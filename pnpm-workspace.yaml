@@ -1,0 +1,10 @@
+packages:
+  - 'packages/*'
+  - 'apps/*'
+
+# Build scripts are opt-in. `supabase` downloads its platform CLI binary on
+# install; the Tailwind and Rolldown native binaries are the build toolchain.
+onlyBuiltDependencies:
+  - supabase
+  - '@tailwindcss/oxide'
+  - esbuild

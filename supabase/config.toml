@@ -1,0 +1,63 @@
+# Supabase CLI configuration for local development.
+#
+# Migrations under ./migrations are forward-only git files, promoted
+# local -> staging -> production and never edited after promotion (DEPLOY.md).
+# ./seed.sql is local and test-only: it is never bundled, never a default and
+# never branched on by application code.
+
+project_id = "shift"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 17
+
+[db.seed]
+enabled = true
+sql_paths = ["./seed.sql"]
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://127.0.0.1"
+
+[local_smtp]
+enabled = true
+port = 54324
+
+[auth]
+enabled = true
+site_url = "http://127.0.0.1:5173"
+additional_redirect_urls = ["http://127.0.0.1:5173"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+# Identity without email: accounts are created by an admin through the
+# admin-auth function. There is no open signup anywhere in this system.
+enable_signup = false
+enable_anonymous_sign_ins = false
+
+[auth.email]
+enable_signup = false
+enable_confirmations = false
+double_confirm_changes = true
+
+[auth.sms]
+enable_signup = false
+enable_confirmations = false
+
+[edge_runtime]
+enabled = true
+policy = "oneshot"
+
+# AD-16: exactly one Edge Function exists. A second one amends AD-14.
+[functions.admin-auth]
+enabled = true
+verify_jwt = true

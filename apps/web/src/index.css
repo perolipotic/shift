@@ -1,0 +1,5 @@
+/* Tailwind 4 — imported wholesale. No token is authored here: shadcn/ui is
+   inherited as-is and the brand delta (primary, destructive, the six-slot
+   working-shift ramp, the non-working slot and the four modifier signals, each
+   in OKLCH for both light and dark) lands in story 1.1b. */
+@import 'tailwindcss';

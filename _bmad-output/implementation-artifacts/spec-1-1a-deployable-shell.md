@@ -2,8 +2,9 @@
 title: 'Story 1.1a — A deployable shell'
 type: 'feature'
 created: '2026-09-02'
-status: 'ready-for-dev'
+status: 'in-progress'
 review_loop_iteration: 0
+baseline_commit: '6a4a0b370dfaa066208dda56cbceff0f250b5714'
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-1-context.md'
 ---
@@ -69,17 +70,17 @@ Pinned versions, the directory tree and AD-14/16/17 are in the loaded `epic-1-co
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `pnpm-workspace.yaml`, `package.json`, `.npmrc`, `.gitignore`, `tsconfig.base.json` -- workspace, pinned versions, strict TS base, root scripts `build`/`lint`/`typecheck`/`test` fanning out -- fixes the shape everything inherits
-- [ ] `packages/domain/*` -- no `dependencies` key, strict tsconfig extending the base, placeholder `src/index.ts`, empty `test/` -- makes purity a resolution property
-- [ ] `eslint.config.js` -- flat config plus a `packages/domain/**` override banning `react`, `react-*`, `@supabase/*` -- readable failure alongside the resolution failure
-- [ ] `apps/web/*` -- Vite + React + Tailwind + shadcn init + TanStack Router; create all five directories; strip every trace of starter boilerplate -- the skeleton, rendering no text
-- [ ] `apps/web/vitest.config.ts`, `packages/domain/vitest.config.ts` -- node environment explicitly, no jsdom -- AD-15
-- [ ] `packages/domain/test/purity.test.ts` -- assert no `dependencies` key and no banned specifier in sources -- catches regressions without needing a failed build
-- [ ] `supabase/config.toml`, `supabase/migrations/0001_extensions.sql` -- local config; enable `btree_gist`, which AD-3's leave exclusion needs downstream -- makes the path real enough to promote
-- [ ] `supabase/seed.sql` -- pilot and UJ-5 section headers, no executable rows yet (no tables exist), marked local/test-only -- reserves the shape 1.2 fills
-- [ ] `supabase/functions/admin-auth/index.ts` -- secret-key client for auth only, caller-JWT client for domain writes, fail fast on missing secret env, all operations return `NOT_IMPLEMENTED` / 501 -- AD-16, AD-17
-- [ ] SPA fallback + build-env config for Cloudflare Pages -- deep links serve `index.html`; publishable key injected at build -- the deploy shape
-- [ ] `DEPLOY.md` -- project setup, which key goes where per environment, ordered local→staging→production promotion runbook -- the human executes this and reports back
+- [x] `pnpm-workspace.yaml`, `package.json`, `.npmrc`, `.gitignore`, `tsconfig.base.json` -- workspace, pinned versions, strict TS base, root scripts `build`/`lint`/`typecheck`/`test` fanning out -- fixes the shape everything inherits
+- [x] `packages/domain/*` -- no `dependencies` key, strict tsconfig extending the base, placeholder `src/index.ts`, empty `test/` -- makes purity a resolution property
+- [x] `eslint.config.js` -- flat config plus a `packages/domain/**` override banning `react`, `react-*`, `@supabase/*` -- readable failure alongside the resolution failure
+- [x] `apps/web/*` -- Vite + React + Tailwind + shadcn init + TanStack Router; create all five directories; strip every trace of starter boilerplate -- the skeleton, rendering no text
+- [x] `apps/web/vitest.config.ts`, `packages/domain/vitest.config.ts` -- node environment explicitly, no jsdom -- AD-15
+- [x] `packages/domain/test/purity.test.ts` -- assert no `dependencies` key and no banned specifier in sources -- catches regressions without needing a failed build
+- [x] `supabase/config.toml`, `supabase/migrations/0001_extensions.sql` -- local config; enable `btree_gist`, which AD-3's leave exclusion needs downstream -- makes the path real enough to promote
+- [x] `supabase/seed.sql` -- pilot and UJ-5 section headers, no executable rows yet (no tables exist), marked local/test-only -- reserves the shape 1.2 fills
+- [x] `supabase/functions/admin-auth/index.ts` -- secret-key client for auth only, caller-JWT client for domain writes, fail fast on missing secret env, all operations return `NOT_IMPLEMENTED` / 501 -- AD-16, AD-17
+- [x] SPA fallback + build-env config for Cloudflare Pages -- deep links serve `index.html`; publishable key injected at build -- the deploy shape
+- [x] `DEPLOY.md` -- project setup, which key goes where per environment, ordered local→staging→production promotion runbook -- the human executes this and reports back
 
 **Acceptance Criteria:**
 - Given a clean checkout, when `pnpm install && pnpm build && pnpm lint && pnpm typecheck && pnpm test` runs, then every command exits 0

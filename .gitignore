@@ -1,0 +1,20 @@
+node_modules/
+dist/
+coverage/
+
+# Vite / build caches
+.vite/
+*.tsbuildinfo
+
+# Local environment — the publishable key is injected at build time, the secret
+# key lives only in the Edge Function's per-environment env (AD-17).
+.env
+.env.*
+!.env.example
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/
+
+.DS_Store
+*.log

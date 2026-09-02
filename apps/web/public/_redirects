@@ -1,0 +1,4 @@
+# Cloudflare Pages SPA fallback: every client route resolves to index.html with
+# HTTP 200, so a deep link such as /kalendar/2026-09 is not a 404. AD-14 means
+# there is no server to route it any other way.
+/*  /index.html  200

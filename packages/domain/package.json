@@ -1,0 +1,26 @@
+{
+  "name": "@shift/domain",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "//": "NO `dependencies` KEY. Purity (AD-7) is a module-resolution property: with pnpm's isolated linker, an import of react or @supabase/supabase-js here cannot resolve and `pnpm build` fails. Adding a runtime dependency is a spec violation, not a refactor.",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "main": "./dist/index.js",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
+  }
+}
