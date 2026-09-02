@@ -1,0 +1,202 @@
+<!doctype html><html lang="hr"><head><meta charset="utf-8"><title>Shift — konfiguracija rotacije i satnih pojasa</title>
+<style>
+:root{--bg:#F6F8FA;--sf:#FFFFFF;--ink:#10161C;--mut:#5B6875;--bd:#DCE3EA;--acc:#1F6FB2;--accfg:#fff;--dng:#D93A46;
+ --s1:#E4F0FA;--s1f:#14496F;--s2:#1B2735;--s2f:#CBD8E6;--nw:#F0F3F6;--nwf:#8D9AA7;
+ --unc:rgba(160,110,20,.22);--uncf:#7A5410}
+@media(prefers-color-scheme:dark){:root{--bg:#0C1116;--sf:#141B22;--ink:#EDF2F7;--mut:#93A1AF;--bd:#232E39;--acc:#4FA3E3;--accfg:#04121D;--dng:#E85B66;
+ --s1:#173248;--s1f:#A8D3F2;--s2:#171F29;--s2f:#9FB3C6;--nw:#161D24;--nwf:#6B7885;
+ --unc:rgba(230,170,60,.16);--uncf:#E0AE5C}}
+*{box-sizing:border-box}
+body{margin:0;background:#5B6875;font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);font-variant-numeric:tabular-nums}
+.page{max-width:1300px;margin:0 auto;padding:26px 18px 60px}
+h1{color:#fff;font-size:21px;margin:0 0 5px;letter-spacing:-.01em}
+.lead{color:#dbe2e8;margin:0 0 22px;max-width:82ch;font-size:13.5px}
+h2{color:#fff;font-size:14px;margin:30px 0 9px}
+.cols{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
+.scr{background:var(--bg);border:1px solid #2c3742;border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.28)}
+.desk{flex:1 1 620px;min-width:520px}
+.phone{width:390px;flex:0 0 auto;border-radius:16px}
+.tb{background:var(--sf);border-bottom:1px solid var(--bd);padding:11px 15px;display:flex;justify-content:space-between;align-items:center}
+.tb .ti{font-weight:660;font-size:14.5px}.tb .sub{color:var(--mut);font-size:12px}
+.bd{padding:14px 15px}
+.sec{background:var(--sf);border:1px solid var(--bd);border-radius:9px;padding:12px 13px;margin-bottom:12px}
+.sec>.sh{font-weight:650;font-size:13px;margin-bottom:2px}
+.sec>.sd{color:var(--mut);font-size:12px;margin-bottom:10px}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th{font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--mut);font-weight:680;text-align:left;padding:0 8px 5px 0}
+td{padding:5px 8px 5px 0;border-top:1px solid var(--bd)}
+.ro{color:var(--mut)}
+.pill{font-size:11px;font-weight:620;padding:2px 7px;border-radius:5px;display:inline-block}
+.p1{background:var(--s1);color:var(--s1f)}.p2{background:var(--s2);color:var(--s2f)}.pn{background:var(--nw);color:var(--nwf)}
+input,select{background:var(--bg);border:1px solid var(--bd);border-radius:6px;padding:4px 7px;font:inherit;font-size:12.5px;color:var(--ink);font-variant-numeric:tabular-nums}
+input[type=time]{width:88px}input.dt{width:110px}
+/* 24h band bar */
+.bar24{display:flex;height:26px;border-radius:6px;overflow:hidden;border:1px solid var(--bd);margin:9px 0 4px}
+.bar24 div{display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:640}
+.b1{background:var(--s1);color:var(--s1f)}.b2{background:var(--s2);color:var(--s2f)}
+.bgap{background-image:repeating-linear-gradient(45deg,var(--unc) 0 5px,transparent 5px 10px);color:var(--uncf);border-left:1px dashed var(--dng);border-right:1px dashed var(--dng)}
+.ticks{display:flex;justify-content:space-between;font-size:9.5px;color:var(--mut)}
+.err{display:flex;gap:8px;background:var(--sf);border:1px solid var(--dng);border-left:3px solid var(--dng);border-radius:7px;padding:9px 11px;font-size:12.5px;margin-top:9px}
+.err .ic{color:var(--dng)}
+/* pattern builder */
+.pat{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:4px 0 8px}
+.slot{background:var(--bg);border:1px solid var(--bd);border-radius:7px;padding:6px 9px;font-size:12px;display:flex;gap:7px;align-items:center}
+.slot .ix{font-size:9.5px;color:var(--mut);font-weight:680}
+.slot .gr{color:var(--mut);cursor:grab;font-size:11px}
+.add{background:transparent;border:1px dashed var(--bd);border-radius:7px;padding:6px 11px;color:var(--acc);font:inherit;font-size:12px;font-weight:620}
+/* preview grid */
+.pv{display:grid;grid-template-columns:56px repeat(4,1fr);gap:2px;font-size:11px;margin-top:4px}
+.pv .hh{font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);font-weight:680;text-align:center}
+.pv .dn{color:var(--mut);font-size:10.5px;text-align:right;padding:5px 3px}
+.cl{min-height:28px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:650}
+.cl.a{background:var(--s1);color:var(--s1f)}.cl.b{background:var(--s2);color:var(--s2f)}.cl.o{background:var(--nw);color:var(--nwf)}
+/* warnings at save */
+.warn{display:flex;gap:9px;background:var(--sf);border:1px solid var(--bd);border-left:3px solid var(--uncf);border-radius:7px;padding:10px 12px;font-size:12.5px;margin-bottom:8px}
+.warn.ok{border-left-color:var(--acc)}
+.warn .ic{font-size:14px;line-height:1.25}
+.warn .tt{font-weight:640}
+.warn .ds{color:var(--mut);font-size:12px;margin-top:1px}
+.acts{display:flex;gap:8px;justify-content:flex-end;margin-top:11px}
+.btn{background:var(--acc);color:var(--accfg);border:0;border-radius:7px;padding:7px 14px;font:inherit;font-size:12.5px;font-weight:620}
+.btn.g{background:transparent;color:var(--acc);border:1px solid var(--bd)}
+.note{background:#fff8e1;border:1px solid #ffe082;border-left:3px solid #f9a825;padding:11px 13px;margin:0 0 20px;font-size:13px;color:#3b3320;max-width:88ch}
+.note b{display:block;margin-bottom:3px}
+.step{display:flex;gap:0;border:1px solid var(--bd);border-radius:7px;overflow:hidden;background:var(--sf);margin-bottom:11px;font-size:11.5px}
+.step div{flex:1;padding:6px 5px;text-align:center;color:var(--mut);border-right:1px solid var(--bd)}
+.step div:last-child{border-right:0}
+.step div.on{background:var(--acc);color:var(--accfg);font-weight:640}
+.step div.dn{color:var(--acc)}
+</style></head><body><div class="page">
+
+<h1>Konfiguracija rotacije i satnih pojasa</h1>
+<p class="lead">The two hardest admin surfaces — the ones where layout drives behaviour, and the ones UJ-5 depends on. Desktop panel plus the phone version, because the spine requires every admin task to complete on a phone and this is the case that proves it.</p>
+
+<div class="note"><b>Two rules this screen has to make visible rather than merely enforce.</b>
+Hour Bands are entered as <em>start times only</em> and their windows are derived, so a gap or an overlap is structurally unrepresentable rather than validated after the fact. And nominal duration is always computed from the times — never typed — so a 19:00→07:00 shift cannot be recorded as anything but 12 hours.</div>
+
+<h2>1 · Satni pojasi — the day/night boundary as a setting</h2>
+<div class="cols">
+<div class="scr desk">
+ <div class="tb"><div><div class="ti">Satni pojasi</div><div class="sub">DVD Kaštel Novi · Europe/Zagreb</div></div><div class="sub">Postavke organizacije</div></div>
+ <div class="bd">
+  <div class="sec"><div class="sh">Pojasi</div><div class="sd">Unosi se samo početak pojasa. Prozor se izračunava — pojasi uvijek pokrivaju cijelih 24 h, bez praznina i preklapanja.</div>
+   <table>
+    <tr><th>Naziv</th><th>Počinje</th><th>Prozor (izračunato)</th><th>Prelazi ponoć</th><th></th></tr>
+    <tr><td><input value="Dan" style="width:110px"></td><td><input type="time" value="07:00"></td><td class="ro">07:00 – 19:00 · 12 h</td><td class="ro">ne</td><td class="ro">✕</td></tr>
+    <tr><td><input value="Noć" style="width:110px"></td><td><input type="time" value="19:00"></td><td class="ro">19:00 – 07:00 · 12 h</td><td class="ro">da</td><td class="ro">✕</td></tr>
+   </table>
+   <div class="bar24"><div class="b1" style="flex:12">Dan · 12 h</div><div class="b2" style="flex:12">Noć · 12 h</div></div>
+   <div class="ticks"><span>00</span><span>04</span><span>07</span><span>12</span><span>19</span><span>24</span></div>
+   <button class="add" style="margin-top:9px">+ Dodaj pojas</button>
+  </div>
+
+  <div class="sec"><div class="sh">Stanje pogreške — praznina u pokrivenosti</div><div class="sd">Ako se granica premjesti tako da pojasi ne pokrivaju 24 h, spremanje se odbija. Ovo je jedna od dvije provjere koja <em>blokira</em>.</div>
+   <div class="bar24"><div class="b1" style="flex:11">Dan · 11 h</div><div class="bgap" style="flex:2">2 h</div><div class="b2" style="flex:11">Noć · 11 h</div></div>
+   <div class="ticks"><span>00</span><span>06</span><span>17</span><span>19</span><span>24</span></div>
+   <div class="err"><span class="ic">⚠</span><div><b>Pojasi ne pokrivaju cijeli dan.</b><div class="ds">2 h (17:00–19:00) nije u nijednom pojasu. Svaki radni sat mora pripadati točno jednom pojasu.</div></div></div>
+  </div>
+ </div>
+</div>
+
+<div class="scr phone">
+ <div class="tb"><div><div class="ti">Satni pojasi</div><div class="sub">2 pojasa · 24 h pokriveno</div></div></div>
+ <div class="bd">
+  <div class="sec"><div class="sh" style="margin-bottom:8px">Dan</div>
+   <table><tr><td class="ro" style="border:0;padding:2px 0">Počinje</td><td style="border:0;padding:2px 0;text-align:right"><input type="time" value="07:00"></td></tr>
+   <tr><td class="ro" style="border:0;padding:2px 0">Prozor</td><td style="border:0;padding:2px 0;text-align:right">07:00–19:00 · 12 h</td></tr></table>
+  </div>
+  <div class="sec"><div class="sh" style="margin-bottom:8px">Noć</div>
+   <table><tr><td class="ro" style="border:0;padding:2px 0">Počinje</td><td style="border:0;padding:2px 0;text-align:right"><input type="time" value="19:00"></td></tr>
+   <tr><td class="ro" style="border:0;padding:2px 0">Prozor</td><td style="border:0;padding:2px 0;text-align:right">19:00–07:00 · 12 h</td></tr>
+   <tr><td class="ro" style="border:0;padding:2px 0">Prelazi ponoć</td><td style="border:0;padding:2px 0;text-align:right">da</td></tr></table>
+  </div>
+  <div class="bar24"><div class="b1" style="flex:12">Dan</div><div class="b2" style="flex:12">Noć</div></div>
+  <div class="ticks"><span>00</span><span>07</span><span>19</span><span>24</span></div>
+  <button class="add" style="margin-top:10px;width:100%">+ Dodaj pojas</button>
+ </div>
+</div>
+</div>
+
+<h2>2 · Rotacija — uzorak, pomak, referentni datum</h2>
+<div class="cols">
+<div class="scr desk">
+ <div class="tb"><div><div class="ti">Rotacija</div><div class="sub">Uzorak i raspored smjena</div></div><div class="sub">Postavke rotacije</div></div>
+ <div class="bd">
+
+  <div class="sec"><div class="sh">Tipovi smjene</div><div class="sd">Trajanje se izračunava iz vremena — ne upisuje se.</div>
+   <table>
+    <tr><th>Naziv</th><th>Od</th><th>Do</th><th>Trajanje</th><th>Radna</th><th>Boja</th></tr>
+    <tr><td>Dan</td><td>07:00</td><td>19:00</td><td class="ro">12 h</td><td class="ro">da</td><td><span class="pill p1">slot 1</span></td></tr>
+    <tr><td>Noć</td><td>19:00</td><td>07:00</td><td class="ro">12 h · prelazi ponoć</td><td class="ro">da</td><td><span class="pill p2">slot 2</span></td></tr>
+    <tr><td>Slobodno</td><td class="ro">—</td><td class="ro">—</td><td class="ro">0 h</td><td class="ro">ne</td><td><span class="pill pn">neradno</span></td></tr>
+   </table>
+  </div>
+
+  <div class="sec"><div class="sh">Uzorak rotacije</div><div class="sd">Bilo koja dužina ciklusa. Isti tip smjene može se ponoviti.</div>
+   <div class="pat">
+    <div class="slot"><span class="gr">⣿</span><span class="ix">1</span><span class="pill p1">Dan</span></div>
+    <div class="slot"><span class="gr">⣿</span><span class="ix">2</span><span class="pill p2">Noć</span></div>
+    <div class="slot"><span class="gr">⣿</span><span class="ix">3</span><span class="pill pn">Slobodno</span></div>
+    <div class="slot"><span class="gr">⣿</span><span class="ix">4</span><span class="pill pn">Slobodno</span></div>
+    <button class="add">+ Dodaj korak</button>
+   </div>
+   <div class="ro" style="font-size:12px">Dužina ciklusa: <b>4 dana</b> · radnih koraka: <b>2</b> · sati po ciklusu: <b>24 h</b></div>
+  </div>
+
+  <div class="sec"><div class="sh">Smjene i pomaci</div><div class="sd">Referentni datum je zajednički: <input class="dt" type="date" value="2026-09-10"></div>
+   <table>
+    <tr><th>Smjena</th><th>Pomak</th><th>Na referentni datum</th><th>Ciklus smjene</th></tr>
+    <tr><td>Smjena A</td><td><select><option>0</option><option>1</option><option>2</option><option>3</option></select></td><td><span class="pill p1">Dan</span></td><td class="ro">Dan → Noć → Slob → Slob</td></tr>
+    <tr><td>Smjena B</td><td><select><option>1</option></select></td><td><span class="pill p2">Noć</span></td><td class="ro">Noć → Slob → Slob → Dan</td></tr>
+    <tr><td>Smjena C</td><td><select><option>2</option></select></td><td><span class="pill pn">Slobodno</span></td><td class="ro">Slob → Slob → Dan → Noć</td></tr>
+    <tr><td>Smjena D</td><td><select><option>3</option></select></td><td><span class="pill pn">Slobodno</span></td><td class="ro">Slob → Dan → Noć → Slob</td></tr>
+   </table>
+  </div>
+
+  <div class="sec"><div class="sh">Pregled ciklusa</div><div class="sd">Izračunato iz uzorka, pomaka i referentnog datuma.</div>
+   <div class="pv">
+    <div class="hh"></div><div class="hh">A</div><div class="hh">B</div><div class="hh">C</div><div class="hh">D</div>
+    <div class="dn">10.09</div><div class="cl a">Dan</div><div class="cl b">Noć</div><div class="cl o">·</div><div class="cl o">·</div>
+    <div class="dn">11.09</div><div class="cl b">Noć</div><div class="cl o">·</div><div class="cl o">·</div><div class="cl a">Dan</div>
+    <div class="dn">12.09</div><div class="cl o">·</div><div class="cl o">·</div><div class="cl a">Dan</div><div class="cl b">Noć</div>
+    <div class="dn">13.09</div><div class="cl o">·</div><div class="cl a">Dan</div><div class="cl b">Noć</div><div class="cl o">·</div>
+   </div>
+  </div>
+
+  <div class="sec"><div class="sh">Provjere pri spremanju</div><div class="sd">Nijedna ne blokira spremanje. Prikazuju se jednom, pri spremanju — ne ostaju kao trajna obavijest.</div>
+   <div class="warn ok"><span class="ic" style="color:var(--acc)">✓</span><div><div class="tt">Pokrivenost je potpuna</div><div class="ds">Svaki dan ciklusa ima točno jednu smjenu na Danu i jednu na Noći. Nema praznina ni dupliranja.</div></div></div>
+   <div class="warn"><span class="ic" style="color:var(--uncf)">◌</span><div><div class="tt">24 h bez pauze</div><div class="ds">Dan (12 h) prelazi izravno u Noć (12 h) — svaka smjena radi 24 h neprekidno, zatim 48 h slobodno. Ako je to namjerno, spremi.</div></div></div>
+   <div class="acts"><button class="btn g">Odustani</button><button class="btn">Spremi rotaciju</button></div>
+  </div>
+
+ </div>
+</div>
+
+<div class="scr phone">
+ <div class="tb"><div><div class="ti">Rotacija</div><div class="sub">Korak 3 od 4</div></div></div>
+ <div class="bd">
+  <div class="step"><div class="dn">Tipovi</div><div class="dn">Uzorak</div><div class="on">Pomaci</div><div>Pregled</div></div>
+  <div class="sec"><div class="sh">Uzorak</div>
+   <div class="pat" style="margin-bottom:4px">
+    <div class="slot"><span class="ix">1</span><span class="pill p1">Dan</span></div>
+    <div class="slot"><span class="ix">2</span><span class="pill p2">Noć</span></div>
+    <div class="slot"><span class="ix">3</span><span class="pill pn">Slob</span></div>
+    <div class="slot"><span class="ix">4</span><span class="pill pn">Slob</span></div>
+   </div>
+   <div class="ro" style="font-size:11.5px">4 dana · 24 h po ciklusu</div>
+  </div>
+  <div class="sec"><div class="sh">Pomaci</div><div class="sd">Referentni datum 10.09.2026</div>
+   <table>
+    <tr><td style="border:0;padding:4px 0">Smjena A</td><td style="border:0;padding:4px 0;text-align:right"><select><option>0</option></select> <span class="pill p1">Dan</span></td></tr>
+    <tr><td style="border-top:1px solid var(--bd);padding:4px 0">Smjena B</td><td style="border-top:1px solid var(--bd);padding:4px 0;text-align:right"><select><option>1</option></select> <span class="pill p2">Noć</span></td></tr>
+    <tr><td style="border-top:1px solid var(--bd);padding:4px 0">Smjena C</td><td style="border-top:1px solid var(--bd);padding:4px 0;text-align:right"><select><option>2</option></select> <span class="pill pn">Slob</span></td></tr>
+    <tr><td style="border-top:1px solid var(--bd);padding:4px 0">Smjena D</td><td style="border-top:1px solid var(--bd);padding:4px 0;text-align:right"><select><option>3</option></select> <span class="pill pn">Slob</span></td></tr>
+   </table>
+  </div>
+  <div class="warn"><span class="ic" style="color:var(--uncf)">◌</span><div><div class="tt">24 h bez pauze</div><div class="ds">Dan prelazi izravno u Noć. Namjerno? Spremi.</div></div></div>
+  <div class="acts"><button class="btn" style="width:100%">Dalje — pregled</button></div>
+ </div>
+</div>
+</div>
+
+</div></body></html>

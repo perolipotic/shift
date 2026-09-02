@@ -1,0 +1,364 @@
+<!doctype html><html lang="hr"><head><meta charset="utf-8"><title>Shift — palette &amp; state encoding options</title>
+<style>
+/* ============================================================
+   SHIFT — palette + shift-state encoding options
+   Concrete hex values documented per variation below.
+   ============================================================ */
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:#eceff1;color:#16191d}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 20px 64px}
+h1{font-size:22px;margin:0 0 6px;letter-spacing:-.01em}
+h2{font-size:16px;margin:38px 0 4px;letter-spacing:-.005em}
+.sub{color:#5a6472;margin:0 0 22px;max-width:74ch}
+.note{background:#fff8e1;border:1px solid #ffe082;border-left:3px solid #f9a825;padding:11px 13px;margin:14px 0 22px;max-width:88ch;font-size:13px}
+.note b{display:block;margin-bottom:3px}
+.card{background:#fff;border:1px solid #d5dbe2;border-radius:8px;margin:0 0 20px;overflow:hidden}
+.card>header{padding:12px 15px;border-bottom:1px solid #e3e8ed;background:#f7f9fb}
+.card>header .nm{font-weight:640;font-size:14px}
+.card>header .reg{color:#5a6472;font-size:12.5px;margin-top:2px}
+.modes{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:#e3e8ed}
+@media(max-width:820px){.modes{grid-template-columns:1fr}}
+.pane{padding:15px}
+.pane .lbl{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;font-weight:680;opacity:.5;margin-bottom:11px}
+.chips{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:13px}
+.chip{font-size:10.5px;padding:3px 7px;border-radius:4px;border:1px solid rgba(128,128,128,.32);font-variant-numeric:tabular-nums}
+/* month grid snippet */
+.grid{display:grid;grid-template-columns:auto repeat(4,1fr);gap:3px;font-size:11.5px}
+.grid .hd{font-size:10px;letter-spacing:.05em;text-transform:uppercase;font-weight:680;opacity:.55;padding:2px 3px}
+.grid .dt{font-variant-numeric:tabular-nums;opacity:.6;padding:5px 5px;font-size:10.5px;white-space:nowrap}
+.cell{padding:5px 6px;border-radius:4px;min-height:30px;line-height:1.25;position:relative}
+.cell .t{font-weight:620;font-size:11px}
+.cell .h{font-size:9.5px;opacity:.72;font-variant-numeric:tabular-nums}
+.dash{margin-top:13px;padding:11px 12px;border-radius:6px;font-size:12px}
+.dash .k{font-size:10px;letter-spacing:.07em;text-transform:uppercase;opacity:.55;font-weight:680}
+.dash .v{font-weight:640;font-size:15px;margin:2px 0 8px}
+.dash .row{display:flex;gap:16px;font-variant-numeric:tabular-nums}
+.legend{display:flex;flex-wrap:wrap;gap:9px;margin-top:12px;font-size:10.5px;opacity:.8}
+.legend span{display:inline-flex;align-items:center;gap:4px}
+.sw{width:11px;height:11px;border-radius:3px;display:inline-block;border:1px solid rgba(128,128,128,.3)}
+code{font:11.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;background:rgba(128,128,128,.13);padding:1px 4px;border-radius:3px}
+.enc{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:900px){.enc{grid-template-columns:1fr}}
+.enc .card{margin:0}
+.mono{font:11px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}
+table.k{border-collapse:collapse;width:100%;font-size:12px;margin-top:6px}
+table.k td,table.k th{border-bottom:1px solid #e3e8ed;padding:5px 7px;text-align:left;vertical-align:top}
+table.k th{font-size:10px;letter-spacing:.07em;text-transform:uppercase;opacity:.55}
+
+/* ---------- V1  VATROGASNA — fire-service red, warm neutrals ----------
+   light: bg #FBF9F8  surface #FFFFFF  ink #1C1917  muted #78716C  border #E7E1DE
+          accent #C1272D  accent-fg #FFFFFF
+          day #FDEBD2 / ink #7A4A08   night #2F2A3D / ink #E8E3F2   off #F4F1EF / ink #A8A29E
+          leave #DCEFE4 / ink #1F5E42  conflict #FBE3E4 ring #C1272D  uncovered hatch #C1272D
+   dark : bg #14100F  surface #1D1817  ink #F5F0EE  muted #A8A29E  border #332C2A
+          accent #E8555B                                                          */
+.v1-l{background:#FBF9F8;color:#1C1917}
+.v1-l .pane .lbl{color:#78716C}
+.v1-l .cell.day{background:#FDEBD2;color:#7A4A08}
+.v1-l .cell.night{background:#2F2A3D;color:#E8E3F2}
+.v1-l .cell.off{background:#F4F1EF;color:#A8A29E}
+.v1-l .cell.leave{background:#DCEFE4;color:#1F5E42}
+.v1-l .cell.conf{background:#FBE3E4;color:#7F1D1D;box-shadow:inset 0 0 0 2px #C1272D}
+.v1-l .dash{background:#fff;border:1px solid #E7E1DE}
+.v1-l .chip{background:#fff}
+.v1-d{background:#14100F;color:#F5F0EE}
+.v1-d .pane .lbl{color:#A8A29E}
+.v1-d .cell.day{background:#4A3A20;color:#FBDCA8}
+.v1-d .cell.night{background:#221E2E;color:#C9C2DE}
+.v1-d .cell.off{background:#231E1D;color:#7A716E}
+.v1-d .cell.leave{background:#1B3A2B;color:#8FD3AE}
+.v1-d .cell.conf{background:#3A1C1E;color:#F2B8BB;box-shadow:inset 0 0 0 2px #E8555B}
+.v1-d .dash{background:#1D1817;border:1px solid #332C2A}
+.v1-d .chip{background:#1D1817}
+
+/* ---------- V2  OPERATIVNA — steel neutrals, blue accent, red reserved ----------
+   light: bg #F6F8FA  surface #FFFFFF  ink #10161C  muted #5B6875  border #DCE3EA
+          accent #1F6FB2  accent-fg #FFFFFF
+          day #E4F0FA / ink #14496F   night #1B2735 / ink #CBD8E6   off #F0F3F6 / ink #8D9AA7
+          leave #E6F2EA / ink #21603F  conflict ring #D93A46 on #FDECEE
+   dark : bg #0C1116  surface #141B22  ink #EDF2F7  muted #93A1AF  border #232E39
+          accent #4FA3E3                                                          */
+.v2-l{background:#F6F8FA;color:#10161C}
+.v2-l .pane .lbl{color:#5B6875}
+.v2-l .cell.day{background:#E4F0FA;color:#14496F}
+.v2-l .cell.night{background:#1B2735;color:#CBD8E6}
+.v2-l .cell.off{background:#F0F3F6;color:#8D9AA7}
+.v2-l .cell.leave{background:#E6F2EA;color:#21603F}
+.v2-l .cell.conf{background:#FDECEE;color:#8C1D24;box-shadow:inset 0 0 0 2px #D93A46}
+.v2-l .dash{background:#fff;border:1px solid #DCE3EA}
+.v2-l .chip{background:#fff}
+.v2-d{background:#0C1116;color:#EDF2F7}
+.v2-d .pane .lbl{color:#93A1AF}
+.v2-d .cell.day{background:#173248;color:#A8D3F2}
+.v2-d .cell.night{background:#171F29;color:#9FB3C6}
+.v2-d .cell.off{background:#161D24;color:#6B7885}
+.v2-d .cell.leave{background:#16352A;color:#84CCA7}
+.v2-d .cell.conf{background:#3A171B;color:#F0AAB0;box-shadow:inset 0 0 0 2px #E85B66}
+.v2-d .dash{background:#141B22;border:1px solid #232E39}
+.v2-d .chip{background:#141B22}
+
+/* ---------- V3  PAPIR — printed-rota register, near-zero chroma ----------
+   light: bg #F7F5F0  surface #FFFDF8  ink #14130F  muted #6E6A5F  border #E2DED2
+          accent #8A6A1F  accent-fg #FFFDF8
+          day #FFFDF8 + 2px left rule #14130F   night #14130F / ink #F7F5F0
+          off #EFEDE6 / ink #9A968A   leave #EDEFE4 + dashed rule
+          conflict double rule #A8271F
+   dark : bg #12120F  surface #1A1A16  ink #F2F0E8  muted #9A968A  border #2B2B24
+          accent #C9A24A                                                          */
+.v3-l{background:#F7F5F0;color:#14130F}
+.v3-l .pane .lbl{color:#6E6A5F}
+.v3-l .cell{border-radius:2px}
+.v3-l .cell.day{background:#FFFDF8;box-shadow:inset 3px 0 0 #14130F}
+.v3-l .cell.night{background:#14130F;color:#F7F5F0}
+.v3-l .cell.off{background:#EFEDE6;color:#9A968A}
+.v3-l .cell.leave{background:#EDEFE4;color:#4A5230;box-shadow:inset 3px 0 0 #7E8A4A}
+.v3-l .cell.conf{background:#FFFDF8;color:#A8271F;box-shadow:inset 3px 0 0 #A8271F,inset 0 0 0 1px #A8271F}
+.v3-l .dash{background:#FFFDF8;border:1px solid #E2DED2;border-radius:2px}
+.v3-l .chip{background:#FFFDF8;border-radius:2px}
+.v3-d{background:#12120F;color:#F2F0E8}
+.v3-d .pane .lbl{color:#9A968A}
+.v3-d .cell{border-radius:2px}
+.v3-d .cell.day{background:#1A1A16;box-shadow:inset 3px 0 0 #F2F0E8}
+.v3-d .cell.night{background:#000;color:#C9C6BA}
+.v3-d .cell.off{background:#181814;color:#6B685E}
+.v3-d .cell.leave{background:#1C2016;color:#A8B87A;box-shadow:inset 3px 0 0 #7E8A4A}
+.v3-d .cell.conf{background:#1A1A16;color:#E88A82;box-shadow:inset 3px 0 0 #C4453B,inset 0 0 0 1px #C4453B}
+.v3-d .dash{background:#1A1A16;border:1px solid #2B2B24;border-radius:2px}
+.v3-d .chip{background:#1A1A16;border-radius:2px}
+
+/* ---------- V4  NOĆNA — dark-first, designed for 03:00 ----------
+   dark : bg #0A0D10  surface #121820  ink #E8EEF4  muted #8695A3  border #1F2933
+          accent #37C8A0  accent-fg #05221B
+          day #24313D / ink #BEDCF0   night #101620 / ink #7E93A8
+          off #14191F / ink #5C6874   leave #14332A / ink #6FD3AE
+          conflict #38181C ring #F2585F
+   light: bg #F4F7F9  surface #FFFFFF  ink #0E1418  accent #0E8A6E                */
+.v4-d{background:#0A0D10;color:#E8EEF4}
+.v4-d .pane .lbl{color:#8695A3}
+.v4-d .cell.day{background:#24313D;color:#BEDCF0}
+.v4-d .cell.night{background:#101620;color:#7E93A8;box-shadow:inset 0 0 0 1px #1F2933}
+.v4-d .cell.off{background:#14191F;color:#5C6874}
+.v4-d .cell.leave{background:#14332A;color:#6FD3AE}
+.v4-d .cell.conf{background:#38181C;color:#F4A3A8;box-shadow:inset 0 0 0 2px #F2585F}
+.v4-d .dash{background:#121820;border:1px solid #1F2933}
+.v4-d .chip{background:#121820}
+.v4-l{background:#F4F7F9;color:#0E1418}
+.v4-l .pane .lbl{color:#5B6875}
+.v4-l .cell.day{background:#DCEBF7;color:#134B72}
+.v4-l .cell.night{background:#1B2530;color:#C4D3E0}
+.v4-l .cell.off{background:#EDF1F4;color:#8A97A3}
+.v4-l .cell.leave{background:#DDF0E8;color:#0E5B45}
+.v4-l .cell.conf{background:#FCEAEC;color:#8A1F26;box-shadow:inset 0 0 0 2px #D2404A}
+.v4-l .dash{background:#fff;border:1px solid #DCE3EA}
+.v4-l .chip{background:#fff}
+
+/* encoding demos — neutral palette so structure reads, not color */
+.e{background:#F6F8FA;color:#10161C;padding:15px}
+.e .cell{background:#fff;box-shadow:inset 0 0 0 1px #DCE3EA}
+.e .cell.off{background:#F0F3F6;color:#8D9AA7}
+/* A: glyph + fill weight */
+.eA .cell.day{background:#E4F0FA;color:#14496F}
+.eA .cell.night{background:#1B2735;color:#CBD8E6}
+.eA .g{font-size:10px;opacity:.85;margin-right:2px}
+/* B: typographic + rule */
+.eB .cell{border-radius:2px;background:#fff}
+.eB .cell.day{box-shadow:inset 3px 0 0 #10161C}
+.eB .cell.night{background:#10161C;color:#EDF2F7}
+.eB .cell.off{background:#F0F3F6;color:#8D9AA7;box-shadow:none}
+.eB .cell .t{text-transform:uppercase;letter-spacing:.04em;font-size:10px}
+/* C: corner marker */
+.eC .cell.day{background:#E4F0FA;color:#14496F}
+.eC .cell.night{background:#1B2735;color:#CBD8E6}
+.eC .mk{position:absolute;top:0;right:0;width:0;height:0}
+.mk-conf{border-top:11px solid #D93A46;border-left:11px solid transparent}
+.mk-ovr{border-top:11px solid #7A6BC4;border-left:11px solid transparent}
+.mk-unc{border-top:11px solid #B0761F;border-left:11px solid transparent}
+/* modifier signals shared */
+.m-ovr{box-shadow:inset 0 0 0 2px #7A6BC4 !important}
+.m-unc{background-image:repeating-linear-gradient(45deg,rgba(160,110,20,.20) 0 5px,transparent 5px 10px)}
+.m-leave{background-image:repeating-linear-gradient(-45deg,rgba(30,120,80,.16) 0 5px,transparent 5px 10px)}
+</style></head><body><div class="wrap">
+
+<h1>Shift — palette and shift-state encoding</h1>
+<p class="sub">Four palettes, each shown light and dark, using the pilot's real content: <code>DVD Kaštel Novi</code>, teams <em>Smjena A–D</em>, shift types <em>Dan</em> / <em>Noć</em> / <em>Slobodno</em>. Every string here also exercises Croatian diacritics — <b>č ć ž š đ</b> — so a typeface gap shows up immediately. Then three strategies for encoding state without relying on colour.</p>
+
+<div class="note"><b>One finding worth deciding before you pick a palette.</b>
+The PRD allows the pilot a fire-department red accent. The spec requires an unresolved conflict to be visible at a glance. If brand red and conflict red are the same red, conflicts stop reading as conflicts — the alarm colour becomes the furniture. Either the brand accent avoids red, or conflict stops being carried primarily by hue. Variation 2 takes the first route; the encoding strategies below take the second.</div>
+
+<div class="note"><b>And a structural point that makes the seven-state problem tractable.</b>
+The seven states aren't peers. Three are <em>base</em> states — the shift type, which is Organization data and can be any number of them. Four are <em>modifiers</em> — leave, conflict, uncovered, overridden — which are system-defined and fixed forever. So: let colour carry the base state (org data, unknown count), and let a non-colour signal carry every modifier (fixed set, designable once). That satisfies "must work for shift types the design never anticipated" instead of fighting it.</div>
+
+<h2>Palettes</h2>
+
+<!-- V1 -->
+<div class="card"><header><div class="nm">1 · Vatrogasna</div><div class="reg">Fire-service red on warm neutrals. Reads as the pilot's own product — and walks straight into the red-on-red finding above.</div></header>
+<div class="modes">
+  <div class="pane v1-l"><div class="lbl">Svijetlo</div>
+    <div class="chips"><span class="chip">accent #C1272D</span><span class="chip">ink #1C1917</span><span class="chip">muted #78716C</span><span class="chip">border #E7E1DE</span></div>
+    <div class="grid">
+      <div class="hd"></div><div class="hd">Smj. A</div><div class="hd">Smj. B</div><div class="hd">Smj. C</div><div class="hd">Smj. D</div>
+      <div class="dt">10.09</div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div><div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell off"><div class="t">Slob.</div></div>
+      <div class="dt">11.09</div><div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div>
+      <div class="dt">12.09</div><div class="cell off"><div class="t">Slob.</div></div><div class="cell leave"><div class="t">God.</div></div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div><div class="cell conf"><div class="t">Noć ⚠</div><div class="h">konflikt</div></div>
+    </div>
+    <div class="dash"><div class="k">Danas</div><div class="v">Ne radiš</div><div class="k">Sljedeća smjena</div><div class="v">Noć · 11.09 · 19:00–07:00</div><div class="row"><span>Dnevni 60 h</span><span>Noćni 48 h</span><span>Preostalo 18 dana</span></div></div>
+  </div>
+  <div class="pane v1-d"><div class="lbl">Tamno</div>
+    <div class="chips"><span class="chip">accent #E8555B</span><span class="chip">ink #F5F0EE</span><span class="chip">muted #A8A29E</span><span class="chip">border #332C2A</span></div>
+    <div class="grid">
+      <div class="hd"></div><div class="hd">Smj. A</div><div class="hd">Smj. B</div><div class="hd">Smj. C</div><div class="hd">Smj. D</div>
+      <div class="dt">10.09</div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div><div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell off"><div class="t">Slob.</div></div>
+      <div class="dt">11.09</div><div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div>
+      <div class="dt">12.09</div><div class="cell off"><div class="t">Slob.</div></div><div class="cell leave"><div class="t">God.</div></div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div><div class="cell conf"><div class="t">Noć ⚠</div><div class="h">konflikt</div></div>
+    </div>
+    <div class="dash"><div class="k">Danas</div><div class="v">Ne radiš</div><div class="k">Sljedeća smjena</div><div class="v">Noć · 11.09 · 19:00–07:00</div><div class="row"><span>Dnevni 60 h</span><span>Noćni 48 h</span><span>Preostalo 18 dana</span></div></div>
+  </div>
+</div></div>
+
+<!-- V2 -->
+<div class="card"><header><div class="nm">2 · Operativna</div><div class="reg">Steel neutrals, one blue accent, red held back exclusively for conflict. The restrained option — and the only one where brand colour and alarm colour cannot collide.</div></header>
+<div class="modes">
+  <div class="pane v2-l"><div class="lbl">Svijetlo</div>
+    <div class="chips"><span class="chip">accent #1F6FB2</span><span class="chip">danger #D93A46</span><span class="chip">ink #10161C</span><span class="chip">border #DCE3EA</span></div>
+    <div class="grid">
+      <div class="hd"></div><div class="hd">Smj. A</div><div class="hd">Smj. B</div><div class="hd">Smj. C</div><div class="hd">Smj. D</div>
+      <div class="dt">10.09</div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div><div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell off"><div class="t">Slob.</div></div>
+      <div class="dt">11.09</div><div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div>
+      <div class="dt">12.09</div><div class="cell off"><div class="t">Slob.</div></div><div class="cell leave"><div class="t">God.</div></div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div><div class="cell conf"><div class="t">Noć ⚠</div><div class="h">konflikt</div></div>
+    </div>
+    <div class="dash"><div class="k">Danas</div><div class="v">Ne radiš</div><div class="k">Sljedeća smjena</div><div class="v">Noć · 11.09 · 19:00–07:00</div><div class="row"><span>Dnevni 60 h</span><span>Noćni 48 h</span><span>Preostalo 18 dana</span></div></div>
+  </div>
+  <div class="pane v2-d"><div class="lbl">Tamno</div>
+    <div class="chips"><span class="chip">accent #4FA3E3</span><span class="chip">danger #E85B66</span><span class="chip">ink #EDF2F7</span><span class="chip">border #232E39</span></div>
+    <div class="grid">
+      <div class="hd"></div><div class="hd">Smj. A</div><div class="hd">Smj. B</div><div class="hd">Smj. C</div><div class="hd">Smj. D</div>
+      <div class="dt">10.09</div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div><div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell off"><div class="t">Slob.</div></div>
+      <div class="dt">11.09</div><div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div>
+      <div class="dt">12.09</div><div class="cell off"><div class="t">Slob.</div></div><div class="cell leave"><div class="t">God.</div></div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div><div class="cell conf"><div class="t">Noć ⚠</div><div class="h">konflikt</div></div>
+    </div>
+    <div class="dash"><div class="k">Danas</div><div class="v">Ne radiš</div><div class="k">Sljedeća smjena</div><div class="v">Noć · 11.09 · 19:00–07:00</div><div class="row"><span>Dnevni 60 h</span><span>Noćni 48 h</span><span>Preostalo 18 dana</span></div></div>
+  </div>
+</div></div>
+
+<!-- V3 -->
+<div class="card"><header><div class="nm">3 · Papir</div><div class="reg">Near-zero chroma, ink-on-paper. State carried by rules and weight rather than fill. Reads like the printed rota it replaces — which is either respectful or regressive, your call.</div></header>
+<div class="modes">
+  <div class="pane v3-l"><div class="lbl">Svijetlo</div>
+    <div class="chips"><span class="chip">accent #8A6A1F</span><span class="chip">ink #14130F</span><span class="chip">muted #6E6A5F</span><span class="chip">border #E2DED2</span></div>
+    <div class="grid">
+      <div class="hd"></div><div class="hd">Smj. A</div><div class="hd">Smj. B</div><div class="hd">Smj. C</div><div class="hd">Smj. D</div>
+      <div class="dt">10.09</div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div><div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell off"><div class="t">Slob.</div></div>
+      <div class="dt">11.09</div><div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div>
+      <div class="dt">12.09</div><div class="cell off"><div class="t">Slob.</div></div><div class="cell leave"><div class="t">God.</div></div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div><div class="cell conf"><div class="t">Noć ⚠</div><div class="h">konflikt</div></div>
+    </div>
+    <div class="dash"><div class="k">Danas</div><div class="v">Ne radiš</div><div class="k">Sljedeća smjena</div><div class="v">Noć · 11.09 · 19:00–07:00</div><div class="row"><span>Dnevni 60 h</span><span>Noćni 48 h</span><span>Preostalo 18 dana</span></div></div>
+  </div>
+  <div class="pane v3-d"><div class="lbl">Tamno</div>
+    <div class="chips"><span class="chip">accent #C9A24A</span><span class="chip">ink #F2F0E8</span><span class="chip">muted #9A968A</span><span class="chip">border #2B2B24</span></div>
+    <div class="grid">
+      <div class="hd"></div><div class="hd">Smj. A</div><div class="hd">Smj. B</div><div class="hd">Smj. C</div><div class="hd">Smj. D</div>
+      <div class="dt">10.09</div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div><div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell off"><div class="t">Slob.</div></div>
+      <div class="dt">11.09</div><div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div>
+      <div class="dt">12.09</div><div class="cell off"><div class="t">Slob.</div></div><div class="cell leave"><div class="t">God.</div></div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div><div class="cell conf"><div class="t">Noć ⚠</div><div class="h">konflikt</div></div>
+    </div>
+    <div class="dash"><div class="k">Danas</div><div class="v">Ne radiš</div><div class="k">Sljedeća smjena</div><div class="v">Noć · 11.09 · 19:00–07:00</div><div class="row"><span>Dnevni 60 h</span><span>Noćni 48 h</span><span>Preostalo 18 dana</span></div></div>
+  </div>
+</div></div>
+
+<!-- V4 -->
+<div class="card"><header><div class="nm">4 · Noćna smjena</div><div class="reg">Designed dark-first for 03:00 in a vehicle or dorm, with light as the derived theme. Inverts the usual order because that is when the member actually opens the app.</div></header>
+<div class="modes">
+  <div class="pane v4-d"><div class="lbl">Tamno (primarno)</div>
+    <div class="chips"><span class="chip">accent #37C8A0</span><span class="chip">danger #F2585F</span><span class="chip">ink #E8EEF4</span><span class="chip">border #1F2933</span></div>
+    <div class="grid">
+      <div class="hd"></div><div class="hd">Smj. A</div><div class="hd">Smj. B</div><div class="hd">Smj. C</div><div class="hd">Smj. D</div>
+      <div class="dt">10.09</div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div><div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell off"><div class="t">Slob.</div></div>
+      <div class="dt">11.09</div><div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div>
+      <div class="dt">12.09</div><div class="cell off"><div class="t">Slob.</div></div><div class="cell leave"><div class="t">God.</div></div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div><div class="cell conf"><div class="t">Noć ⚠</div><div class="h">konflikt</div></div>
+    </div>
+    <div class="dash"><div class="k">Danas</div><div class="v">Ne radiš</div><div class="k">Sljedeća smjena</div><div class="v">Noć · 11.09 · 19:00–07:00</div><div class="row"><span>Dnevni 60 h</span><span>Noćni 48 h</span><span>Preostalo 18 dana</span></div></div>
+  </div>
+  <div class="pane v4-l"><div class="lbl">Svijetlo (izvedeno)</div>
+    <div class="chips"><span class="chip">accent #0E8A6E</span><span class="chip">danger #D2404A</span><span class="chip">ink #0E1418</span><span class="chip">border #DCE3EA</span></div>
+    <div class="grid">
+      <div class="hd"></div><div class="hd">Smj. A</div><div class="hd">Smj. B</div><div class="hd">Smj. C</div><div class="hd">Smj. D</div>
+      <div class="dt">10.09</div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div><div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell off"><div class="t">Slob.</div></div>
+      <div class="dt">11.09</div><div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell off"><div class="t">Slob.</div></div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div>
+      <div class="dt">12.09</div><div class="cell off"><div class="t">Slob.</div></div><div class="cell leave"><div class="t">God.</div></div><div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div><div class="cell conf"><div class="t">Noć ⚠</div><div class="h">konflikt</div></div>
+    </div>
+    <div class="dash"><div class="k">Danas</div><div class="v">Ne radiš</div><div class="k">Sljedeća smjena</div><div class="v">Noć · 11.09 · 19:00–07:00</div><div class="row"><span>Dnevni 60 h</span><span>Noćni 48 h</span><span>Preostalo 18 dana</span></div></div>
+  </div>
+</div></div>
+
+<h2>Encoding the four modifiers without colour</h2>
+<p class="sub">Same neutral base in all three, so you judge the mechanism rather than the hue. Each shows one row where <em>Smjena B</em> is on leave, <em>Smjena C</em>'s shift was manually changed, and <em>Smjena D</em> has an unresolved conflict — plus an uncovered shift.</p>
+
+<div class="enc">
+
+<div class="card"><header><div class="nm">A · Glyph + fill weight</div><div class="reg">A small mark before the label; modifiers change fill density. Scales to any number of shift types.</div></header>
+<div class="e eA">
+  <div class="grid">
+    <div class="hd"></div><div class="hd">A</div><div class="hd">B</div><div class="hd">C</div><div class="hd">D</div>
+    <div class="dt">12.09</div>
+    <div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div>
+    <div class="cell off m-leave"><div class="t"><span class="g">◷</span>Godišnji</div></div>
+    <div class="cell day m-ovr"><div class="t"><span class="g">✎</span>Dan</div><div class="h">izmijenjeno</div></div>
+    <div class="cell night"><div class="t"><span class="g">⚠</span>Noć</div><div class="h">konflikt</div></div>
+    <div class="dt">13.09</div>
+    <div class="cell off"><div class="t">Slob.</div></div>
+    <div class="cell off"><div class="t">Slob.</div></div>
+    <div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div>
+    <div class="cell day m-unc"><div class="t"><span class="g">◌</span>Dan</div><div class="h">nepokriveno</div></div>
+  </div>
+  <div class="legend"><span><span class="g">⚠</span>konflikt</span><span><span class="g">✎</span>izmijenjeno</span><span><span class="g">◷</span>godišnji</span><span><span class="g">◌</span>nepokriveno</span></div>
+</div></div>
+
+<div class="card"><header><div class="nm">B · Typographic + rule</div><div class="reg">Uppercase label, weight for base state, border treatment for modifier: solid rule, dashed, doubled, none.</div></header>
+<div class="e eB">
+  <div class="grid">
+    <div class="hd"></div><div class="hd">A</div><div class="hd">B</div><div class="hd">C</div><div class="hd">D</div>
+    <div class="dt">12.09</div>
+    <div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div>
+    <div class="cell off m-leave"><div class="t">Godišnji</div></div>
+    <div class="cell day m-ovr"><div class="t">Dan *</div><div class="h">izmijenjeno</div></div>
+    <div class="cell night"><div class="t">Noć !</div><div class="h">konflikt</div></div>
+    <div class="dt">13.09</div>
+    <div class="cell off"><div class="t">Slob.</div></div>
+    <div class="cell off"><div class="t">Slob.</div></div>
+    <div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div>
+    <div class="cell day m-unc"><div class="t">Dan ?</div><div class="h">nepokriveno</div></div>
+  </div>
+  <div class="legend"><span><b>!</b> konflikt</span><span><b>*</b> izmijenjeno</span><span>iskošeno godišnji</span><span><b>?</b> nepokriveno</span></div>
+</div></div>
+
+<div class="card"><header><div class="nm">C · Corner marker</div><div class="reg">Base state fills the cell; every modifier is a triangular flag in the top-right. One consistent place to look.</div></header>
+<div class="e eC">
+  <div class="grid">
+    <div class="hd"></div><div class="hd">A</div><div class="hd">B</div><div class="hd">C</div><div class="hd">D</div>
+    <div class="dt">12.09</div>
+    <div class="cell day"><div class="t">Dan</div><div class="h">07–19</div></div>
+    <div class="cell off m-leave"><div class="t">Godišnji</div></div>
+    <div class="cell day"><div class="mk mk-ovr"></div><div class="t">Dan</div><div class="h">izmijenjeno</div></div>
+    <div class="cell night"><div class="mk mk-conf"></div><div class="t">Noć</div><div class="h">konflikt</div></div>
+    <div class="dt">13.09</div>
+    <div class="cell off"><div class="t">Slob.</div></div>
+    <div class="cell off"><div class="t">Slob.</div></div>
+    <div class="cell night"><div class="t">Noć</div><div class="h">19–07</div></div>
+    <div class="cell day"><div class="mk mk-unc"></div><div class="t">Dan</div><div class="h">nepokriveno</div></div>
+  </div>
+  <div class="legend"><span><span class="sw" style="background:#D93A46"></span>konflikt</span><span><span class="sw" style="background:#7A6BC4"></span>izmijenjeno</span><span><span class="sw" style="background:#B0761F"></span>nepokriveno</span></div>
+</div></div>
+
+</div>
+
+<h2>Typeface — the one hard constraint</h2>
+<div class="card"><div class="pane">
+<p style="margin:0 0 8px">Croatian needs Latin Extended-A. A face without it falls back mid-word, which looks broken in exactly the places that matter most — shift names, month names, member names.</p>
+<table class="k"><tr><th>Must render</th><th>Where it appears</th></tr>
+<tr><td class="mono" style="font-size:15px">č ć ž š đ Č Ć Ž Š Đ</td><td>Noć · Godišnji · Slobodno · Izmijenjeno · Kaštel · Lipotić</td></tr>
+<tr><td class="mono">tabular numerals</td><td>the hours table and every 07:00–19:00 — proportional digits make columns wobble</td></tr>
+</table>
+<p style="margin:10px 0 0;color:#5a6472;font-size:13px">Safe with full coverage and tabular figures: Inter, Source Sans 3, IBM Plex Sans, Noto Sans. shadcn's default Geist also covers it. Your call — this is the one place I'd rather you named a preference than inherited mine.</p>
+</div></div>
+
+</div></body></html>

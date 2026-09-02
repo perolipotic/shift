@@ -1,0 +1,136 @@
+<!doctype html><html lang="hr"><head><meta charset="utf-8"><title>Shift — rješavanje konflikta</title>
+<style>
+:root{--bg:#F6F8FA;--sf:#FFFFFF;--ink:#10161C;--mut:#5B6875;--bd:#DCE3EA;--acc:#1F6FB2;--accfg:#fff;--dng:#D93A46;
+ --day:#E4F0FA;--dayi:#14496F;--night:#1B2735;--nighti:#CBD8E6;--off:#F0F3F6;--offi:#8D9AA7;
+ --lv:rgba(33,96,63,.16);--lvi:#21603F;--unc:rgba(160,110,20,.22);--unci:#7A5410;--ovr:#7A6BC4}
+@media(prefers-color-scheme:dark){:root{--bg:#0C1116;--sf:#141B22;--ink:#EDF2F7;--mut:#93A1AF;--bd:#232E39;--acc:#4FA3E3;--accfg:#04121D;--dng:#E85B66;
+ --day:#173248;--dayi:#A8D3F2;--night:#171F29;--nighti:#9FB3C6;--off:#161D24;--offi:#6B7885;
+ --lv:rgba(132,204,167,.15);--lvi:#84CCA7;--unc:rgba(230,170,60,.16);--unci:#E0AE5C;--ovr:#9A8BE0}}
+*{box-sizing:border-box}
+body{margin:0;background:#5B6875;font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);font-variant-numeric:tabular-nums}
+.page{max-width:1180px;margin:0 auto;padding:26px 18px 60px}
+h1{color:#fff;font-size:21px;margin:0 0 5px;letter-spacing:-.01em}
+.lead{color:#dbe2e8;margin:0 0 22px;max-width:80ch;font-size:13.5px}
+h2{color:#fff;font-size:14px;margin:30px 0 9px}
+.scr{background:var(--bg);border:1px solid #2c3742;border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.28);margin-bottom:20px}
+.tb{background:var(--sf);border-bottom:1px solid var(--bd);padding:11px 16px;display:flex;align-items:center;justify-content:space-between}
+.tb .ti{font-weight:660;font-size:15px}
+.tb .sub{color:var(--mut);font-size:12px}
+.bd{padding:15px 16px}
+.warn{display:flex;gap:10px;align-items:flex-start;background:var(--sf);border:1px solid var(--bd);border-left:3px solid var(--dng);border-radius:8px;padding:11px 13px;margin-bottom:14px}
+.warn .ic{color:var(--dng);font-size:15px;line-height:1.3}
+.warn .tt{font-weight:640;font-size:13.5px}
+.warn .ds{color:var(--mut);font-size:12.5px;margin-top:1px}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:1px;background:var(--bd);border:1px solid var(--bd);border-radius:8px;overflow:hidden;margin-bottom:15px}
+.f{background:var(--sf);padding:9px 11px}
+.f .k{font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--mut);font-weight:680}
+.f .v{font-weight:620;font-size:13px;margin-top:2px}
+.opts{display:grid;gap:9px}
+.o{background:var(--sf);border:1px solid var(--bd);border-radius:9px;padding:12px 13px;display:grid;grid-template-columns:22px 1fr auto;gap:11px;align-items:start}
+.o .rd{width:15px;height:15px;border-radius:50%;border:1.5px solid var(--mut);margin-top:2px}
+.o.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+.o.sel .rd{border-color:var(--acc);background:radial-gradient(circle,var(--acc) 0 43%,transparent 45%)}
+.o .nm{font-weight:640;font-size:13.5px}
+.o .ef{color:var(--mut);font-size:12.5px;margin-top:2px}
+.o .out{font-size:11.5px;margin-top:6px;padding:6px 8px;border-radius:6px;background:var(--bg);border:1px solid var(--bd)}
+.o .out b{font-weight:660}
+.o .btn{align-self:center}
+.btn{background:var(--acc);color:var(--accfg);border:0;border-radius:7px;padding:7px 13px;font:inherit;font-size:12.5px;font-weight:620}
+.btn.g{background:transparent;color:var(--acc);border:1px solid var(--bd)}
+.pick{display:flex;gap:8px;align-items:center;margin-top:8px;background:var(--bg);border:1px solid var(--bd);border-radius:7px;padding:7px 9px;font-size:12.5px}
+.pick select{flex:1;background:var(--sf);border:1px solid var(--bd);border-radius:6px;padding:5px 7px;font:inherit;font-size:12.5px;color:var(--ink)}
+.flag{font-size:11.5px;color:var(--unci);background:var(--unc);border-radius:5px;padding:4px 7px;margin-top:6px}
+/* list view */
+.lst{display:grid;gap:7px}
+.li{background:var(--sf);border:1px solid var(--bd);border-radius:9px;padding:11px 13px;display:grid;grid-template-columns:64px 1fr auto;gap:12px;align-items:center}
+.li.past{opacity:.66;border-style:dashed}
+.li .dt{text-align:center}
+.li .dt .n{font-weight:680;font-size:17px;line-height:1}
+.li .dt .m{font-size:10px;color:var(--mut);text-transform:uppercase}
+.li .who{font-weight:620;font-size:13.5px}
+.li .det{color:var(--mut);font-size:12px}
+.pill{font-size:11px;font-weight:620;padding:2px 7px;border-radius:5px;display:inline-block}
+.pill.night{background:var(--night);color:var(--nighti)}
+.pill.day{background:var(--day);color:var(--dayi)}
+.hdr{display:flex;align-items:baseline;gap:9px;margin-bottom:11px}
+.hdr .c{background:var(--dng);color:#fff;font-size:12px;font-weight:680;border-radius:11px;padding:1px 8px}
+.hdr .h{font-weight:660;font-size:14px}
+.zero{background:var(--sf);border:1px solid var(--bd);border-radius:9px;padding:22px;text-align:center;color:var(--mut);font-size:13px}
+.note{background:#fff8e1;border:1px solid #ffe082;border-left:3px solid #f9a825;padding:11px 13px;margin:0 0 20px;font-size:13px;color:#3b3320;max-width:88ch}
+.note b{display:block;margin-bottom:3px}
+</style></head><body><div class="page">
+
+<h1>Rješavanje konflikta</h1>
+<p class="lead">The product's distinguishing stance made concrete. The spec requires that a collision is <em>surfaced and handed to a human</em>, that accepting an uncovered shift is a legitimate choice rather than a failure path, and that resolving must never be faster by being automatic. All three shape this screen.</p>
+
+<div class="note"><b>Design rule this screen encodes.</b>
+Each option states its consequence in the same three terms — coverage, the absent member's hours, the balance — so the admin compares outcomes rather than guessing them. There is no primary-styled "recommended" option and no bulk-resolve affordance anywhere, because either would make the automatic path the fast path.</div>
+
+<h2>Conflict list — the admin's queue</h2>
+<div class="scr">
+ <div class="tb"><div><div class="ti">Konflikti</div><div class="sub">DVD Kaštel Novi</div></div><div class="sub">Najbliži prvi</div></div>
+ <div class="bd">
+  <div class="hdr"><span class="c">3</span><span class="h">nerješena konflikta</span></div>
+  <div class="lst">
+   <div class="li"><div class="dt"><div class="n">12</div><div class="m">ruj</div></div>
+    <div><div class="who">Ana Jurić · Smjena D</div><div class="det">Godišnji odmor 10.09–16.09 · <span class="pill night">Noć 19:00–07:00</span></div></div>
+    <button class="btn">Riješi</button></div>
+   <div class="li"><div class="dt"><div class="n">13</div><div class="m">ruj</div></div>
+    <div><div class="who">Ana Jurić · Smjena D</div><div class="det">Godišnji odmor 10.09–16.09 · <span class="pill day">Dan 07:00–19:00</span></div></div>
+    <button class="btn">Riješi</button></div>
+   <div class="li past"><div class="dt"><div class="n">04</div><div class="m">ruj</div></div>
+    <div><div class="who">Marko Bilić · Smjena B</div><div class="det">Prošli datum · Godišnji odmor 01.09–05.09 · <span class="pill night">Noć 19:00–07:00</span></div></div>
+    <button class="btn g">Riješi</button></div>
+  </div>
+ </div>
+</div>
+
+<h2>Resolution — one conflict, three outcomes, each with its consequence stated</h2>
+<div class="scr">
+ <div class="tb"><div><div class="ti">Konflikt · 12. rujna</div><div class="sub">Ana Jurić · Smjena D</div></div><div class="sub">✕</div></div>
+ <div class="bd">
+  <div class="warn"><div class="ic">⚠</div><div><div class="tt">Ana Jurić je na godišnjem, a raspoređena je na smjenu</div><div class="ds">Smjena se ne uklanja automatski. Odaberi ishod.</div></div></div>
+
+  <div class="facts">
+   <div class="f"><div class="k">Datum</div><div class="v">12.09.2026 (subota)</div></div>
+   <div class="f"><div class="k">Tip smjene</div><div class="v">Noć · 19:00–07:00</div></div>
+   <div class="f"><div class="k">Smjena</div><div class="v">Smjena D</div></div>
+   <div class="f"><div class="k">Godišnji odmor</div><div class="v">10.09–16.09 · 4 dana</div></div>
+   <div class="f"><div class="k">Pokrivenost bez Ane</div><div class="v">2 od 3 člana</div></div>
+   <div class="f"><div class="k">Preostalo godišnjeg</div><div class="v">18 dana</div></div>
+  </div>
+
+  <div class="opts">
+   <div class="o sel"><div class="rd"></div>
+    <div><div class="nm">Prihvati kao nepokriveno</div>
+     <div class="ef">Smjena ostaje u rasporedu i označava se kao nepokrivena.</div>
+     <div class="out">Pokrivenost <b>2 od 3</b> · Anini sati <b>0 h radnih, 12 h godišnjeg</b> · Godišnji <b>−1 dan</b></div></div>
+    <button class="btn">Potvrdi</button></div>
+
+   <div class="o"><div class="rd"></div>
+    <div><div class="nm">Zamijeni člana</div>
+     <div class="ef">Drugi član preuzima smjenu. Rotacija se ne mijenja.</div>
+     <div class="pick"><span>Preuzima:</span><select><option>Ivan Perić — slobodan</option><option>Josip Marić — već raspoređen 12.09</option><option>Petra Novak — na godišnjem</option></select></div>
+     <div class="out">Pokrivenost <b>3 od 3</b> · Anini sati <b>0 h radnih, 12 h godišnjeg</b> · Ivanovi sati <b>+12 h noćnih</b></div></div>
+    <button class="btn g">Potvrdi</button></div>
+
+   <div class="o"><div class="rd"></div>
+    <div><div class="nm">Izmijeni godišnji odmor</div>
+     <div class="ef">Skrati ili premjesti godišnji tako da ne pada na radnu smjenu.</div>
+     <div class="pick"><span>Novi period:</span><select><option>13.09–16.09 (bez 12.09)</option><option>Obriši godišnji odmor</option></select></div>
+     <div class="out">Pokrivenost <b>3 od 3</b> · Anini sati <b>12 h noćnih</b> · Godišnji <b>18 → 19 dana</b> · Rješava i konflikt 13.09</div></div>
+    <button class="btn g">Potvrdi</button></div>
+  </div>
+
+  <div class="flag">◌ Josip Marić je već raspoređen na 12.09. Zamjena je moguća, ali provjeri raspored.</div>
+ </div>
+</div>
+
+<h2>Empty state — the count is shown even at zero</h2>
+<div class="scr">
+ <div class="tb"><div><div class="ti">Konflikti</div><div class="sub">DVD Kaštel Novi</div></div></div>
+ <div class="bd"><div class="hdr"><span class="c" style="background:var(--mut)">0</span><span class="h">nerješenih konflikata</span></div>
+  <div class="zero">Nema konflikata između godišnjih odmora i rasporeda.<br><span style="font-size:12px">Novi konflikt pojavit će se ovdje i na kalendaru.</span></div></div>
+</div>
+
+</div></body></html>

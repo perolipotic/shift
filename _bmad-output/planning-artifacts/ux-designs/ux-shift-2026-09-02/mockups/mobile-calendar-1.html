@@ -1,0 +1,207 @@
+<!doctype html><html lang="hr"><head><meta charset="utf-8"><title>Shift — mobilni kalendar i 24-satna dužnost</title>
+<style>
+/* Operativna tokens — light / dark via prefers-color-scheme
+   accent #1F6FB2 / #4FA3E3 · danger #D93A46 / #E85B66 (conflict only) */
+:root{--bg:#F6F8FA;--sf:#FFFFFF;--ink:#10161C;--mut:#5B6875;--bd:#DCE3EA;
+ --acc:#1F6FB2;--accfg:#fff;--dng:#D93A46;
+ --day:#E4F0FA;--dayi:#14496F;--night:#1B2735;--nighti:#CBD8E6;--off:#F0F3F6;--offi:#8D9AA7;
+ --lv:rgba(33,96,63,.16);--lvi:#21603F;--unc:rgba(160,110,20,.22);--unci:#7A5410;--ovr:#7A6BC4}
+@media(prefers-color-scheme:dark){:root{--bg:#0C1116;--sf:#141B22;--ink:#EDF2F7;--mut:#93A1AF;--bd:#232E39;
+ --acc:#4FA3E3;--accfg:#04121D;--dng:#E85B66;
+ --day:#173248;--dayi:#A8D3F2;--night:#171F29;--nighti:#9FB3C6;--off:#161D24;--offi:#6B7885;
+ --lv:rgba(132,204,167,.15);--lvi:#84CCA7;--unc:rgba(230,170,60,.16);--unci:#E0AE5C;--ovr:#9A8BE0}}
+*{box-sizing:border-box}
+body{margin:0;background:#5B6875;font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);
+ font-variant-numeric:tabular-nums}
+.page{max-width:1320px;margin:0 auto;padding:26px 18px 60px}
+h1{color:#fff;font-size:21px;margin:0 0 5px;letter-spacing:-.01em}
+.lead{color:#dbe2e8;margin:0 0 24px;max-width:78ch;font-size:13.5px}
+h2{color:#fff;font-size:15px;margin:34px 0 10px}
+.row{display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap}
+.opt{width:390px;flex:0 0 auto}
+.opt>.cap{color:#fff;font-size:13px;font-weight:640;margin:0 0 3px}
+.opt>.why{color:#c8d2da;font-size:12px;margin:0 0 9px;min-height:46px}
+.ph{background:var(--bg);border:1px solid #2c3742;border-radius:16px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.28)}
+.tb{background:var(--sf);border-bottom:1px solid var(--bd);padding:10px 13px;display:flex;align-items:center;justify-content:space-between}
+.tb .ti{font-weight:660;font-size:14px}
+.tb .sub{color:var(--mut);font-size:11.5px}
+.bd{padding:11px 13px}
+.seg{display:flex;gap:0;border:1px solid var(--bd);border-radius:7px;overflow:hidden;margin-bottom:11px;background:var(--sf)}
+.seg button{flex:1;border:0;background:transparent;color:var(--mut);font:inherit;font-size:11.5px;padding:6px 4px;border-right:1px solid var(--bd)}
+.seg button:last-child{border-right:0}
+.seg button.on{background:var(--acc);color:var(--accfg);font-weight:620}
+.sel{width:100%;background:var(--sf);border:1px solid var(--bd);border-radius:7px;padding:7px 9px;font:inherit;font-size:12.5px;color:var(--ink);margin-bottom:11px}
+/* --- vertical member list --- */
+.dl{display:flex;flex-direction:column;gap:5px}
+.di{display:flex;gap:9px;align-items:stretch;background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:8px 10px}
+.di .dd{width:38px;flex:0 0 auto;text-align:center}
+.di .dd .n{font-weight:680;font-size:15px;line-height:1.1}
+.di .dd .w{font-size:9.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.di .bar{width:3px;border-radius:2px;background:var(--bd);flex:0 0 auto}
+.di.day .bar{background:var(--dayi)}.di.night .bar{background:var(--nighti)}
+.di .mn{flex:1;min-width:0}
+.di .mn .t{font-weight:620;font-size:13px}
+.di .mn .h{color:var(--mut);font-size:11.5px}
+.di.today{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+.di.off{opacity:.62}
+.tag{display:inline-block;font-size:10px;padding:1px 5px;border-radius:4px;font-weight:620;margin-left:5px;vertical-align:1px}
+.tag.c{background:var(--dng);color:#fff}
+.tag.o{background:var(--ovr);color:#fff}
+.tag.l{background:var(--lv);color:var(--lvi)}
+/* --- compressed grid --- */
+.gr{display:grid;grid-template-columns:30px repeat(4,1fr);gap:2px;font-size:11px}
+.gr .hh{font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);font-weight:680;text-align:center;padding:1px 0}
+.gr .dnum{color:var(--mut);font-size:10.5px;padding:6px 2px;text-align:right}
+.cl{min-height:30px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-weight:660;font-size:11px;position:relative}
+.cl.day{background:var(--day);color:var(--dayi)}
+.cl.night{background:var(--night);color:var(--nighti)}
+.cl.off{background:var(--off);color:var(--offi)}
+.cl.lv{background:var(--off);color:var(--lvi);background-image:repeating-linear-gradient(-45deg,var(--lv) 0 4px,transparent 4px 8px)}
+.cl.uncv{background-image:repeating-linear-gradient(45deg,var(--unc) 0 4px,transparent 4px 8px)}
+.cl.ovrd{box-shadow:inset 0 0 0 2px var(--ovr)}
+.cl .gl{position:absolute;top:1px;left:3px;font-size:8.5px;opacity:.95}
+.cl.cf{box-shadow:inset 0 0 0 2px var(--dng)}
+.lg{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px;font-size:10px;color:var(--mut)}
+.lg span{display:inline-flex;gap:3px;align-items:center}
+/* --- date strip + detail --- */
+.strip{display:flex;gap:4px;overflow-x:auto;padding-bottom:5px;margin-bottom:10px}
+.sd{flex:0 0 auto;width:40px;text-align:center;background:var(--sf);border:1px solid var(--bd);border-radius:8px;padding:6px 0}
+.sd .n{font-weight:680;font-size:14px}
+.sd .w{font-size:9px;color:var(--mut);text-transform:uppercase}
+.sd .pip{width:5px;height:5px;border-radius:50%;margin:3px auto 0;background:var(--bd)}
+.sd.on{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc)}
+.sd .pip.d{background:var(--dayi)}.sd .pip.n{background:var(--nighti)}.sd .pip.c{background:var(--dng)}
+.dtl{background:var(--sf);border:1px solid var(--bd);border-radius:9px;padding:10px 11px}
+.dtl .dh{font-weight:660;font-size:13px;margin-bottom:8px}
+.tr{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd);font-size:12.5px}
+.tr:last-child{border-bottom:0}
+.tr .tn{width:62px;color:var(--mut);font-size:11.5px}
+.pill{font-size:11px;font-weight:620;padding:2px 7px;border-radius:5px}
+.pill.day{background:var(--day);color:var(--dayi)}
+.pill.night{background:var(--night);color:var(--nighti)}
+.pill.off{background:var(--off);color:var(--offi)}
+/* --- duty card --- */
+.duty{background:var(--sf);border:1px solid var(--bd);border-radius:10px;padding:12px 13px;margin-bottom:9px}
+.duty .k{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--mut);font-weight:680}
+.duty .big{font-size:19px;font-weight:680;margin:3px 0 1px;letter-spacing:-.01em}
+.duty .meta{color:var(--mut);font-size:12px}
+.prog{height:5px;border-radius:3px;background:var(--bd);margin:10px 0 5px;overflow:hidden}
+.prog i{display:block;height:100%;background:var(--acc);width:58%}
+.legs{display:flex;gap:0;margin-top:8px;font-size:11.5px;border:1px solid var(--bd);border-radius:7px;overflow:hidden}
+.legs div{flex:1;padding:6px 8px;border-right:1px solid var(--bd)}
+.legs div:last-child{border-right:0}
+.legs .lk{font-size:9.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);font-weight:680}
+.legs .done{background:var(--day);color:var(--dayi)}
+.legs .now{background:var(--night);color:var(--nighti)}
+.chain{color:var(--mut);font-size:11.5px;margin-top:7px}
+.chain b{color:var(--ink)}
+</style></head><body><div class="page">
+
+<h1>Mobilni kalendar &amp; 24-satna dužnost</h1>
+<p class="lead">Operativna palette, glyph + fill encoding, Geist. All three phones are 390 px wide — actual phone width, not a shrunk desktop. Content is the pilot's: <b>Smjena A–D</b>, <b>Dan</b> 07:00–19:00, <b>Noć</b> 19:00–07:00, <b>Slobodno</b>. Toggle your OS to dark and reload — both themes render here.</p>
+
+<h2>1 · The month-on-a-phone problem</h2>
+<div class="row">
+
+<div class="opt"><p class="cap">A · Member-first list</p><p class="why">Mobile defaults to <em>my</em> schedule as a vertical day list. The all-teams grid stays reachable but is not the phone's default. Matches the spec's small-viewport priority order literally.</p>
+<div class="ph">
+ <div class="tb"><div><div class="ti">Rujan 2026</div><div class="sub">Pero Lipotić · Smjena A</div></div><div class="sub">‹ ›</div></div>
+ <div class="bd">
+  <div class="seg"><button class="on">Moj raspored</button><button>Sve smjene</button></div>
+  <div class="dl">
+   <div class="di day today"><div class="dd"><div class="n">10</div><div class="w">če</div></div><div class="bar"></div><div class="mn"><div class="t">Dan</div><div class="h">07:00–19:00 · 12 h</div></div></div>
+   <div class="di night"><div class="dd"><div class="n">11</div><div class="w">pe</div></div><div class="bar"></div><div class="mn"><div class="t">Noć <span class="tag c">⚠ konflikt</span></div><div class="h">19:00–07:00 · godišnji odmor</div></div></div>
+   <div class="di off"><div class="dd"><div class="n">12</div><div class="w">su</div></div><div class="bar"></div><div class="mn"><div class="t">Slobodno</div><div class="h">—</div></div></div>
+   <div class="di off"><div class="dd"><div class="n">13</div><div class="w">ne</div></div><div class="bar"></div><div class="mn"><div class="t">Slobodno</div><div class="h">—</div></div></div>
+   <div class="di day"><div class="dd"><div class="n">14</div><div class="w">po</div></div><div class="bar"></div><div class="mn"><div class="t">Dan <span class="tag o">✎ izmijenjeno</span></div><div class="h">07:00–19:00 · 12 h</div></div></div>
+   <div class="di night"><div class="dd"><div class="n">15</div><div class="w">ut</div></div><div class="bar"></div><div class="mn"><div class="t">Noć</div><div class="h">19:00–07:00 · 12 h</div></div></div>
+  </div>
+ </div>
+</div></div>
+
+<div class="opt"><p class="cap">B · Compressed grid</p><p class="why">Keeps the real month grid. Teams become one-letter columns; the cell carries base state by fill and modifiers by glyph. Tap any cell for detail. Densest — and the only one where an admin can scan coverage on a phone.</p>
+<div class="ph">
+ <div class="tb"><div><div class="ti">Rujan 2026</div><div class="sub">Sve smjene · DVD Kaštel Novi</div></div><div class="sub">‹ ›</div></div>
+ <div class="bd">
+  <select class="sel"><option>Sve smjene (4)</option><option>Smjena A</option><option>Smjena B</option><option>Pero Lipotić</option></select>
+  <div class="gr">
+   <div class="hh"></div><div class="hh">A</div><div class="hh">B</div><div class="hh">C</div><div class="hh">D</div>
+   <div class="dnum">10</div><div class="cl day">D</div><div class="cl night">N</div><div class="cl off">·</div><div class="cl off">·</div>
+   <div class="dnum">11</div><div class="cl night">N</div><div class="cl off">·</div><div class="cl off">·</div><div class="cl day">D</div>
+   <div class="dnum">12</div><div class="cl off">·</div><div class="cl lv"><span class="gl">◷</span>G</div><div class="cl day">D</div><div class="cl night cf"><span class="gl">⚠</span>N</div>
+   <div class="dnum">13</div><div class="cl off">·</div><div class="cl lv"><span class="gl">◷</span>G</div><div class="cl night">N</div><div class="cl day uncv"><span class="gl">◌</span>D</div>
+   <div class="dnum">14</div><div class="cl day ovrd"><span class="gl">✎</span>D</div><div class="cl night">N</div><div class="cl off">·</div><div class="cl off">·</div>
+   <div class="dnum">15</div><div class="cl night">N</div><div class="cl off">·</div><div class="cl off">·</div><div class="cl day">D</div>
+  </div>
+  <div class="lg"><span>⚠ konflikt</span><span>✎ izmijenjeno</span><span>◷ godišnji</span><span>◌ nepokriveno</span></div>
+ </div>
+</div></div>
+
+<div class="opt"><p class="cap">C · Date strip + day detail</p><p class="why">A horizontally scrolling date strip with status pips; tapping a date shows every team for that day as rows. Never crowded, but the month as a whole is never visible at once.</p>
+<div class="ph">
+ <div class="tb"><div><div class="ti">Rujan 2026</div><div class="sub">Sve smjene</div></div><div class="sub">‹ ›</div></div>
+ <div class="bd">
+  <div class="strip">
+   <div class="sd"><div class="n">10</div><div class="w">če</div><div class="pip d"></div></div>
+   <div class="sd"><div class="n">11</div><div class="w">pe</div><div class="pip n"></div></div>
+   <div class="sd on"><div class="n">12</div><div class="w">su</div><div class="pip c"></div></div>
+   <div class="sd"><div class="n">13</div><div class="w">ne</div><div class="pip c"></div></div>
+   <div class="sd"><div class="n">14</div><div class="w">po</div><div class="pip d"></div></div>
+   <div class="sd"><div class="n">15</div><div class="w">ut</div><div class="pip n"></div></div>
+   <div class="sd"><div class="n">16</div><div class="w">sr</div><div class="pip"></div></div>
+  </div>
+  <div class="dtl">
+   <div class="dh">Subota, 12. rujna</div>
+   <div class="tr"><div class="tn">Smjena A</div><span class="pill off">Slobodno</span></div>
+   <div class="tr"><div class="tn">Smjena B</div><span class="pill off">◷ Godišnji</span></div>
+   <div class="tr"><div class="tn">Smjena C</div><span class="pill day">Dan 07–19</span></div>
+   <div class="tr"><div class="tn">Smjena D</div><span class="pill night">Noć 19–07</span> <span class="tag c">⚠</span></div>
+  </div>
+  <div class="lg" style="margin-top:9px"><span>Pip = tip smjene · crveni pip = nerješen konflikt</span></div>
+ </div>
+</div></div>
+
+</div>
+
+<h2>2 · The 24-hour duty problem</h2>
+<p class="lead" style="margin-bottom:14px">The pilot works <b>Dan</b> straight into <b>Noć</b> — one continuous 24-hour stretch, correctly modelled as two shifts on two dates. A member finishing at 07:00 must not be shown two unrelated shifts with a gap. Two treatments:</p>
+<div class="row">
+
+<div class="opt"><p class="cap">D · Duty block (merged presentation)</p><p class="why">Consecutive working shifts with no gap present as one <em>dužnost</em> with an end time and progress. The data model stays two shifts; only the presentation merges.</p>
+<div class="ph">
+ <div class="tb"><div><div class="ti">Danas</div><div class="sub">Pero Lipotić · Smjena A</div></div></div>
+ <div class="bd">
+  <div class="duty">
+   <div class="k">Na dužnosti</div>
+   <div class="big">do 07:00</div>
+   <div class="meta">24-satna dužnost · 10.09 07:00 → 11.09 07:00</div>
+   <div class="prog"><i></i></div>
+   <div class="legs">
+    <div class="done"><div class="lk">Odrađeno</div>Dan 07–19</div>
+    <div class="now"><div class="lk">U tijeku</div>Noć 19–07</div>
+   </div>
+  </div>
+  <div class="duty"><div class="k">Sljedeća dužnost</div><div class="big">13.09</div><div class="meta">Dan 07:00 → Noć 07:00 · 24 h</div></div>
+  <div class="duty"><div class="k">Sati ovaj mjesec</div><div class="big">108 h</div><div class="meta">Dnevni 60 h · Noćni 48 h</div></div>
+  <div class="duty"><div class="k">Godišnji odmor</div><div class="big">18 dana</div><div class="meta">Iskorišteno 12 od 30</div></div>
+ </div>
+</div></div>
+
+<div class="opt"><p class="cap">E · Two shifts, explicitly chained</p><p class="why">Stays literal to the model — two shifts — but draws the link so the continuity is impossible to miss. Less interpretation, more reading.</p>
+<div class="ph">
+ <div class="tb"><div><div class="ti">Danas</div><div class="sub">Pero Lipotić · Smjena A</div></div></div>
+ <div class="bd">
+  <div class="duty">
+   <div class="k">Danas</div>
+   <div class="big">Noć 19:00–07:00</div>
+   <div class="meta">U tijeku · završava sutra u 07:00</div>
+   <div class="chain">↳ nastavak smjene <b>Dan 07:00–19:00</b> · ukupno <b>24 h</b> bez pauze</div>
+  </div>
+  <div class="duty"><div class="k">Sljedeća smjena</div><div class="big">Dan · 13.09</div><div class="meta">07:00–19:00 → nastavlja Noć 19:00–07:00</div></div>
+  <div class="duty"><div class="k">Sati ovaj mjesec</div><div class="big">108 h</div><div class="meta">Dnevni 60 h · Noćni 48 h</div></div>
+  <div class="duty"><div class="k">Godišnji odmor</div><div class="big">18 dana</div><div class="meta">Iskorišteno 12 od 30</div></div>
+ </div>
+</div></div>
+
+</div>
+</div></body></html>
