@@ -16,6 +16,9 @@ import { describe, expect, it } from 'vitest';
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const supabaseRoot = join(repoRoot, 'supabase');
 
+/** `0001_extensions.sql` — four digits, then the name. */
+const MIGRATION_NAME = /^(\d{4})_[a-z0-9_]+\.sql$/;
+
 describe('supabase scaffold', () => {
   it('holds exactly one Edge Function, the privileged auth boundary', () => {
     const functions = readdirSync(join(supabaseRoot, 'functions'), { withFileTypes: true })
@@ -25,21 +28,35 @@ describe('supabase scaffold', () => {
     expect(functions).toEqual(['admin-auth']);
   });
 
-  it('numbers migrations forward-only, with no gaps or duplicates', () => {
-    const migrations = readdirSync(join(supabaseRoot, 'migrations'))
-      .filter((name) => name.endsWith('.sql'))
-      .sort();
+  it('numbers migrations 0001, 0002, … with no gaps and no duplicates', () => {
+    const migrations = readdirSync(join(supabaseRoot, 'migrations')).filter((name) =>
+      name.endsWith('.sql'),
+    );
 
     expect(migrations.length).toBeGreaterThan(0);
 
-    const numbers = migrations.map((name) => {
-      const prefix = /^(\d+)_/.exec(name);
-      expect(prefix, `migration '${name}' does not start with a numeric prefix`).not.toBeNull();
-      return Number(prefix?.[1]);
-    });
+    // Zero-padded to a fixed width, so lexicographic order — which is what the
+    // Supabase CLI applies migrations in — matches numeric order.
+    const malformed = migrations.filter((name) => !MIGRATION_NAME.test(name));
+    expect(malformed, 'migrations must be named <0000>_<snake_case>.sql').toEqual([]);
 
-    expect(numbers).toEqual([...new Set(numbers)]);
-    expect(numbers).toEqual([...numbers].sort((a, b) => a - b));
+    const numbers = migrations
+      .map((name) => Number(MIGRATION_NAME.exec(name)?.[1]))
+      .sort((a, b) => a - b);
+
+    expect(new Set(numbers).size, `duplicate migration numbers in ${migrations.join(', ')}`).toBe(
+      numbers.length,
+    );
+
+    // Contiguity, which is what "no gaps" actually means: 0001, 0003 must fail.
+    expect(numbers).toEqual(numbers.map((_value, index) => index + 1));
+
+    // And the CLI's own ordering agrees with ours.
+    expect([...migrations].sort()).toEqual(
+      [...migrations].sort(
+        (a, b) => Number(MIGRATION_NAME.exec(a)?.[1]) - Number(MIGRATION_NAME.exec(b)?.[1]),
+      ),
+    );
   });
 
   it('enables btree_gist, which AD-3 needs before leave can be unrepresentable', () => {
@@ -54,13 +71,18 @@ describe('supabase scaffold', () => {
     expect(seed).toMatch(/pilot organization/i);
     expect(seed).toMatch(/UJ-5 security organization/i);
 
-    // No table exists until story 1.2, so the seed must not yet insert or
-    // create anything — a statement here would fail `supabase db reset`.
+    // EXPECTED TO BE DELETED IN STORY 1.2. No table exists until then, so any
+    // statement here would fail `supabase db reset`. Once 1.2 lands the real
+    // fixture inserts, this assertion is wrong by construction — remove it
+    // rather than weakening it, and let `supabase db reset` be the check.
     const executable = seed
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
       .split('\n')
       .filter((line) => !line.trimStart().startsWith('--'))
       .join('\n');
 
-    expect(executable).not.toMatch(/\b(insert|create|alter|drop)\b/i);
+    expect(executable).not.toMatch(
+      /\b(insert|create|alter|drop|update|delete|copy|truncate|grant|revoke|do)\b/i,
+    );
   });
 });

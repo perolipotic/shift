@@ -2,9 +2,11 @@
  * admin-auth — the one privileged boundary (AD-16), and it may not think.
  *
  * This is the only server-side component in the system (AD-14). It exposes
- * exactly three operations — `createUser`, `updateUserById` and `ban` /
- * `unban` — and nothing else. It performs no domain calculation and contains no
- * rule from `engine-rules.md`; adding either is a defect, not a refactor.
+ * `createUser`, `updateUserById` and the `ban` / `unban` pair — four operations
+ * in `OPERATIONS`, which AD-16 counts as three capabilities because ban and
+ * unban are one reversible capability — and nothing else. It performs no domain
+ * calculation and contains no rule from `engine-rules.md`; adding either is a
+ * defect, not a refactor.
  *
  * Two clients, because the secret key bypasses RLS entirely:
  *

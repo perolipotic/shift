@@ -2,9 +2,9 @@ packages:
   - 'packages/*'
   - 'apps/*'
 
-# Build scripts are opt-in. `supabase` downloads its platform CLI binary on
-# install; the Tailwind and Rolldown native binaries are the build toolchain.
-onlyBuiltDependencies:
-  - supabase
-  - '@tailwindcss/oxide'
-  - esbuild
+# No `onlyBuiltDependencies` entry: nothing in this tree runs an install script.
+# The native binaries that do exist — `@rolldown/binding-*` (Vite 8's bundler),
+# `@tailwindcss/oxide-*`, `lightningcss` and `@supabase/cli-*` — ship prebuilt
+# per-platform packages rather than compiling on install. Verified by installing
+# with the allowlist removed: pnpm reported no ignored build scripts. If a
+# dependency ever adds one, pnpm says so at install time; add it here then.

@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+
+    // `test/admin-auth-boundary.test.ts` imports the handler by its `.ts` path,
+    // which is what lets the privileged boundary be asserted without a build
+    // step. Safe here because this project only ever type-checks.
+    "allowImportingTsExtensions": true
+  },
+  "//": "The workspace-root project. `pnpm -r` skips the root, so without this file `supabase/functions/**` — the only branching logic in the system — and every root test would be type-checked by nothing at all.",
+  "include": [
+    "test/**/*.ts",
+    "supabase/functions/**/*.ts",
+    "vitest.config.ts"
+  ]
+}

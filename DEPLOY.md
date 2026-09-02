@@ -40,6 +40,27 @@ The Supabase CLI is local to the repo, so invoke it through pnpm:
 pnpm exec supabase --version
 ```
 
+### Authenticating the CLI
+
+Everything in §1 works offline. Everything that touches a remote project —
+`link`, `db push`, `config push`, `secrets set`, `functions deploy` — needs a
+Supabase account token first, and two prompts catch people out:
+
+```bash
+pnpm exec supabase login          # opens a browser, stores the token
+# or, non-interactively (CI, or a machine with no browser):
+export SUPABASE_ACCESS_TOKEN=sbp_...
+```
+
+`supabase link` then asks for that project's **database password** — the one set
+when the project was created, not your account password, and not recoverable
+(reset it under *Project Settings → Database* if it is lost). Pass it
+non-interactively with `--password`, or let the prompt take it.
+
+Without the token, `link` fails with an authorization error that reads exactly
+like the paused-project failure §2 warns about. Log in first and you can tell
+the two apart.
+
 ---
 
 ## 1. Local
@@ -56,15 +77,21 @@ pnpm --filter @shift/web dev
 **publishable** key into `apps/web/.env.local`. `seed.sql` is local and
 test-only: it is never applied to staging or production.
 
-To run the Edge Function locally:
+To run the Edge Function locally, copy its env template and fill it in with an
+editor. Do not `printf` or `echo` a key into place and do not pass one as a
+command-line argument: either way `sb_secret_*` lands in your shell history,
+which is a committed-file leak with extra steps.
 
 ```bash
-# supabase/functions/.env.local — gitignored
-printf 'SHIFT_SECRET_KEY=sb_secret_...\nSHIFT_PUBLISHABLE_KEY=sb_publishable_...\nSHIFT_ALLOWED_ORIGINS=http://127.0.0.1:5173\n' \
-  > supabase/functions/.env.local
+cp supabase/functions/.env.example supabase/functions/.env
+$EDITOR supabase/functions/.env        # gitignored; paste the local keys here
 
-pnpm exec supabase functions serve admin-auth --env-file supabase/functions/.env.local
+pnpm exec supabase functions serve admin-auth
 ```
+
+`supabase functions serve` reads `supabase/functions/.env` by default, so no
+flag is needed. `supabase start` printed the local keys; `SUPABASE_URL` is
+injected for you.
 
 Every operation currently answers `501 { "code": "NOT_IMPLEMENTED" }` — the
 boundary cannot authorize until the `members` table lands in story 1.2.
@@ -116,19 +143,26 @@ injects — you never set it. It needs the publishable key too, because it build
 a second, caller-scoped client from the caller's JWT so that RLS and attribution
 still apply to every domain-table write it makes.
 
-Set the function secrets per project:
+Set the function secrets per project **from a file**, never as arguments — a
+`NAME=VALUE` argument is recorded in shell history, and rotating a key you have
+already leaked to your own history is the one avoidable step here:
 
 ```bash
+cp supabase/functions/.env.example supabase/functions/.env.staging
+$EDITOR supabase/functions/.env.staging       # gitignored
+
 pnpm exec supabase secrets set \
-  SHIFT_SECRET_KEY=sb_secret_... \
-  SHIFT_PUBLISHABLE_KEY=sb_publishable_... \
-  SHIFT_ALLOWED_ORIGINS=https://shift-staging.pages.dev \
+  --env-file supabase/functions/.env.staging \
   --project-ref <staging-ref>
 ```
 
-`SHIFT_ALLOWED_ORIGINS` is a comma-separated allowlist. An origin not on it gets
-no CORS headers, so the browser refuses the response — set it to the exact Pages
-hostname(s) for that environment.
+Repeat with `supabase/functions/.env.production` and `<production-ref>`. Every
+`supabase/functions/.env*` file except `.env.example` is gitignored.
+
+`SHIFT_ALLOWED_ORIGINS` is a comma-separated allowlist of exact origins. An
+origin not on it receives no `Access-Control-Allow-*` header at all, so the
+browser refuses the response — set it to the exact Pages hostname(s) for that
+environment.
 
 ---
 
@@ -143,7 +177,7 @@ One Pages project, connected to this repository.
 | Production branch | `main` |
 | Framework preset | None |
 | Root directory | `/` (repository root — the pnpm workspace lives there) |
-| Build command | `pnpm install --frozen-lockfile && pnpm --filter @shift/web build` |
+| Build command | `pnpm install --frozen-lockfile && pnpm --filter @shift/web... build` |
 | Build output directory | `apps/web/dist` |
 
 Build-time environment variables — set them in **both** scopes, Production
@@ -158,6 +192,12 @@ pointing at `shift-production` and Preview pointing at `shift-staging`:
 
 Vite inlines `VITE_*` variables into the bundle at build time, which is why the
 secret key can never appear here.
+
+The `...` in `--filter @shift/web...` is pnpm's dependency ellipsis: it builds
+`@shift/web` **and everything it depends on**, in topological order. It is a
+no-op today and stops being one the moment `apps/web` imports `@shift/domain`,
+at which point the plain `--filter @shift/web` would deploy a bundle built
+against a stale or missing `packages/domain/dist`. Do not remove it.
 
 Deep links need no configuration beyond what is committed:
 `apps/web/public/_redirects` contains `/*  /index.html  200`, so
@@ -192,16 +232,46 @@ git add supabase/migrations/0002_<name>.sql && git commit
 ### 5.2 Promote to staging
 
 ```bash
-# Confirm the staging project is not paused (see §2), then:
+# Confirm you are logged in (§0) and the staging project is not paused (§2):
 pnpm exec supabase link --project-ref <staging-ref>
 pnpm exec supabase db push                       # applies pending migrations only
 pnpm exec supabase migration list                # local vs remote, must agree
+pnpm exec supabase config push                   # see 5.2a — auth config is NOT in a migration
 pnpm exec supabase functions deploy admin-auth   # only if the function changed
 ```
+
+#### 5.2a Why `config push` is not optional
+
+`supabase/config.toml` governs the **local** stack only. Nothing in a migration
+carries it. So a remote project that has never had `config push` run against it
+keeps Supabase's defaults — and Supabase's default is **signup enabled**, which
+contradicts the system's own rule that there is no open signup anywhere:
+credentials are admin-issued through `admin-auth`, and an account that can sign
+itself up has no member row, no organization claim and no business existing.
+
+`config push` is what makes these three true remotely, per environment:
+
+| Setting in `config.toml` | Value | Why |
+| --- | --- | --- |
+| `[auth] enable_signup` | `false` | no self-registration; an admin issues credentials |
+| `[auth.email] enable_signup` | `false` | the same door, via email |
+| `[auth] enable_anonymous_sign_ins` | `false` | an anonymous session has no organization |
+| `[auth] site_url` | that environment's Pages URL | where a recovery link returns to |
+| `[auth] additional_redirect_urls` | that environment's Pages URL(s) | an unlisted redirect is refused |
+
+`site_url` and `additional_redirect_urls` differ per environment while
+`config.toml` holds the local values, so **set them for the target environment
+before pushing** — either edit them for the push, or set them in the dashboard
+and confirm `config push` does not revert them. Whichever you choose, §6
+verifies the outcome rather than the intent.
+
+> A `config push` failure is not cosmetic. Until it succeeds, that environment
+> accepts self-service signups. Treat it as a blocking step, not a follow-up.
 
 Then verify on staging, against the Preview deployment:
 
 - the migration appears in `supabase migration list` as applied remotely;
+- signup is off — the §6 signup probe is refused;
 - the Preview URL loads and a deep link returns 200;
 - `admin-auth` answers with a JSON `code` rather than a 500 without one.
 
@@ -213,6 +283,7 @@ Only after staging has been verified.
 pnpm exec supabase link --project-ref <production-ref>
 pnpm exec supabase db push
 pnpm exec supabase migration list
+pnpm exec supabase config push                   # 5.2a applies here too
 pnpm exec supabase functions deploy admin-auth   # only if the function changed
 ```
 
@@ -256,4 +327,28 @@ curl -s -X POST https://<ref>.supabase.co/functions/v1/admin-auth \
 
 If the function returns `500 {"code":"SECRET_KEY_MISSING"}` or
 `500 {"code":"SECRET_KEY_INVALID"}`, its secrets are not set for that project.
-It never falls back to the publishable key.
+It never falls back to the publishable key. `500 {"code":"PROJECT_URL_INVALID"}`
+means `SUPABASE_URL` is not a parseable http(s) URL.
+
+### Signup is off, remotely
+
+`config push` (§5.2a) is the only thing that turns Supabase's default open
+signup off on a remote project, so verify the outcome rather than trusting the
+command's exit code. Run this against **each** environment:
+
+```bash
+curl -s -X POST 'https://<ref>.supabase.co/auth/v1/signup' \
+  -H 'apikey: <that environment's sb_publishable_*>' \
+  -H 'content-type: application/json' \
+  -d '{"email":"probe@example.invalid","password":"a-long-throwaway-password"}'
+# -> {"code":422,"error_code":"signup_disabled",...}   signup is off  ✅
+# -> a user object, or a confirmation-sent reply       signup is OPEN ❌
+```
+
+An open result means that project accepts self-service accounts. Re-run
+`supabase config push` for it, re-probe, and delete any account the probe
+created before moving on.
+
+Also confirm, in the dashboard under *Authentication → URL Configuration*, that
+Site URL and Redirect URLs name that environment's Pages hostname — a stale
+`http://127.0.0.1:5173` there sends every password-recovery link to localhost.

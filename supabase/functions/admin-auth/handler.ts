@@ -30,6 +30,7 @@ export type ConfigurationResult =
 
 export type ConfigurationErrorCode =
   | 'PROJECT_URL_MISSING'
+  | 'PROJECT_URL_INVALID'
   | 'SECRET_KEY_MISSING'
   | 'SECRET_KEY_INVALID'
   | 'PUBLISHABLE_KEY_MISSING'
@@ -45,6 +46,21 @@ export interface HandlerDependencies {
 type EnvironmentSource = (name: string) => string | undefined;
 
 /**
+ * A malformed project URL must surface as a configuration code, not as a
+ * `CLIENT_CONSTRUCTION_FAILED` from deep inside the Supabase client — the two
+ * point an operator at completely different things.
+ */
+function isHttpUrl(value: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return false;
+  }
+  return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+}
+
+/**
  * Read and validate the environment, once, at module load.
  *
  * There is deliberately no fallback. A missing or wrong-shaped secret key makes
@@ -54,11 +70,15 @@ type EnvironmentSource = (name: string) => string | undefined;
  * pasting the publishable key into the secret slot.
  */
 export function readConfiguration(getEnv: EnvironmentSource): ConfigurationResult {
-  const projectUrl = getEnv('SUPABASE_URL') ?? '';
-  const secretKey = getEnv('SHIFT_SECRET_KEY') ?? '';
-  const publishableKey = getEnv('SHIFT_PUBLISHABLE_KEY') ?? '';
+  // Trim first. A dashboard paste or a heredoc leaves a trailing newline, which
+  // survives `startsWith` and then fails opaquely at the real auth call — the
+  // shape check is only worth having if it sees the value the client will use.
+  const projectUrl = (getEnv('SUPABASE_URL') ?? '').trim();
+  const secretKey = (getEnv('SHIFT_SECRET_KEY') ?? '').trim();
+  const publishableKey = (getEnv('SHIFT_PUBLISHABLE_KEY') ?? '').trim();
 
   if (projectUrl === '') return { ok: false, code: 'PROJECT_URL_MISSING' };
+  if (!isHttpUrl(projectUrl)) return { ok: false, code: 'PROJECT_URL_INVALID' };
   if (secretKey === '') return { ok: false, code: 'SECRET_KEY_MISSING' };
   if (!secretKey.startsWith('sb_secret_')) return { ok: false, code: 'SECRET_KEY_INVALID' };
   if (publishableKey === '') return { ok: false, code: 'PUBLISHABLE_KEY_MISSING' };
@@ -78,8 +98,14 @@ export function isOperation(value: unknown): value is Operation {
   return typeof value === 'string' && (OPERATIONS as readonly string[]).includes(value);
 }
 
+/**
+ * `Vary: Origin` is emitted on every reply, including the ones that carry no
+ * `Access-Control-Allow-*` header at all. Without it a shared cache may store
+ * the header-less response produced for an unlisted origin and replay it to an
+ * allowed one, which breaks CORS in a way no single-request test can see.
+ */
 function corsHeaders(origin: string | null, allowedOrigins: readonly string[]): Record<string, string> {
-  if (origin === null || !allowedOrigins.includes(origin)) return {};
+  if (origin === null || !allowedOrigins.includes(origin)) return { Vary: 'Origin' };
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Headers': 'authorization, content-type',

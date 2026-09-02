@@ -2,7 +2,7 @@
 title: 'Story 1.1a — A deployable shell'
 type: 'feature'
 created: '2026-09-02'
-status: 'in-progress'
+status: 'in-review'
 review_loop_iteration: 0
 baseline_commit: '6a4a0b370dfaa066208dda56cbceff0f250b5714'
 context:
