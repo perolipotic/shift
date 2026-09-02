@@ -1,0 +1,3 @@
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-1a-deployable-shell.md`
+  summary: Build the 46-token theme layer, the i18next+ICU localization and formatting layer, and the static Croatian sign-in shell (story 1.1's "speaks Croatian in both themes" half).
+  evidence: Story 1.1's full spec measured 3005 tokens against a 1600 ceiling because the story carries four one-time foundations plus a screen. Split at the seam between deployable infrastructure and the themed/translated presentation layer; this half depends on the merged 1-1a workspace but is separately reviewable and testable. Covers UX-DR1, UX-DR2, UX-DR3, UX-DR40 and L1-L7.
