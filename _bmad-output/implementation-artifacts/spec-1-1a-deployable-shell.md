@@ -2,7 +2,7 @@
 title: 'Story 1.1a — A deployable shell'
 type: 'feature'
 created: '2026-09-02'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 0
 baseline_commit: '6a4a0b370dfaa066208dda56cbceff0f250b5714'
 context:
@@ -111,3 +111,79 @@ Pinned versions, the directory tree and AD-14/16/17 are in the loaded `epic-1-co
 **Manual checks (if no CLI):**
 - `apps/web/dist/` contains no starter boilerplate and no user-facing text
 - Live Cloudflare Pages deploy and the staging→production promotion, per `DEPLOY.md` — executed by the human, then reported back
+
+## Suggested Review Order
+
+**The purity guard — the story's central mechanism**
+
+- Start here: strict isolation is what makes an impure import unresolvable rather than merely discouraged.
+  [`.npmrc:4`](../../.npmrc#L4)
+
+- No `dependencies` key at all, so pnpm links nothing for the resolver to find.
+  [`package.json:2`](../../packages/domain/package.json#L2)
+
+- The readable second layer, so the failure names the invariant instead of the resolver.
+  [`eslint.config.js:67`](../../eslint.config.js#L67)
+
+- Allowlist, not denylist: `src/` permits relative specifiers only, so `npm:` and `jsr:` fail too.
+  [`purity.test.ts:31`](../../packages/domain/test/purity.test.ts#L31)
+
+- Asserts the guard's own precondition, since flipping the linker would silently disarm it.
+  [`workspace-isolation.test.ts:13`](../../test/workspace-isolation.test.ts#L13)
+
+**The privileged boundary**
+
+- Env validation with no fallback: a wrong-shaped secret refuses every request rather than downgrading.
+  [`handler.ts:72`](../../supabase/functions/admin-auth/handler.ts#L72)
+
+- Two clients — secret for the auth call only, caller JWT for domain writes, so RLS survives.
+  [`index.ts:63`](../../supabase/functions/admin-auth/index.ts#L63)
+
+- Refuses to act: authorization needs a `members` table that arrives in 1.2.
+  [`handler.ts:191`](../../supabase/functions/admin-auth/handler.ts#L191)
+
+- `Vary` is unconditional so a shared cache cannot replay a header-less response to an allowed origin.
+  [`handler.ts:107`](../../supabase/functions/admin-auth/handler.ts#L107)
+
+- The gap the reviews caught: inverting the allowlist used to keep every test green.
+  [`admin-auth-boundary.test.ts:170`](../../test/admin-auth-boundary.test.ts#L170)
+
+**Key containment**
+
+- Two passes: comment-aware for naming, comment-blind for real key material over tracked files.
+  [`key-hygiene.test.ts:58`](../../test/key-hygiene.test.ts#L58)
+
+**The Supabase scaffold**
+
+- The first forward-only migration; `btree_gist` is what lets AD-3's leave constraint be pure schema.
+  [`0001_extensions.sql:11`](../../supabase/migrations/0001_extensions.sql#L11)
+
+- Both fixtures reserved in order, executable in 1.2 — deliberately empty while no table exists.
+  [`seed.sql:22`](../../supabase/seed.sql#L22)
+
+- Asserts the contiguity its name promises, so a missing migration cannot pass.
+  [`supabase-scaffold.test.ts:8`](../../test/supabase-scaffold.test.ts#L8)
+
+**The static host**
+
+- No server can route a deep link, so every unmatched path is index.html at 200 — never a redirect.
+  [`_redirects:4`](../../apps/web/public/_redirects#L4)
+
+- Skips visibly rather than passing vacuously when nothing has been built.
+  [`static-hosting.test.ts:20`](../../test/static-hosting.test.ts#L20)
+
+**The deploy path — you execute this**
+
+- `config.toml` is local-only, so this blocking step is what keeps signup closed on staging and production.
+  [`DEPLOY.md:46`](../../DEPLOY.md#L46)
+
+- The dependency ellipsis keeps the build correct once `apps/web` imports the domain package.
+  [`DEPLOY.md:73`](../../DEPLOY.md#L73)
+
+**Peripherals**
+
+- Code-based routing keeps every route in `routes/`; the plugin is not published at the pinned version.
+  [`router.ts:8`](../../apps/web/src/router.ts#L8)
+
+- Type-checks the privileged boundary and the tests, which sat outside every project.
+  [`tsconfig.json:16`](../../tsconfig.json#L16)

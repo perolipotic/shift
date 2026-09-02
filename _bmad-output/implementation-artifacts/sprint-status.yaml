@@ -37,7 +37,7 @@ story_location: _bmad-output/implementation-artifacts
 development_status:
   epic-1: in-progress
   # split during build: 1-1a (deployable shell) in progress; 1-1b (theme + i18n + sign-in) in deferred-work.md
-  1-1-a-deployable-shell-that-speaks-croatian-in-both-themes: in-progress
+  1-1-a-deployable-shell-that-speaks-croatian-in-both-themes: review
   1-2-an-operator-provisions-an-organization-that-is-born-with-an: backlog
   1-3-signing-in-reaches-exactly-one-organization-at-exactly-one-r: backlog
   1-4-an-admin-configures-the-organization-s-identity-localization: backlog
