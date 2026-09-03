@@ -109,3 +109,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-1b-theme-layer.md`
   summary: UX-DR40's `tabular-nums` requirement is not yet satisfied anywhere, and nothing verifies Geist Variable actually carries the `tnum` OpenType feature.
   evidence: Story 1.1b binds Geist and deliberately does not author a `tabular` utility, since Tailwind 4 already ships `tabular-nums` — but shipping a utility is not the same as applying it. No surface aligns figures until the Epic 4 hours table and the Epic 3 calendar's date columns; DESIGN.md also names time ranges and leave balances. When the first such surface lands it must apply the utility AND assert the face carries `tnum`, because if Geist does not, the utility is a silent no-op and columns wobble exactly as DESIGN.md warns.
+
+## Deferred from: code review of spec-1-1b-theme-layer (2026-09-03)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-1b-theme-layer.md`
+  summary: `test/theme-applied.test.ts`'s build-freshness check (`expect(built).toBeGreaterThan(source)`, strict) can spuriously fail a genuinely fresh build on filesystems/environments with coarse (e.g. 1-second) mtime resolution.
+  evidence: Deferred rather than patched because the obvious fix — loosening to `toBeGreaterThanOrEqual` — reopens the exact stale-build blind spot this test exists to catch (deleting the whole `@layer base` block and running vitest without rebuilding left all 443 tests green before this check was added). A real fix needs a different mechanism, e.g. a content hash or a build marker file, which is a larger design change than a code-review patch should force. [test/theme-applied.test.ts:56-62]

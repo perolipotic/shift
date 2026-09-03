@@ -155,6 +155,33 @@ describe('every focus indicator is perceivable', () => {
   });
 });
 
+describe('the three shadcn-sourced deviations stay shifted, not reverted to stock', () => {
+  // Each failed its own threshold at the stock shadcn lightness (muted-foreground
+  // 4.34:1, ring 2.59:1, sidebar-ring 2.48:1) and was Ask-First lightness-shifted
+  // to clear it — see the spec change log. The blocks above already fail if any
+  // of the three revert, but only with a bare ratio; this names the regression
+  // the way `theme-fidelity.test.ts`'s `APPROVED` map does for DESIGN.md-sourced
+  // deviations (those three have no DESIGN.md entry, so that map cannot cover
+  // them).
+  const DEVIATIONS: Record<string, { shifted: number; stock: number }> = {
+    'muted-foreground': { shifted: 0.542, stock: 0.556 },
+    ring: { shifted: 0.665, stock: 0.708 },
+    'sidebar-ring': { shifted: 0.654, stock: 0.708 },
+  };
+
+  it.each(Object.keys(DEVIATIONS))('--%s (light) is still lightness-shifted off its stock shadcn value', (name) => {
+    const token = colour('light', name);
+    const { shifted, stock } = DEVIATIONS[name] as { shifted: number; stock: number };
+    const l = 'l' in token ? token.l : Number.NaN;
+
+    expect(l, `--${name} is not an OKLCH colour`).toBeCloseTo(shifted, 3);
+    expect(
+      l,
+      `--${name} (light) reverted to the stock shadcn value ${stock} — see the spec change log`,
+    ).not.toBeCloseTo(stock, 3);
+  });
+});
+
 describe('the inherited border contrast is pinned, not merely inherited', () => {
   /**
    * `--border` and `--input` composite to 1.25-1.47:1 against their surface —
@@ -166,12 +193,26 @@ describe('the inherited border contrast is pinned, not merely inherited', () => 
    * values cannot drift further while the question is open. Same pattern as the
    * state-glyph deferral in typography-coverage.test.ts.
    */
+  // Pinned to the specific stock ratio, not merely `1 < x < AA_LARGE` — that
+  // band would pass silently for any accidental edit landing inside 1-3:1,
+  // which is exactly the drift this block exists to catch.
+  const EXPECTED_RATIO: Record<string, number> = {
+    'light-border': 1.26,
+    'light-input': 1.26,
+    'dark-border': 1.25,
+    'dark-input': 1.47,
+  };
   const cases = THEMES.flatMap((theme) => ['border', 'input'].map((token) => ({ theme, token })));
 
   it.each(cases)('--$token against its surface in $theme is unchanged', ({ theme, token }) => {
     const surface = colour(theme, 'background');
     const measured = ratio(composite(colour(theme, token), surface), surface);
+    const expected = EXPECTED_RATIO[`${theme}-${token}`] as number;
 
+    expect(measured, `${token} (${theme}) measured ${measured.toFixed(2)}:1, expected ~${expected}:1`).toBeCloseTo(
+      expected,
+      2,
+    );
     expect(measured, `${token} (${theme}) measured ${measured.toFixed(2)}:1`).toBeLessThan(AA_LARGE);
     expect(measured).toBeGreaterThan(1);
   });

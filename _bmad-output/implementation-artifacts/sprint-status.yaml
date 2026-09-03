@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 09-03-2026 11:31
+last_updated: 09-03-2026 23:06
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -42,7 +42,7 @@ development_status:
   # them as orphans — reconcile with --set rather than dropping them.
   1-1-a-deployable-shell-that-speaks-croatian-in-both-themes: in-progress
   1-1a-deployable-shell: done
-  1-1b-theme-layer: review
+  1-1b-theme-layer: done
   1-1c-localization-layer: backlog
   1-1d-croatian-sign-in-shell: backlog
   1-2-an-operator-provisions-an-organization-that-is-born-with-an: backlog

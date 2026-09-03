@@ -82,7 +82,7 @@ describe('the built stylesheet consumes the tokens it defines', () => {
   // count here.
   it.skipIf(notBuilt)('references the theme tokens specifically', () => {
     const themeRefs = (builtCss().match(/var\(--[a-z0-9-]+\)/g) ?? []).filter((ref) =>
-      /var\(--(background|foreground|border|input|ring|card|popover|muted|accent|primary|destructive|shift-|modifier-|sidebar)/.test(
+      /var\(--(background|foreground|border|input|ring|card|popover|secondary|muted|accent|primary|destructive|chart-|shift-|modifier-|sidebar)/.test(
         ref,
       ),
     );
