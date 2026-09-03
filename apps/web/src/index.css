@@ -1,5 +1,255 @@
-/* Tailwind 4 — imported wholesale. No token is authored here: shadcn/ui is
-   inherited as-is and the brand delta (primary, destructive, the six-slot
-   working-shift ramp, the non-working slot and the four modifier signals, each
-   in OKLCH for both light and dark) lands in story 1.1b. */
+/* The theme layer (story 1.1b).
+ *
+ * Three layers, in order, and the third is the one that makes the other two
+ * visible. First the shadcn/ui neutral base, which `components.json` presumes
+ * with `cssVariables: true`. Then DESIGN.md's brand delta, overriding
+ * `primary` and `destructive` and adding the working-shift ramp, the
+ * non-working slot and the modifier signals. Then `@layer base`, which paints
+ * them onto the document — Tailwind 4's preflight sets no page background, so
+ * without that layer every token is defined and none is ever consumed.
+ *
+ * Every value is OKLCH (UX-DR3), converted from DESIGN.md's hex — that file is
+ * the source of truth for the brand delta, and shadcn's neutral registry
+ * (ui.shadcn.com/r/colors/neutral.json, cssVarsV4, fetched 2026-09-03) for the
+ * base. Four values deviate from their source, each measured and approved:
+ *
+ *   --shift-nonworking-foreground  L 0.6801 -> 0.5361 light, 0.5665 -> 0.6165
+ *     dark. DESIGN.md's values measured 2.58:1 and 3.76:1 against their own
+ *     fill; UX-DR7 keeps that label always visible, so 4.5:1 applies.
+ *   --muted-foreground             L 0.556 -> 0.542 light. Stock shadcn
+ *     measured 4.34:1 on --muted.
+ *   --ring                         L 0.708 -> 0.665 light. Stock shadcn
+ *     measured 2.59:1 on --background — a focus indicator below the 3:1 that
+ *     WCAG 2.4.11 exists for.
+ *   --sidebar-ring                 L 0.708 -> 0.654 light. Same stock value,
+ *     same defect, measured 2.48:1 on --sidebar.
+ *
+ * Hue and chroma are untouched in every case; only L moved. Each carries a
+ * little headroom rather than sitting on its bound, so re-rounding an OKLCH
+ * literal cannot flip a passing measurement red. Dark values were already
+ * clear except where noted. See the spec change log for the approvals.
+ *
+ * Known and accepted: --border and --input composite to 1.25-1.47:1 against
+ * their surface in both themes. Stock shadcn, unchanged here, and recorded in
+ * deferred-work.md — WCAG 1.4.11 wants 3:1 only where the border is a control's
+ * sole visual affordance, which first becomes true for the 1.1d sign-in form.
+ *
+ * Light lives on `:root`; dark exists only inside `prefers-color-scheme`, and
+ * `color-scheme` tells the UA to follow it for scrollbars and form controls.
+ * There is deliberately no `.dark` class and no `data-theme` attribute: UX-DR2
+ * ships both themes with no toggle, no setting and nothing persisted.
+ *
+ * Ramp slots are numbered, never named. Shift Types are Organization data of
+ * arbitrary count assigned to slots in creation order (UX-DR6), so a
+ * `--shift-night` token would encode one Organization's naming into the theme.
+ */
 @import 'tailwindcss';
+
+/* Every subset the package ships. Croatian's diacritics live in latin-ext; the
+ * latin subset carries none of them, so a narrower entry point would fall back
+ * mid-word on exactly the strings that matter — Noć, Godišnji, and members'
+ * own names. Unused subsets cost nothing at runtime: unicode-range keeps the
+ * browser from fetching them. */
+@import '@fontsource-variable/geist';
+
+:root {
+  --radius: 0.625rem;
+
+  /* shadcn/ui neutral base */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.542 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.665 0 0);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.654 0 0);
+
+  /* DESIGN.md brand delta */
+  --primary: oklch(0.5291 0.129 248.8);
+  --primary-foreground: oklch(1 0 0);
+  --destructive: oklch(0.5908 0.1949 21.67);
+  --destructive-foreground: oklch(1 0 0);
+  --shift-slot-1: oklch(0.9491 0.0186 242.97);
+  --shift-slot-1-foreground: oklch(0.3911 0.0842 244.54);
+  --shift-slot-2: oklch(0.2684 0.0312 252.76);
+  --shift-slot-2-foreground: oklch(0.8766 0.0239 250.09);
+  --shift-slot-3: oklch(0.9389 0.023 308.19);
+  --shift-slot-3-foreground: oklch(0.3706 0.0947 303.98);
+  --shift-slot-4: oklch(0.9601 0.0299 78.79);
+  --shift-slot-4-foreground: oklch(0.4391 0.0842 73.22);
+  --shift-slot-5: oklch(0.9483 0.0177 170.08);
+  --shift-slot-5-foreground: oklch(0.4102 0.0669 168.87);
+  --shift-slot-6: oklch(0.9492 0.0111 89.72);
+  --shift-slot-6-foreground: oklch(0.4445 0.0253 85.94);
+  --shift-nonworking: oklch(0.9627 0.0051 247.88);
+  --shift-nonworking-foreground: oklch(0.5361 0.0243 248.19);
+  --modifier-leave: oklch(0.439 0.0847 157.07 / 0.16);
+  --modifier-leave-foreground: oklch(0.439 0.0847 157.07);
+  --modifier-uncovered: oklch(0.5762 0.1151 75.47 / 0.22);
+  --modifier-uncovered-foreground: oklch(0.4756 0.0932 76.04);
+  --modifier-overridden: oklch(0.582 0.1334 289.32);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* shadcn/ui neutral base */
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+
+    /* DESIGN.md brand delta */
+    --primary: oklch(0.6907 0.1248 244.11);
+    --primary-foreground: oklch(0.1753 0.0312 242.22);
+    --destructive: oklch(0.6564 0.1747 18.71);
+    --destructive-foreground: oklch(0.1757 0.0245 10.61);
+    --shift-slot-1: oklch(0.3071 0.0518 245.22);
+    --shift-slot-1-foreground: oklch(0.8467 0.0627 239.8);
+    --shift-slot-2: oklch(0.2362 0.0226 254.26);
+    --shift-slot-2-foreground: oklch(0.7576 0.0352 246.91);
+    --shift-slot-3: oklch(0.2669 0.0455 302.6);
+    --shift-slot-3-foreground: oklch(0.8068 0.0761 304.88);
+    --shift-slot-4: oklch(0.2831 0.0423 85.72);
+    --shift-slot-4-foreground: oklch(0.846 0.0873 83.41);
+    --shift-slot-5: oklch(0.2862 0.0342 177);
+    --shift-slot-5-foreground: oklch(0.807 0.0699 168.78);
+    --shift-slot-6: oklch(0.2759 0.0162 96.9);
+    --shift-slot-6-foreground: oklch(0.8275 0.0341 89.87);
+    --shift-nonworking: oklch(0.227 0.0171 248.59);
+    --shift-nonworking-foreground: oklch(0.6165 0.0254 248.28);
+    --modifier-leave: oklch(0.7873 0.09 160.99 / 0.15);
+    --modifier-leave-foreground: oklch(0.7873 0.09 160.99);
+    --modifier-uncovered: oklch(0.7758 0.1401 78.65 / 0.16);
+    --modifier-uncovered-foreground: oklch(0.7803 0.1157 78.08);
+    --modifier-overridden: oklch(0.6843 0.1236 290.86);
+  }
+}
+
+@theme inline {
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-shift-slot-1: var(--shift-slot-1);
+  --color-shift-slot-1-foreground: var(--shift-slot-1-foreground);
+  --color-shift-slot-2: var(--shift-slot-2);
+  --color-shift-slot-2-foreground: var(--shift-slot-2-foreground);
+  --color-shift-slot-3: var(--shift-slot-3);
+  --color-shift-slot-3-foreground: var(--shift-slot-3-foreground);
+  --color-shift-slot-4: var(--shift-slot-4);
+  --color-shift-slot-4-foreground: var(--shift-slot-4-foreground);
+  --color-shift-slot-5: var(--shift-slot-5);
+  --color-shift-slot-5-foreground: var(--shift-slot-5-foreground);
+  --color-shift-slot-6: var(--shift-slot-6);
+  --color-shift-slot-6-foreground: var(--shift-slot-6-foreground);
+  --color-shift-nonworking: var(--shift-nonworking);
+  --color-shift-nonworking-foreground: var(--shift-nonworking-foreground);
+  --color-modifier-leave: var(--modifier-leave);
+  --color-modifier-leave-foreground: var(--modifier-leave-foreground);
+  --color-modifier-uncovered: var(--modifier-uncovered);
+  --color-modifier-uncovered-foreground: var(--modifier-uncovered-foreground);
+  --color-modifier-overridden: var(--modifier-overridden);
+}
+
+/* The layer that makes the tokens visible. Written as direct `var()` rather
+ * than `@apply`, so what ships is a reference the build can be asserted
+ * against rather than a resolved literal. */
+@layer base {
+  html {
+    /* Both themes are supported and the OS chooses; without this the UA paints
+     * scrollbars, form controls and the canvas behind the root light in dark
+     * mode — the other half of a flash of the wrong theme. */
+    color-scheme: light dark;
+  }
+
+  *,
+  ::before,
+  ::after {
+    border-color: var(--border);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+  }
+}
