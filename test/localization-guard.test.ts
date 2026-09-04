@@ -72,13 +72,52 @@ const bracedAttribute = (name: string, value: string): string => ` ${name}={'${v
 const bracedString = (text: string): string => `{'${text}'}`;
 /** `` {`text`} `` — the same thing as a template literal. */
 const bracedTemplate = (text: string): string => `{\`${text}\`}`;
+/** `{cond ? 'a' : 'b'}` — a literal hiding inside a branch. */
+const bracedTernary = (a: string, b: string): string => `{cond ? '${a}' : '${b}'}`;
+/** `{cond && 'a'}` — the same shape written as a guard. */
+const bracedGuard = (text: string): string => `{cond && '${text}'}`;
+/** `name={cond ? 'a' : 'b'}` — a branch on an attribute. */
+const ternaryAttribute = (name: string, a: string, b: string): string =>
+  ` ${name}={cond ? '${a}' : '${b}'}`;
+/** `` name={`text`} `` — a template literal on an attribute. */
+const templateAttribute = (name: string, text: string): string => ` ${name}={\`${text}\`}`;
+/** `{a ? 'x' : b ? 'y' : 'z'}` — a branch nested inside a branch. */
+const nestedTernary = (a: string, b: string, c: string): string =>
+  `{a ? '${a}' : b ? '${b}' : '${c}'}`;
+/** `` {cond ? `x` : `y`} `` — the branch shape written with template literals. */
+const templateTernary = (a: string, b: string): string => `{cond ? \`${a}\` : \`${b}\`}`;
+/** `name={cond && 'x'}` — a guard on an attribute. */
+const guardAttribute = (name: string, text: string): string => ` ${name}={cond && '${text}'}`;
+/** `name={a ? 'x' : b ? 'y' : 'z'}` — a nested branch on an attribute. */
+const nestedTernaryAttribute = (name: string, a: string, b: string, c: string): string =>
+  ` ${name}={a ? '${a}' : b ? '${b}' : '${c}'}`;
+/** `` name={cond ? `x` : `y`} `` — template literals in a branch on an attribute. */
+const templateTernaryAttribute = (name: string, a: string, b: string): string =>
+  ` ${name}={cond ? \`${a}\` : \`${b}\`}`;
+/** `{cond ? t('a') : t('b')}` — the correct way to write the branch above. */
+const translatedTernary = (a: string, b: string): string => `{cond ? t('${a}') : t('${b}')}`;
+/** `name={t('a')}` — the correct way to write a guarded attribute. */
+const translatedAttribute = (name: string, key: string): string => ` ${name}={t('${key}')}`;
+/** `name={cond ? t('a') : t('b')}` — and the correct way to branch on one. */
+const translatedTernaryAttribute = (name: string, a: string, b: string): string =>
+  ` ${name}={cond ? t('${a}') : t('${b}')}`;
+/** `{t(cond ? 'a' : 'b')}` — a KEY chosen by a branch, which is not a
+ *  user-facing literal and must stay silent. */
+const translatedComputedKey = (a: string, b: string): string => `{t(cond ? '${a}' : '${b}')}`;
 const component = (body: string): string => `export function Probe() {\n  return ${body};\n}\n`;
 const fragment = (body: string): string => `(<>${body}</>)`;
+/** A compliant probe imports `t` the way a real screen does. */
+const translated = (body: string): string => `import { t } from '@/i18n';\n\n${body}`;
 
 /** Croatian words a real surface would want, so the cases read like the
  *  mistake they model. */
 const DANAS = 'Danas';
 const ZATVORI = 'Zatvori';
+const SATI = 'Sati';
+const SMJENE = 'Smjene';
+/** Two keys that exist, so a compliant case is realistic rather than notional. */
+const KEY_A = 'auth.heading';
+const KEY_B = 'auth.submit';
 
 /** One ESLint, built on first use — flat-config resolution is the slow part,
  *  and nothing below mutates it. Lazy rather than module scope, so a config
@@ -175,6 +214,98 @@ const VIOLATIONS: { name: string; source: string }[] = [
   {
     name: 'a label on a track',
     source: component(selfClosing('track', attribute('label', 'Titlovi'))),
+  },
+  // ---- the branch shapes, added by story 1.1d against real screen code
+  {
+    name: 'a literal in a ternary as a child',
+    source: component(open('p') + bracedTernary(DANAS, ZATVORI) + close('p')),
+  },
+  {
+    name: 'a literal guarded by a logical expression as a child',
+    source: component(open('p') + bracedGuard(DANAS) + close('p')),
+  },
+  {
+    name: 'a literal in a ternary inside a fragment',
+    source: component(fragment(bracedTernary(DANAS, ZATVORI))),
+  },
+  {
+    name: 'a ternary on a guarded attribute',
+    source: component(selfClosing('button', ternaryAttribute('aria-label', DANAS, ZATVORI))),
+  },
+  {
+    name: 'a guard on a guarded attribute',
+    source: component(selfClosing('input', guardAttribute('placeholder', DANAS))),
+  },
+  {
+    name: 'a template literal on a guarded attribute',
+    source: component(selfClosing('button', templateAttribute('aria-label', ZATVORI))),
+  },
+  {
+    name: 'a template literal on a placeholder',
+    source: component(selfClosing('input', templateAttribute('placeholder', DANAS))),
+  },
+  // ---- what the round-1 branch selectors still let through, found in review.
+  // Each of these linted CLEAN against `> Literal` anchored one level under the
+  // outer conditional, with the guarded-attribute template form the only
+  // template shape covered.
+  {
+    name: 'a literal in a NESTED ternary as a child',
+    source: component(open('p') + nestedTernary(DANAS, ZATVORI, SATI) + close('p')),
+  },
+  {
+    name: 'a template literal in a ternary as a child',
+    source: component(open('p') + templateTernary(DANAS, ZATVORI) + close('p')),
+  },
+  {
+    name: 'a literal in a nested ternary inside a fragment',
+    source: component(fragment(nestedTernary(DANAS, ZATVORI, SATI))),
+  },
+  {
+    name: 'a literal in a nested ternary on a guarded attribute',
+    source: component(
+      selfClosing('button', nestedTernaryAttribute('aria-label', DANAS, ZATVORI, SATI)),
+    ),
+  },
+  {
+    name: 'a template literal in a ternary on a guarded attribute',
+    source: component(
+      selfClosing('button', templateTernaryAttribute('aria-label', DANAS, ZATVORI)),
+    ),
+  },
+  {
+    name: 'a punctuation-only string on a guarded attribute, which names nothing',
+    source: component(selfClosing('button', bracedAttribute('aria-label', ' – '))),
+  },
+  // ---- the option/optgroup/track label, in every form but the bare one. All
+  // three elements render `label` to the user, and the round-1 selector saw
+  // only `label="…"`.
+  {
+    name: 'a braced label on an option',
+    source: component(selfClosing('option', bracedAttribute('label', SMJENE))),
+  },
+  {
+    name: 'a template label on an option',
+    source: component(selfClosing('option', templateAttribute('label', SMJENE))),
+  },
+  {
+    name: 'a ternary label on an option',
+    source: component(selfClosing('option', ternaryAttribute('label', SMJENE, SATI))),
+  },
+  {
+    name: 'a nested ternary label on an option',
+    source: component(selfClosing('option', nestedTernaryAttribute('label', SMJENE, SATI, DANAS))),
+  },
+  {
+    name: 'a braced label on an optgroup',
+    source: component(selfClosing('optgroup', bracedAttribute('label', SMJENE))),
+  },
+  {
+    name: 'a template label on a track',
+    source: component(selfClosing('track', templateAttribute('label', 'Titlovi'))),
+  },
+  {
+    name: 'a ternary label on a track',
+    source: component(selfClosing('track', ternaryAttribute('label', 'Titlovi', SATI))),
   },
 ];
 
@@ -275,9 +406,115 @@ const COMPLIANT: { name: string; source: string }[] = [
   },
 ];
 
+/**
+ * The other polarity of the branch and label selectors (story 1.1d).
+ *
+ * Separated from `COMPLIANT` because these are the cases the anchoring was
+ * chosen FOR. The conditional is allowed to NEST, so `{a ? 'x' : b ? 'y' : 'z'}`
+ * fires on all three branches — but the string has to be a DIRECT child of a
+ * branch node, never a descendant of one. That single restriction is what keeps
+ * both of these clean: `{cond ? t('a') : t('b')}`, where the literals are call
+ * arguments one level deeper, and `{t(cond ? 'a' : 'b')}`, where the
+ * container's own child is a call rather than a branch and the strings are
+ * KEYS. A descendant sweep would refuse the very fix the message asks for, and
+ * a merge-blocking rule that refuses the fix is worse than no rule.
+ */
+const BRANCH_COMPLIANT: { name: string; source: string }[] = [
+  {
+    name: 'a ternary between two t() calls as a child',
+    source: translated(component(open('p') + translatedTernary(KEY_A, KEY_B) + close('p'))),
+  },
+  {
+    name: 'a guard around a t() call as a child',
+    source: translated(component(`${open('p')}{cond && t('${KEY_A}')}${close('p')}`)),
+  },
+  {
+    name: 'a NESTED ternary between t() calls as a child',
+    source: translated(
+      component(
+        `${open('p')}{a ? t('${KEY_A}') : b ? t('${KEY_B}') : t('auth.password')}${close('p')}`,
+      ),
+    ),
+  },
+  {
+    name: 'a key chosen by a ternary inside the t() call itself',
+    source: translated(component(open('p') + translatedComputedKey(KEY_A, KEY_B) + close('p'))),
+  },
+  {
+    name: 'a ternary between two t() calls on a guarded attribute',
+    source: translated(
+      component(selfClosing('button', translatedTernaryAttribute('aria-label', KEY_A, KEY_B))),
+    ),
+  },
+  {
+    name: 'an aria-label resolved through a bare t() call',
+    source: translated(component(selfClosing('button', translatedAttribute('aria-label', KEY_A)))),
+  },
+  {
+    name: 'an option label resolved through t()',
+    source: translated(component(selfClosing('option', translatedAttribute('label', KEY_A)))),
+  },
+  {
+    name: 'an option label resolved through a ternary between t() calls',
+    source: translated(
+      component(selfClosing('option', translatedTernaryAttribute('label', KEY_A, KEY_B))),
+    ),
+  },
+  {
+    name: 'a label on a component, where it is structural rather than rendered',
+    source: component(selfClosing('Badge', attribute('label', DANAS))),
+  },
+  {
+    name: 'a ternary between two separators',
+    source: component(`${open('p')}{a}${bracedTernary(' – ', ' / ')}{b}${close('p')}`),
+  },
+  {
+    name: 'a ternary on a className, which is not user-facing',
+    source: component(selfClosing('div', ternaryAttribute('className', 'flex', 'grid'))),
+  },
+  {
+    name: 'a nested ternary on a className',
+    source: component(selfClosing('div', nestedTernaryAttribute('className', 'flex', 'grid', 'hidden'))),
+  },
+  {
+    name: 'a ternary between two elements, which is not JSX content',
+    source: component(`(cond ? ${open('p')}${close('p')} : null)`),
+  },
+  {
+    name: 'a template literal on a guarded attribute interpolating only a value',
+    source: component(selfClosing('button', ' aria-label={`${n}`}')),
+  },
+  {
+    name: 'a template literal as a child interpolating only a value',
+    source: component(`${open('p')}{\`\${n}\`}${close('p')}`),
+  },
+  {
+    name: 'a template literal on a non-guarded attribute',
+    source: component(selfClosing('div', ' className={`flex ${n}`}')),
+  },
+];
+
 describe('the L2 guard stays silent on compliant markup', () => {
   it.each(COMPLIANT)('accepts $name', async ({ source }) => {
     expect(await lint(source)).not.toContain(RULE);
+  });
+});
+
+describe('the branch selectors refuse the literal and accept the fix', () => {
+  // Across all three probe paths, like the violations: narrowing the rule to
+  // one directory once kept every positive assertion green while a literal in
+  // a real screen stopped being refused, and the same trap applies to a
+  // false-positive assertion that only ever ran under `surfaces/`.
+  const cases = WEB_PROBES.flatMap((filePath) =>
+    BRANCH_COMPLIANT.map((compliant) => ({
+      ...compliant,
+      filePath,
+      where: relative(repoRoot, filePath),
+    })),
+  );
+
+  it.each(cases)('accepts $name in $where', async ({ source, filePath }) => {
+    expect(await lint(source, filePath)).not.toContain(RULE);
   });
 });
 

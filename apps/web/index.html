@@ -4,9 +4,49 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Shift</title>
+    <!-- The boot fallback's own styling, inline in the document head and
+         nowhere else. It cannot live in `index.css`: the two failures it
+         covers are the bundle never loading and the translation layer refusing
+         to start, and in the first of those no external stylesheet has been
+         fetched either.
+
+         `opacity: 0` plus a delayed animation, and no JavaScript anywhere in
+         it. Painted immediately — which is what it did before review — the
+         fallback shows a Croatian error telling the user to refresh on EVERY
+         slow load, including the ones that were about to succeed. A CSS
+         animation with a delay and no duration is the only mechanism that
+         reveals it late while still working with scripting disabled: the
+         element stays invisible, and if the application has not mounted and
+         cleared `#root` within the delay, it steps into view. A successful
+         mount removes the element long before that. -->
+    <style>
+      #boot-fallback {
+        margin: 0;
+        padding: 2rem;
+        text-align: center;
+        font: 1rem/1.5 system-ui, sans-serif;
+        opacity: 0;
+        animation: boot-fallback-reveal 0s linear 3s forwards;
+      }
+
+      @keyframes boot-fallback-reveal {
+        to {
+          opacity: 1;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- The boot fallback (story 1.1d), and the one Croatian literal outside
+         hr.json. It cannot come from a key: the failures it covers are the
+         translation layer refusing to start and the bundle never loading at
+         all, so a key would resolve to nothing in the first case and no
+         JavaScript would run in the second. It is static markup inside #root,
+         which `createRoot().render()` clears on a successful mount, so it
+         needs no removal step and no eslint exception. -->
+    <div id="root">
+      <p id="boot-fallback">Shift se nije pokrenuo. Osvježi stranicu.</p>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

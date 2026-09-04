@@ -1,12 +1,19 @@
 import { Outlet, createRootRoute } from '@tanstack/react-router';
 
+import { NotFoundScreen } from '@/routes/not-found';
+
 /**
  * The application shell: structure only.
  *
- * No navigation, no theme token and no text of any kind. The two-layout / one-
- * architecture navigation (bottom tabs on mobile, sidebar on desktop) needs
- * destination labels, so it arrives with the localization and theme layers in
- * story 1.1b, and its destinations become role-dependent in story 1.3.
+ * It stays text-free, and deliberately so. The two-layout / one-architecture
+ * navigation (bottom tabs on mobile, sidebar on desktop) needs a role-keyed
+ * destination table and nine `nav.*` labels, and its destinations become
+ * role-dependent in story 1.3 — so it is its own spec rather than part of this
+ * one, and the shell holds nothing but the outlet until it lands. What it does
+ * own is the not-found case: AD-14 has the host answer every path with
+ * `index.html` at 200, so the client decides a path is unknown, and
+ * `notFoundComponent` here is the only shape that decides it without adding a
+ * route (see `not-found.tsx`).
  */
 function AppShell() {
   return (
@@ -16,4 +23,7 @@ function AppShell() {
   );
 }
 
-export const rootRoute = createRootRoute({ component: AppShell });
+export const rootRoute = createRootRoute({
+  component: AppShell,
+  notFoundComponent: NotFoundScreen,
+});

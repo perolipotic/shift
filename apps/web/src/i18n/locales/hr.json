@@ -1,6 +1,17 @@
 {
+  "auth": {
+    "heading": "Prijava",
+    "username": "Korisničko ime",
+    "password": "Lozinka",
+    "submit": "Prijavi se",
+    "passwordReset": "Zaboravljena lozinka? Administrator ti postavlja novu."
+  },
   "count": {
     "days": "{count, plural, one {# dan} few {# dana} other {# dana}}",
     "conflicts": "{count, plural, one {# konflikt} few {# konflikta} other {# konflikata}}"
+  },
+  "notFound": {
+    "heading": "Stranica ne postoji",
+    "back": "Vrati se na prijavu"
   }
 }

@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 09-03-2026 23:31
+last_updated: 09-04-2026 11:12
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -40,11 +40,15 @@ development_status:
   # in-progress until every part lands; the parts carry their own status.
   # These four keys are not derived from epics.md, so a regenerate reports
   # them as orphans — reconcile with --set rather than dropping them.
+  # The navigation shell is NOT one of the parts: it was added to 1.1d and then
+  # split back out at 1.1d's token gate, and it appears in no epics.md
+  # acceptance criterion for story 1.1. It waits in deferred-work.md and earns
+  # its own key when specced, so the parent below completes with 1.1d.
   1-1-a-deployable-shell-that-speaks-croatian-in-both-themes: in-progress
   1-1a-deployable-shell: done
   1-1b-theme-layer: done
-  1-1c-localization-layer: review
-  1-1d-croatian-sign-in-shell: backlog
+  1-1c-localization-layer: done
+  1-1d-croatian-sign-in-shell: review
   1-2-an-operator-provisions-an-organization-that-is-born-with-an: backlog
   1-3-signing-in-reaches-exactly-one-organization-at-exactly-one-r: backlog
   1-4-an-admin-configures-the-organization-s-identity-localization: backlog

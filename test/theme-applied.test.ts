@@ -76,6 +76,31 @@ describe('the built stylesheet consumes the tokens it defines', () => {
     expect(builtCss()).toContain('var(--border)');
   });
 
+  /**
+   * The input boundary, and this is 1.1b's original loopback in a new place.
+   *
+   * Story 1.1d raised `--input` to clear WCAG 1.4.11 and measured the token in
+   * `theme-contrast.test.ts`. A review mutation then changed one class in
+   * `components/ui/input.tsx` from `border-input` to `border-border`, and all
+   * 900 tests stayed green: the accessibility deliverable was a token value
+   * that no rendered pixel consumed. Exactly the shape of the defect that made
+   * this file exist — every token defined, the built stylesheet consuming
+   * none.
+   *
+   * `var(--input)` alone is not enough to assert: `@theme inline` emits
+   * `--color-input: var(--input)` unconditionally, so the reference is in the
+   * sheet whether or not anything draws with it. The `.border-input` RULE only
+   * exists if a class in the source tree asks for it, which is the claim.
+   */
+  it.skipIf(notBuilt)('emits a border-input utility resolving to --input', () => {
+    const rule = /\.border-input\s*\{[^}]*border-color:\s*var\(--input\)/.exec(builtCss());
+
+    expect(
+      rule,
+      'no .border-input rule in the built sheet — nothing on screen draws the boundary --input was raised for (WCAG 1.4.11)',
+    ).not.toBeNull();
+  });
+
   // Counting all `var(--…)` would be vacuous: Tailwind's own preflight already
   // emits eight (--spacing, --text-sm, --font-mono and friends), so deleting
   // the entire @layer base block still cleared a bare `> 2`. Only theme tokens

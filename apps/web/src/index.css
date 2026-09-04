@@ -11,28 +11,51 @@
  * Every value is OKLCH (UX-DR3), converted from DESIGN.md's hex — that file is
  * the source of truth for the brand delta, and shadcn's neutral registry
  * (ui.shadcn.com/r/colors/neutral.json, cssVarsV4, fetched 2026-09-03) for the
- * base. Four values deviate from their source, each measured and approved:
+ * base. Five values deviate from their source, each measured and approved:
  *
  *   --shift-nonworking-foreground  L 0.6801 -> 0.5361 light, 0.5665 -> 0.6165
  *     dark. DESIGN.md's values measured 2.58:1 and 3.76:1 against their own
  *     fill; UX-DR7 keeps that label always visible, so 4.5:1 applies.
  *   --muted-foreground             L 0.556 -> 0.542 light. Stock shadcn
  *     measured 4.34:1 on --muted.
- *   --ring                         L 0.708 -> 0.665 light. Stock shadcn
- *     measured 2.59:1 on --background — a focus indicator below the 3:1 that
- *     WCAG 2.4.11 exists for.
+ *   --ring                         L 0.708 -> 0.665 -> 0.37 light, 0.556 ->
+ *     0.8 dark. Two shifts, and the second is the interesting one. Stock
+ *     shadcn measured 2.59:1 on --background, below the 3:1 WCAG 2.4.11
+ *     exists for, so 1.1b moved it to 0.665. Story 1.1d then raised --input
+ *     to 0.65 — and a ring at 0.665 abutting a border at 0.65 measures
+ *     1.06:1, so satisfying 1.4.11 for the border had made the focus
+ *     indicator invisible against the very control it indicates. The two
+ *     affordances are adjacent by construction (`ring-1` draws immediately
+ *     outside the input's own border), so they need 3:1 from each other as
+ *     well as from the page. Light goes DARKER rather than lighter: a ring
+ *     light enough to clear 3:1 above a 0.65 border would need L 0.974, which
+ *     is invisible on a white page. Dark goes lighter for the mirror reason.
+ *     Now 3.23:1 and 3.25:1 against --input, 10.43:1 and 10.59:1 against
+ *     --background. --sidebar-ring is deliberately NOT moved with it: it is
+ *     measured against --sidebar, no surface consumes it, and no control abuts
+ *     it — the divergence is recorded in deferred-work.md beside the
+ *     --sidebar-primary question rather than resolved blind.
  *   --sidebar-ring                 L 0.708 -> 0.654 light. Same stock value,
  *     same defect, measured 2.48:1 on --sidebar.
+ *   --input                        L 0.922 -> 0.65 light and alpha 15% -> 36%
+ *     dark, story 1.1d. Stock measured 1.26:1 and 1.47:1 composited against
+ *     --background; the sign-in form is the first control whose border is its
+ *     SOLE visual affordance — a shadcn text input is filled with the page
+ *     colour — which is exactly the case WCAG 1.4.11 holds to 3:1. Now 3.23:1
+ *     and 3.26:1. Dark stays an alpha token so it keeps compositing over
+ *     whatever surface it sits on; read raw it reports a meaningless 19.79:1.
  *
- * Hue and chroma are untouched in every case; only L moved. Each carries a
- * little headroom rather than sitting on its bound, so re-rounding an OKLCH
- * literal cannot flip a passing measurement red. Dark values were already
- * clear except where noted. See the spec change log for the approvals.
+ * Hue and chroma are untouched in every case; only L and, for dark --input,
+ * alpha moved. Each carries a little headroom rather than sitting on its bound,
+ * so re-rounding an OKLCH literal cannot flip a passing measurement red. Dark
+ * values were already clear except where noted. See the spec change log for the
+ * approvals.
  *
- * Known and accepted: --border and --input composite to 1.25-1.47:1 against
- * their surface in both themes. Stock shadcn, unchanged here, and recorded in
- * deferred-work.md — WCAG 1.4.11 wants 3:1 only where the border is a control's
- * sole visual affordance, which first becomes true for the 1.1d sign-in form.
+ * --border, by contrast, stays stock and stays below AA on purpose, pinned at
+ * 1.26:1 and 1.25:1 by test/theme-contrast.test.ts. It edges cards and
+ * separators, never a control, and 1.4.11 says nothing about a decorative
+ * divider; raising it too would visibly heavy every surface in the interface
+ * for no accessibility gain.
  *
  * Light lives on `:root`; dark exists only inside `prefers-color-scheme`, and
  * `color-scheme` tells the UA to follow it for scrollbars and form controls.
@@ -69,8 +92,8 @@
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.665 0 0);
+  --input: oklch(0.65 0 0);
+  --ring: oklch(0.37 0 0);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -127,8 +150,8 @@
     --accent: oklch(0.269 0 0);
     --accent-foreground: oklch(0.985 0 0);
     --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
+    --input: oklch(1 0 0 / 36%);
+    --ring: oklch(0.8 0 0);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -251,5 +274,28 @@
     background-color: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
+  }
+
+  /* The focus indicator in a forced-colours mode, which is the one place the
+   * token layer cannot reach.
+   *
+   * shadcn draws focus as `focus-visible:outline-none` plus a `ring`, and a
+   * ring is a box-shadow. Forced-colours modes drop box-shadow entirely and
+   * override every colour, so the ring simply is not there — and under
+   * Tailwind 4 `outline-none` emits `outline-style: none`, where the v3
+   * utility these primitives were written against drew a transparent 2px
+   * outline that a forced-colours mode would repaint. So the inherited
+   * primitives leave a keyboard user with no focus indicator at all, and no
+   * token value can fix it because colours are not ours to choose there.
+   *
+   * An outline, therefore, and a system colour keyword rather than a token.
+   * `!important` because the utility layer comes after this one and
+   * `outline-none` is a normal declaration: an important declaration in an
+   * earlier layer beats it, and nothing short of that does. */
+  @media (forced-colors: active) {
+    *:focus-visible {
+      outline: 2px solid CanvasText !important;
+      outline-offset: 2px !important;
+    }
   }
 }

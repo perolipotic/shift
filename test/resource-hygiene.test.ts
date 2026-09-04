@@ -20,16 +20,37 @@ import { describe, expect, it } from 'vitest';
  * each with its own sweep, and a vacuous-pass guard so an unreadable or
  * restructured file cannot look compliant.
  *
- * When 1.1d legitimately adds screen strings, the SANCTIONED_KEYS list is what
- * it updates — deliberately, in the same commit, which is the review moment
- * this exists to create.
+ * When a story legitimately adds screen strings, the SANCTIONED_KEYS list is
+ * what it updates — deliberately, in the same commit, which is the review
+ * moment this exists to create. Story 1.1d did exactly that, and in doing so
+ * had to split the list: the three-form ICU assertion below is a rule about
+ * PLURALS, and appending `auth.heading` to a single list would have failed it
+ * as a non-plural rather than checked it as a screen string.
  */
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 const RESOURCE = join(repoRoot, 'apps', 'web', 'src', 'i18n', 'locales', 'hr.json');
 
-/** The two plural messages story 1.1c is permitted to ship (`EXPERIENCE.md:81`). */
-const SANCTIONED_KEYS = ['count.days', 'count.conflicts'];
+/** The two plural messages story 1.1c is permitted to ship (`EXPERIENCE.md:81`).
+ *  Only these carry an ICU `plural` argument, so only these are checked for the
+ *  three Croatian categories. */
+const SANCTIONED_PLURAL_KEYS = ['count.days', 'count.conflicts'];
+
+/** The seven flat screen strings story 1.1d authors: the sign-in form and the
+ *  not-found component. Nothing else in the tree may add a key without editing
+ *  this list, which is the point. */
+const SANCTIONED_SCREEN_KEYS = [
+  'auth.heading',
+  'auth.username',
+  'auth.password',
+  'auth.submit',
+  'auth.passwordReset',
+  'notFound.heading',
+  'notFound.back',
+];
+
+/** Everything the resource file is permitted to hold, together. */
+const SANCTIONED_KEYS = [...SANCTIONED_PLURAL_KEYS, ...SANCTIONED_SCREEN_KEYS];
 
 function resource(): Record<string, unknown> {
   return JSON.parse(readFileSync(RESOURCE, 'utf8')) as Record<string, unknown>;
@@ -42,6 +63,13 @@ function leafKeys(node: unknown, prefix = ''): string[] {
   return Object.entries(node).flatMap(([key, value]) =>
     leafKeys(value, prefix === '' ? key : `${prefix}.${key}`),
   );
+}
+
+/** One message by its dotted key path. */
+function messageAt(key: string): unknown {
+  return key
+    .split('.')
+    .reduce<unknown>((node, part) => (node as Record<string, unknown>)?.[part], resource());
 }
 
 function messages(): string[] {
@@ -66,16 +94,35 @@ describe('the resource file holds only what this story sanctions', () => {
     expect(messages().length).toBeGreaterThan(0);
   });
 
-  it('holds exactly the two sanctioned plural keys and nothing else', () => {
+  it('holds exactly the sanctioned keys and nothing else', () => {
     // The frozen boundary: 1.1d owns every screen literal so it can review them
-    // in one place. A key added here before then bypasses that review.
+    // in one place. A key added outside that review bypasses it.
     expect([...leafKeys(resource())].sort()).toEqual([...SANCTIONED_KEYS].sort());
   });
 
-  it.each(SANCTIONED_KEYS)('declares %s as an ICU plural with all three Croatian forms', (key) => {
-    const message = key
-      .split('.')
-      .reduce<unknown>((node, part) => (node as Record<string, unknown>)?.[part], resource());
+  it('keeps the two lists disjoint, so neither sweep can go vacuous', () => {
+    // A key listed twice would shrink the key-set assertion above without
+    // shrinking the file, and a plural key copied into the screen list would
+    // escape the three-form check below.
+    expect(new Set(SANCTIONED_KEYS).size).toBe(SANCTIONED_KEYS.length);
+    expect(SANCTIONED_PLURAL_KEYS.length).toBeGreaterThan(0);
+    expect(SANCTIONED_SCREEN_KEYS.length).toBeGreaterThan(0);
+  });
+
+  it.each(SANCTIONED_SCREEN_KEYS)('declares %s as a plain string, not an ICU argument', (key) => {
+    // The other half of the partition. A screen string that quietly grew a
+    // `{count, plural, …}` body would need the three-form check the block below
+    // runs only over the plural list, so this is what notices it happening.
+    const message = String(messageAt(key));
+
+    expect(message.length).toBeGreaterThan(0);
+    expect(message, `${key} carries an ICU plural and belongs in the plural list`).not.toContain(
+      'plural',
+    );
+  });
+
+  it.each(SANCTIONED_PLURAL_KEYS)('declares %s as an ICU plural with all three Croatian forms', (key) => {
+    const message = messageAt(key);
 
     expect(typeof message).toBe('string');
     // one/few/other, and `other` is not optional: Croatian needs all three, and
@@ -120,6 +167,12 @@ describe('the messages obey the voice rules that bind every string', () => {
   it('carries no navigation or terminology vocabulary', () => {
     // The other half of the frozen boundary, by content rather than by key
     // count: a screen string smuggled in under a plural-looking key.
+    //
+    // `prijava` and `lozinka` were on this list and are gone from it: story
+    // 1.1d authors the sign-in screen, so those two words are now legitimately
+    // this file's. The eight that remain are the navigation shell's and the
+    // terminology contract's, and they stay banned until the spec that owns
+    // them lands — the same review moment, one story later.
     const reserved = [
       'danas',
       'kalendar',
@@ -128,9 +181,7 @@ describe('the messages obey the voice rules that bind every string', () => {
       'ljudi',
       'organizacija',
       'postavke',
-      'prijava',
       'odjava',
-      'lozinka',
     ];
 
     for (const message of messages()) {
@@ -162,5 +213,14 @@ describe('the detector reads the file it thinks it does', () => {
     expect('Spremljeno!').toContain('!');
     expect('19:00-07:00').toMatch(/\d\s*-\s*\d/);
     expect('Tip smjene'.toLowerCase()).toContain('smjen');
+  });
+
+  it('resolves a nested key path to its message and a wrong one to nothing', () => {
+    // `messageAt` is what both key-shape assertions read through. A version
+    // that returned `undefined` for everything would make the ICU check pass
+    // vacuously on a typo'd key name.
+    expect(String(messageAt('count.days'))).toContain('plural');
+    expect(typeof messageAt('auth.heading')).toBe('string');
+    expect(messageAt('auth.headng')).toBeUndefined();
   });
 });

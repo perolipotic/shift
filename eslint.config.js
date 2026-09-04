@@ -28,6 +28,54 @@ function babel({ jsx }) {
   };
 }
 
+/**
+ * Selector fragments for the L2 block below.
+ *
+ * Named once and composed, because the rule is a matrix — string form ×
+ * position × nesting — and every hand-written derivation of it so far has
+ * covered one axis and missed another. See the commentary on the block itself.
+ */
+
+/** One character that makes a string CONTENT rather than separator punctuation.
+ *  A character class, not `\S`: `{start} – {end}` and `{label}:` leave text
+ *  nodes holding nothing but a dash or a colon, and firing on those is a false
+ *  positive in a merge-blocking rule. Human-approved 2026-09-04. */
+const CONTENT = '[^\\s\\-–—:,.()\\/|•]';
+
+/** A quoted string or a template literal carrying text of its own. Used where
+ *  the string is CONTENT, so the punctuation exemption applies. */
+const CONTENT_STRING = `:matches(Literal[raw=/^['"]/][value=/${CONTENT}/], TemplateLiteral:has(TemplateElement[value.raw=/${CONTENT}/]))`;
+
+/** The same, without the punctuation exemption, for attributes: an `aria-label`
+ *  of " – " names nothing and is still a defect. A template interpolating only
+ *  a value still passes — `aria-label={`${n}`}` is not a hard-coded string. */
+const ANY_STRING = `:matches(Literal[raw=/^['"]/], TemplateLiteral:has(TemplateElement[value.raw=/${CONTENT}/]))`;
+
+/** A ternary or a guard. Both are branches, and a literal in either is a
+ *  hard-coded string; a branch between two words is also how a plural gets
+ *  hand-rolled (L7). */
+const BRANCH = ':matches(ConditionalExpression, LogicalExpression)';
+
+/** An expression container that is an element's own child — as opposed to one
+ *  on an attribute, where a string is usually structural. */
+const CHILD_CONTAINER = ':matches(JSXElement, JSXFragment) > JSXExpressionContainer';
+
+/** The seven attributes whose string value reaches a user or an assistive
+ *  technology. */
+const GUARDED_ATTRIBUTE =
+  'JSXAttribute[name.name=/^(aria-label|aria-description|aria-roledescription|aria-valuetext|placeholder|title|alt)$/]';
+
+/** `label` on the three built-ins where it renders. */
+const LABEL_ATTRIBUTE =
+  'JSXOpeningElement[name.name=/^(optgroup|option|track)$/] > JSXAttribute[name.name="label"]';
+
+const BRANCH_MESSAGE =
+  'L2: a literal in a ternary or a guard is still a hard-coded string, and a branch between two words is also how a plural gets hand-rolled (L7). Add both outcomes to apps/web/src/i18n/locales/hr.json and branch between t() calls.';
+const ATTRIBUTE_MESSAGE =
+  'L2: an assistive-technology or placeholder string is user-facing too — braces, a template literal and a ternary do not change that. Add it to apps/web/src/i18n/locales/hr.json and pass t() instead.';
+const LABEL_MESSAGE =
+  'L2: the label on an optgroup, option or track renders to the user. Add it to apps/web/src/i18n/locales/hr.json and pass t().';
+
 export default [
   {
     ignores: [
@@ -78,64 +126,107 @@ export default [
   // not Babel's `StringLiteral` for the same reason — that parser converts to
   // ESTree, and a selector naming `StringLiteral` lints clean forever.
   //
-  // Two boundaries are drawn deliberately, and both are asserted in
+  // They are COMPOSED from the fragments above rather than written out, because
+  // hand-writing them is what let the gaps in. Every string form has to be
+  // refused in every position that renders, and the first two derivations each
+  // covered one axis and missed the other: story 1.1c's covered bare text and
+  // four attributes but no braces or branches, and 1.1d's first pass added
+  // branches for `Literal` only — so a template literal in a branch, a nested
+  // ternary, and every braced, template and branch form of an `option` label
+  // all still linted clean. The matrix is: three string forms (bare text,
+  // quoted, template) × three positions (element child, guarded attribute,
+  // `label` on the three built-ins where it renders) × two nestings (direct,
+  // inside a branch).
+  //
+  // Three boundaries are drawn deliberately, and all three are asserted in
   // `test/localization-guard.test.ts` with cases of BOTH polarities.
   //
   //   - SEPARATOR PUNCTUATION IS NOT CONTENT. `{start} – {end}` and `{label}:`
   //     leave `JSXText` nodes holding nothing but a dash or a colon, and firing
   //     on those is a false positive in a merge-blocking rule — the fastest
   //     route to someone reaching for `eslint-disable`, which costs more than
-  //     the rule earns. Hence the character class rather than `\S`. Human-
-  //     approved 2026-09-04. `<p>Danas</p>` still fires; so does any text with
-  //     one letter or digit in it.
+  //     the rule earns. Hence `CONTENT` rather than `\S`. Human-approved
+  //     2026-09-04. `<p>Danas</p>` still fires; so does any text with one
+  //     letter or digit in it. Note the exemption applies to CONTENT positions
+  //     only: an `aria-label` of " – " names nothing and still fires, which is
+  //     why the attribute selectors use `ANY_STRING`.
   //   - A BRACED STRING IS STILL A STRING, but only where the string is
   //     content. `{'Danas'}` as an element child is a literal in disguise;
   //     `className={'flex'}` is not user-facing and must stay silent, so the
   //     child selectors are parented to `JSXElement`/`JSXFragment` and the
-  //     attribute case is named separately against the guarded attributes only.
-  //     `{' '}` — the JSX space idiom — is whitespace and passes.
+  //     attribute cases are named separately against the guarded attributes
+  //     only. `{' '}` — the JSX space idiom — is whitespace and passes, and so
+  //     does a template that interpolates a value and carries no text of its
+  //     own.
+  //   - A LITERAL IS A DIRECT CHILD OF ITS BRANCH. The branch selectors let the
+  //     CONDITIONAL nest — `{a ? 'x' : b ? 'y' : 'z'}` fires on all three — but
+  //     the string must be a direct child of a branch node, never a descendant
+  //     of one. That is what keeps `{cond ? t('a') : t('b')}` clean: those
+  //     literals are call ARGUMENTS one level deeper, and a descendant sweep
+  //     would refuse the very fix the message asks for. `t(cond ? 'a' : 'b')`
+  //     stays clean for the same reason from the other side — the container's
+  //     own child is a call, not a branch.
   {
     files: ['apps/web/**/*.tsx'],
     rules: {
       'no-restricted-syntax': [
         'error',
+        // ---- bare JSX text
         {
-          selector: 'JSXText[value=/[^\\s\\-–—:,.()\\/|•]/]',
+          selector: `JSXText[value=/${CONTENT}/]`,
           message:
             'L2: no user-facing literal in a component. Add the string to apps/web/src/i18n/locales/hr.json and render it through t(). If this text is not user-facing, it does not belong in JSX.',
         },
+        // ---- a string as an element child, braced or templated, branch or not
         {
-          selector:
-            ":matches(JSXElement, JSXFragment) > JSXExpressionContainer > Literal[raw=/^['\"]/][value=/[^\\s\\-–—:,.()\\/|•]/]",
+          selector: `${CHILD_CONTAINER} > ${CONTENT_STRING}`,
           message:
-            'L2: a string in braces is still a hard-coded string. Add it to apps/web/src/i18n/locales/hr.json and render it through t().',
+            'L2: a string in braces is still a hard-coded string, and a template literal assembled around a value is also how a date gets built by hand (L6). Add it to apps/web/src/i18n/locales/hr.json and render it through t().',
         },
         {
-          selector:
-            ':matches(JSXElement, JSXFragment) > JSXExpressionContainer > TemplateLiteral:has(TemplateElement[value.raw=/[^\\s\\-–—:,.()\\/|•]/])',
-          message:
-            'L2: a template literal is still a hard-coded string, and assembling one around a value is also how a date gets built by hand (L6). Add the message to apps/web/src/i18n/locales/hr.json and let t() interpolate.',
+          selector: `${CHILD_CONTAINER} > ${BRANCH} > ${CONTENT_STRING}`,
+          message: BRANCH_MESSAGE,
         },
         {
-          selector:
-            'JSXAttribute[name.name=/^(aria-label|aria-description|aria-roledescription|aria-valuetext|placeholder|title|alt)$/] > Literal',
-          message:
-            'L2: an assistive-technology or placeholder string is user-facing too. Add it to apps/web/src/i18n/locales/hr.json and pass t() instead of a literal.',
+          selector: `${CHILD_CONTAINER} > ${BRANCH} ${BRANCH} > ${CONTENT_STRING}`,
+          message: BRANCH_MESSAGE,
+        },
+        // ---- an assistive-technology or placeholder string
+        {
+          selector: `${GUARDED_ATTRIBUTE} > Literal`,
+          message: ATTRIBUTE_MESSAGE,
         },
         {
-          selector:
-            "JSXAttribute[name.name=/^(aria-label|aria-description|aria-roledescription|aria-valuetext|placeholder|title|alt)$/] > JSXExpressionContainer > Literal[raw=/^['\"]/]",
-          message:
-            'L2: braces do not make an assistive-technology string acceptable. Add it to apps/web/src/i18n/locales/hr.json and pass t().',
+          selector: `${GUARDED_ATTRIBUTE} > JSXExpressionContainer > ${ANY_STRING}`,
+          message: ATTRIBUTE_MESSAGE,
         },
         {
-          // Element-qualified, because `label` is user-facing on these three
-          // built-ins and structural on plenty of components — and only type
-          // information could tell those apart, which this config has not got.
-          selector:
-            'JSXOpeningElement[name.name=/^(optgroup|option|track)$/] > JSXAttribute[name.name="label"] > Literal',
-          message:
-            'L2: the label on an optgroup, option or track renders to the user. Add it to apps/web/src/i18n/locales/hr.json and pass t().',
+          selector: `${GUARDED_ATTRIBUTE} > JSXExpressionContainer > ${BRANCH} > ${ANY_STRING}`,
+          message: ATTRIBUTE_MESSAGE,
+        },
+        {
+          selector: `${GUARDED_ATTRIBUTE} > JSXExpressionContainer > ${BRANCH} ${BRANCH} > ${ANY_STRING}`,
+          message: ATTRIBUTE_MESSAGE,
+        },
+        // ---- `label`, on the three built-ins where it renders to the user.
+        // Element-qualified, because `label` is user-facing on these three and
+        // structural on plenty of components — and only type information could
+        // tell those apart, which this config has not got.
+        {
+          selector: `${LABEL_ATTRIBUTE} > Literal`,
+          message: LABEL_MESSAGE,
+        },
+        {
+          selector: `${LABEL_ATTRIBUTE} > JSXExpressionContainer > ${ANY_STRING}`,
+          message: LABEL_MESSAGE,
+        },
+        {
+          selector: `${LABEL_ATTRIBUTE} > JSXExpressionContainer > ${BRANCH} > ${ANY_STRING}`,
+          message: LABEL_MESSAGE,
+        },
+        {
+          selector: `${LABEL_ATTRIBUTE} > JSXExpressionContainer > ${BRANCH} ${BRANCH} > ${ANY_STRING}`,
+          message: LABEL_MESSAGE,
         },
       ],
     },

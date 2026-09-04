@@ -1,7 +1,7 @@
 import { differenceCiede2000, rgb, wcagContrast, type Color, type Rgb } from 'culori';
 import { describe, expect, it } from 'vitest';
 
-import { readToken, type Theme } from './theme-css.js';
+import { rawToken, readToken, type Theme } from './theme-css.js';
 
 /**
  * Contrast, measured rather than promised (story 1.1b, UX-DR3).
@@ -153,20 +153,59 @@ describe('every focus indicator is perceivable', () => {
       `${ring} on ${surface} (${theme}) measured ${measured.toFixed(2)}:1`,
     ).toBeGreaterThanOrEqual(AA_LARGE);
   });
+
+  /**
+   * The ring against the BORDER it abuts, not only against the page.
+   *
+   * Found in review, and it is the shape of defect a per-token threshold
+   * cannot see: raising `--input` to clear WCAG 1.4.11 (3.23:1 on the page)
+   * put it at L 0.65 next to a ring at L 0.665, which measures **1.06:1**
+   * between them. Both tokens passed their own assertion; the focus indicator
+   * had become invisible against the one control it indicates. `ring-1` draws
+   * immediately outside the input's own 1px border, so the two are adjacent by
+   * construction and 1.4.11's "adjacent colours" clause applies between them.
+   *
+   * `--input` is composited first: dark declares it with alpha, and the raw
+   * value is a near-white that flatters the measurement.
+   */
+  it.each(THEMES)('--ring is distinguishable from the --input border it abuts in %s', (theme) => {
+    const surface = colour(theme, 'background');
+    const border = composite(colour(theme, 'input'), surface);
+    const measured = ratio(colour(theme, 'ring'), border);
+
+    expect(
+      measured,
+      `ring against the composited input border (${theme}) measured ${measured.toFixed(2)}:1`,
+    ).toBeGreaterThanOrEqual(AA_LARGE);
+  });
 });
 
-describe('the three shadcn-sourced deviations stay shifted, not reverted to stock', () => {
-  // Each failed its own threshold at the stock shadcn lightness (muted-foreground
-  // 4.34:1, ring 2.59:1, sidebar-ring 2.48:1) and was Ask-First lightness-shifted
-  // to clear it — see the spec change log. The blocks above already fail if any
-  // of the three revert, but only with a bare ratio; this names the regression
-  // the way `theme-fidelity.test.ts`'s `APPROVED` map does for DESIGN.md-sourced
-  // deviations (those three have no DESIGN.md entry, so that map cannot cover
-  // them).
+describe('the shadcn-sourced deviations stay shifted, not reverted to stock', () => {
+  /**
+   * Each failed a threshold at its stock shadcn lightness and was moved to
+   * clear it — see the spec change log. The blocks above already fail if any
+   * of them revert, but only with a bare ratio; this names the regression the
+   * way `theme-fidelity.test.ts`'s `APPROVED` map does for DESIGN.md-sourced
+   * deviations (none of these has a DESIGN.md entry, so that map cannot cover
+   * them).
+   *
+   *   muted-foreground  4.34:1 on --muted
+   *   ring              2.59:1 on --background at stock, then 1.06:1 against
+   *                     the raised --input at 1.1b's own 0.665 — two separate
+   *                     defects, and the second is why the value moved twice
+   *   sidebar-ring      2.48:1 on --sidebar
+   *   input             1.26:1 on --background, where WCAG 1.4.11 wants 3:1
+   *                     because the border is the control's whole affordance
+   *
+   * Light-theme L only, deliberately: dark `--input` is an alpha token rather
+   * than a lightness, so there is no stock L to compare against. Its dark
+   * value is held by the ratio assertions instead, in both themes.
+   */
   const DEVIATIONS: Record<string, { shifted: number; stock: number }> = {
     'muted-foreground': { shifted: 0.542, stock: 0.556 },
-    ring: { shifted: 0.665, stock: 0.708 },
+    ring: { shifted: 0.37, stock: 0.708 },
     'sidebar-ring': { shifted: 0.654, stock: 0.708 },
+    input: { shifted: 0.65, stock: 0.922 },
   };
 
   it.each(Object.keys(DEVIATIONS))('--%s (light) is still lightness-shifted off its stock shadcn value', (name) => {
@@ -182,39 +221,112 @@ describe('the three shadcn-sourced deviations stay shifted, not reverted to stoc
   });
 });
 
+/**
+ * `--border` and `--input` shipped as one stock shadcn value and are now two
+ * different requirements, which is why this is two blocks (story 1.1d).
+ *
+ * Both composited, never raw: dark declares them with alpha, and a raw reading
+ * of dark `--border` reports a meaningless 19.79:1 against a surface it is in
+ * fact barely visible on.
+ */
+describe('the input boundary clears the UI-component threshold', () => {
+  // WCAG 1.4.11 requires 3:1 where a boundary is a component's SOLE visual
+  // affordance, which is exactly a shadcn text input: its fill is the page
+  // colour, so the border is the whole control. The sign-in form is the first
+  // surface where that is true, so the requirement replaces the pin that stood
+  // while the question was open (deferred-work.md, story 1.1b review).
+  //
+  // Pinned AS WELL AS floored, the same reasoning `--border` carries below: a
+  // bare `>= 3` passes for anything in [3, ∞), so an edit landing at 3.02:1 —
+  // or at 8:1, which would be a heavy black box round every field — reads as
+  // compliance. The floor is the requirement; the pin is the drift alarm.
+  const EXPECTED_RATIO: Record<Theme, number> = { light: 3.23, dark: 3.26 };
+
+  it.each(THEMES)('--input is discernible against the page in %s', (theme) => {
+    const surface = colour(theme, 'background');
+    const measured = ratio(composite(colour(theme, 'input'), surface), surface);
+
+    expect(
+      measured,
+      `input on background (${theme}) measured ${measured.toFixed(2)}:1`,
+    ).toBeGreaterThanOrEqual(AA_LARGE);
+  });
+
+  it.each(THEMES)('--input has not drifted off its chosen value in %s', (theme) => {
+    const surface = colour(theme, 'background');
+    const measured = ratio(composite(colour(theme, 'input'), surface), surface);
+    const expected = EXPECTED_RATIO[theme];
+
+    expect(
+      measured,
+      `input on background (${theme}) measured ${measured.toFixed(2)}:1, expected ~${expected}:1`,
+    ).toBeCloseTo(expected, 2);
+  });
+
+  it('keeps dark --input an alpha token, so it composites over whatever it sits on', () => {
+    // Scoped to DARK, and stated rather than folded into a both-themes loop:
+    // light `--input` is opaque, so composited and raw are the same number and
+    // the assertion would be vacuous by construction there.
+    //
+    // The mistake it forbids: dark `--input` is `oklch(1 0 0 / 36%)`, which
+    // reads as near-white — 19.79:1 — until it is composited onto the surface
+    // it actually sits on. Swapping the alpha for an opaque grey of the same
+    // composited lightness would satisfy every ratio above and then be wrong
+    // the moment a field sits on a card rather than the page.
+    const surface = colour('dark', 'background');
+    const composited = ratio(composite(colour('dark', 'input'), surface), surface);
+    const raw = ratio(colour('dark', 'input'), surface);
+
+    expect(raw, 'dark --input no longer carries alpha').toBeGreaterThan(composited);
+    expect(rawToken('dark', 'input')).toContain('%');
+  });
+});
+
 describe('the inherited border contrast is pinned, not merely inherited', () => {
   /**
-   * `--border` and `--input` composite to 1.25-1.47:1 against their surface —
-   * stock shadcn, unchanged here. WCAG 1.4.11 wants 3:1 only where a border is
-   * a control's sole visual affordance, which first becomes true for the 1.1d
-   * sign-in form; the decision is recorded in deferred-work.md.
+   * `--border` composites to 1.25-1.26:1 against its surface — stock shadcn,
+   * unchanged here and deliberately below AA.
    *
-   * Until then the measurement is pinned rather than the requirement, so the
-   * values cannot drift further while the question is open. Same pattern as the
-   * state-glyph deferral in typography-coverage.test.ts.
+   * WCAG 1.4.11 wants 3:1 only where a border is a control's sole visual
+   * affordance. `--border` edges cards and separators and `@layer base` hands
+   * it to every element as a default border colour; none of that is a control,
+   * so the criterion does not apply and raising it would visibly heavy every
+   * surface in the interface for no accessibility gain. `--input`, which IS a
+   * control's whole affordance, moved instead — see the block above.
+   *
+   * The measurement is therefore pinned rather than the requirement, so the
+   * value cannot drift while it stays stock. Same pattern as the state-glyph
+   * deferral in typography-coverage.test.ts.
    */
   // Pinned to the specific stock ratio, not merely `1 < x < AA_LARGE` — that
   // band would pass silently for any accidental edit landing inside 1-3:1,
   // which is exactly the drift this block exists to catch.
   const EXPECTED_RATIO: Record<string, number> = {
-    'light-border': 1.26,
-    'light-input': 1.26,
-    'dark-border': 1.25,
-    'dark-input': 1.47,
+    light: 1.26,
+    dark: 1.25,
   };
-  const cases = THEMES.flatMap((theme) => ['border', 'input'].map((token) => ({ theme, token })));
 
-  it.each(cases)('--$token against its surface in $theme is unchanged', ({ theme, token }) => {
+  it.each(THEMES)('--border against its surface in %s is unchanged', (theme) => {
     const surface = colour(theme, 'background');
-    const measured = ratio(composite(colour(theme, token), surface), surface);
-    const expected = EXPECTED_RATIO[`${theme}-${token}`] as number;
+    const measured = ratio(composite(colour(theme, 'border'), surface), surface);
+    const expected = EXPECTED_RATIO[theme] as number;
 
-    expect(measured, `${token} (${theme}) measured ${measured.toFixed(2)}:1, expected ~${expected}:1`).toBeCloseTo(
+    expect(measured, `border (${theme}) measured ${measured.toFixed(2)}:1, expected ~${expected}:1`).toBeCloseTo(
       expected,
       2,
     );
-    expect(measured, `${token} (${theme}) measured ${measured.toFixed(2)}:1`).toBeLessThan(AA_LARGE);
+    expect(measured, `border (${theme}) measured ${measured.toFixed(2)}:1`).toBeLessThan(AA_LARGE);
     expect(measured).toBeGreaterThan(1);
+  });
+
+  it('is not the same value as --input any more, in either theme', () => {
+    // The two tokens shipped identical in light and are now different
+    // requirements. A merge that restored one from the other would leave both
+    // blocks above passing in one theme and failing in the other, which is a
+    // confusing way to learn this; naming it here says what happened.
+    for (const theme of THEMES) {
+      expect(readToken(theme, 'input')).not.toEqual(readToken(theme, 'border'));
+    }
   });
 });
 
