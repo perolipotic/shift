@@ -184,10 +184,11 @@ export function createHandler(
       return reply(500, { code: 'CLIENT_CONSTRUCTION_FAILED' });
     }
 
-    // Story 1.2 brings the `members` table and with it the only authorization
-    // AD-16 accepts: the caller must be an admin of the target member's own
-    // organization, verified against the database. Until that exists, acting
-    // would mean acting unauthorized.
+    // The only authorization AD-16 accepts is against the database: the caller
+    // must be an admin of the target member's own organization. Story 1.2
+    // created `members`, but story 1.3 owns the policies and the role helper
+    // that make it readable as the caller, and until those land the table is
+    // deny-all. Acting now would mean acting unauthorized.
     return reply(501, { code: 'NOT_IMPLEMENTED', operation });
   };
 }

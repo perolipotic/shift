@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 09-04-2026 11:49
+last_updated: 09-04-2026
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -49,7 +49,7 @@ development_status:
   1-1b-theme-layer: done
   1-1c-localization-layer: done
   1-1d-croatian-sign-in-shell: done
-  1-2-an-operator-provisions-an-organization-that-is-born-with-an: backlog
+  1-2-an-operator-provisions-an-organization-that-is-born-with-an: review
   1-3-signing-in-reaches-exactly-one-organization-at-exactly-one-r: backlog
   1-4-an-admin-configures-the-organization-s-identity-localization: backlog
   1-5-an-admin-creates-and-edits-members-and-works-the-list-at-sca: backlog

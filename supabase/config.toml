@@ -40,12 +40,24 @@ jwt_expiry = 3600
 enable_refresh_token_rotation = true
 refresh_token_reuse_interval = 10
 # Identity without email: accounts are created by an admin through the
-# admin-auth function. There is no open signup anywhere in this system.
+# admin-auth function, or by the operator provisioning script for the very
+# first one. There is no open signup anywhere in this system.
+#
+# Two different switches, and only this one closes that door.
+# `[auth] enable_signup` becomes GOTRUE_DISABLE_SIGNUP, which refuses
+# self-registration and nothing else. `[auth.email] enable_signup` below
+# becomes GOTRUE_EXTERNAL_EMAIL_ENABLED, which turns the email/password
+# provider off entirely — sign-in included. Setting that one false does not
+# harden signup; it makes every admin-issued credential unusable, and a
+# password grant answers 422 "Email logins are disabled".
 enable_signup = false
 enable_anonymous_sign_ins = false
 
 [auth.email]
-enable_signup = false
+# The email/password provider, not the signup door — see the note above. It is
+# on because admin-issued credentials are the only way anyone signs in, and
+# open signup stays refused by `[auth] enable_signup = false`.
+enable_signup = true
 enable_confirmations = false
 double_confirm_changes = true
 

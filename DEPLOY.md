@@ -93,8 +93,11 @@ pnpm exec supabase functions serve admin-auth
 flag is needed. `supabase start` printed the local keys; `SUPABASE_URL` is
 injected for you.
 
-Every operation currently answers `501 { "code": "NOT_IMPLEMENTED" }` — the
-boundary cannot authorize until the `members` table lands in story 1.2.
+Every operation currently answers `501 { "code": "NOT_IMPLEMENTED" }`. The
+`members` table it authorizes against now exists (story 1.2), but nothing reads
+it yet: the row level security policies and the role helper are story 1.3's, and
+acting before they land would mean acting unauthorized. The first organization
+does not go through this function at all — see §7.
 
 Gate before you push anything:
 
@@ -215,9 +218,16 @@ Run these in order. Do not skip staging.
 
 ### 5.1 Author locally
 
+Migrations are **hand-numbered**. Do not run `supabase migration new`: it emits
+a timestamp-prefixed filename (`20260904131500_name.sql`), and
+`test/supabase-scaffold.test.ts` requires `<0000>_<snake_case>.sql`, contiguous
+from `0001`, so that lexicographic order — which is the order the CLI applies
+migrations in — matches numeric order. Create the file yourself with the next
+number.
+
 ```bash
 # 1. Write the migration. Number it above the highest existing file.
-$EDITOR supabase/migrations/0002_<name>.sql
+$EDITOR supabase/migrations/0003_<name>.sql
 
 # 2. Prove it applies from nothing, not just from your current state.
 pnpm exec supabase db reset
@@ -226,7 +236,7 @@ pnpm exec supabase db reset
 pnpm build && pnpm lint && pnpm typecheck && pnpm test
 
 # 4. Commit the migration together with the code that needs it.
-git add supabase/migrations/0002_<name>.sql && git commit
+git add supabase/migrations/0003_<name>.sql && git commit
 ```
 
 ### 5.2 Promote to staging
@@ -254,10 +264,22 @@ itself up has no member row, no organization claim and no business existing.
 | Setting in `config.toml` | Value | Why |
 | --- | --- | --- |
 | `[auth] enable_signup` | `false` | no self-registration; an admin issues credentials |
-| `[auth.email] enable_signup` | `false` | the same door, via email |
+| `[auth.email] enable_signup` | `true` | **not** the signup door — see below |
 | `[auth] enable_anonymous_sign_ins` | `false` | an anonymous session has no organization |
 | `[auth] site_url` | that environment's Pages URL | where a recovery link returns to |
 | `[auth] additional_redirect_urls` | that environment's Pages URL(s) | an unlisted redirect is refused |
+
+<a id="the-two-enable-signup-keys"></a>
+
+> **The two `enable_signup` keys are not two halves of the same switch**, and
+> the names mislead. `[auth] enable_signup` becomes `GOTRUE_DISABLE_SIGNUP` and
+> is the only one that refuses self-registration. `[auth.email] enable_signup`
+> becomes `GOTRUE_EXTERNAL_EMAIL_ENABLED` and turns the **email/password
+> provider** on or off in its entirety, sign-in included. Set it to `false` and
+> every admin-issued credential stops working — a password grant answers
+> `422 "Email logins are disabled"` — while open signup is no more refused than
+> it already was. It is `true` on purpose, and `test/supabase-scaffold.test.ts`
+> pins both values.
 
 `site_url` and `additional_redirect_urls` differ per environment while
 `config.toml` holds the local values, so **set them for the target environment
@@ -352,3 +374,119 @@ created before moving on.
 Also confirm, in the dashboard under *Authentication → URL Configuration*, that
 Site URL and Redirect URLs name that environment's Pages hostname — a stale
 `http://127.0.0.1:5173` there sends every password-recovery link to localhost.
+
+---
+
+## 7. Provisioning an organization
+
+An organization is created by an operator, by hand, once per tenant. **No
+product surface creates one** (FR-2) and none ever will, so this section is the
+only way a tenant comes into existence.
+
+### 7.1 What the operator holds, and what they do not
+
+| Credential | Needed here | Why |
+| --- | --- | --- |
+| The database password (the same one `supabase db push` uses) | **yes** | the script connects as `postgres` and writes rows |
+| The secret key (`sb_secret_*`) | **no** | AD-17 confines it to the `admin-auth` function's environment |
+| The publishable key | **no** | nothing in this path goes through PostgREST |
+
+`supabase/operator/provision-organization.sql` is SQL rather than a Node CLI for
+exactly that reason. A script calling the Admin API to create the first user
+would put the secret key into an operator's shell, which amends AD-17 rather
+than obeying it. Writing `auth.users` directly needs no key at all, and it makes
+"one transaction" literally true across the auth rows and the domain rows: an
+organization and its first admin are created together or not at all.
+
+### 7.2 Run it
+
+Every value arrives as a session setting, so nothing is interpolated into SQL
+text and a name with an apostrophe in it is data rather than syntax. `PGOPTIONS`
+is how libpq carries them: `-c <name>=<value>` per setting, with any space in a
+value escaped as `\ `.
+
+```bash
+PGOPTIONS="\
+-c shift.organization_slug=vatrogasci-primjer \
+-c shift.organization_name=Vatrogasci\ Primjer \
+-c shift.organization_type=Fire\ Department \
+-c shift.organization_timezone=Europe/Zagreb \
+-c shift.organization_locale=hr \
+-c shift.leave_year_start_month=1 \
+-c shift.leave_year_start_day=1 \
+-c shift.admin_name=Ime\ Prezime \
+-c shift.admin_username=ime.prezime \
+-c shift.admin_password=<a long generated password> \
+-c shift.admin_leave_allowance_days=20" \
+  pnpm db:provision
+```
+
+`pnpm db:provision` is
+`supabase db query --local -f supabase/operator/provision-organization.sql`.
+For a remote project, run the same file with `--linked` (after
+`supabase link`) instead of `--local`.
+
+| Setting | Required | Notes |
+| --- | --- | --- |
+| `shift.organization_slug` | yes | lowercase letters, digits and single hyphens; the sign-in addresses are built from it, so it cannot change later |
+| `shift.organization_name` | yes | |
+| `shift.organization_short_name` | no | |
+| `shift.organization_description` | no | |
+| `shift.organization_address` | no | |
+| `shift.organization_contact_email` | no | the organization's own address, not a member's |
+| `shift.organization_type` | yes | a descriptive label; inert, and it never affects scheduling |
+| `shift.organization_timezone` | yes | IANA name — every date and time renders in it |
+| `shift.organization_locale` | yes | BCP 47 tag |
+| `shift.leave_year_start_month` | yes | 1–12 |
+| `shift.leave_year_start_day` | yes | 1–28 |
+| `shift.admin_name` | yes | |
+| `shift.admin_username` | yes | lowercase; becomes the local part of the sign-in address |
+| `shift.admin_password` | yes | |
+| `shift.admin_email` | no | a real address if the admin has one; sign-in never uses it |
+| `shift.admin_leave_allowance_days` | yes | |
+
+The admin signs in with the **synthesized address**, not the username on its
+own: `<shift.admin_username>@<shift.organization_slug>.shift.invalid`. The
+script prints it as a `NOTICE` when it succeeds. `.invalid` is reserved by
+RFC 2606 and resolves nowhere, which is what makes an account usable by someone
+with no email address (AD-12).
+
+### 7.3 Refusals
+
+| What you did | What comes back |
+| --- | --- |
+| Supplied organization attributes and no admin | `ORGANIZATION_WITHOUT_ADMIN`, and the organization row is rolled back with it |
+| Omitted a required organization attribute | a Postgres `23502` / `23514` — the schema refuses it, there is no separate validation |
+| Reused a slug or a username within a slug | a unique violation, `23505` |
+
+Later, once the organization exists, the database refuses any path that would
+leave it with zero admins — deleting the last admin, or downgrading their role
+— with `ORGANIZATION_WOULD_HAVE_NO_ADMIN`. That check is deferred to commit, so
+swapping one admin for another inside a single transaction stays legal.
+
+### 7.4 Verify
+
+```bash
+# Exactly one admin, and the whole schema still carries exactly one
+# constraint trigger. `tgisinternal` matters: every foreign key is implemented
+# as a trigger with a constraint too, so counting without it can never be 1.
+pnpm exec supabase db query --local "
+  select (select count(*) from members where role = 'admin') as admins,
+         (select count(*) from pg_constraint
+           where contype = 't' and connamespace = 'public'::regnamespace) as constraint_triggers"
+
+# The admin authenticates. Use the local publishable key from `supabase status`.
+curl -s -X POST 'http://127.0.0.1:54321/auth/v1/token?grant_type=password' \
+  -H "apikey: $(pnpm exec supabase status -o json | jq -r .PUBLISHABLE_KEY)" \
+  -H 'content-type: application/json' \
+  -d '{"email":"ime.prezime@vatrogasci-primjer.shift.invalid","password":"<the password>"}'
+# -> an access_token   ✅
+# -> 400 invalid_grant for a username that was never issued   ✅
+# -> 422 "Email logins are disabled"   ❌ [auth.email] enable_signup is false
+#    (see the blockquote in §5.2a — that key is the provider, not the signup door)
+```
+
+Reading `organizations` or `members` through PostgREST with the publishable key
+and no session returns `[]`, not an error: row level security is on and story
+1.3 has not written a policy yet. That is the intended state, and
+`test/provisioning.test.ts` asserts it.

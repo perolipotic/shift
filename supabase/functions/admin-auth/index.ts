@@ -25,10 +25,13 @@
  * WHY EVERY OPERATION RETURNS 501 TODAY
  * AD-16 requires each call to be authorized against the DATABASE — the caller
  * must be an admin of the target member's own organization — never against the
- * request. No `members` table exists until story 1.2, so there is nothing to
- * authorize against. Shipping a working `createUser` without that check would
- * be a privilege-escalation hole wearing a passing test. So the boundary ships
- * with the security-critical parts correct (two-client construction, env
+ * request. Story 1.2 brought the `members` table, so the rows now exist; what
+ * does not exist yet is any way to read them as the caller. AD-10's role and
+ * active-status helper and every RLS policy are story 1.3's, and both tables
+ * are deny-all until it lands, so a lookup made here would answer "no such
+ * member" for every caller. Shipping a working `createUser` on top of that
+ * would be a privilege-escalation hole wearing a passing test. So the boundary
+ * ships with the security-critical parts correct (two-client construction, env
  * handling, fail-fast) and refuses to act.
  *
  * This file holds only what is Deno-specific: the environment, the client
