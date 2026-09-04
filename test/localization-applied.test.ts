@@ -233,6 +233,20 @@ describe('a rejected initialization does not mount the application', () => {
     expect(mount, 'the mount is not inside the boot gate').toBeGreaterThan(gate);
   });
 
+  it('mounts only inside the boot-gate if, not merely after it', () => {
+    // The assertion above is ORDER only: `await bootLocalization(...);
+    // createRoot(...)` — the boolean discarded, mounting unconditionally —
+    // satisfies it too. This requires `createRoot(` to be the very next
+    // token after the `if` opens, which only an actual conditional mount can
+    // be.
+    const source = main();
+
+    expect(
+      source,
+      'createRoot is not the first statement inside `if (await bootLocalization(...))`',
+    ).toMatch(/if\s*\(\s*await\s+bootLocalization\(initLocalization\)\s*\)\s*\{\s*createRoot\(/);
+  });
+
   it('holds no failure handling of its own, which is what regressed before', () => {
     // The mutation rewrote this file as `try { await init(); render() } catch`.
     // Both halves of that shape are refused: the module may not catch, and it
@@ -312,6 +326,19 @@ function occurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
 
+/** Word-bounded occurrence count, for the AUTHORED_VOCABULARY sweep below.
+ *  Plain `occurrences` matches a substring anywhere — safe today only because
+ *  none of the five authored words happens to sit inside a longer one
+ *  anywhere in the build, a coincidence rather than a guarantee. `\p{L}`
+ *  rather than `\w`, because `\w` is ASCII-only and would misplace a boundary
+ *  around every diacritic these words carry (č, ž…). */
+function wordOccurrences(haystack: string, needle: string): number {
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'gu');
+
+  return (haystack.match(pattern) ?? []).length;
+}
+
 function resourceSource(): string {
   return readFileSync(join(webRoot, 'src', 'i18n', 'locales', 'hr.json'), 'utf8');
 }
@@ -327,8 +354,8 @@ describe('the resource file is the only user-facing Croatian in the build', () =
   });
 
   it.skipIf(notBuilt).each(AUTHORED_VOCABULARY)('ships %s only from the resource file', (word) => {
-    const inChunk = occurrences(allChunks(), word);
-    const inResource = occurrences(resourceSource(), word);
+    const inChunk = wordOccurrences(allChunks(), word);
+    const inResource = wordOccurrences(resourceSource(), word);
 
     // Both directions matter. Above the resource count means a component
     // hard-codes the word as well; below it means the chunk is stale or the
@@ -368,6 +395,15 @@ describe('the resource file is the only user-facing Croatian in the build', () =
     expect(occurrences('', 'X')).toBe(0);
   });
 
+  it('counts whole words only, unlike the sweep above assumes of occurrences', () => {
+    // The gap `wordOccurrences` exists for: `occurrences` would count 2 here,
+    // since "Prijava" sits inside "Prijavatelj" as a plain substring.
+    expect(wordOccurrences('Prijava i Prijavatelj', 'Prijava')).toBe(1);
+    expect(wordOccurrences('Prijava, Prijava.', 'Prijava')).toBe(2);
+    expect(wordOccurrences('Korisničko ime', 'Korisničko')).toBe(1);
+    expect(wordOccurrences('abc', 'X')).toBe(0);
+  });
+
   it('keeps the title and the boot fallback as the only literals in the HTML', () => {
     const html = join(webRoot, 'dist', 'index.html');
     if (!existsSync(html)) return;
@@ -399,6 +435,39 @@ describe('the resource file is the only user-facing Croatian in the build', () =
     // paint it showed a Croatian error telling the user to refresh on every
     // slow load, including the ones about to succeed.
     expect(source, 'the fallback is revealed immediately again').toMatch(/opacity:\s*0/);
+    // `visibility: hidden` keeps the fallback out of the accessibility tree
+    // until it is actually revealed — opacity alone does not remove an
+    // element from it, so a screen reader could announce a false failure
+    // during the delay or a genuinely slow, still-succeeding load.
+    expect(
+      source,
+      'the fallback stays exposed to the accessibility tree during the reveal delay',
+    ).toMatch(/visibility:\s*hidden/);
+    // The two lines above are satisfied by static, permanently-hidden rules
+    // too — deleting the reveal animation leaves them untouched. This
+    // requires the delayed-reveal mechanism itself: a non-zero-delay,
+    // forwards-filled animation, and a keyframe rule that actually reaches
+    // full opacity and visibility.
+    expect(
+      source,
+      'the reveal animation is missing or no longer forwards its end state — the fallback would stay invisible forever on a real failure',
+    ).toMatch(/animation:\s*[\w-]+\s+0s\s+linear\s+[1-9][\d.]*s\s+forwards/);
+    const keyframesName = /animation:\s*([\w-]+)/.exec(source)?.[1];
+
+    expect(keyframesName, 'no animation name to look up the keyframes rule by').not.toBeUndefined();
+    const keyframesRule = new RegExp(`@keyframes\\s+${keyframesName}\\s*\\{[^}]*to\\s*\\{([^}]*)\\}`).exec(
+      source,
+    )?.[1];
+
+    expect(keyframesRule, `@keyframes ${keyframesName} has no "to" state`).not.toBeUndefined();
+    expect(
+      keyframesRule,
+      `@keyframes ${keyframesName} does not reach opacity: 1 — the fallback never becomes visible`,
+    ).toMatch(/opacity:\s*1/);
+    expect(
+      keyframesRule,
+      `@keyframes ${keyframesName} does not reach visibility: visible — the fallback stays hidden from assistive technology`,
+    ).toMatch(/visibility:\s*visible/);
     // The fallback carries no reserved word and no authored word: it is
     // untranslated by necessity, so it must not become a second home for
     // vocabulary that belongs in hr.json.

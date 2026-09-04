@@ -38,7 +38,7 @@ import { rootRoute } from '@/routes/__root';
  * an inherited component. `destructive` appears nowhere: UX-DR4 reserves it for
  * an unresolved conflict, which is not a refused sign-in.
  */
-function SignInScreen() {
+export function SignInScreen() {
   return (
     <main className="flex flex-1 items-center justify-center p-6">
       <Card className="w-full max-w-sm">

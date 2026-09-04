@@ -188,4 +188,18 @@ describe('the tokens are actually applied to the document', () => {
   it('tells the user agent to follow the theme', () => {
     expect(stripped()).toMatch(/color-scheme:\s*light dark/);
   });
+
+  it('restores a focus indicator in forced-colors mode', () => {
+    // Tailwind 4's `outline-none` emits `outline-style: none`, and a
+    // forced-colors mode drops the ring's box-shadow entirely — together they
+    // leave a keyboard user with no focus indicator at all. Nothing else in
+    // the token layer asserts this rule, so deleting it would regress the fix
+    // silently.
+    const css = stripped();
+    const layer = css.slice(css.indexOf('@layer base'));
+    const forcedColorsBlock = /@media\s*\(forced-colors:\s*active\)\s*\{([\s\S]*?)\}\s*\}/.exec(layer)?.[1];
+
+    expect(forcedColorsBlock, 'no @media (forced-colors: active) rule in @layer base').not.toBeUndefined();
+    expect(forcedColorsBlock).toMatch(/:focus-visible\s*\{[^}]*outline:\s*2px solid CanvasText/);
+  });
 });

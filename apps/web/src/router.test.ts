@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { router } from '@/router';
 import { indexRoute } from '@/routes/index';
 import { NotFoundScreen } from '@/routes/not-found';
+import { prijavaRoute, SignInScreen } from '@/routes/prijava';
 import { rootRoute } from '@/routes/__root';
 
 /**
@@ -38,6 +39,18 @@ describe('the shell route tree', () => {
 
   it('resolves /prijava to the sign-in route inside the root layout', () => {
     expect(match('/prijava').map((matched) => matched.routeId)).toEqual(['__root__', '/prijava']);
+  });
+
+  it('renders SignInScreen on /prijava rather than an empty layout', () => {
+    // IDENTITY, the same shape as the `notFoundComponent` assertion below.
+    // `matchRoutes` resolves the path from the route id alone, so a `component`
+    // swap or removal is invisible to the two assertions above it — the route
+    // still resolves, and the screen never renders.
+    const registered = (prijavaRoute.options as { component?: unknown }).component;
+
+    expect(registered, '/prijava does not render SignInScreen — it renders an empty layout').toBe(
+      SignInScreen,
+    );
   });
 
   // AD-14: the host answers every unmatched path with index.html at 200, so the

@@ -18,7 +18,15 @@
          reveals it late while still working with scripting disabled: the
          element stays invisible, and if the application has not mounted and
          cleared `#root` within the delay, it steps into view. A successful
-         mount removes the element long before that. -->
+         mount removes the element long before that.
+
+         `visibility: hidden` rides alongside `opacity: 0`. Opacity alone does
+         not remove an element from the accessibility tree, so a screen reader
+         reading through the page during the delay — or during a genuinely
+         slow load — could announce the Croatian failure message on a boot
+         that is about to succeed. `visibility` is animatable the same way:
+         the keyframe flips it to `visible` at the same instant opacity
+         reaches 1, so it stays unannounced until it is actually the answer. -->
     <style>
       #boot-fallback {
         margin: 0;
@@ -26,12 +34,14 @@
         text-align: center;
         font: 1rem/1.5 system-ui, sans-serif;
         opacity: 0;
+        visibility: hidden;
         animation: boot-fallback-reveal 0s linear 3s forwards;
       }
 
       @keyframes boot-fallback-reveal {
         to {
           opacity: 1;
+          visibility: visible;
         }
       }
     </style>

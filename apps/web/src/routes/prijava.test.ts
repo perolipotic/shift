@@ -427,6 +427,17 @@ describe('the screen is inert until story 1.3 wires it', () => {
 
     expect(screen).toContain('method="post"');
     expect(screen).toContain('preventDefault()');
+
+    // The line above is a bare substring search — `preventDefault()` sitting
+    // anywhere in the file, including an unrelated or dead code path, would
+    // satisfy it. This scopes the call to the form's own `onSubmit`.
+    const formBlock = /<form\b[\s\S]*?<\/form>/.exec(screen)?.[0];
+
+    expect(formBlock, 'no <form>...</form> element on the screen').not.toBeUndefined();
+    expect(
+      formBlock,
+      "preventDefault is not bound to the form's own onSubmit handler",
+    ).toMatch(/onSubmit=\{\s*\([^)]*\)\s*=>\s*\{[^}]*preventDefault\(\)[^}]*\}\s*\}/);
   });
 
   it('reaches no network and holds no session', () => {
@@ -515,6 +526,33 @@ describe('the detectors find what they claim to find', () => {
   it('strips comments before scanning, in both syntaxes', () => {
     expect(stripComments('/* Prijava */ const x = 1;').trim()).toBe('const x = 1;');
     expect(stripComments('const x = 1; // Prijava').trim()).toBe('const x = 1;');
+  });
+
+  it('reads an attribute value and finds none where the attribute is absent', () => {
+    expect(attributeOf('id="username" type="text"', 'id')).toBe('username');
+    expect(attributeOf('id="username" type="text"', 'placeholder')).toBeNull();
+  });
+
+  it('finds every self-closing Input and nothing where there is none', () => {
+    const two = '<Input id="a" /><p>text</p><Input id="b" className="h-11" />';
+
+    expect(inputElements(two)).toEqual([' id="a" ', ' id="b" className="h-11" ']);
+    expect(inputElements('<p>no inputs here</p>')).toEqual([]);
+  });
+
+  it('finds every Button, self-closing or not, and nothing where there is none', () => {
+    const two = '<Button type="submit">Go</Button><Button className="h-11" disabled />';
+
+    expect(buttonElements(two)).toEqual([' type="submit"', ' className="h-11" disabled ']);
+    expect(buttonElements('<p>no buttons here</p>')).toEqual([]);
+  });
+
+  it('reads htmlFor values in source order and finds none where there are none', () => {
+    expect(labelTargets('<Label htmlFor="username" /><Label htmlFor="password" />')).toEqual([
+      'username',
+      'password',
+    ]);
+    expect(labelTargets('<Label>text</Label>')).toEqual([]);
   });
 
   it('flattens resource keys the way i18next resolves them', () => {

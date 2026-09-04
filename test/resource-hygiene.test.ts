@@ -116,9 +116,13 @@ describe('the resource file holds only what this story sanctions', () => {
     const message = String(messageAt(key));
 
     expect(message.length).toBeGreaterThan(0);
-    expect(message, `${key} carries an ICU plural and belongs in the plural list`).not.toContain(
-      'plural',
-    );
+    // Every ICU argument type, not only `plural` — `select` and
+    // `selectordinal` are the same shape of smuggled argument and the bare
+    // substring check would miss either.
+    expect(
+      message,
+      `${key} carries an ICU argument and belongs in the plural list`,
+    ).not.toMatch(/\{[^,}]+,\s*(plural|select|selectordinal)\s*,/);
   });
 
   it.each(SANCTIONED_PLURAL_KEYS)('declares %s as an ICU plural with all three Croatian forms', (key) => {
