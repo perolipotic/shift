@@ -38,6 +38,17 @@ const SECRET_ENV_NAME = 'SHIFT_SECRET_KEY';
  */
 const PLAUSIBLE_KEY = new RegExp(`${SECRET_VALUE_PREFIX}[A-Za-z0-9_-]{20,}`);
 
+/**
+ * How many trailing key characters make an occurrence key MATERIAL, DERIVED
+ * from the pattern above rather than restated.
+ *
+ * The built-bundle scans read the same threshold, and a second copy of `20`
+ * would let the two drift: raising the pattern's bound while a hard-coded
+ * literal stayed behind would leave a window in which a value is short enough
+ * for the per-occurrence check and long enough to be a key.
+ */
+const KEY_MATERIAL_LENGTH = Number(/\{(\d+),\}/.exec(PLAUSIBLE_KEY.source)?.[1]);
+
 // --------------------------------------------------------------- comment rules
 
 const BLOCK_COMMENT = /\/\*[\s\S]*?\*\//g;
@@ -114,6 +125,36 @@ const byExtension =
   (...extensions: readonly string[]) =>
   (file: string): boolean =>
     extensions.includes(extname(file));
+
+/** Where the build lands, and whether it is there at all. */
+const distRoot = join(repoRoot, 'apps', 'web', 'dist');
+const notBuilt = collectFiles(distRoot, byExtension('.js')).length === 0;
+
+/**
+ * The build output for the two scans that read it.
+ *
+ * `pnpm test` does not build and `dist/` is gitignored, so "nothing to scan" is
+ * the ordinary state of a fresh checkout. The two scans below are gated on
+ * `notBuilt` with `it.skipIf` rather than failing, which is the same answer
+ * `test/localization-applied.test.ts` reaches and for the reason it states: a
+ * stale build is a wrong answer while an absent one is merely no answer. What
+ * must never happen is the third thing — reporting a PASS having read nothing,
+ * which is what the removed `if (…) return;` guards did.
+ *
+ * The assertion stays as a floor rather than being dropped: `skipIf` is
+ * evaluated once at collection time, so a `dist` that disappears between then
+ * and the run would otherwise land back in the vacuous case.
+ */
+function builtFiles(keep: (file: string) => boolean): string[] {
+  const built = collectFiles(distRoot, keep);
+
+  expect(
+    built.length,
+    `nothing to scan in ${relative(repoRoot, distRoot)} — run \`pnpm build\` first; the narrowed secret-key scans rest on this output and must not report a pass without it`,
+  ).toBeGreaterThan(0);
+
+  return built;
+}
 
 /**
  * The files git actually tracks.
@@ -216,21 +257,70 @@ describe('secret key hygiene: key material', () => {
     }
   });
 
-  it('is absent from the built bundle', () => {
-    const dist = join(repoRoot, 'apps', 'web', 'dist');
-    const built = collectFiles(dist, byExtension('.js', '.css', '.html', '.map'));
-
-    // A clean checkout has not built yet, and a partial build may hold no
-    // matching file. Either way there is nothing to scan, and the source scans
-    // above are the ones that make the leak impossible rather than absent.
-    if (built.length === 0) return;
+  it.skipIf(notBuilt)('is absent from the built bundle', () => {
+    // NARROWED by story 1.3b, which put `@supabase/supabase-js` in the bundle
+    // for the first time. The library's own key-format check reads
+    // `e.startsWith('sb_publishable_') || e.startsWith('sb_secret_')`, so the
+    // PREFIX is now in every build as vendored source — and the old bare
+    // `includes` reported the built chunk and its sourcemap as leaks.
+    //
+    // The narrowing is to the fear rather than away from it. What may not reach
+    // a browser is a secret KEY VALUE, and `PLAUSIBLE_KEY` is exactly that
+    // claim: the prefix followed by a long run of key characters, the same
+    // standard the repository-wide committed-file scan above already applies. A
+    // real key inlined through a misnamed `VITE_*` variable still matches it,
+    // while a string comparison against the prefix does not. Our own env NAME
+    // stays absent outright — nothing in the client tree has any business
+    // reading it, which the naming scans prove at source.
+    //
+    // FAILS rather than returns when there is nothing to read. The early return
+    // this used to carry reported green on no evidence, and it did so in
+    // exactly the state the narrowing is least safe in: `pnpm test` does not
+    // build, so an unbuilt or half-cleaned `dist` silently retired the only
+    // assertion standing between a relaxed check and a shipped key.
+    const built = builtFiles(byExtension('.js', '.css', '.html', '.map'));
 
     const offences = built.filter((file) => {
       const contents = readFileSync(file, 'utf8');
-      return contents.includes(SECRET_VALUE_PREFIX) || contents.includes(SECRET_ENV_NAME);
+      return PLAUSIBLE_KEY.test(contents) || contents.includes(SECRET_ENV_NAME);
     });
 
     expect(show(offences)).toEqual([]);
+  });
+
+  it.skipIf(notBuilt)('carries the prefix only as a library key-shape check, never as a value', () => {
+    // The other half of the narrowing, and what keeps it honest: the reason the
+    // assertion above was relaxed is a claim about WHY `sb_secret_` is in the
+    // bundle, so that claim is asserted rather than assumed. Every occurrence
+    // must be followed by too little to be key material — which is what a
+    // `startsWith` comparison looks like and what an inlined key never does.
+    //
+    // Neither the missing-build case nor the no-occurrence case is skipped
+    // quietly. If the prefix ever leaves the bundle the narrowing is no longer
+    // needed, and this failing is how anybody finds that out: the strict
+    // `includes` check belongs back in the test above.
+    const chunks = builtFiles(byExtension('.js'));
+    const naming = chunks.filter((chunk) => readFileSync(chunk, 'utf8').includes(SECRET_VALUE_PREFIX));
+
+    expect(
+      naming.length,
+      `no built chunk names ${SECRET_VALUE_PREFIX} any more — the narrowing in the test above has nothing left to justify it, so restore the strict includes check`,
+    ).toBeGreaterThan(0);
+
+    for (const chunk of naming) {
+      const contents = readFileSync(chunk, 'utf8');
+      const followed = [
+        ...contents.matchAll(new RegExp(`${SECRET_VALUE_PREFIX}([A-Za-z0-9_-]*)`, 'g')),
+      ];
+
+      expect(followed.length, `${relative(repoRoot, chunk)} lost the prefix`).toBeGreaterThan(0);
+      for (const [, trailing = ''] of followed) {
+        expect(
+          trailing.length,
+          `${relative(repoRoot, chunk)} carries ${SECRET_VALUE_PREFIX}${trailing} — that is key material, not a shape check`,
+        ).toBeLessThan(KEY_MATERIAL_LENGTH);
+      }
+    }
   });
 });
 

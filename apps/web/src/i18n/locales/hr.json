@@ -4,11 +4,23 @@
     "username": "Korisničko ime",
     "password": "Lozinka",
     "submit": "Prijavi se",
-    "passwordReset": "Zaboravljena lozinka? Administrator ti postavlja novu."
+    "passwordReset": "Zaboravljena lozinka? Administrator ti postavlja novu.",
+    "error": {
+      "credentials": "Korisničko ime ili lozinka nisu točni.",
+      "unavailable": "Prijava trenutačno nije moguća. Pokušaj ponovno."
+    },
+    "organization": {
+      "heading": "Organizacija",
+      "label": "Kratica organizacije",
+      "submit": "Nastavi"
+    }
   },
   "count": {
     "days": "{count, plural, one {# dan} few {# dana} other {# dana}}",
     "conflicts": "{count, plural, one {# konflikt} few {# konflikta} other {# konflikata}}"
+  },
+  "home": {
+    "heading": "Uspješna prijava"
   },
   "notFound": {
     "heading": "Stranica ne postoji",
