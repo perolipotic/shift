@@ -35,6 +35,22 @@ function allMigrations(): string {
 }
 
 /**
+ * Every migration's text with its comments removed.
+ *
+ * A source-text assertion that runs over prose is satisfiable by prose: the
+ * whole of this file's job is to catch a missing statement, and every
+ * statement it looks for is also *described* in a comment a line above.
+ *
+ * Module scope because two describe blocks need it: the access-control
+ * migration's statement assertions, and the auth-provider block's cross-check
+ * that the configured hook URI names a function some migration actually
+ * creates.
+ */
+function migrationStatements(): string {
+  return allMigrations().replaceAll(/--[^\n]*/g, '');
+}
+
+/**
  * Everything that is core rather than fixture.
  *
  * The migrations, plus the operator provisioning script: it is applied to
@@ -140,7 +156,7 @@ describe('the first schema migration', () => {
       expect(migrations, `no migration creates ${table}`).toMatch(
         new RegExp(`create table ${table}\\b`, 'i'),
       );
-      expect(migrations, `${table} must be deny-all until story 1.3 writes its policies`).toMatch(
+      expect(migrations, `${table} must have row level security enabled; its policies are 0003's`).toMatch(
         new RegExp(`alter table ${table} enable row level security`, 'i'),
       );
     }
@@ -220,17 +236,6 @@ describe('the first schema migration', () => {
 });
 
 describe('the access-control migration', () => {
-  /**
-   * Every migration's text with its comments removed.
-   *
-   * A source-text assertion that runs over prose is satisfiable by prose: the
-   * whole of this file's job is to catch a missing statement, and every
-   * statement it looks for is also *described* in a comment a line above.
-   */
-  function migrationStatements(): string {
-    return allMigrations().replaceAll(/--[^\n]*/g, '');
-  }
-
   /** The `create policy <name> on <table> … ;` body for one policy, comments out. */
   function policyBody(name: string): string {
     const declaration = new RegExp(`create policy ${name}\\b[\\s\\S]*?;`, 'i').exec(
@@ -288,6 +293,30 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
+  it('declares exactly the five policies story 1.3a reviewed, and no sixth', () => {
+    // EXPECTED TO CHANGE IN STORY 1.4, which adds the `organizations` write
+    // policy `0003:243-245` tells it to build by copying the select one. Extend
+    // this list then — do not weaken it to a count or a `toContain`.
+    //
+    // The exact set was asserted only against `pg_policies` in
+    // `test/rls-isolation.test.ts`, which skips without a database, and there
+    // is still no CI running one (deferred-work.md). That left the only bound
+    // on *which* policies exist behind a gate a developer has to remember to
+    // open: the scope guard above is happy with a sixth policy written
+    // `using (true) to authenticated`, and so was everything else here.
+    const declared = (migrationStatements().match(/create policy (\S+)/gi) ?? [])
+      .map((match) => /create policy (\S+)/i.exec(match)?.[1] ?? match)
+      .sort();
+
+    expect(declared, 'the declared policy set changed').toEqual([
+      'members_delete_by_own_active_admin',
+      'members_insert_by_own_active_admin',
+      'members_select_own_organization',
+      'members_update_by_own_active_admin',
+      'organizations_select_own_organization',
+    ]);
+  });
+
   it('pins the tenant in WITH CHECK on both write policies that can set it', () => {
     // Per policy by name, not as a count over the file. A bare count has no
     // margin — the real number is two and the assertion said "at least two" —
@@ -318,7 +347,11 @@ describe('the access-control migration', () => {
     // one the auth service may NOT call breaks every sign-in. The database-side
     // half of this — the actual ACL — is asserted in
     // `test/provisioning.test.ts`.
-    const migrations = allMigrations();
+    // Over `migrationStatements()` rather than `allMigrations()`: every grant
+    // and revoke below is also *described* in a comment a line or two above it
+    // in `0003`, so matching the raw file would let the prose satisfy the
+    // assertion on its own. Same reason the rest of this block strips comments.
+    const migrations = migrationStatements();
 
     expect(migrations, 'nothing grants the auth service execute on the hook').toMatch(
       /grant execute on function public\.custom_access_token_hook\(jsonb\) to supabase_auth_admin/i,
@@ -410,7 +443,7 @@ describe('the local auth provider configuration', () => {
       'the hook URI names the database, schema and function GoTrue will call',
     ).toBe('pg-functions://postgres/public/custom_access_token_hook');
     expect(
-      allMigrations(),
+      migrationStatements(),
       'the hook URI names a function no migration creates',
     ).toMatch(/create function public\.custom_access_token_hook\(event jsonb\)/i);
   });

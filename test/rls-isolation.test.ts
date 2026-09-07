@@ -204,6 +204,30 @@ interface Refusal {
  * over, because the refusal this file is about has a specific SQLSTATE and a
  * different failure would still be a throw.
  */
+/**
+ * `refused`, for a case that still has work to do afterwards.
+ *
+ * A raised error aborts the whole transaction, so every statement after it —
+ * including the `reset role` that lets the assertion re-read the row as the
+ * owner — fails with "current transaction is aborted". Taking a savepoint first
+ * and rolling back to it clears that state and leaves the injected claims and
+ * the `set local role` in place, because both were set before the savepoint.
+ *
+ * Use it wherever a refusal has to be followed by a re-read; plain `refused` is
+ * still right when asserting the raised code is the whole case.
+ */
+async function refusedThenContinue(
+  client: Client,
+  work: () => Promise<unknown>,
+): Promise<Refusal> {
+  await client.query('savepoint refusal_probe');
+  try {
+    return await refused(work);
+  } finally {
+    await client.query('rollback to savepoint refusal_probe').catch(() => undefined);
+  }
+}
+
 async function refused(work: () => Promise<unknown>): Promise<Refusal> {
   try {
     await work();
@@ -233,7 +257,7 @@ function claimsOf(token: string): Record<string, unknown> {
   const payload = token.split('.')[1];
   if (payload === undefined) throw new Error('not a three-part token');
   const decoded: unknown = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-  if (typeof decoded !== 'object' || decoded === null) {
+  if (typeof decoded !== 'object' || decoded === null || Array.isArray(decoded)) {
     throw new Error('the token payload is not an object');
   }
   return decoded as Record<string, unknown>;
@@ -257,7 +281,9 @@ async function tokenFor(username: string, slug: string): Promise<string> {
 
   if (typeof token !== 'string' || token.length === 0) {
     throw new Error(
-      `${address(username, slug)} could not sign in: ${response.status} ${JSON.stringify(body)}`,
+      `${address(username, slug)} could not sign in: ${response.status} ${JSON.stringify(body)}. ` +
+        `If every credential case failed at once, check FIXTURE_PASSWORD against supabase/seed.sql — ` +
+        `it is duplicated here as a literal and a drift presents as a 400 on every case rather than as itself.`,
     );
   }
   return token;
@@ -336,6 +362,22 @@ async function actAs(
   await client.query('set local role authenticated');
 }
 
+/**
+ * Both tables in one statement, so neither policy's active clause is unwatched.
+ *
+ * Module scope because two describe blocks need it: the freshness cases, and
+ * the case covering the caller's own member row being deleted.
+ */
+async function visibleToSession(client: Client): Promise<{ members: number; organizations: number }> {
+  const { rows } = await client.query<{ members: number; organizations: number }>(
+    `select (select count(*)::int from members) as members,
+            (select count(*)::int from organizations) as organizations`,
+  );
+  const counted = rows[0];
+  if (counted === undefined) throw new Error('the count query returned no row');
+  return counted;
+}
+
 /** Back to the connection's own role, so the next read can see the truth. */
 async function actAsOwner(client: Client): Promise<void> {
   await client.query('reset role');
@@ -406,21 +448,70 @@ async function memberById(client: Client, id: string): Promise<MemberRow | undef
  *
  * Every write case that could succeed if a policy were wrong aims at one of
  * these rather than at a fixture account, so a regression turns a case red
- * instead of quietly editing the fixtures every other suite reads. The
- * `auth.users` row carries only what the foreign key needs — it never
- * authenticates — and its address is derived from its own id, so no two of them
- * can collide.
+ * instead of quietly editing the fixtures every other suite reads. Its address
+ * is derived from its own id, so no two of them can collide.
+ *
+ * The row is built to the same shape `supabase/seed.sql:88-118` gives a real
+ * account even though it never authenticates, because it is committed into a
+ * *seeded* organization and `test/provisioning.test.ts` health-checks every
+ * account in those organizations. Carrying only `(id, email)` left
+ * `confirmation_token`, `recovery_token`, `email_change` and
+ * `email_change_token_new` null and created no `auth.identities` row, which
+ * made `'leaves every $fixture account able to sign in'` fail with
+ * `nullTokens = 1` and `identities != accounts` for as long as a throwaway
+ * existed — reproduced during the 1.3a review. `fileParallelism: false` now
+ * keeps the two files apart, but this shape is what stops a throwaway left
+ * behind by a skipped `afterAll` from failing the next run for a reason that
+ * has nothing to do with what broke.
  */
 async function addThrowawayMember(client: Client, organization: string): Promise<MemberRow> {
   const { rows: created } = await client.query<{ id: string }>(
     `with generated as (select gen_random_uuid() as id)
-     insert into auth.users (id, email)
-     select generated.id, generated.id::text || '@' || $1 from generated
+     insert into auth.users (
+       instance_id, id, aud, role, email, email_confirmed_at,
+       raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+       confirmation_token, recovery_token, email_change, email_change_token_new
+     )
+     select '00000000-0000-0000-0000-000000000000',
+            generated.id,
+            'authenticated',
+            'authenticated',
+            generated.id::text || '@' || $1,
+            now(),
+            jsonb_build_object('provider', 'email', 'providers', jsonb_build_array('email')),
+            '{}'::jsonb,
+            now(),
+            now(),
+            '', '', '', ''
+       from generated
      returning id`,
     [`${THROWAWAY}.shift.invalid`],
   );
   const account = created[0];
   if (account === undefined) throw new Error('auth.users insert returned no row');
+
+  // One identity per account, carrying this account's own sub and email:
+  // `recipeHealth` asserts both, and a password grant resolves through
+  // `auth.identities` rather than `auth.users.email`.
+  await client.query(
+    `insert into auth.identities (
+       provider_id, user_id, identity_data, provider, created_at, updated_at
+     )
+     select $1::uuid::text,
+            $1::uuid,
+            jsonb_build_object(
+              'sub', $1::uuid::text,
+              'email', u.email,
+              'email_verified', true,
+              'phone_verified', false
+            ),
+            'email',
+            now(),
+            now()
+       from auth.users u
+      where u.id = $1::uuid`,
+    [account.id],
+  );
 
   const { rows } = await client.query<{ id: string }>(
     `insert into members (organization_id, auth_user_id, name, role, leave_allowance_days)
@@ -477,6 +568,28 @@ describe('the access-control layer is present, so nothing below passes vacuously
     ).toBe(FIXTURES.length * 2);
   });
 
+  it.skipIf(noDatabase)('reaches the API whenever it can reach the database', () => {
+    // The guard the file was missing, and the one that matters most. Fifteen of
+    // this file's twenty-nine blocks are `skipIf(noApi)`, and they are not a
+    // spare half: they hold every cross-tenant *write* case and both cases that
+    // observe what the access token hook actually mints. `apiEndpoint` is built
+    // by shelling out to `supabase status` inside a `try` that returns
+    // `undefined` on any throw with the CLI's stderr discarded, so a broken
+    // stack and an absent one are indistinguishable — and the broken one skips
+    // silently while reporting green.
+    //
+    // A database with no API is not a shape this project has. `SUPABASE_DB_URL`
+    // pointing at a plain Postgres is, which is exactly why the assertion is
+    // `skipIf(noDatabase)` and not ungated: it fires only when the local stack
+    // is the thing under test, and there it insists the two halves rise and
+    // fall together. Reviewed 2026-09-07: without it, a hook rewritten to mint
+    // no claim at all passes this entire file.
+    expect(
+      apiEndpoint,
+      'the database is reachable but `supabase status` yielded no API endpoint — the fifteen HTTP cases, including every cross-tenant write and both hook-claim assertions, would skip silently',
+    ).toBeDefined();
+  });
+
   it.skipIf(noDatabase)('finds both fixtures, both new functions and every policy by name', async () => {
     // Every case below looks a fixture up by slug and asserts something about a
     // policy. Without this guard, a database that had loaded no seed or applied
@@ -498,12 +611,21 @@ describe('the access-control layer is present, so nothing below passes vacuously
       // refuses silently, so its absence produces exactly the HTTP 204 with the
       // row still present that this suite teaches a reader to read as a
       // refusal. Naming every policy is what makes a deleted one a failure.
+      //
+      // EXPECTED TO CHANGE IN STORY 1.4, in the same spirit as the two
+      // assertions 1.2 labelled for this story: 0003:243-245 hands 1.4 the
+      // settings surface and tells it to build the `organizations` write policy
+      // by copying the select one, so a sixth name belongs here then. Extend
+      // the list — never relax it to a `toContain` or a count, which is the
+      // shape that let the delete policy be deletable in the first place.
+      // The same list is mirrored over migration source text in
+      // `test/supabase-scaffold.test.ts`, which runs with no database.
       const { rows: policies } = await client.query<{ policyname: string }>(
         `select policyname from pg_policies where schemaname = 'public' order by policyname`,
       );
       expect(
         policies.map((row) => row.policyname),
-        'story 1.3 owns exactly these five policies; a missing one refuses silently and looks like a working refusal',
+        'story 1.3a owns exactly these five policies; a missing one refuses silently and looks like a working refusal',
       ).toEqual([
         'members_delete_by_own_active_admin',
         'members_insert_by_own_active_admin',
@@ -550,6 +672,10 @@ describe('the token decoder this file owns reads a payload and refuses everythin
     expect(() => claimsOf(tokenShapedString(42)), 'a payload that parses to a number').toThrow();
     expect(() => claimsOf(tokenShapedString('a string')), 'a payload that parses to a string').toThrow();
     expect(() => claimsOf(tokenShapedString(null)), 'a payload that parses to null').toThrow();
+    // `typeof [] === 'object'` and an array is not null, so this is the one
+    // shape the guard let through: every claim lookup on it would be
+    // `undefined` and every assertion about a claim would pass vacuously.
+    expect(() => claimsOf(tokenShapedString([])), 'a payload that parses to an array').toThrow();
   });
 });
 
@@ -616,6 +742,46 @@ describe('a token carries its own organization and no domain role', () => {
         rows[0]?.claims,
         'a subject with no member row must have the organization claim removed, not defaulted or inherited',
       ).toEqual({ role: 'authenticated' });
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('writes the signer own organization claim, called directly', async () => {
+    // The twin of the branch above, and the one the whole story rests on. Every
+    // policy in 0003 compares a column to this claim, so a hook that never
+    // writes it leaves every signed-in session reading zero rows from both
+    // tables — the deny-all symptom DEPLOY.md §5.2b warns "looks exactly like a
+    // broken policy and is not one".
+    //
+    // Asserted here, on the database, rather than only through the two
+    // `skipIf(noApi)` cases that decode a real token. Those exercise the
+    // shipped path and must stay, but they disappear whenever `supabase status`
+    // fails, and the claims-injection harness builds `organization_id` itself
+    // and never calls the hook. Before this case existed, replacing the hook
+    // body with the unconditional claim-removing branch passed this entire
+    // file whenever the API half was skipped. Reviewed 2026-09-07.
+    const client = await connect();
+    try {
+      for (const { slug, admin } of FIXTURES) {
+        const organization = await organizationId(client, slug);
+        const member = await memberByUsername(client, slug, admin);
+
+        const { rows } = await client.query<{ claims: Record<string, unknown> }>(
+          `select public.custom_access_token_hook(
+                    jsonb_build_object(
+                      'user_id', $1::text,
+                      'claims', jsonb_build_object('role', 'authenticated')
+                    )
+                  ) -> 'claims' as claims`,
+          [member.authUserId],
+        );
+
+        expect(
+          rows[0]?.claims,
+          `the hook must mint ${slug}'s own organization for its own admin, and nothing else`,
+        ).toEqual({ role: 'authenticated', organization_id: organization });
+      }
     } finally {
       await client.end();
     }
@@ -1118,6 +1284,42 @@ describe('the policies refuse the same things with claims injected instead of a 
   );
 
   it.skipIf(noDatabase).each(FIXTURES)(
+    'reads nothing when a $fixture session carries an empty organization claim',
+    async ({ slug, admin }) => {
+      // The case for the `nullif(…, '')` written six times across the five
+      // policies and argued for at length at 0003:221-226. Until this existed
+      // the guard could be deleted from every policy for free — by the standard
+      // this file holds `claimsOf` to two hundred lines up, a branch with no
+      // case is a branch that can be deleted for free.
+      //
+      // What `nullif` buys: `''::uuid` raises 22P02, so without it an empty
+      // claim is an error rather than a closed door, and an error is a
+      // different thing for a caller to handle than zero rows.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+
+        await client.query('select set_config($1, $2, true)', [
+          'request.jwt.claims',
+          JSON.stringify({
+            sub: caller.authUserId,
+            role: 'authenticated',
+            organization_id: '',
+          }),
+        ]);
+        await client.query('set local role authenticated');
+        const { rows } = await client.query<{ members: number; organizations: number }>(
+          `select (select count(*)::int from members) as members,
+                  (select count(*)::int from organizations) as organizations`,
+        );
+        await actAsOwner(client);
+
+        expect(rows[0]?.members, `an empty ${slug} claim read members`).toBe(0);
+        expect(rows[0]?.organizations, `an empty ${slug} claim read organizations`).toBe(0);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
     'refuses an insert by an injected $fixture member-role session with 42501',
     async ({ slug, member }) => {
       await inRolledBackTransaction(async (client) => {
@@ -1174,6 +1376,110 @@ describe('the policies refuse the same things with claims injected instead of a 
       });
     },
   );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'affects no rows when an injected $fixture admin updates a $otherFixture member',
+    async ({ slug, admin, otherSlug }) => {
+      // Half of Q1 lived only behind the API gate until this case and the one
+      // below existed: the injection block covered reads and own-organization
+      // inserts, so the tenant conjunct in `members_update_by_own_active_admin`
+      // USING could be dropped entirely and only `skipIf(noApi)` cases noticed.
+      //
+      // A refused UPDATE raises nothing — the row simply fails USING and the
+      // statement affects zero rows — so this asserts `rowCount` and re-reads
+      // the row as the owner, never that anything threw.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, await organizationId(client, otherSlug));
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const attempted = await client.query(
+          'update members set leave_allowance_days = 99 where id = $1',
+          [target.id],
+        );
+        await actAsOwner(client);
+
+        expect(
+          attempted.rowCount,
+          `the ${slug} admin reached a ${otherSlug} row through the update policy`,
+        ).toBe(0);
+        expect(
+          (await memberById(client, target.id))?.leaveAllowanceDays,
+          `the ${slug} admin changed a ${otherSlug} member`,
+        ).toBe(target.leaveAllowanceDays);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'refuses an injected $fixture admin moving their own member into $otherFixture',
+    async ({ slug, admin, otherSlug }) => {
+      // The WITH CHECK twin. 0003:296-302 says that clause exists precisely so
+      // the refusal survives a later loosening of USING, and weakening it to
+      // `with check (organization_id is not null)` passed every injected case
+      // before this one. Unlike the update above this one *does* raise, because
+      // WITH CHECK is what refuses it.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const elsewhere = await organizationId(client, otherSlug);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const refusal = await refusedThenContinue(client, () =>
+          client.query('update members set organization_id = $1 where id = $2', [
+            elsewhere,
+            target.id,
+          ]),
+        );
+        await actAsOwner(client);
+
+        expect(refusal.code, 'a row level security refusal is 42501').toBe('42501');
+        expect(
+          (await memberById(client, target.id))?.organizationId,
+          `a ${slug} member was moved into ${otherSlug}`,
+        ).toBe(caller.organizationId);
+      });
+    },
+  );
+});
+
+describe('organizations is readable and not writable, and the refusal is asserted rather than assumed', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses an injected $fixture admin every write to their own organization row',
+    async ({ slug, admin }) => {
+      // `organizations` carries a SELECT policy and nothing else, so INSERT,
+      // UPDATE and DELETE are refused by *no policy matching* — the silent
+      // failure mode this file goes out of its way to distinguish everywhere
+      // else, and the one shape nothing asserted. It matters forward rather
+      // than today: 0003:243-245 hands story 1.4 the settings surface and tells
+      // it to build the write policy by copying the select one, so 1.4 could
+      // add a write path that reaches every tenant and no existing case would
+      // notice. This is the assertion 1.4 has to consciously edit.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const update = await client.query('update organizations set name = $1 where id = $2', [
+          `${THROWAWAY} renamed`,
+          caller.organizationId,
+        ]);
+        const remove = await client.query('delete from organizations where id = $1', [
+          caller.organizationId,
+        ]);
+        const insertRefusal = await refusedThenContinue(client, () =>
+          client.query('insert into organizations (name, slug) values ($1, $2)', [
+            `${THROWAWAY} organization`,
+            `${THROWAWAY}-inserted`,
+          ]),
+        );
+        await actAsOwner(client);
+
+        expect(update.rowCount, `a ${slug} admin renamed their own organization`).toBe(0);
+        expect(remove.rowCount, `a ${slug} admin deleted their own organization`).toBe(0);
+        expect(insertRefusal.code, 'an insert with no matching policy is 42501').toBe('42501');
+      });
+    },
+  );
 });
 
 describe('role and active state are re-read on the next statement, not at token expiry', () => {
@@ -1214,17 +1520,6 @@ describe('role and active state are re-read on the next statement, not at token 
       });
     },
   );
-
-  /** Both tables in one statement, so neither policy's active clause is unwatched. */
-  async function visibleToSession(client: Client): Promise<{ members: number; organizations: number }> {
-    const { rows } = await client.query<{ members: number; organizations: number }>(
-      `select (select count(*)::int from members) as members,
-              (select count(*)::int from organizations) as organizations`,
-    );
-    const counted = rows[0];
-    if (counted === undefined) throw new Error('the count query returned no row');
-    return counted;
-  }
 
   it.skipIf(noDatabase).each(FIXTURES)(
     'returns zero rows from both tables on the very next read after the $fixture account is banned',
@@ -1422,6 +1717,56 @@ describe('role and active state are re-read on the next statement, not at token 
           `an expired ban still hid the organization from ${slug}`,
         ).toBeGreaterThan(0);
         expect(written.rowCount, `an expired ban still refused a ${slug} admin write`).toBe(1);
+      });
+    },
+  );
+});
+
+describe('the helper other empty result: the caller own member row stops existing', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'closes the $fixture session on the very next statement after its member row is deleted',
+    async ({ slug, admin }) => {
+      // The third way `current_member_access()` can stop yielding a row, and
+      // the one no case reached: demotion and ban both leave the row in place
+      // and change what it says, while stories 1.5 and 1.6 delete member rows
+      // outright. Two statements in one transaction, for the same reason every
+      // other freshness case is: a STABLE function caches within a statement,
+      // so a single-statement version would prove the cache and not the
+      // freshness.
+      //
+      // The delete is the owner's, not the session's — an admin deleting its
+      // own row is a different rule (the zero-admins trigger) and not what this
+      // is about.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const before = await visibleToSession(client);
+        await actAsOwner(client);
+
+        await client.query('delete from members where id = $1', [caller.id]);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const after = await visibleToSession(client);
+        const written = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into members (organization_id, auth_user_id, name, role, leave_allowance_days)
+             values ($1, gen_random_uuid(), $2, 'member_role', 20)`,
+            [caller.organizationId, `${THROWAWAY} after deletion`],
+          ),
+        );
+        await actAsOwner(client);
+
+        expect(before.members, `${slug} could not read its own members to begin with`).toBeGreaterThan(0);
+        expect(
+          after.members,
+          `a deleted ${slug} member still read the member list on the next statement`,
+        ).toBe(0);
+        expect(
+          after.organizations,
+          `a deleted ${slug} member still read the organization row on the next statement`,
+        ).toBe(0);
+        expect(written.code, 'a write with no member row behind it is refused 42501').toBe('42501');
       });
     },
   );

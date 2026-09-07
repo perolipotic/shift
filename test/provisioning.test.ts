@@ -227,6 +227,8 @@ interface FunctionSecurity {
   readonly publicGrants: number;
   /** Every role holding an EXECUTE grant, comma-separated and sorted. */
   readonly grantees: string;
+  /** The role that owns the function, which always holds EXECUTE implicitly. */
+  readonly owner: string;
 }
 
 /**
@@ -253,7 +255,8 @@ async function functionSecurity(
             (select coalesce(
                       string_agg(distinct split_part(entry::text, '=', 1), ',' order by split_part(entry::text, '=', 1)),
                       '')
-               from unnest(coalesce(p.proacl, '{}'::aclitem[])) as entry) as grantees
+               from unnest(coalesce(p.proacl, '{}'::aclitem[])) as entry) as grantees,
+            pg_get_userbyid(p.proowner) as owner
        from pg_proc p
       where p.pronamespace = 'public'::regnamespace
         and p.proname = $1
@@ -834,19 +837,25 @@ describe('the access-control layer runs as the owner and hands that power to nob
     },
   );
 
+  // The grantee lists name every role but the function's owner, which is added
+  // at assertion time from `pg_proc.proowner`. The owner always holds EXECUTE
+  // and is not a security decision; hard-coding it as `postgres` made these
+  // assertions specific to a stack whose migrations happen to be applied by
+  // that role, and would fail elsewhere for a reason unrelated to access
+  // control.
   const grantees = [
     // The request role has to hold EXECUTE or the policy that names the
     // function fails with `permission denied for function` instead of returning
     // rows — a policy expression is permission-checked against the querying
     // role. Granting it discloses nothing: the function takes no argument, so
     // there is no subject to name but `auth.uid()`.
-    { name: 'current_member_access', argumentCount: 0, expected: 'authenticated,postgres' },
+    { name: 'current_member_access', argumentCount: 0, expected: ['authenticated'] },
     // The hook takes its subject as an argument, so anyone who can execute it
     // can ask about anybody. Nothing but the auth service may call it.
     {
       name: 'custom_access_token_hook',
       argumentCount: 1,
-      expected: 'postgres,supabase_auth_admin',
+      expected: ['supabase_auth_admin'],
     },
   ];
 
@@ -858,10 +867,11 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // thing a subset check would not notice coming back.
     const client = await connect();
     try {
+      const security = await functionSecurity(client, name, argumentCount);
       expect(
-        (await functionSecurity(client, name, argumentCount)).grantees,
+        security.grantees,
         `${name} is executable by a role that has no business calling it`,
-      ).toBe(expected);
+      ).toBe([...expected, security.owner].sort().join(','));
     } finally {
       await client.end();
     }

@@ -85,6 +85,20 @@
 -- three-way comparison rather than `banned_until is null` is what makes an
 -- expired ban read as active instead of as a permanent one.
 --
+-- `deleted_at is null` is the second half of the same authentication boundary.
+-- GoTrue soft-deletes rather than removing a row, and a soft-deleted account
+-- carries a null `banned_until`, so reading the ban column alone left a deleted
+-- account with every read and write it had before — verified live during the
+-- 1.3a review: after `deleted_at` was set, the caller still saw every member of
+-- its organization and this function still reported `is_active`. That is a hole
+-- in AD-10's guarantee that access is lost on the next query rather than at
+-- token expiry, and it matters beyond today because this function is the
+-- pattern every later organization-scoped table copies. Nothing in the
+-- repository sets `deleted_at` yet — `admin-auth`'s vocabulary is create,
+-- update and ban/unban — so the clause is written before the path exists
+-- rather than after it is discovered. `is_anonymous` needs no clause:
+-- `supabase/config.toml:54` sets `enable_anonymous_sign_ins = false`.
+--
 -- The row is looked up by `auth.uid()`, which is the token's subject, and
 -- `members.auth_user_id` is unique (0002:128), so this returns at most one row.
 -- No caller can ask about anybody else: there is no parameter to point
@@ -99,7 +113,7 @@ set search_path = ''
 as $$
   select m.organization_id,
          m.role,
-         (u.banned_until is null or u.banned_until <= now())
+         (u.deleted_at is null and (u.banned_until is null or u.banned_until <= now()))
     from public.members m
     join auth.users u on u.id = m.auth_user_id
    where m.auth_user_id = (select auth.uid())
@@ -208,6 +222,20 @@ revoke execute on function public.custom_access_token_hook(jsonb) from anon;
 revoke execute on function public.custom_access_token_hook(jsonb) from authenticated;
 revoke execute on function public.custom_access_token_hook(jsonb) from service_role;
 grant execute on function public.custom_access_token_hook(jsonb) to supabase_auth_admin;
+
+-- EXECUTE on the function is not sufficient on its own: reaching it also needs
+-- USAGE on the schema that holds it. Today `supabase_auth_admin` has that only
+-- through the default PUBLIC grant on `public` — verified live during the 1.3a
+-- review, where `nspacl` named `postgres`, `anon`, `authenticated` and
+-- `service_role` individually alongside a bare `=U` for PUBLIC, and the auth
+-- service appeared nowhere. That is precisely the dependency-by-accident this
+-- file argues against when it declines to inherit the default EXECUTE grants
+-- above, and 0002:43-51 makes the same argument about an extension. Revoking
+-- PUBLIC usage on `public` is a standard hardening step; the day someone takes
+-- it, every sign-in in the system fails on a function the auth service can no
+-- longer reach, with the deny-all symptom DEPLOY.md §5.2b warns "looks exactly
+-- like a broken policy and is not one". Naming the grant costs one line.
+grant usage on schema public to supabase_auth_admin;
 
 -- ----------------------------------------------------------------- Q1, Q2, Q3
 

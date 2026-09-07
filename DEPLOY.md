@@ -333,6 +333,9 @@ pnpm exec supabase db push
 # Or back the hook out first, then push the migration and re-enable it.
 $EDITOR supabase/config.toml     # [auth.hook.custom_access_token] enabled = false
 pnpm exec supabase config push   # sign-in recovers immediately, without the claim
+pnpm exec supabase db push       # then the function the hook wants
+$EDITOR supabase/config.toml     # enabled = true again
+pnpm exec supabase config push   # and the claim comes back at the next sign-in
 ```
 
 With the hook off, sign-in works and every token is claimless — so sessions
@@ -356,21 +359,25 @@ Three consequences worth knowing before the first promotion:
 Read the password rather than typing it into the command. A `-d` argument lands
 in shell history and in `ps` output for every other user on the machine — the
 same leak §3 refuses to accept for the secret key, and this is a live member
-credential against a real project:
+credential against a real project. `jq --arg` is the same leak wearing a
+different hat: an argument is an argument, and `ps` shows it. Pass both values
+through the environment instead, which `jq` reads as `$ENV`, and unset them
+after:
 
 ```bash
 read -rsp 'password: ' SHIFT_PROBE_PASSWORD; echo
 read -rp 'sign-in address: ' SHIFT_PROBE_ADDRESS
 
-jq -n --arg email "$SHIFT_PROBE_ADDRESS" --arg password "$SHIFT_PROBE_PASSWORD" \
-     '{email: $email, password: $password}' \
+export SHIFT_PROBE_ADDRESS SHIFT_PROBE_PASSWORD
+
+jq -n '{email: $ENV.SHIFT_PROBE_ADDRESS, password: $ENV.SHIFT_PROBE_PASSWORD}' \
   | curl -s -X POST 'https://<ref>.supabase.co/auth/v1/token?grant_type=password' \
       -H 'apikey: <that environment sb_publishable_*>' \
       -H 'content-type: application/json' \
       --data @- \
   | jq -r '.access_token | split(".")[1] | @base64d | fromjson'
 
-unset SHIFT_PROBE_PASSWORD
+unset SHIFT_PROBE_PASSWORD SHIFT_PROBE_ADDRESS
 # -> "organization_id": "<that member organization>"   the hook runs  ✅
 # -> "role": "authenticated"                           always, and never a domain role
 # -> no organization_id at all                          config push has not run ❌

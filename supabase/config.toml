@@ -67,9 +67,12 @@ enable_confirmations = false
 
 # AD-10: `organization_id` rides in a JWT claim, and this hook is the only thing
 # that puts it there. The function is created by
-# `supabase/migrations/0003_access_control.sql`, and the ordering is not
-# negotiable in either direction: the migration must be applied before the hook
-# is enabled, or every sign-in fails on a missing function (DEPLOY.md §5.2b).
+# `supabase/migrations/0003_access_control.sql`, and the ordering matters in one
+# direction: the migration must be applied before the hook is enabled, or every
+# sign-in fails on a missing function. The other order is harmless — tokens are
+# minted with no claim for the window, and a claimless token reads zero rows
+# rather than another tenant's, because the policies fail closed on the claim's
+# absence by design (DEPLOY.md §5.2b).
 #
 # `pg-functions://` names the database, the schema and the function. Enabling
 # this locally needs a full `supabase stop && supabase start`: the setting
@@ -80,8 +83,11 @@ enable_confirmations = false
 # `key = value` lines and silently ignores any section it was not asked about,
 # so a new section here is unenforced until something asserts it. That file
 # asserts both keys below, and additionally asserts the function's EXECUTE
-# grants in the database, because a URI naming a function nobody may call is
-# configuration that looks right and signs nothing.
+# grants in the migration source text, because a URI naming a function nobody
+# may call is configuration that looks right and signs nothing. The database
+# ACL those grants produce is asserted separately, in
+# `test/provisioning.test.ts` — source text alone cannot see a grant that a
+# later migration took away.
 [auth.hook.custom_access_token]
 enabled = true
 uri = "pg-functions://postgres/public/custom_access_token_hook"
