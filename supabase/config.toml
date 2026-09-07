@@ -65,6 +65,27 @@ double_confirm_changes = true
 enable_signup = false
 enable_confirmations = false
 
+# AD-10: `organization_id` rides in a JWT claim, and this hook is the only thing
+# that puts it there. The function is created by
+# `supabase/migrations/0003_access_control.sql`, and the ordering is not
+# negotiable in either direction: the migration must be applied before the hook
+# is enabled, or every sign-in fails on a missing function (DEPLOY.md §5.2b).
+#
+# `pg-functions://` names the database, the schema and the function. Enabling
+# this locally needs a full `supabase stop && supabase start`: the setting
+# becomes a GOTRUE_HOOK_* environment variable on the auth container, and an
+# edit to this file does not reach a container that is already running.
+#
+# The reader in `test/supabase-scaffold.test.ts` walks `[section]` headers and
+# `key = value` lines and silently ignores any section it was not asked about,
+# so a new section here is unenforced until something asserts it. That file
+# asserts both keys below, and additionally asserts the function's EXECUTE
+# grants in the database, because a URI naming a function nobody may call is
+# configuration that looks right and signs nothing.
+[auth.hook.custom_access_token]
+enabled = true
+uri = "pg-functions://postgres/public/custom_access_token_hook"
+
 [edge_runtime]
 enabled = true
 policy = "oneshot"

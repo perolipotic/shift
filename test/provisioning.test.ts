@@ -218,6 +218,89 @@ function expectSignInCapable(health: RecipeHealth, where: string): void {
   ).toBe(0);
 }
 
+interface FunctionSecurity {
+  /** SECURITY DEFINER — the function runs as its owner, not as the caller. */
+  readonly prosecdef: boolean;
+  /** `pg_proc.proconfig`, where a pinned `search_path` shows up. */
+  readonly proconfig: string[] | null;
+  /** ACL entries granted to PUBLIC, which is the one grantee nobody may be. */
+  readonly publicGrants: number;
+  /** Every role holding an EXECUTE grant, comma-separated and sorted. */
+  readonly grantees: string;
+}
+
+/**
+ * The three security attributes every SECURITY DEFINER function here carries,
+ * plus the grantee list.
+ *
+ * One query for all of them, because they are one decision: a function that
+ * runs as the owner, resolves no name through a caller-controlled path, and is
+ * not reachable by whoever happens to be asking. Asserting them separately is
+ * how a function acquires two of the three.
+ */
+async function functionSecurity(
+  client: Client,
+  name: string,
+  argumentCount: number,
+): Promise<FunctionSecurity> {
+  const { rows } = await client.query<FunctionSecurity & { hasAcl: boolean }>(
+    `select p.prosecdef,
+            p.proconfig,
+            p.proacl is not null as "hasAcl",
+            (select count(*)::int
+               from unnest(coalesce(p.proacl, '{}'::aclitem[])) as entry
+              where entry::text like '=%') as "publicGrants",
+            (select coalesce(
+                      string_agg(distinct split_part(entry::text, '=', 1), ',' order by split_part(entry::text, '=', 1)),
+                      '')
+               from unnest(coalesce(p.proacl, '{}'::aclitem[])) as entry) as grantees
+       from pg_proc p
+      where p.pronamespace = 'public'::regnamespace
+        and p.proname = $1
+        and p.pronargs = $2`,
+    [name, argumentCount],
+  );
+
+  // Exactly one, and qualified by argument count. `proname` alone matches every
+  // overload, and reading `rows[0]` from an unordered result would let a second
+  // definition decide which one the search_path and ACL assertions inspect —
+  // silently, and in whichever direction the planner happened to return first.
+  expect(
+    rows.length,
+    `expected exactly one public.${name} taking ${argumentCount} argument(s); found ${rows.length}`,
+  ).toBe(1);
+  const security = rows[0];
+  if (security === undefined) throw new Error(`unreachable: public.${name} was asserted to exist`);
+
+  // A null `proacl` means no grant or revoke was ever written, so the defaults
+  // are in force — and it yields zero PUBLIC entries, which makes the check
+  // below pass on precisely the function that has no access control at all.
+  expect(
+    security.hasAcl,
+    `public.${name} has no ACL entries at all, so its default privileges are whatever the platform grants; write the revokes`,
+  ).toBe(true);
+
+  return security;
+}
+
+/** Assert one function runs as its owner and hands that power to nobody. */
+function expectRunsAsOwner(security: FunctionSecurity, name: string): void {
+  expect(security.prosecdef, `${name} must be SECURITY DEFINER`).toBe(true);
+
+  // pg_proc stores it as `search_path=""` — the setting name, then the quoted
+  // value. Both halves matter: present, and empty.
+  const searchPath = (security.proconfig ?? []).find((entry) => entry.startsWith('search_path='));
+  expect(searchPath, `${name} must pin a search_path`).toBeDefined();
+  expect(
+    (searchPath ?? '').slice('search_path='.length).replaceAll(/["']/g, ''),
+    `${name}: the pinned search_path must be empty (set search_path = ''), so no name resolves through a caller-controlled path`,
+  ).toBe('');
+  expect(
+    security.publicGrants,
+    `${name} reads past RLS as its owner and must not be executable by PUBLIC`,
+  ).toBe(0);
+}
+
 async function organizationId(client: Client, slug: string): Promise<string> {
   const { rows } = await client.query<{ id: string }>(
     'select id from organizations where slug = $1',
@@ -480,38 +563,10 @@ describe('an organization can never be left with zero admins', () => {
     // whoever can create a schema.
     const client = await connect();
     try {
-      const { rows } = await client.query<{
-        prosecdef: boolean;
-        proconfig: string[] | null;
-        publicGrants: number;
-      }>(
-        `select p.prosecdef,
-                p.proconfig,
-                (select count(*)::int
-                   from unnest(coalesce(p.proacl, '{}'::aclitem[])) as entry
-                  where entry::text like '=%') as "publicGrants"
-           from pg_proc p
-          where p.pronamespace = 'public'::regnamespace
-            and p.proname = 'refuse_organization_with_no_admin'`,
+      expectRunsAsOwner(
+        await functionSecurity(client, 'refuse_organization_with_no_admin', 0),
+        'refuse_organization_with_no_admin',
       );
-
-      expect(rows.length, 'refuse_organization_with_no_admin does not exist').toBe(1);
-      expect(rows[0]?.prosecdef, 'the trigger function must be SECURITY DEFINER').toBe(true);
-
-      // pg_proc stores it as `search_path=""` — the setting name, then the
-      // quoted value. Both halves matter: present, and empty.
-      const searchPath = (rows[0]?.proconfig ?? []).find((entry) =>
-        entry.startsWith('search_path='),
-      );
-      expect(searchPath, 'the trigger function must pin a search_path').toBeDefined();
-      expect(
-        (searchPath ?? '').slice('search_path='.length).replaceAll(/["']/g, ''),
-        "the pinned search_path must be empty (set search_path = ''), so no name resolves through a caller-controlled path",
-      ).toBe('');
-      expect(
-        rows[0]?.publicGrants,
-        'a SECURITY DEFINER function that reads past RLS must not be executable by PUBLIC',
-      ).toBe(0);
     } finally {
       await client.end();
     }
@@ -653,8 +708,8 @@ describe('the organization slug is a legal DNS label', () => {
   });
 });
 
-describe('both tables are deny-all until story 1.3 writes a policy', () => {
-  it.skipIf(noDatabase)('has row level security on and no policy anywhere', async () => {
+describe('both tables carry row level security, and only story 1.3 policies open them', () => {
+  it.skipIf(noDatabase)('has row level security on', async () => {
     const client = await connect();
     try {
       const { rows } = await client.query<{ relname: string; relrowsecurity: boolean }>(
@@ -669,36 +724,23 @@ describe('both tables are deny-all until story 1.3 writes a policy', () => {
       for (const row of rows) {
         expect(row.relrowsecurity, `${row.relname} must have RLS enabled`).toBe(true);
       }
-
-      // EXPECTED TO BE DELETED IN STORY 1.3. That story writes the RLS
-      // policies, and the first one it writes makes this assertion wrong by
-      // construction — remove it then rather than weakening it to a smaller
-      // list, and let 1.3's own two security tests be the check. Until then,
-      // deny-all is the only safe posture and a policy appearing here early
-      // would go unnoticed until the story that was supposed to author it.
-      const { rows: policies } = await client.query<{ policyname: string }>(
-        `select policyname from pg_policies where schemaname = 'public'`,
-      );
-      expect(
-        policies.map((policy) => policy.policyname),
-        'story 1.3 owns every policy, and writes its two security tests with them',
-      ).toEqual([]);
     } finally {
       await client.end();
     }
   });
 
-  const readers = ['anon', 'authenticated'].flatMap((role) =>
-    ['organizations', 'members'].map((table) => ({ role, table })),
-  );
+  // One role, two tables. This was a two-role cross product until story 1.3
+  // narrowed the `authenticated` half into the case below it; a `flatMap` over
+  // a one-element array is what that edit would have left behind.
+  const anonymousReaders = ['organizations', 'members'].map((table) => ({ role: 'anon', table }));
 
-  it.skipIf(noDatabase).each(readers)('returns zero rows to $role reading $table', async ({ role, table }) => {
+  it.skipIf(noDatabase).each(anonymousReaders)('returns zero rows to $role reading $table', async ({ role, table }) => {
     await inRolledBackTransaction(async (client) => {
-      // THE `authenticated` ROWS ARE EXPECTED TO CHANGE IN STORY 1.3, which
-      // gives a session its own organization's rows — narrow them to "reads
-      // its own organization and no other" rather than deleting them, and
-      // leave the two `anon` rows exactly as they are: no session ever reads
-      // anything, in 1.3 or after it.
+      // THESE TWO ROWS STAY EXACTLY AS THEY ARE, FOREVER. Story 1.3's policies
+      // are all `to authenticated`, so `anon` matches none of them and reads
+      // nothing from either table; there is no anonymous read path anywhere in
+      // this system, in 1.3 or after it. The `authenticated` rows that used to
+      // sit beside them were narrowed by 1.3 into the case below.
       //
       // Exactly what PostgREST does with a publishable key and no session: it
       // switches to this role and selects. A privilege error rather than an
@@ -711,6 +753,153 @@ describe('both tables are deny-all until story 1.3 writes a policy', () => {
 
       expect(rows[0]?.visible, `${role} can read ${table}`).toBe(0);
     });
+  });
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'gives an authenticated $fixture session its own organization and no other',
+    async ({ slug }) => {
+      // The narrowed half of what used to be "returns zero rows to
+      // authenticated": a session now reads its own organization's rows, and
+      // still reads nobody else's. Story 1.3 owns the full matrix — every
+      // operation, both fixtures, through PostgREST with a real token as well
+      // as with claims injected — in `test/rls-isolation.test.ts`. This case
+      // stays here because this is the file that asserted deny-all, and the
+      // line between the two postures is the one thing a later migration could
+      // move without noticing.
+      await inRolledBackTransaction(async (client) => {
+        const organization = await organizationId(client, slug);
+        const { rows: caller } = await client.query<{ authUserId: string }>(
+          `select auth_user_id as "authUserId" from members
+            where organization_id = $1 order by created_at limit 1`,
+          [organization],
+        );
+        const subject = caller[0]?.authUserId;
+        if (subject === undefined) throw new Error(`${slug} has no member to act as`);
+
+        // Read as the connection's own role, before any claim is injected: the
+        // vacuous-pass guard this file requires beside every sweep. With only
+        // one organization loaded, "no foreign rows" is true of a policy that
+        // filters nothing at all.
+        const { rows: everything } = await client.query<{ total: number }>(
+          'select count(*)::int as total from members',
+        );
+
+        await client.query('select set_config($1, $2, true)', [
+          'request.jwt.claims',
+          JSON.stringify({ sub: subject, role: 'authenticated', organization_id: organization }),
+        ]);
+        await client.query('set local role authenticated');
+        const { rows } = await client.query<{ own: number; foreign: number }>(
+          `select count(*) filter (where organization_id = $1)::int as own,
+                  count(*) filter (where organization_id <> $1)::int as "foreign"
+             from members`,
+          [organization],
+        );
+        await client.query('reset role');
+
+        expect(rows[0]?.own, `an authenticated ${slug} session read none of its own members`).toBeGreaterThan(0);
+        expect(rows[0]?.foreign, `an authenticated ${slug} session read another organization`).toBe(0);
+        expect(
+          everything[0]?.total,
+          'both fixtures must be loaded, or a zero foreign count proves nothing',
+        ).toBeGreaterThan(rows[0]?.own ?? 0);
+      });
+    },
+  );
+});
+
+describe('the access-control layer runs as the owner and hands that power to nobody', () => {
+  /** `pronargs` per function, so an overload cannot decide what gets inspected. */
+  const ACCESS_CONTROL_FUNCTIONS = [
+    { name: 'current_member_access', argumentCount: 0 },
+    { name: 'custom_access_token_hook', argumentCount: 1 },
+  ];
+
+  it.skipIf(noDatabase).each(ACCESS_CONTROL_FUNCTIONS)(
+    'runs $name as the owner, past row level security',
+    async ({ name, argumentCount }) => {
+      // The same three attributes 0002's trigger function carries, and for the
+      // same reason: both of these read `members` past row level security — the
+      // helper because a policy on `members` cannot read `members` as the
+      // caller, the hook because it resolves a subject before any policy exists
+      // to consult. Either one reachable by PUBLIC, or resolving a name through
+      // a caller-controlled search_path, is the owner's rights handed to
+      // whoever can call it.
+      const client = await connect();
+      try {
+        expectRunsAsOwner(await functionSecurity(client, name, argumentCount), name);
+      } finally {
+        await client.end();
+      }
+    },
+  );
+
+  const grantees = [
+    // The request role has to hold EXECUTE or the policy that names the
+    // function fails with `permission denied for function` instead of returning
+    // rows — a policy expression is permission-checked against the querying
+    // role. Granting it discloses nothing: the function takes no argument, so
+    // there is no subject to name but `auth.uid()`.
+    { name: 'current_member_access', argumentCount: 0, expected: 'authenticated,postgres' },
+    // The hook takes its subject as an argument, so anyone who can execute it
+    // can ask about anybody. Nothing but the auth service may call it.
+    {
+      name: 'custom_access_token_hook',
+      argumentCount: 1,
+      expected: 'postgres,supabase_auth_admin',
+    },
+  ];
+
+  it.skipIf(noDatabase).each(grantees)('grants execute on $name to $expected and no one else', async ({ name, argumentCount, expected }) => {
+    // An exact list, not a subset. Supabase's default privileges grant EXECUTE
+    // on every new function in `public` to `anon`, `authenticated` and
+    // `service_role` individually, so a `revoke ... from public` leaves all
+    // three in place — the whole point of 0003's explicit revokes, and the
+    // thing a subset check would not notice coming back.
+    const client = await connect();
+    try {
+      expect(
+        (await functionSecurity(client, name, argumentCount)).grantees,
+        `${name} is executable by a role that has no business calling it`,
+      ).toBe(expected);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('keeps a role and an organization out of every account metadata column', async () => {
+    // The hook writes `organization_id` and nothing else, and AD-10 keeps the
+    // domain role out of every claim. GoTrue also copies the metadata columns
+    // into a token wholesale, so a role that landed there would become a claim
+    // without any hook writing it — which is why the seed and the operator
+    // script put nothing but the provider there, and why this asserts it.
+    //
+    // Every `auth.users` row, not only those with a member row: an account with
+    // no member is exactly the one the hook's fail-closed branch is for, and an
+    // inner join would never scan it. Searched as rendered text rather than by
+    // top-level key, so a role nested inside an object is caught too, and
+    // coalesced so a null column — or a metadata value that is not an object at
+    // all — is data rather than an error.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ leaking: number; scanned: number }>(
+        `select count(*) filter (
+                  where coalesce(u.raw_app_meta_data, '{}'::jsonb)::text ~* $1
+                     or coalesce(u.raw_user_meta_data, '{}'::jsonb)::text ~* $1
+                )::int as leaking,
+                count(*)::int as scanned
+           from auth.users u`,
+        ['role|organization_id|admin|member_role'],
+      );
+
+      expect(rows[0]?.scanned, 'no accounts were scanned at all').toBeGreaterThan(0);
+      expect(
+        rows[0]?.leaking,
+        'GoTrue copies account metadata into the token, so a role or organization there becomes an unrefreshed claim (AD-10)',
+      ).toBe(0);
+    } finally {
+      await client.end();
+    }
   });
 });
 

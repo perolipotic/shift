@@ -77,6 +77,26 @@ pnpm --filter @shift/web dev
 **publishable** key into `apps/web/.env.local`. `seed.sql` is local and
 test-only: it is never applied to staging or production.
 
+> **The access token hook needs a restart, not a reset.** `config.toml`'s
+> `[auth.hook.custom_access_token]` becomes a `GOTRUE_HOOK_*` environment
+> variable on the auth container, and an edit to that file does not reach a
+> container that is already running — `supabase db reset` will not do it either,
+> because it restarts containers without recreating them from the config. After
+> any change to that section, run a full stop and start:
+>
+> ```bash
+> pnpm exec supabase stop && pnpm exec supabase start
+> docker inspect supabase_auth_shift \
+>   --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -i hook
+> # -> GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED=true
+> # -> GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI=pg-functions://postgres/public/custom_access_token_hook
+> ```
+>
+> With no hook, tokens carry no `organization_id` and every policy reads zero
+> rows — which looks exactly like a broken policy and is not one.
+> `test/rls-isolation.test.ts` names this in its failure message for that
+> reason.
+
 To run the Edge Function locally, copy its env template and fill it in with an
 editor. Do not `printf` or `echo` a key into place and do not pass one as a
 command-line argument: either way `sb_secret_*` lands in your shell history,
@@ -94,10 +114,12 @@ flag is needed. `supabase start` printed the local keys; `SUPABASE_URL` is
 injected for you.
 
 Every operation currently answers `501 { "code": "NOT_IMPLEMENTED" }`. The
-`members` table it authorizes against now exists (story 1.2), but nothing reads
-it yet: the row level security policies and the role helper are story 1.3's, and
-acting before they land would mean acting unauthorized. The first organization
-does not go through this function at all — see §7.
+`members` table it authorizes against exists (story 1.2) and the policies and
+role helper it would authorize *through* now exist too (story 1.3), so the
+missing half is no longer the access-control layer — it is the operations
+themselves, which belong to the stories that need them: member create and update
+to 1.5, ban and unban to 1.6. The first organization does not go through this
+function at all — see §7.
 
 Gate before you push anything:
 
@@ -268,6 +290,7 @@ itself up has no member row, no organization claim and no business existing.
 | `[auth] enable_anonymous_sign_ins` | `false` | an anonymous session has no organization |
 | `[auth] site_url` | that environment's Pages URL | where a recovery link returns to |
 | `[auth] additional_redirect_urls` | that environment's Pages URL(s) | an unlisted redirect is refused |
+| `[auth.hook.custom_access_token]` | `enabled = true` + the `pg-functions://` URI | without it no token carries `organization_id` and every policy reads zero rows — see §5.2b |
 
 <a id="the-two-enable-signup-keys"></a>
 
@@ -280,6 +303,83 @@ itself up has no member row, no organization claim and no business existing.
 > `422 "Email logins are disabled"` — while open signup is no more refused than
 > it already was. It is `true` on purpose, and `test/supabase-scaffold.test.ts`
 > pins both values.
+
+#### 5.2b The access token hook: order matters, in one direction only
+
+`[auth.hook.custom_access_token]` names
+`pg-functions://postgres/public/custom_access_token_hook`, and that function is
+created by `supabase/migrations/0003_access_control.sql`. So the two commands in
+§5.2 are not interchangeable:
+
+```bash
+pnpm exec supabase db push      # FIRST — creates the hook function
+pnpm exec supabase config push  # THEN  — tells GoTrue to call it
+```
+
+Backwards, GoTrue is told to call a function that does not exist and **every
+sign-in fails** for the window between the two commands. In the documented
+order the worst case is harmless: between the push and the config push, tokens
+are minted with no `organization_id` claim, and a token with no claim reads zero
+rows rather than another tenant's — the policies fail closed on the claim's
+absence by design.
+
+**If you already pushed backwards**, sign-in is down until one of these lands,
+and either is a single command:
+
+```bash
+# Preferred — finish what was started. The function is what the hook wants.
+pnpm exec supabase db push
+
+# Or back the hook out first, then push the migration and re-enable it.
+$EDITOR supabase/config.toml     # [auth.hook.custom_access_token] enabled = false
+pnpm exec supabase config push   # sign-in recovers immediately, without the claim
+```
+
+With the hook off, sign-in works and every token is claimless — so sessions
+read zero rows until you re-enable it. That is a degraded read, not an outage,
+and it is the state to be in while the migration is fixed.
+
+Three consequences worth knowing before the first promotion:
+
+- **A claim-carrying token is only issued at the next sign-in.** The hook runs
+  when a token is minted, not retroactively. Sessions held across the promotion
+  keep their claimless tokens until they expire (`jwt_expiry = 3600`) or refresh,
+  and until then those sessions read nothing. There is no backfill to write —
+  nothing is stored on the account — but expect existing sessions to look
+  logged-in and empty for up to an hour.
+- **Remotely, `config push` is the only thing that enables it.** Nothing in a
+  migration carries auth configuration (§5.2a), so an environment that has
+  never had `config push` run against it has the function and no hook.
+- **Verify the outcome, per environment**, by decoding a real token rather than
+  trusting the command's exit code.
+
+Read the password rather than typing it into the command. A `-d` argument lands
+in shell history and in `ps` output for every other user on the machine — the
+same leak §3 refuses to accept for the secret key, and this is a live member
+credential against a real project:
+
+```bash
+read -rsp 'password: ' SHIFT_PROBE_PASSWORD; echo
+read -rp 'sign-in address: ' SHIFT_PROBE_ADDRESS
+
+jq -n --arg email "$SHIFT_PROBE_ADDRESS" --arg password "$SHIFT_PROBE_PASSWORD" \
+     '{email: $email, password: $password}' \
+  | curl -s -X POST 'https://<ref>.supabase.co/auth/v1/token?grant_type=password' \
+      -H 'apikey: <that environment sb_publishable_*>' \
+      -H 'content-type: application/json' \
+      --data @- \
+  | jq -r '.access_token | split(".")[1] | @base64d | fromjson'
+
+unset SHIFT_PROBE_PASSWORD
+# -> "organization_id": "<that member organization>"   the hook runs  ✅
+# -> "role": "authenticated"                           always, and never a domain role
+# -> no organization_id at all                          config push has not run ❌
+```
+
+`jq`'s `@base64d` is what decodes the payload, not `base64 -d`: a JWT segment is
+**unpadded base64url**, which GNU `base64` rejects outright and macOS spells
+`-D` anyway — so the obvious pipeline fails, and a `2>/dev/null` on it hides the
+failure and prints nothing at all.
 
 `site_url` and `additional_redirect_urls` differ per environment while
 `config.toml` holds the local values, so **set them for the target environment
@@ -487,6 +587,23 @@ curl -s -X POST 'http://127.0.0.1:54321/auth/v1/token?grant_type=password' \
 ```
 
 Reading `organizations` or `members` through PostgREST with the publishable key
-and no session returns `[]`, not an error: row level security is on and story
-1.3 has not written a policy yet. That is the intended state, and
-`test/provisioning.test.ts` asserts it.
+and no session returns `[]`, not an error: row level security is on and every
+policy is `to authenticated`, so an anonymous caller matches none of them. That
+stays true forever — there is no anonymous read path in this system — and
+`test/provisioning.test.ts` and `test/rls-isolation.test.ts` both assert it.
+
+With a session it returns that organization's rows and no other:
+
+```bash
+# The token from the grant above, against the real HTTP path the SPA uses.
+curl -s 'http://127.0.0.1:54321/rest/v1/members?select=name,role' \
+  -H "apikey: $(pnpm exec supabase status -o json | jq -r .PUBLISHABLE_KEY)" \
+  -H "Authorization: Bearer <the access_token>"
+# -> that organization's members only  ✅
+# -> []  the token carries no organization_id claim — see §5.2b   ❌
+```
+
+A member-role token reads the same list and changes nothing on it: a `PATCH`
+answers `204` having affected zero rows, and a `POST` answers
+`403 {"code":"42501"}`. Both are asserted in `test/rls-isolation.test.ts`
+against both fixtures.
