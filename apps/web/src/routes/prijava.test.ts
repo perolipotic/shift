@@ -66,10 +66,15 @@ const RESOURCE = join(srcRoot, 'i18n', 'locales', 'hr.json');
  * now renders a heading of its own.
  */
 const SCREENS = [
-  { name: 'the sign-in screen', file: SCREEN },
-  { name: 'the not-found component', file: NOT_FOUND },
-  { name: 'the organization prompt', file: ORGANIZATION },
-  { name: 'the signed-in placeholder', file: HOME },
+  // `expectedControls` is what stops the general tap-target sweep passing on an
+  // empty set: two of these screens carry no control at all today, so a loop
+  // with no count behind it read as coverage while asserting nothing on half
+  // its cases. A screen that gains a control fails here until the number moves,
+  // which is the moment somebody confirms the new control is measured.
+  { name: 'the sign-in screen', file: SCREEN, expectedControls: 3 },
+  { name: 'the not-found component', file: NOT_FOUND, expectedControls: 1 },
+  { name: 'the organization prompt', file: ORGANIZATION, expectedControls: 2 },
+  { name: 'the signed-in placeholder', file: HOME, expectedControls: 0 },
 ];
 
 /**
@@ -119,6 +124,24 @@ function stripComments(source: string): string {
 
 function source(file: string): string {
   return stripComments(readFileSync(file, 'utf8'));
+}
+
+/**
+ * A screen's `submit` handler, from its signature to its closing brace.
+ *
+ * SCOPED extraction rather than a file-wide match, and that is the whole point
+ * of it: the assertions built on it claim things about what the handler DOES,
+ * and a file-wide regex would find the same tokens in an import, a comment that
+ * survived stripping, or a second function. The closing brace is matched at the
+ * handler's own indentation, which is two spaces inside the component.
+ */
+function submitHandler(screen: string): string {
+  return /(?:async )?function submit\([\s\S]*?\n {2}\}/.exec(screen)?.[0] ?? '';
+}
+
+/** The body of the handler's `finally`, matched at its own indentation. */
+function finallyBlock(screen: string): string {
+  return /\}\s*finally\s*\{([\s\S]*?)\n {4}\}/.exec(screen)?.[1] ?? '';
 }
 
 /** Every key handed to `t()`, in source order. */
@@ -489,14 +512,24 @@ describe('every control on the screen clears the 44 px tap-target floor', () => 
     expect(measured).toBeGreaterThanOrEqual(TARGET_FLOOR_PX);
   });
 
-  it.each(SCREENS)('clears the floor on every control in $name', ({ file }) => {
+  it.each(SCREENS)('clears the floor on every control in $name', ({ file, expectedControls }) => {
     // The named assertions above are the mutation-proven ones and stay. This is
     // the general claim they cannot make: a control added to any screen later,
     // on any of the four, is measured without anyone remembering to add a case
     // — which is how the organization prompt's own two controls got covered.
     const screen = source(file);
 
-    for (const element of [...inputElements(screen), ...buttonElements(screen)]) {
+    const controls = [...inputElements(screen), ...buttonElements(screen)];
+
+    // NON-VACUITY. Without this the loop asserts nothing on a screen it finds
+    // no controls on, and it already found none on two of the four — so half
+    // its cases were passing on an empty set while reading as coverage. It also
+    // records the detectors' reach: both match self-closing `<Input />` and
+    // `<Button` only, so a raw `<button>` or a future primitive is invisible
+    // here and the count is what would notice it disappearing.
+    expect(controls.length, `no control detected on ${file}`).toBe(expectedControls);
+
+    for (const element of controls) {
       const measured = heightPx(attributeOf(element, 'className'));
 
       expect(measured, `a control declares no usable height class: ${element}`).not.toBeNull();
@@ -880,6 +913,110 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       /(?:^|[\s,{])slug\s*,/,
     );
   });
+
+  it('lands a signed-in visitor on / and nowhere else', () => {
+    // MUTATION-PROVEN GAP. Nothing in this repository read a `navigate(` call:
+    // a grep across every test file returned zero matches, so `to: '/prijava'`
+    // here passed the entire suite while a correct sign-in established a
+    // session and then dropped the person back on the organization prompt —
+    // which, with no signed-in guard on that route, renders as though nothing
+    // happened. The story's first acceptance criterion was verified only by
+    // somebody remembering to run the manual browser check.
+    const handler = submitHandler(source(SCREEN));
+
+    expect(handler, 'the sign-in screen has no submit handler').not.toBe('');
+    expect(handler, 'a successful sign-in does not navigate to /').toMatch(
+      /navigate\(\{\s*to:\s*'\/'\s*\}\)/,
+    );
+  });
+
+  it('clears the in-flight state inside the finally, not merely near one', () => {
+    // The assertion this replaces matched `/\}\s*finally\s*\{/` against the
+    // whole file, which is the existence of the keyword and nothing about what
+    // it does. Deleting `setPending(false)` from inside it passed — and left
+    // `pending` true after the first wrong password, so `disabled={pending}`
+    // kept the button dead on the most common error path, with the entered
+    // values still on screen and no way to retry. `pending`, `setPending` and
+    // `disabled` appeared nowhere in this file.
+    const block = finallyBlock(source(SCREEN));
+
+    expect(block, 'the submit handler has no finally, so a path can leave it in flight').not.toBe(
+      '',
+    );
+    expect(block, 'the finally does not re-enable the button').toContain('setPending(false)');
+    expect(block, 'the finally does not clear the in-flight ref').toContain(
+      'exchanging.current = false',
+    );
+  });
+
+  it('logs the cause it cannot render', () => {
+    // The catch swallowed `SUPABASE_ENVIRONMENT_MISSING` whole while its own
+    // comment claimed "the console still carries the stable code". Nothing
+    // wrote to the console, so a deployment with no environment showed a
+    // working-looking form saying "try again" forever and left no trace
+    // anywhere — the misconfiguration-as-outage failure `client.ts` exists to
+    // prevent, reintroduced two files downstream.
+    const screen = source(SCREEN);
+
+    expect(screen, 'the catch reports nothing to the console').toMatch(
+      /catch\s*\([\s\S]{0,600}?console\.error\(/,
+    );
+  });
+
+  it('requires both credentials before it asks the service about them', () => {
+    // The organization prompt marks its one field `required` and says why: the
+    // browser's own validation stops an empty submission in the user's own
+    // language. The credential form marked neither, so a blank submit reached
+    // `normalizeUsername`, was refused locally, and rendered "Korisničko ime
+    // ili lozinka nisu točni." — telling somebody their credentials are wrong
+    // when they had not entered any. UX-DR34 names the problem instead.
+    for (const input of inputElements(source(SCREEN))) {
+      expect(input, `a credential field is not required: ${input}`).toContain('required');
+    }
+  });
+});
+
+describe('the organization prompt reaches the tenant it was given', () => {
+  it('navigates to the parameterized form with the slug it just validated', () => {
+    // MUTATION-PROVEN GAP, and the widest one this story shipped. This hop is
+    // the entire product behaviour of the screen, and no test read it: replace
+    // the call with `navigate({ to: '/prijava' })` and the prompt silently does
+    // nothing on submit; hard-code `params: { slug: 'dvd-kastel-novi' }` and
+    // every visitor of every organization is sent to one tenant's form, where
+    // their correct credentials are refused with the deliberately
+    // indistinguishable message. Both type-check, both keep `slug` referenced
+    // so no lint fires, and both passed the whole suite.
+    //
+    // The PAIR is what matters: the destination must be the parameterized
+    // route, and the parameter must be the value `organizationDestination`
+    // returned rather than a literal of the handler's own.
+    const handler = submitHandler(source(ORGANIZATION));
+
+    expect(handler, 'the organization prompt has no submit handler').not.toBe('');
+    expect(handler, 'the prompt does not navigate to the per-tenant form').toMatch(
+      /navigate\(\{\s*to:\s*'\/prijava\/\$slug'/,
+    );
+    expect(handler, 'the prompt derives no slug from what was typed').toMatch(
+      /const\s+slug\s*=\s*organizationDestination\(/,
+    );
+    expect(handler, 'the slug handed to the route is not the validated one').toMatch(
+      /params:\s*\{\s*slug\s*\}/,
+    );
+  });
+
+  it('surfaces a rejected navigation instead of discarding it', () => {
+    // `void navigate(...)` on a promise that rejects is an unhandled rejection:
+    // the prompt stays put with no explanation and nothing in the console. The
+    // sign-in screen's equivalent call is inside a try/catch for the same
+    // reason. No message reaches the screen — one would begin the enumeration
+    // oracle this screen is built to avoid — so the console is the whole of it.
+    const handler = submitHandler(source(ORGANIZATION));
+
+    expect(handler, 'a rejected navigation is discarded rather than reported').toMatch(
+      /navigate\([\s\S]{0,200}?\.catch\(/,
+    );
+    expect(handler, 'the rejected navigation reports nothing').toContain('console.error(');
+  });
 });
 
 describe('the screen uses no reserved signal', () => {
@@ -969,6 +1106,57 @@ describe('the detectors find what they claim to find', () => {
     expect(jsxTextWithContent('<p>Prijava</p>')).toEqual(['Prijava']);
     expect(stripTypeArguments('<Input id="a" />')).toBe('<Input id="a" />');
     expect(stripTypeArguments('<p>Prijava</p>')).toBe('<p>Prijava</p>');
+  });
+
+  it('records where the type-argument strip over-reaches into JSX', () => {
+    // The polarity the two self-tests above miss, and it is a real one: they
+    // only ever put a CLOSING tag after the text, and `</p>` is excluded by the
+    // character class because of the `/`. An OPENING tag after text is not —
+    // `Prijava<span>` puts `<` directly after an identifier character, which is
+    // exactly the lookbehind's condition, so the strip eats `<span>` and merges
+    // two runs into one.
+    //
+    // Asserted as it BEHAVES rather than as it should behave, because the
+    // imprecision loses no literal: the merged run is still reported, so the
+    // sweep still fails on hard-coded text. Written down so the next person to
+    // widen this regex sees the boundary rather than discovering it.
+    expect(stripTypeArguments('<p>Prijava<span>x</span></p>')).toBe('<p>Prijavax</span></p>');
+    expect(jsxTextWithContent('<p>Prijava<span>x</span></p>')).toEqual(['Prijavax']);
+  });
+
+  it('binds a form to its own handler and refuses one that is merely nearby', () => {
+    // The matcher that replaced the deleted `onSubmit` regex got no self-test,
+    // and its 160-character window was an unasserted magic bound. Both
+    // polarities: a binding inside the window is found, and a `submit` that is
+    // only mentioned far away from the attribute is not.
+    expect('<form onSubmit={(e) => { void submit(e); }}>').toMatch(
+      /onSubmit=\{[\s\S]{0,160}?\bsubmit\b/,
+    );
+    expect('<form onSubmit={noop}>').not.toMatch(/onSubmit=\{[\s\S]{0,160}?\bsubmit\b/);
+    expect(`<form onSubmit={noop}>${' '.repeat(200)}submit`).not.toMatch(
+      /onSubmit=\{[\s\S]{0,160}?\bsubmit\b/,
+    );
+  });
+
+  it('extracts a handler and its finally rather than matching the file', () => {
+    const screen = [
+      'export function Probe() {',
+      '  async function submit(event) {',
+      '    try {',
+      '      await navigate({ to: 1 });',
+      '    } finally {',
+      '      setPending(false);',
+      '    }',
+      '  }',
+      '}',
+      'function elsewhere() { setPending(true); }',
+    ].join('\n');
+
+    expect(submitHandler(screen)).toContain('navigate({ to: 1 })');
+    expect(submitHandler(screen), 'the extraction ran past the handler').not.toContain('elsewhere');
+    expect(finallyBlock(screen)).toContain('setPending(false)');
+    expect(finallyBlock('function submit() { const x = 1; }')).toBe('');
+    expect(submitHandler('const noHandlerHere = 1;')).toBe('');
   });
 
   it('reads a height off every class shape and nothing off none', () => {

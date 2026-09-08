@@ -218,6 +218,27 @@ pointing at `shift-production` and Preview pointing at `shift-staging`:
 Vite inlines `VITE_*` variables into the bundle at build time, which is why the
 secret key can never appear here.
 
+Both values are checked at runtime, and a bad one throws the stable code
+`SUPABASE_ENVIRONMENT_MISSING` rather than degrading quietly. Five things count
+as bad: either variable absent, either one whitespace-only, a `VITE_SUPABASE_URL`
+that is not an `http(s)` URL — a bare project ref is the usual way to get this
+wrong — and a `VITE_SUPABASE_PUBLISHABLE_KEY` that does not begin
+`sb_publishable_`. That last one is a security check as much as a correctness
+one: a secret key pasted into this variable would be inlined into every chunk
+served to every browser.
+
+**The symptom, if you get one wrong.** The client is built on first use, not at
+boot, so the throw is caught by whichever screen needed it first. A visitor sees
+either the sign-in form saying *"Prijava trenutačno nije moguća. Pokušaj
+ponovno."* on every attempt, or a redirect to that form when they expected to
+already be signed in. Both look exactly like a Supabase outage. The way to tell
+them apart is the browser console, which carries the stable code and the cause;
+if you are debugging what looks like an outage and the console names
+`SUPABASE_ENVIRONMENT_MISSING`, the project is misconfigured and Supabase is
+fine. Fix it by correcting the Pages environment variable and **redeploying** —
+these are build-time values, so changing them in the dashboard does nothing
+until the next build.
+
 The `...` in `--filter @shift/web...` is pnpm's dependency ellipsis: it builds
 `@shift/web` **and everything it depends on**, in topological order. It is a
 no-op today and stops being one the moment `apps/web` imports `@shift/domain`,

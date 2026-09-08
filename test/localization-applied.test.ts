@@ -60,6 +60,21 @@ const SOURCES = [
   // nothing — the freshness guard would not notice a build that predates it.
   join(webRoot, 'src', 'routes', 'prijava-organizacija.tsx'),
   join(webRoot, 'src', 'routes', 'index.tsx'),
+  // NOT `.tsx`, and that is the point. This list guards build FRESHNESS, and
+  // the file that owns `auth.error.credentials` and `auth.error.unavailable` is
+  // a plain module: story 1.3b moved the failure-to-message pairing out of the
+  // screen and into `sign-in.ts` precisely so a node test could execute it, and
+  // then added that file to `prijava.test.ts`'s KEY_SOURCES while leaving it
+  // out of here. So the one file invented to hold message keys was swept for
+  // keys and not for staleness — edit `signInMessageKey`, skip the build, and
+  // every chunk sweep below reads output that predates the edit and passes.
+  //
+  // Its two neighbours join it for the same reason rather than a different one:
+  // `client.ts` and `address.ts` hold the stable codes the screens import and
+  // log, so a chunk built before an edit to either is equally stale.
+  join(webRoot, 'src', 'supabase', 'sign-in.ts'),
+  join(webRoot, 'src', 'supabase', 'client.ts'),
+  join(webRoot, 'src', 'supabase', 'address.ts'),
 ];
 
 /**

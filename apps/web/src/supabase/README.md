@@ -1,6 +1,12 @@
 # `supabase/`
 
-The generated database types and the single browser Supabase client.
+The single browser Supabase client, the synthesized sign-in address, and the
+credential exchange.
+
+There are no generated database types here yet. This file claimed them before
+one existed; the decision to generate them is open and sits in
+`deferred-work.md`, so `createClient` currently takes no `Database` generic and
+every query is untyped at the row level.
 
 - `client.ts` — the one client, constructed from `VITE_SUPABASE_URL` and
   `VITE_SUPABASE_PUBLISHABLE_KEY` only. AD-17 keeps `sb_secret_*` out of this

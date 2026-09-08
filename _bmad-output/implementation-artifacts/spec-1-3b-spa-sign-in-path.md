@@ -3,7 +3,7 @@ title: 'Story 1.3b — The SPA sign-in path'
 type: 'feature'
 created: '2026-09-07'
 status: 'done'
-review_loop_iteration: 0
+review_loop_iteration: 2
 baseline_commit: 'fe2596fadeea2dd65a25227c8c98ee72ad096aa9'
 context:
   - '{project-root}/_bmad-output/implementation-artifacts/epic-1-context.md'
@@ -123,6 +123,54 @@ Three, in the same commit: `resource-hygiene.test.ts:100` (equality over the san
 - Given a wrong password, an unknown username and a deactivated account, when each is attempted, then all three produce the identical message and the entered values remain.
 - Given `nvm use && pnpm install && pnpm build && pnpm lint && pnpm typecheck && pnpm test`, when all run with the stack up, then each exits 0, no suite is skipped, and the test count exceeds the 939 + 172 + 4 baseline.
 - Given the built chunk, when the vocabulary sweep runs, then `Nema` and `Odjava` are still absent and `Organizacija`'s count matches the resource file exactly.
+
+### Review Findings
+
+Code review of `fe2596f..9107896`, 2026-09-08. Four layers: blind-hunter,
+edge-case-hunter, verification-gap, acceptance-auditor. Gate verified green
+before review: 946 root / 315 web / 4 domain, 0 skipped, lint and typecheck clean.
+
+- [x] [Review][Decision — RESOLVED 2026-09-08: redirect to `/prijava`] A malformed slug in the URL refuses every correct credential, forever — `/prijava/under_score` renders the form, `organizationDestination` returns `null`, and `signIn` refuses locally with the wrong-password message on every attempt. Normalization closed the capital-letter case the spec's "Known-bad state avoided" names; the malformed case still reaches it. Two defensible readings: (a) `beforeLoad` redirects a slug that cannot be one to `/prijava`, matching the organization prompt's own inert-refusal philosophy; (b) leave it, because refusing identically regardless of slug shape IS the anti-enumeration posture the module argues for. [apps/web/src/routes/prijava.tsx:215, apps/web/src/supabase/sign-in.ts:141]
+
+- [x] [Review][Patch] The organization prompt's navigation destination is pinned by nothing [apps/web/src/routes/prijava-organizacija.tsx:55]
+- [x] [Review][Patch] The post-sign-in landing `navigate({ to: '/' })` is pinned by nothing [apps/web/src/routes/prijava.tsx:102]
+- [x] [Review][Patch] The in-flight test cannot observe what the `finally` block does [apps/web/src/routes/prijava.test.ts:812]
+- [x] [Review][Patch] Every `SUPABASE_ENVIRONMENT_MISSING` throw is swallowed with no log, and two comments claim otherwise [apps/web/src/routes/prijava.tsx:103, apps/web/src/routes/index.tsx:60]
+- [x] [Review][Patch] No runtime guard that the publishable key is publishable [apps/web/src/supabase/client.ts:91]
+- [x] [Review][Patch] The relaxed bundle scan and its compensating assertion cover different file sets [test/key-hygiene.test.ts:281]
+- [x] [Review][Patch] `sign-in.ts` owns two message keys but is absent from the `SOURCES` freshness guard [test/localization-applied.test.ts:48]
+- [x] [Review][Patch] `createClient`'s argument order is asserted by nothing [apps/web/src/supabase/client.test.ts]
+- [x] [Review][Patch] Neither credential field carries `required`, while the sibling screen's field does [apps/web/src/routes/prijava.tsx:144]
+- [x] [Review][Patch] `autoComplete="organization"` asks the browser for the organization's name, not its slug [apps/web/src/routes/prijava-organizacija.tsx:75]
+- [x] [Review][Patch] `DEPLOY.md` documents neither `SUPABASE_ENVIRONMENT_MISSING` nor the new URL-shape requirement [DEPLOY.md:162]
+- [x] [Review][Patch] Story status metadata is inconsistent three ways [_bmad-output/implementation-artifacts/spec-1-3b-spa-sign-in-path.md:5]
+- [x] [Review][Patch] `void navigate(...)` discards a rejection in the organization prompt [apps/web/src/routes/prijava-organizacija.tsx:55]
+- [x] [Review][Patch] `KEY_MATERIAL_LENGTH` is a derived constant with no self-test, in the file that self-tests every other detector [test/key-hygiene.test.ts:50]
+- [x] [Review][Patch] The generalized tap-target sweep asserts nothing when it finds no controls [apps/web/src/routes/prijava.test.ts]
+- [x] [Review][Patch] The `onSubmit` replacement matcher got no self-test and carries an unasserted 160-character window [apps/web/src/routes/prijava.test.ts:777]
+- [x] [Review][Patch] `stripTypeArguments` over-consumes JSX and the failing polarity is untested [apps/web/src/routes/prijava.test.ts:264]
+- [x] [Review][Patch] `README.md` describes a generated database-types file that does not exist [apps/web/src/supabase/README.md:3]
+- [x] [Review][Patch] `organizationDestination`'s doc describes only its navigation caller, not the auth one [apps/web/src/supabase/address.ts:70]
+
+- [x] [Review][Defer] Neither sign-in route redirects an already-signed-in visitor [apps/web/src/routes/prijava.tsx:215] — deferred, belongs with the navigation shell that introduces sign-out
+- [x] [Review][Defer] `STRUCTURAL_EXPRESSION` exempts every present and future structural attribute in expression form [apps/web/src/routes/prijava.test.ts:160] — deferred, design judgement, no current defect
+- [x] [Review][Defer] The `SESSION` test fixture is declared verbatim in three files [apps/web/src/router.test.ts] — deferred, pre-existing shape
+- [x] [Review][Defer] `client.test.ts` constructs a real client with auto-refresh timers in the node suite [apps/web/src/supabase/client.test.ts] — deferred, pairs with the open client-options ledger entry
+- [x] [Review][Defer] `iceberg-js@0.8.1` entered the browser bundle's dependency graph transitively [pnpm-lock.yaml] — deferred, falsifies the spec's "and nothing else" expectation
+
+**Outcome.** All 20 patches applied and all 5 defers ledgered. The decision was
+resolved in favour of the redirect and implemented as `prijavaRoute.beforeLoad`.
+
+Gate after the patches: **948 root / 338 web / 4 domain, 0 skipped**, `pnpm build`,
+`pnpm lint` and `pnpm typecheck` all clean — up from 946 / 315 / 4 before review.
+
+Seven mutations were run against the new assertions to prove they observe what
+they claim, each reverted after: post-sign-in `navigate({ to: '/' })` → `/prijava`;
+`setPending(false)` deleted from the `finally`; the organization prompt's
+`params: { slug }` hard-coded to one tenant; the catch's `console.error` removed;
+the malformed-slug guard neutered to `if (false)`; `createClient`'s two arguments
+swapped; and the publishable-key prefix check deleted. Every one of the seven
+passed the suite before this review and fails it now.
 
 ## Spec Change Log
 

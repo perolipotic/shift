@@ -49,6 +49,7 @@ const PLAUSIBLE_KEY = new RegExp(`${SECRET_VALUE_PREFIX}[A-Za-z0-9_-]{20,}`);
  */
 const KEY_MATERIAL_LENGTH = Number(/\{(\d+),\}/.exec(PLAUSIBLE_KEY.source)?.[1]);
 
+
 // --------------------------------------------------------------- comment rules
 
 const BLOCK_COMMENT = /\/\*[\s\S]*?\*\//g;
@@ -129,6 +130,16 @@ const byExtension =
 /** Where the build lands, and whether it is there at all. */
 const distRoot = join(repoRoot, 'apps', 'web', 'dist');
 const notBuilt = collectFiles(distRoot, byExtension('.js')).length === 0;
+/**
+ * Everything a build emits that a key could ride out in.
+ *
+ * ONE definition, because the relaxed bundle scan and the assertion that
+ * justifies relaxing it must read the same files. They did not: the scan took
+ * `.js|.css|.html|.map` and its justification took `.js`, so the three
+ * occurrences of the prefix in the sourcemap were covered by the loosened
+ * regex and by no claim about why the loosening is safe.
+ */
+const BUNDLE_EXTENSIONS = byExtension('.js', '.css', '.html', '.map');
 
 /**
  * The build output for the two scans that read it.
@@ -278,7 +289,7 @@ describe('secret key hygiene: key material', () => {
     // exactly the state the narrowing is least safe in: `pnpm test` does not
     // build, so an unbuilt or half-cleaned `dist` silently retired the only
     // assertion standing between a relaxed check and a shipped key.
-    const built = builtFiles(byExtension('.js', '.css', '.html', '.map'));
+    const built = builtFiles(BUNDLE_EXTENSIONS);
 
     const offences = built.filter((file) => {
       const contents = readFileSync(file, 'utf8');
@@ -299,7 +310,15 @@ describe('secret key hygiene: key material', () => {
     // quietly. If the prefix ever leaves the bundle the narrowing is no longer
     // needed, and this failing is how anybody finds that out: the strict
     // `includes` check belongs back in the test above.
-    const chunks = builtFiles(byExtension('.js'));
+    // THE SAME EXTENSION SET the relaxed scan above reads, and that pairing is
+    // the point: this test is the entire justification for widening that one
+    // from a bare `includes` to `PLAUSIBLE_KEY`, so anything the relaxation
+    // covers has to be covered here or the narrowing applies to files nothing
+    // checks the claim on. It read `.js` only while the scan above read
+    // `.js|.css|.html|.map`, and the prefix occurs three times in the
+    // sourcemap — so every occurrence outside a chunk was held to the
+    // ≥20-character regex and to nothing else.
+    const chunks = builtFiles(BUNDLE_EXTENSIONS);
     const naming = chunks.filter((chunk) => readFileSync(chunk, 'utf8').includes(SECRET_VALUE_PREFIX));
 
     expect(
@@ -328,6 +347,38 @@ describe('secret key hygiene: the scanner itself', () => {
   // Comment-stripping that swallowed too much would make every naming assertion
   // above pass vacuously, so each rule is proved to strip its own comments and
   // to leave every other language's syntax alone.
+
+  it('derives the key-material bound rather than trusting it, and notices when it cannot', () => {
+    // The one detector in this file with no self-test, in the file that proves
+    // every other one on both polarities. `KEY_MATERIAL_LENGTH` is PARSED out
+    // of `PLAUSIBLE_KEY.source` with `/\{(\d+),\}/`, so an open-ended bound is
+    // the only shape it can read: rewrite the regex as `{20,64}` and the exec
+    // returns null, `Number(undefined)` is `NaN`, and every `toBeLessThan(NaN)`
+    // above fails for a reason that has nothing to do with keys — which is a
+    // confusing way to discover a one-character edit three lines away.
+    expect(Number.isInteger(KEY_MATERIAL_LENGTH), 'the bound is not a number at all').toBe(true);
+    expect(KEY_MATERIAL_LENGTH).toBe(20);
+    expect(PLAUSIBLE_KEY.source).toContain(`{${String(KEY_MATERIAL_LENGTH)},}`);
+
+    // Both polarities of the bound itself: the regex must match key material of
+    // exactly this length and refuse one character less.
+    expect(PLAUSIBLE_KEY.test(SECRET_VALUE_PREFIX + 'a'.repeat(KEY_MATERIAL_LENGTH))).toBe(true);
+    expect(PLAUSIBLE_KEY.test(SECRET_VALUE_PREFIX + 'a'.repeat(KEY_MATERIAL_LENGTH - 1))).toBe(
+      false,
+    );
+  });
+
+  it('reads every artifact a build emits, not only its chunks', () => {
+    // The pairing this file's narrowing rests on: the relaxed scan and the
+    // assertion justifying it must agree on which files they read. A sourcemap
+    // carries the same strings as the chunk it maps, so `.map` in one set and
+    // not the other is a real hole rather than a tidiness point.
+    for (const artifact of ['a.js', 'a.css', 'a.html', 'a.js.map']) {
+      expect(BUNDLE_EXTENSIONS(artifact), `${artifact} is not scanned`).toBe(true);
+    }
+
+    expect(BUNDLE_EXTENSIONS('a.txt'), 'the bundle scan reaches outside the build').toBe(false);
+  });
 
   it('strips the comment syntax each language actually has', () => {
     expect(stripComments('a.ts', '/* sb_secret_prose */')).not.toContain('sb_secret_prose');

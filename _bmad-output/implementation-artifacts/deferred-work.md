@@ -420,3 +420,25 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-3b-spa-sign-in-path.md`
   summary: `createClient` is called with no `Database` generic and no explicit auth options, so every PostgREST call in later stories starts untyped.
   evidence: `apps/web/src/supabase/README.md` still opens with "The generated database types and the single browser Supabase client", but no types file exists and the client is a bare `SupabaseClient`. This is the consumer side of the already-open ledger entry about whether generated types are committed or built — story 1.3b is the first story that would have used them and did not, which is the fact that entry was waiting for. Separately, `persistSession`, `autoRefreshToken`, `storageKey` and `detectSessionInUrl` are all inherited defaults; the spec's "Ask First" gate names session persistence explicitly, so the defaults deserve to be recorded as a decision rather than inherited silently. Resolve with the generated-types entry, since both are answered by the same edit.
+
+## Deferred from: code review of spec-1-3b-spa-sign-in-path (2026-09-08)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3b-spa-sign-in-path.md`
+  summary: Redirect an already-signed-in visitor away from `/prijava` and `/prijava/$slug`.
+  evidence: Neither sign-in route reads the session in `beforeLoad`, so a signed-in person reaching either screen is offered a credential form. It is not a security hole — a new sign-in simply replaces the session — but there is no sign-out affordance anywhere (`Odjava` stays reserved and the navigation shell is itself deferred), so re-authenticating is the only thing the screen can do for them. Belongs with the story that introduces sign-out, because the guard and the affordance are the same decision.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3b-spa-sign-in-path.md`
+  summary: Narrow `STRUCTURAL_EXPRESSION` to an explicit subset rather than generating it from the whole `STRUCTURAL_ATTRIBUTES` set.
+  evidence: Only `aria-describedby` needed to become expression-legal in story 1.3b, but `prijava.test.ts:160` builds the expression matcher from every entry in `STRUCTURAL_ATTRIBUTES`, so each present and future entry is exempted in both quoted and expression syntax at once. The deliberate-widening review moment happens only for the quoted form; the next attribute added to that list — a `title`, an `alt`, a `label` — is silently exempted in expression form with no such moment. No current defect: every present entry is genuinely structural.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3b-spa-sign-in-path.md`
+  summary: Move the shared `SESSION` test fixture into one module.
+  evidence: `router.test.ts`, `client.test.ts` and `sign-in.test.ts` each declare `const SESSION = { access_token: 'token', user: { id: 'member' } } as unknown as Session;` with near-identical comments. Three copies of one shape is exactly what drifts — one file gaining a field the others lack — and the drift would be invisible because each suite passes against its own copy.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3b-spa-sign-in-path.md`
+  summary: Decide the browser client's auth options, and stop the node suite from holding a real auto-refresh timer.
+  evidence: `client.ts:116` calls `createClient(url, publishableKey)` with no `auth` options, so `autoRefreshToken` and `persistSession` take library defaults. `client.test.ts`'s "returns the same instance every time" therefore constructs a REAL `SupabaseClient` in the node suite; the module-level memo is never torn down and nothing calls `stopAutoRefresh`, so a test run can be left holding a background refresh timer. Pairs with the already-open question of which client options this application actually wants.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-3b-spa-sign-in-path.md`
+  summary: Decide whether `iceberg-js@0.8.1` belongs in the browser bundle's dependency graph.
+  evidence: The spec's Verification section expected `pnpm install` to add `@supabase/supabase-js@2.113.0` "and nothing else"; the lockfile gained `iceberg-js@0.8.1` and `tslib@2.8.1` as new package entries. `iceberg-js` is a table-format library reachable via `storage-js`, for a story — and an application — that makes no storage call. Transitive rather than declared, so the "Ask First" dependency gate was not bypassed, but it widens the supply-chain surface of a bundle whose central invariant is key containment. Verify whether it is tree-shaken from the production build before deciding.

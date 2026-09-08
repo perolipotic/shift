@@ -36,6 +36,19 @@ export const INVALID_ORGANIZATION_SLUG = 'INVALID_ORGANIZATION_SLUG';
 export const INVALID_USERNAME = 'INVALID_USERNAME';
 
 /**
+ * Logged when the organization prompt's navigation to the tenant's form rejects.
+ *
+ * Declared HERE rather than in the screen that logs it, for the same reason
+ * `signInMessageKey` is not a ternary in `prijava.tsx`: `prijava.test.ts` makes
+ * every non-import string literal in a screen an offence, so a `.tsx` cannot
+ * hold its own stable code. This module is the one the prompt already imports
+ * its decision from, so it is where the code for that decision's one failure
+ * belongs. Never rendered — a message on that screen would begin the
+ * enumeration oracle it exists to avoid.
+ */
+export const ORGANIZATION_NAVIGATION_FAILED = 'ORGANIZATION_NAVIGATION_FAILED';
+
+/**
  * The slug rule, verbatim from `0002_organizations_and_members.sql`.
  *
  * Two halves, and both are load-bearing. The pattern is what a DNS label may
@@ -66,6 +79,14 @@ export function isOrganizationSlug(slug: string): boolean {
  * Trimming and lowercasing before the check rather than rejecting on them: a
  * slug is a DNS label, and the two things a person does to one while typing it
  * are add a space and hold shift. Neither is a mistake worth a refusal.
+ *
+ * TWO CALLERS, and the second is security-relevant rather than cosmetic, so
+ * changing this function's behaviour for the prompt's sake changes the auth path
+ * too. `prijava-organizacija.tsx` asks it where to navigate; `sign-in.ts` asks
+ * it whether to make an authentication request at all, and `prijava.tsx`'s
+ * `beforeLoad` asks it whether the form should render for this URL. Its name
+ * says "destination" because the prompt came first — read it as the slug rule,
+ * and add a case here only if all three callers want it.
  */
 export function organizationDestination(typed: string): string | null {
   const slug = typed.trim().toLowerCase();
