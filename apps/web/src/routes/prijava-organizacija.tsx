@@ -1,0 +1,97 @@
+import { createRoute, useNavigate } from '@tanstack/react-router';
+import { useRef, type FormEvent } from 'react';
+
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { t } from '@/i18n';
+import { rootRoute } from '@/routes/__root';
+import { organizationDestination } from '@/supabase/address';
+
+/**
+ * Which organization (story 1.3b), at bare `/prijava`.
+ *
+ * The credential form lives at `/prijava/$slug` because AD-12's address is
+ * namespaced by the organization and there is no session to read the
+ * organization from before signing in. That leaves three places with no slug in
+ * scope — `/`'s redirect target, a typed `/prijava`, and `not-found.tsx`'s link
+ * back — so bare `/prijava` needs a screen of its own rather than a 404, and
+ * this is the smallest one that gets a person to theirs: one field, then on.
+ *
+ * It is NOT a third field on the credential form. That form is frozen at two
+ * (human decision, 2026-09-07), and this screen is the reason it can stay that
+ * way.
+ *
+ * It resolves nothing and asks nothing. The slug is checked against the same
+ * DNS-label rule the `organizations` table applies and then simply navigated
+ * to — no lookup, no "does this organization exist" answer, because any such
+ * answer is an enumeration oracle exposed to an anonymous caller. An unknown
+ * slug therefore produces a perfectly ordinary sign-in screen whose refusal
+ * discloses nothing, which is the same shape as a wrong password.
+ *
+ * A value that cannot be a slug is refused INERTLY: `required` lets the
+ * browser's own validation stop an empty submission in the user's language, and
+ * a malformed one simply does not navigate. Neither case gets a message,
+ * because a message here would be the beginning of the same oracle.
+ */
+export function OrganizationPromptScreen() {
+  const navigate = useNavigate();
+  const organizationField = useRef<HTMLInputElement>(null);
+
+  function submit(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+
+    const field = organizationField.current;
+
+    if (field === null) return;
+
+    // The decision itself lives in `@/supabase/address` so a node test can run
+    // it: this file is a `.tsx` and is collected by nothing (AD-15).
+    const slug = organizationDestination(field.value);
+
+    if (slug === null) return;
+
+    void navigate({ to: '/prijava/$slug', params: { slug } });
+  }
+
+  return (
+    <main className="flex flex-1 items-center justify-center p-6">
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <h1 className="text-xl font-semibold leading-none tracking-tight">
+            {t('auth.organization.heading')}
+          </h1>
+        </CardHeader>
+        <CardContent>
+          <form method="post" onSubmit={submit} className="grid gap-6">
+            <div className="grid gap-2">
+              <Label htmlFor="organization">{t('auth.organization.label')}</Label>
+              <Input
+                ref={organizationField}
+                id="organization"
+                name="organization"
+                type="text"
+                autoComplete="organization"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                required
+                className="h-11"
+              />
+            </div>
+            <Button className="h-11 w-full" type="submit">
+              {t('auth.organization.submit')}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </main>
+  );
+}
+
+export const prijavaOrganizacijaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/prijava',
+  component: OrganizationPromptScreen,
+});

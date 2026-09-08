@@ -36,15 +36,28 @@ const RESOURCE = join(repoRoot, 'apps', 'web', 'src', 'i18n', 'locales', 'hr.jso
  *  three Croatian categories. */
 const SANCTIONED_PLURAL_KEYS = ['count.days', 'count.conflicts'];
 
-/** The seven flat screen strings story 1.1d authors: the sign-in form and the
- *  not-found component. Nothing else in the tree may add a key without editing
- *  this list, which is the point. */
+/** The flat screen strings the sign-in path is permitted to ship: 1.1d's
+ *  seven, plus the six story 1.3b adds — two refusal messages, the three-string
+ *  organization prompt, and the signed-in placeholder heading. Nothing else in
+ *  the tree may add a key without editing this list, which is the point. */
 const SANCTIONED_SCREEN_KEYS = [
   'auth.heading',
   'auth.username',
   'auth.password',
   'auth.submit',
   'auth.passwordReset',
+  // Two, not three. A wrong password, an unknown username and a deactivated
+  // account share `auth.error.credentials`: a third message would tell an
+  // anonymous caller which usernames exist in an organization, which is the
+  // enumeration oracle story 1.3b refused a resolution RPC for.
+  'auth.error.credentials',
+  'auth.error.unavailable',
+  'auth.organization.heading',
+  'auth.organization.label',
+  'auth.organization.submit',
+  // Explicitly temporary: the navigation shell replaces the signed-in
+  // placeholder wholesale.
+  'home.heading',
   'notFound.heading',
   'notFound.back',
 ];
@@ -174,16 +187,24 @@ describe('the messages obey the voice rules that bind every string', () => {
     //
     // `prijava` and `lozinka` were on this list and are gone from it: story
     // 1.1d authors the sign-in screen, so those two words are now legitimately
-    // this file's. The eight that remain are the navigation shell's and the
-    // terminology contract's, and they stay banned until the spec that owns
-    // them lands — the same review moment, one story later.
+    // this file's. `organizacija` left the same way and for the same reason —
+    // story 1.3b authors the organization prompt at bare `/prijava`, whose
+    // heading IS the word, so it is now this file's too. The seven that remain
+    // are the navigation shell's and the terminology contract's, and they stay
+    // banned until the spec that owns them lands.
+    //
+    // Only the heading needed the removal. This sweep is a plain lowercase
+    // substring match, and `organizacije` does not contain `organizacija`, so
+    // the field label `Kratica organizacije` cleared the old list on its own —
+    // which is precisely why the removal has to be deliberate rather than
+    // discovered: an inflected form would have shipped the vocabulary without
+    // ever reaching this review moment.
     const reserved = [
       'danas',
       'kalendar',
       'godišnji',
       'raspored',
       'ljudi',
-      'organizacija',
       'postavke',
       'odjava',
     ];

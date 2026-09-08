@@ -186,9 +186,12 @@ export function createHandler(
 
     // The only authorization AD-16 accepts is against the database: the caller
     // must be an admin of the target member's own organization. Story 1.2
-    // created `members`, but story 1.3 owns the policies and the role helper
-    // that make it readable as the caller, and until those land the table is
-    // deny-all. Acting now would mean acting unauthorized.
+    // created `members` and story 1.3a added the policies and the role helper
+    // that make it readable as the caller, so that lookup is now writable. What
+    // is not settled is what each operation does once authorized — its payload,
+    // its refusals, and its effect on the versioned tables AD-2 defers — which
+    // is stories 1.5 and 1.6. The 501 stands until then, and it is pinned by
+    // `test/admin-auth-boundary.test.ts`.
     return reply(501, { code: 'NOT_IMPLEMENTED', operation });
   };
 }

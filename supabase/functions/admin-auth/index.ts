@@ -25,14 +25,15 @@
  * WHY EVERY OPERATION RETURNS 501 TODAY
  * AD-16 requires each call to be authorized against the DATABASE — the caller
  * must be an admin of the target member's own organization — never against the
- * request. Story 1.2 brought the `members` table, so the rows now exist; what
- * does not exist yet is any way to read them as the caller. AD-10's role and
- * active-status helper and every RLS policy are story 1.3's, and both tables
- * are deny-all until it lands, so a lookup made here would answer "no such
- * member" for every caller. Shipping a working `createUser` on top of that
- * would be a privilege-escalation hole wearing a passing test. So the boundary
- * ships with the security-critical parts correct (two-client construction, env
- * handling, fail-fast) and refuses to act.
+ * request. Story 1.2 brought the `members` table and story 1.3a brought what
+ * makes it readable as the caller: AD-10's `current_member_access()` helper and
+ * the RLS policies on both tables. So the authorization this boundary owes is
+ * now expressible, and what is still missing is the operations themselves —
+ * creating, updating and banning a member are stories 1.5 and 1.6, together
+ * with the payload contract each one accepts. Shipping `createUser` ahead of
+ * that contract would mean guessing it. So the boundary ships with the
+ * security-critical parts correct (two-client construction, env handling,
+ * fail-fast) and refuses to act until the operations are specified.
  *
  * This file holds only what is Deno-specific: the environment, the client
  * construction, and the server. Every decision lives in `handler.ts`, which

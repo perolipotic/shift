@@ -35,6 +35,22 @@ function allMigrations(): string {
 }
 
 /**
+ * Every migration's text with its comments removed.
+ *
+ * A source-text assertion that runs over prose is satisfiable by prose: the
+ * whole of this file's job is to catch a missing statement, and every
+ * statement it looks for is also *described* in a comment a line above.
+ *
+ * Module scope because two describe blocks need it: the access-control
+ * migration's statement assertions, and the auth-provider block's cross-check
+ * that the configured hook URI names a function some migration actually
+ * creates.
+ */
+function migrationStatements(): string {
+  return allMigrations().replaceAll(/--[^\n]*/g, '');
+}
+
+/**
  * Everything that is core rather than fixture.
  *
  * The migrations, plus the operator provisioning script: it is applied to
@@ -140,7 +156,7 @@ describe('the first schema migration', () => {
       expect(migrations, `no migration creates ${table}`).toMatch(
         new RegExp(`create table ${table}\\b`, 'i'),
       );
-      expect(migrations, `${table} must be deny-all until story 1.3 writes its policies`).toMatch(
+      expect(migrations, `${table} must have row level security enabled; its policies are 0003's`).toMatch(
         new RegExp(`alter table ${table} enable row level security`, 'i'),
       );
     }
@@ -154,16 +170,6 @@ describe('the first schema migration', () => {
     expect(allMigrations()).toMatch(
       /create extension if not exists pgcrypto with schema extensions/i,
     );
-  });
-
-  it('declares no policy at all, because story 1.3 owns every one of them', () => {
-    // EXPECTED TO BE DELETED IN STORY 1.3. That story writes the RLS policies
-    // and the role helper, and the first one it writes makes this assertion
-    // wrong by construction — remove it then rather than weakening it, and let
-    // 1.3's own two security tests be the check. Until then a permissive policy
-    // written early stays invisible until the story that was supposed to author
-    // it, which is exactly when nobody is looking.
-    expect(allMigrations()).not.toMatch(/create policy/i);
   });
 
   it('spends the whole constraint-trigger budget on one deferred trigger', () => {
@@ -229,8 +235,155 @@ describe('the first schema migration', () => {
   });
 });
 
+describe('the access-control migration', () => {
+  /** The `create policy <name> on <table> … ;` body for one policy, comments out. */
+  function policyBody(name: string): string {
+    const declaration = new RegExp(`create policy ${name}\\b[\\s\\S]*?;`, 'i').exec(
+      migrationStatements(),
+    );
+    return declaration?.[0] ?? '';
+  }
+
+  it('is named 0003 and hand-numbered', () => {
+    // Contiguity across the whole tree is asserted by "numbers migrations 0001,
+    // 0002, … with no gaps and no duplicates" above; this is the narrower claim
+    // that the file story 1.3 owes exists under the name the suite requires.
+    expect(
+      migrationNames(),
+      'story 1.3 owes migration 0003, hand-numbered because `supabase migration new` emits a timestamp name this suite rejects',
+    ).toContain('0003_access_control.sql');
+  });
+
+  it('writes the policies 0002 deliberately left out', () => {
+    // The counterpart of the assertion 0002 carried and this story deleted:
+    // "no migration declares a policy" was the deny-all posture, and the
+    // posture now is that both tables carry policies. Source text only — what
+    // those policies actually do is `test/rls-isolation.test.ts`.
+    const statements = migrationStatements();
+
+    expect(statements, 'no migration declares a policy').toMatch(/create policy/i);
+    for (const table of ['organizations', 'members']) {
+      expect(statements, `no policy is declared on ${table}`).toMatch(
+        new RegExp(`create policy [a-z_]+ on public\\.${table}\\b`, 'i'),
+      );
+    }
+  });
+
+  it('grants every policy to authenticated and to no wider role', () => {
+    // The only database-independent guard on policy *scope*, and the reason the
+    // deleted `not.toMatch(/create policy/i)` assertion is replaced rather than
+    // merely removed. A policy written `to anon`, `to public`, or with no `to`
+    // clause at all opens both tables to an unauthenticated caller, and a
+    // `for all` policy silently covers writes that were never reviewed as
+    // writes. None of that needs a running stack to catch.
+    const declarations = migrationStatements().match(/create policy[\s\S]*?;/gi) ?? [];
+
+    expect(declarations.length, 'no policy declarations were found to check').toBeGreaterThan(0);
+    expect(
+      declarations
+        .filter((declaration) => !/\bto authenticated\b/i.test(declaration))
+        .map((declaration) => /create policy (\S+)/i.exec(declaration)?.[1] ?? declaration),
+      'every policy must name `to authenticated`; anything wider gives an anonymous caller rows',
+    ).toEqual([]);
+    expect(
+      declarations
+        .filter((declaration) => /\bfor all\b/i.test(declaration))
+        .map((declaration) => /create policy (\S+)/i.exec(declaration)?.[1] ?? declaration),
+      'a `for all` policy covers writes that were reviewed as reads',
+    ).toEqual([]);
+  });
+
+  it('declares exactly the five policies story 1.3a reviewed, and no sixth', () => {
+    // EXPECTED TO CHANGE IN STORY 1.4, which adds the `organizations` write
+    // policy `0003:243-245` tells it to build by copying the select one. Extend
+    // this list then — do not weaken it to a count or a `toContain`.
+    //
+    // The exact set was asserted only against `pg_policies` in
+    // `test/rls-isolation.test.ts`, which skips without a database, and there
+    // is still no CI running one (deferred-work.md). That left the only bound
+    // on *which* policies exist behind a gate a developer has to remember to
+    // open: the scope guard above is happy with a sixth policy written
+    // `using (true) to authenticated`, and so was everything else here.
+    const declared = (migrationStatements().match(/create policy (\S+)/gi) ?? [])
+      .map((match) => /create policy (\S+)/i.exec(match)?.[1] ?? match)
+      .sort();
+
+    expect(declared, 'the declared policy set changed').toEqual([
+      'members_delete_by_own_active_admin',
+      'members_insert_by_own_active_admin',
+      'members_select_own_organization',
+      'members_update_by_own_active_admin',
+      'organizations_select_own_organization',
+    ]);
+  });
+
+  it('pins the tenant in WITH CHECK on both write policies that can set it', () => {
+    // Per policy by name, not as a count over the file. A bare count has no
+    // margin — the real number is two and the assertion said "at least two" —
+    // and it is anonymous: two `with check` clauses on two insert policies
+    // would satisfy it while the update policy, the one that can move a row
+    // between tenants, had none.
+    const insert = policyBody('members_insert_by_own_active_admin');
+    const update = policyBody('members_update_by_own_active_admin');
+
+    expect(insert, 'the members insert policy is not declared').not.toBe('');
+    expect(update, 'the members update policy is not declared').not.toBe('');
+
+    expect(insert, 'insert has no USING clause to fail, so WITH CHECK is the only refusal').toMatch(
+      /with check[\s\S]*organization_id/i,
+    );
+    expect(update, 'an update must be reachable only inside the caller organization').toMatch(
+      /using[\s\S]*organization_id/i,
+    );
+    expect(
+      update,
+      'without WITH CHECK on update, an otherwise-legal update can move a row between tenants',
+    ).toMatch(/with check[\s\S]*organization_id/i);
+  });
+
+  it('confines the access token hook to the auth service', () => {
+    // A URI naming a function that the wrong roles may call is configuration
+    // that looks right and hands the owner's rights to a session; a URI naming
+    // one the auth service may NOT call breaks every sign-in. The database-side
+    // half of this — the actual ACL — is asserted in
+    // `test/provisioning.test.ts`.
+    // Over `migrationStatements()` rather than `allMigrations()`: every grant
+    // and revoke below is also *described* in a comment a line or two above it
+    // in `0003`, so matching the raw file would let the prose satisfy the
+    // assertion on its own. Same reason the rest of this block strips comments.
+    const migrations = migrationStatements();
+
+    expect(migrations, 'nothing grants the auth service execute on the hook').toMatch(
+      /grant execute on function public\.custom_access_token_hook\(jsonb\) to supabase_auth_admin/i,
+    );
+
+    // Supabase's default privileges grant EXECUTE on a new function in `public`
+    // to each of these individually, so revoking PUBLIC alone leaves all of
+    // them holding it.
+    for (const role of ['public', 'anon', 'authenticated', 'service_role']) {
+      expect(migrations, `the hook is still executable by ${role}`).toMatch(
+        new RegExp(
+          `revoke execute on function public\\.custom_access_token_hook\\(jsonb\\) from ${role}`,
+          'i',
+        ),
+      );
+    }
+  });
+});
+
 describe('the local auth provider configuration', () => {
-  /** `key = value` within one `[section]` of config.toml. */
+  /**
+   * `key = value` within one `[section]` of config.toml, unquoted.
+   *
+   * A hand-rolled reader rather than a TOML parser, because the only thing this
+   * file needs is a handful of scalar values and a dependency for that would be
+   * a dependency to keep. It strips the surrounding quotes from a string value:
+   * a caller asserting against `'"pg-functions://…"'` would be baking this
+   * reader's shortcomings into its own expected value.
+   *
+   * Note what it does NOT do: it ignores every section it was not asked about,
+   * so a new section in config.toml is unenforced until something names it.
+   */
   function setting(section: string, key: string): string | undefined {
     const config = readFileSync(join(supabaseRoot, 'config.toml'), 'utf8');
     let current = '';
@@ -242,7 +395,7 @@ describe('the local auth provider configuration', () => {
       }
       if (current !== section) continue;
       const pair = new RegExp(`^${key}\\s*=\\s*(\\S+)`).exec(line.trim());
-      if (pair !== null) return pair[1];
+      if (pair !== null) return (pair[1] ?? '').replace(/^"(.*)"$/, '$1');
     }
     return undefined;
   }
@@ -265,6 +418,33 @@ describe('the local auth provider configuration', () => {
       'there is no open signup anywhere in this system',
     ).toBe('false');
 
-    expect(setting('auth', 'enable_anonymous_sign_ins')).toBe('false');
+    expect(
+      setting('auth', 'enable_anonymous_sign_ins'),
+      'an anonymous session has no organization, so it has no business existing',
+    ).toBe('false');
+  });
+
+  it('enables the custom access token hook and points it at the migrated function', () => {
+    // The reader above walks `[section]` headers and silently ignores every
+    // section it was not asked about, so a new section in config.toml is
+    // unenforced until something asks for it by name. AD-10's organization
+    // claim exists only because this hook runs, and nothing else in the
+    // repository would notice the section being deleted.
+    expect(
+      setting('auth.hook.custom_access_token', 'enabled'),
+      'without the hook no token carries organization_id, and every policy reads zero rows',
+    ).toBe('true');
+
+    // The URI names the database, the schema and the function, and the function
+    // is created by a migration — so this string and that migration have to
+    // agree or every sign-in fails on a missing function.
+    expect(
+      setting('auth.hook.custom_access_token', 'uri'),
+      'the hook URI names the database, schema and function GoTrue will call',
+    ).toBe('pg-functions://postgres/public/custom_access_token_hook');
+    expect(
+      migrationStatements(),
+      'the hook URI names a function no migration creates',
+    ).toMatch(/create function public\.custom_access_token_hook\(event jsonb\)/i);
   });
 });

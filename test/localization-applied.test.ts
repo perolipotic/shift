@@ -54,6 +54,12 @@ const SOURCES = [
   join(webRoot, 'src', 'i18n', 'locales', 'hr.json'),
   join(webRoot, 'src', 'routes', 'prijava.tsx'),
   join(webRoot, 'src', 'routes', 'not-found.tsx'),
+  // Story 1.3b's two: the organization prompt at bare `/prijava`, and `/`,
+  // which stopped being a bare redirect and now renders a heading of its own.
+  // A `.tsx` carrying a string that is absent from this list is swept by
+  // nothing — the freshness guard would not notice a build that predates it.
+  join(webRoot, 'src', 'routes', 'prijava-organizacija.tsx'),
+  join(webRoot, 'src', 'routes', 'index.tsx'),
 ];
 
 /**
@@ -288,14 +294,18 @@ describe('a rejected initialization does not mount the application', () => {
  * until the spec that owns them lands.
  */
 
-/** The five words story 1.1d authors, so the chunk may hold them — but only
- *  from `hr.json`. */
+/** The words the sign-in path authors, so the chunk may hold them — but only
+ *  from `hr.json`. Five are story 1.1d's; `Organizacija` is story 1.3b's, and
+ *  it MOVED here from the absent list below rather than being deleted from it.
+ *  That is the stronger claim of the two: absence said nothing may say this
+ *  word, and a count says `hr.json` is the only thing that may. */
 const AUTHORED_VOCABULARY = [
   'Prijava',
   'Prijavi',
   'Lozinka',
   'Korisničko',
   'Zaboravljena',
+  'Organizacija',
 ];
 
 /** Everything the navigation shell and the terminology contract still own.
@@ -306,7 +316,6 @@ const NAVIGATION_AND_TERMINOLOGY = [
   'Godišnji',
   'Raspored',
   'Ljudi',
-  'Organizacija',
   'Postavke',
   'Smjena',
   'Smjene',
