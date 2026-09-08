@@ -22,6 +22,16 @@
   "home": {
     "heading": "Uspješna prijava"
   },
+  "nav": {
+    "danas": "Danas",
+    "kalendar": "Kalendar",
+    "sati": "Sati",
+    "godisnji": "Godišnji",
+    "raspored": "Raspored",
+    "ljudi": "Ljudi",
+    "postavkeRotacije": "Postavke rotacije",
+    "organizacija": "Organizacija"
+  },
   "notFound": {
     "heading": "Stranica ne postoji",
     "back": "Vrati se na prijavu"

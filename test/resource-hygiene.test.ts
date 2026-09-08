@@ -36,10 +36,13 @@ const RESOURCE = join(repoRoot, 'apps', 'web', 'src', 'i18n', 'locales', 'hr.jso
  *  three Croatian categories. */
 const SANCTIONED_PLURAL_KEYS = ['count.days', 'count.conflicts'];
 
-/** The flat screen strings the sign-in path is permitted to ship: 1.1d's
- *  seven, plus the six story 1.3b adds — two refusal messages, the three-string
- *  organization prompt, and the signed-in placeholder heading. Nothing else in
- *  the tree may add a key without editing this list, which is the point. */
+/** The flat screen strings the application is permitted to ship: 1.1d's seven,
+ *  plus the six story 1.3b adds — two refusal messages, the three-string
+ *  organization prompt, and the signed-in placeholder heading — plus the eight
+ *  `nav.*` destination labels the navigation shell's route skeleton adds, for
+ *  twenty-one. Nothing else in the tree may add a key without editing this
+ *  list, which is the point: the list IS the review moment, and a story that
+ *  grows the resource file has to grow this in the same commit. */
 const SANCTIONED_SCREEN_KEYS = [
   'auth.heading',
   'auth.username',
@@ -58,12 +61,50 @@ const SANCTIONED_SCREEN_KEYS = [
   // Explicitly temporary: the navigation shell replaces the signed-in
   // placeholder wholesale.
   'home.heading',
+  // The eight destination labels, added by the navigation shell's route
+  // skeleton. EIGHT, not nine: `Sati` appears in both UX-DR31's member list and
+  // UX-DR32's admin list and is one destination with role-scoped content
+  // (human decision, 2026-09-04). There is no `nav.odjava` — no sign-out ships
+  // in this story, so the word stays reserved below.
+  'nav.danas',
+  'nav.kalendar',
+  'nav.sati',
+  'nav.godisnji',
+  'nav.raspored',
+  'nav.ljudi',
+  'nav.postavkeRotacije',
+  'nav.organizacija',
   'notFound.heading',
   'notFound.back',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
 const SANCTIONED_KEYS = [...SANCTIONED_PLURAL_KEYS, ...SANCTIONED_SCREEN_KEYS];
+
+/**
+ * Vocabulary this story has not earned, as STEMS.
+ *
+ * A stem rather than a word because Croatian inflects: `Odjava` is the noun and
+ * `Odjavi se` is what a button says, and only one of the two contains the other.
+ * Matching the stem catches both, and every form a later story might reach for.
+ *
+ * The navigation shell's route skeleton removed six entries from what used to
+ * be a list of seven whole words — `danas, kalendar, godišnji, raspored, ljudi,
+ * postavke` — in the commit that authored them as `nav.*` labels. They are held
+ * to a COUNT in `test/localization-applied.test.ts` now, which is the stronger
+ * claim: absence said nothing may say the word, a count says `hr.json` is the
+ * only thing that may.
+ */
+const RESERVED_STEMS = ['odjav'];
+
+/** The reserved stem a message carries, or `null`. Lowercased, so an inflected
+ *  or capitalized form cannot slip past. Shared by the sweep and its own
+ *  self-test, so deleting one cannot leave the other green. */
+function reservedStemIn(message: string): string | null {
+  const lowered = message.toLowerCase();
+
+  return RESERVED_STEMS.find((stem) => lowered.includes(stem)) ?? null;
+}
 
 function resource(): Record<string, unknown> {
   return JSON.parse(readFileSync(RESOURCE, 'utf8')) as Record<string, unknown>;
@@ -189,33 +230,69 @@ describe('the messages obey the voice rules that bind every string', () => {
     // 1.1d authors the sign-in screen, so those two words are now legitimately
     // this file's. `organizacija` left the same way and for the same reason —
     // story 1.3b authors the organization prompt at bare `/prijava`, whose
-    // heading IS the word, so it is now this file's too. The seven that remain
-    // are the navigation shell's and the terminology contract's, and they stay
-    // banned until the spec that owns them lands.
+    // heading IS the word, so it is now this file's too.
     //
-    // Only the heading needed the removal. This sweep is a plain lowercase
+    // Only the heading needed that removal. This sweep is a plain lowercase
     // substring match, and `organizacije` does not contain `organizacija`, so
     // the field label `Kratica organizacije` cleared the old list on its own —
-    // which is precisely why the removal has to be deliberate rather than
+    // which is precisely why a removal has to be deliberate rather than
     // discovered: an inflected form would have shipped the vocabulary without
     // ever reaching this review moment.
-    const reserved = [
-      'danas',
-      'kalendar',
-      'godišnji',
-      'raspored',
-      'ljudi',
-      'postavke',
-      'odjava',
-    ];
+    //
+    // SIX MORE LEAVE HERE, in the commit that earns them: the navigation
+    // shell's route skeleton authors `Danas`, `Kalendar`, `Godišnji`,
+    // `Raspored`, `Ljudi` and `Postavke rotacije` as `nav.*` labels, so this
+    // file is now where they belong and absence is no longer the right claim.
+    // `test/localization-applied.test.ts` takes over for all six on the other
+    // side — from an absence assertion to a COUNT, which is the stronger of
+    // the two: absence said nothing may say the word, and a count says
+    // `hr.json` is the only thing that may.
+    //
+    // The one stem that STAYS is `odjav`. This story ships no sign-out — no
+    // affordance, no route, no `nav.odjava` key — so the word is not earned.
+    //
+    // A STEM rather than the whole word, because the whole word missed the
+    // likelier of the two labels: Croatian's imperative sign-out is `Odjavi
+    // se`, which does not contain `odjava` at all, so the noun-only list would
+    // have waved through the exact string a button is most likely to carry.
+    //
+    // Note what this sweep can and cannot see. `messages()` walks string
+    // VALUES, so it catches a LABEL and never a key — a `nav.odjava` key with
+    // some other label is caught by the exhaustive key-set assertion above
+    // instead, and between them the two cover both halves. `Sati` was never on
+    // this list at all; it is added to the count sweep in
+    // `localization-applied.test.ts` rather than inheriting the gap.
+    const found = messages()
+      .map((message) => ({ message, stem: reservedStemIn(message) }))
+      .filter((entry) => entry.stem !== null);
 
-    for (const message of messages()) {
-      for (const word of reserved) {
-        expect(message.toLowerCase(), `${message} contains the reserved word ${word}`).not.toContain(
-          word,
-        );
-      }
-    }
+    // NON-VACUITY, and it earns its place now that the list is down to one
+    // stem: an empty `RESERVED_STEMS` would make this assert nothing at all
+    // while still reading as a sweep, and shrinking the list is exactly what
+    // every story that reaches this comment does.
+    expect(RESERVED_STEMS.length).toBeGreaterThan(0);
+    expect(messages().length).toBeGreaterThan(0);
+    expect(found, `a message carries a reserved stem: ${JSON.stringify(found)}`).toEqual([]);
+  });
+
+  it('would notice a sign-out label in either Croatian form, and passes what ships', () => {
+    // THE SAME PREDICATE the sweep above runs, on synthetic strings — the
+    // pattern `wordOccurrences` is self-tested with in
+    // `test/localization-applied.test.ts`. The version this replaces built its
+    // own literals and called `toLowerCase` on them, so it asserted only that
+    // JavaScript lowercases strings: deleting the sweep's body left it green.
+    //
+    // Both polarities, and both forms. `Odjavi se` is the one the noun-only
+    // list could not see.
+    expect(reservedStemIn('Odjava')).toBe('odjav');
+    expect(reservedStemIn('Odjavi se')).toBe('odjav');
+    expect(reservedStemIn('ODJAVA')).toBe('odjav');
+    expect(reservedStemIn('Prijava')).toBeNull();
+    expect(reservedStemIn('Kratica organizacije')).toBeNull();
+    // Through the real helper on the real file, so the predicate is proved
+    // against the messages the sweep actually reads rather than only against
+    // strings written here.
+    expect(messages().map(reservedStemIn).filter((stem) => stem !== null)).toEqual([]);
   });
 });
 

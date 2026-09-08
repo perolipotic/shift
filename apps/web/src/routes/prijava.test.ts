@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { DESTINATIONS } from '@/navigation/destinations';
+
 /**
  * The sign-in path's screens, asserted at source level (story 1.1d, extended by
  * story 1.3b).
@@ -52,8 +54,46 @@ const SCREEN = join(srcRoot, 'routes', 'prijava.tsx');
 const NOT_FOUND = join(srcRoot, 'routes', 'not-found.tsx');
 const ORGANIZATION = join(srcRoot, 'routes', 'prijava-organizacija.tsx');
 const HOME = join(srcRoot, 'routes', 'index.tsx');
+const LAYOUT = join(srcRoot, 'routes', '_app.tsx');
 const INPUT_PRIMITIVE = join(srcRoot, 'components', 'ui', 'input.tsx');
 const RESOURCE = join(srcRoot, 'i18n', 'locales', 'hr.json');
+
+/**
+ * The eight titled placeholders the navigation shell's route skeleton adds.
+ *
+ * They are screens by this file's definition — a `.tsx` that renders a string —
+ * so they join every sweep below rather than a subset chosen by hand. Each
+ * renders exactly one `nav.*` heading and nothing else, which is what makes the
+ * counts in `SCREENS` and `KEY_SOURCES` the tight numbers they are: a control
+ * added to any of them, or a second string, fails here until somebody says why.
+ *
+ * Derived from the slug list rather than written out eight times, because the
+ * three facts per entry are the same three facts and a hand-copied block is
+ * where the ninth destination gets added to one list and not the other.
+ *
+ * The slug list is itself a hand-copied fourth copy of the eight — after the
+ * router, the destination table and `hr.json` — so it is CROSS-CHECKED against
+ * the table below rather than trusted. Without that, a ninth destination added
+ * everywhere but here would silently escape the control count, the tap-target
+ * floor, the literal sweeps and the per-file key count, all of which read only
+ * what this list names. `router.test.ts` pins the same table against the
+ * registered router, so the four copies are held together end to end.
+ */
+const DESTINATION_SLUGS = [
+  'danas',
+  'kalendar',
+  'sati',
+  'godisnji',
+  'raspored',
+  'ljudi',
+  'postavke-rotacije',
+  'organizacija',
+];
+
+const DESTINATION_SCREENS = DESTINATION_SLUGS.map((slug) => ({
+  name: `the ${slug} destination`,
+  file: join(srcRoot, 'routes', `${slug}.tsx`),
+}));
 
 /**
  * Every screen that renders a string, so each sweep runs over all of them.
@@ -75,6 +115,19 @@ const SCREENS = [
   { name: 'the not-found component', file: NOT_FOUND, expectedControls: 1 },
   { name: 'the organization prompt', file: ORGANIZATION, expectedControls: 2 },
   { name: 'the signed-in placeholder', file: HOME, expectedControls: 0 },
+  // ZERO on all eight, and asserted rather than assumed: a destination is a
+  // heading and nothing else in this story, so the first control any of them
+  // grows is a later story's work arriving without that story's review. The
+  // count is also what keeps the tap-target sweep from reading as coverage on
+  // eight screens it finds nothing to measure.
+  ...DESTINATION_SCREENS.map((destination) => ({ ...destination, expectedControls: 0 })),
+  // The layout renders no string of its own, and is swept anyway: it is a
+  // `.tsx` under `routes/`, so the literal, bare-text and `destructive` sweeps
+  // all apply to it, and being outside this list is exactly how a file becomes
+  // guarded by nothing. Its own `<Outlet />` claim is asserted separately
+  // below, because no sweep here can see a component that renders the wrong
+  // thing.
+  { name: 'the signed-in layout', file: LAYOUT, expectedControls: 0 },
 ];
 
 /**
@@ -416,6 +469,15 @@ const KEY_SOURCES = [
   { name: 'the organization prompt', file: ORGANIZATION, keys: translationKeys, strings: 3 },
   { name: 'the signed-in placeholder', file: HOME, keys: translationKeys, strings: 1 },
   { name: 'the failure-to-message mapping', file: MESSAGE_KEYS, keys: messageKeyUnion, strings: 2 },
+  // ONE each, exactly. The eight together are what make the set comparison
+  // below hold once `hr.json` gained eight `nav.*` keys: a key declared and
+  // never rendered is a string nobody reviewed, and a destination rendering two
+  // keys is a screen this story did not sanction.
+  ...DESTINATION_SCREENS.map((destination) => ({
+    ...destination,
+    keys: translationKeys,
+    strings: 1,
+  })),
 ];
 
 describe('the screen is read at all, so every sweep below means something', () => {
@@ -447,6 +509,78 @@ describe('every user-facing string on the screen resolves through a key', () => 
     // more: a third message would mean a third code, and the three upstream
     // refusals share one on purpose.
     expect(keys(source(file))).toHaveLength(strings);
+  });
+});
+
+describe('the route skeleton is the one the destination table describes', () => {
+  /**
+   * Four hand-written copies of the eight destinations exist — the router, the
+   * destination table, `hr.json`, and this file's slug list — and only pinning
+   * them to each other makes the set of eight a single fact.
+   */
+
+  it('sweeps exactly the destinations the table names', () => {
+    // P7's gap. Every sweep in this file reads `DESTINATION_SCREENS`, so a
+    // ninth destination added to the router and the table but not here would
+    // ship with no control count, no tap-target floor, no literal sweep and no
+    // key count — and nothing in this file would be red, because nothing in
+    // this file would know it existed.
+    expect([...DESTINATION_SLUGS].sort()).toEqual(
+      DESTINATIONS.map((destination) => destination.path.slice(1)).sort(),
+    );
+  });
+
+  it.each(DESTINATIONS)('renders $key on the file that owns $path', ({ key, path }) => {
+    // WHAT NOTHING ELSE BINDS. `danas.tsx` rendering `nav.kalendar` while
+    // `kalendar.tsx` renders `nav.danas` satisfies every other assertion in this
+    // repository: the per-file count is one either way, the rendered-vs-declared
+    // set comparison is unchanged because both keys are still rendered
+    // somewhere, and `router.test.ts`'s identity checks pin the component a
+    // route renders, never the key that component renders. `/danas` would show
+    // "Kalendar" with the whole suite green.
+    //
+    // The file is derived from the PATH rather than named, so this also pins
+    // the third link in the chain: the route path, the file that owns it, and
+    // the key that file renders are one fact in three places.
+    const file = join(srcRoot, 'routes', `${path.slice(1)}.tsx`);
+
+    expect(translationKeys(source(file))).toEqual([key]);
+  });
+});
+
+describe('the signed-in layout renders its outlet', () => {
+  it('renders an Outlet, not merely a container', () => {
+    // MUTATION-PROVEN GAP. `_app.tsx` is in `localization-applied.test.ts`'s
+    // `SOURCES` for build FRESHNESS only and in no source sweep, and
+    // `router.test.ts` pins the component by identity — which says the layout
+    // renders `AppLayout`, never what `AppLayout` renders. Replacing its body
+    // with a plain `<div>` leaves the entire suite green while all eight
+    // destinations render an empty shell at HTTP 200: every path still
+    // resolves, every guard still runs, and nothing reaches the screen.
+    //
+    // Comment-blind, like every read in this file, so the header's own prose
+    // about the outlet cannot satisfy it.
+    const layout = source(LAYOUT);
+
+    expect(layout, 'the layout renders no <Outlet>, so every destination is a blank page').toContain(
+      '<Outlet',
+    );
+    expect(layout, 'the layout does not import Outlet from the router').toMatch(
+      /import\s*\{[^}]*\bOutlet\b[^}]*\}\s*from\s*'@tanstack\/react-router'/,
+    );
+  });
+
+  it('renders the outlet unconditionally, not behind a branch', () => {
+    // The shape the assertion above passes for: `{signedIn ? <Outlet /> : null}`
+    // contains `<Outlet` and renders nothing in the case that matters. The
+    // layout's whole job is to be transparent — the guard decides, and what
+    // survives the guard renders.
+    const layout = source(LAYOUT);
+    const returned = /return \(([\s\S]*?)\n {2}\);/.exec(layout)?.[1] ?? '';
+
+    expect(returned, 'no returned JSX block on the layout').not.toBe('');
+    expect(returned, 'the outlet is behind a branch').not.toMatch(/[?]|&&/);
+    expect(returned).toContain('<Outlet');
   });
 });
 

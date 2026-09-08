@@ -75,6 +75,23 @@ const SOURCES = [
   join(webRoot, 'src', 'supabase', 'sign-in.ts'),
   join(webRoot, 'src', 'supabase', 'client.ts'),
   join(webRoot, 'src', 'supabase', 'address.ts'),
+  // The navigation shell's route skeleton: the pathless layout plus the eight
+  // titled destinations. Every one of the eight renders a `nav.*` label, and
+  // those eight words are held to a COUNT in `AUTHORED_VOCABULARY` below — a
+  // count read off a chunk built before the screen existed compares the
+  // resource file against output that never saw it, which is the exact
+  // staleness this list exists to refuse. The layout renders no string of its
+  // own and is here anyway: it is what puts the eight in the graph at all, so
+  // a build predating it has none of them.
+  join(webRoot, 'src', 'routes', '_app.tsx'),
+  join(webRoot, 'src', 'routes', 'danas.tsx'),
+  join(webRoot, 'src', 'routes', 'kalendar.tsx'),
+  join(webRoot, 'src', 'routes', 'sati.tsx'),
+  join(webRoot, 'src', 'routes', 'godisnji.tsx'),
+  join(webRoot, 'src', 'routes', 'raspored.tsx'),
+  join(webRoot, 'src', 'routes', 'ljudi.tsx'),
+  join(webRoot, 'src', 'routes', 'postavke-rotacije.tsx'),
+  join(webRoot, 'src', 'routes', 'organizacija.tsx'),
 ];
 
 /**
@@ -309,11 +326,24 @@ describe('a rejected initialization does not mount the application', () => {
  * until the spec that owns them lands.
  */
 
-/** The words the sign-in path authors, so the chunk may hold them — but only
+/** The words the application authors, so the chunk may hold them — but only
  *  from `hr.json`. Five are story 1.1d's; `Organizacija` is story 1.3b's, and
  *  it MOVED here from the absent list below rather than being deleted from it.
  *  That is the stronger claim of the two: absence said nothing may say this
- *  word, and a count says `hr.json` is the only thing that may. */
+ *  word, and a count says `hr.json` is the only thing that may.
+ *
+ *  SIX MORE MOVED the same way with the navigation shell's route skeleton —
+ *  `Danas`, `Kalendar`, `Godišnji`, `Raspored`, `Ljudi` and `Postavke`, which
+ *  are now `nav.*` labels rendered by eight placeholder destinations. Note
+ *  `Organizacija` is now in `hr.json` TWICE, as the organization prompt's
+ *  heading and as a destination label, and the count assertion holds because it
+ *  compares the chunk against the resource file rather than against a number
+ *  written here.
+ *
+ *  `Sati` is on this list and was on NEITHER before: it appeared in no absence
+ *  sweep and no count, so it was the one destination label a hard-coded literal
+ *  could have shipped unnoticed. Adding it is closing a gap rather than moving
+ *  a word. */
 const AUTHORED_VOCABULARY = [
   'Prijava',
   'Prijavi',
@@ -321,17 +351,30 @@ const AUTHORED_VOCABULARY = [
   'Korisničko',
   'Zaboravljena',
   'Organizacija',
-];
-
-/** Everything the navigation shell and the terminology contract still own.
- *  None of it may reach the build. */
-const NAVIGATION_AND_TERMINOLOGY = [
   'Danas',
   'Kalendar',
+  'Sati',
   'Godišnji',
   'Raspored',
   'Ljudi',
   'Postavke',
+  // THE WHOLE PHRASE, because the second word cannot be counted on its own.
+  // `Postavke` is guarded above and `rotacije` was in neither list, so a
+  // literal carrying only the second word was swept by nothing. A bare
+  // `rotacije` entry cannot close that: `/postavke-rotacije` is a REGISTERED
+  // ROUTE PATH and ships in the chunk as data, so the word legitimately occurs
+  // twice against `hr.json`'s once and the count assertion would fail on
+  // correct code. The phrase occurs once on each side — the hyphenated path is
+  // not a match for it — and it is also the string a hard-coded label would
+  // actually carry.
+  'Postavke rotacije',
+];
+
+/** Everything the terminology contract and the unshipped affordances still own.
+ *  None of it may reach the build. `Odjava` stays here because no sign-out
+ *  ships — the route skeleton earned six navigation words and deliberately not
+ *  that one. */
+const NAVIGATION_AND_TERMINOLOGY = [
   'Smjena',
   'Smjene',
   'smjena',
@@ -351,11 +394,14 @@ function occurrences(haystack: string, needle: string): number {
 }
 
 /** Word-bounded occurrence count, for the AUTHORED_VOCABULARY sweep below.
- *  Plain `occurrences` matches a substring anywhere — safe today only because
- *  none of the five authored words happens to sit inside a longer one
- *  anywhere in the build, a coincidence rather than a guarantee. `\p{L}`
- *  rather than `\w`, because `\w` is ASCII-only and would misplace a boundary
- *  around every diacritic these words carry (č, ž…). */
+ *  Plain `occurrences` matches a substring anywhere, which was safe while the
+ *  authored list held five words that happened to sit inside no longer one —
+ *  a coincidence rather than a guarantee, and one the list has since outgrown:
+ *  it holds fourteen entries now, and every destination label is also a
+ *  component name in the build (`DanasScreen`, `PostavkeRotacijeScreen`), so
+ *  the boundary is what keeps those from counting. `\p{L}` rather than `\w`,
+ *  because `\w` is ASCII-only and would misplace a boundary around every
+ *  diacritic these words carry (č, ž…). */
 function wordOccurrences(haystack: string, needle: string): number {
   const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const pattern = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'gu');
