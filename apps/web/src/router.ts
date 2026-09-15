@@ -1,12 +1,58 @@
 import { createRouter } from '@tanstack/react-router';
 
+import { appLayoutRoute } from '@/routes/_app';
+import { danasRoute } from '@/routes/danas';
+import { godisnjiRoute } from '@/routes/godisnji';
 import { indexRoute } from '@/routes/index';
+import { kalendarRoute } from '@/routes/kalendar';
+import { ljudiRoute } from '@/routes/ljudi';
+import { organizacijaRoute } from '@/routes/organizacija';
+import { postavkeRotacijeRoute } from '@/routes/postavke-rotacije';
 import { prijavaOrganizacijaRoute } from '@/routes/prijava-organizacija';
 import { prijavaRoute } from '@/routes/prijava';
+import { rasporedRoute } from '@/routes/raspored';
 import { rootRoute } from '@/routes/__root';
+import { satiRoute } from '@/routes/sati';
 import { currentSession } from '@/supabase/client';
 
-const routeTree = rootRoute.addChildren([indexRoute, prijavaRoute, prijavaOrganizacijaRoute]);
+/**
+ * The eight destinations, all of them nested under the pathless `_app` layout.
+ *
+ * Nesting is what registers the session guard for every one of them at once
+ * (`routes/_app.tsx`): a route added to this array and not to the layout would
+ * be a destination a signed-out visitor reaches, and the guard is not something
+ * eight files should each be trusted to remember.
+ *
+ * Order here is registration, not navigation. What a member or an admin sees,
+ * and in which order, is `@/navigation/destinations` — data a test executes
+ * rather than a shape a reader infers from an array in a wiring module.
+ */
+const appDestinations = appLayoutRoute.addChildren([
+  danasRoute,
+  kalendarRoute,
+  satiRoute,
+  godisnjiRoute,
+  rasporedRoute,
+  ljudiRoute,
+  postavkeRotacijeRoute,
+  organizacijaRoute,
+]);
+
+/**
+ * `/` and both sign-in routes stay OUTSIDE the layout, deliberately.
+ *
+ * All three are reachable signed out, and `/` carries its own guard already
+ * (`routes/index.tsx`). Nesting them would change their match chains and force
+ * `router.test.ts`'s deployed-root block to be re-derived against a layout for
+ * no behaviour this story gains — so all three staying flat here is the evidence
+ * that the scope boundary held.
+ */
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  prijavaRoute,
+  prijavaOrganizacijaRoute,
+  appDestinations,
+]);
 
 /**
  * The router, and the one place the session reader is bound into the context.

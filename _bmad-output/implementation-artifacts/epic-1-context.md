@@ -30,7 +30,7 @@ Stand up the first real tenant end to end: an operator provisions an organizatio
 
 ## Technical Decisions
 
-**Workspace shape (Story 1.1, authored directly — no generated starter).** `packages/domain` — pure TypeScript, zero runtime dependencies, where importing React or the Supabase client fails the build rather than review; `apps/web` — Vite + React SPA (`routes/`, `surfaces/`, `components/`, `i18n/`, `supabase/`); `supabase/` with forward-only `migrations/`, a `seed.sql` carrying both fixtures, and `functions/admin-auth/`.
+**Workspace shape (Story 1.1, authored directly — no generated starter).** `packages/domain` — pure TypeScript, zero runtime dependencies, where importing React or the Supabase client fails the build rather than review; `apps/web` — Vite + React SPA (`routes/`, `surfaces/`, `components/`, `i18n/`, `navigation/`, `supabase/`); `supabase/` with forward-only `migrations/`, a `seed.sql` carrying both fixtures, and `functions/admin-auth/`.
 
 **No server tier.** Static SPA on a CDN, no SSR, no application server; clients write directly through PostgREST under RLS. Exactly one serverless function exists — the privileged auth boundary. Migrations are git files promoted local → staging → production, never edited after promotion.
 
