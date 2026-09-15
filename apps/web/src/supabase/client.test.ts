@@ -57,6 +57,32 @@ describe('a missing environment fails fast and loudly', () => {
     expect(() => readSupabaseEnvironment(() => value)).toThrow(SUPABASE_ENVIRONMENT_MISSING);
   });
 
+  it.each([
+    { row: 'a JWT, as the older local stack issued', value: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9' },
+    { row: 'a project ref pasted into the key slot', value: 'abcdefghijklmnopqrst' },
+    { row: 'an unsubstituted placeholder', value: '${SUPABASE_KEY}' },
+    { row: 'a key for the wrong side of AD-17', value: 'sb_sec' + 'ret_deliberately_split' },
+  ])('refuses $row, because only a publishable key belongs in this bundle', ({ value }) => {
+    // AD-17 is the application's central invariant and the URL's shape was
+    // checked while the key's was not. `vite-env.d.ts` says the value "must
+    // match `sb_publishable_*`" and `.env.example` calls the wrong one "a
+    // security defect", but both were prose: a secret key pasted here built a
+    // working client and Vite inlined it into every chunk served to every
+    // browser. The only thing in the way was `key-hygiene.test.ts`'s bundle
+    // scan, which is `skipIf(notBuilt)` and which `pnpm test` does not build
+    // for — so on a fresh checkout nothing checked it at all.
+    //
+    // The last row is SPLIT across a concatenation deliberately. That prefix
+    // may not appear as a literal anywhere under `apps/`, which
+    // `key-hygiene.test.ts`'s naming scan enforces — so the one shape this
+    // guard most needs to refuse is the one shape this file may not spell.
+    expect(() =>
+      readSupabaseEnvironment((name) =>
+        name === SUPABASE_URL_VARIABLE ? 'http://127.0.0.1:54321' : value,
+      ),
+    ).toThrow(SUPABASE_ENVIRONMENT_MISSING);
+  });
+
   it('names a stable SCREAMING_SNAKE code, not a user-facing message', () => {
     // The convention `ROOT_ELEMENT_MISSING` and `LOCALIZATION_INIT_FAILED`
     // established: this throw happens before anything is mounted, so there is
@@ -205,6 +231,38 @@ describe('there is exactly one construction path', () => {
     vi.stubEnv(SUPABASE_PUBLISHABLE_KEY_VARIABLE, 'sb_publishable_local');
 
     expect(supabaseClient()).toBe(supabaseClient());
+  });
+
+  it('hands createClient the url first and the key second', async () => {
+    // MUTATION-PROVEN GAP. This module's own doc block argues that swapping the
+    // two `import.meta.env` members is "a defect that can only be found by
+    // reading the file or by shipping it", and builds a whole `buildEnvironment`
+    // block to close that — while the call the two values actually flow into
+    // was asserted only by identity. `createClient(publishableKey, url)`
+    // type-checks (both are `string`), passes every other test here, and
+    // produces exactly the "fails every call like an outage" symptom the module
+    // exists to prevent.
+    //
+    // Module isolation, because the client is memoized: an instance built by an
+    // earlier test in this file would be returned before the mock is ever
+    // reached.
+    vi.resetModules();
+    vi.stubEnv(SUPABASE_URL_VARIABLE, 'http://127.0.0.1:54321');
+    vi.stubEnv(SUPABASE_PUBLISHABLE_KEY_VARIABLE, 'sb_publishable_local');
+
+    const createClient = vi.fn(() => ({ auth: {} }));
+
+    vi.doMock('@supabase/supabase-js', () => ({ createClient }));
+
+    const isolated = await import('@/supabase/client');
+
+    isolated.supabaseClient();
+
+    expect(createClient).toHaveBeenCalledTimes(1);
+    expect(createClient).toHaveBeenCalledWith('http://127.0.0.1:54321', 'sb_publishable_local');
+
+    vi.doUnmock('@supabase/supabase-js');
+    vi.resetModules();
   });
 });
 

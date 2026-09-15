@@ -62,12 +62,14 @@ development_status:
   # isolation, role refusal, and fresh role/active state). 1.3b is the SPA
   # sign-in path (clause 1) and waits in deferred-work.md, earning its key
   # when specced — so the parent completes with 1.3b, not with 1.3a.
-  1-3-signing-in-reaches-exactly-one-organization-at-exactly-one-r: in-progress
+  # Completed 2026-09-08 with 1.3b, per the convention recorded above: the
+  # parent carries no work of its own and closes when its last part lands.
+  1-3-signing-in-reaches-exactly-one-organization-at-exactly-one-r: done
   1-3a-access-control-layer: done
   # 1.3b is the SPA sign-in path (epics.md acceptance clause 1). Specced
   # 2026-09-07 from the deferred-work entry 1.3a left; earns its key here,
   # same convention as the 1.1 parts. The 1-3 parent completes with it.
-  1-3b-spa-sign-in-path: review
+  1-3b-spa-sign-in-path: done
   1-4-an-admin-configures-the-organization-s-identity-localization: backlog
   1-5-an-admin-creates-and-edits-members-and-works-the-list-at-sca: backlog
   1-6-deactivating-a-member-changes-the-future-and-rewrites-no-his: backlog

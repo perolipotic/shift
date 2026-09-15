@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { t } from '@/i18n';
 import { rootRoute } from '@/routes/__root';
-import { organizationDestination } from '@/supabase/address';
+import { ORGANIZATION_NAVIGATION_FAILED, organizationDestination } from '@/supabase/address';
 
 /**
  * Which organization (story 1.3b), at bare `/prijava`.
@@ -34,6 +34,13 @@ import { organizationDestination } from '@/supabase/address';
  * browser's own validation stop an empty submission in the user's language, and
  * a malformed one simply does not navigate. Neither case gets a message,
  * because a message here would be the beginning of the same oracle.
+ *
+ * `autoComplete="off"` rather than `organization`, which is what this field
+ * carried first: the WHATWG token names the organization's NAME — "DVD Kaštel
+ * Novi" — and this field takes its slug. Autofill therefore supplied a value
+ * `isOrganizationSlug` can never accept, and because the screen is deliberately
+ * inert, the button then visibly did nothing. A wrong hint that drives a person
+ * into the one silent failure state is worse than no hint.
  */
 export function OrganizationPromptScreen() {
   const navigate = useNavigate();
@@ -52,7 +59,15 @@ export function OrganizationPromptScreen() {
 
     if (slug === null) return;
 
-    void navigate({ to: '/prijava/$slug', params: { slug } });
+    // The rejection is caught rather than discarded: `void` on a promise that
+    // rejects — an aborted navigation, a router error — is an unhandled
+    // rejection, and the sign-in screen's equivalent call sits inside a
+    // `try`/`catch` for the same reason. There is nothing to say to the person
+    // here (a message would begin the oracle this screen refuses to be), so the
+    // console carries it and the prompt stays put.
+    navigate({ to: '/prijava/$slug', params: { slug } }).catch((cause: unknown) => {
+      console.error(ORGANIZATION_NAVIGATION_FAILED, cause);
+    });
   }
 
   return (
@@ -72,7 +87,7 @@ export function OrganizationPromptScreen() {
                 id="organization"
                 name="organization"
                 type="text"
-                autoComplete="organization"
+                autoComplete="off"
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}

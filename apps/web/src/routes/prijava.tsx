@@ -1,4 +1,4 @@
-import { createRoute, useNavigate } from '@tanstack/react-router';
+import { createRoute, redirect, useNavigate } from '@tanstack/react-router';
 import { useRef, useState, type FormEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { t } from '@/i18n';
 import { rootRoute } from '@/routes/__root';
+import { organizationDestination } from '@/supabase/address';
 import { supabaseClient } from '@/supabase/client';
 import {
   SIGN_IN_UNAVAILABLE,
@@ -100,14 +101,21 @@ export function SignInScreen() {
       // `/` reads the session itself, so nothing is handed to it: the session
       // is established inside the client by the time the call above resolves.
       await navigate({ to: '/' });
-    } catch {
+    } catch (cause) {
       // Everything `signIn` does not already map: the client throwing its
       // stable code on a build with no environment, and a navigation that
       // rejects. Both used to escape as an unhandled rejection, leaving a
       // screen with no message and — before the `finally` below — a button
-      // disabled forever. A misconfiguration reading as an outage is a real
-      // cost, and it is the smaller one: `/` still fails loudly, and the
-      // console still carries the stable code.
+      // disabled forever.
+      //
+      // A misconfiguration reading as an outage is a real cost, and it is the
+      // smaller one ONLY because the cause is logged. It was not: an earlier
+      // version of this comment claimed "the console still carries the stable
+      // code" while nothing here wrote to it, so a deployment with no
+      // environment showed a working-looking form saying "try again" forever,
+      // with an empty console — the exact failure `client.ts` was written to
+      // prevent. `i18n/boot.ts` sets the shape.
+      console.error(SIGN_IN_UNAVAILABLE, cause);
       setFailure(SIGN_IN_UNAVAILABLE);
     } finally {
       // On EVERY path, including the successful one. Clearing it only on
@@ -150,13 +158,14 @@ export function SignInScreen() {
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
+                required
                 aria-describedby={failure === null ? undefined : 'sign-in-error'}
                 className="h-11"
               />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="password">{t('auth.password')}</Label>
-                {/* Two descriptions, in the order they are useful: what just went
+              {/* Two descriptions, in the order they are useful: what just went
                   wrong, then what to do about a forgotten password. A token
                   list is how `aria-describedby` carries both — the refusal
                   concerns the pair of fields, not the password alone, so it is
@@ -174,6 +183,7 @@ export function SignInScreen() {
                 name="password"
                 type="password"
                 autoComplete="current-password"
+                required
                 aria-describedby={
                   failure === null ? 'password-reset' : 'sign-in-error password-reset'
                 }
@@ -215,5 +225,22 @@ export function SignInScreen() {
 export const prijavaRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/prijava/$slug',
+  // A slug that cannot be one never reaches the form (review decision,
+  // 2026-09-08). Normalization already closed the case a URL creates most
+  // often — `/prijava/DVD-Kastel-Novi`, shared, typed or autocapitalized by a
+  // phone — but a segment no normalization can rescue, `/prijava/under_score`,
+  // rendered a perfectly ordinary form that refused every correct credential
+  // forever with the message that says the password is wrong. Unrecoverable,
+  // because the screen may not say which.
+  //
+  // Sent to the organization prompt rather than answered, and that discloses
+  // NOTHING: well-formedness is the DNS-label rule in
+  // `0002_organizations_and_members.sql`, computable by anyone without asking
+  // this application anything. Existence is the question that stays unanswered
+  // — an unknown but well-formed slug still renders the form and still fails
+  // with the ordinary refusal, exactly as the I/O matrix specifies.
+  beforeLoad: ({ params }) => {
+    if (organizationDestination(params.slug) === null) throw redirect({ to: '/prijava' });
+  },
   component: SignInScreen,
 });

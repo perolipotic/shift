@@ -291,3 +291,57 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
     expect(asked, '/ never asked the router context whether anyone is signed in').toBe(1);
   });
 });
+
+
+describe('a slug that cannot be one never reaches the credential form', () => {
+  type SlugBeforeLoad = (options: { params: { slug: string } }) => unknown;
+
+  function guard(slug: string): unknown {
+    const run = (prijavaRoute.options as unknown as { beforeLoad?: SlugBeforeLoad }).beforeLoad;
+
+    try {
+      run?.({ params: { slug } });
+    } catch (caught) {
+      return caught;
+    }
+
+    return null;
+  }
+
+  it.each([
+    { row: 'an underscore, which no DNS label may hold', slug: 'under_score' },
+    { row: 'a leading hyphen', slug: '-kastel' },
+    { row: 'a doubled hyphen run', slug: 'dvd--kastel' },
+    { row: 'a path segment longer than a DNS label', slug: 'a'.repeat(64) },
+    { row: 'an empty-looking segment', slug: '%20' },
+  ])('redirects $row to the organization prompt', ({ slug }) => {
+    // REVIEW DECISION, 2026-09-08. Normalization already rescued the case a URL
+    // produces most often — a capital letter, from a phone's autocapitalization
+    // or a shared link — but a segment no normalization can rescue rendered a
+    // perfectly ordinary form that then refused every correct credential
+    // forever, with the message that says the password is wrong. There was no
+    // way for the person to discover why, because the screen may not say which.
+    const thrown = guard(slug);
+
+    expect(thrown, `/prijava/${slug} still renders the credential form`).not.toBeNull();
+    expect(isRedirect(thrown), 'the guard threw something that is not a redirect').toBe(true);
+    expect((thrown as { options: { to?: string } }).options.to).toBe('/prijava');
+  });
+
+  it.each([
+    { row: 'the pilot organization', slug: 'dvd-kastel-novi' },
+    { row: 'a slug nobody has registered', slug: 'no-such-org' },
+    { row: 'a slug a phone autocapitalized', slug: 'DVD-Kastel-Novi' },
+    { row: 'a single-label slug', slug: 'kastel' },
+  ])('lets $row through to the form', ({ slug }) => {
+    // THE OTHER POLARITY, and the one that keeps the guard from becoming an
+    // oracle. Well-formedness is the DNS-label rule in
+    // `0002_organizations_and_members.sql` — anyone can compute it without
+    // asking this application anything. EXISTENCE is the question that stays
+    // unanswered: `no-such-org` is well formed, so it renders the form and
+    // fails with the ordinary refusal, exactly as the I/O matrix specifies. A
+    // guard that turned an unknown slug away would answer "does this
+    // organization exist?" for an anonymous caller.
+    expect(guard(slug), `/prijava/${slug} was turned away`).toBeNull();
+  });
+});

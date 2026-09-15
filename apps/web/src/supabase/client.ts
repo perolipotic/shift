@@ -17,8 +17,13 @@ import { createClient, type Session, type SupabaseClient } from '@supabase/supab
  *
  * `SUPABASE_ENVIRONMENT_MISSING` is a stable code, not a message — the same
  * convention as `ROOT_ELEMENT_MISSING` and `LOCALIZATION_INIT_FAILED`. It never
- * reaches a user: the throw happens before the application mounts, so what is on
- * screen is `index.html`'s boot fallback.
+ * reaches a user as itself: the client is memoized rather than built at module
+ * scope, so the throw happens on FIRST USE — inside `/`'s `beforeLoad` or the
+ * sign-in handler — rather than before the application mounts. Both of those
+ * callers catch it, which is what makes the console the only place it surfaces,
+ * and why both of them log it (`index.tsx`, `prijava.tsx`). An earlier version
+ * of this comment claimed the throw preceded mount; it does not, and the
+ * logging is what keeps the "never a silent misconfiguration" promise instead.
  *
  * Two shapes are deliberate:
  *
@@ -45,8 +50,41 @@ export const SUPABASE_ENVIRONMENT_MISSING = 'SUPABASE_ENVIRONMENT_MISSING';
 /** Logged when the session cannot be read. Never rendered: see `sessionReader`. */
 export const SESSION_UNREADABLE = 'SESSION_UNREADABLE';
 
+/**
+ * Logged when reading the session REJECTED rather than merely failing.
+ *
+ * Distinct from `SESSION_UNREADABLE`, which `sessionReader` logs alongside a
+ * session it still managed to read. This one is `/`'s: the read threw, so there
+ * is no session and no error object to report — only a cause, which is usually
+ * `SUPABASE_ENVIRONMENT_MISSING` from a build with no environment, or blocked
+ * storage in a private window. Two codes because the two say different things to
+ * whoever is reading the console, and telling them apart is the whole reason to
+ * log at all.
+ */
+export const SESSION_UNRESOLVED = 'SESSION_UNRESOLVED';
+
 export const SUPABASE_URL_VARIABLE = 'VITE_SUPABASE_URL';
 export const SUPABASE_PUBLISHABLE_KEY_VARIABLE = 'VITE_SUPABASE_PUBLISHABLE_KEY';
+
+/**
+ * What a publishable key looks like, and the only key shape this bundle accepts.
+ *
+ * The URL's shape was already checked and the key's was not, which left the one
+ * asymmetry AD-17 cannot afford: `vite-env.d.ts` says "must match
+ * `sb_publishable_*`" and `.env.example` says a secret value here "is a security
+ * defect", but both were prose. A secret key pasted into this variable
+ * constructed a working client and Vite inlined it into every chunk served to
+ * every browser — and the only thing standing in the way was
+ * `key-hygiene.test.ts`'s bundle scan, which is `skipIf(notBuilt)` and which
+ * `pnpm test` does not build for.
+ *
+ * Asserted POSITIVELY — the value must start with the publishable prefix —
+ * rather than by refusing the secret one. Refusing `sb_secret_` would name it,
+ * and `key-hygiene.test.ts`'s naming scan forbids that literal anywhere in the
+ * client tree; it would also pass any other wrong value through. Only one shape
+ * belongs here, so only one shape is admitted.
+ */
+const PUBLISHABLE_KEY_PREFIX = 'sb_publishable_';
 
 export interface SupabaseEnvironment {
   readonly url: string;
@@ -83,8 +121,10 @@ function isHttpUrl(value: string): boolean {
  * records: a value pasted into a dashboard or a heredoc carries a trailing
  * newline, and a whitespace-only value is absent in every sense that matters.
  *
- * ONE code for all four ways of being wrong. This throw is read by a developer
- * reading a console, never by a user — the application has not mounted — so the
+ * ONE code for all FIVE ways of being wrong — absent url, absent key, a url
+ * that is not a url, a key that is not a publishable key, and a value that is
+ * only whitespace. This throw is read by a developer reading a console, never by
+ * a user: both call sites catch it and log it, and neither renders it. So the
  * distinctions a richer code set would draw buy nothing, and a single stable
  * code is the thing every other layer here already agreed to.
  */
@@ -94,6 +134,9 @@ export function readSupabaseEnvironment(read: EnvironmentReader): SupabaseEnviro
 
   if (url === '' || publishableKey === '') throw new Error(SUPABASE_ENVIRONMENT_MISSING);
   if (!isHttpUrl(url)) throw new Error(SUPABASE_ENVIRONMENT_MISSING);
+  if (!publishableKey.startsWith(PUBLISHABLE_KEY_PREFIX)) {
+    throw new Error(SUPABASE_ENVIRONMENT_MISSING);
+  }
 
   return { url, publishableKey };
 }

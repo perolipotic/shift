@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 
 import { t } from '@/i18n';
 import { rootRoute } from '@/routes/__root';
+import { SESSION_UNRESOLVED } from '@/supabase/client';
 
 /**
  * The deployed root: a redirect while signed out, a screen while signed in.
@@ -57,10 +58,16 @@ export const indexRoute = createRoute({
 
     try {
       session = await context.currentSession();
-    } catch {
-      // Deliberately empty: `session` is already `null`, which IS the decision.
-      // Naming a different outcome here would be the third branch this comment
-      // block exists to rule out.
+    } catch (cause) {
+      // `session` stays `null`, which IS the decision — naming a different
+      // outcome here would be the third branch this comment block exists to
+      // rule out. What is NOT silent is the reason: this catch swallowed
+      // `SUPABASE_ENVIRONMENT_MISSING` whole, so a deployment with no
+      // environment redirected every visitor to the sign-in form with an empty
+      // console and nothing anywhere to say why. `client.ts` exists to stop a
+      // misconfiguration reading as an outage; logging is what keeps that
+      // promise once the throw is caught. Same shape as `i18n/boot.ts`.
+      console.error(SESSION_UNRESOLVED, cause);
     }
 
     if (session !== null) return;
