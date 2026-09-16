@@ -438,13 +438,48 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
 
 
 describe('a slug that cannot be one never reaches the credential form', () => {
-  type SlugBeforeLoad = (options: { params: { slug: string } }) => unknown;
+  /**
+   * The guard became ASYNC and gained a context, and both tests below had to
+   * follow it there.
+   *
+   * `/prijava/$slug` now answers two questions rather than one — is this segment
+   * a slug at all, and is somebody already signed in — and the second needs the
+   * router context and an `await`. A synchronous `guard` reading the return
+   * value of an async `beforeLoad` would see a PROMISE for every case: the
+   * redirects would stop being thrown where this file could catch them, and
+   * every row below would report "let through" while the guard worked
+   * perfectly. So the helper awaits, and the rows await it.
+   *
+   * SIGNED OUT BY DEFAULT, because these rows are about the slug and nothing
+   * else. The signed-in half is its own block further down.
+   */
+  type SlugBeforeLoad = (options: {
+    params: { slug: string };
+    context: AppRouterContext;
+  }) => unknown;
 
-  function guard(slug: string): unknown {
+  /** Enough of a session to be distinguishable from `null`. */
+  const SIGNED_IN = { access_token: 'token', user: { id: 'member' } } as unknown as Session;
+
+  async function guard(slug: string, session: Session | null = null): Promise<unknown> {
     const run = (prijavaRoute.options as unknown as { beforeLoad?: SlugBeforeLoad }).beforeLoad;
 
+    // ASSERTED AND NARROWED, exactly as the signed-in block below does it. This
+    // read `run?.(…)` for three stories, which means deleting `beforeLoad` from
+    // this route entirely left the optional call resolving to `undefined`, every
+    // "was let through" row reading that as a pass, and the three "was turned
+    // away" rows as the only thing red — three failures explaining the wrong
+    // problem. The guard vanishing is a different fact from the guard being
+    // wrong, and it should say so once.
+    if (typeof run !== 'function') {
+      throw new Error('/prijava/$slug has no beforeLoad — every segment reaches the form');
+    }
+
     try {
-      run?.({ params: { slug } });
+      await run({
+        params: { slug },
+        context: { currentSession: () => Promise.resolve(session) },
+      });
     } catch (caught) {
       return caught;
     }
@@ -458,14 +493,14 @@ describe('a slug that cannot be one never reaches the credential form', () => {
     { row: 'a doubled hyphen run', slug: 'dvd--kastel' },
     { row: 'a path segment longer than a DNS label', slug: 'a'.repeat(64) },
     { row: 'an empty-looking segment', slug: '%20' },
-  ])('redirects $row to the organization prompt', ({ slug }) => {
+  ])('redirects $row to the organization prompt', async ({ slug }) => {
     // REVIEW DECISION, 2026-09-08. Normalization already rescued the case a URL
     // produces most often — a capital letter, from a phone's autocapitalization
     // or a shared link — but a segment no normalization can rescue rendered a
     // perfectly ordinary form that then refused every correct credential
     // forever, with the message that says the password is wrong. There was no
     // way for the person to discover why, because the screen may not say which.
-    const thrown = guard(slug);
+    const thrown = await guard(slug);
 
     expect(thrown, `/prijava/${slug} still renders the credential form`).not.toBeNull();
     expect(isRedirect(thrown), 'the guard threw something that is not a redirect').toBe(true);
@@ -477,7 +512,7 @@ describe('a slug that cannot be one never reaches the credential form', () => {
     { row: 'a slug nobody has registered', slug: 'no-such-org' },
     { row: 'a slug a phone autocapitalized', slug: 'DVD-Kastel-Novi' },
     { row: 'a single-label slug', slug: 'kastel' },
-  ])('lets $row through to the form', ({ slug }) => {
+  ])('lets $row through to the form', async ({ slug }) => {
     // THE OTHER POLARITY, and the one that keeps the guard from becoming an
     // oracle. Well-formedness is the DNS-label rule in
     // `0002_organizations_and_members.sql` — anyone can compute it without
@@ -486,7 +521,152 @@ describe('a slug that cannot be one never reaches the credential form', () => {
     // fails with the ordinary refusal, exactly as the I/O matrix specifies. A
     // guard that turned an unknown slug away would answer "does this
     // organization exist?" for an anonymous caller.
-    expect(guard(slug), `/prijava/${slug} was turned away`).toBeNull();
+    expect(await guard(slug), `/prijava/${slug} was turned away`).toBeNull();
+  });
+
+  it('judges the slug before it asks about the session', async () => {
+    // The ORDER, pinned. A malformed segment goes to the organization prompt
+    // whether or not anybody is signed in — the 2026-09-08 decision, unchanged
+    // and deliberately not made conditional on a session read that can fail.
+    // Asked the other way round, `/prijava/under_score` opened for a signed-out
+    // visitor would depend on a read succeeding, and the guard would have two
+    // behaviours where it had one.
+    const thrown = (await guard('under_score', SIGNED_IN)) as { options: { to?: string } };
+
+    expect(isRedirect(thrown), 'a malformed slug stopped being turned away').toBe(true);
+    expect(thrown.options.to, 'the slug guard deferred to the session guard').toBe('/prijava');
+  });
+});
+
+describe('a signed-in visitor is never offered a credential form', () => {
+  /**
+   * THE GUARD THAT SHIPS WITH THE EXIT, and the pairing is the argument rather
+   * than a coincidence of scheduling.
+   *
+   * Neither sign-in route checked for a session: `/prijava/$slug` had a
+   * slug-shape guard and no session check, and bare `/prijava` had no
+   * `beforeLoad` at all — which made it the likelier of the two to be reached,
+   * since `/`'s redirect, a typed URL and `not-found.tsx`'s link back all land
+   * there. A session that already exists was therefore offered a form whose only
+   * possible outcome is to replace that session with the same one.
+   *
+   * On a shared shift-work device that is not merely redundant. The person
+   * reading the form may not be the person signed in, and until the chrome
+   * shipped an exit there was no way for them to discover that or to do anything
+   * about it — which is exactly why a guard added without the affordance would
+   * have made the missing exit HARDER to notice, not easier. Both ship here.
+   */
+
+  /** Enough of a session to be distinguishable from `null`. */
+  const SESSION = { access_token: 'token', user: { id: 'member' } } as unknown as Session;
+
+  type SignInBeforeLoad = (options: {
+    params: { slug: string };
+    context: AppRouterContext;
+  }) => unknown;
+
+  /**
+   * Both sign-in routes, swept together.
+   *
+   * A table rather than two blocks, because the claim is the same claim twice
+   * and a hand-copied block is where the route that was missed hides — which is
+   * the shape this very story is fixing. `prijava.test.ts` records the same
+   * finding about its own form sweeps: covering one screen of an identical pair
+   * left the other protected by nothing.
+   */
+  const SIGN_IN_ROUTES = [
+    { name: 'the credential form at /prijava/$slug', route: prijavaRoute },
+    { name: 'the organization prompt at bare /prijava', route: prijavaOrganizacijaRoute },
+  ];
+
+  async function beforeLoad(
+    route: { options: unknown },
+    currentSession: () => Promise<Session | null>,
+  ): Promise<unknown> {
+    const run = (route.options as { beforeLoad?: SignInBeforeLoad }).beforeLoad;
+
+    // ASSERTED AND NARROWED in one place, the idiom the layout block below uses:
+    // `run?.(…)` on an absent guard resolves to `undefined`, which every "was
+    // not redirected" assertion here would read as a pass. A route with no
+    // `beforeLoad` at all is precisely the state bare `/prijava` was in.
+    if (typeof run !== 'function') {
+      throw new Error('a sign-in route has no beforeLoad — a signed-in visitor is offered a form');
+    }
+
+    try {
+      await run({
+        params: { slug: 'dvd-kastel-novi' },
+        context: { currentSession },
+      });
+    } catch (thrown) {
+      return thrown;
+    }
+
+    return null;
+  }
+
+  it.each(SIGN_IN_ROUTES)('sends a signed-in visitor away from $name', async ({ route }) => {
+    const thrown = await beforeLoad(route, () => Promise.resolve(SESSION));
+
+    expect(thrown, 'a signed-in visitor was offered the form').not.toBeNull();
+    expect(isRedirect(thrown), 'the guard threw something that is not a redirect').toBe(true);
+    // `/` and not a destination: `/` is the one path that decides where a
+    // signed-in person belongs, and naming a destination here would be this file
+    // deciding it instead.
+    expect((thrown as { options: { to?: string } }).options.to).toBe('/');
+  });
+
+  it.each(SIGN_IN_ROUTES)('leaves a signed-out visitor on $name', async ({ route }) => {
+    // The branch that makes the other one worth having. A guard that redirected
+    // unconditionally would satisfy every assertion above and leave nobody able
+    // to sign in at all — the whole application unreachable, with the suite
+    // green.
+    expect(await beforeLoad(route, () => Promise.resolve(null))).toBeNull();
+  });
+
+  it.each(SIGN_IN_ROUTES)('fails OPEN on $name when the session cannot be read', async ({ route }) => {
+    // THE OPPOSITE DEFAULT to `routes/_app.tsx`, and the asymmetry is the
+    // decision. The layout treats an unreadable session as no session, because
+    // letting somebody through puts them on screens every query refuses. Here
+    // the same unreadable session must render the FORM: redirecting on a failed
+    // read would put the one path that can repair a session behind the session
+    // working, which is a deployment nobody can sign into.
+    //
+    // NOT SILENTLY, though — the cause is logged, for the reason `client.ts`
+    // exists: a build with no environment must not read as an ordinary outage.
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      expect(
+        await beforeLoad(route, () => Promise.reject(new Error('SecurityError'))),
+        'an unreadable session turned somebody away from the only screen that could fix it',
+      ).toBeNull();
+      expect(logged, 'the guard swallowed the reason the session could not be read').toHaveBeenCalledWith(
+        SESSION_UNRESOLVED,
+        expect.anything(),
+      );
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it('asks the context exactly once per route, rather than reaching for a client', async () => {
+    // What makes every branch above assertable at all, and the regression
+    // `router.ts` records: a guard that imported the Supabase client would
+    // ignore these stubs entirely and be untestable without a browser and a
+    // running stack. Once, not twice — a second read per resolution is a second
+    // storage round trip on the one screen a person is waiting on.
+    for (const { route } of SIGN_IN_ROUTES) {
+      let asked = 0;
+
+      await beforeLoad(route, () => {
+        asked += 1;
+
+        return Promise.resolve(null);
+      });
+
+      expect(asked, 'a sign-in route never asked the context whether anyone is signed in').toBe(1);
+    }
   });
 });
 
@@ -575,9 +755,17 @@ describe('the signed-in layout guards every destination once, and is pathless', 
     expect(Object.keys(router.routesById)).not.toContain('/$');
   });
 
-  it('renders an outlet and nothing else', () => {
+  it('renders the component that holds the outlet and the chrome', () => {
     // IDENTITY again. A layout resolved to `() => null` renders no outlet, so
     // every destination beneath it goes blank while every path still resolves.
+    //
+    // The title used to read "renders an outlet and nothing else", which stopped
+    // being true the moment the navigation chrome landed — and what this
+    // assertion actually pins is neither: `matchRoutes` resolves a path from the
+    // route id alone, so this says the route names `AppLayout` and says nothing
+    // about what `AppLayout` renders. `prijava.test.ts` owns that half, and owns
+    // it in two assertions now, because reverting the layout to a bare outlet
+    // passed this one unchanged.
     const registered = (appLayoutRoute.options as { component?: unknown }).component;
 
     expect(registered, 'the layout renders no component, so its destinations render nothing').toBe(

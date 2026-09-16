@@ -1,6 +1,7 @@
 import { Outlet, createRoute, redirect } from '@tanstack/react-router';
 import type { Session } from '@supabase/supabase-js';
 
+import { AppChrome } from '@/navigation/chrome';
 import { rootRoute } from '@/routes/__root';
 import { SESSION_UNRESOLVED } from '@/supabase/client';
 
@@ -52,15 +53,22 @@ import { SESSION_UNRESOLVED } from '@/supabase/client';
  * imported here (`__root.tsx` explains the shape), which is what keeps both
  * branches executable in the node suite with no browser and no running stack.
  *
- * It renders an outlet and nothing else. No tab bar, no sidebar, no icons, no
- * active-destination treatment — part B owns every one of those, and the
- * destination table it will consume is already `@/navigation/destinations`.
+ * It renders the chrome around the outlet, and NOTHING ELSE. The tab bar, the
+ * sidebar, the icons, the active-destination treatment and the exit all live in
+ * `@/navigation/chrome`, which is also the only thing that reads the member's
+ * permission level — so the guard registered here stays session-only, and this
+ * file mentions no level at all. `router.test.ts` asserts exactly that, by
+ * sweeping this source for the words, which is what keeps the two decisions from
+ * quietly merging into one.
+ *
+ * The chrome is the OUTER element and the outlet its child, unconditionally: a
+ * conditional outlet is a destination that resolves, guards, and paints nothing.
  */
 export function AppLayout() {
   return (
-    <div className="flex flex-1 flex-col">
+    <AppChrome>
       <Outlet />
-    </div>
+    </AppChrome>
   );
 }
 

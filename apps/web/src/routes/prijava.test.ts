@@ -59,6 +59,17 @@ const INPUT_PRIMITIVE = join(srcRoot, 'components', 'ui', 'input.tsx');
 const RESOURCE = join(srcRoot, 'i18n', 'locales', 'hr.json');
 /** Story 1.4a's settings surface: the first destination that is not a placeholder. */
 const SETTINGS = join(srcRoot, 'routes', 'organizacija.tsx');
+/**
+ * The navigation chrome, part B: a `.tsx` that is not a route at all.
+ *
+ * It is swept by everything in this file anyway, and that is the point rather
+ * than an accident of where it sits. Every claim below — no bare text, no
+ * unsanctioned literal, a 44 px floor on every control, no `destructive` — is a
+ * property of a file that RENDERS, not of a file that is registered as a route.
+ * The chrome renders on every one of the eight destinations, so a literal
+ * smuggled in here reaches more screens than one in any route module could.
+ */
+const CHROME = join(srcRoot, 'navigation', 'chrome.tsx');
 
 /**
  * The seven titled placeholders still standing after story 1.4a.
@@ -159,7 +170,21 @@ const SCREENS = [
   // guarded by nothing. Its own `<Outlet />` claim is asserted separately
   // below, because no sweep here can see a component that renders the wrong
   // thing.
+  //
+  // STILL ZERO, and that is a claim rather than a leftover: the layout wraps the
+  // chrome around the outlet and owns no control of its own. Every control the
+  // signed-in application offers lives in the entry below, which is where the
+  // count moved to — the layout gaining one would mean the chrome had started
+  // leaking back into the route module the guard lives in.
   { name: 'the signed-in layout', file: LAYOUT, expectedControls: 0 },
+  // THREE on the chrome: the sidebar's collapse, the exit, and the retry that
+  // makes the role read's failure something a person can act on. The
+  // destinations are `<Link>`s, which neither detector matches by construction —
+  // they are swept by name in the chrome block below, with their own count — so
+  // this number is the three BUTTONS and nothing else. It is what notices a
+  // fourth arriving: on a component that renders above every destination in the
+  // application, a control nobody reviewed is a control on eight screens.
+  { name: 'the navigation chrome', file: CHROME, expectedControls: 3 },
 ];
 
 /**
@@ -220,6 +245,9 @@ const MESSAGE_KEYS = join(srcRoot, 'supabase', 'sign-in.ts');
 
 /** The same shape, for story 1.4a's four organization failures. */
 const ORGANIZATION_MESSAGE_KEYS = join(srcRoot, 'organization', 'messages.ts');
+
+/** The same shape again, for the chrome's role and sign-out failures. */
+const NAVIGATION_MESSAGE_KEYS = join(srcRoot, 'navigation', 'messages.ts');
 
 /** UX-DR40's tap-target floor, in CSS pixels. */
 const TARGET_FLOOR_PX = 44;
@@ -347,6 +375,36 @@ const STRUCTURAL_ATTRIBUTES = new Set([
   // separately and by name in every screen, so widening here does not widen
   // that.
   'variant',
+  // ADDED by the navigation chrome, and it is a loosening of a GLOBAL
+  // allowlist — this set applies to every screen in the application, so it is
+  // named and justified rather than waved through, exactly as `role` and
+  // `variant` were.
+  //
+  // `aria-current` takes its value from a CLOSED, NON-TEXTUAL vocabulary the
+  // ARIA specification fixes — `page`, `step`, `location`, `date`, `time`,
+  // `true`, `false` — and nothing outside it means anything to a screen reader.
+  // Nothing user-facing can hide in it, which is the test every entry on this
+  // list has to pass. It is also the one attribute the active-destination
+  // treatment cannot do without: UX-DR37 wants the current entry signalled
+  // without relying on colour, and `aria-current="page"` is the half of that
+  // signal a person who cannot see the styling receives.
+  //
+  // The widening is narrower than it looks in one respect worth naming: the
+  // guarded-attribute half of `eslint.config.js`'s L2 block does not include
+  // `aria-current` either, and for the same reason — it is a state, not a name.
+  // `aria-label` remains guarded in both places.
+  'aria-current',
+  // ADDED with it, and the argument is one this list already accepted once:
+  // `aria-controls` is an ID REFERENCE LIST, exactly like `aria-describedby`
+  // three entries up. Its value names elements on the page and renders nowhere,
+  // so nothing user-facing can hide in it — and the chrome's collapse needs it,
+  // because a disclosure that names no region leaves a screen-reader user with
+  // `aria-expanded` and no way to reach what it expanded.
+  //
+  // The exemption is paid for twice over: the block below resolves every id this
+  // attribute names against an element the file actually renders, so an
+  // exempted value that points at nothing is still a failure.
+  'aria-controls',
 ]);
 
 /** Content inside a template literal, with every `${…}` removed. */
@@ -501,6 +559,62 @@ function buttonElements(text: string): string[] {
   return [...text.matchAll(/<Button\b([^>]*?)\/?>/g)].map((found) => found[1] ?? '');
 }
 
+/**
+ * Every `<nav …>…</nav>` block, opening tag to closing tag.
+ *
+ * Added because COUNTING the chrome's controls says nothing about WHERE they
+ * are. Two bars render from the same two variables, and deleting `{exit}` from
+ * one of them leaves the `<Link>` count at one, `expectedControls` at three, and
+ * every responsive-class assertion untouched — a phone build with navigation and
+ * no way to sign out, green. The only thing that notices is reading each bar's
+ * contents, which is what this extracts.
+ *
+ * Non-greedy, which is correct here and would not be if a `<nav>` were ever
+ * nested inside another; the consumer asserts the count, so that day fails
+ * loudly rather than silently merging two bars into one.
+ */
+function navBlocks(text: string): string[] {
+  return [...text.matchAll(/<nav\b[\s\S]*?<\/nav>/g)].map((found) => found[0]);
+}
+
+/**
+ * Every value an `aria-current` attribute can take, in either syntax.
+ *
+ * The attribute is on `STRUCTURAL_ATTRIBUTES` above, which EXEMPTS it from the
+ * literal sweep on every screen in the application — and the argument that
+ * earned the exemption was that its vocabulary is closed and non-textual. That
+ * argument is only true while it is enforced: `aria-current="Danas"` is a
+ * user-facing literal sitting in the one attribute nothing else now looks at.
+ * This is what looks at it.
+ */
+function ariaCurrentValues(text: string): string[] {
+  return [...text.matchAll(/aria-current=(?:"([^"]*)"|\{([^}]*)\})/g)].flatMap((found) => {
+    const literal = found[1];
+
+    if (literal !== undefined) return [literal];
+
+    return [...(found[2] ?? '').matchAll(/'([^']*)'/g)].map((quoted) => quoted[1] ?? '');
+  });
+}
+
+/**
+ * Every `<Link …>` opening tag's attribute block.
+ *
+ * Added by the navigation chrome, and it is a THIRD control detector rather than
+ * a widening of the two above, deliberately. A router link is not a `<Button>`
+ * and must not be counted as one — `expectedControls` on every other screen is a
+ * tight number, and folding links into it would loosen all of them to cover one
+ * file. What a link shares with a button is the only thing asserted through it:
+ * a person taps it, so UX-DR40's floor applies.
+ *
+ * Every consumer of this brings its own length assertion. Both element regexes
+ * above are non-vacuously guarded by each of theirs, and copying one without
+ * that guard is precisely how a sweep goes quiet.
+ */
+function linkElements(text: string): string[] {
+  return [...text.matchAll(/<Link\b([^>]*?)\/?>/g)].map((found) => found[1] ?? '');
+}
+
 function attributeOf(element: string, name: string): string | null {
   return new RegExp(`${name}="([^"]+)"`).exec(element)?.[1] ?? null;
 }
@@ -615,6 +729,27 @@ const KEY_SOURCES = [
     file: ORGANIZATION_MESSAGE_KEYS,
     keys: messageKeyUnion,
     strings: 10,
+  },
+  // SIX literal keys on the chrome — the navigation landmark's name twice (one
+  // per bar), the collapse's two state-dependent names, the exit and the retry —
+  // and that count is smaller than what the chrome RENDERS, which is the
+  // interesting part. The eight destination labels reach `t()` as
+  // `t(destination.key)`, read off `@/navigation/destinations` rather than
+  // written here, so `translationKeys` finds none of them and must not: a chrome
+  // that named its own keys would be a ninth copy of the destination list, and
+  // the whole reason that table is data is that a test can execute it. The eight
+  // stay in the set comparison below because the eight destination screens each
+  // render their own heading.
+  { name: 'the navigation chrome', file: CHROME, keys: translationKeys, strings: 6 },
+  {
+    // TWO, for three role codes and one sign-out code. The collapse is the
+    // decision `messages.test.ts` executes; what this count pins is that there
+    // are exactly two messages to collapse into, so a third failure that quietly
+    // grew its own message has to be justified here first.
+    name: 'the chrome failure-to-message mapping',
+    file: NAVIGATION_MESSAGE_KEYS,
+    keys: messageKeyUnion,
+    strings: 2,
   },
   // ONE each, exactly. The seven together are what make the set comparison
   // below hold once `hr.json` gained eight `nav.*` keys: a key declared and
@@ -735,6 +870,45 @@ describe('the signed-in layout renders its outlet', () => {
     );
   });
 
+  it('mounts the chrome around it, which is the whole deliverable of part B', () => {
+    // MUTATION-PROVEN GAP, and the widest one this story shipped. Reverting this
+    // layout to `<div className="flex flex-1 flex-col"><Outlet /></div>` and
+    // deleting the import passed the ENTIRE root suite — 1055 tests — with no
+    // navigation, no sign-out and no chrome anywhere in the application. Every
+    // assertion about `chrome.tsx` reads `chrome.tsx`, and nothing read the one
+    // line that puts it on screen.
+    //
+    // Both halves are needed and neither implies the other: an import with no
+    // element renders nothing, and an element with no import does not build.
+    const layout = source(LAYOUT);
+
+    expect(layout, 'the layout does not import the chrome').toMatch(
+      /import\s*\{[^}]*\bAppChrome\b[^}]*\}\s*from\s*'@\/navigation\/chrome'/,
+    );
+    expect(layout, 'the layout never renders the chrome').toContain('<AppChrome>');
+  });
+
+  it('puts the outlet INSIDE the chrome, not beside it', () => {
+    // The shape the assertion above passes for: `<><AppChrome /><Outlet /></>`
+    // imports the chrome, renders it, and renders every destination outside it —
+    // a navigation bar with no page attached to it. What must be true is
+    // structural, so it is read structurally: the returned block's OUTERMOST
+    // element is the chrome, and the outlet is nested within.
+    const returned = (/return \(([\s\S]*?)\n {2}\);/.exec(source(LAYOUT))?.[1] ?? '').trim();
+
+    expect(returned, 'no returned JSX block on the layout').not.toBe('');
+    expect(returned.startsWith('<AppChrome>'), `the layout's outermost element is not the chrome: ${returned}`).toBe(
+      true,
+    );
+    expect(returned.endsWith('</AppChrome>'), 'the chrome does not close around the whole tree').toBe(
+      true,
+    );
+    expect(
+      returned.indexOf('<Outlet'),
+      'the outlet is not nested inside the chrome',
+    ).toBeGreaterThan(returned.indexOf('<AppChrome>'));
+  });
+
   it('renders the outlet unconditionally, not behind a branch', () => {
     // The shape the assertion above passes for: `{signedIn ? <Outlet /> : null}`
     // contains `<Outlet` and renders nothing in the case that matters. The
@@ -746,6 +920,485 @@ describe('the signed-in layout renders its outlet', () => {
     expect(returned, 'no returned JSX block on the layout').not.toBe('');
     expect(returned, 'the outlet is behind a branch').not.toMatch(/[?]|&&/);
     expect(returned).toContain('<Outlet');
+  });
+});
+
+describe('the chrome the layout wraps every destination in', () => {
+  /**
+   * THE NAVIGATION SHELL, PART B. Part A registered eight destinations and the
+   * table that maps roles to them and shipped no way to reach any of them; this
+   * is the component that calls `destinationsFor`, and it renders above every
+   * signed-in screen in the application.
+   *
+   * Source-level, like everything else here, because AD-15 bans jsdom. What that
+   * leaves assertable is exactly what a mutation can break silently: which table
+   * the links come from, WHERE each control is placed rather than merely how
+   * many there are, whether the active entry is signalled by anything but
+   * colour, whether a failed role read says so or merely renders nothing, and
+   * whether the exit goes through the module a node test can execute.
+   */
+
+  it('renders one list of links, not one per layout', () => {
+    // NON-VACUITY for every assertion below, and a claim in its own right. Two
+    // `<Link>` blocks — one for the tab bar, one for the sidebar — is two copies
+    // of the destinations, their order, their icons and their active treatment,
+    // and copies drift. ONE element rendered into two containers cannot.
+    expect(
+      linkElements(source(CHROME)),
+      'the chrome renders its destinations from more than one place',
+    ).toHaveLength(1);
+  });
+
+  it('puts the destinations AND the exit in both bars, not merely somewhere', () => {
+    // MUTATION-PROVEN GAP, and the demonstration is the reason this block exists
+    // at all: deleting `{exit}` from the phone `<nav>` alone left the `<Link>`
+    // count at one, `expectedControls` at three and every responsive-class
+    // assertion untouched — 327 tests green on a phone build with navigation and
+    // no way to sign out, on the device this story's whole argument is built
+    // around. Counting controls says nothing about where they are.
+    const bars = navBlocks(source(CHROME));
+
+    // NON-VACUITY, and specifically the count rather than "more than zero": one
+    // bar is the mutation where a whole layout was deleted, and three is a `<nav>`
+    // nested inside another, which the non-greedy extraction above would report
+    // wrongly.
+    expect(bars, 'the chrome does not render exactly two navigation bars').toHaveLength(2);
+
+    for (const bar of bars) {
+      expect(bar, `a navigation bar renders no destinations: ${bar}`).toContain('{destinations}');
+      expect(bar, `a navigation bar renders no exit: ${bar}`).toContain('{exit}');
+    }
+  });
+
+  it('keeps the exit outside the collapsible region, so collapsing cannot strand anybody', () => {
+    // At and above 640px the tab bar is hidden, so the sidebar is the ONLY
+    // chrome — and with the exit inside the collapsible region, collapsing took
+    // the way out of the application with it. The collapse resets on reload, so
+    // the way back was a page refresh nobody would think to try.
+    //
+    // Read as a containment question rather than a class question: what the
+    // collapse hides is the element `aria-controls` names, so the exit must not
+    // be inside it.
+    const chrome = source(CHROME);
+    const collapsible = /<div\s+id="app-destinations"[\s\S]*?<\/div>/.exec(chrome)?.[0] ?? '';
+
+    expect(collapsible, 'no collapsible region to read').not.toBe('');
+    expect(collapsible, 'the collapsible region holds no destinations').toContain('{destinations}');
+    expect(
+      collapsible,
+      'the exit is inside the collapsible region, so collapsing hides the way out',
+    ).not.toContain('{exit}');
+    expect(
+      collapsible,
+      'the region is not actually collapsed by the toggle state',
+    ).toMatch(/className=\{expanded \?/);
+  });
+
+  it('reclaims space when it collapses, rather than hiding a list inside a fixed width', () => {
+    // The sidebar kept `w-56` in both states, so the toggle hid the list and
+    // moved not one pixel of layout — a control that visibly does nothing, which
+    // is the dead affordance the voice rules exist to prevent. The width belongs
+    // to the list, so collapsing takes it with it.
+    const chrome = source(CHROME);
+    const aside = /<aside\b[^>]*>/.exec(chrome)?.[0] ?? '';
+
+    expect(aside, 'no <aside> to read').not.toBe('');
+    expect(aside, 'the sidebar fixes its own width, so collapsing reclaims nothing').not.toMatch(
+      /\bw-\d+/,
+    );
+  });
+
+  it('gives the destination links the same 44 px floor every control has', () => {
+    // The general sweep over `SCREENS` measures `<Input>` and `<Button>` and
+    // structurally cannot see a `<Link>` — so the eight controls a person
+    // actually navigates with were measured by nothing until this line. The
+    // mutation is one character: drop `h-11` and every entry falls to whatever
+    // the flex row gives it.
+    const links = linkElements(source(CHROME));
+
+    expect(links.length, 'no link detected on the chrome').toBeGreaterThan(0);
+    for (const link of links) {
+      const measured = heightPx(attributeOf(link, 'className'));
+
+      expect(measured, `a destination link declares no usable height class: ${link}`).not.toBeNull();
+      expect(measured).toBeGreaterThanOrEqual(TARGET_FLOOR_PX);
+    }
+  });
+
+  it('signals the active destination by aria-current AND by something that is not colour', () => {
+    // UX-DR37 and Q21: no meaning by colour alone. BOTH halves are asserted,
+    // because each is invisible to the other — `aria-current` alone is a state
+    // nobody sighted can see, and a bold entry alone is a state nobody using a
+    // screen reader can hear.
+    //
+    // The treatment is keyed off the attribute itself (`aria-[current=page]:`),
+    // which is what stops the two from disagreeing: there is one condition, not
+    // two that happen to be written the same way today.
+    const link = linkElements(source(CHROME))[0] ?? '';
+    const className = attributeOf(link, 'className') ?? '';
+
+    expect(link, 'the chrome never marks the current destination').toMatch(/aria-current=\{/);
+    expect(
+      /aria-\[current=page\]:(?:font-bold|font-semibold|underline)/.test(className),
+      'the active entry is distinguished by colour alone',
+    ).toBe(true);
+  });
+
+  it('matches a destination and its descendants, not the exact path alone', () => {
+    // Every destination is a SECTION. `pathname === destination.path` drops the
+    // current-destination signal — and `aria-current` with it — on the first
+    // child route, which Epic 2's day view under `Kalendar` adds, so this breaks
+    // on arrival rather than hypothetically. The rule itself is executed in
+    // `destinations.test.ts`; what is asserted here is that the chrome routes
+    // through it rather than comparing strings of its own.
+    const link = linkElements(source(CHROME))[0] ?? '';
+
+    expect(
+      link,
+      'the active entry is decided by an equality this component wrote itself',
+    ).toMatch(/aria-current=\{[^}]*isCurrentDestination\(pathname,[^}]*\}/);
+    expect(source(CHROME), 'the chrome compares pathnames by hand').not.toMatch(
+      /pathname === destination\.path/,
+    );
+  });
+
+  it('renders the destinations the role reaches, never the whole table', () => {
+    // MUTATION-PROVEN SHAPE. `DESTINATIONS` in place of `destinationsFor(role)`
+    // type-checks, lints, renders, and shows a member every admin destination —
+    // with `destinations.test.ts` still green, because that file executes the
+    // TABLE and never sees what renders it.
+    const chrome = source(CHROME);
+
+    expect(chrome, 'the chrome does not filter the destinations by role at all').toContain(
+      'destinationsFor(',
+    );
+    expect(
+      chrome,
+      'the chrome renders the whole destination table rather than the role’s own',
+    ).not.toContain('DESTINATIONS');
+  });
+
+  it('holds no permission level of its own', () => {
+    // The other half of the claim above. The chrome CONSUMES a role and decides
+    // nothing about it: a branch on `'admin'` written here would be a second
+    // place the member/admin split lives, unexecutable by any test (AD-15), and
+    // free to disagree with the table that `destinations.test.ts` runs.
+    const chrome = source(CHROME);
+
+    for (const forbidden of ["'admin'", "'member_role'", 'memberRoleOf(']) {
+      expect(chrome, `the chrome branches on ${forbidden} instead of consuming the role`).not.toContain(
+        forbidden,
+      );
+    }
+  });
+
+  it('reports a role it could not read rather than rendering an empty bar', () => {
+    // THE acceptance criterion this file can carry. An unrecognised or
+    // unreadable role must not render as an empty navigation, because an empty
+    // navigation is byte-identical to what a member with no access would see.
+    // The message is what tells them apart, and it reaches `t()` through the
+    // mapping a node test executes rather than a ternary over codes.
+    const chrome = source(CHROME);
+
+    expect(chrome, 'the chrome renders no alert at all').toContain('role="alert"');
+    expect(chrome, 'the chrome does not render its message through the mapping').toContain(
+      't(navigationMessageKey(',
+    );
+    for (const code of ['MEMBER_ROLE_REFUSED', 'MEMBER_ROLE_UNRECOGNISED', 'shell.error.']) {
+      expect(chrome, `${code} is branched on in the chrome`).not.toContain(code);
+    }
+  });
+
+  it('treats a query that ERRORED as a failure too, not as an empty bar', () => {
+    // THE THIRD OUTCOME, and the one a first draft misses. `readMemberRole`
+    // folds every failure it knows about into `{ ok: false, code }`, which
+    // `useQuery` files as a resolved value — but the queryFn can still throw
+    // before reaching it, and a chrome reading only `data` then has no role AND
+    // no refusal: an empty bar with no message, the exact state this component
+    // is written to make impossible.
+    const chrome = source(CHROME);
+
+    expect(chrome, 'the errored query state is read nowhere').toContain('member.isError');
+    expect(
+      chrome,
+      'an errored query produces no failure code, so it renders as an empty bar',
+    ).toMatch(/member\.isError[\s\S]{0,120}?MEMBER_ROLE_UNAVAILABLE/);
+  });
+
+  it('gives the failed read something to press, since nothing retries it', () => {
+    // A failure resolves as DATA rather than as a throw, so TanStack Query files
+    // it as settled: no retry, no refetch on focus, nothing that recovers on its
+    // own. A message that says a thing is temporarily unavailable, on a screen
+    // with no way to ask again, is the dead affordance the voice rules exist to
+    // prevent — and it is also the path back for an account an administrator has
+    // just reactivated.
+    const chrome = source(CHROME);
+
+    expect(chrome, 'nothing on screen re-reads the role').toContain('member.refetch()');
+    expect(chrome, 'the retry is not offered to the person').toContain("t('shell.retry')");
+    // Offered for the ROLE failure only: a refused sign-out already has its
+    // retry in the exit itself, re-enabled by the handler's `finally`.
+    expect(chrome, 'the retry is offered for a failure it cannot help').toMatch(
+      /roleFailure === null \?/,
+    );
+  });
+
+  it('moves focus to the refusal and clears it on the next destination', () => {
+    // TWO defects in one region. `role="alert"` reaches assistive technology on
+    // insertion and reaches a sighted phone user not at all — the exit is at the
+    // bottom of the viewport and the message renders at the top of the content
+    // column, off screen at the moment of the press. And a failure that only
+    // cleared on the next attempt followed the person onto every destination for
+    // the rest of the session, sitting in front of a later role failure that
+    // nothing would then have shown.
+    const chrome = source(CHROME);
+
+    expect(chrome, 'the refusal cannot receive focus').toMatch(/tabIndex=\{-1\}/);
+    expect(chrome, 'nothing moves focus to the refusal').toMatch(
+      /failure !== null[\s\S]{0,80}?\.focus\(\)/,
+    );
+    expect(chrome, 'a refusal is never cleared by navigating away').toMatch(
+      /setFailure\(null\);\s*\n\s*\}, \[pathname\]\)/,
+    );
+  });
+
+  it('offers both layouts, and exactly one of them at any width', () => {
+    // Two layouts, one architecture: bottom tabs below 640px, a sidebar at and
+    // above it. Asserted as the PAIR of responsive classes, because either one
+    // alone is a chrome that disappears at half the widths the application is
+    // used at — and the phone half is the one nobody testing on a laptop meets.
+    const chrome = source(CHROME);
+
+    expect(chrome, 'the tab bar is not hidden once the sidebar appears').toContain('sm:hidden');
+    expect(chrome, 'the sidebar is not hidden below the breakpoint').toMatch(/hidden[^"]*sm:flex/);
+  });
+
+  it('names both navigation landmarks, and clears the phone’s own bottom inset', () => {
+    // Accessibility labels are definition-of-done in this project, and two
+    // anonymous `<nav>` landmarks are two regions announced as "navigation" with
+    // nothing to tell a reader which one they are in. The same name on both is
+    // correct rather than lazy: they are mutually exclusive by media query, so
+    // only ever one is in the accessibility tree.
+    //
+    // The inset is the same claim in the physical dimension: the bar is
+    // `sticky`, so content scrolls UNDER it, and on a phone with a home
+    // indicator the bar itself sits under the system gesture area.
+    const chrome = source(CHROME);
+    const bars = navBlocks(chrome);
+
+    expect(bars).toHaveLength(2);
+    for (const bar of bars) {
+      expect(bar, `a navigation landmark carries no name: ${bar}`).toMatch(
+        /aria-label=\{t\('shell\.navigation'\)\}/,
+      );
+    }
+    expect(chrome, 'the sticky bar ignores the phone’s bottom inset').toContain(
+      'env(safe-area-inset-bottom',
+    );
+    expect(chrome, 'nothing clears the sticky bar, so content scrolls under it unreachably').toMatch(
+      /pb-\[calc\(4rem/,
+    );
+  });
+
+  it('names the region the collapse controls, and renders that region', () => {
+    // `aria-expanded` says a thing opened; `aria-controls` says WHICH thing, and
+    // without it a screen-reader user is told something expanded and given no
+    // way to reach it. Asserted as a RESOLVING reference, not merely a present
+    // attribute — a reference to an absent id is ignored in silence, which is
+    // worse than no reference because the source-level lookup passes either way.
+    const chrome = source(CHROME);
+    const toggle = buttonElements(chrome).find((element) => element.includes('aria-expanded'));
+
+    expect(toggle, 'nothing on the chrome is a disclosure at all').not.toBeUndefined();
+
+    const controls = attributeOf(toggle ?? '', 'aria-controls');
+
+    expect(controls, 'the collapse names no region').not.toBeNull();
+    expect(chrome, `no element carries id="${String(controls)}"`).toContain(
+      `id="${String(controls)}"`,
+    );
+    // And its NAME changes with its state. A disclosure whose name reads the
+    // same in both directions leaves `aria-expanded` as the only signal —
+    // inaudible to anybody not using assistive technology, invisible to
+    // everybody else.
+    expect(toggle, 'the collapse never announces which state it is in').toContain('aria-expanded=');
+    expect(chrome, 'the collapse reads the same in both states').toMatch(
+      /expanded \? t\('shell\.menuHide'\) : t\('shell\.menuShow'\)/,
+    );
+  });
+
+  it('announces the exit as busy rather than renaming it mid-press', () => {
+    // The opposite decision to the collapse's, and deliberately: a disclosure
+    // has two states and a name that says which one the press produces, while
+    // this has one action. A control whose NAME changes under the pointer is a
+    // control voice control can no longer be told to press, so the state travels
+    // on `aria-busy` and `disabled` instead — which also takes it out of the tab
+    // order while the revocation is in flight.
+    const exit =
+      buttonElements(source(CHROME)).find((element) => element.includes('onClick={startSignOut}')) ??
+      '';
+
+    expect(exit, 'nothing on the chrome signs anybody out').not.toBe('');
+    expect(exit, 'the in-flight state is not announced').toMatch(/aria-busy=\{[^}]+\}/);
+    expect(exit, 'the exit stays live while a revocation is in flight').toMatch(
+      /disabled=\{[^}]+\}/,
+    );
+  });
+
+  it('keeps the icon beside the label rather than in place of it', () => {
+    // The icon is DECORATION. Every entry carries its Croatian name at every
+    // width, and the glyph is `aria-hidden` so the name is announced once rather
+    // than twice — an icon with an accessible name of its own is the shape that
+    // reads "Home, Danas" and the shape that survives somebody deleting the
+    // label.
+    const chrome = source(CHROME);
+
+    expect(chrome, 'the destination icon is exposed to assistive technology').toMatch(
+      /<Icon\s+aria-hidden/,
+    );
+    expect(chrome, 'the link renders no label beside its icon').toContain('{t(destination.key)}');
+    expect(chrome, 'the icon is chosen in the component rather than by the typed map').toContain(
+      'destinationIcon(destination.key)',
+    );
+  });
+
+  it('persists nothing about the layout', () => {
+    // Human decision, 2026-09-16: collapse resets on every load, matching the
+    // theme layer's stance. These are shared devices, and a layout one person
+    // chose following the next person into their shift is a setting nobody asked
+    // for and nobody can find to undo.
+    const chrome = source(CHROME);
+
+    for (const forbidden of ['localStorage', 'sessionStorage', 'document.cookie']) {
+      expect(chrome, `the chrome persists its layout through ${forbidden}`).not.toContain(forbidden);
+    }
+    // The POSITIVE half, pinned to the collapse specifically. A bare
+    // `useState(` was satisfied by the failure and in-flight hooks this
+    // component would hold anyway, so it asserted nothing about the layout at
+    // all — the state could have moved to storage with that line still green.
+    expect(chrome, 'the collapse is not component state').toMatch(
+      /const \[expanded, setExpanded\] = useState\(/,
+    );
+  });
+
+  it('renders no outlet of its own', () => {
+    // The layout owns the one `<Outlet/>` and the chrome takes it as children. A
+    // second one renders the destination twice; a conditional one renders it
+    // never, behind a guard that already said yes.
+    expect(source(CHROME), 'the chrome renders a second outlet').not.toContain('<Outlet');
+    expect(source(CHROME), 'the chrome does not render what the layout hands it').toContain(
+      '{children}',
+    );
+  });
+});
+
+describe('the exit ends the session and says so when it cannot', () => {
+  it('routes through the supabase module rather than calling the client inline', () => {
+    // The same claim the sign-in screen carries, on the other direction of the
+    // same seam: the outcome mapping is in a `.ts` module a node test executes,
+    // and the chrome's job is to reach it.
+    const chrome = source(CHROME);
+
+    for (const required of ["from '@/supabase/sign-out'", 'signOut(', 'supabaseClient()']) {
+      expect(chrome, `the chrome no longer reaches ${required}`).toContain(required);
+    }
+    // A BARE `fetch(`, matched with a boundary rather than as a substring. The
+    // other screens use `not.toContain('fetch(')`, which is correct there and
+    // wrong here: this component calls `member.refetch()` to re-read the role,
+    // and a substring check reports that as a hand-assembled request. The
+    // boundary is what keeps the sweep about what it means — a request built in
+    // a component rather than routed through the `@/supabase` modules.
+    expect(chrome, 'the chrome assembles a request of its own').not.toMatch(/(?<![\w.])fetch\(/);
+    expect(chrome, 'the chrome builds a client of its own').not.toContain('createClient(');
+  });
+
+  it('lands the person on a sign-in route, and only once the session actually ended', () => {
+    // MUTATION-PROVEN SHAPE, and the mutation is the tempting one: navigating
+    // first and reading the outcome after. A refused sign-out leaves the session
+    // live, so a navigation on that path lands on a sign-in route the layout's
+    // own guard bounces straight back off — which reads as "the button did
+    // nothing" rather than as the failure it is.
+    const handler = componentFunction(source(CHROME), 'leave');
+
+    expect(handler, 'no sign-out handler to read').not.toBe('');
+    expect(handler, 'a successful sign-out does not navigate to a sign-in route').toMatch(
+      /navigate\(\{\s*to:\s*'\/prijava'\s*\}\)/,
+    );
+    expect(handler, 'the refused branch does not put the returned code on screen').toMatch(
+      /!outcome\.ok[\s\S]{0,200}?setFailure\(outcome\.code\)/,
+    );
+    expect(
+      handler.indexOf('setFailure(outcome.code)'),
+      'the handler navigates before it has read the outcome',
+    ).toBeLessThan(handler.indexOf('navigate('));
+  });
+
+  it('empties the query cache with the session, which is the shared-device case', () => {
+    // `main.tsx` builds ONE `QueryClient` for the page load and a client-side
+    // navigation does not reload the page — so without this, `['member-role']`
+    // and `['organization']` survive the sign-out and the next person to sign in
+    // on the same device sees the previous member's destinations and the
+    // previous organization's snapshot until each refetch settles. On a shared
+    // shift-work device that is the exact failure the exit exists to prevent.
+    //
+    // ONLY ON THE REVOKED PATH: clearing after a refused sign-out would throw
+    // away a working session's cache for nothing.
+    const handler = componentFunction(source(CHROME), 'leave');
+
+    expect(handler, 'the cache outlives the session').toContain('queryClient.clear()');
+    expect(
+      handler.indexOf('revoked = true'),
+      'the cache is cleared before the session is known to have ended',
+    ).toBeLessThan(handler.indexOf('queryClient.clear()'));
+  });
+
+  it('does not report a failed navigation as a failed sign-out', () => {
+    // The session is GONE at that point. Reporting it as a failure tells
+    // somebody "Odjava trenutačno nije moguća" while they are already signed
+    // out, on a chrome that still looks signed in — the one thing a sign-out
+    // control must never say. The console carries the navigation failure; the
+    // screen does not contradict the database.
+    const handler = componentFunction(source(CHROME), 'leave');
+
+    expect(handler, 'nothing records whether the revocation actually happened').toContain(
+      'let revoked = false',
+    );
+    expect(handler, 'the catch reports every failure as a failed sign-out').toMatch(
+      /if \(!revoked\) setFailure\(SIGN_OUT_FAILED\)/,
+    );
+  });
+
+  it('guards on a ref and clears the in-flight flag on every path', () => {
+    // The two defects every handler in this application is swept for: a guard on
+    // React state is stale inside a handler already called once this tick, so a
+    // double press starts two revocations; and clearing the flag outside a
+    // `finally` leaves the control dead after the first refusal, with nothing on
+    // screen to say why.
+    const handler = componentFunction(source(CHROME), 'leave');
+    const block = finallyBlock(source(CHROME));
+
+    expect(handler, 'the sign-out handler has no in-flight guard').toMatch(
+      /if\s*\([\s\S]*?leaving\.current[\s\S]*?\)\s*\{?\s*return;/,
+    );
+    expect(block, 'the sign-out handler has no finally, so a path can leave it in flight').not.toBe(
+      '',
+    );
+    expect(block, 'the finally does not re-enable the control').toContain('setPending(false)');
+    expect(block, 'the finally does not clear the in-flight ref').toContain(
+      'leaving.current = false',
+    );
+    expect(handler, 'nothing is surfaced when the call throws outside its own mapping').toMatch(
+      /catch[\s\S]{0,400}?setFailure\(/,
+    );
+  });
+
+  it('logs the cause it cannot render', () => {
+    // The catch that swallows `SUPABASE_ENVIRONMENT_MISSING` is how a
+    // misconfiguration reads as an outage — the failure `client.ts` exists to
+    // prevent and that `prijava.tsx` reintroduced once already.
+    expect(source(CHROME), 'the catch reports nothing to the console').toMatch(
+      /catch\s*\([\s\S]{0,400}?console\.error\(/,
+    );
   });
 });
 
@@ -1765,6 +2418,39 @@ describe('the organization prompt reaches the tenant it was given', () => {
   });
 });
 
+/** The closed set `aria-current` admits (WAI-ARIA 1.2). Nothing else is a
+ *  state; everything else is text, and text is what the allowlist exempted this
+ *  attribute on the promise of never carrying. */
+const ARIA_CURRENT_VOCABULARY = new Set(['page', 'step', 'location', 'date', 'time', 'true', 'false']);
+
+describe('the exempted attribute keeps the promise that exempted it', () => {
+  /**
+   * `aria-current` went onto the GLOBAL `STRUCTURAL_ATTRIBUTES` allowlist, which
+   * excuses it from the literal sweep on EVERY screen in the application — and
+   * the argument that earned the exemption was that its vocabulary is closed and
+   * non-textual. An argument is not an enforcement: `aria-current="Danas"` is a
+   * user-facing Croatian literal sitting in the one attribute nothing else now
+   * looks at, and it would render to a screen reader as the element's current
+   * state. This is the enforcement.
+   */
+  it('admits only ARIA state values wherever aria-current appears', () => {
+    const found = SCREENS.flatMap(({ file }) => ariaCurrentValues(source(file)));
+
+    // NON-VACUITY. With no `aria-current` anywhere the loop asserts nothing while
+    // reading as coverage — which is the state every screen but the chrome is in,
+    // so the count has to come from the sweep rather than be assumed.
+    expect(found.length, 'no aria-current anywhere, so this sweep proves nothing').toBeGreaterThan(
+      0,
+    );
+    for (const value of found) {
+      expect(
+        ARIA_CURRENT_VOCABULARY.has(value),
+        `aria-current="${value}" is not an ARIA state — it is text in an attribute the allowlist exempted`,
+      ).toBe(true);
+    }
+  });
+});
+
 describe('the screen uses no reserved signal', () => {
   it.each(SCREENS)('names no destructive utility in $name', ({ file }) => {
     // UX-DR4: `destructive` is reserved exclusively for an unresolved conflict.
@@ -2029,6 +2715,68 @@ describe('the detectors find what they claim to find', () => {
 
     expect(buttonElements(two)).toEqual([' type="submit"', ' className="h-11" disabled ']);
     expect(buttonElements('<p>no buttons here</p>')).toEqual([]);
+  });
+
+  it('finds every Link and never a Label, which starts the same way', () => {
+    // BOTH polarities, and the near-miss is the point: `<Label` shares four
+    // characters with `<Link`, and a detector without the word boundary would
+    // report the settings surface's five labels as navigation links and measure
+    // them against a floor they are not controls for. One that matched neither
+    // would make every claim about the chrome pass against an empty list.
+    const mixed = '<Link to="/danas" className="h-11">x</Link><Label htmlFor="a" />';
+
+    expect(linkElements(mixed)).toEqual([' to="/danas" className="h-11"']);
+    expect(linkElements('<Label htmlFor="a" />')).toEqual([]);
+    expect(linkElements('<p>no links here</p>')).toEqual([]);
+  });
+
+  it('allows aria-current and still refuses the attribute next to it', () => {
+    // The entry the navigation chrome added to the allowlist, proved on BOTH
+    // polarities. Widening that set is the one edit to this file that can
+    // quietly stop it catching things, so the neighbouring offence has to still
+    // be caught — in the quoted form and in the expression form, since the
+    // active treatment ships as the latter.
+    expect(unsanctionedLiterals('<Link aria-current="page">{t(\'nav.danas\')}</Link>')).toEqual([]);
+    expect(
+      unsanctionedLiterals("<Link aria-current={active ? 'page' : undefined} to={path} />"),
+    ).toEqual([]);
+    expect(unsanctionedLiterals('<Link aria-current="page" title="Danas" />')).toEqual(['Danas']);
+    expect(
+      unsanctionedLiterals("<Link aria-current={active ? 'page' : undefined} alt='Danas' />"),
+    ).toEqual(['Danas']);
+  });
+
+  it('extracts each nav block and never merges two into one', () => {
+    // BOTH polarities. A version that matched greedily would return ONE block
+    // spanning both bars, and "every bar renders the exit" would then be
+    // satisfied by one bar that does — which is exactly the mutation the sweep
+    // exists to catch. One that matched nothing would make the same sweep pass
+    // against an empty list.
+    const two = '<nav id="a">{destinations}</nav><p>x</p><nav id="b">{exit}</nav>';
+
+    expect(navBlocks(two)).toEqual(['<nav id="a">{destinations}</nav>', '<nav id="b">{exit}</nav>']);
+    expect(navBlocks('<p>no navigation here</p>')).toEqual([]);
+  });
+
+  it('reads aria-current values out of both syntaxes and none out of neither', () => {
+    // The sweep that keeps the allowlist exemption honest is only as good as
+    // this reader: one that returned nothing would let `aria-current="Danas"`
+    // through on every screen in the application.
+    expect(ariaCurrentValues('<Link aria-current="page" />')).toEqual(['page']);
+    expect(ariaCurrentValues("<Link aria-current={a ? 'page' : undefined} />")).toEqual(['page']);
+    expect(ariaCurrentValues('<Link aria-current="Danas" />')).toEqual(['Danas']);
+    expect(ariaCurrentValues("<Link aria-current={a ? 'step' : 'page'} />")).toEqual(['step', 'page']);
+    expect(ariaCurrentValues('<Link to="/danas" />')).toEqual([]);
+  });
+
+  it('allows aria-controls and still refuses the attribute next to it', () => {
+    // The second entry the chrome added to the allowlist, proved on both
+    // polarities. It is an id reference list exactly as `aria-describedby` is,
+    // and the neighbouring offence has to keep firing.
+    expect(unsanctionedLiterals('<Button aria-controls="app-destinations" />')).toEqual([]);
+    expect(unsanctionedLiterals('<Button aria-controls="app-destinations" title="Izbornik" />')).toEqual(
+      ['Izbornik'],
+    );
   });
 
   it('extracts a component helper and stops at its own closing brace', () => {

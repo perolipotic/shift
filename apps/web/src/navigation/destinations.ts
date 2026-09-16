@@ -104,3 +104,28 @@ export const DESTINATIONS: readonly Destination[] = [
 export function destinationsFor(role: MemberRole): readonly Destination[] {
   return DESTINATIONS.filter((destination) => destination.roles.includes(role));
 }
+
+/**
+ * Whether a pathname is AT a destination or inside it.
+ *
+ * `pathname === path` was the whole of this and it was wrong in one direction
+ * that has not arrived yet and will: every destination here is a section rather
+ * than a leaf, so the moment one of them has a child route — Epic 2's day view
+ * under `Kalendar` is already planned — an exact comparison drops the
+ * current-destination signal exactly where a person is deepest in the
+ * application and most needs to know where they are. The failure is silent, and
+ * it takes `aria-current` with it, so the loss lands hardest on the reader who
+ * cannot see the styling either.
+ *
+ * THE SEPARATOR IS PART OF THE PREFIX. `startsWith(path)` alone would light
+ * `Danas` up on a hypothetical `/danasnji`, which is the classic prefix bug;
+ * `${path}/` is what makes the match about path SEGMENTS rather than about
+ * characters.
+ *
+ * Here rather than in the chrome for the reason everything else in this module
+ * is: a `.tsx` is collected by nothing (AD-15), and this is a rule with two
+ * polarities worth executing.
+ */
+export function isCurrentDestination(pathname: string, path: string): boolean {
+  return pathname === path || pathname.startsWith(`${path}/`);
+}

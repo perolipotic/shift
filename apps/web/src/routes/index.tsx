@@ -26,9 +26,18 @@ import { SESSION_UNRESOLVED } from '@/supabase/client';
  * executable in the node suite without a browser or a running stack.
  *
  * `home.heading` is a PLACEHOLDER and is labelled one on purpose: it is the
- * smallest thing that proves a session reaches a screen. The navigation shell
- * replaces it wholesale, so nothing here should be built on — no destinations,
- * no sign-out affordance (`Odjava` stays reserved), no shell.
+ * smallest thing that proves a session reaches a screen. Nothing here should be
+ * built on.
+ *
+ * THE CHROME IS NOT HERE, and that is now a gap rather than a plan. This route
+ * stays OUTSIDE the `_app` layout (`router.ts` records why), so the navigation
+ * shell's tab bar, sidebar and exit — which the layout wraps around every one of
+ * the eight destinations — reach every signed-in screen except this one. A
+ * person landing here straight after signing in therefore sees a heading and no
+ * way anywhere. Moving `/` under the layout, or redirecting it to a destination,
+ * is a decision about this route's match chain that the navigation shell's own
+ * spec explicitly did not authorize; it is recorded here so the next story that
+ * touches `/` finds it rather than rediscovers it.
  */
 export function SignedInScreen() {
   return (

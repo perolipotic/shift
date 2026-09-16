@@ -87,6 +87,18 @@ development_status:
   # b777832 (PR #4). Reconciled 2026-09-15. Part B is still unspecced and earns
   # its own key when specced, same convention as the parts above.
   navigation-shell-a-route-skeleton: done
+  # Part B is the chrome and the exit — the tab bar, the sidebar, destination
+  # icons, the non-colour active treatment, `signOut`, and the already-signed-in
+  # redirect on both sign-in routes. Specced 2026-09-16; earns its key here,
+  # same convention as the parts above, and a regenerate reports it as an orphan
+  # because it derives from no epics.md acceptance criterion — reconcile with
+  # --set rather than dropping it. It earns the reserved word `Odjava`, which
+  # part A deliberately did not: the shipped literal is the imperative
+  # `Odjavi se`, so `RESERVED_STEMS` empties and the two blocks it guarded are
+  # rewritten in the same commit. It also introduces the first client-side read
+  # of `members`, because `destinationsFor` has had no role to filter on since
+  # part A shipped it.
+  navigation-shell-b-chrome-and-sign-out: review
   # Story 1.4 was split once at step-01's multi-goal check (human decision
   # 2026-09-15). Same convention as 1.1 and 1.3: the parent key below stays
   # in-progress until every part lands; the parts carry their own status, are

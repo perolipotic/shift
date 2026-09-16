@@ -203,3 +203,45 @@ export function sessionReader(source: () => SessionSource): () => Promise<Sessio
 
 /** The bound reader. Named so `router.test.ts` can pin it by identity. */
 export const currentSession = sessionReader(() => supabaseClient().auth);
+
+/**
+ * The session, or `null` — including when reading it FAILED.
+ *
+ * THREE OUTCOMES COLLAPSED TO TWO, deliberately and in one place. `currentSession`
+ * can reject: the client throws its stable code on a build with no environment,
+ * and `getSession` rejects wherever storage is blocked — Safari's private mode,
+ * a locked-down enterprise profile. A rejection escaping a `beforeLoad` resolves
+ * the route to neither a redirect nor a component, which is a blank page at HTTP
+ * 200 that `__root.tsx` registers no `errorComponent` to catch.
+ *
+ * NOT SILENT, which is the half a bare `catch` loses. `SESSION_UNRESOLVED` is a
+ * stable code and never reaches a screen; without it a deployment with no
+ * environment behaves like an ordinary signed-out visit, with an empty console
+ * and nothing anywhere to say why — the misconfiguration-as-outage failure this
+ * module exists to refuse.
+ *
+ * WHAT `null` MEANS IS THE CALLER'S DECISION, and it genuinely differs by caller,
+ * which is why this helper stops short of making it. `routes/_app.tsx` fails
+ * CLOSED — no session, no destination — because letting somebody through puts
+ * them on screens every query refuses. Both sign-in routes fail OPEN — no
+ * session, render the form — because redirecting on a failed read would put the
+ * one path that can repair a session behind the session working. Same read,
+ * opposite defaults; only the read is shared.
+ *
+ * SHARED BY THE TWO SIGN-IN ROUTES ONLY, today. `_app.tsx` and `index.tsx` still
+ * hold their own copies, and that is a scope boundary rather than an oversight:
+ * the navigation shell's own spec permits no change to `_app.tsx` beyond
+ * rendering the chrome. Folding those two in is a one-line edit each for
+ * whichever story is allowed to touch them.
+ */
+export async function resolvedSession(
+  read: () => Promise<Session | null>,
+): Promise<Session | null> {
+  try {
+    return await read();
+  } catch (cause) {
+    console.error(SESSION_UNRESOLVED, cause);
+
+    return null;
+  }
+}

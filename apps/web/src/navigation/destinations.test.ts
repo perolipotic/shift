@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DESTINATIONS,
   destinationsFor,
+  isCurrentDestination,
   type Destination,
   type MemberRole,
 } from '@/navigation/destinations';
@@ -244,6 +245,22 @@ describe('the readers read what they claim to read', () => {
   it('flattens the resource file the way i18next resolves it', () => {
     expect(resourceKeys({ a: { b: 'x', c: 'y' }, d: 'z' }).sort()).toEqual(['a.b', 'a.c', 'd']);
     expect(resourceKeys()).toContain('nav.danas');
+    // THE SIGN-OUT LABEL EXISTS NOW, and this line used to assert it did not:
+    // the route skeleton shipped no exit, so `nav.odjava` was asserted absent
+    // here and the stem was reserved in `test/resource-hygiene.test.ts`. The
+    // chrome ships one, so the claim flips — and note WHERE it lands. It is
+    // `shell.signOut` and deliberately not a `nav.*` key: the `nav.` namespace
+    // is destinations, the exit is an action rather than a place, and
+    // "renders every nav key the resource file declares" above compares that
+    // namespace to the eight destinations exactly. A sign-out key added under
+    // `nav.` would fail that assertion, which is the right failure — it would
+    // mean the exit had been modelled as a ninth destination.
+    expect(resourceKeys()).toContain('shell.signOut');
+    // `nav.odjava` STAYS as the negative polarity — a walker that returned every
+    // string it met would satisfy both `toContain`s above — and it is the only
+    // one worth keeping: `nav.signOut` was asserted absent beside it and proved
+    // nothing at all, since the exhaustive `nav.*` comparison in this same file
+    // already fails on any ninth key by that or any other name.
     expect(resourceKeys()).not.toContain('nav.odjava');
   });
 
@@ -266,6 +283,38 @@ describe('the readers read what they claim to read', () => {
     expect(stringsOf({ meta: { label: 'Danas' } })).toEqual(['Danas']);
     expect(stringsOf({ a: [{ b: ['deep'] }] })).toEqual(['deep']);
     expect(stringsOf({ n: 1, missing: null })).toEqual([]);
+  });
+
+  it('is at a destination when it is the destination, and when it is inside one', () => {
+    // Every destination is a SECTION rather than a leaf. `pathname === path`
+    // drops the current-destination signal — and `aria-current` with it — on the
+    // first child route, and Epic 2's day view under `Kalendar` is already
+    // planned, so this breaks on arrival rather than hypothetically.
+    expect(isCurrentDestination('/kalendar', '/kalendar')).toBe(true);
+    expect(isCurrentDestination('/kalendar/2026-09', '/kalendar')).toBe(true);
+    expect(isCurrentDestination('/kalendar/2026-09/12', '/kalendar')).toBe(true);
+  });
+
+  it('is not at a destination that merely starts the same way', () => {
+    // THE OTHER POLARITY, and the classic prefix bug: `startsWith(path)` alone
+    // lights `Danas` up on `/danasnji`, so two entries claim to be the current
+    // page at once. The separator is what makes the match about path SEGMENTS.
+    expect(isCurrentDestination('/danasnji', '/danas')).toBe(false);
+    expect(isCurrentDestination('/kalendari/2026', '/kalendar')).toBe(false);
+    expect(isCurrentDestination('/ljudi', '/kalendar')).toBe(false);
+    expect(isCurrentDestination('/', '/danas')).toBe(false);
+  });
+
+  it('answers for every destination the table actually carries', () => {
+    // Non-vacuity, read off the shipped table: a helper that always returned
+    // `false` would satisfy both negative rows above and render a chrome where
+    // nothing is ever the current page.
+    for (const destination of DESTINATIONS) {
+      expect(
+        isCurrentDestination(destination.path, destination.path),
+        `${destination.path} is not current when it is the path`,
+      ).toBe(true);
+    }
   });
 
   it('resolves a key path to its message and a wrong one to nothing', () => {

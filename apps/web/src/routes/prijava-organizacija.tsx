@@ -1,4 +1,4 @@
-import { createRoute, useNavigate } from '@tanstack/react-router';
+import { createRoute, redirect, useNavigate } from '@tanstack/react-router';
 import { useRef, type FormEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { t } from '@/i18n';
 import { rootRoute } from '@/routes/__root';
 import { ORGANIZATION_NAVIGATION_FAILED, organizationDestination } from '@/supabase/address';
+import { resolvedSession } from '@/supabase/client';
 
 /**
  * Which organization (story 1.3b), at bare `/prijava`.
@@ -108,5 +109,24 @@ export function OrganizationPromptScreen() {
 export const prijavaOrganizacijaRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/prijava',
+  // THE ROUTE THAT HAD NO GUARD AT ALL, and the one a signed-in visitor is most
+  // likely to reach: it is where `/`'s redirect, a typed `/prijava` and
+  // `not-found.tsx`'s link back all land. Offered to a session that already
+  // exists, this screen asks which organization somebody belongs to when the
+  // answer is already signed into the browser — and on a shared device the
+  // person reading it may not be the person signed in, which is exactly the
+  // state the exit shipping alongside makes reachable.
+  //
+  // FAIL OPEN, the opposite of `routes/_app.tsx` and for the reason recorded on
+  // `/prijava/$slug`: an unreadable session must render this prompt, because
+  // redirecting on a failed read would put the one path that can repair a
+  // session behind the session working.
+  beforeLoad: async ({ context }) => {
+    // The same read `/prijava/$slug` makes, through the same helper — see the
+    // note there, and `@/supabase/client` for why only the read is shared.
+    if ((await resolvedSession(context.currentSession)) === null) return;
+
+    throw redirect({ to: '/' });
+  },
   component: OrganizationPromptScreen,
 });
