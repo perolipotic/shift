@@ -100,6 +100,12 @@ const SOURCES = [
   // is: it holds the stable codes the screen imports and logs.
   join(webRoot, 'src', 'organization', 'snapshot.ts'),
   join(webRoot, 'src', 'organization', 'messages.ts'),
+  // Story 1.4b's module. `logo.ts` renders nothing and is here for the reason
+  // `snapshot.ts` is: it holds the stable codes `messages.ts` pairs with keys,
+  // and it owns the `accept` hint the screen imports rather than writes — so a
+  // chunk built before an edit to it compares `hr.json` against output that
+  // never saw the four logo messages.
+  join(webRoot, 'src', 'organization', 'logo.ts'),
 ];
 
 /**
@@ -384,6 +390,15 @@ const AUTHORED_VOCABULARY = [
   // is the stronger claim in exactly the way the six navigation words were.
   'Spremi',
   'Odustani',
+  // TWO MORE from story 1.4b, and they close a gap rather than moving a word:
+  // neither was in the ban list below, so a hard-coded `Logotip` on the
+  // settings surface would have shipped unnoticed. Both are held to a COUNT
+  // rather than to an absence, which is the stronger of the two claims: absence
+  // says nothing may say the word, a count says `hr.json` is the only thing
+  // that may — and the count is read off the resource file rather than written
+  // here, so the inflected `logotip` in one refusal changes nothing.
+  'Logotip',
+  'Odaberi',
 ];
 
 /** Everything the terminology contract and the unshipped affordances still own.

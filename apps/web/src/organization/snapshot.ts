@@ -58,9 +58,16 @@ export const ORGANIZATION_SNAPSHOT_KEY = ['organization'] as const;
  *
  * `created_at` is not here. It is the one `timestamptz` the conventions permit
  * and nothing renders it, so selecting it would be a column read for no reader.
+ *
+ * `logo_path` joined the list in story 1.4b, and it is the one column here that
+ * exists to answer a question rather than to fill a field. Whether an
+ * organization has a logo is a VALUE the snapshot carries, so the neutral
+ * fallback is a pure read of data already on the client; without the column the
+ * only way to ask would be a second network read behind the screen's one
+ * figure, which is the shape AD-13 exists to prevent.
  */
 export const ORGANIZATION_COLUMNS =
-  'id,slug,name,short_name,description,address,contact_email,organization_type,timezone,locale,leave_year_start_month,leave_year_start_day';
+  'id,slug,name,short_name,description,address,contact_email,organization_type,timezone,locale,leave_year_start_month,leave_year_start_day,logo_path';
 
 /**
  * The organization, as everything downstream sees it.
@@ -82,15 +89,68 @@ export interface OrganizationSnapshot {
   readonly locale: string;
   readonly leaveYearStartMonth: number;
   readonly leaveYearStartDay: number;
+  /** Where the logo object lives, or `null` — which is what "no logo" IS. */
+  readonly logoPath: string | null;
 }
 
-/** The fields the settings surface may change. Deliberately not the row. */
+/** The fields the settings FORM may change. Deliberately not the row. */
 export interface OrganizationEdits {
   readonly name: string;
   readonly organizationType: string;
   readonly timezone: string;
   readonly leaveYearStartMonth: number;
   readonly leaveYearStartDay: number;
+  /** Never here. See {@link OrganizationWrite} for why it is typed rather than said. */
+  readonly logoPath?: never;
+}
+
+/**
+ * The logo reference, written on its own.
+ *
+ * A SEPARATE SHAPE rather than a sixth optional field on {@link
+ * OrganizationEdits}, and the separation is the enforcement rather than the
+ * tidiness: the two writes happen seconds apart and from different controls, so
+ * a form submit that also carried `logo_path` would overwrite a logo uploaded
+ * while the fields were being typed — silently, with a PATCH that reports
+ * success. Disjoint types mean the form cannot send it and the upload cannot
+ * send the fields, and neither is a rule anybody has to remember.
+ */
+export interface OrganizationLogoEdit {
+  readonly logoPath: string;
+  /** None of these, ever. See {@link OrganizationWrite}. */
+  readonly name?: never;
+  readonly organizationType?: never;
+  readonly timezone?: never;
+  readonly leaveYearStartMonth?: never;
+  readonly leaveYearStartDay?: never;
+}
+
+/**
+ * Either write, and NEITHER can be both.
+ *
+ * The `?: never` members on both sides are what make "disjoint" a fact the
+ * compiler checks rather than a claim a comment makes. Without them a value
+ * carrying the five fields AND a `logoPath` — from a spread, or from a variable
+ * assembled elsewhere — satisfies `OrganizationLogoEdit` structurally, routes to
+ * the logo branch of {@link organizationEditColumns}, and silently drops all
+ * five identity fields on a save that reports success. With them such a value
+ * is a `pnpm typecheck` failure at the call site, which is the only place it can
+ * be fixed.
+ */
+export type OrganizationWrite = OrganizationEdits | OrganizationLogoEdit;
+
+/**
+ * Which of the two a write is: the one that actually carries a logo path.
+ *
+ * `!== undefined` as well as `in`, because `exactOptionalPropertyTypes` still
+ * admits `{ …five, logoPath: undefined }` at runtime from a spread of a partial
+ * — and `'logoPath' in write` alone would route that to the logo branch and
+ * write `logo_path = undefined`, which PostgREST drops, producing a PATCH with
+ * an empty body that matches the row and changes nothing while reporting
+ * success.
+ */
+function isLogoEdit(write: OrganizationWrite): write is OrganizationLogoEdit {
+  return 'logoPath' in write && write.logoPath !== undefined;
 }
 
 /**
@@ -251,6 +311,7 @@ export function organizationSnapshotOf(row: unknown): OrganizationSnapshot | nul
     locale,
     leaveYearStartMonth,
     leaveYearStartDay,
+    logoPath: textAt(fields, 'logo_path'),
   };
 }
 
@@ -277,14 +338,19 @@ export function organizationTimeZone(snapshot: OrganizationSnapshot): string {
  * indistinguishable from a policy refusal.
  */
 export function organizationEditColumns(
-  edits: OrganizationEdits,
+  write: OrganizationWrite,
 ): Readonly<Record<string, unknown>> {
+  // ONE COLUMN, AND ONLY THAT COLUMN, on the logo path. The write that follows
+  // an upload names `logo_path` and nothing else, so an identity save that was
+  // typed but not yet submitted is not part of it, and neither is the reverse.
+  if (isLogoEdit(write)) return { logo_path: write.logoPath };
+
   return {
-    name: edits.name,
-    organization_type: edits.organizationType,
-    timezone: edits.timezone,
-    leave_year_start_month: edits.leaveYearStartMonth,
-    leave_year_start_day: edits.leaveYearStartDay,
+    name: write.name,
+    organization_type: write.organizationType,
+    timezone: write.timezone,
+    leave_year_start_month: write.leaveYearStartMonth,
+    leave_year_start_day: write.leaveYearStartDay,
   };
 }
 
@@ -384,7 +450,7 @@ export async function readOrganization(table: OrganizationTable): Promise<Organi
 export async function updateOrganization(
   table: OrganizationTable,
   id: string,
-  edits: OrganizationEdits,
+  write: OrganizationWrite,
 ): Promise<OrganizationOutcome> {
   // REFUSED BEFORE IT IS SENT, and this is the only validation in the system
   // that is not the database's. `0002:93` leaves `timezone` unchecked on purpose
@@ -398,7 +464,11 @@ export async function updateOrganization(
   // Asked of the runtime rather than matched against a pattern, and asked in
   // `format.ts` because that is the only file in `apps/web` permitted to touch
   // `Intl` at all.
-  if (!isRenderableTimeZone(edits.timezone)) {
+  //
+  // Asked of the IDENTITY write only. The logo write carries no zone at all, so
+  // there is nothing to check and nothing to refuse — running the check against
+  // an absent value would refuse every upload.
+  if (!isLogoEdit(write) && !isRenderableTimeZone(write.timezone)) {
     return { ok: false, code: ORGANIZATION_TIMEZONE_UNKNOWN };
   }
 
@@ -406,7 +476,7 @@ export async function updateOrganization(
 
   try {
     answered = await table
-      .update(organizationEditColumns(edits))
+      .update(organizationEditColumns(write))
       .eq(ID_COLUMN, id)
       .select(ORGANIZATION_COLUMNS);
   } catch {

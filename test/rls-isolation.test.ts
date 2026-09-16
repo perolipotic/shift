@@ -335,6 +335,150 @@ async function restRefusal(response: Response): Promise<Refusal> {
   };
 }
 
+// --------------------------------------------------------------------- storage
+
+/**
+ * The private bucket `0005` creates, and the one object inside each
+ * organization's own folder.
+ *
+ * Written out here rather than imported from `apps/web`: this file asserts what
+ * the DATABASE does, and reading the constants from the client would make a
+ * renamed bucket agree with itself on both sides while every existing object
+ * became unreachable.
+ */
+const LOGO_BUCKET = 'organization-logos';
+const LOGO_OBJECT = 'logo';
+
+/** Where an organization's logo lives. The first segment is the isolation. */
+function logoPath(organization: string): string {
+  return `${organization}/${LOGO_OBJECT}`;
+}
+
+/** A one-pixel PNG. The smallest thing the bucket's allowlist accepts. */
+const ONE_PIXEL_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
+interface StorageCall {
+  /** Omitted for an anonymous call, which carries the publishable key only. */
+  readonly token?: string;
+  readonly method?: string;
+  readonly body?: Buffer;
+  readonly contentType?: string;
+  readonly json?: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * One real storage request — the sibling of {@link rest}, and it has to be one.
+ *
+ * `rest` hardcodes `/rest/v1/`, which is PostgREST's mount point and not the
+ * storage service's: the two are different processes behind the same gateway,
+ * they authenticate the same token, and only one of them has ever been reached
+ * from this file. Q4 is about the other one.
+ */
+async function storageApi(path: string, call: StorageCall = {}): Promise<Response> {
+  const endpoint = apiEndpoint;
+  if (endpoint === undefined) throw new Error('unreachable: gated by skipIf');
+
+  const headers: Record<string, string> = { apikey: endpoint.key };
+  if (call.token !== undefined) headers['Authorization'] = `Bearer ${call.token}`;
+  if (call.contentType !== undefined) headers['content-type'] = call.contentType;
+  if (call.json !== undefined) headers['content-type'] = 'application/json';
+  // Always upsert: replacing a logo is an upsert of the same key, and without
+  // the header the second write of a case is refused as a duplicate rather than
+  // exercising the update policy this story wrote.
+  headers['x-upsert'] = 'true';
+
+  return fetch(`${endpoint.url}/storage/v1/${path}`, {
+    method: call.method ?? 'GET',
+    headers,
+    ...(call.json === undefined ? {} : { body: JSON.stringify(call.json) }),
+    ...(call.body === undefined ? {} : { body: call.body }),
+  });
+}
+
+/** Write an object, as whoever the token names — or as nobody at all. */
+async function putLogo(token: string | undefined, objectPath: string): Promise<Response> {
+  return storageApi(`object/${LOGO_BUCKET}/${objectPath}`, {
+    ...(token === undefined ? {} : { token }),
+    method: 'POST',
+    body: ONE_PIXEL_PNG,
+    contentType: 'image/png',
+  });
+}
+
+/** Ask for a signed read URL — the call the surface makes to render a logo. */
+async function signLogo(token: string | undefined, objectPath: string): Promise<Response> {
+  return storageApi(`object/sign/${LOGO_BUCKET}/${objectPath}`, {
+    ...(token === undefined ? {} : { token }),
+    method: 'POST',
+    json: { expiresIn: 60 },
+  });
+}
+
+/** Ask for the bytes themselves. */
+async function downloadLogo(token: string | undefined, objectPath: string): Promise<Response> {
+  return storageApi(`object/${LOGO_BUCKET}/${objectPath}`, {
+    ...(token === undefined ? {} : { token }),
+  });
+}
+
+/**
+ * The storage service's own refusal, which is NOT shaped like PostgREST's.
+ *
+ * Every refusal arrives as HTTP 400 and the distinction lives in the body's
+ * `statusCode` — `403` for a policy, `404` for an object the caller may not
+ * see, `413` for the size bound, `415` for the type allowlist. Reading
+ * `response.status` would make all four the same fact.
+ */
+async function storageRefusal(response: Response): Promise<Refusal> {
+  const body: unknown = await response.json();
+  const fields = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+  return {
+    code: typeof fields['statusCode'] === 'string' ? fields['statusCode'] : '',
+    message: typeof fields['message'] === 'string' ? fields['message'] : '',
+  };
+}
+
+/** Every object under one organization's folder, read as the owner so RLS hides
+ *  nothing — the storage twin of {@link organizationById}. */
+async function logoObjects(client: Client, organization: string): Promise<string[]> {
+  const { rows } = await client.query<{ name: string }>(
+    `select name from storage.objects
+      where bucket_id = $1 and (storage.foldername(name))[1] = $2
+      order by name`,
+    [LOGO_BUCKET, organization],
+  );
+  return rows.map((row) => row.name);
+}
+
+/**
+ * Remove whatever a case wrote. Owner-side, because no DELETE policy exists.
+ *
+ * `storage.allow_delete_query` is the storage schema's own guard against
+ * orphaning objects by deleting their rows out from under the files, and it
+ * raises 42501 for everybody — the owner included — until it is set. Set
+ * LOCALLY, so it lasts one statement's transaction and never becomes a property
+ * of the connection.
+ */
+async function removeLogoObjects(client: Client, organization: string): Promise<void> {
+  await client.query('begin');
+  try {
+    await client.query("set local storage.allow_delete_query = 'true'");
+    await client.query(
+      `delete from storage.objects
+        where bucket_id = $1 and (storage.foldername(name))[1] = $2`,
+      [LOGO_BUCKET, organization],
+    );
+    await client.query('update organizations set logo_path = null where id = $1', [organization]);
+    await client.query('commit');
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
+  }
+}
+
 // ----------------------------------------------------------- claims injection
 
 /**
@@ -577,6 +721,33 @@ afterAll(async () => {
     await client.query('delete from auth.users where email like $1', [
       `%@${THROWAWAY}.shift.invalid`,
     ]);
+    // The storage cases write real objects through the real API, outside any
+    // transaction — there is no throwaway organization to aim them at, because
+    // the caller's claim pins the folder it may write to. Both fixtures are
+    // seeded logo-less and must stay that way for the fallback case.
+    //
+    // SCOPED TO THE FIXTURES THIS FILE ACTUALLY TOUCHES, by slug, exactly as
+    // every other cleanup here is scoped. `databaseUrl` honours
+    // `SUPABASE_DB_URL`, so an unscoped `delete from storage.objects` or
+    // `update organizations set logo_path = null` is one environment variable
+    // away from clearing every tenant's branding on a database this file was
+    // never meant to be pointed at — and both statements would report success.
+    const fixtures = FIXTURES.map((entry) => entry.slug);
+
+    await client.query('begin');
+    await client.query("set local storage.allow_delete_query = 'true'");
+    await client.query(
+      `delete from storage.objects
+        where bucket_id = $1
+          and (storage.foldername(name))[1] in (
+            select id::text from organizations where slug = any($2::text[])
+          )`,
+      [LOGO_BUCKET, fixtures],
+    );
+    await client.query('update organizations set logo_path = null where slug = any($1::text[])', [
+      fixtures,
+    ]);
+    await client.query('commit');
   } finally {
     await client.end();
   }
@@ -1681,7 +1852,7 @@ describe('organizations admits exactly one write path, and it is the settings su
     },
   );
 
-  it.skipIf(noDatabase)('grants authenticated UPDATE on exactly the five editable columns', () => {
+  it.skipIf(noDatabase)('grants authenticated UPDATE on exactly the six writable columns', () => {
     // The column allowlist as a fact about the database rather than about the
     // interface, and an EXACT set: a later migration re-granting the table — or
     // `grant all` written by habit — restores every column silently, and the
@@ -1708,6 +1879,17 @@ describe('organizations admits exactly one write path, and it is the settings su
       ).toEqual([
         'leave_year_start_day',
         'leave_year_start_month',
+        // STORY 1.4b. `0005` adds `logo_path` with a SECOND column grant rather
+        // than by re-granting the five, because column grants are unioned — and
+        // that is exactly why this assertion reads the database instead of the
+        // migration text: it is the only place the union is a single fact.
+        //
+        // Writable, and rightly: it is the organization's own pointer at its own
+        // object. What stops the settings form from sending it is not a
+        // privilege but a TYPE — `@/organization/snapshot` makes the logo write
+        // a shape disjoint from the five fields — so a save of the identity
+        // fields cannot carry a stale path over a logo uploaded seconds earlier.
+        'logo_path',
         'name',
         'organization_type',
         'timezone',
@@ -2104,6 +2286,583 @@ describe('a direct API call edits an organization under exactly the same rules',
       }
     },
     20_000,
+  );
+});
+
+describe('a branding asset is readable only within the organization that owns it', () => {
+  /**
+   * Q4, executed over the transport a browser actually uses (story 1.4b).
+   *
+   * This is the first block in this file that leaves PostgREST. The storage
+   * service is a different process behind the same gateway, it authenticates
+   * the same token, and `0005`'s three policies on `storage.objects` are the
+   * whole of what stands between one tenant's branding and another's — exactly
+   * as `0003`'s policies are for the two domain tables.
+   *
+   * THE REFUSAL SHAPES ARE DIFFERENT HERE, and reading them wrong is the
+   * mistake this block exists to make impossible. PostgREST refuses an update
+   * silently with 204 and no rows; the storage service refuses everything with
+   * HTTP 400 and puts the real code in the body. So every assertion below reads
+   * `statusCode` through `storageRefusal` and then re-reads the database as the
+   * owner, which is the standard the rest of this file holds itself to.
+   *
+   * Every case writes to a SEEDED organization's folder, because there is no
+   * throwaway organization to aim at: the caller's claim pins the folder it may
+   * write to, and no session may create a tenant. So each case cleans up after
+   * itself as the owner, and `afterAll` empties the bucket whatever happened —
+   * both fixtures are seeded logo-less and the neutral-fallback case needs them
+   * to stay that way.
+   */
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'permits the $fixture admin one object in their own folder, however often they replace it',
+    async ({ slug, admin }) => {
+      // The positive control every refusal below needs. A policy that refused
+      // everything — misspelt, written `to anon`, or with a `with check` nobody
+      // satisfies — produces the identical 403 this block teaches a reader to
+      // read as a refusal, so without this the whole story can ship broken.
+      //
+      // And the second half is the matrix's "one object, never two": replacing
+      // a logo is an upsert of the SAME key, which the service performs as an
+      // update of the existing row — so this exercises the update policy as
+      // well, and would notice a bucket accumulating a row per upload.
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+
+        const first = await putLogo(token, logoPath(own));
+        expect(
+          first.status,
+          `the ${slug} admin could not write a logo in their own folder: ${await first.text()}`,
+        ).toBe(200);
+
+        const replaced = await putLogo(token, logoPath(own));
+        expect(replaced.status, `the ${slug} admin could not replace their own logo`).toBe(200);
+
+        expect(
+          await logoObjects(client, own),
+          `replacing the ${slug} logo left more than one object behind`,
+        ).toEqual([logoPath(own)]);
+      } finally {
+        await removeLogoObjects(client, await organizationId(client, slug));
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses a $fixture member-role session the write, and leaves the folder empty',
+    async ({ slug, member }) => {
+      // Q2 on the storage side: read and write are different populations here,
+      // and a member-role account is in the first and not the second. Insert has
+      // no USING clause to fail, so WITH CHECK raises rather than filtering —
+      // which is why this asserts a code rather than re-reading a row count
+      // alone. It does both anyway.
+      const token = await tokenFor(member, slug);
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+        const response = await putLogo(token, logoPath(own));
+
+        expect(response.status, 'a refused write reaches the caller as an error').toBe(400);
+        expect(
+          (await storageRefusal(response)).code,
+          'a row level security refusal on storage is 403',
+        ).toBe('403');
+        expect(
+          await logoObjects(client, own),
+          `a ${slug} member-role session wrote the organization logo`,
+        ).toEqual([]);
+      } finally {
+        await removeLogoObjects(client, await organizationId(client, slug));
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(noApi).each(CROSS_TENANT)(
+    'refuses the $fixture admin an object in the $otherFixture folder',
+    async ({ slug, admin, otherSlug }) => {
+      // Q1 on the write side. The claim is the caller's own and the folder is
+      // somebody else's, so the folder comparison is the only thing in the way
+      // — which is exactly the conjunct a copy-paste from the members policy
+      // would lose, since `storage.objects` has no `organization_id` column for
+      // the habitual clause to name.
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      try {
+        const other = await organizationId(client, otherSlug);
+        const response = await putLogo(token, logoPath(other));
+
+        expect(response.status, 'a cross-tenant write reaches the caller as an error').toBe(400);
+        expect((await storageRefusal(response)).code, 'a policy refusal is 403').toBe('403');
+        expect(
+          await logoObjects(client, other),
+          `the ${slug} admin wrote into the ${otherSlug} folder`,
+        ).toEqual([]);
+      } finally {
+        await removeLogoObjects(client, await organizationId(client, otherSlug));
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses an anonymous write into the $fixture folder',
+    async ({ slug }) => {
+      // Every policy `0005` writes names `to authenticated`, so an anonymous
+      // caller matches none. This is the case that would go quiet if a single
+      // `to` clause were dropped — and nothing about the diff would look
+      // different.
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+        const response = await putLogo(undefined, logoPath(own));
+
+        expect(response.status, 'an anonymous write reaches the caller as an error').toBe(400);
+        expect((await storageRefusal(response)).code, 'a policy refusal is 403').toBe('403');
+        expect(
+          await logoObjects(client, own),
+          `an anonymous caller wrote into the ${slug} folder`,
+        ).toEqual([]);
+      } finally {
+        await removeLogoObjects(client, await organizationId(client, slug));
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(noApi).each(CROSS_TENANT)(
+    'returns no bytes and no signed URL when the $fixture admin asks for the $otherFixture logo',
+    async ({ slug, admin, otherSlug }) => {
+      // THE ACCEPTANCE CLAUSE, and both halves of it: no signed URL and no
+      // bytes. Asserting only the first would leave a policy that refused the
+      // signing endpoint while the download served the object, which is two
+      // different code paths through the same service.
+      //
+      // The object genuinely exists, written by the tenant that owns it, so a
+      // refusal here is the policy rather than an absence.
+      const owner = await tokenFor(
+        FIXTURES.find((entry) => entry.slug === otherSlug)?.admin ?? '',
+        otherSlug,
+      );
+      const intruder = await tokenFor(admin, slug);
+      const client = await connect();
+      try {
+        const other = await organizationId(client, otherSlug);
+        const written = await putLogo(owner, logoPath(other));
+        expect(written.status, `${otherSlug} could not write its own logo`).toBe(200);
+
+        const signed = await signLogo(intruder, logoPath(other));
+        const downloaded = await downloadLogo(intruder, logoPath(other));
+
+        expect(signed.status, `the ${slug} admin was given a URL for the ${otherSlug} logo`).toBe(
+          400,
+        );
+        expect((await storageRefusal(signed)).code, 'a hidden object reads as 404').toBe('404');
+        expect(
+          downloaded.status,
+          `the ${slug} admin read the ${otherSlug} logo bytes`,
+        ).toBe(400);
+        expect((await storageRefusal(downloaded)).code, 'a hidden object reads as 404').toBe('404');
+      } finally {
+        await removeLogoObjects(client, await organizationId(client, otherSlug));
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'gives any active $fixture member a URL for their own logo, and an anonymous caller none',
+    async ({ slug, admin, member }) => {
+      // READ AND WRITE ARE DIFFERENT POPULATIONS, executed. The member-role
+      // account may not write the logo and must be able to see it — it is on
+      // every screen they open — so this is the positive control the refusals
+      // above need on the SELECT policy specifically, which none of them
+      // exercises. The anonymous half is in the same case because it is the
+      // same object and the same endpoint, differing only in the session.
+      const owner = await tokenFor(admin, slug);
+      const reader = await tokenFor(member, slug);
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+        const written = await putLogo(owner, logoPath(own));
+        expect(written.status, `${slug} could not write its own logo`).toBe(200);
+
+        const signed = await signLogo(reader, logoPath(own));
+        expect(
+          signed.status,
+          `a ${slug} member-role session could not see its own organization logo`,
+        ).toBe(200);
+
+        const anonymous = await signLogo(undefined, logoPath(own));
+        expect(anonymous.status, `an anonymous caller was given a URL for the ${slug} logo`).toBe(
+          400,
+        );
+        expect((await storageRefusal(anonymous)).code, 'a hidden object reads as 404').toBe('404');
+      } finally {
+        await removeLogoObjects(client, await organizationId(client, slug));
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses the $fixture admin a delete on their own object, which no policy admits',
+    async ({ slug, admin }) => {
+      // Nothing in this story removes a logo, so `0005` writes no DELETE policy
+      // and the verb is refused by matching none at all — the same shape FR-2
+      // gives `organizations`. Asserted rather than assumed, so the later story
+      // that wants deletion has to delete this to get it.
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+        expect((await putLogo(token, logoPath(own))).status).toBe(200);
+
+        const removed = await storageApi(`object/${LOGO_BUCKET}/${logoPath(own)}`, {
+          token,
+          method: 'DELETE',
+        });
+
+        // THE STATUS AND THE BODY, like every sibling here. `not.toBe(200)` was
+        // satisfied by a 500, by a gateway timeout and by the storage service
+        // being down — three ways of proving nothing about the policy.
+        expect(removed.status, 'a refused delete reaches the caller as an error').toBe(400);
+        expect(
+          (await storageRefusal(removed)).code,
+          'a delete with no matching policy is refused as 403',
+        ).toBe('403');
+        expect(
+          await logoObjects(client, own),
+          `the ${slug} admin deleted their own logo object`,
+        ).toEqual([logoPath(own)]);
+      } finally {
+        await removeLogoObjects(client, await organizationId(client, slug));
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses the $fixture admin a file over the bucket size bound, at the bucket',
+    async ({ slug, admin }) => {
+      // MATRIX ROW 3, proved against the ENFORCEMENT POINT rather than against a
+      // stub body. `@/organization/logo` also refuses an oversized file before
+      // it sends it, which is a courtesy and not a gate: AD-9 leaves no server
+      // tier, so the only thing standing between a 50 MB upload and the bucket
+      // is `file_size_limit`, and reading the column out of `storage.buckets`
+      // says nothing about whether the service honours it.
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+        const response = await storageApi(`object/${LOGO_BUCKET}/${logoPath(own)}`, {
+          token,
+          method: 'POST',
+          body: Buffer.alloc(3 * 1024 * 1024, 1),
+          contentType: 'image/png',
+        });
+
+        expect(response.status, 'an oversized upload reaches the caller as an error').toBe(400);
+        expect(
+          (await storageRefusal(response)).code,
+          'the bucket size bound is not enforced by the service',
+        ).toBe('413');
+        expect(
+          await logoObjects(client, own),
+          `the ${slug} admin wrote a file over the bucket bound`,
+        ).toEqual([]);
+      } finally {
+        await removeLogoObjects(client, await organizationId(client, slug));
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses the $fixture admin a type outside the bucket allowlist, at the bucket',
+    async ({ slug, admin }) => {
+      // MATRIX ROW 4, and the same argument. The picker's `accept` hint is a
+      // hint — a file renamed to `.png` and a direct API call both walk past it
+      // — so the allowlist is the rule, and this is what executes it.
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+        const response = await storageApi(`object/${LOGO_BUCKET}/${logoPath(own)}`, {
+          token,
+          method: 'POST',
+          body: Buffer.from('%PDF-1.4', 'utf8'),
+          contentType: 'application/pdf',
+        });
+
+        expect(response.status, 'a disallowed type reaches the caller as an error').toBe(400);
+        expect(
+          (await storageRefusal(response)).code,
+          'the bucket type allowlist is not enforced by the service',
+        ).toBe('415');
+        expect(
+          await logoObjects(client, own),
+          `the ${slug} admin wrote a type the bucket does not accept`,
+        ).toEqual([]);
+      } finally {
+        await removeLogoObjects(client, await organizationId(client, slug));
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses the $fixture admin any key but the one this story defines',
+    async ({ slug, admin }) => {
+      // "ONE OBJECT, NEVER TWO" AS A POLICY rather than as a client convention.
+      // Scoped by folder alone, an entitled admin could write `<own id>/anything`
+      // through a direct API call — as many objects as they liked, each one
+      // perfectly isolated and each one unreclaimable, because `0005` writes no
+      // DELETE policy. The key is pinned, so this is refused where it is made.
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+
+        for (const key of [`${own}/second-logo`, `${own}/nested/logo`, `${own}/logo.png`]) {
+          const response = await storageApi(`object/${LOGO_BUCKET}/${key}`, {
+            token,
+            method: 'POST',
+            body: ONE_PIXEL_PNG,
+            contentType: 'image/png',
+          });
+
+          expect(response.status, `${key} was accepted as an error-free write`).toBe(400);
+          expect((await storageRefusal(response)).code, `${key} is not refused by policy`).toBe(
+            '403',
+          );
+        }
+
+        expect(
+          await logoObjects(client, own),
+          `the ${slug} admin wrote a key outside the one this story defines`,
+        ).toEqual([]);
+      } finally {
+        await removeLogoObjects(client, await organizationId(client, slug));
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses an injected $fixture admin an object the moment they are banned',
+    async ({ slug, admin }) => {
+      // AD-10's freshness guarantee on the new policies. Claims-injection
+      // rather than HTTP, and deliberately: banning a fixture account over the
+      // wire would have to be undone outside any transaction, and a failure
+      // between the two would leave every other suite unable to sign that
+      // account in. Inside a rolled-back transaction the ban never happened.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const folder = caller.organizationId;
+
+        await actAs(client, caller.authUserId, folder);
+        const permitted = await client.query(
+          `insert into storage.objects (bucket_id, name, owner_id) values ($1, $2, $3)`,
+          [LOGO_BUCKET, logoPath(folder), caller.authUserId],
+        );
+        await actAsOwner(client);
+
+        expect(
+          permitted.rowCount,
+          `the ${slug} admin could not write a logo before the ban`,
+        ).toBe(1);
+
+        await client.query(
+          `update auth.users set banned_until = now() + interval '1 day' where id = $1`,
+          [caller.authUserId],
+        );
+
+        await actAs(client, caller.authUserId, folder);
+        const refusal = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into storage.objects (bucket_id, name, owner_id) values ($1, $2, $3)`,
+            [LOGO_BUCKET, `${folder}/after-the-ban`, caller.authUserId],
+          ),
+        );
+        const renamed = await client.query(
+          `update storage.objects set name = $1 where bucket_id = $2 and name = $3`,
+          [`${folder}/renamed`, LOGO_BUCKET, logoPath(folder)],
+        );
+        await actAsOwner(client);
+
+        expect(refusal.code, 'a banned admin kept writing until the token expired').toBe('42501');
+        expect(renamed.rowCount, 'a banned admin kept editing until the token expired').toBe(0);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses an injected $fixture session with no organization claim at all',
+    async ({ slug, admin }) => {
+      // Every session minted before the hook existed looks like this, and the
+      // claim's absence has to fail CLOSED here as it does everywhere else:
+      // `nullif(...)` yields null, the comparison is null, which is not true,
+      // which matches no row and satisfies no check.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+
+        await actAs(client, caller.authUserId, null);
+        const refusal = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into storage.objects (bucket_id, name, owner_id) values ($1, $2, $3)`,
+            [LOGO_BUCKET, logoPath(caller.organizationId), caller.authUserId],
+          ),
+        );
+        await actAsOwner(client);
+
+        expect(refusal.code, `a claimless ${slug} session wrote a logo`).toBe('42501');
+        expect(await logoObjects(client, caller.organizationId)).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses an injected $fixture admin an object at the bucket root, with no folder at all',
+    async ({ slug, admin }) => {
+      // The fail-closed direction. `storage.foldername` returns an empty array
+      // for a name with no `/` in it, so `[1]` is null, and null compared to
+      // anything is null — an object written at the root would be shared rather
+      // than unreachable if the comparison were the other way round.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const refusal = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into storage.objects (bucket_id, name, owner_id) values ($1, $2, $3)`,
+            [LOGO_BUCKET, LOGO_OBJECT, caller.authUserId],
+          ),
+        );
+        await actAsOwner(client);
+
+        expect(refusal.code, `a ${slug} admin wrote an object outside every folder`).toBe('42501');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'refuses an injected $fixture admin renaming their object into the $otherFixture folder',
+    async ({ slug, admin, otherSlug }) => {
+      // The storage equivalent of moving a row between tenants, and the case a
+      // USING-only policy fails: USING passes — the object IS the caller's — and
+      // WITH CHECK is the only thing standing between an otherwise-legal update
+      // and an object that has left the folder it was reachable in.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const other = await organizationId(client, otherSlug);
+
+        await client.query(
+          `insert into storage.objects (bucket_id, name, owner_id) values ($1, $2, $3)`,
+          [LOGO_BUCKET, logoPath(caller.organizationId), caller.authUserId],
+        );
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const refusal = await refusedThenContinue(client, () =>
+          client.query(
+            `update storage.objects set name = $1 where bucket_id = $2 and name = $3`,
+            [logoPath(other), LOGO_BUCKET, logoPath(caller.organizationId)],
+          ),
+        );
+        await actAsOwner(client);
+
+        expect(refusal.code, 'a WITH CHECK refusal is 42501').toBe('42501');
+        expect(
+          refusal.message,
+          `the ${slug} admin moved their object into the ${otherSlug} folder`,
+        ).toContain('row-level security');
+        expect(await logoObjects(client, other)).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('holds exactly the three storage policies this story wrote', () => {
+    // The exact set as a fact about the DATABASE rather than about the
+    // migration text, which `test/supabase-scaffold.test.ts` reads. A fourth
+    // policy — on either table, from any source, including a later Supabase
+    // image that ships one — is what this notices.
+    return inRolledBackTransaction(async (client) => {
+      const { rows } = await client.query<{ table: string; policy: string; command: string }>(
+        `select tablename as "table", policyname as "policy", cmd as "command"
+           from pg_policies where schemaname = 'storage' order by policyname`,
+      );
+
+      expect(
+        rows.map((row) => `${row.table}.${row.policy} ${row.command}`),
+        'the storage policy set changed',
+      ).toEqual([
+        'objects.organization_logos_insert_by_own_active_admin INSERT',
+        'objects.organization_logos_select_by_own_active_member SELECT',
+        'objects.organization_logos_update_by_own_active_admin UPDATE',
+      ]);
+      expect(
+        rows.filter((row) => row.table === 'buckets'),
+        'a policy on storage.buckets lets a session enumerate buckets',
+      ).toEqual([]);
+    });
+  });
+
+  it.skipIf(noDatabase)('holds exactly one bucket, private and bounded by size and type', () => {
+    // A public bucket serves every object to anybody who can guess a path, with
+    // no policy consulted at all — which would make all three policies above
+    // decorative while every one of them still read as correct.
+    return inRolledBackTransaction(async (client) => {
+      const { rows } = await client.query<{
+        id: string;
+        public: boolean;
+        limit: string;
+        types: string[];
+      }>(
+        `select id, public, file_size_limit::text as "limit", allowed_mime_types as types
+           from storage.buckets order by id`,
+      );
+
+      expect(rows.map((row) => row.id), 'the bucket set changed').toEqual([LOGO_BUCKET]);
+      expect(rows[0]?.public, 'the branding bucket is public').toBe(false);
+      expect(rows[0]?.limit, 'the branding bucket has no size bound').toBe('2097152');
+      expect(rows[0]?.types, 'the branding bucket accepts a type it should not').toEqual([
+        'image/png',
+        'image/jpeg',
+        'image/webp',
+      ]);
+    });
+  });
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'leaves the $fixture fixture logo-less, which is the neutral-fallback case',
+    async ({ slug }) => {
+      // `seed.sql` writes no logo for either fixture and must not start: the
+      // acceptance criterion about the neutral mark is only executable against
+      // an organization that has none, and a fixture that quietly gained one
+      // would make that case unreachable while every assertion here stayed
+      // green.
+      await inRolledBackTransaction(async (client) => {
+        const { rows } = await client.query<{ path: string | null }>(
+          'select logo_path as path from organizations where slug = $1',
+          [slug],
+        );
+
+        expect(rows[0]?.path, `the ${slug} fixture was seeded with a logo`).toBeNull();
+      });
+    },
   );
 });
 

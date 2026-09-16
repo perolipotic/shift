@@ -293,7 +293,7 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the six policies stories 1.3a and 1.4a reviewed, and no seventh', () => {
+  it('declares exactly the nine policies stories 1.3a, 1.4a and 1.4b reviewed, and no tenth', () => {
     // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
     // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
     // copying `members_update_by_own_active_admin`, and its name is added here
@@ -319,9 +319,189 @@ describe('the access-control migration', () => {
       'members_insert_by_own_active_admin',
       'members_select_own_organization',
       'members_update_by_own_active_admin',
+      // STORY 1.4b, on `storage.objects` rather than on a table in `public`,
+      // and the three are named here for the reason the six above are: this is
+      // the only bound on WHICH policies exist that needs no running stack, and
+      // the scope guard above is happy with a fourth written `using (true)`.
+      //
+      // THREE, and the split is the point. Read and write are different
+      // populations here for the first time in this schema — any active member
+      // may see the logo, only an active admin may write it — so a single
+      // `for all` policy would grant the write to the read's population. There
+      // is deliberately NO fourth: no DELETE policy exists, because nothing in
+      // this story removes a logo and replacing one is an upsert of the same
+      // key. Deletion stays refused by matching no policy at all.
+      'organization_logos_insert_by_own_active_admin',
+      'organization_logos_select_by_own_active_member',
+      'organization_logos_update_by_own_active_admin',
       'organizations_select_own_organization',
       'organizations_update_by_own_active_admin',
     ]);
+  });
+
+  it('scopes every storage policy to one bucket and to one organization folder', () => {
+    // STORY 1.4b, and the storage twin of the `organizations` block below: the
+    // patterns there all require the word `organization_id`, and a policy on
+    // `storage.objects` names no such column — isolation is the first segment of
+    // the object's NAME. So a storage policy written `using (true)` would
+    // satisfy every other assertion in this file.
+    //
+    // Three conjuncts per clause, one per fear: the bucket, so a later bucket
+    // does not inherit these rules; the folder, so one tenant cannot read
+    // another's object; and the helper, so `is_active` and `member_role` are
+    // re-read on every evaluation rather than trusted from a token minted
+    // before a demotion.
+    const storagePolicies = (migrationStatements().match(/create policy[\s\S]*?;/gi) ?? []).filter(
+      (declaration) => /on storage\.objects\b/i.test(declaration),
+    );
+
+    expect(storagePolicies.length, 'no policy on storage.objects was found').toBe(3);
+
+    for (const declaration of storagePolicies) {
+      const name = /create policy (\S+)/i.exec(declaration)?.[1] ?? declaration;
+
+      // THE BUCKET BY NAME. `'[a-z-]+'` matched any bucket at all, so a policy
+      // scoped to some other bucket — or to one that does not exist — read as
+      // correct while the branding bucket stood with no policy on it.
+      expect(declaration, `${name} is not scoped to the branding bucket`).toContain(
+        "bucket_id = 'organization-logos'",
+      );
+      // THE WHOLE KEY, not merely the folder. Scoped by folder alone an
+      // entitled admin may write `<own id>/anything`, without bound and without
+      // any way to reclaim it, since no DELETE policy exists.
+      expect(declaration, `${name} does not pin the object key`).toMatch(
+        /and name = nullif\(\(\(select auth\.jwt\(\)\) ->> 'organization_id'\), ''\) \|\| '\/logo'/,
+      );
+      expect(
+        declaration,
+        `${name} does not scope the object to its organization folder`,
+      ).toMatch(/\(storage\.foldername\(name\)\)\[1\] = \(/);
+      expect(declaration, `${name} does not pin the tenant from the signed claim`).toContain(
+        "'organization_id'",
+      );
+      expect(declaration, `${name} does not re-read role and active state`).toContain(
+        'current_member_access()',
+      );
+      expect(declaration, `${name} admits an inactive caller`).toContain('access.is_active');
+    }
+  });
+
+  it('lets any active member read the logo and only an active admin write it', () => {
+    // READ AND WRITE ARE DIFFERENT POPULATIONS, and this is the assertion that
+    // makes that a fact rather than a comment. A copy-paste that carried the
+    // admin clause into the select policy would lock every member-role account
+    // out of a logo that is on every screen they open; one that dropped it from
+    // the two write policies would let any member replace the organization's
+    // branding — and neither is visible in a diff that already reads as four
+    // near-identical blocks.
+    const read = policyBody('organization_logos_select_by_own_active_member');
+    const insert = policyBody('organization_logos_insert_by_own_active_admin');
+    const update = policyBody('organization_logos_update_by_own_active_admin');
+
+    expect(read, 'the storage select policy is not declared').not.toBe('');
+    expect(insert, 'the storage insert policy is not declared').not.toBe('');
+    expect(update, 'the storage update policy is not declared').not.toBe('');
+
+    expect(read, 'a member-role account cannot see its own organization logo').not.toContain(
+      "member_role = 'admin'",
+    );
+    expect(insert, 'any member may write the organization logo').toContain(
+      "access.member_role = 'admin'",
+    );
+    // BOTH clauses on the update, for the reason `0003:316-323` gives:
+    // PostgreSQL falls back to USING when WITH CHECK is omitted, so the check is
+    // what stops an admin renaming their own object into another tenant folder
+    // the day USING is loosened.
+    expect(
+      (update.match(/access\.member_role = 'admin'/g) ?? []).length,
+      'a member-role account is refused by only one of the two update clauses',
+    ).toBe(2);
+    expect(update, 'an update may change what it may not reach').toMatch(/with check[\s\S]*bucket_id/i);
+    // The key pin in BOTH clauses too, for the same reason: USING stops an
+    // admin reaching another key, WITH CHECK stops them renaming their own
+    // object into one.
+    expect(
+      (update.match(/\|\| '\/logo'/g) ?? []).length,
+      'the object key is pinned by only one of the two update clauses',
+    ).toBe(2);
+  });
+
+  it('opens no delete on storage objects, and no policy on storage buckets', () => {
+    // Both absences are decisions (story 1.4b). Nothing removes a logo —
+    // replacing one is an upsert of the same key — and a DELETE policy written
+    // before the surface that needs it is the invisible-permission problem
+    // `0002:12-17` describes, on the one verb where a mistake destroys rather
+    // than discloses. `storage.buckets` needs no policy at all: the storage
+    // service resolves a bucket on its own privileged connection, so deny-all
+    // by absence is what should hold there.
+    const statements = migrationStatements();
+    const storagePolicies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter(
+      (declaration) => /on storage\./i.test(declaration),
+    );
+
+    expect(storagePolicies.length, 'no policy on storage was found').toBeGreaterThan(0);
+    for (const verb of ['delete', 'all']) {
+      expect(
+        storagePolicies.filter((declaration) =>
+          new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration),
+        ),
+        `a policy opens ${verb} on storage; nothing in this story removes an object`,
+      ).toEqual([]);
+    }
+    expect(
+      storagePolicies.filter((declaration) => /on storage\.buckets\b/i.test(declaration)),
+      'a policy on storage.buckets lets a session enumerate buckets',
+    ).toEqual([]);
+  });
+
+  it('creates exactly one bucket, private and bounded by size and type', () => {
+    // The bucket is a MIGRATION rather than a `config.toml` section, so it is
+    // promoted local -> staging -> production the way every other schema fact
+    // is — and so it can be asserted here at all. Each of the three properties
+    // is a refusal the product owes: a public bucket serves every object to
+    // anybody who can guess a path with no policy consulted, and the size and
+    // type bounds are the enforcement point AD-9 leaves no server tier for.
+    const statements = migrationStatements();
+    const buckets = statements.match(/insert into storage\.buckets[\s\S]*?;/gi) ?? [];
+
+    expect(buckets.length, 'exactly one bucket may exist').toBe(1);
+
+    const bucket = buckets[0] ?? '';
+
+    // POSITIONAL-INDEPENDENT. `toMatch(/\bfalse\b/)` tied `false` to nothing:
+    // it passed for a bucket declared public whose `avif_autodetection` happened
+    // to be false, which is the one property here that must not be got wrong.
+    const columns = /insert into storage\.buckets\s*\(([^)]*)\)/i.exec(bucket)?.[1] ?? '';
+    const values = /values\s*\(([\s\S]*?)\)\s*(?:on conflict|;)/i.exec(bucket)?.[1] ?? '';
+    const named = columns.split(',').map((column) => column.trim());
+    const given = values.split(/,(?![^[\]]*\])/).map((value) => value.trim());
+
+    expect(named.length, 'the bucket insert names no columns').toBeGreaterThan(0);
+    expect(given.length, 'the bucket insert values do not line up with its columns').toBe(
+      named.length,
+    );
+
+    const valueOf = (column: string): string => given[named.indexOf(column)] ?? '';
+
+    expect(valueOf('id'), 'the bucket is not the one the client writes to').toBe(
+      "'organization-logos'",
+    );
+    expect(valueOf('public'), 'the bucket is public, so no policy is consulted at all').toBe(
+      'false',
+    );
+    expect(valueOf('file_size_limit'), 'the bucket has no size bound').toBe('2097152');
+    // IDEMPOTENT on the row, so a pre-existing bucket does not abort the whole
+    // migration and take the column, the grant and all three policies with it.
+    expect(bucket, 'the bucket insert aborts where the bucket already exists').toMatch(
+      /on conflict \(id\) do nothing/i,
+    );
+    expect(bucket, 'a migration silently rewrites an existing bucket properties').not.toMatch(
+      /on conflict[\s\S]*do update/i,
+    );
+    expect(bucket, 'the bucket accepts any type at all').toMatch(
+      /allowed_mime_types[\s\S]*?image\/png[\s\S]*?image\/jpeg[\s\S]*?image\/webp/,
+    );
+    expect(bucket, 'an SVG is a document rather than an image').not.toContain('svg');
   });
 
   it('pins the tenant in WITH CHECK on both write policies that can set it', () => {
@@ -399,28 +579,42 @@ describe('the access-control migration', () => {
       /revoke\s+update\s+on\s+table\s+public\.organizations\s+from\s+authenticated/i,
     );
 
-    const granted =
-      /grant\s+update\s*\(([\s\S]*?)\)\s*on\s+table\s+public\.organizations\s+to\s+authenticated/i.exec(
-        statements,
-      )?.[1] ?? '';
+    // EVERY grant across the tree, unioned — not the first one. Column grants
+    // do not narrow each other, so `0005` adds `logo_path` with a second
+    // statement rather than by re-granting the five; reading only the first
+    // match would report the 1.4a set forever and a later migration could add
+    // `slug` in a third statement without this noticing.
+    const grants = [
+      ...statements.matchAll(
+        /grant\s+update\s*\(([\s\S]*?)\)\s*on\s+table\s+public\.organizations\s+to\s+authenticated/gi,
+      ),
+    ].map((found) => found[1] ?? '');
 
-    expect(granted, 'no column-level UPDATE grant on organizations').not.toBe('');
-    expect(
-      granted
-        .split(',')
-        .map((column) => column.trim())
-        .filter((column) => column !== '')
-        .sort(),
-      'the editable column set changed',
-    ).toEqual([
+    expect(grants.length, 'no column-level UPDATE grant on organizations').toBeGreaterThan(0);
+
+    const granted = grants
+      .flatMap((columns) => columns.split(','))
+      .map((column) => column.trim())
+      .filter((column) => column !== '')
+      .sort();
+
+    expect(granted, 'the editable column set changed').toEqual([
       'leave_year_start_day',
       'leave_year_start_month',
+      // STORY 1.4b. The logo reference is writable because it is the
+      // organization's own pointer at its own object — and it is a SIXTH column
+      // rather than a sixth form field: `@/organization/snapshot` types the
+      // logo write as a shape disjoint from the five, so a save of the identity
+      // fields cannot carry it.
+      'logo_path',
       'name',
       'organization_type',
       'timezone',
     ]);
     for (const forbidden of ['slug', 'locale', 'id']) {
-      expect(granted, `${forbidden} is writable by authenticated`).not.toContain(forbidden);
+      expect(granted.join(','), `${forbidden} is writable by authenticated`).not.toContain(
+        forbidden,
+      );
     }
   });
 
