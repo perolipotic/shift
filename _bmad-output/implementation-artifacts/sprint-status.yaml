@@ -98,7 +98,14 @@ development_status:
   # rewritten in the same commit. It also introduces the first client-side read
   # of `members`, because `destinationsFor` has had no role to filter on since
   # part A shipped it.
-  navigation-shell-b-chrome-and-sign-out: review
+  # Part B merged to main in 807cb36 (PR #9) and its spec carries status done
+  # with review_loop_iteration 0 — three adversarial layers, twenty-two findings
+  # patched, two deferred, no loopback. Two of them were demonstrated rather
+  # than argued: the layout could be reverted to a bare outlet, deleting the
+  # whole deliverable, with 1055 tests green. Reconciled 2026-09-16.
+  # The navigation shell is complete: part A the routes, part B the chrome and
+  # the exit. `Odjava` is earned and no longer reserved.
+  navigation-shell-b-chrome-and-sign-out: done
   # Story 1.4 was split once at step-01's multi-goal check (human decision
   # 2026-09-15). Same convention as 1.1 and 1.3: the parent key below stays
   # in-progress until every part lands; the parts carry their own status, are
