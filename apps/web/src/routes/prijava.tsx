@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { t } from '@/i18n';
 import { rootRoute } from '@/routes/__root';
 import { organizationDestination } from '@/supabase/address';
-import { supabaseClient } from '@/supabase/client';
+import { resolvedSession, supabaseClient } from '@/supabase/client';
 import {
   SIGN_IN_UNAVAILABLE,
   signIn,
@@ -239,8 +239,39 @@ export const prijavaRoute = createRoute({
   // this application anything. Existence is the question that stays unanswered
   // — an unknown but well-formed slug still renders the form and still fails
   // with the ordinary refusal, exactly as the I/O matrix specifies.
-  beforeLoad: ({ params }) => {
+  //
+  // AND A SIGNED-IN VISITOR NEVER REACHES IT EITHER. The credential form was
+  // offered to a session that already had one, which is not merely redundant: it
+  // is a form whose only outcome is to replace a working session with the same
+  // one, on a shared device where the person reading it may not be the person
+  // signed in. The exit is what makes that reachable rather than theoretical, so
+  // the guard ships in the same commit as the affordance.
+  //
+  // THE SLUG IS JUDGED FIRST, and the order matters: a malformed segment goes to
+  // the organization prompt whether or not anybody is signed in, which keeps the
+  // 2026-09-08 decision exactly as it was rather than making it conditional on a
+  // session read that can fail.
+  //
+  // FAIL OPEN, which is the OPPOSITE of the layout's guard and deliberately so.
+  // `routes/_app.tsx` treats an unreadable session as no session because letting
+  // someone through would put them on a screen every query refuses; here the
+  // same unreadable session must render the FORM, because bouncing somebody to
+  // `/` on a failed read would leave the one screen that could fix their session
+  // unreachable. Same read, opposite default, because the cost of being wrong
+  // points the other way. `resolvedSession` is the read; the default is here.
+  beforeLoad: async ({ context, params }) => {
     if (organizationDestination(params.slug) === null) throw redirect({ to: '/prijava' });
+
+    // ONE HELPER, TWO ROUTES. The read, the `catch` and the logging were copied
+    // verbatim into both sign-in routes, which is the same hand-copied block
+    // `router.test.ts` argues against two files away — and the failure mode is
+    // the one this story is fixing: a fix applied to one copy and not the other,
+    // on a pair of routes nobody looks at together. What is NOT shared is what
+    // `null` means, because that genuinely differs (see `@/supabase/client`):
+    // this route fails OPEN.
+    if ((await resolvedSession(context.currentSession)) === null) return;
+
+    throw redirect({ to: '/' });
   },
   component: SignInScreen,
 });

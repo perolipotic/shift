@@ -106,6 +106,25 @@ const SOURCES = [
   // chunk built before an edit to it compares `hr.json` against output that
   // never saw the four logo messages.
   join(webRoot, 'src', 'organization', 'logo.ts'),
+  // The navigation chrome, part B. `chrome.tsx` is the only thing in the
+  // application that renders a `nav.*` label more than once — every destination
+  // appears in the tab bar and in the sidebar — and the eight words are held to
+  // a COUNT in `AUTHORED_VOCABULARY` below, so a chunk built before it existed
+  // compares `hr.json` against output that never saw the component doing the
+  // rendering. `_app.tsx` is already listed above and is what puts the chrome in
+  // the graph at all.
+  //
+  // The other four render nothing and are here for the reason `snapshot.ts` and
+  // `client.ts` are: `role.ts` and `sign-out.ts` own the stable codes,
+  // `messages.ts` owns the two `t()` keys those codes resolve to, and `icons.ts`
+  // is what pulls `lucide-react` into the bundle — so a chunk built before an
+  // edit to any of them is stale in a way the vocabulary sweeps cannot see.
+  join(webRoot, 'src', 'navigation', 'destinations.ts'),
+  join(webRoot, 'src', 'navigation', 'chrome.tsx'),
+  join(webRoot, 'src', 'navigation', 'icons.ts'),
+  join(webRoot, 'src', 'navigation', 'messages.ts'),
+  join(webRoot, 'src', 'navigation', 'role.ts'),
+  join(webRoot, 'src', 'supabase', 'sign-out.ts'),
 ];
 
 /**
@@ -399,17 +418,52 @@ const AUTHORED_VOCABULARY = [
   // here, so the inflected `logotip` in one refusal changes nothing.
   'Logotip',
   'Odaberi',
+  // THE NAVIGATION CHROME'S THREE, and the first of them is the word this
+  // application has been holding in reserve since story 1.1c. `Odjavi` MOVED
+  // here from the ban list below — the stronger claim, as every move before it
+  // was — and `Odjava` moved with it, because the refused-sign-out message says
+  // the noun in a sentence even though the button says the imperative.
+  //
+  // COUNTED SEPARATELY AND NOT AS ONE STEM, which is what the word boundary
+  // buys: `Odjavi` and `Odjava` are two distinct whole words, they occur once
+  // each in `hr.json`, and a component hard-coding either is a count that no
+  // longer matches. The stem `odjav` could not have made that distinction and
+  // was never meant to — it was an ABSENCE guard, and absence is what this list
+  // exists to replace.
+  'Odjavi',
+  'Odjava',
+  // The chrome's own words, all of them closing a gap rather than moving one:
+  // none was in the ban list below, so a hard-coded collapse label, landmark
+  // name or retry would have shipped unnoticed. `Izbornik` and `izbornik` are
+  // counted SEPARATELY, which is what the word boundary buys — the capitalized
+  // form opens the failure message and the lowercase form ends three control
+  // names, and a component hard-coding either is a count that no longer matches.
+  // Every count is read off `hr.json` rather than written here, so a reworded
+  // message changes nothing in this list.
+  'Izbornik',
+  'izbornik',
+  'Glavni',
+  'Prikaži',
+  'Sakrij',
 ];
 
 /** Everything the terminology contract and the unshipped affordances still own.
- *  None of it may reach the build. `Odjava` stays here because no sign-out
- *  ships — the route skeleton earned six navigation words and deliberately not
- *  that one. `Spremi` and `Odustani` LEFT in story 1.4a, which ships the first
- *  screen that saves anything; they are held to a count above now. `Nema` stays,
- *  and it is the one that bites: the voice rules say state the fact rather than
- *  the absence, so a refusal worded `Nemaš ovlasti` fails this sweep by
- *  SUBSTRING — which is why 1.4a's refusal says what is needed instead. */
-const NAVIGATION_AND_TERMINOLOGY = ['Smjena', 'Smjene', 'smjena', 'Odjava', 'Nema'];
+ *  None of it may reach the build. `Spremi` and `Odustani` LEFT in story 1.4a,
+ *  which ships the first screen that saves anything; they are held to a count
+ *  above now. `Nema` stays, and it is the one that bites: the voice rules say
+ *  state the fact rather than the absence, so a refusal worded `Nemaš ovlasti`
+ *  fails this sweep by SUBSTRING — which is why 1.4a's refusal says what is
+ *  needed instead.
+ *
+ *  `Odjava` LEFT with the navigation chrome, and it is worth saying why it left
+ *  rather than simply being satisfied. The shipped label is `Odjavi se`, and
+ *  `'Odjavi se'.includes('Odjava')` is FALSE — so this entry would have passed a
+ *  build that ships the exit, and would have gone on reading as protection while
+ *  protecting nothing. A ban the shipped word walks straight past is worse than
+ *  no ban, because it stops anybody looking. Both forms are counted above
+ *  instead, which is the claim this list cannot make: not "nobody says it" but
+ *  "only `hr.json` does". */
+const NAVIGATION_AND_TERMINOLOGY = ['Smjena', 'Smjene', 'smjena', 'Nema'];
 
 /** The static Croatian in `index.html` (story 1.1d): the boot fallback, shown
  *  when localization init rejects or the bundle never loads at all. It cannot
@@ -424,7 +478,7 @@ function occurrences(haystack: string, needle: string): number {
  *  Plain `occurrences` matches a substring anywhere, which was safe while the
  *  authored list held five words that happened to sit inside no longer one —
  *  a coincidence rather than a guarantee, and one the list has since outgrown:
- *  it holds fourteen entries now, and every destination label is also a
+ *  it has grown with every story since, and every destination label is also a
  *  component name in the build (`DanasScreen`, `PostavkeRotacijeScreen`), so
  *  the boundary is what keeps those from counting. `\p{L}` rather than `\w`,
  *  because `\w` is ASCII-only and would misplace a boundary around every

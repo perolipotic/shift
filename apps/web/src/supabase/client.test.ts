@@ -3,12 +3,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   SESSION_UNREADABLE,
+  SESSION_UNRESOLVED,
   SUPABASE_ENVIRONMENT_MISSING,
   SUPABASE_PUBLISHABLE_KEY_VARIABLE,
   SUPABASE_URL_VARIABLE,
   buildEnvironment,
   currentSession,
   readSupabaseEnvironment,
+  resolvedSession,
   sessionReader,
   supabaseClient,
 } from '@/supabase/client';
@@ -358,5 +360,57 @@ describe('the session reader is a function, not a line in the router', () => {
     // constructed and no environment is needed to import it — which this
     // assertion proves by existing in a suite that configures neither.
     expect(currentSession).toBeTypeOf('function');
+  });
+});
+
+describe('a session that cannot be read is no session, and never a silence', () => {
+  /**
+   * The read both sign-in routes make, shared rather than hand-copied.
+   *
+   * It was written out twice, verbatim, in two route modules that nobody reads
+   * together — the exact shape `router.test.ts` argues against two files away
+   * when it sweeps both routes from one table. What is shared is the READ and
+   * the logging; what `null` MEANS stays with each caller, because it genuinely
+   * differs: the signed-in layout fails closed on it and both sign-in routes
+   * fail open.
+   */
+  it('answers with the session when there is one', async () => {
+    const session = { access_token: 'token' } as unknown as Session;
+
+    expect(await resolvedSession(() => Promise.resolve(session))).toBe(session);
+  });
+
+  it('answers null when there is none, without saying anything', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      expect(await resolvedSession(() => Promise.resolve(null))).toBeNull();
+      // THE OTHER POLARITY of the logging claim. A helper that logged on every
+      // resolution would fill a real console with a line per navigation, which
+      // is how the one line that matters stops being noticed.
+      expect(logged, 'an ordinary signed-out visit writes to the console').not.toHaveBeenCalled();
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it('answers null when the read REJECTS, and logs why', async () => {
+    // The third outcome, and the reason this helper exists at all: a rejection
+    // escaping a `beforeLoad` resolves the route to neither a redirect nor a
+    // component — a blank page at HTTP 200 that `__root.tsx` registers no
+    // `errorComponent` to catch. Swallowing it silently is the other failure:
+    // a build with no environment would then behave like an ordinary signed-out
+    // visit, with an empty console and nothing anywhere to say why.
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      expect(await resolvedSession(() => Promise.reject(new Error('SecurityError')))).toBeNull();
+      expect(logged, 'the reason the session could not be read was swallowed').toHaveBeenCalledWith(
+        SESSION_UNRESOLVED,
+        expect.anything(),
+      );
+    } finally {
+      logged.mockRestore();
+    }
   });
 });

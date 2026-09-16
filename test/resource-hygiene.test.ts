@@ -36,14 +36,19 @@ const RESOURCE = join(repoRoot, 'apps', 'web', 'src', 'i18n', 'locales', 'hr.jso
  *  three Croatian categories. */
 const SANCTIONED_PLURAL_KEYS = ['count.days', 'count.conflicts'];
 
-/** The flat screen strings the application is permitted to ship: 1.1d's seven,
- *  plus the six story 1.3b adds — two refusal messages, the three-string
- *  organization prompt, and the signed-in placeholder heading — plus the eight
- *  `nav.*` destination labels the navigation shell's route skeleton adds, plus
- *  the twelve story 1.4a adds, for thirty-three. Nothing else in the tree may add
- *  a key without editing this list, which is the point: the list IS the review
- *  moment, and a story that grows the resource file has to grow this in the
- *  same commit. */
+/** The flat screen strings the application is permitted to ship, by the story
+ *  that earned each of them: 1.1d's sign-in screen, 1.3b's refusals and
+ *  organization prompt, the navigation shell's eight `nav.*` destination
+ *  labels, 1.4a's settings surface, 1.4b's logo, and the navigation chrome's
+ *  four. Nothing else in the tree may add a key without editing this list, which
+ *  is the point: the list IS the review moment, and a story that grows the
+ *  resource file has to grow this in the same commit.
+ *
+ *  NO TOTAL IS WRITTEN HERE ANY MORE. This comment said "thirty-three" against
+ *  forty entries, which is the failure mode of a count kept in prose beside the
+ *  thing it counts — it is never wrong at a moment anybody is reading it, and it
+ *  is stale by the next commit. The exhaustive set comparison below is the count,
+ *  and it is the one that fails. */
 const SANCTIONED_SCREEN_KEYS = [
   'auth.heading',
   'auth.username',
@@ -65,8 +70,11 @@ const SANCTIONED_SCREEN_KEYS = [
   // The eight destination labels, added by the navigation shell's route
   // skeleton. EIGHT, not nine: `Sati` appears in both UX-DR31's member list and
   // UX-DR32's admin list and is one destination with role-scoped content
-  // (human decision, 2026-09-04). There is no `nav.odjava` — no sign-out ships
-  // in this story, so the word stays reserved below.
+  // (human decision, 2026-09-04). There is still no `nav.odjava`, and there is
+  // still not meant to be one — the chrome's exit ships as `shell.signOut`
+  // below, because this namespace is DESTINATIONS and the exit is an action
+  // rather than a place. `apps/web/src/navigation/destinations.test.ts` holds
+  // the two apart by comparing every `nav.*` key to the eight exactly.
   'nav.danas',
   'nav.kalendar',
   'nav.sati',
@@ -139,34 +147,93 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.error.logoType',
   'organization.error.logoUnavailable',
   'organization.error.unavailable',
+  // The navigation chrome, part B — FOUR, and each one is a string that had no
+  // surface to live on until this commit.
+  //
+  // `shell.menu` names the sidebar's collapse, which carries a visible word
+  // rather than a glyph: an icon-only control is a name that cannot be read or
+  // spoken, which is the same rule that keeps every destination's label beside
+  // its icon.
+  'shell.navigation',
+  // TWO names for one control, because a disclosure's name should say which
+  // state the press produces. `aria-expanded` carries the state to assistive
+  // technology and to nobody else, so a toggle reading the same in both
+  // directions is a control whose effect a sighted person has to discover by
+  // pressing it.
+  'shell.menuShow',
+  'shell.menuHide',
+  // THE WORD THIS STORY EARNS, and the one the whole file was holding in
+  // reserve. It is the IMPERATIVE — `Odjavi se`, matching `Spremi`, `Odustani`
+  // and `Odaberi sliku` — because destination labels are nouns that name places
+  // and the exit is an action. That is also why `RESERVED_STEMS` was a stem
+  // rather than the noun: `Odjavi se` does not contain `Odjava` at all, so a
+  // whole-word ban on the noun would have waved through exactly the string a
+  // button was always going to carry.
+  'shell.signOut',
+  // TWO refusals, and the partition is the point in one direction and the
+  // collapse in the other. A role that cannot be read, one that reaches no row
+  // and one this build does not recognise are three CODES
+  // (`apps/web/src/navigation/role.ts`) and one message, because none of the
+  // three leaves the person anything to do but try again — the unrecognised
+  // value is logged, where it can be acted on, rather than rendered. The
+  // sign-out failure stays its own message because it is a different action:
+  // folded together, a refused press would report itself as a navigation
+  // problem and leave somebody on a shared device believing they had signed
+  // out.
+  // The action beside the message rather than inside it. A role read that failed
+  // resolves as DATA, so TanStack Query files it as settled and nothing retries
+  // it — which made `…Pokušaj ponovno.` an instruction with nothing on screen
+  // that could carry it out. The sentence lost those two words when the control
+  // gained them.
+  'shell.retry',
+  'shell.error.destinations',
+  'shell.error.signOut',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
 const SANCTIONED_KEYS = [...SANCTIONED_PLURAL_KEYS, ...SANCTIONED_SCREEN_KEYS];
 
 /**
- * Vocabulary this story has not earned, as STEMS.
+ * Vocabulary the application has not earned the right to say, as STEMS.
+ *
+ * EMPTY TODAY, AND THE MECHANISM STAYS. The list started at seven — `danas,
+ * kalendar, godišnji, raspored, ljudi, postavke` plus `odjav` — and every story
+ * that authored one of them moved it out into a COUNT in
+ * `test/localization-applied.test.ts`, which is the stronger of the two claims:
+ * absence says nothing may say the word, a count says `hr.json` is the only
+ * thing that may. The navigation chrome authors the last one, so the ledger is
+ * empty.
+ *
+ * Deleting it with the ledger was the obvious move and the wrong one. This is
+ * the ONLY sweep in this file that reads message VALUES for unearned vocabulary
+ * — the key-set comparison reads keys, and an equality check on three known keys
+ * reads three known keys — so removing it left nothing at all scanning what the
+ * strings SAY. The next story to reserve a word would have had to rebuild the
+ * mechanism before it could use it, which is how a rule quietly stops being one.
+ *
+ * WHAT MOVED IS THE NON-VACUITY GUARD, off the LIST and onto the DETECTOR. The
+ * old `expect(RESERVED_STEMS.length).toBeGreaterThan(0)` made emptying the array
+ * fail loudly, which was right while emptying it was a thing a story did by
+ * accident and is wrong now that it is the true state of the world. The
+ * self-test below proves the predicate still finds a stem when handed one, on
+ * both polarities, against a list passed in — so the sweep is demonstrably
+ * capable of failing whether or not it currently has anything to fail on.
  *
  * A stem rather than a word because Croatian inflects: `Odjava` is the noun and
  * `Odjavi se` is what a button says, and only one of the two contains the other.
  * Matching the stem catches both, and every form a later story might reach for.
- *
- * The navigation shell's route skeleton removed six entries from what used to
- * be a list of seven whole words — `danas, kalendar, godišnji, raspored, ljudi,
- * postavke` — in the commit that authored them as `nav.*` labels. They are held
- * to a COUNT in `test/localization-applied.test.ts` now, which is the stronger
- * claim: absence said nothing may say the word, a count says `hr.json` is the
- * only thing that may.
  */
-const RESERVED_STEMS = ['odjav'];
+const RESERVED_STEMS: readonly string[] = [];
 
 /** The reserved stem a message carries, or `null`. Lowercased, so an inflected
- *  or capitalized form cannot slip past. Shared by the sweep and its own
- *  self-test, so deleting one cannot leave the other green. */
-function reservedStemIn(message: string): string | null {
+ *  or capitalized form cannot slip past. The list is a PARAMETER so the sweep
+ *  and its self-test run the same predicate — one against what ships, one
+ *  against a ledger with an entry in it — and deleting either cannot leave the
+ *  other looking green. */
+function reservedStemIn(message: string, stems: readonly string[] = RESERVED_STEMS): string | null {
   const lowered = message.toLowerCase();
 
-  return RESERVED_STEMS.find((stem) => lowered.includes(stem)) ?? null;
+  return stems.find((stem) => lowered.includes(stem)) ?? null;
 }
 
 function resource(): Record<string, unknown> {
@@ -285,77 +352,66 @@ describe('the messages obey the voice rules that bind every string', () => {
     }
   });
 
-  it('carries no navigation or terminology vocabulary', () => {
-    // The other half of the frozen boundary, by content rather than by key
-    // count: a screen string smuggled in under a plural-looking key.
-    //
-    // `prijava` and `lozinka` were on this list and are gone from it: story
-    // 1.1d authors the sign-in screen, so those two words are now legitimately
-    // this file's. `organizacija` left the same way and for the same reason —
-    // story 1.3b authors the organization prompt at bare `/prijava`, whose
-    // heading IS the word, so it is now this file's too.
-    //
-    // Only the heading needed that removal. This sweep is a plain lowercase
-    // substring match, and `organizacije` does not contain `organizacija`, so
-    // the field label `Kratica organizacije` cleared the old list on its own —
-    // which is precisely why a removal has to be deliberate rather than
-    // discovered: an inflected form would have shipped the vocabulary without
-    // ever reaching this review moment.
-    //
-    // SIX MORE LEAVE HERE, in the commit that earns them: the navigation
-    // shell's route skeleton authors `Danas`, `Kalendar`, `Godišnji`,
-    // `Raspored`, `Ljudi` and `Postavke rotacije` as `nav.*` labels, so this
-    // file is now where they belong and absence is no longer the right claim.
-    // `test/localization-applied.test.ts` takes over for all six on the other
-    // side — from an absence assertion to a COUNT, which is the stronger of
-    // the two: absence said nothing may say the word, and a count says
-    // `hr.json` is the only thing that may.
-    //
-    // The one stem that STAYS is `odjav`. This story ships no sign-out — no
-    // affordance, no route, no `nav.odjava` key — so the word is not earned.
-    //
-    // A STEM rather than the whole word, because the whole word missed the
-    // likelier of the two labels: Croatian's imperative sign-out is `Odjavi
-    // se`, which does not contain `odjava` at all, so the noun-only list would
-    // have waved through the exact string a button is most likely to carry.
-    //
-    // Note what this sweep can and cannot see. `messages()` walks string
-    // VALUES, so it catches a LABEL and never a key — a `nav.odjava` key with
-    // some other label is caught by the exhaustive key-set assertion above
-    // instead, and between them the two cover both halves. `Sati` was never on
-    // this list at all; it is added to the count sweep in
-    // `localization-applied.test.ts` rather than inheriting the gap.
+  it('carries no reserved vocabulary', () => {
+    // The only sweep in this file that reads what the messages SAY rather than
+    // what they are called. It finds nothing today because the ledger is empty;
+    // the test below is what proves it would find something if it were not.
     const found = messages()
       .map((message) => ({ message, stem: reservedStemIn(message) }))
       .filter((entry) => entry.stem !== null);
 
-    // NON-VACUITY, and it earns its place now that the list is down to one
-    // stem: an empty `RESERVED_STEMS` would make this assert nothing at all
-    // while still reading as a sweep, and shrinking the list is exactly what
-    // every story that reaches this comment does.
-    expect(RESERVED_STEMS.length).toBeGreaterThan(0);
-    expect(messages().length).toBeGreaterThan(0);
+    expect(messages().length, 'no messages to sweep at all').toBeGreaterThan(0);
     expect(found, `a message carries a reserved stem: ${JSON.stringify(found)}`).toEqual([]);
   });
 
-  it('would notice a sign-out label in either Croatian form, and passes what ships', () => {
-    // THE SAME PREDICATE the sweep above runs, on synthetic strings — the
-    // pattern `wordOccurrences` is self-tested with in
-    // `test/localization-applied.test.ts`. The version this replaces built its
-    // own literals and called `toLowerCase` on them, so it asserted only that
-    // JavaScript lowercases strings: deleting the sweep's body left it green.
+  it('would notice a reserved stem in either Croatian form, ledger or no ledger', () => {
+    // THE NON-VACUITY GUARD, moved off the list and onto the predicate — see the
+    // block comment where `RESERVED_STEMS` is declared. The version this
+    // replaces asserted `RESERVED_STEMS.length > 0`, which was right while the
+    // ledger had entries and is simply false now; the version before THAT built
+    // its own literals and called `toLowerCase` on them, so it asserted only
+    // that JavaScript lowercases strings.
     //
-    // Both polarities, and both forms. `Odjavi se` is the one the noun-only
-    // list could not see.
-    expect(reservedStemIn('Odjava')).toBe('odjav');
-    expect(reservedStemIn('Odjavi se')).toBe('odjav');
-    expect(reservedStemIn('ODJAVA')).toBe('odjav');
-    expect(reservedStemIn('Prijava')).toBeNull();
-    expect(reservedStemIn('Kratica organizacije')).toBeNull();
-    // Through the real helper on the real file, so the predicate is proved
-    // against the messages the sweep actually reads rather than only against
-    // strings written here.
-    expect(messages().map(reservedStemIn).filter((stem) => stem !== null)).toEqual([]);
+    // Both polarities, and both forms. `Odjavi se` is the one a whole-word ban on
+    // the noun could not see, which is why the ledger held stems.
+    expect(reservedStemIn('Odjava', ['odjav'])).toBe('odjav');
+    expect(reservedStemIn('Odjavi se', ['odjav'])).toBe('odjav');
+    expect(reservedStemIn('ODJAVA', ['odjav'])).toBe('odjav');
+    expect(reservedStemIn('Prijava', ['odjav'])).toBeNull();
+    expect(reservedStemIn('Kratica organizacije', ['odjav'])).toBeNull();
+    // And through the REAL ledger on the real file, so the sweep above is proved
+    // against the messages it actually reads rather than only against strings
+    // written here.
+    expect(messages().map((message) => reservedStemIn(message)).filter((stem) => stem !== null)).toEqual(
+      [],
+    );
+  });
+
+  it('says the imperative for an action, matching every other action in the file', () => {
+    // WHAT REPLACES THE RESERVED-STEM SWEEP, and it is a claim about the one
+    // word that sweep was holding rather than a thinner version of it (see the
+    // block comment where `RESERVED_STEMS` used to be).
+    //
+    // Every action in this application is second person singular imperative —
+    // `Spremi`, `Odustani`, `Odaberi sliku` — because destination labels are
+    // nouns that NAME PLACES and an action is something a person does. The exit
+    // is an action, so it takes the verb form, and the noun `Odjava` on a
+    // button would be the one string in the interface written in a different
+    // voice from every other control.
+    //
+    // Asserted on the SHIPPED message rather than on a pattern, because the
+    // distinction cannot be written as one: `Odjavi se` and `Odjava` differ by
+    // grammar, not by shape, and a regex over verb endings would refuse
+    // perfectly good Croatian the first time somebody needed a different verb.
+    // `toBe` and nothing beside it: an `expect(label).not.toBe('Odjava')` stood
+    // here too and could never fail while the line below passes, which is a
+    // reader's-eye claim rather than a test.
+    expect(String(messageAt('shell.signOut'))).toBe('Odjavi se');
+    // The imperative neighbours it stands with, read off the file rather than
+    // assumed: if any of them ever becomes a noun this stops being a rule the
+    // exit is following and becomes an exception nobody decided on.
+    expect(messageAt('organization.save')).toBe('Spremi');
+    expect(messageAt('organization.cancel')).toBe('Odustani');
   });
 });
 

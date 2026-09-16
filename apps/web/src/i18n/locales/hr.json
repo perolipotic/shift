@@ -58,5 +58,16 @@
       "logoUnavailable": "Spremanje logotipa trenutačno nije moguće. Pokušaj ponovno.",
       "unavailable": "Spremanje trenutačno nije moguće. Pokušaj ponovno."
     }
+  },
+  "shell": {
+    "navigation": "Glavni izbornik",
+    "menuShow": "Prikaži izbornik",
+    "menuHide": "Sakrij izbornik",
+    "signOut": "Odjavi se",
+    "retry": "Pokušaj ponovno",
+    "error": {
+      "destinations": "Izbornik trenutačno nije moguće prikazati.",
+      "signOut": "Odjava trenutačno nije moguća. Pokušaj ponovno."
+    }
   }
 }
