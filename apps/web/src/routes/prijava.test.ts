@@ -57,9 +57,21 @@ const HOME = join(srcRoot, 'routes', 'index.tsx');
 const LAYOUT = join(srcRoot, 'routes', '_app.tsx');
 const INPUT_PRIMITIVE = join(srcRoot, 'components', 'ui', 'input.tsx');
 const RESOURCE = join(srcRoot, 'i18n', 'locales', 'hr.json');
+/** Story 1.4a's settings surface: the first destination that is not a placeholder. */
+const SETTINGS = join(srcRoot, 'routes', 'organizacija.tsx');
 
 /**
- * The eight titled placeholders the navigation shell's route skeleton adds.
+ * The seven titled placeholders still standing after story 1.4a.
+ *
+ * EIGHT UNTIL THIS COMMIT. `/organizacija` is a real screen now — a form with
+ * five fields, two buttons and a refusal message — so it is named separately
+ * below rather than inheriting the placeholder's counts, which are what make
+ * these entries tight: exactly one string, exactly zero controls. Leaving it in
+ * this list would have meant loosening those counts for all eight, which is the
+ * shape that lets the next destination grow a control nobody reviewed.
+ *
+ * The split is CROSS-CHECKED against the destination table below, so a
+ * destination can be in neither list only by failing a test.
  *
  * They are screens by this file's definition — a `.tsx` that renders a string —
  * so they join every sweep below rather than a subset chosen by hand. Each
@@ -79,7 +91,7 @@ const RESOURCE = join(srcRoot, 'i18n', 'locales', 'hr.json');
  * what this list names. `router.test.ts` pins the same table against the
  * registered router, so the four copies are held together end to end.
  */
-const DESTINATION_SLUGS = [
+const PLACEHOLDER_SLUGS = [
   'danas',
   'kalendar',
   'sati',
@@ -87,10 +99,15 @@ const DESTINATION_SLUGS = [
   'raspored',
   'ljudi',
   'postavke-rotacije',
-  'organizacija',
 ];
 
-const DESTINATION_SCREENS = DESTINATION_SLUGS.map((slug) => ({
+/** The destination that is a built screen rather than a placeholder. */
+const BUILT_SLUGS = ['organizacija'];
+
+/** Every registered destination, however much of it is built. */
+const DESTINATION_SLUGS = [...PLACEHOLDER_SLUGS, ...BUILT_SLUGS];
+
+const DESTINATION_SCREENS = PLACEHOLDER_SLUGS.map((slug) => ({
   name: `the ${slug} destination`,
   file: join(srcRoot, 'routes', `${slug}.tsx`),
 }));
@@ -115,7 +132,13 @@ const SCREENS = [
   { name: 'the not-found component', file: NOT_FOUND, expectedControls: 1 },
   { name: 'the organization prompt', file: ORGANIZATION, expectedControls: 2 },
   { name: 'the signed-in placeholder', file: HOME, expectedControls: 0 },
-  // ZERO on all eight, and asserted rather than assumed: a destination is a
+  // SEVEN, not five: story 1.4a's settings surface carries five fields — name,
+  // type, timezone and the leave year's month and day — plus a save and a
+  // cancel. The number is what notices a sixth field, which on this screen is
+  // how the slug or the locale would arrive: both are ordinary-looking controls
+  // and both are forbidden for reasons that are invisible in a diff.
+  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 7 },
+  // ZERO on all seven, and asserted rather than assumed: a destination is a
   // heading and nothing else in this story, so the first control any of them
   // grows is a later story's work arriving without that story's review. The
   // count is also what keeps the tap-target sweep from reading as coverage on
@@ -140,9 +163,40 @@ const SCREENS = [
  * caught on one screen and stayed live on the other.
  */
 const FORM_SCREENS = [
-  { name: 'the sign-in screen', file: SCREEN, effect: 'signIn(' },
-  { name: 'the organization prompt', file: ORGANIZATION, effect: 'organizationDestination(' },
+  // `inFlight` is the name of the ref that guards a second concurrent submit,
+  // or `null` for a screen that starts nothing to be in flight. It is carried
+  // per entry for the same reason `effect` is: the in-flight sweeps were pinned
+  // to the sign-in screen by name — `exchanging.current` written out as a
+  // literal — so deleting `setPending(false)` from the settings surface's
+  // `finally` left the whole suite green while the identically shaped sign-in
+  // screen was protected against exactly that.
+  { name: 'the sign-in screen', file: SCREEN, effect: 'signIn(', inFlight: 'exchanging' },
+  // The prompt awaits nothing and holds no failure state — it validates what was
+  // typed and navigates — so there is no in-flight flag to clear and no refusal
+  // to surface. `null` rather than a name, and the derived list below asserts it
+  // is not empty, so "every screen opted out" cannot read as coverage.
+  {
+    name: 'the organization prompt',
+    file: ORGANIZATION,
+    effect: 'organizationDestination(',
+    inFlight: null,
+  },
+  // Story 1.4a. The settings surface is the third screen with a form, and it is
+  // the one with the most to lose from getting the uncontrolled-ref shape wrong:
+  // five fields rather than two, so a refusal that re-rendered them away would
+  // discard five entered values instead of a password.
+  {
+    name: 'the organization settings surface',
+    file: SETTINGS,
+    effect: 'updateOrganization(',
+    inFlight: 'saving',
+  },
 ];
+
+/** The form screens that await something, so something can be in flight. */
+const IN_FLIGHT_SCREENS = FORM_SCREENS.filter(
+  (screen): screen is typeof screen & { inFlight: string } => screen.inFlight !== null,
+);
 
 /**
  * A `.ts` module that renders no JSX but holds `t()` keys.
@@ -154,6 +208,9 @@ const FORM_SCREENS = [
  * this application renders would no longer equal every key it declares.
  */
 const MESSAGE_KEYS = join(srcRoot, 'supabase', 'sign-in.ts');
+
+/** The same shape, for story 1.4a's four organization failures. */
+const ORGANIZATION_MESSAGE_KEYS = join(srcRoot, 'organization', 'messages.ts');
 
 /** UX-DR40's tap-target floor, in CSS pixels. */
 const TARGET_FLOOR_PX = 44;
@@ -192,6 +249,23 @@ function submitHandler(screen: string): string {
   return /(?:async )?function submit\([\s\S]*?\n {2}\}/.exec(screen)?.[0] ?? '';
 }
 
+/**
+ * One helper function declared inside a component, from its signature to its
+ * closing brace at the component's own two-space indentation.
+ *
+ * Added by the 1.4a review. The settings surface renders its form from
+ * `renderSettings()`, which returns early when there is no snapshot — so
+ * anything written INSIDE it is reachable only once a row has been read, and
+ * the refusal message was. Scoped extraction rather than a file-wide match, for
+ * the reason `submitHandler` is: the claim is about what is inside this
+ * function, and a file-wide search answers a different question.
+ */
+function componentFunction(screen: string, name: string): string {
+  return (
+    new RegExp(`function ${name}\\([^)]*\\)[^{]*\\{[\\s\\S]*?\\n {2}\\}`).exec(screen)?.[0] ?? ''
+  );
+}
+
 /** The body of the handler's `finally`, matched at its own indentation. */
 function finallyBlock(screen: string): string {
   return /\}\s*finally\s*\{([\s\S]*?)\n {4}\}/.exec(screen)?.[1] ?? '';
@@ -217,7 +291,11 @@ function translationKeys(text: string): string[] {
  * added to the union is too.
  */
 function messageKeyUnion(text: string): string[] {
-  const signature = /function signInMessageKey\([\s\S]*?\):([^{]*)\{/.exec(text)?.[1] ?? '';
+  // `\w*MessageKey` rather than `signInMessageKey`, because story 1.4a writes
+  // the second instance of this shape (`organizationMessageKey`) and a reader
+  // pinned to the first one would return nothing for it — silently dropping four
+  // keys out of the rendered set and weakening the set comparison below by four.
+  const signature = /function \w*MessageKey\([\s\S]*?\):([^{]*)\{/.exec(text)?.[1] ?? '';
 
   return [...signature.matchAll(/'([^']+)'/g)].map((found) => found[1] ?? '');
 }
@@ -251,6 +329,15 @@ const STRUCTURAL_ATTRIBUTES = new Set([
   // `status`, `dialog` — and never renders. Nothing user-facing can hide in it,
   // which is the test every entry on this list has to pass.
   'role',
+  // ADDED by story 1.4a, and it is a loosening, so it is named rather than waved
+  // through: `variant` takes a value from `buttonVariants`' own closed set —
+  // `default`, `outline`, `secondary`, `ghost`, `link` — and selects a class
+  // list, never text. It passes the same test `role` passes: nothing
+  // user-facing can hide in it, because a value outside the set is a `tsc`
+  // error. Note the sixth member of that set is `destructive`, which is banned
+  // separately and by name in every screen, so widening here does not widen
+  // that.
+  'variant',
 ]);
 
 /** Content inside a template literal, with every `${…}` removed. */
@@ -364,6 +451,18 @@ function jsxTextWithContent(text: string): string[] {
     .filter((run) => /[\p{L}\p{N}]/u.test(run));
 }
 
+/**
+ * The key a screen's `<h1>` renders, or `null`.
+ *
+ * Added by story 1.4a, when a destination stopped being a heading and nothing
+ * else: source order was standing in for "the heading is the destination's own
+ * label", and the two came apart the moment a screen rendered eight strings.
+ * Whitespace-tolerant, because a long key puts the call on its own line.
+ */
+function headingKey(text: string): string | null {
+  return /<h1\b[^>]*>\s*\{t\('([^']+)'\)\}/.exec(text)?.[1] ?? null;
+}
+
 /** `htmlFor` values, in source order. */
 function labelTargets(text: string): string[] {
   return [...text.matchAll(/htmlFor="([^"]+)"/g)].map((found) => found[1] ?? '');
@@ -469,7 +568,19 @@ const KEY_SOURCES = [
   { name: 'the organization prompt', file: ORGANIZATION, keys: translationKeys, strings: 3 },
   { name: 'the signed-in placeholder', file: HOME, keys: translationKeys, strings: 1 },
   { name: 'the failure-to-message mapping', file: MESSAGE_KEYS, keys: messageKeyUnion, strings: 2 },
-  // ONE each, exactly. The eight together are what make the set comparison
+  // EIGHT on the settings surface: its own `nav.organizacija` heading, five
+  // field labels, and the save and cancel actions. The refusal is NOT among
+  // them — it reaches `t()` through `organizationMessageKey`, which is the next
+  // entry, for the reason the sign-in refusals do: a ternary over codes written
+  // in a `.tsx` is executed by nothing.
+  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 8 },
+  {
+    name: 'the organization failure-to-message mapping',
+    file: ORGANIZATION_MESSAGE_KEYS,
+    keys: messageKeyUnion,
+    strings: 5,
+  },
+  // ONE each, exactly. The seven together are what make the set comparison
   // below hold once `hr.json` gained eight `nav.*` keys: a key declared and
   // never rendered is a string nobody reviewed, and a destination rendering two
   // keys is a screen this story did not sanction.
@@ -519,6 +630,15 @@ describe('the route skeleton is the one the destination table describes', () => 
    * them to each other makes the set of eight a single fact.
    */
 
+  it('partitions the destinations into placeholders and built screens, with no overlap', () => {
+    // The split story 1.4a introduced. A destination that fell out of BOTH lists
+    // would keep the assertion below green — it reads the union — while escaping
+    // the per-file counts, which read the two lists separately.
+    expect(PLACEHOLDER_SLUGS.filter((slug) => BUILT_SLUGS.includes(slug))).toEqual([]);
+    expect(PLACEHOLDER_SLUGS.length + BUILT_SLUGS.length).toBe(DESTINATION_SLUGS.length);
+    expect(BUILT_SLUGS.length, 'nothing is built, so the split asserts nothing').toBeGreaterThan(0);
+  });
+
   it('sweeps exactly the destinations the table names', () => {
     // P7's gap. Every sweep in this file reads `DESTINATION_SCREENS`, so a
     // ninth destination added to the router and the table but not here would
@@ -543,8 +663,17 @@ describe('the route skeleton is the one the destination table describes', () => 
     // the third link in the chain: the route path, the file that owns it, and
     // the key that file renders are one fact in three places.
     const file = join(srcRoot, 'routes', `${path.slice(1)}.tsx`);
+    const screen = source(file);
 
-    expect(translationKeys(source(file))).toEqual([key]);
+    // READ OFF THE `<h1>`, not off source order, since story 1.4a. Seven of the
+    // eight render exactly one string, so `toEqual([key])` and "the heading is
+    // the key" were the same assertion for them; the settings surface renders
+    // eight, and the one that has to be the destination's own is the HEADING —
+    // a screen whose `<h1>` drifted to some other key is a page titled something
+    // the navigation does not call it. Their per-file exact counts in
+    // `KEY_SOURCES` keep the other seven as tight as they were.
+    expect(headingKey(screen), `${path} does not title itself ${key}`).toBe(key);
+    expect(translationKeys(screen), `${path} never renders ${key}`).toContain(key);
   });
 });
 
@@ -855,6 +984,154 @@ describe('both credential fields carry an accessible name', () => {
   });
 });
 
+describe('every field on the settings surface carries an accessible name', () => {
+  /**
+   * The same claims the credential form makes, on the screen that has five
+   * fields instead of two (story 1.4a).
+   *
+   * Written as its own block rather than folded into the one above, because the
+   * assertions there are about `type="password"` and `autoComplete="username"` —
+   * facts about credentials, not about forms. What generalizes is the binding:
+   * `htmlFor`/`id` is the only thing that ties a `<Label>` to its `<Input>`, and
+   * getting it wrong leaves a screen reader announcing "edit text, blank" on a
+   * field whose value decides what timezone the whole organization renders in.
+   */
+  it('gives every field a label bound by htmlFor, and every label a field', () => {
+    const screen = source(SETTINGS);
+    const targets = labelTargets(screen);
+    const inputs = inputElements(screen);
+    const ids = inputs.map((input) => attributeOf(input, 'id'));
+
+    expect(inputs).toHaveLength(5);
+    expect(targets).toHaveLength(5);
+    expect(ids, 'an <Input> carries no id, so no <Label> can name it').not.toContain(null);
+    expect(new Set(ids).size, 'two fields share one id').toBe(ids.length);
+    for (const id of ids) {
+      expect(targets, `no <Label htmlFor> points at ${String(id)}`).toContain(id);
+    }
+    for (const target of targets) {
+      expect(ids, `<Label htmlFor="${target}"> points at no input`).toContain(target);
+    }
+  });
+
+  it('binds the refusal to every field, and only while it is on the page', () => {
+    // One message for five fields: a description reachable from only one of them
+    // is unreachable from wherever the person actually is. CONDITIONAL, for the
+    // reason the sign-in screen's is — the element renders only on a refusal,
+    // and a reference to an absent id is ignored in silence, which is worse than
+    // no reference because the source-level lookup passes either way.
+    const screen = source(SETTINGS);
+    const errorId = /<p\s+id="([\w-]+)"\s+role="alert"/.exec(screen)?.[1];
+
+    expect(errorId, 'no role="alert" element to describe the fields by').not.toBeUndefined();
+    expect(screen, `no element carries id="${String(errorId)}"`).toContain(
+      `id="${String(errorId)}"`,
+    );
+
+    for (const input of inputElements(screen)) {
+      expect(describedByIds(input), 'a field describes nothing').toContain(String(errorId));
+      expect(
+        attributeOf(input, 'aria-describedby'),
+        `a field names ${String(errorId)} unconditionally, so it dangles until something fails`,
+      ).toBeNull();
+      expect(
+        /aria-describedby=\{[^}]*refusal[^}]*\}/.test(input),
+        'the description is not conditioned on there being a refusal',
+      ).toBe(true);
+    }
+  });
+
+  it('bounds the leave-year day at 28, so the control cannot express the broken case', () => {
+    // `0002:106` admits 1-28 by SHAPE rather than by validation, because a leave
+    // year starting on the 30th has no boundary in February. The spec's I/O
+    // matrix says the control cannot express the value; a `max` of 31 would make
+    // it expressible and turn a shape into a refusal somebody has to read.
+    const screen = source(SETTINGS);
+    const day = inputElements(screen).find((input) => /id="[\w-]*leave-day"/.test(input));
+    const month = inputElements(screen).find((input) => /id="[\w-]*leave-month"/.test(input));
+
+    expect(day, 'no leave-year day field on the settings surface').not.toBeUndefined();
+    expect(month, 'no leave-year month field on the settings surface').not.toBeUndefined();
+    expect(day).toContain('max={28}');
+    expect(day).toContain('min={1}');
+    expect(month).toContain('max={12}');
+    expect(month).toContain('min={1}');
+  });
+
+  it('keeps every entered value by never controlling a field', () => {
+    // UX-DR34, and the reason this screen is uncontrolled: a refused save must
+    // keep all five entered values. `value={…}` on any of them is the shape that
+    // loses them on the render that shows the refusal; `defaultValue={…}` is not
+    // — it seeds an uncontrolled field and never re-renders it away.
+    for (const input of inputElements(source(SETTINGS))) {
+      expect(attributeOf(input, 'value'), 'a settings field is controlled').toBeNull();
+      expect(input.includes('value={') && !input.includes('defaultValue={')).toBe(false);
+    }
+  });
+
+  it('delegates the failure-to-message pairing rather than branching on it', () => {
+    const screen = source(SETTINGS);
+
+    expect(screen, 'the screen no longer renders its message through the mapping').toContain(
+      't(organizationMessageKey(',
+    );
+    for (const key of [
+      'organization.error.refused',
+      'organization.error.name',
+      'organization.error.invalid',
+      'organization.error.timezone',
+      'organization.error.unavailable',
+    ]) {
+      expect(screen, `${key} is branched on in the screen`).not.toContain(key);
+    }
+  });
+
+  it('builds no request and no client of its own', () => {
+    const screen = source(SETTINGS);
+
+    for (const forbidden of ['fetch(', 'createClient(', 'localStorage']) {
+      expect(screen, `the settings screen reaches for ${forbidden}`).not.toContain(forbidden);
+    }
+  });
+
+  it('renders the refusal outside the branch that needs a snapshot to exist', () => {
+    // MUTATION-PROVEN GAP, found by the 1.4a review. The alert lived inside
+    // `renderSettings`, after its `organization === null` early return — so it
+    // was reachable only once a row had been read, and a read that was REFUSED
+    // or UNAVAILABLE produced no row, no form, and therefore no message. The
+    // one element that explains the failure was behind the success.
+    const screen = source(SETTINGS);
+    const gated = componentFunction(screen, 'renderSettings');
+
+    expect(gated, 'no renderSettings function to read').not.toBe('');
+    expect(screen, 'the screen renders no alert at all').toContain('role="alert"');
+    expect(
+      gated,
+      'the refusal is inside the snapshot-gated branch, so a failed read shows nothing',
+    ).not.toContain('role="alert"');
+    expect(
+      gated,
+      'the refusal message is inside the snapshot-gated branch',
+    ).not.toContain('organizationMessageKey(');
+  });
+
+  it('shows the skeleton only while the read is actually pending', () => {
+    // The other half of the same defect. Gated on `organization === null`, the
+    // skeleton was what a permanently failed read looked like: an indefinitely
+    // pulsing bar, byte-identical to a slow one, with no message and no way
+    // forward. UX-DR40 asks for a skeleton rather than a spinner; it does not
+    // ask for one that never resolves.
+    const gated = componentFunction(source(SETTINGS), 'renderSettings');
+
+    expect(gated, 'no renderSettings function to read').not.toBe('');
+    expect(gated, 'the screen renders no skeleton').toContain('animate-pulse');
+    expect(
+      gated,
+      'the skeleton is not conditioned on the query being pending, so a settled failure pulses forever',
+    ).toMatch(/isPending[\s\S]{0,120}?animate-pulse/);
+  });
+});
+
 describe('the screen reaches the authentication seam rather than faking one', () => {
   /**
    * THE INVERSE of story 1.1d's block, which asserted this screen was inert and
@@ -976,27 +1253,62 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     expect(source(file)).toMatch(/=== null[\s\S]{0,80}?return;/);
   });
 
-  it('clears the in-flight flag on every path, and guards on a ref not on state', () => {
-    // TWO defects in one shape. `pending` was cleared only on the failure
-    // branch, so the moment `navigate` stopped resolving the button was
-    // disabled forever with nothing on screen to say why — `finally` is what
-    // makes that unreachable. And the guard reads a REF: state is stale inside
-    // a handler already called once this tick, so a second submit (double
-    // click, Enter as the click lands) fired a second concurrent exchange.
-    const screen = source(SCREEN);
+  it('has an in-flight screen to sweep at all', () => {
+    // NON-VACUITY for the three sweeps below, which run over `IN_FLIGHT_SCREENS`
+    // rather than over `FORM_SCREENS`. A `null` written into every entry would
+    // make all three loops assert nothing while still reading as coverage —
+    // which is the shape the per-screen sweeps were introduced to end.
+    expect(IN_FLIGHT_SCREENS.length, 'no form screen declares an in-flight ref').toBe(2);
+    expect(
+      IN_FLIGHT_SCREENS.map((screen) => screen.inFlight).sort(),
+      'the in-flight ref names drifted from the screens that hold them',
+    ).toEqual(['exchanging', 'saving']);
+  });
 
-    expect(screen, 'the submit handler has no finally, so a path can leave it in flight').toMatch(
-      /\}\s*finally\s*\{/,
-    );
+  it.each(IN_FLIGHT_SCREENS)(
+    'clears the in-flight flag on every path on $name, and guards on a ref not on state',
+    ({ file }) => {
+      // TWO defects in one shape. `pending` was cleared only on the failure
+      // branch, so the moment the awaited call stopped resolving the button was
+      // disabled forever with nothing on screen to say why — `finally` is what
+      // makes that unreachable. And the guard reads a REF: state is stale inside
+      // a handler already called once this tick, so a second submit (double
+      // click, Enter as the click lands) fired a second concurrent call.
+      //
+      // OVER EVERY SCREEN THAT AWAITS SOMETHING, since the 1.4a review. Pinned
+      // to the sign-in screen this protected one of the two files with the
+      // identical shape, and deleting the settings surface's `finally` was free.
+      const screen = source(file);
 
-    const guard = /if\s*\([^)]*\)\s*return;/.exec(screen)?.[0] ?? '';
+      expect(screen, 'the submit handler has no finally, so a path can leave it in flight').toMatch(
+        /\}\s*finally\s*\{/,
+      );
 
-    expect(guard, 'the in-flight guard reads React state, which is stale within a tick').toMatch(
-      /\.current\b/,
-    );
-    expect(screen, 'nothing is surfaced when the exchange throws outside signIn').toMatch(
-      /catch[\s\S]{0,400}?setFailure\(/,
-    );
+      const guard = /if\s*\([\s\S]*?\)\s*\{?\s*return;/.exec(screen)?.[0] ?? '';
+
+      expect(guard, 'the in-flight guard reads React state, which is stale within a tick').toMatch(
+        /\.current\b/,
+      );
+      expect(screen, 'nothing is surfaced when the call throws outside its own mapping').toMatch(
+        /catch[\s\S]{0,400}?setFailure\(/,
+      );
+    },
+  );
+
+  it.each(IN_FLIGHT_SCREENS)('surfaces the refused outcome code on $name', ({ file }) => {
+    // MUTATION-PROVEN GAP, found by the 1.4a review: deleting
+    // `setFailure(outcome.code)` from the settings surface's handler left the
+    // whole suite green, and a refused save then looked exactly like a saved
+    // one — the button re-enabled, the values still there, nothing said. The
+    // `catch` assertion above covers the THROWN path only, and a policy refusal
+    // never throws.
+    const handler = submitHandler(source(file));
+
+    expect(handler, 'no submit handler to read').not.toBe('');
+    expect(
+      handler,
+      'the refused branch does not put the returned code on screen',
+    ).toMatch(/!outcome\.ok[\s\S]{0,160}?setFailure\(outcome\.code\)/);
   });
 
   it('keeps every entered value by never controlling the fields', () => {
@@ -1064,24 +1376,30 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     );
   });
 
-  it('clears the in-flight state inside the finally, not merely near one', () => {
-    // The assertion this replaces matched `/\}\s*finally\s*\{/` against the
-    // whole file, which is the existence of the keyword and nothing about what
-    // it does. Deleting `setPending(false)` from inside it passed — and left
-    // `pending` true after the first wrong password, so `disabled={pending}`
-    // kept the button dead on the most common error path, with the entered
-    // values still on screen and no way to retry. `pending`, `setPending` and
-    // `disabled` appeared nowhere in this file.
-    const block = finallyBlock(source(SCREEN));
+  it.each(IN_FLIGHT_SCREENS)(
+    'clears the in-flight state inside the finally on $name, not merely near one',
+    ({ file, inFlight }) => {
+      // The assertion this replaces matched `/\}\s*finally\s*\{/` against the
+      // whole file, which is the existence of the keyword and nothing about what
+      // it does. Deleting `setPending(false)` from inside it passed — and left
+      // `pending` true after the first wrong password, so `disabled={pending}`
+      // kept the button dead on the most common error path, with the entered
+      // values still on screen and no way to retry.
+      //
+      // The ref NAME comes from the screen's own entry since the 1.4a review.
+      // Hard-coded as `exchanging.current = false` this could only ever be true
+      // of one file, so the settings surface's `saving` ref was swept by nothing.
+      const block = finallyBlock(source(file));
 
-    expect(block, 'the submit handler has no finally, so a path can leave it in flight').not.toBe(
-      '',
-    );
-    expect(block, 'the finally does not re-enable the button').toContain('setPending(false)');
-    expect(block, 'the finally does not clear the in-flight ref').toContain(
-      'exchanging.current = false',
-    );
-  });
+      expect(block, 'the submit handler has no finally, so a path can leave it in flight').not.toBe(
+        '',
+      );
+      expect(block, 'the finally does not re-enable the button').toContain('setPending(false)');
+      expect(block, 'the finally does not clear the in-flight ref').toContain(
+        `${inFlight}.current = false`,
+      );
+    },
+  );
 
   it('logs the cause it cannot render', () => {
     // The catch swallowed `SUPABASE_ENVIRONMENT_MISSING` whole while its own
@@ -1322,6 +1640,35 @@ describe('the detectors find what they claim to find', () => {
     expect(attributeOf('id="username" type="text"', 'placeholder')).toBeNull();
   });
 
+  it('allows a variant and still refuses the attribute next to it', () => {
+    // The entry story 1.4a added to the allowlist, proved on BOTH polarities.
+    // Widening the set is the one edit to this file that can quietly stop it
+    // catching things, so the neighbouring offence has to still be caught.
+    expect(unsanctionedLiterals('<Button variant="outline">{t(\'organization.save\')}</Button>')).toEqual(
+      [],
+    );
+    expect(unsanctionedLiterals('<Button variant="outline" title="Spremi" />')).toEqual(['Spremi']);
+  });
+
+  it('reads a message-key union off either mapping, not only the first one', () => {
+    // The generalization story 1.4a needed. A reader pinned to
+    // `signInMessageKey` returns nothing for `organizationMessageKey`, which
+    // drops four keys out of the rendered set and makes the set comparison
+    // quietly weaker by four rather than red.
+    const signature = [
+      'export function organizationMessageKey(',
+      '  failure: OrganizationFailure,',
+      "): 'organization.error.refused' | 'organization.error.name' {",
+      '  return failure === ORGANIZATION_REFUSED',
+      '}',
+    ].join('\n');
+
+    expect(messageKeyUnion(signature)).toEqual([
+      'organization.error.refused',
+      'organization.error.name',
+    ]);
+  });
+
   it('allows a role and still refuses the attribute next to it', () => {
     // The entry story 1.3b added to the allowlist, proved on BOTH polarities:
     // widening the set is the one edit to this file that can quietly stop it
@@ -1376,6 +1723,42 @@ describe('the detectors find what they claim to find', () => {
 
     expect(buttonElements(two)).toEqual([' type="submit"', ' className="h-11" disabled ']);
     expect(buttonElements('<p>no buttons here</p>')).toEqual([]);
+  });
+
+  it('extracts a component helper and stops at its own closing brace', () => {
+    // The extraction the 1.4a review needed, on both polarities: a version that
+    // ran past the function would swallow the component's own return and make
+    // "the alert is not inside it" false on correct code, and one that matched
+    // nothing would make the same assertion pass on the broken code.
+    const component = [
+      'export function Probe() {',
+      '  function renderSettings() {',
+      '    return <div className="animate-pulse" />;',
+      '  }',
+      '',
+      '  return <p role="alert">x</p>;',
+      '}',
+    ].join('\n');
+
+    expect(componentFunction(component, 'renderSettings')).toContain('animate-pulse');
+    expect(
+      componentFunction(component, 'renderSettings'),
+      'the extraction ran past the helper',
+    ).not.toContain('role="alert"');
+    expect(componentFunction(component, 'missing')).toBe('');
+  });
+
+  it('reads the heading key off an h1, on one line or three', () => {
+    // Both polarities and both layouts. A reader that returned `null` for the
+    // multi-line form would make the destination-binding assertion fail on a
+    // correct screen; one that returned the first key in the file would make it
+    // pass on a screen titled by the wrong one.
+    expect(headingKey('<h1 className="x">{t(\'nav.danas\')}</h1>')).toBe('nav.danas');
+    expect(
+      headingKey('<h1 className="x">\n  {t(\'nav.organizacija\')}\n</h1>'),
+    ).toBe('nav.organizacija');
+    expect(headingKey("<p>{t('nav.danas')}</p>")).toBeNull();
+    expect(headingKey('const x = 1;')).toBeNull();
   });
 
   it('reads htmlFor values in source order and finds none where there are none', () => {

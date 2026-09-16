@@ -39,10 +39,11 @@ const SANCTIONED_PLURAL_KEYS = ['count.days', 'count.conflicts'];
 /** The flat screen strings the application is permitted to ship: 1.1d's seven,
  *  plus the six story 1.3b adds — two refusal messages, the three-string
  *  organization prompt, and the signed-in placeholder heading — plus the eight
- *  `nav.*` destination labels the navigation shell's route skeleton adds, for
- *  twenty-one. Nothing else in the tree may add a key without editing this
- *  list, which is the point: the list IS the review moment, and a story that
- *  grows the resource file has to grow this in the same commit. */
+ *  `nav.*` destination labels the navigation shell's route skeleton adds, plus
+ *  the twelve story 1.4a adds, for thirty-three. Nothing else in the tree may add
+ *  a key without editing this list, which is the point: the list IS the review
+ *  moment, and a story that grows the resource file has to grow this in the
+ *  same commit. */
 const SANCTIONED_SCREEN_KEYS = [
   'auth.heading',
   'auth.username',
@@ -76,6 +77,41 @@ const SANCTIONED_SCREEN_KEYS = [
   'nav.organizacija',
   'notFound.heading',
   'notFound.back',
+  // Story 1.4a — the organization settings surface. FIVE labels, one per
+  // editable field, and no sixth: the slug is never editable (AD-12 builds every
+  // sign-in address from it), the locale is a hard-coded constant so a control
+  // over it would change nothing on screen, and the logo and accent are part B.
+  //
+  // There is deliberately NO `organization.heading`. The screen's `<h1>` is
+  // `nav.organizacija` — the destination's own name, which is what the screen
+  // IS — so a heading key here would be the same word authored twice and one of
+  // the two would be a string nobody renders.
+  'organization.name',
+  'organization.type',
+  'organization.timezone',
+  'organization.leaveYearStartMonth',
+  'organization.leaveYearStartDay',
+  // The two words this story EARNS. Both were asserted absent from every built
+  // chunk until now (`test/localization-applied.test.ts`), and both move from
+  // that ban into the count sweep in the same commit — the stronger of the two
+  // claims: absence said nothing may say the word, a count says `hr.json` is the
+  // only thing that may.
+  'organization.save',
+  'organization.cancel',
+  // FOUR refusals, and the partition is the point. A policy refusal, a blank
+  // name, some other shape on the table and a service failure are four different
+  // things to do next, so collapsing them would cost an action — unlike
+  // `auth.error.credentials`, where three refusals share one message precisely
+  // so an anonymous caller learns nothing.
+  'organization.error.refused',
+  'organization.error.name',
+  'organization.error.invalid',
+  // The one refusal on this surface that is not the database's: `0002:93`
+  // leaves `timezone` unchecked because `pg_timezone_names` is not immutable,
+  // so the value every later screen renders against is validated in
+  // `@/i18n/format` and refused before the write.
+  'organization.error.timezone',
+  'organization.error.unavailable',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

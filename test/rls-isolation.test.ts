@@ -442,6 +442,43 @@ async function memberById(client: Client, id: string): Promise<MemberRow | undef
   return rows[0];
 }
 
+interface OrganizationRow {
+  readonly id: string;
+  readonly slug: string;
+  readonly name: string;
+  readonly organizationType: string;
+  readonly timezone: string;
+  readonly leaveYearStartMonth: number;
+  readonly leaveYearStartDay: number;
+}
+
+/**
+ * One organization row, re-read as the connection's own role so RLS hides
+ * nothing — the `organizations` twin of `memberById`, added by story 1.4a.
+ *
+ * It is what every write case below reads through, and it has to be an OWNER
+ * read rather than a session one: a policy that refused the write AND the read
+ * would make "the row did not change" true for the wrong reason, which is the
+ * shape this file distinguishes everywhere else.
+ */
+async function organizationById(
+  client: Client,
+  id: string,
+): Promise<OrganizationRow | undefined> {
+  const { rows } = await client.query<OrganizationRow>(
+    `select id,
+            slug,
+            name,
+            organization_type as "organizationType",
+            timezone,
+            leave_year_start_month as "leaveYearStartMonth",
+            leave_year_start_day as "leaveYearStartDay"
+       from organizations where id = $1`,
+    [id],
+  );
+  return rows[0];
+}
+
 /**
  * A disposable member-role row in `organization`, so a destructive case has
  * something to be destructive to.
@@ -612,12 +649,12 @@ describe('the access-control layer is present, so nothing below passes vacuously
       // row still present that this suite teaches a reader to read as a
       // refusal. Naming every policy is what makes a deleted one a failure.
       //
-      // EXPECTED TO CHANGE IN STORY 1.4, in the same spirit as the two
-      // assertions 1.2 labelled for this story: 0003:243-245 hands 1.4 the
-      // settings surface and tells it to build the `organizations` write policy
-      // by copying the select one, so a sixth name belongs here then. Extend
-      // the list — never relax it to a `toContain` or a count, which is the
-      // shape that let the delete policy be deletable in the first place.
+      // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004` adds
+      // `organizations_update_by_own_active_admin`, so a sixth name is listed
+      // here rather than the assertion being relaxed to a `toContain` or a
+      // count — the shape that let the delete policy be deletable in the first
+      // place. And still no seventh: `organizations` gains no insert and no
+      // delete policy, because no product surface creates or destroys a tenant.
       // The same list is mirrored over migration source text in
       // `test/supabase-scaffold.test.ts`, which runs with no database.
       const { rows: policies } = await client.query<{ policyname: string }>(
@@ -625,13 +662,14 @@ describe('the access-control layer is present, so nothing below passes vacuously
       );
       expect(
         policies.map((row) => row.policyname),
-        'story 1.3a owns exactly these five policies; a missing one refuses silently and looks like a working refusal',
+        'stories 1.3a and 1.4a own exactly these six policies; a missing one refuses silently and looks like a working refusal',
       ).toEqual([
         'members_delete_by_own_active_admin',
         'members_insert_by_own_active_admin',
         'members_select_own_organization',
         'members_update_by_own_active_admin',
         'organizations_select_own_organization',
+        'organizations_update_by_own_active_admin',
       ]);
 
       const { rows: functions } = await client.query<{ proname: string }>(
@@ -1443,26 +1481,27 @@ describe('the policies refuse the same things with claims injected instead of a 
   );
 });
 
-describe('organizations is readable and not writable, and the refusal is asserted rather than assumed', () => {
+describe('organizations admits exactly one write path, and it is the settings surface', () => {
+  /**
+   * STORY 1.4a REWROTE THIS BLOCK, and the assertion it replaced said the
+   * opposite: until `0004` there was no write policy at all, so update, delete
+   * and insert were refused by *no policy matching* and the block existed to
+   * pin that. Its own comment named this story and told it to edit here rather
+   * than anywhere else, which is what happened.
+   *
+   * What survives verbatim is the half that is still true: INSERT and DELETE
+   * stay refused, and they stay refused for the same reason — no policy matches
+   * them. FR-2 puts provisioning in the operator script, so no product surface
+   * creates or destroys a tenant, and the day one does it will have to delete
+   * these two assertions to do it.
+   */
   it.skipIf(noDatabase).each(FIXTURES)(
-    'refuses an injected $fixture admin every write to their own organization row',
+    'still refuses an injected $fixture admin every insert and delete on organizations',
     async ({ slug, admin }) => {
-      // `organizations` carries a SELECT policy and nothing else, so INSERT,
-      // UPDATE and DELETE are refused by *no policy matching* — the silent
-      // failure mode this file goes out of its way to distinguish everywhere
-      // else, and the one shape nothing asserted. It matters forward rather
-      // than today: 0003:243-245 hands story 1.4 the settings surface and tells
-      // it to build the write policy by copying the select one, so 1.4 could
-      // add a write path that reaches every tenant and no existing case would
-      // notice. This is the assertion 1.4 has to consciously edit.
       await inRolledBackTransaction(async (client) => {
         const caller = await memberByUsername(client, slug, admin);
 
         await actAs(client, caller.authUserId, caller.organizationId);
-        const update = await client.query('update organizations set name = $1 where id = $2', [
-          `${THROWAWAY} renamed`,
-          caller.organizationId,
-        ]);
         const remove = await client.query('delete from organizations where id = $1', [
           caller.organizationId,
         ]);
@@ -1474,11 +1513,597 @@ describe('organizations is readable and not writable, and the refusal is asserte
         );
         await actAsOwner(client);
 
-        expect(update.rowCount, `a ${slug} admin renamed their own organization`).toBe(0);
         expect(remove.rowCount, `a ${slug} admin deleted their own organization`).toBe(0);
         expect(insertRefusal.code, 'an insert with no matching policy is 42501').toBe('42501');
+        expect(
+          await organizationById(client, caller.organizationId),
+          `a ${slug} admin removed their own organization row`,
+        ).toBeDefined();
       });
     },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'permits an injected $fixture admin to edit their own organization',
+    async ({ slug, admin }) => {
+      // The positive control every refusal below needs. A policy that refused
+      // everything — misspelt, written `to anon`, or with a `with check` nobody
+      // satisfies — produces the identical "zero rows and no error" this file
+      // teaches a reader to read as a refusal, so without this the whole write
+      // half of the story can ship broken and green.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const before = await organizationById(client, caller.organizationId);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const written = await client.query(
+          `update organizations
+              set name = $1,
+                  timezone = $2,
+                  leave_year_start_month = $3,
+                  leave_year_start_day = $4
+            where id = $5`,
+          [`${THROWAWAY} renamed`, 'Etc/UTC', 7, 28, caller.organizationId],
+        );
+        await actAsOwner(client);
+
+        const after = await organizationById(client, caller.organizationId);
+
+        expect(written.rowCount, `the ${slug} admin could not edit their own organization`).toBe(1);
+        expect(after?.name).toBe(`${THROWAWAY} renamed`);
+        expect(after?.timezone, 'the timezone the whole application renders in did not move').toBe(
+          'Etc/UTC',
+        );
+        expect(after?.leaveYearStartMonth).toBe(7);
+        expect(after?.leaveYearStartDay).toBe(28);
+        // The slug is not in the statement above and must not move on its own:
+        // every issued sign-in address is built from it (AD-12).
+        expect(after?.slug, 'the slug moved during an edit that never named it').toBe(before?.slug);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses an injected $fixture member-role session editing the organization',
+    async ({ slug, member }) => {
+      // Q2 from the database's side. The refusal is SILENT — USING fails, the
+      // statement matches no row and raises nothing — so this asserts `rowCount`
+      // and re-reads the row as the owner, never that anything threw.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, member);
+        expect(caller.role, 'this case needs a member-role account, not an admin').toBe(
+          'member_role',
+        );
+        const before = await organizationById(client, caller.organizationId);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const attempted = await client.query('update organizations set name = $1 where id = $2', [
+          `${THROWAWAY} renamed by a member`,
+          caller.organizationId,
+        ]);
+        await actAsOwner(client);
+
+        expect(attempted.rowCount, `a ${slug} member-role session edited the organization`).toBe(0);
+        expect(
+          (await organizationById(client, caller.organizationId))?.name,
+          `a ${slug} member-role session changed the organization name`,
+        ).toBe(before?.name);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'affects no rows when an injected $fixture admin edits the $otherFixture organization',
+    async ({ slug, admin, otherSlug }) => {
+      // Q1. The claim is the caller's own and the target is somebody else's, so
+      // USING's tenant conjunct is the only thing in the way — which is exactly
+      // the clause a copy-paste from the members policy could lose.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const other = await organizationId(client, otherSlug);
+        const before = await organizationById(client, other);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const attempted = await client.query('update organizations set name = $1 where id = $2', [
+          `${THROWAWAY} cross-tenant rename`,
+          other,
+        ]);
+        await actAsOwner(client);
+
+        expect(
+          attempted.rowCount,
+          `the ${slug} admin reached the ${otherSlug} row through the update policy`,
+        ).toBe(0);
+        expect(
+          (await organizationById(client, other))?.name,
+          `the ${slug} admin renamed ${otherSlug}`,
+        ).toBe(before?.name);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses an injected $fixture admin changing the organization own identity',
+    async ({ slug, admin }) => {
+      // The `organizations` equivalent of moving a row between tenants, and the
+      // case a USING-only policy fails: USING passes — the row IS the caller's
+      // — and WITH CHECK is the only thing standing between an otherwise-legal
+      // update and a row that has left the tenant it was reachable in. On this
+      // table the primary key IS the tenant reference, so `id` is what has to be
+      // pinned in the check.
+      //
+      // TWO REFUSALS STAND IN FRONT OF IT since the review, and this case proves
+      // both in order rather than letting the outer one hide the inner. `0004`
+      // revokes the table UPDATE grant and re-grants five columns, so `id` is no
+      // longer writable at all and the privilege refuses first; the WITH CHECK
+      // pin is then exercised by granting the column INSIDE this transaction,
+      // where the rollback takes it away again. Without the second half the
+      // check could be deleted for free, which is the standard this file holds
+      // every other branch to.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const byPrivilege = await refusedThenContinue(client, () =>
+          client.query('update organizations set id = gen_random_uuid() where id = $1', [
+            caller.organizationId,
+          ]),
+        );
+        await actAsOwner(client);
+
+        expect(byPrivilege.code, 'a privilege refusal is 42501').toBe('42501');
+        expect(
+          byPrivilege.message,
+          'id is writable by authenticated; the column grant no longer bounds the update',
+        ).toContain('permission denied');
+
+        // Rolled back with the transaction, so nothing here outlives the case.
+        await client.query('grant update (id) on table public.organizations to authenticated');
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const byCheck = await refusedThenContinue(client, () =>
+          client.query('update organizations set id = gen_random_uuid() where id = $1', [
+            caller.organizationId,
+          ]),
+        );
+        await actAsOwner(client);
+
+        expect(byCheck.code, 'a WITH CHECK refusal is 42501').toBe('42501');
+        expect(
+          byCheck.message,
+          'with the column writable, nothing refused the row leaving its own tenant',
+        ).toContain('row-level security');
+        expect(
+          await organizationById(client, caller.organizationId),
+          `the ${slug} organization row lost its own id`,
+        ).toBeDefined();
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('grants authenticated UPDATE on exactly the five editable columns', () => {
+    // The column allowlist as a fact about the database rather than about the
+    // interface, and an EXACT set: a later migration re-granting the table — or
+    // `grant all` written by habit — restores every column silently, and the
+    // behavioural cases below would then be the only thing noticing, one column
+    // at a time.
+    //
+    // Reads `information_schema.column_privileges`, which reports column grants
+    // and table grants alike, so the table grant coming back shows up here as
+    // thirteen columns rather than as nothing.
+    return inRolledBackTransaction(async (client) => {
+      const { rows } = await client.query<{ column: string }>(
+        `select column_name as "column"
+           from information_schema.column_privileges
+          where table_schema = 'public'
+            and table_name = 'organizations'
+            and grantee = 'authenticated'
+            and privilege_type = 'UPDATE'
+          order by column_name`,
+      );
+
+      expect(
+        rows.map((row) => row.column),
+        'authenticated may update a column the settings surface never offers',
+      ).toEqual([
+        'leave_year_start_day',
+        'leave_year_start_month',
+        'name',
+        'organization_type',
+        'timezone',
+      ]);
+    });
+  });
+
+  it.skipIf(noDatabase).each(
+    FIXTURES.flatMap((entry) =>
+      (
+        [
+          { column: 'slug', value: 'hijacked-slug' },
+          { column: 'locale', value: 'en' },
+        ] as const
+      ).map((target) => ({ ...entry, ...target })),
+    ),
+  )(
+    'refuses an injected $fixture admin writing $column, which no policy could bound',
+    async ({ slug, admin, column, value }) => {
+      // THE WRITE THAT MATTERS MOST, and the one the policy alone never touched:
+      // a policy constrains rows, so an entitled admin passed USING and WITH
+      // CHECK and wrote whatever column they liked. Proved during the 1.4a
+      // review — `update organizations set slug = 'hijacked-slug'` reported one
+      // row updated — and it is the frozen "Never": the slug is the domain part
+      // of every issued sign-in address (AD-12), so changing it refuses every
+      // credential in the organization at once.
+      //
+      // Refused by the column grant, which raises rather than filtering, so this
+      // is one of the few write refusals on this table that reaches the caller
+      // as an error.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const before = await organizationById(client, caller.organizationId);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const refusal = await refusedThenContinue(client, () =>
+          client.query(`update organizations set ${column} = $1 where id = $2`, [
+            value,
+            caller.organizationId,
+          ]),
+        );
+        await actAsOwner(client);
+
+        expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
+        expect(refusal.message, `${column} is still writable`).toContain('permission denied');
+        expect(
+          (await organizationById(client, caller.organizationId))?.slug,
+          `the ${slug} organization slug moved, so every issued credential is refused`,
+        ).toBe(before?.slug);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses an injected $fixture session with no organization claim at all',
+    async ({ slug, admin }) => {
+      // Every session minted before the hook existed looks like this, and the
+      // claim's absence has to fail CLOSED on the write side as it does on the
+      // read side: `nullif(...)::uuid` yields null, the comparison is null,
+      // which is not true, which matches no row.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const before = await organizationById(client, caller.organizationId);
+
+        await actAs(client, caller.authUserId, null);
+        const attempted = await client.query('update organizations set name = $1 where id = $2', [
+          `${THROWAWAY} renamed with no claim`,
+          caller.organizationId,
+        ]);
+        await actAsOwner(client);
+
+        expect(attempted.rowCount, `a claimless ${slug} session edited the organization`).toBe(0);
+        expect((await organizationById(client, caller.organizationId))?.name).toBe(before?.name);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'affects no rows on the very next edit after the $fixture admin is banned',
+    async ({ slug, admin }) => {
+      // AD-10's freshness guarantee, on the new write policy, and the ONLY shape
+      // that can prove it — `deferred-work.md` records the finding in full.
+      // PostgreSQL applies the SELECT policy to an `update` as well as the write
+      // policy whenever the statement reads a column, and the select policy
+      // carries its own `is_active`; so the obvious `... where id = $1` form is
+      // refused either way and says nothing about the write predicate. NO
+      // `where`, and a CONSTANT on the right of `set`, is what isolates it.
+      //
+      // `organizations` makes that safe in a way `members` did not: the select
+      // policy already narrows an unfiltered update to the caller's own row.
+      //
+      // PostgREST cannot issue an unfiltered write, so this case is
+      // claims-injection only. It is a statement about the policy, not about the
+      // transport.
+      const settled = `${THROWAWAY} settled type`;
+
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const permitted = await client.query('update organizations set organization_type = $1', [
+          settled,
+        ]);
+        await actAsOwner(client);
+
+        expect(
+          permitted.rowCount,
+          `the ${slug} admin could not edit their own organization before the ban`,
+        ).toBe(1);
+
+        await client.query(
+          `update auth.users set banned_until = now() + interval '1 day' where id = $1`,
+          [caller.authUserId],
+        );
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const updated = await client.query('update organizations set organization_type = $1', [
+          `${THROWAWAY} after the ban`,
+        ]);
+        const deleted = await client.query('delete from organizations');
+        await actAsOwner(client);
+
+        expect(updated.rowCount, 'a banned admin kept editing until the token expired').toBe(0);
+        expect(deleted.rowCount, 'a banned admin deleted an organization').toBe(0);
+        // The row itself, not only the count: a `rowCount` of zero from a
+        // statement that nevertheless changed something is the one shape the two
+        // assertions above could not see.
+        expect(
+          (await organizationById(client, caller.organizationId))?.organizationType,
+          'a banned admin changed the organization',
+        ).toBe(settled);
+      });
+    },
+  );
+});
+
+describe('a direct API call edits an organization under exactly the same rules', () => {
+  /**
+   * Q1 and Q2 over the shipped transport, on the write path story 1.4a opened.
+   *
+   * Every case here targets a SEEDED organization row, which the member cases
+   * above could avoid by aiming at a throwaway: there is no throwaway
+   * organization to aim at, because the caller's claim pins the row it may
+   * reach, and no session may create one. So the permitted case restores what it
+   * changed in a `finally`, as the connection's own role, and every refusal case
+   * asserts the row is untouched rather than creating something to touch.
+   */
+  it.skipIf(noApi).each(FIXTURES)(
+    'permits the $fixture admin to edit their own organization over PostgREST',
+    async ({ slug, admin }) => {
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      let restore: OrganizationRow | undefined;
+      try {
+        const own = await organizationId(client, slug);
+        restore = await organizationById(client, own);
+        expect(restore, `${slug} is not in the database`).toBeDefined();
+
+        const response = await rest(`organizations?id=eq.${own}`, {
+          token,
+          method: 'PATCH',
+          body: { organization_type: `${THROWAWAY} type` },
+        });
+
+        expect(response.status, 'a permitted update answers 204 with no body').toBe(204);
+        expect(
+          (await organizationById(client, own))?.organizationType,
+          `the ${slug} admin could not edit their own organization`,
+        ).toBe(`${THROWAWAY} type`);
+      } finally {
+        if (restore !== undefined) {
+          await client.query('update organizations set organization_type = $1 where id = $2', [
+            restore.organizationType,
+            restore.id,
+          ]);
+        }
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'leaves the row unchanged when a $fixture member-role session patches the organization',
+    async ({ slug, member }) => {
+      // The refusal shape that surprises, and the reason this file re-reads
+      // rather than expecting a throw: row level security refuses an update by
+      // failing USING, so the statement matches no row and succeeds. PostgREST
+      // answers 204 with no error body.
+      const token = await tokenFor(member, slug);
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+        const before = await organizationById(client, own);
+
+        const response = await rest(`organizations?id=eq.${own}`, {
+          token,
+          method: 'PATCH',
+          body: { name: `${THROWAWAY} renamed by a member` },
+        });
+
+        expect(response.status, 'a refused update affects zero rows and raises nothing').toBe(204);
+        expect(
+          (await organizationById(client, own))?.name,
+          `a ${slug} member-role session renamed the organization`,
+        ).toBe(before?.name);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(CROSS_TENANT)(
+    'changes nothing when the $fixture admin patches the $otherFixture organization',
+    async ({ slug, admin, otherSlug }) => {
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      try {
+        const other = await organizationId(client, otherSlug);
+        const before = await organizationById(client, other);
+
+        const response = await rest(`organizations?id=eq.${other}`, {
+          token,
+          method: 'PATCH',
+          body: { name: `${THROWAWAY} cross-tenant rename` },
+        });
+
+        expect(response.status, 'a cross-tenant update matches no row and raises nothing').toBe(
+          204,
+        );
+        expect(
+          (await organizationById(client, other))?.name,
+          `the ${slug} admin renamed ${otherSlug}`,
+        ).toBe(before?.name);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses the $fixture admin an insert and a delete on organizations',
+    async ({ slug, admin }) => {
+      // FR-2 over the transport a browser actually uses. Insert has no USING
+      // clause to fail, so the absence of an insert policy reaches the caller as
+      // 42501 and HTTP 403; delete refuses silently, which is why the row is
+      // re-read rather than the response being trusted.
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+        const before = await client.query<{ total: number }>(
+          'select count(*)::int as total from organizations',
+        );
+
+        const created = await rest('organizations', {
+          token,
+          method: 'POST',
+          body: {
+            slug: `${THROWAWAY}-inserted`,
+            name: `${THROWAWAY} organization`,
+            organization_type: `${THROWAWAY} type`,
+            timezone: 'Etc/UTC',
+            locale: 'hr',
+            leave_year_start_month: 1,
+            leave_year_start_day: 1,
+          },
+        });
+
+        expect(created.status, 'a refused insert reaches the caller as HTTP 403').toBe(403);
+        expect((await restRefusal(created)).code, 'an unmatched policy is 42501').toBe('42501');
+
+        const removed = await rest(`organizations?id=eq.${own}`, { token, method: 'DELETE' });
+
+        expect(removed.status, 'a refused delete affects zero rows and raises nothing').toBe(204);
+        expect(
+          await organizationById(client, own),
+          `the ${slug} admin deleted their own organization`,
+        ).toBeDefined();
+        expect(
+          (
+            await client.query<{ total: number }>(
+              'select count(*)::int as total from organizations',
+            )
+          ).rows[0]?.total,
+          'the number of organizations changed',
+        ).toBe(before.rows[0]?.total);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(
+    FIXTURES.flatMap((entry) =>
+      (
+        [
+          { column: 'slug', value: 'hijacked-slug' },
+          { column: 'locale', value: 'en' },
+        ] as const
+      ).map((target) => ({ ...entry, ...target })),
+    ),
+  )(
+    'refuses the $fixture admin a $column PATCH over PostgREST',
+    async ({ slug, admin, column, value }) => {
+      // The same refusal over the transport a browser actually uses, and the
+      // literal reading of "refused identically via the interface and via a
+      // direct API call": the settings surface draws no control for either
+      // column, and this is what makes that a rule rather than a habit. A
+      // privilege refusal raises, so PostgREST maps it to HTTP 403.
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      let restore: string | undefined;
+      try {
+        const own = await organizationId(client, slug);
+        const before = await organizationById(client, own);
+        restore = before?.slug;
+
+        const response = await rest(`organizations?id=eq.${own}`, {
+          token,
+          method: 'PATCH',
+          body: { [column]: value },
+        });
+        const refusal = await restRefusal(response);
+
+        expect(response.status, `a ${column} PATCH reaches the caller as HTTP 403`).toBe(403);
+        expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
+        expect(
+          (await organizationById(client, own))?.slug,
+          `the ${slug} organization slug moved, so every issued credential is refused`,
+        ).toBe(before?.slug);
+      } finally {
+        // RESTORED EVEN THOUGH NOTHING SHOULD HAVE CHANGED, and the reason is
+        // what this case is for: the write it attempts is the one that would
+        // break every other suite if it ever succeeded. `slug` is the domain
+        // part of every fixture credential, so a regression here without this
+        // `finally` leaves `tokenFor` unable to sign anybody in and turns one
+        // local failure into a file-wide cascade with no diagnosis in it.
+        // Observed exactly that while probing the column grant.
+        if (restore !== undefined) {
+          await client.query('update organizations set slug = $1 where slug = $2', [
+            restore,
+            value,
+          ]);
+        }
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses a blank $fixture name by shape rather than by policy',
+    async ({ slug, admin }) => {
+      // The one refusal on this surface that is the VALUE's rather than the
+      // caller's, and the one the settings surface must name the field for
+      // (UX-DR34). `btrim(name) <> ''` is a check on the table, so it refuses
+      // whoever writes it — including an admin who is otherwise entitled — and
+      // it raises 23514 rather than matching no row, which is what lets the
+      // surface tell the two apart at all.
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+        const before = await organizationById(client, own);
+
+        const response = await rest(`organizations?id=eq.${own}`, {
+          token,
+          method: 'PATCH',
+          body: { name: '   ' },
+        });
+
+        const refusal = await restRefusal(response);
+
+        expect(response.status, 'a check violation reaches the caller as an error').toBe(400);
+        expect(refusal.code, 'a check violation is 23514').toBe('23514');
+        // The constant `@/organization/snapshot` reads to tell this refusal from
+        // every other check on the table. Asserted against the live database, so
+        // a constraint renamed by a later migration fails here rather than
+        // silently turning a named field into a general message.
+        expect(
+          refusal.message,
+          'the refusal does not name the constraint the surface reads',
+        ).toContain('organizations_name_check');
+        expect(
+          (await organizationById(client, own))?.name,
+          `the ${slug} organization was left with a blank name`,
+        ).toBe(before?.name);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
   );
 });
 

@@ -92,6 +92,14 @@ const SOURCES = [
   join(webRoot, 'src', 'routes', 'ljudi.tsx'),
   join(webRoot, 'src', 'routes', 'postavke-rotacije.tsx'),
   join(webRoot, 'src', 'routes', 'organizacija.tsx'),
+  // Story 1.4a's two modules. `organizacija.tsx` above is no longer a
+  // placeholder and `messages.ts` owns four `t()` keys the way `sign-in.ts`
+  // owns two — so a chunk built before an edit to either compares `hr.json`
+  // against output that never saw it, which is the staleness this list refuses.
+  // `snapshot.ts` renders nothing and is here for the same reason `client.ts`
+  // is: it holds the stable codes the screen imports and logs.
+  join(webRoot, 'src', 'organization', 'snapshot.ts'),
+  join(webRoot, 'src', 'organization', 'messages.ts'),
 ];
 
 /**
@@ -368,21 +376,25 @@ const AUTHORED_VOCABULARY = [
   // not a match for it — and it is also the string a hard-coded label would
   // actually carry.
   'Postavke rotacije',
+  // TWO MORE MOVED by story 1.4a, and they are the first two words to leave the
+  // ban list for a reason other than a screen's name: the organization settings
+  // surface is the first screen in the application that SAVES anything, so it is
+  // the first that may say `Spremi` and `Odustani` at all. They were banned
+  // outright in `NAVIGATION_AND_TERMINOLOGY` below until this commit; the count
+  // is the stronger claim in exactly the way the six navigation words were.
+  'Spremi',
+  'Odustani',
 ];
 
 /** Everything the terminology contract and the unshipped affordances still own.
  *  None of it may reach the build. `Odjava` stays here because no sign-out
  *  ships — the route skeleton earned six navigation words and deliberately not
- *  that one. */
-const NAVIGATION_AND_TERMINOLOGY = [
-  'Smjena',
-  'Smjene',
-  'smjena',
-  'Odjava',
-  'Nema',
-  'Spremi',
-  'Odustani',
-];
+ *  that one. `Spremi` and `Odustani` LEFT in story 1.4a, which ships the first
+ *  screen that saves anything; they are held to a count above now. `Nema` stays,
+ *  and it is the one that bites: the voice rules say state the fact rather than
+ *  the absence, so a refusal worded `Nemaš ovlasti` fails this sweep by
+ *  SUBSTRING — which is why 1.4a's refusal says what is needed instead. */
+const NAVIGATION_AND_TERMINOLOGY = ['Smjena', 'Smjene', 'smjena', 'Odjava', 'Nema'];
 
 /** The static Croatian in `index.html` (story 1.1d): the boot fallback, shown
  *  when localization init rejects or the bundle never loads at all. It cannot

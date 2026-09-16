@@ -127,6 +127,36 @@ function partsOf(shape: Shape, instant: Date, timeZone: string): Intl.DateTimeFo
   return dateTimeFormatter(shape, timeZone).formatToParts(instant);
 }
 
+/**
+ * Whether this runtime can actually render in a zone (story 1.4a).
+ *
+ * The organization's `timezone` column is deliberately unvalidated in the
+ * database — `0002:93` records why: `pg_timezone_names` is not immutable and so
+ * cannot appear in a constraint. That left the value every date and time in the
+ * application resolves against with no check anywhere, and the failure it
+ * produces is not a bad date: `Intl.DateTimeFormat` THROWS `RangeError` on an
+ * unknown zone, so a typo saved on the settings surface takes down every later
+ * screen that renders an instant, long after the edit and nowhere near it.
+ *
+ * HERE rather than at the surface, because this module is the only file in
+ * `apps/web` permitted to touch `Intl` at all (`format.test.ts` asserts it), and
+ * asking the runtime is the only honest test — a hand-written list of zones is a
+ * second copy of the IANA database that starts rotting the day it is written.
+ * It stays import-free like everything else in this file.
+ *
+ * The parameter is `timeZone: string`, required and positional, so this reads
+ * the same way as every other zoned entry point and is held to the same rule.
+ */
+export function isRenderableTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat(LOCALE, { timeZone });
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** `12.09.2026` — the binding date (UX-DR34). */
 export function formatDate(instant: Date, timeZone: string): string {
   const parts = partsOf('date', instant, timeZone);

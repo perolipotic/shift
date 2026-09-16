@@ -293,10 +293,16 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the five policies story 1.3a reviewed, and no sixth', () => {
-    // EXPECTED TO CHANGE IN STORY 1.4, which adds the `organizations` write
-    // policy `0003:243-245` tells it to build by copying the select one. Extend
-    // this list then — do not weaken it to a count or a `toContain`.
+  it('declares exactly the six policies stories 1.3a and 1.4a reviewed, and no seventh', () => {
+    // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
+    // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
+    // copying `members_update_by_own_active_admin`, and its name is added here
+    // rather than the assertion being weakened to a count or a `toContain`.
+    //
+    // What is NOT here is as load-bearing as what is: `organizations` gains no
+    // insert and no delete policy, because no product surface creates or
+    // destroys a tenant (FR-2). Both stay refused by matching no policy at all,
+    // which `test/rls-isolation.test.ts` asserts rather than assumes.
     //
     // The exact set was asserted only against `pg_policies` in
     // `test/rls-isolation.test.ts`, which skips without a database, and there
@@ -314,6 +320,7 @@ describe('the access-control migration', () => {
       'members_select_own_organization',
       'members_update_by_own_active_admin',
       'organizations_select_own_organization',
+      'organizations_update_by_own_active_admin',
     ]);
   });
 
@@ -339,6 +346,103 @@ describe('the access-control migration', () => {
       update,
       'without WITH CHECK on update, an otherwise-legal update can move a row between tenants',
     ).toMatch(/with check[\s\S]*organization_id/i);
+  });
+
+  it('pins the tenant on the organizations write policy too, where the tenant is the key', () => {
+    // STORY 1.4a. On `organizations` the tenant reference IS the primary key, so
+    // the clause names `id` rather than `organization_id` and the block above
+    // could not see it: its patterns all require the word `organization_id`, and
+    // a policy written `with check (true)` on this table would have satisfied
+    // every assertion in this file.
+    //
+    // Both halves, and both conjuncts of each: the claim pins the tenant, and
+    // the helper is what makes `is_active` and `admin` fresh rather than a fact
+    // about the moment the token was minted.
+    const update = policyBody('organizations_update_by_own_active_admin');
+
+    expect(update, 'the organizations update policy is not declared').not.toBe('');
+    expect(update, 'an update must be reachable only on the caller own organization').toMatch(
+      /using[\s\S]*id = nullif/i,
+    );
+    expect(
+      update,
+      'without WITH CHECK on update, an otherwise-legal update can change the row own identity',
+    ).toMatch(/with check[\s\S]*id = nullif/i);
+    expect(
+      (update.match(/current_member_access\(\)/g) ?? []).length,
+      'both USING and WITH CHECK must read the role and active state fresh',
+    ).toBe(2);
+    expect(
+      (update.match(/access\.is_active/g) ?? []).length,
+      'a deactivated admin must lose the write on its next statement, not at token expiry',
+    ).toBe(2);
+    expect(
+      (update.match(/access\.member_role = 'admin'/g) ?? []).length,
+      'a member-role account must be refused by both clauses',
+    ).toBe(2);
+  });
+
+  it('bounds which organizations columns authenticated may update, as a grant', () => {
+    // A policy constrains ROWS and never columns, so the update policy on its
+    // own let an entitled admin write every one of the thirteen — proved live
+    // during the 1.4a review, where `update organizations set slug = …` as the
+    // pilot's admin reported one row updated. `slug` is the domain part of
+    // every issued sign-in address (AD-12), so that is the frozen "Never".
+    //
+    // The REVOKE is asserted as well as the grant, and it is the half that is
+    // easy to lose: a column grant does not narrow a table grant, the two are
+    // unioned, so granting five columns while the table grant stood would change
+    // nothing whatsoever and look exactly like this.
+    const statements = migrationStatements();
+
+    expect(statements, 'the table-wide UPDATE grant is never revoked').toMatch(
+      /revoke\s+update\s+on\s+table\s+public\.organizations\s+from\s+authenticated/i,
+    );
+
+    const granted =
+      /grant\s+update\s*\(([\s\S]*?)\)\s*on\s+table\s+public\.organizations\s+to\s+authenticated/i.exec(
+        statements,
+      )?.[1] ?? '';
+
+    expect(granted, 'no column-level UPDATE grant on organizations').not.toBe('');
+    expect(
+      granted
+        .split(',')
+        .map((column) => column.trim())
+        .filter((column) => column !== '')
+        .sort(),
+      'the editable column set changed',
+    ).toEqual([
+      'leave_year_start_day',
+      'leave_year_start_month',
+      'name',
+      'organization_type',
+      'timezone',
+    ]);
+    for (const forbidden of ['slug', 'locale', 'id']) {
+      expect(granted, `${forbidden} is writable by authenticated`).not.toContain(forbidden);
+    }
+  });
+
+  it('opens no insert and no delete on organizations, in any migration', () => {
+    // FR-2: no product surface creates or destroys a tenant — the operator
+    // script in `supabase/operator/` is the only path, and it runs as the owner.
+    // Asserted over the whole migration tree rather than over `0004`, because
+    // the fear is a LATER file adding one, and the exact-policy-set assertion
+    // above would notice the name while saying nothing about what it is for.
+    const organizationPolicies = (
+      migrationStatements().match(/create policy[\s\S]*?;/gi) ?? []
+    ).filter((declaration) => /on public\.organizations\b/i.test(declaration));
+
+    expect(organizationPolicies.length, 'no policy on organizations was found').toBe(2);
+    for (const verb of ['insert', 'delete', 'all']) {
+      expect(
+        organizationPolicies.filter((declaration) =>
+          new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration),
+        ),
+        `a policy opens ${verb} on organizations; provisioning is an operator task`,
+      ).toEqual([]);
+    }
   });
 
   it('confines the access token hook to the auth service', () => {
