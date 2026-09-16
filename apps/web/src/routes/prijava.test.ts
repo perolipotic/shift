@@ -132,12 +132,21 @@ const SCREENS = [
   { name: 'the not-found component', file: NOT_FOUND, expectedControls: 1 },
   { name: 'the organization prompt', file: ORGANIZATION, expectedControls: 2 },
   { name: 'the signed-in placeholder', file: HOME, expectedControls: 0 },
-  // SEVEN, not five: story 1.4a's settings surface carries five fields — name,
-  // type, timezone and the leave year's month and day — plus a save and a
-  // cancel. The number is what notices a sixth field, which on this screen is
-  // how the slug or the locale would arrive: both are ordinary-looking controls
-  // and both are forbidden for reasons that are invisible in a diff.
-  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 7 },
+  // EIGHT, and it was seven until story 1.4b: the settings surface carries five
+  // fields — name, type, timezone and the leave year's month and day — plus a
+  // save, a cancel, and now the logo's choose action. The number is what notices
+  // a sixth FIELD, which on this screen is how the slug or the locale would
+  // arrive: both are ordinary-looking controls and both are forbidden for
+  // reasons that are invisible in a diff.
+  //
+  // The file input itself is a bare `<input type="file" className="sr-only">`
+  // and so is counted by neither detector, which is deliberate rather than a
+  // gap: what a pointer meets is the `<Button>`, that is what has to clear the
+  // 44 px floor, and a native file input renders its own chrome in the
+  // BROWSER's language — the one string on this screen that could never come
+  // from `hr.json`. Its accessible name and its label binding are asserted by
+  // name in the settings block below, since the general sweeps cannot see it.
+  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 8 },
   // ZERO on all seven, and asserted rather than assumed: a destination is a
   // heading and nothing else in this story, so the first control any of them
   // grows is a later story's work arriving without that story's review. The
@@ -473,6 +482,20 @@ function inputElements(text: string): string[] {
   return [...text.matchAll(/<Input\b([\s\S]*?)\/>/g)].map((found) => found[1] ?? '');
 }
 
+/**
+ * Every BARE `<input …/>` element's attribute block — lowercase only.
+ *
+ * Added by story 1.4b. The logo's file picker is a plain `<input type="file">`
+ * rather than the shadcn primitive, so `inputElements` above does not see it
+ * (its pattern is capital-`I` `<Input`) and neither does any sweep built on it.
+ * That is deliberate — what a pointer meets is a `<Button>` — but it means the
+ * one control on this screen that carries a file is guarded by NOTHING unless
+ * it is read separately, which is what this exists for.
+ */
+function bareInputElements(text: string): string[] {
+  return [...text.matchAll(/<input\b([\s\S]*?)\/>/g)].map((found) => found[1] ?? '');
+}
+
 /** Every `<Button …>` opening tag's attribute block. */
 function buttonElements(text: string): string[] {
   return [...text.matchAll(/<Button\b([^>]*?)\/?>/g)].map((found) => found[1] ?? '');
@@ -568,17 +591,30 @@ const KEY_SOURCES = [
   { name: 'the organization prompt', file: ORGANIZATION, keys: translationKeys, strings: 3 },
   { name: 'the signed-in placeholder', file: HOME, keys: translationKeys, strings: 1 },
   { name: 'the failure-to-message mapping', file: MESSAGE_KEYS, keys: messageKeyUnion, strings: 2 },
-  // EIGHT on the settings surface: its own `nav.organizacija` heading, five
-  // field labels, and the save and cancel actions. The refusal is NOT among
-  // them — it reaches `t()` through `organizationMessageKey`, which is the next
-  // entry, for the reason the sign-in refusals do: a ternary over codes written
-  // in a `.tsx` is executed by nothing.
-  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 8 },
+  // TWELVE on the settings surface: its own `nav.organizacija` heading, five
+  // field labels, the save and cancel actions, the logo's own label, the choose
+  // action — rendered TWICE, once as the button's text and once as the hidden
+  // file input's `aria-label`, because the two controls are one affordance and
+  // a screen reader must hear the same word the eye sees — and
+  // `nav.organizacija` a second time, as the neutral mark's accessible name for
+  // the unreachable case where the organization's own name is blank. The set
+  // comparison below dedupes, so twelve `t()` calls over ten keys is correct
+  // rather than a count that drifted.
+  //
+  // The refusal is NOT among them — it reaches `t()` through
+  // `organizationMessageKey`, which is the next entry, for the reason the
+  // sign-in refusals do: a ternary over codes written in a `.tsx` is executed
+  // by nothing.
+  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 12 },
   {
+    // TEN since story 1.4b, and one function rather than two: the surface
+    // shows exactly one message region, so a second mapping would need a
+    // screen-side ternary choosing between them — the executed-by-nothing
+    // branch this entry exists to abolish.
     name: 'the organization failure-to-message mapping',
     file: ORGANIZATION_MESSAGE_KEYS,
     keys: messageKeyUnion,
-    strings: 5,
+    strings: 10,
   },
   // ONE each, exactly. The seven together are what make the set comparison
   // below hold once `hr.json` gained eight `nav.*` keys: a key declared and
@@ -1129,6 +1165,264 @@ describe('every field on the settings surface carries an accessible name', () =>
       gated,
       'the skeleton is not conditioned on the query being pending, so a settled failure pulses forever',
     ).toMatch(/isPending[\s\S]{0,120}?animate-pulse/);
+  });
+});
+
+describe('the logo control the general sweeps structurally cannot see', () => {
+  /**
+   * STORY 1.4b. Every other control on this screen is an `<Input>` or a
+   * `<Button>`, and every sweep above is built on those two detectors. The file
+   * picker is neither: it is a bare `<input type="file">` kept off-screen, and
+   * the affordance a pointer meets is a `<Button>` that opens it.
+   *
+   * That split is the right one — a native file input renders its own chrome in
+   * the BROWSER's language, which is the one string on this screen that could
+   * never come from `hr.json`, and it cannot be sized to UX-DR40's 44 px floor
+   * either — but it puts the input outside every general assertion in this file.
+   * So each property it would otherwise have inherited is claimed here by name.
+   */
+
+  it('keeps exactly one file picker, off-screen but still in the accessibility tree', () => {
+    const screen = source(SETTINGS);
+    const pickers = bareInputElements(screen);
+
+    // NON-VACUITY first: with no bare input found, every assertion below would
+    // pass against an empty string and read as coverage.
+    expect(pickers, 'no bare <input> on the settings surface').toHaveLength(1);
+
+    const picker = pickers[0] ?? '';
+
+    expect(attributeOf(picker, 'type'), 'the picker is not a file input').toBe('file');
+    expect(attributeOf(picker, 'id'), 'the picker carries no id to open it by').not.toBeNull();
+    // `sr-only` and NOT `hidden`: `hidden` removes the control from the
+    // accessibility tree and from the tab order, which would leave the logo
+    // unreachable by keyboard with the visible button doing nothing for anyone
+    // who cannot use a pointer.
+    expect(picker, 'the picker is not kept off-screen').toContain('sr-only');
+    expect(picker, 'the picker is removed from the accessibility tree').not.toMatch(
+      /(^|\s)hidden(\s|$|=)/,
+    );
+    expect(picker, 'the picker carries no accessible name').toMatch(/aria-label=\{t\(/);
+    expect(picker, 'the picker describes nothing when the upload is refused').toMatch(
+      /aria-describedby=\{[^}]*refusal[^}]*\}/,
+    );
+    // DISABLED TOO, and not only the button. Carried on the button alone, a
+    // keyboard user reaching the input directly could choose a second file
+    // mid-upload and get silence — the in-flight guard returns without a word.
+    expect(picker, 'the picker stays live while an upload is in flight').toMatch(
+      /disabled=\{[^}]+\}/,
+    );
+    // The accept hint is DERIVED from the bucket's allowlist rather than typed
+    // here, so a hint offering a type the bucket refuses is not expressible.
+    expect(picker, 'the accept hint is written by hand rather than derived').toContain(
+      'accept={ORGANIZATION_LOGO_ACCEPT}',
+    );
+  });
+
+  it('gives the picker a visible action that clears the tap-target floor', () => {
+    const screen = source(SETTINGS);
+    const buttons = buttonElements(screen);
+
+    expect(buttons, 'the settings surface lost a button').toHaveLength(3);
+
+    const choose = buttons.find((element) => element.includes('onClick={openLogoPicker}')) ?? null;
+
+    expect(choose, 'nothing on the screen opens the file picker').not.toBeNull();
+    expect(choose, 'the choose action would submit the settings form').toContain('type="button"');
+    // THE CONTROL A PERSON ACTUALLY OPERATES is the button, so the refusal has
+    // to be reachable from it: describing only the off-screen input leaves the
+    // message unreachable from wherever a pointer user actually is.
+    expect(choose ?? '', 'the visible action describes nothing when the upload is refused').toMatch(
+      /aria-describedby=\{[^}]*refusal[^}]*\}/,
+    );
+    expect(choose ?? '', 'the in-flight state is not announced').toMatch(/aria-busy=\{[^}]+\}/);
+
+    const measured = heightPx(attributeOf(choose ?? '', 'className'));
+
+    expect(measured, 'the choose action declares no usable height class').not.toBeNull();
+    expect(measured).toBeGreaterThanOrEqual(TARGET_FLOOR_PX);
+  });
+
+  it('disables both controls while either handler is in flight', () => {
+    // ONE MESSAGE REGION, two handlers: a save started while an upload is in
+    // flight takes the region from a refusal nobody has read yet, and whichever
+    // finished last owned it. Both flags on every control is the half of the fix
+    // that is visible; the guards below are the other half.
+    const screen = source(SETTINGS);
+
+    for (const element of buttonElements(screen)) {
+      expect(
+        element,
+        `a control is disabled by only one of the two in-flight flags: ${element}`,
+      ).toMatch(/disabled=\{(?:pending \|\| uploadingLogo|busy)\}/);
+    }
+  });
+
+  it('renders the logo it has, and a neutral mark carrying the name when it has none', () => {
+    // The acceptance criterion, as far as source text can carry it: the preview
+    // is conditioned on there being a URL, and BOTH branches name the
+    // organization — one as `alt`, one as the mark's accessible name. Neither
+    // says anything about an absence, which is the voice rule and also why
+    // there is no key for it in `hr.json`.
+    const screen = source(SETTINGS);
+
+    expect(screen, 'the preview is not conditioned on there being a URL').toMatch(
+      /logoUrl === null \?/,
+    );
+    expect(screen, 'the fallback carries no accessible name').toMatch(
+      /aria-label=\{mark === null \? t\('nav\.organizacija'\) : organization\.name\}/,
+    );
+    expect(screen, 'the logo renders with no alternative text').toContain(
+      'alt={organization.name}',
+    );
+    // A WHOLE CODE POINT, and the helper that takes it is executed in
+    // `logo.test.ts`. `slice(0, 1)` splits a surrogate pair and orphans a
+    // combining caron, and Croatian diacritic coverage is an explicit
+    // requirement of this project.
+    expect(screen, 'the mark is cut out of the name by code unit').not.toContain('.slice(0, 1)');
+    expect(screen, 'the mark is not derived through the tested helper').toContain(
+      'organizationLogoMark(organization.name)',
+    );
+  });
+
+  it('never renders a broken image, however the signed URL stops working', () => {
+    // A signed URL is a capability with a deadline, so a tab left open past the
+    // expiry renders the browser's broken-image glyph — the exact state the
+    // acceptance criterion forbids. Two defences, both asserted: the cache is
+    // bounded below the expiry, and the element falls back when the load fails
+    // for any reason a timer cannot predict.
+    const screen = source(SETTINGS);
+
+    expect(screen, 'the img has no failure path, so a dead URL renders as a broken image').toContain(
+      'onError={markLogoUnrenderable}',
+    );
+    expect(screen, 'the signed URL is cached without regard for its expiry').toContain(
+      'staleTime: LOGO_URL_STALE_MS',
+    );
+    expect(screen, 'a settled refusal is retried as though it were slow').toContain('retry: false');
+  });
+
+  it('draws a skeleton for the logo while the one read is still pending', () => {
+    // UX-DR40 asks for a skeleton rather than a spinner, and the reason it
+    // belongs on this block specifically is layout: without it the card has no
+    // logo at all until the row arrives and then grows one, moving every control
+    // below it under whatever the pointer was already heading for.
+    const gated = componentFunction(source(SETTINGS), 'renderLogo');
+
+    expect(gated, 'no renderLogo function to read').not.toBe('');
+    expect(gated, 'the logo block renders no skeleton').toContain('animate-pulse');
+    expect(
+      gated,
+      'the skeleton is not conditioned on the query being pending, so a settled failure pulses forever',
+    ).toMatch(/isPending[\s\S]{0,120}?animate-pulse/);
+  });
+
+  it('never sends the logo reference from the form submit', () => {
+    // THE CLOBBER the two disjoint write shapes exist to prevent: a save of the
+    // five identity fields that also carried `logo_path` would overwrite a logo
+    // uploaded seconds earlier, silently, with a PATCH that reports success.
+    const handler = submitHandler(source(SETTINGS));
+
+    expect(handler, 'no submit handler to read').not.toBe('');
+    expect(handler, 'the identity save carries the logo reference with it').not.toContain(
+      'logoPath',
+    );
+  });
+
+  it('delegates the whole upload rather than sequencing it here', () => {
+    // A `.tsx` is collected by nothing (AD-15), so a sequence written here is
+    // read as source text and never executed — and the mutation that permits is
+    // not subtle: passing `organization.slug` where the policies authorize
+    // `organization.id` typechecks, lints, and leaves every assertion in this
+    // repository green while every upload is refused 403 at runtime. The
+    // sequence, the ordering and the path are executed in `logo.test.ts`
+    // against a recorder; what is left to assert here is that the screen ROUTES
+    // through it and derives no path of its own.
+    const upload = componentFunction(source(SETTINGS), 'uploadLogo');
+
+    expect(upload, 'no uploadLogo function to read').not.toBe('');
+    expect(upload, 'the screen no longer routes through the upload module').toContain(
+      'replaceOrganizationLogo(',
+    );
+    expect(upload, 'the screen hands over something other than the snapshot').toMatch(
+      /replaceOrganizationLogo\([\s\S]{0,240}?\n\s+organization,/,
+    );
+    for (const sequenced of ['organizationLogoPath(', 'uploadOrganizationLogo(', 'logoPath:']) {
+      expect(
+        source(SETTINGS),
+        `the screen sequences the upload itself by naming ${sequenced}`,
+      ).not.toContain(sequenced);
+    }
+    expect(upload, 'the refused upload is not put on screen').toMatch(
+      /!outcome\.ok[\s\S]{0,160}?setFailure\(outcome\.code\)/,
+    );
+    // ONE invalidation, and it is the snapshot's key: the derived URL is keyed
+    // underneath it, so refetching the row refetches the preview with it.
+    expect(upload, 'the preview is not refreshed after an upload').toContain(
+      'invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY })',
+    );
+  });
+
+  it('clears the in-flight flag on every path, and guards on both refs not on state', () => {
+    // The same two defects the submit handler is swept for, on the second
+    // handler this screen grew: `setUploadingLogo(false)` outside a `finally`
+    // leaves the button dead after the first refusal, and a guard on state is
+    // stale inside a handler already called once this tick.
+    //
+    // BOTH REFS, in both handlers. They share one message region and
+    // `setFailure(null)` here erases whatever the other put there, so a guard
+    // on its own flag alone lets one handler wipe a refusal nobody has read.
+    const upload = componentFunction(source(SETTINGS), 'uploadLogo');
+    const submit = submitHandler(source(SETTINGS));
+
+    expect(upload, 'no uploadLogo function to read').not.toBe('');
+    expect(upload, 'the upload has no finally, so a path can leave it in flight').toMatch(
+      /\}\s*finally\s*\{/,
+    );
+    for (const [name, handler] of [
+      ['uploadLogo', upload],
+      ['submit', submit],
+    ] as const) {
+      expect(handler, `${name} does not guard on the upload flag`).toMatch(
+        /if\s*\([\s\S]*?uploading\.current[\s\S]*?\)\s*\{?\s*return;/,
+      );
+      expect(handler, `${name} does not guard on the save flag`).toMatch(
+        /if\s*\([\s\S]*?saving\.current[\s\S]*?\)\s*\{?\s*return;/,
+      );
+    }
+    expect(upload, 'the finally does not re-enable the action').toContain(
+      'setUploadingLogo(false)',
+    );
+    expect(upload, 'the finally does not clear the in-flight ref').toContain(
+      'uploading.current = false',
+    );
+    expect(upload, 'nothing is surfaced when the call throws outside its own mapping').toMatch(
+      /catch[\s\S]{0,200}?setFailure\(/,
+    );
+  });
+
+  it('logs a read it could not render rather than falling back in silence', () => {
+    // A persistently unreadable logo and an organization with no logo look
+    // identical on screen, by design — that is the matrix's own row. Which is
+    // exactly why the read has to leave a trace somewhere: silence is how a
+    // misconfigured bucket stays undiagnosed, and `uploadLogo` already logs.
+    const reader = componentFunction(source(SETTINGS), 'renderableLogo');
+
+    expect(reader, 'no renderableLogo function to read').not.toBe('');
+    expect(reader, 'a failed read reports nothing at all').toMatch(
+      /!outcome\.ok[\s\S]{0,80}?console\.error\(/,
+    );
+  });
+
+  it('clears the picker after a chosen file, so the same file can be chosen twice', () => {
+    // A file input fires no `change` event when the same file is chosen twice
+    // running, so without the reset "the upload was refused, try that file
+    // again" does nothing at all — the retry a person is most likely to make.
+    const chooser = componentFunction(source(SETTINGS), 'chooseLogo');
+
+    expect(chooser, 'no chooseLogo function to read').not.toBe('');
+    expect(chooser, 'the picker is never cleared').toContain('value = NO_FILE_CHOSEN');
+    expect(chooser, 'nothing is uploaded when a file is chosen').toContain('uploadLogo(');
   });
 });
 
@@ -1716,6 +2010,18 @@ describe('the detectors find what they claim to find', () => {
 
     expect(inputElements(two)).toEqual([' id="a" ', ' id="b" className="h-11" ']);
     expect(inputElements('<p>no inputs here</p>')).toEqual([]);
+  });
+
+  it('finds a bare input and never the shadcn primitive, which is a different control', () => {
+    // BOTH polarities. A detector that also matched `<Input>` would report the
+    // five settings fields as file pickers and make the single-picker assertion
+    // fail on correct code; one that matched neither would make every claim
+    // about the picker pass against an empty string.
+    const mixed = '<Input id="a" className="h-11" /><input id="b" type="file" />';
+
+    expect(bareInputElements(mixed)).toEqual([' id="b" type="file" ']);
+    expect(bareInputElements('<Input id="a" />')).toEqual([]);
+    expect(bareInputElements('<p>no inputs here</p>')).toEqual([]);
   });
 
   it('finds every Button, self-closing or not, and nothing where there is none', () => {

@@ -42,6 +42,8 @@
     "timezone": "Vremenska zona",
     "leaveYearStartMonth": "Mjesec početka godišnjeg odmora",
     "leaveYearStartDay": "Dan početka godišnjeg odmora",
+    "logo": "Logotip",
+    "logoChoose": "Odaberi sliku",
     "save": "Spremi",
     "cancel": "Odustani",
     "error": {
@@ -49,6 +51,11 @@
       "name": "Naziv ne može biti prazan.",
       "invalid": "Unesena vrijednost nije dopuštena.",
       "timezone": "Vremenska zona nije poznata.",
+      "logoRefused": "Ne možeš promijeniti logotip organizacije. Za izmjene trebaš ovlasti administratora.",
+      "logoUnreadable": "Logotip trenutačno nije moguće prikazati.",
+      "logoTooLarge": "Najveća dopuštena veličina slike je 2 MiB.",
+      "logoType": "Dopušteni formati slike su PNG, JPEG i WebP.",
+      "logoUnavailable": "Spremanje logotipa trenutačno nije moguće. Pokušaj ponovno.",
       "unavailable": "Spremanje trenutačno nije moguće. Pokušaj ponovno."
     }
   }

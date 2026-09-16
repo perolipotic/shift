@@ -91,6 +91,16 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.timezone',
   'organization.leaveYearStartMonth',
   'organization.leaveYearStartDay',
+  // Story 1.4b — the organization logo. TWO, and neither of them announces an
+  // absence: `organization.logo` names the thing, `organization.logoChoose` is
+  // the action. There is deliberately no key for "this organization has no
+  // logo": the voice rule states the fact rather than the absence, so the empty
+  // case is a neutral mark carrying the organization's name as its accessible
+  // name and no sentence at all. `Nema` is banned outright in
+  // `test/localization-applied.test.ts`, so a key worded that way would fail
+  // there as well as here.
+  'organization.logo',
+  'organization.logoChoose',
   // The two words this story EARNS. Both were asserted absent from every built
   // chunk until now (`test/localization-applied.test.ts`), and both move from
   // that ban into the count sweep in the same commit — the stronger of the two
@@ -111,6 +121,23 @@ const SANCTIONED_SCREEN_KEYS = [
   // so the value every later screen renders against is validated in
   // `@/i18n/format` and refused before the write.
   'organization.error.timezone',
+  // FIVE MORE from story 1.4b, and the partition is the point again. The
+  // storage layer refuses in five distinguishable ways — a refused write, a
+  // read that reaches nothing, the
+  // bucket's size bound, the bucket's type allowlist, and the service failing —
+  // and every one of them is a different thing to do next: ask for the rights,
+  // shrink the file, export it differently, try again. Two of them NAME A
+  // NUMBER or a list, because the bound is the bucket's (`0005`) and repeating
+  // it is the only way the person can act on it.
+  'organization.error.logoRefused',
+  // A SEPARATE MESSAGE from the refusal above, and the separation is the
+  // finding it closes: `logoRefused` says an administrator's rights are needed
+  // to CHANGE the logo, which is false of a member whose READ was hidden or
+  // whose reference resolved to nothing. Two populations, two messages.
+  'organization.error.logoUnreadable',
+  'organization.error.logoTooLarge',
+  'organization.error.logoType',
+  'organization.error.logoUnavailable',
   'organization.error.unavailable',
 ];
 

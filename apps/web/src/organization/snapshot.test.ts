@@ -23,6 +23,7 @@ import {
   type OrganizationEdits,
   type OrganizationFailure,
   type OrganizationTable,
+  type OrganizationWrite,
   type PostgrestAnswer,
 } from '@/organization/snapshot';
 
@@ -79,6 +80,9 @@ const PILOT_ROW = {
   locale: 'hr',
   leave_year_start_month: 1,
   leave_year_start_day: 1,
+  // Both fixtures are seeded logo-less, which is the fallback case (story
+  // 1.4b): `logo_path` is nullable, carries no default, and null IS "no logo".
+  logo_path: null,
 };
 
 const EDITS: OrganizationEdits = {
@@ -199,12 +203,14 @@ describe('one PostgREST row becomes the canonical snapshot', () => {
       locale: 'hr',
       leaveYearStartMonth: 1,
       leaveYearStartDay: 1,
+      logoPath: null,
     });
   });
 
-  it('admits the four nullable columns as null and no others', () => {
+  it('admits the five nullable columns as null and no others', () => {
     // `short_name`, `description`, `address` and `contact_email` are nullable on
-    // the table (`0002:73-81`); everything else is `not null`. A mapper that
+    // the table (`0002:73-81`), and `logo_path` joined them in `0005`;
+    // everything else is `not null`. A mapper that
     // admitted a missing `timezone` would hand L8 an `undefined` zone, which
     // `Intl` resolves to the DEVICE's — the exact defect the required argument
     // in `format.ts` exists to make impossible.
@@ -220,6 +226,16 @@ describe('one PostgREST row becomes the canonical snapshot', () => {
     expect(sparse?.description).toBeNull();
     expect(sparse?.address).toBeNull();
     expect(sparse?.contactEmail).toBeNull();
+    expect(sparse?.logoPath, 'a missing logo reference is not the same as no column').toBeNull();
+  });
+
+  it('carries the logo reference when there is one', () => {
+    // The positive control the null case needs: a mapper that returned `null`
+    // for every value would satisfy the assertion above and make the fallback
+    // the only thing this screen can ever draw.
+    const path = `${PILOT_ROW.id}/logo`;
+
+    expect(organizationSnapshotOf({ ...PILOT_ROW, logo_path: path })?.logoPath).toBe(path);
   });
 
   it.each([
@@ -348,6 +364,70 @@ describe('the update writes the edited fields and answers with the row', () => {
       leave_year_start_month: 4,
       leave_year_start_day: 1,
     });
+  });
+
+  it('sends the logo reference alone, and never beside the five fields', () => {
+    // STORY 1.4b, and the whole of why the two writes are disjoint types: the
+    // upload happens seconds after somebody starts typing in the name field,
+    // and a logo write that also carried the five fields would save whatever
+    // was half-typed — while a form submit that also carried `logo_path` would
+    // overwrite a logo uploaded while it was being typed. Both are silent, and
+    // both are PATCHes that report success.
+    expect(organizationEditColumns({ logoPath: 'an-organization/logo' })).toEqual({
+      logo_path: 'an-organization/logo',
+    });
+
+    const written = Object.keys(organizationEditColumns({ logoPath: 'an-organization/logo' }));
+
+    expect(written, 'the logo write carries the form fields with it').toEqual(['logo_path']);
+  });
+
+  it('refuses a write that carries the five fields AND the logo reference', () => {
+    // THE UNTAGGED-UNION HOLE, closed by `?: never` on both sides and asserted
+    // by `@ts-expect-error` — which is itself executable, because an expectation
+    // that stops being violated is a `pnpm typecheck` failure. Without the
+    // exclusions such a value satisfies `OrganizationLogoEdit` structurally,
+    // routes to the logo branch, and silently drops all five identity fields on
+    // a save that reports success.
+    // @ts-expect-error neither write may carry the other's fields, by construction
+    const both: OrganizationWrite = { ...EDITS, logoPath: `${PILOT_ROW.id}/logo` };
+
+    // And the runtime behaviour of the value the type system now refuses, so the
+    // consequence is written down rather than left to be rediscovered.
+    expect(Object.keys(organizationEditColumns(both))).toEqual(['logo_path']);
+  });
+
+  it('routes a logoPath of undefined to the identity write, not to the logo write', () => {
+    // `'logoPath' in write` alone routed `{ …five, logoPath: undefined }` — the
+    // shape a spread of a partial produces — to the logo branch, which writes
+    // `logo_path: undefined`. PostgREST drops an undefined value, so that is a
+    // PATCH with an empty body: it matches the row, changes nothing, and
+    // reports success.
+    const spread = { ...EDITS, logoPath: undefined } as OrganizationWrite;
+
+    expect(organizationEditColumns(spread)).toEqual(organizationEditColumns(EDITS));
+  });
+
+  it('sends no logo reference when the form saves its five fields', () => {
+    // The other direction of the same claim, which is the one the acceptance
+    // criterion words as "saving identity cannot clobber a logo uploaded
+    // seconds earlier".
+    expect(Object.keys(organizationEditColumns(EDITS))).not.toContain('logo_path');
+  });
+
+  it('writes the logo reference without asking the timezone validator anything', async () => {
+    // The timezone check is the identity write's, and running it against a
+    // write that carries no zone at all would refuse every upload.
+    const log = recorder();
+    const outcome = await updateOrganization(
+      answering({ data: [PILOT_ROW], error: null }, log),
+      PILOT_ROW.id,
+      { logoPath: `${PILOT_ROW.id}/logo` },
+    );
+
+    expect(outcome.ok, 'the logo write was refused by a check that does not apply').toBe(true);
+    expect(log.updated).toEqual([{ logo_path: `${PILOT_ROW.id}/logo` }]);
+    expect(log.filtered).toEqual([{ column: 'id', value: PILOT_ROW.id }]);
   });
 
   it('sends no slug and no locale, which no control may offer', () => {
@@ -578,20 +658,66 @@ describe('the surface reads once, under one key', () => {
     const screen = source(SCREEN);
 
     expect(ORGANIZATION_SNAPSHOT_KEY).toEqual(['organization']);
-    expect(occurrences(screen, 'queryKey:'), 'the screen names more query keys than one').toBe(
-      occurrences(screen, 'queryKey: ORGANIZATION_SNAPSHOT_KEY'),
+    expect(occurrences(screen, 'queryKey: ORGANIZATION_SNAPSHOT_KEY')).toBeGreaterThan(0);
+    // TWO KEYS SINCE STORY 1.4b, and every one of them has to be the snapshot's
+    // key or DERIVED from it. `organizationLogoKey` is asserted in
+    // `logo.test.ts` to be the snapshot key with the path appended, so a key
+    // written by hand here — the shape that drifts the moment one of the two
+    // gains a qualifier — is what this refuses.
+    expect(
+      occurrences(screen, 'queryKey:'),
+      'the screen names a query key that is neither the snapshot key nor derived from it',
+    ).toBe(
+      occurrences(screen, 'queryKey: ORGANIZATION_SNAPSHOT_KEY') +
+        occurrences(screen, 'queryKey: organizationLogoKey('),
     );
-    expect(occurrences(screen, 'queryKey:')).toBeGreaterThan(0);
   });
 
-  it('issues exactly one read and no second one', () => {
-    // MUTATION THIS REFUSES: a second `useQuery` for one more figure, which is
-    // the ordinary way AD-13 gets broken — nothing fails, the screen just shows
-    // two answers from two moments.
+  it('reads the organization row exactly once, however many figures it draws', () => {
+    // MUTATION THIS REFUSES: a second read of the same ROW for one more figure,
+    // which is the ordinary way AD-13 gets broken — nothing fails, the screen
+    // just shows two answers from two moments.
+    //
+    // The logo's signed URL is a second `useQuery` and deliberately not a second
+    // snapshot: it is derived from a value the one read returned, keyed under
+    // that read's key, and disabled entirely when there is no logo. So the
+    // bound here is on `readOrganization`, which is the read of the row.
     const screen = source(SCREEN);
 
-    expect(occurrences(screen, 'useQuery('), 'the screen issues more than one read').toBe(1);
-    expect(occurrences(screen, 'readOrganization(')).toBe(1);
+    expect(occurrences(screen, 'readOrganization('), 'the screen reads the row twice').toBe(1);
+    expect(occurrences(screen, 'useQuery('), 'the screen issues a third query').toBe(2);
+  });
+
+  it('never asks storage whether a logo exists, and never renders a broken image', () => {
+    // PRESENCE IS A COLUMN, NOT A PROBE. `logo_path` is on the snapshot the
+    // screen already holds, so the fallback is a pure read; the derived query
+    // is `enabled` only when there is something to sign, so an organization
+    // with no logo makes no storage call at all.
+    const screen = source(SCREEN);
+
+    expect(screen, 'the logo query runs even when there is no logo').toContain(
+      'enabled: logoPath !== null',
+    );
+    expect(screen, 'the screen reads presence from somewhere other than the snapshot').toContain(
+      'organization.logoPath',
+    );
+  });
+
+  it('draws a neutral mark rather than announcing that there is no logo', () => {
+    // The voice rule, as markup. The fallback carries the organization's name
+    // as its accessible name and says nothing else; a `t()` key would be a
+    // sentence about an absence, which `test/localization-applied.test.ts`
+    // forbids by banning `Nema` from every built chunk.
+    const screen = source(SCREEN);
+
+    // The mark's accessible name is the organization's name, with the generic
+    // destination label standing in only for the blank name `0002:72` makes
+    // unreachable — never an empty string, which a screen reader announces as
+    // nothing at all.
+    expect(screen, 'the fallback has no accessible name').toMatch(
+      /aria-label=\{mark === null \? t\('nav\.organizacija'\) : organization\.name\}/,
+    );
+    expect(screen, 'the fallback is not announced as an image').toContain('role="img"');
   });
 
   it('reaches the table through the snapshot module rather than naming it', () => {
