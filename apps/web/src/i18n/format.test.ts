@@ -13,6 +13,7 @@ import {
   formatTime,
   formatTimeRange,
   formatWeekdayName,
+  isRenderableTimeZone,
   RANGE_DASH,
 } from '@/i18n/format';
 import { i18n, initLocalization, missingKeyPlaceholder, t } from '@/i18n';
@@ -217,6 +218,11 @@ const ZONED_ENTRY_POINTS = [
   'formatDayMonthRange',
   'formatMonthName',
   'formatWeekdayName',
+  // Story 1.4a. It renders nothing, but it takes a zone and it is held to the
+  // same rule as the six that do: `timeZone: string`, required and positional.
+  // A `?` or a default here would let a caller ask "is the DEVICE's zone
+  // renderable", which is always yes and answers the wrong question.
+  'isRenderableTimeZone',
 ];
 
 beforeAll(async () => {
@@ -519,6 +525,39 @@ describe('the exported t is the instance t, after init', () => {
 
   it('has exactly one language configured', () => {
     expect(i18n.languages).toEqual(['hr']);
+  });
+});
+
+describe('an unknown timezone is refused before it can be saved', () => {
+  /**
+   * Story 1.4a. `0002:93` leaves the `timezone` column unchecked on purpose —
+   * `pg_timezone_names` is not immutable, so it cannot appear in a constraint —
+   * which left the one value every later surface resolves against validated
+   * nowhere at all. The failure that produces is not a wrong date: every zoned
+   * function in this module THROWS `RangeError` on an unknown zone, so a typo
+   * saved on the settings surface takes down each screen that renders an
+   * instant, far from the edit that caused it.
+   */
+  it('accepts the zones the fixtures actually carry', () => {
+    expect(isRenderableTimeZone(ZONE)).toBe(true);
+    expect(isRenderableTimeZone(FOREIGN_ZONE)).toBe(true);
+    expect(isRenderableTimeZone('Etc/UTC')).toBe(true);
+  });
+
+  it('refuses what would throw at render time', () => {
+    // BOTH POLARITIES, and the second is the one that matters: a validator that
+    // returned `true` for everything would pass the block above entirely.
+    for (const unknown of ['Europe/Zagrb', 'not a zone', '', 'UTC+2', 'Europe']) {
+      expect(isRenderableTimeZone(unknown), `${unknown} was accepted`).toBe(false);
+    }
+  });
+
+  it('agrees with what the formatters actually do', () => {
+    // The claim is not "this string looks like a zone" but "this module can
+    // render in it", so it is proved against the module's own behaviour rather
+    // than against a pattern.
+    expect(() => formatDate(new Date('2026-09-12T10:00:00Z'), 'Europe/Zagrb')).toThrow();
+    expect(formatDate(new Date('2026-09-12T10:00:00Z'), ZONE)).toBe('12.09.2026');
   });
 });
 

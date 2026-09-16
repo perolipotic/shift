@@ -487,3 +487,63 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-navigation-shell-a-route-skeleton.md`
   summary: `SOURCES` in `test/localization-applied.test.ts` stays hand-maintained while its own comment says an omission is guarded by nothing.
   evidence: The comment reads "A `.tsx` carrying a string that is absent from this list is swept by nothing — the freshness guard would not notice a build that predates it." This story added nine paths by hand and nothing cross-checks the list against `apps/web/src/routes/*.tsx`, so a tenth route file added later is exactly the case the comment describes. Globbing the routes directory and asserting every `.tsx` in it appears in `SOURCES` would close it for every future story at once.
+
+- source_spec: none
+  summary: Story 1.4 part B — the organization's branding: a logo (upload, storage, cross-organization read refusal, neutral fallback) and the brand accent that tints the application shell and logo lockup only.
+  evidence: Split from story 1.4 at step-01's multi-goal check, human-decided 2026-09-15. The identity and localization half needs no schema work at all — `organizations` already carries `name`, `short_name`, `description`, `address`, `contact_email`, `organization_type`, `timezone`, `locale` and `leave_year_start_month`/`_day` from migration `0002` — so it is a surface, an RLS update policy and the L8 timezone wiring. Branding is a second top-level deliverable that introduces a subsystem the repository does not have in any form: no Supabase Storage bucket exists, `supabase/config.toml` and every migration mention storage nowhere, and both a logo reference and an accent colour are new columns. Each half merges without breaking the other; the settings surface is the natural host for the upload control, which is why it goes first. Covers epics.md story 1.4 acceptance clauses 3 and 4 (Q4's cross-organization asset refusal, the neutral fallback, UX-DR5's accent scope, and UX-DR4's proof that `destructive` stays reserved for an unresolved conflict even when the brand colour is the pilot fire department's red). Precedent for the split: story 1.1 measured 3005 tokens against a 1600 ceiling and split twice, 1.3 split once, and the navigation shell split once.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
+  summary: A successful save is indistinguishable from one that silently matched no row — there is no confirmation string, no toast and no `aria-live` announcement.
+  evidence: The submit handler clears the failure state and refetches; the screen looks identical before and after. This is the first surface in the application that writes anything, and the story goes to considerable length elsewhere to detect the "zero rows and no error" refusal shape — yet to the eye a refused save and a successful one differ only in whether an alert appears. Needs a sanctioned Croatian string and a decision on the announcement mechanism, so it is a UX decision rather than a patch.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
+  summary: The write is hand-rolled rather than using `useMutation`, on the story whose stated purpose is to set the data pattern every later surface copies.
+  evidence: The read uses TanStack Query; the write uses a `useRef` re-entrancy guard plus a `useState` pending flag plus try/catch/finally. `useMutation` supplies `isPending`, call serialization and `onSuccess` invalidation directly. The spec's Design Notes argue Query lands here "so whatever shape it takes becomes the pattern every later surface copies", and story 1.5's member list will copy whichever shape is present. Deferred rather than patched because changing it touches the in-flight assertions being added in this same review pass.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
+  summary: Two admins saving concurrently silently clobber each other; there is no dirty check, no precondition and no `updated_at` column to compare against.
+  evidence: Every save PATCHes all five editable columns regardless of which were edited, so the second writer overwrites the first with no signal to either. The table has no `updated_at`, so the fix requires a migration and a decision about optimistic concurrency. Last-write-wins may well be acceptable for a settings row edited by a handful of admins — but it is currently unstated rather than decided.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
+  summary: Four columns are selected into the snapshot for no reader, in a module that excludes `created_at` on exactly that ground.
+  evidence: `ORGANIZATION_COLUMNS` pulls `short_name`, `description`, `address` and `contact_email`; no surface renders them and the edits type cannot write them. The adjacent comment excludes `created_at` because "selecting it would be a column read for no reader" — the same test fails for these four. They are also the fields story 1.4's narrative mentions but no acceptance criterion names, so whether they gain controls is the open half of the same question.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
+  summary: Native browser validation emits non-Croatian text on a codebase that polices every authored string by test.
+  evidence: `required`, `min`, `max` and `type="number"` without `noValidate` produce validation bubbles in the browser's or OS's locale. `localization-applied.test.ts` and `resource-hygiene.test.ts` check every authored string to the byte, and this is the one class of user-facing text that walks past both. Adding `noValidate` means re-homing those refusals into the application's own message set, which is a design change rather than a patch.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
+  summary: The leave-year month is a raw 1–12 number field in an application that already formats Croatian month names.
+  evidence: `formatMonthName` exists in `format.ts` and returns CLDR month names; the label reads "Mjesec početka godišnjeg odmora" and the control shows `4`. A `<select>` of month names is more legible and removes the out-of-range case entirely — the same argument the day field already makes with `max={28}`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
+  summary: A refused value is never attributed to the field that caused it — `organization.error.invalid` names nothing and no input carries `aria-invalid`.
+  evidence: "Unesena vrijednost nije dopuštena." tells the person a value was rejected without saying which of five fields. UX-DR34 is cited throughout this change as requiring the refusal to name the problem, and the blank-name code honours it while the general check-violation code does not — although PostgREST returns the constraint name, from which the column is derivable exactly as `organizations_name_check` already is. Focus is also never moved to the message, so on a five-field form the `role="alert"` announcement can refer to a control scrolled out of view.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
+  summary: The loading skeleton is a single 44px bar standing in for a five-field form, with no `aria-busy` and no accessible loading text.
+  evidence: It neither reserves the form's layout — guaranteeing a jump when the snapshot arrives — nor tells a screen-reader user that anything is in flight. UX-DR40 requires a skeleton rather than a spinner, which this satisfies in kind but not in shape.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
+  summary: The screen assembles its own data access at two call sites, so `ORGANIZATION_TABLE` has to be part of the snapshot module's public surface.
+  evidence: `supabaseClient().from(ORGANIZATION_TABLE)` appears in both the query function and the submit handler. `snapshot.ts` goes to real trouble to make the table an injected parameter so the module is stubbable, then exports the table name so the screen can build the client itself. An `organizationTable()` helper would keep the seam in one place and let the constant stop being exported.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
+  summary: The new `headingKey` detector reintroduces the `[^>]*` truncation trap the spec's own Code Map flags as a gotcha with teeth.
+  evidence: `/<h1\b[^>]*>\s*\{t\('([^']+)'\)\}/` stops at the first `>`, so an `<h1>` carrying an arrow function or a generic in an attribute returns `null` and the destination-binding assertion fails on correct code. No current `<h1>` has that shape, so nothing is broken today — but this is the same failure mode as `buttonElements` at `prijava.test.ts:379`, reintroduced in a helper added to fix a different brittleness.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
+  summary: `variant` was added to the global `STRUCTURAL_ATTRIBUTES` allowlist to serve one button, widening the exemption beyond its justification.
+  evidence: The entry is argued honestly and proved on both polarities, but the allowlist is consulted for every screen in the sweep, so it also exempts `variant` on any future component where the prop is not drawn from `buttonVariants`' closed set. Scoping the exemption to `<Button>` would keep the widening as narrow as the argument that earned it.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
+  summary: `organizationTimeZone` has no consumer in application code, so the L8 acceptance criterion is proved only by its own unit test.
+  evidence: A repo-wide grep returns only the definition and `snapshot.test.ts`; no `.tsx` in `apps/web/src` imports from `@/i18n/format`, because no shipped surface renders a date or a time yet. The ledger entry this story answered ("1.4 supplies the value, tests pass a literal") is therefore half closed: the value now has a source and still has no consumer. The first surface that renders a date must read the zone from the organization snapshot rather than passing a literal, and that is where the criterion becomes observable.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
+  summary: The only executable proof of the new UPDATE policy is skippable, so whether it is verified at all depends on the operator's environment rather than on `pnpm test`.
+  evidence: Every new case in `rls-isolation.test.ts` is `it.skipIf(noDatabase)` or `it.skipIf(noApi)`, and the repository still has no CI configuration. In a checkout with no reachable local Supabase, all of them skip silently and the suite reports green, leaving only comment-stripped source-text regexes in `supabase-scaffold.test.ts` as evidence that a policy guarding every credential in a tenant exists. This matches the repository's existing convention rather than being introduced here, and it compounds the already-recorded CI gap — but it now guards a higher-consequence invariant than when that entry was written.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
+  summary: There is no retry affordance on the read-failure path, although the message tells the person to try again.
+  evidence: `organization.error.unavailable` reads "Pokušaj ponovno.", but on a failed read there is no form and therefore no button, and `useQuery`'s `refetch` is never called. Once the refusal is made visible (patched in this review pass), nothing on the screen can still act on it short of a browser reload.

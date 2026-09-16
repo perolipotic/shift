@@ -35,5 +35,21 @@
   "notFound": {
     "heading": "Stranica ne postoji",
     "back": "Vrati se na prijavu"
+  },
+  "organization": {
+    "name": "Naziv",
+    "type": "Tip organizacije",
+    "timezone": "Vremenska zona",
+    "leaveYearStartMonth": "Mjesec početka godišnjeg odmora",
+    "leaveYearStartDay": "Dan početka godišnjeg odmora",
+    "save": "Spremi",
+    "cancel": "Odustani",
+    "error": {
+      "refused": "Ne možeš uređivati ovu organizaciju. Za izmjene trebaš ovlasti administratora.",
+      "name": "Naziv ne može biti prazan.",
+      "invalid": "Unesena vrijednost nije dopuštena.",
+      "timezone": "Vremenska zona nije poznata.",
+      "unavailable": "Spremanje trenutačno nije moguće. Pokušaj ponovno."
+    }
   }
 }
