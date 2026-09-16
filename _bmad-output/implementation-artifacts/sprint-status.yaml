@@ -115,7 +115,12 @@ development_status:
   # accent became part C and waits in deferred-work.md, earning its own key
   # when specced. So the 1-4 parent above no longer completes with part B —
   # it now closes with part C, amending the note recorded there.
-  1-4b-organization-logo: review
+  # Part B merged to main in f14dd2f (PR #7) and its spec carries status done
+  # with review_loop_iteration 0 — three adversarial layers run, seventeen
+  # findings patched, two deferred, no loopback. Reconciled 2026-09-16 in the
+  # same session that built it, so this key never went stale the way 1.2, the
+  # navigation shell and 1.4a each did.
+  1-4b-organization-logo: done
   1-5-an-admin-creates-and-edits-members-and-works-the-list-at-sca: backlog
   1-6-deactivating-a-member-changes-the-future-and-rewrites-no-his: backlog
   1-7-an-admin-creates-teams-and-moves-people-between-them: backlog
