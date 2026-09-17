@@ -418,6 +418,33 @@ verifies the outcome rather than the intent.
 > A `config push` failure is not cosmetic. Until it succeeds, that environment
 > accepts self-service signups. Treat it as a blocking step, not a follow-up.
 
+#### 5.2c The SPA and the schema: order matters, in one direction only
+
+The same shape as §5.2b, one layer up, and it became an application-wide risk in
+story 1.4c. `apps/web/src/organization/snapshot.ts` names every column it reads
+in one constant, and the navigation chrome reads that row on **every signed-in
+screen** to draw the organization's lockup and its accent. So a build that
+selects a column the database does not have yet does not degrade — PostgREST
+answers `42703 column organizations.brand_accent does not exist`, the whole read
+fails, and the shell falls back everywhere at once.
+
+```bash
+pnpm exec supabase db push      # FIRST — adds the column
+# THEN deploy the SPA that selects it
+```
+
+Backwards, the window between the two is an application in which no signed-in
+screen can read its own organization. In the documented order the window is
+harmless in the way this system's windows are meant to be: the column exists and
+the old build simply does not ask for it.
+
+This is not specific to `brand_accent`. It is true of **every column added to
+`ORGANIZATION_COLUMNS`**, and it is worse than the same mistake looked in story
+1.4b, where `logo_path` was read by `/organizacija` alone: one screen degrading
+is a screen somebody can avoid, and the chrome is on all of them. Pages
+deployments and `db push` are separate commands with no ordering between them,
+so the ordering is this runbook's to state.
+
 Then verify on staging, against the Preview deployment:
 
 - the migration appears in `supabase migration list` as applied remotely;

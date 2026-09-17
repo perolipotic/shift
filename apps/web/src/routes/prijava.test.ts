@@ -72,6 +72,32 @@ const SETTINGS = join(srcRoot, 'routes', 'organizacija.tsx');
 const CHROME = join(srcRoot, 'navigation', 'chrome.tsx');
 
 /**
+ * The organization lockup (story 1.4c): the second `.tsx` here that is not a
+ * route, and the first that renders on two surfaces at once.
+ *
+ * It is swept by everything in this file for the reason the chrome is — every
+ * claim below is a property of a file that RENDERS — and the reach is wider
+ * still: the lockup is drawn by the chrome, which is drawn above all eight
+ * destinations, AND by the settings surface. A literal smuggled in here reaches
+ * every signed-in screen in the application.
+ */
+const LOCKUP = join(srcRoot, 'organization', 'lockup.tsx');
+
+/** The curated accent set as data, and the fourth `\w*MessageKey` module. */
+const ACCENT_KEYS = join(srcRoot, 'organization', 'accent.ts');
+
+/**
+ * The one signed-URL read behind every lockup.
+ *
+ * It exists because the settings surface and the chrome had a copy each: two
+ * `queryFn`s registered for ONE query key, so whichever mounted first owned the
+ * fetch and the other's cache bound and retry policy were dead code that read
+ * as live. Every claim about how the logo URL is fetched is made against this
+ * file now, and against the two surfaces only that they route through it.
+ */
+const LOGO_URL = join(srcRoot, 'organization', 'logo-url.ts');
+
+/**
  * The seven titled placeholders still standing after story 1.4a.
  *
  * EIGHT UNTIL THIS COMMIT. `/organizacija` is a real screen now — a form with
@@ -157,7 +183,12 @@ const SCREENS = [
   // BROWSER's language — the one string on this screen that could never come
   // from `hr.json`. Its accessible name and its label binding are asserted by
   // name in the settings block below, since the general sweeps cannot see it.
-  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 8 },
+  // NINE SINCE STORY 1.4c: the accent `<select>` joined the eight. It is counted
+  // by the general sweep rather than only by its own block, because a control
+  // type known to one screen and to nothing else escapes the tap-target floor
+  // everywhere else — which is the state `<Link>` was in until the chrome
+  // brought it in.
+  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 9 },
   // ZERO on all seven, and asserted rather than assumed: a destination is a
   // heading and nothing else in this story, so the first control any of them
   // grows is a later story's work arriving without that story's review. The
@@ -185,6 +216,13 @@ const SCREENS = [
   // fourth arriving: on a component that renders above every destination in the
   // application, a control nobody reviewed is a control on eight screens.
   { name: 'the navigation chrome', file: CHROME, expectedControls: 3 },
+  // ZERO on the lockup, and it is a claim rather than an accident of what has
+  // been built: nothing about an organization's logo is pressable. It is not a
+  // link to the organization, not a menu trigger and not a home button — which
+  // is also why it is exempt from UX-DR40's 44 px floor and may be 32 px inside
+  // the phone bar, where nine real targets already compete for the width. The
+  // first handler added here would make it a control nobody measured.
+  { name: 'the organization lockup', file: LOCKUP, expectedControls: 0 },
 ];
 
 /**
@@ -554,6 +592,23 @@ function bareInputElements(text: string): string[] {
   return [...text.matchAll(/<input\b([\s\S]*?)\/>/g)].map((found) => found[1] ?? '');
 }
 
+/**
+ * Every `<select …>` opening tag's attribute block.
+ *
+ * Added by story 1.4c, and a FOURTH control detector rather than a widening of
+ * the three, for the reason `linkElements` is a third: a native `<select>` is
+ * not a `<Button>` and must not be counted as one — `expectedControls` on every
+ * other screen is a tight number, and folding a new element type into it would
+ * loosen all of them to cover one file. What it shares with a button is the
+ * only thing asserted through it: a person taps it, so UX-DR40's floor applies.
+ *
+ * Every consumer brings its own length assertion, the rule every element regex
+ * here follows.
+ */
+function selectElements(text: string): string[] {
+  return [...text.matchAll(/<select\b([\s\S]*?)>/g)].map((found) => found[1] ?? '');
+}
+
 /** Every `<Button …>` opening tag's attribute block. */
 function buttonElements(text: string): string[] {
   return [...text.matchAll(/<Button\b([^>]*?)\/?>/g)].map((found) => found[1] ?? '');
@@ -719,7 +774,45 @@ const KEY_SOURCES = [
   // `organizationMessageKey`, which is the next entry, for the reason the
   // sign-in refusals do: a ternary over codes written in a `.tsx` is executed
   // by nothing.
+  // TWELVE on the settings surface, and it is the same number for a different
+  // reason since story 1.4c. The logo's `<img>` and neutral mark moved into the
+  // shared lockup, taking the mark's borrowed `nav.organizacija` fallback with
+  // them; the accent control's own label arrived in its place. Its five OPTION
+  // names are not here — they reach `t()` through `accentMessageKey`, which is
+  // the entry below, for the reason every refusal on this screen does: a lookup
+  // written in a `.tsx` is executed by nothing.
+  //
+  // So: `nav.organizacija` as the heading, five field labels, the accent label,
+  // the save and cancel actions, the logo's own label, and the choose action
+  // rendered TWICE — once as the button's text and once as the hidden file
+  // input's `aria-label`, because the two controls are one affordance and a
+  // screen reader must hear the word the eye sees. The set comparison below
+  // dedupes, so twelve calls over eleven keys is correct rather than drift.
   { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 12 },
+  {
+    // ONE on the lockup: the accessible name it falls back to when the
+    // organization's own name is blank. `0002:72` makes that unreachable from
+    // the database, but an empty accessible name on a `role="img"` is an
+    // element a screen reader announces as nothing at all. Everything else the
+    // lockup shows is DATA — the organization's name, its logo — and data is
+    // never a key.
+    name: 'the organization lockup',
+    file: LOCKUP,
+    keys: translationKeys,
+    strings: 1,
+  },
+  {
+    // FIVE, for four curated accents and no accent — the fourth instance of the
+    // `\w*MessageKey` shape, after sign-in, the organization's refusals and the
+    // chrome's. It is a mapping rather than a list because the mutation it
+    // refuses is invisible in a diff: two swapped branches leave an
+    // organization that chose green reading `Plava`, and a `.tsx` lookup is
+    // executed by nothing (AD-15). `accent.test.ts` runs it.
+    name: 'the accent-to-label mapping',
+    file: ACCENT_KEYS,
+    keys: messageKeyUnion,
+    strings: 5,
+  },
   {
     // TEN since story 1.4b, and one function rather than two: the surface
     // shows exactly one message region, so a second mapping would need a
@@ -1471,14 +1564,23 @@ describe('every control on the screen clears the 44 px tap-target floor', () => 
     // — which is how the organization prompt's own two controls got covered.
     const screen = source(file);
 
-    const controls = [...inputElements(screen), ...buttonElements(screen)];
+    // THREE DETECTORS, not two. `<select>` joined in story 1.4c, and it joined
+    // the GENERAL sweep rather than only the named block that introduced it:
+    // a control type known to one screen's own block and to nothing else is a
+    // control type that escapes the floor and the count everywhere else, which
+    // is exactly the state `<Link>` was in until the chrome brought it in.
+    const controls = [
+      ...inputElements(screen),
+      ...buttonElements(screen),
+      ...selectElements(screen),
+    ];
 
     // NON-VACUITY. Without this the loop asserts nothing on a screen it finds
     // no controls on, and it already found none on two of the four — so half
     // its cases were passing on an empty set while reading as coverage. It also
-    // records the detectors' reach: both match self-closing `<Input />` and
-    // `<Button` only, so a raw `<button>` or a future primitive is invisible
-    // here and the count is what would notice it disappearing.
+    // records the detectors' reach: they match self-closing `<Input />`,
+    // `<Button` and `<select` only, so a raw `<button>` or a future primitive is
+    // invisible here and the count is what would notice it disappearing.
     expect(controls.length, `no control detected on ${file}`).toBe(expectedControls);
 
     for (const element of controls) {
@@ -1686,20 +1788,29 @@ describe('every field on the settings surface carries an accessible name', () =>
    * field whose value decides what timezone the whole organization renders in.
    */
   it('gives every field a label bound by htmlFor, and every label a field', () => {
+    // SIX LABELLED FIELDS since story 1.4c: the five `<Input>`s and the accent
+    // `<select>`. The select is counted through its own detector rather than
+    // folded into `inputElements`, for the reason `linkElements` is separate —
+    // every other screen's `<Input>` count is a tight number, and widening a
+    // shared detector to cover one file loosens all of them. What matters here
+    // is that nothing on the screen is labelled by accident: every control has
+    // an id a `<Label>` names, and every `<Label>` names a control that exists.
     const screen = source(SETTINGS);
     const targets = labelTargets(screen);
     const inputs = inputElements(screen);
-    const ids = inputs.map((input) => attributeOf(input, 'id'));
+    const selects = selectElements(screen);
+    const ids = [...inputs, ...selects].map((element) => attributeOf(element, 'id'));
 
     expect(inputs).toHaveLength(5);
-    expect(targets).toHaveLength(5);
-    expect(ids, 'an <Input> carries no id, so no <Label> can name it').not.toContain(null);
+    expect(selects, 'the accent control is not a select any more').toHaveLength(1);
+    expect(targets).toHaveLength(6);
+    expect(ids, 'a field carries no id, so no <Label> can name it').not.toContain(null);
     expect(new Set(ids).size, 'two fields share one id').toBe(ids.length);
     for (const id of ids) {
       expect(targets, `no <Label htmlFor> points at ${String(id)}`).toContain(id);
     }
     for (const target of targets) {
-      expect(ids, `<Label htmlFor="${target}"> points at no input`).toContain(target);
+      expect(ids, `<Label htmlFor="${target}"> points at no field`).toContain(target);
     }
   });
 
@@ -1906,36 +2017,9 @@ describe('the logo control the general sweeps structurally cannot see', () => {
     for (const element of buttonElements(screen)) {
       expect(
         element,
-        `a control is disabled by only one of the two in-flight flags: ${element}`,
-      ).toMatch(/disabled=\{(?:pending \|\| uploadingLogo|busy)\}/);
+        `a control is disabled by only some of the in-flight flags: ${element}`,
+      ).toMatch(/disabled=\{busy\}/);
     }
-  });
-
-  it('renders the logo it has, and a neutral mark carrying the name when it has none', () => {
-    // The acceptance criterion, as far as source text can carry it: the preview
-    // is conditioned on there being a URL, and BOTH branches name the
-    // organization — one as `alt`, one as the mark's accessible name. Neither
-    // says anything about an absence, which is the voice rule and also why
-    // there is no key for it in `hr.json`.
-    const screen = source(SETTINGS);
-
-    expect(screen, 'the preview is not conditioned on there being a URL').toMatch(
-      /logoUrl === null \?/,
-    );
-    expect(screen, 'the fallback carries no accessible name').toMatch(
-      /aria-label=\{mark === null \? t\('nav\.organizacija'\) : organization\.name\}/,
-    );
-    expect(screen, 'the logo renders with no alternative text').toContain(
-      'alt={organization.name}',
-    );
-    // A WHOLE CODE POINT, and the helper that takes it is executed in
-    // `logo.test.ts`. `slice(0, 1)` splits a surrogate pair and orphans a
-    // combining caron, and Croatian diacritic coverage is an explicit
-    // requirement of this project.
-    expect(screen, 'the mark is cut out of the name by code unit').not.toContain('.slice(0, 1)');
-    expect(screen, 'the mark is not derived through the tested helper').toContain(
-      'organizationLogoMark(organization.name)',
-    );
   });
 
   it('never renders a broken image, however the signed URL stops working', () => {
@@ -1944,30 +2028,40 @@ describe('the logo control the general sweeps structurally cannot see', () => {
     // acceptance criterion forbids. Two defences, both asserted: the cache is
     // bounded below the expiry, and the element falls back when the load fails
     // for any reason a timer cannot predict.
-    const screen = source(SETTINGS);
+    //
+    // ASSERTED ON THE ONE MODULE THAT FETCHES IT since story 1.4c. Both surfaces
+    // read the same logo under the same derived key, and they had a copy of this
+    // machinery each — two `queryFn`s for one key, so whichever mounted first
+    // owned the fetch and the other copy's bounds were dead code. The three
+    // defences are properties of the read, so they live where the read is.
+    const reader = source(LOGO_URL);
 
-    expect(screen, 'the img has no failure path, so a dead URL renders as a broken image').toContain(
-      'onError={markLogoUnrenderable}',
+    expect(reader, 'the derived key is not the snapshot’s own').toContain(
+      'queryKey: organizationLogoKey(logoPath)',
     );
-    expect(screen, 'the signed URL is cached without regard for its expiry').toContain(
+    expect(reader, 'the signed URL is cached without regard for its expiry').toContain(
       'staleTime: LOGO_URL_STALE_MS',
     );
-    expect(screen, 'a settled refusal is retried as though it were slow').toContain('retry: false');
-  });
+    expect(reader, 'a settled refusal is retried as though it were slow').toContain('retry: false');
+    expect(reader, 'storage is asked even when the column says there is nothing').toContain(
+      'enabled: logoPath !== null',
+    );
+    expect(reader, 'a URL the browser cannot load is never taken back').toContain(
+      'setUnrenderable(readable)',
+    );
 
-  it('draws a skeleton for the logo while the one read is still pending', () => {
-    // UX-DR40 asks for a skeleton rather than a spinner, and the reason it
-    // belongs on this block specifically is layout: without it the card has no
-    // logo at all until the row arrives and then grows one, moving every control
-    // below it under whatever the pointer was already heading for.
-    const gated = componentFunction(source(SETTINGS), 'renderLogo');
+    // And both surfaces route through it rather than round it.
+    for (const file of [SETTINGS, CHROME]) {
+      const screen = source(file);
 
-    expect(gated, 'no renderLogo function to read').not.toBe('');
-    expect(gated, 'the logo block renders no skeleton').toContain('animate-pulse');
-    expect(
-      gated,
-      'the skeleton is not conditioned on the query being pending, so a settled failure pulses forever',
-    ).toMatch(/isPending[\s\S]{0,120}?animate-pulse/);
+      expect(screen, 'a surface fetches the signed URL itself').toContain('useRenderableLogo(');
+      expect(screen, 'a surface still registers its own logo query').not.toContain(
+        'queryKey: organizationLogoKey(',
+      );
+      expect(screen, 'the lockup has no failure path, so a dead URL renders broken').toContain(
+        'onUnrenderable={logo.onUnrenderable}',
+      );
+    }
   });
 
   it('never sends the logo reference from the form submit', () => {
@@ -2059,9 +2153,13 @@ describe('the logo control the general sweeps structurally cannot see', () => {
     // identical on screen, by design — that is the matrix's own row. Which is
     // exactly why the read has to leave a trace somewhere: silence is how a
     // misconfigured bucket stays undiagnosed, and `uploadLogo` already logs.
-    const reader = componentFunction(source(SETTINGS), 'renderableLogo');
+    // READ OFF THE SHARED MODULE since story 1.4c, and the placement is the
+    // claim: the logging sits in the query FUNCTION rather than beside an
+    // element, which is what makes "reported once, not per layout" true — the
+    // chrome renders the lockup into two bars.
+    const reader = componentFunction(source(LOGO_URL), 'signedLogoUrl');
 
-    expect(reader, 'no renderableLogo function to read').not.toBe('');
+    expect(reader, 'no signedLogoUrl function to read').not.toBe('');
     expect(reader, 'a failed read reports nothing at all').toMatch(
       /!outcome\.ok[\s\S]{0,80}?console\.error\(/,
     );
@@ -2415,6 +2513,513 @@ describe('the organization prompt reaches the tenant it was given', () => {
       /navigate\([\s\S]{0,200}?\.catch\(/,
     );
     expect(handler, 'the rejected navigation reports nothing').toContain('console.error(');
+  });
+});
+
+describe('the lockup the chrome and the settings surface share', () => {
+  /**
+   * STORY 1.4c. Until this commit the only place an organization's own logo
+   * appeared was the screen where you upload it; the lockup is what puts it in
+   * the navigation chrome, on every signed-in screen at every width.
+   *
+   * ONE COMPONENT, and that is the claim this block opens with. Written twice
+   * it would be two answers to "what does an organization with no logo look
+   * like" — the fallback, the accessible name, the broken-image path and the
+   * accent are four decisions each, and eight decisions in two places is eight
+   * opportunities for one copy to be fixed.
+   */
+
+  it('is the one place either surface draws a logo or a mark', () => {
+    // MUTATION-PROVEN SHAPE. A `<img src={logoUrl}` left behind on the settings
+    // surface would render correctly, pass every sweep in this file, and go on
+    // being the copy nobody updates when the fallback changes.
+    for (const file of [SETTINGS, CHROME]) {
+      const screen = source(file);
+
+      expect(screen, 'a surface renders the lockup twice or not at all').toContain(
+        '<OrganizationLockup',
+      );
+      expect(screen, 'a surface draws its own image instead of the lockup').not.toContain('<img');
+      expect(screen, 'a surface draws its own neutral mark instead of the lockup').not.toContain(
+        'role="img"',
+      );
+    }
+  });
+
+  it('renders the logo it has, and a neutral mark carrying the name when it has none', () => {
+    // The acceptance criterion, as far as source text can carry it: the mark is
+    // conditioned on there being no URL, and BOTH branches name the
+    // organization — one as `alt`, one as the mark's accessible name. Neither
+    // says anything about an absence, which is the voice rule and also why
+    // `hr.json` has no key for one.
+    const lockup = source(LOCKUP);
+
+    // ANCHORED ON THE BRANCH ITSELF, not on the expression appearing somewhere.
+    // MUTATION-PROVEN GAP: a bare `/logoUrl === null/` is satisfied by
+    // `if (logoUrl !== null || logoUrl === null)`, which draws the neutral mark
+    // over a logo that loads perfectly — the acceptance criterion inverted, with
+    // 314 tests green.
+    expect(lockup, 'the mark is not conditioned on there being no URL').toMatch(
+      /\bif \(logoUrl === null\) \{/,
+    );
+    // And the two branches are the two branches: the mark inside it, the image
+    // after it. A file that drew both, or neither in the right order, satisfies
+    // every `toContain` below on its own.
+    const branch = lockup.indexOf('if (logoUrl === null) {');
+
+    expect(lockup.indexOf('role="img"'), 'the mark is not the no-URL branch').toBeGreaterThan(
+      branch,
+    );
+    expect(lockup.indexOf('<img'), 'the image is not the branch with a URL').toBeGreaterThan(
+      lockup.indexOf('role="img"'),
+    );
+    // ONE FALLBACK FOR BOTH BRANCHES, derived once. `alt=""` is how HTML says
+    // "this image is decorative", so an organization whose name is blank had a
+    // logo a screen reader announced as nothing at all — the `<img>` took the
+    // raw name while only the mark fell back. Asserted as one binding rather
+    // than as two, because two are two things that can come apart.
+    expect(lockup, 'the accessible name is not derived from the name and a fallback').toMatch(
+      /const named = mark === null \? t\('organization\.lockup'\) : organization\.name;/,
+    );
+    expect(lockup, 'the fallback carries no accessible name').toContain('aria-label={named}');
+    expect(lockup, 'the logo can render with no alternative text').toContain('alt={named}');
+    expect(lockup, 'the image takes the raw name rather than the fallback').not.toContain(
+      'alt={organization.name}',
+    );
+    // A WHOLE CODE POINT, and the helper that takes it is executed in
+    // `logo.test.ts`. `slice(0, 1)` splits a surrogate pair and orphans a
+    // combining caron, and Croatian diacritic coverage is an explicit
+    // requirement of this project.
+    expect(lockup, 'the mark is cut out of the name by code unit').not.toContain('.slice(0, 1)');
+    expect(lockup, 'the mark is not derived through the tested helper').toContain(
+      'organizationLogoMark(organization.name)',
+    );
+  });
+
+  it('draws a skeleton while the one read is still pending', () => {
+    // UX-DR40 asks for a skeleton rather than a spinner, and the reason it
+    // belongs on the lockup is layout: without it neither the card nor the bar
+    // has a lockup at all until the row arrives and then grows one, moving
+    // everything beside it under whatever the pointer was already heading for.
+    const lockup = source(LOCKUP);
+
+    expect(lockup, 'the lockup renders no skeleton').toContain('animate-pulse');
+    expect(
+      lockup,
+      'the skeleton is not conditioned on the read being pending, so a settled failure pulses forever',
+    ).toMatch(/pending \?[\s\S]{0,120}?animate-pulse/);
+  });
+
+  it('takes the accent through the module that bounds where a tint may land', () => {
+    // UX-DR5 scopes the tint to the application shell and the logo lockup. The
+    // bound is only a bound while both consumers read it from the one module
+    // that defines the three slots — a `bg-brand-<key>` written here would be a
+    // fifth place the accent lives, unexecutable by `accent.test.ts`, and free
+    // to land on something the scope does not admit.
+    //
+    // SPELLED WITH A PLACEHOLDER rather than with a real key, deliberately:
+    // Tailwind's scanner is TEXT-based and reads comments, so a whole class
+    // name written in prose anywhere under `apps/web/src` emits that rule into
+    // the built sheet — which silently satisfied
+    // `test/theme-applied.test.ts`'s loopback guard while the module that is
+    // supposed to produce that class had stopped.
+    // `accent.test.ts` sweeps for the same mistake across the tree.
+    for (const file of [LOCKUP, CHROME]) {
+      const screen = source(file);
+
+      expect(screen, 'the accent is not resolved through the curated module').toContain(
+        'brandAccentAppearance(',
+      );
+      expect(screen, 'a brand accent class is written by hand').not.toMatch(
+        /(?:bg|text|border)-brand-/,
+      );
+    }
+  });
+
+  it('is not a control, and holds no handler that would make it one', () => {
+    // `expectedControls: 0` above says nothing was COUNTED; this says nothing
+    // is there. The lockup is 32 px in the phone bar, which is only defensible
+    // while it is not pressable — an `onClick` here would put a target 12 px
+    // under UX-DR40's floor on every signed-in screen in the application.
+    const lockup = source(LOCKUP);
+
+    for (const forbidden of ['onClick', '<Button', '<Link', 'href', 'navigate(']) {
+      expect(lockup, `the lockup carries ${forbidden}, which makes it a control`).not.toContain(
+        forbidden,
+      );
+    }
+  });
+});
+
+describe('the lockup reaches both layouts, not merely the one on a laptop', () => {
+  /**
+   * MUTATION-PROVEN GAP, and the same one `{exit}` closed: the destinations and
+   * the exit are rendered into two bars from two variables, and deleting one of
+   * the two references leaves every count, every responsive class and every
+   * accessible name untouched. A lockup in the sidebar alone is a phone build
+   * with no branding at all, on the device this epic's whole argument is built
+   * around — and nobody testing at laptop width would ever see it.
+   */
+  /**
+   * The phone layout's sticky container.
+   *
+   * It is a `<div>` rather than the `<nav>` since the 1.4c review: the lockup is
+   * branding, not a destination, so it belongs outside the navigation landmark —
+   * and it was inside this one while sitting outside the sidebar's, which made a
+   * phone announce an image as part of the navigation that a laptop correctly
+   * did not. The wrapper holds the lockup and the landmark, exactly as the
+   * `<aside>` does. Non-greedy to its own closing tag, which is correct while it
+   * holds no nested `<div>`; the consumers assert what is inside it, so the day
+   * one arrives fails loudly rather than silently widening.
+   */
+  const phoneBar = (chrome: string): string =>
+    /<div\s+className=\{`sticky[\s\S]*?<\/div>/.exec(chrome)?.[0] ?? '';
+
+  it('renders the lockup once, into the sidebar and into the phone bar', () => {
+    const chrome = source(CHROME);
+    const aside = /<aside\b[\s\S]*?<\/aside>/.exec(chrome)?.[0] ?? '';
+    const bar = phoneBar(chrome);
+
+    expect(aside, 'no <aside> to read').not.toBe('');
+    expect(bar, 'no phone bar to read').not.toBe('');
+
+    // COMPUTED ONCE and rendered twice, exactly as `destinations` and `exit`
+    // are: two copies of the element would be two places for the fallback, the
+    // accessible name and the accent to drift, and two console entries for one
+    // unreadable logo.
+    expect(
+      [...chrome.matchAll(/<OrganizationLockup\b/g)],
+      'the chrome builds more than one lockup',
+    ).toHaveLength(1);
+    expect(aside, 'the sidebar renders no lockup').toContain('{lockup}');
+    expect(bar, 'the phone bar renders no lockup').toContain('{lockup}');
+  });
+
+  it('keeps the lockup out of both navigation landmarks, not just one of them', () => {
+    // BRANDING IS NOT A DESTINATION. The lockup sat inside the phone `<nav>` and
+    // outside the sidebar's until the 1.4c review, so the same image was part of
+    // the navigation landmark on a phone and not on a laptop — and it sat inside
+    // the `overflow-x-auto` region whose own comment says nine 44 px targets
+    // already do not fit across a phone, stealing width from them and scrolling
+    // away from the person it identifies.
+    const chrome = source(CHROME);
+    const bars = navBlocks(chrome);
+
+    expect(bars, 'the chrome does not render exactly two navigation bars').toHaveLength(2);
+    for (const bar of bars) {
+      expect(bar, `a navigation landmark carries the lockup: ${bar}`).not.toContain('{lockup}');
+      // And the destinations and the exit are still INSIDE the landmark, which
+      // is the half this could otherwise break by moving everything out.
+      expect(bar, `a navigation bar renders no destinations: ${bar}`).toContain('{destinations}');
+      expect(bar, `a navigation bar renders no exit: ${bar}`).toContain('{exit}');
+    }
+    // The scroller is the landmark, so the lockup is beside it rather than in it.
+    expect(
+      phoneBar(chrome).slice(0, phoneBar(chrome).indexOf('<nav')),
+      'the lockup is not the phone bar’s first child, before the scrolling landmark',
+    ).toContain('{lockup}');
+  });
+
+  it('tints the shell chrome itself, in both layouts', () => {
+    // THE OTHER HALF OF UX-DR5: the accent reaches the lockup AND the shell
+    // chrome. Both edges, because either one alone is an application tinted at
+    // exactly the widths the person testing it happened to use.
+    const chrome = source(CHROME);
+    const aside = /<aside\b[^>]*>/.exec(chrome)?.[0] ?? '';
+
+    expect(aside, 'the sidebar edge carries no accent').toContain('${accent.edge}');
+    expect(phoneBar(chrome), 'the phone bar edge carries no accent').toContain('${accent.edge}');
+    expect(chrome, 'the accent is not resolved through the curated module').toContain(
+      'brandAccentAppearance(',
+    );
+  });
+
+  it('reads the organization under the one key the settings surface uses', () => {
+    // AD-13 forbids two figures on a screen coming from two READS, not a second
+    // consumer of one key. `ORGANIZATION_SNAPSHOT_KEY` is a single constant over
+    // the one `QueryClient` `main.tsx` builds, so the chrome and `/organizacija`
+    // share a cache entry; two keys — or an inline `['organization']` written by
+    // hand here — would be the violation this asserts against.
+    const chrome = source(CHROME);
+
+    expect(chrome, 'the chrome does not read the organization at all').toContain(
+      'queryKey: ORGANIZATION_SNAPSHOT_KEY',
+    );
+    expect(chrome, 'the chrome spells the snapshot key by hand').not.toContain("['organization']");
+    expect(chrome, 'the chrome fetches the signed URL itself').toContain('useRenderableLogo(');
+  });
+
+  it('bounds the read it performs on every signed-in screen', () => {
+    // THE COST OF READING EVERYWHERE. The settings surface's copy of this read
+    // is a screen somebody opens deliberately; this one mounts on every
+    // destination, so unbounded it refetches the row on every navigation and
+    // every window focus — for a border colour and a logo — and retries a
+    // transport fault three times before settling.
+    const chrome = source(CHROME);
+    const read = /const organizationRead = useQuery\(\{[\s\S]*?\n {2}\}\);/.exec(chrome)?.[0] ?? '';
+
+    expect(read, 'no organization query to read').not.toBe('');
+    expect(read, 'the chrome re-reads the organization on every mount and focus').toContain(
+      'staleTime: ORGANIZATION_READ_STALE_MS',
+    );
+    expect(read, 'a settled refusal is retried as though it were slow').toContain('retry: false');
+  });
+
+  it('keeps an unreadable organization out of the message region, but not out of the log', () => {
+    // The story's matrix: navigation still renders, the lockup falls back, and
+    // the failure is REPORTED — to the console, where somebody can diagnose it,
+    // and not to the one `role="alert"` region. That region carries the two
+    // refusals a person can act on, and a third message about branding they
+    // cannot change would compete with them to be announced.
+    //
+    // The logging is in the query FUNCTION rather than beside an element, which
+    // is what makes "reported once, not per layout" true: the lockup renders
+    // into two bars, so a `console.error` at the call site fires twice at every
+    // width where both are in the tree.
+    const chrome = source(CHROME);
+    const reader = componentFunction(chrome, 'readBranding');
+
+    expect(reader, 'no readBranding function to read').not.toBe('');
+    expect(reader, 'an unreadable organization is never reported at all').toMatch(
+      /!outcome\.ok[\s\S]{0,80}?console\.error\(/,
+    );
+    expect(
+      chrome,
+      'the organization read feeds the alert region, which is about the role and the exit',
+    ).not.toMatch(/organizationMessageKey\(/);
+  });
+});
+
+describe('the accent control offers a curated set and nothing else', () => {
+  /**
+   * STORY 1.4c, and this block exists for the reason the logo picker's does:
+   * the control is a native `<select>`, which is neither an `<Input>` nor a
+   * `<Button>`, so every general sweep in this file structurally cannot see it.
+   * Each property it would otherwise have inherited is claimed here by name.
+   */
+
+  it('is exactly one select, with an accessible name and the 44 px floor', () => {
+    const screen = source(SETTINGS);
+    const selects = selectElements(screen);
+
+    // NON-VACUITY first: with no `<select>` found, every assertion below would
+    // pass against an empty string and read as coverage.
+    expect(selects, 'no accent control on the settings surface').toHaveLength(1);
+
+    const control = selects[0] ?? '';
+    const id = attributeOf(control, 'id');
+
+    expect(id, 'the accent control carries no id to name it by').not.toBeNull();
+    expect(screen, `no <Label htmlFor="${String(id)}">`).toContain(`htmlFor="${String(id)}"`);
+    expect(labelTargets(screen), 'the accent control is not labelled').toContain(String(id));
+    expect(control, 'the accent control describes nothing when the write is refused').toMatch(
+      /aria-describedby=\{[^}]*refusal[^}]*\}/,
+    );
+    expect(control, 'the in-flight state is not announced').toMatch(/aria-busy=\{[^}]+\}/);
+    // DISABLED BY THE OTHER TWO HANDLERS AND NOT BY ITS OWN WRITE. `disabled` on
+    // an element that currently has focus moves focus to `<body>`, so a control
+    // that disables itself from inside its own `onChange` ejects every keyboard
+    // user from it on every choice — and then re-enables itself somewhere they
+    // are no longer standing. Its own second change is serialised instead.
+    expect(control, 'the accent control is not locked while another write runs').toMatch(
+      /disabled=\{writingElsewhere\}/,
+    );
+    expect(
+      control,
+      'the accent control disables itself from inside its own change handler',
+    ).not.toMatch(/disabled=\{busy\}/);
+
+    const measured = heightPx(attributeOf(control, 'className'));
+
+    expect(measured, 'the accent control declares no usable height class').not.toBeNull();
+    expect(measured).toBeGreaterThanOrEqual(TARGET_FLOOR_PX);
+
+    // THE AFFORDANCES ITS FIVE NEIGHBOURS GET FROM THE PRIMITIVE. This one is a
+    // native element styled by hand, so everything `components/ui/input.tsx`
+    // composes it has to be composed here — and the two that are invisible in a
+    // screenshot are the two that matter: a keyboard user with no focus ring
+    // cannot see where they are, and a disabled control that looks identical to
+    // a live one is a control people press. The boundary is `--input`'s, which
+    // is the token story 1.1d raised to 3.23:1 for WCAG 1.4.11.
+    const composed = attributeOf(control, 'className') ?? '';
+
+    expect(composed, 'the accent control draws no focus indicator').toContain(
+      'focus-visible:ring-ring',
+    );
+    expect(composed, 'the accent control looks the same disabled as live').toContain(
+      'disabled:opacity-50',
+    );
+    expect(composed, 'the accent control does not draw the raised input boundary').toContain(
+      'border-input',
+    );
+  });
+
+  it('offers the curated options rather than a set written into the screen', () => {
+    // A LIST WRITTEN HERE would be a fifth copy of the accent set — after the
+    // check constraint, the tokens, the module and `hr.json` — and the one
+    // copy no test could compare against the others. The options come from the
+    // module `accent.test.ts` pins to `0006`, and their names come from the
+    // mapping it executes.
+    const screen = source(SETTINGS);
+
+    expect(screen, 'the options are not read off the curated set').toContain(
+      'BRAND_ACCENT_OPTIONS.map(',
+    );
+    expect(screen, 'the option names are not resolved through the tested mapping').toContain(
+      't(accentMessageKey(option))',
+    );
+  });
+
+  it('offers no way to express a colour, which is the whole of the curation', () => {
+    // The frozen "Never": no free-form colour input, no hex field, no colour
+    // picker. Every colour in this application has its contrast measured at
+    // BUILD time, and any of these three would move that guarantee to runtime —
+    // which would need a contrast function in `apps/web/src`, where there is
+    // none.
+    const screen = source(SETTINGS);
+
+    expect(screen, 'the screen offers a native colour picker').not.toContain('type="color"');
+    expect(screen, 'the screen accepts a hand-written colour').not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+    for (const forbidden of ['oklch(', 'rgb(', 'hsl(', 'setProperty']) {
+      expect(screen, `the screen names ${forbidden}`).not.toContain(forbidden);
+    }
+  });
+
+  it('serialises a second choice rather than dropping it', () => {
+    // A `<select>` fires a change per ARROW KEY in several browsers, so somebody
+    // arrowing to the accent they want passes through the ones in between —
+    // and a handler that returns early while a write is in flight would leave
+    // the row holding whichever one they passed through first. Latest wins: the
+    // choice made over the top is held and applied when the first settles.
+    const accentWrite = componentFunction(source(SETTINGS), 'applyAccent');
+
+    expect(accentWrite, 'no applyAccent function to read').not.toBe('');
+    expect(accentWrite, 'a second choice is dropped on the floor').toMatch(
+      /tinting\.current[\s\S]{0,120}?queuedAccent\.current = accent/,
+    );
+    expect(accentWrite, 'the queued choice is never applied').toMatch(
+      /finally[\s\S]{0,400}?applyAccent\(next\)/,
+    );
+  });
+
+  it('keeps a failed refetch out of the write’s own outcome', () => {
+    // The row has already changed by the time the invalidation runs, so a
+    // refetch that rejects must not be reported as a refused save: that tells
+    // somebody their accent was rejected while the database holds it and the
+    // next reload shows it. Its own `catch`, and no `setFailure` inside it.
+    const accentWrite = componentFunction(source(SETTINGS), 'applyAccent');
+    const invalidation =
+      /try \{\s*await queryClient\.invalidateQueries[\s\S]*?catch[\s\S]*?\n {6}\}/.exec(
+        accentWrite,
+      )?.[0] ?? '';
+
+    expect(invalidation, 'the invalidation is not guarded at all').not.toBe('');
+    expect(invalidation, 'a failed refetch reports the landed write as refused').not.toContain(
+      'setFailure(',
+    );
+    expect(invalidation, 'a failed refetch is swallowed in silence').toContain('console.error(');
+  });
+
+  it('shows what the row holds beside the control that changes it', () => {
+    // THE ONLY CONFIRMATION this write gets. Every other write on this screen is
+    // attached to a Save button, so its `aria-busy` going off beside a button
+    // the person pressed is the signal; the accent writes on change, and
+    // `aria-busy` alone announces that something started and never that it
+    // landed. `role="status"` rather than a second `role="alert"`, which would
+    // be a second assertive thing competing to be announced.
+    //
+    // READ OUT OF THE SNAPSHOT and not out of the control, which is the half
+    // that makes it honest: after a refusal the control shows what was chosen
+    // and this shows what the database holds, and the difference is the thing
+    // somebody needs to see.
+    const screen = source(SETTINGS);
+
+    expect(screen, 'nothing reports what the stored accent is').toContain('role="status"');
+    expect(screen, 'the status line is read off the control rather than the row').toContain(
+      'storedAccentLabel(organization.brandAccent)',
+    );
+    // AND IT SAYS WHAT THE ROW HOLDS even when this build has no name for it.
+    // `accentMessageKey` folds an unrecognised key to `Neutralna`, which is
+    // right for the class it resolves and a lie here.
+    const label = componentFunction(screen, 'storedAccentLabel');
+
+    expect(label, 'no storedAccentLabel function to read').not.toBe('');
+    expect(label, 'the status line renames an accent it cannot resolve').toMatch(
+      /brandAccentOf\(accent\) === null && accent !== null/,
+    );
+  });
+
+  it('shows an accent this build cannot render rather than claiming there is none', () => {
+    // A row written by a newer build is an ordinary state during a deploy.
+    // Collapsed into `Neutralna`, the control claimed the organization had no
+    // accent AND made every other option unreachable by keyboard — selecting the
+    // option already shown fires no change event, so there was no path back to
+    // the `null` the screen was claiming to display. Rendered as its own option,
+    // the row is described honestly and every other option is one change away.
+    const screen = source(SETTINGS);
+
+    expect(screen, 'an unrenderable stored accent is hidden behind the neutral option').toMatch(
+      /brandAccentOf\(organization\.brandAccent\) === null &&/,
+    );
+    expect(screen, 'the unknown option carries no value').toContain(
+      '<option value={organization.brandAccent}>',
+    );
+    // Its label is the stored VALUE, because this build has no name for it —
+    // and data is never a key.
+    expect(screen, 'the unknown accent is given a translated name it cannot have').toContain(
+      '{organization.brandAccent}</option>',
+    );
+  });
+
+  it('writes the accent on its own, never on the form submit', () => {
+    // THE CLOBBER the three disjoint write shapes exist to prevent, and the
+    // accent's case is the sharper one: its control sits INSIDE the form, so a
+    // submit that also carried `brandAccent` would overwrite a choice made
+    // while somebody was typing, and an accent write that carried the five
+    // fields would push a half-typed name the moment the picker was touched.
+    const screen = source(SETTINGS);
+    const handler = submitHandler(screen);
+    const accentWrite = componentFunction(screen, 'applyAccent');
+
+    expect(handler, 'no submit handler to read').not.toBe('');
+    expect(handler, 'the identity save carries the accent with it').not.toContain('brandAccent');
+    expect(accentWrite, 'no applyAccent function to read').not.toBe('');
+    expect(accentWrite, 'the accent write does not go through the tested module').toContain(
+      'updateOrganization(',
+    );
+    expect(accentWrite, 'the accent write carries the identity fields with it').not.toContain(
+      'nameField',
+    );
+    // ONE INVALIDATION, under the key the chrome reads too, so the shell tints
+    // itself from the same refetch rather than from a second read.
+    expect(accentWrite, 'nothing refreshes the shell after the accent is written').toContain(
+      'invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY })',
+    );
+  });
+
+  it('keeps the choice on screen when the write is refused', () => {
+    // UX-DR34: a refused save names the problem and keeps every entered value.
+    // The control is UNCONTROLLED like the five inputs beside it — `defaultValue`
+    // and no `value` — so a refusal leaves it showing what was chosen instead of
+    // snapping back to the stored accent, which would look like the press did
+    // nothing.
+    const control = selectElements(source(SETTINGS))[0] ?? '';
+
+    expect(control, 'no accent control to read').not.toBe('');
+    expect(control, 'the accent control is not seeded from the snapshot').toContain(
+      'defaultValue={organization.brandAccent ?? NO_BRAND_ACCENT}',
+    );
+    // REMOUNTED WHEN THE ROW CHANGES. `defaultValue` sets `defaultSelected` at
+    // MOUNT and never again, so after a successful write the element's RESET
+    // state still named the accent the row held when the screen opened — and
+    // `Cancel` is `type="reset"`, so pressing it snapped the control back to an
+    // accent the database no longer holds while the shell stayed tinted.
+    expect(control, 'the control never remounts, so Cancel restores a stale accent').toContain(
+      'key={organization.brandAccent ?? NO_BRAND_ACCENT}',
+    );
+    expect(control, 'the accent control is controlled, so a refusal discards the choice').not.toMatch(
+      /(?<![A-Za-z])value=\{/,
+    );
   });
 });
 

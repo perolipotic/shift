@@ -101,6 +101,50 @@ describe('the built stylesheet consumes the tokens it defines', () => {
     ).not.toBeNull();
   });
 
+  /**
+   * The curated accents, as RULES rather than as declarations (story 1.4c).
+   *
+   * THE SAME LOOPBACK `.border-input` closed, in a new place and with a wider
+   * blast radius. Every accent's colour is authored in `index.css` and measured
+   * in `theme-contrast.test.ts`, and none of that says a single pixel is
+   * painted: a utility class only exists in the built sheet if some source file
+   * asks for it by its WHOLE NAME. Tailwind resolves classes by scanning source
+   * text, so the obvious review simplification — replacing
+   * `@/organization/accent`'s hand-written table with
+   * `` `bg-brand-${key}` `` — emits no `.bg-brand-*` rule at all while every
+   * source-level assertion in the repository keeps passing, and no accent
+   * paints for anybody.
+   *
+   * ONE OF EACH OF THE THREE SHAPES the accent uses, bound to the custom
+   * property it must resolve to: a fill, a border and a foreground. The
+   * foreground is the one the contrast measurement is actually about — a fill
+   * that ships without its text colour is a mark whose letter is whatever the
+   * page inherited.
+   *
+   * THE CLASS NAMES LIVE IN THIS FILE, which is outside `apps/web` and so
+   * outside what Tailwind scans — and that placement is load-bearing rather
+   * than incidental. The scanner is TEXT-based and reads comments too, so a
+   * whole class name written in prose anywhere under `apps/web/src` emits that
+   * rule into the built sheet whether or not anything renders it: one such
+   * comment in `routes/prijava.test.ts` kept `.bg-brand-blue` alive through a
+   * mutation that had stopped the accent module producing any class at all,
+   * which is this guard passing on evidence it manufactured itself.
+   */
+  it.skipIf(notBuilt).each([
+    { utility: 'bg-brand-blue', property: 'background-color', token: 'brand-blue' },
+    { utility: 'border-brand-violet', property: 'border-color', token: 'brand-violet' },
+    { utility: 'text-brand-amber-foreground', property: 'color', token: 'brand-amber-foreground' },
+  ])('emits a $utility rule resolving to --$token', ({ utility, property, token }) => {
+    const rule = new RegExp(`\\.${utility}\\s*\\{[^}]*${property}:\\s*var\\(--${token}\\)`).exec(
+      builtCss(),
+    );
+
+    expect(
+      rule,
+      `no .${utility} rule in the built sheet — the accent is defined, measured, and painted by nothing`,
+    ).not.toBeNull();
+  });
+
   // Counting all `var(--…)` would be vacuous: Tailwind's own preflight already
   // emits eight (--spacing, --text-sm, --font-mono and friends), so deleting
   // the entire @layer base block still cleared a bare `> 2`. Only theme tokens

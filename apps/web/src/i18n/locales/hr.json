@@ -44,6 +44,13 @@
     "leaveYearStartDay": "Dan početka godišnjeg odmora",
     "logo": "Logotip",
     "logoChoose": "Odaberi sliku",
+    "lockup": "Logotip organizacije",
+    "accent": "Naglasak",
+    "accentNone": "Neutralna",
+    "accentBlue": "Plava",
+    "accentGreen": "Zelena",
+    "accentAmber": "Jantarna",
+    "accentViolet": "Ljubičasta",
     "save": "Spremi",
     "cancel": "Odustani",
     "error": {

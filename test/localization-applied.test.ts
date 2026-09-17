@@ -106,6 +106,20 @@ const SOURCES = [
   // chunk built before an edit to it compares `hr.json` against output that
   // never saw the four logo messages.
   join(webRoot, 'src', 'organization', 'logo.ts'),
+  // Story 1.4c's two. `accent.ts` owns five `t()` keys as a return-type union,
+  // exactly as `messages.ts` does, AND the Tailwind class literals the tint is
+  // made of — so a chunk built before an edit to it compares `hr.json` against
+  // output that never saw the accent names. `lockup.tsx` is the component that
+  // renders `organization.lockup`, and it renders in the chrome as well as on
+  // the settings surface, which makes a stale build here wrong on every
+  // signed-in screen rather than on one.
+  join(webRoot, 'src', 'organization', 'accent.ts'),
+  join(webRoot, 'src', 'organization', 'lockup.tsx'),
+  // The one signed-URL read behind every lockup. It renders nothing and is here
+  // for the reason `snapshot.ts` and `client.ts` are: it holds the query key,
+  // the cache bound and the stable code both surfaces now depend on, so a chunk
+  // built before an edit to it is stale in a way no vocabulary sweep can see.
+  join(webRoot, 'src', 'organization', 'logo-url.ts'),
   // The navigation chrome, part B. `chrome.tsx` is the only thing in the
   // application that renders a `nav.*` label more than once — every destination
   // appears in the tab bar and in the sidebar — and the eight words are held to
@@ -445,6 +459,27 @@ const AUTHORED_VOCABULARY = [
   'Glavni',
   'Prikaži',
   'Sakrij',
+  // STORY 1.4c's SIX, and every one of them closes a gap rather than moving a
+  // word: none was in the ban list below, so a hard-coded `Plava` on an accent
+  // option would have shipped unnoticed. Four colour names, the control's own
+  // label, and the name of the untinted default.
+  //
+  // `Neutralna` is on this list rather than the ban list for the reason every
+  // other count here is: the claim is not "nobody says it" but "only `hr.json`
+  // does". It is also the word that exists because `Nema` may not — the voice
+  // rule states the fact rather than the absence, and `Nema` is banned outright
+  // below.
+  //
+  // `Logotip` is NOT repeated here, and the reason is worth naming: it is
+  // already counted above, and the count is read off `hr.json` rather than
+  // written down — so `organization.lockup` adding a second occurrence of the
+  // word moves both sides of the comparison at once and needs no edit here.
+  'Naglasak',
+  'Neutralna',
+  'Plava',
+  'Zelena',
+  'Jantarna',
+  'Ljubičasta',
 ];
 
 /** Everything the terminology contract and the unshipped affordances still own.

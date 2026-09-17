@@ -1,0 +1,80 @@
+-- 0006_organization_accent.sql
+--
+-- Forward-only. Once this file has been promoted past local it is never edited;
+-- a correction is a new migration with a higher number.
+--
+-- THE COLUMN HOLDS A KEY AND NEVER A COLOUR, and that is the whole decision
+-- this story turns on (human decision, 2026-09-17).
+--
+-- Every colour in this application has its contrast MEASURED AT BUILD TIME:
+-- `test/theme-contrast.test.ts` reads `apps/web/src/index.css`, composites the
+-- alpha tokens, and asserts each fill against its own foreground in both
+-- themes. A `brand_accent_hex` column — the obvious shape, and the one that
+-- matches an organization's brand exactly — would move that guarantee to
+-- RUNTIME: an admin could save `#FFF9E6`, and the only thing standing between
+-- that and unreadable white-on-white would be a contrast function running in
+-- the browser. `apps/web/src` contains no such function, no OKLCH parser, no
+-- `setProperty` and no inline `style` at all, and the reason it can stay that
+-- way is this column.
+--
+-- So the curated set is four keys, the colours are authored as real tokens
+-- beside the other fifty-one, and an accent this build cannot render is
+-- UNREPRESENTABLE rather than validated. The `check` below is what makes that
+-- literally true, and it is the database's own refusal rather than the
+-- interface's: `test/rls-isolation.test.ts` writes an unknown key over the real
+-- transport and reads back 23514.
+--
+-- WHY THERE IS NO `red`, and why its absence is permanent. UX-DR4 reserves
+-- `destructive` exclusively for an unresolved conflict — not delete buttons,
+-- not validation errors, and explicitly not a brand accent — and the epic names
+-- the case the rule exists for, which is an emergency service whose own
+-- branding is red. An organization that chose it would paint its shell in the
+-- one colour the application uses to mean "two shifts claim the same person".
+-- The exclusion is by CONSTRUCTION here (there is no key to choose) and by
+-- MEASUREMENT in `test/theme-contrast.test.ts`, which holds each of the four at
+-- least 45° of hue and ΔE 25 away from `destructive` in both themes.
+--
+-- ADDING A FIVE is a token pair, a contrast pair, a value in this constraint and
+-- a label in `hr.json`, moving together in one commit.
+-- `apps/web/src/organization/accent.test.ts` is what refuses them apart: it
+-- parses the list below out of this file and compares it to the SPA's own set.
+
+-- ---------------------------------------------------------- the column
+
+-- NULLABLE, WITH NO DEFAULT, and that is `0002:38-41`'s rule rather than a
+-- preference: a default here would encode one organization's answer for every
+-- tenant that will ever be provisioned. Null is not a missing value — it IS
+-- "no accent", the state every organization starts in and the one that renders
+-- the untinted shell the application has today.
+--
+-- A COLUMN-LEVEL CHECK, so PostgreSQL names it `organizations_brand_accent_check`
+-- — the same shape `0002`'s `btrim(name) <> ''` takes, which is what lets
+-- `apps/web/src/organization/snapshot.ts` recognise a 23514 by constraint name.
+-- It falls through to that module's general `ORGANIZATION_INVALID` rather than
+-- to a named one, deliberately: the only way to reach it is a direct API call
+-- with a key the interface never offers, so a message naming the field would be
+-- written for somebody who is not using the interface.
+--
+-- `check (brand_accent in (...))` is null-tolerant by construction: null `in`
+-- anything is null, which is not false, and a check constraint refuses only on
+-- FALSE. So "no accent" passes without the constraint having to say so twice.
+alter table public.organizations
+  add column brand_accent text
+  check (brand_accent in ('blue', 'green', 'amber', 'violet'));
+
+-- `brand_accent` JOINS the six column grants rather than replacing them.
+--
+-- A column grant does not narrow a table grant and two column grants do not
+-- narrow each other — they are UNIONED — so this line adds a seventh writable
+-- column and leaves `0004:130-134`'s five and `0005`'s `logo_path` exactly as
+-- they were. Writing `revoke` again here would be wrong in the other direction:
+-- the revoke in `0004` already removed the table-wide grant, and repeating it
+-- would suggest the earlier files' work was undone.
+--
+-- WHO may write it is unchanged and is not this line's business:
+-- `organizations_update_by_own_active_admin` (`0004`) is the whole of it, so a
+-- member-role session, an admin of another tenant and a deactivated admin all
+-- reach a statement that matches no row. The grant decides WHICH COLUMNS an
+-- entitled caller may name; the policy decides whether they are entitled.
+-- `test/rls-isolation.test.ts` executes both halves against both fixtures.
+grant update (brand_accent) on table public.organizations to authenticated;

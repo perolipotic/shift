@@ -22,6 +22,17 @@ const AA_BODY = 4.5;
 const AA_LARGE = 3;
 const THEMES = ['light', 'dark'] as const;
 
+/**
+ * The curated accents an organization may choose between (story 1.4c, UX-DR5).
+ *
+ * Named once and consumed twice below — as measured text pairs, and as the
+ * subjects of the separation from `destructive` — so an accent cannot join one
+ * sweep without joining the other. `apps/web/src/organization/accent.test.ts`
+ * separately pins this list against the SPA's own set and against `0006`'s
+ * check constraint, so the three cannot drift apart.
+ */
+const ACCENT_TOKENS = ['brand-blue', 'brand-green', 'brand-amber', 'brand-violet'] as const;
+
 /** Brand fills whose foreground is a shift-cell label — small text, so the
  *  body threshold applies. */
 const BRAND_PAIRS = [
@@ -34,6 +45,12 @@ const BRAND_PAIRS = [
   'shift-slot-5',
   'shift-slot-6',
   'shift-nonworking',
+  // STORY 1.4c's four curated accents. They join the BODY threshold rather than
+  // the 3:1 one, deliberately: the lockup draws an organization's initial on its
+  // own fill at a small size when there is no logo, which is text. An accent
+  // that ships without a measured pair is the one thing this curation exists to
+  // prevent — a colour column would have moved the measurement to runtime.
+  ...ACCENT_TOKENS,
 ] as const;
 
 /** shadcn base surfaces that carry text. */
@@ -97,6 +114,27 @@ function composite(over: Color, under: Color): Rgb {
 
 function ratio(foreground: Color, background: Color): number {
   return wcagContrast(foreground, background);
+}
+
+/**
+ * The shorter way round the OKLCH hue wheel, in degrees.
+ *
+ * ONE FALLBACK FOR A MISSING HUE, and it is `NaN` — which fails every
+ * comparison below, which is the direction a missing hue has to fail in. The
+ * version this replaces had two: a colour object with no `h` KEY yielded `NaN`
+ * while an achromatic OKLCH whose `h` is `undefined` yielded `0` through a
+ * `?? 0`, and 0° is red's own hue — so a grey token compared against
+ * `destructive` would have measured as maximally CLOSE to it and failed for a
+ * reason that was not true. An accent with no hue is not an accent, and every
+ * value this file measures has one; a token that stops having one is a fault,
+ * and a fault should look like one.
+ */
+function hueGap(one: Color, other: Color): number {
+  const angle = (colour: Color): number =>
+    'h' in colour && colour.h !== undefined ? colour.h : Number.NaN;
+  const raw = Math.abs(angle(one) - angle(other)) % 360;
+
+  return Math.min(raw, 360 - raw);
 }
 
 describe('brand text pairs clear WCAG 2.1 AA', () => {
@@ -409,6 +447,189 @@ describe('the conflict marker is perceivable on the cells it marks', () => {
     expect(
       measured,
       `destructive on ${fill} (${theme}) measured ${measured.toFixed(2)}:1`,
+    ).toBeGreaterThanOrEqual(AA_LARGE);
+  });
+});
+
+describe('no curated accent sits in the signal reserved for a conflict', () => {
+  /**
+   * UX-DR4 reserves `destructive` exclusively for an unresolved conflict — not
+   * delete buttons, not validation errors, and explicitly not a brand accent.
+   * The epic names the case this rule exists for: the pilot is a fire
+   * department whose obvious accent is red, and an organization that chose it
+   * would paint its shell in the one colour the application uses to mean "two
+   * shifts claim the same person".
+   *
+   * The curated set excludes red BY CONSTRUCTION — there is no `red` key in
+   * `0006`'s check constraint and no `--brand-red` token to render one — so
+   * this block is not what enforces the absence. What it enforces is that the
+   * four that DO exist stay far enough away, which is the thing a value edit
+   * can break silently: nudging `--brand-amber`'s hue toward the warm end is
+   * one character, breaks no ratio, and ends with an accent a person cannot
+   * tell from a conflict marker.
+   *
+   * MEASURED TWO WAYS, because either alone is satisfiable while the other
+   * fails. Hue distance is the shorter way round the OKLCH wheel, which is what
+   * "in `destructive`'s hue" actually means and what a bare ΔE would let past
+   * for a desaturated or very light red. CIEDE2000 is whether the eye can tell
+   * the two apart at all, which is what a bare hue angle would let past for a
+   * red-adjacent hue matched in lightness and chroma. The tightest accent today
+   * is amber at 73°/ΔE 38.9 in light and 49°/ΔE 32.5 in dark, so both
+   * thresholds sit well below what ships rather than on top of it.
+   */
+  const HUE_SEPARATION_DEGREES = 45;
+  const PERCEPTIBLY_DIFFERENT = 25;
+  const difference = differenceCiede2000();
+  const cases = THEMES.flatMap((theme) => ACCENT_TOKENS.map((accent) => ({ theme, accent })));
+
+  it.each(cases)('$accent is not in destructive’s hue in $theme', ({ theme, accent }) => {
+    const measured = hueGap(colour(theme, accent), colour(theme, 'destructive'));
+
+    expect(
+      measured,
+      `${accent} sits ${measured.toFixed(1)}° from destructive (${theme})`,
+    ).toBeGreaterThanOrEqual(HUE_SEPARATION_DEGREES);
+  });
+
+  it.each(cases)('$accent is perceptibly not destructive in $theme', ({ theme, accent }) => {
+    const measured = difference(colour(theme, accent), colour(theme, 'destructive'));
+
+    expect(
+      measured,
+      `${accent} measured ΔE ${measured.toFixed(2)} against destructive (${theme})`,
+    ).toBeGreaterThanOrEqual(PERCEPTIBLY_DIFFERENT);
+  });
+
+  it('measures a red accent as too close, so the thresholds are not vacuous', () => {
+    // NON-VACUITY, and the only way to have it: every accent that ships passes,
+    // so a broken predicate — a hue gap that always returned 180, a ΔE that
+    // always returned 100 — would read as coverage on four passing cases. This
+    // is the accent the rule exists to refuse, measured through the same two
+    // predicates the sweeps above use.
+    const red = { mode: 'oklch', l: 0.5908, c: 0.1949, h: 24.5 } as Color;
+
+    expect(hueGap(red, colour('light', 'destructive'))).toBeLessThan(HUE_SEPARATION_DEGREES);
+    expect(difference(red, colour('light', 'destructive'))).toBeLessThan(PERCEPTIBLY_DIFFERENT);
+  });
+});
+
+describe('no curated accent is mistakable for any other signal either', () => {
+  /**
+   * THE SEPARATION RULE, EXTENDED PAST `destructive` — found in the 1.4c review,
+   * and the finding was concrete: dark `--brand-amber` measured **ΔE 1.5** from
+   * `--modifier-uncovered-foreground`, which is the same colour by any useful
+   * definition, and dark `--brand-violet` ΔE 5.8 from `--modifier-overridden`.
+   * An organization on amber was tinting its shell in the uncovered-shift
+   * colour. The values moved; this is what keeps them moved.
+   *
+   * THE THRESHOLD IS DELIBERATELY WEAKER THAN `destructive`'S, AND IT IS A
+   * DISTANCE RATHER THAN AN ANGLE. Stating why, because the omission would
+   * otherwise read as an oversight and the asymmetry as an accident:
+   *
+   *   - A HUE RULE IS NOT SATISFIABLE HERE, arithmetically. The five signals sit
+   *     at roughly 19°, 76°, 158°, 245° and 290°, which leaves exactly two
+   *     windows on the whole circle that are 45° from all of them — about 202°
+   *     and about 335°. A curated set of four named `blue`, `green`, `amber` and
+   *     `violet` (the story's frozen Boundaries) cannot live in two windows, and
+   *     an accent called `Jantarna` cannot be 45° from an amber modifier. The
+   *     modifier palette and the accent palette are drawn from the same everyday
+   *     colour vocabulary on purpose.
+   *
+   *   - `destructive` IS DIFFERENT IN KIND, not merely in degree. UX-DR4 makes
+   *     it the one signal that must never be missed, the epic names a brand-red
+   *     accent as the case the rule exists for, and red is therefore ABSENT from
+   *     the curated set rather than merely held at a distance. Nothing is absent
+   *     for the other four.
+   *
+   *   - WHAT ACTUALLY KEEPS THEM UNCONFUSABLE IS ROLE, and it is asserted
+   *     elsewhere rather than assumed. The accent is a 1px border on the shell
+   *     chrome and a fill behind one letter in the lockup;
+   *     `apps/web/src/organization/accent.test.ts` asserts its class literals
+   *     name no ramp slot, no modifier and no reserved token at all, so the two
+   *     never appear in the same visual role. And the modifiers are never colour
+   *     alone: UX-DR8 pairs each with a hatch AND a glyph, and UX-DR37/Q21 make
+   *     the glyph the carrier of the meaning.
+   *
+   * So what is asserted is that no accent is ever the SAME COLOUR as a signal —
+   * ΔE 10, against a just-noticeable bound of about 2.3 — which is a real
+   * property a value edit can break and the one the review's finding actually
+   * violated.
+   */
+  const NOT_THE_SAME_COLOUR = 10;
+  const difference = differenceCiede2000();
+
+  /**
+   * Every signal an accent could be mistaken for, `destructive` excluded — it
+   * has the stricter block above.
+   *
+   * The two overlays are measured through their FOREGROUNDS as well as their
+   * fills, and the foreground is the one that matters: `--modifier-leave` and
+   * `--modifier-uncovered` are alpha tokens whose raw values are read by nobody,
+   * while their foregrounds are the opaque colours the glyph is actually drawn
+   * in. Measuring only the fills is how dark amber passed at ΔE 1.5 from the
+   * colour a person sees.
+   */
+  const SIGNALS = [
+    'primary',
+    'modifier-overridden',
+    'modifier-leave',
+    'modifier-leave-foreground',
+    'modifier-uncovered',
+    'modifier-uncovered-foreground',
+  ] as const;
+
+  const cases = THEMES.flatMap((theme) =>
+    ACCENT_TOKENS.flatMap((accent) => SIGNALS.map((signal) => ({ theme, accent, signal }))),
+  );
+
+  it.each(cases)('$accent is not $signal in $theme', ({ theme, accent, signal }) => {
+    const measured = difference(colour(theme, accent), colour(theme, signal));
+
+    expect(
+      measured,
+      `${accent} measured ΔE ${measured.toFixed(2)} against ${signal} (${theme}) — the two are the same colour`,
+    ).toBeGreaterThanOrEqual(NOT_THE_SAME_COLOUR);
+  });
+
+  it('would have failed the value this rule was written for', () => {
+    // NON-VACUITY, and it is the actual regression rather than an invented one:
+    // `oklch(0.7827 0.1249 79.1)` is what dark `--brand-amber` shipped as before
+    // the 1.4c review, and it measures ΔE 1.5 from the glyph colour of an
+    // uncovered shift. A threshold that cannot fail on that is not a threshold.
+    const shipped = { mode: 'oklch', l: 0.7827, c: 0.1249, h: 79.1 } as Color;
+
+    expect(
+      difference(shipped, colour('dark', 'modifier-uncovered-foreground')),
+    ).toBeLessThan(NOT_THE_SAME_COLOUR);
+  });
+});
+
+describe('the accent is discernible on the surfaces it is drawn on', () => {
+  /**
+   * THE MEASUREMENT THE PAIRS DO NOT MAKE. `BRAND_PAIRS` measures each accent
+   * against its own FOREGROUND, which is the right question for the mark — text
+   * on a fill. It is the wrong question for everything else the accent does: the
+   * sidebar's `border-r`, the phone bar's `border-t` and the lockup's own frame
+   * are 1px borders drawn against a surface, with no foreground involved at all.
+   * A value that read perfectly under its own letter could be invisible as a
+   * line on the page, and nothing measured it.
+   *
+   * WCAG 1.4.11's 3:1, because a border is a non-text element. Held to the
+   * floor rather than pinned: unlike `--border`, which is deliberately below AA
+   * and pinned so it cannot drift, this one has no ceiling worth defending — an
+   * accent that is MORE visible as an edge is doing its job.
+   */
+  const SURFACES = ['background', 'card', 'sidebar'] as const;
+  const cases = THEMES.flatMap((theme) =>
+    ACCENT_TOKENS.flatMap((accent) => SURFACES.map((surface) => ({ theme, accent, surface }))),
+  );
+
+  it.each(cases)('$accent draws a visible edge on $surface in $theme', ({ theme, accent, surface }) => {
+    const measured = ratio(colour(theme, accent), colour(theme, surface));
+
+    expect(
+      measured,
+      `${accent} on ${surface} (${theme}) measured ${measured.toFixed(2)}:1`,
     ).toBeGreaterThanOrEqual(AA_LARGE);
   });
 });

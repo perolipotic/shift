@@ -20,7 +20,24 @@ const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 export const STYLESHEET = join(repoRoot, 'apps', 'web', 'src', 'index.css');
 export const DARK_QUERY = '@media (prefers-color-scheme: dark)';
 
-/** The 23 brand token names from DESIGN.md's `colors:` front matter. */
+/**
+ * The 31 brand token names: DESIGN.md's `colors:` front matter, plus the four
+ * curated accents story 1.4c adds.
+ *
+ * BUILT rather than written out, and the expansion is what the accents extend:
+ * each name below becomes a `[name, name-foreground]` pair, so an accent joins
+ * by adding ONE entry and inherits every sweep the other twenty-three get —
+ * declared once per theme, present in both, light and dark actually different,
+ * and mapped in `@theme inline`. `deferred-work.md:449` item (f) names the
+ * failure this shape avoids: a token list that grows while the counts asserted
+ * against it do not, leaving the new tokens silently untested.
+ *
+ * The accents are the first entries here that are NOT in DESIGN.md, which is
+ * why `theme-fidelity.test.ts` does not measure them: that file derives its
+ * case list from DESIGN.md's own front matter, so it covers the twenty-three
+ * and no more. `theme-contrast.test.ts` is what measures the accents, in both
+ * themes, and what holds each of them away from `destructive`'s hue.
+ */
 export const BRAND_TOKENS: string[] = [
   'primary',
   'destructive',
@@ -33,6 +50,10 @@ export const BRAND_TOKENS: string[] = [
   'shift-nonworking',
   'modifier-leave',
   'modifier-uncovered',
+  'brand-blue',
+  'brand-green',
+  'brand-amber',
+  'brand-violet',
 ].flatMap((name) => [name, `${name}-foreground`]).concat('modifier-overridden');
 
 /** The 28 shadcn/ui neutral base names, less `primary` and `destructive`,

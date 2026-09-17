@@ -14,6 +14,16 @@ import {
   readMemberRole,
   type MemberRoleFailure,
 } from '@/navigation/role';
+import { brandAccentAppearance } from '@/organization/accent';
+import { OrganizationLockup } from '@/organization/lockup';
+import { useRenderableLogo } from '@/organization/logo-url';
+import {
+  ORGANIZATION_READ_STALE_MS,
+  ORGANIZATION_SNAPSHOT_KEY,
+  ORGANIZATION_TABLE,
+  ORGANIZATION_UNAVAILABLE,
+  readOrganization,
+} from '@/organization/snapshot';
 import { currentSession, supabaseClient } from '@/supabase/client';
 import { SIGN_OUT_FAILED, signOut, type SignOutFailure } from '@/supabase/sign-out';
 
@@ -83,11 +93,45 @@ import { SIGN_OUT_FAILED, signOut, type SignOutFailure } from '@/supabase/sign-o
  * leaves the person exactly where they were, because the session is still live
  * and navigating them to a sign-in screen would bounce straight back.
  *
+ * THE ORGANIZATION IS READ HERE NOW, AND IT IS NOT A SECOND SNAPSHOT (story
+ * 1.4c). The line this replaces said the opposite and told a later story where
+ * to come back to: the chrome carried no organization read, and carrying one to
+ * pre-fill a slug on a screen it was about to leave would have been a second
+ * snapshot on a surface that has none. This is the revisit, and the AD-13
+ * arithmetic is the other way round. AD-13 forbids two figures on a screen
+ * coming from two READS; `ORGANIZATION_SNAPSHOT_KEY` is one constant key over
+ * the one `QueryClient` `main.tsx` builds, so the chrome and `/organizacija`
+ * share a single cache entry — a second consumer of one key, which is the
+ * opposite of the failure. Two keys would be the violation.
+ *
+ * THE LOCKUP AND THE SHELL CHROME ARE THE WHOLE OF THE TINT (UX-DR5). The
+ * accent reaches the lockup's mark and frame and the two bars' edges, and
+ * nothing else: every shift fill, every modifier signal, `primary` and
+ * `destructive` are byte-identical to an organization that has chosen none.
+ * `@/organization/accent` holds the three slots the tint may land in and the
+ * class literals for each accent, because Tailwind resolves utilities by
+ * scanning source text and a class built from a variable paints nothing at all.
+ *
+ * AN ORGANIZATION THAT CANNOT BE READ STILL GETS ITS NAVIGATION. The read's
+ * failure never reaches the alert region: a person who cannot see their own
+ * organization's branding has nothing to do about it, and the region already
+ * carries the two refusals that ARE actionable — the role read, which removes
+ * the destinations, and a refused sign-out. The lockup falls back to a skeleton
+ * and then to nothing, the failure is logged where somebody can diagnose it,
+ * and the shell renders. An empty shell is the one state this component exists
+ * to make impossible, and that is as true of the branding as it is of the role.
+ *
+ * REPORTED ONCE, NOT PER LAYOUT. The lockup is computed once and rendered into
+ * both bars, exactly as `destinations` and `exit` are, and the logging happens
+ * inside the query function rather than in a render — so a phone-width session
+ * and a desktop one produce the same one console entry rather than one per bar.
+ *
  * Sizing: `h-11` is 44 px, the tap-target floor UX-DR40 sets, composed onto
  * every link and every button — the inherited primitives are `h-9`/`h-10`. The
  * bar scrolls in its own container rather than letting the page scroll
  * sideways: an admin reaches eight destinations plus the exit, and nine 44 px
- * targets do not fit across a phone.
+ * targets do not fit across a phone. The lockup is NOT a control — nothing
+ * about it is pressable — so it is 32 px rather than 44.
  */
 
 export interface AppChromeProps {
@@ -117,6 +161,39 @@ export function AppChrome({ children }: AppChromeProps) {
     queryKey: MEMBER_ROLE_KEY,
     queryFn: () => readMemberRole(supabaseClient().from(MEMBERS_TABLE), currentSession),
   });
+
+  // THE SAME KEY `/organizacija` READS UNDER, which is what makes this one cache
+  // entry rather than a second snapshot — see the header.
+  //
+  // BOUNDED ON ALL THREE COUNTS, because this one renders EVERYWHERE. The
+  // settings surface's copy of this read is a screen somebody opens
+  // deliberately; this one mounts on every signed-in destination, so an
+  // unbounded version refetches the row on every navigation and every window
+  // focus, and retries a transport fault three times before settling — for a
+  // logo and a border colour. A refusal resolves as DATA rather than as a
+  // throw, so `retry: false` is about the transport faults that do throw.
+  //
+  // AND IT IS LOGGED. The header claims an unreadable organization is
+  // diagnosable; silence is what would make that false. It still reaches no
+  // message region — a person who cannot see their own branding has nothing to
+  // do about it, and the one `role="alert"` here carries the two refusals that
+  // ARE actionable.
+  const organizationRead = useQuery({
+    queryKey: ORGANIZATION_SNAPSHOT_KEY,
+    queryFn: readBranding,
+    retry: false,
+    staleTime: ORGANIZATION_READ_STALE_MS,
+  });
+
+  const organizationAnswer = organizationRead.data;
+  const organization =
+    organizationAnswer !== undefined && organizationAnswer.ok ? organizationAnswer.snapshot : null;
+  // ONE HOOK, SHARED WITH THE SETTINGS SURFACE. Two copies of this were two
+  // `queryFn`s registered for one query key, so whichever surface mounted first
+  // owned the fetch and the other's cache bound and retry policy were dead code
+  // that read as live.
+  const logo = useRenderableLogo(organization === null ? null : organization.logoPath);
+  const accent = brandAccentAppearance(organization === null ? null : organization.brandAccent);
 
   const answered = member.data;
   const role = answered !== undefined && answered.ok ? answered.role : null;
@@ -155,6 +232,22 @@ export function AppChrome({ children }: AppChromeProps) {
   useEffect(() => {
     if (failure !== null) alertRegion.current?.focus();
   }, [failure]);
+
+  /**
+   * The organization, read for its branding and for nothing else.
+   *
+   * A NAMED FUNCTION rather than an arrow in the query options, so the logging
+   * is somewhere a test can reach — the same reason `@/organization/logo-url`
+   * keeps its own failure path out of the hook body. It logs and answers; the
+   * caller falls back.
+   */
+  async function readBranding() {
+    const outcome = await readOrganization(supabaseClient().from(ORGANIZATION_TABLE));
+
+    if (!outcome.ok) console.error(ORGANIZATION_UNAVAILABLE, outcome.code);
+
+    return outcome;
+  }
 
   function toggleNavigation(): void {
     setExpanded((shown) => !shown);
@@ -343,8 +436,29 @@ export function AppChrome({ children }: AppChromeProps) {
     );
   }
 
+  /**
+   * The lockup, rendered into whichever of the two bars is on screen.
+   *
+   * COMPUTED ONCE, exactly as `destinations` and `exit` are, and for the same
+   * reason: the organization's branding is one fact, and two copies of the
+   * element are two places for the fallback, the accessible name and the accent
+   * to drift apart. It is also what keeps the read's failure reported once.
+   */
+  function renderLockup(): ReactNode {
+    return (
+      <OrganizationLockup
+        organization={organization}
+        logoUrl={logo.url}
+        onUnrenderable={logo.onUnrenderable}
+        pending={organizationRead.isPending}
+        compact
+      />
+    );
+  }
+
   const destinations = renderDestinations();
   const exit = renderSignOut();
+  const lockup = renderLockup();
 
   return (
     <div className="flex flex-1 flex-col sm:flex-row">
@@ -352,7 +466,10 @@ export function AppChrome({ children }: AppChromeProps) {
           so collapsing hid the list and reclaimed not one pixel — a control that
           visibly does nothing. The width is the destination list's now, so
           collapsing leaves the aside as wide as the toggle and the exit need. */}
-      <aside className="hidden shrink-0 flex-col gap-2 border-r border-border p-3 sm:flex">
+      <aside
+        className={`hidden shrink-0 flex-col gap-2 border-r p-3 sm:flex ${accent.edge}`}
+      >
+        {lockup}
         {/* The toggle carries its own visible word rather than a glyph, for the
             reason every entry below does: an icon is not a name. Its name says
             WHICH STATE THE PRESS PRODUCES and changes with the state, because a
@@ -390,18 +507,33 @@ export function AppChrome({ children }: AppChromeProps) {
         <div className="flex flex-1 flex-col pb-[calc(4rem+env(safe-area-inset-bottom,0px))] sm:pb-0">
           {children}
         </div>
-        {/* `overflow-x-auto` on the bar and `shrink-0` on every entry: an admin
-            reaches eight destinations plus the exit, and nine 44 px targets do
-            not fit across a phone. Wide content scrolls in its own container so
-            the PAGE never scrolls sideways, which is the rule this bar would
-            otherwise be the first thing to break. */}
-        <nav
-          aria-label={t('shell.navigation')}
-          className="sticky bottom-0 flex items-center gap-1 overflow-x-auto border-t border-border bg-background p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] sm:hidden"
+        {/* `overflow-x-auto` on the landmark and `shrink-0` on every entry: an
+            admin reaches eight destinations plus the exit, and nine 44 px
+            targets do not fit across a phone. Wide content scrolls in its own
+            container so the PAGE never scrolls sideways, which is the rule this
+            bar would otherwise be the first thing to break. */}
+        <div
+          className={`sticky bottom-0 flex items-center gap-2 border-t bg-background p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] sm:hidden ${accent.edge}`}
         >
-          {destinations}
-          {exit}
-        </nav>
+          {/* THE SAME SHAPE AS THE SIDEBAR, and the symmetry is the point rather
+              than a tidiness. The lockup is branding, not a destination, so it
+              belongs OUTSIDE the navigation landmark — and it was inside this
+              one while sitting outside the other, which made a phone announce
+              an image as part of the navigation that a laptop correctly did
+              not. It is outside the SCROLLER too: an admin reaches eight
+              destinations plus the exit, and a lockup inside the scrolling
+              region is branding that scrolls away from the person who needs it
+              while stealing width from nine 44 px targets that already do not
+              fit. */}
+          {lockup}
+          <nav
+            aria-label={t('shell.navigation')}
+            className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+          >
+            {destinations}
+            {exit}
+          </nav>
+        </div>
       </div>
     </div>
   );

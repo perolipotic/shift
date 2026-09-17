@@ -599,6 +599,13 @@ describe('the access-control migration', () => {
       .sort();
 
     expect(granted, 'the editable column set changed').toEqual([
+      // STORY 1.4c. The accent is writable for the same reason `logo_path` is —
+      // it is the organization's own branding — and it is a SEVENTH column
+      // rather than a sixth form field, on the same disjoint-write shape:
+      // `@/organization/snapshot` types the accent write apart from the five
+      // identity fields and from the logo, so none of the three can clobber
+      // another. What it holds is a KEY and never a colour; `0006` says why.
+      'brand_accent',
       'leave_year_start_day',
       'leave_year_start_month',
       // STORY 1.4b. The logo reference is writable because it is the
