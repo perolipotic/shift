@@ -32,6 +32,7 @@
  */
 
 import { isRenderableTimeZone } from '@/i18n/format';
+import type { BrandAccentKey } from '@/organization/accent';
 
 /** The relation the surface reads and writes. Named here so no screen holds it. */
 export const ORGANIZATION_TABLE = 'organizations';
@@ -48,6 +49,22 @@ export const ORGANIZATION_TABLE = 'organizations';
 export const ORGANIZATION_SNAPSHOT_KEY = ['organization'] as const;
 
 /**
+ * How long the organization row may be served from cache, in milliseconds.
+ *
+ * Here rather than at a call site because the navigation chrome reads this row
+ * on EVERY signed-in screen (story 1.4c). Unbounded, TanStack Query treats every
+ * mount and every window focus as a reason to refetch — so a person moving
+ * between destinations re-reads the row for a border colour and a logo, all day.
+ *
+ * Five minutes: long enough that navigating is free, short enough that an
+ * admin who renames the organization on one tab sees it on another without a
+ * reload. It is a FLOOR on staleness rather than a cache: every write on the
+ * settings surface invalidates this key explicitly, so a change made here shows
+ * up immediately and this bound only governs changes made somewhere else.
+ */
+export const ORGANIZATION_READ_STALE_MS = 300000;
+
+/**
  * The columns the snapshot is built from, in one place.
  *
  * `slug` is READ and never written: AD-12 builds every member's sign-in address
@@ -59,6 +76,12 @@ export const ORGANIZATION_SNAPSHOT_KEY = ['organization'] as const;
  * `created_at` is not here. It is the one `timestamptz` the conventions permit
  * and nothing renders it, so selecting it would be a column read for no reader.
  *
+ * `brand_accent` joined in story 1.4c and is the second column of that kind: it
+ * holds a KEY — one of four curated words, or null — and never a colour, so the
+ * contrast measurement stays in `test/theme-contrast.test.ts` where it already
+ * is. `0006` argues the decision; `@/organization/accent` maps the key to what
+ * the shell paints with.
+ *
  * `logo_path` joined the list in story 1.4b, and it is the one column here that
  * exists to answer a question rather than to fill a field. Whether an
  * organization has a logo is a VALUE the snapshot carries, so the neutral
@@ -67,7 +90,7 @@ export const ORGANIZATION_SNAPSHOT_KEY = ['organization'] as const;
  * figure, which is the shape AD-13 exists to prevent.
  */
 export const ORGANIZATION_COLUMNS =
-  'id,slug,name,short_name,description,address,contact_email,organization_type,timezone,locale,leave_year_start_month,leave_year_start_day,logo_path';
+  'id,slug,name,short_name,description,address,contact_email,organization_type,timezone,locale,leave_year_start_month,leave_year_start_day,logo_path,brand_accent';
 
 /**
  * The organization, as everything downstream sees it.
@@ -91,6 +114,20 @@ export interface OrganizationSnapshot {
   readonly leaveYearStartDay: number;
   /** Where the logo object lives, or `null` — which is what "no logo" IS. */
   readonly logoPath: string | null;
+  /**
+   * Which curated accent this organization chose, or `null` for none.
+   *
+   * `string | null` rather than the `BrandAccentKey` union, deliberately. This
+   * type is what a ROW validates into, and the row comes from a database whose
+   * constraint this build cannot see: narrowing here would mean either casting
+   * (a type the runtime may not honour, which is the mistake
+   * `organizationSnapshotOf` exists to refuse) or rejecting the whole snapshot
+   * over one branding value, which would blank every screen in the application
+   * for an organization whose accent a newer build wrote. The narrowing happens
+   * at the point of USE instead — `brandAccentAppearance` resolves an unknown
+   * key to the untinted shell.
+   */
+  readonly brandAccent: string | null;
 }
 
 /** The fields the settings FORM may change. Deliberately not the row. */
@@ -102,6 +139,8 @@ export interface OrganizationEdits {
   readonly leaveYearStartDay: number;
   /** Never here. See {@link OrganizationWrite} for why it is typed rather than said. */
   readonly logoPath?: never;
+  /** Never here either, and for the same reason. */
+  readonly brandAccent?: never;
 }
 
 /**
@@ -123,6 +162,50 @@ export interface OrganizationLogoEdit {
   readonly timezone?: never;
   readonly leaveYearStartMonth?: never;
   readonly leaveYearStartDay?: never;
+  readonly brandAccent?: never;
+}
+
+/**
+ * The accent, written on its own — a THIRD disjoint shape (story 1.4c).
+ *
+ * The argument {@link OrganizationLogoEdit} makes applies here unchanged and
+ * one degree more sharply, because the accent control sits INSIDE the settings
+ * form rather than beside it: a save that carried `brand_accent` would be a
+ * save that can overwrite an accent chosen while the name was being typed, and
+ * an accent write that carried the five fields would push a half-typed name to
+ * the database the moment somebody opened the picker. Disjoint types mean
+ * neither is expressible, and neither is a rule anybody has to remember.
+ *
+ * `string | null` rather than the key union, for the reason the snapshot's own
+ * field is: the DATABASE decides which keys are admissible (`0006`), and a
+ * write the interface cannot express is refused there — 23514, fails closed —
+ * rather than by a second, softer gate here that could disagree with it.
+ * `null` is a value this write can legitimately carry: it is how an
+ * organization goes back to no accent at all.
+ */
+export interface OrganizationAccentEdit {
+  /**
+   * `BrandAccentKey | null`, NOT the column's own `string | null`.
+   *
+   * The two are deliberately different, and the direction is what decides
+   * which. A READ is a value the database chose and this build may not know —
+   * so {@link OrganizationSnapshot} keeps it wide, and an accent written by a
+   * newer build reaches the client as itself rather than blanking the whole
+   * organization. A WRITE is a value this build ORIGINATES, so there is no such
+   * excuse: an accent the stylesheet has no token for is a mistake that can be
+   * caught at `pnpm typecheck`, at the call site, for nothing.
+   *
+   * `null` is admitted because it is a real value rather than an absence: it is
+   * how an organization returns to the untinted shell.
+   */
+  readonly brandAccent: BrandAccentKey | null;
+  /** None of these, ever. See {@link OrganizationWrite}. */
+  readonly name?: never;
+  readonly organizationType?: never;
+  readonly timezone?: never;
+  readonly leaveYearStartMonth?: never;
+  readonly leaveYearStartDay?: never;
+  readonly logoPath?: never;
 }
 
 /**
@@ -137,7 +220,10 @@ export interface OrganizationLogoEdit {
  * is a `pnpm typecheck` failure at the call site, which is the only place it can
  * be fixed.
  */
-export type OrganizationWrite = OrganizationEdits | OrganizationLogoEdit;
+export type OrganizationWrite =
+  | OrganizationEdits
+  | OrganizationLogoEdit
+  | OrganizationAccentEdit;
 
 /**
  * Which of the two a write is: the one that actually carries a logo path.
@@ -151,6 +237,50 @@ export type OrganizationWrite = OrganizationEdits | OrganizationLogoEdit;
  */
 function isLogoEdit(write: OrganizationWrite): write is OrganizationLogoEdit {
   return 'logoPath' in write && write.logoPath !== undefined;
+}
+
+/**
+ * Which of the three a write is: the one that carries an accent.
+ *
+ * `!== undefined` rather than `!== null`, and the distinction is the whole
+ * value of this predicate. `null` is a MEANINGFUL accent — it is how an
+ * organization returns to the untinted shell — so a guard written `!= null`
+ * would route "clear the accent" to the identity branch and send five form
+ * fields the caller never typed. `undefined` is the only absence, and it is the
+ * one `exactOptionalPropertyTypes` still admits at runtime from a spread of a
+ * partial.
+ */
+function isAccentEdit(write: OrganizationWrite): write is OrganizationAccentEdit {
+  return 'brandAccent' in write && write.brandAccent !== undefined;
+}
+
+/**
+ * The identity write, recognised POSITIVELY rather than as "neither of the
+ * other two".
+ *
+ * The guard in {@link updateOrganization} was a growing list of negations, and
+ * a list of negations is a list somebody has to remember to grow: a fourth
+ * write shape added to {@link OrganizationWrite} without a fourth `!isX(write)`
+ * would have started silently refusing that write as
+ * {@link ORGANIZATION_TIMEZONE_UNKNOWN} — a timezone message for something that
+ * carries no zone. Asking whether this IS the write that has a timezone makes
+ * the fourth shape simply not match, which is the failure direction that does
+ * not lie to anybody.
+ *
+ * `!== undefined` for the reason its two siblings use it: `exactOptionalProperty
+ * Types` still admits `{ …logoPath, name: undefined }` at runtime from a spread.
+ *
+ * WORTH KNOWING, because it is the opposite of what a reader assumes: the chain
+ * of negations this replaces did NOT in fact refuse a zone-less write.
+ * `isRenderableTimeZone` delegates to `new Intl.DateTimeFormat(…, { timeZone })`,
+ * and `timeZone: undefined` means "use the default" rather than "reject", so it
+ * answers `true` for a write that carries no zone at all. The old shape was
+ * therefore harmless AND unreadable: it looked like a guard that would refuse
+ * the accent write and was not one. `snapshot.test.ts` pins that behaviour, so
+ * nobody builds on the assumption in either direction.
+ */
+function isIdentityEdit(write: OrganizationWrite): write is OrganizationEdits {
+  return 'name' in write && write.name !== undefined;
 }
 
 /**
@@ -312,6 +442,7 @@ export function organizationSnapshotOf(row: unknown): OrganizationSnapshot | nul
     leaveYearStartMonth,
     leaveYearStartDay,
     logoPath: textAt(fields, 'logo_path'),
+    brandAccent: textAt(fields, 'brand_accent'),
   };
 }
 
@@ -345,13 +476,32 @@ export function organizationEditColumns(
   // typed but not yet submitted is not part of it, and neither is the reverse.
   if (isLogoEdit(write)) return { logo_path: write.logoPath };
 
-  return {
-    name: write.name,
-    organization_type: write.organizationType,
-    timezone: write.timezone,
-    leave_year_start_month: write.leaveYearStartMonth,
-    leave_year_start_day: write.leaveYearStartDay,
-  };
+  // ONE COLUMN AGAIN on the accent, and `null` is a value rather than an
+  // omission: PostgREST sends JSON `null` for it, which is the write that
+  // clears the accent. Dropping the key instead would produce a PATCH with an
+  // empty body that matches the row, changes nothing, and reports success.
+  if (isAccentEdit(write)) return { brand_accent: write.brandAccent };
+
+  if (isIdentityEdit(write)) {
+    return {
+      name: write.name,
+      organization_type: write.organizationType,
+      timezone: write.timezone,
+      leave_year_start_month: write.leaveYearStartMonth,
+      leave_year_start_day: write.leaveYearStartDay,
+    };
+  }
+
+  // EXHAUSTIVE, and `never` is what makes it so — the idiom
+  // `@/organization/messages` records. Written as a fall-through, a FOURTH
+  // write shape added to `OrganizationWrite` would have been mapped as an
+  // identity write and sent five columns it does not have, which PostgREST
+  // drops: an empty PATCH that matches the row, changes nothing, and reports
+  // success. Assigning to `never` turns that into a `pnpm typecheck` failure
+  // here, at the one place the new shape has to be taught.
+  const unhandled: never = write;
+
+  return unhandled;
 }
 
 /**
@@ -465,10 +615,13 @@ export async function updateOrganization(
   // `format.ts` because that is the only file in `apps/web` permitted to touch
   // `Intl` at all.
   //
-  // Asked of the IDENTITY write only. The logo write carries no zone at all, so
-  // there is nothing to check and nothing to refuse — running the check against
-  // an absent value would refuse every upload.
-  if (!isLogoEdit(write) && !isRenderableTimeZone(write.timezone)) {
+  // Asked of the IDENTITY write only, and asked POSITIVELY. Neither the logo
+  // write nor the accent write carries a zone at all, so there is nothing to
+  // check and nothing to refuse — and this guard was a chain of negations until
+  // the 1.4c review, which is a shape that refuses a write nobody remembered to
+  // exempt. `isIdentityEdit` asks whether this is the write that HAS a zone, so
+  // a shape it does not recognise is simply not asked.
+  if (isIdentityEdit(write) && !isRenderableTimeZone(write.timezone)) {
     return { ok: false, code: ORGANIZATION_TIMEZONE_UNKNOWN };
   }
 

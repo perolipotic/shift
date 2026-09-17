@@ -109,6 +109,36 @@ const SANCTIONED_SCREEN_KEYS = [
   // there as well as here.
   'organization.logo',
   'organization.logoChoose',
+  // Story 1.4c — the lockup and the accent. SEVEN, and not one of them
+  // announces an absence.
+  //
+  // `organization.lockup` is the accessible name the lockup falls back to when
+  // the organization's own name is blank — `0002:72` makes that unreachable
+  // from the database, but an empty accessible name on a `role="img"` is an
+  // element a screen reader announces as nothing at all. It replaces the
+  // settings surface's borrowed `nav.organizacija` for that job, because the
+  // lockup now renders in the chrome too and "Organizacija" there would name
+  // the destination rather than the thing on screen.
+  'organization.lockup',
+  // The accent control's own label, and then FIVE option names — four curated
+  // accents plus no accent. They are names for COLOURS and not for the absence
+  // of one: `Neutralna` states what the untinted shell is, where `Nema
+  // naglaska` would state what it lacks. `Nema` is banned outright in
+  // `test/localization-applied.test.ts`, so a key worded that way would fail
+  // there as well as here.
+  //
+  // FIVE, AND NEVER SIX, is the thing this list is really holding: the option
+  // names, `0006`'s check constraint, the tokens in `index.css` and the pairs
+  // in `test/theme-contrast.test.ts` are four places one accent exists, and
+  // `apps/web/src/organization/accent.test.ts` refuses them apart. Adding a
+  // fifth accent means editing all four in one commit — which is the review
+  // moment, and it is deliberately not cheap.
+  'organization.accent',
+  'organization.accentNone',
+  'organization.accentBlue',
+  'organization.accentGreen',
+  'organization.accentAmber',
+  'organization.accentViolet',
   // The two words this story EARNS. Both were asserted absent from every built
   // chunk until now (`test/localization-applied.test.ts`), and both move from
   // that ban into the count sweep in the same commit — the stronger of the two

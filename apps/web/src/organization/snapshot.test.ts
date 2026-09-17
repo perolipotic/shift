@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { formatDate } from '@/i18n/format';
+import { formatDate, isRenderableTimeZone } from '@/i18n/format';
 import { organizationMessageKey } from '@/organization/messages';
 import {
   ORGANIZATION_COLUMNS,
@@ -47,6 +47,11 @@ import {
 
 const srcRoot = fileURLToPath(new URL('..', import.meta.url));
 const SCREEN = join(srcRoot, 'routes', 'organizacija.tsx');
+/** Where the logo-or-mark decision lives since story 1.4c: one component, drawn
+ *  by the settings surface AND by the navigation chrome. */
+const LOCKUP = join(srcRoot, 'organization', 'lockup.tsx');
+/** The one signed-URL read behind every lockup, shared by both surfaces. */
+const LOGO_URL = join(srcRoot, 'organization', 'logo-url.ts');
 const ENTRY = join(srcRoot, 'main.tsx');
 
 const BLOCK_COMMENT = /\/\*[\s\S]*?\*\//g;
@@ -83,6 +88,11 @@ const PILOT_ROW = {
   // Both fixtures are seeded logo-less, which is the fallback case (story
   // 1.4b): `logo_path` is nullable, carries no default, and null IS "no logo".
   logo_path: null,
+  // And accent-less, which is the untinted shell (story 1.4c): `brand_accent`
+  // is nullable with no default for the reason `0002:38-41` gives — a default
+  // would encode one organization's answer for every tenant — and null IS "no
+  // accent" rather than a missing value.
+  brand_accent: null,
 };
 
 const EDITS: OrganizationEdits = {
@@ -204,6 +214,7 @@ describe('one PostgREST row becomes the canonical snapshot', () => {
       leaveYearStartMonth: 1,
       leaveYearStartDay: 1,
       logoPath: null,
+      brandAccent: null,
     });
   });
 
@@ -227,6 +238,7 @@ describe('one PostgREST row becomes the canonical snapshot', () => {
     expect(sparse?.address).toBeNull();
     expect(sparse?.contactEmail).toBeNull();
     expect(sparse?.logoPath, 'a missing logo reference is not the same as no column').toBeNull();
+    expect(sparse?.brandAccent, 'a missing accent is not the same as no column').toBeNull();
   });
 
   it('carries the logo reference when there is one', () => {
@@ -236,6 +248,23 @@ describe('one PostgREST row becomes the canonical snapshot', () => {
     const path = `${PILOT_ROW.id}/logo`;
 
     expect(organizationSnapshotOf({ ...PILOT_ROW, logo_path: path })?.logoPath).toBe(path);
+  });
+
+  it('carries the accent key when there is one, and never a colour', () => {
+    // The positive control the null case needs, and a claim about the SHAPE of
+    // the value: what the column holds is one of `0006`'s four curated keys, so
+    // the mapper hands the accent on as the key it is. A colour would have to be
+    // measured at runtime, and nothing in `apps/web/src` measures contrast.
+    expect(organizationSnapshotOf({ ...PILOT_ROW, brand_accent: 'violet' })?.brandAccent).toBe(
+      'violet',
+    );
+    // NOT NARROWED HERE. The row comes from a database whose constraint this
+    // build cannot see, so a value a newer build wrote reaches the snapshot as
+    // itself rather than blanking the whole organization; `brandAccentAppearance`
+    // is what resolves it to the untinted shell at the point of use.
+    expect(organizationSnapshotOf({ ...PILOT_ROW, brand_accent: 'teal' })?.brandAccent).toBe(
+      'teal',
+    );
   });
 
   it.each([
@@ -280,6 +309,32 @@ describe('the read returns one snapshot or one code', () => {
     await readOrganization(answering({ data: [PILOT_ROW], error: null }, log));
 
     expect(log.selected).toEqual([ORGANIZATION_COLUMNS]);
+  });
+
+  it('names every column a surface actually reads a value out of', () => {
+    // ASSERTED AGAINST ITS CONTENT, not against itself. The case above compares
+    // what went over the wire to the constant, so both sides move together and
+    // deleting a column from the list is invisible — which is the shape the
+    // 1.4c review demonstrated: drop `,brand_accent` and every write still
+    // succeeds, every organization renders untinted, the accent control reads
+    // `Neutralna` after any reload, and nothing at all fails.
+    //
+    // The two named here are the two that answer a QUESTION rather than fill a
+    // field — is there a logo, is there an accent — so a screen that stops
+    // selecting one degrades into a permanent "no" rather than into an error.
+    // `id` is here because every write addresses the row by it.
+    const columns = ORGANIZATION_COLUMNS.split(',');
+
+    for (const column of ['id', 'logo_path', 'brand_accent']) {
+      expect(columns, `the snapshot stops reading ${column}`).toContain(column);
+    }
+    // Spelled `snake_case`, because PostgREST speaks columns: a `camelCase`
+    // entry is not an error anywhere — the row simply comes back without it.
+    expect(
+      columns.filter((column) => !/^[a-z][a-z0-9_]*$/.test(column)),
+      'a selected column is not spelled the way the database spells one',
+    ).toEqual([]);
+    expect(new Set(columns).size, 'a column is selected twice').toBe(columns.length);
   });
 
   it('asks for two rows, so that there being one is something it can observe', async () => {
@@ -406,6 +461,118 @@ describe('the update writes the edited fields and answers with the row', () => {
     const spread = { ...EDITS, logoPath: undefined } as OrganizationWrite;
 
     expect(organizationEditColumns(spread)).toEqual(organizationEditColumns(EDITS));
+  });
+
+  it('sends the accent alone, and never beside the five fields or the logo', () => {
+    // STORY 1.4c, and the accent's case for a disjoint shape is the sharper of
+    // the three: its control sits INSIDE the settings form, so a submit that
+    // also carried `brand_accent` would overwrite a choice made while somebody
+    // was typing, and an accent write that carried the five fields would push a
+    // half-typed name the moment the picker was touched.
+    expect(organizationEditColumns({ brandAccent: 'violet' })).toEqual({
+      brand_accent: 'violet',
+    });
+    expect(
+      Object.keys(organizationEditColumns({ brandAccent: 'violet' })),
+      'the accent write carries something else with it',
+    ).toEqual(['brand_accent']);
+    expect(Object.keys(organizationEditColumns(EDITS))).not.toContain('brand_accent');
+  });
+
+  it('sends null as a VALUE, which is how an organization returns to no accent', () => {
+    // MUTATION-PROVEN GAP. `isAccentEdit` guards on `!== undefined`, and a
+    // one-character change to `!== null` routes "clear the accent" into the
+    // IDENTITY branch — where `updateOrganization` then asks the timezone
+    // validator about a zone the write does not carry and refuses it as
+    // `ORGANIZATION_TIMEZONE_UNKNOWN`. A colour control reporting a timezone
+    // problem, on the one write that takes an organization back to the untinted
+    // shell.
+    //
+    // The key must also be PRESENT: PostgREST drops an undefined value, so a
+    // branch that omitted it would send an empty PATCH that matches the row,
+    // changes nothing, and reports success.
+    const cleared = organizationEditColumns({ brandAccent: null });
+
+    expect(Object.keys(cleared), 'clearing the accent sends no column at all').toEqual([
+      'brand_accent',
+    ]);
+    expect(cleared['brand_accent'], 'the cleared accent is dropped rather than written').toBeNull();
+  });
+
+  it('routes a brandAccent of undefined to the identity write, not to the accent write', () => {
+    // The same hole `logoPath: undefined` closes, and the same shape produces
+    // it: a spread of a partial. `exactOptionalPropertyTypes` admits the value
+    // at runtime, and `'brandAccent' in write` alone would route it to the
+    // accent branch and write `brand_accent: undefined` — an empty PATCH that
+    // reports success.
+    const spread = { ...EDITS, brandAccent: undefined } as OrganizationWrite;
+
+    expect(organizationEditColumns(spread)).toEqual(organizationEditColumns(EDITS));
+  });
+
+  it('refuses a write that carries the accent AND either of the other two', () => {
+    // The untagged-union hole again, on both of the accent's neighbours. The
+    // `?: never` members are what make "disjoint" a fact the compiler checks;
+    // `@ts-expect-error` is itself executable, because an expectation that
+    // stops being violated is a `pnpm typecheck` failure.
+    // @ts-expect-error the accent write may not carry the identity fields
+    const withFields: OrganizationWrite = { ...EDITS, brandAccent: 'violet' };
+    // @ts-expect-error the accent write may not carry the logo reference
+    const withLogo: OrganizationWrite = { logoPath: `${PILOT_ROW.id}/logo`, brandAccent: 'violet' };
+
+    // And the runtime behaviour of the values the type system now refuses, so
+    // the consequence is written down rather than left to be rediscovered:
+    // each routes to WHICHEVER GUARD RUNS FIRST and silently drops the rest.
+    // That order is not a decision worth defending — it is the reason the
+    // combination is a `pnpm typecheck` failure at the call site, which is the
+    // only place it can be fixed.
+    expect(Object.keys(organizationEditColumns(withFields))).toEqual(['brand_accent']);
+    expect(Object.keys(organizationEditColumns(withLogo))).toEqual(['logo_path']);
+  });
+
+  it('writes the accent without asking the timezone validator anything', async () => {
+    // MUTATION-PROVEN GAP, and the second one-character regression this block
+    // exists for: deleting `!isAccentEdit(write) &&` from the guard in
+    // `updateOrganization` refuses EVERY accent write as
+    // `ORGANIZATION_TIMEZONE_UNKNOWN`, because the accent write carries no zone
+    // and `isRenderableTimeZone(undefined)` is false. Executed here rather than
+    // read as source text, which is the only way a guard's polarity is a fact.
+    for (const accent of ['violet', null] as const) {
+      const log = recorder();
+      const outcome = await updateOrganization(
+        answering({ data: [PILOT_ROW], error: null }, log),
+        PILOT_ROW.id,
+        { brandAccent: accent },
+      );
+
+      expect(
+        outcome.ok,
+        `the accent write was refused by a check that does not apply (${String(accent)})`,
+      ).toBe(true);
+      expect(log.updated).toEqual([{ brand_accent: accent }]);
+      expect(log.filtered).toEqual([{ column: 'id', value: PILOT_ROW.id }]);
+      expect(log.selected, 'the accent write does not read the row back').toEqual([
+        ORGANIZATION_COLUMNS,
+      ]);
+    }
+  });
+
+  it('pins what the timezone check answers for a write that carries no zone', () => {
+    // THE ASSUMPTION THE GUARD'S SHAPE INVITES, and it is false. A reader — and
+    // a reviewer — naturally expects `!isAccentEdit(write) &&` to be what stops
+    // an accent write being refused as `ORGANIZATION_TIMEZONE_UNKNOWN`. It is
+    // not: `isRenderableTimeZone` delegates to
+    // `new Intl.DateTimeFormat(…, { timeZone })`, and `undefined` there means
+    // "use the default" rather than "reject", so the check ANSWERS TRUE for a
+    // write with no zone.
+    //
+    // Pinned rather than relied on. The guard is positive now
+    // (`isIdentityEdit`), which is the readable shape and the one a fourth
+    // write shape cannot fall through; this records why the version it replaces
+    // was nonetheless not a live defect, so the next person to reason about it
+    // reasons from a measurement rather than from the code's shape.
+    expect(isRenderableTimeZone(undefined as unknown as string)).toBe(true);
+    expect(isRenderableTimeZone('Europe/Zagrb')).toBe(false);
   });
 
   it('sends no logo reference when the form saves its five fields', () => {
@@ -685,7 +852,17 @@ describe('the surface reads once, under one key', () => {
     const screen = source(SCREEN);
 
     expect(occurrences(screen, 'readOrganization('), 'the screen reads the row twice').toBe(1);
-    expect(occurrences(screen, 'useQuery('), 'the screen issues a third query').toBe(2);
+    // ONE `useQuery` ON THE SCREEN since story 1.4c: the derived logo URL moved
+    // into `@/organization/logo-url`, which the navigation chrome shares — two
+    // copies of it were two `queryFn`s registered for one key. The bound is
+    // still that the ROW is read once here and the derived read is one hook
+    // call, so a third query on this screen is the AD-13 violation it always
+    // was.
+    expect(occurrences(screen, 'useQuery('), 'the screen issues a second query').toBe(1);
+    expect(
+      occurrences(screen, 'useRenderableLogo('),
+      'the screen fetches the signed URL more than once, or not through the shared hook',
+    ).toBe(1);
   });
 
   it('never asks storage whether a logo exists, and never renders a broken image', () => {
@@ -693,31 +870,48 @@ describe('the surface reads once, under one key', () => {
     // screen already holds, so the fallback is a pure read; the derived query
     // is `enabled` only when there is something to sign, so an organization
     // with no logo makes no storage call at all.
-    const screen = source(SCREEN);
-
-    expect(screen, 'the logo query runs even when there is no logo').toContain(
+    // The `enabled` bound lives on the shared hook now, with the query it
+    // guards; the SCREEN's half of the claim is that what it hands the hook is
+    // the column rather than a probe.
+    expect(source(LOGO_URL), 'the logo query runs even when there is no logo').toContain(
       'enabled: logoPath !== null',
     );
-    expect(screen, 'the screen reads presence from somewhere other than the snapshot').toContain(
-      'organization.logoPath',
-    );
+    expect(
+      source(SCREEN),
+      'the screen reads presence from somewhere other than the snapshot',
+    ).toContain('organization.logoPath');
   });
 
   it('draws a neutral mark rather than announcing that there is no logo', () => {
-    // The voice rule, as markup. The fallback carries the organization's name
-    // as its accessible name and says nothing else; a `t()` key would be a
-    // sentence about an absence, which `test/localization-applied.test.ts`
-    // forbids by banning `Nema` from every built chunk.
+    // The voice rule, as markup — and since story 1.4c this file's half of it is
+    // about the SCREEN and nothing else. The mark, its accessible name and its
+    // fallback moved into `@/organization/lockup` when the chrome started
+    // drawing them too, and `routes/prijava.test.ts` owns that component's
+    // internals: asserting them here as well was one claim written twice, in a
+    // file whose subject is the snapshot module and the surface that reads it.
+    //
+    // What IS this file's claim is that the surface delegates rather than
+    // keeping a copy: a second `role="img"` here would be a second answer to
+    // "what does an organization with no logo look like", and copies drift.
     const screen = source(SCREEN);
 
-    // The mark's accessible name is the organization's name, with the generic
-    // destination label standing in only for the blank name `0002:72` makes
-    // unreachable — never an empty string, which a screen reader announces as
-    // nothing at all.
-    expect(screen, 'the fallback has no accessible name').toMatch(
-      /aria-label=\{mark === null \? t\('nav\.organizacija'\) : organization\.name\}/,
+    expect(screen, 'the settings surface does not draw the shared lockup').toContain(
+      '<OrganizationLockup',
     );
-    expect(screen, 'the fallback is not announced as an image').toContain('role="img"');
+    expect(
+      screen,
+      'the settings surface draws its own neutral mark beside the shared one',
+    ).not.toContain('role="img"');
+    expect(screen, 'the settings surface draws its own image beside the shared one').not.toContain(
+      '<img',
+    );
+    // And it says nothing about the absence — no key for "there is no logo",
+    // which `test/localization-applied.test.ts` also enforces by banning `Nema`
+    // from every built chunk.
+    expect(
+      source(LOCKUP),
+      'the lockup announces an absence instead of drawing a mark',
+    ).not.toContain('logoMissing');
   });
 
   it('reaches the table through the snapshot module rather than naming it', () => {

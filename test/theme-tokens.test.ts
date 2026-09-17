@@ -18,7 +18,7 @@ import {
  * copy-pasted from light, or a theme toggle smuggled in as a `.dark` class
  * would all ship green without these.
  *
- * Both halves are covered. The first derivation asserted only the 23 brand
+ * Both halves are covered. The first derivation asserted only the brand
  * names and left the 28 shadcn base names — the ones every primitive actually
  * resolves first — untested; deleting `--border` and `--ring` from the dark
  * block kept the suite green.
@@ -28,11 +28,18 @@ const ALL_TOKENS = [...BASE_TOKENS, ...BRAND_TOKENS];
 const THEMES = ['light', 'dark'] as const;
 
 describe('the token lists are the size everything else assumes', () => {
-  // The spec, the change log and three test headers all reason about "23 brand"
-  // and "28 base". Dropping a name would silently shrink every sweep that
+  // The spec, the change log and three test headers all reason about the brand
+  // count and "28 base". Dropping a name would silently shrink every sweep that
   // consumes these lists while the suite stayed green.
-  it('has 23 brand tokens', () => {
-    expect(BRAND_TOKENS).toHaveLength(23);
+  //
+  // THIRTY-ONE SINCE STORY 1.4c, and the count MOVED WITH the list rather than
+  // after it: `BRAND_TOKENS` is built by expansion, so four accent names became
+  // eight tokens, and a number left at 23 here would have failed loudly — which
+  // is the point. `deferred-work.md:449` item (f) records the opposite failure
+  // as the one to avoid: a hard-coded count that admits the new tokens without
+  // anybody deciding to let them in leaves them swept by nothing.
+  it('has 31 brand tokens', () => {
+    expect(BRAND_TOKENS).toHaveLength(31);
   });
 
   it('has 28 shadcn base tokens', () => {

@@ -594,6 +594,9 @@ interface OrganizationRow {
   readonly timezone: string;
   readonly leaveYearStartMonth: number;
   readonly leaveYearStartDay: number;
+  /** `0006`. A KEY and never a colour — null is "no accent", which is where
+   *  both fixtures start and what every case below restores them to. */
+  readonly brandAccent: string | null;
 }
 
 /**
@@ -616,7 +619,8 @@ async function organizationById(
             organization_type as "organizationType",
             timezone,
             leave_year_start_month as "leaveYearStartMonth",
-            leave_year_start_day as "leaveYearStartDay"
+            leave_year_start_day as "leaveYearStartDay",
+            brand_accent as "brandAccent"
        from organizations where id = $1`,
     [id],
   );
@@ -747,6 +751,16 @@ afterAll(async () => {
     await client.query('update organizations set logo_path = null where slug = any($1::text[])', [
       fixtures,
     ]);
+    // STORY 1.4c, and for the same reason: the accent cases below write a real
+    // key through the real transport, outside any transaction, because there is
+    // no throwaway organization to aim them at. Both fixtures are seeded with no
+    // accent and must stay that way — a fixture left tinted is a `0006` default
+    // by accident, which is the thing `0002:38-41` forbids on purpose. Scoped
+    // by slug, like every other cleanup here.
+    await client.query(
+      'update organizations set brand_accent = null where slug = any($1::text[])',
+      [fixtures],
+    );
     await client.query('commit');
   } finally {
     await client.end();
@@ -1852,7 +1866,7 @@ describe('organizations admits exactly one write path, and it is the settings su
     },
   );
 
-  it.skipIf(noDatabase)('grants authenticated UPDATE on exactly the six writable columns', () => {
+  it.skipIf(noDatabase)('grants authenticated UPDATE on exactly the seven writable columns', () => {
     // The column allowlist as a fact about the database rather than about the
     // interface, and an EXACT set: a later migration re-granting the table — or
     // `grant all` written by habit — restores every column silently, and the
@@ -1877,6 +1891,16 @@ describe('organizations admits exactly one write path, and it is the settings su
         rows.map((row) => row.column),
         'authenticated may update a column the settings surface never offers',
       ).toEqual([
+        // STORY 1.4c. `0006` adds `brand_accent` the same way `0005` added
+        // `logo_path` — a third column grant, unioned with the other two — and
+        // it sorts first because the set is compared in column order. Writable
+        // for the same reason: it is the organization's own branding. What
+        // stops the settings FORM from sending it is a TYPE rather than a
+        // privilege (`@/organization/snapshot` makes the accent a shape
+        // disjoint from the five fields and from the logo), and what stops it
+        // holding a value this build cannot render is `0006`'s check constraint
+        // rather than either.
+        'brand_accent',
         'leave_year_start_day',
         'leave_year_start_month',
         // STORY 1.4b. `0005` adds `logo_path` with a SECOND column grant rather
@@ -2286,6 +2310,262 @@ describe('a direct API call edits an organization under exactly the same rules',
       }
     },
     20_000,
+  );
+});
+
+describe('the brand accent is an admin’s own to set and nobody else’s', () => {
+  /**
+   * STORY 1.4c, over the shipped transport, on the column `0006` opens.
+   *
+   * FOUR CLAIMS, and the fourth is the one that is not about permission at all.
+   * An admin may set their own organization's accent; a member-role session may
+   * not; an admin of another tenant changes nothing; and a key outside the
+   * curated set is refused BY THE DATABASE, whoever asks. That last one is what
+   * makes "an accent this build cannot render is unrepresentable" a fact rather
+   * than a property of the `<select>` — the interface offers four options, and
+   * an interface is not an enforcement point (AD-9 leaves no server tier, so a
+   * terminal and the SPA make the same call).
+   *
+   * Every case targets a SEEDED organization row, for the reason the edit cases
+   * above do: the caller's claim pins the row it may reach and no session may
+   * create one. So the permitted case restores what it changed in a `finally`,
+   * as the connection's own role, and every refusal case asserts the row is
+   * untouched.
+   */
+  const CURATED = 'violet';
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'permits the $fixture admin to set their own organization’s accent',
+    async ({ slug, admin }) => {
+      // The positive control every refusal below needs. A column grant that
+      // never landed, or a policy nobody satisfies, produces the identical
+      // "zero rows and no error" this file teaches a reader to read as a
+      // refusal — so without this the whole block can ship broken and green.
+      //
+      // IT SELF-HEALS RATHER THAN RELYING ON ITS OWN `finally`. This case
+      // cannot run inside `inRolledBackTransaction` the way the constraint and
+      // seeding cases below do: it writes over the real transport, as a real
+      // session, which is the whole point of it, and PostgREST holds no
+      // transaction this file can roll back. So the restore is written three
+      // ways rather than one — the `finally` here, a fixture-scoped reset in
+      // `afterAll`, and the assertion below, which FAILS on a fixture that is
+      // already tinted rather than quietly writing over it. A crashed run
+      // therefore leaves a red test that names the leftover instead of a green
+      // one that hides it, and the next `supabase db reset` clears it outright.
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      let restore: OrganizationRow | undefined;
+      try {
+        const own = await organizationId(client, slug);
+        restore = await organizationById(client, own);
+        expect(restore, `${slug} is not in the database`).toBeDefined();
+        expect(
+          restore?.brandAccent,
+          `${slug} already holds an accent — a previous run of this case did not restore it; run \`supabase db reset\``,
+        ).toBeNull();
+
+        const response = await rest(`organizations?id=eq.${own}`, {
+          token,
+          method: 'PATCH',
+          body: { brand_accent: CURATED },
+        });
+
+        expect(response.status, 'a permitted update answers 204 with no body').toBe(204);
+        expect(
+          (await organizationById(client, own))?.brandAccent,
+          `the ${slug} admin could not set their own accent`,
+        ).toBe(CURATED);
+
+        // AND BACK TO NONE, which is a write rather than an omission: null is
+        // what "no accent" IS on this row, so an organization that cannot
+        // return to it is one whose branding is a one-way door.
+        const cleared = await rest(`organizations?id=eq.${own}`, {
+          token,
+          method: 'PATCH',
+          body: { brand_accent: null },
+        });
+
+        expect(cleared.status, 'clearing the accent answers 204 with no body').toBe(204);
+        expect(
+          (await organizationById(client, own))?.brandAccent,
+          `the ${slug} admin could not return to no accent`,
+        ).toBeNull();
+      } finally {
+        // RESTORED UNCONDITIONALLY, including on the path where `restore` was
+        // read and the write then failed: the value it holds is the value the
+        // row had, so writing it back is a no-op when nothing moved and the
+        // repair when something did.
+        if (restore !== undefined) {
+          await client.query('update organizations set brand_accent = $1 where id = $2', [
+            restore.brandAccent,
+            restore.id,
+          ]);
+        }
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses a $fixture member-role session the accent, by the database and not the interface',
+    async ({ slug, member }) => {
+      // The matrix row: the surface offers a member no control at all — the
+      // whole settings destination is admin-only (UX-DR32) — and this is what
+      // holds when somebody skips the surface. Row level security refuses an
+      // update by failing USING, so the statement matches no row and succeeds;
+      // PostgREST answers 204 with no error body, and the assertion is that the
+      // row did not move.
+      const token = await tokenFor(member, slug);
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+        const before = await organizationById(client, own);
+
+        const response = await rest(`organizations?id=eq.${own}`, {
+          token,
+          method: 'PATCH',
+          body: { brand_accent: CURATED },
+        });
+
+        expect(response.status, 'a refused update affects zero rows and raises nothing').toBe(204);
+        expect(
+          (await organizationById(client, own))?.brandAccent,
+          `a ${slug} member-role session tinted the shell`,
+        ).toBe(before?.brandAccent ?? null);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(CROSS_TENANT)(
+    'changes nothing when the $fixture admin sets the $otherFixture accent',
+    async ({ slug, admin, otherSlug }) => {
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      try {
+        const other = await organizationId(client, otherSlug);
+        const before = await organizationById(client, other);
+
+        const response = await rest(`organizations?id=eq.${other}`, {
+          token,
+          method: 'PATCH',
+          body: { brand_accent: CURATED },
+        });
+
+        expect(response.status, 'a cross-tenant update matches no row and raises nothing').toBe(
+          204,
+        );
+        expect(
+          (await organizationById(client, other))?.brandAccent,
+          `the ${slug} admin tinted ${otherSlug}`,
+        ).toBe(before?.brandAccent ?? null);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses the $fixture admin an accent outside the curated set',
+    async ({ slug, admin }) => {
+      // THE CLAIM THE CURATION RESTS ON, and the one that is not about
+      // permission: this caller is entitled, the column is granted, the policy
+      // passes — and the write is still refused, by `0006`'s check constraint,
+      // as 23514. That is what makes an unrenderable accent UNREPRESENTABLE
+      // rather than merely absent from a dropdown: the four options in the
+      // `<select>` are a convenience, and the database is the enforcement.
+      //
+      // A check violation RAISES rather than filtering, so this is one of the
+      // few write refusals on this table that reaches the caller as an error —
+      // PostgREST maps it to HTTP 400.
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+        const before = await organizationById(client, own);
+
+        const response = await rest(`organizations?id=eq.${own}`, {
+          token,
+          method: 'PATCH',
+          body: { brand_accent: 'red' },
+        });
+
+        expect(
+          response.ok,
+          'an accent outside the curated set was accepted by the database',
+        ).toBe(false);
+
+        const refusal = await restRefusal(response);
+
+        expect(refusal.code, 'a check-constraint refusal is 23514').toBe('23514');
+        expect(
+          refusal.message,
+          'the refusal does not name the accent constraint',
+        ).toContain('organizations_brand_accent_check');
+        expect(
+          (await organizationById(client, own))?.brandAccent,
+          `the ${slug} organization holds an accent no build can render`,
+        ).toBe(before?.brandAccent ?? null);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noDatabase)('admits exactly the curated keys, asked of the constraint itself', () => {
+    // The set, read off the RUNNING database rather than off the migration
+    // text, which is the only place the constraint is a single fact — a later
+    // migration dropping and re-adding it with a fifth value would leave `0006`
+    // reading exactly as it does today. `apps/web/src/organization/accent.test.ts`
+    // compares the SPA's set to the migration; this is what pins the migration
+    // to what actually shipped.
+    return inRolledBackTransaction(async (client) => {
+      const { rows } = await client.query<{ definition: string }>(
+        `select pg_get_constraintdef(c.oid) as definition
+           from pg_constraint c
+           join pg_class t on t.oid = c.conrelid
+           join pg_namespace n on n.oid = t.relnamespace
+          where n.nspname = 'public'
+            and t.relname = 'organizations'
+            and c.conname = 'organizations_brand_accent_check'`,
+      );
+
+      const definition = rows[0]?.definition ?? '';
+
+      expect(definition, 'no check constraint on organizations.brand_accent').not.toBe('');
+      expect(
+        [...definition.matchAll(/'([a-z]+)'/g)].map((found) => found[1]).sort(),
+        'the database admits a different accent set from the one this build renders',
+      ).toEqual(['amber', 'blue', 'green', 'violet']);
+      // RED IS ABSENT DELIBERATELY AND PERMANENTLY. UX-DR4 reserves
+      // `destructive` exclusively for an unresolved conflict, and the epic names
+      // the case: the pilot is a fire department whose obvious accent is red.
+      expect(definition, 'the database admits a red accent').not.toContain("'red'");
+    });
+  });
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'seeds the $fixture organization with no accent at all',
+    async ({ slug }) => {
+      // `0002:38-41` forbids a default that encodes one organization's answer,
+      // and this is the other half of that: the column is nullable with no
+      // default, so every organization starts untinted and the shell it renders
+      // is the one the navigation chrome shipped with. A fixture seeded with an
+      // accent would also make the permitted case above assert nothing.
+      await inRolledBackTransaction(async (client) => {
+        const own = await organizationId(client, slug);
+
+        expect(
+          (await organizationById(client, own))?.brandAccent,
+          `${slug} is seeded with an accent`,
+        ).toBeNull();
+      });
+    },
   );
 });
 

@@ -65,6 +65,51 @@
  * Ramp slots are numbered, never named. Shift Types are Organization data of
  * arbitrary count assigned to slots in creation order (UX-DR6), so a
  * `--shift-night` token would encode one Organization's naming into the theme.
+ *
+ * THE FOUR BRAND ACCENTS (story 1.4c, UX-DR5) are authored here rather than
+ * stored anywhere, and that is the whole architecture of the feature. An
+ * Organization stores WHICH accent it chose — a key, in a `check`-constrained
+ * column (`0006`) — and the colour lives in this file where every other colour
+ * in the application lives: measured at build time by
+ * `test/theme-contrast.test.ts`, in both themes, against its own foreground. A
+ * colour column would move that guarantee to runtime and put colour maths in
+ * `apps/web/src`, which today contains none.
+ *
+ * They are DISTINCTLY NAMED tokens rather than one `--accent` reassigned by an
+ * attribute, which is the obvious implementation and the wrong one here: it
+ * collides with `theme-tokens.test.ts:140`, which bans `.dark`, `[data-theme`
+ * and `data-theme=` outright, and with `:47`, which admits exactly one
+ * declaration per token per theme. Naming each accent's pair distinctly
+ * satisfies both, and every accent then inherits the single-declaration,
+ * dual-theme, divergence and inline-mapping sweeps that hold the other 51.
+ *
+ * NONE OF THEM SITS IN `--destructive`'S HUE, and that is a product rule rather
+ * than a preference: UX-DR4 reserves `destructive` exclusively for an
+ * unresolved conflict, and the pilot is a fire department whose obvious accent
+ * is red. The nearest is `--brand-amber`, 73° away in light and 49° in dark;
+ * `test/theme-contrast.test.ts` asserts the separation in hue AND in CIEDE2000
+ * rather than trusting the numbers written here. Red is absent deliberately and
+ * permanently, which is why the set is four rather than five.
+ *
+ * THE OTHER SIGNALS ARE HELD APART BY DISTANCE RATHER THAN BY HUE, and the
+ * values below were moved in the 1.4c review to make that true. `--primary`,
+ * the two modifier overlays and `--modifier-overridden` occupy the same
+ * everyday colour vocabulary these accents are named from — an accent called
+ * `amber` cannot be 45° from an amber modifier — so what the values buy instead
+ * is perceptual distance: every accent is at least ΔE 10 from every one of
+ * them in both themes, where 2.3 is the just-noticeable bound. Before the
+ * review dark `--brand-amber` measured ΔE 1.5 from
+ * `--modifier-uncovered-foreground`, which is the same colour by any useful
+ * definition. `test/theme-contrast.test.ts` carries the threshold and the
+ * argument for why it is weaker than `destructive`'s.
+ *
+ * Light fills sit near L 0.51 with a white foreground, dark fills near L 0.77
+ * with a near-black one of their own hue — the shape `--primary` already uses.
+ * Every pair clears 4.5:1 against its own foreground with headroom (5.05:1 at
+ * the tightest), every fill clears 3:1 against the surfaces it is drawn on as a
+ * border (4.84:1 at the tightest), and every fill stays inside sRGB — which is
+ * what caps `--brand-amber`'s chroma at 0.09 in light: the hue simply has no
+ * more to give at a lightness white can still read on.
  */
 @import 'tailwindcss';
 
@@ -132,6 +177,16 @@
   --modifier-uncovered: oklch(0.5762 0.1151 75.47 / 0.22);
   --modifier-uncovered-foreground: oklch(0.4756 0.0932 76.04);
   --modifier-overridden: oklch(0.582 0.1334 289.32);
+
+  /* The curated brand accents (story 1.4c, UX-DR5) */
+  --brand-blue: oklch(0.49 0.19 266);
+  --brand-blue-foreground: oklch(1 0 0);
+  --brand-green: oklch(0.52 0.15 143);
+  --brand-green-foreground: oklch(1 0 0);
+  --brand-amber: oklch(0.54 0.09 95);
+  --brand-amber-foreground: oklch(1 0 0);
+  --brand-violet: oklch(0.475 0.19 312);
+  --brand-violet-foreground: oklch(1 0 0);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -190,6 +245,16 @@
     --modifier-uncovered: oklch(0.7758 0.1401 78.65 / 0.16);
     --modifier-uncovered-foreground: oklch(0.7803 0.1157 78.08);
     --modifier-overridden: oklch(0.6843 0.1236 290.86);
+
+    /* The curated brand accents (story 1.4c, UX-DR5) */
+    --brand-blue: oklch(0.77 0.115 266);
+    --brand-blue-foreground: oklch(0.185 0.03 266);
+    --brand-green: oklch(0.82 0.165 143);
+    --brand-green-foreground: oklch(0.185 0.03 143);
+    --brand-amber: oklch(0.665 0.145 68);
+    --brand-amber-foreground: oklch(0.185 0.03 68);
+    --brand-violet: oklch(0.81 0.125 312);
+    --brand-violet-foreground: oklch(0.185 0.03 312);
   }
 }
 
@@ -251,6 +316,14 @@
   --color-modifier-uncovered: var(--modifier-uncovered);
   --color-modifier-uncovered-foreground: var(--modifier-uncovered-foreground);
   --color-modifier-overridden: var(--modifier-overridden);
+  --color-brand-blue: var(--brand-blue);
+  --color-brand-blue-foreground: var(--brand-blue-foreground);
+  --color-brand-green: var(--brand-green);
+  --color-brand-green-foreground: var(--brand-green-foreground);
+  --color-brand-amber: var(--brand-amber);
+  --color-brand-amber-foreground: var(--brand-amber-foreground);
+  --color-brand-violet: var(--brand-violet);
+  --color-brand-violet-foreground: var(--brand-violet-foreground);
 }
 
 /* The layer that makes the tokens visible. Written as direct `var()` rather

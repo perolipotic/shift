@@ -8,18 +8,23 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { t } from '@/i18n';
 import {
+  accentMessageKey,
+  brandAccentOf,
+  brandAccentValue,
+  BRAND_ACCENT_OPTIONS,
+  NO_BRAND_ACCENT,
+  type BrandAccentKey,
+} from '@/organization/accent';
+import { OrganizationLockup } from '@/organization/lockup';
+import {
   LOGO_UNAVAILABLE,
-  LOGO_URL_STALE_MS,
   NO_FILE_CHOSEN,
   ORGANIZATION_LOGO_ACCEPT,
   ORGANIZATION_LOGO_BUCKET,
-  organizationLogoKey,
-  organizationLogoMark,
-  readOrganizationLogoUrl,
   replaceOrganizationLogo,
   type LogoFailure,
-  type LogoUrlOutcome,
 } from '@/organization/logo';
+import { useRenderableLogo } from '@/organization/logo-url';
 import { organizationMessageKey } from '@/organization/messages';
 import {
   ORGANIZATION_SNAPSHOT_KEY,
@@ -67,15 +72,38 @@ import { supabaseClient } from '@/supabase/client';
  *     the resource tree is typed as `typeof hr`, so the application is
  *     single-locale by construction. A control whose value changes nothing on
  *     screen is the dead affordance the voice rules exist to prevent.
- *   - THE ACCENT. Part C, recorded in `deferred-work.md`: UX-DR5 scopes the
- *     tint to the application shell and the logo lockup, and neither exists.
- *     The LOGO is here now, as of story 1.4b.
+ *   - NOTHING ABOUT THE ACCENT BEYOND WHICH ONE. The control offers four
+ *     curated keys and "no accent" and no way to express anything else: no hex
+ *     field, no colour picker, no free-form value. Every colour in this
+ *     application has its contrast measured at BUILD time, and an
+ *     admin-entered colour would move that guarantee to runtime for the sake of
+ *     an exact brand match. `0006` and `@/organization/accent` carry the
+ *     argument; what belongs here is that the control cannot express the thing
+ *     the rule forbids.
  *   - `destructive`. UX-DR4 reserves that token exclusively for an unresolved
  *     conflict, and a refused save is not one — the refusal is a bordered
  *     `role="alert"`, the same shape `/prijava/$slug` uses.
  *
  * The session guard is NOT here. It is registered once on the pathless `_app`
  * layout this route nests under.
+ *
+ * THE ACCENT IS A THIRD WRITE AND NOT A SIXTH FIELD (story 1.4c), and it sits
+ * INSIDE the form where the logo sits beside it — which makes the disjoint
+ * shape matter more rather than less. `{ brandAccent }` travels on its own
+ * update the instant the choice is made, so a save of the five identity fields
+ * cannot carry an accent chosen while somebody was typing, and choosing an
+ * accent cannot push a half-typed name to the database. The write is applied on
+ * CHANGE rather than on submit for exactly that reason: a control whose effect
+ * is the whole shell tinting itself is one whose effect should be visible
+ * immediately, and waiting for the form's submit would make the accent the one
+ * field on the screen whose save is somebody else's button.
+ *
+ * WHICH ACCENT, NEVER WHAT COLOUR. The `<select>` carries keys — `blue`,
+ * `green`, `amber`, `violet` and the empty string for none — and the colours
+ * live in `index.css` beside the other fifty-one, measured by
+ * `test/theme-contrast.test.ts` in both themes. A key outside the set is
+ * refused by `0006`'s check constraint rather than by this screen, which is the
+ * same division every other refusal on this surface follows.
  *
  * THE LOGO IS A SECOND WRITE AND NOT A SIXTH FIELD (story 1.4b). It travels on
  * its own update — `{ logoPath }`, which `@/organization/snapshot` types as a
@@ -120,6 +148,16 @@ export function OrganizacijaScreen() {
   // this tick. The ref is written synchronously, so it is what the guard reads.
   const saving = useRef(false);
   const uploading = useRef(false);
+  const tinting = useRef(false);
+  // THE ACCENT CHOSEN WHILE THE LAST ONE WAS STILL IN FLIGHT, or `undefined` for
+  // none — and `undefined` rather than `null` because `null` is itself a choice
+  // somebody can make. Dropping it on the floor is what this replaces: the
+  // control is a `<select>`, an arrow key is a change event in several browsers,
+  // and a person who lands on the accent they wanted two keys past the one they
+  // passed through would have had the SECOND write silently discarded while the
+  // first painted the shell. Latest wins, and the last thing chosen is what the
+  // row ends up holding.
+  const queuedAccent = useRef<BrandAccentKey | null | undefined>(undefined);
   // ONE FAILURE SLOT for both vocabularies, because there is one message region:
   // a second `role="alert"` would be a second thing competing to be announced,
   // and the five fields would have to choose which of the two to describe
@@ -128,11 +166,21 @@ export function OrganizacijaScreen() {
   const [failure, setFailure] = useState<OrganizationFailure | LogoFailure | null>(null);
   const [pending, setPending] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
-  // WHICH URL failed to load, not merely THAT one did. A boolean would stay
-  // true across the next signed URL and hide a logo that renders perfectly;
-  // holding the URL means the fallback clears itself the moment a different one
-  // arrives, which is what a refetch after an expiry produces.
-  const [unrenderable, setUnrenderable] = useState<string | null>(null);
+  const [savingAccent, setSavingAccent] = useState(false);
+  // ONE FLAG FOR THREE HANDLERS, because there is one message region and one
+  // row: a save started while an upload or an accent write is in flight would
+  // take the region from a refusal nobody has read yet. Named once rather than
+  // spelled out on each control, so a fourth handler cannot be added to two of
+  // them and forgotten on the third.
+  const busy = pending || uploadingLogo || savingAccent;
+  // WHAT THE ACCENT CONTROL IS DISABLED BY, and it deliberately excludes its
+  // OWN write. `disabled` on an element that currently has focus moves focus to
+  // `<body>`, so a control that disables itself from inside its own `onChange`
+  // ejects every keyboard user from it on every choice — and then re-enables
+  // itself somewhere they are no longer standing. The other two handlers still
+  // lock it, because all three share one row and one message region; its own
+  // write is serialised by `queuedAccent` instead.
+  const writingElsewhere = pending || uploadingLogo;
 
   const snapshot = useQuery({
     queryKey: ORGANIZATION_SNAPSHOT_KEY,
@@ -145,31 +193,14 @@ export function OrganizacijaScreen() {
   // that is the thing the person is waiting to hear about.
   const refusal: OrganizationFailure | LogoFailure | null =
     failure ?? (answered !== undefined && !answered.ok ? answered.code : null);
-  const logoPath = organization === null ? null : organization.logoPath;
-
-  // DERIVED, never independent (AD-13). The key is the snapshot's own with the
-  // path appended, the fetch is skipped entirely when there is no logo, and a
-  // failure here surfaces as the neutral fallback rather than as a message: a
-  // reference that resolves to nothing is the same thing to look at as no
-  // reference, and `@/organization/logo` explains why the two cannot be told
-  // apart anyway.
-  const logo = useQuery({
-    queryKey: organizationLogoKey(logoPath),
-    queryFn: () => renderableLogo(logoPath),
-    enabled: logoPath !== null,
-    // NO RETRIES. A refused cross-tenant read is settled, not slow: retrying it
-    // costs three storage calls per mount and answers the same 404 each time,
-    // and it leaves a persistently failing read indistinguishable from an
-    // organization that simply has no logo for as long as the backoff lasts.
-    retry: false,
-    // BELOW THE EXPIRY the signed URL carries, so a tab left open across the
-    // hour refetches instead of rendering a dead capability.
-    staleTime: LOGO_URL_STALE_MS,
-  });
-
-  const signed = logo.data ?? null;
-  const readable = signed !== null && signed.ok ? signed.url : null;
-  const logoUrl = readable === unrenderable ? null : readable;
+  // DERIVED, never independent (AD-13), and SHARED with the navigation chrome
+  // since story 1.4c. The key is the snapshot's own with the path appended, the
+  // fetch is skipped entirely when there is no logo, and a failure surfaces as
+  // the neutral fallback rather than as a message: a reference that resolves to
+  // nothing is the same thing to look at as no reference, and
+  // `@/organization/logo` explains why the two cannot be told apart anyway. Two
+  // copies of it were two `queryFn`s registered for one key.
+  const logo = useRenderableLogo(organization === null ? null : organization.logoPath);
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -188,7 +219,8 @@ export function OrganizacijaScreen() {
       month === null ||
       day === null ||
       saving.current ||
-      uploading.current
+      uploading.current ||
+      tinting.current
     ) {
       return;
     }
@@ -249,29 +281,6 @@ export function OrganizacijaScreen() {
   }
 
   /**
-   * A signed URL for the logo the snapshot points at, or nothing to point at.
-   *
-   * The READ's failure never reaches the message region: a reference that
-   * resolves to nothing and no reference at all are the same thing to look at,
-   * and `@/organization/logo` explains why the service cannot tell them apart
-   * anyway. It is logged instead, for the reason every other stable code in this
-   * application is — a persistently unreadable logo is a fault somebody should
-   * be able to diagnose, and silence is how it stays undiagnosed.
-   */
-  async function renderableLogo(path: string | null): Promise<LogoUrlOutcome | null> {
-    if (path === null) return null;
-
-    const outcome = await readOrganizationLogoUrl(
-      supabaseClient().storage.from(ORGANIZATION_LOGO_BUCKET),
-      path,
-    );
-
-    if (!outcome.ok) console.error(outcome.code, path);
-
-    return outcome;
-  }
-
-  /**
    * Hands the chosen file to the one module that knows what uploading means.
    *
    * THE SEQUENCE IS NOT HERE. `replaceOrganizationLogo` points the row at the
@@ -286,7 +295,7 @@ export function OrganizacijaScreen() {
    * `setFailure(null)` below would erase a refusal the person had not read yet.
    */
   async function uploadLogo(file: Blob): Promise<void> {
-    if (organization === null || uploading.current || saving.current) {
+    if (organization === null || uploading.current || saving.current || tinting.current) {
       return;
     }
 
@@ -307,10 +316,6 @@ export function OrganizacijaScreen() {
 
         return;
       }
-
-      // A NEW URL IS COMING, so whatever failed to render before is no longer
-      // the reason to fall back.
-      setUnrenderable(null);
 
       // ONE INVALIDATION for both figures. The derived URL is keyed under this
       // key, so refetching the row refetches the preview with it.
@@ -340,11 +345,117 @@ export function OrganizacijaScreen() {
     if (chosen !== undefined) void uploadLogo(chosen);
   }
 
-  /** A signed URL the browser could not load. Falls back rather than showing a
-   *  broken image — the second line of defence behind {@link LOGO_URL_STALE_MS},
-   *  because a URL can stop working for reasons no timer predicts. */
-  function markLogoUnrenderable(): void {
-    setUnrenderable(logoUrl);
+  /**
+   * Writes the chosen accent, on its own and on its own key.
+   *
+   * ITS OWN WRITE, not a sixth field on the submit. `{ brandAccent }` is a
+   * shape `@/organization/snapshot` types as disjoint from the five identity
+   * fields and from the logo reference, so none of the three can carry another
+   * — and the compiler is what says so rather than a convention somebody has to
+   * remember.
+   *
+   * GUARDED ON THE OTHER TWO HANDLERS, and QUEUED against itself. All three
+   * share one row and one message region, so a save or an upload in flight has
+   * to lock this out — `setFailure(null)` below would otherwise erase a refusal
+   * nobody had read yet. Its own second press is a different case: dropping it
+   * would leave the row holding an accent the person passed through on the way
+   * to the one they wanted, so the latest choice is remembered and applied when
+   * the first settles.
+   *
+   * A REFUSAL KEEPS THE CHOICE ON SCREEN. The control is uncontrolled, like
+   * every other field here, so a refused write leaves the `<select>` showing
+   * what was chosen rather than snapping back to the stored value — UX-DR34,
+   * and the same reason the five inputs are refs. What is NOT left to the
+   * control is the claim about the row: the status line beside it reads the
+   * accent out of the SNAPSHOT, so a refused write is visible as a control and
+   * a row that disagree rather than as nothing at all.
+   */
+  async function applyAccent(accent: BrandAccentKey | null): Promise<void> {
+    if (organization === null || saving.current || uploading.current) return;
+
+    // LATEST WINS rather than first wins. The write in flight cannot be
+    // recalled, so the choice made over the top of it is held and applied in
+    // the `finally` below.
+    if (tinting.current) {
+      queuedAccent.current = accent;
+
+      return;
+    }
+
+    tinting.current = true;
+    setFailure(null);
+    setSavingAccent(true);
+
+    try {
+      const outcome = await updateOrganization(
+        supabaseClient().from(ORGANIZATION_TABLE),
+        organization.id,
+        { brandAccent: accent },
+      );
+
+      if (!outcome.ok) {
+        setFailure(outcome.code);
+
+        return;
+      }
+
+      // ONE INVALIDATION, and it refreshes the chrome as well as this card: the
+      // navigation reads the organization under this very key, so the shell
+      // tints itself from the same refetch rather than from a second read.
+      //
+      // ITS FAILURE IS NOT THE WRITE'S. The row has already changed by the time
+      // this runs, so a refetch that rejects — an aborted navigation, a
+      // transport fault — must not be reported as a refused save: that would
+      // tell somebody their accent was rejected while the database holds it and
+      // the next reload shows it. Logged where a fault can be diagnosed, and
+      // the stale figure it leaves behind is the ordinary consequence of a read
+      // that did not land.
+      try {
+        await queryClient.invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY });
+      } catch (cause) {
+        console.error(ORGANIZATION_UNAVAILABLE, cause);
+      }
+    } catch (cause) {
+      console.error(ORGANIZATION_UNAVAILABLE, cause);
+      setFailure(ORGANIZATION_UNAVAILABLE);
+    } finally {
+      tinting.current = false;
+      setSavingAccent(false);
+
+      const next = queuedAccent.current;
+
+      queuedAccent.current = undefined;
+      if (next !== undefined) void applyAccent(next);
+    }
+  }
+
+  /**
+   * What the row holds, named the way the control names it.
+   *
+   * THE SAME ANSWER THE SELECTED OPTION GIVES, including for an accent this
+   * build does not know: `accentMessageKey` folds an unrecognised key to
+   * `Neutralna` — which is right for the class it resolves, and would be a lie
+   * here, where the whole job is to say what the DATABASE holds. So an
+   * unrenderable accent reads as its stored value, exactly as its option does.
+   * Data, never a key: this build has no name for it.
+   */
+  function storedAccentLabel(accent: string | null): ReactNode {
+    return brandAccentOf(accent) === null && accent !== null
+      ? accent
+      : t(accentMessageKey(accent));
+  }
+
+  /**
+   * What the accent control hands back: a curated key, or `null` for no accent.
+   *
+   * `brandAccentOf` is what makes the crossing safe in the one direction that
+   * matters: the control's value is a string, the column admits four words and
+   * null, and anything else — including the raw value of an accent a newer
+   * build stored, which this screen renders as its own option — resolves to the
+   * `null` that returns the organization to the untinted shell.
+   */
+  function chooseAccent(event: ChangeEvent<HTMLSelectElement>): void {
+    void applyAccent(brandAccentOf(event.target.value));
   }
 
   /**
@@ -360,42 +471,37 @@ export function OrganizacijaScreen() {
    */
   function renderLogo(): ReactNode {
     if (organization === null) {
-      // A SKELETON THE SIZE OF THE MARK, for the reason `renderSettings` draws
-      // one: without it the card has no logo block at all until the row
+      // A SKELETON THE SIZE OF THE LOCKUP, for the reason `renderSettings`
+      // draws one: without it the card has no logo block at all until the row
       // arrives and then grows one, which moves every control below it under
-      // whatever the pointer was already heading for.
+      // whatever the pointer was already heading for. Drawn by the lockup
+      // itself, so the size is one fact rather than two that can disagree.
       return snapshot.isPending ? (
-        <div className="h-16 w-16 animate-pulse rounded-md bg-muted" />
+        <OrganizationLockup
+          organization={organization}
+          logoUrl={logo.url}
+          onUnrenderable={logo.onUnrenderable}
+          pending={snapshot.isPending}
+          compact={false}
+        />
       ) : null;
     }
-
-    // `null` only for a name that is blank or whitespace only, which `0002:72`
-    // makes unreachable from the database — but an empty accessible name on a
-    // `role="img"` is an element a screen reader announces as nothing at all,
-    // so the generic destination label stands in rather than nothing.
-    const mark = organizationLogoMark(organization.name);
-    const busy = pending || uploadingLogo;
 
     return (
       <div className="grid gap-2">
         <p className="text-sm font-medium leading-none">{t('organization.logo')}</p>
         <div className="flex items-center gap-4">
-          {logoUrl === null ? (
-            <span
-              role="img"
-              aria-label={mark === null ? t('nav.organizacija') : organization.name}
-              className="flex h-16 w-16 shrink-0 items-center justify-center rounded-md border border-input bg-muted text-lg font-semibold uppercase"
-            >
-              {mark}
-            </span>
-          ) : (
-            <img
-              src={logoUrl}
-              alt={organization.name}
-              onError={markLogoUnrenderable}
-              className="h-16 w-16 shrink-0 rounded-md border border-input object-contain"
-            />
-          )}
+          {/* THE LOCKUP, shared with the navigation chrome rather than drawn
+              twice. The logo-or-mark decision, the accessible name, the
+              broken-image fallback and the accent are four decisions, and two
+              copies of them are two places for one copy to be fixed. */}
+          <OrganizationLockup
+            organization={organization}
+            logoUrl={logo.url}
+            onUnrenderable={logo.onUnrenderable}
+            pending={snapshot.isPending}
+            compact={false}
+          />
           {/* `disabled` on the INPUT as well as on the button: only the button
               carried it, so a keyboard user reaching the control directly could
               choose a second file mid-upload and get silence. */}
@@ -553,14 +659,90 @@ export function OrganizacijaScreen() {
             className="h-11"
           />
         </div>
+        <div className="grid gap-2">
+          <Label htmlFor="organization-accent">{t('organization.accent')}</Label>
+          {/* A CLOSED SET AND NOTHING ELSE. Five options — four curated accents
+              and no accent — because every colour in this application has its
+              contrast measured at build time, and a hex field or a colour
+              picker would move that guarantee to runtime. The values are KEYS;
+              `0006`'s check constraint is what refuses one outside the set, so
+              a direct API call fails at the database rather than here.
+
+              A NATIVE `<select>` rather than a styled listbox: it is the one
+              control shadcn's inherited set does not cover, and the native
+              element already carries keyboard behaviour, an accessible name
+              through its `<Label>`, and a phone's own picker sheet. Its options
+              read in Croatian from `hr.json` — unlike a file input's chrome,
+              which is the browser's.
+
+              WRITTEN ON CHANGE, on its own disjoint update. The effect is the
+              whole shell tinting itself, so it should be visible when it is
+              chosen rather than when somebody presses a button four fields
+              away — and travelling alone is what stops it clobbering a
+              half-typed name. */}
+          <select
+            /* REMOUNTED WHEN THE ROW CHANGES, and that is what `key` is doing
+               here rather than a list identity. A `<select>`'s `defaultValue`
+               sets `defaultSelected` at MOUNT and never again, so after a
+               successful write the element's reset state still named the
+               accent the row held when the screen opened — and `Cancel`, which
+               is `type="reset"`, would snap the control back to an accent the
+               database no longer holds. Keying on the stored value remounts the
+               element exactly when that state has to move, so reset always
+               restores what the row actually says. */
+            key={organization.brandAccent ?? NO_BRAND_ACCENT}
+            id="organization-accent"
+            name="brandAccent"
+            defaultValue={organization.brandAccent ?? NO_BRAND_ACCENT}
+            onChange={chooseAccent}
+            disabled={writingElsewhere}
+            aria-busy={savingAccent}
+            aria-describedby={refusal === null ? undefined : 'organization-error'}
+            className="flex h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+              {/* THE ACCENT THIS BUILD DOES NOT KNOW, rendered as its own option
+                rather than collapsed into `Neutralna`. A forward-only migration
+                stream and a static SPA are not promoted at the same instant, so
+                a row carrying an accent a newer build wrote is an ordinary
+                state — and folding it into the first option made the control
+                claim the organization had no accent AND made every other option
+                unreachable by keyboard, because selecting the one already shown
+                fires no change event. Shown, the row is described honestly and
+                every other option is one change away.
+
+                Its label is the stored VALUE and not a key: it is data this
+                build has no name for, and data is never a key. */}
+            {brandAccentOf(organization.brandAccent) === null &&
+            organization.brandAccent !== null ? (
+              <option value={organization.brandAccent}>{organization.brandAccent}</option>
+            ) : null}
+            {BRAND_ACCENT_OPTIONS.map((option) => (
+              <option key={brandAccentValue(option)} value={brandAccentValue(option)}>
+                {t(accentMessageKey(option))}
+              </option>
+            ))}
+          </select>
+          {/* WHAT THE ROW HOLDS, beside the control that changes it.
+              `role="status"` and not `role="alert"`: the alert region is the
+              refusal's, and a second assertive region would be a second thing
+              competing to be announced. This is polite, it is the only
+              confirmation the one write on this screen with no Save button
+              gets, and it is read out of the SNAPSHOT rather than out of the
+              control — so after a refusal the control shows what was chosen and
+              this still shows what the database holds, which is the difference
+              somebody needs to see. */}
+          <p role="status" className="text-sm text-muted-foreground">
+            {storedAccentLabel(organization.brandAccent)}
+          </p>
+        </div>
         <div className="grid gap-2 sm:grid-cols-2">
-          {/* Disabled on EITHER flag. The two handlers share one message
-              region, so a save started while an upload is in flight would take
-              the region from a refusal nobody has read yet. */}
+          {/* Disabled on EVERY flag. The three handlers share one message
+              region, so a save started while an upload or an accent write is in
+              flight would take the region from a refusal nobody has read yet. */}
           <Button
             className="h-11 w-full"
             type="submit"
-            disabled={pending || uploadingLogo}
+            disabled={busy}
             aria-busy={pending}
           >
             {t('organization.save')}
@@ -574,7 +756,7 @@ export function OrganizacijaScreen() {
             className="h-11 w-full"
             type="reset"
             variant="outline"
-            disabled={pending || uploadingLogo}
+            disabled={busy}
           >
             {t('organization.cancel')}
           </Button>
