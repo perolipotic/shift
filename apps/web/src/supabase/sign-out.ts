@@ -2,11 +2,11 @@
  * The exit: a session ended, or one stable code out (the navigation shell, part B).
  *
  * THE COUNTERPART TO `@/supabase/sign-in`, and deliberately its mirror image.
- * `routes/index.tsx` recorded the omission in prose — "no sign-out affordance,
- * `Odjava` stays reserved" — and prose is what an omission looks like right up
- * until somebody needs it: on a shared shift-work device the only way to end a
- * session was to close the browser, which ends nothing the next person cannot
- * reopen.
+ * The application shipped with no sign-out affordance at all, recorded in prose
+ * as a deliberate omission and nowhere else — and prose is what an omission
+ * looks like right up until somebody needs it: on a shared shift-work device the
+ * only way to end a session was to close the browser, which ends nothing the
+ * next person cannot reopen.
  *
  * THE AUTH CLIENT IS THE FIRST PARAMETER, exactly as `signIn(auth, …)` takes
  * it, and for exactly the reason recorded there: every row of the story's I/O

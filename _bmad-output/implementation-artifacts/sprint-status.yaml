@@ -161,6 +161,15 @@ development_status:
   # with review_loop_iteration 0 — three adversarial layers, twenty-nine findings
   # patched, two deferred, no loopback. Reconciled 2026-09-17.
   1-4c-brand-accent-and-lockup: done
+  # The root route's chrome gap, specced 2026-09-17 from the deferred-work entry
+  # the navigation shell's part B left. It derives from no epics.md acceptance
+  # criterion — `/` appears in none of story 1.1's clauses — so it carries no
+  # story number and a regenerate reports it as an orphan: reconcile with --set
+  # rather than dropping it, same convention as the navigation-shell parts.
+  # `/` stops being a screen and becomes the decision `router.test.ts` already
+  # described it as: signed in it forwards to the first destination, signed out
+  # it redirects to /prijava as before. Verified in a browser first.
+  root-route-redirect: review
   1-5-an-admin-creates-and-edits-members-and-works-the-list-at-sca: backlog
   1-6-deactivating-a-member-changes-the-future-and-rewrites-no-his: backlog
   1-7-an-admin-creates-teams-and-moves-people-between-them: backlog

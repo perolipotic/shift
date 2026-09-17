@@ -86,8 +86,17 @@ const ADMIN_ONLY: readonly MemberRole[] = ['admin'];
  * The admin's four are appended rather than interleaved: UX-DR32 describes them
  * as GROUPED configuration added to the member's four, so a member and an admin
  * see the same first four in the same order.
+ *
+ * TYPED AS A NON-EMPTY TUPLE, which is a claim about the table rather than a
+ * formality. `/` forwards a signed-in visitor to the FIRST entry here
+ * (`routes/index.tsx`), so "there is a first entry" is a property callers
+ * depend on — and under `noUncheckedIndexedAccess` a plain array type makes
+ * `[0]` possibly `undefined`, which leaves every caller to invent a fallback
+ * for a case this file rules out. There is no honest fallback: an empty table
+ * means a signed-in person belongs nowhere. The type says so here, beside the
+ * entries that make it true, instead of being asserted away at each call site.
  */
-export const DESTINATIONS: readonly Destination[] = [
+export const DESTINATIONS: readonly [Destination, ...Destination[]] = [
   { key: 'nav.danas', path: '/danas', roles: EVERYONE },
   { key: 'nav.kalendar', path: '/kalendar', roles: EVERYONE },
   // ONE entry, not two. The role decides what `Sati` shows, never whether a
