@@ -13,6 +13,7 @@ import { prijavaRoute } from '@/routes/prijava';
 import { rasporedRoute } from '@/routes/raspored';
 import { rootRoute } from '@/routes/__root';
 import { satiRoute } from '@/routes/sati';
+import { currentMemberRole } from '@/navigation/role';
 import { currentSession } from '@/supabase/client';
 
 /**
@@ -57,11 +58,16 @@ const routeTree = rootRoute.addChildren([
 /**
  * The router, and the one place the session reader is bound into the context.
  *
- * `currentSession` is the whole of the router context (`__root.tsx`). It is
- * declared outside the route module so `/`'s decision stays assertable from the
- * node suite: `router.test.ts` calls `beforeLoad` with a context of its own and
- * gets both branches, which is impossible if the route reaches for the client
- * itself.
+ * `currentSession` and `currentMemberRole` are the whole of the router context
+ * (`__root.tsx`). Both are declared outside the route modules so `/`'s decision
+ * and `/ljudi`'s guard stay assertable from the node suite: `router.test.ts`
+ * calls each `beforeLoad` with a context of its own and gets both branches,
+ * which is impossible if a route reaches for the client itself.
+ *
+ * `currentMemberRole` joined in story 1.5a, and it is the second reader for the
+ * same reason the first one is a reader rather than a value: it is read at
+ * resolution time, so a demoted admin loses `/ljudi` on their next navigation
+ * rather than at token expiry.
  *
  * The reader is IMPORTED rather than written here as an arrow, because an arrow
  * here is executed by no test at all: `router.test.ts` supplies its own context
@@ -79,7 +85,7 @@ const routeTree = rootRoute.addChildren([
  */
 export const router = createRouter({
   routeTree,
-  context: { currentSession },
+  context: { currentSession, currentMemberRole },
 });
 
 declare module '@tanstack/react-router' {

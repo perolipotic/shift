@@ -1,6 +1,7 @@
 import type { Session } from '@supabase/supabase-js';
 
 import type { MemberRole } from '@/navigation/destinations';
+import { currentSession, supabaseClient } from '@/supabase/client';
 
 /**
  * The signed-in member's own permission level, READ (the navigation shell, part B).
@@ -152,14 +153,35 @@ export interface MemberTable {
 }
 
 /**
- * Every permission level this application knows, as VALUES rather than a type.
+ * Every permission level this application knows, as VALUES rather than a type,
+ * IN RANK ORDER.
  *
  * A type alone decides nothing at runtime, and the value arriving here is text
  * from a database that a later migration could widen. Listed here so the
  * narrowing below is a lookup in a list somebody can read, and so adding a third
  * level is one edit in one place.
+ *
+ * EXPORTED, AND THE ORDER IS LOAD-BEARING, since story 1.5a. `/ljudi` is the
+ * first route in the tree that refuses a permission level, and it decides by
+ * asking whether the session holds `MEMBER_ROLES[0]` rather than by naming a
+ * level itself — so reordering this array inverts that guard. That is the
+ * mutation the 1.5a review shipped green once: `['member_role', 'admin']` left
+ * the whole suite passing while members read every colleague's address and
+ * allowance and admins were forwarded away. `members/list.test.ts` therefore
+ * pins `MEMBER_ROLES[0]` to the LITERAL `'admin'`, not to a value derived from
+ * this array, which is the only form of that assertion a reorder can fail.
+ *
+ * TYPED AS A NON-EMPTY TUPLE for the reason `DESTINATIONS` is: "there is a
+ * first entry" is a property the guard depends on, and under
+ * `noUncheckedIndexedAccess` a plain array type makes `[0]` possibly
+ * `undefined` — which would leave the guard inventing a fallback for a case
+ * this file rules out. There is no honest fallback: an application with no
+ * permission levels has nothing to guard.
+ *
+ * The rank is most-privileged first. `destinationsFor` filters rather than
+ * sorts, so nothing about navigation depends on it; the guard does.
  */
-const MEMBER_ROLES: readonly MemberRole[] = ['admin', 'member_role'];
+export const MEMBER_ROLES: readonly [MemberRole, ...MemberRole[]] = ['admin', 'member_role'];
 
 /**
  * The permission level a value IS, or `null` if it is not one.
@@ -305,4 +327,29 @@ export async function readMemberRole(
   }
 
   return { ok: true, role };
+}
+
+/**
+ * The role reader the router binds into its context, and the one place this
+ * module's two seams are tied to the real client.
+ *
+ * THE SEAMS ABOVE STAY SEAMS. `readMemberRole` takes its table and its session
+ * reader as parameters and must keep doing so — that is what makes every row of
+ * the I/O matrix executable from the node suite against a stub. This is the
+ * single BINDING of those parameters to the shipped client, named here so
+ * `router.ts` can import it.
+ *
+ * IMPORTED RATHER THAN WRITTEN AS AN ARROW IN `router.ts`, for the reason that
+ * file records about `currentSession`: an arrow in the router's own context
+ * object is executed by no test at all — `router.test.ts` supplies its own
+ * context — so a stub left there would keep the suite green while `/ljudi`
+ * refused every admin. A named export is something a test can pin by identity,
+ * and `router.test.ts` does.
+ *
+ * It constructs nothing at module load: `supabaseClient()` is memoized and
+ * called here, inside the function, so importing this module still needs no
+ * environment and `VITE_SUPABASE_URL=""` still runs the router suite.
+ */
+export function currentMemberRole(): Promise<MemberRoleOutcome> {
+  return readMemberRole(supabaseClient().from(MEMBERS_TABLE), currentSession);
 }

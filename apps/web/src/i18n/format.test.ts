@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
+  compareText,
   formatDate,
   formatDayMonthRange,
   formatMonthName,
@@ -159,6 +160,31 @@ function forbiddenCallsIn(source: string): string[] {
 }
 
 /**
+ * Every exported FUNCTION name in a source, in every shape one can be declared.
+ *
+ * Three shapes, because `export function` alone missed two of them: an
+ * `export async function` (this module has none today, and a zone-taking one is
+ * exactly the kind a later story adds) and an arrow bound to an exported const,
+ * which is how most of this repository's non-`format` helpers are written. A
+ * completeness guard that cannot see a declaration cannot report it missing.
+ *
+ * Exported VALUES — `LOCALE`, `RANGE_DASH` — are deliberately not matched: they
+ * take no arguments, so the zone rule has nothing to say about them.
+ */
+function exportedFunctionNames(source: string): string[] {
+  const declared = [...source.matchAll(/export\s+(?:async\s+)?function\s+(\w+)/g)].map(
+    (found) => found[1] ?? '',
+  );
+  const arrows = [
+    ...source.matchAll(
+      /export\s+const\s+(\w+)\s*(?::[^=]+)?=\s*(?:async\s+)?\([^)]*\)\s*(?::[^=]+)?=>/g,
+    ),
+  ].map((found) => found[1] ?? '');
+
+  return [...declared, ...arrows];
+}
+
+/**
  * The parameter list of one exported function, split at top-level commas.
  *
  * Nesting-aware: a parameter typed `{ a: number, b: number }` or defaulted to
@@ -204,12 +230,25 @@ function parametersOf(source: string, name: string): string[] {
 }
 
 /**
+ * The exported FUNCTIONS that format no instant, and so take no zone.
+ *
+ * A named list rather than one inline exclusion, because story 1.5a made it
+ * two: `formatNumber` formats a figure and `compareText` orders two strings,
+ * and neither has an instant to resolve against a zone. Naming them is what
+ * keeps the completeness check below honest — every other exported function is
+ * held to `timeZone: string`, and an exemption has to be written down here to
+ * exist.
+ */
+const UNZONED_ENTRY_POINTS = ['formatNumber', 'compareText'];
+
+/**
  * The exported entry points that must take a REQUIRED zone.
  *
- * `formatNumber` is deliberately absent: it formats no date, so it needs no
- * zone. Every other export here does, and the list is asserted complete against
- * the module's actual exports below — otherwise a seventh entry point added
- * without a zone would simply not be checked.
+ * Every exported FUNCTION not named above does, and the list is asserted
+ * complete against the module's actual exports below — otherwise an eighth
+ * entry point added without a zone would simply not be checked. Seven are zoned
+ * and two are not, which is nine exported functions in all; `LOCALE` and
+ * `RANGE_DASH` are exported VALUES and belong to neither count.
  */
 const ZONED_ENTRY_POINTS = [
   'formatDate',
@@ -291,6 +330,46 @@ describe('ranges use an unspaced en dash', () => {
 
   it('exports that dash as the one range separator', () => {
     expect(RANGE_DASH).toBe('–');
+  });
+});
+
+describe('text orders the way Croatian orders it, not the way UTF-16 does', () => {
+  /**
+   * ITS OWN BLOCK, and not a tail on the range separators above.
+   *
+   * These cases were nested under `ranges use an unspaced en dash`, which is a
+   * claim about UX-DR34 and has nothing to say about collation — a reader
+   * scanning the suite for what guards the member list's ordering would not find
+   * it there, and a reviewer reading the dash block would wonder what collation
+   * was doing in it. Same assertions, correct home.
+   */
+  /**
+   * Croatian order, which is not code-unit order (story 1.5a).
+   *
+   * The comparator is the second thing in this module that CLDR gets right and
+   * JavaScript gets wrong — the first being the date separators above — and the
+   * failure mode is the same: the naive form produces output that looks
+   * plausible and is wrong in a way nobody reports. `a < b` compares UTF-16 code
+   * units, which puts every Croatian diacritic after `z`.
+   */
+  it('puts č directly after c rather than after z', () => {
+    // The case `<` gets wrong, and both directions of it, so a comparator
+    // returning a constant fails too.
+    expect(compareText('Cvitanović', 'Čavić')).toBeLessThan(0);
+    expect(compareText('Čavić', 'Cvitanović')).toBeGreaterThan(0);
+    expect(compareText('Čavić', 'Zoran')).toBeLessThan(0);
+    // What `<` would say, stated here so the disagreement is visible rather
+    // than asserted about an invisible mechanism.
+    expect('Čavić' < 'Zoran').toBe(false);
+  });
+
+  it('reports equal text as equal, so a sort over it is stable', () => {
+    expect(compareText('Ana', 'Ana')).toBe(0);
+  });
+
+  it('orders addresses by the same rule, which is why it is not named for names', () => {
+    expect(compareText('ana@dvd.hr', 'čavić@dvd.hr')).toBeLessThan(0);
+    expect(compareText('zoran@dvd.hr', 'čavić@dvd.hr')).toBeGreaterThan(0);
   });
 
   /**
@@ -809,13 +888,40 @@ describe('the timeZone argument is required, not merely present', () => {
   const source = (): string => stripped(FORMATTING_MODULE);
 
   it('checks every exported date/time entry point, and knows of no others', () => {
-    // Completeness guard: a seventh zoned export added later must be listed
+    // Completeness guard: an eighth zoned export added later must be listed
     // here or this fails, rather than the new export going unchecked.
-    const exported = [...source().matchAll(/export function (\w+)/g)].map((match) => match[1]);
-    const zoned = exported.filter((name) => name !== 'formatNumber');
+    //
+    // THE READER SEES EVERY SHAPE AN EXPORT CAN TAKE, which it did not: it
+    // matched `export function` alone, so `export async function` and
+    // `export const name = (…) =>` were both invisible — and either could ship a
+    // date formatter with an optional zone that this block would never look at.
+    // The self-test below proves all three shapes and both polarities.
+    const exported = exportedFunctionNames(source());
+    const zoned = exported.filter((name) => !UNZONED_ENTRY_POINTS.includes(name));
 
+    // Both lists non-empty, so neither an emptied exemption list nor an
+    // emptied requirement list can make the comparison below vacuous.
+    expect(UNZONED_ENTRY_POINTS.length).toBeGreaterThan(0);
+    expect(exported.length).toBe(ZONED_ENTRY_POINTS.length + UNZONED_ENTRY_POINTS.length);
     expect(ZONED_ENTRY_POINTS.length).toBeGreaterThan(0);
     expect([...zoned].sort()).toEqual([...ZONED_ENTRY_POINTS].sort());
+  });
+
+  it('reads every shape an export can be declared in, and no exported value', () => {
+    // Detector self-test, both polarities — the idiom every reader in this
+    // repository follows. A reader blind to one shape makes the completeness
+    // guard above pass while a new entry point goes unchecked.
+    const probe = [
+      'export function plain(a: string) {}',
+      'export async function waiting(a: string) {}',
+      'export const arrow = (a: string): string => a;',
+      'export const typed: Fn = (a: string) => a;',
+      "export const LOCALE = 'hr';",
+      'const notExported = (a: string) => a;',
+    ].join('\n');
+
+    expect(exportedFunctionNames(probe)).toEqual(['plain', 'waiting', 'arrow', 'typed']);
+    expect(exportedFunctionNames('const x = 1;')).toEqual([]);
   });
 
   it.each(ZONED_ENTRY_POINTS)('declares %s(…, timeZone: string) with no default', (name) => {

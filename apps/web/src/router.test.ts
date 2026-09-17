@@ -5,7 +5,15 @@ import type { Session } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 
 import { router } from '@/router';
+import { mayReadMembers } from '@/members/list';
 import { DESTINATIONS, destinationsFor } from '@/navigation/destinations';
+import {
+  currentMemberRole,
+  MEMBER_ROLES,
+  MEMBER_ROLE_REFUSED,
+  MEMBER_ROLE_UNAVAILABLE,
+  type MemberRoleOutcome,
+} from '@/navigation/role';
 import { currentSession, SESSION_UNRESOLVED } from '@/supabase/client';
 import { AppLayout, appLayoutRoute } from '@/routes/_app';
 import { DanasScreen, danasRoute } from '@/routes/danas';
@@ -104,6 +112,19 @@ function stringLiterals(source: string): string[] {
 }
 
 /**
+ * The role reader handed to every block that asserts nothing about the role.
+ *
+ * The router context gained a second member in story 1.5a (`__root.tsx`), and
+ * every stub here has to carry it or `tsc` refuses the literal. It answers the
+ * REFUSAL rather than an admin, deliberately: a guard that started consulting
+ * the level where it has no business doing so — `/`, the layout, either sign-in
+ * route — would change behaviour against this stub rather than silently agree
+ * with it, which is what makes "session only" still a claim these blocks make.
+ */
+const REFUSES_ROLE = (): Promise<MemberRoleOutcome> =>
+  Promise.resolve({ ok: false, code: MEMBER_ROLE_REFUSED });
+
+/**
  * The eight destinations, each paired with what must render on it.
  *
  * A table rather than eight blocks, because the eight claims are the same claim
@@ -133,6 +154,23 @@ const DESTINATION_ROUTES = [
     component: OrganizacijaScreen,
   },
 ];
+
+/**
+ * The destinations that carry a guard of their own, and the ONLY ones.
+ *
+ * `_app.tsx` registers the session guard once for all eight, and that stays the
+ * rule: a destination listed here has a guard about the permission LEVEL on top
+ * of it, never a second copy of the session check. Story 1.5a adds the first
+ * entry, because `/ljudi` is the first destination that renders organization
+ * data rather than a heading — every colleague's address and leave allowance,
+ * which UX-DR31 gives the member role no surface for at all.
+ *
+ * KEPT BESIDE THE TABLE ABOVE, and kept with this comment, so neither orphans
+ * the other: a list of paths with no reason attached is a list the next story
+ * adds to without arguing for it, and a reason with no list is a paragraph
+ * nothing executes.
+ */
+const ROLE_GUARDED_PATHS = ['/ljudi'];
 
 describe('the shell route tree', () => {
   it('assembles the root route and its children', () => {
@@ -378,7 +416,12 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
     expect(run, '/ has no beforeLoad — the redirect is gone').toBeTypeOf('function');
 
     try {
-      await run?.({ context: { currentSession: () => Promise.resolve(session) } });
+      await run?.({
+        context: {
+          currentSession: () => Promise.resolve(session),
+          currentMemberRole: REFUSES_ROLE,
+        },
+      });
     } catch (thrown) {
       return thrown;
     }
@@ -512,7 +555,12 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
     const run = (appLayoutRoute.options as unknown as { beforeLoad?: BeforeLoad }).beforeLoad;
 
     await expect(
-      run?.({ context: { currentSession: () => Promise.resolve(SESSION) } }),
+      run?.({
+        context: {
+          currentSession: () => Promise.resolve(SESSION),
+          currentMemberRole: REFUSES_ROLE,
+        },
+      }),
       'the layout refuses the session / forwarded — the two guards disagree',
     ).resolves.toBeUndefined();
   });
@@ -623,7 +671,10 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
 
     try {
       await run?.({
-        context: { currentSession: () => Promise.reject(new Error('SecurityError')) },
+        context: {
+          currentSession: () => Promise.reject(new Error('SecurityError')),
+          currentMemberRole: REFUSES_ROLE,
+        },
       });
     } catch (caught) {
       thrown = caught;
@@ -646,12 +697,25 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
     //
     // IDENTITY, not `toBeTypeOf('function')`: the weaker form is satisfied by
     // exactly the mutation it must refuse.
-    const context = (router.options as { context?: { currentSession?: unknown } }).context;
+    const context = (
+      router.options as {
+        context?: { currentSession?: unknown; currentMemberRole?: unknown };
+      }
+    ).context;
 
     expect(
       context?.currentSession,
       'the router does not resolve sessions through @/supabase/client',
     ).toBe(currentSession);
+    // THE SAME CLAIM FOR THE SECOND READER, story 1.5a. `/ljudi`'s guard reads
+    // the level through the context and every assertion about it supplies its
+    // own — so an arrow written into `router.ts` in this position would be
+    // executed by nothing and could answer `{ ok: true, role: 'admin' }` to
+    // everybody with the whole suite green.
+    expect(
+      context?.currentMemberRole,
+      'the router does not resolve permission levels through @/navigation/role',
+    ).toBe(currentMemberRole);
   });
 
   it('reads the session through the context rather than reaching for a client', async () => {
@@ -676,6 +740,7 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
 
             return Promise.resolve(SESSION);
           },
+          currentMemberRole: REFUSES_ROLE,
         },
       });
     } catch (caught) {
@@ -733,7 +798,10 @@ describe('a slug that cannot be one never reaches the credential form', () => {
     try {
       await run({
         params: { slug },
-        context: { currentSession: () => Promise.resolve(session) },
+        context: {
+          currentSession: () => Promise.resolve(session),
+          currentMemberRole: REFUSES_ROLE,
+        },
       });
     } catch (caught) {
       return caught;
@@ -851,7 +919,7 @@ describe('a signed-in visitor is never offered a credential form', () => {
     try {
       await run({
         params: { slug: 'dvd-kastel-novi' },
-        context: { currentSession },
+        context: { currentSession, currentMemberRole: REFUSES_ROLE },
       });
     } catch (thrown) {
       return thrown;
@@ -974,7 +1042,11 @@ describe('the signed-in layout guards every destination once, and is pathless', 
 
   async function beforeLoad(currentSession: () => Promise<Session | null>): Promise<Outcome> {
     try {
-      return { returned: await guard()({ context: { currentSession } }) };
+      return {
+        returned: await guard()({
+          context: { currentSession, currentMemberRole: REFUSES_ROLE },
+        }),
+      };
     } catch (thrown) {
       return { thrown };
     }
@@ -1147,16 +1219,226 @@ describe('the signed-in layout guards every destination once, and is pathless', 
     expect(asked, 'the layout never asked the router context whether anyone is signed in').toBe(1);
   });
 
-  it('leaves the guard on the layout rather than on each destination', () => {
+  it('leaves the SESSION guard on the layout rather than on each destination', () => {
     // The claim the branch assertions cannot make. Eight destinations each
     // carrying their own copy would pass every test above — the layout would
     // still guard — while the ninth destination added later would silently ship
-    // without one. The guard belongs in exactly one place, and this is it.
+    // without one. The session guard belongs in exactly one place, and this is
+    // it.
+    //
+    // AMENDED BY STORY 1.5a, and the amendment is the point rather than a
+    // loosening. `_app.tsx` predicted this moment in so many words: the layout's
+    // guard is session-only because the eight screens held no data, and "if a
+    // route-level check is ever wanted on top, it is a NEW decision made against
+    // a screen that has something to hide". `/ljudi` is that screen — it renders
+    // every colleague's address and leave allowance — so it carries a ROLE guard
+    // of its own, asserted by execution in the block below rather than by this
+    // line's absence.
+    //
+    // What this still refuses is a second session guard: a destination in
+    // `ROLE_GUARDED_PATHS` has to prove its `beforeLoad` decides on the LEVEL,
+    // which it does below, and every destination outside the list must still
+    // carry none at all.
     for (const { path, route } of DESTINATION_ROUTES) {
+      const registered = (route.options as { beforeLoad?: unknown }).beforeLoad;
+
+      if (ROLE_GUARDED_PATHS.includes(path)) {
+        expect(
+          registered,
+          `${path} is listed as role-guarded and carries no guard at all`,
+        ).toBeTypeOf('function');
+        continue;
+      }
+
       expect(
-        (route.options as { beforeLoad?: unknown }).beforeLoad,
+        registered,
         `${path} carries a guard of its own instead of inheriting the layout's`,
       ).toBeUndefined();
     }
+  });
+
+  it('guards exactly the destinations the list names, and the list is not empty', () => {
+    // Non-vacuity, and the mutation it refuses: emptying `ROLE_GUARDED_PATHS`
+    // would turn the loop above back into "no destination carries a guard",
+    // which `/ljudi` would then fail — but emptying it AND deleting the guard
+    // passes both, and that is the state this application must never return to.
+    // Pinning the list against the routes that actually carry a guard is what
+    // makes a removed guard a failure rather than a bookkeeping change.
+    expect(ROLE_GUARDED_PATHS.length).toBeGreaterThan(0);
+    expect(
+      DESTINATION_ROUTES.filter(
+        ({ route }) => (route.options as { beforeLoad?: unknown }).beforeLoad !== undefined,
+      ).map(({ path }) => path),
+    ).toEqual([...ROLE_GUARDED_PATHS]);
+  });
+});
+
+describe('the member list is the first destination that refuses a permission level', () => {
+  /**
+   * The guard `_app.tsx` asked a later story to write, EXECUTED.
+   *
+   * Every claim here is made by calling `beforeLoad` with a role outcome and
+   * looking at what comes back — never by reading the route module's source.
+   * That distinction is the whole reason this block exists: the 1.5a review
+   * widened the guard to `mayReadMembers(outcome) || outcome.ok`, which admits
+   * every signed-in member, and the suite stayed green because the guard's only
+   * behavioural coverage arrived with no session at all, where the correct and
+   * the broken version both forward. Its real decision was pinned by
+   * `toContain('mayReadMembers(outcome)')` — a string, not a behaviour.
+   *
+   * It needs no environment. The reader arrives through the router context, so
+   * `VITE_SUPABASE_URL="" pnpm --filter ./apps/web test src/router.test.ts`
+   * runs this block on a fresh clone with no `.env.local`; a `supabaseClient()`
+   * call inside `beforeLoad` would throw `SUPABASE_ENVIRONMENT_MISSING`
+   * synchronously and make every case here report the wrong thing.
+   */
+
+  type BeforeLoad = (options: { context: AppRouterContext }) => unknown;
+
+  /** What running the guard did, the shape the layout block established. */
+  type Outcome = { readonly thrown: unknown } | { readonly returned: unknown };
+
+  async function beforeLoad(role: () => Promise<MemberRoleOutcome>): Promise<Outcome> {
+    const run = (ljudiRoute.options as unknown as { beforeLoad?: BeforeLoad }).beforeLoad;
+
+    if (typeof run !== 'function') {
+      throw new Error('/ljudi has no beforeLoad — every member reaches the member list');
+    }
+
+    try {
+      return {
+        returned: await run({
+          context: {
+            // The guard must not ask this, and nothing here lets it succeed if
+            // it does: `/ljudi` nests under `_app`, whose own guard has already
+            // settled whether anyone is signed in, so a second session read
+            // here would be the duplicated decision `_app.tsx` exists to
+            // prevent.
+            currentSession: () => Promise.reject(new Error('the guard asked for a session')),
+            currentMemberRole: role,
+          },
+        }),
+      };
+    } catch (thrown) {
+      return { thrown };
+    }
+  }
+
+  function thrownBy(outcome: Outcome): unknown {
+    expect(
+      'thrown' in outcome,
+      `the guard resolved instead of forwarding, returning ${JSON.stringify(
+        'returned' in outcome ? outcome.returned : undefined,
+      )}`,
+    ).toBe(true);
+
+    return 'thrown' in outcome ? outcome.thrown : null;
+  }
+
+  it('lets an admin through, which is the branch that makes the others worth having', async () => {
+    // A guard that forwarded unconditionally would satisfy every redirect case
+    // below and no administrator could reach the list at all.
+    expect(await beforeLoad(() => Promise.resolve({ ok: true, role: 'admin' }))).toEqual({
+      returned: undefined,
+    });
+  });
+
+  it('forwards a member-role session to its first destination', async () => {
+    // THE CASE THE PREVIOUS ITERATION COULD NOT MAKE. Driven with a real
+    // `{ ok: true, role: 'member_role' }`, so widening the guard to admit any
+    // resolved outcome fails here rather than shipping.
+    const thrown = thrownBy(
+      await beforeLoad(() => Promise.resolve({ ok: true, role: 'member_role' })),
+    );
+
+    expect(isRedirect(thrown), '/ljudi threw something that is not a redirect').toBe(true);
+    // The FIRST destination, read off the table rather than written here, and
+    // the same one `/` forwards to: a second destination policy is the one that
+    // goes stale silently.
+    expect((thrown as { options: { to?: string } }).options.to).toBe(DESTINATIONS[0].path);
+    // `replace`, for `/`'s reason: a decision left in the history stack makes
+    // Back return to it, decide again, and send the person straight back.
+    expect((thrown as { options: { replace?: unknown } }).options.replace).toBe(true);
+  });
+
+  it('forwards to a destination the refused level actually reaches', async () => {
+    // The forward target has to be somewhere the member can BE. A first row
+    // that became admin-only would send every refused member into a second
+    // refusal, and this is where that is noticed.
+    expect(destinationsFor('member_role')[0]).toEqual(DESTINATIONS[0]);
+  });
+
+  it.each([MEMBER_ROLE_REFUSED, MEMBER_ROLE_UNAVAILABLE] as const)(
+    'forwards when the level comes back as %s rather than admitting on a failed read',
+    async (code) => {
+      // FAILING CLOSED. A read that could not complete is not an
+      // administrator's level, and the cost of being wrong in the other
+      // direction is every member's address and allowance.
+      const thrown = thrownBy(await beforeLoad(() => Promise.resolve({ ok: false, code })));
+
+      expect(isRedirect(thrown), `/ljudi admitted a session whose level was ${code}`).toBe(true);
+    },
+  );
+
+  it('forwards when the reader rejects, and says why on the console', async () => {
+    // THE THIRD OUTCOME. `currentMemberRole` can REJECT — the client throws on a
+    // build with no environment, and `getSession` rejects wherever storage is
+    // blocked. An escaping rejection resolves `/ljudi` to neither a redirect nor
+    // a component: the blank page at HTTP 200 that `__root.tsx` registers no
+    // `errorComponent` to catch.
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const thrown = thrownBy(
+        await beforeLoad(() => Promise.reject(new Error('SecurityError'))),
+      );
+
+      expect(isRedirect(thrown), '/ljudi let the read failure escape').toBe(true);
+      expect(
+        logged,
+        '/ljudi swallowed the reason the permission level could not be read',
+      ).toHaveBeenCalledWith(MEMBER_ROLE_UNAVAILABLE, expect.anything());
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it('says nothing to the console on the ordinary admin path', async () => {
+    // The other polarity: a guard that logged on every resolution would satisfy
+    // the case above and fill a real console with a line per navigation, which
+    // is how the one line that matters stops being noticed.
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await beforeLoad(() => Promise.resolve({ ok: true, role: 'admin' }));
+
+      expect(logged, '/ljudi logs on the ordinary admin path').not.toHaveBeenCalled();
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it('asks the context for the level exactly once, rather than reaching for a client', async () => {
+    // What makes every case above assertable, and what keeps the block out of
+    // the build environment: a guard that imported the Supabase client would
+    // ignore this stub entirely AND throw on a clone with no `.env.local`.
+    let asked = 0;
+
+    await beforeLoad(() => {
+      asked += 1;
+
+      return Promise.resolve({ ok: true, role: 'admin' });
+    });
+
+    expect(asked, '/ljudi never asked the router context for the permission level').toBe(1);
+  });
+
+  it('decides on the level the rank order names, not on a literal of its own', () => {
+    // The guard's decision as a VALUE, so the reorder mutation reaches it. The
+    // exhaustive pinning of `MEMBER_ROLES[0]` against the literal `'admin'`
+    // lives in `members/list.test.ts`; what this adds is that the route's
+    // decision is the same function, so the two cannot drift.
+    expect(mayReadMembers({ ok: true, role: MEMBER_ROLES[0] })).toBe(true);
+    expect(mayReadMembers({ ok: true, role: 'member_role' })).toBe(false);
   });
 });
