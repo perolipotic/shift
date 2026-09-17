@@ -116,7 +116,14 @@ development_status:
   # Organization Type is inert). Part B is the branding half — logo, storage
   # bucket, brand accent (clauses 3 and 4) — which waits in deferred-work.md and
   # earns its key when specced, so the parent completes with part B, not 1.4a.
-  1-4-an-admin-configures-the-organization-s-identity-localization: in-progress
+  # COMPLETE 2026-09-17 with part C, per the convention recorded above: the
+  # parent carries no work of its own and closes when its last part lands.
+  # Its four epics.md acceptance clauses are covered by 1.4a (clauses 1 and 2 —
+  # the timezone frames every render, Organization Type is inert), 1.4b
+  # (clause 3 — the asset readable only within its owning organization, and the
+  # neutral fallback) and 1.4c (clause 4 — the accent tints the shell and the
+  # logo lockup and stops there, with `destructive` still reserved).
+  1-4-an-admin-configures-the-organization-s-identity-localization: done
   # Part A was stale at `review`: spec-1-4a-organization-settings.md carries
   # status done with review_loop_iteration 0 (implemented, three adversarial
   # layers run, nine findings patched), and the work merged to main in 7076d55
@@ -150,7 +157,10 @@ development_status:
   # free-form colour — the database stores a key and the stylesheet the colour,
   # and red stays absent because `destructive` owns it (UX-DR4).
   # THIS PART COMPLETES THE 1-4 PARENT, which has been in-progress since 1.4a.
-  1-4c-brand-accent-and-lockup: review
+  # Part C merged to main in cc190ff (PR #11) and its spec carries status done
+  # with review_loop_iteration 0 — three adversarial layers, twenty-nine findings
+  # patched, two deferred, no loopback. Reconciled 2026-09-17.
+  1-4c-brand-accent-and-lockup: done
   1-5-an-admin-creates-and-edits-members-and-works-the-list-at-sca: backlog
   1-6-deactivating-a-member-changes-the-future-and-rewrites-no-his: backlog
   1-7-an-admin-creates-teams-and-moves-people-between-them: backlog
