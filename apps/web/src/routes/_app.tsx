@@ -28,11 +28,11 @@ import { SESSION_UNRESOLVED } from '@/supabase/client';
  * `/` AND BOTH SIGN-IN ROUTES STAY OUTSIDE IT, deliberately. Nesting `/` would
  * change its match chain from `['__root__', '/']` to one with the layout in it
  * and force the whole deployed-root block — the redirect cases, `search`/`hash`
- * preservation, the `SignedInScreen` identity — to be re-derived against a
- * layout, for nothing this story can use. `/` already carries the equivalent
- * guard (`index.tsx`), and part B replaces that screen wholesale; until then the
- * duplication is two call sites of a four-line guard, which is the cheaper of
- * the two prices.
+ * preservation — to be re-derived against a layout, for nothing gained. `/`
+ * carries the equivalent guard itself (`index.tsx`) and is redirect-only, so it
+ * renders nothing this chrome would need to wrap: a signed-in visitor reaches
+ * the chrome by being forwarded INTO a destination. The duplicated guard is two
+ * call sites of a four-line check, which is the cheaper of the two prices.
  *
  * SESSION ONLY, NEVER ROLE, and that is a decision rather than an omission. A
  * signed-in member who types `/organizacija` reaches the admin destination's

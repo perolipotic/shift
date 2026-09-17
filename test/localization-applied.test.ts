@@ -54,10 +54,15 @@ const SOURCES = [
   join(webRoot, 'src', 'i18n', 'locales', 'hr.json'),
   join(webRoot, 'src', 'routes', 'prijava.tsx'),
   join(webRoot, 'src', 'routes', 'not-found.tsx'),
-  // Story 1.3b's two: the organization prompt at bare `/prijava`, and `/`,
-  // which stopped being a bare redirect and now renders a heading of its own.
-  // A `.tsx` carrying a string that is absent from this list is swept by
-  // nothing — the freshness guard would not notice a build that predates it.
+  // The organization prompt at bare `/prijava`, and `/`. A `.tsx` carrying a
+  // string that is absent from this list is swept by nothing — the freshness
+  // guard would not notice a build that predates it.
+  //
+  // `/` IS HERE FOR FRESHNESS ALONE, and no longer for the reason 1.3b added
+  // it: it renders no heading and no string at all now, it decides where a
+  // signed-in person belongs and redirects. It stays listed because it is still
+  // wiring the built chunk depends on — the redirect target and the forward are
+  // behaviour a stale build would misreport — not because it carries a key.
   join(webRoot, 'src', 'routes', 'prijava-organizacija.tsx'),
   join(webRoot, 'src', 'routes', 'index.tsx'),
   // NOT `.tsx`, and that is the point. This list guards build FRESHNESS, and

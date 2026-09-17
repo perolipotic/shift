@@ -19,9 +19,6 @@
     "days": "{count, plural, one {# dan} few {# dana} other {# dana}}",
     "conflicts": "{count, plural, one {# konflikt} few {# konflikta} other {# konflikata}}"
   },
-  "home": {
-    "heading": "Uspješna prijava"
-  },
   "nav": {
     "danas": "Danas",
     "kalendar": "Kalendar",

@@ -5,12 +5,12 @@ import type { Session } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 
 import { router } from '@/router';
-import { DESTINATIONS } from '@/navigation/destinations';
+import { DESTINATIONS, destinationsFor } from '@/navigation/destinations';
 import { currentSession, SESSION_UNRESOLVED } from '@/supabase/client';
 import { AppLayout, appLayoutRoute } from '@/routes/_app';
 import { DanasScreen, danasRoute } from '@/routes/danas';
 import { GodisnjiScreen, godisnjiRoute } from '@/routes/godisnji';
-import { indexRoute, SignedInScreen } from '@/routes/index';
+import { indexRoute } from '@/routes/index';
 import { KalendarScreen, kalendarRoute } from '@/routes/kalendar';
 import { LjudiScreen, ljudiRoute } from '@/routes/ljudi';
 import { NotFoundScreen } from '@/routes/not-found';
@@ -39,6 +39,68 @@ function match(pathname: string): { routeId: string; _notFound?: boolean }[] {
       matchRoutes: (path: string, search: object) => { routeId: string; _notFound?: boolean }[];
     }
   ).matchRoutes(pathname, {});
+}
+
+/**
+ * Every quoted string in a source, read PAST comments rather than through them.
+ *
+ * For the one sweep that has to ask what a route module STATES: a destination
+ * path hard-coded into `routes/index.tsx` is behaviourally identical to the same
+ * path read from the table, so the source is the only place the two differ.
+ *
+ * A substring search over the raw text cannot ask that question — it fires on a
+ * legitimate `import … from '@/navigation/destinations'` — and the regex comment
+ * stripper used elsewhere in this file cannot be used first: it eats real code
+ * from the first `//` inside any string. So this walks the source once,
+ * skipping both comment forms and collecting each quoted string whole.
+ *
+ * It does not know regex literals from division, which is why it is used on one
+ * route module and not offered as a general tool; a quote inside a regex there
+ * would confuse it, and the case below is what would say so.
+ */
+function stringLiterals(source: string): string[] {
+  const found: string[] = [];
+  let index = 0;
+
+  while (index < source.length) {
+    const char = source[index];
+
+    if (char === '/' && source[index + 1] === '/') {
+      const newline = source.indexOf('\n', index);
+
+      if (newline === -1) break;
+
+      index = newline + 1;
+      continue;
+    }
+
+    if (char === '/' && source[index + 1] === '*') {
+      const close = source.indexOf('*/', index + 2);
+
+      index = close === -1 ? source.length : close + 2;
+      continue;
+    }
+
+    if (char === "'" || char === '"' || char === '`') {
+      let cursor = index + 1;
+      let value = '';
+
+      while (cursor < source.length && source[cursor] !== char) {
+        if (source[cursor] === '\\') cursor += 1;
+
+        value += source[cursor] ?? '';
+        cursor += 1;
+      }
+
+      found.push(value);
+      index = cursor + 1;
+      continue;
+    }
+
+    index += 1;
+  }
+
+  return found;
 }
 
 /**
@@ -284,11 +346,13 @@ describe('an unknown path renders a screen rather than an empty layout', () => {
 
 describe('the deployed root resolves both ways and is never a blank page', () => {
   /**
-   * `/` is the one seam story 1.3b turned conditional, and the invariant 1.1d
-   * wrote down is that BOTH branches resolve: signed out it throws a redirect,
-   * signed in it renders a component. A conditional that fell through to
-   * neither is the blank page 1.1d removed, so every assertion below names
-   * which branch it is about.
+   * `/` decides where a signed-in person belongs, and the invariant 1.1d wrote
+   * down is that every branch of it RESOLVES. All of them resolve the same way:
+   * each throws a redirect — signed out to the sign-in path, signed in on to the
+   * first destination, which is where the navigation chrome and the sign-out
+   * are. A branch falling through to neither a redirect nor a component is the
+   * blank page at HTTP 200 that invariant exists to prevent, so every assertion
+   * below names which branch it is about.
    *
    * Asserted by calling `beforeLoad` directly — `matchRoutes` above resolves
    * paths and never runs a route's lifecycle, so the redirect is invisible to
@@ -349,24 +413,200 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
     expect(options.hash, 'the redirect drops the hash').toBe(true);
   });
 
-  it('does not redirect while signed in', async () => {
-    // The other half of the split. Without it, a `beforeLoad` that still threw
-    // unconditionally would pass every assertion above and no one signing in
-    // could ever reach a screen.
-    expect(await beforeLoad(SESSION), '/ redirected a signed-in visitor away').toBeNull();
+  it('forwards a signed-in visitor on rather than resolving to a screen', async () => {
+    // The branch that makes the other one worth having. Without it, a
+    // `beforeLoad` that threw the SIGNED-OUT redirect unconditionally would pass
+    // every assertion above and no one signing in could reach a destination.
+    const thrown = await beforeLoad(SESSION);
+
+    expect(thrown, '/ resolved a signed-in visitor to neither a redirect nor a screen').not.toBeNull();
+    expect(isRedirect(thrown), '/ threw something that is not a redirect').toBe(true);
   });
 
-  it('registers the signed-in placeholder as the component for /', () => {
-    // INVERTED from 1.1d, which asserted `component` was undefined because a
-    // redirect-only route can never render one. IDENTITY rather than
-    // `toBeDefined`: the weaker form is satisfied by `() => null`, which
-    // resolves the route to a blank page — the exact defect the branch
-    // invariant exists to prevent.
+  it('forwards to the first destination in binding order, read from the table', async () => {
+    // FROM THE TABLE, never a literal on either side. A path written here would
+    // agree with the same path hard-coded in the route and with nothing else,
+    // and the day the first row of `@/navigation/destinations` changes both
+    // would keep naming the old one.
+    const thrown = (await beforeLoad(SESSION)) as { options: { to?: string } };
+
+    expect(
+      thrown.options.to,
+      '/ forwards somewhere other than the first destination in binding order',
+    ).toBe(DESTINATIONS[0].path);
+  });
+
+  it('carries no search and no hash onto the forward', async () => {
+    // THE ASYMMETRY, pinned. `search: true, hash: true` added to this branch
+    // passes every other case in this file, so without this one the property is
+    // held by a comment. They belong to the signed-out redirect, where the
+    // visitor continues to `/prijava` and a dropped parameter is unrecoverable;
+    // a destination knows nothing about parameters addressed to `/`, so
+    // forwarding them invents a meaning rather than preserving one.
+    const { options } = (await beforeLoad(SESSION)) as {
+      options: { search?: unknown; hash?: unknown };
+    };
+
+    expect(options.search, 'the forward carries / own search onto a destination').toBeUndefined();
+    expect(options.hash, 'the forward carries / own hash onto a destination').toBeUndefined();
+  });
+
+  it.each([
+    { name: 'the signed-in forward', session: SESSION },
+    { name: 'the signed-out redirect', session: null },
+  ])('replaces the history entry on $name', async ({ session }) => {
+    // `/` IS A DECISION, and a decision has no business in the history stack.
+    // Left there, Back from wherever the visitor landed returns to `/`, which
+    // decides again and sends them straight back — a dead Back button, and
+    // everything before `/` unreachable. It could not happen while `/` rendered
+    // a screen, because a screen is somewhere Back can legitimately return to,
+    // so nothing in this file asked about it until `/` stopped being one.
+    //
+    // BOTH branches, in one table: the defect is a property of `/` rather than
+    // of either outcome, and a case covering only the forward would leave the
+    // signed-out visitor bouncing between `/` and `/prijava` on Back.
+    const { options } = (await beforeLoad(session)) as { options: { replace?: unknown } };
+
+    expect(options.replace, '/ pushes a history entry nobody can go back through').toBe(true);
+  });
+
+  it('forwards to a destination every role reaches, and to the same one', () => {
+    // WHY the first destination is a safe target for a session-only guard. `/`
+    // never asks who is signed in — AD-10 puts role enforcement in the database
+    // — so the one place it can send everybody has to be reachable by
+    // everybody, and has to be the SAME place for everybody: a first row that
+    // became admin-only would send every member to a destination the chrome
+    // does not offer them.
+    //
+    // Asserted through `destinationsFor`, which is what the chrome renders
+    // from, rather than by copying this file's own idea of which roles exist.
+    // Comparing the filtered first entry per role says the thing that matters —
+    // the forward target is where each role's navigation starts — and says it
+    // without pinning the order of the roles array behind it.
+    for (const role of ['member_role', 'admin'] as const) {
+      expect(
+        destinationsFor(role)[0],
+        `/ forwards to a destination ${role} does not reach`,
+      ).toBe(DESTINATIONS[0]);
+    }
+  });
+
+  it('forwards to a path that takes no parameters', () => {
+    // A `$param` segment in the first row would make the forward resolve to
+    // not-found for every signed-in visitor, because `/` has nothing to fill it
+    // from — the same reason the signed-out branch cannot name a tenant slug.
+    // Nothing else refuses it: all eight destinations are static today, so the
+    // day one is not, this is what says so.
+    expect(
+      DESTINATIONS[0].path,
+      '/ forwards to a parameterized path it has no parameters for',
+    ).not.toContain('$');
+  });
+
+  it('accepts the same session at the destination it forwards to', async () => {
+    // THE OTHER HALF OF "one hop and it ends", and until this case it rested on
+    // reading two files. Every destination nests under `_app`, so the guard the
+    // forwarded visitor meets next is the layout's — and if it threw for the
+    // session `/` just accepted, the two would bounce the visitor between them
+    // with every assertion in this file still green.
+    const run = (appLayoutRoute.options as unknown as { beforeLoad?: BeforeLoad }).beforeLoad;
+
+    await expect(
+      run?.({ context: { currentSession: () => Promise.resolve(SESSION) } }),
+      'the layout refuses the session / forwarded — the two guards disagree',
+    ).resolves.toBeUndefined();
+  });
+
+  it('names no destination itself — it reads the table', () => {
+    // THE MUTATION THIS EXISTS FOR, and it is invisible to every behavioural
+    // assertion above: the first row's path written into `index.tsx` as a
+    // literal produces exactly the redirect the cases above assert, because it
+    // is what the table says today. The two would agree with each other and
+    // with nothing else, and the day the first row changes the route forwards
+    // to the old one with the suite green. The source is the only place the
+    // difference is observable.
+    //
+    // THE `not.toContain` LOOP IS WHERE THE GUARANTEE LIVES. The assertions
+    // around it are vacuity guards on the extractor, not claims about the route:
+    // a reader that found no strings at all would make the loop pass having
+    // examined nothing.
+    //
+    // STRING LITERALS rather than raw text, which matters in both directions. A
+    // substring sweep over the source would fire on a future
+    // `import … from '@/navigation/destinations'` — a legitimate line naming no
+    // path — and a comment stripper run over raw text eats real code from the
+    // first `//` inside any string. Reading the quoted strings out and comparing
+    // them WHOLE asks the only question worth asking: does this file state a
+    // destination path itself?
+    //
+    // `/prijava` is not on the list and must not be: the signed-out branch names
+    // it deliberately, and `/` has no slug in scope to build anything else from.
+    const literals = stringLiterals(
+      readFileSync(new URL('./routes/index.tsx', import.meta.url), 'utf8'),
+    );
+
+    expect(literals.length, 'no string literal was read out of index.tsx at all').toBeGreaterThan(0);
+    expect(
+      literals,
+      "the reader did not find /'s own signed-out redirect target — it is reading something other than this route",
+    ).toContain('/prijava');
+
+    for (const { path } of DESTINATIONS) {
+      expect(
+        literals,
+        `/ names ${path} itself — the destination table is the only thing that may say where a person belongs first`,
+      ).not.toContain(path);
+    }
+  });
+
+  it('reads string literals past comments rather than through them', () => {
+    // THE DETECTOR, SELF-TESTED on synthetic sources, the idiom
+    // `packages/domain/test/purity.test.ts` established and `prijava.test.ts`
+    // follows: a reader that quietly stopped finding strings would make the
+    // sweep above pass having proved nothing, and both of its vacuity guards
+    // would still hold on a reader that found only the first literal.
+    //
+    // Each case is one of the two failure modes the sweep exists to avoid: a
+    // path named in a COMMENT is not the route stating it, and a comment
+    // stripper run first would eat the code after a `//` inside a string.
+    expect(stringLiterals("// '/danas'\nconst path = '/prijava';")).toEqual(['/prijava']);
+    expect(stringLiterals("/* '/danas' */ const path = '/prijava';")).toEqual(['/prijava']);
+    expect(stringLiterals("const link = 'https://example.test/danas';")).toEqual([
+      'https://example.test/danas',
+    ]);
+    expect(stringLiterals("const it = 'it\\'s';")).toEqual(["it's"]);
+    expect(stringLiterals('const nothing = 1;')).toEqual([]);
+  });
+
+  it('names no role, and nothing that would let it read one', () => {
+    // SESSION ONLY, exactly as `routes/_app.tsx` is, and swept the same way and
+    // for the same reason: a role check written here would be unreachable
+    // against these stubs, so no behavioural assertion could see it. `/` sends
+    // every role to the same destination — the case above is why that is safe —
+    // so there is nothing here for a role to decide.
+    const source = readFileSync(new URL('./routes/index.tsx', import.meta.url), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[\s;,{}()[\]])\/\/[^\n]*/g, '$1');
+
+    for (const forbidden of ['role', 'admin', 'member_role', 'destinationsFor']) {
+      expect(
+        source,
+        `/ reaches for ${forbidden} — role enforcement belongs in the database (AD-10)`,
+      ).not.toContain(forbidden);
+    }
+  });
+
+  it('registers no component for /', () => {
+    // RESTORED from 1.1d, which asserted exactly this: a redirect-only route
+    // can never render a component, so registering one is a screen nobody can
+    // reach. 1.3b inverted it for the signed-in placeholder; the placeholder is
+    // gone and so is the inversion.
     const registered = (indexRoute.options as { component?: unknown }).component;
 
-    expect(registered, '/ renders no screen, so a signed-in visitor sees nothing').toBe(
-      SignedInScreen,
-    );
+    expect(
+      registered,
+      '/ registers a component — a redirect-only route can never render one',
+    ).toBeUndefined();
   });
 
   it('resolves to the redirect when the session cannot be read at all', async () => {
@@ -422,16 +662,31 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
 
     const run = (indexRoute.options as unknown as { beforeLoad?: BeforeLoad }).beforeLoad;
 
-    await run?.({
-      context: {
-        currentSession: () => {
-          asked += 1;
+    // The call is WRAPPED now, and it was not before: every branch of `/` ends
+    // in a thrown redirect since the placeholder went, so the signed-in path
+    // that this case drives throws too. Letting it escape would fail the case
+    // on the very behaviour it is not about.
+    let thrown: unknown = null;
 
-          return Promise.resolve(SESSION);
+    try {
+      await run?.({
+        context: {
+          currentSession: () => {
+            asked += 1;
+
+            return Promise.resolve(SESSION);
+          },
         },
-      },
-    });
+      });
+    } catch (caught) {
+      thrown = caught;
+    }
 
+    // CAUGHT AND NAMED, never swallowed. Every branch of `/` throws now, so this
+    // case has to tolerate a throw — and a bare `catch {}` tolerates the wrong
+    // ones too: a `beforeLoad` crashing with a TypeError would pass here as long
+    // as it had asked the context first.
+    expect(isRedirect(thrown), '/ threw something that is not a redirect').toBe(true);
     expect(asked, '/ never asked the router context whether anyone is signed in').toBe(1);
   });
 });

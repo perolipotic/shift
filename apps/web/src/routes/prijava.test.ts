@@ -53,7 +53,11 @@ const srcRoot = fileURLToPath(new URL('..', import.meta.url));
 const SCREEN = join(srcRoot, 'routes', 'prijava.tsx');
 const NOT_FOUND = join(srcRoot, 'routes', 'not-found.tsx');
 const ORGANIZATION = join(srcRoot, 'routes', 'prijava-organizacija.tsx');
-const HOME = join(srcRoot, 'routes', 'index.tsx');
+// `routes/index.tsx` IS NOT A SCREEN and is swept by nothing here: `/` forwards
+// a signed-in visitor to the first destination and renders nothing, so the file
+// carries no JSX and no key for any sweep below to read.
+// `test/localization-applied.test.ts` still lists it, which is about build
+// FRESHNESS rather than strings.
 const LAYOUT = join(srcRoot, 'routes', '_app.tsx');
 const INPUT_PRIMITIVE = join(srcRoot, 'components', 'ui', 'input.tsx');
 const RESOURCE = join(srcRoot, 'i18n', 'locales', 'hr.json');
@@ -155,9 +159,12 @@ const DESTINATION_SCREENS = PLACEHOLDER_SLUGS.map((slug) => ({
  * A `.tsx` carrying a string and missing from this list is swept by NOTHING —
  * the ESLint block is the only other guard, and it cannot see a key that is
  * declared and never rendered, a literal on an unguarded attribute, or a
- * control below the tap-target floor. Story 1.3b adds two: the organization
- * prompt at bare `/prijava`, and `/`, which stopped being a bare redirect and
- * now renders a heading of its own.
+ * control below the tap-target floor. A route module that renders nothing is
+ * the one thing that does not belong: `/` is redirect-only, so listing it would
+ * assert zero strings and zero controls on a file that cannot have either.
+ *
+ * The length of the list is asserted where the sweeps begin, because `it.each`
+ * over a shortened list is a quieter pass than a failing assertion.
  */
 const SCREENS = [
   // `expectedControls` is what stops the general tap-target sweep passing on an
@@ -168,7 +175,6 @@ const SCREENS = [
   { name: 'the sign-in screen', file: SCREEN, expectedControls: 3 },
   { name: 'the not-found component', file: NOT_FOUND, expectedControls: 1 },
   { name: 'the organization prompt', file: ORGANIZATION, expectedControls: 2 },
-  { name: 'the signed-in placeholder', file: HOME, expectedControls: 0 },
   // EIGHT, and it was seven until story 1.4b: the settings surface carries five
   // fields — name, type, timezone and the leave year's month and day — plus a
   // save, a cancel, and now the logo's choose action. The number is what notices
@@ -758,7 +764,6 @@ const KEY_SOURCES = [
   { name: 'the sign-in screen', file: SCREEN, keys: translationKeys, strings: 5 },
   { name: 'the not-found component', file: NOT_FOUND, keys: translationKeys, strings: 2 },
   { name: 'the organization prompt', file: ORGANIZATION, keys: translationKeys, strings: 3 },
-  { name: 'the signed-in placeholder', file: HOME, keys: translationKeys, strings: 1 },
   { name: 'the failure-to-message mapping', file: MESSAGE_KEYS, keys: messageKeyUnion, strings: 2 },
   // TWELVE on the settings surface: its own `nav.organizacija` heading, five
   // field labels, the save and cancel actions, the logo's own label, the choose
@@ -856,6 +861,26 @@ const KEY_SOURCES = [
 ];
 
 describe('the screen is read at all, so every sweep below means something', () => {
+  // THE COUNT IS THE GUARD, because neither list is length-asserted anywhere
+  // else and both drive `it.each`: a removed row takes its cases with it, and
+  // Vitest reports the shorter run as a pass. A row deleted without a reason
+  // fails here until somebody moves the number, which is the moment the removal
+  // gets reviewed — the same bargain `expectedControls` strikes per screen.
+  //
+  // FOURTEEN screens: seven `.tsx` that render — the sign-in form, the
+  // not-found component, the organization prompt, the settings surface, the
+  // organization lockup, the signed-in layout and the chrome — plus the seven
+  // placeholder destinations. `/` is not among them and must not be: it is a
+  // redirect-only route with no JSX for any sweep to read.
+  //
+  // SEVENTEEN key sources: six of those seven (the layout renders no string of
+  // its own), the four `.ts` message mappings, which declare keys and render
+  // nothing, and the seven destinations.
+  it('sweeps every screen and every key source it claims to', () => {
+    expect(SCREENS).toHaveLength(14);
+    expect(KEY_SOURCES).toHaveLength(17);
+  });
+
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
   // assertion hold against nothing.
   it.each(SCREENS)('finds $name and finds JSX in it', ({ file }) => {

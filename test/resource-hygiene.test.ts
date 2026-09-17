@@ -64,9 +64,9 @@ const SANCTIONED_SCREEN_KEYS = [
   'auth.organization.heading',
   'auth.organization.label',
   'auth.organization.submit',
-  // Explicitly temporary: the navigation shell replaces the signed-in
-  // placeholder wholesale.
-  'home.heading',
+  // NO `home.*` KEY, and there is no screen at `/` for one to belong to: it is
+  // a redirect-only route. This list is an EQUALITY assertion, so a key added
+  // to `hr.json` for a screen that does not render is refused here.
   // The eight destination labels, added by the navigation shell's route
   // skeleton. EIGHT, not nine: `Sati` appears in both UX-DR31's member list and
   // UX-DR32's admin list and is one destination with role-scoped content
