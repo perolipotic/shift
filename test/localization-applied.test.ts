@@ -144,6 +144,25 @@ const SOURCES = [
   join(webRoot, 'src', 'navigation', 'messages.ts'),
   join(webRoot, 'src', 'navigation', 'role.ts'),
   join(webRoot, 'src', 'supabase', 'sign-out.ts'),
+  // Story 1.5a's member list. `routes/ljudi.tsx` is already listed above with
+  // the other seven destinations, and it is no longer a placeholder: it renders
+  // a table, a search field, a level filter and a refusal, so a chunk built
+  // before an edit to it compares `hr.json` against output that never saw any
+  // of them.
+  //
+  // `members/list.ts` renders nothing and is here for the reason `snapshot.ts`
+  // and `accent.ts` are — and more so than either: it owns the stable codes,
+  // AND the two-key refusal mapping, AND the two permission-level labels, AND
+  // the three counted filter options, AND the column table whose four `label`
+  // entries are the headings. Eleven of this story's fourteen keys reach the
+  // build through this one module, so a chunk built before an edit to it is
+  // stale in a way no vocabulary sweep could see.
+  //
+  // `components/ui/table.tsx` is vendored and text-free, and it is listed for
+  // freshness rather than for strings: it is what puts a `<table>` in the graph
+  // at all, so a build predating it has no member list to sweep.
+  join(webRoot, 'src', 'members', 'list.ts'),
+  join(webRoot, 'src', 'components', 'ui', 'table.tsx'),
 ];
 
 /**
@@ -485,6 +504,76 @@ const AUTHORED_VOCABULARY = [
   'Zelena',
   'Jantarna',
   'Ljubičasta',
+  // STORY 1.5a's TWENTY-EIGHT, and every one of them closes a gap rather than
+  // moving a word: not one was in the ban list below, so a hard-coded `Ime` on
+  // a column heading or a hard-coded `Administrator` in a cell would have
+  // shipped unnoticed. They are the member list's whole vocabulary — the
+  // caption, the search field, the four headings, the two permission levels,
+  // the counted noun in all its forms, and both refusals.
+  //
+  // COUNTED SEPARATELY AND NOT AS STEMS, which is what the word boundary buys.
+  // `osoba` and `osobe` are two distinct whole words because Croatian needs all
+  // three plural forms and two of them share a spelling — `osoba` occurs in
+  // the `one` and `other` branch of four messages and `osobe` in the `few`
+  // branch of the same four — and every count is read off `hr.json` rather than
+  // written here, so a reworded message moves both sides at once.
+  // `Administrator` and `Administratori` are likewise two words and not one
+  // stem: the singular names the level in a cell, the plural names the filter
+  // option, and a component hard-coding either is a count that no longer
+  // matches.
+  //
+  // Six of them were already in `hr.json` before this story — `ovlasti`,
+  // `godišnjeg`, `odmora`, `prikazati`, `moguće`, `trenutačno` — and were in
+  // NEITHER list, so they are joining the count rather than moving into it.
+  // That is the same gap `Sati` was in until the navigation shell.
+  'Popis',
+  'osoba',
+  'osobe',
+  'organizaciji',
+  'Pretraga',
+  'imenu',
+  'adresi',
+  'Ime',
+  'Adresa',
+  'pošte',
+  'Razina',
+  'razine',
+  'ovlasti',
+  'Dani',
+  'godišnjeg',
+  'odmora',
+  'Administrator',
+  'Administratori',
+  'Član',
+  'Članovi',
+  'Prikazana',
+  'Prikazane',
+  'Prikazano',
+  'Sve',
+  'prikazati',
+  'učitati',
+  'moguće',
+  'trenutačno',
+  // THREE MORE from story 1.5a's round-2 review, and they arrive with the
+  // reworded refusal rather than with the screen. `ljudi.error.refused` used to
+  // end `Pokušaj ponovno.` — an instruction that cannot work, because a refusal
+  // is the database declining this session and asking again asks the same
+  // question of the same claim. It names the action that CAN change the answer
+  // instead, which is signing in again.
+  //
+  // `prijavi` is the lowercase form and is counted SEPARATELY from `Prijavi`
+  // above, which is what the word boundary buys: the capitalized form is the
+  // sign-in button and the lowercase one ends this sentence, and a component
+  // hard-coding either is a count that no longer matches. `Odjavi` needs no
+  // entry of its own — it is already counted, and every count here is read off
+  // `hr.json`, so a second occurrence moves both sides at once.
+  //
+  // `Pokušaj` and `ponovno` close a gap rather than moving a word: both have
+  // been in `hr.json` since story 1.1d and were in neither list, so a hard-coded
+  // retry instruction would have shipped unnoticed on any screen.
+  'prijavi',
+  'Pokušaj',
+  'ponovno',
 ];
 
 /** Everything the terminology contract and the unshipped affordances still own.

@@ -1,6 +1,7 @@
 import { Outlet, createRootRouteWithContext } from '@tanstack/react-router';
 import type { Session } from '@supabase/supabase-js';
 
+import type { MemberRoleOutcome } from '@/navigation/role';
 import { NotFoundScreen } from '@/routes/not-found';
 
 /**
@@ -32,6 +33,26 @@ export interface AppRouterContext {
   /** The live session, or `null`. Asynchronous: it is read from the client's
    *  own storage rather than held here, so nothing has to be kept in step. */
   readonly currentSession: () => Promise<Session | null>;
+  /**
+   * The signed-in member's own permission level, or a code — story 1.5a.
+   *
+   * THE SECOND MEMBER, and it arrives for the reason the first one did rather
+   * than as a convenience. `/ljudi` is the first route in the tree that refuses
+   * a permission level, and the two other ways of telling it were both worse:
+   * importing the Supabase client into the route module makes the decision
+   * unassertable from the node suite (AD-15) AND makes `beforeLoad` throw
+   * `SUPABASE_ENVIRONMENT_MISSING` on a clone with no `.env.local`, and seeding
+   * a plain role value into the router makes it a snapshot that is stale by the
+   * time a demoted admin navigates. A reader is neither: it is injectable, so
+   * both branches of the guard are executable, and it is read at resolution
+   * time, so it cannot be stale.
+   *
+   * It is READ FRESH on every resolution of a guarded route, which is the whole
+   * of `@/navigation/role`'s argument: `custom_access_token_hook` deliberately
+   * puts no level in the token, so a demoted admin loses the destination on
+   * their next navigation rather than at token expiry.
+   */
+  readonly currentMemberRole: () => Promise<MemberRoleOutcome>;
 }
 
 function AppShell() {

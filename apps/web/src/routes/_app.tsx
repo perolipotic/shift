@@ -49,6 +49,17 @@ import { SESSION_UNRESOLVED } from '@/supabase/client';
  * as session-only so that story has to change a test rather than discover this
  * paragraph.
  *
+ * THAT MOMENT ARRIVED IN STORY 1.5a, and this guard did not move. `/ljudi`
+ * renders every colleague's address and leave allowance, so it carries a check
+ * of its own — registered on that route, reading its own reader out of the
+ * router context, and argued for in `routes/ljudi.tsx`. What changed in
+ * `router.test.ts` is the assertion that NO destination carries a guard, which
+ * now names the ones that do and still refuses every other; what did not change
+ * is this file, which names no level and must go on naming none. Eight
+ * destinations sharing one session guard and one of them adding a second
+ * decision of its own are two separate claims, and keeping them in two files is
+ * what stops the next reviewer having to hold both at once.
+ *
  * The session is read through the router CONTEXT rather than from a client
  * imported here (`__root.tsx` explains the shape), which is what keeps both
  * branches executable in the node suite with no browser and no running stack.

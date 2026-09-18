@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { MEMBERS_LIST_KEY } from '@/members/list';
 import { DESTINATIONS } from '@/navigation/destinations';
 
 /**
@@ -63,6 +64,20 @@ const INPUT_PRIMITIVE = join(srcRoot, 'components', 'ui', 'input.tsx');
 const RESOURCE = join(srcRoot, 'i18n', 'locales', 'hr.json');
 /** Story 1.4a's settings surface: the first destination that is not a placeholder. */
 const SETTINGS = join(srcRoot, 'routes', 'organizacija.tsx');
+
+/** Story 1.5a's member list: the second, and the first that renders a table. */
+const MEMBER_LIST = join(srcRoot, 'routes', 'ljudi.tsx');
+
+/**
+ * The member list's rules, as a `.ts` module that renders nothing.
+ *
+ * It declares keys in TWO shapes — three `\w*MessageKey` return-type unions and
+ * a column table whose entries carry a heading key each — and both are keys this
+ * application can put on screen, so both have to be read or the set comparison
+ * below is weaker by eleven. It is the first entry here whose reader is neither
+ * `translationKeys` nor `messageKeyUnion`, for that reason.
+ */
+const MEMBER_LIST_KEYS = join(srcRoot, 'members', 'list.ts');
 /**
  * The navigation chrome, part B: a `.tsx` that is not a route at all.
  *
@@ -138,12 +153,20 @@ const PLACEHOLDER_SLUGS = [
   'sati',
   'godisnji',
   'raspored',
-  'ljudi',
   'postavke-rotacije',
 ];
 
-/** The destination that is a built screen rather than a placeholder. */
-const BUILT_SLUGS = ['organizacija'];
+/**
+ * The destinations that are built screens rather than placeholders.
+ *
+ * TWO SINCE STORY 1.5a. `/ljudi` moved out of the list above in the same commit
+ * that built it — a table with a search field, a level filter, four sortable
+ * headings and a refusal message — so the counts above stay the tight ones they
+ * are: exactly one string, exactly zero controls, on a screen that is still only
+ * a heading. Leaving it there would have meant loosening those counts for all
+ * six.
+ */
+const BUILT_SLUGS = ['organizacija', 'ljudi'];
 
 /** Every registered destination, however much of it is built. */
 const DESTINATION_SLUGS = [...PLACEHOLDER_SLUGS, ...BUILT_SLUGS];
@@ -195,6 +218,14 @@ const SCREENS = [
   // everywhere else — which is the state `<Link>` was in until the chrome
   // brought it in.
   { name: 'the organization settings surface', file: SETTINGS, expectedControls: 9 },
+  // THREE on the member list, and the count is what keeps a fourth from
+  // arriving unreviewed: the search field, the permission-level filter, and ONE
+  // `<Button>` — the sort control, written once inside a map over
+  // `MEMBER_COLUMNS` rather than four times, which is the same property that
+  // makes a fifth column one edit. A second `<Button` in this file means a row
+  // action has appeared, and row actions are the deferred half of story 1.5
+  // (`admin-auth` still answers 501).
+  { name: 'the member list', file: MEMBER_LIST, expectedControls: 3 },
   // ZERO on all seven, and asserted rather than assumed: a destination is a
   // heading and nothing else in this story, so the first control any of them
   // grows is a later story's work arriving without that story's review. The
@@ -317,6 +348,12 @@ function source(file: string): string {
   return stripComments(readFileSync(file, 'utf8'));
 }
 
+/** How many times a needle appears. The counting idiom
+ *  `organization/snapshot.test.ts` uses for its one-read assertions. */
+function occurrences(haystack: string, needle: string): number {
+  return haystack.split(needle).length - 1;
+}
+
 /**
  * A screen's `submit` handler, from its signature to its closing brace.
  *
@@ -379,6 +416,30 @@ function messageKeyUnion(text: string): string[] {
   const signature = /function \w*MessageKey\([\s\S]*?\):([^{]*)\{/.exec(text)?.[1] ?? '';
 
   return [...signature.matchAll(/'([^']+)'/g)].map((found) => found[1] ?? '');
+}
+
+/**
+ * Every key the member-list module declares, in EITHER shape.
+ *
+ * `messageKeyUnion` above reads one signature — it uses `exec`, so the first —
+ * and this module carries three: the two refusals, the two permission-level
+ * labels, and the three counted filter options. It also carries the four column
+ * HEADINGS, which are not a return type at all but `label` entries on the table
+ * the surface renders its headings, its skeleton cells and its body cells from.
+ * Eleven keys in two shapes, and a reader pinned to either one would drop the
+ * other out of the rendered set and weaken the comparison below by that much.
+ *
+ * Self-tested on both polarities at the bottom of this file, like every other
+ * detector here: a reader that found nothing would make the set comparison pass
+ * on a resource file missing all eleven.
+ */
+function memberListKeys(text: string): string[] {
+  const unions = [...text.matchAll(/function \w*MessageKey\([\s\S]*?\):([^{]*)\{/g)].flatMap(
+    (found) => [...(found[1] ?? '').matchAll(/'([^']+)'/g)].map((quoted) => quoted[1] ?? ''),
+  );
+  const headings = [...text.matchAll(/\blabel: '([^']+)'/g)].map((found) => found[1] ?? '');
+
+  return [...unions, ...headings];
 }
 
 /**
@@ -449,6 +510,27 @@ const STRUCTURAL_ATTRIBUTES = new Set([
   // attribute names against an element the file actually renders, so an
   // exempted value that points at nothing is still a failure.
   'aria-controls',
+  // ADDED by story 1.5a's member list, and it is a loosening of a GLOBAL
+  // allowlist — this set applies to all fourteen swept screens — so it is named
+  // and justified rather than waved through, exactly as `role`, `variant`,
+  // `aria-current` and `aria-controls` were.
+  //
+  // `aria-sort` takes its value from a CLOSED, NON-TEXTUAL vocabulary the ARIA
+  // specification fixes — `ascending`, `descending`, `other`, `none` — and
+  // nothing outside it means anything to a screen reader. Nothing user-facing
+  // can hide in it, which is the test every entry on this list has to pass. It
+  // is also a STATE rather than a name, the argument `aria-current` was admitted
+  // on, and the same reason `eslint.config.js`'s guarded-attribute half does not
+  // include it either. `aria-label` remains guarded in both places.
+  //
+  // THE EXEMPTION IS PAID FOR GLOBALLY, and that matters because the allowlist
+  // is global: the justification above is only true while it is ENFORCED, and it
+  // was argued from one screen's usage. `ariaSortValues` below collects every
+  // `aria-sort` value on every swept screen and holds each to the ARIA
+  // vocabulary, so `aria-sort="Ime"` on any screen in the application is a
+  // failure rather than a literal in the one attribute nothing else looks at.
+  // That is the same bargain `aria-current` struck.
+  'aria-sort',
 ]);
 
 /** Content inside a template literal, with every `${…}` removed. */
@@ -659,6 +741,27 @@ function ariaCurrentValues(text: string): string[] {
 }
 
 /**
+ * Every value an `aria-sort` attribute can take, in either syntax.
+ *
+ * The twin of `ariaCurrentValues` above, and it exists for the identical
+ * reason: `aria-sort` is on `STRUCTURAL_ATTRIBUTES`, which EXEMPTS it from the
+ * literal sweep on every screen in the application, and the argument that earned
+ * the exemption was that its vocabulary is closed and non-textual. That argument
+ * is only true while it is enforced — `aria-sort="Ime"` is a user-facing literal
+ * sitting in the one attribute nothing else now looks at. This is what looks at
+ * it, and it looks on every screen rather than on the one that introduced it.
+ */
+function ariaSortValues(text: string): string[] {
+  return [...text.matchAll(/aria-sort=(?:"([^"]*)"|\{([^}]*)\})/g)].flatMap((found) => {
+    const literal = found[1];
+
+    if (literal !== undefined) return [literal];
+
+    return [...(found[2] ?? '').matchAll(/'([^']*)'/g)].map((quoted) => quoted[1] ?? '');
+  });
+}
+
+/**
  * Every `<Link …>` opening tag's attribute block.
  *
  * Added by the navigation chrome, and it is a THIRD control detector rather than
@@ -795,6 +898,35 @@ const KEY_SOURCES = [
   // dedupes, so twelve calls over eleven keys is correct rather than drift.
   { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 12 },
   {
+    // FIVE on the member list, and the number is small because most of what
+    // this screen says is read off a table rather than written into the markup.
+    // Its own `nav.ljudi` heading, the search field's label, the level filter's
+    // label — which is the COLUMN's key `ljudi.role` rendered a second time,
+    // because the control filters exactly what that column shows and two words
+    // for one thing is two things to a reader — the table's caption, and the
+    // stated row count.
+    //
+    // The four column headings are NOT among them, and neither are the three
+    // filter options, the two level labels or the two refusals: every one of
+    // those reaches `t()` through `@/members/list`, which is the entry below.
+    // A lookup written in a `.tsx` is executed by nothing (AD-15), and the 1.5a
+    // review shipped two swapped sort keys green for exactly that reason.
+    name: 'the member list',
+    file: MEMBER_LIST,
+    keys: translationKeys,
+    strings: 5,
+  },
+  {
+    // ELEVEN on the member list's rules: four column headings, two permission
+    // levels, three counted filter options and two refusals. It is the first
+    // key source read by neither `translationKeys` nor `messageKeyUnion` — see
+    // `memberListKeys`, which reads both shapes this module declares keys in.
+    name: 'the member list rules',
+    file: MEMBER_LIST_KEYS,
+    keys: memberListKeys,
+    strings: 11,
+  },
+  {
     // ONE on the lockup: the accessible name it falls back to when the
     // organization's own name is blank. `0002:72` makes that unreachable from
     // the database, but an empty accessible name on a `role="img"` is an
@@ -867,18 +999,30 @@ describe('the screen is read at all, so every sweep below means something', () =
   // fails here until somebody moves the number, which is the moment the removal
   // gets reviewed — the same bargain `expectedControls` strikes per screen.
   //
-  // FOURTEEN screens: seven `.tsx` that render — the sign-in form, the
+  // FOURTEEN screens: eight `.tsx` that render — the sign-in form, the
   // not-found component, the organization prompt, the settings surface, the
-  // organization lockup, the signed-in layout and the chrome — plus the seven
-  // placeholder destinations. `/` is not among them and must not be: it is a
-  // redirect-only route with no JSX for any sweep to read.
+  // member list, the organization lockup, the signed-in layout and the chrome —
+  // plus the six placeholder destinations that are still only a heading. `/` is
+  // not among them and must not be: it is a redirect-only route with no JSX for
+  // any sweep to read.
   //
-  // SEVENTEEN key sources: six of those seven (the layout renders no string of
-  // its own), the four `.ts` message mappings, which declare keys and render
-  // nothing, and the seven destinations.
+  // EIGHTEEN key sources: seven of those eight (the layout renders no string of
+  // its own), the five `.ts` modules that declare keys and render nothing — the
+  // four message mappings plus the member list's rules — and the six
+  // destinations.
   it('sweeps every screen and every key source it claims to', () => {
+    // STILL FOURTEEN after story 1.5a, and the arithmetic is the reason rather
+    // than a coincidence: `/ljudi` left `PLACEHOLDER_SLUGS`, which removed a
+    // derived entry, and arrived as a built one. A net of zero is what a
+    // destination being BUILT rather than added looks like here.
+    //
+    // EIGHTEEN key sources, up from seventeen by the same arithmetic plus one:
+    // the member list replaces its own placeholder entry, and `@/members/list`
+    // is a new source — the module that holds the column headings, the level
+    // labels, the filter options and the refusals, none of which a `.tsx` may
+    // declare because nothing executes a `.tsx`.
     expect(SCREENS).toHaveLength(14);
-    expect(KEY_SOURCES).toHaveLength(17);
+    expect(KEY_SOURCES).toHaveLength(18);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -1520,6 +1664,264 @@ describe('the exit ends the session and says so when it cannot', () => {
   });
 });
 
+describe('the member list computes nothing it renders', () => {
+  /**
+   * THE CLASS OF DEFECT THIS CLOSES, and the reason it is a detector rather than
+   * three more assertions.
+   *
+   * `apps/web/vitest.config.ts` collects `src/**\/*.test.ts` in a NODE
+   * environment (AD-15), so `routes/ljudi.tsx` is executed by nothing in this
+   * repository. Every rule written there is therefore unverifiable by
+   * construction, and round 2 of review demonstrated it three times over on this
+   * one file: swapping the name and address branches of a `cellText` helper
+   * rendered every address under `Ime` with 864/864 green; narrowing an
+   * `isError || paused` check to `paused` left a thrown query function drawing
+   * headings with no rows and no message; dropping `sort` from a memo's
+   * dependency array flipped the arrow while the rows never moved, green AND
+   * eslint-clean.
+   *
+   * Patching the three instances leaves the class. What stops it recurring is
+   * this: the screen may not COMPUTE a value it renders. Every member field it
+   * shows arrives through `@/members/list`, where a node test can execute the
+   * decision — so a branch in the screen that reaches into a member row is
+   * refused here whatever it happens to return today.
+   */
+
+  /** Every field a member row carries, read off the interface that declares it. */
+  function memberRowFields(text: string): string[] {
+    const body = /export interface MemberListRow \{([\s\S]*?)\n\}/.exec(text)?.[1] ?? '';
+
+    return [...body.matchAll(/readonly (\w+)\??:/g)].map((found) => found[1] ?? '');
+  }
+
+  /**
+   * The fields the screen may not reach for.
+   *
+   * `id` is the exception and the only one: `<TableRow key={member.id}>` is
+   * React's reconciliation key, not a rendered value — nobody reads it and no
+   * branch decides anything by it — and a list that keys its rows by index
+   * rather than by identity is its own defect. Every other field is content.
+   */
+  const RENDERED_FIELD_EXEMPTIONS = ['id'];
+
+  it('knows which fields it is guarding, so the sweep below is not vacuous', () => {
+    // Read off `list.ts` rather than written here, so a fifth field added to the
+    // row is guarded the day it exists rather than the day somebody remembers.
+    const fields = memberRowFields(source(MEMBER_LIST_KEYS));
+
+    expect(fields).toEqual(['id', 'organizationId', 'name', 'email', 'role', 'leaveAllowanceDays']);
+    for (const exempt of RENDERED_FIELD_EXEMPTIONS) expect(fields).toContain(exempt);
+  });
+
+  /**
+   * Source with every quoted string emptied.
+   *
+   * `t('ljudi.role')` is a translation KEY, and the field sweep below would read
+   * the `.role` inside it as a property access on a member row — a false
+   * positive on the one shape this screen is supposed to use. Strings carry no
+   * property access, so emptying them loses nothing the sweep wants.
+   */
+  function withoutStrings(text: string): string {
+    return text.replace(/'[^'\n]*'/g, "''").replace(/"[^"\n]*"/g, '""');
+  }
+
+  it('reaches for no member field of its own', () => {
+    const screen = withoutStrings(source(MEMBER_LIST));
+    const guarded = memberRowFields(source(MEMBER_LIST_KEYS)).filter(
+      (field) => !RENDERED_FIELD_EXEMPTIONS.includes(field),
+    );
+
+    expect(guarded.length, 'no field is being guarded at all').toBeGreaterThan(0);
+    for (const field of guarded) {
+      expect(
+        screen,
+        `the member list reads .${field} itself — put the value on MEMBER_COLUMNS, where members/list.test.ts can execute it`,
+      ).not.toMatch(new RegExp(`\\.\\s*${field}\\b`));
+    }
+  });
+
+  it('would notice a field access, and not notice an ordinary property', () => {
+    // BOTH POLARITIES, the idiom every detector in this file follows: a reader
+    // that matched nothing would make the sweep above pass on a screen that
+    // computes every cell it draws.
+    const offending = 'const shown = member.name;';
+    const compliant = 'const shown = cellContent(column.cell(member));';
+
+    expect(withoutStrings(offending)).toMatch(/\.\s*name\b/);
+    expect(withoutStrings(compliant)).not.toMatch(/\.\s*name\b/);
+    // `column.label` and `cell.text` are ordinary properties of things that are
+    // not member rows, and the sweep must not fire on either.
+    expect('t(column.label)').not.toMatch(/\.\s*(email|leaveAllowanceDays|organizationId)\b/);
+    // And a translation KEY that happens to contain a field name is not a field
+    // access — the false positive this helper exists for, on both polarities.
+    expect(withoutStrings("t('ljudi.role')")).not.toMatch(/\.\s*role\b/);
+    expect(withoutStrings('member.role')).toMatch(/\.\s*role\b/);
+  });
+
+  it('hands every cell value through untouched rather than transforming it', () => {
+    // THE RESIDUAL HALF of the same class. The sweep above stops the screen
+    // READING a member field; this stops it CHANGING one it was handed. A
+    // `cell.text.trim()` slipped past every assertion in this repository — it is
+    // in a file nothing executes, and the value still comes from the column — and
+    // trimming is only the harmless end of that range: the same position takes a
+    // `slice`, a `toUpperCase`, or a fallback that quietly replaces an empty
+    // address with a word.
+    //
+    // Each branch's returned expression is pinned exactly. `t()` and the number
+    // formatter are the two transformations this function is FOR — a data module
+    // calling either would need i18next initialised to be testable at all — and
+    // they are named here rather than left to a pattern, so a third arriving is
+    // a decision somebody makes in front of a reviewer.
+    const body =
+      /function cellContent\([^)]*\)[^{]*\{([\s\S]*?)\n\}/.exec(source(MEMBER_LIST))?.[1] ?? '';
+
+    expect(body.length, 'cellContent is gone, so this pins nothing').toBeGreaterThan(0);
+    expect(
+      [...body.matchAll(/return ([^;]+);/g)].map((found) => (found[1] ?? '').trim()),
+      'a cell value is transformed on its way to the screen',
+    ).toEqual([
+      'cell.text',
+      't(memberLevelMessageKey(cell.level))',
+      'formatNumber(cell.days, 0)',
+      'unhandled',
+    ]);
+  });
+
+  it('would notice a transformed return, and not notice the untouched one', () => {
+    // Both polarities on the reader itself, the idiom every detector here
+    // follows.
+    const reader = (text: string): string[] =>
+      [...(/function cellContent\([^)]*\)[^{]*\{([\s\S]*?)\n\}/.exec(text)?.[1] ?? '').matchAll(
+        /return ([^;]+);/g,
+      )].map((found) => (found[1] ?? '').trim());
+
+    expect(reader('function cellContent(cell: X): string {\n  return cell.text;\n}')).toEqual([
+      'cell.text',
+    ]);
+    expect(
+      reader('function cellContent(cell: X): string {\n  return cell.text.trim();\n}'),
+    ).toEqual(['cell.text.trim()']);
+    expect(reader('const x = 1;')).toEqual([]);
+  });
+
+  it('draws the sort arrow the way the module names it', () => {
+    // WHAT NO NODE TEST CAN SEE. `sortIndicatorOf` decides the DIRECTION and
+    // `members/list.test.ts` pins it against `aria-sort`; what is left in the
+    // screen is which glyph each direction draws, and an arrow pointing the
+    // wrong way is worse than none because it contradicts a correct `aria-sort`
+    // on the same element. A record keyed by the module's own names, asserted
+    // pair by pair.
+    const screen = source(MEMBER_LIST);
+
+    expect(screen, 'the sort glyphs are no longer a keyed record').toMatch(
+      /\[ARROW_UP\]:\s*ArrowUp/,
+    );
+    expect(screen).toMatch(/\[ARROW_DOWN\]:\s*ArrowDown/);
+    // And no ternary picking between the two, which is the shape that gets
+    // inverted silently.
+    expect(
+      screen,
+      'the screen branches between the two arrows instead of looking one up',
+    ).not.toMatch(/\?\s*ArrowUp\s*:|\?\s*ArrowDown\s*:/);
+  });
+});
+
+describe('the member list reads once, under one key', () => {
+  /**
+   * AD-13, the shape `organization/snapshot.test.ts` established. Two figures on
+   * a screen coming from two reads is the failure this refuses, and on this
+   * surface there are five — the rows, the stated count and three counts beside
+   * the filter — every one of which must be derived from the one answer.
+   */
+
+  it('declares a single query key and uses that constant', () => {
+    const screen = source(MEMBER_LIST);
+
+    expect(MEMBERS_LIST_KEY).toEqual(['members']);
+    expect(occurrences(screen, 'queryKey: MEMBERS_LIST_KEY')).toBe(1);
+    expect(
+      occurrences(screen, 'queryKey:'),
+      'the member list names a query key that is not the list key',
+    ).toBe(1);
+  });
+
+  it('reads the member list exactly once, however many figures it draws', () => {
+    // A second `useQuery` here is the ordinary way AD-13 gets broken: nothing
+    // fails, the screen just shows two answers from two moments — and on a list
+    // of several hundred people it also doubles the most expensive read in the
+    // application.
+    const screen = source(MEMBER_LIST);
+
+    expect(occurrences(screen, 'useQuery(')).toBe(1);
+    expect(occurrences(screen, 'readMembers(')).toBe(1);
+  });
+
+  it('bounds that read rather than re-running it on every window focus', () => {
+    // Several hundred rows AND an exact count, which costs the database a second
+    // pass over the same index. `members/list.test.ts` pins that the bound
+    // exists; this pins that the screen passes it.
+    const screen = source(MEMBER_LIST);
+
+    expect(screen, 'the member list read has no cache floor').toContain(
+      'staleTime: MEMBERS_READ_STALE_MS',
+    );
+    expect(screen, 'the member list re-reads on every window focus').toContain(
+      'refetchOnWindowFocus: false',
+    );
+  });
+});
+
+describe('the member list owns exactly one scroll container, and states its count', () => {
+  /**
+   * `DESIGN.md:150`: wide content scrolls inside its own container, never the
+   * page, and it names the member list explicitly. Two things can break that
+   * and only the source says which: the primitive giving up its wrapper, and
+   * the screen nesting a second one around it. Neither is visible to any other
+   * assertion in this repository — there is no DOM to measure (AD-15) — so both
+   * are read here, together, because fixing one by breaking the other would
+   * otherwise pass.
+   */
+
+  /** The vendored table primitive, whose wrapper IS the scroll container. */
+  const TABLE_PRIMITIVE = join(srcRoot, 'components', 'ui', 'table.tsx');
+
+  it('keeps the scroller on the table primitive, where shadcn puts it', () => {
+    const primitive = source(TABLE_PRIMITIVE);
+
+    expect(primitive.length, 'the table primitive is missing').toBeGreaterThan(200);
+    expect(
+      primitive,
+      'the table primitive no longer wraps itself in a scroller — the page scrolls sideways instead',
+    ).toMatch(/<div className="[^"]*overflow-auto[^"]*">/);
+  });
+
+  it('nests no second scroller around it on the screen', () => {
+    // TWO overlapping scrollers is the other half of the same defect: a phone
+    // gets two scrollbars, the outer one takes the gesture, and the table's own
+    // never moves. The screen must add none of its own.
+    expect(
+      source(MEMBER_LIST),
+      'the member list nests a scroll container around the one the table already owns',
+    ).not.toMatch(/overflow-(x-)?auto|overflow-x-scroll/);
+  });
+
+  it('never hides a figure because it is zero', () => {
+    // UX-DR20 states the fact rather than the absence: a search matching
+    // nothing renders `Prikazano 0 osoba`, and a surface that emptied the
+    // region instead would be indistinguishable from one that failed to load.
+    // `members/list.test.ts` proves the narrowing RETURNS zero; what no
+    // executable assertion can reach is the screen deciding not to render it,
+    // so the shape that would — a branch on an empty list — is refused here.
+    const screen = source(MEMBER_LIST);
+
+    expect(screen, 'the member list never renders its count').toMatch(/t\('ljudi\.count'/);
+    expect(
+      screen,
+      'the member list branches on an empty list, which is how a stated zero disappears',
+    ).not.toMatch(/\.length\s*(===|!==|>|<)\s*0/);
+  });
+});
+
 describe('the keys rendered and the keys declared are the same set', () => {
   /**
    * DEDUPED, which it was not before story 1.3b.
@@ -1537,6 +1939,31 @@ describe('the keys rendered and the keys declared are the same set', () => {
 
   it('renders every screen key the resource file declares', () => {
     expect(used()).toEqual(declared());
+  });
+
+  it('finds every ljudi key somewhere in the two files that own them, whatever shape it took', () => {
+    // THE CATCH-ALL the shape-specific readers cannot be. `memberListKeys` knows
+    // two shapes — a `\w*MessageKey` return union and a `label:` entry on the
+    // column table — and `translationKeys` knows one, `t('…')`. A key declared
+    // any OTHER way (a `Record` literal, a `satisfies`, a third mapping
+    // function) is in `hr.json`, renders on screen, and escapes the
+    // rendered-versus-declared comparison above entirely, because nothing reads
+    // it. This does not care about the shape: every `ljudi.*` key the resource
+    // file declares has to appear literally in one of the two files that own
+    // this surface, and the comparison above still has to have counted it.
+    const owned = `${source(MEMBER_LIST)}\n${source(MEMBER_LIST_KEYS)}`;
+    const declared = resourceKeys().filter((key) => key.startsWith('ljudi.'));
+
+    expect(declared.length, 'no ljudi keys to sweep at all').toBeGreaterThan(0);
+    for (const key of declared) {
+      expect(owned, `${key} is declared in hr.json and written nowhere the readers look`).toContain(
+        key,
+      );
+      expect(
+        used(),
+        `${key} is written in the source but no reader here counts it — add its shape to memberListKeys`,
+      ).toContain(key);
+    }
   });
 
   it('declares every key the two screens render', () => {
@@ -3079,6 +3506,65 @@ describe('the exempted attribute keeps the promise that exempted it', () => {
       ).toBe(true);
     }
   });
+
+  /**
+   * `aria-sort` joined the same global allowlist in story 1.5a, on the same
+   * argument, and it is held to the same enforcement — GLOBALLY, over every
+   * swept screen, rather than over the one screen that introduced it. That
+   * scoping is the finding: the allowlist applies to all fourteen, so a
+   * justification drawn from one of them buys an exemption on the other
+   * thirteen, and `aria-sort="Ime"` on any of them would be a Croatian literal
+   * in an attribute nothing else looks at.
+   */
+  const ARIA_SORT_VOCABULARY = new Set(['ascending', 'descending', 'other', 'none']);
+
+  it('admits only ARIA sort states wherever aria-sort is written as a literal', () => {
+    const found = SCREENS.flatMap(({ file }) => ariaSortValues(source(file)));
+
+    for (const value of found) {
+      expect(
+        ARIA_SORT_VOCABULARY.has(value),
+        `aria-sort="${value}" is not an ARIA sort state — it is text in an attribute the allowlist exempted`,
+      ).toBe(true);
+    }
+    // NO NON-VACUITY GUARD ON `found`, deliberately, and the case below is why:
+    // the one screen that uses the attribute COMPUTES its value rather than
+    // writing one, so an empty result here is the correct state of the world
+    // rather than a sweep that has gone quiet. The reader's own reach is proved
+    // on synthetic sources below, and what the computed value can be is pinned
+    // by the case that follows.
+    expect(found, 'a screen writes an aria-sort literal — see the case below').toEqual([]);
+  });
+
+  it('computes every aria-sort value through the function pinned to that vocabulary', () => {
+    // WHERE THE ENFORCEMENT ACTUALLY LIVES for the one screen that uses it.
+    // `aria-sort={sortStateOf(sort, column.key)}` cannot carry a Croatian word,
+    // because `sortStateOf` returns one of three ARIA states and
+    // `members/list.test.ts` pins it against those three literally. A screen
+    // that started computing the attribute some other way would escape both this
+    // and the literal sweep above, so the route is pinned rather than assumed.
+    const uses = [...source(MEMBER_LIST).matchAll(/aria-sort=\{([^}]*)\}/g)].map(
+      (found) => found[1] ?? '',
+    );
+
+    expect(uses.length, 'the member list no longer reports a sort state at all').toBe(1);
+    for (const use of uses) {
+      expect(use, 'aria-sort is computed by something other than sortStateOf').toContain(
+        'sortStateOf(',
+      );
+    }
+  });
+
+  it('reads aria-sort in both syntaxes, and finds none where there is none', () => {
+    // Detector self-test, both polarities: a reader that returned nothing would
+    // make the sweep above pass on a screen carrying a literal in it.
+    expect(ariaSortValues('<th aria-sort="ascending">')).toEqual(['ascending']);
+    expect(ariaSortValues("<th aria-sort={sorted ? 'descending' : 'none'}>")).toEqual([
+      'descending',
+      'none',
+    ]);
+    expect(ariaSortValues('<th className="x">')).toEqual([]);
+  });
 });
 
 describe('the screen uses no reserved signal', () => {
@@ -3451,6 +3937,44 @@ describe('the detectors find what they claim to find', () => {
       'password',
     ]);
     expect(labelTargets('<Label>text</Label>')).toEqual([]);
+  });
+
+  it('reads every key the member-list module declares, in both of its shapes', () => {
+    // The reader story 1.5a adds, self-tested on both polarities like every
+    // other detector here. It has to find THREE unions rather than the first
+    // one — `messageKeyUnion` uses `exec` and would stop at the refusals — and
+    // it has to find the column table's headings, which are not a return type
+    // at all. A reader that found neither would make the set comparison above
+    // pass against a resource file missing all eleven.
+    const module = [
+      "export function membersMessageKey(",
+      "  failure: MembersFailure,",
+      "): 'ljudi.error.refused' | 'ljudi.error.unavailable' {",
+      '  return x;',
+      '}',
+      'export function memberLevelMessageKey(role: MemberRole): \'ljudi.admin\' | \'ljudi.member\' {',
+      '  return y;',
+      '}',
+      'export const MEMBER_COLUMNS = [',
+      "  { key: NAME_COLUMN, label: 'ljudi.name', sortValue: (m) => m.name },",
+      "  { key: EMAIL_COLUMN, label: 'ljudi.email', sortValue: (m) => m.email },",
+      '];',
+    ].join('\n');
+
+    expect(memberListKeys(module)).toEqual([
+      'ljudi.error.refused',
+      'ljudi.error.unavailable',
+      'ljudi.admin',
+      'ljudi.member',
+      'ljudi.name',
+      'ljudi.email',
+    ]);
+    // Both polarities: a module that declares neither shape yields nothing, and
+    // a screen's own `t()` calls are NOT keys this reader may claim — those are
+    // `translationKeys`' and counting them twice would hide a key that stopped
+    // being declared.
+    expect(memberListKeys('export function other(): string { return x; }')).toEqual([]);
+    expect(memberListKeys(compliant)).toEqual([]);
   });
 
   it('reads the message keys off the mapping signature and none off a screen', () => {

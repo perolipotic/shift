@@ -78,6 +78,16 @@ const dateTimeFormatters = new Map<string, Intl.DateTimeFormat>();
 const numberFormatters = new Map<string, Intl.NumberFormat>();
 
 /**
+ * The one collator, built once.
+ *
+ * `Intl.Collator` construction is the expensive part of comparing, and a sort
+ * over several hundred member rows calls the comparator O(n log n) times — a
+ * collator built per comparison would construct it a few thousand times for one
+ * click. Nothing invalidates it because there is one locale.
+ */
+const collator = new Intl.Collator(LOCALE, { usage: 'sort', sensitivity: 'variant' });
+
+/**
  * The memoized formatter for one shape in one zone.
  *
  * An invalid IANA zone throws `RangeError` here, at construction, which is the
@@ -203,6 +213,33 @@ export function formatMonthName(instant: Date, timeZone: string): string {
 /** `subota` — CLDR verbatim, lowercase. */
 export function formatWeekdayName(instant: Date, timeZone: string): string {
   return part(partsOf('weekdayName', instant, timeZone), 'weekday').toLocaleLowerCase(LOCALE);
+}
+
+/**
+ * Croatian order for any two pieces of text — names, addresses, anything a
+ * column sorts by.
+ *
+ * NAMED FOR WHAT IT ORDERS rather than for the one column that first needed it:
+ * the member list sorts by name AND by email address through this same call,
+ * and a `compareNames` sorting addresses is a name that has to be explained
+ * every time it is read.
+ *
+ * `<` IS THE THING THIS REPLACES, and the difference is not cosmetic. JavaScript
+ * compares strings by code unit, which puts every Croatian diacritic after `z`:
+ * `Čavić` sorts after `Zoran`, and `Cvitanović` and `Čavić` land at opposite
+ * ends of the list though a Croatian reader expects them adjacent. `hr`'s CLDR
+ * collation puts `č` directly after `c`, `ž` after `z`, and `dž lj nj` where the
+ * alphabet puts them. `members/list.test.ts` pins a case the two disagree on, so
+ * a comparator "simplified" back to `<` fails rather than merely reordering.
+ *
+ * HERE rather than beside the sort, because this file is the only one in
+ * `apps/web` permitted to touch `Intl` at all (`format.test.ts` asserts it), and
+ * `Intl.Collator` is `Intl`. It takes no `timeZone`: it formats no instant, so
+ * the L8 rule that governs every other export here does not reach it —
+ * `format.test.ts` names it alongside `formatNumber` for that reason.
+ */
+export function compareText(first: string, second: string): number {
+  return collator.compare(first, second);
 }
 
 /**

@@ -19,6 +19,24 @@
     "days": "{count, plural, one {# dan} few {# dana} other {# dana}}",
     "conflicts": "{count, plural, one {# konflikt} few {# konflikta} other {# konflikata}}"
   },
+  "ljudi": {
+    "caption": "Popis osoba u organizaciji",
+    "search": "Pretraga po imenu ili adresi",
+    "name": "Ime",
+    "email": "Adresa e-pošte",
+    "role": "Razina ovlasti",
+    "leave": "Dani godišnjeg odmora",
+    "admin": "Administrator",
+    "member": "Član",
+    "count": "{count, plural, one {Prikazana # osoba} few {Prikazane # osobe} other {Prikazano # osoba}}",
+    "filterAll": "{count, plural, one {Sve razine: # osoba} few {Sve razine: # osobe} other {Sve razine: # osoba}}",
+    "filterAdmin": "{count, plural, one {Administratori: # osoba} few {Administratori: # osobe} other {Administratori: # osoba}}",
+    "filterMember": "{count, plural, one {Članovi: # osoba} few {Članovi: # osobe} other {Članovi: # osoba}}",
+    "error": {
+      "refused": "Popis osoba nije moguće prikazati. Odjavi se i prijavi ponovno.",
+      "unavailable": "Popis osoba trenutačno nije moguće učitati. Pokušaj ponovno."
+    }
+  },
   "nav": {
     "danas": "Danas",
     "kalendar": "Kalendar",

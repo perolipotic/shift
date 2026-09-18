@@ -34,7 +34,25 @@ const RESOURCE = join(repoRoot, 'apps', 'web', 'src', 'i18n', 'locales', 'hr.jso
 /** The two plural messages story 1.1c is permitted to ship (`EXPERIENCE.md:81`).
  *  Only these carry an ICU `plural` argument, so only these are checked for the
  *  three Croatian categories. */
-const SANCTIONED_PLURAL_KEYS = ['count.days', 'count.conflicts'];
+const SANCTIONED_PLURAL_KEYS = [
+  'count.days',
+  'count.conflicts',
+  // STORY 1.5a's FOUR, and they are the first plural messages in this file that
+  // a screen actually renders — `count.days` and `count.conflicts` were
+  // authored ahead of any surface that says them. The member list states a row
+  // count and gives every filter option a count of its own (UX-DR19), and a
+  // count in Croatian needs all three forms or the noun is wrong: `1 osoba`,
+  // `3 osobe`, `5 osoba`, and `21 osoba` again — which `count === 1` gets wrong
+  // at 21 and ICU gets right through `Intl.PluralRules`.
+  //
+  // They are here rather than in the screen list below because that list
+  // asserts a plain string and would refuse an ICU argument; splitting them is
+  // what makes each list check the thing it is for.
+  'ljudi.count',
+  'ljudi.filterAll',
+  'ljudi.filterAdmin',
+  'ljudi.filterMember',
+];
 
 /** The flat screen strings the application is permitted to ship, by the story
  *  that earned each of them: 1.1d's sign-in screen, 1.3b's refusals and
@@ -177,6 +195,46 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.error.logoType',
   'organization.error.logoUnavailable',
   'organization.error.unavailable',
+  // Story 1.5a — the member list. ELEVEN plain strings, plus the four counted
+  // ones in the plural list above.
+  //
+  // There is deliberately NO `ljudi.heading`. The screen's `<h1>` is
+  // `nav.ljudi` — the destination's own name, which is what the screen IS — so
+  // a heading key here would be the same word authored twice, exactly as the
+  // settings surface argues.
+  //
+  // `ljudi.caption` is the TABLE's accessible name and not the screen's: a
+  // `<table>` with no caption is announced as "table" and nothing else, and a
+  // screen reader user arriving at one wants to know what it lists before they
+  // start moving through its cells.
+  'ljudi.caption',
+  'ljudi.search',
+  // FOUR COLUMN HEADINGS and no fifth. `members` carries no `team_id` until
+  // story 1.7, hours are epic 4, and active state lives in `auth.users` (AD-2)
+  // with story 1.6 versioning it — so a fifth heading here would be a later
+  // story's work arriving without that story's review.
+  //
+  // `ljudi.role` is rendered TWICE, as the column's heading and as the level
+  // filter's own label, and that is one key rather than two on purpose: the
+  // control filters exactly what the column shows, and two words for one thing
+  // is two things to a reader.
+  'ljudi.name',
+  'ljudi.email',
+  'ljudi.role',
+  'ljudi.leave',
+  // TWO LEVELS, and both are NAMES rather than a name and its absence. They are
+  // the exhaustive mapping `memberLevelMessageKey` runs, which is what keeps an
+  // unrecognised level from rendering as `Član`.
+  'ljudi.admin',
+  'ljudi.member',
+  // TWO REFUSALS, and neither says what a refusal on this surface must never
+  // say. `/ljudi` is reachable only through a guard that has already read this
+  // session's level and found it to be an administrator's, so
+  // `organization.error.refused`'s wording — "za izmjene trebaš ovlasti
+  // administratora" — would be false on the one path that reaches the screen.
+  // They state what happened instead.
+  'ljudi.error.refused',
+  'ljudi.error.unavailable',
   // The navigation chrome, part B — FOUR, and each one is a string that had no
   // surface to live on until this commit.
   //

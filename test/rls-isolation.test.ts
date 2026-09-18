@@ -294,6 +294,16 @@ interface RestCall {
   readonly token?: string;
   readonly method?: string;
   readonly body?: Readonly<Record<string, unknown>>;
+  /**
+   * PostgREST's `Prefer` header, for the one case that needs `count=exact`.
+   *
+   * Story 1.5a: `apps/web/src/members/list.ts` asks for an exact count and
+   * refuses an answer shorter than it claims, so the whole truncation defence
+   * rests on PostgREST actually reporting one. supabase-js sends this header for
+   * `select(columns, { count: 'exact' })`, and this is what lets a case here ask
+   * the same question of the real service.
+   */
+  readonly prefer?: string;
 }
 
 /** One real PostgREST request — the same transport the SPA uses. */
@@ -304,6 +314,7 @@ async function rest(path: string, call: RestCall = {}): Promise<Response> {
   const headers: Record<string, string> = { apikey: endpoint.key };
   if (call.token !== undefined) headers['Authorization'] = `Bearer ${call.token}`;
   if (call.body !== undefined) headers['content-type'] = 'application/json';
+  if (call.prefer !== undefined) headers['Prefer'] = call.prefer;
 
   return fetch(`${endpoint.url}/rest/v1/${path}`, {
     method: call.method ?? 'GET',
@@ -3433,5 +3444,342 @@ describe('the helper other empty result: the caller own member row stops existin
         expect(written.code, 'a write with no member row behind it is refused 42501').toBe('42501');
       });
     },
+  );
+});
+
+describe('the member list is one organization own list, at the scale Q20 names', () => {
+  /**
+   * Story 1.5a: `/ljudi` reads the whole member list through one PostgREST
+   * call, and `0002:141-148` names story 1.5 as the one that proves that read
+   * holds at several hundred members. The index comment asks for the scale to
+   * be PROVED rather than assumed, and `ARCHITECTURE-SPINE.md:337` asks for the
+   * same thing about Q17's budget.
+   *
+   * THE SCALE ROWS ARE GENERATED HERE AND NOT IN `supabase/seed.sql`. The seed
+   * is shared by every suite and several assertions count fixture members
+   * exactly — `provisioning.test.ts` among them — so growing it to Q20 scale
+   * would rewrite unrelated expectations and slow every `db reset`. The index
+   * comment asks for the scale to be proved, not for the pilot organization to
+   * be enlarged.
+   *
+   * THE FOLLOW-UP INSERTS KEY OFF THE IDS THIS BLOCK JUST GENERATED, in one
+   * statement, and never re-select by the throwaway domain. Re-selecting would
+   * adopt every throwaway account the rest of this file has created into the
+   * pilot organization — and, worse, would adopt any left behind by an
+   * interrupted earlier run.
+   *
+   * CLEANED UP IN A `finally` rather than only at file scope. `afterAll`
+   * already sweeps the throwaway domain, and it is not enough on its own: a
+   * failure here would leave four hundred members in the pilot organization for
+   * every case that runs after this one, so the failure would be reported as
+   * half a dozen unrelated ones.
+   */
+
+  /** Q20's "several hundred", as the number this block actually inserts. */
+  const SCALE = 400;
+
+  /** Q17's budget for a surface read, in milliseconds
+   *  (`ARCHITECTURE-SPINE.md:337`). */
+  const READ_BUDGET_MS = 2000;
+
+  /** The columns `apps/web/src/members/list.ts` selects, written out here
+   *  rather than imported: this file asserts what the DATABASE does, and
+   *  reading the list from the client would let a renamed column agree with
+   *  itself on both sides while every existing read broke. */
+  const LIST_COLUMNS = 'organization_id,id,name,email,role,leave_allowance_days';
+
+  /**
+   * `count` members in one organization, in ONE statement, returning the
+   * `auth.users` ids so the cleanup can name exactly what it created.
+   *
+   * Identities are inserted alongside the accounts for the reason
+   * `addThrowawayMember` does it: `provisioning.test.ts` asserts one identity
+   * per account, and a run that left four hundred accounts without one would
+   * fail that file rather than this one.
+   */
+  async function addScaleMembers(
+    client: Client,
+    organization: string,
+    count: number,
+  ): Promise<string[]> {
+    const { rows } = await client.query<{ id: string }>(
+      `with generated as (
+         select gen_random_uuid() as id, ordinal
+           from generate_series(1, $2) as ordinal
+       ),
+       created_users as (
+         insert into auth.users (
+           instance_id, id, aud, role, email, email_confirmed_at,
+           raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+           confirmation_token, recovery_token, email_change, email_change_token_new
+         )
+         select '00000000-0000-0000-0000-000000000000',
+                generated.id,
+                'authenticated',
+                'authenticated',
+                generated.id::text || '@' || $3,
+                now(),
+                jsonb_build_object('provider', 'email', 'providers', jsonb_build_array('email')),
+                '{}'::jsonb,
+                now(),
+                now(),
+                '', '', '', ''
+           from generated
+         returning id
+       ),
+       created_identities as (
+         insert into auth.identities (
+           provider_id, user_id, identity_data, provider, created_at, updated_at
+         )
+         select u.id::text,
+                u.id,
+                jsonb_build_object(
+                  'sub', u.id::text,
+                  'email', u.id::text || '@' || $3,
+                  'email_verified', true,
+                  'phone_verified', false
+                ),
+                'email',
+                now(),
+                now()
+           from created_users u
+         returning user_id
+       ),
+       created_members as (
+         insert into members (
+           organization_id, auth_user_id, name, email, role, leave_allowance_days
+         )
+         select $1,
+                u.id,
+                $4 || ' ' || lpad(row_number() over (order by u.id)::text, 4, '0'),
+                -- A tenth of them carry no address, which is the case the
+                -- surface sorts last in both directions and the schema permits
+                -- outright (\`0002:135\`).
+                case when row_number() over (order by u.id) % 10 = 0
+                     then null
+                     else u.id::text || '@' || $3
+                end,
+                'member_role',
+                20
+           from created_users u
+         returning auth_user_id
+       )
+       select auth_user_id as id
+         from created_members`,
+      [organization, count, `${THROWAWAY}.shift.invalid`, `${THROWAWAY} scale`],
+    );
+
+    const created = rows.map((row) => row.id);
+
+    // Asserted rather than assumed: a CTE that inserted nothing would leave
+    // every assertion below comparing the seeded four against the seeded four
+    // and passing having proved nothing about scale.
+    //
+    // AND IT CLEANS UP WHAT IT MADE BEFORE IT THROWS. The statement is atomic,
+    // so a short answer means the generator disagreed with the request rather
+    // than that half of it landed — but the rows it DID create are committed,
+    // and an assertion thrown from here escapes before the caller's own
+    // `finally` has anything to clean up with, since it never receives the ids.
+    // Every later case in this file would then run against an organization with
+    // several hundred extra members.
+    if (created.length !== count) {
+      await client.query('delete from auth.users where id = any($1::uuid[])', [created]);
+    }
+
+    expect(created, 'the scale insert created no members').toHaveLength(count);
+
+    return created;
+  }
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'returns the $fixture list with every column the surface renders, and no other organization rows',
+    async ({ slug, admin }) => {
+      // The read the surface actually makes, with the column list it actually
+      // sends — `members?select=organization_id,id,name,email,role,
+      // leave_allowance_days` — rather than `select=*`, which is a different
+      // request and the one already covered above.
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+        const rows = await restRows(`members?select=${LIST_COLUMNS}`, { token });
+
+        expect(rows.length, `${slug} read no members at all`).toBeGreaterThan(0);
+        expect(
+          [...new Set(rows.map((row) => row['organization_id']))],
+          `a ${slug} session read members belonging to another organization`,
+        ).toEqual([own]);
+        // Q5, asserted against what comes BACK rather than against what was
+        // asked for: no health data and no absence-reason field reaches the
+        // client, because the six columns the surface names are the six it gets.
+        for (const row of rows) {
+          expect([...Object.keys(row)].sort(), `${slug} read a column nothing asked for`).toEqual(
+            [...LIST_COLUMNS.split(',')].sort(),
+          );
+        }
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'hands a $fixture member-role session the same list, because the database is the enforcement point',
+    async ({ slug, member, admin }) => {
+      // THE CLAIM THE WHOLE ROUTE GUARD RESTS ON, and nothing pinned it.
+      // `/ljudi` refuses a member-role session in the INTERFACE, and both the
+      // spec and `routes/ljudi.tsx` say out loud that this protects nothing
+      // against a direct API call: `members_select_own_organization` carries no
+      // role filter by design (`0003:286-288`), because a member has to read the
+      // list to see who is on a team. If that were ever to stop being true, the
+      // guard would silently become a boundary the application relies on — and
+      // AD-10 says the boundary is the database. So the fact is asserted rather
+      // than described.
+      const memberRows = await restRows(`members?select=${LIST_COLUMNS}`, {
+        token: await tokenFor(member, slug),
+      });
+      const adminRows = await restRows(`members?select=${LIST_COLUMNS}`, {
+        token: await tokenFor(admin, slug),
+      });
+
+      expect(memberRows.length, `a ${slug} member-role session read no members`).toBeGreaterThan(0);
+      // THE SAME ROWS, not merely some rows: the member sees exactly what the
+      // admin sees, which is what makes the route guard an IA decision about
+      // which SCREEN a level reaches rather than a data one.
+      expect(
+        memberRows.map((row) => row['id']).sort(),
+        `a ${slug} member-role session reads a different list from its admin`,
+      ).toEqual(adminRows.map((row) => row['id']).sort());
+      // Including the columns the surface renders — the addresses and the leave
+      // allowances the guard exists to keep off a member's screen are reachable
+      // to them over REST, and that is the state AD-10 describes.
+      expect([...Object.keys(memberRows[0] ?? {})].sort()).toEqual(
+        [...LIST_COLUMNS.split(',')].sort(),
+      );
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi)(
+    'keeps the list one organization own at several hundred members, inside Q17 budget',
+    async () => {
+      const client = await connect();
+      let created: string[] = [];
+
+      try {
+        const pilot = FIXTURES[0];
+        const other = FIXTURES[1];
+        const own = await organizationId(client, pilot.slug);
+        const seeded = await restRows('members?select=id', {
+          token: await tokenFor(pilot.admin, pilot.slug),
+        });
+        // READ BEFORE, COMPARED AFTER, rather than asserted against the seed's
+        // own three. Earlier cases in this file commit throwaway members into
+        // both fixtures and clean them up in `afterAll`, so "three" is true of
+        // `seed.sql` and not of the database at the moment this case runs —
+        // and an assertion that is only true in isolation is one that fails for
+        // a reason that has nothing to do with what it guards. The claim is
+        // that the scale insert changed this organization by EXACTLY nothing.
+        const otherBefore = await restRows('members?select=id', {
+          token: await tokenFor(other.admin, other.slug),
+        });
+
+        created = await addScaleMembers(client, own, SCALE);
+
+        const token = await tokenFor(pilot.admin, pilot.slug);
+        const started = Date.now();
+        const rows = await restRows(`members?select=${LIST_COLUMNS}`, { token });
+        const elapsed = Date.now() - started;
+
+        // EXACTLY the seeded members plus the ones this block created. Not
+        // "at least": a read that silently truncated at `max_rows` would
+        // satisfy a lower bound, and truncation is precisely what
+        // `members/list.ts` refuses on the client.
+        expect(rows, 'the scale read did not return every member of the organization').toHaveLength(
+          seeded.length + SCALE,
+        );
+        expect(
+          [...new Set(rows.map((row) => row['organization_id']))],
+          'the scale read reached more than one organization',
+        ).toEqual([own]);
+
+        // THE OTHER FIXTURE IS UNTOUCHED, and asserted EXACTLY rather than as
+        // "fewer than four hundred": the failure worth catching is the scale
+        // insert having adopted rows into the wrong organization, and a bound
+        // that loose passes while a three-member organization has become four
+        // hundred and three.
+        expect(otherBefore.length, 'the other fixture had no members to begin with').toBeGreaterThan(
+          0,
+        );
+        expect(
+          await restRows('members?select=id', {
+            token: await tokenFor(other.admin, other.slug),
+          }),
+          `the scale insert changed how many members ${other.fixture} has`,
+        ).toHaveLength(otherBefore.length);
+
+        // THE EXACT COUNT, OBSERVED RATHER THAN ASSUMED, and this is the one
+        // place it can be. `members/list.ts` refuses a truncated answer by
+        // comparing the rows it received against the count the transport
+        // reported — and it FAILS OPEN when that count is `null`, which is the
+        // right call for a header a proxy might strip but useless as a defence
+        // if the transport never sends one at all. `list.test.ts` cannot tell
+        // the difference: it hands the reader whatever count it likes. Only a
+        // real request to a real PostgREST can say whether `Prefer: count=exact`
+        // produces a number, and the surface's whole truncation defence rests on
+        // it doing so.
+        //
+        // Asked exactly the way the client asks — supabase-js turns
+        // `select(columns, { count: 'exact' })` into this header — and read off
+        // `Content-Range`, whose `*/N` tail is where the count arrives.
+        const counted = await rest(`members?select=${LIST_COLUMNS}`, {
+          token,
+          prefer: 'count=exact',
+        });
+        const range = counted.headers.get('content-range');
+
+        expect(range, 'PostgREST returned no Content-Range for an exact count').not.toBeNull();
+        const reported = Number((range ?? '').split('/')[1]);
+
+        expect(
+          reported,
+          `Content-Range reported "${String(range)}" — the truncation defence has no count to compare against`,
+        ).toBe(seeded.length + SCALE);
+        expect(Number.isNaN(reported), 'the reported count is not a number').toBe(false);
+
+        // Q17, measured rather than assumed. One local round trip over one
+        // range scan on `members_organization_id_id_key`; if this ever reads as
+        // noise rather than as a property of the read it belongs on the
+        // deferred ledger, not at a loosened threshold (the spec's recorded
+        // disagreement says exactly that).
+        expect(
+          elapsed,
+          `reading ${String(rows.length)} members took ${String(elapsed)}ms`,
+        ).toBeLessThan(READ_BUDGET_MS);
+      } finally {
+        // IN A `finally`, not only in `afterAll`. Four hundred members left in
+        // the pilot organization would fail every later case in this file for
+        // reasons that have nothing to do with what broke — and they are named
+        // by the ids this block generated rather than found by a pattern, so a
+        // concurrent throwaway account belonging to some other case is never
+        // swept up with them.
+        //
+        // NESTED, so the connection is returned even when the DELETE is what
+        // fails. Written as two statements in one `finally`, a delete that threw
+        // — a lock timeout, a connection already broken by whatever failed above
+        // — skipped `client.end()` and leaked the connection for the rest of the
+        // run, which surfaces much later as other cases waiting on a pool that
+        // never refills.
+        try {
+          if (created.length > 0) {
+            await client.query('delete from auth.users where id = any($1::uuid[])', [created]);
+          }
+        } finally {
+          await client.end();
+        }
+      }
+    },
+    120_000,
   );
 });
