@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 09-17-2026
+last_updated: 09-18-2026
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -200,7 +200,22 @@ development_status:
   # filter are pure functions and the markup is shadcn's Table, which left the
   # library imported nowhere. ARCHITECTURE-SPINE.md:218's 9.2.4 pin stands for
   # whichever story first has a use for it.
-  1-5a-member-list: review
+  # Part A merged to main in 8b122aa (PR #15) and its spec carries status done
+  # with review_loop_iteration 1 — the first story in this epic to take a
+  # bad_spec LOOPBACK rather than patch through. Round one's three adversarial
+  # layers demonstrated rather than argued: reordering MEMBER_ROLES, widening the
+  # guard to `|| outcome.ok`, and swapping two headers' sort keys each left the
+  # whole suite green while inverting the route guard, admitting every member to
+  # the list, and mispairing sorted columns. The code was reverted, the spec
+  # amended to require the guard's role reader to arrive through the router
+  # context and all screen logic to live in members/list.ts, and re-derived.
+  # Round two found three MORE green mutations of the same class and was routed
+  # as 25 patches: the cause is that vitest collects only src/**/*.test.ts in a
+  # node environment, so a .tsx is executed by nothing and logic there is
+  # unverifiable by construction. A detector now fails if ljudi.tsx touches a
+  # member field at all, which closes the class rather than the instances.
+  # Six previously-green mutations now each fail the suite.
+  1-5a-member-list: done
   1-6-deactivating-a-member-changes-the-future-and-rewrites-no-his: backlog
   1-7-an-admin-creates-teams-and-moves-people-between-them: backlog
   1-8-a-member-sees-who-is-on-a-team: backlog
