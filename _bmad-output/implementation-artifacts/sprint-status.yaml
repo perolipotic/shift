@@ -248,7 +248,15 @@ development_status:
   # routed as 23 patches, not a second loopback: the findings were localised and
   # the structure held. Four rejected as unreachable and recorded so they are
   # not "fixed" later.
-  1-5b-member-write-path: review
+  # Merged to main in 63bee27 (PR #17) and its spec carries status done with
+  # review_loop_iteration 1 — two review rounds, one bad_spec LOOPBACK, then 23
+  # patches, four findings rejected as unreachable and recorded so they are not
+  # "fixed" later. Reconciled 2026-09-18 in the same session that built it, so
+  # this key never went stale the way 1.2, the navigation shell and 1.4a each
+  # did. The 1-5 parent above deliberately stays in-progress: per the convention
+  # recorded there it closes with its LAST part, which is the admin-issued
+  # password reset waiting in deferred-work.md, not with this one.
+  1-5b-member-write-path: done
   1-6-deactivating-a-member-changes-the-future-and-rewrites-no-his: backlog
   1-7-an-admin-creates-teams-and-moves-people-between-them: backlog
   1-8-a-member-sees-who-is-on-a-team: backlog
