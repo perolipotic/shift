@@ -163,6 +163,23 @@ const SOURCES = [
   // at all, so a build predating it has no member list to sweep.
   join(webRoot, 'src', 'members', 'list.ts'),
   join(webRoot, 'src', 'components', 'ui', 'table.tsx'),
+  // Story 1.5b's three. `members/write.ts` renders nothing and is here for the
+  // reason `members/list.ts` is, and more so: it owns the ELEVEN refusal keys
+  // the two forms show, as a return-type union plus one named constant, so a
+  // chunk built before an edit to it compares `hr.json` against output that
+  // never saw any of them.
+  //
+  // The two screens are `.tsx` that render — twelve keys between them — and
+  // neither is a destination, so neither is listed anywhere else in this file.
+  // A screen absent from this list is a screen the freshness guard cannot see.
+  join(webRoot, 'src', 'members', 'write.ts'),
+  // The wire vocabulary `write.ts` re-exports. It renders nothing and is here
+  // for the reason `snapshot.ts` and `client.ts` are: it holds the stable codes
+  // the two screens' messages are chosen by, so a chunk built before an edit to
+  // it is stale in a way no vocabulary sweep can see.
+  join(webRoot, 'src', 'members', 'wire.ts'),
+  join(webRoot, 'src', 'routes', 'ljudi.novi.tsx'),
+  join(webRoot, 'src', 'routes', 'ljudi.$id.tsx'),
 ];
 
 /**
@@ -574,6 +591,65 @@ const AUTHORED_VOCABULARY = [
   'prijavi',
   'Pokušaj',
   'ponovno',
+  // STORY 1.5b's FORTY, and every one of them closes a gap rather than
+  // moving a word: not one was in the ban list below, so a hard-coded `Dodaj
+  // osobu` on the list's own action or a hard-coded refusal in either form
+  // would have shipped unnoticed. They are the two member forms' whole
+  // vocabulary — the two headings, the three imperatives, the actions column,
+  // the credential panel's three strings, and the eleven refusals the write
+  // path maps to.
+  //
+  // COUNTED SEPARATELY AND NOT AS STEMS, which is what the word boundary buys.
+  // `Osoba`, `osobu`, `osoba` and `osobe` are four distinct whole words because
+  // Croatian declines, and three of them were already counted by story 1.5a —
+  // so only the two this story introduces are added here. `korisničko` is
+  // counted apart from `Korisničko` for the same reason `izbornik` is counted
+  // apart from `Izbornik`: the capitalized form is a field's label and the
+  // lowercase one sits inside four sentences, and a component hard-coding
+  // either is a count that no longer matches.
+  //
+  // Every count is read off `hr.json` rather than written here, so a reworded
+  // message moves both sides at once and needs no edit to this list.
+  'Dodaj',
+  'Nova',
+  'Osoba',
+  'Ostali',
+  'Ova',
+  'Ovo',
+  'Poslije',
+  'Posljednjem',
+  'Početna',
+  'Potrebna',
+  'Promjena',
+  'Promjene',
+  'Radnje',
+  'Račun',
+  'Uredi',
+  'Uređivanje',
+  'Zapiši',
+  'izrađen',
+  'izrađena',
+  'korisničko',
+  'lozinku',
+  'osobu',
+  'administratoru',
+  'dostupno',
+  'oduzeti',
+  'operatera',
+  'podaci',
+  'pomoć',
+  'popis',
+  'promijenjeno',
+  'razmak',
+  'sadržavati',
+  'smije',
+  'spremljena',
+  'spremljene',
+  'spremljeni',
+  'usklađeno',
+  'već',
+  'više',
+  'znak',
 ];
 
 /** Everything the terminology contract and the unshipped affordances still own.

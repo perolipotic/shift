@@ -8,14 +8,74 @@
  * environment, with no browser and no deployed function.
  *
  * The client factories are typed as returning `unknown` on purpose: this
- * module must never touch a client, only prove that both can be constructed on
- * a real request. Reaching into one here would be the AD-16 defect.
+ * module still never touches a client itself. What it does now is hand both
+ * values to the operation modules, which cast them to their own narrow
+ * structural interfaces — the shape `members/list.ts`'s `MembersTable`
+ * established, and the reason a `.ts` extension appears on the three imports
+ * below: Deno requires it, Vitest resolves it, and an extensionless import
+ * works in exactly one of the two runtimes.
  */
+
+import {
+  OPERATION_FAILED,
+  createUser,
+  updateUserById,
+  type CallerClient,
+  type OperationReply,
+  type PrivilegedAccounts,
+} from './operations.ts';
 
 /** The complete set of operations this boundary will ever expose (AD-16). */
 export const OPERATIONS = ['createUser', 'updateUserById', 'ban', 'unban'] as const;
 
 export type Operation = (typeof OPERATIONS)[number];
+
+/**
+ * The operations that still refuse to act, and why they are named here rather
+ * than inferred from the dispatch below.
+ *
+ * `ban` and `unban` version an account's ACTIVE STATE, which AD-2 says lives in
+ * `auth.users` and story 1.6 owns together with the versioned shape that records
+ * it. Shipping them here would mean guessing that shape a story early, so they
+ * keep answering 501 — and `test/admin-auth-boundary.test.ts` drives this list
+ * rather than `OPERATIONS`, so an operation that quietly stopped being
+ * implemented reads as a failing test rather than as a shorter `it.each`.
+ */
+export const UNIMPLEMENTED_OPERATIONS = ['ban', 'unban'] as const;
+
+/** The operations this story implements. The two lists partition
+ *  {@link OPERATIONS}, which the boundary suite asserts rather than assumes. */
+export const IMPLEMENTED_OPERATIONS = ['createUser', 'updateUserById'] as const;
+
+/**
+ * The codes the TRANSPORT answers with, before any operation runs.
+ *
+ * NAMED AND EXPORTED, which they were not: they lived as bare literals in the
+ * replies below and so escaped the contract case in
+ * `test/admin-auth-boundary.test.ts` entirely — the SPA had a mapping for every
+ * code an OPERATION emits and none for any of these, so all seven fell through
+ * to "the service is unavailable, try again". The one that matters is
+ * `AUTHORIZATION_MISSING`: a session that expired while a form was open is
+ * fixed by signing in again and by nothing else, and "try again" repeats the
+ * request that carries no credential.
+ */
+export const AUTHORIZATION_MISSING = 'AUTHORIZATION_MISSING';
+export const METHOD_NOT_ALLOWED = 'METHOD_NOT_ALLOWED';
+export const BODY_NOT_JSON = 'BODY_NOT_JSON';
+export const OPERATION_UNKNOWN = 'OPERATION_UNKNOWN';
+export const NOT_IMPLEMENTED = 'NOT_IMPLEMENTED';
+export const CLIENT_CONSTRUCTION_FAILED = 'CLIENT_CONSTRUCTION_FAILED';
+
+/** Every code the transport can put on the wire. Bound to the SPA's own copy
+ *  alongside `OPERATION_CODES` by the contract case. */
+export const TRANSPORT_CODES = [
+  AUTHORIZATION_MISSING,
+  METHOD_NOT_ALLOWED,
+  BODY_NOT_JSON,
+  OPERATION_UNKNOWN,
+  NOT_IMPLEMENTED,
+  CLIENT_CONSTRUCTION_FAILED,
+] as const;
 
 export interface Configuration {
   readonly projectUrl: string;
@@ -153,45 +213,81 @@ export function createHandler(
     }
 
     if (request.method !== 'POST') {
-      return reply(405, { code: 'METHOD_NOT_ALLOWED', method: request.method });
+      return reply(405, { code: METHOD_NOT_ALLOWED, method: request.method });
     }
 
     const authorization = request.headers.get('Authorization');
     if (authorization === null || authorization === '') {
-      return reply(401, { code: 'AUTHORIZATION_MISSING' });
+      return reply(401, { code: AUTHORIZATION_MISSING });
     }
 
     let payload: unknown;
     try {
       payload = await request.json();
     } catch {
-      return reply(400, { code: 'BODY_NOT_JSON' });
+      return reply(400, { code: BODY_NOT_JSON });
     }
 
     const operation = (payload as { operation?: unknown } | null)?.operation;
     if (!isOperation(operation)) {
-      return reply(400, { code: 'OPERATION_UNKNOWN', operations: OPERATIONS });
+      return reply(400, { code: OPERATION_UNKNOWN, operations: OPERATIONS });
     }
 
     // Both clients are constructed here, on the real request, so the wiring is
     // exercised rather than merely written down: the privileged client for the
     // auth admin call, the caller-scoped client for every domain-table write.
+    let privileged: unknown;
+    let caller: unknown;
+
     try {
-      dependencies.makePrivilegedClient();
-      dependencies.makeCallerClient(authorization);
+      privileged = dependencies.makePrivilegedClient();
+      caller = dependencies.makeCallerClient(authorization);
     } catch (cause) {
       console.error('admin-auth could not construct its clients', cause);
-      return reply(500, { code: 'CLIENT_CONSTRUCTION_FAILED' });
+      return reply(500, { code: CLIENT_CONSTRUCTION_FAILED });
     }
 
-    // The only authorization AD-16 accepts is against the database: the caller
-    // must be an admin of the target member's own organization. Story 1.2
-    // created `members` and story 1.3a added the policies and the role helper
-    // that make it readable as the caller, so that lookup is now writable. What
-    // is not settled is what each operation does once authorized — its payload,
-    // its refusals, and its effect on the versioned tables AD-2 defers — which
-    // is stories 1.5 and 1.6. The 501 stands until then, and it is pinned by
-    // `test/admin-auth-boundary.test.ts`.
-    return reply(501, { code: 'NOT_IMPLEMENTED', operation });
+    // THE TWO VALUES ALREADY IN HAND, never a second call to the factories. A
+    // third construction would be a third client on a request that has proved
+    // two, and on the privileged side it would be a second secret-key client
+    // built outside the try/catch that reports `CLIENT_CONSTRUCTION_FAILED`.
+    //
+    // CAST HERE, at the one place that has both an `unknown` and an operation
+    // to hand it to. `handler.ts` still touches neither client: the casts are
+    // to the operations' own narrow structural interfaces, which name
+    // `auth.admin` on one and `rpc`/`from` on the other and nothing else — so
+    // a domain-table write with the secret key stays unrepresentable.
+    const accounts = privileged as PrivilegedAccounts;
+    const client = caller as CallerClient;
+
+    // THE DISPATCH IS WRAPPED, and that is a transport decision rather than a
+    // defensive habit. An operation that throws — a client method that is not
+    // the shape it was cast to, a rejected fetch inside postgrest-js — would
+    // otherwise escape `Deno.serve`, which answers 500 with a body the SPA
+    // cannot map to any message AND WITHOUT THE CORS HEADERS every other reply
+    // carries. In a browser that is not a 500 at all: it is an opaque network
+    // failure with nothing on screen to explain it.
+    try {
+      let answered: OperationReply | null = null;
+
+      if (operation === 'createUser') {
+        answered = await createUser({ privileged: accounts, caller: client }, payload);
+      }
+      if (operation === 'updateUserById') {
+        answered = await updateUserById({ privileged: accounts, caller: client }, payload);
+      }
+
+      if (answered !== null) return reply(answered.status, answered.body);
+    } catch (cause) {
+      console.error(OPERATION_FAILED, operation, cause);
+
+      return reply(500, { code: OPERATION_FAILED, operation });
+    }
+
+    // `ban` and `unban` only. Active state lives in `auth.users` (AD-2) and the
+    // versioned shape that records it is story 1.6's, so shipping either here
+    // would mean guessing that shape a story early. See
+    // {@link UNIMPLEMENTED_OPERATIONS}.
+    return reply(501, { code: NOT_IMPLEMENTED, operation });
   };
 }

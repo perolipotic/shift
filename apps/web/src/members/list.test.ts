@@ -32,6 +32,7 @@ import {
   levelFilterMessageKey,
   mayReadMembers,
   memberLevelMessageKey,
+  memberActionName,
   memberListRowOf,
   memberRowOutcomeOf,
   membersMessageKey,
@@ -79,6 +80,7 @@ function member(fields: Partial<MemberListRow> & { readonly id: string }): Membe
   return {
     organizationId: 'organization',
     name: 'Ana Anić',
+    username: 'ana.anic',
     email: null,
     role: 'member_role',
     leaveAllowanceDays: 20,
@@ -113,6 +115,7 @@ function row(fields: Readonly<Record<string, unknown>>): Record<string, unknown>
     organization_id: 'organization',
     id: 'member',
     name: 'Ana Anić',
+    username: 'ana.anic',
     email: null,
     role: 'member_role',
     leave_allowance_days: 20,
@@ -193,20 +196,33 @@ describe('the read asks for exactly what the surface needs, and for the count', 
     // LIST rather than over a rendered row, because the list is what a widening
     // would edit — and an exact set, so a column added for a later story has to
     // be argued for here first.
+    //
+    // `username` JOINED IN STORY 1.5b and renders in no column: `0007` put the
+    // issued credential on `members` because nothing in this tree can read
+    // `auth.users`, and the edit form is what seeds a field with it. It is in
+    // this set and deliberately absent from `MEMBER_COLUMNS` below.
     expect(MEMBERS_COLUMNS.split(',').sort()).toEqual(
-      ['email', 'id', 'leave_allowance_days', 'name', 'organization_id', 'role'].sort(),
+      ['email', 'id', 'leave_allowance_days', 'name', 'organization_id', 'role', 'username'].sort(),
     );
   });
 
   it('maps a row field by field rather than casting it', () => {
     expect(
       memberListRowOf(
-        row({ id: 'm1', name: 'Ivan Marić', email: 'ivan@dvd.hr', role: 'admin', leave_allowance_days: 25 }),
+        row({
+          id: 'm1',
+          name: 'Ivan Marić',
+          username: 'ivan.maric',
+          email: 'ivan@dvd.hr',
+          role: 'admin',
+          leave_allowance_days: 25,
+        }),
       ),
     ).toEqual({
       id: 'm1',
       organizationId: 'organization',
       name: 'Ivan Marić',
+      username: 'ivan.maric',
       email: 'ivan@dvd.hr',
       role: 'admin',
       leaveAllowanceDays: 25,
@@ -224,6 +240,9 @@ describe('the read asks for exactly what the surface needs, and for the count', 
     { field: 'id', value: null },
     { field: 'organization_id', value: undefined },
     { field: 'name', value: 42 },
+    // `0007` makes the column `not null`, so a row without one is not a row.
+    // Admitting it would seed the edit form with a blank sign-in identity.
+    { field: 'username', value: null },
     { field: 'leave_allowance_days', value: '20' },
     { field: 'role', value: 'supervisor' },
   ])('refuses a row whose $field is not what the schema says', ({ field, value }) => {
@@ -433,6 +452,24 @@ describe('the four columns are one table, so a heading and its sort key cannot d
     // level is named.
     expect(values[LEVEL_COLUMN]).toBe(0);
     expect(values[LEAVE_COLUMN]).toBe(25);
+  });
+
+  it('names the row action after the member, and never after their address', () => {
+    // WHICH FIELD NAMES THE ROW ACTION is a decision, and it is the one on that
+    // control that can be wrong without looking wrong: `member.email` would
+    // announce every address in the organization to anybody moving through the
+    // table with a screen reader, and a tenth of the rows carry none — so a
+    // tenth of the actions would be named nothing at all. `routes/ljudi.tsx`
+    // may not reach into a member row (`prijava.test.ts`), so the decision is
+    // here and this is what executes it.
+    const one = member({ id: 'm', name: 'Ana Kovač', email: 'ana@dvd.hr' });
+
+    expect(memberActionName(one)).toBe('Ana Kovač');
+    expect(memberActionName(one)).not.toBe(one.email);
+    // A member with no address is still named.
+    expect(memberActionName(member({ id: 'm', name: 'Marko Novak', email: null }))).toBe(
+      'Marko Novak',
+    );
   });
 
   it('reports a member with no address as having no value to sort by', () => {

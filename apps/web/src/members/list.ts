@@ -29,11 +29,12 @@ import { MEMBER_ROLES, type MemberRoleOutcome } from '@/navigation/role';
  * `supabaseClient().from(MEMBERS_TABLE)` satisfies them and a stub does not have
  * to impersonate the rest of PostgREST.
  *
- * WHAT THIS MODULE DOES NOT DO is write. Creating, editing, deactivating and
- * resetting a password are the deferred half of story 1.5 and reach
- * `admin-auth`, which still answers `501`. Nothing here posts, patches or
- * deletes, and the seam below names `select` alone so a write cannot be added
- * without widening the interface in front of a reviewer.
+ * WHAT THIS MODULE DOES NOT DO is write. Creating and editing a member is
+ * `@/members/write` (story 1.5b), which owns the PostgREST edit, the privileged
+ * call and the branch between them; deactivating and resetting a password are
+ * story 1.6 and still answer `501`. Nothing here posts, patches or deletes, and
+ * the seam below names `select` alone so a write cannot be added without
+ * widening the interface in front of a reviewer.
  *
  * Codes, never messages (the conventions): `{ code }` out of here, translated
  * only at the edge — {@link membersMessageKey} is that edge, and it lives here
@@ -69,11 +70,21 @@ export const MEMBERS_LIST_KEY = ['members'] as const;
 /**
  * The columns this read selects, in one place.
  *
- * FIVE RENDERABLE FIELDS AND ONE THAT IS NOT. `name`, `email`, `role` and
+ * FIVE RENDERABLE FIELDS AND TWO THAT ARE NOT. `name`, `email`, `role` and
  * `leave_allowance_days` are what the table shows; `id` is what React keys a row
  * by. `organization_id` renders nowhere and is selected anyway — see
  * {@link readMembers}, which fails closed when an answer spans more than one
  * organization. A column removed from this list is a tripwire removed.
+ *
+ * `username` IS SELECTED AND NO COLUMN SHOWS IT, and that is a decision rather
+ * than an oversight. `0007` gave it to `members` so the application can read
+ * the credential an admin issued at all — it exists nowhere else this tree can
+ * reach, because `auth.users` is not exposed through PostgREST — and story
+ * 1.5b's edit form is what has to seed a field with it. Putting it in
+ * {@link MEMBER_COLUMNS} would be a FIFTH heading, which the block there argues
+ * is a later story's work arriving without that story's review, and it would
+ * widen the search's pinned "name and address and nothing else" claim in the
+ * same commit. The list reads it; the edit form renders it.
  *
  * `created_at` is not here, and neither is anything else: `members` carries no
  * health data and no absence-reason field (Q5), and this list is where that
@@ -81,7 +92,8 @@ export const MEMBERS_LIST_KEY = ['members'] as const;
  * is no `team_id` to select — teams arrive in story 1.7 — and no active column,
  * because active state lives in `auth.users` (AD-2) and story 1.6 versions it.
  */
-export const MEMBERS_COLUMNS = 'organization_id,id,name,email,role,leave_allowance_days';
+export const MEMBERS_COLUMNS =
+  'organization_id,id,name,username,email,role,leave_allowance_days';
 
 /**
  * The exact count the transport is asked for alongside the rows.
@@ -209,6 +221,15 @@ export interface MemberListRow {
   /** Selected, never rendered. See {@link readMembers}. */
   readonly organizationId: string;
   readonly name: string;
+  /**
+   * The credential this member signs in with (`0007`).
+   *
+   * `string` and never `string | null`: the column is `not null`, and a member
+   * whose username could not be read is a member whose sign-in identity the
+   * edit form would then write a blank over. Selected by this read and rendered
+   * by the edit form rather than by the table — see {@link MEMBERS_COLUMNS}.
+   */
+  readonly username: string;
   readonly email: string | null;
   readonly role: MemberRole;
   readonly leaveAllowanceDays: number;
@@ -290,6 +311,7 @@ export function memberRowOutcomeOf(row: unknown): RowOutcome {
   const id = textAt(fields, 'id');
   const organizationId = textAt(fields, 'organization_id');
   const name = textAt(fields, 'name');
+  const username = textAt(fields, 'username');
   const role = memberRoleIn(fields);
   const leaveAllowanceDays = numberAt(fields, 'leave_allowance_days');
 
@@ -298,6 +320,10 @@ export function memberRowOutcomeOf(row: unknown): RowOutcome {
     return { ok: false, malformed: { field: 'organization_id', id } };
   }
   if (name === null) return { ok: false, malformed: { field: 'name', id } };
+  // REQUIRED, because `0007` makes the column `not null`. Admitting a missing
+  // one as the empty string would seed the edit form with a blank username and
+  // save it back over a working sign-in identity.
+  if (username === null) return { ok: false, malformed: { field: 'username', id } };
   if (role === null) return { ok: false, malformed: { field: 'role', id } };
   if (leaveAllowanceDays === null) {
     return { ok: false, malformed: { field: 'leave_allowance_days', id } };
@@ -305,7 +331,15 @@ export function memberRowOutcomeOf(row: unknown): RowOutcome {
 
   return {
     ok: true,
-    member: { id, organizationId, name, email: textAt(fields, 'email'), role, leaveAllowanceDays },
+    member: {
+      id,
+      organizationId,
+      name,
+      username,
+      email: textAt(fields, 'email'),
+      role,
+      leaveAllowanceDays,
+    },
   };
 }
 
@@ -589,6 +623,27 @@ export const MEMBER_COLUMNS: readonly MemberColumn[] = [
     sortValue: (member) => member.leaveAllowanceDays,
   },
 ];
+
+/**
+ * What the row action on this list is NAMED AFTER.
+ *
+ * A FUNCTION FOR ONE FIELD READ, and it earns its line for the reason every
+ * other function in this module does: `routes/ljudi.tsx` is executed by nothing
+ * (AD-15), and `prijava.test.ts` refuses the screen reaching into a member row
+ * at all — because the last time it did, swapping two branches rendered every
+ * address under `Ime` with the whole suite green. The row action interpolates a
+ * member field into its accessible name, so WHICH field is a decision, and it
+ * is the one decision on that control that can be wrong without looking wrong:
+ * `member.email` here would announce four hundred people's addresses to anybody
+ * moving through the table with a screen reader, and a tenth of them have none,
+ * so a tenth of the actions would be named nothing at all.
+ *
+ * `members/list.test.ts` executes it against a member whose name and address
+ * differ, which is what makes that swap a failing case rather than a silent one.
+ */
+export function memberActionName(member: MemberListRow): string {
+  return member.name;
+}
 
 /**
  * The classes a cell is drawn with, decided by what the column HOLDS.

@@ -35,6 +35,34 @@
     "error": {
       "refused": "Popis osoba nije moguće prikazati. Odjavi se i prijavi ponovno.",
       "unavailable": "Popis osoba trenutačno nije moguće učitati. Pokušaj ponovno."
+    },
+    "form": {
+      "newHeading": "Nova osoba",
+      "editHeading": "Uređivanje osobe",
+      "add": "Dodaj osobu",
+      "edit": "Uredi osobu {name}",
+      "actions": "Radnje",
+      "back": "Vrati se na popis",
+      "username": "Korisničko ime",
+      "save": "Spremi",
+      "cancel": "Odustani",
+      "created": "Račun je izrađen.",
+      "saved": "Promjene su spremljene.",
+      "credential": "Početna lozinka",
+      "credentialOnce": "Zapiši lozinku. Poslije nije moguće ponovno je prikazati.",
+      "error": {
+        "refused": "Promjena nije spremljena. Odjavi se i prijavi ponovno.",
+        "invalid": "Unesena vrijednost nije dopuštena.",
+        "usernameTaken": "Ovo korisničko ime već postoji u organizaciji.",
+        "usernameInvalid": "Korisničko ime ne smije sadržavati razmak ili znak @.",
+        "unknown": "Ova osoba više ne postoji u organizaciji.",
+        "notApplied": "Korisničko ime nije promijenjeno. Pokušaj ponovno.",
+        "unsettled": "Korisničko ime nije usklađeno. Potrebna je pomoć operatera.",
+        "stranded": "Osoba nije izrađena. Ovo korisničko ime nije više dostupno. Potrebna je pomoć operatera.",
+        "lastAdmin": "Posljednjem administratoru ne možeš oduzeti ovlasti.",
+        "unavailable": "Spremanje trenutačno nije moguće. Pokušaj ponovno.",
+        "saved": "Ostali podaci su spremljeni."
+      }
     }
   },
   "nav": {

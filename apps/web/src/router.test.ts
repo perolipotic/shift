@@ -20,6 +20,8 @@ import { DanasScreen, danasRoute } from '@/routes/danas';
 import { GodisnjiScreen, godisnjiRoute } from '@/routes/godisnji';
 import { indexRoute } from '@/routes/index';
 import { KalendarScreen, kalendarRoute } from '@/routes/kalendar';
+import { LjudiMemberScreen, ljudiMemberRoute } from '@/routes/ljudi.$id';
+import { LjudiNoviScreen, ljudiNoviRoute } from '@/routes/ljudi.novi';
 import { LjudiScreen, ljudiRoute } from '@/routes/ljudi';
 import { NotFoundScreen } from '@/routes/not-found';
 import { OrganizacijaScreen, organizacijaRoute } from '@/routes/organizacija';
@@ -172,6 +174,39 @@ const DESTINATION_ROUTES = [
  */
 const ROLE_GUARDED_PATHS = ['/ljudi'];
 
+/**
+ * Every route that decides on the permission LEVEL, and the screen each one
+ * renders.
+ *
+ * THREE SINCE STORY 1.5b, and the table is what makes the guard block below
+ * drive all three rather than the one it was written for. The two member forms
+ * copy `/ljudi`'s guard verbatim — three copies of one security decision — and
+ * copies are exactly what a block pinned to a single route lets drift: the
+ * 1.5a review widened `/ljudi`'s guard to admit every signed-in member with the
+ * whole suite green, and two unexecuted copies would be two more chances at
+ * that.
+ *
+ * `/ljudi/novi` and `/ljudi/$id` are NOT destinations, so they are absent from
+ * `DESTINATION_ROUTES` and from `ROLE_GUARDED_PATHS` above — which is about the
+ * eight destinations and what may carry a guard of its own. This table is about
+ * the guard itself.
+ */
+const LEVEL_GUARDED_ROUTES = [
+  { id: '/_app/ljudi', path: '/ljudi', route: ljudiRoute, component: LjudiScreen },
+  {
+    id: '/_app/ljudi/novi',
+    path: '/ljudi/novi',
+    route: ljudiNoviRoute,
+    component: LjudiNoviScreen,
+  },
+  {
+    id: '/_app/ljudi/$id',
+    path: '/ljudi/$id',
+    route: ljudiMemberRoute,
+    component: LjudiMemberScreen,
+  },
+];
+
 describe('the shell route tree', () => {
   it('assembles the root route and its children', () => {
     // Exhaustive on purpose: a new route has to be added here to exist, which
@@ -193,6 +228,18 @@ describe('the shell route tree', () => {
       '/_app/godisnji',
       '/_app/kalendar',
       '/_app/ljudi',
+      // TWO ROUTES THAT ARE NOT DESTINATIONS (story 1.5b). Both nest under the
+      // same pathless layout as the eight, so the session guard covers them
+      // without either file carrying a copy of it — and both are deliberately
+      // absent from `@/navigation/destinations`, because the chrome offers
+      // places and these two are reached from the member list.
+      //
+      // The STATIC id sorts before the parameterized one here only because `$`
+      // sorts before `n`; what settles which one a URL matches is TanStack's
+      // ranking, and the block below pins `/ljudi/novi` resolving to the static
+      // route rather than being read as an id.
+      '/_app/ljudi/$id',
+      '/_app/ljudi/novi',
       '/_app/organizacija',
       '/_app/postavke-rotacije',
       '/_app/raspored',
@@ -1298,11 +1345,27 @@ describe('the member list is the first destination that refuses a permission lev
   /** What running the guard did, the shape the layout block established. */
   type Outcome = { readonly thrown: unknown } | { readonly returned: unknown };
 
-  async function beforeLoad(role: () => Promise<MemberRoleOutcome>): Promise<Outcome> {
-    const run = (ljudiRoute.options as unknown as { beforeLoad?: BeforeLoad }).beforeLoad;
+  /**
+   * One route's guard, RUN.
+   *
+   * Parameterized on the route since story 1.5b, because the guard now exists
+   * in three files: the two member forms copy `/ljudi`'s verbatim, and a helper
+   * pinned to one of them would leave the other two executed by nothing — which
+   * is precisely the state that let the 1.5a review widen this guard with the
+   * whole suite green.
+   */
+  async function beforeLoadOn(
+    // A STRUCTURAL parameter and not `typeof ljudiRoute`: TanStack types a route
+    // by its own id, so the three level-guarded routes have three incompatible
+    // types and naming one of them would refuse the other two at the call site.
+    // What this helper actually needs is the one property it reads.
+    route: { readonly options: unknown },
+    role: () => Promise<MemberRoleOutcome>,
+  ): Promise<Outcome> {
+    const run = (route.options as { beforeLoad?: BeforeLoad }).beforeLoad;
 
     if (typeof run !== 'function') {
-      throw new Error('/ljudi has no beforeLoad — every member reaches the member list');
+      throw new Error('a level-guarded route has no beforeLoad — every member reaches it');
     }
 
     try {
@@ -1323,6 +1386,10 @@ describe('the member list is the first destination that refuses a permission lev
       return { thrown };
     }
   }
+
+  /** The member list's own copy, which the detailed cases below drive. */
+  const beforeLoad = (role: () => Promise<MemberRoleOutcome>): Promise<Outcome> =>
+    beforeLoadOn(ljudiRoute, role);
 
   function thrownBy(outcome: Outcome): unknown {
     expect(
@@ -1440,5 +1507,110 @@ describe('the member list is the first destination that refuses a permission lev
     // decision is the same function, so the two cannot drift.
     expect(mayReadMembers({ ok: true, role: MEMBER_ROLES[0] })).toBe(true);
     expect(mayReadMembers({ ok: true, role: 'member_role' })).toBe(false);
+  });
+
+  describe('and the two member forms carry the same guard, executed the same way', () => {
+    /**
+     * THREE COPIES OF ONE SECURITY DECISION, and this is what stops them
+     * drifting. The two forms copy `/ljudi`'s guard verbatim — the spec asks for
+     * that rather than a shared helper — so the guard exists in three files, and
+     * the 1.5a review has already shown what an unexecuted copy is worth:
+     * widened to `mayReadMembers(outcome) || outcome.ok`, it admitted every
+     * signed-in member with the whole suite green.
+     *
+     * The cases above drive `/ljudi`'s copy in detail. These drive ALL THREE
+     * over the branches that decide who gets in, so a copy that was pasted and
+     * then quietly loosened fails here rather than shipping.
+     */
+    it('guards exactly the three routes the table names, and no fewer', () => {
+      // NON-VACUITY. An entry deleted from the table takes its cases with it and
+      // Vitest reports the shorter run as a pass.
+      expect(LEVEL_GUARDED_ROUTES).toHaveLength(3);
+      for (const { path, route } of LEVEL_GUARDED_ROUTES) {
+        expect(
+          (route.options as { beforeLoad?: unknown }).beforeLoad,
+          `${path} carries no guard at all`,
+        ).toBeTypeOf('function');
+      }
+    });
+
+    it.each(LEVEL_GUARDED_ROUTES)('lets an admin through to $path', async ({ route }) => {
+      expect(
+        await beforeLoadOn(route, () => Promise.resolve({ ok: true, role: 'admin' })),
+      ).toEqual({ returned: undefined });
+    });
+
+    it.each(LEVEL_GUARDED_ROUTES)(
+      'forwards a member-role session away from $path',
+      async ({ route, path }) => {
+        const thrown = thrownBy(
+          await beforeLoadOn(route, () => Promise.resolve({ ok: true, role: 'member_role' })),
+        );
+
+        expect(isRedirect(thrown), `${path} threw something that is not a redirect`).toBe(true);
+        expect((thrown as { options: { to?: string } }).options.to).toBe(DESTINATIONS[0].path);
+        expect((thrown as { options: { replace?: unknown } }).options.replace).toBe(true);
+      },
+    );
+
+    it.each(LEVEL_GUARDED_ROUTES)(
+      'fails closed on $path when the level cannot be read at all',
+      async ({ route, path }) => {
+        // The reader can REJECT — the client throws on a build with no
+        // environment, and `getSession` rejects wherever storage is blocked. An
+        // escaping rejection resolves the route to neither a redirect nor a
+        // component: a blank page at HTTP 200.
+        const noted = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        try {
+          const thrown = thrownBy(
+            await beforeLoadOn(route, () => Promise.reject(new Error('SecurityError'))),
+          );
+
+          expect(isRedirect(thrown), `${path} let the read failure escape`).toBe(true);
+          expect(noted, `${path} swallowed the reason`).toHaveBeenCalledWith(
+            MEMBER_ROLE_UNAVAILABLE,
+            expect.anything(),
+          );
+        } finally {
+          noted.mockRestore();
+        }
+      },
+    );
+
+    it.each(LEVEL_GUARDED_ROUTES)(
+      'reads the level from the router context on $path, never from a client',
+      async ({ route, path }) => {
+        // What keeps all three guards out of the build environment: a
+        // `supabaseClient()` call inside one throws
+        // `SUPABASE_ENVIRONMENT_MISSING` synchronously on a fresh clone with no
+        // `.env.local`, which is how the 1.5a review's first iteration went
+        // vacuous on every case it reported as passing.
+        let asked = 0;
+
+        await beforeLoadOn(route, () => {
+          asked += 1;
+
+          return Promise.resolve({ ok: true, role: 'admin' });
+        });
+
+        expect(asked, `${path} never asked the router context for the level`).toBe(1);
+      },
+    );
+
+    it.each(LEVEL_GUARDED_ROUTES)('resolves $path to $id and to its own screen', ({ id, path, component }) => {
+      // `/ljudi/novi` must not be read as `/ljudi/$id` with `id = 'novi'`, which
+      // is what a ranking change would do — and the screen it resolved to would
+      // be an edit form for a member that does not exist. The component is named
+      // by IDENTITY: `toBeDefined` is satisfied by `() => null`, which resolves
+      // the route to a blank page.
+      const matched = match(path);
+
+      expect(matched[matched.length - 1]?.routeId).toBe(id);
+      expect(
+        (router.routesById[id as keyof typeof router.routesById].options as { component?: unknown })
+          .component,
+      ).toBe(component);
+    });
   });
 });

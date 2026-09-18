@@ -113,13 +113,18 @@ pnpm exec supabase functions serve admin-auth
 flag is needed. `supabase start` printed the local keys; `SUPABASE_URL` is
 injected for you.
 
-Every operation currently answers `501 { "code": "NOT_IMPLEMENTED" }`. The
-`members` table it authorizes against exists (story 1.2) and the policies and
-role helper it would authorize *through* now exist too (story 1.3), so the
-missing half is no longer the access-control layer — it is the operations
-themselves, which belong to the stories that need them: member create and update
-to 1.5, ban and unban to 1.6. The first organization does not go through this
-function at all — see §7.
+`createUser` and `updateUserById` are implemented (story 1.5b). Both authorize
+against the database before they act — the caller must be an active admin of the
+target member's own organization, read through `current_member_access()` as the
+caller — and both use the secret key ONLY for the `auth.admin.*` call, with every
+`members` write going through the caller's own JWT so row level security and
+attribution still apply.
+
+`ban` and `unban` still answer `501 { "code": "NOT_IMPLEMENTED" }`. Active state
+lives in `auth.users` (AD-2) and the versioned shape that records it is story
+1.6's, so shipping them here would mean guessing that shape a story early.
+
+The first organization does not go through this function at all — see §7.
 
 Gate before you push anything:
 
@@ -495,17 +500,66 @@ Against the live host:
 curl -s -o /dev/null -w '%{http_code}\n' https://<host>/                  # 200
 curl -s -o /dev/null -w '%{http_code}\n' https://<host>/some/deep/route   # 200
 
+# `ban`, and NOT `createUser`: `createUser` is implemented, so the smoke test
+# would create a real account on a production project. `ban` and `unban` are the
+# two that still answer 501, until story 1.6.
 curl -s -X POST https://<ref>.supabase.co/functions/v1/admin-auth \
   -H 'Authorization: Bearer <a real user JWT>' \
   -H 'content-type: application/json' \
-  -d '{"operation":"createUser"}'
-# -> 501 {"code":"NOT_IMPLEMENTED","operation":"createUser"}
+  -d '{"operation":"ban"}'
+# -> 501 {"code":"NOT_IMPLEMENTED","operation":"ban"}
 ```
 
 If the function returns `500 {"code":"SECRET_KEY_MISSING"}` or
 `500 {"code":"SECRET_KEY_INVALID"}`, its secrets are not set for that project.
 It never falls back to the publishable key. `500 {"code":"PROJECT_URL_INVALID"}`
 means `SUPABASE_URL` is not a parseable http(s) URL.
+
+### When a member write half-happened
+
+`admin-auth` performs two writes per operation against two services, and nothing
+spans them (§ `supabase/functions/admin-auth/operations.ts`). Each pair carries a
+compensating action, and each carries a distinct code for the case where the
+COMPENSATION itself failed. Those two codes are the only states in this system a
+person at a screen cannot resolve, so they are operator work. Both are logged by
+the function with the identifier you need; the reply carries the code alone.
+
+**`ACCOUNT_NOT_REMOVED`** — an `auth.users` row was created, its `members` row was
+refused, and deleting the account failed too. The account can sign in, carries no
+`organization_id` claim, and therefore reads nothing anywhere. It also holds the
+synthesized address, so re-issuing that username answers `USERNAME_TAKEN` for
+ever until it is removed.
+
+```bash
+# The function logged `ACCOUNT_NOT_REMOVED <auth user id>`.
+# Confirm it really has no member row before removing anything.
+select u.id, u.email, m.id as member
+  from auth.users u left join members m on m.auth_user_id = u.id
+ where u.id = '<auth user id>';
+-- member IS NULL -> safe to delete; the row is an orphan by definition.
+delete from auth.users where id = '<auth user id>';
+```
+
+**`USERNAME_NOT_RESTORED`** — `members.username` was moved, the address would not
+follow, and putting the row back failed. The two stores now disagree: the member
+signs in at the OLD address and the list shows the NEW username. Nothing in
+PostgreSQL can hold the two together (`0007`), so the reconciliation is manual —
+and the address is the authority, because it is what authenticates.
+
+```bash
+# The function logged `USERNAME_NOT_RESTORED <member id>`.
+select m.id, m.username, split_part(u.email, '@', 1) as signs_in_as
+  from members m join auth.users u on u.id = m.auth_user_id
+ where m.id = '<member id>';
+-- Put the row back to what the account actually answers to:
+update members m
+   set username = lower(split_part(u.email, '@', 1))
+  from auth.users u
+ where u.id = m.auth_user_id and m.id = '<member id>';
+```
+
+Then ask the admin to try the rename again. If it keeps failing, the cause is in
+the function's log line above the code.
 
 ### Signup is off, remotely
 

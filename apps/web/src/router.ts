@@ -5,6 +5,8 @@ import { danasRoute } from '@/routes/danas';
 import { godisnjiRoute } from '@/routes/godisnji';
 import { indexRoute } from '@/routes/index';
 import { kalendarRoute } from '@/routes/kalendar';
+import { ljudiMemberRoute } from '@/routes/ljudi.$id';
+import { ljudiNoviRoute } from '@/routes/ljudi.novi';
 import { ljudiRoute } from '@/routes/ljudi';
 import { organizacijaRoute } from '@/routes/organizacija';
 import { postavkeRotacijeRoute } from '@/routes/postavke-rotacije';
@@ -35,6 +37,20 @@ const appDestinations = appLayoutRoute.addChildren([
   godisnjiRoute,
   rasporedRoute,
   ljudiRoute,
+  // TWO ROUTES THAT ARE NOT DESTINATIONS (story 1.5b). `/ljudi/novi` and
+  // `/ljudi/$id` nest under the same layout — so the session guard covers them
+  // exactly as it covers the eight — and they are deliberately absent from
+  // `@/navigation/destinations`: the chrome offers places, and these two are
+  // reached from the member list rather than from the navigation. Each carries
+  // its own role guard, because the layout's is session-only and both screens
+  // write the data `/ljudi` guards the reading of.
+  //
+  // The STATIC one is registered before the parameterized one. TanStack ranks
+  // matches rather than taking source order, so this is legibility rather than
+  // behaviour — but `router.test.ts` pins `/ljudi/novi` resolving to the static
+  // route, because the day that ranking changes, `novi` becomes an id.
+  ljudiNoviRoute,
+  ljudiMemberRoute,
   postavkeRotacijeRoute,
   organizacijaRoute,
 ]);

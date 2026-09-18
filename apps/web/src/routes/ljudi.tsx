@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { createRoute, redirect } from '@tanstack/react-router';
+import { Link, createRoute, redirect } from '@tanstack/react-router';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { useMemo, useState, type ChangeEvent } from 'react';
 
@@ -35,6 +35,7 @@ import {
   chooseLevel,
   levelFilterMessageKey,
   mayReadMembers,
+  memberActionName,
   memberLevelMessageKey,
   membersMessageKey,
   membersSurfaceStateOf,
@@ -90,9 +91,21 @@ import { supabaseClient } from '@/supabase/client';
  * this screen; nothing here nests a second, and the page body never scrolls
  * sideways at any width.
  *
- * NO WRITES. Creating, editing, deactivating and resetting a password are the
- * deferred half of story 1.5 — `admin-auth`'s handler still answers `501` — so
- * there is no row action, no dialog and no call to it anywhere below.
+ * TWO WAYS OUT OF THIS SCREEN AND NO WRITE ON IT (story 1.5b). Creating and
+ * editing a member are `/ljudi/novi` and `/ljudi/$id`; this screen links to
+ * them and performs neither. Deactivating and resetting a password are story
+ * 1.6 and `admin-auth` still answers `501` for both.
+ *
+ * THE ROW ACTION NAMES THE MEMBER IT ACTS ON. Several hundred rows carrying one
+ * repeated accessible name is a list a screen-reader user cannot navigate: the
+ * action is reached, announced as "Uredi osobu", and gives no way to tell which
+ * of four hundred it would open. `ljudi.form.edit` interpolates the name, which
+ * is DATA — the one thing on this surface that is never a key.
+ *
+ * `aria-sort` IS RENDERED ONLY BY COLUMNS THAT SORT. The actions column is not
+ * one, and announcing `none` on it offers assistive technology exactly the
+ * affordance the column exists without: `none` is a sortable column that is not
+ * currently sorted, so a screen reader reports a control that is not there.
  */
 
 /**
@@ -210,7 +223,17 @@ export function LjudiScreen() {
 
   return (
     <main className="flex min-w-0 flex-1 flex-col gap-4 p-6" aria-busy={loading}>
-      <h1 className="text-xl font-semibold leading-none tracking-tight">{t('nav.ljudi')}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-xl font-semibold leading-none tracking-tight">{t('nav.ljudi')}</h1>
+        {/* THE WAY IN, and it is a LINK rather than a button that navigates:
+            issuing an account is a screen, not an action performed here, so
+            middle-click and "open in new tab" work the way they do everywhere
+            else. `asChild` is what keeps the 44 px floor and the shared
+            appearance on the anchor itself. */}
+        <Button asChild className="h-11">
+          <Link to="/ljudi/novi">{t('ljudi.form.add')}</Link>
+        </Button>
+      </div>
       <div className="flex flex-wrap items-end gap-4">
         <div className="grid min-w-0 flex-1 gap-2">
           <Label htmlFor="ljudi-search">{t('ljudi.search')}</Label>
@@ -297,6 +320,12 @@ export function LjudiScreen() {
                   </TableHead>
                 );
               })}
+              {/* NO `aria-sort` HERE. The four above sort; this one holds a
+                  control, and `none` would announce it as a sortable column
+                  that happens not to be sorted — an affordance that does not
+                  exist. It carries a real heading rather than an empty cell,
+                  because a `<th>` with no text is announced as nothing. */}
+              <TableHead>{t('ljudi.form.actions')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -314,6 +343,9 @@ export function LjudiScreen() {
                         <div className="h-4 w-full animate-pulse rounded-md bg-muted" />
                       </TableCell>
                     ))}
+                    <TableCell>
+                      <div className="h-4 w-full animate-pulse rounded-md bg-muted" />
+                    </TableCell>
                   </TableRow>
                 ))
               : null}
@@ -326,6 +358,19 @@ export function LjudiScreen() {
                         {cellContent(column.cell(member))}
                       </TableCell>
                     ))}
+                    <TableCell>
+                      {/* NAMED FOR THE MEMBER IT ACTS ON. Four hundred rows
+                          each announcing "Uredi osobu" is four hundred controls
+                          a screen-reader user cannot tell apart; the name is
+                          data, interpolated, and the label is the whole
+                          accessible name rather than an `aria-label` competing
+                          with visible text. */}
+                      <Button asChild variant="ghost" className="h-11">
+                        <Link to="/ljudi/$id" params={{ id: member.id }}>
+                          {t('ljudi.form.edit', { name: memberActionName(member) })}
+                        </Link>
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
           </TableBody>
