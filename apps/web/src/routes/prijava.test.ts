@@ -78,6 +78,42 @@ const MEMBER_LIST = join(srcRoot, 'routes', 'ljudi.tsx');
  * `translationKeys` nor `messageKeyUnion`, for that reason.
  */
 const MEMBER_LIST_KEYS = join(srcRoot, 'members', 'list.ts');
+
+/**
+ * Story 1.5b's two member forms, and the module that holds every rule they
+ * apply.
+ *
+ * NEITHER SCREEN IS A DESTINATION. `/ljudi/novi` and `/ljudi/$id` are reached
+ * from the member list rather than from the navigation, so neither appears in
+ * `@/navigation/destinations` and neither is covered by the destination table
+ * below — which is precisely why they are named here by hand: a `.tsx` that
+ * renders and is absent from `SCREENS` is swept by nothing at all.
+ */
+const MEMBER_CREATE = join(srcRoot, 'routes', 'ljudi.novi.tsx');
+const MEMBER_EDIT = join(srcRoot, 'routes', 'ljudi.$id.tsx');
+
+/**
+ * The member write path's rules, as a `.ts` module that renders nothing.
+ *
+ * THE THIRD NEW KEY SOURCE, and it has to be its own entry rather than folded
+ * into either screen: the failure-to-message union cannot live in a `.tsx`,
+ * because nothing executes one (AD-15) and swapping two branches of it would
+ * report a taken username as a service outage with the whole suite green. It
+ * declares its keys in TWO shapes — the `\w*MessageKey` return union, and the
+ * one named constant holding the partial-save sentence that is rendered BESIDE
+ * a reason rather than instead of one.
+ *
+ * `wire.ts` AND NOT `write.ts`, and the difference is load-bearing rather than
+ * organizational: the mapping has to be importable by
+ * `test/admin-auth-boundary.test.ts`, which is the one file that can reach both
+ * trees and therefore the only place the FUNCTION's SQLSTATE mapping and this
+ * one can be held to the same answer. `write.ts` reaches
+ * `@supabase/supabase-js` transitively and pnpm's isolated linker means the
+ * root project cannot resolve it, so a mapping written there is a mapping
+ * nothing can bind — and the two paths' fall-throughs were opposites for
+ * exactly that long. `write.ts` re-exports every name.
+ */
+const MEMBER_WRITE_KEYS = join(srcRoot, 'members', 'wire.ts');
 /**
  * The navigation chrome, part B: a `.tsx` that is not a route at all.
  *
@@ -225,7 +261,27 @@ const SCREENS = [
   // makes a fifth column one edit. A second `<Button` in this file means a row
   // action has appeared, and row actions are the deferred half of story 1.5
   // (`admin-auth` still answers 501).
-  { name: 'the member list', file: MEMBER_LIST, expectedControls: 3 },
+  // FIVE SINCE STORY 1.5b, up from three, and the two that arrived are both
+  // `<Button asChild>` wrapping a `<Link>`: the add action beside the heading,
+  // and one row action written once inside the map over the rows. They are
+  // links rather than buttons because issuing and editing an account are
+  // SCREENS — middle-click and "open in new tab" work the way they do
+  // everywhere else — and `asChild` is what puts the 44 px floor on the anchor
+  // itself rather than on a wrapper a pointer never meets.
+  //
+  // The number still notices a fourth: this screen writes nothing, so a
+  // `<Button>` here that is not a link is a write arriving on the list.
+  { name: 'the member list', file: MEMBER_LIST, expectedControls: 5 },
+  // EIGHT on each form, and they are the same eight because the two screens are
+  // the same form over different seeds: four `<Input>`s — name, username,
+  // address, allowance — the level `<select>`, and three `<Button>`s, which are
+  // Save, Cancel and the link back to the list. The count is what notices a
+  // SIXTH FIELD, which on these screens is how `organization_id` or an active
+  // flag would arrive: both look like ordinary controls and both are forbidden
+  // for reasons invisible in a diff — the first is pinned by the update policy
+  // on both sides (`0003:331-351`) and the second is story 1.6's.
+  { name: 'the member create form', file: MEMBER_CREATE, expectedControls: 8 },
+  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 8 },
   // ZERO on all seven, and asserted rather than assumed: a destination is a
   // heading and nothing else in this story, so the first control any of them
   // grows is a later story's work arriving without that story's review. The
@@ -300,6 +356,23 @@ const FORM_SCREENS = [
     effect: 'updateOrganization(',
     inFlight: 'saving',
   },
+  // Story 1.5b's two. Both await a write and both hold a refusal, so every
+  // sweep below applies — and applying them is the point rather than a bonus:
+  // the settings surface only gained the in-flight coverage when a second
+  // screen with the identical shape shipped without it, and these are the
+  // third and fourth.
+  //
+  // `issuing` rather than `saving` on the create screen, because the two verbs
+  // are different: one writes over a row and the other brings an account into
+  // existence. The name is carried per entry, so neither sweep can be pinned
+  // to one file's spelling.
+  {
+    name: 'the member create form',
+    file: MEMBER_CREATE,
+    effect: 'createMember(',
+    inFlight: 'issuing',
+  },
+  { name: 'the member edit form', file: MEMBER_EDIT, effect: 'saveMember(', inFlight: 'saving' },
 ];
 
 /** The form screens that await something, so something can be in flight. */
@@ -443,6 +516,35 @@ function memberListKeys(text: string): string[] {
 }
 
 /**
+ * Every key the member write path declares, in EITHER shape.
+ *
+ * `messageKeyUnion` above reads a `\w*MessageKey` signature and would find ten
+ * of the eleven; the eleventh is `PARTIAL_SAVE_KEY`, a named constant rather
+ * than a return type, because it is rendered BESIDE one of the ten rather than
+ * instead of one — a refused rename that already wrote the four ordinary fields
+ * has to say both what landed and what did not. A reader pinned to the union
+ * alone would drop it out of the rendered set and let `hr.json` hold a message
+ * nothing renders.
+ *
+ * The constant pattern is deliberately narrow — `<NAME>_KEY` at export, and only
+ * in this file — so it cannot start matching a query key or a table name
+ * somewhere else.
+ *
+ * Self-tested on both polarities at the bottom of this file, like every other
+ * detector here.
+ */
+function memberWriteKeys(text: string): string[] {
+  const unions = [...text.matchAll(/function \w*MessageKey\([\s\S]*?\):([^{]*)\{/g)].flatMap(
+    (found) => [...(found[1] ?? '').matchAll(/'([^']+)'/g)].map((quoted) => quoted[1] ?? ''),
+  );
+  const constants = [...text.matchAll(/^export const \w+_KEY = '([^']+)';/gm)].map(
+    (found) => found[1] ?? '',
+  );
+
+  return [...unions, ...constants];
+}
+
+/**
  * Attributes and properties whose string value is structure, not content.
  *
  * An allowlist, not a denylist of the guarded seven: a denylist passes for the
@@ -531,6 +633,23 @@ const STRUCTURAL_ATTRIBUTES = new Set([
   // failure rather than a literal in the one attribute nothing else looks at.
   // That is the same bargain `aria-current` struck.
   'aria-sort',
+  // ADDED by story 1.5b's member forms, and it is a loosening of a GLOBAL
+  // allowlist — this set applies to all sixteen swept screens — so it is named
+  // and justified rather than waved through, exactly as the five entries above
+  // it were.
+  //
+  // `aria-invalid` takes its value from a CLOSED, NON-TEXTUAL vocabulary the
+  // ARIA specification fixes — `true`, `false`, `grammar`, `spelling` — and
+  // nothing outside it means anything to a screen reader. It is a STATE rather
+  // than a name, the argument `aria-current` and `aria-sort` were admitted on,
+  // and the same reason `eslint.config.js`'s guarded-attribute half does not
+  // include it either. `aria-label` remains guarded in both places.
+  //
+  // THE EXEMPTION IS PAID FOR, like `aria-sort`'s: `ariaInvalidValues` below
+  // collects every literal value of it on every swept screen and holds each to
+  // that vocabulary, so `aria-invalid="Dani godišnjeg odmora"` is a failure
+  // rather than a literal in the one attribute nothing else looks at.
+  'aria-invalid',
 ]);
 
 /** Content inside a template literal, with every `${…}` removed. */
@@ -741,6 +860,24 @@ function ariaCurrentValues(text: string): string[] {
 }
 
 /**
+ * Every LITERAL value an `aria-invalid` attribute is given, on any screen.
+ *
+ * The twin of `ariaSortValues` below, and it exists for the identical reason:
+ * `aria-invalid` is on `STRUCTURAL_ATTRIBUTES`, which exempts it from the
+ * literal sweep everywhere, and the argument that earned the exemption is only
+ * true while it is enforced.
+ *
+ * Only the QUOTED form is collected. Both member forms write the expression
+ * form — `aria-invalid={invalidField === 'member-leave'}` — whose value is a
+ * boolean and whose inner literal is an element id, not a word anybody reads;
+ * a sweep over the expression form would report that id as user-facing text.
+ * What must never appear is a quoted value outside the ARIA vocabulary.
+ */
+function ariaInvalidValues(text: string): string[] {
+  return [...text.matchAll(/aria-invalid="([^"]*)"/g)].map((found) => found[1] ?? '');
+}
+
+/**
  * Every value an `aria-sort` attribute can take, in either syntax.
  *
  * The twin of `ariaCurrentValues` above, and it exists for the identical
@@ -898,8 +1035,9 @@ const KEY_SOURCES = [
   // dedupes, so twelve calls over eleven keys is correct rather than drift.
   { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 12 },
   {
-    // FIVE on the member list, and the number is small because most of what
-    // this screen says is read off a table rather than written into the markup.
+    // EIGHT on the member list since story 1.5b, up from five, and the number is
+    // still small because most of what this screen says is read off a table
+    // rather than written into the markup.
     // Its own `nav.ljudi` heading, the search field's label, the level filter's
     // label — which is the COLUMN's key `ljudi.role` rendered a second time,
     // because the control filters exactly what that column shows and two words
@@ -911,10 +1049,58 @@ const KEY_SOURCES = [
     // those reaches `t()` through `@/members/list`, which is the entry below.
     // A lookup written in a `.tsx` is executed by nothing (AD-15), and the 1.5a
     // review shipped two swapped sort keys green for exactly that reason.
+    // The three that arrived are the add action, the actions column's own
+    // heading — a `<th>` with no text is announced as nothing at all — and the
+    // row action, whose name INTERPOLATES the member it acts on because four
+    // hundred rows announcing the same three words is four hundred controls a
+    // screen-reader user cannot tell apart.
     name: 'the member list',
     file: MEMBER_LIST,
     keys: translationKeys,
-    strings: 5,
+    strings: 8,
+  },
+  {
+    // THIRTEEN on the create form: its own heading, five field labels, the save
+    // and cancel actions, the link back to the list, and the credential panel's
+    // three — plus `ljudi.form.username` a SECOND time, as that panel's label
+    // for the username it just issued. The set comparison below dedupes, so
+    // thirteen calls over twelve keys is correct rather than drift.
+    //
+    // The password is not among them and never will be: it is data, generated
+    // in `admin-auth`, and the one value in this system no later read can
+    // recover.
+    name: 'the member create form',
+    file: MEMBER_CREATE,
+    keys: translationKeys,
+    strings: 13,
+  },
+  {
+    // TEN on the edit form: its own heading, five field labels, save, cancel,
+    // the link back, and the confirmation that a save landed. Three fewer than
+    // the create form, which is exactly the credential panel — an edit issues
+    // no credential, and story 1.6 owns the reset that would.
+    //
+    // `ljudi.form.saved` is the tenth and it is not decoration: every field
+    // here is uncontrolled and remounts to the values it was just saved with,
+    // so without it a successful save looks identical to a press that did
+    // nothing.
+    name: 'the member edit form',
+    file: MEMBER_EDIT,
+    keys: translationKeys,
+    strings: 10,
+  },
+  {
+    // TWELVE on the member write path's rules: ten `ljudi.form.error.*`
+    // refusals, the LIST's own refusal — reused rather than reworded, because
+    // `/ljudi/$id` is reachable by URL and a read the database declines
+    // outright is not a failed write — and the partial-save sentence. It is the
+    // second key source read by neither `translationKeys` nor
+    // `messageKeyUnion`; see `memberWriteKeys`, which reads both shapes this
+    // module declares keys in.
+    name: 'the member write rules',
+    file: MEMBER_WRITE_KEYS,
+    keys: memberWriteKeys,
+    strings: 12,
   },
   {
     // ELEVEN on the member list's rules: four column headings, two permission
@@ -1021,8 +1207,18 @@ describe('the screen is read at all, so every sweep below means something', () =
     // is a new source — the module that holds the column headings, the level
     // labels, the filter options and the refusals, none of which a `.tsx` may
     // declare because nothing executes a `.tsx`.
-    expect(SCREENS).toHaveLength(14);
-    expect(KEY_SOURCES).toHaveLength(18);
+    // SIXTEEN AFTER STORY 1.5b, and the arithmetic is the reason rather than a
+    // coincidence: two `.tsx` that render arrived — the create form and the
+    // edit form — and neither replaced a placeholder, because neither is a
+    // destination. Nothing left the list.
+    //
+    // TWENTY-ONE key sources, up from eighteen by THREE and not two: both new
+    // screens declare keys, and so does `@/members/write`, which holds the
+    // failure-to-message union. That union cannot live in a `.tsx` — nothing
+    // executes one — so the module is a source in its own right, exactly as
+    // `@/members/list` is.
+    expect(SCREENS).toHaveLength(16);
+    expect(KEY_SOURCES).toHaveLength(21);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -1709,7 +1905,19 @@ describe('the member list computes nothing it renders', () => {
     // row is guarded the day it exists rather than the day somebody remembers.
     const fields = memberRowFields(source(MEMBER_LIST_KEYS));
 
-    expect(fields).toEqual(['id', 'organizationId', 'name', 'email', 'role', 'leaveAllowanceDays']);
+    expect(fields).toEqual([
+      'id',
+      'organizationId',
+      'name',
+      // `username` JOINED IN STORY 1.5b, and it is guarded like every other
+      // content field: `0007` put the issued credential on `members`, and the
+      // list must not start rendering it by reaching into a row — it renders in
+      // no column at all, and the edit form is what shows it.
+      'username',
+      'email',
+      'role',
+      'leaveAllowanceDays',
+    ]);
     for (const exempt of RENDERED_FIELD_EXEMPTIONS) expect(fields).toContain(exempt);
   });
 
@@ -1951,7 +2159,14 @@ describe('the keys rendered and the keys declared are the same set', () => {
     // it. This does not care about the shape: every `ljudi.*` key the resource
     // file declares has to appear literally in one of the two files that own
     // this surface, and the comparison above still has to have counted it.
-    const owned = `${source(MEMBER_LIST)}\n${source(MEMBER_LIST_KEYS)}`;
+    // FIVE FILES SINCE STORY 1.5b, not two: the `ljudi.form.*` block is rendered
+    // by the two member forms and mapped by `@/members/write`, so a sweep over
+    // the list and its rules alone would report every one of those keys as
+    // declared and written nowhere — or, worse, would have been narrowed to the
+    // `ljudi.` prefix it could still find.
+    const owned = [MEMBER_LIST, MEMBER_LIST_KEYS, MEMBER_CREATE, MEMBER_EDIT, MEMBER_WRITE_KEYS]
+      .map((file) => source(file))
+      .join('\n');
     const declared = resourceKeys().filter((key) => key.startsWith('ljudi.'));
 
     expect(declared.length, 'no ljudi keys to sweep at all').toBeGreaterThan(0);
@@ -2755,11 +2970,15 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // rather than over `FORM_SCREENS`. A `null` written into every entry would
     // make all three loops assert nothing while still reading as coverage —
     // which is the shape the per-screen sweeps were introduced to end.
-    expect(IN_FLIGHT_SCREENS.length, 'no form screen declares an in-flight ref').toBe(2);
+    // FOUR SINCE STORY 1.5b. Two screens with the identical await-and-refuse
+    // shape joined, and the whole reason these sweeps are driven off a list is
+    // that the settings surface was covered by none of them until a second
+    // screen made the gap obvious.
+    expect(IN_FLIGHT_SCREENS.length, 'no form screen declares an in-flight ref').toBe(4);
     expect(
       IN_FLIGHT_SCREENS.map((screen) => screen.inFlight).sort(),
       'the in-flight ref names drifted from the screens that hold them',
-    ).toEqual(['exchanging', 'saving']);
+    ).toEqual(['exchanging', 'issuing', 'saving', 'saving']);
   });
 
   it.each(IN_FLIGHT_SCREENS)(
@@ -2802,10 +3021,18 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     const handler = submitHandler(source(file));
 
     expect(handler, 'no submit handler to read').not.toBe('');
+    // `outcome.code` OR `outcome.refusal`, because story 1.5b's outcome carries
+    // one more fact than a code: whether the ordinary fields were written
+    // before the rename was refused. A flat code there would discard the half
+    // of the answer that says four values really are in the database.
+    // The refusal may be WRAPPED on its way to the state — the edit screen
+    // scopes it to the member it was raised about, so a refusal from one row
+    // cannot stand over another's form — but what reaches `setFailure` has to
+    // be the outcome's own, not a constant the handler invented.
     expect(
       handler,
       'the refused branch does not put the returned code on screen',
-    ).toMatch(/!outcome\.ok[\s\S]{0,160}?setFailure\(outcome\.code\)/);
+    ).toMatch(/outcome\.ok[\s\S]{0,200}?setFailure\([\s\S]{0,80}?outcome\.(?:code|refusal)/);
   });
 
   it('keeps every entered value by never controlling the fields', () => {
@@ -3480,6 +3707,367 @@ describe('the accent control offers a curated set and nothing else', () => {
  *  attribute on the promise of never carrying. */
 const ARIA_CURRENT_VOCABULARY = new Set(['page', 'step', 'location', 'date', 'time', 'true', 'false']);
 
+describe('the two member forms write through the seam and keep nothing back', () => {
+  /**
+   * Story 1.5b's screens, swept for the four things no node test could see any
+   * other way — and every one of them is a claim about a `.tsx`, which is
+   * executed by nothing at all (AD-15).
+   *
+   * The BEHAVIOUR of the write path — the PostgREST-versus-function branch, the
+   * partial save, the form gates — is executed in `members/write.test.ts`
+   * against stubs. What is left here is that the screens ROUTE through it, hold
+   * no branch of their own, and do not keep the one value in this system that
+   * cannot be recovered.
+   */
+
+  /** Every `console.<method>(…)` call and its arguments. */
+  function consoleCalls(text: string): string[] {
+    return [...text.matchAll(/console\.\w+\([^;]*?\)/g)].map((found) => found[0]);
+  }
+
+  /** The three files the issued credential passes through. */
+  const CREDENTIAL_PATH = [
+    { name: 'the member create form', file: MEMBER_CREATE },
+    { name: 'the member edit form', file: MEMBER_EDIT },
+    { name: 'the member write rules', file: MEMBER_WRITE_KEYS },
+  ];
+
+  it.each(CREDENTIAL_PATH)('persists nothing of the credential in $name', ({ file }) => {
+    // SHOWN EXACTLY ONCE is the story's acceptance criterion, and "once" is a
+    // claim about every place a value can outlive a render. Browser storage
+    // survives the tab; a query cache survives the navigation; and `console`
+    // survives both — which is the one the previous iteration shipped, because
+    // every assertion about the credential was about the SCREEN and a log line
+    // is not on the screen.
+    const text = source(file);
+
+    for (const store of ['localStorage', 'sessionStorage', 'indexedDB', 'setQueryData']) {
+      expect(text, `${store} is reached for on a path the credential travels`).not.toContain(store);
+    }
+  });
+
+  it.each(CREDENTIAL_PATH)('logs no credential in $name, whatever else it logs', ({ file }) => {
+    // Deliberately NOT "logs nothing": every one of these files logs a cause it
+    // cannot render, and must. What it may not do is name the credential in one
+    // — `console.error(MEMBER_CREATED, body)` reads as an ordinary diagnostic
+    // and puts the password in a place anybody with the tab open can read long
+    // after the panel is gone.
+    const calls = consoleCalls(source(file));
+
+    for (const call of calls) {
+      for (const secret of ['credential', 'password', 'Password']) {
+        expect(call, `a console call names ${secret}: ${call}`).not.toContain(secret);
+      }
+    }
+  });
+
+  it('would notice a credential in a log, and not notice an ordinary one', () => {
+    // BOTH POLARITIES. A reader that matched no call at all would make the sweep
+    // above pass over a file that logs the password on every create.
+    expect(consoleCalls("console.error(CODE, credential);")).toEqual([
+      'console.error(CODE, credential)',
+    ]);
+    expect(consoleCalls('console.error(CODE, cause);')[0]).not.toContain('credential');
+    expect(consoleCalls('setFailure(code);')).toEqual([]);
+  });
+
+  it('shows the credential once and never re-reads it from anywhere', () => {
+    // The panel is fed from the RETURNED outcome and from nothing else. Reading
+    // it back off a query, a ref or a route search parameter would be a second
+    // copy, and a second copy is what "exactly once" forbids.
+    const screen = source(MEMBER_CREATE);
+
+    expect(screen, 'the credential is not component state').toMatch(
+      /useState<IssuedCredential \| null>\(null\)/,
+    );
+    expect(screen, 'the credential does not come from the create outcome').toContain(
+      'setCredential(outcome.credential)',
+    );
+    // The form and the panel are MUTUALLY EXCLUSIVE, so there is no moment at
+    // which a second create could overwrite a password nobody has read yet.
+    expect(screen, 'the form and the credential panel can be on screen together').toMatch(
+      /credential === null \? renderForm\(\) : renderCredential\(credential\)/,
+    );
+  });
+
+  it('renders no usable form once the organization read has settled failed', () => {
+    // `organizacija.tsx:551-561`'s gating, copied IN FULL. Gated on "there is no
+    // organization" alone this returns a skeleton for a read that has already
+    // failed — an indefinitely pulsing bar, indistinguishable from a slow read,
+    // with the message that explains it rendered by nothing. The decision is
+    // `createFormStateOf`, which `write.test.ts` executes; what this pins is
+    // that the screen asks it and returns NOTHING rather than a form.
+    const render = componentFunction(source(MEMBER_CREATE), 'renderForm');
+
+    expect(render, 'no renderForm to read').not.toBe('');
+    expect(render, 'the create form is not gated on there being an organization').toMatch(
+      /form\.organizationId === null/,
+    );
+    expect(render, 'a settled failed read still draws a skeleton for ever').toMatch(
+      /form\.loading \?[\s\S]{0,200}?: null/,
+    );
+    expect(source(MEMBER_CREATE), 'the screen decides its own gating instead of asking').toContain(
+      'createFormStateOf(',
+    );
+  });
+
+  it('renders no form for a member id that reaches nobody', () => {
+    // The same claim on the other screen, and the refusal it produces is its
+    // OWN code rather than the policy refusal: `memberFormRefusalOf` settles
+    // that, and a form seeded from nothing would save its defaults over
+    // somebody's record.
+    const screen = source(MEMBER_EDIT);
+
+    expect(screen, 'the edit screen decides its own gating instead of asking').toContain(
+      'memberFormRefusalOf(',
+    );
+    const render = componentFunction(screen, 'renderBody');
+
+    expect(render, 'no renderBody to read').not.toBe('');
+    expect(render, 'the edit form renders without a member to seed it from').toMatch(
+      /form\.member !== null/,
+    );
+    expect(render, 'a settled failure still draws a skeleton for ever').toMatch(
+      /form\.loading \?[\s\S]{0,200}?: null/,
+    );
+  });
+
+  it('remounts the edit form with the row, so a refetch cannot leave it stale', () => {
+    // Every field is uncontrolled, so `defaultValue` seeds the DOM at MOUNT and
+    // never again — and this screen refetches after every successful save.
+    // Without the key the fields show what the row held when the screen opened,
+    // and `Odustani`, which is `type="reset"`, snaps them back to that. The
+    // fingerprint itself is executed in `write.test.ts`; what is pinned here is
+    // that the form actually carries it.
+    expect(source(MEMBER_EDIT), 'the edit form never remounts with its row').toMatch(
+      /<form\s+key=\{memberFormKey\(member\)\}/,
+    );
+  });
+
+  it.each([
+    { name: 'the member create form', file: MEMBER_CREATE },
+    { name: 'the member edit form', file: MEMBER_EDIT },
+  ])('gives $name a way back to the list that is not a reset', ({ file }) => {
+    // NEITHER ROUTE IS A DESTINATION, so the chrome offers no way off either
+    // screen — and `type="reset"` restores the fields rather than leaving. A
+    // screen reachable by URL whose only exit is the browser's Back button is a
+    // dead end on a phone, where the tab bar is the only other navigation.
+    const screen = source(file);
+    const links = linkElements(screen);
+
+    expect(links, 'the screen offers no link at all').toHaveLength(1);
+    expect(attributeOf(links[0] ?? '', 'to'), 'the way back does not go to the list').toBe('/ljudi');
+    // And the link is NOT inside the gated branch: a read that settled failed
+    // renders no form, and an exit rendered inside one would be the element
+    // nobody can reach.
+    expect(
+      componentFunction(screen, 'renderForm'),
+      'the way back is inside the branch that needs a successful read',
+    ).not.toContain('<Link');
+  });
+
+  it.each([
+    { name: 'the member create form', file: MEMBER_CREATE, seam: 'createMember(' },
+    { name: 'the member edit form', file: MEMBER_EDIT, seam: 'saveMember(' },
+  ])('routes $name through the write seam and builds nothing of its own', ({ file, seam }) => {
+    const screen = source(file);
+
+    expect(screen, `the screen no longer reaches ${seam}`).toContain(seam);
+    expect(screen, 'the screen reaches the privileged function directly').not.toContain('.invoke(');
+    for (const forbidden of ['fetch(', 'shift.invalid', 'createClient(']) {
+      expect(screen, `the screen reaches for ${forbidden}`).not.toContain(forbidden);
+    }
+  });
+
+  it.each([
+    { name: 'the member create form', file: MEMBER_CREATE },
+    { name: 'the member edit form', file: MEMBER_EDIT },
+  ])('delegates the failure-to-message pairing on $name rather than branching', ({ file }) => {
+    // The shape every screen in this application is held to: a ternary over
+    // codes written in a `.tsx` is executed by nothing, and swapping two of its
+    // branches reports a taken username as a service outage with the suite
+    // green. `memberWriteMessageKeys` is executed in `write.test.ts`.
+    const screen = source(file);
+
+    expect(screen, 'the screen no longer renders its message through the mapping').toContain(
+      'memberWriteMessageKeys(refusal)',
+    );
+    for (const key of ['ljudi.form.error.refused', 'ljudi.form.error.usernameTaken']) {
+      expect(screen, `${key} is branched on in the screen`).not.toContain(key);
+    }
+  });
+
+  it('shows the credential BEFORE it refreshes the list, and survives a failed refresh', () => {
+    // MUTATION-PROVEN ORDERING. `invalidateQueries` AWAITS the refetch, so it
+    // rejects when the browser is offline or the session has just expired.
+    // Written before `setCredential`, that rejection jumped to the handler's
+    // catch, rendered "try again", and threw away the only copy of a password
+    // for an account that had already been created — the admin told the write
+    // failed about an account they now cannot hand to anybody. The one value
+    // this story documents as unrecoverable may not depend on a cache refresh
+    // succeeding.
+    const handler = submitHandler(source(MEMBER_CREATE));
+
+    expect(handler, 'no submit handler to read').not.toBe('');
+    expect(
+      handler.indexOf('setCredential(outcome.credential)'),
+      'the list is refreshed before the credential is shown, so a failed refresh destroys it',
+    ).toBeLessThan(handler.indexOf('invalidateQueries('));
+    // AND ISOLATED, not merely ordered: a rejection after the panel is set
+    // would still reach the outer catch and replace it with a refusal.
+    expect(handler, 'the refresh can still take the credential down with it').toMatch(
+      /try \{[^}]*invalidateQueries\([\s\S]{0,160}?\}\s*catch/,
+    );
+  });
+
+  it('keeps the specific refusal when refreshing the list is what failed', () => {
+    // The same ordering on the edit screen, and what it protects is the
+    // `saved: true` half of a partial save: the four ordinary fields really did
+    // reach the database, and a rejecting refetch replacing that with the
+    // generic failure is the one fact the spec was amended to introduce being
+    // discarded by something unrelated to it.
+    const handler = submitHandler(source(MEMBER_EDIT));
+
+    expect(handler, 'no submit handler to read').not.toBe('');
+    expect(
+      handler.indexOf('setFailure(outcome.refusal)'),
+      'the list is refreshed before the refusal is surfaced, so a failed refresh replaces it',
+    ).toBeLessThan(handler.indexOf('invalidateQueries('));
+    expect(handler, 'the refresh can still take the refusal down with it').toMatch(
+      /try \{[^}]*invalidateQueries\([\s\S]{0,160}?\}\s*catch/,
+    );
+  });
+
+  it('invalidates the member list rather than patching what it believes it wrote', () => {
+    // `organizacija.tsx:254`'s rule, and there is no `useMutation` anywhere in
+    // this application to carry an optimistic patch instead. What is on screen
+    // after a write is what the database holds.
+    for (const file of [MEMBER_CREATE, MEMBER_EDIT]) {
+      expect(source(file), 'the write does not refresh the list').toMatch(
+        /invalidateQueries\(\{\s*queryKey:\s*MEMBERS_LIST_KEY\s*\}\)/,
+      );
+    }
+  });
+
+  it('confirms a save, because nothing else on the edit screen would', () => {
+    // Every field is uncontrolled and remounts to the values it was just saved
+    // with, so a successful save leaves the screen looking EXACTLY as it did
+    // before the press — indistinguishable from a click that did nothing, on
+    // the one surface whose whole job is changing a record. The create screen
+    // has its credential panel; this is the edit screen's.
+    const screen = source(MEMBER_EDIT);
+
+    expect(screen, 'a successful save says nothing at all').toContain("t('ljudi.form.saved')");
+    // `role="status"` and never `role="alert"`: the assertive region is the
+    // refusal's, and a second one would be a second thing competing to be
+    // announced.
+    expect(screen, 'the confirmation competes with the refusal to be announced').toMatch(
+      /<p role="status"[\s\S]{0,120}?ljudi\.form\.saved/,
+    );
+  });
+
+  it('scopes what it raised to the member it was raised about', () => {
+    // ONE COMPONENT INSTANCE SERVES EVERY ROW: moving between two members
+    // changes a route param, not the component, so state survives the move. The
+    // FORM remounts via `memberFormKey` and the alert above it did not, so a
+    // refusal raised on one member stood over another's form. The decision is
+    // `raisedForMember`, executed in `write.test.ts`; what this pins is that
+    // the screen asks it rather than reading the state directly.
+    const screen = source(MEMBER_EDIT);
+
+    expect(screen, 'the refusal is not scoped to a member').toMatch(
+      /raisedForMember\(failure, id\)/,
+    );
+    expect(screen, 'the confirmation is not scoped to a member').toMatch(
+      /raisedForMember\(saved, id\)/,
+    );
+  });
+
+  it.each([
+    { name: 'the member create form', file: MEMBER_CREATE },
+    { name: 'the member edit form', file: MEMBER_EDIT },
+  ])('names the offending field on $name when it refuses one itself', ({ file }) => {
+    // THE ONE REFUSAL EACH SCREEN RAISES ITSELF is also the one it knows the
+    // FIELD for — an allowance that is not a whole number the column can hold —
+    // and a five-field form saying "Unesena vrijednost nije dopuštena." with no
+    // indication of which value leaves somebody re-reading all five.
+    // `aria-invalid` carries it to assistive technology; moving focus carries
+    // it to everybody else.
+    const screen = source(file);
+    const handler = submitHandler(screen);
+
+    expect(handler, 'no submit handler to read').not.toBe('');
+    expect(handler, 'the locally-refused field is not marked').toMatch(
+      /leaveAllowanceDays === null[\s\S]{0,400}?setInvalidField\(/,
+    );
+    expect(handler, 'focus is not moved to the field the message is about').toMatch(
+      /leaveAllowanceDays === null[\s\S]{0,400}?\.focus\(\)/,
+    );
+    // The mark is CLEARED before the next attempt, or a corrected field stays
+    // announced as invalid for the rest of the session.
+    expect(handler, 'the invalid mark is never cleared').toContain('setInvalidField(null)');
+
+    const marked = inputElements(screen).filter((input) => input.includes('aria-invalid'));
+
+    expect(marked, 'no control carries aria-invalid at all').toHaveLength(1);
+    expect(
+      attributeOf(marked[0] ?? '', 'id'),
+      'the marked control is not the one the refusal is about',
+    ).toBe('member-leave');
+  });
+
+  it.each([
+    { name: 'the member create form', file: MEMBER_CREATE },
+    { name: 'the member edit form', file: MEMBER_EDIT },
+  ])('bounds the allowance on $name at what the column can hold', ({ file }) => {
+    // `0002:145` types `leave_allowance_days` as `smallint`, so 32768 is not a
+    // large allowance — it is `22003`, a refusal about a storage type naming
+    // nothing an admin can act on. AD-3 prefers a control that cannot EXPRESS
+    // the broken case, which is the argument `0002:106` already makes about the
+    // leave year's day.
+    const bounded = inputElements(source(file)).filter((input) =>
+      input.includes('max={LEAVE_ALLOWANCE_MAX}'),
+    );
+
+    expect(bounded, 'the allowance field carries no upper bound').toHaveLength(1);
+  });
+
+  it('renders aria-sort only on the columns that sort', () => {
+    // THE ACTIONS COLUMN IS NOT SORTABLE, and `none` is not "this column does
+    // not sort" — it is "this column sorts and is not currently sorted". On a
+    // header carrying a link, it offers assistive technology exactly the
+    // affordance the column exists without.
+    const screen = source(MEMBER_LIST);
+    const heads = [...screen.matchAll(/<TableHead\b([^>]*)>/g)].map((found) => found[1] ?? '');
+
+    // TWO: the one written inside the map over `MEMBER_COLUMNS`, and the
+    // actions column's own. The count is what notices a third arriving.
+    expect(heads, 'the member list no longer renders the headers this reads').toHaveLength(2);
+    expect(
+      heads.filter((head) => head.includes('aria-sort')),
+      'aria-sort is on a column that does not sort, or missing from one that does',
+    ).toHaveLength(1);
+    // The unsorted one is the actions column, named rather than inferred from
+    // its position: a `<th>` with no text is announced as nothing at all.
+    expect(screen, 'the actions column carries no heading').toMatch(
+      /<TableHead>\{t\('ljudi\.form\.actions'\)\}<\/TableHead>/,
+    );
+  });
+
+  it('names the row action after the member it acts on', () => {
+    // Four hundred rows announcing the same three words is four hundred
+    // controls a screen-reader user cannot tell apart. WHICH field names it is
+    // a decision, and it lives in `@/members/list` where `list.test.ts`
+    // executes it — `member.email` here would announce every address in the
+    // organization, and a tenth of the rows carry none.
+    const screen = source(MEMBER_LIST);
+
+    expect(screen, 'the row action does not interpolate the member').toMatch(
+      /t\('ljudi\.form\.edit',\s*\{\s*name:\s*memberActionName\(member\)\s*\}\)/,
+    );
+  });
+});
+
 describe('the exempted attribute keeps the promise that exempted it', () => {
   /**
    * `aria-current` went onto the GLOBAL `STRUCTURAL_ATTRIBUTES` allowlist, which
@@ -3517,6 +4105,28 @@ describe('the exempted attribute keeps the promise that exempted it', () => {
    * in an attribute nothing else looks at.
    */
   const ARIA_SORT_VOCABULARY = new Set(['ascending', 'descending', 'other', 'none']);
+
+  it.each(SCREENS)('admits only ARIA validity states wherever aria-invalid is quoted in $name', ({ file }) => {
+    // What pays for `aria-invalid`'s place on the global allowlist. The member
+    // forms write it as an expression, so this finds nothing on them today —
+    // which is exactly the state `aria-current` and `aria-sort` are in on
+    // fifteen of the sixteen screens, and the sweep is about the attribute
+    // rather than about the screen that introduced it.
+    for (const value of ariaInvalidValues(source(file))) {
+      expect(['true', 'false', 'grammar', 'spelling'], `aria-invalid="${value}"`).toContain(value);
+    }
+  });
+
+  it('reads aria-invalid in the quoted syntax, and finds none where there is none', () => {
+    // BOTH POLARITIES. A reader that matched nothing would make the sweep above
+    // pass on a screen carrying a Croatian sentence in that attribute.
+    expect(ariaInvalidValues('<input aria-invalid="true" />')).toEqual(['true']);
+    expect(ariaInvalidValues('<input aria-invalid="Dani godišnjeg odmora" />')).toEqual([
+      'Dani godišnjeg odmora',
+    ]);
+    expect(ariaInvalidValues('<input aria-invalid={flag} />')).toEqual([]);
+    expect(ariaInvalidValues('<input />')).toEqual([]);
+  });
 
   it('admits only ARIA sort states wherever aria-sort is written as a literal', () => {
     const found = SCREENS.flatMap(({ file }) => ariaSortValues(source(file)));
@@ -3975,6 +4585,26 @@ describe('the detectors find what they claim to find', () => {
     // being declared.
     expect(memberListKeys('export function other(): string { return x; }')).toEqual([]);
     expect(memberListKeys(compliant)).toEqual([]);
+  });
+
+  it('reads the write path keys in both of its shapes, and none where there are none', () => {
+    // BOTH POLARITIES, and both shapes. A reader that found only the union would
+    // drop the partial-save sentence out of the rendered set, and `hr.json`
+    // could then hold a message nothing renders; a reader that found nothing at
+    // all would make the set comparison pass against a resource file missing
+    // every one of the eleven.
+    const module = [
+      "export const PARTIAL_SAVE_KEY = 'ljudi.form.error.saved';",
+      "export function memberWriteMessageKey(failure: F): 'a.one' | 'a.two' {",
+      "  return 'a.one';",
+      '}',
+    ].join('\n');
+
+    expect(memberWriteKeys(module)).toEqual(['a.one', 'a.two', 'ljudi.form.error.saved']);
+    // A query key is not a message key, and the narrow constant pattern is what
+    // keeps `MEMBERS_LIST_KEY` and `MEMBER_ROLE_KEY` out of the rendered set.
+    expect(memberWriteKeys("export const MEMBERS_LIST_KEY = ['members'] as const;")).toEqual([]);
+    expect(memberWriteKeys('const x = 1;')).toEqual([]);
   });
 
   it('reads the message keys off the mapping signature and none off a screen', () => {

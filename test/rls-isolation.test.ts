@@ -113,8 +113,39 @@ const apiEndpoint: { readonly url: string; readonly key: string } | undefined = 
   }
 })();
 
+/**
+ * The SECRET key for the local stack, or `undefined`.
+ *
+ * Read from the same `supabase status -o json` the publishable key comes from,
+ * and used by exactly one case: the one that drives GoTrue's admin API the way
+ * `admin-auth` drives it, so that "the account exists and is usable at its
+ * issued username" stops resting on a stub. It is a per-stack local value that
+ * never leaves this machine — AD-17 confines the DEPLOYED secret to the Edge
+ * Function's environment, and this reads the one `supabase start` just printed
+ * rather than hard-coding anything.
+ */
+const adminKey: string | undefined = (() => {
+  if (noDatabase) return undefined;
+  try {
+    const status = execFileSync(
+      join(repoRoot, 'node_modules', '.bin', 'supabase'),
+      ['status', '-o', 'json'],
+      { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
+    );
+    const parsed: unknown = JSON.parse(status);
+    if (typeof parsed !== 'object' || parsed === null) return undefined;
+    const fields = parsed as Record<string, unknown>;
+    const key = fields['SECRET_KEY'] ?? fields['SERVICE_ROLE_KEY'];
+    return typeof key === 'string' && key.length > 0 ? key : undefined;
+  } catch {
+    return undefined;
+  }
+})();
+
 /** Every case that leaves the database and speaks HTTP is gated on both. */
 const noApi = noDatabase || apiEndpoint === undefined;
+/** The one case that also needs the admin API. */
+const noAdminApi = noApi || adminKey === undefined;
 
 /** `supabase/seed.sql:27` — one password, shared, local and test only. */
 const FIXTURE_PASSWORD = 'local-fixture-password';
@@ -710,8 +741,8 @@ async function addThrowawayMember(client: Client, organization: string): Promise
   );
 
   const { rows } = await client.query<{ id: string }>(
-    `insert into members (organization_id, auth_user_id, name, role, leave_allowance_days)
-     values ($1, $2, $3, 'member_role', 20)
+    `insert into members (organization_id, auth_user_id, name, username, role, leave_allowance_days)
+     values ($1, $2::uuid, $3, $2::uuid::text, 'member_role', 20)
      returning id`,
     [organization, account.id, `${THROWAWAY} target`],
   );
@@ -1192,6 +1223,10 @@ describe('a direct API call refuses an administrative write by a member-role acc
             organization_id: own,
             auth_user_id: '00000000-0000-0000-0000-000000000000',
             name: `${THROWAWAY} refused insert`,
+            // `0007` makes `username` not null, so a body without one would be
+            // refused with 23502 BEFORE the policy is reached — and this case
+            // would then pass while asserting nothing about row level security.
+            username: `${THROWAWAY}-refused-insert`,
             role: 'admin',
             leave_allowance_days: 0,
           },
@@ -1365,6 +1400,7 @@ describe('a direct API call permits an admin inside their own organization and n
             organization_id: other,
             auth_user_id: '00000000-0000-0000-0000-000000000000',
             name: `${THROWAWAY} cross-tenant insert`,
+            username: `${THROWAWAY}-cross-tenant-insert`,
             role: 'member_role',
             leave_allowance_days: 0,
           },
@@ -1565,8 +1601,8 @@ describe('the policies refuse the same things with claims injected instead of a 
         await actAs(client, caller.authUserId, caller.organizationId);
         const refusal = await refused(() =>
           client.query(
-            `insert into members (organization_id, auth_user_id, name, role, leave_allowance_days)
-             values ($1, gen_random_uuid(), $2, 'admin', 0)`,
+            `insert into members (organization_id, auth_user_id, name, username, role, leave_allowance_days)
+             values ($1, gen_random_uuid(), $2, gen_random_uuid()::text, 'admin', 0)`,
             [caller.organizationId, `${THROWAWAY} injected insert`],
           ),
         );
@@ -1598,8 +1634,8 @@ describe('the policies refuse the same things with claims injected instead of a 
 
         await actAs(client, caller.authUserId, caller.organizationId);
         const inserted = await client.query(
-          `insert into members (organization_id, auth_user_id, name, role, leave_allowance_days)
-           values ($1, $2, $3, 'member_role', 20)`,
+          `insert into members (organization_id, auth_user_id, name, username, role, leave_allowance_days)
+           values ($1, $2::uuid, $3, $2::uuid::text, 'member_role', 20)`,
           [caller.organizationId, account.id, `${THROWAWAY} permitted insert`],
         );
         await actAsOwner(client);
@@ -3338,8 +3374,8 @@ describe('role and active state are re-read on the next statement, not at token 
 
         await actAs(client, caller.authUserId, caller.organizationId);
         const permitted = await client.query(
-          `insert into members (organization_id, auth_user_id, name, role, leave_allowance_days)
-           values ($1, $2, $3, 'member_role', 20)`,
+          `insert into members (organization_id, auth_user_id, name, username, role, leave_allowance_days)
+           values ($1, $2::uuid, $3, $2::uuid::text, 'member_role', 20)`,
           [caller.organizationId, beforeBan.id, `${THROWAWAY} before the ban`],
         );
         await actAsOwner(client);
@@ -3353,8 +3389,8 @@ describe('role and active state are re-read on the next statement, not at token 
         await actAs(client, caller.authUserId, caller.organizationId);
         const refusal = await refused(() =>
           client.query(
-            `insert into members (organization_id, auth_user_id, name, role, leave_allowance_days)
-             values ($1, $2, $3, 'member_role', 20)`,
+            `insert into members (organization_id, auth_user_id, name, username, role, leave_allowance_days)
+             values ($1, $2::uuid, $3, $2::uuid::text, 'member_role', 20)`,
             [caller.organizationId, afterBan.id, `${THROWAWAY} after the ban`],
           ),
         );
@@ -3425,8 +3461,8 @@ describe('the helper other empty result: the caller own member row stops existin
         const after = await visibleToSession(client);
         const written = await refusedThenContinue(client, () =>
           client.query(
-            `insert into members (organization_id, auth_user_id, name, role, leave_allowance_days)
-             values ($1, gen_random_uuid(), $2, 'member_role', 20)`,
+            `insert into members (organization_id, auth_user_id, name, username, role, leave_allowance_days)
+             values ($1, gen_random_uuid(), $2, gen_random_uuid()::text, 'member_role', 20)`,
             [caller.organizationId, `${THROWAWAY} after deletion`],
           ),
         );
@@ -3547,11 +3583,15 @@ describe('the member list is one organization own list, at the scale Q20 names',
        ),
        created_members as (
          insert into members (
-           organization_id, auth_user_id, name, email, role, leave_allowance_days
+           organization_id, auth_user_id, name, username, email, role, leave_allowance_days
          )
          select $1,
                 u.id,
                 $4 || ' ' || lpad(row_number() over (order by u.id)::text, 4, '0'),
+                -- \`0007\`: lowercase, no whitespace, no at-sign, and unique
+                -- per organization in ANY casing. The account id satisfies all
+                -- four and needs no counter of its own.
+                u.id::text,
                 -- A tenth of them carry no address, which is the case the
                 -- surface sorts last in both directions and the schema permits
                 -- outright (\`0002:135\`).
@@ -3781,5 +3821,523 @@ describe('the member list is one organization own list, at the scale Q20 names',
       }
     },
     120_000,
+  );
+});
+
+describe('0007 gives the issued username a shape and a per-organization unique', () => {
+  /**
+   * WHY THESE ARE CONSTRAINTS AND NOT REGEXES IN THE EDGE FUNCTION.
+   * `members_update_by_own_active_admin` (`0003:331-351`) admits an active
+   * admin to EVERY COLUMN of every row in their own organization through an
+   * ordinary PostgREST PATCH — so a username rule that lives only in
+   * `admin-auth` is a rule the one caller who can break it never meets. Every
+   * case below writes as the CALLER, through the same transport the SPA uses or
+   * with the caller's claims injected, because that is the path the rule has to
+   * survive.
+   */
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'stores each $fixture member the username their own address is built from',
+    async ({ slug }) => {
+      // THE INVARIANT THE DUPLICATION BUYS AND CANNOT ENFORCE: `members.username`
+      // is the local part of `auth.users.email`, and nothing in PostgreSQL can
+      // hold the two together across the `auth` boundary — which is why
+      // `updateUserById` writes both and carries a compensating restore.
+      //
+      // SCOPED AWAY FROM THROWAWAY ROWS, deliberately. This file creates
+      // members with usernames unrelated to their addresses on purpose, so an
+      // unscoped invariant would go red on a run that died before its cleanup —
+      // reporting the previous run's crash rather than what actually broke.
+      const client = await connect();
+
+      try {
+        const { rows } = await client.query<{ scanned: number; disagreeing: number }>(
+          `select count(*)::int as scanned,
+                  count(*) filter (
+                    where m.username is distinct from split_part(u.email, '@', 1)
+                  )::int as disagreeing
+             from members m
+             join auth.users u on u.id = m.auth_user_id
+             join organizations o on o.id = m.organization_id
+            where o.slug = $1
+              and u.email not like $2`,
+          [slug, `%@${THROWAWAY}.shift.invalid`],
+        );
+
+        expect(rows[0]?.scanned, `no ${slug} members to check the invariant over`).toBeGreaterThan(1);
+        expect(
+          rows[0]?.disagreeing,
+          `a ${slug} member stores a username that is not the local part of their address`,
+        ).toBe(0);
+      } finally {
+        await client.end();
+      }
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses two $fixture usernames that differ only in case',
+    async ({ slug, admin }) => {
+      // `Ana.Kovac` and `ana.kovac` are TWO ROWS AND ONE ADDRESS: the address
+      // builder lowercases, so a case-sensitive unique would let the database
+      // hold a collision the address space cannot express — and the second
+      // account would authenticate as the first. The index is on
+      // `lower(username)` for exactly this.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const first = await addThrowawayMember(client, caller.organizationId);
+        const second = await addThrowawayMember(client, caller.organizationId);
+
+        await client.query('update members set username = $2 where id = $1', [
+          first.id,
+          'petra.babic.case',
+        ]);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const refusal = await refusedThenContinue(client, () =>
+            client.query('update members set username = $2 where id = $1', [
+            second.id,
+            'Petra.Babic.Case',
+          ]),
+        );
+        await actAsOwner(client);
+
+        // THE CHECK FIRES FIRST, and that is the right order: an uppercase
+        // username is refused outright, so the unique never has to decide. The
+        // two are not redundant — see the index case below, which asserts the
+        // unique is case-insensitive as well, because a check relaxed one day
+        // for a case nobody anticipated must not take the collision guard with
+        // it.
+        expect(refusal.code, 'an uppercase username was admitted').toBe('23514');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('scopes the unique to the organization AND to the folded case', () => {
+    // READ OFF THE RUNNING DATABASE rather than off the migration text, which
+    // is what makes it a fact about the schema rather than about a string in a
+    // file. It cannot be asserted by writing two colliding rows: the check
+    // constraint refuses an uppercase username before the index is consulted,
+    // so the only way to see WHICH expression the index is on is to look.
+    //
+    // `Ana.Kovac` and `ana.kovac` are two rows and ONE address — the builder
+    // lowercases — so a case-sensitive unique would let the database hold a
+    // collision the address space cannot express, and the second account would
+    // authenticate as the first.
+    return connect().then(async (client) => {
+      try {
+        const { rows } = await client.query<{ definition: string }>(
+          `select indexdef as definition
+             from pg_indexes
+            where schemaname = 'public'
+              and tablename = 'members'
+              and indexdef ilike '%username%'`,
+        );
+
+        expect(rows, 'members carries no unique index over username at all').toHaveLength(1);
+        expect(rows[0]?.definition, 'the username index is not unique').toContain('UNIQUE');
+        expect(
+          rows[0]?.definition,
+          'the username unique is case-sensitive, so two casings of one address can coexist',
+        ).toContain('lower(username)');
+        expect(
+          rows[0]?.definition,
+          'the username unique is not scoped to the organization',
+        ).toContain('organization_id');
+      } finally {
+        await client.end();
+      }
+    });
+  });
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a second $fixture member holding a username already issued',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const first = await addThrowawayMember(client, caller.organizationId);
+        const second = await addThrowawayMember(client, caller.organizationId);
+
+        await client.query('update members set username = $2 where id = $1', [
+          first.id,
+          'marko.novak.taken',
+        ]);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const refusal = await refusedThenContinue(client, () =>
+            client.query('update members set username = $2 where id = $1', [
+            second.id,
+            'marko.novak.taken',
+          ]),
+        );
+        await actAsOwner(client);
+
+        expect(refusal.code, 'a duplicate username was admitted').toBe('23505');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'lets $fixture and the other tenant both issue the same username',
+    async ({ slug, admin }) => {
+      // The unique is scoped to the ORGANIZATION for the same reason the
+      // address is namespaced by the slug: two tenants may both issue the
+      // username an operator finds obvious, and a global unique would make the
+      // first organization to use `ivan` own it everywhere.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const other = FIXTURES.find((entry) => entry.slug !== slug);
+        if (other === undefined) throw new Error('this file needs two fixtures');
+
+        const here = await addThrowawayMember(client, caller.organizationId);
+        const there = await addThrowawayMember(client, await organizationId(client, other.slug));
+
+        await client.query('update members set username = $2 where id = $1', [here.id, 'ivan']);
+        const across = await client.query('update members set username = $2 where id = $1', [
+          there.id,
+          'ivan',
+        ]);
+
+        expect(across.rowCount, 'one tenant issuing a username blocked the other').toBe(1);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture username carrying whitespace or a second at-sign',
+    async ({ slug, admin }) => {
+      // Either makes the address built from it something other than the address
+      // the account holds — so it authenticates nothing, silently, for ever.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+
+        for (const attempted of ['ivan maric', 'ivan@maric', '']) {
+          await actAs(client, caller.authUserId, caller.organizationId);
+          const refusal = await refusedThenContinue(client, () =>
+            client.query('update members set username = $2 where id = $1', [target.id, attempted]),
+          );
+          await actAsOwner(client);
+
+          expect(refusal.code, `the username "${attempted}" was admitted`).toBe('23514');
+        }
+      });
+    },
+  );
+});
+
+describe('an admin creates and edits a member through the same policies the SPA uses', () => {
+  it.skipIf(noApi).each(FIXTURES)(
+    'lets the $fixture admin insert a member and read it straight back',
+    async ({ slug, admin }) => {
+      // THE POSITIVE CONTROL FOR THE WHOLE WRITE PATH, and it is the shape
+      // `admin-auth` performs: the `auth.users` row exists first (the foreign
+      // key forces it), and the `members` row goes through the CALLER'S token
+      // so `members_insert_by_own_active_admin` and AD-11's attribution both
+      // apply. A policy that refused every insert would satisfy every refusal
+      // case in this file.
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+
+      try {
+        const own = await organizationId(client, slug);
+        const { rows } = await client.query<{ id: string }>(
+          `insert into auth.users (
+             instance_id, id, aud, role, email, email_confirmed_at,
+             raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+             confirmation_token, recovery_token, email_change, email_change_token_new
+           )
+           select '00000000-0000-0000-0000-000000000000',
+                  gen_random_uuid(), 'authenticated', 'authenticated',
+                  gen_random_uuid()::text || '@' || $1, now(),
+                  jsonb_build_object('provider', 'email', 'providers', jsonb_build_array('email')),
+                  '{}'::jsonb, now(), now(), '', '', '', ''
+           returning id`,
+          [`${THROWAWAY}.shift.invalid`],
+        );
+        const account = rows[0];
+        if (account === undefined) throw new Error('auth.users insert returned no row');
+
+        const issued = `${THROWAWAY}-${account.id}`;
+        const created = await rest('members', {
+          token,
+          method: 'POST',
+          body: {
+            organization_id: own,
+            auth_user_id: account.id,
+            name: `${THROWAWAY} created`,
+            username: issued,
+            email: null,
+            role: 'member_role',
+            leave_allowance_days: 22,
+          },
+        });
+
+        expect(created.status, 'a permitted insert answers 201').toBe(201);
+
+        // READ BACK AS THE CALLER, through the same transport: an insert the
+        // policy admitted and the select policy hides would be an account
+        // nobody can see they created.
+        const found = await restRows(`members?username=eq.${issued}&select=username,role`, {
+          token,
+        });
+
+        expect(found).toEqual([{ username: issued, role: 'member_role' }]);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses a $fixture member-role session renaming anybody, silently',
+    async ({ slug, member }) => {
+      // The update policy fails USING, so the statement matches nothing and
+      // raises nothing — which is why this reads the row back rather than
+      // expecting a throw.
+      const token = await tokenFor(member, slug);
+      const client = await connect();
+
+      try {
+        const target = await addThrowawayMember(client, await organizationId(client, slug));
+        const attempted = `${THROWAWAY}-renamed-by-a-member`;
+        const response = await rest(`members?id=eq.${target.id}`, {
+          token,
+          method: 'PATCH',
+          body: { username: attempted },
+        });
+
+        expect(response.status, 'a refused update matches no row and raises nothing').toBe(204);
+
+        const { rows } = await client.query<{ username: string }>(
+          'select username from members where id = $1',
+          [target.id],
+        );
+
+        expect(rows[0]?.username, `a ${slug} member renamed somebody`).not.toBe(attempted);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses demoting the last $fixture admin, at commit',
+    async ({ slug, admin }) => {
+      // Q6's other half, and the reason the trigger is DEFERRABLE INITIALLY
+      // DEFERRED: only the state at COMMIT is a fact about the organization.
+      // The edit form can express this — the control offers both levels — and
+      // the database is what says no, which is the same division every other
+      // refusal on that surface follows.
+      const client = await connect();
+
+      try {
+        const caller = await memberByUsername(client, slug, admin);
+
+        await client.query('begin');
+        await actAs(client, caller.authUserId, caller.organizationId);
+        // The statement itself SUCCEEDS: the trigger is deferred, so nothing is
+        // refused until the transaction tries to commit.
+        const demoted = await client.query(
+          "update members set role = 'member_role' where id = $1",
+          [caller.id],
+        );
+
+        expect(demoted.rowCount, `the ${slug} admin could not reach their own row`).toBe(1);
+
+        const refusal = await refused(() => client.query('commit'));
+
+        expect(refusal.message, 'an organization was left with no admin').toBe(
+          'ORGANIZATION_WOULD_HAVE_NO_ADMIN',
+        );
+      } finally {
+        await client.query('rollback').catch(() => undefined);
+        await client.end();
+      }
+    },
+  );
+});
+
+describe('an account issued the way admin-auth issues one actually signs in', () => {
+  /**
+   * THE FIRST ACCEPTANCE CRITERION, off the stub.
+   *
+   * Every case in `test/admin-auth-boundary.test.ts` drives `createUser`
+   * against a stubbed `auth.admin`, which proves the ORDER, the compensation
+   * and the refusals and proves nothing at all about whether GoTrue's admin API
+   * produces an account somebody can sign in to. This repository already holds
+   * that invariant for its other two account recipes — `seed.sql` and the
+   * operator script, through `recipeHealth`/`expectSignInCapable` in
+   * `test/provisioning.test.ts` — and the third recipe had it asserted by
+   * nothing.
+   *
+   * It drives the same endpoint and the same attributes `auth.admin.createUser`
+   * sends (`POST /auth/v1/admin/users` with `email`, `password`,
+   * `email_confirm`), then exchanges the issued credential for a token at the
+   * SYNTHESIZED address. Skipped, never silently green, without a stack.
+   */
+  const ISSUED_PASSWORD = 'an-issued-throwaway-password';
+
+  async function createAccount(address: string): Promise<Response> {
+    const endpoint = apiEndpoint;
+    if (endpoint === undefined || adminKey === undefined) {
+      throw new Error('unreachable: gated by skipIf');
+    }
+
+    return fetch(`${endpoint.url}/auth/v1/admin/users`, {
+      method: 'POST',
+      headers: {
+        apikey: adminKey,
+        Authorization: `Bearer ${adminKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: address,
+        password: ISSUED_PASSWORD,
+        email_confirm: true,
+      }),
+    });
+  }
+
+  it.skipIf(noAdminApi).each(FIXTURES)(
+    'issues a $fixture credential the account can then sign in with',
+    async ({ slug }) => {
+      const endpoint = apiEndpoint;
+      if (endpoint === undefined) throw new Error('unreachable: gated by skipIf');
+
+      const username = `${THROWAWAY}-issued-${slug}`;
+      // AD-12's address, built the way both builders build it. A case that used
+      // an ordinary address would prove GoTrue works and nothing about ours.
+      const issued = address(username, slug);
+      const client = await connect();
+
+      try {
+        await client.query('delete from auth.users where email = $1', [issued]);
+
+        const created = await createAccount(issued);
+
+        expect(
+          created.status,
+          `the admin API refused the account: ${created.status} ${await created.clone().text()}`,
+        ).toBe(200);
+
+        // THE IDENTITY ROW, confirmed rather than assumed. A password grant
+        // resolves through `auth.identities`, not through `auth.users.email` —
+        // `seed.sql` and the operator script both write one by hand for exactly
+        // that reason, and this is where the admin API is held to producing it.
+        const { rows } = await client.query<{ identities: number; confirmed: number }>(
+          `select count(i.*)::int as identities,
+                  count(u.*) filter (where u.email_confirmed_at is not null)::int as confirmed
+             from auth.users u
+             left join auth.identities i on i.user_id = u.id
+            where u.email = $1`,
+          [issued],
+        );
+
+        expect(rows[0]?.identities, 'the created account has no identity to resolve through').toBe(
+          1,
+        );
+        expect(rows[0]?.confirmed, 'the created account was left unconfirmed').toBe(1);
+
+        // AND IT AUTHENTICATES. Counting rows cannot tell a usable account from
+        // one that is merely present — the whole point of the recipe.
+        const grant = await fetch(`${endpoint.url}/auth/v1/token?grant_type=password`, {
+          method: 'POST',
+          headers: { apikey: endpoint.key, 'content-type': 'application/json' },
+          body: JSON.stringify({ email: issued, password: ISSUED_PASSWORD }),
+        });
+        const body: unknown = await grant.json();
+        const token =
+          typeof body === 'object' && body !== null
+            ? (body as Record<string, unknown>)['access_token']
+            : undefined;
+
+        expect(
+          typeof token === 'string' && token.length > 0,
+          `the issued credential did not authenticate: ${grant.status} ${JSON.stringify(body)}`,
+        ).toBe(true);
+
+        // THE NEGATIVE CONTROL: without it, a GoTrue that accepted anything
+        // would satisfy the assertion above.
+        const rejected = await fetch(`${endpoint.url}/auth/v1/token?grant_type=password`, {
+          method: 'POST',
+          headers: { apikey: endpoint.key, 'content-type': 'application/json' },
+          body: JSON.stringify({ email: issued, password: 'not-the-issued-password' }),
+        });
+
+        expect(rejected.ok, 'a wrong password was accepted').toBe(false);
+
+        // AND THE SECOND ISSUE OF THE SAME ADDRESS IS REFUSED BY CODE, which is
+        // what `createUser` maps to USERNAME_TAKEN — by GoTrue's own code and
+        // never by `status === 422`, which every other validation shares.
+        const duplicate = await createAccount(issued);
+        const refusal: unknown = await duplicate.json();
+        const refusalCode =
+          typeof refusal === 'object' && refusal !== null
+            ? (refusal as Record<string, unknown>)['error_code']
+            : undefined;
+
+        expect(duplicate.ok, 'the same address was issued twice').toBe(false);
+        expect(
+          refusalCode,
+          `GoTrue no longer answers a duplicate address with the code the function maps: ${JSON.stringify(refusal)}`,
+        ).toBe('email_exists');
+      } finally {
+        await client.query('delete from auth.users where email = $1', [issued]).catch(() => undefined);
+        await client.end();
+      }
+    },
+    20_000,
+  );
+});
+
+describe('the zero-admins refusal reaches a direct API caller as a code it can map', () => {
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses the $fixture admin demoting themselves, through PostgREST',
+    async ({ slug, admin }) => {
+      // NOTHING OBSERVED THE BODY POSTGREST ACTUALLY SENDS. Both unit cases hand
+      // `editFailureOf` an error object they built themselves, and the database
+      // case reads the pg driver — so the client's substring match was made
+      // against a shape nothing had ever seen come off the wire. If PostgREST
+      // carries the raised message somewhere other than where the client looks,
+      // demoting the last administrator renders "correct a value" with no value
+      // on the form to correct, and every existing case stays green.
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+
+      try {
+        const caller = await memberByUsername(client, slug, admin);
+        const response = await rest(`members?id=eq.${caller.id}`, {
+          token,
+          method: 'PATCH',
+          body: { role: 'member_role' },
+        });
+
+        // A deferred constraint trigger raises `check_violation`, which is what
+        // makes PostgREST answer 400 rather than 500 (`0002:193-223`).
+        expect(response.ok, 'an organization was left with no admin').toBe(false);
+
+        const refusal = await restRefusal(response);
+
+        expect(refusal.code, 'a deferred check violation is 23514').toBe('23514');
+        expect(
+          refusal.message,
+          'the stable code is not in the body the client actually reads',
+        ).toContain('ORGANIZATION_WOULD_HAVE_NO_ADMIN');
+
+        // AND THE ROW IS UNCHANGED: the trigger is DEFERRABLE INITIALLY
+        // DEFERRED, so the statement succeeded and the COMMIT is what was
+        // refused — the whole transaction, including the demotion, is gone.
+        expect(
+          (await memberById(client, caller.id))?.role,
+          `the ${slug} admin demoted themselves anyway`,
+        ).toBe('admin');
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
   );
 });

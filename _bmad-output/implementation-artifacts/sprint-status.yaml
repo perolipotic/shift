@@ -216,6 +216,39 @@ development_status:
   # member field at all, which closes the class rather than the instances.
   # Six previously-green mutations now each fail the suite.
   1-5a-member-list: done
+  # Part B is the write path, specced 2026-09-18 from the deferred-work entry
+  # 1.5a left. It earns its key here, same convention as the 1.1, 1.3, 1.4 and
+  # navigation-shell parts, and a regenerate reports it as an orphan because it
+  # derives from no epics.md key of its own — reconcile with --set rather than
+  # dropping it. It covers epics.md story 1.5 acceptance clause 1 (an account
+  # usable with no email address, created through the single privileged auth
+  # function, which uses the secret key for the auth call only and the calling
+  # admin's JWT for the `members` row, and refuses unless the caller is an admin
+  # of the target's own organization) and clause 2 (per-member leave allowance).
+  # Four human decisions of 2026-09-18, NOT to be relitigated: (a) the sign-in
+  # username becomes a real `members` column in migration 0007 rather than
+  # staying the unreadable local part of `auth.users.email` — the open question
+  # deferred-work.md:286 assigned to story 1.5; (b) usernames are editable, so
+  # `updateUserById` does real work and only `ban`/`unban` stay at 501; (c) the
+  # initial password is generated in the function and shown exactly once, never
+  # typed by an admin; (d) the forms are separate routes `/ljudi/novi` and
+  # `/ljudi/$id`, vendoring no new primitive — `components/ui/` still has no
+  # Dialog. The admin-issued password RESET was split off at step-01's
+  # multi-goal check the same day and waits in deferred-work.md, so the `1-5`
+  # parent above does NOT close with this part — it closes with the reset.
+  # Round one's three adversarial layers found FOUR demonstrated green mutations
+  # of one class — assertions comparing a value to itself — and it took a
+  # bad_spec LOOPBACK rather than patches, the second story in this epic to do
+  # so. `ADMIN_ROLE` set to 'administrator' left 1412/1412 passing while the
+  # boundary would have refused every legitimate admin, so no account could ever
+  # be issued. Round two, against the re-derived code, found the detached
+  # `Response.prototype.json` that collapsed EVERY function refusal to "try
+  # again" in the browser — a real production defect hidden because the test
+  # stub's `json` was an arrow closure that never touched `this`. That round was
+  # routed as 23 patches, not a second loopback: the findings were localised and
+  # the structure held. Four rejected as unreachable and recorded so they are
+  # not "fixed" later.
+  1-5b-member-write-path: review
   1-6-deactivating-a-member-changes-the-future-and-rewrites-no-his: backlog
   1-7-an-admin-creates-teams-and-moves-people-between-them: backlog
   1-8-a-member-sees-who-is-on-a-team: backlog

@@ -103,6 +103,27 @@ const provisioningScript = readFileSync(
   'utf8',
 );
 
+/**
+ * Migration `0007`, read as TEXT so its backfill can be EXECUTED over a row.
+ *
+ * `supabase db reset` applies migrations BEFORE `seed.sql`, so `members` is
+ * empty at the moment `0007` runs and every character of its update statement
+ * is unverified by construction: changing `split_part(u.email, '@', 1)` to
+ * `, 2)` writes the DOMAIN as everybody's username, and the whole suite stays
+ * green because nothing ever ran the statement over a row. Reading it from the
+ * file and applying it to a member whose username has been nulled is what makes
+ * that a failing case — the same idiom `provisioningScript` above established.
+ */
+const usernameMigration = readFileSync(
+  join(repoRoot, 'supabase', 'migrations', '0007_member_username.sql'),
+  'utf8',
+);
+
+/** The one `update` statement `0007` carries, extracted from the file. */
+function backfillStatement(): string {
+  return /update members m[\s\S]*?;/.exec(usernameMigration)?.[0] ?? '';
+}
+
 async function connect(): Promise<Client> {
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
@@ -329,10 +350,15 @@ async function addAdmin(client: Client, organization: string, label: string): Pr
   );
   const created = rows[0];
   if (created === undefined) throw new Error('auth.users insert returned no row');
+  // `username` since `0007`, and it is the LABEL rather than a constant: the
+  // column carries a case-insensitive unique index per organization, so two
+  // successors added to one tenant with the same username would be refused for
+  // a reason that has nothing to do with the zero-admins rule these cases are
+  // about.
   await client.query(
-    `insert into members (organization_id, auth_user_id, name, role, leave_allowance_days)
-     values ($1, $2, $3, 'admin', 0)`,
-    [organization, created.id, label],
+    `insert into members (organization_id, auth_user_id, name, username, role, leave_allowance_days)
+     values ($1, $2, $3, $4, 'admin', 0)`,
+    [organization, created.id, label, label],
   );
 }
 
@@ -644,12 +670,22 @@ describe('every organization-scoped row carries its organization', () => {
     await inRolledBackTransaction(async (client) => {
       const refusal = await refused(() =>
         client.query(
-          `insert into members (auth_user_id, name, role, leave_allowance_days)
-           values (gen_random_uuid(), 'orphan', 'member_role', 0)`,
+          // EVERY OTHER NOT-NULL COLUMN IS SUPPLIED, and `username` is the
+          // reason that now matters: `0007` made it not null too, so an insert
+          // omitting both columns raises 23502 for WHICHEVER Postgres reaches
+          // first — and this case would have gone on passing with
+          // `organization_id` made nullable. The column is pinned below so the
+          // case demonstrates its own name.
+          `insert into members (auth_user_id, name, username, role, leave_allowance_days)
+           values (gen_random_uuid(), 'orphan', 'orphan', 'member_role', 0)`,
         ),
       );
 
       expect(refusal.code, 'a not null violation is 23502').toBe('23502');
+      expect(
+        `${refusal.message} ${refusal.detail ?? ''}`,
+        'some other not-null column raised, so this case no longer demonstrates organization_id',
+      ).toContain('organization_id');
     });
   });
 
@@ -965,6 +1001,31 @@ describe('the operator provisioning script', () => {
       // AD-12: a non-routable synthesized address, namespaced by the slug.
       expect(rows[0]?.address).toBe(`operator@${slug}.shift.invalid`);
 
+      // THE STORED USERNAME IS ASSERTED, NOT MERELY WRITTEN. Swapping
+      // `admin_username` for `admin_name` in the script's `members` insert left
+      // every case here green while the provisioned admin's stored username
+      // ("Provisioned Admin") disagreed with the address they actually sign in
+      // with — the column is duplicated across the `auth` boundary on purpose
+      // (`0007`), and nothing in PostgreSQL can hold the two together.
+      //
+      // Compared against the LOCAL PART of the address GoTrue holds rather than
+      // against the parameter this test passed in: the parameter is what the
+      // script was given, and the address is what the account answers to.
+      const { rows: identity } = await client.query<{ username: string; local: string }>(
+        `select m.username, split_part(u.email, '@', 1) as local
+           from organizations o
+           join members m on m.organization_id = o.id
+           join auth.users u on u.id = m.auth_user_id
+          where o.slug = $1`,
+        [slug],
+      );
+
+      expect(identity[0]?.local, 'no provisioned account to read an address from').toBe('operator');
+      expect(
+        identity[0]?.username,
+        'the stored username disagrees with the address the admin signs in with',
+      ).toBe(identity[0]?.local);
+
       // The same GoTrue couplings the seed's copy of the recipe is held to.
       expectSignInCapable(await recipeHealth(client, slug), 'the provisioned organization');
     });
@@ -1045,6 +1106,103 @@ describe('the operator provisioning script', () => {
         [slug],
       );
       expect(rows[0]?.surviving, 'the organization row outlived the refusal').toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('0007 backfills the username from the local part, executed over a row', () => {
+  /**
+   * THE STATEMENT `supabase db reset` NEVER RUNS OVER ANYTHING.
+   *
+   * Migrations are applied before `seed.sql`, so `members` is empty when `0007`
+   * runs: its update touches zero rows, and every character of it is
+   * unverified. The 1.5b review changed `split_part(u.email, '@', 1)` to
+   * `, 2)` — which writes `dvd-kastel-novi.shift.invalid` as every member's
+   * username, so `0007`'s per-organization unique index would refuse the second
+   * member of every organization on a real backfill — and the whole suite
+   * stayed green.
+   *
+   * So the statement is READ OUT OF THE MIGRATION FILE and applied here, in a
+   * rolled-back transaction, to a seeded member whose username has been nulled.
+   * A test that wrote its own copy of the statement would assert that a string
+   * this file contains does what this file says.
+   */
+
+  it('finds the statement it is about to execute', () => {
+    // Vacuous-pass guard. An extraction that returned nothing would make the
+    // case below run no SQL and compare a value to itself.
+    const statement = backfillStatement();
+
+    expect(statement.length, '0007 carries no update statement').toBeGreaterThan(40);
+    expect(statement).toContain('split_part');
+    expect(statement).toContain('auth.users');
+  });
+
+  it.skipIf(noDatabase)('writes each member the local part of their own address', async () => {
+    await inRolledBackTransaction(async (client) => {
+      // DDL is transactional in PostgreSQL, so dropping the not-null here is
+      // undone with everything else. It is what lets the column hold the state
+      // the migration actually met: every row null.
+      await client.query('alter table members alter column username drop not null');
+      await client.query('update members set username = null');
+
+      await client.query(backfillStatement());
+
+      const { rows } = await client.query<{ scanned: number; disagreeing: number }>(
+        `select count(*)::int as scanned,
+                count(*) filter (
+                  where m.username is distinct from split_part(u.email, '@', 1)
+                )::int as disagreeing
+           from members m
+           join auth.users u on u.id = m.auth_user_id`,
+      );
+
+      // BOTH FIXTURES' SEVEN ACCOUNTS, so the statement is proved over rows
+      // whose local parts differ from one another and from their domains.
+      expect(rows[0]?.scanned, 'no members were backfilled at all').toBeGreaterThan(1);
+      expect(
+        rows[0]?.disagreeing,
+        'a backfilled username is not the local part of that account address',
+      ).toBe(0);
+
+      // AND NOT THE DOMAIN, which is the mutation this exists for: reading
+      // field 2 writes the same string into every row, so the count of DISTINCT
+      // usernames would collapse to one per organization.
+      const { rows: distinct } = await client.query<{ names: number; rows: number }>(
+        'select count(distinct username)::int as names, count(*)::int as rows from members',
+      );
+
+      expect(distinct[0]?.names).toBe(distinct[0]?.rows);
+    });
+  });
+
+  it.skipIf(noDatabase)('leaves every seeded member holding the username they sign in with', async () => {
+    // The other half, and it is about the SEED rather than the migration: both
+    // fixtures write `username` at insert time now, and a fixture whose stored
+    // username disagreed with its address would be a fixture whose credential
+    // authenticates nothing.
+    const client = await connect();
+
+    try {
+      const { rows } = await client.query<{ disagreeing: number; scanned: number }>(
+        `select count(*)::int as scanned,
+                count(*) filter (
+                  where m.username is distinct from split_part(u.email, '@', 1)
+                )::int as disagreeing
+           from members m
+           join auth.users u on u.id = m.auth_user_id
+           join organizations o on o.id = m.organization_id
+          where o.slug = any($1::text[])`,
+        [FIXTURES.map((entry) => entry.slug)],
+      );
+
+      expect(rows[0]?.scanned, 'no seeded members to check').toBeGreaterThan(1);
+      expect(
+        rows[0]?.disagreeing,
+        'a seeded member stores a username that is not the local part of their address',
+      ).toBe(0);
     } finally {
       await client.end();
     }

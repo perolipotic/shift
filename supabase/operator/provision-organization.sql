@@ -176,10 +176,16 @@ begin
     now()
   );
 
+  -- `username` carries `admin_username` and nothing else (0007). It is the same
+  -- value the synthesized address above was built from, and the two cannot be
+  -- held together by any constraint — `admin_name` here would typecheck, run,
+  -- and leave the provisioned admin with a stored username that authenticates
+  -- nothing, which is why `test/provisioning.test.ts` reads it back and
+  -- compares it against the local part of the address GoTrue actually holds.
   insert into members (
-    organization_id, auth_user_id, name, email, role, leave_allowance_days
+    organization_id, auth_user_id, name, username, email, role, leave_allowance_days
   ) values (
-    new_organization_id, new_auth_user_id, admin_name, admin_email, 'admin', admin_leave_allowance_days
+    new_organization_id, new_auth_user_id, admin_name, admin_username, admin_email, 'admin', admin_leave_allowance_days
   );
 
   -- The operator needs the address back: it is what the admin signs in with,

@@ -235,6 +235,65 @@ const SANCTIONED_SCREEN_KEYS = [
   // They state what happened instead.
   'ljudi.error.refused',
   'ljudi.error.unavailable',
+  // Story 1.5b — the two member forms. TWELVE strings the screens render and
+  // ELEVEN refusals the write path maps to, and the partition is the point in
+  // both halves.
+  //
+  // There is deliberately no `ljudi.form.name`, `ljudi.form.email`,
+  // `ljudi.form.role` or `ljudi.form.leave`: the four fields are the four
+  // COLUMNS of the list, and a form labelling the same thing with a second word
+  // would be two words for one thing — the argument `ljudi.role` already makes
+  // about being both a heading and the filter's label. `ljudi.form.username` is
+  // the one field with no column, because `0007`'s username renders in no
+  // column (`apps/web/src/members/list.ts`).
+  'ljudi.form.newHeading',
+  'ljudi.form.editHeading',
+  'ljudi.form.add',
+  // The row action's name INTERPOLATES the member it acts on, which is why it
+  // is the one key in this file carrying an ICU argument that is not a plural:
+  // several hundred rows each announcing the same three words is several
+  // hundred controls a screen-reader user cannot tell apart. The name is data,
+  // and data is never a key.
+  'ljudi.form.edit',
+  'ljudi.form.actions',
+  'ljudi.form.back',
+  'ljudi.form.username',
+  // `Spremi` and `Odustani` a SECOND time, in their own namespace rather than
+  // borrowed from `organization.*`. The count sweep in
+  // `test/localization-applied.test.ts` reads both sides off `hr.json`, so two
+  // occurrences move both sides at once; what a borrowed key would cost is the
+  // ability to reword one surface's action without rewording the other's.
+  'ljudi.form.save',
+  'ljudi.form.cancel',
+  // The one-showing credential panel. THREE strings, and not one of them is the
+  // password: that is data, generated in `admin-auth` and never authored.
+  'ljudi.form.created',
+  // THE EDIT FORM'S ONLY CONFIRMATION. Its fields are uncontrolled and remount
+  // to the values they were just saved with, so without this a successful save
+  // is visually identical to a press that did nothing — on the one surface
+  // whose whole job is changing a record.
+  'ljudi.form.saved',
+  'ljudi.form.credential',
+  'ljudi.form.credentialOnce',
+  // ELEVEN refusals, and the partition costs nothing it should not. A policy
+  // refusal, a bad value, a taken username, a malformed username, an id that
+  // reaches nobody, a rename that did not apply, a rename that could not be
+  // undone, an account left without a row, the last administrator, and a
+  // service failure are ten different things to do next — and `saved` is the
+  // eleventh because it is not a failure at all: it is the half of a partial
+  // save that says what DID land, rendered beside whichever of the other ten
+  // says what did not.
+  'ljudi.form.error.refused',
+  'ljudi.form.error.invalid',
+  'ljudi.form.error.usernameTaken',
+  'ljudi.form.error.usernameInvalid',
+  'ljudi.form.error.unknown',
+  'ljudi.form.error.notApplied',
+  'ljudi.form.error.unsettled',
+  'ljudi.form.error.stranded',
+  'ljudi.form.error.lastAdmin',
+  'ljudi.form.error.unavailable',
+  'ljudi.form.error.saved',
   // The navigation chrome, part B — FOUR, and each one is a string that had no
   // surface to live on until this commit.
   //
@@ -500,6 +559,20 @@ describe('the messages obey the voice rules that bind every string', () => {
     // exit is following and becomes an exception nobody decided on.
     expect(messageAt('organization.save')).toBe('Spremi');
     expect(messageAt('organization.cancel')).toBe('Odustani');
+    // STORY 1.5b's two, and they are here rather than trusted because they are
+    // a SECOND authoring of the same two words: two keys for one action is
+    // exactly where one of them drifts into a noun while the other stays a
+    // verb, and nothing but this line would notice.
+    expect(messageAt('ljudi.form.save')).toBe('Spremi');
+    expect(messageAt('ljudi.form.cancel')).toBe('Odustani');
+    // The three imperatives the member forms add. `Dodaj`, `Uredi` and `Vrati`
+    // are all second person singular, which is what every action in this
+    // interface is — and the row action is the one that would most naturally
+    // have been written as the noun `Uređivanje`, which is the screen's
+    // heading and not its control.
+    expect(messageAt('ljudi.form.add')).toBe('Dodaj osobu');
+    expect(messageAt('ljudi.form.edit')).toBe('Uredi osobu {name}');
+    expect(messageAt('ljudi.form.back')).toBe('Vrati se na popis');
   });
 });
 

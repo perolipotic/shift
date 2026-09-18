@@ -121,12 +121,18 @@ begin
       now()
     );
 
+    -- `username` is written here as well as into the address (0007). The two
+    -- are the same value by contract and nothing in PostgreSQL can hold them
+    -- together across the `auth` boundary, so a fixture that disagreed with
+    -- itself would be a fixture whose stored username authenticates nothing —
+    -- which is exactly what `test/rls-isolation.test.ts` asserts against.
     insert into members (
-      organization_id, auth_user_id, name, email, role, leave_allowance_days
+      organization_id, auth_user_id, name, username, email, role, leave_allowance_days
     ) values (
       fixture_organization,
       seeded_user,
       seeded.full_name,
+      seeded.username,
       seeded.email,
       seeded.role,
       seeded.leave_allowance_days
@@ -224,12 +230,18 @@ begin
       now()
     );
 
+    -- `username` is written here as well as into the address (0007). The two
+    -- are the same value by contract and nothing in PostgreSQL can hold them
+    -- together across the `auth` boundary, so a fixture that disagreed with
+    -- itself would be a fixture whose stored username authenticates nothing —
+    -- which is exactly what `test/rls-isolation.test.ts` asserts against.
     insert into members (
-      organization_id, auth_user_id, name, email, role, leave_allowance_days
+      organization_id, auth_user_id, name, username, email, role, leave_allowance_days
     ) values (
       fixture_organization,
       seeded_user,
       seeded.full_name,
+      seeded.username,
       seeded.email,
       seeded.role,
       seeded.leave_allowance_days
