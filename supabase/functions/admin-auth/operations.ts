@@ -1,5 +1,6 @@
 /**
- * `createUser` and `updateUserById` — the two operations story 1.5b implements.
+ * `createUser`, `updateUserById` and `resetPassword` — the three operations the
+ * privileged boundary implements.
  *
  * THE TWO-CLIENT DIVISION IS THE WHOLE DESIGN and it is visible in every
  * signature below: the PRIVILEGED client appears only as
@@ -44,7 +45,18 @@
  * the username is the thing they are least sure about.
  *
  * NOTHING HERE LOGS THE GENERATED PASSWORD. It is returned once, to be shown
- * once, and `console` is a place it could be read afterwards.
+ * once, and `console` is a place it could be read afterwards. That is true of
+ * `resetPassword` exactly as it is of `createUser`: the two are the only places
+ * a credential exists at all, and both hand over their one copy in the reply.
+ *
+ * THE RESET IS A SIBLING RATHER THAN A FIELD ON THE RENAME, and the reason is
+ * the paragraph above about ORDER. `updateUserById`'s auth call sits after the
+ * `members` write and inside the username-restore compensation, so a password
+ * hung there would succeed or fail with a rename the reset never performs.
+ * {@link resetPassword} reuses what actually matters — the read-then-authorize
+ * sequence and the {@link PrivilegedAccounts} seam — and keeps its own failure
+ * modes its own. It writes ONE store, so there is no compensation here and no
+ * state in which two stores disagree.
  */
 
 import {
@@ -61,6 +73,16 @@ import { generatePassword, type ByteSource } from './password.ts';
 export const MEMBER_CREATED = 'MEMBER_CREATED';
 /** A member's sign-in identity moved, in both stores. */
 export const USERNAME_CHANGED = 'USERNAME_CHANGED';
+/**
+ * A member's credential was replaced, and the reply carries the new one.
+ *
+ * THE GATE IS THIS VALUE AND NOT THE STATUS. A 200 carrying a password no
+ * account received is worse than any refusal — the admin reads it out and the
+ * member is locked out of an account nobody can now reach — so this code is
+ * emitted only after the auth store has answered with an account, the way
+ * {@link createUser} already proves its own write landed.
+ */
+export const PASSWORD_RESET = 'PASSWORD_RESET';
 
 /** The request body is not the shape this operation accepts. */
 export const PAYLOAD_INVALID = 'PAYLOAD_INVALID';
@@ -91,6 +113,14 @@ export const ACCOUNT_NOT_CREATED = 'ACCOUNT_NOT_CREATED';
 /** The compensation itself failed: the `members` insert was refused AND the
  *  account created a moment earlier could not be removed. */
 export const ACCOUNT_NOT_REMOVED = 'ACCOUNT_NOT_REMOVED';
+/**
+ * The credential was NOT replaced, so nothing is shown and nothing changed.
+ *
+ * Covers both shapes of that failure: GoTrue refusing the set outright, and
+ * GoTrue answering `error: null` with no user at all — which `error !== null`
+ * alone would let through as a success carrying a password no account holds.
+ */
+export const PASSWORD_NOT_APPLIED = 'PASSWORD_NOT_APPLIED';
 /** The row moved and the address would not follow; the row was restored. */
 export const USERNAME_NOT_APPLIED = 'USERNAME_NOT_APPLIED';
 /** The compensation itself failed: the address would not follow AND the row
@@ -113,6 +143,7 @@ export const OPERATION_FAILED = 'OPERATION_FAILED';
 export const OPERATION_CODES = [
   MEMBER_CREATED,
   USERNAME_CHANGED,
+  PASSWORD_RESET,
   NOT_AN_ADMIN,
   ACCESS_UNREADABLE,
   PAYLOAD_INVALID,
@@ -126,6 +157,7 @@ export const OPERATION_CODES = [
   ACCOUNT_NOT_REMOVED,
   USERNAME_NOT_APPLIED,
   USERNAME_NOT_RESTORED,
+  PASSWORD_NOT_APPLIED,
   OPERATION_FAILED,
 ] as const;
 
@@ -233,6 +265,18 @@ export interface AccountAnswer {
  * interface and there must never be one: a domain-table write with the secret
  * key is the AD-16 defect, and making it unrepresentable is stronger than a
  * comment asking nobody to do it.
+ *
+ * THE RESET NEEDS NO FOURTH METHOD, and that is a finding rather than an
+ * omission — see {@link RESET_ATTRIBUTES}. GoTrue's admin user update is the
+ * ONE call in this API that revokes an account's sessions, and it is the same
+ * call that sets the password; there is no per-user session endpoint to name.
+ * Naming one anyway would put a member on this interface that the real client
+ * does not carry, so every reset in a browser would throw out of the cast and
+ * answer `OPERATION_FAILED` while a stubbed suite stayed green — the exact
+ * class of defect the narrow interfaces exist to prevent. The revocation is
+ * asserted where it can actually be observed: `test/rls-isolation.test.ts`
+ * holds a session before the reset and requires it to stop authenticating
+ * after it, against the running stack rather than against a stub.
  */
 export interface PrivilegedAccounts {
   readonly auth: {
@@ -463,6 +507,35 @@ export function renamePayloadOf(body: unknown): PayloadOutcome<RenamePayload> {
   return { ok: true, payload: { memberId, username } };
 }
 
+/** The reset payload, validated. It names ONE field, because that is all a
+ *  reset is: an admin-typed password is forbidden (AD-12) and the organization
+ *  is read off the row rather than taken from the request. */
+export interface ResetPayload {
+  readonly memberId: string;
+}
+
+/**
+ * The request body as a reset payload, or `PAYLOAD_INVALID`.
+ *
+ * CHECKED BEFORE ANY READ, exactly as the other two payloads are: a body with
+ * no `memberId` in it cannot name a row, so reading one would be a query built
+ * out of nothing and an authorization pointed at whatever came back.
+ *
+ * `USERNAME_INVALID` is unreachable from here by construction — this operation
+ * touches no username — which is why the outcome is narrowed to the one code.
+ */
+export function resetPayloadOf(body: unknown): PayloadOutcome<ResetPayload> {
+  const fields = fieldsOf(body);
+
+  if (fields === null) return { ok: false, code: PAYLOAD_INVALID };
+
+  const memberId = textAt(fields, 'memberId');
+
+  if (memberId === null) return { ok: false, code: PAYLOAD_INVALID };
+
+  return { ok: true, payload: { memberId } };
+}
+
 // ---------------------------------------------------------------- the slug read
 
 /** The one column read off `organizations`, and the column a row is found by. */
@@ -528,7 +601,8 @@ const ORGANIZATION_COLUMN = 'organization_id';
  *
  * THE ONLY COPY OF THE PASSWORD LEAVES IN THE REPLY. It is not stored, not
  * logged, and not written to `raw_user_meta_data`; the admin sees it once and
- * story 1.6's reset is what replaces it if they lose it.
+ * {@link resetPassword} — story 1.5's acceptance clause 1, not story 1.6's — is
+ * what replaces it if they lose it.
  */
 export async function createUser(
   dependencies: CreateDependencies,
@@ -737,4 +811,146 @@ export async function updateUserById(
   }
 
   return { status: 200, body: { code: USERNAME_CHANGED, username: payload.username, address } };
+}
+
+// ------------------------------------------------------------------ the reset
+
+/**
+ * What `resetPassword` is handed.
+ *
+ * ITS OWN INTERFACE rather than a shared one, and it carries
+ * `randomBytes?: ByteSource` for the reason {@link CreateDependencies} does:
+ * the generator takes its entropy as a parameter, so the boundary suite can
+ * hand it a source and prove the reset CONSUMES it. A reset that quietly grew a
+ * second generator — or fell back to `Math.random` — answers a different string
+ * and fails there rather than shipping a guessable credential.
+ */
+export interface ResetDependencies {
+  readonly privileged: PrivilegedAccounts;
+  readonly caller: CallerClient;
+  readonly randomBytes?: ByteSource | undefined;
+}
+
+/** What the member row has to say for a reset to be possible at all: whose
+ *  organization it is, and which account carries the credential. No username —
+ *  this operation does not touch the sign-in identity. */
+const MEMBER_RESET_COLUMNS = `${ORGANIZATION_COLUMN},${AUTH_USER_COLUMN}`;
+
+/**
+ * The one attribute a reset sends GoTrue, named so it can be pinned.
+ *
+ * `password` AND NOTHING ELSE. `email_confirm` belongs to the address and the
+ * rename owns it; `ban_duration` is story 1.6's; and `user_metadata` is the one
+ * place a credential must never be written, because every later admin read can
+ * see it. The boundary suite pins these keys exactly, so an attribute added
+ * here is a failing case rather than a value in the auth store nobody chose.
+ *
+ * IT IS ALSO THE REVOCATION. GoTrue's admin user update logs an account out of
+ * every session it holds when a password is set through it — the access token
+ * stops being accepted and the refresh token is gone — which is what makes a
+ * reset issued against a compromised credential worth anything. There is no
+ * per-user session endpoint in the admin API to call instead, so this is not a
+ * shortcut: it is the mechanism. `test/rls-isolation.test.ts` holds a live
+ * session across a reset and requires it to stop authenticating, against the
+ * running stack, because a stub cannot answer that question at all.
+ */
+export function resetAttributes(password: string): Readonly<Record<string, unknown>> {
+  return { password };
+}
+
+/**
+ * Issue a member a new credential, and revoke every session the old one minted.
+ *
+ * THE ORDER IS THE ONE THE RENAME ALREADY USES (`updateUserById` above): read
+ * the target row AS THE CALLER, take the organization off the ROW, and
+ * authorize against that. The member id in the body is a claim; the row is what
+ * turns it into a fact, and `members_select_own_organization` (`0003:289-300`)
+ * means another tenant's member simply is not there — so a cross-tenant id is
+ * indistinguishable from one that never existed.
+ *
+ * THE PASSWORD IS GENERATED AFTER THE GATE, so a refused caller never causes a
+ * credential to exist at all, and it travels to GoTrue and to the reply and
+ * nowhere else — never a log argument, never `user_metadata`.
+ *
+ * AN ACCOUNT HAS TO COME BACK BEFORE THIS ANSWERS 200. `error === null` alone
+ * is not proof: `{ data: { user: null }, error: null }` would be read as a
+ * success and put a password on screen that no account received — and the admin
+ * reads it out to somebody who is then locked out of an account with a
+ * credential nobody knows. {@link createUser} proves its own write the same way,
+ * through {@link accountIdOf}.
+ *
+ * NO COMPENSATION AND NO `saved` FLAG. One store is written, so a disagreement
+ * between two stores is unrepresentable here — which is why this operation has
+ * no analogue to `USERNAME_NOT_RESTORED` and never reports a partial save.
+ */
+export async function resetPassword(
+  dependencies: ResetDependencies,
+  body: unknown,
+): Promise<OperationReply> {
+  const validated = resetPayloadOf(body);
+
+  if (!validated.ok) return { status: 400, body: { code: validated.code } };
+
+  const payload = validated.payload;
+
+  const found = await dependencies.caller
+    .from(MEMBERS_TABLE)
+    .select(MEMBER_RESET_COLUMNS)
+    .eq(ID_COLUMN, payload.memberId)
+    .limit(ONE_ROW);
+
+  if (found.error !== null) {
+    console.error(ACCESS_UNREADABLE, found.error.code);
+
+    return { status: 503, body: { code: ACCESS_UNREADABLE } };
+  }
+
+  const member = fieldsOf(rowsOf(found)[0] ?? null);
+  const organization = member === null ? null : textAt(member, ORGANIZATION_COLUMN);
+  const accountId = member === null ? null : textAt(member, AUTH_USER_COLUMN);
+
+  if (organization === null || accountId === null) {
+    return { status: 404, body: { code: MEMBER_UNKNOWN } };
+  }
+
+  // AGAINST THE ROW'S OWN ORGANIZATION, never against anything in the request.
+  // A caller who is an admin somewhere else, a `member_role` caller and a
+  // deactivated one all answer the same single code — no oracle.
+  const authorized = await authorizeAdminOf(dependencies.caller, organization);
+
+  if (!authorized.ok) return authorizationRefusal(authorized.code);
+
+  // AFTER THE GATE. A credential generated before it would exist for a caller
+  // that was about to be refused, which is one more copy than this system ever
+  // wants of the one value it cannot recover.
+  const password = generatePassword(dependencies.randomBytes);
+
+  const applied = await dependencies.privileged.auth.admin.updateUserById(
+    accountId,
+    resetAttributes(password),
+  );
+
+  if (applied.error !== null) {
+    // THE CAUSE, NEVER THE CREDENTIAL. `code` and `status` point an operator at
+    // what GoTrue refused; the password is the one argument that may not appear
+    // on this line, because `console` outlives the one showing.
+    console.error(PASSWORD_NOT_APPLIED, applied.error.code, applied.error.status);
+
+    return { status: 502, body: { code: PASSWORD_NOT_APPLIED } };
+  }
+
+  // THE PROOF THE WRITE LANDED, and the reason this is not `if (error !== null)`
+  // and nothing else. Nothing was written to `members`, so there is nothing to
+  // compensate — what there is to do is refuse to show a password no account
+  // holds.
+  if (accountIdOf(applied) === null) {
+    console.error(PASSWORD_NOT_APPLIED);
+
+    return { status: 502, body: { code: PASSWORD_NOT_APPLIED } };
+  }
+
+  // THE ONLY COPY LEAVES HERE. No `members` row was written and none will be:
+  // the credential lives in `auth.users` and the reply, and the reply is shown
+  // once.
+  return { status: 200, body: { code: PASSWORD_RESET, password } };
 }

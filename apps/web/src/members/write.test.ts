@@ -6,6 +6,7 @@ import {
   LEAVE_ALLOWANCE_MAX,
   MEMBER_ACCOUNT_STRANDED,
   MEMBER_CREATED,
+  MEMBER_PASSWORD_NOT_APPLIED,
   MEMBER_READ_REFUSED,
   MEMBER_EDIT_COLUMNS,
   MEMBER_UNKNOWN,
@@ -20,6 +21,11 @@ import {
   MESSAGE_SEPARATOR,
   ORGANIZATION_WOULD_HAVE_NO_ADMIN,
   PARTIAL_SAVE_KEY,
+  PASSWORD_RESET,
+  RESET_ARMED,
+  RESET_BUSY,
+  RESET_IDLE,
+  RESET_SHOWN,
   USERNAME_CHANGED,
   WIRE_CODES,
   chosenRole,
@@ -35,6 +41,8 @@ import {
   raisedForMember,
   renameMember,
   replyCodeOf,
+  resetPassword,
+  resetStageOf,
   saveMember,
   storedEmail,
   usernameChanged,
@@ -337,12 +345,48 @@ describe('every failure becomes exactly one message, and no two share one', () =
     MEMBER_UNKNOWN,
     MEMBER_USERNAME_NOT_APPLIED,
     MEMBER_USERNAME_UNSETTLED,
+    MEMBER_PASSWORD_NOT_APPLIED,
     MEMBER_ACCOUNT_STRANDED,
     ORGANIZATION_WOULD_HAVE_NO_ADMIN,
     MEMBER_WRITE_UNAVAILABLE,
   ];
 
-  it('gives each of the ten its own key', () => {
+  it('holds every failure but the one whose message belongs to the LIST', () => {
+    // WHAT THE `never` AT `wire.ts`'s EXHAUSTIVENESS CHECK CANNOT SAY. It forces
+    // a branch to EXIST for each failure and says nothing about which key that
+    // branch returns — so a code omitted from the list below is a code whose
+    // message is observed by neither the distinctness check nor the prefix
+    // sweep, and pointing it at `ljudi.form.error.unavailable` leaves this file
+    // and `prijava.test.ts` completely green. That is the "collapse into the
+    // service-failure fallback" every one of those three files argues must
+    // never happen, and it went unnoticed for exactly one story — the list was
+    // hand-written and the reset's code was simply not added to it.
+    //
+    // DERIVED FROM BOTH PRODUCERS rather than counted, so the next failure is
+    // added here by a failing test rather than by somebody remembering. Both,
+    // because a failure reaches this surface two ways: as a CODE off the
+    // function (`memberWriteFailureOf`) and as a SQLSTATE or a raised message
+    // off PostgREST (`editFailureOf`) — and `ORGANIZATION_WOULD_HAVE_NO_ADMIN`
+    // arrives only the second way, so a derivation over `WIRE_CODES` alone
+    // would report it as one this list should not hold.
+    //
+    // `MEMBER_READ_REFUSED` is the ONE deliberate absence: its message is the
+    // LIST's own refusal, `ljudi.error.refused`, reused rather than reworded
+    // because `/ljudi/$id` is reachable by URL — so it is the one failure the
+    // prefix sweep below would rightly refuse.
+    const mapped = new Set<MemberWriteFailure>([
+      ...WIRE_CODES.map((code) => memberWriteFailureOf(code)),
+      editFailureOf({ message: ORGANIZATION_WOULD_HAVE_NO_ADMIN }),
+    ]);
+
+    mapped.delete(MEMBER_READ_REFUSED);
+
+    expect([...mapped].sort(), 'a failure this surface can reach is swept by nothing').toEqual(
+      [...EVERY_FAILURE].sort(),
+    );
+  });
+
+  it('gives each of the eleven its own key', () => {
     // A MAPPING RATHER THAN A LIST, and distinctness is the claim: two codes
     // sharing a message is two different things to do next collapsed into one,
     // which is the cost `@/organization/messages` argues about at length.
@@ -775,6 +819,187 @@ describe('creating a member issues one credential and reports it once', () => {
       ok: false,
       refusal: { code: MEMBER_USERNAME_TAKEN, saved: false },
     });
+  });
+});
+
+describe('a reset issues one credential, and a reply without one is not a success', () => {
+  it('calls the one function, by name, with the operation spelled out and the member', async () => {
+    // THE OPERATION NAME AS A LITERAL, the way the two siblings above pin
+    // theirs. Asserted against `RESET_PASSWORD_OPERATION` this compares the
+    // constant to itself and passes on any spelling at all — and a misspelt one
+    // arrives at the transport as an unknown operation, falls through to
+    // `MEMBER_WRITE_UNAVAILABLE`, and shows "try again" for ever to an admin
+    // whose member has no other recovery route.
+    const { functions, calls } = functionsThat(
+      replied({ code: PASSWORD_RESET, password: 'Xy7kPq2mRt4vLn8s' }),
+    );
+
+    expect(await resetPassword(functions, 'member-1')).toEqual({
+      ok: true,
+      credential: { password: 'Xy7kPq2mRt4vLn8s' },
+    });
+    expect(calls).toEqual([
+      { name: MEMBER_WRITE_FUNCTION, body: { operation: 'resetPassword', memberId: 'member-1' } },
+    ]);
+  });
+
+  it('sends the member id and nothing else, because a reset chooses nothing', async () => {
+    // No password, no username, no organization. An admin-typed password is
+    // forbidden (the credential is generated in `admin-auth`), and an
+    // organization in the body is a caller choosing which tenant to act in.
+    const { functions, calls } = functionsThat(
+      replied({ code: PASSWORD_RESET, password: 'Xy7kPq2mRt4vLn8s' }),
+    );
+
+    await resetPassword(functions, 'member-1');
+
+    expect(Object.keys(calls[0]?.body ?? {}).sort()).toEqual(['memberId', 'operation']);
+  });
+
+  it('treats any reply that is not the success gate as a failure', async () => {
+    const { functions } = functionsThat(replied({ code: 'SOMETHING_ELSE', password: 'x' }));
+
+    expect(await resetPassword(functions, 'member-1')).toEqual({
+      ok: false,
+      refusal: { code: MEMBER_WRITE_UNAVAILABLE, saved: false },
+    });
+  });
+
+  it.each([
+    ['absent', { code: PASSWORD_RESET }],
+    ['empty', { code: PASSWORD_RESET, password: '' }],
+    ['not a string', { code: PASSWORD_RESET, password: 42 }],
+    ['null', { code: PASSWORD_RESET, password: null }],
+  ])('refuses a success whose password is %s', async (_label, body) => {
+    // THE ACCOUNT'S CREDENTIAL HAS ALREADY CHANGED when this reply arrives, so
+    // a panel rendering a blank line is the worst outcome this surface has: the
+    // member is locked out of the one account with no self-service recovery and
+    // the admin has been told it worked.
+    const { functions } = functionsThat(replied(body));
+
+    expect(await resetPassword(functions, 'member-1')).toEqual({
+      ok: false,
+      refusal: { code: MEMBER_WRITE_UNAVAILABLE, saved: false },
+    });
+  });
+
+  it.each([
+    ['PASSWORD_NOT_APPLIED', MEMBER_PASSWORD_NOT_APPLIED],
+    ['NOT_AN_ADMIN', MEMBER_WRITE_REFUSED],
+    ['MEMBER_UNKNOWN', MEMBER_UNKNOWN],
+    ['PAYLOAD_INVALID', MEMBER_WRITE_INVALID],
+    ['ACCESS_UNREADABLE', MEMBER_WRITE_UNAVAILABLE],
+    ['AUTHORIZATION_MISSING', MEMBER_READ_REFUSED],
+  ] as const)('reports a %s refusal as %s', async (wire, failure) => {
+    const { functions } = functionsThat(refused({ code: wire }));
+
+    expect(await resetPassword(functions, 'member-1')).toEqual({
+      ok: false,
+      refusal: { code: failure, saved: false },
+    });
+  });
+
+  it('never reports a partial save, because a reset writes one store', async () => {
+    // There is no `members` row behind a reset, so there is no state in which
+    // two stores disagree and nothing honest `saved: true` could mean.
+    const { functions } = functionsThat(refused({ code: 'PASSWORD_NOT_APPLIED' }));
+    const outcome = await resetPassword(functions, 'member-1');
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok ? true : outcome.refusal.saved).toBe(false);
+  });
+
+  it('logs the code it returns, and not a different one', async () => {
+    const { functions } = functionsThat(refused({ code: 'PASSWORD_NOT_APPLIED' }));
+    const outcome = await resetPassword(functions, 'member-1');
+
+    expect(outcome.ok).toBe(false);
+    expect(logged).toHaveBeenCalledWith(outcome.ok ? '' : outcome.refusal.code, expect.anything());
+  });
+
+  it('never logs the reply body, which is where the credential is', async () => {
+    const { functions } = functionsThat(
+      replied({ code: PASSWORD_RESET, password: 'Xy7kPq2mRt4vLn8s' }),
+    );
+
+    await resetPassword(functions, 'member-1');
+
+    for (const call of logged.mock.calls) {
+      expect(JSON.stringify(call)).not.toContain('Xy7kPq2mRt4vLn8s');
+    }
+  });
+
+  it('reports a seam that rejects rather than letting it escape', async () => {
+    const { functions } = functionsThat(new Error('SUPABASE_ENVIRONMENT_MISSING'));
+
+    expect(await resetPassword(functions, 'member-1')).toEqual({
+      ok: false,
+      refusal: { code: MEMBER_WRITE_UNAVAILABLE, saved: false },
+    });
+    expect(logged).toHaveBeenCalled();
+  });
+
+  it('reads a refusal delivered on a REAL Response, not only on a closure stub', async () => {
+    // This path reads the WHOLE body rather than just the code, so it has its
+    // own reader and needs its own case — the brand-checked `Response.json` is
+    // invisible to every stub built on an arrow closure.
+    const { functions } = functionsThat(refusedForReal({ code: 'PASSWORD_NOT_APPLIED' }));
+
+    expect(await resetPassword(functions, 'member-1')).toEqual({
+      ok: false,
+      refusal: { code: MEMBER_PASSWORD_NOT_APPLIED, saved: false },
+    });
+  });
+});
+
+describe('the reset has four stages, and the in-flight one is the one that gets lost', () => {
+  const credential = { password: 'Xy7kPq2mRt4vLn8s' };
+
+  it('offers a reset when nothing is armed, nothing is in flight and nothing is shown', () => {
+    expect(resetStageOf(false, false, null)).toBe(RESET_IDLE);
+  });
+
+  it('shows the confirmation once the offer is armed', () => {
+    expect(resetStageOf(true, false, null)).toBe(RESET_ARMED);
+  });
+
+  it('KEEPS THE CONFIRMATION while the request is outstanding, rather than the offer', () => {
+    // THE DEFECT THIS EXISTS FOR. A three-stage model has to clear `armed`
+    // before awaiting, which unmounts the confirm pair and renders the plain,
+    // ENABLED offer for the whole request — so the pending flag is read by no
+    // control at all and a second press starts a second reset.
+    expect(resetStageOf(true, true, null)).toBe(RESET_BUSY);
+    expect(resetStageOf(true, true, null)).not.toBe(RESET_IDLE);
+  });
+
+  it('is busy even if the armed flag was cleared underneath it', () => {
+    // The other half of the same claim: the stage may not fall back to the
+    // offer because somebody disarmed early. `pending` decides.
+    expect(resetStageOf(false, true, null)).toBe(RESET_BUSY);
+  });
+
+  it.each([
+    ['nothing else is happening', false, false],
+    ['the offer is still armed', true, false],
+    ['a request is still in flight', true, true],
+  ])('shows the credential when %s, because it is the only copy', (_label, armed, pending) => {
+    // IT OUTRANKS EVERY OTHER CONSIDERATION. Everything else on that screen can
+    // be recovered by looking again; the password cannot.
+    expect(resetStageOf(armed, pending, credential)).toBe(RESET_SHOWN);
+  });
+
+  it('returns to the offer only when the credential is dismissed', () => {
+    // The ONLY transition out of `shown`, and until it happens a second reset
+    // is impossible — which is what stops one credential overwriting another
+    // before anybody has read it.
+    expect(resetStageOf(false, false, credential)).toBe(RESET_SHOWN);
+    expect(resetStageOf(false, false, null)).toBe(RESET_IDLE);
+  });
+
+  it('names four distinct stages, so none of them is a synonym for another', () => {
+    // Non-vacuity: two constants sharing a value would make the cases above
+    // pass while the screen could not tell the states apart.
+    expect(new Set([RESET_IDLE, RESET_ARMED, RESET_BUSY, RESET_SHOWN]).size).toBe(4);
   });
 });
 

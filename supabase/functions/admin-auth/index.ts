@@ -2,11 +2,11 @@
  * admin-auth — the one privileged boundary (AD-16), and it may not think.
  *
  * This is the only server-side component in the system (AD-14). It exposes
- * `createUser`, `updateUserById` and the `ban` / `unban` pair — four operations
- * in `OPERATIONS`, which AD-16 counts as three capabilities because ban and
- * unban are one reversible capability — and nothing else. It performs no domain
- * calculation and contains no rule from `engine-rules.md`; adding either is a
- * defect, not a refactor.
+ * `createUser`, `updateUserById`, `resetPassword` and the `ban` / `unban` pair
+ * — five operations in `OPERATIONS`, which AD-16 counts as four capabilities
+ * because ban and unban are one reversible capability — and nothing else. It
+ * performs no domain calculation and contains no rule from `engine-rules.md`;
+ * adding either is a defect, not a refactor.
  *
  * Two clients, because the secret key bypasses RLS entirely:
  *
@@ -22,7 +22,7 @@
  * task and the single write in the system exempt from attribution, because no
  * admin exists yet to attribute it to.
  *
- * WHY EVERY OPERATION RETURNS 501 TODAY
+ * WHY `ban` AND `unban` STILL RETURN 501
  * AD-16 requires each call to be authorized against the DATABASE — the caller
  * must be an admin of the target member's own organization — never against the
  * request. Story 1.2 brought the `members` table and story 1.3a brought what

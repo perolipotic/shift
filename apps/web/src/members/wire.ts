@@ -25,15 +25,39 @@
 /** The Edge Function this module calls, by name (`supabase/functions/admin-auth`). */
 export const MEMBER_WRITE_FUNCTION = 'admin-auth';
 
-/** The two operations `OPERATIONS` declares that this story implements. */
+/** The three operations `OPERATIONS` declares as implemented. */
 export const CREATE_USER_OPERATION = 'createUser';
 export const UPDATE_USER_OPERATION = 'updateUserById';
+/**
+ * The admin-issued reset, by the name the function dispatches on.
+ *
+ * ITS VALUE IS A DISPATCH KEY, not a label. Misspelt here and nowhere else,
+ * every reset a browser sends arrives as an unknown operation, the transport
+ * answers `OPERATION_UNKNOWN`, {@link memberWriteFailureOf} maps that to
+ * {@link MEMBER_WRITE_UNAVAILABLE}, and an administrator whose member has no
+ * other recovery route is told to try again for ever — with both suites green,
+ * because each side compares the reply to the constant it imported. So
+ * `write.test.ts` pins the outbound body against the LITERAL `'resetPassword'`,
+ * the way it already does for the two siblings, and the contract case in
+ * `test/admin-auth-boundary.test.ts` binds this list to `OPERATIONS`.
+ */
+export const RESET_PASSWORD_OPERATION = 'resetPassword';
 
 /** The success gate for a create. Its VALUE crosses the wire, so it is bound to
  *  the function's own constant by the contract case in the boundary suite. */
 export const MEMBER_CREATED = 'MEMBER_CREATED';
 /** The success gate for a rename. Same contract, same binding. */
 export const USERNAME_CHANGED = 'USERNAME_CHANGED';
+/**
+ * The success gate for a reset. Same contract, same binding.
+ *
+ * A REPLY IS A SUCCESS ONLY WHEN IT CARRIES THIS CODE AND A PASSWORD. The
+ * function refuses to emit it unless the auth store answered with an account,
+ * and {@link MEMBER_PASSWORD_NOT_APPLIED} is what it says instead — because a
+ * panel showing a credential no account received locks the member out of the
+ * one account nobody can now recover.
+ */
+export const PASSWORD_RESET = 'PASSWORD_RESET';
 
 // ------------------------------------------------------------- the refusals
 
@@ -61,6 +85,17 @@ export const MEMBER_USERNAME_NOT_APPLIED = 'MEMBER_USERNAME_NOT_APPLIED';
 /** The compensation failed: the two stores now disagree about this member's
  *  username, and only an operator can settle it. */
 export const MEMBER_USERNAME_UNSETTLED = 'MEMBER_USERNAME_UNSETTLED';
+/**
+ * The credential did not change, so the old one still works and nothing is
+ * shown.
+ *
+ * ITS OWN CODE rather than the service fallback, and the distinction is what
+ * the admin does next. "Try again" happens to be the right move here too — but
+ * the SENTENCE matters: this surface is the only recovery an account with no
+ * email address has, so "the password was not changed" is the fact the admin
+ * needs before they tell somebody a credential they were never given.
+ */
+export const MEMBER_PASSWORD_NOT_APPLIED = 'MEMBER_PASSWORD_NOT_APPLIED';
 /** The account was created and could not be removed after its row was refused. */
 export const MEMBER_ACCOUNT_STRANDED = 'MEMBER_ACCOUNT_STRANDED';
 /** `0002:193-223`'s deferred trigger: the organization would have no admin. */
@@ -99,6 +134,7 @@ export type MemberWriteFailure =
   | typeof MEMBER_UNKNOWN
   | typeof MEMBER_USERNAME_NOT_APPLIED
   | typeof MEMBER_USERNAME_UNSETTLED
+  | typeof MEMBER_PASSWORD_NOT_APPLIED
   | typeof MEMBER_ACCOUNT_STRANDED
   | typeof ORGANIZATION_WOULD_HAVE_NO_ADMIN
   | typeof MEMBER_READ_REFUSED
@@ -129,6 +165,7 @@ export const WIRE_CODES = [
   'CLIENT_CONSTRUCTION_FAILED',
   'MEMBER_CREATED',
   'USERNAME_CHANGED',
+  'PASSWORD_RESET',
   'NOT_AN_ADMIN',
   'ACCESS_UNREADABLE',
   'ORGANIZATION_UNREADABLE',
@@ -142,6 +179,7 @@ export const WIRE_CODES = [
   'ACCOUNT_NOT_REMOVED',
   'USERNAME_NOT_APPLIED',
   'USERNAME_NOT_RESTORED',
+  'PASSWORD_NOT_APPLIED',
   'OPERATION_FAILED',
 ] as const;
 
@@ -172,6 +210,7 @@ export function memberWriteFailureOf(code: string): MemberWriteFailure {
   if (code === 'MEMBER_UNKNOWN') return MEMBER_UNKNOWN;
   if (code === 'USERNAME_NOT_APPLIED') return MEMBER_USERNAME_NOT_APPLIED;
   if (code === 'USERNAME_NOT_RESTORED') return MEMBER_USERNAME_UNSETTLED;
+  if (code === 'PASSWORD_NOT_APPLIED') return MEMBER_PASSWORD_NOT_APPLIED;
   if (code === 'ACCOUNT_NOT_REMOVED') return MEMBER_ACCOUNT_STRANDED;
 
   // `ACCESS_UNREADABLE`, `ORGANIZATION_UNKNOWN`, `ORGANIZATION_UNREADABLE`,
@@ -332,6 +371,7 @@ export function memberWriteMessageKey(
   | 'ljudi.form.error.unknown'
   | 'ljudi.form.error.notApplied'
   | 'ljudi.form.error.unsettled'
+  | 'ljudi.form.error.resetNotApplied'
   | 'ljudi.form.error.stranded'
   | 'ljudi.form.error.lastAdmin'
   | 'ljudi.form.error.unavailable' {
@@ -342,6 +382,7 @@ export function memberWriteMessageKey(
   if (failure === MEMBER_UNKNOWN) return 'ljudi.form.error.unknown';
   if (failure === MEMBER_USERNAME_NOT_APPLIED) return 'ljudi.form.error.notApplied';
   if (failure === MEMBER_USERNAME_UNSETTLED) return 'ljudi.form.error.unsettled';
+  if (failure === MEMBER_PASSWORD_NOT_APPLIED) return 'ljudi.form.error.resetNotApplied';
   if (failure === MEMBER_ACCOUNT_STRANDED) return 'ljudi.form.error.stranded';
   if (failure === ORGANIZATION_WOULD_HAVE_NO_ADMIN) return 'ljudi.form.error.lastAdmin';
   // THE LIST'S OWN REFUSAL, reused rather than reworded. This surface is

@@ -23,17 +23,24 @@ import {
   MEMBER_WRITE_INVALID,
   MEMBER_WRITE_UNAVAILABLE,
   MESSAGE_SEPARATOR,
+  RESET_ARMED,
+  RESET_BUSY,
+  RESET_IDLE,
+  RESET_SHOWN,
   chosenRole,
   enteredAllowance,
   memberFormKey,
   memberFormRefusalOf,
   memberWriteMessageKeys,
   raisedForMember,
+  resetPassword,
+  resetStageOf,
   saveMember,
   storedEmail,
   type RaisedForMember,
   type MemberFunctions,
   type MemberWriteRefusal,
+  type ResetCredential,
 } from '@/members/write';
 import { DESTINATIONS } from '@/navigation/destinations';
 import { MEMBER_ROLES, MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/navigation/role';
@@ -69,6 +76,21 @@ import { supabaseClient } from '@/supabase/client';
  *
  * THIS IS NOT A DESTINATION, so `type="reset"` is not an exit — it restores the
  * fields. The way back to the list is a link that says so.
+ *
+ * THE PASSWORD RESET IS OUTSIDE THE `<form>`, deliberately. Inside the actions
+ * grid a `<Button>` submits — that is what a button in a form does — so the
+ * offer would save the edit instead of resetting anything; and
+ * `key={memberFormKey(member)}` remounts that subtree after every refetch,
+ * which would wipe a credential the admin has not finished reading. It is its
+ * own block between the form and the way back, and every piece of its state is
+ * scoped through `raisedForMember` so an armed confirmation or a shown password
+ * cannot cross from one member's screen to another's.
+ *
+ * WHICH OF ITS FOUR STAGES IS SHOWING IS `resetStageOf`'s DECISION, in
+ * `@/members/write`, where a test executes it. Written here it would be the
+ * branch nothing runs — and the in-flight stage is the one that gets written
+ * wrong, because clearing `armed` before awaiting renders the plain ENABLED
+ * offer for the whole request.
  */
 
 /** Where a session that is not an administrator's is sent. The FIRST
@@ -112,6 +134,29 @@ export function LjudiMemberScreen() {
    * confirmation standing over another's form.
    */
   const [saved, setSaved] = useState<RaisedForMember<true> | null>(null);
+  // THE RESET'S OWN THREE PIECES OF STATE, and its own in-flight ref. A second
+  // awaiting handler on one screen needs a second guard: `saving` belongs to the
+  // form, and sharing it would make a reset in flight disable the save and the
+  // other way round — two unrelated actions blocking each other.
+  const resetting = useRef(false);
+  const [resetPending, setResetPending] = useState(false);
+  /**
+   * The armed confirmation, carrying the NAME it is about.
+   *
+   * The name travels with it rather than being read off the row at render time,
+   * so the confirmation and the busy state stay on screen — and stay truthful —
+   * through a refetch that drops the row underneath them.
+   */
+  const [armed, setArmed] = useState<RaisedForMember<string> | null>(null);
+  /**
+   * The issued credential, and THE ONLY COPY OF IT THERE IS.
+   *
+   * It outranks everything else on this screen: it survives a refetch, a read
+   * that re-settles failed, and a row that vanishes, because looking again
+   * cannot recover it. It is cleared by the dismiss control and by nothing
+   * else — and until it is, a second reset is impossible.
+   */
+  const [issued, setIssued] = useState<RaisedForMember<ResetCredential> | null>(null);
 
   const answer = useQuery({
     queryKey: MEMBERS_LIST_KEY,
@@ -129,6 +174,62 @@ export function LjudiMemberScreen() {
     raisedForMember(failure, id) ??
     (form.refusal === null ? null : { code: form.refusal, saved: false });
   const confirmed = raisedForMember(saved, id) !== null;
+  const armedFor = raisedForMember(armed, id);
+  const credential = raisedForMember(issued, id);
+  // FOUR STAGES FROM THREE INPUTS, decided in `@/members/write` where a test
+  // runs it. `resetPending` is one of them rather than only a `disabled`
+  // attribute, which is what makes the in-flight stage representable at all.
+  const stage = resetStageOf(armedFor !== null, resetPending, credential);
+
+  /**
+   * Send the reset, and keep the confirmation on screen while it is outstanding.
+   *
+   * NOTHING CLEARS `armed` BEFORE THE AWAIT. Clearing it there is what unmounts
+   * the confirm pair mid-request and renders the plain, ENABLED offer in its
+   * place — the state in which `resetPending` is read by no control at all and
+   * a second press starts a second reset.
+   */
+  async function issue(): Promise<void> {
+    const member = form.member;
+
+    if (member === null || resetting.current) return;
+
+    resetting.current = true;
+    // The reset's own answer replaces whatever the form last said: a stale
+    // "saved" or a stale refusal standing beside a new credential is two
+    // outcomes claiming the same screen.
+    setFailure(null);
+    setInvalidField(null);
+    setSaved(null);
+    setResetPending(true);
+
+    try {
+      const outcome = await resetPassword(
+        supabaseClient().functions as MemberFunctions,
+        member.id,
+      );
+
+      // NO `invalidateQueries` HERE, and that is a decision rather than an
+      // omission: a reset writes no `members` row, so a refetch would change
+      // nothing on the list and would only be one more render the shown
+      // credential has to survive.
+      if (outcome.ok) setIssued({ member: member.id, raised: outcome.credential });
+      else setFailure({ member: member.id, raised: outcome.refusal });
+    } catch (cause) {
+      // The client throwing `SUPABASE_ENVIRONMENT_MISSING` on a build with no
+      // environment. The CAUSE is logged and never the credential — the success
+      // path does not throw, so there is none to leak here.
+      console.error(MEMBER_WRITE_UNAVAILABLE, cause);
+      setFailure({ member: member.id, raised: { code: MEMBER_WRITE_UNAVAILABLE, saved: false } });
+    } finally {
+      // On EVERY path, including the successful one. Disarmed here and NOT
+      // before the await: the confirmation is what carries the busy state, so
+      // it has to outlive the request it started.
+      resetting.current = false;
+      setResetPending(false);
+      setArmed(null);
+    }
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -332,6 +433,151 @@ export function LjudiMemberScreen() {
     );
   }
 
+  /**
+   * The reset, at whichever of its four stages it is.
+   *
+   * A FUNCTION rather than a conditional inside the returned JSX, for the
+   * reason `renderForm` is one: `eslint.config.js`'s L2 block refuses a string
+   * literal inside a branch nested in a branch that is an element's own child.
+   *
+   * THE SHOWN CREDENTIAL IS TESTED FIRST, above every gate on the read. This
+   * inverts the rule the rest of the screen follows and it is deliberate:
+   * everything else here can be recovered by looking again, and the password
+   * cannot. Returning `null` when the row is absent — the ordinary gate, one
+   * line higher — erases the only copy on the next refetch.
+   */
+  function renderReset(): ReactNode {
+    if (stage === RESET_SHOWN && credential !== null) return renderIssued(credential);
+    // ARMED AND BUSY ARE ONE ELEMENT IN TWO STATES, which is why they share a
+    // branch: the confirmation has to stay MOUNTED across the request, and a
+    // separate busy branch is how it stops being the same element and remounts.
+    if ((stage === RESET_ARMED || stage === RESET_BUSY) && armedFor !== null) {
+      return renderConfirmation(armedFor);
+    }
+    // THE OFFER IS REACHED ONLY THROUGH `RESET_IDLE`, and reading the stage
+    // here rather than re-deriving `armedFor !== null` one line up is the whole
+    // point of the decision being a function. Re-derived, the screen holds a
+    // second, unexecuted copy of the rule — and the copy disagrees: with a
+    // request in flight and the armed flag already cleared, `resetStageOf`
+    // answers `busy` while `armedFor !== null` answers "render the plain,
+    // ENABLED offer". `write.test.ts` pins that exact combination, and the
+    // screen was the half the pin could not reach.
+    //
+    // Only now does the row matter: with nothing read there is nobody to offer
+    // a reset for, and an offer over a blank name is a control that cannot say
+    // what it would do.
+    const member = stage === RESET_IDLE ? form.member : null;
+
+    if (member === null) return null;
+
+    return (
+      <div className="grid gap-2">
+        {/* ITS ACCESSIBLE NAME CARRIES THE MEMBER, for the reason the list's row
+            action does: several screens' worth of identically named controls is
+            what a screen-reader user cannot tell apart — and here the control
+            replaces somebody's credential. */}
+        <Button
+          className="h-11 w-full"
+          type="button"
+          variant="outline"
+          onClick={() => {
+            setArmed({ member: member.id, raised: member.name });
+          }}
+        >
+          {t('ljudi.form.reset', { name: member.name })}
+        </Button>
+      </div>
+    );
+  }
+
+  /**
+   * The confirmation, and the busy state it keeps carrying.
+   *
+   * ONE PRESS RESETS NOTHING. The offer arms this; only the confirm below sends
+   * anything, and it names the member so the second press is a distinct, more
+   * specific decision rather than the same press twice.
+   *
+   * IT STAYS MOUNTED WHILE THE REQUEST IS OUTSTANDING, disabled and
+   * `aria-busy`. The offer does not come back underneath it, so there is no
+   * moment at which an enabled control could start a second reset.
+   */
+  function renderConfirmation(name: string): ReactNode {
+    const busy = stage === RESET_BUSY;
+
+    return (
+      <div className="grid gap-2">
+        <p className="text-sm font-medium">{t('ljudi.form.resetPrompt', { name })}</p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Button
+            className="h-11 w-full"
+            type="button"
+            disabled={busy}
+            aria-busy={busy}
+            onClick={() => {
+              void issue();
+            }}
+          >
+            {t('ljudi.form.resetConfirm', { name })}
+          </Button>
+          <Button
+            className="h-11 w-full"
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              setArmed(null);
+            }}
+          >
+            {t('ljudi.form.resetCancel')}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  /**
+   * The new credential, shown once.
+   *
+   * `role="status"` AND NOT `role="alert"`: the assertive region on this screen
+   * belongs to the refusal, and a second one would be a second thing competing
+   * to be announced.
+   *
+   * THE DISMISS IS THE ONLY WAY OUT, and it is what makes a second reset
+   * possible at all — a panel that could not be cleared would block the one
+   * recovery route an account with no address has, for as long as the screen
+   * stayed open.
+   */
+  function renderIssued(shown: ResetCredential): ReactNode {
+    return (
+      <div className="grid gap-4">
+        <p role="status" className="text-sm font-medium">
+          {t('ljudi.form.resetIssued')}
+        </p>
+        <div className="grid gap-2">
+          {/* ITS OWN LABEL, never the create form's `Početna lozinka`: this is
+              not an initial credential and calling it one would be wrong on the
+              one screen where the distinction decides what somebody writes
+              down. */}
+          <p className="text-sm text-muted-foreground">{t('ljudi.form.resetCredential')}</p>
+          {/* DATA, never a key. `break-all font-mono` is what makes a generated
+              string readable aloud off a phone. */}
+          <p className="break-all font-mono text-base">{shown.password}</p>
+        </div>
+        <p className="text-sm font-medium">{t('ljudi.form.credentialOnce')}</p>
+        <Button
+          className="h-11 w-full"
+          type="button"
+          variant="outline"
+          onClick={() => {
+            setIssued(null);
+          }}
+        >
+          {t('ljudi.form.resetDismiss')}
+        </Button>
+      </div>
+    );
+  }
+
   function renderBody(): ReactNode {
     if (form.member !== null) return renderForm(form.member);
 
@@ -376,6 +622,11 @@ export function LjudiMemberScreen() {
             </p>
           ) : null}
           {renderBody()}
+          {/* OUTSIDE THE `<form>` AND BEFORE THE WAY BACK. Inside the actions
+              grid a `<Button>` submits, and `key={memberFormKey(member)}`
+              remounts that subtree on every refetch — which would wipe a
+              credential nobody had finished reading. */}
+          {renderReset()}
           {/* THE WAY BACK, always rendered — including while the read is pending
               and after it has settled failed. A screen reachable only by URL
               that can be left only by the browser's Back button is a dead end. */}

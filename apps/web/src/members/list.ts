@@ -29,12 +29,13 @@ import { MEMBER_ROLES, type MemberRoleOutcome } from '@/navigation/role';
  * `supabaseClient().from(MEMBERS_TABLE)` satisfies them and a stub does not have
  * to impersonate the rest of PostgREST.
  *
- * WHAT THIS MODULE DOES NOT DO is write. Creating and editing a member is
- * `@/members/write` (story 1.5b), which owns the PostgREST edit, the privileged
- * call and the branch between them; deactivating and resetting a password are
- * story 1.6 and still answer `501`. Nothing here posts, patches or deletes, and
- * the seam below names `select` alone so a write cannot be added without
- * widening the interface in front of a reviewer.
+ * WHAT THIS MODULE DOES NOT DO is write. Creating a member, editing one and
+ * resetting a member's password are all `@/members/write`, which owns the
+ * PostgREST edit, the privileged calls and the branch between them; only
+ * DEACTIVATING a member is story 1.6's, and `ban`/`unban` still answer `501`.
+ * Nothing here posts, patches or deletes, and the seam below names `select`
+ * alone so a write cannot be added without widening the interface in front of a
+ * reviewer.
  *
  * Codes, never messages (the conventions): `{ code }` out of here, translated
  * only at the edge — {@link membersMessageKey} is that edge, and it lives here

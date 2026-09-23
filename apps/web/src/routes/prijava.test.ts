@@ -272,16 +272,23 @@ const SCREENS = [
   // The number still notices a fourth: this screen writes nothing, so a
   // `<Button>` here that is not a link is a write arriving on the list.
   { name: 'the member list', file: MEMBER_LIST, expectedControls: 5 },
-  // EIGHT on each form, and they are the same eight because the two screens are
-  // the same form over different seeds: four `<Input>`s — name, username,
-  // address, allowance — the level `<select>`, and three `<Button>`s, which are
-  // Save, Cancel and the link back to the list. The count is what notices a
-  // SIXTH FIELD, which on these screens is how `organization_id` or an active
-  // flag would arrive: both look like ordinary controls and both are forbidden
-  // for reasons invisible in a diff — the first is pinned by the update policy
-  // on both sides (`0003:331-351`) and the second is story 1.6's.
+  // EIGHT on the create form: four `<Input>`s — name, username, address,
+  // allowance — the level `<select>`, and three `<Button>`s, which are Save,
+  // Cancel and the link back to the list. The count is what notices a SIXTH
+  // FIELD, which on these screens is how `organization_id` or an active flag
+  // would arrive: both look like ordinary controls and both are forbidden for
+  // reasons invisible in a diff — the first is pinned by the update policy on
+  // both sides (`0003:331-351`) and the second is story 1.6's.
   { name: 'the member create form', file: MEMBER_CREATE, expectedControls: 8 },
-  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 8 },
+  // TWELVE on the edit form: the same eight, plus the admin-issued reset's
+  // FOUR `<Button>`s — the offer, the confirm and cancel that replace it, and
+  // the dismiss on the shown credential. Four and not one, because the reset is
+  // a two-step confirmation whose panel has to be closable: a single control
+  // here would mean one press replaces somebody's credential, and a panel with
+  // no dismiss blocks every later reset on the one account with no other
+  // recovery route. The FIELD count is unchanged, which is the half this number
+  // still guards.
+  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 12 },
   // ZERO on all seven, and asserted rather than assumed: a destination is a
   // heading and nothing else in this story, so the first control any of them
   // grows is a later story's work arriving without that story's review. The
@@ -381,6 +388,43 @@ const IN_FLIGHT_SCREENS = FORM_SCREENS.filter(
 );
 
 /**
+ * Every AWAITING HANDLER in the application, rather than every screen that owns
+ * one — and the distinction is the finding this closes.
+ *
+ * `submitHandler`, `finallyBlock` and the ref-guard sweep were all pinned to
+ * the FIRST match in a file: `function submit(`, the first `finally`, the first
+ * `if (…) return;`. That was exactly right while every screen held one awaiting
+ * handler, and it went blind the moment one held two — the edit form's password
+ * reset awaits, holds its own in-flight ref and its own refused branch, and not
+ * one of the three sweeps could see any of it. Deleting `setResetPending(false)`
+ * from the reset's `finally` would have left the whole suite green with the
+ * confirmation stuck busy for ever on the one surface that can recover an
+ * account with no email address.
+ *
+ * So the sweeps below are driven by HANDLER, each one extracted by name, and a
+ * screen contributes as many entries as it has handlers that await.
+ */
+const IN_FLIGHT_HANDLERS = [
+  ...IN_FLIGHT_SCREENS.map((screen) => ({
+    ...screen,
+    handler: 'submit',
+    pending: 'setPending',
+  })),
+  {
+    // THE SECOND AWAITING HANDLER ON THE EDIT FORM. Its flags are its own on
+    // purpose: sharing `saving` with the form would make a reset in flight
+    // disable Save and the other way round — two unrelated actions blocking
+    // each other, neither of which the person asked for.
+    name: "the member edit form's password reset",
+    file: MEMBER_EDIT,
+    effect: 'resetPassword(',
+    inFlight: 'resetting',
+    handler: 'issue',
+    pending: 'setResetPending',
+  },
+];
+
+/**
  * A `.ts` module that renders no JSX but holds `t()` keys.
  *
  * `signInMessageKey` moved the two refusal keys out of the screen and into
@@ -437,7 +481,21 @@ function occurrences(haystack: string, needle: string): number {
  * handler's own indentation, which is two spaces inside the component.
  */
 function submitHandler(screen: string): string {
-  return /(?:async )?function submit\([\s\S]*?\n {2}\}/.exec(screen)?.[0] ?? '';
+  return namedHandler(screen, 'submit');
+}
+
+/**
+ * Any handler declared inside a component, BY NAME, from its signature to its
+ * closing brace at the component's own two-space indentation.
+ *
+ * `submitHandler` above is this with the name written in, and it stayed that
+ * way one story too long: a screen with a SECOND awaiting handler — the edit
+ * form's password reset — was swept by nothing at all, because every reader
+ * here matched `function submit(` and stopped. Extraction by name is what lets
+ * `IN_FLIGHT_HANDLERS` carry one entry per handler rather than one per file.
+ */
+function namedHandler(screen: string, name: string): string {
+  return new RegExp(`(?:async )?function ${name}\\([\\s\\S]*?\\n {2}\\}`).exec(screen)?.[0] ?? '';
 }
 
 /**
@@ -457,7 +515,15 @@ function componentFunction(screen: string, name: string): string {
   );
 }
 
-/** The body of the handler's `finally`, matched at its own indentation. */
+/**
+ * The body of a `finally`, matched at its own indentation.
+ *
+ * IT RETURNS THE FIRST ONE IN WHATEVER IT IS GIVEN, which is why the sweeps
+ * below hand it ONE EXTRACTED HANDLER rather than a whole file. Handed the
+ * file, a screen with two awaiting handlers has its second `finally` read by
+ * nothing — and the second is the newer one, so the coverage is always missing
+ * exactly where it was last needed.
+ */
 function finallyBlock(screen: string): string {
   return /\}\s*finally\s*\{([\s\S]*?)\n {4}\}/.exec(screen)?.[1] ?? '';
 }
@@ -1075,10 +1141,17 @@ const KEY_SOURCES = [
     strings: 13,
   },
   {
-    // TEN on the edit form: its own heading, five field labels, save, cancel,
-    // the link back, and the confirmation that a save landed. Three fewer than
-    // the create form, which is exactly the credential panel — an edit issues
-    // no credential, and story 1.6 owns the reset that would.
+    // EIGHTEEN on the edit form: its own heading, five field labels, save,
+    // cancel, the link back, the confirmation that a save landed, and the
+    // admin-issued reset's EIGHT — the offer, the confirmation's prompt, its
+    // confirm and cancel, and the shown panel's four (that it was issued, the
+    // label over the password, the write-it-down sentence, and the dismiss).
+    //
+    // The password is not among them and never will be: it is data, generated
+    // in `admin-auth`, and the one value in this system no later read can
+    // recover. `ljudi.form.credentialOnce` is rendered a SECOND time here — the
+    // create panel already shows it — and the set comparison below dedupes, so
+    // eighteen calls over seventeen keys is correct rather than drift.
     //
     // `ljudi.form.saved` is the tenth and it is not decoration: every field
     // here is uncontrolled and remounts to the values it was just saved with,
@@ -1087,20 +1160,26 @@ const KEY_SOURCES = [
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 10,
+    strings: 18,
   },
   {
-    // TWELVE on the member write path's rules: ten `ljudi.form.error.*`
+    // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
     // refusals, the LIST's own refusal — reused rather than reworded, because
     // `/ljudi/$id` is reachable by URL and a read the database declines
     // outright is not a failed write — and the partial-save sentence. It is the
     // second key source read by neither `translationKeys` nor
     // `messageKeyUnion`; see `memberWriteKeys`, which reads both shapes this
     // module declares keys in.
+    //
+    // THE ELEVENTH REFUSAL IS THE RESET'S. "The password was not changed" is
+    // its own sentence rather than the service fallback because this surface is
+    // the ONLY recovery an account with no email address has, and the fact an
+    // admin needs before they tell somebody anything is whether the credential
+    // moved at all.
     name: 'the member write rules',
     file: MEMBER_WRITE_KEYS,
     keys: memberWriteKeys,
-    strings: 12,
+    strings: 13,
   },
   {
     // ELEVEN on the member list's rules: four column headings, two permission
@@ -2979,11 +3058,35 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       IN_FLIGHT_SCREENS.map((screen) => screen.inFlight).sort(),
       'the in-flight ref names drifted from the screens that hold them',
     ).toEqual(['exchanging', 'issuing', 'saving', 'saving']);
+    // FIVE HANDLERS OVER FOUR SCREENS, and the mismatch is the point: the edit
+    // form owns two awaiting handlers, and while these sweeps counted SCREENS
+    // the second one was read by none of them. A list that silently fell back
+    // to one entry per file would make every sweep below miss exactly the
+    // handler that was added last.
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(5);
+    expect(
+      IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
+      'the in-flight handler names drifted from the handlers that hold them',
+    ).toEqual([
+      'issue/resetting',
+      'submit/exchanging',
+      'submit/issuing',
+      'submit/saving',
+      'submit/saving',
+    ]);
+    // NON-VACUITY ON THE EXTRACTOR ITSELF. A `namedHandler` that answered `''`
+    // for every name would make all three sweeps below assert nothing at all.
+    for (const entry of IN_FLIGHT_HANDLERS) {
+      expect(
+        namedHandler(source(entry.file), entry.handler).length,
+        `${entry.handler} on ${entry.file} could not be extracted`,
+      ).toBeGreaterThan(80);
+    }
   });
 
-  it.each(IN_FLIGHT_SCREENS)(
+  it.each(IN_FLIGHT_HANDLERS)(
     'clears the in-flight flag on every path on $name, and guards on a ref not on state',
-    ({ file }) => {
+    ({ file, handler: named }) => {
       // TWO defects in one shape. `pending` was cleared only on the failure
       // branch, so the moment the awaited call stopped resolving the button was
       // disabled forever with nothing on screen to say why — `finally` is what
@@ -2994,33 +3097,37 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       // OVER EVERY SCREEN THAT AWAITS SOMETHING, since the 1.4a review. Pinned
       // to the sign-in screen this protected one of the two files with the
       // identical shape, and deleting the settings surface's `finally` was free.
-      const screen = source(file);
+      // SCOPED TO THE HANDLER, since the edit form grew a second one. Read off
+      // the whole file, all three of these were satisfied by whichever handler
+      // came first and said nothing whatsoever about the other.
+      const scoped = namedHandler(source(file), named);
 
-      expect(screen, 'the submit handler has no finally, so a path can leave it in flight').toMatch(
+      expect(scoped, `${named} could not be extracted, so nothing below is asserted`).not.toBe('');
+      expect(scoped, 'this handler has no finally, so a path can leave it in flight').toMatch(
         /\}\s*finally\s*\{/,
       );
 
-      const guard = /if\s*\([\s\S]*?\)\s*\{?\s*return;/.exec(screen)?.[0] ?? '';
+      const guard = /if\s*\([\s\S]*?\)\s*\{?\s*return;/.exec(scoped)?.[0] ?? '';
 
       expect(guard, 'the in-flight guard reads React state, which is stale within a tick').toMatch(
         /\.current\b/,
       );
-      expect(screen, 'nothing is surfaced when the call throws outside its own mapping').toMatch(
+      expect(scoped, 'nothing is surfaced when the call throws outside its own mapping').toMatch(
         /catch[\s\S]{0,400}?setFailure\(/,
       );
     },
   );
 
-  it.each(IN_FLIGHT_SCREENS)('surfaces the refused outcome code on $name', ({ file }) => {
+  it.each(IN_FLIGHT_HANDLERS)('surfaces the refused outcome code on $name', ({ file, handler: named }) => {
     // MUTATION-PROVEN GAP, found by the 1.4a review: deleting
     // `setFailure(outcome.code)` from the settings surface's handler left the
     // whole suite green, and a refused save then looked exactly like a saved
     // one — the button re-enabled, the values still there, nothing said. The
     // `catch` assertion above covers the THROWN path only, and a policy refusal
     // never throws.
-    const handler = submitHandler(source(file));
+    const handler = namedHandler(source(file), named);
 
-    expect(handler, 'no submit handler to read').not.toBe('');
+    expect(handler, 'no handler to read').not.toBe('');
     // `outcome.code` OR `outcome.refusal`, because story 1.5b's outcome carries
     // one more fact than a code: whether the ordinary fields were written
     // before the rename was refused. A flat code there would discard the half
@@ -3100,9 +3207,9 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     );
   });
 
-  it.each(IN_FLIGHT_SCREENS)(
+  it.each(IN_FLIGHT_HANDLERS)(
     'clears the in-flight state inside the finally on $name, not merely near one',
-    ({ file, inFlight }) => {
+    ({ file, inFlight, handler: named, pending }) => {
       // The assertion this replaces matched `/\}\s*finally\s*\{/` against the
       // whole file, which is the existence of the keyword and nothing about what
       // it does. Deleting `setPending(false)` from inside it passed — and left
@@ -3113,12 +3220,18 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       // The ref NAME comes from the screen's own entry since the 1.4a review.
       // Hard-coded as `exchanging.current = false` this could only ever be true
       // of one file, so the settings surface's `saving` ref was swept by nothing.
-      const block = finallyBlock(source(file));
+      // HANDED ONE HANDLER, not the file. `finallyBlock` returns the FIRST
+      // `finally` it finds, so the edit form's second awaiting handler — its
+      // password reset — was covered by nothing for as long as this read the
+      // whole screen: deleting `setResetPending(false)` left the confirmation
+      // stuck busy for ever with the suite green.
+      const block = finallyBlock(namedHandler(source(file), named));
 
-      expect(block, 'the submit handler has no finally, so a path can leave it in flight').not.toBe(
-        '',
-      );
-      expect(block, 'the finally does not re-enable the button').toContain('setPending(false)');
+      expect(block, `${named} has no finally, so a path can leave it in flight`).not.toBe('');
+      // THE SETTER NAME COMES FROM THE ENTRY, for the reason the ref name does:
+      // two handlers on one screen hold two different pending flags, and a
+      // hard-coded `setPending` is true of one of them by accident.
+      expect(block, 'the finally does not re-enable the control').toContain(`${pending}(false)`);
       expect(block, 'the finally does not clear the in-flight ref').toContain(
         `${inFlight}.current = false`,
       );
@@ -3788,6 +3901,134 @@ describe('the two member forms write through the seam and keep nothing back', ()
     expect(screen, 'the form and the credential panel can be on screen together').toMatch(
       /credential === null \? renderForm\(\) : renderCredential\(credential\)/,
     );
+  });
+
+  it('shows the RESET credential once and never re-reads it from anywhere either', () => {
+    // THE SAME SHAPE ON THE SECOND SCREEN THAT ISSUES ONE, and the pair is the
+    // point: `CREDENTIAL_PATH` above already sweeps this file for storage and
+    // for logs, but nothing said the panel is fed from the returned outcome
+    // rather than from a query, a ref or a route search parameter — and a
+    // second copy is what "exactly once" forbids.
+    const screen = source(MEMBER_EDIT);
+
+    expect(screen, 'the credential is not component state').toMatch(
+      /useState<RaisedForMember<ResetCredential> \| null>\(null\)/,
+    );
+    expect(screen, 'the credential does not come from the reset outcome').toContain(
+      'setIssued({ member: member.id, raised: outcome.credential })',
+    );
+    // AND IT CAN BE PUT AWAY. A panel with no dismiss blocks every later reset
+    // on the one account with no other recovery route, for as long as the
+    // screen stays open — and iteration 0 shipped a doc comment describing a
+    // dismiss control that existed nowhere.
+    expect(screen, 'a shown credential can never be cleared').toContain('setIssued(null)');
+  });
+
+  it('decides the reset stage in a function a test runs, not in the screen', () => {
+    // AD-15: a `.tsx` is executed by nothing. The four-stage decision — offer,
+    // confirmation, in flight, shown — is `resetStageOf` in `@/members/write`,
+    // where `write.test.ts` drives every branch. What is left here is that the
+    // screen ASKS it and holds no stage branch of its own over the flags.
+    const screen = source(MEMBER_EDIT);
+
+    expect(screen, 'the screen does not route through the stage function').toMatch(
+      /resetStageOf\(armedFor !== null, resetPending, credential\)/,
+    );
+
+    // CALLING IT IS NOT CONSULTING IT. The assertion above matches the call
+    // text and nothing else, and the screen held its own `armedFor !== null`
+    // branch one line below it — so `RESET_IDLE` and `RESET_ARMED` were stages
+    // the function returned and its only consumer never read, and two of the
+    // four lived in a copy of the rule no test executes. The copy DISAGREED
+    // with the original in exactly the case `write.test.ts` pins: with a
+    // request in flight and the armed flag already cleared, `resetStageOf`
+    // answers `busy` and `armedFor !== null` answers "render the plain,
+    // ENABLED offer".
+    const render = componentFunction(screen, 'renderReset');
+    const confirmation = componentFunction(screen, 'renderConfirmation');
+
+    expect(render, 'no reset block to read').not.toBe('');
+    for (const named of ['RESET_SHOWN', 'RESET_ARMED', 'RESET_BUSY', 'RESET_IDLE']) {
+      expect(
+        `${render}\n${confirmation}`,
+        `${named} is a stage the function returns and the screen never reads`,
+      ).toContain(`stage === ${named}`);
+    }
+    // AND THE RULE IS NOT RE-DERIVED BESIDE IT. A bare `armedFor !== null`
+    // deciding what to render is the second copy, whatever else the block says.
+    expect(
+      render,
+      'the reset block decides armed-versus-idle without consulting the stage',
+    ).not.toMatch(/if\s*\(\s*armedFor !== null\s*\)/);
+  });
+
+  it('keeps the confirmation mounted while the reset is in flight', () => {
+    // THE DEFECT THIS EXISTS FOR. Disarming before the await unmounts the
+    // confirm pair and renders the plain, ENABLED offer for the whole request,
+    // so the busy state is carried by no control at all and a second press
+    // starts a second reset. The disarm therefore belongs in the `finally`,
+    // after the request has settled — which is also where both flags are
+    // cleared.
+    const handler = namedHandler(source(MEMBER_EDIT), 'issue');
+    const block = finallyBlock(handler);
+
+    expect(handler, 'no reset handler to read').not.toBe('');
+    expect(block, 'the reset disarms outside its finally, so the offer can render mid-flight')
+      .toContain('setArmed(null)');
+    // And nothing disarms BEFORE the await: `setArmed(null)` appears in this
+    // handler exactly once, inside the block above.
+    expect(occurrences(handler, 'setArmed(null)'), 'the reset disarms more than once').toBe(1);
+
+    // AND THE CONFIRMATION CARRIES THE BUSY STATE. A pair that stays mounted
+    // but stays pressable is the same defect reached a different way: the
+    // second press starts a second reset over the first one's answer.
+    const confirmation = componentFunction(source(MEMBER_EDIT), 'renderConfirmation');
+
+    expect(confirmation, 'no confirmation to read').not.toBe('');
+    expect(confirmation, 'the confirmation never reads the in-flight stage').toContain(
+      'stage === RESET_BUSY',
+    );
+    for (const element of buttonElements(confirmation)) {
+      expect(element, `a confirmation control stays pressable in flight: ${element}`).toContain(
+        'disabled={busy}',
+      );
+    }
+    expect(confirmation, 'nothing announces the wait to assistive technology').toContain(
+      'aria-busy={busy}',
+    );
+  });
+
+  it('needs a second, distinct confirmation before anything is reset', () => {
+    // ONE PRESS RESETS NOTHING. The offer only arms; the confirm is what calls
+    // the write path, and it names the member so the second press is a more
+    // specific decision rather than the same press twice.
+    const screen = source(MEMBER_EDIT);
+    const offer = componentFunction(screen, 'renderReset');
+    const confirmation = componentFunction(screen, 'renderConfirmation');
+
+    expect(offer, 'no offer to read').not.toBe('');
+    expect(offer, 'the offer resets instead of arming').not.toContain('void issue()');
+    expect(offer, 'the offer does not arm the confirmation').toContain('setArmed({');
+    expect(confirmation, 'no confirmation to read').not.toBe('');
+    expect(confirmation, 'the confirmation does not send the reset').toContain('void issue()');
+    // BOTH HALVES OF THE PAIR: a confirmation with no way out is a control that
+    // can only be answered one way.
+    expect(confirmation, 'the confirmation cannot be cancelled').toContain('setArmed(null)');
+  });
+
+  it('renders the shown credential above every gate on the read', () => {
+    // IT OUTRANKS EVERYTHING ELSE ON THE SCREEN, deliberately inverting the
+    // gating rule the rest of this surface follows: a refetch that drops the
+    // row, or a read that re-settles failed, must leave the password standing,
+    // because looking again cannot recover it. Returning `null` for an absent
+    // member ABOVE the shown branch is what erased it.
+    const render = componentFunction(source(MEMBER_EDIT), 'renderReset');
+    const shown = render.indexOf('RESET_SHOWN');
+    const gate = render.indexOf('member === null');
+
+    expect(shown, 'the reset block never checks for a shown credential').toBeGreaterThan(-1);
+    expect(gate, 'the reset block never gates on the member row').toBeGreaterThan(-1);
+    expect(shown, 'the member gate runs before the shown credential is rendered').toBeLessThan(gate);
   });
 
   it('renders no usable form once the organization read has settled failed', () => {

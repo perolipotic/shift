@@ -5,6 +5,19 @@ import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 
+import {
+  ACCESS_UNREADABLE,
+  NOT_AN_ADMIN,
+} from '../supabase/functions/admin-auth/authorize.ts';
+import {
+  MEMBER_UNKNOWN,
+  PASSWORD_RESET,
+  resetPassword,
+  type CallerClient,
+  type PostgrestAnswer,
+  type PrivilegedAccounts,
+} from '../supabase/functions/admin-auth/operations.ts';
+
 /**
  * Q1 and Q2, executed rather than read — and the regression suite every later
  * epic re-runs.
@@ -117,12 +130,17 @@ const apiEndpoint: { readonly url: string; readonly key: string } | undefined = 
  * The SECRET key for the local stack, or `undefined`.
  *
  * Read from the same `supabase status -o json` the publishable key comes from,
- * and used by exactly one case: the one that drives GoTrue's admin API the way
- * `admin-auth` drives it, so that "the account exists and is usable at its
- * issued username" stops resting on a stub. It is a per-stack local value that
- * never leaves this machine — AD-17 confines the DEPLOYED secret to the Edge
- * Function's environment, and this reads the one `supabase start` just printed
- * rather than hard-coding anything.
+ * and used by every block that drives GoTrue's ADMIN API the way `admin-auth`
+ * drives it: the one that proves an issued account can sign in, and the four
+ * that prove an admin-issued reset replaces the credential and ends the
+ * sessions it had. It is a per-stack local value that never leaves this
+ * machine — AD-17 confines the DEPLOYED secret to the Edge Function's
+ * environment, and this reads the one `supabase start` just printed rather
+ * than hard-coding anything.
+ *
+ * TWO SPELLINGS ARE READ because the CLI has used both, which is the same
+ * reason the guard below insists this resolved: a third rename would leave
+ * every case named above skipping silently while the run reported green.
  */
 const adminKey: string | undefined = (() => {
   if (noDatabase) return undefined;
@@ -144,7 +162,8 @@ const adminKey: string | undefined = (() => {
 
 /** Every case that leaves the database and speaks HTTP is gated on both. */
 const noApi = noDatabase || apiEndpoint === undefined;
-/** The one case that also needs the admin API. */
+/** The five blocks that also need the admin API — the issued-account case and
+ *  the four reset cases, which are the whole verification of the revocation. */
 const noAdminApi = noApi || adminKey === undefined;
 
 /** `supabase/seed.sql:27` — one password, shared, local and test only. */
@@ -851,6 +870,25 @@ describe('the access-control layer is present, so nothing below passes vacuously
     expect(
       apiEndpoint,
       'the database is reachable but `supabase status` yielded no API endpoint — the fifteen HTTP cases, including every cross-tenant write and both hook-claim assertions, would skip silently',
+    ).toBeDefined();
+
+    // THE SAME HOLE, ONE KEY OVER, and it is the one that matters most now.
+    // `adminKey` is read out of the same `supabase status` JSON under EITHER of
+    // two spellings — the code already hedges `SECRET_KEY` against
+    // `SERVICE_ROLE_KEY`, so a CLI rename is the anticipated case rather than a
+    // hypothetical one — and a third spelling resolves it to `undefined` with
+    // the CLI's stderr discarded. Every `skipIf(noAdminApi)` block then
+    // vanishes while this file reports green.
+    //
+    // WHAT VANISHES IS THE WHOLE REVOCATION CLAIM. "A session held before the
+    // reset no longer authenticates" cannot be asserted against a stub at all:
+    // GoTrue's admin user update is what ends those sessions, so the only place
+    // that behaviour is ever observed is the admin-API blocks this key gates.
+    // Silently skipping them leaves the story's security argument resting on a
+    // comment.
+    expect(
+      adminKey,
+      'the database is reachable but `supabase status` yielded no secret key — the admin-API cases would skip silently, and they are the only verification that a reset ends the sessions the old credential minted',
     ).toBeDefined();
   });
 
@@ -4291,6 +4329,355 @@ describe('an account issued the way admin-auth issues one actually signs in', ()
     },
     20_000,
   );
+});
+
+describe('an admin-issued reset replaces the credential and ends every session it had', () => {
+  /**
+   * THE OPERATION ITSELF, over the real transport, against the real database.
+   *
+   * Every case in `test/admin-auth-boundary.test.ts` drives `resetPassword`
+   * against stubs, which proves the ORDER and the refusals and proves nothing
+   * about whether the credential actually moves in GoTrue or whether a session
+   * minted from the old one stops working. Those are the two acceptance
+   * criteria a stub cannot answer at all — so the two seams are built here out
+   * of real HTTP: the caller's client is PostgREST carrying a real ES256 token,
+   * so row level security decides which rows exist, and the privileged client
+   * is GoTrue's admin API carrying the secret key.
+   *
+   * THE REVOCATION IS THE PASSWORD SET, and this is where that claim is held to
+   * account rather than asserted in a comment. GoTrue's admin user update logs
+   * an account out of every session it holds; there is no per-user session
+   * endpoint in the admin API to call instead. A build that stopped using it —
+   * or a GoTrue that stopped doing it — fails the two cases below, which is the
+   * only place either could be noticed.
+   */
+  const ISSUED = 'reset-fixture-password-before';
+
+  /** The caller's client, as `resetPassword` narrowly uses it: one RPC and one
+   *  `select(...).eq(...).limit(...)`, both over the shipped REST path. */
+  function callerOver(token: string): CallerClient {
+    const settle = async (response: Response): Promise<PostgrestAnswer> => {
+      const body: unknown = await response.json();
+
+      if (response.ok) return { data: body, error: null };
+
+      const fields =
+        typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+
+      return {
+        data: null,
+        error: { code: typeof fields['code'] === 'string' ? fields['code'] : String(response.status) },
+      };
+    };
+
+    return {
+      rpc: (name) => settle_rpc(name, token),
+      from: (table) => ({
+        select: (columns) => ({
+          eq: (column, value) => ({
+            limit: async (count) =>
+              settle(
+                await rest(`${table}?select=${columns}&${column}=eq.${value}&limit=${count}`, {
+                  token,
+                }),
+              ),
+          }),
+        }),
+        // Named because the interface names them; a reset reaches neither, and
+        // the cases below assert exactly that by counting `members` afterwards.
+        insert: () => ({ select: () => Promise.reject(new Error('a reset must not insert')) }),
+        update: () => ({
+          eq: () => ({ select: () => Promise.reject(new Error('a reset must not update')) }),
+        }),
+      }),
+    } as CallerClient;
+  }
+
+  async function settle_rpc(name: string, token: string): Promise<{ data: unknown; error: null }> {
+    const rows = await restRows(`rpc/${name}`, { token, method: 'POST', body: {} });
+
+    return { data: rows, error: null };
+  }
+
+  /** The privileged client, as `resetPassword` narrowly uses it: GoTrue's admin
+   *  API under the secret key, and nothing that can touch a domain table. */
+  function privilegedOverAdminApi(): PrivilegedAccounts {
+    const endpoint = apiEndpoint;
+    if (endpoint === undefined || adminKey === undefined) {
+      throw new Error('unreachable: gated by skipIf');
+    }
+
+    const headers = {
+      apikey: adminKey,
+      Authorization: `Bearer ${adminKey}`,
+      'content-type': 'application/json',
+    };
+
+    return {
+      auth: {
+        admin: {
+          createUser: () => Promise.reject(new Error('a reset must not create an account')),
+          deleteUser: () => Promise.reject(new Error('a reset must not delete an account')),
+          updateUserById: async (id, attributes) => {
+            const response = await fetch(`${endpoint.url}/auth/v1/admin/users/${id}`, {
+              method: 'PUT',
+              headers,
+              body: JSON.stringify(attributes),
+            });
+            const body: unknown = await response.json();
+            const fields =
+              typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+
+            return response.ok
+              ? { data: { user: { id: fields['id'] } }, error: null }
+              : { data: null, error: { status: response.status } };
+          },
+        },
+      },
+    } as PrivilegedAccounts;
+  }
+
+  async function grant(address: string, password: string): Promise<Response> {
+    const endpoint = apiEndpoint;
+    if (endpoint === undefined) throw new Error('unreachable: gated by skipIf');
+
+    return fetch(`${endpoint.url}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: { apikey: endpoint.key, 'content-type': 'application/json' },
+      body: JSON.stringify({ email: address, password }),
+    });
+  }
+
+  /** Whether a token is still accepted — the only honest question about a
+   *  session, since a revoked one is refused rather than absent. */
+  async function stillAuthenticates(token: string): Promise<boolean> {
+    const endpoint = apiEndpoint;
+    if (endpoint === undefined) throw new Error('unreachable: gated by skipIf');
+
+    const response = await fetch(`${endpoint.url}/auth/v1/user`, {
+      headers: { apikey: endpoint.key, Authorization: `Bearer ${token}` },
+    });
+
+    return response.ok;
+  }
+
+  /** A throwaway member of `slug`'s organization, with a credential it can sign
+   *  in with — the state a reset is issued against. */
+  async function targetIn(
+    client: Client,
+    organization: string,
+  ): Promise<{ member: MemberRow; address: string }> {
+    const member = await addThrowawayMember(client, organization);
+    const { rows } = await client.query<{ email: string }>(
+      'select email from auth.users where id = $1',
+      [member.authUserId],
+    );
+    const email = rows[0]?.email ?? '';
+    const endpoint = apiEndpoint;
+    if (endpoint === undefined || adminKey === undefined) {
+      throw new Error('unreachable: gated by skipIf');
+    }
+
+    const seeded = await fetch(`${endpoint.url}/auth/v1/admin/users/${member.authUserId}`, {
+      method: 'PUT',
+      headers: {
+        apikey: adminKey,
+        Authorization: `Bearer ${adminKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ password: ISSUED, email_confirm: true }),
+    });
+
+    expect(seeded.ok, `the throwaway credential could not be seeded: ${seeded.status}`).toBe(true);
+
+    return { member, address: email };
+  }
+
+  it.skipIf(noAdminApi).each(FIXTURES)(
+    'replaces the $fixture credential, refuses the old one, and writes no members row',
+    async ({ slug, admin }) => {
+      const client = await connect();
+
+      try {
+        const organization = (await memberByUsername(client, slug, admin)).organizationId;
+        const { member, address: target } = await targetIn(client, organization);
+        const before = await memberById(client, member.id);
+
+        // A REAL SESSION, held before the reset. Proving it works first is what
+        // makes its refusal afterwards mean anything.
+        const signedIn = await grant(target, ISSUED);
+        const session = (await signedIn.json()) as Record<string, unknown>;
+        const held = String(session['access_token'] ?? '');
+
+        expect(signedIn.status, 'the throwaway could not sign in before the reset').toBe(200);
+        expect(await stillAuthenticates(held), 'the held session was never valid').toBe(true);
+
+        const reply = await resetPassword(
+          {
+            privileged: privilegedOverAdminApi(),
+            caller: callerOver(await tokenFor(admin, slug)),
+          },
+          { memberId: member.id },
+        );
+
+        expect(reply.status, `the reset was refused: ${JSON.stringify(reply.body)}`).toBe(200);
+        expect(reply.body['code']).toBe(PASSWORD_RESET);
+
+        const issued = String(reply.body['password'] ?? '');
+
+        expect(issued.length, 'the reply carried no credential').toBeGreaterThan(0);
+
+        // THE NEW ONE GRANTS.
+        expect((await grant(target, issued)).status, 'the new credential did not sign in').toBe(200);
+        // AND THE OLD ONE IS REFUSED — the negative control, without which a
+        // GoTrue that accepted anything would satisfy the line above.
+        expect((await grant(target, ISSUED)).ok, 'the previous credential still signs in').toBe(
+          false,
+        );
+
+        // AND THE `members` ROW IS UNTOUCHED. The credential lives in
+        // `auth.users`; this story adds no column and writes no row.
+        expect(await memberById(client, member.id)).toEqual(before);
+      } finally {
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(noAdminApi).each(FIXTURES)(
+    'ends a $fixture session that was held before the reset',
+    async ({ slug, admin }) => {
+      // A RESET ISSUED BECAUSE A CREDENTIAL IS COMPROMISED IS WORTHLESS while a
+      // session minted from that credential still authenticates. Human decision
+      // 2026-09-22, and the only place it can be observed.
+      const client = await connect();
+
+      try {
+        const organization = (await memberByUsername(client, slug, admin)).organizationId;
+        const { member, address: target } = await targetIn(client, organization);
+
+        const signedIn = await grant(target, ISSUED);
+        const session = (await signedIn.json()) as Record<string, unknown>;
+        const held = String(session['access_token'] ?? '');
+        const refresh = String(session['refresh_token'] ?? '');
+
+        expect(await stillAuthenticates(held), 'the held session was never valid').toBe(true);
+
+        await resetPassword(
+          {
+            privileged: privilegedOverAdminApi(),
+            caller: callerOver(await tokenFor(admin, slug)),
+          },
+          { memberId: member.id },
+        );
+
+        expect(
+          await stillAuthenticates(held),
+          'a session minted from the replaced credential still authenticates',
+        ).toBe(false);
+
+        // AND IT CANNOT BE RENEWED EITHER. An access token expires on its own;
+        // a refresh token is what would quietly mint a new session for ever.
+        const endpoint = apiEndpoint;
+        if (endpoint === undefined) throw new Error('unreachable: gated by skipIf');
+
+        const renewed = await fetch(`${endpoint.url}/auth/v1/token?grant_type=refresh_token`, {
+          method: 'POST',
+          headers: { apikey: endpoint.key, 'content-type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refresh }),
+        });
+
+        expect(renewed.ok, 'the refresh token outlived the credential it came from').toBe(false);
+      } finally {
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(noAdminApi).each(FIXTURES)(
+    'refuses a $fixture member-role caller against the database, and changes nothing',
+    async ({ slug, admin, member: memberUsername }) => {
+      const client = await connect();
+
+      try {
+        const organization = (await memberByUsername(client, slug, admin)).organizationId;
+        const { member, address: target } = await targetIn(client, organization);
+
+        const reply = await resetPassword(
+          {
+            privileged: privilegedOverAdminApi(),
+            caller: callerOver(await tokenFor(memberUsername, slug)),
+          },
+          { memberId: member.id },
+        );
+
+        expect(reply.status).toBe(403);
+        expect(reply.body).toEqual({ code: NOT_AN_ADMIN });
+        // NOTHING CHANGED: the credential the account already held still works.
+        expect((await grant(target, ISSUED)).status, 'a refused reset moved the password').toBe(200);
+      } finally {
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  /** Both directions of the cross-tenant pairing, carrying the OTHER tenant's
+   *  admin — `CROSS_TENANT` names the other slug but not the account, and this
+   *  case needs a token for it. */
+  const FOREIGN_ADMINS = FIXTURES.flatMap((self) =>
+    FIXTURES.filter((other) => other.slug !== self.slug).map((other) => ({
+      fixture: self.fixture,
+      slug: self.slug,
+      admin: self.admin,
+      otherFixture: other.fixture,
+      otherSlug: other.slug,
+      otherAdmin: other.admin,
+    })),
+  );
+
+  it.skipIf(noAdminApi).each(FOREIGN_ADMINS)(
+    'refuses the $otherFixture admin resetting a $fixture member, as an unknown row',
+    async ({ slug, admin, otherSlug, otherAdmin }) => {
+      // THE CROSS-TENANT CASE ANSWERS `MEMBER_UNKNOWN` RATHER THAN `NOT_AN_ADMIN`,
+      // and that is the policy working rather than a weaker refusal:
+      // `members_select_own_organization` means another tenant's row is not
+      // there to be read, so the operation never gets far enough to authorize
+      // anything. The other tenant's admin cannot learn that the member exists.
+      const client = await connect();
+
+      try {
+        const organization = (await memberByUsername(client, slug, admin)).organizationId;
+        const { member, address: target } = await targetIn(client, organization);
+
+        const reply = await resetPassword(
+          {
+            privileged: privilegedOverAdminApi(),
+            caller: callerOver(await tokenFor(otherAdmin, otherSlug)),
+          },
+          { memberId: member.id },
+        );
+
+        expect(reply.status).toBe(404);
+        expect(reply.body).toEqual({ code: MEMBER_UNKNOWN });
+        expect((await grant(target, ISSUED)).status, 'a refused reset moved the password').toBe(200);
+      } finally {
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it('names the two refusal codes it asserts, so neither can be renamed into agreement', () => {
+    // Read off the function's own modules rather than written out here: the
+    // cases above compare replies to these values, so importing them is what
+    // makes a rename a failure here instead of a silent agreement.
+    expect(NOT_AN_ADMIN).toBe('NOT_AN_ADMIN');
+    expect(MEMBER_UNKNOWN).toBe('MEMBER_UNKNOWN');
+    expect(ACCESS_UNREADABLE).toBe('ACCESS_UNREADABLE');
+  });
 });
 
 describe('the zero-admins refusal reaches a direct API caller as a code it can map', () => {

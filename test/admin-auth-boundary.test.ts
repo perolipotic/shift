@@ -7,8 +7,10 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   LEAVE_ALLOWANCE_MAX as CLIENT_LEAVE_ALLOWANCE_MAX,
   MEMBER_CREATED as CLIENT_MEMBER_CREATED,
+  PASSWORD_RESET as CLIENT_PASSWORD_RESET,
   USERNAME_CHANGED as CLIENT_USERNAME_CHANGED,
   MEMBER_WRITE_FUNCTION,
+  RESET_PASSWORD_OPERATION,
   WIRE_CODES,
   editFailureOf,
   memberWriteFailureOf,
@@ -48,6 +50,8 @@ import {
   OPERATION_FAILED,
   ORGANIZATIONS_TABLE,
   ORGANIZATION_UNKNOWN,
+  PASSWORD_NOT_APPLIED,
+  PASSWORD_RESET,
   PAYLOAD_INVALID,
   USERNAME_CHANGED,
   USERNAME_INVALID,
@@ -58,6 +62,8 @@ import {
   createUser,
   membersRefusal,
   normalizedUsername,
+  resetAttributes,
+  resetPassword,
   synthesizedAddress,
   updateUserById,
   type AccountAnswer,
@@ -176,8 +182,18 @@ describe('admin-auth: the operations story 1.6 still owns refuse to act', () => 
     expect(dependencies.makeCallerClient).toHaveBeenCalledExactlyOnceWith('Bearer caller-jwt');
   });
 
-  it('exposes exactly the four operations AD-16 permits, and nothing else', async () => {
-    expect([...OPERATIONS]).toEqual(['createUser', 'updateUserById', 'ban', 'unban']);
+  it('exposes exactly the five operations AD-16 permits, and nothing else', async () => {
+    // FIVE SINCE THE ADMIN-ISSUED RESET, and every one of them is written out
+    // rather than derived: this list is the whole of what the secret key may be
+    // pointed at, so an operation appearing in it is the moment somebody
+    // decides a new capability exists.
+    expect([...OPERATIONS]).toEqual([
+      'createUser',
+      'updateUserById',
+      'resetPassword',
+      'ban',
+      'unban',
+    ]);
 
     const handle = createHandler(readConfiguration(envFrom()), deps());
     const response = await handle(post('deleteUser'));
@@ -718,12 +734,24 @@ describe('the function and the SPA speak one vocabulary, bound here', () => {
     );
   });
 
-  it('agrees on the two SUCCESS gates, which are the codes a refusal is not', () => {
-    // These are the two the client tests against by VALUE: anything else is a
+  it('agrees on the three SUCCESS gates, which are the codes a refusal is not', () => {
+    // These are the three the client tests against by VALUE: anything else is a
     // failure. A drift here is not a wrong message — it is a successful create
-    // reported as a failure with the password already gone.
+    // reported as a failure with the password already gone, and on the RESET it
+    // is the same loss suffered by somebody who had already lost the first copy.
     expect(MEMBER_CREATED).toBe(CLIENT_MEMBER_CREATED);
     expect(USERNAME_CHANGED).toBe(CLIENT_USERNAME_CHANGED);
+    expect(PASSWORD_RESET).toBe(CLIENT_PASSWORD_RESET);
+  });
+
+  it('spells the reset operation the way the transport dispatches on it', () => {
+    // A DISPATCH KEY, not a label. Misspelt on the SPA side only, every reset a
+    // browser sends arrives as `OPERATION_UNKNOWN`, falls through to
+    // `MEMBER_WRITE_UNAVAILABLE`, and shows "try again" for ever to an admin
+    // whose member has no other recovery route — with both suites green,
+    // because each side compares replies to the constant it imported.
+    expect(OPERATIONS).toContain(RESET_PASSWORD_OPERATION);
+    expect([...IMPLEMENTED_OPERATIONS]).toContain(RESET_PASSWORD_OPERATION);
   });
 
   it('gives the client a mapping for every code the function can emit', () => {
@@ -744,6 +772,7 @@ describe('the function and the SPA speak one vocabulary, bound here', () => {
     [USERNAME_NOT_APPLIED, 'MEMBER_USERNAME_NOT_APPLIED'],
     [USERNAME_NOT_RESTORED, 'MEMBER_USERNAME_UNSETTLED'],
     [ACCOUNT_NOT_REMOVED, 'MEMBER_ACCOUNT_STRANDED'],
+    [PASSWORD_NOT_APPLIED, 'MEMBER_PASSWORD_NOT_APPLIED'],
   ])('does not let %s collapse into the service-failure fallback', (code, failure) => {
     // The seven refusals an admin can act on. Folded into the fallback, each
     // becomes "try again" over something that will never succeed — a username
@@ -1614,6 +1643,314 @@ describe('updateUserById: the row moves first, then the address', () => {
   });
 });
 
+describe('resetPassword: a new credential, and every session the old one minted', () => {
+  const reset = { memberId: MEMBER };
+
+  /** The `members` read the reset makes before it authorizes anything. It needs
+   *  no `organizations` answer: a reset touches no address, so no slug is read. */
+  const RESET_READ: Readonly<Record<string, readonly PostgrestAnswer[]>> = {
+    members: [{ data: [{ organization_id: ORGANIZATION, auth_user_id: ACCOUNT }], error: null }],
+  };
+
+  it('authorizes against the ROW’s organization and then sets the password, once', async () => {
+    const accounts = accountsThat();
+    const caller = callerThat({ reads: RESET_READ });
+
+    const reply = await resetPassword(
+      { privileged: accounts.client, caller: caller.client },
+      reset,
+    );
+
+    expect(reply.status).toBe(200);
+    expect(reply.body['code']).toBe(PASSWORD_RESET);
+    // THE ORDER, read off the log rather than assumed: the row is read as the
+    // caller FIRST, so the organization the authorization is made against comes
+    // out of the database and never out of the request body.
+    expect(caller.log.reads.map((read) => read.table)).toEqual([MEMBERS_TABLE]);
+    expect(caller.log.rpc).toEqual([CURRENT_MEMBER_ACCESS]);
+    // ONE auth call, against the account the ROW named.
+    expect(accounts.log.updated.map((call) => call.id)).toEqual([ACCOUNT]);
+    // AND NOTHING WAS WRITTEN TO `members`. The credential lives in
+    // `auth.users`; a row written here would be a column this story adds and
+    // `0002:115-158` has none.
+    expect(caller.log.updates).toEqual([]);
+    expect(caller.log.inserts).toEqual([]);
+  });
+
+  it('sends GoTrue the password and nothing else', async () => {
+    // `email_confirm` belongs to the address and the rename owns it;
+    // `ban_duration` is story 1.6's; and `user_metadata` is the one place a
+    // credential must never be written, because every later admin read can see
+    // it. Pinned as an exact key list rather than a `toMatchObject`, which
+    // would pass over every one of those.
+    const accounts = accountsThat();
+    const caller = callerThat({ reads: RESET_READ });
+
+    const reply = await resetPassword(
+      { privileged: accounts.client, caller: caller.client },
+      reset,
+    );
+
+    expect(Object.keys(accounts.log.updated[0]?.attributes ?? {})).toEqual(['password']);
+    // THE VALUE ON THE WIRE IS THE VALUE IN THE REPLY. Two different strings
+    // here is a password shown to an admin that no account ever received.
+    expect(accounts.log.updated[0]?.attributes['password']).toBe(reply.body['password']);
+    expect(Object.keys(resetAttributes('x'))).toEqual(['password']);
+  });
+
+  it('generates the credential with the shared generator, from the injected bytes', async () => {
+    // A SECOND GENERATOR IS A DEFECT, and `Math.random` is the shape it takes.
+    // The byte source travels with the dependencies precisely so this can be
+    // asserted: a generator that ignored it answers a different string.
+    const drawn: number[] = [];
+    let next = 0;
+    const accounts = accountsThat();
+    const caller = callerThat({ reads: RESET_READ });
+
+    const reply = await resetPassword(
+      {
+        privileged: accounts.client,
+        caller: caller.client,
+        randomBytes: (count) => {
+          const bytes = new Uint8Array(count);
+          for (let at = 0; at < count; at += 1) {
+            bytes[at] = next % PASSWORD_ACCEPTABLE_BYTES;
+            drawn.push(bytes[at] ?? 0);
+            next += 1;
+          }
+          return bytes;
+        },
+      },
+      reset,
+    );
+
+    const password = String(reply.body['password']);
+
+    expect(password).toHaveLength(PASSWORD_LENGTH);
+    expect(drawn.length, 'the injected source was never consulted').toBeGreaterThan(0);
+    for (const character of password) {
+      expect(PASSWORD_ALPHABET, `${character} is outside the alphabet`).toContain(character);
+    }
+  });
+
+  it('NEVER generates a credential for a caller it is about to refuse', async () => {
+    // The gate comes before the generator, so a refused caller does not cause
+    // one more copy of the one value this system cannot recover to exist.
+    const accounts = accountsThat();
+    const caller = callerThat({
+      access: { data: [accessRow({ member_role: 'member_role' })], error: null },
+      reads: RESET_READ,
+    });
+
+    await expect(
+      resetPassword({ privileged: accounts.client, caller: caller.client }, reset),
+    ).resolves.toEqual({ status: 403, body: { code: NOT_AN_ADMIN } });
+    expect(accounts.log.updated, 'a refused caller reached the auth store').toEqual([]);
+  });
+
+  it.each([
+    ['an admin of another organization', { organization_id: OTHER_ORGANIZATION }],
+    ['a deactivated account', { is_active: false }],
+    ['a member-role caller', { member_role: 'member_role' }],
+  ])('refuses %s with one indistinguishable code, and writes nothing', async (_label, fields) => {
+    // ONE CODE FOR ALL THREE. A caller who can tell them apart learns whether
+    // their account was deactivated or merely demoted, and whether a given
+    // organization exists — an oracle on the boundary holding the secret key.
+    const accounts = accountsThat();
+    const caller = callerThat({
+      access: { data: [accessRow(fields)], error: null },
+      reads: RESET_READ,
+    });
+
+    await expect(
+      resetPassword({ privileged: accounts.client, caller: caller.client }, reset),
+    ).resolves.toEqual({ status: 403, body: { code: NOT_AN_ADMIN } });
+    expect(accounts.log.updated).toEqual([]);
+  });
+
+  it('authorizes against the ROW’s organization even when the body names another', async () => {
+    // THE ORACLE THE OTHER CASES CANNOT BE. Every refusal above is also refused
+    // by a version that authorizes against `body.organizationId`, because the
+    // reset payload carries no such field and the two values coincide. Here
+    // they are made to DISAGREE: the caller administers `ORGANIZATION` and says
+    // so in the body, while the row belongs to `OTHER_ORGANIZATION` — so a
+    // check pointed at the request answers 200 and replaces a credential in a
+    // tenant the caller has no rights in, and a check pointed at the ROW
+    // refuses. Nothing else in this file can tell the two apart.
+    const accounts = accountsThat();
+    const caller = callerThat({
+      access: { data: [accessRow()], error: null },
+      reads: {
+        members: [
+          { data: [{ organization_id: OTHER_ORGANIZATION, auth_user_id: ACCOUNT }], error: null },
+        ],
+      },
+    });
+
+    await expect(
+      resetPassword(
+        { privileged: accounts.client, caller: caller.client },
+        { memberId: MEMBER, organizationId: ORGANIZATION },
+      ),
+    ).resolves.toEqual({ status: 403, body: { code: NOT_AN_ADMIN } });
+    expect(accounts.log.updated, 'a credential moved in another tenant').toEqual([]);
+  });
+
+  it('IGNORES every field of the payload but the member id', async () => {
+    // The other half of the same claim, and the one that keeps it true of
+    // fields nobody has thought of: an admin-typed password, a slug, a role.
+    // The reset chooses nothing — it reads the row and generates.
+    const accounts = accountsThat();
+    const caller = callerThat({ reads: RESET_READ });
+
+    const reply = await resetPassword({ privileged: accounts.client, caller: caller.client }, {
+      memberId: MEMBER,
+      organizationId: OTHER_ORGANIZATION,
+      password: 'admin-chose-this',
+      role: 'admin',
+    });
+
+    expect(reply.status).toBe(200);
+    expect(
+      accounts.log.updated[0]?.attributes['password'],
+      'a password from the request body reached the auth store',
+    ).not.toBe('admin-chose-this');
+    expect(caller.log.rpc).toEqual([CURRENT_MEMBER_ACCESS]);
+  });
+
+  it('gives a member id that reaches no row its OWN code', async () => {
+    // Distinct from `NOT_AN_ADMIN`, which tells a proven admin to sign in again
+    // over a stale link — an instruction that cannot work. A cross-tenant id and
+    // one that never existed are indistinguishable here, because
+    // `members_select_own_organization` means the row simply is not there.
+    const accounts = accountsThat();
+    const caller = callerThat({ reads: { members: [{ data: [], error: null }] } });
+
+    await expect(
+      resetPassword({ privileged: accounts.client, caller: caller.client }, reset),
+    ).resolves.toEqual({ status: 404, body: { code: MEMBER_UNKNOWN } });
+    expect(caller.log.rpc, 'a missing member still cost an authorization read').toEqual([]);
+    expect(accounts.log.updated).toEqual([]);
+  });
+
+  it('tells a read that could not be PERFORMED apart from one that found nothing', async () => {
+    // An outage is never a permanent no. Reported as `MEMBER_UNKNOWN` it is a
+    // 404 about a member the admin is looking at, which points them at the
+    // wrong thing entirely.
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const accounts = accountsThat();
+    const caller = callerThat({
+      reads: { members: [{ data: null, error: { code: '08006' } }] },
+    });
+
+    try {
+      await expect(
+        resetPassword({ privileged: accounts.client, caller: caller.client }, reset),
+      ).resolves.toEqual({ status: 503, body: { code: ACCESS_UNREADABLE } });
+      expect(logged, 'the transport failure was swallowed').toHaveBeenCalled();
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it('reports an access read that could not be performed as an outage, not a refusal', async () => {
+    const accounts = accountsThat();
+    const caller = callerThat({
+      access: { data: null, error: { code: '08006' } },
+      reads: RESET_READ,
+    });
+
+    await expect(
+      resetPassword({ privileged: accounts.client, caller: caller.client }, reset),
+    ).resolves.toEqual({ status: 503, body: { code: ACCESS_UNREADABLE } });
+    expect(accounts.log.updated).toEqual([]);
+  });
+
+  it('refuses the password set as PASSWORD_NOT_APPLIED, without the cause reaching the reply', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const accounts = accountsThat({
+      updated: { data: null, error: { code: 'weak_password', status: 422 } },
+    });
+    const caller = callerThat({ reads: RESET_READ });
+
+    try {
+      const reply = await resetPassword(
+        { privileged: accounts.client, caller: caller.client },
+        reset,
+      );
+
+      expect(reply).toEqual({ status: 502, body: { code: PASSWORD_NOT_APPLIED } });
+      // NOTHING TO COMPENSATE: no `members` row was written, so there is no
+      // second store to put back and no `saved` half-truth to report.
+      expect(caller.log.updates).toEqual([]);
+      expect(logged).toHaveBeenCalled();
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it('ANSWERS 502 when GoTrue reports no error and no account either', async () => {
+    // THE ROW THIS OPERATION EXISTS FOR. `error !== null` alone lets
+    // `{ data: { user: null }, error: null }` through as a success carrying a
+    // password no account received — and a 200 like that is worse than any
+    // refusal: the admin reads the credential out and the member is locked out
+    // of the one account with no self-service recovery. `createUser` proves its
+    // own write the same way.
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const accounts = accountsThat({ updated: { data: { user: null }, error: null } });
+    const caller = callerThat({ reads: RESET_READ });
+
+    try {
+      const reply = await resetPassword(
+        { privileged: accounts.client, caller: caller.client },
+        reset,
+      );
+
+      expect(reply.status).toBe(502);
+      expect(reply.body).toEqual({ code: PASSWORD_NOT_APPLIED });
+      // AND NO PASSWORD CAME BACK WITH IT. A refusal carrying the credential
+      // anyway is the same defect wearing a 502.
+      expect(reply.body['password']).toBeUndefined();
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it.each([
+    ['no member id', {}],
+    ['a member id that is not a string', { memberId: 7 }],
+    ['a body that is not an object', 7],
+  ])('refuses a payload with %s before it reads anything', async (_label, payload) => {
+    const accounts = accountsThat();
+    const caller = callerThat({ reads: RESET_READ });
+
+    await expect(
+      resetPassword({ privileged: accounts.client, caller: caller.client }, payload),
+    ).resolves.toEqual({ status: 400, body: { code: PAYLOAD_INVALID } });
+    expect(caller.log.reads, 'a shapeless payload still reached the database').toEqual([]);
+  });
+
+  it('lets an admin reset their OWN row, because that is where their own row is served', async () => {
+    // `/ljudi/$id` serves the caller's own member row like any other, so the
+    // offer stands there. The revocation signs the caller out too, and that is
+    // coherent rather than an accident. Human decision 2026-09-22.
+    const accounts = accountsThat();
+    const caller = callerThat({
+      reads: {
+        members: [{ data: [{ organization_id: ORGANIZATION, auth_user_id: ACCOUNT }], error: null }],
+      },
+    });
+
+    const reply = await resetPassword(
+      { privileged: accounts.client, caller: caller.client },
+      reset,
+    );
+
+    expect(reply.status).toBe(200);
+    expect(accounts.log.updated.map((call) => call.id)).toEqual([ACCOUNT]);
+  });
+});
+
 describe('the dispatch is wrapped, so a throw is still a reply the SPA can read', () => {
   function handlerOver(privileged: unknown, caller: unknown) {
     return createHandler(readConfiguration(envFrom()), {
@@ -1648,6 +1985,27 @@ describe('the dispatch is wrapped, so a throw is still a reply the SPA can read'
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ code: USERNAME_CHANGED });
+  });
+
+  it('dispatches resetPassword to the operation rather than answering 501', async () => {
+    // KEPT OUT OF `UNIMPLEMENTED_OPERATIONS` AND WIRED IN. Left in that list it
+    // answers 501, the SPA maps `NOT_IMPLEMENTED` to the service fallback, and
+    // the one recovery route an account with no address has is "try again" for
+    // ever.
+    const accounts = accountsThat();
+    const caller = callerThat({
+      reads: {
+        members: [{ data: [{ organization_id: ORGANIZATION, auth_user_id: ACCOUNT }], error: null }],
+      },
+    });
+    const handle = handlerOver(accounts.client, caller.client);
+
+    const response = await handle(post('resetPassword', {}, { memberId: MEMBER }));
+    const body = (await response.json()) as Record<string, unknown>;
+
+    expect(response.status).toBe(200);
+    expect(body['code']).toBe(PASSWORD_RESET);
+    expect(typeof body['password']).toBe('string');
   });
 
   it('carries the CORS headers on an operation REFUSAL, not only on a success', async () => {
@@ -1727,6 +2085,38 @@ describe('the dispatch is wrapped, so a throw is still a reply the SPA can read'
         'password',
         'email_confirm',
       ]);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it('never leaks the RESET credential into a log line either', async () => {
+    // THE PAIR, and the second half is the one that matters more: a reset is
+    // issued precisely when the first copy is already gone, so a console line
+    // carrying it is the only remaining copy sitting somewhere anybody with the
+    // tab open can read long after the panel is dismissed. It is also never
+    // written into the account's metadata, which every later admin call reads.
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const accounts = accountsThat();
+    const caller = callerThat({
+      reads: {
+        members: [{ data: [{ organization_id: ORGANIZATION, auth_user_id: ACCOUNT }], error: null }],
+      },
+    });
+
+    try {
+      const reply = await resetPassword(
+        { privileged: accounts.client, caller: caller.client },
+        { memberId: MEMBER },
+      );
+      const password = String(reply.body['password']);
+
+      expect(password.length).toBeGreaterThan(0);
+      for (const call of logged.mock.calls) {
+        expect(JSON.stringify(call)).not.toContain(password);
+      }
+      expect(JSON.stringify(accounts.log.updated)).toContain(password);
+      expect(Object.keys(accounts.log.updated[0]?.attributes ?? {})).toEqual(['password']);
     } finally {
       logged.mockRestore();
     }

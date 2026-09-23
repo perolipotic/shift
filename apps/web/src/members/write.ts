@@ -13,6 +13,8 @@ import {
   MEMBER_WRITE_FUNCTION,
   MEMBER_WRITE_REFUSED,
   MEMBER_WRITE_UNAVAILABLE,
+  PASSWORD_RESET,
+  RESET_PASSWORD_OPERATION,
   UPDATE_USER_OPERATION,
   USERNAME_CHANGED,
   editFailureOf,
@@ -25,8 +27,8 @@ import type { MemberRole } from '@/navigation/destinations';
 import { MEMBER_ROLES } from '@/navigation/role';
 
 /**
- * Creating and editing a member (story 1.5b) — every decision the two forms
- * make, in a `.ts` that renders nothing.
+ * Creating a member, editing one, and resetting a member's password — every
+ * decision the two forms make, in a `.ts` that renders nothing.
  *
  * WHY THIS IS A MODULE AND NOT TWO SCREENS. `routes/ljudi.novi.tsx` and
  * `routes/ljudi.$id.tsx` are `.tsx` files, and AD-15 collects none of those: a
@@ -68,7 +70,15 @@ import { MEMBER_ROLES } from '@/navigation/role';
  * NOTHING HERE STORES OR LOGS THE ISSUED CREDENTIAL. It travels from the reply
  * to the caller's return value and no further: not into a query cache, not into
  * `localStorage`, and above all not into `console`, which is a place it could be
- * read back long after its one showing.
+ * read back long after its one showing. That is true of BOTH credentials —
+ * {@link createMember}'s and {@link resetPassword}'s — and the reset's is the
+ * one that matters more, because it is issued precisely when the first copy is
+ * already gone.
+ *
+ * THE RESET'S FOUR STAGES ARE A PURE FUNCTION HERE, not a chain of `&&` in the
+ * screen. {@link resetStageOf} is why: a `.tsx` is executed by nothing, and the
+ * IN-FLIGHT stage is the one a component gets wrong — clear `armed` before
+ * awaiting and the plain, enabled offer renders for the whole request.
  */
 
 // ----------------------------------------------------------------- the seams
@@ -332,6 +342,91 @@ export async function renameMember(
 }
 
 /**
+ * The credential one reset issues, and the only copy of it there is.
+ *
+ * ONE FIELD AND NOT TWO. {@link IssuedCredential} carries a username because a
+ * create INVENTS one and the panel is the only place it is ever read back; a
+ * reset changes nothing about the sign-in identity, so the member's username is
+ * already on the screen that offers the reset and asking the function to repeat
+ * it would put a second copy of an identity on a wire for no reason.
+ *
+ * NOT CACHED, NOT PERSISTED, NOT LOGGED, for the reason `IssuedCredential` is
+ * not: it is returned, shown once, and dropped when the panel is dismissed.
+ */
+export interface ResetCredential {
+  readonly password: string;
+}
+
+/** Mirrors {@link MemberCreateOutcome}: a credential or a refusal, never both
+ *  and never neither. */
+export type MemberResetOutcome =
+  | { readonly ok: true; readonly credential: ResetCredential }
+  | { readonly ok: false; readonly refusal: MemberWriteRefusal };
+
+/**
+ * Issue a member a new password through the privileged boundary.
+ *
+ * `renameMember` IS THE TEMPLATE — one `invoke`, one success gate, everything
+ * else a refusal — with one addition it cannot share: a reply that passes the
+ * gate but carries no password IS NOT A SUCCESS. The account's credential has
+ * changed either way, so a panel rendering an empty line is the worst outcome
+ * this surface has: the member is locked out of the one account with no
+ * self-service recovery, and the admin has been told it worked.
+ *
+ * NOTHING IS INVALIDATED AFTER THIS. A reset writes no `members` row — the
+ * credential lives in `auth.users` — so a refetch would change nothing on the
+ * list and would only be a render the shown credential has to survive.
+ */
+export async function resetPassword(
+  functions: MemberFunctions,
+  memberId: string,
+): Promise<MemberResetOutcome> {
+  let answered: FunctionsAnswer;
+
+  try {
+    answered = await functions.invoke(MEMBER_WRITE_FUNCTION, {
+      body: { operation: RESET_PASSWORD_OPERATION, memberId },
+    });
+  } catch (cause) {
+    console.error(MEMBER_WRITE_UNAVAILABLE, cause);
+
+    return { ok: false, refusal: { code: MEMBER_WRITE_UNAVAILABLE, saved: false } };
+  }
+
+  // ONE READ AND ONE CODE RULE, the shape `createMember` established: a
+  // `Response` body is consumable exactly once, so asking `replyCodeOf` as well
+  // would throw `Body is unusable` and report every reset as a service failure.
+  const body = await replyBodyOf(answered);
+  const code = replyCodeIn(body);
+
+  if (code === PASSWORD_RESET) {
+    const password = body?.['password'];
+
+    if (typeof password === 'string' && password !== '') {
+      return { ok: true, credential: { password } };
+    }
+
+    // DELIBERATELY NOT LOGGED WITH THE BODY. The body is where the credential
+    // is — when there is one — and a console line carrying it would outlive the
+    // one showing.
+    console.error(MEMBER_WRITE_UNAVAILABLE, PASSWORD_RESET);
+
+    return { ok: false, refusal: { code: MEMBER_WRITE_UNAVAILABLE, saved: false } };
+  }
+
+  const failure = code === null ? MEMBER_WRITE_UNAVAILABLE : memberWriteFailureOf(code);
+
+  // THE LOG AND THE RETURNED CODE NAME THE SAME THING, exactly as the rename's
+  // do: a console that disagrees with the screen sends whoever is debugging
+  // after the wrong string.
+  console.error(failure, code);
+
+  // NEVER `saved: true`. One store is written, so there is no partial save to
+  // report and no state in which two stores disagree.
+  return { ok: false, refusal: { code: failure, saved: false } };
+}
+
+/**
  * Save an edit: the ordinary fields through PostgREST, the username through the
  * function, and the function only when the username actually moved.
  *
@@ -401,8 +496,9 @@ export interface MemberCreation extends MemberEdits {
  * The credential the create issues, and the only copy of it there is.
  *
  * NOT CACHED, NOT PERSISTED, NOT LOGGED. It is returned to the caller, shown
- * once, and dropped when the screen leaves. Story 1.6's admin-issued reset is
- * what replaces it if the admin loses it before handing it over.
+ * once, and dropped when the screen leaves. {@link resetPassword} — the
+ * admin-issued reset story 1.5 owns, not story 1.6 — is what replaces it if the
+ * admin loses it before handing it over.
  */
 export interface IssuedCredential {
   readonly username: string;
@@ -644,6 +740,58 @@ export function memberFormKey(member: MemberListRow): string {
   ].join('|');
 }
 
+// ------------------------------------------------------ the reset's four stages
+
+/** The offer stands: one control, naming the member it would act on. */
+export const RESET_IDLE = 'idle';
+/** The confirmation stands, naming the member. Nothing has been sent. */
+export const RESET_ARMED = 'armed';
+/** The request is outstanding. THE CONFIRMATION STAYS MOUNTED, disabled. */
+export const RESET_BUSY = 'busy';
+/** The credential stands, and it outranks everything else on the screen. */
+export const RESET_SHOWN = 'shown';
+
+export type ResetStage =
+  | typeof RESET_IDLE
+  | typeof RESET_ARMED
+  | typeof RESET_BUSY
+  | typeof RESET_SHOWN;
+
+/**
+ * Which of the reset's four stages is showing.
+ *
+ * FOUR AND NOT THREE, and the fourth is what a first attempt gets wrong. A
+ * model with no IN-FLIGHT stage has to clear `armed` before awaiting, which
+ * unmounts the confirm pair and renders the plain, ENABLED offer in its place
+ * for the whole request — so the pending flag the confirmation carried is
+ * observable by nobody and a second press starts a second reset. `pending`
+ * therefore decides this function's answer rather than only a `disabled`
+ * attribute on a control that may not be on screen.
+ *
+ * THE SHOWN CREDENTIAL OUTRANKS EVERY OTHER CONSIDERATION, which is why it is
+ * tested FIRST and why this function is not handed the read's state at all.
+ * Everything else on that screen can be recovered by looking again; the
+ * password cannot, because it is the only copy. A refetch that drops the row, a
+ * read that re-settles failed, a member id that now reaches nobody — none of
+ * them may take it off the screen. This deliberately inverts the gating rule
+ * the rest of the surface follows.
+ *
+ * IT ENDS ONLY BY AN EXPLICIT DISMISS. `issued` going back to `null` is the
+ * ONLY transition out of {@link RESET_SHOWN}, and until it happens a second
+ * reset is impossible — which is what stops one credential being overwritten by
+ * another before anybody has read it.
+ */
+export function resetStageOf(
+  armed: boolean,
+  pending: boolean,
+  issued: ResetCredential | null,
+): ResetStage {
+  if (issued !== null) return RESET_SHOWN;
+  if (pending) return RESET_BUSY;
+
+  return armed ? RESET_ARMED : RESET_IDLE;
+}
+
 /** The relation the edit path writes. Re-exported rather than re-declared, for
  *  the reason `members/list.ts` re-exports it: two spellings of one table name
  *  is one read that moves and one that 404s. */
@@ -663,6 +811,7 @@ export {
   MESSAGE_SEPARATOR,
   MEMBER_ACCOUNT_STRANDED,
   MEMBER_CREATED,
+  MEMBER_PASSWORD_NOT_APPLIED,
   MEMBER_READ_REFUSED,
   MEMBER_UNKNOWN,
   MEMBER_USERNAME_INVALID,
@@ -675,6 +824,8 @@ export {
   MEMBER_WRITE_UNAVAILABLE,
   ORGANIZATION_WOULD_HAVE_NO_ADMIN,
   PARTIAL_SAVE_KEY,
+  PASSWORD_RESET,
+  RESET_PASSWORD_OPERATION,
   UPDATE_USER_OPERATION,
   USERNAME_CHANGED,
   WIRE_CODES,
