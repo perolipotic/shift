@@ -235,9 +235,11 @@ const SANCTIONED_SCREEN_KEYS = [
   // They state what happened instead.
   'ljudi.error.refused',
   'ljudi.error.unavailable',
-  // Story 1.5b — the two member forms. TWELVE strings the screens render and
-  // ELEVEN refusals the write path maps to, and the partition is the point in
-  // both halves.
+  // The two member forms. TWENTY strings the screens render and TWELVE
+  // refusals the write path maps to, and the partition is the point in both
+  // halves. Twelve of the twenty are story 1.5b's; the other eight and the
+  // twelfth refusal are the admin-issued reset, which is the second half of
+  // story 1.5's acceptance clause 1 rather than story 1.6's.
   //
   // There is deliberately no `ljudi.form.name`, `ljudi.form.email`,
   // `ljudi.form.role` or `ljudi.form.leave`: the four fields are the four
@@ -275,14 +277,43 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.form.saved',
   'ljudi.form.credential',
   'ljudi.form.credentialOnce',
-  // ELEVEN refusals, and the partition costs nothing it should not. A policy
+  // THE ADMIN-ISSUED RESET'S SEVEN, and they are seven rather than two because
+  // the reset is a two-step confirmation whose panel has to be closable.
+  //
+  // The OFFER and the CONFIRM both interpolate the member, which makes them the
+  // second and third keys in this file carrying an ICU argument that is not a
+  // plural — for the reason `ljudi.form.edit` carries one: a control that
+  // replaces somebody's credential may not be indistinguishable from the same
+  // control on another person's screen.
+  'ljudi.form.reset',
+  'ljudi.form.resetPrompt',
+  'ljudi.form.resetConfirm',
+  // `Odustani` is NOT reused for this one. The form's cancel restores the
+  // fields; this one abandons a confirmation, and two controls on one screen
+  // reading the same word are two controls a person cannot tell apart.
+  'ljudi.form.resetCancel',
+  'ljudi.form.resetIssued',
+  // ITS OWN LABEL, never `ljudi.form.credential` — "Početna lozinka" is an
+  // INITIAL credential, and a reset is precisely the case where there already
+  // was one. `ljudi.form.credentialOnce` IS shared, because "write it down,
+  // it cannot be shown again" is the same sentence about the same fact.
+  'ljudi.form.resetCredential',
+  // THE ONLY WAY OUT OF THE SHOWN PANEL, and therefore the only thing that
+  // makes a second reset possible at all.
+  'ljudi.form.resetDismiss',
+  // TWELVE refusals, and the partition costs nothing it should not. A policy
   // refusal, a bad value, a taken username, a malformed username, an id that
   // reaches nobody, a rename that did not apply, a rename that could not be
-  // undone, an account left without a row, the last administrator, and a
-  // service failure are ten different things to do next — and `saved` is the
-  // eleventh because it is not a failure at all: it is the half of a partial
-  // save that says what DID land, rendered beside whichever of the other ten
-  // says what did not.
+  // undone, a PASSWORD that did not change, an account left without a row, the
+  // last administrator, and a service failure are eleven different things to do
+  // next — and `saved` is the twelfth because it is not a failure at all: it is
+  // the half of a partial save that says what DID land, rendered beside
+  // whichever of the other eleven says what did not.
+  //
+  // `resetNotApplied` is its own sentence rather than the service fallback
+  // because this surface is the ONLY recovery an account with no email address
+  // has: whether the credential moved at all is the fact an admin needs before
+  // they read anything out to anybody.
   'ljudi.form.error.refused',
   'ljudi.form.error.invalid',
   'ljudi.form.error.usernameTaken',
@@ -290,6 +321,7 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.form.error.unknown',
   'ljudi.form.error.notApplied',
   'ljudi.form.error.unsettled',
+  'ljudi.form.error.resetNotApplied',
   'ljudi.form.error.stranded',
   'ljudi.form.error.lastAdmin',
   'ljudi.form.error.unavailable',
@@ -573,6 +605,15 @@ describe('the messages obey the voice rules that bind every string', () => {
     expect(messageAt('ljudi.form.add')).toBe('Dodaj osobu');
     expect(messageAt('ljudi.form.edit')).toBe('Uredi osobu {name}');
     expect(messageAt('ljudi.form.back')).toBe('Vrati se na popis');
+    // THE RESET'S FOUR ACTION LABELS, pinned here for the reason `Spremi` and
+    // `Odustani` are: they are a THIRD authoring of the same imperative voice,
+    // and the offer is the one that would most naturally have been written as
+    // the noun `Dodjela nove lozinke` — a heading, not a control. `Dodijeli`,
+    // `Potvrdi`, `Odustani` and `Sakrij` are all second person singular.
+    expect(messageAt('ljudi.form.reset')).toBe('Dodijeli novu lozinku osobi {name}');
+    expect(messageAt('ljudi.form.resetConfirm')).toBe('Potvrdi novu lozinku za osobu {name}');
+    expect(messageAt('ljudi.form.resetCancel')).toBe('Odustani od nove lozinke');
+    expect(messageAt('ljudi.form.resetDismiss')).toBe('Sakrij lozinku');
   });
 });
 

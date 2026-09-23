@@ -19,6 +19,7 @@
 import {
   OPERATION_FAILED,
   createUser,
+  resetPassword,
   updateUserById,
   type CallerClient,
   type OperationReply,
@@ -26,7 +27,13 @@ import {
 } from './operations.ts';
 
 /** The complete set of operations this boundary will ever expose (AD-16). */
-export const OPERATIONS = ['createUser', 'updateUserById', 'ban', 'unban'] as const;
+export const OPERATIONS = [
+  'createUser',
+  'updateUserById',
+  'resetPassword',
+  'ban',
+  'unban',
+] as const;
 
 export type Operation = (typeof OPERATIONS)[number];
 
@@ -44,8 +51,13 @@ export type Operation = (typeof OPERATIONS)[number];
 export const UNIMPLEMENTED_OPERATIONS = ['ban', 'unban'] as const;
 
 /** The operations this story implements. The two lists partition
- *  {@link OPERATIONS}, which the boundary suite asserts rather than assumes. */
-export const IMPLEMENTED_OPERATIONS = ['createUser', 'updateUserById'] as const;
+ *  {@link OPERATIONS}, which the boundary suite asserts rather than assumes.
+ *
+ *  `resetPassword` JOINED and `ban`/`unban` did not: the reset is the second
+ *  half of story 1.5's acceptance clause 1 — an account with no email address
+ *  has no self-service recovery, so the reset is the only recovery there is —
+ *  while active state still lives in a versioned shape story 1.6 owns. */
+export const IMPLEMENTED_OPERATIONS = ['createUser', 'updateUserById', 'resetPassword'] as const;
 
 /**
  * The codes the TRANSPORT answers with, before any operation runs.
@@ -275,6 +287,14 @@ export function createHandler(
       }
       if (operation === 'updateUserById') {
         answered = await updateUserById({ privileged: accounts, caller: client }, payload);
+      }
+      // THE SAME TWO VALUES, never a third construction. The reset holds the
+      // secret key for exactly one call — `auth.admin.updateUserById` — and
+      // reads the member it is about through the CALLER's client, so row level
+      // security decides which rows exist before the authorization decides
+      // anything at all.
+      if (operation === 'resetPassword') {
+        answered = await resetPassword({ privileged: accounts, caller: client }, payload);
       }
 
       if (answered !== null) return reply(answered.status, answered.body);

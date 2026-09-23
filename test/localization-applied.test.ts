@@ -650,6 +650,44 @@ const AUTHORED_VOCABULARY = [
   'već',
   'više',
   'znak',
+  // THE ADMIN-ISSUED RESET'S THIRTEEN, and every one of them is a word this
+  // story introduces: the offer's verb, the confirmation's sentence about
+  // existing sessions, the confirm, the shown panel's two lines, and the
+  // refusal that says the credential did not move.
+  //
+  // `nije` IS NOT AMONG THEM, and the reason is worth naming rather than
+  // leaving to be rediscovered: `index.html`'s boot fallback says "Shift se
+  // nije pokrenuo", and that string may not come from a key at all — the
+  // translation layer is what failed. Every word on this list is swept out of
+  // the HTML as well as counted in the chunk, so `nije` cannot join it while
+  // the fallback exists.
+  //
+  // COUNTED SEPARATELY AND NOT AS STEMS, which is what the word boundary buys.
+  // `lozinka`, `lozinke`, `lozinku` and `Lozinka` are four distinct whole words
+  // because Croatian declines and the sign-in field capitalizes; two of the
+  // four were already counted, so only the two this story introduces are added.
+  // `novu` and `nove` are likewise two words and not one stem.
+  //
+  // THE FUNCTION WORDS IN THE SAME SENTENCES — `za`, `od`, `je` — ARE
+  // DELIBERATELY ABSENT, and their absence is a rule this list has followed
+  // since it was written rather than an oversight: one- and two-letter tokens
+  // occur in a minified chunk as identifiers, so a count over them compares
+  // `hr.json` against the bundler's variable names and fails on correct code.
+  // Every count here is read off the resource file rather than written down, so
+  // a reworded message moves both sides at once and needs no edit to this list.
+  'Dodijeli',
+  'Potvrdi',
+  'dobiva',
+  'dodijeljena',
+  'lozinka',
+  'lozinke',
+  'nove',
+  'novu',
+  'osobi',
+  'Postojeće',
+  'prestaju',
+  'prijave',
+  'vrijediti',
 ];
 
 /** Everything the terminology contract and the unshipped affordances still own.
