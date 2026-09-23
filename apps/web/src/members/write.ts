@@ -1,28 +1,48 @@
 import {
   MEMBERS_REFUSED,
   MEMBERS_TABLE,
+  memberActiveFrom,
+  memberLatestVersion,
+  memberStatusOf,
   type MemberListRow,
+  type MemberStatus,
+  type MemberStatusVersion,
   type MembersSurfaceState,
 } from '@/members/list';
 import {
   CREATE_USER_OPERATION,
+  DEACTIVATE,
   LEAVE_ALLOWANCE_MAX,
   MEMBER_CREATED,
   MEMBER_READ_REFUSED,
+  MEMBER_STATUS_DATE_TAKEN,
+  MEMBER_STATUS_IN_EFFECT,
+  MEMBER_STATUS_IN_PAST,
+  MEMBER_STATUS_OUT_OF_ORDER,
+  MEMBER_STATUS_SELF,
+  MEMBER_STATUS_STALE,
+  MEMBER_STATUS_UNCHANGED,
   MEMBER_UNKNOWN,
   MEMBER_WRITE_FUNCTION,
+  MEMBER_WRITE_INVALID,
   MEMBER_WRITE_REFUSED,
   MEMBER_WRITE_UNAVAILABLE,
+  ORGANIZATION_WOULD_HAVE_NO_ADMIN,
+  REACTIVATE,
+  WITHDRAW,
   PASSWORD_RESET,
   RESET_PASSWORD_OPERATION,
   UPDATE_USER_OPERATION,
   USERNAME_CHANGED,
   editFailureOf,
   memberWriteFailureOf,
+  statusPromptMessageKey,
   type MemberWriteFailure,
   type MemberWriteRefusal,
   type PostgrestFailure,
+  type StatusChange,
 } from '@/members/wire';
+import { isIsoDate, nextIsoDate } from '@/i18n/format';
 import type { MemberRole } from '@/navigation/destinations';
 import { MEMBER_ROLES } from '@/navigation/role';
 
@@ -792,6 +812,422 @@ export function resetStageOf(
   return armed ? RESET_ARMED : RESET_IDLE;
 }
 
+// ------------------------------------------------ deactivation (story 1.6)
+
+/**
+ * The relation a status change writes (`0008_member_status.sql`).
+ *
+ * A PLAIN POSTGREST WRITE, never the privileged function. `ban` and `unban`
+ * left `admin-auth`'s vocabulary in this story: the helper every policy re-reads
+ * ends data access on the date, the access token hook ends sign-in, and the
+ * table's policies are where every rule of the write is enforced — for this
+ * screen and for a direct API call alike.
+ */
+export const MEMBER_STATUS_TABLE = 'member_status_versions';
+
+/** What a status insert resolves to. Nothing is read back: the policy that
+ *  admits the write is the confirmation, and the list refetch shows it. */
+export interface StatusInsertAnswer {
+  readonly error: PostgrestFailure | null;
+}
+
+/** The tail of the cancellation chain:
+ *  `.eq('member_id', …).eq('effective_from', …).select(…)`. */
+export interface StatusDeleteFilter {
+  eq(
+    column: string,
+    value: string,
+  ): {
+    eq(column: string, value: string): { select(columns: string): PromiseLike<PostgrestAnswer> };
+  };
+}
+
+/**
+ * The two PostgREST calls a status change makes, named structurally so they
+ * can be stubbed. `insert` to append a version, `delete` to cancel one not yet
+ * in effect — and NO `update`: a version is never changed, and the table
+ * carries no update policy for a seam to reach.
+ */
+export interface MemberStatusTable {
+  insert(values: Readonly<Record<string, unknown>>): PromiseLike<StatusInsertAnswer>;
+  delete(): StatusDeleteFilter;
+}
+
+/** The column a cancellation reads back. A refused one deletes nothing and
+ *  answers `[]` rather than an error, so the row count IS the outcome. */
+const WITHDRAWN_COLUMNS = 'effective_from';
+
+/**
+ * What the status block shows and offers for one member.
+ */
+export type StatusOffer =
+  | {
+      /** Deactivate (active today) or reactivate (inactive today) from a date. */
+      readonly change: typeof DEACTIVATE | typeof REACTIVATE;
+      readonly status: MemberStatus;
+      /** The organization's today. */
+      readonly today: string;
+      /**
+       * The earliest date the control admits, and its default: the later of
+       * today and the day after the member's latest version, because versions
+       * append in date order.
+       */
+      readonly minimum: string;
+    }
+  | {
+      /** A change is scheduled: the only thing offered is cancelling it. */
+      readonly change: typeof WITHDRAW;
+      readonly status: MemberStatus;
+      readonly today: string;
+      /** The scheduled version the cancellation removes. */
+      readonly scheduled: MemberStatusVersion;
+    };
+
+/**
+ * Whether the status block renders at all, and what it offers.
+ *
+ * ABSENT ON THE CALLER'S OWN ROW. `0008` refuses an admin inserting OR
+ * cancelling a version on their own row — cancelling one's own reactivation
+ * is a self-deactivation — so a control offered there can only fail. And
+ * absent while either the caller's identity or the organization's today is
+ * unknown: an offer resting on a guessed date proposes a write the database
+ * may refuse, and one resting on an unread session cannot tell whose row this
+ * is.
+ *
+ * A SCHEDULED CHANGE IS OFFERED ONLY FOR CANCELLATION. A new version must be
+ * dated after it and must change something, so "reactivate from today" beside
+ * a deactivation scheduled for next week would be a version that changes
+ * nothing — the "saved" that did nothing this rule exists to prevent.
+ */
+export function statusOfferOf(
+  member: MemberListRow,
+  callerAuthUserId: string | null,
+  today: string | null,
+): StatusOffer | null {
+  if (today === null || callerAuthUserId === null) return null;
+  if (member.authUserId === callerAuthUserId) return null;
+
+  const status = memberStatusOf(member, today);
+
+  if (status.scheduled !== null) {
+    return { change: WITHDRAW, status, today, scheduled: status.scheduled };
+  }
+
+  const latest = memberLatestVersion(member);
+  const afterLatest = latest === null ? null : nextIsoDate(latest.effectiveFrom);
+
+  // NO DATE LEFT TO OFFER: the latest version is on `9999-12-31`, the last day
+  // `0008` admits, so nothing can be dated after it.
+  if (latest !== null && afterLatest === null) return null;
+
+  const minimum = afterLatest !== null && afterLatest > today ? afterLatest : today;
+
+  return { change: status.activeToday ? DEACTIVATE : REACTIVATE, status, today, minimum };
+}
+
+/** Everything a status change is judged against. */
+export interface StatusContext {
+  /** The member the change is about. */
+  readonly member: MemberListRow;
+  /** The whole organization, as the same list read holds it. */
+  readonly members: readonly MemberListRow[];
+  readonly callerAuthUserId: string;
+  /** The organization's today, as an ISO date. */
+  readonly today: string;
+}
+
+/**
+ * The refusals a status change can know before it is sent, or `null`.
+ *
+ * `day` is the entered date for a deactivation or a reactivation, and the
+ * scheduled version's date for a cancellation.
+ *
+ * ONLY THE CERTAIN ONES — facts about what was entered and about the history
+ * the list holds. Whether the organization would be left without an active
+ * admin is NOT decided here: the list may be stale, and refusing on a stale
+ * list would block a write the database admits. That one is read only after
+ * the database has refused.
+ */
+export function statusPreflightOf(
+  change: StatusChange,
+  day: string,
+  context: StatusContext,
+): MemberWriteFailure | null {
+  if (!isIsoDate(day)) return MEMBER_WRITE_INVALID;
+  if (context.member.authUserId === context.callerAuthUserId) return MEMBER_STATUS_SELF;
+
+  const latest = memberLatestVersion(context.member);
+
+  // ISO dates order as strings, so every comparison below is the policy's own.
+  if (change === WITHDRAW) {
+    // A CANCELLATION NAMING A VERSION THE LIST NO LONGER HOLDS AS LATEST is
+    // stale data, not a change in effect: the status moved since the screen
+    // armed it, and the thing to do is look again.
+    if (latest === null || latest.effectiveFrom !== day) return MEMBER_STATUS_STALE;
+    if (day <= context.today) return MEMBER_STATUS_IN_EFFECT;
+
+    return null;
+  }
+
+  if (day < context.today) return MEMBER_STATUS_IN_PAST;
+  if (latest !== null && day === latest.effectiveFrom) return MEMBER_STATUS_DATE_TAKEN;
+  if (latest !== null && day < latest.effectiveFrom) return MEMBER_STATUS_OUT_OF_ORDER;
+
+  const latestActive = latest === null ? true : latest.active;
+
+  if ((change === REACTIVATE) === latestActive) return MEMBER_STATUS_UNCHANGED;
+
+  return null;
+}
+
+/**
+ * Whether a change would leave some date from `day` onward with no active
+ * admin, by the list's reading — the one `0008` makes: a change that makes an
+ * ADMIN inactive from `day` needs another admin active on every date from
+ * `day` onward. A change to anybody else never earns this refusal.
+ */
+function leavesNoAdmin(change: StatusChange, day: string, context: StatusContext): boolean {
+  const target = context.member;
+
+  if (target.role !== 'admin') return false;
+
+  // Only a deactivation, and the cancellation of a REACTIVATION, make the
+  // target inactive from `day`.
+  const makesInactive =
+    change === DEACTIVATE ||
+    (change === WITHDRAW && memberLatestVersion(target)?.active === true);
+
+  if (!makesInactive) return false;
+
+  return !context.members.some(
+    (candidate) =>
+      candidate.role === 'admin' && candidate.id !== target.id && memberActiveFrom(candidate, day),
+  );
+}
+
+/**
+ * A refused status write, as this application's own failure. `error` is
+ * `null` for a cancellation that deleted nothing.
+ *
+ * EVERY RULE OF `0008`'s POLICIES ARRIVES AS `42501`, or — for a cancellation
+ * — as zero rows deleted, because they are all conjuncts of one clause. So a
+ * refusal is read against what was sent: the preflight's named refusals first,
+ * then the last-admin refusal when the list says that rule is what refused.
+ * A refusal the list cannot explain means the list is behind the database —
+ * somebody changed this member, or another admin, since it was read — so it is
+ * STALE: look again, rather than a bare "refused" that names nothing to do.
+ * The last-admin message is the existing one, because it is the same rule (Q6)
+ * reached another way.
+ */
+export function statusFailureOf(
+  error: PostgrestFailure | null,
+  change: StatusChange,
+  day: string,
+  context: StatusContext,
+): MemberWriteFailure {
+  if (error?.code === '23505') return MEMBER_STATUS_DATE_TAKEN;
+
+  if (error === null || error.code === '42501') {
+    const named = statusPreflightOf(change, day, context);
+
+    if (named !== null) return named;
+    if (leavesNoAdmin(change, day, context)) return ORGANIZATION_WOULD_HAVE_NO_ADMIN;
+
+    return MEMBER_STATUS_STALE;
+  }
+
+  if (error.code !== undefined && ['22', '23'].includes(error.code.slice(0, 2))) {
+    return MEMBER_WRITE_INVALID;
+  }
+
+  return MEMBER_WRITE_UNAVAILABLE;
+}
+
+/** What one status write came back as, before it is judged. */
+interface StatusAnswer {
+  readonly written: boolean;
+  readonly error: PostgrestFailure | null;
+}
+
+async function sendStatus(
+  table: MemberStatusTable,
+  change: StatusChange,
+  day: string,
+  member: MemberListRow,
+): Promise<StatusAnswer> {
+  if (change === WITHDRAW) {
+    const answered = await table
+      .delete()
+      .eq('member_id', member.id)
+      .eq('effective_from', day)
+      .select(WITHDRAWN_COLUMNS);
+
+    // ZERO ROWS IS A REFUSAL: the delete policy matched nothing.
+    return { written: answered.error === null && answered.data?.length === 1, error: answered.error };
+  }
+
+  const answered = await table.insert({
+    organization_id: member.organizationId,
+    member_id: member.id,
+    active: change === REACTIVATE,
+    effective_from: day,
+  });
+
+  return { written: answered.error === null, error: answered.error };
+}
+
+/**
+ * Append one status version, or cancel the scheduled one.
+ *
+ * NOTHING IS SENT FOR A REFUSAL IT CAN ALREADY NAME, and the entered date is
+ * the caller's to keep — the screen holds it in an uncontrolled field that a
+ * refusal does not remount.
+ */
+export async function changeMemberStatus(
+  table: MemberStatusTable,
+  change: StatusChange,
+  day: string,
+  context: StatusContext,
+): Promise<MemberWriteOutcome> {
+  const preflight = statusPreflightOf(change, day, context);
+
+  if (preflight !== null) return { ok: false, refusal: { code: preflight, saved: false } };
+
+  let answer: StatusAnswer;
+
+  try {
+    answer = await sendStatus(table, change, day, context.member);
+  } catch (cause) {
+    console.error(MEMBER_WRITE_UNAVAILABLE, cause);
+
+    return { ok: false, refusal: { code: MEMBER_WRITE_UNAVAILABLE, saved: false } };
+  }
+
+  if (answer.written) return { ok: true };
+
+  const code = statusFailureOf(answer.error, change, day, context);
+
+  console.error(code, answer.error?.code);
+
+  return { ok: false, refusal: { code, saved: false } };
+}
+
+/**
+ * The prompt key for an armed confirmation, worded by its date as at the
+ * organization's today: a change dated TODAY is in the present — it happens
+ * the moment it is confirmed — and one dated after it in the future. A
+ * cancellation is only ever of a later date.
+ */
+export function statusPromptKeyOf(
+  confirmation: Pick<StatusConfirmation, 'change' | 'day'>,
+  today: string,
+): ReturnType<typeof statusPromptMessageKey> {
+  return statusPromptMessageKey(confirmation.change, confirmation.day > today);
+}
+
+/**
+ * The date today's status line names: the date the version in effect took
+ * effect, or today for a member no version has touched (whose line, "active",
+ * interpolates no date at all).
+ */
+export function statusSinceOf(status: MemberStatus, today: string): string {
+  return status.since ?? today;
+}
+
+/** The query key the caller's own account id is read under. */
+export const SESSION_SUBJECT_KEY = ['session-subject'] as const;
+
+/**
+ * The caller's own account id, or `null` when there is no session to read.
+ *
+ * `null` ON EVERY FAILURE, and the status block treats it as "offer nothing":
+ * without the caller's identity the screen cannot tell whether this row is the
+ * caller's own, which is the one row the control may never be offered on.
+ */
+export async function readSessionSubject(
+  read: () => Promise<{ readonly user: { readonly id: string } } | null>,
+): Promise<string | null> {
+  try {
+    return (await read())?.user.id ?? null;
+  } catch (cause) {
+    console.error(MEMBER_WRITE_UNAVAILABLE, cause);
+
+    return null;
+  }
+}
+
+/** The offer stands: a date control and one action, naming the member. */
+export const STATUS_IDLE = 'idle';
+/** The confirmation stands, naming the member and the date. Nothing sent. */
+export const STATUS_ARMED = 'armed';
+/** The write is outstanding. THE CONFIRMATION STAYS MOUNTED, disabled. */
+export const STATUS_BUSY = 'busy';
+
+export type StatusStage = typeof STATUS_IDLE | typeof STATUS_ARMED | typeof STATUS_BUSY;
+
+/**
+ * Which of the status block's three stages is showing.
+ *
+ * `pending` DECIDES, for the reason {@link resetStageOf} gives: a model where
+ * the armed flag is cleared before awaiting renders the plain, enabled offer
+ * for the whole request, and a second press appends a second version.
+ */
+export function statusStageOf(armed: boolean, pending: boolean): StatusStage {
+  if (pending) return STATUS_BUSY;
+
+  return armed ? STATUS_ARMED : STATUS_IDLE;
+}
+
+/**
+ * The status block's fingerprint: the member and their whole history.
+ *
+ * The block is keyed to it, so the date control's `defaultValue` returns to
+ * the new minimum after a version lands — and NOT on a refusal, which leaves
+ * the history alone and so keeps the entered date. An armed confirmation
+ * carries the fingerprint it was armed against, for {@link standingConfirmation}.
+ */
+export function statusBlockKey(member: MemberListRow): string {
+  return [
+    member.id,
+    ...member.statusVersions.map((version) => `${version.effectiveFrom}:${String(version.active)}`),
+  ].join('|');
+}
+
+/**
+ * The confirmation, carrying what it is about.
+ *
+ * The NAME and the DATE travel with it rather than being read off the row and
+ * the field at render time, so the date confirmed is the date sent. `history`
+ * is the member's {@link statusBlockKey} when it was armed.
+ */
+export interface StatusConfirmation {
+  readonly name: string;
+  readonly change: StatusChange;
+  readonly day: string;
+  readonly history: string;
+}
+
+/**
+ * The armed confirmation that still stands for this member, or `null`.
+ *
+ * CLEARED BY A REFETCH THAT CHANGES THE MEMBER'S VERSIONS. A confirmation
+ * armed against one history and confirmed against another is a decision about
+ * a state that no longer exists — "deactivate from Monday" armed before
+ * somebody else scheduled a deactivation for Friday. A refetch that leaves the
+ * history alone keeps it, and so does a PENDING write: its own refetch is what
+ * changes the history, and the busy state must outlive it.
+ */
+export function standingConfirmation(
+  armed: StatusConfirmation | null,
+  member: MemberListRow | null,
+  pending: boolean,
+): StatusConfirmation | null {
+  if (armed === null) return null;
+  if (pending || member === null) return armed;
+
+  return statusBlockKey(member) === armed.history ? armed : null;
+}
+
 /** The relation the edit path writes. Re-exported rather than re-declared, for
  *  the reason `members/list.ts` re-exports it: two spellings of one table name
  *  is one read that moves and one that 404s. */
@@ -807,12 +1243,20 @@ export { MEMBERS_TABLE };
  */
 export {
   CREATE_USER_OPERATION,
+  DEACTIVATE,
   LEAVE_ALLOWANCE_MAX,
   MESSAGE_SEPARATOR,
   MEMBER_ACCOUNT_STRANDED,
   MEMBER_CREATED,
   MEMBER_PASSWORD_NOT_APPLIED,
   MEMBER_READ_REFUSED,
+  MEMBER_STATUS_DATE_TAKEN,
+  MEMBER_STATUS_IN_EFFECT,
+  MEMBER_STATUS_IN_PAST,
+  MEMBER_STATUS_OUT_OF_ORDER,
+  MEMBER_STATUS_SELF,
+  MEMBER_STATUS_STALE,
+  MEMBER_STATUS_UNCHANGED,
   MEMBER_UNKNOWN,
   MEMBER_USERNAME_INVALID,
   MEMBER_USERNAME_NOT_APPLIED,
@@ -825,6 +1269,8 @@ export {
   ORGANIZATION_WOULD_HAVE_NO_ADMIN,
   PARTIAL_SAVE_KEY,
   PASSWORD_RESET,
+  REACTIVATE,
+  WITHDRAW,
   RESET_PASSWORD_OPERATION,
   UPDATE_USER_OPERATION,
   USERNAME_CHANGED,
@@ -833,8 +1279,14 @@ export {
   memberWriteFailureOf,
   memberWriteMessageKey,
   memberWriteMessageKeys,
+  statusConfirmMessageKey,
+  statusOfferMessageKey,
+  statusPromptMessageKey,
+  statusScheduledMessageKey,
+  statusTodayMessageKey,
   type MemberWriteFailure,
   type MemberWriteMessageKey,
   type MemberWriteRefusal,
   type PostgrestFailure,
+  type StatusChange,
 } from '@/members/wire';

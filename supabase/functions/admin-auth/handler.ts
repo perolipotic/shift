@@ -26,38 +26,21 @@ import {
   type PrivilegedAccounts,
 } from './operations.ts';
 
-/** The complete set of operations this boundary will ever expose (AD-16). */
-export const OPERATIONS = [
-  'createUser',
-  'updateUserById',
-  'resetPassword',
-  'ban',
-  'unban',
-] as const;
+/**
+ * The complete set of operations this boundary will ever expose (AD-16).
+ *
+ * THREE, and `ban`/`unban` LEFT in story 1.6 rather than being implemented.
+ * Active state is a versioned domain table (`0008_member_status.sql`) written
+ * through PostgREST under row level security; sign-in is ended by the access
+ * token hook and data access by the helper every policy re-reads. The only
+ * thing the secret key could have added is a session revocation, and GoTrue
+ * offers none without changing the password — so a pass-through operation here
+ * would have been ceremony on the one component AD-16 keeps small. Human
+ * decision 2026-09-23.
+ */
+export const OPERATIONS = ['createUser', 'updateUserById', 'resetPassword'] as const;
 
 export type Operation = (typeof OPERATIONS)[number];
-
-/**
- * The operations that still refuse to act, and why they are named here rather
- * than inferred from the dispatch below.
- *
- * `ban` and `unban` version an account's ACTIVE STATE, which AD-2 says lives in
- * `auth.users` and story 1.6 owns together with the versioned shape that records
- * it. Shipping them here would mean guessing that shape a story early, so they
- * keep answering 501 — and `test/admin-auth-boundary.test.ts` drives this list
- * rather than `OPERATIONS`, so an operation that quietly stopped being
- * implemented reads as a failing test rather than as a shorter `it.each`.
- */
-export const UNIMPLEMENTED_OPERATIONS = ['ban', 'unban'] as const;
-
-/** The operations this story implements. The two lists partition
- *  {@link OPERATIONS}, which the boundary suite asserts rather than assumes.
- *
- *  `resetPassword` JOINED and `ban`/`unban` did not: the reset is the second
- *  half of story 1.5's acceptance clause 1 — an account with no email address
- *  has no self-service recovery, so the reset is the only recovery there is —
- *  while active state still lives in a versioned shape story 1.6 owns. */
-export const IMPLEMENTED_OPERATIONS = ['createUser', 'updateUserById', 'resetPassword'] as const;
 
 /**
  * The codes the TRANSPORT answers with, before any operation runs.
@@ -75,7 +58,6 @@ export const AUTHORIZATION_MISSING = 'AUTHORIZATION_MISSING';
 export const METHOD_NOT_ALLOWED = 'METHOD_NOT_ALLOWED';
 export const BODY_NOT_JSON = 'BODY_NOT_JSON';
 export const OPERATION_UNKNOWN = 'OPERATION_UNKNOWN';
-export const NOT_IMPLEMENTED = 'NOT_IMPLEMENTED';
 export const CLIENT_CONSTRUCTION_FAILED = 'CLIENT_CONSTRUCTION_FAILED';
 
 /** Every code the transport can put on the wire. Bound to the SPA's own copy
@@ -85,7 +67,6 @@ export const TRANSPORT_CODES = [
   METHOD_NOT_ALLOWED,
   BODY_NOT_JSON,
   OPERATION_UNKNOWN,
-  NOT_IMPLEMENTED,
   CLIENT_CONSTRUCTION_FAILED,
 ] as const;
 
@@ -304,10 +285,12 @@ export function createHandler(
       return reply(500, { code: OPERATION_FAILED, operation });
     }
 
-    // `ban` and `unban` only. Active state lives in `auth.users` (AD-2) and the
-    // versioned shape that records it is story 1.6's, so shipping either here
-    // would mean guessing that shape a story early. See
-    // {@link UNIMPLEMENTED_OPERATIONS}.
-    return reply(501, { code: NOT_IMPLEMENTED, operation });
+    // UNREACHABLE: `isOperation` admitted only a member of `OPERATIONS`, and
+    // every member is dispatched above. Answered as the operation failing
+    // rather than falling off the end, so a fourth name added to the list
+    // without a branch is a logged 500 and never a reply with no body.
+    console.error(OPERATION_FAILED, operation);
+
+    return reply(500, { code: OPERATION_FAILED, operation });
   };
 }

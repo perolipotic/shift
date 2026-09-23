@@ -15,11 +15,14 @@ import {
   mayReadMembers,
   memberLevelMessageKey,
   membersSurfaceStateOf,
+  membersTodayOf,
   readMembers,
+  shownDate,
   type MemberListRow,
 } from '@/members/list';
 import {
   LEAVE_ALLOWANCE_MAX,
+  MEMBER_STATUS_TABLE,
   MEMBER_WRITE_INVALID,
   MEMBER_WRITE_UNAVAILABLE,
   MESSAGE_SEPARATOR,
@@ -27,25 +30,45 @@ import {
   RESET_BUSY,
   RESET_IDLE,
   RESET_SHOWN,
+  SESSION_SUBJECT_KEY,
+  STATUS_ARMED,
+  STATUS_BUSY,
+  STATUS_IDLE,
+  WITHDRAW,
+  changeMemberStatus,
   chosenRole,
   enteredAllowance,
   memberFormKey,
   memberFormRefusalOf,
   memberWriteMessageKeys,
   raisedForMember,
+  readSessionSubject,
   resetPassword,
   resetStageOf,
   saveMember,
+  standingConfirmation,
+  statusBlockKey,
+  statusConfirmMessageKey,
+  statusOfferMessageKey,
+  statusOfferOf,
+  statusPreflightOf,
+  statusPromptKeyOf,
+  statusScheduledMessageKey,
+  statusSinceOf,
+  statusStageOf,
+  statusTodayMessageKey,
   storedEmail,
   type RaisedForMember,
   type MemberFunctions,
   type MemberWriteRefusal,
   type ResetCredential,
+  type StatusConfirmation,
+  type StatusOffer,
 } from '@/members/write';
 import { DESTINATIONS } from '@/navigation/destinations';
 import { MEMBER_ROLES, MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/navigation/role';
 import { appLayoutRoute } from '@/routes/_app';
-import { supabaseClient } from '@/supabase/client';
+import { currentSession, supabaseClient } from '@/supabase/client';
 
 /**
  * `/ljudi/$id` — an admin edits one member (story 1.5b).
@@ -91,6 +114,15 @@ import { supabaseClient } from '@/supabase/client';
  * branch nothing runs — and the in-flight stage is the one that gets written
  * wrong, because clearing `armed` before awaiting renders the plain ENABLED
  * offer for the whole request.
+ *
+ * DEACTIVATION IS THE THIRD BLOCK (story 1.6), between the reset and the way
+ * back, with its own ref, pending flag and armed confirmation. It is a plain
+ * PostgREST insert of a status version — never the privileged function — and
+ * every rule of it is `0008`'s insert policy. What it offers, whether it
+ * renders at all (never on the caller's own row), which stage shows and what a
+ * refusal is called are all `@/members/write`'s decisions. The date control
+ * defaults to, and may not go below, the ORGANIZATION's today; it stays mounted
+ * through the confirmation, so a refusal keeps the date that was entered.
  */
 
 /** Where a session that is not an administrator's is sent. The FIRST
@@ -157,6 +189,24 @@ export function LjudiMemberScreen() {
    * else — and until it is, a second reset is impossible.
    */
   const [issued, setIssued] = useState<RaisedForMember<ResetCredential> | null>(null);
+  // THE STATUS BLOCK'S OWN FIVE PIECES OF STATE and its own in-flight ref, for
+  // the reason the reset has its own: sharing either with another action would
+  // make one block's request disable the other's controls — and its own
+  // refusal, so the date control is described by the status block's alert and
+  // never by an unrelated error on the form above it.
+  const statusing = useRef(false);
+  const dateField = useRef<HTMLInputElement>(null);
+  const [statusPending, setStatusPending] = useState(false);
+  /** The armed confirmation, carrying the name, the change and the DATE it is
+   *  about, so what is confirmed is exactly what is sent. */
+  const [statusArmed, setStatusArmed] = useState<RaisedForMember<StatusConfirmation> | null>(
+    null,
+  );
+  /** That a status change landed. Keyed to the member it confirms. */
+  const [statusSaved, setStatusSaved] = useState<RaisedForMember<true> | null>(null);
+  /** Why the last status change did not land. Keyed to the member. */
+  const [statusFailure, setStatusFailure] =
+    useState<RaisedForMember<MemberWriteRefusal> | null>(null);
 
   const answer = useQuery({
     queryKey: MEMBERS_LIST_KEY,
@@ -164,6 +214,18 @@ export function LjudiMemberScreen() {
     staleTime: MEMBERS_READ_STALE_MS,
     refetchOnWindowFocus: false,
   });
+
+  // THE CALLER'S OWN ACCOUNT, so the status block is never offered on it.
+  const subject = useQuery({
+    queryKey: SESSION_SUBJECT_KEY,
+    queryFn: () => readSessionSubject(currentSession),
+    refetchOnWindowFocus: false,
+  });
+  const callerAuthUserId = subject.data ?? null;
+  const organizationMembers = membersSurfaceStateOf(answer).members ?? [];
+  // THE ORGANIZATION'S TODAY — the date control's default and its minimum —
+  // from the zone the one list read embeds.
+  const today = membersTodayOf(organizationMembers, new Date());
 
   // TWO PURE FUNCTIONS AND NO BRANCH OF ITS OWN: the list's four states, then
   // "is this member in it". Both are pinned by execution in `write.test.ts`.
@@ -180,6 +242,117 @@ export function LjudiMemberScreen() {
   // runs it. `resetPending` is one of them rather than only a `disabled`
   // attribute, which is what makes the in-flight stage representable at all.
   const stage = resetStageOf(armedFor !== null, resetPending, credential);
+  // CLEARED BY A REFETCH THAT CHANGES THIS MEMBER'S VERSIONS: a confirmation
+  // armed against one history is not confirmed against another.
+  const statusArmedFor = standingConfirmation(
+    raisedForMember(statusArmed, id),
+    form.member,
+    statusPending,
+  );
+  const statusConfirmed = raisedForMember(statusSaved, id) !== null;
+  const statusRefusal = raisedForMember(statusFailure, id);
+  const statusStage = statusStageOf(statusArmedFor !== null, statusPending);
+  const offer = form.member === null ? null : statusOfferOf(form.member, callerAuthUserId, today);
+
+  /**
+   * Arm the status confirmation, or name the refusal the entered date already
+   * earns. Nothing is sent from here.
+   */
+  function armStatus(member: MemberListRow, offered: StatusOffer): void {
+    if (callerAuthUserId === null) return;
+
+    const field = dateField.current;
+    // A CANCELLATION NAMES THE SCHEDULED VERSION'S DATE; the other two name
+    // the entered one.
+    const day = offered.change === WITHDRAW ? offered.scheduled.effectiveFrom : field?.value;
+
+    if (day === undefined) return;
+
+    const refusal = statusPreflightOf(offered.change, day, {
+      member,
+      members: organizationMembers,
+      callerAuthUserId,
+      today: offered.today,
+    });
+
+    setStatusSaved(null);
+
+    if (refusal !== null) {
+      // FOCUS MOVES TO THE DATE, which the block's own alert names; that alert
+      // is what the field's `aria-describedby` points at.
+      setStatusFailure({ member: member.id, raised: { code: refusal, saved: false } });
+      field?.focus();
+
+      return;
+    }
+
+    setStatusFailure(null);
+    setStatusArmed({
+      member: member.id,
+      raised: { name: member.name, change: offered.change, day, history: statusBlockKey(member) },
+    });
+  }
+
+  /**
+   * Send the confirmed status change, keeping the confirmation on screen while
+   * it is outstanding.
+   *
+   * NOTHING CLEARS `statusArmed` BEFORE THE AWAIT, for the reason `issue` gives.
+   */
+  async function changeStatus(): Promise<void> {
+    const member = form.member;
+    const confirmation = statusArmedFor;
+
+    if (
+      member === null ||
+      confirmation === null ||
+      callerAuthUserId === null ||
+      today === null ||
+      statusing.current
+    ) {
+      return;
+    }
+
+    statusing.current = true;
+    setStatusFailure(null);
+    setStatusSaved(null);
+    setStatusPending(true);
+
+    try {
+      const outcome = await changeMemberStatus(
+        supabaseClient().from(MEMBER_STATUS_TABLE),
+        confirmation.change,
+        confirmation.day,
+        { member, members: organizationMembers, callerAuthUserId, today },
+      );
+
+      if (outcome.ok) setStatusSaved({ member: member.id, raised: true });
+      else setStatusFailure({ member: member.id, raised: outcome.refusal });
+
+      // THE LIST CARRIES THE VERSIONS, so the marker, the status line and the
+      // next offer all move with it — and it is refetched on a REFUSAL too,
+      // because the likeliest reason for one is a list behind the database
+      // (`MEMBER_STATUS_STALE`). Its own failure is isolated, exactly as the
+      // save's is.
+      try {
+        await queryClient.invalidateQueries({ queryKey: MEMBERS_LIST_KEY });
+      } catch (cause) {
+        console.error(MEMBER_WRITE_UNAVAILABLE, cause);
+      }
+    } catch (cause) {
+      console.error(MEMBER_WRITE_UNAVAILABLE, cause);
+      setStatusFailure({
+        member: member.id,
+        raised: { code: MEMBER_WRITE_UNAVAILABLE, saved: false },
+      });
+    } finally {
+      // On EVERY path. Disarmed here and NOT before the await: the confirmation
+      // carries the busy state, so it has to outlive the request it started.
+      statusing.current = false;
+      setStatusPending(false);
+      setStatusArmed(null);
+    }
+  }
 
   /**
    * Send the reset, and keep the confirmation on screen while it is outstanding.
@@ -578,6 +751,156 @@ export function LjudiMemberScreen() {
     );
   }
 
+  /**
+   * The status block: today's status, the change scheduled after it, and the
+   * one thing offered — a change from a date, or the scheduled change's
+   * cancellation — or its confirmation.
+   *
+   * ABSENT ON THE CALLER'S OWN ROW, and while the organization's today or the
+   * caller's identity is unknown — `statusOfferOf`'s decision.
+   *
+   * THE DATE CONTROL STAYS MOUNTED across every stage, disabled while a
+   * confirmation stands, so a refused change returns to the offer with the date
+   * that was entered still in it. The block is keyed to the member's history,
+   * so it remounts — and the date returns to the new minimum — only once a
+   * version lands.
+   */
+  function renderStatus(): ReactNode {
+    const member = form.member;
+
+    if (member === null || offer === null) return null;
+
+    const idle = statusStage === STATUS_IDLE;
+    const { status } = offer;
+
+    return (
+      <div key={statusBlockKey(member)} className="grid gap-2">
+        <p className="text-sm font-medium">
+          {t(statusTodayMessageKey(status.activeToday), {
+            date: shownDate(statusSinceOf(status, offer.today)),
+          })}
+        </p>
+        {status.scheduled === null ? null : (
+          <p className="text-sm font-medium">
+            {t(statusScheduledMessageKey(status.scheduled.active), {
+              date: shownDate(status.scheduled.effectiveFrom),
+            })}
+          </p>
+        )}
+        {statusRefusal === null ? null : (
+          <p
+            id="member-status-error"
+            role="alert"
+            className="rounded-md border border-input px-3 py-2 text-sm font-medium"
+          >
+            {memberWriteMessageKeys(statusRefusal)
+              .map((key) => t(key))
+              .join(MESSAGE_SEPARATOR)}
+          </p>
+        )}
+        {renderStatusDate(offer, idle)}
+        {idle ? renderStatusOffer(member, offer) : renderStatusConfirmation()}
+        {statusConfirmed ? (
+          <p role="status" className="text-sm font-medium">
+            {t('ljudi.status.saved')}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  /**
+   * The date control, for the two changes that take one. A cancellation names
+   * the scheduled version's own date and offers no control.
+   *
+   * DESCRIBED BY THE STATUS BLOCK'S OWN ALERT and by nothing else: the form's
+   * refusal is about other fields, and pointing this control at it would read
+   * an unrelated error out as the reason the date was refused.
+   */
+  function renderStatusDate(offered: StatusOffer, idle: boolean): ReactNode {
+    if (offered.change === WITHDRAW) return null;
+
+    return (
+      <>
+        <Label htmlFor="member-status-date">{t('ljudi.status.date')}</Label>
+        <Input
+          ref={dateField}
+          id="member-status-date"
+          name="effectiveFrom"
+          type="date"
+          required
+          min={offered.minimum}
+          defaultValue={offered.minimum}
+          disabled={!idle}
+          aria-describedby={statusRefusal === null ? undefined : 'member-status-error'}
+          className="h-11"
+        />
+      </>
+    );
+  }
+
+  /** The offer, naming the member it acts on. One press sends nothing. */
+  function renderStatusOffer(member: MemberListRow, offered: StatusOffer): ReactNode {
+    return (
+      <Button
+        className="h-11 w-full"
+        type="button"
+        variant="outline"
+        onClick={() => {
+          armStatus(member, offered);
+        }}
+      >
+        {t(statusOfferMessageKey(offered.change), { name: member.name })}
+      </Button>
+    );
+  }
+
+  /**
+   * The confirmation, naming the member and the date, and the busy state it
+   * keeps carrying while the write is outstanding.
+   */
+  function renderStatusConfirmation(): ReactNode {
+    if (statusArmedFor === null || offer === null) return null;
+
+    const busy = statusStage === STATUS_BUSY;
+    const armedName = statusArmedFor.name;
+
+    return (
+      <div className="grid gap-2">
+        <p className="text-sm font-medium">
+          {t(statusPromptKeyOf(statusArmedFor, offer.today), {
+            name: armedName,
+            date: shownDate(statusArmedFor.day),
+          })}
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Button
+            className="h-11 w-full"
+            type="button"
+            disabled={busy || statusStage !== STATUS_ARMED}
+            aria-busy={busy}
+            onClick={() => {
+              void changeStatus();
+            }}
+          >
+            {t(statusConfirmMessageKey(statusArmedFor.change), { name: armedName })}
+          </Button>
+          <Button
+            className="h-11 w-full"
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              setStatusArmed(null);
+            }}
+          >
+            {t('ljudi.status.cancel')}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   function renderBody(): ReactNode {
     if (form.member !== null) return renderForm(form.member);
 
@@ -627,6 +950,9 @@ export function LjudiMemberScreen() {
               remounts that subtree on every refetch — which would wipe a
               credential nobody had finished reading. */}
           {renderReset()}
+          {/* STORY 1.6, and outside the `<form>` for the reason the reset is: a
+              `<Button>` inside it submits, and the form's key remounts it. */}
+          {renderStatus()}
           {/* THE WAY BACK, always rendered — including while the read is pending
               and after it has settled failed. A screen reachable only by URL
               that can be left only by the browser's Back button is a dead end. */}

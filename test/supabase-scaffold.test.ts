@@ -293,7 +293,7 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the nine policies stories 1.3a, 1.4a and 1.4b reviewed, and no tenth', () => {
+  it('declares exactly the twelve policies stories 1.3a, 1.4a, 1.4b and 1.6 reviewed, and no thirteenth', () => {
     // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
     // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
     // copying `members_update_by_own_active_admin`, and its name is added here
@@ -315,6 +315,13 @@ describe('the access-control migration', () => {
       .sort();
 
     expect(declared, 'the declared policy set changed').toEqual([
+      // STORY 1.6, and THREE rather than four: a status version is appended,
+      // cancelled only while it is not yet in effect, and never changed, so
+      // there is no update policy and that verb matches no row. A fourth name
+      // here is a version being rewritten, which is history being rewritten.
+      'member_status_versions_delete_scheduled_by_own_active_admin',
+      'member_status_versions_insert_by_own_active_admin',
+      'member_status_versions_select_own_organization',
       'members_delete_by_own_active_admin',
       'members_insert_by_own_active_admin',
       'members_select_own_organization',
@@ -644,6 +651,75 @@ describe('the access-control migration', () => {
         `a policy opens ${verb} on organizations; provisioning is an operator task`,
       ).toEqual([]);
     }
+  });
+
+  it('appends status versions and never rewrites one, in any migration', () => {
+    // STORY 1.6. AD-2 makes active status VERSIONED: a version is a new row,
+    // never an update in place, so the table carries a select, an insert and a
+    // delete policy and nothing else — and the delete reaches only a version
+    // dated after today, which has decided no day yet. An update policy written
+    // later would let an admin move a past deactivation, which rewrites past
+    // rosters.
+    const statusPolicies = (migrationStatements().match(/create policy[\s\S]*?;/gi) ?? []).filter(
+      (declaration) => /on public\.member_status_versions\b/i.test(declaration),
+    );
+
+    expect(statusPolicies.length, 'no policy on member_status_versions was found').toBe(3);
+
+    const deletes = statusPolicies.filter((declaration) => /\bfor delete\b/i.test(declaration));
+    expect(deletes, 'the status table has no single cancellation policy').toHaveLength(1);
+    expect(deletes[0], 'a version in effect can be cancelled').toMatch(
+      /effective_from > public\.organization_today\(organization_id\)/,
+    );
+    expect(deletes[0], 'a version other than the latest can be cancelled').toMatch(
+      /effective_from = public\.member_latest_version\(member_id\)/,
+    );
+    expect(deletes[0], 'an admin may cancel a change on their own row').toMatch(
+      /self\.auth_user_id = \(select auth\.uid\(\)\)/,
+    );
+
+    for (const verb of ['update', 'all']) {
+      expect(
+        statusPolicies.filter((declaration) => new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration)),
+        `a policy opens ${verb} on member_status_versions; a version is never rewritten`,
+      ).toEqual([]);
+    }
+  });
+
+  it('refuses a past date, an out-of-order or redundant version, the caller own row and the last active admin in the insert policy', () => {
+    // Source text only; what each clause does is `test/rls-isolation.test.ts`.
+    // Asserted here as well because that file skips without a database, and
+    // each clause is one line a later edit could drop in a diff that still
+    // reads as a policy.
+    const insert = policyBody('member_status_versions_insert_by_own_active_admin');
+
+    expect(insert, 'the status insert policy is not declared').not.toBe('');
+    expect(insert, 'the tenant is not pinned from the signed claim').toMatch(
+      /with check[\s\S]*organization_id = nullif/i,
+    );
+    expect(insert, 'role and active state are not re-read').toContain("access.member_role = 'admin'");
+    expect(insert, 'the attribution is not pinned to the caller').toMatch(
+      /created_by = \(select auth\.uid\(\)\)/,
+    );
+    expect(insert, 'a past date is admitted').toMatch(
+      /effective_from >= public\.organization_today\(organization_id\)/,
+    );
+    expect(insert, 'an admin may deactivate their own row').toMatch(
+      /self\.auth_user_id = \(select auth\.uid\(\)\)/,
+    );
+    expect(insert, 'a version may be dated on or before the latest one').toMatch(
+      /effective_from > coalesce\(public\.member_latest_version\(member_id\)/,
+    );
+    expect(insert, 'a second change may be scheduled on top of one').toMatch(
+      /coalesce\(public\.member_latest_version\(member_id\), '-infinity'::date\)\s*<= public\.organization_today\(organization_id\)/,
+    );
+    expect(insert, 'a version may change nothing').toMatch(
+      /active is distinct from public\.member_active_on\(member_id, 'infinity'::date\)/,
+    );
+    expect(
+      insert,
+      'the last active admin is not read as another admin active on every date from the change',
+    ).toContain('public.member_active_from(admin.id, member_status_versions.effective_from)');
   });
 
   it('confines the access token hook to the auth service', () => {

@@ -9,6 +9,14 @@ import {
   MEMBER_PASSWORD_NOT_APPLIED,
   MEMBER_READ_REFUSED,
   MEMBER_EDIT_COLUMNS,
+  MEMBER_STATUS_DATE_TAKEN,
+  MEMBER_STATUS_IN_EFFECT,
+  MEMBER_STATUS_IN_PAST,
+  MEMBER_STATUS_OUT_OF_ORDER,
+  MEMBER_STATUS_SELF,
+  MEMBER_STATUS_STALE,
+  MEMBER_STATUS_TABLE,
+  MEMBER_STATUS_UNCHANGED,
   MEMBER_UNKNOWN,
   MEMBER_USERNAME_INVALID,
   MEMBER_USERNAME_NOT_APPLIED,
@@ -22,12 +30,20 @@ import {
   ORGANIZATION_WOULD_HAVE_NO_ADMIN,
   PARTIAL_SAVE_KEY,
   PASSWORD_RESET,
+  DEACTIVATE,
+  REACTIVATE,
+  WITHDRAW,
   RESET_ARMED,
   RESET_BUSY,
   RESET_IDLE,
   RESET_SHOWN,
+  SESSION_SUBJECT_KEY,
+  STATUS_ARMED,
+  STATUS_BUSY,
+  STATUS_IDLE,
   USERNAME_CHANGED,
   WIRE_CODES,
+  changeMemberStatus,
   chosenRole,
   createFormStateOf,
   createMember,
@@ -39,14 +55,31 @@ import {
   memberWriteMessageKey,
   memberWriteMessageKeys,
   raisedForMember,
+  readSessionSubject,
   renameMember,
   replyCodeOf,
   resetPassword,
   resetStageOf,
   saveMember,
+  standingConfirmation,
+  statusBlockKey,
+  statusConfirmMessageKey,
+  statusFailureOf,
+  statusOfferMessageKey,
+  statusOfferOf,
+  statusPreflightOf,
+  statusPromptKeyOf,
+  statusPromptMessageKey,
+  statusScheduledMessageKey,
+  statusSinceOf,
+  statusStageOf,
+  statusTodayMessageKey,
   storedEmail,
   usernameChanged,
   type FunctionsAnswer,
+  type MemberStatusTable,
+  type StatusChange,
+  type StatusContext,
   type MemberEdits,
   type MemberFunctions,
   type MemberWriteFailure,
@@ -82,7 +115,30 @@ function member(fields: Partial<MemberListRow> = {}): MemberListRow {
     email: null,
     role: 'member_role',
     leaveAllowanceDays: 20,
+    authUserId: 'account-1',
+    statusVersions: [],
+    timeZone: 'Europe/Zagreb',
     ...fields,
+  };
+}
+
+/** The organization's today in every status case. */
+const TODAY = '2026-09-23';
+
+/** The fixture admin who is doing the deactivating. */
+const CALLER = member({ id: 'admin-1', authUserId: 'account-admin', role: 'admin', name: 'Ivan' });
+
+/** A status change about `target`, judged against an organization of the
+ *  caller, the target and whoever else is passed. */
+function statusContext(
+  target: MemberListRow = member(),
+  others: readonly MemberListRow[] = [],
+): StatusContext {
+  return {
+    member: target,
+    members: [CALLER, target, ...others],
+    callerAuthUserId: CALLER.authUserId,
+    today: TODAY,
   };
 }
 
@@ -348,6 +404,13 @@ describe('every failure becomes exactly one message, and no two share one', () =
     MEMBER_PASSWORD_NOT_APPLIED,
     MEMBER_ACCOUNT_STRANDED,
     ORGANIZATION_WOULD_HAVE_NO_ADMIN,
+    MEMBER_STATUS_IN_PAST,
+    MEMBER_STATUS_SELF,
+    MEMBER_STATUS_DATE_TAKEN,
+    MEMBER_STATUS_OUT_OF_ORDER,
+    MEMBER_STATUS_UNCHANGED,
+    MEMBER_STATUS_IN_EFFECT,
+    MEMBER_STATUS_STALE,
     MEMBER_WRITE_UNAVAILABLE,
   ];
 
@@ -374,9 +437,31 @@ describe('every failure becomes exactly one message, and no two share one', () =
     // LIST's own refusal, `ljudi.error.refused`, reused rather than reworded
     // because `/ljudi/$id` is reachable by URL — so it is the one failure the
     // prefix sweep below would rightly refuse.
+    // STORY 1.6 IS THE THIRD PRODUCER: a refused status write, read by
+    // `statusFailureOf` against what was sent. Its SEVEN codes — a past date,
+    // the caller's own row, a date already taken, a date before the latest
+    // version, a change that changes nothing, a cancellation of a change in
+    // effect, and a list behind the database — are reached only that way.
+    const context = statusContext();
+    const scheduledOut = statusContext(
+      member({ statusVersions: [{ active: false, effectiveFrom: '2026-09-30' }] }),
+    );
+    const outToday = statusContext(
+      member({ statusVersions: [{ active: false, effectiveFrom: TODAY }] }),
+    );
     const mapped = new Set<MemberWriteFailure>([
       ...WIRE_CODES.map((code) => memberWriteFailureOf(code)),
       editFailureOf({ message: ORGANIZATION_WOULD_HAVE_NO_ADMIN }),
+      statusFailureOf({ code: '42501' }, DEACTIVATE, '2026-09-22', context),
+      statusFailureOf({ code: '42501' }, DEACTIVATE, TODAY, {
+        ...context,
+        callerAuthUserId: context.member.authUserId,
+      }),
+      statusFailureOf({ code: '23505' }, DEACTIVATE, TODAY, context),
+      statusFailureOf({ code: '42501' }, REACTIVATE, '2026-09-25', scheduledOut),
+      statusFailureOf({ code: '42501' }, REACTIVATE, TODAY, context),
+      statusFailureOf(null, WITHDRAW, TODAY, outToday),
+      statusFailureOf(null, WITHDRAW, '2026-10-01', scheduledOut),
     ]);
 
     mapped.delete(MEMBER_READ_REFUSED);
@@ -386,7 +471,7 @@ describe('every failure becomes exactly one message, and no two share one', () =
     );
   });
 
-  it('gives each of the eleven its own key', () => {
+  it('gives each of the eighteen its own key', () => {
     // A MAPPING RATHER THAN A LIST, and distinctness is the claim: two codes
     // sharing a message is two different things to do next collapsed into one,
     // which is the cost `@/organization/messages` argues about at length.
@@ -1160,5 +1245,427 @@ describe('the edit form remounts when its row changes', () => {
     // an identical control — and a key that told them apart would remount the
     // whole form on a refetch that changed nothing anybody can see.
     expect(memberFormKey(member({ email: null }))).toBe(memberFormKey(member({ email: '' })));
+  });
+});
+
+describe('a status change is one appended version or one cancelled one, judged before and after it is sent (story 1.6)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  type Answer = { error: { code?: string } | null; data?: readonly unknown[] | null };
+
+  /** A status table that answers once and records what it was asked. */
+  function statusTable(answer: Answer | Error = { error: null, data: [{}] }): {
+    table: MemberStatusTable;
+    sent: Readonly<Record<string, unknown>>[];
+    deleted: [string, string][][];
+  } {
+    const sent: Readonly<Record<string, unknown>>[] = [];
+    const deleted: [string, string][][] = [];
+    const settle = () =>
+      answer instanceof Error
+        ? Promise.reject(answer)
+        : Promise.resolve({ data: answer.data ?? null, error: answer.error });
+
+    return {
+      sent,
+      deleted,
+      table: {
+        insert(values) {
+          sent.push(values);
+
+          return settle();
+        },
+        delete() {
+          const filters: [string, string][] = [];
+
+          deleted.push(filters);
+
+          return {
+            eq(column, value) {
+              filters.push([column, value]);
+
+              return {
+                eq(second, secondValue) {
+                  filters.push([second, secondValue]);
+
+                  return { select: () => settle() };
+                },
+              };
+            },
+          };
+        },
+      },
+    };
+  }
+
+  const version = (active: boolean, effectiveFrom: string) => ({ active, effectiveFrom });
+
+  it('names the relation 0008 creates', () => {
+    expect(MEMBER_STATUS_TABLE).toBe('member_status_versions');
+  });
+
+  it('offers deactivation for an active member and reactivation for one inactive today', () => {
+    expect(statusOfferOf(member(), CALLER.authUserId, TODAY)).toMatchObject({
+      change: DEACTIVATE,
+      today: TODAY,
+      minimum: TODAY,
+      status: { activeToday: true, scheduled: null },
+    });
+    expect(
+      statusOfferOf(
+        member({ statusVersions: [version(false, '2026-09-01')] }),
+        CALLER.authUserId,
+        TODAY,
+      ),
+    ).toMatchObject({ change: REACTIVATE, minimum: TODAY, status: { since: '2026-09-01' } });
+  });
+
+  it('sets the minimum to the day after a latest version dated today', () => {
+    // Versions append in date order: a version today leaves tomorrow as the
+    // first date anything else may carry.
+    expect(
+      statusOfferOf(member({ statusVersions: [version(false, TODAY)] }), CALLER.authUserId, TODAY),
+    ).toMatchObject({ change: REACTIVATE, minimum: '2026-09-24' });
+  });
+
+  it('offers only the cancellation while a change is scheduled, in either direction', () => {
+    const outNextWeek = member({ statusVersions: [version(false, '2026-09-30')] });
+    const backNextWeek = member({
+      statusVersions: [version(false, '2026-09-01'), version(true, '2026-09-30')],
+    });
+
+    expect(statusOfferOf(outNextWeek, CALLER.authUserId, TODAY)).toEqual({
+      change: WITHDRAW,
+      today: TODAY,
+      scheduled: version(false, '2026-09-30'),
+      status: { activeToday: true, since: null, scheduled: version(false, '2026-09-30') },
+    });
+    expect(statusOfferOf(backNextWeek, CALLER.authUserId, TODAY)).toMatchObject({
+      change: WITHDRAW,
+      scheduled: version(true, '2026-09-30'),
+      status: { activeToday: false, since: '2026-09-01' },
+    });
+  });
+
+  it("offers nothing on the caller's own row, or while today or the caller is unknown", () => {
+    expect(statusOfferOf(CALLER, CALLER.authUserId, TODAY)).toBeNull();
+    expect(
+      statusOfferOf(
+        { ...CALLER, statusVersions: [version(false, '2026-09-25'), version(true, '2026-09-30')] },
+        CALLER.authUserId,
+        TODAY,
+      ),
+    ).toBeNull();
+    expect(statusOfferOf(member(), null, TODAY)).toBeNull();
+    expect(statusOfferOf(member(), CALLER.authUserId, null)).toBeNull();
+  });
+
+  it('sends one insert of the four facts, and active is the opposite of deactivate', async () => {
+    const target = member();
+    const away = member({ statusVersions: [version(false, TODAY)] });
+    const deactivation = statusTable();
+    const reactivation = statusTable();
+
+    expect(
+      await changeMemberStatus(deactivation.table, DEACTIVATE, TODAY, statusContext(target)),
+    ).toEqual({ ok: true });
+    expect(
+      await changeMemberStatus(reactivation.table, REACTIVATE, '2026-09-30', statusContext(away)),
+    ).toEqual({ ok: true });
+
+    expect(deactivation.sent).toEqual([
+      {
+        organization_id: target.organizationId,
+        member_id: target.id,
+        active: false,
+        effective_from: TODAY,
+      },
+    ]);
+    expect(deactivation.deleted).toEqual([]);
+    expect(reactivation.sent[0]).toMatchObject({ active: true, effective_from: '2026-09-30' });
+  });
+
+  it('cancels by deleting exactly the scheduled version, and counts zero rows as refused', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const scheduled = member({ statusVersions: [version(false, '2026-09-30')] });
+    const cancelled = statusTable();
+
+    expect(
+      await changeMemberStatus(cancelled.table, WITHDRAW, '2026-09-30', statusContext(scheduled)),
+    ).toEqual({ ok: true });
+    expect(cancelled.sent).toEqual([]);
+    expect(cancelled.deleted).toEqual([
+      [
+        ['member_id', scheduled.id],
+        ['effective_from', '2026-09-30'],
+      ],
+    ]);
+
+    // THE DELETE POLICY MATCHED NOTHING: `[]` and no error is a refusal, never
+    // a "saved" — and one the list cannot explain, so the list is behind.
+    const nothing = statusTable({ error: null, data: [] });
+
+    expect(
+      await changeMemberStatus(nothing.table, WITHDRAW, '2026-09-30', statusContext(scheduled)),
+    ).toEqual({ ok: false, refusal: { code: MEMBER_STATUS_STALE, saved: false } });
+  });
+
+  it('refuses what it can name without sending anything', async () => {
+    const outToday = member({ statusVersions: [version(false, TODAY)] });
+    const outLater = member({ statusVersions: [version(false, '2026-09-30')] });
+    const cases: readonly [StatusChange, string, StatusContext, MemberWriteFailure][] = [
+      [DEACTIVATE, '2026-09-22', statusContext(), MEMBER_STATUS_IN_PAST],
+      [DEACTIVATE, '', statusContext(), MEMBER_WRITE_INVALID],
+      [DEACTIVATE, '23.09.2026', statusContext(), MEMBER_WRITE_INVALID],
+      // IMPOSSIBLE, not merely malformed: the one validator refuses it.
+      [DEACTIVATE, '2026-02-31', statusContext(), MEMBER_WRITE_INVALID],
+      [DEACTIVATE, TODAY, statusContext(CALLER), MEMBER_STATUS_SELF],
+      [REACTIVATE, TODAY, statusContext(outToday), MEMBER_STATUS_DATE_TAKEN],
+      [REACTIVATE, '2026-09-25', statusContext(outLater), MEMBER_STATUS_OUT_OF_ORDER],
+      // REDUNDANT in both directions, against the LATEST state.
+      [DEACTIVATE, '2026-10-05', statusContext(outLater), MEMBER_STATUS_UNCHANGED],
+      [REACTIVATE, '2026-09-25', statusContext(), MEMBER_STATUS_UNCHANGED],
+      // A CANCELLATION of a version in effect, of one that is not the latest,
+      // and on the caller's own row.
+      [WITHDRAW, TODAY, statusContext(outToday), MEMBER_STATUS_IN_EFFECT],
+      // A CANCELLATION NAMING A VERSION THE LIST DOES NOT HOLD AS LATEST is
+      // stale data, not a change in effect — both when there is some other
+      // latest version and when there is none at all.
+      [WITHDRAW, '2026-10-01', statusContext(outLater), MEMBER_STATUS_STALE],
+      [WITHDRAW, '2026-10-01', statusContext(), MEMBER_STATUS_STALE],
+      [
+        WITHDRAW,
+        '2026-09-30',
+        statusContext({ ...CALLER, statusVersions: [version(true, '2026-09-30')] }),
+        MEMBER_STATUS_SELF,
+      ],
+    ];
+
+    for (const [change, day, context, expected] of cases) {
+      const stub = statusTable();
+
+      expect(statusPreflightOf(change, day, context), `${change} ${day}`).toBe(expected);
+      expect(await changeMemberStatus(stub.table, change, day, context)).toEqual({
+        ok: false,
+        refusal: { code: expected, saved: false },
+      });
+      expect(stub.sent, `${change} ${day} reached the database`).toEqual([]);
+      expect(stub.deleted, `${change} ${day} reached the database`).toEqual([]);
+    }
+    // Today itself is admitted: the policy's comparison is `>=`.
+    expect(statusPreflightOf(DEACTIVATE, TODAY, statusContext())).toBeNull();
+    expect(statusPreflightOf(WITHDRAW, '2026-09-30', statusContext(outLater))).toBeNull();
+  });
+
+  it('names the last-admin refusal only for a change that makes an ADMIN inactive with nobody covering', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const target = member({ id: 'admin-2', authUserId: 'account-admin-2', role: 'admin' });
+    // THE CALLER IS OUT FROM NEXT WEEK and a third admin is out today with a
+    // reactivation scheduled: neither is active on every date from today.
+    const caller = { ...CALLER, statusVersions: [version(false, '2026-09-30')] };
+    const returning = member({
+      id: 'admin-3',
+      authUserId: 'account-admin-3',
+      role: 'admin',
+      statusVersions: [version(false, '2026-09-01'), version(true, '2026-10-10')],
+    });
+    const uncovered: StatusContext = {
+      member: target,
+      members: [caller, target, returning],
+      callerAuthUserId: caller.authUserId,
+      today: TODAY,
+    };
+
+    expect(statusFailureOf({ code: '42501' }, DEACTIVATE, TODAY, uncovered)).toBe(
+      ORGANIZATION_WOULD_HAVE_NO_ADMIN,
+    );
+    // FROM THE DAY THE THIRD ADMIN RETURNS they cover every date, so the same
+    // refusal dated then is not this one.
+    expect(statusFailureOf({ code: '42501' }, DEACTIVATE, '2026-10-10', uncovered)).toBe(
+      MEMBER_STATUS_STALE,
+    );
+    // A NON-ADMIN TARGET NEVER EARNS IT, however few admins remain: here no
+    // admin at all is active on every date from today.
+    const ordinary = member();
+    expect(
+      statusFailureOf({ code: '42501' }, DEACTIVATE, TODAY, {
+        ...uncovered,
+        member: ordinary,
+        members: [caller, returning, ordinary],
+      }),
+    ).toBe(MEMBER_STATUS_STALE);
+    // A REACTIVATION never reduces the admins.
+    const outTarget = { ...target, statusVersions: [version(false, '2026-09-01')] };
+    expect(
+      statusFailureOf({ code: '42501' }, REACTIVATE, TODAY, { ...uncovered, member: outTarget }),
+    ).toBe(MEMBER_STATUS_STALE);
+    // CANCELLING AN ADMIN'S REACTIVATION is a deactivation from its date…
+    const backTarget = {
+      ...target,
+      statusVersions: [version(false, '2026-09-01'), version(true, '2026-09-28')],
+    };
+    expect(
+      statusFailureOf(null, WITHDRAW, '2026-09-28', { ...uncovered, member: backTarget }),
+    ).toBe(ORGANIZATION_WOULD_HAVE_NO_ADMIN);
+    // …and cancelling their deactivation is not.
+    const leavingTarget = { ...target, statusVersions: [version(false, '2026-09-28')] };
+    expect(
+      statusFailureOf(null, WITHDRAW, '2026-09-28', { ...uncovered, member: leavingTarget }),
+    ).toBe(MEMBER_STATUS_STALE);
+    // Another admin active on every date: the database declined for another reason.
+    expect(
+      statusFailureOf(
+        { code: '42501' },
+        DEACTIVATE,
+        TODAY,
+        statusContext(target, [member({ id: 'admin-4', authUserId: 'a4', role: 'admin' })]),
+      ),
+    ).toBe(MEMBER_STATUS_STALE);
+  });
+
+  it('maps the other codes a status write can raise', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(statusFailureOf({ code: '23505' }, DEACTIVATE, TODAY, statusContext())).toBe(
+      MEMBER_STATUS_DATE_TAKEN,
+    );
+    expect(statusFailureOf({ code: '23503' }, DEACTIVATE, TODAY, statusContext())).toBe(
+      MEMBER_WRITE_INVALID,
+    );
+    expect(statusFailureOf({ code: '08006' }, DEACTIVATE, TODAY, statusContext())).toBe(
+      MEMBER_WRITE_UNAVAILABLE,
+    );
+
+    const refused = statusTable({ error: { code: '23505' } });
+
+    expect(await changeMemberStatus(refused.table, DEACTIVATE, TODAY, statusContext())).toEqual({
+      ok: false,
+      refusal: { code: MEMBER_STATUS_DATE_TAKEN, saved: false },
+    });
+
+    const thrown = statusTable(new Error('offline'));
+
+    expect(await changeMemberStatus(thrown.table, DEACTIVATE, TODAY, statusContext())).toEqual({
+      ok: false,
+      refusal: { code: MEMBER_WRITE_UNAVAILABLE, saved: false },
+    });
+  });
+
+  it('keeps the confirmation mounted while the write is outstanding', () => {
+    expect(statusStageOf(false, false)).toBe(STATUS_IDLE);
+    expect(statusStageOf(true, false)).toBe(STATUS_ARMED);
+    // IN FLIGHT WINS, including with the armed flag already cleared.
+    expect(statusStageOf(true, true)).toBe(STATUS_BUSY);
+    expect(statusStageOf(false, true)).toBe(STATUS_BUSY);
+  });
+
+  it('remounts the block when the history changes and only then', () => {
+    const before = member();
+    const after = member({ statusVersions: [version(false, TODAY)] });
+
+    expect(statusBlockKey(before)).toBe(statusBlockKey(member()));
+    expect(statusBlockKey(after)).not.toBe(statusBlockKey(before));
+    expect(statusBlockKey(member({ id: 'other' }))).not.toBe(statusBlockKey(before));
+  });
+
+  it('clears an armed confirmation once a refetch changes the member versions', () => {
+    const before = member();
+    const armed = {
+      name: before.name,
+      change: DEACTIVATE,
+      day: '2026-09-28',
+      history: statusBlockKey(before),
+    } as const;
+    const changed = member({ statusVersions: [version(false, '2026-09-25')] });
+
+    expect(standingConfirmation(armed, member(), false)).toBe(armed);
+    expect(standingConfirmation(armed, changed, false)).toBeNull();
+    // WHILE ITS OWN WRITE IS PENDING it stands: that write's refetch is what
+    // changes the history, and the busy state must outlive it.
+    expect(standingConfirmation(armed, changed, true)).toBe(armed);
+    // A row that vanished keeps it, so the busy state stays truthful.
+    expect(standingConfirmation(armed, null, false)).toBe(armed);
+    expect(standingConfirmation(null, before, false)).toBeNull();
+  });
+
+  it('states today in the present and the scheduled change in the future', () => {
+    expect(statusTodayMessageKey(true)).toBe('ljudi.status.active');
+    expect(statusTodayMessageKey(false)).toBe('ljudi.status.inactiveFrom');
+    expect(statusScheduledMessageKey(false)).toBe('ljudi.status.scheduledInactive');
+    expect(statusScheduledMessageKey(true)).toBe('ljudi.status.scheduledActive');
+  });
+
+  it('pairs each change with its own keys, and words a later date in the future', () => {
+    expect(statusOfferMessageKey(DEACTIVATE)).toBe('ljudi.status.deactivate');
+    expect(statusOfferMessageKey(REACTIVATE)).toBe('ljudi.status.reactivate');
+    expect(statusOfferMessageKey(WITHDRAW)).toBe('ljudi.status.withdraw');
+    expect(statusPromptMessageKey(DEACTIVATE, false)).toBe('ljudi.status.deactivatePrompt');
+    expect(statusPromptMessageKey(DEACTIVATE, true)).toBe('ljudi.status.deactivatePromptFuture');
+    expect(statusPromptMessageKey(REACTIVATE, false)).toBe('ljudi.status.reactivatePrompt');
+    expect(statusPromptMessageKey(REACTIVATE, true)).toBe('ljudi.status.reactivatePromptFuture');
+    expect(statusPromptMessageKey(WITHDRAW, true)).toBe('ljudi.status.withdrawPrompt');
+    expect(statusConfirmMessageKey(DEACTIVATE)).toBe('ljudi.status.deactivateConfirm');
+    expect(statusConfirmMessageKey(REACTIVATE)).toBe('ljudi.status.reactivateConfirm');
+    expect(statusConfirmMessageKey(WITHDRAW)).toBe('ljudi.status.withdrawConfirm');
+  });
+
+  it('words a confirmation dated today in the present and one dated after it in the future', () => {
+    // `>` AND NOT `>=`: a change dated TODAY happens the moment it is
+    // confirmed, so its sentence is the present one.
+    expect(statusPromptKeyOf({ change: DEACTIVATE, day: TODAY }, TODAY)).toBe(
+      'ljudi.status.deactivatePrompt',
+    );
+    expect(statusPromptKeyOf({ change: DEACTIVATE, day: '2026-09-24' }, TODAY)).toBe(
+      'ljudi.status.deactivatePromptFuture',
+    );
+    expect(statusPromptKeyOf({ change: REACTIVATE, day: TODAY }, TODAY)).toBe(
+      'ljudi.status.reactivatePrompt',
+    );
+    expect(statusPromptKeyOf({ change: REACTIVATE, day: '2026-10-01' }, TODAY)).toBe(
+      'ljudi.status.reactivatePromptFuture',
+    );
+    expect(statusPromptKeyOf({ change: WITHDRAW, day: '2026-10-01' }, TODAY)).toBe(
+      'ljudi.status.withdrawPrompt',
+    );
+  });
+
+  it("names the date the version in effect took effect, or today for an untouched member", () => {
+    expect(statusSinceOf({ activeToday: false, since: '2026-09-01', scheduled: null }, TODAY)).toBe(
+      '2026-09-01',
+    );
+    expect(statusSinceOf({ activeToday: true, since: null, scheduled: null }, TODAY)).toBe(TODAY);
+  });
+
+  it('offers no dated change once the latest version is on the last day a date can carry', () => {
+    const last = '9999-12-31';
+
+    expect(
+      statusOfferOf(
+        member({ statusVersions: [{ active: false, effectiveFrom: last }] }),
+        CALLER.authUserId,
+        last,
+      ),
+    ).toBeNull();
+    // Before that day the same version is simply the scheduled change.
+    expect(
+      statusOfferOf(
+        member({ statusVersions: [{ active: false, effectiveFrom: last }] }),
+        CALLER.authUserId,
+        TODAY,
+      ),
+    ).toMatchObject({ change: WITHDRAW });
+  });
+
+  it("reads the caller's own account id, and null for no session or a failed read", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(SESSION_SUBJECT_KEY).toEqual(['session-subject']);
+    expect(await readSessionSubject(() => Promise.resolve({ user: { id: 'account' } }))).toBe(
+      'account',
+    );
+    expect(await readSessionSubject(() => Promise.resolve(null))).toBeNull();
+    expect(await readSessionSubject(() => Promise.reject(new Error('storage')))).toBeNull();
   });
 });

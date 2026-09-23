@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 09-18-2026
+last_updated: 09-23-2026
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -186,7 +186,12 @@ development_status:
   # form, the no-email identity and the admin-issued password reset (clauses 1
   # and 2) — waits in deferred-work.md and earns its key when specced, so the
   # parent completes with it, not with 1.5a.
-  1-5-an-admin-creates-and-edits-members-and-works-the-list-at-sca: in-progress
+  # COMPLETE 2026-09-23 with part C, per the convention recorded above: the
+  # parent carries no work of its own and closes when its last part lands.
+  # Its acceptance clauses are covered by 1.5a (clauses 3 and 4), 1.5b (clause 1's
+  # account-without-email and the privileged boundary, and clause 2) and 1.5c
+  # (clause 1's admin-issued password reset).
+  1-5-an-admin-creates-and-edits-members-and-works-the-list-at-sca: done
   # Part A, specced 2026-09-17 — it earns its key here, same convention as the
   # parts above, and a regenerate will report it as an orphan because it derives
   # from no epics.md key of its own: reconcile with --set rather than dropping
@@ -257,7 +262,18 @@ development_status:
   # recorded there it closes with its LAST part, which is the admin-issued
   # password reset waiting in deferred-work.md, not with this one.
   1-5b-member-write-path: done
-  1-6-deactivating-a-member-changes-the-future-and-rewrites-no-his: backlog
+  # Part C is the admin-issued password reset, specced 2026-09-18 from the
+  # deferred-work entry 1.5b left. It earns its key here, same convention as the
+  # parts above, and a regenerate reports it as an orphan — reconcile with --set
+  # rather than dropping it. It covers the second half of epics.md story 1.5
+  # acceptance clause 1 ("its password reset is an admin-issued action rather
+  # than a self-service email", CAP-1, AD-12). THIS PART COMPLETES THE 1-5 PARENT.
+  # Merged to main in 2213c19 (PR #19) and its spec carries status done with
+  # review_loop_iteration 1 — one bad_spec LOOPBACK over the reset's four-stage
+  # machine, then three patches from one targeted verification-gap layer.
+  # Reconciled 2026-09-23.
+  1-5c-admin-issued-password-reset: done
+  1-6-deactivating-a-member-changes-the-future-and-rewrites-no-his: review
   1-7-an-admin-creates-teams-and-moves-people-between-them: backlog
   1-8-a-member-sees-who-is-on-a-team: backlog
   epic-1-retrospective: optional

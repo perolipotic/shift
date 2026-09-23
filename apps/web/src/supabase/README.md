@@ -27,4 +27,6 @@ every query is untyped at the row level.
 
 Every domain read and write goes through PostgREST under RLS; the one exception
 is the `admin-auth` Edge Function, invoked for user creation, user update and
-ban/unban.
+the admin-issued password reset. Deactivation is an ordinary PostgREST insert
+into `member_status_versions` (story 1.6), and cancelling a scheduled change is
+a PostgREST delete of that version.

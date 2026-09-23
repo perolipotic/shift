@@ -755,14 +755,66 @@ describe('both tables carry row level security, and only story 1.3 policies open
         `select relname, relrowsecurity
            from pg_class
           where relnamespace = 'public'::regnamespace
-            and relname in ('organizations', 'members')
+            and relname in ('organizations', 'members', 'member_status_versions')
           order by relname`,
       );
 
-      expect(rows.map((row) => row.relname)).toEqual(['members', 'organizations']);
+      // STORY 1.6 adds the versioned active status, which is organization data
+      // like the other two and is born with row level security on.
+      expect(rows.map((row) => row.relname)).toEqual([
+        'member_status_versions',
+        'members',
+        'organizations',
+      ]);
       for (const row of rows) {
         expect(row.relrowsecurity, `${row.relname} must have RLS enabled`).toBe(true);
       }
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('holds no privilege on member_status_versions that no policy needs', async () => {
+    // STORY 1.6. Supabase's default privileges grant every table privilege to
+    // both request roles; `0008` revokes what nothing uses, so a policy added
+    // later cannot open a verb by accident. `authenticated` keeps SELECT and
+    // DELETE (each narrowed by a policy) and a column-level INSERT; `anon`
+    // keeps nothing.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ role: string; privilege: string; held: boolean }>(
+        `select role, privilege,
+                has_table_privilege(role, 'public.member_status_versions', privilege) as held
+           from unnest(array['anon', 'authenticated']) as role,
+                unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'])
+                  as privilege`,
+      );
+      const held = rows.filter((row) => row.held).map((row) => `${row.role}:${row.privilege}`);
+
+      expect(held.sort()).toEqual(['authenticated:DELETE', 'authenticated:SELECT']);
+
+      const { rows: columns } = await client.query<{ held: boolean }>(
+        `select has_column_privilege('authenticated', 'public.member_status_versions', 'effective_from', 'INSERT') as held`,
+      );
+      expect(columns[0]?.held, 'the four fact columns lost their INSERT grant').toBe(true);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('indexes member_status_versions by its tenant', async () => {
+    // Q3: every policy filters by `organization_id` first, and the unique
+    // index leads with `member_id`, so the tenant needs an index of its own.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ indexdef: string }>(
+        `select indexdef from pg_indexes
+          where schemaname = 'public' and tablename = 'member_status_versions'`,
+      );
+      expect(
+        rows.some((row) => /\(organization_id\)$/.test(row.indexdef)),
+        'no index leads with organization_id alone',
+      ).toBe(true);
     } finally {
       await client.end();
     }
@@ -893,7 +945,40 @@ describe('the access-control layer runs as the owner and hands that power to nob
       argumentCount: 1,
       expected: ['supabase_auth_admin'],
     },
+    // STORY 1.6's four status readers. All are SECURITY INVOKER, so a session
+    // learns nothing through them its own policies would not show it, and the
+    // request role holds EXECUTE because the status policies call them as the
+    // querying role. `anon` and `service_role` have no policy that needs
+    // either.
+    { name: 'organization_today', argumentCount: 1, expected: ['authenticated'] },
+    { name: 'member_active_on', argumentCount: 2, expected: ['authenticated'] },
+    { name: 'member_active_from', argumentCount: 2, expected: ['authenticated'] },
+    { name: 'member_latest_version', argumentCount: 1, expected: ['authenticated'] },
   ];
+
+  it.skipIf(noDatabase).each([
+    { name: 'organization_today', argumentCount: 1 },
+    { name: 'member_active_on', argumentCount: 2 },
+    { name: 'member_active_from', argumentCount: 2 },
+    { name: 'member_latest_version', argumentCount: 1 },
+  ])('runs $name as the caller, with an empty search_path', async ({ name, argumentCount }) => {
+    // INVOKER, the opposite of the helper and the hook. They are reached from
+    // the helper, the hook and the zero-admins function as the owner, and from
+    // the status insert policy as the session — where running as the owner
+    // would let any session read any organization's status history by id.
+    const client = await connect();
+    try {
+      const security = await functionSecurity(client, name, argumentCount);
+      expect(security.prosecdef, `${name} must be SECURITY INVOKER`).toBe(false);
+      const searchPath = (security.proconfig ?? []).find((entry) =>
+        entry.startsWith('search_path='),
+      );
+      expect(searchPath, `${name} must pin a search_path`).toBeDefined();
+      expect(security.publicGrants, `${name} must not be executable by PUBLIC`).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
 
   it.skipIf(noDatabase).each(grantees)('grants execute on $name to $expected and no one else', async ({ name, argumentCount, expected }) => {
     // An exact list, not a subset. Supabase's default privileges grant EXECUTE

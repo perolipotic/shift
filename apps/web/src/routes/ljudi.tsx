@@ -29,6 +29,8 @@ import {
   MEMBERS_READ_STALE_MS,
   MEMBERS_TABLE,
   MEMBER_COLUMNS,
+  INACTIVE_NAME_CELL,
+  SCHEDULED_INACTIVE_NAME_CELL,
   NO_TEXT,
   TEXT_CELL,
   cellClassNameOf,
@@ -42,7 +44,9 @@ import {
   narrowFrom,
   narrowingDependencies,
   nextSortState,
+  membersTodayOf,
   readMembers,
+  shownDate,
   sortIndicatorOf,
   sortStateOf,
   type LevelFilter,
@@ -93,8 +97,9 @@ import { supabaseClient } from '@/supabase/client';
  *
  * TWO WAYS OUT OF THIS SCREEN AND NO WRITE ON IT (story 1.5b). Creating and
  * editing a member are `/ljudi/novi` and `/ljudi/$id`; this screen links to
- * them and performs neither. Deactivating and resetting a password are story
- * 1.6 and `admin-auth` still answers `501` for both.
+ * them and performs neither. Resetting a password and deactivating a member
+ * (story 1.6) live on `/ljudi/$id` too; this screen only MARKS an inactive
+ * member, in words, as at the organization's today.
  *
  * THE ROW ACTION NAMES THE MEMBER IT ACTS ON. Several hundred rows carrying one
  * repeated accessible name is a list a screen-reader user cannot navigate: the
@@ -158,6 +163,14 @@ const SORT_GLYPHS: Record<SortIndicator, typeof ArrowUp> = {
  */
 function cellContent(cell: MemberCell): string {
   if (cell.kind === TEXT_CELL) return cell.text;
+  // STORY 1.6: an inactive member is marked IN WORDS beside the name. Whether
+  // they are inactive is the column's decision, as at the organization's today
+  // (`@/members/list`); an active member's name is an ordinary text cell.
+  if (cell.kind === INACTIVE_NAME_CELL) return t('ljudi.status.inactive', { name: cell.text });
+  // A DEACTIVATION ALREADY SCHEDULED, in the future tense and with its date.
+  if (cell.kind === SCHEDULED_INACTIVE_NAME_CELL) {
+    return t('ljudi.status.inactiveScheduled', { name: cell.text, date: shownDate(cell.from) });
+  }
   if (cell.kind === LEVEL_CELL) return t(memberLevelMessageKey(cell.level));
   // `fractionDigits: 0` — an allowance is a whole number of days, and `20,00`
   // in a column of them is the wobble UX-DR40's tabular numerals prevent.
@@ -192,6 +205,9 @@ export function LjudiScreen() {
   // with no rows, no count and no message.
   const state = membersSurfaceStateOf(answer);
   const { members, refusal, loading } = state;
+  // THE ORGANIZATION'S TODAY, for the inactive marker (story 1.6), from the zone
+  // the same one read embeds — `null` until it has settled, which marks nobody.
+  const today = membersTodayOf(members, new Date());
 
   // ONE OBJECT, and the memo's dependencies are DERIVED from it rather than
   // written beside it. `eslint.config.js` registers no `react-hooks` plugin, so
@@ -355,7 +371,7 @@ export function LjudiScreen() {
                   <TableRow key={member.id}>
                     {MEMBER_COLUMNS.map((column) => (
                       <TableCell key={column.key} className={cellClassNameOf(column)}>
-                        {cellContent(column.cell(member))}
+                        {cellContent(column.cell(member, today))}
                       </TableCell>
                     ))}
                     <TableCell>

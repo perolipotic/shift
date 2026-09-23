@@ -2,9 +2,8 @@
  * admin-auth — the one privileged boundary (AD-16), and it may not think.
  *
  * This is the only server-side component in the system (AD-14). It exposes
- * `createUser`, `updateUserById`, `resetPassword` and the `ban` / `unban` pair
- * — five operations in `OPERATIONS`, which AD-16 counts as four capabilities
- * because ban and unban are one reversible capability — and nothing else. It
+ * `createUser`, `updateUserById` and `resetPassword` — the three operations in
+ * `OPERATIONS` — and nothing else. It
  * performs no domain calculation and contains no rule from `engine-rules.md`;
  * adding either is a defect, not a refactor.
  *
@@ -22,18 +21,14 @@
  * task and the single write in the system exempt from attribution, because no
  * admin exists yet to attribute it to.
  *
- * WHY `ban` AND `unban` STILL RETURN 501
- * AD-16 requires each call to be authorized against the DATABASE — the caller
- * must be an admin of the target member's own organization — never against the
- * request. Story 1.2 brought the `members` table and story 1.3a brought what
- * makes it readable as the caller: AD-10's `current_member_access()` helper and
- * the RLS policies on both tables. So the authorization this boundary owes is
- * now expressible, and what is still missing is the operations themselves —
- * creating, updating and banning a member are stories 1.5 and 1.6, together
- * with the payload contract each one accepts. Shipping `createUser` ahead of
- * that contract would mean guessing it. So the boundary ships with the
- * security-critical parts correct (two-client construction, env handling,
- * fail-fast) and refuses to act until the operations are specified.
+ * WHY THERE IS NO `ban` OR `unban`
+ * Story 1.6 removed them from the vocabulary rather than implementing them.
+ * Deactivation is a versioned domain row (`0008_member_status.sql`) written
+ * through PostgREST under row level security: the helper every policy re-reads
+ * ends data access on the date, and the access token hook ends sign-in and
+ * refresh. The secret key could only have added a session revocation, which
+ * GoTrue does not offer without changing the password. Human decision
+ * 2026-09-23.
  *
  * This file holds only what is Deno-specific: the environment, the client
  * construction, and the server. Every decision lives in `handler.ts`, which

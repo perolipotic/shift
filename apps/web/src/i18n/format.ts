@@ -167,6 +167,97 @@ export function isRenderableTimeZone(timeZone: string): boolean {
   }
 }
 
+/** The zone a date falls back to when the organization's cannot be rendered —
+ *  the same fallback `0008`'s `organization_today` makes, so the two agree. */
+const FALLBACK_TIME_ZONE = 'UTC';
+
+/**
+ * `2026-09-23` — the calendar date an instant falls on in the organization's
+ * zone, as the ISO string a `date` column and an `<input type="date">` both
+ * speak (story 1.6).
+ *
+ * THE ORGANIZATION'S TODAY, never the device's (L8). A deactivation "from
+ * today" is refused by the database for any date before the organization's
+ * own today, so a device a zone away would otherwise offer a date the policy
+ * refuses, or hide one it admits.
+ *
+ * AN UNRENDERABLE ZONE FALLS BACK TO UTC rather than throwing, mirroring the
+ * database: `organizations.timezone` is unchecked (`0002:89-92`), and the
+ * policy reads UTC's date for a zone it cannot resolve.
+ */
+export function organizationIsoDate(instant: Date, timeZone: string): string {
+  const zone = isRenderableTimeZone(timeZone) ? timeZone : FALLBACK_TIME_ZONE;
+  // THE `date` SHAPE, read as parts: the same three fields, reassembled in
+  // ISO order rather than the binding one. A second shape with the same
+  // options would be a second formatter for one question.
+  const parts = partsOf('date', instant, zone);
+
+  return `${part(parts, 'year')}-${part(parts, 'month')}-${part(parts, 'day')}`;
+}
+
+/** An ISO calendar date, shaped `YYYY-MM-DD`. */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A calendar date read at noon UTC — the one reading under which no offset
+ *  can move it across a midnight. */
+function noonOf(isoDate: string): Date {
+  return new Date(`${isoDate}T12:00:00Z`);
+}
+
+/**
+ * Whether a value is a REAL ISO calendar date — THE ONE VALIDATOR (story 1.6).
+ *
+ * The shape alone is not enough: `2026-02-31` matches it and names no day.
+ * `Date` would roll it over to 3 March, so the round trip back to the same
+ * string is what refuses it. `members/list.ts` reads status dates with this
+ * and `members/write.ts` judges an entered date with it; a second validator
+ * is how one of them admits a date the other refuses.
+ */
+export function isIsoDate(value: string): boolean {
+  if (!ISO_DATE.test(value)) return false;
+
+  const instant = noonOf(value);
+
+  if (Number.isNaN(instant.valueOf())) return false;
+
+  return organizationIsoDate(instant, FALLBACK_TIME_ZONE) === value;
+}
+
+/**
+ * The calendar day after an ISO date, or `null` if it is not one — or if it
+ * is the last day a four-digit year can name.
+ *
+ * The earliest date a new status version may carry when the member's latest
+ * version is dated today or later (`0008`: versions append in date order).
+ */
+export function nextIsoDate(isoDate: string): string | null {
+  if (!isIsoDate(isoDate)) return null;
+
+  const instant = noonOf(isoDate);
+
+  instant.setUTCDate(instant.getUTCDate() + 1);
+
+  const next = organizationIsoDate(instant, FALLBACK_TIME_ZONE);
+
+  // `9999-12-31` HAS NO NEXT DAY this shape can carry, and `0008` refuses
+  // year 10000 outright, so there is no date to offer rather than one the
+  // database would refuse.
+  return isIsoDate(next) ? next : null;
+}
+
+/**
+ * `23.09.2026` — an ISO calendar date in the binding shape (UX-DR34).
+ *
+ * A DATE, not an instant, so no zone applies: the string already names the
+ * day. `null` for anything {@link isIsoDate} refuses, so a malformed value
+ * reaches the caller as a case rather than as `NaN.NaN.NaN`.
+ */
+export function formatIsoDate(isoDate: string): string | null {
+  if (!isIsoDate(isoDate)) return null;
+
+  return formatDate(noonOf(isoDate), FALLBACK_TIME_ZONE);
+}
+
 /** `12.09.2026` — the binding date (UX-DR34). */
 export function formatDate(instant: Date, timeZone: string): string {
   const parts = partsOf('date', instant, timeZone);

@@ -68,9 +68,38 @@
         "resetNotApplied": "Lozinka nije dodijeljena. Pokušaj ponovno.",
         "stranded": "Osoba nije izrađena. Ovo korisničko ime nije više dostupno. Potrebna je pomoć operatera.",
         "lastAdmin": "Posljednjem administratoru ne možeš oduzeti ovlasti.",
+        "statusPast": "Datum ne smije biti u prošlosti.",
+        "statusSelf": "Vlastiti status ne možeš mijenjati.",
+        "statusTaken": "Za taj datum već postoji promjena statusa. Odaberi drugi datum.",
+        "statusOrder": "Datum mora biti nakon zadnje promjene statusa.",
+        "statusUnchanged": "Osoba već ima taj status.",
+        "statusInEffect": "Promjena je već na snazi i ne može se poništiti.",
+        "statusStale": "Status osobe se u međuvremenu promijenio. Provjeri ga i pokušaj ponovno.",
         "unavailable": "Spremanje trenutačno nije moguće. Pokušaj ponovno.",
         "saved": "Ostali podaci su spremljeni."
       }
+    },
+    "status": {
+      "inactive": "{name} · neaktivna osoba",
+      "inactiveScheduled": "{name} · bit će neaktivna od {date}",
+      "active": "Osoba je aktivna.",
+      "inactiveFrom": "Osoba je neaktivna od {date}.",
+      "scheduledInactive": "Osoba će biti neaktivna od {date}.",
+      "scheduledActive": "Osoba će ponovno biti aktivna od {date}.",
+      "date": "Vrijedi od",
+      "deactivate": "Deaktiviraj osobu {name}",
+      "reactivate": "Ponovno aktiviraj osobu {name}",
+      "deactivatePrompt": "Osoba {name} od {date} se ne može prijaviti i ne ulazi u buduće rasporede. Prošli rasporedi ostaju nepromijenjeni.",
+      "deactivatePromptFuture": "Osoba {name} od {date} neće se moći prijaviti i neće ulaziti u rasporede. Prošli rasporedi ostaju nepromijenjeni.",
+      "reactivatePrompt": "Osoba {name} od {date} se ponovno može prijaviti.",
+      "reactivatePromptFuture": "Osoba {name} od {date} ponovno će se moći prijaviti.",
+      "withdraw": "Poništi zakazanu promjenu za osobu {name}",
+      "withdrawPrompt": "Zakazana promjena statusa osobe {name} od {date} bit će poništena.",
+      "withdrawConfirm": "Potvrdi poništavanje promjene za osobu {name}",
+      "deactivateConfirm": "Potvrdi deaktivaciju osobe {name}",
+      "reactivateConfirm": "Potvrdi ponovnu aktivaciju osobe {name}",
+      "cancel": "Odustani od promjene statusa",
+      "saved": "Promjena statusa je spremljena."
     }
   },
   "nav": {
