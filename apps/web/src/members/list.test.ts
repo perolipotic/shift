@@ -25,6 +25,14 @@ import {
   NO_TEXT,
   TEXT_CELL,
   LEVEL_CELL,
+  INACTIVE_NAME_CELL,
+  SCHEDULED_INACTIVE_NAME_CELL,
+  memberActiveFrom,
+  memberActiveOn,
+  memberLatestVersion,
+  memberStatusOf,
+  shownDate,
+  membersTodayOf,
   UNSORTED,
   cellClassNameOf,
   chooseLevel,
@@ -72,6 +80,9 @@ import { MEMBER_ROLES } from '@/navigation/role';
  * one real round trip against a fixture it grows itself.
  */
 
+/** The organization's today in every case that needs one. */
+const TODAY = '2026-09-23';
+
 /** Q20's scale, as a number this file sorts, searches and counts at. */
 const SCALE = 400;
 
@@ -84,6 +95,9 @@ function member(fields: Partial<MemberListRow> & { readonly id: string }): Membe
     email: null,
     role: 'member_role',
     leaveAllowanceDays: 20,
+    authUserId: `account-${fields.id}`,
+    statusVersions: [],
+    timeZone: 'Europe/Zagreb',
     ...fields,
   };
 }
@@ -119,6 +133,9 @@ function row(fields: Readonly<Record<string, unknown>>): Record<string, unknown>
     email: null,
     role: 'member_role',
     leave_allowance_days: 20,
+    auth_user_id: `account-${String(fields['id'] ?? 'member')}`,
+    member_status_versions: [],
+    organizations: { timezone: 'Europe/Zagreb' },
     ...fields,
   };
 }
@@ -201,8 +218,28 @@ describe('the read asks for exactly what the surface needs, and for the count', 
     // issued credential on `members` because nothing in this tree can read
     // `auth.users`, and the edit form is what seeds a field with it. It is in
     // this set and deliberately absent from `MEMBER_COLUMNS` below.
-    expect(MEMBERS_COLUMNS.split(',').sort()).toEqual(
-      ['email', 'id', 'leave_allowance_days', 'name', 'organization_id', 'role', 'username'].sort(),
+    //
+    // STORY 1.6 ADDS `auth_user_id` — compared with the session's subject so the
+    // edit screen never offers deactivation on the caller's own row — and the
+    // EMBEDDED status versions, whose two columns are the whole of a version as
+    // the surface reads it. The embed is split off first because its own column
+    // list carries a comma.
+    // `organizations(timezone)` is the organization's ZONE, embedded so "as at
+    // today" is the organization's today without a second read (AD-13, L8).
+    const embed = 'member_status_versions(active,effective_from),organizations(timezone)';
+
+    expect(MEMBERS_COLUMNS.endsWith(`,${embed}`)).toBe(true);
+    expect(MEMBERS_COLUMNS.slice(0, -(embed.length + 1)).split(',').sort()).toEqual(
+      [
+        'auth_user_id',
+        'email',
+        'id',
+        'leave_allowance_days',
+        'name',
+        'organization_id',
+        'role',
+        'username',
+      ].sort(),
     );
   });
 
@@ -226,6 +263,9 @@ describe('the read asks for exactly what the surface needs, and for the count', 
       email: 'ivan@dvd.hr',
       role: 'admin',
       leaveAllowanceDays: 25,
+      authUserId: 'account-m1',
+      statusVersions: [],
+      timeZone: 'Europe/Zagreb',
     });
   });
 
@@ -431,8 +471,8 @@ describe('the four columns are one table, so a heading and its sort key cannot d
 
   it('carries no team, hours or active column', () => {
     // Each absence is a decision: `members` has no `team_id` until story 1.7,
-    // hours are epic 4, and active state lives in `auth.users` (AD-2) with
-    // story 1.6 versioning it.
+    // hours are epic 4, and active state is versioned (AD-2) — story 1.6 marks
+    // an inactive member in words inside the name cell, not in a column.
     expect(MEMBER_COLUMNS).toHaveLength(4);
     for (const forbidden of ['team', 'hours', 'active']) {
       expect(MEMBER_COLUMNS.map((column) => String(column.key))).not.toContain(forbidden);
@@ -843,7 +883,7 @@ describe('the column says what its cell holds, so the screen cannot swap two', (
   });
 
   function cellFor(key: string): unknown {
-    return MEMBER_COLUMNS.find((column) => column.key === key)?.cell(one);
+    return MEMBER_COLUMNS.find((column) => column.key === key)?.cell(one, TODAY);
   }
 
   it('gives each column the value that column is named for', () => {
@@ -867,7 +907,7 @@ describe('the column says what its cell holds, so the screen cannot swap two', (
     // `test/localization-applied.test.ts`.
     const column = MEMBER_COLUMNS.find((candidate) => candidate.key === EMAIL_COLUMN);
 
-    expect(column?.cell(member({ id: 'm', email: null }))).toEqual({
+    expect(column?.cell(member({ id: 'm', email: null }), TODAY)).toEqual({
       kind: TEXT_CELL,
       text: NO_TEXT,
     });
@@ -1238,5 +1278,162 @@ describe('the read is bounded, because it is the most expensive one here', () =>
     // pass over the same index. `prijava.test.ts` pins that the screen actually
     // passes it.
     expect(MEMBERS_READ_STALE_MS).toBeGreaterThan(0);
+  });
+});
+
+describe('status as at a date, read off the embedded versions (story 1.6)', () => {
+  const versions = (...entries: readonly [boolean, string][]): MemberListRow['statusVersions'] =>
+    entries.map(([active, effectiveFrom]) => ({ active, effectiveFrom }));
+
+  it('reads a member with no version as active on every date', () => {
+    const plain = member({ id: 'm' });
+
+    expect(memberActiveOn(plain, '1990-01-01')).toBe(true);
+    expect(memberActiveOn(plain, TODAY)).toBe(true);
+    expect(memberLatestVersion(plain)).toBeNull();
+    expect(memberStatusOf(plain, TODAY)).toEqual({ activeToday: true, since: null, scheduled: null });
+  });
+
+  it('reads inactive on exactly [D, D2) after a deactivation and a reactivation', () => {
+    const away = member({
+      id: 'm',
+      statusVersions: versions([false, '2026-09-25'], [true, '2026-09-28']),
+    });
+
+    expect(memberActiveOn(away, '2026-09-24')).toBe(true);
+    expect(memberActiveOn(away, '2026-09-25')).toBe(false);
+    expect(memberActiveOn(away, '2026-09-27')).toBe(false);
+    expect(memberActiveOn(away, '2026-09-28')).toBe(true);
+    expect(memberLatestVersion(away)).toEqual({ active: true, effectiveFrom: '2026-09-28' });
+    // AS AT A DAY INSIDE THE GAP: inactive since D, reactivation scheduled.
+    expect(memberStatusOf(away, '2026-09-26')).toEqual({
+      activeToday: false,
+      since: '2026-09-25',
+      scheduled: { active: true, effectiveFrom: '2026-09-28' },
+    });
+  });
+
+  it('reads a scheduled deactivation as active until its date, and names it as scheduled', () => {
+    const scheduled = member({ id: 'm', statusVersions: versions([false, '2026-10-01']) });
+
+    expect(memberActiveOn(scheduled, TODAY)).toBe(true);
+    expect(memberStatusOf(scheduled, TODAY)).toEqual({
+      activeToday: true,
+      since: null,
+      scheduled: { active: false, effectiveFrom: '2026-10-01' },
+    });
+    // ON its date the change is in effect and nothing is scheduled any more.
+    expect(memberStatusOf(scheduled, '2026-10-01')).toEqual({
+      activeToday: false,
+      since: '2026-10-01',
+      scheduled: null,
+    });
+  });
+
+  it('reads "active on every date from D" as active on D with no deactivation after it', () => {
+    const outLater = member({ id: 'a', statusVersions: versions([false, '2026-10-01']) });
+    const backLater = member({
+      id: 'b',
+      statusVersions: versions([false, '2026-09-20'], [true, '2026-09-30']),
+    });
+
+    // THE GAP THE "LATEST VERSION" READING MISSED: B's latest version is active,
+    // and still B is not active from today on.
+    expect(memberActiveFrom(backLater, TODAY)).toBe(false);
+    expect(memberActiveFrom(backLater, '2026-09-30')).toBe(true);
+    // And the one a "today" reading missed: A is active today and not from today on.
+    expect(memberActiveFrom(outLater, TODAY)).toBe(false);
+    expect(memberActiveFrom(member({ id: 'c' }), TODAY)).toBe(true);
+  });
+
+  it('validates the embedded versions and orders them, refusing a malformed one', () => {
+    const parsed = memberListRowOf(
+      row({
+        member_status_versions: [
+          { active: true, effective_from: '2026-09-28' },
+          { active: false, effective_from: '2026-09-25' },
+        ],
+      }),
+    );
+
+    expect(parsed?.statusVersions).toEqual(versions([false, '2026-09-25'], [true, '2026-09-28']));
+    expect(parsed?.authUserId).toBe('account-member');
+
+    for (const malformed of [
+      undefined,
+      null,
+      [{ active: 'no', effective_from: '2026-09-25' }],
+      [{ active: false, effective_from: '25.09.2026' }],
+      // THE ONE VALIDATOR refuses an impossible date, not only a malformed one.
+      [{ active: false, effective_from: '2026-02-31' }],
+      [{ active: false }],
+      ['version'],
+    ]) {
+      expect(
+        memberRowOutcomeOf(row({ member_status_versions: malformed })),
+        JSON.stringify(malformed),
+      ).toEqual({ ok: false, malformed: { field: 'member_status_versions', id: 'member' } });
+    }
+    expect(memberRowOutcomeOf(row({ auth_user_id: null }))).toEqual({
+      ok: false,
+      malformed: { field: 'auth_user_id', id: 'member' },
+    });
+  });
+
+  it('marks the name cell inactive as at today, and marks nobody while today is unknown', () => {
+    const name = MEMBER_COLUMNS.find((column) => column.key === NAME_COLUMN);
+    const away = member({ id: 'm', name: 'Ana', statusVersions: versions([false, TODAY]) });
+    const scheduled = member({ id: 'n', name: 'Ivo', statusVersions: versions([false, '2026-10-01']) });
+
+    expect(name?.cell(away, TODAY)).toEqual({ kind: INACTIVE_NAME_CELL, text: 'Ana' });
+    // THE DAY BEFORE, the same version is a scheduled deactivation.
+    expect(name?.cell(away, '2026-09-22')).toEqual({
+      kind: SCHEDULED_INACTIVE_NAME_CELL,
+      text: 'Ana',
+      from: TODAY,
+    });
+    // A SCHEDULED DEACTIVATION is marked too, with the date it takes effect.
+    expect(name?.cell(scheduled, TODAY)).toEqual({
+      kind: SCHEDULED_INACTIVE_NAME_CELL,
+      text: 'Ivo',
+      from: '2026-10-01',
+    });
+    expect(name?.cell(scheduled, '2026-10-01')).toEqual({ kind: INACTIVE_NAME_CELL, text: 'Ivo' });
+    expect(name?.cell(away, null)).toEqual({ kind: TEXT_CELL, text: 'Ana' });
+    expect(name?.cell(scheduled, null)).toEqual({ kind: TEXT_CELL, text: 'Ivo' });
+
+    // INACTIVE TODAY WITH A REACTIVATION SCHEDULED is marked inactive: that is
+    // today's fact, and the return is the edit screen's to state.
+    const returning = member({
+      id: 'r',
+      name: 'Eva',
+      statusVersions: versions([false, '2026-09-01'], [true, '2026-10-01']),
+    });
+    expect(name?.cell(returning, TODAY)).toEqual({ kind: INACTIVE_NAME_CELL, text: 'Eva' });
+  });
+
+  it('shows an ISO date in the binding shape, and a malformed one unchanged', () => {
+    expect(shownDate('2026-09-23')).toBe('23.09.2026');
+    expect(shownDate('nonsense')).toBe('nonsense');
+    expect(shownDate('2026-02-31')).toBe('2026-02-31');
+  });
+
+  it("derives today from the organization's zone the read embeds, and nothing before it", () => {
+    const now = new Date('2026-09-22T22:30:00Z');
+
+    expect(membersTodayOf([member({ id: 'm', timeZone: 'Europe/Zagreb' })], now)).toBe('2026-09-23');
+    expect(membersTodayOf([member({ id: 'm', timeZone: 'Etc/UTC' })], now)).toBe('2026-09-22');
+    expect(membersTodayOf(null, now)).toBeNull();
+    expect(membersTodayOf([], now)).toBeNull();
+  });
+
+  it('refuses a row whose organization zone did not arrive', () => {
+    for (const organizations of [undefined, null, {}, { timezone: 7 }, []]) {
+      expect(memberRowOutcomeOf(row({ organizations })), JSON.stringify(organizations)).toEqual({
+        ok: false,
+        malformed: { field: 'organizations', id: 'member' },
+      });
+    }
+    expect(memberListRowOf(row({}))?.timeZone).toBe('Europe/Zagreb');
   });
 });

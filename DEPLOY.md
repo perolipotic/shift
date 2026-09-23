@@ -120,9 +120,19 @@ caller — and both use the secret key ONLY for the `auth.admin.*` call, with ev
 `members` write going through the caller's own JWT so row level security and
 attribution still apply.
 
-`ban` and `unban` still answer `501 { "code": "NOT_IMPLEMENTED" }`. Active state
-lives in `auth.users` (AD-2) and the versioned shape that records it is story
-1.6's, so shipping them here would mean guessing that shape a story early.
+There is no `ban` or `unban` (story 1.6, human decision 2026-09-23).
+Deactivation is an RLS-governed PostgREST insert into `member_status_versions`
+(`0008_member_status.sql`), not a function call — and cancelling a change
+that is not yet in effect is an RLS-governed delete of that row. `current_member_access()`
+reads the version covering today in the organization's zone, so a deactivated
+member reads nothing on their next statement, and `custom_access_token_hook`
+refuses them a token with a 403, so sign-in and refresh both fail with the
+ordinary credentials message. Nothing is written to GoTrue: a token minted
+before the date keeps authenticating to GoTrue's own endpoints until it
+expires, and reads no organization data.
+An existing `auth.users.banned_until` is still honoured — `current_member_access()`
+ANDs it with the version covering today — but nothing in the product sets it any
+more.
 
 The first organization does not go through this function at all — see §7.
 
@@ -500,14 +510,15 @@ Against the live host:
 curl -s -o /dev/null -w '%{http_code}\n' https://<host>/                  # 200
 curl -s -o /dev/null -w '%{http_code}\n' https://<host>/some/deep/route   # 200
 
-# `ban`, and NOT `createUser`: `createUser` is implemented, so the smoke test
-# would create a real account on a production project. `ban` and `unban` are the
-# two that still answer 501, until story 1.6.
+# `resetPassword` WITH NO PAYLOAD, and NOT `createUser`: every operation is
+# implemented, so the smoke test must be one the function refuses before it
+# acts. A reset with no `memberId` is refused by its own validation, before
+# either client is used.
 curl -s -X POST https://<ref>.supabase.co/functions/v1/admin-auth \
   -H 'Authorization: Bearer <a real user JWT>' \
   -H 'content-type: application/json' \
-  -d '{"operation":"ban"}'
-# -> 501 {"code":"NOT_IMPLEMENTED","operation":"ban"}
+  -d '{"operation":"resetPassword"}'
+# -> 400 {"code":"PAYLOAD_INVALID"}
 ```
 
 If the function returns `500 {"code":"SECRET_KEY_MISSING"}` or

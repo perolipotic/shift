@@ -688,6 +688,63 @@ const AUTHORED_VOCABULARY = [
   'prestaju',
   'prijave',
   'vrijediti',
+  // STORY 1.6's, and every one of them closes a gap rather than moving a word:
+  // the inactive marker, the status block's line, label, offer, confirmation
+  // and cancel, and the three refusals a status change can earn. Counted as
+  // whole words for the reason every entry above is, and read off `hr.json`,
+  // so a reworded message moves both sides at once.
+  'neaktivna',
+  'Vrijedi',
+  'Deaktiviraj',
+  'Ponovno',
+  'aktiviraj',
+  'može',
+  'prijaviti',
+  'ulazi',
+  'buduće',
+  'rasporede',
+  'Prošli',
+  'rasporedi',
+  'ostaju',
+  'nepromijenjeni',
+  'deaktivaciju',
+  'ponovnu',
+  'aktivaciju',
+  'promjene',
+  'statusa',
+  'Datum',
+  'biti',
+  'prošlosti',
+  'Vlastiti',
+  'možeš',
+  'taj',
+  'datum',
+  'postoji',
+  'promjena',
+  'drugi',
+  // STORY 1.6, ITERATION 1: the scheduled change and its cancellation, the
+  // future-tense prompts, and the three refusals the date-order,
+  // changes-something and in-effect rules earn.
+  'aktivna',
+  'zakazanu',
+  'Zakazana',
+  'Poništi',
+  'poništavanje',
+  'poništena',
+  'poništiti',
+  'neće',
+  'moći',
+  'ulaziti',
+  'mora',
+  'zadnje',
+  'već',
+  'snazi',
+  // The stale-status refusal, and the self refusal reworded to cover any
+  // change to one's own status rather than only a deactivation.
+  'međuvremenu',
+  'promijenio',
+  'Provjeri',
+  'mijenjati',
 ];
 
 /** Everything the terminology contract and the unshipped affordances still own.

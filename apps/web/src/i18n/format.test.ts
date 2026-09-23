@@ -7,6 +7,10 @@ import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
   compareText,
+  formatIsoDate,
+  isIsoDate,
+  nextIsoDate,
+  organizationIsoDate,
   formatDate,
   formatDayMonthRange,
   formatMonthName,
@@ -239,7 +243,18 @@ function parametersOf(source: string, name: string): string[] {
  * held to `timeZone: string`, and an exemption has to be written down here to
  * exist.
  */
-const UNZONED_ENTRY_POINTS = ['formatNumber', 'compareText'];
+// Story 1.6 adds `formatIsoDate`: its argument is a CALENDAR DATE, which names
+// a day and has no instant to resolve, so a zone would be a parameter nothing
+// could honestly use.
+// `isIsoDate` and `nextIsoDate` are the same kind: a calendar date in, a
+// judgement or a calendar date out.
+const UNZONED_ENTRY_POINTS = [
+  'formatNumber',
+  'compareText',
+  'formatIsoDate',
+  'isIsoDate',
+  'nextIsoDate',
+];
 
 /**
  * The exported entry points that must take a REQUIRED zone.
@@ -262,6 +277,9 @@ const ZONED_ENTRY_POINTS = [
   // A `?` or a default here would let a caller ask "is the DEVICE's zone
   // renderable", which is always yes and answers the wrong question.
   'isRenderableTimeZone',
+  // Story 1.6. The organization's today as an ISO date: the very question the
+  // rule exists for, since the device's today is the wrong answer to it.
+  'organizationIsoDate',
 ];
 
 beforeAll(async () => {
@@ -1048,5 +1066,60 @@ describe('the scan detects the shapes it exists to catch', () => {
       'shape: { a: number, b: number }',
       'timeZone: string',
     ]);
+  });
+});
+
+describe("the organization's calendar date, and a calendar date in the binding shape", () => {
+  it('reads the date the instant falls on in the organization zone, not UTC', () => {
+    // 22:30 UTC is already tomorrow in Zagreb and still today in UTC, which is
+    // the whole reason the argument is required.
+    expect(organizationIsoDate(at('2026-09-22T22:30:00Z'), ZONE)).toBe('2026-09-23');
+    expect(organizationIsoDate(at('2026-09-22T22:30:00Z'), 'Etc/UTC')).toBe('2026-09-22');
+    expect(organizationIsoDate(at('2026-01-05T10:00:00Z'), ZONE)).toBe('2026-01-05');
+  });
+
+  it('falls back to UTC for a zone it cannot render, as the database does', () => {
+    expect(organizationIsoDate(at('2026-09-22T22:30:00Z'), 'Europe/Zagrb')).toBe('2026-09-22');
+  });
+
+  it('renders an ISO date as 23.09.2026 and refuses anything that is not one', () => {
+    expect(formatIsoDate('2026-09-23')).toBe('23.09.2026');
+    expect(formatIsoDate('2026-01-01')).toBe('01.01.2026');
+    for (const malformed of ['', '2026-9-23', '23.09.2026', '2026-02-31', 'nonsense']) {
+      expect(formatIsoDate(malformed), malformed).toBeNull();
+    }
+  });
+});
+
+describe('the one ISO-date validator', () => {
+  it('admits real calendar dates and refuses impossible ones', () => {
+    for (const real of ['2026-09-23', '2024-02-29', '2026-12-31']) {
+      expect(isIsoDate(real), real).toBe(true);
+    }
+    for (const impossible of [
+      '2026-02-31',
+      '2026-02-29',
+      '2026-13-01',
+      '2026-00-10',
+      '2026-04-31',
+      '2026-9-23',
+      '26-09-23',
+      ' 2026-09-23',
+      '',
+    ]) {
+      expect(isIsoDate(impossible), impossible).toBe(false);
+    }
+  });
+
+  it('names the next calendar day across a month, a year and a leap day', () => {
+    expect(nextIsoDate('2026-09-23')).toBe('2026-09-24');
+    expect(nextIsoDate('2026-09-30')).toBe('2026-10-01');
+    expect(nextIsoDate('2026-12-31')).toBe('2027-01-01');
+    expect(nextIsoDate('2024-02-28')).toBe('2024-02-29');
+    expect(nextIsoDate('2026-02-31')).toBeNull();
+    // THE LAST DAY A FOUR-DIGIT YEAR NAMES has no next day this shape carries,
+    // and `0008` refuses year 10000.
+    expect(nextIsoDate('9999-12-30')).toBe('9999-12-31');
+    expect(nextIsoDate('9999-12-31')).toBeNull();
   });
 });

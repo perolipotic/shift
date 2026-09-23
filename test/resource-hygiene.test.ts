@@ -210,9 +210,9 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.caption',
   'ljudi.search',
   // FOUR COLUMN HEADINGS and no fifth. `members` carries no `team_id` until
-  // story 1.7, hours are epic 4, and active state lives in `auth.users` (AD-2)
-  // with story 1.6 versioning it — so a fifth heading here would be a later
-  // story's work arriving without that story's review.
+  // story 1.7, hours are epic 4, and active state is versioned (AD-2) and
+  // marked in words inside the name cell by story 1.6 — so a fifth heading
+  // here would be a later story's work arriving without that story's review.
   //
   // `ljudi.role` is rendered TWICE, as the column's heading and as the level
   // filter's own label, and that is one key rather than two on purpose: the
@@ -301,7 +301,8 @@ const SANCTIONED_SCREEN_KEYS = [
   // THE ONLY WAY OUT OF THE SHOWN PANEL, and therefore the only thing that
   // makes a second reset possible at all.
   'ljudi.form.resetDismiss',
-  // TWELVE refusals, and the partition costs nothing it should not. A policy
+  // TWELVE refusals from story 1.5 (story 1.6's three are marked where they
+  // sit), and the partition costs nothing it should not. A policy
   // refusal, a bad value, a taken username, a malformed username, an id that
   // reaches nobody, a rename that did not apply, a rename that could not be
   // undone, a PASSWORD that did not change, an account left without a row, the
@@ -324,8 +325,54 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.form.error.resetNotApplied',
   'ljudi.form.error.stranded',
   'ljudi.form.error.lastAdmin',
+  // STORY 1.6's SEVEN refusals, each a different thing to do next: choose a
+  // date that is not in the past, stop trying on your own row (any change to
+  // one's own status, not only a deactivation), choose a date that has no
+  // version yet, choose one after the latest change, notice the member already
+  // has that status, stop trying to cancel a change that has already happened,
+  // and look again at a status that changed underneath the screen. The
+  // last-admin refusal is NOT an eighth — a change
+  // that would leave no active admin is Q6 reached another way, and it says
+  // the sentence `lastAdmin` already says.
+  'ljudi.form.error.statusPast',
+  'ljudi.form.error.statusSelf',
+  'ljudi.form.error.statusTaken',
+  'ljudi.form.error.statusOrder',
+  'ljudi.form.error.statusUnchanged',
+  'ljudi.form.error.statusInEffect',
+  'ljudi.form.error.statusStale',
   'ljudi.form.error.unavailable',
   'ljudi.form.error.saved',
+  // STORY 1.6's STATUS BLOCK, TWENTY-ONE. The list's two markers, which
+  // INTERPOLATE the name they sit beside, because an inactive member is marked
+  // in words and never by colour alone — one for inactive today, one, in the
+  // future tense, for a deactivation already scheduled. On the edit screen:
+  // today's status in the present, the scheduled change in the future, the
+  // date control's label, the offer, its prompt and its confirmation for each
+  // of the three changes — naming the member, for the reason the reset's do,
+  // with a present and a future prompt for the two that take a date — the
+  // confirmation's cancel, which is NOT `Odustani` for the reason
+  // `ljudi.form.resetCancel` is not, and the confirmation that a change landed.
+  'ljudi.status.inactive',
+  'ljudi.status.inactiveScheduled',
+  'ljudi.status.active',
+  'ljudi.status.inactiveFrom',
+  'ljudi.status.scheduledInactive',
+  'ljudi.status.scheduledActive',
+  'ljudi.status.date',
+  'ljudi.status.deactivate',
+  'ljudi.status.reactivate',
+  'ljudi.status.withdraw',
+  'ljudi.status.deactivatePrompt',
+  'ljudi.status.deactivatePromptFuture',
+  'ljudi.status.reactivatePrompt',
+  'ljudi.status.reactivatePromptFuture',
+  'ljudi.status.withdrawPrompt',
+  'ljudi.status.deactivateConfirm',
+  'ljudi.status.reactivateConfirm',
+  'ljudi.status.withdrawConfirm',
+  'ljudi.status.cancel',
+  'ljudi.status.saved',
   // The navigation chrome, part B — FOUR, and each one is a string that had no
   // surface to live on until this commit.
   //
@@ -614,6 +661,20 @@ describe('the messages obey the voice rules that bind every string', () => {
     expect(messageAt('ljudi.form.resetConfirm')).toBe('Potvrdi novu lozinku za osobu {name}');
     expect(messageAt('ljudi.form.resetCancel')).toBe('Odustani od nove lozinke');
     expect(messageAt('ljudi.form.resetDismiss')).toBe('Sakrij lozinku');
+    // STORY 1.6's FOUR ACTION LABELS, a FOURTH authoring of the same voice. The
+    // offer is the one that would most naturally have been the noun
+    // `Deaktivacija` — a status, not a control. `Deaktiviraj`, `aktiviraj`,
+    // `Potvrdi` and `Odustani` are all second person singular.
+    expect(messageAt('ljudi.status.deactivate')).toBe('Deaktiviraj osobu {name}');
+    expect(messageAt('ljudi.status.reactivate')).toBe('Ponovno aktiviraj osobu {name}');
+    expect(messageAt('ljudi.status.deactivateConfirm')).toBe('Potvrdi deaktivaciju osobe {name}');
+    expect(messageAt('ljudi.status.cancel')).toBe('Odustani od promjene statusa');
+    // THE CANCELLATION'S TWO, in the same voice: `Poništi`, not the noun
+    // `Poništavanje`, is the control.
+    expect(messageAt('ljudi.status.withdraw')).toBe('Poništi zakazanu promjenu za osobu {name}');
+    expect(messageAt('ljudi.status.withdrawConfirm')).toBe(
+      'Potvrdi poništavanje promjene za osobu {name}',
+    );
   });
 });
 

@@ -1,4 +1,4 @@
-import { compareText } from '@/i18n/format';
+import { compareText, formatIsoDate, isIsoDate, organizationIsoDate } from '@/i18n/format';
 import type { MemberRole } from '@/navigation/destinations';
 import { MEMBER_ROLES, type MemberRoleOutcome } from '@/navigation/role';
 
@@ -31,9 +31,9 @@ import { MEMBER_ROLES, type MemberRoleOutcome } from '@/navigation/role';
  *
  * WHAT THIS MODULE DOES NOT DO is write. Creating a member, editing one and
  * resetting a member's password are all `@/members/write`, which owns the
- * PostgREST edit, the privileged calls and the branch between them; only
- * DEACTIVATING a member is story 1.6's, and `ban`/`unban` still answer `501`.
- * Nothing here posts, patches or deletes, and the seam below names `select`
+ * PostgREST edit, the privileged calls and the branch between them, and
+ * deactivating one (story 1.6), which is a PostgREST insert of a status
+ * version. Nothing here posts, patches or deletes, and the seam below names `select`
  * alone so a write cannot be added without widening the interface in front of a
  * reviewer.
  *
@@ -87,14 +87,26 @@ export const MEMBERS_LIST_KEY = ['members'] as const;
  * widen the search's pinned "name and address and nothing else" claim in the
  * same commit. The list reads it; the edit form renders it.
  *
+ * STORY 1.6 ADDS TWO. `auth_user_id` is what lets the edit screen recognise
+ * the caller's OWN row — the one row the deactivation control is never offered
+ * on — by comparing it with the session's subject. And the member's status
+ * versions are EMBEDDED rather than read by a second query (AD-13): one answer
+ * carries every member and every version, so the list's inactive marker and
+ * the edit screen's status line are derived from the same snapshot. Active
+ * state is versioned (AD-2), so there is no active column to select; what
+ * arrives is the history, and {@link memberActiveOn} reads it as at a date.
+ * The organization's TIMEZONE is embedded for the same reason: "as at today"
+ * means the organization's today (L8), and reading the zone from a second
+ * query would put two reads behind one figure.
+ *
  * `created_at` is not here, and neither is anything else: `members` carries no
  * health data and no absence-reason field (Q5), and this list is where that
  * claim is made concrete enough for `members/list.test.ts` to assert it. There
- * is no `team_id` to select — teams arrive in story 1.7 — and no active column,
- * because active state lives in `auth.users` (AD-2) and story 1.6 versions it.
+ * is no `team_id` to select — teams arrive in story 1.7.
  */
 export const MEMBERS_COLUMNS =
-  'organization_id,id,name,username,email,role,leave_allowance_days';
+  'organization_id,id,auth_user_id,name,username,email,role,leave_allowance_days,' +
+  'member_status_versions(active,effective_from),organizations(timezone)';
 
 /**
  * The exact count the transport is asked for alongside the rows.
@@ -234,6 +246,169 @@ export interface MemberListRow {
   readonly email: string | null;
   readonly role: MemberRole;
   readonly leaveAllowanceDays: number;
+  /**
+   * The account this member signs in with (`members.auth_user_id`). Rendered
+   * nowhere; the edit screen compares it with the session's subject so the
+   * deactivation control is never offered on the caller's own row.
+   */
+  readonly authUserId: string;
+  /**
+   * Every status version this member has, oldest first (story 1.6). Empty for
+   * a member who was never deactivated, which reads as active.
+   */
+  readonly statusVersions: readonly MemberStatusVersion[];
+  /**
+   * The member's organization's zone, embedded in the same read, so "today"
+   * for the marker and the date control is the organization's and never the
+   * device's (L8). Every row carries the same one — {@link readMembers} refuses
+   * an answer spanning two organizations.
+   */
+  readonly timeZone: string;
+}
+
+/**
+ * One status version as the surface sees it (`0008`). A version is never
+ * edited, so this is history rather than state: the state as at a date is
+ * {@link memberActiveOn}'s reading of it.
+ */
+export interface MemberStatusVersion {
+  readonly active: boolean;
+  /** An ISO calendar date, `YYYY-MM-DD`, in the organization's own frame. */
+  readonly effectiveFrom: string;
+}
+
+/**
+ * The versions a row carries, oldest first, or `null` if any of them is not
+ * one.
+ *
+ * A MALFORMED VERSION REFUSES THE ROW rather than being dropped: a dropped
+ * deactivation reads as an active member, which is the one wrong answer this
+ * reading must never give silently.
+ */
+function statusVersionsIn(row: Record<string, unknown>): MemberStatusVersion[] | null {
+  const value = row['member_status_versions'];
+
+  if (!Array.isArray(value)) return null;
+
+  const versions: MemberStatusVersion[] = [];
+
+  for (const entry of value as readonly unknown[]) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return null;
+
+    const fields = entry as Record<string, unknown>;
+    const active = fields['active'];
+    const effectiveFrom = fields['effective_from'];
+
+    if (typeof active !== 'boolean') return null;
+    // THE ONE VALIDATOR (`@/i18n/format`), so an impossible date refuses the
+    // row here exactly as it refuses an entered date on the edit screen.
+    if (typeof effectiveFrom !== 'string' || !isIsoDate(effectiveFrom)) return null;
+
+    versions.push({ active, effectiveFrom });
+  }
+
+  return versions.sort((first, second) =>
+    first.effectiveFrom < second.effectiveFrom ? -1 : first.effectiveFrom > second.effectiveFrom ? 1 : 0,
+  );
+}
+
+/**
+ * Whether a member is active on a date: the version with the greatest
+ * `effectiveFrom` on or before it, and active when there is none.
+ *
+ * THE SAME READING `0008`'s `member_active_on` makes, and it has to be: the
+ * list's marker and the database's refusal of a sign-in are one fact, and two
+ * readings of it are how a person shown as active is locked out.
+ */
+export function memberActiveOn(member: MemberListRow, day: string): boolean {
+  let active = true;
+
+  for (const version of member.statusVersions) {
+    if (version.effectiveFrom <= day) active = version.active;
+  }
+
+  return active;
+}
+
+/**
+ * The organization's today as an ISO date, read off the list itself, or `null`
+ * while there is no row to read it from.
+ *
+ * NEVER THE DEVICE'S DATE (L8), and never a second query (AD-13): the zone
+ * arrives embedded in the one list read. `null` is the honest answer before
+ * that read has settled, and every caller has a case for it — no marker on the
+ * list and no deactivation offered on the edit screen, rather than either one
+ * resting on a guess.
+ */
+export function membersTodayOf(members: readonly MemberListRow[] | null, now: Date): string | null {
+  const first = members?.[0];
+
+  return first === undefined ? null : organizationIsoDate(now, first.timeZone);
+}
+
+/**
+ * Whether a member is active on EVERY date from `day` onward: active on it,
+ * and no deactivation dated after it. The reading `0008`'s never-zero-admins
+ * rule makes (`member_active_from`), so the surface names the last-admin
+ * refusal for exactly the writes the database refuses for that reason.
+ */
+export function memberActiveFrom(member: MemberListRow, day: string): boolean {
+  return (
+    memberActiveOn(member, day) &&
+    !member.statusVersions.some((version) => version.effectiveFrom > day && !version.active)
+  );
+}
+
+/**
+ * An ISO date the way the screens show one — `23.09.2026` — or the value
+ * unchanged if it is not a real calendar date, so a malformed value is still
+ * visibly the value that was entered rather than a blank.
+ */
+export function shownDate(isoDate: string): string {
+  return formatIsoDate(isoDate) ?? isoDate;
+}
+
+/** A member's latest version, or `null` for a member who has none. */
+export function memberLatestVersion(member: MemberListRow): MemberStatusVersion | null {
+  return member.statusVersions[member.statusVersions.length - 1] ?? null;
+}
+
+/**
+ * A member's status as at the organization's today, and the change scheduled
+ * after it.
+ *
+ * AT MOST ONE CHANGE IS SCHEDULED. `0008` admits a new version only while the
+ * member's latest one is already in effect, so the latest version is the only
+ * one that can be dated after today — and when it is, it is the scheduled
+ * change. `scheduled` is exactly that: the latest version, when it is dated
+ * after today.
+ */
+export interface MemberStatus {
+  readonly activeToday: boolean;
+  /**
+   * The date the version in effect today took effect, when there is one —
+   * what "inactive since" names. `null` for a member no version has touched
+   * yet.
+   */
+  readonly since: string | null;
+  /** The latest version when it is dated after today, or `null`. */
+  readonly scheduled: MemberStatusVersion | null;
+}
+
+export function memberStatusOf(member: MemberListRow, today: string): MemberStatus {
+  let since: string | null = null;
+
+  for (const version of member.statusVersions) {
+    if (version.effectiveFrom <= today) since = version.effectiveFrom;
+  }
+
+  const latest = memberLatestVersion(member);
+
+  return {
+    activeToday: memberActiveOn(member, today),
+    since,
+    scheduled: latest !== null && latest.effectiveFrom > today ? latest : null,
+  };
 }
 
 function textAt(row: Record<string, unknown>, column: string): string | null {
@@ -330,6 +505,24 @@ export function memberRowOutcomeOf(row: unknown): RowOutcome {
     return { ok: false, malformed: { field: 'leave_allowance_days', id } };
   }
 
+  const authUserId = textAt(fields, 'auth_user_id');
+
+  if (authUserId === null) return { ok: false, malformed: { field: 'auth_user_id', id } };
+
+  const statusVersions = statusVersionsIn(fields);
+
+  if (statusVersions === null) {
+    return { ok: false, malformed: { field: 'member_status_versions', id } };
+  }
+
+  const organization = fields['organizations'];
+  const timeZone =
+    typeof organization === 'object' && organization !== null && !Array.isArray(organization)
+      ? textAt(organization as Record<string, unknown>, 'timezone')
+      : null;
+
+  if (timeZone === null) return { ok: false, malformed: { field: 'organizations', id } };
+
   return {
     ok: true,
     member: {
@@ -340,6 +533,9 @@ export function memberRowOutcomeOf(row: unknown): RowOutcome {
       email: textAt(fields, 'email'),
       role,
       leaveAllowanceDays,
+      authUserId,
+      statusVersions,
+      timeZone,
     },
   };
 }
@@ -517,6 +713,21 @@ export type MemberColumnLabel = 'ljudi.name' | 'ljudi.email' | 'ljudi.role' | 'l
 
 /** A cell holding text the row already carries — a name, an address. */
 export const TEXT_CELL = 'text';
+/**
+ * A cell holding the name of a member who is inactive TODAY (story 1.6). The
+ * surface renders it with the inactive marker in WORDS: colour alone is a
+ * signal part of the audience cannot see, and a row that looks like every
+ * other is the defect the marker exists for. An active member's name is an
+ * ordinary {@link TEXT_CELL}, so the marker is decided here and nowhere else.
+ */
+export const INACTIVE_NAME_CELL = 'inactiveName';
+/**
+ * A cell holding the name of a member who is active today and SCHEDULED to be
+ * inactive from a later date. Marked too, in words and in the future tense,
+ * because an admin reading the list is the person who would otherwise plan
+ * next week around somebody who will not be there.
+ */
+export const SCHEDULED_INACTIVE_NAME_CELL = 'scheduledInactiveName';
 /** A cell holding a permission level, which the surface resolves through `t()`. */
 export const LEVEL_CELL = 'level';
 /** A cell holding a count of days, which the surface runs through the formatter. */
@@ -539,6 +750,13 @@ export const DAYS_CELL = 'days';
  */
 export type MemberCell =
   | { readonly kind: typeof TEXT_CELL; readonly text: string }
+  | { readonly kind: typeof INACTIVE_NAME_CELL; readonly text: string }
+  | {
+      readonly kind: typeof SCHEDULED_INACTIVE_NAME_CELL;
+      readonly text: string;
+      /** The ISO date the member is inactive from. */
+      readonly from: string;
+    }
   | { readonly kind: typeof LEVEL_CELL; readonly level: MemberRole }
   | { readonly kind: typeof DAYS_CELL; readonly days: number };
 
@@ -555,8 +773,12 @@ export interface MemberColumn {
    * numeric column cannot arrive without one.
    */
   readonly numeric: boolean;
-  /** What this column's cell holds for one member. See {@link MemberCell}. */
-  readonly cell: (member: MemberListRow) => MemberCell;
+  /**
+   * What this column's cell holds for one member, as at `today` — the
+   * organization's own date, or `null` while it is not yet known. See
+   * {@link MemberCell}.
+   */
+  readonly cell: (member: MemberListRow, today: string | null) => MemberCell;
   /**
    * What this column sorts by, or `null` for a row that carries no value in it.
    *
@@ -581,8 +803,9 @@ export interface MemberColumn {
  *
  * FOUR AND NOT FIVE, and each absence is a decision rather than an omission:
  * there is no team column (`members` carries no `team_id` until story 1.7), no
- * hours column (epic 4), and no active/inactive column (story 1.6 versions that
- * state, and it lives in `auth.users` anyway, AD-2).
+ * hours column (epic 4), and no active/inactive column: story 1.6 marks an
+ * inactive member in words inside the NAME cell, so an active member's row
+ * carries no word about it at all.
  *
  * The permission level sorts by RANK rather than by its own text: `MEMBER_ROLES`
  * is ordered most-privileged first, so ascending puts administrators at the top.
@@ -595,7 +818,25 @@ export const MEMBER_COLUMNS: readonly MemberColumn[] = [
     key: NAME_COLUMN,
     label: 'ljudi.name',
     numeric: false,
-    cell: (member) => ({ kind: TEXT_CELL, text: member.name }),
+    // AS AT TODAY, and no marker at all while today is not known: a member
+    // marked inactive by a guessed date is a false statement about a person,
+    // and the device's own date is the wrong frame (L8).
+    cell: (member, today) => {
+      if (today === null) return { kind: TEXT_CELL, text: member.name };
+
+      const status = memberStatusOf(member, today);
+
+      if (!status.activeToday) return { kind: INACTIVE_NAME_CELL, text: member.name };
+      if (status.scheduled !== null && !status.scheduled.active) {
+        return {
+          kind: SCHEDULED_INACTIVE_NAME_CELL,
+          text: member.name,
+          from: status.scheduled.effectiveFrom,
+        };
+      }
+
+      return { kind: TEXT_CELL, text: member.name };
+    },
     sortValue: (member) => member.name,
   },
   {

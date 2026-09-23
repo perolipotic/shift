@@ -840,7 +840,8 @@ const MEMBER_RESET_COLUMNS = `${ORGANIZATION_COLUMN},${AUTH_USER_COLUMN}`;
  * The one attribute a reset sends GoTrue, named so it can be pinned.
  *
  * `password` AND NOTHING ELSE. `email_confirm` belongs to the address and the
- * rename owns it; `ban_duration` is story 1.6's; and `user_metadata` is the one
+ * rename owns it; `ban_duration` is nobody's, since story 1.6 deactivates in a
+ * domain table and never bans; and `user_metadata` is the one
  * place a credential must never be written, because every later admin read can
  * see it. The boundary suite pins these keys exactly, so an attribute added
  * here is a failing case rather than a value in the auth store nobody chose.

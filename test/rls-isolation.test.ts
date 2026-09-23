@@ -927,8 +927,14 @@ describe('the access-control layer is present, so nothing below passes vacuously
       );
       expect(
         policies.map((row) => row.policyname),
-        'stories 1.3a and 1.4a own exactly these six policies; a missing one refuses silently and looks like a working refusal',
+        'stories 1.3a, 1.4a and 1.6 own exactly these nine policies; a missing one refuses silently and looks like a working refusal',
       ).toEqual([
+        // STORY 1.6: select, insert, and a delete that reaches only a version
+        // not yet in effect — and never update: a status version is appended,
+        // and cancelled only before it has decided any day.
+        'member_status_versions_delete_scheduled_by_own_active_admin',
+        'member_status_versions_insert_by_own_active_admin',
+        'member_status_versions_select_own_organization',
         'members_delete_by_own_active_admin',
         'members_insert_by_own_active_admin',
         'members_select_own_organization',
@@ -940,13 +946,27 @@ describe('the access-control layer is present, so nothing below passes vacuously
       const { rows: functions } = await client.query<{ proname: string }>(
         `select proname from pg_proc
           where pronamespace = 'public'::regnamespace
-            and proname in ('current_member_access', 'custom_access_token_hook')
+            and proname in (
+              'current_member_access',
+              'custom_access_token_hook',
+              'member_active_from',
+              'member_active_on',
+              'member_latest_version',
+              'organization_today'
+            )
           order by proname`,
       );
       expect(
         functions.map((row) => row.proname),
-        'the helper and the hook are what every policy and every claim depend on',
-      ).toEqual(['current_member_access', 'custom_access_token_hook']);
+        'the helper and the hook are what every policy and every claim depend on, and since story 1.6 both read active state through the status readers',
+      ).toEqual([
+        'current_member_access',
+        'custom_access_token_hook',
+        'member_active_from',
+        'member_active_on',
+        'member_latest_version',
+        'organization_today',
+      ]);
     } finally {
       await client.end();
     }
@@ -3560,7 +3580,24 @@ describe('the member list is one organization own list, at the scale Q20 names',
    *  rather than imported: this file asserts what the DATABASE does, and
    *  reading the list from the client would let a renamed column agree with
    *  itself on both sides while every existing read broke. */
-  const LIST_COLUMNS = 'organization_id,id,name,email,role,leave_allowance_days';
+  const LIST_COLUMNS =
+    'organization_id,id,auth_user_id,name,username,email,role,leave_allowance_days,' +
+    'member_status_versions(active,effective_from),organizations(timezone)';
+
+  /** The keys each row of that read carries: the eight columns, and the two
+   *  embeds under their relation names (story 1.6). */
+  const LIST_KEYS = [
+    'organization_id',
+    'id',
+    'auth_user_id',
+    'name',
+    'username',
+    'email',
+    'role',
+    'leave_allowance_days',
+    'member_status_versions',
+    'organizations',
+  ];
 
   /**
    * `count` members in one organization, in ONE statement, returning the
@@ -3673,9 +3710,8 @@ describe('the member list is one organization own list, at the scale Q20 names',
     'returns the $fixture list with every column the surface renders, and no other organization rows',
     async ({ slug, admin }) => {
       // The read the surface actually makes, with the column list it actually
-      // sends — `members?select=organization_id,id,name,email,role,
-      // leave_allowance_days` — rather than `select=*`, which is a different
-      // request and the one already covered above.
+      // sends — `LIST_COLUMNS`, embeds included — rather than `select=*`,
+      // which is a different request and the one already covered above.
       const token = await tokenFor(admin, slug);
       const client = await connect();
       try {
@@ -3692,7 +3728,7 @@ describe('the member list is one organization own list, at the scale Q20 names',
         // client, because the six columns the surface names are the six it gets.
         for (const row of rows) {
           expect([...Object.keys(row)].sort(), `${slug} read a column nothing asked for`).toEqual(
-            [...LIST_COLUMNS.split(',')].sort(),
+            [...LIST_KEYS].sort(),
           );
         }
       } finally {
@@ -3733,8 +3769,67 @@ describe('the member list is one organization own list, at the scale Q20 names',
       // allowances the guard exists to keep off a member's screen are reachable
       // to them over REST, and that is the state AD-10 describes.
       expect([...Object.keys(memberRows[0] ?? {})].sort()).toEqual(
-        [...LIST_COLUMNS.split(',')].sort(),
+        [...LIST_KEYS].sort(),
       );
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'embeds the $fixture organization as an object and the status versions as an array, for an admin and a member',
+    async ({ slug, admin, member }) => {
+      // STORY 1.6's TWO EMBEDS, as the database shapes them. `organizations`
+      // is a to-one relation and must arrive as an OBJECT; the versions are
+      // to-many and must arrive as an ARRAY the reader can see. `members/list.ts`
+      // refuses a row carrying either the other way round, so a shape nobody
+      // sent live is a list that renders "malformed" in production.
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, own);
+        const { rows } = await client.query<{ day: string }>(
+          // TODAY, so the committed version is in effect: a scheduled one would
+          // be cancellable, and the unfiltered delete elsewhere in this file
+          // would count it.
+          'select public.organization_today($1)::text as day',
+          [own],
+        );
+        const day = rows[0]?.day ?? '';
+        await client.query(
+          `insert into member_status_versions (organization_id, member_id, active, effective_from, created_by)
+           values ($1, $2, false, $3::date, $4)`,
+          [own, target.id, day, caller.authUserId],
+        );
+        const { rows: zone } = await client.query<{ timezone: string }>(
+          'select timezone from organizations where id = $1',
+          [own],
+        );
+
+        for (const reader of [admin, member]) {
+          const read = await restRows(`members?select=${LIST_COLUMNS}`, {
+            token: await tokenFor(reader, slug),
+          });
+          for (const row of read) {
+            const organization = row['organizations'];
+            expect(
+              typeof organization === 'object' && organization !== null && !Array.isArray(organization),
+              `${slug}/${reader}: organizations did not arrive as an object`,
+            ).toBe(true);
+            expect(organization).toEqual({ timezone: zone[0]?.timezone });
+            expect(
+              Array.isArray(row['member_status_versions']),
+              `${slug}/${reader}: the versions did not arrive as an array`,
+            ).toBe(true);
+          }
+          expect(
+            read.find((row) => row['id'] === target.id)?.['member_status_versions'],
+            `${slug}/${reader} could not see the version it is shown`,
+          ).toEqual([{ active: false, effective_from: day }]);
+        }
+      } finally {
+        await client.end();
+      }
     },
     20_000,
   );
@@ -4721,6 +4816,1766 @@ describe('the zero-admins refusal reaches a direct API caller as a code it can m
           (await memberById(client, caller.id))?.role,
           `the ${slug} admin demoted themselves anyway`,
         ).toBe('admin');
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+});
+
+// ------------------------------------------------------------------ story 1.6
+
+/**
+ * Deactivation changes the future and rewrites no history (story 1.6).
+ *
+ * `0008_member_status.sql` is the whole enforcement: a versioned table written
+ * under one insert policy, the helper every policy re-reads, the access token
+ * hook and the zero-admins function. So this is where the story's I/O matrix is
+ * proven, over both fixtures, with claims injected for the policy cases and a
+ * real password grant for the sign-in case.
+ *
+ * `now()` is frozen for the length of a transaction, so every date below is
+ * computed by the database from the same instant the policy reads — never by
+ * this process's clock, which could straddle a midnight the database did not.
+ */
+
+/** A date `offset` days from the organization's own today, as the database
+ *  computes it. */
+async function organizationDay(client: Client, organization: string, offset = 0): Promise<string> {
+  const { rows } = await client.query<{ day: string }>(
+    'select (public.organization_today($1) + $2::int)::text as day',
+    [organization, offset],
+  );
+  const day = rows[0]?.day;
+  if (day === undefined || day === null) throw new Error('organization_today answered nothing');
+  return day;
+}
+
+/** One version, written as whoever the connection currently is. The four
+ *  columns a session may name, and nothing else. */
+async function insertVersion(
+  client: Client,
+  version: { organization: string; member: string; active: boolean; from: string },
+): Promise<{ rowCount: number | null }> {
+  return client.query(
+    `insert into member_status_versions (organization_id, member_id, active, effective_from)
+     values ($1, $2, $3, $4::date)`,
+    [version.organization, version.member, version.active, version.from],
+  );
+}
+
+/** One version written as the OWNER, past every policy — the state a case
+ *  starts from, never the write it is about. */
+async function ownerVersion(
+  client: Client,
+  version: { organization: string; member: string; active: boolean; from: string; by: string },
+): Promise<void> {
+  await client.query(
+    `insert into member_status_versions (organization_id, member_id, active, effective_from, created_by)
+     values ($1, $2, $3, $4::date, $5)`,
+    [version.organization, version.member, version.active, version.from, version.by],
+  );
+}
+
+/** Every version of one member, oldest first, read as the owner. */
+async function versionsOf(
+  client: Client,
+  member: string,
+): Promise<{ id: string; active: boolean; from: string; createdBy: string; createdAt: string }[]> {
+  const { rows } = await client.query<{
+    id: string;
+    active: boolean;
+    from: string;
+    createdBy: string;
+    createdAt: string;
+  }>(
+    `select id, active, effective_from::text as "from", created_by as "createdBy",
+            created_at::text as "createdAt"
+       from member_status_versions where member_id = $1 order by effective_from`,
+    [member],
+  );
+  return rows;
+}
+
+/** A second administrator in `organization`, so a last-admin case has somebody
+ *  other than the fixture's only admin to be about. */
+async function addThrowawayAdmin(client: Client, organization: string): Promise<MemberRow> {
+  const member = await addThrowawayMember(client, organization);
+  await client.query(`update members set role = 'admin' where id = $1`, [member.id]);
+  return { ...member, role: 'admin' };
+}
+
+/** What the hook answers for one account, called the way GoTrue calls it. */
+async function hookFor(client: Client, authUserId: string): Promise<Record<string, unknown>> {
+  const { rows } = await client.query<{ answer: Record<string, unknown> }>(
+    `select public.custom_access_token_hook(
+              jsonb_build_object(
+                'user_id', $1::text,
+                'claims', jsonb_build_object('role', 'authenticated')
+              )
+            ) as answer`,
+    [authUserId],
+  );
+  const answer = rows[0]?.answer;
+  if (answer === undefined) throw new Error('the hook answered nothing');
+  return answer;
+}
+
+/** The refusal the hook must answer with, exactly: a 4xx that is not 429, so the
+ *  SPA renders the generic credentials message and nothing distinct. */
+const INACTIVE_REFUSAL = { error: { http_code: 403, message: 'SIGN_IN_REFUSED' } };
+
+/** Whether the helper reports the connection's current session as active. */
+async function helperIsActive(client: Client): Promise<boolean | null> {
+  const { rows } = await client.query<{ active: boolean }>(
+    'select is_active as active from public.current_member_access()',
+  );
+  return rows[0]?.active ?? null;
+}
+
+describe('an admin deactivates a member from a date, and the table only ever grows', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'appends a $fixture deactivation from today and changes no existing version',
+    async ({ slug, admin }) => {
+      // AC 1. A version that already exists — here one written as history by
+      // the owner, the only way a past date can exist — is byte-identical
+      // afterwards, and exactly one row is new.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const today = await organizationDay(client, caller.organizationId);
+
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          active: true,
+          from: await organizationDay(client, caller.organizationId, -30),
+          by: caller.authUserId,
+        });
+        const before = await versionsOf(client, target.id);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const written = await insertVersion(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          active: false,
+          from: today,
+        });
+        await actAsOwner(client);
+
+        const after = await versionsOf(client, target.id);
+
+        expect(written.rowCount, `the ${slug} admin could not deactivate a member`).toBe(1);
+        expect(after, 'an existing version changed').toEqual(expect.arrayContaining(before));
+        expect(after.length, 'the deactivation did not add exactly one row').toBe(before.length + 1);
+
+        const added = after.find((version) => !before.some((old) => old.id === version.id));
+        expect(added?.active).toBe(false);
+        expect(added?.from).toBe(today);
+        // THE COLUMN-FREE INSERT: the session named four columns and the
+        // attribution came from the defaults, pinned to the caller (AD-11).
+        expect(added?.createdBy, 'the attribution is not the caller').toBe(caller.authUserId);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'lets no $fixture session name its own attribution',
+    async ({ slug, admin }) => {
+      // The column grant admits the four facts and nothing else, so a session
+      // cannot write a version attributed to somebody else, or dated earlier.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const today = await organizationDay(client, caller.organizationId);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const forged = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into member_status_versions
+               (organization_id, member_id, active, effective_from, created_by)
+             values ($1, $2, false, $3::date, $4)`,
+            [caller.organizationId, target.id, today, target.authUserId],
+          ),
+        );
+        const backdated = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into member_status_versions
+               (organization_id, member_id, active, effective_from, created_at)
+             values ($1, $2, false, $3::date, now() - interval '1 year')`,
+            [caller.organizationId, target.id, today],
+          ),
+        );
+        await actAsOwner(client);
+
+        expect(forged.code, 'a session named its own created_by').toBe('42501');
+        expect(backdated.code, 'a session named its own created_at').toBe('42501');
+        expect(await versionsOf(client, target.id)).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'updates no $fixture version, and deletes none already in effect, whoever asks',
+    async ({ slug, admin }) => {
+      // NO UPDATE POLICY, and a delete policy that reaches only a version dated
+      // after today. Column-free and unfiltered, for the reason the freshness
+      // block gives: a `where` reads a column and so brings the select policy
+      // in, which would refuse for the wrong reason. Every version here is in
+      // effect — one from today, one in the past — so an unfiltered delete that
+      // removed either would be history rewritten.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const outToday = await addThrowawayMember(client, caller.organizationId);
+        const back = await addThrowawayMember(client, caller.organizationId);
+
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: outToday.id,
+          active: false,
+          from: await organizationDay(client, caller.organizationId),
+          by: caller.authUserId,
+        });
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: back.id,
+          active: false,
+          from: await organizationDay(client, caller.organizationId, -5),
+          by: caller.authUserId,
+        });
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: back.id,
+          active: true,
+          from: await organizationDay(client, caller.organizationId, -1),
+          by: caller.authUserId,
+        });
+        const before = [
+          ...(await versionsOf(client, outToday.id)),
+          ...(await versionsOf(client, back.id)),
+        ];
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        // NO UPDATE PRIVILEGE AT ALL since `0008` revokes it, so the statement
+        // is refused outright rather than matching no row.
+        const updated = await refusedThenContinue(client, () =>
+          client.query('update member_status_versions set active = true'),
+        );
+        const deleted = await client.query('delete from member_status_versions');
+        await actAsOwner(client);
+
+        expect(updated.code, 'an admin rewrote a status version').toBe('42501');
+        expect(deleted.rowCount, 'an admin deleted a version already in effect').toBe(0);
+        expect([
+          ...(await versionsOf(client, outToday.id)),
+          ...(await versionsOf(client, back.id)),
+        ]).toEqual(before);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture deactivation dated yesterday, and writes nothing',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const yesterday = await organizationDay(client, caller.organizationId, -1);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const refusal = await refusedThenContinue(client, () =>
+          insertVersion(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            active: false,
+            from: yesterday,
+          }),
+        );
+        await actAsOwner(client);
+
+        expect(refusal.code, 'a past date would rewrite past rosters').toBe('42501');
+        expect(await versionsOf(client, target.id)).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a second $fixture version on the same date',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        // TODAY, so the first version is IN EFFECT and the at-most-one-scheduled
+        // rule admits the second: the date-order rule is then the only thing
+        // between it and the unique constraint.
+        const day = await organizationDay(client, caller.organizationId);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        await insertVersion(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          active: false,
+          from: day,
+        });
+        const refusal = await refusedThenContinue(client, () =>
+          insertVersion(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            active: true,
+            from: day,
+          }),
+        );
+        await actAsOwner(client);
+
+        // THE DATE-ORDER RULE refuses it first, as the policy's 42501: a version
+        // on the latest version's date is not after it. The unique constraint
+        // stands behind it for a writer no policy governs — the owner below.
+        expect(refusal.code, 'two versions on one date leave that date undefined').toBe('42501');
+        expect((await versionsOf(client, target.id)).length).toBe(1);
+
+        const underneath = await refusedThenContinue(client, () =>
+          ownerVersion(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            active: true,
+            from: day,
+            by: caller.authUserId,
+          }),
+        );
+        expect(underneath.code, 'the table itself admits two versions on one date').toBe('23505');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses the $fixture admin deactivating their own row',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        // A SECOND ADMIN, so the only thing left to refuse is the self rule:
+        // without one the last-admin rule would refuse this too, and the case
+        // would pass with the self clause deleted.
+        await addThrowawayAdmin(client, caller.organizationId);
+        const future = await organizationDay(client, caller.organizationId, 7);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const refusal = await refusedThenContinue(client, () =>
+          insertVersion(client, {
+            organization: caller.organizationId,
+            member: caller.id,
+            active: false,
+            from: future,
+          }),
+        );
+        await actAsOwner(client);
+
+        expect(refusal.code, 'an admin deactivated themselves').toBe('42501');
+        expect(await versionsOf(client, caller.id)).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture member-role account, and an admin naming the other tenant',
+    async ({ slug, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, member);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const today = await organizationDay(client, caller.organizationId);
+        const other = FIXTURES.find((entry) => entry.slug !== slug);
+        if (other === undefined) throw new Error('no second fixture');
+        const foreign = await memberByUsername(client, other.slug, other.admin);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const byMember = await refusedThenContinue(client, () =>
+          insertVersion(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            active: false,
+            from: today,
+          }),
+        );
+        await actAsOwner(client);
+
+        // THE FOREIGN ADMIN, with its own organization's claim, naming this
+        // organization's row: the claim does not match, so the policy refuses.
+        await actAs(client, foreign.authUserId, foreign.organizationId);
+        const byForeigner = await refusedThenContinue(client, () =>
+          insertVersion(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            active: false,
+            from: today,
+          }),
+        );
+        await actAsOwner(client);
+
+        expect(byMember.code, 'a member-role account deactivated somebody').toBe('42501');
+        expect(byForeigner.code, 'an admin deactivated another tenant member').toBe('42501');
+        expect(await versionsOf(client, target.id)).toEqual([]);
+      });
+    },
+  );
+});
+
+describe('status as at a date is the latest version on or before it', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'reads a $fixture member inactive on exactly [D, D2) after a deactivation and a reactivation',
+    async ({ slug, admin }) => {
+      // AC 2, over every date across the period rather than at two points. A
+      // reading with the boundary on the wrong side of either date, or one that
+      // ignored the reactivation, disagrees on at least one day here.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        // D IS TODAY, so the deactivation is in effect when the reactivation is
+        // written: only one change may be scheduled at a time.
+        const deactivated = await organizationDay(client, caller.organizationId);
+        const reactivated = await organizationDay(client, caller.organizationId, 5);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        await insertVersion(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          active: false,
+          from: deactivated,
+        });
+        await insertVersion(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          active: true,
+          from: reactivated,
+        });
+        await actAsOwner(client);
+
+        const { rows } = await client.query<{ day: string; active: boolean }>(
+          `select day::date::text as day, public.member_active_on($1, day::date) as active
+             from generate_series(public.organization_today($2) - 5,
+                                  public.organization_today($2) + 10,
+                                  interval '1 day') as day
+            order by day`,
+          [target.id, caller.organizationId],
+        );
+
+        expect(rows.length).toBe(16);
+        for (const { day, active } of rows) {
+          const expected = !(day >= deactivated && day < reactivated);
+          expect(active, `${slug} status as at ${day}`).toBe(expected);
+        }
+        // The member has no row before D at all, and no row means active.
+        expect(await versionsOf(client, target.id)).toHaveLength(2);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'keeps a $fixture member deactivated from next week active until then',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const nextWeek = await organizationDay(client, caller.organizationId, 7);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const written = await insertVersion(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          active: false,
+          from: nextWeek,
+        });
+        await actAsOwner(client);
+
+        expect(written.rowCount).toBe(1);
+
+        await actAs(client, target.authUserId, target.organizationId);
+        const visible = await visibleToSession(client);
+        await actAsOwner(client);
+
+        expect(visible.members, 'a member scheduled out next week lost access today').toBeGreaterThan(0);
+        expect(await hookFor(client, target.authUserId)).toMatchObject({
+          claims: { organization_id: target.organizationId },
+        });
+
+        const { rows } = await client.query<{ before: boolean; on: boolean }>(
+          `select public.member_active_on($1, $2::date - 1) as before,
+                  public.member_active_on($1, $2::date) as on`,
+          [target.id, nextWeek],
+        );
+        expect(rows[0]).toEqual({ before: true, on: false });
+      });
+    },
+  );
+});
+
+/** One cancellation, as whoever the connection currently is: the delete the
+ *  edit screen sends, filtered by the member and the date it names. */
+async function cancelVersion(
+  client: Client,
+  version: { member: string; from: string },
+): Promise<{ rowCount: number | null }> {
+  return client.query(
+    'delete from member_status_versions where member_id = $1 and effective_from = $2::date',
+    [version.member, version.from],
+  );
+}
+
+describe('versions append in date order, each one changes something, and a scheduled one may be cancelled', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture version dated before the member latest one',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const later = await organizationDay(client, caller.organizationId, 10);
+        const earlier = await organizationDay(client, caller.organizationId, 4);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        await insertVersion(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          active: false,
+          from: later,
+        });
+        // A REACTIVATION dated before the scheduled deactivation would change
+        // nothing (the member is active then anyway); a DEACTIVATION dated
+        // before it would leave the later one changing nothing. Both are out of
+        // order, and the first is refused even though it "differs" from the
+        // latest state.
+        const reactivation = await refusedThenContinue(client, () =>
+          insertVersion(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            active: true,
+            from: earlier,
+          }),
+        );
+        await actAsOwner(client);
+
+        expect(reactivation.code, 'a version was inserted before the latest one').toBe('42501');
+        expect((await versionsOf(client, target.id)).map((version) => version.from)).toEqual([
+          later,
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a second $fixture change while one is already scheduled',
+    async ({ slug, admin }) => {
+      // AT MOST ONE VERSION AFTER TODAY. "Inactive from day 7" then "active
+      // from day 14" is in date order and changes something each time, and
+      // still stacks two scheduled changes the surface cannot show and only
+      // the reverse order could cancel.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const first = await insertVersion(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          active: false,
+          from: await organizationDay(client, caller.organizationId, 7),
+        });
+        const second = await refusedThenContinue(client, async () =>
+          insertVersion(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            active: true,
+            from: await organizationDay(client, caller.organizationId, 14),
+          }),
+        );
+        await actAsOwner(client);
+
+        expect(first.rowCount, 'the first scheduled change was refused').toBe(1);
+        expect(second.code, 'a second change was scheduled on top of the first').toBe('42501');
+        expect(await versionsOf(client, target.id)).toHaveLength(1);
+
+        // THE CONTROL: once the first is in effect, the next may be scheduled.
+        const inEffect = await addThrowawayMember(client, caller.organizationId);
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: inEffect.id,
+          active: false,
+          from: await organizationDay(client, caller.organizationId),
+          by: caller.authUserId,
+        });
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const next = await insertVersion(client, {
+          organization: caller.organizationId,
+          member: inEffect.id,
+          active: true,
+          from: await organizationDay(client, caller.organizationId, 14),
+        });
+        await actAsOwner(client);
+
+        expect(next.rowCount, 'a change after one in effect was refused').toBe(1);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a redundant $fixture version in either direction',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const active = await addThrowawayMember(client, caller.organizationId);
+        const inactive = await addThrowawayMember(client, caller.organizationId);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        await insertVersion(client, {
+          organization: caller.organizationId,
+          member: inactive.id,
+          active: false,
+          from: await organizationDay(client, caller.organizationId, 1),
+        });
+        const reactivateActive = await refusedThenContinue(client, async () =>
+          insertVersion(client, {
+            organization: caller.organizationId,
+            member: active.id,
+            active: true,
+            from: await organizationDay(client, caller.organizationId, 2),
+          }),
+        );
+        const deactivateInactive = await refusedThenContinue(client, async () =>
+          insertVersion(client, {
+            organization: caller.organizationId,
+            member: inactive.id,
+            active: false,
+            from: await organizationDay(client, caller.organizationId, 5),
+          }),
+        );
+        await actAsOwner(client);
+
+        expect(reactivateActive.code, 'an active member was reactivated').toBe('42501');
+        expect(deactivateInactive.code, 'an inactive member was deactivated again').toBe('42501');
+        expect(await versionsOf(client, active.id)).toEqual([]);
+        expect(await versionsOf(client, inactive.id)).toHaveLength(1);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'judges every row of one multi-row $fixture insert against the rows before it',
+    async ({ slug, admin }) => {
+      // ONE STATEMENT, TWO ROWS — a PostgREST insert takes a JSON array. A
+      // reader that saw only the statement's snapshot judged the second row
+      // against a history without the first, and admitted both.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const first = await organizationDay(client, caller.organizationId, 1);
+        const second = await organizationDay(client, caller.organizationId, 3);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const refusal = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into member_status_versions (organization_id, member_id, active, effective_from)
+             values ($1, $2, false, $3::date), ($1, $2, false, $4::date)`,
+            [caller.organizationId, target.id, first, second],
+          ),
+        );
+        await actAsOwner(client);
+
+        expect(refusal.code, 'two deactivations landed in one statement').toBe('42501');
+        expect(await versionsOf(client, target.id)).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture version dated infinity or in year 10000, at the table',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+
+        for (const from of ['infinity', '10000-01-01']) {
+          const refusal = await refusedThenContinue(client, () =>
+            ownerVersion(client, {
+              organization: caller.organizationId,
+              member: target.id,
+              active: false,
+              from,
+              by: caller.authUserId,
+            }),
+          );
+          expect(refusal.code, `${from} was admitted as a date`).toBe('23514');
+        }
+        expect(await versionsOf(client, target.id)).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'cancels a $fixture scheduled change, and the state before it continues on every date',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        // OUT FROM TODAY, so the reactivation can be scheduled on top of it.
+        const out = await organizationDay(client, caller.organizationId);
+        const back = await organizationDay(client, caller.organizationId, 6);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        await insertVersion(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          active: false,
+          from: out,
+        });
+        await insertVersion(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          active: true,
+          from: back,
+        });
+        // NOT THE LATEST, and in effect besides: cancelling the deactivation
+        // would rewrite today and leave the reactivation changing nothing.
+        const notLatest = await cancelVersion(client, { member: target.id, from: out });
+        const cancelled = await cancelVersion(client, { member: target.id, from: back });
+        await actAsOwner(client);
+
+        expect(notLatest.rowCount, 'a version that is not the latest was cancelled').toBe(0);
+        expect(cancelled.rowCount, 'the scheduled reactivation was not cancelled').toBe(1);
+
+        const { rows } = await client.query<{ day: string; active: boolean }>(
+          `select day::date::text as day, public.member_active_on($1, day::date) as active
+             from generate_series(public.organization_today($2) - 2,
+                                  public.organization_today($2) + 12,
+                                  interval '1 day') as day`,
+          [target.id, caller.organizationId],
+        );
+        for (const { day, active } of rows) {
+          expect(active, `${slug} status as at ${day}`).toBe(day < out);
+        }
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses cancelling a $fixture change already in effect, and one on the caller own row',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const second = await addThrowawayAdmin(client, caller.organizationId);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const today = await organizationDay(client, caller.organizationId);
+
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          active: false,
+          from: today,
+          by: caller.authUserId,
+        });
+        // THE CALLER'S OWN reactivation, scheduled: cancelling it would be a
+        // self-deactivation. A second admin keeps the last-admin rule out of it.
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: caller.id,
+          active: false,
+          from: await organizationDay(client, caller.organizationId, 2),
+          by: second.authUserId,
+        });
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: caller.id,
+          active: true,
+          from: await organizationDay(client, caller.organizationId, 4),
+          by: second.authUserId,
+        });
+        const before = await versionsOf(client, caller.id);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const inEffect = await cancelVersion(client, { member: target.id, from: today });
+        const own = await cancelVersion(client, {
+          member: caller.id,
+          from: await organizationDay(client, caller.organizationId, 4),
+        });
+        await actAsOwner(client);
+
+        expect(inEffect.rowCount, 'a version already in effect was deleted').toBe(0);
+        expect(own.rowCount, 'an admin cancelled their own reactivation').toBe(0);
+        expect(await versionsOf(client, target.id)).toHaveLength(1);
+        expect(await versionsOf(client, caller.id)).toEqual(before);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'lets no $fixture member-role account or foreign admin cancel anything',
+    async ({ slug, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, member);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const other = FIXTURES.find((entry) => entry.slug !== slug);
+        if (other === undefined) throw new Error('no second fixture');
+        const foreign = await memberByUsername(client, other.slug, other.admin);
+        const from = await organizationDay(client, caller.organizationId, 3);
+
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          active: false,
+          from,
+          by: foreign.authUserId,
+        });
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const byMember = await cancelVersion(client, { member: target.id, from });
+        await actAsOwner(client);
+        await actAs(client, foreign.authUserId, foreign.organizationId);
+        const byForeigner = await cancelVersion(client, { member: target.id, from });
+        await actAsOwner(client);
+
+        expect(byMember.rowCount, 'a member-role account cancelled a change').toBe(0);
+        expect(byForeigner.rowCount, 'an admin cancelled another tenant change').toBe(0);
+        expect(await versionsOf(client, target.id)).toHaveLength(1);
+      });
+    },
+  );
+});
+
+describe('never zero active admins, on any date from the change onward', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses deactivating the $fixture admin while the only other admin is scheduled out',
+    async ({ slug, admin }) => {
+      // NOT TODAY'S READING. The second admin is scheduled out next week and is
+      // still active today; deactivating the fixture admin today would leave
+      // the organization with nobody from next week on.
+      await inRolledBackTransaction(async (client) => {
+        const incumbent = await memberByUsername(client, slug, admin);
+        const second = await addThrowawayAdmin(client, incumbent.organizationId);
+        const today = await organizationDay(client, incumbent.organizationId);
+        const nextWeek = await organizationDay(client, incumbent.organizationId, 7);
+
+        await actAs(client, incumbent.authUserId, incumbent.organizationId);
+        const scheduled = await insertVersion(client, {
+          organization: incumbent.organizationId,
+          member: second.id,
+          active: false,
+          from: nextWeek,
+        });
+        await actAsOwner(client);
+
+        expect(scheduled.rowCount, 'the incumbent could not schedule the second admin out').toBe(1);
+
+        await actAs(client, second.authUserId, second.organizationId);
+        const refusal = await refusedThenContinue(client, () =>
+          insertVersion(client, {
+            organization: incumbent.organizationId,
+            member: incumbent.id,
+            active: false,
+            from: today,
+          }),
+        );
+        await actAsOwner(client);
+
+        expect(refusal.code, 'the organization was left with no admin going forward').toBe('42501');
+        expect(await versionsOf(client, incumbent.id)).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses the $fixture gap: an admin out today with a reactivation scheduled does not count',
+    async ({ slug, admin }) => {
+      // THE MATRIX'S GAP ROW, and the case a "latest version" reading admits.
+      // B is out today and back in ten days. A schedules C out from day 2
+      // (admitted: A covers every date). C then schedules A out from day 4:
+      // days 4 to 9 would have no admin at all, because B's LATEST version is
+      // active and still B is not active on any of those days.
+      await inRolledBackTransaction(async (client) => {
+        const a = await memberByUsername(client, slug, admin);
+        const b = await addThrowawayAdmin(client, a.organizationId);
+        const c = await addThrowawayAdmin(client, a.organizationId);
+        const organization = a.organizationId;
+
+        await ownerVersion(client, {
+          organization,
+          member: b.id,
+          active: false,
+          from: await organizationDay(client, organization),
+          by: a.authUserId,
+        });
+        await ownerVersion(client, {
+          organization,
+          member: b.id,
+          active: true,
+          from: await organizationDay(client, organization, 10),
+          by: a.authUserId,
+        });
+
+        await actAs(client, a.authUserId, organization);
+        const first = await insertVersion(client, {
+          organization,
+          member: c.id,
+          active: false,
+          from: await organizationDay(client, organization, 2),
+        });
+        await actAsOwner(client);
+
+        await actAs(client, c.authUserId, organization);
+        const second = await refusedThenContinue(client, async () =>
+          insertVersion(client, {
+            organization,
+            member: a.id,
+            active: false,
+            from: await organizationDay(client, organization, 4),
+          }),
+        );
+        // THE CONTROL: from day 10 on, B covers every date, so the same write
+        // dated then is admitted.
+        const covered = await insertVersion(client, {
+          organization,
+          member: a.id,
+          active: false,
+          from: await organizationDay(client, organization, 10),
+        });
+        await actAsOwner(client);
+
+        expect(first.rowCount, 'A could not schedule C out').toBe(1);
+        expect(second.code, 'the second deactivation left days with no admin').toBe('42501');
+        expect(covered.rowCount, 'a deactivation B covers was refused').toBe(1);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses two $fixture admins deactivated in one statement, each counting the other',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const a = await memberByUsername(client, slug, admin);
+        const b = await addThrowawayAdmin(client, a.organizationId);
+        const c = await addThrowawayAdmin(client, a.organizationId);
+        const organization = a.organizationId;
+        const day = await organizationDay(client, organization, 3);
+
+        // A is out from day 3 as well, so after the statement nobody would be.
+        await ownerVersion(client, { organization, member: a.id, active: false, from: day, by: b.authUserId });
+
+        await actAs(client, a.authUserId, organization);
+        const refusal = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into member_status_versions (organization_id, member_id, active, effective_from)
+             values ($1, $2, false, $4::date), ($1, $3, false, $4::date)`,
+            [organization, b.id, c.id, day],
+          ),
+        );
+        await actAsOwner(client);
+
+        expect(refusal.code, 'one statement left the organization with no admin').toBe('42501');
+        expect(await versionsOf(client, b.id)).toEqual([]);
+        expect(await versionsOf(client, c.id)).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'admits deactivating a $fixture member-role account while every other admin is scheduled out',
+    async ({ slug, admin }) => {
+      // A CHANGE TO A NON-ADMIN NEVER CONSULTS THE RULE.
+      await inRolledBackTransaction(async (client) => {
+        const incumbent = await memberByUsername(client, slug, admin);
+        const second = await addThrowawayAdmin(client, incumbent.organizationId);
+        const target = await addThrowawayMember(client, incumbent.organizationId);
+        const organization = incumbent.organizationId;
+
+        await ownerVersion(client, {
+          organization,
+          member: incumbent.id,
+          active: false,
+          from: await organizationDay(client, organization, 5),
+          by: second.authUserId,
+        });
+        await ownerVersion(client, {
+          organization,
+          member: second.id,
+          active: false,
+          from: await organizationDay(client, organization, 5),
+          by: incumbent.authUserId,
+        });
+
+        await actAs(client, incumbent.authUserId, organization);
+        const written = await insertVersion(client, {
+          organization,
+          member: target.id,
+          active: false,
+          from: await organizationDay(client, organization, 1),
+        });
+        await actAsOwner(client);
+
+        expect(written.rowCount, 'a non-admin deactivation consulted the last-admin rule').toBe(1);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses cancelling a $fixture admin reactivation that no other admin covers',
+    async ({ slug, admin }) => {
+      // Cancelling B's reactivation from day 6 makes B inactive from day 6 on,
+      // so it is a deactivation dated day 6 and meets the same rule.
+      await inRolledBackTransaction(async (client) => {
+        const a = await memberByUsername(client, slug, admin);
+        const b = await addThrowawayAdmin(client, a.organizationId);
+        const c = await addThrowawayAdmin(client, a.organizationId);
+        const organization = a.organizationId;
+        const back = await organizationDay(client, organization, 6);
+
+        await ownerVersion(client, {
+          organization,
+          member: b.id,
+          active: false,
+          from: await organizationDay(client, organization, 1),
+          by: a.authUserId,
+        });
+        await ownerVersion(client, { organization, member: b.id, active: true, from: back, by: a.authUserId });
+        // C is out from day 3; A remains, so the cancellation is admitted only
+        // while A covers every date from day 6 on.
+        await ownerVersion(client, {
+          organization,
+          member: c.id,
+          active: false,
+          from: await organizationDay(client, organization, 3),
+          by: a.authUserId,
+        });
+        // A IS OUT ON DAYS 8 TO 19 and back from day 20, so A's LATEST version
+        // is active — a "latest version" reading would count A as covering,
+        // and leave those twelve days with no admin at all.
+        await ownerVersion(client, {
+          organization,
+          member: a.id,
+          active: false,
+          from: await organizationDay(client, organization, 8),
+          by: c.authUserId,
+        });
+        await ownerVersion(client, {
+          organization,
+          member: a.id,
+          active: true,
+          from: await organizationDay(client, organization, 20),
+          by: c.authUserId,
+        });
+
+        await actAs(client, a.authUserId, organization);
+        const refused = await cancelVersion(client, { member: b.id, from: back });
+        await actAsOwner(client);
+
+        expect(refused.rowCount, 'a cancellation left days with no admin').toBe(0);
+
+        // THE CONTROL: with A's scheduled absence gone, A covers every date.
+        await client.query(
+          'delete from member_status_versions where member_id = $1',
+          [a.id],
+        );
+        await actAs(client, a.authUserId, organization);
+        const admitted = await cancelVersion(client, { member: b.id, from: back });
+        await actAsOwner(client);
+
+        expect(admitted.rowCount, 'a covered cancellation was refused').toBe(1);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'admits deactivating a $fixture admin while another admin stays active',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const incumbent = await memberByUsername(client, slug, admin);
+        const second = await addThrowawayAdmin(client, incumbent.organizationId);
+        const today = await organizationDay(client, incumbent.organizationId);
+
+        await actAs(client, second.authUserId, second.organizationId);
+        const written = await insertVersion(client, {
+          organization: incumbent.organizationId,
+          member: incumbent.id,
+          active: false,
+          from: today,
+        });
+        await actAsOwner(client);
+
+        expect(written.rowCount).toBe(1);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses demoting the $fixture admin while the only other admin is scheduled out',
+    async ({ slug, admin }) => {
+      // 0002's deferred trigger, with the extended body. Checked immediately so
+      // the rolled-back transaction still reaches it.
+      await inRolledBackTransaction(async (client) => {
+        const incumbent = await memberByUsername(client, slug, admin);
+        const second = await addThrowawayAdmin(client, incumbent.organizationId);
+
+        await ownerVersion(client, {
+          organization: incumbent.organizationId,
+          member: second.id,
+          active: false,
+          from: await organizationDay(client, incumbent.organizationId, 3),
+          by: incumbent.authUserId,
+        });
+
+        await client.query(`update members set role = 'member_role' where id = $1`, [incumbent.id]);
+        const refusal = await refusedThenContinue(client, () =>
+          client.query('set constraints members_organization_keeps_an_admin immediate'),
+        );
+
+        expect(refusal.code).toBe('23514');
+        expect(refusal.message).toContain('ORGANIZATION_WOULD_HAVE_NO_ADMIN');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses demoting the $fixture admin while the other admin is out today with a reactivation scheduled',
+    async ({ slug, admin }) => {
+      // The matrix's second demotion row, and the one a "latest version"
+      // reading admits: the other admin's latest version is active, and still
+      // nobody would be an admin today.
+      await inRolledBackTransaction(async (client) => {
+        const incumbent = await memberByUsername(client, slug, admin);
+        const second = await addThrowawayAdmin(client, incumbent.organizationId);
+        const organization = incumbent.organizationId;
+
+        await ownerVersion(client, {
+          organization,
+          member: second.id,
+          active: false,
+          from: await organizationDay(client, organization, -2),
+          by: incumbent.authUserId,
+        });
+        await ownerVersion(client, {
+          organization,
+          member: second.id,
+          active: true,
+          from: await organizationDay(client, organization, 4),
+          by: incumbent.authUserId,
+        });
+
+        await client.query(`update members set role = 'member_role' where id = $1`, [incumbent.id]);
+        const refusal = await refusedThenContinue(client, () =>
+          client.query('set constraints members_organization_keeps_an_admin immediate'),
+        );
+
+        expect(refusal.code).toBe('23514');
+        expect(refusal.message).toContain('ORGANIZATION_WOULD_HAVE_NO_ADMIN');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'admits an unrelated $fixture edit while admins hand over to one another across the calendar',
+    async ({ slug, admin }) => {
+      // The trigger fires on EVERY update of `members`. Here no single admin is
+      // active on every date from today — A leaves on day 6, B arrives on day
+      // 3 — yet every date has one, so a rename must still commit.
+      await inRolledBackTransaction(async (client) => {
+        const a = await memberByUsername(client, slug, admin);
+        const b = await addThrowawayAdmin(client, a.organizationId);
+        const organization = a.organizationId;
+
+        await ownerVersion(client, {
+          organization,
+          member: b.id,
+          active: false,
+          from: await organizationDay(client, organization, -1),
+          by: a.authUserId,
+        });
+        await ownerVersion(client, {
+          organization,
+          member: b.id,
+          active: true,
+          from: await organizationDay(client, organization, 3),
+          by: a.authUserId,
+        });
+        await ownerVersion(client, {
+          organization,
+          member: a.id,
+          active: false,
+          from: await organizationDay(client, organization, 6),
+          by: b.authUserId,
+        });
+
+        await client.query(`update members set name = name || ' ' where id = $1`, [a.id]);
+        await client.query('set constraints members_organization_keeps_an_admin immediate');
+
+        // And the gap is still refused by the same trigger once B's return is
+        // moved past A's departure.
+        await client.query(
+          `update member_status_versions set effective_from = $2::date
+            where member_id = $1 and active`,
+          [b.id, await organizationDay(client, organization, 8)],
+        );
+        // The constraint is immediate from the statement above on, so the
+        // rename itself is what raises.
+        const refusal = await refusedThenContinue(client, () =>
+          client.query(`update members set name = name || ' ' where id = $1`, [a.id]),
+        );
+        expect(refusal.message).toContain('ORGANIZATION_WOULD_HAVE_NO_ADMIN');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'admits demoting the $fixture admin while another admin stays active',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const incumbent = await memberByUsername(client, slug, admin);
+        await addThrowawayAdmin(client, incumbent.organizationId);
+
+        await client.query(`update members set role = 'member_role' where id = $1`, [incumbent.id]);
+        await client.query('set constraints members_organization_keeps_an_admin immediate');
+
+        expect((await memberById(client, incumbent.id))?.role).toBe('member_role');
+      });
+    },
+  );
+});
+
+describe('a deactivated member loses access on the very next statement', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'returns zero rows from both tables on the next read after the $fixture account is deactivated',
+    async ({ slug, admin }) => {
+      // AC 3 with claims injected: the token was minted before the version, and
+      // the helper is read fresh on every statement.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const before = await visibleToSession(client);
+        await actAsOwner(client);
+
+        expect(before.members).toBeGreaterThan(0);
+        expect(before.organizations).toBeGreaterThan(0);
+
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: caller.id,
+          active: false,
+          from: await organizationDay(client, caller.organizationId),
+          by: caller.authUserId,
+        });
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const after = await visibleToSession(client);
+        const versions = await client.query<{ total: number }>(
+          'select count(*)::int as total from member_status_versions',
+        );
+        await actAsOwner(client);
+
+        expect(after.members, 'a deactivated account kept reading members').toBe(0);
+        expect(after.organizations, 'a deactivated account kept reading its organization').toBe(0);
+        expect(versions.rows[0]?.total, 'a deactivated account kept reading versions').toBe(0);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'affects no rows on the next update or delete after the $fixture admin is deactivated',
+    async ({ slug, admin }) => {
+      // Column-free, for the reason the ban twin of this case gives: only that
+      // shape proves the write policies' own `is_active`.
+      const settled = 7;
+
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const permitted = await client.query('update members set leave_allowance_days = $1', [
+          settled,
+        ]);
+        await actAsOwner(client);
+
+        expect(permitted.rowCount).toBeGreaterThan(0);
+
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: caller.id,
+          active: false,
+          from: await organizationDay(client, caller.organizationId),
+          by: caller.authUserId,
+        });
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const updated = await client.query('update members set leave_allowance_days = $1', [
+          settled + 1,
+        ]);
+        const deleted = await client.query('delete from members');
+        await actAsOwner(client);
+
+        expect(updated.rowCount, 'a deactivated admin kept updating').toBe(0);
+        expect(deleted.rowCount, 'a deactivated admin kept deleting').toBe(0);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses the next status write with 42501 after the $fixture admin is deactivated',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const today = await organizationDay(client, caller.organizationId);
+
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: caller.id,
+          active: false,
+          from: today,
+          by: caller.authUserId,
+        });
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const refusal = await refused(() =>
+          insertVersion(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            active: false,
+            from: today,
+          }),
+        );
+
+        expect(refusal.code, 'a deactivated admin kept deactivating').toBe('42501');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'treats a $fixture deactivation from tomorrow, and one already reversed, as active',
+    async ({ slug, admin }) => {
+      // The negative control for the three above: a helper that read "any
+      // inactive version at all" would pass them and lock out everybody ever
+      // scheduled or reactivated.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const scheduled = await addThrowawayMember(client, caller.organizationId);
+        const reversed = await addThrowawayMember(client, caller.organizationId);
+
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: scheduled.id,
+          active: false,
+          from: await organizationDay(client, caller.organizationId, 1),
+          by: caller.authUserId,
+        });
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: reversed.id,
+          active: false,
+          from: await organizationDay(client, caller.organizationId, -10),
+          by: caller.authUserId,
+        });
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: reversed.id,
+          active: true,
+          from: await organizationDay(client, caller.organizationId),
+          by: caller.authUserId,
+        });
+
+        for (const subject of [scheduled, reversed]) {
+          await actAs(client, subject.authUserId, subject.organizationId);
+          const visible = await visibleToSession(client);
+          await actAsOwner(client);
+
+          expect(visible.members, `an active ${slug} member read nothing`).toBeGreaterThan(0);
+        }
+      });
+    },
+  );
+});
+
+describe('the access token hook refuses a member inactive today, and agrees with the helper', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'answers a $fixture member deactivated today with a 403 and no claims, called directly',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          active: false,
+          from: await organizationDay(client, caller.organizationId),
+          by: caller.authUserId,
+        });
+
+        // EXACTLY, so a 500 or a missing `http_code` fails here: either one
+        // would reach the sign-in screen as an outage rather than as the
+        // generic credentials message.
+        expect(await hookFor(client, target.authUserId)).toEqual(INACTIVE_REFUSAL);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture token exactly when the helper reads the account inactive',
+    async ({ slug, admin }) => {
+      // Four states, and for each the hook's answer and the helper's must be
+      // the same fact: a hook that refused a member the policies still admit
+      // locks out a working account, and the reverse mints a token that reads
+      // nothing.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const organization = caller.organizationId;
+        const states = [
+          { what: 'no version', versions: [] as { active: boolean; offset: number }[] },
+          { what: 'scheduled out tomorrow', versions: [{ active: false, offset: 1 }] },
+          { what: 'deactivated today', versions: [{ active: false, offset: 0 }] },
+          {
+            what: 'reactivated today',
+            versions: [
+              { active: false, offset: -3 },
+              { active: true, offset: 0 },
+            ],
+          },
+        ];
+        const seen: boolean[] = [];
+
+        for (const state of states) {
+          const subject = await addThrowawayMember(client, organization);
+          for (const version of state.versions) {
+            await ownerVersion(client, {
+              organization,
+              member: subject.id,
+              active: version.active,
+              from: await organizationDay(client, organization, version.offset),
+              by: caller.authUserId,
+            });
+          }
+
+          await actAs(client, subject.authUserId, organization);
+          const active = await helperIsActive(client);
+          await actAsOwner(client);
+          const answer = await hookFor(client, subject.authUserId);
+
+          seen.push(active === true);
+          expect(answer['error'] === undefined, `${slug}, ${state.what}`).toBe(active === true);
+        }
+
+        // Both answers occurred, so the agreement above is not vacuous.
+        expect(seen).toEqual([true, true, false, true]);
+      });
+    },
+  );
+});
+
+describe('today is the organization today, and a zone nobody can resolve is UTC', () => {
+  /** A zone whose date differs from UTC's at this instant. One of these two
+   *  always does: fourteen hours ahead and eleven behind cannot both agree
+   *  with UTC at any moment. */
+  const ZONES = ['Pacific/Kiritimati', 'Pacific/Pago_Pago'];
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'dates the $fixture policy and helper by the organization zone, never by UTC',
+    async ({ slug, admin }) => {
+      let differed = 0;
+
+      for (const zone of ZONES) {
+        await inRolledBackTransaction(async (client) => {
+          const caller = await memberByUsername(client, slug, admin);
+          const organization = caller.organizationId;
+
+          await client.query('update organizations set timezone = $1 where id = $2', [
+            zone,
+            organization,
+          ]);
+          const { rows } = await client.query<{ utc: string; local: string }>(
+            `select (now() at time zone 'UTC')::date::text as utc,
+                    public.organization_today($1)::text as local`,
+            [organization],
+          );
+          const utc = rows[0]?.utc;
+          const local = rows[0]?.local;
+          if (utc === undefined || local === undefined) throw new Error('no dates');
+          if (utc === local) return;
+          differed += 1;
+
+          const today = local;
+          const yesterday = await organizationDay(client, organization, -1);
+          const tomorrow = await organizationDay(client, organization, 1);
+          const outToday = await addThrowawayMember(client, organization);
+          const outTomorrow = await addThrowawayMember(client, organization);
+
+          await actAs(client, caller.authUserId, organization);
+          const past = await refusedThenContinue(client, () =>
+            insertVersion(client, { organization, member: outToday.id, active: false, from: yesterday }),
+          );
+          const admitted = await insertVersion(client, {
+            organization,
+            member: outToday.id,
+            active: false,
+            from: today,
+          });
+          await insertVersion(client, {
+            organization,
+            member: outTomorrow.id,
+            active: false,
+            from: tomorrow,
+          });
+          await actAsOwner(client);
+
+          expect(past.code, `${zone}: the organization's yesterday was admitted`).toBe('42501');
+          expect(admitted.rowCount, `${zone}: the organization's today was refused`).toBe(1);
+
+          await actAs(client, outToday.authUserId, organization);
+          const gone = await visibleToSession(client);
+          await actAsOwner(client);
+          await actAs(client, outTomorrow.authUserId, organization);
+          const kept = await visibleToSession(client);
+          await actAsOwner(client);
+
+          expect(gone.members, `${zone}: a member out from today still reads`).toBe(0);
+          expect(kept.members, `${zone}: a member out from tomorrow lost access`).toBeGreaterThan(0);
+          expect(await hookFor(client, outToday.authUserId)).toEqual(INACTIVE_REFUSAL);
+          expect((await hookFor(client, outTomorrow.authUserId))['error']).toBeUndefined();
+        });
+      }
+
+      expect(differed, 'neither zone differed from UTC, so nothing was proven').toBeGreaterThan(0);
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'falls back to UTC for an unresolvable $fixture zone, and still mints a token',
+    async ({ slug, admin }) => {
+      // The hook must never raise: `organizations.timezone` is unchecked
+      // (0002:89-92), and a typo there must not lock the organization out.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+
+        await client.query(`update organizations set timezone = 'Not/A_Zone' where id = $1`, [
+          caller.organizationId,
+        ]);
+        const { rows } = await client.query<{ same: boolean }>(
+          `select public.organization_today($1) = (now() at time zone 'UTC')::date as same`,
+          [caller.organizationId],
+        );
+
+        expect(rows[0]?.same, 'an unknown zone did not fall back to UTC').toBe(true);
+        expect(await hookFor(client, caller.authUserId)).toMatchObject({
+          claims: { organization_id: caller.organizationId },
+        });
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const active = await helperIsActive(client);
+        const visible = await visibleToSession(client);
+        await actAsOwner(client);
+
+        expect(active).toBe(true);
+        expect(visible.members).toBeGreaterThan(0);
+      });
+    },
+  );
+});
+
+describe('a deactivation reaches a direct API caller and ends a real sign-in', () => {
+  const ISSUED = 'deactivation-fixture-password';
+
+  /** A committed throwaway in `organization` with a credential it can sign in
+   *  with. Committed because GoTrue reads on its own connection; removed by the
+   *  file's `afterAll`, which the status rows cascade from. */
+  async function signableIn(
+    client: Client,
+    organization: string,
+  ): Promise<{ member: MemberRow; address: string }> {
+    const member = await addThrowawayMember(client, organization);
+    const { rows } = await client.query<{ email: string }>(
+      'select email from auth.users where id = $1',
+      [member.authUserId],
+    );
+    const endpoint = apiEndpoint;
+    if (endpoint === undefined || adminKey === undefined) {
+      throw new Error('unreachable: gated by skipIf');
+    }
+
+    const seeded = await fetch(`${endpoint.url}/auth/v1/admin/users/${member.authUserId}`, {
+      method: 'PUT',
+      headers: {
+        apikey: adminKey,
+        Authorization: `Bearer ${adminKey}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ password: ISSUED, email_confirm: true }),
+    });
+
+    expect(seeded.ok, `the throwaway credential could not be seeded: ${seeded.status}`).toBe(true);
+
+    return { member, address: rows[0]?.email ?? '' };
+  }
+
+  async function passwordGrant(email: string): Promise<Response> {
+    const endpoint = apiEndpoint;
+    if (endpoint === undefined) throw new Error('unreachable: gated by skipIf');
+
+    return fetch(`${endpoint.url}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: { apikey: endpoint.key, 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password: ISSUED }),
+    });
+  }
+
+  async function refreshGrant(refreshToken: string): Promise<Response> {
+    const endpoint = apiEndpoint;
+    if (endpoint === undefined) throw new Error('unreachable: gated by skipIf');
+
+    return fetch(`${endpoint.url}/auth/v1/token?grant_type=refresh_token`, {
+      method: 'POST',
+      headers: { apikey: endpoint.key, 'content-type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+  }
+
+  it.skipIf(noAdminApi).each(FIXTURES)(
+    'refuses the $fixture sign-in and refresh, and the earlier token reads nothing',
+    async ({ slug, admin }) => {
+      const client = await connect();
+
+      try {
+        const caller = await memberByUsername(client, slug, admin);
+        const { member, address: email } = await signableIn(client, caller.organizationId);
+
+        // THE CONTROL: the account signs in before it is deactivated.
+        const first = await passwordGrant(email);
+        const session = (await first.json()) as Record<string, unknown>;
+        const token = session['access_token'];
+        const refresh = session['refresh_token'];
+
+        expect(first.ok, `the throwaway could not sign in: ${first.status}`).toBe(true);
+        if (typeof token !== 'string' || typeof refresh !== 'string') {
+          throw new Error('the grant carried no tokens');
+        }
+        expect(
+          (await restRows('members?select=id', { token })).length,
+          'the throwaway read nothing before it was deactivated',
+        ).toBeGreaterThan(0);
+
+        // THE ADMIN'S OWN WRITE, through PostgREST with the admin's real token —
+        // the same call the edit screen makes.
+        const adminToken = await tokenFor(admin, slug);
+        const written = await rest('member_status_versions', {
+          token: adminToken,
+          method: 'POST',
+          body: {
+            organization_id: caller.organizationId,
+            member_id: member.id,
+            active: false,
+            effective_from: await organizationDay(client, caller.organizationId),
+          },
+        });
+
+        expect(written.status, `the admin deactivation was refused: ${await written.clone().text()}`).toBe(201);
+
+        // SIGN-IN AND REFRESH ARE BOTH REFUSED, as a 4xx that is not 429 — the
+        // shape `sign-in.ts` renders as the generic credentials message.
+        const again = await passwordGrant(email);
+        const refreshed = await refreshGrant(refresh);
+
+        for (const [what, response] of [
+          ['sign-in', again],
+          ['refresh', refreshed],
+        ] as const) {
+          expect(response.ok, `a deactivated account completed ${what}`).toBe(false);
+          expect(response.status, `${what} was refused as an outage`).toBeGreaterThanOrEqual(400);
+          expect(response.status).toBeLessThan(500);
+          expect(response.status).not.toBe(429);
+        }
+
+        // AC 3 over the shipped path: the token minted before the version still
+        // authenticates to PostgREST and reads nothing from any table.
+        for (const table of ['members', 'organizations', 'member_status_versions']) {
+          expect(
+            await restRows(`${table}?select=id`, { token }),
+            `a deactivated account read ${table} with its earlier token`,
+          ).toEqual([]);
+        }
+      } finally {
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'cancels the $fixture scheduled version over PostgREST exactly as the edit screen asks, and nothing in effect',
+    async ({ slug, admin }) => {
+      // THE REQUEST `sendStatus` SENDS: supabase-js turns
+      // `.delete().eq('member_id', …).eq('effective_from', …).select('effective_from')`
+      // into this DELETE with `Prefer: return=representation`. The row count
+      // it answers IS the outcome, so it is asserted over the real transport.
+      const client = await connect();
+
+      try {
+        const caller = await memberByUsername(client, slug, admin);
+        const scheduled = await addThrowawayMember(client, caller.organizationId);
+        const inEffect = await addThrowawayMember(client, caller.organizationId);
+        const later = await organizationDay(client, caller.organizationId, 5);
+        const today = await organizationDay(client, caller.organizationId);
+
+        for (const [member, from] of [
+          [scheduled, later],
+          [inEffect, today],
+        ] as const) {
+          await client.query(
+            `insert into member_status_versions (organization_id, member_id, active, effective_from, created_by)
+             values ($1, $2, false, $3::date, $4)`,
+            [caller.organizationId, member.id, from, caller.authUserId],
+          );
+        }
+
+        const token = await tokenFor(admin, slug);
+        const cancel = (member: string, from: string) =>
+          rest(
+            `member_status_versions?member_id=eq.${member}&effective_from=eq.${from}&select=effective_from`,
+            { token, method: 'DELETE', prefer: 'return=representation' },
+          );
+
+        const cancelled = await cancel(scheduled.id, later);
+        expect(cancelled.status, `the cancellation failed: ${await cancelled.clone().text()}`).toBe(200);
+        expect(await cancelled.json()).toEqual([{ effective_from: later }]);
+
+        const kept = await cancel(inEffect.id, today);
+        expect(kept.status).toBe(200);
+        expect(await kept.json(), 'a version in effect was cancelled').toEqual([]);
+
+        expect(await versionsOf(client, scheduled.id)).toEqual([]);
+        expect(await versionsOf(client, inEffect.id)).toHaveLength(1);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses a $fixture member-role token deactivating anybody over PostgREST',
+    async ({ slug, member }) => {
+      const client = await connect();
+
+      try {
+        const caller = await memberByUsername(client, slug, member);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const token = await tokenFor(member, slug);
+
+        const response = await rest('member_status_versions', {
+          token,
+          method: 'POST',
+          body: {
+            organization_id: caller.organizationId,
+            member_id: target.id,
+            active: false,
+            effective_from: await organizationDay(client, caller.organizationId),
+          },
+        });
+        const refusal = await restRefusal(response);
+
+        expect(response.ok, 'a member-role account deactivated somebody').toBe(false);
+        expect(refusal.code).toBe('42501');
+        expect(await versionsOf(client, target.id)).toEqual([]);
       } finally {
         await client.end();
       }

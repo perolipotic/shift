@@ -126,6 +126,129 @@ export const LEAVE_ALLOWANCE_MAX = 32767;
 /** The service could not be reached, or answered something that is not a reply. */
 export const MEMBER_WRITE_UNAVAILABLE = 'MEMBER_WRITE_UNAVAILABLE';
 
+// ------------------------------------------------- deactivation (story 1.6)
+
+/**
+ * A status version dated before the organization's today.
+ *
+ * `0008`'s insert policy refuses it as `42501` like every other rule on that
+ * write, so the code is the surface's own reading of what it sent: the date
+ * field is the value to correct, and a past date would rewrite past rosters.
+ */
+export const MEMBER_STATUS_IN_PAST = 'MEMBER_STATUS_IN_PAST';
+/** An admin naming their own row. The control is never offered there; this is
+ *  what a stale screen or a direct call is told. */
+export const MEMBER_STATUS_SELF = 'MEMBER_STATUS_SELF';
+/** A version already exists for this member on that date: the policy's
+ *  date-order rule, or `23505` on `unique (member_id, effective_from)`. */
+export const MEMBER_STATUS_DATE_TAKEN = 'MEMBER_STATUS_DATE_TAKEN';
+/** A version dated BEFORE the member's latest one. Versions append in date
+ *  order (`0008`), so the later change has to be cancelled first. */
+export const MEMBER_STATUS_OUT_OF_ORDER = 'MEMBER_STATUS_OUT_OF_ORDER';
+/** A version that changes nothing: deactivating a member whose latest state
+ *  is inactive, or reactivating an active one. */
+export const MEMBER_STATUS_UNCHANGED = 'MEMBER_STATUS_UNCHANGED';
+/** Cancelling a version already in effect — dated today or earlier. It has
+ *  decided some day's status, and removing it would rewrite that day. */
+export const MEMBER_STATUS_IN_EFFECT = 'MEMBER_STATUS_IN_EFFECT';
+/**
+ * The member's status changed since this screen read it: a cancellation names
+ * a version that is no longer the latest, or the database refused a change the
+ * list says it would admit. The thing to do next is look again, so the screen
+ * refetches the list whenever a status change is refused.
+ */
+export const MEMBER_STATUS_STALE = 'MEMBER_STATUS_STALE';
+
+/** Deactivate: a version with `active = false`. */
+export const DEACTIVATE = 'deactivate';
+/** Reactivate: a version with `active = true`. */
+export const REACTIVATE = 'reactivate';
+/** Cancel the scheduled change: delete the member's latest version, which is
+ *  dated after today. */
+export const WITHDRAW = 'withdraw';
+
+export type StatusChange = typeof DEACTIVATE | typeof REACTIVATE | typeof WITHDRAW;
+
+/** The offer's label, naming the member it acts on. */
+export function statusOfferMessageKey(
+  change: StatusChange,
+): 'ljudi.status.deactivate' | 'ljudi.status.reactivate' | 'ljudi.status.withdraw' {
+  if (change === DEACTIVATE) return 'ljudi.status.deactivate';
+  if (change === REACTIVATE) return 'ljudi.status.reactivate';
+  if (change === WITHDRAW) return 'ljudi.status.withdraw';
+
+  const unhandled: never = change;
+
+  return unhandled;
+}
+
+/**
+ * The confirmation's sentence, naming the member and the date.
+ *
+ * TENSE FOLLOWS THE DATE: a change from today is worded in the present, one
+ * from a later date in the future, because it has not happened yet and the
+ * member can still sign in until then. A cancellation is only ever of a change
+ * dated after today, so it has one sentence.
+ */
+export function statusPromptMessageKey(
+  change: StatusChange,
+  future: boolean,
+):
+  | 'ljudi.status.deactivatePrompt'
+  | 'ljudi.status.deactivatePromptFuture'
+  | 'ljudi.status.reactivatePrompt'
+  | 'ljudi.status.reactivatePromptFuture'
+  | 'ljudi.status.withdrawPrompt' {
+  if (change === DEACTIVATE) {
+    return future ? 'ljudi.status.deactivatePromptFuture' : 'ljudi.status.deactivatePrompt';
+  }
+  if (change === REACTIVATE) {
+    return future ? 'ljudi.status.reactivatePromptFuture' : 'ljudi.status.reactivatePrompt';
+  }
+  if (change === WITHDRAW) return 'ljudi.status.withdrawPrompt';
+
+  const unhandled: never = change;
+
+  return unhandled;
+}
+
+/**
+ * The key of the line stating a member's status TODAY — present tense:
+ * "inactive from …" when the member is out, "active" otherwise.
+ */
+export function statusTodayMessageKey(
+  activeToday: boolean,
+): 'ljudi.status.active' | 'ljudi.status.inactiveFrom' {
+  return activeToday ? 'ljudi.status.active' : 'ljudi.status.inactiveFrom';
+}
+
+/**
+ * The key of the line stating the SCHEDULED change — future tense, because it
+ * has not happened: "will be inactive from …", "will be active again from …".
+ */
+export function statusScheduledMessageKey(
+  active: boolean,
+): 'ljudi.status.scheduledActive' | 'ljudi.status.scheduledInactive' {
+  return active ? 'ljudi.status.scheduledActive' : 'ljudi.status.scheduledInactive';
+}
+
+/** The confirm control, naming the member — the second press is a distinct,
+ *  more specific decision than the first. */
+export function statusConfirmMessageKey(
+  change: StatusChange,
+):
+  | 'ljudi.status.deactivateConfirm'
+  | 'ljudi.status.reactivateConfirm'
+  | 'ljudi.status.withdrawConfirm' {
+  if (change === DEACTIVATE) return 'ljudi.status.deactivateConfirm';
+  if (change === REACTIVATE) return 'ljudi.status.reactivateConfirm';
+  if (change === WITHDRAW) return 'ljudi.status.withdrawConfirm';
+
+  const unhandled: never = change;
+
+  return unhandled;
+}
+
 export type MemberWriteFailure =
   | typeof MEMBER_WRITE_REFUSED
   | typeof MEMBER_WRITE_INVALID
@@ -138,6 +261,13 @@ export type MemberWriteFailure =
   | typeof MEMBER_ACCOUNT_STRANDED
   | typeof ORGANIZATION_WOULD_HAVE_NO_ADMIN
   | typeof MEMBER_READ_REFUSED
+  | typeof MEMBER_STATUS_IN_PAST
+  | typeof MEMBER_STATUS_SELF
+  | typeof MEMBER_STATUS_DATE_TAKEN
+  | typeof MEMBER_STATUS_OUT_OF_ORDER
+  | typeof MEMBER_STATUS_UNCHANGED
+  | typeof MEMBER_STATUS_IN_EFFECT
+  | typeof MEMBER_STATUS_STALE
   | typeof MEMBER_WRITE_UNAVAILABLE;
 
 /**
@@ -151,7 +281,7 @@ export type MemberWriteFailure =
  * will never succeed.
  */
 export const WIRE_CODES = [
-  // THE TRANSPORT'S OWN SEVEN, which `handler.ts` answers with BEFORE any
+  // THE TRANSPORT'S OWN FIVE, which `handler.ts` answers with BEFORE any
   // operation runs. They were missing from this list and from the mapping
   // below, so every one of them fell through to `MEMBER_WRITE_UNAVAILABLE` —
   // and the one that matters is `AUTHORIZATION_MISSING`: a session that expired
@@ -161,7 +291,6 @@ export const WIRE_CODES = [
   'METHOD_NOT_ALLOWED',
   'BODY_NOT_JSON',
   'OPERATION_UNKNOWN',
-  'NOT_IMPLEMENTED',
   'CLIENT_CONSTRUCTION_FAILED',
   'MEMBER_CREATED',
   'USERNAME_CHANGED',
@@ -374,6 +503,13 @@ export function memberWriteMessageKey(
   | 'ljudi.form.error.resetNotApplied'
   | 'ljudi.form.error.stranded'
   | 'ljudi.form.error.lastAdmin'
+  | 'ljudi.form.error.statusPast'
+  | 'ljudi.form.error.statusSelf'
+  | 'ljudi.form.error.statusTaken'
+  | 'ljudi.form.error.statusOrder'
+  | 'ljudi.form.error.statusUnchanged'
+  | 'ljudi.form.error.statusInEffect'
+  | 'ljudi.form.error.statusStale'
   | 'ljudi.form.error.unavailable' {
   if (failure === MEMBER_WRITE_REFUSED) return 'ljudi.form.error.refused';
   if (failure === MEMBER_WRITE_INVALID) return 'ljudi.form.error.invalid';
@@ -391,6 +527,13 @@ export function memberWriteMessageKey(
   // answer, where every `ljudi.form.error.*` message is about a WRITE and would
   // be false here.
   if (failure === MEMBER_READ_REFUSED) return 'ljudi.error.refused';
+  if (failure === MEMBER_STATUS_IN_PAST) return 'ljudi.form.error.statusPast';
+  if (failure === MEMBER_STATUS_SELF) return 'ljudi.form.error.statusSelf';
+  if (failure === MEMBER_STATUS_DATE_TAKEN) return 'ljudi.form.error.statusTaken';
+  if (failure === MEMBER_STATUS_OUT_OF_ORDER) return 'ljudi.form.error.statusOrder';
+  if (failure === MEMBER_STATUS_UNCHANGED) return 'ljudi.form.error.statusUnchanged';
+  if (failure === MEMBER_STATUS_IN_EFFECT) return 'ljudi.form.error.statusInEffect';
+  if (failure === MEMBER_STATUS_STALE) return 'ljudi.form.error.statusStale';
   if (failure === MEMBER_WRITE_UNAVAILABLE) return 'ljudi.form.error.unavailable';
 
   const unhandled: never = failure;

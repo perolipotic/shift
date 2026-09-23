@@ -149,12 +149,13 @@ The derivation lives in one pure package that cannot reach for data. The store e
 
 - **Binds:** CAP-1, CAP-4; quality-requirements Q2, Q5, Q8
 - **Prevents:** two failures at once. Without it, `admin.createUser` has nowhere to run and CAP-1's admin-issued credentials are unbuildable; without its second clause, the one component holding the secret becomes the place every awkward rule migrates to, and AD-7's leaf property dies quietly.
-- **Rule:** Exactly one Edge Function holds the secret key. It exposes only `createUser`, `updateUserById` and ban/unban, each callable only by an admin of the target member's own organization, verified against the database rather than the request. It **performs no domain calculation and contains no rule from `engine-rules.md`** — adding either is a defect, not a refactor.
+- **Rule:** Exactly one Edge Function holds the secret key. It exposes only `createUser`, `updateUserById` and `resetPassword`, each callable only by an admin of the target member's own organization, verified against the database rather than the request. It **performs no domain calculation and contains no rule from `engine-rules.md`** — adding either is a defect, not a refactor.
 
-  Two further clauses, because the secret key bypasses RLS entirely:
+  Three further clauses, because the secret key bypasses RLS entirely:
 
   - **The function holds two clients.** The secret key is used *only* for the auth call. Every domain-table write it makes — the `members` row above all — goes through a client built from the **caller's JWT**, so RLS, AD-11's `auth.uid()` defaults and its `WITH CHECK` all still apply. A domain write made with the secret key is a defect.
   - **Organization provisioning does not use this function.** It is an operator CLI task outside the application, and is the single write in the system exempt from AD-11 — no admin exists yet to attribute it to.
+  - **Deactivation does not use this function either** (amended by story 1.6, human decision 2026-09-23). Active status is a versioned domain table (AD-2) written through PostgREST under RLS like every other domain write (AD-9): a change is an inserted version, and a change not yet in effect may be cancelled by deleting it; a version in effect is never changed or deleted. Data access ends on the effective date because the AD-10 helper reads the version covering today in the organization's timezone; sign-in and refresh end because the custom access token hook refuses a member inactive today. There is no `ban`/`unban` and no write to the auth store: the secret key could only have added a session revocation, which GoTrue does not offer without a password change. A token minted before the date keeps authenticating to GoTrue's own endpoints until it expires and reads no organization data.
 
 ### AD-17 — The secret key exists in exactly one place
 

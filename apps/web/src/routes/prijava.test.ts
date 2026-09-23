@@ -288,7 +288,11 @@ const SCREENS = [
   // no dismiss blocks every later reset on the one account with no other
   // recovery route. The FIELD count is unchanged, which is the half this number
   // still guards.
-  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 12 },
+  //
+  // SIXTEEN SINCE STORY 1.6: the status block's date `<Input>`, its offer, and
+  // the confirm and cancel that replace the offer — the same two-step shape the
+  // reset has, because one press must not end somebody's access.
+  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 16 },
   // ZERO on all seven, and asserted rather than assumed: a destination is a
   // heading and nothing else in this story, so the first control any of them
   // grows is a later story's work arriving without that story's review. The
@@ -409,6 +413,7 @@ const IN_FLIGHT_HANDLERS = [
     ...screen,
     handler: 'submit',
     pending: 'setPending',
+    failure: 'setFailure',
   })),
   {
     // THE SECOND AWAITING HANDLER ON THE EDIT FORM. Its flags are its own on
@@ -421,6 +426,20 @@ const IN_FLIGHT_HANDLERS = [
     inFlight: 'resetting',
     handler: 'issue',
     pending: 'setResetPending',
+    failure: 'setFailure',
+  },
+  {
+    // STORY 1.6, THE THIRD AWAITING HANDLER ON THE EDIT FORM, with its own
+    // flags for the reason the reset has its own.
+    name: "the member edit form's status change",
+    file: MEMBER_EDIT,
+    effect: 'changeMemberStatus(',
+    inFlight: 'statusing',
+    handler: 'changeStatus',
+    pending: 'setStatusPending',
+    // ITS OWN REFUSAL STATE, so the date control is described by the status
+    // block's alert and never by an unrelated error on the form.
+    failure: 'setStatusFailure',
   },
 ];
 
@@ -1120,10 +1139,16 @@ const KEY_SOURCES = [
     // row action, whose name INTERPOLATES the member it acts on because four
     // hundred rows announcing the same three words is four hundred controls a
     // screen-reader user cannot tell apart.
+    //
+    // TEN SINCE STORY 1.6: the inactive marker, which INTERPOLATES the name it
+    // sits beside, and the scheduled-deactivation marker, which interpolates
+    // the date as well. Whether a member is inactive today or scheduled out is
+    // `@/members/list`'s decision, as at the organization's today; the screen
+    // only renders the kind of cell the column produced.
     name: 'the member list',
     file: MEMBER_LIST,
     keys: translationKeys,
-    strings: 8,
+    strings: 10,
   },
   {
     // THIRTEEN on the create form: its own heading, five field labels, the save
@@ -1157,10 +1182,16 @@ const KEY_SOURCES = [
     // here is uncontrolled and remounts to the values it was just saved with,
     // so without it a successful save looks identical to a press that did
     // nothing.
+    //
+    // TWENTY-ONE SINCE STORY 1.6: the status block's three literal keys — the
+    // date control's label, the confirmation's cancel, and the confirmation
+    // that a change landed. Its status lines, offer, prompt and confirm vary
+    // with the member's history and reach `t()` through `@/members/wire`,
+    // which is the entry below.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 18,
+    strings: 21,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
@@ -1176,10 +1207,21 @@ const KEY_SOURCES = [
     // the ONLY recovery an account with no email address has, and the fact an
     // admin needs before they tell somebody anything is whether the credential
     // moved at all.
+    //
+    // THIRTY-FIVE SINCE STORY 1.6: seven refusals a status change can earn —
+    // a past date, the caller's own row, a date that already has a version, a
+    // date before the latest one, a change that changes nothing, a
+    // cancellation of a change already in effect, and a list behind the
+    // database (look again); ELEVEN keys the offer,
+    // prompt and confirm take across the three changes (a prompt for today
+    // and one for a later date, for each of deactivate and reactivate); and
+    // the FOUR status lines — today's in the present, the scheduled change's
+    // in the future. Paired by `statusOfferMessageKey` and its siblings so
+    // the pairing is executed rather than written into the screen.
     name: 'the member write rules',
     file: MEMBER_WRITE_KEYS,
     keys: memberWriteKeys,
-    strings: 13,
+    strings: 35,
   },
   {
     // ELEVEN on the member list's rules: four column headings, two permission
@@ -1996,6 +2038,13 @@ describe('the member list computes nothing it renders', () => {
       'email',
       'role',
       'leaveAllowanceDays',
+      // STORY 1.6's THREE, all guarded: the account id the edit screen compares
+      // with the session's subject, the status history the marker is read off,
+      // and the organization's zone that "today" is read in. None may be
+      // reached for by the list itself.
+      'authUserId',
+      'statusVersions',
+      'timeZone',
     ]);
     for (const exempt of RENDERED_FIELD_EXEMPTIONS) expect(fields).toContain(exempt);
   });
@@ -2068,6 +2117,13 @@ describe('the member list computes nothing it renders', () => {
       'a cell value is transformed on its way to the screen',
     ).toEqual([
       'cell.text',
+      // STORY 1.6: the inactive marker, a THIRD transformation, named here for
+      // the reason the other two are. It wraps the name in a sentence and
+      // changes nothing about it.
+      "t('ljudi.status.inactive', { name: cell.text })",
+      // And a FOURTH: a scheduled deactivation, marked in the future tense with
+      // the date it takes effect, shown in the binding shape.
+      "t('ljudi.status.inactiveScheduled', { name: cell.text, date: shownDate(cell.from) })",
       't(memberLevelMessageKey(cell.level))',
       'formatNumber(cell.days, 0)',
       'unhandled',
@@ -3063,11 +3119,12 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // the second one was read by none of them. A list that silently fell back
     // to one entry per file would make every sweep below miss exactly the
     // handler that was added last.
-    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(5);
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(6);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
       'the in-flight handler names drifted from the handlers that hold them',
     ).toEqual([
+      'changeStatus/statusing',
       'issue/resetting',
       'submit/exchanging',
       'submit/issuing',
@@ -3086,7 +3143,7 @@ describe('the screen reaches the authentication seam rather than faking one', ()
 
   it.each(IN_FLIGHT_HANDLERS)(
     'clears the in-flight flag on every path on $name, and guards on a ref not on state',
-    ({ file, handler: named }) => {
+    ({ file, handler: named, failure }) => {
       // TWO defects in one shape. `pending` was cleared only on the failure
       // branch, so the moment the awaited call stopped resolving the button was
       // disabled forever with nothing on screen to say why — `finally` is what
@@ -3113,12 +3170,12 @@ describe('the screen reaches the authentication seam rather than faking one', ()
         /\.current\b/,
       );
       expect(scoped, 'nothing is surfaced when the call throws outside its own mapping').toMatch(
-        /catch[\s\S]{0,400}?setFailure\(/,
+        new RegExp(`catch[\\s\\S]{0,400}?${failure}\\(`),
       );
     },
   );
 
-  it.each(IN_FLIGHT_HANDLERS)('surfaces the refused outcome code on $name', ({ file, handler: named }) => {
+  it.each(IN_FLIGHT_HANDLERS)('surfaces the refused outcome code on $name', ({ file, handler: named, failure }) => {
     // MUTATION-PROVEN GAP, found by the 1.4a review: deleting
     // `setFailure(outcome.code)` from the settings surface's handler left the
     // whole suite green, and a refused save then looked exactly like a saved
@@ -3139,7 +3196,11 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     expect(
       handler,
       'the refused branch does not put the returned code on screen',
-    ).toMatch(/outcome\.ok[\s\S]{0,200}?setFailure\([\s\S]{0,80}?outcome\.(?:code|refusal)/);
+    ).toMatch(
+      new RegExp(
+        `outcome\\.ok[\\s\\S]{0,200}?${failure}\\([\\s\\S]{0,80}?outcome\\.(?:code|refusal)`,
+      ),
+    );
   });
 
   it('keeps every entered value by never controlling the fields', () => {

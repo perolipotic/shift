@@ -28,10 +28,8 @@ import {
 } from '../supabase/functions/admin-auth/authorize.ts';
 import {
   AUTHORIZATION_MISSING,
-  IMPLEMENTED_OPERATIONS,
   OPERATIONS,
   TRANSPORT_CODES,
-  UNIMPLEMENTED_OPERATIONS,
   createHandler,
   readConfiguration,
 } from '../supabase/functions/admin-auth/handler.ts';
@@ -112,15 +110,16 @@ function deps() {
 /**
  * The operation the transport cases below are made against.
  *
- * THEY USED TO USE `createUser`, and that stopped being safe the moment it was
- * implemented: a CORS or misconfiguration case pointed at a working operation
- * asserts a header on a reply that also created an account, or fails for a
- * reason that has nothing to do with CORS. It is read off
- * {@link UNIMPLEMENTED_OPERATIONS} rather than written as `'ban'`, so the day
- * story 1.6 implements both, these cases fail here and get repointed
- * deliberately rather than starting to exercise a privileged write.
+ * AN IMPLEMENTED OPERATION CARRYING NO PAYLOAD. These cases used to use `ban`,
+ * which answered 501 before touching anything; story 1.6 removed `ban` and
+ * `unban` from the vocabulary, so nothing unimplemented is left to aim at. A
+ * `resetPassword` with no `memberId` is refused as `PAYLOAD_INVALID` by the
+ * operation's own validation before either client is used, so a CORS or
+ * misconfiguration case still asserts a header on a reply that acted on
+ * nothing — and the fakes `deps()` hands out are inert objects, so a case that
+ * did reach a client would throw into the 500 path rather than write.
  */
-const STILL_UNIMPLEMENTED = UNIMPLEMENTED_OPERATIONS[0];
+const TRANSPORT_PROBE = 'resetPassword';
 
 function post(
   operation: unknown,
@@ -145,55 +144,57 @@ function allowHeaders(response: Response): Record<string, string> {
   );
 }
 
-describe('admin-auth: the operations story 1.6 still owns refuse to act', () => {
-  it('partitions every operation into implemented and not, with nothing left over', () => {
-    // NON-VACUITY AND EXHAUSTIVENESS IN ONE. `it.each` over a shortened list is
-    // a quieter pass than a failing assertion, so an operation dropped from
-    // either list has to show up here — and an operation that is in neither
-    // would answer 501 while reading as implemented, or the reverse.
-    expect([...IMPLEMENTED_OPERATIONS, ...UNIMPLEMENTED_OPERATIONS].sort()).toEqual(
-      [...OPERATIONS].sort(),
-    );
-    expect(UNIMPLEMENTED_OPERATIONS.length).toBeGreaterThan(0);
-    expect(IMPLEMENTED_OPERATIONS.length).toBeGreaterThan(0);
-    // `ban` and `unban` are ONE reversible capability and they are story 1.6's,
-    // because active state lives in `auth.users` (AD-2) and the versioned shape
-    // that records it is not settled. Named rather than inferred: a list that
-    // silently became empty would make the sweep below assert nothing.
-    expect([...UNIMPLEMENTED_OPERATIONS]).toEqual(['ban', 'unban']);
+describe('admin-auth: exactly three operations, and none of them refuses to act', () => {
+  it('answers a request aimed at a removed operation as unknown, never as 501', async () => {
+    // STORY 1.6 REMOVED `ban` AND `unban`. Deactivation is a versioned row
+    // written through PostgREST under row level security, and the access token
+    // hook ends sign-in; the secret key had nothing left to add. A build that
+    // still dispatched either name — or still answered `NOT_IMPLEMENTED` —
+    // would be a privileged entry point nothing reviews.
+    const dependencies = deps();
+    const handle = createHandler(readConfiguration(envFrom()), dependencies);
+
+    for (const removed of ['ban', 'unban']) {
+      const response = await handle(post(removed));
+
+      expect(response.status, `${removed} is still an operation`).toBe(400);
+      expect(await response.json()).toMatchObject({ code: 'OPERATION_UNKNOWN' });
+    }
+    expect(dependencies.makePrivilegedClient).not.toHaveBeenCalled();
+    expect([...TRANSPORT_CODES] as string[]).not.toContain('NOT_IMPLEMENTED');
   });
 
-  it.each(UNIMPLEMENTED_OPERATIONS)('returns 501 NOT_IMPLEMENTED for %s', async (operation) => {
-    const handle = createHandler(readConfiguration(envFrom()), deps());
+  it('dispatches every declared operation, so none can fall through', async () => {
+    // With the 501 path gone, a name in `OPERATIONS` that no branch handled
+    // would reach the handler's final `OPERATION_FAILED`. Each operation with no
+    // payload is refused by its own validation instead, which is the proof it
+    // was dispatched.
+    for (const operation of OPERATIONS) {
+      const handle = createHandler(readConfiguration(envFrom()), deps());
+      const response = await handle(post(operation));
 
-    const response = await handle(post(operation));
-
-    expect(response.status).toBe(501);
-    expect(await response.json()).toEqual({ code: 'NOT_IMPLEMENTED', operation });
+      expect(response.status, `${operation} was not dispatched`).toBe(400);
+      expect(await response.json()).toEqual({ code: 'PAYLOAD_INVALID' });
+    }
   });
 
   it('constructs both clients on a real request, proving the two-client wiring', async () => {
     const dependencies = deps();
     const handle = createHandler(readConfiguration(envFrom()), dependencies);
 
-    await handle(post(STILL_UNIMPLEMENTED));
+    await handle(post(TRANSPORT_PROBE));
 
     expect(dependencies.makePrivilegedClient).toHaveBeenCalledOnce();
     expect(dependencies.makeCallerClient).toHaveBeenCalledExactlyOnceWith('Bearer caller-jwt');
   });
 
-  it('exposes exactly the five operations AD-16 permits, and nothing else', async () => {
-    // FIVE SINCE THE ADMIN-ISSUED RESET, and every one of them is written out
-    // rather than derived: this list is the whole of what the secret key may be
-    // pointed at, so an operation appearing in it is the moment somebody
-    // decides a new capability exists.
-    expect([...OPERATIONS]).toEqual([
-      'createUser',
-      'updateUserById',
-      'resetPassword',
-      'ban',
-      'unban',
-    ]);
+  it('exposes exactly the three operations AD-16 permits, and nothing else', async () => {
+    // THREE SINCE STORY 1.6, and every one of them is written out rather than
+    // derived: this list is the whole of what the secret key may be pointed at,
+    // so an operation appearing in it is the moment somebody decides a new
+    // capability exists. `ban` and `unban` left it by human decision
+    // 2026-09-23.
+    expect([...OPERATIONS]).toEqual(['createUser', 'updateUserById', 'resetPassword']);
 
     const handle = createHandler(readConfiguration(envFrom()), deps());
     const response = await handle(post('deleteUser'));
@@ -210,7 +211,7 @@ describe('admin-auth: the operations story 1.6 still owns refuse to act', () => 
       new Request('http://localhost/admin-auth', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ operation: STILL_UNIMPLEMENTED }),
+        body: JSON.stringify({ operation: TRANSPORT_PROBE }),
       }),
     );
 
@@ -293,7 +294,7 @@ describe('admin-auth: CORS is an allowlist, not a wildcard', () => {
   it('echoes an allowed origin back, and varies on Origin', async () => {
     const handle = createHandler(readConfiguration(envFrom()), deps());
 
-    const response = await handle(post(STILL_UNIMPLEMENTED, { Origin: ALLOWED_ORIGIN }));
+    const response = await handle(post(TRANSPORT_PROBE, { Origin: ALLOWED_ORIGIN }));
 
     expect(response.headers.get('access-control-allow-origin')).toBe(ALLOWED_ORIGIN);
     expect(response.headers.get('vary')).toBe('Origin');
@@ -304,7 +305,7 @@ describe('admin-auth: CORS is an allowlist, not a wildcard', () => {
   it('grants an unlisted origin no Access-Control-Allow header at all', async () => {
     const handle = createHandler(readConfiguration(envFrom()), deps());
 
-    const response = await handle(post(STILL_UNIMPLEMENTED, { Origin: UNLISTED_ORIGIN }));
+    const response = await handle(post(TRANSPORT_PROBE, { Origin: UNLISTED_ORIGIN }));
 
     expect(allowHeaders(response)).toEqual({});
     // Still varies, so a cache cannot replay this reply to an allowed origin.
@@ -314,7 +315,7 @@ describe('admin-auth: CORS is an allowlist, not a wildcard', () => {
   it('grants a request with no Origin no Access-Control-Allow header either', async () => {
     const handle = createHandler(readConfiguration(envFrom()), deps());
 
-    const response = await handle(post(STILL_UNIMPLEMENTED));
+    const response = await handle(post(TRANSPORT_PROBE));
 
     expect(allowHeaders(response)).toEqual({});
     expect(response.headers.get('vary')).toBe('Origin');
@@ -403,12 +404,12 @@ describe('admin-auth: fails fast when misconfigured, and never falls back', () =
     });
   });
 
-  it('answers 500 with the stable code and never reaches the 501 path', async () => {
+  it('answers 500 with the stable code and never reaches an operation', async () => {
     const dependencies = deps();
     const configuration = readConfiguration(envFrom({ SHIFT_SECRET_KEY: undefined }));
     const handle = createHandler(configuration, dependencies);
 
-    const response = await handle(post(STILL_UNIMPLEMENTED));
+    const response = await handle(post(TRANSPORT_PROBE));
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ code: 'SECRET_KEY_MISSING' });
@@ -426,7 +427,7 @@ describe('admin-auth: fails fast when misconfigured, and never falls back', () =
       makeCallerClient: () => ({ caller: true }),
     });
 
-    const response = await handle(post(STILL_UNIMPLEMENTED));
+    const response = await handle(post(TRANSPORT_PROBE));
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ code: 'CLIENT_CONSTRUCTION_FAILED' });
@@ -438,7 +439,7 @@ describe('admin-auth: fails fast when misconfigured, and never falls back', () =
       readConfiguration(envFrom({ SHIFT_SECRET_KEY: undefined })),
     ]) {
       const handle = createHandler(configuration, deps());
-      const response = await handle(post(STILL_UNIMPLEMENTED, { Origin: ALLOWED_ORIGIN }));
+      const response = await handle(post(TRANSPORT_PROBE, { Origin: ALLOWED_ORIGIN }));
       const serialized = `${await response.text()}${JSON.stringify([...response.headers])}`;
 
       expect(serialized).not.toContain('sb_secret_');
@@ -751,7 +752,6 @@ describe('the function and the SPA speak one vocabulary, bound here', () => {
     // whose member has no other recovery route — with both suites green,
     // because each side compares replies to the constant it imported.
     expect(OPERATIONS).toContain(RESET_PASSWORD_OPERATION);
-    expect([...IMPLEMENTED_OPERATIONS]).toContain(RESET_PASSWORD_OPERATION);
   });
 
   it('gives the client a mapping for every code the function can emit', () => {
@@ -1679,7 +1679,8 @@ describe('resetPassword: a new credential, and every session the old one minted'
 
   it('sends GoTrue the password and nothing else', async () => {
     // `email_confirm` belongs to the address and the rename owns it;
-    // `ban_duration` is story 1.6's; and `user_metadata` is the one place a
+    // `ban_duration` is nobody's, since story 1.6 never bans; and
+    // `user_metadata` is the one place a
     // credential must never be written, because every later admin read can see
     // it. Pinned as an exact key list rather than a `toMatchObject`, which
     // would pass over every one of those.
@@ -1959,7 +1960,7 @@ describe('the dispatch is wrapped, so a throw is still a reply the SPA can read'
     });
   }
 
-  it('dispatches createUser to the operation rather than answering 501', async () => {
+  it('dispatches createUser to the operation rather than falling through', async () => {
     const accounts = accountsThat();
     const caller = callerThat({ reads: SLUG_READ });
     const handle = handlerOver(accounts.client, caller.client);
@@ -1971,7 +1972,7 @@ describe('the dispatch is wrapped, so a throw is still a reply the SPA can read'
     expect(body['code']).toBe(MEMBER_CREATED);
   });
 
-  it('dispatches updateUserById to the operation rather than answering 501', async () => {
+  it('dispatches updateUserById to the operation rather than falling through', async () => {
     const accounts = accountsThat();
     const caller = callerThat({
       reads: MEMBER_READ,
@@ -1987,11 +1988,11 @@ describe('the dispatch is wrapped, so a throw is still a reply the SPA can read'
     expect(await response.json()).toMatchObject({ code: USERNAME_CHANGED });
   });
 
-  it('dispatches resetPassword to the operation rather than answering 501', async () => {
-    // KEPT OUT OF `UNIMPLEMENTED_OPERATIONS` AND WIRED IN. Left in that list it
-    // answers 501, the SPA maps `NOT_IMPLEMENTED` to the service fallback, and
-    // the one recovery route an account with no address has is "try again" for
-    // ever.
+  it('dispatches resetPassword to the operation rather than falling through', async () => {
+    // WIRED IN. Undispatched it would reach the handler's final
+    // `OPERATION_FAILED`, the SPA would map that to the service fallback, and
+    // the one recovery route an account with no address has would be "try
+    // again" for ever.
     const accounts = accountsThat();
     const caller = callerThat({
       reads: {
