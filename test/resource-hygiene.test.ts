@@ -52,6 +52,11 @@ const SANCTIONED_PLURAL_KEYS = [
   'ljudi.filterAll',
   'ljudi.filterAdmin',
   'ljudi.filterMember',
+  // STORY 1.7a's TWO: the active teams' stated count and the archived group's,
+  // both rendered at zero — `0 smjena` — and both ICU so `21 smjena` and
+  // `22 smjene` come out right. No count is special-cased (DI-8).
+  'smjene.count',
+  'smjene.archivedCount',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -414,6 +419,36 @@ const SANCTIONED_SCREEN_KEYS = [
   'shell.retry',
   'shell.error.destinations',
   'shell.error.signOut',
+  // STORY 1.7a: the two team screens. The namespace is `smjene`, never
+  // `smjena` — `Smjena` means Team only, and the key names the list. A refused
+  // save names its problem: an empty name, a name another team in use carries,
+  // and a screen the database no longer matches are three sentences, not one.
+  'smjene.heading',
+  'smjene.activeHeading',
+  'smjene.name',
+  'smjene.add',
+  'smjene.created',
+  'smjene.edit',
+  'smjene.view',
+  'smjene.editHeading',
+  'smjene.viewHeading',
+  'smjene.save',
+  'smjene.saved',
+  'smjene.archivedDone',
+  'smjene.archive',
+  'smjene.archivePrompt',
+  'smjene.archiveConfirm',
+  'smjene.archiveCancel',
+  'smjene.archivedNote',
+  'smjene.back',
+  'smjene.error.unavailable',
+  'smjene.error.empty',
+  'smjene.error.taken',
+  'smjene.error.stale',
+  'smjene.error.refused',
+  'smjene.error.invalid',
+  'smjene.error.saveUnavailable',
+  'smjene.error.unknown',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
@@ -450,6 +485,22 @@ const SANCTIONED_KEYS = [...SANCTIONED_PLURAL_KEYS, ...SANCTIONED_SCREEN_KEYS];
  * Matching the stem catches both, and every form a later story might reach for.
  */
 const RESERVED_STEMS: readonly string[] = [];
+
+/** The one namespace whose messages may say `smjen` — the Team (story 1.7a). */
+const TEAM_NAMESPACE = 'smjene.';
+
+/**
+ * Whether a message says `smjen` where it may not: anywhere outside the team
+ * namespace, or as the Shift Type (`tip smjene`) inside it. Keyed so the sweep
+ * and its self-test run the same predicate.
+ */
+function teamTermOutOfTurn(key: string, message: string): boolean {
+  const lowered = message.toLowerCase();
+
+  if (!key.startsWith(TEAM_NAMESPACE)) return lowered.includes('smjen');
+
+  return /\btip\w*\s+smjen/.test(lowered);
+}
 
 /** The reserved stem a message carries, or `null`. Lowercased, so an inflected
  *  or capitalized form cannot slip past. The list is a PARAMETER so the sweep
@@ -561,11 +612,19 @@ describe('the messages obey the voice rules that bind every string', () => {
   it('never says smjena for a shift type', () => {
     // UX-DR36 and the terminology contract: `Smjena` is the Team, `Tip smjene`
     // is the Shift Type, and using the former for the latter is a contract
-    // violation however natural it reads. Neither message should mention a team
-    // or a shift type at all yet, so any occurrence is out of turn.
-    for (const message of messages()) {
-      expect(message.toLowerCase(), `${message} mentions a shift or team`).not.toContain('smjen');
-    }
+    // violation however natural it reads.
+    //
+    // NARROWED BY STORY 1.7a, not relaxed. The team screens are the first to
+    // say `smjena`, and they say it under the `smjene` namespace and nowhere
+    // else: every message OUTSIDE it still may not mention a team at all, and
+    // no message INSIDE it may say `tip smjen` — the Shift Type is still a
+    // later epic's word, and the team screens are where it would creep in.
+    const found = leafKeys(resource())
+      .map((key) => ({ key, message: String(messageAt(key)) }))
+      .filter(({ key, message }) => teamTermOutOfTurn(key, message));
+
+    expect(leafKeys(resource()).filter((key) => key.startsWith(TEAM_NAMESPACE)).length).toBeGreaterThan(0);
+    expect(found, 'a message says smjen out of turn').toEqual([]);
   });
 
   it('uses an en dash rather than a hyphen for any range', () => {
@@ -675,6 +734,18 @@ describe('the messages obey the voice rules that bind every string', () => {
     expect(messageAt('ljudi.status.withdrawConfirm')).toBe(
       'Potvrdi poništavanje promjene za osobu {name}',
     );
+    // STORY 1.7a's SEVEN, a fifth authoring of the same voice. The archive offer
+    // is the one that would most naturally have been the noun `Arhiviranje` —
+    // the prompt's subject, not a control.
+    expect(messageAt('smjene.add')).toBe('Dodaj smjenu');
+    expect(messageAt('smjene.edit')).toBe('Uredi smjenu {name}');
+    // An archived team's row opens it for viewing, in the same voice.
+    expect(messageAt('smjene.view')).toBe('Prikaži smjenu {name}');
+    expect(messageAt('smjene.save')).toBe('Spremi');
+    expect(messageAt('smjene.archive')).toBe('Arhiviraj smjenu {name}');
+    expect(messageAt('smjene.archiveConfirm')).toBe('Potvrdi arhiviranje smjene {name}');
+    expect(messageAt('smjene.archiveCancel')).toBe('Odustani od arhiviranja');
+    expect(messageAt('smjene.back')).toBe('Vrati se na smjene');
   });
 });
 
@@ -697,6 +768,17 @@ describe('the detector reads the file it thinks it does', () => {
     expect('Spremljeno!').toContain('!');
     expect('19:00-07:00').toMatch(/\d\s*-\s*\d/);
     expect('Tip smjene'.toLowerCase()).toContain('smjen');
+  });
+
+  it('would notice smjen outside the team namespace, and the Shift Type inside it', () => {
+    // The self-test for the narrowed sweep, on every polarity it decides.
+    expect(teamTermOutOfTurn('ljudi.caption', 'Popis smjena')).toBe(true);
+    expect(teamTermOutOfTurn('smjena.heading', 'Smjena')).toBe(true);
+    expect(teamTermOutOfTurn('smjene.heading', 'Smjene')).toBe(false);
+    expect(teamTermOutOfTurn('smjene.count', '{count, plural, one {# smjena}}')).toBe(false);
+    expect(teamTermOutOfTurn('smjene.name', 'Tip smjene')).toBe(true);
+    expect(teamTermOutOfTurn('smjene.name', 'Tipovi smjena')).toBe(true);
+    expect(teamTermOutOfTurn('ljudi.caption', 'Popis osoba')).toBe(false);
   });
 
   it('resolves a nested key path to its message and a wrong one to nothing', () => {

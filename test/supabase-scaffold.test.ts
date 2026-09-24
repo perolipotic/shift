@@ -293,7 +293,7 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the twelve policies stories 1.3a, 1.4a, 1.4b and 1.6 reviewed, and no thirteenth', () => {
+  it('declares exactly the fifteen policies stories 1.3a, 1.4a, 1.4b, 1.6 and 1.7a reviewed, and no sixteenth', () => {
     // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
     // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
     // copying `members_update_by_own_active_admin`, and its name is added here
@@ -343,6 +343,12 @@ describe('the access-control migration', () => {
       'organization_logos_update_by_own_active_admin',
       'organizations_select_own_organization',
       'organizations_update_by_own_active_admin',
+      // STORY 1.7a, and THREE: read, create, and an update that renames or
+      // archives. No fourth — removal archives, so there is no delete policy
+      // and the delete privilege is revoked as well.
+      'teams_insert_by_own_active_admin',
+      'teams_select_own_organization',
+      'teams_update_by_own_active_admin',
     ]);
   });
 
@@ -684,6 +690,77 @@ describe('the access-control migration', () => {
         `a policy opens ${verb} on member_status_versions; a version is never rewritten`,
       ).toEqual([]);
     }
+  });
+
+  it('archives teams and never deletes one, in any migration', () => {
+    // STORY 1.7a. "Remove" always archives: no DELETE policy, the delete
+    // privilege revoked, and archiving one-way because the update policy
+    // reaches only a row that is not archived yet. Source text only; what each
+    // clause does is `test/rls-isolation.test.ts`.
+    const statements = migrationStatements();
+    const teamPolicies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter(
+      (declaration) => /on public\.teams\b/i.test(declaration),
+    );
+
+    expect(teamPolicies.length, 'no policy on teams was found').toBe(3);
+    for (const verb of ['delete', 'all']) {
+      expect(
+        teamPolicies.filter((declaration) => new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration)),
+        `a policy opens ${verb} on teams; removing a team archives it`,
+      ).toEqual([]);
+    }
+    expect(statements, 'the delete privilege on teams is never revoked').toMatch(
+      /revoke[^;]*\bdelete\b[^;]*on table public\.teams\s+from anon, authenticated/i,
+    );
+    expect(
+      statements,
+      'a later migration grants delete on teams back',
+    ).not.toMatch(/grant[^;]*\bdelete\b[^;]*on table public\.teams\b/i);
+
+    const update = policyBody('teams_update_by_own_active_admin');
+    const using = /using\s*\(([\s\S]*?)\)\s*with check/i.exec(update)?.[1] ?? '';
+
+    expect(update, 'the teams update policy is not declared').not.toBe('');
+    expect(using, 'an archived team can be renamed or unarchived').toMatch(/\barchived = false\b/);
+    expect(update, 'an update may move a team to another tenant').toMatch(
+      /with check[\s\S]*organization_id = nullif/i,
+    );
+    expect(
+      (update.match(/access\.member_role = 'admin'/g) ?? []).length,
+      'a member-role account is refused by only one of the two update clauses',
+    ).toBe(2);
+
+    const insert = policyBody('teams_insert_by_own_active_admin');
+    expect(insert, 'the teams insert policy is not declared').not.toBe('');
+    expect(insert, 'the tenant is not pinned from the signed claim').toMatch(
+      /with check[\s\S]*organization_id = nullif/i,
+    );
+    expect(insert, 'role and active state are not re-read').toContain("access.member_role = 'admin'");
+    expect(insert, 'the attribution is not pinned to the caller').toMatch(
+      /created_by = \(select auth\.uid\(\)\)/,
+    );
+
+    const read = policyBody('teams_select_own_organization');
+    expect(read, 'the teams select policy is not declared').not.toBe('');
+    expect(read, 'a member-role account cannot see its own organization teams').not.toContain(
+      "member_role = 'admin'",
+    );
+    expect(read, 'archived teams are hidden from somebody').not.toMatch(/\barchived\b/);
+  });
+
+  it('keeps a team name unique among active teams only, and never blank', () => {
+    // The partial index is what lets an archived team's name be reused; a
+    // total one would refuse it, and a case-sensitive one would admit a
+    // duplicate differing only in case.
+    const statements = migrationStatements();
+
+    expect(statements, 'no unique index scopes a team name to its organization').toMatch(
+      /create unique index \w+\s+on teams \(organization_id, lower\(btrim\(name\)\)\)\s+where not archived;/i,
+    );
+    expect(statements, 'a blank team name is admitted').toMatch(/check \(btrim\(name\) <> ''\)/);
+    expect(statements, 'nothing gives 1.7b a composite key to reference').toMatch(
+      /unique \(organization_id, id\)/,
+    );
   });
 
   it('refuses a past date, an out-of-order or redundant version, the caller own row and the last active admin in the insert policy', () => {

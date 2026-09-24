@@ -156,5 +156,37 @@
       "destinations": "Izbornik trenutačno nije moguće prikazati.",
       "signOut": "Odjava trenutačno nije moguća. Pokušaj ponovno."
     }
+  },
+  "smjene": {
+    "heading": "Smjene",
+    "count": "{count, plural, one {# smjena} few {# smjene} other {# smjena}}",
+    "archivedCount": "{count, plural, one {Arhivirano: # smjena} few {Arhivirano: # smjene} other {Arhivirano: # smjena}}",
+    "activeHeading": "U upotrebi",
+    "name": "Naziv smjene",
+    "add": "Dodaj smjenu",
+    "created": "Smjena je dodana.",
+    "edit": "Uredi smjenu {name}",
+    "view": "Prikaži smjenu {name}",
+    "editHeading": "Uređivanje smjene",
+    "viewHeading": "Arhivirana smjena",
+    "save": "Spremi",
+    "saved": "Naziv je spremljen.",
+    "archivedDone": "Smjena je arhivirana.",
+    "archive": "Arhiviraj smjenu {name}",
+    "archivePrompt": "Smjena {name} bit će arhivirana. Arhiviranu smjenu nije moguće preimenovati ni vratiti u upotrebu.",
+    "archiveConfirm": "Potvrdi arhiviranje smjene {name}",
+    "archiveCancel": "Odustani od arhiviranja",
+    "archivedNote": "Ova smjena je arhivirana i ne može se mijenjati.",
+    "back": "Vrati se na smjene",
+    "error": {
+      "unavailable": "Popis smjena trenutačno nije moguće učitati. Pokušaj ponovno.",
+      "empty": "Naziv smjene ne može biti prazan.",
+      "taken": "Smjena s tim nazivom već postoji u organizaciji.",
+      "stale": "Smjena se u međuvremenu promijenila. Provjeri je i pokušaj ponovno.",
+      "refused": "Promjena nije spremljena. Odjavi se i prijavi ponovno.",
+      "invalid": "Unesena vrijednost nije dopuštena.",
+      "saveUnavailable": "Spremanje trenutačno nije moguće. Pokušaj ponovno.",
+      "unknown": "Ova smjena ne postoji u organizaciji."
+    }
   }
 }

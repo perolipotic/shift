@@ -93,6 +93,16 @@ const MEMBER_CREATE = join(srcRoot, 'routes', 'ljudi.novi.tsx');
 const MEMBER_EDIT = join(srcRoot, 'routes', 'ljudi.$id.tsx');
 
 /**
+ * Story 1.7a's two team screens and the two modules holding their rules. Like
+ * the member forms, neither screen is a destination, so they are named here by
+ * hand: a `.tsx` absent from `SCREENS` is swept by nothing.
+ */
+const TEAM_LIST = join(srcRoot, 'routes', 'ljudi.smjene.tsx');
+const TEAM_EDIT = join(srcRoot, 'routes', 'ljudi.smjene.$id.tsx');
+const TEAM_LIST_KEYS = join(srcRoot, 'teams', 'list.ts');
+const TEAM_WRITE_KEYS = join(srcRoot, 'teams', 'write.ts');
+
+/**
  * The member write path's rules, as a `.ts` module that renders nothing.
  *
  * THE THIRD NEW KEY SOURCE, and it has to be its own entry rather than folded
@@ -271,7 +281,10 @@ const SCREENS = [
   //
   // The number still notices a fourth: this screen writes nothing, so a
   // `<Button>` here that is not a link is a write arriving on the list.
-  { name: 'the member list', file: MEMBER_LIST, expectedControls: 5 },
+  //
+  // SIX SINCE STORY 1.7a: a second `<Button asChild>` link beside the add
+  // action, to the teams screen. Still a link, still no write on this list.
+  { name: 'the member list', file: MEMBER_LIST, expectedControls: 6 },
   // EIGHT on the create form: four `<Input>`s — name, username, address,
   // allowance — the level `<select>`, and three `<Button>`s, which are Save,
   // Cancel and the link back to the list. The count is what notices a SIXTH
@@ -293,6 +306,14 @@ const SCREENS = [
   // the confirm and cancel that replace the offer — the same two-step shape the
   // reset has, because one press must not end somebody's access.
   { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 16 },
+  // STORY 1.7a. FOUR on the team list: the link back to `Ljudi`, the one name
+  // `<Input>`, the add `<Button>`, and ONE row link written once inside the map
+  // over the teams — the same count at zero teams as at nine. SIX on one team:
+  // the name `<Input>`, Save, the archive offer, the confirm and cancel that
+  // replace it, and the link back. No delete control exists on either, which is
+  // what the counts keep true.
+  { name: 'the team list', file: TEAM_LIST, expectedControls: 4 },
+  { name: 'the team edit form', file: TEAM_EDIT, expectedControls: 6 },
   // ZERO on all seven, and asserted rather than assumed: a destination is a
   // heading and nothing else in this story, so the first control any of them
   // grows is a later story's work arriving without that story's review. The
@@ -384,6 +405,11 @@ const FORM_SCREENS = [
     inFlight: 'issuing',
   },
   { name: 'the member edit form', file: MEMBER_EDIT, effect: 'saveMember(', inFlight: 'saving' },
+  // Story 1.7a's two. `creating` on the list, which brings a team into
+  // existence, and `writing` on one team, shared by its rename and its archive
+  // because the two must never run at once on the same row.
+  { name: 'the team list', file: TEAM_LIST, effect: 'createTeam(', inFlight: 'creating' },
+  { name: 'the team edit form', file: TEAM_EDIT, effect: 'renameTeam(', inFlight: 'writing' },
 ];
 
 /** The form screens that await something, so something can be in flight. */
@@ -440,6 +466,20 @@ const IN_FLIGHT_HANDLERS = [
     // ITS OWN REFUSAL STATE, so the date control is described by the status
     // block's alert and never by an unrelated error on the form.
     failure: 'setStatusFailure',
+  },
+  {
+    // STORY 1.7a, the team edit form's second awaiting handler. It shares the
+    // rename's `writing` ref on purpose: a rename and an archive of one team
+    // in flight together would race on the same row.
+    name: "the team edit form's archive",
+    file: TEAM_EDIT,
+    effect: 'archiveTeam(',
+    inFlight: 'writing',
+    handler: 'archive',
+    pending: 'setPending',
+    // ITS OWN REFUSAL STATE, announced inside the archive block, so a refused
+    // archive never marks the name field invalid.
+    failure: 'setArchiveFailure',
   },
 ];
 
@@ -1145,10 +1185,55 @@ const KEY_SOURCES = [
     // the date as well. Whether a member is inactive today or scheduled out is
     // `@/members/list`'s decision, as at the organization's today; the screen
     // only renders the kind of cell the column produced.
+    //
+    // ELEVEN SINCE STORY 1.7a: the link to the teams screen, which renders
+    // `smjene.heading`, the teams screen's own heading, as its text.
     name: 'the member list',
     file: MEMBER_LIST,
     keys: translationKeys,
-    strings: 10,
+    strings: 11,
+  },
+  {
+    // STORY 1.7a. EIGHT on the team list: its heading, the link back
+    // (`nav.ljudi`, the destination it returns to), the name label, the add
+    // action, the created confirmation, the active group's heading and count,
+    // and the archived group's count, which IS its heading. Both counts are ICU
+    // plurals and are rendered at zero. The row action (edit or view) and the
+    // refusals reach `t()` through the two `@/teams` modules.
+    name: 'the team list',
+    file: TEAM_LIST,
+    keys: translationKeys,
+    strings: 8,
+  },
+  {
+    // EIGHT on one team: the name label, Save, the archive offer, prompt,
+    // confirm and cancel, the note an archived team carries instead of
+    // controls, and the link back. The heading (edit or view) and the saved
+    // confirmation (renamed or archived) are chosen in `@/teams`, below.
+    name: 'the team edit form',
+    file: TEAM_EDIT,
+    keys: translationKeys,
+    strings: 8,
+  },
+  {
+    // FIVE over three unions, so read by `memberListKeys`, which reads every
+    // union rather than the first: the row action (edit, or view for an
+    // archived team), the one-team heading by the same rule, and the read
+    // failure. Zero rows is an answer here, not a refusal.
+    name: 'the team list rules',
+    file: TEAM_LIST_KEYS,
+    keys: memberListKeys,
+    strings: 5,
+  },
+  {
+    // NINE over two unions: seven refusals — the empty name, the taken name,
+    // the stale screen, the outright refusal, another invalid value, the
+    // service, and a team the list lacks — and the two confirmations, a rename
+    // and an archive, which are different sentences on purpose.
+    name: 'the team write rules',
+    file: TEAM_WRITE_KEYS,
+    keys: memberListKeys,
+    strings: 9,
   },
   {
     // THIRTEEN on the create form: its own heading, five field labels, the save
@@ -1338,8 +1423,11 @@ describe('the screen is read at all, so every sweep below means something', () =
     // failure-to-message union. That union cannot live in a `.tsx` — nothing
     // executes one — so the module is a source in its own right, exactly as
     // `@/members/list` is.
-    expect(SCREENS).toHaveLength(16);
-    expect(KEY_SOURCES).toHaveLength(21);
+    //
+    // EIGHTEEN AND TWENTY-FIVE SINCE STORY 1.7a: the two team screens, and
+    // four key sources — both screens and both `@/teams` modules.
+    expect(SCREENS).toHaveLength(18);
+    expect(KEY_SOURCES).toHaveLength(25);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -2197,6 +2285,80 @@ describe('the member list reads once, under one key', () => {
 
     expect(occurrences(screen, 'useQuery(')).toBe(1);
     expect(occurrences(screen, 'readMembers(')).toBe(1);
+  });
+
+  it.each([
+    { name: 'the team list', file: TEAM_LIST },
+    { name: 'the team edit form', file: TEAM_EDIT },
+  ])('reads the teams exactly once, under the one team key, on $name', ({ file }) => {
+    // STORY 1.7a, AD-13. The rows, both counts and the edited team all come
+    // from one read under `TEAMS_LIST_KEY`. The create's organization is the
+    // session's own claim, never a second query.
+    const screen = source(file);
+
+    expect(occurrences(screen, 'useQuery(')).toBe(1);
+    expect(occurrences(screen, 'readTeams(')).toBe(1);
+    // Every key named — the read's and the re-read's — is the one team key.
+    expect(occurrences(screen, 'queryKey: TEAMS_LIST_KEY')).toBeGreaterThan(0);
+    expect(occurrences(screen, 'queryKey:')).toBe(occurrences(screen, 'queryKey: TEAMS_LIST_KEY'));
+    expect(screen, 'the team read has no cache floor').toContain('staleTime: TEAMS_READ_STALE_MS');
+    expect(screen, 'a write is not followed by a re-read of the one list').toContain(
+      'invalidateQueries({ queryKey: TEAMS_LIST_KEY })',
+    );
+    expect(screen, 'useMutation arrived; this repository uses a pending ref').not.toContain(
+      'useMutation',
+    );
+  });
+
+  it('offers an archived team nothing that writes', () => {
+    // An archived team is frozen by the database's update policy; its screen
+    // must not offer a control the database will refuse.
+    const archived = componentFunction(source(TEAM_EDIT), 'renderArchived');
+
+    expect(archived.length, 'renderArchived could not be extracted').toBeGreaterThan(80);
+    expect(archived).not.toMatch(/<(Button|Input|form|select)\b/);
+    expect(componentFunction(source(TEAM_EDIT), 'renderTeam')).toMatch(
+      /if \(team\.archived\) return renderArchived\(team\);/,
+    );
+  });
+
+  it('describes the name field by the rename refusal alone', () => {
+    const screen = source(TEAM_EDIT);
+
+    expect(screen).toContain('aria-invalid={failure !== null}');
+    expect(screen).toContain("aria-describedby={failure === null ? undefined : 'team-form-error'}");
+    expect(namedHandler(screen, 'archive'), 'an archive refusal marks the name field').not.toMatch(
+      /\bsetFailure\(outcome/,
+    );
+  });
+
+  it('disarms the archive confirmation when a rename is submitted', () => {
+    expect(namedHandler(source(TEAM_EDIT), 'submit')).toContain('setArmed(false)');
+  });
+
+  it('remounts the team screen per route id, so no state crosses teams', () => {
+    expect(source(TEAM_EDIT)).toMatch(/<TeamScreen key=\{id\} id=\{id\} \/>/);
+  });
+
+  it('announces confirmations and never the counts', () => {
+    const screen = source(TEAM_LIST);
+
+    expect(occurrences(screen, 'role="status"'), 'only the created confirmation is live').toBe(1);
+    expect(screen).toMatch(/role="status"[^>]*>\s*\{t\('smjene\.created'\)\}/);
+  });
+
+  it('clears a confirmation when the name is edited again', () => {
+    // A confirmation describes the last save, not what is typed now.
+    expect(source(TEAM_LIST)).toMatch(/onChange=\{\(\) => \{[\s\S]{0,120}?setCreated\(false\)/);
+    expect(source(TEAM_EDIT)).toMatch(/onChange=\{\(\) => \{[\s\S]{0,120}?setSaved\(null\)/);
+  });
+
+  it('offers no delete of a team anywhere on the surface', () => {
+    // Removing a team archives it; the database refuses a delete from anybody.
+    for (const file of [TEAM_LIST, TEAM_EDIT, TEAM_LIST_KEYS, TEAM_WRITE_KEYS]) {
+      expect(source(file), `${file} reaches for a delete`).not.toMatch(/\.delete\(/);
+      expect(source(file), `${file} writes archived: false`).not.toMatch(/archived:\s*false/);
+    }
   });
 
   it('bounds that read rather than re-running it on every window focus', () => {
@@ -3109,27 +3271,31 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // shape joined, and the whole reason these sweeps are driven off a list is
     // that the settings surface was covered by none of them until a second
     // screen made the gap obvious.
-    expect(IN_FLIGHT_SCREENS.length, 'no form screen declares an in-flight ref').toBe(4);
+    expect(IN_FLIGHT_SCREENS.length, 'no form screen declares an in-flight ref').toBe(6);
     expect(
       IN_FLIGHT_SCREENS.map((screen) => screen.inFlight).sort(),
       'the in-flight ref names drifted from the screens that hold them',
-    ).toEqual(['exchanging', 'issuing', 'saving', 'saving']);
-    // FIVE HANDLERS OVER FOUR SCREENS, and the mismatch is the point: the edit
-    // form owns two awaiting handlers, and while these sweeps counted SCREENS
-    // the second one was read by none of them. A list that silently fell back
+    ).toEqual(['creating', 'exchanging', 'issuing', 'saving', 'saving', 'writing']);
+    // NINE HANDLERS OVER SIX SCREENS, and the mismatch is the point: the member
+    // edit form owns three awaiting handlers and the team edit form two, and
+    // while these sweeps counted SCREENS the extra ones were read by none of
+    // them. A list that silently fell back
     // to one entry per file would make every sweep below miss exactly the
     // handler that was added last.
-    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(6);
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(9);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
       'the in-flight handler names drifted from the handlers that hold them',
     ).toEqual([
+      'archive/writing',
       'changeStatus/statusing',
       'issue/resetting',
+      'submit/creating',
       'submit/exchanging',
       'submit/issuing',
       'submit/saving',
       'submit/saving',
+      'submit/writing',
     ]);
     // NON-VACUITY ON THE EXTRACTOR ITSELF. A `namedHandler` that answered `''`
     // for every name would make all three sweeps below assert nothing at all.

@@ -747,7 +747,7 @@ describe('the organization slug is a legal DNS label', () => {
   });
 });
 
-describe('both tables carry row level security, and only story 1.3 policies open them', () => {
+describe('every organization table carries row level security, and only its reviewed privileges open it', () => {
   it.skipIf(noDatabase)('has row level security on', async () => {
     const client = await connect();
     try {
@@ -755,16 +755,18 @@ describe('both tables carry row level security, and only story 1.3 policies open
         `select relname, relrowsecurity
            from pg_class
           where relnamespace = 'public'::regnamespace
-            and relname in ('organizations', 'members', 'member_status_versions')
+            and relname in ('organizations', 'members', 'member_status_versions', 'teams')
           order by relname`,
       );
 
       // STORY 1.6 adds the versioned active status, which is organization data
-      // like the other two and is born with row level security on.
+      // like the other two and is born with row level security on. STORY 1.7a
+      // adds the teams, born the same way.
       expect(rows.map((row) => row.relname)).toEqual([
         'member_status_versions',
         'members',
         'organizations',
+        'teams',
       ]);
       for (const row of rows) {
         expect(row.relrowsecurity, `${row.relname} must have RLS enabled`).toBe(true);
@@ -797,6 +799,64 @@ describe('both tables carry row level security, and only story 1.3 policies open
         `select has_column_privilege('authenticated', 'public.member_status_versions', 'effective_from', 'INSERT') as held`,
       );
       expect(columns[0]?.held, 'the four fact columns lost their INSERT grant').toBe(true);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('holds no privilege on teams that no policy needs, and no delete at all', async () => {
+    // STORY 1.7a. "Remove" archives, so DELETE is revoked outright rather than
+    // left to match no policy: the privilege is the second lock on the one verb
+    // that destroys. `authenticated` keeps SELECT and column-level INSERT and
+    // UPDATE; `anon` keeps nothing.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ role: string; privilege: string; held: boolean }>(
+        `select role, privilege,
+                has_table_privilege(role, 'public.teams', privilege) as held
+           from unnest(array['anon', 'authenticated']) as role,
+                unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'])
+                  as privilege`,
+      );
+      const held = rows.filter((row) => row.held).map((row) => `${row.role}:${row.privilege}`);
+
+      expect(held.sort()).toEqual(['authenticated:SELECT']);
+
+      const { rows: columns } = await client.query<{ column: string; verb: string; held: boolean }>(
+        `select column_name as column, verb,
+                has_column_privilege('authenticated', 'public.teams', column_name, verb) as held
+           from unnest(array['organization_id', 'id', 'name', 'archived', 'created_by', 'created_at'])
+                  as column_name,
+                unnest(array['INSERT', 'UPDATE']) as verb`,
+      );
+      expect(
+        columns
+          .filter((row) => row.held)
+          .map((row) => `${row.verb}:${row.column}`)
+          .sort(),
+        'the writable team columns changed',
+      ).toEqual(['INSERT:name', 'INSERT:organization_id', 'UPDATE:archived', 'UPDATE:name']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('indexes teams by its tenant, and keys it for a composite reference', async () => {
+    // Q3, and the key 1.7b's membership takes a composite foreign key to.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ indexdef: string }>(
+        `select indexdef from pg_indexes
+          where schemaname = 'public' and tablename = 'teams'`,
+      );
+      expect(
+        rows.some((row) => /\(organization_id\)$/.test(row.indexdef)),
+        'no index leads with organization_id alone',
+      ).toBe(true);
+      expect(
+        rows.some((row) => /UNIQUE INDEX .* \(organization_id, id\)$/.test(row.indexdef)),
+        'no unique (organization_id, id) for a composite foreign key',
+      ).toBe(true);
     } finally {
       await client.end();
     }

@@ -7,6 +7,8 @@ import { indexRoute } from '@/routes/index';
 import { kalendarRoute } from '@/routes/kalendar';
 import { ljudiMemberRoute } from '@/routes/ljudi.$id';
 import { ljudiNoviRoute } from '@/routes/ljudi.novi';
+import { ljudiSmjenaRoute } from '@/routes/ljudi.smjene.$id';
+import { ljudiSmjeneRoute } from '@/routes/ljudi.smjene';
 import { ljudiRoute } from '@/routes/ljudi';
 import { organizacijaRoute } from '@/routes/organizacija';
 import { postavkeRotacijeRoute } from '@/routes/postavke-rotacije';
@@ -50,6 +52,12 @@ const appDestinations = appLayoutRoute.addChildren([
   // behaviour — but `router.test.ts` pins `/ljudi/novi` resolving to the static
   // route, because the day that ranking changes, `novi` becomes an id.
   ljudiNoviRoute,
+  // STORY 1.7a's two, on the same terms: nested under the layout, absent from
+  // the destinations (the `Ljudi` tab lights for them), each with its own role
+  // guard. `/ljudi/smjene` is static and must win over `/ljudi/$id`, which
+  // `router.test.ts` pins for the reason it pins `/ljudi/novi`.
+  ljudiSmjeneRoute,
+  ljudiSmjenaRoute,
   ljudiMemberRoute,
   postavkeRotacijeRoute,
   organizacijaRoute,
