@@ -290,7 +290,14 @@ development_status:
   # versioned team membership (clauses 2 and 3) and waits in deferred-work.md,
   # earning its key when specced — so the parent completes with 1.7b.
   1-7-an-admin-creates-teams-and-moves-people-between-them: in-progress
-  1-7a-teams: review
+  # Merged to main in 988743f (PR #22) and its spec carries status done with
+  # review_loop_iteration 0 — three adversarial layers, no loopback, 12 patches,
+  # two findings deferred to deferred-work.md (whitespace trimming and name
+  # length, both shared with members and organizations). Reconciled 2026-09-24.
+  # The 1-7 parent above stays in-progress: per the convention recorded there it
+  # closes with its LAST part, which is 1.7b's versioned team membership waiting
+  # in deferred-work.md, not with this one.
+  1-7a-teams: done
   1-8-a-member-sees-who-is-on-a-team: backlog
   epic-1-retrospective: optional
 
