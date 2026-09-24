@@ -214,9 +214,10 @@ const CROSS_TENANT = FIXTURES.flatMap((self) =>
   })),
 );
 
-/** Both fixtures against both readable tables. */
+/** Both fixtures against every organization-scoped table a session reads:
+ *  `organizations`, `members`, and since story 1.7a `teams`. */
 const OWN_ORGANIZATION_READS = FIXTURES.flatMap((entry) =>
-  (['organizations', 'members'] as const).map((table) => ({ ...entry, table })),
+  (['organizations', 'members', 'teams'] as const).map((table) => ({ ...entry, table })),
 );
 
 /** Name and address prefix for rows this file creates outside a transaction. */
@@ -777,10 +778,36 @@ async function addThrowawayMember(client: Client, organization: string): Promise
   };
 }
 
+/**
+ * A team committed into `organization` as the owner, attributed to
+ * `createdBy`, for a case that runs outside a transaction. Named with the
+ * throwaway prefix and its own random suffix, so no two collide under the
+ * per-organization unique and `afterAll` reaches every one of them.
+ */
+async function addThrowawayTeam(
+  client: Client,
+  organization: string,
+  createdBy: string,
+  archived = false,
+): Promise<{ readonly id: string; readonly name: string }> {
+  const { rows } = await client.query<{ id: string; name: string }>(
+    `insert into teams (organization_id, name, archived, created_by)
+     values ($1, $2 || ' ' || gen_random_uuid()::text, $3, $4)
+     returning id, name`,
+    [organization, `${THROWAWAY} team`, archived, createdBy],
+  );
+  const team = rows[0];
+  if (team === undefined) throw new Error('teams insert returned no row');
+  return team;
+}
+
 afterAll(async () => {
   if (noDatabase) return;
   const client = await connect();
   try {
+    // STORY 1.7a. Teams are never deleted through the product, but the owner
+    // may; scoped to the names this file issues, like every cleanup here.
+    await client.query('delete from teams where name like $1', [`${THROWAWAY}%`]);
     // The members rows cascade from auth.users, and every address this file
     // issues carries the throwaway domain, so this reaches all of them.
     await client.query('delete from auth.users where email like $1', [
@@ -847,8 +874,8 @@ describe('the access-control layer is present, so nothing below passes vacuously
     ).toBe(FIXTURES.length * (FIXTURES.length - 1));
     expect(
       OWN_ORGANIZATION_READS.length,
-      'OWN_ORGANIZATION_READS must cover both readable tables per fixture',
-    ).toBe(FIXTURES.length * 2);
+      'OWN_ORGANIZATION_READS must cover all three readable tables per fixture (teams since 1.7a)',
+    ).toBe(FIXTURES.length * 3);
   });
 
   it.skipIf(noDatabase)('reaches the API whenever it can reach the database', () => {
@@ -927,7 +954,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
       );
       expect(
         policies.map((row) => row.policyname),
-        'stories 1.3a, 1.4a and 1.6 own exactly these nine policies; a missing one refuses silently and looks like a working refusal',
+        'stories 1.3a, 1.4a, 1.6 and 1.7a own exactly these twelve policies; a missing one refuses silently and looks like a working refusal',
       ).toEqual([
         // STORY 1.6: select, insert, and a delete that reaches only a version
         // not yet in effect — and never update: a status version is appended,
@@ -941,6 +968,11 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'members_update_by_own_active_admin',
         'organizations_select_own_organization',
         'organizations_update_by_own_active_admin',
+        // STORY 1.7a: read, create, and an update that renames or archives.
+        // Never delete — removing a team archives it.
+        'teams_insert_by_own_active_admin',
+        'teams_select_own_organization',
+        'teams_update_by_own_active_admin',
       ]);
 
       const { rows: functions } = await client.query<{ proname: string }>(
@@ -1136,6 +1168,16 @@ describe('a direct API call reaches exactly one organization', () => {
       const client = await connect();
       try {
         const own = await organizationId(client, slug);
+        // STORY 1.7a. The seed carries no teams (a seeded one would need a
+        // forged attribution), so this case makes the one it reads, in each
+        // fixture — the other fixture's is what a leak would show.
+        if (table === 'teams') {
+          for (const entry of FIXTURES) {
+            const organization = await organizationId(client, entry.slug);
+            const creator = await memberByUsername(client, entry.slug, entry.admin);
+            await addThrowawayTeam(client, organization, creator.authUserId);
+          }
+        }
         const rows = await restRows(`${table}?select=*`, { token });
 
         expect(rows.length, `${slug} read no ${table} rows at all`).toBeGreaterThan(0);
@@ -6043,13 +6085,23 @@ describe('a deactivated member loses access on the very next statement', () => {
       // the helper is read fresh on every statement.
       await inRolledBackTransaction(async (client) => {
         const caller = await memberByUsername(client, slug, admin);
+        // STORY 1.7a: a team to read, so the teams count below is not 0 = 0.
+        await client.query(
+          'insert into teams (organization_id, name, created_by) values ($1, $2, $3)',
+          [caller.organizationId, `${THROWAWAY} deactivation read`, caller.authUserId],
+        );
+        const teamsVisible = async (): Promise<number> =>
+          (await client.query<{ total: number }>('select count(*)::int as total from teams'))
+            .rows[0]?.total ?? -1;
 
         await actAs(client, caller.authUserId, caller.organizationId);
         const before = await visibleToSession(client);
+        const teamsBefore = await teamsVisible();
         await actAsOwner(client);
 
         expect(before.members).toBeGreaterThan(0);
         expect(before.organizations).toBeGreaterThan(0);
+        expect(teamsBefore, 'an active account read no teams').toBeGreaterThan(0);
 
         await ownerVersion(client, {
           organization: caller.organizationId,
@@ -6064,8 +6116,10 @@ describe('a deactivated member loses access on the very next statement', () => {
         const versions = await client.query<{ total: number }>(
           'select count(*)::int as total from member_status_versions',
         );
+        const teamsAfter = await teamsVisible();
         await actAsOwner(client);
 
+        expect(teamsAfter, 'a deactivated account kept reading teams').toBe(0);
         expect(after.members, 'a deactivated account kept reading members').toBe(0);
         expect(after.organizations, 'a deactivated account kept reading its organization').toBe(0);
         expect(versions.rows[0]?.total, 'a deactivated account kept reading versions').toBe(0);
@@ -6108,6 +6162,50 @@ describe('a deactivated member loses access on the very next statement', () => {
 
         expect(updated.rowCount, 'a deactivated admin kept updating').toBe(0);
         expect(deleted.rowCount, 'a deactivated admin kept deleting').toBe(0);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses the next team insert and matches no team on the next update after the $fixture admin is deactivated',
+    async ({ slug, admin }) => {
+      // STORY 1.7a. COLUMN-FREE updates — a constant SET and no WHERE — for the
+      // reason the members case above gives: a statement that reads a column
+      // is also filtered by the select policy, which would refuse it on its own
+      // and hide a write policy that lost its `is_active`. The insert likewise
+      // carries no RETURNING: returning a row is checked against the select
+      // policy too, which would refuse it and mask the insert policy. The team
+      // is fresh and active, so `archived = false` in USING cannot be what
+      // refuses the update.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const { rows } = await client.query<{ id: string }>(
+          `insert into teams (organization_id, name, created_by) values ($1, $2, $3) returning id`,
+          [caller.organizationId, `${THROWAWAY} deactivation write`, caller.authUserId],
+        );
+        const team = rows[0]?.id ?? '';
+
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: caller.id,
+          active: false,
+          from: await organizationDay(client, caller.organizationId),
+          by: caller.authUserId,
+        });
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const insertRefusal = await refusedThenContinue(client, () =>
+          client.query('insert into teams (organization_id, name) values ($1, $2)', [
+            caller.organizationId,
+            `${THROWAWAY} after deactivation`,
+          ]),
+        );
+        const archived = await client.query('update teams set archived = true');
+        await actAsOwner(client);
+
+        expect(insertRefusal.code, 'a deactivated admin kept creating teams').toBe('42501');
+        expect(archived.rowCount, 'a deactivated admin kept archiving teams').toBe(0);
+        expect((await teamById(client, team))?.archived).toBe(false);
       });
     },
   );
@@ -6487,7 +6585,11 @@ describe('a deactivation reaches a direct API caller and ends a real sign-in', (
 
         // AC 3 over the shipped path: the token minted before the version still
         // authenticates to PostgREST and reads nothing from any table.
-        for (const table of ['members', 'organizations', 'member_status_versions']) {
+        // STORY 1.7a: a committed team, so the teams read below has something
+        // to leak.
+        await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+
+        for (const table of ['members', 'organizations', 'member_status_versions', 'teams']) {
           expect(
             await restRows(`${table}?select=id`, { token }),
             `a deactivated account read ${table} with its earlier token`,
@@ -6576,6 +6678,547 @@ describe('a deactivation reaches a direct API caller and ends a real sign-in', (
         expect(response.ok, 'a member-role account deactivated somebody').toBe(false);
         expect(refusal.code).toBe('42501');
         expect(await versionsOf(client, target.id)).toEqual([]);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+});
+
+// ---------------------------------------------------------------------- teams
+
+/**
+ * STORY 1.7a. Every team the SQL cases below write is inside a rolled-back
+ * transaction, so none of them outlives its case; the REST cases commit, and
+ * name their teams with the throwaway prefix `afterAll` removes.
+ */
+interface TeamRow {
+  readonly id: string;
+  readonly organizationId: string;
+  readonly name: string;
+  readonly archived: boolean;
+  readonly createdBy: string;
+}
+
+/** One team re-read as the owner, so RLS hides nothing. */
+async function teamById(client: Client, id: string): Promise<TeamRow | undefined> {
+  const { rows } = await client.query<TeamRow>(
+    `select id,
+            organization_id as "organizationId",
+            name,
+            archived,
+            created_by as "createdBy"
+       from teams where id = $1`,
+    [id],
+  );
+  return rows[0];
+}
+
+/** Insert one team as the current session, returning its id. */
+async function insertTeam(client: Client, organization: string, name: string): Promise<string> {
+  const { rows } = await client.query<{ id: string }>(
+    'insert into teams (organization_id, name) values ($1, $2) returning id',
+    [organization, name],
+  );
+  const team = rows[0];
+  if (team === undefined) throw new Error('teams insert returned no row');
+  return team.id;
+}
+
+/** The teams the current session can see, active and archived, counted. */
+async function visibleTeams(client: Client): Promise<{ active: number; archived: number }> {
+  const { rows } = await client.query<{ active: number; archived: number }>(
+    `select count(*) filter (where not archived)::int as active,
+            count(*) filter (where archived)::int as archived
+       from teams`,
+  );
+  const counted = rows[0];
+  if (counted === undefined) throw new Error('the count query returned no row');
+  return counted;
+}
+
+describe('an admin creates, renames and archives teams, and any count is just a count', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'lets the $fixture admin create one, then four, then nine teams, each read back and counted',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const before = await visibleTeams(client);
+        const made: string[] = [];
+        for (const target of [1, 4, 9]) {
+          while (made.length < target) {
+            made.push(
+              await insertTeam(client, caller.organizationId, `${THROWAWAY} team ${made.length + 1}`),
+            );
+          }
+          expect(
+            (await visibleTeams(client)).active - before.active,
+            `the ${slug} admin does not see exactly ${target} of the teams they created`,
+          ).toBe(target);
+        }
+
+        // SCOPED TO THE ROWS THIS CASE MADE, by id: other cases commit
+        // throwaway teams outside any transaction, and a name prefix would
+        // read theirs too.
+        const { rows } = await client.query<{ createdBy: string; total: number }>(
+          `select created_by as "createdBy", count(*)::int as total
+             from teams where id = any($1::uuid[]) group by created_by`,
+          [made],
+        );
+        expect(rows, 'a team was attributed to somebody other than its creator').toEqual([
+          { createdBy: caller.authUserId, total: made.length },
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a blank $fixture team name and writes nothing',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const before = await visibleTeams(client);
+
+        const refusal = await refusedThenContinue(client, () =>
+          insertTeam(client, caller.organizationId, '   '),
+        );
+
+        expect(refusal.code, 'a blank name is a check violation').toBe('23514');
+        expect(await visibleTeams(client)).toEqual(before);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture team name an active team already carries, in any case and padding',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        await insertTeam(client, caller.organizationId, `${THROWAWAY} Čvor`);
+
+        const refusal = await refusedThenContinue(client, () =>
+          insertTeam(client, caller.organizationId, ` ${THROWAWAY} čvor `.toUpperCase()),
+        );
+
+        expect(refusal.code, 'a duplicate active name is a unique violation').toBe('23505');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'admits a $fixture team name that only an archived team carries',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const name = `${THROWAWAY} reused`;
+        const first = await insertTeam(client, caller.organizationId, name);
+        const archived = await client.query('update teams set archived = true where id = $1', [
+          first,
+        ]);
+
+        expect(archived.rowCount).toBe(1);
+
+        const second = await insertTeam(client, caller.organizationId, name);
+
+        expect(second).not.toBe(first);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses renaming a $fixture team into the name another active team carries',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        await insertTeam(client, caller.organizationId, `${THROWAWAY} taken`);
+        const other = await insertTeam(client, caller.organizationId, `${THROWAWAY} other`);
+
+        const refusal = await refusedThenContinue(client, () =>
+          client.query('update teams set name = $1 where id = $2', [` ${THROWAWAY} TAKEN `, other]),
+        );
+        await actAsOwner(client);
+
+        expect(refusal.code, 'a rename into an active name is a unique violation').toBe('23505');
+        expect((await teamById(client, other))?.name).toBe(`${THROWAWAY} other`);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'admits renaming a $fixture team to a name only an archived team carries',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const retired = await insertTeam(client, caller.organizationId, `${THROWAWAY} retired name`);
+        await client.query('update teams set archived = true where id = $1', [retired]);
+        const other = await insertTeam(client, caller.organizationId, `${THROWAWAY} renamed later`);
+
+        const renamed = await client.query('update teams set name = $1 where id = $2', [
+          `${THROWAWAY} retired name`,
+          other,
+        ]);
+        await actAsOwner(client);
+
+        expect(renamed.rowCount, 'a name only an archived team carries was refused').toBe(1);
+        expect((await teamById(client, other))?.name).toBe(`${THROWAWAY} retired name`);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'renames a $fixture team in place and archives it without removing the row',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const id = await insertTeam(client, caller.organizationId, `${THROWAWAY} before`);
+
+        const renamed = await client.query('update teams set name = $1 where id = $2', [
+          `${THROWAWAY} after`,
+          id,
+        ]);
+        const archived = await client.query('update teams set archived = true where id = $1', [
+          id,
+        ]);
+        await actAsOwner(client);
+
+        expect(renamed.rowCount, `the ${slug} admin could not rename a team`).toBe(1);
+        expect(archived.rowCount, `the ${slug} admin could not archive a team`).toBe(1);
+        expect(await teamById(client, id)).toMatchObject({
+          id,
+          name: `${THROWAWAY} after`,
+          archived: true,
+        });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'freezes an archived $fixture team: no rename and no unarchive',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const id = await insertTeam(client, caller.organizationId, `${THROWAWAY} frozen`);
+        await client.query('update teams set archived = true where id = $1', [id]);
+
+        const renamed = await client.query('update teams set name = $1 where id = $2', [
+          `${THROWAWAY} thawed`,
+          id,
+        ]);
+        const unarchived = await client.query('update teams set archived = false where id = $1', [
+          id,
+        ]);
+        await actAsOwner(client);
+
+        expect(renamed.rowCount, 'an archived team was renamed').toBe(0);
+        expect(unarchived.rowCount, 'an archived team was unarchived').toBe(0);
+        expect(await teamById(client, id)).toMatchObject({
+          name: `${THROWAWAY} frozen`,
+          archived: true,
+        });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses the $fixture admin deleting a team, and keeps the row',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const id = await insertTeam(client, caller.organizationId, `${THROWAWAY} kept`);
+
+        const refusal = await refusedThenContinue(client, () =>
+          client.query('delete from teams where id = $1', [id]),
+        );
+        await actAsOwner(client);
+
+        expect(refusal.code, 'the delete privilege is revoked, so this is 42501').toBe('42501');
+        expect(await teamById(client, id), 'a team was deleted').toBeDefined();
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture admin forging the attribution of a team',
+    async ({ slug, admin, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const other = await memberByUsername(client, slug, bystander);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const refusal = await refusedThenContinue(client, () =>
+          client.query('insert into teams (organization_id, name, created_by) values ($1, $2, $3)', [
+            caller.organizationId,
+            `${THROWAWAY} forged`,
+            other.authUserId,
+          ]),
+        );
+
+        expect(refusal.code, 'created_by is not a column a session may name').toBe('42501');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture member-role session creating, renaming or archiving a team',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const caller = await memberByUsername(client, slug, member);
+        const { rows } = await client.query<{ id: string }>(
+          `insert into teams (organization_id, name, created_by) values ($1, $2, $3) returning id`,
+          [owner.organizationId, `${THROWAWAY} admin made`, owner.authUserId],
+        );
+        const id = rows[0]?.id ?? '';
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const insertRefusal = await refusedThenContinue(client, () =>
+          insertTeam(client, caller.organizationId, `${THROWAWAY} member made`),
+        );
+        const renamed = await client.query('update teams set name = $1 where id = $2', [
+          `${THROWAWAY} member renamed`,
+          id,
+        ]);
+        const archived = await client.query('update teams set archived = true where id = $1', [id]);
+        await actAsOwner(client);
+
+        expect(insertRefusal.code, 'a member-role insert is refused by WITH CHECK').toBe('42501');
+        expect(renamed.rowCount, `a ${slug} member renamed a team`).toBe(0);
+        expect(archived.rowCount, `a ${slug} member archived a team`).toBe(0);
+        expect(await teamById(client, id)).toMatchObject({
+          name: `${THROWAWAY} admin made`,
+          archived: false,
+        });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'shows a $fixture member-role session active and archived teams alike, unchanged',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const caller = await memberByUsername(client, slug, member);
+        const { rows: made } = await client.query<{ id: string }>(
+          `insert into teams (organization_id, name, archived, created_by)
+           values ($1, $2, false, $4), ($1, $3, true, $4)
+           returning id`,
+          [owner.organizationId, `${THROWAWAY} in use`, `${THROWAWAY} retired`, owner.authUserId],
+        );
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const { rows } = await client.query<{ name: string; archived: boolean }>(
+          'select name, archived from teams where id = any($1::uuid[]) order by name',
+          [made.map((row) => row.id)],
+        );
+
+        expect(rows).toEqual([
+          { name: `${THROWAWAY} in use`, archived: false },
+          { name: `${THROWAWAY} retired`, archived: true },
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'keeps $otherFixture teams out of reach of the $fixture admin',
+    async ({ slug, admin, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const other = await organizationId(client, otherSlug);
+        const { rows } = await client.query<{ id: string }>(
+          `insert into teams (organization_id, name, created_by) values ($1, $2, $3) returning id`,
+          [other, `${THROWAWAY} foreign`, caller.authUserId],
+        );
+        const foreign = rows[0]?.id ?? '';
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const read = await client.query('select id from teams where organization_id = $1', [other]);
+        const renamed = await client.query('update teams set name = $1 where id = $2', [
+          `${THROWAWAY} hijacked`,
+          foreign,
+        ]);
+        const archived = await client.query('update teams set archived = true where id = $1', [
+          foreign,
+        ]);
+        const insertRefusal = await refusedThenContinue(client, () =>
+          insertTeam(client, other, `${THROWAWAY} planted`),
+        );
+        const own = await insertTeam(client, caller.organizationId, `${THROWAWAY} own`);
+        const moved = await refusedThenContinue(client, () =>
+          client.query('update teams set organization_id = $1 where id = $2', [other, own]),
+        );
+        await actAsOwner(client);
+
+        expect(read.rowCount, `a ${slug} admin read ${otherSlug} teams`).toBe(0);
+        expect(renamed.rowCount, `a ${slug} admin renamed a ${otherSlug} team`).toBe(0);
+        expect(archived.rowCount, `a ${slug} admin archived a ${otherSlug} team`).toBe(0);
+        expect(insertRefusal.code).toBe('42501');
+        expect(moved.code, 'organization_id is not a column a session may update').toBe('42501');
+        expect(await teamById(client, foreign)).toMatchObject({
+          name: `${THROWAWAY} foreign`,
+          archived: false,
+        });
+      });
+    },
+  );
+});
+
+describe('a direct API call writes teams under exactly the same rules', () => {
+  it.skipIf(noApi).each(FIXTURES)(
+    'lets the $fixture admin create, rename and archive a team over PostgREST',
+    async ({ slug, admin }) => {
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+        const name = `${THROWAWAY} rest ${crypto.randomUUID()}`;
+        const created = await rest('teams?select=id', {
+          token,
+          method: 'POST',
+          body: { organization_id: own, name },
+          prefer: 'return=representation',
+        });
+        expect(created.status, 'a permitted insert answers 201').toBe(201);
+        const [row] = (await created.json()) as readonly { id: string }[];
+        const id = row?.id ?? '';
+
+        const renamed = await rest(`teams?id=eq.${id}&select=id`, {
+          token,
+          method: 'PATCH',
+          body: { name: `${name} renamed` },
+          prefer: 'return=representation',
+        });
+        expect(await renamed.json(), 'the rename reached no row').toEqual([{ id }]);
+
+        const archived = await rest(`teams?id=eq.${id}&select=id`, {
+          token,
+          method: 'PATCH',
+          body: { archived: true },
+          prefer: 'return=representation',
+        });
+        expect(await archived.json(), 'the archive reached no row').toEqual([{ id }]);
+
+        const unarchived = await rest(`teams?id=eq.${id}&select=id`, {
+          token,
+          method: 'PATCH',
+          body: { archived: false },
+          prefer: 'return=representation',
+        });
+        expect(await unarchived.json(), 'an archived team was unarchived').toEqual([]);
+
+        expect(await teamById(client, id)).toMatchObject({
+          name: `${name} renamed`,
+          archived: true,
+        });
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses a $fixture admin deleting a team over PostgREST, and keeps the row',
+    async ({ slug, admin }) => {
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      try {
+        const caller = await memberByUsername(client, slug, admin);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+
+        const response = await rest(`teams?id=eq.${team.id}`, { token, method: 'DELETE' });
+        const refusal = await restRefusal(response);
+
+        expect(response.ok, 'a team was deleted over PostgREST').toBe(false);
+        expect(refusal.code).toBe('42501');
+        expect(await teamById(client, team.id)).toBeDefined();
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses a $fixture member-role token creating or renaming a team over PostgREST',
+    async ({ slug, admin, member }) => {
+      const token = await tokenFor(member, slug);
+      const client = await connect();
+      try {
+        const owner = await memberByUsername(client, slug, admin);
+        const team = await addThrowawayTeam(client, owner.organizationId, owner.authUserId);
+
+        const created = await rest('teams', {
+          token,
+          method: 'POST',
+          body: { organization_id: owner.organizationId, name: `${THROWAWAY} by a member` },
+        });
+        const refusal = await restRefusal(created);
+        const renamed = await rest(`teams?id=eq.${team.id}`, {
+          token,
+          method: 'PATCH',
+          body: { name: `${THROWAWAY} renamed by a member` },
+        });
+
+        expect(created.ok, 'a member-role account created a team').toBe(false);
+        expect(refusal.code).toBe('42501');
+        expect(renamed.status, 'a refused update matches no row and raises nothing').toBe(204);
+        expect((await teamById(client, team.id))?.name).toBe(team.name);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses a $fixture member-role token archiving a team over PostgREST, row unchanged',
+    async ({ slug, admin, member }) => {
+      const token = await tokenFor(member, slug);
+      const client = await connect();
+      try {
+        const owner = await memberByUsername(client, slug, admin);
+        const team = await addThrowawayTeam(client, owner.organizationId, owner.authUserId);
+
+        const archived = await rest(`teams?id=eq.${team.id}&select=id`, {
+          token,
+          method: 'PATCH',
+          body: { archived: true },
+          prefer: 'return=representation',
+        });
+
+        expect(await archived.json(), 'a member-role account archived a team').toEqual([]);
+        expect(await teamById(client, team.id)).toMatchObject({ name: team.name, archived: false });
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'returns archived teams to a $fixture member-role token, unchanged',
+    async ({ slug, admin, member }) => {
+      const token = await tokenFor(member, slug);
+      const client = await connect();
+      try {
+        const owner = await memberByUsername(client, slug, admin);
+        const team = await addThrowawayTeam(client, owner.organizationId, owner.authUserId, true);
+
+        expect(
+          await restRows(`teams?id=eq.${team.id}&select=id,name,archived`, { token }),
+        ).toEqual([{ id: team.id, name: team.name, archived: true }]);
       } finally {
         await client.end();
       }

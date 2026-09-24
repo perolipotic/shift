@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 09-23-2026
+last_updated: 09-24-2026
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -280,7 +280,17 @@ development_status:
   # deferred-work.md. Reconciled 2026-09-23. Story 1.6 was never split, so no
   # parent key waits on it.
   1-6-deactivating-a-member-changes-the-future-and-rewrites-no-his: done
-  1-7-an-admin-creates-teams-and-moves-people-between-them: backlog
+  # Story 1.7 was split once at step-01's multi-goal check (human decision
+  # 2026-09-23). Same convention as 1.1, 1.3, 1.4 and 1.5: the parent key below
+  # stays in-progress until every part lands; the parts carry their own status,
+  # are not derived from epics.md, and a regenerate reports them as orphans —
+  # reconcile with --set rather than dropping them.
+  # 1.7a is the teams themselves (epics.md acceptance clauses 1 and 4: any count,
+  # no name carries meaning, and removal archives rather than deletes). 1.7b is
+  # versioned team membership (clauses 2 and 3) and waits in deferred-work.md,
+  # earning its key when specced — so the parent completes with 1.7b.
+  1-7-an-admin-creates-teams-and-moves-people-between-them: in-progress
+  1-7a-teams: review
   1-8-a-member-sees-who-is-on-a-team: backlog
   epic-1-retrospective: optional
 

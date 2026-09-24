@@ -745,6 +745,16 @@ const AUTHORED_VOCABULARY = [
   'promijenio',
   'Provjeri',
   'mijenjati',
+  // STORY 1.7a's THREE, moved out of `NAVIGATION_AND_TERMINOLOGY` below the way
+  // every earned word has moved: the team screens are the first that may say
+  // the Team at all, so absence becomes a count. Lowercase `smjene` is NOT
+  // here, and cannot be: it is the key namespace (`smjene.*`) and a route
+  // segment (`/ljudi/smjene`), both of which ship in the chunk as data, so the
+  // word legitimately occurs more often there than in `hr.json`. The component
+  // names (`LjudiSmjeneScreen`) are excluded by the word boundary.
+  'Smjena',
+  'Smjene',
+  'smjena',
 ];
 
 /** Everything the terminology contract and the unshipped affordances still own.
@@ -763,7 +773,7 @@ const AUTHORED_VOCABULARY = [
  *  no ban, because it stops anybody looking. Both forms are counted above
  *  instead, which is the claim this list cannot make: not "nobody says it" but
  *  "only `hr.json` does". */
-const NAVIGATION_AND_TERMINOLOGY = ['Smjena', 'Smjene', 'smjena', 'Nema'];
+const NAVIGATION_AND_TERMINOLOGY = ['Nema'];
 
 /** The static Croatian in `index.html` (story 1.1d): the boot fallback, shown
  *  when localization init rejects or the bundle never loads at all. It cannot

@@ -22,6 +22,8 @@ import { indexRoute } from '@/routes/index';
 import { KalendarScreen, kalendarRoute } from '@/routes/kalendar';
 import { LjudiMemberScreen, ljudiMemberRoute } from '@/routes/ljudi.$id';
 import { LjudiNoviScreen, ljudiNoviRoute } from '@/routes/ljudi.novi';
+import { LjudiSmjenaScreen, ljudiSmjenaRoute } from '@/routes/ljudi.smjene.$id';
+import { LjudiSmjeneScreen, ljudiSmjeneRoute } from '@/routes/ljudi.smjene';
 import { LjudiScreen, ljudiRoute } from '@/routes/ljudi';
 import { NotFoundScreen } from '@/routes/not-found';
 import { OrganizacijaScreen, organizacijaRoute } from '@/routes/organizacija';
@@ -205,6 +207,20 @@ const LEVEL_GUARDED_ROUTES = [
     route: ljudiMemberRoute,
     component: LjudiMemberScreen,
   },
+  // STORY 1.7a: the team list and one team, both admin-only, both copies of
+  // the same guard, and neither a destination.
+  {
+    id: '/_app/ljudi/smjene',
+    path: '/ljudi/smjene',
+    route: ljudiSmjeneRoute,
+    component: LjudiSmjeneScreen,
+  },
+  {
+    id: '/_app/ljudi/smjene/$id',
+    path: '/ljudi/smjene/$id',
+    route: ljudiSmjenaRoute,
+    component: LjudiSmjenaScreen,
+  },
 ];
 
 describe('the shell route tree', () => {
@@ -240,6 +256,10 @@ describe('the shell route tree', () => {
       // route rather than being read as an id.
       '/_app/ljudi/$id',
       '/_app/ljudi/novi',
+      // STORY 1.7a. `/ljudi/smjene` is static and must beat `/ljudi/$id`; the
+      // block below pins that by matching it.
+      '/_app/ljudi/smjene',
+      '/_app/ljudi/smjene/$id',
       '/_app/organizacija',
       '/_app/postavke-rotacije',
       '/_app/raspored',
@@ -1522,10 +1542,10 @@ describe('the member list is the first destination that refuses a permission lev
      * over the branches that decide who gets in, so a copy that was pasted and
      * then quietly loosened fails here rather than shipping.
      */
-    it('guards exactly the three routes the table names, and no fewer', () => {
+    it('guards exactly the five routes the table names, and no fewer', () => {
       // NON-VACUITY. An entry deleted from the table takes its cases with it and
       // Vitest reports the shorter run as a pass.
-      expect(LEVEL_GUARDED_ROUTES).toHaveLength(3);
+      expect(LEVEL_GUARDED_ROUTES).toHaveLength(5);
       for (const { path, route } of LEVEL_GUARDED_ROUTES) {
         expect(
           (route.options as { beforeLoad?: unknown }).beforeLoad,
@@ -1597,6 +1617,15 @@ describe('the member list is the first destination that refuses a permission lev
         expect(asked, `${path} never asked the router context for the level`).toBe(1);
       },
     );
+
+    it('resolves /ljudi/smjene to the team list, never to a member called smjene', () => {
+      // The static-wins pin `/ljudi/novi` has, for the second static segment
+      // under `/ljudi`: read as `/ljudi/$id` it would open an edit form for a
+      // member whose id is `smjene`.
+      expect(match('/ljudi/smjene').at(-1)?.routeId).toBe('/_app/ljudi/smjene');
+      expect(match('/ljudi/smjene/abc').at(-1)?.routeId).toBe('/_app/ljudi/smjene/$id');
+      expect(match('/ljudi/abc').at(-1)?.routeId).toBe('/_app/ljudi/$id');
+    });
 
     it.each(LEVEL_GUARDED_ROUTES)('resolves $path to $id and to its own screen', ({ id, path, component }) => {
       // `/ljudi/novi` must not be read as `/ljudi/$id` with `id = 'novi'`, which

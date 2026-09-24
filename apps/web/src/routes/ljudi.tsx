@@ -246,9 +246,16 @@ export function LjudiScreen() {
             middle-click and "open in new tab" work the way they do everywhere
             else. `asChild` is what keeps the 44 px floor and the shared
             appearance on the anchor itself. */}
-        <Button asChild className="h-11">
-          <Link to="/ljudi/novi">{t('ljudi.form.add')}</Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {/* STORY 1.7a: the teams screen, reached from here rather than from
+              the navigation, so the destinations stay eight. */}
+          <Button asChild variant="outline" className="h-11">
+            <Link to="/ljudi/smjene">{t('smjene.heading')}</Link>
+          </Button>
+          <Button asChild className="h-11">
+            <Link to="/ljudi/novi">{t('ljudi.form.add')}</Link>
+          </Button>
+        </div>
       </div>
       <div className="flex flex-wrap items-end gap-4">
         <div className="grid min-w-0 flex-1 gap-2">
