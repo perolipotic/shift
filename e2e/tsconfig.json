@@ -1,0 +1,20 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // `dom` because `page.evaluate` callbacks run in the page. Kept out of the
+    // root project on purpose: there it would put `document` in scope for the
+    // Edge Function and every node-side test too.
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": ["node"],
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    // The E2E files import each other by their `.ts` path, which Playwright's
+    // loader and Node's own type stripping (`support/require-stack.ts`, run
+    // directly by `playwright.config.ts`) both resolve.
+    "allowImportingTsExtensions": true
+  },
+  "//": "The E2E suite's project, run by the root `typecheck` script. Separate from the root tsconfig only for the `dom` lib.",
+  "include": ["**/*.ts", "../playwright.config.ts"]
+}

@@ -10,8 +10,10 @@
   "scripts": {
     "build": "pnpm -r build",
     "lint": "eslint .",
-    "typecheck": "tsc -p tsconfig.json && pnpm -r typecheck",
+    "typecheck": "tsc -p tsconfig.json && tsc -p e2e/tsconfig.json && pnpm -r typecheck",
     "test": "pnpm -r test && vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "db:reset": "supabase db reset",
     "db:diff": "supabase db diff",
     "db:provision": "supabase db query --local -f supabase/operator/provision-organization.sql"
@@ -22,6 +24,7 @@
     "@babel/plugin-syntax-jsx": "8.0.1",
     "@babel/preset-typescript": "8.0.1",
     "@eslint/js": "10.0.1",
+    "@playwright/test": "1.63.0",
     "@types/culori": "4.0.1",
     "@types/node": "24.13.3",
     "@types/pg": "8.23.1",

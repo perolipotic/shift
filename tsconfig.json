@@ -12,7 +12,7 @@
     // step. Safe here because this project only ever type-checks.
     "allowImportingTsExtensions": true
   },
-  "//": "The workspace-root project. `pnpm -r` skips the root, so without this file `supabase/functions/**` — the only branching logic in the system — and every root test would be type-checked by nothing at all.",
+  "//": "The workspace-root project. `pnpm -r` skips the root, so without this file `supabase/functions/**` — the only branching logic in the system — and every root test would be type-checked by nothing at all. `e2e/**` and `playwright.config.ts` have their own project (`e2e/tsconfig.json`, for the `dom` lib the page callbacks need), chained by the root `typecheck` script.",
   "include": [
     "test/**/*.ts",
     "supabase/functions/**/*.ts",

@@ -18,3 +18,9 @@ supabase/.branches/
 
 .DS_Store
 *.log
+
+# Playwright E2E: stored sessions and per-run fixture facts, and run output
+e2e/.auth/
+test-results/
+playwright-report/
+blob-report/
