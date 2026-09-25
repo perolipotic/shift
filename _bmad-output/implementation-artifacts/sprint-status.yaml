@@ -340,7 +340,14 @@ development_status:
   # partition bar, which waits in deferred-work.md and earns its key when
   # specced — so the parent completes with 2.1b, not with 2.1a.
   2-1-an-admin-defines-the-day-s-hour-bands-so-a-gap-cannot-be-exp: in-progress
-  2-1a-hour-band-rule: review
+  # Merged to main in 599cb0f (PR #28) and its spec carries status done with
+  # review_loop_iteration 0 — three adversarial layers, no loopback, 9 patches,
+  # one finding deferred to deferred-work.md (the start-time unique is not
+  # deferrable, so a swap of two bands' starts fails — 2.1b's editor decides).
+  # Reconciled 2026-09-25. The 2-1 parent above stays in-progress: per the
+  # convention recorded there it closes with its LAST part, which is 2.1b's
+  # Hour Band editor waiting in deferred-work.md, not with this one.
+  2-1a-hour-band-rule: done
   2-2-an-admin-defines-shift-types-including-one-that-crosses-midn: backlog
   2-3-an-admin-builds-the-rotation-and-sees-the-cycle-before-savin: backlog
   2-4-rotation-configuration-completes-on-a-phone: backlog
