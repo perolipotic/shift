@@ -315,7 +315,9 @@ const SCREENS = [
   //
   // ELEVEN SINCE MEMBER RANK: the fire-rank setting's `<select>`, written on
   // change like the accent.
-  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 11 },
+  // NINE SINCE DESIGN REFRESH C: the type and zone inputs left the form; the
+  // leave year's day and month are selects now, still two controls.
+  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 9 },
   // THREE on the member list, and the count is what keeps a fourth from
   // arriving unreviewed: the search field, the permission-level filter, and ONE
   // `<Button>` — the sort control, written once inside a map over
@@ -380,8 +382,11 @@ const SCREENS = [
   // the name `<Input>`, Save, the archive offer, the confirm and cancel that
   // replace it, and the link back. No delete control exists on either, which is
   // what the counts keep true.
-  { name: 'the team list', file: TEAM_LIST, expectedControls: 4 },
-  { name: 'the team edit form', file: TEAM_EDIT, expectedControls: 6 },
+  // DESIGN REFRESH C: SIX on the team list, the add form in a dialog with the
+  // button that opens it and its cancel; FIVE on one team, a dialog over the
+  // list whose own close replaced the link back.
+  { name: 'the team list', file: TEAM_LIST, expectedControls: 6 },
+  { name: 'the team edit form', file: TEAM_EDIT, expectedControls: 5 },
   // STORY 1.8. ONE on the roster: the link back to Danas, a `<Button asChild>`.
   // No field, no form and no write — the count is what notices one arriving.
   // ZERO on Danas: its one new control is the `<Link>` to the roster, which
@@ -395,8 +400,13 @@ const SCREENS = [
   // midnight control exists, which is what the count keeps true. SEVEN on one
   // band: the two fields, Save, the removal offer, the confirm and cancel that
   // replace it, and the link back.
-  { name: 'the hour band list', file: HOUR_BAND_LIST, expectedControls: 5 },
-  { name: 'the hour band edit form', file: HOUR_BAND_EDIT, expectedControls: 7 },
+  // SEVEN ON THE LIST SINCE DESIGN REFRESH C: the add form moved into a
+  // dialog, which brought the button that opens it and the dialog's own
+  // cancel. The dialog's close button is `DialogHeader`'s, not the screen's.
+  { name: 'the hour band list', file: HOUR_BAND_LIST, expectedControls: 7 },
+  // SIX ON ONE BAND SINCE DESIGN REFRESH C: the edit form is a dialog over the
+  // list, and the link back gave way to the dialog's own close.
+  { name: 'the hour band edit form', file: HOUR_BAND_EDIT, expectedControls: 6 },
   // STORY 2.2b. SIX on the shift type list: the name `<Input>`, the working /
   // non-working `<select>`, the start and end `<Input type="time">`s (a
   // non-working type is offered neither), the add `<Button>`, and ONE row link
@@ -406,8 +416,11 @@ const SCREENS = [
   // and submit, and the cancel that replaces them while a correction is
   // scheduled; the archive offer, the confirm and cancel that replace it; and
   // the link back. No `is_working` control and no delete.
-  { name: 'the shift type list', file: SHIFT_TYPE_LIST, expectedControls: 6 },
-  { name: 'the shift type edit form', file: SHIFT_TYPE_EDIT, expectedControls: 11 },
+  // DESIGN REFRESH C: EIGHT on the list, the add form in a dialog with the
+  // button that opens it and its cancel; TEN on one type, a dialog over the
+  // list whose own close replaced the link back.
+  { name: 'the shift type list', file: SHIFT_TYPE_LIST, expectedControls: 8 },
+  { name: 'the shift type edit form', file: SHIFT_TYPE_EDIT, expectedControls: 10 },
   // ZERO on every remaining placeholder (four since story 2.2b built
   // `/postavke-rotacije`), and asserted rather than assumed: a placeholder is a
   // heading and nothing else, so the first control any of them grows is a
@@ -969,6 +982,11 @@ const STRUCTURAL_ATTRIBUTES = new Set([
   // that vocabulary, so `aria-invalid="Dani godišnjeg odmora"` is a failure
   // rather than a literal in the one attribute nothing else looks at.
   'aria-invalid',
+  // ADDED by design refresh C's dialogs, on `aria-describedby`'s own argument:
+  // `aria-labelledby` is an ID REFERENCE LIST. Its value names the dialog's
+  // heading on the same page and renders nowhere, so nothing user-facing can
+  // hide in it. `aria-label` remains guarded.
+  'aria-labelledby',
 ]);
 
 /** Content inside a template literal, with every `${…}` removed. */
@@ -1362,7 +1380,10 @@ const KEY_SOURCES = [
   //
   // FOURTEEN SINCE MEMBER RANK: the fire-rank setting's label. Its two option
   // names and its status line reach `t()` through `fireRanksMessageKey`.
-  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 14 },
+  //
+  // EIGHTEEN SINCE DESIGN REFRESH C: the lede, the logo's accepted formats,
+  // and the aside's title and body.
+  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 18 },
   {
     // EIGHT on the member list since story 1.5b, up from five, and the number is
     // still small because most of what this screen says is read off a table
@@ -1405,10 +1426,12 @@ const KEY_SOURCES = [
     // key `smjene.membership.column` rendered a second time for the reason
     // `ljudi.role` is, and the reset. The three team options reach `t()`
     // through `teamFilterMessageKey`, counted with the rules below.
+    //
+    // FOURTEEN SINCE DESIGN REFRESH C: the lede.
     name: 'the member list',
     file: MEMBER_LIST,
     keys: translationKeys,
-    strings: 13,
+    strings: 14,
   },
   {
     // STORY 1.7a. EIGHT on the team list: its heading, the link back
@@ -1417,20 +1440,27 @@ const KEY_SOURCES = [
     // and the archived group's count, which IS its heading. Both counts are ICU
     // plurals and are rendered at zero. The row action (edit or view) and the
     // refusals reach `t()` through the two `@/teams` modules.
+    //
+    // FIFTEEN SINCE DESIGN REFRESH C: the lede, the add dialog's open button,
+    // heading, close and cancel, and the table's heads (the name label again,
+    // and actions).
     name: 'the team list',
     file: TEAM_LIST,
     keys: translationKeys,
-    strings: 8,
+    strings: 15,
   },
   {
     // EIGHT on one team: the name label, Save, the archive offer, prompt,
     // confirm and cancel, the note an archived team carries instead of
     // controls, and the link back. The heading (edit or view) and the saved
     // confirmation (renamed or archived) are chosen in `@/teams`, below.
+    //
+    // NINE SINCE DESIGN REFRESH C, as a dialog: its close replaced the link
+    // back, and the archive offer shows a short word beside its whole name.
     name: 'the team edit form',
     file: TEAM_EDIT,
     keys: translationKeys,
-    strings: 8,
+    strings: 9,
   },
   {
     // FIVE over three unions, so read by `memberListKeys`, which reads every
@@ -1495,19 +1525,31 @@ const KEY_SOURCES = [
     // duration labels, the midnight flag, the coverage sentence, and the bar's
     // uncovered flag. Every figure is data from `@/hour-bands/list`; the
     // duration's shape and the refusals reach `t()` through the two modules.
+    //
+    // TWENTY-SEVEN SINCE DESIGN REFRESH C. The coverage sentence became two stat
+    // tiles (the covered label and value; the uncovered label, a second use of
+    // the flag's key), and the page gained its lede, the explainer's title and
+    // body, the dialog's open button, heading, close and cancel, the list and
+    // timeline headings, and the table's column heads (the name label again,
+    // from, to, the duration label and actions). THIRTY-TWO with the add
+    // dialog's computed end: its label, its pending text, the hint, and the
+    // preview's duration label and midnight flag.
     name: 'the hour band list',
     file: HOUR_BAND_LIST,
     keys: translationKeys,
-    strings: 13,
+    strings: 32,
   },
   {
     // TWELVE on one band: its heading, the two field labels, Save, the window
     // and duration labels, the midnight flag, the removal offer, prompt,
-    // confirm and cancel, and the link back.
+    // confirm and cancel, and the link back. FIFTEEN SINCE DESIGN REFRESH C,
+    // as a dialog: the window label gave way to the computed end's label,
+    // pending text and hint, the dialog's close replaced the link back, and
+    // the removal offer shows a short word beside its whole accessible name.
     name: 'the hour band edit form',
     file: HOUR_BAND_EDIT,
     keys: translationKeys,
-    strings: 12,
+    strings: 15,
   },
   {
     // FOUR over two unions: the duration's three shapes and the read failure.
@@ -1533,20 +1575,28 @@ const KEY_SOURCES = [
     // duration labels, the midnight flag and the scheduled correction. The
     // kind options, the duration's shape and the refusals reach `t()` through
     // the two modules.
+    //
+    // TWENTY-FIVE SINCE DESIGN REFRESH C: the lede, the add dialog's open
+    // button, heading, close and cancel, the table's column heads (name, kind,
+    // the times label again, the duration label, actions), the working pill
+    // beside the non-working one; the section heading became the card's.
     name: 'the shift type list',
     file: SHIFT_TYPE_LIST,
     keys: translationKeys,
-    strings: 16,
+    strings: 25,
   },
   {
     // On one type: the facts a row says (as on the list), the name and Save,
     // the times heading, date, start and end labels, the note, the set and
     // correct actions, the cancellation, the archive offer, prompt, confirm
     // and cancel, the archived note, and the link back.
+    // TWENTY-THREE SINCE DESIGN REFRESH C, as a dialog: its close replaced
+    // the link back, and the archive offer shows a short word beside its
+    // whole accessible name.
     name: 'the shift type edit form',
     file: SHIFT_TYPE_EDIT,
     keys: translationKeys,
-    strings: 22,
+    strings: 23,
   },
   {
     // The duration's three shapes, the read failure, and the two headings.
@@ -1576,10 +1626,12 @@ const KEY_SOURCES = [
     //
     // FOURTEEN SINCE MEMBER RANK: the rank control's label. Its options reach
     // `t()` through `rankMessageKey`, counted with the rank rules below.
+    // NINETEEN SINCE DESIGN REFRESH C: the lede, the two section headings,
+    // and the aside's title and body.
     name: 'the member create form',
     file: MEMBER_CREATE,
     keys: translationKeys,
-    strings: 14,
+    strings: 19,
   },
   {
     // EIGHTEEN on the edit form: its own heading, five field labels, save,
@@ -1614,10 +1666,13 @@ const KEY_SOURCES = [
     //
     // TWENTY-NINE SINCE MEMBER RANK: the rank control's label, as on the
     // create form.
+    //
+    // THIRTY-FOUR SINCE DESIGN REFRESH C: the form's two section headings, and
+    // the headings of the cards the team, status and password moved into.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 29,
+    strings: 34,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
@@ -1676,10 +1731,13 @@ const KEY_SOURCES = [
     // `memberStatusMessageKey`'s return union.
     // TWENTY-ONE SINCE THE TEAM FILTER: `teamFilterMessageKey`'s three counted
     // options — every team, a named team, and no team.
+    // TWENTY-FOUR SINCE DESIGN REFRESH C: `teamMarkerMessageKey`'s three
+    // markers for a scheduled team change — a move, no team, and a change
+    // that keeps the team.
     name: 'the member list rules',
     file: MEMBER_LIST_KEYS,
     keys: memberListKeys,
-    strings: 21,
+    strings: 24,
   },
   {
     // ONE on the lockup: the accessible name it falls back to when the
@@ -2818,7 +2876,9 @@ describe('the member list reads once, under one key', () => {
 
     expect(bar.length, 'renderBar could not be extracted').toBeGreaterThan(80);
     expect(bar).toContain('aria-hidden={true}');
-    expect(bar, 'the uncovered stretch is not hatched').toContain('hatch-uncovered');
+    // The hatch is `TimelineGap`'s, the primitive the uncovered stretch is drawn with.
+    expect(bar, 'the uncovered stretch is not hatched').toContain('<TimelineGap');
+    expect(source(join(srcRoot, 'components', 'ui', 'timeline.tsx'))).toContain('hatch-uncovered');
     expect(bar, 'the uncovered stretch is not flagged in words').toContain(
       "t('organization.hourBands.uncovered')",
     );
@@ -3075,10 +3135,12 @@ describe('every native select draws the one Input look (visual refresh B)', () =
   it('finds all ten, so the comparison is not vacuous', () => {
     // NINE SINCE MEMBER RANK: the fire-rank setting, and the rank control on
     // both member forms. TEN SINCE TEAM POSITION: the position control.
-    expect(selectClasses()).toHaveLength(10);
+    // TWELVE SINCE DESIGN REFRESH C: the leave year's start became a day and a
+    // month select on the settings surface.
+    expect(selectClasses()).toHaveLength(12);
   });
 
-  it('gives all ten the identical class string, and it is the documented one', () => {
+  it('gives all twelve the identical class string, and it is the documented one', () => {
     const documented =
       /Select class string:\s*`([^`]+)`/.exec(readFileSync(README, 'utf8'))?.[1] ?? '';
 
@@ -3145,7 +3207,7 @@ describe('the member list filters are dead while unanswered, and the reset resto
   it.each([
     { name: 'the level select losing its guard', from: 'onChange={changeLevel}\n            disabled={unanswered}', to: 'onChange={changeLevel}' },
     { name: 'the team select losing its guard', from: 'onChange={changeTeam}\n            disabled={unanswered}', to: 'onChange={changeTeam}' },
-    { name: 'the search losing its guard', from: 'onChange={changeSearch}\n            disabled={unanswered}', to: 'onChange={changeSearch}' },
+    { name: 'the search losing its guard', from: 'onChange={changeSearch}\n              disabled={unanswered}', to: 'onChange={changeSearch}' },
     { name: 'the reset dropping unanswered', from: 'disabled={unanswered || !isNarrowed(', to: 'disabled={!isNarrowed(' },
     { name: 'the reset dropping isNarrowed', from: 'disabled={unanswered || !isNarrowed(search, level, narrowed.team)}', to: 'disabled={unanswered}' },
     { name: 'the reset keeping the search', from: '    setSearch(NO_TEXT);\n    setLevel(ALL_LEVELS);', to: '    setLevel(ALL_LEVELS);' },
@@ -3577,10 +3639,12 @@ describe('every field on the settings surface carries an accessible name', () =>
     const selects = selectElements(screen);
     const ids = [...inputs, ...selects].map((element) => attributeOf(element, 'id'));
 
-    expect(inputs).toHaveLength(5);
-    // TWO SINCE MEMBER RANK: the accent and the fire-rank setting.
-    expect(selects, 'the accent control is not a select any more').toHaveLength(2);
-    expect(targets).toHaveLength(7);
+    // ONE INPUT AND FOUR SELECTS SINCE DESIGN REFRESH C: the type and zone
+    // left the form (both written back unchanged), and the leave year's day
+    // and month became selects beside the accent and the fire-rank setting.
+    expect(inputs).toHaveLength(1);
+    expect(selects, 'the accent control is not a select any more').toHaveLength(4);
+    expect(targets).toHaveLength(5);
     expect(ids, 'a field carries no id, so no <Label> can name it').not.toContain(null);
     expect(new Set(ids).size, 'two fields share one id').toBe(ids.length);
     for (const id of ids) {
@@ -3625,16 +3689,19 @@ describe('every field on the settings surface carries an accessible name', () =>
     // year starting on the 30th has no boundary in February. The spec's I/O
     // matrix says the control cannot express the value; a `max` of 31 would make
     // it expressible and turn a shape into a refusal somebody has to read.
+    //
+    // CLOSED LISTS SINCE DESIGN REFRESH C: the day and month are selects whose
+    // options come from `@/organization/leave-start`, where the days stop at
+    // `LEAVE_START_LAST_DAY` (28) — asserted by that module's own test.
     const screen = source(SETTINGS);
-    const day = inputElements(screen).find((input) => /id="[\w-]*leave-day"/.test(input));
-    const month = inputElements(screen).find((input) => /id="[\w-]*leave-month"/.test(input));
+    const day = selectElements(screen).find((control) => /id="[\w-]*leave-day"/.test(control));
+    const month = selectElements(screen).find((control) => /id="[\w-]*leave-month"/.test(control));
 
     expect(day, 'no leave-year day field on the settings surface').not.toBeUndefined();
     expect(month, 'no leave-year month field on the settings surface').not.toBeUndefined();
-    expect(day).toContain('max={28}');
-    expect(day).toContain('min={1}');
-    expect(month).toContain('max={12}');
-    expect(month).toContain('min={1}');
+    expect(screen).toContain('LEAVE_START_DAYS.map(');
+    expect(screen).toContain('LEAVE_START_MONTHS.map(');
+    expect(screen, 'a day beyond 28 is expressible').not.toMatch(/max=\{(29|30|31)\}/);
   });
 
   it('keeps every entered value by never controlling a field', () => {
@@ -4679,9 +4746,11 @@ describe('the accent control offers a curated set and nothing else', () => {
     // pass against an empty string and read as coverage.
     // TWO SINCE MEMBER RANK. The accent is the first; the fire-rank setting,
     // after it, carries the same properties and is asserted in its own block.
-    expect(selects, 'no accent control on the settings surface').toHaveLength(2);
+    // FOUR SINCE DESIGN REFRESH C, the leave year's day and month before them,
+    // so the accent is found by its id.
+    expect(selects, 'no accent control on the settings surface').toHaveLength(4);
 
-    const control = selects[0] ?? '';
+    const control = selects.find((select) => select.includes('id="organization-accent"')) ?? '';
     const id = attributeOf(control, 'id');
 
     expect(id, 'the accent control carries no id to name it by').not.toBeNull();
@@ -4878,7 +4947,8 @@ describe('the accent control offers a curated set and nothing else', () => {
     // and no `value` — so a refusal leaves it showing what was chosen instead of
     // snapping back to the stored accent, which would look like the press did
     // nothing.
-    const control = selectElements(source(SETTINGS))[0] ?? '';
+    const control =
+      selectElements(source(SETTINGS)).find((select) => select.includes('id="organization-accent"')) ?? '';
 
     expect(control, 'no accent control to read').not.toBe('');
     expect(control, 'the accent control is not seeded from the snapshot').toContain(
@@ -5576,7 +5646,7 @@ describe('the two member forms write through the seam and keep nothing back', ()
     // The unsorted one is the actions column, named rather than inferred from
     // its position: a `<th>` with no text is announced as nothing at all.
     expect(screen, 'the actions column carries no heading').toMatch(
-      /<TableHead>\{t\('ljudi\.form\.actions'\)\}<\/TableHead>/,
+      /<TableHead[^>]*>\{t\('ljudi\.form\.actions'\)\}<\/TableHead>/,
     );
   });
 

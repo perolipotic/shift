@@ -24,6 +24,8 @@ import {
   hourBandsSurfaceStateOf,
   minuteOfTime,
   partitionBarOf,
+  DAY_SCALE,
+  hourBandPreviewOf,
   readHourBands,
   type HourBandRow,
   type HourBandsAnswer,
@@ -193,6 +195,15 @@ describe('the rows, derived by the domain and only formatted here', () => {
     expect(rows.map((row) => row.window)).toEqual(['07:00–19:00', '19:00–07:00']);
     expect(rows.map((row) => durationText(row.durationMinutes))).toEqual(['12 h', '12 h']);
     expect(rows.map((row) => row.crossesMidnight)).toEqual([false, true]);
+    expect(rows.map((row) => [row.start, row.end])).toEqual([
+      ['07:00', '19:00'],
+      ['19:00', '07:00'],
+    ]);
+  });
+
+  it('alternates the tone by start order, never by name', () => {
+    expect(hourBandDisplayRowsOf(PILOT).map((row) => row.tone)).toEqual(['light', 'dark']);
+    expect(hourBandDisplayRowsOf(UJ5).map((row) => row.tone)).toEqual(['light', 'dark', 'light']);
   });
 
   it('renders UJ-5 as three 8 h rows through the same path', () => {
@@ -219,6 +230,43 @@ describe('the rows, derived by the domain and only formatted here', () => {
   });
 });
 
+describe('the end a typed start would give', () => {
+  it('ends a new band where the next one begins', () => {
+    // Between the pilot's Dan (07:00) and Noć (19:00): ends at 19:00.
+    expect(hourBandPreviewOf(PILOT, '13:00', null)).toEqual({
+      end: '19:00',
+      durationMinutes: 360,
+      crossesMidnight: false,
+    });
+    // After Noć: ends at Dan's 07:00 the next morning.
+    expect(hourBandPreviewOf(PILOT, '23:30', null)).toEqual({
+      end: '07:00',
+      durationMinutes: 450,
+      crossesMidnight: true,
+    });
+  });
+
+  it('spans the whole day for the only band', () => {
+    expect(hourBandPreviewOf([], '07:00', null)).toEqual({
+      end: '07:00',
+      durationMinutes: 1440,
+      crossesMidnight: true,
+    });
+  });
+
+  it("replaces an edited band's own start instead of colliding with it", () => {
+    expect(hourBandPreviewOf(PILOT, '07:00', 'pilot-dan')?.end).toBe('19:00');
+    expect(hourBandPreviewOf(PILOT, '08:00', 'pilot-dan')?.durationMinutes).toBe(660);
+  });
+
+  it('shows nothing for a start that is not a time yet, or one another band holds', () => {
+    expect(hourBandPreviewOf(PILOT, '', null)).toBeNull();
+    expect(hourBandPreviewOf(PILOT, '7', null)).toBeNull();
+    expect(hourBandPreviewOf(PILOT, '19:00', null)).toBeNull();
+    expect(hourBandPreviewOf(PILOT, '19:00', 'pilot-dan')).toBeNull();
+  });
+});
+
 describe('the 24-hour bar', () => {
   it('draws the pilot as three segments covering 24 of 24 h, Noć labelled twice', () => {
     const bar = partitionBarOf(PILOT);
@@ -232,6 +280,16 @@ describe('the 24-hour bar', () => {
     expect(bar.coveredMinutes).toBe(1440);
     expect(bar.uncoveredMinutes).toBe(0);
     expect(new Set(bar.segments.map((segment) => segment.key)).size).toBe(3);
+    // A crossing band's two stretches take the tone of its row.
+    expect(bar.segments.map((segment) => segment.tone)).toEqual(['dark', 'light', 'dark']);
+    expect(bar.boundaries.map((mark) => mark.label)).toEqual(['07:00', '19:00']);
+    expect(bar.boundaries.map((mark) => mark.percent)).toEqual([(420 / 1440) * 100, (1140 / 1440) * 100]);
+  });
+
+  it('labels the scale every six hours, closing on 00:00 rather than 24:00', () => {
+    expect(DAY_SCALE.map((mark) => mark.label)).toEqual(['00:00', '06:00', '12:00', '18:00', '00:00']);
+    expect(DAY_SCALE.map((mark) => mark.percent)).toEqual([0, 25, 50, 75, 100]);
+    expect(new Set(DAY_SCALE.map((mark) => mark.key)).size).toBe(5);
   });
 
   it('draws UJ-5 as four segments summing to the whole bar', () => {
@@ -248,23 +306,25 @@ describe('the 24-hour bar', () => {
     expect(bar.segments).toHaveLength(1);
     expect(bar.segments[0]?.name).toBeNull();
     expect(bar.segments[0]?.widthPercent).toBe(100);
+    expect(bar.segments[0]?.tone).toBeNull();
+    expect(bar.boundaries).toEqual([]);
     expect(bar.coveredMinutes).toBe(0);
     expect(bar.uncoveredMinutes).toBe(1440);
   });
 
   it('states coverage in numbers, and the uncovered hours at zero bands', () => {
-    const sentence = (bands: readonly HourBandRow[]): string => {
+    // The two stat tiles under the bar: covered "x od 24 h", and uncovered.
+    const tiles = (bands: readonly HourBandRow[]): [string, string] => {
       const bar = partitionBarOf(bands);
 
-      return t('organization.hourBands.coverage', {
-        covered: durationText(bar.coveredMinutes),
-        uncovered: durationText(bar.uncoveredMinutes),
-      });
+      return [
+        t('organization.hourBands.coveredValue', { covered: durationText(bar.coveredMinutes) }),
+        durationText(bar.uncoveredMinutes),
+      ];
     };
 
-    expect(sentence(PILOT)).toBe('Pokriveno 24 h od 24 h, nepokriveno 0 h.');
-    expect(sentence([])).toBe('Pokriveno 0 h od 24 h, nepokriveno 24 h.');
-    expect(sentence([])).not.toContain('Nema');
+    expect(tiles(PILOT)).toEqual(['24 h od 24 h', '0 h']);
+    expect(tiles([])).toEqual(['0 h od 24 h', '24 h']);
   });
 
   it('flags the uncovered segment in words, not by colour', () => {

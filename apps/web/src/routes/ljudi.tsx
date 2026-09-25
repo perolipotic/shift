@@ -1,15 +1,28 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, createRoute, redirect } from '@tanstack/react-router';
-import { ArrowDown, ArrowUp } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowUp,
+  Pencil,
+  Plus,
+  Search,
+  ShieldCheck,
+  UserCheck,
+  UserMinus,
+  Users,
+  UsersRound,
+} from 'lucide-react';
 import { useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { IconTile } from '@/components/ui/icon-tile';
 import { Input } from '@/components/ui/input';
+import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
-import { PageActions, PageHeader, PageTitle } from '@/components/ui/page-header';
+import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { StatCard, StatLabel, StatValue } from '@/components/ui/stat-card';
 import { Notice } from '@/components/ui/notice';
 import {
@@ -161,6 +174,13 @@ const SORT_GLYPHS: Record<SortIndicator, typeof ArrowUp> = {
 };
 
 /**
+ * The summary tiles' icons, in the order `membersViewOf` returns the four
+ * figures: everyone, administrators, active today, inactive today. DECORATIVE:
+ * each tile's label says what it counts.
+ */
+const STAT_ICONS = [Users, ShieldCheck, UserCheck, UserMinus] as const;
+
+/**
  * What one cell shows, from the value its COLUMN produced.
  *
  * IT TAKES A CELL, NOT A MEMBER, and that is the whole point of the refactor
@@ -218,8 +238,10 @@ function CellView({ cell }: { readonly cell: MemberCell }): ReactNode {
 
   return (
     <span className="inline-flex max-w-full flex-wrap items-center gap-x-3 gap-y-1">
-      {look.avatar === null ? null : <Avatar>{look.avatar.initials}</Avatar>}
-      {look.badge === null ? <span>{text}</span> : <Badge variant={look.badge}>{text}</Badge>}
+      <span className="inline-flex min-w-0 items-center gap-3">
+        {look.avatar === null ? null : <Avatar>{look.avatar.initials}</Avatar>}
+        {look.badge === null ? <span>{text}</span> : <Badge variant={look.badge}>{text}</Badge>}
+      </span>
       {look.status === null ? null : (
         <span>
           <span className="sr-only">{t('ljudi.status.separator')}</span>
@@ -304,65 +326,33 @@ export function LjudiScreen() {
     searchField.current?.focus();
   }
 
-  function pressColumn(column: MemberColumnKey): void {
-    setSort((current) => nextSortState(current, column));
-  }
-
+  /**
+   * The search, the two filters and the reset. A FUNCTION rather than markup
+   * inside the table's card, for the reason `organizacija.tsx`'s
+   * `renderSettings` is one: `eslint.config.js`'s L2 block refuses a string
+   * literal in a branch nested in a branch that is an element's own child, and
+   * the controls' conditional `aria-describedby` sits inside the card's branch.
+   */
+  function renderFilters(): ReactNode {
   return (
-    <main
-      className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6"
-      aria-busy={loading}
-    >
-      <PageHeader>
-        <PageTitle asChild>
-          <h1>{t('nav.ljudi')}</h1>
-        </PageTitle>
-        {/* THE WAY IN, and it is a LINK rather than a button that navigates:
-            issuing an account is a screen, not an action performed here, so
-            middle-click and "open in new tab" work the way they do everywhere
-            else. `asChild` is what keeps the 44 px floor and the shared
-            appearance on the anchor itself. */}
-        <PageActions>
-          {/* STORY 1.7a: the teams screen, reached from here rather than from
-              the navigation, so the destinations stay eight. */}
-          <Button asChild variant="outline" className="h-11">
-            <Link to="/ljudi/smjene">{t('smjene.heading')}</Link>
-          </Button>
-          <Button asChild className="h-11">
-            <Link to="/ljudi/novi">{t('ljudi.form.add')}</Link>
-          </Button>
-        </PageActions>
-      </PageHeader>
-      {summary === null ? null : (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {summary.map((stat) => (
-            <StatCard key={stat.label}>
-              <StatLabel>{t(stat.label)}</StatLabel>
-              {/* A FIGURE THAT CANNOT YET BE STATED is drawn pending, never
-                  as a guessed zero: `membersSummaryOf` answers `null` for the
-                  active and inactive counts while today is unknown. */}
-              {stat.value === null ? (
-                <div className="h-8 w-12 animate-pulse rounded-md bg-muted" />
-              ) : (
-                <StatValue>{formatNumber(stat.value, 0)}</StatValue>
-              )}
-            </StatCard>
-          ))}
-        </div>
-      )}
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="grid min-w-0 flex-1 gap-2">
+      <div className="grid items-end gap-4 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_minmax(0,12rem)_minmax(0,12rem)_auto]">
+        <div className="grid min-w-0 gap-2 sm:col-span-2 lg:col-span-1">
           <Label htmlFor="ljudi-search">{t('ljudi.search')}</Label>
-          <Input
-            id="ljudi-search"
-            ref={searchField}
-            type="search"
-            className="h-11 w-full"
-            value={search}
-            onChange={changeSearch}
-            disabled={unanswered}
-            aria-describedby={refusal === null ? undefined : 'ljudi-error'}
-          />
+          <InputGroup>
+            <InputGroupIcon>
+              <Search />
+            </InputGroupIcon>
+            <Input
+              id="ljudi-search"
+              ref={searchField}
+              type="search"
+              className="h-11 w-full"
+              value={search}
+              onChange={changeSearch}
+              disabled={unanswered}
+              aria-describedby={refusal === null ? undefined : 'ljudi-error'}
+            />
+          </InputGroup>
         </div>
         <div className="grid min-w-0 gap-2">
           <Label htmlFor="ljudi-level">{t('ljudi.role')}</Label>
@@ -427,6 +417,73 @@ export function LjudiScreen() {
           {t('ljudi.reset')}
         </Button>
       </div>
+    );
+  }
+
+  function pressColumn(column: MemberColumnKey): void {
+    setSort((current) => nextSortState(current, column));
+  }
+
+  return (
+    <main
+      className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6"
+      aria-busy={loading}
+    >
+      <PageHeader>
+        <div className="min-w-0">
+          <PageTitle asChild>
+            <h1>{t('nav.ljudi')}</h1>
+          </PageTitle>
+          <PageDescription>{t('ljudi.lede')}</PageDescription>
+        </div>
+        {/* THE WAY IN, and it is a LINK rather than a button that navigates:
+            issuing an account is a screen, not an action performed here, so
+            middle-click and "open in new tab" work the way they do everywhere
+            else. `asChild` is what keeps the 44 px floor and the shared
+            appearance on the anchor itself. */}
+        <PageActions>
+          {/* STORY 1.7a: the teams screen, reached from here rather than from
+              the navigation, so the destinations stay eight. */}
+          <Button asChild variant="outline" className="h-11">
+            <Link to="/ljudi/smjene">
+              <UsersRound aria-hidden />
+              {t('smjene.heading')}
+            </Link>
+          </Button>
+          <Button asChild className="h-11">
+            <Link to="/ljudi/novi">
+              <Plus aria-hidden />
+              {t('ljudi.form.add')}
+            </Link>
+          </Button>
+        </PageActions>
+      </PageHeader>
+      {summary === null ? null : (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {summary.map((stat, index) => {
+            const Icon = STAT_ICONS[index] ?? Users;
+
+            return (
+              <StatCard key={stat.label} className="gap-3 sm:flex-row sm:items-center">
+                <IconTile variant="primary">
+                  <Icon />
+                </IconTile>
+                <div className="grid min-w-0 gap-1.5">
+                  <StatLabel>{t(stat.label)}</StatLabel>
+                  {/* A FIGURE THAT CANNOT YET BE STATED is drawn pending, never
+                      as a guessed zero: `membersSummaryOf` answers `null` for the
+                      active and inactive counts while today is unknown. */}
+                  {stat.value === null ? (
+                    <div className="h-8 w-12 animate-pulse rounded-md bg-muted" />
+                  ) : (
+                    <StatValue>{formatNumber(stat.value, 0)}</StatValue>
+                  )}
+                </div>
+              </StatCard>
+            );
+          })}
+        </div>
+      )}
       {/* OUTSIDE the answered branch, and conditional on both sides: a read that
           produced no row never renders a table, so an explanation rendered
           inside one would be exactly the element nobody can see. `role="alert"`
@@ -439,6 +496,8 @@ export function LjudiScreen() {
       )}
       {unanswered && !loading ? null : (
         <Card className="min-w-0">
+          {/* THE FILTERS, at the head of the table they narrow. */}
+          <CardContent className="border-b p-4">{renderFilters()}</CardContent>
           <Table>
             <TableCaption>{t('ljudi.caption')}</TableCaption>
             <TableHeader>
@@ -475,7 +534,7 @@ export function LjudiScreen() {
                     that happens not to be sorted — an affordance that does not
                     exist. It carries a real heading rather than an empty cell,
                     because a `<th>` with no text is announced as nothing. */}
-                <TableHead>{t('ljudi.form.actions')}</TableHead>
+                <TableHead className="text-right">{t('ljudi.form.actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -508,16 +567,19 @@ export function LjudiScreen() {
                           <CellView cell={column.cell(member, today)} />
                         </TableCell>
                       ))}
-                      <TableCell>
+                      <TableCell className="text-right">
                         {/* NAMED FOR THE MEMBER IT ACTS ON. Four hundred rows
                             each announcing "Uredi osobu" is four hundred controls
                             a screen-reader user cannot tell apart; the name is
                             data, interpolated, and the label is the whole
                             accessible name rather than an `aria-label` competing
                             with visible text. */}
-                        <Button asChild variant="ghost" className="h-11">
+                        <Button asChild variant="ghost" className="h-11 w-11 px-0">
                           <Link to="/ljudi/$id" params={{ id: member.id }}>
-                            {t('ljudi.form.edit', { name: memberActionName(member) })}
+                            <Pencil aria-hidden />
+                            <span className="sr-only">
+                              {t('ljudi.form.edit', { name: memberActionName(member) })}
+                            </span>
                           </Link>
                         </Button>
                       </TableCell>

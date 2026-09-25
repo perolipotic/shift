@@ -60,6 +60,8 @@ import {
   memberLevelMessageKey,
   memberActionName,
   memberCellLookOf,
+  teamCellOf,
+  teamMarkerMessageKey,
   memberStatusMessageKey,
   membersSummaryOf,
   membersViewOf,
@@ -2108,12 +2110,64 @@ describe('team as at a date, read off the embedded versions (story 1.7b)', () =>
     const on = member({ id: 'm', teamVersions: [{ team: A, position: null, effectiveFrom: '2026-09-01' }] });
     const later = member({ id: 'n', teamVersions: [{ team: B, position: null, effectiveFrom: '2026-10-01' }] });
 
-    expect(column?.cell(on, TODAY)).toEqual({ kind: TEAM_CELL, team: 'Alfa' });
-    expect(column?.cell(later, TODAY)).toEqual({ kind: TEAM_CELL, team: null });
-    expect(column?.cell(member({ id: 'f' }), TODAY)).toEqual({ kind: TEAM_CELL, team: null });
+    expect(column?.cell(on, TODAY)).toEqual({ kind: TEAM_CELL, team: 'Alfa', scheduled: null });
+    expect(column?.cell(later, TODAY)).toEqual({
+      kind: TEAM_CELL,
+      team: null,
+      scheduled: { team: 'Beta', from: '2026-10-01', keepsTeam: false },
+    });
+    expect(column?.cell(member({ id: 'f' }), TODAY)).toEqual({ kind: TEAM_CELL, team: null, scheduled: null });
     expect(column?.cell(on, null)).toEqual({ kind: TEXT_CELL, text: '' });
     expect(column?.sortValue(on, TODAY)).toBe('Alfa');
     expect(column?.sortValue(later, TODAY)).toBeNull();
+  });
+});
+
+describe('a scheduled team change is marked in the team cell (design refresh C)', () => {
+  const A = { id: 'team-a', name: 'Alfa' };
+  const B = { id: 'team-b', name: 'Beta' };
+  const moving = member({
+    id: 'm',
+    teamVersions: [
+      { team: A, position: null, effectiveFrom: '2026-09-01' },
+      { team: B, position: null, effectiveFrom: '2026-10-01' },
+    ],
+  });
+  const leaving = member({
+    id: 'l',
+    teamVersions: [
+      { team: A, position: null, effectiveFrom: '2026-09-01' },
+      { team: null, position: null, effectiveFrom: '2026-10-01' },
+    ],
+  });
+  const promoted = member({
+    id: 'p',
+    teamVersions: [
+      { team: A, position: 'firefighter', effectiveFrom: '2026-09-01' },
+      { team: A, position: 'driver', effectiveFrom: '2026-10-01' },
+    ],
+  });
+
+  it('names the team a move goes to, and from when, in the primary tint', () => {
+    const cell = teamCellOf(moving, TODAY);
+
+    expect(teamMarkerMessageKey(cell)).toBe('smjene.membership.markerMove');
+    expect(memberCellLookOf(cell).status).toEqual({
+      variant: 'default',
+      key: 'smjene.membership.markerMove',
+      args: { date: '01.10.2026', team: 'Beta' },
+    });
+    expect(t('smjene.membership.markerMove', { date: '01.10.2026', team: 'Beta' })).toBe('Od 01.10.2026: Beta');
+  });
+
+  it('says a move onto no team, and a change that keeps the team, in their own words', () => {
+    expect(teamMarkerMessageKey(teamCellOf(leaving, TODAY))).toBe('smjene.membership.markerNone');
+    expect(teamMarkerMessageKey(teamCellOf(promoted, TODAY))).toBe('smjene.membership.markerChange');
+  });
+
+  it('marks nothing once the change is in effect, or when none is scheduled', () => {
+    expect(teamMarkerMessageKey(teamCellOf(moving, '2026-10-01'))).toBeNull();
+    expect(memberCellLookOf(teamCellOf(member({ id: 'f' }), TODAY)).status).toBeNull();
   });
 });
 
@@ -2164,7 +2218,7 @@ describe('how a cell is drawn is decided here, never in the screen (visual refre
     expect(memberCellLookOf(cell)).toEqual({
       ...plain,
       avatar: { initials: 'AH' },
-      status: { variant: 'outline', key: 'ljudi.status.inactive', args: { date: NO_TEXT } },
+      status: { variant: 'outline', key: 'ljudi.status.inactive', args: { date: NO_TEXT, team: NO_TEXT } },
     });
   });
 
@@ -2178,7 +2232,7 @@ describe('how a cell is drawn is decided here, never in the screen (visual refre
       status: {
         variant: 'outline',
         key: 'ljudi.status.inactiveScheduled',
-        args: { date: '01.10.2026' },
+        args: { date: '01.10.2026', team: NO_TEXT },
       },
     });
   });

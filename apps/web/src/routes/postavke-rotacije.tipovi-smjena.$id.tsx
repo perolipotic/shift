@@ -1,20 +1,22 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, createRoute, redirect } from '@tanstack/react-router';
+import { createRoute, redirect, useNavigate } from '@tanstack/react-router';
+import { Archive, CalendarDays, Clock3 } from 'lucide-react';
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
-import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { formatMinuteOfDay } from '@/i18n/format';
 import { t } from '@/i18n';
 import { NO_TEXT, mayReadMembers, shownDate } from '@/members/list';
 import { DESTINATIONS } from '@/navigation/destinations';
 import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/navigation/role';
 import { appLayoutRoute } from '@/routes/_app';
+import { PostavkeRotacijeScreen } from '@/routes/postavke-rotacije';
 import {
   SHIFT_TYPES_LIST_KEY,
   SHIFT_TYPES_READ_TABLE,
@@ -92,6 +94,11 @@ import { supabaseClient } from '@/supabase/client';
  *
  * THREE REFUSAL REGIONS, each where its write happened: the rename's above the
  * form, the times' in the times block, the archive's in the archive block.
+ *
+ * A DIALOG OVER THE LIST (design refresh C), as the hour band editor is: the
+ * route renders `Postavke rotacije` and opens this type above it, every way
+ * the dialog closes navigates back, and the archive's confirmation replaces
+ * the dialog's content rather than opening a second one.
  */
 
 const FIRST_DESTINATION = DESTINATIONS[0];
@@ -104,6 +111,7 @@ export function PostavkeRotacijeTipSmjeneScreen() {
 
 function ShiftTypeScreen({ id }: { readonly id: string }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const nameField = useRef<HTMLInputElement>(null);
   const dateField = useRef<HTMLInputElement>(null);
   const startField = useRef<HTMLInputElement>(null);
@@ -135,6 +143,12 @@ function ShiftTypeScreen({ id }: { readonly id: string }) {
   const today = snapshot === null ? null : shiftTypesTodayOf(snapshot, new Date());
   const row = snapshot === null || today === null ? null : shiftTypeDisplayRowOf(snapshot, id, today);
   const stage = archiveStageOf(armed, pending);
+  /** The archive is being asked about, or is in flight. */
+  const confirming = stage === ARCHIVE_ARMED || stage === ARCHIVE_BUSY;
+
+  function close(): void {
+    void navigate({ to: '/postavke-rotacije' });
+  }
 
   /** Re-read the one list, so both screens show what the database holds now. */
   async function refresh(): Promise<void> {
@@ -381,6 +395,7 @@ function ShiftTypeScreen({ id }: { readonly id: string }) {
     );
   }
 
+  /** The archive offer, at the foot of the dialog, or why it is not offered. */
   function renderArchive(type: ShiftTypeRow): ReactNode {
     // NOT OFFERED WHILE A CORRECTION IS SCHEDULED: `0013` refuses it, so the
     // screen says what to do instead of arming a write that can only fail.
@@ -392,63 +407,72 @@ function ShiftTypeScreen({ id }: { readonly id: string }) {
       );
     }
 
-    if (stage === ARCHIVE_ARMED || stage === ARCHIVE_BUSY) {
-      const busy = stage === ARCHIVE_BUSY;
+    return (
+      <div className="grid gap-3">
+        {renderArchiveRefusal()}
+        <DialogFooter>
+          <Button
+            className="h-11"
+            type="button"
+            variant="ghost"
+            disabled={pending}
+            onClick={() => {
+              setArchiveFailure(null);
+              setSaved(null);
+              setArmed(true);
+            }}
+          >
+            <Archive aria-hidden />
+            {/* A short word, and the whole name for assistive technology,
+                which begins with the visible word (WCAG 2.5.3). */}
+            <span aria-hidden>{t('rotation.shiftTypes.archiveShort')}</span>
+            <span className="sr-only">{t('rotation.shiftTypes.archive', { name: type.name })}</span>
+          </Button>
+        </DialogFooter>
+      </div>
+    );
+  }
 
-      return (
-        <div className="grid gap-2">
-          <p className="text-sm font-medium">
-            {t('rotation.shiftTypes.archivePrompt', { name: type.name })}
-          </p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Button
-              className="h-11 w-full"
-              type="button"
-              variant="outline"
-              disabled={busy}
-              aria-busy={busy}
-              onClick={() => {
-                void archive(type);
-              }}
-            >
-              <span className="truncate">
-                {t('rotation.shiftTypes.archiveConfirm', { name: type.name })}
-              </span>
-            </Button>
-            <Button
-              className="h-11 w-full"
-              type="button"
-              variant="outline"
-              disabled={busy}
-              onClick={() => {
-                setArmed(false);
-              }}
-            >
-              <span className="truncate">{t('rotation.shiftTypes.archiveCancel')}</span>
-            </Button>
-          </div>
-        </div>
-      );
-    }
+  /**
+   * THE CONFIRMATION, in place of everything else inside the same dialog: one
+   * question naming the type, and the two answers side by side. It stays
+   * mounted and disabled while the archive is outstanding.
+   */
+  function renderConfirm(type: ShiftTypeRow): ReactNode {
+    const busy = stage === ARCHIVE_BUSY;
 
     return (
-      <div className="grid gap-2">
-        {renderArchiveRefusal()}
-        <Button
-          className="h-11 w-full"
-          type="button"
-          variant="outline"
-          disabled={pending}
-          onClick={() => {
-            setArchiveFailure(null);
-            setSaved(null);
-            setArmed(true);
-          }}
-        >
-          <span className="truncate">
-            {t('rotation.shiftTypes.archive', { name: type.name })}
-          </span>
-        </Button>
+      <div className="grid gap-5">
+        <p className="text-sm font-medium">
+          {t('rotation.shiftTypes.archivePrompt', { name: type.name })}
+        </p>
+        <DialogFooter>
+          <Button
+            className="h-11"
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              setArmed(false);
+            }}
+          >
+            <span className="truncate">{t('rotation.shiftTypes.archiveCancel')}</span>
+          </Button>
+          <Button
+            className="h-11"
+            type="button"
+            disabled={busy}
+            aria-busy={busy}
+            onClick={() => {
+              void archive(type);
+            }}
+          >
+            <Archive aria-hidden />
+            <span className="truncate">
+              {t('rotation.shiftTypes.archiveConfirm', { name: type.name })}
+            </span>
+          </Button>
+        </DialogFooter>
       </div>
     );
   }
@@ -461,54 +485,61 @@ function ShiftTypeScreen({ id }: { readonly id: string }) {
     // AN ARCHIVED TYPE is frozen: its facts and a note, and nothing that writes.
     if (type.archived) {
       return (
-        <div className="grid gap-2">
+        <div className="grid gap-3">
           {/* A refusal set just before the re-read revealed the type as
               archived is still said here, where the blocks it belonged to
               no longer render. */}
           {renderTimesRefusal()}
           {renderArchiveRefusal()}
-          {renderFacts(shown)}
+          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-sm">{renderFacts(shown)}</div>
           <p className="text-sm text-muted-foreground">{t('rotation.shiftTypes.archivedNote')}</p>
         </div>
       );
     }
 
     return (
-      <div className="grid gap-6">
-        {renderFacts(shown)}
-        <form
-          key={shiftTypeFormKey(type, saves)}
-          method="post"
-          onSubmit={(event) => {
-            void submit(event, type);
-          }}
-          className="grid gap-4"
-        >
-          <div className="grid gap-2">
-            <Label htmlFor="shift-type-name">{t('rotation.shiftTypes.name')}</Label>
-            <Input
-              ref={nameField}
-              id="shift-type-name"
-              name="name"
-              type="text"
-              required
-              defaultValue={type.name}
-              onChange={() => {
-                // A confirmation describes the last save, not what is typed now.
-                setSaved(null);
-              }}
-              aria-invalid={marksField(failure, SHIFT_TYPE_NAME_FIELD)}
-              aria-describedby={failure === null ? undefined : 'shift-type-form-error'}
-              className="h-11"
-            />
+      <>
+        {/* HIDDEN, NOT UNMOUNTED, while the archive is asked about: a
+            cancelled archive returns to both forms with what was typed. */}
+        <div className={confirming ? 'hidden' : 'grid gap-5'}>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 rounded-md bg-muted p-3 text-sm">
+            {renderFacts(shown)}
           </div>
-          <Button className="h-11 w-full" type="submit" disabled={pending} aria-busy={pending}>
-            {t('rotation.shiftTypes.save')}
-          </Button>
-        </form>
-        {renderTimes(type, shown)}
-        {renderArchive(type)}
-      </div>
+          <form
+            key={shiftTypeFormKey(type, saves)}
+            method="post"
+            onSubmit={(event) => {
+              void submit(event, type);
+            }}
+            className="grid gap-2"
+          >
+            <Label htmlFor="shift-type-name">{t('rotation.shiftTypes.name')}</Label>
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+              <Input
+                ref={nameField}
+                id="shift-type-name"
+                name="name"
+                type="text"
+                required
+                defaultValue={type.name}
+                onChange={() => {
+                  // A confirmation describes the last save, not what is typed now.
+                  setSaved(null);
+                }}
+                aria-invalid={marksField(failure, SHIFT_TYPE_NAME_FIELD)}
+                aria-describedby={failure === null ? undefined : 'shift-type-form-error'}
+                className="h-11 min-w-0 flex-1"
+              />
+              <Button className="h-11" type="submit" variant="outline" disabled={pending} aria-busy={pending}>
+                {t('rotation.shiftTypes.save')}
+              </Button>
+            </div>
+          </form>
+          {renderTimes(type, shown)}
+          <div className="border-t pt-5">{renderArchive(type)}</div>
+        </div>
+        {confirming ? renderConfirm(type) : null}
+      </>
     );
   }
 
@@ -535,66 +566,83 @@ function ShiftTypeScreen({ id }: { readonly id: string }) {
       >
         <div className="grid gap-2">
           <Label htmlFor="shift-type-times-date">{t('rotation.shiftTypes.timesFrom')}</Label>
-          <Input
-            ref={dateField}
-            id="shift-type-times-date"
-            name="effectiveFrom"
-            type="date"
-            required
-            min={offer.minimum}
-            defaultValue={offer.minimum}
-            onChange={() => {
-              setSaved(null);
-            }}
-            aria-invalid={marksField(timesFailure, SHIFT_TYPE_DATE_FIELD)}
-            aria-describedby={timesFailure === null ? undefined : 'shift-type-times-error'}
-            className="h-11"
-          />
+          <InputGroup>
+            <InputGroupIcon>
+              <CalendarDays />
+            </InputGroupIcon>
+            <Input
+              ref={dateField}
+              id="shift-type-times-date"
+              name="effectiveFrom"
+              type="date"
+              required
+              min={offer.minimum}
+              defaultValue={offer.minimum}
+              onChange={() => {
+                setSaved(null);
+              }}
+              aria-invalid={marksField(timesFailure, SHIFT_TYPE_DATE_FIELD)}
+              aria-describedby={timesFailure === null ? undefined : 'shift-type-times-error'}
+              className="h-11"
+            />
+          </InputGroup>
         </div>
-        <div className="flex flex-wrap gap-4">
-          <div className="grid min-w-0 flex-1 basis-32 gap-2">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid min-w-0 gap-2">
             <Label htmlFor="shift-type-times-start">{t('rotation.shiftTypes.start')}</Label>
-            <Input
-              ref={startField}
-              id="shift-type-times-start"
-              name="start"
-              type="time"
-              required
-              defaultValue={current === null ? NO_TEXT : formatMinuteOfDay(current.startMinute)}
-              onChange={() => {
-                setSaved(null);
-              }}
-              aria-invalid={marksField(timesFailure, SHIFT_TYPE_START_FIELD)}
-              aria-describedby={timesFailure === null ? undefined : 'shift-type-times-error'}
-              className="h-11 w-full"
-            />
+            <InputGroup>
+              <InputGroupIcon>
+                <Clock3 />
+              </InputGroupIcon>
+              <Input
+                ref={startField}
+                id="shift-type-times-start"
+                name="start"
+                type="time"
+                required
+                defaultValue={current === null ? NO_TEXT : formatMinuteOfDay(current.startMinute)}
+                onChange={() => {
+                  setSaved(null);
+                }}
+                aria-invalid={marksField(timesFailure, SHIFT_TYPE_START_FIELD)}
+                aria-describedby={timesFailure === null ? undefined : 'shift-type-times-error'}
+                className="h-11 w-full"
+              />
+            </InputGroup>
           </div>
-          <div className="grid min-w-0 flex-1 basis-32 gap-2">
+          <div className="grid min-w-0 gap-2">
             <Label htmlFor="shift-type-times-end">{t('rotation.shiftTypes.end')}</Label>
-            <Input
-              ref={endField}
-              id="shift-type-times-end"
-              name="end"
-              type="time"
-              required
-              defaultValue={current === null ? NO_TEXT : formatMinuteOfDay(current.endMinute)}
-              onChange={() => {
-                setSaved(null);
-              }}
-              aria-invalid={marksField(timesFailure, SHIFT_TYPE_END_FIELD)}
-              aria-describedby={timesFailure === null ? undefined : 'shift-type-times-error'}
-              className="h-11 w-full"
-            />
+            <InputGroup>
+              <InputGroupIcon>
+                <Clock3 />
+              </InputGroupIcon>
+              <Input
+                ref={endField}
+                id="shift-type-times-end"
+                name="end"
+                type="time"
+                required
+                defaultValue={current === null ? NO_TEXT : formatMinuteOfDay(current.endMinute)}
+                onChange={() => {
+                  setSaved(null);
+                }}
+                aria-invalid={marksField(timesFailure, SHIFT_TYPE_END_FIELD)}
+                aria-describedby={timesFailure === null ? undefined : 'shift-type-times-error'}
+                className="h-11 w-full"
+              />
+            </InputGroup>
           </div>
         </div>
-        <p className="text-sm text-muted-foreground">{t('rotation.shiftTypes.timesNote')}</p>
-        <Button className="h-11 w-full" type="submit" disabled={pending} aria-busy={pending}>
-          <span className="truncate">
-            {offer.kind === TIMES_SET
-              ? t('rotation.shiftTypes.timesSet')
-              : t('rotation.shiftTypes.timesCorrect')}
-          </span>
-        </Button>
+        <p className="text-xs text-muted-foreground">{t('rotation.shiftTypes.timesNote')}</p>
+        <div className="flex justify-end">
+          <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
+            <span className="truncate">
+              {offer.kind === TIMES_SET
+                ? t('rotation.shiftTypes.timesSet')
+                : t('rotation.shiftTypes.timesCorrect')}
+            </span>
+          </Button>
+        </div>
       </form>
     );
   }
@@ -608,8 +656,8 @@ function ShiftTypeScreen({ id }: { readonly id: string }) {
     if (offer === null) return null;
 
     return (
-      <section className="grid gap-4">
-        <h2 className="text-base font-bold">{t('rotation.shiftTypes.timesHeading')}</h2>
+      <section className="grid gap-4 border-t pt-5">
+        <h3 className="text-base font-bold">{t('rotation.shiftTypes.timesHeading')}</h3>
         {renderTimesRefusal()}
         {offer.kind === TIMES_CANCEL ? (
           <Button
@@ -632,39 +680,36 @@ function ShiftTypeScreen({ id }: { readonly id: string }) {
   }
 
   return (
-    <main
-      className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6"
-      aria-busy={loading}
-    >
-      <PageHeader>
-        <PageTitle asChild>
-          <h1>{t(shiftTypeHeadingMessageKey(form.type))}</h1>
-        </PageTitle>
-      </PageHeader>
-      <Card className="w-full min-w-0 max-w-lg">
-        <CardContent className="grid gap-6">
-          {readRefusal === null ? null : (
-            <Notice role="alert">{t(shiftTypesMessageKey(readRefusal))}</Notice>
-          )}
-          {refusal === null ? null : (
-            <Notice id="shift-type-form-error" role="alert">
-              {t(shiftTypeWriteMessageKey(refusal))}
-            </Notice>
-          )}
-          {saved === null ? null : (
-            <Notice ref={confirmation} tabIndex={-1} role="status">
-              {t(shiftTypeSavedMessageKey(saved))}
-            </Notice>
-          )}
-          {renderBody()}
-          <Button asChild className="h-11 w-full" variant="outline">
-            <Link to="/postavke-rotacije">
-              <span className="truncate">{t('rotation.shiftTypes.back')}</span>
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
-    </main>
+    <>
+      {/* THE LIST, behind the dialog: the type is edited where it is listed. */}
+      <PostavkeRotacijeScreen />
+      <Dialog
+        open={true}
+        onOpenChange={(open) => {
+          if (!open) close();
+        }}
+        aria-labelledby="shift-type-edit-heading"
+        className="max-w-xl"
+      >
+        <DialogHeader closeLabel={t('rotation.shiftTypes.close')} onClose={close}>
+          <DialogTitle id="shift-type-edit-heading">{t(shiftTypeHeadingMessageKey(form.type))}</DialogTitle>
+        </DialogHeader>
+        {readRefusal === null ? null : (
+          <Notice role="alert">{t(shiftTypesMessageKey(readRefusal))}</Notice>
+        )}
+        {refusal === null ? null : (
+          <Notice id="shift-type-form-error" role="alert">
+            {t(shiftTypeWriteMessageKey(refusal))}
+          </Notice>
+        )}
+        {saved === null ? null : (
+          <Notice ref={confirmation} tabIndex={-1} role="status">
+            {t(shiftTypeSavedMessageKey(saved))}
+          </Notice>
+        )}
+        {renderBody()}
+      </Dialog>
+    </>
   );
 }
 

@@ -1,3 +1,14 @@
+import {
+  ArrowLeft,
+  AtSign,
+  CalendarClock,
+  CalendarDays,
+  Mail,
+  Medal,
+  Save,
+  ShieldCheck,
+  User,
+} from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, redirect } from '@tanstack/react-router';
 import {
@@ -10,9 +21,13 @@ import {
 } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Callout, CalloutBody } from '@/components/ui/callout';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { IconTile } from '@/components/ui/icon-tile';
+import { ConfirmDialog, DialogFooter } from '@/components/ui/dialog';
 import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { Input } from '@/components/ui/input';
+import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/i18n';
@@ -788,18 +803,24 @@ export function LjudiMemberScreen() {
         }}
         className="grid gap-6"
       >
+        <h2 className="text-base font-bold">{t('ljudi.form.sectionBasics')}</h2>
         <div className="grid gap-2">
           <Label htmlFor="member-name">{t('ljudi.name')}</Label>
-          <Input
-            ref={nameField}
-            id="member-name"
-            name="name"
-            type="text"
-            required
-            defaultValue={member.name}
-            aria-describedby={refusal === null ? undefined : 'member-form-error'}
-            className="h-11"
-          />
+          <InputGroup>
+            <InputGroupIcon>
+              <User />
+            </InputGroupIcon>
+            <Input
+              ref={nameField}
+              id="member-name"
+              name="name"
+              type="text"
+              required
+              defaultValue={member.name}
+              aria-describedby={refusal === null ? undefined : 'member-form-error'}
+              className="h-11"
+            />
+          </InputGroup>
         </div>
         <div className="grid gap-2">
           <Label htmlFor="member-username">{t('ljudi.form.username')}</Label>
@@ -807,76 +828,100 @@ export function LjudiMemberScreen() {
               moves `auth.users.email` as well as `members.username`, which is
               the one thing row level security cannot do — `saveMember` decides
               that, not this element. */}
-          <Input
-            ref={usernameField}
-            id="member-username"
-            name="username"
-            type="text"
-            autoCapitalize="none"
-            autoCorrect="off"
-            required
-            defaultValue={member.username}
-            aria-describedby={refusal === null ? undefined : 'member-form-error'}
-            className="h-11"
-          />
+          <InputGroup>
+            <InputGroupIcon>
+              <AtSign />
+            </InputGroupIcon>
+            <Input
+              ref={usernameField}
+              id="member-username"
+              name="username"
+              type="text"
+              autoCapitalize="none"
+              autoCorrect="off"
+              required
+              defaultValue={member.username}
+              aria-describedby={refusal === null ? undefined : 'member-form-error'}
+              className="h-11"
+            />
+          </InputGroup>
         </div>
         <div className="grid gap-2">
           <Label htmlFor="member-email">{t('ljudi.email')}</Label>
           {/* OPTIONAL (CAP-1, `0002:135`): a member with no address is still a
               member. An emptied field stores `null`, never an empty string. */}
-          <Input
-            ref={emailField}
-            id="member-email"
-            name="email"
-            type="email"
-            autoCapitalize="none"
-            autoCorrect="off"
-            defaultValue={member.email ?? NO_TEXT}
-            aria-describedby={refusal === null ? undefined : 'member-form-error'}
-            className="h-11"
-          />
+          <InputGroup>
+            <InputGroupIcon>
+              <Mail />
+            </InputGroupIcon>
+            <Input
+              ref={emailField}
+              id="member-email"
+              name="email"
+              type="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              defaultValue={member.email ?? NO_TEXT}
+              aria-describedby={refusal === null ? undefined : 'member-form-error'}
+              className="h-11"
+            />
+          </InputGroup>
         </div>
-        <div className="grid gap-2">
-          <Label htmlFor="member-role">{t('ljudi.role')}</Label>
-          {/* Demoting the last administrator of an organization is refused by
-              `0002:242-246`'s deferred trigger AT COMMIT, not here: the control
-              can express it and the database is what says no, which is the same
-              division every other refusal on this surface follows. */}
-          <select
-            ref={roleField}
-            id="member-role"
-            name="role"
-            defaultValue={member.role}
-            aria-describedby={refusal === null ? undefined : 'member-form-error'}
-            className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {MEMBER_ROLES.map((option) => (
-              <option key={option} value={option}>
-                {t(memberLevelMessageKey(option))}
-              </option>
-            ))}
-          </select>
+        <h2 className="border-t pt-6 text-base font-bold">{t('ljudi.form.sectionSettings')}</h2>
+        <div className="grid gap-6 sm:grid-cols-2">
+          <div className="grid gap-2">
+            <Label htmlFor="member-role">{t('ljudi.role')}</Label>
+            {/* Demoting the last administrator of an organization is refused by
+                `0002:242-246`'s deferred trigger AT COMMIT, not here: the control
+                can express it and the database is what says no, which is the same
+                division every other refusal on this surface follows. */}
+            <InputGroup>
+              <InputGroupIcon>
+                <ShieldCheck />
+              </InputGroupIcon>
+              <select
+                ref={roleField}
+                id="member-role"
+                name="role"
+                defaultValue={member.role}
+                aria-describedby={refusal === null ? undefined : 'member-form-error'}
+                className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {MEMBER_ROLES.map((option) => (
+                  <option key={option} value={option}>
+                    {t(memberLevelMessageKey(option))}
+                  </option>
+                ))}
+              </select>
+            </InputGroup>
+          </div>
+          {offersRank ? renderRank(member) : null}
         </div>
-        {offersRank ? renderRank(member) : null}
         <div className="grid gap-2">
           <Label htmlFor="member-leave">{t('ljudi.leave')}</Label>
-          <Input
-            ref={leaveField}
-            id="member-leave"
-            name="leaveAllowanceDays"
-            type="number"
-            min={ALLOWANCE_MINIMUM}
-            max={LEAVE_ALLOWANCE_MAX}
-            step={ALLOWANCE_STEP}
-            aria-invalid={invalidField === 'member-leave'}
-            required
-            defaultValue={member.leaveAllowanceDays}
-            aria-describedby={refusal === null ? undefined : 'member-form-error'}
-            className="h-11"
-          />
+          <InputGroup>
+            <InputGroupIcon>
+              <CalendarDays />
+            </InputGroupIcon>
+            <Input
+              ref={leaveField}
+              id="member-leave"
+              name="leaveAllowanceDays"
+              type="number"
+              min={ALLOWANCE_MINIMUM}
+              max={LEAVE_ALLOWANCE_MAX}
+              step={ALLOWANCE_STEP}
+              aria-invalid={invalidField === 'member-leave'}
+              required
+              defaultValue={member.leaveAllowanceDays}
+              aria-describedby={refusal === null ? undefined : 'member-form-error'}
+              className="h-11"
+            />
+          </InputGroup>
         </div>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-2 border-t pt-6 sm:grid-cols-2">
           <Button className="h-11 w-full" type="submit" disabled={pending} aria-busy={pending}>
+            <Save aria-hidden />
             {t('ljudi.form.save')}
           </Button>
           <Button className="h-11 w-full" type="reset" variant="outline" disabled={pending}>
@@ -898,20 +943,25 @@ export function LjudiMemberScreen() {
     return (
       <div className="grid gap-2">
         <Label htmlFor="member-rank">{t('ljudi.rank.label')}</Label>
-        <select
-          ref={rankField}
-          id="member-rank"
-          name="fireRank"
-          defaultValue={rankInitialValue(member.fireRank)}
-          aria-describedby={refusal === null ? undefined : 'member-form-error'}
-          className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {rankOptionsFor(member.fireRank).map((option) => (
-            <option key={rankValue(option)} value={rankValue(option)}>
-              {t(rankMessageKey(option))}
-            </option>
-          ))}
-        </select>
+        <InputGroup>
+          <InputGroupIcon>
+            <Medal />
+          </InputGroupIcon>
+          <select
+            ref={rankField}
+            id="member-rank"
+            name="fireRank"
+            defaultValue={rankInitialValue(member.fireRank)}
+            aria-describedby={refusal === null ? undefined : 'member-form-error'}
+            className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {rankOptionsFor(member.fireRank).map((option) => (
+              <option key={rankValue(option)} value={rankValue(option)}>
+                {t(rankMessageKey(option))}
+              </option>
+            ))}
+          </select>
+        </InputGroup>
       </div>
     );
   }
@@ -987,23 +1037,23 @@ export function LjudiMemberScreen() {
   function renderConfirmation(name: string): ReactNode {
     const busy = stage === RESET_BUSY;
 
+    // IN A MODAL (design refresh C), open for as long as it is rendered: the
+    // armed state is the screen's as before, and Escape or the backdrop cancel
+    // except while the request is outstanding.
     return (
-      <div className="grid gap-2">
-        <p className="text-sm font-medium">{t('ljudi.form.resetPrompt', { name })}</p>
-        <div className="grid gap-2 sm:grid-cols-2">
+      <ConfirmDialog
+        busy={busy}
+        onCancel={() => {
+          setArmed(null);
+        }}
+        aria-labelledby="member-reset-prompt"
+      >
+        <p id="member-reset-prompt" className="text-sm font-medium">
+          {t('ljudi.form.resetPrompt', { name })}
+        </p>
+        <DialogFooter>
           <Button
-            className="h-11 w-full"
-            type="button"
-            disabled={busy}
-            aria-busy={busy}
-            onClick={() => {
-              void issue();
-            }}
-          >
-            {t('ljudi.form.resetConfirm', { name })}
-          </Button>
-          <Button
-            className="h-11 w-full"
+            className="h-11"
             type="button"
             variant="outline"
             disabled={busy}
@@ -1013,8 +1063,19 @@ export function LjudiMemberScreen() {
           >
             {t('ljudi.form.resetCancel')}
           </Button>
-        </div>
-      </div>
+          <Button
+            className="h-11"
+            type="button"
+            disabled={busy}
+            aria-busy={busy}
+            onClick={() => {
+              void issue();
+            }}
+          >
+            {t('ljudi.form.resetConfirm', { name })}
+          </Button>
+        </DialogFooter>
+      </ConfirmDialog>
     );
   }
 
@@ -1090,12 +1151,21 @@ export function LjudiMemberScreen() {
             date: shownDate(statusSinceOf(status, offer.today)),
           })}
         </p>
+        {/* A SCHEDULED CHANGE STANDS OUT (design refresh C): it is the one
+            line here about the future, so it sits in a callout of its own. */}
         {status.scheduled === null ? null : (
-          <p className="text-sm font-medium">
-            {t(statusScheduledMessageKey(status.scheduled.active), {
-              date: shownDate(status.scheduled.effectiveFrom),
-            })}
-          </p>
+          <Callout>
+            <CalloutBody>
+              <IconTile variant="primary">
+                <CalendarClock />
+              </IconTile>
+              <p className="self-center text-sm font-medium">
+                {t(statusScheduledMessageKey(status.scheduled.active), {
+                  date: shownDate(status.scheduled.effectiveFrom),
+                })}
+              </p>
+            </CalloutBody>
+          </Callout>
         )}
         {statusRefusal === null ? null : (
           <Notice id="member-status-error" role="alert">
@@ -1171,28 +1241,26 @@ export function LjudiMemberScreen() {
     const busy = statusStage === STATUS_BUSY;
     const armedName = statusArmedFor.name;
 
+    // IN A MODAL (design refresh C), open for as long as it is rendered: the
+    // armed state is the screen's as before, and Escape or the backdrop cancel
+    // except while the write is outstanding.
     return (
-      <div className="grid gap-2">
-        <p className="text-sm font-medium">
+      <ConfirmDialog
+        busy={busy}
+        onCancel={() => {
+          setStatusArmed(null);
+        }}
+        aria-labelledby="member-status-prompt"
+      >
+        <p id="member-status-prompt" className="text-sm font-medium">
           {t(statusPromptKeyOf(statusArmedFor, offer.today), {
             name: armedName,
             date: shownDate(statusArmedFor.day),
           })}
         </p>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <DialogFooter>
           <Button
-            className="h-11 w-full"
-            type="button"
-            disabled={busy || statusStage !== STATUS_ARMED}
-            aria-busy={busy}
-            onClick={() => {
-              void changeStatus();
-            }}
-          >
-            {t(statusConfirmMessageKey(statusArmedFor.change), { name: armedName })}
-          </Button>
-          <Button
-            className="h-11 w-full"
+            className="h-11"
             type="button"
             variant="outline"
             disabled={busy}
@@ -1202,8 +1270,19 @@ export function LjudiMemberScreen() {
           >
             {t('ljudi.status.cancel')}
           </Button>
-        </div>
-      </div>
+          <Button
+            className="h-11"
+            type="button"
+            disabled={busy || statusStage !== STATUS_ARMED}
+            aria-busy={busy}
+            onClick={() => {
+              void changeStatus();
+            }}
+          >
+            {t(statusConfirmMessageKey(statusArmedFor.change), { name: armedName })}
+          </Button>
+        </DialogFooter>
+      </ConfirmDialog>
     );
   }
 
@@ -1238,15 +1317,24 @@ export function LjudiMemberScreen() {
             position: current.position === null ? NO_TEXT : t(positionMessageKey(current.position)),
           })}
         </p>
+        {/* A SCHEDULED CHANGE STANDS OUT (design refresh C), as on the
+            status card: the list marks the same change in the team cell. */}
         {scheduled === null ? null : (
-          <p className="text-sm font-medium">
-            {t(scheduled.key, {
-              date: shownDate(scheduled.date ?? NO_TEXT),
-              team: scheduled.team ?? NO_TEXT,
-              position:
-                scheduled.position === null ? NO_TEXT : t(positionMessageKey(scheduled.position)),
-            })}
-          </p>
+          <Callout>
+            <CalloutBody>
+              <IconTile variant="primary">
+                <CalendarClock />
+              </IconTile>
+              <p className="self-center text-sm font-medium">
+                {t(scheduled.key, {
+                  date: shownDate(scheduled.date ?? NO_TEXT),
+                  team: scheduled.team ?? NO_TEXT,
+                  position:
+                    scheduled.position === null ? NO_TEXT : t(positionMessageKey(scheduled.position)),
+                })}
+              </p>
+            </CalloutBody>
+          </Callout>
         )}
         {positionsRefusal === null ? null : (
           <Notice role="alert">
@@ -1403,9 +1491,18 @@ export function LjudiMemberScreen() {
     const busy = teamStage === STATUS_BUSY;
     const armedName = teamArmedFor.name;
 
+    // IN A MODAL (design refresh C), open for as long as it is rendered: the
+    // armed state is the screen's as before, and Escape or the backdrop cancel
+    // except while the write is outstanding.
     return (
-      <div className="grid gap-2">
-        <p className="text-sm font-medium">
+      <ConfirmDialog
+        busy={busy}
+        onCancel={() => {
+          setTeamArmed(null);
+        }}
+        aria-labelledby="member-team-prompt"
+      >
+        <p id="member-team-prompt" className="text-sm font-medium">
           {t(teamPromptKeyOf(teamArmedFor, today), {
             name: armedName,
             date: shownDate(teamArmedFor.day),
@@ -1414,20 +1511,9 @@ export function LjudiMemberScreen() {
               teamArmedFor.position === null ? NO_TEXT : t(positionMessageKey(teamArmedFor.position)),
           })}
         </p>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <DialogFooter>
           <Button
-            className="h-11 w-full"
-            type="button"
-            disabled={busy || teamStage !== STATUS_ARMED}
-            aria-busy={busy}
-            onClick={() => {
-              void changeTeam();
-            }}
-          >
-            {t(teamConfirmMessageKey(teamArmedFor.change), { name: armedName })}
-          </Button>
-          <Button
-            className="h-11 w-full"
+            className="h-11"
             type="button"
             variant="outline"
             disabled={busy}
@@ -1437,8 +1523,19 @@ export function LjudiMemberScreen() {
           >
             {t('smjene.membership.cancel')}
           </Button>
-        </div>
-      </div>
+          <Button
+            className="h-11"
+            type="button"
+            disabled={busy || teamStage !== STATUS_ARMED}
+            aria-busy={busy}
+            onClick={() => {
+              void changeTeam();
+            }}
+          >
+            {t(teamConfirmMessageKey(teamArmedFor.change), { name: armedName })}
+          </Button>
+        </DialogFooter>
+      </ConfirmDialog>
     );
   }
 
@@ -1450,16 +1547,34 @@ export function LjudiMemberScreen() {
     ) : null;
   }
 
+  // Each block once, so its card is drawn only when it renders.
+  const teamBlock = renderTeam();
+  const statusBlock = renderStatus();
+  const resetBlock = renderReset();
+
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6">
       <PageHeader>
-        <PageTitle asChild>
-          <h1>
-            {t('ljudi.form.editHeading')}
-          </h1>
-        </PageTitle>
+        <div className="grid min-w-0 justify-items-start gap-1">
+          {/* THE WAY BACK, always rendered — including while the read is
+              pending and after it has settled failed. A screen reachable only
+              by URL that can be left only by the browser's Back button is a
+              dead end. Above the title, where a way back is looked for
+              (design refresh C). */}
+          <Button asChild variant="ghost" className="-ml-3 h-11 px-3">
+            <Link to="/ljudi">
+              <ArrowLeft aria-hidden />
+              {t('ljudi.form.back')}
+            </Link>
+          </Button>
+          <PageTitle asChild>
+            <h1>
+              {t('ljudi.form.editHeading')}
+            </h1>
+          </PageTitle>
+        </div>
       </PageHeader>
-      <Card className="w-full min-w-0 max-w-lg">
+      <Card className="w-full min-w-0 max-w-2xl">
         {/* OUTSIDE the gated branch: a read that produced no row renders no
             form, so an explanation rendered inside one would be exactly the
             element nobody can see. */}
@@ -1484,24 +1599,46 @@ export function LjudiMemberScreen() {
             </Notice>
           ) : null}
           {renderBody()}
-          {/* OUTSIDE THE `<form>` AND BEFORE THE WAY BACK. Inside the actions
-              grid a `<Button>` submits, and `key={memberFormKey(member)}`
-              remounts that subtree on every refetch — which would wipe a
-              credential nobody had finished reading. */}
-          {renderReset()}
-          {/* STORY 1.6, and outside the `<form>` for the reason the reset is: a
-              `<Button>` inside it submits, and the form's key remounts it. */}
-          {renderStatus()}
-          {/* STORY 1.7b, outside the `<form>` for the same reason. */}
-          {renderTeam()}
-          {/* THE WAY BACK, always rendered — including while the read is pending
-              and after it has settled failed. A screen reachable only by URL
-              that can be left only by the browser's Back button is a dead end. */}
-          <Button asChild className="h-11 w-full" variant="outline">
-            <Link to="/ljudi">{t('ljudi.form.back')}</Link>
-          </Button>
         </CardContent>
       </Card>
+      {/* EACH OTHER DECISION IN ITS OWN CARD (design refresh C), and every one
+          outside the `<form>`: inside it a `<Button>` submits, and
+          `key={memberFormKey(member)}` remounts that subtree on every refetch —
+          which would wipe a credential nobody had finished reading. A card is
+          drawn only around a block that renders, so none stands empty — the
+          status block renders nothing on one's own row, for instance. */}
+      {/* STORY 1.7b. */}
+      {teamBlock === null ? null : (
+        <Card className="w-full min-w-0 max-w-2xl">
+          <CardHeader>
+            <CardTitle asChild>
+              <h2>{t('smjene.membership.column')}</h2>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4">{teamBlock}</CardContent>
+        </Card>
+      )}
+      {/* STORY 1.6. */}
+      {statusBlock === null ? null : (
+        <Card className="w-full min-w-0 max-w-2xl">
+          <CardHeader>
+            <CardTitle asChild>
+              <h2>{t('ljudi.status.heading')}</h2>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4">{statusBlock}</CardContent>
+        </Card>
+      )}
+      {resetBlock === null ? null : (
+        <Card className="w-full min-w-0 max-w-2xl">
+          <CardHeader>
+            <CardTitle asChild>
+              <h2>{t('ljudi.form.passwordHeading')}</h2>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4">{resetBlock}</CardContent>
+        </Card>
+      )}
     </main>
   );
 }

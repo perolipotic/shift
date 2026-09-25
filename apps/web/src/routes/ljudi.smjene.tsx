@@ -1,12 +1,25 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, redirect } from '@tanstack/react-router';
-import { useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Eye, Pencil, Plus, Users, UsersRound } from 'lucide-react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { IconTile } from '@/components/ui/icon-tile';
 import { Input } from '@/components/ui/input';
+import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
-import { PageActions, PageHeader, PageTitle } from '@/components/ui/page-header';
+import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/i18n';
 import { NO_TEXT, mayReadMembers } from '@/members/list';
@@ -63,6 +76,19 @@ export function LjudiSmjeneScreen() {
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState<TeamWriteFailure | null>(null);
   const [created, setCreated] = useState(false);
+  const [adding, setAdding] = useState(false);
+
+  // The first field, once the dialog is open. The dialog's own effect runs
+  // first, so `showModal()` has already moved focus into it.
+  useEffect(() => {
+    if (adding) nameField.current?.focus();
+  }, [adding]);
+
+  function openAdding(): void {
+    setFailure(null);
+    setCreated(false);
+    setAdding(true);
+  }
 
   const answer = useQuery(teamsQueryOptions(() => supabaseClient().from(TEAMS_TABLE)));
 
@@ -109,6 +135,9 @@ export function LjudiSmjeneScreen() {
 
       name.value = NO_TEXT;
       setCreated(true);
+      // Closed, and the confirmation is on the page; focus returns to the
+      // button that opened the dialog.
+      setAdding(false);
 
       try {
         await queryClient.invalidateQueries({ queryKey: TEAMS_LIST_KEY });
@@ -124,25 +153,44 @@ export function LjudiSmjeneScreen() {
     }
   }
 
-  /** A group's rows, or nothing at all when it has none: its count says so. */
+  /** A group as a table, or nothing at all when it has none: its count says so. */
   function renderTeams(group: readonly TeamRow[]): ReactNode {
     if (group.length === 0) return null;
 
     return (
-      <ul className="grid gap-2">
-        {group.map((team) => (
-          <li key={team.id}>
-            {/* NAMED FOR THE TEAM IT OPENS; the name is data, interpolated. An
-                archived team's row VIEWS it — `teamActionMessageKey` decides,
-                because its screen offers no edit. */}
-            <Button asChild variant="outline" className="h-11 w-full justify-start">
-              <Link to="/ljudi/smjene/$id" params={{ id: team.id }}>
-                <span className="truncate">{t(teamActionMessageKey(team), { name: team.name })}</span>
-              </Link>
-            </Button>
-          </li>
-        ))}
-      </ul>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t('smjene.name')}</TableHead>
+            <TableHead className="text-right">{t('smjene.actions')}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {group.map((team) => (
+            <TableRow key={team.id}>
+              <TableCell>
+                <div className="flex min-w-0 items-center gap-3">
+                  <IconTile>
+                    <Users />
+                  </IconTile>
+                  <span className="truncate font-semibold">{team.name}</span>
+                </div>
+              </TableCell>
+              <TableCell className="text-right">
+                {/* NAMED FOR THE TEAM IT OPENS; the name is data, interpolated.
+                    An archived team's row VIEWS it — `teamActionMessageKey`
+                    decides, because its dialog offers no edit. */}
+                <Button asChild variant="ghost" className="h-11 w-11 px-0">
+                  <Link to="/ljudi/smjene/$id" params={{ id: team.id }}>
+                    {team.archived ? <Eye aria-hidden /> : <Pencil aria-hidden />}
+                    <span className="sr-only">{t(teamActionMessageKey(team), { name: team.name })}</span>
+                  </Link>
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     );
   }
 
@@ -152,26 +200,53 @@ export function LjudiSmjeneScreen() {
       aria-busy={loading}
     >
       <PageHeader>
-        <PageTitle asChild>
-          <h1>{t('smjene.heading')}</h1>
-        </PageTitle>
+        <div className="min-w-0">
+          <PageTitle asChild>
+            <h1>{t('smjene.heading')}</h1>
+          </PageTitle>
+          <PageDescription>{t('smjene.lede')}</PageDescription>
+        </div>
         <PageActions>
           <Button asChild variant="outline" className="h-11">
-            <Link to="/ljudi">{t('nav.ljudi')}</Link>
+            <Link to="/ljudi">
+              <UsersRound aria-hidden />
+              {t('nav.ljudi')}
+            </Link>
+          </Button>
+          <Button className="h-11" type="button" onClick={openAdding}>
+            <Plus aria-hidden />
+            {t('smjene.open')}
           </Button>
         </PageActions>
       </PageHeader>
-      <Card>
-        <CardContent className="grid gap-4">
-          <form
-            method="post"
-            onSubmit={(event) => {
-              void submit(event);
-            }}
-            className="flex flex-wrap items-end gap-4"
-          >
-            <div className="grid min-w-0 flex-1 gap-2">
-              <Label htmlFor="team-new-name">{t('smjene.name')}</Label>
+      {created ? <Notice role="status">{t('smjene.created')}</Notice> : null}
+      {refusal === null ? null : (
+        <Notice role="alert">
+          {t(teamsMessageKey(refusal))}
+        </Notice>
+      )}
+      <Dialog open={adding} onOpenChange={setAdding} aria-labelledby="team-new-heading">
+        <DialogHeader
+          closeLabel={t('smjene.close')}
+          onClose={() => {
+            setAdding(false);
+          }}
+        >
+          <DialogTitle id="team-new-heading">{t('smjene.addHeading')}</DialogTitle>
+        </DialogHeader>
+        <form
+          method="post"
+          onSubmit={(event) => {
+            void submit(event);
+          }}
+          className="grid gap-5"
+        >
+          <div className="grid gap-2">
+            <Label htmlFor="team-new-name">{t('smjene.name')}</Label>
+            <InputGroup>
+              <InputGroupIcon>
+                <Users />
+              </InputGroupIcon>
               <Input
                 ref={nameField}
                 id="team-new-name"
@@ -187,26 +262,32 @@ export function LjudiSmjeneScreen() {
                 aria-describedby={failure === null ? undefined : 'team-create-error'}
                 className="h-11 w-full"
               />
-            </div>
-            <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
-              {t('smjene.add')}
-            </Button>
-          </form>
-          {/* THE CREATE FORM'S OWN NOTICES, inside its card as the form screens
-              hold theirs. The list-read refusal below belongs to the page. */}
+            </InputGroup>
+          </div>
+          {/* THE CREATE FORM'S OWN REFUSAL, inside the dialog. The list-read
+              refusal belongs to the page. */}
           {failure === null ? null : (
             <Notice id="team-create-error" role="alert">
               {t(teamWriteMessageKey(failure))}
             </Notice>
           )}
-          {created ? <Notice role="status">{t('smjene.created')}</Notice> : null}
-        </CardContent>
-      </Card>
-      {refusal === null ? null : (
-        <Notice role="alert">
-          {t(teamsMessageKey(refusal))}
-        </Notice>
-      )}
+          <DialogFooter>
+            <Button
+              className="h-11"
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setAdding(false);
+              }}
+            >
+              {t('smjene.cancel')}
+            </Button>
+            <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
+              {t('smjene.add')}
+            </Button>
+          </DialogFooter>
+        </form>
+      </Dialog>
       {loading ? (
         <div className="grid gap-2">
           {SKELETON_ROWS.map((row) => (
@@ -215,30 +296,30 @@ export function LjudiSmjeneScreen() {
         </div>
       ) : null}
       {split === null ? null : (
-        <section className="grid gap-4">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-lg font-bold">
-              {t('smjene.activeHeading')}
-            </h2>
+        <Card className="min-w-0">
+          <CardHeader className="flex-row flex-wrap items-center gap-3">
+            <CardTitle asChild>
+              <h2>{t('smjene.activeHeading')}</h2>
+            </CardTitle>
             {/* STATED, AND STATED AT ZERO (UX-DR20). NOT a live region: only
                 confirmations announce, and a count announced on every refetch
                 is noise that buries them. */}
-            <p className="text-sm text-muted-foreground">
-              {t('smjene.count', { count: split.active.length })}
-            </p>
-          </div>
+            <Badge variant="secondary">{t('smjene.count', { count: split.active.length })}</Badge>
+          </CardHeader>
           {renderTeams(split.active)}
-        </section>
+        </Card>
       )}
       {split === null ? null : (
-        <section className="grid gap-4">
-          {/* The count IS the heading: `Arhivirano: 2 smjene`. A separate
-              `Arhivirano` above it would say the same word twice. */}
-          <h2 className="text-lg font-bold">
-            {t('smjene.archivedCount', { count: split.archived.length })}
-          </h2>
+        <Card className="min-w-0">
+          <CardHeader>
+            {/* The count IS the heading: `Arhivirano: 2 smjene`. A separate
+                `Arhivirano` above it would say the same word twice. */}
+            <CardTitle asChild>
+              <h2>{t('smjene.archivedCount', { count: split.archived.length })}</h2>
+            </CardTitle>
+          </CardHeader>
           {renderTeams(split.archived)}
-        </section>
+        </Card>
       )}
     </main>
   );

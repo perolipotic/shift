@@ -1,10 +1,21 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute } from '@tanstack/react-router';
+import {
+  Building2,
+  CalendarDays,
+  Clock3,
+  Flame,
+  Palette,
+  Save,
+  Upload,
+} from 'lucide-react';
 import { useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { PageActions, PageHeader, PageTitle } from '@/components/ui/page-header';
+import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card';
+import { IconTile } from '@/components/ui/icon-tile';
+import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
+import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
@@ -29,6 +40,7 @@ import {
   NO_BRAND_ACCENT,
   type BrandAccentKey,
 } from '@/organization/accent';
+import { LEAVE_START_DAYS, LEAVE_START_MONTHS } from '@/organization/leave-start';
 import { OrganizationLockup } from '@/organization/lockup';
 import {
   LOGO_UNAVAILABLE,
@@ -152,10 +164,8 @@ import { supabaseClient } from '@/supabase/client';
 export function OrganizacijaScreen() {
   const queryClient = useQueryClient();
   const nameField = useRef<HTMLInputElement>(null);
-  const typeField = useRef<HTMLInputElement>(null);
-  const timezoneField = useRef<HTMLInputElement>(null);
-  const monthField = useRef<HTMLInputElement>(null);
-  const dayField = useRef<HTMLInputElement>(null);
+  const monthField = useRef<HTMLSelectElement>(null);
+  const dayField = useRef<HTMLSelectElement>(null);
   const logoField = useRef<HTMLInputElement>(null);
   // A REF as well as state, and the two are not redundant: state drives the
   // disabled buttons, and state is stale inside a handler already called once
@@ -231,16 +241,12 @@ export function OrganizacijaScreen() {
     event.preventDefault();
 
     const name = nameField.current;
-    const type = typeField.current;
-    const timezone = timezoneField.current;
     const month = monthField.current;
     const day = dayField.current;
 
     if (
       organization === null ||
       name === null ||
-      type === null ||
-      timezone === null ||
       month === null ||
       day === null ||
       saving.current ||
@@ -262,8 +268,12 @@ export function OrganizacijaScreen() {
         organization.id,
         {
           name: name.value,
-          organizationType: type.value,
-          timezone: timezone.value,
+          // NOT ON THIS FORM (design refresh C): inert by contract
+          // (`0002:87`), nothing reads it, so it is written back unchanged.
+          organizationType: organization.organizationType,
+          // NOT ON THIS FORM (design refresh C): the zone is shown beside it
+          // and written back unchanged, so a save never moves it.
+          timezone: organization.timezone,
           leaveYearStartMonth: Number(month.value),
           leaveYearStartDay: Number(day.value),
         },
@@ -618,9 +628,12 @@ export function OrganizacijaScreen() {
     }
 
     return (
-      <div className="grid gap-2">
-        <p className="text-sm font-medium leading-none">{t('organization.logo')}</p>
-        <div className="flex items-center gap-4">
+      <div className="grid gap-3">
+        <div>
+          <p className="text-sm font-semibold leading-none">{t('organization.logo')}</p>
+          <p className="mt-1.5 text-xs text-muted-foreground">{t('organization.logoHint')}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-4">
           {/* THE LOCKUP, shared with the navigation chrome rather than drawn
               twice. The logo-or-mark decision, the accessible name, the
               broken-image fallback and the accent are four decisions, and two
@@ -650,12 +663,13 @@ export function OrganizacijaScreen() {
           <Button
             className="h-11"
             type="button"
-            variant="outline"
+            variant="dashed"
             disabled={busy}
             aria-busy={uploadingLogo}
             aria-describedby={refusal === null ? undefined : 'organization-error'}
             onClick={openLogoPicker}
           >
+            <Upload aria-hidden />
             {t('organization.logoChoose')}
           </Button>
         </div>
@@ -701,94 +715,78 @@ export function OrganizacijaScreen() {
       >
         <div className="grid gap-2">
           <Label htmlFor="organization-name">{t('organization.name')}</Label>
-          <Input
-            ref={nameField}
-            id="organization-name"
-            name="name"
-            type="text"
-            required
-            defaultValue={organization.name}
-            aria-describedby={refusal === null ? undefined : 'organization-error'}
-            className="h-11"
-          />
+          <InputGroup>
+            <InputGroupIcon>
+              <Building2 />
+            </InputGroupIcon>
+            <Input
+              ref={nameField}
+              id="organization-name"
+              name="name"
+              type="text"
+              required
+              defaultValue={organization.name}
+              aria-describedby={refusal === null ? undefined : 'organization-error'}
+              className="h-11"
+            />
+          </InputGroup>
         </div>
-        <div className="grid gap-2">
-          <Label htmlFor="organization-type">{t('organization.type')}</Label>
-          {/* Free text, and inert by contract (`0002:87`): two
-              organizations differing only in type produce byte-identical
-              output, so nothing branches on this value and no enumeration
-              of the types we happened to think of today belongs here. */}
-          <Input
-            ref={typeField}
-            id="organization-type"
-            name="organizationType"
-            type="text"
-            required
-            defaultValue={organization.organizationType}
-            aria-describedby={refusal === null ? undefined : 'organization-error'}
-            className="h-11"
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="organization-timezone">{t('organization.timezone')}</Label>
-          {/* The organization is the frame (L8): this value, and never the
-              device's, is what every date and time in the application
-              renders in. An IANA name, unchecked against
-              `pg_timezone_names` for the reason `0002:93` records. */}
-          <Input
-            ref={timezoneField}
-            id="organization-timezone"
-            name="timezone"
-            type="text"
-            autoCapitalize="none"
-            autoCorrect="off"
-            required
-            defaultValue={organization.timezone}
-            aria-describedby={refusal === null ? undefined : 'organization-error'}
-            className="h-11"
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="organization-leave-month">
-            {t('organization.leaveYearStartMonth')}
-          </Label>
-          <Input
-            ref={monthField}
-            id="organization-leave-month"
-            name="leaveYearStartMonth"
-            type="number"
-            min={1}
-            max={12}
-            step={1}
-            required
-            defaultValue={organization.leaveYearStartMonth}
-            aria-describedby={refusal === null ? undefined : 'organization-error'}
-            className="h-11"
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor="organization-leave-day">
-            {t('organization.leaveYearStartDay')}
-          </Label>
-          {/* 28, not 31, and the control is where that stops being
-              expressible: `0002:106` admits 1-28 by SHAPE rather than by
-              validation, because a leave year starting on the 30th has no
-              boundary in February. A control that could express 30 would
-              turn a shape into a refusal the person has to read. */}
-          <Input
-            ref={dayField}
-            id="organization-leave-day"
-            name="leaveYearStartDay"
-            type="number"
-            min={1}
-            max={28}
-            step={1}
-            required
-            defaultValue={organization.leaveYearStartDay}
-            aria-describedby={refusal === null ? undefined : 'organization-error'}
-            className="h-11"
-          />
-        </div>
+        {/* THE LEAVE YEAR'S START, a day and a month under one legend. Not a
+            date picker: the setting recurs yearly, so a year would mean
+            nothing, and `0002:106` admits days 1-28 by SHAPE, which two closed
+            lists express and a calendar cannot. See `@/organization/leave-start`. */}
+        <fieldset className="grid min-w-0 gap-2">
+          <legend className="mb-2 text-sm font-semibold leading-none">
+            {t('organization.leaveYearStart')}
+          </legend>
+          <div className="grid grid-cols-[6.5rem_minmax(0,1fr)] gap-3">
+            <div className="grid min-w-0">
+              <Label htmlFor="organization-leave-day" className="sr-only">
+                {t('organization.leaveYearStartDay')}
+              </Label>
+              <select
+                ref={dayField}
+                id="organization-leave-day"
+                name="leaveYearStartDay"
+                required
+                defaultValue={organization.leaveYearStartDay}
+                aria-describedby={refusal === null ? undefined : 'organization-error'}
+                className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {LEAVE_START_DAYS.map((day) => (
+                  <option key={day} value={day}>
+                    {day}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="grid min-w-0">
+              <Label htmlFor="organization-leave-month" className="sr-only">
+                {t('organization.leaveYearStartMonth')}
+              </Label>
+              <InputGroup>
+                <InputGroupIcon>
+                  <CalendarDays />
+                </InputGroupIcon>
+                <select
+                  ref={monthField}
+                  id="organization-leave-month"
+                  name="leaveYearStartMonth"
+                  required
+                  defaultValue={organization.leaveYearStartMonth}
+                  aria-describedby={refusal === null ? undefined : 'organization-error'}
+                  className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {LEAVE_START_MONTHS.map((month) => (
+                    <option key={month.value} value={month.value}>
+                      {month.label}
+                    </option>
+                  ))}
+                </select>
+              </InputGroup>
+            </div>
+          </div>
+        </fieldset>
         <div className="grid gap-2">
           <Label htmlFor="organization-accent">{t('organization.accent')}</Label>
           {/* A CLOSED SET AND NOTHING ELSE. Five options — four curated accents
@@ -810,48 +808,53 @@ export function OrganizacijaScreen() {
               chosen rather than when somebody presses a button four fields
               away — and travelling alone is what stops it clobbering a
               half-typed name. */}
-          <select
-            /* REMOUNTED WHEN THE ROW CHANGES, and that is what `key` is doing
-               here rather than a list identity. A `<select>`'s `defaultValue`
-               sets `defaultSelected` at MOUNT and never again, so after a
-               successful write the element's reset state still named the
-               accent the row held when the screen opened — and `Cancel`, which
-               is `type="reset"`, would snap the control back to an accent the
-               database no longer holds. Keying on the stored value remounts the
-               element exactly when that state has to move, so reset always
-               restores what the row actually says. */
-            key={organization.brandAccent ?? NO_BRAND_ACCENT}
-            id="organization-accent"
-            name="brandAccent"
-            defaultValue={organization.brandAccent ?? NO_BRAND_ACCENT}
-            onChange={chooseAccent}
-            disabled={writingElsewhere}
-            aria-busy={savingAccent}
-            aria-describedby={refusal === null ? undefined : 'organization-error'}
-            className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-          >
-              {/* THE ACCENT THIS BUILD DOES NOT KNOW, rendered as its own option
-                rather than collapsed into `Neutralna`. A forward-only migration
-                stream and a static SPA are not promoted at the same instant, so
-                a row carrying an accent a newer build wrote is an ordinary
-                state — and folding it into the first option made the control
-                claim the organization had no accent AND made every other option
-                unreachable by keyboard, because selecting the one already shown
-                fires no change event. Shown, the row is described honestly and
-                every other option is one change away.
+          <InputGroup>
+            <InputGroupIcon>
+              <Palette />
+            </InputGroupIcon>
+            <select
+              /* REMOUNTED WHEN THE ROW CHANGES, and that is what `key` is doing
+                 here rather than a list identity. A `<select>`'s `defaultValue`
+                 sets `defaultSelected` at MOUNT and never again, so after a
+                 successful write the element's reset state still named the
+                 accent the row held when the screen opened — and `Cancel`, which
+                 is `type="reset"`, would snap the control back to an accent the
+                 database no longer holds. Keying on the stored value remounts the
+                 element exactly when that state has to move, so reset always
+                 restores what the row actually says. */
+              key={organization.brandAccent ?? NO_BRAND_ACCENT}
+              id="organization-accent"
+              name="brandAccent"
+              defaultValue={organization.brandAccent ?? NO_BRAND_ACCENT}
+              onChange={chooseAccent}
+              disabled={writingElsewhere}
+              aria-busy={savingAccent}
+              aria-describedby={refusal === null ? undefined : 'organization-error'}
+              className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            >
+                {/* THE ACCENT THIS BUILD DOES NOT KNOW, rendered as its own option
+                  rather than collapsed into `Neutralna`. A forward-only migration
+                  stream and a static SPA are not promoted at the same instant, so
+                  a row carrying an accent a newer build wrote is an ordinary
+                  state — and folding it into the first option made the control
+                  claim the organization had no accent AND made every other option
+                  unreachable by keyboard, because selecting the one already shown
+                  fires no change event. Shown, the row is described honestly and
+                  every other option is one change away.
 
-                Its label is the stored VALUE and not a key: it is data this
-                build has no name for, and data is never a key. */}
-            {brandAccentOf(organization.brandAccent) === null &&
-            organization.brandAccent !== null ? (
-              <option value={organization.brandAccent}>{organization.brandAccent}</option>
-            ) : null}
-            {BRAND_ACCENT_OPTIONS.map((option) => (
-              <option key={brandAccentValue(option)} value={brandAccentValue(option)}>
-                {t(accentMessageKey(option))}
-              </option>
-            ))}
-          </select>
+                  Its label is the stored VALUE and not a key: it is data this
+                  build has no name for, and data is never a key. */}
+              {brandAccentOf(organization.brandAccent) === null &&
+              organization.brandAccent !== null ? (
+                <option value={organization.brandAccent}>{organization.brandAccent}</option>
+              ) : null}
+              {BRAND_ACCENT_OPTIONS.map((option) => (
+                <option key={brandAccentValue(option)} value={brandAccentValue(option)}>
+                  {t(accentMessageKey(option))}
+                </option>
+              ))}
+            </select>
+          </InputGroup>
           {/* WHAT THE ROW HOLDS, beside the control that changes it.
               `role="status"` and not `role="alert"`: the alert region is the
               refusal's, and a second assertive region would be a second thing
@@ -873,30 +876,35 @@ export function OrganizacijaScreen() {
               and remounted when the row changes for the accent's reason — and
               ALSO on a refused write, unlike the accent, so the control never
               shows a setting the database refused. */}
-          <select
-            key={fireRanksControlKey(organization.usesFireRanks, fireRanksRevision)}
-            id="organization-fire-ranks"
-            name="usesFireRanks"
-            defaultValue={fireRanksValue(organization.usesFireRanks)}
-            onChange={chooseFireRanks}
-            disabled={writingBesideFireRanks}
-            aria-busy={savingFireRanks}
-            aria-describedby={refusal === null ? undefined : 'organization-error'}
-            className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {FIRE_RANKS_OPTIONS.map((option) => (
-              <option key={fireRanksValue(option)} value={fireRanksValue(option)}>
-                {t(fireRanksMessageKey(option))}
-              </option>
-            ))}
-          </select>
+          <InputGroup>
+            <InputGroupIcon>
+              <Flame />
+            </InputGroupIcon>
+            <select
+              key={fireRanksControlKey(organization.usesFireRanks, fireRanksRevision)}
+              id="organization-fire-ranks"
+              name="usesFireRanks"
+              defaultValue={fireRanksValue(organization.usesFireRanks)}
+              onChange={chooseFireRanks}
+              disabled={writingBesideFireRanks}
+              aria-busy={savingFireRanks}
+              aria-describedby={refusal === null ? undefined : 'organization-error'}
+              className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {FIRE_RANKS_OPTIONS.map((option) => (
+                <option key={fireRanksValue(option)} value={fireRanksValue(option)}>
+                  {t(fireRanksMessageKey(option))}
+                </option>
+              ))}
+            </select>
+          </InputGroup>
           {/* WHAT THE ROW HOLDS, read out of the snapshot: the confirmation a
               write with no Save button gets. */}
           <p role="status" className="text-sm text-muted-foreground">
             {t(fireRanksStatusMessageKey(organization.usesFireRanks))}
           </p>
         </div>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-2 border-t pt-6 sm:grid-cols-2">
           {/* Disabled on EVERY flag. The four handlers share one message
               region, so a save started while an upload or an accent write is in
               flight would take the region from a refusal nobody has read yet. */}
@@ -906,6 +914,7 @@ export function OrganizacijaScreen() {
             disabled={busy}
             aria-busy={pending}
           >
+            <Save aria-hidden />
             {t('organization.save')}
           </Button>
           {/* `type="reset"`, which on an uncontrolled form is exactly what
@@ -934,39 +943,65 @@ export function OrganizacijaScreen() {
             DESTINATION's own key — the screen is what `Organizacija` names,
             so a second heading string would be the same word authored twice
             and one of the two would be a string nobody renders. */}
-        <PageTitle asChild>
-          <h1>
-            {t('nav.organizacija')}
-          </h1>
-        </PageTitle>
+        <div className="min-w-0">
+          <PageTitle asChild>
+            <h1>
+              {t('nav.organizacija')}
+            </h1>
+          </PageTitle>
+          <PageDescription>{t('organization.lede')}</PageDescription>
+        </div>
         {/* STORY 2.1b: the hour band editor, reached from here rather than
             from the navigation, so the destinations stay eight. A link in the
             header's actions, as `/ljudi`'s way to the teams is. */}
         <PageActions>
           <Button asChild variant="outline" className="h-11">
-            <Link to="/organizacija/satni-pojasi">{t('organization.hourBands.heading')}</Link>
+            <Link to="/organizacija/satni-pojasi">
+              <Clock3 aria-hidden />
+              {t('organization.hourBands.heading')}
+            </Link>
           </Button>
         </PageActions>
       </PageHeader>
-      <Card className="w-full min-w-0 max-w-lg">
-        {/* OUTSIDE the snapshot-gated branch, which is where it used to be and
-            where it could not be seen: a read that never produced a row never
-            rendered the form, so the one element that explains why was itself
-            behind the row existing. `role="alert"` announces it on insertion;
-            nothing in the tab order passes through it, and every field points
-            at it so it is also reachable by moving between them. Conditional on
-            both sides, because a reference to an absent id is ignored in
-            silence rather than reported. */}
-        <CardContent className="grid gap-6">
-          {refusal === null ? null : (
-            <Notice id="organization-error" role="alert">
-              {t(organizationMessageKey(refusal))}
-            </Notice>
-          )}
-          {renderLogo()}
-          {renderSettings()}
-        </CardContent>
-      </Card>
+      <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <Card className="w-full min-w-0 max-w-2xl">
+          {/* OUTSIDE the snapshot-gated branch, which is where it used to be and
+              where it could not be seen: a read that never produced a row never
+              rendered the form, so the one element that explains why was itself
+              behind the row existing. `role="alert"` announces it on insertion;
+              nothing in the tab order passes through it, and every field points
+              at it so it is also reachable by moving between them. Conditional on
+              both sides, because a reference to an absent id is ignored in
+              silence rather than reported. */}
+          <CardContent className="grid gap-6">
+            {refusal === null ? null : (
+              <Notice id="organization-error" role="alert">
+                {t(organizationMessageKey(refusal))}
+              </Notice>
+            )}
+            {renderLogo()}
+            {renderSettings()}
+          </CardContent>
+        </Card>
+        {/* WHAT THESE SETTINGS DO, beside them. Explains; announces nothing. */}
+        <Card className="min-w-0">
+          <CardContent className="grid gap-3">
+            <IconTile variant="primary">
+              <Building2 />
+            </IconTile>
+            <CardTitle asChild>
+              <h2>{t('organization.aboutTitle')}</h2>
+            </CardTitle>
+            <CardDescription>{t('organization.aboutBody')}</CardDescription>
+            {organization === null ? null : (
+              <dl className="grid gap-1 border-t pt-3 text-sm">
+                <dt className="text-muted-foreground">{t('organization.timezone')}</dt>
+                <dd className="font-semibold">{organization.timezone}</dd>
+              </dl>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </main>
   );
 }

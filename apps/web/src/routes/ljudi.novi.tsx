@@ -1,11 +1,24 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, redirect } from '@tanstack/react-router';
+import {
+  ArrowLeft,
+  AtSign,
+  CalendarDays,
+  Info,
+  Mail,
+  Medal,
+  Save,
+  ShieldCheck,
+  User,
+} from 'lucide-react';
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { PageHeader, PageTitle } from '@/components/ui/page-header';
+import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card';
+import { IconTile } from '@/components/ui/icon-tile';
+import { PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { Input } from '@/components/ui/input';
+import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/i18n';
@@ -281,20 +294,25 @@ export function LjudiNoviScreen() {
       <div className="grid gap-2">
         <Label htmlFor="member-rank">{t('ljudi.rank.label')}</Label>
         {/* A native `<select>` over the fixed list, no rank first. */}
-        <select
-          ref={rankField}
-          id="member-rank"
-          name="fireRank"
-          defaultValue={rankInitialValue(null)}
-          aria-describedby={refusal === null ? undefined : 'member-form-error'}
-          className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {RANK_OPTIONS.map((option) => (
-            <option key={rankValue(option)} value={rankValue(option)}>
-              {t(rankMessageKey(option))}
-            </option>
-          ))}
-        </select>
+        <InputGroup>
+          <InputGroupIcon>
+            <Medal />
+          </InputGroupIcon>
+          <select
+            ref={rankField}
+            id="member-rank"
+            name="fireRank"
+            defaultValue={rankInitialValue(null)}
+            aria-describedby={refusal === null ? undefined : 'member-form-error'}
+            className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {RANK_OPTIONS.map((option) => (
+              <option key={rankValue(option)} value={rankValue(option)}>
+                {t(rankMessageKey(option))}
+              </option>
+            ))}
+          </select>
+        </InputGroup>
       </div>
     );
   }
@@ -324,22 +342,28 @@ export function LjudiNoviScreen() {
         }}
         className="grid gap-6"
       >
+        <h2 className="text-base font-bold">{t('ljudi.form.sectionBasics')}</h2>
         <div className="grid gap-2">
           <Label htmlFor="member-name">{t('ljudi.name')}</Label>
           {/* UNCONTROLLED, with a `defaultValue` and never a `value`: a refused
               save must keep every entered value (UX-DR34), and a controlled
               field re-rendered from state on a refusal is how six of them get
               discarded at once. */}
-          <Input
-            ref={nameField}
-            id="member-name"
-            name="name"
-            type="text"
-            required
-            defaultValue={NO_TEXT}
-            aria-describedby={refusal === null ? undefined : 'member-form-error'}
-            className="h-11"
-          />
+          <InputGroup>
+            <InputGroupIcon>
+              <User />
+            </InputGroupIcon>
+            <Input
+              ref={nameField}
+              id="member-name"
+              name="name"
+              type="text"
+              required
+              defaultValue={NO_TEXT}
+              aria-describedby={refusal === null ? undefined : 'member-form-error'}
+              className="h-11"
+            />
+          </InputGroup>
         </div>
         <div className="grid gap-2">
           <Label htmlFor="member-username">{t('ljudi.form.username')}</Label>
@@ -348,18 +372,23 @@ export function LjudiNoviScreen() {
               for the reason the sign-in field turns them off: a phone keyboard
               capitalizing the first letter produces a username `0007`'s
               lowercase check refuses. */}
-          <Input
-            ref={usernameField}
-            id="member-username"
-            name="username"
-            type="text"
-            autoCapitalize="none"
-            autoCorrect="off"
-            required
-            defaultValue={NO_TEXT}
-            aria-describedby={refusal === null ? undefined : 'member-form-error'}
-            className="h-11"
-          />
+          <InputGroup>
+            <InputGroupIcon>
+              <AtSign />
+            </InputGroupIcon>
+            <Input
+              ref={usernameField}
+              id="member-username"
+              name="username"
+              type="text"
+              autoCapitalize="none"
+              autoCorrect="off"
+              required
+              defaultValue={NO_TEXT}
+              aria-describedby={refusal === null ? undefined : 'member-form-error'}
+              className="h-11"
+            />
+          </InputGroup>
         </div>
         <div className="grid gap-2">
           <Label htmlFor="member-email">{t('ljudi.email')}</Label>
@@ -367,62 +396,81 @@ export function LjudiNoviScreen() {
               no address is still a member (`0002:135`), which is the whole
               reason sign-in is a username. No `required` here and no fallback —
               an empty field stores `null`, never an empty string. */}
-          <Input
-            ref={emailField}
-            id="member-email"
-            name="email"
-            type="email"
-            autoCapitalize="none"
-            autoCorrect="off"
-            defaultValue={NO_TEXT}
-            aria-describedby={refusal === null ? undefined : 'member-form-error'}
-            className="h-11"
-          />
+          <InputGroup>
+            <InputGroupIcon>
+              <Mail />
+            </InputGroupIcon>
+            <Input
+              ref={emailField}
+              id="member-email"
+              name="email"
+              type="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              defaultValue={NO_TEXT}
+              aria-describedby={refusal === null ? undefined : 'member-form-error'}
+              className="h-11"
+            />
+          </InputGroup>
         </div>
-        <div className="grid gap-2">
-          <Label htmlFor="member-role">{t('ljudi.role')}</Label>
-          {/* A NATIVE `<select>`, as the accent control on `/organizacija` is
-              and for the same reason: `components/ui/` holds no Select
-              primitive, and a native element already carries keyboard
-              behaviour, an accessible name through its `<Label>` and a phone's
-              own picker sheet. Its options are the levels `0002:140`'s check
-              constraint admits, read off `MEMBER_ROLES` rather than written
-              here, so a third level appears the moment it exists. */}
-          <select
-            ref={roleField}
-            id="member-role"
-            name="role"
-            defaultValue={DEFAULT_MEMBER_ROLE}
-            aria-describedby={refusal === null ? undefined : 'member-form-error'}
-            className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {MEMBER_ROLES.map((option) => (
-              <option key={option} value={option}>
-                {t(memberLevelMessageKey(option))}
-              </option>
-            ))}
-          </select>
+        <h2 className="border-t pt-6 text-base font-bold">{t('ljudi.form.sectionSettings')}</h2>
+        <div className="grid gap-6 sm:grid-cols-2">
+          <div className="grid gap-2">
+            <Label htmlFor="member-role">{t('ljudi.role')}</Label>
+            {/* A NATIVE `<select>`, as the accent control on `/organizacija` is
+                and for the same reason: `components/ui/` holds no Select
+                primitive, and a native element already carries keyboard
+                behaviour, an accessible name through its `<Label>` and a phone's
+                own picker sheet. Its options are the levels `0002:140`'s check
+                constraint admits, read off `MEMBER_ROLES` rather than written
+                here, so a third level appears the moment it exists. */}
+            <InputGroup>
+              <InputGroupIcon>
+                <ShieldCheck />
+              </InputGroupIcon>
+              <select
+                ref={roleField}
+                id="member-role"
+                name="role"
+                defaultValue={DEFAULT_MEMBER_ROLE}
+                aria-describedby={refusal === null ? undefined : 'member-form-error'}
+                className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {MEMBER_ROLES.map((option) => (
+                  <option key={option} value={option}>
+                    {t(memberLevelMessageKey(option))}
+                  </option>
+                ))}
+              </select>
+            </InputGroup>
+          </div>
+          {offersRank ? renderRank() : null}
         </div>
-        {offersRank ? renderRank() : null}
         <div className="grid gap-2">
           <Label htmlFor="member-leave">{t('ljudi.leave')}</Label>
-          <Input
-            ref={leaveField}
-            id="member-leave"
-            name="leaveAllowanceDays"
-            type="number"
-            min={ALLOWANCE_MINIMUM}
-            max={LEAVE_ALLOWANCE_MAX}
-            step={ALLOWANCE_STEP}
-            aria-invalid={invalidField === 'member-leave'}
-            required
-            defaultValue={ALLOWANCE_DEFAULT}
-            aria-describedby={refusal === null ? undefined : 'member-form-error'}
-            className="h-11"
-          />
+          <InputGroup>
+            <InputGroupIcon>
+              <CalendarDays />
+            </InputGroupIcon>
+            <Input
+              ref={leaveField}
+              id="member-leave"
+              name="leaveAllowanceDays"
+              type="number"
+              min={ALLOWANCE_MINIMUM}
+              max={LEAVE_ALLOWANCE_MAX}
+              step={ALLOWANCE_STEP}
+              aria-invalid={invalidField === 'member-leave'}
+              required
+              defaultValue={ALLOWANCE_DEFAULT}
+              aria-describedby={refusal === null ? undefined : 'member-form-error'}
+              className="h-11"
+            />
+          </InputGroup>
         </div>
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid gap-2 border-t pt-6 sm:grid-cols-2">
           <Button className="h-11 w-full" type="submit" disabled={pending} aria-busy={pending}>
+            <Save aria-hidden />
             {t('ljudi.form.save')}
           </Button>
           {/* `type="reset"`, which on an uncontrolled form is exactly what
@@ -441,34 +489,55 @@ export function LjudiNoviScreen() {
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6">
       <PageHeader>
-        <PageTitle asChild>
-          <h1>
-            {t('ljudi.form.newHeading')}
-          </h1>
-        </PageTitle>
-      </PageHeader>
-      <Card className="w-full min-w-0 max-w-lg">
-        {/* OUTSIDE the gated branch, which is the whole point: a read that
-            produced no organization renders no form, so an explanation rendered
-            inside one would be exactly the element nobody can see. */}
-        <CardContent className="grid gap-6">
-          {refusal === null ? null : (
-            <Notice id="member-form-error" role="alert">
-              {memberWriteMessageKeys(refusal)
-                .map((key) => t(key))
-                .join(MESSAGE_SEPARATOR)}
-            </Notice>
-          )}
-          {credential === null ? renderForm() : renderCredential(credential)}
+        <div className="grid min-w-0 justify-items-start gap-1">
           {/* THE WAY BACK, and it is always here — including while the read is
               pending and after it has settled failed. A screen that can only be
               left by the browser's own Back button is a dead end on a phone,
-              where the chrome's tab bar is the only other navigation. */}
-          <Button asChild className="h-11 w-full" variant="outline">
-            <Link to="/ljudi">{t('ljudi.form.back')}</Link>
+              where the chrome's tab bar is the only other navigation. Above the
+              title, where a way back is looked for (design refresh C). */}
+          <Button asChild variant="ghost" className="-ml-3 h-11 px-3">
+            <Link to="/ljudi">
+              <ArrowLeft aria-hidden />
+              {t('ljudi.form.back')}
+            </Link>
           </Button>
-        </CardContent>
-      </Card>
+          <PageTitle asChild>
+            <h1>
+              {t('ljudi.form.newHeading')}
+            </h1>
+          </PageTitle>
+          <PageDescription>{t('ljudi.form.newLede')}</PageDescription>
+        </div>
+      </PageHeader>
+      <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <Card className="w-full min-w-0 max-w-2xl">
+          {/* OUTSIDE the gated branch, which is the whole point: a read that
+              produced no organization renders no form, so an explanation rendered
+              inside one would be exactly the element nobody can see. */}
+          <CardContent className="grid gap-6">
+            {refusal === null ? null : (
+              <Notice id="member-form-error" role="alert">
+                {memberWriteMessageKeys(refusal)
+                  .map((key) => t(key))
+                  .join(MESSAGE_SEPARATOR)}
+              </Notice>
+            )}
+            {credential === null ? renderForm() : renderCredential(credential)}
+          </CardContent>
+        </Card>
+        {/* WHAT HAPPENS AFTER, beside the form. Explains; announces nothing. */}
+        <Card className="min-w-0">
+          <CardContent className="grid gap-3">
+            <IconTile variant="primary">
+              <Info />
+            </IconTile>
+            <CardTitle asChild>
+              <h2>{t('ljudi.form.newAboutTitle')}</h2>
+            </CardTitle>
+            <CardDescription>{t('ljudi.form.newAboutBody')}</CardDescription>
+          </CardContent>
+        </Card>
+      </div>
     </main>
   );
 }

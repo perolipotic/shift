@@ -1,14 +1,25 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, redirect } from '@tanstack/react-router';
-import { useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
+import { BriefcaseBusiness, Clock3, Pencil, Plus } from 'lucide-react';
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
-import { PageHeader, PageTitle } from '@/components/ui/page-header';
+import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { t } from '@/i18n';
 import { NO_TEXT, mayReadMembers, shownDate } from '@/members/list';
 import { DESTINATIONS } from '@/navigation/destinations';
@@ -70,6 +81,10 @@ import { supabaseClient } from '@/supabase/client';
  * organization's zone, so "today" — the date a new type's first times take
  * effect from — is the organization's, never the device's.
  *
+ * A TABLE AND A DIALOG (design refresh C): the types in a table, the add form
+ * in a dialog opened from the header, and each type edited in a dialog over
+ * this list by `/postavke-rotacije/tipovi-smjena/$id`.
+ *
  * THIS FILE HOLDS MARKUP AND STATE. Every rule is in `@/shift-types/list` and
  * `@/shift-types/write`, which the node suite executes.
  */
@@ -89,6 +104,19 @@ export function PostavkeRotacijeScreen() {
   const [working, setWorking] = useState(true);
   const [failure, setFailure] = useState<ShiftTypeWriteFailure | null>(null);
   const [saved, setSaved] = useState<ShiftTypeSaved | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  // The first field, once the dialog is open. The dialog's own effect runs
+  // first, so `showModal()` has already moved focus into it.
+  useEffect(() => {
+    if (adding) nameField.current?.focus();
+  }, [adding]);
+
+  function openAdding(): void {
+    setFailure(null);
+    setSaved(null);
+    setAdding(true);
+  }
 
   const answer = useQuery(
     shiftTypesQueryOptions(() => supabaseClient().from(SHIFT_TYPES_READ_TABLE)),
@@ -162,8 +190,9 @@ export function PostavkeRotacijeScreen() {
         name.value = NO_TEXT;
         if (startField.current !== null) startField.current.value = NO_TEXT;
         if (endField.current !== null) endField.current.value = NO_TEXT;
-        // Back to the first field, ready for the next type.
-        name.focus();
+        // Closed, and the outcome is on the page; focus returns to the
+        // button that opened the dialog.
+        setAdding(false);
       }
 
       if (!next.refetch) return;
@@ -185,78 +214,68 @@ export function PostavkeRotacijeScreen() {
   /** The start and end, offered only for a working type. */
   function renderTimeFields(): ReactNode {
     return (
-      <div className="flex flex-wrap gap-4">
-        <div className="grid min-w-0 flex-1 basis-32 gap-2">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid min-w-0 gap-2">
           <Label htmlFor="shift-type-new-start">{t('rotation.shiftTypes.start')}</Label>
-          <Input
-            ref={startField}
-            id="shift-type-new-start"
-            name="start"
-            type="time"
-            required
-            defaultValue={NO_TEXT}
-            onChange={() => {
-              setSaved(null);
-            }}
-            aria-invalid={marksField(failure, SHIFT_TYPE_START_FIELD)}
-            aria-describedby={failure === null ? undefined : 'shift-type-create-error'}
-            className="h-11 w-full"
-          />
+          <InputGroup>
+            <InputGroupIcon>
+              <Clock3 />
+            </InputGroupIcon>
+            <Input
+              ref={startField}
+              id="shift-type-new-start"
+              name="start"
+              type="time"
+              required
+              defaultValue={NO_TEXT}
+              onChange={() => {
+                setSaved(null);
+              }}
+              aria-invalid={marksField(failure, SHIFT_TYPE_START_FIELD)}
+              aria-describedby={failure === null ? undefined : 'shift-type-create-error'}
+              className="h-11 w-full"
+            />
+          </InputGroup>
         </div>
-        <div className="grid min-w-0 flex-1 basis-32 gap-2">
+        <div className="grid min-w-0 gap-2">
           <Label htmlFor="shift-type-new-end">{t('rotation.shiftTypes.end')}</Label>
-          <Input
-            ref={endField}
-            id="shift-type-new-end"
-            name="end"
-            type="time"
-            required
-            defaultValue={NO_TEXT}
-            onChange={() => {
-              setSaved(null);
-            }}
-            aria-invalid={marksField(failure, SHIFT_TYPE_END_FIELD)}
-            aria-describedby={failure === null ? undefined : 'shift-type-create-error'}
-            className="h-11 w-full"
-          />
+          <InputGroup>
+            <InputGroupIcon>
+              <Clock3 />
+            </InputGroupIcon>
+            <Input
+              ref={endField}
+              id="shift-type-new-end"
+              name="end"
+              type="time"
+              required
+              defaultValue={NO_TEXT}
+              onChange={() => {
+                setSaved(null);
+              }}
+              aria-invalid={marksField(failure, SHIFT_TYPE_END_FIELD)}
+              aria-describedby={failure === null ? undefined : 'shift-type-create-error'}
+              className="h-11 w-full"
+            />
+          </InputGroup>
         </div>
       </div>
     );
   }
 
-  /** A type's times, duration and flags, read-only. */
-  function renderFacts(row: ShiftTypeDisplayRow): ReactNode {
-    if (!row.type.isWorking) {
-      return <Badge variant="secondary">{t('rotation.shiftTypes.nonworking')}</Badge>;
-    }
+  /** A type's times and flags, read-only, in the table's time column. */
+  function renderTimes(row: ShiftTypeDisplayRow): ReactNode {
+    if (!row.type.isWorking) return null;
 
     return (
-      <>
+      <div className="grid gap-1">
         {row.times === null ? (
-          <p className="text-muted-foreground">{t('rotation.shiftTypes.noTimes')}</p>
+          <span className="text-muted-foreground">{t('rotation.shiftTypes.noTimes')}</span>
         ) : (
-          <dl className="flex flex-wrap gap-x-4 gap-y-1">
-            <div className="flex gap-1">
-              <dt className="text-muted-foreground">{t('rotation.shiftTypes.times')}</dt>
-              <dd className="tabular-nums">{row.times.range}</dd>
-            </div>
-            <div className="flex gap-1">
-              <dt className="text-muted-foreground">{t('rotation.shiftTypes.duration.label')}</dt>
-              <dd className="tabular-nums">
-                {t(
-                  shiftTypeDurationMessageKey(row.times.durationMinutes),
-                  durationValuesOf(row.times.durationMinutes),
-                )}
-              </dd>
-            </div>
-          </dl>
+          <span className="tabular-nums">{row.times.range}</span>
         )}
-        {/* A pill whose TEXT is the meaning; no status colour. */}
-        {row.times?.crossesMidnight === true ? (
-          <Badge variant="secondary">{t('rotation.shiftTypes.crossesMidnight')}</Badge>
-        ) : null}
         {row.scheduled === null ? null : (
-          <p className="basis-full tabular-nums">
+          <span className="text-xs text-muted-foreground tabular-nums">
             {t('rotation.shiftTypes.scheduled', {
               date: shownDate(row.scheduled.from),
               range: row.scheduled.times.range,
@@ -265,33 +284,78 @@ export function PostavkeRotacijeScreen() {
                 durationValuesOf(row.scheduled.times.durationMinutes),
               ),
             })}
-          </p>
+          </span>
         )}
-      </>
+      </div>
     );
   }
 
-  /** One type. An archived one is read-only: no link to edit it. */
+  function renderDuration(row: ShiftTypeDisplayRow): ReactNode {
+    if (row.times === null) return null;
+
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="tabular-nums">
+          {t(
+            shiftTypeDurationMessageKey(row.times.durationMinutes),
+            durationValuesOf(row.times.durationMinutes),
+          )}
+        </span>
+        {/* A pill whose TEXT is the meaning; no status colour. */}
+        {row.times.crossesMidnight ? (
+          <Badge variant="outline">{t('rotation.shiftTypes.crossesMidnight')}</Badge>
+        ) : null}
+      </div>
+    );
+  }
+
+  /** One type as a table row. An archived one is read-only: no link to edit it. */
   function renderRow(row: ShiftTypeDisplayRow): ReactNode {
     return (
-      <li key={row.type.id} className="grid min-w-0 gap-2">
-        {row.type.archived ? null : (
-          <Button asChild variant="outline" className="h-11 w-full justify-start">
-            <Link to="/postavke-rotacije/tipovi-smjena/$id" params={{ id: row.type.id }}>
-              <span className="truncate">
-                {t('rotation.shiftTypes.edit', { name: row.type.name })}
-              </span>
-            </Link>
-          </Button>
-        )}
-        <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+      <TableRow key={row.type.id}>
+        <TableCell>
           {/* THE CHIP: the slot's colour, and ALWAYS the name as text. */}
           <span className={row.chipClass}>
             <span className="truncate">{row.type.name}</span>
           </span>
-          {renderFacts(row)}
-        </div>
-      </li>
+        </TableCell>
+        <TableCell>
+          <Badge variant={row.type.isWorking ? 'default' : 'secondary'}>
+            {row.type.isWorking ? t('rotation.shiftTypes.working') : t('rotation.shiftTypes.nonworking')}
+          </Badge>
+        </TableCell>
+        <TableCell>{renderTimes(row)}</TableCell>
+        <TableCell>{renderDuration(row)}</TableCell>
+        <TableCell className="text-right">
+          {row.type.archived ? null : (
+            <Button asChild variant="ghost" className="h-11 w-11 px-0">
+              <Link to="/postavke-rotacije/tipovi-smjena/$id" params={{ id: row.type.id }}>
+                <Pencil aria-hidden />
+                <span className="sr-only">{t('rotation.shiftTypes.edit', { name: row.type.name })}</span>
+              </Link>
+            </Button>
+          )}
+        </TableCell>
+      </TableRow>
+    );
+  }
+
+  function renderTable(rows: readonly ShiftTypeDisplayRow[]): ReactNode {
+    if (rows.length === 0) return null;
+
+    return (
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t('rotation.shiftTypes.columnName')}</TableHead>
+            <TableHead>{t('rotation.shiftTypes.columnKind')}</TableHead>
+            <TableHead>{t('rotation.shiftTypes.times')}</TableHead>
+            <TableHead>{t('rotation.shiftTypes.duration.label')}</TableHead>
+            <TableHead className="text-right">{t('rotation.shiftTypes.actions')}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>{rows.map((row) => renderRow(row))}</TableBody>
+      </Table>
     );
   }
 
@@ -301,104 +365,150 @@ export function PostavkeRotacijeScreen() {
       aria-busy={loading}
     >
       <PageHeader>
-        <PageTitle asChild>
-          <h1>{t('nav.postavkeRotacije')}</h1>
-        </PageTitle>
+        <div className="min-w-0">
+          <PageTitle asChild>
+            <h1>{t('nav.postavkeRotacije')}</h1>
+          </PageTitle>
+          <PageDescription>{t('rotation.shiftTypes.lede')}</PageDescription>
+        </div>
+        <PageActions>
+          <Button className="h-11" type="button" onClick={openAdding}>
+            <Plus aria-hidden />
+            {t('rotation.shiftTypes.open')}
+          </Button>
+        </PageActions>
       </PageHeader>
-      <section className="grid min-w-0 gap-6">
-        <h2 className="text-lg font-bold">{t('rotation.shiftTypes.heading')}</h2>
-        <Card className="w-full min-w-0 max-w-lg">
-          <CardContent className="grid gap-4">
-            <form
-              method="post"
-              onSubmit={(event) => {
-                void submit(event);
-              }}
-              className="grid gap-4"
-            >
-              <div className="grid gap-2">
-                <Label htmlFor="shift-type-new-name">{t('rotation.shiftTypes.name')}</Label>
-                <Input
-                  ref={nameField}
-                  id="shift-type-new-name"
-                  name="name"
-                  type="text"
-                  required
-                  defaultValue={NO_TEXT}
-                  onChange={() => {
-                    // A confirmation describes the last save, not what is typed now.
-                    setSaved(null);
-                  }}
-                  aria-invalid={marksField(failure, SHIFT_TYPE_NAME_FIELD)}
-                  aria-describedby={failure === null ? undefined : 'shift-type-create-error'}
-                  className="h-11 w-full"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="shift-type-new-kind">{t('rotation.shiftTypes.kind')}</Label>
-                {/* A NATIVE `<select>`, as the role control on `/ljudi/novi`
-                    is: `components/ui/` holds no Select primitive. Chosen once:
-                    `is_working` cannot change after creation. */}
-                <select
-                  ref={kindField}
-                  id="shift-type-new-kind"
-                  name="kind"
-                  defaultValue={SHIFT_TYPE_WORKING}
-                  onChange={chooseKind}
-                  aria-describedby={failure === null ? undefined : 'shift-type-create-error'}
-                  className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {SHIFT_TYPE_KINDS.map((option) => (
-                    <option key={option} value={option}>
-                      {t(shiftTypeKindMessageKey(option))}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {/* A NON-WORKING TYPE HAS NO TIMES, so it is offered none. */}
-              {working ? renderTimeFields() : null}
-              <Button className="h-11 w-full" type="submit" disabled={pending} aria-busy={pending}>
-                {t('rotation.shiftTypes.add')}
-              </Button>
-            </form>
-            {/* THE ADD FORM'S OWN NOTICES, inside its card. The list-read
-                refusal below belongs to the page. */}
-            {failure === null ? null : (
-              <Notice id="shift-type-create-error" role="alert">
-                {t(shiftTypeWriteMessageKey(failure))}
-              </Notice>
-            )}
-            {saved === null ? null : (
-              <Notice role="status">{t(shiftTypeSavedMessageKey(saved))}</Notice>
-            )}
-          </CardContent>
-        </Card>
-        {refusal === null ? null : (
-          <Notice role="alert">{t(shiftTypesMessageKey(refusal))}</Notice>
-        )}
-        {loading ? (
+      {/* THE ADD'S OUTCOME ON THE PAGE once the dialog has closed: the
+          confirmation, or a type added without its times. */}
+      {adding || saved === null ? null : (
+        <Notice role="status">{t(shiftTypeSavedMessageKey(saved))}</Notice>
+      )}
+      {adding || failure === null ? null : (
+        <Notice role="alert">{t(shiftTypeWriteMessageKey(failure))}</Notice>
+      )}
+      {refusal === null ? null : (
+        <Notice role="alert">{t(shiftTypesMessageKey(refusal))}</Notice>
+      )}
+      <Dialog
+        open={adding}
+        onOpenChange={setAdding}
+        aria-labelledby="shift-type-new-heading"
+      >
+        <DialogHeader
+          closeLabel={t('rotation.shiftTypes.close')}
+          onClose={() => {
+            setAdding(false);
+          }}
+        >
+          <DialogTitle id="shift-type-new-heading">{t('rotation.shiftTypes.addHeading')}</DialogTitle>
+        </DialogHeader>
+        <form
+          method="post"
+          onSubmit={(event) => {
+            void submit(event);
+          }}
+          className="grid gap-5"
+        >
           <div className="grid gap-2">
-            {SKELETON_ROWS.map((row) => (
-              <div key={row} className="h-11 w-full animate-pulse rounded-md bg-muted" />
-            ))}
+            <Label htmlFor="shift-type-new-name">{t('rotation.shiftTypes.name')}</Label>
+            <Input
+              ref={nameField}
+              id="shift-type-new-name"
+              name="name"
+              type="text"
+              required
+              defaultValue={NO_TEXT}
+              onChange={() => {
+                // A confirmation describes the last save, not what is typed now.
+                setSaved(null);
+              }}
+              aria-invalid={marksField(failure, SHIFT_TYPE_NAME_FIELD)}
+              aria-describedby={failure === null ? undefined : 'shift-type-create-error'}
+              className="h-11 w-full"
+            />
           </div>
-        ) : null}
-        {list === null ? null : (
-          <div className="grid min-w-0 gap-4">
+          <div className="grid gap-2">
+            <Label htmlFor="shift-type-new-kind">{t('rotation.shiftTypes.kind')}</Label>
+            {/* A NATIVE `<select>`, as the role control on `/ljudi/novi`
+                is: `components/ui/` holds no Select primitive. Chosen once:
+                `is_working` cannot change after creation. */}
+            <InputGroup>
+              <InputGroupIcon>
+                <BriefcaseBusiness />
+              </InputGroupIcon>
+              <select
+                ref={kindField}
+                id="shift-type-new-kind"
+                name="kind"
+                defaultValue={SHIFT_TYPE_WORKING}
+                onChange={chooseKind}
+                aria-describedby={failure === null ? undefined : 'shift-type-create-error'}
+                className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {SHIFT_TYPE_KINDS.map((option) => (
+                  <option key={option} value={option}>
+                    {t(shiftTypeKindMessageKey(option))}
+                  </option>
+                ))}
+              </select>
+            </InputGroup>
+          </div>
+          {/* A NON-WORKING TYPE HAS NO TIMES, so it is offered none. */}
+          {working ? renderTimeFields() : null}
+          {/* THE ADD FORM'S OWN REFUSAL, inside the dialog while it is open. */}
+          {!adding || failure === null ? null : (
+            <Notice id="shift-type-create-error" role="alert">
+              {t(shiftTypeWriteMessageKey(failure))}
+            </Notice>
+          )}
+          <DialogFooter>
+            <Button
+              className="h-11"
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setAdding(false);
+              }}
+            >
+              {t('rotation.shiftTypes.cancel')}
+            </Button>
+            <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
+              {t('rotation.shiftTypes.add')}
+            </Button>
+          </DialogFooter>
+        </form>
+      </Dialog>
+      {loading ? (
+        <div className="grid gap-2">
+          {SKELETON_ROWS.map((row) => (
+            <div key={row} className="h-11 w-full animate-pulse rounded-md bg-muted" />
+          ))}
+        </div>
+      ) : null}
+      {list === null ? null : (
+        <Card className="min-w-0">
+          <CardHeader className="flex-row flex-wrap items-center gap-3">
+            <CardTitle asChild>
+              <h2>{t('rotation.shiftTypes.heading')}</h2>
+            </CardTitle>
             {/* STATED, AND STATED AT ZERO (UX-DR20). Not a live region. */}
-            <p className="text-sm text-muted-foreground">
+            <Badge variant="secondary">
               {t('rotation.shiftTypes.count', { count: list.active.length })}
-            </p>
-            <ul className="grid gap-4">{list.active.map((row) => renderRow(row))}</ul>
-          </div>
-        )}
-        {list === null || list.archived.length === 0 ? null : (
-          <div className="grid min-w-0 gap-4">
-            <h3 className="text-base font-bold">{t('rotation.shiftTypes.archivedHeading')}</h3>
-            <ul className="grid gap-4">{list.archived.map((row) => renderRow(row))}</ul>
-          </div>
-        )}
-      </section>
+            </Badge>
+          </CardHeader>
+          {renderTable(list.active)}
+        </Card>
+      )}
+      {list === null || list.archived.length === 0 ? null : (
+        <Card className="min-w-0">
+          <CardHeader>
+            <CardTitle asChild>
+              <h2>{t('rotation.shiftTypes.archivedHeading')}</h2>
+            </CardTitle>
+          </CardHeader>
+          {renderTable(list.archived)}
+        </Card>
+      )}
     </main>
   );
 }

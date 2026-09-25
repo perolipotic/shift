@@ -28,6 +28,8 @@ test('with fire ranks switched on, a member created with a rank shows it on the 
   const rank = hr.ljudi.rank.nco;
 
   await page.goto('/ljudi/smjene');
+  // The add form is a dialog, opened from the header.
+  await page.getByRole('button', { name: hr.smjene.open }).click();
   await page.getByLabel(hr.smjene.name, { exact: true }).fill(teamName);
   await page.getByRole('button', { name: hr.smjene.add }).click();
   await expect(page.getByRole('status')).toHaveText(hr.smjene.created);

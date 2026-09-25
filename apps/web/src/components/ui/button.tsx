@@ -34,6 +34,10 @@ const buttonVariants = cva(
           "border-[1.5px] border-input bg-card text-foreground hover:bg-accent hover:text-accent-foreground",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        // A place to drop or pick something (design refresh C): the outline's
+        // measured `input` boundary, dashed, so it reads as a target.
+        dashed:
+          "border-[1.5px] border-dashed border-input bg-card text-foreground hover:bg-accent hover:text-accent-foreground",
         ghost: "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
         sidebar:

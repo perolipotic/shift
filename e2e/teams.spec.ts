@@ -16,6 +16,8 @@ test('a created team gets a member, and its roster lists them for every role', a
 
   // Create the team.
   await page.goto('/ljudi/smjene');
+  // The add form is a dialog, opened from the header.
+  await page.getByRole('button', { name: hr.smjene.open }).click();
   await page.getByLabel(hr.smjene.name, { exact: true }).fill(teamName);
   await page.getByRole('button', { name: hr.smjene.add }).click();
   await expect(page.getByRole('status')).toHaveText(hr.smjene.created);
