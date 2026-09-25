@@ -473,6 +473,9 @@ const SANCTIONED_SCREEN_KEYS = [
   // THE THEME CONTROL (human decision 2026-09-25, reversing UX-DR2). A glyph
   // whose name — `aria-label` and `title` — states the CURRENT preference, one
   // key per value; the press cycles sustav → svijetla → tamna.
+  // The expanded sidebar shows the three as a segmented pill, a group whose
+  // name is this one word (sidebar redesign).
+  'shell.theme.label',
   'shell.theme.system',
   'shell.theme.light',
   'shell.theme.dark',

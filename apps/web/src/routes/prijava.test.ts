@@ -461,15 +461,17 @@ const SCREENS = [
   // count moved to — the layout gaining one would mean the chrome had started
   // leaking back into the route module the guard lives in.
   { name: 'the signed-in layout', file: LAYOUT, expectedControls: 0 },
-  // FOUR on the chrome: the sidebar's collapse, the theme control (human
-  // decision 2026-09-25), the exit, and the retry that makes the role read's
-  // failure something a person can act on. The
+  // SIX on the chrome: the collapse (on the page since the sidebar redesign),
+  // the theme control's two shapes — the segmented pill and the cycling glyph
+  // (human decisions 2026-09-25/26) — the profile card that discloses the exit,
+  // the exit, and the retry that makes the role read's failure something a
+  // person can act on. The
   // destinations are `<Link>`s, which neither detector matches by construction —
   // they are swept by name in the chrome block below, with their own count — so
-  // this number is the four BUTTONS and nothing else. It is what notices a
-  // fifth arriving: on a component that renders above every destination in the
+  // this number is the six BUTTONS and nothing else. It is what notices a
+  // seventh arriving: on a component that renders above every destination in the
   // application, a control nobody reviewed is a control on eight screens.
-  { name: 'the navigation chrome', file: CHROME, expectedControls: 4 },
+  { name: 'the navigation chrome', file: CHROME, expectedControls: 6 },
   // ZERO on the lockup, and it is a claim rather than an accident of what has
   // been built: nothing about an organization's logo is pressable. It is not a
   // link to the organization, not a menu trigger and not a home button — which
@@ -1874,10 +1876,10 @@ const KEY_SOURCES = [
   // the whole reason that table is data is that a test can execute it. The eight
   // stay in the set comparison below because the eight destination screens each
   // render their own heading.
-  // SEVEN SINCE VISUAL REFRESH A: the sidebar's muted section label renders
-  // `shell.navigation` a third time — the landmark's own name, made visible and
-  // `aria-hidden` so it is not announced twice. TEN WITH THE THEME CONTROL: one
-  // name per preference.
+  // TEN: the theme control's name per preference (three) and its group's label
+  // came in; the sidebar's muted section label, a third `shell.navigation`,
+  // went out with the sidebar redesign. The profile card's role words arrive
+  // through `memberRoleLabelKey`, a key this sweep does not see by design.
   { name: 'the navigation chrome', file: CHROME, keys: translationKeys, strings: 10 },
   {
     // TWO, for three role codes and one sign-out code. The collapse is the
@@ -2170,8 +2172,23 @@ describe('the chrome the layout wraps every destination in', () => {
 
     for (const bar of bars) {
       expect(bar, `a navigation bar renders no destinations: ${bar}`).toContain('{destinations}');
-      expect(bar, `a navigation bar renders no exit: ${bar}`).toContain('{exit}');
     }
+
+    // THE EXIT, ONE PER LAYOUT (sidebar redesign, human decision 2026-09-26).
+    // The phone bar carries it inside its landmark; the sidebar carries it in
+    // the profile menu at the foot of the aside, which is not navigation. Both
+    // halves are read, because deleting either one is the mutation above.
+    const chrome = source(CHROME);
+    const aside = /<aside\b[\s\S]*?<\/aside>/.exec(chrome)?.[0] ?? '';
+
+    const phone = /<div\s+className=\{`sticky[\s\S]*?<\/div>/.exec(chrome)?.[0] ?? '';
+
+    expect(phone, 'the phone bar renders no exit').toMatch(/<nav[\s\S]*\{exit\}[\s\S]*<\/nav>/);
+    expect(aside, 'the sidebar renders no profile card').toContain('{renderProfile()}');
+    expect(
+      /function renderProfile\(\)[\s\S]*?\{renderSignOut\(/.test(chrome),
+      'the profile menu holds no exit',
+    ).toBe(true);
   });
 
   it('keeps the exit outside the collapsible region, so collapsing cannot strand anybody', () => {
@@ -2184,18 +2201,23 @@ describe('the chrome the layout wraps every destination in', () => {
     // collapse hides is the element `aria-controls` names, so the exit must not
     // be inside it.
     const chrome = source(CHROME);
-    const collapsible = /<div\s+id="app-destinations"[\s\S]*?<\/div>/.exec(chrome)?.[0] ?? '';
+    //
+    // The region is the sidebar's `<nav>` since the redesign, and the way out
+    // is the profile card below it, which narrows to its chip but stays.
+    const collapsible = /<nav\s+id="app-destinations"[\s\S]*?<\/nav>/.exec(chrome)?.[0] ?? '';
 
     expect(collapsible, 'no collapsible region to read').not.toBe('');
     expect(collapsible, 'the collapsible region holds no destinations').toContain('{destinations}');
-    expect(
-      collapsible,
-      'the exit is inside the collapsible region, so collapsing hides the way out',
-    ).not.toContain('{exit}');
+    for (const exit of ['{exit}', 'renderSignOut(', 'renderProfile(']) {
+      expect(
+        collapsible,
+        'the exit is inside the collapsible region, so collapsing hides the way out',
+      ).not.toContain(exit);
+    }
     expect(
       collapsible,
       'the region is not actually collapsed by the toggle state',
-    ).toMatch(/className=\{expanded \?/);
+    ).toMatch(/className=\{\s*expanded\s*\?/);
   });
 
   it('reclaims space when it collapses, rather than hiding a list inside a fixed width', () => {
@@ -4818,10 +4840,9 @@ describe('the lockup reaches both layouts, not merely the one on a laptop', () =
     expect(bars, 'the chrome does not render exactly two navigation bars').toHaveLength(2);
     for (const bar of bars) {
       expect(bar, `a navigation landmark carries the lockup: ${bar}`).not.toContain('{lockup}');
-      // And the destinations and the exit are still INSIDE the landmark, which
-      // is the half this could otherwise break by moving everything out.
+      // And the destinations are still INSIDE the landmark, which is the half
+      // this could otherwise break by moving everything out.
       expect(bar, `a navigation bar renders no destinations: ${bar}`).toContain('{destinations}');
-      expect(bar, `a navigation bar renders no exit: ${bar}`).toContain('{exit}');
     }
     // The scroller is the landmark, so the lockup is beside it rather than in it.
     expect(

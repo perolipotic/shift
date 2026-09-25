@@ -380,6 +380,7 @@
     "menuHide": "Sakrij izbornik",
     "signOut": "Odjava",
     "theme": {
+      "label": "Tema",
       "system": "Tema: sustav",
       "light": "Tema: svijetla",
       "dark": "Tema: tamna"
