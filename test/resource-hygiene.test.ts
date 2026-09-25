@@ -140,8 +140,10 @@ const SANCTIONED_SCREEN_KEYS = [
   // IS — so a heading key here would be the same word authored twice and one of
   // the two would be a string nobody renders.
   'organization.name',
-  'organization.type',
   'organization.timezone',
+  // DESIGN REFRESH C: the legend over the day and month, which keep their own
+  // keys as the two selects' labels. The organization type left the form.
+  'organization.leaveYearStart',
   'organization.leaveYearStartMonth',
   'organization.leaveYearStartDay',
   // Story 1.4b — the organization logo. TWO, and neither of them announces an
@@ -484,7 +486,32 @@ const SANCTIONED_SCREEN_KEYS = [
   // `smjena` — `Smjena` means Team only, and the key names the list. A refused
   // save names its problem: an empty name, a name another team in use carries,
   // and a screen the database no longer matches are three sentences, not one.
+  // DESIGN REFRESH C: the member list's lede; the new member screen's lede and
+  // aside; the two sections both member forms are split into.
+  'ljudi.lede',
+  'ljudi.form.newLede',
+  'ljudi.form.newAboutTitle',
+  'ljudi.form.newAboutBody',
+  'ljudi.form.sectionBasics',
+  'ljudi.form.sectionSettings',
+  // The member edit screen's cards for the status and the password.
+  'ljudi.status.heading',
+  'ljudi.form.passwordHeading',
+  // The member list's marker for a scheduled team change, in the team cell.
+  'smjene.membership.markerMove',
+  'smjene.membership.markerNone',
+  'smjene.membership.markerChange',
   'smjene.heading',
+  // DESIGN REFRESH C: the lede, the add dialog (open, heading, close, cancel),
+  // the table's actions head, and the archive offer's short word. The link
+  // back left the edit screen, which is a dialog over the list now.
+  'smjene.lede',
+  'smjene.open',
+  'smjene.addHeading',
+  'smjene.close',
+  'smjene.cancel',
+  'smjene.actions',
+  'smjene.archiveShort',
   'smjene.activeHeading',
   'smjene.name',
   'smjene.add',
@@ -501,7 +528,6 @@ const SANCTIONED_SCREEN_KEYS = [
   'smjene.archiveConfirm',
   'smjene.archiveCancel',
   'smjene.archivedNote',
-  'smjene.back',
   'smjene.error.unavailable',
   'smjene.error.empty',
   'smjene.error.taken',
@@ -587,17 +613,45 @@ const SANCTIONED_SCREEN_KEYS = [
   // name and a start are entered; the window, duration and midnight flag are
   // shown read-only, and zero bands state their uncovered hours in numbers
   // rather than saying the absence.
+  // DESIGN REFRESH C: the organization screen's lede, the aside explaining
+  // what its settings do, and the logo's accepted formats under its label.
+  'organization.lede',
+  'organization.aboutTitle',
+  'organization.aboutBody',
+  'organization.logoHint',
   'organization.hourBands.heading',
   'organization.hourBands.name',
   'organization.hourBands.start',
-  'organization.hourBands.window',
   'organization.hourBands.duration.label',
   'organization.hourBands.duration.hours',
   'organization.hourBands.duration.hoursMinutes',
   'organization.hourBands.duration.minutes',
   'organization.hourBands.crossesMidnight',
-  'organization.hourBands.coverage',
   'organization.hourBands.uncovered',
+  // DESIGN REFRESH C: the page's lede and explainer, the add dialog (its open
+  // button, heading, close and cancel), the list and timeline headings, the
+  // table's column heads, and the coverage sentence split into two stat tiles.
+  // The window label is gone: both dialogs show the start and the computed end
+  // side by side, with a hint that the end is never entered.
+  'organization.hourBands.end',
+  'organization.hourBands.endHint',
+  'organization.hourBands.endPending',
+  // The removal offer's visible word; its accessible name stays `remove`.
+  'organization.hourBands.removeShort',
+  'organization.hourBands.lede',
+  'organization.hourBands.explainerTitle',
+  'organization.hourBands.explainerBody',
+  'organization.hourBands.open',
+  'organization.hourBands.addHeading',
+  'organization.hourBands.close',
+  'organization.hourBands.cancel',
+  'organization.hourBands.listHeading',
+  'organization.hourBands.from',
+  'organization.hourBands.to',
+  'organization.hourBands.actions',
+  'organization.hourBands.timelineHeading',
+  'organization.hourBands.covered',
+  'organization.hourBands.coveredValue',
   'organization.hourBands.add',
   'organization.hourBands.created',
   'organization.hourBands.edit',
@@ -609,7 +663,6 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.hourBands.removeConfirm',
   'organization.hourBands.removeCancel',
   'organization.hourBands.removed',
-  'organization.hourBands.back',
   'organization.hourBands.error.unavailable',
   'organization.hourBands.error.nameEmpty',
   'organization.hourBands.error.nameTaken',
@@ -625,6 +678,18 @@ const SANCTIONED_SCREEN_KEYS = [
   // the Shift Type — `Tip smjene`, never bare `smjena` — see
   // `teamTermOutOfTurn` below.
   'rotation.shiftTypes.heading',
+  // DESIGN REFRESH C: the screen's lede, the add dialog (open, heading, close,
+  // cancel), the table's column heads, and the archive offer's short word. The
+  // link back left the edit screen, which is a dialog now.
+  'rotation.shiftTypes.lede',
+  'rotation.shiftTypes.open',
+  'rotation.shiftTypes.addHeading',
+  'rotation.shiftTypes.close',
+  'rotation.shiftTypes.cancel',
+  'rotation.shiftTypes.columnName',
+  'rotation.shiftTypes.columnKind',
+  'rotation.shiftTypes.actions',
+  'rotation.shiftTypes.archiveShort',
   'rotation.shiftTypes.archivedHeading',
   'rotation.shiftTypes.name',
   'rotation.shiftTypes.kind',
@@ -661,7 +726,6 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.shiftTypes.archiveCancel',
   'rotation.shiftTypes.archivedDone',
   'rotation.shiftTypes.archivedNote',
-  'rotation.shiftTypes.back',
   'rotation.shiftTypes.error.unavailable',
   'rotation.shiftTypes.error.nameEmpty',
   'rotation.shiftTypes.error.nameTaken',
@@ -989,7 +1053,6 @@ describe('the messages obey the voice rules that bind every string', () => {
     expect(messageAt('smjene.archive')).toBe('Arhiviraj smjenu {name}');
     expect(messageAt('smjene.archiveConfirm')).toBe('Potvrdi arhiviranje smjene {name}');
     expect(messageAt('smjene.archiveCancel')).toBe('Odustani od arhiviranja');
-    expect(messageAt('smjene.back')).toBe('Vrati se na smjene');
     // STORY 1.7b's FIVE, a sixth authoring of the same voice. The move offer is
     // the one that would most naturally have been the noun `Premještaj` — the
     // prompt's subject, not a control.

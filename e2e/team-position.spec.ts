@@ -43,6 +43,8 @@ test('with positions in use, a member moved in as driver shows it on the roster,
   const commander = hr.smjene.position.commander;
 
   await page.goto('/ljudi/smjene');
+  // The add form is a dialog, opened from the header.
+  await page.getByRole('button', { name: hr.smjene.open }).click();
   await page.getByLabel(hr.smjene.name, { exact: true }).fill(teamName);
   await page.getByRole('button', { name: hr.smjene.add }).click();
   await expect(page.getByRole('status')).toHaveText(hr.smjene.created);

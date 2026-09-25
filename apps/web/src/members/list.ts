@@ -448,6 +448,27 @@ export interface MemberTeamState {
   } | null;
 }
 
+/**
+ * The team cell as at `today`: today's team, and the change dated after it
+ * (design refresh C) — the same state the member screen states in words.
+ */
+export function teamCellOf(member: MemberListRow, today: string): MemberCell {
+  const state = memberTeamOf(member, today);
+
+  return {
+    kind: TEAM_CELL,
+    team: state.team?.name ?? null,
+    scheduled:
+      state.scheduled === null
+        ? null
+        : {
+            team: state.scheduled.team?.name ?? null,
+            from: state.scheduled.from,
+            keepsTeam: state.scheduled.team !== null && state.scheduled.team.id === state.team?.id,
+          },
+  };
+}
+
 export function memberTeamOf(member: MemberListRow, today: string): MemberTeamState {
   const latest = memberTeamLatestVersion(member);
 
@@ -984,7 +1005,19 @@ export type MemberCell =
       readonly from: string;
     }
   | { readonly kind: typeof LEVEL_CELL; readonly level: MemberRole }
-  | { readonly kind: typeof TEAM_CELL; readonly team: string | null }
+  | {
+      readonly kind: typeof TEAM_CELL;
+      readonly team: string | null;
+      /**
+       * The change dated after today, or `null`: the team from then (`null`
+       * for none), and whether it keeps today's team — a position-only change.
+       */
+      readonly scheduled: {
+        readonly team: string | null;
+        readonly from: string;
+        readonly keepsTeam: boolean;
+      } | null;
+    }
   | { readonly kind: typeof DAYS_CELL; readonly days: number };
 
 export interface MemberColumn {
@@ -1093,10 +1126,7 @@ export const MEMBER_COLUMNS: readonly MemberColumn[] = [
     numeric: false,
     // AS AT TODAY, and nothing at all while today is not known, for the reason
     // the name cell gives: "no team" by a guessed date is a false statement.
-    cell: (member, today) =>
-      today === null
-        ? { kind: TEXT_CELL, text: NO_TEXT }
-        : { kind: TEAM_CELL, team: memberTeamOn(member, today)?.name ?? null },
+    cell: (member, today) => (today === null ? { kind: TEXT_CELL, text: NO_TEXT } : teamCellOf(member, today)),
     // BY THE TEAM THE CELL SHOWS, as at today; the latest state's while today
     // is unknown. Members on no team sort last, as members with no address do.
     sortValue: (member, today) =>
@@ -1157,6 +1187,11 @@ export function cellClassNameOf(column: MemberColumn): string {
   // badge beside the name. Held to one line on a phone, a scheduled marker
   // would make this one column wider than the screen, so it wraps below `sm`.
   if (column.key === NAME_COLUMN) return 'whitespace-normal sm:whitespace-nowrap';
+  // DESIGN REFRESH C: an address is the one unbounded value in a row, and one
+  // long address pushed the actions column past the card. Bounded here and cut
+  // with an ellipsis by the cell's text (`truncate`); the whole address stays
+  // in the DOM, so a screen reader still reads all of it.
+  if (column.key === EMAIL_COLUMN) return 'max-w-56 whitespace-nowrap';
 
   return 'whitespace-nowrap';
 }
@@ -1187,12 +1222,37 @@ export function memberStatusMessageKey(
   return null;
 }
 
+/**
+ * The marker a team cell carries for a change dated after today (design
+ * refresh C), or `null` when none is scheduled: a move onto a team, onto no
+ * team, or a change that keeps the team (a new position). Exhaustive over the
+ * three, so a scheduled change is never drawn as nothing.
+ */
+export function teamMarkerMessageKey(
+  cell: MemberCell,
+):
+  | 'smjene.membership.markerMove'
+  | 'smjene.membership.markerNone'
+  | 'smjene.membership.markerChange'
+  | null {
+  if (cell.kind !== TEAM_CELL || cell.scheduled === null) return null;
+  if (cell.scheduled.keepsTeam) return 'smjene.membership.markerChange';
+  if (cell.scheduled.team === null) return 'smjene.membership.markerNone';
+
+  return 'smjene.membership.markerMove';
+}
+
 /** The inactive marker as the screen draws it: a variant, a key and its argument. */
 export interface MemberStatusLook {
   readonly variant: MemberBadge;
-  readonly key: NonNullable<ReturnType<typeof memberStatusMessageKey>>;
-  /** The key's interpolation. `date` is the SHOWN date, or empty for none. */
-  readonly args: { readonly date: string };
+  readonly key:
+    | NonNullable<ReturnType<typeof memberStatusMessageKey>>
+    | NonNullable<ReturnType<typeof teamMarkerMessageKey>>;
+  /**
+   * The key's interpolation. `date` is the SHOWN date, or empty for none;
+   * `team` the scheduled team's name, or empty for none.
+   */
+  readonly args: { readonly date: string; readonly team: string };
 }
 
 /** The initials chip beside a name. `initials` is `null` for a name with no
@@ -1228,7 +1288,24 @@ function statusLookOf(cell: MemberCell): MemberStatusLook | null {
 
   const date = cell.kind === SCHEDULED_INACTIVE_NAME_CELL ? shownDate(cell.from) : NO_TEXT;
 
-  return { variant: 'outline', key, args: { date } };
+  return { variant: 'outline', key, args: { date, team: NO_TEXT } };
+}
+
+/**
+ * A scheduled team change, drawn in the PRIMARY tint so it stands out from
+ * the plain team name beside it — its words say what changes and from when;
+ * the tint only draws the eye (no status colour, UX-DR4).
+ */
+function teamMarkerLookOf(cell: MemberCell): MemberStatusLook | null {
+  const key = teamMarkerMessageKey(cell);
+
+  if (key === null || cell.kind !== TEAM_CELL || cell.scheduled === null) return null;
+
+  return {
+    variant: 'default',
+    key,
+    args: { date: shownDate(cell.scheduled.from), team: cell.scheduled.team ?? NO_TEXT },
+  };
 }
 
 export function memberCellLookOf(cell: MemberCell): MemberCellLook {
@@ -1242,6 +1319,7 @@ export function memberCellLookOf(cell: MemberCell): MemberCellLook {
   if (cell.kind === LEVEL_CELL) {
     return { ...PLAIN_LOOK, badge: cell.level === 'admin' ? 'default' : 'secondary' };
   }
+  if (cell.kind === TEAM_CELL) return { ...PLAIN_LOOK, status: teamMarkerLookOf(cell) };
 
   return PLAIN_LOOK;
 }

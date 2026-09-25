@@ -1,15 +1,52 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, redirect } from '@tanstack/react-router';
-import { useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Building2, Check, Clock3, Info, MoveRight, Pencil, Plus, TriangleAlert } from 'lucide-react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import {
+  Callout,
+  CalloutAction,
+  CalloutBody,
+  CalloutDescription,
+  CalloutTitle,
+} from '@/components/ui/callout';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { IconTile } from '@/components/ui/icon-tile';
 import { Input } from '@/components/ui/input';
+import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
-import { PageActions, PageHeader, PageTitle } from '@/components/ui/page-header';
+import { OutputField } from '@/components/ui/output-field';
+import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
+import { StatTile, StatTileLabel, StatTileValue } from '@/components/ui/stat-tile';
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Timeline,
+  TimelineLegend,
+  TimelineLegendItem,
+  TimelineBoundaries,
+  TimelineGap,
+  TimelineScale,
+  TimelineSegment,
+  TimelineTrack,
+} from '@/components/ui/timeline';
+import {
+  DAY_SCALE,
   HOUR_BANDS_LIST_KEY,
   HOUR_BANDS_TABLE,
   durationMessageKey,
@@ -19,6 +56,7 @@ import {
   hourBandsSurfaceStateOf,
   partitionBarOf,
   hourBandsQueryOptions,
+  hourBandPreviewOf,
   type PartitionBar,
 } from '@/hour-bands/list';
 import {
@@ -60,6 +98,10 @@ import { supabaseClient } from '@/supabase/client';
  * Nothing on it is colour alone: each covered stretch carries its band's name,
  * and the uncovered one is hatched AND flagged.
  *
+ * THE ADD FORM IS A DIALOG (design refresh C), opened from the explainer. The
+ * dialog stays mounted while closed, so its uncontrolled fields keep a refused
+ * value; a successful add closes it and confirms on the page.
+ *
  * THIS FILE HOLDS MARKUP AND STATE. Every rule is in `@/hour-bands/list` and
  * `@/hour-bands/write`, which the node suite executes.
  */
@@ -76,12 +118,28 @@ export function OrganizacijaSatniPojasiScreen() {
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState<HourBandWriteFailure | null>(null);
   const [created, setCreated] = useState(false);
+  const [adding, setAdding] = useState(false);
+  /** The start as typed, for the end shown beside it; the field stays uncontrolled. */
+  const [typedStart, setTypedStart] = useState(NO_TEXT);
+
+  // The first field, once the dialog is open. The dialog's own effect runs
+  // first, so `showModal()` has already moved focus into it.
+  useEffect(() => {
+    if (adding) nameField.current?.focus();
+  }, [adding]);
 
   const answer = useQuery(hourBandsQueryOptions(() => supabaseClient().from(HOUR_BANDS_TABLE)));
 
   const { bands, refusal, loading } = hourBandsSurfaceStateOf(answer);
   const rows = bands === null ? null : hourBandDisplayRowsOf(bands);
   const bar = bands === null ? null : partitionBarOf(bands);
+  const preview = bands === null ? null : hourBandPreviewOf(bands, typedStart, null);
+
+  function openAdding(): void {
+    setFailure(null);
+    setCreated(false);
+    setAdding(true);
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -126,9 +184,11 @@ export function OrganizacijaSatniPojasiScreen() {
 
       name.value = NO_TEXT;
       start.value = NO_TEXT;
+      setTypedStart(NO_TEXT);
       setCreated(true);
-      // Back to the first field, ready for the next band.
-      name.focus();
+      // Closed, and the confirmation is on the page; focus returns to the
+      // button that opened the dialog.
+      setAdding(false);
 
       try {
         await queryClient.invalidateQueries({ queryKey: HOUR_BANDS_LIST_KEY });
@@ -147,37 +207,30 @@ export function OrganizacijaSatniPojasiScreen() {
   /** The 24-hour bar. Hidden from assistive technology: see the file comment. */
   function renderBar(partition: PartitionBar): ReactNode {
     return (
-      <div
-        aria-hidden={true}
-        className="flex h-11 w-full min-w-0 overflow-hidden rounded-md border border-input"
-      >
-        {partition.segments.map((segment) =>
-          segment.name === null ? (
-            <div
-              key={segment.key}
-              className="hatch-uncovered flex min-w-0 items-center justify-center px-1"
-              style={{ width: `${String(segment.widthPercent)}%` }}
-            >
-              {/* THE FLAG, on a solid chip over an opaque backing, so the text
-                  never sits on the stripes: the chip over the page background
-                  is the pair `theme-contrast.test.ts` measures. */}
-              <span className="flex min-w-0 rounded-sm bg-background">
-                <span className="truncate rounded-sm bg-modifier-uncovered px-1 text-xs font-medium text-modifier-uncovered-foreground">
-                  {t('organization.hourBands.uncovered')}
+      <Timeline aria-hidden={true}>
+        <TimelineScale marks={DAY_SCALE} />
+        <TimelineTrack>
+          {partition.segments.map((segment) =>
+            segment.name === null || segment.tone === null ? (
+              <TimelineGap key={segment.key} widthPercent={segment.widthPercent}>
+                {/* THE FLAG, on a solid chip over an opaque backing, so the text
+                    never sits on the stripes: the chip over the page background
+                    is the pair `theme-contrast.test.ts` measures. */}
+                <span className="flex min-w-0 rounded-sm bg-background">
+                  <span className="truncate rounded-sm bg-modifier-uncovered px-1 text-xs font-medium text-modifier-uncovered-foreground">
+                    {t('organization.hourBands.uncovered')}
+                  </span>
                 </span>
-              </span>
-            </div>
-          ) : (
-            <div
-              key={segment.key}
-              className="flex min-w-0 items-center justify-center border-r border-background bg-muted px-1 text-xs font-medium last:border-r-0"
-              style={{ width: `${String(segment.widthPercent)}%` }}
-            >
-              <span className="truncate">{segment.name}</span>
-            </div>
-          ),
-        )}
-      </div>
+              </TimelineGap>
+            ) : (
+              <TimelineSegment key={segment.key} tone={segment.tone} widthPercent={segment.widthPercent}>
+                <span className="truncate">{segment.name}</span>
+              </TimelineSegment>
+            ),
+          )}
+        </TimelineTrack>
+        <TimelineBoundaries marks={partition.boundaries} />
+      </Timeline>
     );
   }
 
@@ -187,74 +240,153 @@ export function OrganizacijaSatniPojasiScreen() {
       aria-busy={loading}
     >
       <PageHeader>
-        <PageTitle asChild>
-          <h1>{t('organization.hourBands.heading')}</h1>
-        </PageTitle>
+        <div className="min-w-0">
+          <PageTitle asChild>
+            <h1>{t('organization.hourBands.heading')}</h1>
+          </PageTitle>
+          <PageDescription>{t('organization.hourBands.lede')}</PageDescription>
+        </div>
         <PageActions>
           <Button asChild variant="outline" className="h-11">
-            <Link to="/organizacija">{t('nav.organizacija')}</Link>
+            <Link to="/organizacija">
+              <Building2 aria-hidden />
+              {t('nav.organizacija')}
+            </Link>
           </Button>
         </PageActions>
       </PageHeader>
-      <Card className="w-full min-w-0 max-w-lg">
-        <CardContent className="grid gap-4">
-          <form
-            method="post"
-            onSubmit={(event) => {
-              void submit(event);
-            }}
-            className="flex flex-wrap items-end gap-4"
-          >
-            <div className="grid min-w-0 flex-1 basis-40 gap-2">
-              <Label htmlFor="hour-band-new-name">{t('organization.hourBands.name')}</Label>
-              <Input
-                ref={nameField}
-                id="hour-band-new-name"
-                name="name"
-                type="text"
-                required
-                defaultValue={NO_TEXT}
-                onChange={() => {
-                  // A confirmation describes the last save, not what is typed now.
-                  setCreated(false);
-                }}
-                aria-invalid={marksField(failure, HOUR_BAND_NAME_FIELD)}
-                aria-describedby={failure === null ? undefined : 'hour-band-create-error'}
-                className="h-11 w-full"
-              />
+      <Callout>
+        <CalloutBody>
+          <IconTile variant="primary">
+            <Info />
+          </IconTile>
+          <div className="min-w-0">
+            <CalloutTitle>{t('organization.hourBands.explainerTitle')}</CalloutTitle>
+            <CalloutDescription>{t('organization.hourBands.explainerBody')}</CalloutDescription>
+          </div>
+        </CalloutBody>
+        <CalloutAction>
+          <Button className="h-11" type="button" onClick={openAdding}>
+            <Plus aria-hidden />
+            {t('organization.hourBands.open')}
+          </Button>
+        </CalloutAction>
+      </Callout>
+      {created ? <Notice role="status">{t('organization.hourBands.created')}</Notice> : null}
+      {refusal === null ? null : <Notice role="alert">{t(hourBandsMessageKey(refusal))}</Notice>}
+      <Dialog
+        open={adding}
+        onOpenChange={setAdding}
+        aria-labelledby="hour-band-new-heading"
+      >
+        <DialogHeader
+          closeLabel={t('organization.hourBands.close')}
+          onClose={() => {
+            setAdding(false);
+          }}
+        >
+          <DialogTitle id="hour-band-new-heading">{t('organization.hourBands.addHeading')}</DialogTitle>
+        </DialogHeader>
+        <form
+          method="post"
+          onSubmit={(event) => {
+            void submit(event);
+          }}
+          className="grid gap-5"
+        >
+          <div className="grid gap-2">
+            <Label htmlFor="hour-band-new-name">{t('organization.hourBands.name')}</Label>
+            <Input
+              ref={nameField}
+              id="hour-band-new-name"
+              name="name"
+              type="text"
+              required
+              defaultValue={NO_TEXT}
+              onChange={() => {
+                // A confirmation describes the last save, not what is typed now.
+                setCreated(false);
+              }}
+              aria-invalid={marksField(failure, HOUR_BAND_NAME_FIELD)}
+              aria-describedby={failure === null ? undefined : 'hour-band-create-error'}
+              className="h-11 w-full"
+            />
+          </div>
+          <div className="grid gap-2">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="hour-band-new-start">{t('organization.hourBands.start')}</Label>
+                <InputGroup>
+                  <InputGroupIcon>
+                    <Clock3 />
+                  </InputGroupIcon>
+                  <Input
+                    ref={startField}
+                    id="hour-band-new-start"
+                    name="start"
+                    type="time"
+                    required
+                    defaultValue={NO_TEXT}
+                    onChange={(event) => {
+                      setCreated(false);
+                      setTypedStart(event.currentTarget.value);
+                    }}
+                    aria-invalid={marksField(failure, HOUR_BAND_START_FIELD)}
+                    aria-describedby={failure === null ? 'hour-band-new-end-hint' : 'hour-band-create-error'}
+                    className="h-11 w-full"
+                  />
+                </InputGroup>
+              </div>
+              {/* THE END, COMPUTED, beside the start it follows from: the
+                  domain places the typed start among the stored bands and says
+                  where it ends. Nothing here is entered or stored. */}
+              <div className="grid gap-2">
+                <Label htmlFor="hour-band-new-end">{t('organization.hourBands.end')}</Label>
+                <OutputField id="hour-band-new-end" htmlFor="hour-band-new-start">
+                  <MoveRight aria-hidden />
+                  {preview === null ? t('organization.hourBands.endPending') : preview.end}
+                </OutputField>
+              </div>
             </div>
-            <div className="grid min-w-0 basis-32 gap-2">
-              <Label htmlFor="hour-band-new-start">{t('organization.hourBands.start')}</Label>
-              <Input
-                ref={startField}
-                id="hour-band-new-start"
-                name="start"
-                type="time"
-                required
-                defaultValue={NO_TEXT}
-                onChange={() => {
-                  setCreated(false);
-                }}
-                aria-invalid={marksField(failure, HOUR_BAND_START_FIELD)}
-                aria-describedby={failure === null ? undefined : 'hour-band-create-error'}
-                className="h-11 w-full"
-              />
-            </div>
-            <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
-              {t('organization.hourBands.add')}
-            </Button>
-          </form>
-          {/* THE ADD FORM'S OWN NOTICES, inside its card as the form screens
-              hold theirs. The list-read refusal below belongs to the page. */}
+            <p id="hour-band-new-end-hint" className="text-xs text-muted-foreground">
+              {t('organization.hourBands.endHint')}
+            </p>
+            {preview === null ? null : (
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-muted-foreground">{t('organization.hourBands.duration.label')}</span>
+                <span className="font-semibold tabular-nums">
+                  {t(durationMessageKey(preview.durationMinutes), durationValuesOf(preview.durationMinutes))}
+                </span>
+                {preview.crossesMidnight ? (
+                  <Badge variant="outline">{t('organization.hourBands.crossesMidnight')}</Badge>
+                ) : null}
+              </div>
+            )}
+          </div>
+          {/* THE ADD FORM'S OWN REFUSAL, inside the dialog as the form screens
+              hold theirs in their card. The list-read refusal belongs to the page. */}
           {failure === null ? null : (
             <Notice id="hour-band-create-error" role="alert">
               {t(hourBandWriteMessageKey(failure))}
             </Notice>
           )}
-          {created ? <Notice role="status">{t('organization.hourBands.created')}</Notice> : null}
-        </CardContent>
-      </Card>
-      {refusal === null ? null : <Notice role="alert">{t(hourBandsMessageKey(refusal))}</Notice>}
+          <DialogFooter>
+            <Button
+              className="h-11"
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setAdding(false);
+              }}
+            >
+              {t('organization.hourBands.cancel')}
+            </Button>
+            <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
+              {t('organization.hourBands.add')}
+            </Button>
+          </DialogFooter>
+        </form>
+      </Dialog>
       {loading ? (
         <div className="grid gap-2">
           {SKELETON_ROWS.map((row) => (
@@ -263,56 +395,114 @@ export function OrganizacijaSatniPojasiScreen() {
         </div>
       ) : null}
       {rows === null || bar === null ? null : (
-        <section className="grid min-w-0 gap-4">
-          {/* STATED, AND STATED AT ZERO (UX-DR20). Not a live region: only
-              confirmations announce. */}
-          <p className="text-sm text-muted-foreground">
-            {t('organization.hourBands.count', { count: rows.length })}
-          </p>
-          <ul className="grid gap-4">
-            {rows.map((row) => (
-              <li key={row.band.id} className="grid min-w-0 gap-2">
-                <Button asChild variant="outline" className="h-11 w-full justify-start">
-                  <Link to="/organizacija/satni-pojasi/$id" params={{ id: row.band.id }}>
-                    <span className="truncate">
-                      {t('organization.hourBands.edit', { name: row.band.name })}
-                    </span>
-                  </Link>
-                </Button>
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-                  <dl className="flex flex-wrap gap-x-4 gap-y-1">
-                    <div className="flex gap-1">
-                      <dt className="text-muted-foreground">{t('organization.hourBands.window')}</dt>
-                      <dd className="tabular-nums">{row.window}</dd>
-                    </div>
-                    <div className="flex gap-1">
-                      <dt className="text-muted-foreground">
-                        {t('organization.hourBands.duration.label')}
-                      </dt>
-                      <dd className="tabular-nums">
-                        {t(durationMessageKey(row.durationMinutes), durationValuesOf(row.durationMinutes))}
-                      </dd>
-                    </div>
-                  </dl>
-                  {/* A pill whose TEXT is the meaning; no status colour. */}
-                  {row.crossesMidnight ? (
-                    <Badge variant="secondary">{t('organization.hourBands.crossesMidnight')}</Badge>
-                  ) : null}
-                </div>
-              </li>
-            ))}
-          </ul>
-          <p className="text-sm">
-            {t('organization.hourBands.coverage', {
-              covered: t(durationMessageKey(bar.coveredMinutes), durationValuesOf(bar.coveredMinutes)),
-              uncovered: t(
-                durationMessageKey(bar.uncoveredMinutes),
-                durationValuesOf(bar.uncoveredMinutes),
-              ),
-            })}
-          </p>
-          {renderBar(bar)}
-        </section>
+        <>
+          <Card className="min-w-0">
+            <CardHeader className="flex-row flex-wrap items-center gap-3">
+              <CardTitle asChild>
+                <h2>{t('organization.hourBands.listHeading')}</h2>
+              </CardTitle>
+              {/* STATED, AND STATED AT ZERO (UX-DR20). Not a live region: only
+                  confirmations announce. */}
+              <Badge variant="secondary">
+                {t('organization.hourBands.count', { count: rows.length })}
+              </Badge>
+            </CardHeader>
+            {rows.length === 0 ? null : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>{t('organization.hourBands.name')}</TableHead>
+                    <TableHead>{t('organization.hourBands.from')}</TableHead>
+                    <TableHead>{t('organization.hourBands.to')}</TableHead>
+                    <TableHead>{t('organization.hourBands.duration.label')}</TableHead>
+                    <TableHead className="text-right">{t('organization.hourBands.actions')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((row) => (
+                    <TableRow key={row.band.id}>
+                      <TableCell>
+                        <div className="flex min-w-0 items-center gap-3">
+                          <IconTile variant={row.tone}>
+                            <Clock3 />
+                          </IconTile>
+                          <span className="truncate font-semibold">{row.band.name}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="tabular-nums">{row.start}</TableCell>
+                      <TableCell className="tabular-nums">{row.end}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="tabular-nums">
+                            {t(durationMessageKey(row.durationMinutes), durationValuesOf(row.durationMinutes))}
+                          </span>
+                          {/* A pill whose TEXT is the meaning; no status colour. */}
+                          {row.crossesMidnight ? (
+                            <Badge variant="outline">{t('organization.hourBands.crossesMidnight')}</Badge>
+                          ) : null}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button asChild variant="ghost" className="h-11 w-11 px-0">
+                          <Link to="/organizacija/satni-pojasi/$id" params={{ id: row.band.id }}>
+                            <Pencil aria-hidden />
+                            <span className="sr-only">
+                              {t('organization.hourBands.edit', { name: row.band.name })}
+                            </span>
+                          </Link>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </Card>
+          <Card className="min-w-0">
+            <CardHeader>
+              <CardTitle asChild>
+                <h2>{t('organization.hourBands.timelineHeading')}</h2>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-5">
+              {renderBar(bar)}
+              <TimelineLegend aria-hidden={true}>
+                {rows.map((row) => (
+                  <TimelineLegendItem key={row.band.id} tone={row.tone}>
+                    {row.band.name}
+                  </TimelineLegendItem>
+                ))}
+              </TimelineLegend>
+              {/* THE BAR'S TEXT EQUIVALENT: every figure it draws, in words. */}
+              <div className="grid gap-3 sm:grid-cols-2">
+                <StatTile>
+                  <IconTile variant="primary">
+                    <Check />
+                  </IconTile>
+                  <div className="min-w-0">
+                    <StatTileLabel>{t('organization.hourBands.covered')}</StatTileLabel>
+                    <StatTileValue>
+                      {t('organization.hourBands.coveredValue', {
+                        covered: t(durationMessageKey(bar.coveredMinutes), durationValuesOf(bar.coveredMinutes)),
+                      })}
+                    </StatTileValue>
+                  </div>
+                </StatTile>
+                <StatTile>
+                  <IconTile>
+                    <TriangleAlert />
+                  </IconTile>
+                  <div className="min-w-0">
+                    <StatTileLabel>{t('organization.hourBands.uncovered')}</StatTileLabel>
+                    <StatTileValue>
+                      {t(durationMessageKey(bar.uncoveredMinutes), durationValuesOf(bar.uncoveredMinutes))}
+                    </StatTileValue>
+                  </div>
+                </StatTile>
+              </div>
+            </CardContent>
+          </Card>
+        </>
       )}
     </main>
   );

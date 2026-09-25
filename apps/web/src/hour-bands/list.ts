@@ -276,11 +276,31 @@ export function durationMessageKey(
 
 // ---------------------------------------------------------- display rows
 
+/**
+ * Which of the two alternating tones a band is drawn in, on its row and on the
+ * bar. POSITION, NEVER MEANING: the tone follows the band's place in start
+ * order, so adjacent stretches read apart, and nothing about the band's name
+ * picks it — a band called `Noć` is not dark because of its name. Every
+ * stretch still carries the band's name as text.
+ */
+export type HourBandTone = 'light' | 'dark';
+
+const BAND_TONES: readonly HourBandTone[] = ['light', 'dark'];
+
+function toneAt(index: number): HourBandTone {
+  return BAND_TONES[index % BAND_TONES.length] ?? 'light';
+}
+
 /** One band as the list renders it: every derived value read-only. */
 export interface HourBandDisplayRow {
   readonly band: HourBandRow;
   /** `07:00–19:00`, en dash, unspaced (UX-DR34). */
   readonly window: string;
+  /** `07:00`, the window's first half. */
+  readonly start: string;
+  /** `19:00`, the window's second half: where the next band begins. */
+  readonly end: string;
+  readonly tone: HourBandTone;
   readonly durationMinutes: number;
   readonly crossesMidnight: boolean;
 }
@@ -292,20 +312,78 @@ export interface HourBandDisplayRow {
 export function hourBandDisplayRowsOf(bands: readonly HourBandRow[]): HourBandDisplayRow[] {
   const byId = new Map(bands.map((band) => [band.id, band]));
 
-  return deriveHourBands(bands).flatMap((window) => {
+  return deriveHourBands(bands).flatMap((window, index) => {
     const band = byId.get(window.bandId);
 
     if (band === undefined) return [];
 
+    const start = formatMinuteOfDay(window.startMinute);
+    const end = formatMinuteOfDay(window.endMinute);
+
     return [
       {
         band,
-        window: `${formatMinuteOfDay(window.startMinute)}${RANGE_DASH}${formatMinuteOfDay(window.endMinute)}`,
+        window: `${start}${RANGE_DASH}${end}`,
+        start,
+        end,
+        tone: toneAt(index),
         durationMinutes: window.durationMinutes,
         crossesMidnight: window.crossesMidnight,
       },
     ];
   });
+}
+
+// ---------------------------------------------------------- the preview
+
+/** What a band being entered would span, before it is saved. */
+export interface HourBandPreview {
+  /** `19:00`: the start of the band that would follow it. */
+  readonly end: string;
+  readonly durationMinutes: number;
+  readonly crossesMidnight: boolean;
+}
+
+/** The id the previewed band takes among the stored ones; no stored id is empty. */
+const PREVIEW_ID = '';
+
+/**
+ * The END a start would give a band, shown beside the start while it is typed
+ * — in the add dialog (`replacingId` null) and in the edit dialog (the band's
+ * own id, whose stored start the typed one replaces).
+ *
+ * THE DOMAIN DERIVES IT, as it derives every stored band's: the typed start is
+ * placed among the others and `deriveHourBands` says where it ends. Nothing is
+ * stored and nothing is entered: an end is always the next band's start.
+ *
+ * `null` for a start that is not a time yet, or one another band already
+ * holds — the save would be refused, so there is no window to show.
+ */
+export function hourBandPreviewOf(
+  bands: readonly HourBandRow[],
+  startText: string,
+  replacingId: string | null,
+): HourBandPreview | null {
+  const startMinute = minuteOfTime(startText);
+
+  if (startMinute === null) return null;
+
+  const others = bands.filter((band) => band.id !== replacingId);
+
+  if (others.some((band) => band.startMinute === startMinute)) return null;
+
+  const window = deriveHourBands([
+    ...others,
+    { id: PREVIEW_ID, organizationId: PREVIEW_ID, name: PREVIEW_ID, startMinute },
+  ]).find((candidate) => candidate.bandId === PREVIEW_ID);
+
+  if (window === undefined) return null;
+
+  return {
+    end: formatMinuteOfDay(window.endMinute),
+    durationMinutes: window.durationMinutes,
+    crossesMidnight: window.crossesMidnight,
+  };
 }
 
 // ------------------------------------------------------------- the bar
@@ -318,10 +396,26 @@ export interface PartitionBarSegment {
   readonly name: string | null;
   /** `(toMinute − fromMinute) / 1440` as a percentage of the bar's width. */
   readonly widthPercent: number;
+  /** The covering band's tone, or `null` for the uncovered stretch. */
+  readonly tone: HourBandTone | null;
+}
+
+/** A labelled point along the bar: an hour on its scale, or a band boundary. */
+export interface PartitionBarMark {
+  readonly key: string;
+  /** `07:00`. */
+  readonly label: string;
+  /** How far along the day, as a percentage of the bar's width. */
+  readonly percent: number;
 }
 
 export interface PartitionBar {
   readonly segments: readonly PartitionBarSegment[];
+  /**
+   * Where each stretch begins, midnight excepted: the boundaries between
+   * stretches, labelled under the bar.
+   */
+  readonly boundaries: readonly PartitionBarMark[];
   readonly coveredMinutes: number;
   readonly uncoveredMinutes: number;
 }
@@ -336,6 +430,10 @@ const PERCENT = 100;
  */
 export function partitionBarOf(bands: readonly HourBandRow[]): PartitionBar {
   const names = new Map(bands.map((band) => [band.id, band.name]));
+  // The tone each band takes on its row, so a row and its stretches match.
+  const tones = new Map(
+    deriveHourBands(bands).map((window, index) => [window.bandId, toneAt(index)]),
+  );
   const partition = partitionOfDay(bands);
 
   return {
@@ -343,11 +441,38 @@ export function partitionBarOf(bands: readonly HourBandRow[]): PartitionBar {
       key: `${segment.bandId ?? ''}:${String(segment.fromMinute)}`,
       name: segment.bandId === null ? null : (names.get(segment.bandId) ?? null),
       widthPercent: ((segment.toMinute - segment.fromMinute) / MINUTES_PER_DAY) * PERCENT,
+      tone: segment.bandId === null ? null : (tones.get(segment.bandId) ?? null),
     })),
+    boundaries: partition.segments
+      .filter((segment) => segment.fromMinute > 0)
+      .map((segment) => ({
+        key: String(segment.fromMinute),
+        label: formatMinuteOfDay(segment.fromMinute),
+        percent: (segment.fromMinute / MINUTES_PER_DAY) * PERCENT,
+      })),
     coveredMinutes: partition.coveredMinutes,
     uncoveredMinutes: MINUTES_PER_DAY - partition.coveredMinutes,
   };
 }
+
+const SCALE_STEP_MINUTES = 6 * MINUTES_PER_HOUR;
+
+/**
+ * The bar's scale: every six hours, and the closing midnight labelled
+ * `00:00` again rather than `24:00`, for the reason `formatMinuteOfDay` gives.
+ */
+export const DAY_SCALE: readonly PartitionBarMark[] = Array.from(
+  { length: MINUTES_PER_DAY / SCALE_STEP_MINUTES + 1 },
+  (_, step) => {
+    const minute = step * SCALE_STEP_MINUTES;
+
+    return {
+      key: String(minute),
+      label: formatMinuteOfDay(minute % MINUTES_PER_DAY),
+      percent: (minute / MINUTES_PER_DAY) * PERCENT,
+    };
+  },
+);
 
 // ------------------------------------------------------------ the messages
 

@@ -1,20 +1,22 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, createRoute, redirect } from '@tanstack/react-router';
+import { createRoute, redirect, useNavigate } from '@tanstack/react-router';
+import { Clock3, MoveRight, Trash2 } from 'lucide-react';
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
-import { PageHeader, PageTitle } from '@/components/ui/page-header';
+import { OutputField } from '@/components/ui/output-field';
 import {
   HOUR_BANDS_LIST_KEY,
   HOUR_BANDS_TABLE,
   durationMessageKey,
   durationValuesOf,
-  hourBandDisplayRowsOf,
+  hourBandPreviewOf,
   hourBandsMessageKey,
   hourBandsSurfaceStateOf,
   hourBandsQueryOptions,
@@ -49,6 +51,7 @@ import { mayReadMembers } from '@/members/list';
 import { DESTINATIONS } from '@/navigation/destinations';
 import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/navigation/role';
 import { appLayoutRoute } from '@/routes/_app';
+import { OrganizacijaSatniPojasiScreen } from '@/routes/organizacija.satni-pojasi';
 import { supabaseClient } from '@/supabase/client';
 
 /**
@@ -65,6 +68,14 @@ import { supabaseClient } from '@/supabase/client';
  * REMOVAL TAKES ONE CONFIRMATION naming the band, in neutral styling. Any band
  * may be removed, the last one included: the day it leaves uncovered is
  * hatched on the list screen's bar, which is where the consequence is stated.
+ *
+ * A DIALOG OVER THE LIST (design refresh C). The route renders the list screen
+ * and opens this band in a modal above it, so a band is edited where it is
+ * listed, while the URL still names it: a link opens it, Back closes it, and
+ * every way the dialog closes navigates to the list.
+ *
+ * THE END IS SHOWN BESIDE THE START, computed from the start as typed by
+ * `hourBandPreviewOf`, and never entered: a band ends where the next begins.
  *
  * TWO REFUSALS, EACH WHERE IT HAPPENED. A refused save is announced above the
  * form and describes the field it is about; a refused removal is announced
@@ -83,9 +94,10 @@ export function OrganizacijaSatniPojasScreen() {
 
 function HourBandScreen({ id }: { readonly id: string }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const nameField = useRef<HTMLInputElement>(null);
   const startField = useRef<HTMLInputElement>(null);
-  const backLink = useRef<HTMLAnchorElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
   const writing = useRef(false);
   const [pending, setPending] = useState(false);
   const [armed, setArmed] = useState(false);
@@ -96,6 +108,8 @@ function HourBandScreen({ id }: { readonly id: string }) {
   const [saved, setSaved] = useState<HourBandSaved | null>(null);
   /** Landed saves; the form key counts them, never the values. */
   const [saves, setSaves] = useState(0);
+  /** The start as typed since the form last mounted, or `null` for the stored one. */
+  const [typedStart, setTypedStart] = useState<string | null>(null);
 
   const answer = useQuery(hourBandsQueryOptions(() => supabaseClient().from(HOUR_BANDS_TABLE)));
 
@@ -105,8 +119,16 @@ function HourBandScreen({ id }: { readonly id: string }) {
   const form = hourBandFormStateOf(readState, id, holdsRemovalOutcome(saved, removeFailure));
   const refusal = failure ?? form.refusal;
   const stage = removeStageOf(armed, pending);
-  const derived =
-    bands === null ? null : (hourBandDisplayRowsOf(bands).find((row) => row.band.id === id) ?? null);
+  /** The removal is being asked about, or is in flight. */
+  const confirming = stage === REMOVE_ARMED || stage === REMOVE_BUSY;
+  const preview =
+    bands === null || form.band === null
+      ? null
+      : hourBandPreviewOf(bands, typedStart ?? formatMinuteOfDay(form.band.startMinute), id);
+
+  function close(): void {
+    void navigate({ to: '/organizacija/satni-pojasi' });
+  }
 
   /** Re-read the one list, so both screens show what the database holds now. */
   async function refresh(): Promise<void> {
@@ -156,6 +178,7 @@ function HourBandScreen({ id }: { readonly id: string }) {
       await refresh();
       // AFTER the re-read, so a remount shows what the database now holds.
       setSaves((current) => savesAfter(current, outcome));
+      if (outcome.ok) setTypedStart(null);
     } catch (cause) {
       console.error(HOUR_BAND_WRITE_UNAVAILABLE, cause);
       setFailure(HOUR_BAND_WRITE_UNAVAILABLE);
@@ -193,9 +216,9 @@ function HourBandScreen({ id }: { readonly id: string }) {
       await refresh();
 
       // The confirm button this press came from is gone with the band, so
-      // focus would fall to the document. The back link is where a person
-      // goes next, and it is always rendered.
-      if (outcome.ok) backLink.current?.focus();
+      // focus would fall to the document. The dialog's close is where a
+      // person goes next, and it is always rendered.
+      if (outcome.ok) closeButton.current?.focus();
     } catch (cause) {
       console.error(HOUR_BAND_WRITE_UNAVAILABLE, cause);
       setRemoveFailure(HOUR_BAND_WRITE_UNAVAILABLE);
@@ -212,88 +235,103 @@ function HourBandScreen({ id }: { readonly id: string }) {
     );
   }
 
+  /** The removal offer, beside Save in the dialog's footer. */
   function renderRemove(band: HourBandRow): ReactNode {
-    if (stage === REMOVE_ARMED || stage === REMOVE_BUSY) {
-      const busy = stage === REMOVE_BUSY;
+    return (
+      <Button
+        className="h-11"
+        type="button"
+        variant="ghost"
+        disabled={pending}
+        onClick={() => {
+          setRemoveFailure(null);
+          setSaved(null);
+          setArmed(true);
+        }}
+      >
+        <Trash2 aria-hidden />
+        {/* THE WORD IS SHORT, THE NAME IS WHOLE: sighted people read the
+            band's name in the field above, and the accessible name still
+            names it — and begins with the visible word (WCAG 2.5.3). */}
+        <span aria-hidden>{t('organization.hourBands.removeShort')}</span>
+        <span className="sr-only">{t('organization.hourBands.remove', { name: band.name })}</span>
+      </Button>
+    );
+  }
 
-      return (
-        <div className="grid gap-2">
-          <p className="text-sm font-medium">
-            {t('organization.hourBands.removePrompt', { name: band.name })}
-          </p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Button
-              className="h-11 w-full"
-              type="button"
-              variant="outline"
-              disabled={busy}
-              aria-busy={busy}
-              onClick={() => {
-                void remove(band);
-              }}
-            >
-              <span className="truncate">
-                {t('organization.hourBands.removeConfirm', { name: band.name })}
-              </span>
-            </Button>
-            <Button
-              className="h-11 w-full"
-              type="button"
-              variant="outline"
-              disabled={busy}
-              onClick={() => {
-                setArmed(false);
-              }}
-            >
-              <span className="truncate">{t('organization.hourBands.removeCancel')}</span>
-            </Button>
-          </div>
-        </div>
-      );
-    }
+  /**
+   * THE CONFIRMATION, in place of the form inside the same dialog: one question
+   * naming the band, and the two answers side by side. It stays mounted and
+   * disabled while the removal is outstanding.
+   */
+  function renderConfirm(band: HourBandRow): ReactNode {
+    const busy = stage === REMOVE_BUSY;
 
     return (
-      <div className="grid gap-2">
-        <Button
-          className="h-11 w-full"
-          type="button"
-          variant="outline"
-          disabled={pending}
-          onClick={() => {
-            setRemoveFailure(null);
-            setSaved(null);
-            setArmed(true);
-          }}
-        >
-          <span className="truncate">{t('organization.hourBands.remove', { name: band.name })}</span>
-        </Button>
+      <div className="grid gap-5">
+        <p className="text-sm font-medium">
+          {t('organization.hourBands.removePrompt', { name: band.name })}
+        </p>
+        <DialogFooter>
+          <Button
+            className="h-11"
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              setArmed(false);
+            }}
+          >
+            <span className="truncate">{t('organization.hourBands.removeCancel')}</span>
+          </Button>
+          <Button
+            className="h-11"
+            type="button"
+            disabled={busy}
+            aria-busy={busy}
+            onClick={() => {
+              void remove(band);
+            }}
+          >
+            <Trash2 aria-hidden />
+            <span className="truncate">
+              {t('organization.hourBands.removeConfirm', { name: band.name })}
+            </span>
+          </Button>
+        </DialogFooter>
       </div>
     );
   }
 
-  /** The derived values, read-only: the window, the duration, the midnight flag. */
-  function renderDerived(): ReactNode {
-    if (derived === null) return null;
+  /**
+   * The end the start gives, computed and read-only, and the duration and
+   * midnight flag that follow from it. From the start AS TYPED, so a changed
+   * start shows its new end before it is saved.
+   */
+  function renderEnd(): ReactNode {
+    return (
+      <div className="grid gap-2">
+        <Label htmlFor="hour-band-end">{t('organization.hourBands.end')}</Label>
+        <OutputField id="hour-band-end" htmlFor="hour-band-start">
+          <MoveRight aria-hidden />
+          {preview === null ? t('organization.hourBands.endPending') : preview.end}
+        </OutputField>
+      </div>
+    );
+  }
+
+  function renderDuration(): ReactNode {
+    if (preview === null) return null;
 
     return (
-      <div className="grid gap-1">
-        <dl className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-          <div className="flex gap-1">
-            <dt className="text-muted-foreground">{t('organization.hourBands.window')}</dt>
-            <dd className="tabular-nums">{derived.window}</dd>
-          </div>
-          <div className="flex gap-1">
-            <dt className="text-muted-foreground">{t('organization.hourBands.duration.label')}</dt>
-            <dd className="tabular-nums">
-              {t(durationMessageKey(derived.durationMinutes), durationValuesOf(derived.durationMinutes))}
-            </dd>
-          </div>
-        </dl>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-muted-foreground">{t('organization.hourBands.duration.label')}</span>
+        <span className="font-semibold tabular-nums">
+          {t(durationMessageKey(preview.durationMinutes), durationValuesOf(preview.durationMinutes))}
+        </span>
         {/* A pill whose TEXT is the meaning; no status colour. */}
-        {derived.crossesMidnight ? (
-          <div>
-            <Badge variant="secondary">{t('organization.hourBands.crossesMidnight')}</Badge>
-          </div>
+        {preview.crossesMidnight ? (
+          <Badge variant="outline">{t('organization.hourBands.crossesMidnight')}</Badge>
         ) : null}
       </div>
     );
@@ -301,14 +339,16 @@ function HourBandScreen({ id }: { readonly id: string }) {
 
   function renderBand(band: HourBandRow): ReactNode {
     return (
-      <div className="grid gap-6">
+      <>
+        {/* HIDDEN, NOT UNMOUNTED, while the removal is asked about: a
+            cancelled removal returns to the form with what was typed. */}
         <form
           key={hourBandFormKey(band, saves)}
           method="post"
           onSubmit={(event) => {
             void submit(event, band);
           }}
-          className="grid gap-4"
+          className={confirming ? 'hidden' : 'grid gap-5'}
         >
           <div className="grid gap-2">
             <Label htmlFor="hour-band-name">{t('organization.hourBands.name')}</Label>
@@ -329,29 +369,50 @@ function HourBandScreen({ id }: { readonly id: string }) {
             />
           </div>
           <div className="grid gap-2">
-            <Label htmlFor="hour-band-start">{t('organization.hourBands.start')}</Label>
-            <Input
-              ref={startField}
-              id="hour-band-start"
-              name="start"
-              type="time"
-              required
-              defaultValue={formatMinuteOfDay(band.startMinute)}
-              onChange={() => {
-                setSaved(null);
-              }}
-              aria-invalid={marksField(failure, HOUR_BAND_START_FIELD)}
-              aria-describedby={failure === null ? undefined : 'hour-band-form-error'}
-              className="h-11"
-            />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="hour-band-start">{t('organization.hourBands.start')}</Label>
+                <InputGroup>
+                  <InputGroupIcon>
+                    <Clock3 />
+                  </InputGroupIcon>
+                  <Input
+                    ref={startField}
+                    id="hour-band-start"
+                    name="start"
+                    type="time"
+                    required
+                    defaultValue={formatMinuteOfDay(band.startMinute)}
+                    onChange={(event) => {
+                      setSaved(null);
+                      setTypedStart(event.currentTarget.value);
+                    }}
+                    aria-invalid={marksField(failure, HOUR_BAND_START_FIELD)}
+                    aria-describedby={failure === null ? 'hour-band-end-hint' : 'hour-band-form-error'}
+                    className="h-11"
+                  />
+                </InputGroup>
+              </div>
+              {renderEnd()}
+            </div>
+            <p id="hour-band-end-hint" className="text-xs text-muted-foreground">
+              {t('organization.hourBands.endHint')}
+            </p>
+            {renderDuration()}
           </div>
-          {renderDerived()}
-          <Button className="h-11 w-full" type="submit" disabled={pending} aria-busy={pending}>
-            {t('organization.hourBands.save')}
-          </Button>
+          {/* THE TWO DECISIONS TOGETHER, at the right: remove, then save.
+              Neutral, never `destructive`, which UX-DR4 keeps for conflicts;
+              the icon and the confirmation that follows carry the weight.
+              The dialog's close is the way back. */}
+          <DialogFooter>
+            {renderRemove(band)}
+            <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
+              {t('organization.hourBands.save')}
+            </Button>
+          </DialogFooter>
         </form>
-        {renderRemove(band)}
-      </div>
+        {confirming ? renderConfirm(band) : null}
+      </>
     );
   }
 
@@ -362,37 +423,40 @@ function HourBandScreen({ id }: { readonly id: string }) {
   }
 
   return (
-    <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6">
-      <PageHeader>
-        <PageTitle asChild>
-          <h1>{t('organization.hourBands.editHeading')}</h1>
-        </PageTitle>
-      </PageHeader>
-      <Card className="w-full min-w-0 max-w-lg">
-        <CardContent className="grid gap-6">
-          {readRefusal === null ? null : (
-            <Notice role="alert">{t(hourBandsMessageKey(readRefusal))}</Notice>
-          )}
-          {refusal === null ? null : (
-            <Notice id="hour-band-form-error" role="alert">
-              {t(hourBandWriteMessageKey(refusal))}
-            </Notice>
-          )}
-          {saved === null ? null : (
-            <Notice role="status">{t(hourBandSavedMessageKey(saved))}</Notice>
-          )}
-          {renderBody()}
-          {/* OUTSIDE the band's block, so a removal refused as stale — the band
-              already gone, and gone from the re-read too — still says so. */}
-          {renderRemoveRefusal()}
-          <Button asChild className="h-11 w-full" variant="outline">
-            <Link ref={backLink} to="/organizacija/satni-pojasi">
-              <span className="truncate">{t('organization.hourBands.back')}</span>
-            </Link>
-          </Button>
-        </CardContent>
-      </Card>
-    </main>
+    <>
+      {/* THE LIST, behind the dialog: the band is edited where it is listed. */}
+      <OrganizacijaSatniPojasiScreen />
+      <Dialog
+        open={true}
+        onOpenChange={(open) => {
+          if (!open) close();
+        }}
+        aria-labelledby="hour-band-edit-heading"
+      >
+        <DialogHeader
+          closeRef={closeButton}
+          closeLabel={t('organization.hourBands.close')}
+          onClose={close}
+        >
+          <DialogTitle id="hour-band-edit-heading">{t('organization.hourBands.editHeading')}</DialogTitle>
+        </DialogHeader>
+        {readRefusal === null ? null : (
+          <Notice role="alert">{t(hourBandsMessageKey(readRefusal))}</Notice>
+        )}
+        {refusal === null ? null : (
+          <Notice id="hour-band-form-error" role="alert">
+            {t(hourBandWriteMessageKey(refusal))}
+          </Notice>
+        )}
+        {saved === null ? null : (
+          <Notice role="status">{t(hourBandSavedMessageKey(saved))}</Notice>
+        )}
+        {renderBody()}
+        {/* OUTSIDE the band's block, so a removal refused as stale — the band
+            already gone, and gone from the re-read too — still says so. */}
+        {renderRemoveRefusal()}
+      </Dialog>
+    </>
   );
 }
 

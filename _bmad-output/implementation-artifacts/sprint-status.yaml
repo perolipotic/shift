@@ -123,6 +123,10 @@ development_status:
   # (clause 3 — the asset readable only within its owning organization, and the
   # neutral fallback) and 1.4c (clause 4 — the accent tints the shell and the
   # logo lockup and stops there, with `destructive` still reserved).
+  # Amended 2026-09-25 by sprint change
+  # (sprint-change-proposal-2026-09-25-organization-settings.md): Organization
+  # Type, timezone and locale are set at provisioning; the settings screen
+  # shows the timezone read-only (design refresh C). Status unchanged.
   1-4-an-admin-configures-the-organization-s-identity-localization: done
   # Part A was stale at `review`: spec-1-4a-organization-settings.md carries
   # status done with review_loop_iteration 0 (implemented, three adversarial

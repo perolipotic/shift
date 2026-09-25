@@ -59,7 +59,7 @@ The founding insight is a separation most tools blur: **the rotation pattern is 
 Named protagonists; pronouns are they/them throughout.
 
 - **UJ-1. Damir configures the rotation once and retires the spreadsheet.**
-  Damir is the operations lead at a volunteer fire department of roughly forty members in four crews. Entry state: freshly provisioned Admin account, empty organization. They set the organization's name, logo, timezone, and locale; define three Shift Types (`Dan` 07:00–19:00, `Noć` 19:00–07:00, `Slobodno`); build a four-slot Rotation Pattern; create four Teams and give each an Offset against a shared Anchor Date. The system previews the next full cycle and confirms each day has exactly one team on `Dan` and one on `Noć`. **Climax:** Damir opens the Calendar and sees three months already scheduled, correct, without having typed a date. **Resolution:** they add Members to Teams and hand out credentials. **Edge case:** if two Teams get the same Offset, the coverage preview reports the resulting duplicate coverage and the uncovered days — as a warning, not a block, since Damir may have meant it.
+  Damir is the operations lead at a volunteer fire department of roughly forty members in four crews. Entry state: freshly provisioned Admin account, empty organization. They set the organization's name and logo — its timezone and locale were set when it was provisioned — define three Shift Types (`Dan` 07:00–19:00, `Noć` 19:00–07:00, `Slobodno`); build a four-slot Rotation Pattern; create four Teams and give each an Offset against a shared Anchor Date. The system previews the next full cycle and confirms each day has exactly one team on `Dan` and one on `Noć`. **Climax:** Damir opens the Calendar and sees three months already scheduled, correct, without having typed a date. **Resolution:** they add Members to Teams and hand out credentials. **Edge case:** if two Teams get the same Offset, the coverage preview reports the resulting duplicate coverage and the uncovered days — as a warning, not a block, since Damir may have meant it.
 
 - **UJ-2. Luka checks whether they are working tomorrow, from the truck.**
   Luka is a volunteer with a day job who cannot hold the rota in their head. Entry state: authenticated on their phone from a previous session. They open Shift and land on their dashboard: today's shift, next working shift with date and times, hours this month split day and night, leave remaining, and the next few shifts as a compact list. **Climax:** the answer is on screen before they tap anything. **Resolution:** they close the app. **Edge case:** when their Team is non-working today, the dashboard says so in words rather than showing an empty area Luka has to interpret.
@@ -178,7 +178,7 @@ The system refuses every administrative write to a Member Role account.
 
 ### 5.2 Organization Settings and Branding
 
-**Description:** Organization settings are the substrate the whole engine reads: identity, branding, timezone, locale, Hour Bands, and Leave Year. Nothing here is defaulted from the pilot's values in code; the pilot supplies them as data (DI-8). Organization Type is descriptive only — it is the most likely place for fire-department assumptions to leak into the core, so its inertness is a requirement rather than an accident. Realizes UJ-1.
+**Description:** Organization settings are the substrate the whole engine reads: identity, branding, timezone, locale, Hour Bands, and Leave Year. Nothing here is defaulted from the pilot's values in code; the pilot supplies them as data (DI-8). Organization Type is descriptive only — it is the most likely place for fire-department assumptions to leak into the core, so its inertness is a requirement rather than an accident. Realizes UJ-1. Organization Type, timezone and locale are set when the Organization is provisioned; an Admin sees the timezone but does not change any of the three in the application (human decision 2026-09-25, `sprint-change-proposal-2026-09-25-organization-settings.md`).
 
 **Functional Requirements:**
 
@@ -190,16 +190,18 @@ An Admin can set the Organization's name, short name, description, address, and 
 - Only an Admin can modify these fields (FR-5).
 
 #### FR-7: Organization Type is inert
-An Admin can set an Organization Type, and it changes no scheduling behavior.
+An Organization has an Organization Type, set when the Organization is provisioned, and it changes no scheduling behavior.
 
 **Consequences (testable):**
+- Saving the Organization settings never changes the Organization Type; the Admin's settings surface offers no control for it.
 - Two Organizations with identical Teams, Shift Types, and Rotation Assignments but different Organization Types produce byte-identical schedules, hours, and conflicts.
 - No branch anywhere in the domain logic reads Organization Type (DI-8).
 
 #### FR-8: Timezone and locale
-An Admin can set the Organization's timezone and locale.
+An Organization's timezone and locale are set when the Organization is provisioned. An Admin sees the timezone on the settings surface and cannot change either in the application.
 
 **Consequences (testable):**
+- Saving the Organization settings never changes the timezone or the locale; changing either after provisioning is an operator action.
 - Every date and time displayed anywhere resolves against the Organization timezone, not the viewer's device timezone.
 - Changing locale changes language, date format, number format, and pluralization with no deployment (DI-10).
 

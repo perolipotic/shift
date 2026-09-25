@@ -1,11 +1,12 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, createRoute, redirect } from '@tanstack/react-router';
+import { createRoute, redirect, useNavigate } from '@tanstack/react-router';
+import { Archive, Users } from 'lucide-react';
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { PageHeader, PageTitle } from '@/components/ui/page-header';
+import { Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/i18n';
@@ -13,6 +14,7 @@ import { mayReadMembers } from '@/members/list';
 import { DESTINATIONS } from '@/navigation/destinations';
 import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/navigation/role';
 import { appLayoutRoute } from '@/routes/_app';
+import { LjudiSmjeneScreen } from '@/routes/ljudi.smjene';
 import { supabaseClient } from '@/supabase/client';
 import {
   TEAMS_LIST_KEY,
@@ -58,6 +60,11 @@ import {
  * styling: it removes nothing, so it is not dressed as a destructive action. An
  * archived team renders its name and a note, and no control that writes.
  *
+ * A DIALOG OVER THE LIST (design refresh C), as the hour band editor is: the
+ * route renders `Smjene` and opens this team above it, every way the dialog
+ * closes navigates back, and the archive's confirmation replaces the form
+ * inside it.
+ *
  * TWO REFUSALS, EACH WHERE IT HAPPENED. A refused rename is announced above the
  * form and is what the name field is described by; a refused archive is
  * announced inside the archive block, and never marks the name field invalid.
@@ -73,6 +80,7 @@ export function LjudiSmjenaScreen() {
 
 function TeamScreen({ id }: { readonly id: string }) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const nameField = useRef<HTMLInputElement>(null);
   const writing = useRef(false);
   const [pending, setPending] = useState(false);
@@ -93,6 +101,12 @@ function TeamScreen({ id }: { readonly id: string }) {
   const form = teamFormStateOf(readState, id);
   const refusal = failure ?? form.refusal;
   const stage = archiveStageOf(armed, pending);
+  /** The archive is being asked about, or is in flight. */
+  const confirming = stage === ARCHIVE_ARMED || stage === ARCHIVE_BUSY;
+
+  function close(): void {
+    void navigate({ to: '/ljudi/smjene' });
+  }
 
   /** Re-read the one list, so both screens show what the database holds now. */
   async function refresh(): Promise<void> {
@@ -193,58 +207,65 @@ function TeamScreen({ id }: { readonly id: string }) {
     );
   }
 
+  /** The archive offer, beside Save in the dialog's footer. */
   function renderArchive(team: TeamRow): ReactNode {
-    if (stage === ARCHIVE_ARMED || stage === ARCHIVE_BUSY) {
-      const busy = stage === ARCHIVE_BUSY;
+    return (
+      <Button
+        className="h-11"
+        type="button"
+        variant="ghost"
+        disabled={pending}
+        onClick={() => {
+          setArchiveFailure(null);
+          setSaved(null);
+          setArmed(true);
+        }}
+      >
+        <Archive aria-hidden />
+        {/* A short word, and the whole name for assistive technology, which
+            begins with the visible word (WCAG 2.5.3). */}
+        <span aria-hidden>{t('smjene.archiveShort')}</span>
+        <span className="sr-only">{t('smjene.archive', { name: team.name })}</span>
+      </Button>
+    );
+  }
 
-      return (
-        <div className="grid gap-2">
-          <p className="text-sm font-medium">{t('smjene.archivePrompt', { name: team.name })}</p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Button
-              className="h-11 w-full"
-              type="button"
-              variant="outline"
-              disabled={busy}
-              aria-busy={busy}
-              onClick={() => {
-                void archive(team);
-              }}
-            >
-              {t('smjene.archiveConfirm', { name: team.name })}
-            </Button>
-            <Button
-              className="h-11 w-full"
-              type="button"
-              variant="outline"
-              disabled={busy}
-              onClick={() => {
-                setArmed(false);
-              }}
-            >
-              {t('smjene.archiveCancel')}
-            </Button>
-          </div>
-        </div>
-      );
-    }
+  /**
+   * THE CONFIRMATION, in place of the form inside the same dialog: one question
+   * naming the team, and the two answers side by side. It stays mounted and
+   * disabled while the archive is outstanding.
+   */
+  function renderConfirm(team: TeamRow): ReactNode {
+    const busy = stage === ARCHIVE_BUSY;
 
     return (
-      <div className="grid gap-2">
-        {renderArchiveRefusal()}
-        <Button
-          className="h-11 w-full"
-          type="button"
-          variant="outline"
-          disabled={pending}
-          onClick={() => {
-            setArchiveFailure(null);
-            setSaved(null);
-            setArmed(true);
-          }}
-        >
-          {t('smjene.archive', { name: team.name })}
-        </Button>
+      <div className="grid gap-5">
+        <p className="text-sm font-medium">{t('smjene.archivePrompt', { name: team.name })}</p>
+        <DialogFooter>
+          <Button
+            className="h-11"
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              setArmed(false);
+            }}
+          >
+            {t('smjene.archiveCancel')}
+          </Button>
+          <Button
+            className="h-11"
+            type="button"
+            disabled={busy}
+            aria-busy={busy}
+            onClick={() => {
+              void archive(team);
+            }}
+          >
+            <Archive aria-hidden />
+            {t('smjene.archiveConfirm', { name: team.name })}
+          </Button>
+        </DialogFooter>
       </div>
     );
   }
@@ -263,39 +284,53 @@ function TeamScreen({ id }: { readonly id: string }) {
     if (team.archived) return renderArchived(team);
 
     return (
-      <div className="grid gap-6">
+      <>
+        {/* HIDDEN, NOT UNMOUNTED, while the archive is asked about: a
+            cancelled archive returns to the form with what was typed. */}
         <form
           key={teamFormKey(team, renames)}
           method="post"
           onSubmit={(event) => {
             void submit(event, team);
           }}
-          className="grid gap-4"
+          className={confirming ? 'hidden' : 'grid gap-5'}
         >
           <div className="grid gap-2">
             <Label htmlFor="team-name">{t('smjene.name')}</Label>
-            <Input
-              ref={nameField}
-              id="team-name"
-              name="name"
-              type="text"
-              required
-              defaultValue={team.name}
-              onChange={() => {
-                // A confirmation describes the last save, not what is typed now.
-                setSaved(null);
-              }}
-              aria-invalid={failure !== null}
-              aria-describedby={failure === null ? undefined : 'team-form-error'}
-              className="h-11"
-            />
+            <InputGroup>
+              <InputGroupIcon>
+                <Users />
+              </InputGroupIcon>
+              <Input
+                ref={nameField}
+                id="team-name"
+                name="name"
+                type="text"
+                required
+                defaultValue={team.name}
+                onChange={() => {
+                  // A confirmation describes the last save, not what is typed now.
+                  setSaved(null);
+                }}
+                aria-invalid={failure !== null}
+                aria-describedby={failure === null ? undefined : 'team-form-error'}
+                className="h-11"
+              />
+            </InputGroup>
           </div>
-          <Button className="h-11 w-full" type="submit" disabled={pending} aria-busy={pending}>
-            {t('smjene.save')}
-          </Button>
+          {renderArchiveRefusal()}
+          {/* THE TWO DECISIONS TOGETHER, at the right: archive, then save.
+              Neutral, never `destructive`, which UX-DR4 keeps for conflicts.
+              The dialog's close is the way back. */}
+          <DialogFooter>
+            {renderArchive(team)}
+            <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
+              {t('smjene.save')}
+            </Button>
+          </DialogFooter>
         </form>
-        {renderArchive(team)}
-      </div>
+        {confirming ? renderConfirm(team) : null}
+      </>
     );
   }
 
@@ -306,38 +341,37 @@ function TeamScreen({ id }: { readonly id: string }) {
   }
 
   return (
-    <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6">
-      <PageHeader>
-        <PageTitle asChild>
-          <h1>
-            {t(teamHeadingMessageKey(form.team))}
-          </h1>
-        </PageTitle>
-      </PageHeader>
-      <Card className="w-full min-w-0 max-w-lg">
-        <CardContent className="grid gap-6">
-          {readRefusal === null ? null : (
-            <Notice role="alert">
-              {t(teamsMessageKey(readRefusal))}
-            </Notice>
-          )}
-          {refusal === null ? null : (
-            <Notice id="team-form-error" role="alert">
-              {t(teamWriteMessageKey(refusal))}
-            </Notice>
-          )}
-          {saved === null ? null : (
-            <Notice role="status">
-              {t(teamSavedMessageKey(saved))}
-            </Notice>
-          )}
-          {renderBody()}
-          <Button asChild className="h-11 w-full" variant="outline">
-            <Link to="/ljudi/smjene">{t('smjene.back')}</Link>
-          </Button>
-        </CardContent>
-      </Card>
-    </main>
+    <>
+      {/* THE LIST, behind the dialog: the team is edited where it is listed. */}
+      <LjudiSmjeneScreen />
+      <Dialog
+        open={true}
+        onOpenChange={(open) => {
+          if (!open) close();
+        }}
+        aria-labelledby="team-edit-heading"
+      >
+        <DialogHeader closeLabel={t('smjene.close')} onClose={close}>
+          <DialogTitle id="team-edit-heading">{t(teamHeadingMessageKey(form.team))}</DialogTitle>
+        </DialogHeader>
+        {readRefusal === null ? null : (
+          <Notice role="alert">
+            {t(teamsMessageKey(readRefusal))}
+          </Notice>
+        )}
+        {refusal === null ? null : (
+          <Notice id="team-form-error" role="alert">
+            {t(teamWriteMessageKey(refusal))}
+          </Notice>
+        )}
+        {saved === null ? null : (
+          <Notice role="status">
+            {t(teamSavedMessageKey(saved))}
+          </Notice>
+        )}
+        {renderBody()}
+      </Dialog>
+    </>
   );
 }
 

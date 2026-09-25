@@ -43,7 +43,22 @@ const PageTitle = React.forwardRef<
 })
 PageTitle.displayName = "PageTitle"
 
-const PageActions = React.forwardRef<
+// The line under the title: what the screen is for, in one sentence. Muted,
+// and never a second heading. A screen wraps its `PageTitle` and this in one
+// `<div>` so they stay together on the left.
+const PageDescription = React.forwardRef<
+  HTMLParagraphElement,
+  React.HTMLAttributes<HTMLParagraphElement>
+>(({ className, ...props }, ref) => (
+  <p
+    ref={ref}
+    className={cn("mt-1.5 max-w-prose text-sm text-muted-foreground", className)}
+    {...props}
+  />
+))
+PageDescription.displayName = "PageDescription"
+
+const PageActions =React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => (
@@ -51,4 +66,4 @@ const PageActions = React.forwardRef<
 ))
 PageActions.displayName = "PageActions"
 
-export { PageHeader, PageTitle, PageActions }
+export { PageHeader, PageTitle, PageDescription, PageActions }
