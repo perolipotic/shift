@@ -330,6 +330,12 @@ development_status:
   # member-role read of colleagues' status history). Reconciled 2026-09-25.
   # THIS STORY COMPLETED EPIC 1; its retrospective stays optional.
   1-8-a-member-sees-who-is-on-a-team: done
+  # Added 2026-09-25 by sprint change (sprint-change-proposal-2026-09-25.md):
+  # built mid-Epic-2 without planning, backfilled here. Parts: A member rank
+  # (#43, spec-member-rank.md), B team position (#45, spec-team-position.md).
+  1-9-an-organization-that-uses-fire-ranks-records-rank-and-position: done
+  1-9a-member-rank: done
+  1-9b-team-position: done
   epic-1-retrospective: optional
 
   epic-2: in-progress

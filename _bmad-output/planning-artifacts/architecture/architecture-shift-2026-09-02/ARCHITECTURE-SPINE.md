@@ -63,6 +63,8 @@ The derivation lives in one pure package that cannot reach for data. The store e
   | Shift type **name** | **Current-state** | a rename is cosmetic; versioning it would churn the hot path for a typo fix |
   | Hour bands | **Current-state** | CAP-3 explicitly *wants* retroactivity — moving a boundary recomputes reported band hours, and changes no total |
   | Leave allowance | **Current-state** | CAP-15 — allowance minus used equals balance at all times |
+  | Team position | **Versioned** (on the team-membership version) | a promotion takes effect from a date; the roster for a past date shows the position then held (added 2026-09-25, sprint change) |
+  | Member fire rank | **Current-state** | descriptive only, like shift type name; nothing derived reads it (added 2026-09-25, sprint change) |
 
   A new rule kind is unclassified until it appears in this table.
 
@@ -317,9 +319,9 @@ shift/
 | CAP-1 Authenticated, scoped access | Supabase Auth, RLS policies, privileged auth function | AD-9, AD-10, AD-12, AD-16, AD-17 |
 | CAP-2 Organization config and branding | `organizations`, Storage | AD-9, AD-10 |
 | CAP-3 Hour bands | `hour_bands`, `domain/bands` | AD-3, AD-6 |
-| CAP-4 Member management | `members`, RLS helper, privileged auth function | AD-10, AD-11, AD-16 |
-| CAP-5 Team roster visibility | derived roster, RLS read policy | AD-1, AD-10 |
-| CAP-6 Teams of any number | `teams` | AD-9 |
+| CAP-4 Member management | `members` (incl. `fire_rank`), RLS helper, privileged auth function | AD-10, AD-11, AD-16 |
+| CAP-5 Team roster visibility | derived roster (`team_roster`, with rank and position), RLS read policy | AD-1, AD-10 |
+| CAP-6 Teams of any number | `teams`, `team_membership_versions` (incl. `position`) | AD-2, AD-9 |
 | CAP-7 Shift types incl. midnight-crossing | `shift_types`, `domain/duration` | AD-6 |
 | CAP-8 Rotation pattern and assignment | `rotation_*`, `domain/projection` | AD-2, AD-3, AD-7 |
 | CAP-9 Rotation change with effective date | assignment versioning | AD-2, AD-5, AD-11 |
@@ -334,6 +336,7 @@ shift/
 
 ## Deferred
 
+- **Organization-data rank and position lists.** Fire rank and team position are fixed code lists behind the `uses_fire_ranks` setting (PRD FR-18a — a bounded exception to DI-8's spirit, `sprint-change-proposal-2026-09-25.md`). **Revisit when** a second organization needs ranks or positions: the lists become organization rows, the codes migrate to seeded rows, and the setting goes.
 - **Multi-organization membership.** Not built; the current non-goal licenses AD-10's claim. **Revisit when** a user genuinely needs two organizations — the claim becomes a set or a per-request selection, and every policy reading it changes together, as one coordinated move.
 - **Materialization for scale.** AD-1 holds at the pilot's scale and at Q20's several hundred members. **Revisit when** a surface misses Q17's two-second budget on real data, measured rather than assumed.
 - **Conflict-resolution history.** Resolutions are current-state rows. **Revisit when** someone needs to see a resolution that was later superseded.
