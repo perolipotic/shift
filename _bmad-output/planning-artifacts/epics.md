@@ -107,7 +107,7 @@ From `DESIGN.md` (visual) and `EXPERIENCE.md` (behavioural). Both are binding an
 
 **Design tokens and theme**
 - **UX-DR1** Implement the 46-token colour layer as a shadcn theme delta: `primary`, `destructive`, the six-slot working-shift ramp plus `shift-nonworking`, and four modifier signals — each defined in *both* light and dark.
-- **UX-DR2** Light and dark both ship. The default follows `prefers-color-scheme`; a Sustav / Svijetla / Tamna control at the foot of the navigation pins either theme, persisted per device in `localStorage` (changed 2026-09-25 by human decision — it originally forbade any toggle, setting or persisted preference).
+- **UX-DR2** Light and dark both ship. The default follows `prefers-color-scheme`; a Sustav / Svijetla / Tamna glyph beside the organization lockup pins either theme, persisted per device in `localStorage` (changed 2026-09-25 by human decision — it originally forbade any toggle, setting or persisted preference).
 - **UX-DR3** Convert DESIGN.md's hex tokens to the space shadcn now emits (OKLCH), and contrast-verify ramp slots 3–6 in both themes before any second organization uses them. Slots 3–6 are marked `[ASSUMPTION]` and unexercised by the pilot.
 - **UX-DR4** `destructive` is reserved exclusively for an unresolved conflict — not delete buttons, not validation errors, not an organization's accent. Destructive actions use neutral styling plus a confirmation step.
 - **UX-DR5** An organization's accent may tint the application shell and logo lockup only; never a shift state, a modifier, or `destructive`.
