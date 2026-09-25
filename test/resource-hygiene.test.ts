@@ -64,6 +64,13 @@ const SANCTIONED_PLURAL_KEYS = [
   // `0 pojaseva`, `1 pojas`, `2 pojasa`, `21 pojas`. Durations are NOT here:
   // `12 h` and `1 h 30 min` are units and take no plural.
   'organization.hourBands.count',
+  // THE MEMBER LIST'S TEAM FILTER, three options each stating its own count,
+  // rendered at zero — `Bez smjene: 0 osoba`. Under `smjene.membership.*`
+  // rather than `ljudi.*`, because only the team namespace may say `smjena`.
+  // `filterTeam` interpolates the team's name, which is data and never a key.
+  'smjene.membership.filterAll',
+  'smjene.membership.filterTeam',
+  'smjene.membership.filterNone',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -252,6 +259,9 @@ const SANCTIONED_SCREEN_KEYS = [
   // They state what happened instead.
   'ljudi.error.refused',
   'ljudi.error.unavailable',
+  // The member list's one reset: search, level and team back to their
+  // defaults in a single action (UX-DR17). Plain words, no count.
+  'ljudi.reset',
   // The two member forms. TWENTY strings the screens render and TWELVE
   // refusals the write path maps to, and the partition is the point in both
   // halves. Twelve of the twenty are story 1.5b's; the other eight and the

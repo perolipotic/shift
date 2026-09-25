@@ -37,7 +37,7 @@ Every screen (destination, form, placeholder or not-found) is built the same way
 - A refusal and a confirmation are a `Notice` with `role="alert"` or
   `role="status"`. Inside a form screen or a card, the notice sits in the card.
 - A native `<select>` uses the Input look. The class string stays literal in
-  each screen for the 44 px check, and `prijava.test.ts` holds all five to
+  each screen for the 44 px check, and `prijava.test.ts` holds all six to
   this one. Select class string:
   `flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50`.
 

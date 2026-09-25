@@ -37,6 +37,7 @@
     "filterAll": "{count, plural, one {Sve razine: # osoba} few {Sve razine: # osobe} other {Sve razine: # osoba}}",
     "filterAdmin": "{count, plural, one {Administratori: # osoba} few {Administratori: # osobe} other {Administratori: # osoba}}",
     "filterMember": "{count, plural, one {Članovi: # osoba} few {Članovi: # osobe} other {Članovi: # osoba}}",
+    "reset": "Poništi filtre",
     "stats": {
       "total": "Ukupno osoba",
       "admins": "Administratori",
@@ -244,6 +245,9 @@
     "membership": {
       "column": "Smjena",
       "none": "Bez smjene",
+      "filterAll": "{count, plural, one {Sve smjene: # osoba} few {Sve smjene: # osobe} other {Sve smjene: # osoba}}",
+      "filterTeam": "{count, plural, one {{team}: # osoba} few {{team}: # osobe} other {{team}: # osoba}}",
+      "filterNone": "{count, plural, one {Bez smjene: # osoba} few {Bez smjene: # osobe} other {Bez smjene: # osoba}}",
       "current": "Smjena: {team}",
       "scheduled": "Od {date} osoba će biti u smjeni {team}.",
       "scheduledNone": "Od {date} osoba će biti bez smjene.",
