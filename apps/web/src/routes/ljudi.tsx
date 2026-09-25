@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, createRoute, redirect } from '@tanstack/react-router';
 import { ArrowDown, ArrowUp } from 'lucide-react';
-import { useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 
 import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +25,7 @@ import { formatNumber } from '@/i18n/format';
 import { t } from '@/i18n';
 import {
   ALL_LEVELS,
+  ALL_TEAMS,
   ARROW_DOWN,
   ARROW_UP,
   DAYS_CELL,
@@ -43,6 +44,8 @@ import {
   TEXT_CELL,
   cellClassNameOf,
   chooseLevel,
+  chooseTeam,
+  isNarrowed,
   levelFilterMessageKey,
   mayReadMembers,
   memberActionName,
@@ -57,11 +60,14 @@ import {
   readMembers,
   sortIndicatorOf,
   sortStateOf,
+  teamFilterMessageKey,
+  teamToStore,
   type LevelFilter,
   type MemberCell,
   type MemberColumnKey,
   type NarrowingInputs,
   type SortIndicator,
+  type TeamFilter,
 } from '@/members/list';
 import { DESTINATIONS } from '@/navigation/destinations';
 import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/navigation/role';
@@ -88,12 +94,15 @@ import { supabaseClient } from '@/supabase/client';
  * — and the database still settles who may read what.
  *
  * ONE SNAPSHOT, ONE QUERY KEY (AD-13). Every figure below — the rows, the stated
- * count, the three counts beside the filter — comes from the single `useQuery`
- * under `MEMBERS_LIST_KEY` and is derived by `narrowMembers`. There is no second
- * read on this screen and there must not be one.
+ * count, the counts beside both filters, and the team options themselves —
+ * comes from the single `useQuery` under `MEMBERS_LIST_KEY` and is derived by
+ * `narrowMembers`. There is no second read on this screen and there must not be
+ * one: the team options are the teams somebody is on today, never a read of
+ * `teams`.
  *
  * THIS FILE HOLDS MARKUP AND STATE, NOTHING ELSE. Every rule — the fold, the
- * collation, the sort toggle, the level fallback, the counts, the labels — is a
+ * collation, the sort toggle, the level and team fallbacks, the faceted counts,
+ * whether the reset has anything to reset, the labels — is a
  * pure function in `@/members/list`, because a `.tsx` is collected by nothing
  * (AD-15) and the 1.5a review shipped two swapped sort keys green when the
  * pairing lived here.
@@ -226,6 +235,8 @@ function CellView({ cell }: { readonly cell: MemberCell }): ReactNode {
 export function LjudiScreen() {
   const [search, setSearch] = useState(NO_TEXT);
   const [level, setLevel] = useState<LevelFilter>(ALL_LEVELS);
+  const [team, setTeam] = useState<TeamFilter>(ALL_TEAMS);
+  const searchField = useRef<HTMLInputElement>(null);
   const [sort, setSort] = useState(DEFAULT_SORT);
 
   const answer = useQuery({
@@ -257,7 +268,7 @@ export function LjudiScreen() {
   // one left the suite green and eslint clean while the arrow flipped and the
   // rows never moved. There is only one list of inputs now, and
   // `members/list.test.ts` pins what it contains.
-  const inputs: NarrowingInputs = { members, search, level, sort, today };
+  const inputs: NarrowingInputs = { members, search, level, team, sort, today };
   // THE SUMMARY ROW COMES OUT OF THE SAME CALL, from the snapshot and never
   // from the narrowed rows: `membersViewOf` is executed by `members/list.test.ts`
   // with a search that matches nobody, and the four figures still count everyone.
@@ -273,12 +284,36 @@ export function LjudiScreen() {
   // true: there is nothing here to search yet.
   const unanswered = members === null;
 
+  // A TEAM THAT LEFT THE OPTIONS LEAVES THE STATE TOO, adjusted during render
+  // (React's documented pattern for state derived from props). It cannot loop:
+  // once stored, the value IS the applied one and `teamToStore` returns it.
+  const settledTeam = teamToStore(team, narrowed.team, members, today);
+  if (settledTeam !== team) setTeam(settledTeam);
+
   function changeSearch(event: ChangeEvent<HTMLInputElement>): void {
     setSearch(event.target.value);
   }
 
   function changeLevel(event: ChangeEvent<HTMLSelectElement>): void {
     setLevel(chooseLevel(event.target.value));
+  }
+
+  // THE CHOICE IS LOOKED UP AMONG THE OPTIONS ON SCREEN, which are data: a
+  // value that is not one of them falls back to every team rather than
+  // narrowing to a list nobody explained.
+  function changeTeam(event: ChangeEvent<HTMLSelectElement>): void {
+    setTeam(chooseTeam(event.target.value, narrowed.teams));
+  }
+
+  // ONE ACTION FOR ALL THREE (UX-DR17): the search, the level and the team
+  // return to their defaults together. The sort is not a filter and stays.
+  function resetFilters(): void {
+    setSearch(NO_TEXT);
+    setLevel(ALL_LEVELS);
+    setTeam(ALL_TEAMS);
+    // THE PRESSED BUTTON IS ABOUT TO BE DISABLED, which would drop keyboard
+    // focus to the page body. The search is where narrowing starts again.
+    searchField.current?.focus();
   }
 
   function pressColumn(column: MemberColumnKey): void {
@@ -332,6 +367,7 @@ export function LjudiScreen() {
           <Label htmlFor="ljudi-search">{t('ljudi.search')}</Label>
           <Input
             id="ljudi-search"
+            ref={searchField}
             type="search"
             className="h-11 w-full"
             value={search}
@@ -366,6 +402,42 @@ export function LjudiScreen() {
             ))}
           </select>
         </div>
+        <div className="grid min-w-0 gap-2">
+          <Label htmlFor="ljudi-team">{t('smjene.membership.column')}</Label>
+          {/* THE TEAM FILTER, the level filter's twin: native, the same literal
+              class, the same `disabled` and `aria-describedby`. Its options are
+              the teams somebody is on today, derived from the one snapshot, and
+              its value is the team the rows were ACTUALLY narrowed by — so a
+              team that vanished on a refetch shows as every team rather than
+              claiming a filter the rows ignore. Team names are data,
+              interpolated. */}
+          <select
+            id="ljudi-team"
+            className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            value={narrowed.team}
+            onChange={changeTeam}
+            disabled={unanswered}
+            aria-describedby={refusal === null ? undefined : 'ljudi-error'}
+          >
+            {narrowed.teams.map((option) => (
+              <option key={option.value} value={option.value}>
+                {t(teamFilterMessageKey(option.value), { count: option.count, team: option.team })}
+              </option>
+            ))}
+          </select>
+        </div>
+        {/* DEAD WHILE THERE IS NOTHING TO RESET, and while the list is
+            unanswered, for the reason the two filters are. Whether anything is
+            narrowed is `isNarrowed`'s decision, over the team the rows were
+            actually narrowed by. */}
+        <Button
+          variant="outline"
+          className="h-11"
+          onClick={resetFilters}
+          disabled={unanswered || !isNarrowed(search, level, narrowed.team)}
+        >
+          {t('ljudi.reset')}
+        </Button>
       </div>
       {/* OUTSIDE the answered branch, and conditional on both sides: a read that
           produced no row never renders a table, so an explanation rendered

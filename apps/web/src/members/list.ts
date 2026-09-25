@@ -1332,11 +1332,10 @@ export type LevelFilter = typeof ALL_LEVELS | MemberRole;
  * somebody remembers this list. `ALL_LEVELS` leads because it is the state the
  * screen opens in.
  *
- * BY PERMISSION LEVEL and not by team, which is what UX-DR17 and UX-DR19
- * describe: `members` has no `team_id` until story 1.7, so the level is the only
- * axis the schema offers today. What survives from those rules is the SHAPE —
- * each option states its own count — so the filter teams arrive into is already
- * the one they described.
+ * ONE OF TWO AXES since the team filter arrived (UX-DR17, UX-DR19): the team
+ * options are derived from the snapshot rather than written out, by
+ * {@link narrowMembers}, because unlike the levels they are data. Both share
+ * the SHAPE — each option states its own count.
  */
 export const LEVEL_FILTERS: readonly LevelFilter[] = [ALL_LEVELS, ...MEMBER_ROLES];
 
@@ -1353,6 +1352,136 @@ export const LEVEL_FILTERS: readonly LevelFilter[] = [ALL_LEVELS, ...MEMBER_ROLE
  */
 export function chooseLevel(value: string): LevelFilter {
   return LEVEL_FILTERS.find((known) => known === value) ?? ALL_LEVELS;
+}
+
+/** Every member, whatever their team. */
+export const ALL_TEAMS = 'all';
+
+/** The members on no team today. */
+export const NO_TEAM = 'none';
+
+/**
+ * A team filter value: {@link ALL_TEAMS}, {@link NO_TEAM}, or a team's id.
+ *
+ * THE SENTINELS CANNOT COLLIDE WITH AN ID: `teams.id` is a UUID, and neither
+ * `all` nor `none` is one. A plain `string` rather than a union, because the
+ * third member is data the snapshot supplies — which is exactly why a value is
+ * only ever admitted through {@link chooseTeam}.
+ */
+export type TeamFilter = string;
+
+/**
+ * One option of the team filter, with the count it would yield (UX-DR19).
+ *
+ * `team` is the name a named option interpolates, and {@link NO_TEXT} for the
+ * two sentinels, whose messages name no team. It is DATA, never a key.
+ */
+export interface TeamFilterOption {
+  readonly value: TeamFilter;
+  readonly team: string;
+  readonly count: number;
+}
+
+/**
+ * The team a member counts under, as at today: its id, or {@link NO_TEAM}.
+ *
+ * TODAY'S TEAM, and a scheduled move changes nothing until its date — the
+ * reading the team column and `0010`'s `member_team_on` make.
+ */
+function teamFilterValueOf(member: MemberListRow, today: string): TeamFilter {
+  return memberTeamOn(member, today)?.id ?? NO_TEAM;
+}
+
+/**
+ * Every team somebody in the snapshot is on today, by name in Croatian order,
+ * then by id so two teams sharing a name still order totally.
+ *
+ * DERIVED FROM THE ROWS rather than read from `teams` (AD-13): a team nobody is
+ * on today would only ever state `0`, and fetching it would be a second read
+ * behind one figure. The WHOLE snapshot, never the searched part, so an option
+ * does not vanish because a search excluded its members — it reads `0` instead
+ * (UX-DR20).
+ */
+function teamsOnToday(members: readonly MemberListRow[], today: string): MemberTeam[] {
+  const byId = new Map<string, MemberTeam>();
+
+  for (const member of members) {
+    const team = memberTeamOn(member, today);
+
+    if (team !== null && !byId.has(team.id)) byId.set(team.id, team);
+  }
+
+  return [...byId.values()].sort((first, second) => {
+    const byName = compareText(first.name, second.name);
+
+    return byName !== 0 ? byName : compareText(first.id, second.id);
+  });
+}
+
+/**
+ * The team a `<select>` value IS among the options on screen, or every team.
+ *
+ * A LOOKUP WITH AN EXPLICIT FALLBACK, for the reason {@link chooseLevel} gives —
+ * and more so here, because the vocabulary is DATA: a team everybody left since
+ * the last read, or a value from a stale option, is not among the options, and
+ * admitting it would narrow to an empty list nobody explained.
+ */
+export function chooseTeam(value: string, options: readonly TeamFilterOption[]): TeamFilter {
+  return options.find((option) => option.value === value)?.value ?? ALL_TEAMS;
+}
+
+/**
+ * The label one team option renders as — a count, in all three Croatian forms.
+ *
+ * UNDER `smjene.membership.*`, not `ljudi.*`: the team namespace is the one
+ * that may say `smjena` (`test/resource-hygiene.test.ts`), and "no team" is
+ * said in positive words, `Bez smjene`, as the team column says it.
+ */
+export function teamFilterMessageKey(
+  value: TeamFilter,
+):
+  | 'smjene.membership.filterAll'
+  | 'smjene.membership.filterTeam'
+  | 'smjene.membership.filterNone' {
+  if (value === ALL_TEAMS) return 'smjene.membership.filterAll';
+  if (value === NO_TEAM) return 'smjene.membership.filterNone';
+
+  return 'smjene.membership.filterTeam';
+}
+
+/**
+ * The team filter value the screen should STORE, given the one the narrowing
+ * actually applied: the stored value itself, or the applied one when the stored
+ * team has left the options.
+ *
+ * WITHOUT THIS A VANISHED TEAM COMES BACK. The narrowing treats a team nobody
+ * is on any more as every team, but the screen's state would still hold its
+ * id — so a later refetch that puts somebody back on it would silently
+ * re-apply a filter the select had stopped showing, and the reset (which reads
+ * the applied team) would be disabled the whole time. Replacing it only while
+ * the answer is real — members present and today known — keeps a loading or
+ * refused screen from discarding a choice it simply cannot judge yet.
+ */
+export function teamToStore(
+  stored: TeamFilter,
+  applied: TeamFilter,
+  members: readonly MemberListRow[] | null,
+  today: string | null,
+): TeamFilter {
+  if (members === null || today === null) return stored;
+
+  return stored === applied ? stored : applied;
+}
+
+/**
+ * Whether the reset has anything to reset: something in the search box, or a
+ * level or a team other than every one.
+ *
+ * ANY TEXT IN THE BOX COUNTS, whitespace included: the reset's job is to put
+ * the three controls back, and a box holding two spaces is not back.
+ */
+export function isNarrowed(search: string, level: LevelFilter, team: TeamFilter): boolean {
+  return search !== NO_TEXT || level !== ALL_LEVELS || team !== ALL_TEAMS;
 }
 
 /**
@@ -1551,8 +1680,20 @@ export type LevelCounts = Readonly<Record<LevelFilter, number>>;
 export interface MembersNarrowing {
   /** The rows to render, searched, filtered and ordered. */
   readonly rows: readonly MemberListRow[];
-  /** What each filter option would yield from the same search. */
+  /** What each level option would yield from the same search and team. */
   readonly counts: LevelCounts;
+  /**
+   * The team filter's options, in binding order — every team, the teams
+   * somebody is on today by name, and no team — each with what it would yield
+   * from the same search and level.
+   */
+  readonly teams: readonly TeamFilterOption[];
+  /**
+   * The team the rows were actually narrowed by: the one asked for, or
+   * {@link ALL_TEAMS} when it is not among {@link teams} any more. The
+   * `<select>` shows THIS, so it never claims a team the rows ignore.
+   */
+  readonly team: TeamFilter;
 }
 
 /**
@@ -1611,11 +1752,20 @@ function compareByName(first: MemberListRow, second: MemberListRow): number {
  * reports because each half looks right on its own. Here they are the same
  * traversal.
  *
- * THE COUNTS ARE OVER THE SEARCH, NOT OVER THE LEVEL. Each option says how many
- * rows choosing it would produce from what is currently searched — which is what
- * makes the numbers an answer to "what happens if I pick this" rather than a
- * static fact about the organization. Counting after the level filter would make
- * every option but the chosen one read zero.
+ * THE COUNTS ARE FACETED. Each option says how many rows choosing it would
+ * produce with everything else as it is: a level option counts over the search
+ * and the chosen team, a team option over the search and the chosen level —
+ * which is what makes the numbers an answer to "what happens if I pick this"
+ * rather than a static fact about the organization. Counting after an axis's
+ * own filter would make every option but the chosen one read zero, and
+ * counting over the search alone would disagree with the rows the moment the
+ * other axis is narrowed.
+ *
+ * THE TEAM IS TODAY'S, and nothing while today is unknown: with no today there
+ * is no honest answer to "who is on which team", so the only option is every
+ * team and the team axis narrows nothing. A chosen team nobody in the snapshot
+ * is on any more narrows nothing either — it is not an option, so it cannot be
+ * a filter.
  *
  * ADDRESS-LESS MEMBERS SORT LAST IN BOTH DIRECTIONS. A member with no address is
  * not "before A" or "after Z" — they have no place in an alphabetical order at
@@ -1631,25 +1781,59 @@ export function narrowMembers(
   level: LevelFilter,
   sort: SortState,
   today: string | null = null,
+  team: TeamFilter = ALL_TEAMS,
 ): MembersNarrowing {
   const searched = searchedMembers(members, search);
 
+  // THE OPTIONS FIRST, from the whole snapshot, because whether the chosen
+  // team still counts as a filter depends on whether it is still one of them.
+  const named = today === null ? [] : teamsOnToday(members, today);
+  const values: TeamFilter[] =
+    today === null ? [ALL_TEAMS] : [ALL_TEAMS, ...named.map((known) => known.id), NO_TEAM];
+  const applied = values.includes(team) ? team : ALL_TEAMS;
+
   const counts: Record<LevelFilter, number> = {
-    [ALL_LEVELS]: searched.length,
+    [ALL_LEVELS]: 0,
     admin: 0,
     member_role: 0,
   };
+  const teamCounts = new Map<TeamFilter, number>(values.map((value) => [value, 0]));
+  const filtered: MemberListRow[] = [];
 
-  for (const member of searched) counts[member.role] += 1;
+  // ONE TRAVERSAL for the rows and both sets of counts, so none of the three
+  // can drift from the others.
+  for (const member of searched) {
+    // `null` IS "UNKNOWN", never a filter value: with no today there is no team
+    // to count a member under, and only the every-team option exists.
+    const onTeam: TeamFilter | null = today === null ? null : teamFilterValueOf(member, today);
+    const levelMatches = level === ALL_LEVELS || member.role === level;
+    const teamMatches = applied === ALL_TEAMS || onTeam === applied;
 
-  const filtered =
-    level === ALL_LEVELS ? searched : searched.filter((member) => member.role === level);
+    if (teamMatches) {
+      counts[ALL_LEVELS] += 1;
+      counts[member.role] += 1;
+    }
+
+    if (levelMatches) {
+      teamCounts.set(ALL_TEAMS, (teamCounts.get(ALL_TEAMS) ?? 0) + 1);
+      if (onTeam !== null) teamCounts.set(onTeam, (teamCounts.get(onTeam) ?? 0) + 1);
+    }
+
+    if (levelMatches && teamMatches) filtered.push(member);
+  }
+
+  const names = new Map(named.map((known) => [known.id, known.name]));
+  const teams: TeamFilterOption[] = values.map((value) => ({
+    value,
+    team: names.get(value) ?? NO_TEXT,
+    count: teamCounts.get(value) ?? 0,
+  }));
 
   const column = MEMBER_COLUMNS.find((candidate) => candidate.key === sort.key);
   // A sort key no column owns orders nothing rather than throwing: the state is
   // this module's own and cannot reach that, but a `!` here would turn a future
   // mistake into a blank screen instead of an unsorted one.
-  if (column === undefined) return { rows: filtered, counts };
+  if (column === undefined) return { rows: filtered, counts, teams, team: applied };
 
   // DECORATED once rather than read inside the comparator, which is called
   // O(n log n) times: at Q20's several hundred members that is a few thousand
@@ -1681,7 +1865,12 @@ export function narrowMembers(
     absent.reverse();
   }
 
-  return { rows: [...present.map((entry) => entry.member), ...absent], counts };
+  return {
+    rows: [...present.map((entry) => entry.member), ...absent],
+    counts,
+    teams,
+    team: applied,
+  };
 }
 
 /**
@@ -1703,6 +1892,8 @@ export interface NarrowingInputs {
   readonly members: readonly MemberListRow[] | null;
   readonly search: string;
   readonly level: LevelFilter;
+  /** The team filter's value; {@link narrowMembers} decides whether it applies. */
+  readonly team: TeamFilter;
   readonly sort: SortState;
   /** The organization's today, which the team column sorts by (story 1.7b). */
   readonly today: string | null;
@@ -1713,12 +1904,12 @@ export interface NarrowingInputs {
  * beside them.
  *
  * Every field of {@link NarrowingInputs}, in declaration order, and the test
- * that pins it compares against the object's own keys — so a FIFTH input added
+ * that pins it compares against the object's own keys — so a SEVENTH input added
  * to the narrowing and forgotten here fails rather than producing a table that
  * quietly stops responding to it.
  */
 export function narrowingDependencies(inputs: NarrowingInputs): readonly unknown[] {
-  return [inputs.members, inputs.search, inputs.level, inputs.sort, inputs.today];
+  return [inputs.members, inputs.search, inputs.level, inputs.team, inputs.sort, inputs.today];
 }
 
 /** The narrowing, from the same object the dependencies are derived from. */
@@ -1729,6 +1920,7 @@ export function narrowFrom(inputs: NarrowingInputs): MembersNarrowing {
     inputs.level,
     inputs.sort,
     inputs.today,
+    inputs.team,
   );
 }
 
@@ -1745,7 +1937,7 @@ export interface MembersView {
  * makes (visual refresh B).
  *
  * THE SUMMARY IS HANDED `members` AND `today` ONLY, never the search, the
- * level or the sort, and this is the function the screen calls, so the claim
+ * level, the team or the sort, and this is the function the screen calls, so the claim
  * "the stat cards show unfiltered totals" is executed here rather than hoped
  * for in a `.tsx` nothing runs.
  */

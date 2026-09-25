@@ -1,7 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ALL_LEVELS,
+  ALL_TEAMS,
+  NO_TEAM,
   ARROW_DOWN,
   ARROW_UP,
   ASCENDING,
@@ -41,6 +43,10 @@ import {
   UNSORTED,
   cellClassNameOf,
   chooseLevel,
+  chooseTeam,
+  isNarrowed,
+  teamFilterMessageKey,
+  teamToStore,
   foldForSearch,
   levelFilterMessageKey,
   mayReadMembers,
@@ -61,6 +67,7 @@ import {
   readMembers,
   sortIndicatorOf,
   sortStateOf,
+  type LevelFilter,
   type MemberListRow,
   type MembersAnswer,
   type MembersQueryAnswer,
@@ -69,6 +76,7 @@ import {
   type SortState,
 } from '@/members/list';
 import { TEAM_HISTORY, TEAM_HISTORY_ANSWERS, TEAM_HISTORY_SPAN } from '@/members/team-history.fixture';
+import { initLocalization, t } from '@/i18n';
 import { nextIsoDate } from '@/i18n/format';
 import { MEMBER_ROLES } from '@/navigation/role';
 
@@ -809,6 +817,7 @@ describe('the order is Croatian, and an address-less member has a place in it', 
         members,
         search: '',
         level: ALL_LEVELS,
+        team: ALL_TEAMS,
         sort: { key: TEAM_COLUMN, direction: ASCENDING },
         today: TODAY,
       }).rows.map((found) => found.id),
@@ -865,6 +874,271 @@ describe('the filter names every level it can produce, and falls back rather tha
   it('keeps a value that IS a level', () => {
     expect(chooseLevel('admin')).toBe('admin');
     expect(chooseLevel('member_role')).toBe('member_role');
+  });
+});
+
+describe('the team filter is derived from the snapshot, counted by facet, and falls back', () => {
+  const sorted: SortState = { key: NAME_COLUMN, direction: ASCENDING };
+  const alfa = { id: '00000000-0000-4000-8000-00000000000a', name: 'Alfa' };
+  const beta = { id: '00000000-0000-4000-8000-00000000000b', name: 'Beta' };
+  const onTeam = (team: { readonly id: string; readonly name: string }) => [
+    { team, effectiveFrom: '2026-09-01' },
+  ];
+
+  /** Two on Alfa (one an admin), one on Beta, one on no team. */
+  const people = [
+    member({ id: 'a1', name: 'Ana', role: 'admin', teamVersions: onTeam(alfa) }),
+    member({ id: 'a2', name: 'Boris', teamVersions: onTeam(alfa) }),
+    member({ id: 'b1', name: 'Cvita', teamVersions: onTeam(beta) }),
+    member({ id: 'n1', name: 'Dora' }),
+  ];
+
+  const summaryOf = (narrowed: { readonly teams: readonly { value: string; count: number }[] }) =>
+    narrowed.teams.map((option) => [option.value, option.count]);
+
+  it('offers every team, the teams somebody is on today, and no team, each with its count', () => {
+    const narrowed = narrowMembers(people, '', ALL_LEVELS, sorted, TODAY);
+
+    expect(summaryOf(narrowed)).toEqual([
+      [ALL_TEAMS, 4],
+      [alfa.id, 2],
+      [beta.id, 1],
+      [NO_TEAM, 1],
+    ]);
+    // Names are data, carried for interpolation; the sentinels carry none.
+    expect(narrowed.teams.map((option) => option.team)).toEqual([NO_TEXT, 'Alfa', 'Beta', NO_TEXT]);
+    expect(narrowed.team).toBe(ALL_TEAMS);
+  });
+
+  it('orders the teams by the Croatian collator, with no team last', () => {
+    const members = [
+      member({ id: 'z', teamVersions: onTeam({ id: 'team-z', name: 'Zeta' }) }),
+      member({ id: 'c', teamVersions: onTeam({ id: 'team-c', name: 'Čvor' }) }),
+      member({ id: 'k', teamVersions: onTeam({ id: 'team-k', name: 'Cvijet' }) }),
+      member({ id: 'none' }),
+    ];
+
+    // `<` would put `Čvor` after `Zeta`; the collator puts it after `Cvijet`.
+    expect(narrowMembers(members, '', ALL_LEVELS, sorted, TODAY).teams.map((o) => o.value)).toEqual([
+      ALL_TEAMS,
+      'team-k',
+      'team-c',
+      'team-z',
+      NO_TEAM,
+    ]);
+  });
+
+  it('keeps no team as an option, stated at zero, when everybody is on one', () => {
+    const narrowed = narrowMembers(people.slice(0, 3), '', ALL_LEVELS, sorted, TODAY);
+
+    expect(narrowed.teams[narrowed.teams.length - 1]).toEqual({
+      value: NO_TEAM,
+      team: NO_TEXT,
+      count: 0,
+    });
+  });
+
+  it("narrows to one team's members today, and the count matches the rows", () => {
+    const narrowed = narrowMembers(people, '', ALL_LEVELS, sorted, TODAY, alfa.id);
+
+    expect(narrowed.rows.map((found) => found.id)).toEqual(['a1', 'a2']);
+    expect(narrowed.teams.find((option) => option.value === alfa.id)?.count).toBe(
+      narrowed.rows.length,
+    );
+    expect(narrowed.team).toBe(alfa.id);
+  });
+
+  it('narrows to the members on no team today', () => {
+    expect(
+      narrowMembers(people, '', ALL_LEVELS, sorted, TODAY, NO_TEAM).rows.map((found) => found.id),
+    ).toEqual(['n1']);
+  });
+
+  it('counts and shows a scheduled move under the team today only', () => {
+    const moving = member({
+      id: 'moving',
+      name: 'Ema',
+      teamVersions: [
+        { team: alfa, effectiveFrom: '2026-09-01' },
+        { team: beta, effectiveFrom: nextIsoDate(TODAY) ?? '' },
+      ],
+    });
+    const narrowed = narrowMembers([moving], '', ALL_LEVELS, sorted, TODAY);
+
+    expect(summaryOf(narrowed)).toEqual([
+      [ALL_TEAMS, 1],
+      [alfa.id, 1],
+      [NO_TEAM, 0],
+    ]);
+    expect(narrowMembers([moving], '', ALL_LEVELS, sorted, TODAY, alfa.id).rows).toHaveLength(1);
+    // Beta is not an option today, so choosing it narrows nothing.
+    expect(narrowMembers([moving], '', ALL_LEVELS, sorted, TODAY, beta.id).team).toBe(ALL_TEAMS);
+  });
+
+  it('counts each axis over the other: team options over the level, level options over the team', () => {
+    const narrowed = narrowMembers(people, '', 'admin', sorted, TODAY, alfa.id);
+
+    expect(narrowed.rows.map((found) => found.id)).toEqual(['a1']);
+    // Team options count administrators only.
+    expect(summaryOf(narrowed)).toEqual([
+      [ALL_TEAMS, 1],
+      [alfa.id, 1],
+      [beta.id, 0],
+      [NO_TEAM, 0],
+    ]);
+    // Level options count Alfa's members only.
+    expect(narrowed.counts).toEqual({ [ALL_LEVELS]: 2, admin: 1, member_role: 1 });
+  });
+
+  it('agrees with the rows each option would produce, at every combination', () => {
+    for (const level of LEVEL_FILTERS) {
+      for (const team of [ALL_TEAMS, alfa.id, beta.id, NO_TEAM]) {
+        const narrowed = narrowMembers(people, '', level, sorted, TODAY, team);
+
+        for (const option of narrowed.teams) {
+          expect(
+            narrowMembers(people, '', level, sorted, TODAY, option.value).rows,
+            `team ${option.value} at level ${level}`,
+          ).toHaveLength(option.count);
+        }
+        for (const other of LEVEL_FILTERS) {
+          expect(
+            narrowMembers(people, '', other, sorted, TODAY, team).rows,
+            `level ${other} on team ${team}`,
+          ).toHaveLength(narrowed.counts[other]);
+        }
+      }
+    }
+  });
+
+  it('reads zero on every option when the search matches nobody, and keeps the options', () => {
+    const narrowed = narrowMembers(people, 'nitko-ovdje', ALL_LEVELS, sorted, TODAY, alfa.id);
+
+    expect(narrowed.rows).toEqual([]);
+    expect(summaryOf(narrowed)).toEqual([
+      [ALL_TEAMS, 0],
+      [alfa.id, 0],
+      [beta.id, 0],
+      [NO_TEAM, 0],
+    ]);
+    expect(narrowed.counts).toEqual({ [ALL_LEVELS]: 0, admin: 0, member_role: 0 });
+  });
+
+  it('treats a team nobody is on any more as every team, rather than an empty list', () => {
+    // Chosen while Alfa had members; the refetch has nobody on it.
+    const refetched = people.filter((found) => found.id !== 'a1' && found.id !== 'a2');
+    const narrowed = narrowMembers(refetched, '', ALL_LEVELS, sorted, TODAY, alfa.id);
+
+    expect(narrowed.teams.map((option) => option.value)).not.toContain(alfa.id);
+    expect(narrowed.team).toBe(ALL_TEAMS);
+    expect(narrowed.rows).toHaveLength(refetched.length);
+  });
+
+  it('offers only every team, and narrows nothing, while today is unknown', () => {
+    const narrowed = narrowMembers(people, '', ALL_LEVELS, sorted, null, alfa.id);
+
+    expect(summaryOf(narrowed)).toEqual([[ALL_TEAMS, 4]]);
+    expect(narrowed.team).toBe(ALL_TEAMS);
+    expect(narrowed.rows).toHaveLength(4);
+  });
+
+  it('keeps a chosen value that is an option, and falls back for anything else', () => {
+    const options = narrowMembers(people, '', ALL_LEVELS, sorted, TODAY).teams;
+
+    expect(chooseTeam(alfa.id, options)).toBe(alfa.id);
+    expect(chooseTeam(NO_TEAM, options)).toBe(NO_TEAM);
+    expect(chooseTeam(ALL_TEAMS, options)).toBe(ALL_TEAMS);
+    expect(chooseTeam('x', options)).toBe(ALL_TEAMS);
+    expect(chooseTeam('', options)).toBe(ALL_TEAMS);
+    expect(chooseTeam(alfa.id, [])).toBe(ALL_TEAMS);
+  });
+
+  it('uses sentinels no UUID can equal', () => {
+    const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+    expect(ALL_TEAMS).not.toMatch(uuid);
+    expect(NO_TEAM).not.toMatch(uuid);
+    expect(ALL_TEAMS).not.toBe(NO_TEAM);
+  });
+
+  it('maps each kind of option to its own counted label', () => {
+    expect(teamFilterMessageKey(ALL_TEAMS)).toBe('smjene.membership.filterAll');
+    expect(teamFilterMessageKey(NO_TEAM)).toBe('smjene.membership.filterNone');
+    expect(teamFilterMessageKey(alfa.id)).toBe('smjene.membership.filterTeam');
+  });
+
+  it('keeps the summary unfiltered whatever team is chosen', () => {
+    const view = membersViewOf({
+      members: people,
+      search: NO_TEXT,
+      level: ALL_LEVELS,
+      team: NO_TEAM,
+      sort: DEFAULT_SORT,
+      today: TODAY,
+    });
+
+    expect(view.narrowed.rows.map((found) => found.id)).toEqual(['n1']);
+    expect(view.summary?.[0]).toEqual({ label: 'ljudi.stats.total', value: 4 });
+  });
+});
+
+describe('the stored team follows the applied one, once the answer is real', () => {
+  const alfa = { id: 'team-alfa', name: 'Alfa' };
+  const onAlfa = [member({ id: 'a', teamVersions: [{ team: alfa, effectiveFrom: '2026-09-01' }] })];
+  const onNothing = [member({ id: 'n' })];
+  const sorted: SortState = { key: NAME_COLUMN, direction: ASCENDING };
+
+  it('replaces a team that left the options with every team', () => {
+    const applied = narrowMembers(onNothing, '', ALL_LEVELS, sorted, TODAY, alfa.id).team;
+
+    expect(teamToStore(alfa.id, applied, onNothing, TODAY)).toBe(ALL_TEAMS);
+  });
+
+  it('keeps a team that is still an option', () => {
+    const applied = narrowMembers(onAlfa, '', ALL_LEVELS, sorted, TODAY, alfa.id).team;
+
+    expect(teamToStore(alfa.id, applied, onAlfa, TODAY)).toBe(alfa.id);
+    expect(teamToStore(NO_TEAM, NO_TEAM, onAlfa, TODAY)).toBe(NO_TEAM);
+  });
+
+  it('keeps the stored team while today is unknown or there is no answer', () => {
+    expect(teamToStore(alfa.id, ALL_TEAMS, onNothing, null)).toBe(alfa.id);
+    expect(teamToStore(alfa.id, ALL_TEAMS, null, TODAY)).toBe(alfa.id);
+    expect(teamToStore(alfa.id, ALL_TEAMS, null, null)).toBe(alfa.id);
+  });
+});
+
+describe('the team options render their counts in all three Croatian forms', () => {
+  beforeAll(async () => {
+    await initLocalization();
+  });
+
+  it.each([
+    [1, 'Sve smjene: 1 osoba', 'Alfa: 1 osoba', 'Bez smjene: 1 osoba'],
+    [2, 'Sve smjene: 2 osobe', 'Alfa: 2 osobe', 'Bez smjene: 2 osobe'],
+    [5, 'Sve smjene: 5 osoba', 'Alfa: 5 osoba', 'Bez smjene: 5 osoba'],
+    [21, 'Sve smjene: 21 osoba', 'Alfa: 21 osoba', 'Bez smjene: 21 osoba'],
+  ])('states %i people', (count, all, named, none) => {
+    expect(t('smjene.membership.filterAll', { count })).toBe(all);
+    expect(t('smjene.membership.filterTeam', { count, team: 'Alfa' })).toBe(named);
+    expect(t('smjene.membership.filterNone', { count })).toBe(none);
+  });
+});
+
+describe('the reset has something to reset only when a filter is narrowed', () => {
+  it('has nothing to reset at the defaults', () => {
+    expect(isNarrowed(NO_TEXT, ALL_LEVELS, ALL_TEAMS)).toBe(false);
+  });
+
+  it.each<{ name: string; search: string; level: LevelFilter; team: string }>([
+    { name: 'a search', search: 'ana', level: ALL_LEVELS, team: ALL_TEAMS },
+    { name: 'whitespace in the box', search: '  ', level: ALL_LEVELS, team: ALL_TEAMS },
+    { name: 'a level', search: NO_TEXT, level: 'admin', team: ALL_TEAMS },
+    { name: 'a team', search: NO_TEXT, level: ALL_LEVELS, team: 'team-alfa' },
+    { name: 'no team', search: NO_TEXT, level: ALL_LEVELS, team: NO_TEAM },
+    { name: 'all three', search: 'ana', level: 'admin', team: 'team-alfa' },
+  ])('has something to reset with $name', ({ search, level, team }) => {
+    expect(isNarrowed(search, level, team)).toBe(true);
   });
 });
 
@@ -1143,6 +1417,7 @@ describe('the narrowing declares its own inputs, so a memo cannot drop one', () 
     members: [member({ id: 'a' })],
     search: 'ana',
     level: ALL_LEVELS,
+    team: ALL_TEAMS,
     sort: DEFAULT_SORT,
     today: TODAY,
   };
@@ -1155,12 +1430,17 @@ describe('the narrowing declares its own inputs, so a memo cannot drop one', () 
     expect(narrowingDependencies(inputs)).toHaveLength(Object.keys(inputs).length);
   });
 
-  it.each(['members', 'search', 'level', 'sort', 'today'])('changes when %s changes', (field) => {
+  it('names exactly the six inputs, team among them', () => {
+    expect(Object.keys(inputs)).toEqual(['members', 'search', 'level', 'team', 'sort', 'today']);
+  });
+
+  it.each(['members', 'search', 'level', 'team', 'sort', 'today'])('changes when %s changes', (field) => {
     const changed: NarrowingInputs = {
       ...inputs,
       ...(field === 'members' ? { members: [member({ id: 'b' })] } : {}),
       ...(field === 'search' ? { search: 'boris' } : {}),
       ...(field === 'level' ? { level: 'admin' as const } : {}),
+      ...(field === 'team' ? { team: NO_TEAM } : {}),
       ...(field === 'sort' ? { sort: { key: LEAVE_COLUMN, direction: DESCENDING } } : {}),
       ...(field === 'today' ? { today: '2026-09-24' } : {}),
     };
@@ -1170,8 +1450,27 @@ describe('the narrowing declares its own inputs, so a memo cannot drop one', () 
 
   it('narrows from the same object the dependencies come from', () => {
     expect(narrowFrom(inputs)).toEqual(
-      narrowMembers(inputs.members ?? [], inputs.search, inputs.level, inputs.sort, inputs.today),
+      narrowMembers(
+        inputs.members ?? [],
+        inputs.search,
+        inputs.level,
+        inputs.sort,
+        inputs.today,
+        inputs.team,
+      ),
     );
+  });
+
+  it('hands the team through to the narrowing', () => {
+    const alfa = { id: 'team-alfa', name: 'Alfa' };
+    const members = [
+      member({ id: 'on', teamVersions: [{ team: alfa, effectiveFrom: '2026-09-01' }] }),
+      member({ id: 'off' }),
+    ];
+
+    expect(
+      narrowFrom({ ...inputs, search: '', members, team: alfa.id }).rows.map((found) => found.id),
+    ).toEqual(['on']);
   });
 
   it('treats an absent list as an empty one rather than throwing', () => {
@@ -1735,6 +2034,7 @@ describe('the summary counts the whole snapshot, never the narrowed rows (visual
     members: people,
     search: NO_TEXT,
     level: ALL_LEVELS,
+    team: ALL_TEAMS,
     sort: DEFAULT_SORT,
     today: TODAY,
   };

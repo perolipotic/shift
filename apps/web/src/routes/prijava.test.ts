@@ -315,7 +315,11 @@ const SCREENS = [
   //
   // SIX SINCE STORY 1.7a: a second `<Button asChild>` link beside the add
   // action, to the teams screen. Still a link, still no write on this list.
-  { name: 'the member list', file: MEMBER_LIST, expectedControls: 6 },
+  //
+  // EIGHT SINCE THE TEAM FILTER: the team `<select>` beside the level one, and
+  // the reset `<Button>`, which is the one non-link button here and still
+  // writes nothing — it only returns the three filters to their defaults.
+  { name: 'the member list', file: MEMBER_LIST, expectedControls: 8 },
   // EIGHT on the create form: four `<Input>`s — name, username, address,
   // allowance — the level `<select>`, and three `<Button>`s, which are Save,
   // Cancel and the link back to the list. The count is what notices a SIXTH
@@ -1296,10 +1300,15 @@ const KEY_SOURCES = [
     // `@/members/list` (`memberStatusMessageKey`, counted there), where their
     // pairing to a cell is executed, and `ljudi.status.separator` arrived: the
     // visually hidden separator read between a name and its marker badge.
+    //
+    // THIRTEEN SINCE THE TEAM FILTER: its label, which is the team COLUMN's
+    // key `smjene.membership.column` rendered a second time for the reason
+    // `ljudi.role` is, and the reset. The three team options reach `t()`
+    // through `teamFilterMessageKey`, counted with the rules below.
     name: 'the member list',
     file: MEMBER_LIST,
     keys: translationKeys,
-    strings: 11,
+    strings: 13,
   },
   {
     // STORY 1.7a. EIGHT on the team list: its heading, the link back
@@ -1505,10 +1514,12 @@ const KEY_SOURCES = [
     // off `membersSummaryOf`'s `label:` entries the way the headings are, and
     // the two inactive-marker keys, which moved here from the screen as
     // `memberStatusMessageKey`'s return union.
+    // TWENTY-ONE SINCE THE TEAM FILTER: `teamFilterMessageKey`'s three counted
+    // options — every team, a named team, and no team.
     name: 'the member list rules',
     file: MEMBER_LIST_KEYS,
     keys: memberListKeys,
-    strings: 18,
+    strings: 21,
   },
   {
     // ONE on the lockup: the accessible name it falls back to when the
@@ -2744,10 +2755,11 @@ describe('the roster and the Danas line read once, show names only, and write no
 
 describe('every native select draws the one Input look (visual refresh B)', () => {
   /**
-   * The five `<select>`s stay native, and their class strings stay LITERAL,
+   * The six `<select>`s stay native, and their class strings stay LITERAL,
    * because the 44 px sweep reads `h-11` off a quoted `className`. A literal
-   * written five times is five places to drift, so this holds all five to one
-   * another and to the string `components/README.md` documents.
+   * written six times is six places to drift, so this holds all six to one
+   * another and to the string `components/README.md` documents. SIX SINCE THE
+   * TEAM FILTER: the member list has two, level and team.
    */
   const SELECT_SCREENS = [MEMBER_LIST, MEMBER_CREATE, MEMBER_EDIT, SETTINGS];
   const README = join(srcRoot, 'components', 'README.md');
@@ -2758,16 +2770,107 @@ describe('every native select draws the one Input look (visual refresh B)', () =
     );
   }
 
-  it('finds all five, so the comparison is not vacuous', () => {
-    expect(selectClasses()).toHaveLength(5);
+  it('finds all six, so the comparison is not vacuous', () => {
+    expect(selectClasses()).toHaveLength(6);
   });
 
-  it('gives all five the identical class string, and it is the documented one', () => {
+  it('gives all six the identical class string, and it is the documented one', () => {
     const documented =
       /Select class string:\s*`([^`]+)`/.exec(readFileSync(README, 'utf8'))?.[1] ?? '';
 
     expect(documented.length, 'README no longer documents the select class string').toBeGreaterThan(0);
     for (const classes of selectClasses()) expect(classes).toBe(documented);
+  });
+});
+
+describe('the member list filters are dead while unanswered, and the reset restores all three', () => {
+  /**
+   * TWO I/O ROWS OF THE TEAM FILTER SPEC live only in `ljudi.tsx` markup, which
+   * no test executes (AD-15): "unanswered — both selects and reset disabled"
+   * and "reset — one press returns search, level and team to their defaults".
+   * `isNarrowed` itself is executed in `members/list.test.ts`; what is read here
+   * is the wiring. The checks are one pure function over source text, so the
+   * self-tests below can prove each mutation fails.
+   */
+  function filterWiringFaults(text: string): string[] {
+    const faults: string[] = [];
+    const selects = selectElements(text);
+    const inputs = inputElements(text);
+
+    if (selects.length !== 2) faults.push(`expected two selects, found ${String(selects.length)}`);
+    if (inputs.length !== 1) faults.push(`expected one Input, found ${String(inputs.length)}`);
+    for (const control of [...selects, ...inputs]) {
+      if (!control.includes('disabled={unanswered}')) faults.push('a filter control is live while unanswered');
+    }
+
+    const reset = buttonElements(text).find((button) => button.includes('onClick={resetFilters}'));
+    const disabled = /disabled=\{([^}]*)\}/.exec(reset ?? '')?.[1] ?? '';
+
+    if (reset === undefined) faults.push('no reset button');
+    if (!/\bunanswered\b/.test(disabled)) faults.push('the reset is live while unanswered');
+    if (!disabled.includes('isNarrowed(')) faults.push('the reset ignores whether anything is narrowed');
+    if (!/isNarrowed\(\s*search\s*,\s*level\s*,\s*narrowed\.team\s*\)/.test(disabled)) {
+      faults.push('the reset does not judge the search, the level and the applied team');
+    }
+
+    const teamSelect = selects.find((control) => control.includes('onChange={changeTeam}'));
+
+    if (!/value=\{\s*narrowed\.team\s*\}/.test(teamSelect ?? '')) {
+      faults.push('the team select does not show the team the rows were narrowed by');
+    }
+
+    const body = /function resetFilters\(\)[^{]*\{([\s\S]*?)\n {2}\}/.exec(text)?.[1] ?? '';
+
+    for (const [setter, value] of [
+      ['setSearch', 'NO_TEXT'],
+      ['setLevel', 'ALL_LEVELS'],
+      ['setTeam', 'ALL_TEAMS'],
+    ] as const) {
+      if (!new RegExp(`\\b${setter}\\(\\s*${value}\\s*\\)`).test(body)) {
+        faults.push(`the reset does not call ${setter}(${value})`);
+      }
+    }
+
+    return faults;
+  }
+
+  it('disables both selects and the search while unanswered, and the reset restores all three', () => {
+    expect(filterWiringFaults(source(MEMBER_LIST))).toEqual([]);
+  });
+
+  it.each([
+    { name: 'the level select losing its guard', from: 'onChange={changeLevel}\n            disabled={unanswered}', to: 'onChange={changeLevel}' },
+    { name: 'the team select losing its guard', from: 'onChange={changeTeam}\n            disabled={unanswered}', to: 'onChange={changeTeam}' },
+    { name: 'the search losing its guard', from: 'onChange={changeSearch}\n            disabled={unanswered}', to: 'onChange={changeSearch}' },
+    { name: 'the reset dropping unanswered', from: 'disabled={unanswered || !isNarrowed(', to: 'disabled={!isNarrowed(' },
+    { name: 'the reset dropping isNarrowed', from: 'disabled={unanswered || !isNarrowed(search, level, narrowed.team)}', to: 'disabled={unanswered}' },
+    { name: 'the reset keeping the search', from: '    setSearch(NO_TEXT);\n    setLevel(ALL_LEVELS);', to: '    setLevel(ALL_LEVELS);' },
+    { name: 'the reset keeping the level', from: '    setLevel(ALL_LEVELS);\n    setTeam(ALL_TEAMS);', to: '    setTeam(ALL_TEAMS);' },
+    { name: 'the reset keeping the team', from: '    setLevel(ALL_LEVELS);\n    setTeam(ALL_TEAMS);', to: '    setLevel(ALL_LEVELS);' },
+  ])('would notice $name', ({ from, to }) => {
+    const screen = source(MEMBER_LIST);
+
+    expect(screen, 'the mutation no longer applies to the screen').toContain(from);
+    expect(filterWiringFaults(screen.replace(from, to)).length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    { name: 'the team select showing the stored team', from: /value=\{\s*narrowed\.team\s*\}/, to: 'value={team}' },
+    {
+      name: 'the reset judging the stored team',
+      from: /isNarrowed\(\s*search\s*,\s*level\s*,\s*narrowed\.team\s*\)/,
+      to: 'isNarrowed(search, level, team)',
+    },
+    {
+      name: 'the reset ignoring the level',
+      from: /isNarrowed\(\s*search\s*,\s*level\s*,/,
+      to: 'isNarrowed(search, ALL_LEVELS,',
+    },
+  ])('would notice $name, whatever the whitespace', ({ from, to }) => {
+    const screen = source(MEMBER_LIST);
+
+    expect(screen, 'the mutation no longer applies to the screen').toMatch(from);
+    expect(filterWiringFaults(screen.replace(from, to)).length).toBeGreaterThan(0);
   });
 });
 
