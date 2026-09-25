@@ -32,6 +32,7 @@ import { OrganizationPromptScreen, prijavaOrganizacijaRoute } from '@/routes/pri
 import { prijavaRoute, SignInScreen } from '@/routes/prijava';
 import { RasporedScreen, rasporedRoute } from '@/routes/raspored';
 import { SatiScreen, satiRoute } from '@/routes/sati';
+import { SmjenaScreen, smjenaRoute } from '@/routes/smjene.$id';
 import type { AppRouterContext } from '@/routes/__root';
 import { rootRoute } from '@/routes/__root';
 
@@ -264,6 +265,8 @@ describe('the shell route tree', () => {
       '/_app/postavke-rotacije',
       '/_app/raspored',
       '/_app/sati',
+      // STORY 1.8. One team's roster, for every role, reached from Danas only.
+      '/_app/smjene/$id',
       '/prijava',
       '/prijava/$slug',
       '__root__',
@@ -1641,5 +1644,38 @@ describe('the member list is the first destination that refuses a permission lev
           .component,
       ).toBe(component);
     });
+  });
+});
+
+describe('the roster route is for every role and is not a destination', () => {
+  it('resolves /smjene/$id inside the signed-in layout, to its own screen', () => {
+    // STORY 1.8. Nested under `_app`, so the session guard covers it.
+    expect(match('/smjene/abc').map((matched) => matched.routeId)).toEqual([
+      '__root__',
+      '/_app',
+      '/_app/smjene/$id',
+    ]);
+    expect(
+      (router.routesById['/_app/smjene/$id'].options as { component?: unknown }).component,
+    ).toBe(SmjenaScreen);
+  });
+
+  it('carries no beforeLoad of its own, so a member-role session reaches it', () => {
+    // The database decides what a session reads (`team_roster`, `0011`); a
+    // level guard here would hide a surface CAP-5 gives every member.
+    expect((smjenaRoute.options as { beforeLoad?: unknown }).beforeLoad).toBeUndefined();
+  });
+
+  it('is in neither destination list, nor any guarded list', () => {
+    for (const role of MEMBER_ROLES) {
+      expect(
+        destinationsFor(role).map((destination) => destination.path),
+        `${role} is offered the roster as a destination`,
+      ).not.toContain('/smjene/$id');
+    }
+    expect(DESTINATIONS.map((destination) => destination.path)).not.toContain('/smjene/$id');
+    expect(DESTINATION_ROUTES.map((destination) => destination.path)).not.toContain('/smjene/$id');
+    expect(ROLE_GUARDED_PATHS).not.toContain('/smjene/$id');
+    expect(LEVEL_GUARDED_ROUTES.map((guarded) => guarded.path)).not.toContain('/smjene/$id');
   });
 });

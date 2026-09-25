@@ -103,6 +103,15 @@ const TEAM_LIST_KEYS = join(srcRoot, 'teams', 'list.ts');
 const TEAM_WRITE_KEYS = join(srcRoot, 'teams', 'write.ts');
 
 /**
+ * Story 1.8's roster screen, the Danas destination it is reached from, and the
+ * module holding both surfaces' rules. The roster is not a destination, so it
+ * is named here by hand; Danas left the placeholders in the same commit.
+ */
+const TEAM_ROSTER = join(srcRoot, 'routes', 'smjene.$id.tsx');
+const DANAS = join(srcRoot, 'routes', 'danas.tsx');
+const TEAM_ROSTER_KEYS = join(srcRoot, 'teams', 'roster.ts');
+
+/**
  * The member write path's rules, as a `.ts` module that renders nothing.
  *
  * THE THIRD NEW KEY SOURCE, and it has to be its own entry rather than folded
@@ -194,7 +203,6 @@ const LOGO_URL = join(srcRoot, 'organization', 'logo-url.ts');
  * registered router, so the four copies are held together end to end.
  */
 const PLACEHOLDER_SLUGS = [
-  'danas',
   'kalendar',
   'sati',
   'godisnji',
@@ -212,7 +220,10 @@ const PLACEHOLDER_SLUGS = [
  * a heading. Leaving it there would have meant loosening those counts for all
  * six.
  */
-const BUILT_SLUGS = ['organizacija', 'ljudi'];
+//
+// THREE SINCE STORY 1.8: `/danas` left the placeholders when it gained the line
+// naming the caller's team today, for the reason `/ljudi` did.
+const BUILT_SLUGS = ['organizacija', 'ljudi', 'danas'];
 
 /** Every registered destination, however much of it is built. */
 const DESTINATION_SLUGS = [...PLACEHOLDER_SLUGS, ...BUILT_SLUGS];
@@ -318,6 +329,12 @@ const SCREENS = [
   // what the counts keep true.
   { name: 'the team list', file: TEAM_LIST, expectedControls: 4 },
   { name: 'the team edit form', file: TEAM_EDIT, expectedControls: 6 },
+  // STORY 1.8. ONE on the roster: the link back to Danas, a `<Button asChild>`.
+  // No field, no form and no write — the count is what notices one arriving.
+  // ZERO on Danas: its one new control is the `<Link>` to the roster, which
+  // neither detector matches by construction and the link sweep measures.
+  { name: 'the team roster', file: TEAM_ROSTER, expectedControls: 1 },
+  { name: 'the Danas destination', file: DANAS, expectedControls: 0 },
   // ZERO on all seven, and asserted rather than assumed: a destination is a
   // heading and nothing else in this story, so the first control any of them
   // grows is a later story's work arriving without that story's review. The
@@ -1259,6 +1276,32 @@ const KEY_SOURCES = [
     strings: 10,
   },
   {
+    // STORY 1.8. FOUR on the roster: the heading while there is no roster to
+    // name, the archived note, the ICU plural count, and the link back. The
+    // team's name and the members' names are data.
+    name: 'the team roster',
+    file: TEAM_ROSTER,
+    keys: translationKeys,
+    strings: 4,
+  },
+  {
+    // ONE on Danas: its own `nav.danas` heading. The line's words and its
+    // refusal reach `t()` through `@/teams/roster`, below.
+    name: 'the Danas destination',
+    file: DANAS,
+    keys: translationKeys,
+    strings: 1,
+  },
+  {
+    // FIVE over three unions: the roster's two refusals (unknown, and the
+    // service), the Danas line's two openings (the team label, or no team),
+    // and the own-row read's one refusal.
+    name: 'the team roster rules',
+    file: TEAM_ROSTER_KEYS,
+    keys: memberListKeys,
+    strings: 5,
+  },
+  {
     // THIRTEEN on the create form: its own heading, five field labels, the save
     // and cancel actions, the link back to the list, and the credential panel's
     // three — plus `ljudi.form.username` a SECOND time, as that panel's label
@@ -1462,8 +1505,12 @@ describe('the screen is read at all, so every sweep below means something', () =
     //
     // EIGHTEEN AND TWENTY-FIVE SINCE STORY 1.7a: the two team screens, and
     // four key sources — both screens and both `@/teams` modules.
-    expect(SCREENS).toHaveLength(18);
-    expect(KEY_SOURCES).toHaveLength(25);
+    //
+    // NINETEEN AND TWENTY-SEVEN SINCE STORY 1.8: Danas left the placeholders
+    // and arrived as a built entry (net zero), the roster screen is new (one),
+    // and so is `@/teams/roster` as a key source (one more).
+    expect(SCREENS).toHaveLength(19);
+    expect(KEY_SOURCES).toHaveLength(27);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -2417,6 +2464,89 @@ describe('the member list reads once, under one key', () => {
     expect(screen, 'the member list re-reads on every window focus').toContain(
       'refetchOnWindowFocus: false',
     );
+  });
+});
+
+describe('the roster and the Danas line read once, show names only, and write nothing', () => {
+  /** Every field a member row carries, read off the interface in `@/members/list`. */
+  function memberRowFields(text: string): string[] {
+    const body = /export interface MemberListRow \{([\s\S]*?)\n\}/.exec(text)?.[1] ?? '';
+
+    return [...body.matchAll(/readonly (\w+)\??:/g)].map((found) => found[1] ?? '');
+  }
+
+  /** Source with every quoted string emptied, so a key is not a field access. */
+  function withoutStrings(text: string): string {
+    return text.replace(/'[^'\n]*'/g, "''").replace(/"[^"\n]*"/g, '""');
+  }
+
+  /** What a roster member is: an id and a name, and nothing else (CAP-5). */
+  const ROSTER_FIELDS = ['id', 'name'];
+
+  const SURFACES = [
+    { name: 'the team roster', file: TEAM_ROSTER, read: 'readTeamRoster(', key: 'TEAM_ROSTER_KEY(id)' },
+    { name: 'the Danas destination', file: DANAS, read: 'readOwnTeamToday(', key: 'OWN_TEAM_KEY' },
+  ];
+
+  it.each(SURFACES)('reads exactly once, under its one key, on $name', ({ file, read, key }) => {
+    // AD-13. The roster's name, flag, count and names are one RPC's answer;
+    // the Danas line is the caller's own row, derived in `@/teams/roster`.
+    const screen = source(file);
+
+    expect(occurrences(screen, 'useQuery(')).toBe(1);
+    expect(occurrences(screen, read)).toBe(1);
+    expect(occurrences(screen, 'queryKey:')).toBe(1);
+    expect(occurrences(screen, `queryKey: ${key}`)).toBe(1);
+    expect(screen, 'the read has no cache floor').toContain('staleTime: TEAM_ROSTER_READ_STALE_MS');
+  });
+
+  it.each(SURFACES)('offers no write, form or field on $name', ({ file }) => {
+    const screen = source(file);
+
+    expect(screen).not.toContain('useMutation');
+    expect(screen).not.toMatch(/\.(delete|insert|update|upsert)\(/);
+    expect(screen).not.toMatch(/<(form|Input|input|select|textarea|Label)\b/);
+    expect(screen, 'a surface reached past `@/teams/roster` for its rules').not.toContain(
+      "from '@/members/list'",
+    );
+  });
+
+  it.each(SURFACES)('reaches for no member field but id and name on $name', ({ file }) => {
+    // THE NO-FIELD DETECTOR. Every other field a member row carries — email,
+    // username, role, allowance, the histories and the zone — is either not
+    // the roster's to show or is derived in `@/teams/roster`, where a node test
+    // executes it. A screen reaching for one is refused here.
+    const screen = withoutStrings(source(file));
+    const guarded = memberRowFields(source(MEMBER_LIST_KEYS)).filter(
+      (field) => !ROSTER_FIELDS.includes(field),
+    );
+
+    expect(guarded.length, 'no field is being guarded at all').toBeGreaterThan(5);
+    for (const field of guarded) {
+      expect(screen, `${file} reads .${field}`).not.toMatch(new RegExp(`\\.\\s*${field}\\b`));
+    }
+  });
+
+  it('would notice a guarded field access, and not an id or a name', () => {
+    // BOTH POLARITIES, as every detector in this file.
+    const pattern = (field: string) => new RegExp(`\\.\\s*${field}\\b`);
+
+    expect(withoutStrings('<li>{member.email}</li>')).toMatch(pattern('email'));
+    expect(withoutStrings('<li>{member.name}</li>')).not.toMatch(pattern('email'));
+    expect(withoutStrings("t('ljudi.email')")).not.toMatch(pattern('email'));
+  });
+
+  it('links Danas to the roster of the team it names, and to nothing else', () => {
+    const screen = source(DANAS);
+
+    expect(linkElements(screen)).toHaveLength(1);
+    expect(screen).toContain('to="/smjene/$id"');
+    expect(screen).toContain('params={{ id: shown.team.id }}');
+    expect(heightPx(/className="([^"]*)"/.exec(linkElements(screen)[0] ?? '')?.[1] ?? null)).toBeGreaterThanOrEqual(44);
+    // The roster's only way out is back to Danas: no other surface links in.
+    expect(linkElements(source(TEAM_ROSTER)).map((link) => /to="([^"]+)"/.exec(link)?.[1])).toEqual([
+      '/danas',
+    ]);
   });
 });
 

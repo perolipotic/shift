@@ -1032,6 +1032,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
   const ACCESS_CONTROL_FUNCTIONS = [
     { name: 'current_member_access', argumentCount: 0 },
     { name: 'custom_access_token_hook', argumentCount: 1 },
+    // STORY 1.8. The roster reads `members` past the narrowed select policy,
+    // which is the whole point of it, so it carries the same three attributes.
+    { name: 'team_roster', argumentCount: 1 },
   ];
 
   it.skipIf(noDatabase).each(ACCESS_CONTROL_FUNCTIONS)(
@@ -1087,6 +1090,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'member_team_has_version', argumentCount: 1, expected: ['authenticated'] },
     { name: 'team_membership_latest_version', argumentCount: 1, expected: ['authenticated'] },
     { name: 'team_in_use', argumentCount: 1, expected: ['authenticated'] },
+    // STORY 1.8. The roster is called by a signed-in session over REST, and by
+    // nobody else: an anonymous caller has no organization to scope it to.
+    { name: 'team_roster', argumentCount: 1, expected: ['authenticated'] },
   ];
 
   it.skipIf(noDatabase).each([

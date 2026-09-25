@@ -736,9 +736,11 @@ export async function updateUserById(
   const payload = validated.payload;
 
   // THE TARGET'S OWN ORGANIZATION, read as the caller. `members_select_own_organization`
-  // (`0003:289-300`) means a member of another tenant simply is not there — so
-  // the authorization below cannot be pointed at somebody else's row, and a
-  // cross-tenant id is indistinguishable from an id that never existed.
+  // (`0003:289-300`, narrowed by `0011`) shows an active admin their own
+  // organization and anyone else only their own row — so a member of another
+  // tenant, or a colleague read by a member-role caller, simply is not there.
+  // The authorization below cannot be pointed at somebody else's row, and such
+  // an id is indistinguishable from an id that never existed.
   const found = await dependencies.caller
     .from(MEMBERS_TABLE)
     .select(MEMBER_RENAME_COLUMNS)
@@ -865,9 +867,10 @@ export function resetAttributes(password: string): Readonly<Record<string, unkno
  * THE ORDER IS THE ONE THE RENAME ALREADY USES (`updateUserById` above): read
  * the target row AS THE CALLER, take the organization off the ROW, and
  * authorize against that. The member id in the body is a claim; the row is what
- * turns it into a fact, and `members_select_own_organization` (`0003:289-300`)
- * means another tenant's member simply is not there — so a cross-tenant id is
- * indistinguishable from one that never existed.
+ * turns it into a fact, and `members_select_own_organization` (`0003:289-300`,
+ * narrowed by `0011` to an admin's organization or the caller's own row) means
+ * another tenant's member — or, to a member-role caller, a colleague — simply is
+ * not there, so such an id is indistinguishable from one that never existed.
  *
  * THE PASSWORD IS GENERATED AFTER THE GATE, so a refused caller never causes a
  * credential to exist at all, and it travels to GoTrue and to the reply and
