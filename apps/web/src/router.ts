@@ -17,6 +17,7 @@ import { prijavaRoute } from '@/routes/prijava';
 import { rasporedRoute } from '@/routes/raspored';
 import { rootRoute } from '@/routes/__root';
 import { satiRoute } from '@/routes/sati';
+import { smjenaRoute } from '@/routes/smjene.$id';
 import { currentMemberRole } from '@/navigation/role';
 import { currentSession } from '@/supabase/client';
 
@@ -61,6 +62,11 @@ const appDestinations = appLayoutRoute.addChildren([
   ljudiMemberRoute,
   postavkeRotacijeRoute,
   organizacijaRoute,
+  // STORY 1.8. One team's roster, for EVERY role: nested under the layout, so
+  // the session guard covers it, and absent from the destinations — it is
+  // reached from the Danas line only. No role guard of its own, because the
+  // database decides what a session reads (`team_roster`, `0011`).
+  smjenaRoute,
 ]);
 
 /**

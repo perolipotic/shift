@@ -322,8 +322,11 @@ function byEffectiveFrom<T extends { readonly effectiveFrom: string }>(first: T,
  * version does: a dropped move reads as the member still on their old team.
  * A version naming a team whose name did not arrive is malformed too — the
  * list would otherwise say "no team" about somebody who is on one.
+ *
+ * EXPORTED FOR STORY 1.8: `@/teams/roster` reads the caller's own row with the
+ * same embed, so Danas and the list derive "team today" through one parser.
  */
-function teamVersionsIn(row: Record<string, unknown>): MemberTeamVersion[] | null {
+export function teamVersionsIn(row: Record<string, unknown>): MemberTeamVersion[] | null {
   const value = row['team_membership_versions'];
 
   if (!Array.isArray(value)) return null;
@@ -366,7 +369,10 @@ function teamVersionsIn(row: Record<string, unknown>): MemberTeamVersion[] | nul
  * asserts that one over the same history `members/list.test.ts` asserts this
  * one over.
  */
-export function memberTeamOn(member: MemberListRow, day: string): MemberTeam | null {
+export function memberTeamOn(
+  member: Pick<MemberListRow, 'teamVersions'>,
+  day: string,
+): MemberTeam | null {
   let team: MemberTeam | null = null;
 
   for (const version of member.teamVersions) {

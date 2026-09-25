@@ -180,6 +180,12 @@ const SOURCES = [
   join(webRoot, 'src', 'members', 'wire.ts'),
   join(webRoot, 'src', 'routes', 'ljudi.novi.tsx'),
   join(webRoot, 'src', 'routes', 'ljudi.$id.tsx'),
+  // Story 1.8's two. `teams/roster.ts` renders nothing and owns the five keys
+  // the roster and the Danas line are chosen by, as return-type unions; the
+  // roster screen renders four more and is no destination, so it is listed
+  // nowhere else in this file. `danas.tsx` is already listed above.
+  join(webRoot, 'src', 'teams', 'roster.ts'),
+  join(webRoot, 'src', 'routes', 'smjene.$id.tsx'),
 ];
 
 /**
@@ -755,6 +761,14 @@ const AUTHORED_VOCABULARY = [
   'Smjena',
   'Smjene',
   'smjena',
+  // STORY 1.8: the roster and the Danas line are the first screens that speak
+  // to the caller about their own team, and the first to send them back to
+  // Danas by name.
+  'Tvoja',
+  'Tvoju',
+  'Vrati',
+  'arhivirana',
+  'smjeni',
 ];
 
 /** Everything the terminology contract and the unshipped affordances still own.

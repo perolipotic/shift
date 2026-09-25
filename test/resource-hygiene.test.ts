@@ -57,6 +57,9 @@ const SANCTIONED_PLURAL_KEYS = [
   // `22 smjene` come out right. No count is special-cased (DI-8).
   'smjene.count',
   'smjene.archivedCount',
+  // STORY 1.8: how many people are on a team today, rendered at zero too —
+  // `0 osoba`, `1 osoba`, `2 osobe`, `5 osoba`, `21 osoba`.
+  'smjene.roster.count',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -481,6 +484,13 @@ const SANCTIONED_SCREEN_KEYS = [
   'smjene.membership.error.inEffect',
   'smjene.membership.error.archived',
   'smjene.membership.error.stale',
+  // STORY 1.8: the roster screen and the Danas line. "No team" on Danas is
+  // `smjene.membership.none` again, the words the member list uses.
+  'smjene.roster.archived',
+  'smjene.roster.back',
+  'smjene.roster.error.unavailable',
+  'smjene.today.label',
+  'smjene.today.error.unavailable',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

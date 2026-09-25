@@ -675,3 +675,10 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-7b-team-membership.md`
   summary: The member list embeds every member's full team history on every read, unbounded, though the list needs only today's version and at most one scheduled one.
   evidence: Found by 1.7b's blind review layer. `team_membership_versions(team_id,effective_from,teams(name))` in `MEMBERS_COLUMNS` has no date filter or limit; the payload grows with years of moves at several hundred members (Q20), and `member_status_versions` has the same shape. A bounded read (a view or a date-filtered embed) applies to both at once and should be measured before it is needed.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-8-team-roster.md`
+  summary: An admin's membership move, team rename or archive does not refresh Danas's own-team line or the `/smjene/$id` roster, which stay stale for up to their 5-minute stale time in the same session.
+  evidence: The write handlers in `routes/ljudi.$id.tsx` and `routes/ljudi.smjene.$id.tsx` invalidate only `MEMBERS_LIST_KEY`/`TEAMS_LIST_KEY`, per the "a write invalidates only that key" convention; `OWN_TEAM_KEY` and `TEAM_ROSTER_KEY` are new keys no write touches. Same class as the 1.7b entry about a rename not refreshing the member list — a cross-surface invalidation rule should settle both together.
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-8-team-roster.md`
+  summary: A member-role session can still read every colleague's `member_status_versions` rows (active/deactivated history with dates) over PostgREST, although story 1.8 narrowed `members` to the caller's own row for CAP-5.
+  evidence: `member_status_versions_select_own_organization` (0008:410) admits any active member of the organization and was untouched by 0011. CAP-5 lists allowance, balance, leave, hours and contact detail as hidden, so status history is not explicitly forbidden — but "names and membership only" suggests it should be narrowed like `members`; needs a product decision on whether a member may see who is inactive.

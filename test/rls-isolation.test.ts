@@ -13,6 +13,7 @@ import {
   MEMBER_UNKNOWN,
   PASSWORD_RESET,
   resetPassword,
+  updateUserById,
   type CallerClient,
   type PostgrestAnswer,
   type PrivilegedAccounts,
@@ -1009,7 +1010,8 @@ describe('the access-control layer is present, so nothing below passes vacuously
               'member_team_on',
               'organization_today',
               'team_in_use',
-              'team_membership_latest_version'
+              'team_membership_latest_version',
+              'team_roster'
             )
           order by proname`,
       );
@@ -1027,6 +1029,9 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'organization_today',
         'team_in_use',
         'team_membership_latest_version',
+        // STORY 1.8: the one reading a member-role session learns a colleague's
+        // name through, now that the select policy shows it only itself.
+        'team_roster',
       ]);
     } finally {
       await client.end();
@@ -1241,22 +1246,26 @@ describe('a direct API call reaches exactly one organization', () => {
   );
 
   it.skipIf(noApi).each(FIXTURES)(
-    'returns the $fixture organization members to a member-role session too',
+    'returns a $fixture member-role session exactly its own member row, and no colleague',
     async ({ slug, member }) => {
-      // Q2 is about writes. A member-role account has to be able to read the
-      // list — that is how anyone sees who is on a team — and the refusals
-      // below are what keep it from changing it.
+      // STORY 1.8 (CAP-5). Until 0011 a member-role account read every
+      // colleague's row whole — email, leave allowance, username, role. Now it
+      // reads its own row and nothing else; who is on a team reaches it through
+      // `team_roster`, as id and name only.
       const token = await tokenFor(member, slug);
       const client = await connect();
       try {
-        const own = await organizationId(client, slug);
-        const rows = await restRows('members?select=organization_id', { token });
+        const self = await memberByUsername(client, slug, member);
+        const rows = await restRows(
+          'members?select=id,organization_id,email,leave_allowance_days,username,role',
+          { token },
+        );
 
-        expect(rows.length, `a ${slug} member-role session read no members`).toBeGreaterThan(0);
         expect(
-          [...new Set(rows.map((row) => row['organization_id']))],
-          `a ${slug} member-role session read another organization members`,
-        ).toEqual([own]);
+          rows.map((row) => row['id']),
+          `a ${slug} member-role session read a row other than its own`,
+        ).toEqual([self.id]);
+        expect(rows[0]?.['organization_id']).toBe(self.organizationId);
       } finally {
         await client.end();
       }
@@ -3829,44 +3838,44 @@ describe('the member list is one organization own list, at the scale Q20 names',
   );
 
   it.skipIf(noApi).each(FIXTURES)(
-    'hands a $fixture member-role session the same list, because the database is the enforcement point',
+    'hands a $fixture member-role session only its own row of the list, because the database is the enforcement point',
     async ({ slug, member, admin }) => {
-      // THE CLAIM THE WHOLE ROUTE GUARD RESTS ON, and nothing pinned it.
-      // `/ljudi` refuses a member-role session in the INTERFACE, and both the
-      // spec and `routes/ljudi.tsx` say out loud that this protects nothing
-      // against a direct API call: `members_select_own_organization` carries no
-      // role filter by design (`0003:286-288`), because a member has to read the
-      // list to see who is on a team. If that were ever to stop being true, the
-      // guard would silently become a boundary the application relies on — and
-      // AD-10 says the boundary is the database. So the fact is asserted rather
-      // than described.
-      const memberRows = await restRows(`members?select=${LIST_COLUMNS}`, {
-        token: await tokenFor(member, slug),
-      });
-      const adminRows = await restRows(`members?select=${LIST_COLUMNS}`, {
-        token: await tokenFor(admin, slug),
-      });
+      // THE CLAIM THE WHOLE ROUTE GUARD RESTS ON, inverted by story 1.8.
+      // `/ljudi` refuses a member-role session in the INTERFACE, and until 0011
+      // the database did not: `members_select_own_organization` carried no role
+      // filter, so the addresses and leave allowances the guard keeps off a
+      // member's screen were reachable over REST. CAP-5 says the DATABASE
+      // enforces that a member sees names and membership only, so the member
+      // now reads exactly its own row of the list the admin reads whole.
+      const client = await connect();
+      try {
+        const self = await memberByUsername(client, slug, member);
+        const memberRows = await restRows(`members?select=${LIST_COLUMNS}`, {
+          token: await tokenFor(member, slug),
+        });
+        const adminRows = await restRows(`members?select=${LIST_COLUMNS}`, {
+          token: await tokenFor(admin, slug),
+        });
 
-      expect(memberRows.length, `a ${slug} member-role session read no members`).toBeGreaterThan(0);
-      // THE SAME ROWS, not merely some rows: the member sees exactly what the
-      // admin sees, which is what makes the route guard an IA decision about
-      // which SCREEN a level reaches rather than a data one.
-      expect(
-        memberRows.map((row) => row['id']).sort(),
-        `a ${slug} member-role session reads a different list from its admin`,
-      ).toEqual(adminRows.map((row) => row['id']).sort());
-      // Including the columns the surface renders — the addresses and the leave
-      // allowances the guard exists to keep off a member's screen are reachable
-      // to them over REST, and that is the state AD-10 describes.
-      expect([...Object.keys(memberRows[0] ?? {})].sort()).toEqual(
-        [...LIST_KEYS].sort(),
-      );
+        expect(adminRows.length, `a ${slug} admin read only itself`).toBeGreaterThan(1);
+        expect(
+          memberRows.map((row) => row['id']),
+          `a ${slug} member-role session reads colleagues' rows`,
+        ).toEqual([self.id]);
+        expect(
+          adminRows.map((row) => row['id']),
+          `a ${slug} admin no longer reads the member's row`,
+        ).toContain(self.id);
+        expect([...Object.keys(memberRows[0] ?? {})].sort()).toEqual([...LIST_KEYS].sort());
+      } finally {
+        await client.end();
+      }
     },
     20_000,
   );
 
   it.skipIf(noApi).each(FIXTURES)(
-    'embeds the $fixture organization as an object and the status versions as an array, for an admin and a member',
+    'embeds the $fixture organization as an object and the status versions as an array for an admin, and none of it to a member',
     async ({ slug, admin, member }) => {
       // STORY 1.6's TWO EMBEDS, as the database shapes them. `organizations`
       // is a to-one relation and must arrive as an OBJECT; the versions are
@@ -3896,7 +3905,14 @@ describe('the member list is one organization own list, at the scale Q20 names',
           [own],
         );
 
-        for (const reader of [admin, member]) {
+        // STORY 1.8: the admin reads the list whole; a member-role session reads
+        // only its own row, so the throwaway's embeds never reach it.
+        const memberRead = await restRows(`members?select=${LIST_COLUMNS}&id=eq.${target.id}`, {
+          token: await tokenFor(member, slug),
+        });
+        expect(memberRead, `${slug}/${member} read a colleague's row and its versions`).toEqual([]);
+
+        for (const reader of [admin]) {
           const read = await restRows(`members?select=${LIST_COLUMNS}`, {
             token: await tokenFor(reader, slug),
           });
@@ -4798,10 +4814,114 @@ describe('an admin-issued reset replaces the credential and ends every session i
           { memberId: member.id },
         );
 
-        expect(reply.status).toBe(403);
-        expect(reply.body).toEqual({ code: NOT_AN_ADMIN });
+        // STORY 1.8: since 0011 a member-role caller reads only its own row, so
+        // a colleague is not there to authorize against — the refusal arrives
+        // as the unknown row, before any authorization runs.
+        expect(reply.status).toBe(404);
+        expect(reply.body).toEqual({ code: MEMBER_UNKNOWN });
         // NOTHING CHANGED: the credential the account already held still works.
         expect((await grant(target, ISSUED)).status, 'a refused reset moved the password').toBe(200);
+      } finally {
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  /** A fixture member's username, read as the owner, so a refused rename can
+   *  be shown to have changed nothing. */
+  async function usernameOf(client: Client, member: string): Promise<string | undefined> {
+    const { rows } = await client.query<{ username: string }>(
+      'select username from members where id = $1',
+      [member],
+    );
+    return rows[0]?.username;
+  }
+
+  it.skipIf(noAdminApi).each(FIXTURES)(
+    'refuses a $fixture member-role caller resetting its OWN row as NOT_AN_ADMIN, and changes nothing',
+    async ({ slug, member: memberUsername }) => {
+      // STORY 1.8. Since 0011 a member-role caller reads only its own row, so
+      // this is the one target that still reaches the admin gate itself.
+      const client = await connect();
+
+      try {
+        const self = await memberByUsername(client, slug, memberUsername);
+        const reply = await resetPassword(
+          {
+            privileged: privilegedOverAdminApi(),
+            caller: callerOver(await tokenFor(memberUsername, slug)),
+          },
+          { memberId: self.id },
+        );
+
+        expect(reply.status).toBe(403);
+        expect(reply.body).toEqual({ code: NOT_AN_ADMIN });
+        // NOTHING CHANGED: the fixture credential still signs in.
+        expect(
+          (await grant(address(memberUsername, slug), FIXTURE_PASSWORD)).status,
+          'a refused reset moved the password',
+        ).toBe(200);
+      } finally {
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(noAdminApi).each(FIXTURES)(
+    'refuses a $fixture member-role caller renaming its OWN row as NOT_AN_ADMIN, and changes nothing',
+    async ({ slug, member: memberUsername }) => {
+      const client = await connect();
+
+      try {
+        const self = await memberByUsername(client, slug, memberUsername);
+        const before = await usernameOf(client, self.id);
+        const reply = await updateUserById(
+          {
+            privileged: privilegedOverAdminApi(),
+            caller: callerOver(await tokenFor(memberUsername, slug)),
+          },
+          { memberId: self.id, username: `${memberUsername}.renamed` },
+        );
+
+        expect(reply.status).toBe(403);
+        expect(reply.body).toEqual({ code: NOT_AN_ADMIN });
+        expect(await usernameOf(client, self.id), 'a refused rename moved the username').toBe(before);
+        expect(
+          (await grant(address(memberUsername, slug), FIXTURE_PASSWORD)).status,
+          'a refused rename moved the sign-in address',
+        ).toBe(200);
+      } finally {
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(noAdminApi).each(FIXTURES)(
+    'answers a $fixture member-role caller renaming a colleague as MEMBER_UNKNOWN, and changes nothing',
+    async ({ slug, member: memberUsername, bystander }) => {
+      // STORY 1.8: the colleague's row is not there to read, so the refusal is
+      // the unknown row, before any authorization runs.
+      const client = await connect();
+
+      try {
+        const colleague = await memberByUsername(client, slug, bystander);
+        const before = await usernameOf(client, colleague.id);
+        const reply = await updateUserById(
+          {
+            privileged: privilegedOverAdminApi(),
+            caller: callerOver(await tokenFor(memberUsername, slug)),
+          },
+          { memberId: colleague.id, username: `${bystander}.renamed` },
+        );
+
+        expect(reply.status).toBe(404);
+        expect(reply.body).toEqual({ code: MEMBER_UNKNOWN });
+        expect(await usernameOf(client, colleague.id), 'a refused rename moved the username').toBe(
+          before,
+        );
       } finally {
         await client.end();
       }
@@ -8300,7 +8420,7 @@ describe('archiving a team anyone is on today, or is scheduled onto, is refused'
 
 describe('a direct API call moves members between teams under exactly the same rules', () => {
   it.skipIf(noApi).each(FIXTURES)(
-    'lets the $fixture admin assign over PostgREST, and the shipped list read embeds the team for admin and member',
+    'lets the $fixture admin assign over PostgREST, and the shipped list read embeds the team for the admin and not a member',
     async ({ slug, admin, member }) => {
       const client = await connect();
       try {
@@ -8327,7 +8447,15 @@ describe('a direct API call moves members between teams under exactly the same r
           'organization_id,id,auth_user_id,name,username,email,role,leave_allowance_days,' +
           'member_status_versions(active,effective_from),' +
           'team_membership_versions(team_id,effective_from,teams(name)),organizations(timezone)';
-        for (const reader of [admin, member]) {
+        // STORY 1.8: a member-role session reads only its own row, so a
+        // colleague's team reaches it through `team_roster`, never this embed.
+        expect(
+          await restRows(`members?select=${columns}&id=eq.${target.id}`, {
+            token: await tokenFor(member, slug),
+          }),
+          `${member} read a colleague's row`,
+        ).toEqual([]);
+        for (const reader of [admin]) {
           const rows = await restRows(`members?select=${columns}&id=eq.${target.id}`, {
             token: await tokenFor(reader, slug),
           });
@@ -8343,7 +8471,7 @@ describe('a direct API call moves members between teams under exactly the same r
   );
 
   it.skipIf(noApi).each(FIXTURES)(
-    'still embeds an archived team\'s name in the $fixture shipped list read, for admin and member',
+    'still embeds an archived team\'s name in the $fixture shipped list read for the admin, and none to a member',
     async ({ slug, admin, member }) => {
       // R7.6: an archived team stays readable. `members/list.ts` refuses a whole
       // row whose version names a team with no embedded name, so a past version
@@ -8375,7 +8503,13 @@ describe('a direct API call moves members between teams under exactly the same r
           'organization_id,id,auth_user_id,name,username,email,role,leave_allowance_days,' +
           'member_status_versions(active,effective_from),' +
           'team_membership_versions(team_id,effective_from,teams(name)),organizations(timezone)';
-        for (const reader of [admin, member]) {
+        expect(
+          await restRows(`members?select=${columns}&id=eq.${target.id}`, {
+            token: await tokenFor(member, slug),
+          }),
+          `${member} read a colleague's row`,
+        ).toEqual([]);
+        for (const reader of [admin]) {
           const rows = await restRows(`members?select=${columns}&id=eq.${target.id}`, {
             token: await tokenFor(reader, slug),
           });
@@ -8520,6 +8654,454 @@ describe('a direct API call moves members between teams under exactly the same r
         expect(archived.ok, 'a team in use was archived').toBe(false);
         expect(refusal.code).toBe('42501');
         expect((await teamById(client, team.id))?.archived).toBe(false);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+});
+
+// ------------------------------------------------------------ story 1.8: roster
+
+interface RosterRow {
+  readonly name: string;
+  readonly archived: boolean;
+  readonly members: readonly Record<string, unknown>[];
+}
+
+/** `team_roster`, as whoever the connection currently is. */
+async function rosterOf(client: Client, team: string): Promise<RosterRow[]> {
+  const { rows } = await client.query<RosterRow>(
+    'select name, archived, members from public.team_roster($1)',
+    [team],
+  );
+  return rows;
+}
+
+/** The ids a roster names, in the order the function returned them. */
+function rosterIds(rows: readonly RosterRow[]): unknown[] {
+  return (rows[0]?.members ?? []).map((entry) => entry['id']);
+}
+
+describe('a member sees who is on a team, and nothing more about a colleague', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'shows a $fixture member-role session its own member row only, and the admin every row',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const self = await memberByUsername(client, slug, member);
+        const owner = await memberByUsername(client, slug, admin);
+        const { rows: all } = await client.query<{ id: string }>(
+          'select id from members where organization_id = $1 order by id',
+          [self.organizationId],
+        );
+
+        await actAs(client, self.authUserId, self.organizationId);
+        const { rows: seenByMember } = await client.query<{ id: string }>(
+          'select * from members order by id',
+        );
+        await actAsOwner(client);
+        await actAs(client, owner.authUserId, owner.organizationId);
+        const { rows: seenByAdmin } = await client.query<{ id: string }>(
+          'select id from members order by id',
+        );
+        await actAsOwner(client);
+
+        expect(all.length, `${slug} has no colleagues to hide`).toBeGreaterThan(1);
+        expect(seenByMember.map((row) => row.id), `${slug}: a member read a colleague`).toEqual([
+          self.id,
+        ]);
+        expect(seenByAdmin.map((row) => row.id), `${slug}: the admin lost a row`).toEqual(
+          all.map((row) => row.id),
+        );
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'returns the $fixture team with today\'s active members as id and name, to member and admin alike',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const today = await organizationDay(client, organization);
+        const tomorrow = await organizationDay(client, organization, 1);
+        const earlier = await organizationDay(client, organization, -3);
+
+        await actAs(client, owner.authUserId, organization);
+        const team = await insertTeam(client, organization, `${THROWAWAY} roster`);
+        await actAsOwner(client);
+
+        const onToday = await addThrowawayMember(client, organization);
+        const onEarlier = await addThrowawayMember(client, organization);
+        const scheduled = await addThrowawayMember(client, organization);
+        const inactive = await addThrowawayMember(client, organization);
+        for (const [who, from] of [
+          [onToday, today],
+          [onEarlier, earlier],
+          [scheduled, tomorrow],
+          [inactive, earlier],
+        ] as const) {
+          await ownerMembership(client, {
+            organization,
+            member: who.id,
+            team,
+            from,
+            by: owner.authUserId,
+          });
+        }
+        await ownerVersion(client, {
+          organization,
+          member: inactive.id,
+          active: false,
+          from: today,
+          by: owner.authUserId,
+        });
+
+        const expected = [onToday.id, onEarlier.id].sort();
+        for (const reader of [self, owner]) {
+          await actAs(client, reader.authUserId, organization);
+          const rows = await rosterOf(client, team);
+          await actAsOwner(client);
+
+          expect(rows, `${slug}: the roster is not one row`).toHaveLength(1);
+          expect(rows[0]?.name).toBe(`${THROWAWAY} roster`);
+          expect(rows[0]?.archived).toBe(false);
+          expect(
+            rosterIds(rows),
+            `${slug}: a scheduled joiner or an inactive member is on today's roster`,
+          ).toEqual(expected);
+          for (const entry of rows[0]?.members ?? []) {
+            expect(Object.keys(entry).sort(), `${slug}: the roster names a field besides id and name`).toEqual([
+              'id',
+              'name',
+            ]);
+            expect(entry['name']).toBe(`${THROWAWAY} target`);
+          }
+        }
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'returns an empty $fixture team and an archived one with a name and nobody on it',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+
+        await actAs(client, owner.authUserId, organization);
+        const empty = await insertTeam(client, organization, `${THROWAWAY} empty`);
+        const archived = await insertTeam(client, organization, `${THROWAWAY} archived`);
+        await archiveTeam(client, archived);
+        await actAsOwner(client);
+
+        await actAs(client, self.authUserId, organization);
+        const emptyRows = await rosterOf(client, empty);
+        const archivedRows = await rosterOf(client, archived);
+        await actAsOwner(client);
+
+        expect(emptyRows, `${slug}: an empty team`).toEqual([
+          { name: `${THROWAWAY} empty`, archived: false, members: [] },
+        ]);
+        expect(archivedRows, `${slug}: an archived team`).toEqual([
+          { name: `${THROWAWAY} archived`, archived: true, members: [] },
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'answers a $fixture caller zero rows for a $otherFixture team and for an id that never existed',
+    async ({ slug, admin, member, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const foreignOwner = await memberByUsername(
+          client,
+          otherSlug,
+          FIXTURES.find((entry) => entry.slug === otherSlug)?.admin ?? '',
+        );
+        const foreignTeam = await addThrowawayTeam(
+          client,
+          foreignOwner.organizationId,
+          foreignOwner.authUserId,
+        );
+        const ownTeam = await addThrowawayTeam(client, owner.organizationId, owner.authUserId);
+        const { rows: random } = await client.query<{ id: string }>(
+          'select gen_random_uuid()::text as id',
+        );
+        const unknown = random[0]?.id ?? '';
+
+        for (const reader of [self, owner]) {
+          await actAs(client, reader.authUserId, reader.organizationId);
+          expect(await rosterOf(client, foreignTeam.id), `${slug}: another tenant's team`).toEqual([]);
+          expect(await rosterOf(client, unknown), `${slug}: an unknown id`).toEqual([]);
+          expect(await rosterOf(client, ownTeam.id), `${slug}: its own team`).toHaveLength(1);
+          await actAsOwner(client);
+
+          // A claim naming the other organization pins neither: the fresh
+          // helper still says the caller belongs to its own.
+          await actAs(client, reader.authUserId, foreignOwner.organizationId);
+          expect(
+            await rosterOf(client, foreignTeam.id),
+            `${slug}: a forged claim reached another tenant's team`,
+          ).toEqual([]);
+          expect(
+            await rosterOf(client, ownTeam.id),
+            `${slug}: a claim for another organization read its own team`,
+          ).toEqual([]);
+          await actAsOwner(client);
+        }
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'answers a $fixture caller inactive today zero rows',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const organization = owner.organizationId;
+        const team = await addThrowawayTeam(client, organization, owner.authUserId);
+        const caller = await addThrowawayMember(client, organization);
+        await ownerMembership(client, {
+          organization,
+          member: caller.id,
+          team: team.id,
+          from: await organizationDay(client, organization, -1),
+          by: owner.authUserId,
+        });
+
+        await actAs(client, caller.authUserId, organization);
+        const whileActive = await rosterOf(client, team.id);
+        await actAsOwner(client);
+        await ownerVersion(client, {
+          organization,
+          member: caller.id,
+          active: false,
+          from: await organizationDay(client, organization),
+          by: owner.authUserId,
+        });
+        await actAs(client, caller.authUserId, organization);
+        const whileInactive = await rosterOf(client, team.id);
+        await actAsOwner(client);
+
+        expect(whileActive, `${slug}: the active caller read nothing`).toHaveLength(1);
+        expect(whileInactive, `${slug}: an inactive caller read a roster`).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'reads the $fixture roster as at the organization today, never UTC\'s',
+    async ({ slug, admin, member }) => {
+      const ZONES = ['Pacific/Kiritimati', 'Pacific/Pago_Pago'];
+      let differed = 0;
+
+      for (const zone of ZONES) {
+        await inRolledBackTransaction(async (client) => {
+          const owner = await memberByUsername(client, slug, admin);
+          const self = await memberByUsername(client, slug, member);
+          const organization = owner.organizationId;
+          await client.query('update organizations set timezone = $1 where id = $2', [
+            zone,
+            organization,
+          ]);
+          const { rows } = await client.query<{ utc: string; local: string }>(
+            `select (now() at time zone 'UTC')::date::text as utc,
+                    public.organization_today($1)::text as local`,
+            [organization],
+          );
+          const utc = rows[0]?.utc;
+          const local = rows[0]?.local;
+          if (utc === undefined || local === undefined) throw new Error('no dates');
+          if (utc === local) return;
+          differed += 1;
+
+          const team = await addThrowawayTeam(client, organization, owner.authUserId);
+          const fromLocal = await addThrowawayMember(client, organization);
+          const fromUtc = await addThrowawayMember(client, organization);
+          for (const [who, from] of [
+            [fromLocal, local],
+            [fromUtc, utc],
+          ] as const) {
+            await ownerMembership(client, {
+              organization,
+              member: who.id,
+              team: team.id,
+              from,
+              by: owner.authUserId,
+            });
+          }
+
+          await actAs(client, self.authUserId, organization);
+          const read = await rosterOf(client, team.id);
+          await actAsOwner(client);
+
+          // Whoever joined on or before the ORGANIZATION's today is on it.
+          const expected = [fromLocal, fromUtc]
+            .filter((_, index) => (index === 0 ? local : utc) <= local)
+            .map((who) => who.id)
+            .sort();
+          expect(rosterIds(read), `${zone}: the roster was dated by UTC`).toEqual(expected);
+        });
+      }
+
+      expect(differed, 'no zone differed from UTC, so nothing was tested').toBeGreaterThan(0);
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'drops a $fixture member moved off the team or to no team today, and lists them where they moved',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const today = await organizationDay(client, organization);
+        const earlier = await organizationDay(client, organization, -5);
+        const from = await addThrowawayTeam(client, organization, owner.authUserId);
+        const to = await addThrowawayTeam(client, organization, owner.authUserId);
+
+        const stayer = await addThrowawayMember(client, organization);
+        const mover = await addThrowawayMember(client, organization);
+        const leaver = await addThrowawayMember(client, organization);
+        for (const who of [stayer, mover, leaver]) {
+          await ownerMembership(client, {
+            organization,
+            member: who.id,
+            team: from.id,
+            from: earlier,
+            by: owner.authUserId,
+          });
+        }
+        // Effective TODAY: the mover onto the other team, the leaver onto none.
+        for (const [who, team] of [
+          [mover, to.id],
+          [leaver, null],
+        ] as const) {
+          await ownerMembership(client, {
+            organization,
+            member: who.id,
+            team,
+            from: today,
+            by: owner.authUserId,
+          });
+        }
+
+        await actAs(client, self.authUserId, organization);
+        const fromRoster = await rosterOf(client, from.id);
+        const toRoster = await rosterOf(client, to.id);
+        await actAsOwner(client);
+
+        expect(rosterIds(fromRoster), `${slug}: a member moved off today is still listed`).toEqual([
+          stayer.id,
+        ]);
+        expect(rosterIds(toRoster), `${slug}: a member moved on today is not listed`).toEqual([
+          mover.id,
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'hands a $fixture member-role session its own row with the team embed Danas reads',
+    async ({ slug, admin, member }) => {
+      // STORY 1.8. Danas derives the caller's team from its own row, read with
+      // `OWN_TEAM_COLUMNS`. Restated rather than imported: `@/teams/roster`
+      // reaches `@/i18n` through a path alias the root project cannot resolve.
+      // `apps/web/src/teams/roster.test.ts` pins the constant to this literal.
+      const OWN_TEAM_COLUMNS =
+        'team_membership_versions(team_id,effective_from,teams(name)),organizations(timezone)';
+      const client = await connect();
+      try {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const team = await addThrowawayTeam(client, owner.organizationId, owner.authUserId);
+        const today = await organizationDay(client, owner.organizationId);
+        const { rows: zone } = await client.query<{ timezone: string }>(
+          'select timezone from organizations where id = $1',
+          [owner.organizationId],
+        );
+
+        const assigned = await rest('team_membership_versions', {
+          token: await tokenFor(admin, slug),
+          method: 'POST',
+          body: {
+            organization_id: owner.organizationId,
+            member_id: self.id,
+            team_id: team.id,
+            effective_from: today,
+          },
+        });
+        expect(assigned.status, `the assignment was refused: ${await assigned.clone().text()}`).toBe(201);
+
+        const rows = await restRows(
+          `members?select=${OWN_TEAM_COLUMNS}&auth_user_id=eq.${self.authUserId}`,
+          { token: await tokenFor(member, slug) },
+        );
+
+        expect(rows, `${slug}: the member did not read exactly its own row`).toHaveLength(1);
+        expect(rows[0]?.['team_membership_versions']).toEqual([
+          { team_id: team.id, effective_from: today, teams: { name: team.name } },
+        ]);
+        expect(rows[0]?.['organizations']).toEqual({ timezone: zone[0]?.timezone });
+      } finally {
+        // The fixture account goes back to no team, so no later case starts
+        // from a membership it did not write.
+        const self = await memberByUsername(client, slug, member);
+        await client.query('delete from team_membership_versions where member_id = $1', [self.id]);
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'answers the $fixture roster over PostgREST to member and admin, and refuses an anonymous caller',
+    async ({ slug, admin, member }) => {
+      const client = await connect();
+      try {
+        const owner = await memberByUsername(client, slug, admin);
+        const team = await addThrowawayTeam(client, owner.organizationId, owner.authUserId);
+        const target = await addThrowawayMember(client, owner.organizationId);
+        await ownerMembership(client, {
+          organization: owner.organizationId,
+          member: target.id,
+          team: team.id,
+          from: await organizationDay(client, owner.organizationId),
+          by: owner.authUserId,
+        });
+
+        for (const reader of [member, admin]) {
+          const response = await rest('rpc/team_roster', {
+            token: await tokenFor(reader, slug),
+            method: 'POST',
+            body: { team: team.id },
+          });
+          expect(response.status, `${reader}: ${await response.clone().text()}`).toBe(200);
+          expect(await response.json(), `${slug}/${reader} read a different roster`).toEqual([
+            {
+              name: team.name,
+              archived: false,
+              members: [{ id: target.id, name: `${THROWAWAY} target` }],
+            },
+          ]);
+        }
+
+        const anonymous = await rest('rpc/team_roster', {
+          method: 'POST',
+          body: { team: team.id },
+        });
+        // THE GRANT refusing, not a policy: `anon` holds no EXECUTE on the
+        // function, so PostgREST answers 401 with Postgres's privilege code.
+        expect(anonymous.status, 'an anonymous caller reached the roster').toBe(401);
+        const refusal = await restRefusal(anonymous);
+        expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
+        expect(refusal.message).toBe('permission denied for function team_roster');
       } finally {
         await client.end();
       }

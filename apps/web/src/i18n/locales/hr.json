@@ -218,6 +218,20 @@
         "archived": "Ta smjena je arhivirana. Odaberi smjenu u upotrebi.",
         "stale": "Smjena osobe se u međuvremenu promijenila. Provjeri je i pokušaj ponovno."
       }
+    },
+    "roster": {
+      "count": "{count, plural, one {# osoba} few {# osobe} other {# osoba}}",
+      "archived": "Ova smjena je arhivirana.",
+      "back": "Vrati se na Danas",
+      "error": {
+        "unavailable": "Popis osoba u smjeni trenutačno nije moguće učitati. Pokušaj ponovno."
+      }
+    },
+    "today": {
+      "label": "Tvoja smjena",
+      "error": {
+        "unavailable": "Tvoju smjenu trenutačno nije moguće učitati. Pokušaj ponovno."
+      }
     }
   }
 }

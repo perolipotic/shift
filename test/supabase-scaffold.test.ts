@@ -783,6 +783,53 @@ describe('the access-control migration', () => {
     );
   });
 
+  it('narrows the members read to an admin, or the caller its own row, by altering the select policy', () => {
+    // STORY 1.8 (CAP-5). ALTERED, never re-created, so the one `create policy`
+    // on members select is still 0003's and the count above holds. What each
+    // clause does is `test/rls-isolation.test.ts`.
+    const statements = migrationStatements();
+    const altered =
+      /alter policy members_select_own_organization on public\.members[\s\S]*?;/i.exec(
+        statements,
+      )?.[0];
+
+    expect(altered, 'the members select policy is not altered').toBeDefined();
+    expect(altered, 'the altered USING lost the tenant pin').toMatch(
+      /using[\s\S]*organization_id = nullif/i,
+    );
+    expect(altered, 'the altered USING lost the active re-read').toMatch(/where access\.is_active/);
+    expect(altered, 'an admin no longer reads the organization').toContain(
+      "access.member_role = 'admin'",
+    );
+    expect(altered, 'a member-role session no longer reads its own row').toMatch(
+      /or auth_user_id = \(select auth\.uid\(\)\)/,
+    );
+    expect(altered, 'the alter touched WITH CHECK on a read policy').not.toMatch(/with check/i);
+  });
+
+  it('reads the roster through one definer function that names only id and name', () => {
+    // STORY 1.8. Source text only; the matrix is `test/rls-isolation.test.ts`.
+    const statements = migrationStatements();
+    const roster = /create function public\.team_roster\(team uuid\)[\s\S]*?\$\$;/i.exec(
+      statements,
+    )?.[0];
+
+    expect(roster, 'team_roster is not declared').toBeDefined();
+    expect(roster).toMatch(/\bstable\b/i);
+    expect(roster).toMatch(/security definer/i);
+    expect(roster).toMatch(/set search_path = ''/);
+    expect(roster, 'the roster names a member field besides id and name').toMatch(
+      /jsonb_build_object\('id', m\.id, 'name', m\.name\)/,
+    );
+    expect(roster, 'the roster reads a private column').not.toMatch(
+      /\b(email|leave_allowance_days|username|role)\b/,
+    );
+    expect(statements).toMatch(
+      /grant execute on function public\.team_roster\(uuid\) to authenticated;/,
+    );
+    expect(statements).toMatch(/revoke execute on function public\.team_roster\(uuid\) from anon;/);
+  });
+
   it('archives teams and never deletes one, in any migration', () => {
     // STORY 1.7a. "Remove" always archives: no DELETE policy, the delete
     // privilege revoked, and archiving one-way because the update policy
