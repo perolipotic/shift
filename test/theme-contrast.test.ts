@@ -878,3 +878,25 @@ describe('the accent is discernible on the surfaces it is drawn on', () => {
     ).toBeGreaterThanOrEqual(AA_LARGE);
   });
 });
+
+describe('the hour band bar flags its uncovered stretch legibly (story 2.1b)', () => {
+  /**
+   * THE MEASURED PAIR, and only that. The bar's `Nepokriveno` flag is small
+   * text, so the body threshold applies. It sits on a `bg-modifier-uncovered`
+   * chip, and the chip is laid over an opaque `bg-background` backing rather
+   * than straight over the hatch — measured, the chip over a STRIPE reaches
+   * only 4.06:1 in light, so the backing is what makes the ground below the
+   * text one known colour: the tint over the page background. The stripes
+   * themselves carry no text and are the redundant texture beside the flag,
+   * as the shift-cell hatch is.
+   */
+  it.each(THEMES)('flag over the chip over its opaque backing in %s', (theme) => {
+    const chip = composite(colour(theme, 'modifier-uncovered'), colour(theme, 'background'));
+    const measured = ratio(colour(theme, 'modifier-uncovered-foreground'), chip);
+
+    expect(
+      measured,
+      `modifier-uncovered-foreground on the chip (${theme}) measured ${measured.toFixed(2)}:1`,
+    ).toBeGreaterThanOrEqual(AA_BODY);
+  });
+});

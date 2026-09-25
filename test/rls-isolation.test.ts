@@ -9405,6 +9405,14 @@ describe('an admin creates, renames, moves and deletes hour bands, and any count
 
         expect(refusal.code, 'a duplicate start is a unique violation').toBe('23505');
         expect(moveRefusal.code, 'moving onto a taken start is a unique violation').toBe('23505');
+        // STORY 2.1b. The constraint `@/hour-bands/write` reads to tell a taken
+        // start from a taken name — both are 23505 — asserted against the live
+        // database, as `organizations_name_check` is, so a rename fails here.
+        for (const named of [refusal, moveRefusal]) {
+          expect(named.message, 'the refusal does not name the start unique').toContain(
+            'hour_bands_organization_id_start_time_key',
+          );
+        }
         expect(await visibleHourBands(client, caller.organizationId)).toEqual(seededBandsOf(slug));
       });
     },
@@ -9417,11 +9425,18 @@ describe('an admin creates, renames, moves and deletes hour bands, and any count
         const caller = await memberByUsername(client, slug, admin);
         await actAs(client, caller.authUserId, caller.organizationId);
 
-        for (const start of ['24:00', '07:00:30', '03:17:00.5']) {
+        // STORY 2.1b: each with the constraint `@/hour-bands/write` reads, since
+        // three checks share 23514.
+        for (const [start, constraint] of [
+          ['24:00', 'hour_bands_start_before_midnight'],
+          ['07:00:30', 'hour_bands_start_whole_minute'],
+          ['03:17:00.5', 'hour_bands_start_whole_minute'],
+        ] as const) {
           const refusal = await refusedThenContinue(client, () =>
             insertHourBand(client, caller.organizationId, `${THROWAWAY} ${start}`, start),
           );
           expect(refusal.code, `${start} is not a check violation`).toBe('23514');
+          expect(refusal.message, `${start} does not name ${constraint}`).toContain(constraint);
         }
         expect(await visibleHourBands(client, caller.organizationId)).toEqual(seededBandsOf(slug));
 
@@ -9450,6 +9465,13 @@ describe('an admin creates, renames, moves and deletes hour bands, and any count
 
         expect(duplicate.code, 'a duplicate name is a unique violation').toBe('23505');
         expect(blank.code, 'a blank name is a check violation').toBe('23514');
+        // STORY 2.1b: the constraint names `@/hour-bands/write` reads.
+        expect(duplicate.message, 'the refusal does not name the name index').toContain(
+          'hour_bands_organization_name_key',
+        );
+        expect(blank.message, 'the refusal does not name the blank-name check').toContain(
+          'hour_bands_name_not_blank',
+        );
         expect(await visibleHourBands(client, caller.organizationId)).toEqual(seededBandsOf(slug));
       });
     },
@@ -9603,7 +9625,22 @@ describe('a direct API call writes hour bands under exactly the same rules', () 
           body: { organization_id: own, name: `${name} twin`, start_time: '03:41' },
         });
         expect(duplicate.ok, 'a second band at a taken start was admitted').toBe(false);
-        expect((await restRefusal(duplicate)).code).toBe('23505');
+        const duplicateRefusal = await restRefusal(duplicate);
+        expect(duplicateRefusal.code).toBe('23505');
+        // STORY 2.1b: PostgREST carries the constraint in `message`, which is
+        // where `@/hour-bands/write` reads it.
+        expect(duplicateRefusal.message).toContain('hour_bands_organization_id_start_time_key');
+
+        // Both fixtures seed a band named `Noć`: a padded, lowercased twin.
+        const twinName = await rest('hour_bands', {
+          token,
+          method: 'POST',
+          body: { organization_id: own, name: ' noć ', start_time: '03:42' },
+        });
+        expect(twinName.ok, 'a second band with a taken name was admitted').toBe(false);
+        const twinRefusal = await restRefusal(twinName);
+        expect(twinRefusal.code).toBe('23505');
+        expect(twinRefusal.message).toContain('hour_bands_organization_name_key');
 
         const deleted = await rest(`hour_bands?id=eq.${id}&select=id`, {
           token,
@@ -9614,6 +9651,9 @@ describe('a direct API call writes hour bands under exactly the same rules', () 
         expect(await hourBandById(client, id)).toBeUndefined();
       } finally {
         if (id !== undefined) await client.query('delete from hour_bands where id = $1', [id]);
+        // Only a name index that failed to refuse leaves the padded twin; no
+        // fixture seeds a band at 03:42.
+        await client.query("delete from hour_bands where start_time = '03:42'");
         await client.end();
       }
     },
@@ -9666,13 +9706,21 @@ describe('a direct API call writes hour bands under exactly the same rules', () 
       const client = await connect();
       try {
         const own = await organizationId(client, slug);
+        // STORY 2.1b: each attempt names the constraint `@/hour-bands/write`
+        // reads, since all three share 23514.
         const attempts = [
-          { name: `${THROWAWAY} rest midnight`, start_time: '24:00' },
-          { name: `${THROWAWAY} rest seconds`, start_time: '07:00:30' },
-          { name: '   ', start_time: '10:11' },
+          {
+            body: { name: `${THROWAWAY} rest midnight`, start_time: '24:00' },
+            constraint: 'hour_bands_start_before_midnight',
+          },
+          {
+            body: { name: `${THROWAWAY} rest seconds`, start_time: '07:00:30' },
+            constraint: 'hour_bands_start_whole_minute',
+          },
+          { body: { name: '   ', start_time: '10:11' }, constraint: 'hour_bands_name_not_blank' },
         ];
 
-        for (const attempt of attempts) {
+        for (const { body: attempt, constraint } of attempts) {
           const response = await rest('hour_bands', {
             token,
             method: 'POST',
@@ -9682,6 +9730,9 @@ describe('a direct API call writes hour bands under exactly the same rules', () 
 
           expect(response.ok, `${JSON.stringify(attempt)} was admitted`).toBe(false);
           expect(refusal.code, `${JSON.stringify(attempt)} is not a check violation`).toBe('23514');
+          expect(refusal.message, `${JSON.stringify(attempt)} does not name ${constraint}`).toContain(
+            constraint,
+          );
         }
         expect(await visibleHourBands(client, own)).toEqual(seededBandsOf(slug));
       } finally {

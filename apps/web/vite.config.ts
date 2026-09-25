@@ -12,6 +12,13 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // STORY 2.1b. The domain package's SOURCE, not its `dist/`: the root
+      // `typecheck` and `test` never build, so a link through `dist/` would
+      // make both depend on a build nobody ran (AD-7 keeps the package pure;
+      // this only decides where its files are read from).
+      '@shift/domain': fileURLToPath(
+        new URL('../../packages/domain/src/index.ts', import.meta.url),
+      ),
     },
   },
   build: {

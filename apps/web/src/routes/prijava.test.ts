@@ -112,6 +112,16 @@ const DANAS = join(srcRoot, 'routes', 'danas.tsx');
 const TEAM_ROSTER_KEYS = join(srcRoot, 'teams', 'roster.ts');
 
 /**
+ * Story 2.1b's two hour band screens and the two modules holding their rules.
+ * Neither screen is a destination — both are reached from `Organizacija` — so
+ * they are named here by hand, as the team screens are.
+ */
+const HOUR_BAND_LIST = join(srcRoot, 'routes', 'organizacija.satni-pojasi.tsx');
+const HOUR_BAND_EDIT = join(srcRoot, 'routes', 'organizacija.satni-pojasi.$id.tsx');
+const HOUR_BAND_LIST_KEYS = join(srcRoot, 'hour-bands', 'list.ts');
+const HOUR_BAND_WRITE_KEYS = join(srcRoot, 'hour-bands', 'write.ts');
+
+/**
  * The member write path's rules, as a `.ts` module that renders nothing.
  *
  * THE THIRD NEW KEY SOURCE, and it has to be its own entry rather than folded
@@ -281,7 +291,10 @@ const SCREENS = [
   // type known to one screen and to nothing else escapes the tap-target floor
   // everywhere else — which is the state `<Link>` was in until the chrome
   // brought it in.
-  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 9 },
+  //
+  // TEN SINCE STORY 2.1b: a `<Button asChild>` link to the hour band editor,
+  // reached from here rather than from the navigation.
+  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 10 },
   // THREE on the member list, and the count is what keeps a fourth from
   // arriving unreviewed: the search field, the permission-level filter, and ONE
   // `<Button>` — the sort control, written once inside a map over
@@ -342,6 +355,15 @@ const SCREENS = [
   // neither detector matches by construction and the link sweep measures.
   { name: 'the team roster', file: TEAM_ROSTER, expectedControls: 1 },
   { name: 'the Danas destination', file: DANAS, expectedControls: 0 },
+  // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
+  // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
+  // row link written once inside the map over the bands — the same count at
+  // zero bands as at twelve. Only a name and a start: no window, duration or
+  // midnight control exists, which is what the count keeps true. SEVEN on one
+  // band: the two fields, Save, the removal offer, the confirm and cancel that
+  // replace it, and the link back.
+  { name: 'the hour band list', file: HOUR_BAND_LIST, expectedControls: 5 },
+  { name: 'the hour band edit form', file: HOUR_BAND_EDIT, expectedControls: 7 },
   // ZERO on all seven, and asserted rather than assumed: a destination is a
   // heading and nothing else in this story, so the first control any of them
   // grows is a later story's work arriving without that story's review. The
@@ -442,6 +464,20 @@ const FORM_SCREENS = [
   // because the two must never run at once on the same row.
   { name: 'the team list', file: TEAM_LIST, effect: 'createTeam(', inFlight: 'creating' },
   { name: 'the team edit form', file: TEAM_EDIT, effect: 'renameTeam(', inFlight: 'writing' },
+  // Story 2.1b's two, on the team screens' terms: `creating` on the list, and
+  // `writing` on one band, shared by its save and its removal.
+  {
+    name: 'the hour band list',
+    file: HOUR_BAND_LIST,
+    effect: 'createHourBand(',
+    inFlight: 'creating',
+  },
+  {
+    name: 'the hour band edit form',
+    file: HOUR_BAND_EDIT,
+    effect: 'updateHourBand(',
+    inFlight: 'writing',
+  },
 ];
 
 /** The form screens that await something, so something can be in flight. */
@@ -525,6 +561,18 @@ const IN_FLIGHT_HANDLERS = [
     // ITS OWN REFUSAL STATE, announced inside the archive block, so a refused
     // archive never marks the name field invalid.
     failure: 'setArchiveFailure',
+  },
+  {
+    // STORY 2.1b, the band edit form's second awaiting handler, sharing the
+    // save's `writing` ref for the reason the team archive does.
+    name: "the hour band edit form's removal",
+    file: HOUR_BAND_EDIT,
+    effect: 'removeHourBand(',
+    inFlight: 'writing',
+    handler: 'remove',
+    pending: 'setPending',
+    // ITS OWN REFUSAL STATE, announced inside the removal block.
+    failure: 'setRemoveFailure',
   },
 ];
 
@@ -1207,7 +1255,10 @@ const KEY_SOURCES = [
   // input's `aria-label`, because the two controls are one affordance and a
   // screen reader must hear the word the eye sees. The set comparison below
   // dedupes, so twelve calls over eleven keys is correct rather than drift.
-  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 12 },
+  //
+  // THIRTEEN SINCE STORY 2.1b: the link to the hour band editor, which renders
+  // that screen's own heading as its text.
+  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 13 },
   {
     // EIGHT on the member list since story 1.5b, up from five, and the number is
     // still small because most of what this screen says is read off a table
@@ -1320,6 +1371,44 @@ const KEY_SOURCES = [
     file: TEAM_ROSTER_KEYS,
     keys: memberListKeys,
     strings: 5,
+  },
+  {
+    // STORY 2.1b. THIRTEEN on the band list: its heading, the link back
+    // (`nav.organizacija`), the name and start labels, the add action, the
+    // created confirmation, the ICU count, the row action, the window and
+    // duration labels, the midnight flag, the coverage sentence, and the bar's
+    // uncovered flag. Every figure is data from `@/hour-bands/list`; the
+    // duration's shape and the refusals reach `t()` through the two modules.
+    name: 'the hour band list',
+    file: HOUR_BAND_LIST,
+    keys: translationKeys,
+    strings: 13,
+  },
+  {
+    // TWELVE on one band: its heading, the two field labels, Save, the window
+    // and duration labels, the midnight flag, the removal offer, prompt,
+    // confirm and cancel, and the link back.
+    name: 'the hour band edit form',
+    file: HOUR_BAND_EDIT,
+    keys: translationKeys,
+    strings: 12,
+  },
+  {
+    // FOUR over two unions: the duration's three shapes and the read failure.
+    name: 'the hour band list rules',
+    file: HOUR_BAND_LIST_KEYS,
+    keys: memberListKeys,
+    strings: 4,
+  },
+  {
+    // ELEVEN over two unions: nine refusals — the blank name, the taken name,
+    // the taken start, the invalid start, the stale screen, the outright
+    // refusal, another invalid value, the service, and a band the list lacks —
+    // and the two confirmations, an edit and a removal.
+    name: 'the hour band write rules',
+    file: HOUR_BAND_WRITE_KEYS,
+    keys: memberListKeys,
+    strings: 11,
   },
   {
     // THIRTEEN on the create form: its own heading, five field labels, the save
@@ -1539,8 +1628,11 @@ describe('the screen is read at all, so every sweep below means something', () =
     //
     // TWENTY AND TWENTY-EIGHT SINCE VISUAL REFRESH A: the sign-in frame is a
     // new `.tsx` that renders strings, so it is one screen and one key source.
-    expect(SCREENS).toHaveLength(20);
-    expect(KEY_SOURCES).toHaveLength(28);
+    //
+    // TWENTY-TWO AND THIRTY-TWO SINCE STORY 2.1b: the two hour band screens,
+    // and four key sources — both screens and both `@/hour-bands` modules.
+    expect(SCREENS).toHaveLength(22);
+    expect(KEY_SOURCES).toHaveLength(32);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -2446,6 +2538,61 @@ describe('the member list reads once, under one key', () => {
     );
   });
 
+  it.each([
+    { name: 'the hour band list', file: HOUR_BAND_LIST },
+    { name: 'the hour band edit form', file: HOUR_BAND_EDIT },
+  ])('reads the bands exactly once, under the one band key, on $name', ({ file }) => {
+    // STORY 2.1b, AD-13. The rows, the count, the bar and the edited band all
+    // come from one read under `HOUR_BANDS_LIST_KEY`.
+    const screen = source(file);
+
+    expect(occurrences(screen, 'useQuery(')).toBe(1);
+    expect(occurrences(screen, 'readHourBands(')).toBe(1);
+    expect(occurrences(screen, 'queryKey: HOUR_BANDS_LIST_KEY')).toBeGreaterThan(0);
+    expect(occurrences(screen, 'queryKey:')).toBe(
+      occurrences(screen, 'queryKey: HOUR_BANDS_LIST_KEY'),
+    );
+    expect(screen, 'the band read has no cache floor').toContain(
+      'staleTime: HOUR_BANDS_READ_STALE_MS',
+    );
+    expect(screen, 'a write is not followed by a re-read of the one list').toContain(
+      'invalidateQueries({ queryKey: HOUR_BANDS_LIST_KEY })',
+    );
+    expect(screen, 'useMutation arrived; this repository uses a pending ref').not.toContain(
+      'useMutation',
+    );
+  });
+
+  it('enters only a name and a start, and derives nothing on either band screen', () => {
+    // STORY 2.1b, AD-3. The window, duration and midnight flag are shown
+    // read-only and come from `@/hour-bands/list`, which reads the domain.
+    for (const file of [HOUR_BAND_LIST, HOUR_BAND_EDIT]) {
+      const screen = source(file);
+
+      expect(inputElements(screen), `${file} enters something besides a name and a start`).toHaveLength(2);
+      expect(screen).toContain('type="time"');
+      expect(screen, `${file} reaches past the list module into the domain`).not.toContain(
+        '@shift/domain',
+      );
+      expect(screen, `${file} recomputes a band itself`).not.toMatch(
+        /\b1440\b|MINUTES_PER_DAY|startMinute\s*[-+%]/,
+      );
+    }
+  });
+
+  it('draws the bar hidden from assistive technology, its uncovered stretch hatched and flagged', () => {
+    const bar = componentFunction(source(HOUR_BAND_LIST), 'renderBar');
+
+    expect(bar.length, 'renderBar could not be extracted').toBeGreaterThan(80);
+    expect(bar).toContain('aria-hidden={true}');
+    expect(bar, 'the uncovered stretch is not hatched').toContain('hatch-uncovered');
+    expect(bar, 'the uncovered stretch is not flagged in words').toContain(
+      "t('organization.hourBands.uncovered')",
+    );
+    expect(bar, 'a covered stretch is not labelled with its band').toContain('{segment.name}');
+    expect(bar, 'the bar paints a shift type colour').not.toContain('shift-slot');
+  });
+
   it('offers an archived team nothing that writes', () => {
     // An archived team is frozen by the database's update policy; its screen
     // must not offer a control the database will refuse.
@@ -3203,7 +3350,8 @@ describe('the logo control the general sweeps structurally cannot see', () => {
     const screen = source(SETTINGS);
     const buttons = buttonElements(screen);
 
-    expect(buttons, 'the settings surface lost a button').toHaveLength(3);
+    // FOUR SINCE STORY 2.1b: the link to the hour band editor.
+    expect(buttons, 'the settings surface lost a button').toHaveLength(4);
 
     const choose = buttons.find((element) => element.includes('onClick={openLogoPicker}')) ?? null;
 
@@ -3229,8 +3377,14 @@ describe('the logo control the general sweeps structurally cannot see', () => {
     // finished last owned it. Both flags on every control is the half of the fix
     // that is visible; the guards below are the other half.
     const screen = source(SETTINGS);
+    // STORY 2.1b's link to the hour band editor NAVIGATES rather than writes,
+    // so no in-flight flag applies to it — and exactly one such link exists,
+    // so this exemption cannot quietly widen to a write.
+    const links = buttonElements(screen).filter((element) => element.includes('asChild'));
 
-    for (const element of buttonElements(screen)) {
+    expect(links, 'the settings surface grew a second link').toHaveLength(1);
+
+    for (const element of buttonElements(screen).filter((candidate) => !links.includes(candidate))) {
       expect(
         element,
         `a control is disabled by only some of the in-flight flags: ${element}`,
@@ -3523,11 +3677,21 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // shape joined, and the whole reason these sweeps are driven off a list is
     // that the settings surface was covered by none of them until a second
     // screen made the gap obvious.
-    expect(IN_FLIGHT_SCREENS.length, 'no form screen declares an in-flight ref').toBe(6);
+    // EIGHT SINCE STORY 2.1b: the two hour band screens.
+    expect(IN_FLIGHT_SCREENS.length, 'no form screen declares an in-flight ref').toBe(8);
     expect(
       IN_FLIGHT_SCREENS.map((screen) => screen.inFlight).sort(),
       'the in-flight ref names drifted from the screens that hold them',
-    ).toEqual(['creating', 'exchanging', 'issuing', 'saving', 'saving', 'writing']);
+    ).toEqual([
+      'creating',
+      'creating',
+      'exchanging',
+      'issuing',
+      'saving',
+      'saving',
+      'writing',
+      'writing',
+    ]);
     // NINE HANDLERS OVER SIX SCREENS, and the mismatch is the point: the member
     // edit form owns three awaiting handlers and the team edit form two, and
     // while these sweeps counted SCREENS the extra ones were read by none of
@@ -3535,7 +3699,9 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // to one entry per file would make every sweep below miss exactly the
     // handler that was added last.
     // TEN SINCE STORY 1.7b: the member edit form's fourth, the team change.
-    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(10);
+    // THIRTEEN SINCE STORY 2.1b: the band list's add, and the band edit
+    // form's save and its removal, which is its own handler.
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(13);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
       'the in-flight handler names drifted from the handlers that hold them',
@@ -3544,11 +3710,14 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'changeStatus/statusing',
       'changeTeam/teaming',
       'issue/resetting',
+      'remove/writing',
+      'submit/creating',
       'submit/creating',
       'submit/exchanging',
       'submit/issuing',
       'submit/saving',
       'submit/saving',
+      'submit/writing',
       'submit/writing',
     ]);
     // NON-VACUITY ON THE EXTRACTOR ITSELF. A `namedHandler` that answered `''`

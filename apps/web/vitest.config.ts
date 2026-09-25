@@ -18,6 +18,11 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // STORY 2.1b. Read from source, as `vite.config.ts` does, so the suite
+      // needs no domain build.
+      '@shift/domain': fileURLToPath(
+        new URL('../../packages/domain/src/index.ts', import.meta.url),
+      ),
     },
   },
   test: {

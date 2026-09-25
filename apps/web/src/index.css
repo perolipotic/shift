@@ -403,3 +403,22 @@
     }
   }
 }
+
+/* STORY 2.1b: the uncovered stretch of the hour band bar. HATCHED, and never
+ * colour alone: the stripes are a shape a person who cannot tell the tint
+ * apart still sees, and the segment carries a written flag besides. Drawn from
+ * the existing `--modifier-uncovered` token, so no new token exists.
+ *
+ * WHAT IS MEASURED is the flag, not the stripes: its text sits on a solid
+ * `bg-modifier-uncovered` chip over an opaque `bg-background` backing, and
+ * `theme-contrast.test.ts` holds that pair to 4.5:1 in both themes. The
+ * stripes carry no text and are the redundant texture beside it. */
+@utility hatch-uncovered {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--modifier-uncovered) 0,
+    var(--modifier-uncovered) 6px,
+    transparent 6px,
+    transparent 12px
+  );
+}
