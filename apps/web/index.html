@@ -4,6 +4,35 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Shift</title>
+    <!-- The theme, resolved before the first paint. `data-theme` on <html> is
+         always `light` or `dark`; `index.css` hangs the dark tokens on it. The
+         preference (`system`, `light`, `dark`) lives in localStorage under
+         `shift.theme`, written by `src/theme/theme.ts`, which holds the same
+         key and values. Inline and synchronous, because a pinned dark theme
+         read after the bundle loads is a white flash on every visit.
+
+         It also owns following the OS while the preference is `system`: the
+         listener re-reads storage on each change, so a pin made in the app
+         after this ran is respected without the app unsubscribing anything.
+
+         Storage can throw; every failure resolves as `system`. With scripting
+         disabled nothing runs and the page is light, which is the only
+         surface that can be reached that way — the boot fallback. -->
+    <script>
+      (function () {
+        var query = window.matchMedia('(prefers-color-scheme: dark)');
+        function apply() {
+          var stored = null;
+          try {
+            stored = window.localStorage.getItem('shift.theme');
+          } catch (e) {}
+          document.documentElement.dataset.theme =
+            stored === 'light' || stored === 'dark' ? stored : query.matches ? 'dark' : 'light';
+        }
+        apply();
+        query.addEventListener('change', apply);
+      })();
+    </script>
     <!-- The boot fallback's own styling, inline in the document head and
          nowhere else. It cannot live in `index.css`: the two failures it
          covers are the bundle never loading and the translation layer refusing

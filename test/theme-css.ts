@@ -18,7 +18,9 @@ import { parse, type Color } from 'culori';
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
 
 export const STYLESHEET = join(repoRoot, 'apps', 'web', 'src', 'index.css');
-export const DARK_QUERY = '@media (prefers-color-scheme: dark)';
+/** The dark block's selector. `index.html` resolves the preference and writes
+ *  the RESOLVED theme to `data-theme`, so this is the only dark scope. */
+export const DARK_SELECTOR = ':root[data-theme="dark"]';
 
 /**
  * The 31 brand token names: DESIGN.md's `colors:` front matter, plus the four
@@ -134,15 +136,15 @@ function blockAt(css: string, from: number, what: string): [number, number] {
 }
 
 function darkStart(css: string): number {
-  const start = css.indexOf(DARK_QUERY);
+  const start = css.indexOf(DARK_SELECTOR);
   if (start === -1) throw new Error('DARK_BLOCK_MISSING');
   // Two dark blocks would mean later overrides invisible to every sweep below.
-  if (css.indexOf(DARK_QUERY, start + 1) !== -1) throw new Error('MULTIPLE_DARK_BLOCKS');
+  if (css.indexOf(DARK_SELECTOR, start + 1) !== -1) throw new Error('MULTIPLE_DARK_BLOCKS');
 
   return start;
 }
 
-/** The dark media block's body, brace-matched so a later top-level rule — the
+/** The dark block's body, brace-matched so a later top-level rule — the
  *  `@theme inline` and `@layer base` blocks both follow it — cannot be read as
  *  part of it. */
 export function darkScope(): string {

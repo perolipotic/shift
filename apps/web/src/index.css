@@ -109,16 +109,25 @@
  * Their tests measure them against their own fills, never against a surface,
  * so the new page colours change none of their ratios.
  *
- * Light lives on `:root`; dark exists only inside `prefers-color-scheme`, and
- * `color-scheme` tells the UA to follow it for scrollbars and form controls.
- * There is deliberately no `.dark` class and no `data-theme` attribute: UX-DR2
- * ships both themes with no toggle, no setting and nothing persisted.
+ * Light lives on `:root`; dark lives on `:root[data-theme="dark"]`, and each
+ * sets `color-scheme` so the UA paints scrollbars and form controls to match.
+ * UX-DR2 shipped both themes with no toggle; a Sustav / Svijetla / Tamna
+ * control replaced that on 2026-09-25 (human decision). The attribute always
+ * carries the RESOLVED theme — `index.html` resolves `system` against
+ * `prefers-color-scheme` before the first paint — so the dark tokens are
+ * declared once rather than again inside a media query. There is still no
+ * `.dark` class: one hook, not two.
  *
  * Ramp slots are numbered, never named. Shift Types are Organization data of
  * arbitrary count assigned to slots in creation order (UX-DR6), so a
  * `--shift-night` token would encode one Organization's naming into the theme.
  */
 @import 'tailwindcss';
+
+/* Tailwind's `dark:` follows `prefers-color-scheme` by default, which would
+ * disagree with a pinned theme. Nothing uses `dark:` today; this keeps the
+ * first one that does on the same hook as the tokens. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 /* Every subset each package ships. Croatian's diacritics live in latin-ext;
  * the latin subset carries none of them, so a narrower entry point would fall
@@ -130,6 +139,10 @@
 @import '@fontsource-variable/syne';
 
 :root {
+  /* Without it the UA paints scrollbars, form controls and the canvas behind
+   * the root in the OS's scheme rather than the chosen one — the other half of
+   * a flash of the wrong theme. The dark block sets `dark`. */
+  color-scheme: light;
   --radius: 0.75rem;
 
   /* Elevation: DESIGN.md `elevation:`. Soft, and only on cards and layered
@@ -203,76 +216,76 @@
   --brand-violet-foreground: oklch(1 0 0);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --elevation-sh: 0 1px 3px oklch(0 0 0 / 30%), 0 4px 16px oklch(0 0 0 / 22%);
-    --elevation-sh-lg: 0 8px 32px oklch(0 0 0 / 45%);
+:root[data-theme="dark"] {
+  color-scheme: dark;
 
-    /* Base palette: DESIGN.md `base-palette.dark` */
-    --background: oklch(0.2083 0.0376 258.83);
-    --foreground: oklch(0.9288 0.0126 255.51);
-    --card: oklch(0.2432 0.0444 259.63);
-    --card-foreground: oklch(0.9288 0.0126 255.51);
-    --popover: oklch(0.2432 0.0444 259.63);
-    --popover-foreground: oklch(0.9288 0.0126 255.51);
-    --secondary: oklch(0.2888 0.0504 260.22);
-    --secondary-foreground: oklch(0.9288 0.0126 255.51);
-    --muted: oklch(0.2888 0.0504 260.22);
-    --muted-foreground: oklch(0.7107 0.0351 256.79);
-    --accent: oklch(0.2888 0.0504 260.22);
-    --accent-foreground: oklch(0.9683 0.0069 247.9);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 36%);
-    --ring: oklch(0.8563 0.0683 257.35);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.1634 0.028 259.94);
-    --sidebar-foreground: oklch(0.8383 0.0242 256.11);
-    --sidebar-primary: oklch(0.4882 0.2172 264.38);
-    --sidebar-primary-foreground: oklch(1 0 0);
-    --sidebar-accent: oklch(0.2432 0.0444 259.63);
-    --sidebar-accent-foreground: oklch(0.9842 0.0034 247.86);
-    --sidebar-border: oklch(1 0 0 / 7%);
-    --sidebar-ring: oklch(0.7137 0.1434 254.62);
+  --elevation-sh: 0 1px 3px oklch(0 0 0 / 30%), 0 4px 16px oklch(0 0 0 / 22%);
+  --elevation-sh-lg: 0 8px 32px oklch(0 0 0 / 45%);
 
-    /* DESIGN.md brand delta */
-    --primary: oklch(0.6231 0.188 259.81);
-    --primary-foreground: oklch(0.2004 0.0397 259.82);
-    --destructive: oklch(0.6564 0.1747 18.71);
-    --destructive-foreground: oklch(0.1757 0.0245 10.61);
-    --shift-slot-1: oklch(0.3071 0.0518 245.22);
-    --shift-slot-1-foreground: oklch(0.8467 0.0627 239.8);
-    --shift-slot-2: oklch(0.2362 0.0226 254.26);
-    --shift-slot-2-foreground: oklch(0.7576 0.0352 246.91);
-    --shift-slot-3: oklch(0.2669 0.0455 302.6);
-    --shift-slot-3-foreground: oklch(0.8068 0.0761 304.88);
-    --shift-slot-4: oklch(0.2831 0.0423 85.72);
-    --shift-slot-4-foreground: oklch(0.846 0.0873 83.41);
-    --shift-slot-5: oklch(0.2862 0.0342 177);
-    --shift-slot-5-foreground: oklch(0.807 0.0699 168.78);
-    --shift-slot-6: oklch(0.2759 0.0162 96.9);
-    --shift-slot-6-foreground: oklch(0.8275 0.0341 89.87);
-    --shift-nonworking: oklch(0.227 0.0171 248.59);
-    --shift-nonworking-foreground: oklch(0.6165 0.0254 248.28);
-    --modifier-leave: oklch(0.7873 0.09 160.99 / 0.15);
-    --modifier-leave-foreground: oklch(0.7873 0.09 160.99);
-    --modifier-uncovered: oklch(0.7758 0.1401 78.65 / 0.16);
-    --modifier-uncovered-foreground: oklch(0.7803 0.1157 78.08);
-    --modifier-overridden: oklch(0.6843 0.1236 290.86);
+  /* Base palette: DESIGN.md `base-palette.dark` */
+  --background: oklch(0.2083 0.0376 258.83);
+  --foreground: oklch(0.9288 0.0126 255.51);
+  --card: oklch(0.2432 0.0444 259.63);
+  --card-foreground: oklch(0.9288 0.0126 255.51);
+  --popover: oklch(0.2432 0.0444 259.63);
+  --popover-foreground: oklch(0.9288 0.0126 255.51);
+  --secondary: oklch(0.2888 0.0504 260.22);
+  --secondary-foreground: oklch(0.9288 0.0126 255.51);
+  --muted: oklch(0.2888 0.0504 260.22);
+  --muted-foreground: oklch(0.7107 0.0351 256.79);
+  --accent: oklch(0.2888 0.0504 260.22);
+  --accent-foreground: oklch(0.9683 0.0069 247.9);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 36%);
+  --ring: oklch(0.8563 0.0683 257.35);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --sidebar: oklch(0.1634 0.028 259.94);
+  --sidebar-foreground: oklch(0.8383 0.0242 256.11);
+  --sidebar-primary: oklch(0.4882 0.2172 264.38);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.2432 0.0444 259.63);
+  --sidebar-accent-foreground: oklch(0.9842 0.0034 247.86);
+  --sidebar-border: oklch(1 0 0 / 7%);
+  --sidebar-ring: oklch(0.7137 0.1434 254.62);
 
-    /* The curated brand accents (story 1.4c, UX-DR5) */
-    --brand-blue: oklch(0.77 0.115 266);
-    --brand-blue-foreground: oklch(0.185 0.03 266);
-    --brand-green: oklch(0.82 0.165 143);
-    --brand-green-foreground: oklch(0.185 0.03 143);
-    --brand-amber: oklch(0.665 0.145 68);
-    --brand-amber-foreground: oklch(0.185 0.03 68);
-    --brand-violet: oklch(0.81 0.125 312);
-    --brand-violet-foreground: oklch(0.185 0.03 312);
-  }
+  /* DESIGN.md brand delta */
+  --primary: oklch(0.6231 0.188 259.81);
+  --primary-foreground: oklch(0.2004 0.0397 259.82);
+  --destructive: oklch(0.6564 0.1747 18.71);
+  --destructive-foreground: oklch(0.1757 0.0245 10.61);
+  --shift-slot-1: oklch(0.3071 0.0518 245.22);
+  --shift-slot-1-foreground: oklch(0.8467 0.0627 239.8);
+  --shift-slot-2: oklch(0.2362 0.0226 254.26);
+  --shift-slot-2-foreground: oklch(0.7576 0.0352 246.91);
+  --shift-slot-3: oklch(0.2669 0.0455 302.6);
+  --shift-slot-3-foreground: oklch(0.8068 0.0761 304.88);
+  --shift-slot-4: oklch(0.2831 0.0423 85.72);
+  --shift-slot-4-foreground: oklch(0.846 0.0873 83.41);
+  --shift-slot-5: oklch(0.2862 0.0342 177);
+  --shift-slot-5-foreground: oklch(0.807 0.0699 168.78);
+  --shift-slot-6: oklch(0.2759 0.0162 96.9);
+  --shift-slot-6-foreground: oklch(0.8275 0.0341 89.87);
+  --shift-nonworking: oklch(0.227 0.0171 248.59);
+  --shift-nonworking-foreground: oklch(0.6165 0.0254 248.28);
+  --modifier-leave: oklch(0.7873 0.09 160.99 / 0.15);
+  --modifier-leave-foreground: oklch(0.7873 0.09 160.99);
+  --modifier-uncovered: oklch(0.7758 0.1401 78.65 / 0.16);
+  --modifier-uncovered-foreground: oklch(0.7803 0.1157 78.08);
+  --modifier-overridden: oklch(0.6843 0.1236 290.86);
+
+  /* The curated brand accents (story 1.4c, UX-DR5) */
+  --brand-blue: oklch(0.77 0.115 266);
+  --brand-blue-foreground: oklch(0.185 0.03 266);
+  --brand-green: oklch(0.82 0.165 143);
+  --brand-green-foreground: oklch(0.185 0.03 143);
+  --brand-amber: oklch(0.665 0.145 68);
+  --brand-amber-foreground: oklch(0.185 0.03 68);
+  --brand-violet: oklch(0.81 0.125 312);
+  --brand-violet-foreground: oklch(0.185 0.03 312);
 }
 
 @theme inline {
@@ -350,13 +363,6 @@
  * than `@apply`, so what ships is a reference the build can be asserted
  * against rather than a resolved literal. */
 @layer base {
-  html {
-    /* Both themes are supported and the OS chooses; without this the UA paints
-     * scrollbars, form controls and the canvas behind the root light in dark
-     * mode — the other half of a flash of the wrong theme. */
-    color-scheme: light dark;
-  }
-
   *,
   ::before,
   ::after {

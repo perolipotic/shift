@@ -164,11 +164,11 @@ describe('the user agent follows the theme too', () => {
   // Without `color-scheme`, the UA paints scrollbars, form controls and the
   // canvas behind the root light in dark mode — the other half of a flash of
   // the wrong theme, and invisible to any token assertion.
-  it.skipIf(notBuilt)('declares color-scheme as a property, not only a media query', () => {
-    const withoutQueries = builtCss().replaceAll('prefers-color-scheme', '');
-
-    // `color-scheme: light` alone would satisfy a bare `color-scheme\s*:` and
-    // reintroduce exactly the UA-painted wrong-theme surfaces this guards.
-    expect(withoutQueries).toMatch(/color-scheme\s*:\s*light dark/);
+  it.skipIf(notBuilt)('declares color-scheme for both themes', () => {
+    // Each theme names its own scheme: `light` on :root, `dark` on the
+    // attribute. Only one of the two would leave the other theme's scrollbars
+    // and form controls in the wrong colours.
+    expect(builtCss()).toMatch(/color-scheme\s*:\s*light\b/);
+    expect(builtCss()).toMatch(/color-scheme\s*:\s*dark\b/);
   });
 });

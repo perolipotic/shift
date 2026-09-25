@@ -464,6 +464,15 @@ const SANCTIONED_SCREEN_KEYS = [
   // `Odjava` on 2026-09-25 (human decision): the exit sits beside an icon at
   // the foot of the navigation and reads as its last entry.
   'shell.signOut',
+  // THE THEME CONTROL (human decision 2026-09-25, reversing UX-DR2). The
+  // visible words state the CURRENT preference, one key per value, and
+  // `shell.theme.change` is the control's `title`: the press cycles
+  // sustav → svijetla → tamna, so the name says what it does and the words say
+  // where it stands.
+  'shell.theme.change',
+  'shell.theme.system',
+  'shell.theme.light',
+  'shell.theme.dark',
   // TWO refusals, and the partition is the point in one direction and the
   // collapse in the other. A role that cannot be read, one that reaches no row
   // and one this build does not recognise are three CODES
@@ -1004,6 +1013,8 @@ describe('the messages obey the voice rules that bind every string', () => {
     // assumed: if any of them ever becomes a noun this stops being a rule the
     // exit is following and becomes an exception nobody decided on.
     expect(messageAt('organization.save')).toBe('Spremi');
+    // The theme control's title, the verb beside the state it shows.
+    expect(messageAt('shell.theme.change')).toBe('Promijeni temu');
     expect(messageAt('organization.cancel')).toBe('Odustani');
     // STORY 1.5b's two, and they are here rather than trusted because they are
     // a SECOND authoring of the same two words: two keys for one action is
