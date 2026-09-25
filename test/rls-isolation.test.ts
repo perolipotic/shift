@@ -1062,6 +1062,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
               'member_latest_version',
               'member_team_has_version',
               'member_team_on',
+              'member_team_version_on',
               'organization_today',
               'shift_type_latest_version',
               'shift_type_times_on',
@@ -1082,6 +1083,9 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'member_latest_version',
         'member_team_has_version',
         'member_team_on',
+        // TEAM POSITION: team and position at a date, for the insert policy's
+        // changes-the-value rule and the roster.
+        'member_team_version_on',
         'organization_today',
         // STORY 2.2a: the two readers the version and archive policies call.
         'shift_type_latest_version',
@@ -3741,7 +3745,7 @@ describe('the member list is one organization own list, at the scale Q20 names',
   const LIST_COLUMNS =
     'organization_id,id,auth_user_id,name,username,email,role,leave_allowance_days,' +
     'member_status_versions(active,effective_from),' +
-    'team_membership_versions(team_id,effective_from,teams(name)),organizations(timezone)';
+    'team_membership_versions(team_id,position,effective_from,teams(name)),organizations(timezone)';
 
   /** The keys each row of that read carries: the eight columns, and the three
    *  embeds under their relation names (story 1.6, and the team history since
@@ -7555,6 +7559,8 @@ interface MembershipRow {
   readonly id: string;
   readonly memberId: string;
   readonly teamId: string | null;
+  /** TEAM POSITION (`0015`): the position the version records, or null. */
+  readonly position: string | null;
   readonly from: string;
   readonly createdBy: string;
   readonly createdAt: string;
@@ -7565,7 +7571,7 @@ interface MembershipRow {
 async function membershipsOf(client: Client, member: string): Promise<MembershipRow[]> {
   const { rows } = await client.query<MembershipRow>(
     `select organization_id as "organizationId", id, member_id as "memberId",
-            team_id as "teamId", effective_from::text as "from",
+            team_id as "teamId", position, effective_from::text as "from",
             created_by as "createdBy", created_at::text as "createdAt"
        from team_membership_versions where member_id = $1 order by effective_from`,
     [member],
@@ -7573,16 +7579,66 @@ async function membershipsOf(client: Client, member: string): Promise<Membership
   return rows;
 }
 
-/** One membership version, as whoever the connection currently is: the four
+/**
+ * The position a helper writes when a case names none. TEAM POSITION (`0015`):
+ * the pilot uses fire ranks and positions, so a version naming a team there
+ * carries {@link DEFAULT_TEST_POSITION}; UJ-5 does not, so it carries null and
+ * the cases written before positions existed keep exercising the null path.
+ * Either way every version a case writes in one organization carries the same
+ * position, so those cases keep meaning what they meant: dates and teams.
+ */
+const DEFAULT_TEST_POSITION = 'firefighter';
+
+/** The position a version naming a team carries by default in `slug`. */
+function defaultPositionIn(slug: string): string | null {
+  return SEEDED_USES_FIRE_RANKS[slug] === true ? DEFAULT_TEST_POSITION : null;
+}
+
+/** The default position by the organization's SEEDED setting, read as the
+ *  owner's view of its slug so it holds whoever the connection is acting as. */
+async function positionFor(
+  client: Client,
+  version: { organization: string; team: string | null; position?: string | null },
+): Promise<string | null> {
+  if (version.position !== undefined) return version.position;
+  if (version.team === null) return null;
+
+  const slug = FIXTURE_SLUG_BY_ORGANIZATION.get(version.organization) ?? (await slugOf(client, version.organization));
+
+  return slug === undefined ? null : defaultPositionIn(slug);
+}
+
+/** Organization id → slug, filled as `slugOf` learns them. */
+const FIXTURE_SLUG_BY_ORGANIZATION = new Map<string, string>();
+
+/** The slug of an organization, as whoever the connection is acting as: a
+ *  row the session cannot see (another tenant's) has no default at all. */
+async function slugOf(client: Client, organization: string): Promise<string | undefined> {
+  const { rows } = await client.query<{ slug: string }>(
+    'select slug from organizations where id = $1',
+    [organization],
+  );
+  const slug = rows[0]?.slug;
+  if (slug !== undefined) FIXTURE_SLUG_BY_ORGANIZATION.set(organization, slug);
+  return slug;
+}
+
+/** One membership version, as whoever the connection currently is: the five
  *  columns a session may name, and nothing else. */
 async function insertMembership(
   client: Client,
-  version: { organization: string; member: string; team: string | null; from: string },
+  version: {
+    organization: string;
+    member: string;
+    team: string | null;
+    from: string;
+    position?: string | null;
+  },
 ): Promise<{ rowCount: number | null }> {
   return client.query(
-    `insert into team_membership_versions (organization_id, member_id, team_id, effective_from)
-     values ($1, $2, $3, $4::date)`,
-    [version.organization, version.member, version.team, version.from],
+    `insert into team_membership_versions (organization_id, member_id, team_id, position, effective_from)
+     values ($1, $2, $3, $4, $5::date)`,
+    [version.organization, version.member, version.team, await positionFor(client, version), version.from],
   );
 }
 
@@ -7590,13 +7646,27 @@ async function insertMembership(
  *  a case starts from (a past date is only reachable this way). */
 async function ownerMembership(
   client: Client,
-  version: { organization: string; member: string; team: string | null; from: string; by: string },
+  version: {
+    organization: string;
+    member: string;
+    team: string | null;
+    from: string;
+    by: string;
+    position?: string | null;
+  },
 ): Promise<void> {
   await client.query(
     `insert into team_membership_versions
-       (organization_id, member_id, team_id, effective_from, created_by)
-     values ($1, $2, $3, $4::date, $5)`,
-    [version.organization, version.member, version.team, version.from, version.by],
+       (organization_id, member_id, team_id, position, effective_from, created_by)
+     values ($1, $2, $3, $4, $5::date, $6)`,
+    [
+      version.organization,
+      version.member,
+      version.team,
+      await positionFor(client, version),
+      version.from,
+      version.by,
+    ],
   );
 }
 
@@ -8573,6 +8643,9 @@ describe('a direct API call moves members between teams under exactly the same r
         const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
         const today = await organizationDay(client, caller.organizationId);
         const token = await tokenFor(admin, slug);
+        // TEAM POSITION: what the edit screen sends — a position while the
+        // setting is on, null while it is off.
+        const position = SEEDED_USES_FIRE_RANKS[slug] === true ? 'driver' : null;
 
         const written = await rest('team_membership_versions', {
           token,
@@ -8581,6 +8654,7 @@ describe('a direct API call moves members between teams under exactly the same r
             organization_id: caller.organizationId,
             member_id: target.id,
             team_id: team.id,
+            position,
             effective_from: today,
           },
         });
@@ -8590,7 +8664,7 @@ describe('a direct API call moves members between teams under exactly the same r
         const columns =
           'organization_id,id,auth_user_id,name,username,email,role,leave_allowance_days,' +
           'member_status_versions(active,effective_from),' +
-          'team_membership_versions(team_id,effective_from,teams(name)),organizations(timezone)';
+          'team_membership_versions(team_id,position,effective_from,teams(name)),organizations(timezone)';
         // STORY 1.8: a member-role session reads only its own row, so a
         // colleague's team reaches it through `team_roster`, never this embed.
         expect(
@@ -8604,7 +8678,7 @@ describe('a direct API call moves members between teams under exactly the same r
             token: await tokenFor(reader, slug),
           });
           expect(rows[0]?.['team_membership_versions'], `${reader} read no team`).toEqual([
-            { team_id: team.id, effective_from: today, teams: { name: team.name } },
+            { team_id: team.id, position, effective_from: today, teams: { name: team.name } },
           ]);
         }
       } finally {
@@ -8646,7 +8720,7 @@ describe('a direct API call moves members between teams under exactly the same r
         const columns =
           'organization_id,id,auth_user_id,name,username,email,role,leave_allowance_days,' +
           'member_status_versions(active,effective_from),' +
-          'team_membership_versions(team_id,effective_from,teams(name)),organizations(timezone)';
+          'team_membership_versions(team_id,position,effective_from,teams(name)),organizations(timezone)';
         expect(
           await restRows(`members?select=${columns}&id=eq.${target.id}`, {
             token: await tokenFor(member, slug),
@@ -8661,8 +8735,13 @@ describe('a direct API call moves members between teams under exactly the same r
             ...((rows[0]?.['team_membership_versions'] ?? []) as { effective_from: string }[]),
           ].sort((first, second) => first.effective_from.localeCompare(second.effective_from));
           expect(versions, `${reader} lost the archived team's name`).toEqual([
-            { team_id: team.id, effective_from: joined, teams: { name: team.name } },
-            { team_id: null, effective_from: left, teams: null },
+            {
+              team_id: team.id,
+              position: defaultPositionIn(slug),
+              effective_from: joined,
+              teams: { name: team.name },
+            },
+            { team_id: null, position: null, effective_from: left, teams: null },
           ]);
         }
       } finally {
@@ -8919,12 +8998,17 @@ describe('a member sees who is on a team, and nothing more about a colleague', (
           for (const entry of rows[0]?.members ?? []) {
             // MEMBER RANK: `0014` adds `fire_rank`, returned whatever the
             // setting says — the interface decides whether to show it.
+            // TEAM POSITION: `0015` adds `position`, the one in effect today,
+            // on the same terms.
             expect(
               Object.keys(entry).sort(),
-              `${slug}: the roster names a field besides id, name and rank`,
-            ).toEqual(['fire_rank', 'id', 'name']);
+              `${slug}: the roster names a field besides id, name, rank and position`,
+            ).toEqual(['fire_rank', 'id', 'name', 'position']);
             expect(entry['name']).toBe(`${THROWAWAY} target`);
             expect(entry['fire_rank'], `${slug}: a throwaway member carries a rank`).toBeNull();
+            expect(entry['position'], `${slug}: the roster lost today's position`).toBe(
+              defaultPositionIn(slug),
+            );
           }
         }
       });
@@ -9162,7 +9246,7 @@ describe('a member sees who is on a team, and nothing more about a colleague', (
       // reaches `@/i18n` through a path alias the root project cannot resolve.
       // `apps/web/src/teams/roster.test.ts` pins the constant to this literal.
       const OWN_TEAM_COLUMNS =
-        'team_membership_versions(team_id,effective_from,teams(name)),organizations(timezone)';
+        'team_membership_versions(team_id,position,effective_from,teams(name)),organizations(timezone)';
       const client = await connect();
       try {
         const owner = await memberByUsername(client, slug, admin);
@@ -9181,6 +9265,8 @@ describe('a member sees who is on a team, and nothing more about a colleague', (
             organization_id: owner.organizationId,
             member_id: self.id,
             team_id: team.id,
+            // TEAM POSITION: a position while the setting is on, none while off.
+            position: SEEDED_USES_FIRE_RANKS[slug] === true ? 'driver' : null,
             effective_from: today,
           },
         });
@@ -9193,7 +9279,12 @@ describe('a member sees who is on a team, and nothing more about a colleague', (
 
         expect(rows, `${slug}: the member did not read exactly its own row`).toHaveLength(1);
         expect(rows[0]?.['team_membership_versions']).toEqual([
-          { team_id: team.id, effective_from: today, teams: { name: team.name } },
+          {
+            team_id: team.id,
+            position: SEEDED_USES_FIRE_RANKS[slug] === true ? 'driver' : null,
+            effective_from: today,
+            teams: { name: team.name },
+          },
         ]);
         expect(rows[0]?.['organizations']).toEqual({ timezone: zone[0]?.timezone });
       } finally {
@@ -9234,7 +9325,14 @@ describe('a member sees who is on a team, and nothing more about a colleague', (
             {
               name: team.name,
               archived: false,
-              members: [{ id: target.id, name: `${THROWAWAY} target`, fire_rank: null }],
+              members: [
+                {
+                  id: target.id,
+                  name: `${THROWAWAY} target`,
+                  fire_rank: null,
+                  position: defaultPositionIn(slug),
+                },
+              ],
             },
           ]);
         }
@@ -9361,7 +9459,7 @@ describe('a member carries a rank from a fixed list, behind a setting an admin o
       for (const [index, [username, rank]] of Object.entries(SEEDED_PILOT_RANKS).entries()) {
         const entry = byId.get(seeded[index]?.id);
 
-        expect(Object.keys(entry ?? {}).sort()).toEqual(['fire_rank', 'id', 'name']);
+        expect(Object.keys(entry ?? {}).sort()).toEqual(['fire_rank', 'id', 'name', 'position']);
         expect(entry?.['fire_rank'], `${username} on the roster`).toBe(rank);
       }
     });
@@ -9542,6 +9640,504 @@ describe('a member carries a rank from a fixed list, behind a setting an admin o
       ]);
     });
   });
+});
+
+// ---------------------------------------------------------- team position
+
+/**
+ * TEAM POSITION, part B of "rank and team position". `0015_team_position.sql`
+ * is the whole enforcement: `team_membership_versions.position` under a check
+ * of three codes and "no team, no position", `member_team_version_on` as the
+ * one reading of team and position at a date, `0010`'s insert policy ALTERED
+ * so a version changes the team OR the position and carries a position while
+ * the organization uses fire ranks and positions, and `team_roster` returning
+ * today's position. Every SQL case runs in a rolled-back transaction and sets
+ * the setting it is about explicitly, so both fixtures prove both states; the
+ * REST case commits on a throwaway member and team, and restores nothing it
+ * did not write.
+ */
+
+/** Switch the setting inside the case's own transaction, as the owner. */
+async function setUsesFireRanks(client: Client, organization: string, uses: boolean): Promise<void> {
+  await client.query('update organizations set uses_fire_ranks = $1 where id = $2', [
+    uses,
+    organization,
+  ]);
+}
+
+/** `member_team_version_on`, as whoever the connection is: no row is none. */
+async function teamVersionOn(
+  client: Client,
+  member: string,
+  day: string,
+): Promise<{ team_id: string | null; position: string | null } | null> {
+  const { rows } = await client.query<{ team_id: string | null; position: string | null }>(
+    'select team_id, position from public.member_team_version_on($1, $2::date)',
+    [member, day],
+  );
+  expect(rows.length, 'the reader returned more than one version').toBeLessThanOrEqual(1);
+  return rows[0] ?? null;
+}
+
+/** The position one member carries on a roster, or `undefined` when absent. */
+function rosterPositionOf(rows: readonly RosterRow[], member: string): unknown {
+  return (rows[0]?.members ?? []).find((entry) => entry['id'] === member)?.['position'];
+}
+
+describe('a member holds a position in their team from a date, under the membership rules', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'moves a $fixture member into a team as driver with the setting on, and the roster says so',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const reader = await memberByUsername(client, slug, member);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const today = await organizationDay(client, caller.organizationId);
+        await setUsesFireRanks(client, caller.organizationId, true);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const written = await insertMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: team.id,
+          position: 'driver',
+          from: today,
+        });
+        await actAsOwner(client);
+
+        expect(written.rowCount, `the ${slug} admin could not move a member in as driver`).toBe(1);
+        expect(await membershipsOf(client, target.id)).toMatchObject([
+          { teamId: team.id, position: 'driver', from: today },
+        ]);
+        expect(await teamVersionOn(client, target.id, today)).toEqual({
+          team_id: team.id,
+          position: 'driver',
+        });
+
+        // The ROSTER, as the member role and as the admin: today's position.
+        for (const who of [reader, caller]) {
+          await actAs(client, who.authUserId, who.organizationId);
+          const rows = await rosterOf(client, team.id);
+          await actAsOwner(client);
+          expect(rosterPositionOf(rows, target.id), `${slug}: the roster lost the position`).toBe(
+            'driver',
+          );
+        }
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'schedules a $fixture position-only change, and the roster shows the old position until its date',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const joined = await organizationDay(client, caller.organizationId, -3);
+        const today = await organizationDay(client, caller.organizationId);
+        const promoted = await organizationDay(client, caller.organizationId, 7);
+        await setUsesFireRanks(client, caller.organizationId, true);
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: team.id,
+          position: 'driver',
+          from: joined,
+          by: caller.authUserId,
+        });
+        const before = await membershipsOf(client, target.id);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const written = await insertMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: team.id,
+          position: 'commander',
+          from: promoted,
+        });
+        const rows = await rosterOf(client, team.id);
+        await actAsOwner(client);
+
+        expect(written.rowCount, 'a position-only change was refused').toBe(1);
+        const after = await membershipsOf(client, target.id);
+        expect(after).toHaveLength(2);
+        expect(after[0], 'the earlier row changed').toEqual(before[0]);
+        expect(after[1]).toMatchObject({ teamId: team.id, position: 'commander', from: promoted });
+        // SAME TEAM throughout; the position changes on its date.
+        expect(await teamOn(client, target.id, promoted)).toBe(team.id);
+        expect((await teamVersionOn(client, target.id, today))?.position).toBe('driver');
+        expect((await teamVersionOn(client, target.id, promoted))?.position).toBe('commander');
+        expect(rosterPositionOf(rows, target.id), 'the roster read the scheduled position').toBe(
+          'driver',
+        );
+        // And it is WITHDRAWN exactly like a move.
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const cancelled = await cancelMembership(client, { member: target.id, from: promoted });
+        await actAsOwner(client);
+        expect(cancelled.rowCount, 'the scheduled position change could not be cancelled').toBe(1);
+        expect(await membershipsOf(client, target.id)).toEqual(before);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture version that changes neither the team nor the position',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const joined = await organizationDay(client, caller.organizationId, -3);
+        const today = await organizationDay(client, caller.organizationId);
+        await setUsesFireRanks(client, caller.organizationId, true);
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: team.id,
+          position: 'driver',
+          from: joined,
+          by: caller.authUserId,
+        });
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const refusal = await refusedThenContinue(client, () =>
+          insertMembership(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            team: team.id,
+            position: 'driver',
+            from: today,
+          }),
+        );
+        await actAsOwner(client);
+
+        expect(refusal.code, 'an unchanged team and position was admitted').toBe('42501');
+        expect(await membershipsOf(client, target.id)).toHaveLength(1);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture team with no position while the setting is on, and admits it while off',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const today = await organizationDay(client, caller.organizationId);
+        const version = {
+          organization: caller.organizationId,
+          member: target.id,
+          team: team.id,
+          position: null,
+          from: today,
+        };
+
+        await setUsesFireRanks(client, caller.organizationId, true);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const refusal = await refusedThenContinue(client, () => insertMembership(client, version));
+        await actAsOwner(client);
+
+        expect(refusal.code, 'a team was joined with no position while the setting is on').toBe(
+          '42501',
+        );
+        expect(await membershipsOf(client, target.id)).toEqual([]);
+
+        // THE SETTING OFF: the client sends null, and it is admitted.
+        await setUsesFireRanks(client, caller.organizationId, false);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const written = await insertMembership(client, version);
+        await actAsOwner(client);
+
+        expect(written.rowCount, 'a null position was refused with the setting off').toBe(1);
+        expect(await membershipsOf(client, target.id)).toMatchObject([
+          { teamId: team.id, position: null },
+        ]);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const rows = await rosterOf(client, team.id);
+        await actAsOwner(client);
+        expect(rosterPositionOf(rows, target.id), 'the roster invented a position').toBeNull();
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture position on "no team", and a code outside the list, in the table itself',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const joined = await organizationDay(client, caller.organizationId, -3);
+        const today = await organizationDay(client, caller.organizationId);
+        await setUsesFireRanks(client, caller.organizationId, true);
+        // A version to follow, so "no team" passes every policy conjunct and
+        // only the table's own check is left to refuse it.
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: team.id,
+          position: 'driver',
+          from: joined,
+          by: caller.authUserId,
+        });
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const noTeam = await refusedThenContinue(client, () =>
+          insertMembership(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            team: null,
+            position: 'driver',
+            from: today,
+          }),
+        );
+        const unknown = await refusedThenContinue(client, () =>
+          insertMembership(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            team: team.id,
+            position: 'chief',
+            from: today,
+          }),
+        );
+        await actAsOwner(client);
+
+        expect(noTeam.code, 'a position was stored on "no team"').toBe('23514');
+        expect(noTeam.message).toContain('team_membership_versions_position_needs_team');
+        expect(unknown.code, 'a code outside the list was stored').toBe('23514');
+        expect(unknown.message).toContain('team_membership_versions_position_code_check');
+        expect(await membershipsOf(client, target.id)).toHaveLength(1);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses every $fixture member-role insert, with or without a position',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const team = await addThrowawayTeam(client, owner.organizationId, owner.authUserId);
+        const today = await organizationDay(client, owner.organizationId);
+
+        for (const uses of [true, false]) {
+          await setUsesFireRanks(client, owner.organizationId, uses);
+          for (const position of ['commander', null]) {
+            await actAs(client, self.authUserId, self.organizationId);
+            const refusal = await refusedThenContinue(client, () =>
+              insertMembership(client, {
+                organization: self.organizationId,
+                member: self.id,
+                team: team.id,
+                position,
+                from: today,
+              }),
+            );
+            await actAsOwner(client);
+            expect(refusal.code, `a ${slug} member-role session wrote a membership`).toBe('42501');
+          }
+        }
+        expect(await membershipsOf(client, self.id)).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'offers a $fixture legacy version with no position a change to a position, once the setting is on',
+    async ({ slug, admin }) => {
+      // A version written while the setting was off keeps its null position;
+      // switching the setting on rewrites nothing, and giving that member a
+      // position in the same team IS a change.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const joined = await organizationDay(client, caller.organizationId, -3);
+        const today = await organizationDay(client, caller.organizationId);
+        await setUsesFireRanks(client, caller.organizationId, false);
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: team.id,
+          position: null,
+          from: joined,
+          by: caller.authUserId,
+        });
+        await setUsesFireRanks(client, caller.organizationId, true);
+
+        expect(await membershipsOf(client, target.id), 'switching the setting rewrote a row').toMatchObject([
+          { teamId: team.id, position: null },
+        ]);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        expect(
+          rosterPositionOf(await rosterOf(client, team.id), target.id),
+          'the roster invented a legacy position',
+        ).toBeNull();
+        const written = await insertMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: team.id,
+          position: 'firefighter',
+          from: today,
+        });
+        await actAsOwner(client);
+
+        expect(written.rowCount, 'a legacy member could not be given a position').toBe(1);
+        expect(await teamVersionOn(client, target.id, today)).toEqual({
+          team_id: team.id,
+          position: 'firefighter',
+        });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('reads no version for a member with none, and the latest one at infinity', () => {
+    return inRolledBackTransaction(async (client) => {
+      const caller = await memberByUsername(client, PILOT.slug, PILOT.admin);
+      const target = await addThrowawayMember(client, caller.organizationId);
+      const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+      const joined = await organizationDay(client, caller.organizationId, -3);
+      const later = await organizationDay(client, caller.organizationId, 4);
+
+      expect(await teamVersionOn(client, target.id, 'infinity')).toBeNull();
+      for (const [position, from] of [
+        ['driver', joined],
+        ['commander', later],
+      ] as const) {
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: team.id,
+          position,
+          from,
+          by: caller.authUserId,
+        });
+      }
+      expect(await teamVersionOn(client, target.id, 'infinity')).toEqual({
+        team_id: team.id,
+        position: 'commander',
+      });
+      expect(await teamVersionOn(client, target.id, await organizationDay(client, caller.organizationId, -4))).toBeNull();
+    });
+  });
+
+  it.skipIf(noDatabase)('runs the position rule fail-closed, as the database holds it', () => {
+    // FAIL CLOSED (`0015`): a null position is admitted only on a VISIBLE
+    // organization row that says the setting is off — never on the absence of
+    // a row that says it is on. The on and off behaviour is proven by the
+    // cases above; an invisible row cannot be staged on its own, because
+    // `organization_today` reads the same row and refuses first. So the policy
+    // the database RUNS is read here, from the catalogue rather than the file.
+    return inRolledBackTransaction(async (client) => {
+      const { rows } = await client.query<{ check: string }>(
+        `select with_check as check from pg_policies
+          where schemaname = 'public'
+            and tablename = 'team_membership_versions'
+            and policyname = 'team_membership_versions_insert_by_own_active_admin'`,
+      );
+      const check = (rows[0]?.check ?? '').replace(/\s+/g, ' ');
+
+      expect(check, 'no insert policy on team_membership_versions').not.toBe('');
+      expect(check).toMatch(
+        /\(team_id IS NULL\) OR \("position" IS NOT NULL\) OR \(EXISTS \( SELECT 1 FROM organizations organization WHERE \(\(organization\.id = team_membership_versions\.organization_id\) AND \(NOT organization\.uses_fire_ranks\)\)\)\)/,
+      );
+      expect(check, 'the position rule fails open').not.toMatch(
+        /NOT \(EXISTS \( SELECT 1 FROM organizations/,
+      );
+    });
+  });
+
+  it.skipIf(noDatabase)('admits exactly the three codes, asked of the constraint itself', () => {
+    return inRolledBackTransaction(async (client) => {
+      const { rows } = await client.query<{ definition: string }>(
+        `select pg_get_constraintdef(c.oid) as definition
+           from pg_constraint c
+           join pg_class t on t.oid = c.conrelid
+           join pg_namespace n on n.oid = t.relnamespace
+          where n.nspname = 'public'
+            and t.relname = 'team_membership_versions'
+            and c.conname = 'team_membership_versions_position_code_check'`,
+      );
+      const definition = rows[0]?.definition ?? '';
+
+      expect(definition, 'no check constraint on team_membership_versions.position').not.toBe('');
+      expect([...definition.matchAll(/'([a-z0-9_]+)'/g)].map((found) => found[1])).toEqual([
+        'commander',
+        'driver',
+        'firefighter',
+      ]);
+    });
+  });
+
+  it.skipIf(noApi)(
+    'moves a pilot member in over PostgREST as the edit screen sends it, then refuses an unchanged repeat',
+    async () => {
+      const client = await connect();
+      try {
+        const caller = await memberByUsername(client, PILOT.slug, PILOT.admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const today = await organizationDay(client, caller.organizationId);
+        const later = await organizationDay(client, caller.organizationId, 3);
+        const token = await tokenFor(PILOT.admin, PILOT.slug);
+        const body = (position: string | null, from: string) => ({
+          organization_id: caller.organizationId,
+          member_id: target.id,
+          team_id: team.id,
+          position,
+          effective_from: from,
+        });
+
+        expect(SEEDED_USES_FIRE_RANKS[PILOT.slug], 'the pilot does not use positions').toBe(true);
+        const moved = await rest('team_membership_versions', {
+          token,
+          method: 'POST',
+          body: body('driver', today),
+        });
+        expect(moved.status, await moved.clone().text()).toBe(201);
+
+        const unchanged = await rest('team_membership_versions', {
+          token,
+          method: 'POST',
+          body: body('driver', later),
+        });
+        expect(unchanged.status, 'an unchanged team and position was admitted').toBe(403);
+        expect((await restRefusal(unchanged)).code).toBe('42501');
+
+        const none = await rest('team_membership_versions', {
+          token,
+          method: 'POST',
+          body: body(null, later),
+        });
+        expect(none.status, 'a team with no position was admitted').toBe(403);
+
+        const unknown = await rest('team_membership_versions', {
+          token,
+          method: 'POST',
+          body: body('chief', later),
+        });
+        expect(unknown.status, 'a code outside the list was admitted').toBe(400);
+        expect((await restRefusal(unknown)).code).toBe('23514');
+
+        const promoted = await rest('team_membership_versions', {
+          token,
+          method: 'POST',
+          body: body('commander', later),
+        });
+        expect(promoted.status, await promoted.clone().text()).toBe(201);
+        expect(await membershipsOf(client, target.id)).toMatchObject([
+          { teamId: team.id, position: 'driver', from: today },
+          { teamId: team.id, position: 'commander', from: later },
+        ]);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
 });
 
 // ------------------------------------------------------------ story 2.1a: bands

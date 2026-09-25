@@ -1080,7 +1080,7 @@ describe('every organization table carries row level security, and only its revi
   it.skipIf(noDatabase)('holds no privilege on team_membership_versions that no policy needs', async () => {
     // STORY 1.7b, the status table's matrix exactly: `authenticated` keeps
     // SELECT and DELETE (each narrowed by a policy) and a column-level INSERT
-    // on the four facts; `anon` keeps nothing, and no session names the
+    // on the four facts (five since team position); `anon` keeps nothing, and no session names the
     // attribution.
     const client = await connect();
     try {
@@ -1098,8 +1098,8 @@ describe('every organization table carries row level security, and only its revi
       const { rows: columns } = await client.query<{ column: string; verb: string; held: boolean }>(
         `select column_name as column, verb,
                 has_column_privilege('authenticated', 'public.team_membership_versions', column_name, verb) as held
-           from unnest(array['organization_id', 'id', 'member_id', 'team_id', 'effective_from',
-                             'created_by', 'created_at']) as column_name,
+           from unnest(array['organization_id', 'id', 'member_id', 'team_id', 'position',
+                             'effective_from', 'created_by', 'created_at']) as column_name,
                 unnest(array['INSERT', 'UPDATE']) as verb`,
       );
       expect(
@@ -1112,6 +1112,8 @@ describe('every organization table carries row level security, and only its revi
         'INSERT:effective_from',
         'INSERT:member_id',
         'INSERT:organization_id',
+        // TEAM POSITION: a fifth fact, joined to the grant (`0015`).
+        'INSERT:position',
         'INSERT:team_id',
       ]);
     } finally {
@@ -1321,6 +1323,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'member_team_has_version', argumentCount: 1, expected: ['authenticated'] },
     { name: 'team_membership_latest_version', argumentCount: 1, expected: ['authenticated'] },
     { name: 'team_in_use', argumentCount: 1, expected: ['authenticated'] },
+    // TEAM POSITION's reader of team and position at a date, on the same terms.
+    { name: 'member_team_version_on', argumentCount: 2, expected: ['authenticated'] },
     // STORY 2.2a's two version readers, on the same terms.
     { name: 'shift_type_latest_version', argumentCount: 1, expected: ['authenticated'] },
     { name: 'shift_type_times_on', argumentCount: 2, expected: ['authenticated'] },
@@ -1338,6 +1342,7 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'member_team_has_version', argumentCount: 1 },
     { name: 'team_membership_latest_version', argumentCount: 1 },
     { name: 'team_in_use', argumentCount: 1 },
+    { name: 'member_team_version_on', argumentCount: 2 },
     { name: 'shift_type_latest_version', argumentCount: 1 },
     { name: 'shift_type_times_on', argumentCount: 2 },
   ])('runs $name as the caller, with an empty search_path', async ({ name, argumentCount }) => {

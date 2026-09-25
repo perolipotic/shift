@@ -519,13 +519,27 @@ const SANCTIONED_SCREEN_KEYS = [
   'smjene.membership.column',
   'smjene.membership.none',
   'smjene.membership.current',
+  // TEAM POSITION: the team today and the scheduled change, each with the
+  // position it is held in.
+  'smjene.membership.currentPosition',
   'smjene.membership.scheduled',
+  'smjene.membership.scheduledPosition',
+  // and a scheduled change that keeps the team: by position, or neutral while
+  // positions are off, never as a move onto the team the member is on.
+  'smjene.membership.scheduledPositionOnly',
+  'smjene.membership.scheduledChange',
   'smjene.membership.scheduledNone',
   'smjene.membership.team',
   'smjene.membership.date',
   'smjene.membership.move',
   'smjene.membership.movePrompt',
   'smjene.membership.movePromptFuture',
+  // TEAM POSITION: a move naming its position, and a position-only change,
+  // each today or later.
+  'smjene.membership.movePositionPrompt',
+  'smjene.membership.movePositionPromptFuture',
+  'smjene.membership.positionPrompt',
+  'smjene.membership.positionPromptFuture',
   'smjene.membership.removePrompt',
   'smjene.membership.removePromptFuture',
   'smjene.membership.moveConfirm',
@@ -538,6 +552,10 @@ const SANCTIONED_SCREEN_KEYS = [
   'smjene.membership.error.taken',
   'smjene.membership.error.order',
   'smjene.membership.error.unchanged',
+  // TEAM POSITION: the same team and the same position.
+  'smjene.membership.error.positionUnchanged',
+  // TEAM POSITION: a team chosen with no position while positions are in use.
+  'smjene.membership.error.positionRequired',
   'smjene.membership.error.scheduled',
   'smjene.membership.error.inEffect',
   'smjene.membership.error.archived',
@@ -550,6 +568,17 @@ const SANCTIONED_SCREEN_KEYS = [
   'smjene.roster.withRank',
   // and the roster's own lowercase "unknown rank", beside lowercase labels.
   'smjene.roster.rankUnknown',
+  // TEAM POSITION: a roster name with its position, and with both.
+  'smjene.roster.withPosition',
+  'smjene.roster.withRankAndPosition',
+  // TEAM POSITION: the position control's label, the three fixed position
+  // nouns, lowercase because they read beside a name, and a code this build
+  // lacks.
+  'smjene.position.label',
+  'smjene.position.commander',
+  'smjene.position.driver',
+  'smjene.position.firefighter',
+  'smjene.position.unknown',
   'smjene.roster.error.unavailable',
   'smjene.today.label',
   'smjene.today.error.unavailable',

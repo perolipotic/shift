@@ -190,6 +190,9 @@ const ACCENT_KEYS = join(srcRoot, 'organization', 'accent.ts');
 /** The fixed rank list as data (member rank), and its two label mappings. */
 const RANK_KEYS = join(srcRoot, 'members', 'rank.ts');
 
+/** The fixed position list as data (team position), and its label mapping. */
+const POSITION_KEYS = join(srcRoot, 'members', 'position.ts');
+
 /**
  * The one signed-URL read behind every lockup.
  *
@@ -367,7 +370,10 @@ const SCREENS = [
   // the status block's shape, because one press must not move somebody.
   //
   // TWENTY-TWO SINCE MEMBER RANK: the rank `<select>`, as on the create form.
-  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 22 },
+  //
+  // TWENTY-THREE SINCE TEAM POSITION: the position `<select>` in the team
+  // block, written once and shown only while the setting is on.
+  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 23 },
   // STORY 1.7a. FOUR on the team list: the link back to `Ljudi`, the one name
   // `<Input>`, the add `<Button>`, and ONE row link written once inside the map
   // over the teams — the same count at zero teams as at nine. SIX on one team:
@@ -1456,10 +1462,14 @@ const KEY_SOURCES = [
     //
     // FIVE SINCE MEMBER RANK: the name-and-rank line. The rank's own words
     // reach `t()` through `rankMessageKey`.
+    //
+    // FOUR SINCE TEAM POSITION: the name-and-rank line moved, with the two
+    // lines carrying a position, into `@/members/position`'s
+    // `rosterLineMessageKey`, where a node test executes the choice.
     name: 'the team roster',
     file: TEAM_ROSTER,
     keys: translationKeys,
-    strings: 5,
+    strings: 4,
   },
   {
     // ONE on Danas: its own `nav.danas` heading. The line's words and its
@@ -1639,10 +1649,20 @@ const KEY_SOURCES = [
     // refusals, the two offers (move, cancel the scheduled move), five prompts
     // (onto a team or onto none, today or later, and the cancellation), the
     // two confirms, and the two scheduled lines (onto a team, onto none).
+    //
+    // SIXTY-TWO SINCE TEAM POSITION: the refusal for an unchanged team AND
+    // position, four prompts (a move naming its position, and a position-only
+    // change, each today or later), the scheduled line with a position, and
+    // the current-team line in both its forms — moved here out of the screen
+    // as `teamCurrentMessageKey`'s union.
+    //
+    // SIXTY-FIVE after review: the refusal for a team with no position while
+    // positions are in use, and the two scheduled lines for a change that
+    // keeps the team — by position, and neutral while positions are off.
     name: 'the member write rules',
     file: MEMBER_WRITE_KEYS,
     keys: memberWriteKeys,
-    strings: 54,
+    strings: 65,
   },
   {
     // ELEVEN on the member list's rules: four column headings, two permission
@@ -1697,6 +1717,18 @@ const KEY_SOURCES = [
     file: RANK_KEYS,
     keys: memberListKeys,
     strings: 29,
+  },
+  {
+    // TEAM POSITION. SEVEN over two unions: the three position labels and the
+    // unknown position (`positionMessageKey`), and the roster's three lines —
+    // with a rank, with a position, with both (`rosterLineMessageKey`). Read
+    // by `memberListKeys`, the extractor the rank mapping uses, because both
+    // modules declare keys only as `\w*MessageKey` return unions. A mapping for
+    // the rank's reason, and `position.test.ts` runs it.
+    name: 'the position-to-label mapping',
+    file: POSITION_KEYS,
+    keys: memberListKeys,
+    strings: 7,
   },
   {
     // TEN since story 1.4b, and one function rather than two: the surface
@@ -1800,8 +1832,10 @@ describe('the screen is read at all, so every sweep below means something', () =
     // the placeholders and arrived as a built entry (net zero on both lists),
     // the shift type edit screen is new (one each), and so are both
     // `@/shift-types` modules as key sources (two more).
+    //
+    // THIRTY-SEVEN KEY SOURCES SINCE TEAM POSITION: `@/members/position`.
     expect(SCREENS).toHaveLength(23);
-    expect(KEY_SOURCES).toHaveLength(36);
+    expect(KEY_SOURCES).toHaveLength(37);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -2931,8 +2965,9 @@ describe('the roster and the Danas line read once, show names only, and write no
     return text.replace(/'[^'\n]*'/g, "''").replace(/"[^"\n]*"/g, '""');
   }
 
-  /** What a roster member is: an id, a name and — member rank — a rank (CAP-5). */
-  const ROSTER_FIELDS = ['id', 'name', 'fireRank'];
+  /** What a roster member is: an id, a name, a rank (member rank) and a
+   *  position (team position) (CAP-5). */
+  const ROSTER_FIELDS = ['id', 'name', 'fireRank', 'position'];
 
   // MEMBER RANK: the roster also reads the ORGANIZATION snapshot, under its one
   // shared key, for the setting that decides whether a rank is shown. That is a
@@ -3026,6 +3061,7 @@ describe('every native select draws the one Input look (visual refresh B)', () =
    * another and to the string `components/README.md` documents. SIX SINCE THE
    * TEAM FILTER: the member list has two, level and team. NINE SINCE MEMBER
    * RANK: the fire-rank setting and the rank control on both member forms.
+   * TEN SINCE TEAM POSITION: the position control in the team block.
    */
   const SELECT_SCREENS = [MEMBER_LIST, MEMBER_CREATE, MEMBER_EDIT, SETTINGS];
   const README = join(srcRoot, 'components', 'README.md');
@@ -3036,13 +3072,13 @@ describe('every native select draws the one Input look (visual refresh B)', () =
     );
   }
 
-  it('finds all nine, so the comparison is not vacuous', () => {
+  it('finds all ten, so the comparison is not vacuous', () => {
     // NINE SINCE MEMBER RANK: the fire-rank setting, and the rank control on
-    // both member forms.
-    expect(selectClasses()).toHaveLength(9);
+    // both member forms. TEN SINCE TEAM POSITION: the position control.
+    expect(selectClasses()).toHaveLength(10);
   });
 
-  it('gives all nine the identical class string, and it is the documented one', () => {
+  it('gives all ten the identical class string, and it is the documented one', () => {
     const documented =
       /Select class string:\s*`([^`]+)`/.exec(readFileSync(README, 'utf8'))?.[1] ?? '';
 
@@ -5010,7 +5046,56 @@ describe('member rank: the setting gates display and entry, and deletes nothing'
 
     expect(screen).toContain('rosterRankMessageKey(member.fireRank, shown)');
     expect(screen).toContain('const shown = ranksShown(');
-    expect(screen).toContain("t('smjene.roster.withRank', { name: member.name, rank: t(rank) })");
+    // WHICH LINE is `rosterLineOf`'s decision (`position.test.ts` runs all four).
+    expect(screen).toContain('rosterLineOf(member.name, rank, position, (key) => t(key))');
+    expect(screen).toContain('line.key === null ? line.text : t(line.key, line.values)');
+  });
+});
+
+describe('team position: the setting gates the position control and the roster text', () => {
+  /**
+   * TEAM POSITION. Every rule is executed in `@/members/position` and
+   * `@/members/write`; what is read here is the wiring the `.tsx` holds.
+   */
+  it('offers the position beside the team only through the tested gates', () => {
+    const screen = source(MEMBER_EDIT);
+    const position =
+      selectElements(screen).find((control) => control.includes('id="member-position"')) ?? '';
+
+    expect(position, 'no position control on the member edit form').not.toBe('');
+    expect(labelTargets(screen)).toContain('member-position');
+    // THE SETTING AS A STATE (on, off, pending, failed), and the offer from it:
+    // no move until it is known (`write.test.ts` runs all four).
+    expect(screen).toContain('const positionsSetting = teamPositionsSettingOf(organization);');
+    expect(screen).toContain('const offersPosition = teamPositionsOn(positionsSetting);');
+    expect(screen).toContain('teamOfferFor(form.member, activeTeams, today, positionsSetting)');
+    expect(screen).toContain('teamPositionsRefusalOf(positionsSetting)');
+    expect(screen, 'the screen derives the setting on its own').not.toContain('positionsShown(');
+    // Shown only for a picked team, while positions are offered.
+    expect(screen).toMatch(/!offersPositionFor\(offered, pickedTeam\)\) return null;/);
+    expect(position).toContain('defaultValue={positionPickerDefault(offered, pickedTeam)}');
+    expect(screen).toContain('<Fragment key={pickedTeam}>');
+    expect(screen).toContain('t(positionMessageKey(option))');
+    // ONE SOURCE for the picked team: the state, for the position control and
+    // the confirmation alike — never the DOM.
+    expect(screen).toContain('chosenTeam(pickedTeam, offered)');
+    expect(screen).toContain('teamPositionToSend(offered, pickedTeam, ');
+    expect(screen, 'the picked team is read back off the DOM').not.toMatch(/teamField/);
+    expect(screen).toContain('key={teamSelectKey(offered)}');
+    expect(screen).toMatch(/confirmation\.position,\s*\);/);
+    // A refusal for a missing position re-reads the organization.
+    expect(screen).toMatch(
+      /teamRefusalRereadsOrganization\(outcome\.refusal\.code\)\)[\s\S]{0,120}?queryKey: ORGANIZATION_SNAPSHOT_KEY/,
+    );
+    expect(screen).toContain('teamScheduledLineOf(member, today, offersPosition)');
+  });
+
+  it('shows the position on the roster only while the setting is on, as text', () => {
+    const screen = source(TEAM_ROSTER);
+
+    expect(screen).toContain('const positionShown = positionsShown(snapshot);');
+    expect(screen).toContain('rosterPositionMessageKey(member.position, positionShown)');
+    expect(screen).toContain('rosterLineOf(member.name, rank, position, (key) => t(key))');
   });
 });
 

@@ -265,6 +265,12 @@ export const MEMBER_TEAM_OUT_OF_ORDER = 'MEMBER_TEAM_OUT_OF_ORDER';
 /** The chosen team is the one the member is already on (or "no team" for a
  *  member on none). */
 export const MEMBER_TEAM_UNCHANGED = 'MEMBER_TEAM_UNCHANGED';
+/** The chosen team AND position are the ones the member already has (team
+ *  position, `0015`): a position-only change must change the position. */
+export const MEMBER_TEAM_POSITION_UNCHANGED = 'MEMBER_TEAM_POSITION_UNCHANGED';
+/** A team was chosen with no position while the organization uses positions
+ *  (`0015`) — or the setting changed since the screen read it. */
+export const MEMBER_TEAM_POSITION_REQUIRED = 'MEMBER_TEAM_POSITION_REQUIRED';
 /** A move is already scheduled; the only thing to do is cancel it first. */
 export const MEMBER_TEAM_SCHEDULED = 'MEMBER_TEAM_SCHEDULED';
 /** Cancelling a move already in effect — dated today or earlier. */
@@ -293,24 +299,54 @@ export function teamOfferMessageKey(
   return unhandled;
 }
 
+/** The confirmation names no position: none is offered, or no team is chosen. */
+export const PROMPT_TEAM_ONLY = 'team';
+/** The confirmation names the team and the position it is joined in. */
+export const PROMPT_WITH_POSITION = 'withPosition';
+/** The team stays; only the position changes, and the sentence says so. */
+export const PROMPT_POSITION_ONLY = 'positionOnly';
+
+/** How a team confirmation names the position (team position, `0015`). */
+export type TeamPromptPosition =
+  | typeof PROMPT_TEAM_ONLY
+  | typeof PROMPT_WITH_POSITION
+  | typeof PROMPT_POSITION_ONLY;
+
 /**
  * The confirmation's sentence. TENSE FOLLOWS THE DATE, as the status prompt's
  * does, and a move to no team is its own sentence rather than a team name
  * that is not one. A cancellation is only ever of a later date.
+ *
+ * THE POSITION IS NAMED WHEN IT CHANGES: a move while positions are in use
+ * names the position it is made in, and a change that keeps the team is its
+ * own sentence about the position.
  */
 export function teamPromptMessageKey(
   change: TeamChange,
   toNoTeam: boolean,
   future: boolean,
+  position: TeamPromptPosition = PROMPT_TEAM_ONLY,
 ):
   | 'smjene.membership.movePrompt'
   | 'smjene.membership.movePromptFuture'
+  | 'smjene.membership.movePositionPrompt'
+  | 'smjene.membership.movePositionPromptFuture'
+  | 'smjene.membership.positionPrompt'
+  | 'smjene.membership.positionPromptFuture'
   | 'smjene.membership.removePrompt'
   | 'smjene.membership.removePromptFuture'
   | 'smjene.membership.withdrawPrompt' {
   if (change === TEAM_MOVE) {
     if (toNoTeam) {
       return future ? 'smjene.membership.removePromptFuture' : 'smjene.membership.removePrompt';
+    }
+    if (position === PROMPT_POSITION_ONLY) {
+      return future ? 'smjene.membership.positionPromptFuture' : 'smjene.membership.positionPrompt';
+    }
+    if (position === PROMPT_WITH_POSITION) {
+      return future
+        ? 'smjene.membership.movePositionPromptFuture'
+        : 'smjene.membership.movePositionPrompt';
     }
 
     return future ? 'smjene.membership.movePromptFuture' : 'smjene.membership.movePrompt';
@@ -334,11 +370,38 @@ export function teamConfirmMessageKey(
   return unhandled;
 }
 
-/** The line stating the SCHEDULED move — future tense, onto a team or none. */
+/**
+ * The line stating the SCHEDULED change — future tense, onto a team or none,
+ * and with the position it is made in when positions are shown and it carries
+ * one. A change that KEEPS THE TEAM is never worded as a move onto the team the
+ * member is already on: with positions shown it states the new position, and
+ * without them it is a neutral "a change is scheduled".
+ */
 export function teamScheduledMessageKey(
   toNoTeam: boolean,
-): 'smjene.membership.scheduled' | 'smjene.membership.scheduledNone' {
-  return toNoTeam ? 'smjene.membership.scheduledNone' : 'smjene.membership.scheduled';
+  withPosition = false,
+  keepsTeam = false,
+):
+  | 'smjene.membership.scheduled'
+  | 'smjene.membership.scheduledPosition'
+  | 'smjene.membership.scheduledPositionOnly'
+  | 'smjene.membership.scheduledChange'
+  | 'smjene.membership.scheduledNone' {
+  if (toNoTeam) return 'smjene.membership.scheduledNone';
+  if (keepsTeam) {
+    return withPosition
+      ? 'smjene.membership.scheduledPositionOnly'
+      : 'smjene.membership.scheduledChange';
+  }
+
+  return withPosition ? 'smjene.membership.scheduledPosition' : 'smjene.membership.scheduled';
+}
+
+/** The line stating the team today, with the position when one is shown. */
+export function teamCurrentMessageKey(
+  withPosition: boolean,
+): 'smjene.membership.current' | 'smjene.membership.currentPosition' {
+  return withPosition ? 'smjene.membership.currentPosition' : 'smjene.membership.current';
 }
 
 export type MemberWriteFailure =
@@ -364,6 +427,8 @@ export type MemberWriteFailure =
   | typeof MEMBER_TEAM_DATE_TAKEN
   | typeof MEMBER_TEAM_OUT_OF_ORDER
   | typeof MEMBER_TEAM_UNCHANGED
+  | typeof MEMBER_TEAM_POSITION_UNCHANGED
+  | typeof MEMBER_TEAM_POSITION_REQUIRED
   | typeof MEMBER_TEAM_SCHEDULED
   | typeof MEMBER_TEAM_IN_EFFECT
   | typeof MEMBER_TEAM_ARCHIVED
@@ -614,6 +679,8 @@ export function memberWriteMessageKey(
   | 'smjene.membership.error.taken'
   | 'smjene.membership.error.order'
   | 'smjene.membership.error.unchanged'
+  | 'smjene.membership.error.positionUnchanged'
+  | 'smjene.membership.error.positionRequired'
   | 'smjene.membership.error.scheduled'
   | 'smjene.membership.error.inEffect'
   | 'smjene.membership.error.archived'
@@ -648,6 +715,10 @@ export function memberWriteMessageKey(
   if (failure === MEMBER_TEAM_DATE_TAKEN) return 'smjene.membership.error.taken';
   if (failure === MEMBER_TEAM_OUT_OF_ORDER) return 'smjene.membership.error.order';
   if (failure === MEMBER_TEAM_UNCHANGED) return 'smjene.membership.error.unchanged';
+  if (failure === MEMBER_TEAM_POSITION_UNCHANGED) {
+    return 'smjene.membership.error.positionUnchanged';
+  }
+  if (failure === MEMBER_TEAM_POSITION_REQUIRED) return 'smjene.membership.error.positionRequired';
   if (failure === MEMBER_TEAM_SCHEDULED) return 'smjene.membership.error.scheduled';
   if (failure === MEMBER_TEAM_IN_EFFECT) return 'smjene.membership.error.inEffect';
   if (failure === MEMBER_TEAM_ARCHIVED) return 'smjene.membership.error.archived';

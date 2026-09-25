@@ -61,18 +61,24 @@ test('with fire ranks switched on, a member created with a rank shows it on the 
     .click();
   await expect(page.getByText(hr.smjene.membership.saved, { exact: true })).toBeVisible();
 
-  const onRoster = fill(hr.smjene.roster.withRank, { name: person.name, rank });
+  // THE EXACT LINE. With fire ranks and positions on, the move put the member
+  // on the team in the default position, so the roster names both.
+  const onRoster = fill(hr.smjene.roster.withRankAndPosition, {
+    name: person.name,
+    rank,
+    position: hr.smjene.position.firefighter,
+  });
 
   await page.goto(`/smjene/${teamId}`);
   await expect(page.getByRole('heading', { level: 1, name: teamName })).toBeVisible();
-  await expect(page.getByRole('listitem').filter({ hasText: onRoster })).toBeVisible();
+  await expect(page.getByRole('listitem').getByText(onRoster, { exact: true })).toBeVisible();
 
   // The member role reads the rank through the roster RPC, not the members table.
   const memberContext = await browser.newContext({ storageState: MEMBER_STATE });
   try {
     const memberPage = await memberContext.newPage();
     await memberPage.goto(`/smjene/${teamId}`);
-    await expect(memberPage.getByRole('listitem').filter({ hasText: onRoster })).toBeVisible();
+    await expect(memberPage.getByRole('listitem').getByText(onRoster, { exact: true })).toBeVisible();
   } finally {
     await memberContext.close();
   }

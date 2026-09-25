@@ -6,6 +6,7 @@ import {
   memberStatusOf,
   memberTeamLatestVersion,
   memberTeamOf,
+  memberTeamVersionOn,
   type MemberListRow,
   type MemberStatus,
   type MemberStatusVersion,
@@ -32,6 +33,8 @@ import {
   MEMBER_TEAM_IN_PAST,
   MEMBER_TEAM_OUT_OF_ORDER,
   MEMBER_TEAM_SCHEDULED,
+  MEMBER_TEAM_POSITION_REQUIRED,
+  MEMBER_TEAM_POSITION_UNCHANGED,
   MEMBER_TEAM_STALE,
   MEMBER_TEAM_UNCHANGED,
   MEMBER_UNKNOWN,
@@ -40,6 +43,9 @@ import {
   MEMBER_WRITE_REFUSED,
   MEMBER_WRITE_UNAVAILABLE,
   ORGANIZATION_WOULD_HAVE_NO_ADMIN,
+  PROMPT_POSITION_ONLY,
+  PROMPT_TEAM_ONLY,
+  PROMPT_WITH_POSITION,
   REACTIVATE,
   WITHDRAW,
   PASSWORD_RESET,
@@ -51,13 +57,17 @@ import {
   statusPromptMessageKey,
   TEAM_MOVE,
   teamPromptMessageKey,
+  teamScheduledMessageKey,
+  teamCurrentMessageKey,
   type TeamChange,
+  type TeamPromptPosition,
   type MemberWriteFailure,
   type MemberWriteRefusal,
   type PostgrestFailure,
   type StatusChange,
 } from '@/members/wire';
 import { isIsoDate, nextIsoDate } from '@/i18n/format';
+import { DEFAULT_POSITION, chosenPosition, positionsShown } from '@/members/position';
 import type { MemberRole } from '@/navigation/destinations';
 import { MEMBER_ROLES } from '@/navigation/role';
 
@@ -1186,6 +1196,11 @@ export async function readSessionSubject(
   }
 }
 
+/** The first segment of the status block's key; see {@link statusBlockKey}. */
+export const STATUS_BLOCK_PREFIX = 'status';
+/** The first segment of the team block's key; see {@link teamBlockKey}. */
+export const TEAM_BLOCK_PREFIX = 'team';
+
 /** The offer stands: a date control and one action, naming the member. */
 export const STATUS_IDLE = 'idle';
 /** The confirmation stands, naming the member and the date. Nothing sent. */
@@ -1218,6 +1233,10 @@ export function statusStageOf(armed: boolean, pending: boolean): StatusStage {
  */
 export function statusBlockKey(member: MemberListRow): string {
   return [
+    // PREFIXED, so it never equals its sibling {@link teamBlockKey}: for a
+    // member with no versions both would otherwise be the bare id, and React
+    // warns about two siblings under one key.
+    STATUS_BLOCK_PREFIX,
     member.id,
     ...member.statusVersions.map((version) => `${version.effectiveFrom}:${String(version.active)}`),
   ].join('|');
@@ -1301,10 +1320,20 @@ export type TeamOffer =
       readonly change: typeof TEAM_MOVE;
       readonly state: MemberTeamState;
       readonly today: string;
-      /** The active teams the member is not on today, in the order given. */
+      /**
+       * The active teams the member is not on today, in the order given —
+       * and, while positions are offered, the team they ARE on as well, so a
+       * position-only change can be made.
+       */
       readonly choices: readonly TeamChoice[];
       /** Whether "no team" is offered: only for a member who is on one. */
       readonly offersNoTeam: boolean;
+      /** Whether a position is offered beside the team (the setting on). */
+      readonly positions: boolean;
+      /** The team the member is on today, or `null` for none. */
+      readonly current: TeamChoice | null;
+      /** The position the member holds in {@link current}, or `null`. */
+      readonly currentPosition: string | null;
       /** The earliest date the control admits, and its default — the rule
        *  {@link statusOfferOf} applies: versions append in date order. */
       readonly minimum: string;
@@ -1333,6 +1362,7 @@ export function teamOfferOf(
   member: MemberListRow,
   teams: readonly TeamOption[] | null,
   today: string | null,
+  positions = false,
 ): TeamOffer | null {
   if (today === null || teams === null) return null;
 
@@ -1349,8 +1379,10 @@ export function teamOfferOf(
   if (latest !== null && afterLatest === null) return null;
 
   const current = state.team?.id ?? null;
+  // THE CURRENT TEAM STAYS CHOOSABLE while positions are offered: the same
+  // team with a different position is a change `0015` admits.
   const choices = teams
-    .filter((team) => !team.archived && team.id !== current)
+    .filter((team) => !team.archived && (positions || team.id !== current))
     .map((team) => ({ id: team.id, name: team.name }));
   const offersNoTeam = current !== null;
 
@@ -1358,7 +1390,18 @@ export function teamOfferOf(
 
   const minimum = afterLatest !== null && afterLatest > today ? afterLatest : today;
 
-  return { change: TEAM_MOVE, state, today, choices, offersNoTeam, minimum };
+  return {
+    change: TEAM_MOVE,
+    state,
+    today,
+    choices,
+    offersNoTeam,
+    positions,
+    current: state.team === null ? null : { id: state.team.id, name: state.team.name },
+    // No scheduled change stands here, so the latest version is today's.
+    currentPosition: state.team === null ? null : (latest?.position ?? null),
+    minimum,
+  };
 }
 
 /**
@@ -1373,11 +1416,235 @@ export function chosenTeam(value: string, offer: TeamOffer): TeamChoice | null |
   return offer.choices.find((choice) => choice.id === value);
 }
 
-/** The value the picker opens on: the first team offered, or "no team". */
+/**
+ * The value the picker opens on: the first team offered other than the
+ * current one, then the current one, then "no team". A move stays the first
+ * thing offered; a position-only change is one pick away.
+ */
 export function teamPickerDefault(offer: TeamOffer): string {
   if (offer.change !== TEAM_MOVE) return NO_TEAM_VALUE;
 
-  return offer.choices[0]?.id ?? NO_TEAM_VALUE;
+  const other = offer.choices.find((choice) => choice.id !== offer.current?.id);
+
+  return other?.id ?? offer.choices[0]?.id ?? NO_TEAM_VALUE;
+}
+
+/**
+ * What a team pick is made against: the member's team history (the block's
+ * key) AND the team `<select>`'s own key. Either moving remounts the control
+ * onto its default, so a pick made against another one no longer describes it.
+ */
+export function teamPickHistory(member: MemberListRow, offer: TeamOffer): string {
+  return `${teamBlockKey(member)}#${teamSelectKey(offer)}`;
+}
+
+/** A team pick the screen holds, with the history it was made against. */
+export interface TeamPick {
+  readonly value: string;
+  readonly history: string;
+}
+
+/**
+ * The team value the picker holds now — THE ONE SOURCE the screen reads, for
+ * the position control and for the confirmation alike: the person's pick
+ * while it was made against this {@link teamPickHistory} and the offer still
+ * renders it,
+ * and otherwise {@link teamPickerDefault} — what the remounted picker opens on.
+ * The position control's default and visibility follow this value.
+ */
+export function pickedTeamValue(
+  pick: TeamPick | null,
+  member: MemberListRow,
+  offer: TeamOffer,
+): string {
+  if (offer.change !== TEAM_MOVE || pick === null) return teamPickerDefault(offer);
+  if (pick.history !== teamPickHistory(member, offer)) return teamPickerDefault(offer);
+  if (chosenTeam(pick.value, offer) === undefined) return teamPickerDefault(offer);
+
+  return pick.value;
+}
+
+/**
+ * Whether the position control shows for the team the picker holds: only while
+ * positions are offered and a team — not "no team" — is picked. A version
+ * naming no team names no position (`0015`).
+ */
+export function offersPositionFor(offer: TeamOffer, teamValue: string): boolean {
+  return offer.change === TEAM_MOVE && offer.positions && teamValue !== NO_TEAM_VALUE;
+}
+
+/**
+ * The position the control opens on for the team the picker holds: the
+ * member's current position when the team is unchanged (a legacy version with
+ * none falls back to the default), and {@link DEFAULT_POSITION} for a move into
+ * another team.
+ */
+export function positionPickerDefault(offer: TeamOffer, teamValue: string): string {
+  if (offer.change !== TEAM_MOVE) return DEFAULT_POSITION;
+  if (offer.current !== null && teamValue === offer.current.id) {
+    return offer.currentPosition ?? DEFAULT_POSITION;
+  }
+
+  return DEFAULT_POSITION;
+}
+
+// ---------------------------------------------- the setting, as the team block needs it
+
+/**
+ * The organization's "uses fire ranks and positions", as the team block knows
+ * it: on, off, still being read, or not readable. PENDING and FAILED are
+ * states of their own, never folded into "off": a move sent on a guessed "off"
+ * carries a null position that `0015` refuses while the setting is on.
+ */
+export type TeamPositionsSetting =
+  | { readonly known: true; readonly on: boolean }
+  | { readonly known: false; readonly failed: boolean };
+
+/** As much of the organization snapshot query as this reads. */
+export interface OrganizationSettingRead {
+  readonly data:
+    | { readonly ok: true; readonly snapshot: { readonly usesFireRanks: boolean } }
+    | { readonly ok: false }
+    | undefined;
+  readonly isError: boolean;
+}
+
+/**
+ * The setting out of the organization query. An answer wins over a later
+ * failed refetch (the setting is still what was read); a refused answer or a
+ * failed first read is FAILED; no answer yet is pending.
+ */
+export function teamPositionsSettingOf(read: OrganizationSettingRead): TeamPositionsSetting {
+  const answered = read.data;
+
+  if (answered !== undefined && answered.ok) {
+    return { known: true, on: positionsShown(answered.snapshot) };
+  }
+  if (answered !== undefined || read.isError) return { known: false, failed: true };
+
+  return { known: false, failed: false };
+}
+
+/** Whether positions are offered and shown: only a setting KNOWN to be on. */
+export function teamPositionsOn(setting: TeamPositionsSetting): boolean {
+  return setting.known && setting.on;
+}
+
+/**
+ * The team block's offer given the setting. Until the setting is known NO
+ * MOVE is offered — only the cancellation of a scheduled one, which sends no
+ * position — so nothing can send a position guessed from an unread setting.
+ */
+export function teamOfferFor(
+  member: MemberListRow,
+  teams: readonly TeamOption[] | null,
+  today: string | null,
+  setting: TeamPositionsSetting,
+): TeamOffer | null {
+  const offer = teamOfferOf(member, teams, today, teamPositionsOn(setting));
+
+  if (setting.known || offer === null) return offer;
+
+  return offer.change === WITHDRAW ? offer : null;
+}
+
+/**
+ * The refusal the team block states about the setting itself: a failed
+ * organization read is the service being unavailable, said out loud rather
+ * than a move silently withheld.
+ */
+export function teamPositionsRefusalOf(setting: TeamPositionsSetting): MemberWriteFailure | null {
+  return !setting.known && setting.failed ? MEMBER_WRITE_UNAVAILABLE : null;
+}
+
+/**
+ * The position a move sends, from the picked team and the position control's
+ * value: `null` whenever no position control is shown (positions off, or "no
+ * team" picked), the looked-up code while it is, and `undefined` for a value
+ * the control never rendered — which the screen reads as stale.
+ */
+export function teamPositionToSend(
+  offer: TeamOffer,
+  teamValue: string,
+  positionValue: string,
+): string | null | undefined {
+  if (offer.change !== TEAM_MOVE || !offersPositionFor(offer, teamValue)) return null;
+
+  const stored = offer.current !== null && teamValue === offer.current.id ? offer.currentPosition : null;
+
+  return chosenPosition(positionValue, stored);
+}
+
+/** Whether a refused team write re-reads the organization: the setting moved. */
+export function teamRefusalRereadsOrganization(failure: MemberWriteFailure): boolean {
+  return failure === MEMBER_TEAM_POSITION_REQUIRED;
+}
+
+/**
+ * The team `<select>`'s key: the offer's choices and whether positions are
+ * offered, so it remounts onto {@link teamPickerDefault} whenever either moves
+ * and the DOM never holds a pick the state does not.
+ */
+export function teamSelectKey(offer: TeamOffer): string {
+  if (offer.change !== TEAM_MOVE) return WITHDRAW;
+
+  return [String(offer.positions), ...offer.choices.map((choice) => choice.id)].join('|');
+}
+
+/** A line the team block states, with the values it interpolates. */
+export interface TeamLine<Key extends string> {
+  readonly key: Key;
+  readonly team: string | null;
+  readonly position: string | null;
+  readonly date: string | null;
+}
+
+/**
+ * The team today, and its position only while positions are shown and the
+ * version carries one — a legacy version reads as the team alone.
+ */
+export function teamCurrentLineOf(
+  member: MemberListRow,
+  today: string,
+  shown: boolean,
+): TeamLine<ReturnType<typeof teamCurrentMessageKey>> {
+  const state = memberTeamOf(member, today);
+  const position =
+    shown && state.team !== null ? (memberTeamVersionOn(member, today)?.position ?? null) : null;
+
+  return {
+    key: teamCurrentMessageKey(position !== null),
+    team: state.team?.name ?? null,
+    position,
+    date: null,
+  };
+}
+
+/**
+ * The scheduled change's line, or `null` for none. A change that KEEPS THE
+ * TEAM is worded by position (setting on) or neutrally (setting off), never as
+ * a move onto the team the member is already on.
+ */
+export function teamScheduledLineOf(
+  member: MemberListRow,
+  today: string,
+  shown: boolean,
+): TeamLine<ReturnType<typeof teamScheduledMessageKey>> | null {
+  const state = memberTeamOf(member, today);
+  const scheduled = state.scheduled;
+
+  if (scheduled === null) return null;
+
+  const keepsTeam = scheduled.team !== null && scheduled.team.id === state.team?.id;
+  const position =
+    shown && scheduled.team !== null ? (memberTeamLatestVersion(member)?.position ?? null) : null;
+
+  return {
+    key: teamScheduledMessageKey(scheduled.team === null, position !== null, keepsTeam),
+    team: scheduled.team?.name ?? null,
+    position,
+    date: scheduled.from,
+  };
 }
 
 /** Everything a team change is judged against. */
@@ -1387,6 +1654,12 @@ export interface TeamContext {
   readonly teams: readonly TeamOption[];
   /** The organization's today, as an ISO date. */
   readonly today: string;
+  /**
+   * Whether the organization uses fire ranks and positions, as the screen
+   * last read it (`0015`): a team then needs a position, and an unchanged
+   * write is named as an unchanged position. Absent is off.
+   */
+  readonly positions?: boolean;
 }
 
 /**
@@ -1394,14 +1667,16 @@ export interface TeamContext {
  *
  * `day` is the entered date for a move and the scheduled version's date for a
  * cancellation; `team` is the chosen team's id, `null` for no team, ignored
- * for a cancellation. The same rules as `0010`'s policies, in the order the
- * screen can act on them.
+ * for a cancellation; `position` is the chosen position, `null` for none. The
+ * same rules as `0010`'s and `0015`'s policies, in the order the screen can
+ * act on them.
  */
 export function teamPreflightOf(
   change: TeamChange,
   day: string,
   team: string | null,
   context: TeamContext,
+  position: string | null = null,
 ): MemberWriteFailure | null {
   if (!isIsoDate(day)) return MEMBER_WRITE_INVALID;
 
@@ -1422,9 +1697,16 @@ export function teamPreflightOf(
   if (latest !== null && day === latest.effectiveFrom) return MEMBER_TEAM_DATE_TAKEN;
   if (latest !== null && day < latest.effectiveFrom) return MEMBER_TEAM_OUT_OF_ORDER;
   if (latest !== null && latest.effectiveFrom > context.today) return MEMBER_TEAM_SCHEDULED;
-  // CHANGES THE TEAM: compared with the latest state, and "no team" for a
-  // member with no history at all is no change either.
-  if (team === (latest?.team?.id ?? null)) return MEMBER_TEAM_UNCHANGED;
+  const positions = context.positions === true;
+
+  // A TEAM NEEDS A POSITION while positions are in use (`0015`).
+  if (positions && team !== null && position === null) return MEMBER_TEAM_POSITION_REQUIRED;
+  // CHANGES THE VALUE (`0015`): the team OR the position differs from the
+  // latest version, and "no team" for a member with no history at all is no
+  // change either. Named by the SETTING, not guessed from the position.
+  if (team === (latest?.team?.id ?? null) && position === (latest?.position ?? null)) {
+    return positions && team !== null ? MEMBER_TEAM_POSITION_UNCHANGED : MEMBER_TEAM_UNCHANGED;
+  }
 
   if (team !== null) {
     const target = context.teams.find((candidate) => candidate.id === team);
@@ -1449,12 +1731,24 @@ export function teamFailureOf(
   day: string,
   team: string | null,
   context: TeamContext,
+  position: string | null = null,
 ): MemberWriteFailure {
   if (error?.code === '23505') return MEMBER_TEAM_DATE_TAKEN;
   if (error?.code === '23503') return MEMBER_TEAM_STALE;
 
+  // A 42501 THE PREFLIGHT CANNOT NAME is stale — except an insert naming a
+  // team with no position: that is `0015`'s position rule, refusing because
+  // the setting is on although the screen read it off. The screen re-reads the
+  // organization after it (`teamRefusalRereadsOrganization`).
   if (error === null || error.code === '42501') {
-    return teamPreflightOf(change, day, team, context) ?? MEMBER_TEAM_STALE;
+    const named = teamPreflightOf(change, day, team, context, position);
+
+    if (named !== null) return named;
+    if (error !== null && change === TEAM_MOVE && team !== null && position === null) {
+      return MEMBER_TEAM_POSITION_REQUIRED;
+    }
+
+    return MEMBER_TEAM_STALE;
   }
 
   if (error.code !== undefined && ['22', '23'].includes(error.code.slice(0, 2))) {
@@ -1470,6 +1764,7 @@ async function sendTeam(
   day: string,
   team: string | null,
   member: MemberListRow,
+  position: string | null,
 ): Promise<StatusAnswer> {
   if (change === WITHDRAW) {
     const answered = await table
@@ -1486,6 +1781,8 @@ async function sendTeam(
     organization_id: member.organizationId,
     member_id: member.id,
     team_id: team,
+    // NULL while the setting is off, and always for "no team" (`0015`).
+    position: team === null ? null : position,
     effective_from: day,
   });
 
@@ -1494,8 +1791,9 @@ async function sendTeam(
 
 /**
  * Append one team version, or cancel the scheduled one. Nothing is sent for a
- * refusal it can already name, and the picked team and date are the caller's
- * to keep — both controls are uncontrolled and a refusal does not remount them.
+ * refusal it can already name, and the picked team, position and date are the
+ * caller's to keep — the controls are uncontrolled and a refusal does not
+ * remount them. `position` is `null` while the setting is off.
  */
 export async function changeMemberTeam(
   table: MemberTeamTable,
@@ -1503,15 +1801,17 @@ export async function changeMemberTeam(
   day: string,
   team: string | null,
   context: TeamContext,
+  position: string | null = null,
 ): Promise<MemberWriteOutcome> {
-  const preflight = teamPreflightOf(change, day, team, context);
+  const chosen = team === null ? null : position;
+  const preflight = teamPreflightOf(change, day, team, context, chosen);
 
   if (preflight !== null) return { ok: false, refusal: { code: preflight, saved: false } };
 
   let answer: StatusAnswer;
 
   try {
-    answer = await sendTeam(table, change, day, team, context.member);
+    answer = await sendTeam(table, change, day, team, context.member, chosen);
   } catch (cause) {
     console.error(MEMBER_WRITE_UNAVAILABLE, cause);
 
@@ -1520,7 +1820,7 @@ export async function changeMemberTeam(
 
   if (answer.written) return { ok: true };
 
-  const code = teamFailureOf(answer.error, change, day, team, context);
+  const code = teamFailureOf(answer.error, change, day, team, context, chosen);
 
   console.error(code, answer.error?.code);
 
@@ -1537,31 +1837,51 @@ export interface TeamConfirmation {
   readonly name: string;
   readonly change: TeamChange;
   readonly team: TeamChoice | null;
+  /** The chosen position, `null` while positions are not offered or for no team. */
+  readonly position: string | null;
+  /** Whether the chosen team is the one the member is on: a position-only change. */
+  readonly keepsTeam: boolean;
   readonly day: string;
   readonly history: string;
 }
 
+/** How a confirmation names its position; see {@link teamPromptMessageKey}. */
+export function teamPromptPositionOf(
+  confirmation: Partial<Pick<TeamConfirmation, 'position' | 'keepsTeam'>>,
+): TeamPromptPosition {
+  if (confirmation.position === undefined || confirmation.position === null) {
+    return PROMPT_TEAM_ONLY;
+  }
+
+  return confirmation.keepsTeam === true ? PROMPT_POSITION_ONLY : PROMPT_WITH_POSITION;
+}
+
 /** The prompt key for an armed team confirmation, worded by its date. */
 export function teamPromptKeyOf(
-  confirmation: Pick<TeamConfirmation, 'change' | 'team' | 'day'>,
+  confirmation: Pick<TeamConfirmation, 'change' | 'team' | 'day'> &
+    Partial<Pick<TeamConfirmation, 'position' | 'keepsTeam'>>,
   today: string,
 ): ReturnType<typeof teamPromptMessageKey> {
   return teamPromptMessageKey(
     confirmation.change,
     confirmation.team === null,
     confirmation.day > today,
+    teamPromptPositionOf(confirmation),
   );
 }
 
 /** The team block's fingerprint: the member and their whole team history. */
 export function teamBlockKey(member: MemberListRow): string {
   return [
+    // PREFIXED, so it never equals its sibling {@link statusBlockKey}.
+    TEAM_BLOCK_PREFIX,
     member.id,
     ...member.teamVersions.map(
       // THE NAME IS PART OF THE KEY: a confirmation armed before a rename would
-      // otherwise name the team as it no longer is.
+      // otherwise name the team as it no longer is. So is the POSITION: a
+      // position change is a new version, and must clear a stale confirmation.
       (version) =>
-        `${version.effectiveFrom}:${version.team?.id ?? NO_TEAM_VALUE}:${version.team?.name ?? ''}`,
+        `${version.effectiveFrom}:${version.team?.id ?? NO_TEAM_VALUE}:${version.team?.name ?? ''}:${version.position ?? ''}`,
     ),
   ].join('|');
 }
@@ -1617,6 +1937,8 @@ export {
   MEMBER_TEAM_IN_PAST,
   MEMBER_TEAM_OUT_OF_ORDER,
   MEMBER_TEAM_SCHEDULED,
+  MEMBER_TEAM_POSITION_REQUIRED,
+  MEMBER_TEAM_POSITION_UNCHANGED,
   MEMBER_TEAM_STALE,
   MEMBER_TEAM_UNCHANGED,
   MEMBER_UNKNOWN,
@@ -1647,11 +1969,16 @@ export {
   statusScheduledMessageKey,
   statusTodayMessageKey,
   TEAM_MOVE,
+  PROMPT_POSITION_ONLY,
+  PROMPT_TEAM_ONLY,
+  PROMPT_WITH_POSITION,
   teamConfirmMessageKey,
+  teamCurrentMessageKey,
   teamOfferMessageKey,
   teamPromptMessageKey,
   teamScheduledMessageKey,
   type TeamChange,
+  type TeamPromptPosition,
   type MemberWriteFailure,
   type MemberWriteMessageKey,
   type MemberWriteRefusal,

@@ -93,25 +93,49 @@ import {
   MEMBER_TEAM_SCHEDULED,
   MEMBER_TEAM_STALE,
   MEMBER_TEAM_TABLE,
+  MEMBER_TEAM_POSITION_REQUIRED,
+  MEMBER_TEAM_POSITION_UNCHANGED,
   MEMBER_TEAM_UNCHANGED,
+  MEMBER_WRITE_UNAVAILABLE as UNAVAILABLE,
   NO_TEAM_VALUE,
+  PROMPT_POSITION_ONLY,
+  PROMPT_TEAM_ONLY,
+  PROMPT_WITH_POSITION,
+  STATUS_BLOCK_PREFIX,
+  TEAM_BLOCK_PREFIX,
   TEAM_MOVE,
   changeMemberTeam,
   chosenTeam,
+  offersPositionFor,
+  pickedTeamValue,
+  positionPickerDefault,
   standingTeamConfirmation,
   teamBlockKey,
   teamConfirmMessageKey,
+  teamCurrentMessageKey,
   teamFailureOf,
   teamOfferMessageKey,
   teamOfferOf,
   teamPickerDefault,
   teamPreflightOf,
   teamPromptKeyOf,
+  teamPromptPositionOf,
+  teamCurrentLineOf,
+  teamOfferFor,
+  teamPickHistory,
+  teamPositionToSend,
+  teamPositionsOn,
+  teamPositionsRefusalOf,
+  teamPositionsSettingOf,
+  teamRefusalRereadsOrganization,
+  teamScheduledLineOf,
+  teamSelectKey,
   teamScheduledMessageKey,
   type MemberTeamTable,
   type TeamConfirmation,
   type TeamContext,
 } from '@/members/write';
+import { DEFAULT_POSITION } from '@/members/position';
 
 /**
  * The member write path's rules, EXECUTED (story 1.5b).
@@ -432,12 +456,12 @@ function teamFailuresReached(): MemberWriteFailure[] {
     { ...b, archived: false },
     { id: 'team-old', name: 'Stara', archived: true },
   ];
-  const onA = member({ teamVersions: [{ team: a, effectiveFrom: '2026-09-01' }] });
-  const onAToday = member({ teamVersions: [{ team: a, effectiveFrom: TODAY }] });
+  const onA = member({ teamVersions: [{ team: a, position: null, effectiveFrom: '2026-09-01' }] });
+  const onAToday = member({ teamVersions: [{ team: a, position: null, effectiveFrom: TODAY }] });
   const scheduled = member({
     teamVersions: [
-      { team: a, effectiveFrom: '2026-09-01' },
-      { team: b, effectiveFrom: '2026-10-01' },
+      { team: a, position: null, effectiveFrom: '2026-09-01' },
+      { team: b, position: null, effectiveFrom: '2026-10-01' },
     ],
   });
   const on = (target: MemberListRow) => ({ member: target, teams, today: TODAY });
@@ -451,6 +475,20 @@ function teamFailuresReached(): MemberWriteFailure[] {
     teamFailureOf(null, WITHDRAW, TODAY, null, on(onAToday)),
     teamFailureOf({ code: '42501' }, TEAM_MOVE, TODAY, 'team-old', on(onA)),
     teamFailureOf(null, WITHDRAW, '2026-10-01', null, on(scheduled)),
+    // TEAM POSITION: the same team and the same position.
+    teamFailureOf(
+      { code: '42501' },
+      TEAM_MOVE,
+      TODAY,
+      a.id,
+      {
+        ...on(member({ teamVersions: [{ team: a, position: 'driver', effectiveFrom: '2026-09-01' }] })),
+        positions: true,
+      },
+      'driver',
+    ),
+    // TEAM POSITION: a team with no position, refused by `0015` while on.
+    teamFailureOf({ code: '42501' }, TEAM_MOVE, TODAY, b.id, on(onA), null),
   ];
 }
 
@@ -477,6 +515,8 @@ describe('every failure becomes exactly one message, and no two share one', () =
     MEMBER_TEAM_DATE_TAKEN,
     MEMBER_TEAM_OUT_OF_ORDER,
     MEMBER_TEAM_UNCHANGED,
+    MEMBER_TEAM_POSITION_UNCHANGED,
+    MEMBER_TEAM_POSITION_REQUIRED,
     MEMBER_TEAM_SCHEDULED,
     MEMBER_TEAM_IN_EFFECT,
     MEMBER_TEAM_ARCHIVED,
@@ -1863,12 +1903,12 @@ describe('a team change is one appended version or one cancelled one, judged bef
   }
 
   const onA = (from = '2026-09-01') =>
-    member({ teamVersions: [{ team: { id: A.id, name: A.name }, effectiveFrom: from }] });
+    member({ teamVersions: [{ team: { id: A.id, name: A.name }, position: null, effectiveFrom: from }] });
   const scheduledB = () =>
     member({
       teamVersions: [
-        { team: { id: A.id, name: A.name }, effectiveFrom: '2026-09-01' },
-        { team: { id: B.id, name: B.name }, effectiveFrom: '2026-10-01' },
+        { team: { id: A.id, name: A.name }, position: null, effectiveFrom: '2026-09-01' },
+        { team: { id: B.id, name: B.name }, position: null, effectiveFrom: '2026-10-01' },
       ],
     });
   const context = (target: MemberListRow): TeamContext => ({ member: target, teams: TEAMS, today: TODAY });
@@ -1953,7 +1993,14 @@ describe('a team change is one appended version or one cancelled one, judged bef
     const move = teamTable();
     expect(await changeMemberTeam(move.table, TEAM_MOVE, TODAY, B.id, context(onA()))).toEqual({ ok: true });
     expect(move.sent).toEqual([
-      { organization_id: 'organization-1', member_id: 'member-1', team_id: B.id, effective_from: TODAY },
+      {
+        organization_id: 'organization-1',
+        member_id: 'member-1',
+        team_id: B.id,
+        // THE SETTING OFF: no position is chosen, and null is what is sent.
+        position: null,
+        effective_from: TODAY,
+      },
     ]);
 
     const remove = teamTable();
@@ -1981,11 +2028,27 @@ describe('a team change is one appended version or one cancelled one, judged bef
       await changeMemberTeam(nothing.table, WITHDRAW, '2026-10-01', null, context(scheduledB())),
     ).toEqual({ ok: false, refusal: { code: MEMBER_TEAM_STALE, saved: false } });
 
+    // With a position sent, nothing names the 42501: stale.
     const refused = teamTable({ error: { code: '42501' } });
-    expect(await changeMemberTeam(refused.table, TEAM_MOVE, TODAY, B.id, context(onA()))).toEqual({
+    expect(
+      await changeMemberTeam(refused.table, TEAM_MOVE, TODAY, B.id, context(onA()), 'driver'),
+    ).toEqual({
       ok: false,
       refusal: { code: MEMBER_TEAM_STALE, saved: false },
     });
+    // With a team and NO position, it is `0015`'s position rule: the setting
+    // is on although the screen read it off.
+    const noPosition = teamTable({ error: { code: '42501' } });
+    expect(await changeMemberTeam(noPosition.table, TEAM_MOVE, TODAY, B.id, context(onA()))).toEqual({
+      ok: false,
+      refusal: { code: MEMBER_TEAM_POSITION_REQUIRED, saved: false },
+    });
+    expect(teamRefusalRereadsOrganization(MEMBER_TEAM_POSITION_REQUIRED)).toBe(true);
+    expect(teamRefusalRereadsOrganization(MEMBER_TEAM_STALE)).toBe(false);
+    // A cancellation or a move to no team is never read as a missing position.
+    expect(
+      teamFailureOf({ code: '42501' }, TEAM_MOVE, TODAY, null, context(onA()), null),
+    ).toBe(MEMBER_TEAM_STALE);
 
     const thrown = teamTable(new Error('offline'));
     expect(await changeMemberTeam(thrown.table, TEAM_MOVE, TODAY, B.id, context(onA()))).toEqual({
@@ -2010,6 +2073,8 @@ describe('a team change is one appended version or one cancelled one, judged bef
       MEMBER_TEAM_DATE_TAKEN,
       MEMBER_TEAM_OUT_OF_ORDER,
       MEMBER_TEAM_UNCHANGED,
+      MEMBER_TEAM_POSITION_UNCHANGED,
+      MEMBER_TEAM_POSITION_REQUIRED,
       MEMBER_TEAM_SCHEDULED,
       MEMBER_TEAM_IN_EFFECT,
       MEMBER_TEAM_ARCHIVED,
@@ -2042,12 +2107,285 @@ describe('a team change is one appended version or one cancelled one, judged bef
     expect(teamScheduledMessageKey(false)).toBe('smjene.membership.scheduled');
   });
 
+  it('names the position in the prompt when it changes, and a position-only change as its own sentence', () => {
+    const team = { id: B.id, name: B.name };
+    const at = (day: string, position: string | null, keepsTeam: boolean) =>
+      teamPromptKeyOf({ change: TEAM_MOVE, team, day, position, keepsTeam }, TODAY);
+
+    expect(at(TODAY, null, false)).toBe('smjene.membership.movePrompt');
+    expect(at(TODAY, 'driver', false)).toBe('smjene.membership.movePositionPrompt');
+    expect(at('2026-09-30', 'driver', false)).toBe('smjene.membership.movePositionPromptFuture');
+    expect(at(TODAY, 'commander', true)).toBe('smjene.membership.positionPrompt');
+    expect(at('2026-09-30', 'commander', true)).toBe('smjene.membership.positionPromptFuture');
+    // No team names no position, whatever else holds.
+    expect(
+      teamPromptKeyOf({ change: TEAM_MOVE, team: null, day: TODAY, position: null, keepsTeam: false }, TODAY),
+    ).toBe('smjene.membership.removePrompt');
+    expect(teamPromptPositionOf({})).toBe(PROMPT_TEAM_ONLY);
+    expect(teamPromptPositionOf({ position: 'driver', keepsTeam: false })).toBe(PROMPT_WITH_POSITION);
+    expect(teamPromptPositionOf({ position: 'driver', keepsTeam: true })).toBe(PROMPT_POSITION_ONLY);
+    expect(teamScheduledMessageKey(false, true)).toBe('smjene.membership.scheduledPosition');
+    expect(teamScheduledMessageKey(true, true)).toBe('smjene.membership.scheduledNone');
+    expect(teamCurrentMessageKey(false)).toBe('smjene.membership.current');
+    expect(teamCurrentMessageKey(true)).toBe('smjene.membership.currentPosition');
+  });
+
+  it('keeps the current team choosable only while positions are offered', () => {
+    // TEAM POSITION. Off, the offer is exactly story 1.7b's.
+    const off = teamOfferOf(onA(), TEAMS, TODAY);
+    expect(off).toMatchObject({ choices: [{ id: B.id, name: B.name }], positions: false });
+
+    const on = teamOfferOf(onA(), TEAMS, TODAY, true);
+    if (on === null || on.change !== TEAM_MOVE) throw new Error('no move offered');
+    expect(on.choices).toEqual([
+      { id: A.id, name: A.name },
+      { id: B.id, name: B.name },
+    ]);
+    expect(on).toMatchObject({ positions: true, current: { id: A.id, name: A.name }, currentPosition: null });
+    expect(chosenTeam(A.id, on)).toEqual({ id: A.id, name: A.name });
+    // A MOVE stays the first thing offered; the current team is one pick away.
+    expect(teamPickerDefault(on)).toBe(B.id);
+    // A member on no team has no current team to keep.
+    expect(teamOfferOf(member(), TEAMS, TODAY, true)).toMatchObject({ current: null, currentPosition: null });
+    // A scheduled change still offers only the cancellation.
+    expect(teamOfferOf(scheduledB(), TEAMS, TODAY, true)).toMatchObject({ change: WITHDRAW });
+    // Only the current team left, and positions on: still offered, for a position change.
+    const alone = teamOfferOf(onA(), [{ ...A, archived: false }], TODAY, true);
+    expect(alone).toMatchObject({ choices: [{ id: A.id, name: A.name }] });
+    if (alone === null) throw new Error('no offer');
+    expect(teamPickerDefault(alone)).toBe(A.id);
+  });
+
+  it('opens the position on the current one for the same team and on the default for a move', () => {
+    const driverOnA = member({
+      teamVersions: [{ team: { id: A.id, name: A.name }, position: 'driver', effectiveFrom: '2026-09-01' }],
+    });
+    const on = teamOfferOf(driverOnA, TEAMS, TODAY, true);
+    const legacy = teamOfferOf(onA(), TEAMS, TODAY, true);
+    const off = teamOfferOf(driverOnA, TEAMS, TODAY, false);
+    if (on === null || legacy === null || off === null) throw new Error('no offer');
+
+    expect(on).toMatchObject({ currentPosition: 'driver' });
+    expect(positionPickerDefault(on, A.id)).toBe('driver');
+    expect(positionPickerDefault(on, B.id)).toBe(DEFAULT_POSITION);
+    expect(DEFAULT_POSITION).toBe('firefighter');
+    // A LEGACY VERSION with no position: offered, and the default chosen.
+    expect(positionPickerDefault(legacy, A.id)).toBe('firefighter');
+    // Shown only for a team, and only while positions are offered.
+    expect(offersPositionFor(on, A.id)).toBe(true);
+    expect(offersPositionFor(on, NO_TEAM_VALUE)).toBe(false);
+    expect(offersPositionFor(off, B.id)).toBe(false);
+  });
+
+  it('holds a team pick only against the history and offer it was made in', () => {
+    const target = onA();
+    const on = teamOfferOf(target, TEAMS, TODAY, true);
+    if (on === null) throw new Error('no offer');
+    const history = teamPickHistory(target, on);
+
+    expect(pickedTeamValue(null, target, on)).toBe(B.id);
+    // A pick made before the select's own key moved (other choices, or the
+    // setting flipped) no longer describes the remounted control.
+    const off = teamOfferOf(target, TEAMS, TODAY, false);
+    if (off === null) throw new Error('no offer');
+    expect(teamSelectKey(on)).not.toBe(teamSelectKey(off));
+    expect(pickedTeamValue({ value: B.id, history }, target, off)).toBe(B.id);
+    expect(pickedTeamValue({ value: NO_TEAM_VALUE, history }, target, off)).toBe(B.id);
+    expect(pickedTeamValue({ value: A.id, history }, target, on)).toBe(A.id);
+    expect(pickedTeamValue({ value: NO_TEAM_VALUE, history }, target, on)).toBe(NO_TEAM_VALUE);
+    // A pick made against another history, or one the offer no longer renders.
+    expect(pickedTeamValue({ value: A.id, history: 'stale' }, target, on)).toBe(B.id);
+    expect(pickedTeamValue({ value: OLD.id, history }, target, on)).toBe(B.id);
+  });
+
+  it('refuses the same team and position, and admits a position-only change', async () => {
+    const driverOnA = () =>
+      member({
+        teamVersions: [{ team: { id: A.id, name: A.name }, position: 'driver', effectiveFrom: '2026-09-01' }],
+      });
+
+    // NOTHING CHANGED: nothing is sent.
+    const on = (target: MemberListRow): TeamContext => ({ ...context(target), positions: true });
+    const same = teamTable();
+    expect(teamPreflightOf(TEAM_MOVE, TODAY, A.id, on(driverOnA()), 'driver')).toBe(
+      MEMBER_TEAM_POSITION_UNCHANGED,
+    );
+    expect(
+      await changeMemberTeam(same.table, TEAM_MOVE, TODAY, A.id, on(driverOnA()), 'driver'),
+    ).toEqual({ ok: false, refusal: { code: MEMBER_TEAM_POSITION_UNCHANGED, saved: false } });
+    expect(same.sent).toEqual([]);
+    // THE SETTING, not the position, names the refusal: off, it is the team.
+    expect(teamPreflightOf(TEAM_MOVE, TODAY, A.id, context(driverOnA()), 'driver')).toBe(
+      MEMBER_TEAM_UNCHANGED,
+    );
+    const legacy = member({
+      teamVersions: [{ team: { id: A.id, name: A.name }, position: null, effectiveFrom: '2026-09-01' }],
+    });
+    expect(teamPreflightOf(TEAM_MOVE, TODAY, A.id, context(legacy), null)).toBe(MEMBER_TEAM_UNCHANGED);
+
+    // POSITION REQUIRED while on: a team with no position is refused unsent.
+    const required = teamTable();
+    expect(teamPreflightOf(TEAM_MOVE, TODAY, B.id, on(driverOnA()), null)).toBe(
+      MEMBER_TEAM_POSITION_REQUIRED,
+    );
+    expect(await changeMemberTeam(required.table, TEAM_MOVE, TODAY, B.id, on(driverOnA()))).toEqual({
+      ok: false,
+      refusal: { code: MEMBER_TEAM_POSITION_REQUIRED, saved: false },
+    });
+    expect(required.sent).toEqual([]);
+    // ... and never for "no team", nor while off.
+    expect(teamPreflightOf(TEAM_MOVE, TODAY, null, on(driverOnA()), null)).toBeNull();
+    expect(teamPreflightOf(TEAM_MOVE, TODAY, B.id, context(driverOnA()), null)).toBeNull();
+
+    // POSITION ONLY, from a later date: one version, same team, new position.
+    const promoted = teamTable();
+    expect(
+      await changeMemberTeam(promoted.table, TEAM_MOVE, '2026-10-01', A.id, context(driverOnA()), 'commander'),
+    ).toEqual({ ok: true });
+    expect(promoted.sent).toEqual([
+      {
+        organization_id: 'organization-1',
+        member_id: 'member-1',
+        team_id: A.id,
+        position: 'commander',
+        effective_from: '2026-10-01',
+      },
+    ]);
+
+    // A LEGACY VERSION (A, none) moved to (A, firefighter) is a change.
+    expect(teamPreflightOf(TEAM_MOVE, TODAY, A.id, context(onA()), 'firefighter')).toBeNull();
+    // A move into another team carries its position.
+    const moved = teamTable();
+    await changeMemberTeam(moved.table, TEAM_MOVE, TODAY, B.id, context(driverOnA()), 'driver');
+    expect(moved.sent[0]?.['position']).toBe('driver');
+    // "No team" never carries a position, whatever the caller passed.
+    const removed = teamTable();
+    await changeMemberTeam(removed.table, TEAM_MOVE, TODAY, null, context(driverOnA()), 'driver');
+    expect(removed.sent[0]?.['position']).toBeNull();
+  });
+
+  it('reads the setting as on, off, pending or failed, and offers a move only once it is known', () => {
+    const snapshot = (usesFireRanks: boolean) => ({
+      data: { ok: true as const, snapshot: { usesFireRanks } },
+      isError: false,
+    });
+    const on = teamPositionsSettingOf(snapshot(true));
+    const off = teamPositionsSettingOf(snapshot(false));
+    const pending = teamPositionsSettingOf({ data: undefined, isError: false });
+    const failed = teamPositionsSettingOf({ data: undefined, isError: true });
+    const refused = teamPositionsSettingOf({ data: { ok: false }, isError: false });
+
+    expect(on).toEqual({ known: true, on: true });
+    expect(off).toEqual({ known: true, on: false });
+    expect(pending).toEqual({ known: false, failed: false });
+    expect(failed).toEqual({ known: false, failed: true });
+    expect(refused).toEqual({ known: false, failed: true });
+    // An answer outlives a failed refetch: the setting is what was read.
+    expect(teamPositionsSettingOf({ ...snapshot(true), isError: true })).toEqual(on);
+
+    expect([on, off, pending, failed].map(teamPositionsOn)).toEqual([true, false, false, false]);
+    expect([on, off, pending, failed].map(teamPositionsRefusalOf)).toEqual([
+      null,
+      null,
+      null,
+      UNAVAILABLE,
+    ]);
+
+    // ON: the current team stays choosable, and a move sends the position.
+    const withOn = teamOfferFor(onA(), TEAMS, TODAY, on);
+    if (withOn === null) throw new Error('no offer with the setting on');
+    expect(withOn).toMatchObject({ change: TEAM_MOVE, positions: true });
+    expect(teamPositionToSend(withOn, B.id, 'driver')).toBe('driver');
+    expect(teamPositionToSend(withOn, NO_TEAM_VALUE, 'driver')).toBeNull();
+    expect(teamPositionToSend(withOn, B.id, 'chief')).toBeUndefined();
+    // OFF: story 1.7b's offer, and null is sent whatever the DOM holds.
+    const withOff = teamOfferFor(onA(), TEAMS, TODAY, off);
+    if (withOff === null) throw new Error('no offer with the setting off');
+    expect(withOff).toMatchObject({ change: TEAM_MOVE, positions: false });
+    expect(teamPositionToSend(withOff, B.id, 'driver')).toBeNull();
+    // PENDING and FAILED: no move at all, so no null is ever sent on a guess.
+    expect(teamOfferFor(onA(), TEAMS, TODAY, pending)).toBeNull();
+    expect(teamOfferFor(onA(), TEAMS, TODAY, failed)).toBeNull();
+    // A scheduled change can still be cancelled: that sends no position.
+    expect(teamOfferFor(scheduledB(), TEAMS, TODAY, pending)).toMatchObject({ change: WITHDRAW });
+    expect(teamOfferFor(scheduledB(), TEAMS, TODAY, failed)).toMatchObject({ change: WITHDRAW });
+  });
+
+  it('words the scheduled line by whether it keeps the team, and the current line by position', () => {
+    const at = (position: string | null, from: string, team = A) => ({
+      team: { id: team.id, name: team.name },
+      position,
+      effectiveFrom: from,
+    });
+    const promoted = member({ teamVersions: [at('driver', '2026-09-01'), at('commander', '2026-10-01')] });
+    const moved = member({ teamVersions: [at('driver', '2026-09-01'), at('driver', '2026-10-01', B)] });
+
+    // KEEPS THE TEAM: never worded as a move onto it.
+    expect(teamScheduledLineOf(promoted, TODAY, true)).toEqual({
+      key: 'smjene.membership.scheduledPositionOnly',
+      team: A.name,
+      position: 'commander',
+      date: '2026-10-01',
+    });
+    expect(teamScheduledLineOf(promoted, TODAY, false)).toMatchObject({
+      key: 'smjene.membership.scheduledChange',
+      position: null,
+    });
+    // A MOVE: with its position while shown, the plain move while not.
+    expect(teamScheduledLineOf(moved, TODAY, true)).toMatchObject({
+      key: 'smjene.membership.scheduledPosition',
+      team: B.name,
+      position: 'driver',
+    });
+    expect(teamScheduledLineOf(moved, TODAY, false)?.key).toBe('smjene.membership.scheduled');
+    expect(teamScheduledLineOf(scheduledB(), TODAY, true)?.key).toBe('smjene.membership.scheduled');
+    expect(teamScheduledLineOf(onA(), TODAY, true)).toBeNull();
+    expect(teamScheduledMessageKey(false, true, true)).toBe('smjene.membership.scheduledPositionOnly');
+    expect(teamScheduledMessageKey(false, false, true)).toBe('smjene.membership.scheduledChange');
+    expect(teamScheduledMessageKey(true, true, true)).toBe('smjene.membership.scheduledNone');
+
+    expect(teamCurrentLineOf(promoted, TODAY, true)).toEqual({
+      key: 'smjene.membership.currentPosition',
+      team: A.name,
+      position: 'driver',
+      date: null,
+    });
+    expect(teamCurrentLineOf(promoted, TODAY, false)).toMatchObject({
+      key: 'smjene.membership.current',
+      position: null,
+    });
+    expect(teamCurrentLineOf(onA(), TODAY, true)?.key).toBe('smjene.membership.current');
+    expect(teamCurrentLineOf(member(), TODAY, true)).toMatchObject({ team: null, position: null });
+  });
+
+  it('keys the team block by position too, and never as its status sibling', () => {
+    const driver = member({
+      teamVersions: [{ team: { id: A.id, name: A.name }, position: 'driver', effectiveFrom: '2026-09-01' }],
+    });
+    const commander = member({
+      teamVersions: [{ team: { id: A.id, name: A.name }, position: 'commander', effectiveFrom: '2026-09-01' }],
+    });
+
+    expect(teamBlockKey(driver)).not.toBe(teamBlockKey(commander));
+    // THE DUPLICATE-KEY FIX: a fresh member with no versions of either kind.
+    const fresh = member();
+    expect(fresh.statusVersions).toEqual([]);
+    expect(fresh.teamVersions).toEqual([]);
+    expect(statusBlockKey(fresh)).not.toBe(teamBlockKey(fresh));
+    expect(statusBlockKey(fresh)).not.toBe(fresh.id);
+    expect(teamBlockKey(fresh)).not.toBe(fresh.id);
+    expect(statusBlockKey(fresh).startsWith(`${STATUS_BLOCK_PREFIX}|`)).toBe(true);
+    expect(teamBlockKey(fresh).startsWith(`${TEAM_BLOCK_PREFIX}|`)).toBe(true);
+  });
+
   it('keeps an armed confirmation while pending, and clears it when the team history changes', () => {
     const before = onA();
     const armed: TeamConfirmation = {
       name: before.name,
       change: TEAM_MOVE,
       team: { id: B.id, name: B.name },
+      position: null,
+      keepsTeam: false,
       day: TODAY,
       history: teamBlockKey(before),
     };
