@@ -32,6 +32,16 @@ export const TEAM_WRITE_INVALID = 'TEAM_WRITE_INVALID';
 export const TEAM_WRITE_UNAVAILABLE = 'TEAM_WRITE_UNAVAILABLE';
 /** The route names a team the list does not hold. */
 export const TEAM_UNKNOWN = 'TEAM_UNKNOWN';
+/**
+ * Somebody is on the team today, or is scheduled onto it (story 1.7b).
+ *
+ * `0010` alters the update policy's WITH CHECK to refuse `archived = true`
+ * while any membership version for the team is in effect today or dated after
+ * it. A failed WITH CHECK RAISES `42501` — unlike a USING miss, which matches
+ * no row — and the archive is only offered to an admin on screen, so a `42501`
+ * answering an ARCHIVE is this rule, not a lost permission.
+ */
+export const TEAM_IN_USE = 'TEAM_IN_USE';
 
 export type TeamWriteFailure =
   | typeof TEAM_NAME_EMPTY
@@ -40,7 +50,8 @@ export type TeamWriteFailure =
   | typeof TEAM_WRITE_REFUSED
   | typeof TEAM_WRITE_INVALID
   | typeof TEAM_WRITE_UNAVAILABLE
-  | typeof TEAM_UNKNOWN;
+  | typeof TEAM_UNKNOWN
+  | typeof TEAM_IN_USE;
 
 export type TeamWriteOutcome =
   | { readonly ok: true }
@@ -111,9 +122,20 @@ export function teamWriteFailureOf(error: TeamWriteError): TeamWriteFailure {
   return TEAM_WRITE_UNAVAILABLE;
 }
 
+/**
+ * An archive's refusal: `42501` is the in-use rule (see {@link TEAM_IN_USE}),
+ * and everything else reads as any other team write does.
+ */
+export function archiveFailureOf(error: TeamWriteError): TeamWriteFailure {
+  if (error.code === INSUFFICIENT_PRIVILEGE) return TEAM_IN_USE;
+
+  return teamWriteFailureOf(error);
+}
+
 /** Settle one write: a thrown call, an error, zero rows, or one row. */
 async function settled(
   write: () => PromiseLike<TeamWriteAnswer>,
+  failureOf: (error: TeamWriteError) => TeamWriteFailure = teamWriteFailureOf,
 ): Promise<TeamWriteOutcome> {
   let answered: TeamWriteAnswer;
 
@@ -132,7 +154,7 @@ async function settled(
   }
 
   if (answered.error !== null) {
-    const code = teamWriteFailureOf(answered.error);
+    const code = failureOf(answered.error);
 
     console.error(code, answered.error.code);
 
@@ -182,8 +204,9 @@ export async function renameTeam(
 export async function archiveTeam(table: TeamWriteTable, team: TeamRow): Promise<TeamWriteOutcome> {
   if (team.archived) return { ok: false, code: TEAM_STALE };
 
-  return settled(() =>
-    table.update({ archived: true }).eq(ID_COLUMN, team.id).select(RETURNED_COLUMNS),
+  return settled(
+    () => table.update({ archived: true }).eq(ID_COLUMN, team.id).select(RETURNED_COLUMNS),
+    archiveFailureOf,
   );
 }
 
@@ -230,7 +253,8 @@ export function teamWriteMessageKey(
   | 'smjene.error.refused'
   | 'smjene.error.invalid'
   | 'smjene.error.saveUnavailable'
-  | 'smjene.error.unknown' {
+  | 'smjene.error.unknown'
+  | 'smjene.error.inUse' {
   if (failure === TEAM_NAME_EMPTY) return 'smjene.error.empty';
   if (failure === TEAM_NAME_TAKEN) return 'smjene.error.taken';
   if (failure === TEAM_STALE) return 'smjene.error.stale';
@@ -238,6 +262,7 @@ export function teamWriteMessageKey(
   if (failure === TEAM_WRITE_INVALID) return 'smjene.error.invalid';
   if (failure === TEAM_WRITE_UNAVAILABLE) return 'smjene.error.saveUnavailable';
   if (failure === TEAM_UNKNOWN) return 'smjene.error.unknown';
+  if (failure === TEAM_IN_USE) return 'smjene.error.inUse';
 
   const unhandled: never = failure;
 

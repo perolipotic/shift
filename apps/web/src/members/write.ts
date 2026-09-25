@@ -4,9 +4,13 @@ import {
   memberActiveFrom,
   memberLatestVersion,
   memberStatusOf,
+  memberTeamLatestVersion,
+  memberTeamOf,
   type MemberListRow,
   type MemberStatus,
   type MemberStatusVersion,
+  type MemberTeamState,
+  type MemberTeamVersion,
   type MembersSurfaceState,
 } from '@/members/list';
 import {
@@ -22,6 +26,14 @@ import {
   MEMBER_STATUS_SELF,
   MEMBER_STATUS_STALE,
   MEMBER_STATUS_UNCHANGED,
+  MEMBER_TEAM_ARCHIVED,
+  MEMBER_TEAM_DATE_TAKEN,
+  MEMBER_TEAM_IN_EFFECT,
+  MEMBER_TEAM_IN_PAST,
+  MEMBER_TEAM_OUT_OF_ORDER,
+  MEMBER_TEAM_SCHEDULED,
+  MEMBER_TEAM_STALE,
+  MEMBER_TEAM_UNCHANGED,
   MEMBER_UNKNOWN,
   MEMBER_WRITE_FUNCTION,
   MEMBER_WRITE_INVALID,
@@ -37,6 +49,9 @@ import {
   editFailureOf,
   memberWriteFailureOf,
   statusPromptMessageKey,
+  TEAM_MOVE,
+  teamPromptMessageKey,
+  type TeamChange,
   type MemberWriteFailure,
   type MemberWriteRefusal,
   type PostgrestFailure,
@@ -1228,6 +1243,330 @@ export function standingConfirmation(
   return statusBlockKey(member) === armed.history ? armed : null;
 }
 
+// --------------------------------------------- team membership (story 1.7b)
+
+/**
+ * The relation a team change writes: `0010`'s versioned membership.
+ *
+ * A PLAIN POSTGREST WRITE, mirroring the status path exactly: an insert to
+ * append a version, a delete to cancel the scheduled one, and never an update.
+ * Every rule is `0010`'s policies; what is here is the surface's reading.
+ */
+export const MEMBER_TEAM_TABLE = 'team_membership_versions';
+
+/** The same two-verb seam the status table has. */
+export type MemberTeamTable = MemberStatusTable;
+
+/** The `<select>` value that means "no team". Named, because the screen may
+ *  hold no literal, and not a uuid, so it can never collide with a team id. */
+export const NO_TEAM_VALUE = 'none';
+
+/** A team a member can be moved onto, as the picker offers it. */
+export interface TeamChoice {
+  readonly id: string;
+  readonly name: string;
+}
+
+/** As much of a team row as the team path reads (`@/teams/list`'s `TeamRow`). */
+export interface TeamOption {
+  readonly id: string;
+  readonly name: string;
+  readonly archived: boolean;
+}
+
+/**
+ * What the team block shows and offers for one member.
+ *
+ * NO OWN-ROW EXCLUSION, unlike the status block: an admin may set their own
+ * team, and `0010` admits it.
+ */
+export type TeamOffer =
+  | {
+      /** Move from a date, onto one of `choices` or onto no team. */
+      readonly change: typeof TEAM_MOVE;
+      readonly state: MemberTeamState;
+      readonly today: string;
+      /** The active teams the member is not on today, in the order given. */
+      readonly choices: readonly TeamChoice[];
+      /** Whether "no team" is offered: only for a member who is on one. */
+      readonly offersNoTeam: boolean;
+      /** The earliest date the control admits, and its default — the rule
+       *  {@link statusOfferOf} applies: versions append in date order. */
+      readonly minimum: string;
+    }
+  | {
+      /** A move is scheduled: the only thing offered is cancelling it. */
+      readonly change: typeof WITHDRAW;
+      readonly state: MemberTeamState;
+      readonly today: string;
+      /** The scheduled version the cancellation removes. */
+      readonly scheduled: MemberTeamVersion;
+    };
+
+/**
+ * Whether the team block offers anything, and what.
+ *
+ * `null` while today or the teams are unknown — an offer resting on a guessed
+ * date or on no list of teams proposes a write the database may refuse — and
+ * when there is nothing to move onto: no active team the member is not on, and
+ * no team to leave.
+ *
+ * `teams` are the ACTIVE teams, already sorted (`splitTeams(...).active`);
+ * an archived one passed in is dropped anyway.
+ */
+export function teamOfferOf(
+  member: MemberListRow,
+  teams: readonly TeamOption[] | null,
+  today: string | null,
+): TeamOffer | null {
+  if (today === null || teams === null) return null;
+
+  const state = memberTeamOf(member, today);
+  const latest = memberTeamLatestVersion(member);
+
+  if (state.scheduled !== null && latest !== null) {
+    return { change: WITHDRAW, state, today, scheduled: latest };
+  }
+
+  const afterLatest = latest === null ? null : nextIsoDate(latest.effectiveFrom);
+
+  // NO DATE LEFT TO OFFER: the latest version is on the last day `0010` admits.
+  if (latest !== null && afterLatest === null) return null;
+
+  const current = state.team?.id ?? null;
+  const choices = teams
+    .filter((team) => !team.archived && team.id !== current)
+    .map((team) => ({ id: team.id, name: team.name }));
+  const offersNoTeam = current !== null;
+
+  if (choices.length === 0 && !offersNoTeam) return null;
+
+  const minimum = afterLatest !== null && afterLatest > today ? afterLatest : today;
+
+  return { change: TEAM_MOVE, state, today, choices, offersNoTeam, minimum };
+}
+
+/**
+ * The team a `<select>` value names: a team id, `null` for "no team", or
+ * `undefined` for a value the offer never rendered — a lookup with no cast,
+ * so a stale option cannot become a write.
+ */
+export function chosenTeam(value: string, offer: TeamOffer): TeamChoice | null | undefined {
+  if (offer.change !== TEAM_MOVE) return undefined;
+  if (value === NO_TEAM_VALUE) return offer.offersNoTeam ? null : undefined;
+
+  return offer.choices.find((choice) => choice.id === value);
+}
+
+/** The value the picker opens on: the first team offered, or "no team". */
+export function teamPickerDefault(offer: TeamOffer): string {
+  if (offer.change !== TEAM_MOVE) return NO_TEAM_VALUE;
+
+  return offer.choices[0]?.id ?? NO_TEAM_VALUE;
+}
+
+/** Everything a team change is judged against. */
+export interface TeamContext {
+  readonly member: MemberListRow;
+  /** Every team the read holds, archived ones included. */
+  readonly teams: readonly TeamOption[];
+  /** The organization's today, as an ISO date. */
+  readonly today: string;
+}
+
+/**
+ * The refusals a team change can know before it is sent, or `null`.
+ *
+ * `day` is the entered date for a move and the scheduled version's date for a
+ * cancellation; `team` is the chosen team's id, `null` for no team, ignored
+ * for a cancellation. The same rules as `0010`'s policies, in the order the
+ * screen can act on them.
+ */
+export function teamPreflightOf(
+  change: TeamChange,
+  day: string,
+  team: string | null,
+  context: TeamContext,
+): MemberWriteFailure | null {
+  if (!isIsoDate(day)) return MEMBER_WRITE_INVALID;
+
+  const latest = memberTeamLatestVersion(context.member);
+
+  // ISO dates order as strings, so every comparison below is the policy's own.
+  if (change === WITHDRAW) {
+    if (latest === null || latest.effectiveFrom !== day) return MEMBER_TEAM_STALE;
+    if (day <= context.today) return MEMBER_TEAM_IN_EFFECT;
+
+    return null;
+  }
+
+  if (day < context.today) return MEMBER_TEAM_IN_PAST;
+  // DATE ORDER BEFORE THE ONE-SCHEDULED RULE: a date on or before a scheduled
+  // move is refused for its date whatever else holds, and only a date after it
+  // is refused for being a second scheduled change.
+  if (latest !== null && day === latest.effectiveFrom) return MEMBER_TEAM_DATE_TAKEN;
+  if (latest !== null && day < latest.effectiveFrom) return MEMBER_TEAM_OUT_OF_ORDER;
+  if (latest !== null && latest.effectiveFrom > context.today) return MEMBER_TEAM_SCHEDULED;
+  // CHANGES THE TEAM: compared with the latest state, and "no team" for a
+  // member with no history at all is no change either.
+  if (team === (latest?.team?.id ?? null)) return MEMBER_TEAM_UNCHANGED;
+
+  if (team !== null) {
+    const target = context.teams.find((candidate) => candidate.id === team);
+
+    if (target === undefined) return MEMBER_TEAM_STALE;
+    if (target.archived) return MEMBER_TEAM_ARCHIVED;
+  }
+
+  return null;
+}
+
+/**
+ * A refused team write, as this application's own failure — the reading
+ * {@link statusFailureOf} makes. Every rule arrives as `42501`, or as zero
+ * rows for a cancellation, so the preflight names it; a refusal the list
+ * cannot explain is STALE (look again). `23503` is a team or member that is no
+ * longer there, which is stale too.
+ */
+export function teamFailureOf(
+  error: PostgrestFailure | null,
+  change: TeamChange,
+  day: string,
+  team: string | null,
+  context: TeamContext,
+): MemberWriteFailure {
+  if (error?.code === '23505') return MEMBER_TEAM_DATE_TAKEN;
+  if (error?.code === '23503') return MEMBER_TEAM_STALE;
+
+  if (error === null || error.code === '42501') {
+    return teamPreflightOf(change, day, team, context) ?? MEMBER_TEAM_STALE;
+  }
+
+  if (error.code !== undefined && ['22', '23'].includes(error.code.slice(0, 2))) {
+    return MEMBER_WRITE_INVALID;
+  }
+
+  return MEMBER_WRITE_UNAVAILABLE;
+}
+
+async function sendTeam(
+  table: MemberTeamTable,
+  change: TeamChange,
+  day: string,
+  team: string | null,
+  member: MemberListRow,
+): Promise<StatusAnswer> {
+  if (change === WITHDRAW) {
+    const answered = await table
+      .delete()
+      .eq('member_id', member.id)
+      .eq('effective_from', day)
+      .select(WITHDRAWN_COLUMNS);
+
+    // ZERO ROWS IS A REFUSAL: the delete policy matched nothing.
+    return { written: answered.error === null && answered.data?.length === 1, error: answered.error };
+  }
+
+  const answered = await table.insert({
+    organization_id: member.organizationId,
+    member_id: member.id,
+    team_id: team,
+    effective_from: day,
+  });
+
+  return { written: answered.error === null, error: answered.error };
+}
+
+/**
+ * Append one team version, or cancel the scheduled one. Nothing is sent for a
+ * refusal it can already name, and the picked team and date are the caller's
+ * to keep — both controls are uncontrolled and a refusal does not remount them.
+ */
+export async function changeMemberTeam(
+  table: MemberTeamTable,
+  change: TeamChange,
+  day: string,
+  team: string | null,
+  context: TeamContext,
+): Promise<MemberWriteOutcome> {
+  const preflight = teamPreflightOf(change, day, team, context);
+
+  if (preflight !== null) return { ok: false, refusal: { code: preflight, saved: false } };
+
+  let answer: StatusAnswer;
+
+  try {
+    answer = await sendTeam(table, change, day, team, context.member);
+  } catch (cause) {
+    console.error(MEMBER_WRITE_UNAVAILABLE, cause);
+
+    return { ok: false, refusal: { code: MEMBER_WRITE_UNAVAILABLE, saved: false } };
+  }
+
+  if (answer.written) return { ok: true };
+
+  const code = teamFailureOf(answer.error, change, day, team, context);
+
+  console.error(code, answer.error?.code);
+
+  return { ok: false, refusal: { code, saved: false } };
+}
+
+/**
+ * The team confirmation, carrying what it is about: the member's name, the
+ * change, the chosen team (`null` for no team, and for a cancellation) and the
+ * DATE, so what is confirmed is exactly what is sent. `history` is
+ * {@link teamBlockKey} when it was armed.
+ */
+export interface TeamConfirmation {
+  readonly name: string;
+  readonly change: TeamChange;
+  readonly team: TeamChoice | null;
+  readonly day: string;
+  readonly history: string;
+}
+
+/** The prompt key for an armed team confirmation, worded by its date. */
+export function teamPromptKeyOf(
+  confirmation: Pick<TeamConfirmation, 'change' | 'team' | 'day'>,
+  today: string,
+): ReturnType<typeof teamPromptMessageKey> {
+  return teamPromptMessageKey(
+    confirmation.change,
+    confirmation.team === null,
+    confirmation.day > today,
+  );
+}
+
+/** The team block's fingerprint: the member and their whole team history. */
+export function teamBlockKey(member: MemberListRow): string {
+  return [
+    member.id,
+    ...member.teamVersions.map(
+      // THE NAME IS PART OF THE KEY: a confirmation armed before a rename would
+      // otherwise name the team as it no longer is.
+      (version) =>
+        `${version.effectiveFrom}:${version.team?.id ?? NO_TEAM_VALUE}:${version.team?.name ?? ''}`,
+    ),
+  ].join('|');
+}
+
+/**
+ * The armed team confirmation that still stands, or `null` — cleared by a
+ * refetch that changes the member's team history, kept while its own write is
+ * pending. {@link standingConfirmation}'s rule.
+ */
+export function standingTeamConfirmation(
+  armed: TeamConfirmation | null,
+  member: MemberListRow | null,
+  pending: boolean,
+): TeamConfirmation | null {
+  if (armed === null) return null;
+  if (pending || member === null) return armed;
+
+  return teamBlockKey(member) === armed.history ? armed : null;
+}
+
 /** The relation the edit path writes. Re-exported rather than re-declared, for
  *  the reason `members/list.ts` re-exports it: two spellings of one table name
  *  is one read that moves and one that 404s. */
@@ -1257,6 +1596,14 @@ export {
   MEMBER_STATUS_SELF,
   MEMBER_STATUS_STALE,
   MEMBER_STATUS_UNCHANGED,
+  MEMBER_TEAM_ARCHIVED,
+  MEMBER_TEAM_DATE_TAKEN,
+  MEMBER_TEAM_IN_EFFECT,
+  MEMBER_TEAM_IN_PAST,
+  MEMBER_TEAM_OUT_OF_ORDER,
+  MEMBER_TEAM_SCHEDULED,
+  MEMBER_TEAM_STALE,
+  MEMBER_TEAM_UNCHANGED,
   MEMBER_UNKNOWN,
   MEMBER_USERNAME_INVALID,
   MEMBER_USERNAME_NOT_APPLIED,
@@ -1284,6 +1631,12 @@ export {
   statusPromptMessageKey,
   statusScheduledMessageKey,
   statusTodayMessageKey,
+  TEAM_MOVE,
+  teamConfirmMessageKey,
+  teamOfferMessageKey,
+  teamPromptMessageKey,
+  teamScheduledMessageKey,
+  type TeamChange,
   type MemberWriteFailure,
   type MemberWriteMessageKey,
   type MemberWriteRefusal,

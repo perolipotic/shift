@@ -755,17 +755,22 @@ describe('every organization table carries row level security, and only its revi
         `select relname, relrowsecurity
            from pg_class
           where relnamespace = 'public'::regnamespace
-            and relname in ('organizations', 'members', 'member_status_versions', 'teams')
+            and relname in (
+              'organizations', 'members', 'member_status_versions', 'teams',
+              'team_membership_versions'
+            )
           order by relname`,
       );
 
       // STORY 1.6 adds the versioned active status, which is organization data
       // like the other two and is born with row level security on. STORY 1.7a
-      // adds the teams, born the same way.
+      // adds the teams, born the same way, and STORY 1.7b the versioned team
+      // membership.
       expect(rows.map((row) => row.relname)).toEqual([
         'member_status_versions',
         'members',
         'organizations',
+        'team_membership_versions',
         'teams',
       ]);
       for (const row of rows) {
@@ -836,6 +841,69 @@ describe('every organization table carries row level security, and only its revi
           .sort(),
         'the writable team columns changed',
       ).toEqual(['INSERT:name', 'INSERT:organization_id', 'UPDATE:archived', 'UPDATE:name']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('holds no privilege on team_membership_versions that no policy needs', async () => {
+    // STORY 1.7b, the status table's matrix exactly: `authenticated` keeps
+    // SELECT and DELETE (each narrowed by a policy) and a column-level INSERT
+    // on the four facts; `anon` keeps nothing, and no session names the
+    // attribution.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ role: string; privilege: string; held: boolean }>(
+        `select role, privilege,
+                has_table_privilege(role, 'public.team_membership_versions', privilege) as held
+           from unnest(array['anon', 'authenticated']) as role,
+                unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'])
+                  as privilege`,
+      );
+      const held = rows.filter((row) => row.held).map((row) => `${row.role}:${row.privilege}`);
+
+      expect(held.sort()).toEqual(['authenticated:DELETE', 'authenticated:SELECT']);
+
+      const { rows: columns } = await client.query<{ column: string; verb: string; held: boolean }>(
+        `select column_name as column, verb,
+                has_column_privilege('authenticated', 'public.team_membership_versions', column_name, verb) as held
+           from unnest(array['organization_id', 'id', 'member_id', 'team_id', 'effective_from',
+                             'created_by', 'created_at']) as column_name,
+                unnest(array['INSERT', 'UPDATE']) as verb`,
+      );
+      expect(
+        columns
+          .filter((row) => row.held)
+          .map((row) => `${row.verb}:${row.column}`)
+          .sort(),
+        'the writable membership columns changed',
+      ).toEqual([
+        'INSERT:effective_from',
+        'INSERT:member_id',
+        'INSERT:organization_id',
+        'INSERT:team_id',
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('indexes team_membership_versions by its tenant', async () => {
+    // Q3, as for the status table: the unique index leads with `member_id`.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ indexdef: string }>(
+        `select indexdef from pg_indexes
+          where schemaname = 'public' and tablename = 'team_membership_versions'`,
+      );
+      expect(
+        rows.some((row) => /\(organization_id\)$/.test(row.indexdef)),
+        'no index leads with organization_id alone',
+      ).toBe(true);
+      expect(
+        rows.some((row) => /UNIQUE INDEX .* \(member_id, effective_from\)$/.test(row.indexdef)),
+        'two versions may share a date',
+      ).toBe(true);
     } finally {
       await client.end();
     }
@@ -1014,6 +1082,11 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'member_active_on', argumentCount: 2, expected: ['authenticated'] },
     { name: 'member_active_from', argumentCount: 2, expected: ['authenticated'] },
     { name: 'member_latest_version', argumentCount: 1, expected: ['authenticated'] },
+    // STORY 1.7b's four membership readers, on the same terms.
+    { name: 'member_team_on', argumentCount: 2, expected: ['authenticated'] },
+    { name: 'member_team_has_version', argumentCount: 1, expected: ['authenticated'] },
+    { name: 'team_membership_latest_version', argumentCount: 1, expected: ['authenticated'] },
+    { name: 'team_in_use', argumentCount: 1, expected: ['authenticated'] },
   ];
 
   it.skipIf(noDatabase).each([
@@ -1021,6 +1094,10 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'member_active_on', argumentCount: 2 },
     { name: 'member_active_from', argumentCount: 2 },
     { name: 'member_latest_version', argumentCount: 1 },
+    { name: 'member_team_on', argumentCount: 2 },
+    { name: 'member_team_has_version', argumentCount: 1 },
+    { name: 'team_membership_latest_version', argumentCount: 1 },
+    { name: 'team_in_use', argumentCount: 1 },
   ])('runs $name as the caller, with an empty search_path', async ({ name, argumentCount }) => {
     // INVOKER, the opposite of the helper and the hook. They are reached from
     // the helper, the hook and the zero-admins function as the owner, and from

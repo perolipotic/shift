@@ -14,6 +14,7 @@ import {
   NO_TEXT,
   mayReadMembers,
   memberLevelMessageKey,
+  memberTeamOf,
   membersSurfaceStateOf,
   membersTodayOf,
   readMembers,
@@ -23,9 +24,12 @@ import {
 import {
   LEAVE_ALLOWANCE_MAX,
   MEMBER_STATUS_TABLE,
+  MEMBER_TEAM_STALE,
+  MEMBER_TEAM_TABLE,
   MEMBER_WRITE_INVALID,
   MEMBER_WRITE_UNAVAILABLE,
   MESSAGE_SEPARATOR,
+  NO_TEAM_VALUE,
   RESET_ARMED,
   RESET_BUSY,
   RESET_IDLE,
@@ -34,8 +38,11 @@ import {
   STATUS_ARMED,
   STATUS_BUSY,
   STATUS_IDLE,
+  TEAM_MOVE,
   WITHDRAW,
   changeMemberStatus,
+  changeMemberTeam,
+  chosenTeam,
   chosenRole,
   enteredAllowance,
   memberFormKey,
@@ -47,6 +54,7 @@ import {
   resetStageOf,
   saveMember,
   standingConfirmation,
+  standingTeamConfirmation,
   statusBlockKey,
   statusConfirmMessageKey,
   statusOfferMessageKey,
@@ -58,17 +66,36 @@ import {
   statusStageOf,
   statusTodayMessageKey,
   storedEmail,
+  teamBlockKey,
+  teamConfirmMessageKey,
+  teamOfferMessageKey,
+  teamOfferOf,
+  teamPickerDefault,
+  teamPreflightOf,
+  teamPromptKeyOf,
+  teamScheduledMessageKey,
   type RaisedForMember,
   type MemberFunctions,
   type MemberWriteRefusal,
   type ResetCredential,
   type StatusConfirmation,
   type StatusOffer,
+  type TeamConfirmation,
+  type TeamOffer,
 } from '@/members/write';
 import { DESTINATIONS } from '@/navigation/destinations';
 import { MEMBER_ROLES, MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/navigation/role';
 import { appLayoutRoute } from '@/routes/_app';
 import { currentSession, supabaseClient } from '@/supabase/client';
+import {
+  TEAMS_LIST_KEY,
+  TEAMS_READ_STALE_MS,
+  TEAMS_TABLE,
+  readTeams,
+  splitTeams,
+  teamsMessageKey,
+  teamsSurfaceStateOf,
+} from '@/teams/list';
 
 /**
  * `/ljudi/$id` — an admin edits one member (story 1.5b).
@@ -123,6 +150,14 @@ import { currentSession, supabaseClient } from '@/supabase/client';
  * refusal is called are all `@/members/write`'s decisions. The date control
  * defaults to, and may not go below, the ORGANIZATION's today; it stays mounted
  * through the confirmation, so a refusal keeps the date that was entered.
+ *
+ * THE TEAM IS THE FOURTH BLOCK (story 1.7b), after the status, on the same
+ * shape: its own ref, pending flag, armed confirmation and refusal; a plain
+ * PostgREST insert of a membership version or the delete of the scheduled one;
+ * every rule `0010`'s policies. Unlike the status block it IS offered on the
+ * caller's own row. The picker reads the teams under `TEAMS_LIST_KEY`, active
+ * ones only; the team and date controls are uncontrolled and stay mounted
+ * through the confirmation, so a refusal keeps both.
  */
 
 /** Where a session that is not an administrator's is sent. The FIRST
@@ -207,6 +242,17 @@ export function LjudiMemberScreen() {
   /** Why the last status change did not land. Keyed to the member. */
   const [statusFailure, setStatusFailure] =
     useState<RaisedForMember<MemberWriteRefusal> | null>(null);
+  // THE TEAM BLOCK'S OWN STATE and its own in-flight ref, for the reason the
+  // status block has its own.
+  const teaming = useRef(false);
+  const teamField = useRef<HTMLSelectElement>(null);
+  const teamDateField = useRef<HTMLInputElement>(null);
+  const [teamPending, setTeamPending] = useState(false);
+  const [teamArmed, setTeamArmed] = useState<RaisedForMember<TeamConfirmation> | null>(null);
+  const [teamSaved, setTeamSaved] = useState<RaisedForMember<true> | null>(null);
+  const [teamFailure, setTeamFailure] = useState<RaisedForMember<MemberWriteRefusal> | null>(
+    null,
+  );
 
   const answer = useQuery({
     queryKey: MEMBERS_LIST_KEY,
@@ -222,6 +268,17 @@ export function LjudiMemberScreen() {
     refetchOnWindowFocus: false,
   });
   const callerAuthUserId = subject.data ?? null;
+
+  // THE TEAMS THE PICKER OFFERS, under the team screens' own key (AD-13).
+  const teamsAnswer = useQuery({
+    queryKey: TEAMS_LIST_KEY,
+    queryFn: () => readTeams(supabaseClient().from(TEAMS_TABLE)),
+    staleTime: TEAMS_READ_STALE_MS,
+    refetchOnWindowFocus: false,
+  });
+  const teamsState = teamsSurfaceStateOf(teamsAnswer);
+  const allTeams = teamsState.teams;
+  const activeTeams = allTeams === null ? null : splitTeams(allTeams).active;
   const organizationMembers = membersSurfaceStateOf(answer).members ?? [];
   // THE ORGANIZATION'S TODAY — the date control's default and its minimum —
   // from the zone the one list read embeds.
@@ -253,6 +310,112 @@ export function LjudiMemberScreen() {
   const statusRefusal = raisedForMember(statusFailure, id);
   const statusStage = statusStageOf(statusArmedFor !== null, statusPending);
   const offer = form.member === null ? null : statusOfferOf(form.member, callerAuthUserId, today);
+  const teamArmedFor = standingTeamConfirmation(
+    raisedForMember(teamArmed, id),
+    form.member,
+    teamPending,
+  );
+  const teamConfirmed = raisedForMember(teamSaved, id) !== null;
+  const teamRefusal = raisedForMember(teamFailure, id);
+  const teamStage = statusStageOf(teamArmedFor !== null, teamPending);
+  const teamOffer = form.member === null ? null : teamOfferOf(form.member, activeTeams, today);
+
+  /**
+   * Arm the team confirmation, or name the refusal the picked team and date
+   * already earn. Nothing is sent from here.
+   */
+  function armTeam(member: MemberListRow, offered: TeamOffer): void {
+    const dateField = teamDateField.current;
+    const picked = teamField.current;
+    const day = offered.change === WITHDRAW ? offered.scheduled.effectiveFrom : dateField?.value;
+    const team = offered.change === WITHDRAW ? null : chosenTeam(picked?.value ?? NO_TEAM_VALUE, offered);
+
+    // NEVER A PRESS WITH NO ANSWER: teams unread, or a pick the offer no longer
+    // holds, is a screen behind the database.
+    if (allTeams === null || day === undefined || team === undefined) {
+      setTeamSaved(null);
+      setTeamFailure({ member: member.id, raised: { code: MEMBER_TEAM_STALE, saved: false } });
+
+      return;
+    }
+
+    const refusal = teamPreflightOf(offered.change, day, team?.id ?? null, {
+      member,
+      teams: allTeams,
+      today: offered.today,
+    });
+
+    setTeamSaved(null);
+
+    if (refusal !== null) {
+      setTeamFailure({ member: member.id, raised: { code: refusal, saved: false } });
+      (offered.change === WITHDRAW ? null : dateField)?.focus();
+
+      return;
+    }
+
+    setTeamFailure(null);
+    setTeamArmed({
+      member: member.id,
+      raised: { name: member.name, change: offered.change, team, day, history: teamBlockKey(member) },
+    });
+  }
+
+  /**
+   * Send the confirmed team change, keeping the confirmation on screen while it
+   * is outstanding. NOTHING CLEARS `teamArmed` BEFORE THE AWAIT.
+   */
+  async function changeTeam(): Promise<void> {
+    const member = form.member;
+    const confirmation = teamArmedFor;
+
+    if (member === null || confirmation === null || teaming.current) return;
+
+    if (allTeams === null || today === null) {
+      setTeamFailure({ member: member.id, raised: { code: MEMBER_TEAM_STALE, saved: false } });
+      setTeamArmed(null);
+
+      return;
+    }
+
+    teaming.current = true;
+    setTeamFailure(null);
+    setTeamSaved(null);
+    setTeamPending(true);
+
+    try {
+      const outcome = await changeMemberTeam(
+        supabaseClient().from(MEMBER_TEAM_TABLE),
+        confirmation.change,
+        confirmation.day,
+        confirmation.team?.id ?? null,
+        { member, teams: allTeams, today },
+      );
+
+      if (outcome.ok) setTeamSaved({ member: member.id, raised: true });
+      else setTeamFailure({ member: member.id, raised: outcome.refusal });
+
+      // THE LIST CARRIES THE TEAM HISTORY, and a refusal is refetched too: the
+      // likeliest reason for one is a list behind the database. The teams are
+      // refetched as well, because a team archived meanwhile is the other.
+      try {
+        await queryClient.invalidateQueries({ queryKey: MEMBERS_LIST_KEY });
+        if (!outcome.ok) await queryClient.invalidateQueries({ queryKey: TEAMS_LIST_KEY });
+      } catch (cause) {
+        console.error(MEMBER_WRITE_UNAVAILABLE, cause);
+      }
+    } catch (cause) {
+      console.error(MEMBER_WRITE_UNAVAILABLE, cause);
+      setTeamFailure({
+        member: member.id,
+        raised: { code: MEMBER_WRITE_UNAVAILABLE, saved: false },
+      });
+    } finally {
+      teaming.current = false;
+      setTeamPending(false);
+      setTeamArmed(null);
+    }
+  }
 
   /**
    * Arm the status confirmation, or name the refusal the entered date already
@@ -901,6 +1064,196 @@ export function LjudiMemberScreen() {
     );
   }
 
+  /**
+   * The team block: the team today, the move scheduled after it, and the one
+   * thing offered — a move from a date, or the scheduled move's cancellation —
+   * or its confirmation. No team is said in words (`Bez smjene`).
+   *
+   * THE PICKER AND THE DATE STAY MOUNTED across every stage, disabled while a
+   * confirmation stands, so a refused move returns to the offer with both
+   * still as entered. Keyed to the member's team history.
+   */
+  function renderTeam(): ReactNode {
+    const member = form.member;
+
+    if (member === null || today === null) return null;
+
+    const idle = teamStage === STATUS_IDLE;
+    // STATED EVEN WHEN NOTHING IS OFFERED — no teams to move onto, or the
+    // teams unread — so the member's team is never left unsaid.
+    const state = memberTeamOf(member, today);
+    const current = state.team;
+    const scheduled = state.scheduled;
+
+    return (
+      <div key={teamBlockKey(member)} className="grid gap-2">
+        <p className="text-sm font-medium">
+          {t('smjene.membership.current', {
+            team: current?.name ?? t('smjene.membership.none'),
+          })}
+        </p>
+        {scheduled === null ? null : (
+          <p className="text-sm font-medium">
+            {t(teamScheduledMessageKey(scheduled.team === null), {
+              date: shownDate(scheduled.from),
+              team: scheduled.team?.name ?? NO_TEXT,
+            })}
+          </p>
+        )}
+        {teamsState.refusal === null ? null : (
+          <p role="alert" className="rounded-md border border-input px-3 py-2 text-sm font-medium">
+            {t(teamsMessageKey(teamsState.refusal))}
+          </p>
+        )}
+        {teamRefusal === null ? null : (
+          <p
+            id="member-team-error"
+            role="alert"
+            className="rounded-md border border-input px-3 py-2 text-sm font-medium"
+          >
+            {memberWriteMessageKeys(teamRefusal)
+              .map((key) => t(key))
+              .join(MESSAGE_SEPARATOR)}
+          </p>
+        )}
+        {/* AN ARMED OR PENDING CONFIRMATION OUTLIVES ITS OFFER: a refetch that
+            empties the offer mid-write must not take the busy state with it. */}
+        {teamOffer === null
+          ? renderTeamConfirmation(today)
+          : renderTeamControls(member, teamOffer, idle, today)}
+        {teamConfirmed ? (
+          <p role="status" className="text-sm font-medium">
+            {t('smjene.membership.saved')}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
+  /** The picker and date for a move, then the offer or its confirmation. */
+  function renderTeamControls(
+    member: MemberListRow,
+    offered: TeamOffer,
+    idle: boolean,
+    today: string,
+  ): ReactNode {
+    return (
+      <>
+        {renderTeamPicker(offered, idle)}
+        {idle ? renderTeamOffer(member, offered) : renderTeamConfirmation(today)}
+      </>
+    );
+  }
+
+  /**
+   * The team `<select>` and the date, for a move. A cancellation names the
+   * scheduled version's own date and offers neither. Described by the team
+   * block's own alert and by nothing else.
+   */
+  function renderTeamPicker(offered: TeamOffer, idle: boolean): ReactNode {
+    if (offered.change !== TEAM_MOVE) return null;
+
+    return (
+      <>
+        <Label htmlFor="member-team">{t('smjene.membership.team')}</Label>
+        <select
+          ref={teamField}
+          id="member-team"
+          name="team"
+          defaultValue={teamPickerDefault(offered)}
+          disabled={!idle}
+          aria-describedby={teamRefusal === null ? undefined : 'member-team-error'}
+          className="flex h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {offered.choices.map((choice) => (
+            <option key={choice.id} value={choice.id}>
+              {choice.name}
+            </option>
+          ))}
+          {offered.offersNoTeam ? (
+            <option value={NO_TEAM_VALUE}>{t('smjene.membership.none')}</option>
+          ) : null}
+        </select>
+        <Label htmlFor="member-team-date">{t('smjene.membership.date')}</Label>
+        <Input
+          ref={teamDateField}
+          id="member-team-date"
+          name="teamEffectiveFrom"
+          type="date"
+          required
+          min={offered.minimum}
+          defaultValue={offered.minimum}
+          disabled={!idle}
+          aria-describedby={teamRefusal === null ? undefined : 'member-team-error'}
+          className="h-11"
+        />
+      </>
+    );
+  }
+
+  /** The offer, naming the member it acts on. One press sends nothing. */
+  function renderTeamOffer(member: MemberListRow, offered: TeamOffer): ReactNode {
+    return (
+      <Button
+        className="h-11 w-full"
+        type="button"
+        variant="outline"
+        onClick={() => {
+          armTeam(member, offered);
+        }}
+      >
+        {t(teamOfferMessageKey(offered.change), { name: member.name })}
+      </Button>
+    );
+  }
+
+  /**
+   * The confirmation, naming the member, the team and the date. Its tense reads
+   * TODAY AS IT IS NOW, the day the write will be judged against.
+   */
+  function renderTeamConfirmation(today: string): ReactNode {
+    if (teamArmedFor === null) return null;
+
+    const busy = teamStage === STATUS_BUSY;
+    const armedName = teamArmedFor.name;
+
+    return (
+      <div className="grid gap-2">
+        <p className="text-sm font-medium">
+          {t(teamPromptKeyOf(teamArmedFor, today), {
+            name: armedName,
+            date: shownDate(teamArmedFor.day),
+            team: teamArmedFor.team?.name ?? NO_TEXT,
+          })}
+        </p>
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Button
+            className="h-11 w-full"
+            type="button"
+            disabled={busy || teamStage !== STATUS_ARMED}
+            aria-busy={busy}
+            onClick={() => {
+              void changeTeam();
+            }}
+          >
+            {t(teamConfirmMessageKey(teamArmedFor.change), { name: armedName })}
+          </Button>
+          <Button
+            className="h-11 w-full"
+            type="button"
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              setTeamArmed(null);
+            }}
+          >
+            {t('smjene.membership.cancel')}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   function renderBody(): ReactNode {
     if (form.member !== null) return renderForm(form.member);
 
@@ -953,6 +1306,8 @@ export function LjudiMemberScreen() {
           {/* STORY 1.6, and outside the `<form>` for the reason the reset is: a
               `<Button>` inside it submits, and the form's key remounts it. */}
           {renderStatus()}
+          {/* STORY 1.7b, outside the `<form>` for the same reason. */}
+          {renderTeam()}
           {/* THE WAY BACK, always rendered — including while the read is pending
               and after it has settled failed. A screen reachable only by URL
               that can be left only by the browser's Back button is a dead end. */}

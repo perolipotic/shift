@@ -449,6 +449,38 @@ const SANCTIONED_SCREEN_KEYS = [
   'smjene.error.invalid',
   'smjene.error.saveUnavailable',
   'smjene.error.unknown',
+  // STORY 1.7b: an archive of a team somebody is on today, or is scheduled
+  // onto, is refused and says so.
+  'smjene.error.inUse',
+  // STORY 1.7b: team membership on the member list and edit screens. Under
+  // `smjene.membership.*` so the one namespace that may say the Team holds
+  // them; "no team" is `Bez smjene`, positive words, never `Nema`.
+  'smjene.membership.column',
+  'smjene.membership.none',
+  'smjene.membership.current',
+  'smjene.membership.scheduled',
+  'smjene.membership.scheduledNone',
+  'smjene.membership.team',
+  'smjene.membership.date',
+  'smjene.membership.move',
+  'smjene.membership.movePrompt',
+  'smjene.membership.movePromptFuture',
+  'smjene.membership.removePrompt',
+  'smjene.membership.removePromptFuture',
+  'smjene.membership.moveConfirm',
+  'smjene.membership.withdraw',
+  'smjene.membership.withdrawPrompt',
+  'smjene.membership.withdrawConfirm',
+  'smjene.membership.cancel',
+  'smjene.membership.saved',
+  'smjene.membership.error.past',
+  'smjene.membership.error.taken',
+  'smjene.membership.error.order',
+  'smjene.membership.error.unchanged',
+  'smjene.membership.error.scheduled',
+  'smjene.membership.error.inEffect',
+  'smjene.membership.error.archived',
+  'smjene.membership.error.stale',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
@@ -746,6 +778,18 @@ describe('the messages obey the voice rules that bind every string', () => {
     expect(messageAt('smjene.archiveConfirm')).toBe('Potvrdi arhiviranje smjene {name}');
     expect(messageAt('smjene.archiveCancel')).toBe('Odustani od arhiviranja');
     expect(messageAt('smjene.back')).toBe('Vrati se na smjene');
+    // STORY 1.7b's FIVE, a sixth authoring of the same voice. The move offer is
+    // the one that would most naturally have been the noun `Premještaj` — the
+    // prompt's subject, not a control.
+    expect(messageAt('smjene.membership.move')).toBe('Promijeni smjenu osobe {name}');
+    expect(messageAt('smjene.membership.moveConfirm')).toBe('Potvrdi promjenu smjene osobe {name}');
+    expect(messageAt('smjene.membership.withdraw')).toBe(
+      'Poništi zakazanu promjenu smjene za osobu {name}',
+    );
+    expect(messageAt('smjene.membership.withdrawConfirm')).toBe(
+      'Potvrdi poništavanje promjene smjene za osobu {name}',
+    );
+    expect(messageAt('smjene.membership.cancel')).toBe('Odustani od promjene smjene');
   });
 });
 

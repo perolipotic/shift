@@ -21,6 +21,10 @@ import {
   MEMBERS_READ_STALE_MS,
   MEMBER_COLUMNS,
   NAME_COLUMN,
+  TEAM_CELL,
+  TEAM_COLUMN,
+  memberTeamOf,
+  memberTeamOn,
   NOT_A_ROW,
   NO_TEXT,
   TEXT_CELL,
@@ -59,6 +63,8 @@ import {
   type NarrowingInputs,
   type SortState,
 } from '@/members/list';
+import { TEAM_HISTORY, TEAM_HISTORY_ANSWERS, TEAM_HISTORY_SPAN } from '@/members/team-history.fixture';
+import { nextIsoDate } from '@/i18n/format';
 import { MEMBER_ROLES } from '@/navigation/role';
 
 /**
@@ -97,6 +103,7 @@ function member(fields: Partial<MemberListRow> & { readonly id: string }): Membe
     leaveAllowanceDays: 20,
     authUserId: `account-${fields.id}`,
     statusVersions: [],
+    teamVersions: [],
     timeZone: 'Europe/Zagreb',
     ...fields,
   };
@@ -135,6 +142,7 @@ function row(fields: Readonly<Record<string, unknown>>): Record<string, unknown>
     leave_allowance_days: 20,
     auth_user_id: `account-${String(fields['id'] ?? 'member')}`,
     member_status_versions: [],
+    team_membership_versions: [],
     organizations: { timezone: 'Europe/Zagreb' },
     ...fields,
   };
@@ -226,7 +234,10 @@ describe('the read asks for exactly what the surface needs, and for the count', 
     // list carries a comma.
     // `organizations(timezone)` is the organization's ZONE, embedded so "as at
     // today" is the organization's today without a second read (AD-13, L8).
-    const embed = 'member_status_versions(active,effective_from),organizations(timezone)';
+    // STORY 1.7b adds the TEAM history, each version with its team's name.
+    const embed =
+      'member_status_versions(active,effective_from),' +
+      'team_membership_versions(team_id,effective_from,teams(name)),organizations(timezone)';
 
     expect(MEMBERS_COLUMNS.endsWith(`,${embed}`)).toBe(true);
     expect(MEMBERS_COLUMNS.slice(0, -(embed.length + 1)).split(',').sort()).toEqual(
@@ -265,6 +276,7 @@ describe('the read asks for exactly what the surface needs, and for the count', 
       leaveAllowanceDays: 25,
       authUserId: 'account-m1',
       statusVersions: [],
+      teamVersions: [],
       timeZone: 'Europe/Zagreb',
     });
   });
@@ -465,16 +477,17 @@ describe('the four columns are one table, so a heading and its sort key cannot d
       [NAME_COLUMN, 'ljudi.name'],
       [EMAIL_COLUMN, 'ljudi.email'],
       [LEVEL_COLUMN, 'ljudi.role'],
+      [TEAM_COLUMN, 'smjene.membership.column'],
       [LEAVE_COLUMN, 'ljudi.leave'],
     ]);
   });
 
-  it('carries no team, hours or active column', () => {
-    // Each absence is a decision: `members` has no `team_id` until story 1.7,
-    // hours are epic 4, and active state is versioned (AD-2) — story 1.6 marks
-    // an inactive member in words inside the name cell, not in a column.
-    expect(MEMBER_COLUMNS).toHaveLength(4);
-    for (const forbidden of ['team', 'hours', 'active']) {
+  it('carries no hours or active column', () => {
+    // Each absence is a decision: hours are epic 4, and active state is
+    // versioned (AD-2) — story 1.6 marks an inactive member in words inside
+    // the name cell, not in a column. The team arrived in story 1.7b.
+    expect(MEMBER_COLUMNS).toHaveLength(5);
+    for (const forbidden of ['hours', 'active']) {
       expect(MEMBER_COLUMNS.map((column) => String(column.key))).not.toContain(forbidden);
     }
   });
@@ -757,6 +770,44 @@ describe('the order is Croatian, and an address-less member has a place in it', 
         direction: ASCENDING,
       }).rows.map((found) => found.id),
     ).toEqual(['a', 'm']);
+  });
+
+  it('sorts the team column by the team today, through the list narrowing itself', () => {
+    // THROUGH `narrowMembers`, not `sortValue`: a narrowing that stopped
+    // handing `today` on would order a member with a scheduled move by the
+    // team the cell does not show. Alfa today and Zeta from 2026-10-01 sorts
+    // before Beta only if today reached the column.
+    const alfa = { id: 'team-alfa', name: 'Alfa' };
+    const beta = { id: 'team-beta', name: 'Beta' };
+    const zeta = { id: 'team-zeta', name: 'Zeta' };
+    const members = [
+      member({ id: 'on-beta', name: 'Ana', teamVersions: [{ team: beta, effectiveFrom: '2026-09-01' }] }),
+      member({
+        id: 'moving',
+        name: 'Boris',
+        teamVersions: [
+          { team: alfa, effectiveFrom: '2026-09-01' },
+          { team: zeta, effectiveFrom: '2026-10-01' },
+        ],
+      }),
+    ];
+
+    expect(
+      narrowMembers(members, '', ALL_LEVELS, { key: TEAM_COLUMN, direction: ASCENDING }, TODAY).rows.map(
+        (found) => found.id,
+      ),
+    ).toEqual(['moving', 'on-beta']);
+    // And through the object the screen hands over, so `narrowFrom` dropping
+    // `today` fails here too.
+    expect(
+      narrowFrom({
+        members,
+        search: '',
+        level: ALL_LEVELS,
+        sort: { key: TEAM_COLUMN, direction: ASCENDING },
+        today: TODAY,
+      }).rows.map((found) => found.id),
+    ).toEqual(['moving', 'on-beta']);
   });
 
   it('sorts the allowance numerically rather than as text', () => {
@@ -1087,6 +1138,7 @@ describe('the narrowing declares its own inputs, so a memo cannot drop one', () 
     search: 'ana',
     level: ALL_LEVELS,
     sort: DEFAULT_SORT,
+    today: TODAY,
   };
 
   it('carries every input, and exactly the inputs the object declares', () => {
@@ -1097,13 +1149,14 @@ describe('the narrowing declares its own inputs, so a memo cannot drop one', () 
     expect(narrowingDependencies(inputs)).toHaveLength(Object.keys(inputs).length);
   });
 
-  it.each(['members', 'search', 'level', 'sort'])('changes when %s changes', (field) => {
+  it.each(['members', 'search', 'level', 'sort', 'today'])('changes when %s changes', (field) => {
     const changed: NarrowingInputs = {
       ...inputs,
       ...(field === 'members' ? { members: [member({ id: 'b' })] } : {}),
       ...(field === 'search' ? { search: 'boris' } : {}),
       ...(field === 'level' ? { level: 'admin' as const } : {}),
       ...(field === 'sort' ? { sort: { key: LEAVE_COLUMN, direction: DESCENDING } } : {}),
+      ...(field === 'today' ? { today: '2026-09-24' } : {}),
     };
 
     expect(narrowingDependencies(changed)).not.toEqual(narrowingDependencies(inputs));
@@ -1111,7 +1164,7 @@ describe('the narrowing declares its own inputs, so a memo cannot drop one', () 
 
   it('narrows from the same object the dependencies come from', () => {
     expect(narrowFrom(inputs)).toEqual(
-      narrowMembers(inputs.members ?? [], inputs.search, inputs.level, inputs.sort),
+      narrowMembers(inputs.members ?? [], inputs.search, inputs.level, inputs.sort, inputs.today),
     );
   });
 
@@ -1435,5 +1488,106 @@ describe('status as at a date, read off the embedded versions (story 1.6)', () =
       });
     }
     expect(memberListRowOf(row({}))?.timeZone).toBe('Europe/Zagreb');
+  });
+});
+
+describe('team as at a date, read off the embedded versions (story 1.7b)', () => {
+  const A = { id: 'team-a', name: 'Alfa' };
+  const B = { id: 'team-b', name: 'Beta' };
+
+  it('validates the embedded team versions and orders them, refusing a malformed one', () => {
+    const parsed = memberListRowOf(
+      row({
+        team_membership_versions: [
+          { team_id: null, effective_from: '2026-10-05' },
+          { team_id: 'team-a', effective_from: '2026-09-01', teams: { name: 'Alfa' } },
+        ],
+      }),
+    );
+
+    expect(parsed?.teamVersions).toEqual([
+      { team: A, effectiveFrom: '2026-09-01' },
+      { team: null, effectiveFrom: '2026-10-05' },
+    ]);
+
+    for (const malformed of [
+      undefined,
+      null,
+      [{ team_id: 'team-a', effective_from: '2026-09-01' }],
+      [{ team_id: 'team-a', effective_from: '2026-09-01', teams: null }],
+      [{ team_id: 'team-a', effective_from: '2026-09-01', teams: { name: 7 } }],
+      [{ team_id: 7, effective_from: '2026-09-01', teams: { name: 'Alfa' } }],
+      [{ team_id: null, effective_from: '2026-02-31' }],
+      [{ team_id: null }],
+      ['version'],
+    ]) {
+      expect(
+        memberRowOutcomeOf(row({ team_membership_versions: malformed })),
+        JSON.stringify(malformed),
+      ).toEqual({ ok: false, malformed: { field: 'team_membership_versions', id: 'member' } });
+    }
+  });
+
+  it('reads the team as the latest version on or before a date, and no team before any', () => {
+    // AC 2's SPA half, over THE SAME history and answers `test/rls-isolation`
+    // asserts `member_team_on` against (`team-history.fixture.ts`).
+    const teams = { A, B } as const;
+    // Every day of the span, walked with the one date helper from the span's
+    // first day; the walk must pass through TODAY at offset 0.
+    const days: string[] = ['2026-09-08'];
+    while (days.length < TEAM_HISTORY_SPAN.to - TEAM_HISTORY_SPAN.from + 1) {
+      const next = nextIsoDate(days[days.length - 1] ?? '');
+      if (next === null) throw new Error('the span walked off the calendar');
+      days.push(next);
+    }
+    const dayAt = (offset: number) => days[offset - TEAM_HISTORY_SPAN.from] ?? '';
+    expect(dayAt(0), 'the span does not pass through TODAY at offset 0').toBe(TODAY);
+    const moved = member({
+      id: 'm',
+      teamVersions: TEAM_HISTORY.map(({ offset, team }) => ({
+        team: team === null ? null : teams[team],
+        effectiveFrom: dayAt(offset),
+      })),
+    });
+
+    expect(TEAM_HISTORY_ANSWERS.size).toBe(TEAM_HISTORY_SPAN.to - TEAM_HISTORY_SPAN.from + 1);
+    for (let offset = TEAM_HISTORY_SPAN.from; offset <= TEAM_HISTORY_SPAN.to; offset += 1) {
+      const answer = TEAM_HISTORY_ANSWERS.get(offset);
+      expect(answer, `no written answer for offset ${offset}`).not.toBeUndefined();
+      expect(memberTeamOn(moved, dayAt(offset)), dayAt(offset)).toEqual(
+        answer === null || answer === undefined ? null : teams[answer],
+      );
+    }
+    expect(memberTeamOn(member({ id: 'fresh' }), TODAY)).toBeNull();
+  });
+
+  it('states today and the one scheduled move', () => {
+    const scheduled = member({
+      id: 'm',
+      teamVersions: [
+        { team: A, effectiveFrom: '2026-09-01' },
+        { team: B, effectiveFrom: '2026-10-01' },
+      ],
+    });
+
+    expect(memberTeamOf(scheduled, TODAY)).toEqual({
+      team: A,
+      scheduled: { team: B, from: '2026-10-01' },
+    });
+    expect(memberTeamOf(scheduled, '2026-10-01')).toEqual({ team: B, scheduled: null });
+    expect(memberTeamOf(member({ id: 'f' }), TODAY)).toEqual({ team: null, scheduled: null });
+  });
+
+  it('puts the team today in the team cell, no team as null, and nothing while today is unknown', () => {
+    const column = MEMBER_COLUMNS.find((candidate) => candidate.key === TEAM_COLUMN);
+    const on = member({ id: 'm', teamVersions: [{ team: A, effectiveFrom: '2026-09-01' }] });
+    const later = member({ id: 'n', teamVersions: [{ team: B, effectiveFrom: '2026-10-01' }] });
+
+    expect(column?.cell(on, TODAY)).toEqual({ kind: TEAM_CELL, team: 'Alfa' });
+    expect(column?.cell(later, TODAY)).toEqual({ kind: TEAM_CELL, team: null });
+    expect(column?.cell(member({ id: 'f' }), TODAY)).toEqual({ kind: TEAM_CELL, team: null });
+    expect(column?.cell(on, null)).toEqual({ kind: TEXT_CELL, text: '' });
+    expect(column?.sortValue(on, TODAY)).toBe('Alfa');
+    expect(column?.sortValue(later, TODAY)).toBeNull();
   });
 });

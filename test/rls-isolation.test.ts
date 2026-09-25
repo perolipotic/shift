@@ -17,6 +17,11 @@ import {
   type PostgrestAnswer,
   type PrivilegedAccounts,
 } from '../supabase/functions/admin-auth/operations.ts';
+import {
+  TEAM_HISTORY,
+  TEAM_HISTORY_ANSWERS,
+  TEAM_HISTORY_SPAN,
+} from '../apps/web/src/members/team-history.fixture.ts';
 
 /**
  * Q1 and Q2, executed rather than read — and the regression suite every later
@@ -215,9 +220,13 @@ const CROSS_TENANT = FIXTURES.flatMap((self) =>
 );
 
 /** Both fixtures against every organization-scoped table a session reads:
- *  `organizations`, `members`, and since story 1.7a `teams`. */
+ *  `organizations`, `members`, since story 1.7a `teams`, and since story 1.7b
+ *  `team_membership_versions`. */
 const OWN_ORGANIZATION_READS = FIXTURES.flatMap((entry) =>
-  (['organizations', 'members', 'teams'] as const).map((table) => ({ ...entry, table })),
+  (['organizations', 'members', 'teams', 'team_membership_versions'] as const).map((table) => ({
+    ...entry,
+    table,
+  })),
 );
 
 /** Name and address prefix for rows this file creates outside a transaction. */
@@ -805,6 +814,12 @@ afterAll(async () => {
   if (noDatabase) return;
   const client = await connect();
   try {
+    // STORY 1.7b. Membership versions reference teams with no cascade, so the
+    // versions naming a throwaway team go first.
+    await client.query(
+      'delete from team_membership_versions where team_id in (select id from teams where name like $1)',
+      [`${THROWAWAY}%`],
+    );
     // STORY 1.7a. Teams are never deleted through the product, but the owner
     // may; scoped to the names this file issues, like every cleanup here.
     await client.query('delete from teams where name like $1', [`${THROWAWAY}%`]);
@@ -874,8 +889,8 @@ describe('the access-control layer is present, so nothing below passes vacuously
     ).toBe(FIXTURES.length * (FIXTURES.length - 1));
     expect(
       OWN_ORGANIZATION_READS.length,
-      'OWN_ORGANIZATION_READS must cover all three readable tables per fixture (teams since 1.7a)',
-    ).toBe(FIXTURES.length * 3);
+      'OWN_ORGANIZATION_READS must cover all four readable tables per fixture (teams since 1.7a, team membership since 1.7b)',
+    ).toBe(FIXTURES.length * 4);
   });
 
   it.skipIf(noDatabase)('reaches the API whenever it can reach the database', () => {
@@ -954,7 +969,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
       );
       expect(
         policies.map((row) => row.policyname),
-        'stories 1.3a, 1.4a, 1.6 and 1.7a own exactly these twelve policies; a missing one refuses silently and looks like a working refusal',
+        'stories 1.3a, 1.4a, 1.6, 1.7a and 1.7b own exactly these fifteen policies; a missing one refuses silently and looks like a working refusal',
       ).toEqual([
         // STORY 1.6: select, insert, and a delete that reaches only a version
         // not yet in effect — and never update: a status version is appended,
@@ -968,6 +983,12 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'members_update_by_own_active_admin',
         'organizations_select_own_organization',
         'organizations_update_by_own_active_admin',
+        // STORY 1.7b: the status table's three, for the same reason — a
+        // membership version is appended, and cancelled only before it has
+        // decided any day.
+        'team_membership_versions_delete_scheduled_by_own_active_admin',
+        'team_membership_versions_insert_by_own_active_admin',
+        'team_membership_versions_select_own_organization',
         // STORY 1.7a: read, create, and an update that renames or archives.
         // Never delete — removing a team archives it.
         'teams_insert_by_own_active_admin',
@@ -984,7 +1005,11 @@ describe('the access-control layer is present, so nothing below passes vacuously
               'member_active_from',
               'member_active_on',
               'member_latest_version',
-              'organization_today'
+              'member_team_has_version',
+              'member_team_on',
+              'organization_today',
+              'team_in_use',
+              'team_membership_latest_version'
             )
           order by proname`,
       );
@@ -997,7 +1022,11 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'member_active_from',
         'member_active_on',
         'member_latest_version',
+        'member_team_has_version',
+        'member_team_on',
         'organization_today',
+        'team_in_use',
+        'team_membership_latest_version',
       ]);
     } finally {
       await client.end();
@@ -1176,6 +1205,22 @@ describe('a direct API call reaches exactly one organization', () => {
             const organization = await organizationId(client, entry.slug);
             const creator = await memberByUsername(client, entry.slug, entry.admin);
             await addThrowawayTeam(client, organization, creator.authUserId);
+          }
+        }
+        // STORY 1.7b. Nor any membership, for the same reason: a throwaway
+        // member on a throwaway team, in each fixture.
+        if (table === 'team_membership_versions') {
+          for (const entry of FIXTURES) {
+            const organization = await organizationId(client, entry.slug);
+            const creator = await memberByUsername(client, entry.slug, entry.admin);
+            const team = await addThrowawayTeam(client, organization, creator.authUserId);
+            const target = await addThrowawayMember(client, organization);
+            await client.query(
+              `insert into team_membership_versions
+                 (organization_id, member_id, team_id, effective_from, created_by)
+               values ($1, $2, $3, public.organization_today($1), $4)`,
+              [organization, target.id, team.id, creator.authUserId],
+            );
           }
         }
         const rows = await restRows(`${table}?select=*`, { token });
@@ -3624,10 +3669,12 @@ describe('the member list is one organization own list, at the scale Q20 names',
    *  itself on both sides while every existing read broke. */
   const LIST_COLUMNS =
     'organization_id,id,auth_user_id,name,username,email,role,leave_allowance_days,' +
-    'member_status_versions(active,effective_from),organizations(timezone)';
+    'member_status_versions(active,effective_from),' +
+    'team_membership_versions(team_id,effective_from,teams(name)),organizations(timezone)';
 
-  /** The keys each row of that read carries: the eight columns, and the two
-   *  embeds under their relation names (story 1.6). */
+  /** The keys each row of that read carries: the eight columns, and the three
+   *  embeds under their relation names (story 1.6, and the team history since
+   *  story 1.7b). */
   const LIST_KEYS = [
     'organization_id',
     'id',
@@ -3638,6 +3685,7 @@ describe('the member list is one organization own list, at the scale Q20 names',
     'role',
     'leave_allowance_days',
     'member_status_versions',
+    'team_membership_versions',
     'organizations',
   ];
 
@@ -7219,6 +7267,1259 @@ describe('a direct API call writes teams under exactly the same rules', () => {
         expect(
           await restRows(`teams?id=eq.${team.id}&select=id,name,archived`, { token }),
         ).toEqual([{ id: team.id, name: team.name, archived: true }]);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+});
+
+// ------------------------------------------------------------ team membership
+
+/**
+ * STORY 1.7b. A member moves between teams from a chosen date, and history is
+ * never rewritten. `0010_team_membership.sql` is the whole enforcement: one
+ * versioned table under the status table's rules, one reading of it
+ * (`member_team_on`), and the teams update policy's archive refusal. Every SQL
+ * case below runs in a rolled-back transaction; the REST cases commit, on
+ * throwaway members and teams `afterAll` removes (versions first, since they
+ * reference teams with no cascade).
+ */
+interface MembershipRow {
+  readonly organizationId: string;
+  readonly id: string;
+  readonly memberId: string;
+  readonly teamId: string | null;
+  readonly from: string;
+  readonly createdBy: string;
+  readonly createdAt: string;
+}
+
+/** Every membership version of one member, oldest first, read as the owner:
+ *  every column of the table, so an equality is a whole-row equality. */
+async function membershipsOf(client: Client, member: string): Promise<MembershipRow[]> {
+  const { rows } = await client.query<MembershipRow>(
+    `select organization_id as "organizationId", id, member_id as "memberId",
+            team_id as "teamId", effective_from::text as "from",
+            created_by as "createdBy", created_at::text as "createdAt"
+       from team_membership_versions where member_id = $1 order by effective_from`,
+    [member],
+  );
+  return rows;
+}
+
+/** One membership version, as whoever the connection currently is: the four
+ *  columns a session may name, and nothing else. */
+async function insertMembership(
+  client: Client,
+  version: { organization: string; member: string; team: string | null; from: string },
+): Promise<{ rowCount: number | null }> {
+  return client.query(
+    `insert into team_membership_versions (organization_id, member_id, team_id, effective_from)
+     values ($1, $2, $3, $4::date)`,
+    [version.organization, version.member, version.team, version.from],
+  );
+}
+
+/** One membership version written as the OWNER, past every policy — the state
+ *  a case starts from (a past date is only reachable this way). */
+async function ownerMembership(
+  client: Client,
+  version: { organization: string; member: string; team: string | null; from: string; by: string },
+): Promise<void> {
+  await client.query(
+    `insert into team_membership_versions
+       (organization_id, member_id, team_id, effective_from, created_by)
+     values ($1, $2, $3, $4::date, $5)`,
+    [version.organization, version.member, version.team, version.from, version.by],
+  );
+}
+
+/** The cancellation the edit screen sends, as whoever the connection is. */
+async function cancelMembership(
+  client: Client,
+  version: { member: string; from: string },
+): Promise<{ rowCount: number | null }> {
+  return client.query(
+    'delete from team_membership_versions where member_id = $1 and effective_from = $2::date',
+    [version.member, version.from],
+  );
+}
+
+/** `member_team_on`, the one SQL reading, as whoever the connection is. */
+async function teamOn(client: Client, member: string, day: string): Promise<string | null> {
+  const { rows } = await client.query<{ team: string | null }>(
+    'select public.member_team_on($1, $2::date) as team',
+    [member, day],
+  );
+  return rows[0]?.team ?? null;
+}
+
+/** Archive a team as whoever the connection is. */
+async function archiveTeam(client: Client, team: string): Promise<{ rowCount: number | null }> {
+  return client.query('update teams set archived = true where id = $1', [team]);
+}
+
+describe('an admin moves a member between teams from a date, and the table only ever grows', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'assigns a $fixture member with no team to a team from today, attributed to the caller',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const today = await organizationDay(client, caller.organizationId);
+        const yesterday = await organizationDay(client, caller.organizationId, -1);
+
+        expect(await teamOn(client, target.id, today), 'a fresh member is on a team').toBeNull();
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const written = await insertMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: team.id,
+          from: today,
+        });
+        await actAsOwner(client);
+
+        expect(written.rowCount, `the ${slug} admin could not assign a team`).toBe(1);
+        const [row] = await membershipsOf(client, target.id);
+        expect(row).toMatchObject({ teamId: team.id, from: today, createdBy: caller.authUserId });
+        expect(await teamOn(client, target.id, today)).toBe(team.id);
+        expect(await teamOn(client, target.id, yesterday), 'the assignment reached back').toBeNull();
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'lets the $fixture admin set their own team',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const written = await insertMembership(client, {
+          organization: caller.organizationId,
+          member: caller.id,
+          team: team.id,
+          from: await organizationDay(client, caller.organizationId),
+        });
+        await actAsOwner(client);
+
+        expect(written.rowCount, 'an admin could not set their own team').toBe(1);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'moves a $fixture member from a later date with one new row and the earlier row byte-identical',
+    async ({ slug, admin }) => {
+      // AC 1, and the past-team row of the matrix.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const first = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const second = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const joined = await organizationDay(client, caller.organizationId, -10);
+        const moved = await organizationDay(client, caller.organizationId, 5);
+
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: first.id,
+          from: joined,
+          by: caller.authUserId,
+        });
+        const before = await membershipsOf(client, target.id);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const written = await insertMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: second.id,
+          from: moved,
+        });
+        await actAsOwner(client);
+
+        const after = await membershipsOf(client, target.id);
+        expect(written.rowCount).toBe(1);
+        expect(after.length, 'the move did not add exactly one row').toBe(before.length + 1);
+        expect(after[0], 'the earlier row changed').toEqual(before[0]);
+
+        const { rows } = await client.query<{ day: string; team: string | null }>(
+          `select day::date::text as day, public.member_team_on($1, day::date) as team
+             from generate_series(public.organization_today($2) - 12,
+                                  public.organization_today($2) + 10,
+                                  interval '1 day') as day
+            order by day`,
+          [target.id, caller.organizationId],
+        );
+        expect(rows.length).toBe(23);
+        for (const { day, team } of rows) {
+          const expected = day < joined ? null : day < moved ? first.id : second.id;
+          expect(team, `${slug} team as at ${day}`).toBe(expected);
+        }
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'reads a $fixture member\'s team on every date exactly as the member list derives it',
+    async ({ slug, admin }) => {
+      // AC 2: `member_team_on` over THE SAME history and written-out answers
+      // `apps/web/src/members/list.test.ts` asserts `memberTeamOn` against, so
+      // the two readings agree on every date rather than each on its own.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const teams = {
+          A: await addThrowawayTeam(client, caller.organizationId, caller.authUserId),
+          B: await addThrowawayTeam(client, caller.organizationId, caller.authUserId),
+        } as const;
+
+        for (const { offset, team } of TEAM_HISTORY) {
+          await ownerMembership(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            team: team === null ? null : teams[team].id,
+            from: await organizationDay(client, caller.organizationId, offset),
+            by: caller.authUserId,
+          });
+        }
+
+        const { rows } = await client.query<{ offset: number; team: string | null }>(
+          `select offset_day as "offset",
+                  public.member_team_on($1, public.organization_today($2) + offset_day) as team
+             from generate_series($3::int, $4::int) as offset_day
+            order by offset_day`,
+          [target.id, caller.organizationId, TEAM_HISTORY_SPAN.from, TEAM_HISTORY_SPAN.to],
+        );
+        expect(rows.length).toBe(TEAM_HISTORY_ANSWERS.size);
+        for (const { offset, team } of rows) {
+          const answer = TEAM_HISTORY_ANSWERS.get(offset);
+          expect(answer, `no written answer for offset ${offset}`).not.toBeUndefined();
+          expect(team, `${slug} team at offset ${offset}`).toBe(
+            answer === null || answer === undefined ? null : teams[answer].id,
+          );
+        }
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'removes a $fixture member from their team from a date, and they are on none from then',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const removed = await organizationDay(client, caller.organizationId, 3);
+
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: team.id,
+          from: await organizationDay(client, caller.organizationId, -5),
+          by: caller.authUserId,
+        });
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const written = await insertMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: null,
+          from: removed,
+        });
+        await actAsOwner(client);
+
+        expect(written.rowCount, 'a removal was refused').toBe(1);
+        expect(await teamOn(client, target.id, await organizationDay(client, caller.organizationId, 2))).toBe(
+          team.id,
+        );
+        expect(await teamOn(client, target.id, removed)).toBeNull();
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'lets no $fixture session name its own attribution',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const today = await organizationDay(client, caller.organizationId);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const forged = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into team_membership_versions
+               (organization_id, member_id, team_id, effective_from, created_by)
+             values ($1, $2, $3, $4::date, $5)`,
+            [caller.organizationId, target.id, team.id, today, target.authUserId],
+          ),
+        );
+        const backdated = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into team_membership_versions
+               (organization_id, member_id, team_id, effective_from, created_at)
+             values ($1, $2, $3, $4::date, now() - interval '1 year')`,
+            [caller.organizationId, target.id, team.id, today],
+          ),
+        );
+        await actAsOwner(client);
+
+        expect(forged.code, 'a session named its own created_by').toBe('42501');
+        expect(backdated.code, 'a session named its own created_at').toBe('42501');
+        expect(await membershipsOf(client, target.id)).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'updates no $fixture version, and deletes none already in effect, whoever asks',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const first = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const second = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: first.id,
+          from: await organizationDay(client, caller.organizationId, -5),
+          by: caller.authUserId,
+        });
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: second.id,
+          from: await organizationDay(client, caller.organizationId),
+          by: caller.authUserId,
+        });
+        const before = await membershipsOf(client, target.id);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const updated = await refusedThenContinue(client, () =>
+          client.query('update team_membership_versions set team_id = null'),
+        );
+        const deleted = await client.query('delete from team_membership_versions');
+        await actAsOwner(client);
+
+        expect(updated.code, 'an admin rewrote a membership version').toBe('42501');
+        expect(deleted.rowCount, 'an admin deleted a version already in effect').toBe(0);
+        expect(await membershipsOf(client, target.id)).toEqual(before);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture assignment dated yesterday, and writes nothing',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const past = await refusedThenContinue(client, async () =>
+          insertMembership(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            team: team.id,
+            from: await organizationDay(client, caller.organizationId, -1),
+          }),
+        );
+        await actAsOwner(client);
+
+        expect(past.code, 'a past date would rewrite past rosters').toBe('42501');
+        expect(await membershipsOf(client, target.id)).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a second $fixture version on the latest one date, and the table itself refuses it too',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const first = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const second = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const today = await organizationDay(client, caller.organizationId);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        await insertMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: first.id,
+          from: today,
+        });
+        const refusal = await refusedThenContinue(client, () =>
+          insertMembership(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            team: second.id,
+            from: today,
+          }),
+        );
+        await actAsOwner(client);
+
+        // THE DATE-ORDER RULE refuses it first, as the policy's 42501; the
+        // unique constraint stands behind it for the owner.
+        expect(refusal.code, 'a version on the latest version date was admitted').toBe('42501');
+        expect(await membershipsOf(client, target.id)).toHaveLength(1);
+
+        const underneath = await refusedThenContinue(client, () =>
+          ownerMembership(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            team: second.id,
+            from: today,
+            by: caller.authUserId,
+          }),
+        );
+        expect(underneath.code, 'the table itself admits two versions on one date').toBe('23505');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture version that leaves the team unchanged, or "no team" for a member on none',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const onTeam = await addThrowawayMember(client, caller.organizationId);
+        const removed = await addThrowawayMember(client, caller.organizationId);
+        const fresh = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const today = await organizationDay(client, caller.organizationId);
+        const later = await organizationDay(client, caller.organizationId, 3);
+
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: removed.id,
+          team: team.id,
+          from: await organizationDay(client, caller.organizationId, -5),
+          by: caller.authUserId,
+        });
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: removed.id,
+          team: null,
+          from: await organizationDay(client, caller.organizationId, -3),
+          by: caller.authUserId,
+        });
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        await insertMembership(client, {
+          organization: caller.organizationId,
+          member: onTeam.id,
+          team: team.id,
+          from: today,
+        });
+        const sameTeam = await refusedThenContinue(client, () =>
+          insertMembership(client, {
+            organization: caller.organizationId,
+            member: onTeam.id,
+            team: team.id,
+            from: later,
+          }),
+        );
+        const noneAgain = await refusedThenContinue(client, () =>
+          insertMembership(client, {
+            organization: caller.organizationId,
+            member: removed.id,
+            team: null,
+            from: today,
+          }),
+        );
+        const noneFresh = await refusedThenContinue(client, () =>
+          insertMembership(client, {
+            organization: caller.organizationId,
+            member: fresh.id,
+            team: null,
+            from: today,
+          }),
+        );
+        await actAsOwner(client);
+
+        expect(sameTeam.code, 'a version onto the team the member is on').toBe('42501');
+        expect(noneAgain.code, '"no team" for a member already on none').toBe('42501');
+        expect(noneFresh.code, '"no team" for a member with no history').toBe('42501');
+        expect(await membershipsOf(client, onTeam.id)).toHaveLength(1);
+        expect(await membershipsOf(client, removed.id)).toHaveLength(2);
+        expect(await membershipsOf(client, fresh.id)).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a second $fixture change while one is scheduled, in or out of date order',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const first = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const second = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const scheduled = await organizationDay(client, caller.organizationId, 5);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        await insertMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: first.id,
+          from: scheduled,
+        });
+        const stacked = await refusedThenContinue(client, async () =>
+          insertMembership(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            team: second.id,
+            from: await organizationDay(client, caller.organizationId, 10),
+          }),
+        );
+        const earlier = await refusedThenContinue(client, async () =>
+          insertMembership(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            team: second.id,
+            from: await organizationDay(client, caller.organizationId, 2),
+          }),
+        );
+        await actAsOwner(client);
+
+        expect(stacked.code, 'a second future version was admitted').toBe('42501');
+        expect(earlier.code, 'a version before the scheduled one was admitted').toBe('42501');
+        expect((await membershipsOf(client, target.id)).map((row) => row.from)).toEqual([scheduled]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'cancels a $fixture scheduled move, and the prior team continues',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const first = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const second = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const moved = await organizationDay(client, caller.organizationId, 5);
+
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: first.id,
+          from: await organizationDay(client, caller.organizationId, -5),
+          by: caller.authUserId,
+        });
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        await insertMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: second.id,
+          from: moved,
+        });
+        const cancelled = await cancelMembership(client, { member: target.id, from: moved });
+        await actAsOwner(client);
+
+        expect(cancelled.rowCount, 'the scheduled move could not be cancelled').toBe(1);
+        expect(await membershipsOf(client, target.id)).toHaveLength(1);
+        expect(await teamOn(client, target.id, moved)).toBe(first.id);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses cancelling a $fixture version in effect today or earlier, and keeps the row',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const today = await addThrowawayMember(client, caller.organizationId);
+        const past = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const todayDate = await organizationDay(client, caller.organizationId);
+        const pastDate = await organizationDay(client, caller.organizationId, -4);
+
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: past.id,
+          team: team.id,
+          from: pastDate,
+          by: caller.authUserId,
+        });
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        await insertMembership(client, {
+          organization: caller.organizationId,
+          member: today.id,
+          team: team.id,
+          from: todayDate,
+        });
+        const fromToday = await cancelMembership(client, { member: today.id, from: todayDate });
+        const fromPast = await cancelMembership(client, { member: past.id, from: pastDate });
+        await actAsOwner(client);
+
+        expect(fromToday.rowCount, 'a version in effect from today was cancelled').toBe(0);
+        expect(fromPast.rowCount, 'a past version was cancelled').toBe(0);
+        expect(await membershipsOf(client, today.id)).toHaveLength(1);
+        expect(await membershipsOf(client, past.id)).toHaveLength(1);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture move onto an archived team',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const archived = await addThrowawayTeam(
+          client,
+          caller.organizationId,
+          caller.authUserId,
+          true,
+        );
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const refusal = await refusedThenContinue(client, async () =>
+          insertMembership(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            team: archived.id,
+            from: await organizationDay(client, caller.organizationId),
+          }),
+        );
+        await actAsOwner(client);
+
+        expect(refusal.code, 'a member was moved onto an archived team').toBe('42501');
+        expect(await membershipsOf(client, target.id)).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'refuses a $fixture admin naming a $otherFixture team, member or organization',
+    async ({ slug, admin, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const own = await addThrowawayMember(client, caller.organizationId);
+        const ownTeam = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const other = await organizationId(client, otherSlug);
+        const otherAdmin = FIXTURES.find((entry) => entry.slug === otherSlug)?.admin ?? '';
+        const otherCreator = await memberByUsername(client, otherSlug, otherAdmin);
+        const foreignMember = await addThrowawayMember(client, other);
+        const foreignTeam = await addThrowawayTeam(client, other, otherCreator.authUserId);
+        const today = await organizationDay(client, caller.organizationId);
+        const otherToday = await organizationDay(client, other);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const byTeam = await refusedThenContinue(client, () =>
+          insertMembership(client, {
+            organization: caller.organizationId,
+            member: own.id,
+            team: foreignTeam.id,
+            from: today,
+          }),
+        );
+        const byMember = await refusedThenContinue(client, () =>
+          insertMembership(client, {
+            organization: caller.organizationId,
+            member: foreignMember.id,
+            team: ownTeam.id,
+            from: today,
+          }),
+        );
+        const byOrganization = await refusedThenContinue(client, () =>
+          insertMembership(client, {
+            organization: other,
+            member: foreignMember.id,
+            team: foreignTeam.id,
+            from: otherToday,
+          }),
+        );
+        await actAsOwner(client);
+
+        expect(['42501', '23503'], `a ${otherSlug} team was named`).toContain(byTeam.code);
+        expect(['42501', '23503'], `a ${otherSlug} member was named`).toContain(byMember.code);
+        expect(byOrganization.code, `a ${otherSlug} version was written`).toBe('42501');
+        expect(await membershipsOf(client, own.id)).toEqual([]);
+        expect(await membershipsOf(client, foreignMember.id)).toEqual([]);
+
+        // THE TABLE ITSELF, past every policy: the composite keys make a
+        // cross-tenant reference unrepresentable, not merely refused.
+        const underneath = await refusedThenContinue(client, () =>
+          ownerMembership(client, {
+            organization: caller.organizationId,
+            member: own.id,
+            team: foreignTeam.id,
+            from: today,
+            by: caller.authUserId,
+          }),
+        );
+        expect(underneath.code, 'the table admits another tenant team').toBe('23503');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture member-role account writing or cancelling, and a foreign admin too',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const caller = await memberByUsername(client, slug, member);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, owner.authUserId);
+        const today = await organizationDay(client, caller.organizationId);
+        const scheduled = await organizationDay(client, caller.organizationId, 4);
+        const other = FIXTURES.find((entry) => entry.slug !== slug);
+        if (other === undefined) throw new Error('no second fixture');
+        const foreign = await memberByUsername(client, other.slug, other.admin);
+        const scheduledMember = await addThrowawayMember(client, caller.organizationId);
+
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: scheduledMember.id,
+          team: team.id,
+          from: scheduled,
+          by: owner.authUserId,
+        });
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const byMember = await refusedThenContinue(client, () =>
+          insertMembership(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            team: team.id,
+            from: today,
+          }),
+        );
+        const memberCancel = await cancelMembership(client, {
+          member: scheduledMember.id,
+          from: scheduled,
+        });
+        await actAsOwner(client);
+
+        await actAs(client, foreign.authUserId, foreign.organizationId);
+        const byForeigner = await refusedThenContinue(client, () =>
+          insertMembership(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            team: team.id,
+            from: today,
+          }),
+        );
+        const foreignCancel = await cancelMembership(client, {
+          member: scheduledMember.id,
+          from: scheduled,
+        });
+        await actAsOwner(client);
+
+        expect(byMember.code, 'a member-role account assigned a team').toBe('42501');
+        expect(byForeigner.code, 'an admin assigned another tenant member').toBe('42501');
+        expect(memberCancel.rowCount, 'a member-role account cancelled a move').toBe(0);
+        expect(foreignCancel.rowCount, 'a foreign admin cancelled a move').toBe(0);
+        expect(await membershipsOf(client, target.id)).toEqual([]);
+        expect(await membershipsOf(client, scheduledMember.id)).toHaveLength(1);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'shows a $fixture member-role account every version in its own organization',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const caller = await memberByUsername(client, slug, member);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, owner.authUserId);
+
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: team.id,
+          from: await organizationDay(client, caller.organizationId, -3),
+          by: owner.authUserId,
+        });
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: null,
+          from: await organizationDay(client, caller.organizationId, 3),
+          by: owner.authUserId,
+        });
+        const { rows: truth } = await client.query<{ total: number }>(
+          'select count(*)::int as total from team_membership_versions where organization_id = $1',
+          [caller.organizationId],
+        );
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const { rows: seen } = await client.query<{ total: number; foreign: number }>(
+          `select count(*)::int as total,
+                  count(*) filter (where organization_id <> $1)::int as "foreign"
+             from team_membership_versions`,
+          [caller.organizationId],
+        );
+        await actAsOwner(client);
+
+        expect(truth[0]?.total).toBeGreaterThanOrEqual(2);
+        expect(seen[0], 'a member-role account does not see every version').toEqual({
+          total: truth[0]?.total,
+          foreign: 0,
+        });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses an unbounded $fixture date in the table itself',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+
+        for (const from of ['infinity', '10000-01-01']) {
+          const refusal = await refusedThenContinue(client, () =>
+            ownerMembership(client, {
+              organization: caller.organizationId,
+              member: target.id,
+              team: team.id,
+              from,
+              by: caller.authUserId,
+            }),
+          );
+          expect(refusal.code, `${from} was stored`).toBe('23514');
+        }
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'keeps $fixture team and status independent: a deactivated member still moves',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const today = await organizationDay(client, caller.organizationId);
+
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          active: false,
+          from: await organizationDay(client, caller.organizationId, -2),
+          by: caller.authUserId,
+        });
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const written = await insertMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: team.id,
+          from: today,
+        });
+        await actAsOwner(client);
+
+        expect(written.rowCount, 'an inactive member could not be assigned').toBe(1);
+        expect(await versionsOf(client, target.id), 'the move rewrote status').toHaveLength(1);
+      });
+    },
+  );
+});
+
+describe('archiving a team anyone is on today, or is scheduled onto, is refused', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses archiving a $fixture team a member is on today, active or not, or scheduled onto',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const onToday = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const onInactive = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const scheduledOnto = await addThrowawayTeam(
+          client,
+          caller.organizationId,
+          caller.authUserId,
+        );
+        const leavingLater = await addThrowawayTeam(
+          client,
+          caller.organizationId,
+          caller.authUserId,
+        );
+        const first = await addThrowawayMember(client, caller.organizationId);
+        const inactive = await addThrowawayMember(client, caller.organizationId);
+        const joining = await addThrowawayMember(client, caller.organizationId);
+        const leaving = await addThrowawayMember(client, caller.organizationId);
+        const byOwner = (member: string, team: string | null, from: string) =>
+          ownerMembership(client, {
+            organization: caller.organizationId,
+            member,
+            team,
+            from,
+            by: caller.authUserId,
+          });
+
+        await byOwner(first.id, onToday.id, await organizationDay(client, caller.organizationId, -3));
+        await byOwner(inactive.id, onInactive.id, await organizationDay(client, caller.organizationId, -3));
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: inactive.id,
+          active: false,
+          from: await organizationDay(client, caller.organizationId, -1),
+          by: caller.authUserId,
+        });
+        await byOwner(joining.id, scheduledOnto.id, await organizationDay(client, caller.organizationId, 6));
+        await byOwner(leaving.id, leavingLater.id, await organizationDay(client, caller.organizationId, -8));
+        await byOwner(leaving.id, null, await organizationDay(client, caller.organizationId, 2));
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const refusals = [];
+        for (const team of [onToday, onInactive, scheduledOnto, leavingLater]) {
+          refusals.push((await refusedThenContinue(client, () => archiveTeam(client, team.id))).code);
+        }
+        // A RENAME of a team in use still passes: `archived` stays false.
+        const renamed = await client.query('update teams set name = name || $2 where id = $1', [
+          onToday.id,
+          ' renamed',
+        ]);
+        await actAsOwner(client);
+
+        expect(refusals, 'a team in use was archived').toEqual(['42501', '42501', '42501', '42501']);
+        expect(renamed.rowCount, 'renaming a team in use was refused').toBe(1);
+        for (const team of [onToday, onInactive, scheduledOnto, leavingLater]) {
+          expect((await teamById(client, team.id))?.archived).toBe(false);
+        }
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'archives a $fixture team only past versions name, and those still read it',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const past = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const current = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const back = await organizationDay(client, caller.organizationId, -5);
+
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: past.id,
+          from: await organizationDay(client, caller.organizationId, -10),
+          by: caller.authUserId,
+        });
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: current.id,
+          from: await organizationDay(client, caller.organizationId, -2),
+          by: caller.authUserId,
+        });
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const archived = await archiveTeam(client, past.id);
+        await actAsOwner(client);
+
+        expect(archived.rowCount, 'a team only history names could not be archived').toBe(1);
+        expect((await teamById(client, past.id))?.archived).toBe(true);
+        expect(await teamOn(client, target.id, back), 'history lost its archived team').toBe(past.id);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'reads "today" for the $fixture archive rule in the organization zone, never UTC',
+    async ({ slug, admin }) => {
+      // Two histories per zone: one that left the team on the organization's
+      // today (free to archive), and one that leaves it on the organization's
+      // tomorrow (still in use). A rule reading UTC's date gets one of them
+      // wrong in whichever zone differs from UTC.
+      const ZONES = ['Pacific/Kiritimati', 'Pacific/Pago_Pago'];
+      let differed = 0;
+
+      for (const zone of ZONES) {
+        await inRolledBackTransaction(async (client) => {
+          const caller = await memberByUsername(client, slug, admin);
+          const organization = caller.organizationId;
+          await client.query('update organizations set timezone = $1 where id = $2', [
+            zone,
+            organization,
+          ]);
+          const { rows } = await client.query<{ same: boolean }>(
+            `select public.organization_today($1) = (now() at time zone 'UTC')::date as same`,
+            [organization],
+          );
+          if (rows[0]?.same !== false) return;
+          differed += 1;
+
+          const left = await addThrowawayTeam(client, organization, caller.authUserId);
+          const staying = await addThrowawayTeam(client, organization, caller.authUserId);
+          const elsewhere = await addThrowawayTeam(client, organization, caller.authUserId);
+          const mover = await addThrowawayMember(client, organization);
+          const stayer = await addThrowawayMember(client, organization);
+          const byOwner = (member: string, team: string, offset: number) =>
+            organizationDay(client, organization, offset).then((from) =>
+              ownerMembership(client, { organization, member, team, from, by: caller.authUserId }),
+            );
+
+          await byOwner(mover.id, left.id, -5);
+          await byOwner(mover.id, elsewhere.id, 0);
+          await byOwner(stayer.id, staying.id, -5);
+          await byOwner(stayer.id, elsewhere.id, 1);
+          const joiner = await addThrowawayMember(client, organization);
+          const today = await organizationDay(client, organization);
+
+          await actAs(client, caller.authUserId, organization);
+          const free = await archiveTeam(client, left.id);
+          const inUse = await refusedThenContinue(client, () => archiveTeam(client, staying.id));
+          const joinToday = await insertMembership(client, {
+            organization,
+            member: joiner.id,
+            team: elsewhere.id,
+            from: today,
+          });
+          await actAsOwner(client);
+
+          expect(free.rowCount, `${zone}: a team left on the organization's today stayed in use`).toBe(1);
+          expect(inUse.code, `${zone}: a team left tomorrow was archived today`).toBe('42501');
+          expect(joinToday.rowCount, `${zone}: the organization's today was refused`).toBe(1);
+        });
+      }
+
+      expect(differed, 'neither zone differed from UTC, so nothing was proven').toBeGreaterThan(0);
+    },
+  );
+});
+
+describe('a direct API call moves members between teams under exactly the same rules', () => {
+  it.skipIf(noApi).each(FIXTURES)(
+    'lets the $fixture admin assign over PostgREST, and the shipped list read embeds the team for admin and member',
+    async ({ slug, admin, member }) => {
+      const client = await connect();
+      try {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const today = await organizationDay(client, caller.organizationId);
+        const token = await tokenFor(admin, slug);
+
+        const written = await rest('team_membership_versions', {
+          token,
+          method: 'POST',
+          body: {
+            organization_id: caller.organizationId,
+            member_id: target.id,
+            team_id: team.id,
+            effective_from: today,
+          },
+        });
+        expect(written.status, `the assignment was refused: ${await written.clone().text()}`).toBe(201);
+
+        // THE SELECT `members/list.ts` SENDS, embeds included, as both levels.
+        const columns =
+          'organization_id,id,auth_user_id,name,username,email,role,leave_allowance_days,' +
+          'member_status_versions(active,effective_from),' +
+          'team_membership_versions(team_id,effective_from,teams(name)),organizations(timezone)';
+        for (const reader of [admin, member]) {
+          const rows = await restRows(`members?select=${columns}&id=eq.${target.id}`, {
+            token: await tokenFor(reader, slug),
+          });
+          expect(rows[0]?.['team_membership_versions'], `${reader} read no team`).toEqual([
+            { team_id: team.id, effective_from: today, teams: { name: team.name } },
+          ]);
+        }
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'still embeds an archived team\'s name in the $fixture shipped list read, for admin and member',
+    async ({ slug, admin, member }) => {
+      // R7.6: an archived team stays readable. `members/list.ts` refuses a whole
+      // row whose version names a team with no embedded name, so a past version
+      // on an archived team that the embed could not see would make the member
+      // unlistable.
+      const client = await connect();
+      try {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const joined = await organizationDay(client, caller.organizationId, -10);
+        const left = await organizationDay(client, caller.organizationId, -2);
+
+        for (const [teamId, from] of [
+          [team.id, joined],
+          [null, left],
+        ] as const) {
+          await ownerMembership(client, {
+            organization: caller.organizationId,
+            member: target.id,
+            team: teamId,
+            from,
+            by: caller.authUserId,
+          });
+        }
+        await client.query('update teams set archived = true where id = $1', [team.id]);
+
+        const columns =
+          'organization_id,id,auth_user_id,name,username,email,role,leave_allowance_days,' +
+          'member_status_versions(active,effective_from),' +
+          'team_membership_versions(team_id,effective_from,teams(name)),organizations(timezone)';
+        for (const reader of [admin, member]) {
+          const rows = await restRows(`members?select=${columns}&id=eq.${target.id}`, {
+            token: await tokenFor(reader, slug),
+          });
+          const versions = [
+            ...((rows[0]?.['team_membership_versions'] ?? []) as { effective_from: string }[]),
+          ].sort((first, second) => first.effective_from.localeCompare(second.effective_from));
+          expect(versions, `${reader} lost the archived team's name`).toEqual([
+            { team_id: team.id, effective_from: joined, teams: { name: team.name } },
+            { team_id: null, effective_from: left, teams: null },
+          ]);
+        }
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'cancels the $fixture scheduled move over PostgREST exactly as the edit screen asks, and nothing in effect',
+    async ({ slug, admin }) => {
+      const client = await connect();
+      try {
+        const caller = await memberByUsername(client, slug, admin);
+        const scheduled = await addThrowawayMember(client, caller.organizationId);
+        const inEffect = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        const later = await organizationDay(client, caller.organizationId, 5);
+        const today = await organizationDay(client, caller.organizationId);
+
+        for (const [row, from] of [
+          [scheduled, later],
+          [inEffect, today],
+        ] as const) {
+          await ownerMembership(client, {
+            organization: caller.organizationId,
+            member: row.id,
+            team: team.id,
+            from,
+            by: caller.authUserId,
+          });
+        }
+
+        const token = await tokenFor(admin, slug);
+        const cancel = (memberId: string, from: string) =>
+          rest(
+            `team_membership_versions?member_id=eq.${memberId}&effective_from=eq.${from}&select=effective_from`,
+            { token, method: 'DELETE', prefer: 'return=representation' },
+          );
+
+        const cancelled = await cancel(scheduled.id, later);
+        expect(cancelled.status, `the cancellation failed: ${await cancelled.clone().text()}`).toBe(200);
+        expect(await cancelled.json()).toEqual([{ effective_from: later }]);
+
+        const kept = await cancel(inEffect.id, today);
+        expect(kept.status).toBe(200);
+        expect(await kept.json(), 'a version in effect was cancelled').toEqual([]);
+
+        expect(await membershipsOf(client, scheduled.id)).toEqual([]);
+        expect(await membershipsOf(client, inEffect.id)).toHaveLength(1);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses a $fixture member-role token assigning or cancelling over PostgREST',
+    async ({ slug, admin, member }) => {
+      const client = await connect();
+      try {
+        const owner = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, owner.organizationId);
+        const scheduled = await addThrowawayMember(client, owner.organizationId);
+        const team = await addThrowawayTeam(client, owner.organizationId, owner.authUserId);
+        const later = await organizationDay(client, owner.organizationId, 5);
+        await ownerMembership(client, {
+          organization: owner.organizationId,
+          member: scheduled.id,
+          team: team.id,
+          from: later,
+          by: owner.authUserId,
+        });
+        const token = await tokenFor(member, slug);
+
+        const response = await rest('team_membership_versions', {
+          token,
+          method: 'POST',
+          body: {
+            organization_id: owner.organizationId,
+            member_id: target.id,
+            team_id: team.id,
+            effective_from: await organizationDay(client, owner.organizationId),
+          },
+        });
+        const refusal = await restRefusal(response);
+        const cancel = await rest(
+          `team_membership_versions?member_id=eq.${scheduled.id}&effective_from=eq.${later}&select=effective_from`,
+          { token, method: 'DELETE', prefer: 'return=representation' },
+        );
+
+        expect(response.ok, 'a member-role account assigned a team').toBe(false);
+        expect(refusal.code).toBe('42501');
+        expect(await cancel.json(), 'a member-role account cancelled a move').toEqual([]);
+        expect(await membershipsOf(client, target.id)).toEqual([]);
+        expect(await membershipsOf(client, scheduled.id)).toHaveLength(1);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses the $fixture admin archiving a team in use over PostgREST as 42501, row unchanged',
+    async ({ slug, admin }) => {
+      // THE REFUSAL `teams/write.ts` MAPS TO `TEAM_IN_USE`: WITH CHECK failing
+      // raises 42501 — unlike a USING miss, which matches no row silently.
+      const client = await connect();
+      try {
+        const caller = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, caller.organizationId);
+        const team = await addThrowawayTeam(client, caller.organizationId, caller.authUserId);
+        await ownerMembership(client, {
+          organization: caller.organizationId,
+          member: target.id,
+          team: team.id,
+          from: await organizationDay(client, caller.organizationId),
+          by: caller.authUserId,
+        });
+        const token = await tokenFor(admin, slug);
+
+        const archived = await rest(`teams?id=eq.${team.id}&select=id`, {
+          token,
+          method: 'PATCH',
+          body: { archived: true },
+          prefer: 'return=representation',
+        });
+        const refusal = await restRefusal(archived);
+
+        expect(archived.ok, 'a team in use was archived').toBe(false);
+        expect(refusal.code).toBe('42501');
+        expect((await teamById(client, team.id))?.archived).toBe(false);
       } finally {
         await client.end();
       }
