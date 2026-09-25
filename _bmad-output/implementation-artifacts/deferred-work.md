@@ -661,7 +661,7 @@
   evidence: Found by 1.7a's edge-case review layer. `teams.name`, `members.name` and `organizations.name` are unbounded `text`; `teams_organization_name_key` (and `members_organization_username_key`, `0007:92`) index the value, so a name over roughly 2.7 KB fails with 54000, which `editFailureOf` maps to unavailable. A product decision on a maximum length (with a matching client check and a named refusal) applies to every name field at once.
 
 - source_spec: none
-  summary: The member list gains a team filter — the team axis joining the level filter in one control, with its count in the label, options from live teams, and a one-action reset (UX-DR17, UX-DR19).
+  summary: RESOLVED — built as `spec-member-list-team-filter.md` and merged to main in caa63d7 (PR #35). The team axis is a second select beside the level filter rather than one combined control (human decision 2026-09-25). Options come from the members snapshot as at the organization's today, counts are faceted, and "Poništi filtre" resets search, level and team in one action. No action required. Original summary: The member list gains a team filter — the team axis joining the level filter in one control, with its count in the label, options from live teams, and a one-action reset (UX-DR17, UX-DR19).
   evidence: Split from story 1.7b at step-01's clarification (human decision 2026-09-24). 1.7b ships versioned membership and states each member's team in words on the list and edit screens; the filter touches search, sort, counts and UX-DR19's three clauses and is independently shippable once membership exists.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-7b-team-membership.md`
