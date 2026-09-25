@@ -101,12 +101,19 @@ export const MEMBERS_LIST_KEY = ['members'] as const;
  *
  * `created_at` is not here, and neither is anything else: `members` carries no
  * health data and no absence-reason field (Q5), and this list is where that
- * claim is made concrete enough for `members/list.test.ts` to assert it. There
- * is no `team_id` to select — teams arrive in story 1.7.
+ * claim is made concrete enough for `members/list.test.ts` to assert it.
+ *
+ * STORY 1.7b EMBEDS THE TEAM HISTORY the same way the status history is, and
+ * for the same reasons: membership is versioned (AD-2), so there is no
+ * `team_id` on `members` to select, and the list's team column and the edit
+ * screen's team block are derived from this one answer (AD-13). Each version
+ * carries its team's NAME through the nested `teams(name)` embed, so the list
+ * stays at one query; {@link memberTeamOn} reads the history as at a date.
  */
 export const MEMBERS_COLUMNS =
   'organization_id,id,auth_user_id,name,username,email,role,leave_allowance_days,' +
-  'member_status_versions(active,effective_from),organizations(timezone)';
+  'member_status_versions(active,effective_from),' +
+  'team_membership_versions(team_id,effective_from,teams(name)),organizations(timezone)';
 
 /**
  * The exact count the transport is asked for alongside the rows.
@@ -258,6 +265,11 @@ export interface MemberListRow {
    */
   readonly statusVersions: readonly MemberStatusVersion[];
   /**
+   * Every team membership version this member has, oldest first (story 1.7b).
+   * Empty for a member never put on a team, which reads as no team.
+   */
+  readonly teamVersions: readonly MemberTeamVersion[];
+  /**
    * The member's organization's zone, embedded in the same read, so "today"
    * for the marker and the date control is the organization's and never the
    * device's (L8). Every row carries the same one — {@link readMembers} refuses
@@ -275,6 +287,125 @@ export interface MemberStatusVersion {
   readonly active: boolean;
   /** An ISO calendar date, `YYYY-MM-DD`, in the organization's own frame. */
   readonly effectiveFrom: string;
+}
+
+/** A team as the member screens name it: its id, and its name. */
+export interface MemberTeam {
+  readonly id: string;
+  readonly name: string;
+}
+
+/**
+ * One team membership version as the surface sees it (`0010`). `team` is
+ * `null` for a version that says "no team from this date".
+ */
+export interface MemberTeamVersion {
+  readonly team: MemberTeam | null;
+  /** An ISO calendar date, `YYYY-MM-DD`, in the organization's own frame. */
+  readonly effectiveFrom: string;
+}
+
+/** Oldest first. ISO dates order as strings. */
+function byEffectiveFrom<T extends { readonly effectiveFrom: string }>(first: T, second: T): number {
+  return first.effectiveFrom < second.effectiveFrom
+    ? -1
+    : first.effectiveFrom > second.effectiveFrom
+      ? 1
+      : 0;
+}
+
+/**
+ * The team versions a row carries, oldest first, or `null` if any of them is
+ * not one.
+ *
+ * A MALFORMED VERSION REFUSES THE ROW, for the reason a malformed status
+ * version does: a dropped move reads as the member still on their old team.
+ * A version naming a team whose name did not arrive is malformed too — the
+ * list would otherwise say "no team" about somebody who is on one.
+ */
+function teamVersionsIn(row: Record<string, unknown>): MemberTeamVersion[] | null {
+  const value = row['team_membership_versions'];
+
+  if (!Array.isArray(value)) return null;
+
+  const versions: MemberTeamVersion[] = [];
+
+  for (const entry of value as readonly unknown[]) {
+    if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return null;
+
+    const fields = entry as Record<string, unknown>;
+    const teamId = fields['team_id'];
+    const effectiveFrom = fields['effective_from'];
+    const team = fields['teams'];
+
+    if (typeof effectiveFrom !== 'string' || !isIsoDate(effectiveFrom)) return null;
+
+    if (teamId === null) {
+      versions.push({ team: null, effectiveFrom });
+      continue;
+    }
+
+    if (typeof teamId !== 'string') return null;
+    if (typeof team !== 'object' || team === null || Array.isArray(team)) return null;
+
+    const name = (team as Record<string, unknown>)['name'];
+
+    if (typeof name !== 'string') return null;
+
+    versions.push({ team: { id: teamId, name }, effectiveFrom });
+  }
+
+  return versions.sort(byEffectiveFrom);
+}
+
+/**
+ * The team a member is on at a date: the version with the greatest
+ * `effectiveFrom` on or before it, and no team when there is none.
+ *
+ * THE SAME READING `0010`'s `member_team_on` makes, and `test/rls-isolation`
+ * asserts that one over the same history `members/list.test.ts` asserts this
+ * one over.
+ */
+export function memberTeamOn(member: MemberListRow, day: string): MemberTeam | null {
+  let team: MemberTeam | null = null;
+
+  for (const version of member.teamVersions) {
+    if (version.effectiveFrom <= day) team = version.team;
+  }
+
+  return team;
+}
+
+/** A member's latest team version, or `null` for a member who has none. */
+export function memberTeamLatestVersion(member: MemberListRow): MemberTeamVersion | null {
+  return member.teamVersions[member.teamVersions.length - 1] ?? null;
+}
+
+/**
+ * A member's team as at the organization's today, and the move scheduled after
+ * it. AT MOST ONE IS SCHEDULED, for the reason {@link MemberStatus} gives:
+ * `0010` admits a version only while the latest one is in effect.
+ */
+export interface MemberTeamState {
+  /** The team today, or `null` for no team. */
+  readonly team: MemberTeam | null;
+  /** The latest version when it is dated after today, or `null`. */
+  readonly scheduled: {
+    readonly team: MemberTeam | null;
+    readonly from: string;
+  } | null;
+}
+
+export function memberTeamOf(member: MemberListRow, today: string): MemberTeamState {
+  const latest = memberTeamLatestVersion(member);
+
+  return {
+    team: memberTeamOn(member, today),
+    scheduled:
+      latest !== null && latest.effectiveFrom > today
+        ? { team: latest.team, from: latest.effectiveFrom }
+        : null,
+  };
 }
 
 /**
@@ -307,9 +438,7 @@ function statusVersionsIn(row: Record<string, unknown>): MemberStatusVersion[] |
     versions.push({ active, effectiveFrom });
   }
 
-  return versions.sort((first, second) =>
-    first.effectiveFrom < second.effectiveFrom ? -1 : first.effectiveFrom > second.effectiveFrom ? 1 : 0,
-  );
+  return versions.sort(byEffectiveFrom);
 }
 
 /**
@@ -515,6 +644,12 @@ export function memberRowOutcomeOf(row: unknown): RowOutcome {
     return { ok: false, malformed: { field: 'member_status_versions', id } };
   }
 
+  const teamVersions = teamVersionsIn(fields);
+
+  if (teamVersions === null) {
+    return { ok: false, malformed: { field: 'team_membership_versions', id } };
+  }
+
   const organization = fields['organizations'];
   const timeZone =
     typeof organization === 'object' && organization !== null && !Array.isArray(organization)
@@ -535,6 +670,7 @@ export function memberRowOutcomeOf(row: unknown): RowOutcome {
       leaveAllowanceDays,
       authUserId,
       statusVersions,
+      teamVersions,
       timeZone,
     },
   };
@@ -700,16 +836,25 @@ export const EMAIL_COLUMN = 'email';
 export const LEVEL_COLUMN = 'role';
 /** The column carrying the annual leave allowance, in days. */
 export const LEAVE_COLUMN = 'leaveAllowanceDays';
+/** The column carrying the member's team today (story 1.7b). */
+export const TEAM_COLUMN = 'team';
 
 export type MemberColumnKey =
   | typeof NAME_COLUMN
   | typeof EMAIL_COLUMN
   | typeof LEVEL_COLUMN
+  | typeof TEAM_COLUMN
   | typeof LEAVE_COLUMN;
 
-/** The keys the four column headings render. Typed as the union so a heading
- *  absent from `hr.json` is a `pnpm typecheck` failure here. */
-export type MemberColumnLabel = 'ljudi.name' | 'ljudi.email' | 'ljudi.role' | 'ljudi.leave';
+/** The keys the five column headings render. Typed as the union so a heading
+ *  absent from `hr.json` is a `pnpm typecheck` failure here. The team heading
+ *  lives under `smjene.*`, the one namespace that may say the Team. */
+export type MemberColumnLabel =
+  | 'ljudi.name'
+  | 'ljudi.email'
+  | 'ljudi.role'
+  | 'smjene.membership.column'
+  | 'ljudi.leave';
 
 /** A cell holding text the row already carries — a name, an address. */
 export const TEXT_CELL = 'text';
@@ -732,6 +877,12 @@ export const SCHEDULED_INACTIVE_NAME_CELL = 'scheduledInactiveName';
 export const LEVEL_CELL = 'level';
 /** A cell holding a count of days, which the surface runs through the formatter. */
 export const DAYS_CELL = 'days';
+/**
+ * A cell holding a member's team TODAY (story 1.7b): its name, or `null` for
+ * no team, which the surface states in positive words (`Bez smjene`) rather
+ * than leaving blank — a blank cell reads as "not loaded".
+ */
+export const TEAM_CELL = 'team';
 
 /**
  * What one cell CONTAINS, as a value rather than as a rendered string.
@@ -758,6 +909,7 @@ export type MemberCell =
       readonly from: string;
     }
   | { readonly kind: typeof LEVEL_CELL; readonly level: MemberRole }
+  | { readonly kind: typeof TEAM_CELL; readonly team: string | null }
   | { readonly kind: typeof DAYS_CELL; readonly days: number };
 
 export interface MemberColumn {
@@ -788,7 +940,7 @@ export interface MemberColumn {
    * `members/list.test.ts` pins, rather than a two-character change in JSX that
    * nothing executes.
    */
-  readonly sortValue: (member: MemberListRow) => string | number | null;
+  readonly sortValue: (member: MemberListRow, today?: string | null) => string | number | null;
 }
 
 /**
@@ -801,8 +953,8 @@ export interface MemberColumn {
  * could. The 1.5a review swapped two headers' sort keys and the suite stayed
  * green precisely because the pairing lived in JSX.
  *
- * FOUR AND NOT FIVE, and each absence is a decision rather than an omission:
- * there is no team column (`members` carries no `team_id` until story 1.7), no
+ * FIVE SINCE STORY 1.7b, which adds the team as at the organization's today.
+ * Each remaining absence is a decision rather than an omission: there is no
  * hours column (epic 4), and no active/inactive column: story 1.6 marks an
  * inactive member in words inside the NAME cell, so an active member's row
  * carries no word about it at all.
@@ -856,6 +1008,23 @@ export const MEMBER_COLUMNS: readonly MemberColumn[] = [
     numeric: false,
     cell: (member) => ({ kind: LEVEL_CELL, level: member.role }),
     sortValue: (member) => MEMBER_ROLES.indexOf(member.role),
+  },
+  {
+    key: TEAM_COLUMN,
+    label: 'smjene.membership.column',
+    numeric: false,
+    // AS AT TODAY, and nothing at all while today is not known, for the reason
+    // the name cell gives: "no team" by a guessed date is a false statement.
+    cell: (member, today) =>
+      today === null
+        ? { kind: TEXT_CELL, text: NO_TEXT }
+        : { kind: TEAM_CELL, team: memberTeamOn(member, today)?.name ?? null },
+    // BY THE TEAM THE CELL SHOWS, as at today; the latest state's while today
+    // is unknown. Members on no team sort last, as members with no address do.
+    sortValue: (member, today) =>
+      (today === null || today === undefined
+        ? memberTeamLatestVersion(member)?.team?.name
+        : memberTeamOn(member, today)?.name) ?? null,
   },
   {
     key: LEAVE_COLUMN,
@@ -1297,6 +1466,7 @@ export function narrowMembers(
   search: string,
   level: LevelFilter,
   sort: SortState,
+  today: string | null = null,
 ): MembersNarrowing {
   const searched = searchedMembers(members, search);
 
@@ -1327,7 +1497,7 @@ export function narrowMembers(
   const absent: MemberListRow[] = [];
 
   for (const member of filtered) {
-    const value = column.sortValue(member);
+    const value = column.sortValue(member, today);
 
     if (value === null) absent.push(member);
     else present.push({ member, value });
@@ -1370,6 +1540,8 @@ export interface NarrowingInputs {
   readonly search: string;
   readonly level: LevelFilter;
   readonly sort: SortState;
+  /** The organization's today, which the team column sorts by (story 1.7b). */
+  readonly today: string | null;
 }
 
 /**
@@ -1382,12 +1554,18 @@ export interface NarrowingInputs {
  * quietly stops responding to it.
  */
 export function narrowingDependencies(inputs: NarrowingInputs): readonly unknown[] {
-  return [inputs.members, inputs.search, inputs.level, inputs.sort];
+  return [inputs.members, inputs.search, inputs.level, inputs.sort, inputs.today];
 }
 
 /** The narrowing, from the same object the dependencies are derived from. */
 export function narrowFrom(inputs: NarrowingInputs): MembersNarrowing {
-  return narrowMembers(inputs.members ?? [], inputs.search, inputs.level, inputs.sort);
+  return narrowMembers(
+    inputs.members ?? [],
+    inputs.search,
+    inputs.level,
+    inputs.sort,
+    inputs.today,
+  );
 }
 
 /**

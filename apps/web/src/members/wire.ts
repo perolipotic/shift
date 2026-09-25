@@ -249,6 +249,98 @@ export function statusConfirmMessageKey(
   return unhandled;
 }
 
+// ------------------------------------------------- team membership (story 1.7b)
+
+/**
+ * The team refusals, the surface's reading of what it sent — `0010`'s insert
+ * and delete policies refuse every one of them as `42501` (or zero rows),
+ * exactly as `0008`'s do, so each is named here against the entered values.
+ */
+/** A membership version dated before the organization's today. */
+export const MEMBER_TEAM_IN_PAST = 'MEMBER_TEAM_IN_PAST';
+/** A version already exists for this member on that date. */
+export const MEMBER_TEAM_DATE_TAKEN = 'MEMBER_TEAM_DATE_TAKEN';
+/** A version dated before the member's latest one. */
+export const MEMBER_TEAM_OUT_OF_ORDER = 'MEMBER_TEAM_OUT_OF_ORDER';
+/** The chosen team is the one the member is already on (or "no team" for a
+ *  member on none). */
+export const MEMBER_TEAM_UNCHANGED = 'MEMBER_TEAM_UNCHANGED';
+/** A move is already scheduled; the only thing to do is cancel it first. */
+export const MEMBER_TEAM_SCHEDULED = 'MEMBER_TEAM_SCHEDULED';
+/** Cancelling a move already in effect — dated today or earlier. */
+export const MEMBER_TEAM_IN_EFFECT = 'MEMBER_TEAM_IN_EFFECT';
+/** The chosen team is archived. */
+export const MEMBER_TEAM_ARCHIVED = 'MEMBER_TEAM_ARCHIVED';
+/** The member's team history, or the teams, changed since the screen read
+ *  them. Look again. */
+export const MEMBER_TEAM_STALE = 'MEMBER_TEAM_STALE';
+
+/** Move the member onto a team, or onto no team, from a date. */
+export const TEAM_MOVE = 'move';
+
+/** A team change: a move from a date, or cancelling the scheduled one. */
+export type TeamChange = typeof TEAM_MOVE | typeof WITHDRAW;
+
+/** The offer's label, naming the member it acts on. */
+export function teamOfferMessageKey(
+  change: TeamChange,
+): 'smjene.membership.move' | 'smjene.membership.withdraw' {
+  if (change === TEAM_MOVE) return 'smjene.membership.move';
+  if (change === WITHDRAW) return 'smjene.membership.withdraw';
+
+  const unhandled: never = change;
+
+  return unhandled;
+}
+
+/**
+ * The confirmation's sentence. TENSE FOLLOWS THE DATE, as the status prompt's
+ * does, and a move to no team is its own sentence rather than a team name
+ * that is not one. A cancellation is only ever of a later date.
+ */
+export function teamPromptMessageKey(
+  change: TeamChange,
+  toNoTeam: boolean,
+  future: boolean,
+):
+  | 'smjene.membership.movePrompt'
+  | 'smjene.membership.movePromptFuture'
+  | 'smjene.membership.removePrompt'
+  | 'smjene.membership.removePromptFuture'
+  | 'smjene.membership.withdrawPrompt' {
+  if (change === TEAM_MOVE) {
+    if (toNoTeam) {
+      return future ? 'smjene.membership.removePromptFuture' : 'smjene.membership.removePrompt';
+    }
+
+    return future ? 'smjene.membership.movePromptFuture' : 'smjene.membership.movePrompt';
+  }
+  if (change === WITHDRAW) return 'smjene.membership.withdrawPrompt';
+
+  const unhandled: never = change;
+
+  return unhandled;
+}
+
+/** The confirm control, naming the member. */
+export function teamConfirmMessageKey(
+  change: TeamChange,
+): 'smjene.membership.moveConfirm' | 'smjene.membership.withdrawConfirm' {
+  if (change === TEAM_MOVE) return 'smjene.membership.moveConfirm';
+  if (change === WITHDRAW) return 'smjene.membership.withdrawConfirm';
+
+  const unhandled: never = change;
+
+  return unhandled;
+}
+
+/** The line stating the SCHEDULED move — future tense, onto a team or none. */
+export function teamScheduledMessageKey(
+  toNoTeam: boolean,
+): 'smjene.membership.scheduled' | 'smjene.membership.scheduledNone' {
+  return toNoTeam ? 'smjene.membership.scheduledNone' : 'smjene.membership.scheduled';
+}
+
 export type MemberWriteFailure =
   | typeof MEMBER_WRITE_REFUSED
   | typeof MEMBER_WRITE_INVALID
@@ -268,6 +360,14 @@ export type MemberWriteFailure =
   | typeof MEMBER_STATUS_UNCHANGED
   | typeof MEMBER_STATUS_IN_EFFECT
   | typeof MEMBER_STATUS_STALE
+  | typeof MEMBER_TEAM_IN_PAST
+  | typeof MEMBER_TEAM_DATE_TAKEN
+  | typeof MEMBER_TEAM_OUT_OF_ORDER
+  | typeof MEMBER_TEAM_UNCHANGED
+  | typeof MEMBER_TEAM_SCHEDULED
+  | typeof MEMBER_TEAM_IN_EFFECT
+  | typeof MEMBER_TEAM_ARCHIVED
+  | typeof MEMBER_TEAM_STALE
   | typeof MEMBER_WRITE_UNAVAILABLE;
 
 /**
@@ -510,6 +610,14 @@ export function memberWriteMessageKey(
   | 'ljudi.form.error.statusUnchanged'
   | 'ljudi.form.error.statusInEffect'
   | 'ljudi.form.error.statusStale'
+  | 'smjene.membership.error.past'
+  | 'smjene.membership.error.taken'
+  | 'smjene.membership.error.order'
+  | 'smjene.membership.error.unchanged'
+  | 'smjene.membership.error.scheduled'
+  | 'smjene.membership.error.inEffect'
+  | 'smjene.membership.error.archived'
+  | 'smjene.membership.error.stale'
   | 'ljudi.form.error.unavailable' {
   if (failure === MEMBER_WRITE_REFUSED) return 'ljudi.form.error.refused';
   if (failure === MEMBER_WRITE_INVALID) return 'ljudi.form.error.invalid';
@@ -534,6 +642,16 @@ export function memberWriteMessageKey(
   if (failure === MEMBER_STATUS_UNCHANGED) return 'ljudi.form.error.statusUnchanged';
   if (failure === MEMBER_STATUS_IN_EFFECT) return 'ljudi.form.error.statusInEffect';
   if (failure === MEMBER_STATUS_STALE) return 'ljudi.form.error.statusStale';
+  // STORY 1.7b, under `smjene.*`: the one namespace whose messages may say
+  // the Team.
+  if (failure === MEMBER_TEAM_IN_PAST) return 'smjene.membership.error.past';
+  if (failure === MEMBER_TEAM_DATE_TAKEN) return 'smjene.membership.error.taken';
+  if (failure === MEMBER_TEAM_OUT_OF_ORDER) return 'smjene.membership.error.order';
+  if (failure === MEMBER_TEAM_UNCHANGED) return 'smjene.membership.error.unchanged';
+  if (failure === MEMBER_TEAM_SCHEDULED) return 'smjene.membership.error.scheduled';
+  if (failure === MEMBER_TEAM_IN_EFFECT) return 'smjene.membership.error.inEffect';
+  if (failure === MEMBER_TEAM_ARCHIVED) return 'smjene.membership.error.archived';
+  if (failure === MEMBER_TEAM_STALE) return 'smjene.membership.error.stale';
   if (failure === MEMBER_WRITE_UNAVAILABLE) return 'ljudi.form.error.unavailable';
 
   const unhandled: never = failure;

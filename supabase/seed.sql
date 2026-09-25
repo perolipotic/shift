@@ -34,7 +34,7 @@
 -- Fixture 1 — the pilot organization
 -- ===========================================================================
 -- Populated in story 1.2 onward, in dependency order:
---   organizations -> members -> teams -> team_memberships
+--   organizations -> members -> teams -> team_membership_versions
 --   -> hour_bands -> shift_types -> shift_type_versions
 --   -> rotation_patterns -> rotation_steps -> rotation_assignments
 --   -> leave_records

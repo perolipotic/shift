@@ -24,6 +24,7 @@ import {
   DAYS_CELL,
   DEFAULT_SORT,
   LEVEL_CELL,
+  TEAM_CELL,
   LEVEL_FILTERS,
   MEMBERS_LIST_KEY,
   MEMBERS_READ_STALE_MS,
@@ -172,6 +173,9 @@ function cellContent(cell: MemberCell): string {
     return t('ljudi.status.inactiveScheduled', { name: cell.text, date: shownDate(cell.from) });
   }
   if (cell.kind === LEVEL_CELL) return t(memberLevelMessageKey(cell.level));
+  // STORY 1.7b: the team today, and "no team" in positive words — never a
+  // blank cell, which would read as a value that did not load.
+  if (cell.kind === TEAM_CELL) return cell.team ?? t('smjene.membership.none');
   // `fractionDigits: 0` — an allowance is a whole number of days, and `20,00`
   // in a column of them is the wobble UX-DR40's tabular numerals prevent.
   if (cell.kind === DAYS_CELL) return formatNumber(cell.days, 0);
@@ -215,7 +219,7 @@ export function LjudiScreen() {
   // one left the suite green and eslint clean while the arrow flipped and the
   // rows never moved. There is only one list of inputs now, and
   // `members/list.test.ts` pins what it contains.
-  const inputs: NarrowingInputs = { members, search, level, sort };
+  const inputs: NarrowingInputs = { members, search, level, sort, today };
   const narrowed = useMemo(() => narrowFrom(inputs), narrowingDependencies(inputs));
 
   // THE CONTROLS ARE DEAD WHILE THERE IS NOTHING TO NARROW. A live filter over

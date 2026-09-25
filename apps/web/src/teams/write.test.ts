@@ -6,6 +6,7 @@ import {
   ARCHIVE_BUSY,
   ARCHIVE_IDLE,
   TEAM_ARCHIVED,
+  TEAM_IN_USE,
   TEAM_NAME_EMPTY,
   TEAM_NAME_TAKEN,
   TEAM_RENAMED,
@@ -14,6 +15,7 @@ import {
   TEAM_WRITE_INVALID,
   TEAM_WRITE_REFUSED,
   TEAM_WRITE_UNAVAILABLE,
+  archiveFailureOf,
   archiveStageOf,
   archiveTeam,
   claimedOrganizationOf,
@@ -210,6 +212,7 @@ describe('a database refusal names its problem', () => {
       TEAM_WRITE_INVALID,
       TEAM_WRITE_UNAVAILABLE,
       TEAM_UNKNOWN,
+      TEAM_IN_USE,
     ];
     const keys = failures.map((failure) => teamWriteMessageKey(failure));
 
@@ -217,6 +220,37 @@ describe('a database refusal names its problem', () => {
     expect(teamWriteMessageKey(TEAM_NAME_TAKEN)).toBe('smjene.error.taken');
     expect(teamWriteMessageKey(TEAM_NAME_EMPTY)).toBe('smjene.error.empty');
     expect(teamWriteMessageKey(TEAM_STALE)).toBe('smjene.error.stale');
+    expect(teamWriteMessageKey(TEAM_IN_USE)).toBe('smjene.error.inUse');
+  });
+});
+
+describe('an archive of a team somebody is on is refused by name (story 1.7b)', () => {
+  it('reads a 42501 answering an ARCHIVE as the in-use rule, and nothing else as it', () => {
+    // `0010`'s WITH CHECK raises `42501` for an archive while a membership
+    // version for the team is in effect today or dated after today. The
+    // archive is offered only to an admin on screen, so that is the rule.
+    expect(archiveFailureOf({ code: '42501' })).toBe(TEAM_IN_USE);
+    expect(archiveFailureOf({ code: '23505' })).toBe(TEAM_NAME_TAKEN);
+    expect(archiveFailureOf({ code: '40001' })).toBe(TEAM_WRITE_UNAVAILABLE);
+    expect(archiveFailureOf({})).toBe(TEAM_WRITE_UNAVAILABLE);
+  });
+
+  it('settles a refused archive as in use, and a refused rename as a plain refusal', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(await archiveTeam(tableAnswering(refusedWith('42501')), ACTIVE)).toEqual({
+      ok: false,
+      code: TEAM_IN_USE,
+    });
+    expect(await renameTeam(tableAnswering(refusedWith('42501')), ACTIVE, 'Drugi')).toEqual({
+      ok: false,
+      code: TEAM_WRITE_REFUSED,
+    });
+  });
+
+  it('names the rule rather than the generic refusal', () => {
+    expect(teamWriteMessageKey(TEAM_IN_USE)).not.toBe(teamWriteMessageKey(TEAM_WRITE_REFUSED));
+    expect(teamWriteMessageKey(TEAM_IN_USE)).not.toBe(teamWriteMessageKey(TEAM_WRITE_UNAVAILABLE));
   });
 });
 

@@ -305,7 +305,11 @@ const SCREENS = [
   // SIXTEEN SINCE STORY 1.6: the status block's date `<Input>`, its offer, and
   // the confirm and cancel that replace the offer — the same two-step shape the
   // reset has, because one press must not end somebody's access.
-  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 16 },
+  //
+  // TWENTY-ONE SINCE STORY 1.7b: the team block's `<select>` and date
+  // `<Input>`, its offer, and the confirm and cancel that replace the offer —
+  // the status block's shape, because one press must not move somebody.
+  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 21 },
   // STORY 1.7a. FOUR on the team list: the link back to `Ljudi`, the one name
   // `<Input>`, the add `<Button>`, and ONE row link written once inside the map
   // over the teams — the same count at zero teams as at nine. SIX on one team:
@@ -466,6 +470,19 @@ const IN_FLIGHT_HANDLERS = [
     // ITS OWN REFUSAL STATE, so the date control is described by the status
     // block's alert and never by an unrelated error on the form.
     failure: 'setStatusFailure',
+  },
+  {
+    // STORY 1.7b, THE FOURTH AWAITING HANDLER ON THE EDIT FORM: the team
+    // change, with its own flags for the reason the status change has its own.
+    // Offered on the caller's own row too, so it must never share a ref with
+    // the status block.
+    name: "the member edit form's team change",
+    file: MEMBER_EDIT,
+    effect: 'changeMemberTeam(',
+    inFlight: 'teaming',
+    handler: 'changeTeam',
+    pending: 'setTeamPending',
+    failure: 'setTeamFailure',
   },
   {
     // STORY 1.7a, the team edit form's second awaiting handler. It shares the
@@ -1188,10 +1205,13 @@ const KEY_SOURCES = [
     //
     // ELEVEN SINCE STORY 1.7a: the link to the teams screen, which renders
     // `smjene.heading`, the teams screen's own heading, as its text.
+    //
+    // TWELVE SINCE STORY 1.7b: `smjene.membership.none`, the team cell's
+    // positive words for a member on no team today.
     name: 'the member list',
     file: MEMBER_LIST,
     keys: translationKeys,
-    strings: 11,
+    strings: 12,
   },
   {
     // STORY 1.7a. EIGHT on the team list: its heading, the link back
@@ -1230,10 +1250,13 @@ const KEY_SOURCES = [
     // the stale screen, the outright refusal, another invalid value, the
     // service, and a team the list lacks — and the two confirmations, a rename
     // and an archive, which are different sentences on purpose.
+    //
+    // TEN SINCE STORY 1.7b: the in-use refusal, an archive of a team somebody
+    // is on today or is scheduled onto.
     name: 'the team write rules',
     file: TEAM_WRITE_KEYS,
     keys: memberListKeys,
-    strings: 9,
+    strings: 10,
   },
   {
     // THIRTEEN on the create form: its own heading, five field labels, the save
@@ -1273,10 +1296,17 @@ const KEY_SOURCES = [
     // that a change landed. Its status lines, offer, prompt and confirm vary
     // with the member's history and reach `t()` through `@/members/wire`,
     // which is the entry below.
+    //
+    // TWENTY-EIGHT SINCE STORY 1.7b: the team block's seven literal calls —
+    // the line stating the team today, `Bez smjene` twice (as that line's
+    // value and as the picker's "no team" option), the picker's and the date's
+    // labels, the confirmation's cancel, and the confirmation that a change
+    // landed. Its scheduled line, offer, prompt and confirm reach `t()`
+    // through `@/members/wire`.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 21,
+    strings: 28,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
@@ -1303,20 +1333,26 @@ const KEY_SOURCES = [
     // the FOUR status lines — today's in the present, the scheduled change's
     // in the future. Paired by `statusOfferMessageKey` and its siblings so
     // the pairing is executed rather than written into the screen.
+    //
+    // FIFTY-FOUR SINCE STORY 1.7b, all under `smjene.membership.*`: eight team
+    // refusals, the two offers (move, cancel the scheduled move), five prompts
+    // (onto a team or onto none, today or later, and the cancellation), the
+    // two confirms, and the two scheduled lines (onto a team, onto none).
     name: 'the member write rules',
     file: MEMBER_WRITE_KEYS,
     keys: memberWriteKeys,
-    strings: 35,
+    strings: 54,
   },
   {
     // ELEVEN on the member list's rules: four column headings, two permission
     // levels, three counted filter options and two refusals. It is the first
     // key source read by neither `translationKeys` nor `messageKeyUnion` — see
     // `memberListKeys`, which reads both shapes this module declares keys in.
+    // TWELVE SINCE STORY 1.7b: the team column's heading.
     name: 'the member list rules',
     file: MEMBER_LIST_KEYS,
     keys: memberListKeys,
-    strings: 11,
+    strings: 12,
   },
   {
     // ONE on the lockup: the accessible name it falls back to when the
@@ -2132,6 +2168,9 @@ describe('the member list computes nothing it renders', () => {
       // reached for by the list itself.
       'authUserId',
       'statusVersions',
+      // STORY 1.7b: the team history the team cell is read off, guarded like
+      // the status history.
+      'teamVersions',
       'timeZone',
     ]);
     for (const exempt of RENDERED_FIELD_EXEMPTIONS) expect(fields).toContain(exempt);
@@ -2213,6 +2252,11 @@ describe('the member list computes nothing it renders', () => {
       // the date it takes effect, shown in the binding shape.
       "t('ljudi.status.inactiveScheduled', { name: cell.text, date: shownDate(cell.from) })",
       't(memberLevelMessageKey(cell.level))',
+      // STORY 1.7b, a FIFTH: the team today, or "no team" stated in positive
+      // words (`Bez smjene`) where a blank would read as not loaded. The
+      // fallback is the one the module's `null` asks for, not a replacement
+      // of a value that arrived.
+      "cell.team ?? t('smjene.membership.none')",
       'formatNumber(cell.days, 0)',
       'unhandled',
     ]);
@@ -3282,13 +3326,15 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // them. A list that silently fell back
     // to one entry per file would make every sweep below miss exactly the
     // handler that was added last.
-    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(9);
+    // TEN SINCE STORY 1.7b: the member edit form's fourth, the team change.
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(10);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
       'the in-flight handler names drifted from the handlers that hold them',
     ).toEqual([
       'archive/writing',
       'changeStatus/statusing',
+      'changeTeam/teaming',
       'issue/resetting',
       'submit/creating',
       'submit/exchanging',

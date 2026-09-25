@@ -85,6 +85,32 @@ import {
   type MemberWriteFailure,
   type MemberWriteTable,
   type PostgrestAnswer,
+  MEMBER_TEAM_ARCHIVED,
+  MEMBER_TEAM_DATE_TAKEN,
+  MEMBER_TEAM_IN_EFFECT,
+  MEMBER_TEAM_IN_PAST,
+  MEMBER_TEAM_OUT_OF_ORDER,
+  MEMBER_TEAM_SCHEDULED,
+  MEMBER_TEAM_STALE,
+  MEMBER_TEAM_TABLE,
+  MEMBER_TEAM_UNCHANGED,
+  NO_TEAM_VALUE,
+  TEAM_MOVE,
+  changeMemberTeam,
+  chosenTeam,
+  standingTeamConfirmation,
+  teamBlockKey,
+  teamConfirmMessageKey,
+  teamFailureOf,
+  teamOfferMessageKey,
+  teamOfferOf,
+  teamPickerDefault,
+  teamPreflightOf,
+  teamPromptKeyOf,
+  teamScheduledMessageKey,
+  type MemberTeamTable,
+  type TeamConfirmation,
+  type TeamContext,
 } from '@/members/write';
 
 /**
@@ -117,6 +143,7 @@ function member(fields: Partial<MemberListRow> = {}): MemberListRow {
     leaveAllowanceDays: 20,
     authUserId: 'account-1',
     statusVersions: [],
+    teamVersions: [],
     timeZone: 'Europe/Zagreb',
     ...fields,
   };
@@ -392,6 +419,40 @@ describe('a PostgREST refusal means the same thing on both write paths', () => {
   });
 });
 
+/**
+ * Every team refusal `teamFailureOf` can name, each reached from the answer and
+ * the history that produces it (story 1.7b).
+ */
+function teamFailuresReached(): MemberWriteFailure[] {
+  const a = { id: 'team-a', name: 'Alfa' };
+  const b = { id: 'team-b', name: 'Beta' };
+  const teams = [
+    { ...a, archived: false },
+    { ...b, archived: false },
+    { id: 'team-old', name: 'Stara', archived: true },
+  ];
+  const onA = member({ teamVersions: [{ team: a, effectiveFrom: '2026-09-01' }] });
+  const onAToday = member({ teamVersions: [{ team: a, effectiveFrom: TODAY }] });
+  const scheduled = member({
+    teamVersions: [
+      { team: a, effectiveFrom: '2026-09-01' },
+      { team: b, effectiveFrom: '2026-10-01' },
+    ],
+  });
+  const on = (target: MemberListRow) => ({ member: target, teams, today: TODAY });
+
+  return [
+    teamFailureOf({ code: '42501' }, TEAM_MOVE, '2026-09-22', b.id, on(onA)),
+    teamFailureOf({ code: '23505' }, TEAM_MOVE, TODAY, b.id, on(onA)),
+    teamFailureOf({ code: '42501' }, TEAM_MOVE, '2026-09-25', a.id, on(scheduled)),
+    teamFailureOf({ code: '42501' }, TEAM_MOVE, TODAY, a.id, on(onA)),
+    teamFailureOf({ code: '42501' }, TEAM_MOVE, '2026-10-05', b.id, on(scheduled)),
+    teamFailureOf(null, WITHDRAW, TODAY, null, on(onAToday)),
+    teamFailureOf({ code: '42501' }, TEAM_MOVE, TODAY, 'team-old', on(onA)),
+    teamFailureOf(null, WITHDRAW, '2026-10-01', null, on(scheduled)),
+  ];
+}
+
 describe('every failure becomes exactly one message, and no two share one', () => {
   const EVERY_FAILURE: readonly MemberWriteFailure[] = [
     MEMBER_WRITE_REFUSED,
@@ -411,6 +472,14 @@ describe('every failure becomes exactly one message, and no two share one', () =
     MEMBER_STATUS_UNCHANGED,
     MEMBER_STATUS_IN_EFFECT,
     MEMBER_STATUS_STALE,
+    MEMBER_TEAM_IN_PAST,
+    MEMBER_TEAM_DATE_TAKEN,
+    MEMBER_TEAM_OUT_OF_ORDER,
+    MEMBER_TEAM_UNCHANGED,
+    MEMBER_TEAM_SCHEDULED,
+    MEMBER_TEAM_IN_EFFECT,
+    MEMBER_TEAM_ARCHIVED,
+    MEMBER_TEAM_STALE,
     MEMBER_WRITE_UNAVAILABLE,
   ];
 
@@ -462,6 +531,10 @@ describe('every failure becomes exactly one message, and no two share one', () =
       statusFailureOf({ code: '42501' }, REACTIVATE, TODAY, context),
       statusFailureOf(null, WITHDRAW, TODAY, outToday),
       statusFailureOf(null, WITHDRAW, '2026-10-01', scheduledOut),
+      // STORY 1.7b IS THE FOURTH: a refused team write, read by
+      // `teamFailureOf` against what was sent. Its EIGHT codes are reached only
+      // that way.
+      ...teamFailuresReached(),
     ]);
 
     mapped.delete(MEMBER_READ_REFUSED);
@@ -485,8 +558,13 @@ describe('every failure becomes exactly one message, and no two share one', () =
     // this session's level and found it to be an administrator's, so
     // `organization.error.refused`'s wording would be false on the one path
     // that reaches them.
+    // The team refusals (story 1.7b) live under `smjene.membership.error.*`,
+    // the one namespace whose messages may say the Team, and are held to the
+    // same rule.
     for (const failure of EVERY_FAILURE) {
-      expect(memberWriteMessageKey(failure)).toMatch(/^ljudi\.form\.error\./);
+      expect(memberWriteMessageKey(failure)).toMatch(
+        /^(ljudi\.form\.error\.|smjene\.membership\.error\.)/,
+      );
     }
   });
 
@@ -1667,5 +1745,258 @@ describe('a status change is one appended version or one cancelled one, judged b
     );
     expect(await readSessionSubject(() => Promise.resolve(null))).toBeNull();
     expect(await readSessionSubject(() => Promise.reject(new Error('storage')))).toBeNull();
+  });
+});
+
+describe('a team change is one appended version or one cancelled one, judged before and after it is sent (story 1.7b)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  const A = { id: 'team-a', name: 'Alfa', archived: false };
+  const B = { id: 'team-b', name: 'Beta', archived: false };
+  const OLD = { id: 'team-old', name: 'Stara', archived: true };
+  const TEAMS = [A, B, OLD];
+
+  type Answer = { error: { code?: string } | null; data?: readonly unknown[] | null };
+
+  function teamTable(answer: Answer | Error = { error: null, data: [{}] }): {
+    table: MemberTeamTable;
+    sent: Readonly<Record<string, unknown>>[];
+    deleted: [string, string][][];
+  } {
+    const sent: Readonly<Record<string, unknown>>[] = [];
+    const deleted: [string, string][][] = [];
+    const settle = () =>
+      answer instanceof Error
+        ? Promise.reject(answer)
+        : Promise.resolve({ data: answer.data ?? null, error: answer.error });
+
+    return {
+      sent,
+      deleted,
+      table: {
+        insert(values) {
+          sent.push(values);
+
+          return settle();
+        },
+        delete() {
+          const filters: [string, string][] = [];
+
+          deleted.push(filters);
+
+          return {
+            eq(column, value) {
+              filters.push([column, value]);
+
+              return {
+                eq(second, secondValue) {
+                  filters.push([second, secondValue]);
+
+                  return { select: () => settle() };
+                },
+              };
+            },
+          };
+        },
+      },
+    };
+  }
+
+  const onA = (from = '2026-09-01') =>
+    member({ teamVersions: [{ team: { id: A.id, name: A.name }, effectiveFrom: from }] });
+  const scheduledB = () =>
+    member({
+      teamVersions: [
+        { team: { id: A.id, name: A.name }, effectiveFrom: '2026-09-01' },
+        { team: { id: B.id, name: B.name }, effectiveFrom: '2026-10-01' },
+      ],
+    });
+  const context = (target: MemberListRow): TeamContext => ({ member: target, teams: TEAMS, today: TODAY });
+
+  it('writes to the membership table', () => {
+    expect(MEMBER_TEAM_TABLE).toBe('team_membership_versions');
+  });
+
+  it('offers active teams but the current one, "no team" only to a member on one, and today as the minimum', () => {
+    const fresh = teamOfferOf(member(), TEAMS, TODAY);
+    expect(fresh).toMatchObject({
+      change: TEAM_MOVE,
+      choices: [
+        { id: A.id, name: A.name },
+        { id: B.id, name: B.name },
+      ],
+      offersNoTeam: false,
+      minimum: TODAY,
+    });
+
+    const on = teamOfferOf(onA(), TEAMS, TODAY);
+    expect(on).toMatchObject({ choices: [{ id: B.id, name: B.name }], offersNoTeam: true });
+    // AN ADMIN'S OWN ROW is offered too: nothing here reads the caller.
+    expect(teamOfferOf(member({ role: 'admin' }), TEAMS, TODAY)).not.toBeNull();
+    // THE MINIMUM follows the date-order rule: after a version dated today.
+    expect(teamOfferOf(onA(TODAY), TEAMS, TODAY)).toMatchObject({ minimum: '2026-09-24' });
+  });
+
+  it('offers only the cancellation while a move is scheduled, and nothing without today or teams', () => {
+    expect(teamOfferOf(scheduledB(), TEAMS, TODAY)).toMatchObject({
+      change: WITHDRAW,
+      scheduled: { effectiveFrom: '2026-10-01' },
+    });
+    expect(teamOfferOf(onA(), TEAMS, null)).toBeNull();
+    expect(teamOfferOf(onA(), null, TODAY)).toBeNull();
+    // NOTHING TO MOVE ONTO and no team to leave.
+    expect(teamOfferOf(member(), [OLD], TODAY)).toBeNull();
+  });
+
+  it('reads a picked value by lookup, never by cast', () => {
+    const on = teamOfferOf(onA(), TEAMS, TODAY);
+    const fresh = teamOfferOf(member(), TEAMS, TODAY);
+    if (on === null || fresh === null) throw new Error('no offer');
+
+    expect(chosenTeam(B.id, on)).toEqual({ id: B.id, name: B.name });
+    expect(chosenTeam(NO_TEAM_VALUE, on)).toBeNull();
+    expect(chosenTeam(NO_TEAM_VALUE, fresh)).toBeUndefined();
+    expect(chosenTeam(OLD.id, on)).toBeUndefined();
+    expect(chosenTeam(A.id, on)).toBeUndefined();
+    expect(teamPickerDefault(on)).toBe(B.id);
+  });
+
+  it.each([
+    { what: 'a past date', change: TEAM_MOVE, day: '2026-09-22', team: B.id, target: onA, code: MEMBER_TEAM_IN_PAST },
+    { what: 'the latest date', change: TEAM_MOVE, day: TODAY, team: B.id, target: () => onA(TODAY), code: MEMBER_TEAM_DATE_TAKEN },
+    { what: 'before the latest', change: TEAM_MOVE, day: '2026-09-25', team: B.id, target: () => onA('2026-09-30'), code: MEMBER_TEAM_OUT_OF_ORDER },
+    { what: 'the scheduled move\'s own date', change: TEAM_MOVE, day: '2026-10-01', team: A.id, target: scheduledB, code: MEMBER_TEAM_DATE_TAKEN },
+    { what: 'the same team', change: TEAM_MOVE, day: TODAY, team: A.id, target: onA, code: MEMBER_TEAM_UNCHANGED },
+    { what: 'no team for a member on none', change: TEAM_MOVE, day: TODAY, team: null, target: () => member(), code: MEMBER_TEAM_UNCHANGED },
+    { what: 'a second scheduled move', change: TEAM_MOVE, day: '2026-10-05', team: A.id, target: scheduledB, code: MEMBER_TEAM_SCHEDULED },
+    { what: 'an archived team', change: TEAM_MOVE, day: TODAY, team: OLD.id, target: onA, code: MEMBER_TEAM_ARCHIVED },
+    { what: 'a team the list lacks', change: TEAM_MOVE, day: TODAY, team: 'gone', target: onA, code: MEMBER_TEAM_STALE },
+    { what: 'cancelling one in effect', change: WITHDRAW, day: '2026-09-01', team: null, target: onA, code: MEMBER_TEAM_IN_EFFECT },
+    { what: 'cancelling one not the latest', change: WITHDRAW, day: '2026-09-02', team: null, target: scheduledB, code: MEMBER_TEAM_STALE },
+  ] as const)('refuses $what before sending anything', async ({ change, day, team, target, code }) => {
+    const stub = teamTable();
+
+    expect(teamPreflightOf(change, day, team, context(target()))).toBe(code);
+    expect(await changeMemberTeam(stub.table, change, day, team, context(target()))).toEqual({
+      ok: false,
+      refusal: { code, saved: false },
+    });
+    expect(stub.sent).toEqual([]);
+    expect(stub.deleted).toEqual([]);
+  });
+
+  it('refuses a date that is not one as a value to correct', () => {
+    expect(teamPreflightOf(TEAM_MOVE, '2026-02-31', A.id, context(member()))).toBe(MEMBER_WRITE_INVALID);
+  });
+
+  it('sends the four facts of a move, "no team" as null, and a cancellation filtered by member and date', async () => {
+    const move = teamTable();
+    expect(await changeMemberTeam(move.table, TEAM_MOVE, TODAY, B.id, context(onA()))).toEqual({ ok: true });
+    expect(move.sent).toEqual([
+      { organization_id: 'organization-1', member_id: 'member-1', team_id: B.id, effective_from: TODAY },
+    ]);
+
+    const remove = teamTable();
+    expect(await changeMemberTeam(remove.table, TEAM_MOVE, '2026-09-30', null, context(onA()))).toEqual({
+      ok: true,
+    });
+    expect(remove.sent[0]?.['team_id']).toBeNull();
+
+    const cancel = teamTable();
+    expect(
+      await changeMemberTeam(cancel.table, WITHDRAW, '2026-10-01', null, context(scheduledB())),
+    ).toEqual({ ok: true });
+    expect(cancel.deleted).toEqual([
+      [
+        ['member_id', 'member-1'],
+        ['effective_from', '2026-10-01'],
+      ],
+    ]);
+  });
+
+  it('reads a cancellation that deleted nothing, or an unexplained 42501, as stale', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const nothing = teamTable({ error: null, data: [] });
+    expect(
+      await changeMemberTeam(nothing.table, WITHDRAW, '2026-10-01', null, context(scheduledB())),
+    ).toEqual({ ok: false, refusal: { code: MEMBER_TEAM_STALE, saved: false } });
+
+    const refused = teamTable({ error: { code: '42501' } });
+    expect(await changeMemberTeam(refused.table, TEAM_MOVE, TODAY, B.id, context(onA()))).toEqual({
+      ok: false,
+      refusal: { code: MEMBER_TEAM_STALE, saved: false },
+    });
+
+    const thrown = teamTable(new Error('offline'));
+    expect(await changeMemberTeam(thrown.table, TEAM_MOVE, TODAY, B.id, context(onA()))).toEqual({
+      ok: false,
+      refusal: { code: MEMBER_WRITE_UNAVAILABLE, saved: false },
+    });
+  });
+
+  it('maps the SQLSTATEs a team write can meet', () => {
+    const ctx = context(onA());
+    expect(teamFailureOf({ code: '23505' }, TEAM_MOVE, TODAY, B.id, ctx)).toBe(MEMBER_TEAM_DATE_TAKEN);
+    expect(teamFailureOf({ code: '23503' }, TEAM_MOVE, TODAY, B.id, ctx)).toBe(MEMBER_TEAM_STALE);
+    expect(teamFailureOf({ code: '22007' }, TEAM_MOVE, TODAY, B.id, ctx)).toBe(MEMBER_WRITE_INVALID);
+    expect(teamFailureOf({ code: '08006' }, TEAM_MOVE, TODAY, B.id, ctx)).toBe(MEMBER_WRITE_UNAVAILABLE);
+    // A 42501 the preflight explains is named: the team archived meanwhile.
+    expect(teamFailureOf({ code: '42501' }, TEAM_MOVE, TODAY, OLD.id, ctx)).toBe(MEMBER_TEAM_ARCHIVED);
+  });
+
+  it('names every team refusal under smjene.*, never under ljudi.*', () => {
+    for (const code of [
+      MEMBER_TEAM_IN_PAST,
+      MEMBER_TEAM_DATE_TAKEN,
+      MEMBER_TEAM_OUT_OF_ORDER,
+      MEMBER_TEAM_UNCHANGED,
+      MEMBER_TEAM_SCHEDULED,
+      MEMBER_TEAM_IN_EFFECT,
+      MEMBER_TEAM_ARCHIVED,
+      MEMBER_TEAM_STALE,
+    ] satisfies MemberWriteFailure[]) {
+      expect(memberWriteMessageKey(code)).toMatch(/^smjene\.membership\.error\./);
+    }
+  });
+
+  it('words the prompt by tense and by whether the move is onto no team', () => {
+    const team = { id: B.id, name: B.name };
+    expect(teamPromptKeyOf({ change: TEAM_MOVE, team, day: TODAY }, TODAY)).toBe('smjene.membership.movePrompt');
+    expect(teamPromptKeyOf({ change: TEAM_MOVE, team, day: '2026-09-30' }, TODAY)).toBe(
+      'smjene.membership.movePromptFuture',
+    );
+    expect(teamPromptKeyOf({ change: TEAM_MOVE, team: null, day: TODAY }, TODAY)).toBe(
+      'smjene.membership.removePrompt',
+    );
+    expect(teamPromptKeyOf({ change: TEAM_MOVE, team: null, day: '2026-09-30' }, TODAY)).toBe(
+      'smjene.membership.removePromptFuture',
+    );
+    expect(teamPromptKeyOf({ change: WITHDRAW, team: null, day: '2026-09-30' }, TODAY)).toBe(
+      'smjene.membership.withdrawPrompt',
+    );
+    expect(teamOfferMessageKey(TEAM_MOVE)).toBe('smjene.membership.move');
+    expect(teamOfferMessageKey(WITHDRAW)).toBe('smjene.membership.withdraw');
+    expect(teamConfirmMessageKey(TEAM_MOVE)).toBe('smjene.membership.moveConfirm');
+    expect(teamConfirmMessageKey(WITHDRAW)).toBe('smjene.membership.withdrawConfirm');
+    expect(teamScheduledMessageKey(true)).toBe('smjene.membership.scheduledNone');
+    expect(teamScheduledMessageKey(false)).toBe('smjene.membership.scheduled');
+  });
+
+  it('keeps an armed confirmation while pending, and clears it when the team history changes', () => {
+    const before = onA();
+    const armed: TeamConfirmation = {
+      name: before.name,
+      change: TEAM_MOVE,
+      team: { id: B.id, name: B.name },
+      day: TODAY,
+      history: teamBlockKey(before),
+    };
+
+    expect(standingTeamConfirmation(armed, before, false)).toBe(armed);
+    expect(standingTeamConfirmation(armed, scheduledB(), false)).toBeNull();
+    expect(standingTeamConfirmation(armed, scheduledB(), true)).toBe(armed);
+    expect(standingTeamConfirmation(null, before, false)).toBeNull();
   });
 });

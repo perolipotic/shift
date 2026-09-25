@@ -659,3 +659,19 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-7a-teams.md`
   summary: No name column has a length limit; a very long team name makes the unique-index entry exceed the btree row size (54000) and is reported as "try again", which can never succeed.
   evidence: Found by 1.7a's edge-case review layer. `teams.name`, `members.name` and `organizations.name` are unbounded `text`; `teams_organization_name_key` (and `members_organization_username_key`, `0007:92`) index the value, so a name over roughly 2.7 KB fails with 54000, which `editFailureOf` maps to unavailable. A product decision on a maximum length (with a matching client check and a named refusal) applies to every name field at once.
+
+- source_spec: none
+  summary: The member list gains a team filter — the team axis joining the level filter in one control, with its count in the label, options from live teams, and a one-action reset (UX-DR17, UX-DR19).
+  evidence: Split from story 1.7b at step-01's clarification (human decision 2026-09-24). 1.7b ships versioned membership and states each member's team in words on the list and edit screens; the filter touches search, sort, counts and UX-DR19's three clauses and is independently shippable once membership exists.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-7b-team-membership.md`
+  summary: Two concurrent inserts into `team_membership_versions` for one member on different future dates can both commit, leaving two scheduled versions (or one out of order) that the SPA's one-scheduled model and the delete policy do not expect; a concurrent archive and assign can likewise both pass.
+  evidence: Found by 1.7b's edge-case and blind review layers. The insert policy's date-order and at-most-one-future checks read committed rows only under READ COMMITTED, and `unique (member_id, effective_from)` catches only the same date; `0010`'s KNOWN GAP comment records both races. Same class as 1.6's cross-transaction serialization entry for `member_status_versions` — one fix (per-member advisory lock or a serializable check) belongs to both tables at once.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-7b-team-membership.md`
+  summary: A team rename or archive does not refresh the member list, so the list and the member edit screen show the team's old name for up to the members read's 5-minute stale time in the same session.
+  evidence: Found by 1.7b's verification-gap layer. `MEMBERS_COLUMNS` now embeds `teams(name)` under `MEMBERS_LIST_KEY`, while `ljudi.smjene.$id.tsx`'s `refresh()` invalidates only `TEAMS_LIST_KEY` — by the architecture's rule that a write invalidates only its own surface's key, pinned by `prijava.test.ts:2347`. Fixing it means amending that rule for embeds that cross surfaces (or a shorter stale time), which is an architecture decision, not a patch.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-1-7b-team-membership.md`
+  summary: The member list embeds every member's full team history on every read, unbounded, though the list needs only today's version and at most one scheduled one.
+  evidence: Found by 1.7b's blind review layer. `team_membership_versions(team_id,effective_from,teams(name))` in `MEMBERS_COLUMNS` has no date filter or limit; the payload grows with years of moves at several hundred members (Q20), and `member_status_versions` has the same shape. A bounded read (a view or a date-filtered embed) applies to both at once and should be measured before it is needed.

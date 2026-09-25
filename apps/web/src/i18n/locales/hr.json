@@ -186,7 +186,38 @@
       "refused": "Promjena nije spremljena. Odjavi se i prijavi ponovno.",
       "invalid": "Unesena vrijednost nije dopuštena.",
       "saveUnavailable": "Spremanje trenutačno nije moguće. Pokušaj ponovno.",
-      "unknown": "Ova smjena ne postoji u organizaciji."
+      "unknown": "Ova smjena ne postoji u organizaciji.",
+      "inUse": "Smjenu nije moguće arhivirati dok je netko u njoj ili je u nju zakazan. Premjesti te osobe u drugu smjenu ili je arhiviraj kad u njoj više nikoga nema."
+    },
+    "membership": {
+      "column": "Smjena",
+      "none": "Bez smjene",
+      "current": "Smjena: {team}",
+      "scheduled": "Od {date} osoba će biti u smjeni {team}.",
+      "scheduledNone": "Od {date} osoba će biti bez smjene.",
+      "team": "Nova smjena",
+      "date": "Smjena vrijedi od",
+      "move": "Promijeni smjenu osobe {name}",
+      "movePrompt": "Osoba {name} od {date} je u smjeni {team}. Prošli rasporedi ostaju nepromijenjeni.",
+      "movePromptFuture": "Osoba {name} od {date} bit će u smjeni {team}. Prošli rasporedi ostaju nepromijenjeni.",
+      "removePrompt": "Osoba {name} od {date} je bez smjene. Prošli rasporedi ostaju nepromijenjeni.",
+      "removePromptFuture": "Osoba {name} od {date} bit će bez smjene. Prošli rasporedi ostaju nepromijenjeni.",
+      "moveConfirm": "Potvrdi promjenu smjene osobe {name}",
+      "withdraw": "Poništi zakazanu promjenu smjene za osobu {name}",
+      "withdrawPrompt": "Zakazana promjena smjene osobe {name} od {date} bit će poništena.",
+      "withdrawConfirm": "Potvrdi poništavanje promjene smjene za osobu {name}",
+      "cancel": "Odustani od promjene smjene",
+      "saved": "Promjena smjene je spremljena.",
+      "error": {
+        "past": "Datum promjene smjene ne smije biti u prošlosti.",
+        "taken": "Za taj datum već postoji promjena smjene. Odaberi drugi datum.",
+        "order": "Datum mora biti nakon zadnje promjene smjene.",
+        "unchanged": "Osoba je već u toj smjeni. Odaberi drugu smjenu.",
+        "scheduled": "Promjena smjene već je zakazana. Najprije je poništi.",
+        "inEffect": "Promjena smjene je već na snazi i ne može se poništiti.",
+        "archived": "Ta smjena je arhivirana. Odaberi smjenu u upotrebi.",
+        "stale": "Smjena osobe se u međuvremenu promijenila. Provjeri je i pokušaj ponovno."
+      }
     }
   }
 }

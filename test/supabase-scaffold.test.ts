@@ -293,7 +293,7 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the fifteen policies stories 1.3a, 1.4a, 1.4b, 1.6 and 1.7a reviewed, and no sixteenth', () => {
+  it('declares exactly the eighteen policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a and 1.7b reviewed, and no nineteenth', () => {
     // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
     // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
     // copying `members_update_by_own_active_admin`, and its name is added here
@@ -343,6 +343,12 @@ describe('the access-control migration', () => {
       'organization_logos_update_by_own_active_admin',
       'organizations_select_own_organization',
       'organizations_update_by_own_active_admin',
+      // STORY 1.7b, and THREE for the reason the status table has three: a
+      // membership version is appended, cancelled only while it is not yet in
+      // effect, and never changed.
+      'team_membership_versions_delete_scheduled_by_own_active_admin',
+      'team_membership_versions_insert_by_own_active_admin',
+      'team_membership_versions_select_own_organization',
       // STORY 1.7a, and THREE: read, create, and an update that renames or
       // archives. No fourth — removal archives, so there is no delete policy
       // and the delete privilege is revoked as well.
@@ -690,6 +696,91 @@ describe('the access-control migration', () => {
         `a policy opens ${verb} on member_status_versions; a version is never rewritten`,
       ).toEqual([]);
     }
+  });
+
+  it('appends membership versions and never rewrites one, in any migration', () => {
+    // STORY 1.7b, the status table's shape copied: select, insert and a delete
+    // that reaches only the latest version while it is dated after today. No
+    // update policy, and the privilege revoked.
+    const statements = migrationStatements();
+    const membershipPolicies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter(
+      (declaration) => /on public\.team_membership_versions\b/i.test(declaration),
+    );
+
+    expect(membershipPolicies.length, 'no policy on team_membership_versions was found').toBe(3);
+
+    const deletes = membershipPolicies.filter((declaration) => /\bfor delete\b/i.test(declaration));
+    expect(deletes, 'the membership table has no single cancellation policy').toHaveLength(1);
+    expect(deletes[0], 'a version in effect can be cancelled').toMatch(
+      /effective_from > public\.organization_today\(organization_id\)/,
+    );
+    expect(deletes[0], 'a version other than the latest can be cancelled').toMatch(
+      /effective_from = public\.team_membership_latest_version\(member_id\)/,
+    );
+
+    for (const verb of ['update', 'all']) {
+      expect(
+        membershipPolicies.filter((declaration) =>
+          new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration),
+        ),
+        `a policy opens ${verb} on team_membership_versions; a version is never rewritten`,
+      ).toEqual([]);
+    }
+    expect(statements, 'the update privilege on team_membership_versions is never revoked').toMatch(
+      /revoke update, truncate, references, trigger on table public\.team_membership_versions\s+from anon, authenticated/i,
+    );
+    expect(statements, 'the four fact columns are not the only insertable ones').toMatch(
+      /grant insert \(\s*organization_id,\s*member_id,\s*team_id,\s*effective_from\s*\) on table public\.team_membership_versions to authenticated/i,
+    );
+
+    const insert = policyBody('team_membership_versions_insert_by_own_active_admin');
+    expect(insert, 'the membership insert policy is not declared').not.toBe('');
+    expect(insert, 'the tenant is not pinned from the signed claim').toMatch(
+      /with check[\s\S]*organization_id = nullif/i,
+    );
+    expect(insert, 'role and active state are not re-read').toContain("access.member_role = 'admin'");
+    expect(insert, 'the attribution is not pinned to the caller').toMatch(
+      /created_by = \(select auth\.uid\(\)\)/,
+    );
+    expect(insert, 'a past date is admitted').toMatch(
+      /effective_from >= public\.organization_today\(organization_id\)/,
+    );
+    expect(insert, 'a version may be dated on or before the latest one').toMatch(
+      /effective_from > coalesce\(public\.team_membership_latest_version\(member_id\)/,
+    );
+    expect(insert, 'a second change may be scheduled on top of one').toMatch(
+      /coalesce\(public\.team_membership_latest_version\(member_id\), '-infinity'::date\)\s*<= public\.organization_today\(organization_id\)/,
+    );
+    expect(insert, 'a version may leave the team unchanged').toMatch(
+      /team_id is distinct from public\.member_team_on\(member_id, 'infinity'::date\)/,
+    );
+    expect(insert, 'an archived team may be joined').toMatch(/and not team\.archived/);
+    expect(insert, 'membership reads status, which is independent of it').not.toMatch(
+      /member_active_on|member_status_versions/,
+    );
+  });
+
+  it('refuses archiving a team anyone is on or scheduled onto, by altering the update policy', () => {
+    // STORY 1.7b. ALTERED, never re-created, so the one `create policy` on
+    // teams update is still 0009's and the count above holds.
+    const statements = migrationStatements();
+    const altered = /alter policy teams_update_by_own_active_admin on public\.teams[\s\S]*?;/i.exec(
+      statements,
+    )?.[0];
+
+    expect(altered, 'the teams update policy is not altered').toBeDefined();
+    expect(altered, 'the archive in-use rule is missing').toMatch(
+      /\(not archived or not public\.team_in_use\(id\)\)/,
+    );
+    expect(altered, 'the altered WITH CHECK lost the tenant pin').toMatch(
+      /with check[\s\S]*organization_id = nullif/i,
+    );
+    expect(altered, 'the altered WITH CHECK lost the role re-read').toContain(
+      "access.member_role = 'admin'",
+    );
+    expect(altered, 'the alter touched USING, so archiving may stop being one-way').not.toMatch(
+      /\busing\b/i,
+    );
   });
 
   it('archives teams and never deletes one, in any migration', () => {

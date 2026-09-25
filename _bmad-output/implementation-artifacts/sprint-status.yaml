@@ -298,6 +298,14 @@ development_status:
   # closes with its LAST part, which is 1.7b's versioned team membership waiting
   # in deferred-work.md, not with this one.
   1-7a-teams: done
+  # Part B is versioned team membership, specced 2026-09-24 from the
+  # deferred-work entry 1.7a's split left. It earns its key here, same
+  # convention as the parts above, and a regenerate reports it as an orphan —
+  # reconcile with --set rather than dropping it. It covers epics.md story 1.7
+  # acceptance clauses 2 and 3 (CAP-6, AD-2, UX-DR20). THIS PART COMPLETES THE
+  # 1-7 PARENT. The member list's team filter was split out at step-01 (human
+  # decision 2026-09-24) and waits in deferred-work.md; it is not a part of 1.7.
+  1-7b-team-membership: review
   1-8-a-member-sees-who-is-on-a-team: backlog
   epic-1-retrospective: optional
 
