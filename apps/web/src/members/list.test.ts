@@ -2272,9 +2272,11 @@ describe('how a cell is drawn is decided here, never in the screen (visual refre
     }
   });
 
-  it('lets the name cell wrap on a phone and every other text cell stay on one line', () => {
+  it('lets the name cell wrap on a phone, bounds the address, and keeps every other text cell on one line', () => {
     expect(cellClassNameOf(columnOf(NAME_COLUMN))).toBe('whitespace-normal sm:whitespace-nowrap');
-    for (const key of [EMAIL_COLUMN, LEVEL_COLUMN, TEAM_COLUMN]) {
+    // DESIGN REFRESH C: one long address pushed the actions column past the card.
+    expect(cellClassNameOf(columnOf(EMAIL_COLUMN))).toBe('max-w-56 whitespace-nowrap');
+    for (const key of [LEVEL_COLUMN, TEAM_COLUMN]) {
       expect(cellClassNameOf(columnOf(key)), key).toBe('whitespace-nowrap');
     }
   });

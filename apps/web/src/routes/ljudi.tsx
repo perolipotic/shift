@@ -238,9 +238,11 @@ function CellView({ cell }: { readonly cell: MemberCell }): ReactNode {
 
   return (
     <span className="inline-flex max-w-full flex-wrap items-center gap-x-3 gap-y-1">
-      <span className="inline-flex min-w-0 items-center gap-3">
+      {/* `max-w-full` and `truncate` all the way down, so a cell its column
+          bounds (the address) ends in an ellipsis rather than clipping. */}
+      <span className="inline-flex min-w-0 max-w-full items-center gap-3">
         {look.avatar === null ? null : <Avatar>{look.avatar.initials}</Avatar>}
-        {look.badge === null ? <span>{text}</span> : <Badge variant={look.badge}>{text}</Badge>}
+        {look.badge === null ? <span className="truncate">{text}</span> : <Badge variant={look.badge}>{text}</Badge>}
       </span>
       {look.status === null ? null : (
         <span>
@@ -519,11 +521,15 @@ export function LjudiScreen() {
                     <TableHead key={column.key} aria-sort={sortStateOf(sort, column.key)}>
                       <Button
                         variant="ghost"
-                        className="h-11 w-full justify-start gap-2 px-2"
+                        className="h-auto min-h-11 w-full justify-start gap-2 whitespace-normal px-2 py-1 text-left"
                         onClick={press}
                         disabled={unanswered}
                       >
-                        <span className="truncate">{t(column.label)}</span>
+                        {/* A LONG HEADING WRAPS (design refresh C) rather than
+                            widening its column: `Dani godišnjeg odmora` on one
+                            line pushed the actions column past the card. The
+                            44 px floor holds as a minimum height. */}
+                        <span>{t(column.label)}</span>
                         {Glyph === null ? null : <Glyph aria-hidden className="size-4 shrink-0" />}
                       </Button>
                     </TableHead>

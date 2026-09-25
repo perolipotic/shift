@@ -1187,6 +1187,11 @@ export function cellClassNameOf(column: MemberColumn): string {
   // badge beside the name. Held to one line on a phone, a scheduled marker
   // would make this one column wider than the screen, so it wraps below `sm`.
   if (column.key === NAME_COLUMN) return 'whitespace-normal sm:whitespace-nowrap';
+  // DESIGN REFRESH C: an address is the one unbounded value in a row, and one
+  // long address pushed the actions column past the card. Bounded here and cut
+  // with an ellipsis by the cell's text (`truncate`); the whole address stays
+  // in the DOM, so a screen reader still reads all of it.
+  if (column.key === EMAIL_COLUMN) return 'max-w-56 whitespace-nowrap';
 
   return 'whitespace-nowrap';
 }
