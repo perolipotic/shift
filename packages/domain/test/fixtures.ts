@@ -1,4 +1,11 @@
-import type { HourBand, ShiftType, ShiftTypeVersion } from '../src/index.js';
+import type {
+  HourBand,
+  RotationAssignment,
+  RotationPattern,
+  RotationStep,
+  ShiftType,
+  ShiftTypeVersion,
+} from '../src/index.js';
 
 /**
  * Both fixtures, as the domain sees them (Q10), and the ONE source of truth
@@ -69,5 +76,78 @@ export const UJ5_SHIFT_TYPE_VERSIONS: readonly ShiftTypeVersion[] = [
   { shiftTypeId: 'uj5-popodnevna', effectiveFrom: SEEDED_EFFECTIVE_FROM, startMinute: at(14), endMinute: at(22) },
   { shiftTypeId: 'uj5-nocna', effectiveFrom: SEEDED_EFFECTIVE_FROM, startMinute: at(22), endMinute: at(6) },
 ];
+
+/**
+ * STORY 2.3a. Both fixtures' teams and rotation. `test/rls-isolation.test.ts`
+ * reads these back from `supabase/seed.sql` by name (a team by its name, a
+ * step by its position and its shift type's name, an assignment by its team
+ * and its offset step's position), and projects the seeded rows through
+ * `@shift/domain` against these.
+ *
+ * One pattern each, every team bound to it from {@link SEEDED_EFFECTIVE_FROM}
+ * at one shared anchor, {@link SEEDED_ANCHOR_DATE}, and each team at its own
+ * offset step. The seed writes no memberships.
+ */
+export const SEEDED_ANCHOR_DATE = '2020-01-01';
+
+/** A team as the fixtures name it: an opaque id and its display name. */
+export interface FixtureTeam {
+  readonly id: string;
+  readonly name: string;
+}
+
+/** The pilot: four teams, Smjena A–D. */
+export const PILOT_TEAMS: readonly FixtureTeam[] = [
+  { id: 'pilot-smjena-a', name: 'Smjena A' },
+  { id: 'pilot-smjena-b', name: 'Smjena B' },
+  { id: 'pilot-smjena-c', name: 'Smjena C' },
+  { id: 'pilot-smjena-d', name: 'Smjena D' },
+];
+
+export const PILOT_ROTATION_PATTERN: RotationPattern = { id: 'pilot-rotation' };
+
+/** `[Dan, Noć, Slobodno, Slobodno]`: 24 hours on, 48 off. */
+export const PILOT_ROTATION_STEPS: readonly RotationStep[] = [
+  { id: 'pilot-step-0', patternId: 'pilot-rotation', position: 0, shiftTypeId: 'pilot-dan' },
+  { id: 'pilot-step-1', patternId: 'pilot-rotation', position: 1, shiftTypeId: 'pilot-noc' },
+  { id: 'pilot-step-2', patternId: 'pilot-rotation', position: 2, shiftTypeId: 'pilot-slobodno' },
+  { id: 'pilot-step-3', patternId: 'pilot-rotation', position: 3, shiftTypeId: 'pilot-slobodno' },
+];
+
+/** Smjena A–D at offsets 0–3. */
+export const PILOT_ROTATION_ASSIGNMENTS: readonly RotationAssignment[] = PILOT_TEAMS.map((team, offset) => ({
+  teamId: team.id,
+  patternId: 'pilot-rotation',
+  offsetStepId: `pilot-step-${offset}`,
+  anchorDate: SEEDED_ANCHOR_DATE,
+  effectiveFrom: SEEDED_EFFECTIVE_FROM,
+}));
+
+/** UJ-5: three teams, Smjena A–C. */
+export const UJ5_TEAMS: readonly FixtureTeam[] = [
+  { id: 'uj5-smjena-a', name: 'Smjena A' },
+  { id: 'uj5-smjena-b', name: 'Smjena B' },
+  { id: 'uj5-smjena-c', name: 'Smjena C' },
+];
+
+export const UJ5_ROTATION_PATTERN: RotationPattern = { id: 'uj5-rotation' };
+
+/** `[Jutarnja, Popodnevna, Noćna, Slobodno, Slobodno]`: a five-step cycle. */
+export const UJ5_ROTATION_STEPS: readonly RotationStep[] = [
+  { id: 'uj5-step-0', patternId: 'uj5-rotation', position: 0, shiftTypeId: 'uj5-jutarnja' },
+  { id: 'uj5-step-1', patternId: 'uj5-rotation', position: 1, shiftTypeId: 'uj5-popodnevna' },
+  { id: 'uj5-step-2', patternId: 'uj5-rotation', position: 2, shiftTypeId: 'uj5-nocna' },
+  { id: 'uj5-step-3', patternId: 'uj5-rotation', position: 3, shiftTypeId: 'uj5-slobodno' },
+  { id: 'uj5-step-4', patternId: 'uj5-rotation', position: 4, shiftTypeId: 'uj5-slobodno' },
+];
+
+/** Smjena A–C at offsets 0, 1 and 2. */
+export const UJ5_ROTATION_ASSIGNMENTS: readonly RotationAssignment[] = UJ5_TEAMS.map((team, offset) => ({
+  teamId: team.id,
+  patternId: 'uj5-rotation',
+  offsetStepId: `uj5-step-${offset}`,
+  anchorDate: SEEDED_ANCHOR_DATE,
+  effectiveFrom: SEEDED_EFFECTIVE_FROM,
+}));
 
 export { at };

@@ -788,7 +788,8 @@ describe('every organization table carries row level security, and only its revi
             and relname in (
               'organizations', 'members', 'member_status_versions', 'teams',
               'team_membership_versions', 'hour_bands', 'shift_types',
-              'shift_type_versions'
+              'shift_type_versions', 'rotation_patterns', 'rotation_steps',
+              'rotation_assignments'
             )
           order by relname`,
       );
@@ -796,13 +797,17 @@ describe('every organization table carries row level security, and only its revi
       // STORY 1.6 adds the versioned active status, which is organization data
       // like the other two and is born with row level security on. STORY 1.7a
       // adds the teams, born the same way, and STORY 1.7b the versioned team
-      // membership. STORY 2.1a adds the hour bands, and STORY 2.2a the shift
-      // types and their versioned times.
+      // membership. STORY 2.1a adds the hour bands, STORY 2.2a the shift
+      // types and their versioned times, and STORY 2.3a the rotation: its
+      // patterns, their steps and the versioned team assignments.
       expect(rows.map((row) => row.relname)).toEqual([
         'hour_bands',
         'member_status_versions',
         'members',
         'organizations',
+        'rotation_assignments',
+        'rotation_patterns',
+        'rotation_steps',
         'shift_type_versions',
         'shift_types',
         'team_membership_versions',
@@ -1107,6 +1112,202 @@ describe('every organization table carries row level security, and only its revi
     }
   });
 
+  /** Every table and column privilege `anon` and `authenticated` hold on a table, but column SELECT. */
+  async function heldPrivileges(
+    client: Client,
+    table: string,
+    columns: readonly string[],
+  ): Promise<{ readonly tables: string[]; readonly columns: string[] }> {
+    const { rows } = await client.query<{ role: string; privilege: string; held: boolean }>(
+      `select role, privilege,
+              has_table_privilege(role, $1, privilege) as held
+         from unnest(array['anon', 'authenticated']) as role,
+              unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'])
+                as privilege`,
+      [`public.${table}`],
+    );
+    const { rows: columnRows } = await client.query<{
+      role: string;
+      column: string;
+      verb: string;
+      held: boolean;
+    }>(
+      `select role, column_name as column, verb,
+              has_column_privilege(role, $1, column_name, verb) as held
+         from unnest(array['anon', 'authenticated']) as role,
+              unnest($2::text[]) as column_name,
+              unnest(array['SELECT', 'INSERT', 'UPDATE']) as verb`,
+      [`public.${table}`, columns],
+    );
+    return {
+      tables: rows
+        .filter((row) => row.held)
+        .map((row) => `${row.role}:${row.privilege}`)
+        .sort(),
+      columns: columnRows
+        .filter((row) => row.held)
+        .map((row) => `${row.role}:${row.verb}:${row.column}`)
+        .filter((entry) => !entry.startsWith('authenticated:SELECT:'))
+        .sort(),
+    };
+  }
+
+  it.skipIf(noDatabase)('holds no privilege on rotation_patterns but read and a tenant-only insert, and never update or delete', async () => {
+    // STORY 2.3a. A pattern is IMMUTABLE: `authenticated` reads, and inserts
+    // naming nothing but the tenant; update and delete are revoked outright,
+    // and `anon` keeps nothing — not even SELECT.
+    const client = await connect();
+    try {
+      const held = await heldPrivileges(client, 'rotation_patterns', [
+        'organization_id',
+        'id',
+        'created_by',
+        'created_at',
+      ]);
+      expect(held.tables).toEqual(['authenticated:SELECT']);
+      expect(held.columns, 'the writable pattern columns changed, or anon holds one').toEqual([
+        'authenticated:INSERT:organization_id',
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('holds no privilege on rotation_steps but read and a four-column insert, and never update or delete', async () => {
+    // STORY 2.3a. A step is IMMUTABLE: `authenticated` reads, and inserts its
+    // tenant, pattern, position and type; no session updates or deletes one,
+    // names its attribution, or holds anything as `anon`.
+    const client = await connect();
+    try {
+      const held = await heldPrivileges(client, 'rotation_steps', [
+        'organization_id',
+        'id',
+        'pattern_id',
+        'position',
+        'shift_type_id',
+        'created_by',
+        'created_at',
+      ]);
+      expect(held.tables).toEqual(['authenticated:SELECT']);
+      expect(held.columns, 'the writable step columns changed, or anon holds one').toEqual([
+        'authenticated:INSERT:organization_id',
+        'authenticated:INSERT:pattern_id',
+        'authenticated:INSERT:position',
+        'authenticated:INSERT:shift_type_id',
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('holds no privilege on rotation_assignments that no policy needs', async () => {
+    // STORY 2.3a, the membership matrix exactly: `authenticated` keeps SELECT
+    // and DELETE (each narrowed by a policy) and a column-level INSERT on the
+    // six facts; `anon` keeps nothing, and no session names the attribution.
+    const client = await connect();
+    try {
+      const held = await heldPrivileges(client, 'rotation_assignments', [
+        'organization_id',
+        'id',
+        'team_id',
+        'pattern_id',
+        'offset_step_id',
+        'anchor_date',
+        'effective_from',
+        'created_by',
+        'created_at',
+      ]);
+      expect(held.tables).toEqual(['authenticated:DELETE', 'authenticated:SELECT']);
+      expect(held.columns, 'the writable assignment columns changed, or anon holds one').toEqual([
+        'authenticated:INSERT:anchor_date',
+        'authenticated:INSERT:effective_from',
+        'authenticated:INSERT:offset_step_id',
+        'authenticated:INSERT:organization_id',
+        'authenticated:INSERT:pattern_id',
+        'authenticated:INSERT:team_id',
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('indexes the rotation tables by tenant, keys them for composite references, and orders steps uniquely', async () => {
+    // Q3 on all three; the (organization_id, id) keys the steps and
+    // assignments reference; the (organization_id, pattern_id, id) key the
+    // offset references, which is what binds an offset to its own pattern; one
+    // step per position of a pattern; one assignment version per team per date.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ tablename: string; indexdef: string }>(
+        `select tablename, indexdef from pg_indexes
+          where schemaname = 'public'
+            and tablename in ('rotation_patterns', 'rotation_steps', 'rotation_assignments')`,
+      );
+      const on = (table: string) => rows.filter((row) => row.tablename === table);
+      for (const table of ['rotation_patterns', 'rotation_steps', 'rotation_assignments']) {
+        expect(
+          on(table).some((row) => /\(organization_id\)$/.test(row.indexdef)),
+          `no index on ${table} leads with organization_id alone`,
+        ).toBe(true);
+      }
+      expect(
+        on('rotation_patterns').some((row) => /UNIQUE INDEX .* \(organization_id, id\)$/.test(row.indexdef)),
+        'no unique (organization_id, id) on rotation_patterns for a composite foreign key',
+      ).toBe(true);
+      expect(
+        on('rotation_steps').some((row) =>
+          /UNIQUE INDEX .* \(organization_id, pattern_id, id\)$/.test(row.indexdef),
+        ),
+        'no unique (organization_id, pattern_id, id) for the offset to reference',
+      ).toBe(true);
+      expect(
+        on('rotation_steps').some((row) => /UNIQUE INDEX .* \(pattern_id, "?position"?\)$/.test(row.indexdef)),
+        'two steps of one pattern may share a position',
+      ).toBe(true);
+      expect(
+        on('rotation_assignments').some((row) =>
+          /UNIQUE INDEX .* \(team_id, effective_from\)$/.test(row.indexdef),
+        ),
+        'two assignment versions of one team may share a date',
+      ).toBe(true);
+      expect(
+        on('rotation_assignments').some((row) => /\(pattern_id\)$/.test(row.indexdef)),
+        'rotation_pattern_in_use scans the organization',
+      ).toBe(true);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('keys the offset to a step of the same pattern, and cascades from nothing but the organization', async () => {
+    // AD-3's shape: the offset key is THREE columns, so an offset outside the
+    // cycle is unrepresentable. Every key toward another rule is NO ACTION;
+    // only the organization cascades.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ source: string; definition: string }>(
+        `select conrelid::regclass::text as source, pg_get_constraintdef(oid) as definition
+           from pg_constraint
+          where contype = 'f'
+            and conrelid in ('public.rotation_patterns'::regclass, 'public.rotation_steps'::regclass,
+                             'public.rotation_assignments'::regclass)
+          order by 1, 2`,
+      );
+      expect(rows.map((row) => `${row.source}: ${row.definition}`).sort()).toEqual([
+        'rotation_assignments: FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE',
+        'rotation_assignments: FOREIGN KEY (organization_id, pattern_id) REFERENCES rotation_patterns(organization_id, id)',
+        'rotation_assignments: FOREIGN KEY (organization_id, pattern_id, offset_step_id) REFERENCES rotation_steps(organization_id, pattern_id, id)',
+        'rotation_assignments: FOREIGN KEY (organization_id, team_id) REFERENCES teams(organization_id, id)',
+        'rotation_patterns: FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE',
+        'rotation_steps: FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE',
+        'rotation_steps: FOREIGN KEY (organization_id, pattern_id) REFERENCES rotation_patterns(organization_id, id)',
+        'rotation_steps: FOREIGN KEY (organization_id, shift_type_id) REFERENCES shift_types(organization_id, id)',
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
   it.skipIf(noDatabase)('holds no privilege on team_membership_versions that no policy needs', async () => {
     // STORY 1.7b, the status table's matrix exactly: `authenticated` keeps
     // SELECT and DELETE (each narrowed by a policy) and a column-level INSERT
@@ -1358,6 +1559,10 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 2.2a's two version readers, on the same terms.
     { name: 'shift_type_latest_version', argumentCount: 1, expected: ['authenticated'] },
     { name: 'shift_type_times_on', argumentCount: 2, expected: ['authenticated'] },
+    // STORY 2.3a's three rotation readers, on the same terms.
+    { name: 'rotation_pattern_in_use', argumentCount: 1, expected: ['authenticated'] },
+    { name: 'rotation_assignment_on', argumentCount: 2, expected: ['authenticated'] },
+    { name: 'rotation_assignment_latest_version', argumentCount: 1, expected: ['authenticated'] },
     // STORY 1.8. The roster is called by a signed-in session over REST, and by
     // nobody else: an anonymous caller has no organization to scope it to.
     { name: 'team_roster', argumentCount: 1, expected: ['authenticated'] },
@@ -1375,6 +1580,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'member_team_version_on', argumentCount: 2 },
     { name: 'shift_type_latest_version', argumentCount: 1 },
     { name: 'shift_type_times_on', argumentCount: 2 },
+    { name: 'rotation_pattern_in_use', argumentCount: 1 },
+    { name: 'rotation_assignment_on', argumentCount: 2 },
+    { name: 'rotation_assignment_latest_version', argumentCount: 1 },
   ])('runs $name as the caller, with an empty search_path', async ({ name, argumentCount }) => {
     // INVOKER, the opposite of the helper and the hook. They are reached from
     // the helper, the hook and the zero-admins function as the owner, and from

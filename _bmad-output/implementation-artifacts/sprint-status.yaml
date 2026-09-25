@@ -400,7 +400,17 @@ development_status:
   # guard copied into four routes; time helpers living in hour-bands).
   # Reconciled 2026-09-25. THIS PART COMPLETED THE 2-2 PARENT above.
   2-2b-shift-type-editor: done
-  2-3-an-admin-builds-the-rotation-and-sees-the-cycle-before-savin: backlog
+  # Split 2026-09-25 at step-01 (human decision [S]), same convention as 2.1
+  # and 2.2: the parent stays in-progress until its LAST part (2.3b, the
+  # pattern builder, team offsets and cycle preview, waiting in
+  # deferred-work.md) is done. Each part earns its key here; a regenerate
+  # reports them as orphans — reconcile with --set rather than dropping them.
+  2-3-an-admin-builds-the-rotation-and-sees-the-cycle-before-savin: in-progress
+  # Part A: rotation_patterns, rotation_steps and versioned
+  # rotation_assignments (offset as an FK to a step of that pattern), pure
+  # domain/projection, teams and rotation seeded for both fixtures and the
+  # demo organization. No UI.
+  2-3a-rotation-rule: review
   2-4-rotation-configuration-completes-on-a-phone: backlog
   2-5-saving-a-rotation-reports-what-it-will-actually-do: backlog
   2-6-an-admin-changes-the-rotation-from-a-date-forward: backlog

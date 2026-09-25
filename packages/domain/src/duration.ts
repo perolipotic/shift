@@ -26,6 +26,7 @@
  */
 
 import { MINUTES_PER_DAY } from './bands.js';
+import { checkDate } from './calendar.js';
 
 /** One stored shift type, as the database holds it (`shift_types`). */
 export interface ShiftType {
@@ -67,21 +68,6 @@ export interface ShiftTimes {
 function checkMinute(what: string, minute: number): void {
   if (!Number.isInteger(minute) || minute < 0 || minute >= MINUTES_PER_DAY) {
     throw new RangeError(`${what} is ${minute}, not a whole minute in 0–${MINUTES_PER_DAY - 1}`);
-  }
-}
-
-const DATE_SHAPE = /^(\d{4})-(\d{2})-(\d{2})$/;
-
-/** @throws RangeError naming `what` when `date` is not a calendar `YYYY-MM-DD`. */
-function checkDate(what: string, date: string): void {
-  const match = DATE_SHAPE.exec(date);
-  const year = Number(match?.[1]);
-  const month = Number(match?.[2]);
-  const day = Number(match?.[3]);
-  const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
-  const daysInMonth = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
-  if (match === null || daysInMonth === undefined || day < 1 || day > daysInMonth) {
-    throw new RangeError(`${what} is ${JSON.stringify(date)}, not a calendar date as YYYY-MM-DD`);
   }
 }
 

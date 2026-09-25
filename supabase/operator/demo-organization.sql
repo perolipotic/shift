@@ -2,10 +2,10 @@
 --
 -- Creates the pilot demo organization, `dvd-demo`: one admin, four crews of
 -- four (a commander, a driver and two firefighters each, all ranked), the
--- pilot's hour bands and its shift types. It is what a human looks at on a
--- local stack or on staging. It is NOT a test fixture: the fixtures live in
--- `supabase/seed.sql`, which tests pin exactly, and this file touches neither
--- them nor any other organization.
+-- pilot's hour bands, its shift types and its rotation. It is what a human
+-- looks at on a local stack or on staging. It is NOT a test fixture: the
+-- fixtures live in `supabase/seed.sql`, which tests pin exactly, and this file
+-- touches neither them nor any other organization.
 --
 -- Every value below is fixed on purpose, because this file IS demo data. That
 -- is also why `test/supabase-scaffold.test.ts` leaves it out of the
@@ -19,7 +19,9 @@
 --   PGOPTIONS="-c shift.demo_target=staging -c shift.demo_password=..." \
 --     pnpm exec supabase db query --linked -f supabase/operator/demo-organization.sql
 --
--- Both refusals raise SQLSTATE P0001 (raise_exception) with a named message.
+-- Both refusals raise SQLSTATE P0001 (raise_exception) with a named message,
+-- as does DEMO_ROTATION_INCOMPLETE, raised if the rotation's steps or
+-- assignments would be written short.
 --
 -- Two session settings, both required:
 --
@@ -30,9 +32,9 @@
 --     DEMO_PASSWORD_MISSING. A real password is used untrimmed.
 --
 -- RE-RUNNING REPLACES THE DEMO. The existing `dvd-demo` organization (its
--- members, teams, memberships, bands and shift types cascade with it) and every
--- auth user under `@dvd-demo.shift.invalid` are deleted, and everything is
--- created again. Nothing else is touched.
+-- members, teams, memberships, bands, shift types and rotation cascade with
+-- it) and every auth user under `@dvd-demo.shift.invalid` are deleted, and
+-- everything is created again. Nothing else is touched.
 --
 -- One `do $$ … $$;` block, for the reason `provision-organization.sql` gives:
 -- `supabase db query` sends the file as one prepared statement, and a do block
@@ -42,7 +44,9 @@
 -- part of it: the four empty token columns, the identity row, bcrypt cost 10.
 -- `test/provisioning.test.ts` asserts it for this organization too.
 --
--- No rotation yet; story 2.3 adds it.
+-- The rotation is the pilot's (story 2.3a): one pattern, [Dan, Noć,
+-- Slobodno, Slobodno], and Smjena A–D bound to it at offsets 0–3 from the
+-- anchor 2020-01-01, effective from the same date, so any date projects.
 
 do $$
 declare
@@ -60,6 +64,8 @@ declare
   seeded_user       uuid;
   seeded_member     uuid;
   seeded_address    text;
+  demo_pattern      uuid;
+  written           integer;
 begin
   -- Refusals first, so a refused run has written nothing at all.
   if demo_target is null or demo_target not in ('local', 'staging') then
@@ -218,6 +224,62 @@ begin
       ('Noć', '19:00', '07:00')
     ) as version (name, start_time, end_time) on version.name = shift_types.name
    where shift_types.organization_id = demo_organization;
+
+  -- The pilot's rotation: one pattern, its four steps by position, and each
+  -- crew at the step of its offset, all from 2020-01-01 and attributed to the
+  -- admin, with ascending `created_at` as for the shift types.
+  insert into rotation_patterns (organization_id, created_by, created_at)
+  values (demo_organization, demo_admin, now())
+  returning id into demo_pattern;
+
+  insert into rotation_steps (organization_id, pattern_id, position, shift_type_id, created_by, created_at)
+  select demo_organization, demo_pattern, step.position, shift_types.id, demo_admin,
+         now() + (step.position + 1) * interval '1 millisecond'
+    from (values
+      (0, 'Dan'),
+      (1, 'Noć'),
+      (2, 'Slobodno'),
+      (3, 'Slobodno')
+    ) as step (position, shift_type)
+    join shift_types on shift_types.organization_id = demo_organization
+                    and shift_types.name = step.shift_type;
+
+  -- The steps and assignments join by name, so a missing type or crew would
+  -- write fewer rows without an error. Refuse that: the demo is whole or not
+  -- at all, and the raise rolls back everything above.
+  get diagnostics written = row_count;
+  if demo_pattern is null or written <> 4 then
+    raise exception using
+      errcode = 'raise_exception',
+      message = 'DEMO_ROTATION_INCOMPLETE',
+      detail = format('pattern %s, %s of 4 steps written', coalesce(demo_pattern::text, '(none)'), written);
+  end if;
+
+  insert into rotation_assignments (
+    organization_id, team_id, pattern_id, offset_step_id, anchor_date, effective_from,
+    created_by, created_at
+  )
+  select demo_organization, teams.id, demo_pattern, rotation_steps.id,
+         date '2020-01-01', date '2020-01-01', demo_admin,
+         now() + (assignment.offset_position + 1) * interval '1 millisecond'
+    from (values
+      ('Smjena A', 0),
+      ('Smjena B', 1),
+      ('Smjena C', 2),
+      ('Smjena D', 3)
+    ) as assignment (team, offset_position)
+    join teams on teams.organization_id = demo_organization
+              and teams.name = assignment.team
+    join rotation_steps on rotation_steps.pattern_id = demo_pattern
+                       and rotation_steps.position = assignment.offset_position;
+
+  get diagnostics written = row_count;
+  if written <> 4 then
+    raise exception using
+      errcode = 'raise_exception',
+      message = 'DEMO_ROTATION_INCOMPLETE',
+      detail = format('%s of 4 assignments written', written);
+  end if;
 
   raise notice 'demo organization % (%) replaced on %; the admin signs in as admin@%',
     demo_slug, demo_organization, demo_target, demo_domain;

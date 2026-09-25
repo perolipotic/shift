@@ -764,11 +764,12 @@ against both fixtures.
 `supabase/operator/demo-organization.sql` creates `dvd-demo`, "DVD Kaštel Novi
 (demo)": one admin (`admin`, "Demo Admin", no rank), sixteen members in four
 crews, `Smjena A` to `Smjena D` (each a commander, a driver and two
-firefighters, all ranked), the pilot's hour bands (`Dan` 07:00, `Noć` 19:00)
-and its shift types (`Dan`, `Noć`, `Slobodno`). It is what a human looks at.
-It is not a test fixture: `supabase/seed.sql`, the tests and the E2E suite do
-not use it, and it touches no other organization. There is no rotation yet
-(story 2.3).
+firefighters, all ranked), the pilot's hour bands (`Dan` 07:00, `Noć` 19:00),
+its shift types (`Dan`, `Noć`, `Slobodno`) and its rotation (`Dan`, `Noć`,
+`Slobodno`, `Slobodno`, with `Smjena A` to `Smjena D` at offsets 0 to 3,
+anchored on and effective from 2020-01-01). It is what a human looks at. It is not a test fixture:
+`supabase/seed.sql`, the tests and the E2E suite do not use it, and it touches
+no other organization.
 
 **Never run it in production.** The script refuses unless `shift.demo_target`
 is `local` or `staging`. That guard checks only the target you *declare*: it

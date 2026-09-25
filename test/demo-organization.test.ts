@@ -164,6 +164,21 @@ async function demoSnapshot(client: Client): Promise<string> {
               from shift_type_versions sv where sv.shift_type_id = s.id))
           order by s.created_at, s.id)
           from shift_types s join demo on demo.id = s.organization_id),
+       'rotation_patterns', (select jsonb_agg(jsonb_build_object(
+          'by_admin', p.created_by = (select auth_user_id from admin),
+          'steps', (select coalesce(jsonb_agg(jsonb_build_object(
+              'position', rs.position, 'type', st.name,
+              'by_admin', rs.created_by = (select auth_user_id from admin)) order by rs.position), '[]'::jsonb)
+              from rotation_steps rs join shift_types st on st.id = rs.shift_type_id
+             where rs.pattern_id = p.id))
+          order by p.created_at, p.id)
+          from rotation_patterns p join demo on demo.id = p.organization_id),
+       'rotation_assignments', (select jsonb_agg(jsonb_build_object(
+          'team', t.name, 'offset', rs.position, 'anchor', a.anchor_date, 'from', a.effective_from,
+          'by_admin', a.created_by = (select auth_user_id from admin)) order by t.name, a.effective_from)
+          from rotation_assignments a join demo on demo.id = a.organization_id
+          join teams t on t.id = a.team_id
+          join rotation_steps rs on rs.id = a.offset_step_id),
        'auth_users', (select count(*) from auth.users where email like '%@' || $2),
        'identities', (select count(*) from auth.identities i join auth.users u on u.id = i.user_id
                        where u.email like '%@' || $2)
@@ -197,6 +212,12 @@ async function othersFingerprint(client: Client): Promise<{ rows: number; digest
             union all select 'shift_types', x.id::text, to_jsonb(x)::text from shift_types x
               where x.organization_id in (select id from others)
             union all select 'shift_type_versions', x.id::text, to_jsonb(x)::text from shift_type_versions x
+              where x.organization_id in (select id from others)
+            union all select 'rotation_patterns', x.id::text, to_jsonb(x)::text from rotation_patterns x
+              where x.organization_id in (select id from others)
+            union all select 'rotation_steps', x.id::text, to_jsonb(x)::text from rotation_steps x
+              where x.organization_id in (select id from others)
+            union all select 'rotation_assignments', x.id::text, to_jsonb(x)::text from rotation_assignments x
               where x.organization_id in (select id from others)
             union all select 'auth.users', u.id::text, to_jsonb(u)::text from auth.users u
               where u.email is null or u.email not like '%@' || $2
@@ -315,6 +336,9 @@ describe('the demo organization script', () => {
            (select count(*)::int from team_membership_versions where organization_id = $1) as memberships,
            (select count(*)::int from hour_bands where organization_id = $1) as bands,
            (select count(*)::int from shift_types where organization_id = $1) as types,
+           (select count(*)::int from rotation_patterns where organization_id = $1) as patterns,
+           (select count(*)::int from rotation_steps where organization_id = $1) as steps,
+           (select count(*)::int from rotation_assignments where organization_id = $1) as assignments,
            (select count(*)::int from auth.users where email like '%@' || $2) as "authUsers",
            (select count(*)::int from auth.identities i join auth.users u on u.id = i.user_id
              where u.email like '%@' || $2) as identities`,
@@ -328,6 +352,9 @@ describe('the demo organization script', () => {
         memberships: 16,
         bands: 2,
         types: 3,
+        patterns: 1,
+        steps: 4,
+        assignments: 4,
         authUsers: 17,
         identities: 17,
       });
@@ -432,6 +459,45 @@ describe('the demo organization script', () => {
       );
       expect(ties[0]?.distinct).toBe(3);
 
+      // The pilot's rotation: [Dan, Noć, Slobodno, Slobodno], Smjena A–D at
+      // offsets 0–3 from the anchor 2020-01-01, effective from the same date.
+      const { rows: steps } = await client.query<{ position: number; type: string }>(
+        `select s.position, t.name as type
+           from rotation_steps s join shift_types t on t.id = s.shift_type_id
+          where s.organization_id = $1 order by s.position`,
+        [organizationId],
+      );
+      expect(steps).toEqual([
+        { position: 0, type: 'Dan' },
+        { position: 1, type: 'Noć' },
+        { position: 2, type: 'Slobodno' },
+        { position: 3, type: 'Slobodno' },
+      ]);
+      const { rows: assignments } = await client.query<{
+        team: string;
+        offset: number;
+        anchor: string;
+        from: string;
+        samePattern: boolean;
+      }>(
+        `select t.name as team, s.position as "offset", a.anchor_date::text as anchor,
+                a.effective_from::text as "from", a.pattern_id = s.pattern_id as "samePattern"
+           from rotation_assignments a
+           join teams t on t.id = a.team_id
+           join rotation_steps s on s.id = a.offset_step_id
+          where a.organization_id = $1 order by t.name`,
+        [organizationId],
+      );
+      expect(assignments).toEqual(
+        ['Smjena A', 'Smjena B', 'Smjena C', 'Smjena D'].map((team, offset) => ({
+          team,
+          offset,
+          anchor: '2020-01-01',
+          from: '2020-01-01',
+          samePattern: true,
+        })),
+      );
+
       // Attribution: every created_by is the demo admin.
       const { rows: attribution } = await client.query<{ foreign: number; attributed: number }>(
         `with admin as (select auth_user_id from members where organization_id = $1 and role = 'admin')
@@ -442,10 +508,13 @@ describe('the demo organization script', () => {
              union all select created_by from team_membership_versions where organization_id = $1
              union all select created_by from shift_types where organization_id = $1
              union all select created_by from shift_type_versions where organization_id = $1
+             union all select created_by from rotation_patterns where organization_id = $1
+             union all select created_by from rotation_steps where organization_id = $1
+             union all select created_by from rotation_assignments where organization_id = $1
            ) as rows`,
         [organizationId],
       );
-      expect(attribution[0]).toEqual({ foreign: 0, attributed: 4 + 16 + 3 + 2 });
+      expect(attribution[0]).toEqual({ foreign: 0, attributed: 4 + 16 + 3 + 2 + 1 + 4 + 4 });
     });
   });
 
@@ -537,12 +606,24 @@ describe('the demo organization script', () => {
       // aggregate a non-null array of the expected length.
       const parsed = JSON.parse(first) as Record<string, unknown>;
       const lengths = Object.fromEntries(
-        ['members', 'teams', 'memberships', 'hour_bands', 'shift_types'].map((key) => [
+        ['members', 'teams', 'memberships', 'hour_bands', 'shift_types', 'rotation_patterns', 'rotation_assignments'].map((key) => [
           key,
           Array.isArray(parsed[key]) ? (parsed[key] as unknown[]).length : `not an array: ${String(parsed[key])}`,
         ]),
       );
-      expect(lengths).toEqual({ members: 17, teams: 4, memberships: 16, hour_bands: 2, shift_types: 3 });
+      expect(lengths).toEqual({
+        members: 17,
+        teams: 4,
+        memberships: 16,
+        hour_bands: 2,
+        shift_types: 3,
+        rotation_patterns: 1,
+        rotation_assignments: 4,
+      });
+      expect(
+        ((parsed['rotation_patterns'] as { steps: unknown[] }[] | undefined)?.[0]?.steps ?? []).length,
+        'the demo pattern has no steps in the snapshot',
+      ).toBe(4);
       expect(parsed['organization']).not.toBeNull();
       expect(parsed['auth_users']).toBe(17);
 
@@ -658,6 +739,33 @@ describe('the demo organization script', () => {
 
       expect(outcome).toEqual({ code: 'P0001', message: 'DEMO_TARGET_REFUSED' });
       expect(after).toBe(before);
+    });
+
+    it.skipIf(noDatabase).each([
+      {
+        what: 'a step naming a shift type the demo does not have',
+        from: "(3, 'Slobodno')\n    ) as step",
+        to: "(3, 'Nepostojeći')\n    ) as step",
+      },
+      {
+        what: 'an assignment naming a crew the demo does not have',
+        from: "('Smjena D', 3)\n    ) as assignment",
+        to: "('Smjena Z', 3)\n    ) as assignment",
+      },
+    ])('with the rotation written short ($what), as DEMO_ROTATION_INCOMPLETE', async ({ from, to }) => {
+      // The rotation joins by name, so a drifted name would write fewer rows
+      // silently. The guard turns that into a refusal of the whole run.
+      expect(demoScript, 'the text this case edits is gone').toContain(from);
+      const drifted = demoScript.replace(from, to);
+      await inRolledBackTransaction(async (client) => {
+        await configure(client, LOCAL_SETTINGS);
+        const before = await demoSnapshot(client);
+        await client.query('savepoint refusal');
+        const outcome = await refused(() => client.query(drifted));
+        await client.query('rollback to savepoint refusal');
+        expect(outcome).toEqual({ code: 'P0001', message: 'DEMO_ROTATION_INCOMPLETE' });
+        expect(await demoSnapshot(client)).toBe(before);
+      });
     });
 
     it.skipIf(noDatabase)('with staging as the target, it runs', async () => {
