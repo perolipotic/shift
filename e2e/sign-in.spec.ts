@@ -44,7 +44,13 @@ test('a wrong password is refused on the page', async ({ page, fixture }) => {
 test('Odjava signs out and returns to the organization prompt', async ({ page, fixture }) => {
   await signIn(page, fixture.slug, fixture.spare.username, fixture.password);
 
-  await navigation(page).getByRole('button', { name: hr.shell.signOut }).click();
+  // On the sidebar the exit lives in the profile menu: the card, named by the
+  // person's own name, discloses it.
+  const profile = page.getByRole('button', { name: fixture.spare.name });
+  await expect(profile).toHaveAttribute('aria-expanded', 'false');
+  await profile.click();
+  await expect(profile).toHaveAttribute('aria-expanded', 'true');
+  await page.getByRole('button', { name: hr.shell.signOut }).click();
 
   await expect(page).toHaveURL('/prijava');
   await expect(page.getByRole('heading', { level: 1, name: hr.auth.organization.heading })).toBeVisible();
