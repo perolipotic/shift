@@ -759,6 +759,106 @@ answers `204` having affected zero rows, and a `POST` answers
 `403 {"code":"42501"}`. Both are asserted in `test/rls-isolation.test.ts`
 against both fixtures.
 
+### 7.5 Demo organization (local and staging)
+
+`supabase/operator/demo-organization.sql` creates `dvd-demo`, "DVD Kaštel Novi
+(demo)": one admin (`admin`, "Demo Admin", no rank), sixteen members in four
+crews, `Smjena A` to `Smjena D` (each a commander, a driver and two
+firefighters, all ranked), the pilot's hour bands (`Dan` 07:00, `Noć` 19:00)
+and its shift types (`Dan`, `Noć`, `Slobodno`). It is what a human looks at.
+It is not a test fixture: `supabase/seed.sql`, the tests and the E2E suite do
+not use it, and it touches no other organization. There is no rotation yet
+(story 2.3).
+
+**Never run it in production.** The script refuses unless `shift.demo_target`
+is `local` or `staging`. That guard checks only the target you *declare*: it
+cannot tell which database it is connected to. Before a `--linked` run,
+confirm that `supabase link` points at the **staging** project
+(`supabase projects list` marks the linked one), and re-link if in doubt.
+
+| Setting | Required | Notes |
+| --- | --- | --- |
+| `shift.demo_target` | yes | `local` or `staging`; anything else, unset included, is refused with `DEMO_TARGET_REFUSED` |
+| `shift.demo_password` | yes | every demo account's password; no default; unset, empty or whitespace-only is refused with `DEMO_PASSWORD_MISSING` |
+
+Both refusals raise SQLSTATE `P0001` and write nothing. Every account signs in
+as `<username>@dvd-demo.shift.invalid`, the admin as
+`admin@dvd-demo.shift.invalid`.
+
+#### Local
+
+```bash
+pnpm db:demo
+pnpm exec supabase db query --local \
+  "select count(*) from members m join organizations o on o.id = m.organization_id where o.slug = 'dvd-demo'"
+# -> 17
+```
+
+`pnpm db:demo` is
+`PGOPTIONS='-c shift.demo_target=local -c shift.demo_password=local-fixture-password' supabase db query --local -f supabase/operator/demo-organization.sql`.
+
+#### Staging
+
+> **Not yet verified against a real staging project.** Staging deploys are
+> still off, so the `--linked` path below has been exercised only in its
+> `--local` form. Check the verification query's answer the first time.
+
+Read the password without echoing it or leaving it in shell history. Inside
+`PGOPTIONS` a value cannot contain spaces or backslashes, so choose a password
+without them:
+
+```bash
+read -s DEMO_PW
+PGOPTIONS="-c shift.demo_target=staging -c shift.demo_password=$DEMO_PW" \
+  pnpm exec supabase db query --linked -f supabase/operator/demo-organization.sql
+unset DEMO_PW
+```
+
+`PGOPTIONS` travels in the connection's startup packet, and a connection
+pooler may not pass it through. If the run is refused with
+`DEMO_TARGET_REFUSED` although you set the target, set both values in the same
+session instead. `supabase db query` sends one statement per call, so use
+`psql` with the staging connection string (Dashboard → Connect), which runs
+everything piped to it in one session. The password goes in as a `psql`
+variable, so it is quoted as data and never appears in the SQL text:
+
+```bash
+read -s DEMO_PW
+{ echo "select set_config('shift.demo_target', 'staging', false), set_config('shift.demo_password', :'pw', false);"
+  cat supabase/operator/demo-organization.sql; } \
+  | psql "<the staging connection string>" -v ON_ERROR_STOP=1 -v pw="$DEMO_PW"
+unset DEMO_PW
+```
+
+Verify:
+
+```bash
+pnpm exec supabase db query --linked \
+  "select count(*) from members m join organizations o on o.id = m.organization_id where o.slug = 'dvd-demo'"
+# -> 17
+```
+
+#### Re-running and removing
+
+**Re-running replaces the demo.** In one transaction, serialized against any
+concurrent run by an advisory lock, the script deletes the `dvd-demo`
+organization (everything scoped to it cascades) and every auth user under
+`@dvd-demo.shift.invalid`, then creates it all again. Any edits made to the
+demo are lost. Only `@dvd-demo.shift.invalid` auth users are removed: an
+account added to the demo through the interface with any other address loses
+its member row (it cascades with the organization) but keeps its auth user,
+which then belongs to no organization. Delete such an account by hand if it
+matters.
+
+To remove the demo entirely, run these two queries in this order (use
+`--linked` instead of `--local` for staging; `supabase db query` takes one
+statement per call):
+
+```bash
+pnpm exec supabase db query --local "delete from organizations where slug = 'dvd-demo'"
+pnpm exec supabase db query --local "delete from auth.users where email like '%@dvd-demo.shift.invalid'"
+```
+
 ---
 
 ## 8. CI/CD
