@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 09-24-2026
+last_updated: 09-25-2026
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -289,7 +289,11 @@ development_status:
   # no name carries meaning, and removal archives rather than deletes). 1.7b is
   # versioned team membership (clauses 2 and 3) and waits in deferred-work.md,
   # earning its key when specced — so the parent completes with 1.7b.
-  1-7-an-admin-creates-teams-and-moves-people-between-them: in-progress
+  # Completed 2026-09-25, per the convention recorded above: both parts (1.7a
+  # and 1.7b) are done. The member list's team filter split out of 1.7b is not
+  # a part of 1.7 and waits in deferred-work.md, so the parent carries no
+  # remaining work.
+  1-7-an-admin-creates-teams-and-moves-people-between-them: done
   # Merged to main in 988743f (PR #22) and its spec carries status done with
   # review_loop_iteration 0 — three adversarial layers, no loopback, 12 patches,
   # two findings deferred to deferred-work.md (whitespace trimming and name
@@ -305,7 +309,13 @@ development_status:
   # acceptance clauses 2 and 3 (CAP-6, AD-2, UX-DR20). THIS PART COMPLETES THE
   # 1-7 PARENT. The member list's team filter was split out at step-01 (human
   # decision 2026-09-24) and waits in deferred-work.md; it is not a part of 1.7.
-  1-7b-team-membership: review
+  # Merged to main in cfd629f (PR #24) and its spec carries status done with
+  # review_loop_iteration 0 — three adversarial layers, no loopback, 6 patches,
+  # three findings deferred to deferred-work.md (cross-transaction
+  # serialization of membership writes, a renamed team's old name on the member
+  # list until its stale time, the unbounded team-history embed). Reconciled
+  # 2026-09-25. THIS PART COMPLETED THE 1-7 PARENT above.
+  1-7b-team-membership: done
   1-8-a-member-sees-who-is-on-a-team: backlog
   epic-1-retrospective: optional
 
