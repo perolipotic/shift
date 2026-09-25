@@ -372,7 +372,14 @@ development_status:
   2-2-an-admin-defines-shift-types-including-one-that-crosses-midn: in-progress
   # Part A: shift_types + versioned shift_type_versions, seed for both
   # fixtures, pure domain/duration. No UI.
-  2-2a-shift-type-rule: review
+  # Merged to main in 1cfedd0 (PR #33). Its spec carries status done with
+  # review_loop_iteration 0 — three adversarial layers, no loopback, 15
+  # patches (among them the human decision that archiving a type with a change
+  # scheduled is refused), two findings deferred to deferred-work.md (creation
+  # order has no tiebreaker for 2.2b's ramp slots; name uniqueness ignores
+  # Unicode normalization). Reconciled 2026-09-25. The 2-2 parent above stays
+  # in-progress until 2.2b is done.
+  2-2a-shift-type-rule: done
   2-3-an-admin-builds-the-rotation-and-sees-the-cycle-before-savin: backlog
   2-4-rotation-configuration-completes-on-a-phone: backlog
   2-5-saving-a-rotation-reports-what-it-will-actually-do: backlog
