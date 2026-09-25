@@ -89,6 +89,17 @@ export const BASE_TOKENS = [
   'sidebar-ring',
 ] as const;
 
+/**
+ * The elevation tokens (visual refresh A): DESIGN.md's `elevation:` key, as
+ * shadow values whose colours are OKLCH alpha. Not colours themselves, so they
+ * are kept out of `BASE_TOKENS` and `BRAND_TOKENS` — nothing measures a shadow
+ * for contrast, and `@theme inline` maps them to `--shadow-*` rather than to
+ * `--color-*` — but they are theme tokens all the same, and
+ * `theme-tokens.test.ts` holds them to the same once-per-theme, both-themes and
+ * dark-differs sweeps as every colour.
+ */
+export const ELEVATION_TOKENS = ['elevation-sh', 'elevation-sh-lg'] as const;
+
 export type Theme = 'light' | 'dark';
 
 function source(): string {

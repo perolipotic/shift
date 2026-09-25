@@ -1,7 +1,11 @@
-import { differenceCiede2000, rgb, wcagContrast, type Color, type Rgb } from 'culori';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { differenceCiede2000, displayable, rgb, wcagContrast, type Color, type Rgb } from 'culori';
 import { describe, expect, it } from 'vitest';
 
-import { rawToken, readToken, type Theme } from './theme-css.js';
+import { BASE_TOKENS, BRAND_TOKENS, rawToken, readToken, type Theme } from './theme-css.js';
 
 /**
  * Contrast, measured rather than promised (story 1.1b, UX-DR3).
@@ -11,8 +15,14 @@ import { rawToken, readToken, type Theme } from './theme-css.js';
  * value drifts unnoticed. So every pair is computed here, in both themes.
  *
  * Both halves of the layer are covered. The first derivation measured only the
- * brand pairs; the 28 shadcn base tokens went unmeasured, and two of them ship
- * below the thresholds this file enforces elsewhere.
+ * brand pairs and left the 28 base tokens — the shadcn token NAMES every
+ * primitive resolves, filled since visual refresh A with a slate/navy palette —
+ * unmeasured.
+ *
+ * Every measurement assumes the colour renders as declared, which is only true
+ * inside sRGB: a browser clips an out-of-gamut OKLCH value, and a ratio or ΔE
+ * computed on the unclipped value then describes a colour nobody sees. The
+ * gamut block below asserts that premise for every colour token.
  *
  * A failure is a design question, not a value to nudge: the spec gates that on
  * a human.
@@ -53,7 +63,7 @@ const BRAND_PAIRS = [
   ...ACCENT_TOKENS,
 ] as const;
 
-/** shadcn base surfaces that carry text. */
+/** Base surfaces that carry text. */
 const BASE_PAIRS = ['card', 'popover', 'secondary', 'muted', 'accent', 'sidebar'] as const;
 
 /** Every fill a shift cell can actually have. */
@@ -150,7 +160,7 @@ describe('brand text pairs clear WCAG 2.1 AA', () => {
   });
 });
 
-describe('shadcn base text pairs clear WCAG 2.1 AA', () => {
+describe('base text pairs clear WCAG 2.1 AA', () => {
   // The half every primitive resolves first. Untested in the first derivation.
   const cases = THEMES.flatMap((theme) => BASE_PAIRS.map((name) => ({ theme, name })));
 
@@ -169,6 +179,189 @@ describe('shadcn base text pairs clear WCAG 2.1 AA', () => {
     expect(measured, `foreground on background (${theme}) measured ${measured.toFixed(2)}:1`).toBeGreaterThanOrEqual(
       AA_BODY,
     );
+  });
+});
+
+describe('every colour token renders as declared, inside sRGB', () => {
+  /**
+   * THE PREMISE OF THIS WHOLE FILE. OKLCH can name colours no sRGB display can
+   * show, and a browser clips them — so a value outside the gamut would pass
+   * every ratio and ΔE here while rendering as some other, nearer colour. The
+   * accents are where this bites: visual refresh A pushed `--brand-blue` to
+   * chroma 0.255 to hold it away from `primary`, which is close to the edge.
+   *
+   * Every colour token in both themes, alpha tokens included (their colour is
+   * checked, their alpha is not a gamut question).
+   */
+  const cases = THEMES.flatMap((theme) =>
+    [...BASE_TOKENS, ...BRAND_TOKENS].map((name) => ({ theme, name })),
+  );
+
+  it.each(cases)('--$name is inside sRGB in $theme', ({ theme, name }) => {
+    const value = colour(theme, name);
+    const channels = rgb(value);
+
+    expect(
+      displayable(value),
+      `--${name} (${theme}) is out of sRGB: r ${channels.r.toFixed(4)} g ${channels.g.toFixed(4)} b ${channels.b.toFixed(4)}`,
+    ).toBe(true);
+  });
+
+  it('would refuse an out-of-gamut value, so the sweep is not vacuous', () => {
+    expect(displayable({ mode: 'oklch', l: 0.545, c: 0.32, h: 280 } as Color)).toBe(false);
+  });
+});
+
+describe('the navy sidebar carries readable text and visible controls', () => {
+  /**
+   * The sidebar's own pairs (visual refresh A), owed since story 1.1b: the
+   * base sweep measures `sidebar-foreground` on `sidebar` and nothing else, so
+   * the active destination's label, the hovered row, the sign-in brand
+   * panel's headline and the section label were measured by nothing.
+   *
+   * The section label is drawn at 70% of `sidebar-foreground`, so it is
+   * composited over the sidebar first — the raw token flatters it.
+   */
+  const SIDEBAR_PAIRS: { label: string; text: (theme: Theme) => Rgb | Color; surface: string }[] = [
+    {
+      label: 'sidebar-primary-foreground on sidebar-primary (the active destination)',
+      text: (theme) => colour(theme, 'sidebar-primary-foreground'),
+      surface: 'sidebar-primary',
+    },
+    {
+      label: 'sidebar-accent-foreground on sidebar-accent (a hovered row)',
+      text: (theme) => colour(theme, 'sidebar-accent-foreground'),
+      surface: 'sidebar-accent',
+    },
+    {
+      label: 'sidebar-accent-foreground on sidebar (the brand panel)',
+      text: (theme) => colour(theme, 'sidebar-accent-foreground'),
+      surface: 'sidebar',
+    },
+    {
+      label: 'sidebar-foreground at 70% on sidebar (the section label)',
+      text: (theme) =>
+        composite({ ...rgb(colour(theme, 'sidebar-foreground')), alpha: 0.7 }, colour(theme, 'sidebar')),
+      surface: 'sidebar',
+    },
+  ];
+  const cases = THEMES.flatMap((theme) => SIDEBAR_PAIRS.map((pair) => ({ theme, ...pair })));
+
+  it.each(cases)('$label reads in $theme', ({ theme, text, surface }) => {
+    const measured = ratio(text(theme), colour(theme, surface));
+
+    expect(measured, `measured ${measured.toFixed(2)}:1 (${theme})`).toBeGreaterThanOrEqual(AA_BODY);
+  });
+
+  /**
+   * The `sidebar` Button variant's boundary: `sidebar-foreground` at 50%, the
+   * value `components/ui/button.tsx` spells as `border-sidebar-foreground/50`.
+   * The collapse and the exit are bordered controls on navy, and
+   * `--sidebar-border` measures about 1.2:1 there — a divider, not a control's
+   * edge. Floored at 3:1 and pinned, the `--input` bargain: the floor is the
+   * requirement, the pin is the drift alarm.
+   */
+  const SIDEBAR_CONTROL_ALPHA = 0.5;
+  const SIDEBAR_CONTROL_RATIO: Record<Theme, number> = { light: 3.91, dark: 3.67 };
+
+  it('reads the alpha from the primitive itself, so the two cannot drift apart', () => {
+    const button = readFileSync(
+      join(fileURLToPath(new URL('..', import.meta.url)), 'apps', 'web', 'src', 'components', 'ui', 'button.tsx'),
+      'utf8',
+    );
+
+    expect(button).toContain(`border-sidebar-foreground/${SIDEBAR_CONTROL_ALPHA * 100}`);
+  });
+
+  it.each(THEMES)('the sidebar button boundary clears 3:1 on --sidebar in %s', (theme) => {
+    const surface = colour(theme, 'sidebar');
+    const edge = composite({ ...rgb(colour(theme, 'sidebar-foreground')), alpha: SIDEBAR_CONTROL_ALPHA }, surface);
+    const measured = ratio(edge, surface);
+
+    expect(measured, `sidebar button boundary (${theme}) measured ${measured.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+      AA_LARGE,
+    );
+    expect(measured, `expected ~${SIDEBAR_CONTROL_RATIO[theme]}:1`).toBeCloseTo(SIDEBAR_CONTROL_RATIO[theme], 2);
+  });
+});
+
+describe('badges and stat cards are text, and read on the card and on a hovered row', () => {
+  /**
+   * Visual refresh B's badges carry their meaning in words (a level, an
+   * inactive marker), so each is small text and the body threshold applies.
+   * They sit on the card, the member list's surface, AND on a hovered table
+   * row, which is `muted` at the row primitive's alpha composited over the
+   * card. The `default` variant is a primary TINT, `bg-primary/N`, composited
+   * over whichever surface it sits on. Both alphas are read from the primitives,
+   * as the sidebar button's is.
+   *
+   * ITS TEXT IS `foreground`, NOT `primary`. Dark `primary` does not reach the
+   * body threshold on the dark card even with no tint, and every tint only
+   * lowers it, so no alpha could fix it and a new colour token is a
+   * design-owner decision. The assertion below keeps that reason measured
+   * rather than remembered: if it ever stops being true, `text-primary` is
+   * back on the table.
+   *
+   * The stat card's label is `muted-foreground` on the card; its value is
+   * `card-foreground` on the card, which the base sweep already measures.
+   */
+  const BADGE_TINT_ALPHA = 0.15;
+  const ROW_HOVER_ALPHA = 0.6;
+  const webSrc = join(fileURLToPath(new URL('..', import.meta.url)), 'apps', 'web', 'src', 'components', 'ui');
+
+  it('reads the variants and the row hover from the primitives, so they cannot drift apart', () => {
+    const badge = readFileSync(join(webSrc, 'badge.tsx'), 'utf8');
+    const table = readFileSync(join(webSrc, 'table.tsx'), 'utf8');
+
+    expect(badge).toContain(`default: "bg-primary/${Math.round(BADGE_TINT_ALPHA * 100)} text-foreground",`);
+    expect(badge).toContain('secondary: "bg-secondary text-secondary-foreground",');
+    expect(badge).toContain('outline: "border border-input text-muted-foreground",');
+    expect(table).toContain(`hover:bg-muted/${Math.round(ROW_HOVER_ALPHA * 100)}`);
+  });
+
+  it('keeps the reason the tint takes foreground text: dark primary misses 4.5:1 on the card untinted', () => {
+    expect(ratio(colour('dark', 'primary'), colour('dark', 'card'))).toBeLessThan(AA_BODY);
+  });
+
+  const card = (theme: Theme): Color => colour(theme, 'card');
+  const hoveredRow = (theme: Theme): Rgb =>
+    composite({ ...rgb(colour(theme, 'muted')), alpha: ROW_HOVER_ALPHA }, card(theme));
+  const tintOver = (theme: Theme, under: Color | Rgb): Rgb =>
+    composite({ ...rgb(colour(theme, 'primary')), alpha: BADGE_TINT_ALPHA }, under as Color);
+
+  const BADGE_PAIRS: { label: string; text: string; surface: (theme: Theme) => Rgb | Color }[] = [
+    {
+      label: 'foreground on the primary tint over the card (the default badge)',
+      text: 'foreground',
+      surface: (theme) => tintOver(theme, card(theme)),
+    },
+    {
+      label: 'foreground on the primary tint over a hovered row (the default badge)',
+      text: 'foreground',
+      surface: (theme) => tintOver(theme, hoveredRow(theme)),
+    },
+    {
+      label: 'secondary-foreground on secondary (the secondary badge, the avatar chip, on any row)',
+      text: 'secondary-foreground',
+      surface: (theme) => colour(theme, 'secondary'),
+    },
+    {
+      label: 'muted-foreground on the card (the outline badge, the stat label)',
+      text: 'muted-foreground',
+      surface: card,
+    },
+    {
+      label: 'muted-foreground on a hovered row (the outline badge)',
+      text: 'muted-foreground',
+      surface: hoveredRow,
+    },
+  ];
+  const cases = THEMES.flatMap((theme) => BADGE_PAIRS.map((pair) => ({ theme, ...pair })));
+
+  it.each(cases)('$label reads in $theme', ({ theme, text, surface }) => {
+    const measured = ratio(colour(theme, text), surface(theme));
+
+    expect(measured, `measured ${measured.toFixed(2)}:1 (${theme})`).toBeGreaterThanOrEqual(AA_BODY);
   });
 });
 
@@ -216,12 +409,37 @@ describe('every focus indicator is perceivable', () => {
       `ring against the composited input border (${theme}) measured ${measured.toFixed(2)}:1`,
     ).toBeGreaterThanOrEqual(AA_LARGE);
   });
+
+  /**
+   * The same two measurements ON A CARD. Since visual refresh A the Input
+   * primitive is filled with `--card`, and every form in the application sits
+   * inside a Card — so the page is not the surface a field or its ring is
+   * actually drawn on. Dark `--input` is alpha, so it composites differently
+   * over navy-2 than over the page.
+   */
+  it.each(THEMES)('--ring is distinguishable from --card in %s', (theme) => {
+    const measured = ratio(colour(theme, 'ring'), colour(theme, 'card'));
+
+    expect(measured, `ring on card (${theme}) measured ${measured.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_LARGE);
+  });
+
+  it.each(THEMES)('--ring is distinguishable from the --input border on a card in %s', (theme) => {
+    const border = composite(colour(theme, 'input'), colour(theme, 'card'));
+    const measured = ratio(colour(theme, 'ring'), border);
+
+    expect(
+      measured,
+      `ring against the input border on a card (${theme}) measured ${measured.toFixed(2)}:1`,
+    ).toBeGreaterThanOrEqual(AA_LARGE);
+  });
 });
 
-describe('the shadcn-sourced deviations stay shifted, not reverted to stock', () => {
+describe('the base deviations stay shifted, not reverted to stock shadcn', () => {
   /**
    * Each failed a threshold at its stock shadcn lightness and was moved to
-   * clear it — see the spec change log. The blocks above already fail if any
+   * clear it — see the spec change log. Since visual refresh A the base is a
+   * slate/navy palette rather than stock shadcn, and `stock` below is kept as
+   * the value a careless re-vendoring of shadcn's registry would restore. The blocks above already fail if any
    * of them revert, but only with a bare ratio; this names the regression the
    * way `theme-fidelity.test.ts`'s `APPROVED` map does for DESIGN.md-sourced
    * deviations (none of these has a DESIGN.md entry, so that map cannot cover
@@ -238,15 +456,25 @@ describe('the shadcn-sourced deviations stay shifted, not reverted to stock', ()
    * Light-theme L only, deliberately: dark `--input` is an alpha token rather
    * than a lightness, so there is no stock L to compare against. Its dark
    * value is held by the ratio assertions instead, in both themes.
+   *
+   * RE-PINNED BY VISUAL REFRESH A, to newly measured values; the thresholds
+   * above did not move. The slate/navy palette replaced the neutral greys, so
+   * each `shifted` value is the new palette's, recorded with its reason in
+   * `apps/web/src/index.css`'s header comment:
+   *
+   *   muted-foreground  0.542 -> 0.4924  slate-500 is 4.34:1 on slate-100
+   *   ring              0.37  -> 0.3418  primary's hue, 3:1 from the border
+   *   sidebar-ring      0.654 -> 0.8091  the sidebar is navy, so it goes light
+   *   input             0.65  -> 0.6291  slate-toned, still 3:1 on the page
    */
   const DEVIATIONS: Record<string, { shifted: number; stock: number }> = {
-    'muted-foreground': { shifted: 0.542, stock: 0.556 },
-    ring: { shifted: 0.37, stock: 0.708 },
-    'sidebar-ring': { shifted: 0.654, stock: 0.708 },
-    input: { shifted: 0.65, stock: 0.922 },
+    'muted-foreground': { shifted: 0.4924, stock: 0.556 },
+    ring: { shifted: 0.3418, stock: 0.708 },
+    'sidebar-ring': { shifted: 0.8091, stock: 0.708 },
+    input: { shifted: 0.6291, stock: 0.922 },
   };
 
-  it.each(Object.keys(DEVIATIONS))('--%s (light) is still lightness-shifted off its stock shadcn value', (name) => {
+  it.each(Object.keys(DEVIATIONS))('--%s (light) holds its measured lightness, not shadcn’s stock one', (name) => {
     const token = colour('light', name);
     const { shifted, stock } = DEVIATIONS[name] as { shifted: number; stock: number };
     const l = 'l' in token ? token.l : Number.NaN;
@@ -260,8 +488,9 @@ describe('the shadcn-sourced deviations stay shifted, not reverted to stock', ()
 });
 
 /**
- * `--border` and `--input` shipped as one stock shadcn value and are now two
- * different requirements, which is why this is two blocks (story 1.1d).
+ * `--border` and `--input` shipped as one stock shadcn value and are two
+ * different requirements, which is why this is two blocks (story 1.1d; both
+ * slate-toned since visual refresh A).
  *
  * Both composited, never raw: dark declares them with alpha, and a raw reading
  * of dark `--border` reports a meaningless 19.79:1 against a surface it is in
@@ -269,8 +498,8 @@ describe('the shadcn-sourced deviations stay shifted, not reverted to stock', ()
  */
 describe('the input boundary clears the UI-component threshold', () => {
   // WCAG 1.4.11 requires 3:1 where a boundary is a component's SOLE visual
-  // affordance, which is exactly a shadcn text input: its fill is the page
-  // colour, so the border is the whole control. The sign-in form is the first
+  // affordance, which is exactly a text input: its fill is the surface it
+  // sits on, so the border is the whole control. The sign-in form is the first
   // surface where that is true, so the requirement replaces the pin that stood
   // while the question was open (deferred-work.md, story 1.1b review).
   //
@@ -278,7 +507,10 @@ describe('the input boundary clears the UI-component threshold', () => {
   // bare `>= 3` passes for anything in [3, ∞), so an edit landing at 3.02:1 —
   // or at 8:1, which would be a heavy black box round every field — reads as
   // compliance. The floor is the requirement; the pin is the drift alarm.
-  const EXPECTED_RATIO: Record<Theme, number> = { light: 3.23, dark: 3.26 };
+  //
+  // RE-PINNED BY VISUAL REFRESH A: 3.23 -> 3.35 light (a slate-toned input on
+  // a slate-50 page), 3.26 -> 3.32 dark (the same 36% white, now over navy).
+  const EXPECTED_RATIO: Record<Theme, number> = { light: 3.35, dark: 3.32 };
 
   it.each(THEMES)('--input is discernible against the page in %s', (theme) => {
     const surface = colour(theme, 'background');
@@ -301,6 +533,15 @@ describe('the input boundary clears the UI-component threshold', () => {
     ).toBeCloseTo(expected, 2);
   });
 
+  it.each(THEMES)('--input is discernible against a card in %s', (theme) => {
+    // The Input primitive is filled with `--card` since visual refresh A, and
+    // forms sit in cards, so this is the surface the boundary is actually on.
+    const surface = colour(theme, 'card');
+    const measured = ratio(composite(colour(theme, 'input'), surface), surface);
+
+    expect(measured, `input on card (${theme}) measured ${measured.toFixed(2)}:1`).toBeGreaterThanOrEqual(AA_LARGE);
+  });
+
   it('keeps dark --input an alpha token, so it composites over whatever it sits on', () => {
     // Scoped to DARK, and stated rather than folded into a both-themes loop:
     // light `--input` is opaque, so composited and raw are the same number and
@@ -320,10 +561,10 @@ describe('the input boundary clears the UI-component threshold', () => {
   });
 });
 
-describe('the inherited border contrast is pinned, not merely inherited', () => {
+describe('the decorative border contrast is pinned, not merely floored', () => {
   /**
-   * `--border` composites to 1.25-1.26:1 against its surface — stock shadcn,
-   * unchanged here and deliberately below AA.
+   * `--border` composites to 1.18-1.32:1 against its surface — decorative,
+   * and deliberately below AA.
    *
    * WCAG 1.4.11 wants 3:1 only where a border is a control's sole visual
    * affordance. `--border` edges cards and separators and `@layer base` hands
@@ -333,18 +574,22 @@ describe('the inherited border contrast is pinned, not merely inherited', () => 
    * control's whole affordance, moved instead — see the block above.
    *
    * The measurement is therefore pinned rather than the requirement, so the
-   * value cannot drift while it stays stock. Same pattern as the state-glyph
-   * deferral in typography-coverage.test.ts.
+   * value cannot drift unnoticed. Same pattern as the state-glyph deferral in
+   * typography-coverage.test.ts.
    */
-  // Pinned to the specific stock ratio, not merely `1 < x < AA_LARGE` — that
+  // Pinned to the specific measured ratio, not merely `1 < x < AA_LARGE` — that
   // band would pass silently for any accidental edit landing inside 1-3:1,
   // which is exactly the drift this block exists to catch.
+  //
+  // RE-PINNED BY VISUAL REFRESH A: 1.26 -> 1.18 light (slate-200 on slate-50),
+  // 1.25 -> 1.32 dark (10% white over the navy page). Still below 3:1 on
+  // purpose — the reasoning above is unchanged.
   const EXPECTED_RATIO: Record<string, number> = {
-    light: 1.26,
-    dark: 1.25,
+    light: 1.18,
+    dark: 1.32,
   };
 
-  it.each(THEMES)('--border against its surface in %s is unchanged', (theme) => {
+  it.each(THEMES)('--border against its surface in %s holds its pinned ratio', (theme) => {
     const surface = colour(theme, 'background');
     const measured = ratio(composite(colour(theme, 'border'), surface), surface);
     const expected = EXPECTED_RATIO[theme] as number;

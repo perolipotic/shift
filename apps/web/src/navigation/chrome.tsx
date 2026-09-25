@@ -358,17 +358,24 @@ export function AppChrome({ children }: AppChromeProps) {
           key={destination.key}
           to={destination.path}
           // `aria-current="page"` AND a treatment that is not colour (UX-DR37):
-          // the weight and the underline are what make the active entry readable
-          // to somebody who cannot tell the background apart from its
-          // neighbours, and the attribute is what makes it audible. Both are
-          // driven by the same attribute, so they cannot disagree.
+          // the active entry is a filled `sidebar-primary` pill, and it is ALSO
+          // semibold and underlined where its neighbours are neither. The pill
+          // alone is not enough: a hovered neighbour takes the same filled
+          // shape, so the weight and the underline are what make the active
+          // entry readable to somebody who cannot tell the two fills apart; the
+          // attribute is what makes it audible. All of them are driven by the
+          // same attribute, so they cannot disagree.
+          //
+          // The focus ring is OFFSET by the sidebar colour, so it is always
+          // drawn against navy (where `--sidebar-ring` clears 3:1) and never
+          // against the pill it would touch at under 3:1.
           //
           // MATCHED AS A SECTION, not as a string. Every destination here is a
           // section rather than a leaf, and an equality test drops the signal on
           // the first child route — see `isCurrentDestination`, which is in the
           // data module because it is a rule with two polarities worth running.
           aria-current={isCurrentDestination(pathname, destination.path) ? 'page' : undefined}
-          className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium aria-[current=page]:bg-accent aria-[current=page]:font-bold aria-[current=page]:underline aria-[current=page]:underline-offset-4 sm:justify-start"
+          className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-normal text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar aria-[current=page]:bg-sidebar-primary aria-[current=page]:font-semibold aria-[current=page]:text-sidebar-primary-foreground aria-[current=page]:underline aria-[current=page]:underline-offset-4 sm:justify-start"
         >
           <Icon aria-hidden className="size-4 shrink-0" />
           {t(destination.key)}
@@ -391,9 +398,9 @@ export function AppChrome({ children }: AppChromeProps) {
   function renderSignOut(): ReactNode {
     return (
       <Button
-        className="h-11 shrink-0 px-4"
+        className="h-11 shrink-0 px-4 sm:mt-auto"
         type="button"
-        variant="outline"
+        variant="sidebar"
         disabled={pending}
         aria-busy={pending}
         onClick={startSignOut}
@@ -418,7 +425,7 @@ export function AppChrome({ children }: AppChromeProps) {
     if (refusal === null) return null;
 
     return (
-      <div className="mx-3 mt-3 flex flex-col gap-2 rounded-md border border-input px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="mx-3 mt-3 flex flex-col gap-2 rounded-lg border border-input bg-card px-3 py-2 shadow-sh sm:flex-row sm:items-center sm:justify-between">
         <p ref={alertRegion} role="alert" tabIndex={-1} className="text-sm font-medium">
           {t(navigationMessageKey(refusal))}
         </p>
@@ -466,10 +473,14 @@ export function AppChrome({ children }: AppChromeProps) {
           so collapsing hid the list and reclaimed not one pixel — a control that
           visibly does nothing. The width is the destination list's now, so
           collapsing leaves the aside as wide as the toggle and the exit need. */}
+      {/* NAVY IN BOTH THEMES (visual refresh A), and sticky to the viewport so
+          the exit at its foot stays reachable beside a long destination. The
+          accent is the EDGE, never the fill: the organization tints the line
+          between the chrome and the content and nothing inside it. */}
       <aside
-        className={`hidden shrink-0 flex-col gap-2 border-r p-3 sm:flex ${accent.edge}`}
+        className={`hidden shrink-0 flex-col gap-2 border-r bg-sidebar p-3 text-sidebar-foreground sm:sticky sm:top-0 sm:flex sm:h-dvh sm:overflow-y-auto ${accent.edge}`}
       >
-        {lockup}
+        <div className="flex border-b border-sidebar-border pb-3">{lockup}</div>
         {/* The toggle carries its own visible word rather than a glyph, for the
             reason every entry below does: an icon is not a name. Its name says
             WHICH STATE THE PRESS PRODUCES and changes with the state, because a
@@ -481,18 +492,27 @@ export function AppChrome({ children }: AppChromeProps) {
         <Button
           className="h-11 shrink-0 px-4"
           type="button"
-          variant="outline"
+          variant="sidebar"
           aria-expanded={expanded}
           aria-controls="app-destinations"
           onClick={toggleNavigation}
         >
           {expanded ? t('shell.menuHide') : t('shell.menuShow')}
         </Button>
-        <nav aria-label={t('shell.navigation')} className="flex flex-col gap-1">
+        <nav aria-label={t('shell.navigation')} className="flex flex-1 flex-col gap-1">
           {/* THE COLLAPSIBLE REGION, and it holds the destinations ALONE. The
               exit is a sibling below it, so collapsing never takes the way out
               of the application with it. */}
           <div id="app-destinations" className={expanded ? 'flex w-48 flex-col gap-1' : 'hidden'}>
+            {/* The mockup's muted section label. `aria-hidden` because it is
+                the landmark's own name, which `aria-label` already announces;
+                read twice it would be noise. */}
+            <p
+              aria-hidden
+              className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/70"
+            >
+              {t('shell.navigation')}
+            </p>
             {destinations}
           </div>
           {exit}
@@ -513,7 +533,7 @@ export function AppChrome({ children }: AppChromeProps) {
             container so the PAGE never scrolls sideways, which is the rule this
             bar would otherwise be the first thing to break. */}
         <div
-          className={`sticky bottom-0 flex items-center gap-2 border-t bg-background p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] sm:hidden ${accent.edge}`}
+          className={`sticky bottom-0 flex items-center gap-2 border-t bg-sidebar p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] text-sidebar-foreground sm:hidden ${accent.edge}`}
         >
           {/* THE SAME SHAPE AS THE SIDEBAR, and the symmetry is the point rather
               than a tidiness. The lockup is branding, not a destination, so it

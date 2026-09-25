@@ -65,6 +65,9 @@ const SOURCES = [
   // behaviour a stale build would misreport — not because it carries a key.
   join(webRoot, 'src', 'routes', 'prijava-organizacija.tsx'),
   join(webRoot, 'src', 'routes', 'index.tsx'),
+  // The sign-in steps' shared frame (visual refresh A), which renders the
+  // brand panel's three strings around both steps.
+  join(webRoot, 'src', 'components', 'auth-layout.tsx'),
   // NOT `.tsx`, and that is the point. This list guards build FRESHNESS, and
   // the file that owns `auth.error.credentials` and `auth.error.unavailable` is
   // a plain module: story 1.3b moved the failure-to-message pairing out of the
@@ -186,6 +189,19 @@ const SOURCES = [
   // nowhere else in this file. `danas.tsx` is already listed above.
   join(webRoot, 'src', 'teams', 'roster.ts'),
   join(webRoot, 'src', 'routes', 'smjene.$id.tsx'),
+  // Visual refresh B's layout primitives and the initials module. All five are
+  // text-free and here for freshness rather than for strings: they are what
+  // every screen's header, the summary row, the badges and the avatar chips
+  // are drawn from, so a chunk built before an edit to one is stale on every
+  // screen at once.
+  join(webRoot, 'src', 'components', 'initials.ts'),
+  join(webRoot, 'src', 'components', 'ui', 'page-header.tsx'),
+  join(webRoot, 'src', 'components', 'ui', 'stat-card.tsx'),
+  join(webRoot, 'src', 'components', 'ui', 'badge.tsx'),
+  join(webRoot, 'src', 'components', 'ui', 'avatar.tsx'),
+  // The refusal and confirmation box every screen draws through, for the same
+  // freshness reason.
+  join(webRoot, 'src', 'components', 'ui', 'notice.tsx'),
 ];
 
 /**

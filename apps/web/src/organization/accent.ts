@@ -87,8 +87,8 @@ export interface BrandAccentAppearance {
    * classes each element already carried before this story existed. UX-DR5's
    * "no accent renders the untinted shell it has today" is a claim about
    * BYTES, so collapsing the two into one field would have to pick one neutral
-   * and change the other — `--input` measures 3.23:1 against the page and
-   * `--border` 1.26:1, so it is the difference between a boundary that is a
+   * and change the other — `--input` measures 3.35:1 against the page and
+   * `--border` 1.18:1, so it is the difference between a boundary that is a
    * control's whole affordance and a decorative divider.
    *
    * Nor can the element carry its own neutral and let the accent override it:
@@ -145,9 +145,17 @@ export const LOCKUP_COMPACT: LockupScale = { box: 'h-8 w-8', type: 'text-xs lead
  * second, subtly different neutral. The absence is a neutral default and never
  * an error (the story's I/O matrix), which is also why this is what an
  * UNRECOGNISED key resolves to.
+ *
+ * `text-foreground` ON THE MARK SINCE VISUAL REFRESH A, and it is the one
+ * neutral class that is not inherited from before. The chrome's sidebar is navy
+ * now and its text is light, so a mark that inherited its letter colour drew a
+ * light letter on the light `bg-muted` fill — illegible in exactly the state
+ * every organization starts in. Every accent's mark already names its own
+ * foreground; the neutral one now does too, which is also what the settings
+ * card was rendering by inheritance all along.
  */
 const NEUTRAL: BrandAccentAppearance = {
-  mark: 'bg-muted',
+  mark: 'bg-muted text-foreground',
   frame: 'border-input',
   edge: 'border-border',
 };

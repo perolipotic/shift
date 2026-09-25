@@ -3,8 +3,11 @@ import { Link, createRoute, redirect } from '@tanstack/react-router';
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PageActions, PageHeader, PageTitle } from '@/components/ui/page-header';
+import { Notice } from '@/components/ui/notice';
 import { t } from '@/i18n';
 import { NO_TEXT, mayReadMembers } from '@/members/list';
 import { DESTINATIONS } from '@/navigation/destinations';
@@ -150,60 +153,65 @@ export function LjudiSmjeneScreen() {
   }
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-6 p-6" aria-busy={loading}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-xl font-semibold leading-none tracking-tight">{t('smjene.heading')}</h1>
-        <Button asChild variant="outline" className="h-11">
-          <Link to="/ljudi">{t('nav.ljudi')}</Link>
-        </Button>
-      </div>
-      <form
-        method="post"
-        onSubmit={(event) => {
-          void submit(event);
-        }}
-        className="flex flex-wrap items-end gap-4"
-      >
-        <div className="grid min-w-0 flex-1 gap-2">
-          <Label htmlFor="team-new-name">{t('smjene.name')}</Label>
-          <Input
-            ref={nameField}
-            id="team-new-name"
-            name="name"
-            type="text"
-            required
-            defaultValue={NO_TEXT}
-            onChange={() => {
-              // A confirmation describes the last save, not what is typed now.
-              setCreated(false);
+    <main
+      className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6"
+      aria-busy={loading}
+    >
+      <PageHeader>
+        <PageTitle asChild>
+          <h1>{t('smjene.heading')}</h1>
+        </PageTitle>
+        <PageActions>
+          <Button asChild variant="outline" className="h-11">
+            <Link to="/ljudi">{t('nav.ljudi')}</Link>
+          </Button>
+        </PageActions>
+      </PageHeader>
+      <Card>
+        <CardContent className="grid gap-4">
+          <form
+            method="post"
+            onSubmit={(event) => {
+              void submit(event);
             }}
-            aria-invalid={failure !== null}
-            aria-describedby={failure === null ? undefined : 'team-create-error'}
-            className="h-11 w-full"
-          />
-        </div>
-        <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
-          {t('smjene.add')}
-        </Button>
-      </form>
-      {failure === null ? null : (
-        <p
-          id="team-create-error"
-          role="alert"
-          className="rounded-md border border-input px-3 py-2 text-sm font-medium"
-        >
-          {t(teamWriteMessageKey(failure))}
-        </p>
-      )}
-      {created ? (
-        <p role="status" className="text-sm font-medium">
-          {t('smjene.created')}
-        </p>
-      ) : null}
+            className="flex flex-wrap items-end gap-4"
+          >
+            <div className="grid min-w-0 flex-1 gap-2">
+              <Label htmlFor="team-new-name">{t('smjene.name')}</Label>
+              <Input
+                ref={nameField}
+                id="team-new-name"
+                name="name"
+                type="text"
+                required
+                defaultValue={NO_TEXT}
+                onChange={() => {
+                  // A confirmation describes the last save, not what is typed now.
+                  setCreated(false);
+                }}
+                aria-invalid={failure !== null}
+                aria-describedby={failure === null ? undefined : 'team-create-error'}
+                className="h-11 w-full"
+              />
+            </div>
+            <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
+              {t('smjene.add')}
+            </Button>
+          </form>
+          {/* THE CREATE FORM'S OWN NOTICES, inside its card as the form screens
+              hold theirs. The list-read refusal below belongs to the page. */}
+          {failure === null ? null : (
+            <Notice id="team-create-error" role="alert">
+              {t(teamWriteMessageKey(failure))}
+            </Notice>
+          )}
+          {created ? <Notice role="status">{t('smjene.created')}</Notice> : null}
+        </CardContent>
+      </Card>
       {refusal === null ? null : (
-        <p role="alert" className="rounded-md border border-input px-3 py-2 text-sm font-medium">
+        <Notice role="alert">
           {t(teamsMessageKey(refusal))}
-        </p>
+        </Notice>
       )}
       {loading ? (
         <div className="grid gap-2">
@@ -215,7 +223,7 @@ export function LjudiSmjeneScreen() {
       {split === null ? null : (
         <section className="grid gap-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <h2 className="text-base font-semibold">
+            <h2 className="text-lg font-bold">
               {t('smjene.activeHeading')}
             </h2>
             {/* STATED, AND STATED AT ZERO (UX-DR20). NOT a live region: only
@@ -232,7 +240,7 @@ export function LjudiSmjeneScreen() {
         <section className="grid gap-4">
           {/* The count IS the heading: `Arhivirano: 2 smjene`. A separate
               `Arhivirano` above it would say the same word twice. */}
-          <h2 className="text-base font-semibold">
+          <h2 className="text-lg font-bold">
             {t('smjene.archivedCount', { count: split.archived.length })}
           </h2>
           {renderTeams(split.archived)}

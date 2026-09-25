@@ -1,11 +1,17 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, createRoute, redirect } from '@tanstack/react-router';
 import { ArrowDown, ArrowUp } from 'lucide-react';
-import { useMemo, useState, type ChangeEvent } from 'react';
+import { useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
 
+import { Avatar } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PageActions, PageHeader, PageTitle } from '@/components/ui/page-header';
+import { StatCard, StatLabel, StatValue } from '@/components/ui/stat-card';
+import { Notice } from '@/components/ui/notice';
 import {
   Table,
   TableBody,
@@ -30,6 +36,7 @@ import {
   MEMBERS_READ_STALE_MS,
   MEMBERS_TABLE,
   MEMBER_COLUMNS,
+  NAME_CELL,
   INACTIVE_NAME_CELL,
   SCHEDULED_INACTIVE_NAME_CELL,
   NO_TEXT,
@@ -39,15 +46,15 @@ import {
   levelFilterMessageKey,
   mayReadMembers,
   memberActionName,
+  memberCellLookOf,
   memberLevelMessageKey,
   membersMessageKey,
+  membersViewOf,
   membersSurfaceStateOf,
-  narrowFrom,
   narrowingDependencies,
   nextSortState,
   membersTodayOf,
   readMembers,
-  shownDate,
   sortIndicatorOf,
   sortStateOf,
   type LevelFilter,
@@ -163,14 +170,16 @@ const SORT_GLYPHS: Record<SortIndicator, typeof ArrowUp> = {
  * initialised to be testable at all.
  */
 function cellContent(cell: MemberCell): string {
-  if (cell.kind === TEXT_CELL) return cell.text;
-  // STORY 1.6: an inactive member is marked IN WORDS beside the name. Whether
-  // they are inactive is the column's decision, as at the organization's today
-  // (`@/members/list`); an active member's name is an ordinary text cell.
-  if (cell.kind === INACTIVE_NAME_CELL) return t('ljudi.status.inactive', { name: cell.text });
-  // A DEACTIVATION ALREADY SCHEDULED, in the future tense and with its date.
-  if (cell.kind === SCHEDULED_INACTIVE_NAME_CELL) {
-    return t('ljudi.status.inactiveScheduled', { name: cell.text, date: shownDate(cell.from) });
+  // VISUAL REFRESH B: every name kind renders its name untouched. The inactive
+  // marker moved out of the name and into a badge beside it, whose words
+  // `memberCellLookOf` decides.
+  if (
+    cell.kind === TEXT_CELL ||
+    cell.kind === NAME_CELL ||
+    cell.kind === INACTIVE_NAME_CELL ||
+    cell.kind === SCHEDULED_INACTIVE_NAME_CELL
+  ) {
+    return cell.text;
   }
   if (cell.kind === LEVEL_CELL) return t(memberLevelMessageKey(cell.level));
   // STORY 1.7b: the team today, and "no team" in positive words — never a
@@ -183,6 +192,35 @@ function cellContent(cell: MemberCell): string {
   const unhandled: never = cell;
 
   return unhandled;
+}
+
+/**
+ * One cell, drawn the way `memberCellLookOf` decides (visual refresh B): an
+ * initials chip beside every name, a badge for the level, and the inactive
+ * marker's badge with its words. EVERY DECISION IS THE MODULE'S; this only
+ * passes the marker's key and argument to `t()`.
+ *
+ * The chip is decorative and hidden by the primitive, and it is drawn EMPTY
+ * for a name with no letter so the names stay aligned. The marker is preceded
+ * by a visually hidden separator from `hr.json`, so a screen reader announces
+ * the name and the marker as two things rather than one run of words.
+ */
+function CellView({ cell }: { readonly cell: MemberCell }): ReactNode {
+  const look = memberCellLookOf(cell);
+  const text = cellContent(cell);
+
+  return (
+    <span className="inline-flex max-w-full flex-wrap items-center gap-x-3 gap-y-1">
+      {look.avatar === null ? null : <Avatar>{look.avatar.initials}</Avatar>}
+      {look.badge === null ? <span>{text}</span> : <Badge variant={look.badge}>{text}</Badge>}
+      {look.status === null ? null : (
+        <span>
+          <span className="sr-only">{t('ljudi.status.separator')}</span>
+          <Badge variant={look.status.variant}>{t(look.status.key, look.status.args)}</Badge>
+        </span>
+      )}
+    </span>
+  );
 }
 
 export function LjudiScreen() {
@@ -220,7 +258,13 @@ export function LjudiScreen() {
   // rows never moved. There is only one list of inputs now, and
   // `members/list.test.ts` pins what it contains.
   const inputs: NarrowingInputs = { members, search, level, sort, today };
-  const narrowed = useMemo(() => narrowFrom(inputs), narrowingDependencies(inputs));
+  // THE SUMMARY ROW COMES OUT OF THE SAME CALL, from the snapshot and never
+  // from the narrowed rows: `membersViewOf` is executed by `members/list.test.ts`
+  // with a search that matches nobody, and the four figures still count everyone.
+  const { summary, narrowed } = useMemo(
+    () => membersViewOf(inputs),
+    narrowingDependencies(inputs),
+  );
 
   // THE CONTROLS ARE DEAD WHILE THERE IS NOTHING TO NARROW. A live filter over
   // an absent list renders `Sve razine: 0 osoba` beside a failure message, and
@@ -242,15 +286,20 @@ export function LjudiScreen() {
   }
 
   return (
-    <main className="flex min-w-0 flex-1 flex-col gap-4 p-6" aria-busy={loading}>
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-xl font-semibold leading-none tracking-tight">{t('nav.ljudi')}</h1>
+    <main
+      className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6"
+      aria-busy={loading}
+    >
+      <PageHeader>
+        <PageTitle asChild>
+          <h1>{t('nav.ljudi')}</h1>
+        </PageTitle>
         {/* THE WAY IN, and it is a LINK rather than a button that navigates:
             issuing an account is a screen, not an action performed here, so
             middle-click and "open in new tab" work the way they do everywhere
             else. `asChild` is what keeps the 44 px floor and the shared
             appearance on the anchor itself. */}
-        <div className="flex flex-wrap gap-2">
+        <PageActions>
           {/* STORY 1.7a: the teams screen, reached from here rather than from
               the navigation, so the destinations stay eight. */}
           <Button asChild variant="outline" className="h-11">
@@ -259,8 +308,25 @@ export function LjudiScreen() {
           <Button asChild className="h-11">
             <Link to="/ljudi/novi">{t('ljudi.form.add')}</Link>
           </Button>
+        </PageActions>
+      </PageHeader>
+      {summary === null ? null : (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {summary.map((stat) => (
+            <StatCard key={stat.label}>
+              <StatLabel>{t(stat.label)}</StatLabel>
+              {/* A FIGURE THAT CANNOT YET BE STATED is drawn pending, never
+                  as a guessed zero: `membersSummaryOf` answers `null` for the
+                  active and inactive counts while today is unknown. */}
+              {stat.value === null ? (
+                <div className="h-8 w-12 animate-pulse rounded-md bg-muted" />
+              ) : (
+                <StatValue>{formatNumber(stat.value, 0)}</StatValue>
+              )}
+            </StatCard>
+          ))}
         </div>
-      </div>
+      )}
       <div className="flex flex-wrap items-end gap-4">
         <div className="grid min-w-0 flex-1 gap-2">
           <Label htmlFor="ljudi-search">{t('ljudi.search')}</Label>
@@ -287,7 +353,7 @@ export function LjudiScreen() {
               looks different. */}
           <select
             id="ljudi-level"
-            className="flex h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
             value={level}
             onChange={changeLevel}
             disabled={unanswered}
@@ -307,101 +373,99 @@ export function LjudiScreen() {
           announces it on insertion, and both controls point at it by id so it is
           also reachable by moving between them. */}
       {refusal === null ? null : (
-        <p
-          id="ljudi-error"
-          role="alert"
-          className="rounded-md border border-input px-3 py-2 text-sm font-medium"
-        >
+        <Notice id="ljudi-error" role="alert">
           {t(membersMessageKey(refusal))}
-        </p>
+        </Notice>
       )}
       {unanswered && !loading ? null : (
-        <Table>
-          <TableCaption>{t('ljudi.caption')}</TableCaption>
-          <TableHeader>
-            <TableRow>
-              {MEMBER_COLUMNS.map((column) => {
-                // BOTH HALVES OF THE SORT SIGNAL COME FROM THE SAME MODULE, so
-                // they cannot disagree: `sortStateOf` is what a screen reader
-                // hears and `sortIndicatorOf` is what a sighted person sees, and
-                // an arrow pointing the wrong way beside a correct `aria-sort`
-                // is worse than no arrow at all. UX-DR37: colour is never the
-                // sole carrier of meaning, and neither is a screen reader.
-                const indicator = sortIndicatorOf(sort, column.key);
-                const Glyph = indicator === null ? null : SORT_GLYPHS[indicator];
-                const press = (): void => {
-                  pressColumn(column.key);
-                };
+        <Card className="min-w-0">
+          <Table>
+            <TableCaption>{t('ljudi.caption')}</TableCaption>
+            <TableHeader>
+              <TableRow>
+                {MEMBER_COLUMNS.map((column) => {
+                  // BOTH HALVES OF THE SORT SIGNAL COME FROM THE SAME MODULE, so
+                  // they cannot disagree: `sortStateOf` is what a screen reader
+                  // hears and `sortIndicatorOf` is what a sighted person sees, and
+                  // an arrow pointing the wrong way beside a correct `aria-sort`
+                  // is worse than no arrow at all. UX-DR37: colour is never the
+                  // sole carrier of meaning, and neither is a screen reader.
+                  const indicator = sortIndicatorOf(sort, column.key);
+                  const Glyph = indicator === null ? null : SORT_GLYPHS[indicator];
+                  const press = (): void => {
+                    pressColumn(column.key);
+                  };
 
-                return (
-                  <TableHead key={column.key} aria-sort={sortStateOf(sort, column.key)}>
-                    <Button
-                      variant="ghost"
-                      className="h-11 w-full justify-start gap-2 px-2"
-                      onClick={press}
-                      disabled={unanswered}
-                    >
-                      <span className="truncate">{t(column.label)}</span>
-                      {Glyph === null ? null : <Glyph aria-hidden className="size-4 shrink-0" />}
-                    </Button>
-                  </TableHead>
-                );
-              })}
-              {/* NO `aria-sort` HERE. The four above sort; this one holds a
-                  control, and `none` would announce it as a sortable column
-                  that happens not to be sorted — an affordance that does not
-                  exist. It carries a real heading rather than an empty cell,
-                  because a `<th>` with no text is announced as nothing. */}
-              <TableHead>{t('ljudi.form.actions')}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {/* TWO CONTAINERS rather than one ternary between them, and that is
-                a constraint of this repository rather than a style: the bare-JSX
-                sweep in `prijava.test.ts` reads every run between a `>` and the
-                next `<`, and the middle of a multi-line ternary is exactly such
-                a run with no braces in it. The skeleton and the rows are
-                mutually exclusive either way. */}
-            {loading
-              ? SKELETON_ROWS.map((row) => (
-                  <TableRow key={row}>
-                    {MEMBER_COLUMNS.map((column) => (
-                      <TableCell key={column.key}>
+                  return (
+                    <TableHead key={column.key} aria-sort={sortStateOf(sort, column.key)}>
+                      <Button
+                        variant="ghost"
+                        className="h-11 w-full justify-start gap-2 px-2"
+                        onClick={press}
+                        disabled={unanswered}
+                      >
+                        <span className="truncate">{t(column.label)}</span>
+                        {Glyph === null ? null : <Glyph aria-hidden className="size-4 shrink-0" />}
+                      </Button>
+                    </TableHead>
+                  );
+                })}
+                {/* NO `aria-sort` HERE. The four above sort; this one holds a
+                    control, and `none` would announce it as a sortable column
+                    that happens not to be sorted — an affordance that does not
+                    exist. It carries a real heading rather than an empty cell,
+                    because a `<th>` with no text is announced as nothing. */}
+                <TableHead>{t('ljudi.form.actions')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {/* TWO CONTAINERS rather than one ternary between them, and that is
+                  a constraint of this repository rather than a style: the bare-JSX
+                  sweep in `prijava.test.ts` reads every run between a `>` and the
+                  next `<`, and the middle of a multi-line ternary is exactly such
+                  a run with no braces in it. The skeleton and the rows are
+                  mutually exclusive either way. */}
+              {loading
+                ? SKELETON_ROWS.map((row) => (
+                    <TableRow key={row}>
+                      {MEMBER_COLUMNS.map((column) => (
+                        <TableCell key={column.key}>
+                          <div className="h-4 w-full animate-pulse rounded-md bg-muted" />
+                        </TableCell>
+                      ))}
+                      <TableCell>
                         <div className="h-4 w-full animate-pulse rounded-md bg-muted" />
                       </TableCell>
-                    ))}
-                    <TableCell>
-                      <div className="h-4 w-full animate-pulse rounded-md bg-muted" />
-                    </TableCell>
-                  </TableRow>
-                ))
-              : null}
-            {loading
-              ? null
-              : narrowed.rows.map((member) => (
-                  <TableRow key={member.id}>
-                    {MEMBER_COLUMNS.map((column) => (
-                      <TableCell key={column.key} className={cellClassNameOf(column)}>
-                        {cellContent(column.cell(member, today))}
+                    </TableRow>
+                  ))
+                : null}
+              {loading
+                ? null
+                : narrowed.rows.map((member) => (
+                    <TableRow key={member.id}>
+                      {MEMBER_COLUMNS.map((column) => (
+                        <TableCell key={column.key} className={cellClassNameOf(column)}>
+                          <CellView cell={column.cell(member, today)} />
+                        </TableCell>
+                      ))}
+                      <TableCell>
+                        {/* NAMED FOR THE MEMBER IT ACTS ON. Four hundred rows
+                            each announcing "Uredi osobu" is four hundred controls
+                            a screen-reader user cannot tell apart; the name is
+                            data, interpolated, and the label is the whole
+                            accessible name rather than an `aria-label` competing
+                            with visible text. */}
+                        <Button asChild variant="ghost" className="h-11">
+                          <Link to="/ljudi/$id" params={{ id: member.id }}>
+                            {t('ljudi.form.edit', { name: memberActionName(member) })}
+                          </Link>
+                        </Button>
                       </TableCell>
-                    ))}
-                    <TableCell>
-                      {/* NAMED FOR THE MEMBER IT ACTS ON. Four hundred rows
-                          each announcing "Uredi osobu" is four hundred controls
-                          a screen-reader user cannot tell apart; the name is
-                          data, interpolated, and the label is the whole
-                          accessible name rather than an `aria-label` competing
-                          with visible text. */}
-                      <Button asChild variant="ghost" className="h-11">
-                        <Link to="/ljudi/$id" params={{ id: member.id }}>
-                          {t('ljudi.form.edit', { name: memberActionName(member) })}
-                        </Link>
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-          </TableBody>
-        </Table>
+                    </TableRow>
+                  ))}
+            </TableBody>
+          </Table>
+        </Card>
       )}
       {/* STATED, AND STATED AT ZERO. A search matching nothing renders
           `Prikazano 0 osoba` rather than emptying the region: UX-DR20 states the

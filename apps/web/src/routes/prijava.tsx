@@ -1,10 +1,12 @@
 import { createRoute, redirect, useNavigate } from '@tanstack/react-router';
 import { useRef, useState, type FormEvent } from 'react';
 
+import { AuthLayout } from '@/components/auth-layout';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Notice } from '@/components/ui/notice';
 import { t } from '@/i18n';
 import { rootRoute } from '@/routes/__root';
 import { organizationDestination } from '@/supabase/address';
@@ -127,12 +129,16 @@ export function SignInScreen() {
   }
 
   return (
-    <main className="flex flex-1 items-center justify-center p-6">
+    <AuthLayout>
       <Card className="w-full max-w-sm">
         <CardHeader>
-          {/* An `<h1>`, not `CardTitle`: that primitive renders a `div`, and
-              this screen's name is the document's only heading. */}
-          <h1 className="text-xl font-semibold leading-none tracking-tight">{t('auth.heading')}</h1>
+          {/* An `<h1>` carrying `CardTitle`'s styling through `asChild`: the
+              primitive renders a `div` by default, and this screen's name is
+              the document's only heading. No type classes of its own — the
+              heading looks like every other card title. */}
+          <CardTitle asChild>
+            <h1>{t('auth.heading')}</h1>
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <form
@@ -195,13 +201,9 @@ export function SignInScreen() {
                 in the tab order passes through it, and the fields point at it
                 so it is also reachable by moving between them. */}
             {failure === null ? null : (
-              <p
-                id="sign-in-error"
-                role="alert"
-                className="rounded-md border border-input px-3 py-2 text-sm font-medium"
-              >
+              <Notice id="sign-in-error" role="alert">
                 {t(signInMessageKey(failure))}
-              </p>
+              </Notice>
             )}
             <Button className="h-11 w-full" type="submit" disabled={pending}>
               {t('auth.submit')}
@@ -218,7 +220,7 @@ export function SignInScreen() {
           </form>
         </CardContent>
       </Card>
-    </main>
+    </AuthLayout>
   );
 }
 

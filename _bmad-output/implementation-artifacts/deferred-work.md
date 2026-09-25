@@ -690,3 +690,11 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-1a-hour-band-rule.md`
   summary: `unique (organization_id, start_time)` on `hour_bands` is checked row by row, so swapping two bands' start times — or shifting every start by an hour — cannot be written as one statement or transaction even though the end state is a valid partition.
   evidence: Raised by 2.1a's review (blind hunter and edge-case hunter independently). The constraint is not `deferrable`, so an `update` that moves 07:00→19:00 while another band still holds 19:00 fails 23505 part-way through. Harmless while every write is a single-row PostgREST call, but 2.1b's editor is where an admin first tries to swap or shift bands: decide there whether the editor sequences through a temporary start, or the constraint becomes `deferrable initially deferred` (which also changes `on conflict` behaviour and needs its own test). The case-insensitive name index has the same shape for a name swap.
+
+- source_spec: none
+  summary: Visual refresh part B — restyle the content screens (members list and detail, new member, teams, team detail, roster, organization settings, Danas) in the shiftapp-v2 style: page headers, KPI-style summary cards, avatar-chip tables, pill badges.
+  evidence: Split from the visual-refresh intent at the user's choice ([S]). Part A (design system, tokens, fonts, shell, sign-in, shared ui primitives) ships first; part B builds on its tokens and primitives and is independently reviewable.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-visual-refresh-a-design-system-and-shell.md`
+  summary: When shift cells are first built, confirm the enlarged small radius (`radius-sm` 6px → 8px after `--radius` 0.625rem → 0.75rem) still reads as a grid rather than a field of pills at 390px with 30px cells.
+  evidence: DESIGN.md keeps "shift cells use the small radius so a dense grid reads as a grid", but no shift cell exists yet to judge it against; found by the visual-refresh A blind review.

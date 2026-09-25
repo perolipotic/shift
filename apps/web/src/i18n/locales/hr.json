@@ -13,6 +13,11 @@
       "heading": "Organizacija",
       "label": "Kratica organizacije",
       "submit": "Nastavi"
+    },
+    "brand": {
+      "name": "Shift",
+      "headline": "Raspored kojem možeš vjerovati.",
+      "subline": "Tko radi i kada, sati i godišnji odmor na jednom mjestu."
     }
   },
   "count": {
@@ -32,6 +37,12 @@
     "filterAll": "{count, plural, one {Sve razine: # osoba} few {Sve razine: # osobe} other {Sve razine: # osoba}}",
     "filterAdmin": "{count, plural, one {Administratori: # osoba} few {Administratori: # osobe} other {Administratori: # osoba}}",
     "filterMember": "{count, plural, one {Članovi: # osoba} few {Članovi: # osobe} other {Članovi: # osoba}}",
+    "stats": {
+      "total": "Ukupno osoba",
+      "admins": "Administratori",
+      "active": "Aktivne danas",
+      "inactive": "Neaktivne danas"
+    },
     "error": {
       "refused": "Popis osoba nije moguće prikazati. Odjavi se i prijavi ponovno.",
       "unavailable": "Popis osoba trenutačno nije moguće učitati. Pokušaj ponovno."
@@ -80,8 +91,9 @@
       }
     },
     "status": {
-      "inactive": "{name} · neaktivna osoba",
-      "inactiveScheduled": "{name} · bit će neaktivna od {date}",
+      "inactive": "Neaktivna osoba",
+      "inactiveScheduled": "Neaktivno od {date}",
+      "separator": ", ",
       "active": "Osoba je aktivna.",
       "inactiveFrom": "Osoba je neaktivna od {date}.",
       "scheduledInactive": "Osoba će biti neaktivna od {date}.",

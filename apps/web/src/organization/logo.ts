@@ -33,6 +33,7 @@
  * only at the edge — `@/organization/messages` is that edge.
  */
 
+import { leadingCharacterOf } from '@/components/initials';
 import {
   ORGANIZATION_SNAPSHOT_KEY,
   updateOrganization,
@@ -451,7 +452,7 @@ export async function replaceOrganizationLogo(
  * nothing at all. The caller substitutes a generic label.
  */
 export function organizationLogoMark(name: string): string | null {
-  const trimmed = name.normalize('NFC').trim();
-
-  return trimmed === '' ? null : ([...trimmed][0] ?? null);
+  // The rule lives in `@/components/initials` since visual refresh B, shared
+  // with the avatar chips so the two cannot disagree about a code point.
+  return leadingCharacterOf(name);
 }

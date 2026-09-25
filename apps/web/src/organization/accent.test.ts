@@ -239,6 +239,9 @@ describe('the tint reaches the lockup and the shell chrome, and nothing else', (
     // there is nowhere for a fourth to hide.
     const allowed = new Set([
       'bg-muted',
+      // The neutral mark's own letter colour (visual refresh A): the navy
+      // sidebar no longer lends it a legible one by inheritance.
+      'text-foreground',
       'border-input',
       'border-border',
       ...BRAND_ACCENT_KEYS.flatMap((key) => [
@@ -279,7 +282,7 @@ describe('the tint reaches the lockup and the shell chrome, and nothing else', (
     // each element already carried, and UX-DR5's "no accent renders the
     // untinted shell it has today" is a claim about bytes: collapsing the two
     // fields would have to pick one neutral and change the other, and `--input`
-    // measures 3.23:1 against the page where `--border` measures 1.26:1.
+    // measures 3.35:1 against the page where `--border` measures 1.18:1.
     for (const key of BRAND_ACCENT_KEYS) {
       const appearance = brandAccentAppearance(key);
 

@@ -3,9 +3,11 @@ import { Link, createRoute, redirect } from '@tanstack/react-router';
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Notice } from '@/components/ui/notice';
 import { t } from '@/i18n';
 import {
   MEMBERS_LIST_KEY,
@@ -731,7 +733,7 @@ export function LjudiMemberScreen() {
             name="role"
             defaultValue={member.role}
             aria-describedby={refusal === null ? undefined : 'member-form-error'}
-            className="flex h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
             {MEMBER_ROLES.map((option) => (
               <option key={option} value={option}>
@@ -886,9 +888,9 @@ export function LjudiMemberScreen() {
   function renderIssued(shown: ResetCredential): ReactNode {
     return (
       <div className="grid gap-4">
-        <p role="status" className="text-sm font-medium">
+        <Notice role="status">
           {t('ljudi.form.resetIssued')}
-        </p>
+        </Notice>
         <div className="grid gap-2">
           {/* ITS OWN LABEL, never the create form's `Početna lozinka`: this is
               not an initial credential and calling it one would be wrong on the
@@ -951,22 +953,18 @@ export function LjudiMemberScreen() {
           </p>
         )}
         {statusRefusal === null ? null : (
-          <p
-            id="member-status-error"
-            role="alert"
-            className="rounded-md border border-input px-3 py-2 text-sm font-medium"
-          >
+          <Notice id="member-status-error" role="alert">
             {memberWriteMessageKeys(statusRefusal)
               .map((key) => t(key))
               .join(MESSAGE_SEPARATOR)}
-          </p>
+          </Notice>
         )}
         {renderStatusDate(offer, idle)}
         {idle ? renderStatusOffer(member, offer) : renderStatusConfirmation()}
         {statusConfirmed ? (
-          <p role="status" className="text-sm font-medium">
+          <Notice role="status">
             {t('ljudi.status.saved')}
-          </p>
+          </Notice>
         ) : null}
       </div>
     );
@@ -1101,20 +1099,16 @@ export function LjudiMemberScreen() {
           </p>
         )}
         {teamsState.refusal === null ? null : (
-          <p role="alert" className="rounded-md border border-input px-3 py-2 text-sm font-medium">
+          <Notice role="alert">
             {t(teamsMessageKey(teamsState.refusal))}
-          </p>
+          </Notice>
         )}
         {teamRefusal === null ? null : (
-          <p
-            id="member-team-error"
-            role="alert"
-            className="rounded-md border border-input px-3 py-2 text-sm font-medium"
-          >
+          <Notice id="member-team-error" role="alert">
             {memberWriteMessageKeys(teamRefusal)
               .map((key) => t(key))
               .join(MESSAGE_SEPARATOR)}
-          </p>
+          </Notice>
         )}
         {/* AN ARMED OR PENDING CONFIRMATION OUTLIVES ITS OFFER: a refetch that
             empties the offer mid-write must not take the busy state with it. */}
@@ -1122,9 +1116,9 @@ export function LjudiMemberScreen() {
           ? renderTeamConfirmation(today)
           : renderTeamControls(member, teamOffer, idle, today)}
         {teamConfirmed ? (
-          <p role="status" className="text-sm font-medium">
+          <Notice role="status">
             {t('smjene.membership.saved')}
-          </p>
+          </Notice>
         ) : null}
       </div>
     );
@@ -1163,7 +1157,7 @@ export function LjudiMemberScreen() {
           defaultValue={teamPickerDefault(offered)}
           disabled={!idle}
           aria-describedby={teamRefusal === null ? undefined : 'member-team-error'}
-          className="flex h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         >
           {offered.choices.map((choice) => (
             <option key={choice.id} value={choice.id}>
@@ -1263,27 +1257,25 @@ export function LjudiMemberScreen() {
   }
 
   return (
-    <main className="flex flex-1 justify-center p-6">
-      <Card className="w-full max-w-lg">
-        <CardHeader>
-          <h1 className="text-xl font-semibold leading-none tracking-tight">
+    <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6">
+      <PageHeader>
+        <PageTitle asChild>
+          <h1>
             {t('ljudi.form.editHeading')}
           </h1>
-        </CardHeader>
+        </PageTitle>
+      </PageHeader>
+      <Card className="w-full min-w-0 max-w-lg">
         {/* OUTSIDE the gated branch: a read that produced no row renders no
             form, so an explanation rendered inside one would be exactly the
             element nobody can see. */}
         <CardContent className="grid gap-6">
           {refusal === null ? null : (
-            <p
-              id="member-form-error"
-              role="alert"
-              className="rounded-md border border-input px-3 py-2 text-sm font-medium"
-            >
+            <Notice id="member-form-error" role="alert">
               {memberWriteMessageKeys(refusal)
                 .map((key) => t(key))
                 .join(MESSAGE_SEPARATOR)}
-            </p>
+            </Notice>
           )}
           {/* THE ONLY THING THAT SAYS A SAVE LANDED. Every field is
               uncontrolled and remounts to the values it was just saved with, so
@@ -1293,9 +1285,9 @@ export function LjudiMemberScreen() {
               region belongs to the refusal, and a second one would be a second
               thing competing to be announced. */}
           {confirmed ? (
-            <p role="status" className="text-sm font-medium">
+            <Notice role="status">
               {t('ljudi.form.saved')}
-            </p>
+            </Notice>
           ) : null}
           {renderBody()}
           {/* OUTSIDE THE `<form>` AND BEFORE THE WAY BACK. Inside the actions

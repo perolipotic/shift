@@ -2,6 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, createRoute } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 
+import { Card, CardContent } from '@/components/ui/card';
+import { Notice } from '@/components/ui/notice';
+import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { t } from '@/i18n';
 import { appLayoutRoute } from '@/routes/_app';
 import { currentSession, supabaseClient } from '@/supabase/client';
@@ -65,18 +68,23 @@ export function DanasScreen() {
   }
 
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-4 p-6">
-      <h1 className="text-xl font-semibold leading-none tracking-tight">{t('nav.danas')}</h1>
-      {refusal === null ? null : (
-        <p role="alert" className="rounded-md border border-input px-3 py-2 text-sm font-medium">
-          {t(ownTeamMessageKey(refusal))}
-        </p>
-      )}
-      {line === null ? (
-        loading ? <div className="h-11 w-48 max-w-full animate-pulse rounded-md bg-muted" /> : null
-      ) : (
-        renderLine(line)
-      )}
+    <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6">
+      <PageHeader>
+        <PageTitle asChild>
+          <h1>{t('nav.danas')}</h1>
+        </PageTitle>
+      </PageHeader>
+      {/* ONE CARD, holding the refusal as the form screens hold theirs, then
+          the line or its skeleton while it loads. */}
+      <Card className="w-full min-w-0 max-w-lg">
+        <CardContent className="grid gap-4">
+          {refusal === null ? null : <Notice role="alert">{t(ownTeamMessageKey(refusal))}</Notice>}
+          {line === null ? null : renderLine(line)}
+          {line === null && loading ? (
+            <div className="h-11 w-48 max-w-full animate-pulse rounded-md bg-muted" />
+          ) : null}
+        </CardContent>
+      </Card>
     </main>
   );
 }
