@@ -1,0 +1,207 @@
+name: Deploy one environment
+description: >-
+  DEPLOY.md §5.2 / §5.2b, in order, against one hosted environment:
+  link, db push, migration list, config push, secrets set, functions deploy
+  admin-auth, then a build with that environment's VITE_* values and a
+  Cloudflare Pages Direct Upload. Runs after actions/checkout and ./setup, and
+  after the calling job has checked that every input is set
+  (scripts/ci/require-config.mjs, including the shape of the project ref and
+  the publishable key), so no remote command runs on a partial or malformed
+  configuration.
+
+inputs:
+  environment:
+    description: The GitHub Environment name (staging or production), for the summary.
+    required: true
+  pages-branch:
+    description: The Pages branch to deploy to (staging for the preview alias, main for production).
+    required: true
+  app-origins:
+    description: >-
+      Comma-separated bare origins the app is served from. The first is the
+      auth site URL; all are redirect URLs and admin-auth CORS origins.
+    required: true
+  supabase-project-ref:
+    required: true
+  supabase-access-token:
+    required: true
+  supabase-db-password:
+    required: true
+  supabase-publishable-key:
+    required: true
+  supabase-secret-key:
+    required: true
+  cloudflare-api-token:
+    required: true
+  cloudflare-account-id:
+    required: true
+  cloudflare-pages-project:
+    required: true
+
+outputs:
+  app-origin:
+    description: The first app origin, which the smoke targets and the Environment URL shows.
+    value: ${{ steps.origin.outputs.app-origin }}
+  origins:
+    description: The normalized comma-separated origin list.
+    value: ${{ steps.origin.outputs.origins }}
+  supabase-url:
+    description: The environment's Supabase project URL.
+    value: ${{ steps.origin.outputs.supabase-url }}
+
+runs:
+  using: composite
+  steps:
+    # The one parse of APP_ORIGINS (scripts/ci/origins.mjs, https only): its
+    # normalized list and first origin feed site_url, the redirect URLs,
+    # SHIFT_ALLOWED_ORIGINS, the Environment URL and the smoke. Nothing below
+    # re-parses the raw variable.
+    - name: Resolve origins
+      id: origin
+      shell: bash
+      env:
+        APP_ORIGINS: ${{ inputs.app-origins }}
+        PROJECT_REF: ${{ inputs.supabase-project-ref }}
+      run: |
+        node scripts/ci/origins.mjs "$APP_ORIGINS"
+        echo "supabase-url=https://$PROJECT_REF.supabase.co" >> "$GITHUB_OUTPUT"
+
+    # ------------------------------------------------------------- Supabase
+    # SUPABASE_ACCESS_TOKEN authenticates the CLI (DEPLOY.md §0) and
+    # SUPABASE_DB_PASSWORD is the database password `link`, `db push` and
+    # `migration list` read. Both reach the CLI through the environment only,
+    # never as an argument.
+    - name: supabase link
+      shell: bash
+      env:
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase-access-token }}
+        SUPABASE_DB_PASSWORD: ${{ inputs.supabase-db-password }}
+        PROJECT_REF: ${{ inputs.supabase-project-ref }}
+      run: pnpm exec supabase link --project-ref "$PROJECT_REF"
+
+    # FIRST: creates the access token hook's function before config push tells
+    # GoTrue to call it (§5.2b), and adds any column before the SPA that selects
+    # it is published (§5.2c). Migrations only: never --include-seed.
+    - name: supabase db push
+      shell: bash
+      env:
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase-access-token }}
+        SUPABASE_DB_PASSWORD: ${{ inputs.supabase-db-password }}
+      run: pnpm exec supabase db push --yes
+
+    - name: supabase migration list (local and remote must agree)
+      shell: bash
+      env:
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase-access-token }}
+        SUPABASE_DB_PASSWORD: ${{ inputs.supabase-db-password }}
+      run: |
+        # JSON, so nothing scrapes a table (scripts/ci/check-migrations.mjs);
+        # it fails on drift and on a listing in which it recognised no row.
+        pnpm exec supabase migration list --output-format json > "$RUNNER_TEMP/migrations.json"
+        node scripts/ci/check-migrations.mjs "$RUNNER_TEMP/migrations.json"
+
+    # site_url / additional_redirect_urls are the only per-environment values
+    # in config.toml. Rewritten in this runner's copy only; the committed file
+    # keeps its local values.
+    - name: Point [auth] URLs at this environment
+      shell: bash
+      env:
+        ORIGINS: ${{ steps.origin.outputs.origins }}
+      run: node scripts/ci/set-auth-urls.mjs "$ORIGINS"
+
+    # THEN: signup off, the hook on, this environment's URLs (§5.2a). A failure
+    # here leaves self-service signup open, so it stops the job.
+    - name: supabase config push
+      shell: bash
+      env:
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase-access-token }}
+        PROJECT_REF: ${{ inputs.supabase-project-ref }}
+      run: pnpm exec supabase config push --project-ref "$PROJECT_REF" --yes
+
+    # From a file, never as NAME=VALUE arguments (§3). The file is written from
+    # the environment by a heredoc, is readable by this user only, and is
+    # removed however the step ends.
+    - name: supabase secrets set (admin-auth)
+      shell: bash
+      env:
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase-access-token }}
+        PROJECT_REF: ${{ inputs.supabase-project-ref }}
+        FUNCTION_SECRET_KEY: ${{ inputs.supabase-secret-key }}
+        FUNCTION_PUBLISHABLE_KEY: ${{ inputs.supabase-publishable-key }}
+        ORIGINS: ${{ steps.origin.outputs.origins }}
+      run: |
+        env_file="$RUNNER_TEMP/admin-auth.env"
+        trap 'rm -f "$env_file"' EXIT
+        umask 077
+        cat > "$env_file" <<EOF
+        SHIFT_SECRET_KEY=${FUNCTION_SECRET_KEY}
+        SHIFT_PUBLISHABLE_KEY=${FUNCTION_PUBLISHABLE_KEY}
+        SHIFT_ALLOWED_ORIGINS=${ORIGINS}
+        EOF
+        pnpm exec supabase secrets set --env-file "$env_file" --project-ref "$PROJECT_REF"
+
+    - name: supabase functions deploy admin-auth
+      shell: bash
+      env:
+        SUPABASE_ACCESS_TOKEN: ${{ inputs.supabase-access-token }}
+        PROJECT_REF: ${{ inputs.supabase-project-ref }}
+      run: pnpm exec supabase functions deploy admin-auth --project-ref "$PROJECT_REF"
+
+    # ---------------------------------------------------------------- Pages
+    # Vite inlines VITE_* at build time, so each environment builds its own
+    # bundle; the Stage 2 artifact is never reused (spec, Design Notes). The
+    # `...` builds @shift/web and everything it depends on (DEPLOY.md §4).
+    - name: Build apps/web for ${{ inputs.environment }}
+      shell: bash
+      env:
+        VITE_SUPABASE_URL: ${{ steps.origin.outputs.supabase-url }}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${{ inputs.supabase-publishable-key }}
+      run: pnpm --filter "@shift/web..." build
+
+    # AD-17, on the bundle about to ship: this environment's secret key value,
+    # and any key-shaped value, must be absent.
+    - name: The bundle carries no secret
+      shell: bash
+      env:
+        FUNCTION_SECRET_KEY: ${{ inputs.supabase-secret-key }}
+      run: |
+        if grep -rqF -- "$FUNCTION_SECRET_KEY" apps/web/dist; then
+          echo "::error title=Secret in bundle::this environment's secret key is in apps/web/dist"
+          exit 1
+        fi
+        if grep -rqE 'sb_secret_[A-Za-z0-9_-]{20}' apps/web/dist; then
+          echo "::error title=Secret in bundle::a key-shaped sb_secret_ value is in apps/web/dist"
+          exit 1
+        fi
+
+    # Direct Upload: the Pages project has no Git connection (DEPLOY.md §4), so
+    # this is the only way anything is published, and it runs only after every
+    # gate before it passed.
+    - name: wrangler pages deploy
+      shell: bash
+      env:
+        CLOUDFLARE_API_TOKEN: ${{ inputs.cloudflare-api-token }}
+        CLOUDFLARE_ACCOUNT_ID: ${{ inputs.cloudflare-account-id }}
+        PAGES_PROJECT: ${{ inputs.cloudflare-pages-project }}
+        PAGES_BRANCH: ${{ inputs.pages-branch }}
+        WRANGLER_SEND_METRICS: 'false'
+      run: |
+        pnpm exec wrangler pages deploy apps/web/dist \
+          --project-name "$PAGES_PROJECT" \
+          --branch "$PAGES_BRANCH" \
+          --commit-hash "$GITHUB_SHA"
+
+    - name: Summary
+      shell: bash
+      env:
+        ENVIRONMENT: ${{ inputs.environment }}
+        APP_ORIGIN: ${{ steps.origin.outputs.app-origin }}
+        SUPABASE_URL: ${{ steps.origin.outputs.supabase-url }}
+      run: |
+        {
+          echo "### Deployed ${ENVIRONMENT}"
+          echo ""
+          echo "- app: ${APP_ORIGIN}"
+          echo "- Supabase: ${SUPABASE_URL}"
+          echo "- commit: ${GITHUB_SHA}"
+        } >> "$GITHUB_STEP_SUMMARY"

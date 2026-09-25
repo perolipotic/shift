@@ -1,0 +1,451 @@
+# The one pipeline (DEPLOY.md, "CI/CD").
+#
+#   Stage 1  quality   gitleaks over the full history, ESLint
+#   Stage 2  build     typecheck, build, upload apps/web/dist
+#            test      local Supabase, build, `pnpm test`, zero skipped
+#            e2e       local Supabase, the full Playwright E2E suite, then the
+#                      remote smoke against the same local servers
+#   main only, and only when vars.DEPLOY_ENABLED == 'true':
+#            deploy-staging → smoke-staging → deploy-production (approval) → smoke-production
+#            notify    on any failure on main
+#
+# Pull requests stop after `test` and `e2e`. Every third-party action is pinned
+# to a full commit SHA; the version is in the comment beside it.
+
+name: Pipeline
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Pull requests only: a newer push to a PR cancels that PR's run in progress.
+# Pushes to main get NO workflow-level group, deliberately. GitHub keeps at most
+# one running and one PENDING run per concurrency group and silently cancels an
+# older pending one, so a main-wide group would let a run parked at the
+# production approval hold back — and then drop — the CI of every push behind
+# it. Instead every push to main runs quality/build/test/e2e at once, and only
+# the deploy jobs queue, each in its own job-level group below (same
+# one-pending rule: while a deploy runs, only the NEWEST waiting deploy is
+# kept, which is the one worth shipping).
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('pipeline-pr-{0}', github.ref) || format('pipeline-run-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Supabase CLI and Wrangler: no prompts, no telemetry, no update nag.
+  SUPABASE_TELEMETRY_DISABLED: '1'
+  WRANGLER_SEND_METRICS: 'false'
+
+jobs:
+  # ----------------------------------------------------------------- Stage 1
+  quality:
+    name: Quality (gitleaks, lint)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # gitleaks scans every commit, not only the tip
+          persist-credentials: false
+
+      # The image is pinned by digest as well as by tag. `.gitleaks.toml`
+      # extends the default rules and allowlists only known fake values. Run as
+      # the runner's own user, so the mounted checkout is owned by the scanning
+      # user and git's safe.directory check never applies. The expected commit
+      # count is printed first; gitleaks logs "N commits scanned" at the end,
+      # and the two should agree.
+      - name: Gitleaks (full history)
+        run: |
+          echo "commits in history: $(git rev-list --all --count)"
+          docker run --rm --user "$(id -u):$(id -g)" -v "$GITHUB_WORKSPACE:/repo" \
+            zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
+            git /repo --config /repo/.gitleaks.toml --redact --no-banner --log-level info
+
+      - uses: ./.github/actions/setup
+
+      - name: ESLint
+        run: pnpm lint
+
+  # ----------------------------------------------------------------- Stage 2
+  build:
+    name: Build (typecheck, build)
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      # Built with no environment's VITE_* values, so it proves the build works
+      # and nothing more: every deploy job rebuilds with its own (spec, Design
+      # Notes). Never deployed.
+      - name: Upload apps/web/dist
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: web-dist
+          path: apps/web/dist
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Deploys are not configured
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED != 'true'
+        run: |
+          echo "::notice title=Deploys skipped::vars.DEPLOY_ENABLED is not 'true', so deploy-staging, smoke-staging, deploy-production and smoke-production are skipped."
+          {
+            echo "### Deploys skipped"
+            echo ""
+            echo "The repository variable \`DEPLOY_ENABLED\` is not \`true\`, so this run stops after \`test\` and \`e2e\`."
+            echo "To turn deploys on, configure what DEPLOY.md → *CI/CD* lists, then set \`DEPLOY_ENABLED=true\`:"
+            echo ""
+            echo "- environments \`staging\` and \`production\`, both restricted to the \`main\` branch, production with a required reviewer"
+            echo "- on EACH environment, secrets \`SUPABASE_ACCESS_TOKEN\`, \`SUPABASE_DB_PASSWORD\`, \`SUPABASE_SECRET_KEY\`, \`CLOUDFLARE_API_TOKEN\` and variables \`SUPABASE_PROJECT_REF\`, \`SUPABASE_PUBLISHABLE_KEY\`, \`APP_ORIGINS\`, \`CLOUDFLARE_ACCOUNT_ID\`, \`CLOUDFLARE_PAGES_PROJECT\`"
+            echo "- no deploy credential as a repository secret"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  test:
+    name: Test (Vitest, local Supabase)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      # The full stack: `test/rls-isolation.test.ts` needs the API and the
+      # secret key from `supabase status`, not only Postgres. Migrations and
+      # seed.sql are applied by start. A runner of its own, so the E2E job's
+      # organizations never meet this job's organization counts.
+      - name: Start local Supabase
+        run: pnpm exec supabase start
+
+      # The build-gated root tests read apps/web/dist and fail on a stale one.
+      - name: Build
+        run: pnpm build
+
+      # Arguments to `pnpm test` reach its last command, the root `vitest run`.
+      - name: pnpm test
+        run: pnpm test --reporter=default --reporter=json --outputFile.json="$RUNNER_TEMP/vitest-root.json"
+
+      - name: No root test was skipped
+        run: node scripts/ci/assert-no-skipped.mjs "$RUNNER_TEMP/vitest-root.json"
+
+  e2e:
+    name: E2E (Playwright, local Supabase)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      # Without the edge runtime: the function has to be served with
+      # supabase/functions/.env, which cannot exist until the stack's keys do.
+      # `supabase functions serve` below reads the file written after start.
+      - name: Start local Supabase (edge runtime left to functions serve)
+        run: pnpm exec supabase start -x edge-runtime
+
+      - name: Write apps/web/.env.local and supabase/functions/.env
+        run: node scripts/ci/write-local-env.mjs
+
+      - uses: ./.github/actions/playwright
+
+      # Started here rather than by Playwright's webServer, so the same two
+      # servers are up for the E2E suite (whose webServer entries reuse them)
+      # and for the smoke after it. Same host and port as playwright.config.ts:
+      # the function's CORS admits only http://127.0.0.1:5173.
+      - name: Serve admin-auth and the app
+        id: serve
+        run: |
+          nohup pnpm exec supabase functions serve admin-auth > "$RUNNER_TEMP/functions.log" 2>&1 &
+          nohup pnpm --filter @shift/web exec vite --host 127.0.0.1 --port 5173 --strictPort > "$RUNNER_TEMP/vite.log" 2>&1 &
+          # Up means any answer below 404: the function answers 401 without a
+          # JWT once served; before that the gateway answers 5xx.
+          wait_for() {
+            for _ in $(seq 1 120); do
+              code="$(curl -s -o /dev/null -w '%{http_code}' "$1" || true)"
+              case "$code" in 2??|3??|40[0-3]) echo "$2 is up (HTTP $code)"; return 0 ;; esac
+              sleep 1
+            done
+            echo "::error title=$2 did not start::no answer from $1 within 120 s"
+            return 1
+          }
+          wait_for http://127.0.0.1:5173/ vite
+          wait_for http://127.0.0.1:54321/functions/v1/admin-auth admin-auth
+
+      - name: pnpm test:e2e
+        run: pnpm test:e2e --reporter=github,html
+
+      # The smoke specs, exercised on every PR against the local stack: every
+      # anonymous check, plus sign-in with a seeded member. Never signs out.
+      - name: pnpm test:smoke (local stack)
+        if: ${{ !cancelled() && steps.serve.outcome == 'success' }}
+        env:
+          SMOKE_BASE_URL: http://127.0.0.1:5173
+          SMOKE_ORG: dvd-kastel-novi
+          SMOKE_USERNAME: ana.kovac
+          SMOKE_PASSWORD: local-fixture-password
+        run: pnpm test:smoke
+
+      - name: Server logs
+        if: failure()
+        run: |
+          echo "::group::vite"; cat "$RUNNER_TEMP/vite.log" || true; echo "::endgroup::"
+          echo "::group::functions serve"; cat "$RUNNER_TEMP/functions.log" || true; echo "::endgroup::"
+
+      - name: Upload the Playwright reports
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: e2e-report
+          path: |
+            playwright-report/
+            test-results/
+            playwright-report-smoke/
+            test-results-smoke/
+          retention-days: 14
+
+      - name: Stop the servers
+        if: always()
+        run: |
+          pkill -f 'vite --host 127.0.0.1 --port 5173' || true
+          pkill -f 'supabase functions serve admin-auth' || true
+
+  # ------------------------------------------------------- staging (main only)
+  deploy-staging:
+    name: Deploy staging
+    needs: [test, e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: staging
+      url: ${{ steps.deploy.outputs.app-origin }}
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
+    outputs:
+      app-origin: ${{ steps.deploy.outputs.app-origin }}
+      supabase-url: ${{ steps.deploy.outputs.supabase-url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check configuration
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          APP_ORIGINS: ${{ vars.APP_ORIGINS }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: >-
+          node scripts/ci/require-config.mjs --environment staging
+          secret:SUPABASE_ACCESS_TOKEN secret:CLOUDFLARE_API_TOKEN
+          var:CLOUDFLARE_ACCOUNT_ID var:CLOUDFLARE_PAGES_PROJECT
+          var:SUPABASE_PROJECT_REF:project-ref var:SUPABASE_PUBLISHABLE_KEY:publishable var:APP_ORIGINS
+          secret:SUPABASE_DB_PASSWORD secret:SUPABASE_SECRET_KEY:secret
+
+      - uses: ./.github/actions/setup
+
+      - name: Deploy
+        id: deploy
+        uses: ./.github/actions/deploy
+        with:
+          environment: staging
+          pages-branch: staging
+          app-origins: ${{ vars.APP_ORIGINS }}
+          supabase-project-ref: ${{ vars.SUPABASE_PROJECT_REF }}
+          supabase-access-token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          supabase-db-password: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          supabase-publishable-key: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          supabase-secret-key: ${{ secrets.SUPABASE_SECRET_KEY }}
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          cloudflare-account-id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          cloudflare-pages-project: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+
+  # The SPA, the Supabase environment it was built with, signup refused,
+  # admin-auth CORS, and — with the smoke account configured — a sign-in that
+  # never signs out. Writes nothing, except that an OPEN signup means the probe
+  # just created an account, which its failure message names (DEPLOY.md §8.3).
+  # The `staging` environment for the smoke account's secret; staging has no
+  # required reviewer, so this never waits.
+  smoke-staging:
+    name: Smoke staging
+    needs: deploy-staging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: staging
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      - uses: ./.github/actions/playwright
+
+      - name: pnpm test:smoke
+        env:
+          SMOKE_BASE_URL: ${{ needs.deploy-staging.outputs.app-origin }}
+          SMOKE_SUPABASE_URL: ${{ needs.deploy-staging.outputs.supabase-url }}
+          SMOKE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          SMOKE_ORG: ${{ vars.SMOKE_ORG }}
+          SMOKE_USERNAME: ${{ vars.SMOKE_USERNAME }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+        run: pnpm test:smoke
+
+      - name: Upload the smoke report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-staging-report
+          path: |
+            playwright-report-smoke/
+            test-results-smoke/
+          retention-days: 14
+
+  # ---------------------------------------------------- production (main only)
+  # Waits for a required reviewer on the `production` environment (DEPLOY.md,
+  # "CI/CD"). Starts only if staging deployed AND its smoke passed.
+  deploy-production:
+    name: Deploy production
+    needs: smoke-staging
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.app-origin }}
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    outputs:
+      app-origin: ${{ steps.deploy.outputs.app-origin }}
+      supabase-url: ${{ steps.deploy.outputs.supabase-url }}
+      # Public by design (it is inlined into every bundle), and handed on so
+      # the anonymous smoke needs no environment — and so no second approval.
+      publishable-key: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check configuration
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+          SUPABASE_PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          APP_ORIGINS: ${{ vars.APP_ORIGINS }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: >-
+          node scripts/ci/require-config.mjs --environment production
+          secret:SUPABASE_ACCESS_TOKEN secret:CLOUDFLARE_API_TOKEN
+          var:CLOUDFLARE_ACCOUNT_ID var:CLOUDFLARE_PAGES_PROJECT
+          var:SUPABASE_PROJECT_REF:project-ref var:SUPABASE_PUBLISHABLE_KEY:publishable var:APP_ORIGINS
+          secret:SUPABASE_DB_PASSWORD secret:SUPABASE_SECRET_KEY:secret
+
+      - uses: ./.github/actions/setup
+
+      - name: Deploy
+        id: deploy
+        uses: ./.github/actions/deploy
+        with:
+          environment: production
+          pages-branch: main
+          app-origins: ${{ vars.APP_ORIGINS }}
+          supabase-project-ref: ${{ vars.SUPABASE_PROJECT_REF }}
+          supabase-access-token: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          supabase-db-password: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          supabase-publishable-key: ${{ vars.SUPABASE_PUBLISHABLE_KEY }}
+          supabase-secret-key: ${{ secrets.SUPABASE_SECRET_KEY }}
+          cloudflare-api-token: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          cloudflare-account-id: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          cloudflare-pages-project: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+
+  # Anonymous: production has no smoke account, so nothing here signs in.
+  smoke-production:
+    name: Smoke production
+    needs: deploy-production
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/setup
+
+      - uses: ./.github/actions/playwright
+
+      - name: pnpm test:smoke
+        env:
+          SMOKE_BASE_URL: ${{ needs.deploy-production.outputs.app-origin }}
+          SMOKE_SUPABASE_URL: ${{ needs.deploy-production.outputs.supabase-url }}
+          SMOKE_PUBLISHABLE_KEY: ${{ needs.deploy-production.outputs.publishable-key }}
+        run: pnpm test:smoke
+
+      - name: Upload the smoke report
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: smoke-production-report
+          path: |
+            playwright-report-smoke/
+            test-results-smoke/
+          retention-days: 14
+
+  # ------------------------------------------------------------------ notify
+  notify:
+    name: Notify
+    needs: [quality, build, test, e2e, deploy-staging, smoke-staging, deploy-production, smoke-production]
+    if: (failure() || cancelled()) && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      NEEDS: ${{ toJSON(needs) }}
+    steps:
+      - name: Summary
+        run: |
+          list() { jq -r --arg result "$1" 'to_entries | map(select(.value.result == $result) | .key) | join(", ")' <<< "$NEEDS"; }
+          failed="$(list failure)"
+          cancelled="$(list cancelled)"
+          outcome="failed: ${failed:-none}; cancelled: ${cancelled:-none}"
+          if [ -z "$failed" ] && [ -z "$cancelled" ]; then outcome="unknown"; fi
+          echo "outcome=${outcome}" >> "$GITHUB_ENV"
+          echo "::error title=Pipeline did not finish on main::${outcome}"
+          echo "**Pipeline did not finish on \`main\`** at \`${GITHUB_SHA::7}\` — ${outcome}. [Run](${RUN_URL})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Slack
+        if: env.SLACK_WEBHOOK_URL != ''
+        run: |
+          jq -n --arg text ":x: shift pipeline did not finish on main at ${GITHUB_SHA::7} (${outcome}): ${RUN_URL}" '{text: $text}' \
+            | curl -fsS -X POST -H 'content-type: application/json' --data @- "$SLACK_WEBHOOK_URL"

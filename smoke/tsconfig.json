@@ -1,0 +1,16 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // `dom` for the same reason as `e2e/tsconfig.json`: Playwright's page types.
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "types": ["node"],
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    // The smoke reuses `e2e/support/*.ts` by its `.ts` path, as the E2E files do.
+    "allowImportingTsExtensions": true
+  },
+  "//": "The remote smoke's project (`playwright.smoke.config.ts`), run by the root `typecheck` script.",
+  "include": ["**/*.ts", "../playwright.smoke.config.ts"]
+}

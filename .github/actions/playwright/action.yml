@@ -1,0 +1,30 @@
+name: Playwright Chromium
+description: >-
+  Chromium for Playwright, with ~/.cache/ms-playwright cached under the
+  installed @playwright/test version. Runs after ./setup. The system libraries
+  are installed every time (they are apt packages, not in the cache); on a cache
+  hit only the browser download is skipped.
+
+runs:
+  using: composite
+  steps:
+    - name: Playwright version
+      id: version
+      shell: bash
+      run: |
+        version="$(pnpm exec playwright --version | awk '{print $2}')"
+        if [ -z "$version" ]; then
+          echo "::error title=Playwright::could not read the installed Playwright version"
+          exit 1
+        fi
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+    - name: Cache browsers
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.version.outputs.version }}-chromium
+
+    - name: Install Chromium
+      shell: bash
+      run: pnpm exec playwright install --with-deps chromium
