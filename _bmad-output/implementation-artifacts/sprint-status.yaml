@@ -328,8 +328,19 @@ development_status:
   1-8-a-member-sees-who-is-on-a-team: done
   epic-1-retrospective: optional
 
-  epic-2: backlog
-  2-1-an-admin-defines-the-day-s-hour-bands-so-a-gap-cannot-be-exp: backlog
+  epic-2: in-progress
+  # Story 2.1 was split once at step-02's token gate (human decision
+  # 2026-09-25). Same convention as 1.1, 1.3, 1.4, 1.5 and 1.7: the parent key
+  # below stays in-progress until every part lands; the parts carry their own
+  # status, are not derived from epics.md, and a regenerate reports them as
+  # orphans — reconcile with --set rather than dropping them.
+  # 2.1a is the band rule and its storage — `hour_bands`, RLS, the pure
+  # `domain/bands` derivation and both seeded fixtures (epics.md acceptance
+  # clauses 1's shape, 3 and 4). 2.1b is the Hour Band editor and its 24-hour
+  # partition bar, which waits in deferred-work.md and earns its key when
+  # specced — so the parent completes with 2.1b, not with 2.1a.
+  2-1-an-admin-defines-the-day-s-hour-bands-so-a-gap-cannot-be-exp: in-progress
+  2-1a-hour-band-rule: review
   2-2-an-admin-defines-shift-types-including-one-that-crosses-midn: backlog
   2-3-an-admin-builds-the-rotation-and-sees-the-cycle-before-savin: backlog
   2-4-rotation-configuration-completes-on-a-phone: backlog

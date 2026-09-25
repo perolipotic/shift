@@ -23,6 +23,7 @@ import {
   TEAM_HISTORY_ANSWERS,
   TEAM_HISTORY_SPAN,
 } from '../apps/web/src/members/team-history.fixture.ts';
+import { PILOT_HOUR_BANDS, UJ5_HOUR_BANDS } from '../packages/domain/test/fixtures.ts';
 
 /**
  * Q1 and Q2, executed rather than read — and the regression suite every later
@@ -221,10 +222,12 @@ const CROSS_TENANT = FIXTURES.flatMap((self) =>
 );
 
 /** Both fixtures against every organization-scoped table a session reads:
- *  `organizations`, `members`, since story 1.7a `teams`, and since story 1.7b
- *  `team_membership_versions`. */
+ *  `organizations`, `members`, since story 1.7a `teams`, since story 1.7b
+ *  `team_membership_versions`, and since story 2.1a `hour_bands`. */
 const OWN_ORGANIZATION_READS = FIXTURES.flatMap((entry) =>
-  (['organizations', 'members', 'teams', 'team_membership_versions'] as const).map((table) => ({
+  (
+    ['organizations', 'members', 'teams', 'team_membership_versions', 'hour_bands'] as const
+  ).map((table) => ({
     ...entry,
     table,
   })),
@@ -821,6 +824,9 @@ afterAll(async () => {
       'delete from team_membership_versions where team_id in (select id from teams where name like $1)',
       [`${THROWAWAY}%`],
     );
+    // STORY 2.1a. The REST band cases delete their own rows in `finally`; this
+    // is the backstop for a run that died between the two.
+    await client.query('delete from hour_bands where name like $1', [`${THROWAWAY}%`]);
     // STORY 1.7a. Teams are never deleted through the product, but the owner
     // may; scoped to the names this file issues, like every cleanup here.
     await client.query('delete from teams where name like $1', [`${THROWAWAY}%`]);
@@ -890,8 +896,8 @@ describe('the access-control layer is present, so nothing below passes vacuously
     ).toBe(FIXTURES.length * (FIXTURES.length - 1));
     expect(
       OWN_ORGANIZATION_READS.length,
-      'OWN_ORGANIZATION_READS must cover all four readable tables per fixture (teams since 1.7a, team membership since 1.7b)',
-    ).toBe(FIXTURES.length * 4);
+      'OWN_ORGANIZATION_READS must cover all five readable tables per fixture (teams since 1.7a, team membership since 1.7b, hour bands since 2.1a)',
+    ).toBe(FIXTURES.length * 5);
   });
 
   it.skipIf(noDatabase)('reaches the API whenever it can reach the database', () => {
@@ -970,8 +976,14 @@ describe('the access-control layer is present, so nothing below passes vacuously
       );
       expect(
         policies.map((row) => row.policyname),
-        'stories 1.3a, 1.4a, 1.6, 1.7a and 1.7b own exactly these fifteen policies; a missing one refuses silently and looks like a working refusal',
+        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b and 2.1a own exactly these nineteen policies; a missing one refuses silently and looks like a working refusal',
       ).toEqual([
+        // STORY 2.1a: read, and all three writes for an active admin. Bands are
+        // current-state and any of them may be deleted, the last one included.
+        'hour_bands_delete_by_own_active_admin',
+        'hour_bands_insert_by_own_active_admin',
+        'hour_bands_select_own_organization',
+        'hour_bands_update_by_own_active_admin',
         // STORY 1.6: select, insert, and a delete that reaches only a version
         // not yet in effect — and never update: a status version is appended,
         // and cancelled only before it has decided any day.
@@ -6410,6 +6422,88 @@ describe('a deactivated member loses access on the very next statement', () => {
   );
 
   it.skipIf(noDatabase).each(FIXTURES)(
+    'reads no band, and changes, deletes or creates none, after the $fixture admin is deactivated',
+    async ({ slug, admin }) => {
+      // STORY 2.1a. Column-free writes and an insert without RETURNING, for the
+      // reason the teams case above gives: only that shape reaches the write
+      // policies' own `is_active` rather than the select policy's.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const bandsVisible = async (): Promise<number> => {
+          const total = (
+            await client.query<{ total: number }>('select count(*)::int as total from hour_bands')
+          ).rows[0]?.total;
+          if (total === undefined) throw new Error('the hour band count returned no row');
+          return total;
+        };
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const before = await bandsVisible();
+        await actAsOwner(client);
+        expect(before, 'an active admin read no seeded bands').toBe(seededBandsOf(slug).length);
+
+        await ownerVersion(client, {
+          organization: caller.organizationId,
+          member: caller.id,
+          active: false,
+          from: await organizationDay(client, caller.organizationId),
+          by: caller.authUserId,
+        });
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const after = await bandsVisible();
+        const renamed = await client.query(`update hour_bands set name = '${THROWAWAY} renamed'`);
+        const deleted = await client.query('delete from hour_bands');
+        const insertRefusal = await refusedThenContinue(client, () =>
+          client.query(
+            "insert into hour_bands (organization_id, name, start_time) values ($1, $2, '03:17')",
+            [caller.organizationId, `${THROWAWAY} after deactivation`],
+          ),
+        );
+        await actAsOwner(client);
+
+        expect(after, 'a deactivated admin kept reading bands').toBe(0);
+        expect(renamed.rowCount, 'a deactivated admin kept renaming bands').toBe(0);
+        expect(deleted.rowCount, 'a deactivated admin kept deleting bands').toBe(0);
+        expect(insertRefusal.code, 'a deactivated admin kept creating bands').toBe('42501');
+        expect(await visibleHourBands(client, caller.organizationId)).toEqual(seededBandsOf(slug));
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'reads no band after a $fixture member-role reader is deactivated',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const reader = await memberByUsername(client, slug, member);
+        const count = 'select count(*)::int as total from hour_bands';
+
+        await actAs(client, reader.authUserId, reader.organizationId);
+        const before = (await client.query<{ total: number }>(count)).rows[0]?.total;
+        await actAsOwner(client);
+        expect(before, 'an active member-role reader read no seeded bands').toBe(
+          seededBandsOf(slug).length,
+        );
+
+        await ownerVersion(client, {
+          organization: reader.organizationId,
+          member: reader.id,
+          active: false,
+          from: await organizationDay(client, reader.organizationId),
+          by: owner.authUserId,
+        });
+
+        await actAs(client, reader.authUserId, reader.organizationId);
+        const after = (await client.query<{ total: number }>(count)).rows[0]?.total;
+        await actAsOwner(client);
+
+        expect(after, 'a deactivated member-role reader kept reading bands').toBe(0);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
     'treats a $fixture deactivation from tomorrow, and one already reversed, as active',
     async ({ slug, admin }) => {
       // The negative control for the three above: a helper that read "any
@@ -9108,4 +9202,505 @@ describe('a member sees who is on a team, and nothing more about a colleague', (
     },
     20_000,
   );
+});
+
+// ------------------------------------------------------------ story 2.1a: bands
+
+/**
+ * STORY 2.1a. An organization's hour bands are a name and a start time, and
+ * `0012_hour_bands.sql` is the whole enforcement: two checks, two uniques,
+ * four policies and the column grants. The window, duration and midnight flag
+ * are `packages/domain`'s, and are asserted there.
+ *
+ * Every SQL case below runs in a rolled-back transaction. The REST cases
+ * commit, at start times neither fixture seeds (none on 05, 07, 13, 19 or 21),
+ * under the throwaway prefix, and delete their own rows in `finally`;
+ * `afterAll` is the backstop.
+ */
+interface HourBandRow {
+  readonly organizationId: string;
+  readonly id: string;
+  readonly name: string;
+  readonly startTime: string;
+}
+
+/** A domain start minute as PostgreSQL prints a `time`: `HH:MM:SS`. */
+function asTime(startMinute: number): string {
+  const hours = String(Math.floor(startMinute / 60)).padStart(2, '0');
+  const minutes = String(startMinute % 60).padStart(2, '0');
+  return `${hours}:${minutes}:00`;
+}
+
+/**
+ * What `supabase/seed.sql` gives each fixture, in start order (Q10).
+ *
+ * DERIVED FROM THE DOMAIN FIXTURES, not written out a second time: the arrays
+ * `packages/domain` asserts its band rule against are the one source of truth,
+ * and every case below that reads the seed compares it with them. A seed that
+ * drifts from the domain's fixtures — or the other way round — fails here.
+ */
+const SEEDED_HOUR_BANDS: Readonly<Record<string, readonly { name: string; startTime: string }[]>> =
+  Object.fromEntries(
+    (
+      [
+        ['dvd-kastel-novi', PILOT_HOUR_BANDS],
+        ['zastita-split', UJ5_HOUR_BANDS],
+      ] as const
+    ).map(([slug, bands]) => [
+      slug,
+      [...bands]
+        .sort((a, b) => a.startMinute - b.startMinute)
+        .map((band) => ({ name: band.name, startTime: asTime(band.startMinute) })),
+    ]),
+  );
+
+function seededBandsOf(slug: string): readonly { name: string; startTime: string }[] {
+  const seeded = SEEDED_HOUR_BANDS[slug];
+  if (seeded === undefined) throw new Error(`no seeded hour bands are recorded for ${slug}`);
+  return seeded;
+}
+
+/** One band re-read as the owner, so RLS hides nothing. */
+async function hourBandById(client: Client, id: string): Promise<HourBandRow | undefined> {
+  const { rows } = await client.query<HourBandRow>(
+    `select organization_id as "organizationId", id, name, start_time::text as "startTime"
+       from hour_bands where id = $1`,
+    [id],
+  );
+  return rows[0];
+}
+
+/** The bands the current session can see in one organization, in start order. */
+async function visibleHourBands(
+  client: Client,
+  organization: string,
+): Promise<readonly { name: string; startTime: string }[]> {
+  const { rows } = await client.query<{ name: string; startTime: string }>(
+    `select name, start_time::text as "startTime"
+       from hour_bands where organization_id = $1 order by start_time`,
+    [organization],
+  );
+  return rows;
+}
+
+/** Insert one band as the current session, returning its id. */
+async function insertHourBand(
+  client: Client,
+  organization: string,
+  name: string,
+  startTime: string,
+): Promise<string> {
+  const { rows } = await client.query<{ id: string }>(
+    'insert into hour_bands (organization_id, name, start_time) values ($1, $2, $3) returning id',
+    [organization, name, startTime],
+  );
+  const band = rows[0];
+  if (band === undefined) throw new Error('hour_bands insert returned no row');
+  return band.id;
+}
+
+describe('each organization holds exactly its own seeded hour bands', () => {
+  it('converts a domain start minute to the time PostgreSQL prints', () => {
+    // The conversion every seeded-band comparison goes through; a wrong one
+    // would compare both sides through the same mistake.
+    expect([0, 7 * 60, 19 * 60 + 5, 1439].map(asTime)).toEqual([
+      '00:00:00',
+      '07:00:00',
+      '19:05:00',
+      '23:59:00',
+    ]);
+  });
+
+  it('records the bands both fixtures are seeded with', () => {
+    // A guard on the table below: with a fixture missing from it, the cases
+    // that read it would throw rather than assert, and with an entry for a
+    // fixture that is not in FIXTURES they would never read it at all.
+    expect(Object.keys(SEEDED_HOUR_BANDS).sort()).toEqual(FIXTURES.map((f) => f.slug).sort());
+  });
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'shows the $fixture admin and member-role session exactly its own seeded bands',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const own = await organizationId(client, slug);
+
+        for (const username of [admin, member]) {
+          const caller = await memberByUsername(client, slug, username);
+          await actAs(client, caller.authUserId, caller.organizationId);
+          const { rows } = await client.query<{ organizationId: string; name: string; startTime: string }>(
+            `select organization_id as "organizationId", name, start_time::text as "startTime"
+               from hour_bands order by start_time`,
+          );
+          await actAsOwner(client);
+
+          expect(
+            rows,
+            `${slug}/${username} does not read exactly its own seeded bands`,
+          ).toEqual(seededBandsOf(slug).map((band) => ({ organizationId: own, ...band })));
+        }
+      });
+    },
+  );
+});
+
+describe('an admin creates, renames, moves and deletes hour bands, and any count is just a count', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'lets the $fixture admin add, rename, move and delete a band, down to zero bands',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const own = caller.organizationId;
+
+        const id = await insertHourBand(client, own, `${THROWAWAY} band`, '03:17');
+        expect(await visibleHourBands(client, own)).toHaveLength(seededBandsOf(slug).length + 1);
+
+        const renamed = await client.query('update hour_bands set name = $1 where id = $2', [
+          `${THROWAWAY} renamed`,
+          id,
+        ]);
+        const moved = await client.query("update hour_bands set start_time = '03:41' where id = $1", [
+          id,
+        ]);
+        expect(renamed.rowCount, 'the rename reached no row').toBe(1);
+        expect(moved.rowCount, 'the move reached no row').toBe(1);
+
+        // Zero bands is a valid stored state: every band, the last included,
+        // may go. The domain derives one uncovered segment from it.
+        const deleted = await client.query('delete from hour_bands where organization_id = $1', [own]);
+        expect(deleted.rowCount).toBe(seededBandsOf(slug).length + 1);
+        expect(await visibleHourBands(client, own)).toEqual([]);
+        await actAsOwner(client);
+
+        expect(await hourBandById(client, id), 'a deleted band is still there').toBeUndefined();
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a second $fixture band at a start that is already taken, and writes nothing',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const taken = seededBandsOf(slug)[0]?.startTime;
+        if (taken === undefined) throw new Error(`${slug} records no seeded band to collide with`);
+
+        const refusal = await refusedThenContinue(client, () =>
+          insertHourBand(client, caller.organizationId, `${THROWAWAY} twin`, taken),
+        );
+        const { rows } = await client.query<{ id: string }>(
+          'select id from hour_bands where organization_id = $1 order by start_time limit 1',
+          [caller.organizationId],
+        );
+        const first = rows[0]?.id;
+        if (first === undefined) throw new Error(`${slug} admin reads no hour band to keep in place`);
+        const moveRefusal = await refusedThenContinue(client, () =>
+          client.query('update hour_bands set start_time = $1 where organization_id = $2 and id <> $3', [
+            taken,
+            caller.organizationId,
+            first,
+          ]),
+        );
+
+        expect(refusal.code, 'a duplicate start is a unique violation').toBe('23505');
+        expect(moveRefusal.code, 'moving onto a taken start is a unique violation').toBe('23505');
+        expect(await visibleHourBands(client, caller.organizationId)).toEqual(seededBandsOf(slug));
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture band at 24:00 or at a start with seconds',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        for (const start of ['24:00', '07:00:30', '03:17:00.5']) {
+          const refusal = await refusedThenContinue(client, () =>
+            insertHourBand(client, caller.organizationId, `${THROWAWAY} ${start}`, start),
+          );
+          expect(refusal.code, `${start} is not a check violation`).toBe('23514');
+        }
+        expect(await visibleHourBands(client, caller.organizationId)).toEqual(seededBandsOf(slug));
+
+        // The edges that ARE admitted, so the checks are not simply refusing
+        // everything near midnight.
+        await insertHourBand(client, caller.organizationId, `${THROWAWAY} midnight`, '00:00');
+        await insertHourBand(client, caller.organizationId, `${THROWAWAY} last`, '23:59');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture band name another band carries in any case and padding, or a blank one',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        // Both fixtures seed a band named `Noć`.
+        const duplicate = await refusedThenContinue(client, () =>
+          insertHourBand(client, caller.organizationId, ' noć ', '03:17'),
+        );
+        const blank = await refusedThenContinue(client, () =>
+          insertHourBand(client, caller.organizationId, '  ', '03:17'),
+        );
+
+        expect(duplicate.code, 'a duplicate name is a unique violation').toBe('23505');
+        expect(blank.code, 'a blank name is a check violation').toBe('23514');
+        expect(await visibleHourBands(client, caller.organizationId)).toEqual(seededBandsOf(slug));
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture admin naming a band column the grant does not admit',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const forgedAt = await refusedThenContinue(client, () =>
+          client.query(
+            "insert into hour_bands (organization_id, name, start_time, created_at) values ($1, $2, '03:17', now())",
+            [caller.organizationId, `${THROWAWAY} forged`],
+          ),
+        );
+        const forgedId = await refusedThenContinue(client, () =>
+          client.query('update hour_bands set id = gen_random_uuid() where organization_id = $1', [
+            caller.organizationId,
+          ]),
+        );
+
+        expect(forgedAt.code, 'created_at is not a column a session may name').toBe('42501');
+        expect(forgedId.code, 'id is not a column a session may update').toBe('42501');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture member-role session creating, changing or deleting a band',
+    async ({ slug, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, member);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const insertRefusal = await refusedThenContinue(client, () =>
+          insertHourBand(client, caller.organizationId, `${THROWAWAY} member made`, '03:17'),
+        );
+        const renamed = await client.query('update hour_bands set name = name || $1', ['!']);
+        const moved = await client.query(
+          "update hour_bands set start_time = start_time + interval '1 minute'",
+        );
+        const deleted = await client.query('delete from hour_bands');
+        await actAsOwner(client);
+
+        expect(insertRefusal.code, 'a member-role insert is refused by WITH CHECK').toBe('42501');
+        expect(renamed.rowCount, `a ${slug} member renamed a band`).toBe(0);
+        expect(moved.rowCount, `a ${slug} member moved a band`).toBe(0);
+        expect(deleted.rowCount, `a ${slug} member deleted a band`).toBe(0);
+        expect(await visibleHourBands(client, caller.organizationId)).toEqual(seededBandsOf(slug));
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'keeps $otherFixture hour bands out of reach of the $fixture admin',
+    async ({ slug, admin, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const other = await organizationId(client, otherSlug);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const read = await client.query('select id from hour_bands where organization_id = $1', [
+          other,
+        ]);
+        const renamed = await client.query(
+          'update hour_bands set name = name || $1 where organization_id = $2',
+          [' hijacked', other],
+        );
+        const deleted = await client.query('delete from hour_bands where organization_id = $1', [
+          other,
+        ]);
+        const insertRefusal = await refusedThenContinue(client, () =>
+          insertHourBand(client, other, `${THROWAWAY} planted`, '03:17'),
+        );
+        const own = await insertHourBand(client, caller.organizationId, `${THROWAWAY} own`, '03:17');
+        const movedAway = await refusedThenContinue(client, () =>
+          client.query('update hour_bands set organization_id = $1 where id = $2', [other, own]),
+        );
+        await actAsOwner(client);
+
+        expect(read.rowCount, `a ${slug} admin read ${otherSlug} bands`).toBe(0);
+        expect(renamed.rowCount, `a ${slug} admin renamed a ${otherSlug} band`).toBe(0);
+        expect(deleted.rowCount, `a ${slug} admin deleted a ${otherSlug} band`).toBe(0);
+        expect(insertRefusal.code).toBe('42501');
+        expect(movedAway.code, 'organization_id is not a column a session may update').toBe('42501');
+        expect(await visibleHourBands(client, other)).toEqual(seededBandsOf(otherSlug));
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('refuses an anonymous session every verb on hour bands', async () => {
+    await inRolledBackTransaction(async (client) => {
+      const own = await organizationId(client, FIXTURES[0].slug);
+      await client.query('set local role anon');
+
+      const verbs = [
+        () => client.query('select id from hour_bands'),
+        () => insertHourBand(client, own, `${THROWAWAY} anonymous`, '03:17'),
+        () => client.query("update hour_bands set name = 'x'"),
+        () => client.query('delete from hour_bands'),
+      ];
+      for (const verb of verbs) {
+        const refusal = await refusedThenContinue(client, verb);
+        expect(refusal.code, 'anon holds a privilege on hour_bands').toBe('42501');
+      }
+    });
+  });
+});
+
+describe('a direct API call writes hour bands under exactly the same rules', () => {
+  it.skipIf(noApi).each(FIXTURES)(
+    'lets the $fixture admin create, rename, move and delete a band over PostgREST',
+    async ({ slug, admin }) => {
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      let id: string | undefined;
+      try {
+        const own = await organizationId(client, slug);
+        const name = `${THROWAWAY} rest ${crypto.randomUUID()}`;
+        const created = await rest('hour_bands?select=id', {
+          token,
+          method: 'POST',
+          body: { organization_id: own, name, start_time: '03:17' },
+          prefer: 'return=representation',
+        });
+        expect(created.status, 'a permitted insert answers 201').toBe(201);
+        const [row] = (await created.json()) as readonly { id: string }[];
+        id = row?.id;
+        if (id === undefined) throw new Error('a permitted band insert returned no row');
+
+        const changed = await rest(`hour_bands?id=eq.${id}&select=id`, {
+          token,
+          method: 'PATCH',
+          body: { name: `${name} renamed`, start_time: '03:41' },
+          prefer: 'return=representation',
+        });
+        expect(await changed.json(), 'the update reached no row').toEqual([{ id }]);
+        expect(await hourBandById(client, id)).toEqual({
+          organizationId: own,
+          id,
+          name: `${name} renamed`,
+          startTime: '03:41:00',
+        });
+
+        const duplicate = await rest('hour_bands', {
+          token,
+          method: 'POST',
+          body: { organization_id: own, name: `${name} twin`, start_time: '03:41' },
+        });
+        expect(duplicate.ok, 'a second band at a taken start was admitted').toBe(false);
+        expect((await restRefusal(duplicate)).code).toBe('23505');
+
+        const deleted = await rest(`hour_bands?id=eq.${id}&select=id`, {
+          token,
+          method: 'DELETE',
+          prefer: 'return=representation',
+        });
+        expect(await deleted.json(), 'the delete reached no row').toEqual([{ id }]);
+        expect(await hourBandById(client, id)).toBeUndefined();
+      } finally {
+        if (id !== undefined) await client.query('delete from hour_bands where id = $1', [id]);
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses a $fixture member-role token creating, changing or deleting a band over PostgREST',
+    async ({ slug, member }) => {
+      const token = await tokenFor(member, slug);
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+
+        const created = await rest('hour_bands', {
+          token,
+          method: 'POST',
+          body: { organization_id: own, name: `${THROWAWAY} by a member`, start_time: '10:11' },
+        });
+        const refusal = await restRefusal(created);
+        const changed = await rest(`hour_bands?organization_id=eq.${own}&select=id`, {
+          token,
+          method: 'PATCH',
+          body: { start_time: '10:11' },
+          prefer: 'return=representation',
+        });
+        const deleted = await rest(`hour_bands?organization_id=eq.${own}&select=id`, {
+          token,
+          method: 'DELETE',
+          prefer: 'return=representation',
+        });
+
+        expect(created.ok, 'a member-role account created a band').toBe(false);
+        expect(refusal.code).toBe('42501');
+        expect(await changed.json(), 'a member-role account changed a band').toEqual([]);
+        expect(await deleted.json(), 'a member-role account deleted a band').toEqual([]);
+        expect(await visibleHourBands(client, own)).toEqual(seededBandsOf(slug));
+      } finally {
+        await client.query('delete from hour_bands where name like $1', [`${THROWAWAY} by a member%`]);
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses a $fixture admin a band at 24:00, at a start with seconds, or with a blank name over PostgREST',
+    async ({ slug, admin }) => {
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+        const attempts = [
+          { name: `${THROWAWAY} rest midnight`, start_time: '24:00' },
+          { name: `${THROWAWAY} rest seconds`, start_time: '07:00:30' },
+          { name: '   ', start_time: '10:11' },
+        ];
+
+        for (const attempt of attempts) {
+          const response = await rest('hour_bands', {
+            token,
+            method: 'POST',
+            body: { organization_id: own, ...attempt },
+          });
+          const refusal = await restRefusal(response);
+
+          expect(response.ok, `${JSON.stringify(attempt)} was admitted`).toBe(false);
+          expect(refusal.code, `${JSON.stringify(attempt)} is not a check violation`).toBe('23514');
+        }
+        expect(await visibleHourBands(client, own)).toEqual(seededBandsOf(slug));
+      } finally {
+        // Only a check that failed to refuse leaves a row; the blank name
+        // cannot be stored at all, so the two named attempts are all there is.
+        await client.query('delete from hour_bands where name = any($1::text[])', [
+          [`${THROWAWAY} rest midnight`, `${THROWAWAY} rest seconds`],
+        ]);
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi)('refuses an anonymous caller any hour band', async () => {
+    const response = await rest('hour_bands?select=*');
+    const refusal = await restRefusal(response);
+
+    expect(response.status, 'an anonymous caller read hour bands').toBe(401);
+    expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
+  });
 });

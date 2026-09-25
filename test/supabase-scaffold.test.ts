@@ -293,7 +293,7 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the eighteen policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a and 1.7b reviewed, and no nineteenth', () => {
+  it('declares exactly the twenty-two policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b and 2.1a reviewed, and no twenty-third', () => {
     // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
     // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
     // copying `members_update_by_own_active_admin`, and its name is added here
@@ -315,6 +315,13 @@ describe('the access-control migration', () => {
       .sort();
 
     expect(declared, 'the declared policy set changed').toEqual([
+      // STORY 2.1a, and FOUR: bands are current-state and any band may be
+      // deleted, the last one included, so an active admin holds every write
+      // verb. Each is its own policy, never `for all`.
+      'hour_bands_delete_by_own_active_admin',
+      'hour_bands_insert_by_own_active_admin',
+      'hour_bands_select_own_organization',
+      'hour_bands_update_by_own_active_admin',
       // STORY 1.6, and THREE rather than four: a status version is appended,
       // cancelled only while it is not yet in effect, and never changed, so
       // there is no update policy and that verb matches no row. A fourth name
@@ -884,6 +891,99 @@ describe('the access-control migration', () => {
       "member_role = 'admin'",
     );
     expect(read, 'archived teams are hidden from somebody').not.toMatch(/\barchived\b/);
+  });
+
+  it('stores an hour band as a name and a start, and derives everything else', () => {
+    // STORY 2.1a (AD-3): shape, not validation. The window, duration and
+    // midnight flag belong to `packages/domain`, so none is a column here; a
+    // stored one could disagree with the starts it is derived from.
+    const statements = migrationStatements();
+    const table = /create table hour_bands \(([\s\S]*?)\n\);/i.exec(statements)?.[1] ?? '';
+
+    expect(table, 'the hour_bands table is not declared').not.toBe('');
+    // EVERY column definition, whatever its type: a line at the table's own
+    // indent that opens with an identifier and is not a table constraint. A
+    // type allowlist would let `duration_minutes integer` or
+    // `crosses_midnight boolean` — exactly the derived values AD-3 forbids
+    // storing — slip past unseen.
+    const columns = [...table.matchAll(/^[ ]{2}([a-z_][a-z0-9_]*)[ ]+\S/gm)]
+      .map((match) => match[1])
+      .filter(
+        (name) =>
+          !['constraint', 'primary', 'unique', 'check', 'foreign', 'exclude'].includes(name ?? ''),
+      );
+    expect(columns, 'hour_bands stores something beyond a name and a start').toEqual([
+      'organization_id',
+      'id',
+      'name',
+      'start_time',
+      'created_at',
+    ]);
+    expect(table, 'a band carries forged-able attribution').not.toMatch(/\bcreated_by\b/);
+    expect(table, 'a start is not unique per organization').toMatch(
+      /unique \(organization_id, start_time\)/,
+    );
+    expect(table, 'a start of 24:00 is admitted').toMatch(/check \(start_time < '24:00'\)/);
+    expect(table, 'a start with seconds is admitted').toMatch(
+      /check \(date_trunc\('minute', start_time\) = start_time\)/,
+    );
+    expect(table, 'a blank band name is admitted').toMatch(/check \(btrim\(name\) <> ''\)/);
+    expect(statements, 'no total unique index scopes a band name to its organization').toMatch(
+      /create unique index \w+\s+on hour_bands \(organization_id, lower\(btrim\(name\)\)\);/i,
+    );
+  });
+
+  it('opens every hour band verb to an active admin of the row own organization alone', () => {
+    // STORY 2.1a. Source text only; what each clause does is
+    // `test/rls-isolation.test.ts`, which skips without a database.
+    const statements = migrationStatements();
+    const bandPolicies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter(
+      (declaration) => /on public\.hour_bands\b/i.test(declaration),
+    );
+    expect(bandPolicies.length, 'hour_bands does not carry exactly four policies').toBe(4);
+
+    const read = policyBody('hour_bands_select_own_organization');
+    expect(read, 'the hour_bands select policy is not declared').toMatch(/for select/);
+    expect(read, 'the tenant is not pinned from the signed claim').toMatch(/organization_id = nullif/);
+    expect(read, 'active state is not re-read').toContain('access.is_active');
+    expect(read, 'a member-role account cannot read its own bands').not.toContain(
+      "member_role = 'admin'",
+    );
+
+    const writes: readonly [string, string, number][] = [
+      ['hour_bands_insert_by_own_active_admin', 'insert', 1],
+      ['hour_bands_update_by_own_active_admin', 'update', 2],
+      ['hour_bands_delete_by_own_active_admin', 'delete', 1],
+    ];
+    for (const [name, verb, clauses] of writes) {
+      const body = policyBody(name);
+      expect(body, `${name} is not declared for ${verb}`).toMatch(new RegExp(`for ${verb}\\b`));
+      expect(
+        (body.match(/organization_id = nullif/g) ?? []).length,
+        `${name} does not pin the tenant in every clause`,
+      ).toBe(clauses);
+      expect(
+        (body.match(/access\.member_role = 'admin'/g) ?? []).length,
+        `${name} does not refuse a member-role account in every clause`,
+      ).toBe(clauses);
+      expect(
+        (body.match(/access\.is_active/g) ?? []).length,
+        `${name} does not re-read active state in every clause`,
+      ).toBe(clauses);
+    }
+
+    expect(statements, 'authenticated may insert or update more than the name and start').toMatch(
+      /grant insert \(organization_id, name, start_time\) on table public\.hour_bands to authenticated;/,
+    );
+    expect(statements).toMatch(
+      /grant update \(name, start_time\) on table public\.hour_bands to authenticated;/,
+    );
+    expect(statements, 'anon keeps a privilege on hour_bands').toMatch(
+      /revoke all on table public\.hour_bands from anon;/,
+    );
+    expect(statements, 'a later migration grants anon something on hour_bands').not.toMatch(
+      /grant[^;]*on table public\.hour_bands to[^;]*\banon\b/i,
+    );
   });
 
   it('keeps a team name unique among active teams only, and never blank', () => {

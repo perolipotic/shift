@@ -757,7 +757,7 @@ describe('every organization table carries row level security, and only its revi
           where relnamespace = 'public'::regnamespace
             and relname in (
               'organizations', 'members', 'member_status_versions', 'teams',
-              'team_membership_versions'
+              'team_membership_versions', 'hour_bands'
             )
           order by relname`,
       );
@@ -765,8 +765,9 @@ describe('every organization table carries row level security, and only its revi
       // STORY 1.6 adds the versioned active status, which is organization data
       // like the other two and is born with row level security on. STORY 1.7a
       // adds the teams, born the same way, and STORY 1.7b the versioned team
-      // membership.
+      // membership. STORY 2.1a adds the hour bands.
       expect(rows.map((row) => row.relname)).toEqual([
+        'hour_bands',
         'member_status_versions',
         'members',
         'organizations',
@@ -841,6 +842,83 @@ describe('every organization table carries row level security, and only its revi
           .sort(),
         'the writable team columns changed',
       ).toEqual(['INSERT:name', 'INSERT:organization_id', 'UPDATE:archived', 'UPDATE:name']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('holds no privilege on hour_bands that no policy needs', async () => {
+    // STORY 2.1a. Any band may be deleted, so `authenticated` keeps SELECT and
+    // DELETE (each narrowed by a policy) and column-level INSERT and UPDATE on
+    // the name and start alone; `anon` keeps nothing.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ role: string; privilege: string; held: boolean }>(
+        `select role, privilege,
+                has_table_privilege(role, 'public.hour_bands', privilege) as held
+           from unnest(array['anon', 'authenticated']) as role,
+                unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'])
+                  as privilege`,
+      );
+      const held = rows.filter((row) => row.held).map((row) => `${row.role}:${row.privilege}`);
+
+      expect(held.sort()).toEqual(['authenticated:DELETE', 'authenticated:SELECT']);
+
+      const { rows: columns } = await client.query<{
+        role: string;
+        column: string;
+        verb: string;
+        held: boolean;
+      }>(
+        `select role, column_name as column, verb,
+                has_column_privilege(role, 'public.hour_bands', column_name, verb) as held
+           from unnest(array['anon', 'authenticated']) as role,
+                unnest(array['organization_id', 'id', 'name', 'start_time', 'created_at'])
+                  as column_name,
+                unnest(array['SELECT', 'INSERT', 'UPDATE']) as verb`,
+      );
+      expect(
+        columns
+          .filter((row) => row.held)
+          .map((row) => `${row.role}:${row.verb}:${row.column}`)
+          .filter((entry) => !entry.startsWith('authenticated:SELECT:'))
+          .sort(),
+        'the writable hour band columns changed, or anon holds one',
+      ).toEqual([
+        'authenticated:INSERT:name',
+        'authenticated:INSERT:organization_id',
+        'authenticated:INSERT:start_time',
+        'authenticated:UPDATE:name',
+        'authenticated:UPDATE:start_time',
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('indexes hour_bands by its tenant, one start and one name per organization', async () => {
+    // Q3, and the two uniques that are the whole of "a gap cannot be
+    // expressed" and "a name means one band".
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ indexdef: string }>(
+        `select indexdef from pg_indexes
+          where schemaname = 'public' and tablename = 'hour_bands'`,
+      );
+      expect(
+        rows.some((row) => /\(organization_id\)$/.test(row.indexdef)),
+        'no index leads with organization_id alone',
+      ).toBe(true);
+      expect(
+        rows.some((row) => /UNIQUE INDEX .* \(organization_id, start_time\)$/.test(row.indexdef)),
+        'two bands may share a start',
+      ).toBe(true);
+      expect(
+        rows.some((row) =>
+          /UNIQUE INDEX .* \(organization_id, lower\(btrim\(name\)\)\)$/.test(row.indexdef),
+        ),
+        'two bands may share a name, or the unique is partial',
+      ).toBe(true);
     } finally {
       await client.end();
     }

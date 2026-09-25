@@ -11,5 +11,12 @@
  * translated string.
  */
 
-/** Marks this package as present and buildable. Replaced by real exports in Epic 2. */
-export const DOMAIN_PACKAGE_NAME = '@shift/domain';
+export {
+  MINUTES_PER_DAY,
+  deriveHourBands,
+  partitionOfDay,
+  type DayPartition,
+  type DaySegment,
+  type HourBand,
+  type HourBandWindow,
+} from './bands.js';
