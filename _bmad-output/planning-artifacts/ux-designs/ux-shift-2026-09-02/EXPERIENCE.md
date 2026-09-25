@@ -80,6 +80,7 @@ Microcopy rules. Brand voice lives in `DESIGN.md` § Brand & Style.
 - **Times are ranges, dates are Croatian-formatted.** `19:00–07:00`, `12.09.2026`. En dash for ranges, never a hyphen.
 - **Counts respect three plural forms** — one / few / other. `1 dan`, `2 dana`, `5 dana`; `1 konflikt`, `2 konflikta`, `5 konflikata`. A `count === 1` check is a defect.
 - **Never say "shift" for a team.** `Smjena` is the team; `Tip smjene` is the shift type. Because `Sve smjene` reads ambiguously as an all-teams filter, that control shows a count — `Sve smjene (4)` — and groups its options under a labelled heading.
+- **Rank and position** (sprint change 2026-09-25). The member's rank is `Vatrogasni čin`; the team role is `Položaj`, never *pozicija*; the setting is `Vatrogasni činovi i položaji`. The roster line is `Ime · čin · položaj`, labels lowercase beside the name. Neither is ever colour-coded, and neither is a filter in MVP.
 
 ## Component Patterns
 

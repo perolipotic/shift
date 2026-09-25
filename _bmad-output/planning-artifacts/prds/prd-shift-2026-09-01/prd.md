@@ -79,9 +79,12 @@ Downstream workflows and readers use these terms exactly. Introducing a synonym 
 
 - **Organization** — a tenant. Owns every other record. Has a name, short name, description, address, contact details, an Organization Type, a timezone, a locale, a Leave Year, and branding. Has many Members, Teams, Shift Types, and Rotation Patterns.
 - **Organization Type** — a descriptive label (e.g. "Fire Department"). Affects presentation and, later, onboarding templates. **Never** affects scheduling, hours, leave, or conflict logic.
-- **Member** — a person belonging to exactly one Organization. Has a name, optional email, active/inactive status, a Role, at most one Team, and a Leave Allowance. *"Member" always means the person, never the permission level.*
+- **Member** — a person belonging to exactly one Organization. Has a name, optional email, active/inactive status, a Role, at most one Team, a Leave Allowance, and — where the Organization uses them — a Fire Rank and a Team Position. *"Member" always means the person, never the permission level.*
 - **Role** — a Member's permission level: **Admin** or **Member Role**. Where the permission level is meant, the term is always "Admin" or "Member Role", never bare "Member".
 - **Team** — a named group of Members within an Organization sharing one Rotation Assignment. A Member belongs to at most one Team in v1.
+- **Fire Rank** — an optional, descriptive rank on a Member, from a fixed list, current-state. Exists only for an Organization whose Fire Ranks and Positions setting is on. Never affects scheduling, hours, leave or conflict logic.
+- **Team Position** — a Member's descriptive position within their Team (commander, driver, firefighter), versioned with the Team membership so it changes from a date forward. Required while the setting is on; absent without a Team. Inert like Fire Rank.
+- **Fire Ranks and Positions** — an Organization setting, off by default, gating the display and entry of Fire Rank and Team Position. Never deletes them.
 - **Shift Type** — a reusable named definition of a working or non-working period: start time, end time, and a working flag. It carries no hour classification of its own (FR-21). A non-working Shift Type has zero duration and needs no times. A Shift Type whose end time is not after its start time crosses midnight.
 - **Nominal Duration** — the configured wall-clock length of a Shift Type, independent of daylight-saving transitions. Authoritative for all hour accounting.
 - **Elapsed Duration** — real time between a Scheduled Shift's absolute start and end instants. Equals Nominal Duration except across a daylight-saving transition. May be displayed; never used for accounting.
@@ -265,7 +268,7 @@ An Admin can search, sort, and filter the Member list.
 A Member Role account can view the Organization's Members and their Teams.
 
 **Consequences (testable):**
-- The directory shows name and Team; it does not expose Leave Allowance, Leave Balance, Leave Records, hours, or contact details of other Members. `[ASSUMPTION: other Members' leave and hours are private to Admins; confirm — a volunteer organization may prefer full transparency.]`
+- The directory shows name and Team — and, where the Organization uses them, Fire Rank and Team Position; it does not expose Leave Allowance, Leave Balance, Leave Records, hours, or contact details of other Members. `[ASSUMPTION: other Members' leave and hours are private to Admins; confirm — a volunteer organization may prefer full transparency.]`
 - No write action is reachable from the directory for a Member Role account.
 
 ### 5.4 Teams
@@ -290,6 +293,17 @@ An Admin can assign a Member to at most one Team, or leave them unassigned.
 - Moving a Member between Teams changes their schedule from the move date forward and rewrites no history.
 
 **Out of Scope:** simultaneous membership of multiple Teams; temporary loan to another Team (see §11.2).
+
+#### FR-18a: Fire Ranks and Team Positions (added 2026-09-25, sprint change)
+An Admin of an Organization that switches on Fire Ranks and Positions can record each Member's Fire Rank and their Team Position.
+
+**Consequences (testable):**
+- With the setting off, no rank or position control or text appears anywhere; stored values survive.
+- A position change takes effect from a chosen date and rewrites no history (as FR-18).
+- Rank and position are inert: two Organizations identical but for ranks and positions produce byte-identical schedules, hours and conflicts (the FR-7 rule).
+- No rule enforces a staffing mix or qualification from them (§7.2).
+
+**Bounded exception to §6.** The rank and position lists are fixed, not Organization data — accepted for the pilot on 2026-09-25 (`sprint-change-proposal-2026-09-25.md`, option A). **Revisit when** a second Organization needs ranks or positions: the lists then become Organization data.
 
 ### 5.5 Shift Types
 
@@ -654,7 +668,7 @@ An Admin landing in the application sees today's coverage by Team, upcoming shif
 - **This is not a workforce-optimization tool.** No demand forecasting, no auto-assignment, no optimization of coverage against predicted load.
 - **This is not a communication tool.** No notifications, messaging, push, SMS, or email beyond authentication and invitation.
 - **This does not become a general permission system.** Two Roles. Not a role builder, not per-resource ACLs.
-- **This does not become a fire-department product by accretion.** Any requirement that cannot be expressed as Organization data is a requirement to reject or generalize (DI-8).
+- **This does not become a fire-department product by accretion.** Any requirement that cannot be expressed as Organization data is a requirement to reject or generalize (DI-8). The one recorded exception is FR-18a, whose fixed lists are descriptive, inert and gated by a setting.
 
 ## 7. MVP Scope
 

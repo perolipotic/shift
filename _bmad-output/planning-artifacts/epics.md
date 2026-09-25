@@ -30,9 +30,9 @@ Capabilities from `SPEC.md`. Each is an independently reviewable slice; `engine-
 - **CAP-1** — Authenticated, tenant- and role-scoped access. Session scoped to one organization and one role; cross-tenant read fails at the data layer; administrative writes refused for member-role via UI *and* direct API; a usable account exists with no email, signing in by admin-issued username, its reset an admin action.
 - **CAP-2** — Organization configuration and branding. Identity, timezone, locale, leave year, logo. All times display in organization timezone. Two organizations differing only in type produce byte-identical output. Logo unreadable across tenants.
 - **CAP-3** — Configurable day/night boundary via Hour Bands. Bands partition 24h; gap or overlap refused; a band may cross midnight; moving a boundary recomputes band hours and changes no total; three bands report three figures with no code change.
-- **CAP-4** — Member management. Create, edit, activate, deactivate with role, team, allowance; search/sort/filter at scale. Deactivation preserves history, blocks authentication, removes from future rosters, alters no past shift. Allowance is per member. Never zero admins.
-- **CAP-5** — Team roster visibility. Names and team membership only; no allowance, balance, leave, hours or contact details. No write action for member-role. Reached through team context, not a top-level destination.
-- **CAP-6** — Teams of any number. Any count from one upward; no path assumes four; no name carries meaning. A member with no team has an empty schedule and generates no conflicts. A team move changes the schedule forward only.
+- **CAP-4** — Member management. Create, edit, activate, deactivate with role, team, allowance; search/sort/filter at scale. Deactivation preserves history, blocks authentication, removes from future rosters, alters no past shift. Allowance is per member. Never zero admins. Where the organization uses fire ranks, a member carries an optional rank (current-state).
+- **CAP-5** — Team roster visibility. Names and team membership — and, where the organization uses them, rank and team position; no allowance, balance, leave, hours or contact details. No write action for member-role. Reached through team context, not a top-level destination.
+- **CAP-6** — Teams of any number. Any count from one upward; no path assumes four; no name carries meaning. A member with no team has an empty schedule and generates no conflicts. A team move changes the schedule forward only. Where the organization uses them, a membership carries a team position, versioned with it.
 - **CAP-7** — Configurable shift types including midnight-crossing. 19:00–07:00 has nominal duration 12h, one shift, attributed to its start date, never split or double-counted. 24-hour type valid. Duration derived, never entered. No field names or implies an hour band. Editing times changes no already-reported past hours; renaming takes effect everywhere.
 - **CAP-8** — Rotation pattern definition and team assignment. Arbitrary cycle length; nothing assumes a week; deterministic for any date before or after the anchor; teams may share a pattern at the same or different offsets; an offset outside the cycle is refused at save.
 - **CAP-9** — Rotation change with an effective date. Shifts before the effective date unchanged; overrides on or after listed for explicit confirm, amend or discard; attributable to an admin and a timestamp.
@@ -457,6 +457,37 @@ So that I know who I am working with.
 **Then** it carries the same four destinations plus grouped configuration — Raspored, Ljudi, Postavke rotacije, Organizacija, Sati (UX-DR32)
 **And** the shape is bottom tabs on mobile and a sidebar on desktop: two layouts, one information architecture (UX-DR31)
 
+
+### Story 1.9: An organization that uses fire ranks records each member's rank and team position (delivered 2026-09-25, sprint change)
+
+As an admin of an organization that uses fire ranks,
+I want to record each member's rank and their position in the team,
+So that everyone can see who commands and who drives.
+
+Added retroactively by `sprint-change-proposal-2026-09-25.md`; delivered in #43 (`spec-member-rank.md`) and #45 (`spec-team-position.md`). Governed by PRD FR-18a, a bounded exception to §6.
+
+**Acceptance Criteria (as delivered):**
+
+**Given** the organization's fire ranks and positions setting off
+**When** any screen renders
+**Then** no rank or position appears, and stored values survive
+
+**Given** the setting on
+**When** an admin creates or edits a member
+**Then** a rank from the fixed list can be chosen, and an untouched stored rank is written back unchanged
+
+**Given** a member on a team with the setting on
+**When** their position changes from a date
+**Then** it is a new membership version, withdrawable while scheduled, and rewrites no history (AD-2)
+
+**Given** a team roster
+**When** it is read by any role
+**Then** each member shows `Ime · čin · položaj` where present (CAP-5)
+
+**Given** any schedule, hours or conflict derivation
+**When** ranks or positions change
+**Then** the output is byte-identical (FR-18a)
+
 ---
 
 ## Epic 2: The rota is defined once, and projects itself
@@ -773,6 +804,8 @@ So that hours follow the people who worked rather than the people who were sched
 **When** it is written
 **Then** it carries author and timestamp from column defaults the client cannot forge, and that record outlives the schedule entry it modified (AD-11, Q11)
 
+**Note (sprint change 2026-09-25):** where the organization uses fire ranks, candidates may be shown with rank and position — information only; nothing blocks, warns or suggests from them (FR-18a, §7.2).
+
 ---
 
 ## Epic 4: Hours compute themselves
@@ -953,6 +986,8 @@ So that I am choosing an outcome rather than clearing a list.
 **Given** any resolution
 **When** time passes, or any unrelated data changes
 **Then** no conflict expires, auto-clears or is suppressed under any circumstance (CAP-16, DI-4)
+
+**Note (sprint change 2026-09-25):** for the replace-the-member outcome, where the organization uses fire ranks, candidates may be shown with rank and position — information only; nothing blocks, warns or suggests from them (FR-18a, §7.2).
 
 ### Story 5.5: A configuration change cannot quietly erase a pending decision
 
