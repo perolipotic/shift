@@ -11,6 +11,8 @@ import { ljudiSmjenaRoute } from '@/routes/ljudi.smjene.$id';
 import { ljudiSmjeneRoute } from '@/routes/ljudi.smjene';
 import { ljudiRoute } from '@/routes/ljudi';
 import { organizacijaRoute } from '@/routes/organizacija';
+import { organizacijaSatniPojasRoute } from '@/routes/organizacija.satni-pojasi.$id';
+import { organizacijaSatniPojasiRoute } from '@/routes/organizacija.satni-pojasi';
 import { postavkeRotacijeRoute } from '@/routes/postavke-rotacije';
 import { prijavaOrganizacijaRoute } from '@/routes/prijava-organizacija';
 import { prijavaRoute } from '@/routes/prijava';
@@ -62,6 +64,11 @@ const appDestinations = appLayoutRoute.addChildren([
   ljudiMemberRoute,
   postavkeRotacijeRoute,
   organizacijaRoute,
+  // STORY 2.1b's two, on 1.7a's terms: nested under the layout, absent from
+  // the destinations (the `Organizacija` tab lights for them), each with its
+  // own role guard.
+  organizacijaSatniPojasiRoute,
+  organizacijaSatniPojasRoute,
   // STORY 1.8. One team's roster, for EVERY role: nested under the layout, so
   // the session guard covers it, and absent from the destinations — it is
   // reached from the Danas line only. No role guard of its own, because the

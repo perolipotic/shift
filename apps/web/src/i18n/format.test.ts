@@ -8,6 +8,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
   compareText,
   formatIsoDate,
+  formatMinuteOfDay,
   isIsoDate,
   nextIsoDate,
   organizationIsoDate,
@@ -254,6 +255,9 @@ const UNZONED_ENTRY_POINTS = [
   'formatIsoDate',
   'isIsoDate',
   'nextIsoDate',
+  // Story 2.1b. A nominal minute of the day — an hour band's start — which has
+  // no date and so no instant for a zone to resolve.
+  'formatMinuteOfDay',
 ];
 
 /**
@@ -261,9 +265,10 @@ const UNZONED_ENTRY_POINTS = [
  *
  * Every exported FUNCTION not named above does, and the list is asserted
  * complete against the module's actual exports below — otherwise an eighth
- * entry point added without a zone would simply not be checked. Seven are zoned
- * and two are not, which is nine exported functions in all; `LOCALE` and
- * `RANGE_DASH` are exported VALUES and belong to neither count.
+ * entry point added without a zone would simply not be checked. Eight are zoned
+ * and six are not, which is fourteen exported functions in all; `LOCALE` and
+ * `RANGE_DASH` are exported VALUES and belong to neither count. The exhaustive
+ * comparison below is what holds those numbers; this sentence only reports them.
  */
 const ZONED_ENTRY_POINTS = [
   'formatDate',
@@ -1087,6 +1092,22 @@ describe("the organization's calendar date, and a calendar date in the binding s
     expect(formatIsoDate('2026-01-01')).toBe('01.01.2026');
     for (const malformed of ['', '2026-9-23', '23.09.2026', '2026-02-31', 'nonsense']) {
       expect(formatIsoDate(malformed), malformed).toBeNull();
+    }
+  });
+});
+
+describe('a nominal minute of the day', () => {
+  it('renders 0 as 00:00 and 1439 as 23:59, zero-padded and 24-hour', () => {
+    expect(formatMinuteOfDay(0)).toBe('00:00');
+    expect(formatMinuteOfDay(1439)).toBe('23:59');
+    expect(formatMinuteOfDay(420)).toBe('07:00');
+    expect(formatMinuteOfDay(1140)).toBe('19:00');
+    expect(formatMinuteOfDay(65)).toBe('01:05');
+  });
+
+  it('refuses anything that is not a whole minute of one day', () => {
+    for (const refused of [-1, 1440, 7.5, Number.NaN]) {
+      expect(() => formatMinuteOfDay(refused), String(refused)).toThrow(RangeError);
     }
   });
 });

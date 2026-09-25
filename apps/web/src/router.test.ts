@@ -27,6 +27,14 @@ import { LjudiSmjeneScreen, ljudiSmjeneRoute } from '@/routes/ljudi.smjene';
 import { LjudiScreen, ljudiRoute } from '@/routes/ljudi';
 import { NotFoundScreen } from '@/routes/not-found';
 import { OrganizacijaScreen, organizacijaRoute } from '@/routes/organizacija';
+import {
+  OrganizacijaSatniPojasScreen,
+  organizacijaSatniPojasRoute,
+} from '@/routes/organizacija.satni-pojasi.$id';
+import {
+  OrganizacijaSatniPojasiScreen,
+  organizacijaSatniPojasiRoute,
+} from '@/routes/organizacija.satni-pojasi';
 import { PostavkeRotacijeScreen, postavkeRotacijeRoute } from '@/routes/postavke-rotacije';
 import { OrganizationPromptScreen, prijavaOrganizacijaRoute } from '@/routes/prijava-organizacija';
 import { prijavaRoute, SignInScreen } from '@/routes/prijava';
@@ -222,6 +230,20 @@ const LEVEL_GUARDED_ROUTES = [
     route: ljudiSmjenaRoute,
     component: LjudiSmjenaScreen,
   },
+  // STORY 2.1b: the hour band list and one band, both admin-only, both copies
+  // of the same guard, and neither a destination.
+  {
+    id: '/_app/organizacija/satni-pojasi',
+    path: '/organizacija/satni-pojasi',
+    route: organizacijaSatniPojasiRoute,
+    component: OrganizacijaSatniPojasiScreen,
+  },
+  {
+    id: '/_app/organizacija/satni-pojasi/$id',
+    path: '/organizacija/satni-pojasi/$id',
+    route: organizacijaSatniPojasRoute,
+    component: OrganizacijaSatniPojasScreen,
+  },
 ];
 
 describe('the shell route tree', () => {
@@ -262,6 +284,9 @@ describe('the shell route tree', () => {
       '/_app/ljudi/smjene',
       '/_app/ljudi/smjene/$id',
       '/_app/organizacija',
+      // STORY 2.1b. The hour band editor, reached from `Organizacija` only.
+      '/_app/organizacija/satni-pojasi',
+      '/_app/organizacija/satni-pojasi/$id',
       '/_app/postavke-rotacije',
       '/_app/raspored',
       '/_app/sati',
@@ -1545,10 +1570,10 @@ describe('the member list is the first destination that refuses a permission lev
      * over the branches that decide who gets in, so a copy that was pasted and
      * then quietly loosened fails here rather than shipping.
      */
-    it('guards exactly the five routes the table names, and no fewer', () => {
+    it('guards exactly the seven routes the table names, and no fewer', () => {
       // NON-VACUITY. An entry deleted from the table takes its cases with it and
-      // Vitest reports the shorter run as a pass.
-      expect(LEVEL_GUARDED_ROUTES).toHaveLength(5);
+      // Vitest reports the shorter run as a pass. SEVEN SINCE STORY 2.1b.
+      expect(LEVEL_GUARDED_ROUTES).toHaveLength(7);
       for (const { path, route } of LEVEL_GUARDED_ROUTES) {
         expect(
           (route.options as { beforeLoad?: unknown }).beforeLoad,

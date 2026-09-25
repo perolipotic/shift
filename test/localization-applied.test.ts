@@ -202,6 +202,16 @@ const SOURCES = [
   // The refusal and confirmation box every screen draws through, for the same
   // freshness reason.
   join(webRoot, 'src', 'components', 'ui', 'notice.tsx'),
+  // Story 2.1b's four. The two band screens render and are no destination, so
+  // they are listed nowhere else in this file; the two `@/hour-bands` modules
+  // own the duration shapes and the refusals as return-type unions, so a chunk
+  // built before an edit to either is stale in a way no sweep could see.
+  // `pojasi` is deliberately NOT counted in `AUTHORED_VOCABULARY`: it is also
+  // the registered route path `/organizacija/satni-pojasi`, which ships as data.
+  join(webRoot, 'src', 'hour-bands', 'list.ts'),
+  join(webRoot, 'src', 'hour-bands', 'write.ts'),
+  join(webRoot, 'src', 'routes', 'organizacija.satni-pojasi.tsx'),
+  join(webRoot, 'src', 'routes', 'organizacija.satni-pojasi.$id.tsx'),
 ];
 
 /**

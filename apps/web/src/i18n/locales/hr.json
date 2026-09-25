@@ -156,6 +156,46 @@
       "logoType": "Dopušteni formati slike su PNG, JPEG i WebP.",
       "logoUnavailable": "Spremanje logotipa trenutačno nije moguće. Pokušaj ponovno.",
       "unavailable": "Spremanje trenutačno nije moguće. Pokušaj ponovno."
+    },
+    "hourBands": {
+      "heading": "Satni pojasi",
+      "count": "{count, plural, one {# pojas} few {# pojasa} other {# pojaseva}}",
+      "name": "Naziv pojasa",
+      "start": "Početak",
+      "window": "Razdoblje",
+      "duration": {
+        "label": "Trajanje",
+        "hours": "{hours} h",
+        "hoursMinutes": "{hours} h {minutes} min",
+        "minutes": "{minutes} min"
+      },
+      "crossesMidnight": "Prelazi ponoć",
+      "coverage": "Pokriveno {covered} od 24 h, nepokriveno {uncovered}.",
+      "uncovered": "Nepokriveno",
+      "add": "Dodaj pojas",
+      "created": "Pojas je dodan.",
+      "edit": "Uredi pojas {name}",
+      "editHeading": "Uređivanje pojasa",
+      "save": "Spremi",
+      "saved": "Promjene su spremljene.",
+      "remove": "Ukloni pojas {name}",
+      "removePrompt": "Pojas {name} bit će uklonjen.",
+      "removeConfirm": "Potvrdi uklanjanje pojasa {name}",
+      "removeCancel": "Odustani od uklanjanja",
+      "removed": "Pojas je uklonjen.",
+      "back": "Vrati se na satne pojaseve",
+      "error": {
+        "unavailable": "Satne pojaseve trenutačno nije moguće učitati. Pokušaj ponovno.",
+        "nameEmpty": "Naziv pojasa ne može biti prazan.",
+        "nameTaken": "Pojas s tim nazivom već postoji u organizaciji.",
+        "startTaken": "Pojas s tim početkom već postoji u organizaciji. Odaberi drugi početak.",
+        "startInvalid": "Početak mora biti vrijeme dana u punim minutama, na primjer 07:00.",
+        "stale": "Pojas se u međuvremenu promijenio ili je uklonjen. Provjeri popis i pokušaj ponovno.",
+        "refused": "Promjena nije spremljena. Odjavi se i prijavi ponovno.",
+        "invalid": "Unesena vrijednost nije dopuštena.",
+        "saveUnavailable": "Spremanje trenutačno nije moguće. Pokušaj ponovno.",
+        "unknown": "Ovaj pojas ne postoji u organizaciji."
+      }
     }
   },
   "shell": {

@@ -60,6 +60,10 @@ const SANCTIONED_PLURAL_KEYS = [
   // STORY 1.8: how many people are on a team today, rendered at zero too —
   // `0 osoba`, `1 osoba`, `2 osobe`, `5 osoba`, `21 osoba`.
   'smjene.roster.count',
+  // STORY 2.1b: how many hour bands the organization has, rendered at zero —
+  // `0 pojaseva`, `1 pojas`, `2 pojasa`, `21 pojas`. Durations are NOT here:
+  // `12 h` and `1 h 30 min` are units and take no plural.
+  'organization.hourBands.count',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -511,6 +515,44 @@ const SANCTIONED_SCREEN_KEYS = [
   'smjene.roster.error.unavailable',
   'smjene.today.label',
   'smjene.today.error.unavailable',
+  // STORY 2.1b: the hour band editor, under `organization.hourBands` because
+  // the bands are an organization setting reached from `Organizacija`. Only a
+  // name and a start are entered; the window, duration and midnight flag are
+  // shown read-only, and zero bands state their uncovered hours in numbers
+  // rather than saying the absence.
+  'organization.hourBands.heading',
+  'organization.hourBands.name',
+  'organization.hourBands.start',
+  'organization.hourBands.window',
+  'organization.hourBands.duration.label',
+  'organization.hourBands.duration.hours',
+  'organization.hourBands.duration.hoursMinutes',
+  'organization.hourBands.duration.minutes',
+  'organization.hourBands.crossesMidnight',
+  'organization.hourBands.coverage',
+  'organization.hourBands.uncovered',
+  'organization.hourBands.add',
+  'organization.hourBands.created',
+  'organization.hourBands.edit',
+  'organization.hourBands.editHeading',
+  'organization.hourBands.save',
+  'organization.hourBands.saved',
+  'organization.hourBands.remove',
+  'organization.hourBands.removePrompt',
+  'organization.hourBands.removeConfirm',
+  'organization.hourBands.removeCancel',
+  'organization.hourBands.removed',
+  'organization.hourBands.back',
+  'organization.hourBands.error.unavailable',
+  'organization.hourBands.error.nameEmpty',
+  'organization.hourBands.error.nameTaken',
+  'organization.hourBands.error.startTaken',
+  'organization.hourBands.error.startInvalid',
+  'organization.hourBands.error.stale',
+  'organization.hourBands.error.refused',
+  'organization.hourBands.error.invalid',
+  'organization.hourBands.error.saveUnavailable',
+  'organization.hourBands.error.unknown',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
@@ -820,6 +862,15 @@ describe('the messages obey the voice rules that bind every string', () => {
       'Potvrdi poništavanje promjene smjene za osobu {name}',
     );
     expect(messageAt('smjene.membership.cancel')).toBe('Odustani od promjene smjene');
+    // STORY 2.1b's SIX, a seventh authoring of the same voice. The removal
+    // offer is the one that would most naturally have been the noun
+    // `Uklanjanje` — the prompt's subject, not a control.
+    expect(messageAt('organization.hourBands.add')).toBe('Dodaj pojas');
+    expect(messageAt('organization.hourBands.edit')).toBe('Uredi pojas {name}');
+    expect(messageAt('organization.hourBands.save')).toBe('Spremi');
+    expect(messageAt('organization.hourBands.remove')).toBe('Ukloni pojas {name}');
+    expect(messageAt('organization.hourBands.removeConfirm')).toBe('Potvrdi uklanjanje pojasa {name}');
+    expect(messageAt('organization.hourBands.removeCancel')).toBe('Odustani od uklanjanja');
   });
 });
 

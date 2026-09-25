@@ -348,6 +348,13 @@ development_status:
   # convention recorded there it closes with its LAST part, which is 2.1b's
   # Hour Band editor waiting in deferred-work.md, not with this one.
   2-1a-hour-band-rule: done
+  # Part B is the Hour Band editor, specced 2026-09-25 from the deferred-work
+  # entry 2.1a's split left. It earns its key here, same convention as the
+  # parts above, and a regenerate reports it as an orphan — reconcile with
+  # --set rather than dropping it. It covers the rest of epics.md story 2.1
+  # clauses 1 and 2 (UX-DR13): the editor and the 24-hour partition bar.
+  # THIS PART COMPLETES THE 2-1 PARENT.
+  2-1b-hour-band-editor: review
   2-2-an-admin-defines-shift-types-including-one-that-crosses-midn: backlog
   2-3-an-admin-builds-the-rotation-and-sees-the-cycle-before-savin: backlog
   2-4-rotation-configuration-completes-on-a-phone: backlog

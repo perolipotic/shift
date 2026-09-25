@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { createRoute } from '@tanstack/react-router';
+import { Link, createRoute } from '@tanstack/react-router';
 import { useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { PageHeader, PageTitle } from '@/components/ui/page-header';
+import { PageActions, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
@@ -780,6 +780,14 @@ export function OrganizacijaScreen() {
             {t('nav.organizacija')}
           </h1>
         </PageTitle>
+        {/* STORY 2.1b: the hour band editor, reached from here rather than
+            from the navigation, so the destinations stay eight. A link in the
+            header's actions, as `/ljudi`'s way to the teams is. */}
+        <PageActions>
+          <Button asChild variant="outline" className="h-11">
+            <Link to="/organizacija/satni-pojasi">{t('organization.hourBands.heading')}</Link>
+          </Button>
+        </PageActions>
       </PageHeader>
       <Card className="w-full min-w-0 max-w-lg">
         {/* OUTSIDE the snapshot-gated branch, which is where it used to be and

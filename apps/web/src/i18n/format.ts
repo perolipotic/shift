@@ -45,6 +45,34 @@ export const LOCALE = 'hr';
 /** U+2013 EN DASH. Unspaced, and never a hyphen (UX-DR34). */
 export const RANGE_DASH = '–';
 
+/** Minutes in one nominal day, for {@link formatMinuteOfDay}'s range check. */
+const MINUTES_PER_DAY = 1440;
+const MINUTES_PER_HOUR = 60;
+
+/**
+ * `07:00` — a nominal minute of the day (0–1439), 24-hour and zero-padded
+ * (story 2.1b).
+ *
+ * NO ZONE AND NO `Intl`, and both on purpose. An hour band's start is a
+ * wall-clock time with no date and no instant (AD-7 reads it as integer
+ * minutes), so there is nothing to resolve against a zone, and `formatTime`'s
+ * zoned path would need a fabricated `Date` to reach the same two digits. The
+ * shape is `formatTime`'s — `h23`, so midnight is `00:00`, never `24:00`.
+ *
+ * @throws RangeError for anything that is not a whole minute in 0–1439, rather
+ *   than rendering `NaN:NaN` or a `24:00` that names a second midnight.
+ */
+export function formatMinuteOfDay(minute: number): string {
+  if (!Number.isInteger(minute) || minute < 0 || minute >= MINUTES_PER_DAY) {
+    throw new RangeError(`FORMAT_MINUTE_OUT_OF_RANGE:${String(minute)}`);
+  }
+
+  const hours = String(Math.floor(minute / MINUTES_PER_HOUR)).padStart(2, '0');
+  const minutes = String(minute % MINUTES_PER_HOUR).padStart(2, '0');
+
+  return `${hours}:${minutes}`;
+}
+
 /**
  * The date/time shapes this module produces. A closed set, because every
  * formatter is memoized by name and an ad-hoc options object elsewhere would be
