@@ -339,7 +339,9 @@ development_status:
   # clauses 1's shape, 3 and 4). 2.1b is the Hour Band editor and its 24-hour
   # partition bar, which waits in deferred-work.md and earns its key when
   # specced — so the parent completes with 2.1b, not with 2.1a.
-  2-1-an-admin-defines-the-day-s-hour-bands-so-a-gap-cannot-be-exp: in-progress
+  # Completed 2026-09-25 with 2.1b, per the convention recorded above: both
+  # parts (2.1a and 2.1b) are done, so the parent carries no remaining work.
+  2-1-an-admin-defines-the-day-s-hour-bands-so-a-gap-cannot-be-exp: done
   # Merged to main in 599cb0f (PR #28) and its spec carries status done with
   # review_loop_iteration 0 — three adversarial layers, no loopback, 9 patches,
   # one finding deferred to deferred-work.md (the start-time unique is not
@@ -354,7 +356,14 @@ development_status:
   # --set rather than dropping it. It covers the rest of epics.md story 2.1
   # clauses 1 and 2 (UX-DR13): the editor and the 24-hour partition bar.
   # THIS PART COMPLETES THE 2-1 PARENT.
-  2-1b-hour-band-editor: review
+  # Merged to main in 523f929 (PR #31), rebased onto the visual refresh (#30)
+  # and restyled to its page skeleton before merge. Its spec carries status
+  # done with review_loop_iteration 0 — three adversarial layers, no loopback,
+  # 9 patches, one finding deferred to deferred-work.md (every list reader
+  # returns failures as query data, so a failed refetch blanks the list and is
+  # never retried — teams, members and bands alike). Reconciled 2026-09-25.
+  # THIS PART COMPLETED THE 2-1 PARENT above.
+  2-1b-hour-band-editor: done
   2-2-an-admin-defines-shift-types-including-one-that-crosses-midn: backlog
   2-3-an-admin-builds-the-rotation-and-sees-the-cycle-before-savin: backlog
   2-4-rotation-configuration-completes-on-a-phone: backlog
