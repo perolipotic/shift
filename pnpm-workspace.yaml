@@ -2,9 +2,17 @@ packages:
   - 'packages/*'
   - 'apps/*'
 
-# No `onlyBuiltDependencies` entry: nothing in this tree runs an install script.
-# The native binaries that do exist — `@rolldown/binding-*` (Vite 8's bundler),
-# `@tailwindcss/oxide-*`, `lightningcss` and `@supabase/cli-*` — ship prebuilt
-# per-platform packages rather than compiling on install. Verified by installing
-# with the allowlist removed: pnpm reported no ignored build scripts. If a
-# dependency ever adds one, pnpm says so at install time; add it here then.
+# Nothing in this tree is allowed to run an install script. The native binaries
+# that exist — `@rolldown/binding-*` (Vite 8's bundler), `@tailwindcss/oxide-*`,
+# `lightningcss` and `@supabase/cli-*` — ship prebuilt per-platform packages
+# rather than compiling on install. If a dependency ever adds a script, pnpm
+# says so at install time and refuses until it is decided here.
+#
+# `wrangler` (the CI's Pages Direct Upload, DEPLOY.md §4) brought the first two:
+# `esbuild` and `workerd`. Both only VERIFY an already installed per-platform
+# optional dependency (`@esbuild/*`, `@cloudflare/workerd-*`), and
+# `wrangler pages deploy` uploads a directory without bundling or running a
+# Worker, so neither script is needed. Refused explicitly rather than approved.
+allowBuilds:
+  esbuild: false
+  workerd: false

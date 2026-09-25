@@ -174,9 +174,13 @@ end of 2026 and this system does not read them.
 
 | Value | staging | production |
 | --- | --- | --- |
-| project URL | Pages env `VITE_SUPABASE_URL` (Preview) **and** function env (auto) | Pages env `VITE_SUPABASE_URL` (Production) **and** function env (auto) |
-| `sb_publishable_*` | Pages env `VITE_SUPABASE_PUBLISHABLE_KEY` (Preview) + function secret `SHIFT_PUBLISHABLE_KEY` | same, Production scope |
-| `sb_secret_*` | function secret `SHIFT_SECRET_KEY` **only** | function secret `SHIFT_SECRET_KEY` **only** |
+| project URL | derived from the `staging` Environment's `SUPABASE_PROJECT_REF` into the build's `VITE_SUPABASE_URL` **and** function env (auto) | same, `production` Environment |
+| `sb_publishable_*` | `staging` Environment variable `SUPABASE_PUBLISHABLE_KEY` → the build's `VITE_SUPABASE_PUBLISHABLE_KEY` + function secret `SHIFT_PUBLISHABLE_KEY` | same, `production` Environment |
+| `sb_secret_*` | `staging` Environment secret `SUPABASE_SECRET_KEY` → function secret `SHIFT_SECRET_KEY` **only** | same, `production` Environment |
+
+The pipeline (§8) sets the function secrets itself on every deploy, from those
+GitHub Environment values, through a temporary env file exactly like the one
+below. The manual commands in this section are the fallback.
 
 The function reads its project URL from `SUPABASE_URL`, which the Edge Runtime
 injects — you never set it. It needs the publishable key too, because it builds
@@ -208,27 +212,41 @@ environment.
 
 ## 4. Cloudflare Pages
 
-One Pages project, connected to this repository.
+One Pages project, **with no Git connection**. The pipeline publishes to it by
+Direct Upload (`wrangler pages deploy`, §8), after every gate has passed and —
+for production — after a human has approved. A Git-connected project would
+build and publish `main` on its own, before any of that, so the Git integration
+is not used at all.
 
-*Workers & Pages → Create → Pages → Connect to Git*, then:
+Create it once, from a machine logged in to Cloudflare (`pnpm exec wrangler
+login`), or in the dashboard via *Workers & Pages → Create → Pages → Upload
+assets* (**not** *Connect to Git*):
+
+```bash
+pnpm exec wrangler pages project create <project> --production-branch main
+```
 
 | Setting | Value |
 | --- | --- |
-| Production branch | `main` |
-| Framework preset | None |
-| Root directory | `/` (repository root — the pnpm workspace lives there) |
-| Build command | `pnpm install --frozen-lockfile && pnpm --filter @shift/web... build` |
-| Build output directory | `apps/web/dist` |
+| Production branch | `main` — the pipeline's production deploy uses `--branch main` |
+| Preview branch alias | `staging` — the staging deploy uses `--branch staging`, served at `https://staging.<project>.pages.dev` |
+| Build settings | none: Cloudflare never builds this project, the pipeline uploads `apps/web/dist` |
 
-Build-time environment variables — set them in **both** scopes, Production
-pointing at `shift-production` and Preview pointing at `shift-staging`:
+**If the project already exists connected to Git**, a Git-connected project
+cannot switch to Direct Upload. Create a new project as above (a new
+`<project>.pages.dev` hostname), move any custom domain to it, and delete the
+old one — or, at the very least, turn off *Settings → Builds & deployments →
+Automatic deployments* for both production and preview so nothing publishes
+without the pipeline.
 
-| Variable | Value |
+There are **no Pages environment variables** to set. `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_PUBLISHABLE_KEY` are build-time values, and the build now runs in
+the pipeline's deploy job, which reads them from that GitHub Environment (§8):
+
+| Variable | Where it comes from |
 | --- | --- |
-| `NODE_VERSION` | `24.19.0` |
-| `PNPM_VERSION` | `11.25.0` |
-| `VITE_SUPABASE_URL` | that environment's project URL |
-| `VITE_SUPABASE_PUBLISHABLE_KEY` | that environment's `sb_publishable_*` |
+| `VITE_SUPABASE_URL` | `https://<SUPABASE_PROJECT_REF>.supabase.co`, from the environment's `SUPABASE_PROJECT_REF` |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | the environment's `SUPABASE_PUBLISHABLE_KEY` variable (`sb_publishable_*`) |
 
 Vite inlines `VITE_*` variables into the bundle at build time, which is why the
 secret key can never appear here.
@@ -250,11 +268,12 @@ already be signed in. Both look exactly like a Supabase outage. The way to tell
 them apart is the browser console, which carries the stable code and the cause;
 if you are debugging what looks like an outage and the console names
 `SUPABASE_ENVIRONMENT_MISSING`, the project is misconfigured and Supabase is
-fine. Fix it by correcting the Pages environment variable and **redeploying** —
-these are build-time values, so changing them in the dashboard does nothing
-until the next build.
+fine. Fix it by correcting the GitHub Environment variable (§8) and **redeploying** —
+these are build-time values, so changing the GitHub Environment variable does
+nothing until the next deploy (re-run the deploy job, or push to `main`).
 
-The `...` in `--filter @shift/web...` is pnpm's dependency ellipsis: it builds
+The deploy job builds with `pnpm --filter "@shift/web..." build`. The `...` in
+`--filter @shift/web...` is pnpm's dependency ellipsis: it builds
 `@shift/web` **and everything it depends on**, in topological order. It is a
 no-op today and stops being one the moment `apps/web` imports `@shift/domain`,
 at which point the plain `--filter @shift/web` would deploy a bundle built
@@ -458,7 +477,8 @@ This is not specific to `brand_accent`. It is true of **every column added to
 1.4b, where `logo_path` was read by `/organizacija` alone: one screen degrading
 is a screen somebody can avoid, and the chrome is on all of them. Pages
 deployments and `db push` are separate commands with no ordering between them,
-so the ordering is this runbook's to state.
+so the ordering is this runbook's to state — and the pipeline's deploy job
+(§8) runs them in this order for every environment.
 
 Then verify on staging, against the Preview deployment:
 
@@ -479,8 +499,19 @@ pnpm exec supabase config push                   # 5.2a applies here too
 pnpm exec supabase functions deploy admin-auth   # only if the function changed
 ```
 
-Merging to `main` publishes the Production deployment on Pages. Push migrations
-**before** the merge lands whenever the new code depends on the new schema.
+With the pipeline enabled (§8), merging to `main` is what promotes: staging is
+deployed and smoked, then production waits for an approval, and each deploy
+pushes migrations **before** it publishes the SPA. Without it, nothing publishes
+on its own — the Pages project has no Git connection (§4) — so a manual
+promotion ends with a manual upload, built with that environment's values:
+
+```bash
+VITE_SUPABASE_URL=https://<production-ref>.supabase.co \
+VITE_SUPABASE_PUBLISHABLE_KEY=<production sb_publishable_*> \
+  pnpm --filter "@shift/web..." build
+pnpm exec wrangler pages deploy apps/web/dist --project-name <project> --branch main
+# staging: the staging values, and --branch staging
+```
 
 ### 5.4 If a push fails midway
 
@@ -727,3 +758,257 @@ A member-role token reads the same list and changes nothing on it: a `PATCH`
 answers `204` having affected zero rows, and a `POST` answers
 `403 {"code":"42501"}`. Both are asserted in `test/rls-isolation.test.ts`
 against both fixtures.
+
+---
+
+## 8. CI/CD
+
+One GitHub Actions workflow, `.github/workflows/pipeline.yml`, runs on every
+pull request to `main` and every push to `main`.
+
+| Job | Runs on | What it does |
+| --- | --- | --- |
+| `quality` | PR + `main` | Gitleaks over the **full** history (`.gitleaks.toml`), then `pnpm lint` |
+| `build` | PR + `main` | `pnpm typecheck`, `pnpm build`, uploads `apps/web/dist` as the `web-dist` artifact (built with no environment's values, so it proves the build and is never deployed) |
+| `test` | PR + `main` | `supabase start` (the full stack), `pnpm build`, `pnpm test`; **fails if the root Vitest run skipped anything** (§8.5) |
+| `e2e` | PR + `main` | `supabase start -x edge-runtime`, the two local env files from `supabase status` (`scripts/ci/write-local-env.mjs`), `supabase functions serve admin-auth` and Vite on `127.0.0.1:5173`, then `pnpm test:e2e`, then `pnpm test:smoke` against those same local servers (anonymous checks plus sign-in as the seeded `dvd-kastel-novi` / `ana.kovac`), so the smoke specs run on every PR. Reports are uploaded on failure. A runner of its own, so it never shares a stack with `test` (`e2e/README.md`) |
+| `deploy-staging` | `main`, deploys enabled | §5.2 against the `staging` Environment, then Pages `--branch staging` |
+| `smoke-staging` | after `deploy-staging` | `pnpm test:smoke` against the staging origin, with the smoke account if configured |
+| `deploy-production` | after `smoke-staging`, **after approval** | §5.3 against the `production` Environment, then Pages `--branch main` |
+| `smoke-production` | after `deploy-production` | `pnpm test:smoke`, anonymous |
+| `notify` | any failed or cancelled job on `main` | an error annotation and a run-summary line naming the failed and cancelled jobs; a Slack post if `SLACK_WEBHOOK_URL` is set |
+
+A failing job stops everything after it: production never starts unless
+staging deployed **and** its smoke passed.
+
+**Concurrency.** GitHub keeps at most one *running* and one *pending* run or
+job per concurrency group, and when a newer one arrives it silently cancels the
+older **pending** one — it does not form a queue. The workflow is built around
+that rule:
+
+- Pull requests: one group per PR, and a newer push cancels the run in progress.
+- Pushes to `main`: no workflow-level group. Every push runs `quality`,
+  `build`, `test` and `e2e` straight away, so CI on `main` is never held back —
+  or dropped — behind a run parked at the production approval.
+- `deploy-staging` and `deploy-production` each have a job-level group that
+  never cancels a deploy in progress. While one runs, a newer run's deploy
+  waits; if a third arrives meanwhile, the second's pending deploy is cancelled
+  and only the newest is kept — which is the one worth shipping. Two runs can
+  therefore interleave: staging can already hold run B while production is
+  still waiting for approval of run A. Approve (or reject) the older production
+  deploy first, and check which commit a pending approval is for.
+
+### 8.1 What a deploy job does, in order
+
+`.github/actions/deploy/action.yml`, once per environment — §5.2/§5.2b in the
+same order, with nothing skipped:
+
+1. check that every required secret and variable is set, has no leading or
+   trailing whitespace, and — for the project ref, the publishable key and the
+   secret key — has the right shape, naming each one that fails
+   (`scripts/ci/require-config.mjs`), then parse `APP_ORIGINS` once into a
+   normalized https-only list (`scripts/ci/origins.mjs`); all of this **before**
+   any remote command;
+2. `supabase link --project-ref …` — the database password reaches the CLI as
+   `SUPABASE_DB_PASSWORD` in the environment, never as an argument;
+3. `supabase db push` — migrations only, never `--include-seed`;
+4. `supabase migration list --output-format json`, failing the job if local and
+   remote disagree, or if it recognises no migration at all
+   (`scripts/ci/check-migrations.mjs`);
+5. rewrite `[auth] site_url` / `additional_redirect_urls` in the **runner's**
+   copy of `supabase/config.toml` to the normalized origins
+   (`scripts/ci/set-auth-urls.mjs`) — the committed file keeps its local values;
+6. `supabase config push` — after `db push`, always (§5.2b; what it sends: §8.6);
+7. `supabase secrets set --env-file` from a temporary file written by a heredoc
+   and deleted when the step ends (`SHIFT_SECRET_KEY`, `SHIFT_PUBLISHABLE_KEY`,
+   `SHIFT_ALLOWED_ORIGINS` = the normalized origins);
+8. `supabase functions deploy admin-auth` — every time, which is idempotent;
+9. `pnpm --filter "@shift/web..." build` with that environment's `VITE_*`
+   values, then a check that neither this environment's secret key nor any
+   key-shaped `sb_secret_` value is in `apps/web/dist`;
+10. `wrangler pages deploy apps/web/dist --branch staging|main`.
+
+### 8.2 Configure it
+
+Nothing deploys until the repository variable `DEPLOY_ENABLED` is exactly
+`true`. Until then, pushes to `main` run `quality`, `build`, `test` and `e2e`
+only, stay green, and the run summary lists what is left to configure. Once it
+is `true`, a missing or malformed item fails the deploy job by name rather than
+being skipped.
+
+**1. Create the hosted projects by hand** — the pipeline never creates, pauses
+or un-pauses anything: the two Supabase projects (§2) and the Pages project with
+no Git connection (§4).
+
+**2. Create two Environments** under *Settings → Environments*. Both settings
+marked required are the gate; do not skip either.
+
+| Environment | Deployment branches (**required**) | Required reviewers |
+| --- | --- | --- |
+| `staging` | *Selected branches* → `main` only | none |
+| `production` | *Selected branches* → `main` only | **required**: at least one person — `deploy-production` waits in the run until someone approves it |
+
+**3. Every deploy credential is an Environment secret, never a repository
+secret.** A repository secret is readable by any workflow job on any branch; an
+Environment secret only by a job that names that Environment — and with the
+branch restriction above, only from `main`, and for production only after
+approval. Set these on **each** of `staging` and `production`, with that
+environment's values:
+
+| Name | Kind | Value |
+| --- | --- | --- |
+| `SUPABASE_ACCESS_TOKEN` | secret | a Supabase access token (`sbp_*`, §0) — see the warning below |
+| `SUPABASE_DB_PASSWORD` | secret | that project's database password (§0) |
+| `SUPABASE_SECRET_KEY` | secret | that project's `sb_secret_*` — reaches the `admin-auth` function secrets and nothing else |
+| `CLOUDFLARE_API_TOKEN` | secret | a Cloudflare API token with *Account → Cloudflare Pages → Edit* |
+| `SUPABASE_PROJECT_REF` | variable | the project ref (20 lowercase letters and digits); the project URL is `https://<ref>.supabase.co` |
+| `SUPABASE_PUBLISHABLE_KEY` | variable | `sb_publishable_*` — public by design, it is inlined into the bundle |
+| `APP_ORIGINS` | variable | comma-separated bare **https** origins the app is served from, **primary first**: staging `https://staging.<project>.pages.dev`; production `https://<project>.pages.dev` or the custom domain first, then any other hostname. The first is the auth `site_url`, the Environment URL and the smoke's target; all of them are redirect URLs and `SHIFT_ALLOWED_ORIGINS`. No empty entries, no paths, no trailing slash |
+| `CLOUDFLARE_ACCOUNT_ID` | variable | the Cloudflare account id |
+| `CLOUDFLARE_PAGES_PROJECT` | variable | the Pages project name (`<project>`) |
+
+> **A Supabase personal access token is account-wide.** It is not scoped to a
+> project: the token stored on `staging` can reach the production project too,
+> and so can anything that reads it. So the real gate is not which token sits
+> where — it is that the token exists only as an Environment secret, that both
+> Environments accept `main` only, and that production needs a reviewer. Use a
+> **separate token per environment** anyway (from separate Supabase accounts or
+> organization members where you can), so one can be revoked without the other
+> and a leak is attributable. The Cloudflare token can be narrowed to the one
+> account; it still covers every Pages project in it.
+
+Repository-level, only two things, neither a deploy credential:
+
+| Name | Kind | Value |
+| --- | --- | --- |
+| `DEPLOY_ENABLED` | variable | `true` to turn deploys on; anything else (or unset) keeps them off |
+| `SLACK_WEBHOOK_URL` | secret, optional | an incoming-webhook URL for `notify`; unset means no Slack post |
+
+A secret key never goes into a variable, and a publishable key that starts
+`sb_secret_` is refused by the pre-deploy check, by the app at runtime (§4) and
+by the bundle check before upload.
+
+**4. The smoke account (staging only, optional).** With all three set on the
+`staging` Environment, `smoke-staging` also signs in and checks it lands on
+`/danas`. With none of them set that one case is skipped and the rest still run;
+with only one or two set, the smoke fails as misconfigured.
+
+| Name | Kind | Value |
+| --- | --- | --- |
+| `SMOKE_ORG` | variable | the smoke organization's slug |
+| `SMOKE_USERNAME` | variable | the smoke member's username |
+| `SMOKE_PASSWORD` | secret | that member's password |
+
+Provision it by hand with §7 against **staging**, as its own organization (for
+example `smoke`), never inside a real tenant. `smoke-production` is anonymous;
+production has no smoke account.
+
+**5. Turn it on:** set `DEPLOY_ENABLED` to `true`, then push to `main` (or
+re-run the latest `main` run).
+
+### 8.3 The remote smoke
+
+`smoke/` with `playwright.smoke.config.ts` — no web server, no global setup,
+nothing provisioned. Against `SMOKE_BASE_URL` it checks that `/` and a deep link
+answer 200 with the SPA shell, that `/prijava` renders with no
+`SUPABASE_ENVIRONMENT_MISSING` in the console, that signup is refused with
+`422 signup_disabled` (§6), that `admin-auth` answers CORS for the deployed
+origin, and, with the smoke account configured, that sign-in lands on `/danas`.
+It never signs out: a sign-out revokes every session of the account.
+
+**It is not read-only in one case.** The signup probe posts a real signup. On a
+correctly configured project it is refused; if signup is open, **the probe has
+just created an account** (`smoke-probe-<uuid>@example.invalid`) on that
+project. The failure message names the address: delete it under
+*Authentication → Users*, re-run `supabase config push` and re-probe (§6). The
+probe never retries, so one failed run creates at most one such account.
+
+Run it locally against the dev server; the project URL and publishable key fall
+back to `apps/web/.env.local`:
+
+```bash
+SMOKE_BASE_URL=http://127.0.0.1:5173 pnpm test:smoke
+# with the sign-in case, against the local seed:
+SMOKE_BASE_URL=http://127.0.0.1:5173 SMOKE_ORG=dvd-kastel-novi \
+  SMOKE_USERNAME=ana.kovac SMOKE_PASSWORD=local-fixture-password pnpm test:smoke
+```
+
+### 8.4 When the pipeline is not an option
+
+The manual runbook in §5 stays the fallback — a hotfix while Actions is down, or
+a first promotion before the Environments exist. A manual promotion and a
+pipeline deploy must never overlap, and nothing but you can stop that:
+
+1. set the repository variable `DEPLOY_ENABLED` to anything but `true` (for
+   example `paused`) — runs already past their deploy gate are not stopped, so
+   let any in-flight deploy finish, or cancel it, first;
+2. run §5.2 then §5.3 by hand, including the `wrangler pages deploy` at the end
+   of §5.3, and verify with §6;
+3. set `DEPLOY_ENABLED` back to `true`.
+
+### 8.5 What "no test skipped" covers
+
+Only the **root** Vitest run (`vitest run` over `test/**`, the last command of
+`pnpm test`) is checked, from its JSON report
+(`scripts/ci/assert-no-skipped.mjs`). The `pnpm -r test` package runs before it
+are not. In CI every root `skipIf` prerequisite is present — the stack is up
+and the app is built — so a skip there means a prerequisite silently went
+missing. It also means **an `it.skip`, `it.todo` or `describe.skip` in a root
+test now fails CI**: remove the case, or finish it, instead of parking it.
+
+### 8.6 What `config push` sends, and whether that is safe
+
+`supabase config push` sends the sections of `supabase/config.toml` that have a
+hosted counterpart, and **overwrites** the hosted values with them. So for every
+setting it covers, `config.toml` is the source of truth; anything changed in the
+dashboard for those settings is reverted on the next deploy.
+
+| Section | Sent | Hosted effect | Safe? |
+| --- | --- | --- | --- |
+| `project_id`, every `port` | no | local only | — |
+| `[api]` `schemas`, `extra_search_path`, `max_rows` | yes | PostgREST exposes `public` and `graphql_public`, caps a response at 1000 rows | yes — the same values the local suite runs against |
+| `[db]` `major_version = 17` | checked, not changed | the CLI compares it with the project's Postgres version | yes, **if the projects run Postgres 17** — create them on 17 (a mismatch is reported, not fixed) |
+| `[db.seed]` | no | `db push` without `--include-seed` never applies `seed.sql` | — |
+| `[studio]`, `[local_smtp]` | no | local only | — |
+| `[auth]` `site_url`, `additional_redirect_urls` | yes | rewritten per environment first (§8.1 step 5) | yes |
+| `[auth]` `jwt_expiry`, refresh-token rotation and reuse interval | yes | one-hour tokens, rotated refresh tokens | yes |
+| `[auth]` `enable_signup = false`, `enable_anonymous_sign_ins = false` | yes | no self-service or anonymous accounts (§5.2a) | yes — this is the point of the push |
+| `[auth.email]` `enable_signup = true`, `enable_confirmations = false`, `double_confirm_changes` | yes | the email/password provider on (sign-in needs it, §5.2a); no confirmation mail, since `.shift.invalid` addresses receive none | yes |
+| `[auth.sms]` `enable_signup = false` | yes | no phone signup | yes |
+| `[auth.hook.custom_access_token]` | yes | the hook on, calling the function `db push` just created (§5.2b) | yes, in this order only |
+| auth sections **absent** from the file (SMTP, rate limits, MFA, external providers, templates) | defaults | the CLI may send its defaults for them, reverting any dashboard change | acceptable today — none is configured in the dashboard. Before configuring one there, put it in `config.toml` instead (Ask First: it changes `config.toml`) |
+| `[edge_runtime]` | no | local only | — |
+| `[functions.admin-auth]` `verify_jwt = true` | by `functions deploy`, not `config push` | the gateway rejects a call without a JWT before the function runs | yes |
+
+Nothing in the file needs changing for hosted environments. The `config push`
+step's log shows the diff it applied; read it on the first deploy to each
+environment.
+
+### 8.7 Rolling back
+
+- **The SPA.** Cloudflare keeps every deployment. *Workers & Pages → <project> →
+  Deployments*, pick the previous production deployment, *Rollback to this
+  deployment* (for staging, the previous `staging` deployment). It is instant
+  and changes nothing in Supabase. The next push to `main` deploys again.
+- **The function.** Check out the previous commit and run
+  `supabase functions deploy admin-auth --project-ref <ref>` (§5.2).
+- **Migrations are forward-fix only** (§5.4). There is no down-migration and
+  no `db reset` against a hosted project, ever. A bad migration is corrected by
+  the next migration, promoted the same way.
+
+Because the database cannot roll back, write schema changes so the SPA can —
+**expand, then contract**:
+
+1. **Expand:** a release adds only — a new column (nullable or with a default),
+   a new table, a new function. The bundle already live does not ask for it, so
+   rolling the SPA back is always safe (§5.2c is the same rule from the other
+   side: the column exists before any bundle selects it).
+2. **Migrate readers:** a later release switches the SPA to the new shape.
+3. **Contract:** only once no live bundle — including the one you might roll
+   back to — reads the old column, a further release drops or renames it.
+
+Never drop or rename a column that the live bundle reads in the same release
+that stops reading it: the deploy pushes the migration first, so between
+`db push` and the upload every signed-in screen that reads it fails (§5.2c), and
+rolling the SPA back afterwards lands on a bundle that reads a column that no
+longer exists.

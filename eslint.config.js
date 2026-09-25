@@ -281,6 +281,8 @@ export default [
       'packages/*/test/**/*.ts',
       'test/**/*.ts',
       'apps/web/src/**/*.test.ts',
+      // The pipeline's helpers (`.github/workflows/pipeline.yml`): plain Node ESM.
+      'scripts/**/*.mjs',
     ],
     languageOptions: {
       globals: globals.node,
@@ -289,9 +291,10 @@ export default [
 
   // ------------------------------------------------ node + browser: e2e
   // The Playwright suite runs under Node, and its `page.evaluate` callbacks run
-  // in the page, so both sets of globals are real here.
+  // in the page, so both sets of globals are real here. The remote smoke
+  // (`smoke/`) is the same kind of file.
   {
-    files: ['e2e/**/*.ts'],
+    files: ['e2e/**/*.ts', 'smoke/**/*.ts'],
     languageOptions: {
       globals: { ...globals.node, ...globals.browser },
     },

@@ -1,0 +1,40 @@
+# Gitleaks configuration for the `quality` job (.github/workflows/pipeline.yml),
+# which scans the FULL git history on every pull request and every push.
+#
+#   docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1 \
+#     git /repo --config /repo/.gitleaks.toml
+#
+# The default rule set, extended — never replaced. Every allowlist below is
+# NARROW: a path AND a regex over the matched secret, both of which must hold
+# (`condition = "AND"`), so the same value anywhere else, or anything else in
+# the same file, is still reported. A finding that is not a known fake or local
+# value is a real leak until a human says otherwise: rotate it, and do not add
+# an allowlist entry for it here (spec-ci-cd-pipeline.md, Ask First).
+#
+# The fake and local values the spec names (key-hygiene's synthetic key, the
+# `*_test_value` fixtures, `.env.example` placeholders, the local
+# `postgres:postgres@127.0.0.1:54322` URLs, `local-fixture-password`, the split
+# key in `client.test.ts`) do not trip the default rules as of gitleaks v8.30.1,
+# so none of them needs an entry. Add one only when a scan actually reports it.
+
+[extend]
+useDefault = true
+
+# ---------------------------------------------------------------------------
+# CONFIRMED BY THE HUMAN (2026-09-25). The two entries below are not among the
+# values the spec pre-approved. Both were reported by `generic-api-key` on the
+# first full-history scan, both are verifiably not credentials, and the human
+# approved keeping them.
+# ---------------------------------------------------------------------------
+
+[[allowlists]]
+description = "Unit-test fixture: the generated password a mocked admin-auth reply carries (apps/web/src/members/write.test.ts). No account anywhere has it; the function is stubbed."
+condition = "AND"
+paths = ['''^apps/web/src/members/write\.test\.ts$''']
+regexes = ['''^Xy7kPq2mRt4vLn8s$''']
+
+[[allowlists]]
+description = "Vendored BMAD tooling: SHA-256 content hashes of its own files in the install manifest, not secrets."
+condition = "AND"
+paths = ['''^_bmad/_config/files-manifest\.csv$''']
+regexes = ['''^[0-9a-f]{64}$''']

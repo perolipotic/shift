@@ -23,4 +23,7 @@ supabase/.branches/
 e2e/.auth/
 test-results/
 playwright-report/
+# the remote smoke's own (playwright.smoke.config.ts)
+test-results-smoke/
+playwright-report-smoke/
 blob-report/
