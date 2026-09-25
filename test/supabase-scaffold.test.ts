@@ -293,7 +293,7 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the twenty-two policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b and 2.1a reviewed, and no twenty-third', () => {
+  it('declares exactly the twenty-eight policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a and 2.2a reviewed, and no twenty-ninth', () => {
     // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
     // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
     // copying `members_update_by_own_active_admin`, and its name is added here
@@ -350,6 +350,17 @@ describe('the access-control migration', () => {
       'organization_logos_update_by_own_active_admin',
       'organizations_select_own_organization',
       'organizations_update_by_own_active_admin',
+      // STORY 2.2a, and THREE for the reason the membership table has three:
+      // a times version is appended, cancelled only while it is not yet in
+      // effect, and never changed.
+      'shift_type_versions_delete_scheduled_by_own_active_admin',
+      'shift_type_versions_insert_by_own_active_admin',
+      'shift_type_versions_select_own_organization',
+      // STORY 2.2a, and THREE for the reason teams have three: removal
+      // archives, so there is no delete policy and the privilege is revoked.
+      'shift_types_insert_by_own_active_admin',
+      'shift_types_select_own_organization',
+      'shift_types_update_by_own_active_admin',
       // STORY 1.7b, and THREE for the reason the status table has three: a
       // membership version is appended, cancelled only while it is not yet in
       // effect, and never changed.
@@ -984,6 +995,232 @@ describe('the access-control migration', () => {
     expect(statements, 'a later migration grants anon something on hour_bands').not.toMatch(
       /grant[^;]*on table public\.hour_bands to[^;]*\banon\b/i,
     );
+  });
+
+  it('stores a shift type as a name, a working flag and an archive flag, and never deletes one', () => {
+    // STORY 2.2a, the teams shape of 1.7a: current-state, archived one-way, no
+    // delete. `is_working` is written once, on insert. Source text only; what
+    // each clause does is `test/rls-isolation.test.ts`.
+    const statements = migrationStatements();
+    const table = /create table shift_types \(([\s\S]*?)\n\);/i.exec(statements)?.[1] ?? '';
+
+    expect(table, 'the shift_types table is not declared').not.toBe('');
+    // EVERY column definition, whatever its type, as for hour_bands: a stored
+    // duration or ramp slot fails here.
+    const columns = [...table.matchAll(/^[ ]{2}([a-z_][a-z0-9_]*)[ ]+\S/gm)]
+      .map((match) => match[1])
+      .filter(
+        (name) =>
+          !['constraint', 'primary', 'unique', 'check', 'foreign', 'exclude'].includes(name ?? ''),
+      );
+    expect(columns, 'shift_types stores something beyond its reviewed columns').toEqual([
+      'organization_id',
+      'id',
+      'name',
+      'is_working',
+      'archived',
+      'created_by',
+      'created_at',
+    ]);
+    expect(table, 'is_working has a default, so a type may be created without saying').toMatch(
+      /^[ ]{2}is_working boolean not null,$/m,
+    );
+    expect(table, 'a blank type name is admitted').toMatch(/check \(btrim\(name\) <> ''\)/);
+    expect(table, 'nothing gives the versions a composite key to reference').toMatch(
+      /unique \(organization_id, id\)/,
+    );
+    expect(statements, 'no partial unique index scopes a type name to its organization').toMatch(
+      /create unique index \w+\s+on shift_types \(organization_id, lower\(btrim\(name\)\)\)\s+where not archived;/i,
+    );
+
+    const typePolicies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter(
+      (declaration) => /on public\.shift_types\b/i.test(declaration),
+    );
+    expect(typePolicies.length, 'shift_types does not carry exactly three policies').toBe(3);
+    for (const verb of ['delete', 'all']) {
+      expect(
+        typePolicies.filter((declaration) => new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration)),
+        `a policy opens ${verb} on shift_types; removing a type archives it`,
+      ).toEqual([]);
+    }
+
+    const update = policyBody('shift_types_update_by_own_active_admin');
+    const using = /using\s*\(([\s\S]*?)\)\s*with check/i.exec(update)?.[1] ?? '';
+    expect(update, 'the shift_types update policy is not declared').not.toBe('');
+    expect(using, 'an archived type can be renamed or unarchived').toMatch(/\barchived = false\b/);
+    expect(update, 'an update may move a type to another tenant').toMatch(
+      /with check[\s\S]*organization_id = nullif/i,
+    );
+    const check = /with check\s*\(([\s\S]*)\)\s*;/i.exec(update)?.[1] ?? '';
+    expect(check, 'a type with a change scheduled may be archived').toMatch(
+      /not archived\s+or coalesce\(public\.shift_type_latest_version\(id\), '-infinity'::date\)\s+<= public\.organization_today\(organization_id\)/,
+    );
+    expect(using, 'the archive rule leaked into USING, so a scheduled type cannot be renamed').not.toMatch(
+      /shift_type_latest_version/,
+    );
+    expect(
+      (update.match(/access\.member_role = 'admin'/g) ?? []).length,
+      'a member-role account is refused by only one of the two update clauses',
+    ).toBe(2);
+
+    const insert = policyBody('shift_types_insert_by_own_active_admin');
+    expect(insert, 'the tenant is not pinned from the signed claim').toMatch(
+      /with check[\s\S]*organization_id = nullif/i,
+    );
+    expect(insert, 'role and active state are not re-read').toContain("access.member_role = 'admin'");
+    expect(insert, 'the attribution is not pinned to the caller').toMatch(
+      /created_by = \(select auth\.uid\(\)\)/,
+    );
+
+    const read = policyBody('shift_types_select_own_organization');
+    expect(read, 'a member-role account cannot see its own organization types').not.toContain(
+      "member_role = 'admin'",
+    );
+    expect(read, 'archived types are hidden from somebody').not.toMatch(/\barchived\b/);
+
+    expect(statements, 'the delete privilege on shift_types is never revoked').toMatch(
+      /revoke insert, update, delete, truncate, references, trigger on table public\.shift_types\s+from anon, authenticated;/i,
+    );
+    expect(statements, 'authenticated may insert more than tenant, name and working flag').toMatch(
+      /grant insert \(organization_id, name, is_working\) on table public\.shift_types to authenticated;/,
+    );
+    expect(statements, 'authenticated may update more than the name and archive flag').toMatch(
+      /grant update \(name, archived\) on table public\.shift_types to authenticated;/,
+    );
+    expect(statements, 'a later migration grants delete on shift_types back').not.toMatch(
+      /grant[^;]*\bdelete\b[^;]*on table public\.shift_types\b/i,
+    );
+    expect(statements, 'a later migration grants anon something on shift_types').not.toMatch(
+      /grant[^;]*on table public\.shift_types to[^;]*\banon\b/i,
+    );
+  });
+
+  it('stores a shift type version as two times and a date, and derives the duration', () => {
+    // STORY 2.2a (AD-3): shape, not validation. The duration and the midnight
+    // flag belong to `packages/domain`, so neither is a column here.
+    const statements = migrationStatements();
+    const table = /create table shift_type_versions \(([\s\S]*?)\n\);/i.exec(statements)?.[1] ?? '';
+
+    expect(table, 'the shift_type_versions table is not declared').not.toBe('');
+    const columns = [...table.matchAll(/^[ ]{2}([a-z_][a-z0-9_]*)[ ]+\S/gm)]
+      .map((match) => match[1])
+      .filter(
+        (name) =>
+          !['constraint', 'primary', 'unique', 'check', 'foreign', 'exclude'].includes(name ?? ''),
+      );
+    expect(columns, 'shift_type_versions stores something beyond its reviewed columns').toEqual([
+      'organization_id',
+      'id',
+      'shift_type_id',
+      'start_time',
+      'end_time',
+      'effective_from',
+      'created_by',
+      'created_at',
+    ]);
+    expect(table, 'a version may name another tenant type').toMatch(
+      /foreign key \(organization_id, shift_type_id\)\s+references shift_types \(organization_id, id\)/,
+    );
+    for (const column of ['start_time', 'end_time']) {
+      expect(table, `${column} of 24:00 is admitted`).toContain(`check (${column} < '24:00')`);
+      expect(table, `${column} with seconds is admitted`).toContain(
+        `check (date_trunc('minute', ${column}) = ${column})`,
+      );
+    }
+    expect(table, 'an infinite effective_from is admitted').toMatch(
+      /check \(isfinite\(effective_from\) and effective_from < date '10000-01-01'\)/,
+    );
+    expect(table, 'two versions may share a date').toMatch(/unique \(shift_type_id, effective_from\)/);
+  });
+
+  it('appends shift type versions and never rewrites one, in any migration', () => {
+    // STORY 2.2a, the membership table's rules of 1.7b unchanged: select,
+    // insert and a delete that reaches only the latest version while it is
+    // dated after today. No update policy, and the privilege revoked.
+    const statements = migrationStatements();
+    const versionPolicies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter(
+      (declaration) => /on public\.shift_type_versions\b/i.test(declaration),
+    );
+
+    expect(versionPolicies.length, 'shift_type_versions does not carry exactly three policies').toBe(3);
+
+    const deletes = versionPolicies.filter((declaration) => /\bfor delete\b/i.test(declaration));
+    expect(deletes, 'the versions table has no single cancellation policy').toHaveLength(1);
+    expect(deletes[0], 'a version in effect can be cancelled').toMatch(
+      /effective_from > public\.organization_today\(organization_id\)/,
+    );
+    expect(deletes[0], 'a version other than the latest can be cancelled').toMatch(
+      /effective_from = public\.shift_type_latest_version\(shift_type_id\)/,
+    );
+    expect(deletes[0], 'a member-role account can cancel').toContain("access.member_role = 'admin'");
+
+    for (const verb of ['update', 'all']) {
+      expect(
+        versionPolicies.filter((declaration) => new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration)),
+        `a policy opens ${verb} on shift_type_versions; a version is never rewritten`,
+      ).toEqual([]);
+    }
+    expect(statements, 'the update privilege on shift_type_versions is never revoked').toMatch(
+      /revoke update, truncate, references, trigger on table public\.shift_type_versions\s+from anon, authenticated/i,
+    );
+    expect(statements, 'the five fact columns are not the only insertable ones').toMatch(
+      /grant insert \(\s*organization_id,\s*shift_type_id,\s*start_time,\s*end_time,\s*effective_from\s*\) on table public\.shift_type_versions to authenticated/i,
+    );
+    expect(statements, 'anon keeps a privilege on shift_type_versions').toMatch(
+      /revoke select, insert, delete on table public\.shift_type_versions from anon;/,
+    );
+
+    const insert = policyBody('shift_type_versions_insert_by_own_active_admin');
+    expect(insert, 'the version insert policy is not declared').not.toBe('');
+    expect(insert, 'the tenant is not pinned from the signed claim').toMatch(
+      /with check[\s\S]*organization_id = nullif/i,
+    );
+    expect(insert, 'role and active state are not re-read').toContain("access.member_role = 'admin'");
+    expect(insert, 'the attribution is not pinned to the caller').toMatch(
+      /created_by = \(select auth\.uid\(\)\)/,
+    );
+    expect(insert, 'a past date is admitted').toMatch(
+      /effective_from >= public\.organization_today\(organization_id\)/,
+    );
+    expect(insert, 'a version may be dated on or before the latest one').toMatch(
+      /effective_from > coalesce\(public\.shift_type_latest_version\(shift_type_id\)/,
+    );
+    expect(insert, 'a second change may be scheduled on top of one').toMatch(
+      /coalesce\(public\.shift_type_latest_version\(shift_type_id\), '-infinity'::date\)\s*<= public\.organization_today\(organization_id\)/,
+    );
+    expect(insert, 'a version may leave the times unchanged').toMatch(
+      /not exists \(\s*select 1\s+from public\.shift_type_times_on\(shift_type_versions\.shift_type_id, 'infinity'::date\) as latest\s+where latest\.start_time = shift_type_versions\.start_time\s+and latest\.end_time = shift_type_versions\.end_time\s*\)/,
+    );
+    expect(insert, 'the policy reads its own table directly, which recurses (42P17)').not.toMatch(
+      /from public\.shift_type_versions\b/,
+    );
+    expect(insert, 'a non-working or archived type may be given times').toMatch(
+      /and shift_type\.is_working\s+and not shift_type\.archived/,
+    );
+  });
+
+  it('reads shift type versions through two invoker functions with an empty search_path', () => {
+    // STORY 2.2a, 0010's readers copied. Source text only; the catalogue is
+    // asserted in `test/provisioning.test.ts`.
+    const statements = migrationStatements();
+    for (const [name, signature] of [
+      ['shift_type_latest_version', 'uuid'],
+      ['shift_type_times_on', 'uuid, date'],
+    ] as const) {
+      const body = new RegExp(`create function public\\.${name}\\([\\s\\S]*?\\$\\$;`, 'i').exec(
+        statements,
+      )?.[0];
+      expect(body, `${name} is not declared`).toBeDefined();
+      expect(body).toMatch(/\bvolatile\b/i);
+      expect(body).toMatch(/security invoker/i);
+      expect(body).toMatch(/set search_path = ''/);
+      expect(statements).toContain(`grant execute on function public.${name}(${signature}) to authenticated;`);
+      expect(statements).toContain(`revoke execute on function public.${name}(${signature}) from anon;`);
+    }
+    expect(
+      readFileSync(join(supabaseRoot, 'migrations', '0013_shift_types.sql'), 'utf8'),
+      'story 2.2a takes no trigger',
+    ).not.toMatch(/create (or replace )?trigger/i);
   });
 
   it('keeps a team name unique among active teams only, and never blank', () => {

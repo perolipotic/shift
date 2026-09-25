@@ -23,7 +23,15 @@ import {
   TEAM_HISTORY_ANSWERS,
   TEAM_HISTORY_SPAN,
 } from '../apps/web/src/members/team-history.fixture.ts';
-import { PILOT_HOUR_BANDS, UJ5_HOUR_BANDS } from '../packages/domain/test/fixtures.ts';
+import {
+  PILOT_HOUR_BANDS,
+  PILOT_SHIFT_TYPES,
+  PILOT_SHIFT_TYPE_VERSIONS,
+  SEEDED_EFFECTIVE_FROM,
+  UJ5_HOUR_BANDS,
+  UJ5_SHIFT_TYPES,
+  UJ5_SHIFT_TYPE_VERSIONS,
+} from '../packages/domain/test/fixtures.ts';
 
 /**
  * Q1 and Q2, executed rather than read — and the regression suite every later
@@ -223,10 +231,19 @@ const CROSS_TENANT = FIXTURES.flatMap((self) =>
 
 /** Both fixtures against every organization-scoped table a session reads:
  *  `organizations`, `members`, since story 1.7a `teams`, since story 1.7b
- *  `team_membership_versions`, and since story 2.1a `hour_bands`. */
+ *  `team_membership_versions`, since story 2.1a `hour_bands`, and since story
+ *  2.2a `shift_types` and `shift_type_versions`. */
 const OWN_ORGANIZATION_READS = FIXTURES.flatMap((entry) =>
   (
-    ['organizations', 'members', 'teams', 'team_membership_versions', 'hour_bands'] as const
+    [
+      'organizations',
+      'members',
+      'teams',
+      'team_membership_versions',
+      'hour_bands',
+      'shift_types',
+      'shift_type_versions',
+    ] as const
   ).map((table) => ({
     ...entry,
     table,
@@ -827,6 +844,14 @@ afterAll(async () => {
     // STORY 2.1a. The REST band cases delete their own rows in `finally`; this
     // is the backstop for a run that died between the two.
     await client.query('delete from hour_bands where name like $1', [`${THROWAWAY}%`]);
+    // STORY 2.2a. Versions reference types with no cascade, so the versions of
+    // a throwaway type go first; the REST cases clean up in `finally`, and this
+    // is the backstop.
+    await client.query(
+      'delete from shift_type_versions where shift_type_id in (select id from shift_types where name like $1)',
+      [`${THROWAWAY}%`],
+    );
+    await client.query('delete from shift_types where name like $1', [`${THROWAWAY}%`]);
     // STORY 1.7a. Teams are never deleted through the product, but the owner
     // may; scoped to the names this file issues, like every cleanup here.
     await client.query('delete from teams where name like $1', [`${THROWAWAY}%`]);
@@ -896,8 +921,8 @@ describe('the access-control layer is present, so nothing below passes vacuously
     ).toBe(FIXTURES.length * (FIXTURES.length - 1));
     expect(
       OWN_ORGANIZATION_READS.length,
-      'OWN_ORGANIZATION_READS must cover all five readable tables per fixture (teams since 1.7a, team membership since 1.7b, hour bands since 2.1a)',
-    ).toBe(FIXTURES.length * 5);
+      'OWN_ORGANIZATION_READS must cover all seven readable tables per fixture (teams since 1.7a, team membership since 1.7b, hour bands since 2.1a, shift types and their versions since 2.2a)',
+    ).toBe(FIXTURES.length * 7);
   });
 
   it.skipIf(noDatabase)('reaches the API whenever it can reach the database', () => {
@@ -976,7 +1001,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
       );
       expect(
         policies.map((row) => row.policyname),
-        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b and 2.1a own exactly these nineteen policies; a missing one refuses silently and looks like a working refusal',
+        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a and 2.2a own exactly these twenty-five policies; a missing one refuses silently and looks like a working refusal',
       ).toEqual([
         // STORY 2.1a: read, and all three writes for an active admin. Bands are
         // current-state and any of them may be deleted, the last one included.
@@ -996,6 +1021,16 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'members_update_by_own_active_admin',
         'organizations_select_own_organization',
         'organizations_update_by_own_active_admin',
+        // STORY 2.2a: the membership table's three on the times versions — a
+        // version is appended, and cancelled only before it has decided any
+        // day — and the teams' three on the types, which archive and are never
+        // deleted.
+        'shift_type_versions_delete_scheduled_by_own_active_admin',
+        'shift_type_versions_insert_by_own_active_admin',
+        'shift_type_versions_select_own_organization',
+        'shift_types_insert_by_own_active_admin',
+        'shift_types_select_own_organization',
+        'shift_types_update_by_own_active_admin',
         // STORY 1.7b: the status table's three, for the same reason — a
         // membership version is appended, and cancelled only before it has
         // decided any day.
@@ -1021,6 +1056,8 @@ describe('the access-control layer is present, so nothing below passes vacuously
               'member_team_has_version',
               'member_team_on',
               'organization_today',
+              'shift_type_latest_version',
+              'shift_type_times_on',
               'team_in_use',
               'team_membership_latest_version',
               'team_roster'
@@ -1039,6 +1076,9 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'member_team_has_version',
         'member_team_on',
         'organization_today',
+        // STORY 2.2a: the two readers the version and archive policies call.
+        'shift_type_latest_version',
+        'shift_type_times_on',
         'team_in_use',
         'team_membership_latest_version',
         // STORY 1.8: the one reading a member-role session learns a colleague's
@@ -9754,4 +9794,1399 @@ describe('a direct API call writes hour bands under exactly the same rules', () 
     expect(response.status, 'an anonymous caller read hour bands').toBe(401);
     expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
   });
+});
+
+// ------------------------------------------------------ story 2.2a: shift types
+
+/**
+ * STORY 2.2a. A shift type is current-state (`shift_types`, 0009's shape) and
+ * a working type's times are versioned (`shift_type_versions`, 0010's rules
+ * unchanged). `0013_shift_types.sql` is the whole enforcement; the duration is
+ * `packages/domain`'s and is asserted there.
+ *
+ * Every SQL case below runs in a rolled-back transaction. The REST cases commit
+ * on throwaway types only, never on a seeded one, and delete their own rows in
+ * `finally` (versions first — they reference types with no cascade);
+ * `afterAll` is the backstop.
+ */
+interface ShiftTypeRow {
+  readonly organizationId: string;
+  readonly id: string;
+  readonly name: string;
+  readonly isWorking: boolean;
+  readonly archived: boolean;
+  readonly createdBy: string;
+}
+
+interface ShiftTypeVersionRow {
+  readonly organizationId: string;
+  readonly id: string;
+  readonly shiftTypeId: string;
+  readonly startTime: string;
+  readonly endTime: string;
+  readonly from: string;
+  readonly createdBy: string;
+  readonly createdAt: string;
+}
+
+interface SeededShiftType {
+  readonly name: string;
+  readonly isWorking: boolean;
+  readonly versions: readonly { startTime: string; endTime: string; from: string }[];
+}
+
+/**
+ * What `supabase/seed.sql` gives each fixture, in creation order, with the
+ * admin every row is attributed to.
+ *
+ * DERIVED FROM THE DOMAIN FIXTURES, as the bands are: the arrays
+ * `packages/domain` asserts its duration rule against are the one source of
+ * truth, so a seed that drifts from them — or they from it — fails here.
+ */
+const SEEDED_SHIFT_TYPES: Readonly<
+  Record<string, { readonly admin: string; readonly types: readonly SeededShiftType[] }>
+> = Object.fromEntries(
+  (
+    [
+      ['dvd-kastel-novi', 'ivan.maric', PILOT_SHIFT_TYPES, PILOT_SHIFT_TYPE_VERSIONS],
+      ['zastita-split', 'josip.peric', UJ5_SHIFT_TYPES, UJ5_SHIFT_TYPE_VERSIONS],
+    ] as const
+  ).map(([slug, admin, types, versions]) => [
+    slug,
+    {
+      admin,
+      types: types.map((type) => ({
+        name: type.name,
+        isWorking: type.isWorking,
+        versions: versions
+          .filter((version) => version.shiftTypeId === type.id)
+          .map((version) => ({
+            startTime: asTime(version.startMinute),
+            endTime: asTime(version.endMinute),
+            from: version.effectiveFrom,
+          })),
+      })),
+    },
+  ]),
+);
+
+function seededShiftTypesOf(slug: string): readonly SeededShiftType[] {
+  const seeded = SEEDED_SHIFT_TYPES[slug];
+  if (seeded === undefined) throw new Error(`no seeded shift types are recorded for ${slug}`);
+  return seeded.types;
+}
+
+/** One type re-read as the owner, so RLS hides nothing. */
+async function shiftTypeById(client: Client, id: string): Promise<ShiftTypeRow | undefined> {
+  const { rows } = await client.query<ShiftTypeRow>(
+    `select organization_id as "organizationId", id, name, is_working as "isWorking",
+            archived, created_by as "createdBy"
+       from shift_types where id = $1`,
+    [id],
+  );
+  return rows[0];
+}
+
+/** A seeded type of one organization found by name, as the owner. */
+async function seededShiftType(client: Client, organization: string, name: string): Promise<string> {
+  const { rows } = await client.query<{ id: string }>(
+    'select id from shift_types where organization_id = $1 and name = $2',
+    [organization, name],
+  );
+  const found = rows[0];
+  if (found === undefined) throw new Error(`no seeded shift type ${name}`);
+  return found.id;
+}
+
+/** Every version of one type, oldest first, read as the owner: every column,
+ *  so an equality is a whole-row equality. */
+async function shiftTypeVersionsOf(client: Client, type: string): Promise<ShiftTypeVersionRow[]> {
+  const { rows } = await client.query<ShiftTypeVersionRow>(
+    `select organization_id as "organizationId", id, shift_type_id as "shiftTypeId",
+            start_time::text as "startTime", end_time::text as "endTime",
+            effective_from::text as "from", created_by as "createdBy",
+            created_at::text as "createdAt"
+       from shift_type_versions where shift_type_id = $1 order by effective_from`,
+    [type],
+  );
+  return rows;
+}
+
+/** Every version of every type in one organization, as the owner. */
+async function organizationShiftTypeVersions(
+  client: Client,
+  organization: string,
+): Promise<ShiftTypeVersionRow[]> {
+  const { rows } = await client.query<ShiftTypeVersionRow>(
+    `select organization_id as "organizationId", id, shift_type_id as "shiftTypeId",
+            start_time::text as "startTime", end_time::text as "endTime",
+            effective_from::text as "from", created_by as "createdBy",
+            created_at::text as "createdAt"
+       from shift_type_versions where organization_id = $1 order by shift_type_id, effective_from`,
+    [organization],
+  );
+  return rows;
+}
+
+/** `shift_type_times_on`, the one SQL reading: the times in effect on a date
+ *  (the greatest `effective_from` on or before it), as whoever the connection
+ *  is. The same reading the domain's `shiftTypeVersionOn` makes. */
+async function shiftTimesOn(
+  client: Client,
+  type: string,
+  day: string,
+): Promise<{ startTime: string; endTime: string } | null> {
+  const { rows } = await client.query<{ startTime: string; endTime: string }>(
+    `select start_time::text as "startTime", end_time::text as "endTime"
+       from public.shift_type_times_on($1, $2::date)`,
+    [type, day],
+  );
+  return rows[0] ?? null;
+}
+
+/** Insert one type as the current session, returning its id. */
+async function insertShiftType(
+  client: Client,
+  organization: string,
+  name: string,
+  isWorking: boolean,
+): Promise<string> {
+  const { rows } = await client.query<{ id: string }>(
+    'insert into shift_types (organization_id, name, is_working) values ($1, $2, $3) returning id',
+    [organization, name, isWorking],
+  );
+  const type = rows[0];
+  if (type === undefined) throw new Error('shift_types insert returned no row');
+  return type.id;
+}
+
+/** A throwaway type written as the OWNER — the state a case starts from. */
+async function addThrowawayShiftType(
+  client: Client,
+  organization: string,
+  createdBy: string,
+  options: { isWorking?: boolean; archived?: boolean } = {},
+): Promise<string> {
+  const { rows } = await client.query<{ id: string }>(
+    `insert into shift_types (organization_id, name, is_working, archived, created_by)
+     values ($1, $2 || ' ' || gen_random_uuid()::text, $3, $4, $5)
+     returning id`,
+    [
+      organization,
+      `${THROWAWAY} shift type`,
+      options.isWorking ?? true,
+      options.archived ?? false,
+      createdBy,
+    ],
+  );
+  const type = rows[0];
+  if (type === undefined) throw new Error('shift_types insert returned no row');
+  return type.id;
+}
+
+interface VersionFacts {
+  readonly organization: string;
+  readonly type: string;
+  readonly start: string;
+  readonly end: string;
+  readonly from: string;
+}
+
+/** One version, as whoever the connection currently is: the five columns a
+ *  session may name, and nothing else. */
+async function insertShiftTypeVersion(
+  client: Client,
+  version: VersionFacts,
+): Promise<{ rowCount: number | null }> {
+  return client.query(
+    `insert into shift_type_versions
+       (organization_id, shift_type_id, start_time, end_time, effective_from)
+     values ($1, $2, $3, $4, $5::date)`,
+    [version.organization, version.type, version.start, version.end, version.from],
+  );
+}
+
+/** One version written as the OWNER, past every policy (a past or second
+ *  scheduled date is only reachable this way). */
+async function ownerShiftTypeVersion(
+  client: Client,
+  version: VersionFacts & { readonly by: string },
+): Promise<void> {
+  await client.query(
+    `insert into shift_type_versions
+       (organization_id, shift_type_id, start_time, end_time, effective_from, created_by)
+     values ($1, $2, $3, $4, $5::date, $6)`,
+    [version.organization, version.type, version.start, version.end, version.from, version.by],
+  );
+}
+
+/** The cancellation a surface would send, as whoever the connection is. */
+async function cancelShiftTypeVersion(
+  client: Client,
+  version: { type: string; from: string },
+): Promise<{ rowCount: number | null }> {
+  return client.query(
+    'delete from shift_type_versions where shift_type_id = $1 and effective_from = $2::date',
+    [version.type, version.from],
+  );
+}
+
+describe('each organization holds exactly its own seeded shift types and times', () => {
+  it('records the types both fixtures are seeded with', () => {
+    expect(Object.keys(SEEDED_SHIFT_TYPES).sort()).toEqual(FIXTURES.map((f) => f.slug).sort());
+    expect(SEEDED_EFFECTIVE_FROM).toBe('2020-01-01');
+  });
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'shows the $fixture admin and member-role session exactly its own types, times and dates',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const own = await organizationId(client, slug);
+
+        for (const username of [admin, member]) {
+          const caller = await memberByUsername(client, slug, username);
+          await actAs(client, caller.authUserId, caller.organizationId);
+          const { rows: types } = await client.query<{
+            organizationId: string;
+            id: string;
+            name: string;
+            isWorking: boolean;
+            archived: boolean;
+          }>(
+            `select organization_id as "organizationId", id, name, is_working as "isWorking", archived
+               from shift_types order by created_at`,
+          );
+          const { rows: versions } = await client.query<{
+            organizationId: string;
+            shiftTypeId: string;
+            startTime: string;
+            endTime: string;
+            from: string;
+          }>(
+            `select organization_id as "organizationId", shift_type_id as "shiftTypeId",
+                    start_time::text as "startTime", end_time::text as "endTime",
+                    effective_from::text as "from"
+               from shift_type_versions order by effective_from`,
+          );
+          await actAsOwner(client);
+
+          expect(
+            types.map((type) => ({
+              organizationId: type.organizationId,
+              name: type.name,
+              isWorking: type.isWorking,
+              archived: type.archived,
+              versions: versions
+                .filter((version) => version.shiftTypeId === type.id)
+                .map(({ startTime, endTime, from }) => ({ startTime, endTime, from })),
+            })),
+            `${slug}/${username} does not read exactly its own seeded types, in creation order`,
+          ).toEqual(
+            seededShiftTypesOf(slug).map((type) => ({
+              organizationId: own,
+              archived: false,
+              ...type,
+            })),
+          );
+          expect(
+            [...new Set(versions.map((version) => version.organizationId))],
+            `${slug}/${username} read another organization's versions`,
+          ).toEqual([own]);
+        }
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'attributes every seeded $fixture type and version to its own admin',
+    async ({ slug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const seeded = SEEDED_SHIFT_TYPES[slug];
+        if (seeded === undefined) throw new Error(`no seeded shift types are recorded for ${slug}`);
+        const owner = await memberByUsername(client, slug, seeded.admin);
+
+        const { rows } = await client.query<{ table: string; createdBy: string; ties: number }>(
+          `select 'shift_types' as table, created_by as "createdBy",
+                  (count(*) - count(distinct created_at))::int as ties
+             from shift_types where organization_id = $1 group by created_by
+           union all
+           select 'shift_type_versions', created_by, 0
+             from shift_type_versions where organization_id = $1 group by created_by
+           order by 1`,
+          [owner.organizationId],
+        );
+        expect(rows, `${slug} seed attribution is not its admin alone`).toEqual([
+          { table: 'shift_type_versions', createdBy: owner.authUserId, ties: 0 },
+          // Distinct `created_at`s: the seed runs in one transaction, where
+          // `now()` would tie, and 2.2b reads creation order.
+          { table: 'shift_types', createdBy: owner.authUserId, ties: 0 },
+        ]);
+      });
+    },
+  );
+});
+
+describe('an admin creates, renames and archives shift types, and never deletes one', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'lets the $fixture admin create a working and a non-working type, rename and archive them, attributed to the caller',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const working = await insertShiftType(client, caller.organizationId, `${THROWAWAY} working`, true);
+        const resting = await insertShiftType(client, caller.organizationId, `${THROWAWAY} resting`, false);
+        const renamed = await client.query('update shift_types set name = $1 where id = $2', [
+          `${THROWAWAY} renamed`,
+          working,
+        ]);
+        const archived = await client.query('update shift_types set archived = true where id = $1', [
+          resting,
+        ]);
+        // One-way: an archived type matches no update at all.
+        const revived = await client.query('update shift_types set archived = false where id = $1', [
+          resting,
+        ]);
+        const renamedArchived = await client.query('update shift_types set name = $1 where id = $2', [
+          `${THROWAWAY} renamed while archived`,
+          resting,
+        ]);
+        await actAsOwner(client);
+
+        expect(renamed.rowCount, 'the rename reached no row').toBe(1);
+        expect(archived.rowCount, 'the archive reached no row').toBe(1);
+        expect(revived.rowCount, `a ${slug} archived type was brought back`).toBe(0);
+        expect(renamedArchived.rowCount, `a ${slug} archived type was renamed`).toBe(0);
+        expect(await shiftTypeById(client, working)).toEqual({
+          organizationId: caller.organizationId,
+          id: working,
+          name: `${THROWAWAY} renamed`,
+          isWorking: true,
+          archived: false,
+          createdBy: caller.authUserId,
+        });
+        expect(await shiftTypeById(client, resting)).toMatchObject({
+          name: `${THROWAWAY} resting`,
+          isWorking: false,
+          archived: true,
+          createdBy: caller.authUserId,
+        });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses the $fixture admin flipping is_working, deleting a type, or naming a column the grant does not admit',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const type = await seededShiftType(client, caller.organizationId, seededShiftTypesOf(slug)[0]!.name);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const flipped = await refusedThenContinue(client, () =>
+          client.query('update shift_types set is_working = false where id = $1', [type]),
+        );
+        const deleted = await refusedThenContinue(client, () =>
+          client.query('delete from shift_types where id = $1', [type]),
+        );
+        const forgedBy = await refusedThenContinue(client, () =>
+          client.query(
+            'insert into shift_types (organization_id, name, is_working, created_by) values ($1, $2, true, $3)',
+            [caller.organizationId, `${THROWAWAY} forged`, caller.authUserId],
+          ),
+        );
+        const forgedAt = await refusedThenContinue(client, () =>
+          client.query(
+            "insert into shift_types (organization_id, name, is_working, created_at) values ($1, $2, true, now() - interval '1 year')",
+            [caller.organizationId, `${THROWAWAY} forged`],
+          ),
+        );
+        const movedAway = await refusedThenContinue(client, () =>
+          client.query('update shift_types set organization_id = organization_id where id = $1', [type]),
+        );
+        await actAsOwner(client);
+
+        expect(flipped.code, 'is_working is updatable').toBe('42501');
+        expect(deleted.code, 'the delete privilege on shift_types is held').toBe('42501');
+        expect(forgedBy.code, 'a session named its own created_by').toBe('42501');
+        expect(forgedAt.code, 'a session named its own created_at').toBe('42501');
+        expect(movedAway.code, 'organization_id is updatable').toBe('42501');
+        expect(await shiftTypeById(client, type)).toMatchObject({ isWorking: true, archived: false });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture type name another active type carries in any case and padding, or a blank one, and frees an archived one',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        // The matrix's `" noć "` beside `Noć`, for every seeded name.
+        for (const { name } of seededShiftTypesOf(slug)) {
+          const padded = ` ${name.toLowerCase()} `;
+          const duplicate = await refusedThenContinue(client, () =>
+            insertShiftType(client, caller.organizationId, padded, true),
+          );
+          expect(duplicate.code, `${JSON.stringify(padded)} is not a unique violation`).toBe('23505');
+          expect(duplicate.message).toContain('shift_types_organization_name_key');
+        }
+        const blank = await refusedThenContinue(client, () =>
+          insertShiftType(client, caller.organizationId, '   ', true),
+        );
+        expect(blank.code, 'a blank name is a check violation').toBe('23514');
+        expect(blank.message).toContain('shift_types_name_not_blank');
+
+        // PARTIAL: an archived type's name is free to be taken again.
+        const first = await insertShiftType(client, caller.organizationId, `${THROWAWAY} reused`, true);
+        await client.query('update shift_types set archived = true where id = $1', [first]);
+        const second = await insertShiftType(client, caller.organizationId, `${THROWAWAY} REUSED `, true);
+        expect(second).not.toBe(first);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture member-role session creating, renaming or archiving a type',
+    async ({ slug, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, member);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const created = await refusedThenContinue(client, () =>
+          insertShiftType(client, caller.organizationId, `${THROWAWAY} member made`, true),
+        );
+        const renamed = await client.query('update shift_types set name = name || $1', ['!']);
+        const archived = await client.query('update shift_types set archived = true');
+        await actAsOwner(client);
+
+        expect(created.code, 'a member-role insert is refused by WITH CHECK').toBe('42501');
+        expect(renamed.rowCount, `a ${slug} member renamed a type`).toBe(0);
+        expect(archived.rowCount, `a ${slug} member archived a type`).toBe(0);
+      });
+    },
+  );
+});
+
+describe('shift type times are versioned: appended in date order, each one a change, one scheduled at most', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'gives a new $fixture working type its first times from today, attributed to the caller',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const today = await organizationDay(client, caller.organizationId);
+        const yesterday = await organizationDay(client, caller.organizationId, -1);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const type = await insertShiftType(client, caller.organizationId, `${THROWAWAY} new`, true);
+        expect(await shiftTimesOn(client, type, today), 'a new type invented times').toBeNull();
+        const written = await insertShiftTypeVersion(client, {
+          organization: caller.organizationId,
+          type,
+          start: '07:00',
+          end: '07:00',
+          from: today,
+        });
+        await actAsOwner(client);
+
+        expect(written.rowCount, `the ${slug} admin could not give a type its times`).toBe(1);
+        expect(await shiftTypeVersionsOf(client, type)).toMatchObject([
+          {
+            organizationId: caller.organizationId,
+            shiftTypeId: type,
+            startTime: '07:00:00',
+            endTime: '07:00:00',
+            from: today,
+            createdBy: caller.authUserId,
+          },
+        ]);
+        expect(await shiftTimesOn(client, type, yesterday), 'the first times reached back').toBeNull();
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'corrects a seeded $fixture type from today, renames it, and earlier dates keep the old times',
+    async ({ slug, admin }) => {
+      // The time-correction row and AC 3: one new row, the seeded one
+      // byte-identical, the name current on every date, the times per date.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const seeded = seededShiftTypesOf(slug).find((type) => type.isWorking);
+        if (seeded === undefined) throw new Error(`${slug} seeds no working type`);
+        const type = await seededShiftType(client, caller.organizationId, seeded.name);
+        const today = await organizationDay(client, caller.organizationId);
+        const yesterday = await organizationDay(client, caller.organizationId, -1);
+        const before = await shiftTypeVersionsOf(client, type);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const written = await insertShiftTypeVersion(client, {
+          organization: caller.organizationId,
+          type,
+          start: '05:30',
+          end: '17:30',
+          from: today,
+        });
+        const renamed = await client.query('update shift_types set name = $1 where id = $2', [
+          `${THROWAWAY} renamed`,
+          type,
+        ]);
+        const { rows: named } = await client.query<{ name: string }>(
+          'select name from shift_types where id = $1',
+          [type],
+        );
+        const rows = [];
+        for (const day of ['2019-12-31', SEEDED_EFFECTIVE_FROM, yesterday, today]) {
+          rows.push({
+            name: named[0]?.name,
+            day,
+            startTime: (await shiftTimesOn(client, type, day))?.startTime ?? null,
+          });
+        }
+        await actAsOwner(client);
+
+        expect(written.rowCount).toBe(1);
+        expect(renamed.rowCount).toBe(1);
+        const after = await shiftTypeVersionsOf(client, type);
+        expect(after.length).toBe(before.length + 1);
+        expect(after[0], 'the seeded version changed').toEqual(before[0]);
+        expect(rows).toEqual([
+          { name: `${THROWAWAY} renamed`, day: '2019-12-31', startTime: null },
+          { name: `${THROWAWAY} renamed`, day: SEEDED_EFFECTIVE_FROM, startTime: seeded.versions[0]!.startTime },
+          { name: `${THROWAWAY} renamed`, day: yesterday, startTime: seeded.versions[0]!.startTime },
+          { name: `${THROWAWAY} renamed`, day: today, startTime: '05:30:00' },
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a backdated $fixture version, and writes nothing',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const type = await addThrowawayShiftType(client, caller.organizationId, caller.authUserId);
+        const yesterday = await organizationDay(client, caller.organizationId, -1);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const refusal = await refusedThenContinue(client, () =>
+          insertShiftTypeVersion(client, {
+            organization: caller.organizationId,
+            type,
+            start: '07:00',
+            end: '19:00',
+            from: yesterday,
+          }),
+        );
+        await actAsOwner(client);
+
+        expect(refusal.code, 'a backdated version was admitted').toBe('42501');
+        expect(await shiftTypeVersionsOf(client, type)).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a second scheduled $fixture version, or one on or before the latest, and writes nothing',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const type = await addThrowawayShiftType(client, caller.organizationId, caller.authUserId);
+        const facts = { organization: caller.organizationId, type };
+        await ownerShiftTypeVersion(client, {
+          ...facts,
+          start: '07:00',
+          end: '19:00',
+          from: SEEDED_EFFECTIVE_FROM,
+          by: caller.authUserId,
+        });
+        await ownerShiftTypeVersion(client, {
+          ...facts,
+          start: '08:00',
+          end: '20:00',
+          from: await organizationDay(client, caller.organizationId, 5),
+          by: caller.authUserId,
+        });
+        const before = await shiftTypeVersionsOf(client, type);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        for (const offset of [0, 3, 5, 10]) {
+          const refusal = await refusedThenContinue(client, async () =>
+            insertShiftTypeVersion(client, {
+              ...facts,
+              start: '09:00',
+              end: '21:00',
+              from: await organizationDay(client, caller.organizationId, offset),
+            }),
+          );
+          expect(refusal.code, `a version at today+${offset} was admitted beside a scheduled one`).toBe(
+            '42501',
+          );
+        }
+        await actAsOwner(client);
+
+        expect(await shiftTypeVersionsOf(client, type)).toEqual(before);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture version with the latest version own times, and admits a change of either time alone',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const today = await organizationDay(client, caller.organizationId);
+        const types = [];
+        for (let index = 0; index < 3; index += 1) {
+          const type = await addThrowawayShiftType(client, caller.organizationId, caller.authUserId);
+          await ownerShiftTypeVersion(client, {
+            organization: caller.organizationId,
+            type,
+            start: '19:00',
+            end: '07:00',
+            from: SEEDED_EFFECTIVE_FROM,
+            by: caller.authUserId,
+          });
+          types.push(type);
+        }
+        const [same, startOnly, endOnly] = types as [string, string, string];
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const refusal = await refusedThenContinue(client, () =>
+          insertShiftTypeVersion(client, {
+            organization: caller.organizationId,
+            type: same,
+            start: '19:00',
+            end: '07:00',
+            from: today,
+          }),
+        );
+        const moveStart = await insertShiftTypeVersion(client, {
+          organization: caller.organizationId,
+          type: startOnly,
+          start: '18:00',
+          end: '07:00',
+          from: today,
+        });
+        const moveEnd = await insertShiftTypeVersion(client, {
+          organization: caller.organizationId,
+          type: endOnly,
+          start: '19:00',
+          end: '08:00',
+          from: today,
+        });
+        await actAsOwner(client);
+
+        expect(refusal.code, 'a version that changes nothing was admitted').toBe('42501');
+        expect(await shiftTypeVersionsOf(client, same)).toHaveLength(1);
+        expect(moveStart.rowCount, 'a change of the start alone was refused').toBe(1);
+        expect(moveEnd.rowCount, 'a change of the end alone was refused').toBe(1);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture version on a non-working or archived type',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const resting = seededShiftTypesOf(slug).find((type) => !type.isWorking);
+        if (resting === undefined) throw new Error(`${slug} seeds no non-working type`);
+        const nonWorking = await seededShiftType(client, caller.organizationId, resting.name);
+        const archived = await addThrowawayShiftType(client, caller.organizationId, caller.authUserId, {
+          archived: true,
+        });
+        const today = await organizationDay(client, caller.organizationId);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        for (const [label, type] of [
+          ['non-working', nonWorking],
+          ['archived', archived],
+        ] as const) {
+          const refusal = await refusedThenContinue(client, () =>
+            insertShiftTypeVersion(client, {
+              organization: caller.organizationId,
+              type,
+              start: '07:00',
+              end: '19:00',
+              from: today,
+            }),
+          );
+          expect(refusal.code, `a version on a ${label} type was admitted`).toBe('42501');
+        }
+        await actAsOwner(client);
+
+        expect(await shiftTypeVersionsOf(client, nonWorking)).toEqual([]);
+        expect(await shiftTypeVersionsOf(client, archived)).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'cancels the latest future $fixture version, and no version in effect or before it',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const today = await organizationDay(client, caller.organizationId);
+        const scheduled = await organizationDay(client, caller.organizationId, 7);
+        const facts = { organization: caller.organizationId, by: caller.authUserId };
+
+        const pending = await addThrowawayShiftType(client, caller.organizationId, caller.authUserId);
+        await ownerShiftTypeVersion(client, { ...facts, type: pending, start: '07:00', end: '19:00', from: SEEDED_EFFECTIVE_FROM });
+        await ownerShiftTypeVersion(client, { ...facts, type: pending, start: '08:00', end: '20:00', from: scheduled });
+        const current = await addThrowawayShiftType(client, caller.organizationId, caller.authUserId);
+        await ownerShiftTypeVersion(client, { ...facts, type: current, start: '07:00', end: '19:00', from: SEEDED_EFFECTIVE_FROM });
+        await ownerShiftTypeVersion(client, { ...facts, type: current, start: '08:00', end: '20:00', from: today });
+        const pendingBefore = await shiftTypeVersionsOf(client, pending);
+        const currentBefore = await shiftTypeVersionsOf(client, current);
+
+        await actAs(client, caller.authUserId, caller.organizationId);
+        const past = await cancelShiftTypeVersion(client, { type: pending, from: SEEDED_EFFECTIVE_FROM });
+        const inEffect = await cancelShiftTypeVersion(client, { type: current, from: today });
+        const whole = await client.query('delete from shift_type_versions where shift_type_id = $1', [
+          current,
+        ]);
+        const cancelled = await cancelShiftTypeVersion(client, { type: pending, from: scheduled });
+        await actAsOwner(client);
+
+        expect(past.rowCount, 'a past version was deleted').toBe(0);
+        expect(inEffect.rowCount, 'a version in effect today was deleted').toBe(0);
+        expect(whole.rowCount, 'versions in effect were deleted').toBe(0);
+        expect(cancelled.rowCount, 'the scheduled version could not be cancelled').toBe(1);
+        expect(await shiftTypeVersionsOf(client, pending)).toEqual(pendingBefore.slice(0, 1));
+        expect(await shiftTypeVersionsOf(client, current)).toEqual(currentBefore);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture version at 24:00 or with seconds, in either time',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const type = await addThrowawayShiftType(client, caller.organizationId, caller.authUserId);
+        const today = await organizationDay(client, caller.organizationId);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        for (const [start, end, constraint] of [
+          ['24:00', '07:00', 'shift_type_versions_start_before_midnight'],
+          ['07:00', '24:00', 'shift_type_versions_end_before_midnight'],
+          ['07:00:30', '19:00', 'shift_type_versions_start_whole_minute'],
+          ['07:00', '19:00:00.5', 'shift_type_versions_end_whole_minute'],
+        ] as const) {
+          const refusal = await refusedThenContinue(client, () =>
+            insertShiftTypeVersion(client, { organization: caller.organizationId, type, start, end, from: today }),
+          );
+          expect(refusal.code, `${start}–${end} is not a check violation`).toBe('23514');
+          expect(refusal.message, `${start}–${end} does not name ${constraint}`).toContain(constraint);
+        }
+        await actAsOwner(client);
+        expect(await shiftTypeVersionsOf(client, type)).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'updates no $fixture version, and lets no session name the attribution',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const type = await addThrowawayShiftType(client, caller.organizationId, caller.authUserId);
+        const today = await organizationDay(client, caller.organizationId);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const updated = await refusedThenContinue(client, () =>
+          client.query("update shift_type_versions set start_time = '06:00' where organization_id = $1", [
+            caller.organizationId,
+          ]),
+        );
+        const forgedBy = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into shift_type_versions
+               (organization_id, shift_type_id, start_time, end_time, effective_from, created_by)
+             values ($1, $2, '07:00', '19:00', $3::date, $4)`,
+            [caller.organizationId, type, today, caller.authUserId],
+          ),
+        );
+        const forgedAt = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into shift_type_versions
+               (organization_id, shift_type_id, start_time, end_time, effective_from, created_at)
+             values ($1, $2, '07:00', '19:00', $3::date, now() - interval '1 year')`,
+            [caller.organizationId, type, today],
+          ),
+        );
+        await actAsOwner(client);
+
+        expect(updated.code, 'a version is updatable').toBe('42501');
+        expect(forgedBy.code, 'a session named its own created_by').toBe('42501');
+        expect(forgedAt.code, 'a session named its own created_at').toBe('42501');
+        expect(await shiftTypeVersionsOf(client, type)).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture member-role session writing or cancelling a version',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const caller = await memberByUsername(client, slug, member);
+        const type = await addThrowawayShiftType(client, caller.organizationId, owner.authUserId);
+        const scheduled = await organizationDay(client, caller.organizationId, 3);
+        await ownerShiftTypeVersion(client, {
+          organization: caller.organizationId,
+          type,
+          start: '07:00',
+          end: '19:00',
+          from: scheduled,
+          by: owner.authUserId,
+        });
+        const before = await organizationShiftTypeVersions(client, caller.organizationId);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const written = await refusedThenContinue(client, async () =>
+          insertShiftTypeVersion(client, {
+            organization: caller.organizationId,
+            type: await seededShiftType(client, caller.organizationId, seededShiftTypesOf(slug)[0]!.name),
+            start: '05:30',
+            end: '17:30',
+            from: await organizationDay(client, caller.organizationId),
+          }),
+        );
+        const cancelled = await cancelShiftTypeVersion(client, { type, from: scheduled });
+        const wiped = await client.query('delete from shift_type_versions');
+        await actAsOwner(client);
+
+        expect(written.code, 'a member-role version insert is refused by WITH CHECK').toBe('42501');
+        expect(cancelled.rowCount, `a ${slug} member cancelled a scheduled version`).toBe(0);
+        expect(wiped.rowCount, `a ${slug} member deleted a version`).toBe(0);
+        expect(await organizationShiftTypeVersions(client, caller.organizationId)).toEqual(before);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'keeps $otherFixture shift types and versions out of reach of the $fixture admin',
+    async ({ slug, admin, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const other = await organizationId(client, otherSlug);
+        const otherAdmin = await memberByUsername(
+          client,
+          otherSlug,
+          FIXTURES.find((entry) => entry.slug === otherSlug)!.admin,
+        );
+        const otherType = await seededShiftType(
+          client,
+          other,
+          seededShiftTypesOf(otherSlug).find((type) => type.isWorking)!.name,
+        );
+        const scheduled = await organizationDay(client, other, 4);
+        await ownerShiftTypeVersion(client, {
+          organization: other,
+          type: otherType,
+          start: '05:30',
+          end: '17:30',
+          from: scheduled,
+          by: otherAdmin.authUserId,
+        });
+        const typesBefore = await client.query(
+          'select * from shift_types where organization_id = $1 order by id',
+          [other],
+        );
+        const versionsBefore = await organizationShiftTypeVersions(client, other);
+        const today = await organizationDay(client, caller.organizationId);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const readTypes = await client.query('select id from shift_types where organization_id = $1', [other]);
+        const readVersions = await client.query(
+          'select id from shift_type_versions where organization_id = $1',
+          [other],
+        );
+        const renamed = await client.query(
+          'update shift_types set name = name || $1 where organization_id = $2',
+          [' hijacked', other],
+        );
+        const cancelled = await cancelShiftTypeVersion(client, { type: otherType, from: scheduled });
+        const plantedType = await refusedThenContinue(client, () =>
+          insertShiftType(client, other, `${THROWAWAY} planted`, true),
+        );
+        const plantedVersion = await refusedThenContinue(client, () =>
+          insertShiftTypeVersion(client, {
+            organization: other,
+            type: otherType,
+            start: '06:30',
+            end: '18:30',
+            from: today,
+          }),
+        );
+        // Own tenant named, the other tenant's type: the composite key makes it
+        // unrepresentable, and the policy refuses it first.
+        const crossedVersion = await refusedThenContinue(client, () =>
+          insertShiftTypeVersion(client, {
+            organization: caller.organizationId,
+            type: otherType,
+            start: '06:30',
+            end: '18:30',
+            from: today,
+          }),
+        );
+        await actAsOwner(client);
+
+        expect(readTypes.rowCount, `a ${slug} admin read ${otherSlug} types`).toBe(0);
+        expect(readVersions.rowCount, `a ${slug} admin read ${otherSlug} versions`).toBe(0);
+        expect(renamed.rowCount, `a ${slug} admin renamed a ${otherSlug} type`).toBe(0);
+        expect(cancelled.rowCount, `a ${slug} admin cancelled a ${otherSlug} version`).toBe(0);
+        expect(plantedType.code).toBe('42501');
+        expect(plantedVersion.code).toBe('42501');
+        expect(crossedVersion.code).toBe('42501');
+        expect(
+          (await client.query('select * from shift_types where organization_id = $1 order by id', [other]))
+            .rows,
+        ).toEqual(typesBefore.rows);
+        expect(await organizationShiftTypeVersions(client, other)).toEqual(versionsBefore);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('refuses an anonymous session every verb on shift types and their versions', async () => {
+    await inRolledBackTransaction(async (client) => {
+      const own = await organizationId(client, FIXTURES[0].slug);
+      const type = await seededShiftType(client, own, seededShiftTypesOf(FIXTURES[0].slug)[0]!.name);
+      await client.query('set local role anon');
+
+      const verbs = [
+        () => client.query('select id from shift_types'),
+        () => insertShiftType(client, own, `${THROWAWAY} anonymous`, true),
+        () => client.query("update shift_types set name = 'x'"),
+        () => client.query('delete from shift_types'),
+        () => client.query('select id from shift_type_versions'),
+        () =>
+          insertShiftTypeVersion(client, {
+            organization: own,
+            type,
+            start: '05:30',
+            end: '17:30',
+            from: '2999-01-01',
+          }),
+        () => client.query("update shift_type_versions set start_time = '06:00'"),
+        () => client.query('delete from shift_type_versions'),
+      ];
+      for (const verb of verbs) {
+        const refusal = await refusedThenContinue(client, verb);
+        expect(refusal.code, 'anon holds a privilege on shift types or their versions').toBe('42501');
+      }
+    });
+  });
+});
+
+describe('shift type names, archives and times hold across renames, schedules and many versions', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses renaming a $fixture type onto another active type name in any case and padding, and admits an archived one',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const taken = seededShiftTypesOf(slug)[0]!.name;
+        const mover = await insertShiftType(client, caller.organizationId, `${THROWAWAY} mover`, true);
+        const retired = await insertShiftType(client, caller.organizationId, `${THROWAWAY} retired`, true);
+        await client.query('update shift_types set archived = true where id = $1', [retired]);
+
+        const onto = await refusedThenContinue(client, () =>
+          client.query('update shift_types set name = $1 where id = $2', [` ${taken.toUpperCase()} `, mover]),
+        );
+        const ontoArchived = await client.query('update shift_types set name = $1 where id = $2', [
+          ` ${THROWAWAY.toUpperCase()} RETIRED `,
+          mover,
+        ]);
+        await actAsOwner(client);
+
+        expect(onto.code, 'a rename onto an active type name is not a unique violation').toBe('23505');
+        expect(onto.message).toContain('shift_types_organization_name_key');
+        expect(ontoArchived.rowCount, 'a rename onto an archived type name was refused').toBe(1);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses archiving a $fixture type with a change scheduled, and admits it once the change is cancelled',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const facts = { organization: caller.organizationId, by: caller.authUserId };
+        const scheduled = await organizationDay(client, caller.organizationId, 4);
+        const pending = await addThrowawayShiftType(client, caller.organizationId, caller.authUserId);
+        await ownerShiftTypeVersion(client, { ...facts, type: pending, start: '07:00', end: '19:00', from: SEEDED_EFFECTIVE_FROM });
+        await ownerShiftTypeVersion(client, { ...facts, type: pending, start: '08:00', end: '20:00', from: scheduled });
+        // A version in effect today, and none after, does not block the archive.
+        const current = await addThrowawayShiftType(client, caller.organizationId, caller.authUserId);
+        await ownerShiftTypeVersion(client, {
+          ...facts,
+          type: current,
+          start: '07:00',
+          end: '19:00',
+          from: await organizationDay(client, caller.organizationId),
+        });
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const refused = await refusedThenContinue(client, () =>
+          client.query('update shift_types set archived = true where id = $1', [pending]),
+        );
+        const renamed = await client.query('update shift_types set name = $1 where id = $2', [
+          `${THROWAWAY} renamed while scheduled`,
+          pending,
+        ]);
+        const cancelled = await cancelShiftTypeVersion(client, { type: pending, from: scheduled });
+        const archived = await client.query('update shift_types set archived = true where id = $1', [pending]);
+        const archivedCurrent = await client.query('update shift_types set archived = true where id = $1', [
+          current,
+        ]);
+        await actAsOwner(client);
+
+        expect(refused.code, 'a type with a change scheduled was archived').toBe('42501');
+        expect(renamed.rowCount, 'a rename of a type with a change scheduled was refused').toBe(1);
+        expect(cancelled.rowCount).toBe(1);
+        expect(archived.rowCount, 'the archive was refused after the cancellation').toBe(1);
+        expect(archivedCurrent.rowCount, 'a version in effect blocked the archive').toBe(1);
+        expect(await shiftTypeById(client, pending)).toMatchObject({ archived: true });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'reads a $fixture type with two versions on every date, and compares a new version with the latest times only',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const today = await organizationDay(client, caller.organizationId);
+        const yesterday = await organizationDay(client, caller.organizationId, -1);
+        const facts = { organization: caller.organizationId, by: caller.authUserId };
+        const [repeatLatest, repeatOlder] = [
+          await addThrowawayShiftType(client, caller.organizationId, caller.authUserId),
+          await addThrowawayShiftType(client, caller.organizationId, caller.authUserId),
+        ];
+        for (const type of [repeatLatest, repeatOlder]) {
+          await ownerShiftTypeVersion(client, { ...facts, type, start: '19:00', end: '07:00', from: SEEDED_EFFECTIVE_FROM });
+          await ownerShiftTypeVersion(client, { ...facts, type, start: '20:00', end: '08:00', from: today });
+        }
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const old = { startTime: '19:00:00', endTime: '07:00:00' };
+        const current = { startTime: '20:00:00', endTime: '08:00:00' };
+        expect(await shiftTimesOn(client, repeatLatest, '2019-12-31')).toBeNull();
+        expect(await shiftTimesOn(client, repeatLatest, SEEDED_EFFECTIVE_FROM)).toEqual(old);
+        expect(await shiftTimesOn(client, repeatLatest, yesterday)).toEqual(old);
+        expect(await shiftTimesOn(client, repeatLatest, today)).toEqual(current);
+        expect(await shiftTimesOn(client, repeatLatest, 'infinity')).toEqual(current);
+
+        const future = await organizationDay(client, caller.organizationId, 3);
+        const sameAsLatest = await refusedThenContinue(client, () =>
+          insertShiftTypeVersion(client, { organization: caller.organizationId, type: repeatLatest, start: '20:00', end: '08:00', from: future }),
+        );
+        const backToOlder = await insertShiftTypeVersion(client, {
+          organization: caller.organizationId,
+          type: repeatOlder,
+          start: '19:00',
+          end: '07:00',
+          from: future,
+        });
+        await actAsOwner(client);
+
+        expect(sameAsLatest.code, 'a version repeating the latest times was admitted').toBe('42501');
+        expect(backToOlder.rowCount, 'a version returning to older times was refused').toBe(1);
+        expect(await shiftTypeVersionsOf(client, repeatLatest)).toHaveLength(2);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'cancels only the latest of two future $fixture versions',
+    async ({ slug, admin }) => {
+      // Two future versions are only reachable as the owner; the delete
+      // policy's latest-only conjunct is what refuses the earlier one.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const facts = { organization: caller.organizationId, by: caller.authUserId };
+        const [soon, later] = [
+          await organizationDay(client, caller.organizationId, 3),
+          await organizationDay(client, caller.organizationId, 5),
+        ];
+        const type = await addThrowawayShiftType(client, caller.organizationId, caller.authUserId);
+        await ownerShiftTypeVersion(client, { ...facts, type, start: '07:00', end: '19:00', from: soon });
+        await ownerShiftTypeVersion(client, { ...facts, type, start: '08:00', end: '20:00', from: later });
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const earlier = await cancelShiftTypeVersion(client, { type, from: soon });
+        const latest = await cancelShiftTypeVersion(client, { type, from: later });
+        await actAsOwner(client);
+
+        expect(earlier.rowCount, 'a future version other than the latest was cancelled').toBe(0);
+        expect(latest.rowCount, 'the latest future version could not be cancelled').toBe(1);
+        expect((await shiftTypeVersionsOf(client, type)).map((row) => row.from)).toEqual([soon]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses one $fixture statement inserting two future versions of one type',
+    async ({ slug, admin }) => {
+      // The one-scheduled rule sees the statement's own earlier row, which is
+      // what the VOLATILE readers are for: a STABLE one would admit both.
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const type = await addThrowawayShiftType(client, caller.organizationId, caller.authUserId);
+        const [first, second] = [
+          await organizationDay(client, caller.organizationId, 2),
+          await organizationDay(client, caller.organizationId, 4),
+        ];
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const refusal = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into shift_type_versions
+               (organization_id, shift_type_id, start_time, end_time, effective_from)
+             values ($1, $2, '07:00', '19:00', $3::date),
+                    ($1, $2, '08:00', '20:00', $4::date)`,
+            [caller.organizationId, type, first, second],
+          ),
+        );
+        await actAsOwner(client);
+
+        expect(refusal.code, 'two scheduled versions in one statement were admitted').toBe('42501');
+        expect(await shiftTypeVersionsOf(client, type)).toEqual([]);
+      });
+    },
+  );
+});
+
+describe('a direct API call writes shift types and their times under exactly the same rules', () => {
+  it.skipIf(noApi).each(FIXTURES)(
+    'lets the $fixture admin create, rename and time a type, schedule and cancel a change, and archive it over PostgREST',
+    async ({ slug, admin }) => {
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      let id: string | undefined;
+      try {
+        const caller = await memberByUsername(client, slug, admin);
+        const own = caller.organizationId;
+        const today = await organizationDay(client, own);
+        const yesterday = await organizationDay(client, own, -1);
+        const scheduled = await organizationDay(client, own, 6);
+        const name = `${THROWAWAY} rest ${crypto.randomUUID()}`;
+
+        const created = await rest('shift_types?select=id', {
+          token,
+          method: 'POST',
+          body: { organization_id: own, name, is_working: true },
+          prefer: 'return=representation',
+        });
+        expect(created.status, 'a permitted insert answers 201').toBe(201);
+        const [row] = (await created.json()) as readonly { id: string }[];
+        id = row?.id;
+        if (id === undefined) throw new Error('a permitted shift type insert returned no row');
+
+        const renamed = await rest(`shift_types?id=eq.${id}&select=id`, {
+          token,
+          method: 'PATCH',
+          body: { name: `${name} renamed` },
+          prefer: 'return=representation',
+        });
+        expect(await renamed.json(), 'the rename reached no row').toEqual([{ id }]);
+
+        const timed = await rest('shift_type_versions', {
+          token,
+          method: 'POST',
+          body: { organization_id: own, shift_type_id: id, start_time: '19:00', end_time: '07:00', effective_from: today },
+        });
+        expect(timed.status, 'the first times were refused').toBe(201);
+
+        for (const [label, body] of [
+          ['the same times', { start_time: '19:00', end_time: '07:00', effective_from: scheduled }],
+          ['a backdated change', { start_time: '20:00', end_time: '08:00', effective_from: yesterday }],
+        ] as const) {
+          const response = await rest('shift_type_versions', {
+            token,
+            method: 'POST',
+            body: { organization_id: own, shift_type_id: id, ...body },
+          });
+          expect(response.ok, `${label} was admitted`).toBe(false);
+          expect((await restRefusal(response)).code, label).toBe('42501');
+        }
+
+        for (const [times, constraint] of [
+          [{ start_time: '19:00', end_time: '24:00' }, 'shift_type_versions_end_before_midnight'],
+          [{ start_time: '07:00:30', end_time: '19:00' }, 'shift_type_versions_start_whole_minute'],
+        ] as const) {
+          const outOfRange = await rest('shift_type_versions', {
+            token,
+            method: 'POST',
+            body: { organization_id: own, shift_type_id: id, ...times, effective_from: scheduled },
+          });
+          const refusal = await restRefusal(outOfRange);
+          expect(outOfRange.ok, `${JSON.stringify(times)} was admitted`).toBe(false);
+          expect(refusal.code, `${JSON.stringify(times)} is not a check violation`).toBe('23514');
+          expect(refusal.message).toContain(constraint);
+        }
+
+        const change = await rest('shift_type_versions', {
+          token,
+          method: 'POST',
+          body: { organization_id: own, shift_type_id: id, start_time: '20:00', end_time: '08:00', effective_from: scheduled },
+        });
+        expect(change.status, 'a scheduled change was refused').toBe(201);
+        const archivedEarly = await rest(`shift_types?id=eq.${id}`, {
+          token,
+          method: 'PATCH',
+          body: { archived: true },
+        });
+        expect(archivedEarly.ok, 'a type with a change scheduled was archived').toBe(false);
+        expect((await restRefusal(archivedEarly)).code).toBe('42501');
+        const second = await rest('shift_type_versions', {
+          token,
+          method: 'POST',
+          body: { organization_id: own, shift_type_id: id, start_time: '21:00', end_time: '09:00', effective_from: await organizationDay(client, own, 9) },
+        });
+        expect(second.ok, 'a second scheduled change was admitted').toBe(false);
+        expect((await restRefusal(second)).code).toBe('42501');
+
+        const pastCancel = await rest(
+          `shift_type_versions?shift_type_id=eq.${id}&effective_from=eq.${today}&select=id`,
+          { token, method: 'DELETE', prefer: 'return=representation' },
+        );
+        expect(await pastCancel.json(), 'a version in effect was cancelled').toEqual([]);
+        const cancel = await rest(
+          `shift_type_versions?shift_type_id=eq.${id}&effective_from=eq.${scheduled}&select=effective_from`,
+          { token, method: 'DELETE', prefer: 'return=representation' },
+        );
+        expect(await cancel.json(), 'the scheduled change was not cancelled').toEqual([
+          { effective_from: scheduled },
+        ]);
+
+        const flipped = await rest(`shift_types?id=eq.${id}`, {
+          token,
+          method: 'PATCH',
+          body: { is_working: false },
+        });
+        expect(flipped.ok, 'is_working was flipped').toBe(false);
+        expect((await restRefusal(flipped)).code).toBe('42501');
+        const removed = await rest(`shift_types?id=eq.${id}`, { token, method: 'DELETE' });
+        expect(removed.ok, 'a type was deleted').toBe(false);
+        expect((await restRefusal(removed)).code).toBe('42501');
+
+        const archived = await rest(`shift_types?id=eq.${id}&select=archived`, {
+          token,
+          method: 'PATCH',
+          body: { archived: true },
+          prefer: 'return=representation',
+        });
+        expect(await archived.json()).toEqual([{ archived: true }]);
+
+        expect(await shiftTypeById(client, id)).toEqual({
+          organizationId: own,
+          id,
+          name: `${name} renamed`,
+          isWorking: true,
+          archived: true,
+          createdBy: caller.authUserId,
+        });
+        expect(await shiftTypeVersionsOf(client, id)).toMatchObject([
+          { startTime: '19:00:00', endTime: '07:00:00', from: today, createdBy: caller.authUserId },
+        ]);
+      } finally {
+        if (id !== undefined) {
+          await client.query('delete from shift_type_versions where shift_type_id = $1', [id]);
+          await client.query('delete from shift_types where id = $1', [id]);
+        }
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses a $fixture member-role token writing a type or a version over PostgREST',
+    async ({ slug, member }) => {
+      const token = await tokenFor(member, slug);
+      const client = await connect();
+      let type: string | undefined;
+      try {
+        const own = await organizationId(client, slug);
+        const owner = await memberByUsername(client, slug, FIXTURES.find((f) => f.slug === slug)!.admin);
+        // A committed throwaway type, so every write below aims at a row this
+        // test owns: a PATCH that wrongly succeeded could otherwise rename
+        // seeded types into the THROWAWAY prefix, which `afterAll` then deletes.
+        await client.query('begin');
+        type = await addThrowawayShiftType(client, own, owner.authUserId);
+        await client.query('commit');
+        const typesBefore = (await client.query('select * from shift_types where organization_id = $1 order by id', [own])).rows;
+        const versionsBefore = await organizationShiftTypeVersions(client, own);
+
+        const created = await rest('shift_types', {
+          token,
+          method: 'POST',
+          body: { organization_id: own, name: `${THROWAWAY} by a member`, is_working: true },
+        });
+        const renamed = await rest(`shift_types?id=eq.${type}&select=id`, {
+          token,
+          method: 'PATCH',
+          body: { name: `${THROWAWAY} by a member` },
+          prefer: 'return=representation',
+        });
+        const timed = await rest('shift_type_versions', {
+          token,
+          method: 'POST',
+          body: {
+            organization_id: own,
+            shift_type_id: type,
+            start_time: '05:30',
+            end_time: '17:30',
+            effective_from: await organizationDay(client, own),
+          },
+        });
+        const cancelled = await rest(`shift_type_versions?shift_type_id=eq.${type}&select=id`, {
+          token,
+          method: 'DELETE',
+          prefer: 'return=representation',
+        });
+
+        expect(created.ok, 'a member-role account created a type').toBe(false);
+        expect((await restRefusal(created)).code).toBe('42501');
+        expect(await renamed.json(), 'a member-role account renamed a type').toEqual([]);
+        expect(timed.ok, 'a member-role account wrote a version').toBe(false);
+        expect((await restRefusal(timed)).code).toBe('42501');
+        expect(await cancelled.json(), 'a member-role account deleted a version').toEqual([]);
+        expect(
+          (await client.query('select * from shift_types where organization_id = $1 order by id', [own])).rows,
+        ).toEqual(typesBefore);
+        expect(await organizationShiftTypeVersions(client, own)).toEqual(versionsBefore);
+      } finally {
+        // Only the rows this test made, or a policy that failed to refuse made:
+        // its own throwaway type, and a type created under the member's name.
+        await client.query(
+          `delete from shift_type_versions
+            where shift_type_id = $1
+               or shift_type_id in (select id from shift_types where name like $2)`,
+          [type ?? null, `${THROWAWAY} by a member%`],
+        );
+        if (type !== undefined) await client.query('delete from shift_types where id = $1', [type]);
+        await client.query('delete from shift_types where name like $1', [`${THROWAWAY} by a member%`]);
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(['shift_types', 'shift_type_versions'] as const)(
+    'refuses an anonymous caller any %s row',
+    async (table) => {
+      const response = await rest(`${table}?select=*`);
+      const refusal = await restRefusal(response);
+
+      expect(response.status, `an anonymous caller read ${table}`).toBe(401);
+      expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
+    },
+  );
 });

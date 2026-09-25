@@ -364,7 +364,15 @@ development_status:
   # never retried — teams, members and bands alike). Reconciled 2026-09-25.
   # THIS PART COMPLETED THE 2-1 PARENT above.
   2-1b-hour-band-editor: done
-  2-2-an-admin-defines-shift-types-including-one-that-crosses-midn: backlog
+  # Split 2026-09-25 at step-01 (human decision [S]), same convention as 2.1:
+  # the parent stays in-progress until its LAST part (2.2b, the Shift Type
+  # editor, ramp slots and slot 3-6 contrast, waiting in deferred-work.md) is
+  # done. Each part earns its key here; a regenerate reports them as orphans —
+  # reconcile with --set rather than dropping them.
+  2-2-an-admin-defines-shift-types-including-one-that-crosses-midn: in-progress
+  # Part A: shift_types + versioned shift_type_versions, seed for both
+  # fixtures, pure domain/duration. No UI.
+  2-2a-shift-type-rule: review
   2-3-an-admin-builds-the-rotation-and-sees-the-cycle-before-savin: backlog
   2-4-rotation-configuration-completes-on-a-phone: backlog
   2-5-saving-a-rotation-reports-what-it-will-actually-do: backlog

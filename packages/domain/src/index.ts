@@ -20,3 +20,12 @@ export {
   type HourBand,
   type HourBandWindow,
 } from './bands.js';
+
+export {
+  deriveShiftTimes,
+  shiftDurationOn,
+  shiftTypeVersionOn,
+  type ShiftTimes,
+  type ShiftType,
+  type ShiftTypeVersion,
+} from './duration.js';
