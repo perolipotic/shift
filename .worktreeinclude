@@ -1,0 +1,6 @@
+# Gitignored files Claude Code copies into every new worktree (gitignore
+# syntax; only files that are also ignored are copied). The local keys the web
+# app and the admin-auth Edge Function read, so a worktree runs without a
+# manual copy. `node_modules` is not copied: run `pnpm install` there.
+apps/web/.env.local
+supabase/functions/.env
