@@ -442,14 +442,15 @@ const SCREENS = [
   // count moved to — the layout gaining one would mean the chrome had started
   // leaking back into the route module the guard lives in.
   { name: 'the signed-in layout', file: LAYOUT, expectedControls: 0 },
-  // THREE on the chrome: the sidebar's collapse, the exit, and the retry that
-  // makes the role read's failure something a person can act on. The
+  // FOUR on the chrome: the sidebar's collapse, the theme control (human
+  // decision 2026-09-25), the exit, and the retry that makes the role read's
+  // failure something a person can act on. The
   // destinations are `<Link>`s, which neither detector matches by construction —
   // they are swept by name in the chrome block below, with their own count — so
-  // this number is the three BUTTONS and nothing else. It is what notices a
-  // fourth arriving: on a component that renders above every destination in the
+  // this number is the four BUTTONS and nothing else. It is what notices a
+  // fifth arriving: on a component that renders above every destination in the
   // application, a control nobody reviewed is a control on eight screens.
-  { name: 'the navigation chrome', file: CHROME, expectedControls: 3 },
+  { name: 'the navigation chrome', file: CHROME, expectedControls: 4 },
   // ZERO on the lockup, and it is a claim rather than an accident of what has
   // been built: nothing about an organization's logo is pressable. It is not a
   // link to the organization, not a menu trigger and not a home button — which
@@ -1815,8 +1816,9 @@ const KEY_SOURCES = [
   // render their own heading.
   // SEVEN SINCE VISUAL REFRESH A: the sidebar's muted section label renders
   // `shell.navigation` a third time — the landmark's own name, made visible and
-  // `aria-hidden` so it is not announced twice.
-  { name: 'the navigation chrome', file: CHROME, keys: translationKeys, strings: 7 },
+  // `aria-hidden` so it is not announced twice. ELEVEN WITH THE THEME CONTROL:
+  // its title plus one word per preference.
+  { name: 'the navigation chrome', file: CHROME, keys: translationKeys, strings: 11 },
   {
     // TWO, for three role codes and one sign-out code. The collapse is the
     // decision `messages.test.ts` executes; what this count pins is that there

@@ -4,8 +4,10 @@ import {
   allDeclarations,
   BASE_TOKENS,
   BRAND_TOKENS,
-  DARK_QUERY,
+  DARK_SELECTOR,
+  darkScope,
   ELEVATION_TOKENS,
+  lightScope,
   rawToken,
   stripped,
 } from './theme-css.js';
@@ -16,8 +18,8 @@ import {
  * The colour layer is CSS, so there is no module to import and no component to
  * render — what can silently break is the file. A half-finished hex-to-OKLCH
  * conversion, a token defined in light but forgotten in dark, a dark block
- * copy-pasted from light, or a theme toggle smuggled in as a `.dark` class
- * would all ship green without these.
+ * copy-pasted from light, or a second theme hook beside `data-theme` would all
+ * ship green without these.
  *
  * Both halves are covered. The first derivation asserted only the brand
  * names and left the 28 shadcn base names — the ones every primitive actually
@@ -153,11 +155,20 @@ describe('every token is exposed as a Tailwind utility', () => {
   });
 });
 
-describe('the theme is chosen by the operating system alone', () => {
-  // UX-DR2: both themes ship driven entirely by prefers-color-scheme. No
-  // toggle, no setting, nothing persisted — so no surface may exist for one.
-  it.each(['.dark', '[data-theme', 'data-theme='])('carries no %s hook', (hook) => {
-    expect(stripped().toLowerCase()).not.toContain(hook.toLowerCase());
+describe('the theme is chosen through one hook', () => {
+  // UX-DR2 shipped no toggle; the Sustav / Svijetla / Tamna control replaced
+  // that (human decision 2026-09-25). `data-theme` on <html> is the ONE hook:
+  // a `.dark` class beside it would be a second way to be dark that the sweeps
+  // below never read.
+  it('carries no .dark class hook', () => {
+    expect(stripped().toLowerCase()).not.toContain('.dark');
+  });
+
+  it('names data-theme only in the dark block and the dark: variant', () => {
+    const mentions = stripped().match(/\[data-theme[^\]]*\]/g) ?? [];
+    expect(new Set(mentions)).toEqual(new Set(['[data-theme="dark"]']));
+    // The dark block, plus the variant's two selectors.
+    expect(mentions).toHaveLength(3);
   });
 });
 
@@ -174,15 +185,17 @@ describe('ramp slots are numbered, never named', () => {
 describe('there is exactly one dark mechanism', () => {
   // Asserted against the whole file, not against a scope defined as "the text
   // outside the dark block" — that phrasing cannot fail.
-  it('declares prefers-color-scheme exactly once', () => {
-    expect(stripped().match(/prefers-color-scheme/g)).toHaveLength(1);
+  it('leaves prefers-color-scheme to index.html', () => {
+    // The attribute carries the RESOLVED theme. A media query here as well
+    // would be a second dark block the pinned light theme cannot switch off.
+    expect(stripped()).not.toMatch(/prefers-color-scheme/);
   });
 
-  it('writes the media query in the canonical form the helper matches', () => {
+  it('writes the dark selector in the canonical form the helper matches', () => {
     // Every theme test resolves its scopes by matching this string. A reformat
     // would fail all three files with a bare DARK_BLOCK_MISSING and no named
     // invariant to explain why.
-    expect(stripped()).toContain(DARK_QUERY);
+    expect(stripped()).toContain(DARK_SELECTOR);
   });
 });
 
@@ -205,7 +218,8 @@ describe('the tokens are actually applied to the document', () => {
   });
 
   it('tells the user agent to follow the theme', () => {
-    expect(stripped()).toMatch(/color-scheme:\s*light dark/);
+    expect(lightScope()).toMatch(/color-scheme:\s*light;/);
+    expect(darkScope()).toMatch(/color-scheme:\s*dark;/);
   });
 
   it('restores a focus indicator in forced-colors mode', () => {

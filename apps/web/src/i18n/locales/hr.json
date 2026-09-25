@@ -321,6 +321,12 @@
     "menuShow": "Prikaži izbornik",
     "menuHide": "Sakrij izbornik",
     "signOut": "Odjava",
+    "theme": {
+      "change": "Promijeni temu",
+      "system": "Tema: sustav",
+      "light": "Tema: svijetla",
+      "dark": "Tema: tamna"
+    },
     "retry": "Pokušaj ponovno",
     "error": {
       "destinations": "Izbornik trenutačno nije moguće prikazati.",

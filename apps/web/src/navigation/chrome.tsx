@@ -1,6 +1,14 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
-import { LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import {
+  LogOut,
+  Monitor,
+  Moon,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Sun,
+  type LucideIcon,
+} from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -27,6 +35,7 @@ import {
 } from '@/organization/snapshot';
 import { currentSession, supabaseClient } from '@/supabase/client';
 import { SIGN_OUT_FAILED, signOut, type SignOutFailure } from '@/supabase/sign-out';
+import { nextPreference, useThemePreference, type ThemePreference } from '@/theme/theme';
 
 /**
  * The navigation chrome: two layouts, one architecture (the navigation shell,
@@ -143,6 +152,12 @@ export interface AppChromeProps {
   readonly children: ReactNode;
 }
 
+const THEME_GLYPHS: Record<ThemePreference, LucideIcon> = {
+  system: Monitor,
+  light: Sun,
+  dark: Moon,
+};
+
 export function AppChrome({ children }: AppChromeProps) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -151,6 +166,7 @@ export function AppChrome({ children }: AppChromeProps) {
   // moves with the router instead of with a full page load.
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const [expanded, setExpanded] = useState(true);
+  const [theme, setTheme] = useThemePreference();
   // A REF as well as state, and the two are not redundant — the shape every
   // handler in this application uses: state drives the disabled button, and
   // state is stale inside a handler already called once this tick, so a second
@@ -401,12 +417,45 @@ export function AppChrome({ children }: AppChromeProps) {
    * `disabled` takes it out of the tab order while the revocation is in flight,
    * which is the pair that carries "in progress" without renaming anything.
    */
+  /**
+   * The theme control (human decision 2026-09-25): one press cycles
+   * sustav → svijetla → tamna. The words and glyph show where it STANDS, so
+   * the preference is readable without pressing; `title` names the action. It
+   * sits directly above the exit and takes over `sm:mt-auto`, so the two stay
+   * together at the foot of the rail and narrow the same way when collapsed.
+   */
+  function renderTheme(): ReactNode {
+    // Three literal calls rather than one templated key: the key sweep in
+    // `prijava.test.ts` reads keys off the source and cannot see through a
+    // template.
+    const names: Record<ThemePreference, string> = {
+      system: t('shell.theme.system'),
+      light: t('shell.theme.light'),
+      dark: t('shell.theme.dark'),
+    };
+    const name = names[theme];
+    const Glyph = THEME_GLYPHS[theme];
+
+    return (
+      <Button
+        className="h-11 shrink-0 gap-2 px-4 sm:mt-auto sm:justify-start group-data-[collapsed=true]/sidebar:w-11 group-data-[collapsed=true]/sidebar:self-center group-data-[collapsed=true]/sidebar:justify-center group-data-[collapsed=true]/sidebar:px-0"
+        type="button"
+        variant="sidebar"
+        title={t('shell.theme.change')}
+        onClick={() => setTheme(nextPreference(theme))}
+      >
+        <Glyph aria-hidden className="size-4 shrink-0" />
+        <span className="group-data-[collapsed=true]/sidebar:sr-only">{name}</span>
+      </Button>
+    );
+  }
+
   function renderSignOut(): ReactNode {
     const name = t('shell.signOut');
 
     return (
       <Button
-        className="h-11 shrink-0 gap-2 px-4 sm:mt-auto sm:justify-start group-data-[collapsed=true]/sidebar:w-11 group-data-[collapsed=true]/sidebar:self-center group-data-[collapsed=true]/sidebar:justify-center group-data-[collapsed=true]/sidebar:px-0"
+        className="h-11 shrink-0 gap-2 px-4 sm:justify-start group-data-[collapsed=true]/sidebar:w-11 group-data-[collapsed=true]/sidebar:self-center group-data-[collapsed=true]/sidebar:justify-center group-data-[collapsed=true]/sidebar:px-0"
         type="button"
         variant="sidebar"
         title={expanded ? undefined : name}
@@ -475,6 +524,7 @@ export function AppChrome({ children }: AppChromeProps) {
 
   const toggleName = expanded ? t('shell.menuHide') : t('shell.menuShow');
   const destinations = renderDestinations();
+  const themeControl = renderTheme();
   const exit = renderSignOut();
   const lockup = renderLockup();
 
@@ -536,6 +586,7 @@ export function AppChrome({ children }: AppChromeProps) {
             </p>
             {destinations}
           </div>
+          {themeControl}
           {exit}
         </nav>
       </aside>
@@ -572,6 +623,7 @@ export function AppChrome({ children }: AppChromeProps) {
             className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
           >
             {destinations}
+            {themeControl}
             {exit}
           </nav>
         </div>
