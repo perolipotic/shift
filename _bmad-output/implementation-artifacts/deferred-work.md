@@ -772,3 +772,24 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-pilot-demo-seed.md`
   summary: Re-running the demo script cascades the old `dvd-demo` organization away but leaves any uploaded logo objects under the old organization id orphaned in storage.
   evidence: `storage.objects` keyed by `(storage.foldername(name))[1]` = organization id (0005_organization_logo.sql) has no FK to organizations; Supabase may block direct deletes from `storage.objects`, so cleanup belongs in a storage-API path, not the SQL script.
+- source_spec: none
+  summary: Story 2.3b — the pattern builder, team offsets and cycle preview under `/postavke-rotacije`: an ordered, reorderable list of steps where a shift type may repeat, with cycle length, working steps and hours per cycle live beneath it (UX-DR14); each active team placed at a step from one shared anchor date; the next full cycle rendered from the unsaved configuration before save (UX-DR15); saved as pattern, then steps (one bulk insert), then assignments (one bulk insert) from today, over 2.3a's schema and `domain/projection`.
+  evidence: Split at step-01 of story 2.3 (human decision [S], 2026-09-25). 2.3a ships the schema (`rotation_patterns`, `rotation_steps`, `rotation_assignments`), the pure projection module and both fixtures' seeded rotation first; 2.3b is UI-only on top of it and closes the 2.3 parent.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-3a-rotation-rule.md`
+  summary: Story 2.5 must settle what a coverage gap is — a date with no working team (epic-2-context's wording), or a date on which a working shift type has nobody (the PRD's "one team on Dan and one on Noć") — because the two differ for UJ-5.
+  evidence: 2.3a's matrix said UJ-5 has dates with no working team; with `[Jutarnja, Popodnevna, Noćna, Slobodno, Slobodno]` at offsets 0/1/2 every date has one, but 2020-01-01…05 leave 0, 1, 2, 2 and 1 working types uncovered. Human decision 2026-09-25 [A]: the row was amended and the seed kept; the pilot reads 0 gaps under either definition.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-3a-rotation-rule.md`
+  summary: A team with a rotation assignment can still be archived — `0010`'s archive rule (`team_in_use`) looks at memberships only — so an archived team keeps projecting shifts.
+  evidence: Raised by 2.3a's implementation report. Decide in 2.3b or 2.6 whether archiving a team should be refused while an assignment is in force or scheduled, or whether archiving closes the assignment (a versioned "no rotation" state, which 2.3a's `not null` offset does not express).
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-3a-rotation-rule.md`
+  summary: Patterns and steps have no delete path, so a failed or abandoned rotation save leaves a pattern (possibly with steps) that no session can remove and every member reads, and a wrong step added before the first assignment cannot be taken back.
+  evidence: Raised by 2.3a's review. The non-atomic save is a human decision (2026-09-25) and an unreferenced pattern projects nothing, but 2.3b must build a fresh pattern on retry rather than reuse a half-written one, and a cleanup (operator script, or a delete policy limited to never-assigned patterns) is still missing.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-3a-rotation-rule.md`
+  summary: A shift type used by a rotation step can still be archived (`0013`'s archive rule), a new assignment can still be written onto a pattern whose step type was archived after the steps, and projection keeps returning the archived type.
+  evidence: The spec left changing 0013's archive rule under "Ask First"; the review found it had no ledger entry. Decide with 2.3b whether archiving is refused while a pattern in force or scheduled uses the type (would want an index on `rotation_steps.shift_type_id`, which 2.3a does not add) or whether an archived type in a rotation is allowed and only labelled.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-3a-rotation-rule.md`
+  summary: The assignment "changes the value" rule compares pattern, offset step and anchor literally, so moving the anchor by a whole number of cycles with the same offset writes a new version that projects exactly the same shifts.
+  evidence: Raised by 2.3a's review (pilot: 2020-01-01 → 2020-01-05, same step). Harmless for history, but 2.6 should either compare the projected phase or state that the rule is literal on purpose.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-3a-rotation-rule.md`
+  summary: `projectedShiftType` re-validates and re-sorts the steps on every call, so Epic 3's month view and Epic 4's hours repeat O(n log n) work for every team and date.
+  evidence: Raised by 2.3a's review. Fine for 2.3's preview; before the calendar lands, add a prepared-pattern form in `domain/projection` (validate and order once, project many dates) rather than caching in the app, which AD-7 forbids.

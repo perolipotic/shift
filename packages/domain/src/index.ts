@@ -29,3 +29,13 @@ export {
   type ShiftType,
   type ShiftTypeVersion,
 } from './duration.js';
+
+export {
+  daysBetween,
+  projectedShiftType,
+  projectedShiftTypeOn,
+  rotationAssignmentOn,
+  type RotationAssignment,
+  type RotationPattern,
+  type RotationStep,
+} from './projection.js';

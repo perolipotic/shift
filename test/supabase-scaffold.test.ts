@@ -301,7 +301,7 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the twenty-eight policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a and 2.2a reviewed, and no twenty-ninth', () => {
+  it('declares exactly the thirty-five policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a and 2.3a reviewed, and no thirty-sixth', () => {
     // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
     // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
     // copying `members_update_by_own_active_admin`, and its name is added here
@@ -358,6 +358,19 @@ describe('the access-control migration', () => {
       'organization_logos_update_by_own_active_admin',
       'organizations_select_own_organization',
       'organizations_update_by_own_active_admin',
+      // STORY 2.3a, and THREE for the reason the membership table has three:
+      // an assignment version is appended, cancelled only while it is not yet
+      // in effect, and never changed.
+      'rotation_assignments_delete_scheduled_by_own_active_admin',
+      'rotation_assignments_insert_by_own_active_admin',
+      'rotation_assignments_select_own_organization',
+      // STORY 2.3a, and TWO each: patterns and steps are IMMUTABLE, so read and
+      // insert are all there is. A third name here is a pattern being edited
+      // under the teams that stand on it.
+      'rotation_patterns_insert_by_own_active_admin',
+      'rotation_patterns_select_own_organization',
+      'rotation_steps_insert_by_own_active_admin',
+      'rotation_steps_select_own_organization',
       // STORY 2.2a, and THREE for the reason the membership table has three:
       // a times version is appended, cancelled only while it is not yet in
       // effect, and never changed.
@@ -1352,6 +1365,273 @@ describe('the access-control migration', () => {
       readFileSync(join(supabaseRoot, 'migrations', '0013_shift_types.sql'), 'utf8'),
       'story 2.2a takes no trigger',
     ).not.toMatch(/create (or replace )?trigger/i);
+  });
+
+  /** The reviewed column list of one `create table … (…);`, constraints out. */
+  function columnsOf(table: string): { readonly body: string; readonly columns: readonly string[] } {
+    const body =
+      new RegExp(`create table ${table} \\(([\\s\\S]*?)\\n\\);`, 'i').exec(migrationStatements())?.[1] ?? '';
+    const columns = [...body.matchAll(/^[ ]{2}([a-z_][a-z0-9_]*)[ ]+\S/gm)]
+      .map((match) => match[1] ?? '')
+      .filter((name) => !['constraint', 'primary', 'unique', 'check', 'foreign', 'exclude'].includes(name));
+    return { body, columns };
+  }
+
+  it('stores a rotation as a pattern, ordered steps and assignments, and no cycle length, offset or shift', () => {
+    // STORY 2.3a (AD-3): shape, not validation. The cycle length, the offset
+    // index and every projected shift belong to `packages/domain`, so none is
+    // a column, and no table stores a schedule.
+    const patterns = columnsOf('rotation_patterns');
+    expect(patterns.columns, 'rotation_patterns stores something beyond its reviewed columns').toEqual([
+      'organization_id',
+      'id',
+      'created_by',
+      'created_at',
+    ]);
+    expect(patterns.body, 'nothing gives the steps a composite key to reference').toMatch(
+      /unique \(organization_id, id\)/,
+    );
+
+    const steps = columnsOf('rotation_steps');
+    expect(steps.columns, 'rotation_steps stores something beyond its reviewed columns').toEqual([
+      'organization_id',
+      'id',
+      'pattern_id',
+      'position',
+      'shift_type_id',
+      'created_by',
+      'created_at',
+    ]);
+    expect(steps.body, 'a step may name another tenant pattern').toMatch(
+      /foreign key \(organization_id, pattern_id\)\s+references rotation_patterns \(organization_id, id\),/,
+    );
+    expect(steps.body, 'a step may name another tenant type').toMatch(
+      /foreign key \(organization_id, shift_type_id\)\s+references shift_types \(organization_id, id\),/,
+    );
+    expect(steps.body, 'a negative position is admitted').toContain('check (position >= 0)');
+    expect(steps.body, 'two steps of one pattern may share a position').toMatch(/unique \(pattern_id, position\)/);
+    expect(steps.body, 'nothing gives the offset a step-and-pattern key to reference').toMatch(
+      /unique \(organization_id, pattern_id, id\)/,
+    );
+
+    const assignments = columnsOf('rotation_assignments');
+    expect(assignments.columns, 'rotation_assignments stores something beyond its reviewed columns').toEqual([
+      'organization_id',
+      'id',
+      'team_id',
+      'pattern_id',
+      'offset_step_id',
+      'anchor_date',
+      'effective_from',
+      'created_by',
+      'created_at',
+    ]);
+    expect(assignments.body, 'the offset step may be null').toMatch(/^ {2}offset_step_id uuid not null,$/m);
+    expect(
+      assignments.body,
+      'the offset may name a step of another pattern: the key must carry the pattern too',
+    ).toMatch(
+      /foreign key \(organization_id, pattern_id, offset_step_id\)\s+references rotation_steps \(organization_id, pattern_id, id\),/,
+    );
+    expect(assignments.body, 'an assignment may name another tenant team').toMatch(
+      /foreign key \(organization_id, team_id\)\s+references teams \(organization_id, id\),/,
+    );
+    for (const column of ['anchor_date', 'effective_from']) {
+      expect(assignments.body, `an infinite, BC or year-10000 ${column} is admitted`).toContain(
+        `check (isfinite(${column}) and ${column} >= date '0001-01-01' and ${column} < date '10000-01-01')`,
+      );
+    }
+    expect(assignments.body, 'two versions of one team may share a date').toMatch(
+      /unique \(team_id, effective_from\)/,
+    );
+    // No key toward a rule cascades; only the organization does.
+    for (const { body } of [patterns, steps, assignments]) {
+      expect((body.match(/on delete cascade/g) ?? []).length, 'a key toward a rule cascades').toBe(1);
+      expect(body).toMatch(/organization_id uuid not null references organizations \(id\) on delete cascade/);
+    }
+    expect(migrationStatements(), 'a column stores a cycle length, an integer offset or a projected shift').not.toMatch(
+      /\b(cycle_length|offset_index|offset integer|projected_shift)\b/i,
+    );
+  });
+
+  it('re-reads the tenant, active state and role in every rotation policy clause', () => {
+    // STORY 2.3a, the hour-band check: each clause pins the tenant from the
+    // claim and re-reads `is_active` through the helper, and each write
+    // clause refuses a member-role account. A clause that dropped
+    // `access.is_active` would let a deactivated admin keep writing.
+    const policies: readonly [string, number, boolean][] = [
+      ['rotation_patterns_select_own_organization', 1, false],
+      ['rotation_patterns_insert_by_own_active_admin', 1, true],
+      ['rotation_steps_select_own_organization', 1, false],
+      ['rotation_steps_insert_by_own_active_admin', 1, true],
+      ['rotation_assignments_select_own_organization', 1, false],
+      ['rotation_assignments_insert_by_own_active_admin', 1, true],
+      ['rotation_assignments_delete_scheduled_by_own_active_admin', 1, true],
+    ];
+    for (const [name, clauses, admin] of policies) {
+      const body = policyBody(name);
+      expect(body, `${name} is not declared`).not.toBe('');
+      expect(
+        (body.match(/organization_id = nullif/g) ?? []).length,
+        `${name} does not pin the tenant in every clause`,
+      ).toBe(clauses);
+      expect(
+        (body.match(/access\.is_active/g) ?? []).length,
+        `${name} does not re-read active state in every clause`,
+      ).toBe(clauses);
+      expect(
+        (body.match(/access\.member_role = 'admin'/g) ?? []).length,
+        `${name} ${admin ? 'does not refuse a member-role account' : 'hides the rotation from a member-role account'}`,
+      ).toBe(admin ? clauses : 0);
+    }
+  });
+
+  it('keeps patterns and steps immutable, and refuses a step once the pattern is in use', () => {
+    // STORY 2.3a. Two policies each — read and insert — and update and delete
+    // revoked outright, in this and every later migration.
+    const statements = migrationStatements();
+    for (const table of ['rotation_patterns', 'rotation_steps']) {
+      const policies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter((declaration) =>
+        new RegExp(`on public\\.${table}\\b`, 'i').test(declaration),
+      );
+      expect(policies.length, `${table} does not carry exactly two policies`).toBe(2);
+      for (const verb of ['update', 'delete', 'all']) {
+        expect(
+          policies.filter((declaration) => new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration)),
+          `a policy opens ${verb} on ${table}; it is immutable`,
+        ).toEqual([]);
+      }
+      expect(statements, `the update and delete privileges on ${table} are never revoked`).toMatch(
+        new RegExp(
+          `revoke insert, update, delete, truncate, references, trigger on table public\\.${table}\\s+from anon, authenticated;`,
+          'i',
+        ),
+      );
+      expect(statements, `a later migration grants update or delete on ${table} back`).not.toMatch(
+        new RegExp(`grant[^;]*\\b(update|delete|all)\\b[^;]*on table public\\.${table}\\b`, 'i'),
+      );
+      expect(statements, `a later migration grants anon something on ${table}`).not.toMatch(
+        new RegExp(`grant[^;]*on table public\\.${table} to[^;]*\\banon\\b`, 'i'),
+      );
+      expect(statements, `anon keeps SELECT on ${table}`).toMatch(
+        new RegExp(`revoke select on table public\\.${table} from anon;`),
+      );
+    }
+    expect(statements, 'authenticated may insert more than the pattern tenant').toMatch(
+      /grant insert \(organization_id\) on table public\.rotation_patterns to authenticated;/,
+    );
+    expect(statements, 'authenticated may insert more than the four step facts').toMatch(
+      /grant insert \(organization_id, pattern_id, position, shift_type_id\) on table public\.rotation_steps\s+to authenticated;/,
+    );
+
+    for (const name of ['rotation_patterns_insert_by_own_active_admin', 'rotation_steps_insert_by_own_active_admin']) {
+      const insert = policyBody(name);
+      expect(insert, `${name} is not declared`).not.toBe('');
+      expect(insert, 'the tenant is not pinned from the signed claim').toMatch(/with check[\s\S]*organization_id = nullif/i);
+      expect(insert, 'role and active state are not re-read').toContain("access.member_role = 'admin'");
+      expect(insert, 'the attribution is not pinned to the caller').toMatch(/created_by = \(select auth\.uid\(\)\)/);
+    }
+    const step = policyBody('rotation_steps_insert_by_own_active_admin');
+    expect(step, 'a step may be added to a pattern a team stands on').toMatch(
+      /and not public\.rotation_pattern_in_use\(pattern_id\)/,
+    );
+    expect(step, 'a step may name an archived type').toMatch(
+      /and not exists \(\s*select 1\s+from public\.shift_types shift_type\s+where shift_type\.organization_id = rotation_steps\.organization_id\s+and shift_type\.id = rotation_steps\.shift_type_id\s+and shift_type\.archived\s*\)/,
+    );
+    for (const name of ['rotation_patterns_select_own_organization', 'rotation_steps_select_own_organization']) {
+      expect(policyBody(name), `${name} hides the rotation from a member-role account`).not.toContain(
+        "member_role = 'admin'",
+      );
+    }
+  });
+
+  it('appends rotation assignments under the membership rules and never rewrites one, in any migration', () => {
+    // STORY 2.3a, 0010's rules unchanged: select, insert and a delete that
+    // reaches only the latest version while it is dated after today. No update
+    // policy, and the privilege revoked.
+    const statements = migrationStatements();
+    const policies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter((declaration) =>
+      /on public\.rotation_assignments\b/i.test(declaration),
+    );
+    expect(policies.length, 'rotation_assignments does not carry exactly three policies').toBe(3);
+
+    const deletes = policies.filter((declaration) => /\bfor delete\b/i.test(declaration));
+    expect(deletes, 'the assignments table has no single cancellation policy').toHaveLength(1);
+    expect(deletes[0], 'a version in effect can be cancelled').toMatch(
+      /effective_from > public\.organization_today\(organization_id\)/,
+    );
+    expect(deletes[0], 'a version other than the latest can be cancelled').toMatch(
+      /effective_from = public\.rotation_assignment_latest_version\(team_id\)/,
+    );
+    expect(deletes[0], 'a member-role account can cancel').toContain("access.member_role = 'admin'");
+    for (const verb of ['update', 'all']) {
+      expect(
+        policies.filter((declaration) => new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration)),
+        `a policy opens ${verb} on rotation_assignments; a version is never rewritten`,
+      ).toEqual([]);
+    }
+    expect(statements, 'the update privilege on rotation_assignments is never revoked').toMatch(
+      /revoke update, truncate, references, trigger on table public\.rotation_assignments\s+from anon, authenticated/i,
+    );
+    expect(statements, 'the six fact columns are not the only insertable ones').toMatch(
+      /grant insert \(\s*organization_id,\s*team_id,\s*pattern_id,\s*offset_step_id,\s*anchor_date,\s*effective_from\s*\) on table public\.rotation_assignments to authenticated/i,
+    );
+    expect(statements, 'anon keeps a privilege on rotation_assignments').toMatch(
+      /revoke select, insert, delete on table public\.rotation_assignments from anon;/,
+    );
+    expect(statements, 'a later migration grants anon something on rotation_assignments').not.toMatch(
+      /grant[^;]*on table public\.rotation_assignments to[^;]*\banon\b/i,
+    );
+
+    const insert = policyBody('rotation_assignments_insert_by_own_active_admin');
+    expect(insert, 'the assignment insert policy is not declared').not.toBe('');
+    expect(insert, 'the tenant is not pinned from the signed claim').toMatch(/with check[\s\S]*organization_id = nullif/i);
+    expect(insert, 'role and active state are not re-read').toContain("access.member_role = 'admin'");
+    expect(insert, 'the attribution is not pinned to the caller').toMatch(/created_by = \(select auth\.uid\(\)\)/);
+    expect(insert, 'a past date is admitted').toMatch(/effective_from >= public\.organization_today\(organization_id\)/);
+    expect(insert, 'a version may be dated on or before the latest one').toMatch(
+      /effective_from > coalesce\(public\.rotation_assignment_latest_version\(team_id\)/,
+    );
+    expect(insert, 'a second change may be scheduled on top of one').toMatch(
+      /coalesce\(public\.rotation_assignment_latest_version\(team_id\), '-infinity'::date\)\s*<= public\.organization_today\(organization_id\)/,
+    );
+    expect(insert, 'a version may leave the pattern, offset step and anchor unchanged').toMatch(
+      /not exists \(\s*select 1\s+from public\.rotation_assignment_on\(rotation_assignments\.team_id, 'infinity'::date\) as latest\s+where latest\.pattern_id = rotation_assignments\.pattern_id\s+and latest\.offset_step_id = rotation_assignments\.offset_step_id\s+and latest\.anchor_date = rotation_assignments\.anchor_date\s*\)/,
+    );
+    expect(insert, 'the policy reads its own table directly, which recurses (42P17)').not.toMatch(
+      /from public\.rotation_assignments\b/,
+    );
+    expect(insert, 'an archived team may be given a rotation').toMatch(
+      /and team\.id = rotation_assignments\.team_id\s+and not team\.archived/,
+    );
+  });
+
+  it('reads the rotation through three invoker functions with an empty search_path', () => {
+    // STORY 2.3a, 0010's readers copied. Source text only; the catalogue is
+    // asserted in `test/provisioning.test.ts`.
+    const statements = migrationStatements();
+    for (const [name, signature] of [
+      ['rotation_pattern_in_use', 'uuid'],
+      ['rotation_assignment_on', 'uuid, date'],
+      ['rotation_assignment_latest_version', 'uuid'],
+    ] as const) {
+      const body = new RegExp(`create function public\\.${name}\\([\\s\\S]*?\\$\\$;`, 'i').exec(statements)?.[0];
+      expect(body, `${name} is not declared`).toBeDefined();
+      expect(body).toMatch(/language plpgsql/i);
+      expect(body).toMatch(/\bvolatile\b/i);
+      expect(body).toMatch(/security invoker/i);
+      expect(body).toMatch(/set search_path = ''/);
+      for (const role of ['public', 'anon', 'service_role']) {
+        expect(statements).toContain(`revoke execute on function public.${name}(${signature}) from ${role};`);
+      }
+      expect(statements).toContain(`grant execute on function public.${name}(${signature}) to authenticated;`);
+    }
+    const migration = readFileSync(join(supabaseRoot, 'migrations', '0016_rotation.sql'), 'utf8');
+    expect(migration, 'story 2.3a takes no trigger').not.toMatch(/create (or replace )?trigger/i);
+    expect(
+      (migration.replaceAll(/--[^\n]*/g, '').match(/create function/gi) ?? []).length,
+      'story 2.3a takes no RPC: its functions are the three readers',
+    ).toBe(3);
   });
 
   it('keeps a team name unique among active teams only, and never blank', () => {

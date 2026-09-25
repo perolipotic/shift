@@ -18,10 +18,12 @@
 -- adds one where its inserts belong.
 --
 -- Attribution comes from column defaults (AD-11), so nothing here sets
--- created_by or created_at — with one exception, the shift types and their
--- versions (story 2.2a), whose `created_by` has no session to default from and
--- is each fixture's own admin, and whose types carry an explicit ascending
--- `created_at` because this file runs in one transaction.
+-- created_by or created_at — with two exceptions, whose `created_by` has no
+-- session to default from and is each fixture's own admin, and whose rows
+-- carry an explicit ascending `created_at` because this file runs in one
+-- transaction: the shift types and their versions (story 2.2a), and the teams
+-- and the rotation — pattern, steps and assignments (story 2.3a). No team
+-- membership is seeded.
 --
 -- Both fixtures are provisioned the way a real organization is — see
 -- `supabase/operator/provision-organization.sql`, which carries the same
@@ -44,8 +46,8 @@
 --   -> rotation_patterns -> rotation_steps -> rotation_assignments
 --   -> leave_records
 -- Attribution comes from column defaults (AD-11), so inserts here must not
--- forge created_by or created_at — except the shift types and their versions,
--- as the header explains.
+-- forge created_by or created_at — except the teams, the shift types and their
+-- versions, and the rotation, as the header explains.
 
 insert into organizations (
   slug, name, short_name, description, address, contact_email,
@@ -154,6 +156,23 @@ begin
 end
 $$;
 
+-- Story 2.3a: the pilot's four teams, attributed to its admin, in creation
+-- order. No member is placed on one: memberships are not seeded.
+insert into teams (organization_id, name, created_by, created_at)
+select organizations.id,
+       team.name,
+       (select auth_user_id from members
+         where organization_id = organizations.id and username = 'ivan.maric'),
+       now() + team.position * interval '1 millisecond'
+  from organizations
+  cross join (values
+    (1, 'Smjena A'),
+    (2, 'Smjena B'),
+    (3, 'Smjena C'),
+    (4, 'Smjena D')
+  ) as team (position, name)
+ where organizations.slug = 'dvd-kastel-novi';
+
 -- Story 2.1a: the pilot's two hour bands. Only name and start are stored; each
 -- window is derived (Dan 07:00–19:00, Noć 19:00–07:00, crossing midnight).
 insert into hour_bands (organization_id, name, start_time)
@@ -203,6 +222,66 @@ select organizations.id,
   ) as version (name, start_time, end_time)
  where organizations.slug = 'dvd-kastel-novi'
    and shift_types.name = version.name;
+
+-- Story 2.3a: the pilot's rotation. One pattern, [Dan, Noć, Slobodno,
+-- Slobodno] at positions 0–3 (24 hours on, 48 off), and Smjena A–D bound to it
+-- at offsets 0–3 from one shared anchor, 2020-01-01, effective from the same
+-- date so any past date projects. The offset is the step at that position.
+-- Attributed to the admin, with ascending `created_at`.
+insert into rotation_patterns (organization_id, created_by, created_at)
+select organizations.id,
+       (select auth_user_id from members
+         where organization_id = organizations.id and username = 'ivan.maric'),
+       now()
+  from organizations
+ where organizations.slug = 'dvd-kastel-novi';
+
+insert into rotation_steps (organization_id, pattern_id, position, shift_type_id, created_by, created_at)
+select organizations.id,
+       rotation_patterns.id,
+       step.position,
+       shift_types.id,
+       (select auth_user_id from members
+         where organization_id = organizations.id and username = 'ivan.maric'),
+       now() + (step.position + 1) * interval '1 millisecond'
+  from organizations
+  join rotation_patterns on rotation_patterns.organization_id = organizations.id
+  cross join (values
+    (0, 'Dan'),
+    (1, 'Noć'),
+    (2, 'Slobodno'),
+    (3, 'Slobodno')
+  ) as step (position, shift_type)
+  join shift_types on shift_types.organization_id = organizations.id
+                  and shift_types.name = step.shift_type
+ where organizations.slug = 'dvd-kastel-novi';
+
+insert into rotation_assignments (
+  organization_id, team_id, pattern_id, offset_step_id, anchor_date, effective_from,
+  created_by, created_at
+)
+select organizations.id,
+       teams.id,
+       rotation_patterns.id,
+       rotation_steps.id,
+       date '2020-01-01',
+       date '2020-01-01',
+       (select auth_user_id from members
+         where organization_id = organizations.id and username = 'ivan.maric'),
+       now() + (assignment.offset_position + 1) * interval '1 millisecond'
+  from organizations
+  join rotation_patterns on rotation_patterns.organization_id = organizations.id
+  cross join (values
+    ('Smjena A', 0),
+    ('Smjena B', 1),
+    ('Smjena C', 2),
+    ('Smjena D', 3)
+  ) as assignment (team, offset_position)
+  join teams on teams.organization_id = organizations.id
+            and teams.name = assignment.team
+  join rotation_steps on rotation_steps.pattern_id = rotation_patterns.id
+                     and rotation_steps.position = assignment.offset_position
+ where organizations.slug = 'dvd-kastel-novi';
 
 
 -- ===========================================================================
@@ -313,6 +392,21 @@ begin
 end
 $$;
 
+-- Story 2.3a: UJ-5's three teams, attributed to its admin. No memberships.
+insert into teams (organization_id, name, created_by, created_at)
+select organizations.id,
+       team.name,
+       (select auth_user_id from members
+         where organization_id = organizations.id and username = 'josip.peric'),
+       now() + team.position * interval '1 millisecond'
+  from organizations
+  cross join (values
+    (1, 'Smjena A'),
+    (2, 'Smjena B'),
+    (3, 'Smjena C')
+  ) as team (position, name)
+ where organizations.slug = 'zastita-split';
+
 -- Story 2.1a: UJ-5's three hour bands, eight hours each. Its shifts start at
 -- 06:00, 14:00 and 22:00, so every one straddles a band edge (Q10) and band
 -- splitting is exercised.
@@ -363,3 +457,61 @@ select organizations.id,
   ) as version (name, start_time, end_time)
  where organizations.slug = 'zastita-split'
    and shift_types.name = version.name;
+
+-- Story 2.3a: UJ-5's rotation. One five-step pattern, [Jutarnja,
+-- Popodnevna, Noćna, Slobodno, Slobodno], and Smjena A–C at offsets 0, 1 and 2
+-- from the anchor 2020-01-01, effective from the same date.
+insert into rotation_patterns (organization_id, created_by, created_at)
+select organizations.id,
+       (select auth_user_id from members
+         where organization_id = organizations.id and username = 'josip.peric'),
+       now()
+  from organizations
+ where organizations.slug = 'zastita-split';
+
+insert into rotation_steps (organization_id, pattern_id, position, shift_type_id, created_by, created_at)
+select organizations.id,
+       rotation_patterns.id,
+       step.position,
+       shift_types.id,
+       (select auth_user_id from members
+         where organization_id = organizations.id and username = 'josip.peric'),
+       now() + (step.position + 1) * interval '1 millisecond'
+  from organizations
+  join rotation_patterns on rotation_patterns.organization_id = organizations.id
+  cross join (values
+    (0, 'Jutarnja'),
+    (1, 'Popodnevna'),
+    (2, 'Noćna'),
+    (3, 'Slobodno'),
+    (4, 'Slobodno')
+  ) as step (position, shift_type)
+  join shift_types on shift_types.organization_id = organizations.id
+                  and shift_types.name = step.shift_type
+ where organizations.slug = 'zastita-split';
+
+insert into rotation_assignments (
+  organization_id, team_id, pattern_id, offset_step_id, anchor_date, effective_from,
+  created_by, created_at
+)
+select organizations.id,
+       teams.id,
+       rotation_patterns.id,
+       rotation_steps.id,
+       date '2020-01-01',
+       date '2020-01-01',
+       (select auth_user_id from members
+         where organization_id = organizations.id and username = 'josip.peric'),
+       now() + (assignment.offset_position + 1) * interval '1 millisecond'
+  from organizations
+  join rotation_patterns on rotation_patterns.organization_id = organizations.id
+  cross join (values
+    ('Smjena A', 0),
+    ('Smjena B', 1),
+    ('Smjena C', 2)
+  ) as assignment (team, offset_position)
+  join teams on teams.organization_id = organizations.id
+            and teams.name = assignment.team
+  join rotation_steps on rotation_steps.pattern_id = rotation_patterns.id
+                     and rotation_steps.position = assignment.offset_position
+ where organizations.slug = 'zastita-split';
