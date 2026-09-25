@@ -8,6 +8,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import {
   compareText,
   formatIsoDate,
+  formatIsoDayMonth,
   formatMinuteOfDay,
   isIsoDate,
   nextIsoDate,
@@ -253,6 +254,8 @@ const UNZONED_ENTRY_POINTS = [
   'formatNumber',
   'compareText',
   'formatIsoDate',
+  // Story 2.3b: the same calendar date, day and month only.
+  'formatIsoDayMonth',
   'isIsoDate',
   'nextIsoDate',
   // Story 2.1b. A nominal minute of the day — an hour band's start — which has
@@ -1142,5 +1145,14 @@ describe('the one ISO-date validator', () => {
     // and `0008` refuses year 10000.
     expect(nextIsoDate('9999-12-30')).toBe('9999-12-31');
     expect(nextIsoDate('9999-12-31')).toBeNull();
+  });
+});
+
+describe('formatIsoDayMonth (story 2.3b)', () => {
+  it('cuts the binding date before the year, and refuses what formatIsoDate refuses', () => {
+    expect(formatIsoDayMonth('2026-09-26')).toBe('26.09.');
+    expect(formatIsoDayMonth('2026-01-05')).toBe('05.01.');
+    expect(formatIsoDayMonth('2026-02-30')).toBeNull();
+    expect(formatIsoDayMonth('')).toBeNull();
   });
 });

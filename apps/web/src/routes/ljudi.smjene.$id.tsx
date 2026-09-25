@@ -13,6 +13,7 @@ import { t } from '@/i18n';
 import { mayReadMembers } from '@/members/list';
 import { DESTINATIONS } from '@/navigation/destinations';
 import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/navigation/role';
+import { ROTATION_KEY } from '@/rotation/list';
 import { appLayoutRoute } from '@/routes/_app';
 import { LjudiSmjeneScreen } from '@/routes/ljudi.smjene';
 import { supabaseClient } from '@/supabase/client';
@@ -111,7 +112,13 @@ function TeamScreen({ id }: { readonly id: string }) {
   /** Re-read the one list, so both screens show what the database holds now. */
   async function refresh(): Promise<void> {
     try {
-      await queryClient.invalidateQueries({ queryKey: TEAMS_LIST_KEY });
+      // The rotation builder binds every active team, from its own snapshot
+      // (story 2.3b), so a rename or an archive shows there too. Both start
+      // together.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: TEAMS_LIST_KEY }),
+        queryClient.invalidateQueries({ queryKey: ROTATION_KEY }),
+      ]);
     } catch (cause) {
       console.error(TEAM_WRITE_UNAVAILABLE, cause);
     }

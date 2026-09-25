@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 2026-09-25
+last_updated: 2026-09-26
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -409,12 +409,16 @@ development_status:
   # pattern builder, team offsets and cycle preview, waiting in
   # deferred-work.md) is done. Each part earns its key here; a regenerate
   # reports them as orphans — reconcile with --set rather than dropping them.
-  2-3-an-admin-builds-the-rotation-and-sees-the-cycle-before-savin: in-progress
+  2-3-an-admin-builds-the-rotation-and-sees-the-cycle-before-savin: done
   # Part A: rotation_patterns, rotation_steps and versioned
   # rotation_assignments (offset as an FK to a step of that pattern), pure
   # domain/projection, teams and rotation seeded for both fixtures and the
   # demo organization. No UI.
-  2-3a-rotation-rule: review
+  2-3a-rotation-rule: done
+  # Part B: the pattern builder with live figures, the shared anchor and each
+  # team's step, the cycle preview and the save, under /postavke-rotacije.
+  # THIS PART COMPLETES THE 2-3 PARENT above.
+  2-3b-rotation-builder: done
   2-4-rotation-configuration-completes-on-a-phone: backlog
   2-5-saving-a-rotation-reports-what-it-will-actually-do: backlog
   2-6-an-admin-changes-the-rotation-from-a-date-forward: backlog

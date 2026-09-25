@@ -796,3 +796,9 @@
 - source_spec: `_bmad-output/planning-artifacts/sprint-change-proposal-2026-09-25-organization-settings.md`
   summary: There is no operator path to change an organization's timezone or locale after provisioning; since design refresh C the admin cannot change either in the application, and `provision-organization.sql` only creates.
   evidence: Human decision 2026-09-25 (option a): type, timezone and locale are set at provisioning (FR-7, FR-8 as amended). A correction today is hand-written SQL against `organizations`. Add an operator script — guarded like the demo seed, validating the IANA name — when a second organization or a correction needs it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-3b-rotation-builder.md`
+  summary: Adding one new team empties the rotation builder's prefill for everyone, because the prefill requires every active team to have an assignment in force on one pattern; prefilling from the others' shared pattern and placing the new team on step 1 would spare the admin rebuilding the whole pattern.
+  evidence: Raised by 2.3b's review. `prefillOf` returns an empty draft when any active team has no assignment in force (spec 2.3b "Prefill" rule, as approved). Revisit with 2.6 (change from a date) or 2.4.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-3b-rotation-builder.md`
+  summary: The rotation snapshot embeds every pattern, step and assignment the organization ever had, including orphan patterns left by failed saves, so it grows with every save.
+  evidence: Raised by 2.3b's review. Each save creates a fresh pattern (2.3a immutability), and the one read under `ROTATION_KEY` is unbounded. Fine at pilot scale; bound it to in-force and scheduled versions (plus the patterns they reference) before Epic 3 reads it per month, together with the orphan-pattern cleanup already in this ledger.

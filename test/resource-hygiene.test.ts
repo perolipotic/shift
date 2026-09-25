@@ -74,6 +74,12 @@ const SANCTIONED_PLURAL_KEYS = [
   // STORY 2.2b: how many shift types are in use, rendered at zero —
   // `0 tipova smjena`, `1 tip smjene`, `2 tipa smjene`, `21 tip smjene`.
   'rotation.shiftTypes.count',
+  // STORY 2.3b: the cycle length under the pattern, rendered at zero —
+  // `0 dana`, `1 dan`, `2 dana`, `21 dan`.
+  'rotation.builder.cycleLength',
+  // OWNER REQUEST: the preview's cycles choice, `1 ciklus`, `2 ciklusa`,
+  // `5 ciklusa`.
+  'rotation.builder.cycleCount',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -693,7 +699,6 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.shiftTypes.close',
   'rotation.shiftTypes.cancel',
   'rotation.shiftTypes.columnName',
-  'rotation.shiftTypes.columnKind',
   'rotation.shiftTypes.actions',
   'rotation.shiftTypes.archiveShort',
   'rotation.shiftTypes.archivedHeading',
@@ -746,6 +751,66 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.shiftTypes.error.invalid',
   'rotation.shiftTypes.error.saveUnavailable',
   'rotation.shiftTypes.error.unknown',
+  // STORY 2.3b: the rotation builder, under `rotation.builder` — the pattern
+  // and its live figures, the shared anchor and each team's step, the cycle
+  // preview, the save, and its refusals. There `smjen` names the TEAM, as in
+  // `smjene.*`, and the Shift Type may not be said at all (`teamTermOutOfTurn`
+  // below): a step's type is shown by its own name, which is data.
+  'rotation.builder.patternHeading',
+  'rotation.builder.patternLede',
+  'rotation.builder.patternEmpty',
+  'rotation.builder.stepsCaption',
+  'rotation.builder.stepPosition',
+  'rotation.builder.archivedStep',
+  // AS RENEGOTIATED: the drag handle's name and role description, the
+  // keyboard instructions and the four announcements — every word dnd-kit
+  // would otherwise say in English.
+  'rotation.builder.drag.handle',
+  'rotation.builder.drag.roleDescription',
+  'rotation.builder.drag.instructions',
+  'rotation.builder.drag.lifted',
+  'rotation.builder.drag.over',
+  'rotation.builder.drag.dropped',
+  'rotation.builder.drag.cancelled',
+  'rotation.builder.remove',
+  'rotation.builder.newStep',
+  'rotation.builder.addStep',
+  'rotation.builder.cycleLengthLabel',
+  'rotation.builder.workingStepsLabel',
+  'rotation.builder.nonWorkingStepsLabel',
+  'rotation.builder.cycleHoursLabel',
+  'rotation.builder.cycleHoursUnknown',
+  'rotation.builder.offsetsHeading',
+  'rotation.builder.anchor',
+  'rotation.builder.anchorNote',
+  'rotation.builder.howTitle',
+  'rotation.builder.howBody',
+  'rotation.builder.columnTeam',
+  'rotation.builder.columnOffset',
+  'rotation.builder.columnOnAnchor',
+  // OWNER ADDITION: spread every team's step evenly over the cycle.
+  'rotation.builder.spread',
+  'rotation.builder.offsetOf',
+  'rotation.builder.stepOption',
+  'rotation.builder.offsetsEmpty',
+  'rotation.builder.previewHeading',
+  'rotation.builder.previewLede',
+  'rotation.builder.dayNumber',
+  'rotation.builder.cycleLabel',
+  'rotation.builder.previewCycles',
+  'rotation.builder.save',
+  'rotation.builder.saveNote',
+  'rotation.builder.saved',
+  'rotation.builder.error.unavailable',
+  'rotation.builder.error.empty',
+  'rotation.builder.error.noTeams',
+  'rotation.builder.error.scheduled',
+  'rotation.builder.error.typeArchived',
+  'rotation.builder.error.unchanged',
+  'rotation.builder.error.changedToday',
+  'rotation.builder.error.refused',
+  'rotation.builder.error.saveUnavailable',
+  'rotation.builder.error.nothingChanged',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
@@ -794,6 +859,14 @@ const TEAM_NAMESPACE = 'smjene.';
 const SHIFT_TYPE_NAMESPACE = 'rotation.shiftTypes.';
 
 /**
+ * The rotation builder's namespace (story 2.3b). There `smjen` names the TEAM
+ * — the builder binds teams to steps — exactly as in {@link TEAM_NAMESPACE},
+ * and `tip… smjen…` is refused: the builder never says the Shift Type, it
+ * shows each step's type by its name.
+ */
+const ROTATION_BUILDER_NAMESPACE = 'rotation.builder.';
+
+/**
  * `Tip smjene` in the inflections of `tip` the copy can use — tip, tipa, tipu,
  * tipom, tipovi, tipova, tipove, tipovima — and no other word starting `tip`
  * (`tipka smjene`, `tipično smjena` are not the term).
@@ -801,9 +874,10 @@ const SHIFT_TYPE_NAMESPACE = 'rotation.shiftTypes.';
 const SHIFT_TYPE_TERM = /(?<![\p{L}\p{N}])tip(?:a|u|om|ovi|ova|ove|ovima)?\s+smjen\p{L}*/gu;
 
 /**
- * Whether a message says `smjen` where it may not: anywhere outside the two
- * namespaces; as the Shift Type (`tip smjene`) inside the team one; and
- * anywhere but inside `tip… smjen…` in the shift type one. Keyed so the sweep
+ * Whether a message says `smjen` where it may not: anywhere outside the three
+ * namespaces; as the Shift Type (`tip smjene`) inside the team one and the
+ * rotation builder's; and anywhere but inside `tip… smjen…` in the shift type
+ * one. Keyed so the sweep
  * and its self-test run the same predicate.
  */
 function teamTermOutOfTurn(key: string, message: string): boolean {
@@ -813,7 +887,9 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     return lowered.replace(SHIFT_TYPE_TERM, '').includes('smjen');
   }
 
-  if (!key.startsWith(TEAM_NAMESPACE)) return lowered.includes('smjen');
+  if (!key.startsWith(TEAM_NAMESPACE) && !key.startsWith(ROTATION_BUILDER_NAMESPACE)) {
+    return lowered.includes('smjen');
+  }
 
   return /\btip\w*\s+smjen/.test(lowered);
 }
@@ -939,6 +1015,10 @@ describe('the messages obey the voice rules that bind every string', () => {
     // AMENDED BY STORY 2.2b, and still narrow: the Shift Type arrives, under
     // `rotation.shiftTypes` ONLY, and there `smjen` may appear only inside the
     // term `tip… smjen…` — a bare `smjena` there would be the Team again.
+    //
+    // AMENDED BY STORY 2.3b: `rotation.builder` binds teams to steps, so it
+    // says the Team as `smjene` does — and, as `smjene` does, never the Shift
+    // Type.
     const found = leafKeys(resource())
       .map((key) => ({ key, message: String(messageAt(key)) }))
       .filter(({ key, message }) => teamTermOutOfTurn(key, message));
@@ -946,6 +1026,9 @@ describe('the messages obey the voice rules that bind every string', () => {
     expect(leafKeys(resource()).filter((key) => key.startsWith(TEAM_NAMESPACE)).length).toBeGreaterThan(0);
     expect(
       leafKeys(resource()).filter((key) => key.startsWith(SHIFT_TYPE_NAMESPACE)).length,
+    ).toBeGreaterThan(0);
+    expect(
+      leafKeys(resource()).filter((key) => key.startsWith(ROTATION_BUILDER_NAMESPACE)).length,
     ).toBeGreaterThan(0);
     expect(found, 'a message says smjen out of turn').toEqual([]);
   });
@@ -1080,6 +1163,15 @@ describe('the messages obey the voice rules that bind every string', () => {
     expect(messageAt('organization.hourBands.remove')).toBe('Ukloni pojas {name}');
     expect(messageAt('organization.hourBands.removeConfirm')).toBe('Potvrdi uklanjanje pojasa {name}');
     expect(messageAt('organization.hourBands.removeCancel')).toBe('Odustani od uklanjanja');
+    // STORY 2.3b's FOUR, an eighth authoring of the same voice. The save is
+    // the one that would most naturally have been the noun `Spremanje
+    // rotacije` — a status, not a control; the drag handle the noun
+    // `Premještanje`.
+    expect(messageAt('rotation.builder.addStep')).toBe('Dodaj korak');
+    expect(messageAt('rotation.builder.drag.handle')).toBe('Premjesti korak {position}');
+    expect(messageAt('rotation.builder.spread')).toBe('Rasporedi ravnomjerno');
+    expect(messageAt('rotation.builder.remove')).toBe('Ukloni korak {position}');
+    expect(messageAt('rotation.builder.save')).toBe('Spremi rotaciju');
   });
 });
 
@@ -1128,6 +1220,14 @@ describe('the detector reads the file it thinks it does', () => {
     expect(teamTermOutOfTurn('rotation.shiftTypes.name', 'Tipovima smjena')).toBe(false);
     expect(teamTermOutOfTurn('rotation.pattern.heading', 'Tip smjene')).toBe(true);
     expect(teamTermOutOfTurn('organization.hourBands.name', 'Tip smjene')).toBe(true);
+    // STORY 2.3b: the builder may say the Team, and never the Shift Type.
+    expect(teamTermOutOfTurn('rotation.builder.offsetsHeading', 'Smjene i pomaci')).toBe(false);
+    expect(teamTermOutOfTurn('rotation.builder.offsetOf', 'Pomak smjene {name}')).toBe(false);
+    expect(teamTermOutOfTurn('rotation.builder.patternLede', 'Isti tip smjene može se ponoviti.')).toBe(true);
+    expect(teamTermOutOfTurn('rotation.builder.patternLede', 'Tipovi smjena')).toBe(true);
+    expect(teamTermOutOfTurn('rotation.builder.patternLede', 'Isti tip može se ponoviti.')).toBe(false);
+    expect(teamTermOutOfTurn('rotation.builderx.heading', 'Smjena')).toBe(true);
+    expect(teamTermOutOfTurn('rotation.pattern.heading', 'Smjena')).toBe(true);
   });
 
   it('resolves a nested key path to its message and a wrong one to nothing', () => {

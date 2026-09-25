@@ -229,6 +229,19 @@ const SOURCES = [
   join(webRoot, 'src', 'shift-types', 'write.ts'),
   join(webRoot, 'src', 'shift-types', 'ramp.ts'),
   join(webRoot, 'src', 'routes', 'postavke-rotacije.tipovi-smjena.$id.tsx'),
+  // Story 2.3b's four. The builder section renders on `postavke-rotacije.tsx`
+  // and is no destination of its own; the three `@/rotation` modules own the
+  // refusals and the read failure as return-type unions and the ramp-chip
+  // display rows, so a chunk built before an edit to any of them is stale in a
+  // way no sweep could see.
+  join(webRoot, 'src', 'rotation', 'list.ts'),
+  join(webRoot, 'src', 'rotation', 'draft.ts'),
+  join(webRoot, 'src', 'rotation', 'draft-store.ts'),
+  join(webRoot, 'src', 'rotation', 'write.ts'),
+  join(webRoot, 'src', 'rotation', 'rotation-section.tsx'),
+  // The owner layout's numbered section badge, a primitive: text-free, here
+  // for freshness like the other primitives.
+  join(webRoot, 'src', 'components', 'ui', 'section-number.tsx'),
 ];
 
 /**
@@ -812,6 +825,115 @@ const AUTHORED_VOCABULARY = [
   'Vrati',
   'arhivirana',
   'smjeni',
+  // STORY 2.3b: the rotation builder's own words, every one closing a gap —
+  // none was in either list, so a hard-coded `Pomak` on the offsets column or
+  // `Uzorak rotacije` on the pattern card would have shipped unnoticed.
+  // `korak`, `Korak` and `koraka` are counted apart, as whole words.
+  'Uzorak',
+  'uzorka',
+  'korak',
+  'Korak',
+  'koraka',
+  'Dužina',
+  'ciklusa',
+  'Referentni',
+  'referentni',
+  'Pomak',
+  'pomaka',
+  'Pregled',
+  'rotaciju',
+  'Rotacija',
+  // And the rest of the builder's vocabulary (review of 2.3b), so a
+  // hard-coded label, lede or refusal on it is a count that no longer
+  // matches. Left out on purpose: `danas`, `rotacije` and `smjene`, which also
+  // ship as route paths or key namespaces; `nije`, which the boot fallback
+  // says; ICU's `few` and `other`; and words of three letters or fewer, which
+  // collide with minified identifiers.
+  'Arhiviran',
+  'Ciklus',
+  'Izračunato',
+  'Koraci',
+  'Nepoznato',
+  'Novi',
+  'Promijeni',
+  'Radnih',
+  'Rotaciju',
+  'Sljedeća',
+  'Spremanje',
+  'Ukloni',
+  'Zajednički',
+  'arhivirani',
+  'barem',
+  'bilo',
+  'bira',
+  'ciklus',
+  'ciklusu',
+  'današnjeg',
+  'datuma',
+  'dolje',
+  'dosadašnja',
+  'dosadašnju',
+  'dužine',
+  'gore',
+  'ista',
+  'isti',
+  'jedan',
+  'jedna',
+  'kasniji',
+  'koje',
+  'kojem',
+  'moguća',
+  'nakon',
+  'nijedne',
+  'pomaci',
+  'pomak',
+  'ponoviti',
+  'potrebna',
+  'prazan',
+  'prije',
+  'promijenjena',
+  'prvi',
+  'prvog',
+  'radni',
+  'referentnog',
+  'sada',
+  'sadrži',
+  'spremanja',
+  'spremiti',
+  'sutra',
+  'upotrebi',
+  'uzorak',
+  'vremena',
+  'vrijedi',
+  'zadržavaju',
+  'zakazana',
+  'zamijeni',
+  // OWNER LAYOUT: the non-working figure and the offsets callout.
+  'Slobodnih',
+  'Kako',
+  'funkcionira',
+  'odnosno',
+  'prolaze',
+  // OWNER ADDITION: the spread action.
+  'Rasporedi',
+  'ravnomjerno',
+  // AS RENEGOTIATED: the drag handle, its keyboard instructions and the
+  // announcements.
+  'Premjesti',
+  'Premještanje',
+  'premještanje',
+  'premještanja',
+  'razmaknicu',
+  'strelicama',
+  'podignut',
+  'premješten',
+  'otkazano',
+  'mjesto',
+  'mjestom',
+  'Tipka',
+  'odustaje',
+  'pritisni',
+  'pomakni',
 ];
 
 /** Everything the terminology contract and the unshipped affordances still own.

@@ -1,0 +1,316 @@
+import { randomBytes } from 'node:crypto';
+
+import type { Locator, Page } from '@playwright/test';
+
+import { connect } from './support/database.ts';
+import { ADMIN_STATE } from './support/fixture.ts';
+import { fill, hr } from './support/i18n.ts';
+import { expect, test } from './support/test.ts';
+
+test.use({ storageState: ADMIN_STATE });
+
+const builder = hr.rotation.builder;
+const shiftTypes = hr.rotation.shiftTypes;
+
+/** The `few` form of an ICU plural, filled — `3 dana` — without an ICU parser. */
+function fewForm(message: string, count: number): string {
+  const form = /few \{([^}]*)\}/.exec(message)?.[1];
+  if (form === undefined) throw new Error(`E2E: ${message} has no few form`);
+
+  return form.replace('#', String(count));
+}
+
+async function addShiftType(page: Page, name: string, times: readonly [string, string] | null) {
+  await page.getByRole('button', { name: shiftTypes.open }).click();
+  await page.getByLabel(shiftTypes.name, { exact: true }).fill(name);
+  if (times === null) {
+    await page.getByLabel(shiftTypes.kind, { exact: true }).selectOption({ label: shiftTypes.nonworking });
+  } else {
+    await page.getByLabel(shiftTypes.start, { exact: true }).fill(times[0]);
+    await page.getByLabel(shiftTypes.end, { exact: true }).fill(times[1]);
+  }
+  await page.getByRole('button', { name: shiftTypes.add }).click();
+  await expect(page.getByText(shiftTypes.created, { exact: true })).toBeVisible();
+}
+
+/**
+ * A real mouse drag: press on the handle, move past dnd-kit's activation
+ * distance, glide onto the target row's centre, release.
+ */
+async function dragOnto(page: Page, handle: Locator, target: Locator): Promise<void> {
+  // Centred first, so the drag stays clear of the viewport edge where
+  // dnd-kit's auto-scroll would move the page under the pointer.
+  await handle.evaluate((element) => {
+    element.scrollIntoView({ block: 'center' });
+  });
+  const from = await handle.boundingBox();
+  const to = await target.boundingBox();
+  if (from === null || to === null) throw new Error('E2E: the drag has nothing to hold or nowhere to go');
+
+  const start = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x, start.y + 10, { steps: 5 });
+  await page.mouse.move(start.x, to.y + to.height / 2, { steps: 15 });
+  await page.mouse.up();
+}
+
+/** What dnd-kit's live region says — every word of it from `hr.json`. */
+function announced(page: Page, message: string): Locator {
+  return page.getByText(message, { exact: true });
+}
+
+/**
+ * One macrotask in the page. dnd-kit's keyboard sensor starts listening for
+ * the arrows in a `setTimeout` after the lift, so a key pressed before that
+ * timer has run is lost — which happens under a loaded, parallel run. A
+ * zero-delay timer queued now runs after dnd-kit's; nothing is waited on by
+ * the clock.
+ */
+async function afterPendingTimers(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, 0);
+      }),
+  );
+}
+
+/**
+ * The keyboard path: focus the handle, space lifts (announced), one arrow
+ * moves (announced), space drops (announced) — each awaited, since dnd-kit
+ * starts listening for the arrows only once the lift has rendered.
+ */
+async function keyboardMove(
+  page: Page,
+  handle: Locator,
+  from: number,
+  arrow: 'ArrowUp' | 'ArrowDown',
+  to: number,
+): Promise<void> {
+  const positions = { from: String(from), to: String(to) };
+
+  await handle.focus();
+  await page.keyboard.press('Space');
+  await expect(announced(page, fill(builder.drag.lifted, { position: String(from) }))).toBeAttached();
+  await afterPendingTimers(page);
+  await page.keyboard.press(arrow);
+  await expect(announced(page, fill(builder.drag.over, positions))).toBeAttached();
+  await page.keyboard.press('Space');
+  await expect(announced(page, fill(builder.drag.dropped, positions))).toBeAttached();
+}
+
+/**
+ * The cell one team works in on the `day`-th date (0 = today) of the
+ * transposed preview: teams are rows (the team's name in the first cell),
+ * dates are columns (headed `Dan N`).
+ */
+async function previewCell(page: Page, teamName: string, day: number): Promise<Locator> {
+  const table = page.getByRole('table').filter({
+    has: page.getByRole('columnheader', { name: fill(builder.dayNumber, { day: '1' }) }),
+  });
+  const row = table.getByRole('row').filter({ has: page.getByRole('cell', { name: teamName, exact: true }) });
+  await expect(row, `the preview has no row for ${teamName}`).toHaveCount(1);
+
+  return row.getByRole('cell').nth(day + 1);
+}
+
+test('an admin builds a rotation, sees its figures and cycle, saves it, and it opens as the rotation in force', async ({
+  page,
+  fixture,
+}) => {
+  // EVERYTHING THIS TEST WRITES IS ITS OWN, per attempt: a team made for it
+  // and three types with fresh names. A team's rotation changes at most once
+  // per date, and the save binds every active team of the run's organization,
+  // so a retry first removes the versions an earlier attempt dated today —
+  // in this run's organization only, which is deleted at teardown anyway.
+  const client = await connect();
+  try {
+    await client.query(
+      `delete from rotation_assignments a
+        using organizations o
+        where a.organization_id = o.id and o.slug = $1
+          and a.effective_from >= public.organization_today(o.id)`,
+      [fixture.slug],
+    );
+  } finally {
+    await client.end();
+  }
+
+  const suffix = randomBytes(3).toString('hex');
+  const teamName = `Smjena ${suffix}`;
+  const a = `Dnevna ${suffix}`;
+  const b = `Noćna ${suffix}`;
+  const off = `Slobodno ${suffix}`;
+
+  await page.goto('/ljudi/smjene');
+  await page.getByRole('button', { name: hr.smjene.open }).click();
+  await page.getByLabel(hr.smjene.name, { exact: true }).fill(teamName);
+  await page.getByRole('button', { name: hr.smjene.add }).click();
+  await expect(page.getByRole('status')).toHaveText(hr.smjene.created);
+
+  await page.goto('/postavke-rotacije');
+  await addShiftType(page, a, ['07:00', '19:00']);
+  await addShiftType(page, b, ['19:00', '07:00']);
+  await addShiftType(page, off, null);
+
+  // Build [A, B, Slob].
+  const newStep = page.getByLabel(builder.newStep, { exact: true });
+  for (const name of [a, b, off]) {
+    await newStep.selectOption({ label: name });
+    await page.getByRole('button', { name: builder.addStep }).click();
+  }
+  const steps = page.getByRole('list', { name: builder.stepsCaption }).getByRole('listitem');
+  await expect(steps).toHaveCount(3);
+  for (const [index, name] of [a, b, off].entries()) await expect(steps.nth(index)).toContainText(name);
+
+  // THE STEP CONTROLS, by drag. The team — on step 1, A, like every team of
+  // an empty draft — follows its step wherever it goes.
+  const teamStep = page.getByLabel(fill(builder.offsetOf, { name: teamName }), { exact: true });
+  const handle = (position: number) =>
+    page.getByRole('button', { name: fill(builder.drag.handle, { position: String(position) }), exact: true });
+  await expect(teamStep).toHaveValue('0');
+
+  // By MOUSE: step 1's handle dragged onto step 2 → [B, A, Slob].
+  await dragOnto(page, handle(1), steps.nth(1));
+  for (const [index, name] of [b, a, off].entries()) await expect(steps.nth(index)).toContainText(name);
+  await expect(teamStep).toHaveValue('1');
+  await expect(await previewCell(page, teamName, 0)).toContainText(a);
+
+  // By KEYBOARD: step 3's handle, space, up, space → [B, Slob, A], and focus
+  // stays on the moved step's handle, now step 2.
+  await keyboardMove(page, handle(3), 3, 'ArrowUp', 2);
+  for (const [index, name] of [b, off, a].entries()) await expect(steps.nth(index)).toContainText(name);
+  await expect(handle(2)).toBeFocused();
+  await expect(teamStep).toHaveValue('2');
+  await expect(await previewCell(page, teamName, 0)).toContainText(a);
+  await expect(await previewCell(page, teamName, 1)).toContainText(b);
+
+  // Escape cancels a lifted step: nothing moves.
+  await handle(1).focus();
+  await page.keyboard.press('Space');
+  await expect(announced(page, fill(builder.drag.lifted, { position: '1' }))).toBeAttached();
+  await afterPendingTimers(page);
+  await page.keyboard.press('ArrowDown');
+  await expect(announced(page, fill(builder.drag.over, { from: '1', to: '2' }))).toBeAttached();
+  await page.keyboard.press('Escape');
+  await expect(announced(page, fill(builder.drag.cancelled, { position: '1' }))).toBeAttached();
+  for (const [index, name] of [b, off, a].entries()) await expect(steps.nth(index)).toContainText(name);
+
+  // Step 2 removed → [B, A]. Anchored today, the team works A today, B tomorrow.
+  await page.getByRole('button', { name: fill(builder.remove, { position: '2' }), exact: true }).click();
+  await expect(steps).toHaveCount(2);
+  for (const [index, name] of [b, a].entries()) await expect(steps.nth(index)).toContainText(name);
+  await expect(teamStep).toHaveValue('1');
+  await expect(await previewCell(page, teamName, 0)).toContainText(a);
+  await expect(await previewCell(page, teamName, 1)).toContainText(b);
+
+  // THE ANCHOR. One day later, the team stands on A tomorrow, so on B today.
+  const anchor = page.getByLabel(builder.anchor, { exact: true });
+  const today = await anchor.inputValue();
+  const tomorrow = new Date(`${today}T12:00:00Z`);
+  tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+  await anchor.fill(tomorrow.toISOString().slice(0, 10));
+  await expect(await previewCell(page, teamName, 0)).toContainText(b);
+  await anchor.fill(today);
+  await expect(await previewCell(page, teamName, 0)).toContainText(a);
+
+  // Back to [A, B, Slob]: step 2 lifted up by keyboard, then Slob added again.
+  await keyboardMove(page, handle(2), 2, 'ArrowUp', 1);
+  for (const [index, name] of [a, b].entries()) await expect(steps.nth(index)).toContainText(name);
+  await newStep.selectOption({ label: off });
+  await page.getByRole('button', { name: builder.addStep }).click();
+  await expect(steps).toHaveCount(3);
+  for (const [index, name] of [a, b, off].entries()) await expect(steps.nth(index)).toContainText(name);
+
+  // The figures: 3 dana · 2 · 24 h.
+  await expect(page.getByText(fewForm(builder.cycleLength, 3), { exact: true })).toBeVisible();
+  await expect(page.getByText(builder.workingStepsLabel, { exact: true }).locator('..')).toContainText('2');
+  await expect(page.getByText(builder.cycleHoursLabel, { exact: true }).locator('..')).toContainText(
+    fill(shiftTypes.duration.hours, { hours: '24' }),
+  );
+
+  // RASPOREDI RAVNOMJERNO. The run's own teams — the fixture's and this
+  // attempt's — both put on step 2, then spread: team i of n on 3 steps lands
+  // on floor(i * 3 / n) while n <= 3, else on i wrapped by 3, in the order the
+  // offsets list them.
+  const bothOnStep2 = fill(builder.stepOption, { position: '2', name: b });
+  for (const name of [fixture.team.name, teamName]) {
+    await page.getByLabel(fill(builder.offsetOf, { name }), { exact: true }).selectOption({ label: bothOnStep2 });
+  }
+  await expect(page.getByLabel(fill(builder.offsetOf, { name: fixture.team.name }), { exact: true })).toHaveValue('1');
+  await expect(teamStep).toHaveValue('1');
+  await page.getByRole('button', { name: builder.spread, exact: true }).click();
+  const offsets = page.getByRole('table').filter({
+    has: page.getByRole('columnheader', { name: builder.columnOffset, exact: true }),
+  });
+  // Every body row's first cell is its team's name, in the list's order.
+  const bodyRows = offsets.getByRole('row').filter({ has: page.getByRole('cell') });
+  const teamNames: string[] = [];
+  for (const row of await bodyRows.all()) {
+    teamNames.push(((await row.getByRole('cell').first().textContent()) ?? '').trim());
+  }
+  const listed = teamNames.length;
+  for (const [index, name] of teamNames.entries()) {
+    const expected = listed <= 3 ? Math.floor((index * 3) / listed) : index - Math.floor(index / 3) * 3;
+    await expect(page.getByLabel(fill(builder.offsetOf, { name }), { exact: true })).toHaveValue(String(expected));
+  }
+  expect(teamNames).toEqual(expect.arrayContaining([fixture.team.name, teamName]));
+
+  // The team made for this attempt on step 2, anchored today: B, Slob, A.
+  await page
+    .getByLabel(fill(builder.offsetOf, { name: teamName }), { exact: true })
+    .selectOption({ label: fill(builder.stepOption, { position: '2', name: b }) });
+  for (const [row, name] of [b, off, a].entries()) {
+    await expect(await previewCell(page, teamName, row)).toContainText(name);
+  }
+
+  // A RENAME in the type's edit dialog, BEFORE saving: the dialog's route
+  // remounts the builder, and the unsaved draft — kept outside it — is
+  // intact when the dialog closes, with the new name and no reload.
+  const renamed = `Odmor ${suffix}`;
+  await page.getByRole('link', { name: fill(shiftTypes.edit, { name: off }) }).click();
+  // By role, so the closed add dialog's hidden field of the same label is not matched.
+  await page.getByRole('textbox', { name: shiftTypes.name, exact: true }).fill(renamed);
+  await page.getByRole('button', { name: shiftTypes.save, exact: true }).click();
+  await expect(page.getByText(shiftTypes.renamed, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: shiftTypes.close, exact: true }).click();
+  await expect(page).toHaveURL('/postavke-rotacije');
+  await expect(steps).toHaveCount(3);
+  for (const [index, name] of [a, b, renamed].entries()) await expect(steps.nth(index)).toContainText(name);
+  await expect(teamStep).toHaveValue('1');
+  for (const [row, name] of [b, renamed, a].entries()) {
+    await expect(await previewCell(page, teamName, row)).toContainText(name);
+  }
+
+  await page.getByRole('button', { name: builder.save }).click();
+  await expect(page.getByText(builder.saved, { exact: true })).toBeVisible();
+
+  // Reloaded, the builder opens as the rotation now in force, anchored on
+  // the organization's today (the prefill's anchor is always today).
+  await page.reload();
+  await expect(steps).toHaveCount(3);
+  await expect(anchor).toHaveValue(today);
+  for (const [index, name] of [a, b, renamed].entries()) await expect(steps.nth(index)).toContainText(name);
+  await expect(page.getByLabel(fill(builder.offsetOf, { name: teamName }), { exact: true })).toHaveValue('1');
+  for (const [row, name] of [b, renamed, a].entries()) {
+    await expect(await previewCell(page, teamName, row)).toContainText(name);
+  }
+
+  // And saving it again unchanged is refused before anything is sent.
+  await page.getByRole('button', { name: builder.save }).click();
+  await expect(page.getByText(builder.error.unchanged, { exact: true })).toBeVisible();
+
+  // TWO CYCLES in the preview: twice the cycle's dates, `Dan N` restarting,
+  // the second cycle named over its first day. A view choice only.
+  await page
+    .getByLabel(builder.previewCycles, { exact: true })
+    .selectOption({ label: fewForm(builder.cycleCount, 2) });
+  const preview = page.getByRole('table').filter({
+    has: page.getByRole('columnheader', { name: fill(builder.dayNumber, { day: '1' }) }),
+  });
+  // The team column, then 2 × 3 dates.
+  await expect(preview.getByRole('columnheader')).toHaveCount(1 + 2 * 3);
+  await expect(preview.getByRole('columnheader', { name: fill(builder.cycleLabel, { cycle: '2' }) })).toHaveCount(1);
+  await expect(await previewCell(page, teamName, 3)).toContainText(b);
+});

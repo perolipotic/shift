@@ -286,6 +286,18 @@ export function formatIsoDate(isoDate: string): string | null {
   return formatDate(noonOf(isoDate), FALLBACK_TIME_ZONE);
 }
 
+/**
+ * `23.09.` — an ISO calendar date's day and month alone, for a column head
+ * where the year is the header's (story 2.3b, the cycle preview). The same
+ * binding shape as {@link formatIsoDate}, cut before the year. `null` for
+ * anything {@link isIsoDate} refuses.
+ */
+export function formatIsoDayMonth(isoDate: string): string | null {
+  const full = formatIsoDate(isoDate);
+
+  return full === null ? null : full.slice(0, full.length - 4);
+}
+
 /** `12.09.2026` — the binding date (UX-DR34). */
 export function formatDate(instant: Date, timeZone: string): string {
   const parts = partsOf('date', instant, timeZone);

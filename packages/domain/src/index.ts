@@ -34,6 +34,7 @@ export {
   daysBetween,
   projectedShiftType,
   projectedShiftTypeOn,
+  projectedStepId,
   rotationAssignmentOn,
   type RotationAssignment,
   type RotationPattern,

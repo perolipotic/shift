@@ -6,6 +6,7 @@ import {
   daysBetween,
   projectedShiftType,
   projectedShiftTypeOn,
+  projectedStepId,
   rotationAssignmentOn,
   type RotationAssignment,
   type RotationStep,
@@ -142,11 +143,12 @@ function walkedShiftType(
   steps: readonly RotationStep[],
   assignment: RotationAssignment,
   days: number,
-): { date: string; shiftTypeId: string } {
+): { date: string; shiftTypeId: string; stepId: string } {
   const ordered = [...steps].sort((left, right) => left.position - right.position);
   const offsetIndex = ordered.findIndex((step) => step.id === assignment.offsetStepId);
   const { date, index } = walk(assignment.anchorDate, days, offsetIndex, ordered.length);
-  return { date, shiftTypeId: (ordered[index] as RotationStep).shiftTypeId };
+  const step = ordered[index] as RotationStep;
+  return { date, shiftTypeId: step.shiftTypeId, stepId: step.id };
 }
 
 /** An unbiased Fisher–Yates shuffle of a copy, drawing from `random`. */
@@ -561,6 +563,53 @@ describe('both fixtures', () => {
   });
 });
 
+describe('projectedStepId (story 2.3b)', () => {
+  it.each(FIXTURES)('names each $fixture team\'s offset step on the anchor, and the step whose type the projection returns on every date of a cycle', ({ teams, steps, assignments }) => {
+    for (const team of teams) {
+      const assignment = assignmentOf(assignments, team);
+      expect(projectedStepId(steps, assignment, assignment.anchorDate)).toBe(assignment.offsetStepId);
+      for (let days = -steps.length; days < 2 * steps.length; days += 1) {
+        const { date } = walk(SEEDED_ANCHOR_DATE, days, 0, 1);
+        const stepId = projectedStepId(steps, assignment, date);
+        const step = steps.find((candidate) => candidate.id === stepId);
+        expect(step?.shiftTypeId, `${team.id} on ${date}`).toBe(projectedShiftType(steps, assignment, date));
+      }
+    }
+  });
+
+  it.each(FIXTURES)('re-expresses a $fixture team against another anchor without changing any projected date', ({ teams, steps, assignments }) => {
+    for (const team of teams) {
+      const assignment = assignmentOf(assignments, team);
+      for (const anchorDate of ['2019-12-30', '2026-09-26', '2031-02-28']) {
+        const moved: RotationAssignment = {
+          ...assignment,
+          anchorDate,
+          offsetStepId: projectedStepId(steps, assignment, anchorDate),
+        };
+        for (let days = -7; days < 14; days += 1) {
+          const { date } = walk('2026-09-26', days, 0, 1);
+          expect(projectedShiftType(steps, moved, date), `${team.id} from ${anchorDate} on ${date}`).toBe(
+            projectedShiftType(steps, assignment, date),
+          );
+        }
+      }
+    }
+  });
+
+  it('tells two steps of one repeated type apart: the pilot\'s Smjena C and D both stand on Slobodno on the anchor', () => {
+    const [, , c, d] = PILOT_TEAMS as readonly [FixtureTeam, FixtureTeam, FixtureTeam, FixtureTeam];
+    expect(projectedStepId(PILOT_ROTATION_STEPS, assignmentOf(PILOT_ROTATION_ASSIGNMENTS, c), SEEDED_ANCHOR_DATE)).toBe('pilot-step-2');
+    expect(projectedStepId(PILOT_ROTATION_STEPS, assignmentOf(PILOT_ROTATION_ASSIGNMENTS, d), SEEDED_ANCHOR_DATE)).toBe('pilot-step-3');
+  });
+
+  it('refuses what projectedShiftType refuses, with the same RangeError', () => {
+    const smjenaA = assignmentOf(PILOT_ROTATION_ASSIGNMENTS, PILOT_TEAMS[0] as FixtureTeam);
+    expect(() => projectedStepId([], smjenaA, '2020-01-01')).toThrow(/has no steps/);
+    expect(() => projectedStepId(PILOT_ROTATION_STEPS, { ...smjenaA, offsetStepId: 'uj5-step-0' }, '2020-01-01')).toThrow(/uj5-step-0/);
+    expect(() => projectedStepId(PILOT_ROTATION_STEPS, smjenaA, '2020-02-30')).toThrow(RangeError);
+  });
+});
+
 describe('the projection invariant, over randomized patterns and dates (Q9)', () => {
   /** A random pattern of `cycleLength` steps: gapped positions, repeated types, shuffled. */
   function randomSteps(random: () => number, patternId: string, cycleLength: number): RotationStep[] {
@@ -603,6 +652,7 @@ describe('the projection invariant, over randomized patterns and dates (Q9)', ()
 
       expect(daysBetween(anchor, walked.date), label).toBe(days);
       expect(projectedShiftType(steps, assignment, walked.date), label).toBe(walked.shiftTypeId);
+      expect(projectedStepId(steps, assignment, walked.date), label).toBe(walked.stepId);
       expect(projectedShiftTypeOn([assignment], steps, walked.date), label).toBe(walked.shiftTypeId);
     }
   });
