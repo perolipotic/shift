@@ -331,13 +331,21 @@
       "filterTeam": "{count, plural, one {{team}: # osoba} few {{team}: # osobe} other {{team}: # osoba}}",
       "filterNone": "{count, plural, one {Bez smjene: # osoba} few {Bez smjene: # osobe} other {Bez smjene: # osoba}}",
       "current": "Smjena: {team}",
+      "currentPosition": "Smjena: {team}, položaj: {position}",
       "scheduled": "Od {date} osoba će biti u smjeni {team}.",
+      "scheduledPosition": "Od {date} osoba će biti u smjeni {team}, položaj: {position}.",
+      "scheduledPositionOnly": "Od {date} osoba će u smjeni {team} imati položaj: {position}.",
+      "scheduledChange": "Od {date} zakazana je promjena u smjeni {team}.",
       "scheduledNone": "Od {date} osoba će biti bez smjene.",
       "team": "Nova smjena",
       "date": "Smjena vrijedi od",
       "move": "Promijeni smjenu osobe {name}",
       "movePrompt": "Osoba {name} od {date} je u smjeni {team}. Prošli rasporedi ostaju nepromijenjeni.",
       "movePromptFuture": "Osoba {name} od {date} bit će u smjeni {team}. Prošli rasporedi ostaju nepromijenjeni.",
+      "movePositionPrompt": "Osoba {name} od {date} je u smjeni {team}, položaj: {position}. Prošli rasporedi ostaju nepromijenjeni.",
+      "movePositionPromptFuture": "Osoba {name} od {date} bit će u smjeni {team}, položaj: {position}. Prošli rasporedi ostaju nepromijenjeni.",
+      "positionPrompt": "Osoba {name} od {date} u smjeni {team} ima položaj: {position}. Prošli rasporedi ostaju nepromijenjeni.",
+      "positionPromptFuture": "Osoba {name} od {date} u smjeni {team} imat će položaj: {position}. Prošli rasporedi ostaju nepromijenjeni.",
       "removePrompt": "Osoba {name} od {date} je bez smjene. Prošli rasporedi ostaju nepromijenjeni.",
       "removePromptFuture": "Osoba {name} od {date} bit će bez smjene. Prošli rasporedi ostaju nepromijenjeni.",
       "moveConfirm": "Potvrdi promjenu smjene osobe {name}",
@@ -351,11 +359,20 @@
         "taken": "Za taj datum već postoji promjena smjene. Odaberi drugi datum.",
         "order": "Datum mora biti nakon zadnje promjene smjene.",
         "unchanged": "Osoba je već u toj smjeni. Odaberi drugu smjenu.",
+        "positionUnchanged": "Osoba je već u toj smjeni na tom položaju. Odaberi drugu smjenu ili drugi položaj.",
+        "positionRequired": "Odaberi položaj osobe u smjeni. Postavke organizacije su se možda promijenile, pa ih provjeri i pokušaj ponovno.",
         "scheduled": "Promjena smjene već je zakazana. Najprije je poništi.",
         "inEffect": "Promjena smjene je već na snazi i ne može se poništiti.",
         "archived": "Ta smjena je arhivirana. Odaberi smjenu u upotrebi.",
         "stale": "Smjena osobe se u međuvremenu promijenila. Provjeri je i pokušaj ponovno."
       }
+    },
+    "position": {
+      "label": "Položaj",
+      "commander": "zapovjednik",
+      "driver": "vozač",
+      "firefighter": "vatrogasac",
+      "unknown": "nepoznat položaj"
     },
     "roster": {
       "count": "{count, plural, one {# osoba} few {# osobe} other {# osoba}}",
@@ -363,6 +380,8 @@
       "back": "Vrati se na Danas",
       "withRank": "{name} · {rank}",
       "rankUnknown": "nepoznat čin",
+      "withPosition": "{name} · {position}",
+      "withRankAndPosition": "{name} · {rank} · {position}",
       "error": {
         "unavailable": "Popis osoba u smjeni trenutačno nije moguće učitati. Pokušaj ponovno."
       }

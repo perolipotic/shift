@@ -116,11 +116,15 @@ export const MEMBERS_LIST_KEY = ['members'] as const;
  * MEMBER RANK ADDS `fire_rank` (`0014`), read and never shown by the table: a
  * rank column on the list is an Ask First. The edit form seeds its rank
  * control from it.
+ *
+ * TEAM POSITION ADDS `position` to each membership version (`0015`): the
+ * position is versioned with the team, so it arrives in the same embed and
+ * the edit screen's team block reads both off one history.
  */
 export const MEMBERS_COLUMNS =
   'organization_id,id,auth_user_id,name,username,email,role,leave_allowance_days,fire_rank,' +
   'member_status_versions(active,effective_from),' +
-  'team_membership_versions(team_id,effective_from,teams(name)),organizations(timezone)';
+  'team_membership_versions(team_id,position,effective_from,teams(name)),organizations(timezone)';
 
 /**
  * The exact count the transport is asked for alongside the rows.
@@ -314,6 +318,13 @@ export interface MemberTeam {
  */
 export interface MemberTeamVersion {
   readonly team: MemberTeam | null;
+  /**
+   * The position code (`0015`), or `null` for none — a version written while
+   * the organization did not use positions, or one naming no team. Wide
+   * rather than the code union: a code this build lacks is kept as it is and
+   * shown as "unknown position" (`@/members/position`).
+   */
+  readonly position: string | null;
   /** An ISO calendar date, `YYYY-MM-DD`, in the organization's own frame. */
   readonly effectiveFrom: string;
 }
@@ -351,13 +362,17 @@ export function teamVersionsIn(row: Record<string, unknown>): MemberTeamVersion[
 
     const fields = entry as Record<string, unknown>;
     const teamId = fields['team_id'];
+    const position = fields['position'];
     const effectiveFrom = fields['effective_from'];
     const team = fields['teams'];
 
     if (typeof effectiveFrom !== 'string' || !isIsoDate(effectiveFrom)) return null;
+    // PRESENT, as text or null: a version without it is not a reading `0015`
+    // produces. An unknown code is kept as it is, never refused or dropped.
+    if (position !== null && typeof position !== 'string') return null;
 
     if (teamId === null) {
-      versions.push({ team: null, effectiveFrom });
+      versions.push({ team: null, position, effectiveFrom });
       continue;
     }
 
@@ -368,7 +383,7 @@ export function teamVersionsIn(row: Record<string, unknown>): MemberTeamVersion[
 
     if (typeof name !== 'string') return null;
 
-    versions.push({ team: { id: teamId, name }, effectiveFrom });
+    versions.push({ team: { id: teamId, name }, position, effectiveFrom });
   }
 
   return versions.sort(byEffectiveFrom);
@@ -393,6 +408,24 @@ export function memberTeamOn(
   }
 
   return team;
+}
+
+/**
+ * The membership version in effect at a date — team AND position — or `null`
+ * when there is none. The SPA's twin of `0015`'s `member_team_version_on`, and
+ * {@link memberTeamOn} is its team.
+ */
+export function memberTeamVersionOn(
+  member: Pick<MemberListRow, 'teamVersions'>,
+  day: string,
+): MemberTeamVersion | null {
+  let found: MemberTeamVersion | null = null;
+
+  for (const version of member.teamVersions) {
+    if (version.effectiveFrom <= day) found = version;
+  }
+
+  return found;
 }
 
 /** A member's latest team version, or `null` for a member who has none. */

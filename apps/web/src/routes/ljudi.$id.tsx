@@ -1,6 +1,13 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, redirect } from '@tanstack/react-router';
-import { useRef, useState, type FormEvent, type ReactNode } from 'react';
+import {
+  Fragment,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -15,7 +22,6 @@ import {
   NO_TEXT,
   mayReadMembers,
   memberLevelMessageKey,
-  memberTeamOf,
   membersSurfaceStateOf,
   membersTodayOf,
   membersQueryOptions,
@@ -49,6 +55,19 @@ import {
   memberFormKey,
   memberFormRefusalOf,
   memberWriteMessageKeys,
+  offersPositionFor,
+  pickedTeamValue,
+  teamCurrentLineOf,
+  teamOfferFor,
+  teamPickHistory,
+  teamPositionToSend,
+  teamPositionsOn,
+  teamPositionsRefusalOf,
+  teamPositionsSettingOf,
+  teamRefusalRereadsOrganization,
+  teamScheduledLineOf,
+  teamSelectKey,
+  positionPickerDefault,
   raisedForMember,
   readSessionSubject,
   resetPassword,
@@ -70,11 +89,9 @@ import {
   teamBlockKey,
   teamConfirmMessageKey,
   teamOfferMessageKey,
-  teamOfferOf,
   teamPickerDefault,
   teamPreflightOf,
   teamPromptKeyOf,
-  teamScheduledMessageKey,
   type RaisedForMember,
   type MemberFunctions,
   type MemberWriteRefusal,
@@ -83,7 +100,9 @@ import {
   type StatusOffer,
   type TeamConfirmation,
   type TeamOffer,
+  type TeamPick,
 } from '@/members/write';
+import { positionMessageKey, positionOptionsFor } from '@/members/position';
 import {
   rankEditOf,
   rankInitialValue,
@@ -173,6 +192,14 @@ import {
  * caller's own row. The picker reads the teams under `TEAMS_LIST_KEY`, active
  * ones only; the team and date controls are uncontrolled and stay mounted
  * through the confirmation, so a refusal keeps both.
+ *
+ * TEAM POSITION joins the team block while the organization uses fire ranks
+ * and positions: a position `<select>` beside the team, shown only while a
+ * team (not "no team") is picked, and the current team stays choosable so a
+ * position-only change can be made. The team pick is held in state only so
+ * the position control can follow it — its visibility and its default are
+ * `@/members/write`'s decisions. With the setting off nothing here renders and
+ * the write carries a null position.
  */
 
 /** Where a session that is not an administrator's is sent. The FIRST
@@ -261,7 +288,6 @@ export function LjudiMemberScreen() {
   // THE TEAM BLOCK'S OWN STATE and its own in-flight ref, for the reason the
   // status block has its own.
   const teaming = useRef(false);
-  const teamField = useRef<HTMLSelectElement>(null);
   const teamDateField = useRef<HTMLInputElement>(null);
   const [teamPending, setTeamPending] = useState(false);
   const [teamArmed, setTeamArmed] = useState<RaisedForMember<TeamConfirmation> | null>(null);
@@ -269,6 +295,10 @@ export function LjudiMemberScreen() {
   const [teamFailure, setTeamFailure] = useState<RaisedForMember<MemberWriteRefusal> | null>(
     null,
   );
+  // TEAM POSITION. The position control, and the team the picker holds, so the
+  // position control can follow it.
+  const positionField = useRef<HTMLSelectElement>(null);
+  const [teamPick, setTeamPick] = useState<RaisedForMember<TeamPick> | null>(null);
 
   const answer = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
 
@@ -284,9 +314,15 @@ export function LjudiMemberScreen() {
     retry: false,
     staleTime: ORGANIZATION_READ_STALE_MS,
   });
-  const offersRank = ranksShown(
-    organization.data !== undefined && organization.data.ok ? organization.data.snapshot : null,
-  );
+  const organizationSnapshot =
+    organization.data !== undefined && organization.data.ok ? organization.data.snapshot : null;
+  const offersRank = ranksShown(organizationSnapshot);
+  // TEAM POSITION: the same setting, as `@/members/write` reads it — on, off,
+  // pending or failed. Until it is KNOWN no move is offered, so no position is
+  // ever sent on a guess.
+  const positionsSetting = teamPositionsSettingOf(organization);
+  const offersPosition = teamPositionsOn(positionsSetting);
+  const positionsRefusal = teamPositionsRefusalOf(positionsSetting);
 
   // THE CALLER'S OWN ACCOUNT, so the status block is never offered on it.
   const subject = useQuery({
@@ -342,7 +378,12 @@ export function LjudiMemberScreen() {
   const teamConfirmed = raisedForMember(teamSaved, id) !== null;
   const teamRefusal = raisedForMember(teamFailure, id);
   const teamStage = statusStageOf(teamArmedFor !== null, teamPending);
-  const teamOffer = form.member === null ? null : teamOfferOf(form.member, activeTeams, today);
+  const teamOffer =
+    form.member === null ? null : teamOfferFor(form.member, activeTeams, today, positionsSetting);
+  const pickedTeam =
+    form.member === null || teamOffer === null
+      ? NO_TEAM_VALUE
+      : pickedTeamValue(raisedForMember(teamPick, id), form.member, teamOffer);
 
   /**
    * Arm the team confirmation, or name the refusal the picked team and date
@@ -350,24 +391,34 @@ export function LjudiMemberScreen() {
    */
   function armTeam(member: MemberListRow, offered: TeamOffer): void {
     const dateField = teamDateField.current;
-    const picked = teamField.current;
     const day = offered.change === WITHDRAW ? offered.scheduled.effectiveFrom : dateField?.value;
-    const team = offered.change === WITHDRAW ? null : chosenTeam(picked?.value ?? NO_TEAM_VALUE, offered);
+    // THE PICKED TEAM IS THE STATE (`pickedTeam`), the same value the position
+    // control follows — never read back off the DOM.
+    const team = offered.change === WITHDRAW ? null : chosenTeam(pickedTeam, offered);
+    const keepsTeam =
+      offered.change === TEAM_MOVE && team !== null && team !== undefined && team.id === offered.current?.id;
+    // `null` while no position control is shown; decided in `@/members/write`.
+    const position =
+      offered.change === WITHDRAW
+        ? null
+        : teamPositionToSend(offered, pickedTeam, positionField.current?.value ?? NO_TEXT);
 
     // NEVER A PRESS WITH NO ANSWER: teams unread, or a pick the offer no longer
     // holds, is a screen behind the database.
-    if (allTeams === null || day === undefined || team === undefined) {
+    if (allTeams === null || day === undefined || team === undefined || position === undefined) {
       setTeamSaved(null);
       setTeamFailure({ member: member.id, raised: { code: MEMBER_TEAM_STALE, saved: false } });
 
       return;
     }
 
-    const refusal = teamPreflightOf(offered.change, day, team?.id ?? null, {
-      member,
-      teams: allTeams,
-      today: offered.today,
-    });
+    const refusal = teamPreflightOf(
+      offered.change,
+      day,
+      team?.id ?? null,
+      { member, teams: allTeams, today: offered.today, positions: offersPosition },
+      position,
+    );
 
     setTeamSaved(null);
 
@@ -381,7 +432,33 @@ export function LjudiMemberScreen() {
     setTeamFailure(null);
     setTeamArmed({
       member: member.id,
-      raised: { name: member.name, change: offered.change, team, day, history: teamBlockKey(member) },
+      raised: {
+        name: member.name,
+        change: offered.change,
+        team,
+        position,
+        keepsTeam,
+        day,
+        history: teamBlockKey(member),
+      },
+    });
+  }
+
+  /**
+   * Hold the team the picker now shows, against the history it was picked in,
+   * so the position control can follow it (team position).
+   */
+  function pickTeam(event: ChangeEvent<HTMLSelectElement>): void {
+    const member = form.member;
+
+    if (member === null) return;
+
+    setTeamPick({
+      member: member.id,
+      raised: {
+        value: event.currentTarget.value,
+        history: teamOffer === null ? NO_TEXT : teamPickHistory(member, teamOffer),
+      },
     });
   }
 
@@ -413,11 +490,17 @@ export function LjudiMemberScreen() {
         confirmation.change,
         confirmation.day,
         confirmation.team?.id ?? null,
-        { member, teams: allTeams, today },
+        { member, teams: allTeams, today, positions: offersPosition },
+        confirmation.position,
       );
 
-      if (outcome.ok) setTeamSaved({ member: member.id, raised: true });
-      else setTeamFailure({ member: member.id, raised: outcome.refusal });
+      if (outcome.ok) {
+        setTeamSaved({ member: member.id, raised: true });
+        // The block remounts on the new history; the pick goes with it.
+        setTeamPick(null);
+      } else {
+        setTeamFailure({ member: member.id, raised: outcome.refusal });
+      }
 
       // THE LIST CARRIES THE TEAM HISTORY, and a refusal is refetched too: the
       // likeliest reason for one is a list behind the database. The teams are
@@ -425,6 +508,11 @@ export function LjudiMemberScreen() {
       try {
         await queryClient.invalidateQueries({ queryKey: MEMBERS_LIST_KEY });
         if (!outcome.ok) await queryClient.invalidateQueries({ queryKey: TEAMS_LIST_KEY });
+        // TEAM POSITION: a refusal for a missing position means the setting
+        // moved since this screen read it, so the organization is read again.
+        if (!outcome.ok && teamRefusalRereadsOrganization(outcome.refusal.code)) {
+          await queryClient.invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY });
+        }
       } catch (cause) {
         console.error(MEMBER_WRITE_UNAVAILABLE, cause);
       }
@@ -1136,24 +1224,36 @@ export function LjudiMemberScreen() {
     const idle = teamStage === STATUS_IDLE;
     // STATED EVEN WHEN NOTHING IS OFFERED — no teams to move onto, or the
     // teams unread — so the member's team is never left unsaid.
-    const state = memberTeamOf(member, today);
-    const current = state.team;
-    const scheduled = state.scheduled;
+    // Both lines, and which sentence each is, are `@/members/write`'s: the
+    // position only while shown, and a scheduled change that keeps the team
+    // never worded as a move onto it.
+    const current = teamCurrentLineOf(member, today, offersPosition);
+    const scheduled = teamScheduledLineOf(member, today, offersPosition);
 
     return (
       <div key={teamBlockKey(member)} className="grid gap-2">
         <p className="text-sm font-medium">
-          {t('smjene.membership.current', {
-            team: current?.name ?? t('smjene.membership.none'),
+          {t(current.key, {
+            team: current.team ?? t('smjene.membership.none'),
+            position: current.position === null ? NO_TEXT : t(positionMessageKey(current.position)),
           })}
         </p>
         {scheduled === null ? null : (
           <p className="text-sm font-medium">
-            {t(teamScheduledMessageKey(scheduled.team === null), {
-              date: shownDate(scheduled.from),
-              team: scheduled.team?.name ?? NO_TEXT,
+            {t(scheduled.key, {
+              date: shownDate(scheduled.date ?? NO_TEXT),
+              team: scheduled.team ?? NO_TEXT,
+              position:
+                scheduled.position === null ? NO_TEXT : t(positionMessageKey(scheduled.position)),
             })}
           </p>
+        )}
+        {positionsRefusal === null ? null : (
+          <Notice role="alert">
+            {memberWriteMessageKeys({ code: positionsRefusal, saved: false })
+              .map((key) => t(key))
+              .join(MESSAGE_SEPARATOR)}
+          </Notice>
         )}
         {teamsState.refusal === null ? null : (
           <Notice role="alert">
@@ -1208,11 +1308,12 @@ export function LjudiMemberScreen() {
       <>
         <Label htmlFor="member-team">{t('smjene.membership.team')}</Label>
         <select
-          ref={teamField}
+          key={teamSelectKey(offered)}
           id="member-team"
           name="team"
           defaultValue={teamPickerDefault(offered)}
           disabled={!idle}
+          onChange={pickTeam}
           aria-describedby={teamRefusal === null ? undefined : 'member-team-error'}
           className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
         >
@@ -1225,6 +1326,7 @@ export function LjudiMemberScreen() {
             <option value={NO_TEAM_VALUE}>{t('smjene.membership.none')}</option>
           ) : null}
         </select>
+        {renderPositionPicker(offered, idle)}
         <Label htmlFor="member-team-date">{t('smjene.membership.date')}</Label>
         <Input
           ref={teamDateField}
@@ -1239,6 +1341,39 @@ export function LjudiMemberScreen() {
           className="h-11"
         />
       </>
+    );
+  }
+
+  /**
+   * The position `<select>`, only while positions are offered and a team is
+   * picked. KEYED TO THE PICKED TEAM, so picking another team reopens it on
+   * that team's default: the current position for the member's own team, the
+   * default position for a move. Described by the team block's own alert.
+   */
+  function renderPositionPicker(offered: TeamOffer, idle: boolean): ReactNode {
+    if (offered.change !== TEAM_MOVE || !offersPositionFor(offered, pickedTeam)) return null;
+
+    const stored = pickedTeam === offered.current?.id ? offered.currentPosition : null;
+
+    return (
+      <Fragment key={pickedTeam}>
+        <Label htmlFor="member-position">{t('smjene.position.label')}</Label>
+        <select
+          ref={positionField}
+          id="member-position"
+          name="position"
+          defaultValue={positionPickerDefault(offered, pickedTeam)}
+          disabled={!idle}
+          aria-describedby={teamRefusal === null ? undefined : 'member-team-error'}
+          className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {positionOptionsFor(stored).map((option) => (
+            <option key={option} value={option}>
+              {t(positionMessageKey(option))}
+            </option>
+          ))}
+        </select>
+      </Fragment>
     );
   }
 
@@ -1275,6 +1410,8 @@ export function LjudiMemberScreen() {
             name: armedName,
             date: shownDate(teamArmedFor.day),
             team: teamArmedFor.team?.name ?? NO_TEXT,
+            position:
+              teamArmedFor.position === null ? NO_TEXT : t(positionMessageKey(teamArmedFor.position)),
           })}
         </p>
         <div className="grid gap-2 sm:grid-cols-2">

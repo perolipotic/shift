@@ -33,6 +33,7 @@ import {
   TEAM_COLUMN,
   memberTeamOf,
   memberTeamOn,
+  memberTeamVersionOn,
   NOT_A_ROW,
   NO_TEXT,
   TEXT_CELL,
@@ -259,7 +260,7 @@ describe('the read asks for exactly what the surface needs, and for the count', 
     // STORY 1.7b adds the TEAM history, each version with its team's name.
     const embed =
       'member_status_versions(active,effective_from),' +
-      'team_membership_versions(team_id,effective_from,teams(name)),organizations(timezone)';
+      'team_membership_versions(team_id,position,effective_from,teams(name)),organizations(timezone)';
 
     expect(MEMBERS_COLUMNS.endsWith(`,${embed}`)).toBe(true);
     expect(MEMBERS_COLUMNS.slice(0, -(embed.length + 1)).split(',').sort()).toEqual(
@@ -817,13 +818,13 @@ describe('the order is Croatian, and an address-less member has a place in it', 
     const beta = { id: 'team-beta', name: 'Beta' };
     const zeta = { id: 'team-zeta', name: 'Zeta' };
     const members = [
-      member({ id: 'on-beta', name: 'Ana', teamVersions: [{ team: beta, effectiveFrom: '2026-09-01' }] }),
+      member({ id: 'on-beta', name: 'Ana', teamVersions: [{ team: beta, position: null, effectiveFrom: '2026-09-01' }] }),
       member({
         id: 'moving',
         name: 'Boris',
         teamVersions: [
-          { team: alfa, effectiveFrom: '2026-09-01' },
-          { team: zeta, effectiveFrom: '2026-10-01' },
+          { team: alfa, position: null, effectiveFrom: '2026-09-01' },
+          { team: zeta, position: null, effectiveFrom: '2026-10-01' },
         ],
       }),
     ];
@@ -905,7 +906,7 @@ describe('the team filter is derived from the snapshot, counted by facet, and fa
   const alfa = { id: '00000000-0000-4000-8000-00000000000a', name: 'Alfa' };
   const beta = { id: '00000000-0000-4000-8000-00000000000b', name: 'Beta' };
   const onTeam = (team: { readonly id: string; readonly name: string }) => [
-    { team, effectiveFrom: '2026-09-01' },
+    { team, position: null, effectiveFrom: '2026-09-01' },
   ];
 
   /** Two on Alfa (one an admin), one on Beta, one on no team. */
@@ -982,8 +983,8 @@ describe('the team filter is derived from the snapshot, counted by facet, and fa
       id: 'moving',
       name: 'Ema',
       teamVersions: [
-        { team: alfa, effectiveFrom: '2026-09-01' },
-        { team: beta, effectiveFrom: nextIsoDate(TODAY) ?? '' },
+        { team: alfa, position: null, effectiveFrom: '2026-09-01' },
+        { team: beta, position: null, effectiveFrom: nextIsoDate(TODAY) ?? '' },
       ],
     });
     const narrowed = narrowMembers([moving], '', ALL_LEVELS, sorted, TODAY);
@@ -1107,7 +1108,7 @@ describe('the team filter is derived from the snapshot, counted by facet, and fa
 
 describe('the stored team follows the applied one, once the answer is real', () => {
   const alfa = { id: 'team-alfa', name: 'Alfa' };
-  const onAlfa = [member({ id: 'a', teamVersions: [{ team: alfa, effectiveFrom: '2026-09-01' }] })];
+  const onAlfa = [member({ id: 'a', teamVersions: [{ team: alfa, position: null, effectiveFrom: '2026-09-01' }] })];
   const onNothing = [member({ id: 'n' })];
   const sorted: SortState = { key: NAME_COLUMN, direction: ASCENDING };
 
@@ -1643,7 +1644,7 @@ describe('the narrowing declares its own inputs, so a memo cannot drop one', () 
   it('hands the team through to the narrowing', () => {
     const alfa = { id: 'team-alfa', name: 'Alfa' };
     const members = [
-      member({ id: 'on', teamVersions: [{ team: alfa, effectiveFrom: '2026-09-01' }] }),
+      member({ id: 'on', teamVersions: [{ team: alfa, position: null, effectiveFrom: '2026-09-01' }] }),
       member({ id: 'off' }),
     ];
 
@@ -1989,26 +1990,41 @@ describe('team as at a date, read off the embedded versions (story 1.7b)', () =>
     const parsed = memberListRowOf(
       row({
         team_membership_versions: [
-          { team_id: null, effective_from: '2026-10-05' },
-          { team_id: 'team-a', effective_from: '2026-09-01', teams: { name: 'Alfa' } },
+          { team_id: null, position: null, effective_from: '2026-10-05' },
+          { team_id: 'team-a', position: null, effective_from: '2026-09-01', teams: { name: 'Alfa' } },
         ],
       }),
     );
 
     expect(parsed?.teamVersions).toEqual([
-      { team: A, effectiveFrom: '2026-09-01' },
-      { team: null, effectiveFrom: '2026-10-05' },
+      { team: A, position: null, effectiveFrom: '2026-09-01' },
+      { team: null, position: null, effectiveFrom: '2026-10-05' },
     ]);
+
+    // TEAM POSITION: a known code, and a code this build lacks kept as it is.
+    expect(
+      memberListRowOf(
+        row({
+          team_membership_versions: [
+            { team_id: 'team-a', position: 'driver', effective_from: '2026-09-01', teams: { name: 'Alfa' } },
+            { team_id: 'team-a', position: 'chief', effective_from: '2026-09-10', teams: { name: 'Alfa' } },
+          ],
+        }),
+      )?.teamVersions.map((version) => version.position),
+    ).toEqual(['driver', 'chief']);
 
     for (const malformed of [
       undefined,
       null,
-      [{ team_id: 'team-a', effective_from: '2026-09-01' }],
-      [{ team_id: 'team-a', effective_from: '2026-09-01', teams: null }],
-      [{ team_id: 'team-a', effective_from: '2026-09-01', teams: { name: 7 } }],
-      [{ team_id: 7, effective_from: '2026-09-01', teams: { name: 'Alfa' } }],
-      [{ team_id: null, effective_from: '2026-02-31' }],
-      [{ team_id: null }],
+      [{ team_id: 'team-a', position: null, effective_from: '2026-09-01' }],
+      [{ team_id: 'team-a', position: null, effective_from: '2026-09-01', teams: null }],
+      [{ team_id: 'team-a', position: null, effective_from: '2026-09-01', teams: { name: 7 } }],
+      [{ team_id: 7, position: null, effective_from: '2026-09-01', teams: { name: 'Alfa' } }],
+      [{ team_id: null, position: null, effective_from: '2026-02-31' }],
+      [{ team_id: null, position: null }],
+      // TEAM POSITION: the key must arrive, as text or null.
+      [{ team_id: 'team-a', effective_from: '2026-09-01', teams: { name: 'Alfa' } }],
+      [{ team_id: 'team-a', position: 3, effective_from: '2026-09-01', teams: { name: 'Alfa' } }],
       ['version'],
     ]) {
       expect(
@@ -2036,6 +2052,7 @@ describe('team as at a date, read off the embedded versions (story 1.7b)', () =>
       id: 'm',
       teamVersions: TEAM_HISTORY.map(({ offset, team }) => ({
         team: team === null ? null : teams[team],
+        position: null,
         effectiveFrom: dayAt(offset),
       })),
     });
@@ -2051,12 +2068,30 @@ describe('team as at a date, read off the embedded versions (story 1.7b)', () =>
     expect(memberTeamOn(member({ id: 'fresh' }), TODAY)).toBeNull();
   });
 
+  it('reads the version in effect at a date, team and position together (team position)', () => {
+    // The SPA's twin of `0015`'s `member_team_version_on`: a position-only
+    // change is a new version of the same team.
+    const promoted = member({
+      id: 'p',
+      teamVersions: [
+        { team: A, position: 'driver', effectiveFrom: '2026-09-01' },
+        { team: A, position: 'commander', effectiveFrom: '2026-10-01' },
+      ],
+    });
+
+    expect(memberTeamVersionOn(promoted, '2026-08-31')).toBeNull();
+    expect(memberTeamVersionOn(promoted, '2026-09-30')?.position).toBe('driver');
+    expect(memberTeamVersionOn(promoted, '2026-10-01')?.position).toBe('commander');
+    expect(memberTeamOn(promoted, '2026-10-01')).toEqual(A);
+    expect(memberTeamVersionOn(member({ id: 'fresh' }), TODAY)).toBeNull();
+  });
+
   it('states today and the one scheduled move', () => {
     const scheduled = member({
       id: 'm',
       teamVersions: [
-        { team: A, effectiveFrom: '2026-09-01' },
-        { team: B, effectiveFrom: '2026-10-01' },
+        { team: A, position: null, effectiveFrom: '2026-09-01' },
+        { team: B, position: null, effectiveFrom: '2026-10-01' },
       ],
     });
 
@@ -2070,8 +2105,8 @@ describe('team as at a date, read off the embedded versions (story 1.7b)', () =>
 
   it('puts the team today in the team cell, no team as null, and nothing while today is unknown', () => {
     const column = MEMBER_COLUMNS.find((candidate) => candidate.key === TEAM_COLUMN);
-    const on = member({ id: 'm', teamVersions: [{ team: A, effectiveFrom: '2026-09-01' }] });
-    const later = member({ id: 'n', teamVersions: [{ team: B, effectiveFrom: '2026-10-01' }] });
+    const on = member({ id: 'm', teamVersions: [{ team: A, position: null, effectiveFrom: '2026-09-01' }] });
+    const later = member({ id: 'n', teamVersions: [{ team: B, position: null, effectiveFrom: '2026-10-01' }] });
 
     expect(column?.cell(on, TODAY)).toEqual({ kind: TEAM_CELL, team: 'Alfa' });
     expect(column?.cell(later, TODAY)).toEqual({ kind: TEAM_CELL, team: null });

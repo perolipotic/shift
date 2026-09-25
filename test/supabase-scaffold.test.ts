@@ -757,8 +757,31 @@ describe('the access-control migration', () => {
     expect(statements, 'the four fact columns are not the only insertable ones').toMatch(
       /grant insert \(\s*organization_id,\s*member_id,\s*team_id,\s*effective_from\s*\) on table public\.team_membership_versions to authenticated/i,
     );
+    // TEAM POSITION: a fifth fact column, JOINING the grant rather than
+    // replacing it. Attribution is still not insertable.
+    expect(statements, 'the position is not insertable').toMatch(
+      /grant insert \(position\) on table public\.team_membership_versions to authenticated/i,
+    );
+    expect(statements, 'attribution became insertable').not.toMatch(
+      /grant insert \([^)]*\bcreated_(by|at)\b[^)]*\) on table public\.team_membership_versions/i,
+    );
 
-    const insert = policyBody('team_membership_versions_insert_by_own_active_admin');
+    // THE POLICY THE DATABASE RUNS: `0010` declares it and `0015` ALTERS its
+    // WITH CHECK (team position), so the latest `alter policy` is what is read.
+    // Declared once, never re-created, so the policy inventories hold.
+    expect(
+      statements.match(/create policy team_membership_versions_insert_by_own_active_admin\b/gi) ?? [],
+      'the membership insert policy is declared other than once',
+    ).toHaveLength(1);
+    const alterations = [
+      ...statements.matchAll(
+        /alter policy team_membership_versions_insert_by_own_active_admin on public\.team_membership_versions[\s\S]*?;/gi,
+      ),
+    ].map((found) => found[0]);
+    expect(alterations, 'the membership insert policy is not altered for the position').toHaveLength(1);
+    const insert =
+      alterations[alterations.length - 1] ??
+      policyBody('team_membership_versions_insert_by_own_active_admin');
     expect(insert, 'the membership insert policy is not declared').not.toBe('');
     expect(insert, 'the tenant is not pinned from the signed claim').toMatch(
       /with check[\s\S]*organization_id = nullif/i,
@@ -776,8 +799,26 @@ describe('the access-control migration', () => {
     expect(insert, 'a second change may be scheduled on top of one').toMatch(
       /coalesce\(public\.team_membership_latest_version\(member_id\), '-infinity'::date\)\s*<= public\.organization_today\(organization_id\)/,
     );
-    expect(insert, 'a version may leave the team unchanged').toMatch(
-      /team_id is distinct from public\.member_team_on\(member_id, 'infinity'::date\)/,
+    // CHANGES THE VALUE (team position): the team OR the position differs
+    // from the latest version, read through the table-returning reader.
+    expect(insert, 'a version may leave the team and position unchanged').toMatch(
+      /not exists \(\s*select 1\s+from public\.member_team_version_on\(team_membership_versions\.member_id, 'infinity'::date\) as latest\s+where latest\.team_id is not distinct from team_membership_versions\.team_id\s+and latest\.position is not distinct from team_membership_versions\.position\s*\)/,
+    );
+    expect(insert, 'the changes-the-value rule still compares the team alone').not.toMatch(
+      /team_id is distinct from public\.member_team_on/,
+    );
+    expect(insert, '"no team" may be the first version').toMatch(
+      /\(team_id is not null or public\.member_team_has_version\(member_id\)\)/,
+    );
+    // REQUIRED WHILE THE SETTING IS ON: a version naming a team carries a
+    // position in an organization that uses fire ranks and positions.
+    // FAIL CLOSED: a null position is admitted only on a visible row that says
+    // the setting is off, never on the absence of a row that says it is on.
+    expect(insert, 'a team may be joined with no position while the setting is on').toMatch(
+      /team_id is null\s+or position is not null\s+or exists \(\s*select 1\s+from public\.organizations organization\s+where organization\.id = team_membership_versions\.organization_id\s+and not organization\.uses_fire_ranks\s*\)/,
+    );
+    expect(insert, 'the position rule fails open on an unreadable organization').not.toMatch(
+      /or not exists \(\s*select 1\s+from public\.organizations/,
     );
     expect(insert, 'an archived team may be joined').toMatch(/and not team\.archived/);
     expect(insert, 'membership reads status, which is independent of it').not.toMatch(
@@ -855,10 +896,12 @@ describe('the access-control migration', () => {
     expect(statements).toMatch(/revoke execute on function public\.team_roster\(uuid\) from anon;/);
   });
 
-  it('replaces the roster once, adding the rank and nothing else', () => {
+  it('replaces the roster twice, adding the rank and then the position and nothing else', () => {
     // MEMBER RANK. `0014` replaces `team_roster` in place: the same signature,
-    // the same definer scope, and one more key in each member object. The
-    // replacing body is what the database runs, so it is read on its own.
+    // the same definer scope, and one more key in each member object. TEAM
+    // POSITION: `0015` replaces it once more, adding the position in effect
+    // today. The LAST replacing body is what the database runs, so it is read
+    // on its own.
     const statements = migrationStatements();
     const replacements = [
       ...statements.matchAll(
@@ -866,17 +909,23 @@ describe('the access-control migration', () => {
       ),
     ].map((found) => found[0]);
 
-    expect(replacements, 'team_roster is replaced other than exactly once').toHaveLength(1);
+    expect(replacements, 'team_roster is replaced other than exactly twice').toHaveLength(2);
 
-    const roster = replacements[0] ?? '';
+    const roster = replacements[replacements.length - 1] ?? '';
 
     expect(roster).toMatch(/returns table \(name text, archived boolean, members jsonb\)/);
     expect(roster).toMatch(/\bstable\b/i);
     expect(roster).toMatch(/security definer/i);
     expect(roster).toMatch(/set search_path = ''/);
-    expect(roster, 'the roster names a member field besides id, name and rank').toMatch(
-      /jsonb_build_object\('id', m\.id, 'name', m\.name, 'fire_rank', m\.fire_rank\)/,
+    expect(roster, 'the roster names a member field besides id, name, rank and position').toMatch(
+      /jsonb_build_object\(\s*'id', m\.id,\s*'name', m\.name,\s*'fire_rank', m\.fire_rank,\s*'position', today_version\.position\s*\)/,
     );
+    // ONE READ of the version serves the team filter and the position.
+    expect(roster).toMatch(
+      /cross join lateral public\.member_team_version_on\(m\.id, today\.day\) as today_version/,
+    );
+    expect(roster).toMatch(/today_version\.team_id = t\.id/);
+    expect(roster, 'the roster reads the team twice').not.toMatch(/member_team_on\(/);
     expect(roster, 'the roster reads a private column').not.toMatch(
       /\b(email|leave_allowance_days|username|role)\b/,
     );
@@ -884,7 +933,6 @@ describe('the access-control migration', () => {
       /where access\.is_active/,
     );
     expect(roster).toMatch(/member_active_on\(m\.id, today\.day\)/);
-    expect(roster).toMatch(/member_team_on\(m\.id, today\.day\) = t\.id/);
   });
 
   it('constrains the rank to a fixed list and gates it behind a setting that defaults off', () => {
@@ -895,6 +943,32 @@ describe('the access-control migration', () => {
       /add column uses_fire_ranks boolean not null default false/,
     );
     expect(statements).toMatch(/add column fire_rank text\s+check \(fire_rank in \(/);
+  });
+
+  it('versions the position with the team, from a fixed list, with no default and no trigger', () => {
+    // TEAM POSITION. Source text only; the refusals are `test/rls-isolation.test.ts`.
+    const position = readFileSync(join(supabaseRoot, 'migrations', '0015_team_position.sql'), 'utf8').replaceAll(
+      /--[^\n]*/g,
+      '',
+    );
+
+    expect(position).toMatch(
+      /add column position text\s+constraint team_membership_versions_position_code_check\s+check \(position in \(/,
+    );
+    expect(position, 'a position may name no team').toMatch(
+      /check \(team_id is not null or position is null\)/,
+    );
+    expect(position, 'the position has a column default').not.toMatch(/\bdefault\b/i);
+    expect(position, 'the position is kept by a trigger').not.toMatch(/\btrigger\b/i);
+    expect(position, 'the reader is not the shift type reader\'s shape').toMatch(
+      /create function public\.member_team_version_on\(member uuid, on_date date\)\s+returns table \(team_id uuid, "position" text\)\s+language plpgsql\s+volatile\s+security invoker\s+set search_path = ''/,
+    );
+    expect(position).toMatch(
+      /grant execute on function public\.member_team_version_on\(uuid, date\) to authenticated;/,
+    );
+    expect(position).toMatch(
+      /revoke execute on function public\.member_team_version_on\(uuid, date\) from anon;/,
+    );
   });
 
   it('archives teams and never deletes one, in any migration', () => {

@@ -120,11 +120,11 @@ describe('the roster read', () => {
       rpcAnswering({
         data: [
           rosterRow([
-            { id: 'c', name: 'Zrinka', fire_rank: null },
-            { id: 'b', name: 'Čedo', fire_rank: null },
-            { id: 'z', name: 'Ana', fire_rank: null },
-            { id: 'a', name: 'Ana', fire_rank: 'nco' },
-            { id: 'd', name: 'Cvita', fire_rank: null },
+            { id: 'c', name: 'Zrinka', fire_rank: null, position: null },
+            { id: 'b', name: 'Čedo', fire_rank: null, position: null },
+            { id: 'z', name: 'Ana', fire_rank: null, position: null },
+            { id: 'a', name: 'Ana', fire_rank: 'nco', position: null },
+            { id: 'd', name: 'Cvita', fire_rank: null, position: null },
           ]),
         ],
         error: null,
@@ -154,11 +154,37 @@ describe('the roster read', () => {
 
   it('carries id, name and rank off each member and nothing else', () => {
     const roster = teamRosterOf(
-      rosterRow([{ id: 'a', name: 'Ana', fire_rank: 'nco', email: 'ana@example.invalid' }]),
+      rosterRow([{ id: 'a', name: 'Ana', fire_rank: 'nco', position: null, email: 'ana@example.invalid' }]),
     );
 
-    expect(roster?.members).toEqual([{ id: 'a', name: 'Ana', fireRank: 'nco' }]);
-    expect(Object.keys(roster?.members[0] ?? {}).sort()).toEqual(['fireRank', 'id', 'name']);
+    expect(roster?.members).toEqual([{ id: 'a', name: 'Ana', fireRank: 'nco', position: null }]);
+    expect(Object.keys(roster?.members[0] ?? {}).sort()).toEqual([
+      'fireRank',
+      'id',
+      'name',
+      'position',
+    ]);
+  });
+
+  it('carries the position today, none as null, and a code this build lacks as itself', () => {
+    // TEAM POSITION. As the rank: an unknown code is the surface's to label.
+    const roster = teamRosterOf(
+      rosterRow([
+        { id: 'a', name: 'Ana', fire_rank: null, position: 'driver' },
+        { id: 'b', name: 'Bruno', fire_rank: null, position: null },
+        { id: 'c', name: 'Cvita', fire_rank: null, position: 'chief' },
+      ]),
+    );
+
+    expect(roster?.members.map((member) => member.position)).toEqual(['driver', null, 'chief']);
+  });
+
+  it('refuses a roster whose member lacks a position or carries a non-text one', () => {
+    // PRESENT, as text or null: `0015` always writes the key.
+    expect(teamRosterOf(rosterRow([{ id: 'a', name: 'Ana', fire_rank: null }]))).toBeNull();
+    expect(
+      teamRosterOf(rosterRow([{ id: 'a', name: 'Ana', fire_rank: null, position: 3 }])),
+    ).toBeNull();
   });
 
   it('carries no rank as null, and a code this build lacks as itself', () => {
@@ -166,8 +192,8 @@ describe('the roster read', () => {
     // refuse the whole roster.
     const roster = teamRosterOf(
       rosterRow([
-        { id: 'a', name: 'Ana', fire_rank: null },
-        { id: 'b', name: 'Bruno', fire_rank: 'marshal' },
+        { id: 'a', name: 'Ana', fire_rank: null, position: null },
+        { id: 'b', name: 'Bruno', fire_rank: 'marshal', position: null },
       ]),
     );
 
@@ -212,8 +238,8 @@ describe('the roster read', () => {
       {
         data: [
           rosterRow([
-            { id: 'a', name: 'Ana', fire_rank: null },
-            { id: 'a', name: 'Ana', fire_rank: null },
+            { id: 'a', name: 'Ana', fire_rank: null, position: null },
+            { id: 'a', name: 'Ana', fire_rank: null, position: null },
           ]),
         ],
         error: null,
@@ -241,7 +267,7 @@ describe('the roster screen state and messages', () => {
     roster: {
       name: 'Tim 1',
       archived: false,
-      members: [{ id: 'a', name: 'Ana', fireRank: null }],
+      members: [{ id: 'a', name: 'Ana', fireRank: null, position: null }],
     },
   };
 
@@ -304,7 +330,7 @@ describe('the caller\'s own team today', () => {
     expect(OWN_TEAM_TABLE).toBe('members');
     expect(OWN_TEAM_KEY).toEqual(['own-team']);
     expect(OWN_TEAM_COLUMNS).toBe(
-      'team_membership_versions(team_id,effective_from,teams(name)),organizations(timezone)',
+      'team_membership_versions(team_id,position,effective_from,teams(name)),organizations(timezone)',
     );
     expect(table.calls).toEqual([
       ['select', OWN_TEAM_COLUMNS],
@@ -319,8 +345,8 @@ describe('the caller\'s own team today', () => {
       ownTableAnswering({
         data: [
           ownRow([
-            { team_id: 'b', effective_from: '2026-09-26', teams: { name: 'Tim B' } },
-            { team_id: 'a', effective_from: '2026-09-01', teams: { name: 'Tim A' } },
+            { team_id: 'b', position: null, effective_from: '2026-09-26', teams: { name: 'Tim B' } },
+            { team_id: 'a', position: null, effective_from: '2026-09-01', teams: { name: 'Tim A' } },
           ]),
         ],
         error: null,
@@ -337,7 +363,7 @@ describe('the caller\'s own team today', () => {
   it('reads today in the organization zone, never UTC', () => {
     // 23:30 UTC on the 25th is already the 26th fourteen hours ahead.
     const now = new Date('2026-09-25T23:30:00Z');
-    const versions = [{ team_id: 'a', effective_from: '2026-09-26', teams: { name: 'Tim A' } }];
+    const versions = [{ team_id: 'a', position: null, effective_from: '2026-09-26', teams: { name: 'Tim A' } }];
     const ahead = ownTeamSnapshotOf(ownRow(versions, 'Pacific/Kiritimati'));
     const utc = ownTeamSnapshotOf(ownRow(versions, 'UTC'));
 
@@ -363,8 +389,8 @@ describe('the caller\'s own team today', () => {
       ok: true,
       snapshot: {
         teamVersions: [
-          { team: { id: 'a', name: 'Tim A' }, effectiveFrom: '2026-09-01' },
-          { team: null, effectiveFrom: '2026-09-20' },
+          { team: { id: 'a', name: 'Tim A' }, position: null, effectiveFrom: '2026-09-01' },
+          { team: null, position: null, effectiveFrom: '2026-09-20' },
         ],
         timeZone: 'UTC',
       },

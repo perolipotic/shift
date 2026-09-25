@@ -185,6 +185,9 @@ const SOURCES = [
   // and the setting's two states as return-type unions, so a chunk built
   // before an edit to it is stale in a way no vocabulary sweep can see.
   join(webRoot, 'src', 'members', 'rank.ts'),
+  // Team position. `members/position.ts` renders nothing and owns the position
+  // labels as a return-type union, for the rank module's reason.
+  join(webRoot, 'src', 'members', 'position.ts'),
   join(webRoot, 'src', 'routes', 'ljudi.novi.tsx'),
   join(webRoot, 'src', 'routes', 'ljudi.$id.tsx'),
   // Story 1.8's two. `teams/roster.ts` renders nothing and owns the five keys

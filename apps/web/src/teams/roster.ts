@@ -50,7 +50,7 @@ export const TEAM_ROSTER_UNKNOWN = 'TEAM_ROSTER_UNKNOWN';
 
 export type TeamRosterFailure = typeof TEAM_ROSTER_UNAVAILABLE | typeof TEAM_ROSTER_UNKNOWN;
 
-/** One person on a roster: an id, a name and a rank, and nothing else ever arrives. */
+/** One person on a roster: an id, a name, a rank and a position, and nothing else ever arrives. */
 export interface TeamRosterMember {
   readonly id: string;
   readonly name: string;
@@ -62,6 +62,11 @@ export interface TeamRosterMember {
    * show it.
    */
   readonly fireRank: string | null;
+  /**
+   * The position in effect today (`0015`), or `null` for none. Wide for the
+   * rank's reason, and returned whatever the setting says.
+   */
+  readonly position: string | null;
 }
 
 /** One team's roster today, members sorted by name. */
@@ -104,9 +109,9 @@ function compareMembers(first: TeamRosterMember, second: TeamRosterMember): numb
 /**
  * One roster row as the surface sees it, or `null` — validated field by field,
  * so a malformed answer refuses the roster rather than rendering a blank. Only
- * `id`, `name` and `fire_rank` are carried off each member, whatever else
- * might arrive. `fire_rank` must be PRESENT, as text or null: a member object
- * without it is not a reading `0014` produces.
+ * `id`, `name`, `fire_rank` and `position` are carried off each member,
+ * whatever else might arrive. `fire_rank` and `position` must be PRESENT, as
+ * text or null: a member object without them is not a reading `0015` produces.
  */
 export function teamRosterOf(row: unknown): TeamRoster | null {
   if (!isRecord(row)) return null;
@@ -126,11 +131,13 @@ export function teamRosterOf(row: unknown): TeamRoster | null {
     const id = entry['id'];
     const memberName = entry['name'];
     const fireRank = entry['fire_rank'];
+    const position = entry['position'];
 
     if (typeof id !== 'string' || typeof memberName !== 'string') return null;
     if (fireRank !== null && typeof fireRank !== 'string') return null;
+    if (position !== null && typeof position !== 'string') return null;
 
-    parsed.push({ id, name: memberName, fireRank });
+    parsed.push({ id, name: memberName, fireRank, position });
   }
 
   // The same person twice is not a roster any reading of `0011` produces.
@@ -266,10 +273,11 @@ export const OWN_TEAM_KEY = ['own-team'] as const;
 /**
  * The caller's own row, carrying only what "team today" needs: the team
  * history with each team's name, and the organization's zone — the same embed
- * `MEMBERS_COLUMNS` names, so one parser reads both.
+ * `MEMBERS_COLUMNS` names, position included (`0015`), so one parser reads
+ * both.
  */
 export const OWN_TEAM_COLUMNS =
-  'team_membership_versions(team_id,effective_from,teams(name)),organizations(timezone)';
+  'team_membership_versions(team_id,position,effective_from,teams(name)),organizations(timezone)';
 
 const AUTH_USER_COLUMN = 'auth_user_id';
 const EQUALS = 'eq';

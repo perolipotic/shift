@@ -9,6 +9,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { PageActions, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/i18n';
+import { positionsShown, rosterLineOf, rosterPositionMessageKey } from '@/members/position';
 import { ranksShown, rosterRankMessageKey } from '@/members/rank';
 import {
   ORGANIZATION_READ_STALE_MS,
@@ -79,9 +80,11 @@ function RosterScreen({ id }: { readonly id: string }) {
     retry: false,
     staleTime: ORGANIZATION_READ_STALE_MS,
   });
-  const shown = ranksShown(
-    organization.data !== undefined && organization.data.ok ? organization.data.snapshot : null,
-  );
+  const snapshot =
+    organization.data !== undefined && organization.data.ok ? organization.data.snapshot : null;
+  const shown = ranksShown(snapshot);
+  // TEAM POSITION: the same setting, "uses fire ranks and positions".
+  const positionShown = positionsShown(snapshot);
 
   function renderRoster(team: TeamRoster): ReactNode {
     return (
@@ -97,16 +100,17 @@ function RosterScreen({ id }: { readonly id: string }) {
             {team.members.map((member) => {
               const initials = initialsOf(member.name);
               const rank = rosterRankMessageKey(member.fireRank, shown);
+              const position = rosterPositionMessageKey(member.position, positionShown);
+              // WHICH SENTENCE is `rosterLineOf`'s decision, executed in a test.
+              const line = rosterLineOf(member.name, rank, position, (key) => t(key));
 
               return (
                 <li key={member.id} className="flex min-w-0 items-center gap-3 text-base">
                   {/* EMPTY for a name with no letter, so the names stay aligned. */}
                   <Avatar>{initials}</Avatar>
-                  {/* TEXT, never a colour or an icon: the rank is words. */}
+                  {/* TEXT, never a colour or an icon: rank and position are words. */}
                   <span className="min-w-0 break-words">
-                    {rank === null
-                      ? member.name
-                      : t('smjene.roster.withRank', { name: member.name, rank: t(rank) })}
+                    {line.key === null ? line.text : t(line.key, line.values)}
                   </span>
                 </li>
               );
