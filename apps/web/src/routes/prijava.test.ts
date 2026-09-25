@@ -1816,9 +1816,9 @@ const KEY_SOURCES = [
   // render their own heading.
   // SEVEN SINCE VISUAL REFRESH A: the sidebar's muted section label renders
   // `shell.navigation` a third time — the landmark's own name, made visible and
-  // `aria-hidden` so it is not announced twice. ELEVEN WITH THE THEME CONTROL:
-  // its title plus one word per preference.
-  { name: 'the navigation chrome', file: CHROME, keys: translationKeys, strings: 11 },
+  // `aria-hidden` so it is not announced twice. TEN WITH THE THEME CONTROL: one
+  // name per preference.
+  { name: 'the navigation chrome', file: CHROME, keys: translationKeys, strings: 10 },
   {
     // TWO, for three role codes and one sign-out code. The collapse is the
     // decision `messages.test.ts` executes; what this count pins is that there

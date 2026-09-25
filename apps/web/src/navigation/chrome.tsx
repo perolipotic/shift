@@ -419,10 +419,12 @@ export function AppChrome({ children }: AppChromeProps) {
    */
   /**
    * The theme control (human decision 2026-09-25): one press cycles
-   * sustav → svijetla → tamna. The words and glyph show where it STANDS, so
-   * the preference is readable without pressing; `title` names the action. It
-   * sits directly above the exit and takes over `sm:mt-auto`, so the two stay
-   * together at the foot of the rail and narrow the same way when collapsed.
+   * sustav → svijetla → tamna. A GLYPH beside the lockup, at the far end of
+   * its row — monitor, sun, moon — and, like the collapse, its words are its
+   * NAME on `aria-label` and `title`. Unlike the collapse the name states where
+   * the preference STANDS rather than what the press produces: a three-way
+   * cycle has no single opposite to announce, and the current value is what
+   * the glyph shows.
    */
   function renderTheme(): ReactNode {
     // Three literal calls rather than one templated key: the key sweep in
@@ -438,14 +440,14 @@ export function AppChrome({ children }: AppChromeProps) {
 
     return (
       <Button
-        className="h-11 shrink-0 gap-2 px-4 sm:mt-auto sm:justify-start group-data-[collapsed=true]/sidebar:w-11 group-data-[collapsed=true]/sidebar:self-center group-data-[collapsed=true]/sidebar:justify-center group-data-[collapsed=true]/sidebar:px-0"
+        className="h-11 w-11 shrink-0 p-0"
         type="button"
         variant="sidebar"
-        title={t('shell.theme.change')}
+        aria-label={name}
+        title={name}
         onClick={() => setTheme(nextPreference(theme))}
       >
-        <Glyph aria-hidden className="size-4 shrink-0" />
-        <span className="group-data-[collapsed=true]/sidebar:sr-only">{name}</span>
+        <Glyph aria-hidden className="size-5" />
       </Button>
     );
   }
@@ -455,7 +457,7 @@ export function AppChrome({ children }: AppChromeProps) {
 
     return (
       <Button
-        className="h-11 shrink-0 gap-2 px-4 sm:justify-start group-data-[collapsed=true]/sidebar:w-11 group-data-[collapsed=true]/sidebar:self-center group-data-[collapsed=true]/sidebar:justify-center group-data-[collapsed=true]/sidebar:px-0"
+        className="h-11 shrink-0 gap-2 px-4 sm:mt-auto sm:justify-start group-data-[collapsed=true]/sidebar:w-11 group-data-[collapsed=true]/sidebar:self-center group-data-[collapsed=true]/sidebar:justify-center group-data-[collapsed=true]/sidebar:px-0"
         type="button"
         variant="sidebar"
         title={expanded ? undefined : name}
@@ -542,7 +544,12 @@ export function AppChrome({ children }: AppChromeProps) {
         data-collapsed={!expanded}
         className={`group/sidebar hidden shrink-0 flex-col gap-2 border-r bg-sidebar p-3 text-sidebar-foreground sm:sticky sm:top-0 sm:flex sm:h-dvh sm:overflow-y-auto ${accent.edge}`}
       >
-        <div className="flex border-b border-sidebar-border pb-3">{lockup}</div>
+        {/* The theme glyph shares the lockup's row, pushed to its far end;
+            collapsed, the row is one icon wide and stacks instead. */}
+        <div className="flex items-center justify-between gap-2 border-b border-sidebar-border pb-3 group-data-[collapsed=true]/sidebar:flex-col">
+          {lockup}
+          {themeControl}
+        </div>
         {/* The toggle is a glyph (human decision 2026-09-25): a panel closing
             while expanded, a panel opening while collapsed. Its NAME is still
             the words, on `aria-label` and `title`, and it still says WHICH
@@ -586,7 +593,6 @@ export function AppChrome({ children }: AppChromeProps) {
             </p>
             {destinations}
           </div>
-          {themeControl}
           {exit}
         </nav>
       </aside>
@@ -618,12 +624,12 @@ export function AppChrome({ children }: AppChromeProps) {
               while stealing width from nine 44 px targets that already do not
               fit. */}
           {lockup}
+          {themeControl}
           <nav
             aria-label={t('shell.navigation')}
             className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
           >
             {destinations}
-            {themeControl}
             {exit}
           </nav>
         </div>
