@@ -141,6 +141,17 @@ begin
 end
 $$;
 
+-- Story 2.1a: the pilot's two hour bands. Only name and start are stored; each
+-- window is derived (Dan 07:00–19:00, Noć 19:00–07:00, crossing midnight).
+insert into hour_bands (organization_id, name, start_time)
+select organizations.id, band.name, band.start_time::time
+  from organizations
+  cross join (values
+    ('Dan', '07:00'),
+    ('Noć', '19:00')
+  ) as band (name, start_time)
+ where organizations.slug = 'dvd-kastel-novi';
+
 
 -- ===========================================================================
 -- Fixture 2 — the UJ-5 security organization
@@ -249,3 +260,16 @@ begin
   end loop;
 end
 $$;
+
+-- Story 2.1a: UJ-5's three hour bands, eight hours each. Its shifts start at
+-- 06:00, 14:00 and 22:00, so every one straddles a band edge (Q10) and band
+-- splitting is exercised.
+insert into hour_bands (organization_id, name, start_time)
+select organizations.id, band.name, band.start_time::time
+  from organizations
+  cross join (values
+    ('Jutro',   '05:00'),
+    ('Popodne', '13:00'),
+    ('Noć',     '21:00')
+  ) as band (name, start_time)
+ where organizations.slug = 'zastita-split';
