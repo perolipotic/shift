@@ -50,10 +50,18 @@ export const TEAM_ROSTER_UNKNOWN = 'TEAM_ROSTER_UNKNOWN';
 
 export type TeamRosterFailure = typeof TEAM_ROSTER_UNAVAILABLE | typeof TEAM_ROSTER_UNKNOWN;
 
-/** One person on a roster: an id and a name, and nothing else ever arrives. */
+/** One person on a roster: an id, a name and a rank, and nothing else ever arrives. */
 export interface TeamRosterMember {
   readonly id: string;
   readonly name: string;
+  /**
+   * The member's rank code (`0014`), or `null` for none. Wide rather than the
+   * code union: the row may carry a code this build lacks, and the surface
+   * shows that as "unknown rank" rather than refusing the roster. Returned
+   * whatever the organization's setting says; the surface decides whether to
+   * show it.
+   */
+  readonly fireRank: string | null;
 }
 
 /** One team's roster today, members sorted by name. */
@@ -96,7 +104,9 @@ function compareMembers(first: TeamRosterMember, second: TeamRosterMember): numb
 /**
  * One roster row as the surface sees it, or `null` — validated field by field,
  * so a malformed answer refuses the roster rather than rendering a blank. Only
- * `id` and `name` are carried off each member, whatever else might arrive.
+ * `id`, `name` and `fire_rank` are carried off each member, whatever else
+ * might arrive. `fire_rank` must be PRESENT, as text or null: a member object
+ * without it is not a reading `0014` produces.
  */
 export function teamRosterOf(row: unknown): TeamRoster | null {
   if (!isRecord(row)) return null;
@@ -115,10 +125,12 @@ export function teamRosterOf(row: unknown): TeamRoster | null {
 
     const id = entry['id'];
     const memberName = entry['name'];
+    const fireRank = entry['fire_rank'];
 
     if (typeof id !== 'string' || typeof memberName !== 'string') return null;
+    if (fireRank !== null && typeof fireRank !== 'string') return null;
 
-    parsed.push({ id, name: memberName });
+    parsed.push({ id, name: memberName, fireRank });
   }
 
   // The same person twice is not a roster any reading of `0011` produces.

@@ -896,6 +896,13 @@ afterAll(async () => {
       'update organizations set brand_accent = null where slug = any($1::text[])',
       [fixtures],
     );
+    // MEMBER RANK, for the same reason: the setting case writes the real row.
+    for (const [seededSlug, uses] of Object.entries(SEEDED_USES_FIRE_RANKS)) {
+      await client.query('update organizations set uses_fire_ranks = $1 where slug = $2', [
+        uses,
+        seededSlug,
+      ]);
+    }
     await client.query('commit');
   } finally {
     await client.end();
@@ -2119,7 +2126,7 @@ describe('organizations admits exactly one write path, and it is the settings su
     },
   );
 
-  it.skipIf(noDatabase)('grants authenticated UPDATE on exactly the seven writable columns', () => {
+  it.skipIf(noDatabase)('grants authenticated UPDATE on exactly the eight writable columns', () => {
     // The column allowlist as a fact about the database rather than about the
     // interface, and an EXACT set: a later migration re-granting the table — or
     // `grant all` written by habit — restores every column silently, and the
@@ -2170,6 +2177,9 @@ describe('organizations admits exactly one write path, and it is the settings su
         'name',
         'organization_type',
         'timezone',
+        // MEMBER RANK. `0014` adds `uses_fire_ranks` with its own column grant,
+        // unioned with the rest, written on its own disjoint shape.
+        'uses_fire_ranks',
       ]);
     });
   });
@@ -8907,11 +8917,14 @@ describe('a member sees who is on a team, and nothing more about a colleague', (
             `${slug}: a scheduled joiner or an inactive member is on today's roster`,
           ).toEqual(expected);
           for (const entry of rows[0]?.members ?? []) {
-            expect(Object.keys(entry).sort(), `${slug}: the roster names a field besides id and name`).toEqual([
-              'id',
-              'name',
-            ]);
+            // MEMBER RANK: `0014` adds `fire_rank`, returned whatever the
+            // setting says — the interface decides whether to show it.
+            expect(
+              Object.keys(entry).sort(),
+              `${slug}: the roster names a field besides id, name and rank`,
+            ).toEqual(['fire_rank', 'id', 'name']);
             expect(entry['name']).toBe(`${THROWAWAY} target`);
+            expect(entry['fire_rank'], `${slug}: a throwaway member carries a rank`).toBeNull();
           }
         }
       });
@@ -9221,7 +9234,7 @@ describe('a member sees who is on a team, and nothing more about a colleague', (
             {
               name: team.name,
               archived: false,
-              members: [{ id: target.id, name: `${THROWAWAY} target` }],
+              members: [{ id: target.id, name: `${THROWAWAY} target`, fire_rank: null }],
             },
           ]);
         }
@@ -9242,6 +9255,293 @@ describe('a member sees who is on a team, and nothing more about a colleague', (
     },
     20_000,
   );
+});
+
+// ------------------------------------------------------------ member rank
+
+/**
+ * MEMBER RANK (`0014`). An organization setting that gates display and entry,
+ * a fixed list of rank codes on `members`, and `team_roster` carrying the rank.
+ * The SQL cases run in rolled-back transactions; the REST cases write only a
+ * throwaway member or restore the setting they touch in `finally`, and
+ * `afterAll` is the backstop.
+ */
+
+/** The two fixtures, read off `FIXTURES` rather than restated. */
+const [PILOT, SECOND_FIXTURE] = FIXTURES;
+
+/** The seeded setting per fixture: the pilot records ranks, UJ-5 does not. */
+const SEEDED_USES_FIRE_RANKS: Readonly<Record<string, boolean>> = {
+  [PILOT.slug]: true,
+  [SECOND_FIXTURE.slug]: false,
+};
+
+/** The seeded pilot ranks, by username; Petra, not a named fixture role, is
+ *  the null case. */
+const SEEDED_PILOT_RANKS: Readonly<Record<string, string | null>> = {
+  [PILOT.admin]: 'officer',
+  [PILOT.member]: 'nco',
+  [PILOT.bystander]: 'firefighter',
+  'petra.babic': null,
+};
+
+/** The rank a seeded member of `slug` carries: the pilot's table, else none. */
+function seededRankOf(slug: string, username: string): string | null {
+  return slug === PILOT.slug ? (SEEDED_PILOT_RANKS[username] ?? null) : null;
+}
+
+async function usesFireRanks(client: Client, organization: string): Promise<boolean | undefined> {
+  const { rows } = await client.query<{ uses: boolean }>(
+    'select uses_fire_ranks as uses from organizations where id = $1',
+    [organization],
+  );
+  return rows[0]?.uses;
+}
+
+async function fireRankOf(client: Client, member: string): Promise<string | null | undefined> {
+  const { rows } = await client.query<{ rank: string | null }>(
+    'select fire_rank as rank from members where id = $1',
+    [member],
+  );
+  return rows[0]?.rank;
+}
+
+describe('a member carries a rank from a fixed list, behind a setting an admin owns', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'seeds the $fixture setting and ranks the fixtures describe',
+    async ({ slug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const organization = await organizationId(client, slug);
+
+        expect(await usesFireRanks(client, organization)).toBe(SEEDED_USES_FIRE_RANKS[slug]);
+
+        const { rows } = await client.query<{ username: string; rank: string | null }>(
+          'select username, fire_rank as rank from members where organization_id = $1',
+          [organization],
+        );
+
+        expect(rows.length, `${slug} has no members`).toBeGreaterThan(0);
+        for (const row of rows) {
+          expect(row.rank, `${slug}/${row.username}`).toBe(seededRankOf(slug, row.username));
+        }
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('returns the seeded pilot ranks on the roster, and null for none', async () => {
+    // The acceptance criterion: each roster entry carries `id`, `name` and
+    // `fire_rank` with the seeded values.
+    await inRolledBackTransaction(async (client) => {
+      const slug = PILOT.slug;
+      const owner = await memberByUsername(client, slug, PILOT.admin);
+      const organization = owner.organizationId;
+      const team = await addThrowawayTeam(client, organization, owner.authUserId);
+      const today = await organizationDay(client, organization);
+      const seeded = await Promise.all(
+        Object.keys(SEEDED_PILOT_RANKS).map((username) => memberByUsername(client, slug, username)),
+      );
+      for (const who of seeded) {
+        await ownerMembership(client, {
+          organization,
+          member: who.id,
+          team: team.id,
+          from: today,
+          by: owner.authUserId,
+        });
+      }
+
+      const reader = await memberByUsername(client, slug, PILOT.member);
+      await actAs(client, reader.authUserId, organization);
+      const rows = await rosterOf(client, team.id);
+      await actAsOwner(client);
+
+      const byId = new Map((rows[0]?.members ?? []).map((entry) => [entry['id'], entry]));
+
+      expect(byId.size, 'the roster does not carry the four seeded members').toBe(4);
+      for (const [index, [username, rank]] of Object.entries(SEEDED_PILOT_RANKS).entries()) {
+        const entry = byId.get(seeded[index]?.id);
+
+        expect(Object.keys(entry ?? {}).sort()).toEqual(['fire_rank', 'id', 'name']);
+        expect(entry?.['fire_rank'], `${username} on the roster`).toBe(rank);
+      }
+    });
+  });
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'lets the $fixture admin set, clear and never mis-set a member rank',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const target = await addThrowawayMember(client, owner.organizationId);
+
+        await actAs(client, owner.authUserId, owner.organizationId);
+        const set = await client.query('update members set fire_rank = $1 where id = $2', [
+          'nco',
+          target.id,
+        ]);
+        const refusal = await refusedThenContinue(client, () =>
+          client.query('update members set fire_rank = $1 where id = $2', ['general', target.id]),
+        );
+        await actAsOwner(client);
+
+        expect(set.rowCount, `the ${slug} admin could not set a rank`).toBe(1);
+        expect(refusal.code, 'a rank outside the list is not a check violation').toBe('23514');
+        expect(refusal.message).toContain('members_fire_rank_check');
+        expect(await fireRankOf(client, target.id), 'the refused rank was written').toBe('nco');
+
+        await actAs(client, owner.authUserId, owner.organizationId);
+        const cleared = await client.query('update members set fire_rank = null where id = $1', [
+          target.id,
+        ]);
+        await actAsOwner(client);
+
+        expect(cleared.rowCount).toBe(1);
+        expect(await fireRankOf(client, target.id), 'no rank is not null').toBeNull();
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture member-role session a rank, by the database',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const target = await addThrowawayMember(client, owner.organizationId);
+
+        await actAs(client, self.authUserId, self.organizationId);
+        const other = await client.query('update members set fire_rank = $1 where id = $2', [
+          'officer',
+          target.id,
+        ]);
+        const own = await client.query('update members set fire_rank = $1 where id = $2', [
+          'senior_officer_1',
+          self.id,
+        ]);
+        await actAsOwner(client);
+
+        expect(other.rowCount, `a ${slug} member-role session ranked a colleague`).toBe(0);
+        expect(own.rowCount, `a ${slug} member-role session ranked itself`).toBe(0);
+        expect(await fireRankOf(client, target.id)).toBeNull();
+        expect(await fireRankOf(client, self.id)).toBe(seededRankOf(slug, member));
+      });
+    },
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses the $fixture admin a rank outside the list over PostgREST, writing nothing',
+    async ({ slug, admin }) => {
+      const client = await connect();
+      let target: MemberRow | undefined;
+      try {
+        const owner = await memberByUsername(client, slug, admin);
+        target = await addThrowawayMember(client, owner.organizationId);
+
+        const response = await rest(`members?id=eq.${target.id}`, {
+          token: await tokenFor(admin, slug),
+          method: 'PATCH',
+          body: { fire_rank: 'general' },
+        });
+
+        expect(response.ok, 'a rank outside the list was accepted').toBe(false);
+        const refusal = await restRefusal(response);
+        expect(refusal.code).toBe('23514');
+        expect(await fireRankOf(client, target.id), 'the refused rank was written').toBeNull();
+      } finally {
+        // The throwaway was committed, so it is removed here; the member row
+        // cascades from its account. `afterAll` is the backstop.
+        if (target !== undefined) {
+          await client.query('delete from auth.users where id = $1', [target.authUserId]);
+        }
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'lets the $fixture admin switch the setting, and refuses the member-role session',
+    async ({ slug, admin, member }) => {
+      const client = await connect();
+      const own = await organizationId(client, slug);
+      const seeded = SEEDED_USES_FIRE_RANKS[slug];
+      try {
+        expect(
+          await usesFireRanks(client, own),
+          `${slug} does not hold its seeded setting — a previous run did not restore it; run \`supabase db reset\``,
+        ).toBe(seeded);
+
+        const refused = await rest(`organizations?id=eq.${own}`, {
+          token: await tokenFor(member, slug),
+          method: 'PATCH',
+          body: { uses_fire_ranks: !seeded },
+        });
+
+        expect(refused.status, 'a refused update affects zero rows and raises nothing').toBe(204);
+        expect(await usesFireRanks(client, own), `a ${slug} member-role session switched it`).toBe(
+          seeded,
+        );
+
+        const switched = await rest(`organizations?id=eq.${own}`, {
+          token: await tokenFor(admin, slug),
+          method: 'PATCH',
+          body: { uses_fire_ranks: !seeded },
+        });
+
+        expect(switched.status).toBe(204);
+        expect(await usesFireRanks(client, own), `the ${slug} admin could not switch it`).toBe(
+          !seeded,
+        );
+        // SWITCHING IT DELETES NOTHING: every stored rank survives.
+        const { rows } = await client.query<{ ranked: number }>(
+          'select count(*)::int as ranked from members where organization_id = $1 and fire_rank is not null',
+          [own],
+        );
+        expect(rows[0]?.ranked).toBe(
+          slug === PILOT.slug
+            ? Object.values(SEEDED_PILOT_RANKS).filter((rank) => rank !== null).length
+            : 0,
+        );
+      } finally {
+        await client.query('update organizations set uses_fire_ranks = $1 where id = $2', [
+          seeded,
+          own,
+        ]);
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noDatabase)('admits exactly the eleven codes, asked of the constraint itself', () => {
+    return inRolledBackTransaction(async (client) => {
+      const { rows } = await client.query<{ definition: string }>(
+        `select pg_get_constraintdef(c.oid) as definition
+           from pg_constraint c
+           join pg_class t on t.oid = c.conrelid
+           join pg_namespace n on n.oid = t.relnamespace
+          where n.nspname = 'public'
+            and t.relname = 'members'
+            and c.conname = 'members_fire_rank_check'`,
+      );
+      const definition = rows[0]?.definition ?? '';
+
+      expect(definition, 'no check constraint on members.fire_rank').not.toBe('');
+      expect([...definition.matchAll(/'([a-z0-9_]+)'/g)].map((found) => found[1])).toEqual([
+        'trainee',
+        'firefighter',
+        'firefighter_1',
+        'nco',
+        'nco_1',
+        'senior_nco',
+        'senior_nco_1',
+        'officer',
+        'officer_1',
+        'senior_officer',
+        'senior_officer_1',
+      ]);
+    });
+  });
 });
 
 // ------------------------------------------------------------ story 2.1a: bands

@@ -120,11 +120,11 @@ describe('the roster read', () => {
       rpcAnswering({
         data: [
           rosterRow([
-            { id: 'c', name: 'Zrinka' },
-            { id: 'b', name: 'Čedo' },
-            { id: 'z', name: 'Ana' },
-            { id: 'a', name: 'Ana' },
-            { id: 'd', name: 'Cvita' },
+            { id: 'c', name: 'Zrinka', fire_rank: null },
+            { id: 'b', name: 'Čedo', fire_rank: null },
+            { id: 'z', name: 'Ana', fire_rank: null },
+            { id: 'a', name: 'Ana', fire_rank: 'nco' },
+            { id: 'd', name: 'Cvita', fire_rank: null },
           ]),
         ],
         error: null,
@@ -152,11 +152,26 @@ describe('the roster read', () => {
     ).toEqual({ ok: true, roster: { name: 'Tim 1', archived: true, members: [] } });
   });
 
-  it('carries id and name off each member and nothing else', () => {
-    const roster = teamRosterOf(rosterRow([{ id: 'a', name: 'Ana', email: 'ana@example.invalid' }]));
+  it('carries id, name and rank off each member and nothing else', () => {
+    const roster = teamRosterOf(
+      rosterRow([{ id: 'a', name: 'Ana', fire_rank: 'nco', email: 'ana@example.invalid' }]),
+    );
 
-    expect(roster?.members).toEqual([{ id: 'a', name: 'Ana' }]);
-    expect(Object.keys(roster?.members[0] ?? {}).sort()).toEqual(['id', 'name']);
+    expect(roster?.members).toEqual([{ id: 'a', name: 'Ana', fireRank: 'nco' }]);
+    expect(Object.keys(roster?.members[0] ?? {}).sort()).toEqual(['fireRank', 'id', 'name']);
+  });
+
+  it('carries no rank as null, and a code this build lacks as itself', () => {
+    // MEMBER RANK. An unknown code is the surface's to label, never a reason to
+    // refuse the whole roster.
+    const roster = teamRosterOf(
+      rosterRow([
+        { id: 'a', name: 'Ana', fire_rank: null },
+        { id: 'b', name: 'Bruno', fire_rank: 'marshal' },
+      ]),
+    );
+
+    expect(roster?.members.map((member) => member.fireRank)).toEqual([null, 'marshal']);
   });
 
   it.each(['abc', '', 'smjene', `${TEAM}x`, TEAM.replaceAll('-', '')])(
@@ -189,13 +204,16 @@ describe('the roster read', () => {
       { data: [{ name: 7, archived: false, members: [] }], error: null },
       { data: [{ name: 'Tim 1', archived: false, members: null }], error: null },
       { data: [rosterRow([{ id: 'a' }])], error: null },
-      { data: [rosterRow([{ id: 1, name: 'Ana' }])], error: null },
+      { data: [rosterRow([{ id: 1, name: 'Ana', fire_rank: null }])], error: null },
+      // MEMBER RANK: the rank must be present, as text or null.
+      { data: [rosterRow([{ id: 'a', name: 'Ana' }])], error: null },
+      { data: [rosterRow([{ id: 'a', name: 'Ana', fire_rank: 3 }])], error: null },
       { data: [rosterRow(['Ana' as unknown as Record<string, unknown>])], error: null },
       {
         data: [
           rosterRow([
-            { id: 'a', name: 'Ana' },
-            { id: 'a', name: 'Ana' },
+            { id: 'a', name: 'Ana', fire_rank: null },
+            { id: 'a', name: 'Ana', fire_rank: null },
           ]),
         ],
         error: null,
@@ -220,7 +238,11 @@ describe('the roster read', () => {
 describe('the roster screen state and messages', () => {
   const good: TeamRosterOutcome = {
     ok: true,
-    roster: { name: 'Tim 1', archived: false, members: [{ id: 'a', name: 'Ana' }] },
+    roster: {
+      name: 'Tim 1',
+      archived: false,
+      members: [{ id: 'a', name: 'Ana', fireRank: null }],
+    },
   };
 
   it('distinguishes answered, failed, paused, refetch-failed and loading', () => {

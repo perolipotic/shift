@@ -88,9 +88,13 @@ export const ORGANIZATION_READ_STALE_MS = 300000;
  * fallback is a pure read of data already on the client; without the column the
  * only way to ask would be a second network read behind the screen's one
  * figure, which is the shape AD-13 exists to prevent.
+ *
+ * `uses_fire_ranks` joined for member rank (`0014`). It is a setting that gates
+ * DISPLAY AND ENTRY of a member's rank, read here because every surface that
+ * shows or offers a rank already reads this one snapshot under this one key.
  */
 export const ORGANIZATION_COLUMNS =
-  'id,slug,name,short_name,description,address,contact_email,organization_type,timezone,locale,leave_year_start_month,leave_year_start_day,logo_path,brand_accent';
+  'id,slug,name,short_name,description,address,contact_email,organization_type,timezone,locale,leave_year_start_month,leave_year_start_day,logo_path,brand_accent,uses_fire_ranks';
 
 /**
  * The organization, as everything downstream sees it.
@@ -128,6 +132,12 @@ export interface OrganizationSnapshot {
    * key to the untinted shell.
    */
   readonly brandAccent: string | null;
+  /**
+   * Whether this organization records fire ranks (`0014`). It gates display
+   * and entry only: off, no surface offers or shows a rank, and stored ranks
+   * survive untouched.
+   */
+  readonly usesFireRanks: boolean;
 }
 
 /** The fields the settings FORM may change. Deliberately not the row. */
@@ -141,6 +151,7 @@ export interface OrganizationEdits {
   readonly logoPath?: never;
   /** Never here either, and for the same reason. */
   readonly brandAccent?: never;
+  readonly usesFireRanks?: never;
 }
 
 /**
@@ -163,6 +174,7 @@ export interface OrganizationLogoEdit {
   readonly leaveYearStartMonth?: never;
   readonly leaveYearStartDay?: never;
   readonly brandAccent?: never;
+  readonly usesFireRanks?: never;
 }
 
 /**
@@ -206,6 +218,37 @@ export interface OrganizationAccentEdit {
   readonly leaveYearStartMonth?: never;
   readonly leaveYearStartDay?: never;
   readonly logoPath?: never;
+  readonly usesFireRanks?: never;
+}
+
+/**
+ * The fire-rank setting, written on its own — a FOURTH disjoint shape.
+ *
+ * The accent's argument, unchanged: the switch saves the moment it changes,
+ * beside a form that may hold half-typed fields, so a write that carried both
+ * could push those fields or be overwritten by them. Disjoint types make
+ * neither expressible.
+ */
+export interface OrganizationFireRanksEdit {
+  readonly usesFireRanks: boolean;
+  /**
+   * None of these, ever — EVERY other field the snapshot carries, not only
+   * the ones another write shape names. See {@link OrganizationWrite}.
+   */
+  readonly id?: never;
+  readonly slug?: never;
+  readonly shortName?: never;
+  readonly description?: never;
+  readonly address?: never;
+  readonly contactEmail?: never;
+  readonly locale?: never;
+  readonly name?: never;
+  readonly organizationType?: never;
+  readonly timezone?: never;
+  readonly leaveYearStartMonth?: never;
+  readonly leaveYearStartDay?: never;
+  readonly logoPath?: never;
+  readonly brandAccent?: never;
 }
 
 /**
@@ -223,7 +266,8 @@ export interface OrganizationAccentEdit {
 export type OrganizationWrite =
   | OrganizationEdits
   | OrganizationLogoEdit
-  | OrganizationAccentEdit;
+  | OrganizationAccentEdit
+  | OrganizationFireRanksEdit;
 
 /**
  * Which of the two a write is: the one that actually carries a logo path.
@@ -252,6 +296,11 @@ function isLogoEdit(write: OrganizationWrite): write is OrganizationLogoEdit {
  */
 function isAccentEdit(write: OrganizationWrite): write is OrganizationAccentEdit {
   return 'brandAccent' in write && write.brandAccent !== undefined;
+}
+
+/** Which of the four a write is: the one that carries the fire-rank setting. */
+function isFireRanksEdit(write: OrganizationWrite): write is OrganizationFireRanksEdit {
+  return 'usesFireRanks' in write && typeof write.usesFireRanks === 'boolean';
 }
 
 /**
@@ -414,8 +463,10 @@ export function organizationSnapshotOf(row: unknown): OrganizationSnapshot | nul
   const locale = textAt(fields, 'locale');
   const leaveYearStartMonth = numberAt(fields, 'leave_year_start_month');
   const leaveYearStartDay = numberAt(fields, 'leave_year_start_day');
+  const usesFireRanks = fields['uses_fire_ranks'];
 
   if (
+    typeof usesFireRanks !== 'boolean' ||
     id === null ||
     slug === null ||
     name === null ||
@@ -443,6 +494,7 @@ export function organizationSnapshotOf(row: unknown): OrganizationSnapshot | nul
     leaveYearStartDay,
     logoPath: textAt(fields, 'logo_path'),
     brandAccent: textAt(fields, 'brand_accent'),
+    usesFireRanks,
   };
 }
 
@@ -481,6 +533,9 @@ export function organizationEditColumns(
   // clears the accent. Dropping the key instead would produce a PATCH with an
   // empty body that matches the row, changes nothing, and reports success.
   if (isAccentEdit(write)) return { brand_accent: write.brandAccent };
+
+  // ONE COLUMN on the fire-rank setting, for the same reason.
+  if (isFireRanksEdit(write)) return { uses_fire_ranks: write.usesFireRanks };
 
   if (isIdentityEdit(write)) {
     return {

@@ -50,7 +50,8 @@
 insert into organizations (
   slug, name, short_name, description, address, contact_email,
   organization_type, timezone, locale,
-  leave_year_start_month, leave_year_start_day
+  leave_year_start_month, leave_year_start_day,
+  uses_fire_ranks
 ) values (
   'dvd-kastel-novi',
   'DVD Kaštel Novi',
@@ -62,7 +63,10 @@ insert into organizations (
   'Europe/Zagreb',
   'hr',
   1,
-  1
+  1,
+  -- Member rank: the pilot organises its crews by fire rank (0014). UJ-5
+  -- keeps the default and has no ranks.
+  true
 );
 
 do $$
@@ -80,14 +84,15 @@ begin
       -- Its own admin, and three member-role accounts: enough for a role
       -- refusal to have both a subject and a bystander. Story 1.5 grows the
       -- list to Q20 scale; four is what proves the rules.
-      ('Ivan Marić',   'ivan.maric',   'ivan.maric@example.com',  'admin',       20),
-      ('Ana Kovač',    'ana.kovac',    null,                      'member_role', 20),
+      ('Ivan Marić',   'ivan.maric',   'ivan.maric@example.com',  'admin',       20, 'officer'),
+      ('Ana Kovač',    'ana.kovac',    null,                      'member_role', 20, 'nco'),
       -- No email at all: CAP-1's account for a member who has none.
-      ('Marko Novak',  'marko.novak',  null,                      'member_role', 20),
+      ('Marko Novak',  'marko.novak',  null,                      'member_role', 20, 'firefighter'),
       -- A different allowance in the same organization, because leave
       -- allowance is per member and there is no organization-wide constant.
-      ('Petra Babić',  'petra.babic',  'petra.babic@example.com', 'member_role', 25)
-    ) as fixture (full_name, username, email, role, leave_allowance_days)
+      -- No rank: the null case of 0014's `fire_rank`.
+      ('Petra Babić',  'petra.babic',  'petra.babic@example.com', 'member_role', 25, null)
+    ) as fixture (full_name, username, email, role, leave_allowance_days, fire_rank)
   loop
     seeded_user := gen_random_uuid();
     seeded_address := seeded.username || '@' || fixture_slug || '.shift.invalid';
@@ -133,7 +138,8 @@ begin
     -- itself would be a fixture whose stored username authenticates nothing —
     -- which is exactly what `test/rls-isolation.test.ts` asserts against.
     insert into members (
-      organization_id, auth_user_id, name, username, email, role, leave_allowance_days
+      organization_id, auth_user_id, name, username, email, role, leave_allowance_days,
+      fire_rank
     ) values (
       fixture_organization,
       seeded_user,
@@ -141,7 +147,8 @@ begin
       seeded.username,
       seeded.email,
       seeded.role,
-      seeded.leave_allowance_days
+      seeded.leave_allowance_days,
+      seeded.fire_rank
     );
   end loop;
 end

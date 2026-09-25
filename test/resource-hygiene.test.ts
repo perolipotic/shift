@@ -184,6 +184,14 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.accentGreen',
   'organization.accentAmber',
   'organization.accentViolet',
+  // MEMBER RANK: the fire-rank setting's label and its two states, which are
+  // also its status line.
+  'organization.fireRanks',
+  'organization.fireRanksOff',
+  'organization.fireRanksOn',
+  // and its status line, which names the setting it is about.
+  'organization.fireRanksStatusOff',
+  'organization.fireRanksStatusOn',
   // The two words this story EARNS. Both were asserted absent from every built
   // chunk until now (`test/localization-applied.test.ts`), and both move from
   // that ban into the count sweep in the same commit — the stronger of the two
@@ -380,6 +388,23 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.stats.admins',
   'ljudi.stats.active',
   'ljudi.stats.inactive',
+  // MEMBER RANK: the rank control's label, no rank, a code this build lacks,
+  // and the eleven fixed rank names, lowercase because they read as a noun
+  // phrase beside a name.
+  'ljudi.rank.label',
+  'ljudi.rank.none',
+  'ljudi.rank.unknown',
+  'ljudi.rank.trainee',
+  'ljudi.rank.firefighter',
+  'ljudi.rank.firefighter1',
+  'ljudi.rank.nco',
+  'ljudi.rank.nco1',
+  'ljudi.rank.seniorNco',
+  'ljudi.rank.seniorNco1',
+  'ljudi.rank.officer',
+  'ljudi.rank.officer1',
+  'ljudi.rank.seniorOfficer',
+  'ljudi.rank.seniorOfficer1',
   // STORY 1.6's STATUS BLOCK, TWENTY-ONE. The list's two markers, which
   // INTERPOLATE the name they sit beside, because an inactive member is marked
   // in words and never by colour alone — one for inactive today, one, in the
@@ -521,6 +546,10 @@ const SANCTIONED_SCREEN_KEYS = [
   // `smjene.membership.none` again, the words the member list uses.
   'smjene.roster.archived',
   'smjene.roster.back',
+  // MEMBER RANK: a roster name with its rank beside it.
+  'smjene.roster.withRank',
+  // and the roster's own lowercase "unknown rank", beside lowercase labels.
+  'smjene.roster.rankUnknown',
   'smjene.roster.error.unavailable',
   'smjene.today.label',
   'smjene.today.error.unavailable',

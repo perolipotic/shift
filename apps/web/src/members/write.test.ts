@@ -141,6 +141,7 @@ function member(fields: Partial<MemberListRow> = {}): MemberListRow {
     email: null,
     role: 'member_role',
     leaveAllowanceDays: 20,
+    fireRank: null,
     authUserId: 'account-1',
     statusVersions: [],
     teamVersions: [],
@@ -813,6 +814,47 @@ describe('an edit reaches the privileged function only when the identity moves',
     expect(calls[0]?.columns).toBe(MEMBER_EDIT_COLUMNS);
   });
 
+  it('writes the rank in the same PATCH, null for no rank, and leaves it alone when absent', async () => {
+    // MEMBER RANK. The empty choice stores `null`; a form with no rank control
+    // (the setting off) sends no `fire_rank` at all, so stored ranks survive.
+    for (const [fireRank, expected] of [
+      ['nco', 'nco'],
+      [null, null],
+    ] as const) {
+      const { table, calls } = tableThat({ data: [{ id: 'member-1' }], error: null });
+      const { functions } = functionsThat(replied({ code: USERNAME_CHANGED }));
+
+      await saveMember(table, functions, member(), edits({ fireRank }));
+
+      expect(calls).toHaveLength(1);
+      expect(Object.keys(calls[0]?.values ?? {})).toContain('fire_rank');
+      expect(calls[0]?.values['fire_rank']).toBe(expected);
+    }
+
+    const { table, calls } = tableThat({ data: [{ id: 'member-1' }], error: null });
+    const { functions } = functionsThat(replied({ code: USERNAME_CHANGED }));
+
+    await saveMember(table, functions, member(), edits());
+
+    expect(Object.keys(calls[0]?.values ?? {})).not.toContain('fire_rank');
+  });
+
+  it('reports a rank the check constraint refuses as a value to correct', async () => {
+    // A direct write of a code outside `0014`'s list is refused by the
+    // database with 23514; nothing is written, and it reads as INVALID.
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { table } = tableThat({
+      data: null,
+      error: { code: '23514', message: 'members_fire_rank_check' },
+    });
+    const { functions } = functionsThat(replied({ code: USERNAME_CHANGED }));
+
+    expect(await saveMember(table, functions, member(), edits({ fireRank: 'general' }))).toEqual({
+      ok: false,
+      refusal: { code: MEMBER_WRITE_INVALID, saved: false },
+    });
+  });
+
   it('calls the function once when the username moves, after the fields landed', async () => {
     const { table, calls } = tableThat({ data: [{ id: 'member-1' }], error: null });
     const { functions, calls: invoked } = functionsThat(replied({ code: USERNAME_CHANGED }));
@@ -924,6 +966,22 @@ describe('creating a member issues one credential and reports it once', () => {
         },
       },
     ]);
+    expect(Object.keys(calls[0]?.body ?? {}), 'an absent rank reached the payload').not.toContain(
+      'fireRank',
+    );
+  });
+
+  it('carries the rank in the one create payload, null included', async () => {
+    // MEMBER RANK. The row is inserted with its rank in one insert.
+    for (const fireRank of ['nco', null] as const) {
+      const { functions, calls } = functionsThat(
+        replied({ code: MEMBER_CREATED, username: 'marko.novak', password: 'Xy7kPq2mRt4vLn8s' }),
+      );
+
+      await createMember(functions, { ...creation, fireRank });
+
+      expect(calls[0]?.body).toMatchObject({ operation: 'createUser', fireRank });
+    }
   });
 
   it('refuses a success that carries no credential, because nobody could sign in', async () => {
@@ -1296,7 +1354,7 @@ describe('what the edit screen raised, and the member it was raised about', () =
 });
 
 describe('the edit form remounts when its row changes', () => {
-  it.each(['name', 'username', 'email', 'role', 'leaveAllowanceDays'] as const)(
+  it.each(['name', 'username', 'email', 'role', 'leaveAllowanceDays', 'fireRank'] as const)(
     'changes the form identity when %s changes',
     (field) => {
       // EVERY WRITTEN FIELD IS IN THE FINGERPRINT. Keying on `id` alone never
