@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
+import { LogOut, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
@@ -75,12 +76,15 @@ import { SIGN_OUT_FAILED, signOut, type SignOutFailure } from '@/supabase/sign-o
  * nothing on screen that can is the dead affordance the voice rules exist to
  * prevent, so the alert carries a control that re-reads.
  *
- * ICONS ARE DECORATION BESIDE A VISIBLE LABEL, never the label — every entry
- * carries its Croatian name at every width, in both layouts, and the icon is
- * `aria-hidden` so assistive technology hears the name once. Collapsing the
- * sidebar therefore hides the LIST rather than narrowing it to glyphs: an
- * icon-only rail is exactly the state that rule forbids, and there is no width
- * at which it is more acceptable than at any other.
+ * COLLAPSING NARROWS THE SIDEBAR TO AN ICON RAIL (human decision 2026-09-25,
+ * replacing the earlier "hide the list, never a glyph-only rail"). Expanded,
+ * every entry shows its icon beside its Croatian name; collapsed, the sidebar
+ * shows the icons alone. The NAME never leaves: it stays in the DOM as
+ * screen-reader-only text, so assistive technology still hears it once, and it
+ * is the entry's `title`, so a pointer user can read it on hover. The rail is
+ * driven by the aside's `data-collapsed` through a `group/sidebar` variant, so
+ * it reaches the sidebar alone — the phone's bottom bar renders the same
+ * entries outside that group and always shows their names.
  *
  * NOTHING IS PERSISTED. The collapse lives in `useState` and resets on every
  * load, matching the theme layer's stance for the same reason: these are shared
@@ -352,6 +356,7 @@ export function AppChrome({ children }: AppChromeProps) {
 
     return destinationsFor(role).map((destination) => {
       const Icon = destinationIcon(destination.key);
+      const name = t(destination.key);
 
       return (
         <Link
@@ -375,10 +380,11 @@ export function AppChrome({ children }: AppChromeProps) {
           // the first child route — see `isCurrentDestination`, which is in the
           // data module because it is a rule with two polarities worth running.
           aria-current={isCurrentDestination(pathname, destination.path) ? 'page' : undefined}
+          title={expanded ? undefined : name}
           className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-normal text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar aria-[current=page]:bg-sidebar-primary aria-[current=page]:font-semibold aria-[current=page]:text-sidebar-primary-foreground aria-[current=page]:underline aria-[current=page]:underline-offset-4 sm:justify-start"
         >
           <Icon aria-hidden className="size-4 shrink-0" />
-          {t(destination.key)}
+          <span className="group-data-[collapsed=true]/sidebar:sr-only">{name}</span>
         </Link>
       );
     });
@@ -396,16 +402,20 @@ export function AppChrome({ children }: AppChromeProps) {
    * which is the pair that carries "in progress" without renaming anything.
    */
   function renderSignOut(): ReactNode {
+    const name = t('shell.signOut');
+
     return (
       <Button
-        className="h-11 shrink-0 px-4 sm:mt-auto"
+        className="h-11 shrink-0 gap-2 px-4 sm:mt-auto sm:justify-start group-data-[collapsed=true]/sidebar:w-11 group-data-[collapsed=true]/sidebar:self-center group-data-[collapsed=true]/sidebar:justify-center group-data-[collapsed=true]/sidebar:px-0"
         type="button"
         variant="sidebar"
+        title={expanded ? undefined : name}
         disabled={pending}
         aria-busy={pending}
         onClick={startSignOut}
       >
-        {t('shell.signOut')}
+        <LogOut aria-hidden className="size-4 shrink-0" />
+        <span className="group-data-[collapsed=true]/sidebar:sr-only">{name}</span>
       </Button>
     );
   }
@@ -463,6 +473,7 @@ export function AppChrome({ children }: AppChromeProps) {
     );
   }
 
+  const toggleName = expanded ? t('shell.menuHide') : t('shell.menuShow');
   const destinations = renderDestinations();
   const exit = renderSignOut();
   const lockup = renderLockup();
@@ -472,43 +483,53 @@ export function AppChrome({ children }: AppChromeProps) {
       {/* NO FIXED WIDTH ON THE ASIDE. It sized itself at `w-56` in both states,
           so collapsing hid the list and reclaimed not one pixel — a control that
           visibly does nothing. The width is the destination list's now, so
-          collapsing leaves the aside as wide as the toggle and the exit need. */}
+          collapsing leaves the aside as wide as one 44 px icon target. */}
       {/* NAVY IN BOTH THEMES (visual refresh A), and sticky to the viewport so
           the exit at its foot stays reachable beside a long destination. The
           accent is the EDGE, never the fill: the organization tints the line
           between the chrome and the content and nothing inside it. */}
       <aside
-        className={`hidden shrink-0 flex-col gap-2 border-r bg-sidebar p-3 text-sidebar-foreground sm:sticky sm:top-0 sm:flex sm:h-dvh sm:overflow-y-auto ${accent.edge}`}
+        data-collapsed={!expanded}
+        className={`group/sidebar hidden shrink-0 flex-col gap-2 border-r bg-sidebar p-3 text-sidebar-foreground sm:sticky sm:top-0 sm:flex sm:h-dvh sm:overflow-y-auto ${accent.edge}`}
       >
         <div className="flex border-b border-sidebar-border pb-3">{lockup}</div>
-        {/* The toggle carries its own visible word rather than a glyph, for the
-            reason every entry below does: an icon is not a name. Its name says
-            WHICH STATE THE PRESS PRODUCES and changes with the state, because a
+        {/* The toggle is a glyph (human decision 2026-09-25): a panel closing
+            while expanded, a panel opening while collapsed. Its NAME is still
+            the words, on `aria-label` and `title`, and it still says WHICH
+            STATE THE PRESS PRODUCES and changes with the state, because a
             disclosure whose name is the same in both directions leaves
-            `aria-expanded` as the only signal — inaudible to anybody not using
-            assistive technology and invisible to everybody else.
-            `aria-controls` names the region it opens, which is why that region
-            is an element with an id rather than a branch that renders nothing. */}
+            `aria-expanded` as the only signal. `aria-controls` names the region
+            it narrows, which is why that region is an element with an id. */}
         <Button
-          className="h-11 shrink-0 px-4"
+          className="h-11 w-11 shrink-0 self-end p-0 group-data-[collapsed=true]/sidebar:self-center"
           type="button"
           variant="sidebar"
           aria-expanded={expanded}
           aria-controls="app-destinations"
+          aria-label={toggleName}
+          title={toggleName}
           onClick={toggleNavigation}
         >
-          {expanded ? t('shell.menuHide') : t('shell.menuShow')}
+          {expanded ? (
+            <PanelLeftClose aria-hidden className="size-5" />
+          ) : (
+            <PanelLeftOpen aria-hidden className="size-5" />
+          )}
         </Button>
         <nav aria-label={t('shell.navigation')} className="flex flex-1 flex-col gap-1">
-          {/* THE COLLAPSIBLE REGION, and it holds the destinations ALONE. The
-              exit is a sibling below it, so collapsing never takes the way out
-              of the application with it. */}
-          <div id="app-destinations" className={expanded ? 'flex w-48 flex-col gap-1' : 'hidden'}>
+          {/* THE COLLAPSIBLE REGION: collapsing narrows it to the icons and
+              keeps every entry reachable. The exit is a sibling below it, and
+              it narrows the same way, so the way out never leaves the rail. */}
+          <div
+            id="app-destinations"
+            className={expanded ? 'flex w-48 flex-col gap-1' : 'flex flex-col gap-1'}
+          >
             {/* The mockup's muted section label. `aria-hidden` because it is
                 the landmark's own name, which `aria-label` already announces;
                 read twice it would be noise. */}
             <p
               aria-hidden
+              hidden={!expanded}
               className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground/70"
             >
               {t('shell.navigation')}

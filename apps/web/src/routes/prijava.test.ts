@@ -2144,7 +2144,11 @@ describe('the chrome the layout wraps every destination in', () => {
     expect(chrome, 'the destination icon is exposed to assistive technology').toMatch(
       /<Icon\s+aria-hidden/,
     );
-    expect(chrome, 'the link renders no label beside its icon').toContain('{t(destination.key)}');
+    // The collapsed rail (human decision 2026-09-25) hides the label VISUALLY
+    // only: it is still rendered, as screen-reader text and as the `title`.
+    expect(chrome, 'the link renders no label beside its icon').toMatch(
+      /const name = t\(destination\.key\);[\s\S]*?<span className="[^"]*sr-only">\{name\}<\/span>/,
+    );
     expect(chrome, 'the icon is chosen in the component rather than by the typed map').toContain(
       'destinationIcon(destination.key)',
     );

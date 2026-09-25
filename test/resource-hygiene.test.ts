@@ -418,10 +418,9 @@ const SANCTIONED_SCREEN_KEYS = [
   // The navigation chrome, part B — FOUR, and each one is a string that had no
   // surface to live on until this commit.
   //
-  // `shell.menu` names the sidebar's collapse, which carries a visible word
-  // rather than a glyph: an icon-only control is a name that cannot be read or
-  // spoken, which is the same rule that keeps every destination's label beside
-  // its icon.
+  // `shell.menu*` names the sidebar's collapse. The control shows a glyph
+  // (human decision 2026-09-25), and these words are its `aria-label` and
+  // `title`, so the name can still be read and spoken.
   'shell.navigation',
   // TWO names for one control, because a disclosure's name should say which
   // state the press produces. `aria-expanded` carries the state to assistive
@@ -431,12 +430,9 @@ const SANCTIONED_SCREEN_KEYS = [
   'shell.menuShow',
   'shell.menuHide',
   // THE WORD THIS STORY EARNS, and the one the whole file was holding in
-  // reserve. It is the IMPERATIVE — `Odjavi se`, matching `Spremi`, `Odustani`
-  // and `Odaberi sliku` — because destination labels are nouns that name places
-  // and the exit is an action. That is also why `RESERVED_STEMS` was a stem
-  // rather than the noun: `Odjavi se` does not contain `Odjava` at all, so a
-  // whole-word ban on the noun would have waved through exactly the string a
-  // button was always going to carry.
+  // reserve. It shipped as the imperative `Odjavi se` and became the noun
+  // `Odjava` on 2026-09-25 (human decision): the exit sits beside an icon at
+  // the foot of the navigation and reads as its last entry.
   'shell.signOut',
   // TWO refusals, and the partition is the point in one direction and the
   // collapse in the other. A role that cannot be read, one that reaches no row
@@ -786,26 +782,17 @@ describe('the messages obey the voice rules that bind every string', () => {
     );
   });
 
-  it('says the imperative for an action, matching every other action in the file', () => {
-    // WHAT REPLACES THE RESERVED-STEM SWEEP, and it is a claim about the one
-    // word that sweep was holding rather than a thinner version of it (see the
-    // block comment where `RESERVED_STEMS` used to be).
-    //
+  it('says the imperative for an action, the exit being the one named exception', () => {
     // Every action in this application is second person singular imperative —
     // `Spremi`, `Odustani`, `Odaberi sliku` — because destination labels are
-    // nouns that NAME PLACES and an action is something a person does. The exit
-    // is an action, so it takes the verb form, and the noun `Odjava` on a
-    // button would be the one string in the interface written in a different
-    // voice from every other control.
+    // nouns that NAME PLACES and an action is something a person does.
     //
-    // Asserted on the SHIPPED message rather than on a pattern, because the
-    // distinction cannot be written as one: `Odjavi se` and `Odjava` differ by
-    // grammar, not by shape, and a regex over verb endings would refuse
-    // perfectly good Croatian the first time somebody needed a different verb.
-    // `toBe` and nothing beside it: an `expect(label).not.toBe('Odjava')` stood
-    // here too and could never fail while the line below passes, which is a
-    // reader's-eye claim rather than a test.
-    expect(String(messageAt('shell.signOut'))).toBe('Odjavi se');
+    // THE EXIT IS THE ONE EXCEPTION, by human decision of 2026-09-25: it sits
+    // at the foot of the navigation beside an icon, reads as the last entry of
+    // that list, and says the noun `Odjava` the way its neighbours say
+    // `Danas` and `Ljudi`. Pinned with `toBe` so the exception stays exactly
+    // one string wide; every other action below still has to be a verb.
+    expect(String(messageAt('shell.signOut'))).toBe('Odjava');
     // The imperative neighbours it stands with, read off the file rather than
     // assumed: if any of them ever becomes a noun this stops being a rule the
     // exit is following and becomes an exception nobody decided on.

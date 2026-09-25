@@ -20,10 +20,10 @@ import type { NavigationKey } from '@/navigation/destinations';
 /**
  * The icon each destination carries — decoration, never the label.
  *
- * THE ICON IS NOT THE NAME. Every entry in the chrome renders a visible Croatian
- * label beside its icon, at every width and in both layouts; nothing in this
- * application is ever an icon on its own, because an icon-only entry is a name
- * that cannot be read, cannot be searched and cannot be spoken back. The
+ * THE ICON IS NOT THE NAME. Every entry in the chrome carries its Croatian
+ * label beside its icon. The collapsed sidebar shows the icons alone (human
+ * decision 2026-09-25), but the label stays as screen-reader text and as the
+ * entry's `title`, so no entry is ever a glyph without a name. The
  * assignment below is the human decision of 2026-09-16 and it is recorded here
  * rather than argued: `Danas` Home, `Kalendar` Calendar, `Sati` Clock,
  * `Godišnji` TreePalm, `Raspored` CalendarRange, `Ljudi` Users, `Postavke
