@@ -18,11 +18,16 @@
 -- adds one where its inserts belong.
 --
 -- Attribution comes from column defaults (AD-11), so nothing here sets
--- created_by or created_at. Both fixtures are provisioned the way a real
--- organization is — see `supabase/operator/provision-organization.sql`, which
--- carries the same auth.users recipe and explains every part of it. The recipe
--- is duplicated rather than shared because that script must be one prepared
--- statement and so cannot be included from here.
+-- created_by or created_at — with one exception, the shift types and their
+-- versions (story 2.2a), whose `created_by` has no session to default from and
+-- is each fixture's own admin, and whose types carry an explicit ascending
+-- `created_at` because this file runs in one transaction.
+--
+-- Both fixtures are provisioned the way a real organization is — see
+-- `supabase/operator/provision-organization.sql`, which carries the same
+-- auth.users recipe and explains every part of it. The recipe is duplicated
+-- rather than shared because that script must be one prepared statement and
+-- so cannot be included from here.
 --
 -- EVERY ACCOUNT BELOW SHARES ONE PASSWORD, `local-fixture-password`. That is
 -- safe precisely because this file never reaches an environment where it would
@@ -39,7 +44,8 @@
 --   -> rotation_patterns -> rotation_steps -> rotation_assignments
 --   -> leave_records
 -- Attribution comes from column defaults (AD-11), so inserts here must not
--- forge created_by or created_at.
+-- forge created_by or created_at — except the shift types and their versions,
+-- as the header explains.
 
 insert into organizations (
   slug, name, short_name, description, address, contact_email,
@@ -151,6 +157,45 @@ select organizations.id, band.name, band.start_time::time
     ('Noć', '19:00')
   ) as band (name, start_time)
  where organizations.slug = 'dvd-kastel-novi';
+
+-- Story 2.2a: the pilot's shift types, in creation order (2.2b takes each
+-- working type's ramp slot from it), attributed to its admin. A working type's
+-- times are a version effective from 2020-01-01, so any past date projects;
+-- the duration is derived (Dan 720 min; Noć 720 min, crossing midnight, one
+-- span on its start date). Slobodno is non-working and has no version.
+insert into shift_types (organization_id, name, is_working, created_by, created_at)
+select organizations.id,
+       shift_type.name,
+       shift_type.is_working,
+       (select auth_user_id from members
+         where organization_id = organizations.id and username = 'ivan.maric'),
+       now() + shift_type.position * interval '1 millisecond'
+  from organizations
+  cross join (values
+    (1, 'Dan', true),
+    (2, 'Noć', true),
+    (3, 'Slobodno', false)
+  ) as shift_type (position, name, is_working)
+ where organizations.slug = 'dvd-kastel-novi';
+
+insert into shift_type_versions (
+  organization_id, shift_type_id, start_time, end_time, effective_from, created_by
+)
+select organizations.id,
+       shift_types.id,
+       version.start_time::time,
+       version.end_time::time,
+       date '2020-01-01',
+       (select auth_user_id from members
+         where organization_id = organizations.id and username = 'ivan.maric')
+  from organizations
+  join shift_types on shift_types.organization_id = organizations.id
+  cross join (values
+    ('Dan', '07:00', '19:00'),
+    ('Noć', '19:00', '07:00')
+  ) as version (name, start_time, end_time)
+ where organizations.slug = 'dvd-kastel-novi'
+   and shift_types.name = version.name;
 
 
 -- ===========================================================================
@@ -273,3 +318,41 @@ select organizations.id, band.name, band.start_time::time
     ('Noć',     '21:00')
   ) as band (name, start_time)
  where organizations.slug = 'zastita-split';
+
+-- Story 2.2a: UJ-5's shift types, 8 hours each, attributed to its admin. Each
+-- straddles a band edge (05:00, 13:00, 21:00); Noćna crosses midnight.
+insert into shift_types (organization_id, name, is_working, created_by, created_at)
+select organizations.id,
+       shift_type.name,
+       shift_type.is_working,
+       (select auth_user_id from members
+         where organization_id = organizations.id and username = 'josip.peric'),
+       now() + shift_type.position * interval '1 millisecond'
+  from organizations
+  cross join (values
+    (1, 'Jutarnja', true),
+    (2, 'Popodnevna', true),
+    (3, 'Noćna', true),
+    (4, 'Slobodno', false)
+  ) as shift_type (position, name, is_working)
+ where organizations.slug = 'zastita-split';
+
+insert into shift_type_versions (
+  organization_id, shift_type_id, start_time, end_time, effective_from, created_by
+)
+select organizations.id,
+       shift_types.id,
+       version.start_time::time,
+       version.end_time::time,
+       date '2020-01-01',
+       (select auth_user_id from members
+         where organization_id = organizations.id and username = 'josip.peric')
+  from organizations
+  join shift_types on shift_types.organization_id = organizations.id
+  cross join (values
+    ('Jutarnja', '06:00', '14:00'),
+    ('Popodnevna', '14:00', '22:00'),
+    ('Noćna', '22:00', '06:00')
+  ) as version (name, start_time, end_time)
+ where organizations.slug = 'zastita-split'
+   and shift_types.name = version.name;

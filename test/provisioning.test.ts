@@ -757,7 +757,8 @@ describe('every organization table carries row level security, and only its revi
           where relnamespace = 'public'::regnamespace
             and relname in (
               'organizations', 'members', 'member_status_versions', 'teams',
-              'team_membership_versions', 'hour_bands'
+              'team_membership_versions', 'hour_bands', 'shift_types',
+              'shift_type_versions'
             )
           order by relname`,
       );
@@ -765,12 +766,15 @@ describe('every organization table carries row level security, and only its revi
       // STORY 1.6 adds the versioned active status, which is organization data
       // like the other two and is born with row level security on. STORY 1.7a
       // adds the teams, born the same way, and STORY 1.7b the versioned team
-      // membership. STORY 2.1a adds the hour bands.
+      // membership. STORY 2.1a adds the hour bands, and STORY 2.2a the shift
+      // types and their versioned times.
       expect(rows.map((row) => row.relname)).toEqual([
         'hour_bands',
         'member_status_versions',
         'members',
         'organizations',
+        'shift_type_versions',
+        'shift_types',
         'team_membership_versions',
         'teams',
       ]);
@@ -918,6 +922,155 @@ describe('every organization table carries row level security, and only its revi
           /UNIQUE INDEX .* \(organization_id, lower\(btrim\(name\)\)\)$/.test(row.indexdef),
         ),
         'two bands may share a name, or the unique is partial',
+      ).toBe(true);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('holds no privilege on shift_types that no policy needs, and no delete at all', async () => {
+    // STORY 2.2a, the teams matrix plus the working flag: removal archives, so
+    // DELETE is revoked outright; `is_working` is insertable and never
+    // updatable; `anon` keeps nothing.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ role: string; privilege: string; held: boolean }>(
+        `select role, privilege,
+                has_table_privilege(role, 'public.shift_types', privilege) as held
+           from unnest(array['anon', 'authenticated']) as role,
+                unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'])
+                  as privilege`,
+      );
+      const held = rows.filter((row) => row.held).map((row) => `${row.role}:${row.privilege}`);
+
+      expect(held.sort()).toEqual(['authenticated:SELECT']);
+
+      const { rows: columns } = await client.query<{
+        role: string;
+        column: string;
+        verb: string;
+        held: boolean;
+      }>(
+        `select role, column_name as column, verb,
+                has_column_privilege(role, 'public.shift_types', column_name, verb) as held
+           from unnest(array['anon', 'authenticated']) as role,
+                unnest(array['organization_id', 'id', 'name', 'is_working', 'archived',
+                              'created_by', 'created_at']) as column_name,
+                unnest(array['SELECT', 'INSERT', 'UPDATE']) as verb`,
+      );
+      expect(
+        columns
+          .filter((row) => row.held)
+          .map((row) => `${row.role}:${row.verb}:${row.column}`)
+          .filter((entry) => !entry.startsWith('authenticated:SELECT:'))
+          .sort(),
+        'the writable shift type columns changed, or anon holds one',
+      ).toEqual([
+        'authenticated:INSERT:is_working',
+        'authenticated:INSERT:name',
+        'authenticated:INSERT:organization_id',
+        'authenticated:UPDATE:archived',
+        'authenticated:UPDATE:name',
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('holds no privilege on shift_type_versions that no policy needs', async () => {
+    // STORY 2.2a, the membership matrix exactly: `authenticated` keeps SELECT
+    // and DELETE (each narrowed by a policy) and a column-level INSERT on the
+    // five facts; `anon` keeps nothing, and no session names the attribution.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ role: string; privilege: string; held: boolean }>(
+        `select role, privilege,
+                has_table_privilege(role, 'public.shift_type_versions', privilege) as held
+           from unnest(array['anon', 'authenticated']) as role,
+                unnest(array['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'])
+                  as privilege`,
+      );
+      const held = rows.filter((row) => row.held).map((row) => `${row.role}:${row.privilege}`);
+
+      expect(held.sort()).toEqual(['authenticated:DELETE', 'authenticated:SELECT']);
+
+      const { rows: columns } = await client.query<{
+        role: string;
+        column: string;
+        verb: string;
+        held: boolean;
+      }>(
+        `select role, column_name as column, verb,
+                has_column_privilege(role, 'public.shift_type_versions', column_name, verb) as held
+           from unnest(array['anon', 'authenticated']) as role,
+                unnest(array['organization_id', 'id', 'shift_type_id', 'start_time', 'end_time',
+                              'effective_from', 'created_by', 'created_at']) as column_name,
+                unnest(array['SELECT', 'INSERT', 'UPDATE']) as verb`,
+      );
+      expect(
+        columns
+          .filter((row) => row.held)
+          .map((row) => `${row.role}:${row.verb}:${row.column}`)
+          .filter((entry) => !entry.startsWith('authenticated:SELECT:'))
+          .sort(),
+        'the writable version columns changed, or anon holds one',
+      ).toEqual([
+        'authenticated:INSERT:effective_from',
+        'authenticated:INSERT:end_time',
+        'authenticated:INSERT:organization_id',
+        'authenticated:INSERT:shift_type_id',
+        'authenticated:INSERT:start_time',
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('indexes shift_types by its tenant, one active name per organization, and keys it for a composite reference', async () => {
+    // Q3; the PARTIAL name unique that lets an archived type's name be reused;
+    // and the key the versions take a composite foreign key to.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ indexdef: string }>(
+        `select indexdef from pg_indexes
+          where schemaname = 'public' and tablename = 'shift_types'`,
+      );
+      expect(
+        rows.some((row) => /\(organization_id\)$/.test(row.indexdef)),
+        'no index leads with organization_id alone',
+      ).toBe(true);
+      expect(
+        rows.some((row) => /UNIQUE INDEX .* \(organization_id, id\)$/.test(row.indexdef)),
+        'no unique (organization_id, id) for a composite foreign key',
+      ).toBe(true);
+      expect(
+        rows.some((row) =>
+          /UNIQUE INDEX .* \(organization_id, lower\(btrim\(name\)\)\) WHERE \(NOT archived\)$/.test(
+            row.indexdef,
+          ),
+        ),
+        'two active types may share a name, or the unique also binds archived ones',
+      ).toBe(true);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('indexes shift_type_versions by its tenant, one version per type per date', async () => {
+    // Q3, as for the membership table: the unique index leads with the type.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ indexdef: string }>(
+        `select indexdef from pg_indexes
+          where schemaname = 'public' and tablename = 'shift_type_versions'`,
+      );
+      expect(
+        rows.some((row) => /\(organization_id\)$/.test(row.indexdef)),
+        'no index leads with organization_id alone',
+      ).toBe(true);
+      expect(
+        rows.some((row) => /UNIQUE INDEX .* \(shift_type_id, effective_from\)$/.test(row.indexdef)),
+        'two versions may share a date',
       ).toBe(true);
     } finally {
       await client.end();
@@ -1168,6 +1321,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'member_team_has_version', argumentCount: 1, expected: ['authenticated'] },
     { name: 'team_membership_latest_version', argumentCount: 1, expected: ['authenticated'] },
     { name: 'team_in_use', argumentCount: 1, expected: ['authenticated'] },
+    // STORY 2.2a's two version readers, on the same terms.
+    { name: 'shift_type_latest_version', argumentCount: 1, expected: ['authenticated'] },
+    { name: 'shift_type_times_on', argumentCount: 2, expected: ['authenticated'] },
     // STORY 1.8. The roster is called by a signed-in session over REST, and by
     // nobody else: an anonymous caller has no organization to scope it to.
     { name: 'team_roster', argumentCount: 1, expected: ['authenticated'] },
@@ -1182,6 +1338,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'member_team_has_version', argumentCount: 1 },
     { name: 'team_membership_latest_version', argumentCount: 1 },
     { name: 'team_in_use', argumentCount: 1 },
+    { name: 'shift_type_latest_version', argumentCount: 1 },
+    { name: 'shift_type_times_on', argumentCount: 2 },
   ])('runs $name as the caller, with an empty search_path', async ({ name, argumentCount }) => {
     // INVOKER, the opposite of the helper and the hook. They are reached from
     // the helper, the hook and the zero-admins function as the owner, and from

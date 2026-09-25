@@ -54,18 +54,21 @@ This epic turns a secured, populated tenant into one with a working schedule, wi
 
 ## UX & Interaction Patterns
 
-- **Hour Band editor:** each band is a name plus a start time. The window, duration and midnight crossing are shown read-only. A 24-hour partition bar hatches and flags any uncovered region. Bands live under the Organizacija settings.
-- **Shift types** live under Postavke rotacije. They take working ramp slots (`shift-slot-1..6`) in creation order: the pilot's Dan is slot 1 and Noć is slot 2. Beyond six types a slot repeats, and the always-visible label carries the distinction. Non-working types use `shift-nonworking`. Contrast for slots 3–6 is unverified (they are marked as an assumption) and must be checked in both themes before a second organization uses them. No `shift-day`/`shift-night` token may exist.
+- **Visual register (refreshed):** slate surfaces, a navy sidebar in both themes, one blue `primary`, soft `shadow-sh` on cards, 12 px base radius, DM Sans body and Syne headings. Screens compose the `components/ui` primitives (Button, Card, Input, Table, PageHeader/PageTitle, StatCard, Badge, Notice) and may size or place them but never restyle colour, radius, border, shadow or type. A new look means changing or adding a primitive.
+- **Page skeleton:** `mx-auto w-full max-w-5xl p-6`, `PageHeader` first (title top-left, actions right, stacking on a phone), then a table in a `Card`, or a form in a left-aligned `Card` (`max-w-lg`). Refusals and confirmations use `Notice` (`role="alert"` / `role="status"`). Controls are `h-11` (44 px floor).
+- **The shiftapp-v2 mockups are for look only.** Its shift-type cards carry a colour picker, emoji, pay multiplier and valid days; none of these belong to Shift. Colour comes from the ramp slot, never a user choice, and all copy is Croatian.
+- **Hour Band editor** (done in 2.1): name plus start time, derived window/duration/midnight read-only, a 24-hour partition bar that hatches and flags any uncovered region, under Organizacija.
+- **Shift types** live under Postavke rotacije. They take working ramp slots (`shift-slot-1..6`) in creation order: Dan is slot 1, Noć slot 2. Beyond six a slot repeats and the always-visible label carries the distinction. Non-working types use `shift-nonworking`. Slots 3–6 are unverified for contrast and must be checked in both themes before a second organization uses them. No `shift-day`/`shift-night` token may exist. `destructive` is reserved for conflicts; removal uses neutral styling plus one confirmation.
 - **Pattern builder:** an ordered, reorderable list of steps of any length, where a type may repeat. Cycle length, working steps and hours per cycle update live beneath it.
-- **Cycle preview:** renders the next full cycle from the unsaved pattern, offsets and anchor date, so the admin judges the configuration by its output.
-- **Layout by width:** below 640 px, a four-step stepper (shift types → pattern → offsets → preview), where completed steps can be revisited. On tablet and desktop, one scrolling panel with no stepper. Both layouts have the same data, validations and order. Build against a 390 px viewport first, because this is the hardest admin surface to fit on a phone. Wide content scrolls inside its own container.
-- **Warning copy:** states the consequence in numbers (`24 h bez pauze`), with no adjectives and no exclamation marks. Every count uses the plural forms, and a `count === 1` check is a defect. Times use an en dash (`19:00–07:00`). The team is `Smjena`; the shift type is `Tip smjene`, and it is never called *smjena*. Mockup reference: `ux-designs/…/mockups/rotation-config-1.html`.
+- **Cycle preview:** renders the next full cycle from the unsaved pattern, offsets and anchor date.
+- **Layout by width:** below 640 px, a four-step stepper (shift types → pattern → offsets → preview) with completed steps revisitable. Tablet and desktop get one scrolling panel with no stepper. Same data, validations and order in both. Build against 390 px first. Wide content scrolls inside its own container.
+- **Copy:** warnings state the consequence in numbers (`24 h bez pauze`), with no adjectives and no exclamation marks. Every count uses the three plural forms; a `count === 1` check is a defect. Clock ranges use an en dash (`19:00–07:00`) and go through the i18n format layer, never an ad-hoc template. The team is `Smjena`; the shift type is `Tip smjene`, never *smjena*. Mockup reference: `ux-designs/ux-shift-2026-09-02/mockups/rotation-config-1.html` (layout and flow; take the look from the refreshed design system).
 
 ## Cross-Story Dependencies
 
 - **Relies on Epic 1:** teams of any count (archived, never deleted), the RLS and role pattern and its security regression tests, the versioning mechanism, attribution defaults, and the theme and i18n layers.
 - **Order within the epic:**
-  - 2.1 comes before 2.2. It seeds both fixtures and starts the domain test suite.
+  - 2.1 is done (split as 2.1a rule and 2.1b editor). It seeded both fixtures, started `packages/domain` with `bands`, and started the domain test suite.
   - 2.2 comes before 2.3, because steps reference shift types.
   - 2.3 builds the projection and preview that 2.4 (phone layout), 2.5 (warnings at save) and 2.6 (versioned change) all depend on.
 - **Later epics consume the projection:**
