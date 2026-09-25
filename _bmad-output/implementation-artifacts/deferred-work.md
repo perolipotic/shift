@@ -726,3 +726,23 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-list-reader-refetch-failure.md`
   summary: The list and edit screens offer no "try again" action after a read failure, so the unavailable message (now shown beside kept rows) stays until a remount, a reconnect or the next write.
   evidence: With `refetchOnWindowFocus: false` and a five-minute `staleTime`, nothing re-reads on its own. The message invites a retry the screen cannot perform. This is the same shape the earlier `organization.error.unavailable` entry records. It needs a UX decision on the control and its string. Found by the review blind hunter.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-2b-shift-type-editor.md`
+  summary: The organization's "today" is computed on the client from the device clock (plus the organization's zone) at render time, so a device clock off from the server, or a screen left open across the organization's midnight, offers a date minimum the database then refuses — and on the shift-type add it turns the second write into "created without times".
+  evidence: Raised by 2.2b's edge-case and blind reviews against `shiftTypesTodayOf(snapshot, new Date())` in both shift-type screens; the same pattern already backs the member-status date offer (`membersTodayOf`, `members/list.ts`). A fix is shared: recompute today at submit time and/or take the first version's `effective_from` from `public.organization_today` server-side (the latter needs an RPC or a column default, which is an Ask First).
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-2b-shift-type-editor.md`
+  summary: The admin `beforeLoad` guard is copied verbatim into every admin-only route (hour bands ×2, shift types ×2) and leans on the member-list predicate `mayReadMembers`, so the copies can drift and an admin-only rotation rule depends on a function named for reading members.
+  evidence: Raised by 2.2b's blind review; 2.2b followed the pattern 2.1b set (`organizacija.satni-pojasi.tsx:321-341`). A shared guard factory with an admin-named predicate, plus the `router.test.ts` inventories, would fix all four at once.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-2b-shift-type-editor.md`
+  summary: Generic time helpers (`minuteOfTime`, `durationValuesOf`) live in the hour-band feature module and `shift-types` now imports them from `@/hour-bands/list`, coupling two features; they belong in a shared time/format module.
+  evidence: Raised by 2.2b's blind review; the move touches hour-bands and its tests, so it was kept out of 2.2b's diff.
+
+- source_spec: none
+  summary: A demo seed for the pilot (DVD Kaštel Novi), separate from `supabase/seed.sql` and applied on demand — four teams (A–D), each of four firefighters: a commander (zapovjednik), a driver (vozač) and two firefighters, named by rank; after story 2.3 the pilot rotation `[Dan, Noć, Slobodno, Slobodno]` at offsets 0–3.
+  evidence: Human decision 2026-09-25 (sized down to 4 × 4 = 16 members). The pilot fixture holds four members and no teams, which says nothing about the roster or (soon) the calendar. `seed.sql` must stay minimal because tests pin it exactly (`test/rls-isolation.test.ts` seeded read-backs, `packages/domain/test/fixtures.ts`), and the local stack is shared by every worktree. The Playwright E2E smoke suite is already being written on its own branch; coordinate so this seed and its isolated dataset are one thing, not two. The commander/driver/firefighter split and the ranks come from the rank and team-position story below, so this seed follows it; names are invented, never real crew.
+
+- source_spec: none
+  summary: Rank and team position — a fixed-list rank on `members` (a check constraint, like the accent tokens) and a fixed-list position in the team (zapovjednik, vozač, vatrogasac) on the versioned team membership, so a position change takes effect from a date; the member form gets a rank choice, membership gets a position choice, and the team roster shows both. To be built as its own story right AFTER 2.2b merges.
+  evidence: Human decision 2026-09-25 (the recommended option: both, fixed lists, with UI). Needed for the pilot demo seed above (four teams of commander, driver and two firefighters). Wait for 2.2b to merge before resetting the shared local stack, because a new migration breaks the DB inventory tests in every other worktree until they rebase. The exact rank list (DVD ranks) is to be confirmed with the human at that story's step-01; tests pin policy/privilege inventories (`supabase-scaffold.test.ts`, `provisioning.test.ts`).

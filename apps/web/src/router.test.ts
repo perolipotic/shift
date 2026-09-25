@@ -36,6 +36,10 @@ import {
   organizacijaSatniPojasiRoute,
 } from '@/routes/organizacija.satni-pojasi';
 import { PostavkeRotacijeScreen, postavkeRotacijeRoute } from '@/routes/postavke-rotacije';
+import {
+  PostavkeRotacijeTipSmjeneScreen,
+  postavkeRotacijeTipSmjeneRoute,
+} from '@/routes/postavke-rotacije.tipovi-smjena.$id';
 import { OrganizationPromptScreen, prijavaOrganizacijaRoute } from '@/routes/prijava-organizacija';
 import { prijavaRoute, SignInScreen } from '@/routes/prijava';
 import { RasporedScreen, rasporedRoute } from '@/routes/raspored';
@@ -183,7 +187,11 @@ const DESTINATION_ROUTES = [
  * adds to without arguing for it, and a reason with no list is a paragraph
  * nothing executes.
  */
-const ROLE_GUARDED_PATHS = ['/ljudi'];
+//
+// TWO SINCE STORY 2.2b: `/postavke-rotacije` stopped being a heading and now
+// renders — and writes — the organization's shift types, which UX-DR32 gives
+// the member role no surface for.
+const ROLE_GUARDED_PATHS = ['/ljudi', '/postavke-rotacije'];
 
 /**
  * Every route that decides on the permission LEVEL, and the screen each one
@@ -244,6 +252,21 @@ const LEVEL_GUARDED_ROUTES = [
     route: organizacijaSatniPojasRoute,
     component: OrganizacijaSatniPojasScreen,
   },
+  // STORY 2.2b: the shift type list — which is the `Postavke rotacije`
+  // destination itself — and one shift type, both admin-only copies of the
+  // same guard.
+  {
+    id: '/_app/postavke-rotacije',
+    path: '/postavke-rotacije',
+    route: postavkeRotacijeRoute,
+    component: PostavkeRotacijeScreen,
+  },
+  {
+    id: '/_app/postavke-rotacije/tipovi-smjena/$id',
+    path: '/postavke-rotacije/tipovi-smjena/$id',
+    route: postavkeRotacijeTipSmjeneRoute,
+    component: PostavkeRotacijeTipSmjeneScreen,
+  },
 ];
 
 describe('the shell route tree', () => {
@@ -288,6 +311,8 @@ describe('the shell route tree', () => {
       '/_app/organizacija/satni-pojasi',
       '/_app/organizacija/satni-pojasi/$id',
       '/_app/postavke-rotacije',
+      // STORY 2.2b. One shift type, reached from `Postavke rotacije` only.
+      '/_app/postavke-rotacije/tipovi-smjena/$id',
       '/_app/raspored',
       '/_app/sati',
       // STORY 1.8. One team's roster, for every role, reached from Danas only.
@@ -1570,10 +1595,11 @@ describe('the member list is the first destination that refuses a permission lev
      * over the branches that decide who gets in, so a copy that was pasted and
      * then quietly loosened fails here rather than shipping.
      */
-    it('guards exactly the seven routes the table names, and no fewer', () => {
+    it('guards exactly the nine routes the table names, and no fewer', () => {
       // NON-VACUITY. An entry deleted from the table takes its cases with it and
       // Vitest reports the shorter run as a pass. SEVEN SINCE STORY 2.1b.
-      expect(LEVEL_GUARDED_ROUTES).toHaveLength(7);
+      // NINE SINCE STORY 2.2b.
+      expect(LEVEL_GUARDED_ROUTES).toHaveLength(9);
       for (const { path, route } of LEVEL_GUARDED_ROUTES) {
         expect(
           (route.options as { beforeLoad?: unknown }).beforeLoad,

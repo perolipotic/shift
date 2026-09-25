@@ -122,6 +122,16 @@ const HOUR_BAND_LIST_KEYS = join(srcRoot, 'hour-bands', 'list.ts');
 const HOUR_BAND_WRITE_KEYS = join(srcRoot, 'hour-bands', 'write.ts');
 
 /**
+ * Story 2.2b's two shift type screens and the two modules holding their rules.
+ * The list IS the `Postavke rotacije` destination, which left the placeholders
+ * when it was built; the edit screen is reached from it only.
+ */
+const SHIFT_TYPE_LIST = join(srcRoot, 'routes', 'postavke-rotacije.tsx');
+const SHIFT_TYPE_EDIT = join(srcRoot, 'routes', 'postavke-rotacije.tipovi-smjena.$id.tsx');
+const SHIFT_TYPE_LIST_KEYS = join(srcRoot, 'shift-types', 'list.ts');
+const SHIFT_TYPE_WRITE_KEYS = join(srcRoot, 'shift-types', 'write.ts');
+
+/**
  * The member write path's rules, as a `.ts` module that renders nothing.
  *
  * THE THIRD NEW KEY SOURCE, and it has to be its own entry rather than folded
@@ -224,7 +234,6 @@ const PLACEHOLDER_SLUGS = [
   'sati',
   'godisnji',
   'raspored',
-  'postavke-rotacije',
 ];
 
 /**
@@ -240,7 +249,10 @@ const PLACEHOLDER_SLUGS = [
 //
 // THREE SINCE STORY 1.8: `/danas` left the placeholders when it gained the line
 // naming the caller's team today, for the reason `/ljudi` did.
-const BUILT_SLUGS = ['organizacija', 'ljudi', 'danas'];
+//
+// FOUR SINCE STORY 2.2b: `/postavke-rotacije` left the placeholders when it
+// gained the shift type list, its add form and its archived section.
+const BUILT_SLUGS = ['organizacija', 'ljudi', 'danas', 'postavke-rotacije'];
 
 /** Every registered destination, however much of it is built. */
 const DESTINATION_SLUGS = [...PLACEHOLDER_SLUGS, ...BUILT_SLUGS];
@@ -368,11 +380,23 @@ const SCREENS = [
   // replace it, and the link back.
   { name: 'the hour band list', file: HOUR_BAND_LIST, expectedControls: 5 },
   { name: 'the hour band edit form', file: HOUR_BAND_EDIT, expectedControls: 7 },
-  // ZERO on all seven, and asserted rather than assumed: a destination is a
-  // heading and nothing else in this story, so the first control any of them
-  // grows is a later story's work arriving without that story's review. The
-  // count is also what keeps the tap-target sweep from reading as coverage on
-  // eight screens it finds nothing to measure.
+  // STORY 2.2b. SIX on the shift type list: the name `<Input>`, the working /
+  // non-working `<select>`, the start and end `<Input type="time">`s (a
+  // non-working type is offered neither), the add `<Button>`, and ONE row link
+  // written once inside the map over the types. No colour, emoji, multiplier,
+  // valid-days or hour-band control exists, which is what the count keeps true.
+  // ELEVEN on one type: the name and Save; the times block's date, start, end
+  // and submit, and the cancel that replaces them while a correction is
+  // scheduled; the archive offer, the confirm and cancel that replace it; and
+  // the link back. No `is_working` control and no delete.
+  { name: 'the shift type list', file: SHIFT_TYPE_LIST, expectedControls: 6 },
+  { name: 'the shift type edit form', file: SHIFT_TYPE_EDIT, expectedControls: 11 },
+  // ZERO on every remaining placeholder (four since story 2.2b built
+  // `/postavke-rotacije`), and asserted rather than assumed: a placeholder is a
+  // heading and nothing else, so the first control any of them grows is a
+  // later story's work arriving without that story's review. The count is also
+  // what keeps the tap-target sweep from reading as coverage on screens it
+  // finds nothing to measure.
   ...DESTINATION_SCREENS.map((destination) => ({ ...destination, expectedControls: 0 })),
   // The layout renders no string of its own, and is swept anyway: it is a
   // `.tsx` under `routes/`, so the literal, bare-text and `destructive` sweeps
@@ -482,6 +506,21 @@ const FORM_SCREENS = [
     effect: 'updateHourBand(',
     inFlight: 'writing',
   },
+  // Story 2.2b's two, on the same terms: `creating` on the list, and
+  // `writing` on one type, shared by its rename, its times, the cancellation
+  // and its archive.
+  {
+    name: 'the shift type list',
+    file: SHIFT_TYPE_LIST,
+    effect: 'createShiftType(',
+    inFlight: 'creating',
+  },
+  {
+    name: 'the shift type edit form',
+    file: SHIFT_TYPE_EDIT,
+    effect: 'renameShiftType(',
+    inFlight: 'writing',
+  },
 ];
 
 /** The form screens that await something, so something can be in flight. */
@@ -578,6 +617,37 @@ const IN_FLIGHT_HANDLERS = [
     // ITS OWN REFUSAL STATE, announced inside the removal block.
     failure: 'setRemoveFailure',
   },
+  // STORY 2.2b, the shift type edit form's three further awaiting handlers,
+  // all sharing the rename's `writing` ref: two writes on one type in flight
+  // together would race on the same row. The times and the cancellation share
+  // ONE refusal state, announced in the times block; the archive has its own.
+  {
+    name: "the shift type edit form's times",
+    file: SHIFT_TYPE_EDIT,
+    effect: 'correctShiftTypeTimes(',
+    inFlight: 'writing',
+    handler: 'saveTimes',
+    pending: 'setPending',
+    failure: 'setTimesFailure',
+  },
+  {
+    name: "the shift type edit form's cancellation",
+    file: SHIFT_TYPE_EDIT,
+    effect: 'cancelScheduledTimes(',
+    inFlight: 'writing',
+    handler: 'cancelTimes',
+    pending: 'setPending',
+    failure: 'setTimesFailure',
+  },
+  {
+    name: "the shift type edit form's archive",
+    file: SHIFT_TYPE_EDIT,
+    effect: 'archiveShiftType(',
+    inFlight: 'writing',
+    handler: 'archive',
+    pending: 'setPending',
+    failure: 'setArchiveFailure',
+  },
 ];
 
 /**
@@ -655,6 +725,11 @@ function submitHandler(screen: string): string {
  * here matched `function submit(` and stopped. Extraction by name is what lets
  * `IN_FLIGHT_HANDLERS` carry one entry per handler rather than one per file.
  */
+/** A top-level exported function of a module, from `export` to its closing brace. */
+function exportedFunction(text: string, name: string): string {
+  return new RegExp(`export async function ${name}\\([\\s\\S]*?\\n\\}`).exec(text)?.[0] ?? '';
+}
+
 function namedHandler(screen: string, name: string): string {
   return new RegExp(`(?:async )?function ${name}\\([\\s\\S]*?\\n {2}\\}`).exec(screen)?.[0] ?? '';
 }
@@ -1425,6 +1500,43 @@ const KEY_SOURCES = [
     strings: 11,
   },
   {
+    // STORY 2.2b. On the shift type list: the destination's own heading, the
+    // section heading, the four field labels, the add action, the ICU count, the archived heading, the row action, and
+    // what a row says — the non-working pill, the no-times line, the times and
+    // duration labels, the midnight flag and the scheduled correction. The
+    // kind options, the duration's shape and the refusals reach `t()` through
+    // the two modules.
+    name: 'the shift type list',
+    file: SHIFT_TYPE_LIST,
+    keys: translationKeys,
+    strings: 16,
+  },
+  {
+    // On one type: the facts a row says (as on the list), the name and Save,
+    // the times heading, date, start and end labels, the note, the set and
+    // correct actions, the cancellation, the archive offer, prompt, confirm
+    // and cancel, the archived note, and the link back.
+    name: 'the shift type edit form',
+    file: SHIFT_TYPE_EDIT,
+    keys: translationKeys,
+    strings: 22,
+  },
+  {
+    // The duration's three shapes, the read failure, and the two headings.
+    name: 'the shift type list rules',
+    file: SHIFT_TYPE_LIST_KEYS,
+    keys: memberListKeys,
+    strings: 6,
+  },
+  {
+    // The two kinds, the thirteen refusals and the five confirmations — the
+    // created one among them, rendered through `shiftTypeSavedMessageKey`.
+    name: 'the shift type write rules',
+    file: SHIFT_TYPE_WRITE_KEYS,
+    keys: memberListKeys,
+    strings: 20,
+  },
+  {
     // THIRTEEN on the create form: its own heading, five field labels, the save
     // and cancel actions, the link back to the list, and the credential panel's
     // three — plus `ljudi.form.username` a SECOND time, as that panel's label
@@ -1647,8 +1759,13 @@ describe('the screen is read at all, so every sweep below means something', () =
     //
     // TWENTY-TWO AND THIRTY-TWO SINCE STORY 2.1b: the two hour band screens,
     // and four key sources — both screens and both `@/hour-bands` modules.
-    expect(SCREENS).toHaveLength(22);
-    expect(KEY_SOURCES).toHaveLength(32);
+    //
+    // TWENTY-THREE AND THIRTY-FIVE SINCE STORY 2.2b: `/postavke-rotacije` left
+    // the placeholders and arrived as a built entry (net zero on both lists),
+    // the shift type edit screen is new (one each), and so are both
+    // `@/shift-types` modules as key sources (two more).
+    expect(SCREENS).toHaveLength(23);
+    expect(KEY_SOURCES).toHaveLength(35);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -2634,6 +2751,60 @@ describe('the member list reads once, under one key', () => {
     );
     expect(bar, 'a covered stretch is not labelled with its band').toContain('{segment.name}');
     expect(bar, 'the bar paints a shift type colour').not.toContain('shift-slot');
+  });
+
+  it.each([
+    { name: 'the shift type list', file: SHIFT_TYPE_LIST },
+    { name: 'the shift type edit form', file: SHIFT_TYPE_EDIT },
+  ])('reads the shift types exactly once, under the one key, on $name', ({ file }) => {
+    // STORY 2.2b, AD-13. The rows, the slots, the times, "today" and the edited
+    // type all come from one read under `SHIFT_TYPES_LIST_KEY`.
+    const screen = source(file);
+
+    expect(occurrences(screen, 'useQuery(')).toBe(1);
+    expect(occurrences(screen, 'shiftTypesQueryOptions(')).toBe(1);
+    expect(occurrences(screen, 'queryKey:')).toBe(
+      occurrences(screen, 'queryKey: SHIFT_TYPES_LIST_KEY'),
+    );
+    expect(screen, 'a write is not followed by a re-read of the one list').toContain(
+      'invalidateQueries({ queryKey: SHIFT_TYPES_LIST_KEY })',
+    );
+    expect(screen, 'useMutation arrived; this repository uses a pending ref').not.toContain(
+      'useMutation',
+    );
+    expect(screen, `${file} reaches past the list module into the domain`).not.toContain(
+      '@shift/domain',
+    );
+    expect(screen, `${file} recomputes a duration itself`).not.toMatch(
+      /\b1440\b|MINUTES_PER_DAY|startMinute\s*[-+%]|endMinute\s*[-+%]/,
+    );
+    // UX-DR6: colour is the slot's, never a choice, and never a named token.
+    expect(screen).not.toMatch(/type="color"|shift-day|shift-night|shift-slot-/);
+  });
+
+  it('offers no is_working change and no delete of a type', () => {
+    // STORY 2.2b. `is_working` is fixed at creation; the edit screen has no
+    // select at all, and neither screen sends a delete of a type.
+    expect(selectElements(source(SHIFT_TYPE_EDIT))).toEqual([]);
+    expect(source(SHIFT_TYPE_EDIT)).not.toContain('is_working');
+    expect(source(SHIFT_TYPE_LIST_KEYS) + source(SHIFT_TYPE_WRITE_KEYS)).not.toMatch(
+      /archived:\s*false/,
+    );
+    // THE ONLY DELETE is the cancellation of a scheduled version, on the
+    // versions table's seam; `shift_types` has no delete verb in its seam and
+    // no `.delete(` anywhere else.
+    const writes = source(SHIFT_TYPE_WRITE_KEYS);
+    const typeSeam = /export interface ShiftTypeWriteTable \{[\s\S]*?\n\}/.exec(writes)?.[0] ?? '';
+
+    expect(typeSeam, 'the shift_types seam could not be extracted').toContain('update(');
+    expect(typeSeam, 'the shift_types seam grew a delete').not.toContain('delete(');
+    expect(occurrences(writes, '.delete()'), 'a second delete arrived').toBe(1);
+    expect(exportedFunction(writes, 'cancelScheduledTimes'), 'the one delete is not the cancellation').toContain(
+      '.delete()',
+    );
+    for (const file of [SHIFT_TYPE_LIST, SHIFT_TYPE_EDIT]) {
+      expect(source(file), `${file} deletes directly`).not.toContain('.delete(');
+    }
   });
 
   it('offers an archived team nothing that writes', () => {
@@ -3819,11 +3990,13 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // that the settings surface was covered by none of them until a second
     // screen made the gap obvious.
     // EIGHT SINCE STORY 2.1b: the two hour band screens.
-    expect(IN_FLIGHT_SCREENS.length, 'no form screen declares an in-flight ref').toBe(8);
+    // TEN SINCE STORY 2.2b: the two shift type screens.
+    expect(IN_FLIGHT_SCREENS.length, 'no form screen declares an in-flight ref').toBe(10);
     expect(
       IN_FLIGHT_SCREENS.map((screen) => screen.inFlight).sort(),
       'the in-flight ref names drifted from the screens that hold them',
     ).toEqual([
+      'creating',
       'creating',
       'creating',
       'exchanging',
@@ -3832,9 +4005,11 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'saving',
       'writing',
       'writing',
+      'writing',
     ]);
-    // NINE HANDLERS OVER SIX SCREENS, and the mismatch is the point: the member
-    // edit form owns three awaiting handlers and the team edit form two, and
+    // MORE HANDLERS THAN SCREENS, and the mismatch is the point (it began as
+    // nine over six): the member edit form owns four awaiting handlers, the
+    // team and band edit forms two each and the shift type edit form four, and
     // while these sweeps counted SCREENS the extra ones were read by none of
     // them. A list that silently fell back
     // to one entry per file would make every sweep below miss exactly the
@@ -3842,22 +4017,29 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // TEN SINCE STORY 1.7b: the member edit form's fourth, the team change.
     // THIRTEEN SINCE STORY 2.1b: the band list's add, and the band edit
     // form's save and its removal, which is its own handler.
-    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(13);
+    // EIGHTEEN SINCE STORY 2.2b: the shift type list's add, and the shift
+    // type edit form's rename, times, cancellation and archive.
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(18);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
       'the in-flight handler names drifted from the handlers that hold them',
     ).toEqual([
       'archive/writing',
+      'archive/writing',
+      'cancelTimes/writing',
       'changeStatus/statusing',
       'changeTeam/teaming',
       'issue/resetting',
       'remove/writing',
+      'saveTimes/writing',
+      'submit/creating',
       'submit/creating',
       'submit/creating',
       'submit/exchanging',
       'submit/issuing',
       'submit/saving',
       'submit/saving',
+      'submit/writing',
       'submit/writing',
       'submit/writing',
     ]);
@@ -3928,7 +4110,11 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'the refused branch does not put the returned code on screen',
     ).toMatch(
       new RegExp(
-        `outcome\\.ok[\\s\\S]{0,200}?${failure}\\([\\s\\S]{0,80}?outcome\\.(?:code|refusal)`,
+        // STORY 2.2b's add hands the outcome to `createdOutcomeOf` — the branch
+        // is a pure function the node suite executes (`shift-types/write.test.ts`)
+        // — and the refusal it derives from the outcome is what reaches state.
+        `outcome\\.ok[\\s\\S]{0,200}?${failure}\\([\\s\\S]{0,80}?outcome\\.(?:code|refusal)` +
+          `|const next = createdOutcomeOf\\(outcome\\);[\\s\\S]{0,120}?${failure}\\(next\\.failure\\)`,
       ),
     );
   });

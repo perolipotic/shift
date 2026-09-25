@@ -212,6 +212,16 @@ const SOURCES = [
   join(webRoot, 'src', 'hour-bands', 'write.ts'),
   join(webRoot, 'src', 'routes', 'organizacija.satni-pojasi.tsx'),
   join(webRoot, 'src', 'routes', 'organizacija.satni-pojasi.$id.tsx'),
+  // Story 2.2b's four. `postavke-rotacije.tsx` is listed above with the
+  // destinations; the edit screen renders and is no destination, and the two
+  // `@/shift-types` modules own the duration shapes, the kinds and the
+  // refusals as return-type unions, so a chunk built before an edit to any of
+  // them is stale in a way no sweep could see. The ramp module holds the chip
+  // classes' slot numbering.
+  join(webRoot, 'src', 'shift-types', 'list.ts'),
+  join(webRoot, 'src', 'shift-types', 'write.ts'),
+  join(webRoot, 'src', 'shift-types', 'ramp.ts'),
+  join(webRoot, 'src', 'routes', 'postavke-rotacije.tipovi-smjena.$id.tsx'),
 ];
 
 /**
@@ -840,6 +850,21 @@ function wordOccurrences(haystack: string, needle: string): number {
   return (haystack.match(pattern) ?? []).length;
 }
 
+/**
+ * Registered route SEGMENTS that are also counted words, and ship in the chunk
+ * as data rather than as copy. Story 2.2b's `/postavke-rotacije/tipovi-smjena/$id`
+ * is the first: its `smjena` is a path segment (the route definition and every
+ * `<Link to>` carry it), and the word boundary cannot tell it from a hard-coded
+ * label because `-` and `/` are both boundaries. Removed as the WHOLE route
+ * path prefix, so a bare `smjena` literal — or the segment under any other
+ * path — still counts.
+ */
+const ROUTE_SEGMENTS = ['/postavke-rotacije/tipovi-smjena/'];
+
+function withoutRouteSegments(chunk: string): string {
+  return ROUTE_SEGMENTS.reduce((text, segment) => text.replaceAll(segment, ''), chunk);
+}
+
 function resourceSource(): string {
   return readFileSync(join(webRoot, 'src', 'i18n', 'locales', 'hr.json'), 'utf8');
 }
@@ -855,7 +880,7 @@ describe('the resource file is the only user-facing Croatian in the build', () =
   });
 
   it.skipIf(notBuilt).each(AUTHORED_VOCABULARY)('ships %s only from the resource file', (word) => {
-    const inChunk = wordOccurrences(allChunks(), word);
+    const inChunk = wordOccurrences(withoutRouteSegments(allChunks()), word);
     const inResource = wordOccurrences(resourceSource(), word);
 
     // Both directions matter. Above the resource count means a component

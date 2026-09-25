@@ -31,7 +31,7 @@ colors:
   shift-slot-2-foreground: '#CBD8E6'
   shift-slot-2-dark: '#171F29'
   shift-slot-2-foreground-dark: '#9FB3C6'
-  shift-slot-3: '#EFE7F7'          # [ASSUMPTION] slots 3-6 unexercised by the pilot
+  shift-slot-3: '#EFE7F7'          # slots 3-6 verified in both themes, test/theme-contrast.test.ts
   shift-slot-3-foreground: '#4B3168'
   shift-slot-3-dark: '#2A2038'
   shift-slot-3-foreground-dark: '#CBB4E8'
@@ -217,7 +217,7 @@ Two properties are not stylistic preferences but consequences of the product con
 
 **Organization branding.** An Organization's accent is data, not design. It tints exactly three things — the logo lockup, the sidebar's edge and the phone bar's edge — and nothing else. Because the lockup and the sidebar edge sit on the navy sidebar, a light-theme accent must clear 3:1 against both a white card and the navy, and 4.5:1 under its own white letter, which confines it to roughly OKLCH L 0.53–0.56; the accent values in `index.css` are tuned into that window and `test/theme-contrast.test.ts` measures them there. It may never be used for a shift state, a modifier, or `destructive`. An Organization whose accent is red gets a red shell and an unchanged red conflict signal — which is why the conflict signal also carries a glyph and a border.
 
-**The working-shift ramp.** Working Shift Types are Organization data of arbitrary count, so colour is assigned to six ordered slots rather than to named shift types. An Organization's Shift Types take slots in creation order; the pilot's `Dan` takes slot 1 and `Noć` takes slot 2. Slot 1 reads light and cool, slot 2 dark and deep — a deliberate light/dark contrast that happens to suit a day/night organization without encoding one. Slots 3–6 are `[ASSUMPTION]`: unexercised by the pilot, and each must be contrast-verified in both themes before a second Organization uses them. Beyond six Shift Types a slot repeats, and the always-visible label carries the distinction.
+**The working-shift ramp.** Working Shift Types are Organization data of arbitrary count, so colour is assigned to six ordered slots rather than to named shift types. An Organization's Shift Types take slots in creation order; the pilot's `Dan` takes slot 1 and `Noć` takes slot 2. Slot 1 reads light and cool, slot 2 dark and deep — a deliberate light/dark contrast that happens to suit a day/night organization without encoding one. Slots 3–6 are verified in both themes, `test/theme-contrast.test.ts` (story 2.2b pins that every slot the ramp can return has a measured light and dark pair). Beyond six Shift Types a slot repeats, and the always-visible label carries the distinction.
 
 **Modifier signals** — leave, uncovered, overridden, conflict — are system-defined and fixed forever. Leave and uncovered are hatch fills, overridden is an inset ring, conflict is an inset ring in the reserved hue. All four also carry a glyph.
 
