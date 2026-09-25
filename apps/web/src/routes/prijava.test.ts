@@ -157,6 +157,13 @@ const CHROME = join(srcRoot, 'navigation', 'chrome.tsx');
  */
 const LOCKUP = join(srcRoot, 'organization', 'lockup.tsx');
 
+/**
+ * The sign-in steps' shared frame (visual refresh A): the brand panel both
+ * sign-in screens render around their card. Not a route, and swept anyway for
+ * the reason the chrome and the lockup are — it renders strings.
+ */
+const AUTH_LAYOUT = join(srcRoot, 'components', 'auth-layout.tsx');
+
 /** The curated accent set as data, and the fourth `\w*MessageKey` module. */
 const ACCENT_KEYS = join(srcRoot, 'organization', 'accent.ts');
 
@@ -369,6 +376,10 @@ const SCREENS = [
   // the phone bar, where nine real targets already compete for the width. The
   // first handler added here would make it a control nobody measured.
   { name: 'the organization lockup', file: LOCKUP, expectedControls: 0 },
+  // ZERO on the sign-in frame (visual refresh A): the brand panel is a product
+  // name, a headline and a subline. A control here would be a sign-in
+  // affordance outside the two frozen forms.
+  { name: 'the sign-in frame', file: AUTH_LAYOUT, expectedControls: 0 },
 ];
 
 /**
@@ -1163,6 +1174,10 @@ const KEY_SOURCES = [
   { name: 'the sign-in screen', file: SCREEN, keys: translationKeys, strings: 5 },
   { name: 'the not-found component', file: NOT_FOUND, keys: translationKeys, strings: 2 },
   { name: 'the organization prompt', file: ORGANIZATION, keys: translationKeys, strings: 3 },
+  // THREE on the sign-in frame (visual refresh A): the brand panel's product
+  // name, headline and subline, written once and rendered around both steps,
+  // so neither step's own count moved.
+  { name: 'the sign-in frame', file: AUTH_LAYOUT, keys: translationKeys, strings: 3 },
   { name: 'the failure-to-message mapping', file: MESSAGE_KEYS, keys: messageKeyUnion, strings: 2 },
   // TWELVE on the settings surface: its own `nav.organizacija` heading, five
   // field labels, the save and cancel actions, the logo's own label, the choose
@@ -1441,7 +1456,10 @@ const KEY_SOURCES = [
   // the whole reason that table is data is that a test can execute it. The eight
   // stay in the set comparison below because the eight destination screens each
   // render their own heading.
-  { name: 'the navigation chrome', file: CHROME, keys: translationKeys, strings: 6 },
+  // SEVEN SINCE VISUAL REFRESH A: the sidebar's muted section label renders
+  // `shell.navigation` a third time — the landmark's own name, made visible and
+  // `aria-hidden` so it is not announced twice.
+  { name: 'the navigation chrome', file: CHROME, keys: translationKeys, strings: 7 },
   {
     // TWO, for three role codes and one sign-out code. The collapse is the
     // decision `messages.test.ts` executes; what this count pins is that there
@@ -1509,8 +1527,11 @@ describe('the screen is read at all, so every sweep below means something', () =
     // NINETEEN AND TWENTY-SEVEN SINCE STORY 1.8: Danas left the placeholders
     // and arrived as a built entry (net zero), the roster screen is new (one),
     // and so is `@/teams/roster` as a key source (one more).
-    expect(SCREENS).toHaveLength(19);
-    expect(KEY_SOURCES).toHaveLength(27);
+    //
+    // TWENTY AND TWENTY-EIGHT SINCE VISUAL REFRESH A: the sign-in frame is a
+    // new `.tsx` that renders strings, so it is one screen and one key source.
+    expect(SCREENS).toHaveLength(20);
+    expect(KEY_SOURCES).toHaveLength(28);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"

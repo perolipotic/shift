@@ -101,7 +101,7 @@ export function OrganizationLockup({
       <span
         role="img"
         aria-label={named}
-        className={`${scale.box} ${scale.type} ${appearance.mark} ${appearance.frame} flex shrink-0 items-center justify-center overflow-hidden rounded-md border font-semibold uppercase`}
+        className={`${scale.box} ${scale.type} ${appearance.mark} ${appearance.frame} flex shrink-0 items-center justify-center overflow-hidden rounded-md border font-heading font-bold uppercase`}
       >
         {mark}
       </span>

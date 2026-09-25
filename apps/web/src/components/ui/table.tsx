@@ -2,11 +2,12 @@ import * as React from "react"
 
 import { cn } from "@/components/utils"
 
-// Vendored from shadcn/ui verbatim and UNRESTYLED (`DESIGN.md:117`: the
-// components that ship from shadcn inherit their visual specs as-is, and
-// restyling them is against the brand discipline). Only the parts the member
-// list uses are here — there is no `TableFooter`, because nothing sums a column
-// yet and a primitive nothing renders is a primitive nobody reviewed.
+// Vendored from shadcn/ui and restyled ONCE, here, to DESIGN.md's register
+// (visual refresh A): uppercase header cells on `muted`, dividing rows that
+// tint on hover, and roomier cells. Screens compose these and never restyle
+// them. Only the parts the member list uses are here — there is no
+// `TableFooter`, because nothing sums a column yet and a primitive nothing
+// renders is a primitive nobody reviewed.
 //
 // `Table`'s own wrapper is `overflow-auto`, and that is the ONE scroll
 // container `DESIGN.md:150` grants this screen: wide content scrolls inside its
@@ -32,7 +33,7 @@ const TableHeader = React.forwardRef<
   HTMLTableSectionElement,
   React.HTMLAttributes<HTMLTableSectionElement>
 >(({ className, ...props }, ref) => (
-  <thead ref={ref} className={cn("[&_tr]:border-b", className)} {...props} />
+  <thead ref={ref} className={cn("bg-muted [&_tr]:border-b [&_tr]:hover:bg-transparent", className)} {...props} />
 ))
 TableHeader.displayName = "TableHeader"
 
@@ -55,7 +56,7 @@ const TableRow = React.forwardRef<
   <tr
     ref={ref}
     className={cn(
-      "border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted",
+      "border-b transition-colors hover:bg-muted/60 data-[state=selected]:bg-muted",
       className
     )}
     {...props}
@@ -70,7 +71,7 @@ const TableHead = React.forwardRef<
   <th
     ref={ref}
     className={cn(
-      "h-10 px-2 text-left align-middle font-medium text-muted-foreground [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+      "h-10 px-4 text-left align-middle text-xs font-semibold uppercase tracking-wide text-muted-foreground [&_button]:text-xs [&_button]:font-semibold [&_button]:uppercase [&_button]:tracking-wide [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
       className
     )}
     {...props}
@@ -85,7 +86,7 @@ const TableCell = React.forwardRef<
   <td
     ref={ref}
     className={cn(
-      "p-2 align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
+      "px-4 py-2 align-middle [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]",
       className
     )}
     {...props}

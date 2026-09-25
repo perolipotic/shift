@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ShiftApp — Shift Management for Every Company</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --navy:#0B1628;--navy2:#0f1e35;--navy3:#162740;
+  --blue:#2563EB;--blue2:#1d4ed8;--blue-l:#dbeafe;
+  --teal:#0EA5E9;--green:#10B981;--green-l:#d1fae5;
+  --orange:#F59E0B;--red:#EF4444;--purple:#8B5CF6;
+  --g400:#94A3B8;--g300:#CBD5E1;--g200:#E2E8F0;--g100:#F1F5F9;--g50:#F8FAFC;
+}
+html{scroll-behavior:smooth}
+body{font-family:'DM Sans',sans-serif;background:var(--navy);color:#fff;overflow-x:hidden}
+
+/* ── UTILS ── */
+.container{max-width:1160px;margin:0 auto;padding:0 40px}
+@media(max-width:768px){.container{padding:0 20px}}
+
+/* ── NAV ── */
+.nav{position:fixed;top:0;left:0;right:0;z-index:200;transition:all .3s}
+.nav.scrolled{background:rgba(11,22,40,.96);backdrop-filter:blur(16px);border-bottom:1px solid rgba(255,255,255,.06)}
+.nav-inner{display:flex;align-items:center;height:68px;gap:8px}
+.nav-logo{display:flex;align-items:center;gap:10px;text-decoration:none;margin-right:8px}
+.logo-mark{width:34px;height:34px;background:var(--blue);border-radius:9px;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:13px;color:#fff;letter-spacing:-.5px}
+.logo-name{font-family:'Syne',sans-serif;font-weight:800;font-size:16px;color:#fff}
+.nav-links{display:flex;gap:4px;margin-left:20px}
+.nav-link{color:var(--g400);font-size:14px;font-weight:500;cursor:pointer;transition:color .18s;text-decoration:none;padding:6px 12px;border-radius:7px}
+.nav-link:hover{color:#fff;background:rgba(255,255,255,.06)}
+.nav-right{margin-left:auto;display:flex;align-items:center;gap:10px}
+.lang-pill{display:flex;background:rgba(255,255,255,.07);border-radius:8px;padding:3px;gap:1px}
+.lp-btn{padding:5px 11px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;color:var(--g400);transition:all .18s}
+.lp-btn.on{background:var(--blue);color:#fff}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:9px 20px;border-radius:9px;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;border:none;font-family:'DM Sans',sans-serif;text-decoration:none;white-space:nowrap}
+.btn-ghost{color:var(--g400);background:transparent;border:1.5px solid rgba(255,255,255,.15)}
+.btn-ghost:hover{color:#fff;border-color:rgba(255,255,255,.4)}
+.btn-cta{background:var(--blue);color:#fff;box-shadow:0 0 0 0 rgba(37,99,235,.4)}
+.btn-cta:hover{background:var(--blue2);transform:translateY(-1px);box-shadow:0 6px 24px rgba(37,99,235,.45)}
+
+/* ── HERO ── */
+.hero{min-height:100vh;display:flex;align-items:center;position:relative;overflow:hidden;padding-top:68px}
+.hero-bg{position:absolute;inset:0}
+.hero-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.025) 1px,transparent 1px);background-size:48px 48px}
+.hero-glow{position:absolute;top:-20%;left:50%;transform:translateX(-50%);width:900px;height:700px;background:radial-gradient(ellipse,rgba(37,99,235,.14) 0%,transparent 65%);pointer-events:none}
+.hero-glow2{position:absolute;bottom:-10%;right:-5%;width:600px;height:500px;background:radial-gradient(ellipse,rgba(14,165,233,.08) 0%,transparent 65%);pointer-events:none}
+.hero-inner{position:relative;text-align:center;padding:80px 0 60px}
+.hero-eyebrow{display:inline-flex;align-items:center;gap:8px;background:rgba(37,99,235,.12);border:1px solid rgba(37,99,235,.25);border-radius:99px;padding:6px 16px 6px 8px;font-size:13px;font-weight:600;color:var(--blue-l);margin-bottom:28px}
+.eyebrow-dot{width:6px;height:6px;border-radius:50%;background:var(--blue);animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.hero-h1{font-family:'Syne',sans-serif;font-weight:800;font-size:clamp(40px,6.5vw,76px);line-height:1.02;letter-spacing:-2px;margin-bottom:20px}
+.hero-h1 em{font-style:normal;background:linear-gradient(90deg,#60a5fa,var(--teal));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hero-sub{font-size:clamp(16px,2.2vw,19px);color:var(--g400);line-height:1.65;max-width:560px;margin:0 auto 36px;font-weight:400}
+.hero-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;margin-bottom:20px}
+.btn-hero-primary{background:#fff;color:var(--navy);font-size:15px;padding:13px 28px;border-radius:11px;font-weight:700}
+.btn-hero-primary:hover{background:var(--g100);transform:translateY(-2px);box-shadow:0 8px 28px rgba(0,0,0,.3)}
+.btn-hero-secondary{font-size:15px;padding:13px 28px;border-radius:11px;color:#fff;border:1.5px solid rgba(255,255,255,.18)}
+.btn-hero-secondary:hover{background:rgba(255,255,255,.07);border-color:rgba(255,255,255,.35)}
+.hero-trust{font-size:13px;color:var(--g400);display:flex;align-items:center;justify-content:center;gap:6px}
+.trust-dot{width:4px;height:4px;border-radius:50%;background:var(--g400)}
+
+/* ── LOGOS STRIP ── */
+.logos-strip{border-top:1px solid rgba(255,255,255,.07);border-bottom:1px solid rgba(255,255,255,.07);padding:20px 0;background:rgba(255,255,255,.02)}
+.logos-inner{display:flex;align-items:center;gap:0;overflow:hidden}
+.logos-label{font-size:12px;color:var(--g400);white-space:nowrap;padding:0 32px 0 0;font-weight:500}
+.logos-track{display:flex;gap:48px;align-items:center;flex:1;overflow:hidden}
+.industry-pill{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--g400);white-space:nowrap;font-weight:500}
+.industry-pill span{font-size:18px}
+
+/* ── APP PREVIEW ── */
+.preview-section{padding:60px 0 80px;position:relative}
+.preview-label{text-align:center;font-size:11px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:2px;margin-bottom:16px}
+.browser-frame{background:var(--navy2);border-radius:16px;border:1px solid rgba(255,255,255,.08);overflow:hidden;box-shadow:0 40px 100px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.04);max-width:960px;margin:0 auto}
+.browser-bar{background:var(--navy3);height:40px;display:flex;align-items:center;padding:0 16px;gap:6px;border-bottom:1px solid rgba(255,255,255,.06)}
+.b-dot{width:11px;height:11px;border-radius:50%}
+.b-url{flex:1;background:rgba(255,255,255,.05);border-radius:6px;height:24px;display:flex;align-items:center;padding:0 12px;font-size:11px;color:var(--g400);margin:0 12px;gap:6px}
+.b-url-lock{width:8px;height:8px;opacity:.5}
+.preview-content{padding:20px;display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.mini-stat{background:rgba(255,255,255,.04);border-radius:10px;padding:14px;border:1px solid rgba(255,255,255,.05);position:relative;overflow:hidden}
+.mini-stat::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.ms-label{font-size:10px;color:var(--g400);margin-bottom:6px;font-weight:500}
+.ms-val{font-family:'Syne',sans-serif;font-weight:800;font-size:22px;line-height:1}
+.ms-trend{font-size:10px;font-weight:600;margin-top:4px}
+.preview-bottom{padding:0 20px 20px;display:grid;grid-template-columns:1.6fr 1fr;gap:10px}
+.mini-card{background:rgba(255,255,255,.04);border-radius:10px;border:1px solid rgba(255,255,255,.05);overflow:hidden}
+.mc-head{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.05);font-size:11px;font-weight:600;color:var(--g400);display:flex;justify-content:space-between;align-items:center}
+.mc-dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green)}
+.mc-row{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid rgba(255,255,255,.04);font-size:11px}
+.mc-av{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;flex-shrink:0}
+.mc-chip{padding:2px 7px;border-radius:4px;font-size:9.5px;font-weight:700;letter-spacing:.3px}
+
+/* ── SECTION BASE ── */
+.section{padding:80px 0}
+.section-eyebrow{font-size:11px;font-weight:700;color:var(--blue);text-transform:uppercase;letter-spacing:2px;margin-bottom:12px}
+.section-h2{font-family:'Syne',sans-serif;font-weight:800;font-size:clamp(28px,4vw,44px);line-height:1.1;letter-spacing:-.5px;margin-bottom:14px}
+.section-sub{font-size:16px;color:var(--g400);line-height:1.65;max-width:520px}
+.text-center{text-align:center}
+.text-center .section-sub{margin:0 auto}
+
+/* ── HOW IT WORKS ── */
+.how-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:52px}
+.how-step{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:24px;position:relative;transition:border-color .2s}
+.how-step:hover{border-color:rgba(37,99,235,.3)}
+.hs-num{font-family:'Syne',sans-serif;font-weight:800;font-size:36px;color:rgba(37,99,235,.2);line-height:1;margin-bottom:12px}
+.hs-icon{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;margin-bottom:14px}
+.hs-title{font-family:'Syne',sans-serif;font-weight:700;font-size:15px;margin-bottom:8px}
+.hs-sub{font-size:13px;color:var(--g400);line-height:1.55}
+.hs-arrow{position:absolute;right:-8px;top:50%;transform:translateY(-50%);color:rgba(255,255,255,.15);font-size:18px;z-index:1}
+
+/* ── FEATURES BENTO ── */
+.bento-grid{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:auto auto;gap:16px;margin-top:52px}
+.bento-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:16px;padding:28px;transition:all .2s;position:relative;overflow:hidden}
+.bento-card:hover{border-color:rgba(255,255,255,.14);background:rgba(255,255,255,.05)}
+.bento-card.wide{grid-column:span 2}
+.bento-card.tall{grid-row:span 2}
+.bc-icon{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:16px}
+.bc-title{font-family:'Syne',sans-serif;font-weight:700;font-size:17px;margin-bottom:8px}
+.bc-sub{font-size:13.5px;color:var(--g400);line-height:1.6}
+.bc-visual{margin-top:20px;border-radius:10px;overflow:hidden;border:1px solid rgba(255,255,255,.06)}
+
+/* ── INDUSTRIES ── */
+.ind-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:40px}
+.ind-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:18px;transition:all .2s;cursor:pointer;text-align:center}
+.ind-card:hover{border-color:rgba(37,99,235,.35);background:rgba(37,99,235,.06);transform:translateY(-2px)}
+.ind-icon{font-size:30px;margin-bottom:8px;display:block}
+.ind-name{font-family:'Syne',sans-serif;font-weight:700;font-size:13.5px;margin-bottom:4px}
+.ind-ex{font-size:11.5px;color:var(--g400)}
+
+/* ── PRICING ── */
+.pricing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:52px;align-items:start}
+.plan-card{border:1px solid rgba(255,255,255,.08);border-radius:16px;padding:28px;position:relative;background:rgba(255,255,255,.02)}
+.plan-card.popular{border-color:var(--blue);background:rgba(37,99,235,.07)}
+.pop-badge{position:absolute;top:-12px;left:50%;transform:translateX(-50%);background:var(--blue);color:#fff;font-size:11px;font-weight:700;padding:4px 14px;border-radius:99px;white-space:nowrap;letter-spacing:.5px}
+.plan-name{font-family:'Syne',sans-serif;font-weight:800;font-size:18px;margin-bottom:4px}
+.plan-desc{font-size:13px;color:var(--g400);margin-bottom:20px}
+.plan-price{font-family:'Syne',sans-serif;font-weight:800;font-size:40px;line-height:1;color:#fff}
+.plan-price sup{font-size:18px;font-weight:600;vertical-align:top;margin-top:6px;display:inline-block;color:var(--g400)}
+.plan-price sub{font-size:13px;font-weight:400;color:var(--g400)}
+.plan-divider{height:1px;background:rgba(255,255,255,.07);margin:20px 0}
+.plan-cta{display:flex;justify-content:center;margin-top:20px}
+.plan-cta .btn{width:100%;justify-content:center;padding:11px}
+.plan-feature{display:flex;align-items:flex-start;gap:8px;font-size:13px;padding:5px 0;color:var(--g400)}
+.plan-feature.yes{color:#e2e8f0}
+.plan-feature.yes::before{content:'✓';color:var(--green);font-weight:700;flex-shrink:0;margin-top:1px}
+.plan-feature.no{opacity:.4}
+.plan-feature.no::before{content:'—';color:var(--g400);flex-shrink:0}
+
+/* ── TESTIMONIALS ── */
+.test-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:48px}
+.test-card{background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.07);border-radius:14px;padding:24px}
+.test-stars{color:var(--orange);font-size:14px;margin-bottom:14px;letter-spacing:2px}
+.test-quote{font-size:14px;line-height:1.65;color:#cbd5e1;margin-bottom:18px;font-style:italic}
+.test-author{display:flex;align-items:center;gap:10px}
+.test-av{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0}
+.test-name{font-size:13.5px;font-weight:600;color:#fff}
+.test-role{font-size:11.5px;color:var(--g400);margin-top:1px}
+
+/* ── CTA BAND ── */
+.cta-band{background:linear-gradient(135deg,rgba(37,99,235,.2) 0%,rgba(14,165,233,.12) 100%);border:1px solid rgba(37,99,235,.25);border-radius:20px;padding:60px 40px;text-align:center;position:relative;overflow:hidden;margin:0 0 80px}
+.cta-band::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse 70% 100% at 50% 0%,rgba(37,99,235,.12) 0%,transparent 70%)}
+.cta-h{font-family:'Syne',sans-serif;font-weight:800;font-size:clamp(28px,4vw,44px);letter-spacing:-.5px;position:relative;margin-bottom:14px}
+.cta-sub{font-size:16px;color:var(--g400);margin-bottom:32px;position:relative}
+.cta-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap;position:relative}
+.cta-note{margin-top:14px;font-size:12.5px;color:var(--g400);position:relative}
+
+/* ── FOOTER ── */
+footer{background:var(--navy2);border-top:1px solid rgba(255,255,255,.06);padding:48px 0 28px}
+.footer-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:40px;margin-bottom:40px}
+.footer-brand-desc{font-size:13.5px;color:var(--g400);line-height:1.6;margin-top:10px;max-width:260px}
+.footer-made{margin-top:14px;font-size:12px;color:rgba(255,255,255,.25)}
+.footer-col-title{font-family:'Syne',sans-serif;font-weight:700;font-size:12px;color:#fff;margin-bottom:14px;text-transform:uppercase;letter-spacing:.8px}
+.footer-link{display:block;font-size:13px;color:var(--g400);margin-bottom:8px;cursor:pointer;transition:color .18s;text-decoration:none}
+.footer-link:hover{color:#fff}
+.footer-bottom{border-top:1px solid rgba(255,255,255,.06);padding-top:20px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+.footer-copy{font-size:12px;color:rgba(255,255,255,.25)}
+
+/* ── SCROLL ANIMATIONS ── */
+.reveal{opacity:0;transform:translateY(20px);transition:opacity .55s ease,transform .55s ease}
+.reveal.visible{opacity:1;transform:translateY(0)}
+.reveal-delay-1{transition-delay:.1s}
+.reveal-delay-2{transition-delay:.2s}
+.reveal-delay-3{transition-delay:.3s}
+
+@media(max-width:900px){
+  .how-grid,.bento-grid,.pricing-grid,.test-grid{grid-template-columns:1fr}
+  .bento-card.wide,.bento-card.tall{grid-column:auto;grid-row:auto}
+  .ind-grid{grid-template-columns:repeat(2,1fr)}
+  .footer-grid{grid-template-columns:1fr 1fr}
+  .nav-links{display:none}
+}
+</style>
+</head>
+<body>
+
+<!-- ── NAV ── -->
+<nav class="nav" id="nav">
+  <div class="container">
+    <div class="nav-inner">
+      <a class="nav-logo" href="#">
+        <div class="logo-mark">SA</div>
+        <div class="logo-name">ShiftApp</div>
+      </a>
+      <div class="nav-links">
+        <a class="nav-link" href="#how">How it works</a>
+        <a class="nav-link" href="#features">Features</a>
+        <a class="nav-link" href="#industries">Industries</a>
+        <a class="nav-link" href="#pricing">Pricing</a>
+      </div>
+      <div class="nav-right">
+        <div class="lang-pill">
+          <div class="lp-btn on" onclick="setLang('en')">EN</div>
+          <div class="lp-btn" onclick="setLang('hr')">HR</div>
+        </div>
+        <a class="btn btn-ghost" href="shiftapp_auth.html">Log in</a>
+        <a class="btn btn-cta" href="shiftapp_auth.html">Start free — 60 days →</a>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<!-- ── HERO ── -->
+<section class="hero">
+  <div class="hero-bg">
+    <div class="hero-grid"></div>
+    <div class="hero-glow"></div>
+    <div class="hero-glow2"></div>
+  </div>
+  <div class="container" style="width:100%">
+    <div class="hero-inner">
+      <div class="hero-eyebrow">
+        <div class="eyebrow-dot"></div>
+        <span data-t="heroBadge">Works for factories, hospitals, restaurants & more</span>
+      </div>
+      <h1 class="hero-h1" data-t="heroH1">Replace your shift<br>spreadsheet with <em>something<br>that actually works</em></h1>
+      <p class="hero-sub" data-t="heroSub">Define your own shift types. Schedule your team in minutes. Workers clock in from any phone. No training needed.</p>
+      <div class="hero-actions">
+        <a class="btn btn-hero-primary" href="shiftapp_auth.html" data-t="heroCta1">Start free trial — 60 days →</a>
+        <a class="btn btn-hero-secondary" href="#how" data-t="heroCta2">See how it works</a>
+      </div>
+      <div class="hero-trust">
+        <span data-t="trustNoCard">No credit card</span>
+        <div class="trust-dot"></div>
+        <span data-t="trustSetup">Setup in 5 minutes</span>
+        <div class="trust-dot"></div>
+        <span data-t="trustCancel">Cancel anytime</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── INDUSTRIES STRIP ── -->
+<div class="logos-strip">
+  <div class="container">
+    <div class="logos-inner">
+      <div class="logos-label" data-t="usedBy">Used by teams in:</div>
+      <div class="logos-track">
+        <div class="industry-pill"><span>🏭</span><span data-t="ind1">Manufacturing</span></div>
+        <div class="industry-pill"><span>🏥</span><span data-t="ind2">Healthcare</span></div>
+        <div class="industry-pill"><span>🛒</span><span data-t="ind3">Retail</span></div>
+        <div class="industry-pill"><span>🍽️</span><span data-t="ind4">Hospitality</span></div>
+        <div class="industry-pill"><span>📦</span><span data-t="ind5">Logistics</span></div>
+        <div class="industry-pill"><span>🔒</span><span data-t="ind6">Security</span></div>
+        <div class="industry-pill"><span>🧹</span><span data-t="ind7">Cleaning</span></div>
+        <div class="industry-pill"><span>📞</span><span data-t="ind8">Call Centres</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── APP PREVIEW ── -->
+<section class="preview-section">
+  <div class="container">
+    <div class="preview-label" data-t="previewLabel">Live product — not a mockup</div>
+    <div class="browser-frame">
+      <div class="browser-bar">
+        <div class="b-dot" style="background:#FF5F57"></div>
+        <div class="b-dot" style="background:#FEBC2E"></div>
+        <div class="b-dot" style="background:#28C840"></div>
+        <div class="b-url">🔒 <span>app.shiftapp.io/dashboard</span></div>
+        <div style="font-size:11px;color:var(--g400)">⌘R</div>
+      </div>
+      <div class="preview-content">
+        <div class="mini-stat" style="--c:var(--green)"><div class="mini-stat" style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--green);border-radius:0"></div><div class="ms-label">On Duty Now</div><div class="ms-val" style="color:#fff">22</div><div class="ms-trend" style="color:var(--green)">↑ 91% attendance</div></div>
+        <div class="mini-stat"><div class="mini-stat" style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--blue);border-radius:0"></div><div class="ms-label">Shifts Today</div><div class="ms-val" style="color:#fff">18</div><div class="ms-trend" style="color:var(--blue)">↑ All filled</div></div>
+        <div class="mini-stat"><div class="mini-stat" style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--orange);border-radius:0"></div><div class="ms-label">Pending Approvals</div><div class="ms-val" style="color:var(--orange)">3</div><div class="ms-trend" style="color:var(--orange)">↓ Needs review</div></div>
+        <div class="mini-stat"><div class="mini-stat" style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--red);border-radius:0"></div><div class="ms-label">Overtime Alert</div><div class="ms-val" style="color:var(--red)">8h</div><div class="ms-trend" style="color:var(--red)">↑ Above limit</div></div>
+      </div>
+      <div class="preview-bottom">
+        <div class="mini-card">
+          <div class="mc-head">Today's Schedule <div class="mc-dot"></div></div>
+          <div class="mc-row"><div class="mc-av" style="background:linear-gradient(135deg,#F59E0B,#e85d04)">IH</div><span style="flex:1;color:#e2e8f0">Ivan Horvat</span><div class="mc-chip" style="background:rgba(37,99,235,.2);color:#93c5fd">🌅 Early · Hall A</div></div>
+          <div class="mc-row"><div class="mc-av" style="background:linear-gradient(135deg,#10B981,#0EA5E9)">AV</div><span style="flex:1;color:#e2e8f0">Ana Vidović</span><div class="mc-chip" style="background:rgba(37,99,235,.2);color:#93c5fd">🌅 Early · Hall B</div></div>
+          <div class="mc-row"><div class="mc-av" style="background:linear-gradient(135deg,#8B5CF6,#2563EB)">MP</div><span style="flex:1;color:#e2e8f0">Mario Perić</span><div class="mc-chip" style="background:rgba(245,158,11,.15);color:#fbbf24">🌇 Late · Hall A</div></div>
+          <div class="mc-row"><div class="mc-av" style="background:linear-gradient(135deg,#EF4444,#F59E0B)">JB</div><span style="flex:1;color:#e2e8f0">Josip Blažić</span><div class="mc-chip" style="background:rgba(139,92,246,.15);color:#c4b5fd">🌑 Night · Hall C</div></div>
+        </div>
+        <div class="mini-card">
+          <div class="mc-head">Pending Approvals</div>
+          <div style="padding:12px 14px;border-bottom:1px solid rgba(255,255,255,.04)">
+            <div style="font-size:11px;font-weight:600;color:#e2e8f0;margin-bottom:3px">Ivan H. — Annual Leave</div>
+            <div style="font-size:10px;color:var(--g400);margin-bottom:8px">Apr 7–11 · 5 days · Hall A covered ✓</div>
+            <div style="display:flex;gap:6px">
+              <div style="flex:1;padding:4px;background:rgba(16,185,129,.15);color:#6ee7b7;border-radius:5px;text-align:center;font-size:10px;font-weight:700;cursor:pointer">✓ Approve</div>
+              <div style="flex:1;padding:4px;background:rgba(239,68,68,.12);color:#fca5a5;border-radius:5px;text-align:center;font-size:10px;font-weight:700;cursor:pointer">✕ Deny</div>
+            </div>
+          </div>
+          <div style="padding:12px 14px">
+            <div style="font-size:11px;font-weight:600;color:#e2e8f0;margin-bottom:3px">Ana V. — Sick Leave</div>
+            <div style="font-size:10px;color:var(--g400);margin-bottom:8px">Apr 3–4 · 2 days</div>
+            <div style="display:flex;gap:6px">
+              <div style="flex:1;padding:4px;background:rgba(16,185,129,.15);color:#6ee7b7;border-radius:5px;text-align:center;font-size:10px;font-weight:700;cursor:pointer">✓ Approve</div>
+              <div style="flex:1;padding:4px;background:rgba(239,68,68,.12);color:#fca5a5;border-radius:5px;text-align:center;font-size:10px;font-weight:700;cursor:pointer">✕ Deny</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── HOW IT WORKS ── -->
+<section class="section" id="how">
+  <div class="container">
+    <div class="text-center reveal">
+      <div class="section-eyebrow" data-t="howEyebrow">How it works</div>
+      <h2 class="section-h2" data-t="howH2">Live in 5 minutes</h2>
+      <p class="section-sub" data-t="howSub">No IT department. No training sessions. No implementation consultant. Just sign up and go.</p>
+    </div>
+    <div class="how-grid">
+      <div class="how-step reveal reveal-delay-1">
+        <div class="hs-num">01</div>
+        <div class="hs-icon" style="background:rgba(37,99,235,.12)">🏢</div>
+        <div class="hs-title" data-t="how1Title">Set up your company</div>
+        <p class="hs-sub" data-t="how1Sub">Enter company details, pick your country and language. Add your locations — halls, floors, departments. Takes 3 minutes.</p>
+        <div class="hs-arrow">›</div>
+      </div>
+      <div class="how-step reveal reveal-delay-2">
+        <div class="hs-num">02</div>
+        <div class="hs-icon" style="background:rgba(16,185,129,.1)">⏱</div>
+        <div class="hs-title" data-t="how2Title">Define your shift types</div>
+        <p class="hs-sub" data-t="how2Sub">Name them, set start and end times, pick colors. Use our templates or start from scratch. Your factory, your rules.</p>
+        <div class="hs-arrow">›</div>
+      </div>
+      <div class="how-step reveal reveal-delay-2">
+        <div class="hs-num">03</div>
+        <div class="hs-icon" style="background:rgba(245,158,11,.1)">👥</div>
+        <div class="hs-title" data-t="how3Title">Invite managers & workers</div>
+        <p class="hs-sub" data-t="how3Sub">Managers get the web dashboard. Workers get a link — they install ShiftApp on their phone in 30 seconds. No App Store needed.</p>
+        <div class="hs-arrow">›</div>
+      </div>
+      <div class="how-step reveal reveal-delay-3">
+        <div class="hs-num">04</div>
+        <div class="hs-icon" style="background:rgba(139,92,246,.1)">🚀</div>
+        <div class="hs-title" data-t="how4Title">Schedule & go live</div>
+        <p class="hs-sub" data-t="how4Sub">Build your first week schedule, click Publish. Everyone sees it instantly. Clock-in starts working. You're live.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── FEATURES ── -->
+<section class="section" id="features" style="background:rgba(255,255,255,.015);border-top:1px solid rgba(255,255,255,.05);border-bottom:1px solid rgba(255,255,255,.05)">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-eyebrow" data-t="featEyebrow">Features</div>
+      <h2 class="section-h2" data-t="featH2">Everything you need.<br>Nothing you don't.</h2>
+    </div>
+    <div class="bento-grid">
+      <div class="bento-card wide reveal">
+        <div class="bc-icon" style="background:rgba(37,99,235,.12)">⏱</div>
+        <div class="bc-title" data-t="feat1Title">Custom shift types — any industry</div>
+        <p class="bc-sub" data-t="feat1Sub">Define your own shift types with any name, time, color, and pay rate. Early/Late/Night for factories. Lunch/Dinner/Closing for restaurants. Morning/Afternoon/Night for hospitals. Load a template or build from scratch.</p>
+        <div class="bc-visual" style="padding:12px;background:rgba(255,255,255,.03);display:flex;gap:8px;margin-top:16px">
+          <div style="flex:1;background:rgba(37,99,235,.15);border-radius:8px;padding:10px;border:1px solid rgba(37,99,235,.2)"><div style="font-size:11px;font-weight:700;color:#93c5fd">🌅 Early Shift</div><div style="font-size:10px;color:var(--g400);margin-top:2px">06:00–14:00 · 1.0×</div></div>
+          <div style="flex:1;background:rgba(245,158,11,.1);border-radius:8px;padding:10px;border:1px solid rgba(245,158,11,.2)"><div style="font-size:11px;font-weight:700;color:#fcd34d">🌇 Late Shift</div><div style="font-size:10px;color:var(--g400);margin-top:2px">14:00–22:00 · 1.0×</div></div>
+          <div style="flex:1;background:rgba(139,92,246,.1);border-radius:8px;padding:10px;border:1px solid rgba(139,92,246,.2)"><div style="font-size:11px;font-weight:700;color:#c4b5fd">🌑 Night Shift</div><div style="font-size:10px;color:var(--g400);margin-top:2px">22:00–06:00 · 1.3×</div></div>
+          <div style="flex:1;background:rgba(16,185,129,.08);border-radius:8px;padding:10px;border:2px dashed rgba(16,185,129,.2);display:flex;align-items:center;justify-content:center;cursor:pointer"><div style="font-size:11px;font-weight:700;color:var(--green)">+ Add your own</div></div>
+        </div>
+      </div>
+      <div class="bento-card reveal reveal-delay-1">
+        <div class="bc-icon" style="background:rgba(16,185,129,.1)">📱</div>
+        <div class="bc-title" data-t="feat2Title">Mobile PWA for workers</div>
+        <p class="bc-sub" data-t="feat2Sub">Workers install ShiftApp from a link — no App Store. Works on any phone, works offline. See schedule, clock in, request leave.</p>
+      </div>
+      <div class="bento-card reveal reveal-delay-1">
+        <div class="bc-icon" style="background:rgba(245,158,11,.1)">✅</div>
+        <div class="bc-title" data-t="feat3Title">Leave & swap approvals</div>
+        <p class="bc-sub" data-t="feat3Sub">One-click approve or deny. Coverage check runs automatically. Everyone notified instantly via push notification.</p>
+      </div>
+      <div class="bento-card reveal">
+        <div class="bc-icon" style="background:rgba(239,68,68,.1)">🔌</div>
+        <div class="bc-title" data-t="feat4Title">Hardware terminal sync</div>
+        <p class="bc-sub" data-t="feat4Sub">Already have a Dormakaba, Spica, or Interflex terminal? We pull clock-in data automatically. Workers change nothing. You get real-time data.</p>
+      </div>
+      <div class="bento-card reveal reveal-delay-1">
+        <div class="bc-icon" style="background:rgba(14,165,233,.1)">📊</div>
+        <div class="bc-title" data-t="feat5Title">Reports & overtime alerts</div>
+        <p class="bc-sub" data-t="feat5Sub">Attendance rates, overtime tracking, shift coverage. Export to CSV for any payroll system. Croatian and German labour law rules built in.</p>
+      </div>
+      <div class="bento-card reveal reveal-delay-2">
+        <div class="bc-icon" style="background:rgba(139,92,246,.1)">🌐</div>
+        <div class="bc-title" data-t="feat6Title">5 languages built in</div>
+        <p class="bc-sub" data-t="feat6Sub">Croatian, English, German, Turkish, Polish. Each employee chooses their own language. No extra cost.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── INDUSTRIES ── -->
+<section class="section" id="industries">
+  <div class="container">
+    <div class="text-center reveal">
+      <div class="section-eyebrow" data-t="indEyebrow">Industries</div>
+      <h2 class="section-h2" data-t="indH2">One product. Any company with shifts.</h2>
+      <p class="section-sub" data-t="indSub">You define the shift types. We handle the rest. It works for every industry.</p>
+    </div>
+    <div class="ind-grid">
+      <div class="ind-card reveal"><span class="ind-icon">🏭</span><div class="ind-name" data-t="ind1">Manufacturing</div><div class="ind-ex">CNC, Metal, Food, Wood</div></div>
+      <div class="ind-card reveal reveal-delay-1"><span class="ind-icon">🏥</span><div class="ind-name" data-t="ind2">Healthcare</div><div class="ind-ex">Hospitals, Clinics, Care</div></div>
+      <div class="ind-card reveal reveal-delay-1"><span class="ind-icon">🛒</span><div class="ind-name" data-t="ind3">Retail</div><div class="ind-ex">Shops, Supermarkets</div></div>
+      <div class="ind-card reveal reveal-delay-2"><span class="ind-icon">🍽️</span><div class="ind-name" data-t="ind4">Hospitality</div><div class="ind-ex">Restaurants, Hotels</div></div>
+      <div class="ind-card reveal"><span class="ind-icon">📦</span><div class="ind-name" data-t="ind5">Logistics</div><div class="ind-ex">Warehouses, Delivery</div></div>
+      <div class="ind-card reveal reveal-delay-1"><span class="ind-icon">🔒</span><div class="ind-name" data-t="ind6">Security</div><div class="ind-ex">Guards, Patrol</div></div>
+      <div class="ind-card reveal reveal-delay-2"><span class="ind-icon">🧹</span><div class="ind-name" data-t="ind7">Cleaning</div><div class="ind-ex">Facility Services</div></div>
+      <div class="ind-card reveal reveal-delay-3"><span class="ind-icon">⚙️</span><div class="ind-name" data-t="ind8">Any other</div><div class="ind-ex">If you have shifts, it works</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── TESTIMONIALS ── -->
+<section class="section" style="background:rgba(255,255,255,.015);border-top:1px solid rgba(255,255,255,.05)">
+  <div class="container">
+    <div class="text-center reveal">
+      <div class="section-eyebrow" data-t="testEyebrow">What teams say</div>
+      <h2 class="section-h2" data-t="testH2">Real companies, real results</h2>
+    </div>
+    <div class="test-grid">
+      <div class="test-card reveal">
+        <div class="test-stars">★★★★★</div>
+        <p class="test-quote" data-t="test1">"We ran shifts on Excel for 6 years. ShiftApp replaced it in one day. The night shift bonus calculation alone saves 3 hours a month."</p>
+        <div class="test-author"><div class="test-av" style="background:linear-gradient(135deg,var(--blue),var(--teal))">MK</div><div><div class="test-name">Marko Kovačić</div><div class="test-role" data-t="test1role">Production Manager · Zagreb</div></div></div>
+      </div>
+      <div class="test-card reveal reveal-delay-1">
+        <div class="test-stars">★★★★★</div>
+        <p class="test-quote" data-t="test2">"Our workers are from 4 countries. Each uses the app in their language. That alone was worth the switch."</p>
+        <div class="test-author"><div class="test-av" style="background:linear-gradient(135deg,var(--orange),#e85d04)">HP</div><div><div class="test-name">Hans Peters</div><div class="test-role" data-t="test2role">HR Lead · CNC Factory, Osijek</div></div></div>
+      </div>
+      <div class="test-card reveal reveal-delay-2">
+        <div class="test-stars">★★★★★</div>
+        <p class="test-quote" data-t="test3">"Connected our Dormakaba terminal in 2 hours. Clock-in data flows automatically now. Zero manual entry."</p>
+        <div class="test-author"><div class="test-av" style="background:linear-gradient(135deg,var(--green),var(--teal))">IH</div><div><div class="test-name">Ivana Horvat</div><div class="test-role" data-t="test3role">Operations Director · Logistics</div></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── PRICING ── -->
+<section class="section" id="pricing">
+  <div class="container">
+    <div class="text-center reveal">
+      <div class="section-eyebrow" data-t="priceEyebrow">Pricing</div>
+      <h2 class="section-h2" data-t="priceH2">Pay per employee. That's it.</h2>
+      <p class="section-sub" data-t="priceSub">No hidden fees. No setup costs. No long-term contracts. 60-day free trial on every plan.</p>
+    </div>
+    <div class="pricing-grid">
+      <div class="plan-card reveal">
+        <div class="plan-name" data-t="plan1">Starter</div>
+        <div class="plan-desc" data-t="plan1Desc">For teams up to 25 employees</div>
+        <div class="plan-price"><sup>€</sup>5<sub data-t="perEmp"> / employee / mo</sub></div>
+        <div class="plan-divider"></div>
+        <div class="plan-feature yes" data-t="pf1">Shift scheduling & calendar</div>
+        <div class="plan-feature yes" data-t="pf2">Employee mobile PWA</div>
+        <div class="plan-feature yes" data-t="pf3">Leave requests & approvals</div>
+        <div class="plan-feature yes" data-t="pf4">Clock in / out</div>
+        <div class="plan-feature yes" data-t="pf5">Multi-language (5 languages)</div>
+        <div class="plan-feature no" data-t="pf6">Reports & analytics</div>
+        <div class="plan-feature no" data-t="pf7">Hardware sync connector</div>
+        <div class="plan-feature no" data-t="pf8">Multi-location support</div>
+        <div class="plan-cta"><a class="btn btn-ghost" style="color:#fff;border-color:rgba(255,255,255,.2)" href="shiftapp_auth.html" data-t="planCta">Start free →</a></div>
+      </div>
+      <div class="plan-card popular reveal reveal-delay-1">
+        <div class="pop-badge" data-t="popular">Most popular</div>
+        <div class="plan-name" data-t="plan2">Growth</div>
+        <div class="plan-desc" data-t="plan2Desc">For teams up to 100 employees</div>
+        <div class="plan-price"><sup>€</sup>9<sub data-t="perEmp"> / employee / mo</sub></div>
+        <div class="plan-divider"></div>
+        <div class="plan-feature yes">Everything in Starter</div>
+        <div class="plan-feature yes" data-t="pf9">Reports & analytics</div>
+        <div class="plan-feature yes" data-t="pf7">Hardware sync connector</div>
+        <div class="plan-feature yes" data-t="pf8">Multi-location support</div>
+        <div class="plan-feature yes" data-t="pf10">Departments & sub-locations</div>
+        <div class="plan-feature yes" data-t="pf11">Overtime alerts</div>
+        <div class="plan-feature no" data-t="pf12">DATEV / Pantheon export</div>
+        <div class="plan-feature no" data-t="pf13">API access</div>
+        <div class="plan-cta"><a class="btn btn-cta" style="width:100%;justify-content:center" href="shiftapp_auth.html" data-t="planCta">Start free →</a></div>
+      </div>
+      <div class="plan-card reveal reveal-delay-2">
+        <div class="plan-name" data-t="plan3">Enterprise</div>
+        <div class="plan-desc" data-t="plan3Desc">Unlimited employees, custom setup</div>
+        <div class="plan-price" style="font-size:28px;padding-top:6px" data-t="planCustom">Custom</div>
+        <div style="font-size:12px;color:var(--g400);margin-top:4px" data-t="planContact">Contact us for pricing</div>
+        <div class="plan-divider"></div>
+        <div class="plan-feature yes">Everything in Growth</div>
+        <div class="plan-feature yes" data-t="pf12">DATEV / Pantheon export</div>
+        <div class="plan-feature yes" data-t="pf13">Full REST API access</div>
+        <div class="plan-feature yes" data-t="pf14">Works council workflows</div>
+        <div class="plan-feature yes" data-t="pf15">Dedicated account manager</div>
+        <div class="plan-feature yes" data-t="pf16">Custom SLA & onboarding</div>
+        <div class="plan-feature yes" data-t="pf17">White-label option</div>
+        <div class="plan-cta"><a class="btn btn-ghost" style="color:#fff;border-color:rgba(255,255,255,.2)" href="mailto:hello@shiftapp.io" data-t="planContactCta">Contact sales →</a></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA BAND ── -->
+<div class="container">
+  <div class="cta-band reveal">
+    <h2 class="cta-h" data-t="ctaH">Ready to replace that spreadsheet?</h2>
+    <p class="cta-sub" data-t="ctaSub">60 days free. No credit card. Your team live in 5 minutes.</p>
+    <div class="cta-actions">
+      <a class="btn btn-hero-primary" href="shiftapp_auth.html" data-t="ctaBtn1">Start free trial →</a>
+      <a class="btn btn-hero-secondary" href="mailto:hello@shiftapp.io" data-t="ctaBtn2">Talk to us first</a>
+    </div>
+    <div class="cta-note" data-t="ctaNote">No setup fee · No long-term contract · EU servers · GDPR compliant</div>
+  </div>
+</div>
+
+<!-- ── FOOTER ── -->
+<footer>
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div class="logo-mark">SA</div>
+          <div class="logo-name">ShiftApp</div>
+        </div>
+        <p class="footer-brand-desc" data-t="footerDesc">Shift scheduling for every company with hourly workers. Configure your own shift types. Works for any industry.</p>
+        <div class="footer-made">🇭🇷 Made in Croatia · shiftapp.io</div>
+      </div>
+      <div>
+        <div class="footer-col-title" data-t="footProduct">Product</div>
+        <a class="footer-link" href="#features" data-t="footFeatures">Features</a>
+        <a class="footer-link" href="#pricing" data-t="footPricing">Pricing</a>
+        <a class="footer-link" href="#" data-t="footChangelog">Changelog</a>
+        <a class="footer-link" href="#" data-t="footRoadmap">Roadmap</a>
+      </div>
+      <div>
+        <div class="footer-col-title" data-t="footIndustries">Industries</div>
+        <a class="footer-link" data-t="ind1">Manufacturing</a>
+        <a class="footer-link" data-t="ind2">Healthcare</a>
+        <a class="footer-link" data-t="ind3">Retail</a>
+        <a class="footer-link" data-t="ind4">Hospitality</a>
+        <a class="footer-link" data-t="ind5">Logistics</a>
+      </div>
+      <div>
+        <div class="footer-col-title" data-t="footCompany">Company</div>
+        <a class="footer-link" data-t="footAbout">About</a>
+        <a class="footer-link" href="mailto:hello@shiftapp.io" data-t="footContact">Contact</a>
+        <a class="footer-link" data-t="footPrivacy">Privacy Policy</a>
+        <a class="footer-link" data-t="footTerms">Terms of Service</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <div class="footer-copy">© 2025 ShiftApp. All rights reserved.</div>
+      <div class="footer-copy">Croatia 🇭🇷 · Germany 🇩🇪 · Slovenia 🇸🇮</div>
+    </div>
+  </div>
+</footer>
+
+<script>
+// ── Translations ──────────────────────────────────────────────
+const T = {
+  en:{
+    heroBadge:"Works for factories, hospitals, restaurants & more",
+    heroH1:"Replace your shift<br>spreadsheet with <em>something<br>that actually works</em>",
+    heroSub:"Define your own shift types. Schedule your team in minutes. Workers clock in from any phone. No training needed.",
+    heroCta1:"Start free trial — 60 days →",heroCta2:"See how it works",
+    trustNoCard:"No credit card",trustSetup:"Setup in 5 minutes",trustCancel:"Cancel anytime",
+    usedBy:"Used by teams in:",
+    previewLabel:"Live product — not a mockup",
+    howEyebrow:"How it works",howH2:"Live in 5 minutes",
+    howSub:"No IT department. No training sessions. No implementation consultant. Just sign up and go.",
+    how1Title:"Set up your company",how1Sub:"Enter company details, pick your country and language. Add your locations — halls, floors, departments. Takes 3 minutes.",
+    how2Title:"Define your shift types",how2Sub:"Name them, set start and end times, pick colors. Use our templates or start from scratch. Your factory, your rules.",
+    how3Title:"Invite managers & workers",how3Sub:"Managers get the web dashboard. Workers get a link — they install ShiftApp on their phone in 30 seconds. No App Store needed.",
+    how4Title:"Schedule & go live",how4Sub:"Build your first week schedule, click Publish. Everyone sees it instantly. Clock-in starts working. You're live.",
+    featEyebrow:"Features",featH2:"Everything you need.\nNothing you don't.",
+    feat1Title:"Custom shift types — any industry",feat1Sub:"Define your own shift types with any name, time, color, and pay rate. Early/Late/Night for factories. Lunch/Dinner/Closing for restaurants. Load a template or build from scratch.",
+    feat2Title:"Mobile PWA for workers",feat2Sub:"Workers install ShiftApp from a link — no App Store. Works on any phone, works offline. See schedule, clock in, request leave.",
+    feat3Title:"Leave & swap approvals",feat3Sub:"One-click approve or deny. Coverage check runs automatically. Everyone notified instantly via push notification.",
+    feat4Title:"Hardware terminal sync",feat4Sub:"Already have a Dormakaba, Spica, or Interflex terminal? We pull clock-in data automatically. Workers change nothing.",
+    feat5Title:"Reports & overtime alerts",feat5Sub:"Attendance rates, overtime tracking, shift coverage. Export to CSV for any payroll system.",
+    feat6Title:"5 languages built in",feat6Sub:"Croatian, English, German, Turkish, Polish. Each employee chooses their own language. No extra cost.",
+    indEyebrow:"Industries",indH2:"One product. Any company with shifts.",indSub:"You define the shift types. We handle the rest. It works for every industry.",
+    ind1:"Manufacturing",ind2:"Healthcare",ind3:"Retail",ind4:"Hospitality",ind5:"Logistics",ind6:"Security",ind7:"Cleaning",ind8:"Any other",
+    testEyebrow:"What teams say",testH2:"Real companies, real results",
+    test1:'"We ran shifts on Excel for 6 years. ShiftApp replaced it in one day. The night shift bonus calculation alone saves 3 hours a month."',
+    test1role:"Production Manager · Zagreb",
+    test2:'"Our workers are from 4 countries. Each uses the app in their language. That alone was worth the switch."',
+    test2role:"HR Lead · CNC Factory, Osijek",
+    test3:'"Connected our Dormakaba terminal in 2 hours. Clock-in data flows automatically now. Zero manual entry."',
+    test3role:"Operations Director · Logistics",
+    priceEyebrow:"Pricing",priceH2:"Pay per employee. That's it.",priceSub:"No hidden fees. No setup costs. No long-term contracts. 60-day free trial on every plan.",
+    plan1:"Starter",plan1Desc:"For teams up to 25 employees",
+    plan2:"Growth",plan2Desc:"For teams up to 100 employees",
+    plan3:"Enterprise",plan3Desc:"Unlimited employees, custom setup",
+    planCustom:"Custom",planContact:"Contact us for pricing",
+    perEmp:" / employee / mo",popular:"Most popular",
+    pf1:"Shift scheduling & calendar",pf2:"Employee mobile PWA",pf3:"Leave requests & approvals",pf4:"Clock in / out",pf5:"Multi-language (5 languages)",pf6:"Reports & analytics",pf7:"Hardware sync connector",pf8:"Multi-location support",pf9:"Reports & analytics",pf10:"Departments & sub-locations",pf11:"Overtime alerts",pf12:"DATEV / Pantheon export",pf13:"API access",pf14:"Works council workflows",pf15:"Dedicated account manager",pf16:"Custom SLA & onboarding",pf17:"White-label option",
+    planCta:"Start free →",planContactCta:"Contact sales →",
+    ctaH:"Ready to replace that spreadsheet?",ctaSub:"60 days free. No credit card. Your team live in 5 minutes.",ctaBtn1:"Start free trial →",ctaBtn2:"Talk to us first",ctaNote:"No setup fee · No long-term contract · EU servers · GDPR compliant",
+    footerDesc:"Shift scheduling for every company with hourly workers. Configure your own shift types. Works for any industry.",
+    footProduct:"Product",footIndustries:"Industries",footCompany:"Company",
+    footFeatures:"Features",footPricing:"Pricing",footChangelog:"Changelog",footRoadmap:"Roadmap",
+    footAbout:"About",footContact:"Contact",footPrivacy:"Privacy Policy",footTerms:"Terms",
+  },
+  hr:{
+    heroBadge:"Radi za tvornice, bolnice, restorane i još mnogo toga",
+    heroH1:"Zamijenite Excel tablicu<br>za smjene s <em>nečim što<br>stvarno funkcionira</em>",
+    heroSub:"Definirajte vlastite vrste smjena. Rasporedite tim za nekoliko minuta. Radnici se prijavljuju s bilo kojeg telefona. Nema treninga.",
+    heroCta1:"Počnite besplatno — 60 dana →",heroCta2:"Pogledajte kako radi",
+    trustNoCard:"Bez kreditne kartice",trustSetup:"Postavljanje za 5 minuta",trustCancel:"Otkaz u bilo kada",
+    usedBy:"Koriste timovi u:",previewLabel:"Pravi proizvod — nije mockup",
+    howEyebrow:"Kako radi",howH2:"Aktivno za 5 minuta",
+    howSub:"Nema IT odjela. Nema treninga. Samo se registrirajte i počnite.",
+    how1Title:"Postavite tvrtku",how1Sub:"Unesite podatke, odaberite jezik i lokacije. Traje 3 minute.",
+    how2Title:"Definirajte vrste smjena",how2Sub:"Imenujte ih, postavite vremena, odaberite boje. Koristite predloške ili počnite od nule.",
+    how3Title:"Pozovite voditelje i radnike",how3Sub:"Voditelji dobivaju web dashboard. Radnici dobivaju link — instaliraju ShiftApp za 30 sekundi.",
+    how4Title:"Rasporedite i krenite",how4Sub:"Napravite prvi tjedni raspored, objavite ga. Svi odmah vide. Prijava na posao počinje raditi.",
+    featEyebrow:"Funkcionalnosti",featH2:"Sve što trebate.\nNišta što ne trebate.",
+    feat1Title:"Prilagodljive vrste smjena",feat1Sub:"Definirajte vlastite smjene s bilo kojim nazivom, vremenom, bojom i faktorom plaće.",
+    feat2Title:"Mobilna PWA za radnike",feat2Sub:"Radnici instaliraju ShiftApp s linka — bez App Storea. Radi na svim telefonima, radi offline.",
+    feat3Title:"Odobravanje godišnjeg i zamjena",feat3Sub:"Jedan klik za odobravanje ili odbijanje. Provjera pokrivenosti automatski.",
+    feat4Title:"Sinkronizacija hardverskog terminala",feat4Sub:"Imate Dormakaba, Spica ili Interflex terminal? Podaci o prijavi dolaze automatski.",
+    feat5Title:"Izvještaji i upozorenja za prekovremeni",feat5Sub:"Stope prisustva, praćenje prekovremenih, pokrivenost smjena. Izvoz u CSV.",
+    feat6Title:"5 jezika ugrađeno",feat6Sub:"Hrvatski, engleski, njemački, turski, poljski. Svaki zaposlenik bira vlastiti jezik.",
+    indEyebrow:"Industrije",indH2:"Jedan proizvod. Svaka tvrtka sa smjenama.",indSub:"Vi definirate vrste smjena. Radi za svaku industriju.",
+    ind1:"Proizvodnja",ind2:"Zdravstvo",ind3:"Maloprodaja",ind4:"Ugostiteljstvo",ind5:"Logistika",ind6:"Zaštita",ind7:"Čišćenje",ind8:"Ostalo",
+    testEyebrow:"Što kažu timovi",testH2:"Stvarne tvrtke, stvarni rezultati",
+    test1:'"6 godina smo radili smjene u Excelu. ShiftApp ga je zamijenio za jedan dan. Samo izračun noćnog doplatka uštedi 3 sata mjesečno."',test1role:"Voditelj proizvodnje · Zagreb",
+    test2:'"Naši radnici dolaze iz 4 zemlje. Svaki koristi aplikaciju na svom jeziku. Samo to je bila vrijednost promjene."',test2role:"Voditelj HR · CNC tvornica, Osijek",
+    test3:'"Spojili smo Dormakaba terminal za 2 sata. Podaci o prijavi teku automatski. Nula ručnog unosa."',test3role:"Direktorica operacija · Logistika",
+    priceEyebrow:"Cijene",priceH2:"Plaćate po zaposleniku. To je sve.",priceSub:"Bez skrivenih naknada. Bez troškova postavljanja. 60 dana besplatno na svakom planu.",
+    plan1:"Starter",plan1Desc:"Za timove do 25 zaposlenika",plan2:"Growth",plan2Desc:"Za timove do 100 zaposlenika",plan3:"Enterprise",plan3Desc:"Neograničeni zaposlenici",
+    planCustom:"Po dogovoru",planContact:"Kontaktirajte nas za cijenu",perEmp:" / zaposlenik / mj.",popular:"Najpopularnije",
+    pf1:"Raspored smjena i kalendar",pf2:"Mobilna PWA za zaposlenike",pf3:"Zahtjevi za godišnji",pf4:"Prijava / odjava",pf5:"5 jezika",pf6:"Izvještaji",pf7:"Sinkronizacija terminala",pf8:"Više lokacija",pf9:"Izvještaji i analitika",pf10:"Odjeli i podlokacije",pf11:"Upozorenja za prekovremeni",pf12:"DATEV / Pantheon izvoz",pf13:"API pristup",pf14:"Radnički savjet",pf15:"Account manager",pf16:"Prilagođeni SLA",pf17:"White-label opcija",
+    planCta:"Počnite besplatno →",planContactCta:"Kontaktirajte prodaju →",
+    ctaH:"Spremni zamijeniti tu tablicu?",ctaSub:"60 dana besplatno. Bez kreditne kartice. Tim aktivan za 5 minuta.",ctaBtn1:"Počnite besplatno →",ctaBtn2:"Razgovarajte s nama",ctaNote:"Bez naknade za postavljanje · Bez dugoročnog ugovora · EU serveri · GDPR",
+    footerDesc:"Upravljanje smjenama za svaku tvrtku sa satnom nadomještom.",
+    footProduct:"Proizvod",footIndustries:"Industrije",footCompany:"Tvrtka",
+    footFeatures:"Funkcionalnosti",footPricing:"Cijene",footChangelog:"Promjene",footRoadmap:"Mapa puta",
+    footAbout:"O nama",footContact:"Kontakt",footPrivacy:"Politika privatnosti",footTerms:"Uvjeti",
+  }
+};
+let lang='en';
+function setLang(l){
+  lang=l;
+  document.querySelectorAll('.lp-btn').forEach(b=>b.classList.toggle('on',b.textContent===l.toUpperCase()));
+  document.querySelectorAll('[data-t]').forEach(el=>{
+    const v=T[l][el.dataset.t]||T.en[el.dataset.t];
+    if(v) el.innerHTML=v;
+  });
+}
+
+// ── Nav scroll effect ─────────────────────────────────────────
+window.addEventListener('scroll',()=>{
+  document.getElementById('nav').classList.toggle('scrolled',scrollY>40);
+});
+
+// ── Scroll reveal ─────────────────────────────────────────────
+const obs=new IntersectionObserver(e=>{
+  e.forEach(en=>{if(en.isIntersecting)en.target.classList.add('visible')});
+},{threshold:0.1});
+document.querySelectorAll('.reveal').forEach(el=>obs.observe(el));
+</script>
+</body>
+</html>

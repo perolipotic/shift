@@ -13,6 +13,11 @@
       "heading": "Organizacija",
       "label": "Kratica organizacije",
       "submit": "Nastavi"
+    },
+    "brand": {
+      "name": "Shift",
+      "headline": "Raspored kojem možeš vjerovati.",
+      "subline": "Tko radi i kada, sati i godišnji odmor na jednom mjestu."
     }
   },
   "count": {

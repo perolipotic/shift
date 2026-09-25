@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ShiftApp — Advanced Reports</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#0B1628;--navy2:#132035;--navy3:#1a2d47;
+  --blue:#2563EB;--blue2:#1d4ed8;--blue-l:#dbeafe;--blue-m:#93c5fd;
+  --teal:#0EA5E9;--green:#10B981;--green-l:#d1fae5;
+  --orange:#F59E0B;--orange-l:#fef3c7;
+  --red:#EF4444;--red-l:#fee2e2;
+  --purple:#8B5CF6;--purple-l:#ede9fe;
+  --yellow:#EAB308;--yellow-l:#fef9c3;
+  --g50:#F8FAFC;--g100:#F1F5F9;--g200:#E2E8F0;--g300:#CBD5E1;
+  --g400:#94A3B8;--g500:#64748B;--g700:#334155;
+  --sw:240px;--r:12px;
+  --sh:0 1px 3px rgba(0,0,0,.07),0 4px 16px rgba(0,0,0,.05);
+  --sh-lg:0 8px 32px rgba(0,0,0,.1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:var(--g50);color:var(--g700);min-height:100vh}
+.app{display:flex;min-height:100vh}
+
+/* ── SIDEBAR ── */
+.sb{width:var(--sw);background:var(--navy);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100}
+.sb-logo{padding:18px 18px 14px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;gap:10px}
+.lm{width:34px;height:34px;background:var(--blue);border-radius:9px;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:12px;color:#fff;flex-shrink:0}
+.lt{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;color:#fff}
+.ls{font-size:10px;color:var(--g400)}
+.sb-sec{padding:12px 10px 4px}
+.sb-lbl{font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:1px;padding:0 8px 6px}
+.ni{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer;color:var(--g400);font-size:13px;font-weight:500;margin-bottom:1px;transition:all .18s}
+.ni:hover{background:rgba(255,255,255,.06);color:#fff}
+.ni.on{background:var(--blue);color:#fff}
+.ni svg{width:16px;height:16px;flex-shrink:0;opacity:.85}
+.ni.on svg{opacity:1}
+.sb-bot{margin-top:auto;padding:12px 10px;border-top:1px solid rgba(255,255,255,.07)}
+.uc{display:flex;align-items:center;gap:9px;padding:9px;border-radius:8px;cursor:pointer}
+.ua{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0}
+
+/* ── MAIN ── */
+.main{margin-left:var(--sw);flex:1;display:flex;flex-direction:column}
+.tb{height:64px;background:#fff;border-bottom:1px solid var(--g200);display:flex;align-items:center;padding:0 24px;gap:14px;position:sticky;top:0;z-index:50}
+.tb-title{font-family:'Syne',sans-serif;font-weight:700;font-size:17px;color:var(--navy);flex:1}
+.tb-sub{font-size:12px;color:var(--g400);margin-top:1px}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 15px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:all .18s;border:none;font-family:'DM Sans',sans-serif}
+.bp{background:var(--blue);color:#fff}.bp:hover{background:var(--blue2)}
+.bg{background:transparent;color:var(--g500);border:1.5px solid var(--g200)}.bg:hover{background:var(--g100)}
+
+/* ── REPORT TABS ── */
+.rtabs{display:flex;gap:0;border-bottom:1px solid var(--g200);background:#fff;overflow-x:auto;flex-shrink:0}
+.rtabs::-webkit-scrollbar{display:none}
+.rt{padding:13px 18px;font-size:13px;font-weight:600;cursor:pointer;color:var(--g400);border-bottom:2.5px solid transparent;transition:all .18s;white-space:nowrap;display:flex;align-items:center;gap:7px}
+.rt:hover{color:var(--navy);background:var(--g50)}
+.rt.on{color:var(--blue);border-bottom-color:var(--blue);background:#fff}
+
+/* ── CONTENT ── */
+.content{padding:24px;flex:1}
+.sc{display:none;animation:fi .25s ease}
+.sc.on{display:block}
+@keyframes fi{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── FILTER BAR ── */
+.filter-bar{background:#fff;border:1px solid var(--g200);border-radius:var(--r);padding:14px 18px;margin-bottom:20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;box-shadow:var(--sh)}
+.fb-label{font-size:12px;font-weight:700;color:var(--g500);white-space:nowrap}
+.fi,.fs{padding:7px 11px;border-radius:8px;border:1.5px solid var(--g200);font-size:12.5px;font-family:'DM Sans',sans-serif;color:var(--g700);background:#fff;outline:none;transition:border-color .2s;appearance:none}
+.fi:focus,.fs:focus{border-color:var(--blue)}
+.fb-spacer{flex:1}
+
+/* ── CARDS ── */
+.card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);border:1px solid var(--g200);overflow:hidden}
+.ch{padding:14px 18px;border-bottom:1px solid var(--g100);display:flex;align-items:center;gap:8px}
+.ct{font-family:'Syne',sans-serif;font-weight:700;font-size:13.5px;color:var(--navy);flex:1}
+.cb{padding:18px}
+
+/* ── KPIs ── */
+.kpig{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:20px}
+.kpi{background:#fff;border-radius:var(--r);box-shadow:var(--sh);border:1px solid var(--g200);padding:16px;position:relative;overflow:hidden;cursor:default;transition:transform .2s}
+.kpi:hover{transform:translateY(-2px);box-shadow:var(--sh-lg)}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.kpi.bl::before{background:var(--blue)}.kpi.gr::before{background:var(--green)}.kpi.or::before{background:var(--orange)}.kpi.rd::before{background:var(--red)}.kpi.pu::before{background:var(--purple)}.kpi.ye::before{background:var(--yellow)}
+.ki{font-size:20px;margin-bottom:8px}
+.kv{font-family:'Syne',sans-serif;font-weight:800;font-size:24px;color:var(--navy);line-height:1}
+.kl{font-size:12px;color:var(--g500);margin-top:3px;font-weight:500}
+.kd{font-size:11px;font-weight:600;margin-top:4px}.kd.up{color:var(--green)}.kd.dn{color:var(--red)}.kd.nt{color:var(--g400)}
+
+/* ── GRIDS ── */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.g21{display:grid;grid-template-columns:2fr 1fr;gap:18px}
+.g12{display:grid;grid-template-columns:1fr 2fr;gap:18px}
+.mb18{margin-bottom:18px}.mb24{margin-bottom:24px}
+
+/* ── BADGES ── */
+.badge{display:inline-flex;align-items:center;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600}
+.b-gr{background:var(--green-l);color:#065f46}.b-bl{background:var(--blue-l);color:#1e40af}
+.b-or{background:var(--orange-l);color:#92400e}.b-rd{background:var(--red-l);color:#991b1b}
+.b-pu{background:var(--purple-l);color:#5b21b6}.b-gy{background:var(--g100);color:var(--g500)}
+.b-ye{background:var(--yellow-l);color:#713f12}
+
+/* ── BAR CHART ── */
+.chart-wrap{position:relative;padding:0 0 24px}
+.bar-chart{display:flex;align-items:flex-end;gap:4px;height:120px;padding:0 4px}
+.bar{flex:1;border-radius:4px 4px 0 0;position:relative;cursor:pointer;transition:opacity .18s}
+.bar:hover{opacity:.8}
+.bar-label{position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--g400);white-space:nowrap;font-weight:500}
+.bar-val{position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:700;color:var(--g700);white-space:nowrap}
+.chart-y{display:flex;flex-direction:column;justify-content:space-between;font-size:10px;color:var(--g400);padding-bottom:24px;margin-right:6px;text-align:right;height:120px;flex-shrink:0}
+.chart-row{display:flex;gap:8px;align-items:stretch}
+
+/* ── LINE CHART ── */
+.line-chart-wrap{padding:10px 0 0;position:relative}
+.lc-labels{display:flex;justify-content:space-between;font-size:10px;color:var(--g400);padding:6px 4px 0;margin-top:4px}
+
+/* ── WEATHER CHART ── */
+.weather-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--g100)}
+.weather-row:last-child{border-bottom:none}
+.wr-weather{width:52px;text-align:center;flex-shrink:0}
+.wr-icon{font-size:22px}
+.wr-temp{font-size:10px;color:var(--g400);font-weight:600;margin-top:1px}
+.wr-bar-wrap{flex:1;position:relative;height:28px;display:flex;align-items:center}
+.wr-bar{height:18px;border-radius:4px;position:relative;display:flex;align-items:center;justify-content:flex-end;padding-right:7px;min-width:28px;transition:width .6s}
+.wr-bar-val{font-size:11px;font-weight:700;color:#fff}
+.wr-month{font-size:12px;font-weight:600;color:var(--navy);width:32px;flex-shrink:0}
+.wr-note{font-size:11px;color:var(--g400);width:130px;flex-shrink:0;text-align:right}
+
+/* ── INSIGHT CARD ── */
+.insight{background:linear-gradient(135deg,var(--navy),var(--navy3));border-radius:var(--r);padding:18px;border:1px solid rgba(255,255,255,.06);position:relative;overflow:hidden}
+.insight::before{content:'';position:absolute;top:-40px;right:-40px;width:120px;height:120px;background:radial-gradient(circle,rgba(37,99,235,.2) 0%,transparent 65%)}
+.ins-ic{font-size:26px;margin-bottom:10px;display:block}
+.ins-title{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;color:#fff;margin-bottom:6px}
+.ins-text{font-size:12.5px;color:var(--g400);line-height:1.55}
+.ins-stat{font-family:'Syne',sans-serif;font-weight:800;font-size:24px;margin-top:10px;display:block}
+
+/* ── TABLE ── */
+table{width:100%;border-collapse:collapse}
+thead th{text-align:left;padding:9px 14px;font-size:11px;font-weight:600;color:var(--g400);text-transform:uppercase;letter-spacing:.5px;background:var(--g50);border-bottom:1px solid var(--g200)}
+tbody tr{border-bottom:1px solid var(--g100);transition:background .15s}
+tbody tr:hover{background:var(--g50)}
+tbody tr:last-child{border-bottom:none}
+td{padding:10px 14px;font-size:13px}
+
+/* ── PROGRESS ── */
+.pb{height:6px;background:var(--g100);border-radius:99px;overflow:hidden}
+.pb.thick{height:9px}
+.pf{height:100%;border-radius:99px;transition:width .6s}
+
+/* ── AVATAR ── */
+.av{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0}
+
+/* ── DOT ── */
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+
+/* ── HEATMAP ── */
+.heatmap-wrap{overflow-x:auto}
+.heatmap{display:grid;gap:3px;grid-template-rows:repeat(7,1fr)}
+.hm-cell{width:14px;height:14px;border-radius:3px;cursor:pointer;transition:opacity .15s}
+.hm-cell:hover{opacity:.7}
+.hm-labels-top{display:flex;gap:3px;margin-bottom:3px;padding-left:28px}
+.hm-label{width:14px;font-size:8px;color:var(--g400);text-align:center}
+.hm-row-label{font-size:9px;color:var(--g400);width:24px;line-height:14px;text-align:right;padding-right:4px}
+.hm-row{display:flex;gap:3px;align-items:center}
+
+/* SVG charts */
+.svg-chart{width:100%;overflow:visible}
+
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:var(--g200);border-radius:99px}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- ── SIDEBAR ── -->
+<aside class="sb">
+  <div class="sb-logo">
+    <div class="lm">SA</div>
+    <div><div class="lt">ShiftApp</div><div class="ls">Manager Portal</div></div>
+  </div>
+  <div class="sb-sec">
+    <div class="sb-lbl">Overview</div>
+    <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</div>
+  </div>
+  <div class="sb-sec">
+    <div class="sb-lbl">Workforce</div>
+    <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Shift Schedule</div>
+    <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Leave Requests</div>
+    <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>Team & Users</div>
+    <div class="ni on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Reports</div>
+  </div>
+  <div class="sb-sec">
+    <div class="sb-lbl">Configuration</div>
+    <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14"/></svg>Shift Settings</div>
+    <div class="ni"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>SQL Connectors</div>
+  </div>
+  <div class="sb-bot">
+    <div class="uc">
+      <div class="ua" style="background:linear-gradient(135deg,var(--blue),var(--teal))">MK</div>
+      <div><div style="font-size:12.5px;font-weight:600;color:#fff">Marko Kovačić</div><div style="font-size:10.5px;color:var(--g400)">HR Manager</div></div>
+    </div>
+  </div>
+</aside>
+
+<!-- ── MAIN ── -->
+<div class="main">
+  <div class="tb">
+    <div>
+      <div class="tb-title">📊 Reports & Analytics</div>
+      <div class="tb-sub">Mueller Präzision d.o.o. · Workforce intelligence</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <select class="fs" style="padding:7px 11px;font-size:12.5px">
+        <option>Q1 2025 (Jan–Mar)</option>
+        <option selected>March 2025</option>
+        <option>February 2025</option>
+        <option>Last 90 days</option>
+        <option>Custom range…</option>
+      </select>
+      <button class="btn bp">⬇ Export All</button>
+    </div>
+  </div>
+
+  <!-- ── REPORT TABS ── -->
+  <div class="rtabs">
+    <div class="rt on"  onclick="showReport('overview',this)">📊 Overview</div>
+    <div class="rt"     onclick="showReport('weather',this)">🌤 Weather vs Absence</div>
+    <div class="rt"     onclick="showReport('attendance',this)">✅ Attendance</div>
+    <div class="rt"     onclick="showReport('overtime',this)">⏰ Overtime</div>
+    <div class="rt"     onclick="showReport('leave',this)">🏖️ Leave</div>
+    <div class="rt"     onclick="showReport('bradford',this)">🔴 Bradford Factor</div>
+    <div class="rt"     onclick="showReport('shifts',this)">⏱ Shift Coverage</div>
+  </div>
+
+  <div class="content">
+
+    <!-- ════════════════════════════════════════════
+         OVERVIEW
+    ════════════════════════════════════════════ -->
+    <div class="sc on" id="sc-overview">
+      <div class="kpig">
+        <div class="kpi bl"><div class="ki">📅</div><div class="kv">186</div><div class="kl">Total Shifts</div><div class="kd up">↑ +12 vs Feb</div></div>
+        <div class="kpi gr"><div class="ki">✅</div><div class="kv">94.2%</div><div class="kl">Attendance Rate</div><div class="kd up">↑ +1.8% vs Feb</div></div>
+        <div class="kpi or"><div class="ki">⏱</div><div class="kv">22h</div><div class="kl">Total Overtime</div><div class="kd dn">↑ Over budget</div></div>
+        <div class="kpi rd"><div class="ki">🤒</div><div class="kv">8</div><div class="kl">Sick Days</div><div class="kd nt">→ Same as Feb</div></div>
+        <div class="kpi pu"><div class="ki">🔄</div><div class="kv">4</div><div class="kl">Swap Requests</div><div class="kd nt">→ Same</div></div>
+      </div>
+
+      <div class="g21 mb18">
+        <!-- Monthly attendance bar chart -->
+        <div class="card">
+          <div class="ch"><div class="ct">📈 Attendance Rate — Last 6 Months</div><button class="btn bg" style="font-size:11.5px;padding:4px 10px">⬇ CSV</button></div>
+          <div class="cb">
+            <div class="chart-row">
+              <div class="chart-y"><span>100%</span><span>90%</span><span>80%</span><span>70%</span></div>
+              <div style="flex:1;position:relative">
+                <div style="position:absolute;inset:0 0 24px 0;display:flex;flex-direction:column;justify-content:space-between;pointer-events:none">
+                  <div style="border-bottom:1px dashed var(--g200);width:100%"></div>
+                  <div style="border-bottom:1px dashed var(--g200);width:100%"></div>
+                  <div style="border-bottom:1px dashed var(--g200);width:100%"></div>
+                  <div style="border-bottom:1px solid var(--g200);width:100%"></div>
+                </div>
+                <div class="bar-chart">
+                  <div class="bar" style="height:89%;background:linear-gradient(180deg,var(--blue),rgba(37,99,235,.6))"><span class="bar-label">Oct</span><span class="bar-val">89%</span></div>
+                  <div class="bar" style="height:91%;background:linear-gradient(180deg,var(--blue),rgba(37,99,235,.6))"><span class="bar-label">Nov</span><span class="bar-val">91%</span></div>
+                  <div class="bar" style="height:87%;background:linear-gradient(180deg,var(--orange),rgba(245,158,11,.6))"><span class="bar-label">Dec</span><span class="bar-val">87%</span></div>
+                  <div class="bar" style="height:88%;background:linear-gradient(180deg,var(--blue),rgba(37,99,235,.6))"><span class="bar-label">Jan</span><span class="bar-val">88%</span></div>
+                  <div class="bar" style="height:92%;background:linear-gradient(180deg,var(--blue),rgba(37,99,235,.6))"><span class="bar-label">Feb</span><span class="bar-val">92%</span></div>
+                  <div class="bar" style="height:94%;background:linear-gradient(180deg,var(--green),rgba(16,185,129,.6));outline:2px solid var(--green);outline-offset:2px"><span class="bar-label" style="color:var(--green);font-weight:700">Mar ←</span><span class="bar-val" style="color:var(--green)">94%</span></div>
+                </div>
+              </div>
+            </div>
+            <div style="margin-top:18px;display:flex;gap:16px;flex-wrap:wrap">
+              <div style="display:flex;align-items:center;gap:5px;font-size:12px"><div style="width:10px;height:10px;border-radius:2px;background:var(--blue)"></div>Normal months</div>
+              <div style="display:flex;align-items:center;gap:5px;font-size:12px"><div style="width:10px;height:10px;border-radius:2px;background:var(--orange)"></div>Holiday season</div>
+              <div style="display:flex;align-items:center;gap:5px;font-size:12px"><div style="width:10px;height:10px;border-radius:2px;background:var(--green)"></div>Current month</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Absence breakdown donut -->
+        <div class="card">
+          <div class="ch"><div class="ct">🏖️ Absence Breakdown</div></div>
+          <div class="cb" style="text-align:center">
+            <svg width="130" height="130" viewBox="0 0 130 130" style="display:block;margin:0 auto 14px">
+              <circle cx="65" cy="65" r="52" fill="none" stroke="#F1F5F9" stroke-width="14"/>
+              <circle cx="65" cy="65" r="52" fill="none" stroke="#2563EB" stroke-width="14" stroke-dasharray="130 326" stroke-linecap="round" transform="rotate(-90 65 65)"/>
+              <circle cx="65" cy="65" r="52" fill="none" stroke="#EF4444" stroke-width="14" stroke-dasharray="98 326" stroke-dashoffset="-130" stroke-linecap="round" transform="rotate(-90 65 65)"/>
+              <circle cx="65" cy="65" r="52" fill="none" stroke="#8B5CF6" stroke-width="14" stroke-dasharray="65 326" stroke-dashoffset="-228" stroke-linecap="round" transform="rotate(-90 65 65)"/>
+              <circle cx="65" cy="65" r="52" fill="none" stroke="#F59E0B" stroke-width="14" stroke-dasharray="33 326" stroke-dashoffset="-293" stroke-linecap="round" transform="rotate(-90 65 65)"/>
+              <text x="65" y="60" text-anchor="middle" font-size="16" font-weight="bold" fill="#0B1628">47</text>
+              <text x="65" y="75" text-anchor="middle" font-size="10" fill="#94A3B8">absences</text>
+            </svg>
+            <div style="display:flex;flex-direction:column;gap:7px;text-align:left">
+              <div style="display:flex;align-items:center;gap:8px;font-size:12.5px"><div class="dot" style="background:var(--blue)"></div><span style="flex:1">Annual Leave</span><strong>20 days</strong></div>
+              <div style="display:flex;align-items:center;gap:8px;font-size:12.5px"><div class="dot" style="background:var(--red)"></div><span style="flex:1">Sick Leave</span><strong>15 days</strong></div>
+              <div style="display:flex;align-items:center;gap:8px;font-size:12.5px"><div class="dot" style="background:var(--purple)"></div><span style="flex:1">Unexcused</span><strong>8 days</strong></div>
+              <div style="display:flex;align-items:center;gap:8px;font-size:12.5px"><div class="dot" style="background:var(--orange)"></div><span style="flex:1">Other</span><strong>4 days</strong></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Insights row -->
+      <div class="g3">
+        <div class="insight">
+          <span class="ins-ic">☀️</span>
+          <div class="ins-title">Weather Correlation Detected</div>
+          <div class="ins-text">Absence rate rises <strong style="color:#fbbf24">+34%</strong> on days when temperature exceeds 28°C. Summer planning advised.</div>
+          <button style="margin-top:12px;padding:5px 12px;background:rgba(37,99,235,.2);border:1px solid rgba(37,99,235,.3);border-radius:6px;color:#93c5fd;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif" onclick="showReport('weather',document.querySelector('.rt:nth-child(2)'))">View full analysis →</button>
+        </div>
+        <div class="insight">
+          <span class="ins-ic">🔴</span>
+          <div class="ins-title">High Bradford Factor</div>
+          <div class="ins-text"><strong style="color:#fca5a5">2 employees</strong> have a Bradford score above 300 — indicating frequent short absences. HR review recommended.</div>
+          <button style="margin-top:12px;padding:5px 12px;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.3);border-radius:6px;color:#fca5a5;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif" onclick="showReport('bradford',document.querySelector('.rt:nth-child(6)'))">View Bradford scores →</button>
+        </div>
+        <div class="insight">
+          <span class="ins-ic">⏱</span>
+          <div class="ins-title">Night Shift Overtime</div>
+          <div class="ins-text">Night shift workers averaged <strong style="color:#fbbf24">2.3h overtime</strong> this month — 60% higher than day shifts. Review staffing levels.</div>
+          <button style="margin-top:12px;padding:5px 12px;background:rgba(245,158,11,.15);border:1px solid rgba(245,158,11,.3);border-radius:6px;color:#fcd34d;font-size:12px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif" onclick="showReport('overtime',document.querySelector('.rt:nth-child(4)'))">View overtime →</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         WEATHER VS ABSENCE
+    ════════════════════════════════════════════ -->
+    <div class="sc" id="sc-weather">
+      <div style="background:linear-gradient(135deg,var(--navy),var(--navy3));border-radius:var(--r);padding:20px 24px;margin-bottom:20px;border:1px solid rgba(255,255,255,.07);display:flex;gap:20px;align-items:center">
+        <div style="font-size:40px">☀️</div>
+        <div>
+          <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:18px;color:#fff">Weather vs Absence Correlation</div>
+          <div style="font-size:13px;color:var(--g400);margin-top:4px;max-width:580px">When temperatures rise above 28°C, absence rates spike significantly — especially on Fridays. This analysis helps you plan extra coverage for summer months.</div>
+        </div>
+        <div style="margin-left:auto;background:rgba(234,179,8,.15);border:1px solid rgba(234,179,8,.3);border-radius:10px;padding:14px 18px;text-align:center;flex-shrink:0">
+          <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:28px;color:var(--yellow)">+34%</div>
+          <div style="font-size:12px;color:var(--g400);margin-top:2px">Absence increase<br>on hot days (28°C+)</div>
+        </div>
+      </div>
+
+      <div class="g2 mb18">
+        <!-- Monthly: weather vs absence bars -->
+        <div class="card">
+          <div class="ch"><div class="ct">🌡️ Monthly Avg Temperature vs Absence Rate</div></div>
+          <div class="cb" style="padding-top:10px">
+            <div class="weather-row">
+              <div class="wr-month">Jan</div>
+              <div class="wr-weather"><div class="wr-icon">❄️</div><div class="wr-temp">4°C</div></div>
+              <div class="wr-bar-wrap">
+                <div class="wr-bar" style="width:22%;background:linear-gradient(90deg,var(--blue),var(--blue-m))"><span class="wr-bar-val">5.2%</span></div>
+              </div>
+              <div class="wr-note"><span class="badge b-gr">Low absence</span></div>
+            </div>
+            <div class="weather-row">
+              <div class="wr-month">Feb</div>
+              <div class="wr-weather"><div class="wr-icon">🌨️</div><div class="wr-temp">6°C</div></div>
+              <div class="wr-bar-wrap">
+                <div class="wr-bar" style="width:25%;background:linear-gradient(90deg,var(--blue),var(--blue-m))"><span class="wr-bar-val">5.8%</span></div>
+              </div>
+              <div class="wr-note"><span class="badge b-gr">Low absence</span></div>
+            </div>
+            <div class="weather-row">
+              <div class="wr-month">Mar</div>
+              <div class="wr-weather"><div class="wr-icon">🌤️</div><div class="wr-temp">13°C</div></div>
+              <div class="wr-bar-wrap">
+                <div class="wr-bar" style="width:26%;background:linear-gradient(90deg,var(--green),#34d399)"><span class="wr-bar-val">5.8%</span></div>
+              </div>
+              <div class="wr-note"><span class="badge b-gr">Normal</span></div>
+            </div>
+            <div class="weather-row">
+              <div class="wr-month">Apr</div>
+              <div class="wr-weather"><div class="wr-icon">🌦️</div><div class="wr-temp">18°C</div></div>
+              <div class="wr-bar-wrap">
+                <div class="wr-bar" style="width:30%;background:linear-gradient(90deg,var(--teal),var(--blue))"><span class="wr-bar-val">6.4%</span></div>
+              </div>
+              <div class="wr-note"><span class="badge b-bl">Watch this</span></div>
+            </div>
+            <div class="weather-row">
+              <div class="wr-month">May</div>
+              <div class="wr-weather"><div class="wr-icon">⛅</div><div class="wr-temp">22°C</div></div>
+              <div class="wr-bar-wrap">
+                <div class="wr-bar" style="width:36%;background:linear-gradient(90deg,var(--orange),#fbbf24)"><span class="wr-bar-val">7.8%</span></div>
+              </div>
+              <div class="wr-note"><span class="badge b-or">Rising</span></div>
+            </div>
+            <div class="weather-row">
+              <div class="wr-month">Jun</div>
+              <div class="wr-weather"><div class="wr-icon">☀️</div><div class="wr-temp">27°C</div></div>
+              <div class="wr-bar-wrap">
+                <div class="wr-bar" style="width:52%;background:linear-gradient(90deg,var(--red),#f87171)"><span class="wr-bar-val">11.2%</span></div>
+              </div>
+              <div class="wr-note"><span class="badge b-rd">High risk</span></div>
+            </div>
+            <div class="weather-row">
+              <div class="wr-month">Jul</div>
+              <div class="wr-weather"><div class="wr-icon">🌡️</div><div class="wr-temp">32°C</div></div>
+              <div class="wr-bar-wrap">
+                <div class="wr-bar" style="width:74%;background:linear-gradient(90deg,#dc2626,#ef4444)"><span class="wr-bar-val">16.1%</span></div>
+              </div>
+              <div class="wr-note"><span class="badge b-rd">🔥 Critical</span></div>
+            </div>
+            <div class="weather-row">
+              <div class="wr-month">Aug</div>
+              <div class="wr-weather"><div class="wr-icon">🌡️</div><div class="wr-temp">31°C</div></div>
+              <div class="wr-bar-wrap">
+                <div class="wr-bar" style="width:70%;background:linear-gradient(90deg,#dc2626,#ef4444)"><span class="wr-bar-val">15.3%</span></div>
+              </div>
+              <div class="wr-note"><span class="badge b-rd">🔥 Critical</span></div>
+            </div>
+            <div class="weather-row">
+              <div class="wr-month">Sep</div>
+              <div class="wr-weather"><div class="wr-icon">🍂</div><div class="wr-temp">22°C</div></div>
+              <div class="wr-bar-wrap">
+                <div class="wr-bar" style="width:38%;background:linear-gradient(90deg,var(--orange),#fbbf24)"><span class="wr-bar-val">8.2%</span></div>
+              </div>
+              <div class="wr-note"><span class="badge b-or">Elevated</span></div>
+            </div>
+            <div class="weather-row">
+              <div class="wr-month">Oct</div>
+              <div class="wr-weather"><div class="wr-icon">🌧️</div><div class="wr-temp">14°C</div></div>
+              <div class="wr-bar-wrap">
+                <div class="wr-bar" style="width:24%;background:linear-gradient(90deg,var(--blue),var(--blue-m))"><span class="wr-bar-val">5.5%</span></div>
+              </div>
+              <div class="wr-note"><span class="badge b-gr">Normal</span></div>
+            </div>
+            <div class="weather-row">
+              <div class="wr-month">Nov</div>
+              <div class="wr-weather"><div class="wr-icon">🌨️</div><div class="wr-temp">7°C</div></div>
+              <div class="wr-bar-wrap">
+                <div class="wr-bar" style="width:23%;background:linear-gradient(90deg,var(--blue),var(--blue-m))"><span class="wr-bar-val">5.1%</span></div>
+              </div>
+              <div class="wr-note"><span class="badge b-gr">Low absence</span></div>
+            </div>
+            <div class="weather-row">
+              <div class="wr-month">Dec</div>
+              <div class="wr-weather"><div class="wr-icon">❄️</div><div class="wr-temp">3°C</div></div>
+              <div class="wr-bar-wrap">
+                <div class="wr-bar" style="width:35%;background:linear-gradient(90deg,var(--purple),#a78bfa)"><span class="wr-bar-val">7.6%</span></div>
+              </div>
+              <div class="wr-note"><span class="badge b-pu">Holiday spike</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:18px">
+          <!-- Day of week pattern -->
+          <div class="card">
+            <div class="ch"><div class="ct">📅 Absence by Day of Week</div><span style="font-size:12px;color:var(--g400)">Summer months only</span></div>
+            <div class="cb">
+              <div style="display:flex;flex-direction:column;gap:9px">
+                <div><div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:12.5px"><span style="font-weight:600">Monday</span><span style="color:var(--orange);font-weight:700">8.4%</span></div><div class="pb thick"><div class="pf" style="width:52%;background:var(--orange)"></div></div></div>
+                <div><div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:12.5px"><span style="font-weight:600">Tuesday</span><span style="color:var(--blue);font-weight:700">5.1%</span></div><div class="pb thick"><div class="pf" style="width:32%;background:var(--blue)"></div></div></div>
+                <div><div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:12.5px"><span style="font-weight:600">Wednesday</span><span style="color:var(--blue);font-weight:700">4.8%</span></div><div class="pb thick"><div class="pf" style="width:30%;background:var(--blue)"></div></div></div>
+                <div><div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:12.5px"><span style="font-weight:600">Thursday</span><span style="color:var(--teal);font-weight:700">5.5%</span></div><div class="pb thick"><div class="pf" style="width:34%;background:var(--teal)"></div></div></div>
+                <div><div style="display:flex;justify-content:space-between;margin-bottom:4px;font-size:12.5px"><span style="font-weight:600">Friday 🔥</span><span style="color:var(--red);font-weight:700">14.2%</span></div><div class="pb thick"><div class="pf" style="width:88%;background:var(--red)"></div></div></div>
+              </div>
+              <div style="margin-top:12px;background:var(--red-l);border:1px solid rgba(239,68,68,.2);border-radius:8px;padding:9px 12px;font-size:12.5px;color:#991b1b">
+                🔍 <strong>Friday effect:</strong> Absence is 3× higher on Fridays in summer. Consider requiring advance notice for Friday leave Jun–Aug.
+              </div>
+            </div>
+          </div>
+
+          <!-- Temperature thresholds -->
+          <div class="card">
+            <div class="ch"><div class="ct">🌡️ Temperature Thresholds</div></div>
+            <div class="cb">
+              <div style="display:flex;flex-direction:column;gap:11px">
+                <div style="display:flex;align-items:center;gap:12px">
+                  <div style="width:48px;text-align:center;font-size:22px">❄️</div>
+                  <div style="flex:1"><div style="font-size:12.5px;font-weight:700;color:var(--navy)">Below 10°C</div><div style="font-size:12px;color:var(--g400)">Cold / winter</div></div>
+                  <div style="text-align:right"><div style="font-size:15px;font-weight:800;color:var(--green)">4.8%</div><div style="font-size:10.5px;color:var(--g400)">avg absence</div></div>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px">
+                  <div style="width:48px;text-align:center;font-size:22px">🌤️</div>
+                  <div style="flex:1"><div style="font-size:12.5px;font-weight:700;color:var(--navy)">10–20°C</div><div style="font-size:12px;color:var(--g400)">Spring / autumn</div></div>
+                  <div style="text-align:right"><div style="font-size:15px;font-weight:800;color:var(--green)">5.9%</div><div style="font-size:10.5px;color:var(--g400)">avg absence</div></div>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px">
+                  <div style="width:48px;text-align:center;font-size:22px">☀️</div>
+                  <div style="flex:1"><div style="font-size:12.5px;font-weight:700;color:var(--navy)">20–28°C</div><div style="font-size:12px;color:var(--g400)">Warm summer</div></div>
+                  <div style="text-align:right"><div style="font-size:15px;font-weight:800;color:var(--orange)">8.4%</div><div style="font-size:10.5px;color:var(--g400)">avg absence</div></div>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;background:var(--red-l);border-radius:8px;padding:8px 10px;border:1px solid rgba(239,68,68,.2)">
+                  <div style="width:48px;text-align:center;font-size:22px">🌡️</div>
+                  <div style="flex:1"><div style="font-size:12.5px;font-weight:700;color:var(--red)">Above 28°C</div><div style="font-size:12px;color:var(--red)">Heat wave</div></div>
+                  <div style="text-align:right"><div style="font-size:15px;font-weight:800;color:var(--red)">15.7%</div><div style="font-size:10.5px;color:var(--red)">avg absence ⚠️</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- AI recommendation -->
+          <div style="background:linear-gradient(135deg,var(--navy),var(--navy3));border-radius:var(--r);padding:18px;border:1px solid rgba(255,255,255,.07)">
+            <div style="font-size:13px;font-weight:700;color:#fff;margin-bottom:8px;display:flex;align-items:center;gap:7px"><span>🤖</span> AI Recommendation</div>
+            <div style="font-size:12.5px;color:var(--g400);line-height:1.6">For June–August, <strong style="color:#fff">add 2 backup staff per shift</strong> on days forecast above 28°C. Based on last year's pattern, you will avoid approximately <strong style="color:var(--green)">34 unplanned absences</strong>.</div>
+            <div style="margin-top:10px;display:flex;gap:8px">
+              <button class="btn bp" style="font-size:12px;padding:6px 12px">📅 Auto-add coverage</button>
+              <button class="btn" style="font-size:12px;padding:6px 12px;background:rgba(255,255,255,.07);color:var(--g400);border:1px solid rgba(255,255,255,.12)">Dismiss</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Absence heatmap -->
+      <div class="card">
+        <div class="ch"><div class="ct">🗓️ Absence Heatmap — Last 12 Months</div><div style="font-size:12px;color:var(--g400)">Each cell = 1 week · Darker = more absent</div></div>
+        <div class="cb">
+          <div class="heatmap-wrap">
+            <div style="display:flex;align-items:flex-start;gap:6px;min-width:600px">
+              <div style="display:flex;flex-direction:column;gap:3px;padding-top:20px">
+                <div class="hm-row-label">Mon</div>
+                <div class="hm-row-label">Tue</div>
+                <div class="hm-row-label">Wed</div>
+                <div class="hm-row-label">Thu</div>
+                <div class="hm-row-label">Fri</div>
+                <div class="hm-row-label">Sat</div>
+                <div class="hm-row-label">Sun</div>
+              </div>
+              <div style="flex:1" id="heatmap-grid"></div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;margin-top:10px;font-size:11px;color:var(--g400)">
+              <span>Low</span>
+              <div style="width:12px;height:12px;border-radius:2px;background:#e0f2fe"></div>
+              <div style="width:12px;height:12px;border-radius:2px;background:#7dd3fc"></div>
+              <div style="width:12px;height:12px;border-radius:2px;background:#f59e0b"></div>
+              <div style="width:12px;height:12px;border-radius:2px;background:#ef4444"></div>
+              <div style="width:12px;height:12px;border-radius:2px;background:#991b1b"></div>
+              <span>High</span>
+              <span style="margin-left:16px;color:var(--orange)">↑ Summer months show significantly higher absence</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         ATTENDANCE
+    ════════════════════════════════════════════ -->
+    <div class="sc" id="sc-attendance">
+      <div class="kpig" style="grid-template-columns:repeat(4,1fr)">
+        <div class="kpi gr"><div class="ki">✅</div><div class="kv">94.2%</div><div class="kl">Avg Attendance Rate</div><div class="kd up">↑ +1.8% vs last month</div></div>
+        <div class="kpi bl"><div class="ki">👷</div><div class="kv">22.6</div><div class="kl">Avg Shifts/Employee</div><div class="kd nt">→ Normal</div></div>
+        <div class="kpi rd"><div class="ki">🚫</div><div class="kv">3</div><div class="kl">Unexcused Absences</div><div class="kd dn">↑ Up from 1</div></div>
+        <div class="kpi or"><div class="ki">⏰</div><div class="kv">7</div><div class="kl">Late Arrivals</div><div class="kd nt">→ Same as Feb</div></div>
+      </div>
+      <div class="g2 mb18">
+        <div class="card">
+          <div class="ch"><div class="ct">👥 Per-Employee Attendance</div><button class="btn bg" style="font-size:11.5px;padding:4px 10px">⬇ Export</button></div>
+          <table>
+            <thead><tr><th>Employee</th><th>Shifts</th><th>Present</th><th>Absent</th><th>Rate</th><th>Trend</th></tr></thead>
+            <tbody>
+              <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#F59E0B,#e85d04)">IH</div>Ivan Horvat</div></td><td>23</td><td>22</td><td>1</td><td><span class="badge b-gr">95.7%</span></td><td style="color:var(--green)">↑</td></tr>
+              <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#10B981,#0EA5E9)">AV</div>Ana Vidović</div></td><td>22</td><td>20</td><td>2</td><td><span class="badge b-bl">90.9%</span></td><td style="color:var(--orange)">→</td></tr>
+              <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#8B5CF6,#2563EB)">MP</div>Mario Perić</div></td><td>23</td><td>23</td><td>0</td><td><span class="badge b-gr">100%</span></td><td style="color:var(--green)">↑</td></tr>
+              <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#EF4444,#F59E0B)">JB</div>Josip Blažić</div></td><td>22</td><td>19</td><td>3</td><td><span class="badge b-or">86.4%</span></td><td style="color:var(--red)">↓</td></tr>
+              <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#2563EB,#8B5CF6)">NK</div>Nina Kolar</div></td><td>23</td><td>23</td><td>0</td><td><span class="badge b-gr">100%</span></td><td style="color:var(--green)">↑</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="ch"><div class="ct">📊 Attendance by Location</div></div>
+          <div class="cb">
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <div><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px"><span style="font-weight:600">🏭 Hall A</span><span style="font-weight:700;color:var(--green)">96.2%</span></div><div class="pb thick"><div class="pf" style="width:96%;background:var(--green)"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px"><span style="font-weight:600">🏗️ Hall B</span><span style="font-weight:700;color:var(--blue)">93.8%</span></div><div class="pb thick"><div class="pf" style="width:94%;background:var(--blue)"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px"><span style="font-weight:600">🌙 Hall C (Night)</span><span style="font-weight:700;color:var(--orange)">88.1%</span></div><div class="pb thick"><div class="pf" style="width:88%;background:var(--orange)"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px"><span style="font-weight:600">🏢 Office / Admin</span><span style="font-weight:700;color:var(--green)">98.5%</span></div><div class="pb thick"><div class="pf" style="width:98%;background:var(--green)"></div></div></div>
+            </div>
+            <div style="margin-top:14px;background:var(--orange-l);border:1px solid rgba(245,158,11,.25);border-radius:8px;padding:10px 12px;font-size:12.5px;color:#92400e">
+              ⚠️ Hall C (night shift) has the lowest attendance rate. Consider reviewing staffing and working conditions.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         OVERTIME
+    ════════════════════════════════════════════ -->
+    <div class="sc" id="sc-overtime">
+      <div class="kpig" style="grid-template-columns:repeat(4,1fr)">
+        <div class="kpi or"><div class="ki">⏱</div><div class="kv">22h</div><div class="kl">Total Overtime</div><div class="kd dn">↑ +6h vs Feb</div></div>
+        <div class="kpi rd"><div class="ki">🔥</div><div class="kv">3</div><div class="kl">Over 40h/week</div><div class="kd dn">↑ Up from 1</div></div>
+        <div class="kpi pu"><div class="ki">🌑</div><div class="kv">14h</div><div class="kl">Night Shift OT</div><div class="kd dn">↑ 63% of total</div></div>
+        <div class="kpi bl"><div class="ki">💰</div><div class="kv">€340</div><div class="kl">Est. OT Cost</div><div class="kd nt">At 1.5× rate</div></div>
+      </div>
+      <div class="g2">
+        <div class="card">
+          <div class="ch"><div class="ct">📊 Overtime by Employee</div><button class="btn bg" style="font-size:11.5px;padding:4px 10px">⬇ Export</button></div>
+          <table>
+            <thead><tr><th>Employee</th><th>OT Hours</th><th>Shift Type</th><th>Est. Cost</th><th>Flag</th></tr></thead>
+            <tbody>
+              <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#EF4444,#F59E0B)">JB</div>Josip Blažić</div></td><td style="font-weight:700;color:var(--red)">8.5h</td><td><span class="badge b-pu">🌑 Night</span></td><td>€128</td><td><span class="badge b-rd">⚠️ Alert</span></td></tr>
+              <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#F59E0B,#e85d04)">IH</div>Ivan Horvat</div></td><td style="font-weight:700;color:var(--orange)">6.0h</td><td><span class="badge b-bl">🌅 Early</span></td><td>€72</td><td><span class="badge b-or">Watch</span></td></tr>
+              <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#2563EB,#8B5CF6)">AS</div>Ante Šimić</div></td><td style="font-weight:700;color:var(--orange)">5.5h</td><td><span class="badge b-or">🌇 Late</span></td><td>€83</td><td><span class="badge b-or">Watch</span></td></tr>
+              <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#10B981,#0EA5E9)">AV</div>Ana Vidović</div></td><td>2.0h</td><td><span class="badge b-bl">🌅 Early</span></td><td>€24</td><td><span class="badge b-gr">OK</span></td></tr>
+              <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#8B5CF6,#2563EB)">MP</div>Mario Perić</div></td><td>0h</td><td>—</td><td>€0</td><td><span class="badge b-gr">OK</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="ch"><div class="ct">⏱ Overtime by Shift Type</div></div>
+          <div class="cb">
+            <div style="display:flex;flex-direction:column;gap:12px">
+              <div><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px;align-items:center"><span style="font-weight:600">🌑 Night Shift</span><div><span style="font-weight:700;color:var(--purple)">14h</span><span class="badge b-rd" style="margin-left:7px">63%</span></div></div><div class="pb thick"><div class="pf" style="width:63%;background:var(--purple)"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px;align-items:center"><span style="font-weight:600">🌅 Early Shift</span><div><span style="font-weight:700;color:var(--blue)">6h</span><span class="badge b-bl" style="margin-left:7px">27%</span></div></div><div class="pb thick"><div class="pf" style="width:27%;background:var(--blue)"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px;align-items:center"><span style="font-weight:600">🌇 Late Shift</span><div><span style="font-weight:700;color:var(--orange)">2h</span><span class="badge b-or" style="margin-left:7px">10%</span></div></div><div class="pb thick"><div class="pf" style="width:10%;background:var(--orange)"></div></div></div>
+            </div>
+            <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--g100)">
+              <div style="font-size:12px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Weekly Trend</div>
+              <div style="display:flex;align-items:flex-end;gap:6px;height:60px">
+                <div style="flex:1;background:var(--blue-l);border-radius:4px 4px 0 0;height:30%;display:flex;align-items:flex-start;justify-content:center;padding-top:3px;font-size:10px;font-weight:600;color:var(--blue)">3h</div>
+                <div style="flex:1;background:var(--blue-l);border-radius:4px 4px 0 0;height:40%;display:flex;align-items:flex-start;justify-content:center;padding-top:3px;font-size:10px;font-weight:600;color:var(--blue)">4h</div>
+                <div style="flex:1;background:var(--blue-l);border-radius:4px 4px 0 0;height:25%;display:flex;align-items:flex-start;justify-content:center;padding-top:3px;font-size:10px;font-weight:600;color:var(--blue)">2h</div>
+                <div style="flex:1;background:var(--orange-l);border-radius:4px 4px 0 0;height:65%;border:1px solid var(--orange);display:flex;align-items:flex-start;justify-content:center;padding-top:3px;font-size:10px;font-weight:600;color:var(--orange)">7h</div>
+                <div style="flex:1;background:var(--red-l);border-radius:4px 4px 0 0;height:80%;border:1px solid var(--red);display:flex;align-items:flex-start;justify-content:center;padding-top:3px;font-size:10px;font-weight:600;color:var(--red)">8h</div>
+              </div>
+              <div style="display:flex;gap:6px;margin-top:4px">
+                <div style="flex:1;font-size:10px;color:var(--g400);text-align:center">W1</div>
+                <div style="flex:1;font-size:10px;color:var(--g400);text-align:center">W2</div>
+                <div style="flex:1;font-size:10px;color:var(--g400);text-align:center">W3</div>
+                <div style="flex:1;font-size:10px;color:var(--orange);text-align:center;font-weight:600">W4</div>
+                <div style="flex:1;font-size:10px;color:var(--red);text-align:center;font-weight:600">W5↑</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         LEAVE
+    ════════════════════════════════════════════ -->
+    <div class="sc" id="sc-leave">
+      <div class="kpig" style="grid-template-columns:repeat(4,1fr)">
+        <div class="kpi bl"><div class="ki">🏖️</div><div class="kv">47</div><div class="kl">Total Leave Days</div><div class="kd nt">→ Normal usage</div></div>
+        <div class="kpi rd"><div class="ki">🤒</div><div class="kv">8</div><div class="kl">Sick Days</div><div class="kd nt">→ Same as Feb</div></div>
+        <div class="kpi or"><div class="ki">⏳</div><div class="kv">3</div><div class="kl">Pending Requests</div><div class="kd dn">Needs action</div></div>
+        <div class="kpi pu"><div class="ki">🔄</div><div class="kv">4</div><div class="kl">Shift Swaps</div><div class="kd nt">→ All approved</div></div>
+      </div>
+      <div class="g2">
+        <div class="card mb18">
+          <div class="ch"><div class="ct">📋 Leave Type Breakdown</div></div>
+          <div class="cb">
+            <div style="display:flex;flex-direction:column;gap:11px">
+              <div><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px"><span style="font-weight:600">🏖️ Annual Leave</span><span style="font-weight:700;color:var(--blue)">20 days · 43%</span></div><div class="pb thick"><div class="pf" style="width:43%;background:var(--blue)"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px"><span style="font-weight:600">🤒 Sick Leave</span><span style="font-weight:700;color:var(--red)">15 days · 32%</span></div><div class="pb thick"><div class="pf" style="width:32%;background:var(--red)"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px"><span style="font-weight:600">🔄 Shift Swaps</span><span style="font-weight:700;color:var(--purple)">8 days · 17%</span></div><div class="pb thick"><div class="pf" style="width:17%;background:var(--purple)"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px"><span style="font-weight:600">⏸️ Unpaid / Other</span><span style="font-weight:700;color:var(--orange)">4 days · 8%</span></div><div class="pb thick"><div class="pf" style="width:8%;background:var(--orange)"></div></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="ch"><div class="ct">📅 Annual Leave Remaining — Per Employee</div></div>
+          <table>
+            <thead><tr><th>Employee</th><th>Entitlement</th><th>Used</th><th>Remaining</th><th></th></tr></thead>
+            <tbody>
+              <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#F59E0B,#e85d04)">IH</div>Ivan Horvat</div></td><td>25</td><td>7</td><td style="font-weight:700;color:var(--green)">18</td><td><div class="pb" style="width:80px"><div class="pf" style="width:72%;background:var(--green)"></div></div></td></tr>
+              <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#10B981,#0EA5E9)">AV</div>Ana Vidović</div></td><td>25</td><td>12</td><td style="font-weight:700;color:var(--orange)">13</td><td><div class="pb" style="width:80px"><div class="pf" style="width:52%;background:var(--orange)"></div></div></td></tr>
+              <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#8B5CF6,#2563EB)">MP</div>Mario Perić</div></td><td>25</td><td>3</td><td style="font-weight:700;color:var(--green)">22</td><td><div class="pb" style="width:80px"><div class="pf" style="width:88%;background:var(--green)"></div></div></td></tr>
+              <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#EF4444,#F59E0B)">JB</div>Josip Blažić</div></td><td>20</td><td>18</td><td style="font-weight:700;color:var(--red)">2</td><td><div class="pb" style="width:80px"><div class="pf" style="width:10%;background:var(--red)"></div></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         BRADFORD FACTOR
+    ════════════════════════════════════════════ -->
+    <div class="sc" id="sc-bradford">
+      <div style="background:linear-gradient(135deg,rgba(239,68,68,.1),rgba(239,68,68,.05));border:1px solid rgba(239,68,68,.2);border-radius:var(--r);padding:18px 22px;margin-bottom:20px;display:flex;gap:16px;align-items:center">
+        <div style="font-size:36px">🔴</div>
+        <div>
+          <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:17px;color:var(--navy)">Bradford Factor — Absence Pattern Monitor</div>
+          <div style="font-size:13px;color:var(--g500);margin-top:4px;max-width:600px">The Bradford Factor measures frequent short-term absences. Formula: <strong>S² × D</strong> (S = number of absence spells, D = total absent days). Scores above 200 warrant an HR conversation.</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:10px;flex-shrink:0">
+          <div style="text-align:center;background:var(--green-l);border-radius:8px;padding:10px 16px"><div style="font-family:'Syne',sans-serif;font-weight:800;font-size:22px;color:var(--green)">17</div><div style="font-size:11px;color:var(--g400)">Normal (0–99)</div></div>
+          <div style="text-align:center;background:var(--orange-l);border-radius:8px;padding:10px 16px"><div style="font-family:'Syne',sans-serif;font-weight:800;font-size:22px;color:var(--orange)">5</div><div style="font-size:11px;color:var(--g400)">Watch (100–299)</div></div>
+          <div style="text-align:center;background:var(--red-l);border-radius:8px;padding:10px 16px"><div style="font-family:'Syne',sans-serif;font-weight:800;font-size:22px;color:var(--red)">2</div><div style="font-size:11px;color:var(--g400)">Alert (300+)</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="ch"><div class="ct">📊 Bradford Scores — All Employees</div><button class="btn bg" style="font-size:11.5px;padding:4px 10px">⬇ Export for HR</button></div>
+        <table>
+          <thead><tr><th>Employee</th><th>Location</th><th>Absence Spells (S)</th><th>Total Days (D)</th><th>Bradford Score (S²×D)</th><th>Risk Level</th><th>Action</th></tr></thead>
+          <tbody>
+            <tr style="background:var(--red-l)">
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#EF4444,#F59E0B)">JB</div><div><div style="font-weight:600">Josip Blažić</div><div style="font-size:11px;color:var(--g400)">#0391</div></div></div></td>
+              <td style="font-size:12px;color:var(--g400)">Hall C</td>
+              <td style="font-weight:700">7</td><td style="font-weight:700">12</td>
+              <td><span style="font-family:'Syne',sans-serif;font-weight:800;font-size:16px;color:var(--red)">588</span></td>
+              <td><span class="badge b-rd">🔴 Critical</span></td>
+              <td><button class="btn" style="font-size:11.5px;padding:4px 10px;background:var(--red-l);color:var(--red);border:1px solid rgba(239,68,68,.25)">HR Review</button></td>
+            </tr>
+            <tr style="background:var(--red-l)">
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#10B981,#0EA5E9)">AV</div><div><div style="font-weight:600">Ana Vidović</div><div style="font-size:11px;color:var(--g400)">#0156</div></div></div></td>
+              <td style="font-size:12px;color:var(--g400)">Hall A</td>
+              <td style="font-weight:700">6</td><td style="font-weight:700">9</td>
+              <td><span style="font-family:'Syne',sans-serif;font-weight:800;font-size:16px;color:var(--red)">324</span></td>
+              <td><span class="badge b-rd">🔴 Critical</span></td>
+              <td><button class="btn" style="font-size:11.5px;padding:4px 10px;background:var(--red-l);color:var(--red);border:1px solid rgba(239,68,68,.25)">HR Review</button></td>
+            </tr>
+            <tr>
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#2563EB,#8B5CF6)">AS</div><div><div style="font-weight:600">Ante Šimić</div><div style="font-size:11px;color:var(--g400)">#0274</div></div></div></td>
+              <td style="font-size:12px;color:var(--g400)">Hall B</td>
+              <td>4</td><td>6</td>
+              <td><span style="font-family:'Syne',sans-serif;font-weight:800;font-size:16px;color:var(--orange)">96</span></td>
+              <td><span class="badge b-or">🟡 Watch</span></td>
+              <td><button class="btn bg" style="font-size:11.5px;padding:4px 10px">Monitor</button></td>
+            </tr>
+            <tr>
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#F59E0B,#e85d04)">IH</div><div><div style="font-weight:600">Ivan Horvat</div><div style="font-size:11px;color:var(--g400)">#0214</div></div></div></td>
+              <td style="font-size:12px;color:var(--g400)">Hall A</td>
+              <td>1</td><td>2</td>
+              <td><span style="font-family:'Syne',sans-serif;font-weight:800;font-size:16px;color:var(--green)">2</span></td>
+              <td><span class="badge b-gr">🟢 Normal</span></td>
+              <td><span style="color:var(--g300);font-size:12px">—</span></td>
+            </tr>
+            <tr>
+              <td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#8B5CF6,#2563EB)">MP</div><div><div style="font-weight:600">Mario Perić</div><div style="font-size:11px;color:var(--g400)">#0391</div></div></div></td>
+              <td style="font-size:12px;color:var(--g400)">Hall B</td>
+              <td>0</td><td>0</td>
+              <td><span style="font-family:'Syne',sans-serif;font-weight:800;font-size:16px;color:var(--green)">0</span></td>
+              <td><span class="badge b-gr">🟢 Perfect</span></td>
+              <td><span style="color:var(--g300);font-size:12px">—</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════
+         SHIFT COVERAGE
+    ════════════════════════════════════════════ -->
+    <div class="sc" id="sc-shifts">
+      <div class="kpig" style="grid-template-columns:repeat(4,1fr)">
+        <div class="kpi bl"><div class="ki">📅</div><div class="kv">186</div><div class="kl">Total Shifts Worked</div><div class="kd up">↑ +12 vs Feb</div></div>
+        <div class="kpi gr"><div class="ki">✅</div><div class="kv">98.4%</div><div class="kl">Shifts Fully Covered</div><div class="kd up">↑ Excellent</div></div>
+        <div class="kpi or"><div class="ki">⚠️</div><div class="kv">3</div><div class="kl">Understaffed Shifts</div><div class="kd dn">All Night shifts</div></div>
+        <div class="kpi pu"><div class="ki">🔄</div><div class="kv">4</div><div class="kl">Swaps This Month</div><div class="kd nt">→ All approved</div></div>
+      </div>
+      <div class="g2">
+        <div class="card">
+          <div class="ch"><div class="ct">⏱ Coverage by Shift Type</div></div>
+          <div class="cb">
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <div><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px;align-items:center"><span style="font-weight:600">🌅 Early Shift</span><div><span style="font-weight:700;color:var(--green)">100%</span><span class="badge b-gr" style="margin-left:7px">74 shifts</span></div></div><div class="pb thick"><div class="pf" style="width:100%;background:var(--green)"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px;align-items:center"><span style="font-weight:600">🌇 Late Shift</span><div><span style="font-weight:700;color:var(--green)">100%</span><span class="badge b-bl" style="margin-left:7px">68 shifts</span></div></div><div class="pb thick"><div class="pf" style="width:100%;background:var(--blue)"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px;align-items:center"><span style="font-weight:600">🌑 Night Shift</span><div><span style="font-weight:700;color:var(--orange)">93.2%</span><span class="badge b-or" style="margin-left:7px">44 shifts</span></div></div><div class="pb thick"><div class="pf" style="width:93%;background:var(--orange)"></div></div>
+              <div style="font-size:11.5px;color:var(--red);margin-top:5px">⚠️ 3 understaffed — consider adding 1 more night shift worker</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="ch"><div class="ct">📊 Shifts by Location</div></div>
+          <div class="cb">
+            <div style="display:flex;flex-direction:column;gap:13px">
+              <div><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px"><span style="font-weight:600">🏭 Hall A</span><span style="font-weight:700">84 shifts · 12 staff</span></div><div class="pb thick"><div class="pf" style="width:85%;background:var(--blue)"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px"><span style="font-weight:600">🏗️ Hall B</span><span style="font-weight:700">62 shifts · 8 staff</span></div><div class="pb thick"><div class="pf" style="width:63%;background:var(--teal)"></div></div></div>
+              <div><div style="display:flex;justify-content:space-between;margin-bottom:5px;font-size:13px"><span style="font-weight:600">🌙 Hall C</span><span style="font-weight:700">40 shifts · 4 staff</span></div><div class="pb thick"><div class="pf" style="width:40%;background:var(--purple)"></div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<script>
+// ── Report tabs ────────────────────────────────────────────────
+const allTabs = document.querySelectorAll('.rt');
+function showReport(id, el) {
+  document.querySelectorAll('.sc').forEach(s => s.classList.remove('on'));
+  document.getElementById('sc-' + id).classList.add('on');
+  allTabs.forEach(t => t.classList.remove('on'));
+  if (el) el.classList.add('on');
+}
+
+// ── Heatmap generation ────────────────────────────────────────
+function buildHeatmap() {
+  const grid = document.getElementById('heatmap-grid');
+  if (!grid) return;
+  const months = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar'];
+  const COLORS = ['#e0f2fe','#7dd3fc','#f59e0b','#ef4444','#991b1b'];
+  // Simulate 52 weeks × 7 days
+  const weeks = 52;
+  // Build header
+  let html = '<div style="display:flex;gap:3px;margin-bottom:3px;padding-left:0">';
+  // month labels (one per 4 weeks approx)
+  for (let m = 0; m < months.length; m++) {
+    html += `<div style="width:${(52/12)*17}px;font-size:9px;color:var(--g400);overflow:hidden;white-space:nowrap">${months[m]}</div>`;
+  }
+  html += '</div><div style="display:grid;grid-template-rows:repeat(7,14px);grid-auto-flow:column;grid-auto-columns:14px;gap:3px">';
+  // Summer months are weeks 10–22 (approx Jun–Aug)
+  for (let d = 0; d < 7; d++) {
+    for (let w = 0; w < weeks; w++) {
+      // Generate absence level
+      let level;
+      const isSummer = w >= 9 && w <= 22;
+      const isWinter = w >= 36 || w <= 3;
+      const isHoliday = w >= 37 && w <= 39; // Dec holidays
+      if (isSummer) {
+        level = d === 4 ? Math.floor(Math.random()*2)+3 : Math.floor(Math.random()*2)+2;
+      } else if (isHoliday) {
+        level = Math.floor(Math.random()*2)+2;
+      } else if (isWinter) {
+        level = Math.floor(Math.random()*2);
+      } else {
+        level = Math.floor(Math.random()*2)+1;
+      }
+      const color = COLORS[Math.min(level, COLORS.length-1)];
+      html += `<div class="hm-cell" style="background:${color}" title="W${w+1} D${d+1}: ${level*3}% absent"></div>`;
+    }
+  }
+  html += '</div>';
+  grid.innerHTML = html;
+}
+buildHeatmap();
+</script>
+</body>
+</html>

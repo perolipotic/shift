@@ -1,8 +1,9 @@
 import { createRoute, redirect, useNavigate } from '@tanstack/react-router';
 import { useRef, type FormEvent } from 'react';
 
+import { AuthLayout } from '@/components/auth-layout';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { t } from '@/i18n';
@@ -72,12 +73,12 @@ export function OrganizationPromptScreen() {
   }
 
   return (
-    <main className="flex flex-1 items-center justify-center p-6">
+    <AuthLayout>
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <h1 className="text-xl font-semibold leading-none tracking-tight">
-            {t('auth.organization.heading')}
-          </h1>
+          <CardTitle asChild>
+            <h1>{t('auth.organization.heading')}</h1>
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <form method="post" onSubmit={submit} className="grid gap-6">
@@ -102,7 +103,7 @@ export function OrganizationPromptScreen() {
           </form>
         </CardContent>
       </Card>
-    </main>
+    </AuthLayout>
   );
 }
 

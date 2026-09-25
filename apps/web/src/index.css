@@ -1,70 +1,59 @@
-/* The theme layer (story 1.1b).
+/* The theme layer (story 1.1b, rethemed by visual refresh A).
  *
  * Three layers, in order, and the third is the one that makes the other two
- * visible. First the shadcn/ui neutral base, which `components.json` presumes
- * with `cssVariables: true`. Then DESIGN.md's brand delta, overriding
- * `primary` and `destructive` and adding the working-shift ramp, the
- * non-working slot and the modifier signals. Then `@layer base`, which paints
- * them onto the document — Tailwind 4's preflight sets no page background, so
- * without that layer every token is defined and none is ever consumed.
+ * visible. First the base palette: the shadcn/ui token NAMES that
+ * `components.json` presumes with `cssVariables: true`, filled since visual
+ * refresh A with a slate/navy palette instead of shadcn's neutral greys. Then
+ * DESIGN.md's brand delta: `primary` and `destructive`, the working-shift
+ * ramp, the non-working slot, the modifier signals and the curated accents.
+ * Then `@layer base`, which paints them onto the document — Tailwind 4's
+ * preflight sets no page background, so without that layer every token is
+ * defined and none is ever consumed.
  *
- * Every value is OKLCH (UX-DR3), converted from DESIGN.md's hex — that file is
- * the source of truth for the brand delta, and shadcn's neutral registry
- * (ui.shadcn.com/r/colors/neutral.json, cssVarsV4, fetched 2026-09-03) for the
- * base. Five values deviate from their source, each measured and approved:
+ * Every value is OKLCH (UX-DR3), converted from a hex that DESIGN.md declares:
+ * the brand delta under `colors:` and the base palette under `base-palette:`
+ * (both round-tripped by `test/theme-fidelity.test.ts`), the elevation under
+ * `elevation:`. DESIGN.md is the source of truth; this file is its OKLCH
+ * transcription.
  *
- *   --shift-nonworking-foreground  L 0.6801 -> 0.5361 light, 0.5665 -> 0.6165
- *     dark. DESIGN.md's values measured 2.58:1 and 3.76:1 against their own
- *     fill; UX-DR7 keeps that label always visible, so 4.5:1 applies.
- *   --muted-foreground             L 0.556 -> 0.542 light. Stock shadcn
- *     measured 4.34:1 on --muted.
- *   --ring                         L 0.708 -> 0.665 -> 0.37 light, 0.556 ->
- *     0.8 dark. Two shifts, and the second is the interesting one. Stock
- *     shadcn measured 2.59:1 on --background, below the 3:1 WCAG 2.4.11
- *     exists for, so 1.1b moved it to 0.665. Story 1.1d then raised --input
- *     to 0.65 — and a ring at 0.665 abutting a border at 0.65 measures
- *     1.06:1, so satisfying 1.4.11 for the border had made the focus
- *     indicator invisible against the very control it indicates. The two
- *     affordances are adjacent by construction (`ring-1` draws immediately
- *     outside the input's own border), so they need 3:1 from each other as
- *     well as from the page. Light goes DARKER rather than lighter: a ring
- *     light enough to clear 3:1 above a 0.65 border would need L 0.974, which
- *     is invisible on a white page. Dark goes lighter for the mirror reason.
- *     Now 3.23:1 and 3.25:1 against --input, 10.43:1 and 10.59:1 against
- *     --background. --sidebar-ring is deliberately NOT moved with it: it is
- *     measured against --sidebar, no surface consumes it, and no control abuts
- *     it — the divergence is recorded in deferred-work.md beside the
- *     --sidebar-primary question rather than resolved blind.
- *   --sidebar-ring                 L 0.708 -> 0.654 light. Same stock value,
- *     same defect, measured 2.48:1 on --sidebar.
- *   --input                        L 0.922 -> 0.65 light and alpha 15% -> 36%
- *     dark, story 1.1d. Stock measured 1.26:1 and 1.47:1 composited against
- *     --background; the sign-in form is the first control whose border is its
- *     SOLE visual affordance — a shadcn text input is filled with the page
- *     colour — which is exactly the case WCAG 1.4.11 holds to 3:1. Now 3.23:1
- *     and 3.26:1. Dark stays an alpha token so it keeps compositing over
- *     whatever surface it sits on; read raw it reports a meaningless 19.79:1.
+ * THE REGISTER (visual refresh A). A slate-50 page with white cards, a navy
+ * sidebar in BOTH themes (#0B1628 light, a darker #070E1A dark — two distinct
+ * navies, so the dark-differs-from-light sweep holds without widening its
+ * PARITY list), a navy-based dark theme, `primary` #2563EB, a 12px radius and
+ * soft shadows. Body text is DM Sans, headings Syne.
  *
- * Hue and chroma are untouched in every case; only L and, for dark --input,
- * alpha moved. Each carries a little headroom rather than sitting on its bound,
- * so re-rounding an OKLCH literal cannot flip a passing measurement red. Dark
- * values were already clear except where noted. See the spec change log for the
- * approvals.
+ * MEASURED DEVIATIONS AND RE-PINS. Every threshold in `test/theme-*.test.ts`
+ * kept its value; what moved is the measurements pinned against them, each to a
+ * newly measured value that still clears its threshold with headroom:
  *
- * --border, by contrast, stays stock and stays below AA on purpose, pinned at
- * 1.26:1 and 1.25:1 by test/theme-contrast.test.ts. It edges cards and
- * separators, never a control, and 1.4.11 says nothing about a decorative
- * divider; raising it too would visibly heavy every surface in the interface
- * for no accessibility gain.
- *
- * Light lives on `:root`; dark exists only inside `prefers-color-scheme`, and
- * `color-scheme` tells the UA to follow it for scrollbars and form controls.
- * There is deliberately no `.dark` class and no `data-theme` attribute: UX-DR2
- * ships both themes with no toggle, no setting and nothing persisted.
- *
- * Ramp slots are numbered, never named. Shift Types are Organization data of
- * arbitrary count assigned to slots in creation order (UX-DR6), so a
- * `--shift-night` token would encode one Organization's naming into the theme.
+ *   --muted-foreground   light L 0.542 -> 0.4924 (#556275). Slate-500, the
+ *     mockup's secondary text, measures 4.34:1 on the slate-100 `--muted`; the
+ *     darker slate clears 4.5:1 at 5.65:1 (5.92:1 on the page).
+ *   --input              light L 0.65 -> 0.6291 (#7B8AA0); dark stays
+ *     `oklch(1 0 0 / 36%)`. The mockup draws inputs in slate-200, which is
+ *     1.18:1 — decorative, where WCAG 1.4.11 holds a text field's only
+ *     affordance to 3:1. Pinned ratio against the page 3.23 -> 3.35 light,
+ *     3.26 -> 3.32 dark (the dark page is navy now, so the same alpha measures
+ *     differently). Dark stays an alpha token so it composites over whatever
+ *     surface it sits on; read raw it reports a meaningless near-white.
+ *   --ring               light L 0.37 -> 0.3418 (#1A3275), dark L 0.8 ->
+ *     0.8563 (#B4D2FD). Primary's hue now rather than grey. The ring draws
+ *     immediately outside the input's own border, so it needs 3:1 from that
+ *     border as well as from the page — and a ring light enough to clear 3:1
+ *     above a 3:1 border would be invisible on the page, so light goes DARK.
+ *     3.41:1 and 3.47:1 against the composited `--input`, 11.42:1 and 11.51:1
+ *     against `--background`. `#2563EB` itself measures 1.5:1 against the
+ *     border, which is why the ring is a deeper blue than `primary`.
+ *   --sidebar-ring       light L 0.654 -> 0.8091 (#93C5FD). The sidebar is
+ *     navy now, so the ring that clears 3:1 on it is LIGHT: 10.04:1 light,
+ *     7.60:1 dark (#60A5FA).
+ *   --border             light 1.26:1 -> 1.18:1 (slate-200 on slate-50), dark
+ *     1.25:1 -> 1.32:1 (the same 10% white over navy). Still deliberately below
+ *     AA and still pinned: it edges cards and separators, never a control, and
+ *     1.4.11 says nothing about a decorative divider.
+ *   --shift-nonworking-foreground  unchanged since 1.1b: L 0.6801 -> 0.5361
+ *     light, 0.5665 -> 0.6165 dark, because DESIGN.md's values measured 2.58:1
+ *     and 3.76:1 against their own fill and UX-DR7 keeps that label visible.
  *
  * THE FOUR BRAND ACCENTS (story 1.4c, UX-DR5) are authored here rather than
  * stored anywhere, and that is the whole architecture of the feature. An
@@ -76,85 +65,110 @@
  * `apps/web/src`, which today contains none.
  *
  * They are DISTINCTLY NAMED tokens rather than one `--accent` reassigned by an
- * attribute, which is the obvious implementation and the wrong one here: it
- * collides with `theme-tokens.test.ts:140`, which bans `.dark`, `[data-theme`
- * and `data-theme=` outright, and with `:47`, which admits exactly one
- * declaration per token per theme. Naming each accent's pair distinctly
- * satisfies both, and every accent then inherits the single-declaration,
- * dual-theme, divergence and inline-mapping sweeps that hold the other 51.
+ * attribute: that collides with `theme-tokens.test.ts`, which bans `.dark`,
+ * `[data-theme` and `data-theme=` outright and admits exactly one declaration
+ * per token per theme.
+ *
+ * RETUNED FOR THE NAVY SIDEBAR (visual refresh A). The accent is a 1px edge on
+ * the sidebar and a fill behind the lockup's letter ON the sidebar, so a light
+ * accent must clear 3:1 against a white card AND the navy sidebar, and 4.5:1
+ * with its white foreground: relative luminance roughly 0.13-0.18, OKLCH L
+ * about 0.53-0.56 at these chromas. The 1.4c values sat at L ~0.49, below that
+ * window (2.6:1 on navy), so every light accent moved up into it:
+ *
+ *   --brand-blue    oklch(0.49 0.19 266)  -> oklch(0.545 0.255 280)
+ *   --brand-green   oklch(0.52 0.15 143)  -> oklch(0.535 0.16 143)
+ *   --brand-amber   oklch(0.54 0.09 95)   -> oklch(0.545 0.085 95)
+ *   --brand-violet  oklch(0.475 0.19 312) -> oklch(0.56 0.22 312)
+ *
+ * `--brand-blue` is the one whose HUE moved, by 14° (the Boundaries allow 15
+ * without asking): `#2563EB` sits at L 0.546 h 263, inside the very window the
+ * accent had to enter, and the old hue at the new lightness measured ΔE 6.6
+ * from it. At 280° it is ΔE 10.84 from `primary` and 12.62 from
+ * `--modifier-overridden` (289°), which is the corridor it has to thread. Its
+ * tightest border is 3.27:1 on the navy sidebar. Every fill stays inside sRGB
+ * — a browser clips anything outside it, and every ratio above would then
+ * describe a colour nobody sees — which is what caps `--brand-blue`'s chroma at
+ * 0.255 (its blue channel sits at 0.993) and `--brand-amber`'s at 0.085: the
+ * hues have no more to give at a lightness that clears both the white card and
+ * the navy. `test/theme-contrast.test.ts` asserts the gamut for every colour
+ * token in both themes. Dark accents are unchanged:
+ * the dark surfaces are navy now rather than grey, and every dark accent was
+ * already far above 3:1 on them (5.18:1 at the tightest).
  *
  * NONE OF THEM SITS IN `--destructive`'S HUE, and that is a product rule rather
  * than a preference: UX-DR4 reserves `destructive` exclusively for an
  * unresolved conflict, and the pilot is a fire department whose obvious accent
  * is red. The nearest is `--brand-amber`, 73° away in light and 49° in dark;
- * `test/theme-contrast.test.ts` asserts the separation in hue AND in CIEDE2000
- * rather than trusting the numbers written here. Red is absent deliberately and
- * permanently, which is why the set is four rather than five.
+ * `test/theme-contrast.test.ts` asserts the separation in hue AND in CIEDE2000.
+ * The other signals — `primary`, the modifier overlays and
+ * `--modifier-overridden` — are held apart by distance rather than by hue:
+ * every accent is at least ΔE 10 from every one of them in both themes.
  *
- * THE OTHER SIGNALS ARE HELD APART BY DISTANCE RATHER THAN BY HUE, and the
- * values below were moved in the 1.4c review to make that true. `--primary`,
- * the two modifier overlays and `--modifier-overridden` occupy the same
- * everyday colour vocabulary these accents are named from — an accent called
- * `amber` cannot be 45° from an amber modifier — so what the values buy instead
- * is perceptual distance: every accent is at least ΔE 10 from every one of
- * them in both themes, where 2.3 is the just-noticeable bound. Before the
- * review dark `--brand-amber` measured ΔE 1.5 from
- * `--modifier-uncovered-foreground`, which is the same colour by any useful
- * definition. `test/theme-contrast.test.ts` carries the threshold and the
- * argument for why it is weaker than `destructive`'s.
+ * `destructive`, the ramp, the non-working slot and the modifiers did NOT move.
+ * Their tests measure them against their own fills, never against a surface,
+ * so the new page colours change none of their ratios.
  *
- * Light fills sit near L 0.51 with a white foreground, dark fills near L 0.77
- * with a near-black one of their own hue — the shape `--primary` already uses.
- * Every pair clears 4.5:1 against its own foreground with headroom (5.05:1 at
- * the tightest), every fill clears 3:1 against the surfaces it is drawn on as a
- * border (4.84:1 at the tightest), and every fill stays inside sRGB — which is
- * what caps `--brand-amber`'s chroma at 0.09 in light: the hue simply has no
- * more to give at a lightness white can still read on.
+ * Light lives on `:root`; dark exists only inside `prefers-color-scheme`, and
+ * `color-scheme` tells the UA to follow it for scrollbars and form controls.
+ * There is deliberately no `.dark` class and no `data-theme` attribute: UX-DR2
+ * ships both themes with no toggle, no setting and nothing persisted.
+ *
+ * Ramp slots are numbered, never named. Shift Types are Organization data of
+ * arbitrary count assigned to slots in creation order (UX-DR6), so a
+ * `--shift-night` token would encode one Organization's naming into the theme.
  */
 @import 'tailwindcss';
 
-/* Every subset the package ships. Croatian's diacritics live in latin-ext; the
- * latin subset carries none of them, so a narrower entry point would fall back
- * mid-word on exactly the strings that matter — Noć, Godišnji, and members'
- * own names. Unused subsets cost nothing at runtime: unicode-range keeps the
- * browser from fetching them. */
-@import '@fontsource-variable/geist';
+/* Every subset each package ships. Croatian's diacritics live in latin-ext;
+ * the latin subset carries none of them, so a narrower entry point would fall
+ * back mid-word on exactly the strings that matter — Noć, Godišnji, and
+ * members' own names. Unused subsets cost nothing at runtime: unicode-range
+ * keeps the browser from fetching them. Self-hosted, never the Google CDN.
+ * `test/typography-coverage.test.ts` checks BOTH imports, body face first. */
+@import '@fontsource-variable/dm-sans';
+@import '@fontsource-variable/syne';
 
 :root {
-  --radius: 0.625rem;
+  --radius: 0.75rem;
 
-  /* shadcn/ui neutral base */
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
+  /* Elevation: DESIGN.md `elevation:`. Soft, and only on cards and layered
+   * surfaces. OKLCH alpha, like every other colour in this file. */
+  --elevation-sh: 0 1px 3px oklch(0 0 0 / 7%), 0 4px 16px oklch(0 0 0 / 5%);
+  --elevation-sh-lg: 0 8px 32px oklch(0 0 0 / 10%);
+
+  /* Base palette: DESIGN.md `base-palette.light` */
+  --background: oklch(0.9842 0.0034 247.86);
+  --foreground: oklch(0.2077 0.0398 265.75);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  --card-foreground: oklch(0.2077 0.0398 265.75);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.542 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.65 0 0);
-  --ring: oklch(0.37 0 0);
+  --popover-foreground: oklch(0.2077 0.0398 265.75);
+  --secondary: oklch(0.9683 0.0069 247.9);
+  --secondary-foreground: oklch(0.2795 0.0368 260.03);
+  --muted: oklch(0.9683 0.0069 247.9);
+  --muted-foreground: oklch(0.4924 0.0345 257.79);
+  --accent: oklch(0.9683 0.0069 247.9);
+  --accent-foreground: oklch(0.2795 0.0368 260.03);
+  --border: oklch(0.9288 0.0126 255.51);
+  --input: oklch(0.6291 0.0376 257.87);
+  --ring: oklch(0.3418 0.1191 265.52);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.654 0 0);
+  --sidebar: oklch(0.2004 0.0397 259.82);
+  --sidebar-foreground: oklch(0.869 0.0198 252.89);
+  --sidebar-primary: oklch(0.5461 0.2152 262.88);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.2947 0.0539 256.53);
+  --sidebar-accent-foreground: oklch(1 0 0);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.8091 0.0956 251.81);
 
   /* DESIGN.md brand delta */
-  --primary: oklch(0.5291 0.129 248.8);
+  --primary: oklch(0.5461 0.2152 262.88);
   --primary-foreground: oklch(1 0 0);
   --destructive: oklch(0.5908 0.1949 21.67);
   --destructive-foreground: oklch(1 0 0);
@@ -178,52 +192,55 @@
   --modifier-uncovered-foreground: oklch(0.4756 0.0932 76.04);
   --modifier-overridden: oklch(0.582 0.1334 289.32);
 
-  /* The curated brand accents (story 1.4c, UX-DR5) */
-  --brand-blue: oklch(0.49 0.19 266);
+  /* The curated brand accents (story 1.4c, UX-DR5; retuned by visual refresh A) */
+  --brand-blue: oklch(0.545 0.255 280);
   --brand-blue-foreground: oklch(1 0 0);
-  --brand-green: oklch(0.52 0.15 143);
+  --brand-green: oklch(0.535 0.16 143);
   --brand-green-foreground: oklch(1 0 0);
-  --brand-amber: oklch(0.54 0.09 95);
+  --brand-amber: oklch(0.545 0.085 95);
   --brand-amber-foreground: oklch(1 0 0);
-  --brand-violet: oklch(0.475 0.19 312);
+  --brand-violet: oklch(0.56 0.22 312);
   --brand-violet-foreground: oklch(1 0 0);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    /* shadcn/ui neutral base */
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
+    --elevation-sh: 0 1px 3px oklch(0 0 0 / 30%), 0 4px 16px oklch(0 0 0 / 22%);
+    --elevation-sh-lg: 0 8px 32px oklch(0 0 0 / 45%);
+
+    /* Base palette: DESIGN.md `base-palette.dark` */
+    --background: oklch(0.2083 0.0376 258.83);
+    --foreground: oklch(0.9288 0.0126 255.51);
+    --card: oklch(0.2432 0.0444 259.63);
+    --card-foreground: oklch(0.9288 0.0126 255.51);
+    --popover: oklch(0.2432 0.0444 259.63);
+    --popover-foreground: oklch(0.9288 0.0126 255.51);
+    --secondary: oklch(0.2888 0.0504 260.22);
+    --secondary-foreground: oklch(0.9288 0.0126 255.51);
+    --muted: oklch(0.2888 0.0504 260.22);
+    --muted-foreground: oklch(0.7107 0.0351 256.79);
+    --accent: oklch(0.2888 0.0504 260.22);
+    --accent-foreground: oklch(0.9683 0.0069 247.9);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 36%);
-    --ring: oklch(0.8 0 0);
+    --ring: oklch(0.8563 0.0683 257.35);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    --sidebar: oklch(0.1634 0.028 259.94);
+    --sidebar-foreground: oklch(0.8383 0.0242 256.11);
+    --sidebar-primary: oklch(0.4882 0.2172 264.38);
+    --sidebar-primary-foreground: oklch(1 0 0);
+    --sidebar-accent: oklch(0.2432 0.0444 259.63);
+    --sidebar-accent-foreground: oklch(0.9842 0.0034 247.86);
+    --sidebar-border: oklch(1 0 0 / 7%);
+    --sidebar-ring: oklch(0.7137 0.1434 254.62);
 
     /* DESIGN.md brand delta */
-    --primary: oklch(0.6907 0.1248 244.11);
-    --primary-foreground: oklch(0.1753 0.0312 242.22);
+    --primary: oklch(0.6231 0.188 259.81);
+    --primary-foreground: oklch(0.2004 0.0397 259.82);
     --destructive: oklch(0.6564 0.1747 18.71);
     --destructive-foreground: oklch(0.1757 0.0245 10.61);
     --shift-slot-1: oklch(0.3071 0.0518 245.22);
@@ -259,11 +276,14 @@
 }
 
 @theme inline {
-  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'DM Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-heading: 'Syne Variable', 'DM Sans Variable', ui-sans-serif, system-ui, sans-serif;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+  --shadow-sh: var(--elevation-sh);
+  --shadow-sh-lg: var(--elevation-sh-lg);
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -347,6 +367,17 @@
     background-color: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
+  }
+
+  /* Headings in the display face, once, here — so no screen spells a font
+   * family and every heading a later screen adds inherits it. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading);
   }
 
   /* The focus indicator in a forced-colours mode, which is the one place the

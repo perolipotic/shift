@@ -1,0 +1,1110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ShiftApp — Manager Portal</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#0B1628;--navy2:#132035;--navy3:#1a2d47;
+  --blue:#2563EB;--blue2:#1d4ed8;--blue-l:#dbeafe;--blue-m:#93c5fd;
+  --teal:#0EA5E9;--green:#10B981;--green-l:#d1fae5;
+  --orange:#F59E0B;--orange-l:#fef3c7;
+  --red:#EF4444;--red-l:#fee2e2;
+  --purple:#8B5CF6;--purple-l:#ede9fe;
+  --g50:#F8FAFC;--g100:#F1F5F9;--g200:#E2E8F0;--g300:#CBD5E1;
+  --g400:#94A3B8;--g500:#64748B;--g700:#334155;
+  --sw:240px;--th:64px;--r:12px;
+  --sh:0 1px 3px rgba(0,0,0,.07),0 4px 16px rgba(0,0,0,.05);
+  --sh-lg:0 8px 32px rgba(0,0,0,.1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:var(--g50);color:var(--g700);min-height:100vh}
+.app{display:flex;min-height:100vh}
+
+/* SIDEBAR */
+.sb{width:var(--sw);background:var(--navy);display:flex;flex-direction:column;position:fixed;top:0;left:0;height:100vh;z-index:100;transition:width .2s}
+.sb-logo{padding:18px 18px 14px;border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;gap:10px}
+.lm{width:34px;height:34px;background:var(--blue);border-radius:9px;display:flex;align-items:center;justify-content:center;font-family:'Syne',sans-serif;font-weight:800;font-size:12px;color:#fff;flex-shrink:0}
+.lt{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;color:#fff;line-height:1.2}
+.ls{font-size:10px;color:var(--g400)}
+.sb-sec{padding:12px 10px 4px}
+.sb-lbl{font-size:10px;font-weight:700;color:var(--g400);text-transform:uppercase;letter-spacing:1px;padding:0 8px 6px}
+.ni{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:8px;cursor:pointer;transition:all .18s;color:var(--g400);font-size:13px;font-weight:500;margin-bottom:1px;position:relative}
+.ni:hover{background:rgba(255,255,255,.06);color:#fff}
+.ni.on{background:var(--blue);color:#fff}
+.ni svg{width:16px;height:16px;flex-shrink:0;opacity:.85}
+.ni.on svg{opacity:1}
+.nb{margin-left:auto;background:var(--orange);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px}
+.sb-bot{margin-top:auto;padding:12px 10px;border-top:1px solid rgba(255,255,255,.07)}
+.uc{display:flex;align-items:center;gap:9px;padding:9px;border-radius:8px;cursor:pointer;transition:background .18s}
+.uc:hover{background:rgba(255,255,255,.06)}
+.ua{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex-shrink:0}
+
+/* MAIN */
+.main{margin-left:var(--sw);flex:1;display:flex;flex-direction:column;min-height:100vh}
+
+/* TOPBAR */
+.tb{height:var(--th);background:#fff;border-bottom:1px solid var(--g200);display:flex;align-items:center;padding:0 24px;gap:14px;position:sticky;top:0;z-index:50}
+.tb-title{font-family:'Syne',sans-serif;font-weight:700;font-size:17px;color:var(--navy);flex:1}
+.tb-sub{font-size:12px;color:var(--g400);margin-top:1px}
+.search{display:flex;align-items:center;gap:7px;background:var(--g100);border-radius:8px;padding:6px 12px;width:200px;border:1.5px solid transparent;transition:all .2s}
+.search:focus-within{background:#fff;border-color:var(--blue)}
+.search input{border:none;background:transparent;font-size:13px;color:var(--g700);outline:none;width:100%;font-family:'DM Sans',sans-serif}
+.btn{display:flex;align-items:center;gap:5px;padding:7px 15px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:all .18s;border:none;font-family:'DM Sans',sans-serif;text-decoration:none}
+.bp{background:var(--blue);color:#fff}
+.bp:hover{background:var(--blue2);transform:translateY(-1px);box-shadow:0 4px 12px rgba(37,99,235,.35)}
+.bg{background:transparent;color:var(--g500);border:1.5px solid var(--g200)}
+.bg:hover{background:var(--g100);color:var(--navy)}
+.bd{background:var(--red-l);color:var(--red);border:1px solid rgba(239,68,68,.25)}
+.bd:hover{background:var(--red);color:#fff}
+.ib{width:34px;height:34px;border-radius:8px;background:var(--g100);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--g500);font-size:15px;transition:all .18s;position:relative;flex-shrink:0}
+.ib:hover{background:var(--g200);color:var(--navy)}
+.nd{position:absolute;top:6px;right:6px;width:7px;height:7px;border-radius:50%;background:var(--red);border:1.5px solid #fff}
+
+/* SCREEN TABS */
+.sts{display:flex;gap:5px;padding:8px 24px;background:#fff;border-bottom:1px solid var(--g200);overflow-x:auto;flex-shrink:0}
+.sts::-webkit-scrollbar{display:none}
+.st{padding:5px 12px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;transition:all .18s;border:1.5px solid var(--g200);color:var(--g500);background:#fff}
+.st:hover{border-color:var(--blue);color:var(--blue)}
+.st.on{background:var(--blue);border-color:var(--blue);color:#fff}
+
+/* CONTENT */
+.content{padding:24px;flex:1}
+.sc{display:none;animation:fi .25s ease}
+.sc.on{display:block}
+@keyframes fi{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:translateY(0)}}
+.ph{margin-bottom:20px;display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px}
+.pt{font-family:'Syne',sans-serif;font-weight:800;font-size:21px;color:var(--navy)}
+.ps{font-size:13px;color:var(--g400);margin-top:3px}
+
+/* CARDS */
+.card{background:#fff;border-radius:var(--r);box-shadow:var(--sh);border:1px solid var(--g200);overflow:hidden}
+.ch{padding:14px 18px;border-bottom:1px solid var(--g100);display:flex;align-items:center;gap:8px}
+.ct{font-family:'Syne',sans-serif;font-weight:700;font-size:13.5px;color:var(--navy);flex:1}
+.cb{padding:18px}
+
+/* KPI */
+.kpig{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+.kpi{background:#fff;border-radius:var(--r);box-shadow:var(--sh);border:1px solid var(--g200);padding:18px;display:flex;flex-direction:column;gap:7px;position:relative;overflow:hidden;transition:transform .2s,box-shadow .2s;cursor:default}
+.kpi:hover{transform:translateY(-2px);box-shadow:var(--sh-lg)}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.kpi.bl::before{background:var(--blue)}.kpi.gr::before{background:var(--green)}.kpi.or::before{background:var(--orange)}.kpi.rd::before{background:var(--red)}.kpi.pu::before{background:var(--purple)}
+.ki{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:17px}
+.ki.bl{background:var(--blue-l)}.ki.gr{background:var(--green-l)}.ki.or{background:var(--orange-l)}.ki.rd{background:var(--red-l)}.ki.pu{background:var(--purple-l)}
+.kv{font-family:'Syne',sans-serif;font-weight:800;font-size:26px;color:var(--navy);line-height:1}
+.kl{font-size:12px;color:var(--g500);font-weight:500}
+.kd{font-size:11px;font-weight:600}.kd.up{color:var(--green)}.kd.dn{color:var(--red)}.kd.nt{color:var(--g400)}
+
+/* GRIDS */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.g31{display:grid;grid-template-columns:1.5fr 1fr;gap:18px}
+.g13{display:grid;grid-template-columns:1fr 1.5fr;gap:18px}
+.mb18{margin-bottom:18px}.mb24{margin-bottom:24px}
+
+/* BADGE */
+.badge{display:inline-flex;align-items:center;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600;gap:3px}
+.b-gr{background:var(--green-l);color:#065f46}.b-bl{background:var(--blue-l);color:#1e40af}
+.b-or{background:var(--orange-l);color:#92400e}.b-rd{background:var(--red-l);color:#991b1b}
+.b-pu{background:var(--purple-l);color:#5b21b6}.b-gy{background:var(--g100);color:var(--g500)}
+
+/* AVATAR */
+.av{width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0}
+
+/* TABLE */
+table{width:100%;border-collapse:collapse}
+thead th{text-align:left;padding:9px 14px;font-size:11px;font-weight:600;color:var(--g400);text-transform:uppercase;letter-spacing:.5px;background:var(--g50);border-bottom:1px solid var(--g200)}
+tbody tr{border-bottom:1px solid var(--g100);transition:background .15s}
+tbody tr:hover{background:var(--g50)}
+tbody tr:last-child{border-bottom:none}
+td{padding:10px 14px;font-size:13px}
+
+/* PROGRESS */
+.pb{height:5px;background:var(--g100);border-radius:99px;overflow:hidden}
+.pb.thick{height:9px}
+.pf{height:100%;border-radius:99px;transition:width .6s}
+
+/* FORM */
+.fg{margin-bottom:14px}
+.fl{font-size:12px;font-weight:600;color:var(--g700);margin-bottom:4px;display:block}
+.fh{font-size:11.5px;color:var(--g400);margin-top:3px}
+.fi,.fs,.fta{width:100%;padding:8px 11px;border-radius:8px;border:1.5px solid var(--g200);font-size:13px;font-family:'DM Sans',sans-serif;color:var(--g700);background:#fff;outline:none;transition:border-color .2s,box-shadow .2s;appearance:none}
+.fi:focus,.fs:focus,.fta:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.1)}
+.fta{resize:vertical;min-height:72px}
+.fr{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.fr3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+
+/* TABS */
+.tabs{display:flex;border-bottom:1px solid var(--g200);margin-bottom:16px}
+.tab{padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;color:var(--g400);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .18s}
+.tab:hover{color:var(--navy)}
+.tab.on{color:var(--blue);border-bottom-color:var(--blue)}
+
+/* TOGGLE */
+.tgl{width:38px;height:21px;border-radius:99px;position:relative;cursor:pointer;transition:background .2s;flex-shrink:0}
+.tgl.on{background:var(--blue)}.tgl.off{background:var(--g200)}
+.tgl-th{position:absolute;top:2px;width:17px;height:17px;background:#fff;border-radius:50%;transition:left .2s;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.tgl.on .tgl-th{left:19px}.tgl.off .tgl-th{left:2px}
+
+/* APPROVAL ITEM */
+.ai{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--g100);transition:background .15s;cursor:pointer}
+.ai:hover{background:var(--g50)}
+.ai:last-child{border-bottom:none}
+.ai-info{flex:1;min-width:0}
+.ai-name{font-size:13px;font-weight:600;color:var(--navy)}
+.ai-detail{font-size:11.5px;color:var(--g400);margin-top:1px}
+.aa{padding:5px 12px;border-radius:7px;font-size:11.5px;font-weight:600;cursor:pointer;border:none;font-family:'DM Sans',sans-serif;transition:all .18s}
+.aa.apv{background:var(--green-l);color:#065f46}
+.aa.apv:hover{background:var(--green);color:#fff}
+.aa.dny{background:var(--red-l);color:#991b1b}
+.aa.dny:hover{background:var(--red);color:#fff}
+
+/* ACTIVITY */
+.ait{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--g100)}
+.ait:last-child{border-bottom:none}
+.ai-ic{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0}
+
+/* SCHEDULE GRID */
+.sg{border:1px solid var(--g200);border-radius:var(--r);overflow:hidden;background:#fff;box-shadow:var(--sh)}
+.sg-h{display:grid;border-bottom:1px solid var(--g200);background:var(--g50)}
+.sg-hc{padding:9px 8px;text-align:center;font-size:11px;font-weight:700;color:var(--g500);border-right:1px solid var(--g100)}
+.sg-hc:first-child{text-align:left;padding-left:14px}
+.sg-hc.today-col{background:var(--blue-l);color:var(--blue)}
+.sg-r{display:grid;border-bottom:1px solid var(--g100)}
+.sg-r:last-child{border-bottom:none}
+.sg-r:hover{background:var(--g50)}
+.sg-nm{padding:9px 14px;display:flex;align-items:center;gap:8px;border-right:1px solid var(--g100)}
+.sg-cell{padding:5px 4px;border-right:1px solid var(--g100);display:flex;align-items:center;justify-content:center;min-height:42px}
+.sg-cell.today-col{background:rgba(37,99,235,.03)}
+.sc-chip{border-radius:6px;padding:3px 7px;font-size:10.5px;font-weight:700;color:#fff;width:100%;text-align:center;cursor:pointer;transition:opacity .15s;white-space:nowrap}
+.sc-chip:hover{opacity:.82}
+.sc-add{width:26px;height:26px;border-radius:6px;background:var(--g100);border:1.5px dashed var(--g300);display:flex;align-items:center;justify-content:center;color:var(--g400);font-size:14px;cursor:pointer;transition:all .18s}
+.sc-add:hover{border-color:var(--blue);color:var(--blue);background:var(--blue-l)}
+
+/* SHIFT TYPE CARD */
+.stc{background:#fff;border-radius:var(--r);border:1.5px solid var(--g200);padding:14px;transition:all .2s;cursor:pointer;position:relative}
+.stc:hover{box-shadow:var(--sh-lg);transform:translateY(-1px)}
+.stc-bar{height:4px;border-radius:2px;width:100%;margin-bottom:10px}
+.stc-ic{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;margin-bottom:8px}
+.stc-nm{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;color:var(--navy)}
+.stc-tm{font-size:11.5px;color:var(--g400);margin-top:2px}
+.stc-act{position:absolute;top:10px;right:10px;display:flex;gap:3px;opacity:0;transition:opacity .18s}
+.stc:hover .stc-act{opacity:1}
+
+/* MODAL */
+.mo{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s;padding:20px}
+.mo.open{opacity:1;pointer-events:all}
+.mo-box{background:#fff;border-radius:16px;width:100%;max-width:520px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.2);transform:translateY(10px);transition:transform .25s}
+.mo.open .mo-box{transform:translateY(0)}
+.mo-hd{padding:18px 22px 14px;border-bottom:1px solid var(--g100);display:flex;align-items:center;gap:10px}
+.mo-ti{font-family:'Syne',sans-serif;font-weight:700;font-size:15px;color:var(--navy);flex:1}
+.mo-bd{padding:18px 22px}
+.mo-ft{padding:14px 22px;border-top:1px solid var(--g100);display:flex;gap:10px;justify-content:flex-end}
+
+/* CONNECTOR STATUS */
+.conn-card{background:#fff;border-radius:var(--r);border:1px solid var(--g200);overflow:hidden;box-shadow:var(--sh);transition:box-shadow .2s}
+.conn-card:hover{box-shadow:var(--sh-lg)}
+.conn-hd{padding:14px 18px;display:flex;align-items:center;gap:12px;border-bottom:1px solid var(--g100)}
+.conn-logo{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.conn-nm{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;color:var(--navy)}
+.conn-tp{font-size:12px;color:var(--g400);margin-top:1px}
+.conn-bd{padding:14px 18px}
+.conn-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--g100);font-size:12.5px}
+.conn-row:last-child{border-bottom:none}
+.conn-lbl{color:var(--g500)}
+.conn-val{font-weight:600;color:var(--navy)}
+.conn-ft{padding:10px 18px;background:var(--g50);border-top:1px solid var(--g100);display:flex;gap:8px}
+.status-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.sd-gr{background:var(--green);box-shadow:0 0 0 3px rgba(16,185,80,.15);animation:pg 2s infinite}
+.sd-or{background:var(--orange);box-shadow:0 0 0 3px rgba(245,158,11,.15);animation:po 2s infinite}
+.sd-gy{background:var(--g300)}
+@keyframes pg{0%,100%{box-shadow:0 0 0 3px rgba(16,185,80,.15)}50%{box-shadow:0 0 0 6px rgba(16,185,80,.06)}}
+@keyframes po{0%,100%{box-shadow:0 0 0 3px rgba(245,158,11,.15)}50%{box-shadow:0 0 0 6px rgba(245,158,11,.06)}}
+
+/* LOCATION TREE */
+.loc-tree{font-size:13px}
+.loc-company{padding:10px 14px;border-bottom:1px solid var(--g100);display:flex;align-items:center;gap:10px;background:var(--g50);font-weight:700;color:var(--navy)}
+.loc-site{padding:9px 14px 9px 28px;border-bottom:1px solid var(--g100);display:flex;align-items:center;gap:10px;cursor:pointer;transition:background .15s}
+.loc-site:hover{background:var(--g50)}
+.loc-sub{padding:8px 14px 8px 44px;border-bottom:1px solid var(--g100);display:flex;align-items:center;gap:10px;cursor:pointer;transition:background .15s;font-size:12.5px;color:var(--g500)}
+.loc-sub:hover{background:var(--g50)}
+
+/* COLOR SWATCHES */
+.csw-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:5px;margin-top:5px}
+.csw{width:26px;height:26px;border-radius:6px;cursor:pointer;transition:transform .15s;border:2px solid transparent}
+.csw:hover{transform:scale(1.15)}
+.csw.sel{border-color:var(--navy);transform:scale(1.1)}
+
+/* LIVE FEED */
+.lf-item{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--g100);animation:sl .3s ease}
+@keyframes sl{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:translateX(0)}}
+.lf-item:last-child{border-bottom:none}
+.lf-ic{width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0}
+.lf-txt{font-size:12.5px;color:var(--g700);line-height:1.4;flex:1}
+.lf-tm{font-size:11px;color:var(--g400);margin-top:2px}
+
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-thumb{background:var(--g200);border-radius:99px}
+</style>
+</head>
+<body>
+<div class="app">
+
+<!-- SIDEBAR -->
+<aside class="sb">
+  <div class="sb-logo">
+    <div class="lm">WP</div>
+    <div><div class="lt">ShiftApp</div><div class="ls">Manager Portal</div></div>
+  </div>
+  <div class="sb-sec">
+    <div class="sb-lbl">Overview</div>
+    <div class="ni on" onclick="go('dashboard',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard
+    </div>
+    <div class="ni" onclick="go('calendar',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Calendar
+    </div>
+  </div>
+  <div class="sb-sec">
+    <div class="sb-lbl">Workforce</div>
+    <div class="ni" onclick="go('shifts',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Shift Schedule
+    </div>
+    <div class="ni" onclick="go('leave',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>Leave Requests
+      <span class="nb">3</span>
+    </div>
+    <div class="ni" onclick="go('team',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>Team & Users
+    </div>
+    <div class="ni" onclick="go('reports',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>Reports
+    </div>
+  </div>
+  <div class="sb-sec">
+    <div class="sb-lbl">Configuration</div>
+    <div class="ni" onclick="go('settings',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg>Shift Settings
+    </div>
+    <div class="ni" onclick="go('connectors',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>SQL Connectors
+    </div>
+  </div>
+  <div class="sb-bot">
+    <div class="uc">
+      <div class="ua" style="background:linear-gradient(135deg,var(--blue),var(--teal))">MK</div>
+      <div><div style="font-size:12.5px;font-weight:600;color:#fff">Marko Kovačić</div><div style="font-size:10.5px;color:var(--g400)">HR Manager</div></div>
+      <div style="margin-left:auto;color:var(--g400);font-size:12px">⌄</div>
+    </div>
+  </div>
+</aside>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="tb">
+    <div>
+      <div class="tb-title" id="tb-title">Dashboard</div>
+      <div class="tb-sub" id="tb-sub">Welcome back, Marko 👋 — Monday, March 31, 2025</div>
+    </div>
+    <div class="search"><span style="color:var(--g400);font-size:13px">🔍</span><input placeholder="Search employees, shifts…"></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="ib">🔔<span class="nd"></span></button>
+      <button class="ib">❓</button>
+      <button class="btn bp" id="tb-action" onclick="openModal('user-modal')">+ Add Employee</button>
+    </div>
+  </div>
+
+  <div class="sts">
+    <div class="st on" onclick="go('dashboard',null,this)">📊 Dashboard</div>
+    <div class="st" onclick="go('calendar',null,this)">📅 Calendar</div>
+    <div class="st" onclick="go('shifts',null,this)">⏱ Shifts</div>
+    <div class="st" onclick="go('leave',null,this)">✅ Leave</div>
+    <div class="st" onclick="go('team',null,this)">👥 Team</div>
+    <div class="st" onclick="go('reports',null,this)">📈 Reports</div>
+    <div class="st" onclick="go('settings',null,this)">⚙️ Shift Settings</div>
+    <div class="st" onclick="go('connectors',null,this)">🔌 SQL Connectors</div>
+  </div>
+
+  <div class="content">
+
+    <!-- ════ DASHBOARD ════ -->
+    <div class="sc on" id="sc-dashboard">
+      <div class="ph"><div><div class="pt">Dashboard Overview</div><div class="ps">Mueller Präzision d.o.o. · Real-time workforce snapshot</div></div></div>
+      <div class="kpig">
+        <div class="kpi gr"><div class="ki gr">👷</div><div class="kv">22</div><div class="kl">Staff On Duty</div><div class="kd up">↑ 91% attendance</div></div>
+        <div class="kpi bl"><div class="ki bl">⏱</div><div class="kv">18</div><div class="kl">Shifts Today</div><div class="kd nt">— 3 per shift type</div></div>
+        <div class="kpi or"><div class="ki or">⏳</div><div class="kv">3</div><div class="kl">Pending Approvals</div><div class="kd dn">↓ Needs review</div></div>
+        <div class="kpi rd"><div class="ki rd">⚠️</div><div class="kv">8h</div><div class="kl">Overtime This Month</div><div class="kd dn">↑ Above limit</div></div>
+      </div>
+      <div class="g31 mb18">
+        <div class="card">
+          <div class="ch"><div class="ct">⏳ Pending Approvals</div><span class="badge b-or">3</span><button class="btn bg" style="font-size:11.5px;padding:4px 10px" onclick="go('leave')">View all</button></div>
+          <div>
+            <div class="ai"><div class="av" style="background:linear-gradient(135deg,#10B981,#0EA5E9)">IV</div><div class="ai-info"><div class="ai-name">Ivan Horvat</div><div class="ai-detail">Annual Leave · Apr 7–11 · 5 days · Hall A</div></div><span class="badge b-or" style="margin-right:8px">Pending</span><div style="display:flex;gap:5px"><button class="aa apv">✓</button><button class="aa dny">✕</button></div></div>
+            <div class="ai"><div class="av" style="background:linear-gradient(135deg,#8B5CF6,#2563EB)">AV</div><div class="ai-info"><div class="ai-name">Ana Vidović</div><div class="ai-detail">Sick Leave · Apr 3–4 · 2 days</div></div><span class="badge b-or" style="margin-right:8px">Pending</span><div style="display:flex;gap:5px"><button class="aa apv">✓</button><button class="aa dny">✕</button></div></div>
+            <div class="ai"><div class="av" style="background:linear-gradient(135deg,#F59E0B,#EF4444)">MP</div><div class="ai-info"><div class="ai-name">Mario Perić</div><div class="ai-detail">Shift Swap · Apr 5 · Wed→Fri</div></div><span class="badge b-or" style="margin-right:8px">Pending</span><div style="display:flex;gap:5px"><button class="aa apv">✓</button><button class="aa dny">✕</button></div></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="ch"><div class="ct">⚡ Recent Activity</div></div>
+          <div class="cb" style="padding-top:6px">
+            <div class="ait"><div class="ai-ic" style="background:var(--green-l)">✅</div><div><div class="lf-txt"><strong>Ivan H.</strong> clocked in — Early Shift, Hall A</div><div class="lf-tm">06:02 today</div></div></div>
+            <div class="ait"><div class="ai-ic" style="background:var(--blue-l)">📅</div><div><div class="lf-txt">April schedule published for all teams</div><div class="lf-tm">1 hour ago</div></div></div>
+            <div class="ait"><div class="ai-ic" style="background:var(--orange-l)">🔄</div><div><div class="lf-txt"><strong>Mario P.</strong> requested shift swap Apr 5</div><div class="lf-tm">2 hours ago</div></div></div>
+            <div class="ait"><div class="ai-ic" style="background:var(--red-l)">⚠️</div><div><div class="lf-txt">Overtime alert: <strong>Ante Šimić</strong> exceeded 40h</div><div class="lf-tm">Yesterday</div></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="ch"><div class="ct">🏭 Today's Shifts — Monday March 31</div><button class="btn bg" style="font-size:11.5px;padding:4px 10px" onclick="go('shifts')">Full schedule →</button></div>
+        <table>
+          <thead><tr><th>Employee</th><th>Shift</th><th>Time</th><th>Location</th><th>Sub-location</th><th>Status</th></tr></thead>
+          <tbody>
+            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#F59E0B,#e85d04);width:24px;height:24px;font-size:8px">IH</div>Ivan Horvat</div></td><td>🌅 Early</td><td>06:00–14:00</td><td>Hall A</td><td>CNC #3</td><td><span class="badge b-bl">Active</span></td></tr>
+            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#10B981,#0EA5E9);width:24px;height:24px;font-size:8px">AV</div>Ana Vidović</div></td><td>🌅 Early</td><td>06:00–14:00</td><td>Hall A</td><td>CNC #1</td><td><span class="badge b-bl">Active</span></td></tr>
+            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#8B5CF6,#2563EB);width:24px;height:24px;font-size:8px">MP</div>Mario Perić</div></td><td>🌇 Late</td><td>14:00–22:00</td><td>Hall B</td><td>Lathe #2</td><td><span class="badge b-gy">Scheduled</span></td></tr>
+            <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#EF4444,#F59E0B);width:24px;height:24px;font-size:8px">JB</div>Josip Blažić</div></td><td>🌑 Night</td><td>22:00–06:00</td><td>Hall C</td><td>CNC #5</td><td><span class="badge b-gy">Scheduled</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ════ CALENDAR ════ -->
+    <div class="sc" id="sc-calendar">
+      <div class="ph"><div><div class="pt">📅 Team Calendar</div><div class="ps">April 2025 — all shifts & events</div></div><div style="display:flex;gap:8px;align-items:center"><button class="btn bg">◀ March</button><span style="font-family:'Syne',sans-serif;font-weight:700;font-size:15px;color:var(--navy)">April 2025</span><button class="btn bg">May ▶</button><button class="btn bp">+ Add Shift</button></div></div>
+      <div class="card">
+        <div class="cb">
+          <div style="display:flex;gap:14px;margin-bottom:14px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:5px;font-size:12px"><div style="width:10px;height:10px;background:var(--blue);border-radius:2px"></div>Early Shift</div>
+            <div style="display:flex;align-items:center;gap:5px;font-size:12px"><div style="width:10px;height:10px;background:var(--orange);border-radius:2px"></div>Late Shift</div>
+            <div style="display:flex;align-items:center;gap:5px;font-size:12px"><div style="width:10px;height:10px;background:var(--purple);border-radius:2px"></div>Night Shift</div>
+            <div style="display:flex;align-items:center;gap:5px;font-size:12px"><div style="width:10px;height:10px;background:var(--green);border-radius:2px"></div>Leave Approved</div>
+            <div style="display:flex;align-items:center;gap:5px;font-size:12px"><div style="width:10px;height:10px;background:var(--orange-l);border:1px solid var(--orange);border-radius:2px"></div>Holiday</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px">
+            <div style="font-size:11px;font-weight:600;color:var(--g400);text-align:center;padding:7px 0">Mon</div>
+            <div style="font-size:11px;font-weight:600;color:var(--g400);text-align:center;padding:7px 0">Tue</div>
+            <div style="font-size:11px;font-weight:600;color:var(--g400);text-align:center;padding:7px 0">Wed</div>
+            <div style="font-size:11px;font-weight:600;color:var(--g400);text-align:center;padding:7px 0">Thu</div>
+            <div style="font-size:11px;font-weight:600;color:var(--g400);text-align:center;padding:7px 0">Fri</div>
+            <div style="font-size:11px;font-weight:600;color:var(--red);text-align:center;padding:7px 0">Sat</div>
+            <div style="font-size:11px;font-weight:600;color:var(--red);text-align:center;padding:7px 0">Sun</div>
+            <!-- Row 1 -->
+            <div style="min-height:68px;padding:5px;border-radius:6px;opacity:.4"><div style="font-size:12px;font-weight:500;color:var(--g400);line-height:22px;width:22px;text-align:center">31</div></div>
+            <div style="min-height:68px;padding:5px;border-radius:6px;background:var(--blue-l)"><div style="font-size:12px;font-weight:700;background:var(--blue);color:#fff;width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center">1</div><div style="font-size:10px;font-weight:600;padding:1px 5px;border-radius:3px;margin-top:2px;background:var(--blue-l);color:var(--blue)">8 shifts</div></div>
+            <div style="min-height:68px;padding:5px;border-radius:6px;cursor:pointer" onmouseover="this.style.background='var(--g50)'" onmouseout="this.style.background=''"><div style="font-size:12px;font-weight:500;color:var(--g700);line-height:22px;width:22px;text-align:center">2</div><div style="font-size:10px;font-weight:600;padding:1px 5px;border-radius:3px;margin-top:2px;background:var(--blue-l);color:var(--blue)">8 shifts</div></div>
+            <div style="min-height:68px;padding:5px;border-radius:6px;cursor:pointer" onmouseover="this.style.background='var(--g50)'" onmouseout="this.style.background=''"><div style="font-size:12px;font-weight:500;color:var(--g700);line-height:22px;width:22px;text-align:center">3</div><div style="font-size:10px;font-weight:600;padding:1px 5px;border-radius:3px;margin-top:2px;background:var(--green-l);color:#065f46">Ana: Sick</div></div>
+            <div style="min-height:68px;padding:5px;border-radius:6px;cursor:pointer" onmouseover="this.style.background='var(--g50)'" onmouseout="this.style.background=''"><div style="font-size:12px;font-weight:500;color:var(--g700);line-height:22px;width:22px;text-align:center">4</div><div style="font-size:10px;font-weight:600;padding:1px 5px;border-radius:3px;margin-top:2px;background:var(--blue-l);color:var(--blue)">7 shifts</div></div>
+            <div style="min-height:68px;padding:5px;border-radius:6px"><div style="font-size:12px;font-weight:500;color:var(--red);line-height:22px;width:22px;text-align:center">5</div></div>
+            <div style="min-height:68px;padding:5px;border-radius:6px"><div style="font-size:12px;font-weight:500;color:var(--red);line-height:22px;width:22px;text-align:center">6</div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ SHIFTS ════ -->
+    <div class="sc" id="sc-shifts">
+      <div class="ph"><div><div class="pt">⏱ Shift Schedule</div><div class="ps">Week of March 31 – April 6, 2025</div></div><div style="display:flex;gap:8px"><button class="btn bg">◀ Prev</button><button class="btn bg">Next ▶</button><button class="btn bp">+ Add Shift</button></div></div>
+      <div class="sg mb18" style="overflow-x:auto">
+        <div class="sg-h" style="grid-template-columns:140px repeat(7,1fr)">
+          <div class="sg-hc" style="text-align:left">Employee</div>
+          <div class="sg-hc">Mon 31</div><div class="sg-hc today-col">Tue 1 ★</div>
+          <div class="sg-hc">Wed 2</div><div class="sg-hc">Thu 3</div><div class="sg-hc">Fri 4</div>
+          <div class="sg-hc" style="color:var(--red)">Sat 5</div><div class="sg-hc" style="color:var(--red)">Sun 6</div>
+        </div>
+        <div id="shift-rows"></div>
+      </div>
+      <div class="card">
+        <div class="ch"><div class="ct">📊 Week Summary</div></div>
+        <div class="cb"><div style="display:grid;grid-template-columns:repeat(5,1fr);gap:16px;text-align:center">
+          <div><div style="font-size:22px;font-weight:800;color:var(--navy);font-family:'Syne',sans-serif">24</div><div style="font-size:11px;color:var(--g400)">Total Shifts</div></div>
+          <div><div style="font-size:22px;font-weight:800;color:var(--blue);font-family:'Syne',sans-serif">192h</div><div style="font-size:11px;color:var(--g400)">Hours Scheduled</div></div>
+          <div><div style="font-size:22px;font-weight:800;color:var(--green);font-family:'Syne',sans-serif">0</div><div style="font-size:11px;color:var(--g400)">Conflicts</div></div>
+          <div><div style="font-size:22px;font-weight:800;color:var(--orange);font-family:'Syne',sans-serif">2</div><div style="font-size:11px;color:var(--g400)">Swap Requests</div></div>
+          <div><div style="font-size:22px;font-weight:800;color:var(--purple);font-family:'Syne',sans-serif">5</div><div style="font-size:11px;color:var(--g400)">Staff Available</div></div>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- ════ LEAVE ════ -->
+    <div class="sc" id="sc-leave">
+      <div class="ph"><div><div class="pt">✅ Leave Requests</div><div class="ps">3 pending approvals need your attention</div></div><button class="btn bp">+ New Request</button></div>
+      <div class="g2">
+        <div class="card">
+          <div class="ch"><div class="ct">📝 New Leave Request</div></div>
+          <div class="cb">
+            <div class="fg"><label class="fl">Employee</label><select class="fs"><option>Ivan Horvat</option><option>Ana Vidović</option><option>Mario Perić</option></select></div>
+            <div class="fg"><label class="fl">Leave Type</label><div style="display:flex;gap:7px;flex-wrap:wrap"><button class="btn bp" style="font-size:12px;padding:5px 12px">🏖️ Annual</button><button class="btn bg" style="font-size:12px;padding:5px 12px">🤒 Sick</button><button class="btn bg" style="font-size:12px;padding:5px 12px">🔄 Swap</button></div></div>
+            <div class="fr"><div class="fg"><label class="fl">Start Date</label><input type="date" class="fi" value="2025-04-07"></div><div class="fg"><label class="fl">End Date</label><input type="date" class="fi" value="2025-04-11"></div></div>
+            <div class="fg"><label class="fl">Note</label><input class="fi" placeholder="Optional…"></div>
+            <div style="background:var(--green-l);border:1px solid rgba(16,185,129,.3);border-radius:8px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;color:#065f46">✓ <strong>Coverage OK</strong> — 3 colleagues available Apr 7–11</div>
+            <button class="btn bp" style="width:100%;justify-content:center">Submit Request →</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="ch"><div class="ct">📋 All Requests</div></div>
+          <div class="tabs" style="padding:0 16px;margin-bottom:0;border-bottom:1px solid var(--g200)">
+            <div class="tab on" style="padding:8px 12px;font-size:12px">Pending (3)</div>
+            <div class="tab" style="padding:8px 12px;font-size:12px">Approved</div>
+            <div class="tab" style="padding:8px 12px;font-size:12px">Denied</div>
+          </div>
+          <table>
+            <thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody>
+              <tr><td><div style="display:flex;align-items:center;gap:7px"><div class="av" style="background:linear-gradient(135deg,#F59E0B,#e85d04);width:24px;height:24px;font-size:8px">IH</div>Ivan H.</div></td><td><span class="badge b-bl">Annual</span></td><td style="font-size:12px">Apr 7–11</td><td style="font-weight:600">5d</td><td><span class="badge b-or">Pending</span></td><td><div style="display:flex;gap:4px"><button class="aa apv" style="padding:3px 9px;font-size:11px">✓</button><button class="aa dny" style="padding:3px 9px;font-size:11px">✕</button></div></td></tr>
+              <tr><td><div style="display:flex;align-items:center;gap:7px"><div class="av" style="background:linear-gradient(135deg,#10B981,#0EA5E9);width:24px;height:24px;font-size:8px">AV</div>Ana V.</div></td><td><span class="badge b-rd">Sick</span></td><td style="font-size:12px">Apr 3–4</td><td style="font-weight:600">2d</td><td><span class="badge b-or">Pending</span></td><td><div style="display:flex;gap:4px"><button class="aa apv" style="padding:3px 9px;font-size:11px">✓</button><button class="aa dny" style="padding:3px 9px;font-size:11px">✕</button></div></td></tr>
+              <tr><td><div style="display:flex;align-items:center;gap:7px"><div class="av" style="background:linear-gradient(135deg,#8B5CF6,#2563EB);width:24px;height:24px;font-size:8px">MP</div>Mario P.</div></td><td><span class="badge b-pu">Swap</span></td><td style="font-size:12px">Apr 5</td><td style="font-weight:600">1d</td><td><span class="badge b-or">Pending</span></td><td><div style="display:flex;gap:4px"><button class="aa apv" style="padding:3px 9px;font-size:11px">✓</button><button class="aa dny" style="padding:3px 9px;font-size:11px">✕</button></div></td></tr>
+              <tr><td><div style="display:flex;align-items:center;gap:7px"><div class="av" style="background:linear-gradient(135deg,#2563EB,#8B5CF6);width:24px;height:24px;font-size:8px">JB</div>Josip B.</div></td><td><span class="badge b-bl">Annual</span></td><td style="font-size:12px">Mar 24–26</td><td style="font-weight:600">3d</td><td><span class="badge b-gr">Approved</span></td><td><span style="color:var(--g300);font-size:12px">—</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ TEAM ════ -->
+    <div class="sc" id="sc-team">
+      <div class="ph"><div><div class="pt">👥 Team & Users</div><div class="ps">24 employees · 3 locations · 2 shift managers</div></div><div style="display:flex;gap:8px"><div class="search" style="width:180px"><span style="color:var(--g400);font-size:13px">🔍</span><input placeholder="Search team…"></div><button class="btn bp" onclick="openModal('user-modal')">+ Add Employee</button></div></div>
+      <div class="g2 mb18">
+        <!-- Location tree -->
+        <div class="card">
+          <div class="ch"><div class="ct">🏭 Company Structure</div><button class="btn bg" style="font-size:11.5px;padding:4px 10px">Edit</button></div>
+          <div class="loc-tree">
+            <div class="loc-company"><span style="font-size:16px;margin-right:4px">🏢</span>Mueller Präzision d.o.o.<span class="badge b-bl" style="margin-left:auto">24 employees</span></div>
+            <div class="loc-site">
+              <span style="color:var(--blue);font-size:12px">▼</span>
+              <span style="font-size:16px">🏭</span>
+              <div style="flex:1"><div style="font-weight:600;color:var(--navy)">Production Hall A</div><div style="font-size:11.5px;color:var(--g400)">12 employees · CNC machines</div></div>
+              <span class="badge b-gr">Active</span>
+            </div>
+            <div class="loc-sub"><span style="font-size:14px">⚙️</span><div style="flex:1"><div style="font-weight:500;color:var(--g700)">CNC Milling #1–#3</div><div style="font-size:11px;color:var(--g400)">3 machines · Hall A</div></div></div>
+            <div class="loc-sub"><span style="font-size:14px">⚙️</span><div style="flex:1"><div style="font-weight:500;color:var(--g700)">Grinding Section</div><div style="font-size:11px;color:var(--g400)">2 machines · Hall A</div></div></div>
+            <div class="loc-site">
+              <span style="color:var(--blue);font-size:12px">▼</span>
+              <span style="font-size:16px">🏗️</span>
+              <div style="flex:1"><div style="font-weight:600;color:var(--navy)">Production Hall B</div><div style="font-size:11.5px;color:var(--g400)">8 employees · Lathes</div></div>
+              <span class="badge b-gr">Active</span>
+            </div>
+            <div class="loc-sub"><span style="font-size:14px">🔧</span><div style="flex:1"><div style="font-weight:500;color:var(--g700)">Lathe Section</div><div style="font-size:11px;color:var(--g400)">4 machines · Hall B</div></div></div>
+            <div class="loc-site">
+              <span style="color:var(--g400);font-size:12px">▶</span>
+              <span style="font-size:16px">🌙</span>
+              <div style="flex:1"><div style="font-weight:600;color:var(--navy)">Hall C — Night Ops</div><div style="font-size:11.5px;color:var(--g400)">4 employees · Night shift only</div></div>
+              <span class="badge b-gr">Active</span>
+            </div>
+          </div>
+        </div>
+        <!-- Team table -->
+        <div class="card">
+          <div class="ch"><div class="ct">Team Members</div><span class="badge b-bl">24 total</span></div>
+          <table>
+            <thead><tr><th>Name</th><th>Role</th><th>Location</th><th>Sub-location</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#F59E0B,#e85d04)">IH</div><div><div style="font-weight:600;font-size:13px">Ivan Horvat</div><div style="font-size:11px;color:var(--g400)">Employee #0214</div></div></div></td><td><span class="badge b-gy">Operator</span></td><td>Hall A</td><td style="font-size:12px;color:var(--g400)">CNC #3</td><td><span class="badge b-bl">● On duty</span></td></tr>
+              <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#10B981,#0EA5E9)">AV</div><div><div style="font-weight:600;font-size:13px">Ana Vidović</div><div style="font-size:11px;color:var(--g400)">Employee #0156</div></div></div></td><td><span class="badge b-gy">Operator</span></td><td>Hall A</td><td style="font-size:12px;color:var(--g400)">CNC #1</td><td><span class="badge b-rd">● Sick leave</span></td></tr>
+              <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#8B5CF6,#2563EB)">MP</div><div><div style="font-weight:600;font-size:13px">Mario Perić</div><div style="font-size:11px;color:var(--g400)">Employee #0391</div></div></div></td><td><span class="badge b-gy">Operator</span></td><td>Hall B</td><td style="font-size:12px;color:var(--g400)">Lathe #2</td><td><span class="badge b-gr">● On duty</span></td></tr>
+              <tr><td><div style="display:flex;align-items:center;gap:8px"><div class="av" style="background:linear-gradient(135deg,#2563EB,#0EA5E9)">NK</div><div><div style="font-weight:600;font-size:13px">Nina Kolar</div><div style="font-size:11px;color:var(--g400)">Manager #0042</div></div></div></td><td><span class="badge b-bl">Manager</span></td><td>All halls</td><td style="font-size:12px;color:var(--g400)">—</td><td><span class="badge b-bl">● On duty</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ REPORTS ════ -->
+    <div class="sc" id="sc-reports">
+      <div class="ph"><div><div class="pt">📈 Reports & Analytics</div><div class="ps">March 2025 workforce insights</div></div><div style="display:flex;gap:8px"><select class="fi" style="width:auto;padding:7px 12px;font-size:13px"><option>March 2025</option><option>February 2025</option><option>Q1 2025</option></select><button class="btn bg">⬇ Export CSV</button></div></div>
+      <div class="kpig">
+        <div class="kpi bl"><div class="ki bl">📅</div><div class="kv">186</div><div class="kl">Total Shifts</div><div class="kd up">↑ +12 vs Feb</div></div>
+        <div class="kpi gr"><div class="ki gr">✅</div><div class="kv">94%</div><div class="kl">Attendance Rate</div><div class="kd up">↑ +2% vs Feb</div></div>
+        <div class="kpi or"><div class="ki or">⏱</div><div class="kv">22h</div><div class="kl">Total Overtime</div><div class="kd dn">↑ Above budget</div></div>
+        <div class="kpi pu"><div class="ki pu">🔄</div><div class="kv">4</div><div class="kl">Shift Swaps</div><div class="kd nt">→ Same as Feb</div></div>
+      </div>
+      <div class="g2">
+        <div class="card"><div class="ch"><div class="ct">📊 Shifts by Type — March</div></div><div class="cb">
+          <div style="display:flex;flex-direction:column;gap:11px">
+            <div><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:13px;font-weight:600">🌅 Early Shift</span><span style="font-size:13px;font-weight:700;color:var(--blue)">74 shifts</span></div><div class="pb thick"><div class="pf" style="width:80%;background:linear-gradient(90deg,var(--blue),var(--teal))"></div></div></div>
+            <div><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:13px;font-weight:600">🌇 Late Shift</span><span style="font-size:13px;font-weight:700;color:var(--orange)">68 shifts</span></div><div class="pb thick"><div class="pf" style="width:73%;background:linear-gradient(90deg,var(--orange),#fbbf24)"></div></div></div>
+            <div><div style="display:flex;justify-content:space-between;margin-bottom:4px"><span style="font-size:13px;font-weight:600">🌑 Night Shift</span><span style="font-size:13px;font-weight:700;color:var(--purple)">44 shifts</span></div><div class="pb thick"><div class="pf" style="width:47%;background:linear-gradient(90deg,var(--purple),#a78bfa)"></div></div></div>
+          </div>
+        </div></div>
+        <div class="card"><div class="ch"><div class="ct">👥 Headcount Status</div></div><div class="cb">
+          <div style="display:flex;align-items:center;gap:20px">
+            <svg width="110" height="110" viewBox="0 0 110 110"><circle cx="55" cy="55" r="44" fill="none" stroke="#F1F5F9" stroke-width="10"/><circle cx="55" cy="55" r="44" fill="none" stroke="#2563EB" stroke-width="10" stroke-dasharray="220 276" stroke-linecap="round" transform="rotate(-90 55 55)"/><circle cx="55" cy="55" r="44" fill="none" stroke="#F59E0B" stroke-width="10" stroke-dasharray="28 276" stroke-dashoffset="-220" stroke-linecap="round" transform="rotate(-90 55 55)"/><circle cx="55" cy="55" r="44" fill="none" stroke="#EF4444" stroke-width="10" stroke-dasharray="14 276" stroke-dashoffset="-248" stroke-linecap="round" transform="rotate(-90 55 55)"/><text x="55" y="52" text-anchor="middle" font-size="14" font-weight="bold" fill="#0B1628">24</text><text x="55" y="64" text-anchor="middle" font-size="9" fill="#94A3B8">staff</text></svg>
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <div style="display:flex;align-items:center;gap:7px;font-size:13px"><div style="width:9px;height:9px;border-radius:50%;background:var(--blue)"></div><strong>20</strong> On Duty (83%)</div>
+              <div style="display:flex;align-items:center;gap:7px;font-size:13px"><div style="width:9px;height:9px;border-radius:50%;background:var(--orange)"></div><strong>3</strong> On Leave (12%)</div>
+              <div style="display:flex;align-items:center;gap:7px;font-size:13px"><div style="width:9px;height:9px;border-radius:50%;background:var(--red)"></div><strong>1</strong> Absent (5%)</div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+
+    <!-- ════ SHIFT SETTINGS ════ -->
+    <div class="sc" id="sc-settings">
+      <div class="ph"><div><div class="pt">⚙️ Shift Settings</div><div class="ps">Configure shift types, work rules and pay multipliers</div></div><button class="btn bp" onclick="openModal('shift-modal')">+ Add Shift Type</button></div>
+
+      <!-- Shift types -->
+      <div class="card mb18">
+        <div class="ch"><div class="ct">⏱ Shift Types</div><div style="font-size:12px;color:var(--g400)">Click any shift to edit it</div></div>
+        <div class="cb">
+          <div class="g3" id="shift-types-grid">
+            <div class="stc" onclick="openModal('shift-modal','early')">
+              <div class="stc-act"><button class="ib" style="width:26px;height:26px;font-size:11px" onclick="event.stopPropagation();openModal('shift-modal','early')">✏️</button><button class="ib" style="width:26px;height:26px;font-size:11px;color:var(--red)" onclick="event.stopPropagation()">🗑</button></div>
+              <div class="stc-bar" style="background:var(--blue)"></div>
+              <div class="stc-ic" style="background:var(--blue-l)">🌅</div>
+              <div class="stc-nm">Early Shift</div>
+              <div class="stc-tm">06:00 – 14:00 · 8h</div>
+              <div style="margin-top:8px;display:flex;gap:5px"><span class="badge b-gy">1.0× pay</span><span class="badge b-gy">Mon–Fri</span></div>
+            </div>
+            <div class="stc" onclick="openModal('shift-modal','late')">
+              <div class="stc-act"><button class="ib" style="width:26px;height:26px;font-size:11px">✏️</button><button class="ib" style="width:26px;height:26px;font-size:11px;color:var(--red)">🗑</button></div>
+              <div class="stc-bar" style="background:var(--orange)"></div>
+              <div class="stc-ic" style="background:var(--orange-l)">🌇</div>
+              <div class="stc-nm">Late Shift</div>
+              <div class="stc-tm">14:00 – 22:00 · 8h</div>
+              <div style="margin-top:8px;display:flex;gap:5px"><span class="badge b-gy">1.0× pay</span><span class="badge b-gy">Mon–Fri</span></div>
+            </div>
+            <div class="stc" onclick="openModal('shift-modal','night')">
+              <div class="stc-act"><button class="ib" style="width:26px;height:26px;font-size:11px">✏️</button><button class="ib" style="width:26px;height:26px;font-size:11px;color:var(--red)">🗑</button></div>
+              <div class="stc-bar" style="background:var(--purple)"></div>
+              <div class="stc-ic" style="background:var(--purple-l)">🌑</div>
+              <div class="stc-nm">Night Shift</div>
+              <div class="stc-tm">22:00 – 06:00 · 8h</div>
+              <div style="margin-top:8px;display:flex;gap:5px"><span class="badge b-pu">1.3× pay</span><span class="badge b-gy">Mon–Fri</span></div>
+            </div>
+            <div class="stc" onclick="openModal('shift-modal','weekend')">
+              <div class="stc-act"><button class="ib" style="width:26px;height:26px;font-size:11px">✏️</button><button class="ib" style="width:26px;height:26px;font-size:11px;color:var(--red)">🗑</button></div>
+              <div class="stc-bar" style="background:var(--green)"></div>
+              <div class="stc-ic" style="background:var(--green-l)">☀️</div>
+              <div class="stc-nm">Weekend Day</div>
+              <div class="stc-tm">08:00 – 16:00 · 8h</div>
+              <div style="margin-top:8px;display:flex;gap:5px"><span class="badge b-gr">1.5× pay</span><span class="badge b-rd">Sat–Sun</span></div>
+            </div>
+            <div class="stc" style="border-style:dashed;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:110px;color:var(--g400);gap:7px" onclick="openModal('shift-modal')">
+              <div style="font-size:26px">＋</div>
+              <div style="font-size:12.5px;font-weight:600">Add shift type</div>
+            </div>
+          </div>
+          <!-- Templates -->
+          <div style="margin-top:18px;padding-top:18px;border-top:1px solid var(--g100)">
+            <div style="font-size:12px;font-weight:600;color:var(--g400);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">Quick templates — load for your industry</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn bg" style="font-size:12px;padding:6px 12px">🏭 Manufacturing</button>
+              <button class="btn bg" style="font-size:12px;padding:6px 12px">🏥 Healthcare</button>
+              <button class="btn bg" style="font-size:12px;padding:6px 12px">🍽️ Restaurant</button>
+              <button class="btn bg" style="font-size:12px;padding:6px 12px">🛒 Retail</button>
+              <button class="btn bg" style="font-size:12px;padding:6px 12px">🔒 Security</button>
+              <button class="btn bg" style="font-size:12px;padding:6px 12px">📦 Logistics</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Work rules -->
+      <div class="g2">
+        <div class="card">
+          <div class="ch"><div class="ct">📋 Work Rules</div><span class="badge b-bl">Croatian Law</span></div>
+          <div class="cb">
+            <div class="fr">
+              <div class="fg"><label class="fl">Max hours per day</label><input class="fi" value="8"><div class="fh">Alert if exceeded. Legal max 10h.</div></div>
+              <div class="fg"><label class="fl">Max hours per week</label><input class="fi" value="40"><div class="fh">Overtime tracked above this.</div></div>
+            </div>
+            <div class="fr">
+              <div class="fg"><label class="fl">Mandatory break after (h)</label><input class="fi" value="6"><div class="fh">Croatian law: 30 min after 6h.</div></div>
+              <div class="fg"><label class="fl">Break duration (min)</label><input class="fi" value="30"></div>
+            </div>
+            <div class="fr">
+              <div class="fg"><label class="fl">Min rest between shifts (h)</label><input class="fi" value="11"></div>
+              <div class="fg"><label class="fl">Max consecutive days</label><input class="fi" value="5"></div>
+            </div>
+            <div style="background:var(--orange-l);border:1px solid rgba(245,158,11,.3);border-radius:8px;padding:9px 12px;font-size:12px;color:#92400e">⚠️ These rules fire alerts. Actual payroll must be confirmed with your accountant.</div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="ch"><div class="ct">💰 Pay Multipliers</div></div>
+          <div class="cb">
+            <div class="fr3">
+              <div class="fg"><label class="fl">Night shift bonus</label><div style="display:flex;align-items:center;gap:6px"><input class="fi" value="1.3" style="width:70px"><span style="font-size:12.5px;color:var(--g500)">× base</span></div><div class="fh">Croatian law: +30%</div></div>
+              <div class="fg"><label class="fl">Weekend bonus</label><div style="display:flex;align-items:center;gap:6px"><input class="fi" value="1.5" style="width:70px"><span style="font-size:12.5px;color:var(--g500)">× base</span></div><div class="fh">Sat & Sun</div></div>
+              <div class="fg"><label class="fl">Holiday bonus</label><div style="display:flex;align-items:center;gap:6px"><input class="fi" value="2.0" style="width:70px"><span style="font-size:12.5px;color:var(--g500)">× base</span></div><div class="fh">Public holidays</div></div>
+            </div>
+            <div style="margin-top:16px">
+              <div style="font-size:12px;font-weight:600;color:var(--g400);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">Notification Preferences</div>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:13px;font-weight:600;color:var(--navy)">Overtime alerts</div><div style="font-size:11.5px;color:var(--g400)">When employee nears weekly limit</div></div><div class="tgl on" onclick="this.classList.toggle('on');this.classList.toggle('off')"><div class="tgl-th"></div></div></div>
+                <div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:13px;font-weight:600;color:var(--navy)">Understaffed shift alert</div><div style="font-size:11.5px;color:var(--g400)">When shift falls below minimum</div></div><div class="tgl on" onclick="this.classList.toggle('on');this.classList.toggle('off')"><div class="tgl-th"></div></div></div>
+                <div style="display:flex;align-items:center;justify-content:space-between"><div><div style="font-size:13px;font-weight:600;color:var(--navy)">Late clock-in alert</div><div style="font-size:11.5px;color:var(--g400)">When worker is 15+ min late</div></div><div class="tgl off" onclick="this.classList.toggle('on');this.classList.toggle('off')"><div class="tgl-th"></div></div></div>
+              </div>
+            </div>
+            <button class="btn bp" style="width:100%;justify-content:center;margin-top:16px">💾 Save All Settings</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ SQL CONNECTORS ════ -->
+    <div class="sc" id="sc-connectors">
+      <div class="ph"><div><div class="pt">🔌 SQL Connectors</div><div class="ps">Real-time clock-in sync from your factory terminals</div></div><div style="display:flex;align-items:center;gap:10px"><div style="font-size:12px;color:var(--g400)">Live syncing</div><span style="font-family:'Courier New',monospace;font-size:12px;background:var(--green-l);color:#065f46;padding:2px 8px;border-radius:4px;font-weight:700" id="sync-count">1,247</span><span style="font-size:12px;color:var(--g400)">records today</span><button class="btn bg" onclick="openModal('conn-modal')">+ Add Connector</button><button class="btn bp" id="sync-btn" onclick="triggerSync()">↺ Sync Now</button></div></div>
+
+      <!-- KPIs -->
+      <div class="kpig">
+        <div class="kpi gr"><div class="ki gr">🔗</div><div class="kv">3</div><div class="kl">Active Connectors</div><div class="kd up">↑ All online</div></div>
+        <div class="kpi bl"><div class="ki bl">📡</div><div class="kv" id="sync-kpi">1,247</div><div class="kl">Records Synced Today</div><div class="kd up">↑ Since midnight</div></div>
+        <div class="kpi or"><div class="ki or">⚠️</div><div class="kv">2</div><div class="kl">Unmapped Cards</div><div class="kd dn">↓ Need attention</div></div>
+        <div class="kpi gr"><div class="ki gr">⚡</div><div class="kv">28s</div><div class="kl">Last Sync Delay</div><div class="kd up">↑ Within target</div></div>
+      </div>
+
+      <!-- Connector cards -->
+      <div class="g3 mb18">
+        <div class="conn-card">
+          <div class="conn-hd">
+            <div class="conn-logo" style="background:var(--blue-l)">🏭</div>
+            <div style="flex:1"><div class="conn-nm">Dormakaba MATRIX</div><div class="conn-tp">MS SQL Server · Hall A & B Entrance</div></div>
+            <div style="display:flex;align-items:center;gap:5px"><div class="status-dot sd-gr"></div><span style="font-size:12px;font-weight:600;color:var(--green)">Online</span></div>
+          </div>
+          <div class="conn-bd">
+            <div class="conn-row"><span class="conn-lbl">Host</span><span class="conn-val" style="font-family:'Courier New',monospace;font-size:11px">192.168.1.50</span></div>
+            <div class="conn-row"><span class="conn-lbl">Database</span><span class="conn-val" style="font-family:'Courier New',monospace;font-size:11px">DormakabaDB</span></div>
+            <div class="conn-row"><span class="conn-lbl">Last sync</span><span class="conn-val" style="color:var(--green)">28 sec ago</span></div>
+            <div class="conn-row"><span class="conn-lbl">Records today</span><span class="conn-val">847</span></div>
+            <div class="conn-row"><span class="conn-lbl">Mapped employees</span><span class="conn-val">23 / 25</span></div>
+            <div style="margin-top:10px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--g400);margin-bottom:4px"><span>Mapping coverage</span><span>92%</span></div><div class="pb"><div class="pf" style="width:92%;background:var(--green)"></div></div></div>
+          </div>
+          <div class="conn-ft">
+            <button class="btn bg" style="font-size:11px;padding:4px 10px">📋 Logs</button>
+            <button class="btn bg" style="font-size:11px;padding:4px 10px" onclick="openModal('mapping-modal')">🔑 Card Mapping</button>
+            <button class="btn bp" style="font-size:11px;padding:4px 10px;margin-left:auto">✏️ Edit</button>
+          </div>
+        </div>
+
+        <div class="conn-card">
+          <div class="conn-hd">
+            <div class="conn-logo" style="background:var(--purple-l)">🖥️</div>
+            <div style="flex:1"><div class="conn-nm">Interflex IF-6040</div><div class="conn-tp">REST API · Canteen & Office</div></div>
+            <div style="display:flex;align-items:center;gap:5px"><div class="status-dot sd-gr"></div><span style="font-size:12px;font-weight:600;color:var(--green)">Online</span></div>
+          </div>
+          <div class="conn-bd">
+            <div class="conn-row"><span class="conn-lbl">Endpoint</span><span class="conn-val" style="font-family:'Courier New',monospace;font-size:11px">192.168.1.72/api</span></div>
+            <div class="conn-row"><span class="conn-lbl">Auth</span><span class="conn-val">Bearer token</span></div>
+            <div class="conn-row"><span class="conn-lbl">Last sync</span><span class="conn-val" style="color:var(--green)">31 sec ago</span></div>
+            <div class="conn-row"><span class="conn-lbl">Records today</span><span class="conn-val">312</span></div>
+            <div class="conn-row"><span class="conn-lbl">Mapped employees</span><span class="conn-val">25 / 25</span></div>
+            <div style="margin-top:10px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--g400);margin-bottom:4px"><span>Mapping coverage</span><span>100%</span></div><div class="pb"><div class="pf" style="width:100%;background:var(--blue)"></div></div></div>
+          </div>
+          <div class="conn-ft">
+            <button class="btn bg" style="font-size:11px;padding:4px 10px">📋 Logs</button>
+            <button class="btn bg" style="font-size:11px;padding:4px 10px">🔑 Card Mapping</button>
+            <button class="btn bp" style="font-size:11px;padding:4px 10px;margin-left:auto">✏️ Edit</button>
+          </div>
+        </div>
+
+        <div class="conn-card">
+          <div class="conn-hd">
+            <div class="conn-logo" style="background:var(--orange-l)">📟</div>
+            <div style="flex:1"><div class="conn-nm">PCS Chronos Kiosk</div><div class="conn-tp">CSV File Watch · Hall C</div></div>
+            <div style="display:flex;align-items:center;gap:5px"><div class="status-dot sd-or"></div><span style="font-size:12px;font-weight:600;color:var(--orange)">Delayed</span></div>
+          </div>
+          <div class="conn-bd">
+            <div class="conn-row"><span class="conn-lbl">Watch folder</span><span class="conn-val" style="font-family:'Courier New',monospace;font-size:11px">\\server\exports\</span></div>
+            <div class="conn-row"><span class="conn-lbl">Pattern</span><span class="conn-val" style="font-family:'Courier New',monospace;font-size:11px">clockins_*.csv</span></div>
+            <div class="conn-row"><span class="conn-lbl">Last sync</span><span class="conn-val" style="color:var(--orange)">8 min ago ⚠️</span></div>
+            <div class="conn-row"><span class="conn-lbl">Records today</span><span class="conn-val">88</span></div>
+            <div class="conn-row"><span class="conn-lbl">Mapped employees</span><span class="conn-val">6 / 8 <span style="color:var(--orange)">⚠️ 2 unmapped</span></span></div>
+            <div style="margin-top:10px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--g400);margin-bottom:4px"><span>Mapping coverage</span><span>75%</span></div><div class="pb"><div class="pf" style="width:75%;background:var(--orange)"></div></div></div>
+          </div>
+          <div class="conn-ft">
+            <button class="btn bg" style="font-size:11px;padding:4px 10px">📋 Logs</button>
+            <button class="btn" style="font-size:11px;padding:4px 10px;background:var(--orange-l);color:#92400e;border:1px solid rgba(245,158,11,.3)" onclick="openModal('mapping-modal')">⚠️ Fix Mapping</button>
+            <button class="btn bp" style="font-size:11px;padding:4px 10px;margin-left:auto">✏️ Edit</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live feed + logs -->
+      <div class="g2">
+        <div class="card">
+          <div class="ch"><div class="ct">⚡ Live Clock-In Feed</div><div style="display:flex;align-items:center;gap:5px"><div class="status-dot sd-gr"></div><span style="font-size:12px;color:var(--green)">Streaming</span></div></div>
+          <div style="padding:0 18px" id="live-feed">
+            <div class="lf-item"><div class="lf-ic" style="background:var(--green-l)">🟢</div><div style="flex:1"><div class="lf-txt"><strong>Klaus Müller</strong> clocked <strong>IN</strong> · Card #0842 · Hall B</div><div class="lf-tm">06:02:14 — 4h 47m ago · Dormakaba</div></div><span class="badge b-gr">IN</span></div>
+            <div class="lf-item"><div class="lf-ic" style="background:var(--red-l)">🔴</div><div style="flex:1"><div class="lf-txt"><strong>Anna Park</strong> clocked <strong>OUT</strong> · Card #0156 · Canteen</div><div class="lf-tm">06:01:33 — 4h 48m ago · Interflex</div></div><span class="badge b-rd">OUT</span></div>
+            <div class="lf-item"><div class="lf-ic" style="background:var(--orange-l)">⚠️</div><div style="flex:1"><div class="lf-txt"><strong>Unknown card #1103</strong> tapped — not mapped to any employee</div><div class="lf-tm">05:59:44 — 4h 50m ago · PCS Chronos Hall C</div></div><span class="badge b-or">UNKNOWN</span></div>
+            <div class="lf-item"><div class="lf-ic" style="background:var(--green-l)">🟢</div><div style="flex:1"><div class="lf-txt"><strong>Tom Lewis</strong> clocked <strong>IN</strong> · Card #0274 · Hall B</div><div class="lf-tm">05:58:12 — 4h 51m ago · Dormakaba</div></div><span class="badge b-gr">IN</span></div>
+          </div>
+        </div>
+
+        <!-- Error log + mapping -->
+        <div class="card">
+          <div class="tabs" style="padding:0 16px;margin-bottom:0;border-bottom:1px solid var(--g200)">
+            <div class="tab on" id="ctab-logs" onclick="showCTab('logs',this)">Error Logs</div>
+            <div class="tab" id="ctab-mapping" onclick="showCTab('mapping',this)">Card Mapping</div>
+          </div>
+          <div id="cpanel-logs">
+            <table>
+              <thead><tr><th>Time</th><th>Connector</th><th>Event</th><th>Status</th></tr></thead>
+              <tbody>
+                <tr><td style="font-family:'Courier New',monospace;font-size:11px">06:47:12</td><td><span class="badge b-or">PCS</span></td><td style="font-size:12px">Card #1103 — no mapping found</td><td><span class="badge b-or">Warning</span></td></tr>
+                <tr><td style="font-family:'Courier New',monospace;font-size:11px">06:43:07</td><td><span class="badge b-or">PCS</span></td><td style="font-size:12px">Card #0997 — no mapping found</td><td><span class="badge b-or">Warning</span></td></tr>
+                <tr><td style="font-family:'Courier New',monospace;font-size:11px">06:38:55</td><td><span class="badge b-bl">Dormakaba</span></td><td style="font-size:12px">Timeout — retried, recovered</td><td><span class="badge b-gr">Resolved</span></td></tr>
+                <tr><td style="font-family:'Courier New',monospace;font-size:11px">06:02:14</td><td><span class="badge b-bl">Dormakaba</span></td><td style="font-size:12px">847 records synced successfully</td><td><span class="badge b-gr">OK</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div id="cpanel-mapping" style="display:none">
+            <div style="padding:10px 16px;background:var(--orange-l);border-bottom:1px solid rgba(245,158,11,.2);display:flex;align-items:center;gap:8px">
+              <span>⚠️</span><span style="font-size:12.5px;color:#92400e;font-weight:500;flex:1">2 cards from PCS Chronos have no employee mapping.</span>
+              <button class="btn bg" style="font-size:11px;padding:3px 9px;border-color:rgba(245,158,11,.4);color:#92400e">Fix all</button>
+            </div>
+            <div>
+              <div style="padding:7px 16px;font-size:11px;font-weight:700;color:var(--orange);text-transform:uppercase;letter-spacing:.5px">⚠️ Unmapped</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid var(--g100)">
+                <span style="font-family:'Courier New',monospace;font-size:11px;font-weight:600;background:var(--g100);padding:2px 7px;border-radius:4px">#1103</span>
+                <span style="color:var(--g400);font-size:14px">→</span>
+                <select class="fs" style="flex:1;font-size:12px;padding:5px 9px"><option>Assign to employee…</option><option>New Employee A</option></select>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid var(--g100)">
+                <span style="font-family:'Courier New',monospace;font-size:11px;font-weight:600;background:var(--g100);padding:2px 7px;border-radius:4px">#0997</span>
+                <span style="color:var(--g400);font-size:14px">→</span>
+                <select class="fs" style="flex:1;font-size:12px;padding:5px 9px"><option>Assign to employee…</option><option>New Employee B</option></select>
+              </div>
+              <div style="padding:7px 16px;font-size:11px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.5px">✓ Mapped</div>
+              <div style="display:flex;align-items:center;gap:10px;padding:9px 16px;border-bottom:1px solid var(--g100)"><span style="font-family:'Courier New',monospace;font-size:11px;font-weight:600;background:var(--g100);padding:2px 7px;border-radius:4px">#0842</span><span style="color:var(--g400);font-size:14px">→</span><div style="display:flex;align-items:center;gap:7px;flex:1"><div class="av" style="background:linear-gradient(135deg,#F59E0B,#e85d04);width:22px;height:22px;font-size:8px">KM</div><div style="font-size:12.5px;font-weight:600;color:var(--navy)">Klaus Müller</div></div><span class="badge b-gr">✓</span></div>
+              <div style="padding:11px 16px;border-top:1px solid var(--g100);display:flex;gap:8px"><button class="btn bg" style="font-size:12px">⬆ Import CSV</button><button class="btn bp" style="font-size:12px;margin-left:auto">Save Mappings</button></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /main -->
+</div><!-- /app -->
+
+<!-- ════ MODAL: ADD/EDIT EMPLOYEE ════ -->
+<div class="mo" id="user-modal">
+  <div class="mo-box">
+    <div class="mo-hd">
+      <div style="width:34px;height:34px;border-radius:9px;background:var(--blue-l);display:flex;align-items:center;justify-content:center;font-size:18px">👤</div>
+      <div class="mo-ti">Add New Employee</div>
+      <button class="ib" onclick="closeModals()">✕</button>
+    </div>
+    <div class="mo-bd">
+      <div class="fr"><div class="fg"><label class="fl">First Name *</label><input class="fi" placeholder="Ivan"></div><div class="fg"><label class="fl">Last Name *</label><input class="fi" placeholder="Horvat"></div></div>
+      <div class="fg"><label class="fl">Email Address *</label><input type="email" class="fi" placeholder="ivan@yourcompany.com"><div class="fh">An invitation will be sent to this email</div></div>
+      <div class="fr"><div class="fg"><label class="fl">Role</label><select class="fs"><option value="EMPLOYEE">Employee</option><option value="MANAGER">Shift Manager</option><option value="ADMIN">Admin</option></select></div><div class="fg"><label class="fl">Employee Number</label><input class="fi" placeholder="e.g. 0214"></div></div>
+
+      <!-- Location hierarchy — the key missing piece -->
+      <div style="background:var(--g50);border-radius:10px;padding:14px;border:1px solid var(--g200);margin-bottom:14px">
+        <div style="font-size:12px;font-weight:700;color:var(--navy);margin-bottom:12px;display:flex;align-items:center;gap:6px">📍 Work Assignment<span style="font-size:11px;font-weight:400;color:var(--g400)">— Where does this employee work?</span></div>
+        <div class="fg"><label class="fl">Company / Site</label><select class="fs" onchange="updateLocations(this)"><option value="">Select company…</option><option value="mueller">Mueller Präzision d.o.o.</option></select></div>
+        <div class="fr">
+          <div class="fg"><label class="fl">Location (Hall / Site)</label><select class="fs" id="loc-select" onchange="updateSubLocations(this)" disabled><option value="">Select location…</option><option value="hall-a">Production Hall A</option><option value="hall-b">Production Hall B</option><option value="hall-c">Hall C — Night Ops</option><option value="office">Office / Admin</option></select></div>
+          <div class="fg"><label class="fl">Sub-location (Machine / Section)</label><select class="fs" id="subloc-select" disabled><option value="">Select location first…</option></select></div>
+        </div>
+        <div class="fg"><label class="fl">Department</label><select class="fs"><option value="">Select department…</option><option>Production</option><option>Quality Control</option><option>Maintenance</option><option>HR / Management</option></select></div>
+      </div>
+
+      <div class="fg"><label class="fl">Default Shift Type</label><select class="fs"><option>No default (manager assigns)</option><option>🌅 Early Shift (06:00–14:00)</option><option>🌇 Late Shift (14:00–22:00)</option><option>🌑 Night Shift (22:00–06:00)</option></select></div>
+      <div class="fg"><label class="fl">Language</label><select class="fs"><option>Croatian 🇭🇷</option><option>English 🇬🇧</option><option>German 🇩🇪</option><option>Turkish 🇹🇷</option><option>Polish 🇵🇱</option></select></div>
+      <div style="background:var(--blue-l);border:1px solid rgba(37,99,235,.2);border-radius:8px;padding:10px 12px;font-size:12.5px;color:#1e40af">📱 They'll receive an invitation email with a link to install ShiftApp on their phone — no App Store needed.</div>
+    </div>
+    <div class="mo-ft">
+      <button class="btn bg" onclick="closeModals()">Cancel</button>
+      <button class="btn bp" onclick="closeModals()">📧 Send Invitation</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ MODAL: SHIFT TYPE EDITOR ════ -->
+<div class="mo" id="shift-modal">
+  <div class="mo-box">
+    <div class="mo-hd">
+      <div style="width:34px;height:34px;border-radius:9px;background:var(--blue-l);display:flex;align-items:center;justify-content:center;font-size:18px" id="sm-icon">🌅</div>
+      <div class="mo-ti" id="sm-title">Add Shift Type</div>
+      <button class="ib" onclick="closeModals()">✕</button>
+    </div>
+    <div class="mo-bd">
+      <div class="fr">
+        <div class="fg"><label class="fl">Shift Name *</label><input class="fi" id="sm-name" placeholder="e.g. Morning Shift" oninput="updatePreview()"></div>
+        <div class="fg"><label class="fl">Icon / Emoji</label><input class="fi" id="sm-emoji" value="🌅" style="font-size:18px;text-align:center" oninput="updatePreview()"></div>
+      </div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Start Time *</label><input type="time" class="fi" id="sm-start" value="06:00" onchange="updatePreview()"></div>
+        <div class="fg"><label class="fl">End Time *</label><input type="time" class="fi" id="sm-end" value="14:00" onchange="updatePreview()"></div>
+      </div>
+      <div class="fg">
+        <label class="fl">Color</label>
+        <div class="csw-grid">
+          <div class="csw sel" style="background:#2563EB" data-c="#2563EB" onclick="selectColor(this)"></div>
+          <div class="csw" style="background:#F59E0B" data-c="#F59E0B" onclick="selectColor(this)"></div>
+          <div class="csw" style="background:#10B981" data-c="#10B981" onclick="selectColor(this)"></div>
+          <div class="csw" style="background:#EF4444" data-c="#EF4444" onclick="selectColor(this)"></div>
+          <div class="csw" style="background:#8B5CF6" data-c="#8B5CF6" onclick="selectColor(this)"></div>
+          <div class="csw" style="background:#0EA5E9" data-c="#0EA5E9" onclick="selectColor(this)"></div>
+          <div class="csw" style="background:#EC4899" data-c="#EC4899" onclick="selectColor(this)"></div>
+          <div class="csw" style="background:#0B1628" data-c="#0B1628" onclick="selectColor(this)"></div>
+        </div>
+      </div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Pay Multiplier</label><select class="fs" id="sm-pay"><option value="1.0">1.0× Normal pay</option><option value="1.3">1.3× Night (+30%)</option><option value="1.5">1.5× Weekend (+50%)</option><option value="2.0">2.0× Holiday (+100%)</option></select><div class="fh">Croatian law: night +30%, weekend +50%</div></div>
+        <div class="fg"><label class="fl">Valid Days</label><select class="fs"><option>Monday – Friday</option><option>Monday – Sunday</option><option>Saturday – Sunday only</option><option>Custom…</option></select></div>
+      </div>
+      <!-- Live preview -->
+      <div style="background:var(--g50);border-radius:10px;padding:14px;border:1px solid var(--g200)">
+        <div style="font-size:11px;font-weight:600;color:var(--g400);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Preview</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="padding:5px 12px;border-radius:6px;font-size:12px;font-weight:700;color:#fff;background:#2563EB" id="sm-preview">🌅 Early Shift</div>
+          <div style="font-size:12.5px;color:var(--g500)" id="sm-preview-time">06:00 – 14:00 · 8h · 1.0× pay</div>
+        </div>
+      </div>
+    </div>
+    <div class="mo-ft">
+      <button class="btn bg" onclick="closeModals()">Cancel</button>
+      <button class="btn bp" onclick="closeModals()">💾 Save Shift Type</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ MODAL: ADD CONNECTOR ════ -->
+<div class="mo" id="conn-modal">
+  <div class="mo-box">
+    <div class="mo-hd">
+      <div style="width:34px;height:34px;border-radius:9px;background:var(--blue-l);display:flex;align-items:center;justify-content:center;font-size:18px">🔌</div>
+      <div class="mo-ti">Add SQL Connector</div>
+      <button class="ib" onclick="closeModals()">✕</button>
+    </div>
+    <div class="mo-bd">
+      <div class="fg">
+        <label class="fl">Terminal Type</label>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:4px">
+          <div style="border:1.5px solid var(--blue);background:var(--blue-l);border-radius:9px;padding:11px;text-align:center;cursor:pointer"><div style="font-size:20px">🏭</div><div style="font-size:11.5px;font-weight:700;color:var(--blue);margin-top:4px">Dormakaba</div><div style="font-size:10px;color:var(--g400)">MS SQL Server</div></div>
+          <div style="border:1.5px solid var(--g200);border-radius:9px;padding:11px;text-align:center;cursor:pointer" onclick="selectTerminal(this)"><div style="font-size:20px">🖥️</div><div style="font-size:11.5px;font-weight:700;color:var(--navy);margin-top:4px">Interflex</div><div style="font-size:10px;color:var(--g400)">REST API</div></div>
+          <div style="border:1.5px solid var(--g200);border-radius:9px;padding:11px;text-align:center;cursor:pointer" onclick="selectTerminal(this)"><div style="font-size:20px">📟</div><div style="font-size:11.5px;font-weight:700;color:var(--navy);margin-top:4px">PCS Chronos</div><div style="font-size:10px;color:var(--g400)">CSV File</div></div>
+          <div style="border:1.5px solid var(--g200);border-radius:9px;padding:11px;text-align:center;cursor:pointer" onclick="selectTerminal(this)"><div style="font-size:20px">🔷</div><div style="font-size:11.5px;font-weight:700;color:var(--navy);margin-top:4px">Spica</div><div style="font-size:10px;color:var(--g400)">REST API</div></div>
+          <div style="border:1.5px solid var(--g200);border-radius:9px;padding:11px;text-align:center;cursor:pointer" onclick="selectTerminal(this)"><div style="font-size:20px">🟦</div><div style="font-size:11.5px;font-weight:700;color:var(--navy);margin-top:4px">SAP HR</div><div style="font-size:10px;color:var(--g400)">OData API</div></div>
+          <div style="border:1.5px solid var(--g200);border-radius:9px;padding:11px;text-align:center;cursor:pointer" onclick="selectTerminal(this)"><div style="font-size:20px">⚙️</div><div style="font-size:11.5px;font-weight:700;color:var(--navy);margin-top:4px">Custom SQL</div><div style="font-size:10px;color:var(--g400)">Any DB</div></div>
+        </div>
+      </div>
+      <div class="fg"><label class="fl">Connector Name</label><input class="fi" placeholder="e.g. Dormakaba — Hall A & B"></div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Server IP / Host</label><input class="fi" placeholder="192.168.1.50"><div class="fh">Local network IP</div></div>
+        <div class="fg"><label class="fl">Port</label><input class="fi" value="1433" placeholder="1433"></div>
+      </div>
+      <div class="fg"><label class="fl">Database Name</label><input class="fi" placeholder="DormakabaDB"></div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Username (read-only)</label><input class="fi" placeholder="readonly_user"></div>
+        <div class="fg"><label class="fl">Password</label><input type="password" class="fi" placeholder="••••••••"></div>
+      </div>
+      <div class="fr">
+        <div class="fg"><label class="fl">Sync Interval</label><select class="fs"><option>Every 30 seconds</option><option>Every 60 seconds</option><option>Every 5 minutes</option></select></div>
+        <div class="fg" style="display:flex;align-items:flex-end"><button class="btn bg" style="width:100%;justify-content:center" onclick="testConn()">🔌 Test Connection</button></div>
+      </div>
+      <div id="conn-test-idle" style="background:var(--g50);border:1px solid var(--g200);border-radius:8px;padding:14px;text-align:center;color:var(--g400);font-size:13px">Configure settings and click Test Connection</div>
+      <div id="conn-test-ok" style="display:none;background:var(--green-l);border:1px solid rgba(16,185,129,.3);border-radius:8px;padding:12px 14px;font-size:13px;color:#065f46">✅ <strong>Connection successful!</strong> Found 25 employees and 1,247 records. Ready to sync.</div>
+    </div>
+    <div class="mo-ft">
+      <button class="btn bg" onclick="closeModals()">Cancel</button>
+      <button class="btn bp" onclick="closeModals()">Save Connector →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast" style="position:fixed;bottom:24px;right:24px;background:var(--navy);color:#fff;padding:11px 18px;border-radius:10px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:7px;box-shadow:var(--sh-lg);transform:translateY(70px);opacity:0;transition:all .3s;z-index:300">✅ Saved successfully</div>
+
+<script>
+// ── Navigation ────────────────────────────────────────────────
+const TOPBAR = {
+  dashboard:  ['Dashboard','Welcome back, Marko 👋 — Monday, March 31, 2025'],
+  calendar:   ['Team Calendar','April 2025 — all shifts & events'],
+  shifts:     ['Shift Schedule','Week of March 31 – April 6, 2025'],
+  leave:      ['Leave Requests','3 pending approvals need your attention'],
+  team:       ['Team & Users','24 employees · 3 locations · 2 managers'],
+  reports:    ['Reports & Analytics','March 2025 workforce insights'],
+  settings:   ['Shift Settings','Configure shift types, work rules and pay multipliers'],
+  connectors: ['SQL Connectors','Real-time clock-in sync from factory terminals'],
+};
+const allNi  = document.querySelectorAll('.ni');
+const allSts = document.querySelectorAll('.st');
+
+function go(id, navEl, swEl) {
+  document.querySelectorAll('.sc').forEach(s=>s.classList.remove('on'));
+  document.getElementById('sc-'+id).classList.add('on');
+  const [t,s] = TOPBAR[id]||[id,''];
+  document.getElementById('tb-title').textContent = t;
+  document.getElementById('tb-sub').textContent = s;
+  allNi.forEach(n=>n.classList.remove('on'));
+  if(navEl) navEl.classList.add('on');
+  else allNi.forEach(n=>{if(n.getAttribute('onclick')?.includes("'"+id+"'"))n.classList.add('on')});
+  allSts.forEach(t=>t.classList.remove('on'));
+  if(swEl) swEl.classList.add('on');
+  else allSts.forEach(t=>{if(t.getAttribute('onclick')?.includes("'"+id+"'"))t.classList.add('on')});
+  // update topbar action
+  const actions = {dashboard:'+ Add Employee',calendar:'+ Add Shift',shifts:'+ Add Shift',leave:'+ New Request',team:'+ Add Employee',reports:'⬇ Export',settings:'+ Add Shift Type',connectors:'+ Add Connector'};
+  const modals  = {dashboard:'user-modal',calendar:'shift-modal',shifts:'shift-modal',leave:'',team:'user-modal',reports:'',settings:'shift-modal',connectors:'conn-modal'};
+  const btn = document.getElementById('tb-action');
+  btn.textContent = actions[id]||'+ New';
+  btn.onclick = modals[id]?()=>openModal(modals[id]):null;
+}
+
+// ── Shift schedule grid ───────────────────────────────────────
+const STAFF = [
+  {n:'Ivan H.',  c:'linear-gradient(135deg,#F59E0B,#e85d04)',  i:'IH', shifts:[1,1,0,1,1,0,0], times:'Early'},
+  {n:'Ana V.',   c:'linear-gradient(135deg,#10B981,#0EA5E9)', i:'AV', shifts:[1,0,1,0,1,0,0], times:'Early'},
+  {n:'Mario P.', c:'linear-gradient(135deg,#8B5CF6,#2563EB)', i:'MP', shifts:[1,1,1,1,0,0,0], times:'Late'},
+  {n:'Josip B.', c:'linear-gradient(135deg,#EF4444,#F59E0B)', i:'JB', shifts:[1,0,1,0,1,0,0], times:'Night'},
+  {n:'Ante S.',  c:'linear-gradient(135deg,#2563EB,#8B5CF6)', i:'AS', shifts:[0,1,1,1,1,0,0], times:'Late'},
+];
+const SHIFT_COLORS = {Early:'#2563EB',Late:'#F59E0B',Night:'#8B5CF6'};
+const rows = document.getElementById('shift-rows');
+STAFF.forEach(s=>{
+  const div = document.createElement('div');
+  div.className='sg-r'; div.style.gridTemplateColumns='140px repeat(7,1fr)';
+  let html=`<div class="sg-nm"><div class="av" style="background:${s.c};width:24px;height:24px;font-size:8px">${s.i}</div><span style="font-size:12px;font-weight:500">${s.n}</span></div>`;
+  s.shifts.forEach((on,di)=>{
+    const isToday=di===1, isWe=di>=5;
+    const cls='sg-cell'+(isToday?' today-col':'');
+    if(on&&!isWe){
+      html+=`<div class="${cls}"><div class="sc-chip" style="background:${SHIFT_COLORS[s.times]}">${s.times}</div></div>`;
+    } else {
+      html+=`<div class="${cls}" style="${isWe?'background:var(--g50)':''}"><div class="sc-add" onclick="openModal('shift-modal')">+</div></div>`;
+    }
+  });
+  div.innerHTML=html; rows.appendChild(div);
+});
+
+// ── Modals ────────────────────────────────────────────────────
+const SHIFT_DATA = {
+  early: {name:'Early Shift',emoji:'🌅',start:'06:00',end:'14:00',color:'#2563EB',pay:'1.0'},
+  late:  {name:'Late Shift', emoji:'🌇',start:'14:00',end:'22:00',color:'#F59E0B',pay:'1.0'},
+  night: {name:'Night Shift',emoji:'🌑',start:'22:00',end:'06:00',color:'#8B5CF6',pay:'1.3'},
+  weekend:{name:'Weekend Day',emoji:'☀️',start:'08:00',end:'16:00',color:'#10B981',pay:'1.5'},
+};
+
+function openModal(id, data){
+  if(id==='shift-modal'&&data){
+    const d=SHIFT_DATA[data]||{};
+    document.getElementById('sm-title').textContent=data?'Edit Shift Type':'Add Shift Type';
+    document.getElementById('sm-name').value=d.name||'';
+    document.getElementById('sm-emoji').value=d.emoji||'⏱';
+    document.getElementById('sm-start').value=d.start||'06:00';
+    document.getElementById('sm-end').value=d.end||'14:00';
+    document.getElementById('sm-pay').value=d.pay||'1.0';
+    document.querySelectorAll('.csw').forEach(s=>{
+      s.classList.toggle('sel',s.dataset.c===(d.color||'#2563EB'));
+    });
+    updatePreview();
+  }
+  document.getElementById(id).classList.add('open');
+}
+function closeModals(){ document.querySelectorAll('.mo').forEach(m=>m.classList.remove('open')); }
+document.querySelectorAll('.mo').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)closeModals()}));
+
+// ── Shift preview ─────────────────────────────────────────────
+function updatePreview(){
+  const name  = document.getElementById('sm-name').value||'Shift Name';
+  const emoji = document.getElementById('sm-emoji').value||'⏱';
+  const start = document.getElementById('sm-start').value||'06:00';
+  const end   = document.getElementById('sm-end').value||'14:00';
+  const color = document.querySelector('.csw.sel')?.dataset.c||'#2563EB';
+  const pay   = document.getElementById('sm-pay').value||'1.0';
+  const chip  = document.getElementById('sm-preview');
+  chip.textContent = emoji+' '+name;
+  chip.style.background = color;
+  // calc hours
+  const [sh,sm]=(start||'06:00').split(':').map(Number);
+  const [eh,em]=(end  ||'14:00').split(':').map(Number);
+  let h=eh-sh; if(h<0)h+=24;
+  document.getElementById('sm-preview-time').textContent=`${start} – ${end} · ${h}h · ${pay}× pay`;
+}
+function selectColor(el){
+  document.querySelectorAll('.csw').forEach(s=>s.classList.remove('sel'));
+  el.classList.add('sel');
+  updatePreview();
+}
+
+// ── Connector tab ─────────────────────────────────────────────
+function showCTab(name,el){
+  document.querySelectorAll('[id^="ctab-"]').forEach(t=>t.classList.remove('on'));
+  document.querySelectorAll('[id^="cpanel-"]').forEach(p=>p.style.display='none');
+  el.classList.add('on');
+  document.getElementById('cpanel-'+name).style.display='block';
+}
+
+// ── Test connector ────────────────────────────────────────────
+function testConn(){
+  const btn=event.target; btn.textContent='⏳ Testing…'; btn.disabled=true;
+  setTimeout(()=>{
+    document.getElementById('conn-test-idle').style.display='none';
+    document.getElementById('conn-test-ok').style.display='block';
+    btn.textContent='🔌 Test Connection'; btn.disabled=false;
+  },1800);
+}
+function selectTerminal(el){
+  el.closest('.mo-bd').querySelectorAll('[onclick="selectTerminal(this)"]').forEach(t=>{
+    t.style.borderColor='var(--g200)'; t.style.background='';
+    t.querySelector('div:nth-child(2)').style.color='var(--navy)';
+  });
+  el.style.borderColor='var(--blue)'; el.style.background='var(--blue-l)';
+  el.querySelector('div:nth-child(2)').style.color='var(--blue)';
+}
+
+// ── Location cascade ─────────────────────────────────────────
+const SUB_LOCS = {
+  'hall-a':['CNC #1','CNC #2','CNC #3','Grinding Section'],
+  'hall-b':['Lathe #1','Lathe #2','Lathe #3','Welding Section'],
+  'hall-c':['CNC #5','CNC #6'],
+  'office':['HR Department','Management','Reception'],
+};
+function updateLocations(sel){
+  const loc=document.getElementById('loc-select');
+  loc.disabled=!sel.value; loc.value='';
+  document.getElementById('subloc-select').disabled=true;
+  document.getElementById('subloc-select').innerHTML='<option value="">Select location first…</option>';
+}
+function updateSubLocations(sel){
+  const sub=document.getElementById('subloc-select');
+  sub.disabled=!sel.value;
+  const opts=SUB_LOCS[sel.value]||[];
+  sub.innerHTML='<option value="">No specific machine</option>'+opts.map(o=>`<option>${o}</option>`).join('');
+}
+
+// ── Sync counter ─────────────────────────────────────────────
+let cnt=1247;
+setInterval(()=>{
+  cnt+=Math.floor(Math.random()*3);
+  document.getElementById('sync-count').textContent=cnt.toLocaleString();
+  document.getElementById('sync-kpi').textContent=cnt.toLocaleString();
+},9000);
+
+function triggerSync(){
+  const btn=document.getElementById('sync-btn');
+  btn.textContent='⏳ Syncing…'; btn.disabled=true;
+  setTimeout(()=>{btn.textContent='↺ Sync Now';btn.disabled=false;},2000);
+}
+
+// ── Approve/deny ─────────────────────────────────────────────
+document.querySelectorAll('.aa.apv').forEach(b=>{b.onclick=function(e){e.stopPropagation();const r=this.closest('tr')||this.closest('.ai');if(r){r.style.opacity='0';r.style.transition='opacity .3s';setTimeout(()=>r.remove(),300)}}});
+document.querySelectorAll('.aa.dny').forEach(b=>{b.onclick=function(e){e.stopPropagation();const r=this.closest('tr')||this.closest('.ai');if(r){r.style.background='var(--red-l)';setTimeout(()=>{r.style.opacity='0';setTimeout(()=>r.remove(),300)},400)}}});
+
+// ── Live feed ────────────────────────────────────────────────
+const FEED_EVENTS=[
+  {ic:'🟢',bg:'var(--green-l)',txt:'<strong>Mario Perić</strong> clocked <strong>IN</strong> · Card #0391 · Hall B',src:'Dormakaba · Terminal 02',badge:'badge b-gr',lbl:'IN'},
+  {ic:'🔴',bg:'var(--red-l)',  txt:'<strong>Tom Lewis</strong> clocked <strong>OUT</strong> · Card #0274 · Hall B',src:'Dormakaba · Terminal 02',badge:'badge b-rd',lbl:'OUT'},
+  {ic:'🟢',bg:'var(--green-l)',txt:'<strong>Nina Kolar</strong> clocked <strong>IN</strong> · Card #0512 · Office',src:'Interflex · Terminal 03',badge:'badge b-gr',lbl:'IN'},
+];
+let fi=0;
+setInterval(()=>{
+  const e=FEED_EVENTS[fi%FEED_EVENTS.length]; fi++;
+  const feed=document.getElementById('live-feed');
+  const item=document.createElement('div'); item.className='lf-item';
+  const now=new Date();
+  const ts=`${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}:${now.getSeconds().toString().padStart(2,'0')} — just now`;
+  item.innerHTML=`<div class="lf-ic" style="background:${e.bg}">${e.ic}</div><div style="flex:1"><div class="lf-txt">${e.txt}</div><div class="lf-tm">${ts} · ${e.src}</div></div><span class="${e.badge}">${e.lbl}</span>`;
+  feed.insertBefore(item,feed.firstChild);
+  if(feed.children.length>6)feed.removeChild(feed.lastChild);
+},14000);
+</script>
+</body>
+</html>

@@ -5,6 +5,7 @@ import {
   BASE_TOKENS,
   BRAND_TOKENS,
   DARK_QUERY,
+  ELEVATION_TOKENS,
   rawToken,
   stripped,
 } from './theme-css.js';
@@ -25,6 +26,11 @@ import {
  */
 
 const ALL_TOKENS = [...BASE_TOKENS, ...BRAND_TOKENS];
+
+/** Every token a theme declares: the colours, plus the two elevation shadows
+ *  visual refresh A added. The colour-only sweeps (OKLCH, `--color-*`
+ *  mappings) keep reading `ALL_TOKENS`. */
+const THEME_TOKENS = [...ALL_TOKENS, ...ELEVATION_TOKENS];
 const THEMES = ['light', 'dark'] as const;
 
 describe('the token lists are the size everything else assumes', () => {
@@ -45,11 +51,15 @@ describe('the token lists are the size everything else assumes', () => {
   it('has 28 shadcn base tokens', () => {
     expect(BASE_TOKENS).toHaveLength(28);
   });
+
+  it('has 2 elevation tokens', () => {
+    expect(ELEVATION_TOKENS).toHaveLength(2);
+  });
 });
 
 describe('each token is declared exactly once per theme', () => {
   // A duplicate is invisible to a value assertion but changes what CSS applies.
-  const cases = THEMES.flatMap((theme) => ALL_TOKENS.map((token) => ({ theme, token })));
+  const cases = THEMES.flatMap((theme) => THEME_TOKENS.map((token) => ({ theme, token })));
 
   it.each(cases)('--$token appears once in $theme', ({ theme, token }) => {
     expect(allDeclarations(theme, token)).toHaveLength(1);
@@ -57,7 +67,7 @@ describe('each token is declared exactly once per theme', () => {
 });
 
 describe('every token is defined in both themes', () => {
-  const cases = THEMES.flatMap((theme) => ALL_TOKENS.map((token) => ({ theme, token })));
+  const cases = THEMES.flatMap((theme) => THEME_TOKENS.map((token) => ({ theme, token })));
 
   it.each(cases)('--$token is declared in $theme', ({ theme, token }) => {
     expect(rawToken(theme, token)).not.toBeNull();
@@ -84,7 +94,9 @@ describe('the dark theme is a real theme, not a copy of the light one', () => {
     'sidebar-primary-foreground',
   ];
 
-  it.each(ALL_TOKENS.filter((token) => !PARITY.includes(token)))(
+  // The elevation shadows are in this sweep: the dark theme's shadows are
+  // deliberately heavier, because a 7% black shadow is invisible on navy.
+  it.each(THEME_TOKENS.filter((token) => !PARITY.includes(token)))(
     '--%s differs between the themes',
     (token) => {
       expect(rawToken('dark', token)).not.toBe(rawToken('light', token));

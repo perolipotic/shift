@@ -1,17 +1,18 @@
 ---
 name: Shift
-description: Industry-agnostic shift management platform. shadcn/ui on React + Vite + Tailwind; this DESIGN.md specifies the brand-layer delta only. Croatian-first UI, light and dark driven by prefers-color-scheme.
+description: Industry-agnostic shift management platform. shadcn/ui primitives on React + Vite + Tailwind, restyled once in `components/ui` to the shiftapp-v2 register — slate surfaces, a navy sidebar, one blue primary, soft elevation, DM Sans and Syne. Croatian-first UI, light and dark driven by prefers-color-scheme.
 status: final
-updated: 2026-09-02
+updated: 2026-09-25
 colors:
-  # ── Brand delta on shadcn defaults ────────────────────────────────
-  # Unlisted tokens inherit from shadcn: background, foreground, card,
-  # card-foreground, popover, popover-foreground, muted, muted-foreground,
-  # secondary, border, input, ring.
-  primary: '#1F6FB2'
+  # ── Brand delta ───────────────────────────────────────────────────
+  # The surface tokens (background, card, muted, border, input, ring,
+  # sidebar…) are NOT listed here; they live under `base-palette:` below.
+  # This block is parsed by test/theme-fidelity.test.ts and must hold
+  # exactly the 23 brand names.
+  primary: '#2563EB'
   primary-foreground: '#FFFFFF'
-  primary-dark: '#4FA3E3'
-  primary-foreground-dark: '#04121D'
+  primary-dark: '#3B82F6'
+  primary-foreground-dark: '#0B1628'
   # destructive is OVERRIDDEN and RESERVED — see Colors §"The reserved hue"
   destructive: '#D93A46'
   destructive-foreground: '#FFFFFF'
@@ -64,15 +65,93 @@ colors:
   modifier-uncovered-foreground-dark: '#E0AE5C'
   modifier-overridden: '#7A6BC4'
   modifier-overridden-dark: '#9A8BE0'
+base-palette:
+  # ── Surfaces: the shadcn token names, filled with slate and navy ───
+  # Every base token in apps/web/src/index.css traces to a hex here, and
+  # test/theme-fidelity.test.ts round-trips each one against the stylesheet. The
+  # sidebar is navy in BOTH themes, as two distinct navies. Values marked
+  # (a11y) deviate from the plain slate step for a measured reason recorded
+  # in index.css's header comment.
+  light:
+    background: '#F8FAFC'            # slate-50
+    foreground: '#0F172A'            # slate-900
+    card: '#FFFFFF'
+    card-foreground: '#0F172A'
+    popover: '#FFFFFF'
+    popover-foreground: '#0F172A'
+    secondary: '#F1F5F9'             # slate-100
+    secondary-foreground: '#1E293B'  # slate-800
+    muted: '#F1F5F9'
+    muted-foreground: '#556275'      # (a11y) slate-500 is 4.34:1 on muted
+    accent: '#F1F5F9'
+    accent-foreground: '#1E293B'
+    border: '#E2E8F0'                # slate-200, decorative only
+    input: '#7B8AA0'                 # (a11y) a field's only affordance, 3:1
+    ring: '#1A3275'                  # (a11y) 3:1 against the input border too
+    chart-1: '#D4D4D4'               # chart greys: stock shadcn neutrals,
+    chart-2: '#737373'               # identical in both themes, consumed by
+    chart-3: '#525252'               # nothing yet
+    chart-4: '#404040'
+    chart-5: '#262626'
+    sidebar: '#0B1628'               # navy
+    sidebar-foreground: '#CBD5E1'    # slate-300
+    sidebar-primary: '#2563EB'       # the active destination's pill
+    sidebar-primary-foreground: '#FFFFFF'
+    sidebar-accent: '#1A2D47'        # navy-3, hover
+    sidebar-accent-foreground: '#FFFFFF'
+    sidebar-border: 'rgba(255,255,255,0.08)'
+    sidebar-ring: '#93C5FD'
+  dark:
+    background: '#0D1829'            # navy
+    foreground: '#E2E8F0'
+    card: '#132035'                  # navy-2
+    card-foreground: '#E2E8F0'
+    popover: '#132035'
+    popover-foreground: '#E2E8F0'
+    secondary: '#1C2B44'             # navy-3
+    secondary-foreground: '#E2E8F0'
+    muted: '#1C2B44'
+    muted-foreground: '#94A3B8'      # slate-400
+    accent: '#1C2B44'
+    accent-foreground: '#F1F5F9'
+    border: 'rgba(255,255,255,0.10)'
+    input: 'rgba(255,255,255,0.36)'
+    ring: '#B4D2FD'
+    chart-1: '#D4D4D4'               # chart greys: stock shadcn neutrals,
+    chart-2: '#737373'               # identical in both themes, consumed by
+    chart-3: '#525252'               # nothing yet
+    chart-4: '#404040'
+    chart-5: '#262626'
+    sidebar: '#070E1A'               # a darker navy than the page
+    sidebar-foreground: '#C0CBDA'
+    sidebar-primary: '#1D4ED8'
+    sidebar-primary-foreground: '#FFFFFF'
+    sidebar-accent: '#132035'
+    sidebar-accent-foreground: '#F8FAFC'
+    sidebar-border: 'rgba(255,255,255,0.07)'
+    sidebar-ring: '#60A5FA'
+elevation:
+  # Soft, and only on cards and layered surfaces. Tailwind: shadow-sh, shadow-sh-lg.
+  sh: '0 1px 3px rgba(0,0,0,0.07), 0 4px 16px rgba(0,0,0,0.05)'
+  sh-lg: '0 8px 32px rgba(0,0,0,0.10)'
+  sh-dark: '0 1px 3px rgba(0,0,0,0.30), 0 4px 16px rgba(0,0,0,0.22)'
+  sh-lg-dark: '0 8px 32px rgba(0,0,0,0.45)'
 typography:
-  # ZERO DELTA. Geist (shadcn default) covers Latin Extended-A, which
-  # Croatian requires. All roles inherit. The single non-default rule:
+  body:
+    fontFamily: 'DM Sans Variable'   # @fontsource-variable/dm-sans, self-hosted
+  heading:
+    fontFamily: 'Syne Variable'      # @fontsource-variable/syne, self-hosted
+    use: 'h1-h6, card titles, large numerals'
   numeric:
     fontVariantNumeric: 'tabular-nums'
 rounded:
-  # shadcn defaults inherited; no overrides.
+  base: 12px                         # --radius: 0.75rem; cards use rounded-lg
+  sm: 8px
+  md: 10px
+  lg: 12px
+  xl: 16px
 spacing:
-  # Tailwind / shadcn defaults inherited; no overrides.
+  # Tailwind defaults; no overrides.
 components:
   shift-cell:
     background: '{colors.shift-slot-N}'
@@ -112,9 +191,16 @@ components:
 
 ## Brand & Style
 
-Shift is an operational tool for people who currently keep the rota in a spreadsheet. The brand premise is **quiet competence**: the product's job is to be trusted with a schedule people plan their lives around, and nothing about it should feel like it is trying to be liked. Steel neutrals, one blue accent, and a single red held in reserve for the one thing that must never be missed.
+Shift is an operational tool for people who currently keep the rota in a spreadsheet. The brand premise is **quiet competence**: the product's job is to be trusted with a schedule people plan their lives around, and nothing about it should feel like it is trying to be liked. Slate surfaces, a navy sidebar, one blue primary, and a single red held in reserve for the one thing that must never be missed.
 
-Shift inherits shadcn/ui wholesale. This DESIGN.md specifies only the brand-layer delta: primary and destructive colours, a working-shift colour ramp and modifier signals that shadcn has no concept of, and a handful of domain components. The components that ship from shadcn — Button, Card, Dialog, Sheet, Select, Command, Popover, Toast, Table — inherit their visual specs as-is. Restyling them is against the brand discipline; shadcn's defaults are the contract.
+*Style reference: [../shiftapp-v2/shiftapp_manager_v2.html](../shiftapp-v2/shiftapp_manager_v2.html) (shell, cards, buttons, inputs, tables) and [../shiftapp-v2/shiftapp_login_onboard.html](../shiftapp-v2/shiftapp_login_onboard.html) (sign-in). The reference is for LOOK only — its copy, its English, its product name, its Google login, signup and demo affordances are not Shift's.*
+
+**The register is modern and calm, not decorative.** White cards with a soft shadow on a slate-50 page, a 12 px radius, a navy sidebar in both themes, DM Sans for reading and Syne for headings. Every surface the product draws inherits it through two layers and only two:
+
+1. **Tokens** in `apps/web/src/index.css`, transcribed from this file's front matter.
+2. **Primitives** in `apps/web/src/components/ui` — Button, Card, Input, Label, Table and whatever shadcn primitive is added next. They are shadcn's components, **restyled once there** to this register.
+
+Screens compose primitives and never restyle them. A screen may size and place a primitive (`h-11`, `w-full`, grid placement) but may not override its colour, radius, border, shadow or type. If a screen needs a primitive to look different, the primitive changes — for every screen at once — or a new primitive is added.
 
 Two properties are not stylistic preferences but consequences of the product contract, and may not be traded away:
 
@@ -125,11 +211,11 @@ Two properties are not stylistic preferences but consequences of the product con
 
 *Rendered reference: [mockups/color-themes-1.html](mockups/color-themes-1.html) — the four palettes considered, light and dark, with the state language applied to the pilot's content.*
 
-**Register.** Steel neutrals from shadcn, one blue primary, near-zero decorative colour. Both themes ship, driven entirely by `prefers-color-scheme` — there is no in-app theme toggle, so every token below is defined in both and no state may rely on a single theme's contrast.
+**Register.** A slate base (`base-palette:`), a navy sidebar in both themes, one blue primary `#2563EB`, near-zero decorative colour. The dark theme is navy-based, not grey: a navy page, navy-2 cards, and a darker navy sidebar. Both themes ship, driven entirely by `prefers-color-scheme` — there is no in-app theme toggle, so every token below is defined in both and no state may rely on a single theme's contrast.
 
 **The reserved hue.** `destructive` is overridden to `#D93A46` and is **reserved exclusively for an unresolved conflict**. It appears nowhere else — not on delete buttons, not on validation errors, not as an Organization's brand accent. This is a hard rule with a specific origin: the pilot is a fire department and the obvious brand accent is red. Had brand red and conflict red been the same red, the alarm colour would have become the furniture and conflicts would have stopped reading as conflicts. Destructive actions that are not conflicts use shadcn's neutral button styles plus a confirmation step.
 
-**Organization branding.** An Organization's accent is data, not design. It may tint the application shell, the logo lockup, and nothing else. It may never be used for a shift state, a modifier, or `destructive`. An Organization whose accent is red gets a red shell and an unchanged red conflict signal — which is why the conflict signal also carries a glyph and a border.
+**Organization branding.** An Organization's accent is data, not design. It tints exactly three things — the logo lockup, the sidebar's edge and the phone bar's edge — and nothing else. Because the lockup and the sidebar edge sit on the navy sidebar, a light-theme accent must clear 3:1 against both a white card and the navy, and 4.5:1 under its own white letter, which confines it to roughly OKLCH L 0.53–0.56; the accent values in `index.css` are tuned into that window and `test/theme-contrast.test.ts` measures them there. It may never be used for a shift state, a modifier, or `destructive`. An Organization whose accent is red gets a red shell and an unchanged red conflict signal — which is why the conflict signal also carries a glyph and a border.
 
 **The working-shift ramp.** Working Shift Types are Organization data of arbitrary count, so colour is assigned to six ordered slots rather than to named shift types. An Organization's Shift Types take slots in creation order; the pilot's `Dan` takes slot 1 and `Noć` takes slot 2. Slot 1 reads light and cool, slot 2 dark and deep — a deliberate light/dark contrast that happens to suit a day/night organization without encoding one. Slots 3–6 are `[ASSUMPTION]`: unexercised by the pilot, and each must be contrast-verified in both themes before a second Organization uses them. Beyond six Shift Types a slot repeats, and the always-visible label carries the distinction.
 
@@ -137,31 +223,46 @@ Two properties are not stylistic preferences but consequences of the product con
 
 ## Typography
 
-**Zero delta.** Geist, shadcn's default, at every role. Two requirements, neither of them stylistic:
+**Two faces, both self-hosted** through `@fontsource-variable`, never the Google CDN:
 
-- **Latin Extended-A coverage is mandatory.** Croatian needs **č ć ž š đ Č Ć Ž Đ Š**. A face that falls back mid-word breaks exactly the strings that matter most — `Noć`, `Godišnji`, `Slobodno`, `Izmijenjeno`, and members' own names. Geist covers it; any substitution must be checked against that set before it lands.
+- **DM Sans** for body text, labels, controls and table cells — `--font-sans`.
+- **Syne** for headings (`h1`–`h6`, card titles) and, when they arrive, large display numerals — `--font-heading`. Applied once in `@layer base` and in the Card primitive; screens never spell a font family.
+
+Two requirements, neither of them stylistic, and each applies to **both** faces:
+
+- **Latin Extended-A coverage is mandatory.** Croatian needs **č ć ž š đ Č Ć Ž Đ Š**. A face that falls back mid-word breaks exactly the strings that matter most — `Noć`, `Godišnji`, `Slobodno`, `Izmijenjeno`, and members' own names. Both faces ship a latin-ext subset; `test/typography-coverage.test.ts` checks each import, and any substitution must pass the same check before it lands.
 - **Tabular numerals wherever numbers align.** The hours table, every `07:00–19:00`, leave balances, and calendar date columns. Proportional digits make columns wobble and make two totals hard to compare. Applied via the `numeric` token.
 
 ## Layout & Spacing
 
-Tailwind and shadcn defaults, inherited without override. Two domain rules:
+Tailwind's spacing scale, no overrides. Controls a person presses keep the 44 px floor (`h-11`) at every width. Two domain rules:
 
 - **The calendar grid is the density budget.** At 390 px a day row carries a date column plus one column per team. Cells hold a 30 px minimum height, a label, and where space allows a time range. Anything that does not fit is not abbreviated — it moves to the day-detail view.
 - **Wide content scrolls inside its own container, never the page.** The calendar grid, member list, and hours table each own their horizontal overflow. The page body never scrolls sideways at any width.
 
 ## Elevation & Depth
 
-Flat. shadcn's default card border and background separation carry all hierarchy; no custom shadow tokens. Elevation is reserved for genuinely layered surfaces — Dialog and Sheet — where shadcn's own treatment applies unmodified. A rota is a document, and documents do not float.
+**Soft, and sparing.** Two shadow tokens, `sh` and `sh-lg` (`elevation:`), expressed as OKLCH alpha in the stylesheet. Cards carry a 1 px `border` plus `sh`; `sh-lg` is for genuinely layered surfaces — Dialog, Sheet, Popover. The primary button lifts a primary-tinted shadow on hover. Nothing else floats: a rota is still a document, and the shadow says "this is a card", never "look at me".
 
 ## Shapes
 
-shadcn radii, inherited. Shift cells use the small radius so a dense grid reads as a grid rather than as a field of pills.
+A 12 px base radius (`--radius: 0.75rem`): cards `lg` (12 px), buttons and inputs `md` (10 px), small chips `sm` (8 px). Shift cells use the small radius so a dense grid reads as a grid rather than as a field of pills.
 
 ## Components
 
 *Rendered reference: [mockups/conflict-resolution-1.html](mockups/conflict-resolution-1.html) — resolution-option and consequence-strip in place.*
 
-Domain components shadcn has no equivalent for. Everything else is shadcn as-shipped.
+**Primitives** — shadcn components, restyled once in `components/ui` and never in a screen:
+
+| Primitive | Spec |
+|---|---|
+| **Button** | `rounded-md`, semibold. Default is `primary` with a soft primary-tinted shadow on hover; outline is a 1.5 px `input` border on the card colour. Heights are the primitive's; screens set `h-11`. |
+| **Card** | `rounded-lg`, 1 px `border`, `shadow-sh`, `card` fill. A header carries a bottom divider; the title is Syne, and `CardTitle asChild` makes it the page's `<h1>` without restyling. |
+| **Input** | `rounded-md`, 1.5 px `border-input` on the card colour, and a 2 px `ring` focus ring. |
+| **Table** | Header cells uppercase, small, `muted-foreground` on `muted`; rows divide with `border` and tint to `muted` on hover. Scrolls in its own container. |
+| **Shell** | Navy `sidebar` with a `border` edge (or the organization's accent). Destinations are rounded rows; the active one is a `sidebar-primary` pill AND semibold AND underlined, never colour or shape alone, since a hovered row takes the same fill. Its focus ring is offset by the sidebar colour. The shell's buttons use Button's `sidebar` variant, whose 1.5 px boundary is `sidebar-foreground` at 50% (≥ 3:1 on navy); `sidebar-border` is a divider only. The phone bar is the same navy with the same treatment. |
+
+**Domain components** — the ones shadcn has no equivalent for:
 
 | Component | Spec |
 |---|---|
@@ -185,8 +286,10 @@ Domain components shadcn has no equivalent for. Everything else is shadcn as-shi
 **Don't**
 
 - Don't add a `shift-day` or `shift-night` token, however convenient. It encodes one Organization into the design system and breaks the platform's core constraint.
-- Don't restyle a shadcn component. If a shadcn component is wrong for the job, the job is wrong.
+- Don't restyle a primitive in a screen. Colour, radius, border, shadow and type belong to `components/ui`; a screen that needs a primitive to look different changes the primitive for everyone, or adds a new one.
+- Don't load fonts from the Google CDN, and don't swap a face without re-running the Croatian glyph check against it.
+- Don't copy the style reference's copy or flows: no English, no "ShiftApp", no social login, signup, demo buttons or "remember me".
 - Don't let an Organization's brand accent touch a shift state, a modifier, or `destructive`.
 - Don't convey a state by colour alone anywhere — not in the compressed grid, not in a status pip, not in a badge.
-- Don't introduce a motion token. Component transitions ship from shadcn; the product adds none.
+- Don't introduce a motion token. Primitives use short colour/shadow transitions; the product adds no animation of its own.
 - Don't primary-style one conflict resolution over another. A visual default is a decision taken away from the admin.

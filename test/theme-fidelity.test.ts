@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { formatHex, parse, rgb } from 'culori';
 import { describe, expect, it } from 'vitest';
 
-import { rawToken, type Theme } from './theme-css.js';
+import { BASE_TOKENS, rawToken, type Theme } from './theme-css.js';
 
 /**
  * The OKLCH conversion round-trips to DESIGN.md's hex (story 1.1b, UX-DR3).
@@ -148,5 +148,78 @@ describe('every shipped value round-trips to the hex DESIGN.md declares', () => 
         3,
       );
     }
+  });
+});
+
+/**
+ * The base palette, round-tripped the same way (visual refresh A).
+ *
+ * The surfaces — page, card, muted, border, input, ring, sidebar — stopped
+ * being stock shadcn when the slate/navy retheme landed, so their source of
+ * truth moved into DESIGN.md's `base-palette:` key, one map per theme. Without
+ * this block that claim would be prose: a surface could drift off its declared
+ * hex with every contrast ratio still green.
+ *
+ * NO EXEMPTIONS. The accessibility deviations recorded in `index.css`'s header
+ * (muted-foreground, input, ring, sidebar-ring) are deviations from the plain
+ * slate STEP, not from DESIGN.md: the declared hex already is the measured
+ * value, so each round-trips like any other.
+ */
+function basePalette(): Record<Theme, Map<string, string>> {
+  const md = readFileSync(DESIGN, 'utf8');
+  const block = md.split(/^base-palette:\s*$/m)[1]?.split(/^\w[\w-]*:\s*$/m)[0] ?? '';
+  const themes: Record<Theme, Map<string, string>> = { light: new Map(), dark: new Map() };
+  let current: Theme | null = null;
+
+  for (const line of block.split('\n')) {
+    const heading = /^\s{2}(light|dark):\s*$/.exec(line);
+    if (heading?.[1] !== undefined) {
+      current = heading[1] as Theme;
+      continue;
+    }
+    const found = /^\s{4}([a-z0-9-]+):\s*'([^']+)'/.exec(line);
+    if (current !== null && found?.[1] !== undefined && found[2] !== undefined) {
+      themes[current].set(found[1], found[2]);
+    }
+  }
+
+  return themes;
+}
+
+describe('every base token round-trips to the hex base-palette declares', () => {
+  it.each(THEMES)('declares every one of the 28 base tokens for %s', (theme) => {
+    expect([...basePalette()[theme].keys()].sort()).toEqual([...BASE_TOKENS].sort());
+  });
+
+  const cases = THEMES.flatMap((theme) => BASE_TOKENS.map((token) => ({ theme, token })));
+
+  it.each(cases)('$token in $theme', ({ theme, token }) => {
+    const declared = basePalette()[theme].get(token);
+    expect(declared, `base-palette.${theme} declares no ${token}`).toBeDefined();
+
+    const shipped = rawToken(theme, token);
+    expect(shipped, `--${token} is not declared in the ${theme} theme`).not.toBeNull();
+
+    const expected = rgb(parse(declared ?? ''));
+    const actual = rgb(parse(shipped ?? ''));
+    expect(expected, `base-palette.${theme}.${token} is unparseable`).toBeDefined();
+    expect(actual, `--${token} (${theme}) is unparseable`).toBeDefined();
+    if (expected === undefined || actual === undefined) return;
+
+    const drift =
+      Math.max(
+        Math.abs(expected.r - actual.r),
+        Math.abs(expected.g - actual.g),
+        Math.abs(expected.b - actual.b),
+      ) * 255;
+
+    expect(
+      drift,
+      `--${token} (${theme}) is ${formatHex(actual)}, DESIGN.md declares ${formatHex(expected)}`,
+    ).toBeLessThan(0.5);
+    expect(actual.alpha ?? 1, `--${token} (${theme}) alpha differs from DESIGN.md`).toBeCloseTo(
+      expected.alpha ?? 1,
+      3,
+    );
   });
 });

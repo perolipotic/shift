@@ -90,6 +90,11 @@ const SANCTIONED_SCREEN_KEYS = [
   'auth.organization.heading',
   'auth.organization.label',
   'auth.organization.submit',
+  // VISUAL REFRESH A's three: the sign-in brand panel's product name, headline
+  // and subline, rendered on both sign-in steps from `lg` up.
+  'auth.brand.name',
+  'auth.brand.headline',
+  'auth.brand.subline',
   // NO `home.*` KEY, and there is no screen at `/` for one to belong to: it is
   // a redirect-only route. This list is an EQUALITY assertion, so a key added
   // to `hr.json` for a screen that does not render is refused here.

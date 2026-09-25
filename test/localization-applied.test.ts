@@ -65,6 +65,9 @@ const SOURCES = [
   // behaviour a stale build would misreport — not because it carries a key.
   join(webRoot, 'src', 'routes', 'prijava-organizacija.tsx'),
   join(webRoot, 'src', 'routes', 'index.tsx'),
+  // The sign-in steps' shared frame (visual refresh A), which renders the
+  // brand panel's three strings around both steps.
+  join(webRoot, 'src', 'components', 'auth-layout.tsx'),
   // NOT `.tsx`, and that is the point. This list guards build FRESHNESS, and
   // the file that owns `auth.error.credentials` and `auth.error.unavailable` is
   // a plain module: story 1.3b moved the failure-to-message pairing out of the
