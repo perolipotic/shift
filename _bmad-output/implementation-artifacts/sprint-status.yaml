@@ -373,7 +373,7 @@ development_status:
   # editor, ramp slots and slot 3-6 contrast, waiting in deferred-work.md) is
   # done. Each part earns its key here; a regenerate reports them as orphans —
   # reconcile with --set rather than dropping them.
-  2-2-an-admin-defines-shift-types-including-one-that-crosses-midn: review
+  2-2-an-admin-defines-shift-types-including-one-that-crosses-midn: done
   # Part A: shift_types + versioned shift_type_versions, seed for both
   # fixtures, pure domain/duration. No UI.
   # Merged to main in 1cfedd0 (PR #33). Its spec carries status done with
@@ -387,7 +387,13 @@ development_status:
   # Part B: the Shift Type editor under Postavke rotacije — list with ramp-slot
   # chips, add, rename, time correction from a date, cancel scheduled,
   # archive; the slot 3-6 contrast pin. THIS PART COMPLETES THE 2-2 PARENT.
-  2-2b-shift-type-editor: review
+  # Merged to main in 2063722 (PR #41), rebased onto the sidebar icon rail
+  # (#40) before merge. Its spec carries status done with review_loop_iteration
+  # 0 — three adversarial layers, no loopback, 14 patches, three findings
+  # deferred to deferred-work.md (client-computed organization today; the admin
+  # guard copied into four routes; time helpers living in hour-bands).
+  # Reconciled 2026-09-25. THIS PART COMPLETED THE 2-2 PARENT above.
+  2-2b-shift-type-editor: done
   2-3-an-admin-builds-the-rotation-and-sees-the-cycle-before-savin: backlog
   2-4-rotation-configuration-completes-on-a-phone: backlog
   2-5-saving-a-rotation-reports-what-it-will-actually-do: backlog
