@@ -11,14 +11,13 @@ import { Notice } from '@/components/ui/notice';
 import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import {
   HOUR_BANDS_LIST_KEY,
-  HOUR_BANDS_READ_STALE_MS,
   HOUR_BANDS_TABLE,
   durationMessageKey,
   durationValuesOf,
   hourBandDisplayRowsOf,
   hourBandsMessageKey,
   hourBandsSurfaceStateOf,
-  readHourBands,
+  hourBandsQueryOptions,
   type HourBandRow,
 } from '@/hour-bands/list';
 import {
@@ -98,20 +97,12 @@ function HourBandScreen({ id }: { readonly id: string }) {
   /** Landed saves; the form key counts them, never the values. */
   const [saves, setSaves] = useState(0);
 
-  const answer = useQuery({
-    queryKey: HOUR_BANDS_LIST_KEY,
-    queryFn: () => readHourBands(supabaseClient().from(HOUR_BANDS_TABLE)),
-    staleTime: HOUR_BANDS_READ_STALE_MS,
-    refetchOnWindowFocus: false,
-  });
+  const answer = useQuery(hourBandsQueryOptions(() => supabaseClient().from(HOUR_BANDS_TABLE)));
 
-  const { bands, refusal: readRefusal, loading } = hourBandsSurfaceStateOf(answer);
-  const form = hourBandFormStateOf(
-    bands,
-    loading,
-    id,
-    holdsRemovalOutcome(saved, removeFailure),
-  );
+  const readState = hourBandsSurfaceStateOf(answer);
+  const { bands, refusal: readRefusal, loading } = readState;
+  // A read failure hides the form, decided in `hourBandFormStateOf` from the state.
+  const form = hourBandFormStateOf(readState, id, holdsRemovalOutcome(saved, removeFailure));
   const refusal = failure ?? form.refusal;
   const stage = removeStageOf(armed, pending);
   const derived =

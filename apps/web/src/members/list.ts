@@ -1,3 +1,5 @@
+import { queryOptions } from '@tanstack/react-query';
+
 import { initialsOf } from '@/components/initials';
 import { compareText, formatIsoDate, isIsoDate, organizationIsoDate } from '@/i18n/format';
 import type { MemberRole } from '@/navigation/destinations';
@@ -1949,6 +1951,72 @@ export function membersViewOf(inputs: NarrowingInputs): MembersView {
 }
 
 /**
+ * What the members query settles to: the list, or the policy's refusal.
+ *
+ * NARROWER THAN {@link MembersOutcome} on purpose. `MEMBERS_UNAVAILABLE` is
+ * never resolved data — {@link membersQueryOptions} rejects on it — so the
+ * only failure a settled answer can carry is `MEMBERS_REFUSED`.
+ */
+export type MembersSettled =
+  | { readonly ok: true; readonly members: readonly MemberListRow[] }
+  | { readonly ok: false; readonly code: typeof MEMBERS_REFUSED };
+
+/**
+ * The one query definition every screen reading {@link MEMBERS_LIST_KEY} uses.
+ *
+ * TWO FAILURES, TWO TREATMENTS:
+ *
+ *   - `MEMBERS_UNAVAILABLE` IS TRANSIENT, so it REJECTS. TanStack Query then
+ *     retries it, and on a failed refetch keeps the previous `data` beside
+ *     `isError`. Resolved as data instead, it replaced a good cached list the
+ *     moment any write's invalidation refetched into a blip, and `retry` never
+ *     ran.
+ *   - `MEMBERS_REFUSED` IS SETTLED — the policy's answer, not a fault — so it
+ *     stays resolved data: not retried, and allowed to replace rows, because a
+ *     session the database now declines should stop seeing the list.
+ *
+ * THE TABLE IS RESOLVED INSIDE THE QUERY FUNCTION, so `supabaseClient()`
+ * raising `SUPABASE_ENVIRONMENT_MISSING` is a query rejection as well.
+ */
+export function membersQueryOptions(table: () => MembersTable) {
+  return queryOptions({
+    queryKey: MEMBERS_LIST_KEY,
+    queryFn: async (): Promise<MembersSettled> => {
+      const outcome = await readMembers(table());
+
+      if (outcome.ok) return outcome;
+
+      const code = outcome.code;
+
+      // EXHAUSTIVE, so a new `MembersFailure` code fails to compile here rather
+      // than being relabelled a refusal or silently resolved as data.
+      switch (code) {
+        case MEMBERS_REFUSED:
+          return { ok: false, code };
+        case MEMBERS_UNAVAILABLE:
+          throw new Error(code);
+        default: {
+          const unhandled: never = code;
+          return unhandled;
+        }
+      }
+    },
+    // BOUNDED, because this is the most expensive read in the application:
+    // several hundred rows AND an exact count, which costs the database a second
+    // pass over the same index. Unbounded, every window focus re-runs it — an
+    // admin who alt-tabs to their mail and back re-reads the whole organization
+    // for a list that has not changed. See `MEMBERS_READ_STALE_MS`.
+    staleTime: MEMBERS_READ_STALE_MS,
+    refetchOnWindowFocus: false,
+    // ONE RETRY, ONE SECOND APART, not TanStack's three with backoff (~7 s). A
+    // write awaits the invalidation's refetch before releasing its busy lock, so
+    // the default held Save disabled for seconds after a write that had landed.
+    retry: 1,
+    retryDelay: 1000,
+  });
+}
+
+/**
  * As much of a TanStack Query result as this surface reads.
  *
  * A STRUCTURAL PARAMETER, the same shape the table seam above is, and for the
@@ -1960,7 +2028,8 @@ export interface MembersQueryAnswer {
   readonly isPending: boolean;
   readonly isError: boolean;
   readonly fetchStatus: string;
-  readonly data: MembersOutcome | undefined;
+  /** The last settled answer, kept by TanStack Query across a failed refetch. */
+  readonly data: MembersSettled | undefined;
 }
 
 /** What the surface renders: rows, a skeleton, a message, or a combination. */
@@ -1974,29 +2043,31 @@ export interface MembersSurfaceState {
 }
 
 /**
- * One query result as the four things the screen can be showing.
+ * One query result as the things the screen can be showing.
  *
- * FOUR STATES, NOT TWO, and every one of them was a defect in this surface at
- * some point in the 1.5a review:
+ * Every one of these was a defect in this surface at some point:
  *
- *   - ANSWERED. `readMembers` folds every failure it knows about into
- *     `{ ok: false, code }`, which `useQuery` reports as a resolved VALUE.
- *   - THREW. The query function can still reject before reaching that mapping —
- *     `supabaseClient()` raises `SUPABASE_ENVIRONMENT_MISSING` on a build with
- *     no environment — and a version reading only `data` left that case
- *     rendering headings with no rows, no count and no message. It shipped
- *     GREEN, because this derivation used to live in the screen.
+ *   - ANSWERED. The list, drawn.
+ *   - REFUSED. The policy answered with zero rows, which
+ *     {@link membersQueryOptions} resolves as settled data. No rows, the
+ *     refusal's own message, and no retry.
+ *   - FAILED. Every unavailable read REJECTS — `readMembers`' own
+ *     `MEMBERS_UNAVAILABLE`, rethrown by the query options, and
+ *     `supabaseClient()` raising `SUPABASE_ENVIRONMENT_MISSING` on a build with
+ *     no environment — so once TanStack's retries are spent it arrives as
+ *     `isError` with no `data`. A version reading only `data` once left that
+ *     case rendering headings with no rows, no count and no message.
  *   - PAUSED. TanStack Query pauses rather than fails when the browser reports
  *     itself offline: `isPending` stays true with nothing in flight and no error
  *     ever arriving, so the skeleton pulses for ever with nothing saying why.
- *   - THREW OVER A GOOD ANSWER. A refetch that fails while a complete list is
- *     already cached — the ordinary shape of a network blip on a screen someone
- *     is looking at. The rows are KEPT and the message is shown BESIDE them,
- *     which is the decision this story makes and the one the previous version
- *     got wrong in the expensive direction: it replaced a correct, if slightly
- *     old, list of several hundred people with a sentence. Stale data plainly
- *     labelled as troubled beats no data at all, and the alternative asks
- *     somebody to reload to see what they were already looking at.
+ *   - FAILED OVER A GOOD ANSWER. A refetch that fails while a complete list is
+ *     already cached — a network blip after a write's invalidation, on a screen
+ *     someone is looking at. Because the failure rejects, TanStack keeps the
+ *     previous `data` beside `isError`: the rows are KEPT and the message is
+ *     shown BESIDE them. Stale data plainly labelled as troubled beats no data
+ *     at all, and the alternative asks somebody to reload to see what they were
+ *     already looking at. Over a cached REFUSAL the current fault wins: the
+ *     message is the unavailable one, and there are still no rows.
  *
  * `loading` and `refusal` are never both set: a skeleton beside an explanation
  * says the surface is both working and broken.
@@ -2006,12 +2077,14 @@ export function membersSurfaceStateOf(answer: MembersQueryAnswer): MembersSurfac
   const members = answered !== undefined && answered.ok ? answered.members : null;
   const paused = answer.isPending && answer.fetchStatus === FETCH_PAUSED;
 
-  if (answered !== undefined && !answered.ok) {
-    return { members: null, refusal: answered.code, loading: false };
-  }
-
+  // THE CURRENT FAULT WINS: a refetch that failed over a cached refusal is
+  // unavailable now, whatever the policy said last time.
   if (answer.isError || paused) {
     return { members, refusal: MEMBERS_UNAVAILABLE, loading: false };
+  }
+
+  if (answered !== undefined && !answered.ok) {
+    return { members: null, refusal: answered.code, loading: false };
   }
 
   return { members, refusal: null, loading: answer.isPending };

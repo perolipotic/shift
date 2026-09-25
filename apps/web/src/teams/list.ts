@@ -1,3 +1,5 @@
+import { queryOptions } from '@tanstack/react-query';
+
 import { compareText } from '@/i18n/format';
 
 /**
@@ -230,12 +232,49 @@ export function teamsMessageKey(failure: TeamsFailure): 'smjene.error.unavailabl
   return unhandled;
 }
 
+/**
+ * The one query definition every screen reading {@link TEAMS_LIST_KEY} uses.
+ *
+ * UNAVAILABLE REJECTS. {@link readTeams} returns its failure as a value, and
+ * handed to TanStack Query as resolved data that value would REPLACE a good
+ * cached list on a failed refetch — the rows vanish after any write's
+ * invalidation — and `retry` would never run. Thrown here, TanStack retries it
+ * and keeps the previous `data` beside `isError`, which is exactly the "rows
+ * kept, message beside them" state {@link teamsSurfaceStateOf} draws.
+ *
+ * THE TABLE IS RESOLVED INSIDE THE QUERY FUNCTION, so a build with no
+ * environment (`SUPABASE_ENVIRONMENT_MISSING`) is a query rejection too.
+ *
+ * ONE DEFINITION PER KEY: two query functions registered under one key is a
+ * known defect, so no screen spells this out by hand.
+ */
+export function teamsQueryOptions(table: () => TeamsTable) {
+  return queryOptions({
+    queryKey: TEAMS_LIST_KEY,
+    queryFn: async (): Promise<readonly TeamRow[]> => {
+      const outcome = await readTeams(table());
+
+      if (!outcome.ok) throw new Error(outcome.code);
+
+      return outcome.teams;
+    },
+    staleTime: TEAMS_READ_STALE_MS,
+    refetchOnWindowFocus: false,
+    // ONE RETRY, ONE SECOND APART, not TanStack's three with backoff (~7 s). A
+    // write awaits the invalidation's refetch before releasing its busy lock, so
+    // the default held Save disabled for seconds after a write that had landed.
+    retry: 1,
+    retryDelay: 1000,
+  });
+}
+
 /** The query result the surface state is derived from. */
 export interface TeamsQueryAnswer {
   readonly isPending: boolean;
   readonly isError: boolean;
   readonly fetchStatus: string;
-  readonly data: TeamsOutcome | undefined;
+  /** The last good answer, kept by TanStack Query across a failed refetch. */
+  readonly data: readonly TeamRow[] | undefined;
 }
 
 export interface TeamsSurfaceState {
@@ -247,22 +286,29 @@ export interface TeamsSurfaceState {
 }
 
 /**
- * One query result as what the screen shows — the four states
- * `membersSurfaceStateOf` distinguishes: answered, failed, paused offline, and
- * a failed refetch over a good answer (rows kept, message beside them).
+ * One query result as what the screen shows: answered, failed, paused offline,
+ * and a failed refetch over a good answer (rows kept, message beside them).
+ * Every failure reaches here as `isError`, because {@link teamsQueryOptions}
+ * rejects on it.
  */
 export function teamsSurfaceStateOf(answer: TeamsQueryAnswer): TeamsSurfaceState {
-  const answered = answer.data;
-  const teams = answered !== undefined && answered.ok ? answered.teams : null;
+  const teams = answer.data ?? null;
   const paused = answer.isPending && answer.fetchStatus === TEAMS_FETCH_PAUSED;
-
-  if (answered !== undefined && !answered.ok) {
-    return { teams: null, refusal: answered.code, loading: false };
-  }
 
   if (answer.isError || paused) {
     return { teams, refusal: TEAMS_UNAVAILABLE, loading: false };
   }
 
   return { teams, refusal: null, loading: answer.isPending };
+}
+
+/**
+ * The teams a WRITE may be built from: the surface's rows, but only while the
+ * read is healthy. A failed refetch keeps the cached rows on screen beside the
+ * message, and a picker or team action offered from that possibly stale list
+ * would write against teams the database may no longer hold as shown — so on
+ * any read refusal there is nothing to write from.
+ */
+export function writableTeamsOf(state: TeamsSurfaceState): readonly TeamRow[] | null {
+  return state.refusal === null ? state.teams : null;
 }

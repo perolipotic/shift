@@ -1,5 +1,10 @@
 import { formatMinuteOfDay } from '@/i18n/format';
-import { hourBandById, minuteOfTime, type HourBandRow } from '@/hour-bands/list';
+import {
+  hourBandById,
+  minuteOfTime,
+  type HourBandRow,
+  type HourBandsSurfaceState,
+} from '@/hour-bands/list';
 import { claimedOrganizationOf } from '@/teams/write';
 
 /**
@@ -391,8 +396,11 @@ export function holdsRemovalOutcome(
  * `null` band with no refusal while the list loads, and whenever THIS SCREEN
  * holds a removal outcome ({@link holdsRemovalOutcome}) — that outcome is
  * rendered instead, outside the band's own block, so it survives the band
- * disappearing. {@link HOUR_BAND_UNKNOWN} when the answer settled without the
- * band otherwise.
+ * disappearing. Also `null` with no refusal whenever the read has failed, even
+ * over cached rows, for the reason `TeamFormState` gives: the screen shows only
+ * the read message rather than a form that may hold stale values beside
+ * "saved". {@link HOUR_BAND_UNKNOWN} when the answer settled without the band
+ * otherwise.
  */
 export interface HourBandFormState {
   readonly band: HourBandRow | null;
@@ -400,12 +408,13 @@ export interface HourBandFormState {
 }
 
 export function hourBandFormStateOf(
-  bands: readonly HourBandRow[] | null,
-  loading: boolean,
+  state: HourBandsSurfaceState,
   id: string,
   removalHeld: boolean,
 ): HourBandFormState {
-  if (bands === null) return { band: null, refusal: null };
+  const { bands, loading } = state;
+
+  if (bands === null || state.refusal !== null) return { band: null, refusal: null };
 
   const band = hourBandById(bands, id);
 

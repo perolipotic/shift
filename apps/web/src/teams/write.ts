@@ -1,4 +1,4 @@
-import { teamById, type TeamRow } from '@/teams/list';
+import { teamById, type TeamRow, type TeamsSurfaceState } from '@/teams/list';
 
 /**
  * Creating, renaming and archiving a team — every decision the two team
@@ -294,20 +294,21 @@ export function archiveStageOf(armed: boolean, pending: boolean): ArchiveStage {
 /**
  * What the edit screen renders for the team its route names.
  *
- * `null` team with no refusal while the list loads; {@link TEAM_UNKNOWN} when
- * the answer settled without it.
+ * `null` team with no refusal while the list loads, and whenever the read has
+ * failed — even over cached rows: the screen then shows only the read message,
+ * because a form remounted after a landed rename would draw the stale name
+ * beside "saved", and a second Save would overwrite the change.
+ * {@link TEAM_UNKNOWN} when the answer settled without it.
  */
 export interface TeamFormState {
   readonly team: TeamRow | null;
   readonly refusal: typeof TEAM_UNKNOWN | null;
 }
 
-export function teamFormStateOf(
-  teams: readonly TeamRow[] | null,
-  loading: boolean,
-  id: string,
-): TeamFormState {
-  if (teams === null) return { team: null, refusal: null };
+export function teamFormStateOf(state: TeamsSurfaceState, id: string): TeamFormState {
+  const { teams, loading } = state;
+
+  if (teams === null || state.refusal !== null) return { team: null, refusal: null };
 
   const team = teamById(teams, id);
 

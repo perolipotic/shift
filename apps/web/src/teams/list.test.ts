@@ -1,11 +1,19 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import {
+  QueryClient,
+  QueryObserver,
+  environmentManager,
+  onlineManager,
+} from '@tanstack/react-query';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { initLocalization, t } from '@/i18n';
+import { teamFormStateOf } from '@/teams/write';
 import {
   TEAMS_COLUMNS,
   TEAMS_COUNT,
   TEAMS_FETCH_PAUSED,
   TEAMS_LIST_KEY,
+  TEAMS_READ_STALE_MS,
   TEAMS_TABLE,
   TEAMS_UNAVAILABLE,
   readTeams,
@@ -15,7 +23,9 @@ import {
   teamHeadingMessageKey,
   teamRowOf,
   teamsMessageKey,
+  teamsQueryOptions,
   teamsSurfaceStateOf,
+  writableTeamsOf,
   type TeamRow,
   type TeamsAnswer,
   type TeamsTable,
@@ -214,44 +224,233 @@ describe('the counts read in words, with the plural each count takes', () => {
   });
 });
 
-describe('the surface state', () => {
-  const answered = { ok: true as const, teams: [] };
+describe('the surface state, driven through the one query definition', () => {
+  /**
+   * A REAL `QueryClient` and `QueryObserver`, never a hand-built result: the
+   * defect this pins — a failed refetch replacing a good cached list — lived in
+   * how TanStack Query treats a resolved failure versus a rejected one, which a
+   * fixture cannot reproduce. Only `retryDelay` is overridden; `retry` is the
+   * factory's own `1`. Node counts as a server, where TanStack forces `retry`
+   * to 0, so the environment is told it is a browser for these cases.
+   */
+  const wasServer = environmentManager.isServer();
+  const good = { data: rows(3), error: null, count: 3 };
+  const truncated = { data: rows(2), error: null, count: 3 };
+  let client: QueryClient;
+  let unsubscribes: (() => void)[];
 
-  it('pulses while pending and says nothing', () => {
-    expect(
-      teamsSurfaceStateOf({ isPending: true, isError: false, fetchStatus: 'fetching', data: undefined }),
-    ).toEqual({ teams: null, refusal: null, loading: true });
+  beforeAll(() => {
+    environmentManager.setIsServer(() => false);
   });
 
-  it('draws an answer, an empty one included', () => {
-    expect(
-      teamsSurfaceStateOf({ isPending: false, isError: false, fetchStatus: 'idle', data: answered }),
-    ).toEqual({ teams: [], refusal: null, loading: false });
+  afterAll(() => {
+    environmentManager.setIsServer(() => wasServer);
   });
 
-  it('shows the message for a failed read, a thrown one and a paused one', () => {
-    const failed = { ok: false as const, code: TEAMS_UNAVAILABLE } as const;
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    client = new QueryClient();
+    unsubscribes = [];
+  });
 
-    expect(
-      teamsSurfaceStateOf({ isPending: false, isError: false, fetchStatus: 'idle', data: failed }),
-    ).toEqual({ teams: null, refusal: TEAMS_UNAVAILABLE, loading: false });
-    expect(
-      teamsSurfaceStateOf({ isPending: false, isError: true, fetchStatus: 'idle', data: undefined }),
-    ).toEqual({ teams: null, refusal: TEAMS_UNAVAILABLE, loading: false });
-    expect(
-      teamsSurfaceStateOf({
-        isPending: true,
-        isError: false,
-        fetchStatus: TEAMS_FETCH_PAUSED,
-        data: undefined,
+  afterEach(() => {
+    for (const unsubscribe of unsubscribes) unsubscribe();
+    client.clear();
+    onlineManager.setOnline(true);
+    vi.restoreAllMocks();
+  });
+
+  /** A table answering each call with the next answer, the last one for ever. */
+  function answeringInTurn(...answers: TeamsAnswer[]): TeamsTable & { readonly calls: () => number } {
+    let calls = 0;
+
+    return {
+      calls: () => calls,
+      select() {
+        const answer = answers[Math.min(calls, answers.length - 1)];
+
+        calls += 1;
+
+        return Promise.resolve(answer as TeamsAnswer);
+      },
+    };
+  }
+
+  function observe(table: () => TeamsTable) {
+    const observer = new QueryObserver(client, { ...teamsQueryOptions(table), retryDelay: 0 });
+
+    unsubscribes.push(observer.subscribe(() => undefined));
+
+    return observer;
+  }
+
+  async function settled(observer: ReturnType<typeof observe>) {
+    await vi.waitFor(() => {
+      expect(observer.getCurrentResult().fetchStatus).toBe('idle');
+    });
+
+    return observer.getCurrentResult();
+  }
+
+  const goodTeams: readonly TeamRow[] = good.data.flatMap((row) => {
+    const team = teamRowOf(row);
+
+    return team === null ? [] : [team];
+  });
+
+  it('keeps today\'s key and cache bound', () => {
+    const options = teamsQueryOptions(() => answeringInTurn(good));
+
+    expect(options.queryKey).toEqual(TEAMS_LIST_KEY);
+    expect(options.staleTime).toBe(TEAMS_READ_STALE_MS);
+    expect(options.refetchOnWindowFocus).toBe(false);
+    expect(options.retry).toBe(1);
+    expect(options.retryDelay).toBe(1000);
+  });
+
+  it('pulses while the first read is in flight and says nothing', () => {
+    const observer = observe(() => answeringInTurn(good));
+
+    expect(teamsSurfaceStateOf(observer.getCurrentResult())).toEqual({
+      teams: null,
+      refusal: null,
+      loading: true,
+    });
+  });
+
+  it.each([0, 3])('draws a first answer of %i teams', async (count) => {
+    const result = await settled(
+      observe(() => answeringInTurn({ data: rows(count), error: null, count })),
+    );
+
+    expect(result.status).toBe('success');
+    expect(teamsSurfaceStateOf(result)).toEqual({
+      teams: rows(count).map((row) => teamRowOf(row)),
+      refusal: null,
+      loading: false,
+    });
+  });
+
+  it('retries an unavailable first read, then shows the message and no rows', async () => {
+    const table = answeringInTurn(truncated);
+    const result = await settled(observe(() => table));
+
+    expect(table.calls(), 'the unavailable read was not retried exactly once').toBe(2);
+    expect(result.status).toBe('error');
+    expect(result.data).toBeUndefined();
+    expect(teamsSurfaceStateOf(result)).toEqual({
+      teams: null,
+      refusal: TEAMS_UNAVAILABLE,
+      loading: false,
+    });
+  });
+
+  it('keeps the rows beside the message when a refetch is unavailable', async () => {
+    // The write's `invalidateQueries`, then a blip: the list stays on screen.
+    const table = answeringInTurn(good, truncated);
+    const observer = observe(() => table);
+
+    await settled(observer);
+    await client.invalidateQueries({ queryKey: TEAMS_LIST_KEY });
+    const result = await settled(observer);
+
+    expect(table.calls(), 'the unavailable refetch was not retried exactly once').toBe(3);
+    expect(result.isError).toBe(true);
+    expect(teamsSurfaceStateOf(result)).toEqual({
+      teams: goodTeams,
+      refusal: TEAMS_UNAVAILABLE,
+      loading: false,
+    });
+  });
+
+  it('hides the edit form, and names nothing, when a refetch fails over good rows', async () => {
+    // Through the real cache and the same two calls the edit screen makes: the
+    // cached rows stay on the surface, and the form gate still withholds the form.
+    const table = answeringInTurn(good, truncated);
+    const observer = observe(() => table);
+
+    await settled(observer);
+    expect(teamFormStateOf(teamsSurfaceStateOf(observer.getCurrentResult()), 'team-000').team).not.toBeNull();
+    await client.invalidateQueries({ queryKey: TEAMS_LIST_KEY });
+    const state = teamsSurfaceStateOf(await settled(observer));
+
+    expect(state.teams).toEqual(goodTeams);
+    expect(teamFormStateOf(state, 'team-000')).toEqual({ team: null, refusal: null });
+  });
+
+  it('withholds the teams a write may use when a refetch fails over good rows', async () => {
+    // The member screen's picker and team actions: the rows stay drawable, but
+    // nothing is written from a list the read now says it cannot vouch for.
+    const table = answeringInTurn(good, truncated);
+    const observer = observe(() => table);
+
+    expect(writableTeamsOf(teamsSurfaceStateOf(await settled(observer)))).toEqual(goodTeams);
+    await client.invalidateQueries({ queryKey: TEAMS_LIST_KEY });
+    const state = teamsSurfaceStateOf(await settled(observer));
+
+    expect(state.teams).toEqual(goodTeams);
+    expect(writableTeamsOf(state)).toBeNull();
+  });
+
+  it('offers the teams to write from only while the read is healthy', () => {
+    expect(writableTeamsOf({ teams: goodTeams, refusal: null, loading: false })).toEqual(goodTeams);
+    expect(writableTeamsOf({ teams: [], refusal: null, loading: false })).toEqual([]);
+    expect(writableTeamsOf({ teams: null, refusal: null, loading: true })).toBeNull();
+    expect(writableTeamsOf({ teams: goodTeams, refusal: TEAMS_UNAVAILABLE, loading: false })).toBeNull();
+    expect(writableTeamsOf({ teams: null, refusal: TEAMS_UNAVAILABLE, loading: false })).toBeNull();
+  });
+
+  it('settles as a success when a transient failure is followed by an answer', async () => {
+    const table = answeringInTurn(truncated, good);
+    const result = await settled(observe(() => table));
+
+    expect(table.calls()).toBe(2);
+    expect(result.status).toBe('success');
+    expect(teamsSurfaceStateOf(result)).toEqual({ teams: goodTeams, refusal: null, loading: false });
+  });
+
+  it('rejects when the table cannot even be built', async () => {
+    // `supabaseClient()` raising `SUPABASE_ENVIRONMENT_MISSING`, resolved
+    // inside the query function so it is a query rejection like any other.
+    const result = await settled(
+      observe(() => {
+        throw new Error('SUPABASE_ENVIRONMENT_MISSING');
       }),
-    ).toEqual({ teams: null, refusal: TEAMS_UNAVAILABLE, loading: false });
+    );
+
+    expect(result.isError).toBe(true);
+    expect(teamsSurfaceStateOf(result)).toEqual({
+      teams: null,
+      refusal: TEAMS_UNAVAILABLE,
+      loading: false,
+    });
   });
 
-  it('keeps a good answer beside a failed refetch', () => {
-    expect(
-      teamsSurfaceStateOf({ isPending: false, isError: true, fetchStatus: 'idle', data: answered }),
-    ).toEqual({ teams: [], refusal: TEAMS_UNAVAILABLE, loading: false });
+  it('says why rather than pulsing while paused offline', () => {
+    onlineManager.setOnline(false);
+    const result = observe(() => answeringInTurn(good)).getCurrentResult();
+
+    expect(result.isPending).toBe(true);
+    expect(result.fetchStatus).toBe(TEAMS_FETCH_PAUSED);
+    expect(teamsSurfaceStateOf(result)).toEqual({
+      teams: null,
+      refusal: TEAMS_UNAVAILABLE,
+      loading: false,
+    });
+  });
+
+  it('never pulses a skeleton beside a message', () => {
+    for (const isError of [true, false]) {
+      for (const isPending of [true, false]) {
+        for (const fetchStatus of ['idle', 'fetching', TEAMS_FETCH_PAUSED]) {
+          for (const data of [undefined, [], goodTeams]) {
+            const state = teamsSurfaceStateOf({ isPending, isError, fetchStatus, data });
+
+            expect(state.loading && state.refusal !== null).toBe(false);
+          }
+        }
+      }
+    }
   });
 
   it('maps its one failure to its own message', () => {

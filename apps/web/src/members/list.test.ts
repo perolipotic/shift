@@ -1,4 +1,10 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  QueryClient,
+  QueryObserver,
+  environmentManager,
+  onlineManager,
+} from '@tanstack/react-query';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ALL_LEVELS,
@@ -59,6 +65,7 @@ import {
   memberListRowOf,
   memberRowOutcomeOf,
   membersMessageKey,
+  membersQueryOptions,
   membersSurfaceStateOf,
   narrowFrom,
   narrowMembers,
@@ -1296,62 +1303,143 @@ describe('the sort indicator and aria-sort are one decision', () => {
   });
 });
 
-describe('the four things the surface can be showing', () => {
+describe('the things the surface can be showing, driven through the one query definition', () => {
   /**
    * DERIVED HERE AND EXECUTED, because it was four lines of conditional in the
    * screen and the screen is executed by nothing: replacing
    * `answer.isError || paused` with `paused` shipped green, and a thrown query
    * function then rendered headings with no rows, no count and no message.
+   *
+   * A REAL `QueryClient` and `QueryObserver`, never a hand-built result. The
+   * defect this pins — a failed refetch after a write's invalidation replacing
+   * several hundred correct people with a sentence — lived in how TanStack
+   * Query treats a RESOLVED failure versus a REJECTED one, and a fixture
+   * pairing `isError: true` with cached data described a state the old query
+   * function could never actually reach. Only `retryDelay` is overridden, so
+   * the factory's own `retry: 1` is what runs; node counts as a server, where
+   * TanStack forces `retry` to 0, so the environment is told it is a browser
+   * for these cases. `console.error` is silenced by the suite-wide spy above.
    */
+  const wasServer = environmentManager.isServer();
+  const good: Partial<MembersAnswer> = { data: [row({ id: 'a' }), row({ id: 'b' })], count: 2 };
+  const truncated: Partial<MembersAnswer> = { data: [row({ id: 'a' })], count: 2 };
+  const refused: Partial<MembersAnswer> = { data: [], count: 0 };
+  let client: QueryClient;
+  let unsubscribes: (() => void)[];
+  let goodMembers: readonly MemberListRow[];
 
-  const rows = [member({ id: 'a' })];
-  const settled: MembersQueryAnswer = {
-    isPending: false,
-    isError: false,
-    fetchStatus: 'idle',
-    data: { ok: true, members: rows },
-  };
+  beforeAll(async () => {
+    environmentManager.setIsServer(() => false);
+    const outcome = await readMembers(answering(good));
 
-  it('draws the rows when the read answered', () => {
-    expect(membersSurfaceStateOf(settled)).toEqual({ members: rows, refusal: null, loading: false });
+    if (!outcome.ok) throw new Error('fixture answer does not read');
+    goodMembers = outcome.members;
+  });
+
+  afterAll(() => {
+    environmentManager.setIsServer(() => wasServer);
+  });
+
+  beforeEach(() => {
+    client = new QueryClient();
+    unsubscribes = [];
+  });
+
+  afterEach(() => {
+    for (const unsubscribe of unsubscribes) unsubscribe();
+    client.clear();
+    onlineManager.setOnline(true);
+  });
+
+  /** A table answering each call with the next answer, the last one for ever. */
+  function answeringInTurn(
+    ...answers: Partial<MembersAnswer>[]
+  ): MembersTable & { readonly calls: () => number } {
+    let calls = 0;
+
+    return {
+      calls: () => calls,
+      select(columns, options) {
+        const answer = answers[Math.min(calls, answers.length - 1)] ?? {};
+
+        calls += 1;
+
+        return answering(answer).select(columns, options);
+      },
+    };
+  }
+
+  function observe(table: () => MembersTable) {
+    const observer = new QueryObserver(client, { ...membersQueryOptions(table), retryDelay: 0 });
+
+    unsubscribes.push(observer.subscribe(() => undefined));
+
+    return observer;
+  }
+
+  async function settled(observer: ReturnType<typeof observe>) {
+    await vi.waitFor(() => {
+      expect(observer.getCurrentResult().fetchStatus).toBe('idle');
+    });
+
+    return observer.getCurrentResult();
+  }
+
+  it("keeps today's key and cache bound", () => {
+    const options = membersQueryOptions(() => answeringInTurn(good));
+
+    expect(options.queryKey).toEqual(MEMBERS_LIST_KEY);
+    expect(options.staleTime).toBe(MEMBERS_READ_STALE_MS);
+    expect(options.refetchOnWindowFocus).toBe(false);
+    expect(options.retry).toBe(1);
+    expect(options.retryDelay).toBe(1000);
   });
 
   it('pulses the skeleton while the read is in flight', () => {
-    expect(
-      membersSurfaceStateOf({
-        isPending: true,
-        isError: false,
-        fetchStatus: 'fetching',
-        data: undefined,
-      }),
-    ).toEqual({ members: null, refusal: null, loading: true });
+    const observer = observe(() => answeringInTurn(good));
+
+    expect(membersSurfaceStateOf(observer.getCurrentResult())).toEqual({
+      members: null,
+      refusal: null,
+      loading: true,
+    });
   });
 
-  it.each([MEMBERS_REFUSED, MEMBERS_UNAVAILABLE] as const)(
-    'shows the message and no table when the read answered %s',
-    (code) => {
-      expect(
-        membersSurfaceStateOf({
-          isPending: false,
-          isError: false,
-          fetchStatus: 'idle',
-          data: { ok: false, code },
-        }),
-      ).toEqual({ members: null, refusal: code, loading: false });
-    },
-  );
+  it('draws the rows when the read answered', async () => {
+    const result = await settled(observe(() => answeringInTurn(good)));
 
-  it('shows a message rather than empty headings when the query function threw', () => {
-    // THE MUTATION: `answer.isError || paused` narrowed to `paused`. `readMembers`
-    // maps every failure it knows about, but the query function can still reject
-    // before reaching it — `supabaseClient()` raises on a build with no
-    // environment — and `data` is then `undefined` with `isError` true.
-    const state = membersSurfaceStateOf({
-      isPending: false,
-      isError: true,
-      fetchStatus: 'idle',
-      data: undefined,
+    expect(result.status).toBe('success');
+    expect(membersSurfaceStateOf(result)).toEqual({
+      members: goodMembers,
+      refusal: null,
+      loading: false,
     });
+  });
+
+  it('retries an unavailable read, then shows the message and no table', async () => {
+    const table = answeringInTurn(truncated);
+    const result = await settled(observe(() => table));
+
+    expect(table.calls(), 'the unavailable read was not retried exactly once').toBe(2);
+    expect(result.status).toBe('error');
+    expect(result.data).toBeUndefined();
+    expect(membersSurfaceStateOf(result)).toEqual({
+      members: null,
+      refusal: MEMBERS_UNAVAILABLE,
+      loading: false,
+    });
+  });
+
+  it('shows a message rather than empty headings when the table cannot be built', async () => {
+    // `supabaseClient()` raising `SUPABASE_ENVIRONMENT_MISSING`, resolved inside
+    // the query function so it is a query rejection like any other.
+    const state = membersSurfaceStateOf(
+      await settled(
+        observe(() => {
+          throw new Error('SUPABASE_ENVIRONMENT_MISSING');
+        }),
+      ),
+    );
 
     expect(state.refusal, 'a thrown query function reports nothing at all').toBe(
       MEMBERS_UNAVAILABLE,
@@ -1359,40 +1447,115 @@ describe('the four things the surface can be showing', () => {
     expect(state.loading, 'a thrown query function leaves the skeleton pulsing').toBe(false);
   });
 
-  it('explains a paused fetch rather than pulsing for ever', () => {
-    // TanStack Query pauses rather than fails when the browser reports itself
-    // offline: `isPending` stays true with nothing in flight and no error ever
-    // arriving.
-    expect(
-      membersSurfaceStateOf({
-        isPending: true,
-        isError: false,
-        fetchStatus: 'paused',
-        data: undefined,
-      }),
-    ).toEqual({ members: null, refusal: MEMBERS_UNAVAILABLE, loading: false });
-  });
+  it('keeps a cached list on screen when a refetch is unavailable over it', async () => {
+    // THE DECISION THIS SURFACE MAKES: a refetch that fails while a complete
+    // list is already cached — a blip after a write's invalidation — keeps the
+    // rows and shows the message beside them. Stale data plainly labelled as
+    // troubled beats no data.
+    const table = answeringInTurn(good, truncated);
+    const observer = observe(() => table);
 
-  it('keeps a cached list on screen when a refetch throws over it', () => {
-    // THE DECISION THIS STORY MAKES, pinned because the previous version made
-    // the other one silently: a refetch that fails while a complete list is
-    // already cached replaced several hundred correct — if slightly old — people
-    // with a sentence. Stale data plainly labelled as troubled beats no data,
-    // and the alternative asks somebody to reload to see what they were already
-    // looking at.
-    const state = membersSurfaceStateOf({ ...settled, isError: true });
+    await settled(observer);
+    await client.invalidateQueries({ queryKey: MEMBERS_LIST_KEY });
+    const state = membersSurfaceStateOf(await settled(observer));
 
-    expect(state.members, 'a network blip discards a good list').toEqual(rows);
+    expect(table.calls(), 'the unavailable refetch was not retried exactly once').toBe(3);
+    expect(state.members, 'a network blip discards a good list').toEqual(goodMembers);
     expect(state.refusal, 'a failing refetch says nothing at all').toBe(MEMBERS_UNAVAILABLE);
     expect(state.loading).toBe(false);
   });
 
+  it('settles as a success when a transient failure is followed by an answer', async () => {
+    const table = answeringInTurn(truncated, good);
+    const result = await settled(observe(() => table));
+
+    expect(table.calls()).toBe(2);
+    expect(result.status).toBe('success');
+    expect(membersSurfaceStateOf(result)).toEqual({
+      members: goodMembers,
+      refusal: null,
+      loading: false,
+    });
+  });
+
+  it('shows the refusal and no table, and does not retry it', async () => {
+    // The policy's settled answer, not a fault: retrying asks the same question
+    // of a database that has already answered it.
+    const table = answeringInTurn(refused);
+    const result = await settled(observe(() => table));
+
+    expect(table.calls(), 'a settled refusal was retried').toBe(1);
+    expect(result.status).toBe('success');
+    expect(membersSurfaceStateOf(result)).toEqual({
+      members: null,
+      refusal: MEMBERS_REFUSED,
+      loading: false,
+    });
+  });
+
+  it('lets a refusal replace the rows it arrives over', async () => {
+    const table = answeringInTurn(good, refused);
+    const observer = observe(() => table);
+
+    await settled(observer);
+    await client.invalidateQueries({ queryKey: MEMBERS_LIST_KEY });
+
+    expect(membersSurfaceStateOf(await settled(observer))).toEqual({
+      members: null,
+      refusal: MEMBERS_REFUSED,
+      loading: false,
+    });
+    expect(table.calls()).toBe(2);
+  });
+
+  it('says unavailable, not refused, when a refetch fails over a cached refusal', async () => {
+    // The current fault wins: the refusal was last time's answer, and what the
+    // surface knows now is that it could not ask.
+    const table = answeringInTurn(refused, truncated);
+    const observer = observe(() => table);
+
+    await settled(observer);
+    await client.invalidateQueries({ queryKey: MEMBERS_LIST_KEY });
+    const result = await settled(observer);
+
+    expect(table.calls(), 'the unavailable refetch was not retried exactly once').toBe(3);
+    expect(result.isError).toBe(true);
+    expect(result.data).toEqual({ ok: false, code: MEMBERS_REFUSED });
+    expect(membersSurfaceStateOf(result)).toEqual({
+      members: null,
+      refusal: MEMBERS_UNAVAILABLE,
+      loading: false,
+    });
+  });
+
+  it('explains a paused fetch rather than pulsing for ever', () => {
+    // TanStack Query pauses rather than fails when the browser reports itself
+    // offline: `isPending` stays true with nothing in flight and no error ever
+    // arriving.
+    onlineManager.setOnline(false);
+    const result = observe(() => answeringInTurn(good)).getCurrentResult();
+
+    expect(result.isPending).toBe(true);
+    expect(result.fetchStatus).toBe('paused');
+    expect(membersSurfaceStateOf(result)).toEqual({
+      members: null,
+      refusal: MEMBERS_UNAVAILABLE,
+      loading: false,
+    });
+  });
+
   it('never pulses a skeleton beside an explanation', () => {
     // Both at once says the surface is working and broken at the same time.
+    const settledData: readonly MembersQueryAnswer['data'][] = [
+      undefined,
+      { ok: true, members: [member({ id: 'a' })] },
+      { ok: false, code: MEMBERS_REFUSED },
+    ];
+
     for (const isError of [true, false]) {
       for (const isPending of [true, false]) {
         for (const fetchStatus of ['idle', 'fetching', 'paused']) {
-          for (const data of [undefined, settled.data, { ok: false, code: MEMBERS_REFUSED } as const]) {
+          for (const data of settledData) {
             const state = membersSurfaceStateOf({ isPending, isError, fetchStatus, data });
 
             expect(state.loading && state.refusal !== null).toBe(false);
