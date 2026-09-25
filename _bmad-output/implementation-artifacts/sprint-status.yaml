@@ -35,7 +35,7 @@ project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
 development_status:
-  epic-1: in-progress
+  epic-1: done
   # Story 1.1 was split twice during build. The parent key below stays
   # in-progress until every part lands; the parts carry their own status.
   # These four keys are not derived from epics.md, so a regenerate reports
@@ -316,7 +316,16 @@ development_status:
   # list until its stale time, the unbounded team-history embed). Reconciled
   # 2026-09-25. THIS PART COMPLETED THE 1-7 PARENT above.
   1-7b-team-membership: done
-  1-8-a-member-sees-who-is-on-a-team: review
+  # Story 1.8 was never split, so no parent key waits on it. Its spec is
+  # spec-1-8-team-roster.md: it narrows the `members` select to an admin or the
+  # caller's own row (CAP-5 enforced in the database), adds `team_roster`, the
+  # read-only /smjene/$id roster and the Danas line. Merged to main in 029b4ee
+  # (PR #26) and its spec carries status done with review_loop_iteration 0 —
+  # three adversarial layers, no loopback, 6 patches, two findings deferred to
+  # deferred-work.md (stale Danas/roster after an admin's team write, and the
+  # member-role read of colleagues' status history). Reconciled 2026-09-25.
+  # THIS STORY COMPLETED EPIC 1; its retrospective stays optional.
+  1-8-a-member-sees-who-is-on-a-team: done
   epic-1-retrospective: optional
 
   epic-2: backlog
