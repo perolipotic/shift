@@ -287,6 +287,16 @@ export default [
     },
   },
 
+  // ------------------------------------------------ node + browser: e2e
+  // The Playwright suite runs under Node, and its `page.evaluate` callbacks run
+  // in the page, so both sets of globals are real here.
+  {
+    files: ['e2e/**/*.ts'],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
+    },
+  },
+
   // ------------------------------------------- Deno: the one Edge Function
   {
     files: ['supabase/functions/**/*.ts'],
