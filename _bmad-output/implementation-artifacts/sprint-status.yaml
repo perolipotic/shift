@@ -291,8 +291,11 @@ development_status:
   # earning its key when specced — so the parent completes with 1.7b.
   # Completed 2026-09-25, per the convention recorded above: both parts (1.7a
   # and 1.7b) are done. The member list's team filter split out of 1.7b is not
-  # a part of 1.7 and waits in deferred-work.md, so the parent carries no
-  # remaining work.
+  # a part of 1.7, so the parent carries no remaining work either way. That
+  # filter was built from its deferred-work entry as a freeform spec
+  # (spec-member-list-team-filter.md, no sprint key) and merged to main in
+  # caa63d7 (PR #35) — three adversarial layers, no loopback, 6 patches, no
+  # findings deferred. Reconciled 2026-09-25.
   1-7-an-admin-creates-teams-and-moves-people-between-them: done
   # Merged to main in 988743f (PR #22) and its spec carries status done with
   # review_loop_iteration 0 — three adversarial layers, no loopback, 12 patches,
@@ -308,7 +311,8 @@ development_status:
   # reconcile with --set rather than dropping it. It covers epics.md story 1.7
   # acceptance clauses 2 and 3 (CAP-6, AD-2, UX-DR20). THIS PART COMPLETES THE
   # 1-7 PARENT. The member list's team filter was split out at step-01 (human
-  # decision 2026-09-24) and waits in deferred-work.md; it is not a part of 1.7.
+  # decision 2026-09-24); it is not a part of 1.7, and it merged separately in
+  # caa63d7 (PR #35) — see the 1-7 parent above.
   # Merged to main in cfd629f (PR #24) and its spec carries status done with
   # review_loop_iteration 0 — three adversarial layers, no loopback, 6 patches,
   # three findings deferred to deferred-work.md (cross-transaction
