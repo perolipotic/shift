@@ -793,3 +793,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-3a-rotation-rule.md`
   summary: `projectedShiftType` re-validates and re-sorts the steps on every call, so Epic 3's month view and Epic 4's hours repeat O(n log n) work for every team and date.
   evidence: Raised by 2.3a's review. Fine for 2.3's preview; before the calendar lands, add a prepared-pattern form in `domain/projection` (validate and order once, project many dates) rather than caching in the app, which AD-7 forbids.
+- source_spec: `_bmad-output/planning-artifacts/sprint-change-proposal-2026-09-25-organization-settings.md`
+  summary: There is no operator path to change an organization's timezone or locale after provisioning; since design refresh C the admin cannot change either in the application, and `provision-organization.sql` only creates.
+  evidence: Human decision 2026-09-25 (option a): type, timezone and locale are set at provisioning (FR-7, FR-8 as amended). A correction today is hand-written SQL against `organizations`. Add an operator script — guarded like the demo seed, validating the IANA name — when a second organization or a correction needs it.

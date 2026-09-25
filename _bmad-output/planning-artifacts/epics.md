@@ -28,7 +28,7 @@ This document provides the complete epic and story breakdown for shift, decompos
 Capabilities from `SPEC.md`. Each is an independently reviewable slice; `engine-rules.md` holds the numbered behavioural detail each one must satisfy.
 
 - **CAP-1** — Authenticated, tenant- and role-scoped access. Session scoped to one organization and one role; cross-tenant read fails at the data layer; administrative writes refused for member-role via UI *and* direct API; a usable account exists with no email, signing in by admin-issued username, its reset an admin action.
-- **CAP-2** — Organization configuration and branding. Identity, timezone, locale, leave year, logo. All times display in organization timezone. Two organizations differing only in type produce byte-identical output. Logo unreadable across tenants.
+- **CAP-2** — Organization configuration and branding. Identity, timezone, locale, leave year, logo. Type, timezone and locale are set at provisioning; the admin configures identity, leave year and logo. All times display in organization timezone. Two organizations differing only in type produce byte-identical output. Logo unreadable across tenants.
 - **CAP-3** — Configurable day/night boundary via Hour Bands. Bands partition 24h; gap or overlap refused; a band may cross midnight; moving a boundary recomputes band hours and changes no total; three bands report three figures with no code change.
 - **CAP-4** — Member management. Create, edit, activate, deactivate with role, team, allowance; search/sort/filter at scale. Deactivation preserves history, blocks authentication, removes from future rosters, alters no past shift. Allowance is per member. Never zero admins. Where the organization uses fire ranks, a member carries an optional rank (current-state).
 - **CAP-5** — Team roster visibility. Names and team membership — and, where the organization uses them, rank and team position; no allowance, balance, leave, hours or contact details. No write action for member-role. Reached through team context, not a top-level destination.
@@ -198,7 +198,7 @@ Six epics. Each stands alone and enables the next without requiring it.
 
 ### Epic 1: An organization exists, and its people can sign in
 
-An operator provisions an organization; an admin configures its identity, timezone, locale, leave year and branding, creates teams, and issues credentials — including to members who have no email address. Every member signs in and reaches exactly their own organization's data at exactly their own permission level, and can see who is on a team.
+An operator provisions an organization with its type, timezone and locale; an admin configures its identity, leave year and branding, creates teams, and issues credentials — including to members who have no email address. Every member signs in and reaches exactly their own organization's data at exactly their own permission level, and can see who is on a team.
 
 **Capabilities covered:** CAP-1, CAP-2, CAP-4, CAP-5, CAP-6
 **Standalone:** a complete, secured, populated tenant. Nothing later is required for it to be useful or correct.
@@ -249,7 +249,7 @@ A member opens the app and knows whether they are working today — stated in wo
 
 ## Epic 1: An organization exists, and its people can sign in
 
-An operator provisions an organization; an admin configures its identity, timezone, locale, leave year and branding, creates teams, and issues credentials — including to members who have no email address. Every member signs in and reaches exactly their own organization's data at exactly their own permission level, and can see who is on a team.
+An operator provisions an organization with its type, timezone and locale; an admin configures its identity, leave year and branding, creates teams, and issues credentials — including to members who have no email address. Every member signs in and reaches exactly their own organization's data at exactly their own permission level, and can see who is on a team.
 
 **Capabilities:** CAP-1, CAP-2, CAP-4, CAP-5, CAP-6 · **Governed by:** AD-3, AD-9, AD-10, AD-11, AD-12, AD-14 · **Proves:** Q1, Q2, Q3, Q5, Q6, Q20 · **UX:** UX-DR1–6, 31–32, 34–36, 40
 
@@ -336,7 +336,7 @@ So that I reach my own organization's data and nothing else.
 ### Story 1.4: An admin configures the organization's identity, localization and branding
 
 As an admin,
-I want to set my organization's name, type, timezone, locale, leave year and logo,
+I want to set my organization's name, leave year and logo, and see the timezone it was provisioned with,
 So that every date, time and calculation resolves against my organization rather than a default.
 
 **Acceptance Criteria:**
@@ -344,6 +344,10 @@ So that every date, time and calculation resolves against my organization rather
 **Given** an organization whose timezone is Europe/Zagreb and a viewer whose device is in another timezone
 **When** any date or time is displayed
 **Then** it renders in the organization's timezone, never the device's (CAP-2, L8)
+
+**Given** the organization settings surface
+**When** an admin saves it
+**Then** the Organization Type, timezone and locale are unchanged — they are set at provisioning — and the timezone is shown read-only beside the form (CAP-2)
 
 **Given** two organizations identical except for their Organization Type
 **When** their schedules, hours and conflicts are produced
