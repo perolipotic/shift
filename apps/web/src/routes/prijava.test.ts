@@ -61,6 +61,7 @@ const ORGANIZATION = join(srcRoot, 'routes', 'prijava-organizacija.tsx');
 // FRESHNESS rather than strings.
 const LAYOUT = join(srcRoot, 'routes', '_app.tsx');
 const INPUT_PRIMITIVE = join(srcRoot, 'components', 'ui', 'input.tsx');
+const SELECT_PRIMITIVE = join(srcRoot, 'components', 'ui', 'select.tsx');
 const RESOURCE = join(srcRoot, 'i18n', 'locales', 'hr.json');
 /** Story 1.4a's settings surface: the first destination that is not a placeholder. */
 const SETTINGS = join(srcRoot, 'routes', 'organizacija.tsx');
@@ -1137,7 +1138,11 @@ function bareInputElements(text: string): string[] {
 }
 
 /**
- * Every `<select …>` opening tag's attribute block.
+ * Every `<Select …>` opening tag's attribute block — the primitive, which
+ * renders the native `<select>`. Capital-`S` since the primitive arrived, for
+ * the reason `inputElements` reads `<Input`: the composed `className` the 44 px
+ * sweep measures is written on the primitive. A bare `<select>` on a screen is
+ * refused outright in the select-look block below.
  *
  * Added by story 1.4c, and a FOURTH control detector rather than a widening of
  * the three, for the reason `linkElements` is a third: a native `<select>` is
@@ -1150,7 +1155,7 @@ function bareInputElements(text: string): string[] {
  * here follows.
  */
 function selectElements(text: string): string[] {
-  return [...text.matchAll(/<select\b([\s\S]*?)>/g)].map((found) => found[1] ?? '');
+  return [...text.matchAll(/<Select\b([\s\S]*?)>/g)].map((found) => found[1] ?? '');
 }
 
 /** Every `<Button …>` opening tag's attribute block. */
@@ -3113,17 +3118,18 @@ describe('the roster and the Danas line read once, show names only, and write no
   });
 });
 
-describe('every native select draws the one Input look (visual refresh B)', () => {
+describe('every select is the one Select primitive, in the one Input look', () => {
   /**
-   * The nine `<select>`s stay native, and their class strings stay LITERAL,
-   * because the 44 px sweep reads `h-11` off a quoted `className`. A literal
-   * written nine times is nine places to drift, so this holds all nine to one
-   * another and to the string `components/README.md` documents. SIX SINCE THE
-   * TEAM FILTER: the member list has two, level and team. NINE SINCE MEMBER
-   * RANK: the fire-rank setting and the rank control on both member forms.
-   * TEN SINCE TEAM POSITION: the position control in the team block.
+   * VISUAL REFRESH B held nine, then twelve, native `<select>`s to one LITERAL
+   * class string written on each, because the 44 px sweep reads `h-11` off a
+   * quoted `className`. The look now lives once, in `components/ui/select.tsx`
+   * — still a native `<select>` underneath — and a screen composes only the
+   * height, as it does on `<Input>`. So this holds three things: no screen
+   * writes a bare `<select>` beside the primitive, every screen's `<Select>`
+   * composes `h-11` and nothing else, and the primitive draws the string
+   * `components/README.md` documents.
    */
-  const SELECT_SCREENS = [MEMBER_LIST, MEMBER_CREATE, MEMBER_EDIT, SETTINGS];
+  const SELECT_SCREENS = [MEMBER_LIST, MEMBER_CREATE, MEMBER_EDIT, SETTINGS, SHIFT_TYPE_LIST];
   const README = join(srcRoot, 'components', 'README.md');
 
   function selectClasses(): string[] {
@@ -3132,20 +3138,31 @@ describe('every native select draws the one Input look (visual refresh B)', () =
     );
   }
 
-  it('finds all ten, so the comparison is not vacuous', () => {
-    // NINE SINCE MEMBER RANK: the fire-rank setting, and the rank control on
-    // both member forms. TEN SINCE TEAM POSITION: the position control.
-    // TWELVE SINCE DESIGN REFRESH C: the leave year's start became a day and a
-    // month select on the settings surface.
-    expect(selectClasses()).toHaveLength(12);
+  it('finds all thirteen, so the comparison is not vacuous', () => {
+    // THIRTEEN: the twelve visual refresh B held to one literal, and the shift
+    // type kind on `/postavke-rotacije`, which that block never listed.
+    expect(selectClasses()).toHaveLength(13);
   });
 
-  it('gives all twelve the identical class string, and it is the documented one', () => {
+  it('composes only the 44 px height onto each, so no screen restyles the primitive', () => {
+    for (const classes of selectClasses()) expect(classes).toBe('h-11');
+  });
+
+  it('leaves no bare native select on any screen', () => {
+    const files = [...new Set([...SCREENS.map((screen) => screen.file), ...SELECT_SCREENS])];
+
+    for (const file of files) {
+      expect(source(file), `a bare <select> on ${file}`).not.toMatch(/<select\b/);
+    }
+  });
+
+  it('draws the documented class string in the primitive', () => {
     const documented =
       /Select class string:\s*`([^`]+)`/.exec(readFileSync(README, 'utf8'))?.[1] ?? '';
+    const drawn = /cn\(\s*"([^"]+)"/.exec(source(SELECT_PRIMITIVE))?.[1] ?? '';
 
     expect(documented.length, 'README no longer documents the select class string').toBeGreaterThan(0);
-    for (const classes of selectClasses()) expect(classes).toBe(documented);
+    expect(drawn).toBe(documented);
   });
 });
 
@@ -4778,14 +4795,14 @@ describe('the accent control offers a curated set and nothing else', () => {
     expect(measured, 'the accent control declares no usable height class').not.toBeNull();
     expect(measured).toBeGreaterThanOrEqual(TARGET_FLOOR_PX);
 
-    // THE AFFORDANCES ITS FIVE NEIGHBOURS GET FROM THE PRIMITIVE. This one is a
-    // native element styled by hand, so everything `components/ui/input.tsx`
-    // composes it has to be composed here — and the two that are invisible in a
-    // screenshot are the two that matter: a keyboard user with no focus ring
-    // cannot see where they are, and a disabled control that looks identical to
-    // a live one is a control people press. The boundary is `--input`'s, which
-    // is the token story 1.1d raised to 3.23:1 for WCAG 1.4.11.
-    const composed = attributeOf(control, 'className') ?? '';
+    // THE AFFORDANCES ITS NEIGHBOURS GET FROM `components/ui/input.tsx`. The
+    // control draws them through `components/ui/select.tsx` now, so they are
+    // read off that primitive — and the two that are invisible in a screenshot
+    // are the two that matter: a keyboard user with no focus ring cannot see
+    // where they are, and a disabled control that looks identical to a live one
+    // is a control people press. The boundary is `--input`'s, which is the token
+    // story 1.1d raised to 3.23:1 for WCAG 1.4.11.
+    const composed = source(SELECT_PRIMITIVE);
 
     expect(composed, 'the accent control draws no focus indicator').toContain(
       'focus-visible:ring-ring',

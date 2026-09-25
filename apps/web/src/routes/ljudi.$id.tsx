@@ -30,6 +30,7 @@ import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
+import { Select } from '@/components/ui/select';
 import { t } from '@/i18n';
 import {
   MEMBERS_LIST_KEY,
@@ -879,20 +880,20 @@ export function LjudiMemberScreen() {
               <InputGroupIcon>
                 <ShieldCheck />
               </InputGroupIcon>
-              <select
+              <Select
                 ref={roleField}
                 id="member-role"
                 name="role"
                 defaultValue={member.role}
                 aria-describedby={refusal === null ? undefined : 'member-form-error'}
-                className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-11"
               >
                 {MEMBER_ROLES.map((option) => (
                   <option key={option} value={option}>
                     {t(memberLevelMessageKey(option))}
                   </option>
                 ))}
-              </select>
+              </Select>
             </InputGroup>
           </div>
           {offersRank ? renderRank(member) : null}
@@ -947,20 +948,20 @@ export function LjudiMemberScreen() {
           <InputGroupIcon>
             <Medal />
           </InputGroupIcon>
-          <select
+          <Select
             ref={rankField}
             id="member-rank"
             name="fireRank"
             defaultValue={rankInitialValue(member.fireRank)}
             aria-describedby={refusal === null ? undefined : 'member-form-error'}
-            className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-11"
           >
             {rankOptionsFor(member.fireRank).map((option) => (
               <option key={rankValue(option)} value={rankValue(option)}>
                 {t(rankMessageKey(option))}
               </option>
             ))}
-          </select>
+          </Select>
         </InputGroup>
       </div>
     );
@@ -1395,7 +1396,7 @@ export function LjudiMemberScreen() {
     return (
       <>
         <Label htmlFor="member-team">{t('smjene.membership.team')}</Label>
-        <select
+        <Select
           key={teamSelectKey(offered)}
           id="member-team"
           name="team"
@@ -1403,7 +1404,7 @@ export function LjudiMemberScreen() {
           disabled={!idle}
           onChange={pickTeam}
           aria-describedby={teamRefusal === null ? undefined : 'member-team-error'}
-          className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-11"
         >
           {offered.choices.map((choice) => (
             <option key={choice.id} value={choice.id}>
@@ -1413,7 +1414,7 @@ export function LjudiMemberScreen() {
           {offered.offersNoTeam ? (
             <option value={NO_TEAM_VALUE}>{t('smjene.membership.none')}</option>
           ) : null}
-        </select>
+        </Select>
         {renderPositionPicker(offered, idle)}
         <Label htmlFor="member-team-date">{t('smjene.membership.date')}</Label>
         <Input
@@ -1446,21 +1447,21 @@ export function LjudiMemberScreen() {
     return (
       <Fragment key={pickedTeam}>
         <Label htmlFor="member-position">{t('smjene.position.label')}</Label>
-        <select
+        <Select
           ref={positionField}
           id="member-position"
           name="position"
           defaultValue={positionPickerDefault(offered, pickedTeam)}
           disabled={!idle}
           aria-describedby={teamRefusal === null ? undefined : 'member-team-error'}
-          className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-11"
         >
           {positionOptionsFor(stored).map((option) => (
             <option key={option} value={option}>
               {t(positionMessageKey(option))}
             </option>
           ))}
-        </select>
+        </Select>
       </Fragment>
     );
   }

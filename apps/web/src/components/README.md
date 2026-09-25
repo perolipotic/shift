@@ -36,10 +36,11 @@ Every screen (destination, form, placeholder or not-found) is built the same way
 - A form sits in a left-aligned `Card` with `max-w-lg` under the header.
 - A refusal and a confirmation are a `Notice` with `role="alert"` or
   `role="status"`. Inside a form screen or a card, the notice sits in the card.
-- A native `<select>` uses the Input look. The class string stays literal in
-  each screen for the 44 px check, and `prijava.test.ts` holds all six to
-  this one. Select class string:
-  `flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50`.
+- A select is the `Select` primitive (`ui/select.tsx`), a native `<select>`
+  in the Input look with a chevron in place of the browser's arrow. A screen
+  composes only `className="h-11"` for the 44 px floor, as on `Input`, and
+  `prijava.test.ts` refuses a bare `<select>` on a screen. Select class string:
+  `flex h-9 w-full appearance-none rounded-md border-[1.5px] border-input bg-card py-1 pl-3 pr-9 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50`.
 
 ## Layout primitives (visual refresh B)
 
@@ -53,7 +54,8 @@ Every screen (destination, form, placeholder or not-found) is built the same way
 | `Callout` (`ui/callout.tsx`) | An explanation box with an icon tile, a title, a sentence and an optional action. It explains; it never refuses or confirms (that is `Notice`). |
 | `IconTile` (`ui/icon-tile.tsx`) | A decorative rounded square holding one icon, beside words that carry the meaning. `light`/`dark` match the timeline's tones. |
 | `StatTile` (`ui/stat-tile.tsx`) | A summary figure INSIDE a card, where `StatCard` would nest a card in a card. |
-| `InputGroup`, `InputGroupIcon` (`ui/input-group.tsx`) | A leading icon on an `Input` or native `<select>`; the group adds the padding, so the select class string stays literal. |
+| `InputGroup`, `InputGroupIcon` (`ui/input-group.tsx`) | A leading icon on an `Input` or a `Select`; the group adds the padding, so neither primitive changes. |
+| `Select` (`ui/select.tsx`) | The one select: native underneath, so `defaultValue`, `ref`, `FormData`, key-remounts and a phone's picker all keep working. The screen composes `h-11`. |
 | `OutputField` (`ui/output-field.tsx`) | A computed, read-only value shaped like a field (dashed, muted), on a native `<output>`. |
 | `Timeline` and parts (`ui/timeline.tsx`) | A day as one bar: `TimelineScale`, `TimelineTrack` of `TimelineSegment`s and `TimelineGap`s, `TimelineBoundaries`, `TimelineLegend`. The screen hides it from assistive technology beside a text equivalent. |
 | `Dialog` and parts (`ui/dialog.tsx`) | The one modal, on the native `<dialog>` and `showModal()`: focus trap, Escape, backdrop click and focus return come from the browser. Closed means hidden, not unmounted, so uncontrolled fields keep their values. A confirmation replaces the form inside the same dialog. `ConfirmDialog` is a confirmation on its own: open while the screen renders it, so an "armed" state becomes a modal without changing, and not dismissible while `busy`. |
