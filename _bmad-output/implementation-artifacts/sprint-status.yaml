@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 09-25-2026
+last_updated: 2026-09-25
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -373,7 +373,7 @@ development_status:
   # editor, ramp slots and slot 3-6 contrast, waiting in deferred-work.md) is
   # done. Each part earns its key here; a regenerate reports them as orphans —
   # reconcile with --set rather than dropping them.
-  2-2-an-admin-defines-shift-types-including-one-that-crosses-midn: in-progress
+  2-2-an-admin-defines-shift-types-including-one-that-crosses-midn: review
   # Part A: shift_types + versioned shift_type_versions, seed for both
   # fixtures, pure domain/duration. No UI.
   # Merged to main in 1cfedd0 (PR #33). Its spec carries status done with
@@ -384,6 +384,10 @@ development_status:
   # Unicode normalization). Reconciled 2026-09-25. The 2-2 parent above stays
   # in-progress until 2.2b is done.
   2-2a-shift-type-rule: done
+  # Part B: the Shift Type editor under Postavke rotacije — list with ramp-slot
+  # chips, add, rename, time correction from a date, cancel scheduled,
+  # archive; the slot 3-6 contrast pin. THIS PART COMPLETES THE 2-2 PARENT.
+  2-2b-shift-type-editor: review
   2-3-an-admin-builds-the-rotation-and-sees-the-cycle-before-savin: backlog
   2-4-rotation-configuration-completes-on-a-phone: backlog
   2-5-saving-a-rotation-reports-what-it-will-actually-do: backlog

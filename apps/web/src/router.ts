@@ -14,6 +14,7 @@ import { organizacijaRoute } from '@/routes/organizacija';
 import { organizacijaSatniPojasRoute } from '@/routes/organizacija.satni-pojasi.$id';
 import { organizacijaSatniPojasiRoute } from '@/routes/organizacija.satni-pojasi';
 import { postavkeRotacijeRoute } from '@/routes/postavke-rotacije';
+import { postavkeRotacijeTipSmjeneRoute } from '@/routes/postavke-rotacije.tipovi-smjena.$id';
 import { prijavaOrganizacijaRoute } from '@/routes/prijava-organizacija';
 import { prijavaRoute } from '@/routes/prijava';
 import { rasporedRoute } from '@/routes/raspored';
@@ -63,6 +64,10 @@ const appDestinations = appLayoutRoute.addChildren([
   ljudiSmjenaRoute,
   ljudiMemberRoute,
   postavkeRotacijeRoute,
+  // STORY 2.2b: one shift type, on 1.7a's terms — nested under the layout,
+  // absent from the destinations (the `Postavke rotacije` tab lights for it),
+  // with its own role guard, as `/postavke-rotacije` now carries too.
+  postavkeRotacijeTipSmjeneRoute,
   organizacijaRoute,
   // STORY 2.1b's two, on 1.7a's terms: nested under the layout, absent from
   // the destinations (the `Organizacija` tab lights for them), each with its

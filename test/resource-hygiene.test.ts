@@ -71,6 +71,9 @@ const SANCTIONED_PLURAL_KEYS = [
   'smjene.membership.filterAll',
   'smjene.membership.filterTeam',
   'smjene.membership.filterNone',
+  // STORY 2.2b: how many shift types are in use, rendered at zero —
+  // `0 tipova smjena`, `1 tip smjene`, `2 tipa smjene`, `21 tip smjene`.
+  'rotation.shiftTypes.count',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -559,6 +562,62 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.hourBands.error.invalid',
   'organization.hourBands.error.saveUnavailable',
   'organization.hourBands.error.unknown',
+  // STORY 2.2b: the shift type editor, under `rotation.shiftTypes` because
+  // shift types live under Postavke rotacije. The one namespace that may say
+  // the Shift Type — `Tip smjene`, never bare `smjena` — see
+  // `teamTermOutOfTurn` below.
+  'rotation.shiftTypes.heading',
+  'rotation.shiftTypes.archivedHeading',
+  'rotation.shiftTypes.name',
+  'rotation.shiftTypes.kind',
+  'rotation.shiftTypes.working',
+  'rotation.shiftTypes.nonworking',
+  'rotation.shiftTypes.start',
+  'rotation.shiftTypes.end',
+  'rotation.shiftTypes.times',
+  'rotation.shiftTypes.duration.label',
+  'rotation.shiftTypes.duration.hours',
+  'rotation.shiftTypes.duration.hoursMinutes',
+  'rotation.shiftTypes.duration.minutes',
+  'rotation.shiftTypes.crossesMidnight',
+  'rotation.shiftTypes.noTimes',
+  'rotation.shiftTypes.scheduled',
+  'rotation.shiftTypes.add',
+  'rotation.shiftTypes.created',
+  'rotation.shiftTypes.edit',
+  'rotation.shiftTypes.editHeading',
+  'rotation.shiftTypes.viewHeading',
+  'rotation.shiftTypes.save',
+  'rotation.shiftTypes.renamed',
+  'rotation.shiftTypes.timesHeading',
+  'rotation.shiftTypes.timesFrom',
+  'rotation.shiftTypes.timesNote',
+  'rotation.shiftTypes.timesCorrect',
+  'rotation.shiftTypes.timesSet',
+  'rotation.shiftTypes.timesSaved',
+  'rotation.shiftTypes.cancelScheduled',
+  'rotation.shiftTypes.timesCancelled',
+  'rotation.shiftTypes.archive',
+  'rotation.shiftTypes.archivePrompt',
+  'rotation.shiftTypes.archiveConfirm',
+  'rotation.shiftTypes.archiveCancel',
+  'rotation.shiftTypes.archivedDone',
+  'rotation.shiftTypes.archivedNote',
+  'rotation.shiftTypes.back',
+  'rotation.shiftTypes.error.unavailable',
+  'rotation.shiftTypes.error.nameEmpty',
+  'rotation.shiftTypes.error.nameTaken',
+  'rotation.shiftTypes.error.timeInvalid',
+  'rotation.shiftTypes.error.dateInvalid',
+  'rotation.shiftTypes.error.timesRefused',
+  'rotation.shiftTypes.error.timesUnchanged',
+  'rotation.shiftTypes.error.changeScheduled',
+  'rotation.shiftTypes.error.createdWithoutTimes',
+  'rotation.shiftTypes.error.stale',
+  'rotation.shiftTypes.error.refused',
+  'rotation.shiftTypes.error.invalid',
+  'rotation.shiftTypes.error.saveUnavailable',
+  'rotation.shiftTypes.error.unknown',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
@@ -596,16 +655,35 @@ const SANCTIONED_KEYS = [...SANCTIONED_PLURAL_KEYS, ...SANCTIONED_SCREEN_KEYS];
  */
 const RESERVED_STEMS: readonly string[] = [];
 
-/** The one namespace whose messages may say `smjen` — the Team (story 1.7a). */
+/** The one namespace whose messages may say `smjen` as the Team (story 1.7a). */
 const TEAM_NAMESPACE = 'smjene.';
 
 /**
- * Whether a message says `smjen` where it may not: anywhere outside the team
- * namespace, or as the Shift Type (`tip smjene`) inside it. Keyed so the sweep
+ * The ONLY namespace whose messages may say the SHIFT TYPE (story 2.2b) — and
+ * there `smjen` is admitted only inside the term itself, `tip… smjen…`
+ * (`Tip smjene`, `tipova smjena`), never on its own, which would be the Team.
+ */
+const SHIFT_TYPE_NAMESPACE = 'rotation.shiftTypes.';
+
+/**
+ * `Tip smjene` in the inflections of `tip` the copy can use — tip, tipa, tipu,
+ * tipom, tipovi, tipova, tipove, tipovima — and no other word starting `tip`
+ * (`tipka smjene`, `tipično smjena` are not the term).
+ */
+const SHIFT_TYPE_TERM = /(?<![\p{L}\p{N}])tip(?:a|u|om|ovi|ova|ove|ovima)?\s+smjen\p{L}*/gu;
+
+/**
+ * Whether a message says `smjen` where it may not: anywhere outside the two
+ * namespaces; as the Shift Type (`tip smjene`) inside the team one; and
+ * anywhere but inside `tip… smjen…` in the shift type one. Keyed so the sweep
  * and its self-test run the same predicate.
  */
 function teamTermOutOfTurn(key: string, message: string): boolean {
   const lowered = message.toLowerCase();
+
+  if (key.startsWith(SHIFT_TYPE_NAMESPACE)) {
+    return lowered.replace(SHIFT_TYPE_TERM, '').includes('smjen');
+  }
 
   if (!key.startsWith(TEAM_NAMESPACE)) return lowered.includes('smjen');
 
@@ -729,11 +807,18 @@ describe('the messages obey the voice rules that bind every string', () => {
     // else: every message OUTSIDE it still may not mention a team at all, and
     // no message INSIDE it may say `tip smjen` — the Shift Type is still a
     // later epic's word, and the team screens are where it would creep in.
+    //
+    // AMENDED BY STORY 2.2b, and still narrow: the Shift Type arrives, under
+    // `rotation.shiftTypes` ONLY, and there `smjen` may appear only inside the
+    // term `tip… smjen…` — a bare `smjena` there would be the Team again.
     const found = leafKeys(resource())
       .map((key) => ({ key, message: String(messageAt(key)) }))
       .filter(({ key, message }) => teamTermOutOfTurn(key, message));
 
     expect(leafKeys(resource()).filter((key) => key.startsWith(TEAM_NAMESPACE)).length).toBeGreaterThan(0);
+    expect(
+      leafKeys(resource()).filter((key) => key.startsWith(SHIFT_TYPE_NAMESPACE)).length,
+    ).toBeGreaterThan(0);
     expect(found, 'a message says smjen out of turn').toEqual([]);
   });
 
@@ -901,6 +986,21 @@ describe('the detector reads the file it thinks it does', () => {
     expect(teamTermOutOfTurn('smjene.name', 'Tip smjene')).toBe(true);
     expect(teamTermOutOfTurn('smjene.name', 'Tipovi smjena')).toBe(true);
     expect(teamTermOutOfTurn('ljudi.caption', 'Popis osoba')).toBe(false);
+    // STORY 2.2b's namespace, on both polarities: the term passes in any
+    // inflection; a bare `smjena` beside it, or instead of it, does not; and
+    // the term anywhere outside the namespace is still out of turn.
+    expect(teamTermOutOfTurn('rotation.shiftTypes.heading', 'Tipovi smjena')).toBe(false);
+    expect(teamTermOutOfTurn('rotation.shiftTypes.add', 'Dodaj tip smjene')).toBe(false);
+    expect(teamTermOutOfTurn('rotation.shiftTypes.count', '{count, plural, few {# tipa smjene}}')).toBe(false);
+    expect(teamTermOutOfTurn('rotation.shiftTypes.name', 'Naziv smjene')).toBe(true);
+    expect(teamTermOutOfTurn('rotation.shiftTypes.name', 'Tip smjene iz smjene A')).toBe(true);
+    // Near misses: words that START with `tip` but are not the term.
+    expect(teamTermOutOfTurn('rotation.shiftTypes.name', 'Tipka smjene')).toBe(true);
+    expect(teamTermOutOfTurn('rotation.shiftTypes.name', 'Tipično smjena')).toBe(true);
+    expect(teamTermOutOfTurn('rotation.shiftTypes.name', 'Prototip smjene')).toBe(true);
+    expect(teamTermOutOfTurn('rotation.shiftTypes.name', 'Tipovima smjena')).toBe(false);
+    expect(teamTermOutOfTurn('rotation.pattern.heading', 'Tip smjene')).toBe(true);
+    expect(teamTermOutOfTurn('organization.hourBands.name', 'Tip smjene')).toBe(true);
   });
 
   it('resolves a nested key path to its message and a wrong one to nothing', () => {

@@ -5,14 +5,17 @@ import { fileURLToPath } from 'node:url';
 import { differenceCiede2000, displayable, rgb, wcagContrast, type Color, type Rgb } from 'culori';
 import { describe, expect, it } from 'vitest';
 
+import { NONWORKING_TOKEN, rampSlotOf, rampTokenOf } from '../apps/web/src/shift-types/ramp.ts';
 import { BASE_TOKENS, BRAND_TOKENS, rawToken, readToken, type Theme } from './theme-css.js';
 
 /**
  * Contrast, measured rather than promised (story 1.1b, UX-DR3).
  *
- * DESIGN.md marks ramp slots 3-6 `[ASSUMPTION]` — unexercised by the pilot and
- * never contrast-checked — and converting from hex to OKLCH is exactly where a
- * value drifts unnoticed. So every pair is computed here, in both themes.
+ * DESIGN.md marked ramp slots 3-6 `[ASSUMPTION]` — unexercised by the pilot
+ * and never contrast-checked — and converting from hex to OKLCH is exactly
+ * where a value drifts unnoticed. So every pair is computed here, in both
+ * themes, and since story 2.2b DESIGN.md points here instead: the block at the
+ * end pins that every slot the ramp can hand a shift type is one of them.
  *
  * Both halves of the layer are covered. The first derivation measured only the
  * brand pairs and left the 28 base tokens — the shadcn token NAMES every
@@ -897,6 +900,52 @@ describe('the hour band bar flags its uncovered stretch legibly (story 2.1b)', (
     expect(
       measured,
       `modifier-uncovered-foreground on the chip (${theme}) measured ${measured.toFixed(2)}:1`,
+    ).toBeGreaterThanOrEqual(AA_BODY);
+  });
+});
+
+describe('every slot the ramp can return is measured in both themes (story 2.2b, UX-DR3)', () => {
+  /**
+   * THE PROOF DESIGN.md POINTS AT. A working shift type is drawn in
+   * `shift-slot-${(i mod 6) + 1}` (`apps/web/src/shift-types/ramp.ts`) and a
+   * non-working one in `shift-nonworking`. The pairs above are measured for a
+   * FIXED list; this is what ties that list to the function that actually
+   * picks a slot, so a ramp that could reach a seventh slot — `i mod 7` — or a
+   * token the lists above do not measure fails here rather than shipping an
+   * unmeasured colour. Indices 0-12 cover two full cycles and the wrap.
+   */
+  const INDICES = Array.from({ length: 13 }, (_, index) => index);
+  const reachable = [
+    ...new Set([...INDICES.map((index) => rampTokenOf(rampSlotOf(index))), NONWORKING_TOKEN]),
+  ];
+
+  it('reaches all six working slots and the non-working token, and nothing else', () => {
+    expect(reachable.sort()).toEqual([
+      'shift-nonworking',
+      'shift-slot-1',
+      'shift-slot-2',
+      'shift-slot-3',
+      'shift-slot-4',
+      'shift-slot-5',
+      'shift-slot-6',
+    ]);
+  });
+
+  it.each(INDICES)('index %i lands on a slot with a measured pair and fill', (index) => {
+    const token = rampTokenOf(rampSlotOf(index));
+
+    expect(BRAND_PAIRS as readonly string[]).toContain(token);
+    expect(FILLS as readonly string[]).toContain(token);
+  });
+
+  const cases = THEMES.flatMap((theme) => reachable.map((name) => ({ theme, name })));
+
+  it.each(cases)('$name reads on its own fill in $theme', ({ theme, name }) => {
+    const measured = ratio(colour(theme, `${name}-foreground`), colour(theme, name));
+
+    expect(
+      measured,
+      `${name}-foreground on ${name} (${theme}) measured ${measured.toFixed(2)}:1`,
     ).toBeGreaterThanOrEqual(AA_BODY);
   });
 });
