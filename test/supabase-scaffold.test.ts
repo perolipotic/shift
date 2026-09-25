@@ -623,7 +623,10 @@ describe('the access-control migration', () => {
     // `slug` in a third statement without this noticing.
     const grants = [
       ...statements.matchAll(
-        /grant\s+update\s*\(([\s\S]*?)\)\s*on\s+table\s+public\.organizations\s+to\s+authenticated/gi,
+        // `[^)]*`, not `[\s\S]*?`: a lazy any-character match started at a
+        // grant on ANOTHER table (`0009`'s teams) and ran on to the next
+        // organizations grant, which `0014` is the first to place after it.
+        /grant\s+update\s*\(([^)]*)\)\s*on\s+table\s+public\.organizations\s+to\s+authenticated/gi,
       ),
     ].map((found) => found[1] ?? '');
 
@@ -654,6 +657,10 @@ describe('the access-control migration', () => {
       'name',
       'organization_type',
       'timezone',
+      // MEMBER RANK. The fire-rank setting, an EIGHTH column on its own
+      // disjoint write shape, for the accent's reason: it saves on change,
+      // beside a form that may hold half-typed fields.
+      'uses_fire_ranks',
     ]);
     for (const forbidden of ['slug', 'locale', 'id']) {
       expect(granted.join(','), `${forbidden} is writable by authenticated`).not.toContain(
@@ -846,6 +853,48 @@ describe('the access-control migration', () => {
       /grant execute on function public\.team_roster\(uuid\) to authenticated;/,
     );
     expect(statements).toMatch(/revoke execute on function public\.team_roster\(uuid\) from anon;/);
+  });
+
+  it('replaces the roster once, adding the rank and nothing else', () => {
+    // MEMBER RANK. `0014` replaces `team_roster` in place: the same signature,
+    // the same definer scope, and one more key in each member object. The
+    // replacing body is what the database runs, so it is read on its own.
+    const statements = migrationStatements();
+    const replacements = [
+      ...statements.matchAll(
+        /create or replace function public\.team_roster\(team uuid\)[\s\S]*?\$\$;/gi,
+      ),
+    ].map((found) => found[0]);
+
+    expect(replacements, 'team_roster is replaced other than exactly once').toHaveLength(1);
+
+    const roster = replacements[0] ?? '';
+
+    expect(roster).toMatch(/returns table \(name text, archived boolean, members jsonb\)/);
+    expect(roster).toMatch(/\bstable\b/i);
+    expect(roster).toMatch(/security definer/i);
+    expect(roster).toMatch(/set search_path = ''/);
+    expect(roster, 'the roster names a member field besides id, name and rank').toMatch(
+      /jsonb_build_object\('id', m\.id, 'name', m\.name, 'fire_rank', m\.fire_rank\)/,
+    );
+    expect(roster, 'the roster reads a private column').not.toMatch(
+      /\b(email|leave_allowance_days|username|role)\b/,
+    );
+    expect(roster, 'the replacement lost the caller-organization pin').toMatch(
+      /where access\.is_active/,
+    );
+    expect(roster).toMatch(/member_active_on\(m\.id, today\.day\)/);
+    expect(roster).toMatch(/member_team_on\(m\.id, today\.day\) = t\.id/);
+  });
+
+  it('constrains the rank to a fixed list and gates it behind a setting that defaults off', () => {
+    // MEMBER RANK. Source text only; the refusals are `test/rls-isolation.test.ts`.
+    const statements = migrationStatements();
+
+    expect(statements).toMatch(
+      /add column uses_fire_ranks boolean not null default false/,
+    );
+    expect(statements).toMatch(/add column fire_rank text\s+check \(fire_rank in \(/);
   });
 
   it('archives teams and never deletes one, in any migration', () => {

@@ -23,6 +23,7 @@ import {
   type OrganizationEdits,
   type OrganizationFailure,
   type OrganizationTable,
+  type OrganizationFireRanksEdit,
   type OrganizationWrite,
   type PostgrestAnswer,
 } from '@/organization/snapshot';
@@ -93,6 +94,8 @@ const PILOT_ROW = {
   // would encode one organization's answer for every tenant — and null IS "no
   // accent" rather than a missing value.
   brand_accent: null,
+  // Member rank (`0014`): the pilot records fire ranks.
+  uses_fire_ranks: true,
 };
 
 const EDITS: OrganizationEdits = {
@@ -215,7 +218,20 @@ describe('one PostgREST row becomes the canonical snapshot', () => {
       leaveYearStartDay: 1,
       logoPath: null,
       brandAccent: null,
+      usesFireRanks: true,
     });
+  });
+
+  it('carries the fire-rank setting as the boolean it is, and refuses anything else', () => {
+    // MEMBER RANK. The column is `not null`, so a missing or non-boolean value
+    // is a row that is not an organization — never silently "off", which
+    // would hide every stored rank behind a read fault.
+    expect(organizationSnapshotOf({ ...PILOT_ROW, uses_fire_ranks: false })?.usesFireRanks).toBe(
+      false,
+    );
+    for (const value of [undefined, null, 'true', 1]) {
+      expect(organizationSnapshotOf({ ...PILOT_ROW, uses_fire_ranks: value })).toBeNull();
+    }
   });
 
   it('admits the five nullable columns as null and no others', () => {
@@ -325,7 +341,7 @@ describe('the read returns one snapshot or one code', () => {
     // `id` is here because every write addresses the row by it.
     const columns = ORGANIZATION_COLUMNS.split(',');
 
-    for (const column of ['id', 'logo_path', 'brand_accent']) {
+    for (const column of ['id', 'logo_path', 'brand_accent', 'uses_fire_ranks']) {
       expect(columns, `the snapshot stops reading ${column}`).toContain(column);
     }
     // Spelled `snake_case`, because PostgREST speaks columns: a `camelCase`
@@ -528,6 +544,79 @@ describe('the update writes the edited fields and answers with the row', () => {
     // only place it can be fixed.
     expect(Object.keys(organizationEditColumns(withFields))).toEqual(['brand_accent']);
     expect(Object.keys(organizationEditColumns(withLogo))).toEqual(['logo_path']);
+  });
+
+  it('sends the fire-rank setting alone, as a fourth disjoint write', async () => {
+    // MEMBER RANK. The switch saves the moment it changes, beside a form that
+    // may hold half-typed fields, so it names its one column and nothing else.
+    for (const value of [true, false]) {
+      expect(organizationEditColumns({ usesFireRanks: value })).toEqual({
+        uses_fire_ranks: value,
+      });
+
+      const log = recorder();
+      const outcome = await updateOrganization(
+        answering({ data: [PILOT_ROW], error: null }, log),
+        PILOT_ROW.id,
+        { usesFireRanks: value },
+      );
+
+      expect(outcome.ok, 'the setting write was refused by a check that does not apply').toBe(
+        true,
+      );
+      expect(log.updated).toEqual([{ uses_fire_ranks: value }]);
+    }
+    expect(Object.keys(organizationEditColumns(EDITS))).not.toContain('uses_fire_ranks');
+
+    // @ts-expect-error the setting write may not carry the identity fields
+    const withFields: OrganizationWrite = { ...EDITS, usesFireRanks: true };
+    // @ts-expect-error the setting write may not carry the accent
+    const withAccent: OrganizationWrite = { brandAccent: 'violet', usesFireRanks: true };
+
+    expect(withFields).toBeDefined();
+    expect(withAccent).toBeDefined();
+  });
+
+  it('types the setting write apart from EVERY other snapshot field', () => {
+    // The doc's claim, made executable: each `@ts-expect-error` below is a
+    // `pnpm typecheck` failure the moment the field stops being excluded.
+    const excluded: OrganizationFireRanksEdit[] = [
+      // @ts-expect-error not the id
+      { usesFireRanks: true, id: PILOT_ROW.id },
+      // @ts-expect-error not the slug
+      { usesFireRanks: true, slug: 'x' },
+      // @ts-expect-error not the short name
+      { usesFireRanks: true, shortName: 'x' },
+      // @ts-expect-error not the description
+      { usesFireRanks: true, description: 'x' },
+      // @ts-expect-error not the address
+      { usesFireRanks: true, address: 'x' },
+      // @ts-expect-error not the contact address
+      { usesFireRanks: true, contactEmail: 'x' },
+      // @ts-expect-error not the locale
+      { usesFireRanks: true, locale: 'x' },
+      // @ts-expect-error not the type
+      { usesFireRanks: true, organizationType: 'x' },
+      // @ts-expect-error not the zone
+      { usesFireRanks: true, timezone: 'x' },
+      // @ts-expect-error not the leave year's month
+      { usesFireRanks: true, leaveYearStartMonth: 1 },
+      // @ts-expect-error not the leave year's day
+      { usesFireRanks: true, leaveYearStartDay: 1 },
+      // @ts-expect-error not the logo
+      { usesFireRanks: true, logoPath: 'x' },
+    ];
+    const snapshotFields = Object.keys(organizationSnapshotOf(PILOT_ROW) ?? {}).filter(
+      (field) => field !== 'usesFireRanks',
+    );
+    const covered = new Set([
+      ...excluded.flatMap((write) => Object.keys(write)),
+      // The identity fields and the accent are covered by the case above.
+      'name',
+      'brandAccent',
+    ]);
+
+    for (const field of snapshotFields) expect(covered, `${field} is not excluded`).toContain(field);
   });
 
   it('writes the accent without asking the timezone validator anything', async () => {

@@ -43,6 +43,7 @@ import {
   MEMBER_CREATED,
   MEMBER_INVALID,
   MEMBER_ROLES,
+  FIRE_RANKS,
   MEMBER_UNKNOWN,
   OPERATION_CODES,
   OPERATION_FAILED,
@@ -57,6 +58,7 @@ import {
   USERNAME_NOT_RESTORED,
   USERNAME_TAKEN,
   ORGANIZATION_UNREADABLE,
+  createPayloadOf,
   createUser,
   membersRefusal,
   normalizedUsername,
@@ -528,6 +530,17 @@ describe('every constant that decides a security outcome is pinned to the databa
     expect(access).toContain(
       `grant execute on function public.${CURRENT_MEMBER_ACCESS}() to authenticated`,
     );
+  });
+
+  it('admits exactly the ranks 0014 admits, in its order', () => {
+    // MEMBER RANK. Parsed out of the migration, never compared to itself.
+    const clause = /add column fire_rank text\s+check \(fire_rank in \(([^)]*)\)\)/.exec(
+      migration('0014_member_fire_rank.sql'),
+    )?.[1];
+    const admitted = [...(clause ?? '').matchAll(/'([^']+)'/g)].map((found) => found[1] ?? '');
+
+    expect(admitted.length, 'the rank check was not found in 0014').toBe(11);
+    expect([...FIRE_RANKS]).toEqual(admitted);
   });
 
   it('offers exactly the levels the check constraint admits, and no third', () => {
@@ -1200,6 +1213,42 @@ describe('createUser: an account and the row that gives it an organization', () 
     expect(accounts.log.deleted, 'a successful create removed the account').toEqual([]);
   });
 
+  it('writes a chosen rank in the same insert, and names no rank column without one', async () => {
+    // MEMBER RANK. One row, one insert: the rank is not a second write that a
+    // failure between the two could leave half-done.
+    const accounts = accountsThat();
+    const caller = callerThat({ reads: SLUG_READ });
+
+    await expect(
+      createUser(
+        { privileged: accounts.client, caller: caller.client },
+        creation({ fireRank: 'nco' }),
+      ),
+    ).resolves.toMatchObject({ status: 201 });
+    expect(caller.log.inserts).toHaveLength(1);
+    expect(caller.log.inserts[0]?.values['fire_rank']).toBe('nco');
+
+    for (const absent of [{ fireRank: null }, {}]) {
+      expect(createPayloadOf(creation(absent))).toMatchObject({
+        ok: true,
+        payload: { fireRank: null },
+      });
+
+      const bare = callerThat({ reads: SLUG_READ });
+
+      await createUser(
+        { privileged: accountsThat().client, caller: bare.client },
+        creation(absent),
+      );
+
+      expect(bare.log.inserts).toHaveLength(1);
+      expect(
+        Object.keys(bare.log.inserts[0]?.values ?? {}),
+        'a no-rank create names the rank column',
+      ).not.toContain('fire_rank');
+    }
+  });
+
   it('reads the slug from organizations AS THE CALLER, never from the payload', async () => {
     // The address namespace is the DATABASE's choice. A slug in the request body
     // is a caller choosing which organization's namespace to issue an account
@@ -1408,6 +1457,11 @@ describe('createUser: an account and the row that gives it an organization', () 
     // the same "correct a value" every other bad entry is.
     ['an allowance the column cannot hold', creation({ leaveAllowanceDays: 32768 })],
     ['an address that is not text', creation({ email: 7 })],
+    // MEMBER RANK. An unknown rank is REFUSED, never dropped: dropping it would
+    // issue a member without the rank the admin chose, and say nothing.
+    ['a rank the check constraint refuses', creation({ fireRank: 'general' })],
+    ['a rank that is not text', creation({ fireRank: 3 })],
+    ['an empty rank', creation({ fireRank: '' })],
     ['a body that is not an object', 'createUser'],
   ])('refuses a payload with %s before touching anything', async (_label, payload) => {
     const accounts = accountsThat();

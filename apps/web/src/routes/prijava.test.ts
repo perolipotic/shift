@@ -187,6 +187,9 @@ const AUTH_LAYOUT = join(srcRoot, 'components', 'auth-layout.tsx');
 /** The curated accent set as data, and the fourth `\w*MessageKey` module. */
 const ACCENT_KEYS = join(srcRoot, 'organization', 'accent.ts');
 
+/** The fixed rank list as data (member rank), and its two label mappings. */
+const RANK_KEYS = join(srcRoot, 'members', 'rank.ts');
+
 /**
  * The one signed-URL read behind every lockup.
  *
@@ -306,7 +309,10 @@ const SCREENS = [
   //
   // TEN SINCE STORY 2.1b: a `<Button asChild>` link to the hour band editor,
   // reached from here rather than from the navigation.
-  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 10 },
+  //
+  // ELEVEN SINCE MEMBER RANK: the fire-rank setting's `<select>`, written on
+  // change like the accent.
+  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 11 },
   // THREE on the member list, and the count is what keeps a fourth from
   // arriving unreviewed: the search field, the permission-level filter, and ONE
   // `<Button>` — the sort control, written once inside a map over
@@ -339,7 +345,10 @@ const SCREENS = [
   // would arrive: both look like ordinary controls and both are forbidden for
   // reasons invisible in a diff — the first is pinned by the update policy on
   // both sides (`0003:331-351`) and the second is story 1.6's.
-  { name: 'the member create form', file: MEMBER_CREATE, expectedControls: 8 },
+  //
+  // NINE SINCE MEMBER RANK: the rank `<select>`, rendered only while the
+  // organization uses ranks — written once, so counted once.
+  { name: 'the member create form', file: MEMBER_CREATE, expectedControls: 9 },
   // TWELVE on the edit form: the same eight, plus the admin-issued reset's
   // FOUR `<Button>`s — the offer, the confirm and cancel that replace it, and
   // the dismiss on the shown credential. Four and not one, because the reset is
@@ -356,7 +365,9 @@ const SCREENS = [
   // TWENTY-ONE SINCE STORY 1.7b: the team block's `<select>` and date
   // `<Input>`, its offer, and the confirm and cancel that replace the offer —
   // the status block's shape, because one press must not move somebody.
-  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 21 },
+  //
+  // TWENTY-TWO SINCE MEMBER RANK: the rank `<select>`, as on the create form.
+  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 22 },
   // STORY 1.7a. FOUR on the team list: the link back to `Ljudi`, the one name
   // `<Input>`, the add `<Button>`, and ONE row link written once inside the map
   // over the teams — the same count at zero teams as at nine. SIX on one team:
@@ -1342,7 +1353,10 @@ const KEY_SOURCES = [
   //
   // THIRTEEN SINCE STORY 2.1b: the link to the hour band editor, which renders
   // that screen's own heading as its text.
-  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 13 },
+  //
+  // FOURTEEN SINCE MEMBER RANK: the fire-rank setting's label. Its two option
+  // names and its status line reach `t()` through `fireRanksMessageKey`.
+  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 14 },
   {
     // EIGHT on the member list since story 1.5b, up from five, and the number is
     // still small because most of what this screen says is read off a table
@@ -1439,10 +1453,13 @@ const KEY_SOURCES = [
     // STORY 1.8. FOUR on the roster: the heading while there is no roster to
     // name, the archived note, the ICU plural count, and the link back. The
     // team's name and the members' names are data.
+    //
+    // FIVE SINCE MEMBER RANK: the name-and-rank line. The rank's own words
+    // reach `t()` through `rankMessageKey`.
     name: 'the team roster',
     file: TEAM_ROSTER,
     keys: translationKeys,
-    strings: 4,
+    strings: 5,
   },
   {
     // ONE on Danas: its own `nav.danas` heading. The line's words and its
@@ -1546,10 +1563,13 @@ const KEY_SOURCES = [
     // The password is not among them and never will be: it is data, generated
     // in `admin-auth`, and the one value in this system no later read can
     // recover.
+    //
+    // FOURTEEN SINCE MEMBER RANK: the rank control's label. Its options reach
+    // `t()` through `rankMessageKey`, counted with the rank rules below.
     name: 'the member create form',
     file: MEMBER_CREATE,
     keys: translationKeys,
-    strings: 13,
+    strings: 14,
   },
   {
     // EIGHTEEN on the edit form: its own heading, five field labels, save,
@@ -1581,10 +1601,13 @@ const KEY_SOURCES = [
     // labels, the confirmation's cancel, and the confirmation that a change
     // landed. Its scheduled line, offer, prompt and confirm reach `t()`
     // through `@/members/wire`.
+    //
+    // TWENTY-NINE SINCE MEMBER RANK: the rank control's label, as on the
+    // create form.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 28,
+    strings: 29,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
@@ -1661,6 +1684,19 @@ const KEY_SOURCES = [
     file: ACCENT_KEYS,
     keys: messageKeyUnion,
     strings: 5,
+  },
+  {
+    // MEMBER RANK. TWENTY-NINE over four unions: the eleven rank labels, no
+    // rank and unknown rank (`rankMessageKey`, 13); the roster's form — the
+    // eleven labels again and its own lowercase unknown rank
+    // (`rosterRankMessageKey`, 12); the setting's two option labels and its
+    // two status lines. The set comparison dedupes the repeated labels. A
+    // mapping for the accent's reason: a `.tsx` lookup is executed by nothing,
+    // and `rank.test.ts` runs this one.
+    name: 'the rank-to-label mapping',
+    file: RANK_KEYS,
+    keys: memberListKeys,
+    strings: 29,
   },
   {
     // TEN since story 1.4b, and one function rather than two: the surface
@@ -1765,7 +1801,7 @@ describe('the screen is read at all, so every sweep below means something', () =
     // the shift type edit screen is new (one each), and so are both
     // `@/shift-types` modules as key sources (two more).
     expect(SCREENS).toHaveLength(23);
-    expect(KEY_SOURCES).toHaveLength(35);
+    expect(KEY_SOURCES).toHaveLength(36);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -2468,6 +2504,9 @@ describe('the member list computes nothing it renders', () => {
       'email',
       'role',
       'leaveAllowanceDays',
+      // MEMBER RANK: read for the edit form and guarded like the rest — a rank
+      // column on the list is an Ask First, so the list may not reach for it.
+      'fireRank',
       // STORY 1.6's THREE, all guarded: the account id the edit screen compares
       // with the session's subject, the status history the marker is read off,
       // and the organization's zone that "today" is read in. None may be
@@ -2892,23 +2931,40 @@ describe('the roster and the Danas line read once, show names only, and write no
     return text.replace(/'[^'\n]*'/g, "''").replace(/"[^"\n]*"/g, '""');
   }
 
-  /** What a roster member is: an id and a name, and nothing else (CAP-5). */
-  const ROSTER_FIELDS = ['id', 'name'];
+  /** What a roster member is: an id, a name and — member rank — a rank (CAP-5). */
+  const ROSTER_FIELDS = ['id', 'name', 'fireRank'];
 
+  // MEMBER RANK: the roster also reads the ORGANIZATION snapshot, under its one
+  // shared key, for the setting that decides whether a rank is shown. That is a
+  // second consumer of the chrome's own cache entry (AD-13), not a second read
+  // of the roster, so it is counted separately rather than loosening the pin.
   const SURFACES = [
-    { name: 'the team roster', file: TEAM_ROSTER, read: 'readTeamRoster(', key: 'TEAM_ROSTER_KEY(id)' },
-    { name: 'the Danas destination', file: DANAS, read: 'readOwnTeamToday(', key: 'OWN_TEAM_KEY' },
+    {
+      name: 'the team roster',
+      file: TEAM_ROSTER,
+      read: 'readTeamRoster(',
+      key: 'TEAM_ROSTER_KEY(id)',
+      organizationReads: 1,
+    },
+    {
+      name: 'the Danas destination',
+      file: DANAS,
+      read: 'readOwnTeamToday(',
+      key: 'OWN_TEAM_KEY',
+      organizationReads: 0,
+    },
   ];
 
-  it.each(SURFACES)('reads exactly once, under its one key, on $name', ({ file, read, key }) => {
+  it.each(SURFACES)('reads exactly once, under its one key, on $name', ({ file, read, key, organizationReads }) => {
     // AD-13. The roster's name, flag, count and names are one RPC's answer;
     // the Danas line is the caller's own row, derived in `@/teams/roster`.
     const screen = source(file);
 
-    expect(occurrences(screen, 'useQuery(')).toBe(1);
+    expect(occurrences(screen, 'useQuery(')).toBe(1 + organizationReads);
     expect(occurrences(screen, read)).toBe(1);
-    expect(occurrences(screen, 'queryKey:')).toBe(1);
+    expect(occurrences(screen, 'queryKey:')).toBe(1 + organizationReads);
     expect(occurrences(screen, `queryKey: ${key}`)).toBe(1);
+    expect(occurrences(screen, 'queryKey: ORGANIZATION_SNAPSHOT_KEY')).toBe(organizationReads);
     expect(screen, 'the read has no cache floor').toContain('staleTime: TEAM_ROSTER_READ_STALE_MS');
   });
 
@@ -2964,11 +3020,12 @@ describe('the roster and the Danas line read once, show names only, and write no
 
 describe('every native select draws the one Input look (visual refresh B)', () => {
   /**
-   * The six `<select>`s stay native, and their class strings stay LITERAL,
+   * The nine `<select>`s stay native, and their class strings stay LITERAL,
    * because the 44 px sweep reads `h-11` off a quoted `className`. A literal
-   * written six times is six places to drift, so this holds all six to one
+   * written nine times is nine places to drift, so this holds all nine to one
    * another and to the string `components/README.md` documents. SIX SINCE THE
-   * TEAM FILTER: the member list has two, level and team.
+   * TEAM FILTER: the member list has two, level and team. NINE SINCE MEMBER
+   * RANK: the fire-rank setting and the rank control on both member forms.
    */
   const SELECT_SCREENS = [MEMBER_LIST, MEMBER_CREATE, MEMBER_EDIT, SETTINGS];
   const README = join(srcRoot, 'components', 'README.md');
@@ -2979,11 +3036,13 @@ describe('every native select draws the one Input look (visual refresh B)', () =
     );
   }
 
-  it('finds all six, so the comparison is not vacuous', () => {
-    expect(selectClasses()).toHaveLength(6);
+  it('finds all nine, so the comparison is not vacuous', () => {
+    // NINE SINCE MEMBER RANK: the fire-rank setting, and the rank control on
+    // both member forms.
+    expect(selectClasses()).toHaveLength(9);
   });
 
-  it('gives all six the identical class string, and it is the documented one', () => {
+  it('gives all nine the identical class string, and it is the documented one', () => {
     const documented =
       /Select class string:\s*`([^`]+)`/.exec(readFileSync(README, 'utf8'))?.[1] ?? '';
 
@@ -3168,7 +3227,15 @@ describe('the keys rendered and the keys declared are the same set', () => {
     // the list and its rules alone would report every one of those keys as
     // declared and written nowhere — or, worse, would have been narrowed to the
     // `ljudi.` prefix it could still find.
-    const owned = [MEMBER_LIST, MEMBER_LIST_KEYS, MEMBER_CREATE, MEMBER_EDIT, MEMBER_WRITE_KEYS]
+    // SIX SINCE MEMBER RANK: `@/members/rank` owns the `ljudi.rank.*` block.
+    const owned = [
+      MEMBER_LIST,
+      MEMBER_LIST_KEYS,
+      MEMBER_CREATE,
+      MEMBER_EDIT,
+      MEMBER_WRITE_KEYS,
+      RANK_KEYS,
+    ]
       .map((file) => source(file))
       .join('\n');
     const declared = resourceKeys().filter((key) => key.startsWith('ljudi.'));
@@ -3475,8 +3542,9 @@ describe('every field on the settings surface carries an accessible name', () =>
     const ids = [...inputs, ...selects].map((element) => attributeOf(element, 'id'));
 
     expect(inputs).toHaveLength(5);
-    expect(selects, 'the accent control is not a select any more').toHaveLength(1);
-    expect(targets).toHaveLength(6);
+    // TWO SINCE MEMBER RANK: the accent and the fire-rank setting.
+    expect(selects, 'the accent control is not a select any more').toHaveLength(2);
+    expect(targets).toHaveLength(7);
     expect(ids, 'a field carries no id, so no <Label> can name it').not.toContain(null);
     expect(new Set(ids).size, 'two fields share one id').toBe(ids.length);
     for (const id of ids) {
@@ -4573,7 +4641,9 @@ describe('the accent control offers a curated set and nothing else', () => {
 
     // NON-VACUITY first: with no `<select>` found, every assertion below would
     // pass against an empty string and read as coverage.
-    expect(selects, 'no accent control on the settings surface').toHaveLength(1);
+    // TWO SINCE MEMBER RANK. The accent is the first; the fire-rank setting,
+    // after it, carries the same properties and is asserted in its own block.
+    expect(selects, 'no accent control on the settings surface').toHaveLength(2);
 
     const control = selects[0] ?? '';
     const id = attributeOf(control, 'id');
@@ -4789,6 +4859,158 @@ describe('the accent control offers a curated set and nothing else', () => {
     expect(control, 'the accent control is controlled, so a refusal discards the choice').not.toMatch(
       /(?<![A-Za-z])value=\{/,
     );
+  });
+});
+
+describe('member rank: the setting gates display and entry, and deletes nothing', () => {
+  /**
+   * MEMBER RANK. Every rule here is executed in `@/members/rank`; what is read
+   * here is the wiring a `.tsx` holds and nothing executes (AD-15).
+   */
+  function fireRanksControl(): string {
+    return (
+      selectElements(source(SETTINGS)).find((control) =>
+        control.includes('id="organization-fire-ranks"'),
+      ) ?? ''
+    );
+  }
+
+  it('offers the setting as one labelled select, locked by the other writes only', () => {
+    const control = fireRanksControl();
+    const screen = source(SETTINGS);
+
+    expect(control, 'no fire-rank setting on the settings surface').not.toBe('');
+    expect(labelTargets(screen)).toContain('organization-fire-ranks');
+    expect(control).toMatch(/disabled=\{writingBesideFireRanks\}/);
+    expect(control).not.toMatch(/disabled=\{busy\}/);
+    expect(control).toMatch(/aria-busy=\{savingFireRanks\}/);
+    expect(control, 'the control is controlled, so a refusal discards the choice').not.toMatch(
+      /(?<![A-Za-z])value=\{/,
+    );
+    // REMOUNTED on a stored change AND on every refused write, so a refusal
+    // never leaves the refused choice showing.
+    expect(control).toContain(
+      'key={fireRanksControlKey(organization.usesFireRanks, fireRanksRevision)}',
+    );
+    expect(control, 'the setting control is not seeded from the row').toContain(
+      'defaultValue={fireRanksValue(organization.usesFireRanks)}',
+    );
+    expect(screen).toContain('FIRE_RANKS_OPTIONS.map(');
+    expect(screen).toContain('t(fireRanksMessageKey(option))');
+    expect(screen, 'nothing reports what the stored setting is').toContain(
+      't(fireRanksStatusMessageKey(organization.usesFireRanks))',
+    );
+    expect(screen, 'the control reads an unexpected value as off').toContain(
+      'fireRanksOf(event.target.value, organization?.usesFireRanks ?? false)',
+    );
+    expect(
+      /const writingBesideFireRanks = ([^;]*);/.exec(screen)?.[1] ?? '',
+      'the setting is not locked while the accent is written',
+    ).toContain('savingAccent');
+    expect(
+      /const writingElsewhere = ([^;]*);/.exec(screen)?.[1] ?? '',
+      'the accent is not locked while the setting is written',
+    ).toContain('savingFireRanks');
+  });
+
+  it('writes the setting on its own, immediately, and serialises a second change', () => {
+    const screen = source(SETTINGS);
+    const write = componentFunction(screen, 'applyFireRanks');
+
+    expect(write, 'no applyFireRanks function to read').not.toBe('');
+    expect(write).toContain('{ usesFireRanks: uses }');
+    expect(write).not.toContain('nameField');
+    // QUEUED, never dropped, while ANY write is in flight.
+    expect(write).toMatch(
+      /fireRanksStepOf\(writingElsewhereNow, ranking\.current\) === FIRE_RANKS_QUEUE\)[\s\S]{0,80}?queuedFireRanks\.current = uses/,
+    );
+    expect(write).toContain(
+      'const writingElsewhereNow = saving.current || uploading.current || tinting.current;',
+    );
+    // A queued follow-up does not erase the region's unread outcome.
+    expect(write).toContain('if (fireRanksClearsFailure(fromQueue)) setFailure(null);');
+    expect(write, 'the write clears the region unconditionally').not.toMatch(
+      /^ {4}setFailure\(null\);/m,
+    );
+    expect(write).toMatch(/finally[\s\S]{0,600}?drainFireRanks\(refused\)/);
+    expect(write).toMatch(/if \(refused\) setFireRanksRevision\(/);
+
+    // THE QUEUE IS DRAINED BY EVERY HANDLER, with that handler's own outcome,
+    // so a queued choice is never stranded and a refusal drops it.
+    const drain = componentFunction(screen, 'drainFireRanks');
+
+    expect(drain).toContain('fireRanksFollowUpOf(queuedFireRanks.current, refused)');
+    expect(drain).toContain('applyFireRanks(next, true)');
+    for (const handler of ['submit', 'uploadLogo', 'applyAccent']) {
+      expect(
+        finallyBlock(componentFunction(screen, handler)),
+        `${handler} strands a queued setting choice`,
+      ).toContain('drainFireRanks(refused)');
+    }
+    expect(write).toContain('invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY })');
+    expect(submitHandler(screen), 'the identity save carries the setting').not.toContain(
+      'usesFireRanks',
+    );
+    expect(submitHandler(screen), 'a save runs over a setting write').toContain('ranking.current');
+  });
+
+  it.each([
+    {
+      name: 'the member create form',
+      file: MEMBER_CREATE,
+      options: 'RANK_OPTIONS.map(',
+      stored: 'null',
+    },
+    {
+      name: 'the member edit form',
+      file: MEMBER_EDIT,
+      options: 'rankOptionsFor(member.fireRank).map(',
+      stored: 'member.fireRank',
+    },
+  ])('offers the rank on $name only while the setting is on', ({ file, options, stored }) => {
+    const screen = source(file);
+    const handler = submitHandler(screen);
+
+    expect(screen, 'the rank control is not gated on the setting').toMatch(
+      /\{offersRank \? renderRank\([^)]*\) : null\}/,
+    );
+    expect(screen).toContain('const offersRank = ranksShown(');
+    expect(screen, 'the organization is read under a second key').toContain(
+      'queryKey: ORGANIZATION_SNAPSHOT_KEY',
+    );
+    expect(screen).toContain(options);
+    expect(screen).toContain('t(rankMessageKey(option))');
+    expect(labelTargets(screen)).toContain('member-rank');
+    // ONE EXECUTED CALL decides what the save sends (`rankEditOf`, run in
+    // `rank.test.ts`), with the row's own rank as the stored value — never
+    // `null`, which would wipe a rank the control merely showed.
+    expect(handler, 'the rank edit is not decided by the tested helper').toContain(
+      `...rankEditOf(${stored}, rank?.value ?? null, offersRank)`,
+    );
+    expect(screen, 'the rank control is not seeded by the tested helper').toContain(
+      `defaultValue={rankInitialValue(${stored})}`,
+    );
+    expect(handler).not.toContain('chosenRank(');
+  });
+
+  it.each([
+    { name: 'the member edit form', file: MEMBER_EDIT },
+    { name: 'the team roster', file: TEAM_ROSTER },
+  ])("reads the organization on $name under the chrome's own cache policy", ({ file }) => {
+    const read =
+      /useQuery\(\{\s*queryKey: ORGANIZATION_SNAPSHOT_KEY,[\s\S]*?\}\);/.exec(source(file))?.[0] ?? '';
+
+    expect(read, 'no organization read to inspect').not.toBe('');
+    expect(read).toContain('retry: false');
+    expect(read).toContain('staleTime: ORGANIZATION_READ_STALE_MS');
+  });
+
+  it('shows the rank on the roster only while the setting is on, as text', () => {
+    const screen = source(TEAM_ROSTER);
+
+    expect(screen).toContain('rosterRankMessageKey(member.fireRank, shown)');
+    expect(screen).toContain('const shown = ranksShown(');
+    expect(screen).toContain("t('smjene.roster.withRank', { name: member.name, rank: t(rank) })");
   });
 });
 

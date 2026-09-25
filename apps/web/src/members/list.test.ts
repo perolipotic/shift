@@ -121,6 +121,7 @@ function member(fields: Partial<MemberListRow> & { readonly id: string }): Membe
     email: null,
     role: 'member_role',
     leaveAllowanceDays: 20,
+    fireRank: null,
     authUserId: `account-${fields.id}`,
     statusVersions: [],
     teamVersions: [],
@@ -160,6 +161,7 @@ function row(fields: Readonly<Record<string, unknown>>): Record<string, unknown>
     email: null,
     role: 'member_role',
     leave_allowance_days: 20,
+    fire_rank: null,
     auth_user_id: `account-${String(fields['id'] ?? 'member')}`,
     member_status_versions: [],
     team_membership_versions: [],
@@ -264,6 +266,7 @@ describe('the read asks for exactly what the surface needs, and for the count', 
       [
         'auth_user_id',
         'email',
+        'fire_rank',
         'id',
         'leave_allowance_days',
         'name',
@@ -284,6 +287,7 @@ describe('the read asks for exactly what the surface needs, and for the count', 
           email: 'ivan@dvd.hr',
           role: 'admin',
           leave_allowance_days: 25,
+          fire_rank: 'officer',
         }),
       ),
     ).toEqual({
@@ -294,11 +298,19 @@ describe('the read asks for exactly what the surface needs, and for the count', 
       email: 'ivan@dvd.hr',
       role: 'admin',
       leaveAllowanceDays: 25,
+      fireRank: 'officer',
       authUserId: 'account-m1',
       statusVersions: [],
       teamVersions: [],
       timeZone: 'Europe/Zagreb',
     });
+  });
+
+  it('admits no rank as null, and a code this build lacks as itself', () => {
+    // MEMBER RANK. `fire_rank` is nullable; an unknown code is the edit form's
+    // to label as "unknown rank", never a reason to refuse the row.
+    expect(memberListRowOf(row({ fire_rank: null }))?.fireRank).toBeNull();
+    expect(memberListRowOf(row({ fire_rank: 'marshal' }))?.fireRank).toBe('marshal');
   });
 
   it('admits a missing address as null, because the column is nullable', () => {
@@ -317,6 +329,10 @@ describe('the read asks for exactly what the surface needs, and for the count', 
     { field: 'username', value: null },
     { field: 'leave_allowance_days', value: '20' },
     { field: 'role', value: 'supervisor' },
+    // MEMBER RANK: a rank that is not text or null refuses the row rather than
+    // folding into "no rank", and so does a row that does not carry it at all.
+    { field: 'fire_rank', value: 7 },
+    { field: 'fire_rank', value: undefined },
   ])('refuses a row whose $field is not what the schema says', ({ field, value }) => {
     // NARROWED BY A GUARD, never a cast. `'supervisor'` is the case that
     // matters most: cast through, the level column would render whatever an

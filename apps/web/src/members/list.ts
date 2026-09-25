@@ -112,9 +112,13 @@ export const MEMBERS_LIST_KEY = ['members'] as const;
  * screen's team block are derived from this one answer (AD-13). Each version
  * carries its team's NAME through the nested `teams(name)` embed, so the list
  * stays at one query; {@link memberTeamOn} reads the history as at a date.
+ *
+ * MEMBER RANK ADDS `fire_rank` (`0014`), read and never shown by the table: a
+ * rank column on the list is an Ask First. The edit form seeds its rank
+ * control from it.
  */
 export const MEMBERS_COLUMNS =
-  'organization_id,id,auth_user_id,name,username,email,role,leave_allowance_days,' +
+  'organization_id,id,auth_user_id,name,username,email,role,leave_allowance_days,fire_rank,' +
   'member_status_versions(active,effective_from),' +
   'team_membership_versions(team_id,effective_from,teams(name)),organizations(timezone)';
 
@@ -256,6 +260,12 @@ export interface MemberListRow {
   readonly email: string | null;
   readonly role: MemberRole;
   readonly leaveAllowanceDays: number;
+  /**
+   * The member's rank code (`0014`), or `null` for none. Wide rather than the
+   * code union, because a row may carry a code this build lacks; the edit form
+   * shows that as "unknown rank" rather than refusing the row.
+   */
+  readonly fireRank: string | null;
   /**
    * The account this member signs in with (`members.auth_user_id`). Rendered
    * nowhere; the edit screen compares it with the session's subject so the
@@ -647,6 +657,15 @@ export function memberRowOutcomeOf(row: unknown): RowOutcome {
 
   if (authUserId === null) return { ok: false, malformed: { field: 'auth_user_id', id } };
 
+  // MEMBER RANK. Text or null, and nothing else: a rank that is neither is a
+  // row this build cannot trust, never "no rank" — which the edit form would
+  // then write back over whatever the column holds.
+  const fireRank = fields['fire_rank'];
+
+  if (fireRank !== null && typeof fireRank !== 'string') {
+    return { ok: false, malformed: { field: 'fire_rank', id } };
+  }
+
   const statusVersions = statusVersionsIn(fields);
 
   if (statusVersions === null) {
@@ -677,6 +696,7 @@ export function memberRowOutcomeOf(row: unknown): RowOutcome {
       email: textAt(fields, 'email'),
       role,
       leaveAllowanceDays,
+      fireRank,
       authUserId,
       statusVersions,
       teamVersions,

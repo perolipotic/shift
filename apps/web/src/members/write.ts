@@ -247,7 +247,7 @@ export async function replyCodeOf(answer: FunctionsAnswer): Promise<string | nul
 // ------------------------------------------------------------------ the writes
 
 /** The columns a plain edit writes, and the ones read back to prove it landed. */
-export const MEMBER_EDIT_COLUMNS = 'id,name,email,role,leave_allowance_days,username';
+export const MEMBER_EDIT_COLUMNS = 'id,name,email,role,leave_allowance_days,username,fire_rank';
 const ID_COLUMN = 'id';
 
 /**
@@ -313,6 +313,13 @@ export interface MemberEdits {
   readonly role: MemberRole;
   readonly leaveAllowanceDays: number;
   readonly username: string;
+  /**
+   * The rank code (`0014`), `null` for "no rank", or ABSENT when the
+   * organization does not use ranks. Absent is not `null`: the form offers no
+   * rank control then, so the write must not touch the stored rank — switching
+   * the setting off hides ranks and never deletes them.
+   */
+  readonly fireRank?: string | null;
 }
 
 export type MemberWriteOutcome =
@@ -489,6 +496,9 @@ export async function saveMember(
         email: edits.email,
         role: edits.role,
         leave_allowance_days: edits.leaveAllowanceDays,
+        // ONLY WHEN THE FORM OFFERED IT. `null` is a value — the empty choice,
+        // "no rank" — and is written; an absent rank leaves the column alone.
+        ...(edits.fireRank === undefined ? {} : { fire_rank: edits.fireRank }),
       })
       .eq(ID_COLUMN, member.id)
       .select(MEMBER_EDIT_COLUMNS);
@@ -568,6 +578,9 @@ export async function createMember(
         email: creation.email,
         role: creation.role,
         leaveAllowanceDays: creation.leaveAllowanceDays,
+        // In the ONE create payload, so the row is inserted with its rank
+        // rather than patched afterwards. Absent is "no rank" to the function.
+        ...(creation.fireRank === undefined ? {} : { fireRank: creation.fireRank }),
       },
     });
   } catch (cause) {
@@ -772,6 +785,8 @@ export function memberFormKey(member: MemberListRow): string {
     member.email ?? '',
     member.role,
     String(member.leaveAllowanceDays),
+    // MEMBER RANK: the rank `<select>` is seeded by `defaultValue` too.
+    member.fireRank ?? '',
   ].join('|');
 }
 

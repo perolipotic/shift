@@ -309,6 +309,32 @@ export const ORGANIZATIONS_TABLE = 'organizations';
 export const MEMBER_ROLES = ['admin', 'member_role'] as const;
 
 /**
+ * The rank codes `members.fire_rank`'s check constraint admits (`0014`),
+ * lowest to highest.
+ *
+ * A COPY, because this function cannot import the SPA's tree: the browser's
+ * `RANK_CODES` (`apps/web/src/members/rank.ts`) is the other one. Each copy is
+ * pinned to the constraint parsed out of `0014`, never to the other copy or
+ * to itself: this one by the boundary suite, the browser's by
+ * `apps/web/src/members/rank.test.ts`. A rank outside this list is refused as a payload shape rather
+ * than dropped: a create that silently lost the rank would issue a member the
+ * admin did not describe.
+ */
+export const FIRE_RANKS = [
+  'trainee',
+  'firefighter',
+  'firefighter_1',
+  'nco',
+  'nco_1',
+  'senior_nco',
+  'senior_nco_1',
+  'officer',
+  'officer_1',
+  'senior_officer',
+  'senior_officer_1',
+] as const;
+
+/**
  * The largest leave allowance `members.leave_allowance_days` can hold.
  *
  * `0002:145` types the column `smallint`, so 32768 is not a large allowance: it
@@ -428,6 +454,8 @@ export interface CreatePayload {
   readonly email: string | null;
   readonly role: (typeof MEMBER_ROLES)[number];
   readonly leaveAllowanceDays: number;
+  /** `null` is "no rank", and is what an absent field means. */
+  readonly fireRank: (typeof FIRE_RANKS)[number] | null;
 }
 
 export type PayloadOutcome<T> =
@@ -475,13 +503,24 @@ export function createPayloadOf(body: unknown): PayloadOutcome<CreatePayload> {
   }
   const email = typeof rawEmail === 'string' && rawEmail.trim() !== '' ? rawEmail.trim() : null;
 
+  // ABSENT AND NULL ARE BOTH "no rank"; anything else must be a known code.
+  // An unknown value is REFUSED, never dropped — dropping it would create a
+  // member without the rank the admin chose, and say nothing.
+  const rawFireRank = fields['fireRank'];
+  const fireRank =
+    rawFireRank === undefined || rawFireRank === null
+      ? null
+      : FIRE_RANKS.find((known) => known === rawFireRank);
+
+  if (fireRank === undefined) return { ok: false, code: PAYLOAD_INVALID };
+
   const username = normalizedUsername(fields['username']);
 
   if (username === null) return { ok: false, code: USERNAME_INVALID };
 
   return {
     ok: true,
-    payload: { organizationId, name, username, email, role, leaveAllowanceDays },
+    payload: { organizationId, name, username, email, role, leaveAllowanceDays, fireRank },
   };
 }
 
@@ -669,6 +708,10 @@ export async function createUser(
       email: payload.email,
       role: payload.role,
       leave_allowance_days: payload.leaveAllowanceDays,
+      // ONLY WHEN A CODE WAS CHOSEN. No rank is the column's default (null),
+      // so a create without one names no `fire_rank` at all and does not
+      // depend on the column existing.
+      ...(payload.fireRank === null ? {} : { fire_rank: payload.fireRank }),
     })
     .select(MEMBER_WRITE_COLUMNS);
 

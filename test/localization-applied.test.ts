@@ -181,6 +181,10 @@ const SOURCES = [
   // the two screens' messages are chosen by, so a chunk built before an edit to
   // it is stale in a way no vocabulary sweep can see.
   join(webRoot, 'src', 'members', 'wire.ts'),
+  // Member rank. `members/rank.ts` renders nothing and owns the rank labels
+  // and the setting's two states as return-type unions, so a chunk built
+  // before an edit to it is stale in a way no vocabulary sweep can see.
+  join(webRoot, 'src', 'members', 'rank.ts'),
   join(webRoot, 'src', 'routes', 'ljudi.novi.tsx'),
   join(webRoot, 'src', 'routes', 'ljudi.$id.tsx'),
   // Story 1.8's two. `teams/roster.ts` renders nothing and owns the five keys

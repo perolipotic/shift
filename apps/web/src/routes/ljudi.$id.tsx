@@ -84,8 +84,22 @@ import {
   type TeamConfirmation,
   type TeamOffer,
 } from '@/members/write';
+import {
+  rankEditOf,
+  rankInitialValue,
+  rankMessageKey,
+  rankOptionsFor,
+  rankValue,
+  ranksShown,
+} from '@/members/rank';
 import { DESTINATIONS } from '@/navigation/destinations';
 import { MEMBER_ROLES, MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/navigation/role';
+import {
+  ORGANIZATION_READ_STALE_MS,
+  ORGANIZATION_SNAPSHOT_KEY,
+  ORGANIZATION_TABLE,
+  readOrganization,
+} from '@/organization/snapshot';
 import { appLayoutRoute } from '@/routes/_app';
 import { currentSession, supabaseClient } from '@/supabase/client';
 import {
@@ -179,6 +193,7 @@ export function LjudiMemberScreen() {
   const emailField = useRef<HTMLInputElement>(null);
   const leaveField = useRef<HTMLInputElement>(null);
   const roleField = useRef<HTMLSelectElement>(null);
+  const rankField = useRef<HTMLSelectElement>(null);
   // A REF as well as state: state drives the disabled button, and state is
   // stale inside a handler already called once this tick.
   const saving = useRef(false);
@@ -256,6 +271,22 @@ export function LjudiMemberScreen() {
   );
 
   const answer = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
+
+  // MEMBER RANK. Whether the rank control is offered, read from the one
+  // organization snapshot under its shared key (AD-13) — the chrome already
+  // reads it on every screen. Until it arrives the control is absent and the
+  // save leaves the stored rank alone.
+  const organization = useQuery({
+    queryKey: ORGANIZATION_SNAPSHOT_KEY,
+    queryFn: () => readOrganization(supabaseClient().from(ORGANIZATION_TABLE)),
+    // The chrome's own cache policy for this entry, so this is a second
+    // consumer of one cache entry rather than a second read policy on it.
+    retry: false,
+    staleTime: ORGANIZATION_READ_STALE_MS,
+  });
+  const offersRank = ranksShown(
+    organization.data !== undefined && organization.data.ok ? organization.data.snapshot : null,
+  );
 
   // THE CALLER'S OWN ACCOUNT, so the status block is never offered on it.
   const subject = useQuery({
@@ -569,6 +600,7 @@ export function LjudiMemberScreen() {
     const email = emailField.current;
     const leave = leaveField.current;
     const role = roleField.current;
+    const rank = rankField.current;
 
     if (
       member === null ||
@@ -577,6 +609,7 @@ export function LjudiMemberScreen() {
       email === null ||
       leave === null ||
       role === null ||
+      (offersRank && rank === null) ||
       saving.current
     ) {
       return;
@@ -609,6 +642,9 @@ export function LjudiMemberScreen() {
           role: chosenRole(role.value),
           leaveAllowanceDays,
           username: username.value,
+          // ONLY WHILE THE CONTROL IS OFFERED. Absent, the PATCH leaves the
+          // stored rank alone: the setting hides ranks and never deletes them.
+          ...rankEditOf(member.fireRank, rank?.value ?? null, offersRank),
         },
       );
 
@@ -733,6 +769,7 @@ export function LjudiMemberScreen() {
             ))}
           </select>
         </div>
+        {offersRank ? renderRank(member) : null}
         <div className="grid gap-2">
           <Label htmlFor="member-leave">{t('ljudi.leave')}</Label>
           <Input
@@ -759,6 +796,35 @@ export function LjudiMemberScreen() {
           </Button>
         </div>
       </form>
+    );
+  }
+
+  /**
+   * The rank control, offered only while the organization uses ranks.
+   *
+   * Seeded from the row. A stored code this build lacks is offered as its own
+   * "unknown rank" option, so the control describes the row honestly and a
+   * save that does not touch it sends back what the row holds.
+   */
+  function renderRank(member: MemberListRow): ReactNode {
+    return (
+      <div className="grid gap-2">
+        <Label htmlFor="member-rank">{t('ljudi.rank.label')}</Label>
+        <select
+          ref={rankField}
+          id="member-rank"
+          name="fireRank"
+          defaultValue={rankInitialValue(member.fireRank)}
+          aria-describedby={refusal === null ? undefined : 'member-form-error'}
+          className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {rankOptionsFor(member.fireRank).map((option) => (
+            <option key={rankValue(option)} value={rankValue(option)}>
+              {t(rankMessageKey(option))}
+            </option>
+          ))}
+        </select>
+      </div>
     );
   }
 

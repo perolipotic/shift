@@ -31,6 +31,14 @@ import {
   type MemberFunctions,
   type MemberWriteRefusal,
 } from '@/members/write';
+import {
+  rankEditOf,
+  rankInitialValue,
+  rankMessageKey,
+  rankValue,
+  ranksShown,
+  RANK_OPTIONS,
+} from '@/members/rank';
 import { DESTINATIONS } from '@/navigation/destinations';
 import { MEMBER_ROLES, MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/navigation/role';
 import {
@@ -96,6 +104,7 @@ export function LjudiNoviScreen() {
   const emailField = useRef<HTMLInputElement>(null);
   const leaveField = useRef<HTMLInputElement>(null);
   const roleField = useRef<HTMLSelectElement>(null);
+  const rankField = useRef<HTMLSelectElement>(null);
   // A REF as well as state, and the two are not redundant: state drives the
   // disabled button, and state is stale inside a handler already called once
   // this tick. The ref is written synchronously, so it is what the guard reads.
@@ -125,6 +134,11 @@ export function LjudiNoviScreen() {
   // EVERY STATE THIS SCREEN CAN BE IN, decided in `@/members/write` and pinned
   // by execution over all three of them.
   const form = createFormStateOf(snapshot);
+  // MEMBER RANK: the rank control exists only while the organization uses
+  // ranks, read from the same snapshot the form is seeded from.
+  const offersRank = ranksShown(
+    snapshot.data !== undefined && snapshot.data.ok ? snapshot.data.snapshot : null,
+  );
   const refusal: MemberWriteRefusal | null =
     failure ??
     (form.refusal === null ? null : { code: form.refusal, saved: false });
@@ -137,6 +151,7 @@ export function LjudiNoviScreen() {
     const email = emailField.current;
     const leave = leaveField.current;
     const role = roleField.current;
+    const rank = rankField.current;
 
     if (
       form.organizationId === null ||
@@ -145,6 +160,7 @@ export function LjudiNoviScreen() {
       email === null ||
       leave === null ||
       role === null ||
+      (offersRank && rank === null) ||
       issuing.current
     ) {
       return;
@@ -177,6 +193,9 @@ export function LjudiNoviScreen() {
         email: storedEmail(email.value),
         role: chosenRole(role.value),
         leaveAllowanceDays,
+        // In the one create payload, so the row is inserted with its rank.
+        // Absent while the setting is off: the function stores no rank.
+        ...rankEditOf(null, rank?.value ?? null, offersRank),
       });
 
       if (!outcome.ok) {
@@ -246,6 +265,36 @@ export function LjudiNoviScreen() {
           <p className="break-all font-mono text-base">{issued.password}</p>
         </div>
         <p className="text-sm font-medium">{t('ljudi.form.credentialOnce')}</p>
+      </div>
+    );
+  }
+
+  /**
+   * The rank control, offered only while the organization uses ranks.
+   *
+   * A FUNCTION for the reason `renderCredential` is one: a conditional
+   * `aria-describedby` inside a conditionally rendered block is the shape
+   * `eslint.config.js`'s L2 block refuses inline.
+   */
+  function renderRank(): ReactNode {
+    return (
+      <div className="grid gap-2">
+        <Label htmlFor="member-rank">{t('ljudi.rank.label')}</Label>
+        {/* A native `<select>` over the fixed list, no rank first. */}
+        <select
+          ref={rankField}
+          id="member-rank"
+          name="fireRank"
+          defaultValue={rankInitialValue(null)}
+          aria-describedby={refusal === null ? undefined : 'member-form-error'}
+          className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {RANK_OPTIONS.map((option) => (
+            <option key={rankValue(option)} value={rankValue(option)}>
+              {t(rankMessageKey(option))}
+            </option>
+          ))}
+        </select>
       </div>
     );
   }
@@ -354,6 +403,7 @@ export function LjudiNoviScreen() {
             ))}
           </select>
         </div>
+        {offersRank ? renderRank() : null}
         <div className="grid gap-2">
           <Label htmlFor="member-leave">{t('ljudi.leave')}</Label>
           <Input

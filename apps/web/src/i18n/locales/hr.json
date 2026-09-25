@@ -91,6 +91,22 @@
         "saved": "Ostali podaci su spremljeni."
       }
     },
+    "rank": {
+      "label": "Vatrogasni čin",
+      "none": "Bez čina",
+      "unknown": "Nepoznat čin",
+      "trainee": "vatrogasac pripravnik",
+      "firefighter": "vatrogasac",
+      "firefighter1": "vatrogasac I. klase",
+      "nco": "vatrogasni dočasnik",
+      "nco1": "vatrogasni dočasnik I. klase",
+      "seniorNco": "viši vatrogasni dočasnik",
+      "seniorNco1": "viši vatrogasni dočasnik I. klase",
+      "officer": "vatrogasni časnik",
+      "officer1": "vatrogasni časnik I. klase",
+      "seniorOfficer": "viši vatrogasni časnik",
+      "seniorOfficer1": "viši vatrogasni časnik I. klase"
+    },
     "status": {
       "inactive": "Neaktivna osoba",
       "inactiveScheduled": "Neaktivno od {date}",
@@ -144,6 +160,11 @@
     "accentGreen": "Zelena",
     "accentAmber": "Jantarna",
     "accentViolet": "Ljubičasta",
+    "fireRanks": "Vatrogasni činovi i položaji",
+    "fireRanksOff": "Ne koriste se",
+    "fireRanksOn": "Koriste se",
+    "fireRanksStatusOff": "Vatrogasni činovi i položaji: ne koriste se.",
+    "fireRanksStatusOn": "Vatrogasni činovi i položaji: koriste se.",
     "save": "Spremi",
     "cancel": "Odustani",
     "error": {
@@ -340,6 +361,8 @@
       "count": "{count, plural, one {# osoba} few {# osobe} other {# osoba}}",
       "archived": "Ova smjena je arhivirana.",
       "back": "Vrati se na Danas",
+      "withRank": "{name} · {rank}",
+      "rankUnknown": "nepoznat čin",
       "error": {
         "unavailable": "Popis osoba u smjeni trenutačno nije moguće učitati. Pokušaj ponovno."
       }

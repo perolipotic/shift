@@ -10,6 +10,18 @@ import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/i18n';
 import {
+  fireRanksClearsFailure,
+  fireRanksControlKey,
+  fireRanksFollowUpOf,
+  fireRanksMessageKey,
+  fireRanksOf,
+  fireRanksStatusMessageKey,
+  fireRanksStepOf,
+  fireRanksValue,
+  FIRE_RANKS_OPTIONS,
+  FIRE_RANKS_QUEUE,
+} from '@/members/rank';
+import {
   accentMessageKey,
   brandAccentOf,
   brandAccentValue,
@@ -151,6 +163,10 @@ export function OrganizacijaScreen() {
   const saving = useRef(false);
   const uploading = useRef(false);
   const tinting = useRef(false);
+  // The fire-rank setting's own in-flight flag and queue, on the accent's
+  // terms: it also writes on change, alone, beside the form.
+  const ranking = useRef(false);
+  const queuedFireRanks = useRef<boolean | undefined>(undefined);
   // THE ACCENT CHOSEN WHILE THE LAST ONE WAS STILL IN FLIGHT, or `undefined` for
   // none — and `undefined` rather than `null` because `null` is itself a choice
   // somebody can make. Dropping it on the floor is what this replaces: the
@@ -169,20 +185,27 @@ export function OrganizacijaScreen() {
   const [pending, setPending] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [savingAccent, setSavingAccent] = useState(false);
-  // ONE FLAG FOR THREE HANDLERS, because there is one message region and one
-  // row: a save started while an upload or an accent write is in flight would
-  // take the region from a refusal nobody has read yet. Named once rather than
-  // spelled out on each control, so a fourth handler cannot be added to two of
-  // them and forgotten on the third.
-  const busy = pending || uploadingLogo || savingAccent;
+  const [savingFireRanks, setSavingFireRanks] = useState(false);
+  // Moves on every refused setting write, so the setting control remounts to
+  // what the row holds instead of showing the refused choice.
+  const [fireRanksRevision, setFireRanksRevision] = useState(0);
+  // ONE FLAG FOR FOUR HANDLERS, because there is one message region and one
+  // row: a save started while an upload, an accent write or a setting write is
+  // in flight would take the region from a refusal nobody has read yet. Named
+  // once rather than spelled out on each control, so a fifth handler cannot be
+  // added to some of them and forgotten on the rest.
+  const busy = pending || uploadingLogo || savingAccent || savingFireRanks;
   // WHAT THE ACCENT CONTROL IS DISABLED BY, and it deliberately excludes its
   // OWN write. `disabled` on an element that currently has focus moves focus to
   // `<body>`, so a control that disables itself from inside its own `onChange`
   // ejects every keyboard user from it on every choice — and then re-enables
-  // itself somewhere they are no longer standing. The other two handlers still
-  // lock it, because all three share one row and one message region; its own
-  // write is serialised by `queuedAccent` instead.
-  const writingElsewhere = pending || uploadingLogo;
+  // itself somewhere they are no longer standing. The other three handlers
+  // still lock it, because all four share one row and one message region; its
+  // own write is serialised by `queuedAccent` instead.
+  const writingElsewhere = pending || uploadingLogo || savingFireRanks;
+  // The same rule for the fire-rank setting: locked by the other writes, never
+  // by its own.
+  const writingBesideFireRanks = pending || uploadingLogo || savingAccent;
 
   const snapshot = useQuery({
     queryKey: ORGANIZATION_SNAPSHOT_KEY,
@@ -222,7 +245,8 @@ export function OrganizacijaScreen() {
       day === null ||
       saving.current ||
       uploading.current ||
-      tinting.current
+      tinting.current ||
+      ranking.current
     ) {
       return;
     }
@@ -230,6 +254,7 @@ export function OrganizacijaScreen() {
     saving.current = true;
     setFailure(null);
     setPending(true);
+    let refused = false;
 
     try {
       const outcome = await updateOrganization(
@@ -245,6 +270,7 @@ export function OrganizacijaScreen() {
       );
 
       if (!outcome.ok) {
+        refused = true;
         setFailure(outcome.code);
 
         return;
@@ -260,6 +286,7 @@ export function OrganizacijaScreen() {
       // and a refetch that rejects. Logged as well as surfaced, because a
       // misconfiguration reading as an outage is only the smaller cost while the
       // cause reaches the console (`supabase/client.ts`).
+      refused = true;
       console.error(ORGANIZATION_UNAVAILABLE, cause);
       setFailure(ORGANIZATION_UNAVAILABLE);
     } finally {
@@ -268,6 +295,7 @@ export function OrganizacijaScreen() {
       // why.
       saving.current = false;
       setPending(false);
+      drainFireRanks(refused);
     }
   }
 
@@ -297,13 +325,20 @@ export function OrganizacijaScreen() {
    * `setFailure(null)` below would erase a refusal the person had not read yet.
    */
   async function uploadLogo(file: Blob): Promise<void> {
-    if (organization === null || uploading.current || saving.current || tinting.current) {
+    if (
+      organization === null ||
+      uploading.current ||
+      saving.current ||
+      tinting.current ||
+      ranking.current
+    ) {
       return;
     }
 
     uploading.current = true;
     setFailure(null);
     setUploadingLogo(true);
+    let refused = false;
 
     try {
       const outcome = await replaceOrganizationLogo(
@@ -314,6 +349,7 @@ export function OrganizacijaScreen() {
       );
 
       if (!outcome.ok) {
+        refused = true;
         setFailure(outcome.code);
 
         return;
@@ -323,11 +359,13 @@ export function OrganizacijaScreen() {
       // key, so refetching the row refetches the preview with it.
       await queryClient.invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY });
     } catch (cause) {
+      refused = true;
       console.error(LOGO_UNAVAILABLE, cause);
       setFailure(LOGO_UNAVAILABLE);
     } finally {
       uploading.current = false;
       setUploadingLogo(false);
+      drainFireRanks(refused);
     }
   }
 
@@ -356,8 +394,9 @@ export function OrganizacijaScreen() {
    * — and the compiler is what says so rather than a convention somebody has to
    * remember.
    *
-   * GUARDED ON THE OTHER TWO HANDLERS, and QUEUED against itself. All three
-   * share one row and one message region, so a save or an upload in flight has
+   * GUARDED ON THE OTHER THREE HANDLERS, and QUEUED against itself. All four
+   * share one row and one message region, so a save, an upload or a setting
+   * write in flight has
    * to lock this out — `setFailure(null)` below would otherwise erase a refusal
    * nobody had read yet. Its own second press is a different case: dropping it
    * would leave the row holding an accent the person passed through on the way
@@ -373,7 +412,7 @@ export function OrganizacijaScreen() {
    * a row that disagree rather than as nothing at all.
    */
   async function applyAccent(accent: BrandAccentKey | null): Promise<void> {
-    if (organization === null || saving.current || uploading.current) return;
+    if (organization === null || saving.current || uploading.current || ranking.current) return;
 
     // LATEST WINS rather than first wins. The write in flight cannot be
     // recalled, so the choice made over the top of it is held and applied in
@@ -387,6 +426,7 @@ export function OrganizacijaScreen() {
     tinting.current = true;
     setFailure(null);
     setSavingAccent(true);
+    let refused = false;
 
     try {
       const outcome = await updateOrganization(
@@ -396,6 +436,7 @@ export function OrganizacijaScreen() {
       );
 
       if (!outcome.ok) {
+        refused = true;
         setFailure(outcome.code);
 
         return;
@@ -418,6 +459,7 @@ export function OrganizacijaScreen() {
         console.error(ORGANIZATION_UNAVAILABLE, cause);
       }
     } catch (cause) {
+      refused = true;
       console.error(ORGANIZATION_UNAVAILABLE, cause);
       setFailure(ORGANIZATION_UNAVAILABLE);
     } finally {
@@ -428,7 +470,93 @@ export function OrganizacijaScreen() {
 
       queuedAccent.current = undefined;
       if (next !== undefined) void applyAccent(next);
+      else drainFireRanks(refused);
     }
+  }
+
+  /**
+   * Writes the fire-rank setting, on its own, the moment it changes.
+   *
+   * THE ACCENT'S SHAPE, for the accent's reasons — a fourth disjoint write
+   * (`OrganizationFireRanksEdit`) and a failed refetch kept out of the write's
+   * own outcome — with three rules of its own, each executed in
+   * `@/members/rank`:
+   *
+   *   - QUEUED, NEVER DROPPED, while ANY write is in flight (`fireRanksStepOf`):
+   *     the latest choice is held and applied when that write settles.
+   *   - A QUEUED FOLLOW-UP DOES NOT CLEAR THE MESSAGE REGION
+   *     (`fireRanksClearsFailure`), which may hold the outcome of the write it
+   *     waited for — `uploadLogo`'s guidance about an unread refusal.
+   *   - AFTER A REFUSAL THE QUEUE IS DROPPED (`fireRanksFollowUpOf`), and a
+   *     refused setting write remounts the control to what the row holds.
+   *
+   * Switching it off hides ranks everywhere and deletes none.
+   */
+  async function applyFireRanks(uses: boolean, fromQueue = false): Promise<void> {
+    if (organization === null) return;
+
+    const writingElsewhereNow = saving.current || uploading.current || tinting.current;
+
+    if (fireRanksStepOf(writingElsewhereNow, ranking.current) === FIRE_RANKS_QUEUE) {
+      queuedFireRanks.current = uses;
+
+      return;
+    }
+
+    ranking.current = true;
+    if (fireRanksClearsFailure(fromQueue)) setFailure(null);
+    setSavingFireRanks(true);
+    let refused = false;
+
+    try {
+      const outcome = await updateOrganization(
+        supabaseClient().from(ORGANIZATION_TABLE),
+        organization.id,
+        { usesFireRanks: uses },
+      );
+
+      if (!outcome.ok) {
+        refused = true;
+        setFailure(outcome.code);
+
+        return;
+      }
+
+      try {
+        await queryClient.invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY });
+      } catch (cause) {
+        console.error(ORGANIZATION_UNAVAILABLE, cause);
+      }
+    } catch (cause) {
+      refused = true;
+      console.error(ORGANIZATION_UNAVAILABLE, cause);
+      setFailure(ORGANIZATION_UNAVAILABLE);
+    } finally {
+      ranking.current = false;
+      setSavingFireRanks(false);
+      // A REFUSAL REMOUNTS THE CONTROL, so it shows what the row holds rather
+      // than the choice the database just refused.
+      if (refused) setFireRanksRevision((revision) => revision + 1);
+      drainFireRanks(refused);
+    }
+  }
+
+  /**
+   * Applies a setting choice held while another write was in flight — or
+   * drops it, when that write was refused. Called from every handler's
+   * `finally`, so a queued choice is never stranded.
+   */
+  function drainFireRanks(refused: boolean): void {
+    const next = fireRanksFollowUpOf(queuedFireRanks.current, refused);
+
+    queuedFireRanks.current = undefined;
+    if (next !== undefined) void applyFireRanks(next, true);
+  }
+
+  function chooseFireRanks(event: ChangeEvent<HTMLSelectElement>): void {
+    void applyFireRanks(
+      fireRanksOf(event.target.value, organization?.usesFireRanks ?? false),
+    );
   }
 
   /**
@@ -728,8 +856,8 @@ export function OrganizacijaScreen() {
               `role="status"` and not `role="alert"`: the alert region is the
               refusal's, and a second assertive region would be a second thing
               competing to be announced. This is polite, it is the only
-              confirmation the one write on this screen with no Save button
-              gets, and it is read out of the SNAPSHOT rather than out of the
+              confirmation this write — one of the two on this screen with no
+              Save button — gets, and it is read out of the SNAPSHOT rather than out of the
               control — so after a refusal the control shows what was chosen and
               this still shows what the database holds, which is the difference
               somebody needs to see. */}
@@ -737,8 +865,39 @@ export function OrganizacijaScreen() {
             {storedAccentLabel(organization.brandAccent)}
           </p>
         </div>
+        <div className="grid gap-2">
+          <Label htmlFor="organization-fire-ranks">{t('organization.fireRanks')}</Label>
+          {/* MEMBER RANK. Whether the member forms offer a rank and the roster
+              shows one. It gates display and entry ONLY: off, stored ranks are
+              hidden and survive. Written on change, alone, like the accent,
+              and remounted when the row changes for the accent's reason — and
+              ALSO on a refused write, unlike the accent, so the control never
+              shows a setting the database refused. */}
+          <select
+            key={fireRanksControlKey(organization.usesFireRanks, fireRanksRevision)}
+            id="organization-fire-ranks"
+            name="usesFireRanks"
+            defaultValue={fireRanksValue(organization.usesFireRanks)}
+            onChange={chooseFireRanks}
+            disabled={writingBesideFireRanks}
+            aria-busy={savingFireRanks}
+            aria-describedby={refusal === null ? undefined : 'organization-error'}
+            className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {FIRE_RANKS_OPTIONS.map((option) => (
+              <option key={fireRanksValue(option)} value={fireRanksValue(option)}>
+                {t(fireRanksMessageKey(option))}
+              </option>
+            ))}
+          </select>
+          {/* WHAT THE ROW HOLDS, read out of the snapshot: the confirmation a
+              write with no Save button gets. */}
+          <p role="status" className="text-sm text-muted-foreground">
+            {t(fireRanksStatusMessageKey(organization.usesFireRanks))}
+          </p>
+        </div>
         <div className="grid gap-2 sm:grid-cols-2">
-          {/* Disabled on EVERY flag. The three handlers share one message
+          {/* Disabled on EVERY flag. The four handlers share one message
               region, so a save started while an upload or an accent write is in
               flight would take the region from a refusal nobody has read yet. */}
           <Button
