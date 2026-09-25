@@ -16,9 +16,8 @@ import { appLayoutRoute } from '@/routes/_app';
 import { supabaseClient } from '@/supabase/client';
 import {
   TEAMS_LIST_KEY,
-  TEAMS_READ_STALE_MS,
   TEAMS_TABLE,
-  readTeams,
+  teamsQueryOptions,
   teamHeadingMessageKey,
   teamsMessageKey,
   teamsSurfaceStateOf,
@@ -86,15 +85,12 @@ function TeamScreen({ id }: { readonly id: string }) {
   /** Landed renames; the form key counts them, never the name. */
   const [renames, setRenames] = useState(0);
 
-  const answer = useQuery({
-    queryKey: TEAMS_LIST_KEY,
-    queryFn: () => readTeams(supabaseClient().from(TEAMS_TABLE)),
-    staleTime: TEAMS_READ_STALE_MS,
-    refetchOnWindowFocus: false,
-  });
+  const answer = useQuery(teamsQueryOptions(() => supabaseClient().from(TEAMS_TABLE)));
 
-  const { teams, refusal: readRefusal, loading } = teamsSurfaceStateOf(answer);
-  const form = teamFormStateOf(teams, loading, id);
+  const readState = teamsSurfaceStateOf(answer);
+  const { refusal: readRefusal, loading } = readState;
+  // A read failure hides the form, decided in `teamFormStateOf` from the state.
+  const form = teamFormStateOf(readState, id);
   const refusal = failure ?? form.refusal;
   const stage = archiveStageOf(armed, pending);
 

@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { HourBandRow } from '@/hour-bands/list';
+import {
+  HOUR_BANDS_UNAVAILABLE,
+  type HourBandRow,
+  type HourBandsSurfaceState,
+} from '@/hour-bands/list';
 import {
   HOUR_BAND_NAME_EMPTY,
   HOUR_BAND_NAME_FIELD,
@@ -43,6 +47,15 @@ import {
 
 const ORGANIZATION = '00000000-0000-4000-8000-000000000001';
 const DAN: HourBandRow = { id: 'pilot-dan', organizationId: ORGANIZATION, name: 'Dan', startMinute: 420 };
+
+/** A read's surface state: bands (or none), and whether the read is failing. */
+function readOf(
+  bands: readonly HourBandRow[] | null,
+  loading: boolean,
+  failed = false,
+): HourBandsSurfaceState {
+  return { bands, refusal: failed ? HOUR_BANDS_UNAVAILABLE : null, loading: failed ? false : loading };
+}
 
 interface Recorded {
   readonly verb: 'insert' | 'update' | 'delete';
@@ -386,12 +399,25 @@ describe('the screen state', () => {
   });
 
   it('finds the band, waits while loading, and names one it lacks', () => {
-    expect(hourBandFormStateOf(null, true, 'pilot-dan', false)).toEqual({ band: null, refusal: null });
-    expect(hourBandFormStateOf([DAN], false, 'pilot-dan', false)).toEqual({ band: DAN, refusal: null });
-    expect(hourBandFormStateOf([], true, 'pilot-dan', false)).toEqual({ band: null, refusal: null });
-    expect(hourBandFormStateOf([], false, 'pilot-dan', false)).toEqual({
+    expect(hourBandFormStateOf(readOf(null, true), 'pilot-dan', false)).toEqual({ band: null, refusal: null });
+    expect(hourBandFormStateOf(readOf([DAN], false), 'pilot-dan', false)).toEqual({ band: DAN, refusal: null });
+    expect(hourBandFormStateOf(readOf([], true), 'pilot-dan', false)).toEqual({ band: null, refusal: null });
+    expect(hourBandFormStateOf(readOf([], false), 'pilot-dan', false)).toEqual({
       band: null,
       refusal: HOUR_BAND_UNKNOWN,
+    });
+  });
+
+  it('hides the form and names nothing when the read failed, even over cached rows', () => {
+    // A form remounted after a landed save would show stale values beside
+    // "saved"; the screen shows only the read message instead.
+    expect(hourBandFormStateOf(readOf([DAN], false, true), 'pilot-dan', false)).toEqual({
+      band: null,
+      refusal: null,
+    });
+    expect(hourBandFormStateOf(readOf([], false, true), 'pilot-dan', false)).toEqual({
+      band: null,
+      refusal: null,
     });
   });
 
@@ -405,7 +431,7 @@ describe('the screen state', () => {
 
   it('does not call a band unknown once this screen removed it', () => {
     expect(
-      hourBandFormStateOf([], false, 'pilot-dan', holdsRemovalOutcome(HOUR_BAND_REMOVED, null)),
+      hourBandFormStateOf(readOf([], false), 'pilot-dan', holdsRemovalOutcome(HOUR_BAND_REMOVED, null)),
     ).toEqual({ band: null, refusal: null });
   });
 
@@ -414,14 +440,14 @@ describe('the screen state', () => {
     // longer holds the band. The screen says STALE, which it renders outside
     // the band's block; the form state must not stand UNKNOWN over it.
     expect(
-      hourBandFormStateOf([], false, 'pilot-dan', holdsRemovalOutcome(null, HOUR_BAND_STALE)),
+      hourBandFormStateOf(readOf([], false), 'pilot-dan', holdsRemovalOutcome(null, HOUR_BAND_STALE)),
     ).toEqual({ band: null, refusal: null });
     expect(hourBandWriteMessageKey(HOUR_BAND_STALE)).toBe('organization.hourBands.error.stale');
   });
 
   it('still draws the band beside a removal refused while it stays in place', () => {
     expect(
-      hourBandFormStateOf([DAN], false, 'pilot-dan', holdsRemovalOutcome(null, HOUR_BAND_WRITE_REFUSED)),
+      hourBandFormStateOf(readOf([DAN], false), 'pilot-dan', holdsRemovalOutcome(null, HOUR_BAND_WRITE_REFUSED)),
     ).toEqual({ band: DAN, refusal: null });
   });
 

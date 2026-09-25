@@ -11,7 +11,6 @@ import { Notice } from '@/components/ui/notice';
 import { PageActions, PageHeader, PageTitle } from '@/components/ui/page-header';
 import {
   HOUR_BANDS_LIST_KEY,
-  HOUR_BANDS_READ_STALE_MS,
   HOUR_BANDS_TABLE,
   durationMessageKey,
   durationValuesOf,
@@ -19,7 +18,7 @@ import {
   hourBandsMessageKey,
   hourBandsSurfaceStateOf,
   partitionBarOf,
-  readHourBands,
+  hourBandsQueryOptions,
   type PartitionBar,
 } from '@/hour-bands/list';
 import {
@@ -78,12 +77,7 @@ export function OrganizacijaSatniPojasiScreen() {
   const [failure, setFailure] = useState<HourBandWriteFailure | null>(null);
   const [created, setCreated] = useState(false);
 
-  const answer = useQuery({
-    queryKey: HOUR_BANDS_LIST_KEY,
-    queryFn: () => readHourBands(supabaseClient().from(HOUR_BANDS_TABLE)),
-    staleTime: HOUR_BANDS_READ_STALE_MS,
-    refetchOnWindowFocus: false,
-  });
+  const answer = useQuery(hourBandsQueryOptions(() => supabaseClient().from(HOUR_BANDS_TABLE)));
 
   const { bands, refusal, loading } = hourBandsSurfaceStateOf(answer);
   const rows = bands === null ? null : hourBandDisplayRowsOf(bands);

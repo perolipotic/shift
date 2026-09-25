@@ -627,6 +627,11 @@ function occurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
 
+/** A call of `name`, spelled so this file never contains the call it forbids. */
+function callOf(name: string): string {
+  return `${name}(`;
+}
+
 /**
  * A screen's `submit` handler, from its signature to its closing brace.
  *
@@ -2508,11 +2513,13 @@ describe('the member list reads once, under one key', () => {
     const screen = source(MEMBER_LIST);
 
     expect(MEMBERS_LIST_KEY).toEqual(['members']);
-    expect(occurrences(screen, 'queryKey: MEMBERS_LIST_KEY')).toBe(1);
+    // The key is named in ONE place, the query options every screen reading it
+    // uses — two `queryFn`s for one key is how a cache bound goes dead.
+    expect(occurrences(source(MEMBER_LIST_KEYS), 'queryKey: MEMBERS_LIST_KEY')).toBe(1);
     expect(
       occurrences(screen, 'queryKey:'),
-      'the member list names a query key that is not the list key',
-    ).toBe(1);
+      'the member list defines its own query rather than using the one definition',
+    ).toBe(0);
   });
 
   it('reads the member list exactly once, however many figures it draws', () => {
@@ -2523,7 +2530,24 @@ describe('the member list reads once, under one key', () => {
     const screen = source(MEMBER_LIST);
 
     expect(occurrences(screen, 'useQuery(')).toBe(1);
-    expect(occurrences(screen, 'readMembers(')).toBe(1);
+    expect(occurrences(screen, 'useQuery(membersQueryOptions(')).toBe(1);
+    expect(occurrences(screen, callOf('readMembers')), 'only the query options call the reader').toBe(0);
+  });
+
+  it.each([
+    { name: 'the team key', options: TEAM_LIST_KEYS, key: 'queryKey: TEAMS_LIST_KEY' },
+    { name: 'the hour band key', options: HOUR_BAND_LIST_KEYS, key: 'queryKey: HOUR_BANDS_LIST_KEY' },
+  ])('names $name as a query key in one place, the query options', ({ options, key }) => {
+    // Two `queryFn`s for one key is how a cache bound goes dead; the screens
+    // only ever name the key to invalidate it.
+    expect(occurrences(source(options), key)).toBe(1);
+  });
+
+  it('reads the teams on the member edit screen through the one team definition', () => {
+    const screen = source(MEMBER_EDIT);
+
+    expect(occurrences(screen, 'teamsQueryOptions(')).toBe(1);
+    expect(occurrences(screen, callOf('readTeams')), 'only the query options call the reader').toBe(0);
   });
 
   it.each([
@@ -2536,11 +2560,14 @@ describe('the member list reads once, under one key', () => {
     const screen = source(file);
 
     expect(occurrences(screen, 'useQuery(')).toBe(1);
-    expect(occurrences(screen, 'readTeams(')).toBe(1);
-    // Every key named — the read's and the re-read's — is the one team key.
+    expect(occurrences(screen, 'useQuery(teamsQueryOptions(')).toBe(1);
+    expect(occurrences(screen, callOf('readTeams')), 'only the query options call the reader').toBe(0);
+    // Every key named — the re-read's — is the one team key.
     expect(occurrences(screen, 'queryKey: TEAMS_LIST_KEY')).toBeGreaterThan(0);
     expect(occurrences(screen, 'queryKey:')).toBe(occurrences(screen, 'queryKey: TEAMS_LIST_KEY'));
-    expect(screen, 'the team read has no cache floor').toContain('staleTime: TEAMS_READ_STALE_MS');
+    expect(source(TEAM_LIST_KEYS), 'the team read has no cache floor').toContain(
+      'staleTime: TEAMS_READ_STALE_MS',
+    );
     expect(screen, 'a write is not followed by a re-read of the one list').toContain(
       'invalidateQueries({ queryKey: TEAMS_LIST_KEY })',
     );
@@ -2558,12 +2585,13 @@ describe('the member list reads once, under one key', () => {
     const screen = source(file);
 
     expect(occurrences(screen, 'useQuery(')).toBe(1);
-    expect(occurrences(screen, 'readHourBands(')).toBe(1);
+    expect(occurrences(screen, 'useQuery(hourBandsQueryOptions(')).toBe(1);
+    expect(occurrences(screen, callOf('readHourBands')), 'only the query options call the reader').toBe(0);
     expect(occurrences(screen, 'queryKey: HOUR_BANDS_LIST_KEY')).toBeGreaterThan(0);
     expect(occurrences(screen, 'queryKey:')).toBe(
       occurrences(screen, 'queryKey: HOUR_BANDS_LIST_KEY'),
     );
-    expect(screen, 'the band read has no cache floor').toContain(
+    expect(source(HOUR_BAND_LIST_KEYS), 'the band read has no cache floor').toContain(
       'staleTime: HOUR_BANDS_READ_STALE_MS',
     );
     expect(screen, 'a write is not followed by a re-read of the one list').toContain(
@@ -2658,15 +2686,21 @@ describe('the member list reads once, under one key', () => {
   it('bounds that read rather than re-running it on every window focus', () => {
     // Several hundred rows AND an exact count, which costs the database a second
     // pass over the same index. `members/list.test.ts` pins that the bound
-    // exists; this pins that the screen passes it.
-    const screen = source(MEMBER_LIST);
+    // exists; this pins that the one query definition passes it, and that both
+    // member screens read through that definition.
+    const options = source(MEMBER_LIST_KEYS);
 
-    expect(screen, 'the member list read has no cache floor').toContain(
+    expect(options, 'the member list read has no cache floor').toContain(
       'staleTime: MEMBERS_READ_STALE_MS',
     );
-    expect(screen, 'the member list re-reads on every window focus').toContain(
+    expect(options, 'the member list re-reads on every window focus').toContain(
       'refetchOnWindowFocus: false',
     );
+    for (const file of [MEMBER_LIST, MEMBER_EDIT]) {
+      expect(source(file), `${file} defines its own member query`).toContain(
+        'useQuery(membersQueryOptions(',
+      );
+    }
   });
 });
 

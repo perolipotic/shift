@@ -33,8 +33,6 @@ import {
   LEVEL_CELL,
   TEAM_CELL,
   LEVEL_FILTERS,
-  MEMBERS_LIST_KEY,
-  MEMBERS_READ_STALE_MS,
   MEMBERS_TABLE,
   MEMBER_COLUMNS,
   NAME_CELL,
@@ -57,7 +55,7 @@ import {
   narrowingDependencies,
   nextSortState,
   membersTodayOf,
-  readMembers,
+  membersQueryOptions,
   sortIndicatorOf,
   sortStateOf,
   teamFilterMessageKey,
@@ -239,20 +237,10 @@ export function LjudiScreen() {
   const searchField = useRef<HTMLInputElement>(null);
   const [sort, setSort] = useState(DEFAULT_SORT);
 
-  const answer = useQuery({
-    queryKey: MEMBERS_LIST_KEY,
-    queryFn: () => readMembers(supabaseClient().from(MEMBERS_TABLE)),
-    // BOUNDED, because this is the most expensive read in the application:
-    // several hundred rows AND an exact count, which costs the database a second
-    // pass over the same index. Unbounded, every window focus re-runs it — an
-    // admin who alt-tabs to their mail and back re-reads the whole organization
-    // for a list that has not changed. See `MEMBERS_READ_STALE_MS`.
-    staleTime: MEMBERS_READ_STALE_MS,
-    refetchOnWindowFocus: false,
-  });
+  const answer = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
 
   // EVERY STATE THIS SCREEN CAN BE IN, decided in `@/members/list` and pinned by
-  // execution over all four of them. Written here it was four lines of
+  // execution over real query results. Written here it was four lines of
   // conditional that vitest never ran: replacing `answer.isError || paused` with
   // `paused` shipped green, and a thrown query function then rendered headings
   // with no rows, no count and no message.

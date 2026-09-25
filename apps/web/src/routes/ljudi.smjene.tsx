@@ -16,9 +16,8 @@ import { appLayoutRoute } from '@/routes/_app';
 import { supabaseClient } from '@/supabase/client';
 import {
   TEAMS_LIST_KEY,
-  TEAMS_READ_STALE_MS,
   TEAMS_TABLE,
-  readTeams,
+  teamsQueryOptions,
   splitTeams,
   teamActionMessageKey,
   teamsMessageKey,
@@ -65,12 +64,7 @@ export function LjudiSmjeneScreen() {
   const [failure, setFailure] = useState<TeamWriteFailure | null>(null);
   const [created, setCreated] = useState(false);
 
-  const answer = useQuery({
-    queryKey: TEAMS_LIST_KEY,
-    queryFn: () => readTeams(supabaseClient().from(TEAMS_TABLE)),
-    staleTime: TEAMS_READ_STALE_MS,
-    refetchOnWindowFocus: false,
-  });
+  const answer = useQuery(teamsQueryOptions(() => supabaseClient().from(TEAMS_TABLE)));
 
   const { teams, refusal, loading } = teamsSurfaceStateOf(answer);
   const split = teams === null ? null : splitTeams(teams);

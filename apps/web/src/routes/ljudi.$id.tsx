@@ -11,7 +11,6 @@ import { Notice } from '@/components/ui/notice';
 import { t } from '@/i18n';
 import {
   MEMBERS_LIST_KEY,
-  MEMBERS_READ_STALE_MS,
   MEMBERS_TABLE,
   NO_TEXT,
   mayReadMembers,
@@ -19,7 +18,7 @@ import {
   memberTeamOf,
   membersSurfaceStateOf,
   membersTodayOf,
-  readMembers,
+  membersQueryOptions,
   shownDate,
   type MemberListRow,
 } from '@/members/list';
@@ -91,12 +90,12 @@ import { appLayoutRoute } from '@/routes/_app';
 import { currentSession, supabaseClient } from '@/supabase/client';
 import {
   TEAMS_LIST_KEY,
-  TEAMS_READ_STALE_MS,
   TEAMS_TABLE,
-  readTeams,
+  teamsQueryOptions,
   splitTeams,
   teamsMessageKey,
   teamsSurfaceStateOf,
+  writableTeamsOf,
 } from '@/teams/list';
 
 /**
@@ -256,12 +255,7 @@ export function LjudiMemberScreen() {
     null,
   );
 
-  const answer = useQuery({
-    queryKey: MEMBERS_LIST_KEY,
-    queryFn: () => readMembers(supabaseClient().from(MEMBERS_TABLE)),
-    staleTime: MEMBERS_READ_STALE_MS,
-    refetchOnWindowFocus: false,
-  });
+  const answer = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
 
   // THE CALLER'S OWN ACCOUNT, so the status block is never offered on it.
   const subject = useQuery({
@@ -272,14 +266,11 @@ export function LjudiMemberScreen() {
   const callerAuthUserId = subject.data ?? null;
 
   // THE TEAMS THE PICKER OFFERS, under the team screens' own key (AD-13).
-  const teamsAnswer = useQuery({
-    queryKey: TEAMS_LIST_KEY,
-    queryFn: () => readTeams(supabaseClient().from(TEAMS_TABLE)),
-    staleTime: TEAMS_READ_STALE_MS,
-    refetchOnWindowFocus: false,
-  });
+  const teamsAnswer = useQuery(teamsQueryOptions(() => supabaseClient().from(TEAMS_TABLE)));
   const teamsState = teamsSurfaceStateOf(teamsAnswer);
-  const allTeams = teamsState.teams;
+  // WRITABLE, not merely drawable: a failed refetch keeps the cached teams, and
+  // the picker and team actions are withheld on it as they were before.
+  const allTeams = writableTeamsOf(teamsState);
   const activeTeams = allTeams === null ? null : splitTeams(allTeams).active;
   const organizationMembers = membersSurfaceStateOf(answer).members ?? [];
   // THE ORGANIZATION'S TODAY — the date control's default and its minimum —

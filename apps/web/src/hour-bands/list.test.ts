@@ -1,10 +1,17 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import {
+  QueryClient,
+  QueryObserver,
+  environmentManager,
+  onlineManager,
+} from '@tanstack/react-query';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   HOUR_BANDS_COLUMNS,
   HOUR_BANDS_COUNT,
   HOUR_BANDS_FETCH_PAUSED,
   HOUR_BANDS_LIST_KEY,
+  HOUR_BANDS_READ_STALE_MS,
   HOUR_BANDS_TABLE,
   HOUR_BANDS_UNAVAILABLE,
   durationMessageKey,
@@ -13,6 +20,7 @@ import {
   hourBandDisplayRowsOf,
   hourBandRowOf,
   hourBandsMessageKey,
+  hourBandsQueryOptions,
   hourBandsSurfaceStateOf,
   minuteOfTime,
   partitionBarOf,
@@ -21,6 +29,7 @@ import {
   type HourBandsAnswer,
   type HourBandsTable,
 } from '@/hour-bands/list';
+import { hourBandFormStateOf } from '@/hour-bands/write';
 import { initLocalization, t } from '@/i18n';
 
 /**
@@ -276,38 +285,205 @@ describe('the count', () => {
   });
 });
 
-describe('the surface state', () => {
-  const answered = { ok: true as const, bands: PILOT };
+describe('the surface state, driven through the one query definition', () => {
+  /**
+   * A REAL `QueryClient` and `QueryObserver`, for the reason
+   * `teams/list.test.ts` gives: only TanStack Query itself can show that a
+   * failed refetch keeps the cached bands. Only `retryDelay` is overridden, and
+   * node is told it is a browser so the factory's own `retry: 1` applies.
+   */
+  const wasServer = environmentManager.isServer();
+  const good = { data: PILOT_ROWS, error: null, count: PILOT_ROWS.length };
+  const miscounted = { data: PILOT_ROWS, error: null, count: PILOT_ROWS.length + 1 };
+  let client: QueryClient;
+  let unsubscribes: (() => void)[];
 
-  it('draws an answer, refuses a failed one, and keeps rows beside a failed refetch', () => {
-    expect(
-      hourBandsSurfaceStateOf({ isPending: false, isError: false, fetchStatus: 'idle', data: answered }),
-    ).toEqual({ bands: PILOT, refusal: null, loading: false });
-    expect(
-      hourBandsSurfaceStateOf({
-        isPending: false,
-        isError: false,
-        fetchStatus: 'idle',
-        data: { ok: false, code: HOUR_BANDS_UNAVAILABLE },
-      }),
-    ).toEqual({ bands: null, refusal: HOUR_BANDS_UNAVAILABLE, loading: false });
-    expect(
-      hourBandsSurfaceStateOf({ isPending: false, isError: true, fetchStatus: 'idle', data: answered }),
-    ).toEqual({ bands: PILOT, refusal: HOUR_BANDS_UNAVAILABLE, loading: false });
+  beforeAll(() => {
+    environmentManager.setIsServer(() => false);
   });
 
-  it('loads while pending, and refuses while paused offline', () => {
+  afterAll(() => {
+    environmentManager.setIsServer(() => wasServer);
+  });
+
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    client = new QueryClient();
+    unsubscribes = [];
+  });
+
+  afterEach(() => {
+    for (const unsubscribe of unsubscribes) unsubscribe();
+    client.clear();
+    onlineManager.setOnline(true);
+    vi.restoreAllMocks();
+  });
+
+  /** A table answering each call with the next answer, the last one for ever. */
+  function answeringInTurn(
+    ...answers: HourBandsAnswer[]
+  ): HourBandsTable & { readonly calls: () => number } {
+    let calls = 0;
+
+    return {
+      calls: () => calls,
+      select() {
+        const answer = answers[Math.min(calls, answers.length - 1)];
+
+        calls += 1;
+
+        return Promise.resolve(answer as HourBandsAnswer);
+      },
+    };
+  }
+
+  function observe(table: () => HourBandsTable) {
+    const observer = new QueryObserver(client, { ...hourBandsQueryOptions(table), retryDelay: 0 });
+
+    unsubscribes.push(observer.subscribe(() => undefined));
+
+    return observer;
+  }
+
+  async function settled(observer: ReturnType<typeof observe>) {
+    await vi.waitFor(() => {
+      expect(observer.getCurrentResult().fetchStatus).toBe('idle');
+    });
+
+    return observer.getCurrentResult();
+  }
+
+  it("keeps today's key and cache bound", () => {
+    const options = hourBandsQueryOptions(() => answeringInTurn(good));
+
+    expect(options.queryKey).toEqual(HOUR_BANDS_LIST_KEY);
+    expect(options.staleTime).toBe(HOUR_BANDS_READ_STALE_MS);
+    expect(options.refetchOnWindowFocus).toBe(false);
+    expect(options.retry).toBe(1);
+    expect(options.retryDelay).toBe(1000);
+  });
+
+  it('pulses while the first read is in flight and says nothing', () => {
+    const observer = observe(() => answeringInTurn(good));
+
+    expect(hourBandsSurfaceStateOf(observer.getCurrentResult())).toEqual({
+      bands: null,
+      refusal: null,
+      loading: true,
+    });
+  });
+
+  it('draws a first answer, an empty one included', async () => {
+    const pilot = await settled(observe(() => answeringInTurn(good)));
+
+    expect(hourBandsSurfaceStateOf(pilot)).toEqual({ bands: PILOT, refusal: null, loading: false });
+
+    client.clear();
+    const empty = await settled(observe(() => answeringInTurn({ data: [], error: null, count: 0 })));
+
+    expect(hourBandsSurfaceStateOf(empty)).toEqual({ bands: [], refusal: null, loading: false });
+  });
+
+  it('retries an unavailable first read, then shows the message and no bands', async () => {
+    const table = answeringInTurn(miscounted);
+    const result = await settled(observe(() => table));
+
+    expect(table.calls(), 'the unavailable read was not retried exactly once').toBe(2);
+    expect(result.status).toBe('error');
+    expect(result.data).toBeUndefined();
+    expect(hourBandsSurfaceStateOf(result)).toEqual({
+      bands: null,
+      refusal: HOUR_BANDS_UNAVAILABLE,
+      loading: false,
+    });
+  });
+
+  it('keeps the bands beside the message when a refetch is unavailable', async () => {
+    // The write's `invalidateQueries`, then a blip: the rows, the bar and the
+    // edit form's band all stay on screen.
+    const table = answeringInTurn(good, miscounted);
+    const observer = observe(() => table);
+
+    await settled(observer);
+    await client.invalidateQueries({ queryKey: HOUR_BANDS_LIST_KEY });
+    const result = await settled(observer);
+
+    expect(table.calls(), 'the unavailable refetch was not retried exactly once').toBe(3);
+    expect(result.isError).toBe(true);
+    expect(hourBandsSurfaceStateOf(result)).toEqual({
+      bands: PILOT,
+      refusal: HOUR_BANDS_UNAVAILABLE,
+      loading: false,
+    });
+  });
+
+  it('hides the edit form, and names nothing, when a refetch fails over good bands', async () => {
+    // Through the real cache and the same two calls the edit screen makes: the
+    // cached bands stay on the surface, and the form gate still withholds the form.
+    const table = answeringInTurn(good, miscounted);
+    const observer = observe(() => table);
+    const id = PILOT[0]?.id ?? '';
+
+    await settled(observer);
     expect(
-      hourBandsSurfaceStateOf({ isPending: true, isError: false, fetchStatus: 'fetching', data: undefined }),
-    ).toEqual({ bands: null, refusal: null, loading: true });
-    expect(
-      hourBandsSurfaceStateOf({
-        isPending: true,
-        isError: false,
-        fetchStatus: HOUR_BANDS_FETCH_PAUSED,
-        data: undefined,
+      hourBandFormStateOf(hourBandsSurfaceStateOf(observer.getCurrentResult()), id, false).band,
+    ).not.toBeNull();
+    await client.invalidateQueries({ queryKey: HOUR_BANDS_LIST_KEY });
+    const state = hourBandsSurfaceStateOf(await settled(observer));
+
+    expect(state.bands).toEqual(PILOT);
+    expect(hourBandFormStateOf(state, id, false)).toEqual({ band: null, refusal: null });
+  });
+
+  it('settles as a success when a transient failure is followed by an answer', async () => {
+    const table = answeringInTurn(miscounted, good);
+    const result = await settled(observe(() => table));
+
+    expect(table.calls()).toBe(2);
+    expect(result.status).toBe('success');
+    expect(hourBandsSurfaceStateOf(result)).toEqual({ bands: PILOT, refusal: null, loading: false });
+  });
+
+  it('rejects when the table cannot even be built', async () => {
+    const result = await settled(
+      observe(() => {
+        throw new Error('SUPABASE_ENVIRONMENT_MISSING');
       }),
-    ).toEqual({ bands: null, refusal: HOUR_BANDS_UNAVAILABLE, loading: false });
+    );
+
+    expect(result.isError).toBe(true);
+    expect(hourBandsSurfaceStateOf(result)).toEqual({
+      bands: null,
+      refusal: HOUR_BANDS_UNAVAILABLE,
+      loading: false,
+    });
+  });
+
+  it('says why rather than pulsing while paused offline', () => {
+    onlineManager.setOnline(false);
+    const result = observe(() => answeringInTurn(good)).getCurrentResult();
+
+    expect(result.isPending).toBe(true);
+    expect(result.fetchStatus).toBe(HOUR_BANDS_FETCH_PAUSED);
+    expect(hourBandsSurfaceStateOf(result)).toEqual({
+      bands: null,
+      refusal: HOUR_BANDS_UNAVAILABLE,
+      loading: false,
+    });
+  });
+
+  it('never pulses a skeleton beside a message', () => {
+    for (const isError of [true, false]) {
+      for (const isPending of [true, false]) {
+        for (const fetchStatus of ['idle', 'fetching', HOUR_BANDS_FETCH_PAUSED]) {
+          for (const data of [undefined, [], PILOT]) {
+            const state = hourBandsSurfaceStateOf({ isPending, isError, fetchStatus, data });
+
+            expect(state.loading && state.refusal !== null).toBe(false);
+          }
+        }
+      }
+    }
   });
 
   it('names the read failure through its own key', () => {

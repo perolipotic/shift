@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { TeamRow } from '@/teams/list';
+import { TEAMS_UNAVAILABLE, type TeamRow, type TeamsSurfaceState } from '@/teams/list';
 import {
   ARCHIVE_ARMED,
   ARCHIVE_BUSY,
@@ -38,6 +38,11 @@ import {
 const ORGANIZATION = '00000000-0000-4000-8000-000000000001';
 const ACTIVE: TeamRow = { id: 't1', organizationId: ORGANIZATION, name: 'Prvi', archived: false };
 const ARCHIVED: TeamRow = { ...ACTIVE, id: 't2', archived: true };
+
+/** A read's surface state: rows (or none), and whether the read is failing. */
+function readOf(teams: readonly TeamRow[] | null, loading: boolean, failed = false): TeamsSurfaceState {
+  return { teams, refusal: failed ? TEAMS_UNAVAILABLE : null, loading: failed ? false : loading };
+}
 
 interface Recorded {
   readonly verb: 'insert' | 'update';
@@ -295,15 +300,35 @@ describe('the archive control has three stages and busy wins', () => {
 
 describe('the edit screen finds its team in the one list', () => {
   it('waits while the list has not answered', () => {
-    expect(teamFormStateOf(null, true, 't1')).toEqual({ team: null, refusal: null });
+    expect(teamFormStateOf(readOf(null, true), 't1')).toEqual({ team: null, refusal: null });
   });
 
   it('finds an active and an archived team alike', () => {
-    expect(teamFormStateOf([ACTIVE, ARCHIVED], false, 't2')).toEqual({ team: ARCHIVED, refusal: null });
+    expect(teamFormStateOf(readOf([ACTIVE, ARCHIVED], false), 't2')).toEqual({
+      team: ARCHIVED,
+      refusal: null,
+    });
+  });
+
+  it('hides the form and names nothing when the read failed, even over cached rows', () => {
+    // A form remounted after a landed rename would draw the stale name beside
+    // "saved"; the screen shows only the read message instead.
+    expect(teamFormStateOf(readOf([ACTIVE, ARCHIVED], false, true), 't1')).toEqual({
+      team: null,
+      refusal: null,
+    });
+    expect(teamFormStateOf(readOf([ACTIVE], false, true), 'missing')).toEqual({
+      team: null,
+      refusal: null,
+    });
+    expect(teamFormStateOf(readOf(null, false, true), 't1')).toEqual({ team: null, refusal: null });
   });
 
   it('names a team the answer does not hold', () => {
-    expect(teamFormStateOf([ACTIVE], false, 'missing')).toEqual({ team: null, refusal: TEAM_UNKNOWN });
+    expect(teamFormStateOf(readOf([ACTIVE], false), 'missing')).toEqual({
+      team: null,
+      refusal: TEAM_UNKNOWN,
+    });
   });
 
   it('keeps the form mounted when a re-read brings a name changed elsewhere', () => {

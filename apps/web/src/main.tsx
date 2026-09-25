@@ -23,16 +23,21 @@ if (rootElement === null) {
 // is the stale-total-beside-a-fresh-one failure AD-13 exists to prevent — with
 // the added twist that neither one looks wrong on its own.
 //
-// No default options, and one of TanStack's does not apply at all. The caching
-// and the refetch on focus and on reconnect are what a settings surface wants;
-// the `retry: 3` default is inert here, because `readOrganization` NEVER
-// rejects — every failure is folded into `{ ok: false, code }`, which `useQuery`
-// sees as a resolved value and therefore as a success. That is deliberate (a
-// code is what the edge translates, and a thrown error is not), so it is written
-// down rather than left to be rediscovered by somebody wondering why a failed
-// read was not retried. A `staleTime` chosen here would be a different thing: a
-// decision made once for every later surface by whoever happened to write this
-// line first. A surface that needs a different policy states it on its own query.
+// No client defaults. The caching and the refetch on focus and on reconnect
+// are what a settings surface wants, and TanStack's `retry: 3` is left as it
+// is — but it does nothing for the organization read, because
+// `readOrganization` NEVER rejects: every failure is folded into
+// `{ ok: false, code }`, which `useQuery` sees as a resolved value and therefore
+// as a success. That is deliberate (a code is what the edge translates, and a
+// thrown error is not), so it is written down rather than left to be
+// rediscovered by somebody wondering why a failed read was not retried. The
+// teams, members and hour-band lists DO reject on an unavailable read (their
+// query options, `teamsQueryOptions` and its siblings, rethrow the code, so a
+// failed refetch keeps the cached rows), and each sets its own `retry: 1`.
+// Any future query that rejects without stating its own `retry` gets the
+// default 3. A `staleTime` chosen here would be a different thing: a decision
+// made once for every later surface by whoever happened to write this line
+// first. A surface that needs a different policy states it on its own query.
 const queryClient = new QueryClient();
 
 // Initialization is awaited before the first render (story 1.1c). Resources are

@@ -4,6 +4,7 @@ import {
   partitionOfDay,
   type HourBand,
 } from '@shift/domain';
+import { queryOptions } from '@tanstack/react-query';
 
 import { RANGE_DASH, formatMinuteOfDay } from '@/i18n/format';
 
@@ -363,12 +364,40 @@ export function hourBandsMessageKey(
 
 // --------------------------------------------------------- surface state
 
+/**
+ * The one query definition every screen reading {@link HOUR_BANDS_LIST_KEY}
+ * uses. UNAVAILABLE REJECTS, and the table is resolved inside the query
+ * function, for the reasons `teamsQueryOptions` gives: a failed refetch keeps
+ * the cached bands (and the bar and edit forms drawn from them) and is retried,
+ * instead of replacing them with a resolved failure.
+ */
+export function hourBandsQueryOptions(table: () => HourBandsTable) {
+  return queryOptions({
+    queryKey: HOUR_BANDS_LIST_KEY,
+    queryFn: async (): Promise<readonly HourBandRow[]> => {
+      const outcome = await readHourBands(table());
+
+      if (!outcome.ok) throw new Error(outcome.code);
+
+      return outcome.bands;
+    },
+    staleTime: HOUR_BANDS_READ_STALE_MS,
+    refetchOnWindowFocus: false,
+    // ONE RETRY, ONE SECOND APART, not TanStack's three with backoff (~7 s). A
+    // write awaits the invalidation's refetch before releasing its busy lock, so
+    // the default held Save disabled for seconds after a write that had landed.
+    retry: 1,
+    retryDelay: 1000,
+  });
+}
+
 /** The query result the surface state is derived from. */
 export interface HourBandsQueryAnswer {
   readonly isPending: boolean;
   readonly isError: boolean;
   readonly fetchStatus: string;
-  readonly data: HourBandsOutcome | undefined;
+  /** The last good answer, kept by TanStack Query across a failed refetch. */
+  readonly data: readonly HourBandRow[] | undefined;
 }
 
 export interface HourBandsSurfaceState {
@@ -380,18 +409,14 @@ export interface HourBandsSurfaceState {
 }
 
 /**
- * One query result as what the screen shows — the four states
- * `teamsSurfaceStateOf` distinguishes: answered, failed, paused offline, and a
- * failed refetch over a good answer (rows kept, message beside them).
+ * One query result as what the screen shows: answered, failed, paused offline,
+ * and a failed refetch over a good answer (bands kept, message beside them).
+ * Every failure reaches here as `isError`, because {@link hourBandsQueryOptions}
+ * rejects on it; TanStack Query keeps the last good `data` beside that error.
  */
 export function hourBandsSurfaceStateOf(answer: HourBandsQueryAnswer): HourBandsSurfaceState {
-  const answered = answer.data;
-  const bands = answered !== undefined && answered.ok ? answered.bands : null;
+  const bands = answer.data ?? null;
   const paused = answer.isPending && answer.fetchStatus === HOUR_BANDS_FETCH_PAUSED;
-
-  if (answered !== undefined && !answered.ok) {
-    return { bands: null, refusal: answered.code, loading: false };
-  }
 
   if (answer.isError || paused) {
     return { bands, refusal: HOUR_BANDS_UNAVAILABLE, loading: false };
