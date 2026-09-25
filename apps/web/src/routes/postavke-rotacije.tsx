@@ -12,7 +12,8 @@ import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
-import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
+import { PageDescription, PageTitle } from '@/components/ui/page-header';
+import { SectionNumber } from '@/components/ui/section-number';
 import {
   Table,
   TableBody,
@@ -25,12 +26,15 @@ import { t } from '@/i18n';
 import { NO_TEXT, mayReadMembers, shownDate } from '@/members/list';
 import { DESTINATIONS } from '@/navigation/destinations';
 import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/navigation/role';
+import { ROTATION_KEY } from '@/rotation/list';
+import { RotationSection } from '@/rotation/rotation-section';
 import { appLayoutRoute } from '@/routes/_app';
 import {
   SHIFT_TYPES_LIST_KEY,
   SHIFT_TYPES_READ_TABLE,
   SHIFT_TYPES_TABLE,
   SHIFT_TYPE_VERSIONS_TABLE,
+  NO_TIMES_SHOWN,
   durationValuesOf,
   shiftTypeDurationMessageKey,
   shiftTypeListOf,
@@ -67,11 +71,12 @@ import { supabaseClient } from '@/supabase/client';
 /**
  * `Postavke rotacije` — the organization's shift types (story 2.2b).
  *
- * ADMIN ONLY (UX-DR32), under the guard `/ljudi/smjene` carries. The rotation
- * builder (2.3) joins this screen later; today it holds its first section,
- * `Tipovi smjena`: the types in use, each in its ramp-slot chip with its times
- * and duration, an add form, and the archived types listed separately and
- * read-only.
+ * ADMIN ONLY (UX-DR32), under the guard `/ljudi/smjene` carries. Its first
+ * section is `Tipovi smjena`: the types in use, each in its ramp-slot chip with
+ * its times and duration, an add form, and the archived types listed
+ * separately and read-only. Below it, the rotation builder (story 2.3b,
+ * `@/rotation/rotation-section`), which reads its own snapshot — so a shift
+ * type write invalidates `ROTATION_KEY` as well.
  *
  * THE CHIP ALWAYS CARRIES THE NAME AS TEXT; the slot colour only reinforces
  * it, so a seventh working type — slot 1 again — is told apart by its name.
@@ -199,7 +204,13 @@ export function PostavkeRotacijeScreen() {
       if (!next.refetch) return;
 
       try {
-        await queryClient.invalidateQueries({ queryKey: SHIFT_TYPES_LIST_KEY });
+        // The rotation builder below draws the types too, from its own
+        // snapshot. Both re-reads start together, so one failing cannot skip
+        // the other.
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: SHIFT_TYPES_LIST_KEY }),
+          queryClient.invalidateQueries({ queryKey: ROTATION_KEY }),
+        ]);
       } catch (cause) {
         console.error(SHIFT_TYPE_WRITE_UNAVAILABLE, cause);
       }
@@ -254,9 +265,18 @@ export function PostavkeRotacijeScreen() {
     );
   }
 
+  /** A non-working type's times and duration: none, shown as a dash. */
+  function renderNoTimes(): ReactNode {
+    return (
+      <span className="text-muted-foreground">{NO_TIMES_SHOWN}</span>
+    );
+  }
+
   /** A type's times and flags, read-only, in the table's time column. */
   function renderTimes(row: ShiftTypeDisplayRow): ReactNode {
-    if (!row.type.isWorking) return null;
+    // A NON-WORKING TYPE HAS NO TIMES, and says so with a dash — the kind
+    // column is gone (owner layout); its chip keeps its name.
+    if (!row.type.isWorking) return renderNoTimes();
 
     return (
       <div className="grid gap-1">
@@ -282,6 +302,7 @@ export function PostavkeRotacijeScreen() {
   }
 
   function renderDuration(row: ShiftTypeDisplayRow): ReactNode {
+    if (!row.type.isWorking) return renderNoTimes();
     if (row.times === null) return null;
 
     return (
@@ -310,11 +331,6 @@ export function PostavkeRotacijeScreen() {
             <span className="truncate">{row.type.name}</span>
           </span>
         </TableCell>
-        <TableCell>
-          <Badge variant={row.type.isWorking ? 'default' : 'secondary'}>
-            {row.type.isWorking ? t('rotation.shiftTypes.working') : t('rotation.shiftTypes.nonworking')}
-          </Badge>
-        </TableCell>
         <TableCell>{renderTimes(row)}</TableCell>
         <TableCell>{renderDuration(row)}</TableCell>
         <TableCell className="text-right">
@@ -339,7 +355,6 @@ export function PostavkeRotacijeScreen() {
         <TableHeader>
           <TableRow>
             <TableHead>{t('rotation.shiftTypes.columnName')}</TableHead>
-            <TableHead>{t('rotation.shiftTypes.columnKind')}</TableHead>
             <TableHead>{t('rotation.shiftTypes.times')}</TableHead>
             <TableHead>{t('rotation.shiftTypes.duration.label')}</TableHead>
             <TableHead className="text-right">{t('rotation.shiftTypes.actions')}</TableHead>
@@ -350,36 +365,86 @@ export function PostavkeRotacijeScreen() {
     );
   }
 
+  /**
+   * SECTION 1, the shift types, as the builder places it: beside the pattern
+   * from `lg` up, stacked above it below. The add opens from the card's own
+   * header now; the archived types follow in a card of their own.
+   */
+  function renderShiftTypes(): ReactNode {
+    return (
+      <div className="grid min-w-0 gap-6">
+        {/* THE ADD'S OUTCOME ON THE PAGE once the dialog has closed — the
+            confirmation, or a type added without its times — above the
+            section it is about. */}
+        {adding || saved === null ? null : (
+          <Notice role="status">{t(shiftTypeSavedMessageKey(saved))}</Notice>
+        )}
+        {adding || failure === null ? null : (
+          <Notice role="alert">{t(shiftTypeWriteMessageKey(failure))}</Notice>
+        )}
+        {refusal === null ? null : (
+          <Notice role="alert">{t(shiftTypesMessageKey(refusal))}</Notice>
+        )}
+        {loading ? (
+          <div className="grid gap-2">
+            {SKELETON_ROWS.map((row) => (
+              <div key={row} className="h-11 w-full animate-pulse rounded-md bg-muted" />
+            ))}
+          </div>
+        ) : null}
+        {list === null ? null : (
+          <Card className="min-w-0">
+            <CardHeader className="flex-row flex-wrap items-center gap-3">
+              <SectionNumber value={1} />
+              <CardTitle asChild>
+                <h2>{t('rotation.shiftTypes.heading')}</h2>
+              </CardTitle>
+              {/* STATED, AND STATED AT ZERO (UX-DR20). Not a live region. */}
+              <Badge variant="secondary">
+                {t('rotation.shiftTypes.count', { count: list.active.length })}
+              </Badge>
+              <Button className="ml-auto h-11" type="button" onClick={openAdding}>
+                <Plus aria-hidden />
+                {t('rotation.shiftTypes.open')}
+              </Button>
+            </CardHeader>
+            {renderTable(list.active)}
+          </Card>
+        )}
+        {list === null || list.archived.length === 0 ? null : (
+          <Card className="min-w-0">
+            <CardHeader>
+              <CardTitle asChild>
+                <h2>{t('rotation.shiftTypes.archivedHeading')}</h2>
+              </CardTitle>
+            </CardHeader>
+            {renderTable(list.archived)}
+          </Card>
+        )}
+      </div>
+    );
+  }
+
   return (
     <main
       className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6"
       aria-busy={loading}
     >
-      <PageHeader>
-        <div className="min-w-0">
-          <PageTitle asChild>
-            <h1>{t('nav.postavkeRotacije')}</h1>
-          </PageTitle>
-          <PageDescription>{t('rotation.shiftTypes.lede')}</PageDescription>
-        </div>
-        <PageActions>
-          <Button className="h-11" type="button" onClick={openAdding}>
-            <Plus aria-hidden />
-            {t('rotation.shiftTypes.open')}
-          </Button>
-        </PageActions>
-      </PageHeader>
-      {/* THE ADD'S OUTCOME ON THE PAGE once the dialog has closed: the
-          confirmation, or a type added without its times. */}
-      {adding || saved === null ? null : (
-        <Notice role="status">{t(shiftTypeSavedMessageKey(saved))}</Notice>
-      )}
-      {adding || failure === null ? null : (
-        <Notice role="alert">{t(shiftTypeWriteMessageKey(failure))}</Notice>
-      )}
-      {refusal === null ? null : (
-        <Notice role="alert">{t(shiftTypesMessageKey(refusal))}</Notice>
-      )}
+      {/* THE OWNER LAYOUT (story 2.3b): the page header, with `Spremi
+          rotaciju` among its actions, and the four numbered sections are laid
+          out by the rotation builder; this screen hands it its title and
+          section 1, the shift types. */}
+      <RotationSection
+        heading={
+          <div className="min-w-0">
+            <PageTitle asChild>
+              <h1>{t('nav.postavkeRotacije')}</h1>
+            </PageTitle>
+            <PageDescription>{t('rotation.shiftTypes.lede')}</PageDescription>
+          </div>
+        }
+        shiftTypes={renderShiftTypes()}
+      />
       <Dialog
         open={adding}
         onOpenChange={setAdding}
@@ -468,37 +533,6 @@ export function PostavkeRotacijeScreen() {
           </DialogFooter>
         </form>
       </Dialog>
-      {loading ? (
-        <div className="grid gap-2">
-          {SKELETON_ROWS.map((row) => (
-            <div key={row} className="h-11 w-full animate-pulse rounded-md bg-muted" />
-          ))}
-        </div>
-      ) : null}
-      {list === null ? null : (
-        <Card className="min-w-0">
-          <CardHeader className="flex-row flex-wrap items-center gap-3">
-            <CardTitle asChild>
-              <h2>{t('rotation.shiftTypes.heading')}</h2>
-            </CardTitle>
-            {/* STATED, AND STATED AT ZERO (UX-DR20). Not a live region. */}
-            <Badge variant="secondary">
-              {t('rotation.shiftTypes.count', { count: list.active.length })}
-            </Badge>
-          </CardHeader>
-          {renderTable(list.active)}
-        </Card>
-      )}
-      {list === null || list.archived.length === 0 ? null : (
-        <Card className="min-w-0">
-          <CardHeader>
-            <CardTitle asChild>
-              <h2>{t('rotation.shiftTypes.archivedHeading')}</h2>
-            </CardTitle>
-          </CardHeader>
-          {renderTable(list.archived)}
-        </Card>
-      )}
     </main>
   );
 }

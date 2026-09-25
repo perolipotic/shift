@@ -84,6 +84,13 @@ const asAdmin: readonly Screen[] = [
       }),
   },
   {
+    // STORY 2.3b: the shift types and the rotation builder below them, one
+    // scrolling panel; wide tables scroll inside their own container.
+    title: 'Postavke rotacije',
+    path: () => '/postavke-rotacije',
+    ready: (page) => page.getByRole('heading', { name: hr.rotation.builder.patternHeading }),
+  },
+  {
     title: 'Organizacija',
     path: () => '/organizacija',
     ready: (page) => page.getByLabel(hr.organization.name, { exact: true }),
@@ -116,4 +123,18 @@ test.describe('as an admin', () => {
       await checkScreen(page, fixture, screen);
     });
   }
+});
+
+// STORY 2.3b, OWNER LAYOUT: the rotation screen at 390 px too — the phone the
+// builder is designed against — where sections 1 and 2 stack, the figures sit
+// 2 × 2 and the preview scrolls inside its card.
+test.describe('as an admin at 390 px', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 390, height: 844 } });
+
+  const rotation = asAdmin.find((screen) => screen.title === 'Postavke rotacije');
+
+  test('Postavke rotacije fits 390 px', async ({ page, fixture }) => {
+    if (rotation === undefined) throw new Error('E2E: no Postavke rotacije screen in the list');
+    await checkScreen(page, fixture, rotation);
+  });
 });

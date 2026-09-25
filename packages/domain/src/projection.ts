@@ -158,24 +158,35 @@ function orderedSteps(steps: readonly RotationStep[], patternId: string): readon
 }
 
 /**
- * The shift type `assignment` projects for its team on `date`, as an id:
+ * The step `assignment` projects for its team on `date`, as a step id:
  *
  *   steps[(offsetIndex + daysBetween(anchor, date)) mod cycleLength]
  *
  * `steps` are the steps of the assignment's pattern, in any order. The answer
  * is defined for every date, before the anchor too; whether the assignment is
  * in effect on `date` is {@link rotationAssignmentOn}'s question, not this one.
+ * Re-expressing a team's offset against another anchor is this function asked
+ * on that anchor: the team then stands on the step it would have stood on
+ * anyway, so every projected date is unchanged.
  *
  * @throws RangeError naming the value when `date` or the anchor is not a
  *   calendar `YYYY-MM-DD`, when there are no steps, when a step belongs to
  *   another pattern, when a position is not a non-negative integer, when two
  *   steps share a position, or when the offset step is not in the pattern.
  */
-export function projectedShiftType(
+export function projectedStepId(
   steps: readonly RotationStep[],
   assignment: RotationAssignment,
   date: string,
 ): string {
+  return projectedStep(steps, assignment, date).id;
+}
+
+function projectedStep(
+  steps: readonly RotationStep[],
+  assignment: RotationAssignment,
+  date: string,
+): RotationStep {
   checkDate('the date', date);
   checkDate(`the anchor of team ${assignment.teamId}'s rotation`, assignment.anchorDate);
 
@@ -196,7 +207,21 @@ export function projectedShiftType(
       `index ${index} names no step of rotation pattern ${assignment.patternId}, which has ${ordered.length}`,
     );
   }
-  return step.shiftTypeId;
+  return step;
+}
+
+/**
+ * The shift type `assignment` projects for its team on `date`, as an id: the
+ * type of the step {@link projectedStepId} names.
+ *
+ * @throws RangeError on every precondition of {@link projectedStepId}.
+ */
+export function projectedShiftType(
+  steps: readonly RotationStep[],
+  assignment: RotationAssignment,
+  date: string,
+): string {
+  return projectedStep(steps, assignment, date).shiftTypeId;
 }
 
 /**

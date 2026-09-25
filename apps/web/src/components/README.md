@@ -59,4 +59,20 @@ Every screen (destination, form, placeholder or not-found) is built the same way
 | `OutputField` (`ui/output-field.tsx`) | A computed, read-only value shaped like a field (dashed, muted), on a native `<output>`. |
 | `Timeline` and parts (`ui/timeline.tsx`) | A day as one bar: `TimelineScale`, `TimelineTrack` of `TimelineSegment`s and `TimelineGap`s, `TimelineBoundaries`, `TimelineLegend`. The screen hides it from assistive technology beside a text equivalent. |
 | `Dialog` and parts (`ui/dialog.tsx`) | The one modal, on the native `<dialog>` and `showModal()`: focus trap, Escape, backdrop click and focus return come from the browser. Closed means hidden, not unmounted, so uncontrolled fields keep their values. A confirmation replaces the form inside the same dialog. `ConfirmDialog` is a confirmation on its own: open while the screen renders it, so an "armed" state becomes a modal without changing, and not dismissible while `busy`. |
+| `SectionNumber` (`ui/section-number.tsx`) | A numbered section's badge beside its `CardTitle` (`/postavke-rotacije`, sections 1–4). Takes `value`, renders the figure in the primary tint, and is hidden from assistive technology: the heading beside it carries the meaning. |
 | `Notice` (`ui/notice.tsx`) | The one refusal and confirmation box, in the Input look. The `role` is the variant: `alert` draws a warning icon and `status` a check, so the two differ by shape as well as by words. Every other attribute (`id`, `ref`, `tabIndex`, `aria-*`) passes through to its `<p>`. |
+
+## Reordering a list (story 2.3b)
+
+A list the person reorders uses `@dnd-kit` (`core` + `sortable`), never native
+HTML5 drag-and-drop, which is unreliable on touch. The rotation builder's steps
+(`rotation/rotation-section.tsx`) are the reference:
+
+- Each item is one row that never wraps. Only a ghost `Button` handle
+  (`GripVertical`, `h-11 w-11`, `touch-none`) activates the drag
+  (`setActivatorNodeRef`), and its accessible name names the item's position.
+- Mouse, touch and keyboard sensors: space lifts, the arrows move, space drops,
+  Escape cancels. Every announcement, the instructions and the handle's role
+  description come from `hr.json`, so dnd-kit says nothing in English.
+- The drop hands indices to a pure, tested operation (`withStepMovedTo`); the
+  screen never reorders, and focus after a drop is a rule in the same module.

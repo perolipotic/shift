@@ -15,6 +15,7 @@ import { NO_TEXT, mayReadMembers, shownDate } from '@/members/list';
 import { DESTINATIONS } from '@/navigation/destinations';
 import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/navigation/role';
 import { appLayoutRoute } from '@/routes/_app';
+import { ROTATION_KEY } from '@/rotation/list';
 import { PostavkeRotacijeScreen } from '@/routes/postavke-rotacije';
 import {
   SHIFT_TYPES_LIST_KEY,
@@ -152,7 +153,13 @@ function ShiftTypeScreen({ id }: { readonly id: string }) {
   /** Re-read the one list, so both screens show what the database holds now. */
   async function refresh(): Promise<void> {
     try {
-      await queryClient.invalidateQueries({ queryKey: SHIFT_TYPES_LIST_KEY });
+      // The rotation builder draws the types too (its own snapshot, story
+      // 2.3b). Both re-reads start together, so one failing cannot skip the
+      // other.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: SHIFT_TYPES_LIST_KEY }),
+        queryClient.invalidateQueries({ queryKey: ROTATION_KEY }),
+      ]);
     } catch (cause) {
       console.error(SHIFT_TYPE_WRITE_UNAVAILABLE, cause);
     }

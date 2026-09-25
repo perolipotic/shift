@@ -47,15 +47,27 @@ export const SHIFT_TYPE_VERSIONS_TABLE = 'shift_type_versions';
 export const SHIFT_TYPES_LIST_KEY = ['shiftTypes'] as const;
 
 /**
+ * The organization's own columns every snapshot starting at it selects first:
+ * its id and its zone. Shared with `@/rotation/list` (story 2.3b).
+ */
+export const ORGANIZATION_ZONE_COLUMNS = 'id,timezone';
+
+/**
+ * The types-and-versions embed alone, for another snapshot that starts at the
+ * organization too and reads its types through {@link shiftTypeRowOf}
+ * (`@/rotation/list`, story 2.3b), so the columns and the parser stay one pair.
+ */
+export const SHIFT_TYPES_EMBED =
+  'shift_types(organization_id,id,name,is_working,archived,created_at,' +
+  'shift_type_versions(organization_id,shift_type_id,start_time,end_time,effective_from))';
+
+/**
  * The columns this read selects: the organization, its zone, and every type
  * with its versions. `organization_id` on each type renders nowhere and is the
  * tripwire {@link readShiftTypes} uses to refuse a type from another tenant.
  * No duration column exists to select: `0013` stores none.
  */
-export const SHIFT_TYPES_COLUMNS =
-  'id,timezone,' +
-  'shift_types(organization_id,id,name,is_working,archived,created_at,' +
-  'shift_type_versions(organization_id,shift_type_id,start_time,end_time,effective_from))';
+export const SHIFT_TYPES_COLUMNS = `${ORGANIZATION_ZONE_COLUMNS},${SHIFT_TYPES_EMBED}`;
 
 /** The exact count, so an answer reaching two organizations is caught. */
 export const SHIFT_TYPES_COUNT: ShiftTypesCountOptions = { count: 'exact' };
@@ -377,6 +389,14 @@ const SLOT_CHIP_CLASSES: Readonly<Record<RampSlot, string>> = {
   6: 'bg-shift-slot-6 text-shift-slot-6-foreground',
 };
 
+/**
+ * What a table cell shows where a type has no times: a non-working type's
+ * times and duration (owner layout, story 2.3b — the kind column is gone, and
+ * this, beside the chip's name, is how a non-working type reads). An em dash,
+ * a mark rather than a word, so it is no copy.
+ */
+export const NO_TIMES_SHOWN = '\u2014';
+
 /** A non-working type's chip. */
 export const NONWORKING_CHIP_CLASS = 'bg-shift-nonworking text-shift-nonworking-foreground';
 
@@ -384,9 +404,14 @@ export const NONWORKING_CHIP_CLASS = 'bg-shift-nonworking text-shift-nonworking-
 export const CHIP_SHAPE_CLASS =
   'inline-flex min-w-0 max-w-full items-center whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-semibold';
 
+/** A slot's colour classes alone — or the non-working ones — for a shape other than the pill. */
+export function slotColourClassOf(slot: RampSlot | null): string {
+  return slot === null ? NONWORKING_CHIP_CLASS : SLOT_CHIP_CLASSES[slot];
+}
+
 /** The chip classes a type is drawn in: the pill, and its slot's colour or the non-working one. */
 export function chipClassOf(slot: RampSlot | null): string {
-  return `${CHIP_SHAPE_CLASS} ${slot === null ? NONWORKING_CHIP_CLASS : SLOT_CHIP_CLASSES[slot]}`;
+  return `${CHIP_SHAPE_CLASS} ${slotColourClassOf(slot)}`;
 }
 
 // ------------------------------------------------------------ display rows

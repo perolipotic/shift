@@ -133,6 +133,16 @@ const SHIFT_TYPE_LIST_KEYS = join(srcRoot, 'shift-types', 'list.ts');
 const SHIFT_TYPE_WRITE_KEYS = join(srcRoot, 'shift-types', 'write.ts');
 
 /**
+ * Story 2.3b's rotation builder and the two modules holding its keys. The
+ * section renders on `/postavke-rotacije`, below the shift types, from a file
+ * of its own — the shift type screens are pinned to one query — so it is named
+ * here by hand. `@/rotation/draft` declares no key.
+ */
+const ROTATION_SECTION = join(srcRoot, 'rotation', 'rotation-section.tsx');
+const ROTATION_LIST_KEYS = join(srcRoot, 'rotation', 'list.ts');
+const ROTATION_WRITE_KEYS = join(srcRoot, 'rotation', 'write.ts');
+
+/**
  * The member write path's rules, as a `.ts` module that renders nothing.
  *
  * THE THIRD NEW KEY SOURCE, and it has to be its own entry rather than folded
@@ -422,6 +432,15 @@ const SCREENS = [
   // list whose own close replaced the link back.
   { name: 'the shift type list', file: SHIFT_TYPE_LIST, expectedControls: 8 },
   { name: 'the shift type edit form', file: SHIFT_TYPE_EDIT, expectedControls: 10 },
+  // STORY 2.3b, AS RENEGOTIATED. SEVEN on the rotation builder, each written
+  // once however many steps and teams there are: a step's drag handle and
+  // remove (the move arrows are gone), the new step's `<select>` and the add,
+  // the anchor date, one team's step `<select>`, and the save. No
+  // effective-date control (2.6) and no delete of a pattern.
+  // EIGHT SINCE THE OWNER ADDITION: `Rasporedi ravnomjerno`, which only
+  // fills the draft.
+  // NINE SINCE THE CYCLES CHOICE: the preview's native `<select>`.
+  { name: 'the rotation builder', file: ROTATION_SECTION, expectedControls: 9 },
   // ZERO on every remaining placeholder (four since story 2.2b built
   // `/postavke-rotacije`), and asserted rather than assumed: a placeholder is a
   // heading and nothing else, so the first control any of them grows is a
@@ -1586,10 +1605,12 @@ const KEY_SOURCES = [
     // button, heading, close and cancel, the table's column heads (name, kind,
     // the times label again, the duration label, actions), the working pill
     // beside the non-working one; the section heading became the card's.
+    // TWENTY-TWO SINCE THE OWNER LAYOUT (story 2.3b): the kind column's
+    // head and its two pills are gone; a non-working type reads as a dash.
     name: 'the shift type list',
     file: SHIFT_TYPE_LIST,
     keys: translationKeys,
-    strings: 25,
+    strings: 22,
   },
   {
     // On one type: the facts a row says (as on the list), the name and Save,
@@ -1618,6 +1639,45 @@ const KEY_SOURCES = [
     file: SHIFT_TYPE_WRITE_KEYS,
     keys: memberListKeys,
     strings: 20,
+  },
+  {
+    // STORY 2.3b. THIRTY-SIX on the builder since the renegotiation — the
+    // two move labels gone; the handle's name and role description, the
+    // keyboard instructions, and the four announcements (lifted, over,
+    // dropped, and cancelled from two events) added. Before it, THIRTY: the three card headings and their
+    // ledes (the anchor note is the offsets card's), the empty pattern, the
+    // steps' caption and position, the archived label, the three step
+    // actions, the new step and its add, the three figure labels, the cycle
+    // length and the unknown hours, the anchor, the three offset columns, a
+    // team's step label and its options, the empty offsets note, the date
+    // column, the save and its note. The hours' shape comes
+    // through `shiftTypeDurationMessageKey`, counted with the shift type list
+    // rules; the refusals and the confirmation through the two modules below.
+    name: 'the rotation builder',
+    file: ROTATION_SECTION,
+    // THIRTY-SEVEN SINCE THE OWNER ADDITION: the spread action. FORTY-ONE
+    // SINCE THE OWNER LAYOUT: the non-working steps figure, the callout's
+    // title and body, and the day-number column head; the date column head
+    // went with the transposed preview.
+    // FORTY-FOUR SINCE THE CYCLES CHOICE: its label, its ICU options and
+    // the cycle's name over each cycle's first day.
+    keys: translationKeys,
+    strings: 44,
+  },
+  {
+    // The read failure.
+    name: 'the rotation read rules',
+    file: ROTATION_LIST_KEYS,
+    keys: messageKeyUnion,
+    strings: 1,
+  },
+  {
+    // The eight refusals, the "nothing changed" note beside a failure after
+    // the pattern, and the confirmation.
+    name: 'the rotation write rules',
+    file: ROTATION_WRITE_KEYS,
+    keys: memberWriteKeys,
+    strings: 10,
   },
   {
     // THIRTEEN on the create form: its own heading, five field labels, the save
@@ -1899,8 +1959,12 @@ describe('the screen is read at all, so every sweep below means something', () =
     // `@/shift-types` modules as key sources (two more).
     //
     // THIRTY-SEVEN KEY SOURCES SINCE TEAM POSITION: `@/members/position`.
-    expect(SCREENS).toHaveLength(23);
-    expect(KEY_SOURCES).toHaveLength(37);
+    //
+    // TWENTY-FOUR AND FORTY SINCE STORY 2.3b: the rotation builder is a new
+    // `.tsx` that renders strings (one each), and `@/rotation/list` and
+    // `@/rotation/write` are key sources (two more).
+    expect(SCREENS).toHaveLength(24);
+    expect(KEY_SOURCES).toHaveLength(40);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -2821,9 +2885,19 @@ describe('the member list reads once, under one key', () => {
     expect(occurrences(screen, 'useQuery(')).toBe(1);
     expect(occurrences(screen, 'useQuery(teamsQueryOptions(')).toBe(1);
     expect(occurrences(screen, callOf('readTeams')), 'only the query options call the reader').toBe(0);
-    // Every key named — the re-read's — is the one team key.
+    // Every key named — the re-read's — is the one team key, and (STORY 2.3b)
+    // the rotation builder's, which binds every active team: re-read beside
+    // it, started together so one failing cannot skip the other.
     expect(occurrences(screen, 'queryKey: TEAMS_LIST_KEY')).toBeGreaterThan(0);
-    expect(occurrences(screen, 'queryKey:')).toBe(occurrences(screen, 'queryKey: TEAMS_LIST_KEY'));
+    expect(occurrences(screen, 'queryKey:')).toBe(
+      occurrences(screen, 'queryKey: TEAMS_LIST_KEY') + occurrences(screen, 'queryKey: ROTATION_KEY'),
+    );
+    expect(occurrences(screen, 'invalidateQueries({ queryKey: ROTATION_KEY })')).toBe(
+      occurrences(screen, 'invalidateQueries({ queryKey: TEAMS_LIST_KEY })'),
+    );
+    expect(screen, 'the two re-reads are not started together').toMatch(
+      /Promise\.all\(\[\s*queryClient\.invalidateQueries\(\{ queryKey: TEAMS_LIST_KEY \}\),\s*queryClient\.invalidateQueries\(\{ queryKey: ROTATION_KEY \}\),?\s*\]\)/,
+    );
     expect(source(TEAM_LIST_KEYS), 'the team read has no cache floor').toContain(
       'staleTime: TEAMS_READ_STALE_MS',
     );
@@ -2903,11 +2977,22 @@ describe('the member list reads once, under one key', () => {
 
     expect(occurrences(screen, 'useQuery(')).toBe(1);
     expect(occurrences(screen, 'shiftTypesQueryOptions(')).toBe(1);
+    // STORY 2.3b: a shift type write also invalidates the rotation builder's
+    // own snapshot, which draws the types too — and nothing else.
     expect(occurrences(screen, 'queryKey:')).toBe(
-      occurrences(screen, 'queryKey: SHIFT_TYPES_LIST_KEY'),
+      occurrences(screen, 'queryKey: SHIFT_TYPES_LIST_KEY') + occurrences(screen, 'queryKey: ROTATION_KEY'),
     );
     expect(screen, 'a write is not followed by a re-read of the one list').toContain(
       'invalidateQueries({ queryKey: SHIFT_TYPES_LIST_KEY })',
+    );
+    expect(screen, 'a shift type write leaves the rotation builder showing old types').toContain(
+      'invalidateQueries({ queryKey: ROTATION_KEY })',
+    );
+    expect(occurrences(screen, 'invalidateQueries({ queryKey: ROTATION_KEY })')).toBe(
+      occurrences(screen, 'invalidateQueries({ queryKey: SHIFT_TYPES_LIST_KEY })'),
+    );
+    expect(screen, 'the two re-reads are not started together').toMatch(
+      /Promise\.all\(\[\s*queryClient\.invalidateQueries\(\{ queryKey: SHIFT_TYPES_LIST_KEY \}\),\s*queryClient\.invalidateQueries\(\{ queryKey: ROTATION_KEY \}\),?\s*\]\)/,
     );
     expect(screen, 'useMutation arrived; this repository uses a pending ref').not.toContain(
       'useMutation',
@@ -2920,6 +3005,72 @@ describe('the member list reads once, under one key', () => {
     );
     // UX-DR6: colour is the slot's, never a choice, and never a named token.
     expect(screen).not.toMatch(/type="color"|shift-day|shift-night|shift-slot-/);
+  });
+
+  it('reads the rotation once, under its own key, and invalidates only that key, on the rotation builder', () => {
+    // STORY 2.3b, AD-13. The teams, types, steps, assignments and "today" all
+    // come from one read under `ROTATION_KEY`; the save re-reads only it.
+    const screen = source(ROTATION_SECTION);
+
+    expect(occurrences(screen, 'useQuery(')).toBe(1);
+    expect(occurrences(screen, 'useQuery(rotationQueryOptions(')).toBe(1);
+    expect(occurrences(screen, 'queryKey:')).toBe(occurrences(screen, 'queryKey: ROTATION_KEY'));
+    expect(screen).toContain('invalidateQueries({ queryKey: ROTATION_KEY })');
+    expect(screen, 'useMutation arrived; this repository uses a pending ref').not.toContain('useMutation');
+    expect(screen, 'no in-flight ref guards a second save').toMatch(/saving\.current = true/);
+    expect(screen, 'the in-flight ref is never released').toMatch(/finally \{\s*saving\.current = false;/);
+    // AD-7: nothing on the builder projects, takes a modulo or counts a cycle.
+    expect(screen, 'the builder reaches past its modules into the domain').not.toContain('@shift/domain');
+    expect(screen, 'the builder writes an effective date other than today').not.toMatch(/effective_?[fF]rom/);
+    expect(screen).not.toMatch(/type="color"|shift-day|shift-night|shift-slot-|destructive/);
+    // AS RENEGOTIATED: steps reorder by `@dnd-kit`, by the handle only, with
+    // mouse, touch and keyboard sensors — never native HTML5 drag-and-drop,
+    // which is unreliable on touch. The drop is `withStepMovedTo`'s, and no
+    // reorder is computed here (`arrayMove`, a splice).
+    expect(screen).toMatch(/from '@dnd-kit\/core'/);
+    expect(screen).toMatch(/from '@dnd-kit\/sortable'/);
+    for (const sensor of ['MouseSensor', 'TouchSensor', 'KeyboardSensor']) {
+      expect(screen, `no ${sensor}`).toContain(`useSensor(${sensor}`);
+    }
+    expect(screen).toContain('setActivatorNodeRef');
+    expect(screen).toContain('withStepMovedTo(');
+    expect(screen).not.toMatch(/\bdraggable=|onDrop=|onDragStart=|arrayMove|\.splice\(/);
+    expect(screen, 'dnd-kit would announce in English').toContain('announcements: announcementsOf(');
+    expect(screen, 'dnd-kit would instruct in English').toContain('screenReaderInstructions:');
+  });
+
+  /**
+   * A file's CODE alone: comments, and the contents of every string and
+   * template literal, blanked — so a `%` in prose or in a class name is not
+   * read as an operator, and one between two operands (`a%b`) still is.
+   */
+  function codeOnly(text: string): string {
+    return text
+      .replaceAll(/\/\*[\s\S]*?\*\//g, ' ')
+      .replaceAll(/\/\/[^\n]*/g, ' ')
+      .replaceAll(/'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\]|\\.)*`/g, "''");
+  }
+
+  it('reads a modulo in code, and none in prose or strings', () => {
+    expect(codeOnly('const i = a%b;')).toContain('%');
+    expect(codeOnly('x %= 2;')).toContain('%');
+    expect(codeOnly("// a % b\nconst w = 'w-[50%]';\n/* 10 % */ const t = `${'%'}`;")).not.toContain('%');
+  });
+
+  it('keeps projection and modulo out of every rotation module and the builder, and a rotation out of storage', () => {
+    // AD-7: the builder's draft is projected by `@shift/domain` alone; no
+    // cycle length, offset integer or projected shift is written.
+    for (const file of [
+      ROTATION_LIST_KEYS,
+      ROTATION_WRITE_KEYS,
+      ROTATION_SECTION,
+      join(srcRoot, 'rotation', 'draft.ts'),
+    ]) {
+      const text = readFileSync(file, 'utf8');
+
+      expect(codeOnly(text), `${file} takes a modulo`).not.toContain('%');
+      expect(text, `${file} writes a derived value`).not.toMatch(/cycle_length|offset_index|projected_/);
+    }
   });
 
   it('offers no is_working change and no delete of a type', () => {
