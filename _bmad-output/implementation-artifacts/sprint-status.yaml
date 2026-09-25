@@ -419,7 +419,7 @@ development_status:
   # team's step, the cycle preview and the save, under /postavke-rotacije.
   # THIS PART COMPLETES THE 2-3 PARENT above.
   2-3b-rotation-builder: done
-  2-4-rotation-configuration-completes-on-a-phone: backlog
+  2-4-rotation-configuration-completes-on-a-phone: review
   2-5-saving-a-rotation-reports-what-it-will-actually-do: backlog
   2-6-an-admin-changes-the-rotation-from-a-date-forward: backlog
   epic-2-retrospective: optional

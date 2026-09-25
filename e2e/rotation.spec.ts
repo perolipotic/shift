@@ -2,12 +2,21 @@ import { randomBytes } from 'node:crypto';
 
 import type { Locator, Page } from '@playwright/test';
 
-import { connect } from './support/database.ts';
+import { holdRotation, type RotationHold } from './support/database.ts';
 import { ADMIN_STATE } from './support/fixture.ts';
 import { fill, hr } from './support/i18n.ts';
+import { addShiftType, previewCell } from './support/rotation.ts';
 import { expect, test } from './support/test.ts';
 
 test.use({ storageState: ADMIN_STATE });
+
+/** The run organization's rotation, while this file's test holds it (`holdRotation`). */
+let hold: RotationHold | null = null;
+
+test.afterEach(async () => {
+  await hold?.release();
+  hold = null;
+});
 
 const builder = hr.rotation.builder;
 const shiftTypes = hr.rotation.shiftTypes;
@@ -18,19 +27,6 @@ function fewForm(message: string, count: number): string {
   if (form === undefined) throw new Error(`E2E: ${message} has no few form`);
 
   return form.replace('#', String(count));
-}
-
-async function addShiftType(page: Page, name: string, times: readonly [string, string] | null) {
-  await page.getByRole('button', { name: shiftTypes.open }).click();
-  await page.getByLabel(shiftTypes.name, { exact: true }).fill(name);
-  if (times === null) {
-    await page.getByLabel(shiftTypes.kind, { exact: true }).selectOption({ label: shiftTypes.nonworking });
-  } else {
-    await page.getByLabel(shiftTypes.start, { exact: true }).fill(times[0]);
-    await page.getByLabel(shiftTypes.end, { exact: true }).fill(times[1]);
-  }
-  await page.getByRole('button', { name: shiftTypes.add }).click();
-  await expect(page.getByText(shiftTypes.created, { exact: true })).toBeVisible();
 }
 
 /**
@@ -100,21 +96,6 @@ async function keyboardMove(
   await expect(announced(page, fill(builder.drag.dropped, positions))).toBeAttached();
 }
 
-/**
- * The cell one team works in on the `day`-th date (0 = today) of the
- * transposed preview: teams are rows (the team's name in the first cell),
- * dates are columns (headed `Dan N`).
- */
-async function previewCell(page: Page, teamName: string, day: number): Promise<Locator> {
-  const table = page.getByRole('table').filter({
-    has: page.getByRole('columnheader', { name: fill(builder.dayNumber, { day: '1' }) }),
-  });
-  const row = table.getByRole('row').filter({ has: page.getByRole('cell', { name: teamName, exact: true }) });
-  await expect(row, `the preview has no row for ${teamName}`).toHaveCount(1);
-
-  return row.getByRole('cell').nth(day + 1);
-}
-
 test('an admin builds a rotation, sees its figures and cycle, saves it, and it opens as the rotation in force', async ({
   page,
   fixture,
@@ -122,20 +103,12 @@ test('an admin builds a rotation, sees its figures and cycle, saves it, and it o
   // EVERYTHING THIS TEST WRITES IS ITS OWN, per attempt: a team made for it
   // and three types with fresh names. A team's rotation changes at most once
   // per date, and the save binds every active team of the run's organization,
-  // so a retry first removes the versions an earlier attempt dated today —
-  // in this run's organization only, which is deleted at teardown anyway.
-  const client = await connect();
-  try {
-    await client.query(
-      `delete from rotation_assignments a
-        using organizations o
-        where a.organization_id = o.id and o.slug = $1
-          and a.effective_from >= public.organization_today(o.id)`,
-      [fixture.slug],
-    );
-  } finally {
-    await client.end();
-  }
+  // so the rotation is held for this test alone (the phone spec saves one
+  // too) and the versions an earlier attempt dated today are removed first.
+  // Waiting for the other holder may take a while, hence the longer timeout.
+  test.slow();
+  hold = holdRotation(fixture.slug);
+  await hold.ready;
 
   const suffix = randomBytes(3).toString('hex');
   const teamName = `Smjena ${suffix}`;

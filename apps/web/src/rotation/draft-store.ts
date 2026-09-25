@@ -6,6 +6,14 @@ import {
   type RotationDraft,
 } from '@/rotation/draft';
 import { rotationTeamsOf, type RotationSnapshot } from '@/rotation/list';
+import {
+  STEPPER_START,
+  stepperBack,
+  stepperNext,
+  stepperOpen,
+  stepperStepOf,
+  type StepperState,
+} from '@/rotation/stepper';
 
 /**
  * Where the builder's UNSAVED draft lives: outside the component (story 2.3b,
@@ -106,6 +114,59 @@ export function createPreviewCyclesStore(): PreviewCyclesStore {
     },
   };
 }
+
+/**
+ * Where the phone stepper stands (story 2.4): VIEW STATE, kept beside the
+ * draft for the same reason (the shift type dialog's remount), and never
+ * saved. Every change goes through `@/rotation/stepper`'s rules; a value set
+ * that is not a step, or a step not yet reached, leaves the state as it was.
+ * Subscribers hear only of a change.
+ */
+export interface StepperStore {
+  get(): StepperState;
+  /** A tap in the bar: go to a reached step; anything else is ignored. */
+  set(value: number | string): void;
+  /** Dalje. */
+  next(): void;
+  /** Natrag. */
+  back(): void;
+  subscribe(listener: () => void): () => void;
+}
+
+export function createStepperStore(): StepperStore {
+  let state: StepperState = STEPPER_START;
+  let listeners: readonly (() => void)[] = [];
+  const settle = (next: StepperState) => {
+    if (next.current === state.current && next.reached === state.reached) return;
+    state = next;
+    for (const listener of listeners) listener();
+  };
+
+  return {
+    get: () => state,
+    set(value) {
+      const step = stepperStepOf(value);
+
+      if (step !== null) settle(stepperOpen(state, step));
+    },
+    next() {
+      settle(stepperNext(state));
+    },
+    back() {
+      settle(stepperBack(state));
+    },
+    subscribe(listener) {
+      listeners = [...listeners, listener];
+
+      return () => {
+        listeners = listeners.filter((kept) => kept !== listener);
+      };
+    },
+  };
+}
+
+/** The one stepper the builder uses, for the life of the tab. */
+export const rotationStepperStore = createStepperStore();
 
 /** The one cycles choice the builder uses, for the life of the tab. */
 export const rotationPreviewCyclesStore = createPreviewCyclesStore();

@@ -239,6 +239,9 @@ const SOURCES = [
   join(webRoot, 'src', 'rotation', 'draft-store.ts'),
   join(webRoot, 'src', 'rotation', 'write.ts'),
   join(webRoot, 'src', 'rotation', 'rotation-section.tsx'),
+  // Story 2.4's phone stepper rules: the step names and Dalje's labels as
+  // return-type unions, and the classes that hide a section below `sm`.
+  join(webRoot, 'src', 'rotation', 'stepper.ts'),
   // The owner layout's numbered section badge, a primitive: text-free, here
   // for freshness like the other primitives.
   join(webRoot, 'src', 'components', 'ui', 'section-number.tsx'),
@@ -934,6 +937,14 @@ const AUTHORED_VOCABULARY = [
   'odustaje',
   'pritisni',
   'pomakni',
+  // STORY 2.4: the phone stepper's own words, so a hard-coded `Dalje` or
+  // `Natrag` below the sections, or a step name in the bar, is a count that
+  // no longer matches. `Tipovi` is left out: the shift type card's heading
+  // says it too, and a chunk-side component name could carry it.
+  'Dalje',
+  'Natrag',
+  'završeno',
+  'Pomaci',
 ];
 
 /** Everything the terminology contract and the unshipped affordances still own.
