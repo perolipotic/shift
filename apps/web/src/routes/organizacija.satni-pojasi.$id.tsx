@@ -1,13 +1,12 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createRoute, redirect, useNavigate } from '@tanstack/react-router';
-import { Clock3, MoveRight, Trash2 } from 'lucide-react';
+import { MoveRight, Trash2 } from 'lucide-react';
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { OutputField } from '@/components/ui/output-field';
@@ -372,26 +371,21 @@ function HourBandScreen({ id }: { readonly id: string }) {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="hour-band-start">{t('organization.hourBands.start')}</Label>
-                <InputGroup>
-                  <InputGroupIcon>
-                    <Clock3 />
-                  </InputGroupIcon>
-                  <Input
-                    ref={startField}
-                    id="hour-band-start"
-                    name="start"
-                    type="time"
-                    required
-                    defaultValue={formatMinuteOfDay(band.startMinute)}
-                    onChange={(event) => {
-                      setSaved(null);
-                      setTypedStart(event.currentTarget.value);
-                    }}
-                    aria-invalid={marksField(failure, HOUR_BAND_START_FIELD)}
-                    aria-describedby={failure === null ? 'hour-band-end-hint' : 'hour-band-form-error'}
-                    className="h-11"
-                  />
-                </InputGroup>
+                <Input
+                  ref={startField}
+                  id="hour-band-start"
+                  name="start"
+                  type="time"
+                  required
+                  defaultValue={formatMinuteOfDay(band.startMinute)}
+                  onChange={(event) => {
+                    setSaved(null);
+                    setTypedStart(event.currentTarget.value);
+                  }}
+                  aria-invalid={marksField(failure, HOUR_BAND_START_FIELD)}
+                  aria-describedby={failure === null ? 'hour-band-end-hint' : 'hour-band-form-error'}
+                  className="h-11"
+                />
               </div>
               {renderEnd()}
             </div>

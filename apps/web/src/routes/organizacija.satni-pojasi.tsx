@@ -21,7 +21,6 @@ import {
 } from '@/components/ui/dialog';
 import { IconTile } from '@/components/ui/icon-tile';
 import { Input } from '@/components/ui/input';
-import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { OutputField } from '@/components/ui/output-field';
@@ -316,26 +315,21 @@ export function OrganizacijaSatniPojasiScreen() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="hour-band-new-start">{t('organization.hourBands.start')}</Label>
-                <InputGroup>
-                  <InputGroupIcon>
-                    <Clock3 />
-                  </InputGroupIcon>
-                  <Input
-                    ref={startField}
-                    id="hour-band-new-start"
-                    name="start"
-                    type="time"
-                    required
-                    defaultValue={NO_TEXT}
-                    onChange={(event) => {
-                      setCreated(false);
-                      setTypedStart(event.currentTarget.value);
-                    }}
-                    aria-invalid={marksField(failure, HOUR_BAND_START_FIELD)}
-                    aria-describedby={failure === null ? 'hour-band-new-end-hint' : 'hour-band-create-error'}
-                    className="h-11 w-full"
-                  />
-                </InputGroup>
+                <Input
+                  ref={startField}
+                  id="hour-band-new-start"
+                  name="start"
+                  type="time"
+                  required
+                  defaultValue={NO_TEXT}
+                  onChange={(event) => {
+                    setCreated(false);
+                    setTypedStart(event.currentTarget.value);
+                  }}
+                  aria-invalid={marksField(failure, HOUR_BAND_START_FIELD)}
+                  aria-describedby={failure === null ? 'hour-band-new-end-hint' : 'hour-band-create-error'}
+                  className="h-11 w-full"
+                />
               </div>
               {/* THE END, COMPUTED, beside the start it follows from: the
                   domain places the typed start among the stored bands and says
