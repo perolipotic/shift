@@ -58,11 +58,19 @@ function migrationStatements(): string {
  * would seed one organization's answer into every tenant just as surely as a
  * default in a migration would. `seed.sql` is deliberately absent — it is
  * where the pilot's values are *supposed* to live.
+ *
+ * So is the demo organization script, by name and alone: it IS demo data (the
+ * pilot's name, type, zone, locale and shift types, fixed on purpose), and it
+ * refuses to run unless `shift.demo_target` is `local` or `staging`, so it
+ * never reaches production. `test/demo-organization.test.ts` asserts that
+ * refusal. Every other file in `supabase/operator/` stays in scope.
  */
+const DEMO_SCRIPT = 'demo-organization.sql';
+
 function coreSql(): string {
   const operator = existsSync(operatorRoot)
     ? readdirSync(operatorRoot)
-        .filter((name) => name.endsWith('.sql'))
+        .filter((name) => name.endsWith('.sql') && name !== DEMO_SCRIPT)
         .sort()
         .map((name) => readFileSync(join(operatorRoot, name), 'utf8'))
     : [];

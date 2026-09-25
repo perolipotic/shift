@@ -104,6 +104,17 @@ const provisioningScript = readFileSync(
 );
 
 /**
+ * The pilot demo (`pnpm db:demo`), local and staging only. It carries a third
+ * copy of the same auth.users recipe, so its accounts are held to the same
+ * `recipeHealth` / `expectSignInCapable` checks as the seed's and the
+ * operator script's.
+ */
+const demoScript = readFileSync(
+  join(repoRoot, 'supabase', 'operator', 'demo-organization.sql'),
+  'utf8',
+);
+
+/**
  * Migration `0007`, read as TEXT so its backfill can be EXECUTED over a row.
  *
  * `supabase db reset` applies migrations BEFORE `seed.sql`, so `members` is
@@ -454,6 +465,25 @@ describe('the seed carries both fixtures, so no rule is asserted against one ten
       }
     },
   );
+});
+
+describe('the demo organization script carries the same recipe', () => {
+  it.skipIf(noDatabase)('leaves every demo account able to sign in', async () => {
+    // The third copy of the recipe. Run inside a rolled-back transaction, so
+    // whether a human has applied the demo to this database changes nothing.
+    await inRolledBackTransaction(async (client) => {
+      await client.query(`select set_config('shift.demo_target', 'local', true)`);
+      await client.query(`select set_config('shift.demo_password', 'a-throwaway-demo-password', true)`);
+      await client.query(demoScript);
+      // Fire the deferred zero-admins check now, as a commit would, before
+      // this transaction is rolled back.
+      await client.query('set constraints all immediate');
+
+      const health = await recipeHealth(client, 'dvd-demo');
+      expect(health.accounts, 'the demo creates seventeen accounts').toBe(17);
+      expectSignInCapable(health, 'the demo organization');
+    });
+  });
 });
 
 describe('an organization can never be left with zero admins', () => {

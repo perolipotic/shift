@@ -17,7 +17,8 @@
     "test:smoke": "playwright test -c playwright.smoke.config.ts",
     "db:reset": "supabase db reset",
     "db:diff": "supabase db diff",
-    "db:provision": "supabase db query --local -f supabase/operator/provision-organization.sql"
+    "db:provision": "supabase db query --local -f supabase/operator/provision-organization.sql",
+    "db:demo": "PGOPTIONS='-c shift.demo_target=local -c shift.demo_password=local-fixture-password' supabase db query --local -f supabase/operator/demo-organization.sql"
   },
   "devDependencies": {
     "@babel/core": "8.0.1",
