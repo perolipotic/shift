@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
+import { Select } from '@/components/ui/select';
 import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import {
   Table,
@@ -429,28 +430,27 @@ export function PostavkeRotacijeScreen() {
           </div>
           <div className="grid gap-2">
             <Label htmlFor="shift-type-new-kind">{t('rotation.shiftTypes.kind')}</Label>
-            {/* A NATIVE `<select>`, as the role control on `/ljudi/novi`
-                is: `components/ui/` holds no Select primitive. Chosen once:
-                `is_working` cannot change after creation. */}
+            {/* The native `Select`, as the role control on `/ljudi/novi` is.
+                Chosen once: `is_working` cannot change after creation. */}
             <InputGroup>
               <InputGroupIcon>
                 <BriefcaseBusiness />
               </InputGroupIcon>
-              <select
+              <Select
                 ref={kindField}
                 id="shift-type-new-kind"
                 name="kind"
                 defaultValue={SHIFT_TYPE_WORKING}
                 onChange={chooseKind}
                 aria-describedby={failure === null ? undefined : 'shift-type-create-error'}
-                className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-11"
               >
                 {SHIFT_TYPE_KINDS.map((option) => (
                   <option key={option} value={option}>
                     {t(shiftTypeKindMessageKey(option))}
                   </option>
                 ))}
-              </select>
+              </Select>
             </InputGroup>
           </div>
           {/* A NON-WORKING TYPE HAS NO TIMES, so it is offered none. */}

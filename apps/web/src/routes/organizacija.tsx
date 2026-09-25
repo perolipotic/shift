@@ -19,6 +19,7 @@ import { PageActions, PageDescription, PageHeader, PageTitle } from '@/component
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
+import { Select } from '@/components/ui/select';
 import { t } from '@/i18n';
 import {
   fireRanksClearsFailure,
@@ -744,21 +745,21 @@ export function OrganizacijaScreen() {
               <Label htmlFor="organization-leave-day" className="sr-only">
                 {t('organization.leaveYearStartDay')}
               </Label>
-              <select
+              <Select
                 ref={dayField}
                 id="organization-leave-day"
                 name="leaveYearStartDay"
                 required
                 defaultValue={organization.leaveYearStartDay}
                 aria-describedby={refusal === null ? undefined : 'organization-error'}
-                className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-11"
               >
                 {LEAVE_START_DAYS.map((day) => (
                   <option key={day} value={day}>
                     {day}
                   </option>
                 ))}
-              </select>
+              </Select>
             </div>
             <div className="grid min-w-0">
               <Label htmlFor="organization-leave-month" className="sr-only">
@@ -768,21 +769,21 @@ export function OrganizacijaScreen() {
                 <InputGroupIcon>
                   <CalendarDays />
                 </InputGroupIcon>
-                <select
+                <Select
                   ref={monthField}
                   id="organization-leave-month"
                   name="leaveYearStartMonth"
                   required
                   defaultValue={organization.leaveYearStartMonth}
                   aria-describedby={refusal === null ? undefined : 'organization-error'}
-                  className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                  className="h-11"
                 >
                   {LEAVE_START_MONTHS.map((month) => (
                     <option key={month.value} value={month.value}>
                       {month.label}
                     </option>
                   ))}
-                </select>
+                </Select>
               </InputGroup>
             </div>
           </div>
@@ -796,12 +797,11 @@ export function OrganizacijaScreen() {
               `0006`'s check constraint is what refuses one outside the set, so
               a direct API call fails at the database rather than here.
 
-              A NATIVE `<select>` rather than a styled listbox: it is the one
-              control shadcn's inherited set does not cover, and the native
-              element already carries keyboard behaviour, an accessible name
-              through its `<Label>`, and a phone's own picker sheet. Its options
-              read in Croatian from `hr.json` — unlike a file input's chrome,
-              which is the browser's.
+              The `Select` primitive, a NATIVE `<select>` rather than a styled
+              listbox: the native element already carries keyboard behaviour,
+              an accessible name through its `<Label>`, and a phone's own
+              picker sheet. Its options read in Croatian from `hr.json` —
+              unlike a file input's chrome, which is the browser's.
 
               WRITTEN ON CHANGE, on its own disjoint update. The effect is the
               whole shell tinting itself, so it should be visible when it is
@@ -812,7 +812,7 @@ export function OrganizacijaScreen() {
             <InputGroupIcon>
               <Palette />
             </InputGroupIcon>
-            <select
+            <Select
               /* REMOUNTED WHEN THE ROW CHANGES, and that is what `key` is doing
                  here rather than a list identity. A `<select>`'s `defaultValue`
                  sets `defaultSelected` at MOUNT and never again, so after a
@@ -830,7 +830,7 @@ export function OrganizacijaScreen() {
               disabled={writingElsewhere}
               aria-busy={savingAccent}
               aria-describedby={refusal === null ? undefined : 'organization-error'}
-              className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-11"
             >
                 {/* THE ACCENT THIS BUILD DOES NOT KNOW, rendered as its own option
                   rather than collapsed into `Neutralna`. A forward-only migration
@@ -853,7 +853,7 @@ export function OrganizacijaScreen() {
                   {t(accentMessageKey(option))}
                 </option>
               ))}
-            </select>
+            </Select>
           </InputGroup>
           {/* WHAT THE ROW HOLDS, beside the control that changes it.
               `role="status"` and not `role="alert"`: the alert region is the
@@ -880,7 +880,7 @@ export function OrganizacijaScreen() {
             <InputGroupIcon>
               <Flame />
             </InputGroupIcon>
-            <select
+            <Select
               key={fireRanksControlKey(organization.usesFireRanks, fireRanksRevision)}
               id="organization-fire-ranks"
               name="usesFireRanks"
@@ -889,14 +889,14 @@ export function OrganizacijaScreen() {
               disabled={writingBesideFireRanks}
               aria-busy={savingFireRanks}
               aria-describedby={refusal === null ? undefined : 'organization-error'}
-              className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-11"
             >
               {FIRE_RANKS_OPTIONS.map((option) => (
                 <option key={fireRanksValue(option)} value={fireRanksValue(option)}>
                   {t(fireRanksMessageKey(option))}
                 </option>
               ))}
-            </select>
+            </Select>
           </InputGroup>
           {/* WHAT THE ROW HOLDS, read out of the snapshot: the confirmation a
               write with no Save button gets. */}

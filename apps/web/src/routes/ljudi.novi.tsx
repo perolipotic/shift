@@ -21,6 +21,7 @@ import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
+import { Select } from '@/components/ui/select';
 import { t } from '@/i18n';
 import {
   MEMBERS_LIST_KEY,
@@ -298,20 +299,20 @@ export function LjudiNoviScreen() {
           <InputGroupIcon>
             <Medal />
           </InputGroupIcon>
-          <select
+          <Select
             ref={rankField}
             id="member-rank"
             name="fireRank"
             defaultValue={rankInitialValue(null)}
             aria-describedby={refusal === null ? undefined : 'member-form-error'}
-            className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-11"
           >
             {RANK_OPTIONS.map((option) => (
               <option key={rankValue(option)} value={rankValue(option)}>
                 {t(rankMessageKey(option))}
               </option>
             ))}
-          </select>
+          </Select>
         </InputGroup>
       </div>
     );
@@ -417,9 +418,8 @@ export function LjudiNoviScreen() {
         <div className="grid gap-6 sm:grid-cols-2">
           <div className="grid gap-2">
             <Label htmlFor="member-role">{t('ljudi.role')}</Label>
-            {/* A NATIVE `<select>`, as the accent control on `/organizacija` is
-                and for the same reason: `components/ui/` holds no Select
-                primitive, and a native element already carries keyboard
+            {/* The `Select` primitive, native underneath, as the accent control
+                on `/organizacija` is: the native element carries keyboard
                 behaviour, an accessible name through its `<Label>` and a phone's
                 own picker sheet. Its options are the levels `0002:140`'s check
                 constraint admits, read off `MEMBER_ROLES` rather than written
@@ -428,20 +428,20 @@ export function LjudiNoviScreen() {
               <InputGroupIcon>
                 <ShieldCheck />
               </InputGroupIcon>
-              <select
+              <Select
                 ref={roleField}
                 id="member-role"
                 name="role"
                 defaultValue={DEFAULT_MEMBER_ROLE}
                 aria-describedby={refusal === null ? undefined : 'member-form-error'}
-                className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                className="h-11"
               >
                 {MEMBER_ROLES.map((option) => (
                   <option key={option} value={option}>
                     {t(memberLevelMessageKey(option))}
                   </option>
                 ))}
-              </select>
+              </Select>
             </InputGroup>
           </div>
           {offersRank ? renderRank() : null}

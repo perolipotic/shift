@@ -25,6 +25,7 @@ import { Label } from '@/components/ui/label';
 import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { StatCard, StatLabel, StatValue } from '@/components/ui/stat-card';
 import { Notice } from '@/components/ui/notice';
+import { Select } from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -367,9 +368,9 @@ export function LjudiScreen() {
               `aria-describedby` handling its precedent does, because a control
               that looks identical and behaves differently is worse than one that
               looks different. */}
-          <select
+          <Select
             id="ljudi-level"
-            className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-11"
             value={level}
             onChange={changeLevel}
             disabled={unanswered}
@@ -380,7 +381,7 @@ export function LjudiScreen() {
                 {t(levelFilterMessageKey(option), { count: narrowed.counts[option] })}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         <div className="grid min-w-0 gap-2">
           <Label htmlFor="ljudi-team">{t('smjene.membership.column')}</Label>
@@ -391,9 +392,9 @@ export function LjudiScreen() {
               team that vanished on a refetch shows as every team rather than
               claiming a filter the rows ignore. Team names are data,
               interpolated. */}
-          <select
+          <Select
             id="ljudi-team"
-            className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="h-11"
             value={narrowed.team}
             onChange={changeTeam}
             disabled={unanswered}
@@ -404,7 +405,7 @@ export function LjudiScreen() {
                 {t(teamFilterMessageKey(option.value), { count: option.count, team: option.team })}
               </option>
             ))}
-          </select>
+          </Select>
         </div>
         {/* DEAD WHILE THERE IS NOTHING TO RESET, and while the list is
             unanswered, for the reason the two filters are. Whether anything is
