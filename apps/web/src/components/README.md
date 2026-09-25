@@ -54,7 +54,7 @@ Every screen (destination, form, placeholder or not-found) is built the same way
 | `Callout` (`ui/callout.tsx`) | An explanation box with an icon tile, a title, a sentence and an optional action. It explains; it never refuses or confirms (that is `Notice`). |
 | `IconTile` (`ui/icon-tile.tsx`) | A decorative rounded square holding one icon, beside words that carry the meaning. `light`/`dark` match the timeline's tones. |
 | `StatTile` (`ui/stat-tile.tsx`) | A summary figure INSIDE a card, where `StatCard` would nest a card in a card. |
-| `InputGroup`, `InputGroupIcon` (`ui/input-group.tsx`) | A leading icon on an `Input` or a `Select`; the group adds the padding, so neither primitive changes. |
+| `InputGroup`, `InputGroupIcon` (`ui/input-group.tsx`) | A leading icon on an `Input` or a `Select`; the group adds the padding, so neither primitive changes. Never on `type="time"` or `type="date"`: the browser already draws its own clock or calendar button there, and a second icon reads as a duplicate. |
 | `Select` (`ui/select.tsx`) | The one select: native underneath, so `defaultValue`, `ref`, `FormData`, key-remounts and a phone's picker all keep working. The screen composes `h-11`. |
 | `OutputField` (`ui/output-field.tsx`) | A computed, read-only value shaped like a field (dashed, muted), on a native `<output>`. |
 | `Timeline` and parts (`ui/timeline.tsx`) | A day as one bar: `TimelineScale`, `TimelineTrack` of `TimelineSegment`s and `TimelineGap`s, `TimelineBoundaries`, `TimelineLegend`. The screen hides it from assistive technology beside a text equivalent. |

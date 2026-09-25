@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, redirect } from '@tanstack/react-router';
-import { BriefcaseBusiness, Clock3, Pencil, Plus } from 'lucide-react';
+import { BriefcaseBusiness, Pencil, Plus } from 'lucide-react';
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -218,47 +218,37 @@ export function PostavkeRotacijeScreen() {
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="grid min-w-0 gap-2">
           <Label htmlFor="shift-type-new-start">{t('rotation.shiftTypes.start')}</Label>
-          <InputGroup>
-            <InputGroupIcon>
-              <Clock3 />
-            </InputGroupIcon>
-            <Input
-              ref={startField}
-              id="shift-type-new-start"
-              name="start"
-              type="time"
-              required
-              defaultValue={NO_TEXT}
-              onChange={() => {
-                setSaved(null);
-              }}
-              aria-invalid={marksField(failure, SHIFT_TYPE_START_FIELD)}
-              aria-describedby={failure === null ? undefined : 'shift-type-create-error'}
-              className="h-11 w-full"
-            />
-          </InputGroup>
+          <Input
+            ref={startField}
+            id="shift-type-new-start"
+            name="start"
+            type="time"
+            required
+            defaultValue={NO_TEXT}
+            onChange={() => {
+              setSaved(null);
+            }}
+            aria-invalid={marksField(failure, SHIFT_TYPE_START_FIELD)}
+            aria-describedby={failure === null ? undefined : 'shift-type-create-error'}
+            className="h-11 w-full"
+          />
         </div>
         <div className="grid min-w-0 gap-2">
           <Label htmlFor="shift-type-new-end">{t('rotation.shiftTypes.end')}</Label>
-          <InputGroup>
-            <InputGroupIcon>
-              <Clock3 />
-            </InputGroupIcon>
-            <Input
-              ref={endField}
-              id="shift-type-new-end"
-              name="end"
-              type="time"
-              required
-              defaultValue={NO_TEXT}
-              onChange={() => {
-                setSaved(null);
-              }}
-              aria-invalid={marksField(failure, SHIFT_TYPE_END_FIELD)}
-              aria-describedby={failure === null ? undefined : 'shift-type-create-error'}
-              className="h-11 w-full"
-            />
-          </InputGroup>
+          <Input
+            ref={endField}
+            id="shift-type-new-end"
+            name="end"
+            type="time"
+            required
+            defaultValue={NO_TEXT}
+            onChange={() => {
+              setSaved(null);
+            }}
+            aria-invalid={marksField(failure, SHIFT_TYPE_END_FIELD)}
+            aria-describedby={failure === null ? undefined : 'shift-type-create-error'}
+            className="h-11 w-full"
+          />
         </div>
       </div>
     );

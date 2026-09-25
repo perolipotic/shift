@@ -1,13 +1,12 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createRoute, redirect, useNavigate } from '@tanstack/react-router';
-import { Archive, CalendarDays, Clock3 } from 'lucide-react';
+import { Archive } from 'lucide-react';
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { formatMinuteOfDay } from '@/i18n/format';
@@ -566,71 +565,56 @@ function ShiftTypeScreen({ id }: { readonly id: string }) {
       >
         <div className="grid gap-2">
           <Label htmlFor="shift-type-times-date">{t('rotation.shiftTypes.timesFrom')}</Label>
-          <InputGroup>
-            <InputGroupIcon>
-              <CalendarDays />
-            </InputGroupIcon>
-            <Input
-              ref={dateField}
-              id="shift-type-times-date"
-              name="effectiveFrom"
-              type="date"
-              required
-              min={offer.minimum}
-              defaultValue={offer.minimum}
-              onChange={() => {
-                setSaved(null);
-              }}
-              aria-invalid={marksField(timesFailure, SHIFT_TYPE_DATE_FIELD)}
-              aria-describedby={timesFailure === null ? undefined : 'shift-type-times-error'}
-              className="h-11"
-            />
-          </InputGroup>
+          <Input
+            ref={dateField}
+            id="shift-type-times-date"
+            name="effectiveFrom"
+            type="date"
+            required
+            min={offer.minimum}
+            defaultValue={offer.minimum}
+            onChange={() => {
+              setSaved(null);
+            }}
+            aria-invalid={marksField(timesFailure, SHIFT_TYPE_DATE_FIELD)}
+            aria-describedby={timesFailure === null ? undefined : 'shift-type-times-error'}
+            className="h-11"
+          />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="grid min-w-0 gap-2">
             <Label htmlFor="shift-type-times-start">{t('rotation.shiftTypes.start')}</Label>
-            <InputGroup>
-              <InputGroupIcon>
-                <Clock3 />
-              </InputGroupIcon>
-              <Input
-                ref={startField}
-                id="shift-type-times-start"
-                name="start"
-                type="time"
-                required
-                defaultValue={current === null ? NO_TEXT : formatMinuteOfDay(current.startMinute)}
-                onChange={() => {
-                  setSaved(null);
-                }}
-                aria-invalid={marksField(timesFailure, SHIFT_TYPE_START_FIELD)}
-                aria-describedby={timesFailure === null ? undefined : 'shift-type-times-error'}
-                className="h-11 w-full"
-              />
-            </InputGroup>
+            <Input
+              ref={startField}
+              id="shift-type-times-start"
+              name="start"
+              type="time"
+              required
+              defaultValue={current === null ? NO_TEXT : formatMinuteOfDay(current.startMinute)}
+              onChange={() => {
+                setSaved(null);
+              }}
+              aria-invalid={marksField(timesFailure, SHIFT_TYPE_START_FIELD)}
+              aria-describedby={timesFailure === null ? undefined : 'shift-type-times-error'}
+              className="h-11 w-full"
+            />
           </div>
           <div className="grid min-w-0 gap-2">
             <Label htmlFor="shift-type-times-end">{t('rotation.shiftTypes.end')}</Label>
-            <InputGroup>
-              <InputGroupIcon>
-                <Clock3 />
-              </InputGroupIcon>
-              <Input
-                ref={endField}
-                id="shift-type-times-end"
-                name="end"
-                type="time"
-                required
-                defaultValue={current === null ? NO_TEXT : formatMinuteOfDay(current.endMinute)}
-                onChange={() => {
-                  setSaved(null);
-                }}
-                aria-invalid={marksField(timesFailure, SHIFT_TYPE_END_FIELD)}
-                aria-describedby={timesFailure === null ? undefined : 'shift-type-times-error'}
-                className="h-11 w-full"
-              />
-            </InputGroup>
+            <Input
+              ref={endField}
+              id="shift-type-times-end"
+              name="end"
+              type="time"
+              required
+              defaultValue={current === null ? NO_TEXT : formatMinuteOfDay(current.endMinute)}
+              onChange={() => {
+                setSaved(null);
+              }}
+              aria-invalid={marksField(timesFailure, SHIFT_TYPE_END_FIELD)}
+              aria-describedby={timesFailure === null ? undefined : 'shift-type-times-error'}
+              className="h-11 w-full"
+            />
           </div>
         </div>
         <p className="text-xs text-muted-foreground">{t('rotation.shiftTypes.timesNote')}</p>
