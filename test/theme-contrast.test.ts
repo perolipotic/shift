@@ -285,6 +285,86 @@ describe('the navy sidebar carries readable text and visible controls', () => {
   });
 });
 
+describe('badges and stat cards are text, and read on the card and on a hovered row', () => {
+  /**
+   * Visual refresh B's badges carry their meaning in words (a level, an
+   * inactive marker), so each is small text and the body threshold applies.
+   * They sit on the card, the member list's surface, AND on a hovered table
+   * row, which is `muted` at the row primitive's alpha composited over the
+   * card. The `default` variant is a primary TINT, `bg-primary/N`, composited
+   * over whichever surface it sits on. Both alphas are read from the primitives,
+   * as the sidebar button's is.
+   *
+   * ITS TEXT IS `foreground`, NOT `primary`. Dark `primary` does not reach the
+   * body threshold on the dark card even with no tint, and every tint only
+   * lowers it, so no alpha could fix it and a new colour token is a
+   * design-owner decision. The assertion below keeps that reason measured
+   * rather than remembered: if it ever stops being true, `text-primary` is
+   * back on the table.
+   *
+   * The stat card's label is `muted-foreground` on the card; its value is
+   * `card-foreground` on the card, which the base sweep already measures.
+   */
+  const BADGE_TINT_ALPHA = 0.15;
+  const ROW_HOVER_ALPHA = 0.6;
+  const webSrc = join(fileURLToPath(new URL('..', import.meta.url)), 'apps', 'web', 'src', 'components', 'ui');
+
+  it('reads the variants and the row hover from the primitives, so they cannot drift apart', () => {
+    const badge = readFileSync(join(webSrc, 'badge.tsx'), 'utf8');
+    const table = readFileSync(join(webSrc, 'table.tsx'), 'utf8');
+
+    expect(badge).toContain(`default: "bg-primary/${Math.round(BADGE_TINT_ALPHA * 100)} text-foreground",`);
+    expect(badge).toContain('secondary: "bg-secondary text-secondary-foreground",');
+    expect(badge).toContain('outline: "border border-input text-muted-foreground",');
+    expect(table).toContain(`hover:bg-muted/${Math.round(ROW_HOVER_ALPHA * 100)}`);
+  });
+
+  it('keeps the reason the tint takes foreground text: dark primary misses 4.5:1 on the card untinted', () => {
+    expect(ratio(colour('dark', 'primary'), colour('dark', 'card'))).toBeLessThan(AA_BODY);
+  });
+
+  const card = (theme: Theme): Color => colour(theme, 'card');
+  const hoveredRow = (theme: Theme): Rgb =>
+    composite({ ...rgb(colour(theme, 'muted')), alpha: ROW_HOVER_ALPHA }, card(theme));
+  const tintOver = (theme: Theme, under: Color | Rgb): Rgb =>
+    composite({ ...rgb(colour(theme, 'primary')), alpha: BADGE_TINT_ALPHA }, under as Color);
+
+  const BADGE_PAIRS: { label: string; text: string; surface: (theme: Theme) => Rgb | Color }[] = [
+    {
+      label: 'foreground on the primary tint over the card (the default badge)',
+      text: 'foreground',
+      surface: (theme) => tintOver(theme, card(theme)),
+    },
+    {
+      label: 'foreground on the primary tint over a hovered row (the default badge)',
+      text: 'foreground',
+      surface: (theme) => tintOver(theme, hoveredRow(theme)),
+    },
+    {
+      label: 'secondary-foreground on secondary (the secondary badge, the avatar chip, on any row)',
+      text: 'secondary-foreground',
+      surface: (theme) => colour(theme, 'secondary'),
+    },
+    {
+      label: 'muted-foreground on the card (the outline badge, the stat label)',
+      text: 'muted-foreground',
+      surface: card,
+    },
+    {
+      label: 'muted-foreground on a hovered row (the outline badge)',
+      text: 'muted-foreground',
+      surface: hoveredRow,
+    },
+  ];
+  const cases = THEMES.flatMap((theme) => BADGE_PAIRS.map((pair) => ({ theme, ...pair })));
+
+  it.each(cases)('$label reads in $theme', ({ theme, text, surface }) => {
+    const measured = ratio(colour(theme, text), surface(theme));
+
+    expect(measured, `measured ${measured.toFixed(2)}:1 (${theme})`).toBeGreaterThanOrEqual(AA_BODY);
+  });
+});
+
 describe('every focus indicator is perceivable', () => {
   // A focus ring is the archetypal non-text UI component the 3:1 bar exists for.
   // Enumerated as pairs so a new ring token has to join the list to exist:

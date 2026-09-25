@@ -3,9 +3,11 @@ import { Link, createRoute, redirect } from '@tanstack/react-router';
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Notice } from '@/components/ui/notice';
 import { t } from '@/i18n';
 import {
   MEMBERS_LIST_KEY,
@@ -230,9 +232,9 @@ export function LjudiNoviScreen() {
   function renderCredential(issued: IssuedCredential): ReactNode {
     return (
       <div className="grid gap-4">
-        <p role="status" className="text-sm font-medium">
+        <Notice role="status">
           {t('ljudi.form.created')}
-        </p>
+        </Notice>
         <div className="grid gap-2">
           <p className="text-sm text-muted-foreground">{t('ljudi.form.username')}</p>
           {/* DATA, never a key — the username is what the admin typed, read
@@ -343,7 +345,7 @@ export function LjudiNoviScreen() {
             name="role"
             defaultValue={DEFAULT_MEMBER_ROLE}
             aria-describedby={refusal === null ? undefined : 'member-form-error'}
-            className="flex h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
             {MEMBER_ROLES.map((option) => (
               <option key={option} value={option}>
@@ -387,27 +389,25 @@ export function LjudiNoviScreen() {
   }
 
   return (
-    <main className="flex flex-1 justify-center p-6">
-      <Card className="w-full max-w-lg">
-        <CardHeader>
-          <h1 className="text-xl font-semibold leading-none tracking-tight">
+    <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6">
+      <PageHeader>
+        <PageTitle asChild>
+          <h1>
             {t('ljudi.form.newHeading')}
           </h1>
-        </CardHeader>
+        </PageTitle>
+      </PageHeader>
+      <Card className="w-full min-w-0 max-w-lg">
         {/* OUTSIDE the gated branch, which is the whole point: a read that
             produced no organization renders no form, so an explanation rendered
             inside one would be exactly the element nobody can see. */}
         <CardContent className="grid gap-6">
           {refusal === null ? null : (
-            <p
-              id="member-form-error"
-              role="alert"
-              className="rounded-md border border-input px-3 py-2 text-sm font-medium"
-            >
+            <Notice id="member-form-error" role="alert">
               {memberWriteMessageKeys(refusal)
                 .map((key) => t(key))
                 .join(MESSAGE_SEPARATOR)}
-            </p>
+            </Notice>
           )}
           {credential === null ? renderForm() : renderCredential(credential)}
           {/* THE WAY BACK, and it is always here — including while the read is

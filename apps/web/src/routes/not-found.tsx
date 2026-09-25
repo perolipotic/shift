@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 
 import { Button } from '@/components/ui/button';
+import { PageActions, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { t } from '@/i18n';
 
 /**
@@ -29,11 +30,17 @@ import { t } from '@/i18n';
  */
 export function NotFoundScreen() {
   return (
-    <main className="flex flex-1 flex-col items-center justify-center gap-6 p-6 text-center">
-      <h1 className="text-xl font-semibold leading-none tracking-tight">{t('notFound.heading')}</h1>
-      <Button asChild className="h-11">
-        <Link to="/prijava">{t('notFound.back')}</Link>
-      </Button>
+    <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6">
+      <PageHeader>
+        <PageTitle asChild>
+          <h1>{t('notFound.heading')}</h1>
+        </PageTitle>
+        <PageActions>
+          <Button asChild className="h-11">
+            <Link to="/prijava">{t('notFound.back')}</Link>
+          </Button>
+        </PageActions>
+      </PageHeader>
     </main>
   );
 }

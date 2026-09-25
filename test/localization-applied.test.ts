@@ -189,6 +189,19 @@ const SOURCES = [
   // nowhere else in this file. `danas.tsx` is already listed above.
   join(webRoot, 'src', 'teams', 'roster.ts'),
   join(webRoot, 'src', 'routes', 'smjene.$id.tsx'),
+  // Visual refresh B's layout primitives and the initials module. All five are
+  // text-free and here for freshness rather than for strings: they are what
+  // every screen's header, the summary row, the badges and the avatar chips
+  // are drawn from, so a chunk built before an edit to one is stale on every
+  // screen at once.
+  join(webRoot, 'src', 'components', 'initials.ts'),
+  join(webRoot, 'src', 'components', 'ui', 'page-header.tsx'),
+  join(webRoot, 'src', 'components', 'ui', 'stat-card.tsx'),
+  join(webRoot, 'src', 'components', 'ui', 'badge.tsx'),
+  join(webRoot, 'src', 'components', 'ui', 'avatar.tsx'),
+  // The refusal and confirmation box every screen draws through, for the same
+  // freshness reason.
+  join(webRoot, 'src', 'components', 'ui', 'notice.tsx'),
 ];
 
 /**

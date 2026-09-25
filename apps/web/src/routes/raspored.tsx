@@ -1,5 +1,6 @@
 import { createRoute } from '@tanstack/react-router';
 
+import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { t } from '@/i18n';
 import { appLayoutRoute } from '@/routes/_app';
 
@@ -30,8 +31,12 @@ import { appLayoutRoute } from '@/routes/_app';
  */
 export function RasporedScreen() {
   return (
-    <main className="flex flex-1 items-center justify-center p-6">
-      <h1 className="text-xl font-semibold leading-none tracking-tight">{t('nav.raspored')}</h1>
+    <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6">
+      <PageHeader>
+        <PageTitle asChild>
+          <h1>{t('nav.raspored')}</h1>
+        </PageTitle>
+      </PageHeader>
     </main>
   );
 }

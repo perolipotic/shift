@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Notice } from '@/components/ui/notice';
 import { t } from '@/i18n';
 import { rootRoute } from '@/routes/__root';
 import { organizationDestination } from '@/supabase/address';
@@ -200,13 +201,9 @@ export function SignInScreen() {
                 in the tab order passes through it, and the fields point at it
                 so it is also reachable by moving between them. */}
             {failure === null ? null : (
-              <p
-                id="sign-in-error"
-                role="alert"
-                className="rounded-md border border-input px-3 py-2 text-sm font-medium"
-              >
+              <Notice id="sign-in-error" role="alert">
                 {t(signInMessageKey(failure))}
-              </p>
+              </Notice>
             )}
             <Button className="h-11 w-full" type="submit" disabled={pending}>
               {t('auth.submit')}

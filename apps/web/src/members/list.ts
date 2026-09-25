@@ -1,3 +1,4 @@
+import { initialsOf } from '@/components/initials';
 import { compareText, formatIsoDate, isIsoDate, organizationIsoDate } from '@/i18n/format';
 import type { MemberRole } from '@/navigation/destinations';
 import { MEMBER_ROLES, type MemberRoleOutcome } from '@/navigation/role';
@@ -862,8 +863,15 @@ export type MemberColumnLabel =
   | 'smjene.membership.column'
   | 'ljudi.leave';
 
-/** A cell holding text the row already carries — a name, an address. */
+/** A cell holding text the row already carries — an address. */
 export const TEXT_CELL = 'text';
+/**
+ * A cell holding the name of a member who is active today, or of any member
+ * while today is not yet known (visual refresh B). It carries the initials the
+ * avatar chip beside the name draws, so the screen reads no member field for
+ * them. The inactive and scheduled name cells carry the same two values.
+ */
+export const NAME_CELL = 'name';
 /**
  * A cell holding the name of a member who is inactive TODAY (story 1.6). The
  * surface renders it with the inactive marker in WORDS: colour alone is a
@@ -907,10 +915,16 @@ export const TEAM_CELL = 'team';
  */
 export type MemberCell =
   | { readonly kind: typeof TEXT_CELL; readonly text: string }
-  | { readonly kind: typeof INACTIVE_NAME_CELL; readonly text: string }
+  | { readonly kind: typeof NAME_CELL; readonly text: string; readonly initials: string | null }
+  | {
+      readonly kind: typeof INACTIVE_NAME_CELL;
+      readonly text: string;
+      readonly initials: string | null;
+    }
   | {
       readonly kind: typeof SCHEDULED_INACTIVE_NAME_CELL;
       readonly text: string;
+      readonly initials: string | null;
       /** The ISO date the member is inactive from. */
       readonly from: string;
     }
@@ -980,20 +994,23 @@ export const MEMBER_COLUMNS: readonly MemberColumn[] = [
     // marked inactive by a guessed date is a false statement about a person,
     // and the device's own date is the wrong frame (L8).
     cell: (member, today) => {
-      if (today === null) return { kind: TEXT_CELL, text: member.name };
+      const initials = initialsOf(member.name);
+
+      if (today === null) return { kind: NAME_CELL, text: member.name, initials };
 
       const status = memberStatusOf(member, today);
 
-      if (!status.activeToday) return { kind: INACTIVE_NAME_CELL, text: member.name };
+      if (!status.activeToday) return { kind: INACTIVE_NAME_CELL, text: member.name, initials };
       if (status.scheduled !== null && !status.scheduled.active) {
         return {
           kind: SCHEDULED_INACTIVE_NAME_CELL,
           text: member.name,
+          initials,
           from: status.scheduled.effectiveFrom,
         };
       }
 
-      return { kind: TEXT_CELL, text: member.name };
+      return { kind: NAME_CELL, text: member.name, initials };
     },
     sortValue: (member) => member.name,
   },
@@ -1080,7 +1097,148 @@ export function memberActionName(member: MemberListRow): string {
  * the application; the hours table of epic 4 is the next.
  */
 export function cellClassNameOf(column: MemberColumn): string {
-  return column.numeric ? 'whitespace-nowrap text-right tabular-nums' : 'whitespace-nowrap';
+  if (column.numeric) return 'whitespace-nowrap text-right tabular-nums';
+  // VISUAL REFRESH B: the name cell carries a chip and, for a marked member, a
+  // badge beside the name. Held to one line on a phone, a scheduled marker
+  // would make this one column wider than the screen, so it wraps below `sm`.
+  if (column.key === NAME_COLUMN) return 'whitespace-normal sm:whitespace-nowrap';
+
+  return 'whitespace-nowrap';
+}
+
+/**
+ * The badge variants a cell may be drawn with, spelled as `components/ui/badge`
+ * spells them. No status colour exists among them on purpose: a badge's meaning
+ * is its text, and the variant only reinforces it.
+ */
+export type MemberBadge = 'default' | 'secondary' | 'outline';
+
+/**
+ * The inactive marker's words for a name cell, or `null` for a member with no
+ * marker (story 1.6, moved here by visual refresh B).
+ *
+ * AN INACTIVE MEMBER IS MARKED IN WORDS, never by colour alone: inactive today
+ * in the present, a deactivation already scheduled in the future with its
+ * date. Swapping the two would mark a member inactive who is only scheduled to
+ * be, so the pairing is executed by `members/list.test.ts` rather than written
+ * in a `.tsx` nothing runs.
+ */
+export function memberStatusMessageKey(
+  cell: MemberCell,
+): 'ljudi.status.inactive' | 'ljudi.status.inactiveScheduled' | null {
+  if (cell.kind === INACTIVE_NAME_CELL) return 'ljudi.status.inactive';
+  if (cell.kind === SCHEDULED_INACTIVE_NAME_CELL) return 'ljudi.status.inactiveScheduled';
+
+  return null;
+}
+
+/** The inactive marker as the screen draws it: a variant, a key and its argument. */
+export interface MemberStatusLook {
+  readonly variant: MemberBadge;
+  readonly key: NonNullable<ReturnType<typeof memberStatusMessageKey>>;
+  /** The key's interpolation. `date` is the SHOWN date, or empty for none. */
+  readonly args: { readonly date: string };
+}
+
+/** The initials chip beside a name. `initials` is `null` for a name with no
+ *  letter in it, which draws an EMPTY chip so the names stay aligned. */
+export interface MemberAvatar {
+  readonly initials: string | null;
+}
+
+/**
+ * How one cell is drawn, decided here rather than in the screen (visual
+ * refresh B, AD-15).
+ *
+ * - `avatar`: the initials chip beside a name, or `null` for no chip at all.
+ * - `badge`: the badge the cell's own value is drawn as, or `null` for plain
+ *   text. A permission level is a badge: administrators in the primary tint,
+ *   members in the secondary fill. The level's WORD is what says which it is.
+ * - `status`: the inactive marker beside the name, with its words, or `null`
+ *   when the member carries no marker. The key comes from
+ *   {@link memberStatusMessageKey}, so the look and the words are one decision.
+ */
+export interface MemberCellLook {
+  readonly avatar: MemberAvatar | null;
+  readonly badge: MemberBadge | null;
+  readonly status: MemberStatusLook | null;
+}
+
+const PLAIN_LOOK: MemberCellLook = { avatar: null, badge: null, status: null };
+
+function statusLookOf(cell: MemberCell): MemberStatusLook | null {
+  const key = memberStatusMessageKey(cell);
+
+  if (key === null) return null;
+
+  const date = cell.kind === SCHEDULED_INACTIVE_NAME_CELL ? shownDate(cell.from) : NO_TEXT;
+
+  return { variant: 'outline', key, args: { date } };
+}
+
+export function memberCellLookOf(cell: MemberCell): MemberCellLook {
+  if (
+    cell.kind === NAME_CELL ||
+    cell.kind === INACTIVE_NAME_CELL ||
+    cell.kind === SCHEDULED_INACTIVE_NAME_CELL
+  ) {
+    return { ...PLAIN_LOOK, avatar: { initials: cell.initials }, status: statusLookOf(cell) };
+  }
+  if (cell.kind === LEVEL_CELL) {
+    return { ...PLAIN_LOOK, badge: cell.level === 'admin' ? 'default' : 'secondary' };
+  }
+
+  return PLAIN_LOOK;
+}
+
+/** The keys the four summary figures are labelled with. */
+export type MemberStatLabel =
+  | 'ljudi.stats.total'
+  | 'ljudi.stats.admins'
+  | 'ljudi.stats.active'
+  | 'ljudi.stats.inactive';
+
+export interface MemberStat {
+  /** The heading's translation key. NEVER the heading. */
+  readonly label: MemberStatLabel;
+  /** The figure, or `null` while it cannot yet be stated: drawn as pending. */
+  readonly value: number | null;
+}
+
+/**
+ * The summary row above the list: everybody, the administrators, and who is
+ * active and inactive as at the organization's today (visual refresh B).
+ *
+ * UNFILTERED, AND FROM THE ONE SNAPSHOT (AD-13). It counts the `members` the
+ * single read returned, never the narrowed rows, so a typed search or a chosen
+ * level changes the table and leaves these four figures alone. No second read
+ * exists for it. The screen reaches it through {@link membersViewOf}.
+ *
+ * `null` while there is no answer, so no figure is stated before one exists.
+ * While today is unknown the ACTIVE and INACTIVE figures are `null` too, for
+ * the reason the name cell marks nobody: a count by a guessed date is a false
+ * statement, and `5 / 0` would be one.
+ */
+export function membersSummaryOf(
+  members: readonly MemberListRow[] | null,
+  today: string | null,
+): readonly MemberStat[] | null {
+  if (members === null) return null;
+
+  let admins = 0;
+  let inactive = 0;
+
+  for (const member of members) {
+    if (member.role === 'admin') admins += 1;
+    if (today !== null && !memberActiveOn(member, today)) inactive += 1;
+  }
+
+  return [
+    { label: 'ljudi.stats.total', value: members.length },
+    { label: 'ljudi.stats.admins', value: admins },
+    { label: 'ljudi.stats.active', value: today === null ? null : members.length - inactive },
+    { label: 'ljudi.stats.inactive', value: today === null ? null : inactive },
+  ];
 }
 
 /** `aria-sort`'s own vocabulary, so the screen writes neither value by hand. */
@@ -1572,6 +1730,30 @@ export function narrowFrom(inputs: NarrowingInputs): MembersNarrowing {
     inputs.sort,
     inputs.today,
   );
+}
+
+/** Everything the member list draws from one set of inputs. */
+export interface MembersView {
+  /** The summary row: the WHOLE snapshot, whatever is searched or filtered. */
+  readonly summary: readonly MemberStat[] | null;
+  /** The table's rows and the filter's counts. */
+  readonly narrowed: MembersNarrowing;
+}
+
+/**
+ * The summary and the narrowing, from the same inputs, in ONE call the screen
+ * makes (visual refresh B).
+ *
+ * THE SUMMARY IS HANDED `members` AND `today` ONLY, never the search, the
+ * level or the sort, and this is the function the screen calls, so the claim
+ * "the stat cards show unfiltered totals" is executed here rather than hoped
+ * for in a `.tsx` nothing runs.
+ */
+export function membersViewOf(inputs: NarrowingInputs): MembersView {
+  return {
+    summary: membersSummaryOf(inputs.members, inputs.today),
+    narrowed: narrowFrom(inputs),
+  };
 }
 
 /**

@@ -3,9 +3,11 @@ import { Link, createRoute, redirect } from '@tanstack/react-router';
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Notice } from '@/components/ui/notice';
 import { t } from '@/i18n';
 import { mayReadMembers } from '@/members/list';
 import { DESTINATIONS } from '@/navigation/destinations';
@@ -189,9 +191,9 @@ function TeamScreen({ id }: { readonly id: string }) {
 
   function renderArchiveRefusal(): ReactNode {
     return archiveFailure === null ? null : (
-      <p role="alert" className="rounded-md border border-input px-3 py-2 text-sm font-medium">
+      <Notice role="alert">
         {t(teamWriteMessageKey(archiveFailure))}
-      </p>
+      </Notice>
     );
   }
 
@@ -308,32 +310,30 @@ function TeamScreen({ id }: { readonly id: string }) {
   }
 
   return (
-    <main className="flex flex-1 justify-center p-6">
-      <Card className="w-full max-w-lg">
-        <CardHeader>
-          <h1 className="text-xl font-semibold leading-none tracking-tight">
+    <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6">
+      <PageHeader>
+        <PageTitle asChild>
+          <h1>
             {t(teamHeadingMessageKey(form.team))}
           </h1>
-        </CardHeader>
+        </PageTitle>
+      </PageHeader>
+      <Card className="w-full min-w-0 max-w-lg">
         <CardContent className="grid gap-6">
           {readRefusal === null ? null : (
-            <p role="alert" className="rounded-md border border-input px-3 py-2 text-sm font-medium">
+            <Notice role="alert">
               {t(teamsMessageKey(readRefusal))}
-            </p>
+            </Notice>
           )}
           {refusal === null ? null : (
-            <p
-              id="team-form-error"
-              role="alert"
-              className="rounded-md border border-input px-3 py-2 text-sm font-medium"
-            >
+            <Notice id="team-form-error" role="alert">
               {t(teamWriteMessageKey(refusal))}
-            </p>
+            </Notice>
           )}
           {saved === null ? null : (
-            <p role="status" className="text-sm font-medium">
+            <Notice role="status">
               {t(teamSavedMessageKey(saved))}
-            </p>
+            </Notice>
           )}
           {renderBody()}
           <Button asChild className="h-11 w-full" variant="outline">

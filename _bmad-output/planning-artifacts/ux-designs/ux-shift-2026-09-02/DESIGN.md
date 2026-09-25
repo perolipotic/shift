@@ -240,6 +240,13 @@ Tailwind's spacing scale, no overrides. Controls a person presses keep the 44 px
 - **The calendar grid is the density budget.** At 390 px a day row carries a date column plus one column per team. Cells hold a 30 px minimum height, a label, and where space allows a time range. Anything that does not fit is not abbreviated — it moves to the day-detail view.
 - **Wide content scrolls inside its own container, never the page.** The calendar grid, member list, and hours table each own their horizontal overflow. The page body never scrolls sideways at any width.
 
+**The page skeleton** (visual refresh B). Every screen follows the same pattern, including placeholders and not-found:
+
+- The page is `mx-auto w-full max-w-5xl` with `p-6`, and the `PageHeader` comes first. The title sits top-left and the actions sit at the right, stacking under the title on a phone. Nothing is centred in the viewport.
+- Content follows: a table inside a `Card`, a `StatCard` row (2 columns on a phone, 4 from `lg`), or a form in a left-aligned `Card` with `max-w-lg`.
+- A refusal and a confirmation are one `Notice` primitive in the Input look: a 1.5 px `input` border on the card colour. `role="alert"` draws a warning icon and `role="status"` a check, so the two differ by shape as well as by words. On a form screen or a card the notice sits in the card. Native `<select>`s use the Input look too, and `components/README.md` spells that class string.
+- People's names are shown with an `Avatar` (never a team's), and a permission level or an inactive marker is shown as a `Badge`. A name cell wraps on a phone rather than widening its column.
+
 ## Elevation & Depth
 
 **Soft, and sparing.** Two shadow tokens, `sh` and `sh-lg` (`elevation:`), expressed as OKLCH alpha in the stylesheet. Cards carry a 1 px `border` plus `sh`; `sh-lg` is for genuinely layered surfaces — Dialog, Sheet, Popover. The primary button lifts a primary-tinted shadow on hover. Nothing else floats: a rota is still a document, and the shadow says "this is a card", never "look at me".
@@ -260,6 +267,11 @@ A 12 px base radius (`--radius: 0.75rem`): cards `lg` (12 px), buttons and input
 | **Card** | `rounded-lg`, 1 px `border`, `shadow-sh`, `card` fill. A header carries a bottom divider; the title is Syne, and `CardTitle asChild` makes it the page's `<h1>` without restyling. |
 | **Input** | `rounded-md`, 1.5 px `border-input` on the card colour, and a 2 px `ring` focus ring. |
 | **Table** | Header cells uppercase, small, `muted-foreground` on `muted`; rows divide with `border` and tint to `muted` on hover. Scrolls in its own container. |
+| **PageHeader / PageTitle** | The page skeleton's head (visual refresh B). The title is top-left, Syne `text-2xl` extrabold, and the actions sit at the right, stacking under the title on a phone. `PageTitle asChild` styles the screen's own `<h1>`, and the primitive carries no copy. |
+| **StatCard** | A `Card` with a small uppercase `muted-foreground` label and a large Syne tabular value. It counts only data the screen already holds, as one snapshot. |
+| **Badge** | A `rounded-full` pill in `text-xs` semibold. `default` is a 15% `primary` tint with `foreground` text, because dark `primary` text on the dark card measures below 4.5:1 at any tint. Badges are measured on the card and on a hovered row. `secondary` is the `secondary` fill, and `outline` is an `input` border with `muted-foreground` text. Its text carries the meaning, and there are no status colours. |
+| **Avatar** | A round `secondary` chip for a person, holding initials: the first letter (with its combining marks, after NFC) of the first and last word that has one, so brackets, digits and emoji are skipped. A name with no letter draws an empty chip, so names stay aligned. It is decorative and hidden from assistive technology, because the name is always rendered beside it. |
+| **Notice** | The one refusal and confirmation box: `rounded-md`, 1.5 px `input` border, `card` fill, `text-sm` medium, and a small lucide icon chosen by its `role` (`alert` a warning, `status` a check). The icon is hidden from assistive technology; the role announces the message. |
 | **Shell** | Navy `sidebar` with a `border` edge (or the organization's accent). Destinations are rounded rows; the active one is a `sidebar-primary` pill AND semibold AND underlined, never colour or shape alone, since a hovered row takes the same fill. Its focus ring is offset by the sidebar colour. The shell's buttons use Button's `sidebar` variant, whose 1.5 px boundary is `sidebar-foreground` at 50% (≥ 3:1 on navy); `sidebar-border` is a divider only. The phone bar is the same navy with the same treatment. |
 
 **Domain components** — the ones shadcn has no equivalent for:

@@ -28,6 +28,7 @@ import {
   NOT_A_ROW,
   NO_TEXT,
   TEXT_CELL,
+  NAME_CELL,
   LEVEL_CELL,
   INACTIVE_NAME_CELL,
   SCHEDULED_INACTIVE_NAME_CELL,
@@ -45,6 +46,10 @@ import {
   mayReadMembers,
   memberLevelMessageKey,
   memberActionName,
+  memberCellLookOf,
+  memberStatusMessageKey,
+  membersSummaryOf,
+  membersViewOf,
   memberListRowOf,
   memberRowOutcomeOf,
   membersMessageKey,
@@ -938,7 +943,8 @@ describe('the column says what its cell holds, so the screen cannot swap two', (
   }
 
   it('gives each column the value that column is named for', () => {
-    expect(cellFor(NAME_COLUMN)).toEqual({ kind: TEXT_CELL, text: 'Ivan Marić' });
+    // VISUAL REFRESH B: the name is a NAME_CELL now, carrying the avatar's initials.
+    expect(cellFor(NAME_COLUMN)).toEqual({ kind: NAME_CELL, text: 'Ivan Marić', initials: 'IM' });
     expect(cellFor(EMAIL_COLUMN)).toEqual({ kind: TEXT_CELL, text: 'ivan@dvd.hr' });
     expect(cellFor(LEVEL_COLUMN)).toEqual({ kind: LEVEL_CELL, level: 'admin' });
     expect(cellFor(LEAVE_COLUMN)).toEqual({ kind: DAYS_CELL, days: 25 });
@@ -1438,22 +1444,28 @@ describe('status as at a date, read off the embedded versions (story 1.6)', () =
     const away = member({ id: 'm', name: 'Ana', statusVersions: versions([false, TODAY]) });
     const scheduled = member({ id: 'n', name: 'Ivo', statusVersions: versions([false, '2026-10-01']) });
 
-    expect(name?.cell(away, TODAY)).toEqual({ kind: INACTIVE_NAME_CELL, text: 'Ana' });
+    expect(name?.cell(away, TODAY)).toEqual({ kind: INACTIVE_NAME_CELL, text: 'Ana', initials: 'A' });
     // THE DAY BEFORE, the same version is a scheduled deactivation.
     expect(name?.cell(away, '2026-09-22')).toEqual({
       kind: SCHEDULED_INACTIVE_NAME_CELL,
       text: 'Ana',
+      initials: 'A',
       from: TODAY,
     });
     // A SCHEDULED DEACTIVATION is marked too, with the date it takes effect.
     expect(name?.cell(scheduled, TODAY)).toEqual({
       kind: SCHEDULED_INACTIVE_NAME_CELL,
       text: 'Ivo',
+      initials: 'I',
       from: '2026-10-01',
     });
-    expect(name?.cell(scheduled, '2026-10-01')).toEqual({ kind: INACTIVE_NAME_CELL, text: 'Ivo' });
-    expect(name?.cell(away, null)).toEqual({ kind: TEXT_CELL, text: 'Ana' });
-    expect(name?.cell(scheduled, null)).toEqual({ kind: TEXT_CELL, text: 'Ivo' });
+    expect(name?.cell(scheduled, '2026-10-01')).toEqual({
+      kind: INACTIVE_NAME_CELL,
+      text: 'Ivo',
+      initials: 'I',
+    });
+    expect(name?.cell(away, null)).toEqual({ kind: NAME_CELL, text: 'Ana', initials: 'A' });
+    expect(name?.cell(scheduled, null)).toEqual({ kind: NAME_CELL, text: 'Ivo', initials: 'I' });
 
     // INACTIVE TODAY WITH A REACTIVATION SCHEDULED is marked inactive: that is
     // today's fact, and the return is the edit screen's to state.
@@ -1462,7 +1474,7 @@ describe('status as at a date, read off the embedded versions (story 1.6)', () =
       name: 'Eva',
       statusVersions: versions([false, '2026-09-01'], [true, '2026-10-01']),
     });
-    expect(name?.cell(returning, TODAY)).toEqual({ kind: INACTIVE_NAME_CELL, text: 'Eva' });
+    expect(name?.cell(returning, TODAY)).toEqual({ kind: INACTIVE_NAME_CELL, text: 'Eva', initials: 'E' });
   });
 
   it('shows an ISO date in the binding shape, and a malformed one unchanged', () => {
@@ -1589,5 +1601,181 @@ describe('team as at a date, read off the embedded versions (story 1.7b)', () =>
     expect(column?.cell(on, null)).toEqual({ kind: TEXT_CELL, text: '' });
     expect(column?.sortValue(on, TODAY)).toBe('Alfa');
     expect(column?.sortValue(later, TODAY)).toBeNull();
+  });
+});
+
+describe('how a cell is drawn is decided here, never in the screen (visual refresh B)', () => {
+  const columnOf = (key: string) => {
+    const found = MEMBER_COLUMNS.find((column) => column.key === key);
+
+    expect(found, `no ${key} column`).toBeDefined();
+
+    return found as (typeof MEMBER_COLUMNS)[number];
+  };
+  const plain = { avatar: null, badge: null, status: null };
+  const away = member({
+    id: 'b',
+    name: 'Ana Horvat',
+    statusVersions: [{ active: false, effectiveFrom: TODAY }],
+  });
+  const leaving = member({
+    id: 'c',
+    name: 'Eva Kos',
+    statusVersions: [{ active: false, effectiveFrom: '2026-10-01' }],
+  });
+
+  it('puts an initials chip beside every name, and no marker on an active one', () => {
+    const name = columnOf(NAME_COLUMN);
+    const active = member({ id: 'a', name: 'Ivan Marić' });
+
+    expect(memberCellLookOf(name.cell(active, TODAY))).toEqual({
+      ...plain,
+      avatar: { initials: 'IM' },
+    });
+    expect(memberCellLookOf(name.cell(active, null))).toEqual({
+      ...plain,
+      avatar: { initials: 'IM' },
+    });
+  });
+
+  it('draws an EMPTY chip for a name with no letter, rather than no chip', () => {
+    const look = memberCellLookOf(columnOf(NAME_COLUMN).cell(member({ id: 'x', name: '42' }), TODAY));
+
+    expect(look.avatar).toEqual({ initials: null });
+  });
+
+  it('marks an inactive member with the present-tense key and no date', () => {
+    const cell = columnOf(NAME_COLUMN).cell(away, TODAY);
+
+    expect(memberStatusMessageKey(cell)).toBe('ljudi.status.inactive');
+    expect(memberCellLookOf(cell)).toEqual({
+      ...plain,
+      avatar: { initials: 'AH' },
+      status: { variant: 'outline', key: 'ljudi.status.inactive', args: { date: NO_TEXT } },
+    });
+  });
+
+  it('marks a scheduled deactivation with the future key and its SHOWN date', () => {
+    const cell = columnOf(NAME_COLUMN).cell(leaving, TODAY);
+
+    expect(memberStatusMessageKey(cell)).toBe('ljudi.status.inactiveScheduled');
+    expect(memberCellLookOf(cell)).toEqual({
+      ...plain,
+      avatar: { initials: 'EK' },
+      status: {
+        variant: 'outline',
+        key: 'ljudi.status.inactiveScheduled',
+        args: { date: '01.10.2026' },
+      },
+    });
+  });
+
+  it('never swaps the two markers', () => {
+    // The mutation this module exists to catch: the scheduled key on a member
+    // who is inactive today, or the reverse.
+    expect(memberStatusMessageKey(columnOf(NAME_COLUMN).cell(away, TODAY))).not.toBe(
+      'ljudi.status.inactiveScheduled',
+    );
+    expect(memberStatusMessageKey(columnOf(NAME_COLUMN).cell(leaving, TODAY))).not.toBe(
+      'ljudi.status.inactive',
+    );
+    // And no marker at all while today is unknown.
+    expect(memberStatusMessageKey(columnOf(NAME_COLUMN).cell(away, null))).toBeNull();
+  });
+
+  it('draws the level as a badge whose word carries the meaning, the tint only reinforcing it', () => {
+    const level = columnOf(LEVEL_COLUMN);
+
+    expect(memberCellLookOf(level.cell(member({ id: 'a', role: 'admin' }), TODAY))).toEqual({
+      ...plain,
+      badge: 'default',
+    });
+    expect(memberCellLookOf(level.cell(member({ id: 'b', role: 'member_role' }), TODAY))).toEqual({
+      ...plain,
+      badge: 'secondary',
+    });
+  });
+
+  it('draws every other cell as plain text', () => {
+    const one = member({ id: 'a', email: 'ana@dvd.hr' });
+
+    for (const key of [EMAIL_COLUMN, LEAVE_COLUMN, TEAM_COLUMN]) {
+      expect(memberCellLookOf(columnOf(key).cell(one, TODAY)), key).toEqual(plain);
+      expect(memberStatusMessageKey(columnOf(key).cell(one, TODAY)), key).toBeNull();
+    }
+  });
+
+  it('lets the name cell wrap on a phone and every other text cell stay on one line', () => {
+    expect(cellClassNameOf(columnOf(NAME_COLUMN))).toBe('whitespace-normal sm:whitespace-nowrap');
+    for (const key of [EMAIL_COLUMN, LEVEL_COLUMN, TEAM_COLUMN]) {
+      expect(cellClassNameOf(columnOf(key)), key).toBe('whitespace-nowrap');
+    }
+  });
+});
+
+describe('the summary counts the whole snapshot, never the narrowed rows (visual refresh B)', () => {
+  const people = [
+    member({ id: 'a', name: 'Ana Anić', role: 'admin' }),
+    member({
+      id: 'b',
+      name: 'Boris Babić',
+      role: 'admin',
+      statusVersions: [{ active: false, effectiveFrom: '2026-09-01' }],
+    }),
+    member({ id: 'c', name: 'Cvita Cvitić' }),
+    member({ id: 'd', name: 'Dora Dorić', statusVersions: [{ active: false, effectiveFrom: TODAY }] }),
+    // Scheduled, so still active today.
+    member({
+      id: 'e',
+      name: 'Ema Emić',
+      statusVersions: [{ active: false, effectiveFrom: '2026-10-01' }],
+    }),
+  ];
+  const inputs: NarrowingInputs = {
+    members: people,
+    search: NO_TEXT,
+    level: ALL_LEVELS,
+    sort: DEFAULT_SORT,
+    today: TODAY,
+  };
+
+  it('states total, administrators, active and inactive as at today', () => {
+    expect(membersSummaryOf(people, TODAY)).toEqual([
+      { label: 'ljudi.stats.total', value: 5 },
+      { label: 'ljudi.stats.admins', value: 2 },
+      { label: 'ljudi.stats.active', value: 3 },
+      { label: 'ljudi.stats.inactive', value: 2 },
+    ]);
+  });
+
+  it('keeps counting everyone through the call the screen makes, with a search that matches nobody', () => {
+    const view = membersViewOf({ ...inputs, search: 'nobody matches this' });
+
+    expect(view.narrowed.rows).toEqual([]);
+    expect(view.summary).toEqual(membersSummaryOf(people, TODAY));
+    expect(view.summary?.[0]).toEqual({ label: 'ljudi.stats.total', value: 5 });
+  });
+
+  it('keeps counting everyone with a level filter too', () => {
+    const view = membersViewOf({ ...inputs, level: 'admin' });
+
+    expect(view.narrowed.rows.map((row) => row.id).sort()).toEqual(['a', 'b']);
+    expect(view.summary?.map((stat) => stat.value)).toEqual([5, 2, 3, 2]);
+  });
+
+  it('hands the narrowing through unchanged', () => {
+    expect(membersViewOf(inputs).narrowed).toEqual(narrowFrom(inputs));
+  });
+
+  it('states neither active nor inactive while today is unknown, and nothing before an answer', () => {
+    expect(membersSummaryOf(people, null)).toEqual([
+      { label: 'ljudi.stats.total', value: 5 },
+      { label: 'ljudi.stats.admins', value: 2 },
+      { label: 'ljudi.stats.active', value: null },
+      { label: 'ljudi.stats.inactive', value: null },
+    ]);
+    expect(membersSummaryOf([], null)?.map((stat) => stat.value)).toEqual([0, 0, null, null]);
+    expect(membersSummaryOf(null, TODAY)).toBeNull();
+    expect(membersViewOf({ ...inputs, members: null }).summary).toBeNull();
   });
 });

@@ -356,6 +356,13 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.form.error.statusStale',
   'ljudi.form.error.unavailable',
   'ljudi.form.error.saved',
+  // VISUAL REFRESH B's FOUR: the member list's summary figures, labels only.
+  // Each value is counted by `membersSummaryOf` from the one snapshot and
+  // rendered through `formatNumber`, so none of these carries a count argument.
+  'ljudi.stats.total',
+  'ljudi.stats.admins',
+  'ljudi.stats.active',
+  'ljudi.stats.inactive',
   // STORY 1.6's STATUS BLOCK, TWENTY-ONE. The list's two markers, which
   // INTERPOLATE the name they sit beside, because an inactive member is marked
   // in words and never by colour alone — one for inactive today, one, in the
@@ -366,8 +373,16 @@ const SANCTIONED_SCREEN_KEYS = [
   // with a present and a future prompt for the two that take a date — the
   // confirmation's cancel, which is NOT `Odustani` for the reason
   // `ljudi.form.resetCancel` is not, and the confirmation that a change landed.
+  //
+  // VISUAL REFRESH B: the two list markers no longer interpolate the name.
+  // They render as a badge BESIDE the name, whose text carries the meaning.
+  // The scheduled one reads `Neaktivno od {date}`, with no gendered predicate,
+  // because it sits beside names of every gender with no subject of its own.
+  // The separator is visually hidden and read before the badge, so a screen
+  // reader announces the name and the marker as two things.
   'ljudi.status.inactive',
   'ljudi.status.inactiveScheduled',
+  'ljudi.status.separator',
   'ljudi.status.active',
   'ljudi.status.inactiveFrom',
   'ljudi.status.scheduledInactive',

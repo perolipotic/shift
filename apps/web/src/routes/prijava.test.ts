@@ -1240,10 +1240,15 @@ const KEY_SOURCES = [
     //
     // TWELVE SINCE STORY 1.7b: `smjene.membership.none`, the team cell's
     // positive words for a member on no team today.
+    //
+    // ELEVEN SINCE VISUAL REFRESH B: the two marker keys LEFT for
+    // `@/members/list` (`memberStatusMessageKey`, counted there), where their
+    // pairing to a cell is executed, and `ljudi.status.separator` arrived: the
+    // visually hidden separator read between a name and its marker badge.
     name: 'the member list',
     file: MEMBER_LIST,
     keys: translationKeys,
-    strings: 12,
+    strings: 11,
   },
   {
     // STORY 1.7a. EIGHT on the team list: its heading, the link back
@@ -1407,10 +1412,14 @@ const KEY_SOURCES = [
     // key source read by neither `translationKeys` nor `messageKeyUnion` — see
     // `memberListKeys`, which reads both shapes this module declares keys in.
     // TWELVE SINCE STORY 1.7b: the team column's heading.
+    // EIGHTEEN SINCE VISUAL REFRESH B: the summary row's four stat labels, read
+    // off `membersSummaryOf`'s `label:` entries the way the headings are, and
+    // the two inactive-marker keys, which moved here from the screen as
+    // `memberStatusMessageKey`'s return union.
     name: 'the member list rules',
     file: MEMBER_LIST_KEYS,
     keys: memberListKeys,
-    strings: 12,
+    strings: 18,
   },
   {
     // ONE on the lockup: the accessible name it falls back to when the
@@ -2311,14 +2320,11 @@ describe('the member list computes nothing it renders', () => {
       [...body.matchAll(/return ([^;]+);/g)].map((found) => (found[1] ?? '').trim()),
       'a cell value is transformed on its way to the screen',
     ).toEqual([
+      // VISUAL REFRESH B: every name kind returns its name untouched, in ONE
+      // branch. Story 1.6's two inactive-marker sentences that stood here left
+      // the name: the marker is a badge BESIDE it now, rendered by `cellStatus`,
+      // so the name itself is no longer wrapped in anything.
       'cell.text',
-      // STORY 1.6: the inactive marker, a THIRD transformation, named here for
-      // the reason the other two are. It wraps the name in a sentence and
-      // changes nothing about it.
-      "t('ljudi.status.inactive', { name: cell.text })",
-      // And a FOURTH: a scheduled deactivation, marked in the future tense with
-      // the date it takes effect, shown in the binding shape.
-      "t('ljudi.status.inactiveScheduled', { name: cell.text, date: shownDate(cell.from) })",
       't(memberLevelMessageKey(cell.level))',
       // STORY 1.7b, a FIFTH: the team today, or "no team" stated in positive
       // words (`Bez smjene`) where a blank would read as not loaded. The
@@ -2328,6 +2334,24 @@ describe('the member list computes nothing it renders', () => {
       'formatNumber(cell.days, 0)',
       'unhandled',
     ]);
+  });
+
+  it('passes the inactive marker through untouched, deciding nothing (visual refresh B)', () => {
+    // The marker's words are `@/members/list`'s decision now
+    // (`memberStatusMessageKey`, inside `memberCellLookOf`), where
+    // `members/list.test.ts` EXECUTES the pairing of each name cell to its key.
+    // What is left to pin at source is that the screen only hands that key and
+    // its argument to `t()`: no marker key spelled here, and no branch on the
+    // cell's kind that could pick one.
+    const screen = source(MEMBER_LIST);
+    const view = /function CellView\([^)]*\)[^{]*\{([\s\S]*?)\n\}/.exec(screen)?.[1] ?? '';
+
+    expect(view.length, 'CellView is gone, so this pins nothing').toBeGreaterThan(0);
+    expect(view).toContain('t(look.status.key, look.status.args)');
+    expect(view, 'the screen branches on the cell kind itself').not.toMatch(/cell\.kind/);
+    expect(screen, 'a marker key is spelled on the screen').not.toMatch(
+      /t\('ljudi\.status\.inactive(Scheduled)?'/,
+    );
   });
 
   it('would notice a transformed return, and not notice the untouched one', () => {
@@ -2568,6 +2592,35 @@ describe('the roster and the Danas line read once, show names only, and write no
     expect(linkElements(source(TEAM_ROSTER)).map((link) => /to="([^"]+)"/.exec(link)?.[1])).toEqual([
       '/danas',
     ]);
+  });
+});
+
+describe('every native select draws the one Input look (visual refresh B)', () => {
+  /**
+   * The five `<select>`s stay native, and their class strings stay LITERAL,
+   * because the 44 px sweep reads `h-11` off a quoted `className`. A literal
+   * written five times is five places to drift, so this holds all five to one
+   * another and to the string `components/README.md` documents.
+   */
+  const SELECT_SCREENS = [MEMBER_LIST, MEMBER_CREATE, MEMBER_EDIT, SETTINGS];
+  const README = join(srcRoot, 'components', 'README.md');
+
+  function selectClasses(): string[] {
+    return SELECT_SCREENS.flatMap((file) =>
+      selectElements(source(file)).map((control) => attributeOf(control, 'className') ?? ''),
+    );
+  }
+
+  it('finds all five, so the comparison is not vacuous', () => {
+    expect(selectClasses()).toHaveLength(5);
+  });
+
+  it('gives all five the identical class string, and it is the documented one', () => {
+    const documented =
+      /Select class string:\s*`([^`]+)`/.exec(readFileSync(README, 'utf8'))?.[1] ?? '';
+
+    expect(documented.length, 'README no longer documents the select class string').toBeGreaterThan(0);
+    for (const classes of selectClasses()) expect(classes).toBe(documented);
   });
 });
 
@@ -2859,7 +2912,9 @@ describe('both credential fields carry an accessible name', () => {
     // So the shape is asserted, not just the resolution: the error id may only
     // reach the attribute through an expression that branches on the failure.
     const screen = source(SCREEN);
-    const errorId = /<p\s+id="([\w-]+)"\s+role="alert"/.exec(screen)?.[1];
+    // VISUAL REFRESH B: the refusal is drawn by the `Notice` primitive, which
+    // renders the `<p>`, so the element read here is `<Notice`. Same shape.
+    const errorId = /<Notice\s+id="([\w-]+)"\s+role="alert"/.exec(screen)?.[1];
 
     expect(errorId, 'no role="alert" element to describe the fields by').not.toBeUndefined();
 
@@ -2980,7 +3035,9 @@ describe('every field on the settings surface carries an accessible name', () =>
     // and a reference to an absent id is ignored in silence, which is worse than
     // no reference because the source-level lookup passes either way.
     const screen = source(SETTINGS);
-    const errorId = /<p\s+id="([\w-]+)"\s+role="alert"/.exec(screen)?.[1];
+    // VISUAL REFRESH B: the refusal is drawn by the `Notice` primitive, which
+    // renders the `<p>`, so the element read here is `<Notice`. Same shape.
+    const errorId = /<Notice\s+id="([\w-]+)"\s+role="alert"/.exec(screen)?.[1];
 
     expect(errorId, 'no role="alert" element to describe the fields by').not.toBeUndefined();
     expect(screen, `no element carries id="${String(errorId)}"`).toContain(
@@ -4627,7 +4684,8 @@ describe('the two member forms write through the seam and keep nothing back', ()
     // refusal's, and a second one would be a second thing competing to be
     // announced.
     expect(screen, 'the confirmation competes with the refusal to be announced').toMatch(
-      /<p role="status"[\s\S]{0,120}?ljudi\.form\.saved/,
+      // VISUAL REFRESH B: the `Notice` primitive renders the `<p>`.
+      /<Notice role="status"[\s\S]{0,120}?ljudi\.form\.saved/,
     );
   });
 

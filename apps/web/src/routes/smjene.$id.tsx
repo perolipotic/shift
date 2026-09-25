@@ -2,8 +2,12 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, createRoute } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 
+import { initialsOf } from '@/components/initials';
+import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { PageActions, PageHeader, PageTitle } from '@/components/ui/page-header';
+import { Notice } from '@/components/ui/notice';
 import { t } from '@/i18n';
 import { appLayoutRoute } from '@/routes/_app';
 import { supabaseClient } from '@/supabase/client';
@@ -65,11 +69,17 @@ function RosterScreen({ id }: { readonly id: string }) {
         </p>
         {team.members.length === 0 ? null : (
           <ul className="grid gap-2">
-            {team.members.map((member) => (
-              <li key={member.id} className="break-words text-base">
-                {member.name}
-              </li>
-            ))}
+            {team.members.map((member) => {
+              const initials = initialsOf(member.name);
+
+              return (
+                <li key={member.id} className="flex min-w-0 items-center gap-3 text-base">
+                  {/* EMPTY for a name with no letter, so the names stay aligned. */}
+                  <Avatar>{initials}</Avatar>
+                  <span className="min-w-0 break-words">{member.name}</span>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
@@ -89,23 +99,25 @@ function RosterScreen({ id }: { readonly id: string }) {
   }
 
   return (
-    <main className="flex flex-1 justify-center p-6">
-      <Card className="w-full min-w-0 max-w-lg">
-        <CardHeader>
-          <h1 className="break-words text-xl font-semibold leading-none tracking-tight">
-            {roster === null ? t('smjene.heading') : roster.name}
-          </h1>
-        </CardHeader>
-        <CardContent className="grid gap-6">
-          {refusal === null ? null : (
-            <p role="alert" className="rounded-md border border-input px-3 py-2 text-sm font-medium">
-              {t(teamRosterMessageKey(refusal))}
-            </p>
-          )}
-          {renderBody()}
-          <Button asChild className="h-11 w-full" variant="outline">
+    <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6">
+      <PageHeader>
+        <PageTitle asChild>
+          <h1>{roster === null ? t('smjene.heading') : roster.name}</h1>
+        </PageTitle>
+        <PageActions>
+          <Button asChild className="h-11" variant="outline">
             <Link to="/danas">{t('smjene.roster.back')}</Link>
           </Button>
+        </PageActions>
+      </PageHeader>
+      <Card className="w-full min-w-0 max-w-lg">
+        <CardContent className="grid gap-6">
+          {refusal === null ? null : (
+            <Notice role="alert">
+              {t(teamRosterMessageKey(refusal))}
+            </Notice>
+          )}
+          {renderBody()}
         </CardContent>
       </Card>
     </main>

@@ -3,9 +3,11 @@ import { createRoute } from '@tanstack/react-router';
 import { useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Notice } from '@/components/ui/notice';
 import { t } from '@/i18n';
 import {
   accentMessageKey,
@@ -698,7 +700,7 @@ export function OrganizacijaScreen() {
             disabled={writingElsewhere}
             aria-busy={savingAccent}
             aria-describedby={refusal === null ? undefined : 'organization-error'}
-            className="flex h-11 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-11 w-full rounded-md border-[1.5px] border-input bg-card px-3 text-sm transition-[border-color,box-shadow] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           >
               {/* THE ACCENT THIS BUILD DOES NOT KNOW, rendered as its own option
                 rather than collapsed into `Neutralna`. A forward-only migration
@@ -766,18 +768,20 @@ export function OrganizacijaScreen() {
   }
 
   return (
-    <main className="flex flex-1 justify-center p-6">
-      <Card className="w-full max-w-lg">
-        <CardHeader>
-          {/* An `<h1>`, not `CardTitle`: that primitive renders a `div`, and
-              this screen's name is the document's only heading. It is the
-              DESTINATION's own key — the screen is what `Organizacija` names,
-              so a second heading string would be the same word authored twice
-              and one of the two would be a string nobody renders. */}
-          <h1 className="text-xl font-semibold leading-none tracking-tight">
+    <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6">
+      <PageHeader>
+        {/* The screen's own `<h1>`, styled by `PageTitle asChild` (visual
+            refresh B): this screen's name is the document's only heading. It is the
+            DESTINATION's own key — the screen is what `Organizacija` names,
+            so a second heading string would be the same word authored twice
+            and one of the two would be a string nobody renders. */}
+        <PageTitle asChild>
+          <h1>
             {t('nav.organizacija')}
           </h1>
-        </CardHeader>
+        </PageTitle>
+      </PageHeader>
+      <Card className="w-full min-w-0 max-w-lg">
         {/* OUTSIDE the snapshot-gated branch, which is where it used to be and
             where it could not be seen: a read that never produced a row never
             rendered the form, so the one element that explains why was itself
@@ -788,13 +792,9 @@ export function OrganizacijaScreen() {
             silence rather than reported. */}
         <CardContent className="grid gap-6">
           {refusal === null ? null : (
-            <p
-              id="organization-error"
-              role="alert"
-              className="rounded-md border border-input px-3 py-2 text-sm font-medium"
-            >
+            <Notice id="organization-error" role="alert">
               {t(organizationMessageKey(refusal))}
-            </p>
+            </Notice>
           )}
           {renderLogo()}
           {renderSettings()}
