@@ -68,7 +68,7 @@ Named protagonists; pronouns are they/them throughout.
   Ana is on Team C and has agreed the second week of September off. Damir opens Ana's record — 30 allocated, 12 used, 18 remaining — and enters 10.09–16.09. Before saving, the system shows the cost in Leave Days, counting only dates where Ana has a working shift. **Climax:** on save, each affected working shift becomes a visible Conflict; the shifts stay on the Calendar and the rotation is untouched. **Resolution:** Damir resolves two Conflicts by putting a colleague on those shifts and accepts the third as uncovered. Nothing was silently deleted. **Edge case:** a range overlapping leave Ana already has is refused rather than charged twice.
 
 - **UJ-4. Damir closes the month.**
-  End of September. Damir opens Hours, picks the month, and sees every Member with shift counts and hours per category — day, night, total — plus leave hours listed separately. One member's total is low; Damir drills in and sees two shifts were reassigned during week two's leave conflicts. **Climax:** the number is explainable without reconstructing anything. **Resolution:** they read the figures on screen and report them onward. `[ASSUMPTION: on-screen reporting suffices for the pilot; no export in MVP.]`
+  End of September. Damir opens Hours, picks the month, and sees every Member with shift counts and hours per category — day, night, total — plus leave hours listed separately. One member's total is low; Damir drills in and sees two shifts were reassigned during week two's leave conflicts. **Climax:** the number is explainable without reconstructing anything. **Resolution:** they export the month to Excel and send it onward, and the file carries exactly the figures on screen (FR-42a).
 
 - **UJ-5. A second organization proves the engine.**
   A security company with three Teams on a five-slot `DAY → DAY → NIGHT → OFF → OFF` pattern and 8-hour shifts is configured as a second tenant. **Climax:** it works with no code change, no migration, no branch. **Resolution:** the core principle is validated rather than asserted. This is a product acceptance test, not an end-user flow.
@@ -545,7 +545,18 @@ An Admin can view hours for all Members for a selected period. Realizes UJ-4.
 - Per-Member figures reconcile exactly with that Member's own view (FR-41).
 - Reachable in one navigation step from the Admin dashboard.
 
-**Out of Scope for MVP:** export (CSV, Excel, PDF); pay rates and premiums; overtime rules; breaks within a shift; actual attendance as distinct from scheduled; period locking.
+#### FR-42a: Export organization hours (added 2026-09-26, sprint change)
+An Admin can export the Organization hours for a selected period to an Excel file. Realizes UJ-4.
+
+**Consequences (testable):**
+- The file holds exactly the rows the Organization hours view shows for that period and filter, in its sort order, with the same figures (FR-42). It is built from the same data the view rendered, never from a second read.
+- Columns: Member, Team, shift count, one column per Hour Band named by the Organization's bands, Total Hours, Leave Hours. No band is hard-coded (DI-8).
+- Figures are stored as numbers, not text, so they can be summed in the spreadsheet.
+- Column headers, sheet name and file name follow the Organization locale. The file name carries the Organization and the period.
+- A shift in unresolved Conflict is marked in the file as it is on screen (FR-41), so no exported total is silently wrong.
+- Only an Admin can export. A Member cannot export anyone's hours, their own included, in MVP.
+
+**Out of Scope for MVP:** export as CSV or PDF, and any export other than FR-42a; pay rates and premiums; overtime rules; breaks within a shift; actual attendance as distinct from scheduled; period locking.
 
 ### 5.11 Annual Leave
 
@@ -676,7 +687,7 @@ An Admin landing in the application sees today's coverage by Team, upcoming shif
 
 ### 7.1 In Scope
 
-Authentication with Organization and Role resolution · operator-provisioned multi-tenant Organizations with enforced isolation · Organization profile, Organization Type, timezone, locale, Hour Bands, Leave Year, and branding · Members with Roles, status, Team, and Leave Allowance · Admin member list with search, sort, filter · read-only member directory · Teams of any number · configurable Shift Types including midnight-crossing and non-working · band-based day/night hour computation · Rotation Patterns of arbitrary cycle length · Rotation Assignments with Offset and Anchor Date · coverage and rest-gap warnings · schedule projection for any date · Shift Rosters · Shift Type and Roster Overrides with attribution and visible overridden state · monthly Calendar with Team/Member filters, filter reset, leave, conflicts, and uncovered shifts · shift counts and Band Hours per Member and Organization · annual leave with allowance, Leave Day cost, and balance · leave/schedule Conflict detection with three explicit resolutions · Member and Admin dashboards · Croatian UI on a fully internationalized architecture · responsive across mobile, tablet, desktop.
+Authentication with Organization and Role resolution · operator-provisioned multi-tenant Organizations with enforced isolation · Organization profile, Organization Type, timezone, locale, Hour Bands, Leave Year, and branding · Members with Roles, status, Team, and Leave Allowance · Admin member list with search, sort, filter · read-only member directory · Teams of any number · configurable Shift Types including midnight-crossing and non-working · band-based day/night hour computation · Rotation Patterns of arbitrary cycle length · Rotation Assignments with Offset and Anchor Date · coverage and rest-gap warnings · schedule projection for any date · Shift Rosters · Shift Type and Roster Overrides with attribution and visible overridden state · monthly Calendar with Team/Member filters, filter reset, leave, conflicts, and uncovered shifts · shift counts and Band Hours per Member and Organization · Excel export of Organization hours · annual leave with allowance, Leave Day cost, and balance · leave/schedule Conflict detection with three explicit resolutions · Member and Admin dashboards · Croatian UI on a fully internationalized architecture · responsive across mobile, tablet, desktop.
 
 ### 7.2 Out of Scope for MVP
 
@@ -690,7 +701,7 @@ Grouped with reasons where the reason matters.
 **Deferred because MVP has no need:**
 - Absence types other than annual leave; carry-over; part-day leave; public-holiday calendars.
 - Breaks within a shift; overtime; actual attendance distinct from scheduled.
-- Export in any format; advanced reporting; analytics; team statistics.
+- Export beyond FR-42a's Excel file of Organization hours (CSV, PDF, payroll formats, other surfaces); advanced reporting; analytics; team statistics.
 - Minimum-staffing rules; qualification constraints; statutory rest-period enforcement.
 - Weekly and daily Calendar views; drag-and-drop editing; print; iCal feeds.
 - Audit-log user interface. The data model supports auditability (DI-11); no screen exposes it.
@@ -827,7 +838,6 @@ Ordered by how much they cost to get wrong.
 
 Every `[ASSUMPTION]` in this document, for explicit confirmation:
 
-- **§2.3 UJ-4** — On-screen hour reporting is sufficient for the pilot; no export in MVP.
 - **§5.3 FR-16** — Another Member's leave, hours, and contact details are visible only to Admins. A volunteer organization may prefer full transparency. *See §11.2 Q6.*
 - **§5.6 FR-24** — When a rotation changes, Overrides on or after the effective date are surfaced for explicit review rather than silently kept or silently dropped.
 - **§5.9 FR-37** — In the all-Teams Calendar view, leave is shown as an indicator or count rather than per-Member detail; UX to settle the treatment.

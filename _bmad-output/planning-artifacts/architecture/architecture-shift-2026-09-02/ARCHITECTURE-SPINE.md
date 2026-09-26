@@ -223,6 +223,7 @@ Verified against the npm registry and vendor documentation on 2026-09-02.
 | i18next | 26.4.1 |
 | Vitest | current, node environment |
 | PostgreSQL | Supabase-managed |
+| XLSX writer (client-side, lazy-loaded; `apps/web` only) | chosen and pinned in Story 4.3 |
 
 ## Structural Seed
 
@@ -329,7 +330,7 @@ shift/
 | CAP-11 Schedule projection and rosters | `domain/projection` | AD-1, AD-2, AD-7 |
 | CAP-12 Overrides as a separable layer | `*_overrides` | AD-1, AD-11 |
 | CAP-13 Monthly calendar | calendar surface | AD-13, AD-1 |
-| CAP-14 Hours by band intersection | `domain/hours` | AD-6, AD-7, AD-13 |
+| CAP-14 Hours by band intersection | `domain/hours`; the Excel export in `apps/web` renders the surface snapshot and computes nothing | AD-6, AD-7, AD-13 |
 | CAP-15 Annual leave | `leave_records`, `domain/leave` | AD-3, AD-13 |
 | CAP-16 Conflicts resolved explicitly | `conflict_resolutions`, `domain/collisions` | AD-4, AD-5, AD-11 |
 | CAP-17 Role-appropriate landing surfaces | dashboard surfaces | AD-13 |

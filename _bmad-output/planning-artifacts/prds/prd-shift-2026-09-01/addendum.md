@@ -323,7 +323,7 @@ Note: Epic 8 overlaps Epic 1 in this PRD's grouping (both land in §5.2), and th
 
 **Notifications** — upcoming shift reminders · schedule change alerts · leave decisions · conflict alerts. Channels: push, email, SMS.
 
-**Reporting** — Excel and PDF export · advanced hour reports · team statistics · attendance reports · payroll export · government reporting.
+**Reporting** — PDF export, and Excel export beyond Organization hours (Excel export of Organization hours moved into MVP as FR-42a, 2026-09-26) · advanced hour reports · team statistics · attendance reports · payroll export · government reporting.
 
 **Platform** — native mobile applications or PWA · English, then possibly German and Italian · public API and integrations · audit-log interface · multiple Organizations per user · multi-site and sub-organization hierarchies.
 
