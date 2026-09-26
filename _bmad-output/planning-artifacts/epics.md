@@ -40,7 +40,7 @@ Capabilities from `SPEC.md`. Each is an independently reviewable slice; `engine-
 - **CAP-11** — Schedule projection and rosters. Arbitrary future dates with no generation run; repeated queries agree; with every override removed the schedule equals pure projection exactly; each working shift carries a roster.
 - **CAP-12** — Schedule overrides as a separable exception layer. Pattern and assignment byte-identical before and after; replacing a member is one action recording both; removing an override restores projection and default roster exactly; an overridden date is identifiable without opening detail.
 - **CAP-13** — Monthly calendar with team and member filters. Filters populated from live records; state survives month navigation and clears in one action; a midnight-crossing shift renders once on its start date with both clock times; unresolved conflicts visible without opening detail; no state by colour alone.
-- **CAP-14** — Hours computed by band intersection. Band hours sum exactly to total; a straddling shift is split not rounded (19:00–07:00 with bands at 06:00/21:00 yields 3 day, 9 night); 12 hours on both DST transition dates; hours follow the roster; a member's figures reconcile exactly with the admin's view.
+- **CAP-14** — Hours computed by band intersection. Band hours sum exactly to total; a straddling shift is split not rounded (19:00–07:00 with bands at 06:00/21:00 yields 3 day, 9 night); 12 hours on both DST transition dates; hours follow the roster; a member's figures reconcile exactly with the admin's view. An admin can export the organization hours for a period to Excel, carrying exactly the figures on screen.
 - **CAP-15** — Annual leave against a per-member allowance. Recording leave leaves every shift in place; cost visible before saving; overlapping range refused; allowance minus used equals balance at all times within the current leave year; deleting restores the balance.
 - **CAP-16** — Leave/schedule conflicts resolved explicitly. A conflict exists for every affected working shift and stands until explicitly resolved; none expires or auto-clears; a configuration change that would remove a cause surfaces it for an explicit decision; detection alters no shift; non-working shifts raise nothing; exactly three resolutions, each attributable; resulting hours land as leave hours.
 - **CAP-17** — Role-appropriate landing surfaces. Member: today's shift stated in words when not working, next working shift with both times, band hours and total, leave used and remaining, seven days ahead, usable at phone width with no horizontal scrolling. Admin: today's coverage for any team count, unresolved-conflict count shown even at zero and matching the list exactly. Every dashboard figure equals its detail view.
@@ -163,6 +163,7 @@ From `DESIGN.md` (visual) and `EXPERIENCE.md` (behavioural). Both are binding an
 - **UX-DR41** Phone (<640): *Moj raspored* day list by default, compressed grid one tap away with teams as one-letter columns. Tablet (640–1024): full grid with team names. Desktop (>1024): times visible in cells.
 - **UX-DR42** The compressed grid is the same component as the full grid with a narrower column treatment, not a separate mobile calendar.
 - **UX-DR43** Every administrative task completes on a phone; rotation configuration is the hardest case and the one to test first.
+- **UX-DR44** Hours export — one action on Organization hours, `Izvezi u Excel`, admin-only; exports the current period, filter and sort; the file's figures match the table exactly.
 
 ### FR Coverage Map
 
@@ -183,14 +184,14 @@ Capabilities are the functional requirements (see basis note above). Every capab
 | CAP-11 Schedule projection and rosters | Epic 2 | the projection function and cycle preview |
 | CAP-12 Overrides as a separable layer | Epic 3 | shift-type and roster overrides |
 | CAP-13 Monthly calendar with filters | Epic 3 | calendar in both modes, day detail |
-| CAP-14 Hours by band intersection | Epic 4 | my hours, organization hours |
+| CAP-14 Hours by band intersection | Epic 4 | my hours, organization hours, Excel export |
 | CAP-15 Annual leave against allowance | Epic 5 | leave records, cost preview, balance |
 | CAP-16 Conflicts resolved explicitly | Epic 5 | derived collisions, queue, three resolutions |
 | CAP-17 Role-appropriate landing surfaces | Epic 6 | member and admin dashboards |
 
 **Non-functional allocation.** Q1–Q3 and Q6 land in Epic 1 and are re-asserted by every epic that adds a table. Q7–Q10 land in Epic 2 with the domain package and both fixtures, and each later epic extends the suite. Q11–Q12 land in Epic 3 with the first attributable writes. Q13–Q16 and Q21–Q23 are definition-of-done on every epic with a surface. Q17–Q18 are proven in Epic 3, Q19 in Epic 6, Q20 in Epic 1. The localization contract L1–L8 is definition-of-done everywhere.
 
-**UX design requirement allocation.** UX-DR1–2, 4–5, 31–32, 34, 40 land in Epic 1 — the theme layer and the i18n layer are built once, first. UX-DR3, 6, 13–16, 23, 35, 43 land in Epic 2, including the ramp-slot contrast verification, which belongs where shift types are first assigned to slots. UX-DR7–8, 12, 18–21, 24, 26, 30, 33, 36–39, 41–42 land in Epic 3 with the calendar, skeleton loading included. UX-DR17, 29 land in Epic 4. UX-DR10–11, 22, 25, 27–28 land in Epic 5. UX-DR9 (duty-block) lands in Epic 6.
+**UX design requirement allocation.** UX-DR1–2, 4–5, 31–32, 34, 40 land in Epic 1 — the theme layer and the i18n layer are built once, first. UX-DR3, 6, 13–16, 23, 35, 43 land in Epic 2, including the ramp-slot contrast verification, which belongs where shift types are first assigned to slots. UX-DR7–8, 12, 18–21, 24, 26, 30, 33, 36–39, 41–42 land in Epic 3 with the calendar, skeleton loading included. UX-DR17, 29, 44 land in Epic 4. UX-DR10–11, 22, 25, 27–28 land in Epic 5. UX-DR9 (duty-block) lands in Epic 6.
 
 ## Epic List
 
@@ -222,7 +223,7 @@ Any member opens a month and reads it — their own schedule or every team's —
 
 ### Epic 4: Hours compute themselves
 
-A member sees their shift counts, hours per band, total and leave hours for a period. An admin sees the same for everyone, sortable and filterable. Nobody enters or reconciles an hour by hand, and a member's own figures reconcile exactly with the admin's view of them.
+A member sees their shift counts, hours per band, total and leave hours for a period. An admin sees the same for everyone, sortable and filterable. Nobody enters or reconciles an hour by hand, and a member's own figures reconcile exactly with the admin's view of them. The admin can take the month away as an Excel file that matches the screen.
 
 **Capabilities covered:** CAP-14
 **Standalone:** closes the month, which is one of the three failures the product exists to fix.
@@ -814,9 +815,9 @@ So that hours follow the people who worked rather than the people who were sched
 
 ## Epic 4: Hours compute themselves
 
-A member sees their shift counts, hours per band, total and leave hours for a period. An admin sees the same for everyone, sortable and filterable. Nobody enters or reconciles an hour by hand, and a member's own figures reconcile exactly with the admin's view of them.
+A member sees their shift counts, hours per band, total and leave hours for a period. An admin sees the same for everyone, sortable and filterable. Nobody enters or reconciles an hour by hand, and a member's own figures reconcile exactly with the admin's view of them. The admin can take the month away as an Excel file that matches the screen.
 
-**Capabilities:** CAP-14 · **Governed by:** AD-6, AD-7, AD-13 · **Proves:** Q8, Q10, Q19 · **UX:** UX-DR17, 29
+**Capabilities:** CAP-14 · **Governed by:** AD-6, AD-7, AD-13 · **Proves:** Q8, Q10, Q19 · **UX:** UX-DR17, 29, 44
 
 **Sequencing note.** This epic delivers worked hours in full. CAP-14's *leave hours* half needs leave records, which arrive in Epic 5 — so the column exists here and is populated there. Epic 4 does not depend on Epic 5 to be correct or useful; it is complete for every hour actually worked.
 
@@ -873,6 +874,52 @@ So that I can close the month and answer a question about any number in it.
 **Given** hours, leave balance or conflict state
 **When** any of them changes
 **Then** no optimistic update is shown — the figure waits rather than flickering and correcting itself (UX-DR29)
+
+### Story 4.3: An admin exports the month's hours to Excel (added 2026-09-26, sprint change)
+
+As an admin,
+I want to download the hours I am looking at as an Excel file,
+So that I can send the month onward without retyping a number.
+
+**Acceptance Criteria:**
+
+**Given** the Organization hours view with a period, a team or member filter, and a sort
+**When** the admin chooses `Izvezi u Excel`
+**Then** an `.xlsx` file downloads with exactly the rows, order and figures on screen (FR-42a)
+**And** it is built from the surface's one snapshot, never a second read (AD-13, Q19)
+
+**Given** an organization with any number of Hour Bands
+**When** the file is built
+**Then** it has one column per band, named by the organization's bands, next to Member, Team, shift count, Total and Leave Hours; nothing names day or night in code (DI-8)
+**And** the security fixture, whose bands split shifts, exports its split figures exactly (AD-15)
+
+**Given** the exported figures
+**When** the file is opened in a spreadsheet
+**Then** every count and hour is a number, not text, and band hours sum to total on every row (DI-7)
+
+**Given** the organization locale
+**When** the file is built
+**Then** headers, sheet name and file name come from `i18n`, and the file name carries the organization and period; no literal string is added outside `i18n` (AD-8, L1–L8)
+
+**Given** a member with a shift in unresolved conflict in the period
+**When** the file is built
+**Then** that row carries the same distinct state the table shows (FR-41)
+
+**Given** Epic 5 not yet delivered
+**When** the file is built
+**Then** the leave-hours column exists and is empty, and fills with no change to the export once leave records exist
+
+**Given** a member-role account
+**When** any surface renders
+**Then** no export action is offered, and the export needs no new RLS path because it reads nothing the table did not (Q1–Q3)
+
+**Given** the main bundle
+**When** the app loads
+**Then** the XLSX writer is not in it; it loads only when the export is chosen (NFR-22, Q17)
+
+**Given** the domain package
+**When** it is inspected
+**Then** it has gained no dependency and no export code (AD-7)
 
 ---
 

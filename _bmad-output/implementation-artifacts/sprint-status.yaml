@@ -436,6 +436,8 @@ development_status:
   epic-4: backlog
   4-1-a-member-sees-their-own-hours-split-by-band: backlog
   4-2-an-admin-sees-hours-for-everyone-and-can-explain-any-figure: backlog
+  # Added 2026-09-26 by sprint change (sprint-change-proposal-2026-09-26-hours-export.md).
+  4-3-an-admin-exports-the-month-s-hours-to-excel: backlog
   epic-4-retrospective: optional
 
   epic-5: backlog
