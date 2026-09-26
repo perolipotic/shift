@@ -7,6 +7,7 @@ import {
   shiftTypeVersionOn,
 } from '@shift/domain';
 
+import type { CalendarModifier } from '@/calendar/modifiers';
 import { CALENDAR_UNAVAILABLE, type CalendarReadFailure, type CalendarSnapshot } from '@/calendar/snapshot';
 import {
   formatIsoDayMonth,
@@ -158,6 +159,15 @@ export const CALENDAR_CELL_CLASS =
  */
 export const COMPRESSED_CELL_CLASS = 'max-sm:min-h-11 max-sm:min-w-11 max-sm:items-center max-sm:px-1';
 
+/** A cell in the day list, on top of {@link CALENDAR_CELL_CLASS}: it takes the row's remaining width. */
+export const DAY_CELL_CLASS = 'min-w-0 flex-1';
+
+/** A range in the grid: dropped below 1024 px, never abbreviated. */
+export const GRID_RANGE_CLASS = 'hidden font-normal tabular-nums lg:inline';
+
+/** A range in the day list: always shown. */
+export const DAY_RANGE_CLASS = 'font-normal tabular-nums';
+
 /** A cell with no rotation in effect yet: no fill, only the mark. */
 export const NO_ROTATION_CELL_CLASS = 'text-muted-foreground';
 
@@ -307,7 +317,15 @@ export interface CalendarCell {
   readonly className: string;
   /** `19:00–07:00` from the type's version on that date; `null` for a non-working type or no times. */
   readonly range: string | null;
+  /**
+   * The marks the cell carries (`@/calendar/modifiers`), in any order. ALWAYS
+   * EMPTY in story 3.2b: no data source derives a modifier yet.
+   */
+  readonly modifiers: readonly CalendarModifier[];
 }
+
+/** No modifiers: what every cell carries until a later story derives one. */
+const NO_MODIFIERS: readonly CalendarModifier[] = [];
 
 /** One date of the month. */
 export interface CalendarRow {
@@ -425,6 +443,7 @@ function cellOf(
       letter: null,
       className: `${CALENDAR_CELL_CLASS} ${NO_ROTATION_CELL_CLASS}`,
       range: null,
+      modifiers: NO_MODIFIERS,
     };
   }
 
@@ -445,6 +464,7 @@ function cellOf(
     letter: letters.get(shiftTypeId) ?? null,
     className: `${CALENDAR_CELL_CLASS} ${fills.get(shiftTypeId) ?? NONWORKING_CHIP_CLASS}`,
     range: version === null ? null : shiftTimesShownOf(version).range,
+    modifiers: NO_MODIFIERS,
   };
 }
 

@@ -26,6 +26,10 @@ import { expect, test } from './support/test.ts';
  * an admin on the grid, the switch shows the compressed one-letter grid,
  * `prikaz` survives month navigation, the member on no team reads the notice,
  * and it is all one read.
+ *
+ * Story 3.2b: the grid is an ARIA grid — one tab stop that starts on today,
+ * the arrows, Home, End and Ctrl+End moving focus at 1280 px and at 390 px —
+ * every gridcell named in full, and no legend while no mark is on screen.
  */
 
 const kalendar = hr.kalendar;
@@ -86,6 +90,11 @@ function dayMonth(date: string): string {
   return `${date.slice(8, 10)}.${date.slice(5, 7)}.`;
 }
 
+/** `subota` — a date's weekday, as its row header and its cells' labels name it. */
+function weekdayOf(date: string): string {
+  return new Intl.DateTimeFormat('hr', { weekday: 'long', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`));
+}
+
 /** The type the seeded pattern names on `date`, from its start today. */
 function expectedType(rotation: SeededRotation, date: string): string {
   const days = Math.round(
@@ -97,9 +106,14 @@ function expectedType(rotation: SeededRotation, date: string): string {
   return step;
 }
 
+/** The calendar grid, named by the month heading. */
+function gridOf(page: Page): Locator {
+  return page.getByRole('grid', { name: /\d{4}$/ });
+}
+
 /** The grid's cell for `teamName` on `date`. */
 async function cellOf(page: Page, teamName: string, date: string): Promise<Locator> {
-  const grid = page.getByRole('table', { name: /\d{4}$/ });
+  const grid = gridOf(page);
   // The grid renders once the snapshot has landed; the skeleton has no headers.
   await expect(grid.getByRole('columnheader', { name: teamName, exact: true })).toBeVisible();
   // The header's text without its compressed letter, which is `aria-hidden`.
@@ -118,7 +132,7 @@ async function cellOf(page: Page, teamName: string, date: string): Promise<Locat
   await expect(row, `the grid has no row for ${date}`).toHaveCount(1);
 
   // The first column is the row header; the cells follow it.
-  return row.getByRole('cell').nth(column - 1);
+  return row.getByRole('gridcell').nth(column - 1);
 }
 
 for (const [role, storageState] of [
@@ -233,7 +247,8 @@ test.describe('edge months and a failed read', () => {
     const cell = await cellOf(page, fixture.team.name, '0001-01-01');
 
     await expect(cell).toContainText('\u2014');
-    await expect(cell.getByText(kalendar.noRotation, { exact: true })).toHaveCount(1);
+    // The mark is drawn; the gridcell's own label names it.
+    await expect(cell).toHaveAccessibleName(`${weekdayOf('0001-01-01')} 01.01., ${fixture.team.name}, ${kalendar.noRotation}`);
   });
 
   test('a read that fails shows the alert and no grid', async ({ page }) => {
@@ -245,7 +260,7 @@ test.describe('edge months and a failed read', () => {
     await page.goto('/kalendar');
 
     await expect(page.getByRole('alert').filter({ hasText: kalendar.error.unavailable })).toBeVisible();
-    await expect(page.getByRole('table')).toHaveCount(0);
+    await expect(page.getByRole('grid')).toHaveCount(0);
   });
 });
 
@@ -319,7 +334,7 @@ test.describe('on a phone, as a member', () => {
     const { moj, sve } = modes(page);
     await expect(moj).toHaveAttribute('aria-pressed', 'true');
     await expect(sve).toHaveAttribute('aria-pressed', 'false');
-    await expect(page.getByRole('table')).toHaveCount(0);
+    await expect(page.getByRole('grid')).toHaveCount(0);
 
     // A day per date, today marked, each the member's own team's type.
     const list = dayList(page);
@@ -349,8 +364,9 @@ test.describe('on a phone, as a member', () => {
     const letter = letterOf(cell);
     await expect(letter).toBeVisible();
     expectLetterOf(await letter.innerText(), expectedType(rotation, rotation.today));
-    // The full name is there for a screen reader, not drawn.
-    await expect(cell.getByText(expectedType(rotation, rotation.today), { exact: true })).toHaveClass(/(^|\s)sr-only(\s|$)/);
+    // The full name is not drawn below 640 px: the gridcell's label names it.
+    await expect(cell.getByText(expectedType(rotation, rotation.today), { exact: true })).toBeHidden();
+    await expect(cell).toHaveAccessibleName(new RegExp(`, ${fixture.team.name}, ${expectedType(rotation, rotation.today)}(,|$)`));
 
     // The compressed cells and the switch are touch targets.
     for (const target of [cell.locator('div').first(), moj, sve]) {
@@ -367,7 +383,7 @@ test.describe('on a phone, as a member', () => {
     await expect(page.getByRole('heading', { level: 2, name: monthHeading(next) })).toBeVisible();
     await expect(page).toHaveURL(new RegExp(`mjesec=${next.slice(0, 7)}`));
     await expect(page).toHaveURL(/prikaz=sve/);
-    await expect(page.getByRole('table')).toBeVisible();
+    await expect(page.getByRole('grid')).toBeVisible();
     await moj.click();
     await expect(page).toHaveURL(/prikaz=moj/);
     await expect(page).toHaveURL(new RegExp(`mjesec=${next.slice(0, 7)}`));
@@ -411,7 +427,132 @@ test.describe('on a phone, as the member on no team', () => {
     await expect(page.getByText(kalendar.noTeam, { exact: true })).toBeVisible();
     await expect(modes(page).moj).toHaveAttribute('aria-pressed', 'true');
     await expect(dayList(page)).toHaveCount(0);
-    await expect(page.getByRole('table')).toHaveCount(0);
+    await expect(page.getByRole('grid')).toHaveCount(0);
     await expectNoHorizontalScroll(page);
   });
 });
+
+/** The focused gridcell's position among the data cells, or `null` when focus is not on one. */
+async function focusedCell(page: Page): Promise<{ readonly row: number; readonly column: number } | null> {
+  return page.evaluate(() => {
+    const active = document.activeElement;
+    if (!(active instanceof HTMLTableCellElement) || active.getAttribute('role') !== 'gridcell') return null;
+    const row = active.parentElement;
+    if (!(row instanceof HTMLTableRowElement)) return null;
+
+    // Past the header row and the date column.
+    return { row: row.rowIndex - 1, column: active.cellIndex - 1 };
+  });
+}
+
+for (const [width, height, name] of [
+  [1280, 800, 'the full grid at 1280 px'],
+  [390, 844, 'the compressed grid at 390 px'],
+] as const) {
+  test.describe(`the keyboard grid: ${name}`, () => {
+    test.use({ storageState: ADMIN_STATE, viewport: { width, height } });
+
+    test('one tab stop on today, the keys move focus, and every cell is named in full', async ({ page, fixture }) => {
+      const rotation = await seeded(fixture.slug, fixture.team.id);
+
+      await page.goto('/kalendar?prikaz=sve');
+      const grid = gridOf(page);
+      const today = await cellOf(page, fixture.team.name, rotation.today);
+      await expect(grid).toBeVisible();
+      await expect(grid).toHaveAttribute('aria-readonly', 'true');
+
+      // A gridcell's name holds the date, the team, the type and the range —
+      // the same at every width, and never a bare letter.
+      await expect(today).toHaveAccessibleName(
+        `${weekdayOf(rotation.today)} ${dayMonth(rotation.today)}, ${fixture.team.name}, ${expectedType(rotation, rotation.today)}, 07:00–19:00`,
+      );
+
+      // No mark is on screen, so there is no legend: no list, no tooltip, no icon.
+      await expect(page.getByText(kalendar.legend, { exact: true })).toHaveCount(0);
+
+      // Exactly one tab stop, on today's first team.
+      const stops = grid.locator('[role="gridcell"][tabindex="0"]');
+      await expect(stops).toHaveCount(1);
+      const todayRow = grid.locator('tr[aria-current="date"]');
+      await expect(todayRow.getByRole('gridcell').first()).toHaveAttribute('tabindex', '0');
+      const rows = await grid.locator('tbody tr').count();
+      const columns = await grid.locator('thead th').count() - 1;
+      const cells = grid.getByRole('gridcell');
+      await expect(cells).toHaveCount(rows * columns);
+
+      // Tab enters the grid on that one cell, and a second Tab leaves it.
+      await page.getByRole('group', { name: kalendar.mode.label }).getByRole('button', { name: kalendar.mode.sve, exact: true }).focus();
+      await page.keyboard.press('Tab');
+      await expect(todayRow.getByRole('gridcell').first()).toBeFocused();
+      const start = await focusedCell(page);
+      expect(start?.column).toBe(0);
+      expect(await page.evaluate(() => document.activeElement?.matches(':focus-visible') ?? false), 'no visible focus').toBe(true);
+      await page.keyboard.press('Tab');
+      expect(await focusedCell(page), 'a second Tab stayed in the grid').toBeNull();
+      await page.keyboard.press('Shift+Tab');
+      expect(await focusedCell(page)).toEqual(start);
+      // Space on a cell is swallowed, near the top where the page could still scroll.
+      await page.keyboard.press('Control+Home');
+      const origin = () => page.evaluate(() => document.activeElement?.getBoundingClientRect().top ?? Number.NaN);
+      const before = await origin();
+      await page.keyboard.press('Space');
+      expect(await focusedCell(page)).toEqual({ row: 0, column: 0 });
+      expect(await origin(), 'Space scrolled the page').toBe(before);
+
+      const lastRow = rows - 1;
+      const lastColumn = columns - 1;
+      for (const [key, expected] of [
+        ['Control+Home', { row: 0, column: 0 }],
+        ['ArrowLeft', { row: 0, column: 0 }],
+        ['ArrowUp', { row: 0, column: 0 }],
+        ['ArrowDown', { row: 1, column: 0 }],
+        ['End', { row: 1, column: lastColumn }],
+        ['ArrowRight', { row: 1, column: lastColumn }],
+        ['Home', { row: 1, column: 0 }],
+        ['ArrowRight', { row: 1, column: Math.min(1, lastColumn) }],
+        ['ArrowLeft', { row: 1, column: 0 }],
+        ['Control+End', { row: lastRow, column: lastColumn }],
+        ['ArrowDown', { row: lastRow, column: lastColumn }],
+        ['ArrowUp', { row: lastRow - 1, column: lastColumn }],
+      ] as const) {
+        await page.keyboard.press(key);
+        expect(await focusedCell(page), key).toEqual(expected);
+        // The roving tab stop follows focus: still exactly one.
+        await expect(stops).toHaveCount(1);
+      }
+      const here = { row: lastRow - 1, column: lastColumn };
+      // Enter and Space do nothing yet (day detail is 3.4): focus, the URL and
+      // the scroll stay — Space never scrolls the page.
+      const url = page.url();
+      // Where the focused cell sits on screen: any scroller moving would move it.
+      const top = () => page.evaluate(() => document.activeElement?.getBoundingClientRect().top ?? Number.NaN);
+      const scrolled = await top();
+      await page.keyboard.press('Enter');
+      expect(await focusedCell(page)).toEqual(here);
+      await page.keyboard.press('Space');
+      expect(await focusedCell(page)).toEqual(here);
+      expect(await top(), 'Space scrolled the page').toBe(scrolled);
+      expect(page.url()).toBe(url);
+      // With Shift, Alt or Meta held, or Ctrl with an arrow, the key is the browser's: focus stays.
+      // Last, since the browser may scroll the page for some of them.
+      for (const key of ['Shift+ArrowUp', 'Alt+ArrowLeft', 'Meta+ArrowUp', 'Control+ArrowUp', 'Shift+Home']) {
+        await page.keyboard.press(key);
+        expect(await focusedCell(page), key).toEqual(here);
+      }
+
+      // The tab stop resets when the month changes, and coming back starts on today again.
+      await page.getByRole('button', { name: kalendar.next }).click();
+      await expect(page.getByRole('heading', { level: 2, name: monthHeading(firstOfNextMonth(rotation.today)) })).toBeVisible();
+      await expect(stops).toHaveCount(1);
+      await expect(stops).toHaveAttribute('data-row', '0');
+      await expect(stops).toHaveAttribute('data-column', '0');
+      await page.getByRole('button', { name: kalendar.previous }).click();
+      await expect(page.getByRole('heading', { level: 2, name: monthHeading(rotation.today) })).toBeVisible();
+      await expect(stops).toHaveCount(1);
+      await expect(todayRow.getByRole('gridcell').first()).toHaveAttribute('tabindex', '0');
+      await expect(stops).toHaveAttribute('data-column', '0');
+
+      await expectNoHorizontalScroll(page);
+    });
+  });
+}

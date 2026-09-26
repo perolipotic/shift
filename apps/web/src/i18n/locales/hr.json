@@ -41,6 +41,13 @@
       "moj": "Moj raspored",
       "sve": "Sve smjene"
     },
+    "legend": "Oznake",
+    "modifier": {
+      "conflict": "Konflikt",
+      "overridden": "Izmijenjeno",
+      "leave": "Godišnji",
+      "uncovered": "Nepokriveno"
+    },
     "error": {
       "unavailable": "Kalendar trenutačno nije moguće učitati. Pokušaj ponovno."
     }

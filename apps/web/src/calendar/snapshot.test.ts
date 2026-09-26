@@ -479,8 +479,24 @@ describe('the calendar only reads, and projects nothing of its own', () => {
 
   it('sweeps the files it means to', () => {
     expect(files.map((file) => file.slice(directory.length - 1))).toEqual(
-      expect.arrayContaining(['/month.ts', '/snapshot.ts']),
+      expect.arrayContaining(['/month.ts', '/snapshot.ts', '/modifiers.ts', '/grid-keys.ts']),
     );
+  });
+
+  it('derives no modifier from snapshot data (story 3.2b): only the vocabulary names one', () => {
+    // Every cell carries `modifiers: []` until 3.5, 3.6 and Epics 4–5 derive
+    // one; no file but the vocabulary names a modifier, and `month.ts` sets
+    // the empty list and nothing else.
+    for (const file of files.filter((one) => !one.endsWith('modifiers.ts'))) {
+      expect(stripped(file), file).not.toMatch(/'(conflict|overridden|leave|uncovered)'|MODIFIER_[A-Z]+\b/);
+    }
+    const month = stripped(join(directory, 'month.ts'));
+
+    expect(month, 'a cell given modifiers other than the empty list').not.toMatch(
+      /(?<!readonly )\bmodifiers:(?! NO_MODIFIERS\b)/,
+    );
+    expect(month.match(/\bmodifiers: NO_MODIFIERS\b/g)).toHaveLength(2);
+    expect(month).toMatch(/const NO_MODIFIERS: readonly CalendarModifier\[\] = \[\];/);
   });
 
   it.each(files)('%s has no modulo, no write and no read of rank or position', (file) => {

@@ -898,6 +898,13 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.mode.sve',
   'kalendar.noTeam',
   'kalendar.day.noTeam',
+  // STORY 3.2b: the modifier vocabulary — the legend's heading and the four
+  // marks' labels, read in the legend and in every cell's label.
+  'kalendar.legend',
+  'kalendar.modifier.conflict',
+  'kalendar.modifier.overridden',
+  'kalendar.modifier.leave',
+  'kalendar.modifier.uncovered',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
