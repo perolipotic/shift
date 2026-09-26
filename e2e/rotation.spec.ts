@@ -287,3 +287,83 @@ test('an admin builds a rotation, sees its figures and cycle, saves it, and it o
   await expect(preview.getByRole('columnheader', { name: fill(builder.cycleLabel, { cycle: '2' }) })).toHaveCount(1);
   await expect(await previewCell(page, teamName, 3)).toContainText(b);
 });
+
+/** An ICU message with its `{count, plural, …}` block replaced by the filled `few` form — `3 dana …`. */
+function withFewCount(message: string, count: number): string {
+  return message.replace(/\{count, plural, [\s\S]*?other \{[^}]*\}\}/, fewForm(message, count));
+}
+
+test('a saved rotation reports its coverage gap, duplicate and rest gap, and an edit clears them', async ({
+  page,
+  fixture,
+}) => {
+  // Its own team and types, per attempt, and the run's rotation held, as the
+  // test above (a save binds every active team of the run's organization).
+  test.slow();
+  hold = holdRotation(fixture.slug);
+  await hold.ready;
+
+  const suffix = randomBytes(3).toString('hex');
+  const teamName = `Smjena ${suffix}`;
+  const a = `Dnevna ${suffix}`;
+  const b = `Noćna ${suffix}`;
+  const off = `Slobodno ${suffix}`;
+
+  await page.goto('/ljudi/smjene');
+  await page.getByRole('button', { name: hr.smjene.open }).click();
+  await page.getByLabel(hr.smjene.name, { exact: true }).fill(teamName);
+  await page.getByRole('button', { name: hr.smjene.add }).click();
+  await expect(page.getByRole('status')).toHaveText(hr.smjene.created);
+
+  await page.goto('/postavke-rotacije');
+  await addShiftType(page, a, ['07:00', '19:00']);
+  await addShiftType(page, b, ['19:00', '07:00']);
+  await addShiftType(page, off, null);
+
+  // [A, B, Slob], and every team — the fixture's and this attempt's, at least
+  // two — on step 1, as an empty draft starts them.
+  const newStep = page.getByLabel(builder.newStep, { exact: true });
+  for (const name of [a, b, off]) {
+    await newStep.selectOption({ label: name });
+    await page.getByRole('button', { name: builder.addStep }).click();
+  }
+  const steps = page.getByRole('list', { name: builder.stepsCaption }).getByRole('listitem');
+  await expect(steps).toHaveCount(3);
+  for (const name of [fixture.team.name, teamName]) {
+    await expect(page.getByLabel(fill(builder.offsetOf, { name }), { exact: true })).toHaveValue('0');
+  }
+
+  // Saved, never blocked: the confirmation carries the warnings. Over the
+  // next cycle every team works A, then B, then is free — so B is uncovered
+  // on day 1, A on day 2, both on day 3; A is doubled on day 1 and B on day
+  // 2; and A → B is 24 h of work with no free day between.
+  await page.getByRole('button', { name: builder.save }).click();
+  const confirmation = page.getByRole('status').filter({ hasText: builder.saved });
+  await expect(confirmation).toBeVisible();
+  const warnings = builder.warnings;
+  await expect(confirmation).toContainText(withFewCount(warnings.summary, 3));
+  await expect(confirmation).toContainText(withFewCount(warnings.coverageGap, 3));
+  await expect(confirmation).toContainText(withFewCount(warnings.duplicateCoverage, 2));
+  await expect(confirmation).toContainText(
+    fill(warnings.restGap, {
+      duration: fill(shiftTypes.duration.hours, { hours: '24' }),
+      types: `${a}${warnings.typeSeparator}${b}`,
+    }),
+  );
+  // Three warnings, then a line per date: three gap dates, two duplicate dates.
+  await expect(confirmation.getByRole('listitem')).toHaveCount(3 + 3 + 2);
+
+  // The next edit clears them with the confirmation: the builder re-opened
+  // as the rotation now in force, and a step removed from it.
+  await expect(steps).toHaveCount(3);
+  await page.getByRole('button', { name: fill(builder.remove, { position: '3' }), exact: true }).click();
+  await expect(steps).toHaveCount(2);
+  await expect(confirmation).toHaveCount(0);
+  await expect(page.getByText(withFewCount(warnings.coverageGap, 3))).toHaveCount(0);
+
+  // And a reload shows none: warnings are never standing.
+  await page.reload();
+  await expect(steps).toHaveCount(3);
+  await expect(page.getByText(builder.saved, { exact: true })).toHaveCount(0);
+  await expect(page.getByText(withFewCount(warnings.summary, 3))).toHaveCount(0);
+});

@@ -143,6 +143,8 @@ const ROTATION_LIST_KEYS = join(srcRoot, 'rotation', 'list.ts');
 const ROTATION_WRITE_KEYS = join(srcRoot, 'rotation', 'write.ts');
 /** Story 2.4's phone stepper rules: each step's name and Dalje's label per target step. */
 const ROTATION_STEPPER_KEYS = join(srcRoot, 'rotation', 'stepper.ts');
+/** Story 2.5's save warnings: every line, its date detail, the count and the separators. */
+const ROTATION_WARNING_KEYS = join(srcRoot, 'rotation', 'warnings.ts');
 
 /**
  * The member write path's rules, as a `.ts` module that renders nothing.
@@ -1683,6 +1685,15 @@ const KEY_SOURCES = [
     strings: 7,
   },
   {
+    // STORY 2.5: the six warning lines (gap, duplicate, and the rest gap
+    // known, unknown, endless and endless unknown), the summary counting
+    // them, a date's detail, and the list's and the run's separators.
+    name: 'the rotation warning rules',
+    file: ROTATION_WARNING_KEYS,
+    keys: memberListKeys,
+    strings: 10,
+  },
+  {
     // The read failure.
     name: 'the rotation read rules',
     file: ROTATION_LIST_KEYS,
@@ -1983,8 +1994,10 @@ describe('the screen is read at all, so every sweep below means something', () =
     // `@/rotation/write` are key sources (two more).
     //
     // FORTY-ONE KEY SOURCES SINCE STORY 2.4: `@/rotation/stepper`.
+    //
+    // FORTY-TWO SINCE STORY 2.5: `@/rotation/warnings`.
     expect(SCREENS).toHaveLength(24);
-    expect(KEY_SOURCES).toHaveLength(41);
+    expect(KEY_SOURCES).toHaveLength(42);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -3106,6 +3119,7 @@ describe('the member list reads once, under one key', () => {
       ROTATION_SECTION,
       join(srcRoot, 'rotation', 'draft.ts'),
       ROTATION_STEPPER_KEYS,
+      ROTATION_WARNING_KEYS,
     ]) {
       const text = readFileSync(file, 'utf8');
 

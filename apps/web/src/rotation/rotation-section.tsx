@@ -120,7 +120,6 @@ import {
   rotationWriteMessageKey,
   saveRotation,
   type RotationInsertTable,
-  type RotationSaveOutcome,
 } from '@/rotation/write';
 import {
   STEPPER_STEPS,
@@ -136,6 +135,13 @@ import {
   stepSectionClassOf,
   stepStatusOf,
 } from '@/rotation/stepper';
+import {
+  shownSaveOutcomeOf,
+  warningTextOf,
+  warningsSummaryOf,
+  type ShownSaveOutcome,
+  type WarningTranslate,
+} from '@/rotation/warnings';
 import { durationValuesOf, shiftTypeDurationMessageKey } from '@/shift-types/list';
 import { supabaseClient } from '@/supabase/client';
 
@@ -187,7 +193,7 @@ export function RotationSection({
   const progress = useRef<HTMLParagraphElement>(null);
   const stepMoved = useRef(false);
   const [pending, setPending] = useState(false);
-  const [outcome, setOutcome] = useState<RotationSaveOutcome | null>(null);
+  const [outcome, setOutcome] = useState<ShownSaveOutcome | null>(null);
   const [focus, setFocus] = useState<StepFocus | null>(null);
   const controls = useRef(new Map<string, HTMLButtonElement>());
 
@@ -328,7 +334,10 @@ export function RotationSection({
       );
 
       // A REFUSED SAVE KEEPS THE DRAFT: nothing below touches it on that path.
-      setOutcome(saved);
+      // A LANDED ONE CARRIES ITS WARNINGS (story 2.5), from the draft just
+      // saved and the date the save used — before the draft re-opens below.
+      // They never block: the rows are already written.
+      setOutcome(shownSaveOutcomeOf(saved, writable, draft, savedOn));
 
       if (!saved.ok) return;
 
@@ -816,6 +825,8 @@ export function RotationSection({
   }
 
   const partial = outcome === null ? null : rotationPartialMessageKey(outcome);
+  /** A warning's words, every one from `hr.json`, resolved by `@/rotation/warnings`. */
+  const translate: WarningTranslate = (key, values) => t(key, values);
 
   return (
     <>
@@ -845,7 +856,36 @@ export function RotationSection({
           {partial === null ? null : <> {t(partial)}</>}
         </Notice>
       )}
-      {outcome?.ok === true ? <Notice role="status">{t(ROTATION_SAVED_MESSAGE_KEY)}</Notice> : null}
+      {outcome?.ok === true ? (
+        <Notice role="status">
+          {/* The confirmation on its own line, and its own element, whether
+              or not warnings follow it. */}
+          <span className="block">{t(ROTATION_SAVED_MESSAGE_KEY)}</span>
+          {outcome.warnings.length === 0 ? null : (
+            <>
+              <span className="mt-2 block">{warningTextOf(warningsSummaryOf(outcome.warnings), translate)}</span>
+              {/* SPANS WITH LIST ROLES, because the Notice is a `<p>` and a `<ul>`
+                  may not sit in one. */}
+              <span role="list" className="mt-1 grid gap-1">
+                {outcome.warnings.map((line, index) => (
+                  <span role="listitem" key={index} className="block">
+                    {warningTextOf(line.text, translate)}
+                    {line.details.length === 0 ? null : (
+                      <span role="list" className="mt-0.5 grid gap-0.5 pl-4 font-normal">
+                        {line.details.map((detail, detailIndex) => (
+                          <span role="listitem" key={detailIndex} className="block">
+                            {warningTextOf(detail, translate)}
+                          </span>
+                        ))}
+                      </span>
+                    )}
+                  </span>
+                ))}
+              </span>
+            </>
+          )}
+        </Notice>
+      ) : null}
       {refusal === null ? null : <Notice role="alert">{t(rotationMessageKey(refusal))}</Notice>}
       {draft === null ? null : renderStepBar()}
       {/* SECTIONS 1 AND 2 side by side from `lg` up, stacked below it. The

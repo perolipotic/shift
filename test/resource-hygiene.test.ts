@@ -80,6 +80,12 @@ const SANCTIONED_PLURAL_KEYS = [
   // OWNER REQUEST: the preview's cycles choice, `1 ciklus`, `2 ciklusa`,
   // `5 ciklusa`.
   'rotation.builder.cycleCount',
+  // STORY 2.5: the save's warnings — how many there are (`1 upozorenje`,
+  // `2 upozorenja`, `5 upozorenja`), and the days of the next cycle with a
+  // gap or a duplicate (`1 dan`, `2 dana`, `5 dana`).
+  'rotation.builder.warnings.summary',
+  'rotation.builder.warnings.coverageGap',
+  'rotation.builder.warnings.duplicateCoverage',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -804,6 +810,18 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.builder.save',
   'rotation.builder.saveNote',
   'rotation.builder.saved',
+  // STORY 2.5: the save's warnings, in the success notice. One date and its
+  // types; the rest gap true on the clock (`24 h rada bez slobodnog dana
+  // između`), with an unknown duration and an endless pattern each said as
+  // such; and the two separators, a list's and a run's. Still the builder's
+  // namespace: `smjen` names the team, and a type is shown by its own name.
+  'rotation.builder.warnings.date',
+  'rotation.builder.warnings.restGap',
+  'rotation.builder.warnings.restGapUnknown',
+  'rotation.builder.warnings.restGapEndless',
+  'rotation.builder.warnings.restGapEndlessUnknown',
+  'rotation.builder.warnings.listSeparator',
+  'rotation.builder.warnings.typeSeparator',
   // STORY 2.4: the phone stepper, under `rotation.builder.stepper` — the bar's
   // label, the progress line, the four step names, a reached step's
   // "završeno", Natrag, and Dalje naming the step it leads to. Still the

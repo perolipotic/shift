@@ -805,3 +805,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-4-rotation-phone-stepper.md`
   summary: `e2e/rotation.spec.ts` checks the prefill after a reload, so a team created meanwhile by a parallel spec (no assignment) empties the prefill and can flake the test; the phone spec avoids it by checking in the same tab right after the save.
   evidence: Raised while implementing 2.4. The race comes from `prefillOf` requiring every active team to have an assignment (see the 2.3b entry above) plus other specs creating teams in the shared run organization; `rotation.spec.ts` was not hardened.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-5-rotation-save-warnings.md`
+  summary: A duplicate-coverage warning names the date and the shift type but not the teams that collide, so the admin has to work out from the preview which offsets to change.
+  evidence: Raised by 2.5's review. `DUPLICATE_COVERAGE` dates carry `shiftTypeIds` only (spec 2.5 shape, as approved); carrying the team ids per duplicated type would let the confirmation say "Smjena A i Smjena B na Dan".

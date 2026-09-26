@@ -124,13 +124,14 @@ export function rotationAssignmentOn(
 }
 
 /**
- * The steps of ONE pattern, ordered by position.
+ * The steps of ONE pattern, ordered by position. INTERNAL: shared with
+ * `warnings.ts` and not re-exported from `index.ts`.
  *
  * @throws RangeError naming the value when there are no steps, when they
  *   belong to a pattern other than `patternId`, when a position is not a
  *   non-negative integer, or when two steps share a position or an id.
  */
-function orderedSteps(steps: readonly RotationStep[], patternId: string): readonly RotationStep[] {
+export function orderedSteps(steps: readonly RotationStep[], patternId: string): readonly RotationStep[] {
   if (steps.length === 0) {
     throw new RangeError(`rotation pattern ${patternId} has no steps, so it names no shift on any date`);
   }
