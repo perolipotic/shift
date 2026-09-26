@@ -141,6 +141,8 @@ const SHIFT_TYPE_WRITE_KEYS = join(srcRoot, 'shift-types', 'write.ts');
 const ROTATION_SECTION = join(srcRoot, 'rotation', 'rotation-section.tsx');
 const ROTATION_LIST_KEYS = join(srcRoot, 'rotation', 'list.ts');
 const ROTATION_WRITE_KEYS = join(srcRoot, 'rotation', 'write.ts');
+/** Story 2.4's phone stepper rules: each step's name and Dalje's label per target step. */
+const ROTATION_STEPPER_KEYS = join(srcRoot, 'rotation', 'stepper.ts');
 
 /**
  * The member write path's rules, as a `.ts` module that renders nothing.
@@ -440,7 +442,10 @@ const SCREENS = [
   // EIGHT SINCE THE OWNER ADDITION: `Rasporedi ravnomjerno`, which only
   // fills the draft.
   // NINE SINCE THE CYCLES CHOICE: the preview's native `<select>`.
-  { name: 'the rotation builder', file: ROTATION_SECTION, expectedControls: 9 },
+  // TWELVE SINCE STORY 2.4: the phone stepper's bar step (written once for
+  // all four), Natrag and Dalje. No width switch in script: all three are
+  // hidden from `sm` up by CSS.
+  { name: 'the rotation builder', file: ROTATION_SECTION, expectedControls: 12 },
   // ZERO on every remaining placeholder (four since story 2.2b built
   // `/postavke-rotacije`), and asserted rather than assumed: a placeholder is a
   // heading and nothing else, so the first control any of them grows is a
@@ -1663,8 +1668,19 @@ const KEY_SOURCES = [
     // went with the transposed preview.
     // FORTY-FOUR SINCE THE CYCLES CHOICE: its label, its ICU options and
     // the cycle's name over each cycle's first day.
+    // FORTY-EIGHT SINCE STORY 2.4: the stepper's progress line, the bar's
+    // label, a reached step's "završeno" and Natrag. The step names and
+    // Dalje's labels come through `@/rotation/stepper`, counted below.
     keys: translationKeys,
-    strings: 44,
+    strings: 48,
+  },
+  {
+    // STORY 2.4: the four step names and Dalje's three labels, one per step
+    // it can lead to.
+    name: 'the rotation stepper rules',
+    file: ROTATION_STEPPER_KEYS,
+    keys: memberListKeys,
+    strings: 7,
   },
   {
     // The read failure.
@@ -1965,8 +1981,10 @@ describe('the screen is read at all, so every sweep below means something', () =
     // TWENTY-FOUR AND FORTY SINCE STORY 2.3b: the rotation builder is a new
     // `.tsx` that renders strings (one each), and `@/rotation/list` and
     // `@/rotation/write` are key sources (two more).
+    //
+    // FORTY-ONE KEY SOURCES SINCE STORY 2.4: `@/rotation/stepper`.
     expect(SCREENS).toHaveLength(24);
-    expect(KEY_SOURCES).toHaveLength(40);
+    expect(KEY_SOURCES).toHaveLength(41);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -3087,11 +3105,31 @@ describe('the member list reads once, under one key', () => {
       ROTATION_WRITE_KEYS,
       ROTATION_SECTION,
       join(srcRoot, 'rotation', 'draft.ts'),
+      ROTATION_STEPPER_KEYS,
     ]) {
       const text = readFileSync(file, 'utf8');
 
       expect(codeOnly(text), `${file} takes a modulo`).not.toContain('%');
       expect(text, `${file} writes a derived value`).not.toMatch(/cycle_length|offset_index|projected_/);
+    }
+  });
+
+  it('switches the phone stepper by CSS alone, never by a width read in script', () => {
+    // STORY 2.4: one DOM tree at every width. A section that is not the
+    // current step is hidden below `sm` by a class; nothing measures the
+    // window, so a resize across 640 px has no state to reconcile.
+    for (const file of [ROTATION_SECTION, ROTATION_STEPPER_KEYS, join(srcRoot, 'rotation', 'draft-store.ts')]) {
+      expect(codeOnly(readFileSync(file, 'utf8')), `${file} reads the width in script`).not.toMatch(
+        /matchMedia|innerWidth|outerWidth|clientWidth|ResizeObserver|screen\.width/,
+      );
+    }
+    // The step bar and Natrag / Dalje are `sm:hidden`; each section's wrapper
+    // takes its class from the stepper rules.
+    const section = source(ROTATION_SECTION);
+
+    expect(occurrences(section, 'sm:hidden')).toBe(2);
+    for (const step of [1, 2, 3, 4]) {
+      expect(section).toContain(`stepSectionClassOf(shown, ${step})`);
     }
   });
 

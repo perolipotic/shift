@@ -21,6 +21,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   BriefcaseBusiness,
   CalendarRange,
+  Check,
+  ChevronLeft,
   Clock3,
   Coffee,
   GripVertical,
@@ -89,7 +91,12 @@ import {
   type StepControl,
   type StepFocus,
 } from '@/rotation/draft';
-import { rotationDraftStore, rotationPreviewCyclesStore, shownDraftOf } from '@/rotation/draft-store';
+import {
+  rotationDraftStore,
+  rotationPreviewCyclesStore,
+  rotationStepperStore,
+  shownDraftOf,
+} from '@/rotation/draft-store';
 import {
   ROTATION_ASSIGNMENTS_TABLE,
   ROTATION_KEY,
@@ -115,6 +122,20 @@ import {
   type RotationInsertTable,
   type RotationSaveOutcome,
 } from '@/rotation/write';
+import {
+  STEPPER_STEPS,
+  STEP_CURRENT,
+  STEP_REACHED,
+  STEP_UNREACHED,
+  nextMessageKey,
+  nextStepOf,
+  previousStepOf,
+  shownStepperOf,
+  stepGroupClassOf,
+  stepMessageKey,
+  stepSectionClassOf,
+  stepStatusOf,
+} from '@/rotation/stepper';
 import { durationValuesOf, shiftTypeDurationMessageKey } from '@/shift-types/list';
 import { supabaseClient } from '@/supabase/client';
 
@@ -139,6 +160,13 @@ import { supabaseClient } from '@/supabase/client';
  * A FAILED REFETCH KEEPS THE DRAFT AND THE ROWS, with the message beside them;
  * the save is then refused as unavailable rather than built from rows that may
  * be stale.
+ *
+ * BELOW `sm`, A STEPPER (story 2.4, UX-DR16), IN CSS ONLY. Every section is
+ * always rendered; the one that is not the current step is hidden below `sm`
+ * (`stepSectionClassOf`), and the step bar and Natrag / Dalje are `sm:hidden`.
+ * One tree at every width: the data, the validations and the order cannot
+ * differ, and a step change remounts nothing. The header, its save, the save's
+ * note and outcome and the read refusal stay outside every step.
  */
 
 export function RotationSection({
@@ -155,6 +183,9 @@ export function RotationSection({
   const addField = useRef<HTMLSelectElement>(null);
   const stored = useSyncExternalStore(rotationDraftStore.subscribe, rotationDraftStore.get);
   const cycles = useSyncExternalStore(rotationPreviewCyclesStore.subscribe, rotationPreviewCyclesStore.get);
+  const stepper = useSyncExternalStore(rotationStepperStore.subscribe, rotationStepperStore.get);
+  const progress = useRef<HTMLParagraphElement>(null);
+  const stepMoved = useRef(false);
   const [pending, setPending] = useState(false);
   const [outcome, setOutcome] = useState<RotationSaveOutcome | null>(null);
   const [focus, setFocus] = useState<StepFocus | null>(null);
@@ -171,11 +202,24 @@ export function RotationSection({
     setFocus(null);
   }, [focus]);
 
+  // A STEP CHANGE MOVES FOCUS to the progress line, and scrolls it into view,
+  // so a screen reader hears "Korak N od 4" and a finger starts at the top of
+  // the new step. Only after a step change made here — never on a mount.
+  useEffect(() => {
+    if (!stepMoved.current) return;
+
+    stepMoved.current = false;
+    progress.current?.focus({ preventScroll: true });
+    progress.current?.scrollIntoView();
+  }, [stepper.current]);
+
   const answer = useQuery(rotationQueryOptions(() => supabaseClient().from(ROTATION_READ_TABLE)));
   const state = rotationSurfaceStateOf(answer);
   const { snapshot, refusal } = state;
   const today = snapshot === null ? null : rotationTodayOf(snapshot, new Date());
   const draft = snapshot === null || today === null ? null : shownDraftOf(stored, snapshot, today);
+  // With no draft only section 1 exists: laid out as step 1, and no stepper.
+  const shown = shownStepperOf(stepper, draft !== null);
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
     useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 6 } }),
@@ -667,6 +711,110 @@ export function RotationSection({
     );
   }
 
+  /**
+   * Every step change goes through the stepper store, and then moves focus —
+   * only when the store actually changed. A tap on the current step (still
+   * enabled, `aria-current`) is a no-op the store ignores, and must not leave
+   * a flag behind for a later, unrelated change to steal focus with.
+   */
+  function moveStep(move: () => void): void {
+    const before = rotationStepperStore.get();
+
+    // Raised BEFORE the move, in case the store's render commits inside it,
+    // and lowered again when nothing moved.
+    stepMoved.current = true;
+    move();
+    if (rotationStepperStore.get() === before) stepMoved.current = false;
+  }
+
+  function renderStepBar(): ReactNode {
+    return (
+      <div className="grid gap-3 sm:hidden">
+        <p
+          ref={progress}
+          tabIndex={-1}
+          className="scroll-mt-4 text-sm font-semibold text-muted-foreground focus-visible:outline-none"
+        >
+          {t('rotation.builder.stepper.progress', { current: stepper.current, total: STEPPER_STEPS.length })}
+        </p>
+        <nav aria-label={t('rotation.builder.stepper.label')}>
+          <ol className="grid grid-cols-4 gap-1">
+            {STEPPER_STEPS.map((step) => {
+              const status = stepStatusOf(stepper, step);
+
+              return (
+                <li key={step} className="min-w-0">
+                  {/* THE STEP'S STATE IN WORDS AND A GLYPH, not colour alone:
+                      the current one is `aria-current`, a reached one carries a
+                      check and "završeno", an unreached one is disabled. */}
+                  <Button
+                    type="button"
+                    variant={status === STEP_CURRENT ? 'default' : 'outline'}
+                    className="h-11 w-full flex-col gap-0 px-1 py-0 text-xs leading-tight"
+                    aria-current={status === STEP_CURRENT ? 'step' : undefined}
+                    disabled={status === STEP_UNREACHED}
+                    onClick={() => {
+                      moveStep(() => {
+                        rotationStepperStore.set(step);
+                      });
+                    }}
+                  >
+                    <span className="flex items-center gap-0.5 tabular-nums">
+                      {status === STEP_REACHED ? <Check aria-hidden /> : null}
+                      {step}
+                    </span>
+                    <span className="max-w-full truncate leading-normal">{t(stepMessageKey(step))}</span>
+                    {status === STEP_REACHED ? (
+                      <span className="sr-only">{t('rotation.builder.stepper.done')}</span>
+                    ) : null}
+                  </Button>
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+      </div>
+    );
+  }
+
+  function renderStepActions(): ReactNode {
+    const previous = previousStepOf(stepper.current);
+    const next = nextStepOf(stepper.current);
+
+    return (
+      <div className="flex flex-wrap gap-3 sm:hidden">
+        {previous === null ? null : (
+          <Button
+            className="h-11 grow"
+            type="button"
+            variant="outline"
+            onClick={() => {
+              moveStep(() => {
+                rotationStepperStore.back();
+              });
+            }}
+          >
+            <ChevronLeft aria-hidden />
+            {t('rotation.builder.stepper.back')}
+          </Button>
+        )}
+        {next === null ? null : (
+          <Button
+            className="h-11 grow"
+            type="button"
+            onClick={() => {
+              moveStep(() => {
+                rotationStepperStore.next();
+              });
+            }}
+          >
+            {t(nextMessageKey(next))}
+          </Button>
+        )}
+      </div>
+    );
+  }
+
   const partial = outcome === null ? null : rotationPartialMessageKey(outcome);
 
   return (
@@ -699,32 +847,41 @@ export function RotationSection({
       )}
       {outcome?.ok === true ? <Notice role="status">{t(ROTATION_SAVED_MESSAGE_KEY)}</Notice> : null}
       {refusal === null ? null : <Notice role="alert">{t(rotationMessageKey(refusal))}</Notice>}
+      {draft === null ? null : renderStepBar()}
       {/* SECTIONS 1 AND 2 side by side from `lg` up, stacked below it. The
           shift types' table gets the wider share, so it does not scroll; the
-          step rows stay one line in the narrower one. */}
-      <div className="grid min-w-0 gap-6 lg:grid-cols-[3fr_2fr] lg:items-start" aria-busy={state.loading}>
-        {shiftTypes}
-        {draft === null ? null : (
-          <Card className="min-w-0">
-            <CardHeader className="flex-row items-start gap-3">
-              <SectionNumber value={2} />
-              <div className="grid min-w-0 gap-1.5">
-                <CardTitle asChild>
-                  <h2>{t('rotation.builder.patternHeading')}</h2>
-                </CardTitle>
-                <CardDescription>{t('rotation.builder.patternLede')}</CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent className="grid gap-4 pt-4">
-              {renderSteps(draft)}
-              {renderAdd(draft)}
-              {renderFigures(draft)}
-            </CardContent>
-          </Card>
-        )}
+          step rows stay one line in the narrower one. Each section sits in a
+          wrapper that stays the grid item (`min-w-0`) and is hidden below
+          `sm` unless it is the current step; the grid's own wrapper too on
+          steps 3 and 4, so an empty grid leaves no gap. */}
+      <div className={stepGroupClassOf(shown, [1, 2])}>
+        <div className="grid min-w-0 gap-6 lg:grid-cols-[3fr_2fr] lg:items-start" aria-busy={state.loading}>
+          <div className={stepSectionClassOf(shown, 1)}>{shiftTypes}</div>
+          {draft === null ? null : (
+            <div className={stepSectionClassOf(shown, 2)}>
+              <Card className="min-w-0">
+                <CardHeader className="flex-row items-start gap-3">
+                  <SectionNumber value={2} />
+                  <div className="grid min-w-0 gap-1.5">
+                    <CardTitle asChild>
+                      <h2>{t('rotation.builder.patternHeading')}</h2>
+                    </CardTitle>
+                    <CardDescription>{t('rotation.builder.patternLede')}</CardDescription>
+                  </div>
+                </CardHeader>
+                <CardContent className="grid gap-4 pt-4">
+                  {renderSteps(draft)}
+                  {renderAdd(draft)}
+                  {renderFigures(draft)}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </div>
       </div>
-      {draft === null ? null : renderOffsets(draft)}
-      {draft === null ? null : renderPreview(draft)}
+      {draft === null ? null : <div className={stepSectionClassOf(shown, 3)}>{renderOffsets(draft)}</div>}
+      {draft === null ? null : <div className={stepSectionClassOf(shown, 4)}>{renderPreview(draft)}</div>}
+      {draft === null ? null : renderStepActions()}
     </>
   );
 }

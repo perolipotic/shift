@@ -3,6 +3,7 @@ import type { Locator, Page } from '@playwright/test';
 import { ADMIN_STATE, MEMBER_STATE, type Fixture } from './support/fixture.ts';
 import { fill, hr } from './support/i18n.ts';
 import { expectNoHorizontalScroll, expectTouchTargets } from './support/layout.ts';
+import { NEXT_LABELS, STEP_HEADINGS, stepProgress } from './support/rotation.ts';
 import { expect, firstBand, test } from './support/test.ts';
 
 /**
@@ -84,13 +85,6 @@ const asAdmin: readonly Screen[] = [
       }),
   },
   {
-    // STORY 2.3b: the shift types and the rotation builder below them, one
-    // scrolling panel; wide tables scroll inside their own container.
-    title: 'Postavke rotacije',
-    path: () => '/postavke-rotacije',
-    ready: (page) => page.getByRole('heading', { name: hr.rotation.builder.patternHeading }),
-  },
-  {
     title: 'Organizacija',
     path: () => '/organizacija',
     ready: (page) => page.getByLabel(hr.organization.name, { exact: true }),
@@ -125,16 +119,70 @@ test.describe('as an admin', () => {
   }
 });
 
+/**
+ * STORY 2.4: the rotation screen below 640 px is a four-step stepper, so it is
+ * measured on EACH step — reached through Dalje, as a person reaches it — and
+ * not only on the first. The preview's wide grid scrolls inside its own
+ * container, never the page.
+ */
+async function checkRotationSteps(page: Page): Promise<void> {
+  await page.goto('/postavke-rotacije');
+
+  for (const [index, heading] of STEP_HEADINGS.entries()) {
+    const next = NEXT_LABELS[index - 1];
+
+    if (next !== undefined) await page.getByRole('button', { name: next, exact: true }).tap();
+    await expect(stepProgress(page, index + 1)).toBeVisible();
+    await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
+
+    await expectNoHorizontalScroll(page);
+    await expectTouchTargets(page);
+  }
+}
+
+test.describe('as an admin, the rotation screen', () => {
+  test.use({ storageState: ADMIN_STATE });
+
+  test('Postavke rotacije fits 320 px on each of its four steps', async ({ page }) => {
+    await checkRotationSteps(page);
+  });
+
+  // STORY 2.4, a regression only: the dialogs of the hour bands and the shift
+  // types open at 320 px with no sideways page scroll and 44 px controls.
+  test('the hour band dialogs fit 320 px', async ({ page, fixture }) => {
+    const bands = hr.organization.hourBands;
+
+    await page.goto('/organizacija/satni-pojasi');
+    await page.getByRole('button', { name: bands.open }).tap();
+    await expect(page.getByRole('dialog', { name: bands.addHeading })).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    await expectTouchTargets(page);
+    await page.getByRole('button', { name: bands.close, exact: true }).tap();
+    await expect(page.getByRole('dialog')).toBeHidden();
+
+    await page.getByRole('link', { name: fill(bands.edit, { name: firstBand(fixture).name }) }).tap();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    await expectTouchTargets(page);
+  });
+
+  test('the new shift type dialog fits 320 px', async ({ page }) => {
+    const shiftTypes = hr.rotation.shiftTypes;
+
+    await page.goto('/postavke-rotacije');
+    await page.getByRole('button', { name: shiftTypes.open }).tap();
+    await expect(page.getByRole('dialog', { name: shiftTypes.addHeading })).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    await expectTouchTargets(page);
+  });
+});
+
 // STORY 2.3b, OWNER LAYOUT: the rotation screen at 390 px too — the phone the
-// builder is designed against — where sections 1 and 2 stack, the figures sit
-// 2 × 2 and the preview scrolls inside its card.
+// builder is designed against — now walked step by step (story 2.4).
 test.describe('as an admin at 390 px', () => {
   test.use({ storageState: ADMIN_STATE, viewport: { width: 390, height: 844 } });
 
-  const rotation = asAdmin.find((screen) => screen.title === 'Postavke rotacije');
-
-  test('Postavke rotacije fits 390 px', async ({ page, fixture }) => {
-    if (rotation === undefined) throw new Error('E2E: no Postavke rotacije screen in the list');
-    await checkScreen(page, fixture, rotation);
+  test('Postavke rotacije fits 390 px on each of its four steps', async ({ page }) => {
+    await checkRotationSteps(page);
   });
 });

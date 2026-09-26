@@ -804,6 +804,22 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.builder.save',
   'rotation.builder.saveNote',
   'rotation.builder.saved',
+  // STORY 2.4: the phone stepper, under `rotation.builder.stepper` — the bar's
+  // label, the progress line, the four step names, a reached step's
+  // "završeno", Natrag, and Dalje naming the step it leads to. Still the
+  // builder's namespace, so the team-term rule holds: `Tipovi` alone, never
+  // the Shift Type.
+  'rotation.builder.stepper.label',
+  'rotation.builder.stepper.progress',
+  'rotation.builder.stepper.step.types',
+  'rotation.builder.stepper.step.pattern',
+  'rotation.builder.stepper.step.offsets',
+  'rotation.builder.stepper.step.preview',
+  'rotation.builder.stepper.done',
+  'rotation.builder.stepper.back',
+  'rotation.builder.stepper.next.pattern',
+  'rotation.builder.stepper.next.offsets',
+  'rotation.builder.stepper.next.preview',
   'rotation.builder.error.unavailable',
   'rotation.builder.error.empty',
   'rotation.builder.error.noTeams',
@@ -1230,6 +1246,10 @@ describe('the detector reads the file it thinks it does', () => {
     expect(teamTermOutOfTurn('rotation.builder.patternLede', 'Tipovi smjena')).toBe(true);
     expect(teamTermOutOfTurn('rotation.builder.patternLede', 'Isti tip može se ponoviti.')).toBe(false);
     expect(teamTermOutOfTurn('rotation.builderx.heading', 'Smjena')).toBe(true);
+    // STORY 2.4: the stepper's step names sit under the builder's namespace —
+    // `Tipovi` alone passes, the Shift Type term does not.
+    expect(teamTermOutOfTurn('rotation.builder.stepper.step.types', 'Tipovi')).toBe(false);
+    expect(teamTermOutOfTurn('rotation.builder.stepper.step.types', 'Tipovi smjena')).toBe(true);
     expect(teamTermOutOfTurn('rotation.pattern.heading', 'Smjena')).toBe(true);
   });
 

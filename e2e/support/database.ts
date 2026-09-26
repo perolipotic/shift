@@ -43,6 +43,97 @@ export async function connect(url: string = DATABASE_URL): Promise<pg.Client> {
   return client;
 }
 
+/** How long a test waits for another to release the run's rotation. */
+const ROTATION_LOCK_WAIT_MS = 60_000;
+const ROTATION_LOCK_POLL_MS = 250;
+
+/** A hold on the run organization's rotation (`holdRotation`). */
+export interface RotationHold {
+  /** Resolves once the lock is held and the rotation reset; rejects naming the lock otherwise. */
+  readonly ready: Promise<void>;
+  /** Ends the connection — and with it the lock, or the wait for it. Safe at any point, and twice. */
+  release(): Promise<void>;
+}
+
+/**
+ * The run organization's rotation, held by ONE test at a time, freshly reset.
+ *
+ * A rotation save binds every active team of the organization and a team's
+ * rotation changes at most once per date, so two tests that save a rotation
+ * (`rotation.spec.ts`, `rotation-phone.spec.ts`) cannot run side by side in
+ * one organization: the second save would be refused as already changed
+ * today, and the first test's prefill would show the second one's rotation. A
+ * session-level advisory lock, keyed by the run's slug, serializes them across
+ * workers; it is released when the connection ends.
+ *
+ * THE WAIT IS BOUNDED: `pg_try_advisory_lock` is polled for
+ * {@link ROTATION_LOCK_WAIT_MS}, then `ready` rejects naming the lock. The
+ * hold is returned SYNCHRONOUSLY, so a caller can store it before awaiting
+ * `ready` and its `afterEach` can release it even when the test timed out
+ * mid-wait — the connection is ended on every path, and never left to take
+ * the lock later.
+ *
+ * Once held, the versions an earlier attempt or test dated today or later are
+ * removed — in this run's organization only, which is deleted at teardown
+ * anyway — so the builder opens on an empty draft.
+ */
+export function holdRotation(slug: string): RotationHold {
+  const key = `e2e-rotation:${slug}`;
+  const client = new pg.Client({ connectionString: DATABASE_URL, connectionTimeoutMillis: REQUEST_TIMEOUT_MS });
+  let released = false;
+  let ended: Promise<void> | null = null;
+
+  const end = (): Promise<void> => {
+    // Bounded as well: an end asked for while the connect is still under way
+    // must not hold up the caller's teardown. The socket goes with the worker.
+    ended ??= Promise.race([
+      client.end().catch(() => undefined),
+      new Promise<void>((resolve) => setTimeout(resolve, REQUEST_TIMEOUT_MS)),
+    ]);
+    return ended;
+  };
+
+  const ready = (async () => {
+    try {
+      await client.connect();
+      const deadline = Date.now() + ROTATION_LOCK_WAIT_MS;
+
+      for (;;) {
+        if (released) throw new Error(`E2E: the wait for the lock ${key} was released before it was held`);
+
+        const answer = await client.query<{ held: boolean }>('select pg_try_advisory_lock(hashtext($1)) as held', [
+          key,
+        ]);
+
+        if (answer.rows[0]?.held === true) break;
+        if (Date.now() >= deadline) {
+          throw new Error(`E2E: the lock ${key} was not released within ${ROTATION_LOCK_WAIT_MS} ms`);
+        }
+        await new Promise((resolve) => setTimeout(resolve, ROTATION_LOCK_POLL_MS));
+      }
+
+      await client.query(
+        `delete from rotation_assignments a
+          using organizations o
+          where a.organization_id = o.id and o.slug = $1
+            and a.effective_from >= public.organization_today(o.id)`,
+        [slug],
+      );
+    } catch (cause) {
+      await end();
+      throw cause;
+    }
+  })();
+
+  return {
+    ready,
+    async release() {
+      released = true;
+      await end();
+    },
+  };
+}
+
 /**
  * Fails fast, naming `supabase start`, when the database or GoTrue is not
  * reachable. GoTrue too, because every spec signs in through it and a stack

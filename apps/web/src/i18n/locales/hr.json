@@ -360,6 +360,23 @@
       "save": "Spremi rotaciju",
       "saveNote": "Rotacija vrijedi od danas. Dani prije današnjeg zadržavaju dosadašnju rotaciju.",
       "saved": "Rotacija je spremljena.",
+      "stepper": {
+        "label": "Koraci rotacije",
+        "progress": "Korak {current} od {total}",
+        "step": {
+          "types": "Tipovi",
+          "pattern": "Uzorak",
+          "offsets": "Pomaci",
+          "preview": "Pregled"
+        },
+        "done": "završeno",
+        "back": "Natrag",
+        "next": {
+          "pattern": "Dalje — uzorak",
+          "offsets": "Dalje — pomaci",
+          "preview": "Dalje — pregled"
+        }
+      },
       "error": {
         "unavailable": "Rotaciju trenutačno nije moguće učitati. Pokušaj ponovno.",
         "empty": "Uzorak mora imati barem jedan korak.",

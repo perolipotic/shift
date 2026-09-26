@@ -802,3 +802,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-3b-rotation-builder.md`
   summary: The rotation snapshot embeds every pattern, step and assignment the organization ever had, including orphan patterns left by failed saves, so it grows with every save.
   evidence: Raised by 2.3b's review. Each save creates a fresh pattern (2.3a immutability), and the one read under `ROTATION_KEY` is unbounded. Fine at pilot scale; bound it to in-force and scheduled versions (plus the patterns they reference) before Epic 3 reads it per month, together with the orphan-pattern cleanup already in this ledger.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-4-rotation-phone-stepper.md`
+  summary: `e2e/rotation.spec.ts` checks the prefill after a reload, so a team created meanwhile by a parallel spec (no assignment) empties the prefill and can flake the test; the phone spec avoids it by checking in the same tab right after the save.
+  evidence: Raised while implementing 2.4. The race comes from `prefillOf` requiring every active team to have an assignment (see the 2.3b entry above) plus other specs creating teams in the shared run organization; `rotation.spec.ts` was not hardened.

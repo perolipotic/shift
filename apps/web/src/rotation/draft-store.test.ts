@@ -4,7 +4,9 @@ import { withStepAdded, withTeamStep, prefillOf } from '@/rotation/draft';
 import {
   createDraftStore,
   createPreviewCyclesStore,
+  createStepperStore,
   rotationDraftStore,
+  rotationStepperStore,
   shownDraftOf,
 } from '@/rotation/draft-store';
 import { readRotation, type RotationSnapshot } from '@/rotation/list';
@@ -132,5 +134,64 @@ describe('the preview cycles choice', () => {
     store.set('7');
     expect(store.get()).toBe(1);
     expect(heard).toBe(2);
+  });
+});
+
+describe('the phone stepper', () => {
+  it('starts on step 1, and Dalje, Natrag and the bar move it through the rules', () => {
+    const store = createStepperStore();
+
+    expect(store.get()).toEqual({ current: 1, reached: 1 });
+    store.next();
+    store.next();
+    expect(store.get()).toEqual({ current: 3, reached: 3 });
+    store.set(2);
+    expect(store.get()).toEqual({ current: 2, reached: 3 });
+    store.set('3');
+    expect(store.get()).toEqual({ current: 3, reached: 3 });
+    store.back();
+    expect(store.get()).toEqual({ current: 2, reached: 3 });
+  });
+
+  it('ignores a value that is not a step, and a step not yet reached', () => {
+    const store = createStepperStore();
+
+    store.next();
+    const before = store.get();
+
+    store.set(7);
+    store.set('x');
+    store.set(0);
+    store.set(4);
+    expect(store.get()).toBe(before);
+    expect(store.get()).toEqual({ current: 2, reached: 2 });
+  });
+
+  it('tells subscribers only of a change', () => {
+    const store = createStepperStore();
+    let heard = 0;
+    const unsubscribe = store.subscribe(() => {
+      heard += 1;
+    });
+
+    store.back();
+    store.set(1);
+    store.set('x');
+    expect(heard).toBe(0);
+    store.next();
+    expect(heard).toBe(1);
+    store.set(3);
+    expect(heard).toBe(1);
+    store.back();
+    expect(heard).toBe(2);
+    unsubscribe();
+    store.next();
+    expect(heard).toBe(2);
+  });
+
+  it('keeps one stepper for the tab, opening on step 1', () => {
+    // The shift type dialog remounts the section; a module-level store
+    // outlives it, as the draft's does.
+    expect(rotationStepperStore.get()).toEqual({ current: 1, reached: 1 });
   });
 });
