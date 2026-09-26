@@ -842,3 +842,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-2b-calendar-modifiers-and-keyboard-grid.md`
   summary: Under `forced-colors: active` (Windows High Contrast) the `box-shadow` modifier rings and the background-image hatches are dropped, leaving only the glyphs.
   evidence: Raised by 3.2b's review. `index.css`'s `modifier-ring-*` and `modifier-hatch-*` utilities have no `@media (forced-colors: active)` fallback (e.g. an `outline` in `CanvasText`); the glyph still carries the meaning, so this is not colour-alone, but the treatment vanishes.
+- source_spec: none
+  summary: Story 3.3b — the calendar's filter to one person: members' names and team membership history readable by every active member through a new read (a `SECURITY DEFINER` function, shared with 3.4's roster as at a date), and the chosen member's month drawn from `memberScheduleOfMonth`, roster-override shifts included once 3.6 lands.
+  evidence: Split from story 3.3 at the user's request (2026-09-26). Since `0011` a member-role account reads only its own `members` row, so a person filter for members needs a migration; 3.3a ships the team filter in `apps/web` alone, with no migration, so parallel worktrees keep their DB tests green.

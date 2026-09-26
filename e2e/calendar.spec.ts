@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 
 import type { Locator, Page } from '@playwright/test';
 
@@ -30,6 +30,10 @@ import { expect, test } from './support/test.ts';
  * Story 3.2b: the grid is an ARIA grid — one tab stop that starts on today,
  * the arrows, Home, End and Ctrl+End moving focus at 1280 px and at 390 px —
  * every gridcell named in full, and no legend while no mark is on screen.
+ *
+ * Story 3.3a: *Sve smjene* narrowed to one team by a native Select — the
+ * all-teams option counting the columns, the teams under their heading — kept
+ * across month navigation and cleared by the reset, and a phone-safe row.
  */
 
 const kalendar = hr.kalendar;
@@ -480,8 +484,9 @@ for (const [width, height, name] of [
       const cells = grid.getByRole('gridcell');
       await expect(cells).toHaveCount(rows * columns);
 
-      // Tab enters the grid on that one cell, and a second Tab leaves it.
-      await page.getByRole('group', { name: kalendar.mode.label }).getByRole('button', { name: kalendar.mode.sve, exact: true }).focus();
+      // Tab enters the grid on that one cell, and a second Tab leaves it. The
+      // control before the grid is the team filter (story 3.3a), under the switch.
+      await teamFilterOf(page).focus();
       await page.keyboard.press('Tab');
       await expect(todayRow.getByRole('gridcell').first()).toBeFocused();
       const start = await focusedCell(page);
@@ -556,3 +561,161 @@ for (const [width, height, name] of [
     });
   });
 }
+
+/** The team filter's native select. */
+function teamFilterOf(page: Page): Locator {
+  return page.getByRole('combobox', { name: kalendar.filter.label, exact: true });
+}
+
+/** The grid's team columns: its column headers but the date's. */
+async function columnCountOf(page: Page): Promise<number> {
+  return (await gridOf(page).locator('thead th').count()) - 1;
+}
+
+/** A search parameter's value, matched whole: `name=value` followed by `&` or the end. */
+function searchParamPattern(name: string, value: string): RegExp {
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  return new RegExp(`[?&]${escape(name)}=${escape(value)}(&|$)`);
+}
+
+/** Any value of a search parameter. */
+function anySearchParamPattern(name: string): RegExp {
+  return new RegExp(`[?&]${name}=`);
+}
+
+/**
+ * Moves the grid's tab stop off today's first cell, so a later reset of it is
+ * observable: focus that cell, then Ctrl+Home — or Ctrl+End when today is the
+ * first row — and check the one tab stop has left it.
+ */
+async function moveTabStopOffToday(page: Page): Promise<void> {
+  const grid = gridOf(page);
+  const todayFirst = grid.locator('tr[aria-current="date"]').getByRole('gridcell').first();
+  await todayFirst.focus();
+  await page.keyboard.press('Control+Home');
+  if ((await todayFirst.getAttribute('tabindex')) === '0') await page.keyboard.press('Control+End');
+  await expect(todayFirst).toHaveAttribute('tabindex', '-1');
+  await expect(grid.locator('[role="gridcell"][tabindex="0"]')).toHaveCount(1);
+}
+
+/** The grid's one tab stop is on today's row, column 0. */
+async function expectTabStopOnToday(page: Page): Promise<void> {
+  const grid = gridOf(page);
+  const stops = grid.locator('[role="gridcell"][tabindex="0"]');
+  await expect(stops).toHaveCount(1);
+  await expect(grid.locator('tr[aria-current="date"]').getByRole('gridcell').first()).toHaveAttribute('tabindex', '0');
+  await expect(stops).toHaveAttribute('data-column', '0');
+}
+
+test.describe('the team filter at 1280 px', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 1280, height: 800 } });
+
+  test('narrows the grid to one team, keeps it across months, and resets in one press', async ({ page, fixture }) => {
+    await page.goto('/kalendar');
+    await expect(gridOf(page).getByRole('columnheader', { name: fixture.team.name, exact: true })).toBeVisible();
+    // The run organization may hold teams other specs created: count, never assume.
+    const columns = await columnCountOf(page);
+    expect(columns).toBeGreaterThan(0);
+    const team = searchParamPattern('smjena', fixture.team.id);
+
+    const select = teamFilterOf(page);
+    await expect(select).toBeVisible();
+    await expect(select.locator('option').first()).toHaveText(fill(kalendar.filter.all, { count: String(columns) }));
+    await expect(select).toHaveValue('');
+    const grouped = select.locator(`optgroup[label="${kalendar.filter.group}"] > option`);
+    await expect(grouped).toHaveCount(columns);
+    await expect(grouped.filter({ hasText: fixture.team.name })).toHaveCount(1);
+    const reset = page.getByRole('button', { name: kalendar.filter.reset, exact: true });
+    await expect(reset).toHaveCount(0);
+
+    // Choosing a team narrows the grid and resets the tab stop to today.
+    await moveTabStopOffToday(page);
+    await select.selectOption(fixture.team.id);
+    await expect(page).toHaveURL(team);
+    await expect(gridOf(page).locator('thead th')).toHaveCount(2);
+    await expect(gridOf(page).getByRole('columnheader', { name: fixture.team.name, exact: true })).toBeVisible();
+    await expect(select).toHaveValue(fixture.team.id);
+    await expect(reset).toBeVisible();
+    await expectTabStopOnToday(page);
+
+    // One press brings every column back, on /kalendar, the reset goes, focus
+    // lands on the filter rather than <body>, and the tab stop is on today.
+    await moveTabStopOffToday(page);
+    await reset.click();
+    await expect(page).not.toHaveURL(anySearchParamPattern('smjena'));
+    await expect(page).toHaveURL(/\/kalendar(\?|$)/);
+    await expect(gridOf(page).locator('thead th')).toHaveCount(columns + 1);
+    await expect(select).toHaveValue('');
+    await expect(reset).toHaveCount(0);
+    await expect(select).toBeFocused();
+    await expectTabStopOnToday(page);
+
+    // The next month keeps the team: the heading moves, the filter stays.
+    await select.selectOption(fixture.team.id);
+    await expect(page).toHaveURL(team);
+    const heading = page.getByRole('heading', { level: 2 });
+    const thisMonth = (await heading.innerText()).trim();
+    await page.getByRole('button', { name: kalendar.next }).click();
+    await expect(heading).not.toHaveText(thisMonth);
+    await expect(page).toHaveURL(anySearchParamPattern('mjesec'));
+    await expect(page).toHaveURL(team);
+    await expect(gridOf(page).locator('thead th')).toHaveCount(2);
+    await expect(select).toHaveValue(fixture.team.id);
+
+    // A reset there drops the team and keeps the month.
+    const mjesec = new URL(page.url()).searchParams.get('mjesec') ?? '';
+    expect(mjesec).toMatch(/^\d{4}-\d{2}$/);
+    await reset.click();
+    await expect(page).not.toHaveURL(anySearchParamPattern('smjena'));
+    await expect(page).toHaveURL(searchParamPattern('mjesec', mjesec));
+    await expect(gridOf(page).locator('thead th')).toHaveCount(columns + 1);
+    await expect(select).toBeFocused();
+  });
+
+  test('an unknown team id shows every column, reads as all teams, and offers no reset', async ({ page, fixture }) => {
+    const unknown = randomUUID();
+    await page.goto(`/kalendar?smjena=${unknown}`);
+    await expect(gridOf(page).getByRole('columnheader', { name: fixture.team.name, exact: true })).toBeVisible();
+    const select = teamFilterOf(page);
+    await expect(select).toHaveValue('');
+    const columns = await columnCountOf(page);
+    await expect(select.locator(`optgroup[label="${kalendar.filter.group}"] > option`)).toHaveCount(columns);
+    await expect(select.locator('option').first()).toHaveText(fill(kalendar.filter.all, { count: String(columns) }));
+    await expect(page.getByRole('button', { name: kalendar.filter.reset, exact: true })).toHaveCount(0);
+    // Silently ignored, and left in the URL.
+    await expect(page).toHaveURL(searchParamPattern('smjena', unknown));
+  });
+
+  test('Moj raspored ignores the team, shows no filter, and keeps it in the URL', async ({ page, fixture }) => {
+    await page.goto(`/kalendar?prikaz=moj&smjena=${fixture.team.id}`);
+    await expect(modes(page).moj).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('heading', { level: 2, name: /\d{4}$/ })).toBeVisible();
+    await expect(teamFilterOf(page)).toHaveCount(0);
+    await expect(page.getByRole('button', { name: kalendar.filter.reset, exact: true })).toHaveCount(0);
+    await expect(page.getByRole('grid')).toHaveCount(0);
+    await expect(page).toHaveURL(searchParamPattern('smjena', fixture.team.id));
+  });
+});
+
+test.describe('the team filter at 320 px', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 320, height: 720 } });
+
+  test('never scrolls the page sideways, and the select and the reset are touch targets', async ({ page, fixture }) => {
+    await page.goto(`/kalendar?prikaz=sve&smjena=${fixture.team.id}`);
+    await expect(gridOf(page).getByRole('columnheader', { name: fixture.team.name, exact: true })).toBeAttached();
+    const select = teamFilterOf(page);
+    const reset = page.getByRole('button', { name: kalendar.filter.reset, exact: true });
+    await expect(select).toHaveValue(fixture.team.id);
+    await expect(reset).toBeVisible();
+
+    for (const target of [select, reset]) {
+      const box = await target.boundingBox();
+      expect(box, 'a target has no box').not.toBeNull();
+      expect(box!.width).toBeGreaterThanOrEqual(MINIMUM_TARGET - 0.5);
+      expect(box!.height).toBeGreaterThanOrEqual(MINIMUM_TARGET - 0.5);
+    }
+    await expectNoHorizontalScroll(page);
+    await expectTouchTargets(page);
+  });
+});

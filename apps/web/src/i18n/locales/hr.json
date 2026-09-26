@@ -41,6 +41,12 @@
       "moj": "Moj raspored",
       "sve": "Sve smjene"
     },
+    "filter": {
+      "label": "Smjena",
+      "all": "Sve smjene ({count})",
+      "group": "Smjene",
+      "reset": "Poništi filtar"
+    },
     "legend": "Oznake",
     "modifier": {
       "conflict": "Konflikt",

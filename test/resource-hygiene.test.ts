@@ -905,6 +905,12 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.modifier.overridden',
   'kalendar.modifier.leave',
   'kalendar.modifier.uncovered',
+  // STORY 3.3a: the team filter — its label, the all-teams option with its
+  // count, the heading over the teams and the reset. `Smjena` is the Team.
+  'kalendar.filter.label',
+  'kalendar.filter.all',
+  'kalendar.filter.group',
+  'kalendar.filter.reset',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

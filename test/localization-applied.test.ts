@@ -995,6 +995,9 @@ const AUTHORED_VOCABULARY = [
   'Oznake',
   'Konflikt',
   'Izmijenjeno',
+  // STORY 3.3a: the team filter's reset, so a hard-coded reset label is a
+  // count that no longer matches.
+  'filtar',
 ];
 
 /** Everything the terminology contract and the unshipped affordances still own.
@@ -1055,6 +1058,41 @@ function withoutRouteSegments(chunk: string): string {
   return ROUTE_SEGMENTS.reduce((text, segment) => text.replaceAll(segment, ''), chunk);
 }
 
+/**
+ * Search PARAMETERS that are also counted words, and ship in the chunk as code
+ * rather than as copy. Story 3.3a's `?smjena=<team id>` is the first: the
+ * calendar's search object carries it as a property (`search.smjena`,
+ * `{smjena:…}`), the `in` check that tells a team change from the others, and
+ * the one constant naming it. Removed in THOSE shapes only — a property access,
+ * an object key, the constant's assignment and the `in` operand — so a bare
+ * `smjena` literal rendered as copy (a JSX child, an attribute value) still
+ * counts.
+ */
+const SEARCH_PARAMETERS = ['smjena'];
+
+function withoutSearchParameters(chunk: string): string {
+  return SEARCH_PARAMETERS.reduce(
+    (text, parameter) =>
+      text.replace(
+        new RegExp(
+          [
+            // A property access: `search.smjena`.
+            `\\.${parameter}(?![\\p{L}\\p{N}])`,
+            // An object key: `{smjena:…}`, `,smjena:…`.
+            `(?<=[{,])${parameter}(?=:)`,
+            // The constant's assignment, in any quote a minifier picks.
+            `(?<==)(["'\`])${parameter}\\1(?=[,;])`,
+            // The `in` operand, in any quote.
+            `(["'\`])${parameter}\\2\\s*(?=in\\b)`,
+          ].join('|'),
+          'gu',
+        ),
+        '',
+      ),
+    chunk,
+  );
+}
+
 function resourceSource(): string {
   return readFileSync(join(webRoot, 'src', 'i18n', 'locales', 'hr.json'), 'utf8');
 }
@@ -1070,7 +1108,7 @@ describe('the resource file is the only user-facing Croatian in the build', () =
   });
 
   it.skipIf(notBuilt).each(AUTHORED_VOCABULARY)('ships %s only from the resource file', (word) => {
-    const inChunk = wordOccurrences(withoutRouteSegments(allChunks()), word);
+    const inChunk = wordOccurrences(withoutSearchParameters(withoutRouteSegments(allChunks())), word);
     const inResource = wordOccurrences(resourceSource(), word);
 
     // Both directions matter. Above the resource count means a component
