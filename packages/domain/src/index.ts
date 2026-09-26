@@ -62,8 +62,18 @@ export {
   scheduleOfMonth,
   type MemberScheduleDay,
   type MemberScheduleInput,
-  type MembershipVersion,
   type ScheduleCell,
   type ScheduleInput,
   type ScheduleRow,
 } from './schedule.js';
+
+export {
+  activeOn,
+  membershipOn,
+  shiftRoster,
+  type MembershipOn,
+  type MembershipVersion,
+  type RosterEntry,
+  type RosterMember,
+  type StatusVersion,
+} from './roster.js';

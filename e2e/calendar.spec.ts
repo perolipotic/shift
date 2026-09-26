@@ -408,7 +408,15 @@ test.describe('on a phone, as a member', () => {
     expect(read).toMatch(/members\.auth_user_id=eq\.[0-9a-f-]{36}/);
     const select = new URL(read).searchParams.get('select') ?? '';
     expect(select).toContain('members(organization_id,id,role,team_membership_versions(');
-    expect(select).not.toMatch(/position\b(?!,shift_type_id)|rank|created_by|auth_user_id|members\([^)]*name/);
+    // Story 3.4a: the organization's rank setting and the positions of the
+    // organization-level membership versions are read (shown by 3.4b, never
+    // used); no member's rank or name ever comes through the select.
+    expect(select).toContain('team_membership_versions(organization_id,member_id,team_id,position,effective_from)');
+    expect(select).toContain('member_status_versions(organization_id,member_id,active,effective_from)');
+    const unexpected = select
+      .replace('uses_fire_ranks', '')
+      .replace('team_membership_versions(organization_id,member_id,team_id,position,effective_from)', '');
+    expect(unexpected).not.toMatch(/position\b(?!,shift_type_id)|rank|created_by|auth_user_id|members\([^)]*name/);
   });
 });
 
@@ -853,7 +861,7 @@ test.describe('the person filter for a member-role account', () => {
       expect(text).not.toMatch(/@|e2e\./);
     }
 
-    // A colleague's month — the reading `calendar_people()` exists for.
+    // A colleague's month — the reading `calendar_members()` exists for.
     const select = teamFilterOf(page);
     await select.selectOption({ label: fixture.admin.name });
     await expect(page).toHaveURL(anySearchParamPattern('osoba'));

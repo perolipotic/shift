@@ -54,7 +54,7 @@ import {
 } from '@/calendar/month';
 import {
   CALENDAR_READ_TABLE,
-  type CalendarPeopleRpc,
+  type CalendarMembersRpc,
   calendarMessageKey,
   calendarQueryOptions,
   calendarSurfaceStateOf,
@@ -107,7 +107,9 @@ import { supabaseClient } from '@/supabase/client';
  * `calendarMonthOf`'s decision; the state lives in the URL alone.
  *
  * ONE PERSON (story 3.3b), `?osoba=<member id>`: the same Select offers every
- * member active today under *Osobe*, read through `calendar_people()`. A
+ * member active on the organization's today under *Osobe*. The members come
+ * from `calendar_members()` (story 3.4a), active or not; which of them are
+ * active today is `calendarMonthOf`'s decision, through `activeOn`. A
  * person chosen replaces the grid with their day list — the one *Moj
  * raspored* draws — headed with their name, and wins over a team.
  *
@@ -134,7 +136,7 @@ export function KalendarScreen() {
       () => supabaseClient().from(CALENDAR_READ_TABLE),
       // The precedent of `smjene.$id.tsx`: the client's `rpc` is wider than
       // the one call the calendar makes.
-      () => supabaseClient() as unknown as CalendarPeopleRpc,
+      () => supabaseClient() as unknown as CalendarMembersRpc,
     ),
   );
   const state = calendarSurfaceStateOf(answer);

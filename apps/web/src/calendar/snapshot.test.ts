@@ -16,7 +16,7 @@ import {
   CALENDAR_COUNT,
   CALENDAR_FETCH_PAUSED,
   CALENDAR_KEY,
-  CALENDAR_PEOPLE_FUNCTION,
+  CALENDAR_MEMBERS_FUNCTION,
   CALENDAR_READ_STALE_MS,
   CALENDAR_READ_TABLE,
   CALENDAR_UNAVAILABLE,
@@ -27,7 +27,7 @@ import {
   calendarSurfaceStateOf,
   readCalendar,
   type CalendarAnswer,
-  type CalendarPeopleRpc,
+  type CalendarMembersRpc,
   type CalendarSnapshot,
   type CalendarTable,
 } from '@/calendar/snapshot';
@@ -44,8 +44,9 @@ import {
   calendarTableOf,
   memberMembershipRow,
   membershipRow,
-  peopleAnswerOf,
-  personRow,
+  membersAnswerOf,
+  calendarMemberRow,
+  statusRow,
   stepRow,
   teamRow,
   typeRow,
@@ -58,7 +59,9 @@ import {
  * Story 3.1's read, executed rather than read (AD-15): the one select, the
  * parsing, the tenant tripwire, the query options and the surface state, over
  * both fixtures, with a real `QueryObserver`. Story 3.2a's viewer row: the
- * filter, the session and every bad-embed row of its matrix.
+ * filter, the session and every bad-embed row of its matrix. Story 3.4a's
+ * members: every member with rank, positions and status versions, and one
+ * refusal per new validation.
  */
 
 /** The organization as the calendar's read embeds it: the viewer's member row alone. */
@@ -66,15 +69,15 @@ function answerOf(rows: FixtureRows, viewers: readonly Record<string, unknown>[]
   return { data: [calendarOrganizationRow(rows, { viewers })], error: null, count: 1 };
 }
 
-type Source = CalendarTable & CalendarPeopleRpc & { readonly seen: unknown[][] };
+type Source = CalendarTable & CalendarMembersRpc & { readonly seen: unknown[][] };
 
-function tableOf(answer: CalendarAnswer, people: unknown = peopleAnswerOf()): Source {
-  return calendarTableOf(answer, people);
+function tableOf(answer: CalendarAnswer, members: unknown = membersAnswerOf()): Source {
+  return calendarTableOf(answer, members);
 }
 
 const session = viewerSession();
 
-/** `readCalendar` over one stub standing in for both the table and the people rpc. */
+/** `readCalendar` over one stub standing in for both the table and the members rpc. */
 function read(source: Source, current: () => Promise<Session | null> = session) {
   return readCalendar(source, source, current);
 }
@@ -103,14 +106,15 @@ describe('the read', () => {
     expect(table.seen).toEqual([
       ['select', CALENDAR_COLUMNS, CALENDAR_COUNT],
       ['filter', 'members.auth_user_id', 'eq', VIEWER_AUTH_USER],
-      ['rpc', 'calendar_people'],
+      ['rpc', 'calendar_members'],
     ]);
-    expect(CALENDAR_PEOPLE_FUNCTION).toBe('calendar_people');
+    expect(CALENDAR_MEMBERS_FUNCTION).toBe('calendar_members');
     expect([CALENDAR_VIEWER_COLUMN, CALENDAR_VIEWER_OPERATOR]).toEqual(['members.auth_user_id', 'eq']);
     expect(CALENDAR_COUNT).toEqual({ count: 'exact' });
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.snapshot.timeZone).toBe('Europe/Zagreb');
+    expect(outcome.snapshot.usesFireRanks).toBe(false);
     expect(outcome.snapshot.teams).toHaveLength(teams);
     expect(outcome.snapshot.types).toHaveLength(types);
     expect(outcome.snapshot.steps).toHaveLength(steps);
@@ -118,13 +122,16 @@ describe('the read', () => {
     expect(outcome.snapshot.viewer).toEqual({
       memberId: VIEWER_MEMBER,
       role: 'member_role',
-      memberships: [{ teamId: (rows.teams[0] as { id: string }).id, effectiveFrom: SEEDED }],
+      memberships: [{ teamId: (rows.teams[0] as { id: string }).id, position: null, effectiveFrom: SEEDED }],
+      statuses: [],
     });
-    expect(outcome.snapshot.people).toEqual([
+    expect(outcome.snapshot.members).toEqual([
       {
         id: VIEWER_MEMBER,
         name: VIEWER_NAME,
-        memberships: [{ teamId: (rows.teams[0] as { id: string }).id, effectiveFrom: SEEDED }],
+        fireRank: null,
+        memberships: [{ teamId: (rows.teams[0] as { id: string }).id, position: null, effectiveFrom: SEEDED }],
+        statuses: [],
       },
     ]);
   });
@@ -145,21 +152,42 @@ describe('the read', () => {
     expect(member).toBe('organization_id,id,role,team_membership_versions');
     expect(/team_membership_versions\(([^)]*)\)/.exec(CALENDAR_COLUMNS)?.[1]).toBe('organization_id,team_id,effective_from');
     // STORY 3.3b: every member's history, at the organization level — who is
-    // on which team when, and nothing about the person.
-    expect(CALENDAR_COLUMNS.endsWith(',team_membership_versions(organization_id,member_id,team_id,effective_from)')).toBe(
-      true,
-    );
+    // on which team when — and STORY 3.4a: in which position, and when each
+    // member was active. Nothing about the person beyond that.
+    expect(
+      CALENDAR_COLUMNS.endsWith(
+        ',team_membership_versions(organization_id,member_id,team_id,position,effective_from),' +
+          'member_status_versions(organization_id,member_id,active,effective_from)',
+      ),
+    ).toBe(true);
     expect([...CALENDAR_COLUMNS.matchAll(/team_membership_versions\(([^)]*)\)/g)].map((found) => found[1])).toEqual([
       'organization_id,team_id,effective_from',
-      'organization_id,member_id,team_id,effective_from',
+      'organization_id,member_id,team_id,position,effective_from',
     ]);
+    expect([...CALENDAR_COLUMNS.matchAll(/member_status_versions\(([^)]*)\)/g)].map((found) => found[1])).toEqual([
+      'organization_id,member_id,active,effective_from',
+    ]);
+    // The organization's own columns: its id, zone and whether it uses ranks.
+    expect(CALENDAR_COLUMNS.startsWith('id,timezone,uses_fire_ranks,teams(')).toBe(true);
     expect(CALENDAR_COLUMNS).not.toMatch(/auth_user_id|email/);
     expect(CALENDAR_COLUMNS).not.toContain('created_by');
     const assignments = /rotation_assignments\(([^)]*)\)/.exec(CALENDAR_COLUMNS)?.[1] ?? '';
 
     expect(assignments).toBe('organization_id,team_id,pattern_id,offset_step_id,anchor_date,effective_from');
-    // No fire rank, no position, nothing projected or stored as a schedule.
-    expect(CALENDAR_COLUMNS).not.toMatch(/rank|position_|cycle|projected|schedule|override/);
+    // No member's fire rank (that is the rpc's), nothing projected or stored
+    // as a schedule.
+    expect(CALENDAR_COLUMNS.replace('uses_fire_ranks', '')).not.toMatch(/rank|cycle|projected|schedule|override/);
+    // `position` in exactly two embeds: a rotation step's place in its
+    // pattern, and the organization-level membership versions (story 3.4a).
+    const positioned = [...CALENDAR_COLUMNS.matchAll(/(\w+)\(([^()]*)\)/g)]
+      .filter((found) => /\bposition\b/.test(found[2] ?? ''))
+      .map((found) => `${found[1] ?? ''}(${found[2] ?? ''})`);
+
+    expect(positioned).toEqual([
+      'rotation_steps(organization_id,id,pattern_id,position,shift_type_id)',
+      'team_membership_versions(organization_id,member_id,team_id,position,effective_from)',
+    ]);
+    expect(CALENDAR_COLUMNS.match(/position/g)).toHaveLength(2);
   });
 
   it('answers an organization with nothing yet as an answer', async () => {
@@ -253,10 +281,11 @@ describe('the read', () => {
       memberId: VIEWER_MEMBER,
       role: 'admin',
       memberships: [
-        { teamId: 'pilot-smjena-x', effectiveFrom: '2020-01-01' },
-        { teamId: 'pilot-smjena-b', effectiveFrom: '2024-05-01' },
-        { teamId: null, effectiveFrom: '2026-09-10' },
+        { teamId: 'pilot-smjena-x', position: null, effectiveFrom: '2020-01-01' },
+        { teamId: 'pilot-smjena-b', position: null, effectiveFrom: '2024-05-01' },
+        { teamId: null, position: null, effectiveFrom: '2026-09-10' },
       ],
+      statuses: [],
     });
     const none = await read(tableOf(answerOf(PILOT, [viewerRow([])])), session);
 
@@ -305,55 +334,131 @@ describe('the read', () => {
     vi.restoreAllMocks();
   });
 
-  it('reads the people with their histories, sorted by name, and ignores versions of anyone else', async () => {
+  it('reads every member with rank and histories, sorted by name, an inactive one included', async () => {
     const colleague = '00000000-0000-4000-8000-0000000000c1';
     const namesake = '00000000-0000-4000-8000-0000000000c0';
     const inactive = '00000000-0000-4000-8000-0000000000c9';
     const outcome = await read(
       tableOf(
-        { data: [calendarOrganizationRow(PILOT, { versions: [
-          memberMembershipRow(colleague, 'pilot-smjena-b', '2026-09-15'),
-          memberMembershipRow(colleague, 'pilot-smjena-a', SEEDED),
-          memberMembershipRow(VIEWER_MEMBER, 'pilot-smjena-a', SEEDED),
-          // A member the people read does not name — inactive today.
-          memberMembershipRow(inactive, 'pilot-smjena-c', SEEDED),
-        ] })], error: null, count: 1 },
-        peopleAnswerOf([
-          { ...personRow(colleague, 'Čedo Zorić'), email: 'never@carried.hr' },
-          personRow(VIEWER_MEMBER, VIEWER_NAME),
-          personRow(namesake, 'Čedo Zorić'),
-          personRow('00000000-0000-4000-8000-0000000000c2', 'Ante Babić'),
+        {
+          data: [
+            calendarOrganizationRow(PILOT, {
+              usesFireRanks: true,
+              versions: [
+                memberMembershipRow(colleague, 'pilot-smjena-b', '2026-09-15', undefined, 'driver'),
+                memberMembershipRow(colleague, 'pilot-smjena-a', SEEDED, undefined, 'commander'),
+                memberMembershipRow(VIEWER_MEMBER, 'pilot-smjena-a', SEEDED),
+                memberMembershipRow(inactive, 'pilot-smjena-c', SEEDED, undefined, 'firefighter'),
+              ],
+              statuses: [
+                statusRow(inactive, true, SEEDED),
+                statusRow(inactive, false, '2026-09-01'),
+                statusRow(VIEWER_MEMBER, true, '2021-03-01'),
+              ],
+            }),
+          ],
+          error: null,
+          count: 1,
+        },
+        membersAnswerOf([
+          { ...calendarMemberRow(colleague, 'Čedo Zorić', 'nco'), email: 'never@carried.hr' },
+          calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME),
+          calendarMemberRow(namesake, 'Čedo Zorić'),
+          calendarMemberRow('00000000-0000-4000-8000-0000000000c2', 'Ante Babić'),
+          calendarMemberRow(inactive, 'Zoran Umirovljeni', 'officer'),
         ]),
       ),
     );
 
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
+    expect(outcome.snapshot.usesFireRanks).toBe(true);
     // Croatian collation: `Č` after `C`, before `L`; one name twice, by id.
-    expect(outcome.snapshot.people).toEqual([
-      { id: '00000000-0000-4000-8000-0000000000c2', name: 'Ante Babić', memberships: [] },
-      { id: namesake, name: 'Čedo Zorić', memberships: [] },
+    expect(outcome.snapshot.members).toEqual([
+      { id: '00000000-0000-4000-8000-0000000000c2', name: 'Ante Babić', fireRank: null, memberships: [], statuses: [] },
+      { id: namesake, name: 'Čedo Zorić', fireRank: null, memberships: [], statuses: [] },
       {
         id: colleague,
         name: 'Čedo Zorić',
+        fireRank: 'nco',
         memberships: [
-          { teamId: 'pilot-smjena-a', effectiveFrom: SEEDED },
-          { teamId: 'pilot-smjena-b', effectiveFrom: '2026-09-15' },
+          { teamId: 'pilot-smjena-a', position: 'commander', effectiveFrom: SEEDED },
+          { teamId: 'pilot-smjena-b', position: 'driver', effectiveFrom: '2026-09-15' },
+        ],
+        statuses: [],
+      },
+      {
+        id: VIEWER_MEMBER,
+        name: VIEWER_NAME,
+        fireRank: null,
+        memberships: [{ teamId: 'pilot-smjena-a', position: null, effectiveFrom: SEEDED }],
+        statuses: [{ active: true, effectiveFrom: '2021-03-01' }],
+      },
+      {
+        id: inactive,
+        name: 'Zoran Umirovljeni',
+        fireRank: 'officer',
+        memberships: [{ teamId: 'pilot-smjena-c', position: 'firefighter', effectiveFrom: SEEDED }],
+        statuses: [
+          { active: true, effectiveFrom: SEEDED },
+          { active: false, effectiveFrom: '2026-09-01' },
         ],
       },
-      { id: VIEWER_MEMBER, name: VIEWER_NAME, memberships: [{ teamId: 'pilot-smjena-a', effectiveFrom: SEEDED }] },
     ]);
-    const empty = await read(tableOf(answerOf(PILOT), peopleAnswerOf([])));
+    // ONE HISTORY PER PERSON: the viewer's memberships and statuses are
+    // exactly their entry in `members`.
+    const own = outcome.snapshot.members.find((member) => member.id === VIEWER_MEMBER)!;
 
-    expect(empty.ok && empty.snapshot.people).toEqual([]);
+    expect(outcome.snapshot.viewer.memberships).toBe(own.memberships);
+    expect(outcome.snapshot.viewer.statuses).toBe(own.statuses);
+    expect(outcome.snapshot.viewer.statuses).toEqual([{ active: true, effectiveFrom: '2021-03-01' }]);
   });
 
-  it('refuses every bad people answer', async () => {
+  it("carries the viewer's positions from the organization-level history", async () => {
+    const outcome = await read(
+      tableOf({
+        data: [
+          calendarOrganizationRow(PILOT, {
+            versions: [
+              memberMembershipRow(VIEWER_MEMBER, 'pilot-smjena-b', '2026-09-15', undefined, 'driver'),
+              memberMembershipRow(VIEWER_MEMBER, 'pilot-smjena-a', SEEDED, undefined, 'commander'),
+            ],
+          }),
+        ],
+        error: null,
+        count: 1,
+      }),
+    );
+
+    expect(outcome.ok && outcome.snapshot.viewer.memberships).toEqual([
+      { teamId: 'pilot-smjena-a', position: 'commander', effectiveFrom: SEEDED },
+      { teamId: 'pilot-smjena-b', position: 'driver', effectiveFrom: '2026-09-15' },
+    ]);
+  });
+
+  it('refuses a viewer the members read does not name', async () => {
     quiet();
-    for (const people of [
+    const empty = await read(
+      tableOf({ data: [calendarOrganizationRow(PILOT, { versions: [] })], error: null, count: 1 }, membersAnswerOf([])),
+    );
+    const others = await read(
+      tableOf(
+        { data: [calendarOrganizationRow(PILOT, { versions: [] })], error: null, count: 1 },
+        membersAnswerOf([calendarMemberRow('someone-else', 'Ana')]),
+      ),
+    );
+
+    expect(empty).toEqual(REFUSED);
+    expect(others).toEqual(REFUSED);
+    vi.restoreAllMocks();
+  });
+
+  it('refuses every bad members answer', async () => {
+    quiet();
+    for (const members of [
       // An error, data that is not an array, a malformed answer.
       { data: null, error: { code: '42501' } },
-      { data: [personRow(VIEWER_MEMBER, VIEWER_NAME)], error: { code: '500' } },
+      { data: [calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME)], error: { code: '500' } },
       { data: { id: VIEWER_MEMBER }, error: null },
       { data: null, error: null },
       null,
@@ -361,16 +466,20 @@ describe('the read', () => {
       // A malformed row: not an object, no id, an empty id, no name, a number.
       { data: [null], error: null },
       { data: [{ name: 'Ana' }], error: null },
-      { data: [personRow('', 'Ana')], error: null },
+      { data: [calendarMemberRow('', 'Ana')], error: null },
       { data: [{ id: VIEWER_MEMBER }], error: null },
-      { data: [personRow(VIEWER_MEMBER, 7 as unknown as string)], error: null },
+      { data: [calendarMemberRow(VIEWER_MEMBER, 7 as unknown as string)], error: null },
       // A blank name, empty or white space only.
-      { data: [personRow(VIEWER_MEMBER, '')], error: null },
-      { data: [personRow(VIEWER_MEMBER, ' \t ')], error: null },
+      { data: [calendarMemberRow(VIEWER_MEMBER, '')], error: null },
+      { data: [calendarMemberRow(VIEWER_MEMBER, ' \t ')], error: null },
       // One id twice.
-      peopleAnswerOf([personRow(VIEWER_MEMBER, VIEWER_NAME), personRow(VIEWER_MEMBER, 'Ana')]),
+      membersAnswerOf([calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME), calendarMemberRow(VIEWER_MEMBER, 'Ana')]),
+      // STORY 3.4a: a rank that is neither text nor null, or missing.
+      membersAnswerOf([calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME, 3)]),
+      membersAnswerOf([calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME, false)]),
+      membersAnswerOf([{ id: VIEWER_MEMBER, name: VIEWER_NAME }]),
     ]) {
-      expect(await read(tableOf(answerOf(PILOT), people)), JSON.stringify(people)).toEqual(REFUSED);
+      expect(await read(tableOf(answerOf(PILOT), members)), JSON.stringify(members)).toEqual(REFUSED);
     }
     const rejecting: Source = {
       ...tableOf(answerOf(PILOT)),
@@ -397,6 +506,17 @@ describe('the read', () => {
       [memberMembershipRow(VIEWER_MEMBER, 'pilot-smjena-a', '2020-02-30')],
       [{ ...own, member_id: null }],
       [null as unknown as Record<string, unknown>],
+      // STORY 3.4a: a version of a member the members read does not name is
+      // still validated — another tenant's, or a repeated date, is refused.
+      [own, memberMembershipRow('someone-unknown', 'pilot-smjena-b', SEEDED, OTHER_ORGANIZATION)],
+      [
+        own,
+        memberMembershipRow('someone-unknown', 'pilot-smjena-b', SEEDED),
+        memberMembershipRow('someone-unknown', 'pilot-smjena-c', SEEDED),
+      ],
+      // A position that is neither text nor null, or missing.
+      [memberMembershipRow(VIEWER_MEMBER, 'pilot-smjena-a', SEEDED, undefined, 7)],
+      [{ organization_id: own['organization_id'], member_id: VIEWER_MEMBER, team_id: 'pilot-smjena-a', effective_from: SEEDED }],
     ]) {
       const answer = { data: [calendarOrganizationRow(PILOT, { versions })], error: null, count: 1 };
 
@@ -407,10 +527,37 @@ describe('the read', () => {
     expect(await read(tableOf({ data: [noEmbed], error: null, count: 1 }))).toEqual(REFUSED);
     // Two members on one date is two histories, not a repeat.
     const shared = await read(
+      tableOf(
+        {
+          data: [
+            calendarOrganizationRow(PILOT, {
+              versions: [own, memberMembershipRow('someone-else', 'pilot-smjena-b', SEEDED)],
+            }),
+          ],
+          error: null,
+          count: 1,
+        },
+        membersAnswerOf([calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME), calendarMemberRow('someone-else', 'Ana')]),
+      ),
+    );
+
+    expect(shared.ok).toBe(true);
+    vi.restoreAllMocks();
+  });
+
+  it('ignores a valid version of a member the members read does not yet name (story 3.4a)', async () => {
+    // The select and the rpc are two requests: a member created between them
+    // is a race, not a defect, and never takes the calendar down.
+    const unknown = '00000000-0000-4000-8000-0000000000d1';
+    const outcome = await read(
       tableOf({
         data: [
           calendarOrganizationRow(PILOT, {
-            versions: [own, memberMembershipRow('someone-else', 'pilot-smjena-b', SEEDED)],
+            versions: [
+              memberMembershipRow(VIEWER_MEMBER, 'pilot-smjena-a', SEEDED),
+              memberMembershipRow(unknown, 'pilot-smjena-b', SEEDED, undefined, 'driver'),
+            ],
+            statuses: [statusRow(unknown, false, '2026-09-01')],
           }),
         ],
         error: null,
@@ -418,7 +565,53 @@ describe('the read', () => {
       }),
     );
 
-    expect(shared.ok).toBe(true);
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.snapshot.members.map((member) => member.id)).toEqual([VIEWER_MEMBER]);
+    expect(outcome.snapshot.members[0]!.memberships).toEqual([
+      { teamId: 'pilot-smjena-a', position: null, effectiveFrom: SEEDED },
+    ]);
+    expect(outcome.snapshot.members[0]!.statuses).toEqual([]);
+  });
+
+  it('refuses every bad status version (story 3.4a)', async () => {
+    quiet();
+    const own = statusRow(VIEWER_MEMBER, false, '2026-09-01');
+
+    for (const statuses of [
+      // Another tenant's version.
+      [statusRow(VIEWER_MEMBER, false, '2026-09-01', OTHER_ORGANIZATION)],
+      // A member the members read does not name is still validated.
+      [statusRow('someone-unknown', false, '2026-09-01', OTHER_ORGANIZATION)],
+      [statusRow('someone-unknown', 'no', '2026-09-01')],
+      // One member, one date, twice — even with another answer.
+      [own, statusRow(VIEWER_MEMBER, true, '2026-09-01')],
+      // An `active` that is not a boolean, or missing.
+      [statusRow(VIEWER_MEMBER, 'false', '2026-09-01')],
+      [statusRow(VIEWER_MEMBER, null, '2026-09-01')],
+      [{ ...own, active: undefined }],
+      // A malformed date, no member, not a row.
+      [statusRow(VIEWER_MEMBER, false, '2026-02-30')],
+      [{ ...own, member_id: null }],
+      [null as unknown as Record<string, unknown>],
+    ]) {
+      const answer = { data: [calendarOrganizationRow(PILOT, { statuses })], error: null, count: 1 };
+
+      expect(await read(tableOf(answer)), JSON.stringify(statuses)).toEqual(REFUSED);
+    }
+    const { member_status_versions: _statuses, ...noEmbed } = calendarOrganizationRow(PILOT);
+
+    expect(await read(tableOf({ data: [noEmbed], error: null, count: 1 }))).toEqual(REFUSED);
+    vi.restoreAllMocks();
+  });
+
+  it('refuses an organization whose rank setting is not a boolean (story 3.4a)', async () => {
+    quiet();
+    for (const usesFireRanks of [null, 'true', 1]) {
+      const answer = { data: [calendarOrganizationRow(PILOT, { usesFireRanks })], error: null, count: 1 };
+
+      expect(await read(tableOf(answer)), String(usesFireRanks)).toEqual(REFUSED);
+    }
     vi.restoreAllMocks();
   });
 
@@ -459,12 +652,12 @@ describe('the surface state, driven through the one query definition', () => {
 
   function answeringInTurn(
     ...answers: CalendarAnswer[]
-  ): CalendarTable & CalendarPeopleRpc & { readonly calls: () => number } {
+  ): CalendarTable & CalendarMembersRpc & { readonly calls: () => number } {
     let calls = 0;
 
     return {
       calls: () => calls,
-      rpc: () => Promise.resolve(peopleAnswerOf()),
+      rpc: () => Promise.resolve(membersAnswerOf()),
       select() {
         return {
           filter() {
@@ -479,7 +672,7 @@ describe('the surface state, driven through the one query definition', () => {
     };
   }
 
-  function observe(table: () => CalendarTable & CalendarPeopleRpc) {
+  function observe(table: () => CalendarTable & CalendarMembersRpc) {
     const observer = new QueryObserver(client, {
       ...calendarQueryOptions(table, table, session),
       retryDelay: 0,
@@ -620,6 +813,20 @@ describe('the surface state, driven through the one query definition', () => {
   });
 });
 
+/**
+ * What `snapshot.ts` may say about rank and position (story 3.4a), each an
+ * exact count in its comment-stripped text: the organization's setting, each
+ * member's rank off `calendar_members()`, and the membership versions'
+ * position. A new use is a new count here, reviewed.
+ */
+const SNAPSHOT_CARRIES = [
+  { token: 'uses_fire_ranks', count: 2 },
+  { token: 'usesFireRanks', count: 4 },
+  { token: "row['fire_rank']", count: 1 },
+  { token: 'fireRank', count: 6 },
+  { token: "version['position']", count: 1 },
+] as const;
+
 describe('the calendar only reads, and projects nothing of its own', () => {
   const directory = fileURLToPath(new URL('.', import.meta.url));
   const route = join(directory, '..', 'routes', 'kalendar.tsx');
@@ -661,7 +868,17 @@ describe('the calendar only reads, and projects nothing of its own', () => {
 
     expect(text, 'a `%` projection').not.toMatch(/%/);
     expect(text).not.toMatch(/\.(insert|update|delete|upsert)\(/);
-    expect(text).not.toMatch(/fire_?rank|fireRank|\brank\b|team_position|teamPosition/i);
+    // Story 3.4a: the snapshot CARRIES rank and position off the wire, to be
+    // shown by 3.4b — in the named places only, counted, and nowhere else. No
+    // other file reads either, and no rule ever does.
+    const carried = file.endsWith('snapshot.ts') ? SNAPSHOT_CARRIES : [];
+    let rest = text;
+
+    for (const { token, count } of carried) {
+      expect(rest.split(token).length - 1, `${token} in ${file}`).toBe(count);
+      rest = rest.replaceAll(token, '');
+    }
+    expect(rest).not.toMatch(/fire_?rank|fireRank|\brank\b|team_position|teamPosition|usesFireRanks/i);
     expect(text, 'a second query or key').not.toMatch(/queryKey:\s*\[(?!\s*\])/);
   });
 });

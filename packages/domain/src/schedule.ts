@@ -16,6 +16,7 @@
 
 import { checkDate, civilDayNumber, dateOfCivilDay } from './calendar.js';
 import { projectedShiftTypeOn, type RotationAssignment, type RotationStep } from './projection.js';
+import { orderedVersions, versionOn, type MembershipVersion, type StatusVersion } from './roster.js';
 
 const MONTH_SHAPE = /^(\d{4})-(\d{2})$/;
 
@@ -135,20 +136,12 @@ export function scheduleOfMonth(input: ScheduleInput, month: string): readonly S
   }));
 }
 
-/**
- * One stored version of the viewer's team membership
- * (`team_membership_versions`): from `effectiveFrom` on, until the next
- * version, the member belongs to `teamId` — or to no team when it is `null`.
- */
-export interface MembershipVersion {
-  readonly teamId: string | null;
-  readonly effectiveFrom: string;
-}
-
-/** What one member's month is derived from: their membership history and the configuration. */
+/** What one member's month is derived from: their membership and status histories and the configuration. */
 export interface MemberScheduleInput {
   /** Every membership version of ONE member, in any order. */
   readonly memberships: readonly MembershipVersion[];
+  /** Every status version of the same member, in any order; none means always active. */
+  readonly statuses: readonly StatusVersion[];
   /** Every rotation version, of any team; only the teams the member belongs to are read. */
   readonly assignments: readonly RotationAssignment[];
   /** The steps of every pattern a version names. */
@@ -157,8 +150,8 @@ export interface MemberScheduleInput {
 
 /**
  * One date of a member's month: the team they belong to on it (`null` when
- * none), and the shift type that team works (`null` when there is no team or
- * no rotation version in effect yet).
+ * none, or when the member is inactive on it), and the shift type that team
+ * works (`null` when there is no team or no rotation version in effect yet).
  */
 export interface MemberScheduleDay {
   readonly date: string;
@@ -169,28 +162,21 @@ export interface MemberScheduleDay {
 /**
  * One member's schedule of `month`: a row per date, in order. The team on a
  * date is the membership version with the greatest `effectiveFrom` on or
- * before it (none before the first version); the shift type is
- * {@link projectedShiftTypeOn} for that team's rotation versions.
+ * before it (none before the first version) — the rule of `membershipOn` —
+ * and no team at all on a date the member is inactive (`activeOn`); the shift
+ * type is {@link projectedShiftTypeOn} for that team's rotation versions.
  *
  * @throws RangeError when `month` is not a `YYYY-MM` in years 0001–9999, when
- *   a membership version's `effectiveFrom` is not a calendar `YYYY-MM-DD`,
- *   when two membership versions share an `effectiveFrom`, or on any
+ *   a membership or status version's `effectiveFrom` is not a calendar
+ *   `YYYY-MM-DD`, when two membership versions or two status versions share
+ *   an `effectiveFrom`, or on any
  *   precondition of {@link projectedShiftTypeOn} for a team the member is in.
  */
 export function memberScheduleOfMonth(input: MemberScheduleInput, month: string): readonly MemberScheduleDay[] {
   const dates = datesOfMonth(month);
 
-  const seen = new Set<string>();
-  for (const version of input.memberships) {
-    checkDate('a team membership version is effective from', version.effectiveFrom);
-    if (seen.has(version.effectiveFrom)) {
-      throw new RangeError(`two team membership versions are effective from ${version.effectiveFrom}`);
-    }
-    seen.add(version.effectiveFrom);
-  }
-  const memberships = [...input.memberships].sort((left, right) =>
-    left.effectiveFrom < right.effectiveFrom ? -1 : 1,
-  );
+  const memberships = orderedVersions('team membership', input.memberships);
+  const statuses = orderedVersions('member status', input.statuses);
 
   const versionsOf = new Map<string, RotationAssignment[]>();
   for (const assignment of input.assignments) {
@@ -200,11 +186,8 @@ export function memberScheduleOfMonth(input: MemberScheduleInput, month: string)
   }
 
   return dates.map((date) => {
-    let teamId: string | null = null;
-    for (const version of memberships) {
-      if (version.effectiveFrom > date) break;
-      teamId = version.teamId;
-    }
+    const active = versionOn(statuses, date)?.active ?? true;
+    const teamId = active ? (versionOn(memberships, date)?.teamId ?? null) : null;
     return {
       date,
       teamId,

@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 2026-09-26
+last_updated: 2026-09-27
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -439,7 +439,14 @@ development_status:
   # `calendar_people()` (spec-3-3b-calendar-person-filter.md); the shifts a
   # person holds only through a roster override arrive with 3.6.
   3-3-filtering-to-one-team-or-one-person: done
-  3-4-opening-a-day-to-see-who-is-actually-on-it: backlog
+  # Story 3.4 was split in two at the user's request (2026-09-27); both parts
+  # ride on this one key. 3.4a HAS LANDED: the roster as at a date — migration
+  # 0018's `calendar_members()` replacing 0017's `calendar_people()`, the
+  # snapshot's status versions, positions and `uses_fire_ranks`, and
+  # `activeOn`/`membershipOn`/`shiftRoster` in `packages/domain`, with no
+  # screen change (spec-3-4a-roster-as-at-a-date.md). 3.4b, the day-detail
+  # Dialog, is still to come and closes this key.
+  3-4-opening-a-day-to-see-who-is-actually-on-it: in-progress
   3-5-an-admin-changes-a-team-s-shift-type-on-one-date: backlog
   3-6-an-admin-adds-removes-or-replaces-someone-on-a-shift: backlog
   epic-3-retrospective: optional
