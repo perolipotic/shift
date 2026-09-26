@@ -42,10 +42,14 @@
       "sve": "Sve smjene"
     },
     "filter": {
-      "label": "Smjena",
+      "label": "Smjena ili osoba",
       "all": "Sve smjene ({count})",
       "group": "Smjene",
+      "people": "Osobe",
       "reset": "Poništi filtar"
+    },
+    "person": {
+      "noTeam": "{name} ovaj mjesec nije član nijedne smjene."
     },
     "legend": "Oznake",
     "modifier": {

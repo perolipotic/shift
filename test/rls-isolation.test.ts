@@ -1114,6 +1114,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
         `select proname from pg_proc
           where pronamespace = 'public'::regnamespace
             and proname in (
+              'calendar_people',
               'current_member_access',
               'custom_access_token_hook',
               'member_active_from',
@@ -1138,6 +1139,9 @@ describe('the access-control layer is present, so nothing below passes vacuously
         functions.map((row) => row.proname),
         'the helper and the hook are what every policy and every claim depend on, and since story 1.6 both read active state through the status readers',
       ).toEqual([
+        // STORY 3.3b: the one reading the calendar's person filter learns every
+        // active colleague's id and name through.
+        'calendar_people',
         'current_member_access',
         'custom_access_token_hook',
         'member_active_from',
@@ -9548,6 +9552,199 @@ describe('a member sees who is on a team, and nothing more about a colleague', (
         const refusal = await restRefusal(anonymous);
         expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
         expect(refusal.message).toBe('permission denied for function team_roster');
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+});
+
+// ---------------------------------------------- story 3.3b: calendar people
+
+interface PersonRow {
+  readonly id: string;
+  readonly name: string;
+}
+
+/** `calendar_people()`, as whoever the connection currently is: every column it returns. */
+async function calendarPeopleOf(client: Client): Promise<Record<string, unknown>[]> {
+  const { rows } = await client.query<Record<string, unknown>>('select * from public.calendar_people()');
+  return rows;
+}
+
+/** Every member of `organization` active on its today, read as the owner, ids sorted. */
+async function activeMemberIds(client: Client, organization: string): Promise<string[]> {
+  const { rows } = await client.query<{ id: string }>(
+    `select m.id::text as id
+       from members m
+      where m.organization_id = $1
+        and public.member_active_on(m.id, public.organization_today($1))
+      order by m.id`,
+    [organization],
+  );
+  return rows.map((row) => row.id);
+}
+
+function peopleIds(rows: readonly Record<string, unknown>[]): unknown[] {
+  return rows.map((row) => row['id']).sort();
+}
+
+describe('the calendar names every active colleague, as id and name only', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'returns every $fixture member active today to member and admin alike, a deactivated colleague excluded',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const colleague = await addThrowawayMember(client, organization);
+        const deactivated = await addThrowawayMember(client, organization);
+        await ownerVersion(client, {
+          organization,
+          member: deactivated.id,
+          active: false,
+          from: await organizationDay(client, organization),
+          by: owner.authUserId,
+        });
+
+        const expected = await activeMemberIds(client, organization);
+
+        expect(expected, `${slug}: the colleague is not active`).toContain(colleague.id);
+        expect(expected, `${slug}: the deactivation did not take`).not.toContain(deactivated.id);
+        expect(expected).toEqual(expect.arrayContaining([self.id, owner.id]));
+
+        for (const reader of [self, owner]) {
+          await actAs(client, reader.authUserId, organization);
+          const rows = await calendarPeopleOf(client);
+          await actAsOwner(client);
+
+          expect(peopleIds(rows), `${slug}: the people are not today's active members`).toEqual(expected);
+          for (const row of rows) {
+            expect(Object.keys(row).sort(), `${slug}: a field besides id and name`).toEqual(['id', 'name']);
+            expect(typeof row['name']).toBe('string');
+          }
+          expect(
+            (rows as unknown as PersonRow[]).find((row) => row.id === colleague.id)?.name,
+          ).toBe(`${THROWAWAY} target`);
+        }
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'answers a $fixture caller inactive today zero rows',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const organization = owner.organizationId;
+        const caller = await addThrowawayMember(client, organization);
+
+        await actAs(client, caller.authUserId, organization);
+        const whileActive = await calendarPeopleOf(client);
+        await actAsOwner(client);
+        await ownerVersion(client, {
+          organization,
+          member: caller.id,
+          active: false,
+          from: await organizationDay(client, organization),
+          by: owner.authUserId,
+        });
+        await actAs(client, caller.authUserId, organization);
+        const whileInactive = await calendarPeopleOf(client);
+        await actAsOwner(client);
+
+        expect(peopleIds(whileActive), `${slug}: the active caller is not among the people`).toContain(caller.id);
+        expect(whileInactive, `${slug}: an inactive caller read the people`).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'answers a $fixture caller nothing of $otherFixture, and nothing under a forged claim',
+    async ({ slug, admin, member, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const foreignOwner = await memberByUsername(
+          client,
+          otherSlug,
+          FIXTURES.find((entry) => entry.slug === otherSlug)?.admin ?? '',
+        );
+        const foreign = await activeMemberIds(client, foreignOwner.organizationId);
+
+        expect(foreign.length, `${otherSlug} has nobody to leak`).toBeGreaterThan(0);
+
+        for (const reader of [self, owner]) {
+          await actAs(client, reader.authUserId, reader.organizationId);
+          const own = await calendarPeopleOf(client);
+          await actAsOwner(client);
+
+          expect(own.length, `${slug}: its own people`).toBeGreaterThan(0);
+          for (const id of peopleIds(own)) {
+            expect(foreign, `${slug}: another tenant's member`).not.toContain(id);
+          }
+
+          // A claim naming the other organization pins neither: the fresh
+          // helper still says the caller belongs to its own.
+          await actAs(client, reader.authUserId, foreignOwner.organizationId);
+          expect(await calendarPeopleOf(client), `${slug}: a forged claim read people`).toEqual([]);
+          await actAsOwner(client);
+          await actAs(client, reader.authUserId, null);
+          expect(await calendarPeopleOf(client), `${slug}: no claim read people`).toEqual([]);
+          await actAsOwner(client);
+        }
+      });
+    },
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'answers the $fixture people over PostgREST to member and admin, and refuses an anonymous caller',
+    async ({ slug, admin, member }) => {
+      const client = await connect();
+      try {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        // COMMITTED data other suites may add to while this runs, so the
+        // answer is held to the organization's members rather than to an
+        // exact list; the exact list is the rolled-back case above.
+        const { rows: all } = await client.query<{ id: string }>(
+          'select id::text as id from members where organization_id = $1',
+          [owner.organizationId],
+        );
+        const own = all.map((row) => row.id);
+
+        for (const reader of [member, admin]) {
+          const response = await rest('rpc/calendar_people', {
+            token: await tokenFor(reader, slug),
+            method: 'POST',
+            body: {},
+          });
+          expect(response.status, `${reader}: ${await response.clone().text()}`).toBe(200);
+          const rows = (await response.json()) as Record<string, unknown>[];
+
+          expect(peopleIds(rows), `${slug}/${reader} lost the fixture accounts`).toEqual(
+            expect.arrayContaining([self.id, owner.id]),
+          );
+          for (const id of peopleIds(rows)) {
+            expect(own, `${slug}/${reader}: a member of another organization`).toContain(id);
+          }
+          for (const row of rows) {
+            // No email, username, role, allowance, rank or position.
+            expect(Object.keys(row).sort(), `${slug}/${reader}: a field besides id and name`).toEqual([
+              'id',
+              'name',
+            ]);
+          }
+        }
+
+        const anonymous = await rest('rpc/calendar_people', { method: 'POST', body: {} });
+        // THE GRANT refusing, not a policy: `anon` holds no EXECUTE on the
+        // function, so PostgREST answers 401 with Postgres's privilege code.
+        expect(anonymous.status, 'an anonymous caller reached the people').toBe(401);
+        const refusal = await restRefusal(anonymous);
+        expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
+        expect(refusal.message).toBe('permission denied for function calendar_people');
       } finally {
         await client.end();
       }

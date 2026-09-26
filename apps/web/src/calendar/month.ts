@@ -5,6 +5,7 @@ import {
   monthOf,
   scheduleOfMonth,
   shiftTypeVersionOn,
+  type MembershipVersion,
 } from '@shift/domain';
 
 import type { CalendarModifier } from '@/calendar/modifiers';
@@ -61,12 +62,30 @@ export const MODE_SEARCH_PARAM = 'prikaz';
 export const TEAM_SEARCH_PARAM = 'smjena';
 
 /**
+ * The search parameter that names the one person *Sve smjene* shows:
+ * `?osoba=<member id>` (story 3.3b). A person chosen wins over `smjena`.
+ */
+export const PERSON_SEARCH_PARAM = 'osoba';
+
+/**
  * The team filter's all-teams option value. It cannot collide with a chosen
  * team because {@link calendarSearchOf} drops an empty `smjena`: no search the
  * calendar reads ever names `''`. {@link calendarFilterChangeOf} is the one
- * place that turns it into `{ smjena: null }`.
+ * place that turns it into `{ smjena: null, osoba: null }`.
  */
 export const ALL_TEAMS_FILTER = '';
+
+/**
+ * What a person's option value starts with in the one filter Select (story
+ * 3.3b): `osoba:<member id>`, so a person's value never reads as a team id. A
+ * team's value stays its bare id.
+ */
+export const PERSON_FILTER_PREFIX = 'osoba:';
+
+/** A person's option value in the filter Select. */
+export function personFilterValueOf(id: string): string {
+  return `${PERSON_FILTER_PREFIX}${id}`;
+}
 
 /** *Moj raspored*: the viewer's own day list. */
 export const MODE_MOJ = 'moj';
@@ -130,13 +149,23 @@ export interface CalendarSearch {
   readonly mjesec?: string | undefined;
   readonly prikaz?: CalendarMode | undefined;
   readonly smjena?: string | undefined;
+  readonly osoba?: string | undefined;
 }
 
-/** A change of the search: the month (`null`: the current one), the mode, or the team (`null`: every team). */
+/**
+ * The filter's change: the team and the person, BOTH ALWAYS PRESENT (story
+ * 3.3b), so choosing one drops the other. `null` drops either.
+ */
+export interface CalendarFilterChange {
+  readonly smjena: string | null;
+  readonly osoba: string | null;
+}
+
+/** A change of the search: the month (`null`: the current one), the mode, or the filter. */
 export type CalendarSearchChange =
   | { readonly mjesec: string | null }
   | { readonly prikaz: CalendarMode }
-  | { readonly smjena: string | null };
+  | CalendarFilterChange;
 
 /** Whether a value is one of the two modes. */
 export function isCalendarMode(value: unknown): value is CalendarMode {
@@ -158,31 +187,44 @@ export function calendarModeOf(search: CalendarSearch, role: MemberRole, isPhone
 
 /**
  * The search to navigate to: the one `change` applied, and everything else the
- * search already names kept — so the month buttons keep the mode and the team,
- * the mode switch keeps the month and the team (story 3.3a), and the team
- * filter keeps the month and the mode. `null` drops a month (the current one)
- * or a team (every team). A mode or team the viewer never chose is never
- * written in.
+ * search already names kept — so the month buttons keep the mode, the team
+ * and the person, the mode switch keeps the month, the team (story 3.3a) and
+ * the person (story 3.3b), and the filter keeps the month and the mode. `null`
+ * drops a month (the current one), a team or a person. A mode, team or person
+ * the viewer never chose is never written in.
  */
 export function calendarSearchTo(search: CalendarSearch, change: CalendarSearchChange): CalendarSearch {
   const mjesec = 'mjesec' in change ? change.mjesec : (search.mjesec ?? null);
   const prikaz = 'prikaz' in change ? change.prikaz : search.prikaz;
   const smjena = 'smjena' in change ? change.smjena : (search.smjena ?? null);
+  const osoba = 'osoba' in change ? change.osoba : (search.osoba ?? null);
 
   return {
     ...(mjesec === null ? {} : { mjesec }),
     ...(prikaz === undefined ? {} : { prikaz }),
     ...(smjena === null ? {} : { smjena }),
+    ...(osoba === null ? {} : { osoba }),
   };
 }
 
 /**
- * The team filter's `<select>` value as a search change: the all-teams option
- * ({@link ALL_TEAMS_FILTER}) drops `smjena`. The ONE place the empty value is
- * mapped; pass its answer straight to {@link calendarSearchTo}.
+ * The filter `<select>`'s value as a search change, both keys always present:
+ * the all-teams option ({@link ALL_TEAMS_FILTER}) drops both, a person's
+ * `osoba:<id>` ({@link PERSON_FILTER_PREFIX}) chooses that person and drops
+ * the team, and anything else chooses that team and drops the person. The ONE
+ * place the values are mapped; pass its answer straight to
+ * {@link calendarSearchTo}.
  */
-export function calendarFilterChangeOf(value: string): { readonly smjena: string | null } {
-  return { smjena: value === ALL_TEAMS_FILTER ? null : value };
+export function calendarFilterChangeOf(value: string): CalendarFilterChange {
+  if (value === ALL_TEAMS_FILTER) return { smjena: null, osoba: null };
+
+  if (value.startsWith(PERSON_FILTER_PREFIX)) {
+    const osoba = value.slice(PERSON_FILTER_PREFIX.length);
+
+    return { smjena: null, osoba: osoba === '' ? null : osoba };
+  }
+
+  return { smjena: value, osoba: null };
 }
 
 /** A cell's shape: at least 30 px high, the small radius, the label never truncated. */
@@ -225,20 +267,23 @@ export function isCalendarMonth(value: unknown): value is string {
  * The raw search as the calendar reads it. A missing or invalid `mjesec` is
  * dropped, so the screen falls back to the organization's current month; a
  * missing or invalid `prikaz` is dropped, so the mode falls back to
- * {@link defaultModeOf}; a `smjena` that is not a non-empty string is dropped,
- * so every team shows. A non-empty `smjena` is KEPT whatever it names — an
- * unknown or archived team is ignored by {@link calendarMonthOf}, and stays in
- * the URL until the viewer chooses again.
+ * {@link defaultModeOf}; a `smjena` or `osoba` that is not a non-empty string
+ * is dropped, so every team shows. A non-empty `smjena` or `osoba` is KEPT
+ * whatever it names — an unknown or archived team, or an unknown or inactive
+ * person, is ignored by {@link calendarMonthOf}, and stays in the URL until
+ * the viewer chooses again.
  */
 export function calendarSearchOf(search: Record<string, unknown>): CalendarSearch {
   const month = search[MONTH_SEARCH_PARAM];
   const mode = search[MODE_SEARCH_PARAM];
   const team = search[TEAM_SEARCH_PARAM];
+  const person = search[PERSON_SEARCH_PARAM];
 
   return {
     ...(isCalendarMonth(month) ? { mjesec: month } : {}),
     ...(isCalendarMode(mode) ? { prikaz: mode } : {}),
     ...(typeof team === 'string' && team !== '' ? { smjena: team } : {}),
+    ...(typeof person === 'string' && person !== '' ? { osoba: person } : {}),
   };
 }
 
@@ -390,12 +435,33 @@ export type CalendarColumn = TeamRow & {
   readonly letter: string;
 };
 
-/** The team filter of *Sve smjene* (story 3.3a). */
+/** A person the filter offers: id and name only (story 3.3b). */
+export interface CalendarFilterPerson {
+  readonly id: string;
+  readonly name: string;
+}
+
+/** The filter of *Sve smjene*: one team (story 3.3a) or one person (story 3.3b). */
 export interface CalendarFilter {
-  /** Its options: every active team, in column order. */
+  /** Its team options: every active team, in column order. */
   readonly teams: readonly CalendarColumn[];
-  /** The team the grid IS narrowed to, one of `teams`; `null` for every team. */
+  /**
+   * The team the grid IS narrowed to, one of `teams`; `null` for every team,
+   * and `null` whenever a person is chosen.
+   */
   readonly chosen: string | null;
+  /** Its person options: every member active today, in the snapshot's name order. */
+  readonly people: readonly CalendarFilterPerson[];
+  /** The person shown, one of `people`; `null` for none. */
+  readonly person: string | null;
+}
+
+/** The person *Sve smjene* shows in place of the grid (story 3.3b). */
+export interface CalendarPersonMonth {
+  readonly id: string;
+  readonly name: string;
+  /** Their day list, as *Moj raspored* draws the viewer's; its failure is theirs alone. */
+  readonly days: CalendarDayListOutcome;
 }
 
 /** One date of the viewer's own day list (*Moj raspored*). */
@@ -445,6 +511,12 @@ export interface CalendarMonth {
    * `CALENDAR_UNAVAILABLE` here, and the grid still draws.
    */
   readonly days: CalendarDayListOutcome;
+  /**
+   * The person chosen in the filter, with their day list, or `null` for none.
+   * `columns` and `rows` are NOT narrowed by it: the screen draws the person
+   * instead of the grid.
+   */
+  readonly person: CalendarPersonMonth | null;
 }
 
 /** The day list, or its own read failure — which the grid does not share. */
@@ -539,8 +611,9 @@ function weekdayOf(date: string): string {
 }
 
 /**
- * The viewer's own day list of `month` (*Moj raspored*): a day per date, each
- * the type the viewer's team that day works — through `memberScheduleOfMonth`,
+ * One member's day list of `month` — the viewer's in *Moj raspored*, or the
+ * person chosen in the filter (story 3.3b) — from their `memberships`: a day
+ * per date, each the type the member's team that day works — through `memberScheduleOfMonth`,
  * so a move between teams in the middle of the month changes rotation on the
  * day it takes effect — or no team. `null` when there is no team on any date:
  * the screen explains, never draws an empty list.
@@ -550,11 +623,12 @@ function weekdayOf(date: string): string {
  */
 export function calendarDayListOf(
   snapshot: CalendarSnapshot,
+  memberships: readonly MembershipVersion[],
   month: string,
   today: string,
 ): readonly CalendarDay[] | null {
   const schedule = memberScheduleOfMonth(
-    { memberships: snapshot.viewer.memberships, assignments: snapshot.assignments, steps: snapshot.steps },
+    { memberships, assignments: snapshot.assignments, steps: snapshot.steps },
     month,
   );
 
@@ -577,13 +651,18 @@ export function calendarDayListOf(
 
 /**
  * {@link calendarDayListOf}, GUARDED and LOCAL: a `RangeError` from the day
- * list — the viewer's history reaching a team whose rotation the grid never
- * projects — is *Moj raspored*'s failure alone, logged, and never takes the
+ * list — a member's history reaching a team whose rotation the grid never
+ * projects — is that day list's failure alone, logged, and never takes the
  * *Sve smjene* grid down with it.
  */
-function dayListOutcomeOf(snapshot: CalendarSnapshot, month: string, today: string): CalendarDayListOutcome {
+function dayListOutcomeOf(
+  snapshot: CalendarSnapshot,
+  memberships: readonly MembershipVersion[],
+  month: string,
+  today: string,
+): CalendarDayListOutcome {
   try {
-    return { ok: true, days: calendarDayListOf(snapshot, month, today) };
+    return { ok: true, days: calendarDayListOf(snapshot, memberships, month, today) };
   } catch (cause) {
     console.error(CALENDAR_UNAVAILABLE, cause);
 
@@ -603,8 +682,23 @@ export function chosenTeamOf(search: CalendarSearch, teams: readonly { readonly 
 }
 
 /**
+ * The person shown: `osoba` when it names one of `people` — the members active
+ * today — and `null` otherwise. An unknown or inactive id is no person, the
+ * harmless direction, as {@link chosenTeamOf}.
+ */
+export function chosenPersonOf(search: CalendarSearch, people: readonly { readonly id: string }[]): string | null {
+  const wanted = search.osoba;
+
+  return wanted === undefined ? null : (people.find((person) => person.id === wanted)?.id ?? null);
+}
+
+/**
  * The month `search` names — or today's — as the screen draws it, from the
  * one snapshot. `today` is the organization's ({@link calendarTodayOf}).
+ *
+ * A PERSON WINS OVER A TEAM (story 3.3b): the Select only ever produces one,
+ * and a hand-edited URL carrying both resolves to the narrower. With a person
+ * chosen, the team filter reads `chosen: null` and the grid is not narrowed.
  *
  * THE TEAM FILTER NARROWS LAST (story 3.3a): the letters, team and type alike,
  * are computed over every active team first, so a column and its cells draw
@@ -623,7 +717,9 @@ export function calendarMonthOf(snapshot: CalendarSnapshot, search: CalendarSear
     snapshot,
     schedule.flatMap((row) => row.cells.map((cell) => cell.shiftTypeId)),
   );
-  const chosen = chosenTeamOf(search, teams);
+  const person = chosenPersonOf(search, snapshot.people);
+  const chosen = person === null ? chosenTeamOf(search, teams) : null;
+  const personShown = snapshot.people.find((one) => one.id === person) ?? null;
   const shown = (teamId: string): boolean => chosen === null || teamId === chosen;
   const columns = teams.filter((team) => shown(team.id));
 
@@ -635,7 +731,12 @@ export function calendarMonthOf(snapshot: CalendarSnapshot, search: CalendarSear
     next: adjacentMonth(month, 1),
     isCurrent: month === monthOf(today),
     columns,
-    filter: { teams, chosen },
+    filter: {
+      teams,
+      chosen,
+      people: snapshot.people.map(({ id, name }) => ({ id, name })),
+      person,
+    },
     rows: schedule.map((row) => ({
       date: row.date,
       dayMonth: dayMonthOf(row.date),
@@ -645,7 +746,15 @@ export function calendarMonthOf(snapshot: CalendarSnapshot, search: CalendarSear
         .filter((cell) => shown(cell.teamId))
         .map((cell) => cellOf(lookup, cell.teamId, cell.shiftTypeId, row.date)),
     })),
-    days: dayListOutcomeOf(snapshot, month, today),
+    days: dayListOutcomeOf(snapshot, snapshot.viewer.memberships, month, today),
+    person:
+      personShown === null
+        ? null
+        : {
+            id: personShown.id,
+            name: personShown.name,
+            days: dayListOutcomeOf(snapshot, personShown.memberships, month, today),
+          },
   };
 }
 

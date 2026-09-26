@@ -41,15 +41,20 @@ import {
   calendarSearchOf,
   calendarSearchTo,
   calendarTodayOf,
+  personFilterValueOf,
   phoneStoreOf,
   type CalendarCell,
   type CalendarDay,
+  type CalendarDayListOutcome,
+  type CalendarFilterChange,
   type CalendarMode,
   type CalendarMonth,
+  type CalendarPersonMonth,
   type CalendarSearch,
 } from '@/calendar/month';
 import {
   CALENDAR_READ_TABLE,
+  type CalendarPeopleRpc,
   calendarMessageKey,
   calendarQueryOptions,
   calendarSurfaceStateOf,
@@ -101,6 +106,11 @@ import { supabaseClient } from '@/supabase/client';
  * is chosen. Which team is chosen — an unknown or archived id being none — is
  * `calendarMonthOf`'s decision; the state lives in the URL alone.
  *
+ * ONE PERSON (story 3.3b), `?osoba=<member id>`: the same Select offers every
+ * member active today under *Osobe*, read through `calendar_people()`. A
+ * person chosen replaces the grid with their day list — the one *Moj
+ * raspored* draws — headed with their name, and wins over a team.
+ *
  * The session guard is NOT here. It is registered once on the pathless `_app`
  * layout this route nests under.
  */
@@ -119,18 +129,28 @@ const translateCellLabel: CellLabelTranslate = (key) => t(key);
 export function KalendarScreen() {
   const search = kalendarRoute.useSearch();
   const navigate = useNavigate({ from: kalendarRoute.fullPath });
-  const answer = useQuery(calendarQueryOptions(() => supabaseClient().from(CALENDAR_READ_TABLE)));
+  const answer = useQuery(
+    calendarQueryOptions(
+      () => supabaseClient().from(CALENDAR_READ_TABLE),
+      // The precedent of `smjene.$id.tsx`: the client's `rpc` is wider than
+      // the one call the calendar makes.
+      () => supabaseClient() as unknown as CalendarPeopleRpc,
+    ),
+  );
   const state = calendarSurfaceStateOf(answer);
   const { snapshot, loading } = state;
   const today = snapshot === null ? null : calendarTodayOf(snapshot, new Date());
   const mjesec = search.mjesec;
   const smjena = search.smjena;
+  const osoba = search.osoba;
   // GUARDED (`calendarMonthOutcomeOf`): a month the domain refuses is the read
   // failure, never a crashed route.
   const outcome = useMemo(
     () =>
-      snapshot === null || today === null ? null : calendarMonthOutcomeOf(snapshot, { mjesec, smjena }, today),
-    [snapshot, mjesec, smjena, today],
+      snapshot === null || today === null
+        ? null
+        : calendarMonthOutcomeOf(snapshot, { mjesec, smjena, osoba }, today),
+    [snapshot, mjesec, smjena, osoba, today],
   );
   const refusal = state.refusal ?? (outcome !== null && !outcome.ok ? outcome.code : null);
   const month = outcome !== null && outcome.ok ? outcome.month : null;
@@ -138,11 +158,15 @@ export function KalendarScreen() {
   const isPhone = useSyncExternalStore(phone.subscribe, phone.get, isPhoneOnServer);
   const mode = snapshot === null ? null : calendarModeOf(search, snapshot.viewer.role, isPhone);
   // The grid's one tab stop, remembered across re-renders and FORGOTTEN
-  // whenever the month shown or the team chosen changes (story 3.3a) — by the
-  // buttons, the filter, the URL or history — so coming back to a month starts
-  // on today again, not where focus last was.
+  // whenever the month shown, the team chosen (story 3.3a) or the person
+  // chosen (story 3.3b) changes — by the buttons, the filter, the URL or
+  // history — so coming back to a month starts on today again, not where focus
+  // last was.
   const [gridFocus, setGridFocus] = useState<GridFocus | null>(null);
-  const shownGrid = month === null ? null : `${month.month}|${month.filter.chosen ?? ALL_TEAMS_FILTER}`;
+  const shownGrid =
+    month === null
+      ? null
+      : `${month.month}|${month.filter.chosen ?? ALL_TEAMS_FILTER}|${month.filter.person ?? ALL_TEAMS_FILTER}`;
   const [focusGrid, setFocusGrid] = useState<string | null>(shownGrid);
 
   if (focusGrid !== shownGrid) {
@@ -164,7 +188,7 @@ export function KalendarScreen() {
     void navigate({ search: calendarSearchTo(search, { prikaz }) });
   }
 
-  function filter(change: { readonly smjena: string | null }): void {
+  function filter(change: CalendarFilterChange): void {
     void navigate({ search: calendarSearchTo(search, change) });
   }
 
@@ -356,15 +380,21 @@ export function KalendarScreen() {
   }
 
   /**
-   * THE TEAM FILTER of *Sve smjene* (story 3.3a): a native `Select`, as on
-   * `/ljudi`, whose value is the team the grid IS narrowed to — so an unknown
-   * or archived id reads as every team rather than claiming a filter the grid
-   * ignores. The first option counts the active teams (UX-DR19); the teams
-   * sit under a labelled heading, their names data. The reset shows only while
-   * a team is chosen, and keeps the viewer on `/kalendar`.
+   * THE FILTER of *Sve smjene*: a native `Select`, as on `/ljudi`, whose value
+   * is the team the grid IS narrowed to (story 3.3a) or the person shown
+   * (story 3.3b) — so an unknown id reads as every team rather than claiming a
+   * filter the screen ignores. The first option counts the active teams
+   * (UX-DR19); the teams sit under *Smjene* and the people under *Osobe*,
+   * their names data. The reset shows only while a team or a person is
+   * chosen, and keeps the viewer on `/kalendar`.
    */
   function renderFilter(shown: CalendarMonth): ReactNode {
-    if (shown.filter.teams.length === 0) return null;
+    if (shown.filter.teams.length === 0 && shown.filter.people.length === 0) return null;
+
+    const value =
+      shown.filter.person !== null
+        ? personFilterValueOf(shown.filter.person)
+        : (shown.filter.chosen ?? ALL_TEAMS_FILTER);
 
     return (
       <div className="flex min-w-0 flex-wrap items-end gap-3 px-4 pb-4">
@@ -374,28 +404,39 @@ export function KalendarScreen() {
             id="kalendar-filter"
             ref={filterRef}
             className="h-11"
-            value={shown.filter.chosen ?? ALL_TEAMS_FILTER}
+            value={value}
             onChange={(event) => {
               filter(calendarFilterChangeOf(event.target.value));
             }}
           >
             <option value={ALL_TEAMS_FILTER}>{t('kalendar.filter.all', { count: shown.filter.teams.length })}</option>
-            <optgroup label={t('kalendar.filter.group')}>
-              {shown.filter.teams.map((team) => (
-                <option key={team.id} value={team.id}>
-                  {team.name}
-                </option>
-              ))}
-            </optgroup>
+            {shown.filter.teams.length === 0 ? null : (
+              <optgroup label={t('kalendar.filter.group')}>
+                {shown.filter.teams.map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {shown.filter.people.length === 0 ? null : (
+              <optgroup label={t('kalendar.filter.people')}>
+                {shown.filter.people.map((person) => (
+                  <option key={person.id} value={personFilterValueOf(person.id)}>
+                    {person.name}
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </Select>
         </div>
-        {shown.filter.chosen === null ? null : (
+        {shown.filter.chosen === null && shown.filter.person === null ? null : (
           <Button
             type="button"
             variant="outline"
             className="h-11"
             onClick={() => {
-              filter({ smjena: null });
+              filter({ smjena: null, osoba: null });
               filterRef.current?.focus();
             }}
           >
@@ -430,27 +471,51 @@ export function KalendarScreen() {
     );
   }
 
-  function renderDays(shown: CalendarMonth): ReactNode {
+  /**
+   * A day list — the viewer's, or the person chosen — or its own failure, or
+   * the explanation `noTeam` when there is no team all month, never an empty
+   * list. The list is named by the month's heading, after the person's when
+   * it is theirs.
+   */
+  function renderDayList(days: CalendarDayListOutcome, noTeam: string, ofPerson: boolean): ReactNode {
     // The day list's own failure: the alert and no list. The grid is unaffected.
-    if (!shown.days.ok) {
+    if (!days.ok) {
       return (
         <div className="px-4 pb-4">
-          <Notice role="alert">{t(calendarMessageKey(shown.days.code))}</Notice>
+          <Notice role="alert">{t(calendarMessageKey(days.code))}</Notice>
         </div>
       );
     }
 
-    if (shown.days.days === null) {
-      // What is true, never an empty list: the viewer is on no team this month.
-      return <p className="px-4 pb-4 text-sm text-muted-foreground">{t('kalendar.noTeam')}</p>;
+    if (days.days === null) {
+      return <p className="px-4 pb-4 text-sm text-muted-foreground">{noTeam}</p>;
     }
 
     return (
       <>
-        {renderLegend(shown.days.days.map((day) => day.cell))}
-        <ol aria-labelledby="kalendar-month-heading" className="divide-y divide-border px-4 pb-4">
-          {shown.days.days.map((day) => renderDay(day))}
+        {renderLegend(days.days.map((day) => day.cell))}
+        <ol
+          aria-labelledby={ofPerson ? 'kalendar-person-heading kalendar-month-heading' : 'kalendar-month-heading'}
+          className="divide-y divide-border px-4 pb-4">
+          {days.days.map((day) => renderDay(day))}
         </ol>
+      </>
+    );
+  }
+
+  function renderDays(shown: CalendarMonth): ReactNode {
+    // What is true, never an empty list: the viewer is on no team this month.
+    return renderDayList(shown.days, t('kalendar.noTeam'), false);
+  }
+
+  /** The person chosen in *Sve smjene* (story 3.3b): their name, then their day list. */
+  function renderPerson(person: CalendarPersonMonth): ReactNode {
+    return (
+      <>
+        <h3 id="kalendar-person-heading" className="px-4 pb-3 font-heading text-lg font-semibold">
+          {person.name}
+        </h3>
+        {renderDayList(person.days, t('kalendar.person.noTeam', { name: person.name }), true)}
       </>
     );
   }
@@ -588,7 +653,13 @@ export function KalendarScreen() {
             {mode === null ? null : renderSwitch(mode)}
           </div>
           {month === null || mode !== MODE_SVE ? null : renderFilter(month)}
-          {month === null ? renderSkeleton() : mode === MODE_MOJ ? renderDays(month) : renderGrid(month)}
+          {month === null
+            ? renderSkeleton()
+            : mode === MODE_MOJ
+              ? renderDays(month)
+              : month.person === null
+                ? renderGrid(month)
+                : renderPerson(month.person)}
         </Card>
       )}
     </main>

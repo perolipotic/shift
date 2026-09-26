@@ -911,6 +911,11 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.filter.all',
   'kalendar.filter.group',
   'kalendar.filter.reset',
+  // STORY 3.3b: the person filter — the heading over the people in the same
+  // Select, and the note for a person on no team all month. The label now
+  // reads `Smjena ili osoba`; `Smjena` is still the Team.
+  'kalendar.filter.people',
+  'kalendar.person.noTeam',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

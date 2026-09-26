@@ -1747,11 +1747,12 @@ const KEY_SOURCES = [
     // a day on no team. FOURTEEN SINCE STORY 3.2b: the legend's heading. The
     // marks' labels come through `@/calendar/modifiers`, below. EIGHTEEN SINCE
     // STORY 3.3a: the team filter's label, its all-teams option, the heading
-    // over the teams and the reset.
+    // over the teams and the reset. TWENTY SINCE STORY 3.3b: the heading over
+    // the people and a person on no team all month.
     name: 'the Kalendar destination',
     file: KALENDAR,
     keys: translationKeys,
-    strings: 18,
+    strings: 20,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's
