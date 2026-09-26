@@ -86,6 +86,9 @@ const SANCTIONED_PLURAL_KEYS = [
   'rotation.builder.warnings.summary',
   'rotation.builder.warnings.coverageGap',
   'rotation.builder.warnings.duplicateCoverage',
+  // STORY 2.6: how many teams one saved change binds, in the history —
+  // `1 smjena`, `2 smjene`, `5 smjena`. The builder's namespace may say the Team.
+  'rotation.builder.history.teamCount',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -822,6 +825,31 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.builder.warnings.restGapEndlessUnknown',
   'rotation.builder.warnings.listSeparator',
   'rotation.builder.warnings.typeSeparator',
+  // STORY 2.6: a change from a date forward. `Vrijedi od` beside the anchor;
+  // the cancel of a scheduled change — its offer beside the refusal, its
+  // prompt, keep and confirm, the confirmation and the stale refusal; and
+  // `Povijest rotacije` — its heading, lede, empty note, five column heads,
+  // the save time, the unknown author and the three statuses, in words.
+  'rotation.builder.effectiveFrom',
+  'rotation.builder.cancelScheduled.offer',
+  'rotation.builder.cancelScheduled.prompt',
+  'rotation.builder.cancelScheduled.confirm',
+  'rotation.builder.cancelScheduled.keep',
+  'rotation.builder.cancelScheduled.done',
+  'rotation.builder.cancelScheduled.stale',
+  'rotation.builder.history.heading',
+  'rotation.builder.history.lede',
+  'rotation.builder.history.empty',
+  'rotation.builder.history.columnEffective',
+  'rotation.builder.history.columnStatus',
+  'rotation.builder.history.columnAuthor',
+  'rotation.builder.history.columnSaved',
+  'rotation.builder.history.columnTeams',
+  'rotation.builder.history.savedAt',
+  'rotation.builder.history.unknownAuthor',
+  'rotation.builder.history.status.scheduled',
+  'rotation.builder.history.status.inForce',
+  'rotation.builder.history.status.previous',
   // STORY 2.4: the phone stepper, under `rotation.builder.stepper` — the bar's
   // label, the progress line, the four step names, a reached step's
   // "završeno", Natrag, and Dalje naming the step it leads to. Still the
@@ -842,6 +870,8 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.builder.error.empty',
   'rotation.builder.error.noTeams',
   'rotation.builder.error.scheduled',
+  // STORY 2.6: an effective date before today.
+  'rotation.builder.error.effectivePast',
   'rotation.builder.error.typeArchived',
   'rotation.builder.error.unchanged',
   'rotation.builder.error.changedToday',
@@ -1209,6 +1239,10 @@ describe('the messages obey the voice rules that bind every string', () => {
     expect(messageAt('rotation.builder.spread')).toBe('Rasporedi ravnomjerno');
     expect(messageAt('rotation.builder.remove')).toBe('Ukloni korak {position}');
     expect(messageAt('rotation.builder.save')).toBe('Spremi rotaciju');
+    // STORY 2.6's TWO, a ninth authoring: the offer is the one that would most
+    // naturally have been the noun `Poništavanje` — the prompt's subject.
+    expect(messageAt('rotation.builder.cancelScheduled.offer')).toBe('Poništi promjenu zakazanu od {date}');
+    expect(messageAt('rotation.builder.cancelScheduled.confirm')).toBe('Potvrdi poništavanje promjene');
   });
 });
 

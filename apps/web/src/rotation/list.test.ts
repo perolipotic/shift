@@ -19,6 +19,7 @@ import {
   rotationChangedTodayOf,
   rotationMessageKey,
   rotationQueryOptions,
+  rotationScheduledDateOf,
   rotationScheduledOf,
   rotationSurfaceStateOf,
   rotationTeamsOf,
@@ -29,13 +30,18 @@ import {
   type RotationTable,
 } from '@/rotation/list';
 import {
+  ADMIN,
+  ADMIN_NAME,
+  ORGANIZATION,
   OTHER_ORGANIZATION,
   PILOT,
+  SEEDED_AT,
   SEEDED,
   TODAY,
   UJ5,
   answerOf,
   assignmentRow,
+  memberRow,
   stepRow,
   teamRow,
   type FixtureRows,
@@ -171,6 +177,88 @@ describe('the read', () => {
   });
 });
 
+describe('the attribution, read in the same snapshot (story 2.6)', () => {
+  it('selects each version\'s id, author and time, and the members as names', () => {
+    expect(ROTATION_COLUMNS).toContain(
+      'rotation_assignments(organization_id,id,team_id,pattern_id,offset_step_id,anchor_date,effective_from,created_by,created_at)',
+    );
+    expect(ROTATION_COLUMNS).toContain('members(organization_id,auth_user_id,name)');
+    // Names only: no role, email, rank or position reaches the builder.
+    expect(ROTATION_COLUMNS).not.toMatch(/email|role|fire_rank|position\)/);
+  });
+
+  it.each([
+    { fixture: 'pilot', rows: PILOT },
+    { fixture: 'UJ-5', rows: UJ5 },
+  ])('$fixture: one history record per assignment, beside the domain type, and the authors by auth user id', async ({ rows }) => {
+    const snapshot = await snapshotOf(rows);
+
+    expect(snapshot.history).toHaveLength(snapshot.assignments.length);
+    expect(snapshot.history[0]).toEqual({
+      id: `assignment-${String(rows.assignments[0]?.['team_id'])}-${SEEDED}`,
+      teamId: rows.assignments[0]?.['team_id'],
+      patternId: rows.assignments[0]?.['pattern_id'],
+      effectiveFrom: SEEDED,
+      createdBy: ADMIN,
+      createdAt: SEEDED_AT,
+    });
+    // The domain's type carries none of it.
+    expect(Object.keys(snapshot.assignments[0] ?? {}).sort()).toEqual(
+      ['anchorDate', 'effectiveFrom', 'offsetStepId', 'patternId', 'teamId'].sort(),
+    );
+    expect(snapshot.authors).toEqual([{ authUserId: ADMIN, name: ADMIN_NAME }]);
+  });
+
+  it('refuses a member of another tenant, a malformed member, and a version without its id, author or time', async () => {
+    const spy = quiet();
+    const withRow = (change: (row: Record<string, unknown>) => Record<string, unknown>): FixtureRows => ({
+      ...PILOT,
+      assignments: PILOT.assignments.map((row, index) => (index === 0 ? change({ ...row }) : row)),
+    });
+
+    for (const rows of [
+      { ...PILOT, members: [memberRow(ADMIN, ADMIN_NAME), memberRow('stranger', 'Netko', OTHER_ORGANIZATION)] },
+      { ...PILOT, members: [{ organization_id: ORGANIZATION, auth_user_id: '', name: 'Netko' }] },
+      { ...PILOT, members: [memberRow(ADMIN, ADMIN_NAME), memberRow(ADMIN, 'Dvojnik')] },
+      withRow((row) => ({ ...row, id: null })),
+      withRow((row) => ({ ...row, created_by: '' })),
+      withRow((row) => ({ ...row, created_at: 'yesterday' })),
+      // Date.parse reads these; they are not a full timestamp with an offset.
+      withRow((row) => ({ ...row, created_at: '2026' })),
+      withRow((row) => ({ ...row, created_at: '2026-09-26' })),
+      withRow((row) => ({ ...row, created_at: '2026-09-26T20:07:49' })),
+      withRow((row) => ({ ...row, id: PILOT.assignments[1]?.['id'] })),
+    ]) {
+      expect((await refusedOf(rows)).ok).toBe(false);
+    }
+    // No members embed at all: the answer is not the snapshot the read asked for.
+    const organization = { ...(answerOf(PILOT).data?.[0] as Record<string, unknown>) };
+
+    Reflect.deleteProperty(organization, 'members');
+
+    expect((await readRotation(tableOf({ data: [organization], error: null, count: 1 }))).ok).toBe(false);
+    spy.mockRestore();
+  });
+
+  it('reads the timestamps PostgREST renders, with any offset', async () => {
+    for (const createdAt of ['2026-09-25T20:07:49.331741+00:00', '2026-09-25T22:07:49+02:00', '2026-09-25T20:07Z']) {
+      const snapshot = await snapshotOf({
+        ...PILOT,
+        assignments: PILOT.assignments.map((row, index) => (index === 0 ? { ...row, created_at: createdAt } : row)),
+      });
+
+      expect(snapshot.history[0]?.createdAt, createdAt).toBe(createdAt);
+    }
+  });
+
+  it('reads a version whose author the members embed lacks: the history names nobody', async () => {
+    const snapshot = await snapshotOf({ ...PILOT, members: [] });
+
+    expect(snapshot.authors).toEqual([]);
+    expect(snapshot.history.every((record) => record.createdBy === ADMIN)).toBe(true);
+  });
+});
+
 describe('the rotation in force, over both fixtures', () => {
   it.each([
     { fixture: 'pilot', rows: PILOT, count: 4, pattern: 'pilot-rotation' },
@@ -216,6 +304,10 @@ describe('the rotation in force, over both fixtures', () => {
     expect(rotationScheduledOf(seeded, TODAY)).toBe(false);
     expect(rotationScheduledOf(scheduled, TODAY)).toBe(true);
     expect(rotationScheduledOf(scheduled, '2026-10-01')).toBe(false);
+    // The date the cancel deletes (story 2.6).
+    expect(rotationScheduledDateOf(seeded, TODAY)).toBeNull();
+    expect(rotationScheduledDateOf(scheduled, TODAY)).toBe('2026-10-01');
+    expect(rotationScheduledDateOf(scheduled, '2026-10-01')).toBeNull();
   });
 
   it("ignores an archived team's version after today: the save writes none for it", async () => {

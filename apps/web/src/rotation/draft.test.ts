@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   ROTATION_CHANGED_TODAY,
+  ROTATION_EFFECTIVE_PAST,
   ROTATION_EMPTY,
   ROTATION_NO_TEAMS,
   ROTATION_SCHEDULED,
@@ -19,6 +20,7 @@ import {
   addableTypesOf,
   datesFrom,
   draftRefusalOf,
+  draftShiftTypeOn,
   draftStepRowsOf,
   draftTeamRowsOf,
   draftUnchangedOf,
@@ -37,6 +39,7 @@ import {
   stepControlIdOf,
   stepIndexOf,
   withAnchor,
+  withEffectiveFrom,
   withStepAdded,
   withStepMoved,
   withStepMovedTo,
@@ -210,7 +213,7 @@ describe('the prefill', () => {
 
     expect(prefillOf(withNewTeam, TODAY).steps).toEqual([]);
     expect(prefillOf(withNewTeam, TODAY).offsets['new']).toBe(0);
-    expect(prefillOf(withNoTeam, TODAY)).toEqual({ steps: [], anchorDate: TODAY, offsets: {}, keys: [], nextKey: 0 });
+    expect(prefillOf(withNoTeam, TODAY)).toEqual({ steps: [], anchorDate: TODAY, effectiveFrom: TODAY, offsets: {}, keys: [], nextKey: 0 });
   });
 
   it('takes the version in force today, not a later or earlier one', async () => {
@@ -324,7 +327,7 @@ describe('the step operations keep every team on its step', () => {
       teams: [...PILOT.teams, teamRow('new', 'Smjena E'), teamRow('gone', 'Smjena Z', { archived: true })],
     });
     const draft = normalizedDraftOf(
-      { steps: [DAN, NOC], anchorDate: TODAY, offsets: { 'pilot-smjena-a': 1, 'pilot-smjena-b': 7, gone: 1 }, keys: [], nextKey: 0 },
+      { steps: [DAN, NOC], anchorDate: TODAY, effectiveFrom: TODAY, offsets: { 'pilot-smjena-a': 1, 'pilot-smjena-b': 7, gone: 1 }, keys: [], nextKey: 0 },
       rotationTeamsOf(snapshot),
     );
 
@@ -361,7 +364,7 @@ describe('each step keeps its client key, and focus lands where the rule says', 
   });
 
   it('repairs keys that do not match the steps', () => {
-    const draft = normalizedDraftOf({ steps: [DAN, NOC], anchorDate: TODAY, offsets: {}, keys: ['x'], nextKey: 0 }, []);
+    const draft = normalizedDraftOf({ steps: [DAN, NOC], anchorDate: TODAY, effectiveFrom: TODAY, offsets: {}, keys: ['x'], nextKey: 0 }, []);
 
     expect(draft.keys).toEqual(['step-0', 'step-1']);
     expect(withStepAdded(draft, SLOB).keys).toEqual(['step-0', 'step-1', 'step-2']);
@@ -453,6 +456,7 @@ describe('Rasporedi ravnomjerno spreads the teams evenly over the cycle', () => 
   const draftOf = (length: number, teams: readonly { id: string }[]): RotationDraft => ({
     steps: Array.from({ length }, (_, index) => `type-${String(index)}`),
     anchorDate: TODAY,
+    effectiveFrom: TODAY,
     offsets: Object.fromEntries(teams.map((team) => [team.id, 0])),
     keys: Array.from({ length }, (_, index) => `step-${String(index)}`),
     nextKey: length,
@@ -851,6 +855,214 @@ describe('refused before anything is sent', () => {
 
     draftRefusalOf(snapshot, draft, TODAY);
     expect(draft).toEqual(copy);
+  });
+});
+
+describe('the effective date (story 2.6)', () => {
+  const YESTERDAY = '2026-09-25';
+  const NEXT_WEEK = '2026-10-03';
+
+  it.each([
+    { fixture: 'pilot', rows: PILOT },
+    { fixture: 'UJ-5', rows: UJ5 },
+  ])('$fixture: the prefill and an empty draft apply from today, the anchor staying today however the date moves', async ({ rows }) => {
+    const snapshot = await snapshotOf(rows);
+    const prefill = prefillOf(snapshot, TODAY);
+
+    expect(prefill.effectiveFrom).toBe(TODAY);
+    expect(emptyDraftOf(rotationTeamsOf(snapshot), TODAY).effectiveFrom).toBe(TODAY);
+
+    const moved = withEffectiveFrom(prefill, NEXT_WEEK);
+
+    expect(moved.effectiveFrom).toBe(NEXT_WEEK);
+    expect(moved.anchorDate).toBe(TODAY);
+    expect(moved.offsets).toEqual(prefill.offsets);
+  });
+
+  it('takes only a calendar date, and keeps a past one for the save to refuse', async () => {
+    const draft = prefillOf(await snapshotOf(PILOT), TODAY);
+
+    for (const value of ['', '2026-13-01', '2026-02-30', 'soon']) {
+      expect(withEffectiveFrom(draft, value), value).toBe(draft);
+    }
+    expect(withEffectiveFrom(draft, ` ${YESTERDAY} `).effectiveFrom).toBe(YESTERDAY);
+  });
+
+  it.each([
+    { fixture: 'pilot', rows: PILOT },
+    { fixture: 'UJ-5', rows: UJ5 },
+  ])('$fixture past: a date before today is refused, after only the scheduled, empty and no-team checks, and the draft is kept', async ({ rows }) => {
+    const snapshot = await snapshotOf(rows);
+    const [first] = rotationTeamsOf(snapshot);
+    const changed = withTeamStep(prefillOf(snapshot, TODAY), first?.id ?? '', 1);
+
+    for (const draft of [withEffectiveFrom(changed, YESTERDAY), withEffectiveFrom(prefillOf(snapshot, TODAY), '2020-01-01')]) {
+      const copy = JSON.parse(JSON.stringify(draft)) as RotationDraft;
+
+      expect(draftRefusalOf(snapshot, draft, TODAY)).toBe(ROTATION_EFFECTIVE_PAST);
+      expect(draft).toEqual(copy);
+    }
+    expect(draftRefusalOf(snapshot, withEffectiveFrom(changed, TODAY), TODAY)).toBeNull();
+  });
+
+  it('future: the preview, the figures and the check all start on the effective date', async () => {
+    const snapshot = await snapshotOf(PILOT);
+    const [dan] = snapshot.types;
+    // Dan's times change from next week, so the figures show which date they read.
+    const corrected: RotationSnapshot = {
+      ...snapshot,
+      types: snapshot.types.map((type) =>
+        type === dan
+          ? {
+              ...type,
+              versions: [
+                ...type.versions,
+                { shiftTypeId: type.id, effectiveFrom: NEXT_WEEK, startMinute: 420, endMinute: 1080 },
+              ],
+            }
+          : type,
+      ),
+    };
+    const draft = withEffectiveFrom(withTeamStep(prefillOf(corrected, TODAY), 'pilot-smjena-a', 1), NEXT_WEEK);
+    const grid = previewGridOf(corrected, draft, draft.effectiveFrom);
+
+    expect(grid.days.map((day) => day.date)).toEqual(datesFrom(NEXT_WEEK, 4));
+    expect(previewIds(corrected, draft, draft.effectiveFrom)).toEqual(
+      datesFrom(NEXT_WEEK, 4).map((date) => rotationTeamsOf(corrected).map((team) => draftShiftTypeOn(draft, team.id, date))),
+    );
+    expect(figuresOf(corrected, draft, draft.effectiveFrom).cycleMinutes).toBe(1380);
+    expect(figuresOf(corrected, draft, TODAY).cycleMinutes).toBe(1440);
+    expect(draftRefusalOf(corrected, draft, TODAY)).toBeNull();
+  });
+
+  it.each([
+    { fixture: 'pilot', rows: PILOT },
+    { fixture: 'UJ-5', rows: UJ5 },
+  ])('$fixture unchanged on the date: the version in force on it, re-expressed from today, is refused', async ({ rows }) => {
+    const snapshot = await snapshotOf(rows);
+
+    for (const date of [TODAY, '2026-09-27', NEXT_WEEK]) {
+      const draft = withEffectiveFrom(prefillOf(snapshot, TODAY), date);
+
+      expect(draftUnchangedOf(snapshot, draft, date), date).toBe(true);
+      expect(draftRefusalOf(snapshot, draft, TODAY), date).toBe(ROTATION_UNCHANGED);
+    }
+  });
+
+  it('judges unchanged against the version in force ON the date, not today', async () => {
+    // A version from yesterday: today it is in force; on 2026-09-24 the seeded one was.
+    const snapshot = await snapshotOf({
+      ...PILOT,
+      steps: [...PILOT.steps, stepRow('next-0', 'next', 0, NOC), stepRow('next-1', 'next', 1, SLOB)],
+      assignments: [
+        ...PILOT.assignments,
+        ...PILOT.teams.map((team) => assignmentRow(String(team['id']), 'next', 'next-0', YESTERDAY, YESTERDAY)),
+      ],
+    });
+    const seeded = prefillOf(snapshot, '2026-09-24');
+
+    expect(draftUnchangedOf(snapshot, seeded, '2026-09-24')).toBe(true);
+    expect(draftUnchangedOf(snapshot, withEffectiveFrom(seeded, NEXT_WEEK), NEXT_WEEK)).toBe(false);
+  });
+
+  it("refuses only a date a team's latest version already carries", async () => {
+    const changedToday = await snapshotOf({
+      ...PILOT,
+      assignments: [...PILOT.assignments, assignmentRow('pilot-smjena-a', 'pilot-rotation', 'pilot-step-1', SEEDED, TODAY)],
+    });
+    const draft = withStepAdded(prefillOf(changedToday, TODAY), DAN);
+
+    expect(draftRefusalOf(changedToday, draft, TODAY)).toBe(ROTATION_CHANGED_TODAY);
+    expect(draftRefusalOf(changedToday, withEffectiveFrom(draft, '2026-09-27'), TODAY)).toBeNull();
+  });
+
+  it('refuses a scheduled change FIRST, over a past date, an empty pattern and no team, so the cancel is offered', async () => {
+    const scheduled = {
+      ...PILOT,
+      assignments: [...PILOT.assignments, assignmentRow('pilot-smjena-a', 'pilot-rotation', 'pilot-step-1', SEEDED, NEXT_WEEK)],
+    };
+    const snapshot = await snapshotOf(scheduled);
+    const prefill = prefillOf(snapshot, TODAY);
+
+    expect(draftRefusalOf(snapshot, withEffectiveFrom(prefill, YESTERDAY), TODAY)).toBe(ROTATION_SCHEDULED);
+    expect(draftRefusalOf(snapshot, emptyDraftOf(rotationTeamsOf(snapshot), TODAY), TODAY)).toBe(ROTATION_SCHEDULED);
+    expect(
+      draftRefusalOf(snapshot, withEffectiveFrom(emptyDraftOf(rotationTeamsOf(snapshot), TODAY), YESTERDAY), TODAY),
+    ).toBe(ROTATION_SCHEDULED);
+    // NO TEAM AND A SCHEDULED CHANGE CANNOT MEET: only an ACTIVE team's
+    // version counts as scheduled. With every team archived, the scheduled
+    // version refuses nothing and no-teams is what is said.
+    const archived: RotationSnapshot = {
+      ...snapshot,
+      teams: snapshot.teams.map((team) => ({ ...team, archived: true })),
+    };
+
+    expect(draftRefusalOf(archived, prefill, TODAY)).toBe(ROTATION_NO_TEAMS);
+  });
+
+  it('reads the times in force ON a future effective date for the figures, not today\'s', async () => {
+    const snapshot = await snapshotOf(UJ5);
+    const [jutarnja] = snapshot.types;
+    // Jutarnja goes from 06:00–14:00 (8 h) to 06:00–16:00 (10 h) on 2026-09-30,
+    // between today and next week.
+    const corrected: RotationSnapshot = {
+      ...snapshot,
+      types: snapshot.types.map((type) =>
+        type === jutarnja
+          ? {
+              ...type,
+              versions: [
+                ...type.versions,
+                { shiftTypeId: type.id, effectiveFrom: '2026-09-30', startMinute: 360, endMinute: 960 },
+              ],
+            }
+          : type,
+      ),
+    };
+    const draft = withEffectiveFrom(prefillOf(corrected, TODAY), NEXT_WEEK);
+
+    expect(figuresOf(corrected, draft, TODAY).cycleMinutes).toBe(1440);
+    expect(figuresOf(corrected, draft, draft.effectiveFrom).cycleMinutes).toBe(1560);
+  });
+
+  it('is unchanged when the draft equals a NEWER version in force on the effective date', async () => {
+    // Snapshot data only: every team's version from NEXT_WEEK, on a two-step
+    // pattern — as the database would hold it, with no save made here.
+    const snapshot = await snapshotOf({
+      ...PILOT,
+      steps: [...PILOT.steps, stepRow('next-0', 'next', 0, NOC), stepRow('next-1', 'next', 1, SLOB)],
+      assignments: [
+        ...PILOT.assignments,
+        ...PILOT.teams.map((team, index) =>
+          assignmentRow(String(team['id']), 'next', `next-${String(index < 2 ? 0 : 1)}`, NEXT_WEEK, NEXT_WEEK),
+        ),
+      ],
+    });
+    const newer: RotationDraft = {
+      ...emptyDraftOf(rotationTeamsOf(snapshot), TODAY),
+      steps: [NOC, SLOB],
+      keys: ['step-0', 'step-1'],
+      nextKey: 2,
+      anchorDate: NEXT_WEEK,
+      effectiveFrom: NEXT_WEEK,
+      offsets: { 'pilot-smjena-a': 0, 'pilot-smjena-b': 0, 'pilot-smjena-c': 1, 'pilot-smjena-d': 1 },
+    };
+
+    expect(draftUnchangedOf(snapshot, newer, NEXT_WEEK)).toBe(true);
+    // Against the version in force today it is a change.
+    expect(draftUnchangedOf(snapshot, newer, TODAY)).toBe(false);
+  });
+
+  it('still refuses a scheduled change, judged from today whatever the effective date', async () => {
+    const snapshot = await snapshotOf({
+      ...PILOT,
+      assignments: [...PILOT.assignments, assignmentRow('pilot-smjena-a', 'pilot-rotation', 'pilot-step-1', SEEDED, NEXT_WEEK)],
+    });
+    const draft = withStepAdded(prefillOf(snapshot, TODAY), DAN);
+
+    for (const date of [TODAY, '2026-10-10']) {
+      expect(draftRefusalOf(snapshot, withEffectiveFrom(draft, date), TODAY), date).toBe(ROTATION_SCHEDULED);
+    }
   });
 });
 

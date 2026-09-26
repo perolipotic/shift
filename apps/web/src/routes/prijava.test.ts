@@ -145,6 +145,8 @@ const ROTATION_WRITE_KEYS = join(srcRoot, 'rotation', 'write.ts');
 const ROTATION_STEPPER_KEYS = join(srcRoot, 'rotation', 'stepper.ts');
 /** Story 2.5's save warnings: every line, its date detail, the count and the separators. */
 const ROTATION_WARNING_KEYS = join(srcRoot, 'rotation', 'warnings.ts');
+/** Story 2.6's rotation history: the three statuses and the unknown author. */
+const ROTATION_HISTORY_KEYS = join(srcRoot, 'rotation', 'history.ts');
 
 /**
  * The member write path's rules, as a `.ts` module that renders nothing.
@@ -447,7 +449,10 @@ const SCREENS = [
   // TWELVE SINCE STORY 2.4: the phone stepper's bar step (written once for
   // all four), Natrag and Dalje. No width switch in script: all three are
   // hidden from `sm` up by CSS.
-  { name: 'the rotation builder', file: ROTATION_SECTION, expectedControls: 12 },
+  // SIXTEEN SINCE STORY 2.6: the `Vrijedi od` date, the cancel offered beside
+  // the scheduled refusal, and its confirmation's keep and confirm. The
+  // history is a table and offers nothing.
+  { name: 'the rotation builder', file: ROTATION_SECTION, expectedControls: 16 },
   // ZERO on every remaining placeholder (four since story 2.2b built
   // `/postavke-rotacije`), and asserted rather than assumed: a placeholder is a
   // heading and nothing else, so the first control any of them grows is a
@@ -1673,8 +1678,12 @@ const KEY_SOURCES = [
     // FORTY-EIGHT SINCE STORY 2.4: the stepper's progress line, the bar's
     // label, a reached step's "završeno" and Natrag. The step names and
     // Dalje's labels come through `@/rotation/stepper`, counted below.
+    // SIXTY-THREE SINCE STORY 2.6: `Vrijedi od`; the cancel's offer, prompt,
+    // keep and confirm; and the history's heading, lede, empty note, five
+    // column heads, save time and team count. The statuses and the unknown
+    // author come through `@/rotation/history`, counted below.
     keys: translationKeys,
-    strings: 48,
+    strings: 63,
   },
   {
     // STORY 2.4: the four step names and Dalje's three labels, one per step
@@ -1694,6 +1703,16 @@ const KEY_SOURCES = [
     strings: 10,
   },
   {
+    // STORY 2.6: the history's three statuses, in words, and the unknown author.
+    // `memberListKeys`, as the warning rules use, because the module holds TWO
+    // `\w*MessageKey` unions: `messageKeyUnion` reads only the first and would
+    // drop the unknown author. It has no quoted `label:` entry to over-read.
+    name: 'the rotation history rules',
+    file: ROTATION_HISTORY_KEYS,
+    keys: memberListKeys,
+    strings: 4,
+  },
+  {
     // The read failure.
     name: 'the rotation read rules',
     file: ROTATION_LIST_KEYS,
@@ -1703,10 +1722,13 @@ const KEY_SOURCES = [
   {
     // The eight refusals, the "nothing changed" note beside a failure after
     // the pattern, and the confirmation.
+    // FIFTEEN SINCE STORY 2.6: the past effective date; the cancel's three
+    // refusals (stale, and the save's refused and unavailable again) and its
+    // confirmation.
     name: 'the rotation write rules',
     file: ROTATION_WRITE_KEYS,
     keys: memberWriteKeys,
-    strings: 10,
+    strings: 15,
   },
   {
     // THIRTEEN on the create form: its own heading, five field labels, the save
@@ -1996,8 +2018,10 @@ describe('the screen is read at all, so every sweep below means something', () =
     // FORTY-ONE KEY SOURCES SINCE STORY 2.4: `@/rotation/stepper`.
     //
     // FORTY-TWO SINCE STORY 2.5: `@/rotation/warnings`.
+    //
+    // FORTY-THREE SINCE STORY 2.6: `@/rotation/history`.
     expect(SCREENS).toHaveLength(24);
-    expect(KEY_SOURCES).toHaveLength(42);
+    expect(KEY_SOURCES).toHaveLength(43);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -3074,7 +3098,10 @@ describe('the member list reads once, under one key', () => {
     expect(screen, 'the in-flight ref is never released').toMatch(/finally \{\s*saving\.current = false;/);
     // AD-7: nothing on the builder projects, takes a modulo or counts a cycle.
     expect(screen, 'the builder reaches past its modules into the domain').not.toContain('@shift/domain');
-    expect(screen, 'the builder writes an effective date other than today').not.toMatch(/effective_?[fF]rom/);
+    // STORY 2.6 LIFTED THE BAN on the draft's `effectiveFrom`: the section
+    // reads it for `Vrijedi od`. The COLUMN stays out — only `@/rotation/write`
+    // names what is sent.
+    expect(screen, 'the builder names a column the save sends').not.toMatch(/effective_from/);
     expect(screen).not.toMatch(/type="color"|shift-day|shift-night|shift-slot-|destructive/);
     // AS RENEGOTIATED: steps reorder by `@dnd-kit`, by the handle only, with
     // mouse, touch and keyboard sensors — never native HTML5 drag-and-drop,
@@ -3120,6 +3147,7 @@ describe('the member list reads once, under one key', () => {
       join(srcRoot, 'rotation', 'draft.ts'),
       ROTATION_STEPPER_KEYS,
       ROTATION_WARNING_KEYS,
+      ROTATION_HISTORY_KEYS,
     ]) {
       const text = readFileSync(file, 'utf8');
 
@@ -3170,6 +3198,34 @@ describe('the member list reads once, under one key', () => {
     for (const file of [SHIFT_TYPE_LIST, SHIFT_TYPE_EDIT]) {
       expect(source(file), `${file} deletes directly`).not.toContain('.delete(');
     }
+  });
+
+  it('deletes only the scheduled rotation change, in one place, through the cancel', () => {
+    // STORY 2.6, decision 2a. The one delete in `@/rotation` is the cancel's,
+    // on its own seam; the save's insert seam grew no delete and no update.
+    const writes = source(ROTATION_WRITE_KEYS);
+    const insertSeam = /export interface RotationInsertTable \{[\s\S]*?\n\}/.exec(writes)?.[0] ?? '';
+
+    expect(insertSeam, 'the insert seam could not be extracted').toContain('insert(');
+    expect(insertSeam, 'the insert seam grew a delete').not.toContain('delete(');
+    expect(occurrences(writes, '.delete()'), 'a second delete arrived').toBe(1);
+    expect(exportedFunction(writes, 'cancelScheduledRotation'), 'the one delete is not the cancel').toContain(
+      '.delete()',
+    );
+    expect(source(ROTATION_SECTION), 'the builder deletes directly').not.toContain('.delete(');
+    // Neutral, never `destructive`, and confirmed in a `ConfirmDialog`.
+    expect(source(ROTATION_SECTION)).toContain('<ConfirmDialog');
+    expect(source(ROTATION_SECTION)).not.toContain('destructive');
+    // The cancel guards on the save's ref, releases it on every path, and
+    // re-reads only `ROTATION_KEY`.
+    const cancel = namedHandler(source(ROTATION_SECTION), 'cancelScheduled');
+
+    expect(cancel.length, 'the cancel handler could not be extracted').toBeGreaterThan(80);
+    expect(cancel).toContain('cancelScheduledRotation(');
+    expect(cancel).toMatch(/if \(saving\.current\) return;/);
+    expect(finallyBlock(cancel)).toContain('saving.current = false');
+    expect(finallyBlock(cancel)).toContain('setPending(false)');
+    expect(cancel).toContain('invalidateQueries({ queryKey: ROTATION_KEY })');
   });
 
   it('offers an archived team nothing that writes', () => {

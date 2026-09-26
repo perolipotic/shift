@@ -409,6 +409,60 @@ describe('rotationAssignmentOn', () => {
   });
 });
 
+describe('a rotation change from a date forward (story 2.6)', () => {
+  // The change 2.6 saves: a NEW pattern (the old one's steps, reversed) and a
+  // new version per team from EFFECTIVE, anchored on a date of its own — the
+  // anchor fixes the phase, the effective date when it applies. Nothing of
+  // the old version is touched.
+  const EFFECTIVE = '2026-10-03';
+  const ANCHOR = '2026-09-26';
+
+  it.each(FIXTURES)('$fixture: the day before resolves through the old version, the effective day and later through the new', ({ teams, steps, assignments, patternId }) => {
+    const changedSteps: readonly RotationStep[] = [...steps]
+      .sort((one, other) => one.position - other.position)
+      .reverse()
+      .map((step, position) => ({ ...step, id: `changed-${step.id}`, patternId: `changed-${patternId}`, position }));
+    const allSteps = [...steps, ...changedSteps];
+
+    for (const [index, team] of teams.entries()) {
+      const old = assignmentOf(assignments, team);
+      const changed: RotationAssignment = {
+        teamId: team.id,
+        patternId: `changed-${patternId}`,
+        offsetStepId: (changedSteps[index] as RotationStep).id,
+        anchorDate: ANCHOR,
+        effectiveFrom: EFFECTIVE,
+      };
+      const versions = [old, changed];
+      let differs = false;
+
+      // Before the effective date: exactly the old projection, for a full
+      // cycle and more back from the day before.
+      for (let days = 1; days <= steps.length * 3; days += 1) {
+        const { date } = walk(EFFECTIVE, -days, 0, 1);
+
+        expect(rotationAssignmentOn(versions, date), `${team.id} on ${date}`).toBe(old);
+        expect(projectedShiftTypeOn(versions, allSteps, date), `${team.id} on ${date}`).toBe(
+          projectedShiftType(steps, old, date),
+        );
+      }
+      // On the effective date and after it: the new version, from its own
+      // anchor.
+      for (let days = 0; days < steps.length * 3; days += 1) {
+        const { date } = walk(EFFECTIVE, days, 0, 1);
+
+        expect(rotationAssignmentOn(versions, date), `${team.id} on ${date}`).toBe(changed);
+        expect(projectedShiftTypeOn(versions, allSteps, date), `${team.id} on ${date}`).toBe(
+          walkedShiftType(changedSteps, changed, daysBetween(ANCHOR, date)).shiftTypeId,
+        );
+        if (projectedShiftType(changedSteps, changed, date) !== projectedShiftType(steps, old, date)) differs = true;
+      }
+      // Not vacuous: the change changes something the old version said.
+      expect(differs, team.id).toBe(true);
+    }
+  });
+});
+
 describe('the steps and the offset', () => {
   const smjenaA = assignmentOf(PILOT_ROTATION_ASSIGNMENTS, PILOT_TEAMS[0]!);
 

@@ -26,10 +26,12 @@ import {
   Clock3,
   Coffee,
   GripVertical,
+  History,
   Info,
   Plus,
   Rows3,
   Save,
+  Undo2,
   X,
 } from 'lucide-react';
 import {
@@ -45,6 +47,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Callout, CalloutBody, CalloutDescription, CalloutTitle } from '@/components/ui/callout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ConfirmDialog, DialogFooter } from '@/components/ui/dialog';
 import { IconTile } from '@/components/ui/icon-tile';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -65,6 +68,7 @@ import { t } from '@/i18n';
 import {
   FOCUS_ADD,
   PREVIEW_CYCLE_CHOICES,
+  ROTATION_SCHEDULED,
   STEP_CONTROL_HANDLE,
   STEP_CONTROL_REMOVE,
   addableTypesOf,
@@ -80,6 +84,7 @@ import {
   stepIndexOf,
   stepPositionOf,
   withAnchor,
+  withEffectiveFrom,
   withOffsetsSpread,
   withStepAdded,
   withStepMovedTo,
@@ -106,19 +111,33 @@ import {
   reopensAfterSaveOf,
   rotationMessageKey,
   rotationQueryOptions,
+  rotationScheduledOf,
   rotationSurfaceStateOf,
   rotationTeamsOf,
   rotationTodayOf,
   writableRotationOf,
 } from '@/rotation/list';
 import {
+  rotationHistoryAuthorMessageKey,
+  rotationHistoryOf,
+  rotationHistoryStatusMessageKey,
+  scheduledChangeOf,
+  type ScheduledChange,
+} from '@/rotation/history';
+import {
+  ROTATION_CANCELLED_MESSAGE_KEY,
+  ROTATION_CANCEL_STALE,
   ROTATION_SAVED_MESSAGE_KEY,
   ROTATION_WRITE_REFUSED,
   ROTATION_WRITE_UNAVAILABLE,
+  cancelScheduledRotation,
   claimedOrganizationOf,
+  rotationCancelMessageKey,
   rotationPartialMessageKey,
   rotationWriteMessageKey,
   saveRotation,
+  type RotationAssignmentDeleteTable,
+  type RotationCancelOutcome,
   type RotationInsertTable,
 } from '@/rotation/write';
 import {
@@ -173,6 +192,13 @@ import { supabaseClient } from '@/supabase/client';
  * One tree at every width: the data, the validations and the order cannot
  * differ, and a step change remounts nothing. The header, its save, the save's
  * note and outcome and the read refusal stay outside every step.
+ *
+ * FROM A DATE FORWARD (story 2.6). `Vrijedi od` sits beside the anchor; the
+ * figures, the preview, the checks and the warnings all start on it, and the
+ * save writes every version from it. While a change is scheduled the save is
+ * refused and, beside that refusal, the change can be cancelled — confirmed in
+ * a `ConfirmDialog`, re-reading only `ROTATION_KEY`. `Povijest rotacije`
+ * lists every saved change after the step sections, at every width.
  */
 
 export function RotationSection({
@@ -194,6 +220,10 @@ export function RotationSection({
   const stepMoved = useRef(false);
   const [pending, setPending] = useState(false);
   const [outcome, setOutcome] = useState<ShownSaveOutcome | null>(null);
+  const [cancelArmed, setCancelArmed] = useState(false);
+  const [cancelled, setCancelled] = useState<RotationCancelOutcome | null>(null);
+  /** The cancel's confirmation, where focus goes when the pressed control unmounts. */
+  const cancelConfirmation = useRef<HTMLParagraphElement>(null);
   const [focus, setFocus] = useState<StepFocus | null>(null);
   const controls = useRef(new Map<string, HTMLButtonElement>());
 
@@ -235,6 +265,7 @@ export function RotationSection({
   /** Every change goes through a draft operation, into the store; a message describes the last save only. */
   function change(next: RotationDraft): void {
     setOutcome(null);
+    setCancelled(null);
     if (snapshot !== null) rotationDraftStore.set(snapshot.organizationId, next);
   }
 
@@ -297,6 +328,7 @@ export function RotationSection({
 
     saving.current = true;
     setOutcome(null);
+    setCancelled(null);
     setPending(true);
 
     try {
@@ -307,9 +339,10 @@ export function RotationSection({
       }
 
       // TODAY AT THE MOMENT OF SAVING, not when the screen last rendered: a
-      // tab left open past the organization's midnight dates the versions,
-      // and runs the checks, on the day the save is actually made.
-      const savedOn = rotationTodayOf(writable, new Date());
+      // tab left open past the organization's midnight runs the checks — the
+      // effective date may be no earlier, and nothing may be scheduled after
+      // it — on the day the save is actually made.
+      const savedToday = rotationTodayOf(writable, new Date());
 
       const client = supabaseClient();
       const { data } = await client.auth.getSession();
@@ -330,14 +363,14 @@ export function RotationSection({
         organization,
         writable,
         draft,
-        savedOn,
+        savedToday,
       );
 
       // A REFUSED SAVE KEEPS THE DRAFT: nothing below touches it on that path.
       // A LANDED ONE CARRIES ITS WARNINGS (story 2.5), from the draft just
-      // saved and the date the save used — before the draft re-opens below.
-      // They never block: the rows are already written.
-      setOutcome(shownSaveOutcomeOf(saved, writable, draft, savedOn));
+      // saved and the date its versions apply from (story 2.6) — before the
+      // draft re-opens below. They never block: the rows are already written.
+      setOutcome(shownSaveOutcomeOf(saved, writable, draft, draft.effectiveFrom));
 
       if (!saved.ok) return;
 
@@ -359,6 +392,74 @@ export function RotationSection({
     }
   }
 
+  /**
+   * Cancel the scheduled change, once confirmed (story 2.6, decision 2a). The
+   * confirmation stays mounted and disabled while the delete is outstanding.
+   * A landed cancel and a stale one both re-read `ROTATION_KEY`, and only it;
+   * the draft is kept either way.
+   */
+  async function cancelScheduled(confirmed: string): Promise<void> {
+    const writable = writableRotationOf(state);
+
+    if (saving.current) return;
+
+    saving.current = true;
+    setCancelled(null);
+    setPending(true);
+
+    try {
+      if (writable === null) {
+        setCancelled({ ok: false, code: ROTATION_WRITE_UNAVAILABLE });
+
+        return;
+      }
+
+      const client = supabaseClient();
+      const { data } = await client.auth.getSession();
+      const organization = claimedOrganizationOf(data.session?.access_token);
+
+      if (organization === null) {
+        setCancelled({ ok: false, code: ROTATION_WRITE_REFUSED });
+
+        return;
+      }
+
+      const outcome = await cancelScheduledRotation(
+        client.from(ROTATION_ASSIGNMENTS_TABLE) as unknown as RotationAssignmentDeleteTable,
+        organization,
+        writable,
+        rotationTodayOf(writable, new Date()),
+        confirmed,
+      );
+      const reread = outcome.ok || outcome.code === ROTATION_CANCEL_STALE;
+
+      // The scheduled refusal it was offered beside no longer holds — landed,
+      // or stale and about to be re-read; a save after the re-read refuses
+      // again if a change is still scheduled.
+      if (reread) setOutcome(null);
+      setCancelled(outcome);
+
+      if (reread) {
+        try {
+          await queryClient.invalidateQueries({ queryKey: ROTATION_KEY });
+        } catch (cause) {
+          console.error(ROTATION_WRITE_UNAVAILABLE, cause);
+        }
+      }
+
+      // The offer unmounts with the refusal; focus follows the confirmation
+      // rather than falling to the document, as the shift type cancel's does.
+      if (outcome.ok) cancelConfirmation.current?.focus();
+    } catch (cause) {
+      console.error(ROTATION_WRITE_UNAVAILABLE, cause);
+      setCancelled({ ok: false, code: ROTATION_WRITE_UNAVAILABLE });
+    } finally {
+      saving.current = false;
+      setPending(false);
+      setCancelArmed(false);
+    }
+  }
+
   /** A team's step `<select>`: the value is read as a step of the draft, or ignored. */
   function chooseTeamStep(current: RotationDraft, teamId: string) {
     return (event: ChangeEvent<HTMLSelectElement>): void => {
@@ -377,6 +478,13 @@ export function RotationSection({
   function chooseAnchor(current: RotationDraft) {
     return (event: ChangeEvent<HTMLInputElement>): void => {
       change(withAnchor(current, event.target.value));
+    };
+  }
+
+  /** `Vrijedi od`: only a calendar date moves it; one before today is refused at the save. */
+  function chooseEffectiveFrom(current: RotationDraft) {
+    return (event: ChangeEvent<HTMLInputElement>): void => {
+      change(withEffectiveFrom(current, event.target.value));
     };
   }
 
@@ -473,7 +581,7 @@ export function RotationSection({
   function renderFigures(current: RotationDraft): ReactNode {
     if (snapshot === null || today === null) return null;
 
-    const figures = figuresOf(snapshot, current, today);
+    const figures = figuresOf(snapshot, current, current.effectiveFrom);
 
     // FOUR TILES, each a label and a value; the icons are decoration.
     return (
@@ -557,8 +665,24 @@ export function RotationSection({
               </div>
             </CalloutBody>
           </Callout>
-          {/* THE ANCHOR AND THE SPREAD ON ONE ROW, wrapping on a phone. */}
+          {/* THE EFFECTIVE DATE, THE ANCHOR AND THE SPREAD ON ONE ROW,
+              wrapping on a phone. The two dates stay separate: the anchor
+              fixes the phase, `Vrijedi od` when it applies. */}
           <div className="flex flex-wrap items-end gap-3">
+            <div className="grid w-full gap-2 sm:w-64">
+              <Label htmlFor="rotation-effective-from">{t('rotation.builder.effectiveFrom')}</Label>
+              <Input
+                id="rotation-effective-from"
+                name="effectiveFrom"
+                type="date"
+                required
+                min={today ?? undefined}
+                value={current.effectiveFrom}
+                disabled={pending}
+                onChange={chooseEffectiveFrom(current)}
+                className="h-11 w-full"
+              />
+            </div>
             <div className="grid w-full gap-2 sm:w-64">
               <Label htmlFor="rotation-anchor">{t('rotation.builder.anchor')}</Label>
               <Input
@@ -638,7 +762,7 @@ export function RotationSection({
   function renderPreview(current: RotationDraft): ReactNode {
     if (snapshot === null || today === null) return null;
 
-    const grid = previewGridOf(snapshot, current, today, cycles);
+    const grid = previewGridOf(snapshot, current, current.effectiveFrom, cycles);
     const grouped = cycles !== 1;
 
     return (
@@ -824,7 +948,122 @@ export function RotationSection({
     );
   }
 
+  /**
+   * `Povijest rotacije`: every saved change, newest first, after the step
+   * sections and at every width. The table scrolls inside its own container.
+   */
+  function renderHistory(): ReactNode {
+    if (snapshot === null || today === null) return null;
+
+    const rows = rotationHistoryOf(snapshot, today);
+
+    return (
+      <Card className="min-w-0">
+        <CardHeader className="flex-row items-start gap-3">
+          <IconTile>
+            <History />
+          </IconTile>
+          <div className="grid min-w-0 gap-1.5">
+            <CardTitle asChild>
+              <h2>{t('rotation.builder.history.heading')}</h2>
+            </CardTitle>
+            <CardDescription>{t('rotation.builder.history.lede')}</CardDescription>
+          </div>
+        </CardHeader>
+        {rows.length === 0 ? (
+          <CardContent className="pt-4">
+            <p className="text-sm text-muted-foreground">{t('rotation.builder.history.empty')}</p>
+          </CardContent>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>{t('rotation.builder.history.columnEffective')}</TableHead>
+                <TableHead>{t('rotation.builder.history.columnStatus')}</TableHead>
+                <TableHead>{t('rotation.builder.history.columnAuthor')}</TableHead>
+                <TableHead>{t('rotation.builder.history.columnSaved')}</TableHead>
+                <TableHead>{t('rotation.builder.history.columnTeams')}</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.key}>
+                  <TableCell className="whitespace-nowrap font-semibold tabular-nums">{row.effectiveLabel}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {/* THE STATUS IN WORDS: the badge's colour adds nothing the text does not say. */}
+                    <Badge variant="outline">{t(rotationHistoryStatusMessageKey(row.status))}</Badge>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {row.author ?? t(rotationHistoryAuthorMessageKey())}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap tabular-nums">
+                    {t('rotation.builder.history.savedAt', { date: row.savedDate, time: row.savedTime })}
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {t('rotation.builder.history.teamCount', { count: row.teamCount })}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </Card>
+    );
+  }
+
+  /**
+   * The cancel's confirmation, in a modal open for as long as it is rendered;
+   * Escape or the backdrop dismiss it except while the delete is outstanding.
+   * Neutral, never `destructive`.
+   */
+  function renderCancelConfirmation(change: ScheduledChange): ReactNode {
+    return (
+      <ConfirmDialog
+        busy={pending}
+        onCancel={() => {
+          setCancelArmed(false);
+        }}
+        aria-labelledby="rotation-cancel-prompt"
+      >
+        <p id="rotation-cancel-prompt" className="text-sm font-medium">
+          {t('rotation.builder.cancelScheduled.prompt', { date: change.label })}
+        </p>
+        <DialogFooter>
+          <Button
+            className="h-11"
+            type="button"
+            variant="outline"
+            disabled={pending}
+            onClick={() => {
+              setCancelArmed(false);
+            }}
+          >
+            {t('rotation.builder.cancelScheduled.keep')}
+          </Button>
+          <Button
+            className="h-11"
+            type="button"
+            disabled={pending}
+            aria-busy={pending}
+            onClick={() => {
+              void cancelScheduled(change.effectiveFrom);
+            }}
+          >
+            {t('rotation.builder.cancelScheduled.confirm')}
+          </Button>
+        </DialogFooter>
+      </ConfirmDialog>
+    );
+  }
+
   const partial = outcome === null ? null : rotationPartialMessageKey(outcome);
+  // THE CANCEL IS OFFERED ONLY BESIDE THE SCHEDULED REFUSAL, and only while a
+  // change is still scheduled in the snapshot.
+  const scheduled =
+    snapshot === null || today === null || !rotationScheduledOf(snapshot, today)
+      ? null
+      : scheduledChangeOf(snapshot, today);
+  const cancelOffered = scheduled !== null && outcome !== null && !outcome.ok && outcome.code === ROTATION_SCHEDULED;
   /** A warning's words, every one from `hr.json`, resolved by `@/rotation/warnings`. */
   const translate: WarningTranslate = (key, values) => t(key, values);
 
@@ -854,7 +1093,29 @@ export function RotationSection({
         <Notice role="alert">
           {t(rotationWriteMessageKey(outcome.code))}
           {partial === null ? null : <> {t(partial)}</>}
+          {cancelOffered ? (
+            <Button
+              className="mt-3 flex h-11"
+              type="button"
+              variant="outline"
+              disabled={pending}
+              onClick={() => {
+                setCancelArmed(true);
+              }}
+            >
+              <Undo2 aria-hidden />
+              {t('rotation.builder.cancelScheduled.offer', { date: scheduled.label })}
+            </Button>
+          ) : null}
         </Notice>
+      )}
+      {cancelArmed && scheduled !== null ? renderCancelConfirmation(scheduled) : null}
+      {cancelled === null ? null : cancelled.ok ? (
+        <Notice ref={cancelConfirmation} tabIndex={-1} role="status">
+          {t(ROTATION_CANCELLED_MESSAGE_KEY)}
+        </Notice>
+      ) : (
+        <Notice role="alert">{t(rotationCancelMessageKey(cancelled.code))}</Notice>
       )}
       {outcome?.ok === true ? (
         <Notice role="status">
@@ -922,6 +1183,8 @@ export function RotationSection({
       {draft === null ? null : <div className={stepSectionClassOf(shown, 3)}>{renderOffsets(draft)}</div>}
       {draft === null ? null : <div className={stepSectionClassOf(shown, 4)}>{renderPreview(draft)}</div>}
       {draft === null ? null : renderStepActions()}
+      {/* THE HISTORY, after every step section and at every width. */}
+      {draft === null ? null : renderHistory()}
     </>
   );
 }

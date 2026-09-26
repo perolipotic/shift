@@ -244,6 +244,8 @@ const SOURCES = [
   join(webRoot, 'src', 'rotation', 'stepper.ts'),
   // Story 2.5's warnings: every key they render through, as return-type unions.
   join(webRoot, 'src', 'rotation', 'warnings.ts'),
+  // Story 2.6's history: the statuses and the unknown author, as return-type unions.
+  join(webRoot, 'src', 'rotation', 'history.ts'),
   // The owner layout's numbered section badge, a primitive: text-free, here
   // for freshness like the other primitives.
   join(webRoot, 'src', 'components', 'ui', 'section-number.tsx'),
@@ -960,6 +962,15 @@ const AUTHORED_VOCABULARY = [
   'svakom',
   'trajanje',
   'nepoznato',
+  // STORY 2.6: a change from a date forward, the cancel of a scheduled one
+  // and the history, so a hard-coded status or heading in the builder is a
+  // count that no longer matches.
+  'Povijest',
+  'zakazano',
+  'prethodno',
+  'Poništi',
+  'Nepoznata',
+  'Spremljeno',
 ];
 
 /** Everything the terminology contract and the unshipped affordances still own.

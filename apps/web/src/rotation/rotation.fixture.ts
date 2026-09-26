@@ -15,6 +15,11 @@ export const ORGANIZATION = '00000000-0000-4000-8000-000000000001';
 export const OTHER_ORGANIZATION = '00000000-0000-4000-8000-000000000002';
 export const TODAY = '2026-09-26';
 export const SEEDED = '2020-01-01';
+/** The admin every fixture version is attributed to, unless a row says otherwise (story 2.6). */
+export const ADMIN = '00000000-0000-4000-8000-0000000000a1';
+export const ADMIN_NAME = 'Ivan Marić';
+/** When the seeded versions were saved. */
+export const SEEDED_AT = '2019-12-20T09:15:00+00:00';
 
 type Row = Record<string, unknown>;
 
@@ -23,6 +28,12 @@ export interface FixtureRows {
   readonly types: readonly Row[];
   readonly steps: readonly Row[];
   readonly assignments: readonly Row[];
+  /** The members embed; the admin alone when a fixture names none. */
+  readonly members?: readonly Row[];
+}
+
+export function memberRow(authUserId: string, name: string, organization = ORGANIZATION): Row {
+  return { organization_id: organization, auth_user_id: authUserId, name };
 }
 
 export function teamRow(id: string, name: string, { archived = false, organization = ORGANIZATION } = {}): Row {
@@ -80,14 +91,19 @@ export function assignmentRow(
   anchorDate: string,
   effectiveFrom: string,
   organization = ORGANIZATION,
+  { createdBy = ADMIN, createdAt = SEEDED_AT }: { createdBy?: string; createdAt?: string } = {},
 ): Row {
   return {
     organization_id: organization,
+    // One version per team per date, so the pair names the row.
+    id: `assignment-${teamId}-${effectiveFrom}`,
     team_id: teamId,
     pattern_id: patternId,
     offset_step_id: offsetStepId,
     anchor_date: anchorDate,
     effective_from: effectiveFrom,
+    created_by: createdBy,
+    created_at: createdAt,
   };
 }
 
@@ -99,6 +115,7 @@ export function organizationRow(rows: FixtureRows, timezone = 'Europe/Zagreb'): 
     shift_types: rows.types,
     rotation_steps: rows.steps,
     rotation_assignments: rows.assignments,
+    members: rows.members ?? [memberRow(ADMIN, ADMIN_NAME)],
   };
 }
 

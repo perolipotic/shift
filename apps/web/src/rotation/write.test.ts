@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ROTATION_CHANGED_TODAY,
+  ROTATION_EFFECTIVE_PAST,
   ROTATION_EMPTY,
   ROTATION_NO_TEAMS,
   ROTATION_SCHEDULED,
@@ -15,6 +16,7 @@ import {
   prefillOf,
   previewOf,
   withStepAdded,
+  withEffectiveFrom,
   withStepMoved,
   withTeamStep,
   STEP_UP,
@@ -34,13 +36,19 @@ import {
   type FixtureRows,
 } from '@/rotation/rotation.fixture';
 import {
+  ROTATION_CANCELLED_MESSAGE_KEY,
+  ROTATION_CANCEL_STALE,
   ROTATION_SAVED_MESSAGE_KEY,
   ROTATION_WRITE_REFUSED,
   ROTATION_WRITE_UNAVAILABLE,
+  cancelScheduledRotation,
+  rotationCancelMessageKey,
   rotationPartialMessageKey,
   rotationWriteFailureOf,
   rotationWriteMessageKey,
   saveRotation,
+  type RotationAssignmentDeleteTable,
+  type RotationCancelFailure,
   type RotationInsertTable,
   type RotationWriteAnswer,
   type RotationWriteFailure,
@@ -254,6 +262,218 @@ describe('the save', () => {
   });
 });
 
+describe('from a date forward (story 2.6)', () => {
+  const NEXT_WEEK = '2026-10-03';
+
+  it('writes every version from the effective date, the anchor its own, and no attribution', async () => {
+    for (const rows of [PILOT, UJ5]) {
+      const snapshot = await snapshotOf(rows);
+      const [first] = rotationTeamsOf(snapshot);
+      const draft = withEffectiveFrom(withTeamStep(prefillOf(snapshot, TODAY), first?.id ?? '', 1), NEXT_WEEK);
+      const { sent, tables } = tablesOf();
+
+      expect(await saveRotation(tables, ORGANIZATION, snapshot, draft, TODAY)).toEqual({ ok: true });
+
+      const bound = sent.assignments[0] as Record<string, unknown>[];
+
+      expect(bound).toHaveLength(rotationTeamsOf(snapshot).length);
+      for (const row of bound) {
+        expect(row['effective_from']).toBe(NEXT_WEEK);
+        expect(row['anchor_date']).toBe(TODAY);
+        // AD-11: `created_by` and `created_at` are `0016`'s defaults, never sent.
+        expect(row).not.toHaveProperty('created_by');
+        expect(row).not.toHaveProperty('created_at');
+      }
+    }
+  });
+
+  it('refuses a date before today with nothing sent, and keeps the draft', async () => {
+    const snapshot = await snapshotOf(PILOT);
+    const draft = withEffectiveFrom(withTeamStep(prefillOf(snapshot, TODAY), 'pilot-smjena-a', 1), '2026-09-25');
+    const copy = JSON.parse(JSON.stringify(draft)) as RotationDraft;
+    const { log, tables } = tablesOf();
+
+    expect(await saveRotation(tables, ORGANIZATION, snapshot, draft, TODAY)).toEqual({
+      ok: false,
+      code: ROTATION_EFFECTIVE_PAST,
+      afterPattern: false,
+    });
+    expect(log).toEqual([]);
+    expect(draft).toEqual(copy);
+  });
+
+  it('leaves every date before the effective date as it was, and projects the draft from it', async () => {
+    const snapshot = await snapshotOf(PILOT);
+    const draft = withEffectiveFrom(withTeamStep(prefillOf(snapshot, TODAY), 'pilot-smjena-a', 1), NEXT_WEEK);
+    const { sent, tables } = tablesOf();
+
+    await saveRotation(tables, ORGANIZATION, snapshot, draft, TODAY);
+
+    const patternId = `pattern-${String(serial)}`;
+    const after = await snapshotOf({
+      ...PILOT,
+      steps: [
+        ...PILOT.steps,
+        ...(sent.steps[0] as { position: number; shift_type_id: string }[]).map((row) =>
+          stepRow(`made-step-${String(row.position)}`, patternId, row.position, row.shift_type_id),
+        ),
+      ],
+      assignments: [
+        ...PILOT.assignments,
+        ...(sent.assignments[0] as Record<string, string>[]).map((row) =>
+          assignmentRow(
+            row['team_id'] as string,
+            patternId,
+            row['offset_step_id'] as string,
+            row['anchor_date'] as string,
+            row['effective_from'] as string,
+          ),
+        ),
+      ],
+    });
+    const projected = (state: RotationSnapshot, date: string) =>
+      rotationTeamsOf(state).map((team) =>
+        projectedShiftTypeOn(teamAssignmentsOf(state, team.id), state.steps, date),
+      );
+
+    for (const date of datesFrom('2026-09-01', 32)) {
+      if (date >= NEXT_WEEK) break;
+      expect(projected(after, date), date).toEqual(projected(snapshot, date));
+    }
+    expect(datesFrom(NEXT_WEEK, 4).map((date) => projected(after, date))).toEqual(
+      previewOf(snapshot, draft, NEXT_WEEK).map((row) => row.cells.map((cell) => cell.chip.shiftTypeId)),
+    );
+  });
+});
+
+/** An assignments table that records the delete and its filters, answering from a script. */
+function deleteTableOf(answer: () => RotationWriteAnswer | Error) {
+  const log: string[] = [];
+  const table: RotationAssignmentDeleteTable = {
+    delete() {
+      log.push('delete');
+
+      return {
+        eq(column, value) {
+          log.push(`eq(${column},${value})`);
+
+          return {
+            eq(second, other) {
+              log.push(`eq(${second},${other})`);
+
+              return {
+                in(third, values) {
+                  log.push(`in(${third},${values.join('|')})`);
+
+                  return {
+                    select(columns) {
+                      log.push(`select(${columns})`);
+                      const answered = answer();
+
+                      return answered instanceof Error ? Promise.reject(answered) : Promise.resolve(answered);
+                    },
+                  };
+                },
+              };
+            },
+          };
+        },
+      };
+    },
+  };
+
+  return { table, log };
+}
+
+describe('cancelling a scheduled change (story 2.6, decision 2a)', () => {
+  const NEXT_WEEK = '2026-10-03';
+  const scheduledRows: FixtureRows = {
+    ...PILOT,
+    assignments: [
+      ...PILOT.assignments,
+      ...['a', 'b', 'c', 'd'].map((letter, index) =>
+        assignmentRow(`pilot-smjena-${letter}`, 'pilot-rotation', `pilot-step-${String(3 - index)}`, TODAY, NEXT_WEEK),
+      ),
+    ],
+  };
+
+  const ACTIVE = ['a', 'b', 'c', 'd'].map((letter) => `pilot-smjena-${letter}`);
+  const fourRows = () => ({ data: ACTIVE.map((team) => ({ id: team })), error: null });
+
+  it("deletes the active teams' assignments at the confirmed scheduled date, and nothing else", async () => {
+    const snapshot = await snapshotOf(scheduledRows);
+    const { table, log } = deleteTableOf(fourRows);
+
+    expect(await cancelScheduledRotation(table, ORGANIZATION, snapshot, TODAY, NEXT_WEEK)).toEqual({ ok: true });
+    expect(log).toEqual([
+      'delete',
+      `eq(organization_id,${ORGANIZATION})`,
+      `eq(effective_from,${NEXT_WEEK})`,
+      `in(team_id,${ACTIVE.join('|')})`,
+      'select(id)',
+    ]);
+  });
+
+  it("never touches an archived team's version at that date, and counts only the active teams'", async () => {
+    const snapshot = await snapshotOf({
+      ...scheduledRows,
+      teams: [...scheduledRows.teams, teamRow('gone', 'Smjena Z', { archived: true })],
+      assignments: [...scheduledRows.assignments, assignmentRow('gone', 'pilot-rotation', 'pilot-step-1', TODAY, NEXT_WEEK)],
+    });
+    const { table, log } = deleteTableOf(fourRows);
+
+    expect(await cancelScheduledRotation(table, ORGANIZATION, snapshot, TODAY, NEXT_WEEK)).toEqual({ ok: true });
+    expect(log.find((entry) => entry.startsWith('in('))).not.toContain('gone');
+  });
+
+  it('zero rows back, or fewer than the active versions at that date, is stale: never a partial success', async () => {
+    const snapshot = await snapshotOf(scheduledRows);
+
+    for (const data of [[], [{ id: 'one' }], ACTIVE.slice(0, 3).map((team) => ({ id: team }))]) {
+      const { table } = deleteTableOf(() => ({ data, error: null }));
+
+      expect(await cancelScheduledRotation(table, ORGANIZATION, snapshot, TODAY, NEXT_WEEK), String(data.length)).toEqual({
+        ok: false,
+        code: ROTATION_CANCEL_STALE,
+      });
+    }
+  });
+
+  it('nothing scheduled, or a date other than the one confirmed, is stale, with nothing sent', async () => {
+    const { table, log } = deleteTableOf(fourRows);
+
+    expect(await cancelScheduledRotation(table, ORGANIZATION, await snapshotOf(PILOT), TODAY, NEXT_WEEK)).toEqual({
+      ok: false,
+      code: ROTATION_CANCEL_STALE,
+    });
+    // On the scheduled date itself the change is in effect: nothing to cancel.
+    expect(
+      await cancelScheduledRotation(table, ORGANIZATION, await snapshotOf(scheduledRows), NEXT_WEEK, NEXT_WEEK),
+    ).toEqual({ ok: false, code: ROTATION_CANCEL_STALE });
+    // The dialog confirmed one date; the snapshot now schedules another.
+    expect(
+      await cancelScheduledRotation(table, ORGANIZATION, await snapshotOf(scheduledRows), TODAY, '2026-10-10'),
+    ).toEqual({ ok: false, code: ROTATION_CANCEL_STALE });
+    expect(log).toEqual([]);
+  });
+
+  it('refused (42501) and unavailable map as the save does', async () => {
+    const snapshot = await snapshotOf(scheduledRows);
+
+    for (const [answer, code] of [
+      [() => ({ data: null, error: { code: '42501' } }), ROTATION_WRITE_REFUSED],
+      [() => ({ data: null, error: { code: '500' } }), ROTATION_WRITE_UNAVAILABLE],
+      [() => new Error('down'), ROTATION_WRITE_UNAVAILABLE],
+      [() => ({ data: null, error: null }), ROTATION_WRITE_UNAVAILABLE],
+      [() => ({ data: ['not a row'], error: null }), ROTATION_WRITE_UNAVAILABLE],
+    ] as [() => RotationWriteAnswer | Error, RotationCancelFailure][]) {
+      const { table } = deleteTableOf(answer);
+
+      expect(await cancelScheduledRotation(table, ORGANIZATION, snapshot, TODAY, NEXT_WEEK)).toEqual({ ok: false, code });
+    }
+  });
+});
+
 describe('an archived team does not refuse the save', () => {
   it('saves over an archived team with a version scheduled after today, and binds only active teams', async () => {
     const rows: FixtureRows = {
@@ -438,6 +658,7 @@ describe('the messages', () => {
       ROTATION_EMPTY,
       ROTATION_NO_TEAMS,
       ROTATION_SCHEDULED,
+      ROTATION_EFFECTIVE_PAST,
       ROTATION_TYPE_ARCHIVED,
       ROTATION_UNCHANGED,
       ROTATION_CHANGED_TODAY,
@@ -451,18 +672,42 @@ describe('the messages', () => {
       expect(typeof messageAt(key), key).toBe('string');
     }
   });
+
+  it("gives the cancel's stale refusal its own key, and maps the rest as the save does", () => {
+    const codes: RotationCancelFailure[] = [ROTATION_CANCEL_STALE, ROTATION_WRITE_REFUSED, ROTATION_WRITE_UNAVAILABLE];
+    const keys = codes.map(rotationCancelMessageKey);
+
+    expect(keys).toEqual([
+      'rotation.builder.cancelScheduled.stale',
+      rotationWriteMessageKey(ROTATION_WRITE_REFUSED),
+      rotationWriteMessageKey(ROTATION_WRITE_UNAVAILABLE),
+    ]);
+    for (const key of [...keys, ROTATION_CANCELLED_MESSAGE_KEY]) {
+      expect(typeof messageAt(key), key).toBe('string');
+    }
+  });
 });
 
 describe('the rotation modules write nothing they must not', () => {
-  it('never update or delete a pattern, a step or an assignment', () => {
+  it('never update a pattern, a step or an assignment, and delete only in the cancel of a scheduled change', () => {
     const directory = new URL('./', import.meta.url);
+    let deletes = 0;
 
     for (const file of readdirSync(directory).filter((name) => !name.endsWith('.test.ts'))) {
       const source = readFileSync(new URL(file, directory), 'utf8');
 
-      expect(source, file).not.toContain('.delete(');
+      deletes += source.split('.delete(').length - 1;
+      if (file !== 'write.ts') expect(source, file).not.toContain('.delete(');
       expect(source, file).not.toContain('.update(');
       expect(source, file).not.toContain('.upsert(');
     }
+
+    // STORY 2.6: exactly one delete, and it is inside `cancelScheduledRotation`.
+    const write = readFileSync(new URL('write.ts', directory), 'utf8');
+    const cancel = /export async function cancelScheduledRotation\([\s\S]*?\n\}/.exec(write)?.[0] ?? '';
+
+    expect(deletes, 'a second delete arrived').toBe(1);
+    expect(cancel, 'the cancel could not be extracted').toContain('rotationScheduledDateOf(');
+    expect(cancel, 'the one delete is not the cancel').toContain('.delete()');
   });
 });

@@ -1,5 +1,6 @@
 import {
   ROTATION_CHANGED_TODAY,
+  ROTATION_EFFECTIVE_PAST,
   ROTATION_EMPTY,
   ROTATION_NO_TEAMS,
   ROTATION_SCHEDULED,
@@ -10,7 +11,7 @@ import {
   type DraftRefusal,
   type RotationDraft,
 } from '@/rotation/draft';
-import { rotationTeamsOf, type RotationSnapshot } from '@/rotation/list';
+import { rotationScheduledDateOf, rotationTeamsOf, type RotationSnapshot } from '@/rotation/list';
 import { claimedOrganizationOf } from '@/teams/write';
 
 /**
@@ -27,14 +28,18 @@ export { claimedOrganizationOf };
  * THREE WRITES, NOT ATOMIC (human decision 2026-09-25, 2.3a): a fresh
  * `rotation_patterns` row, then all its steps in one bulk insert, then one
  * assignment per active team in one bulk insert, every version effective from
- * the organization's TODAY at the draft's shared anchor. A failure after the
+ * the DRAFT'S EFFECTIVE DATE — today or later (story 2.6) — at the draft's
+ * shared anchor. A failure after the
  * pattern leaves an unreferenced pattern, which projects nothing, and changes
  * no team's rotation — so it says NOTHING CHANGED. A retry builds a fresh
  * pattern every time; a half-written one is never reused (its steps may be
  * incomplete, and once a team stands on it no step can be added).
  *
  * PATTERNS AND STEPS ARE NEVER UPDATED OR DELETED (`0016` grants neither), and
- * nothing here calls either verb.
+ * nothing here calls either verb. THE ONE DELETE is {@link cancelScheduledRotation}:
+ * the organization's assignments at the one scheduled date, which `0016`'s
+ * delete policy admits only while they are in the future and each team's
+ * latest (story 2.6, decision 2a). Nothing is ever updated.
  *
  * Codes, never messages: {@link rotationWriteMessageKey} is the one edge.
  */
@@ -81,9 +86,30 @@ interface Selecting {
 
 type Row = Readonly<Record<string, unknown>>;
 
-/** The one call made on each rotation table: an insert returning rows. No update, no delete. */
+/** The one call made on each rotation table by the save: an insert returning rows. No update, no delete. */
 export interface RotationInsertTable {
   insert(values: Row | readonly Row[]): Selecting;
+}
+
+interface FilteringByTeams {
+  in(column: string, values: readonly string[]): Selecting;
+}
+
+interface FilteringByDate {
+  eq(column: string, value: string): FilteringByTeams;
+}
+
+interface FilteringByTenant {
+  eq(column: string, value: string): FilteringByDate;
+}
+
+/**
+ * The one call the CANCEL makes on `rotation_assignments`: a delete filtered
+ * by the tenant, the scheduled date and the ACTIVE teams, returning the rows
+ * removed. No insert and no update on this seam.
+ */
+export interface RotationAssignmentDeleteTable {
+  delete(): FilteringByTenant;
 }
 
 export interface RotationWriteTables {
@@ -95,6 +121,10 @@ export interface RotationWriteTables {
 const PATTERN_RETURNED = 'id';
 const STEP_RETURNED = 'id,position';
 const ASSIGNMENT_RETURNED = 'team_id';
+const CANCEL_RETURNED = 'id';
+const ORGANIZATION_COLUMN = 'organization_id';
+const EFFECTIVE_COLUMN = 'effective_from';
+const TEAM_COLUMN = 'team_id';
 
 const INSUFFICIENT_PRIVILEGE = '42501';
 const UNIQUE_VIOLATION = '23505';
@@ -172,8 +202,11 @@ function textOf(row: Record<string, unknown> | undefined, column: string): strin
 }
 
 /**
- * Save `draft` as the rotation from `today`: refused before anything is sent
- * for every reason {@link draftRefusalOf} names, then the three writes.
+ * Save `draft` as the rotation from its effective date: refused before
+ * anything is sent for every reason {@link draftRefusalOf} names — `today`,
+ * the organization's, is what the date may not precede — then the three
+ * writes. `created_by` and `created_at` are never sent: `0016`'s defaults
+ * fill them (AD-11).
  */
 export async function saveRotation(
   tables: RotationWriteTables,
@@ -262,7 +295,7 @@ export async function saveRotation(
       pattern_id: patternId,
       offset_step_id: offsetStepId,
       anchor_date: draft.anchorDate,
-      effective_from: today,
+      effective_from: draft.effectiveFrom,
     });
   }
 
@@ -276,6 +309,130 @@ export async function saveRotation(
   return { ok: true };
 }
 
+// ---------------------------------------------------------------- the cancel
+
+/** The scheduled change is gone since the screen was drawn — cancelled, or in effect. */
+export const ROTATION_CANCEL_STALE = 'ROTATION_CANCEL_STALE';
+
+export type RotationCancelFailure =
+  | typeof ROTATION_CANCEL_STALE
+  | typeof ROTATION_WRITE_REFUSED
+  | typeof ROTATION_WRITE_UNAVAILABLE;
+
+export type RotationCancelOutcome =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly code: RotationCancelFailure };
+
+/** A refusal of the cancel, mapped as the save's are: `42501` refused, anything else the service. */
+function cancelFailureOf(error: RotationWriteError): RotationCancelFailure {
+  return error.code === INSUFFICIENT_PRIVILEGE ? ROTATION_WRITE_REFUSED : ROTATION_WRITE_UNAVAILABLE;
+}
+
+/**
+ * Cancel the change scheduled after `today` (story 2.6, decision 2a): delete
+ * the ACTIVE teams' assignments at that one date — the date the admin
+ * confirmed, `confirmed` — through `0016`'s delete policy, which admits only a
+ * version still in the future and its team's latest. An archived team's
+ * version is never touched (the save wrote none for it). Nothing else is
+ * deleted, and nothing is updated.
+ *
+ * {@link ROTATION_CANCEL_STALE}, and the caller re-reads, when:
+ *
+ *   * nothing is scheduled in the snapshot, or a DIFFERENT date is than the
+ *     one confirmed — nothing is sent;
+ *   * the rows back are not EXACTLY the active teams' versions the snapshot
+ *     holds at that date (zero, or fewer): the change was cancelled elsewhere,
+ *     came into effect, or was only partly removed. A partial cancel is never
+ *     reported as success.
+ */
+export async function cancelScheduledRotation(
+  table: RotationAssignmentDeleteTable,
+  organizationId: string,
+  snapshot: RotationSnapshot,
+  today: string,
+  confirmed: string,
+): Promise<RotationCancelOutcome> {
+  const scheduled = rotationScheduledDateOf(snapshot, today);
+
+  if (scheduled === null || scheduled !== confirmed) return { ok: false, code: ROTATION_CANCEL_STALE };
+
+  const teamIds = rotationTeamsOf(snapshot).map((team) => team.id);
+  const active = new Set(teamIds);
+  const expected = snapshot.assignments.filter(
+    (assignment) => active.has(assignment.teamId) && assignment.effectiveFrom === scheduled,
+  ).length;
+
+  let answered: RotationWriteAnswer;
+
+  try {
+    answered = await table
+      .delete()
+      .eq(ORGANIZATION_COLUMN, organizationId)
+      .eq(EFFECTIVE_COLUMN, scheduled)
+      .in(TEAM_COLUMN, teamIds)
+      .select(CANCEL_RETURNED);
+  } catch (cause) {
+    console.error(ROTATION_WRITE_UNAVAILABLE, cause);
+
+    return { ok: false, code: ROTATION_WRITE_UNAVAILABLE };
+  }
+
+  if (!isRecord(answered)) {
+    console.error(ROTATION_WRITE_UNAVAILABLE, typeof answered);
+
+    return { ok: false, code: ROTATION_WRITE_UNAVAILABLE };
+  }
+
+  if (answered.error !== null && answered.error !== undefined) {
+    const code = cancelFailureOf(answered.error);
+
+    console.error(code, answered.error.code);
+
+    return { ok: false, code };
+  }
+
+  const rows = answered.data;
+
+  if (!Array.isArray(rows) || !rows.every(isRecord)) {
+    console.error(ROTATION_WRITE_UNAVAILABLE, 'rows');
+
+    return { ok: false, code: ROTATION_WRITE_UNAVAILABLE };
+  }
+
+  if (rows.length !== expected) {
+    console.error(ROTATION_CANCEL_STALE, rows.length, expected);
+
+    return { ok: false, code: ROTATION_CANCEL_STALE };
+  }
+
+  return { ok: true };
+}
+
+/** The message a refused cancel renders. Exhaustive. */
+export function rotationCancelMessageKey(
+  failure: RotationCancelFailure,
+):
+  | 'rotation.builder.cancelScheduled.stale'
+  | 'rotation.builder.error.refused'
+  | 'rotation.builder.error.saveUnavailable' {
+  switch (failure) {
+    case ROTATION_CANCEL_STALE:
+      return 'rotation.builder.cancelScheduled.stale';
+    case ROTATION_WRITE_REFUSED:
+      return 'rotation.builder.error.refused';
+    case ROTATION_WRITE_UNAVAILABLE:
+      return 'rotation.builder.error.saveUnavailable';
+    default: {
+      const unhandled: never = failure;
+
+      return unhandled;
+    }
+  }
+}
+
+/** The confirmation a landed cancel renders. */
+export const ROTATION_CANCELLED_MESSAGE_KEY = 'rotation.builder.cancelScheduled.done';
+
 // ------------------------------------------------------------ the messages
 
 /** The edge, and the only place one of these codes becomes Croatian. Exhaustive. */
@@ -285,6 +442,7 @@ export function rotationWriteMessageKey(
   | 'rotation.builder.error.empty'
   | 'rotation.builder.error.noTeams'
   | 'rotation.builder.error.scheduled'
+  | 'rotation.builder.error.effectivePast'
   | 'rotation.builder.error.typeArchived'
   | 'rotation.builder.error.unchanged'
   | 'rotation.builder.error.changedToday'
@@ -297,6 +455,8 @@ export function rotationWriteMessageKey(
       return 'rotation.builder.error.noTeams';
     case ROTATION_SCHEDULED:
       return 'rotation.builder.error.scheduled';
+    case ROTATION_EFFECTIVE_PAST:
+      return 'rotation.builder.error.effectivePast';
     case ROTATION_TYPE_ARCHIVED:
       return 'rotation.builder.error.typeArchived';
     case ROTATION_UNCHANGED:
