@@ -426,7 +426,9 @@ const SCREENS = [
   // STORY 3.2a: five — the previous and next months, `Ovaj mjesec`, and the
   // two buttons of the mode switch. STILL FIVE SINCE STORY 3.2b: the grid's
   // cells take focus as one roving tab stop, and are cells, not controls.
-  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 5 },
+  // SEVEN SINCE STORY 3.3a: the team filter's `Select` and its reset, the
+  // reset written once however often it shows.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 7 },
   // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
   // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
   // row link written once inside the map over the bands — the same count at
@@ -1743,11 +1745,13 @@ const KEY_SOURCES = [
     // failure comes through `@/calendar/snapshot`, below. THIRTEEN SINCE STORY
     // 3.2a: the mode switch's label and its two modes, the no-team notice and
     // a day on no team. FOURTEEN SINCE STORY 3.2b: the legend's heading. The
-    // marks' labels come through `@/calendar/modifiers`, below.
+    // marks' labels come through `@/calendar/modifiers`, below. EIGHTEEN SINCE
+    // STORY 3.3a: the team filter's label, its all-teams option, the heading
+    // over the teams and the reset.
     name: 'the Kalendar destination',
     file: KALENDAR,
     keys: translationKeys,
-    strings: 14,
+    strings: 18,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's
@@ -3471,7 +3475,7 @@ describe('every select is the one Select primitive, in the one Input look', () =
    * composes `h-11` and nothing else, and the primitive draws the string
    * `components/README.md` documents.
    */
-  const SELECT_SCREENS = [MEMBER_LIST, MEMBER_CREATE, MEMBER_EDIT, SETTINGS, SHIFT_TYPE_LIST];
+  const SELECT_SCREENS = [MEMBER_LIST, MEMBER_CREATE, MEMBER_EDIT, SETTINGS, SHIFT_TYPE_LIST, KALENDAR];
   const README = join(srcRoot, 'components', 'README.md');
 
   function selectClasses(): string[] {
@@ -3480,10 +3484,11 @@ describe('every select is the one Select primitive, in the one Input look', () =
     );
   }
 
-  it('finds all thirteen, so the comparison is not vacuous', () => {
+  it('finds all fourteen, so the comparison is not vacuous', () => {
     // THIRTEEN: the twelve visual refresh B held to one literal, and the shift
     // type kind on `/postavke-rotacije`, which that block never listed.
-    expect(selectClasses()).toHaveLength(13);
+    // FOURTEEN SINCE STORY 3.3a: the calendar's team filter.
+    expect(selectClasses()).toHaveLength(14);
   });
 
   it('composes only the 44 px height onto each, so no screen restyles the primitive', () => {

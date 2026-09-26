@@ -2,6 +2,7 @@ import { projectedShiftTypeOn } from '@shift/domain';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
+  ALL_TEAMS_FILTER,
   CALENDAR_CELL_CLASS,
   COMPRESSED_CELL_CLASS,
   NO_ROTATION_CELL_CLASS,
@@ -10,12 +11,14 @@ import {
   SKELETON_GRID_STYLE,
   PHONE_MEDIA_QUERY,
   calendarDayListOf,
+  calendarFilterChangeOf,
   calendarModeOf,
   calendarMonthOf,
   calendarMonthOutcomeOf,
   calendarSearchOf,
   calendarSearchTo,
   calendarTodayOf,
+  chosenTeamOf,
   defaultModeOf,
   isCalendarMonth,
   monthShownOf,
@@ -709,5 +712,151 @@ describe('modifiers and labels (story 3.2b)', () => {
     expect(
       cellLabelOf({ ...before.rows[0]!, ...before.rows[0]!.cells[0]!, teamName: before.columns[0]!.name }, translate),
     ).toBe('nedjelja 01.12., Smjena A, Bez rotacije');
+  });
+});
+
+describe('the team filter (story 3.3a)', () => {
+  it('keeps any non-empty smjena and drops anything else', () => {
+    expect(calendarSearchOf({ smjena: 'pilot-smjena-a' })).toEqual({ smjena: 'pilot-smjena-a' });
+    // Kept whatever it names: whether it is a team shown is the month's decision.
+    expect(calendarSearchOf({ smjena: 'nobody' })).toEqual({ smjena: 'nobody' });
+    expect(calendarSearchOf({ smjena: 'pilot-smjena-a', prikaz: 'sve', mjesec: '2026-10' })).toEqual({
+      mjesec: '2026-10',
+      prikaz: 'sve',
+      smjena: 'pilot-smjena-a',
+    });
+    for (const bad of ['', 7, null, undefined, ['pilot-smjena-a'], { id: 'pilot-smjena-a' }]) {
+      expect(calendarSearchOf({ smjena: bad, mjesec: '2026-10' }), String(bad)).toEqual({ mjesec: '2026-10' });
+    }
+  });
+
+  it('keeps the team on a month change and on a mode change', () => {
+    // Matrix: month change — `{mjesec, prikaz, smjena}` all kept.
+    expect(calendarSearchTo({ smjena: 'A', prikaz: 'sve' }, { mjesec: '2026-10' })).toEqual({
+      mjesec: '2026-10',
+      prikaz: 'sve',
+      smjena: 'A',
+    });
+    expect(calendarSearchTo({ mjesec: '2026-10', smjena: 'A' }, { mjesec: null })).toEqual({ smjena: 'A' });
+    // Matrix: mode change — `smjena` kept.
+    expect(calendarSearchTo({ smjena: 'A' }, { prikaz: 'moj' })).toEqual({ prikaz: 'moj', smjena: 'A' });
+  });
+
+  it('chooses a team, and resets to every team keeping the rest', () => {
+    expect(calendarSearchTo({ mjesec: '2026-10' }, { smjena: 'A' })).toEqual({ mjesec: '2026-10', smjena: 'A' });
+    expect(calendarSearchTo({ smjena: 'A' }, { smjena: 'B' })).toEqual({ smjena: 'B' });
+    // Matrix: reset — the search without `smjena`, the other params kept.
+    expect(calendarSearchTo({ mjesec: '2026-10', prikaz: 'sve', smjena: 'A' }, { smjena: null })).toEqual({
+      mjesec: '2026-10',
+      prikaz: 'sve',
+    });
+    // Never a mode or a team the viewer did not choose.
+    expect(calendarSearchTo({}, { smjena: null })).toEqual({});
+    expect(calendarSearchTo({}, { mjesec: '2026-10' })).toEqual({ mjesec: '2026-10' });
+  });
+
+  it('turns the all-teams option into the reset, and a team into itself', () => {
+    expect(calendarFilterChangeOf(ALL_TEAMS_FILTER)).toEqual({ smjena: null });
+    expect(calendarFilterChangeOf('pilot-smjena-b')).toEqual({ smjena: 'pilot-smjena-b' });
+  });
+
+  it('shows every column and chooses nothing with no smjena', () => {
+    // Matrix: no filter — 4 columns.
+    const month = calendarMonthOf(pilot, {}, TODAY);
+
+    expect(month.filter.chosen).toBeNull();
+    expect(month.filter.teams.map((team) => team.id)).toEqual(month.columns.map((team) => team.id));
+    expect(month.filter.teams).toHaveLength(4);
+    expect(month.columns).toHaveLength(4);
+  });
+
+  it("narrows the columns and every row's cells to the chosen team, keeping its letter", () => {
+    // Matrix: team chosen — only B's column and cells, B keeps its letter.
+    const all = calendarMonthOf(pilot, { mjesec: '2020-01' }, TODAY);
+    const month = calendarMonthOf(pilot, { mjesec: '2020-01', smjena: 'pilot-smjena-b' }, TODAY);
+
+    expect(month.filter.chosen).toBe('pilot-smjena-b');
+    expect(month.filter.teams.map((team) => team.id)).toEqual(all.columns.map((team) => team.id));
+    expect(month.columns.map((team) => [team.id, team.letter])).toEqual([['pilot-smjena-b', 'B']]);
+    expect(month.rows).toHaveLength(all.rows.length);
+    month.rows.forEach((row, index) => {
+      expect(row.cells).toEqual(all.rows[index]!.cells.filter((cell) => cell.teamId === 'pilot-smjena-b'));
+    });
+    // The labels read the narrowed column, never the first of every team.
+    expect(gridCellLabelsOf(month, (key) => t(key))[0]).toEqual(['srijeda 01.01., Smjena B, Noć, 19:00–07:00']);
+  });
+
+  it('keeps a widened letter when narrowed to one column', async () => {
+    const colliding = await snapshotOf({
+      ...PILOT,
+      teams: PILOT.teams.map((team, index) =>
+        index < 2 ? { ...team, name: ['Smjena Alfa', 'Smjena Ante'][index] } : team,
+      ),
+    });
+    const all = calendarMonthOf(colliding, { mjesec: '2020-01' }, TODAY);
+
+    for (const team of all.columns) {
+      const month = calendarMonthOf(colliding, { mjesec: '2020-01', smjena: team.id }, TODAY);
+
+      // The narrowed column's letter is the same team's letter unfiltered.
+      expect(month.columns.map((column) => [column.id, column.letter])).toEqual([[team.id, team.letter]]);
+    }
+    expect(all.columns[0]!.letter).toBe('AL');
+  });
+
+  it('ignores an unknown or archived id: every column, and nothing chosen', async () => {
+    const withArchived = await snapshotOf({
+      ...PILOT,
+      teams: [...PILOT.teams, teamRow('pilot-smjena-x', 'Smjena X', { archived: true })],
+    });
+
+    for (const smjena of ['nobody', 'pilot-smjena-x']) {
+      const month = calendarMonthOf(withArchived, { smjena }, TODAY);
+
+      expect(month.filter.chosen, smjena).toBeNull();
+      expect(month.columns, smjena).toHaveLength(4);
+      for (const row of month.rows) expect(row.cells).toHaveLength(4);
+    }
+    // Archived teams are never options.
+    expect(calendarMonthOf(withArchived, {}, TODAY).filter.teams.map((team) => team.id)).not.toContain(
+      'pilot-smjena-x',
+    );
+    expect(chosenTeamOf({ smjena: 'pilot-smjena-x' }, calendarMonthOf(withArchived, {}, TODAY).filter.teams)).toBeNull();
+  });
+
+  it('lists the options in column order, straight from the snapshot', async () => {
+    const reordered = await snapshotOf({ ...PILOT, teams: [...PILOT.teams].reverse() });
+    const month = calendarMonthOf(reordered, {}, TODAY);
+
+    expect(month.filter.teams.map((team) => team.id)).toEqual(month.columns.map((team) => team.id));
+    expect(calendarMonthOf(uj5, {}, TODAY).filter.teams.map((team) => team.name)).toEqual([
+      'Smjena A',
+      'Smjena B',
+      'Smjena C',
+    ]);
+  });
+
+  it('leaves the day list alone when a team is chosen', () => {
+    // Matrix: mode change — the day list is unchanged by `smjena`, even when
+    // the chosen team is not the viewer's.
+    const own = pilot.viewer.memberships[0]!.teamId;
+    const unfiltered = daysOf(calendarMonthOf(pilot, {}, TODAY));
+
+    expect(unfiltered, 'the viewer is on no team, so the day list proves nothing').not.toBeNull();
+    expect(unfiltered!.every((day) => day.teamId === own)).toBe(true);
+    for (const team of calendarMonthOf(pilot, {}, TODAY).filter.teams) {
+      expect(daysOf(calendarMonthOf(pilot, { smjena: team.id }, TODAY)), team.id).toEqual(unfiltered);
+    }
+    expect(calendarMonthOf(pilot, {}, TODAY).filter.teams.some((team) => team.id !== own)).toBe(true);
+  });
+
+  it('has no options and nothing chosen when no team is active', async () => {
+    const month = calendarMonthOf(
+      await snapshotOf({ teams: [], types: [], steps: [], assignments: [] }),
+      { smjena: 'pilot-smjena-a' },
+      TODAY,
+    );
+
+    expect(month.filter).toEqual({ teams: [], chosen: null });
   });
 });

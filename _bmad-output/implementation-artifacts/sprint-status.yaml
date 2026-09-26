@@ -433,7 +433,10 @@ development_status:
   # legend, the keyboard grid and the full per-cell labels for assistive
   # technology (spec-3-2b-calendar-modifiers-and-keyboard-grid.md).
   3-2-the-month-is-readable-on-a-phone-and-by-a-screen-reader: done
-  3-3-filtering-to-one-team-or-one-person: backlog
+  # Story 3.3 was split in two at the user's request (2026-09-26). 3.3a is the
+  # team filter (spec-3-3a-calendar-team-filter.md). 3.3b, the person filter,
+  # needs a members read and a migration and waits in deferred-work.md.
+  3-3-filtering-to-one-team-or-one-person: review
   3-4-opening-a-day-to-see-who-is-actually-on-it: backlog
   3-5-an-admin-changes-a-team-s-shift-type-on-one-date: backlog
   3-6-an-admin-adds-removes-or-replaces-someone-on-a-shift: backlog

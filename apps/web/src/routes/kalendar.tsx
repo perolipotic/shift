@@ -24,6 +24,7 @@ import {
   type CellLabelTranslate,
 } from '@/calendar/modifiers';
 import {
+  ALL_TEAMS_FILTER,
   COMPRESSED_CELL_CLASS,
   DAY_CELL_CLASS,
   DAY_RANGE_CLASS,
@@ -34,6 +35,7 @@ import {
   SKELETON_COLUMN_COUNT,
   SKELETON_GRID_STYLE,
   SKELETON_ROW_COUNT,
+  calendarFilterChangeOf,
   calendarModeOf,
   calendarMonthOutcomeOf,
   calendarSearchOf,
@@ -54,8 +56,10 @@ import {
 } from '@/calendar/snapshot';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { PageHeader, PageTitle } from '@/components/ui/page-header';
+import { Select } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { t } from '@/i18n';
 import { appLayoutRoute } from '@/routes/_app';
@@ -92,6 +96,11 @@ import { supabaseClient } from '@/supabase/client';
  * renderer, shared by the grid and the day list, and the legend shows only
  * while a mark is on screen. The day list stays a plain list.
  *
+ * ONE TEAM (story 3.3a), `?smjena=<team id>`: *Sve smjene* narrowed to one
+ * active team by a native `Select` above the grid, with a reset while a team
+ * is chosen. Which team is chosen — an unknown or archived id being none — is
+ * `calendarMonthOf`'s decision; the state lives in the URL alone.
+ *
  * The session guard is NOT here. It is registered once on the pathless `_app`
  * layout this route nests under.
  */
@@ -115,11 +124,13 @@ export function KalendarScreen() {
   const { snapshot, loading } = state;
   const today = snapshot === null ? null : calendarTodayOf(snapshot, new Date());
   const mjesec = search.mjesec;
+  const smjena = search.smjena;
   // GUARDED (`calendarMonthOutcomeOf`): a month the domain refuses is the read
   // failure, never a crashed route.
   const outcome = useMemo(
-    () => (snapshot === null || today === null ? null : calendarMonthOutcomeOf(snapshot, { mjesec }, today)),
-    [snapshot, mjesec, today],
+    () =>
+      snapshot === null || today === null ? null : calendarMonthOutcomeOf(snapshot, { mjesec, smjena }, today),
+    [snapshot, mjesec, smjena, today],
   );
   const refusal = state.refusal ?? (outcome !== null && !outcome.ok ? outcome.code : null);
   const month = outcome !== null && outcome.ok ? outcome.month : null;
@@ -127,18 +138,21 @@ export function KalendarScreen() {
   const isPhone = useSyncExternalStore(phone.subscribe, phone.get, isPhoneOnServer);
   const mode = snapshot === null ? null : calendarModeOf(search, snapshot.viewer.role, isPhone);
   // The grid's one tab stop, remembered across re-renders and FORGOTTEN
-  // whenever the month shown changes — by the buttons, the URL or history — so
-  // coming back to a month starts on today again, not where focus last was.
+  // whenever the month shown or the team chosen changes (story 3.3a) — by the
+  // buttons, the filter, the URL or history — so coming back to a month starts
+  // on today again, not where focus last was.
   const [gridFocus, setGridFocus] = useState<GridFocus | null>(null);
-  const shownMonth = month === null ? null : month.month;
-  const [focusMonth, setFocusMonth] = useState<string | null>(shownMonth);
+  const shownGrid = month === null ? null : `${month.month}|${month.filter.chosen ?? ALL_TEAMS_FILTER}`;
+  const [focusGrid, setFocusGrid] = useState<string | null>(shownGrid);
 
-  if (focusMonth !== shownMonth) {
-    setFocusMonth(shownMonth);
+  if (focusGrid !== shownGrid) {
+    setFocusGrid(shownGrid);
     setGridFocus(null);
   }
 
   const gridRef = useRef<HTMLTableElement>(null);
+  // The reset unmounts itself; focus goes to the filter rather than <body>.
+  const filterRef = useRef<HTMLSelectElement>(null);
   // Built once per month shown, not on every focus move.
   const labels = useMemo(() => (month === null ? null : gridCellLabelsOf(month, translateCellLabel)), [month]);
 
@@ -148,6 +162,10 @@ export function KalendarScreen() {
 
   function choose(prikaz: CalendarMode): void {
     void navigate({ search: calendarSearchTo(search, { prikaz }) });
+  }
+
+  function filter(change: { readonly smjena: string | null }): void {
+    void navigate({ search: calendarSearchTo(search, change) });
   }
 
   /** A cell's name or letter; in the grid, every part `aria-hidden` and the letter first. */
@@ -337,6 +355,57 @@ export function KalendarScreen() {
     );
   }
 
+  /**
+   * THE TEAM FILTER of *Sve smjene* (story 3.3a): a native `Select`, as on
+   * `/ljudi`, whose value is the team the grid IS narrowed to — so an unknown
+   * or archived id reads as every team rather than claiming a filter the grid
+   * ignores. The first option counts the active teams (UX-DR19); the teams
+   * sit under a labelled heading, their names data. The reset shows only while
+   * a team is chosen, and keeps the viewer on `/kalendar`.
+   */
+  function renderFilter(shown: CalendarMonth): ReactNode {
+    if (shown.filter.teams.length === 0) return null;
+
+    return (
+      <div className="flex min-w-0 flex-wrap items-end gap-3 px-4 pb-4">
+        <div className="grid w-full min-w-0 gap-2 sm:w-64">
+          <Label htmlFor="kalendar-filter">{t('kalendar.filter.label')}</Label>
+          <Select
+            id="kalendar-filter"
+            ref={filterRef}
+            className="h-11"
+            value={shown.filter.chosen ?? ALL_TEAMS_FILTER}
+            onChange={(event) => {
+              filter(calendarFilterChangeOf(event.target.value));
+            }}
+          >
+            <option value={ALL_TEAMS_FILTER}>{t('kalendar.filter.all', { count: shown.filter.teams.length })}</option>
+            <optgroup label={t('kalendar.filter.group')}>
+              {shown.filter.teams.map((team) => (
+                <option key={team.id} value={team.id}>
+                  {team.name}
+                </option>
+              ))}
+            </optgroup>
+          </Select>
+        </div>
+        {shown.filter.chosen === null ? null : (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-11"
+            onClick={() => {
+              filter({ smjena: null });
+              filterRef.current?.focus();
+            }}
+          >
+            {t('kalendar.filter.reset')}
+          </Button>
+        )}
+      </div>
+    );
+  }
+
   function renderDay(day: CalendarDay): ReactNode {
     return (
       <li
@@ -518,6 +587,7 @@ export function KalendarScreen() {
             )}
             {mode === null ? null : renderSwitch(mode)}
           </div>
+          {month === null || mode !== MODE_SVE ? null : renderFilter(month)}
           {month === null ? renderSkeleton() : mode === MODE_MOJ ? renderDays(month) : renderGrid(month)}
         </Card>
       )}
