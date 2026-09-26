@@ -833,3 +833,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-2a-phone-calendar-modes.md`
   summary: While the calendar loads, the skeleton is always the grid shape and the mode switch is absent, so a member who lands on the day list sees the layout jump when the snapshot arrives.
   evidence: Raised by 3.2a's review. The default mode needs the role, which arrives with the snapshot; showing a day-list skeleton would need the role before the read (e.g. from the chrome's cached `MEMBER_ROLE_KEY`).
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2b-calendar-modifiers-and-keyboard-grid.md`
+  summary: When the grid is scrolled sideways, a cell that receives keyboard focus can sit under the sticky date column, hiding the focused cell and its ring.
+  evidence: Raised by 3.2b's review. `kalendar.tsx` calls `cell.focus()` with no `scroll-margin-left` or `scrollIntoView` offset for the `sticky left-0` date column; it shows only on the compressed or a narrow full grid that actually scrolls.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2b-calendar-modifiers-and-keyboard-grid.md`
+  summary: The first story that produces a real modifier (3.5's `overridden`) must see the rings, hatches, glyphs and legend on screen, adding an E2E for the legend and a contrast check of name, letter and range over each hatch in both themes.
+  evidence: Raised by 3.2b's review. In 3.2b every cell carries `modifiers: []`, so the render path (legend markup, glyph run, ring/hatch classes, day-list `sr-only` names) is covered only by unit tests of `modifiers.ts`; the hatches use translucent `--modifier-leave`/`--modifier-uncovered` bands that nothing measures.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2b-calendar-modifiers-and-keyboard-grid.md`
+  summary: Under `forced-colors: active` (Windows High Contrast) the `box-shadow` modifier rings and the background-image hatches are dropped, leaving only the glyphs.
+  evidence: Raised by 3.2b's review. `index.css`'s `modifier-ring-*` and `modifier-hatch-*` utilities have no `@media (forced-colors: active)` fallback (e.g. an `outline` in `CanvasText`); the glyph still carries the meaning, so this is not colour-alone, but the treatment vanishes.

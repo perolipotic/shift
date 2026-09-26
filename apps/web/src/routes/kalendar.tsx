@@ -1,10 +1,33 @@
 import { useQuery } from '@tanstack/react-query';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { useMemo, useSyncExternalStore, type ReactNode } from 'react';
+import { useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
 
 import {
+  GRID_CELL_SELECTOR,
+  gridCellSelectorOf,
+  gridFocusAfter,
+  gridPositionOf,
+  gridTabStopOf,
+  isInertGridKey,
+  isSameGridPosition,
+  keyModifiersOf,
+  type GridFocus,
+  type GridPosition,
+} from '@/calendar/grid-keys';
+import {
+  gridCellLabelsOf,
+  legendOf,
+  modifierMessageKey,
+  modifierNamesTextOf,
+  modifierTreatmentOf,
+  type CellLabelTranslate,
+} from '@/calendar/modifiers';
+import {
   COMPRESSED_CELL_CLASS,
+  DAY_CELL_CLASS,
+  DAY_RANGE_CLASS,
+  GRID_RANGE_CLASS,
   MODE_MOJ,
   MODE_SVE,
   NO_ROTATION_SHOWN,
@@ -61,6 +84,14 @@ import { supabaseClient } from '@/supabase/client';
  * header and per cell, the full names `sr-only` — and is the same table; from
  * 640 px up it is story 3.1's.
  *
+ * THE GRID IS AN ARIA GRID (story 3.2b), full and compressed alike: one tab
+ * stop, the arrows, Home and End moving focus by `@/calendar/grid-keys`, and
+ * every data cell a `gridcell` named in full by `cellLabelOf` — the date, the
+ * team, the type, the range and each modifier, never a letter — with its
+ * drawing `aria-hidden` beside it. Modifier marks draw through one cell
+ * renderer, shared by the grid and the day list, and the legend shows only
+ * while a mark is on screen. The day list stays a plain list.
+ *
  * The session guard is NOT here. It is registered once on the pathless `_app`
  * layout this route nests under.
  */
@@ -73,6 +104,8 @@ function isPhoneOnServer(): boolean {
 
 const SKELETON_ROWS = Array.from({ length: SKELETON_ROW_COUNT }, (_, index) => index);
 const SKELETON_COLUMNS = Array.from({ length: SKELETON_COLUMN_COUNT + 1 }, (_, index) => index);
+
+const translateCellLabel: CellLabelTranslate = (key) => t(key);
 
 export function KalendarScreen() {
   const search = kalendarRoute.useSearch();
@@ -93,6 +126,21 @@ export function KalendarScreen() {
   // READ LIVE: crossing 640 px changes the default mode while no `prikaz` is chosen.
   const isPhone = useSyncExternalStore(phone.subscribe, phone.get, isPhoneOnServer);
   const mode = snapshot === null ? null : calendarModeOf(search, snapshot.viewer.role, isPhone);
+  // The grid's one tab stop, remembered across re-renders and FORGOTTEN
+  // whenever the month shown changes — by the buttons, the URL or history — so
+  // coming back to a month starts on today again, not where focus last was.
+  const [gridFocus, setGridFocus] = useState<GridFocus | null>(null);
+  const shownMonth = month === null ? null : month.month;
+  const [focusMonth, setFocusMonth] = useState<string | null>(shownMonth);
+
+  if (focusMonth !== shownMonth) {
+    setFocusMonth(shownMonth);
+    setGridFocus(null);
+  }
+
+  const gridRef = useRef<HTMLTableElement>(null);
+  // Built once per month shown, not on every focus move.
+  const labels = useMemo(() => (month === null ? null : gridCellLabelsOf(month, translateCellLabel)), [month]);
 
   function show(mjesec: string | null): void {
     void navigate({ search: calendarSearchTo(search, { mjesec }) });
@@ -102,23 +150,19 @@ export function KalendarScreen() {
     void navigate({ search: calendarSearchTo(search, { prikaz }) });
   }
 
-  function renderCellBody(cell: CalendarCell, compressed: boolean): ReactNode {
+  /** A cell's name or letter; in the grid, every part `aria-hidden` and the letter first. */
+  function renderCellName(cell: CalendarCell, inGrid: boolean): ReactNode {
     if (cell.name === null) {
       return (
         <>
           <span aria-hidden>{NO_ROTATION_SHOWN}</span>
-          <span className="sr-only">{t('kalendar.noRotation')}</span>
+          {inGrid ? null : <span className="sr-only">{t('kalendar.noRotation')}</span>}
         </>
       );
     }
 
-    if (!compressed) {
-      return (
-        <>
-          <span>{cell.name}</span>
-          {cell.range === null ? null : <span className="font-normal tabular-nums">{cell.range}</span>}
-        </>
-      );
+    if (!inGrid) {
+      return <span>{cell.name}</span>;
     }
 
     return (
@@ -126,19 +170,139 @@ export function KalendarScreen() {
         <span aria-hidden className="sm:hidden">
           {cell.letter}
         </span>
-        <span className="sr-only sm:not-sr-only">{cell.name}</span>
-        {cell.range === null ? null : (
-          <span className="hidden font-normal tabular-nums lg:inline">{cell.range}</span>
-        )}
+        <span aria-hidden className="hidden sm:inline">
+          {cell.name}
+        </span>
       </>
     );
   }
 
-  function renderCell(cell: CalendarCell): ReactNode {
+  /**
+   * THE ONE CELL RENDERER, for the grid (full and compressed) and the day
+   * list: the type's fill, any modifier's ring or hatch over it, and the
+   * glyphs beside the name or letter. In the grid every part is `aria-hidden`,
+   * because the `gridcell`'s label names it in full; in the day list the
+   * marks' names are there for a screen reader.
+   */
+  function renderCellBox(cell: CalendarCell, inGrid: boolean): ReactNode {
+    const treatment = modifierTreatmentOf(cell.modifiers);
+
     return (
-      <TableCell key={cell.teamId} className="px-1 py-1">
-        <div className={`${cell.className} ${COMPRESSED_CELL_CLASS}`}>{renderCellBody(cell, true)}</div>
+      <div className={`${cell.className} ${inGrid ? COMPRESSED_CELL_CLASS : DAY_CELL_CLASS} ${treatment.className}`}>
+        {treatment.glyphs.length === 0 ? (
+          renderCellName(cell, inGrid)
+        ) : (
+          <span className="flex items-center gap-1">
+            {renderCellName(cell, inGrid)}
+            <span aria-hidden className="font-normal [font-variant-emoji:text]">
+              {treatment.glyphText}
+            </span>
+          </span>
+        )}
+        {cell.range === null ? null : (
+          <span
+            aria-hidden={inGrid ? true : undefined}
+            className={inGrid ? GRID_RANGE_CLASS : DAY_RANGE_CLASS}
+          >
+            {cell.range}
+          </span>
+        )}
+        {inGrid || treatment.modifiers.length === 0 ? null : (
+          <span className="sr-only">{modifierNamesTextOf(treatment.modifiers, translateCellLabel)}</span>
+        )}
+      </div>
+    );
+  }
+
+  /** Focus moved to a cell: it becomes the grid's one tab stop. */
+  function remember(month: string, position: GridPosition): void {
+    setGridFocus((current) =>
+      current !== null && current.month === month && isSameGridPosition(current.position, position)
+        ? current
+        : { month, position },
+    );
+  }
+
+  /**
+   * A key on the grid, from the cell that HAS focus: move focus by
+   * `gridFocusAfter`, swallow Space, or leave the key alone.
+   */
+  function moveGridFocus(event: KeyboardEvent<HTMLTableElement>, shown: CalendarMonth): void {
+    const target = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>(GRID_CELL_SELECTOR) : null;
+    const from = target === null ? null : gridPositionOf(target.dataset);
+
+    if (from === null) return;
+
+    const modifiers = keyModifiersOf(event);
+
+    if (isInertGridKey(event.key, modifiers)) {
+      event.preventDefault();
+
+      return;
+    }
+
+    const next = gridFocusAfter(event.key, modifiers, from, {
+      rows: shown.rows.length,
+      columns: shown.columns.length,
+    });
+
+    if (next === null) return;
+
+    event.preventDefault();
+    remember(shown.month, next);
+    gridRef.current?.querySelector<HTMLElement>(gridCellSelectorOf(next))?.focus();
+  }
+
+  function renderCell(
+    month: string,
+    cell: CalendarCell,
+    label: string | undefined,
+    position: GridPosition,
+    tabStop: GridPosition,
+  ): ReactNode {
+    return (
+      <TableCell
+        key={cell.teamId}
+        role="gridcell"
+        data-row={position.row}
+        data-column={position.column}
+        tabIndex={isSameGridPosition(position, tabStop) ? 0 : -1}
+        aria-label={label}
+        onFocus={() => {
+          remember(month, position);
+        }}
+        className="px-1 py-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      >
+        {renderCellBox(cell, true)}
       </TableCell>
+    );
+  }
+
+  /** The legend of the marks on screen, or nothing when there are none. */
+  function renderLegend(cells: Iterable<CalendarCell | null>): ReactNode {
+    const legend = legendOf(cells);
+
+    if (legend.length === 0) return null;
+
+    return (
+      <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 px-4 pb-3 text-sm">
+        <span id="kalendar-legend" className="font-semibold">
+          {t('kalendar.legend')}
+        </span>
+        <ul aria-labelledby="kalendar-legend" className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          {legend.map((modifier) => (
+            <li key={modifier} className="flex items-center gap-2">
+              <span
+                aria-hidden
+                className={`inline-flex size-6 items-center justify-center rounded-sm bg-card text-xs [font-variant-emoji:text] ${modifierTreatmentOf([modifier]).className}`}
+              >
+                {modifierTreatmentOf([modifier]).glyphText}
+              </span>
+              <span>{t(modifierMessageKey(modifier))}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
     );
   }
 
@@ -191,7 +355,7 @@ export function KalendarScreen() {
         {day.cell === null ? (
           <span className="text-sm text-muted-foreground">{t('kalendar.day.noTeam')}</span>
         ) : (
-          <div className={`${day.cell.className} min-w-0 flex-1`}>{renderCellBody(day.cell, false)}</div>
+          renderCellBox(day.cell, false)
         )}
       </li>
     );
@@ -213,9 +377,12 @@ export function KalendarScreen() {
     }
 
     return (
-      <ol aria-labelledby="kalendar-month-heading" className="divide-y divide-border px-4 pb-4">
-        {shown.days.days.map((day) => renderDay(day))}
-      </ol>
+      <>
+        {renderLegend(shown.days.days.map((day) => day.cell))}
+        <ol aria-labelledby="kalendar-month-heading" className="divide-y divide-border px-4 pb-4">
+          {shown.days.days.map((day) => renderDay(day))}
+        </ol>
+      </>
     );
   }
 
@@ -224,42 +391,57 @@ export function KalendarScreen() {
       return <p className="px-4 pb-4 text-sm text-muted-foreground">{t('kalendar.noTeams')}</p>;
     }
 
+    const tabStop = gridTabStopOf(gridFocus, shown.month, shown.rows, shown.columns.length);
+
     return (
-      <Table aria-labelledby="kalendar-month-heading">
-        <TableHeader>
-          <TableRow>
-            <TableHead scope="col" className="sticky left-0 bg-muted">
-              {t('kalendar.columnDate')}
-            </TableHead>
-            {shown.columns.map((team) => (
-              <TableHead key={team.id} scope="col" className="whitespace-nowrap normal-case max-sm:text-center">
-                <span aria-hidden className="sm:hidden">
-                  {team.letter}
-                </span>
-                <span className="sr-only sm:not-sr-only">{team.name}</span>
+      <>
+        {renderLegend(shown.rows.flatMap((row) => row.cells))}
+        <Table
+          ref={gridRef}
+          role="grid"
+          aria-readonly
+          aria-labelledby="kalendar-month-heading"
+          onKeyDown={(event) => {
+            moveGridFocus(event, shown);
+          }}
+        >
+          <TableHeader>
+            <TableRow>
+              <TableHead scope="col" className="sticky left-0 bg-muted">
+                {t('kalendar.columnDate')}
               </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {shown.rows.map((row) => (
-            <TableRow key={row.date} aria-current={row.isToday ? 'date' : undefined}>
-              <TableHead
-                scope="row"
-                className={
-                  row.isToday
-                    ? 'sticky left-0 h-auto whitespace-nowrap border-l-4 border-foreground bg-card py-1 text-sm font-bold normal-case tracking-normal text-foreground'
-                    : 'sticky left-0 h-auto whitespace-nowrap bg-card py-1 text-sm font-medium normal-case tracking-normal text-foreground'
-                }
-              >
-                <span className="block tabular-nums">{row.dayMonth}</span>
-                <span className="block text-xs font-normal text-muted-foreground">{row.weekday}</span>
-              </TableHead>
-              {row.cells.map((cell) => renderCell(cell))}
+              {shown.columns.map((team) => (
+                <TableHead key={team.id} scope="col" className="whitespace-nowrap normal-case max-sm:text-center">
+                  <span aria-hidden className="sm:hidden">
+                    {team.letter}
+                  </span>
+                  <span className="sr-only sm:not-sr-only">{team.name}</span>
+                </TableHead>
+              ))}
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {shown.rows.map((row, rowIndex) => (
+              <TableRow key={row.date} aria-current={row.isToday ? 'date' : undefined}>
+                <TableHead
+                  scope="row"
+                  className={
+                    row.isToday
+                      ? 'sticky left-0 h-auto whitespace-nowrap border-l-4 border-foreground bg-card py-1 text-sm font-bold normal-case tracking-normal text-foreground'
+                      : 'sticky left-0 h-auto whitespace-nowrap bg-card py-1 text-sm font-medium normal-case tracking-normal text-foreground'
+                  }
+                >
+                  <span className="block tabular-nums">{row.dayMonth}</span>
+                  <span className="block text-xs font-normal text-muted-foreground">{row.weekday}</span>
+                </TableHead>
+                {row.cells.map((cell, column) =>
+                  renderCell(shown.month, cell, labels?.[rowIndex]?.[column], { row: rowIndex, column }, tabStop),
+                )}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </>
     );
   }
 

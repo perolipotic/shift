@@ -26,7 +26,7 @@ Make the projected rota readable and correctable. Any member opens any month, pa
 - **Member filter.** It shows that member's shifts, including shifts held only through a roster override, and their leave once leave exists.
 - **Rank and position are shown, never used.** Where the organization uses fire ranks, the roster, day detail and replacement candidates may show rank and position as information only. Nothing blocks, warns or suggests based on them, and neither is colour-coded or offered as a filter.
 - **Performance.** An all-teams month at pilot scale renders within 2 s on a mid-range phone over a typical mobile network. Any month, visited or not, performs about the same. Both are measured on the pilot fixture in this epic.
-- **Accessibility.** No state is shown by colour alone, and this is checked in the compressed grid, pips and badges. The calendar grid works from the keyboard. Every cell exposes its date, team, shift type, times and modifiers to assistive technology. The target is WCAG 2.1 AA.
+- **Accessibility.** No state is shown by colour alone: every state carries a glyph or fill treatment alongside its colour, asserted for each state as it lands (including states later epics add), and checked specifically in the compressed grid, status pips and badges. The calendar grid works from the keyboard. Every cell exposes its date, team, shift type, times and modifiers to assistive technology, never a colour swatch or a bare letter. The target is WCAG 2.1 AA, without a formal audit in the MVP. State must stay legible in both light and dark themes; no state may rely on one theme's contrast.
 - **Localization.** No hard-coded strings. Croatian needs three plural forms. Dates use `12.09.2026` and times `19:00–07:00` with an en dash, in the organization's timezone. `Smjena` means team and `Tip smjene` means shift type; never write *smjena* for a shift type.
 
 ## Technical Decisions
@@ -51,7 +51,7 @@ Make the projected rota readable and correctable. Any member opens any month, pa
   - leave: hatch fill plus `◷`
   - uncovered: hatch fill plus `◌`
 
-  A **persistent legend** appears wherever these glyphs render, not in a tooltip or behind an info icon. `destructive` is reserved for conflicts, and the organization accent never touches a shift state.
+  The four marks are a fixed, system-defined set available to every surface. A **persistent legend** appears wherever these glyphs render, not in a tooltip or behind an info icon. `destructive` is reserved for conflicts, and the organization accent never touches a shift state. Nothing in the visual language names a shift type: colour comes from ordered ramp slots, never from "day" or "night".
 - **Mode switch.** A segmented control with two modes, *Moj raspored* and *Sve smjene*. *Moj raspored* is the default for member-role accounts on mobile.
 - **Filters.** A Select populated from live records that shows a count in its label. The all-teams option reads `Sve smjene (N)`, with its options under a labelled heading. One action resets the filter to all teams without leaving the calendar. Filter and mode survive month navigation within a session and are not kept across sessions.
 - **Responsive layout.**
@@ -59,7 +59,8 @@ Make the projected rota readable and correctable. Any member opens any month, pa
   - Tablet (640–1024 px): the full grid with team names.
   - Desktop (>1024 px): times visible in cells.
 
-  The compressed grid is the same component as the full grid, not a separate mobile calendar. The page never scrolls sideways; the grid owns its own horizontal overflow.
+  The compressed grid is the same component as the full grid with a narrower column treatment, not a separate mobile calendar. The page never scrolls sideways; the grid owns its own horizontal overflow. On phones, navigation is bottom tabs.
+- **Primitives.** Screens compose the shared primitives and never restyle them (sizing and placement only); a new look means changing the primitive or adding one. A purely visual drawing is hidden from assistive technology beside a text equivalent, and decorative icons are hidden while the text or role carries the meaning.
 - **Month navigation** is symmetric and unbounded in both directions. Loading shows skeletons that match the final layout, with no spinners, so a visited month and an unvisited one feel the same.
 - **Empty states say what is true.** A member with no team gets an explanation, never a blank schedule.
 - **Dialogs and confirmation.** Adding or editing a small record happens in a dialog. A destructive action, such as removing an override, needs one modal confirmation with neutral styling that names what is being removed. The dialog cannot be dismissed while the write is in flight. A refused save keeps the values the user entered.
@@ -69,8 +70,8 @@ Make the projected rota readable and correctable. Any member opens any month, pa
 
 - **Builds on Epic 2.** It uses the projection function, the versioned assignments and the shift-type slot ramp. It also uses Epic 2's rotation-change flow (2.6), which 3.5 extends with the override disposition review.
 - **Builds on Epic 1.** It uses teams, versioned team membership and position, member active status, rank, the RLS helper and attribution defaults.
-- **Order within the epic.** 3.1 defines `OrganizationSnapshot` and the calendar surface, which 3.2, 3.3 and 3.4 build on. The modifier and legend vocabulary from 3.2 is used by 3.5 (`✎`) and later by Epic 5 (`⚠`, `◷`, `◌`). The roster derivation in 3.4 is the base for the roster overrides in 3.6.
+- **Order within the epic.** 3.1 is done. It defines `OrganizationSnapshot` and the calendar surface, which 3.2, 3.3 and 3.4 build on. The modifier and legend vocabulary from 3.2 is used by 3.5 (`✎`) and later by Epic 5 (`⚠`, `◷`, `◌`). The roster derivation in 3.4 is the base for the roster overrides in 3.6.
 - **Downstream.**
-  - Epic 4: hours follow the overridden roster.
+  - Epic 4: hours follow the overridden roster, and the Excel export of hours is built from the same surface snapshot, never a second read.
   - Epic 5: conflicts are leave ∩ working shift ∩ roster including overrides. Replace Member is implemented as a roster override, and the before/after collision diff guards override and rotation writes.
   - Epic 6: the dashboards extend the same snapshot.

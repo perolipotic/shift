@@ -154,6 +154,8 @@ const ROTATION_HISTORY_KEYS = join(srcRoot, 'rotation', 'history.ts');
  */
 const KALENDAR = join(srcRoot, 'routes', 'kalendar.tsx');
 const CALENDAR_SNAPSHOT_KEYS = join(srcRoot, 'calendar', 'snapshot.ts');
+/** Story 3.2b's modifier vocabulary: the four marks' labels and a cell with no rotation. */
+const CALENDAR_MODIFIER_KEYS = join(srcRoot, 'calendar', 'modifiers.ts');
 
 /**
  * The member write path's rules, as a `.ts` module that renders nothing.
@@ -422,7 +424,8 @@ const SCREENS = [
   // STORY 3.1. THREE on Kalendar: the previous month, `Ovaj mjesec` and the
   // next month. The grid is a table and offers nothing (day detail is 3.4).
   // STORY 3.2a: five — the previous and next months, `Ovaj mjesec`, and the
-  // two buttons of the mode switch.
+  // two buttons of the mode switch. STILL FIVE SINCE STORY 3.2b: the grid's
+  // cells take focus as one roving tab stop, and are cells, not controls.
   { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 5 },
   // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
   // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
@@ -1739,11 +1742,21 @@ const KEY_SOURCES = [
     // column head, the no-rotation label and the no-teams note. The read
     // failure comes through `@/calendar/snapshot`, below. THIRTEEN SINCE STORY
     // 3.2a: the mode switch's label and its two modes, the no-team notice and
-    // a day on no team.
+    // a day on no team. FOURTEEN SINCE STORY 3.2b: the legend's heading. The
+    // marks' labels come through `@/calendar/modifiers`, below.
     name: 'the Kalendar destination',
     file: KALENDAR,
     keys: translationKeys,
-    strings: 13,
+    strings: 14,
+  },
+  {
+    // STORY 3.2b: the four marks' labels and the no-rotation label a cell's
+    // full label reads. `memberListKeys`, because the module holds TWO
+    // `\w*MessageKey` unions and `messageKeyUnion` reads only the first.
+    name: 'the calendar modifier vocabulary',
+    file: CALENDAR_MODIFIER_KEYS,
+    keys: memberListKeys,
+    strings: 5,
   },
   {
     // STORY 3.1: the calendar's one read failure.
@@ -2064,8 +2077,10 @@ describe('the screen is read at all, so every sweep below means something', () =
     // FORTY-FOUR SINCE STORY 3.1: `/kalendar` left the placeholders (one
     // generated entry fewer, its own entry instead, so SCREENS holds) and
     // `@/calendar/snapshot` joined.
+    //
+    // FORTY-FIVE SINCE STORY 3.2b: `@/calendar/modifiers`.
     expect(SCREENS).toHaveLength(24);
-    expect(KEY_SOURCES).toHaveLength(44);
+    expect(KEY_SOURCES).toHaveLength(45);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"

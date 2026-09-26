@@ -26,8 +26,9 @@ import {
   type CalendarMonth,
   type PhoneMediaQuery,
 } from '@/calendar/month';
+import { cellLabelOf, gridCellLabelsOf, legendOf, type CellLabelTranslate } from '@/calendar/modifiers';
 import { CALENDAR_UNAVAILABLE, readCalendar, type CalendarSnapshot } from '@/calendar/snapshot';
-import { initLocalization } from '@/i18n';
+import { initLocalization, t } from '@/i18n';
 import {
   PILOT,
   TODAY,
@@ -174,6 +175,7 @@ describe('this month', () => {
       letter: 'D',
       className: `${CALENDAR_CELL_CLASS} ${slotColourClassOf(1)}`,
       range: '07:00–19:00',
+      modifiers: [],
     });
     expect(noc?.className).toBe(`${CALENDAR_CELL_CLASS} ${slotColourClassOf(2)}`);
     expect(noc?.range).toBe('19:00–07:00');
@@ -184,6 +186,7 @@ describe('this month', () => {
       letter: 'S',
       className: `${CALENDAR_CELL_CLASS} ${NONWORKING_CHIP_CLASS}`,
       range: null,
+      modifiers: [],
     });
     expect(CALENDAR_CELL_CLASS).toContain('min-h-[30px]');
     expect(CALENDAR_CELL_CLASS).toContain('rounded-sm');
@@ -233,6 +236,7 @@ describe('the matrix', () => {
         letter: null,
         className: `${CALENDAR_CELL_CLASS} ${NO_ROTATION_CELL_CLASS}`,
         range: null,
+        modifiers: [],
       });
     }
     expect(NO_ROTATION_SHOWN).toBe(NO_TIMES_SHOWN);
@@ -648,5 +652,62 @@ describe('the review of 3.2a', () => {
     expect(list.removeEventListener).toHaveBeenCalledWith('change', onChange);
     expect(listeners.size).toBe(0);
     expect(asked).toEqual([PHONE_MEDIA_QUERY]);
+  });
+});
+
+describe('modifiers and labels (story 3.2b)', () => {
+  const translate: CellLabelTranslate = (key) => t(key);
+
+  it.each([
+    { fixture: 'pilot', snapshot: () => pilot },
+    { fixture: 'UJ-5', snapshot: () => uj5 },
+  ])('$fixture: no cell carries a modifier yet, so there is no legend', ({ snapshot }) => {
+    for (const mjesec of ['2026-09', '2019-12', '2031-02']) {
+      const month = calendarMonthOf(snapshot(), { mjesec }, TODAY);
+      const cells = month.rows.flatMap((row) => row.cells);
+      const days = daysOf(month) ?? [];
+
+      for (const cell of [...cells, ...days.map((day) => day.cell)]) {
+        if (cell !== null) expect(cell.modifiers).toEqual([]);
+      }
+      expect(legendOf(cells)).toEqual([]);
+      expect(legendOf(days.map((day) => day.cell))).toEqual([]);
+    }
+  });
+
+  it('labels a cell from its row, its column and itself, never with a letter', () => {
+    const month = calendarMonthOf(pilot, { mjesec: '2020-01' }, TODAY);
+    const labels = gridCellLabelsOf(month, translate);
+
+    expect(labels).toHaveLength(month.rows.length);
+    for (const row of labels) expect(row).toHaveLength(month.columns.length);
+    // Never a letter: every label names the team and the type in full.
+    for (const [index, row] of month.rows.entries()) {
+      for (const [column, cell] of row.cells.entries()) {
+        const label = labels[index]![column]!;
+
+        expect(label.startsWith(`${row.weekday} ${row.dayMonth}, ${month.columns[column]!.name}, ${cell.name ?? ''}`)).toBe(true);
+        expect(label.split(', ')).not.toContain(cell.letter);
+      }
+    }
+    // 2020-01-01, the anchor: Smjena A–D stand on Dan, Noć, Slobodno, Slobodno.
+    expect(labels[0]).toEqual([
+      'srijeda 01.01., Smjena A, Dan, 07:00–19:00',
+      'srijeda 01.01., Smjena B, Noć, 19:00–07:00',
+      'srijeda 01.01., Smjena C, Slobodno',
+      'srijeda 01.01., Smjena D, Slobodno',
+    ]);
+  });
+
+  it("labels today's row and a month before any rotation", () => {
+    const today = calendarMonthOf(pilot, {}, TODAY).rows.find((row) => row.isToday)!;
+    const before = calendarMonthOf(pilot, { mjesec: '2019-12' }, TODAY);
+
+    expect(cellLabelOf({ ...today, ...today.cells[0]!, teamName: 'Smjena A' }, translate)).toMatch(
+      /^subota 26\.09\., Smjena A, /,
+    );
+    expect(
+      cellLabelOf({ ...before.rows[0]!, ...before.rows[0]!.cells[0]!, teamName: before.columns[0]!.name }, translate),
+    ).toBe('nedjelja 01.12., Smjena A, Bez rotacije');
   });
 });

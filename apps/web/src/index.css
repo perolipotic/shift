@@ -428,3 +428,70 @@
     transparent 12px
   );
 }
+
+/* STORY 3.2b: the calendar's modifier treatments (`@/calendar/modifiers`),
+ * which compose on any cell. Drawn from the existing `--destructive` and
+ * `--modifier-*` tokens, redefined per theme above, so no new token exists and
+ * each treatment follows the theme.
+ *
+ * RINGS are inset box-shadows, so two of them stack as nested 2 px bands:
+ * conflict's `destructive` outermost, overridden's inside it. `destructive` is
+ * conflict's alone.
+ *
+ * HATCHES are `background-image` layers, so they lie OVER the type's `bg-*`
+ * base fill rather than replacing it, and two of them layer into a
+ * cross-hatch: leave at −45°, uncovered at 45°. `hatch-uncovered` above is the
+ * hour band bar's and stays as it is.
+ *
+ * Never colour alone: each mark carries a glyph and a label beside it. */
+@utility modifier-ring-conflict {
+  box-shadow: inset 0 0 0 2px var(--destructive);
+}
+
+@utility modifier-ring-overridden {
+  box-shadow: inset 0 0 0 2px var(--modifier-overridden);
+}
+
+@utility modifier-ring-conflict-overridden {
+  box-shadow:
+    inset 0 0 0 2px var(--destructive),
+    inset 0 0 0 4px var(--modifier-overridden);
+}
+
+@utility modifier-hatch-leave {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--modifier-leave) 0,
+    var(--modifier-leave) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+}
+
+@utility modifier-hatch-uncovered {
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--modifier-uncovered) 0,
+    var(--modifier-uncovered) 4px,
+    transparent 4px,
+    transparent 8px
+  );
+}
+
+@utility modifier-hatch-leave-uncovered {
+  background-image:
+    repeating-linear-gradient(
+      -45deg,
+      var(--modifier-leave) 0,
+      var(--modifier-leave) 4px,
+      transparent 4px,
+      transparent 8px
+    ),
+    repeating-linear-gradient(
+      45deg,
+      var(--modifier-uncovered) 0,
+      var(--modifier-uncovered) 4px,
+      transparent 4px,
+      transparent 8px
+    );
+}

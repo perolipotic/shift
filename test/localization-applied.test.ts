@@ -251,6 +251,11 @@ const SOURCES = [
   // `@/i18n/format`). `kalendar.tsx` is listed with the destinations above.
   join(webRoot, 'src', 'calendar', 'snapshot.ts'),
   join(webRoot, 'src', 'calendar', 'month.ts'),
+  // Story 3.2b's two: the modifier vocabulary owns the four marks' labels and
+  // the no-rotation label as return-type unions and the treatment classes;
+  // the grid's keyboard rules render nothing and decide where focus goes.
+  join(webRoot, 'src', 'calendar', 'modifiers.ts'),
+  join(webRoot, 'src', 'calendar', 'grid-keys.ts'),
   // The owner layout's numbered section badge, a primitive: text-free, here
   // for freshness like the other primitives.
   join(webRoot, 'src', 'components', 'ui', 'section-number.tsx'),
@@ -985,6 +990,11 @@ const AUTHORED_VOCABULARY = [
   // label or empty state is a count that no longer matches.
   'Moj',
   'Nisi',
+  // STORY 3.2b: the legend and the two marks no other surface names, so a
+  // hard-coded mark label is a count that no longer matches.
+  'Oznake',
+  'Konflikt',
+  'Izmijenjeno',
 ];
 
 /** Everything the terminology contract and the unshipped affordances still own.
