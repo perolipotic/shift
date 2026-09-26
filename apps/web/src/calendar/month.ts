@@ -1,4 +1,5 @@
 import {
+  activeOn,
   adjacentMonth,
   datesOfMonth,
   memberScheduleOfMonth,
@@ -6,6 +7,7 @@ import {
   scheduleOfMonth,
   shiftTypeVersionOn,
   type MembershipVersion,
+  type StatusVersion,
 } from '@shift/domain';
 
 import type { CalendarModifier } from '@/calendar/modifiers';
@@ -435,6 +437,12 @@ export type CalendarColumn = TeamRow & {
   readonly letter: string;
 };
 
+/** One member's two version histories, which their day list is derived from (story 3.4a). */
+export interface CalendarMemberHistory {
+  readonly memberships: readonly MembershipVersion[];
+  readonly statuses: readonly StatusVersion[];
+}
+
 /** A person the filter offers: id and name only (story 3.3b). */
 export interface CalendarFilterPerson {
   readonly id: string;
@@ -450,7 +458,10 @@ export interface CalendarFilter {
    * and `null` whenever a person is chosen.
    */
   readonly chosen: string | null;
-  /** Its person options: every member active today, in the snapshot's name order. */
+  /**
+   * Its person options: every member active on the organization's today
+   * (`activeOn`), in the snapshot's name order.
+   */
   readonly people: readonly CalendarFilterPerson[];
   /** The person shown, one of `people`; `null` for none. */
   readonly person: string | null;
@@ -612,23 +623,24 @@ function weekdayOf(date: string): string {
 
 /**
  * One member's day list of `month` — the viewer's in *Moj raspored*, or the
- * person chosen in the filter (story 3.3b) — from their `memberships`: a day
- * per date, each the type the member's team that day works — through `memberScheduleOfMonth`,
- * so a move between teams in the middle of the month changes rotation on the
- * day it takes effect — or no team. `null` when there is no team on any date:
- * the screen explains, never draws an empty list.
+ * person chosen in the filter (story 3.3b) — from their membership and status
+ * histories: a day per date, each the type the member's team that day works —
+ * through `memberScheduleOfMonth`, so a move between teams in the middle of
+ * the month changes rotation on the day it takes effect — or no team, which a
+ * day the member is inactive on is too (story 3.4a). `null` when there is no
+ * team on any date: the screen explains, never draws an empty list.
  *
  * @throws RangeError on any precondition of `memberScheduleOfMonth`, a type
  *   the snapshot lacks, or a date that cannot be formatted.
  */
 export function calendarDayListOf(
   snapshot: CalendarSnapshot,
-  memberships: readonly MembershipVersion[],
+  { memberships, statuses }: CalendarMemberHistory,
   month: string,
   today: string,
 ): readonly CalendarDay[] | null {
   const schedule = memberScheduleOfMonth(
-    { memberships, assignments: snapshot.assignments, steps: snapshot.steps },
+    { memberships, statuses, assignments: snapshot.assignments, steps: snapshot.steps },
     month,
   );
 
@@ -657,12 +669,12 @@ export function calendarDayListOf(
  */
 function dayListOutcomeOf(
   snapshot: CalendarSnapshot,
-  memberships: readonly MembershipVersion[],
+  history: CalendarMemberHistory,
   month: string,
   today: string,
 ): CalendarDayListOutcome {
   try {
-    return { ok: true, days: calendarDayListOf(snapshot, memberships, month, today) };
+    return { ok: true, days: calendarDayListOf(snapshot, history, month, today) };
   } catch (cause) {
     console.error(CALENDAR_UNAVAILABLE, cause);
 
@@ -717,9 +729,13 @@ export function calendarMonthOf(snapshot: CalendarSnapshot, search: CalendarSear
     snapshot,
     schedule.flatMap((row) => row.cells.map((cell) => cell.shiftTypeId)),
   );
-  const person = chosenPersonOf(search, snapshot.people);
+  // "Active today" is the domain's rule over each member's status versions
+  // (story 3.4a), so the filter offers exactly whom 3.3b's `calendar_people()`
+  // answered.
+  const people = snapshot.members.filter((member) => activeOn(member.statuses, today));
+  const person = chosenPersonOf(search, people);
   const chosen = person === null ? chosenTeamOf(search, teams) : null;
-  const personShown = snapshot.people.find((one) => one.id === person) ?? null;
+  const personShown = people.find((one) => one.id === person) ?? null;
   const shown = (teamId: string): boolean => chosen === null || teamId === chosen;
   const columns = teams.filter((team) => shown(team.id));
 
@@ -734,7 +750,7 @@ export function calendarMonthOf(snapshot: CalendarSnapshot, search: CalendarSear
     filter: {
       teams,
       chosen,
-      people: snapshot.people.map(({ id, name }) => ({ id, name })),
+      people: people.map(({ id, name }) => ({ id, name })),
       person,
     },
     rows: schedule.map((row) => ({
@@ -746,14 +762,14 @@ export function calendarMonthOf(snapshot: CalendarSnapshot, search: CalendarSear
         .filter((cell) => shown(cell.teamId))
         .map((cell) => cellOf(lookup, cell.teamId, cell.shiftTypeId, row.date)),
     })),
-    days: dayListOutcomeOf(snapshot, snapshot.viewer.memberships, month, today),
+    days: dayListOutcomeOf(snapshot, snapshot.viewer, month, today),
     person:
       personShown === null
         ? null
         : {
             id: personShown.id,
             name: personShown.name,
-            days: dayListOutcomeOf(snapshot, personShown.memberships, month, today),
+            days: dayListOutcomeOf(snapshot, personShown, month, today),
           },
   };
 }

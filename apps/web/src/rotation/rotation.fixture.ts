@@ -1,5 +1,6 @@
 import type { Session } from '@supabase/supabase-js';
 
+import { CALENDAR_MEMBERS_FUNCTION } from '@/calendar/snapshot';
 import type { RotationAnswer } from '@/rotation/list';
 
 /**
@@ -164,7 +165,7 @@ export const UJ5: FixtureRows = {
 export const VIEWER_AUTH_USER = '00000000-0000-4000-8000-0000000000b1';
 export const VIEWER_MEMBER = '00000000-0000-4000-8000-0000000000b2';
 
-/** The viewer's name, as `calendar_people()` answers it (story 3.3b). */
+/** The viewer's name, as `calendar_members()` answers it (stories 3.3b, 3.4a). */
 export const VIEWER_NAME = 'Lana Članica';
 
 /** One of the viewer's team membership versions as the calendar embeds it: `teamId` `null` is no team. */
@@ -180,14 +181,28 @@ export function viewerRow(
   return { organization_id: organization, id, role, team_membership_versions: versions };
 }
 
-/** One member's team membership version as the organization-level embed carries it (story 3.3b). */
+/**
+ * One member's team membership version as the organization-level embed
+ * carries it (story 3.3b), with its position (story 3.4a).
+ */
 export function memberMembershipRow(
   memberId: string,
   teamId: string | null,
   effectiveFrom: string,
   organization = ORGANIZATION,
+  position: unknown = null,
 ): Row {
-  return { ...membershipRow(teamId, effectiveFrom, organization), member_id: memberId };
+  return { ...membershipRow(teamId, effectiveFrom, organization), member_id: memberId, position };
+}
+
+/** One member's status version as the organization-level embed carries it (story 3.4a). */
+export function statusRow(
+  memberId: string,
+  active: unknown,
+  effectiveFrom: string,
+  organization = ORGANIZATION,
+): Row {
+  return { organization_id: organization, member_id: memberId, active, effective_from: effectiveFrom };
 }
 
 /**
@@ -195,7 +210,9 @@ export function memberMembershipRow(
  * embeds, and in place of the members list, the viewer's row alone — by
  * default a member on the fixture's first team from `SEEDED`. The
  * organization-level `team_membership_versions` embed is `versions`, or by
- * default every viewer row's own versions, stamped with its member id.
+ * default every viewer row's own versions, stamped with its member id and a
+ * `null` position. The `member_status_versions` embed is `statuses`, by
+ * default none (story 3.4a).
  */
 export function calendarOrganizationRow(
   rows: FixtureRows,
@@ -203,6 +220,8 @@ export function calendarOrganizationRow(
     timezone = 'Europe/Zagreb',
     viewers = null as readonly Row[] | null,
     versions = null as readonly Row[] | null,
+    statuses = [] as readonly Row[],
+    usesFireRanks = false as unknown,
   } = {},
 ): Row {
   const first = rows.teams[0]?.['id'];
@@ -211,23 +230,31 @@ export function calendarOrganizationRow(
   const stamped = members.flatMap((member) => {
     const own = member['team_membership_versions'];
 
-    return Array.isArray(own) ? own.map((version: Row) => ({ ...version, member_id: member['id'] })) : [];
+    return Array.isArray(own)
+      ? own.map((version: Row) => ({ ...version, member_id: member['id'], position: null }))
+      : [];
   });
 
-  return { ...organizationRow(rows, timezone), members, team_membership_versions: versions ?? stamped };
+  return {
+    ...organizationRow(rows, timezone),
+    uses_fire_ranks: usesFireRanks,
+    members,
+    team_membership_versions: versions ?? stamped,
+    member_status_versions: statuses,
+  };
 }
 
-/** One row of `calendar_people()`: id and name only. */
-export function personRow(id: string, name: string): Row {
-  return { id, name };
+/** One row of `calendar_members()`: id, name and fire rank only. */
+export function calendarMemberRow(id: string, name: string, fireRank: unknown = null): Row {
+  return { id, name, fire_rank: fireRank };
 }
 
-/** `calendar_people()`'s answer: by default the viewer alone. */
-export function peopleAnswerOf(people: readonly Row[] = [personRow(VIEWER_MEMBER, VIEWER_NAME)]): {
+/** `calendar_members()`'s answer: by default the viewer alone. */
+export function membersAnswerOf(members: readonly Row[] = [calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME)]): {
   readonly data: unknown;
   readonly error: null;
 } {
-  return { data: people, error: null };
+  return { data: members, error: null };
 }
 
 /** The session the calendar reads as: the viewer's. */
@@ -236,13 +263,13 @@ export function viewerSession(authUserId = VIEWER_AUTH_USER): () => Promise<Sess
 }
 
 /**
- * A calendar table answering once with `answer`, and the people rpc answering
- * with `people`, recording every select, filter and rpc. It stands in for both
+ * A calendar table answering once with `answer`, and the members rpc answering
+ * with `members`, recording every select, filter and rpc. It stands in for both
  * of `readCalendar`'s sources.
  */
 export function calendarTableOf(
   answer: unknown,
-  people: unknown = peopleAnswerOf(),
+  members: unknown = membersAnswerOf(),
 ): {
   readonly seen: unknown[][];
   select(columns: string, options: unknown): { filter(column: string, operator: string, value: string): Promise<never> };
@@ -255,7 +282,10 @@ export function calendarTableOf(
     rpc(fn) {
       seen.push(['rpc', fn]);
 
-      return Promise.resolve(people as never);
+      // The one function the calendar may call (0018).
+      if (fn !== CALENDAR_MEMBERS_FUNCTION) throw new Error(`unexpected rpc ${fn}`);
+
+      return Promise.resolve(members as never);
     },
     select(columns, options) {
       seen.push(['select', columns, options]);

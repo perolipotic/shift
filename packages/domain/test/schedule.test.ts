@@ -201,9 +201,9 @@ describe('scheduleOfMonth', () => {
 describe('memberScheduleOfMonth', () => {
   it.each(FIXTURES)('$fixture: every day equals projectedShiftTypeOn of the team on that date', ({ teams, steps, assignments }) => {
     for (const team of teams) {
-      const memberships = [{ teamId: team.id, effectiveFrom: SEEDED_EFFECTIVE_FROM }];
+      const memberships = [{ teamId: team.id, position: null, effectiveFrom: SEEDED_EFFECTIVE_FROM }];
       for (const month of MONTHS) {
-        const days = memberScheduleOfMonth({ memberships, assignments, steps }, month);
+        const days = memberScheduleOfMonth({ memberships, statuses: [], assignments, steps }, month);
         expect(days.map((day) => day.date)).toEqual(datesOfMonth(month));
         const versions = assignments.filter((assignment) => assignment.teamId === team.id);
         for (const day of days) {
@@ -220,11 +220,11 @@ describe('memberScheduleOfMonth', () => {
   it('follows a move from one team to another in the middle of the month', () => {
     const [first, second] = [PILOT_TEAMS[0]!.id, PILOT_TEAMS[1]!.id];
     const memberships = [
-      { teamId: second, effectiveFrom: '2026-10-15' },
-      { teamId: first, effectiveFrom: '2026-10-01' },
+      { teamId: second, position: null, effectiveFrom: '2026-10-15' },
+      { teamId: first, position: null, effectiveFrom: '2026-10-01' },
     ];
     const days = memberScheduleOfMonth(
-      { memberships, assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS },
+      { memberships, statuses: [], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS },
       '2026-10',
     );
     let differs = false;
@@ -244,11 +244,11 @@ describe('memberScheduleOfMonth', () => {
   it('has no team and no type from the day a member leaves their team', () => {
     const team = PILOT_TEAMS[0]!.id;
     const memberships = [
-      { teamId: team, effectiveFrom: '2020-01-01' },
-      { teamId: null, effectiveFrom: '2026-09-10' },
+      { teamId: team, position: null, effectiveFrom: '2020-01-01' },
+      { teamId: null, position: null, effectiveFrom: '2026-09-10' },
     ];
     const days = memberScheduleOfMonth(
-      { memberships, assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS },
+      { memberships, statuses: [], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS },
       '2026-09',
     );
     for (const day of days) {
@@ -263,7 +263,7 @@ describe('memberScheduleOfMonth', () => {
 
   it('gives a member with no versions no team on any date', () => {
     const days = memberScheduleOfMonth(
-      { memberships: [], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS },
+      { memberships: [], statuses: [], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS },
       '2026-09',
     );
     expect(days).toHaveLength(30);
@@ -272,15 +272,63 @@ describe('memberScheduleOfMonth', () => {
 
   it('gives a team with no rotation version its team and a null type', () => {
     const days = memberScheduleOfMonth(
-      { memberships: [{ teamId: 'no-rotation', effectiveFrom: '2020-01-01' }], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS },
+      { memberships: [{ teamId: 'no-rotation', position: null, effectiveFrom: '2020-01-01' }], statuses: [], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS },
       '2026-09',
     );
     expect(days.every((day) => day.teamId === 'no-rotation' && day.shiftTypeId === null)).toBe(true);
   });
 
+  it.each(FIXTURES)('$fixture: a day the member is inactive has no team and no type (story 3.4a)', ({ teams, steps, assignments }) => {
+    const team = teams[0]!.id;
+    const memberships = [{ teamId: team, position: null, effectiveFrom: SEEDED_EFFECTIVE_FROM }];
+    // Inactive from the 5th, active again from the 20th.
+    const statuses = [
+      { active: true, effectiveFrom: SEEDED_EFFECTIVE_FROM },
+      { active: false, effectiveFrom: '2026-09-05' },
+      { active: true, effectiveFrom: '2026-09-20' },
+    ];
+    const days = memberScheduleOfMonth({ memberships, statuses, assignments, steps }, '2026-09');
+    const versions = assignments.filter((assignment) => assignment.teamId === team);
+    for (const day of days) {
+      if (day.date >= '2026-09-05' && day.date < '2026-09-20') {
+        expect(day, day.date).toEqual({ date: day.date, teamId: null, shiftTypeId: null });
+      } else {
+        expect(day, day.date).toEqual({
+          date: day.date,
+          teamId: team,
+          shiftTypeId: projectedShiftTypeOn(versions, steps, day.date),
+        });
+      }
+    }
+  });
+
+  it('throws a RangeError on a malformed or repeated status date', () => {
+    const input = {
+      memberships: [{ teamId: PILOT_TEAMS[0]!.id, position: null, effectiveFrom: '2020-01-01' }],
+      assignments: PILOT_ROTATION_ASSIGNMENTS,
+      steps: PILOT_ROTATION_STEPS,
+    };
+    expect(() =>
+      memberScheduleOfMonth({ ...input, statuses: [{ active: false, effectiveFrom: '2026-02-30' }] }, '2026-09'),
+    ).toThrow(RangeError);
+    expect(() =>
+      memberScheduleOfMonth(
+        {
+          ...input,
+          statuses: [
+            { active: false, effectiveFrom: '2026-09-03' },
+            { active: true, effectiveFrom: '2026-09-03' },
+          ],
+        },
+        '2026-09',
+      ),
+    ).toThrow(/2026-09-03/);
+  });
+
   it('throws a RangeError on bad input', () => {
     const input = {
-      memberships: [{ teamId: PILOT_TEAMS[0]!.id, effectiveFrom: '2020-01-01' }],
+      memberships: [{ teamId: PILOT_TEAMS[0]!.id, position: null, effectiveFrom: '2020-01-01' }],
+      statuses: [],
       assignments: PILOT_ROTATION_ASSIGNMENTS,
       steps: PILOT_ROTATION_STEPS,
     };
@@ -288,12 +336,12 @@ describe('memberScheduleOfMonth', () => {
     // Two versions on one date.
     expect(() =>
       memberScheduleOfMonth(
-        { ...input, memberships: [...input.memberships, { teamId: null, effectiveFrom: '2020-01-01' }] },
+        { ...input, memberships: [...input.memberships, { teamId: null, position: null, effectiveFrom: '2020-01-01' }] },
         '2026-09',
       ),
     ).toThrow(/2020-01-01/);
     expect(() =>
-      memberScheduleOfMonth({ ...input, memberships: [{ teamId: null, effectiveFrom: '2026-02-30' }] }, '2026-09'),
+      memberScheduleOfMonth({ ...input, memberships: [{ teamId: null, position: null, effectiveFrom: '2026-02-30' }] }, '2026-09'),
     ).toThrow(RangeError);
     // A version whose pattern has no steps among those given.
     expect(() => memberScheduleOfMonth({ ...input, steps: UJ5_ROTATION_STEPS }, '2026-09')).toThrow(RangeError);

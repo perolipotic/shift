@@ -1,4 +1,4 @@
-import type { MembershipVersion, RotationAssignment, RotationStep } from '@shift/domain';
+import type { MembershipVersion, RotationAssignment, RotationStep, StatusVersion } from '@shift/domain';
 import type { Session } from '@supabase/supabase-js';
 import { queryOptions } from '@tanstack/react-query';
 
@@ -45,12 +45,15 @@ import { TEAMS_COLUMNS, teamRowOf, type TeamRow } from '@/teams/list';
  * `created_at` stays, because the ramp slot is derived from the creation
  * order, and it is the column `shiftTypeRowOf` checks.
  *
- * THE PEOPLE (story 3.3b). A member-role session reads only its own
- * `members` row (0011), so the colleagues the person filter offers come from
- * `calendar_people()` (0017): the id and name of every member active today,
- * and nothing more. Their team membership history is the organization-level
- * `team_membership_versions` embed, which any active member may read. The rpc
- * is made beside the select under the same key, so it is still ONE query.
+ * THE MEMBERS (stories 3.3b, 3.4a). A member-role session reads only its own
+ * `members` row (0011), so the colleagues come from `calendar_members()`
+ * (0018): the id, name and fire rank of every member, active or not, and
+ * nothing more. Their team membership history (with position) and their
+ * active-status history are the organization-level `team_membership_versions`
+ * and `member_status_versions` embeds, which any active member may read, so
+ * "active on a date" is `activeOn` from `@shift/domain` — the person filter's
+ * "active today" and the roster's "active on the day" alike. The rpc is made
+ * beside the select under the same key, so it is still ONE query.
  *
  * `select` AND ONE `rpc`, AND NOTHING ELSE.
  */
@@ -67,16 +70,17 @@ export const CALENDAR_KEY = ['calendar'] as const;
  * row of another tenant.
  */
 export const CALENDAR_COLUMNS =
-  `${ORGANIZATION_ZONE_COLUMNS},` +
+  `${ORGANIZATION_ZONE_COLUMNS},uses_fire_ranks,` +
   `teams(${TEAMS_COLUMNS}),` +
   `${SHIFT_TYPES_EMBED},` +
   'rotation_steps(organization_id,id,pattern_id,position,shift_type_id),' +
   'rotation_assignments(organization_id,team_id,pattern_id,offset_step_id,anchor_date,effective_from),' +
   'members(organization_id,id,role,team_membership_versions(organization_id,team_id,effective_from)),' +
-  'team_membership_versions(organization_id,member_id,team_id,effective_from)';
+  'team_membership_versions(organization_id,member_id,team_id,position,effective_from),' +
+  'member_status_versions(organization_id,member_id,active,effective_from)';
 
-/** The function the person filter's people are read through (0017): id and name only. */
-export const CALENDAR_PEOPLE_FUNCTION = 'calendar_people';
+/** The function every member is read through (0018): id, name and fire rank only. */
+export const CALENDAR_MEMBERS_FUNCTION = 'calendar_members';
 
 /** The embedded column the members embed is filtered by: the viewer's own row alone. */
 export const CALENDAR_VIEWER_COLUMN = 'members.auth_user_id';
@@ -137,22 +141,26 @@ export interface CalendarTable {
 }
 
 /** As much of the rpc's answer as this module reads. */
-export interface CalendarPeopleAnswer {
+export interface CalendarMembersAnswer {
   readonly data: unknown;
   readonly error: CalendarReadError | null;
 }
 
-/** The people read, named structurally so it can be stubbed. */
-export interface CalendarPeopleRpc {
-  rpc(fn: string): PromiseLike<CalendarPeopleAnswer>;
+/** The members read, named structurally so it can be stubbed. */
+export interface CalendarMembersRpc {
+  rpc(fn: string): PromiseLike<CalendarMembersAnswer>;
 }
 
-/** A colleague the person filter offers: active today, id and name only (0017). */
-export interface CalendarPerson {
+/** A member of the organization, active or not: id, name and rank only (0018). */
+export interface CalendarMember {
   readonly id: string;
   readonly name: string;
+  /** Shown, never used; `null` is no rank. */
+  readonly fireRank: string | null;
   /** Every version of their team membership, in `effectiveFrom` order. */
   readonly memberships: readonly MembershipVersion[];
+  /** Every version of their active status, in `effectiveFrom` order; none is always active. */
+  readonly statuses: readonly StatusVersion[];
 }
 
 /** The signed-in member reading the calendar. */
@@ -160,8 +168,13 @@ export interface CalendarViewer {
   readonly memberId: string;
   /** Picks the default mode only; authorizes nothing. */
   readonly role: MemberRole;
-  /** Every version of the viewer's team membership, in `effectiveFrom` order. */
+  /**
+   * Every version of the viewer's team membership, in `effectiveFrom` order:
+   * the organization-level history, the same as their entry in `members`.
+   */
   readonly memberships: readonly MembershipVersion[];
+  /** Every version of the viewer's active status, in `effectiveFrom` order (story 3.4a). */
+  readonly statuses: readonly StatusVersion[];
 }
 
 /** The one answer the calendar draws from. */
@@ -169,6 +182,8 @@ export interface CalendarSnapshot {
   readonly organizationId: string;
   /** The organization's zone: "today" is the organization's, never the device's (L8). */
   readonly timeZone: string;
+  /** Whether the organization uses fire ranks: rank is shown where it does, and never used. */
+  readonly usesFireRanks: boolean;
   /** Every team, archived ones included; the month shows the active ones. */
   readonly teams: readonly TeamRow[];
   /** Every shift type, archived ones included, in creation order. */
@@ -180,10 +195,11 @@ export interface CalendarSnapshot {
   /** The viewer's own member row. */
   readonly viewer: CalendarViewer;
   /**
-   * Every member of the organization active today, the viewer included,
-   * sorted by name under the Croatian collation, then by id (story 3.3b).
+   * Every member of the organization, active or not, the viewer included,
+   * sorted by name under the Croatian collation, then by id (stories 3.3b,
+   * 3.4a).
    */
-  readonly people: readonly CalendarPerson[];
+  readonly members: readonly CalendarMember[];
 }
 
 // ------------------------------------------------------------- validation
@@ -198,8 +214,36 @@ function textAt(row: Record<string, unknown>, column: string): string | null {
   return typeof value === 'string' && value !== '' ? value : null;
 }
 
-function unavailable(detail: unknown): CalendarOutcome {
-  console.error(CALENDAR_UNAVAILABLE, detail);
+/**
+ * Which check refused the read: logged beside {@link CALENDAR_UNAVAILABLE},
+ * never shown, and closed so a new check names itself here.
+ */
+type CalendarRefusal =
+  | 'session'
+  | 'rejected'
+  | 'answer'
+  | 'error'
+  | 'data'
+  | 'count'
+  | 'organization'
+  | 'viewer'
+  | 'team'
+  | 'type'
+  | 'step'
+  | 'assignment'
+  | 'ids'
+  | 'step type'
+  | 'positions'
+  | 'assignment team'
+  | 'assignment step'
+  | 'versions'
+  | 'members'
+  | 'memberships'
+  | 'statuses';
+
+function unavailable(reason: CalendarRefusal, detail?: unknown): CalendarOutcome {
+  if (detail === undefined) console.error(CALENDAR_UNAVAILABLE, reason);
+  else console.error(CALENDAR_UNAVAILABLE, reason, detail);
 
   return { ok: false, code: CALENDAR_UNAVAILABLE };
 }
@@ -220,45 +264,54 @@ function embedded(organization: Record<string, unknown>, relation: string): read
  * of one pattern at one position, and on an assignment naming a team the
  * answer lacks, a step outside its own pattern, or a date its team already
  * has a version on. Unavailable, too, on no session and on anything but
- * EXACTLY ONE viewer member row, whose role is not one this build knows, or
- * whose membership versions name another tenant, a team the answer lacks, or
- * one date twice. Unavailable, finally, on a people read that is rejected,
- * errors, answers anything but an array, or holds a malformed row or one id
- * twice, and on an organization-level membership version of another tenant,
- * naming a team the answer lacks, or on a date its member already has a
- * version on. What the database's keys guarantee is re-checked, so a defect
- * surfaces as the message, never as a projection that throws.
+ * EXACTLY ONE viewer member row, whose role is not one this build knows,
+ * whose own membership versions name another tenant, a team the answer lacks,
+ * or one date twice, or whose id the members read does not name.
+ * Unavailable, finally, on a members read that is rejected, errors, answers
+ * anything but an array, or holds a malformed row (a rank neither text nor
+ * null included) or one id twice; on an organization-level membership version
+ * of another tenant, naming a team the answer lacks, with a position neither
+ * text nor null, or on a date its member already has a version on; and on a
+ * status version of another tenant, with an `active` that is not a boolean,
+ * or on a date its member already has a version on. What the database's keys
+ * guarantee is re-checked, so a defect surfaces as the message, never as a
+ * projection that throws.
+ *
+ * A VALID VERSION OF A MEMBER THE MEMBERS READ DOES NOT NAME IS IGNORED, as
+ * 3.3b ignored it: the select and the rpc are two requests, so a member
+ * created between them is a race, not a defect, and must not take the
+ * calendar down.
  */
 export async function readCalendar(
   table: CalendarTable,
-  people: CalendarPeopleRpc,
+  membersRead: CalendarMembersRpc,
   session: () => Promise<Session | null>,
 ): Promise<CalendarOutcome> {
   let answered: CalendarAnswer;
-  let peopleAnswered: CalendarPeopleAnswer;
+  let membersAnswered: CalendarMembersAnswer;
 
   try {
     const current = await session();
 
     if (current === null) return unavailable('session');
 
-    [answered, peopleAnswered] = await Promise.all([
+    [answered, membersAnswered] = await Promise.all([
       table
         .select(CALENDAR_COLUMNS, CALENDAR_COUNT)
         .filter(CALENDAR_VIEWER_COLUMN, CALENDAR_VIEWER_OPERATOR, current.user.id),
-      people.rpc(CALENDAR_PEOPLE_FUNCTION),
+      membersRead.rpc(CALENDAR_MEMBERS_FUNCTION),
     ]);
   } catch (cause) {
-    return unavailable(cause);
+    return unavailable('rejected', cause);
   }
 
-  if (!isRecord(answered)) return unavailable(typeof answered);
-  if (answered.error !== null) return unavailable(answered.error.code);
+  if (!isRecord(answered)) return unavailable('answer', typeof answered);
+  if (answered.error !== null) return unavailable('error', answered.error.code);
   if (!Array.isArray(answered.data)) return unavailable('data');
 
   const rows: readonly unknown[] = answered.data;
 
-  if (answered.count !== 1 || rows.length !== 1) return unavailable(answered.count);
+  if (answered.count !== 1 || rows.length !== 1) return unavailable('count', answered.count);
 
   const organization = rows[0];
 
@@ -266,19 +319,23 @@ export async function readCalendar(
 
   const organizationId = textAt(organization, 'id');
   const timeZone = textAt(organization, 'timezone');
+  const usesFireRanks = organization['uses_fire_ranks'];
   const teamRows = embedded(organization, 'teams');
   const typeRows = embedded(organization, 'shift_types');
   const stepRows = embedded(organization, 'rotation_steps');
   const assignmentRows = embedded(organization, 'rotation_assignments');
   const memberRows = embedded(organization, 'members');
   const membershipRows = embedded(organization, 'team_membership_versions');
+  const statusRows = embedded(organization, 'member_status_versions');
 
   if (organizationId === null || timeZone === null) return unavailable('organization');
+  if (typeof usesFireRanks !== 'boolean') return unavailable('organization');
   if (teamRows === null || typeRows === null || stepRows === null || assignmentRows === null) {
     return unavailable('organization');
   }
   if (memberRows === null || memberRows.length !== 1) return unavailable('viewer');
   if (membershipRows === null) return unavailable('memberships');
+  if (statusRows === null) return unavailable('statuses');
 
   const teams: TeamRow[] = [];
 
@@ -344,66 +401,104 @@ export async function readCalendar(
 
   if (versions.size !== assignments.length) return unavailable('versions');
 
-  const viewer = viewerOf(memberRows[0], organizationId, teamIds);
+  const identities = identitiesOf(membersAnswered);
 
-  if (viewer === null) return unavailable('viewer');
+  if (identities === null) return unavailable('members');
 
-  const memberships = membershipsByMemberOf(membershipRows, organizationId, teamIds);
+  const memberIds = new Set(identities.map((identity) => identity.id));
+  const memberships = versionsByMemberOf(membershipRows, memberIds, (row) =>
+    membershipOf(row, organizationId, teamIds, true),
+  );
 
   if (memberships === null) return unavailable('memberships');
 
-  const persons = peopleOf(peopleAnswered, memberships);
+  const statuses = versionsByMemberOf(statusRows, memberIds, (row) => statusOf(row, organizationId));
 
-  if (persons === null) return unavailable('people');
+  if (statuses === null) return unavailable('statuses');
+
+  const viewer = viewerOf(memberRows[0], organizationId, teamIds, memberIds, memberships, statuses);
+
+  if (viewer === null) return unavailable('viewer');
+
+  const members: CalendarMember[] = identities
+    .map((identity) => ({
+      ...identity,
+      memberships: memberships.get(identity.id) ?? [],
+      statuses: statuses.get(identity.id) ?? [],
+    }))
+    .sort(compareMembers);
 
   types.sort(compareCreation);
 
   return {
     ok: true,
-    snapshot: { organizationId, timeZone, teams, types, steps, assignments, viewer, people: persons },
+    snapshot: { organizationId, timeZone, usesFireRanks, teams, types, steps, assignments, viewer, members },
   };
 }
 
-function byEffectiveFrom(left: MembershipVersion, right: MembershipVersion): number {
+function byEffectiveFrom(left: { readonly effectiveFrom: string }, right: { readonly effectiveFrom: string }): number {
   return left.effectiveFrom < right.effectiveFrom ? -1 : 1;
 }
 
 /**
  * One membership version as the calendar embeds it, or `null`: another
- * tenant's, a malformed date, or a team that is neither `null` nor one the
- * answer holds.
+ * tenant's, a malformed date, a team that is neither `null` nor one the
+ * answer holds, or — where the embed carries it (`positioned`) — a position
+ * that is neither text nor `null`. The viewer's own embed carries no
+ * position; it is only validated, never carried ({@link viewerOf}).
  */
 function membershipOf(
   version: unknown,
   organizationId: string,
   teamIds: ReadonlySet<string>,
+  positioned: boolean,
 ): MembershipVersion | null {
   if (!isRecord(version) || textAt(version, 'organization_id') !== organizationId) return null;
 
   const effectiveFrom = textAt(version, 'effective_from');
   const teamId = version['team_id'];
+  const position = positioned ? version['position'] : null;
 
   if (effectiveFrom === null || !isIsoDate(effectiveFrom)) return null;
   if (teamId !== null && (typeof teamId !== 'string' || !teamIds.has(teamId))) return null;
+  if (position !== null && typeof position !== 'string') return null;
 
-  return { teamId, effectiveFrom };
+  return { teamId, position, effectiveFrom };
 }
 
 /**
- * Every member's team membership history from the organization-level embed,
- * by member id, each in date order; `null` when one version does not validate
- * ({@link membershipOf}), names no member, or repeats a date its member
- * already has.
+ * One status version as the calendar embeds it, or `null`: another tenant's,
+ * a malformed date, or an `active` that is not a boolean.
  */
-function membershipsByMemberOf(
+function statusOf(version: unknown, organizationId: string): StatusVersion | null {
+  if (!isRecord(version) || textAt(version, 'organization_id') !== organizationId) return null;
+
+  const effectiveFrom = textAt(version, 'effective_from');
+  const active = version['active'];
+
+  if (effectiveFrom === null || !isIsoDate(effectiveFrom)) return null;
+  if (typeof active !== 'boolean') return null;
+
+  return { active, effectiveFrom };
+}
+
+/**
+ * Every member's history from an organization-level versions embed, by member
+ * id, each in date order; `null` when one version does not validate
+ * (`versionOf`), names no member, or repeats a date its member already has.
+ * A valid version of a member outside `memberIds` — one the members read, a
+ * separate request, did not yet name — is checked like any other and then
+ * left out.
+ */
+function versionsByMemberOf<Version extends { readonly effectiveFrom: string }>(
   rows: readonly unknown[],
-  organizationId: string,
-  teamIds: ReadonlySet<string>,
-): ReadonlyMap<string, readonly MembershipVersion[]> | null {
-  const byMember = new Map<string, MembershipVersion[]>();
+  memberIds: ReadonlySet<string>,
+  versionOf: (row: unknown) => Version | null,
+): ReadonlyMap<string, readonly Version[]> | null {
+  const byMember = new Map<string, Version[]>();
 
   for (const row of rows) {
-    const version = membershipOf(row, organizationId, teamIds);
+    const version = versionOf(row);
     const memberId = isRecord(row) ? textAt(row, 'member_id') : null;
 
     if (version === null || memberId === null) return null;
@@ -416,59 +511,83 @@ function membershipsByMemberOf(
     byMember.set(memberId, versions);
   }
 
-  for (const versions of byMember.values()) versions.sort(byEffectiveFrom);
+  const known = new Map<string, Version[]>();
 
-  return byMember;
+  for (const [memberId, versions] of byMember) {
+    if (memberIds.has(memberId)) known.set(memberId, versions.sort(byEffectiveFrom));
+  }
+
+  return known;
 }
 
-function comparePeople(first: CalendarPerson, second: CalendarPerson): number {
-  // By name under the Croatian collation, then by id, as `compareMembers`, so
-  // two people who share a name sort the same way every time.
+function compareMembers(first: CalendarMember, second: CalendarMember): number {
+  // By name under the Croatian collation, then by id, as `@/teams/roster`'s
+  // `compareMembers`, so two members who share a name sort the same way every
+  // time.
   return compareText(first.name, second.name) || compareText(first.id, second.id);
 }
 
+/** A member as `calendar_members()` answers it, before their histories are attached. */
+interface CalendarMemberIdentity {
+  readonly id: string;
+  readonly name: string;
+  readonly fireRank: string | null;
+}
+
 /**
- * The people `calendar_people()` answered, each with their memberships, or
- * `null`: a malformed answer, an error, data that is not an array, a row
- * without a text id and a non-blank name, or one id twice. Only `id` and `name` are
- * carried off a row, whatever else might arrive.
+ * The members `calendar_members()` answered, or `null`: a malformed answer,
+ * an error, data that is not an array, a row without a text id and a
+ * non-blank name or with a rank neither text nor `null`, or one id twice.
+ * Only `id`, `name` and `fire_rank` are carried off a row, whatever else
+ * might arrive.
  */
-function peopleOf(
-  answered: unknown,
-  memberships: ReadonlyMap<string, readonly MembershipVersion[]>,
-): CalendarPerson[] | null {
+function identitiesOf(answered: unknown): CalendarMemberIdentity[] | null {
   if (!isRecord(answered) || answered['error'] !== null) return null;
 
   const rows = answered['data'];
 
   if (!Array.isArray(rows)) return null;
 
-  const people: CalendarPerson[] = [];
+  const identities: CalendarMemberIdentity[] = [];
 
   for (const row of rows as readonly unknown[]) {
     if (!isRecord(row)) return null;
 
     const id = textAt(row, 'id');
     const name = row['name'];
+    const fireRank = row['fire_rank'];
 
     // Blank is not a name `members` can hold (`btrim(name) <> ''`).
     if (id === null || typeof name !== 'string' || name.trim() === '') return null;
+    if (fireRank !== null && typeof fireRank !== 'string') return null;
 
-    people.push({ id, name, memberships: memberships.get(id) ?? [] });
+    identities.push({ id, name, fireRank });
   }
 
-  if (new Set(people.map((person) => person.id)).size !== people.length) return null;
+  if (new Set(identities.map((identity) => identity.id)).size !== identities.length) return null;
 
-  return people.sort(comparePeople);
+  return identities;
 }
 
 /**
  * The viewer's member row, or `null` when it does not validate: another
  * tenant's, a role this build does not know, a membership version of another
  * tenant, with a malformed date, naming a team the answer lacks, or on a date
- * another version already has.
+ * another version already has — or a member the members read does not name.
+ *
+ * ONE HISTORY PER PERSON (story 3.4a): the viewer's own embed is still
+ * validated, as the tripwire it always was, but the memberships and statuses
+ * carried are the organization-level ones under their id — exactly those of
+ * their entry in `members`, positions included.
  */
-function viewerOf(row: unknown, organizationId: string, teamIds: ReadonlySet<string>): CalendarViewer | null {
+function viewerOf(
+  row: unknown,
+  organizationId: string,
+  teamIds: ReadonlySet<string>,
+  memberIds: ReadonlySet<string>,
+  memberships: ReadonlyMap<string, readonly MembershipVersion[]>,
+  statuses: ReadonlyMap<string, readonly StatusVersion[]>,
+): CalendarViewer | null {
   if (!isRecord(row) || textAt(row, 'organization_id') !== organizationId) return null;
 
   const memberId = textAt(row, 'id');
@@ -477,21 +596,24 @@ function viewerOf(row: unknown, organizationId: string, teamIds: ReadonlySet<str
 
   if (memberId === null || role === null || versionRows === null) return null;
 
-  const memberships: MembershipVersion[] = [];
+  if (!memberIds.has(memberId)) return null;
+
   const dates = new Set<string>();
 
   for (const row of versionRows) {
-    const version = membershipOf(row, organizationId, teamIds);
+    const version = membershipOf(row, organizationId, teamIds, false);
 
     if (version === null || dates.has(version.effectiveFrom)) return null;
 
     dates.add(version.effectiveFrom);
-    memberships.push(version);
   }
 
-  memberships.sort(byEffectiveFrom);
-
-  return { memberId, role, memberships };
+  return {
+    memberId,
+    role,
+    memberships: memberships.get(memberId) ?? [],
+    statuses: statuses.get(memberId) ?? [],
+  };
 }
 
 /** The message a read failure renders as. Exhaustive. */
@@ -512,13 +634,13 @@ export function calendarMessageKey(failure: CalendarReadFailure): 'kalendar.erro
  */
 export function calendarQueryOptions(
   table: () => CalendarTable,
-  people: () => CalendarPeopleRpc,
+  membersRead: () => CalendarMembersRpc,
   session: () => Promise<Session | null> = currentSession,
 ) {
   return queryOptions({
     queryKey: CALENDAR_KEY,
     queryFn: async (): Promise<CalendarSnapshot> => {
-      const outcome = await readCalendar(table(), people(), session);
+      const outcome = await readCalendar(table(), membersRead(), session);
 
       if (!outcome.ok) throw new Error(outcome.code);
 
