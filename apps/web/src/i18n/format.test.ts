@@ -9,6 +9,8 @@ import {
   compareText,
   formatIsoDate,
   formatIsoDayMonth,
+  formatIsoMonthName,
+  formatIsoWeekdayName,
   formatMinuteOfDay,
   isIsoDate,
   nextIsoDate,
@@ -256,6 +258,9 @@ const UNZONED_ENTRY_POINTS = [
   'formatIsoDate',
   // Story 2.3b: the same calendar date, day and month only.
   'formatIsoDayMonth',
+  // Story 3.1: the month and weekday names of a calendar date.
+  'formatIsoMonthName',
+  'formatIsoWeekdayName',
   'isIsoDate',
   'nextIsoDate',
   // Story 2.1b. A nominal minute of the day — an hour band's start — which has
@@ -1154,5 +1159,34 @@ describe('formatIsoDayMonth (story 2.3b)', () => {
     expect(formatIsoDayMonth('2026-01-05')).toBe('05.01.');
     expect(formatIsoDayMonth('2026-02-30')).toBeNull();
     expect(formatIsoDayMonth('')).toBeNull();
+  });
+});
+
+describe('formatIsoMonthName and formatIsoWeekdayName (story 3.1)', () => {
+  it('name the month and weekday of a calendar date, whatever the device zone', () => {
+    expect(formatIsoMonthName('2026-09-01')).toBe('rujan');
+    expect(formatIsoMonthName('2026-01-31')).toBe('siječanj');
+    expect(formatIsoWeekdayName('2026-09-12')).toBe('subota');
+    expect(formatIsoWeekdayName('2026-09-14')).toBe('ponedjeljak');
+    // The first and last days of the calendar: noon UTC moves neither.
+    // 0001-01-01 is a Monday on the proleptic Gregorian calendar.
+    expect(formatIsoWeekdayName('0001-01-01')).toBe('ponedjeljak');
+    expect(formatIsoMonthName('0001-01-01')).toBe('siječanj');
+    expect(formatIsoWeekdayName('9999-12-31')).toBe('petak');
+    expect(formatIsoMonthName('9999-12-31')).toBe('prosinac');
+  });
+
+  it('admit the first years of the calendar, which a year rendered without padding refused', () => {
+    expect(isIsoDate('0001-01-01')).toBe(true);
+    expect(isIsoDate('0999-12-31')).toBe(true);
+    expect(formatIsoDate('0001-01-01')).toBe('01.01.0001');
+    expect(formatIsoDayMonth('0001-01-01')).toBe('01.01.');
+    expect(nextIsoDate('0999-12-31')).toBe('1000-01-01');
+  });
+
+  it('refuse what isIsoDate refuses', () => {
+    expect(formatIsoMonthName('2026-02-30')).toBeNull();
+    expect(formatIsoMonthName('2026-09')).toBeNull();
+    expect(formatIsoWeekdayName('')).toBeNull();
   });
 });

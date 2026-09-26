@@ -878,6 +878,18 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.builder.error.refused',
   'rotation.builder.error.saveUnavailable',
   'rotation.builder.error.nothingChanged',
+  // STORY 3.1: the calendar — the month heading, the previous and next
+  // months, `Ovaj mjesec`, the date column head, the no-rotation label for
+  // screen readers, the no-teams note and the one read failure. Its columns
+  // are teams, so `smjena` here is the Team.
+  'kalendar.monthHeading',
+  'kalendar.previous',
+  'kalendar.next',
+  'kalendar.current',
+  'kalendar.columnDate',
+  'kalendar.noRotation',
+  'kalendar.noTeams',
+  'kalendar.error.unavailable',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
@@ -934,6 +946,13 @@ const SHIFT_TYPE_NAMESPACE = 'rotation.shiftTypes.';
 const ROTATION_BUILDER_NAMESPACE = 'rotation.builder.';
 
 /**
+ * The calendar's namespace (story 3.1). Its columns are TEAMS, so `smjen`
+ * names the Team there as in {@link TEAM_NAMESPACE}, and `tip… smjen…` is
+ * refused: a cell shows its shift type by name.
+ */
+const CALENDAR_NAMESPACE = 'kalendar.';
+
+/**
  * `Tip smjene` in the inflections of `tip` the copy can use — tip, tipa, tipu,
  * tipom, tipovi, tipova, tipove, tipovima — and no other word starting `tip`
  * (`tipka smjene`, `tipično smjena` are not the term).
@@ -954,7 +973,11 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     return lowered.replace(SHIFT_TYPE_TERM, '').includes('smjen');
   }
 
-  if (!key.startsWith(TEAM_NAMESPACE) && !key.startsWith(ROTATION_BUILDER_NAMESPACE)) {
+  if (
+    !key.startsWith(TEAM_NAMESPACE) &&
+    !key.startsWith(ROTATION_BUILDER_NAMESPACE) &&
+    !key.startsWith(CALENDAR_NAMESPACE)
+  ) {
     return lowered.includes('smjen');
   }
 
@@ -1086,6 +1109,9 @@ describe('the messages obey the voice rules that bind every string', () => {
     // AMENDED BY STORY 2.3b: `rotation.builder` binds teams to steps, so it
     // says the Team as `smjene` does — and, as `smjene` does, never the Shift
     // Type.
+    //
+    // AMENDED BY STORY 3.1: `kalendar` has a column per team, and says the
+    // Team the same way, never the Shift Type.
     const found = leafKeys(resource())
       .map((key) => ({ key, message: String(messageAt(key)) }))
       .filter(({ key, message }) => teamTermOutOfTurn(key, message));

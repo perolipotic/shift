@@ -418,6 +418,30 @@ describe('the shell route tree', () => {
     expect(matched.map((one) => one.routeId)).toEqual(['__root__']);
     expect(matched[0]?._notFound).toBe(true);
   });
+
+  it('chooses the calendar month by a search parameter, not a child route (story 3.1)', () => {
+    // `?mjesec=` keeps the deep-link chain above exactly as it was: a child
+    // route under `/kalendar` would have moved `_notFound` off the root.
+    const matched = (
+      router as unknown as {
+        matchRoutes: (path: string, search: object) => { routeId: string; search?: unknown; _notFound?: boolean }[];
+      }
+    ).matchRoutes('/kalendar', { mjesec: '2031-02' });
+
+    expect(matched.map((one) => one.routeId)).toEqual(['__root__', '/_app', '/_app/kalendar']);
+    expect(matched.some((one) => one._notFound === true)).toBe(false);
+    expect(matched.at(-1)?.search).toEqual({ mjesec: '2031-02' });
+    expect(kalendarRoute.options.validateSearch).toBeDefined();
+
+    // A month the calendar cannot show is dropped, so the screen falls back.
+    const invalid = (
+      router as unknown as {
+        matchRoutes: (path: string, search: object) => { search?: unknown; _strictSearch?: unknown }[];
+      }
+    ).matchRoutes('/kalendar', { mjesec: '2026-13' });
+
+    expect(invalid.at(-1)?._strictSearch).toEqual({});
+  });
 });
 
 describe('the eight destinations are registered and each renders its own screen', () => {
