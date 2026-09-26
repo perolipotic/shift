@@ -425,7 +425,7 @@ development_status:
   epic-2-retrospective: optional
 
   epic-3: in-progress
-  3-1-anyone-reads-a-month: review
+  3-1-anyone-reads-a-month: done
   3-2-the-month-is-readable-on-a-phone-and-by-a-screen-reader: backlog
   3-3-filtering-to-one-team-or-one-person: backlog
   3-4-opening-a-day-to-see-who-is-actually-on-it: backlog
