@@ -3,16 +3,28 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   CALENDAR_CELL_CLASS,
+  COMPRESSED_CELL_CLASS,
   NO_ROTATION_CELL_CLASS,
   NO_ROTATION_SHOWN,
   SKELETON_COLUMN_COUNT,
   SKELETON_GRID_STYLE,
+  PHONE_MEDIA_QUERY,
+  calendarDayListOf,
+  calendarModeOf,
   calendarMonthOf,
   calendarMonthOutcomeOf,
   calendarSearchOf,
+  calendarSearchTo,
   calendarTodayOf,
+  defaultModeOf,
   isCalendarMonth,
   monthShownOf,
+  teamLettersOf,
+  phoneStoreOf,
+  typeLettersOf,
+  type CalendarDay,
+  type CalendarMonth,
+  type PhoneMediaQuery,
 } from '@/calendar/month';
 import { CALENDAR_UNAVAILABLE, readCalendar, type CalendarSnapshot } from '@/calendar/snapshot';
 import { initLocalization } from '@/i18n';
@@ -21,9 +33,14 @@ import {
   TODAY,
   UJ5,
   assignmentRow,
-  organizationRow,
+  calendarOrganizationRow,
+  calendarTableOf,
+  membershipRow,
   stepRow,
   teamRow,
+  typeRow,
+  viewerRow,
+  viewerSession,
   type FixtureRows,
 } from '@/rotation/rotation.fixture';
 import { NONWORKING_CHIP_CLASS, NO_TIMES_SHOWN, slotColourClassOf } from '@/shift-types/list';
@@ -35,15 +52,26 @@ import { NONWORKING_CHIP_CLASS, NO_TIMES_SHOWN, slotColourClassOf } from '@/shif
  * which the snapshot's suite and the e2e suite hold.
  */
 
-async function snapshotOf(rows: FixtureRows, timezone = 'Europe/Zagreb'): Promise<CalendarSnapshot> {
-  const { members: _members, ...organization } = organizationRow(rows, timezone);
-  const outcome = await readCalendar({
-    select: () => Promise.resolve({ data: [organization], error: null, count: 1 }),
-  });
+async function snapshotOf(
+  rows: FixtureRows,
+  { timezone = 'Europe/Zagreb', viewers = null as readonly Record<string, unknown>[] | null } = {},
+): Promise<CalendarSnapshot> {
+  const organization = calendarOrganizationRow(rows, { timezone, viewers });
+  const outcome = await readCalendar(
+    calendarTableOf({ data: [organization], error: null, count: 1 }),
+    viewerSession(),
+  );
 
   if (!outcome.ok) throw new Error(outcome.code);
 
   return outcome.snapshot;
+}
+
+/** The day list of a month whose day list did not fail. */
+function daysOf(month: CalendarMonth): readonly CalendarDay[] | null {
+  if (!month.days.ok) throw new Error(month.days.code);
+
+  return month.days.days;
 }
 
 let pilot: CalendarSnapshot;
@@ -143,6 +171,7 @@ describe('this month', () => {
       teamId: 'pilot-smjena-a',
       shiftTypeId: 'pilot-dan',
       name: 'Dan',
+      letter: 'D',
       className: `${CALENDAR_CELL_CLASS} ${slotColourClassOf(1)}`,
       range: '07:00–19:00',
     });
@@ -152,6 +181,7 @@ describe('this month', () => {
       teamId: 'pilot-smjena-c',
       shiftTypeId: 'pilot-slobodno',
       name: 'Slobodno',
+      letter: 'S',
       className: `${CALENDAR_CELL_CLASS} ${NONWORKING_CHIP_CLASS}`,
       range: null,
     });
@@ -200,6 +230,7 @@ describe('the matrix', () => {
         teamId: cell.teamId,
         shiftTypeId: null,
         name: null,
+        letter: null,
         className: `${CALENDAR_CELL_CLASS} ${NO_ROTATION_CELL_CLASS}`,
         range: null,
       });
@@ -344,5 +375,278 @@ describe('the guard', () => {
 
   it('shapes the skeleton row from its column count', () => {
     expect(SKELETON_GRID_STYLE.gridTemplateColumns).toBe(`repeat(${String(SKELETON_COLUMN_COUNT + 1)}, minmax(0, 1fr))`);
+  });
+});
+
+describe('the mode (story 3.2a)', () => {
+  it('keeps a valid prikaz beside the month and drops anything else', () => {
+    expect(calendarSearchOf({ prikaz: 'moj' })).toEqual({ prikaz: 'moj' });
+    expect(calendarSearchOf({ prikaz: 'sve', mjesec: '2026-10' })).toEqual({ mjesec: '2026-10', prikaz: 'sve' });
+    for (const bad of ['MOJ', 'all', '', 1, null, undefined, ['moj']]) {
+      expect(calendarSearchOf({ prikaz: bad, mjesec: '2026-10' }), String(bad)).toEqual({ mjesec: '2026-10' });
+    }
+  });
+
+  it('defaults to the day list only for a member-role account on a phone', () => {
+    expect(defaultModeOf('member_role', true)).toBe('moj');
+    expect(defaultModeOf('member_role', false)).toBe('sve');
+    expect(defaultModeOf('admin', true)).toBe('sve');
+    expect(defaultModeOf('admin', false)).toBe('sve');
+    expect(PHONE_MEDIA_QUERY).toBe('(max-width: 639px)');
+  });
+
+  it('shows the mode the search names, whatever the role or width', () => {
+    for (const role of ['admin', 'member_role'] as const) {
+      for (const isPhone of [true, false]) {
+        expect(calendarModeOf({ prikaz: 'moj' }, role, isPhone)).toBe('moj');
+        expect(calendarModeOf({ prikaz: 'sve' }, role, isPhone)).toBe('sve');
+        expect(calendarModeOf({}, role, isPhone)).toBe(defaultModeOf(role, isPhone));
+      }
+    }
+  });
+
+  it('keeps the mode on month navigation and Ovaj mjesec, and never writes one in', () => {
+    expect(calendarSearchTo({ prikaz: 'moj' }, { mjesec: '2026-10' })).toEqual({ mjesec: '2026-10', prikaz: 'moj' });
+    expect(calendarSearchTo({ mjesec: '2026-10', prikaz: 'sve' }, { mjesec: null })).toEqual({ prikaz: 'sve' });
+    expect(calendarSearchTo({}, { mjesec: '2026-10' })).toEqual({ mjesec: '2026-10' });
+    expect(calendarSearchTo({ mjesec: '2026-10' }, { mjesec: null })).toEqual({});
+    // The switch keeps the month.
+    expect(calendarSearchTo({ mjesec: '2026-10' }, { prikaz: 'moj' })).toEqual({ mjesec: '2026-10', prikaz: 'moj' });
+    expect(calendarSearchTo({ mjesec: '2026-10', prikaz: 'moj' }, { prikaz: 'sve' })).toEqual({
+      mjesec: '2026-10',
+      prikaz: 'sve',
+    });
+  });
+});
+
+describe('the letters (story 3.2a)', () => {
+  it('names a team by the first letter of its last word, and a type by its first letter', () => {
+    expect(teamLettersOf(['Smjena A', 'Smjena B', 'Smjena C', 'Smjena D'])).toEqual(['A', 'B', 'C', 'D']);
+    expect(typeLettersOf(['Dan', 'Noć', 'Slobodno'])).toEqual(['D', 'N', 'S']);
+    expect(typeLettersOf(['Jutarnja', 'Popodnevna', 'Noćna', 'Slobodno'])).toEqual(['J', 'P', 'N', 'S']);
+    expect(teamLettersOf(['smjena čvor', '  Ekipa  ', 'Smjena'])).toEqual(['Č', 'E', 'S']);
+  });
+
+  it('widens colliding letters to two, and still colliding ones to the whole word', () => {
+    expect(teamLettersOf(['Smjena Alfa', 'Smjena Ante', 'Smjena B'])).toEqual(['AL', 'AN', 'B']);
+    expect(typeLettersOf(['Dan', 'Dežurstvo', 'Noć'])).toEqual(['DA', 'DE', 'N']);
+    expect(teamLettersOf(['Smjena Alfa', 'Smjena Alma'])).toEqual(['ALFA', 'ALMA']);
+    // A single letter collides with nothing once the rest widen.
+    expect(typeLettersOf(['Dan', 'Dnevna', 'D'])).toEqual(['DA', 'DN', 'D']);
+  });
+
+  it('puts the letters on the grid, the columns and the cells', async () => {
+    const month = calendarMonthOf(pilot, { mjesec: '2020-01' }, TODAY);
+
+    expect(month.columns.map((column) => column.letter)).toEqual(['A', 'B', 'C', 'D']);
+    expect(month.rows[0]!.cells.map((cell) => cell.letter)).toEqual(['D', 'N', 'S', 'S']);
+    expect(calendarMonthOf(uj5, { mjesec: '2020-01' }, TODAY).rows[0]!.cells.map((cell) => cell.letter)).toEqual([
+      'J',
+      'P',
+      'N',
+    ]);
+    const colliding = await snapshotOf({
+      ...PILOT,
+      teams: PILOT.teams.map((team, index) =>
+        index < 2 ? { ...team, name: ['Smjena Alfa', 'Smjena Ante'][index] } : team,
+      ),
+      types: [...PILOT.types, typeRow('pilot-dezurstvo', 'Dežurstvo', '2026-09-25T20:07:49.339741+00:00')],
+    });
+    const widened = calendarMonthOf(colliding, { mjesec: '2020-01' }, TODAY);
+
+    expect(widened.columns.map((column) => column.letter)).toEqual(['AL', 'AN', 'C', 'D']);
+    // Dežurstvo is in no rotation, so it is not shown and widens nothing.
+    expect(widened.rows[0]!.cells[0]!.letter).toBe('D');
+  });
+
+  it('makes a compressed cell a touch target below 640 px only', () => {
+    expect(COMPRESSED_CELL_CLASS.split(' ').every((name) => name.startsWith('max-sm:'))).toBe(true);
+    expect(COMPRESSED_CELL_CLASS).toContain('max-sm:min-h-11');
+    expect(COMPRESSED_CELL_CLASS).toContain('max-sm:min-w-11');
+  });
+});
+
+describe('the day list (story 3.2a)', () => {
+  it.each([
+    { fixture: 'pilot', snapshot: () => pilot },
+    { fixture: 'UJ-5', snapshot: () => uj5 },
+  ])("$fixture: every day is the viewer's team's cell in the grid", ({ snapshot }) => {
+    const shown = snapshot();
+    const month = calendarMonthOf(shown, {}, TODAY);
+    const team = shown.viewer.memberships[0]!.teamId;
+    const column = month.columns.findIndex((one) => one.id === team);
+
+    expect(daysOf(month)).toHaveLength(30);
+    for (const [index, day] of daysOf(month)!.entries()) {
+      const row = month.rows[index]!;
+
+      expect(day.date).toBe(row.date);
+      expect(day.dayMonth).toBe(row.dayMonth);
+      expect(day.weekday).toBe(row.weekday);
+      expect(day.isToday).toBe(row.isToday);
+      expect(day.teamId).toBe(team);
+      expect(day.cell).toEqual(row.cells[column]);
+    }
+    expect(daysOf(month)!.filter((day) => day.isToday).map((day) => day.date)).toEqual([TODAY]);
+    expect(calendarDayListOf(shown, '2026-09', TODAY)).toEqual(daysOf(month));
+  });
+
+  it('follows a move in the middle of the month: the 1st–14th from A, the 15th on from B', async () => {
+    const moved = await snapshotOf(PILOT, {
+      viewers: [viewerRow([membershipRow('pilot-smjena-a', '2026-10-01'), membershipRow('pilot-smjena-b', '2026-10-15')])],
+    });
+    const month = calendarMonthOf(moved, { mjesec: '2026-10' }, TODAY);
+
+    for (const [index, day] of daysOf(month)!.entries()) {
+      const column = day.date < '2026-10-15' ? 0 : 1;
+
+      expect(day.teamId, day.date).toBe(column === 0 ? 'pilot-smjena-a' : 'pilot-smjena-b');
+      expect(day.cell, day.date).toEqual(month.rows[index]!.cells[column]);
+    }
+  });
+
+  it('reads no team from the day the viewer leaves, and no list when on no team all month', async () => {
+    const left = await snapshotOf(PILOT, {
+      viewers: [viewerRow([membershipRow('pilot-smjena-a', '2020-01-01'), membershipRow(null, '2026-09-10')])],
+    });
+    const september = daysOf(calendarMonthOf(left, { mjesec: '2026-09' }, TODAY))!;
+
+    expect(september.slice(0, 9).every((day) => day.teamId === 'pilot-smjena-a' && day.cell !== null)).toBe(true);
+    expect(september.slice(9).every((day) => day.teamId === null && day.cell === null)).toBe(true);
+    expect(daysOf(calendarMonthOf(left, { mjesec: '2026-10' }, TODAY))).toBeNull();
+
+    const none = await snapshotOf(PILOT, { viewers: [viewerRow([])] });
+
+    expect(daysOf(calendarMonthOf(none, {}, TODAY))).toBeNull();
+  });
+
+  it("follows the viewer onto an archived team, which the grid hides", async () => {
+    const archived = await snapshotOf(
+      {
+        ...PILOT,
+        teams: [...PILOT.teams, teamRow('pilot-smjena-x', 'Smjena X', { archived: true })],
+        assignments: [
+          ...PILOT.assignments,
+          assignmentRow('pilot-smjena-x', 'pilot-rotation', 'pilot-step-0', '2020-01-01', '2020-01-01'),
+        ],
+      },
+      { viewers: [viewerRow([membershipRow('pilot-smjena-x', '2020-01-01')])] },
+    );
+    const month = calendarMonthOf(archived, { mjesec: '2020-01' }, TODAY);
+
+    expect(month.columns.map((column) => column.id)).not.toContain('pilot-smjena-x');
+    expect(daysOf(month)![0]!.teamId).toBe('pilot-smjena-x');
+    expect(daysOf(month)![0]!.cell?.name).toBe('Dan');
+  });
+
+  it('draws a day before the team has a rotation as the grid draws it: the mark', async () => {
+    const month = calendarMonthOf(pilot, { mjesec: '2019-12' }, TODAY);
+
+    // The fixture viewer joins on 2020-01-01: December 2019 has no team at all.
+    expect(daysOf(month)).toBeNull();
+    const early = await snapshotOf(PILOT, { viewers: [viewerRow([membershipRow('pilot-smjena-a', '2019-12-01')])] });
+    const days = daysOf(calendarMonthOf(early, { mjesec: '2019-12' }, TODAY))!;
+
+    expect(days.every((day) => day.cell?.name === null && day.cell.letter === null)).toBe(true);
+  });
+});
+
+describe('the review of 3.2a', () => {
+  it('keeps a decomposed letter one letter', () => {
+    const decomposed = 'Smjena C\u030Cvor';
+
+    expect(decomposed).not.toBe(decomposed.normalize('NFC'));
+    expect(teamLettersOf([decomposed, 'Smjena B'])).toEqual(['Č', 'B']);
+    expect(typeLettersOf(['C\u030Casna', 'Dan'])).toEqual(['Č', 'D']);
+    expect(typeLettersOf(['C\u030Casna', 'Čuvanje'])).toEqual(['ČA', 'ČU']);
+  });
+
+  it('falls back to the full name where even the whole words collide', () => {
+    expect(teamLettersOf(['Smjena A', 'Tim A', 'Smjena B'])).toEqual(['Smjena A', 'Tim A', 'B']);
+    const labels = teamLettersOf(['Prva Alfa', 'Druga Alfa', 'Alfa']);
+
+    expect(new Set(labels).size).toBe(3);
+    expect(labels).toEqual(['Prva Alfa', 'Druga Alfa', 'Alfa']);
+  });
+
+  it('letters only the types the month shows: an unused type never widens a shown one', async () => {
+    const withUnused = await snapshotOf({
+      ...PILOT,
+      types: [
+        ...PILOT.types,
+        typeRow('pilot-dezurstvo', 'Dežurstvo', '2026-09-25T20:07:49.339741+00:00', { archived: true }),
+        typeRow('pilot-nocna', 'Noćna', '2026-09-25T20:07:49.339841+00:00'),
+      ],
+    });
+    const month = calendarMonthOf(withUnused, { mjesec: '2026-09' }, TODAY);
+    const letters = new Set(month.rows.flatMap((row) => row.cells.map((cell) => cell.letter)));
+
+    expect(letters).toEqual(new Set(['D', 'N', 'S']));
+  });
+
+  it('keeps a day-list failure local: the grid still draws, and the day list is the read failure', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    // The viewer on an archived team whose version names a pattern with no
+    // steps: the grid never projects that team, the day list must.
+    const broken: CalendarSnapshot = {
+      ...pilot,
+      viewer: { ...pilot.viewer, memberships: [{ teamId: 'archived-team', effectiveFrom: '2020-01-01' }] },
+      assignments: [
+        ...pilot.assignments,
+        {
+          teamId: 'archived-team',
+          patternId: 'no-steps',
+          offsetStepId: 'missing',
+          anchorDate: '2020-01-01',
+          effectiveFrom: '2020-01-01',
+        },
+      ],
+    };
+
+    expect(() => calendarDayListOf(broken, '2026-09', TODAY)).toThrow(RangeError);
+    const outcome = calendarMonthOutcomeOf(broken, { mjesec: '2026-09' }, TODAY);
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    // Sve smjene: the grid is the grid it always was.
+    expect(outcome.month.rows).toEqual(calendarMonthOf(pilot, { mjesec: '2026-09' }, TODAY).rows);
+    // Moj raspored: the alert, and no list.
+    expect(outcome.month.days).toEqual({ ok: false, code: CALENDAR_UNAVAILABLE });
+    expect(logged).toHaveBeenCalledWith(CALENDAR_UNAVAILABLE, expect.any(RangeError));
+    logged.mockRestore();
+  });
+
+  it('follows the width through one shared media query list', () => {
+    const listeners = new Set<() => void>();
+    const asked: string[] = [];
+    const list: PhoneMediaQuery & { matches: boolean } = {
+      matches: false,
+      addEventListener: vi.fn((_type: 'change', listener: () => void) => {
+        listeners.add(listener);
+      }),
+      removeEventListener: vi.fn((_type: 'change', listener: () => void) => {
+        listeners.delete(listener);
+      }),
+    };
+    const store = phoneStoreOf((query) => {
+      asked.push(query);
+
+      return list;
+    });
+
+    expect(asked).toEqual([]);
+    expect(store.get()).toBe(false);
+    const onChange = vi.fn();
+    const unsubscribe = store.subscribe(onChange);
+
+    expect(list.addEventListener).toHaveBeenCalledWith('change', onChange);
+    list.matches = true;
+    for (const listener of listeners) listener();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(store.get()).toBe(true);
+    unsubscribe();
+    expect(list.removeEventListener).toHaveBeenCalledWith('change', onChange);
+    expect(listeners.size).toBe(0);
+    expect(asked).toEqual([PHONE_MEDIA_QUERY]);
   });
 });

@@ -18,6 +18,8 @@ import {
   CALENDAR_READ_STALE_MS,
   CALENDAR_READ_TABLE,
   CALENDAR_UNAVAILABLE,
+  CALENDAR_VIEWER_COLUMN,
+  CALENDAR_VIEWER_OPERATOR,
   calendarMessageKey,
   calendarQueryOptions,
   calendarSurfaceStateOf,
@@ -29,43 +31,42 @@ import {
 import {
   OTHER_ORGANIZATION,
   PILOT,
+  SEEDED,
   UJ5,
+  VIEWER_AUTH_USER,
+  VIEWER_MEMBER,
   assignmentRow,
-  organizationRow,
+  calendarOrganizationRow,
+  calendarTableOf,
+  membershipRow,
   stepRow,
   teamRow,
   typeRow,
+  viewerRow,
+  viewerSession,
   type FixtureRows,
 } from '@/rotation/rotation.fixture';
 
 /**
  * Story 3.1's read, executed rather than read (AD-15): the one select, the
  * parsing, the tenant tripwire, the query options and the surface state, over
- * both fixtures, with a real `QueryObserver`.
+ * both fixtures, with a real `QueryObserver`. Story 3.2a's viewer row: the
+ * filter, the session and every bad-embed row of its matrix.
  */
 
-/** The organization as the calendar's read embeds it: no members. */
-function answerOf(rows: FixtureRows, timezone = 'Europe/Zagreb'): CalendarAnswer {
-  const { members: _members, ...organization } = organizationRow(rows, timezone);
-
-  return { data: [organization], error: null, count: 1 };
+/** The organization as the calendar's read embeds it: the viewer's member row alone. */
+function answerOf(rows: FixtureRows, viewers: readonly Record<string, unknown>[] | null = null): CalendarAnswer {
+  return { data: [calendarOrganizationRow(rows, { viewers })], error: null, count: 1 };
 }
 
 function tableOf(answer: CalendarAnswer): CalendarTable & { readonly seen: unknown[][] } {
-  const seen: unknown[][] = [];
-
-  return {
-    seen,
-    select(columns, options) {
-      seen.push([columns, options]);
-
-      return Promise.resolve(answer);
-    },
-  };
+  return calendarTableOf(answer);
 }
 
+const session = viewerSession();
+
 async function snapshotOf(rows: FixtureRows): Promise<CalendarSnapshot> {
-  const outcome = await readCalendar(tableOf(answerOf(rows)));
+  const outcome = await readCalendar(tableOf(answerOf(rows)), session);
 
   if (!outcome.ok) throw new Error(outcome.code);
 
@@ -82,10 +83,14 @@ describe('the read', () => {
     { fixture: 'UJ-5', rows: UJ5, teams: 3, types: 4, steps: 5 },
   ])('$fixture: reads the organization and everything the month draws from in one exact-count select', async ({ rows, teams, types, steps }) => {
     const table = tableOf(answerOf(rows));
-    const outcome = await readCalendar(table);
+    const outcome = await readCalendar(table, session);
 
     expect(CALENDAR_READ_TABLE).toBe('organizations');
-    expect(table.seen).toEqual([[CALENDAR_COLUMNS, CALENDAR_COUNT]]);
+    expect(table.seen).toEqual([
+      ['select', CALENDAR_COLUMNS, CALENDAR_COUNT],
+      ['filter', 'members.auth_user_id', 'eq', VIEWER_AUTH_USER],
+    ]);
+    expect([CALENDAR_VIEWER_COLUMN, CALENDAR_VIEWER_OPERATOR]).toEqual(['members.auth_user_id', 'eq']);
     expect(CALENDAR_COUNT).toEqual({ count: 'exact' });
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
@@ -94,6 +99,11 @@ describe('the read', () => {
     expect(outcome.snapshot.types).toHaveLength(types);
     expect(outcome.snapshot.steps).toHaveLength(steps);
     expect(outcome.snapshot.assignments).toHaveLength(teams);
+    expect(outcome.snapshot.viewer).toEqual({
+      memberId: VIEWER_MEMBER,
+      role: 'member_role',
+      memberships: [{ teamId: (rows.teams[0] as { id: string }).id, effectiveFrom: SEEDED }],
+    });
   });
 
   it('selects what a member may read and nothing more', () => {
@@ -102,8 +112,16 @@ describe('the read', () => {
     expect(CALENDAR_COLUMNS).toContain('shift_type_versions(');
     expect(CALENDAR_COLUMNS).toContain('rotation_steps(');
     expect(CALENDAR_COLUMNS).toContain('rotation_assignments(');
-    // A member reads only their own member row, and the calendar names no author.
-    expect(CALENDAR_COLUMNS).not.toContain('members(');
+    // The viewer's own member row: its tenant, id, role and team history, and
+    // nothing that names, ranks or positions a person.
+    expect(CALENDAR_COLUMNS).toContain(
+      'members(organization_id,id,role,team_membership_versions(organization_id,team_id,effective_from))',
+    );
+    const member = /members\(([^()]*)/.exec(CALENDAR_COLUMNS)?.[1] ?? '';
+
+    expect(member).toBe('organization_id,id,role,team_membership_versions');
+    expect(/team_membership_versions\(([^)]*)\)/.exec(CALENDAR_COLUMNS)?.[1]).toBe('organization_id,team_id,effective_from');
+    expect(CALENDAR_COLUMNS).not.toMatch(/auth_user_id|email/);
     expect(CALENDAR_COLUMNS).not.toContain('created_by');
     const assignments = /rotation_assignments\(([^)]*)\)/.exec(CALENDAR_COLUMNS)?.[1] ?? '';
 
@@ -127,11 +145,13 @@ describe('the read', () => {
 
   it('refuses a rejected call, an error, and anything but exactly one organization', async () => {
     quiet();
-    expect(await readCalendar({ select: () => Promise.reject(new Error('down')) })).toEqual(REFUSED);
-    expect(await readCalendar(tableOf({ data: null, error: { code: '500' }, count: null }))).toEqual(REFUSED);
-    expect(await readCalendar(tableOf({ ...answerOf(PILOT), count: 2 }))).toEqual(REFUSED);
-    expect(await readCalendar(tableOf({ data: [], error: null, count: 0 }))).toEqual(REFUSED);
-    expect(await readCalendar(tableOf({ data: [{ id: 'x' }], error: null, count: 1 }))).toEqual(REFUSED);
+    const rejecting: CalendarTable = { select: () => ({ filter: () => Promise.reject(new Error('down')) }) };
+
+    expect(await readCalendar(rejecting, session)).toEqual(REFUSED);
+    expect(await readCalendar(tableOf({ data: null, error: { code: '500' }, count: null }), session)).toEqual(REFUSED);
+    expect(await readCalendar(tableOf({ ...answerOf(PILOT), count: 2 }), session)).toEqual(REFUSED);
+    expect(await readCalendar(tableOf({ data: [], error: null, count: 0 }), session)).toEqual(REFUSED);
+    expect(await readCalendar(tableOf({ data: [{ id: 'x' }], error: null, count: 1 }), session)).toEqual(REFUSED);
     vi.restoreAllMocks();
   });
 
@@ -152,7 +172,7 @@ describe('the read', () => {
         ],
       },
     ]) {
-      expect(await readCalendar(tableOf(answerOf(rows)))).toEqual(REFUSED);
+      expect(await readCalendar(tableOf(answerOf(rows)), session)).toEqual(REFUSED);
     }
     vi.restoreAllMocks();
   });
@@ -173,8 +193,84 @@ describe('the read', () => {
       // A malformed date.
       { ...PILOT, assignments: [assignmentRow('pilot-smjena-a', 'pilot-rotation', 'pilot-step-0', '2020-01-01', '2020-02-30')] },
     ]) {
-      expect(await readCalendar(tableOf(answerOf(rows)))).toEqual(REFUSED);
+      expect(await readCalendar(tableOf(answerOf(rows)), session)).toEqual(REFUSED);
     }
+    vi.restoreAllMocks();
+  });
+
+  it('reads the viewer\'s history in date order, a left team and archived teams included', async () => {
+    const moved = await readCalendar(
+      tableOf(
+        answerOf(
+          { ...PILOT, teams: [...PILOT.teams, teamRow('pilot-smjena-x', 'Smjena X', { archived: true })] },
+          [
+            viewerRow(
+              [
+                membershipRow(null, '2026-09-10'),
+                membershipRow('pilot-smjena-x', '2020-01-01'),
+                membershipRow('pilot-smjena-b', '2024-05-01'),
+              ],
+              { role: 'admin' },
+            ),
+          ],
+        ),
+      ),
+      session,
+    );
+
+    expect(moved.ok && moved.snapshot.viewer).toEqual({
+      memberId: VIEWER_MEMBER,
+      role: 'admin',
+      memberships: [
+        { teamId: 'pilot-smjena-x', effectiveFrom: '2020-01-01' },
+        { teamId: 'pilot-smjena-b', effectiveFrom: '2024-05-01' },
+        { teamId: null, effectiveFrom: '2026-09-10' },
+      ],
+    });
+    const none = await readCalendar(tableOf(answerOf(PILOT, [viewerRow([])])), session);
+
+    expect(none.ok && none.snapshot.viewer.memberships).toEqual([]);
+  });
+
+  it('refuses no session, and a session that cannot be read, without reading', async () => {
+    quiet();
+    const table = tableOf(answerOf(PILOT));
+
+    expect(await readCalendar(table, () => Promise.resolve(null))).toEqual(REFUSED);
+    expect(await readCalendar(table, () => Promise.reject(new Error('storage')))).toEqual(REFUSED);
+    expect(table.seen).toEqual([]);
+    vi.restoreAllMocks();
+  });
+
+  it('refuses every bad viewer embed', async () => {
+    quiet();
+    const own = membershipRow('pilot-smjena-a', SEEDED);
+
+    for (const viewers of [
+      // No member row, and two.
+      [],
+      [viewerRow([own]), viewerRow([own], { id: 'someone-else' })],
+      // Another tenant's row, or a version of another tenant.
+      [viewerRow([own], { organization: OTHER_ORGANIZATION })],
+      [viewerRow([membershipRow('pilot-smjena-a', SEEDED, OTHER_ORGANIZATION)])],
+      // A team the answer lacks.
+      [viewerRow([membershipRow('unknown-team', SEEDED)])],
+      // Two versions on one date.
+      [viewerRow([own, membershipRow('pilot-smjena-b', SEEDED)])],
+      // A role this build does not know, or none.
+      [viewerRow([own], { role: 'supervisor' })],
+      [viewerRow([own], { role: null })],
+      // A malformed date, a malformed team, no id, no versions list.
+      [viewerRow([membershipRow('pilot-smjena-a', '2020-02-30')])],
+      [viewerRow([{ ...own, team_id: 7 }])],
+      [{ ...viewerRow([own]), id: '' }],
+      [{ ...viewerRow([own]), team_membership_versions: null }],
+    ]) {
+      expect(await readCalendar(tableOf(answerOf(PILOT, viewers)), session), JSON.stringify(viewers)).toEqual(REFUSED);
+    }
+    const { members: _members, ...noEmbed } = calendarOrganizationRow(PILOT);
+
+    expect(await readCalendar(tableOf({ data: [noEmbed], error: null, count: 1 }), session)).toEqual(REFUSED);
     vi.restoreAllMocks();
   });
 
@@ -219,17 +315,21 @@ describe('the surface state, driven through the one query definition', () => {
     return {
       calls: () => calls,
       select() {
-        const answer = answers[Math.min(calls, answers.length - 1)];
+        return {
+          filter() {
+            const answer = answers[Math.min(calls, answers.length - 1)];
 
-        calls += 1;
+            calls += 1;
 
-        return Promise.resolve(answer as CalendarAnswer);
+            return Promise.resolve(answer as CalendarAnswer);
+          },
+        };
       },
     };
   }
 
   function observe(table: () => CalendarTable) {
-    const observer = new QueryObserver(client, { ...calendarQueryOptions(table), retryDelay: 0 });
+    const observer = new QueryObserver(client, { ...calendarQueryOptions(table, session), retryDelay: 0 });
 
     unsubscribes.push(observer.subscribe(() => undefined));
 

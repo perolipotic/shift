@@ -824,3 +824,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-1-anyone-reads-a-month.md`
   summary: The calendar's team header row is not sticky, so the team names scroll out of view in a 28–31-row month on a phone or short window.
   evidence: in `apps/web/src/routes/kalendar.tsx` only the date column is `sticky left-0`; story 3.2 (phone and screen reader) is the natural owner.
+- source_spec: none
+  summary: Story 3.2b — the fixed modifier vocabulary (⚠ ✎ ◷ ◌ with rings and hatch) on a shared shift cell, the legend shown wherever a glyph renders, the keyboard-navigable ARIA grid (roving tabindex, arrows, Home/End) and full per-cell assistive-technology labels (date, team, type, times, modifiers).
+  evidence: Split from story 3.2 at the user's request (2026-09-26); 3.2a ships the phone modes (Moj raspored day list, compressed one-letter grid, mode switch) first. Agreed for 3.2b: legend only when a glyph is on screen; grid with one tab stop, cells focusable but inert until 3.4.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2a-phone-calendar-modes.md`
+  summary: The calendar snapshot now carries the viewer (member id, role, team history) but `CALENDAR_KEY` has no user in it, so a session change that bypasses the sign-out `queryClient.clear()` (e.g. an account switch in another tab) could briefly show the previous viewer's day list and default mode.
+  evidence: Raised by 3.2a's review. `chrome.tsx:344` clears the cache on sign-out in this tab only; no `onAuthStateChange` listener invalidates it. The same applies to other per-user keys (`MEMBER_ROLE_KEY`, `OWN_TEAM_KEY`), so this needs one app-wide rule.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-2a-phone-calendar-modes.md`
+  summary: While the calendar loads, the skeleton is always the grid shape and the mode switch is absent, so a member who lands on the day list sees the layout jump when the snapshot arrives.
+  evidence: Raised by 3.2a's review. The default mode needs the role, which arrives with the snapshot; showing a day-list skeleton would need the role before the read (e.g. from the chrome's cached `MEMBER_ROLE_KEY`).

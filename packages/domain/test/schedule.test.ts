@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   adjacentMonth,
   datesOfMonth,
+  memberScheduleOfMonth,
   monthOf,
   projectedShiftTypeOn,
   scheduleOfMonth,
@@ -194,5 +195,107 @@ describe('scheduleOfMonth', () => {
     expect(() =>
       scheduleOfMonth({ ...input, assignments: [PILOT_ROTATION_ASSIGNMENTS[0]!, twin] }, '2026-09'),
     ).toThrow(RangeError);
+  });
+});
+
+describe('memberScheduleOfMonth', () => {
+  it.each(FIXTURES)('$fixture: every day equals projectedShiftTypeOn of the team on that date', ({ teams, steps, assignments }) => {
+    for (const team of teams) {
+      const memberships = [{ teamId: team.id, effectiveFrom: SEEDED_EFFECTIVE_FROM }];
+      for (const month of MONTHS) {
+        const days = memberScheduleOfMonth({ memberships, assignments, steps }, month);
+        expect(days.map((day) => day.date)).toEqual(datesOfMonth(month));
+        const versions = assignments.filter((assignment) => assignment.teamId === team.id);
+        for (const day of days) {
+          const inTeam = day.date >= SEEDED_EFFECTIVE_FROM;
+          expect(day.teamId, day.date).toBe(inTeam ? team.id : null);
+          expect(day.shiftTypeId, `${team.id} on ${day.date}`).toBe(
+            inTeam ? projectedShiftTypeOn(versions, steps, day.date) : null,
+          );
+        }
+      }
+    }
+  });
+
+  it('follows a move from one team to another in the middle of the month', () => {
+    const [first, second] = [PILOT_TEAMS[0]!.id, PILOT_TEAMS[1]!.id];
+    const memberships = [
+      { teamId: second, effectiveFrom: '2026-10-15' },
+      { teamId: first, effectiveFrom: '2026-10-01' },
+    ];
+    const days = memberScheduleOfMonth(
+      { memberships, assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS },
+      '2026-10',
+    );
+    let differs = false;
+    for (const day of days) {
+      const team = day.date < '2026-10-15' ? first : second;
+      const versions = PILOT_ROTATION_ASSIGNMENTS.filter((assignment) => assignment.teamId === team);
+      expect(day.teamId, day.date).toBe(team);
+      expect(day.shiftTypeId, day.date).toBe(projectedShiftTypeOn(versions, PILOT_ROTATION_STEPS, day.date));
+      if (team === second) {
+        const old = PILOT_ROTATION_ASSIGNMENTS.filter((assignment) => assignment.teamId === first);
+        if (day.shiftTypeId !== projectedShiftTypeOn(old, PILOT_ROTATION_STEPS, day.date)) differs = true;
+      }
+    }
+    expect(differs).toBe(true);
+  });
+
+  it('has no team and no type from the day a member leaves their team', () => {
+    const team = PILOT_TEAMS[0]!.id;
+    const memberships = [
+      { teamId: team, effectiveFrom: '2020-01-01' },
+      { teamId: null, effectiveFrom: '2026-09-10' },
+    ];
+    const days = memberScheduleOfMonth(
+      { memberships, assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS },
+      '2026-09',
+    );
+    for (const day of days) {
+      if (day.date < '2026-09-10') {
+        expect(day.teamId).toBe(team);
+        expect(day.shiftTypeId).not.toBeNull();
+      } else {
+        expect(day).toEqual({ date: day.date, teamId: null, shiftTypeId: null });
+      }
+    }
+  });
+
+  it('gives a member with no versions no team on any date', () => {
+    const days = memberScheduleOfMonth(
+      { memberships: [], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS },
+      '2026-09',
+    );
+    expect(days).toHaveLength(30);
+    expect(days.every((day) => day.teamId === null && day.shiftTypeId === null)).toBe(true);
+  });
+
+  it('gives a team with no rotation version its team and a null type', () => {
+    const days = memberScheduleOfMonth(
+      { memberships: [{ teamId: 'no-rotation', effectiveFrom: '2020-01-01' }], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS },
+      '2026-09',
+    );
+    expect(days.every((day) => day.teamId === 'no-rotation' && day.shiftTypeId === null)).toBe(true);
+  });
+
+  it('throws a RangeError on bad input', () => {
+    const input = {
+      memberships: [{ teamId: PILOT_TEAMS[0]!.id, effectiveFrom: '2020-01-01' }],
+      assignments: PILOT_ROTATION_ASSIGNMENTS,
+      steps: PILOT_ROTATION_STEPS,
+    };
+    expect(() => memberScheduleOfMonth(input, '2026-13')).toThrow(RangeError);
+    // Two versions on one date.
+    expect(() =>
+      memberScheduleOfMonth(
+        { ...input, memberships: [...input.memberships, { teamId: null, effectiveFrom: '2020-01-01' }] },
+        '2026-09',
+      ),
+    ).toThrow(/2020-01-01/);
+    expect(() =>
+      memberScheduleOfMonth({ ...input, memberships: [{ teamId: null, effectiveFrom: '2026-02-30' }] }, '2026-09'),
+    ).toThrow(RangeError);
+    // A version whose pattern has no steps among those given.
+    expect(() => memberScheduleOfMonth({ ...input, steps: UJ5_ROTATION_STEPS }, '2026-09')).toThrow(RangeError);
   });
 });

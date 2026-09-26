@@ -421,7 +421,9 @@ const SCREENS = [
   { name: 'the Danas destination', file: DANAS, expectedControls: 0 },
   // STORY 3.1. THREE on Kalendar: the previous month, `Ovaj mjesec` and the
   // next month. The grid is a table and offers nothing (day detail is 3.4).
-  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 3 },
+  // STORY 3.2a: five — the previous and next months, `Ovaj mjesec`, and the
+  // two buttons of the mode switch.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 5 },
   // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
   // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
   // row link written once inside the map over the bands — the same count at
@@ -1735,11 +1737,13 @@ const KEY_SOURCES = [
     // STORY 3.1. EIGHT on Kalendar: its own `nav.kalendar` heading, the month
     // heading, the previous and next months' names, `Ovaj mjesec`, the date
     // column head, the no-rotation label and the no-teams note. The read
-    // failure comes through `@/calendar/snapshot`, below.
+    // failure comes through `@/calendar/snapshot`, below. THIRTEEN SINCE STORY
+    // 3.2a: the mode switch's label and its two modes, the no-team notice and
+    // a day on no team.
     name: 'the Kalendar destination',
     file: KALENDAR,
     keys: translationKeys,
-    strings: 8,
+    strings: 13,
   },
   {
     // STORY 3.1: the calendar's one read failure.

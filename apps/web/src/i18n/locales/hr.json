@@ -32,6 +32,15 @@
     "columnDate": "Datum",
     "noRotation": "Bez rotacije",
     "noTeams": "Nijedna smjena nije u upotrebi, pa kalendar nema što prikazati.",
+    "noTeam": "Nisi član nijedne smjene.",
+    "day": {
+      "noTeam": "Bez smjene"
+    },
+    "mode": {
+      "label": "Prikaz kalendara",
+      "moj": "Moj raspored",
+      "sve": "Sve smjene"
+    },
     "error": {
       "unavailable": "Kalendar trenutačno nije moguće učitati. Pokušaj ponovno."
     }

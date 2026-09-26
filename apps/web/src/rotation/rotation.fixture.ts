@@ -1,3 +1,5 @@
+import type { Session } from '@supabase/supabase-js';
+
 import type { RotationAnswer } from '@/rotation/list';
 
 /**
@@ -155,3 +157,65 @@ export const UJ5: FixtureRows = {
     assignmentRow(`uj5-smjena-${letter}`, 'uj5-rotation', `uj5-step-${String(offset)}`, SEEDED, SEEDED),
   ),
 };
+
+// ------------------------------------------------ the calendar's viewer (3.2a)
+
+/** The signed-in viewer of the calendar fixtures: their auth user and member row. */
+export const VIEWER_AUTH_USER = '00000000-0000-4000-8000-0000000000b1';
+export const VIEWER_MEMBER = '00000000-0000-4000-8000-0000000000b2';
+
+/** One of the viewer's team membership versions as the calendar embeds it: `teamId` `null` is no team. */
+export function membershipRow(teamId: string | null, effectiveFrom: string, organization = ORGANIZATION): Row {
+  return { organization_id: organization, team_id: teamId, effective_from: effectiveFrom };
+}
+
+/** The viewer's member row as the calendar embeds it: no name, no position, no rank. */
+export function viewerRow(
+  versions: readonly Row[],
+  { role = 'member_role' as unknown, id = VIEWER_MEMBER, organization = ORGANIZATION } = {},
+): Row {
+  return { organization_id: organization, id, role, team_membership_versions: versions };
+}
+
+/**
+ * The organization as the calendar's read embeds it: the rotation fixture's
+ * embeds, and in place of the members list, the viewer's row alone — by
+ * default a member on the fixture's first team from `SEEDED`.
+ */
+export function calendarOrganizationRow(
+  rows: FixtureRows,
+  { timezone = 'Europe/Zagreb', viewers = null as readonly Row[] | null } = {},
+): Row {
+  const first = rows.teams[0]?.['id'];
+  const fallback = [viewerRow(typeof first === 'string' ? [membershipRow(first, SEEDED)] : [])];
+
+  return { ...organizationRow(rows, timezone), members: viewers ?? fallback };
+}
+
+/** The session the calendar reads as: the viewer's. */
+export function viewerSession(authUserId = VIEWER_AUTH_USER): () => Promise<Session> {
+  return () => Promise.resolve({ user: { id: authUserId } } as Session);
+}
+
+/** A calendar table answering once with `answer`, recording every select and filter. */
+export function calendarTableOf(answer: unknown): {
+  readonly seen: unknown[][];
+  select(columns: string, options: unknown): { filter(column: string, operator: string, value: string): Promise<never> };
+} {
+  const seen: unknown[][] = [];
+
+  return {
+    seen,
+    select(columns, options) {
+      seen.push(['select', columns, options]);
+
+      return {
+        filter(column, operator, value) {
+          seen.push(['filter', column, operator, value]);
+
+          return Promise.resolve(answer as never);
+        },
+      };
+    },
+  };
+}

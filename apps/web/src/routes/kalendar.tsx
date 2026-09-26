@@ -1,17 +1,25 @@
 import { useQuery } from '@tanstack/react-query';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useSyncExternalStore, type ReactNode } from 'react';
 
 import {
+  COMPRESSED_CELL_CLASS,
+  MODE_MOJ,
+  MODE_SVE,
   NO_ROTATION_SHOWN,
   SKELETON_COLUMN_COUNT,
   SKELETON_GRID_STYLE,
   SKELETON_ROW_COUNT,
+  calendarModeOf,
   calendarMonthOutcomeOf,
   calendarSearchOf,
+  calendarSearchTo,
   calendarTodayOf,
+  phoneStoreOf,
   type CalendarCell,
+  type CalendarDay,
+  type CalendarMode,
   type CalendarMonth,
   type CalendarSearch,
 } from '@/calendar/month';
@@ -46,9 +54,22 @@ import { supabaseClient } from '@/supabase/client';
  * THIS FILE HOLDS MARKUP. Every rule is in `@/calendar/snapshot` and
  * `@/calendar/month`, which the node suite executes.
  *
+ * TWO MODES (story 3.2a), `?prikaz=moj|sve`: *Moj raspored*, the viewer's
+ * own day list, and *Sve smjene*, the grid. With no `prikaz`, a member-role
+ * account below 640 px lands on the day list and everyone else on the grid.
+ * Below 640 px the grid is COMPRESSED by CSS alone — one letter per team
+ * header and per cell, the full names `sr-only` — and is the same table; from
+ * 640 px up it is story 3.1's.
+ *
  * The session guard is NOT here. It is registered once on the pathless `_app`
  * layout this route nests under.
  */
+
+const phone = phoneStoreOf((query) => window.matchMedia(query));
+
+function isPhoneOnServer(): boolean {
+  return false;
+}
 
 const SKELETON_ROWS = Array.from({ length: SKELETON_ROW_COUNT }, (_, index) => index);
 const SKELETON_COLUMNS = Array.from({ length: SKELETON_COLUMN_COUNT + 1 }, (_, index) => index);
@@ -69,30 +90,132 @@ export function KalendarScreen() {
   );
   const refusal = state.refusal ?? (outcome !== null && !outcome.ok ? outcome.code : null);
   const month = outcome !== null && outcome.ok ? outcome.month : null;
+  // READ LIVE: crossing 640 px changes the default mode while no `prikaz` is chosen.
+  const isPhone = useSyncExternalStore(phone.subscribe, phone.get, isPhoneOnServer);
+  const mode = snapshot === null ? null : calendarModeOf(search, snapshot.viewer.role, isPhone);
 
   function show(mjesec: string | null): void {
-    void navigate({ search: mjesec === null ? {} : { mjesec } });
+    void navigate({ search: calendarSearchTo(search, { mjesec }) });
+  }
+
+  function choose(prikaz: CalendarMode): void {
+    void navigate({ search: calendarSearchTo(search, { prikaz }) });
+  }
+
+  function renderCellBody(cell: CalendarCell, compressed: boolean): ReactNode {
+    if (cell.name === null) {
+      return (
+        <>
+          <span aria-hidden>{NO_ROTATION_SHOWN}</span>
+          <span className="sr-only">{t('kalendar.noRotation')}</span>
+        </>
+      );
+    }
+
+    if (!compressed) {
+      return (
+        <>
+          <span>{cell.name}</span>
+          {cell.range === null ? null : <span className="font-normal tabular-nums">{cell.range}</span>}
+        </>
+      );
+    }
+
+    return (
+      <>
+        <span aria-hidden className="sm:hidden">
+          {cell.letter}
+        </span>
+        <span className="sr-only sm:not-sr-only">{cell.name}</span>
+        {cell.range === null ? null : (
+          <span className="hidden font-normal tabular-nums lg:inline">{cell.range}</span>
+        )}
+      </>
+    );
   }
 
   function renderCell(cell: CalendarCell): ReactNode {
     return (
       <TableCell key={cell.teamId} className="px-1 py-1">
-        <div className={cell.className}>
-          {cell.name === null ? (
-            <>
-              <span aria-hidden>{NO_ROTATION_SHOWN}</span>
-              <span className="sr-only">{t('kalendar.noRotation')}</span>
-            </>
-          ) : (
-            <>
-              <span>{cell.name}</span>
-              {cell.range === null ? null : (
-                <span className="hidden font-normal tabular-nums lg:inline">{cell.range}</span>
-              )}
-            </>
-          )}
-        </div>
+        <div className={`${cell.className} ${COMPRESSED_CELL_CLASS}`}>{renderCellBody(cell, true)}</div>
       </TableCell>
+    );
+  }
+
+  // The pressed mode is filled from its own `aria-pressed`, so the fill and the
+  // state never disagree; it differs from the other by fill AND border.
+  function renderSwitch(chosen: CalendarMode): ReactNode {
+    return (
+      <div role="group" aria-label={t('kalendar.mode.label')} className="flex w-full gap-2 sm:w-auto">
+        <Button
+          type="button"
+          variant="outline"
+          className="h-11 min-w-11 flex-1 aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground sm:flex-none"
+          aria-pressed={chosen === MODE_MOJ}
+          onClick={() => {
+            choose(MODE_MOJ);
+          }}
+        >
+          {t('kalendar.mode.moj')}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          className="h-11 min-w-11 flex-1 aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground sm:flex-none"
+          aria-pressed={chosen === MODE_SVE}
+          onClick={() => {
+            choose(MODE_SVE);
+          }}
+        >
+          {t('kalendar.mode.sve')}
+        </Button>
+      </div>
+    );
+  }
+
+  function renderDay(day: CalendarDay): ReactNode {
+    return (
+      <li
+        key={day.date}
+        aria-current={day.isToday ? 'date' : undefined}
+        className={
+          day.isToday
+            ? 'flex min-h-11 items-center gap-3 border-l-4 border-foreground py-1 pl-2 pr-1 font-bold'
+            : 'flex min-h-11 items-center gap-3 py-1 pl-3 pr-1'
+        }
+      >
+        <span className="w-20 shrink-0 text-sm">
+          <span className="block tabular-nums">{day.dayMonth}</span>
+          <span className="block text-xs font-normal text-muted-foreground">{day.weekday}</span>
+        </span>
+        {day.cell === null ? (
+          <span className="text-sm text-muted-foreground">{t('kalendar.day.noTeam')}</span>
+        ) : (
+          <div className={`${day.cell.className} min-w-0 flex-1`}>{renderCellBody(day.cell, false)}</div>
+        )}
+      </li>
+    );
+  }
+
+  function renderDays(shown: CalendarMonth): ReactNode {
+    // The day list's own failure: the alert and no list. The grid is unaffected.
+    if (!shown.days.ok) {
+      return (
+        <div className="px-4 pb-4">
+          <Notice role="alert">{t(calendarMessageKey(shown.days.code))}</Notice>
+        </div>
+      );
+    }
+
+    if (shown.days.days === null) {
+      // What is true, never an empty list: the viewer is on no team this month.
+      return <p className="px-4 pb-4 text-sm text-muted-foreground">{t('kalendar.noTeam')}</p>;
+    }
+
+    return (
+      <ol aria-labelledby="kalendar-month-heading" className="divide-y divide-border px-4 pb-4">
+        {shown.days.days.map((day) => renderDay(day))}
+      </ol>
     );
   }
 
@@ -109,8 +232,11 @@ export function KalendarScreen() {
               {t('kalendar.columnDate')}
             </TableHead>
             {shown.columns.map((team) => (
-              <TableHead key={team.id} scope="col" className="whitespace-nowrap normal-case">
-                {team.name}
+              <TableHead key={team.id} scope="col" className="whitespace-nowrap normal-case max-sm:text-center">
+                <span aria-hidden className="sm:hidden">
+                  {team.letter}
+                </span>
+                <span className="sr-only sm:not-sr-only">{team.name}</span>
               </TableHead>
             ))}
           </TableRow>
@@ -208,8 +334,9 @@ export function KalendarScreen() {
                 </div>
               </>
             )}
+            {mode === null ? null : renderSwitch(mode)}
           </div>
-          {month === null ? renderSkeleton() : renderGrid(month)}
+          {month === null ? renderSkeleton() : mode === MODE_MOJ ? renderDays(month) : renderGrid(month)}
         </Card>
       )}
     </main>
