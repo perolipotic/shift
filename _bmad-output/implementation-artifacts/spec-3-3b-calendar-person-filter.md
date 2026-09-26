@@ -45,7 +45,7 @@ context:
   - With a person chosen in *Sve smjene*:
     - a heading with the person's name (data);
     - the legend and the `<ol>` day list, reusing `renderDay`;
-    - when that person has no team all month, `kalendar.person.noTeam` = "{name} ovaj mjesec nije član nijedne smjene.";
+    - when that person has no team all month, `kalendar.person.noTeam` = "{name} ovaj mjesec nije ni u jednoj smjeni.";
     - the person's day-list failure shows the alert locally.
   - *Moj raspored* ignores `osoba` and keeps it in the URL.
   - The grid tab-stop key also includes the person.

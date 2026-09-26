@@ -49,7 +49,7 @@
       "reset": "Poništi filtar"
     },
     "person": {
-      "noTeam": "{name} ovaj mjesec nije član nijedne smjene."
+      "noTeam": "{name} ovaj mjesec nije ni u jednoj smjeni."
     },
     "legend": "Oznake",
     "modifier": {
