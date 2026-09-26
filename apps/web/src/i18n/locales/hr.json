@@ -360,6 +360,18 @@
       "save": "Spremi rotaciju",
       "saveNote": "Rotacija vrijedi od danas. Dani prije današnjeg zadržavaju dosadašnju rotaciju.",
       "saved": "Rotacija je spremljena.",
+      "warnings": {
+        "summary": "{count, plural, one {# upozorenje} few {# upozorenja} other {# upozorenja}} za sljedeći ciklus:",
+        "coverageGap": "{count, plural, one {# dan} few {# dana} other {# dana}} u sljedećem ciklusu s radnim tipom na kojem nije nijedna smjena:",
+        "duplicateCoverage": "{count, plural, one {# dan} few {# dana} other {# dana}} u sljedećem ciklusu s dvije ili više smjena na istom tipu:",
+        "date": "{date}: {types}",
+        "restGap": "{duration} rada bez slobodnog dana između ({types})",
+        "restGapUnknown": "Rad bez slobodnog dana između ({types}), trajanje nepoznato",
+        "restGapEndless": "Uzorak je bez slobodnog dana: {duration} rada u svakom ciklusu ({types})",
+        "restGapEndlessUnknown": "Uzorak je bez slobodnog dana ({types}), trajanje nepoznato",
+        "listSeparator": ", ",
+        "typeSeparator": " → "
+      },
       "stepper": {
         "label": "Koraci rotacije",
         "progress": "Korak {current} od {total}",

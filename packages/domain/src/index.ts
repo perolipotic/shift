@@ -40,3 +40,16 @@ export {
   type RotationPattern,
   type RotationStep,
 } from './projection.js';
+
+export {
+  COVERAGE_GAP,
+  DUPLICATE_COVERAGE,
+  REST_GAP,
+  rotationWarningsOf,
+  type CoverageGapWarning,
+  type DuplicateCoverageWarning,
+  type RestGapWarning,
+  type RotationWarning,
+  type RotationWarningInput,
+  type WarningDate,
+} from './warnings.js';

@@ -242,6 +242,8 @@ const SOURCES = [
   // Story 2.4's phone stepper rules: the step names and Dalje's labels as
   // return-type unions, and the classes that hide a section below `sm`.
   join(webRoot, 'src', 'rotation', 'stepper.ts'),
+  // Story 2.5's warnings: every key they render through, as return-type unions.
+  join(webRoot, 'src', 'rotation', 'warnings.ts'),
   // The owner layout's numbered section badge, a primitive: text-free, here
   // for freshness like the other primitives.
   join(webRoot, 'src', 'components', 'ui', 'section-number.tsx'),
@@ -945,6 +947,19 @@ const AUTHORED_VOCABULARY = [
   'Natrag',
   'završeno',
   'Pomaci',
+  // STORY 2.5: the save's warnings, so a hard-coded warning line in the
+  // builder is a count that no longer matches.
+  'upozorenje',
+  'upozorenja',
+  'sljedećem',
+  'nijedna',
+  'dvije',
+  'istom',
+  'slobodnog',
+  'između',
+  'svakom',
+  'trajanje',
+  'nepoznato',
 ];
 
 /** Everything the terminology contract and the unshipped affordances still own.

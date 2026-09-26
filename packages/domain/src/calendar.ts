@@ -48,3 +48,28 @@ export function civilDayNumber(date: string): number {
   const dayOfEra = yearOfEra * 365 + Math.floor(yearOfEra / 4) - Math.floor(yearOfEra / 100) + dayOfYear;
   return era * 146097 + dayOfEra - 719468;
 }
+
+/**
+ * The date of a civil day number, as `YYYY-MM-DD`: the inverse of
+ * {@link civilDayNumber}, by the same era arithmetic. `null` outside years
+ * 0001–9999, which no date this package accepts can name.
+ */
+export function dateOfCivilDay(dayNumber: number): string | null {
+  const shifted = dayNumber + 719468;
+  const era = Math.floor(shifted / 146097);
+  const dayOfEra = shifted - era * 146097;
+  const yearOfEra = Math.floor(
+    (dayOfEra - Math.floor(dayOfEra / 1460) + Math.floor(dayOfEra / 36524) - Math.floor(dayOfEra / 146096)) /
+      365,
+  );
+  const dayOfYear = dayOfEra - (365 * yearOfEra + Math.floor(yearOfEra / 4) - Math.floor(yearOfEra / 100));
+  const monthFromMarch = Math.floor((5 * dayOfYear + 2) / 153);
+  const day = dayOfYear - Math.floor((153 * monthFromMarch + 2) / 5) + 1;
+  const month = monthFromMarch < 10 ? monthFromMarch + 3 : monthFromMarch - 9;
+  const year = yearOfEra + era * 400 + (month <= 2 ? 1 : 0);
+
+  if (year < 1 || year > 9999) return null;
+
+  const pad = (value: number, width: number): string => String(value).padStart(width, '0');
+  return `${pad(year, 4)}-${pad(month, 2)}-${pad(day, 2)}`;
+}
