@@ -1068,7 +1068,10 @@ function withoutRouteSegments(chunk: string): string {
  * `smjena` literal rendered as copy (a JSX child, an attribute value) still
  * counts.
  */
-const SEARCH_PARAMETERS = ['smjena'];
+// STORY 3.3b: `?osoba=<member id>`, in the same shapes, and one more — the
+// filter Select's person value prefix, the whole literal `osoba:` and nothing
+// else, wherever the minifier inlines it. No copy is ever exactly that.
+const SEARCH_PARAMETERS = ['smjena', 'osoba'];
 
 function withoutSearchParameters(chunk: string): string {
   return SEARCH_PARAMETERS.reduce(
@@ -1084,6 +1087,8 @@ function withoutSearchParameters(chunk: string): string {
             `(?<==)(["'\`])${parameter}\\1(?=[,;])`,
             // The `in` operand, in any quote.
             `(["'\`])${parameter}\\2\\s*(?=in\\b)`,
+            // The person filter's option value prefix, in any quote.
+            `(["'\`])${parameter}:\\3`,
           ].join('|'),
           'gu',
         ),

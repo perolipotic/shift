@@ -1499,6 +1499,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 1.8. The roster reads `members` past the narrowed select policy,
     // which is the whole point of it, so it carries the same three attributes.
     { name: 'team_roster', argumentCount: 1 },
+    // STORY 3.3b. The calendar's people read `members` past the narrowed
+    // select policy for the roster's reason, on the same three attributes.
+    { name: 'calendar_people', argumentCount: 0 },
   ];
 
   it.skipIf(noDatabase).each(ACCESS_CONTROL_FUNCTIONS)(
@@ -1566,6 +1569,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 1.8. The roster is called by a signed-in session over REST, and by
     // nobody else: an anonymous caller has no organization to scope it to.
     { name: 'team_roster', argumentCount: 1, expected: ['authenticated'] },
+    // STORY 3.3b. The calendar's people, on the roster's terms.
+    { name: 'calendar_people', argumentCount: 0, expected: ['authenticated'] },
   ];
 
   it.skipIf(noDatabase).each([

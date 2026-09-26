@@ -8,6 +8,7 @@ import {
   environmentManager,
   onlineManager,
 } from '@tanstack/react-query';
+import type { Session } from '@supabase/supabase-js';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -15,6 +16,7 @@ import {
   CALENDAR_COUNT,
   CALENDAR_FETCH_PAUSED,
   CALENDAR_KEY,
+  CALENDAR_PEOPLE_FUNCTION,
   CALENDAR_READ_STALE_MS,
   CALENDAR_READ_TABLE,
   CALENDAR_UNAVAILABLE,
@@ -25,6 +27,7 @@ import {
   calendarSurfaceStateOf,
   readCalendar,
   type CalendarAnswer,
+  type CalendarPeopleRpc,
   type CalendarSnapshot,
   type CalendarTable,
 } from '@/calendar/snapshot';
@@ -35,10 +38,14 @@ import {
   UJ5,
   VIEWER_AUTH_USER,
   VIEWER_MEMBER,
+  VIEWER_NAME,
   assignmentRow,
   calendarOrganizationRow,
   calendarTableOf,
+  memberMembershipRow,
   membershipRow,
+  peopleAnswerOf,
+  personRow,
   stepRow,
   teamRow,
   typeRow,
@@ -59,14 +66,21 @@ function answerOf(rows: FixtureRows, viewers: readonly Record<string, unknown>[]
   return { data: [calendarOrganizationRow(rows, { viewers })], error: null, count: 1 };
 }
 
-function tableOf(answer: CalendarAnswer): CalendarTable & { readonly seen: unknown[][] } {
-  return calendarTableOf(answer);
+type Source = CalendarTable & CalendarPeopleRpc & { readonly seen: unknown[][] };
+
+function tableOf(answer: CalendarAnswer, people: unknown = peopleAnswerOf()): Source {
+  return calendarTableOf(answer, people);
 }
 
 const session = viewerSession();
 
+/** `readCalendar` over one stub standing in for both the table and the people rpc. */
+function read(source: Source, current: () => Promise<Session | null> = session) {
+  return readCalendar(source, source, current);
+}
+
 async function snapshotOf(rows: FixtureRows): Promise<CalendarSnapshot> {
-  const outcome = await readCalendar(tableOf(answerOf(rows)), session);
+  const outcome = await read(tableOf(answerOf(rows)));
 
   if (!outcome.ok) throw new Error(outcome.code);
 
@@ -83,13 +97,15 @@ describe('the read', () => {
     { fixture: 'UJ-5', rows: UJ5, teams: 3, types: 4, steps: 5 },
   ])('$fixture: reads the organization and everything the month draws from in one exact-count select', async ({ rows, teams, types, steps }) => {
     const table = tableOf(answerOf(rows));
-    const outcome = await readCalendar(table, session);
+    const outcome = await read(table);
 
     expect(CALENDAR_READ_TABLE).toBe('organizations');
     expect(table.seen).toEqual([
       ['select', CALENDAR_COLUMNS, CALENDAR_COUNT],
       ['filter', 'members.auth_user_id', 'eq', VIEWER_AUTH_USER],
+      ['rpc', 'calendar_people'],
     ]);
+    expect(CALENDAR_PEOPLE_FUNCTION).toBe('calendar_people');
     expect([CALENDAR_VIEWER_COLUMN, CALENDAR_VIEWER_OPERATOR]).toEqual(['members.auth_user_id', 'eq']);
     expect(CALENDAR_COUNT).toEqual({ count: 'exact' });
     expect(outcome.ok).toBe(true);
@@ -104,6 +120,13 @@ describe('the read', () => {
       role: 'member_role',
       memberships: [{ teamId: (rows.teams[0] as { id: string }).id, effectiveFrom: SEEDED }],
     });
+    expect(outcome.snapshot.people).toEqual([
+      {
+        id: VIEWER_MEMBER,
+        name: VIEWER_NAME,
+        memberships: [{ teamId: (rows.teams[0] as { id: string }).id, effectiveFrom: SEEDED }],
+      },
+    ]);
   });
 
   it('selects what a member may read and nothing more', () => {
@@ -121,6 +144,15 @@ describe('the read', () => {
 
     expect(member).toBe('organization_id,id,role,team_membership_versions');
     expect(/team_membership_versions\(([^)]*)\)/.exec(CALENDAR_COLUMNS)?.[1]).toBe('organization_id,team_id,effective_from');
+    // STORY 3.3b: every member's history, at the organization level — who is
+    // on which team when, and nothing about the person.
+    expect(CALENDAR_COLUMNS.endsWith(',team_membership_versions(organization_id,member_id,team_id,effective_from)')).toBe(
+      true,
+    );
+    expect([...CALENDAR_COLUMNS.matchAll(/team_membership_versions\(([^)]*)\)/g)].map((found) => found[1])).toEqual([
+      'organization_id,team_id,effective_from',
+      'organization_id,member_id,team_id,effective_from',
+    ]);
     expect(CALENDAR_COLUMNS).not.toMatch(/auth_user_id|email/);
     expect(CALENDAR_COLUMNS).not.toContain('created_by');
     const assignments = /rotation_assignments\(([^)]*)\)/.exec(CALENDAR_COLUMNS)?.[1] ?? '';
@@ -147,11 +179,11 @@ describe('the read', () => {
     quiet();
     const rejecting: CalendarTable = { select: () => ({ filter: () => Promise.reject(new Error('down')) }) };
 
-    expect(await readCalendar(rejecting, session)).toEqual(REFUSED);
-    expect(await readCalendar(tableOf({ data: null, error: { code: '500' }, count: null }), session)).toEqual(REFUSED);
-    expect(await readCalendar(tableOf({ ...answerOf(PILOT), count: 2 }), session)).toEqual(REFUSED);
-    expect(await readCalendar(tableOf({ data: [], error: null, count: 0 }), session)).toEqual(REFUSED);
-    expect(await readCalendar(tableOf({ data: [{ id: 'x' }], error: null, count: 1 }), session)).toEqual(REFUSED);
+    expect(await readCalendar(rejecting, tableOf(answerOf(PILOT)), session)).toEqual(REFUSED);
+    expect(await read(tableOf({ data: null, error: { code: '500' }, count: null }), session)).toEqual(REFUSED);
+    expect(await read(tableOf({ ...answerOf(PILOT), count: 2 }), session)).toEqual(REFUSED);
+    expect(await read(tableOf({ data: [], error: null, count: 0 }), session)).toEqual(REFUSED);
+    expect(await read(tableOf({ data: [{ id: 'x' }], error: null, count: 1 }), session)).toEqual(REFUSED);
     vi.restoreAllMocks();
   });
 
@@ -172,7 +204,7 @@ describe('the read', () => {
         ],
       },
     ]) {
-      expect(await readCalendar(tableOf(answerOf(rows)), session)).toEqual(REFUSED);
+      expect(await read(tableOf(answerOf(rows)), session)).toEqual(REFUSED);
     }
     vi.restoreAllMocks();
   });
@@ -193,14 +225,13 @@ describe('the read', () => {
       // A malformed date.
       { ...PILOT, assignments: [assignmentRow('pilot-smjena-a', 'pilot-rotation', 'pilot-step-0', '2020-01-01', '2020-02-30')] },
     ]) {
-      expect(await readCalendar(tableOf(answerOf(rows)), session)).toEqual(REFUSED);
+      expect(await read(tableOf(answerOf(rows)), session)).toEqual(REFUSED);
     }
     vi.restoreAllMocks();
   });
 
   it('reads the viewer\'s history in date order, a left team and archived teams included', async () => {
-    const moved = await readCalendar(
-      tableOf(
+    const moved = await read(tableOf(
         answerOf(
           { ...PILOT, teams: [...PILOT.teams, teamRow('pilot-smjena-x', 'Smjena X', { archived: true })] },
           [
@@ -227,7 +258,7 @@ describe('the read', () => {
         { teamId: null, effectiveFrom: '2026-09-10' },
       ],
     });
-    const none = await readCalendar(tableOf(answerOf(PILOT, [viewerRow([])])), session);
+    const none = await read(tableOf(answerOf(PILOT, [viewerRow([])])), session);
 
     expect(none.ok && none.snapshot.viewer.memberships).toEqual([]);
   });
@@ -236,8 +267,8 @@ describe('the read', () => {
     quiet();
     const table = tableOf(answerOf(PILOT));
 
-    expect(await readCalendar(table, () => Promise.resolve(null))).toEqual(REFUSED);
-    expect(await readCalendar(table, () => Promise.reject(new Error('storage')))).toEqual(REFUSED);
+    expect(await read(table, () => Promise.resolve(null))).toEqual(REFUSED);
+    expect(await read(table, () => Promise.reject(new Error('storage')))).toEqual(REFUSED);
     expect(table.seen).toEqual([]);
     vi.restoreAllMocks();
   });
@@ -266,11 +297,128 @@ describe('the read', () => {
       [{ ...viewerRow([own]), id: '' }],
       [{ ...viewerRow([own]), team_membership_versions: null }],
     ]) {
-      expect(await readCalendar(tableOf(answerOf(PILOT, viewers)), session), JSON.stringify(viewers)).toEqual(REFUSED);
+      expect(await read(tableOf(answerOf(PILOT, viewers)), session), JSON.stringify(viewers)).toEqual(REFUSED);
     }
     const { members: _members, ...noEmbed } = calendarOrganizationRow(PILOT);
 
-    expect(await readCalendar(tableOf({ data: [noEmbed], error: null, count: 1 }), session)).toEqual(REFUSED);
+    expect(await read(tableOf({ data: [noEmbed], error: null, count: 1 }), session)).toEqual(REFUSED);
+    vi.restoreAllMocks();
+  });
+
+  it('reads the people with their histories, sorted by name, and ignores versions of anyone else', async () => {
+    const colleague = '00000000-0000-4000-8000-0000000000c1';
+    const namesake = '00000000-0000-4000-8000-0000000000c0';
+    const inactive = '00000000-0000-4000-8000-0000000000c9';
+    const outcome = await read(
+      tableOf(
+        { data: [calendarOrganizationRow(PILOT, { versions: [
+          memberMembershipRow(colleague, 'pilot-smjena-b', '2026-09-15'),
+          memberMembershipRow(colleague, 'pilot-smjena-a', SEEDED),
+          memberMembershipRow(VIEWER_MEMBER, 'pilot-smjena-a', SEEDED),
+          // A member the people read does not name — inactive today.
+          memberMembershipRow(inactive, 'pilot-smjena-c', SEEDED),
+        ] })], error: null, count: 1 },
+        peopleAnswerOf([
+          { ...personRow(colleague, 'Čedo Zorić'), email: 'never@carried.hr' },
+          personRow(VIEWER_MEMBER, VIEWER_NAME),
+          personRow(namesake, 'Čedo Zorić'),
+          personRow('00000000-0000-4000-8000-0000000000c2', 'Ante Babić'),
+        ]),
+      ),
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    // Croatian collation: `Č` after `C`, before `L`; one name twice, by id.
+    expect(outcome.snapshot.people).toEqual([
+      { id: '00000000-0000-4000-8000-0000000000c2', name: 'Ante Babić', memberships: [] },
+      { id: namesake, name: 'Čedo Zorić', memberships: [] },
+      {
+        id: colleague,
+        name: 'Čedo Zorić',
+        memberships: [
+          { teamId: 'pilot-smjena-a', effectiveFrom: SEEDED },
+          { teamId: 'pilot-smjena-b', effectiveFrom: '2026-09-15' },
+        ],
+      },
+      { id: VIEWER_MEMBER, name: VIEWER_NAME, memberships: [{ teamId: 'pilot-smjena-a', effectiveFrom: SEEDED }] },
+    ]);
+    const empty = await read(tableOf(answerOf(PILOT), peopleAnswerOf([])));
+
+    expect(empty.ok && empty.snapshot.people).toEqual([]);
+  });
+
+  it('refuses every bad people answer', async () => {
+    quiet();
+    for (const people of [
+      // An error, data that is not an array, a malformed answer.
+      { data: null, error: { code: '42501' } },
+      { data: [personRow(VIEWER_MEMBER, VIEWER_NAME)], error: { code: '500' } },
+      { data: { id: VIEWER_MEMBER }, error: null },
+      { data: null, error: null },
+      null,
+      'rows',
+      // A malformed row: not an object, no id, an empty id, no name, a number.
+      { data: [null], error: null },
+      { data: [{ name: 'Ana' }], error: null },
+      { data: [personRow('', 'Ana')], error: null },
+      { data: [{ id: VIEWER_MEMBER }], error: null },
+      { data: [personRow(VIEWER_MEMBER, 7 as unknown as string)], error: null },
+      // A blank name, empty or white space only.
+      { data: [personRow(VIEWER_MEMBER, '')], error: null },
+      { data: [personRow(VIEWER_MEMBER, ' \t ')], error: null },
+      // One id twice.
+      peopleAnswerOf([personRow(VIEWER_MEMBER, VIEWER_NAME), personRow(VIEWER_MEMBER, 'Ana')]),
+    ]) {
+      expect(await read(tableOf(answerOf(PILOT), people)), JSON.stringify(people)).toEqual(REFUSED);
+    }
+    const rejecting: Source = {
+      ...tableOf(answerOf(PILOT)),
+      rpc: () => Promise.reject(new Error('down')),
+    };
+
+    expect(await read(rejecting)).toEqual(REFUSED);
+    vi.restoreAllMocks();
+  });
+
+  it('refuses every bad organization-level membership version', async () => {
+    quiet();
+    const own = memberMembershipRow(VIEWER_MEMBER, 'pilot-smjena-a', SEEDED);
+
+    for (const versions of [
+      // Another tenant's version.
+      [memberMembershipRow(VIEWER_MEMBER, 'pilot-smjena-a', SEEDED, OTHER_ORGANIZATION)],
+      // A team the answer lacks, or a team that is not text.
+      [memberMembershipRow(VIEWER_MEMBER, 'unknown-team', SEEDED)],
+      [{ ...own, team_id: 7 }],
+      // One member, one date, twice — even to another team.
+      [own, memberMembershipRow(VIEWER_MEMBER, 'pilot-smjena-b', SEEDED)],
+      // A malformed date, no member, not a row.
+      [memberMembershipRow(VIEWER_MEMBER, 'pilot-smjena-a', '2020-02-30')],
+      [{ ...own, member_id: null }],
+      [null as unknown as Record<string, unknown>],
+    ]) {
+      const answer = { data: [calendarOrganizationRow(PILOT, { versions })], error: null, count: 1 };
+
+      expect(await read(tableOf(answer)), JSON.stringify(versions)).toEqual(REFUSED);
+    }
+    const { team_membership_versions: _versions, ...noEmbed } = calendarOrganizationRow(PILOT);
+
+    expect(await read(tableOf({ data: [noEmbed], error: null, count: 1 }))).toEqual(REFUSED);
+    // Two members on one date is two histories, not a repeat.
+    const shared = await read(
+      tableOf({
+        data: [
+          calendarOrganizationRow(PILOT, {
+            versions: [own, memberMembershipRow('someone-else', 'pilot-smjena-b', SEEDED)],
+          }),
+        ],
+        error: null,
+        count: 1,
+      }),
+    );
+
+    expect(shared.ok).toBe(true);
     vi.restoreAllMocks();
   });
 
@@ -309,11 +457,14 @@ describe('the surface state, driven through the one query definition', () => {
     vi.restoreAllMocks();
   });
 
-  function answeringInTurn(...answers: CalendarAnswer[]): CalendarTable & { readonly calls: () => number } {
+  function answeringInTurn(
+    ...answers: CalendarAnswer[]
+  ): CalendarTable & CalendarPeopleRpc & { readonly calls: () => number } {
     let calls = 0;
 
     return {
       calls: () => calls,
+      rpc: () => Promise.resolve(peopleAnswerOf()),
       select() {
         return {
           filter() {
@@ -328,8 +479,11 @@ describe('the surface state, driven through the one query definition', () => {
     };
   }
 
-  function observe(table: () => CalendarTable) {
-    const observer = new QueryObserver(client, { ...calendarQueryOptions(table, session), retryDelay: 0 });
+  function observe(table: () => CalendarTable & CalendarPeopleRpc) {
+    const observer = new QueryObserver(client, {
+      ...calendarQueryOptions(table, table, session),
+      retryDelay: 0,
+    });
 
     unsubscribes.push(observer.subscribe(() => undefined));
 
@@ -345,7 +499,10 @@ describe('the surface state, driven through the one query definition', () => {
   }
 
   it('keeps one key with no month in it, and reads again whenever it is opened', () => {
-    const options = calendarQueryOptions(() => answeringInTurn(good));
+    const options = calendarQueryOptions(
+      () => answeringInTurn(good),
+      () => answeringInTurn(good),
+    );
 
     expect(options.queryKey).toEqual(CALENDAR_KEY);
     expect(CALENDAR_KEY).toEqual(['calendar']);

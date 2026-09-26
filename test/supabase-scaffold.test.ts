@@ -917,6 +917,35 @@ describe('the access-control migration', () => {
     expect(statements).toMatch(/revoke execute on function public\.team_roster\(uuid\) from anon;/);
   });
 
+  it('reads the calendar\'s people through one definer function that returns only id and name', () => {
+    // STORY 3.3b. Source text only; the matrix is `test/rls-isolation.test.ts`.
+    const statements = migrationStatements();
+    const people = /create function public\.calendar_people\(\)[\s\S]*?\$\$;/i.exec(statements)?.[0];
+
+    expect(people, 'calendar_people is not declared').toBeDefined();
+    expect(people).toMatch(/returns table \(id uuid, name text\)/);
+    expect(people).toMatch(/language sql/i);
+    expect(people).toMatch(/\bstable\b/i);
+    expect(people).toMatch(/security definer/i);
+    expect(people).toMatch(/set search_path = ''/);
+    expect(people, 'the people select a member field besides id and name').toMatch(
+      /select m\.id,\s*m\.name\s+from public\.members m/,
+    );
+    expect(people, 'the people read a private column').not.toMatch(
+      /\b(email|leave_allowance_days|username|role|fire_rank|position|auth_user_id)\b/,
+    );
+    expect(people, 'the people lost the claim pin').toMatch(
+      /m\.organization_id = nullif\(\(\(select auth\.jwt\(\)\) ->> 'organization_id'\), ''\)::uuid/,
+    );
+    expect(people, 'the people lost the active caller pin').toMatch(/where access\.is_active/);
+    expect(people).toMatch(/member_active_on\(m\.id, today\.day\)/);
+    expect(people).toMatch(/public\.organization_today\(m\.organization_id\)/);
+    for (const role of ['public', 'anon', 'service_role']) {
+      expect(statements).toContain(`revoke execute on function public.calendar_people() from ${role};`);
+    }
+    expect(statements).toContain('grant execute on function public.calendar_people() to authenticated;');
+  });
+
   it('replaces the roster twice, adding the rank and then the position and nothing else', () => {
     // MEMBER RANK. `0014` replaces `team_roster` in place: the same signature,
     // the same definer scope, and one more key in each member object. TEAM

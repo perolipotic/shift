@@ -34,6 +34,11 @@ import { expect, test } from './support/test.ts';
  * Story 3.3a: *Sve smjene* narrowed to one team by a native Select — the
  * all-teams option counting the columns, the teams under their heading — kept
  * across month navigation and cleared by the reset, and a phone-safe row.
+ *
+ * Story 3.3b: the same Select lists every active person under *Osobe*, to an
+ * admin and to a member-role account alike; choosing one replaces the grid
+ * with their day list headed with their name, kept across months, dropped by
+ * choosing a team and by the reset, and a person on no team is explained.
  */
 
 const kalendar = hr.kalendar;
@@ -695,6 +700,170 @@ test.describe('the team filter at 1280 px', () => {
     await expect(page.getByRole('button', { name: kalendar.filter.reset, exact: true })).toHaveCount(0);
     await expect(page.getByRole('grid')).toHaveCount(0);
     await expect(page).toHaveURL(searchParamPattern('smjena', fixture.team.id));
+  });
+});
+
+/**
+ * A person's day list, named by their heading and then the month's
+ * (`Lana Članica Rujan 2026`), so the month is never lost.
+ */
+function personListOf(page: Page, name: string): Locator {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  return page.getByRole('list', { name: new RegExp(`^${escaped} \\S+ \\d{4}$`) });
+}
+
+/** The people under the filter's *Osobe* heading. */
+function peopleOptionsOf(page: Page): Locator {
+  return teamFilterOf(page).locator(`optgroup[label="${kalendar.filter.people}"] > option`);
+}
+
+test.describe('the person filter at 1280 px', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 1280, height: 800 } });
+
+  test("shows one person's day list in place of the grid, kept across months and cleared by a team or the reset", async ({
+    page,
+    fixture,
+  }) => {
+    await page.goto('/kalendar');
+    await expect(gridOf(page).getByRole('columnheader', { name: fixture.team.name, exact: true })).toBeVisible();
+    const columns = await columnCountOf(page);
+    const select = teamFilterOf(page);
+    const reset = page.getByRole('button', { name: kalendar.filter.reset, exact: true });
+
+    // The Osobe group follows the teams and lists the fixture's people.
+    await expect(select.locator('optgroup')).toHaveCount(2);
+    await expect(select.locator('optgroup').nth(1)).toHaveAttribute('label', kalendar.filter.people);
+    for (const person of [fixture.admin, fixture.member, fixture.spare]) {
+      await expect(peopleOptionsOf(page).filter({ hasText: person.name }), person.name).toHaveCount(1);
+    }
+
+    // Choosing her shows her day list headed with her name, and no grid.
+    await select.selectOption({ label: fixture.member.name });
+    await expect(page).toHaveURL(anySearchParamPattern('osoba'));
+    const osoba = new URL(page.url()).searchParams.get('osoba') ?? '';
+    expect(osoba).not.toBe('');
+    await expect(page.getByRole('heading', { level: 3, name: fixture.member.name, exact: true })).toBeVisible();
+    const list = personListOf(page, fixture.member.name);
+    await expect(list).toBeVisible();
+    await expect(list).toHaveAccessibleName(
+      `${fixture.member.name} ${(await page.getByRole('heading', { level: 2 }).innerText()).trim()}`,
+    );
+    await expect(page.getByRole('grid')).toHaveCount(0);
+    await expect(select).toHaveValue(`osoba:${osoba}`);
+    await expect(reset).toBeVisible();
+
+    // The next month keeps her.
+    const heading = page.getByRole('heading', { level: 2 });
+    const thisMonth = (await heading.innerText()).trim();
+    await page.getByRole('button', { name: kalendar.next }).click();
+    await expect(heading).not.toHaveText(thisMonth);
+    await expect(page).toHaveURL(anySearchParamPattern('mjesec'));
+    await expect(page).toHaveURL(searchParamPattern('osoba', osoba));
+    await expect(personListOf(page, fixture.member.name)).toBeVisible();
+    await expect(page.getByRole('grid')).toHaveCount(0);
+
+    // Choosing a team drops her: the grid narrowed to that team.
+    await select.selectOption(fixture.team.id);
+    await expect(page).not.toHaveURL(anySearchParamPattern('osoba'));
+    await expect(page).toHaveURL(searchParamPattern('smjena', fixture.team.id));
+    await expect(gridOf(page).locator('thead th')).toHaveCount(2);
+
+    // Back to her, then the reset returns the whole grid and keeps the month.
+    await select.selectOption({ label: fixture.member.name });
+    await expect(page).toHaveURL(searchParamPattern('osoba', osoba));
+    await expect(page).not.toHaveURL(anySearchParamPattern('smjena'));
+    const mjesec = new URL(page.url()).searchParams.get('mjesec') ?? '';
+    await reset.click();
+    await expect(page).not.toHaveURL(anySearchParamPattern('osoba'));
+    await expect(page).not.toHaveURL(anySearchParamPattern('smjena'));
+    await expect(page).toHaveURL(searchParamPattern('mjesec', mjesec));
+    await expect(gridOf(page).locator('thead th')).toHaveCount(columns + 1);
+    await expect(select).toHaveValue('');
+    await expect(reset).toHaveCount(0);
+    await expect(select).toBeFocused();
+  });
+
+  test('forgets the grid tab stop when a person is chosen and reset', async ({ page, fixture }) => {
+    await page.goto('/kalendar');
+    await expect(gridOf(page).getByRole('columnheader', { name: fixture.team.name, exact: true })).toBeVisible();
+    const select = teamFilterOf(page);
+
+    await moveTabStopOffToday(page);
+    await select.selectOption({ label: fixture.member.name });
+    await expect(page).toHaveURL(anySearchParamPattern('osoba'));
+    await expect(page.getByRole('grid')).toHaveCount(0);
+    await page.getByRole('button', { name: kalendar.filter.reset, exact: true }).click();
+    await expect(page).not.toHaveURL(anySearchParamPattern('osoba'));
+    await expectTabStopOnToday(page);
+  });
+
+  test('a person on no team all month is explained, never an empty list', async ({ page, fixture }) => {
+    await page.goto('/kalendar');
+    const select = teamFilterOf(page);
+    await expect(peopleOptionsOf(page).filter({ hasText: fixture.spare.name })).toHaveCount(1);
+
+    await select.selectOption({ label: fixture.spare.name });
+    await expect(page).toHaveURL(anySearchParamPattern('osoba'));
+    await expect(page.getByRole('heading', { level: 3, name: fixture.spare.name, exact: true })).toBeVisible();
+    await expect(page.getByText(fill(kalendar.person.noTeam, { name: fixture.spare.name }), { exact: true })).toBeVisible();
+    await expect(personListOf(page, fixture.spare.name)).toHaveCount(0);
+    await expect(page.getByRole('grid')).toHaveCount(0);
+  });
+
+  test('an unknown person id is ignored: the grid, and no reset', async ({ page, fixture }) => {
+    const unknown = randomUUID();
+    await page.goto(`/kalendar?osoba=${unknown}`);
+    await expect(gridOf(page).getByRole('columnheader', { name: fixture.team.name, exact: true })).toBeVisible();
+    await expect(teamFilterOf(page)).toHaveValue('');
+    await expect(page.getByRole('button', { name: kalendar.filter.reset, exact: true })).toHaveCount(0);
+    await expect(page).toHaveURL(searchParamPattern('osoba', unknown));
+  });
+});
+
+test.describe('the person filter in Moj raspored', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 1280, height: 800 } });
+
+  test('Moj raspored ignores the person, shows no filter, and keeps it in the URL', async ({ page, fixture }) => {
+    await page.goto('/kalendar');
+    const value = await peopleOptionsOf(page).filter({ hasText: fixture.member.name }).getAttribute('value');
+    const osoba = (value ?? '').replace(/^osoba:/, '');
+    expect(osoba).not.toBe('');
+
+    await page.goto(`/kalendar?prikaz=moj&osoba=${osoba}`);
+    await expect(modes(page).moj).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('heading', { level: 2, name: /\d{4}$/ })).toBeVisible();
+    await expect(teamFilterOf(page)).toHaveCount(0);
+    await expect(page.getByRole('heading', { level: 3, name: fixture.member.name })).toHaveCount(0);
+    await expect(page).toHaveURL(searchParamPattern('osoba', osoba));
+  });
+});
+
+test.describe('the person filter for a member-role account', () => {
+  test.use({ storageState: MEMBER_STATE, viewport: { width: 1280, height: 800 } });
+
+  test('lists the colleagues under Osobe', async ({ page, fixture }) => {
+    await page.goto('/kalendar?prikaz=sve');
+    await expect(teamFilterOf(page)).toBeVisible();
+    for (const person of [fixture.admin, fixture.member, fixture.spare]) {
+      await expect(peopleOptionsOf(page).filter({ hasText: person.name }), person.name).toHaveCount(1);
+    }
+    // Every option is a name and nothing else: no address, no username.
+    for (const text of await peopleOptionsOf(page).allInnerTexts()) {
+      expect(text).not.toMatch(/@|e2e\./);
+    }
+
+    // A colleague's month — the reading `calendar_people()` exists for.
+    const select = teamFilterOf(page);
+    await select.selectOption({ label: fixture.admin.name });
+    await expect(page).toHaveURL(anySearchParamPattern('osoba'));
+    await expect(page.getByRole('heading', { level: 3, name: fixture.admin.name, exact: true })).toBeVisible();
+    await expect(page.getByRole('grid')).toHaveCount(0);
+
+    await select.selectOption({ label: fixture.spare.name });
+    await expect(page.getByRole('heading', { level: 3, name: fixture.spare.name, exact: true })).toBeVisible();
+    await expect(page.getByText(fill(kalendar.person.noTeam, { name: fixture.spare.name }), { exact: true })).toBeVisible();
+    await expect(page.getByRole('grid')).toHaveCount(0);
   });
 });
 

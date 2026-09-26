@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   ALL_TEAMS_FILTER,
   CALENDAR_CELL_CLASS,
+  PERSON_FILTER_PREFIX,
   COMPRESSED_CELL_CLASS,
   NO_ROTATION_CELL_CLASS,
   NO_ROTATION_SHOWN,
@@ -18,10 +19,12 @@ import {
   calendarSearchOf,
   calendarSearchTo,
   calendarTodayOf,
+  chosenPersonOf,
   chosenTeamOf,
   defaultModeOf,
   isCalendarMonth,
   monthShownOf,
+  personFilterValueOf,
   teamLettersOf,
   phoneStoreOf,
   typeLettersOf,
@@ -34,12 +37,18 @@ import { CALENDAR_UNAVAILABLE, readCalendar, type CalendarSnapshot } from '@/cal
 import { initLocalization, t } from '@/i18n';
 import {
   PILOT,
+  SEEDED,
   TODAY,
   UJ5,
+  VIEWER_MEMBER,
+  VIEWER_NAME,
   assignmentRow,
   calendarOrganizationRow,
   calendarTableOf,
+  memberMembershipRow,
   membershipRow,
+  peopleAnswerOf,
+  personRow,
   stepRow,
   teamRow,
   typeRow,
@@ -58,13 +67,16 @@ import { NONWORKING_CHIP_CLASS, NO_TIMES_SHOWN, slotColourClassOf } from '@/shif
 
 async function snapshotOf(
   rows: FixtureRows,
-  { timezone = 'Europe/Zagreb', viewers = null as readonly Record<string, unknown>[] | null } = {},
+  {
+    timezone = 'Europe/Zagreb',
+    viewers = null as readonly Record<string, unknown>[] | null,
+    versions = null as readonly Record<string, unknown>[] | null,
+    people = undefined as readonly Record<string, unknown>[] | undefined,
+  } = {},
 ): Promise<CalendarSnapshot> {
-  const organization = calendarOrganizationRow(rows, { timezone, viewers });
-  const outcome = await readCalendar(
-    calendarTableOf({ data: [organization], error: null, count: 1 }),
-    viewerSession(),
-  );
+  const organization = calendarOrganizationRow(rows, { timezone, viewers, versions });
+  const source = calendarTableOf({ data: [organization], error: null, count: 1 }, peopleAnswerOf(people));
+  const outcome = await readCalendar(source, source, viewerSession());
 
   if (!outcome.ok) throw new Error(outcome.code);
 
@@ -495,7 +507,7 @@ describe('the day list (story 3.2a)', () => {
       expect(day.cell).toEqual(row.cells[column]);
     }
     expect(daysOf(month)!.filter((day) => day.isToday).map((day) => day.date)).toEqual([TODAY]);
-    expect(calendarDayListOf(shown, '2026-09', TODAY)).toEqual(daysOf(month));
+    expect(calendarDayListOf(shown, shown.viewer.memberships, '2026-09', TODAY)).toEqual(daysOf(month));
   });
 
   it('follows a move in the middle of the month: the 1st–14th from A, the 15th on from B', async () => {
@@ -610,7 +622,7 @@ describe('the review of 3.2a', () => {
       ],
     };
 
-    expect(() => calendarDayListOf(broken, '2026-09', TODAY)).toThrow(RangeError);
+    expect(() => calendarDayListOf(broken, broken.viewer.memberships, '2026-09', TODAY)).toThrow(RangeError);
     const outcome = calendarMonthOutcomeOf(broken, { mjesec: '2026-09' }, TODAY);
 
     expect(outcome.ok).toBe(true);
@@ -743,21 +755,26 @@ describe('the team filter (story 3.3a)', () => {
   });
 
   it('chooses a team, and resets to every team keeping the rest', () => {
-    expect(calendarSearchTo({ mjesec: '2026-10' }, { smjena: 'A' })).toEqual({ mjesec: '2026-10', smjena: 'A' });
-    expect(calendarSearchTo({ smjena: 'A' }, { smjena: 'B' })).toEqual({ smjena: 'B' });
+    expect(calendarSearchTo({ mjesec: '2026-10' }, { smjena: 'A', osoba: null })).toEqual({
+      mjesec: '2026-10',
+      smjena: 'A',
+    });
+    expect(calendarSearchTo({ smjena: 'A' }, { smjena: 'B', osoba: null })).toEqual({ smjena: 'B' });
     // Matrix: reset — the search without `smjena`, the other params kept.
-    expect(calendarSearchTo({ mjesec: '2026-10', prikaz: 'sve', smjena: 'A' }, { smjena: null })).toEqual({
+    expect(
+      calendarSearchTo({ mjesec: '2026-10', prikaz: 'sve', smjena: 'A' }, { smjena: null, osoba: null }),
+    ).toEqual({
       mjesec: '2026-10',
       prikaz: 'sve',
     });
     // Never a mode or a team the viewer did not choose.
-    expect(calendarSearchTo({}, { smjena: null })).toEqual({});
+    expect(calendarSearchTo({}, { smjena: null, osoba: null })).toEqual({});
     expect(calendarSearchTo({}, { mjesec: '2026-10' })).toEqual({ mjesec: '2026-10' });
   });
 
   it('turns the all-teams option into the reset, and a team into itself', () => {
-    expect(calendarFilterChangeOf(ALL_TEAMS_FILTER)).toEqual({ smjena: null });
-    expect(calendarFilterChangeOf('pilot-smjena-b')).toEqual({ smjena: 'pilot-smjena-b' });
+    expect(calendarFilterChangeOf(ALL_TEAMS_FILTER)).toEqual({ smjena: null, osoba: null });
+    expect(calendarFilterChangeOf('pilot-smjena-b')).toEqual({ smjena: 'pilot-smjena-b', osoba: null });
   });
 
   it('shows every column and chooses nothing with no smjena', () => {
@@ -857,6 +874,195 @@ describe('the team filter (story 3.3a)', () => {
       TODAY,
     );
 
-    expect(month.filter).toEqual({ teams: [], chosen: null });
+    expect(month.filter).toEqual({
+      teams: [],
+      chosen: null,
+      people: [{ id: VIEWER_MEMBER, name: VIEWER_NAME }],
+      person: null,
+    });
+  });
+});
+
+describe('the person filter (story 3.3b)', () => {
+  const COLLEAGUE = '00000000-0000-4000-8000-0000000000c1';
+  const SPARE = '00000000-0000-4000-8000-0000000000c2';
+  const INACTIVE = '00000000-0000-4000-8000-0000000000c9';
+
+  /**
+   * The pilot with the viewer on Smjena A, a colleague on Smjena A who moves
+   * to Smjena B on 2026-09-15, a spare on no team, and a member inactive today
+   * whom `calendar_people()` therefore does not name.
+   */
+  async function withPeople(): Promise<CalendarSnapshot> {
+    return snapshotOf(PILOT, {
+      versions: [
+        memberMembershipRow(VIEWER_MEMBER, 'pilot-smjena-a', SEEDED),
+        memberMembershipRow(COLLEAGUE, 'pilot-smjena-a', SEEDED),
+        memberMembershipRow(COLLEAGUE, 'pilot-smjena-b', '2026-09-15'),
+        memberMembershipRow(INACTIVE, 'pilot-smjena-c', SEEDED),
+      ],
+      people: [
+        personRow(VIEWER_MEMBER, VIEWER_NAME),
+        personRow(COLLEAGUE, 'Ante Babić'),
+        personRow(SPARE, 'Toni Bezsmjene'),
+      ],
+    });
+  }
+
+  let people: CalendarSnapshot;
+
+  beforeAll(async () => {
+    people = await withPeople();
+  });
+
+  it('keeps any non-empty osoba and drops anything else', () => {
+    expect(calendarSearchOf({ osoba: COLLEAGUE })).toEqual({ osoba: COLLEAGUE });
+    expect(calendarSearchOf({ osoba: 'nobody', smjena: 'A' })).toEqual({ smjena: 'A', osoba: 'nobody' });
+    for (const bad of ['', 7, null, undefined, [COLLEAGUE], { id: COLLEAGUE }]) {
+      expect(calendarSearchOf({ osoba: bad, mjesec: '2026-10' }), String(bad)).toEqual({ mjesec: '2026-10' });
+    }
+  });
+
+  it('keeps the person on a month change and on a mode change', () => {
+    // Matrix: month / mode change — `osoba` kept.
+    expect(calendarSearchTo({ osoba: 'P', prikaz: 'sve' }, { mjesec: '2026-10' })).toEqual({
+      mjesec: '2026-10',
+      prikaz: 'sve',
+      osoba: 'P',
+    });
+    expect(calendarSearchTo({ mjesec: '2026-10', osoba: 'P' }, { mjesec: null })).toEqual({ osoba: 'P' });
+    expect(calendarSearchTo({ osoba: 'P' }, { prikaz: 'moj' })).toEqual({ prikaz: 'moj', osoba: 'P' });
+  });
+
+  it('maps the Select: a person drops the team, a team drops the person, all teams drops both', () => {
+    expect(PERSON_FILTER_PREFIX).toBe('osoba:');
+    expect(personFilterValueOf(COLLEAGUE)).toBe(`osoba:${COLLEAGUE}`);
+    expect(calendarFilterChangeOf(personFilterValueOf(COLLEAGUE))).toEqual({ smjena: null, osoba: COLLEAGUE });
+    expect(calendarFilterChangeOf('osoba:')).toEqual({ smjena: null, osoba: null });
+    // Matrix: choose a team after a person — `{smjena: A}`, `osoba` dropped.
+    expect(
+      calendarSearchTo({ mjesec: '2026-10', osoba: 'P' }, calendarFilterChangeOf('pilot-smjena-a')),
+    ).toEqual({ mjesec: '2026-10', smjena: 'pilot-smjena-a' });
+    expect(calendarSearchTo({ smjena: 'A' }, calendarFilterChangeOf(personFilterValueOf('P')))).toEqual({
+      osoba: 'P',
+    });
+    // Matrix: reset — neither `osoba` nor `smjena`, the other params kept.
+    expect(
+      calendarSearchTo(
+        { mjesec: '2026-10', prikaz: 'sve', smjena: 'A', osoba: 'P' },
+        calendarFilterChangeOf(ALL_TEAMS_FILTER),
+      ),
+    ).toEqual({ mjesec: '2026-10', prikaz: 'sve' });
+  });
+
+  it('offers every person the snapshot names, id and name only, and chooses nobody without osoba', () => {
+    const month = calendarMonthOf(people, {}, TODAY);
+
+    expect(month.filter.people).toEqual([
+      { id: COLLEAGUE, name: 'Ante Babić' },
+      { id: VIEWER_MEMBER, name: VIEWER_NAME },
+      { id: SPARE, name: 'Toni Bezsmjene' },
+    ]);
+    expect(month.filter.person).toBeNull();
+    expect(month.person).toBeNull();
+  });
+
+  it("shows the chosen person's day list, headed with their name, across a mid-month move", () => {
+    // Matrix: person chosen; mid-month move — days 1–14 A's type, 15+ B's.
+    const month = calendarMonthOf(people, { mjesec: '2026-09', osoba: COLLEAGUE }, TODAY);
+    const grid = calendarMonthOf(people, { mjesec: '2026-09' }, TODAY);
+    const a = grid.columns.findIndex((team) => team.id === 'pilot-smjena-a');
+    const b = grid.columns.findIndex((team) => team.id === 'pilot-smjena-b');
+
+    expect(month.filter.person).toBe(COLLEAGUE);
+    expect(month.person?.id).toBe(COLLEAGUE);
+    expect(month.person?.name).toBe('Ante Babić');
+    if (month.person === null || !month.person.days.ok) throw new Error('no day list');
+    const days = month.person.days.days!;
+
+    expect(days).toHaveLength(30);
+    for (const [index, day] of days.entries()) {
+      const column = day.date < '2026-09-15' ? a : b;
+
+      expect(day.teamId, day.date).toBe(day.date < '2026-09-15' ? 'pilot-smjena-a' : 'pilot-smjena-b');
+      expect(day.cell, day.date).toEqual(grid.rows[index]!.cells[column]);
+    }
+    expect(month.person.days.days).toEqual(
+      calendarDayListOf(people, people.people.find((one) => one.id === COLLEAGUE)!.memberships, '2026-09', TODAY),
+    );
+    // The grid is not narrowed by a person, and the viewer's own list is theirs.
+    expect(month.columns).toEqual(grid.columns);
+    expect(month.rows).toEqual(grid.rows);
+    expect(month.days).toEqual(grid.days);
+  });
+
+  it('says a person on no team all month is on none, never an empty list', () => {
+    // Matrix: no team this month.
+    const month = calendarMonthOf(people, { mjesec: '2026-09', osoba: SPARE }, TODAY);
+
+    expect(month.person).toEqual({ id: SPARE, name: 'Toni Bezsmjene', days: { ok: true, days: null } });
+  });
+
+  it('ignores an unknown or inactive id: the grid, or the smjena team', () => {
+    // Matrix: unknown / inactive id — as if absent.
+    for (const osoba of ['nobody', INACTIVE]) {
+      const month = calendarMonthOf(people, { osoba }, TODAY);
+
+      expect(month.filter.person, osoba).toBeNull();
+      expect(month.person, osoba).toBeNull();
+      expect(month.columns, osoba).toHaveLength(4);
+      const narrowed = calendarMonthOf(people, { osoba, smjena: 'pilot-smjena-b' }, TODAY);
+
+      expect(narrowed.filter.chosen, osoba).toBe('pilot-smjena-b');
+      expect(narrowed.columns.map((team) => team.id), osoba).toEqual(['pilot-smjena-b']);
+    }
+    expect(chosenPersonOf({ osoba: INACTIVE }, people.people)).toBeNull();
+    expect(chosenPersonOf({ osoba: COLLEAGUE }, people.people)).toBe(COLLEAGUE);
+    expect(chosenPersonOf({}, people.people)).toBeNull();
+  });
+
+  it('lets a person win over a team when a URL carries both', () => {
+    // Matrix: both params — P's day list; the team filter reads `chosen: null`.
+    const month = calendarMonthOf(people, { smjena: 'pilot-smjena-b', osoba: COLLEAGUE }, TODAY);
+
+    expect(month.filter.chosen).toBeNull();
+    expect(month.filter.person).toBe(COLLEAGUE);
+    expect(month.person?.id).toBe(COLLEAGUE);
+    expect(month.columns).toHaveLength(4);
+  });
+
+  it("fails the person's day list alone, and the grid still draws", async () => {
+    const broken = await withPeople();
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const outcome = calendarMonthOutcomeOf(
+      {
+        ...broken,
+        // The 3.2a defect, on the person: a team whose rotation the grid
+        // never projects, on a pattern with no steps.
+        people: broken.people.map((one) =>
+          one.id === COLLEAGUE ? { ...one, memberships: [{ teamId: 'archived-team', effectiveFrom: SEEDED }] } : one,
+        ),
+        assignments: [
+          ...broken.assignments,
+          {
+            teamId: 'archived-team',
+            patternId: 'no-steps',
+            offsetStepId: 'missing',
+            anchorDate: SEEDED,
+            effectiveFrom: SEEDED,
+          },
+        ],
+      },
+      { mjesec: '2026-09', osoba: COLLEAGUE },
+      TODAY,
+    );
+
+    quiet.mockRestore();
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.month.person?.days).toEqual({ ok: false, code: CALENDAR_UNAVAILABLE });
+    expect(outcome.month.days.ok).toBe(true);
+    expect(outcome.month.rows).toEqual(calendarMonthOf(broken, { mjesec: '2026-09' }, TODAY).rows);
   });
 });
