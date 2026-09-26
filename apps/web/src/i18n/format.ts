@@ -149,6 +149,16 @@ function part(parts: readonly Intl.DateTimeFormatPart[], type: string): string {
 }
 
 /**
+ * The year part as FOUR digits (story 3.1). `year: 'numeric'` renders year 1
+ * as `1`, so without the padding `isIsoDate('0001-01-01')` round-tripped to
+ * `1-01-01` and refused every date before 1000 — which the schema and the
+ * domain both admit. From 1000 on the padding changes nothing.
+ */
+function yearOf(parts: readonly Intl.DateTimeFormatPart[]): string {
+  return part(parts, 'year').padStart(4, '0');
+}
+
+/**
  * The one choke point every date/time entry point passes through, and therefore
  * where an invalid instant is named.
  *
@@ -220,7 +230,7 @@ export function organizationIsoDate(instant: Date, timeZone: string): string {
   // options would be a second formatter for one question.
   const parts = partsOf('date', instant, zone);
 
-  return `${part(parts, 'year')}-${part(parts, 'month')}-${part(parts, 'day')}`;
+  return `${yearOf(parts)}-${part(parts, 'month')}-${part(parts, 'day')}`;
 }
 
 /** An ISO calendar date, shaped `YYYY-MM-DD`. */
@@ -302,7 +312,7 @@ export function formatIsoDayMonth(isoDate: string): string | null {
 export function formatDate(instant: Date, timeZone: string): string {
   const parts = partsOf('date', instant, timeZone);
 
-  return `${part(parts, 'day')}.${part(parts, 'month')}.${part(parts, 'year')}`;
+  return `${part(parts, 'day')}.${part(parts, 'month')}.${yearOf(parts)}`;
 }
 
 /** `19:00` — 24-hour, zero-padded, in the organization's zone. */
@@ -344,6 +354,30 @@ export function formatMonthName(instant: Date, timeZone: string): string {
 /** `subota` — CLDR verbatim, lowercase. */
 export function formatWeekdayName(instant: Date, timeZone: string): string {
   return part(partsOf('weekdayName', instant, timeZone), 'weekday').toLocaleLowerCase(LOCALE);
+}
+
+/**
+ * `rujan` — the month an ISO calendar date falls in, by
+ * {@link formatMonthName} (story 3.1, the calendar's heading). A DATE, not an
+ * instant, so no zone applies: it is read at noon in the fallback zone, where
+ * no offset can move it. `null` for anything {@link isIsoDate} refuses.
+ */
+export function formatIsoMonthName(isoDate: string): string | null {
+  if (!isIsoDate(isoDate)) return null;
+
+  return formatMonthName(noonOf(isoDate), FALLBACK_TIME_ZONE);
+}
+
+/**
+ * `subota` — the weekday of an ISO calendar date, by
+ * {@link formatWeekdayName} (story 3.1, the calendar's rows), by the same
+ * reading as {@link formatIsoMonthName}. `null` for anything {@link isIsoDate}
+ * refuses.
+ */
+export function formatIsoWeekdayName(isoDate: string): string | null {
+  if (!isIsoDate(isoDate)) return null;
+
+  return formatWeekdayName(noonOf(isoDate), FALLBACK_TIME_ZONE);
 }
 
 /**

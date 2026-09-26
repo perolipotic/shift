@@ -53,3 +53,13 @@ export {
   type RotationWarningInput,
   type WarningDate,
 } from './warnings.js';
+
+export {
+  adjacentMonth,
+  datesOfMonth,
+  monthOf,
+  scheduleOfMonth,
+  type ScheduleCell,
+  type ScheduleInput,
+  type ScheduleRow,
+} from './schedule.js';

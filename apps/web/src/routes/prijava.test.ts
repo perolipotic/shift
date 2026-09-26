@@ -149,6 +149,13 @@ const ROTATION_WARNING_KEYS = join(srcRoot, 'rotation', 'warnings.ts');
 const ROTATION_HISTORY_KEYS = join(srcRoot, 'rotation', 'history.ts');
 
 /**
+ * Story 3.1's calendar: the `Kalendar` destination, built, and the module
+ * holding its read failure. `@/calendar/month` declares no key.
+ */
+const KALENDAR = join(srcRoot, 'routes', 'kalendar.tsx');
+const CALENDAR_SNAPSHOT_KEYS = join(srcRoot, 'calendar', 'snapshot.ts');
+
+/**
  * The member write path's rules, as a `.ts` module that renders nothing.
  *
  * THE THIRD NEW KEY SOURCE, and it has to be its own entry rather than folded
@@ -253,7 +260,6 @@ const LOGO_URL = join(srcRoot, 'organization', 'logo-url.ts');
  * registered router, so the four copies are held together end to end.
  */
 const PLACEHOLDER_SLUGS = [
-  'kalendar',
   'sati',
   'godisnji',
   'raspored',
@@ -275,7 +281,10 @@ const PLACEHOLDER_SLUGS = [
 //
 // FOUR SINCE STORY 2.2b: `/postavke-rotacije` left the placeholders when it
 // gained the shift type list, its add form and its archived section.
-const BUILT_SLUGS = ['organizacija', 'ljudi', 'danas', 'postavke-rotacije'];
+//
+// FIVE SINCE STORY 3.1: `/kalendar` left the placeholders when it gained the
+// month grid and its navigation.
+const BUILT_SLUGS = ['organizacija', 'ljudi', 'danas', 'postavke-rotacije', 'kalendar'];
 
 /** Every registered destination, however much of it is built. */
 const DESTINATION_SLUGS = [...PLACEHOLDER_SLUGS, ...BUILT_SLUGS];
@@ -410,6 +419,9 @@ const SCREENS = [
   // neither detector matches by construction and the link sweep measures.
   { name: 'the team roster', file: TEAM_ROSTER, expectedControls: 1 },
   { name: 'the Danas destination', file: DANAS, expectedControls: 0 },
+  // STORY 3.1. THREE on Kalendar: the previous month, `Ovaj mjesec` and the
+  // next month. The grid is a table and offers nothing (day detail is 3.4).
+  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 3 },
   // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
   // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
   // row link written once inside the map over the bands — the same count at
@@ -1022,6 +1034,13 @@ const STRUCTURAL_ATTRIBUTES = new Set([
   // heading on the same page and renders nowhere, so nothing user-facing can
   // hide in it. `aria-label` remains guarded.
   'aria-labelledby',
+  // ADDED by story 3.1's calendar grid, and it is a loosening of a GLOBAL
+  // allowlist, so it is named. `scope` on a table header takes its value from
+  // a CLOSED, NON-TEXTUAL vocabulary HTML fixes — `row`, `col`, `rowgroup`,
+  // `colgroup` — and renders nowhere; it is what ties a date's row and a
+  // team's column to their cells for assistive technology. `aria-label`
+  // remains guarded.
+  'scope',
 ]);
 
 /** Content inside a template literal, with every `${…}` removed. */
@@ -1713,6 +1732,23 @@ const KEY_SOURCES = [
     strings: 4,
   },
   {
+    // STORY 3.1. EIGHT on Kalendar: its own `nav.kalendar` heading, the month
+    // heading, the previous and next months' names, `Ovaj mjesec`, the date
+    // column head, the no-rotation label and the no-teams note. The read
+    // failure comes through `@/calendar/snapshot`, below.
+    name: 'the Kalendar destination',
+    file: KALENDAR,
+    keys: translationKeys,
+    strings: 8,
+  },
+  {
+    // STORY 3.1: the calendar's one read failure.
+    name: 'the calendar read rules',
+    file: CALENDAR_SNAPSHOT_KEYS,
+    keys: messageKeyUnion,
+    strings: 1,
+  },
+  {
     // The read failure.
     name: 'the rotation read rules',
     file: ROTATION_LIST_KEYS,
@@ -2020,8 +2056,12 @@ describe('the screen is read at all, so every sweep below means something', () =
     // FORTY-TWO SINCE STORY 2.5: `@/rotation/warnings`.
     //
     // FORTY-THREE SINCE STORY 2.6: `@/rotation/history`.
+    //
+    // FORTY-FOUR SINCE STORY 3.1: `/kalendar` left the placeholders (one
+    // generated entry fewer, its own entry instead, so SCREENS holds) and
+    // `@/calendar/snapshot` joined.
     expect(SCREENS).toHaveLength(24);
-    expect(KEY_SOURCES).toHaveLength(43);
+    expect(KEY_SOURCES).toHaveLength(44);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"

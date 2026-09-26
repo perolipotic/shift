@@ -24,6 +24,18 @@
     "days": "{count, plural, one {# dan} few {# dana} other {# dana}}",
     "conflicts": "{count, plural, one {# konflikt} few {# konflikta} other {# konflikata}}"
   },
+  "kalendar": {
+    "monthHeading": "{month} {year}",
+    "previous": "Prethodni mjesec",
+    "next": "Sljedeći mjesec",
+    "current": "Ovaj mjesec",
+    "columnDate": "Datum",
+    "noRotation": "Bez rotacije",
+    "noTeams": "Nijedna smjena nije u upotrebi, pa kalendar nema što prikazati.",
+    "error": {
+      "unavailable": "Kalendar trenutačno nije moguće učitati. Pokušaj ponovno."
+    }
+  },
   "ljudi": {
     "lede": "Osobe u organizaciji, njihove razine ovlasti i dani godišnjeg odmora.",
     "caption": "Popis osoba u organizaciji",

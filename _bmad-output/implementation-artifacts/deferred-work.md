@@ -814,3 +814,13 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-6-rotation-effective-date.md`
   summary: `Vrijedi od` has no upper bound, so a change scheduled years ahead (up to 9999-12-31, `0016`'s finite check) blocks every later save until someone cancels it.
   evidence: Raised by 2.6's review. Decision 2a allows one scheduled change at most; a typo in the year is recoverable only through the cancel. A sanity bound (e.g. a year or one cycle ahead) would need a product decision.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-anyone-reads-a-month.md`
+  summary: The calendar's "today" row and the `Ovaj mjesec` target are computed only on render, so a screen left open past the organization's midnight keeps marking yesterday.
+  evidence: `apps/web/src/routes/kalendar.tsx` reads `calendarTodayOf(snapshot, new Date())` during render with no timer at the day change; the rotation builder has the same pattern, so this needs one app-wide rule.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-anyone-reads-a-month.md`
+  summary: The unavailable notices ("Pokušaj ponovno") offer no retry control on the calendar or other read surfaces; retrying means reloading the page.
+  evidence: `kalendar.error.unavailable` is rendered in a `Notice` with no button, `retry: 1`, and no refetch on window focus; the rotation builder's notice behaves the same way.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-anyone-reads-a-month.md`
+  summary: The calendar's team header row is not sticky, so the team names scroll out of view in a 28–31-row month on a phone or short window.
+  evidence: in `apps/web/src/routes/kalendar.tsx` only the date column is `sticky left-0`; story 3.2 (phone and screen reader) is the natural owner.

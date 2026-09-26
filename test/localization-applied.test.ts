@@ -246,6 +246,11 @@ const SOURCES = [
   join(webRoot, 'src', 'rotation', 'warnings.ts'),
   // Story 2.6's history: the statuses and the unknown author, as return-type unions.
   join(webRoot, 'src', 'rotation', 'history.ts'),
+  // Story 3.1's calendar: the read failure as a return-type union, and the
+  // month model the grid renders (its names and ranges come through
+  // `@/i18n/format`). `kalendar.tsx` is listed with the destinations above.
+  join(webRoot, 'src', 'calendar', 'snapshot.ts'),
+  join(webRoot, 'src', 'calendar', 'month.ts'),
   // The owner layout's numbered section badge, a primitive: text-free, here
   // for freshness like the other primitives.
   join(webRoot, 'src', 'components', 'ui', 'section-number.tsx'),
@@ -971,6 +976,11 @@ const AUTHORED_VOCABULARY = [
   'Poništi',
   'Nepoznata',
   'Spremljeno',
+  // STORY 3.1: the calendar's navigation, so a hard-coded month button is a
+  // count that no longer matches.
+  'Prethodni',
+  'Sljedeći',
+  'Ovaj',
 ];
 
 /** Everything the terminology contract and the unshipped affordances still own.

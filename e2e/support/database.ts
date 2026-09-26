@@ -134,6 +134,140 @@ export function holdRotation(slug: string): RotationHold {
   };
 }
 
+/** What {@link seedTeamRotation} wrote: the four-step pattern's type names and the date it starts. */
+export interface SeededRotation {
+  /** The organization's today, `YYYY-MM-DD`: the version's effective date and anchor. */
+  readonly today: string;
+  /** The pattern's step types in order — working, working, non-working, non-working. */
+  readonly steps: readonly [string, string, string, string];
+  /** What {@link removeSeededRotation} deletes. */
+  readonly organizationId: string;
+  readonly patternId: string;
+  readonly shiftTypeIds: readonly string[];
+}
+
+/**
+ * Gives ONE team of the run organization a rotation from today, in SQL (story
+ * 3.1): three new shift types — `Dan <suffix>` 07:00–19:00, `Noć <suffix>`
+ * 19:00–07:00 and `Slobodno <suffix>` — a pattern `[Dan, Noć, Slobodno,
+ * Slobodno]`, and a version for `teamId` effective from and anchored on the
+ * organization's today at the first step, attributed to the run's admin.
+ *
+ * CALL IT UNDER {@link holdRotation}, and undo it with
+ * {@link removeSeededRotation} before releasing the hold, so no other spec
+ * ever lists, counts or ramps these types.
+ */
+export async function seedTeamRotation(slug: string, teamId: string, suffix: string): Promise<SeededRotation> {
+  const client = await connect();
+  try {
+    await client.query('begin');
+    const found = await client.query<{ organization_id: string; admin_user: string; today: string }>(
+      `select o.id as organization_id, m.auth_user_id as admin_user,
+              to_char(public.organization_today(o.id), 'YYYY-MM-DD') as today
+         from organizations o
+         join members m on m.organization_id = o.id and m.role = 'admin'
+        where o.slug = $1
+        order by m.created_at, m.id
+        limit 1`,
+      [slug],
+    );
+    const organization = found.rows[0];
+    if (organization === undefined) throw new Error(`E2E: no organization ${slug} to seed a rotation in`);
+    const { organization_id: organizationId, admin_user: admin, today } = organization;
+
+    const names = [`Dan ${suffix}`, `Noć ${suffix}`, `Slobodno ${suffix}`] as const;
+    const typeIds: string[] = [];
+    for (const [index, name] of names.entries()) {
+      const type = await client.query<{ id: string }>(
+        `insert into shift_types (organization_id, name, is_working, created_by)
+         values ($1, $2, $3, $4) returning id`,
+        [organizationId, name, index < 2, admin],
+      );
+      const id = type.rows[0]?.id;
+      if (id === undefined) throw new Error('E2E: shift_types insert returned no row');
+      typeIds.push(id);
+    }
+    const [dan, noc, slobodno] = typeIds as [string, string, string];
+    for (const [shiftTypeId, start, end] of [
+      [dan, '07:00', '19:00'],
+      [noc, '19:00', '07:00'],
+    ] as const) {
+      await client.query(
+        `insert into shift_type_versions (organization_id, shift_type_id, start_time, end_time, effective_from, created_by)
+         values ($1, $2, $3::time, $4::time, date '2020-01-01', $5)`,
+        [organizationId, shiftTypeId, start, end, admin],
+      );
+    }
+
+    const pattern = await client.query<{ id: string }>(
+      'insert into rotation_patterns (organization_id, created_by) values ($1, $2) returning id',
+      [organizationId, admin],
+    );
+    const patternId = pattern.rows[0]?.id;
+    if (patternId === undefined) throw new Error('E2E: rotation_patterns insert returned no row');
+
+    let firstStep: string | undefined;
+    for (const [position, shiftTypeId] of [dan, noc, slobodno, slobodno].entries()) {
+      const step = await client.query<{ id: string }>(
+        `insert into rotation_steps (organization_id, pattern_id, position, shift_type_id, created_by)
+         values ($1, $2, $3, $4, $5) returning id`,
+        [organizationId, patternId, position, shiftTypeId, admin],
+      );
+      firstStep ??= step.rows[0]?.id;
+    }
+    if (firstStep === undefined) throw new Error('E2E: rotation_steps insert returned no row');
+
+    await client.query(
+      `insert into rotation_assignments
+         (organization_id, team_id, pattern_id, offset_step_id, anchor_date, effective_from, created_by)
+       values ($1, $2, $3, $4, $5::date, $5::date, $6)`,
+      [organizationId, teamId, patternId, firstStep, today, admin],
+    );
+    await client.query('commit');
+
+    return {
+      today,
+      steps: [names[0], names[1], names[2], names[2]],
+      organizationId,
+      patternId,
+      shiftTypeIds: typeIds,
+    };
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Deletes everything {@link seedTeamRotation} wrote — the version, the steps,
+ * the pattern, the times and the three types — in one transaction, so the run
+ * organization is as it was. Safe to call twice.
+ */
+export async function removeSeededRotation(seeded: SeededRotation): Promise<void> {
+  const client = await connect();
+  try {
+    await client.query('begin');
+    const scope = [seeded.organizationId, seeded.patternId];
+    await client.query('delete from rotation_assignments where organization_id = $1 and pattern_id = $2', scope);
+    await client.query('delete from rotation_steps where organization_id = $1 and pattern_id = $2', scope);
+    await client.query('delete from rotation_patterns where organization_id = $1 and id = $2', scope);
+    const types = [seeded.organizationId, seeded.shiftTypeIds];
+    await client.query(
+      'delete from shift_type_versions where organization_id = $1 and shift_type_id = any($2::uuid[])',
+      types,
+    );
+    await client.query('delete from shift_types where organization_id = $1 and id = any($2::uuid[])', types);
+    await client.query('commit');
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
+  } finally {
+    await client.end();
+  }
+}
+
 /**
  * Fails fast, naming `supabase start`, when the database or GoTrue is not
  * reachable. GoTrue too, because every spec signs in through it and a stack
