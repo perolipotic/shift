@@ -44,6 +44,10 @@ import type { TeamRow } from '@/teams/list';
  * team whose own step is removed falls to step 1 (index 0).
  *
  * "TODAY" IS THE ORGANIZATION'S, from the snapshot's zone, never the device's.
+ *
+ * THE CHANGE APPLIES FROM THE DRAFT'S EFFECTIVE DATE (story 2.6), never before
+ * today: the preview, the figures and the checks start on it, and every date
+ * before it keeps the version already in force.
  */
 
 /** A draft: what the builder holds between the prefill and the save. */
@@ -52,6 +56,13 @@ export interface RotationDraft {
   readonly steps: readonly string[];
   /** The one anchor every team's assignment is saved with — a UI convention (2.3a). */
   readonly anchorDate: string;
+  /**
+   * The date the change applies from (story 2.6, `Vrijedi od`): every version
+   * is saved from it, and the preview, the figures and the checks start on it.
+   * SEPARATE FROM THE ANCHOR: the anchor fixes the phase, this fixes when the
+   * phase applies. Never before the organization's today.
+   */
+  readonly effectiveFrom: string;
   /** Each active team's step, by team id, as an index into {@link steps}. */
   readonly offsets: Readonly<Record<string, number>>;
   /**
@@ -102,11 +113,12 @@ export function draftAssignmentOf(draft: RotationDraft, teamId: string): Rotatio
   };
 }
 
-/** A draft with no steps, the anchor on `anchorDate`, every team on step 1. */
-export function emptyDraftOf(teams: readonly TeamRow[], anchorDate: string): RotationDraft {
+/** A draft with no steps, the anchor and the effective date on `today`, every team on step 1. */
+export function emptyDraftOf(teams: readonly TeamRow[], today: string): RotationDraft {
   return {
     steps: [],
-    anchorDate,
+    anchorDate: today,
+    effectiveFrom: today,
     offsets: Object.fromEntries(teams.map((team) => [team.id, 0])),
     keys: [],
     nextKey: 0,
@@ -155,6 +167,9 @@ export function normalizedDraftOf(draft: RotationDraft, teams: readonly TeamRow[
  *
  * In any other case — no active team, a team with no rotation in force, or
  * teams on two patterns — the draft is empty, anchored on today.
+ *
+ * Either way the change applies from TODAY (story 2.6) until the admin moves
+ * `Vrijedi od`; the anchor stays today however that date moves.
  */
 export function prefillOf(snapshot: RotationSnapshot, today: string): RotationDraft {
   const teams = rotationTeamsOf(snapshot);
@@ -184,6 +199,7 @@ export function prefillOf(snapshot: RotationSnapshot, today: string): RotationDr
   return {
     steps: steps.map((step) => step.shiftTypeId),
     anchorDate: today,
+    effectiveFrom: today,
     offsets,
     keys: freshKeys(steps.length),
     nextKey: steps.length,
@@ -345,6 +361,17 @@ export function withAnchor(draft: RotationDraft, value: string): RotationDraft {
   const date = value.trim();
 
   return isIsoDate(date) ? { ...draft, anchorDate: date } : draft;
+}
+
+/**
+ * The draft with `value` as the date the change applies from — only a
+ * calendar date; a cleared or partial date input leaves it as it was. A date
+ * before today is KEPT here, and refused at the save (`ROTATION_EFFECTIVE_PAST`).
+ */
+export function withEffectiveFrom(draft: RotationDraft, value: string): RotationDraft {
+  const date = value.trim();
+
+  return isIsoDate(date) ? { ...draft, effectiveFrom: date } : draft;
 }
 
 /** A `<select>`'s value as a step index of `draft`, or `null`. */
@@ -541,14 +568,14 @@ export interface PreviewRow {
 }
 
 /**
- * One cycle of the unsaved draft, from today: one row per date for the cycle
- * length, one cell per active team — every cell projected by `@shift/domain`.
- * No rows while the pattern is empty.
+ * One cycle of the unsaved draft, from `from` — the draft's effective date
+ * (story 2.6): one row per date for the cycle length, one cell per active team
+ * — every cell projected by `@shift/domain`. No rows while the pattern is empty.
  */
 export function previewOf(
   snapshot: RotationSnapshot,
   draft: RotationDraft,
-  today: string,
+  from: string,
   cycles: number = 1,
 ): readonly PreviewRow[] {
   if (draft.steps.length === 0) return [];
@@ -556,7 +583,7 @@ export function previewOf(
   const chips = chipsOf(snapshot.types);
   const teams = rotationTeamsOf(snapshot);
 
-  return datesFrom(today, draft.steps.length * previewCyclesOf(cycles)).map((date) => ({
+  return datesFrom(from, draft.steps.length * previewCyclesOf(cycles)).map((date) => ({
     date,
     label: formatIsoDate(date) ?? date,
     cells: teams.map((team) => ({
@@ -627,10 +654,10 @@ export interface PreviewGrid {
 export function previewGridOf(
   snapshot: RotationSnapshot,
   draft: RotationDraft,
-  today: string,
+  from: string,
   cycles: number = 1,
 ): PreviewGrid {
-  const byDate = previewOf(snapshot, draft, today, cycles);
+  const byDate = previewOf(snapshot, draft, from, cycles);
   const length = draft.steps.length;
   // Day and cycle numbers by counting, not by division: day d of cycle c.
   const numbers: { readonly dayNumber: number; readonly cycleNumber: number }[] = [];
@@ -686,14 +713,15 @@ export interface DraftFigures {
   /** Steps whose type is non-working (a day off). A type the snapshot lacks is neither. */
   readonly nonWorkingSteps: number;
   /**
-   * Minutes worked over one cycle: the sum of each step's duration today, from
+   * Minutes worked over one cycle: the sum of each step's duration on the
+   * date given — the draft's effective date (story 2.6) — from
    * `shiftDurationOn`. `null` — UNKNOWN, never a guessed 0 — when a working
-   * step's type has no times in effect today.
+   * step's type has no times in effect then.
    */
   readonly cycleMinutes: number | null;
 }
 
-export function figuresOf(snapshot: RotationSnapshot, draft: RotationDraft, today: string): DraftFigures {
+export function figuresOf(snapshot: RotationSnapshot, draft: RotationDraft, on: string): DraftFigures {
   const byId = new Map(snapshot.types.map((type) => [type.id, type]));
   let workingSteps = 0;
   let nonWorkingSteps = 0;
@@ -701,7 +729,7 @@ export function figuresOf(snapshot: RotationSnapshot, draft: RotationDraft, toda
 
   for (const shiftTypeId of draft.steps) {
     const type = byId.get(shiftTypeId);
-    const minutes = type === undefined ? null : shiftDurationOn(type, type.versions, today);
+    const minutes = type === undefined ? null : shiftDurationOn(type, type.versions, on);
 
     if (type?.isWorking === true) workingSteps += 1;
     if (type?.isWorking === false) nonWorkingSteps += 1;
@@ -719,17 +747,20 @@ export const ROTATION_EMPTY = 'ROTATION_EMPTY';
 export const ROTATION_NO_TEAMS = 'ROTATION_NO_TEAMS';
 /** A team's rotation already has a version scheduled after today (2.6 cancels it). */
 export const ROTATION_SCHEDULED = 'ROTATION_SCHEDULED';
+/** The effective date is before the organization's today: past schedules are never rewritten (2.6). */
+export const ROTATION_EFFECTIVE_PAST = 'ROTATION_EFFECTIVE_PAST';
 /** A step names an archived type: `0016` refuses a step on one. */
 export const ROTATION_TYPE_ARCHIVED = 'ROTATION_TYPE_ARCHIVED';
 /** The draft is the rotation in force: the same steps and the same projection over a cycle. */
 export const ROTATION_UNCHANGED = 'ROTATION_UNCHANGED';
-/** A team's rotation already changed today; the save dates every version today. */
+/** A team's latest version is already dated the effective date; the save dates every version on it. */
 export const ROTATION_CHANGED_TODAY = 'ROTATION_CHANGED_TODAY';
 
 export type DraftRefusal =
   | typeof ROTATION_EMPTY
   | typeof ROTATION_NO_TEAMS
   | typeof ROTATION_SCHEDULED
+  | typeof ROTATION_EFFECTIVE_PAST
   | typeof ROTATION_TYPE_ARCHIVED
   | typeof ROTATION_UNCHANGED
   | typeof ROTATION_CHANGED_TODAY;
@@ -739,21 +770,21 @@ function sameSequence(one: readonly string[], other: readonly string[]): boolean
 }
 
 /**
- * Whether saving `draft` would change nothing: every active team has a
- * rotation in force today whose pattern is the draft's sequence of type ids,
- * and on every date of one cycle from today the team stands on the same step
- * index under both. A new pattern id alone would pass the database's
- * "changes the value" rule and write a redundant version, so this is judged
- * by projection, not by ids.
+ * Whether saving `draft` from `from` — its effective date (story 2.6) — would
+ * change nothing: every active team has a rotation in force ON THAT DATE whose
+ * pattern is the draft's sequence of type ids, and on every date of one cycle
+ * from it the team stands on the same step index under both. A new pattern id
+ * alone would pass the database's "changes the value" rule and write a
+ * redundant version, so this is judged by projection, not by ids.
  */
-export function draftUnchangedOf(snapshot: RotationSnapshot, draft: RotationDraft, today: string): boolean {
+export function draftUnchangedOf(snapshot: RotationSnapshot, draft: RotationDraft, from: string): boolean {
   const teams = rotationTeamsOf(snapshot);
-  const cycle = datesFrom(today, draft.steps.length);
+  const cycle = datesFrom(from, draft.steps.length);
 
   return (
     teams.length > 0 &&
     teams.every((team) => {
-      const assignment = assignmentInForceOf(snapshot, team.id, today);
+      const assignment = assignmentInForceOf(snapshot, team.id, from);
 
       if (assignment === null) return false;
 
@@ -773,21 +804,31 @@ export function draftUnchangedOf(snapshot: RotationSnapshot, draft: RotationDraf
 /**
  * Why `draft` is refused before anything is sent, or `null`. Every entered
  * value is kept either way; each reason has its own message.
+ *
+ * `today` is the organization's: the effective date may be no earlier, and a
+ * change scheduled after it refuses the save. Everything the save changes is
+ * judged FROM THE DRAFT'S EFFECTIVE DATE (story 2.6).
+ *
+ * A SCHEDULED CHANGE IS CHECKED FIRST: its refusal is where the cancel is
+ * offered, so no other refusal — an empty pattern, no team, an effective date
+ * that became yesterday at midnight — may hide it.
  */
 export function draftRefusalOf(
   snapshot: RotationSnapshot,
   draft: RotationDraft,
   today: string,
 ): DraftRefusal | null {
+  if (rotationScheduledOf(snapshot, today)) return ROTATION_SCHEDULED;
   if (draft.steps.length === 0) return ROTATION_EMPTY;
   if (rotationTeamsOf(snapshot).length === 0) return ROTATION_NO_TEAMS;
-  if (rotationScheduledOf(snapshot, today)) return ROTATION_SCHEDULED;
+  // ISO dates order as strings: this is the insert policy's own comparison.
+  if (!isIsoDate(draft.effectiveFrom) || draft.effectiveFrom < today) return ROTATION_EFFECTIVE_PAST;
 
   const inUse = new Set(snapshot.types.filter((type) => !type.archived).map((type) => type.id));
 
   if (draft.steps.some((shiftTypeId) => !inUse.has(shiftTypeId))) return ROTATION_TYPE_ARCHIVED;
-  if (draftUnchangedOf(snapshot, draft, today)) return ROTATION_UNCHANGED;
-  if (rotationChangedTodayOf(snapshot, today)) return ROTATION_CHANGED_TODAY;
+  if (draftUnchangedOf(snapshot, draft, draft.effectiveFrom)) return ROTATION_UNCHANGED;
+  if (rotationChangedTodayOf(snapshot, draft.effectiveFrom)) return ROTATION_CHANGED_TODAY;
 
   return null;
 }

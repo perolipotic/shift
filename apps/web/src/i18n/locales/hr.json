@@ -342,6 +342,7 @@
       "offsetsHeading": "Smjene i pomaci",
       "anchor": "Referentni datum",
       "anchorNote": "Zajednički za sve smjene. Pomak je korak na kojem je smjena na referentni datum.",
+      "effectiveFrom": "Vrijedi od",
       "howTitle": "Kako to funkcionira?",
       "howBody": "Na referentni datum svaka smjena stoji na svom pomaku, odnosno koraku uzorka. Od tog dana sve smjene prolaze kroz uzorak, jedan korak po danu.",
       "columnTeam": "Smjena",
@@ -352,13 +353,13 @@
       "stepOption": "Korak {position}: {name}",
       "offsetsEmpty": "Pomak se bira nakon prvog koraka.",
       "previewHeading": "Pregled ciklusa",
-      "previewLede": "Izračunato iz uzorka, pomaka i referentnog datuma, za jedan ciklus od danas.",
+      "previewLede": "Izračunato iz uzorka, pomaka i referentnog datuma, za jedan ciklus od datuma od kojeg rotacija vrijedi.",
       "dayNumber": "Dan {day}",
       "cycleLabel": "Ciklus {cycle}",
       "previewCycles": "Prikaži",
       "cycleCount": "{count, plural, one {# ciklus} few {# ciklusa} other {# ciklusa}}",
       "save": "Spremi rotaciju",
-      "saveNote": "Rotacija vrijedi od danas. Dani prije današnjeg zadržavaju dosadašnju rotaciju.",
+      "saveNote": "Rotacija vrijedi od odabranog datuma. Dani prije njega zadržavaju dosadašnju rotaciju.",
       "saved": "Rotacija je spremljena.",
       "warnings": {
         "summary": "{count, plural, one {# upozorenje} few {# upozorenja} other {# upozorenja}} za sljedeći ciklus:",
@@ -371,6 +372,32 @@
         "restGapEndlessUnknown": "Uzorak je bez slobodnog dana ({types}), trajanje nepoznato",
         "listSeparator": ", ",
         "typeSeparator": " → "
+      },
+      "cancelScheduled": {
+        "offer": "Poništi promjenu zakazanu od {date}",
+        "prompt": "Poništiti promjenu rotacije zakazanu od {date}? Dosadašnja rotacija ostaje na snazi.",
+        "confirm": "Potvrdi poništavanje promjene",
+        "keep": "Odustani",
+        "done": "Zakazana promjena rotacije je poništena.",
+        "stale": "Zakazana promjena više ne postoji: poništena je ili je već na snazi. Prikazano je trenutačno stanje."
+      },
+      "history": {
+        "heading": "Povijest rotacije",
+        "lede": "Svaka spremljena promjena: od kada vrijedi, tko ju je spremio i kada.",
+        "empty": "Rotacija još nije spremljena.",
+        "columnEffective": "Vrijedi od",
+        "columnStatus": "Status",
+        "columnAuthor": "Spremio",
+        "columnSaved": "Spremljeno",
+        "columnTeams": "Smjene",
+        "savedAt": "{date} u {time}",
+        "teamCount": "{count, plural, one {# smjena} few {# smjene} other {# smjena}}",
+        "unknownAuthor": "Nepoznata osoba",
+        "status": {
+          "scheduled": "zakazano",
+          "inForce": "na snazi",
+          "previous": "prethodno"
+        }
       },
       "stepper": {
         "label": "Koraci rotacije",
@@ -393,7 +420,8 @@
         "unavailable": "Rotaciju trenutačno nije moguće učitati. Pokušaj ponovno.",
         "empty": "Uzorak mora imati barem jedan korak.",
         "noTeams": "Za rotaciju je potrebna barem jedna smjena u upotrebi.",
-        "scheduled": "Promjena rotacije već je zakazana za kasniji datum, pa rotaciju sada nije moguće spremiti.",
+        "scheduled": "Promjena rotacije već je zakazana za kasniji datum, pa rotaciju sada nije moguće spremiti. Poništi zakazanu promjenu pa spremi ponovno.",
+        "effectivePast": "Rotacija ne može vrijediti od datuma prije današnjeg. Odaberi današnji ili kasniji datum.",
         "typeArchived": "Uzorak sadrži arhivirani tip. Ukloni taj korak ili ga zamijeni prije spremanja.",
         "unchanged": "Rotacija je ista kao dosadašnja. Promijeni uzorak, pomak ili referentni datum.",
         "changedToday": "Rotacija je danas već promijenjena. Sljedeća promjena moguća je od sutra.",

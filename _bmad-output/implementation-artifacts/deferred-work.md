@@ -808,3 +808,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-5-rotation-save-warnings.md`
   summary: A duplicate-coverage warning names the date and the shift type but not the teams that collide, so the admin has to work out from the preview which offsets to change.
   evidence: Raised by 2.5's review. `DUPLICATE_COVERAGE` dates carry `shiftTypeIds` only (spec 2.5 shape, as approved); carrying the team ids per duplicated type would let the confirmation say "Smjena A i Smjena B na Dan".
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-6-rotation-effective-date.md`
+  summary: After a change is scheduled, the builder's prefill still shows the rotation in force today, not the scheduled one, so the admin cannot see or start from what they just scheduled in the builder (only in the history).
+  evidence: Raised by 2.6's review. `prefillOf(snapshot, today)` picks the assignment in force today (spec 2.3b prefill rule); saving is refused while a change is scheduled (decision 2a), so this is confusing rather than harmful. Prefilling from the scheduled version would also need to decide the anchor.
+- source_spec: `_bmad-output/implementation-artifacts/spec-2-6-rotation-effective-date.md`
+  summary: `Vrijedi od` has no upper bound, so a change scheduled years ahead (up to 9999-12-31, `0016`'s finite check) blocks every later save until someone cancels it.
+  evidence: Raised by 2.6's review. Decision 2a allows one scheduled change at most; a typo in the year is recoverable only through the cancel. A sanity bound (e.g. a year or one cycle ahead) would need a product decision.

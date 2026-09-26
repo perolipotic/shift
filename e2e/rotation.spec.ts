@@ -367,3 +367,98 @@ test('a saved rotation reports its coverage gap, duplicate and rest gap, and an 
   await expect(page.getByText(builder.saved, { exact: true })).toHaveCount(0);
   await expect(page.getByText(withFewCount(warnings.summary, 3))).toHaveCount(0);
 });
+
+/** An ISO date `days` after the organization's today (the run's organization is in Europe/Zagreb). */
+function organizationDate(days: number): string {
+  const today = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Zagreb',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+  const [year, month, day] = today.split('-').map(Number) as [number, number, number];
+
+  return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
+}
+
+/** `03.10.2026`, the binding shape, from an ISO date. */
+function shownDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split('-');
+
+  return `${String(day)}.${String(month)}.${String(year)}`;
+}
+
+test('an admin schedules a change from tomorrow, sees it in the history, is refused a second, and cancels it', async ({
+  page,
+  fixture,
+}) => {
+  // Its own types, per attempt, and the run's rotation held (a save binds
+  // every active team of the run's organization, and the hold removes every
+  // version dated today or later, a scheduled one included).
+  test.slow();
+  hold = holdRotation(fixture.slug);
+  await hold.ready;
+
+  const suffix = randomBytes(3).toString('hex');
+  const a = `Dnevna ${suffix}`;
+  const off = `Slobodno ${suffix}`;
+  const tomorrow = organizationDate(1);
+  const history = builder.history;
+
+  await page.goto('/postavke-rotacije');
+  await addShiftType(page, a, ['07:00', '19:00']);
+  await addShiftType(page, off, null);
+
+  const newStep = page.getByLabel(builder.newStep, { exact: true });
+  const steps = page.getByRole('list', { name: builder.stepsCaption }).getByRole('listitem');
+  const before = await steps.count();
+  for (const name of [a, off]) {
+    await newStep.selectOption({ label: name });
+    await page.getByRole('button', { name: builder.addStep }).click();
+  }
+  await expect(steps).toHaveCount(before + 2);
+
+  // `Vrijedi od` opens on today; the anchor stays where it was when it moves.
+  const effective = page.getByLabel(builder.effectiveFrom, { exact: true });
+  const anchor = page.getByLabel(builder.anchor, { exact: true });
+  await expect(effective).toHaveValue(organizationDate(0));
+  const anchored = await anchor.inputValue();
+  await effective.fill(tomorrow);
+  await expect(anchor).toHaveValue(anchored);
+  // The preview starts on the effective date: its first date column is tomorrow.
+  const preview = page.getByRole('table').filter({
+    has: page.getByRole('columnheader', { name: fill(builder.dayNumber, { day: '1' }) }),
+  });
+  await expect(preview.getByRole('columnheader').nth(1)).toContainText(shownDate(tomorrow).slice(0, 6));
+
+  await page.getByRole('button', { name: builder.save }).click();
+  await expect(page.getByRole('status').filter({ hasText: builder.saved })).toBeVisible();
+
+  // The history names the change: from tomorrow, scheduled, by the admin.
+  const table = page.getByRole('table').filter({
+    has: page.getByRole('columnheader', { name: history.columnSaved }),
+  });
+  const scheduledRow = table.getByRole('row').filter({ hasText: shownDate(tomorrow) });
+  await expect(scheduledRow).toHaveCount(1);
+  await expect(scheduledRow).toContainText(history.status.scheduled);
+  await expect(scheduledRow).toContainText(fixture.admin.name);
+
+  // A second change is refused while that one is scheduled; the cancel is
+  // offered beside the refusal.
+  await newStep.selectOption({ label: a });
+  await page.getByRole('button', { name: builder.addStep }).click();
+  await page.getByRole('button', { name: builder.save }).click();
+  const refusal = page.getByRole('alert').filter({ hasText: builder.error.scheduled });
+  await expect(refusal).toBeVisible();
+  await refusal
+    .getByRole('button', { name: fill(builder.cancelScheduled.offer, { date: shownDate(tomorrow) }) })
+    .click();
+
+  // Confirmed in a dialog, then gone: the history no longer lists it.
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText(fill(builder.cancelScheduled.prompt, { date: shownDate(tomorrow) }));
+  await dialog.getByRole('button', { name: builder.cancelScheduled.confirm }).click();
+  await expect(page.getByRole('status').filter({ hasText: builder.cancelScheduled.done })).toBeVisible();
+  await expect(table.getByRole('row').filter({ hasText: shownDate(tomorrow) })).toHaveCount(0);
+  await expect(refusal).toHaveCount(0);
+});

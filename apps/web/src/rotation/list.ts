@@ -57,7 +57,11 @@ export const ROTATION_COLUMNS =
   `teams(${TEAMS_COLUMNS}),` +
   `${SHIFT_TYPES_EMBED},` +
   'rotation_steps(organization_id,id,pattern_id,position,shift_type_id),' +
-  'rotation_assignments(organization_id,team_id,pattern_id,offset_step_id,anchor_date,effective_from)';
+  'rotation_assignments(organization_id,id,team_id,pattern_id,offset_step_id,anchor_date,effective_from,created_by,created_at),' +
+  // STORY 2.6: who saved each change. `created_by` is an auth user id with no
+  // key to `members`, so the names are joined here, on the client; an active
+  // admin reads every member of the organization (0011).
+  'members(organization_id,auth_user_id,name)';
 
 /** The exact count, so an answer reaching two organizations is caught. */
 export const ROTATION_COUNT: RotationCountOptions = { count: 'exact' };
@@ -114,6 +118,32 @@ export interface RotationSnapshot {
   readonly steps: readonly RotationStep[];
   /** Every version of every team's rotation. */
   readonly assignments: readonly RotationAssignment[];
+  /**
+   * The same versions' ATTRIBUTION (story 2.6, AD-11), one record per
+   * assignment, kept beside the domain's type rather than on it: the domain
+   * projects dates and never reads who saved a version or when.
+   */
+  readonly history: readonly RotationHistoryRecord[];
+  /** The organization's members as the history names them: by auth user id. */
+  readonly authors: readonly RotationAuthor[];
+}
+
+/** One stored assignment's attribution: which version, who saved it, when. */
+export interface RotationHistoryRecord {
+  readonly id: string;
+  readonly teamId: string;
+  readonly patternId: string;
+  readonly effectiveFrom: string;
+  /** The saving admin's auth user id — `0016`'s `created_by default auth.uid()`. */
+  readonly createdBy: string;
+  /** The instant it was saved — `0016`'s `created_at default now()`, as sent. */
+  readonly createdAt: string;
+}
+
+/** One member, as the history names an author. */
+export interface RotationAuthor {
+  readonly authUserId: string;
+  readonly name: string;
 }
 
 // ------------------------------------------------------------- validation
@@ -158,6 +188,46 @@ export function rotationAssignmentOf(row: unknown, organizationId: string): Rota
   if (!isIsoDate(anchorDate) || !isIsoDate(effectiveFrom)) return null;
 
   return { teamId, patternId, offsetStepId, anchorDate, effectiveFrom };
+}
+
+/** A full ISO timestamp WITH an offset, as PostgREST renders a `timestamptz`. */
+const TIMESTAMP_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/;
+
+/**
+ * One embedded assignment's attribution, validated field by field, or `null`
+ * (another tenant included). `created_at` must be a full timestamp with an
+ * offset that reads as an instant — `2026` or a bare date is not one.
+ */
+export function rotationHistoryRecordOf(row: unknown, organizationId: string): RotationHistoryRecord | null {
+  const assignment = rotationAssignmentOf(row, organizationId);
+
+  if (assignment === null || !isRecord(row)) return null;
+
+  const id = textAt(row, 'id');
+  const createdBy = textAt(row, 'created_by');
+  const createdAt = textAt(row, 'created_at');
+
+  if (id === null || createdBy === null || createdAt === null) return null;
+  if (!TIMESTAMP_WITH_OFFSET.test(createdAt) || Number.isNaN(Date.parse(createdAt))) return null;
+
+  return {
+    id,
+    teamId: assignment.teamId,
+    patternId: assignment.patternId,
+    effectiveFrom: assignment.effectiveFrom,
+    createdBy,
+    createdAt,
+  };
+}
+
+/** One embedded member as an author, or `null` (another tenant included). */
+export function rotationAuthorOf(row: unknown, organizationId: string): RotationAuthor | null {
+  if (!isRecord(row) || textAt(row, 'organization_id') !== organizationId) return null;
+
+  const authUserId = textAt(row, 'auth_user_id');
+  const name = textAt(row, 'name');
+
+  return authUserId === null || name === null ? null : { authUserId, name };
 }
 
 function unavailable(detail: unknown): RotationOutcome {
@@ -211,9 +281,16 @@ export async function readRotation(table: RotationTable): Promise<RotationOutcom
   const typeRows = embedded(organization, 'shift_types');
   const stepRows = embedded(organization, 'rotation_steps');
   const assignmentRows = embedded(organization, 'rotation_assignments');
+  const memberRows = embedded(organization, 'members');
 
   if (organizationId === null || timeZone === null) return unavailable('organization');
-  if (teamRows === null || typeRows === null || stepRows === null || assignmentRows === null) {
+  if (
+    teamRows === null ||
+    typeRows === null ||
+    stepRows === null ||
+    assignmentRows === null ||
+    memberRows === null
+  ) {
     return unavailable('organization');
   }
 
@@ -248,13 +325,26 @@ export async function readRotation(table: RotationTable): Promise<RotationOutcom
   }
 
   const assignments: RotationAssignment[] = [];
+  const history: RotationHistoryRecord[] = [];
 
   for (const row of assignmentRows) {
     const assignment = rotationAssignmentOf(row, organizationId);
+    const record = rotationHistoryRecordOf(row, organizationId);
 
-    if (assignment === null) return unavailable('assignment');
+    if (assignment === null || record === null) return unavailable('assignment');
 
     assignments.push(assignment);
+    history.push(record);
+  }
+
+  const authors: RotationAuthor[] = [];
+
+  for (const row of memberRows) {
+    const author = rotationAuthorOf(row, organizationId);
+
+    if (author === null) return unavailable('member');
+
+    authors.push(author);
   }
 
   const teamIds = new Set(teams.map((team) => team.id));
@@ -280,10 +370,15 @@ export async function readRotation(table: RotationTable): Promise<RotationOutcom
   const versions = new Set(assignments.map((assignment) => `${assignment.teamId}:${assignment.effectiveFrom}`));
 
   if (versions.size !== assignments.length) return unavailable('versions');
+  if (new Set(history.map((record) => record.id)).size !== history.length) return unavailable('ids');
+  if (new Set(authors.map((author) => author.authUserId)).size !== authors.length) return unavailable('ids');
 
   types.sort(compareCreation);
 
-  return { ok: true, snapshot: { organizationId, timeZone, teams, types, steps, assignments } };
+  return {
+    ok: true,
+    snapshot: { organizationId, timeZone, teams, types, steps, assignments, history, authors },
+  };
 }
 
 // ---------------------------------------------------------------- reading
@@ -336,16 +431,35 @@ export function rotationScheduledOf(snapshot: RotationSnapshot, today: string): 
 }
 
 /**
- * Whether an active team's rotation already has a version dated today. A new
- * version must be dated after the latest one, and the save dates every
- * version today, so the database would refuse it.
+ * The date of the change scheduled after today — the earliest, should two
+ * active teams ever differ — or `null` while nothing is scheduled. What the
+ * cancel deletes (story 2.6, decision 2a).
  */
-export function rotationChangedTodayOf(snapshot: RotationSnapshot, today: string): boolean {
+export function rotationScheduledDateOf(snapshot: RotationSnapshot, today: string): string | null {
   const active = new Set(rotationTeamsOf(snapshot).map((team) => team.id));
+  const dates = snapshot.assignments
+    .filter((assignment) => active.has(assignment.teamId) && assignment.effectiveFrom > today)
+    .map((assignment) => assignment.effectiveFrom)
+    .sort();
 
-  return snapshot.assignments.some(
-    (assignment) => active.has(assignment.teamId) && assignment.effectiveFrom === today,
-  );
+  return dates[0] ?? null;
+}
+
+/**
+ * Whether an active team's LATEST version is dated `effectiveFrom`. A new
+ * version must be dated after the latest one, and the save dates every
+ * version on the effective date, so the database would refuse it (story 2.6:
+ * the effective date, where 2.3b had today).
+ */
+export function rotationChangedTodayOf(snapshot: RotationSnapshot, effectiveFrom: string): boolean {
+  return rotationTeamsOf(snapshot).some((team) => {
+    const latest = teamAssignmentsOf(snapshot, team.id)
+      .map((assignment) => assignment.effectiveFrom)
+      .sort()
+      .at(-1);
+
+    return latest === effectiveFrom;
+  });
 }
 
 /** The message a read failure renders as. Exhaustive. */

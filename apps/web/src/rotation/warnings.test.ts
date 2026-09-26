@@ -7,6 +7,7 @@ import {
   ROTATION_UNCHANGED,
   emptyDraftOf,
   prefillOf,
+  withEffectiveFrom,
   withStepAdded,
   withStepRemoved,
   withTeamStep,
@@ -197,6 +198,20 @@ describe('shownSaveOutcomeOf', () => {
     expect(shown.ok && textsOf(shown.warnings)).toEqual([
       ['24 h rada bez slobodnog dana između (Dan → Noć)'],
     ]);
+  });
+
+  it('computes the warnings from the effective date the save used, not from today (story 2.6)', async () => {
+    const NEXT_WEEK = '2026-10-03';
+    const snapshot = await snapshotOf(PILOT);
+    // A and B share step 1: a coverage gap. The anchor stays today; the
+    // change applies from next week, so the next cycle is 03.10.–06.10.
+    const draft = withEffectiveFrom(withTeamStep(prefillOf(snapshot, TODAY), 'pilot-smjena-b', 0), NEXT_WEEK);
+    const shown = shownSaveOutcomeOf({ ok: true }, snapshot, draft, draft.effectiveFrom);
+    const [gap] = shown.ok ? textsOf(shown.warnings) : [];
+
+    expect(gap?.[0]).toBe('2 dana u sljedećem ciklusu s radnim tipom na kojem nije nijedna smjena:');
+    expect(gap?.[1]).toMatch(/^03\.10\.2026: /);
+    expect(gap?.join(' ')).not.toContain('26.09.2026');
   });
 
   it('logs a throw and keeps the plain confirmation', async () => {
