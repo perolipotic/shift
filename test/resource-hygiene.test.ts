@@ -890,6 +890,14 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.noRotation',
   'kalendar.noTeams',
   'kalendar.error.unavailable',
+  // STORY 3.2a: the mode switch — its label, *Moj raspored* and *Sve smjene*
+  // — the notice for a viewer on no team all month, and a day on no team.
+  // `smjen` is the Team here too: `Sve smjene` is every team.
+  'kalendar.mode.label',
+  'kalendar.mode.moj',
+  'kalendar.mode.sve',
+  'kalendar.noTeam',
+  'kalendar.day.noTeam',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

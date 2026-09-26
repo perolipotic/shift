@@ -57,8 +57,12 @@ export {
 export {
   adjacentMonth,
   datesOfMonth,
+  memberScheduleOfMonth,
   monthOf,
   scheduleOfMonth,
+  type MemberScheduleDay,
+  type MemberScheduleInput,
+  type MembershipVersion,
   type ScheduleCell,
   type ScheduleInput,
   type ScheduleRow,

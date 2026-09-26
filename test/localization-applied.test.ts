@@ -981,6 +981,10 @@ const AUTHORED_VOCABULARY = [
   'Prethodni',
   'Sljedeći',
   'Ovaj',
+  // STORY 3.2a: the mode switch and the no-team notice, so a hard-coded mode
+  // label or empty state is a count that no longer matches.
+  'Moj',
+  'Nisi',
 ];
 
 /** Everything the terminology contract and the unshipped affordances still own.

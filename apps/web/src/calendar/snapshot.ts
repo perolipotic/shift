@@ -1,5 +1,10 @@
-import type { RotationAssignment, RotationStep } from '@shift/domain';
+import type { MembershipVersion, RotationAssignment, RotationStep } from '@shift/domain';
+import type { Session } from '@supabase/supabase-js';
 import { queryOptions } from '@tanstack/react-query';
+
+import { isIsoDate } from '@/i18n/format';
+import type { MemberRole } from '@/navigation/destinations';
+import { memberRoleOf } from '@/navigation/role';
 
 import { rotationAssignmentOf, rotationStepOf } from '@/rotation/list';
 import {
@@ -9,6 +14,7 @@ import {
   shiftTypeRowOf,
   type ShiftTypeRow,
 } from '@/shift-types/list';
+import { currentSession } from '@/supabase/client';
 import { TEAMS_COLUMNS, teamRowOf, type TeamRow } from '@/teams/list';
 
 /**
@@ -28,11 +34,16 @@ import { TEAMS_COLUMNS, teamRowOf, type TeamRow } from '@/teams/list';
  * month, and moving between months never reads again. When overrides arrive
  * (story 3.5), their window is the part that may need a month in the key.
  *
- * READABLE BY EVERY MEMBER. No `members` embed — a member reads only their own
- * member row — and no attribution (`created_by`, `created_at` of an
- * assignment): the calendar says what is worked, not who saved the rule. The
- * shift types' `created_at` stays, because the ramp slot is derived from the
- * creation order, and it is the column `shiftTypeRowOf` checks.
+ * READABLE BY EVERY MEMBER. The one `members` row embedded is THE VIEWER'S
+ * (story 3.2a): the embed is filtered to `members.auth_user_id = <session
+ * uid>`, which PostgREST applies to the embed without filtering the
+ * organization, so it is still one select. It carries the viewer's role —
+ * which only picks the default mode, and authorizes nothing — and their team
+ * membership history, which *Moj raspored* follows. No name, no position, no
+ * rank. No attribution either (`created_by`, `created_at` of an assignment):
+ * the calendar says what is worked, not who saved the rule. The shift types'
+ * `created_at` stays, because the ramp slot is derived from the creation
+ * order, and it is the column `shiftTypeRowOf` checks.
  *
  * `select` AND NOTHING ELSE.
  */
@@ -53,7 +64,14 @@ export const CALENDAR_COLUMNS =
   `teams(${TEAMS_COLUMNS}),` +
   `${SHIFT_TYPES_EMBED},` +
   'rotation_steps(organization_id,id,pattern_id,position,shift_type_id),' +
-  'rotation_assignments(organization_id,team_id,pattern_id,offset_step_id,anchor_date,effective_from)';
+  'rotation_assignments(organization_id,team_id,pattern_id,offset_step_id,anchor_date,effective_from),' +
+  'members(organization_id,id,role,team_membership_versions(organization_id,team_id,effective_from))';
+
+/** The embedded column the members embed is filtered by: the viewer's own row alone. */
+export const CALENDAR_VIEWER_COLUMN = 'members.auth_user_id';
+
+/** The operator of that filter. */
+export const CALENDAR_VIEWER_OPERATOR = 'eq';
 
 /** The exact count, so an answer reaching two organizations is caught. */
 export const CALENDAR_COUNT: CalendarCountOptions = { count: 'exact' };
@@ -97,9 +115,23 @@ export interface CalendarAnswer {
   readonly count: number | null;
 }
 
+/** The select, narrowed to the viewer's own member row. */
+export interface CalendarSelectFilter {
+  filter(column: string, operator: string, value: string): PromiseLike<CalendarAnswer>;
+}
+
 /** The one call this module makes, named structurally so it can be stubbed. */
 export interface CalendarTable {
-  select(columns: string, options: CalendarCountOptions): PromiseLike<CalendarAnswer>;
+  select(columns: string, options: CalendarCountOptions): CalendarSelectFilter;
+}
+
+/** The signed-in member reading the calendar. */
+export interface CalendarViewer {
+  readonly memberId: string;
+  /** Picks the default mode only; authorizes nothing. */
+  readonly role: MemberRole;
+  /** Every version of the viewer's team membership, in `effectiveFrom` order. */
+  readonly memberships: readonly MembershipVersion[];
 }
 
 /** The one answer the calendar draws from. */
@@ -115,6 +147,8 @@ export interface CalendarSnapshot {
   readonly steps: readonly RotationStep[];
   /** Every version of every team's rotation. */
   readonly assignments: readonly RotationAssignment[];
+  /** The viewer's own member row. */
+  readonly viewer: CalendarViewer;
 }
 
 // ------------------------------------------------------------- validation
@@ -150,14 +184,26 @@ function embedded(organization: Record<string, unknown>, relation: string): read
  * names another tenant, on a step naming a type the answer lacks or two steps
  * of one pattern at one position, and on an assignment naming a team the
  * answer lacks, a step outside its own pattern, or a date its team already
- * has a version on. What the database's keys guarantee is re-checked, so a
+ * has a version on. Unavailable, too, on no session and on anything but
+ * EXACTLY ONE viewer member row, whose role is not one this build knows, or
+ * whose membership versions name another tenant, a team the answer lacks, or
+ * one date twice. What the database's keys guarantee is re-checked, so a
  * defect surfaces as the message, never as a projection that throws.
  */
-export async function readCalendar(table: CalendarTable): Promise<CalendarOutcome> {
+export async function readCalendar(
+  table: CalendarTable,
+  session: () => Promise<Session | null>,
+): Promise<CalendarOutcome> {
   let answered: CalendarAnswer;
 
   try {
-    answered = await table.select(CALENDAR_COLUMNS, CALENDAR_COUNT);
+    const current = await session();
+
+    if (current === null) return unavailable('session');
+
+    answered = await table
+      .select(CALENDAR_COLUMNS, CALENDAR_COUNT)
+      .filter(CALENDAR_VIEWER_COLUMN, CALENDAR_VIEWER_OPERATOR, current.user.id);
   } catch (cause) {
     return unavailable(cause);
   }
@@ -180,11 +226,13 @@ export async function readCalendar(table: CalendarTable): Promise<CalendarOutcom
   const typeRows = embedded(organization, 'shift_types');
   const stepRows = embedded(organization, 'rotation_steps');
   const assignmentRows = embedded(organization, 'rotation_assignments');
+  const memberRows = embedded(organization, 'members');
 
   if (organizationId === null || timeZone === null) return unavailable('organization');
   if (teamRows === null || typeRows === null || stepRows === null || assignmentRows === null) {
     return unavailable('organization');
   }
+  if (memberRows === null || memberRows.length !== 1) return unavailable('viewer');
 
   const teams: TeamRow[] = [];
 
@@ -250,9 +298,49 @@ export async function readCalendar(table: CalendarTable): Promise<CalendarOutcom
 
   if (versions.size !== assignments.length) return unavailable('versions');
 
+  const viewer = viewerOf(memberRows[0], organizationId, teamIds);
+
+  if (viewer === null) return unavailable('viewer');
+
   types.sort(compareCreation);
 
-  return { ok: true, snapshot: { organizationId, timeZone, teams, types, steps, assignments } };
+  return { ok: true, snapshot: { organizationId, timeZone, teams, types, steps, assignments, viewer } };
+}
+
+/**
+ * The viewer's member row, or `null` when it does not validate: another
+ * tenant's, a role this build does not know, a membership version of another
+ * tenant, with a malformed date, naming a team the answer lacks, or on a date
+ * another version already has.
+ */
+function viewerOf(row: unknown, organizationId: string, teamIds: ReadonlySet<string>): CalendarViewer | null {
+  if (!isRecord(row) || textAt(row, 'organization_id') !== organizationId) return null;
+
+  const memberId = textAt(row, 'id');
+  const role = memberRoleOf(row['role']);
+  const versionRows = embedded(row, 'team_membership_versions');
+
+  if (memberId === null || role === null || versionRows === null) return null;
+
+  const memberships: MembershipVersion[] = [];
+  const dates = new Set<string>();
+
+  for (const version of versionRows) {
+    if (!isRecord(version) || textAt(version, 'organization_id') !== organizationId) return null;
+
+    const effectiveFrom = textAt(version, 'effective_from');
+    const teamId = version['team_id'];
+
+    if (effectiveFrom === null || !isIsoDate(effectiveFrom) || dates.has(effectiveFrom)) return null;
+    if (teamId !== null && (typeof teamId !== 'string' || !teamIds.has(teamId))) return null;
+
+    dates.add(effectiveFrom);
+    memberships.push({ teamId, effectiveFrom });
+  }
+
+  memberships.sort((left, right) => (left.effectiveFrom < right.effectiveFrom ? -1 : 1));
+
+  return { memberId, role, memberships };
 }
 
 /** The message a read failure renders as. Exhaustive. */
@@ -271,11 +359,14 @@ export function calendarMessageKey(failure: CalendarReadFailure): 'kalendar.erro
  * UNAVAILABLE REJECTS — the query function throws its code — so a failed
  * refetch is retried once and reported.
  */
-export function calendarQueryOptions(table: () => CalendarTable) {
+export function calendarQueryOptions(
+  table: () => CalendarTable,
+  session: () => Promise<Session | null> = currentSession,
+) {
   return queryOptions({
     queryKey: CALENDAR_KEY,
     queryFn: async (): Promise<CalendarSnapshot> => {
-      const outcome = await readCalendar(table());
+      const outcome = await readCalendar(table(), session);
 
       if (!outcome.ok) throw new Error(outcome.code);
 

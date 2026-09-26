@@ -11,7 +11,8 @@ import {
 } from './support/database.ts';
 import { ADMIN_STATE, MEMBER_STATE } from './support/fixture.ts';
 import { fill, hr } from './support/i18n.ts';
-import { expectNoHorizontalScroll, expectTouchTargets } from './support/layout.ts';
+import { MINIMUM_TARGET, expectNoHorizontalScroll, expectTouchTargets } from './support/layout.ts';
+import { signIn } from './support/sign-in.ts';
 import { expect, test } from './support/test.ts';
 
 /**
@@ -20,6 +21,11 @@ import { expect, test } from './support/test.ts';
  * calendar is read as an admin and as a member: the same grid, the team's
  * column, the projected types, month navigation with no second read, and the
  * phone layout.
+ *
+ * Story 3.2a: the two modes on a phone — a member lands on *Moj raspored*,
+ * an admin on the grid, the switch shows the compressed one-letter grid,
+ * `prikaz` survives month navigation, the member on no team reads the notice,
+ * and it is all one read.
  */
 
 const kalendar = hr.kalendar;
@@ -96,7 +102,15 @@ async function cellOf(page: Page, teamName: string, date: string): Promise<Locat
   const grid = page.getByRole('table', { name: /\d{4}$/ });
   // The grid renders once the snapshot has landed; the skeleton has no headers.
   await expect(grid.getByRole('columnheader', { name: teamName, exact: true })).toBeVisible();
-  const heads = await grid.getByRole('columnheader').allTextContents();
+  // The header's text without its compressed letter, which is `aria-hidden`.
+  const heads = await grid.getByRole('columnheader').evaluateAll((elements) =>
+    elements.map((element) => {
+      const copy = element.cloneNode(true) as Element;
+      for (const hidden of copy.querySelectorAll('[aria-hidden="true"]')) hidden.remove();
+
+      return copy.textContent ?? '';
+    }),
+  );
   const column = heads.indexOf(teamName);
   expect(column, `the grid has no column for ${teamName}: ${heads.join(', ')}`).toBeGreaterThan(0);
   const escaped = dayMonth(date).replace(/\./g, '\\.');
@@ -128,6 +142,17 @@ for (const [role, storageState] of [
 
       const first = await cellOf(page, fixture.team.name, rotation.today);
       await expect(first).toContainText(expectedType(rotation, rotation.today));
+      // From 640 px up the full names are DRAWN, not merely read out: the
+      // `sm:not-sr-only` spans have a real box.
+      for (const drawn of [
+        page.getByRole('columnheader', { name: fixture.team.name, exact: true }).getByText(fixture.team.name, { exact: true }),
+        first.getByText(expectedType(rotation, rotation.today), { exact: true }),
+      ]) {
+        const box = await drawn.boundingBox();
+        expect(box, 'a full name has no box').not.toBeNull();
+        expect(box!.width).toBeGreaterThan(1);
+        expect(box!.height).toBeGreaterThan(1);
+      }
       // Desktop: the range is shown beside the name — visible, not merely in the DOM.
       await expect(first.getByText('07:00–19:00', { exact: true })).toBeVisible();
 
@@ -227,13 +252,20 @@ test.describe('edge months and a failed read', () => {
 test.describe('at 320 px', () => {
   test.use({ storageState: MEMBER_STATE, viewport: { width: 320, height: 720 } });
 
-  test('the page never scrolls sideways, the range is dropped and the buttons are touch targets', async ({
+  test('the page never scrolls sideways in either mode, and the buttons are touch targets', async ({
     page,
     fixture,
   }) => {
     const rotation = await seeded(fixture.slug, fixture.team.id);
 
     await page.goto('/kalendar');
+    await expect(dayList(page).locator('li[aria-current="date"]')).toContainText(
+      expectedType(rotation, rotation.today),
+    );
+    await expectNoHorizontalScroll(page);
+    await expectTouchTargets(page);
+
+    await page.goto('/kalendar?prikaz=sve');
     const cell = await cellOf(page, fixture.team.name, rotation.today);
     await expect(cell).toContainText(expectedType(rotation, rotation.today));
     // Below 1024 px the range is not shown — dropped, never abbreviated.
@@ -241,5 +273,145 @@ test.describe('at 320 px', () => {
 
     await expectNoHorizontalScroll(page);
     await expectTouchTargets(page);
+  });
+});
+
+/** *Moj raspored*: the day list, named by the month heading. */
+function dayList(page: Page): Locator {
+  return page.getByRole('list', { name: /\d{4}$/ });
+}
+
+/** The mode switch's two buttons. */
+function modes(page: Page): { readonly moj: Locator; readonly sve: Locator } {
+  const group = page.getByRole('group', { name: kalendar.mode.label });
+
+  return {
+    moj: group.getByRole('button', { name: kalendar.mode.moj, exact: true }),
+    sve: group.getByRole('button', { name: kalendar.mode.sve, exact: true }),
+  };
+}
+
+/** The drawn, `aria-hidden` letter of a compressed header or cell. */
+function letterOf(locator: Locator): Locator {
+  return locator.locator('[aria-hidden="true"]').first();
+}
+
+/** Whether `letter` is the start of `word`, uppercased, and shorter than it: a compressed label. */
+function expectLetterOf(letter: string, word: string): void {
+  expect(letter.length, `${letter} is not a short label of ${word}`).toBeGreaterThan(0);
+  expect(word.toLocaleUpperCase('hr').startsWith(letter), `${letter} does not start ${word}`).toBe(true);
+}
+
+test.describe('on a phone, as a member', () => {
+  test.use({ storageState: MEMBER_STATE, viewport: { width: 390, height: 844 } });
+
+  test('lands on Moj raspored with the seeded types, and the switch shows the letters', async ({ page, fixture }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+
+    const reads: string[] = [];
+    page.on('request', (request) => {
+      const url = decodeURIComponent(request.url());
+      if (url.includes('/rest/v1/organizations') && url.includes('rotation_assignments')) reads.push(url);
+    });
+
+    await page.goto('/kalendar');
+    await expect(page.getByRole('heading', { level: 2, name: monthHeading(rotation.today) })).toBeVisible();
+    const { moj, sve } = modes(page);
+    await expect(moj).toHaveAttribute('aria-pressed', 'true');
+    await expect(sve).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByRole('table')).toHaveCount(0);
+
+    // A day per date, today marked, each the member's own team's type.
+    const list = dayList(page);
+    await expect(list.getByRole('listitem')).toHaveCount(
+      new Date(Date.UTC(Number(rotation.today.slice(0, 4)), Number(rotation.today.slice(5, 7)), 0)).getUTCDate(),
+    );
+    const today = list.locator('li[aria-current="date"]');
+    await expect(today).toHaveCount(1);
+    await expect(today).toContainText(dayMonth(rotation.today));
+    await expect(today).toContainText(expectedType(rotation, rotation.today));
+    // The day list shows the range of a working type.
+    const tomorrow = addDays(rotation.today, 1);
+    if (tomorrow.slice(0, 7) === rotation.today.slice(0, 7)) {
+      const row = list.getByRole('listitem').filter({ hasText: dayMonth(tomorrow) });
+      await expect(row).toContainText(expectedType(rotation, tomorrow));
+      await expect(row.getByText('19:00–07:00', { exact: true })).toBeVisible();
+    }
+
+    // One tap to the compressed grid: one letter per team and per cell.
+    await sve.click();
+    await expect(page).toHaveURL(/prikaz=sve/);
+    await expect(sve).toHaveAttribute('aria-pressed', 'true');
+    const header = page.getByRole('columnheader', { name: fixture.team.name, exact: true });
+    await expect(letterOf(header)).toBeVisible();
+    expectLetterOf(await letterOf(header).innerText(), fixture.team.name.split(' ').at(-1) ?? '');
+    const cell = await cellOf(page, fixture.team.name, rotation.today);
+    const letter = letterOf(cell);
+    await expect(letter).toBeVisible();
+    expectLetterOf(await letter.innerText(), expectedType(rotation, rotation.today));
+    // The full name is there for a screen reader, not drawn.
+    await expect(cell.getByText(expectedType(rotation, rotation.today), { exact: true })).toHaveClass(/(^|\s)sr-only(\s|$)/);
+
+    // The compressed cells and the switch are touch targets.
+    for (const target of [cell.locator('div').first(), moj, sve]) {
+      const box = await target.boundingBox();
+      expect(box, 'a target has no box').not.toBeNull();
+      expect(box!.width).toBeGreaterThanOrEqual(MINIMUM_TARGET - 0.5);
+      expect(box!.height).toBeGreaterThanOrEqual(MINIMUM_TARGET - 0.5);
+    }
+    await expectTouchTargets(page);
+
+    // `prikaz` survives next, and the switch back keeps the month.
+    const next = firstOfNextMonth(rotation.today);
+    await page.getByRole('button', { name: kalendar.next }).click();
+    await expect(page.getByRole('heading', { level: 2, name: monthHeading(next) })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`mjesec=${next.slice(0, 7)}`));
+    await expect(page).toHaveURL(/prikaz=sve/);
+    await expect(page.getByRole('table')).toBeVisible();
+    await moj.click();
+    await expect(page).toHaveURL(/prikaz=moj/);
+    await expect(page).toHaveURL(new RegExp(`mjesec=${next.slice(0, 7)}`));
+    await expect(dayList(page).getByRole('listitem').first()).toContainText(expectedType(rotation, next));
+    await page.getByRole('button', { name: kalendar.previous }).click();
+    await expect(page).toHaveURL(/prikaz=moj/);
+    await expect(dayList(page)).toBeVisible();
+
+    // One read, filtered to the viewer's own member row, naming nobody.
+    await page.waitForLoadState('networkidle');
+    expect(reads, 'the calendar read more than once').toHaveLength(1);
+    const read = reads[0] ?? '';
+    expect(read).toMatch(/members\.auth_user_id=eq\.[0-9a-f-]{36}/);
+    const select = new URL(read).searchParams.get('select') ?? '';
+    expect(select).toContain('members(organization_id,id,role,team_membership_versions(');
+    expect(select).not.toMatch(/position\b(?!,shift_type_id)|rank|created_by|auth_user_id|members\([^)]*name/);
+  });
+});
+
+test.describe('on a phone, as an admin', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 390, height: 844 } });
+
+  test('lands on the compressed grid', async ({ page, fixture }) => {
+    await page.goto('/kalendar');
+    const { moj, sve } = modes(page);
+    await expect(sve).toHaveAttribute('aria-pressed', 'true');
+    await expect(moj).toHaveAttribute('aria-pressed', 'false');
+    const header = page.getByRole('columnheader', { name: fixture.team.name, exact: true });
+    await expect(letterOf(header)).toBeVisible();
+    await expect(dayList(page)).toHaveCount(0);
+  });
+});
+
+test.describe('on a phone, as the member on no team', () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test('reads the notice, never an empty list', async ({ page, fixture }) => {
+    await signIn(page, fixture.slug, fixture.spare.username, fixture.password);
+    await page.goto('/kalendar');
+
+    await expect(page.getByText(kalendar.noTeam, { exact: true })).toBeVisible();
+    await expect(modes(page).moj).toHaveAttribute('aria-pressed', 'true');
+    await expect(dayList(page)).toHaveCount(0);
+    await expect(page.getByRole('table')).toHaveCount(0);
+    await expectNoHorizontalScroll(page);
   });
 });

@@ -134,3 +134,81 @@ export function scheduleOfMonth(input: ScheduleInput, month: string): readonly S
     })),
   }));
 }
+
+/**
+ * One stored version of the viewer's team membership
+ * (`team_membership_versions`): from `effectiveFrom` on, until the next
+ * version, the member belongs to `teamId` — or to no team when it is `null`.
+ */
+export interface MembershipVersion {
+  readonly teamId: string | null;
+  readonly effectiveFrom: string;
+}
+
+/** What one member's month is derived from: their membership history and the configuration. */
+export interface MemberScheduleInput {
+  /** Every membership version of ONE member, in any order. */
+  readonly memberships: readonly MembershipVersion[];
+  /** Every rotation version, of any team; only the teams the member belongs to are read. */
+  readonly assignments: readonly RotationAssignment[];
+  /** The steps of every pattern a version names. */
+  readonly steps: readonly RotationStep[];
+}
+
+/**
+ * One date of a member's month: the team they belong to on it (`null` when
+ * none), and the shift type that team works (`null` when there is no team or
+ * no rotation version in effect yet).
+ */
+export interface MemberScheduleDay {
+  readonly date: string;
+  readonly teamId: string | null;
+  readonly shiftTypeId: string | null;
+}
+
+/**
+ * One member's schedule of `month`: a row per date, in order. The team on a
+ * date is the membership version with the greatest `effectiveFrom` on or
+ * before it (none before the first version); the shift type is
+ * {@link projectedShiftTypeOn} for that team's rotation versions.
+ *
+ * @throws RangeError when `month` is not a `YYYY-MM` in years 0001–9999, when
+ *   a membership version's `effectiveFrom` is not a calendar `YYYY-MM-DD`,
+ *   when two membership versions share an `effectiveFrom`, or on any
+ *   precondition of {@link projectedShiftTypeOn} for a team the member is in.
+ */
+export function memberScheduleOfMonth(input: MemberScheduleInput, month: string): readonly MemberScheduleDay[] {
+  const dates = datesOfMonth(month);
+
+  const seen = new Set<string>();
+  for (const version of input.memberships) {
+    checkDate('a team membership version is effective from', version.effectiveFrom);
+    if (seen.has(version.effectiveFrom)) {
+      throw new RangeError(`two team membership versions are effective from ${version.effectiveFrom}`);
+    }
+    seen.add(version.effectiveFrom);
+  }
+  const memberships = [...input.memberships].sort((left, right) =>
+    left.effectiveFrom < right.effectiveFrom ? -1 : 1,
+  );
+
+  const versionsOf = new Map<string, RotationAssignment[]>();
+  for (const assignment of input.assignments) {
+    const versions = versionsOf.get(assignment.teamId);
+    if (versions === undefined) versionsOf.set(assignment.teamId, [assignment]);
+    else versions.push(assignment);
+  }
+
+  return dates.map((date) => {
+    let teamId: string | null = null;
+    for (const version of memberships) {
+      if (version.effectiveFrom > date) break;
+      teamId = version.teamId;
+    }
+    return {
+      date,
+      teamId,
+      shiftTypeId: teamId === null ? null : projectedShiftTypeOn(versionsOf.get(teamId) ?? [], input.steps, date),
+    };
+  });
+}
