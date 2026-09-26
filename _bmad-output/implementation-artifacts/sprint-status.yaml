@@ -432,7 +432,7 @@ development_status:
   # the mode switch (spec-3-2a-phone-calendar-modes.md). 3.2b — the modifier
   # glyphs, the legend, the keyboard grid and the full per-cell labels for
   # assistive technology — waits in deferred-work.md and is still to come.
-  3-2-the-month-is-readable-on-a-phone-and-by-a-screen-reader: review
+  3-2-the-month-is-readable-on-a-phone-and-by-a-screen-reader: in-progress
   3-3-filtering-to-one-team-or-one-person: backlog
   3-4-opening-a-day-to-see-who-is-actually-on-it: backlog
   3-5-an-admin-changes-a-team-s-shift-type-on-one-date: backlog
