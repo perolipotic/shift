@@ -95,3 +95,15 @@ export function organizationMessageKey(
 
   return unhandled;
 }
+
+/**
+ * The id of the settings surface's one message region, the `role="alert"`
+ * `Notice` the refusal renders into, and what every control on the surface
+ * names in its `aria-describedby` while there is a refusal to describe.
+ *
+ * ONE CONSTANT because two files use it: the settings card, which renders the
+ * region and the form, and the logo block, whose picker and action it
+ * describes too. Two hand-typed copies would be a description that can point
+ * at nothing after one of them is renamed.
+ */
+export const ORGANIZATION_ERROR_ID = 'organization-error';

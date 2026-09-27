@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { formatDate, isRenderableTimeZone } from '@/lib/i18n/format';
 import { organizationMessageKey } from '@/features/organization/utils/messages';
+import { SETTINGS_SCREEN_PARTS } from '@/features/organization/settings-screen.fixture';
 import {
   ORGANIZATION_COLUMNS,
   ORGANIZATION_INVALID,
@@ -47,7 +48,20 @@ import {
  */
 
 const srcRoot = fileURLToPath(new URL('../../..', import.meta.url));
-const SCREEN = join(srcRoot, 'pages', 'organizacija.tsx');
+/**
+ * The settings surface, a FILE SET since source structure B2: the page, which
+ * only composes; the hook holding its one read and its writes; and the three
+ * components that draw it. A claim about the whole surface reads the set as
+ * one source; a claim about where something happens reads the file that must
+ * hold it, so a needle in the wrong file cannot satisfy it.
+ */
+// WRITTEN ONCE in `settings-screen.fixture.ts`, which `pages/prijava.test.ts`
+// reads too and holds to the feature folders with a completeness check.
+const HOOK = join(srcRoot, ...SETTINGS_SCREEN_PARTS.hook);
+const LOGO_CARD = join(srcRoot, ...SETTINGS_SCREEN_PARTS.logo);
+const SCREEN: readonly string[] = Object.values(SETTINGS_SCREEN_PARTS).map((parts) =>
+  join(srcRoot, ...parts),
+);
 /** Where the logo-or-mark decision lives since story 1.4c: one component, drawn
  *  by the settings surface AND by the navigation chrome. */
 const LOCKUP = join(srcRoot, 'features', 'organization', 'components', 'lockup.tsx');
@@ -61,8 +75,11 @@ const BLOCK_COMMENT = /\/\*[\s\S]*?\*\//g;
 const LINE_SLASH = /(^|[\s;,{}()[\]])\/\/[^\n]*/g;
 
 /** Comment-blind source: both files explain these rules in prose at length, and
- *  a comment-aware read would be satisfied by the explanation. */
-function source(file: string): string {
+ *  a comment-aware read would be satisfied by the explanation. A file set is
+ *  read as one source, joined in order. */
+function source(file: string | readonly string[]): string {
+  if (typeof file !== 'string') return file.map((part) => source(part)).join('\n');
+
   return readFileSync(file, 'utf8').replace(BLOCK_COMMENT, '').replace(LINE_SLASH, '$1');
 }
 
@@ -914,7 +931,8 @@ describe('the surface reads once, under one key', () => {
     const screen = source(SCREEN);
 
     expect(ORGANIZATION_SNAPSHOT_KEY).toEqual(['organization']);
-    expect(occurrences(screen, 'queryKey: ORGANIZATION_SNAPSHOT_KEY')).toBeGreaterThan(0);
+    // The read is the HOOK's, so the key it registers is read off the hook.
+    expect(occurrences(source(HOOK), 'queryKey: ORGANIZATION_SNAPSHOT_KEY')).toBeGreaterThan(0);
     // TWO KEYS SINCE STORY 1.4b, and every one of them has to be the snapshot's
     // key or DERIVED from it. `organizationLogoKey` is asserted in
     // `logo.test.ts` to be the snapshot key with the path appended, so a key
@@ -939,8 +957,10 @@ describe('the surface reads once, under one key', () => {
     // that read's key, and disabled entirely when there is no logo. So the
     // bound here is on `readOrganization`, which is the read of the row.
     const screen = source(SCREEN);
+    const hook = source(HOOK);
 
     expect(occurrences(screen, 'readOrganization('), 'the screen reads the row twice').toBe(1);
+    expect(occurrences(hook, 'readOrganization('), 'the row is not read by the hook').toBe(1);
     // ONE `useQuery` ON THE SCREEN since story 1.4c: the derived logo URL moved
     // into `@/features/organization/hooks/logo-url`, which the navigation chrome shares — two
     // copies of it were two `queryFn`s registered for one key. The bound is
@@ -948,10 +968,14 @@ describe('the surface reads once, under one key', () => {
     // call, so a third query on this screen is the AD-13 violation it always
     // was.
     expect(occurrences(screen, 'useQuery('), 'the screen issues a second query').toBe(1);
+    expect(occurrences(hook, 'useQuery('), 'the one query is not the hook\'s').toBe(1);
     expect(
       occurrences(screen, 'useRenderableLogo('),
       'the screen fetches the signed URL more than once, or not through the shared hook',
     ).toBe(1);
+    expect(occurrences(hook, 'useRenderableLogo('), 'the signed URL is not read by the hook').toBe(
+      1,
+    );
   });
 
   it('never asks storage whether a logo exists, and never renders a broken image', () => {
@@ -966,7 +990,7 @@ describe('the surface reads once, under one key', () => {
       'enabled: logoPath !== null',
     );
     expect(
-      source(SCREEN),
+      source(HOOK),
       'the screen reads presence from somewhere other than the snapshot',
     ).toContain('organization.logoPath');
   });
@@ -984,7 +1008,7 @@ describe('the surface reads once, under one key', () => {
     // "what does an organization with no logo look like", and copies drift.
     const screen = source(SCREEN);
 
-    expect(screen, 'the settings surface does not draw the shared lockup').toContain(
+    expect(source(LOGO_CARD), 'the settings surface does not draw the shared lockup').toContain(
       '<OrganizationLockup',
     );
     expect(
@@ -1006,12 +1030,13 @@ describe('the surface reads once, under one key', () => {
   it('reaches the table through the snapshot module rather than naming it', () => {
     const screen = source(SCREEN);
 
+    // The reads and writes are the HOOK's, so that is where they are required.
     for (const required of [
       "from '@/features/organization/services/snapshot'",
       'supabaseClient().from(ORGANIZATION_TABLE)',
       'updateOrganization(',
     ]) {
-      expect(screen, `the settings screen no longer reaches ${required}`).toContain(required);
+      expect(source(HOOK), `the settings screen no longer reaches ${required}`).toContain(required);
     }
     expect(ORGANIZATION_TABLE).toBe('organizations');
     // The relation name is the snapshot module's, so a screen holding it as a
@@ -1030,7 +1055,7 @@ describe('the surface reads once, under one key', () => {
   });
 
   it('refetches the snapshot after a save rather than trusting the form', () => {
-    const screen = source(SCREEN);
+    const screen = source(HOOK);
 
     expect(screen, 'a successful save does not refetch the snapshot').toContain(
       'invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY })',
@@ -1077,6 +1102,10 @@ describe('the detectors read what they claim to read', () => {
     // Vacuous-pass guard: a renamed or moved file would make every "contains"
     // assertion above hold against nothing.
     expect(source(SCREEN).length).toBeGreaterThan(500);
+    // PER FILE, so one emptied or gutted part cannot hide behind the others.
+    for (const part of SCREEN) {
+      expect(source(part).length, `${part} holds almost nothing`).toBeGreaterThan(200);
+    }
     expect(source(ENTRY).length).toBeGreaterThan(200);
   });
 
