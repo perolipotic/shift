@@ -31,6 +31,7 @@ import {
   shiftTypeRowOf,
   shiftTypesMessageKey,
   shiftTypesQueryOptions,
+  shiftTypesNoticeOf,
   shiftTypesSurfaceStateOf,
   shiftTypesTodayOf,
   type ShiftTypeRow,
@@ -579,13 +580,14 @@ describe('the surface state, driven through the one query definition', () => {
       snapshot: null,
       refusal: null,
       loading: true,
+      paused: false,
     });
   });
 
   it('draws a first answer', async () => {
     const result = await settled(observe(() => answeringInTurn(good)));
 
-    expect(shiftTypesSurfaceStateOf(result)).toEqual({ snapshot: pilot, refusal: null, loading: false });
+    expect(shiftTypesSurfaceStateOf(result)).toEqual({ snapshot: pilot, refusal: null, loading: false, paused: false });
   });
 
   it('retries an unavailable first read once, then shows the message and no rows', async () => {
@@ -598,6 +600,7 @@ describe('the surface state, driven through the one query definition', () => {
       snapshot: null,
       refusal: SHIFT_TYPES_UNAVAILABLE,
       loading: false,
+      paused: false,
     });
   });
 
@@ -615,6 +618,7 @@ describe('the surface state, driven through the one query definition', () => {
       snapshot: pilot,
       refusal: SHIFT_TYPES_UNAVAILABLE,
       loading: false,
+      paused: false,
     });
   });
 
@@ -649,6 +653,35 @@ describe('the surface state, driven through the one query definition', () => {
     expect(shiftTypesSurfaceStateOf(result).refusal).toBe(SHIFT_TYPES_UNAVAILABLE);
   });
 
+  it('says so when a refetch pauses offline over cached types', async () => {
+    // THE WRITE'S RE-READ, OR A STALE MOUNT, WITH THE BROWSER OFFLINE: TanStack
+    // pauses the refetch over the cached answer, so `isPending` is false and no
+    // error ever arrives. The types stay on screen and the message says they
+    // may be behind, rather than old types looking current.
+    const observer = observe(() => answeringInTurn(good));
+    const cached = await settled(observer);
+
+    onlineManager.setOnline(false);
+    void client.invalidateQueries({ queryKey: SHIFT_TYPES_LIST_KEY });
+    await vi.waitFor(() => {
+      expect(observer.getCurrentResult().fetchStatus).toBe(SHIFT_TYPES_FETCH_PAUSED);
+    });
+    const result = observer.getCurrentResult();
+
+    expect(result.isPending, 'nothing was cached before the pause').toBe(false);
+    // NOT A REFUSAL: an edit form over these rows stays mounted. The list
+    // announces the pause through its notice, beside the kept rows.
+    expect(shiftTypesSurfaceStateOf(result)).toEqual({
+      snapshot: cached.data,
+      refusal: null,
+      loading: false,
+      paused: true,
+    });
+    expect(shiftTypesNoticeOf(shiftTypesSurfaceStateOf(result)), 'the list says nothing about the pause').toBe(
+      SHIFT_TYPES_UNAVAILABLE,
+    );
+  });
+
   it('says why rather than pulsing while paused offline', () => {
     onlineManager.setOnline(false);
     const result = observe(() => answeringInTurn(good)).getCurrentResult();
@@ -658,6 +691,7 @@ describe('the surface state, driven through the one query definition', () => {
       snapshot: null,
       refusal: SHIFT_TYPES_UNAVAILABLE,
       loading: false,
+      paused: false,
     });
   });
 

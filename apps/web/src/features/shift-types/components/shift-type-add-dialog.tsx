@@ -75,15 +75,19 @@ export function ShiftTypeAddDialog({ screen }: { readonly screen: ShiftTypeListS
     screen;
 
   return (
+    // NOT DISMISSIBLE WHILE A CREATE IS IN FLIGHT: Escape, the backdrop, the
+    // close control and Cancel all wait for the outcome, so the dialog that
+    // reports it cannot be closed before it lands.
     <Dialog
       open={adding}
       onOpenChange={setAdding}
+      dismissible={!pending}
       aria-labelledby="shift-type-new-heading"
     >
       <DialogHeader
         closeLabel={t('rotation.shiftTypes.close')}
         onClose={() => {
-          setAdding(false);
+          if (!pending) setAdding(false);
         }}
       >
         <DialogTitle id="shift-type-new-heading">{t('rotation.shiftTypes.addHeading')}</DialogTitle>
@@ -151,6 +155,7 @@ export function ShiftTypeAddDialog({ screen }: { readonly screen: ShiftTypeListS
             className="h-11"
             type="button"
             variant="outline"
+            disabled={pending}
             onClick={() => {
               setAdding(false);
             }}

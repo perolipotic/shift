@@ -10,6 +10,7 @@ import {
   chooseLevel,
   chooseTeam,
   membersQueryOptions,
+  membersNoticeOf,
   membersSurfaceStateOf,
   membersTodayOf,
   membersViewOf,
@@ -55,7 +56,10 @@ export function useMemberList() {
   // with `paused` shipped green, and a thrown query function then rendered
   // headings with no rows, no count and no message.
   const state = membersSurfaceStateOf(answer);
-  const { members, refusal, loading } = state;
+  const { members, loading } = state;
+  // THE LIST'S NOTICE: the refusal, or the unavailable message beside rows a
+  // refetch paused offline over, which is never a refusal (an edit form keeps them).
+  const refusal = membersNoticeOf(state);
   // THE ORGANIZATION'S TODAY, for the inactive marker (story 1.6), from the zone
   // the same one read embeds — `null` until it has settled, which marks nobody.
   const today = membersTodayOf(members, new Date());

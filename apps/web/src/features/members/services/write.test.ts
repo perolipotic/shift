@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type { MemberListRow, MembersSurfaceState } from '@/features/members/services/list';
+import {
+  membersSurfaceStateOf,
+  type MemberListRow,
+  type MembersSurfaceState,
+} from '@/features/members/services/list';
 import {
   DEFAULT_MEMBER_ROLE,
   LEAVE_ALLOWANCE_MAX,
@@ -1266,8 +1270,18 @@ describe('the reset has four stages, and the in-flight one is the one that gets 
 
 describe('whether either form may render at all', () => {
   function listState(fields: Partial<MembersSurfaceState> = {}): MembersSurfaceState {
-    return { members: null, refusal: null, loading: false, ...fields };
+    return { members: null, refusal: null, loading: false, paused: false, ...fields };
   }
+
+  it('keeps the form over rows a refetch paused offline over', () => {
+    // A PAUSE IS NOT A REFUSAL: a save that failed offline is followed by a
+    // re-read that pauses, and the form keeps what was typed.
+    const wanted = member({ id: 'member-2', name: 'Petra Babić' });
+    const paused = membersSurfaceStateOf({ isPending: false, isError: false, fetchStatus: 'paused', data: { ok: true, members: [member(), wanted] } });
+
+    expect(paused.paused, 'the state is not the paused one').toBe(true);
+    expect(memberFormRefusalOf(paused, 'member-2')).toEqual({ member: wanted, refusal: null, loading: false });
+  });
 
   it('hands over the member the id names', () => {
     const wanted = member({ id: 'member-2', name: 'Petra Babić' });

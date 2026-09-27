@@ -115,7 +115,7 @@ export const FEATURE_PUBLIC = {
     'services/sign-out', // navigation
   ],
   calendar: [
-    'services/snapshot', // pages
+    'services/snapshot', // pages, teams
     'utils/month', // pages
   ],
   'hour-bands': [
@@ -128,7 +128,8 @@ export const FEATURE_PUBLIC = {
     'utils/rank', // calendar, organization, teams
   ],
   navigation: [
-    'services/role', // calendar, members, pages, router
+    'services/profile', // teams
+    'services/role', // calendar, members, pages, router, teams
     'utils/destinations', // calendar, members, pages
   ],
   organization: [
@@ -145,6 +146,7 @@ export const FEATURE_PUBLIC = {
     'services/write', // pages
   ],
   teams: [
+    'services/dependents', // members
     'services/list', // calendar, members, rotation, pages
     'services/roster', // pages
     'services/write', // calendar, hour-bands, rotation, shift-types, pages

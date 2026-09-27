@@ -392,16 +392,8 @@
   evidence: Found by 1.7b's edge-case and blind review layers. The insert policy's date-order and at-most-one-future checks read committed rows only under READ COMMITTED, and `unique (member_id, effective_from)` catches only the same date; `0010`'s KNOWN GAP comment records both races. Same class as 1.6's cross-transaction serialization entry for `member_status_versions` — one fix (per-member advisory lock or a serializable check) belongs to both tables at once.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-7b-team-membership.md`
-  summary: A team rename or archive does not refresh the member list, so the list and the member edit screen show the team's old name for up to the members read's 5-minute stale time in the same session.
-  evidence: Found by 1.7b's verification-gap layer. `MEMBERS_COLUMNS` now embeds `teams(name)` under `MEMBERS_LIST_KEY`, while `ljudi.smjene.$id.tsx`'s `refresh()` invalidates only `TEAMS_LIST_KEY` — by the architecture's rule that a write invalidates only its own surface's key, pinned by `prijava.test.ts:2347`. Fixing it means amending that rule for embeds that cross surfaces (or a shorter stale time), which is an architecture decision, not a patch.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-7b-team-membership.md`
   summary: The member list embeds every member's full team history on every read, unbounded, though the list needs only today's version and at most one scheduled one.
   evidence: Found by 1.7b's blind review layer. `team_membership_versions(team_id,effective_from,teams(name))` in `MEMBERS_COLUMNS` has no date filter or limit; the payload grows with years of moves at several hundred members (Q20), and `member_status_versions` has the same shape. A bounded read (a view or a date-filtered embed) applies to both at once and should be measured before it is needed.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-8-team-roster.md`
-  summary: An admin's membership move, team rename or archive does not refresh Danas's own-team line or the `/smjene/$id` roster, which stay stale for up to their 5-minute stale time in the same session.
-  evidence: The write handlers in `routes/ljudi.$id.tsx` and `routes/ljudi.smjene.$id.tsx` invalidate only `MEMBERS_LIST_KEY`/`TEAMS_LIST_KEY`, per the "a write invalidates only that key" convention; `OWN_TEAM_KEY` and `TEAM_ROSTER_KEY` are new keys no write touches. Same class as the 1.7b entry about a rename not refreshing the member list — a cross-surface invalidation rule should settle both together.
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-1a-hour-band-rule.md`
   summary: `unique (organization_id, start_time)` on `hour_bands` is checked row by row, so swapping two bands' start times — or shifting every start by an hour — cannot be written as one statement or transaction even though the end state is a valid partition.
   evidence: Raised by 2.1a's review (blind hunter and edge-case hunter independently). The constraint is not `deferrable`, so an `update` that moves 07:00→19:00 while another band still holds 19:00 fails 23505 part-way through. Harmless while every write is a single-row PostgREST call, but 2.1b's editor is where an admin first tries to swap or shift bands: decide there whether the editor sequences through a temporary start, or the constraint becomes `deferrable initially deferred` (which also changes `on conflict` behaviour and needs its own test). The case-insensitive name index has the same shape for a name swap.
@@ -413,10 +405,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-2a-shift-type-rule.md`
   summary: Case-insensitive name uniqueness (`lower(btrim(name))`) on `teams`, `hour_bands` and now `shift_types` ignores Unicode normalization, so NFC `Noć` and NFD `Noć` (c + combining acute) are two distinct active names that render identically.
   evidence: Raised by 2.2a's review; the pattern is pre-existing (`0009_teams.sql:66-68`, `0012_hour_bands.sql:70-71`) and 2.2a copied it as the spec required. Croatian diacritics (č ć đ š ž) make it reachable by paste from another source. A fix is one migration for all three indexes (`lower(normalize(btrim(name), NFC))`) plus a normalize in each surface's duplicate-name message path, and a test per table.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-list-reader-refetch-failure.md`
-  summary: A refetch that pauses offline over cached rows (`isPending` false, `fetchStatus` `paused`) shows the stale rows with no message on the teams, members and hour-bands surfaces.
-  evidence: Every `*SurfaceStateOf` treats "paused" only as `isPending && fetchStatus === 'paused'`, i.e. a first read. The shape predates this spec: before, the same case also showed cached rows silently. It became more visible now that a failed refetch keeps rows. Found by the review edge-case hunter.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-list-reader-refetch-failure.md`
   summary: The list and edit screens offer no "try again" action after a read failure, so the unavailable message (now shown beside kept rows) stays until a remount, a reconnect or the next write.
@@ -521,10 +509,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-e2e-flow-coverage.md`
   summary: The local E2E stack keeps GoTrue's default sign-in rate limit; with more sign-in tests (wrong password, retries, `--repeat-each`) a 429 maps to `auth.error.unavailable` and could make sign-in assertions flaky. Consider raising `[auth.rate_limit] sign_in_sign_ups` for the local stack in `supabase/config.toml`.
   evidence: Raised by the E2E coverage review (2026-09-27). Not seen in runs so far; the change touches the shared Supabase config, so it is a deliberate decision rather than part of a test-only change.
-- source_spec: `_bmad-output/implementation-artifacts/spec-fix-team-add-dialog.md`
-  summary: The shift-type and hour-band add dialogs let the viewer dismiss them (Cancel, Escape, close) while a create is in flight, as the team add dialog did before its fix; give them the same `disabled={pending}` / `dismissible={!pending}` gating and an E2E pin.
-  evidence: Found while fixing the team add dialog (2026-09-27); left alone because that spec asked first before changing other screens.
-
 - source_spec: `_bmad-output/implementation-artifacts/spec-fix-admin-route-guards.md`
   summary: Open decision: keep writing per-function EXECUTE revokes (`anon`, `authenticated`, `service_role`) for every new function in `public`, as 0003 and 0020 do, or write one `alter default privileges` so future functions start with no grant for those roles.
   evidence: 0020 closed the one known gap (`refuse_organization_with_no_admin`) with per-function revokes only; that spec lists `alter default privileges` as Ask First, so nothing was decided. The per-function route relies on each migration author remembering the three revokes; `test/provisioning.test.ts`'s exact-grantee table catches a missed one only for functions listed there.
@@ -537,10 +521,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-5b-shift-type-override-form.md`
   summary: `claimedOrganizationOf` lives in `features/teams/services/write.ts`, and the calendar now imports it (FEATURE_PUBLIC widened); a token-claim helper belongs in a shared lib beside the Supabase client.
   evidence: Raised by 3.5b's review. The helper predates 3.5b; moving it touches every feature's writes and their guards, so it is a focused follow-up.
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-5b-shift-type-override-form.md`
-  summary: The shared `Dialog` primitive's `dismissible={false}` relies on `preventDefault` of `cancel`; Chrome's close-watcher closes a modal dialog on a second Escape without intervening user activation, so a held write's dialog (day detail, team add #89) can still close.
-  evidence: Raised by 3.5b's edge-case review. It affects every non-dismissible Dialog, not just the override form; the fix (re-open on `close` while pending, or a close-watcher-aware primitive) belongs in `components/ui/dialog.tsx`.
-
 - source_spec: `_bmad-output/implementation-artifacts/spec-fix-sign-in-and-settings.md`
   summary: No pending state on the sign-in or settings screens is one assistive technology can actually hear. The sign-in button's `aria-busy` is not announced by NVDA or JAWS, and the settings skeleton's `aria-busy` region has no label, because `hr.json` has no loading string.
   evidence: The skeleton now reserves the form's shape and marks its region `aria-busy` (the rest of the 1.4a entry this narrows), and the sign-in submit is `aria-disabled` + `aria-busy` instead of natively disabled. Both states are silent to the common screen readers without words. Adding those words needs a new resource string, which that spec lists as Ask First, so it was left for a decision.
@@ -560,3 +540,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-fix-sign-in-and-settings.md`
   summary: A deep link carried by the session-change re-guard (a user signing out to nobody) can be followed by the NEXT person who signs in on the same device, possibly from another organization.
   evidence: When `session-cache` re-runs the guards after a sign-out or expiry elsewhere, `_app` sends the tab to `/prijava?povratak=<the previous user's path>`. Whoever signs in next is returned there. The path passes the validator, since it is a known route, and RLS refuses its data. But the previous user's resource path (a member id, a shift type) shows in the address bar, and the new user lands on a refusal. Possible fixes are to bind the target to the organization (the slug) it was raised in, or to drop it when the subject signing in differs from the last one.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-list-refresh.md`
+  summary: A create request that never resolves traps the viewer in its add dialog (team, hour band, shift type): while it is pending the dialog cannot be dismissed, and nothing bounds how long the insert may take.
+  evidence: Raised by the fix-list-refresh review (2026-09-28). The dialogs are non-dismissible while `pending` by design (#89 and this fix), and the Supabase client sets no request timeout, so a request the network holds open indefinitely keeps the modal up until a reload. A fix is either a request timeout on the write (mapped to the existing unavailable refusal) or allowing dismissal after N seconds; both are behaviour decisions beyond this fix.

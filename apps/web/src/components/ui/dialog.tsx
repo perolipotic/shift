@@ -27,8 +27,10 @@ export interface DialogProps
   open: boolean
   onOpenChange: (open: boolean) => void
   /**
-   * `false` while something is in flight: Escape and the backdrop then do
-   * nothing, so a request cannot lose the dialog that reports its outcome.
+   * `false` while something is in flight: Escape (however often it is
+   * pressed) and the backdrop then do nothing, and a native close that gets
+   * through anyway is undone, so a request cannot lose the dialog that
+   * reports its outcome.
    */
   dismissible?: boolean
 }
@@ -55,11 +57,27 @@ function Dialog({
   return (
     <dialog
       ref={element}
+      // NOT DISMISSIBLE MEANS NO CLOSE REQUEST AT ALL. Chrome's CloseWatcher
+      // lets a first Escape be cancelled, but a second one without user
+      // activation between is not cancelable, so `onCancel` alone lets a
+      // double Escape close the dialog mid-request. Cancelling the KEYDOWN
+      // stops the browser from making the close request in the first place.
+      onKeyDown={(event) => {
+        if (!dismissible && event.key === "Escape") event.preventDefault()
+      }}
       onCancel={(event) => {
         if (!dismissible) event.preventDefault()
       }}
       onClose={() => {
-        if (open) onOpenChange(false)
+        if (!open) return
+        // A native close that still got through while not dismissible is
+        // undone: the dialog reopens and the screen's state is never told.
+        if (!dismissible) {
+          element.current?.showModal()
+
+          return
+        }
+        onOpenChange(false)
       }}
       onClick={(event) => {
         if (dismissible && event.target === event.currentTarget) onOpenChange(false)

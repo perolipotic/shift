@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { TEAMS_UNAVAILABLE, type TeamRow, type TeamsSurfaceState } from '@/features/teams/services/list';
+import {
+  TEAMS_UNAVAILABLE,
+  teamsSurfaceStateOf,
+  writableTeamsOf,
+  type TeamRow,
+  type TeamsSurfaceState,
+} from '@/features/teams/services/list';
 import {
   ARCHIVE_ARMED,
   ARCHIVE_BUSY,
@@ -41,7 +47,7 @@ const ARCHIVED: TeamRow = { ...ACTIVE, id: 't2', archived: true };
 
 /** A read's surface state: rows (or none), and whether the read is failing. */
 function readOf(teams: readonly TeamRow[] | null, loading: boolean, failed = false): TeamsSurfaceState {
-  return { teams, refusal: failed ? TEAMS_UNAVAILABLE : null, loading: failed ? false : loading };
+  return { teams, refusal: failed ? TEAMS_UNAVAILABLE : null, loading: failed ? false : loading, paused: false };
 }
 
 interface Recorded {
@@ -299,6 +305,17 @@ describe('the archive control has three stages and busy wins', () => {
 });
 
 describe('the edit screen finds its team in the one list', () => {
+  it('keeps the form, and the teams to write from, over rows a refetch paused offline over', () => {
+    // A PAUSE IS NOT A REFUSAL. A save that failed offline is followed by a
+    // re-read that pauses; were that a refusal, the form would unmount and
+    // take what was typed with it.
+    const paused = teamsSurfaceStateOf({ isPending: false, isError: false, fetchStatus: 'paused', data: [ACTIVE, ARCHIVED] });
+
+    expect(paused.paused, 'the state is not the paused one').toBe(true);
+    expect(teamFormStateOf(paused, 't1')).toEqual({ team: ACTIVE, refusal: null });
+    expect(writableTeamsOf(paused)).toEqual([ACTIVE, ARCHIVED]);
+  });
+
   it('waits while the list has not answered', () => {
     expect(teamFormStateOf(readOf(null, true), 't1')).toEqual({ team: null, refusal: null });
   });

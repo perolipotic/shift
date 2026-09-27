@@ -531,6 +531,13 @@ export interface HourBandsSurfaceState {
   readonly refusal: HourBandsFailure | null;
   /** Never true beside a message. */
   readonly loading: boolean;
+  /**
+   * A REFETCH PAUSED OFFLINE OVER CACHED ROWS. Not a refusal: an edit form
+   * built on this state stays mounted with what was typed. A list screen
+   * announces it through {@link hourBandsNoticeOf}, the unavailable message beside the
+   * kept rows.
+   */
+  readonly paused: boolean;
 }
 
 /**
@@ -538,14 +545,22 @@ export interface HourBandsSurfaceState {
  * and a failed refetch over a good answer (bands kept, message beside them).
  * Every failure reaches here as `isError`, because {@link hourBandsQueryOptions}
  * rejects on it; TanStack Query keeps the last good `data` beside that error.
+ * A FIRST READ paused offline is a refusal; a REFETCH paused over cached bands
+ * is `paused`, never a refusal, so the edit form keeps what was typed and the
+ * list says so through {@link hourBandsNoticeOf}.
  */
 export function hourBandsSurfaceStateOf(answer: HourBandsQueryAnswer): HourBandsSurfaceState {
   const bands = answer.data ?? null;
-  const paused = answer.isPending && answer.fetchStatus === HOUR_BANDS_FETCH_PAUSED;
+  const pausedFetch = answer.fetchStatus === HOUR_BANDS_FETCH_PAUSED;
 
-  if (answer.isError || paused) {
-    return { bands, refusal: HOUR_BANDS_UNAVAILABLE, loading: false };
+  if (answer.isError || (answer.isPending && pausedFetch)) {
+    return { bands, refusal: HOUR_BANDS_UNAVAILABLE, loading: false, paused: false };
   }
 
-  return { bands, refusal: null, loading: answer.isPending };
+  return { bands, refusal: null, loading: answer.isPending, paused: pausedFetch };
+}
+
+/** What the LIST screen announces, by {@link teamsNoticeOf}'s rule. */
+export function hourBandsNoticeOf(state: HourBandsSurfaceState): HourBandsFailure | null {
+  return state.refusal ?? (state.paused ? HOUR_BANDS_UNAVAILABLE : null);
 }
