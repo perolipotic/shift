@@ -1,9 +1,12 @@
-import { Link, createRoute } from '@tanstack/react-router';
+import { Link, createRoute, redirect } from '@tanstack/react-router';
 import { Clock3 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { t } from '@/lib/i18n';
+import { mayReadMembers } from '@/features/members/services/list';
+import { DESTINATIONS } from '@/features/navigation/utils/destinations';
+import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/features/navigation/services/role';
 import { OrganizationAbout } from '@/features/organization/components/organization-about';
 import { OrganizationSettingsCard } from '@/features/organization/components/organization-settings-card';
 import { useOrganizationSettings } from '@/features/organization/hooks/use-organization-settings';
@@ -16,18 +19,22 @@ import { appLayoutRoute } from '@/pages/_app';
  * rationale for each write, are `useOrganizationSettings`; what the form
  * deliberately does not offer is `OrganizationSettingsCard`'s.
  *
- * ADMIN ONLY (UX-DR32), and that is enforced by the DATABASE rather than here.
+ * ADMIN ONLY (UX-DR32). The WRITES are enforced by the DATABASE:
  * `organizations_update_by_own_active_admin` (`0004`) is the whole of it: a
  * member-role session, an admin naming another tenant and a deactivated admin
  * are all refused identically through this form and through a direct API call,
  * because AD-9 leaves no server tier and both are the same call. What the
- * screen owes is that the refusal is visible and that nothing typed is lost —
- * not a second gate that would be the softer of the two and could disagree with
- * the first.
+ * screen owes is that the refusal is visible and that nothing typed is lost.
+ * The route carries the admin guard `/ljudi/smjene` does, so a member who types
+ * this URL is forwarded rather than shown an admin screen shell; it hides the
+ * shell, and the database still decides every read and write.
  *
  * The session guard is NOT here. It is registered once on the pathless `_app`
  * layout this route nests under.
  */
+
+const FIRST_DESTINATION = DESTINATIONS[0];
+
 export function OrganizacijaScreen() {
   const settings = useOrganizationSettings();
 
@@ -70,5 +77,21 @@ export function OrganizacijaScreen() {
 export const organizacijaRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/organizacija',
+  /** The guard `/ljudi/smjene` carries, copied verbatim; `router.test.ts` drives it. */
+  beforeLoad: async ({ context }) => {
+    let outcome: MemberRoleOutcome;
+
+    try {
+      outcome = await context.currentMemberRole();
+    } catch (cause) {
+      console.error(MEMBER_ROLE_UNAVAILABLE, cause);
+
+      outcome = { ok: false, code: MEMBER_ROLE_UNAVAILABLE };
+    }
+
+    if (mayReadMembers(outcome)) return;
+
+    throw redirect({ to: FIRST_DESTINATION.path, replace: true });
+  },
   component: OrganizacijaScreen,
 });

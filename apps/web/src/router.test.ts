@@ -191,7 +191,16 @@ const DESTINATION_ROUTES = [
 // TWO SINCE STORY 2.2b: `/postavke-rotacije` stopped being a heading and now
 // renders — and writes — the organization's shift types, which UX-DR32 gives
 // the member role no surface for.
-const ROLE_GUARDED_PATHS = ['/ljudi', '/postavke-rotacije'];
+//
+// DERIVED SINCE THE ADMIN ROUTE GUARD FIX, and the derivation is the point: a
+// hand-kept list let `/raspored` and `/organizacija` sit `ADMIN_ONLY` in the
+// destination table with no guard at all, and a member who typed either URL
+// reached an admin screen shell. Every destination the member role does not
+// reach carries the admin guard, so a new `ADMIN_ONLY` row without one fails
+// the completeness test below rather than shipping.
+const ROLE_GUARDED_PATHS: readonly string[] = DESTINATIONS.filter(
+  (destination) => !destination.roles.includes('member_role'),
+).map((destination) => destination.path);
 
 /**
  * Every route that decides on the permission LEVEL, and the screen each one
@@ -211,6 +220,15 @@ const ROLE_GUARDED_PATHS = ['/ljudi', '/postavke-rotacije'];
  * the guard itself.
  */
 const LEVEL_GUARDED_ROUTES = [
+  // THE ADMIN ROUTE GUARD FIX: the two `ADMIN_ONLY` destinations that carried
+  // no guard, now copies of the same one.
+  { id: '/_app/raspored', path: '/raspored', route: rasporedRoute, component: RasporedScreen },
+  {
+    id: '/_app/organizacija',
+    path: '/organizacija',
+    route: organizacijaRoute,
+    component: OrganizacijaScreen,
+  },
   { id: '/_app/ljudi', path: '/ljudi', route: ljudiRoute, component: LjudiScreen },
   {
     id: '/_app/ljudi/novi',
@@ -1274,11 +1292,11 @@ describe('the signed-in layout guards every destination once, and is pathless', 
 
   it('asks whether anyone is signed in, and nothing about who they are', () => {
     // P9's decision, pinned so the story that changes it has to change a test.
-    // The guard is SESSION-ONLY: a signed-in member typing `/organizacija`
-    // reaches it, and today that is correct — AD-10 puts isolation and role
-    // enforcement in the database, and these eight screens hold no data for a
-    // role check to protect. What decides that a member never SEES the
-    // destination is `@/features/navigation/utils/destinations`.
+    // The LAYOUT's guard is SESSION-ONLY: AD-10 puts isolation and role
+    // enforcement in the database, and a destination that needs the level
+    // carries its own guard (the admin-only ones, below). What decides that a
+    // member never SEES the destination is
+    // `@/features/navigation/utils/destinations`.
     //
     // Read off the SOURCE, because a role check that never fires against these
     // stubs is invisible to a behavioural assertion: every branch of it would
@@ -1532,18 +1550,6 @@ describe('the member list is the first destination that refuses a permission lev
     expect(destinationsFor('member_role')[0]).toEqual(DESTINATIONS[0]);
   });
 
-  it.each([MEMBER_ROLE_REFUSED, MEMBER_ROLE_UNAVAILABLE] as const)(
-    'forwards when the level comes back as %s rather than admitting on a failed read',
-    async (code) => {
-      // FAILING CLOSED. A read that could not complete is not an
-      // administrator's level, and the cost of being wrong in the other
-      // direction is every member's address and allowance.
-      const thrown = thrownBy(await beforeLoad(() => Promise.resolve({ ok: false, code })));
-
-      expect(isRedirect(thrown), `/ljudi admitted a session whose level was ${code}`).toBe(true);
-    },
-  );
-
   it('forwards when the reader rejects, and says why on the console', async () => {
     // THE THIRD OUTCOME. `currentMemberRole` can REJECT — the client throws on a
     // build with no environment, and `getSession` rejects wherever storage is
@@ -1562,21 +1568,6 @@ describe('the member list is the first destination that refuses a permission lev
         logged,
         '/ljudi swallowed the reason the permission level could not be read',
       ).toHaveBeenCalledWith(MEMBER_ROLE_UNAVAILABLE, expect.anything());
-    } finally {
-      logged.mockRestore();
-    }
-  });
-
-  it('says nothing to the console on the ordinary admin path', async () => {
-    // The other polarity: a guard that logged on every resolution would satisfy
-    // the case above and fill a real console with a line per navigation, which
-    // is how the one line that matters stops being noticed.
-    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-
-    try {
-      await beforeLoad(() => Promise.resolve({ ok: true, role: 'admin' }));
-
-      expect(logged, '/ljudi logs on the ordinary admin path').not.toHaveBeenCalled();
     } finally {
       logged.mockRestore();
     }
@@ -1619,15 +1610,43 @@ describe('the member list is the first destination that refuses a permission lev
      * over the branches that decide who gets in, so a copy that was pasted and
      * then quietly loosened fails here rather than shipping.
      */
-    it('guards exactly the nine routes the table names, and no fewer', () => {
+    it('guards exactly the eleven routes the table names, and no fewer', () => {
       // NON-VACUITY. An entry deleted from the table takes its cases with it and
       // Vitest reports the shorter run as a pass. SEVEN SINCE STORY 2.1b.
-      // NINE SINCE STORY 2.2b.
-      expect(LEVEL_GUARDED_ROUTES).toHaveLength(9);
+      // NINE SINCE STORY 2.2b. ELEVEN SINCE THE ADMIN ROUTE GUARD FIX.
+      expect(LEVEL_GUARDED_ROUTES).toHaveLength(11);
       for (const { path, route } of LEVEL_GUARDED_ROUTES) {
         expect(
           (route.options as { beforeLoad?: unknown }).beforeLoad,
           `${path} carries no guard at all`,
+        ).toBeTypeOf('function');
+      }
+    });
+
+    it('drives every admin-only destination the destination table names', () => {
+      // COMPLETENESS, derived rather than listed. The table's `ADMIN_ONLY` rows
+      // are the source of truth for who may reach a destination, so each one
+      // must be a route the cases below EXECUTE, not merely one that carries
+      // some function: a guard deleted from `/organizacija` or `/raspored` fails
+      // here and in every case below.
+      const adminOnly = DESTINATIONS.filter(
+        (destination) => !destination.roles.includes('member_role'),
+      ).map((destination) => destination.path);
+
+      expect(adminOnly.length, 'the destination table names no admin-only row').toBeGreaterThan(0);
+      for (const path of adminOnly) {
+        const guarded = LEVEL_GUARDED_ROUTES.find((entry) => entry.path === path);
+
+        expect(guarded, `${path} is admin-only and the guard cases never drive it`).toBeDefined();
+        // IDENTITY, not only the path: an entry naming the right path and the
+        // wrong route object would drive some other route's guard.
+        expect(
+          guarded?.route,
+          `${path}'s table entry is not the route the router registered for it`,
+        ).toBe(router.routesByPath[path as keyof typeof router.routesByPath]);
+        expect(
+          (guarded?.route.options as { beforeLoad?: unknown } | undefined)?.beforeLoad,
+          `${path} is admin-only and carries no guard`,
         ).toBeTypeOf('function');
       }
     });
@@ -1651,6 +1670,45 @@ describe('the member list is the first destination that refuses a permission lev
       },
     );
 
+    it.each(
+      LEVEL_GUARDED_ROUTES.flatMap((entry) =>
+        ([MEMBER_ROLE_REFUSED, MEMBER_ROLE_UNAVAILABLE] as const).map((code) => ({ ...entry, code })),
+      ),
+    )(
+      'forwards from $path when the level comes back as $code rather than admitting on a failed read',
+      async ({ route, path, code }) => {
+        // FAILING CLOSED. A read that could not complete is not an
+        // administrator's level, and the cost of being wrong in the other
+        // direction is every member's address and allowance.
+        const thrown = thrownBy(
+          await beforeLoadOn(route, () => Promise.resolve({ ok: false, code })),
+        );
+
+        expect(isRedirect(thrown), `${path} admitted a session whose level was ${code}`).toBe(true);
+        expect((thrown as { options: { to?: string } }).options.to).toBe(DESTINATIONS[0].path);
+        expect((thrown as { options: { replace?: unknown } }).options.replace).toBe(true);
+      },
+    );
+
+    it.each(LEVEL_GUARDED_ROUTES)(
+      'says nothing to the console on the ordinary admin path to $path',
+      async ({ route, path }) => {
+        // The other polarity of the logging case below: a guard that logged on
+        // every resolution would satisfy it and fill a real console with a
+        // line per navigation, which is how the one line that matters stops
+        // being noticed.
+        const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        try {
+          await beforeLoadOn(route, () => Promise.resolve({ ok: true, role: 'admin' }));
+
+          expect(logged, `${path} logs on the ordinary admin path`).not.toHaveBeenCalled();
+        } finally {
+          logged.mockRestore();
+        }
+      },
+    );
+
     it.each(LEVEL_GUARDED_ROUTES)(
       'fails closed on $path when the level cannot be read at all',
       async ({ route, path }) => {
@@ -1666,6 +1724,8 @@ describe('the member list is the first destination that refuses a permission lev
           );
 
           expect(isRedirect(thrown), `${path} let the read failure escape`).toBe(true);
+          expect((thrown as { options: { to?: string } }).options.to).toBe(DESTINATIONS[0].path);
+          expect((thrown as { options: { replace?: unknown } }).options.replace).toBe(true);
           expect(noted, `${path} swallowed the reason`).toHaveBeenCalledWith(
             MEMBER_ROLE_UNAVAILABLE,
             expect.anything(),

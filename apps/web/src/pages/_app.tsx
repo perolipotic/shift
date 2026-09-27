@@ -34,12 +34,13 @@ import { SESSION_UNRESOLVED } from '@/lib/supabase/client';
  * the chrome by being forwarded INTO a destination. The duplicated guard is two
  * call sites of a four-line check, which is the cheaper of the two prices.
  *
- * SESSION ONLY, NEVER ROLE, and that is a decision rather than an omission. A
- * signed-in member who types `/organizacija` reaches the admin destination's
- * heading, and today that is correct: AD-10 puts isolation and role enforcement
- * in the DATABASE — a `SECURITY DEFINER STABLE` helper re-read on every policy
- * evaluation — never in the interface, and these eight screens hold no data at
- * all, so there is nothing here for a role check to protect. What decides that a
+ * SESSION ONLY, NEVER ROLE, and that is a decision rather than an omission.
+ * When this layout was written, a signed-in member who typed `/organizacija`
+ * reached the admin destination's heading, and that was correct: AD-10 puts
+ * isolation and role enforcement in the DATABASE — a `SECURITY DEFINER STABLE`
+ * helper re-read on every policy evaluation — never in the interface, and these
+ * eight screens held no data at all, so there was nothing here for a role check
+ * to protect. What decides that a
  * member never SEES the destination is `@/features/navigation/utils/destinations`, which part B
  * renders from.
  *
@@ -55,7 +56,9 @@ import { SESSION_UNRESOLVED } from '@/lib/supabase/client';
  * router context, and argued for in `pages/ljudi.tsx`. What changed in
  * `router.test.ts` is the assertion that NO destination carries a guard, which
  * now names the ones that do and still refuses every other; what did not change
- * is this file, which names no level and must go on naming none. Eight
+ * is this file, which names no level and must go on naming none. Since the
+ * admin route guard fix, every admin-only destination carries that check of its
+ * own, `/raspored` and `/organizacija` included. Eight
  * destinations sharing one session guard and one of them adding a second
  * decision of its own are two separate claims, and keeping them in two files is
  * what stops the next reviewer having to hold both at once.

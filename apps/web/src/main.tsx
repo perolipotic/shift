@@ -5,6 +5,9 @@ import { createRoot } from 'react-dom/client';
 import { App } from '@/App';
 import { initLocalization } from '@/lib/i18n';
 import { bootLocalization } from '@/lib/i18n/boot';
+import { supabaseClient } from '@/lib/supabase/client';
+import { resetOnSessionChange } from '@/lib/supabase/session-cache';
+import { router } from '@/router';
 
 import '@/index.css';
 
@@ -38,6 +41,15 @@ if (rootElement === null) {
 // made once for every later surface by whoever happened to write this line
 // first. A surface that needs a different policy states it on its own query.
 const queryClient = new QueryClient();
+
+// ONE RULE FOR THE WHOLE PAGE LOAD: whenever the signed-in user changes or
+// signs out, from this tab or another, or by expiry, the cache forgets the
+// previous user in a way every mounted screen sees, and the router re-runs
+// every guard for the new one. The chrome's sign-out still clears on its own;
+// this covers every change no click here makes. The three transitions, and why
+// a token refresh changes nothing, are `@/lib/supabase/session-cache`, which
+// the node suite executes.
+resetOnSessionChange(() => supabaseClient().auth, { cache: queryClient, router });
 
 // Initialization is awaited before the first render (story 1.1c). Resources are
 // bundled, so this resolves in a microtask rather than over the network — but

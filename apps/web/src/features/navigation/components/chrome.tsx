@@ -341,6 +341,12 @@ export function AppChrome({ children }: AppChromeProps) {
       // until each refetch settles. `clear()` rather than invalidating two keys
       // by name: the rule is "nothing this session read outlives it", and a list
       // of keys to forget is a list somebody has to remember to grow.
+      //
+      // KEPT beside the app-wide rule in `main.tsx`
+      // (`@/lib/supabase/session-cache`), which covers every other change of
+      // user: this one is synchronous with the navigation below. The rule's
+      // own router invalidation is deferred past this navigation, so it only
+      // re-checks the `/prijava` the tab is already heading to.
       queryClient.clear();
 
       // BARE `/prijava`, discarding a slug this component never had. The

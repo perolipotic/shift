@@ -1164,6 +1164,19 @@ describe('the query cache is wired into the application, not merely installed', 
     expect(occurrences(entry, 'new QueryClient('), 'main.tsx builds more than one client').toBe(1);
   });
 
+  it('installs the session rule on the one cache, once', () => {
+    // The rule itself is executed by `lib/supabase/session-cache.test.ts`;
+    // what that test cannot see is that the boot installs it. Without this
+    // line an account switch in another tab, an expiry or a sign-in over a
+    // stale cache shows the previous viewer's answers until each refetch.
+    const entry = source(ENTRY);
+
+    expect(entry, 'main.tsx does not clear the cache on a session change').toContain(
+      'resetOnSessionChange(() => supabaseClient().auth, { cache: queryClient, router })',
+    );
+    expect(occurrences(entry, 'resetOnSessionChange(')).toBe(1);
+  });
+
   it('keeps the cache inside the localization gate it must not outlive', () => {
     // The mount stays inside `if (await bootLocalization(initLocalization))`.
     // `test/localization-applied.test.ts` owns that claim; this is the narrower
