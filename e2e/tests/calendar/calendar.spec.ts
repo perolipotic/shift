@@ -658,6 +658,26 @@ test.describe('the day detail at 1280 px, as an admin', () => {
     await expect(calendarPage.listsIn(detail)).toHaveCount(0);
   });
 
+  test('browser Back after an in-app month change closes the detail and returns focus to the grid', async ({ page, calendarPage, fixture }) => {
+    // The opener is gone once Back shows the other month, so focus falls back
+    // to the grid's one tab stop. The months are changed in the app, not by
+    // `goto`: a Back across two loaded documents restores the earlier document,
+    // where focus starts on the body as in any fresh page.
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    const next = firstOfNextMonth(rotation.today);
+
+    await calendarPage.goto(gridMonthOf(rotation.today));
+    await calendarPage.nextButton.click();
+    await expect(calendarPage.monthHeading(monthHeading(next))).toBeVisible();
+    await (await calendarPage.cellOf(fixture.team.name, next)).click();
+    await expect(calendarPage.detailOf(fixture.team.name, next)).toBeVisible();
+    await page.goBack();
+    await expect(calendarPage.monthHeading(monthHeading(rotation.today))).toBeVisible();
+    await expect(calendarPage.dialog()).toHaveCount(0);
+    await expect(calendarPage.tabStops).toHaveCount(1);
+    await expect(calendarPage.tabStops).toBeFocused();
+  });
+
   test('browser Back while the detail is open closes it, and it does not reopen', async ({ page, calendarPage, fixture }) => {
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const next = firstOfNextMonth(rotation.today);
