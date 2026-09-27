@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -6,6 +6,10 @@ import { describe, expect, it } from 'vitest';
 
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { DESTINATIONS } from '@/features/navigation/utils/destinations';
+import {
+  SETTINGS_SCREEN_EXEMPT,
+  SETTINGS_SCREEN_PARTS,
+} from '@/features/organization/settings-screen.fixture';
 
 /**
  * The sign-in path's screens, asserted at source level (story 1.1d, extended by
@@ -63,8 +67,27 @@ const LAYOUT = join(srcRoot, 'pages', '_app.tsx');
 const INPUT_PRIMITIVE = join(srcRoot, 'components', 'ui', 'input.tsx');
 const SELECT_PRIMITIVE = join(srcRoot, 'components', 'ui', 'select.tsx');
 const RESOURCE = join(srcRoot, 'lib', 'i18n', 'locales', 'hr.json');
-/** Story 1.4a's settings surface: the first destination that is not a placeholder. */
-const SETTINGS = join(srcRoot, 'pages', 'organizacija.tsx');
+/** The organization feature, which holds the settings surface's parts. */
+const ORGANIZATION_FEATURE = join(srcRoot, 'features', 'organization');
+/** The settings surface's page, which only composes (source structure B2). */
+const SETTINGS_PAGE = join(srcRoot, ...SETTINGS_SCREEN_PARTS.page);
+/** Its state, its one read and its four named writes. */
+const SETTINGS_HOOK = join(srcRoot, ...SETTINGS_SCREEN_PARTS.hook);
+/** The message region, the form and its three selects beside the name. */
+const SETTINGS_CARD = join(srcRoot, ...SETTINGS_SCREEN_PARTS.card);
+/** The logo block: the shared lockup, the file picker and its visible action. */
+const SETTINGS_LOGO = join(srcRoot, ...SETTINGS_SCREEN_PARTS.logo);
+/** The status line's name for the stored accent. */
+const SETTINGS_ACCENT_LABEL = join(srcRoot, ...SETTINGS_SCREEN_PARTS.accentLabel);
+/**
+ * Story 1.4a's settings surface: the first destination that is not a
+ * placeholder. A file set since source structure B2, read as one source like
+ * the member screens, and written ONCE in `settings-screen.fixture.ts`, which
+ * `snapshot.test.ts` reads too.
+ */
+const SETTINGS: readonly string[] = Object.values(SETTINGS_SCREEN_PARTS).map((parts) =>
+  join(srcRoot, ...parts),
+);
 
 /**
  * A screen that is more than one file: its page, the hook holding its state,
@@ -856,7 +879,7 @@ function submitHandler(screen: string): string {
  */
 /** A top-level exported function of a module, from `export` to its closing brace. */
 function exportedFunction(text: string, name: string): string {
-  return new RegExp(`export async function ${name}\\([\\s\\S]*?\\n\\}`).exec(text)?.[0] ?? '';
+  return new RegExp(`export (?:async )?function ${name}\\([\\s\\S]*?\\n\\}`).exec(text)?.[0] ?? '';
 }
 
 function namedHandler(screen: string, name: string): string {
@@ -2169,6 +2192,31 @@ describe('the screen is read at all, so every sweep below means something', () =
 
     expect(found.length, 'no member screen parts found at all').toBeGreaterThan(10);
     for (const file of found) expect(swept.has(file), `${file} is in no member file set`).toBe(true);
+  });
+
+  it('sweeps every part of the settings surface, so a new file cannot escape the set', () => {
+    // SOURCE STRUCTURE B2, on B1's terms, and as an EQUALITY: every part the
+    // set names exists, and every non-test module under the organization
+    // feature's `components/`, `hooks/` and `utils/` is either in the set or
+    // exempt for a stated reason (`settings-screen.fixture.ts`).
+    const exempt = new Set(
+      SETTINGS_SCREEN_EXEMPT.map((entry) => join(ORGANIZATION_FEATURE, entry.file)),
+    );
+    const found = ['components', 'hooks', 'utils'].flatMap((folder) =>
+      readdirSync(join(ORGANIZATION_FEATURE, folder))
+        .filter((name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name))
+        .map((name) => join(ORGANIZATION_FEATURE, folder, name)),
+    );
+
+    for (const file of exempt) expect(found, `${file} is exempt and does not exist`).toContain(file);
+    for (const entry of SETTINGS_SCREEN_EXEMPT) expect(entry.why.length).toBeGreaterThan(20);
+    for (const file of SETTINGS) {
+      expect(existsSync(file), `${file} is in the set and does not exist`).toBe(true);
+    }
+    expect(
+      found.filter((file) => !exempt.has(file)).sort(),
+      'the settings file set and the feature folders disagree',
+    ).toEqual(SETTINGS.filter((file) => file !== SETTINGS_PAGE).sort());
   });
 
   it('finds the controls it is about to measure', () => {
@@ -4106,15 +4154,28 @@ describe('every field on the settings surface carries an accessible name', () =>
     const screen = source(SETTINGS);
     // VISUAL REFRESH B: the refusal is drawn by the `Notice` primitive, which
     // renders the `<p>`, so the element read here is `<Notice`. Same shape.
-    const errorId = /<Notice\s+id="([\w-]+)"\s+role="alert"/.exec(screen)?.[1];
+    // ONE CONSTANT since source structure B2, because the id is shared by two
+    // files (the settings card and the logo block): the Notice carries it by
+    // name, every field names the same constant, and the constant resolves to
+    // a real id in the refusal's own module.
+    const errorName = /<Notice\s+id=\{(\w+)\}\s+role="alert"/.exec(screen)?.[1];
+    const errorId = new RegExp(`export const ${String(errorName)} = '([\\w-]+)';`).exec(
+      source(ORGANIZATION_MESSAGE_KEYS),
+    )?.[1];
 
-    expect(errorId, 'no role="alert" element to describe the fields by').not.toBeUndefined();
-    expect(screen, `no element carries id="${String(errorId)}"`).toContain(
-      `id="${String(errorId)}"`,
-    );
+    expect(errorName, 'no role="alert" element to describe the fields by').not.toBeUndefined();
+    expect(errorId, `${String(errorName)} names no id`).not.toBeUndefined();
+    expect(screen, 'the refusal id is spelled by hand somewhere').not.toContain(`'${String(errorId)}'`);
+    for (const file of [SETTINGS_CARD, SETTINGS_LOGO]) {
+      expect(source(file), `${file} does not take the id from its module`).toMatch(
+        new RegExp(`import \\{[^}]*\\b${String(errorName)}\\b[^}]*\\} from '@/features/organization/utils/messages'`),
+      );
+    }
 
     for (const input of inputElements(screen)) {
-      expect(describedByIds(input), 'a field describes nothing').toContain(String(errorId));
+      expect(input, 'a field describes nothing').toMatch(
+        new RegExp(`aria-describedby=\\{[^}]*\\b${String(errorName)}\\b[^}]*\\}`),
+      );
       expect(
         attributeOf(input, 'aria-describedby'),
         `a field names ${String(errorId)} unconditionally, so it dangles until something fails`,
@@ -4141,8 +4202,9 @@ describe('every field on the settings surface carries an accessible name', () =>
 
     expect(day, 'no leave-year day field on the settings surface').not.toBeUndefined();
     expect(month, 'no leave-year month field on the settings surface').not.toBeUndefined();
-    expect(screen).toContain('LEAVE_START_DAYS.map(');
-    expect(screen).toContain('LEAVE_START_MONTHS.map(');
+    // READ OFF THE CARD THAT RENDERS THEM (source structure B2), not the set.
+    expect(source(SETTINGS_CARD)).toContain('LEAVE_START_DAYS.map(');
+    expect(source(SETTINGS_CARD)).toContain('LEAVE_START_MONTHS.map(');
     expect(screen, 'a day beyond 28 is expressible').not.toMatch(/max=\{(29|30|31)\}/);
   });
 
@@ -4160,9 +4222,10 @@ describe('every field on the settings surface carries an accessible name', () =>
   it('delegates the failure-to-message pairing rather than branching on it', () => {
     const screen = source(SETTINGS);
 
-    expect(screen, 'the screen no longer renders its message through the mapping').toContain(
-      't(organizationMessageKey(',
-    );
+    expect(
+      source(SETTINGS_CARD),
+      'the screen no longer renders its message through the mapping',
+    ).toContain('t(organizationMessageKey(');
     for (const key of [
       'organization.error.refused',
       'organization.error.name',
@@ -4193,6 +4256,13 @@ describe('every field on the settings surface carries an accessible name', () =>
 
     expect(gated, 'no renderSettings function to read').not.toBe('');
     expect(screen, 'the screen renders no alert at all').toContain('role="alert"');
+    // FILE BY FILE since source structure B2: the alert is the settings
+    // card's, outside its gated `renderSettings`, and never the logo block's,
+    // which is gated on the same snapshot as a whole.
+    expect(source(SETTINGS_CARD), 'the settings card renders no alert').toContain('role="alert"');
+    expect(source(SETTINGS_LOGO), 'the refusal moved into the snapshot-gated logo block').not.toContain(
+      'role="alert"',
+    );
     expect(
       gated,
       'the refusal is inside the snapshot-gated branch, so a failed read shows nothing',
@@ -4345,17 +4415,23 @@ describe('the logo control the general sweeps structurally cannot see', () => {
       'setUnrenderable(readable)',
     );
 
-    // And both surfaces route through it rather than round it.
-    for (const file of [SETTINGS, CHROME]) {
-      const screen = source(file);
-
-      expect(screen, 'a surface fetches the signed URL itself').toContain('useRenderableLogo(');
-      expect(screen, 'a surface still registers its own logo query').not.toContain(
+    // And both surfaces route through it rather than round it. Each needle is
+    // read off the file that must hold it (source structure B2): the settings
+    // surface calls the hook in its hook and draws the lockup in its logo card.
+    for (const { surface, reads, draws } of [
+      { surface: SETTINGS, reads: SETTINGS_HOOK, draws: SETTINGS_LOGO },
+      { surface: CHROME, reads: CHROME, draws: CHROME },
+    ]) {
+      expect(source(reads), 'a surface fetches the signed URL itself').toContain(
+        'useRenderableLogo(',
+      );
+      expect(source(surface), 'a surface still registers its own logo query').not.toContain(
         'queryKey: organizationLogoKey(',
       );
-      expect(screen, 'the lockup has no failure path, so a dead URL renders broken').toContain(
-        'onUnrenderable={logo.onUnrenderable}',
-      );
+      expect(
+        source(draws),
+        'the lockup has no failure path, so a dead URL renders broken',
+      ).toContain('onUnrenderable={logo.onUnrenderable}');
     }
   });
 
@@ -4923,10 +4999,13 @@ describe('the lockup the chrome and the settings surface share', () => {
     // MUTATION-PROVEN SHAPE. A `<img src={logoUrl}` left behind on the settings
     // surface would render correctly, pass every sweep in this file, and go on
     // being the copy nobody updates when the fallback changes.
-    for (const file of [SETTINGS, CHROME]) {
+    for (const { file, draws } of [
+      { file: SETTINGS, draws: SETTINGS_LOGO },
+      { file: CHROME, draws: CHROME },
+    ]) {
       const screen = source(file);
 
-      expect(screen, 'a surface renders the lockup twice or not at all').toContain(
+      expect(source(draws), 'a surface renders the lockup twice or not at all').toContain(
         '<OrganizationLockup',
       );
       expect(screen, 'a surface draws its own image instead of the lockup').not.toContain('<img');
@@ -5253,7 +5332,7 @@ describe('the accent control offers a curated set and nothing else', () => {
     // copy no test could compare against the others. The options come from the
     // module `accent.test.ts` pins to `0006`, and their names come from the
     // mapping it executes.
-    const screen = source(SETTINGS);
+    const screen = source(SETTINGS_CARD);
 
     expect(screen, 'the options are not read off the curated set').toContain(
       'BRAND_ACCENT_OPTIONS.map(',
@@ -5325,7 +5404,7 @@ describe('the accent control offers a curated set and nothing else', () => {
     // that makes it honest: after a refusal the control shows what was chosen
     // and this shows what the database holds, and the difference is the thing
     // somebody needs to see.
-    const screen = source(SETTINGS);
+    const screen = source(SETTINGS_CARD);
 
     expect(screen, 'nothing reports what the stored accent is').toContain('role="status"');
     expect(screen, 'the status line is read off the control rather than the row').toContain(
@@ -5333,8 +5412,16 @@ describe('the accent control offers a curated set and nothing else', () => {
     );
     // AND IT SAYS WHAT THE ROW HOLDS even when this build has no name for it.
     // `accentMessageKey` folds an unrecognised key to `Neutralna`, which is
-    // right for the class it resolves and a lie here.
-    const label = componentFunction(screen, 'storedAccentLabel');
+    // right for the class it resolves and a lie here. Its own module since
+    // source structure B2: the card imports it and keeps no copy, and the fold
+    // is read off that module alone (and executed in `accent-label.test.ts`).
+    expect(screen, 'the card does not take the label from its module').toContain(
+      "import { storedAccentLabel } from '@/features/organization/utils/accent-label';",
+    );
+    expect(screen, 'the card keeps a local copy of the label').not.toContain(
+      'function storedAccentLabel(',
+    );
+    const label = exportedFunction(source(SETTINGS_ACCENT_LABEL), 'storedAccentLabel');
 
     expect(label, 'no storedAccentLabel function to read').not.toBe('');
     expect(label, 'the status line renames an accent it cannot resolve').toMatch(
@@ -5349,7 +5436,7 @@ describe('the accent control offers a curated set and nothing else', () => {
     // option already shown fires no change event, so there was no path back to
     // the `null` the screen was claiming to display. Rendered as its own option,
     // the row is described honestly and every other option is one change away.
-    const screen = source(SETTINGS);
+    const screen = source(SETTINGS_CARD);
 
     expect(screen, 'an unrenderable stored accent is hidden behind the neutral option').toMatch(
       /brandAccentOf\(organization\.brandAccent\) === null &&/,
@@ -5450,20 +5537,26 @@ describe('member rank: the setting gates display and entry, and deletes nothing'
     expect(control, 'the setting control is not seeded from the row').toContain(
       'defaultValue={fireRanksValue(organization.usesFireRanks)}',
     );
-    expect(screen).toContain('FIRE_RANKS_OPTIONS.map(');
-    expect(screen).toContain('t(fireRanksMessageKey(option))');
-    expect(screen, 'nothing reports what the stored setting is').toContain(
+    // Each needle read off the file that must hold it (source structure B2):
+    // the card renders the options and the status line, the hook holds the
+    // handler and the two lock derivations.
+    const card = source(SETTINGS_CARD);
+    const hook = source(SETTINGS_HOOK);
+
+    expect(card).toContain('FIRE_RANKS_OPTIONS.map(');
+    expect(card).toContain('t(fireRanksMessageKey(option))');
+    expect(card, 'nothing reports what the stored setting is').toContain(
       't(fireRanksStatusMessageKey(organization.usesFireRanks))',
     );
-    expect(screen, 'the control reads an unexpected value as off').toContain(
+    expect(hook, 'the control reads an unexpected value as off').toContain(
       'fireRanksOf(event.target.value, organization?.usesFireRanks ?? false)',
     );
     expect(
-      /const writingBesideFireRanks = ([^;]*);/.exec(screen)?.[1] ?? '',
+      /const writingBesideFireRanks = ([^;]*);/.exec(hook)?.[1] ?? '',
       'the setting is not locked while the accent is written',
     ).toContain('savingAccent');
     expect(
-      /const writingElsewhere = ([^;]*);/.exec(screen)?.[1] ?? '',
+      /const writingElsewhere = ([^;]*);/.exec(hook)?.[1] ?? '',
       'the accent is not locked while the setting is written',
     ).toContain('savingFireRanks');
   });

@@ -47,6 +47,22 @@ function memberScreenParts(): string[] {
 }
 
 /**
+ * Every non-test module under the organization feature's `hooks/`,
+ * `components/` and `utils/` — the settings surface's parts since source
+ * structure B2, and the shared lockup, logo read and accent module beside them.
+ */
+function organizationScreenParts(): string[] {
+  const feature = join(webRoot, 'src', 'features', 'organization');
+
+  return ['hooks', 'components', 'utils'].flatMap((folder) =>
+    readdirSync(join(feature, folder))
+      .filter((name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name))
+      .sort()
+      .map((name) => join(feature, folder, name)),
+  );
+}
+
+/**
  * Every source file whose content must be reflected in the build.
  *
  * MUTATION-PROVEN GAP. The list held only the four localization sources, so
@@ -115,34 +131,24 @@ const SOURCES = [
   join(webRoot, 'src', 'pages', 'ljudi.tsx'),
   join(webRoot, 'src', 'pages', 'postavke-rotacije.tsx'),
   join(webRoot, 'src', 'pages', 'organizacija.tsx'),
-  // Story 1.4a's two modules. `organizacija.tsx` above is no longer a
-  // placeholder and `messages.ts` owns four `t()` keys the way `sign-in.ts`
-  // owns two — so a chunk built before an edit to either compares `hr.json`
-  // against output that never saw it, which is the staleness this list refuses.
-  // `snapshot.ts` renders nothing and is here for the same reason `client.ts`
-  // is: it holds the stable codes the screen imports and logs.
+  // Story 1.4a's `snapshot.ts` and 1.4b's `logo.ts` render nothing and are
+  // here for the reason `client.ts` is: they hold the stable codes the screen
+  // imports and logs, and `logo.ts` owns the `accept` hint the screen imports
+  // rather than writes.
   join(webRoot, 'src', 'features', 'organization', 'services', 'snapshot.ts'),
-  join(webRoot, 'src', 'features', 'organization', 'utils', 'messages.ts'),
-  // Story 1.4b's module. `logo.ts` renders nothing and is here for the reason
-  // `snapshot.ts` is: it holds the stable codes `messages.ts` pairs with keys,
-  // and it owns the `accept` hint the screen imports rather than writes — so a
-  // chunk built before an edit to it compares `hr.json` against output that
-  // never saw the four logo messages.
   join(webRoot, 'src', 'features', 'organization', 'services', 'logo.ts'),
-  // Story 1.4c's two. `accent.ts` owns five `t()` keys as a return-type union,
-  // exactly as `messages.ts` does, AND the Tailwind class literals the tint is
-  // made of — so a chunk built before an edit to it compares `hr.json` against
-  // output that never saw the accent names. `lockup.tsx` is the component that
-  // renders `organization.lockup`, and it renders in the chrome as well as on
-  // the settings surface, which makes a stale build here wrong on every
-  // signed-in screen rather than on one.
-  join(webRoot, 'src', 'features', 'organization', 'utils', 'accent.ts'),
-  join(webRoot, 'src', 'features', 'organization', 'components', 'lockup.tsx'),
-  // The one signed-URL read behind every lockup. It renders nothing and is here
-  // for the reason `snapshot.ts` and `client.ts` are: it holds the query key,
-  // the cache bound and the stable code both surfaces now depend on, so a chunk
-  // built before an edit to it is stale in a way no vocabulary sweep can see.
-  join(webRoot, 'src', 'features', 'organization', 'hooks', 'logo-url.ts'),
+  // The organization feature's `hooks/`, `components/` and `utils/`, READ OFF
+  // THE FOLDERS rather than listed (source structure B2), so a part added
+  // later is covered the day it exists. That covers:
+  //   - the settings surface's parts: its hook, its cards and the accent label;
+  //   - `messages.ts`, which owns the refusal keys the way `sign-in.ts` owns two;
+  //   - `accent.ts`, which owns five keys as a return-type union AND the
+  //     Tailwind class literals the tint is made of;
+  //   - `lockup.tsx`, which renders in the chrome as well as on the settings
+  //     surface, so a stale build there is wrong on every signed-in screen;
+  //   - `logo-url.ts`, the one signed-URL read behind every lockup, holding the
+  //     query key, the cache bound and the stable code both surfaces use.
+  ...organizationScreenParts(),
   // The navigation chrome, part B. `chrome.tsx` is the only thing in the
   // application that renders a `nav.*` label more than once — every destination
   // appears in the tab bar and in the sidebar — and the eight words are held to
