@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import {
+  CALENDAR_SCREEN_EXEMPT,
+  CALENDAR_SCREEN_PARTS,
+} from '@/features/calendar/calendar-screen.fixture';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { DESTINATIONS } from '@/features/navigation/utils/destinations';
 import {
@@ -207,11 +211,21 @@ const ROTATION_WARNING_KEYS = join(srcRoot, 'features', 'rotation', 'utils', 'wa
 /** Story 2.6's rotation history: the three statuses and the unknown author. */
 const ROTATION_HISTORY_KEYS = join(srcRoot, 'features', 'rotation', 'services', 'history.ts');
 
+/** The calendar feature, which holds the calendar screen's parts. */
+const CALENDAR_FEATURE = join(srcRoot, 'features', 'calendar');
+/** The calendar screen's page, which only composes (source structure B3). */
+const KALENDAR_PAGE = join(srcRoot, ...CALENDAR_SCREEN_PARTS.page);
 /**
  * Story 3.1's calendar: the `Kalendar` destination, built, and the module
  * holding its read failure. `@/features/calendar/utils/month` declares no key.
+ * A file set since source structure B3 — the page, its two hooks, its
+ * components and two helpers — read as one source like the member and
+ * settings screens, and written ONCE in `calendar-screen.fixture.ts`, which
+ * `features/calendar/services/snapshot.test.ts` reads too.
  */
-const KALENDAR = join(srcRoot, 'pages', 'kalendar.tsx');
+const KALENDAR: readonly string[] = Object.values(CALENDAR_SCREEN_PARTS).map((parts) =>
+  join(srcRoot, ...parts),
+);
 const CALENDAR_SNAPSHOT_KEYS = join(srcRoot, 'features', 'calendar', 'services', 'snapshot.ts');
 /** Story 3.2b's modifier vocabulary: the four marks' labels and a cell with no rotation. */
 const CALENDAR_MODIFIER_KEYS = join(srcRoot, 'features', 'calendar', 'utils', 'modifiers.ts');
@@ -2217,6 +2231,34 @@ describe('the screen is read at all, so every sweep below means something', () =
       found.filter((file) => !exempt.has(file)).sort(),
       'the settings file set and the feature folders disagree',
     ).toEqual(SETTINGS.filter((file) => file !== SETTINGS_PAGE).sort());
+  });
+
+  it('sweeps every part of the calendar screen, so a new file cannot escape the set', () => {
+    // SOURCE STRUCTURE B3, on B2's terms: an EQUALITY between the set and
+    // EVERY non-test module anywhere under the calendar feature — its root,
+    // `services/`, and `components/`, `hooks/` and `utils/` at any depth — less
+    // the modules exempt for a stated reason (`calendar-screen.fixture.ts`).
+    // Read recursively, so a nested file cannot escape the set either.
+    const exempt = new Set(CALENDAR_SCREEN_EXEMPT.map((entry) => join(CALENDAR_FEATURE, entry.file)));
+    const found = readdirSync(CALENDAR_FEATURE, { recursive: true, encoding: 'utf8' })
+      .filter((name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name))
+      .map((name) => join(CALENDAR_FEATURE, name));
+
+    expect(found, 'the walk reaches the feature root').toContain(join(CALENDAR_FEATURE, 'calendar-screen.fixture.ts'));
+    expect(found, 'the walk reaches services/').toContain(CALENDAR_SNAPSHOT_KEYS);
+    for (const file of exempt) expect(found, `${file} is exempt and does not exist`).toContain(file);
+    for (const entry of CALENDAR_SCREEN_EXEMPT) expect(entry.why.length).toBeGreaterThan(20);
+    for (const file of KALENDAR) {
+      expect(existsSync(file), `${file} is in the set and does not exist`).toBe(true);
+      // NON-VACUITY PER FILE, with a floor rather than "not empty": a part
+      // gutted to its imports would otherwise pass every sweep over the set.
+      expect(source(file).trim().length, `${file} is all but empty`).toBeGreaterThan(150);
+    }
+    expect(KALENDAR[0], 'the page is read first').toBe(KALENDAR_PAGE);
+    expect(
+      found.filter((file) => !exempt.has(file)).sort(),
+      'the calendar file set and the feature folders disagree',
+    ).toEqual(KALENDAR.filter((file) => file !== KALENDAR_PAGE).sort());
   });
 
   it('finds the controls it is about to measure', () => {
