@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -66,8 +66,30 @@ const RESOURCE = join(srcRoot, 'lib', 'i18n', 'locales', 'hr.json');
 /** Story 1.4a's settings surface: the first destination that is not a placeholder. */
 const SETTINGS = join(srcRoot, 'pages', 'organizacija.tsx');
 
+/**
+ * A screen that is more than one file: its page, the hook holding its state,
+ * reads and handlers, and the components and helpers its sections moved into
+ * (source structure B1). Every sweep reads the set as ONE source, in this
+ * order, so a guard that targeted the screen's file before the split targets
+ * the same text after it and keeps its count.
+ */
+type SourceSet = string | readonly string[];
+
+/** The members feature, which holds the three member screens' parts. */
+const MEMBERS_FEATURE = join(srcRoot, 'features', 'members');
+
 /** Story 1.5a's member list: the second, and the first that renders a table. */
-const MEMBER_LIST = join(srcRoot, 'pages', 'ljudi.tsx');
+const MEMBER_LIST: readonly string[] = [
+  join(srcRoot, 'pages', 'ljudi.tsx'),
+  join(MEMBERS_FEATURE, 'hooks', 'use-member-list.ts'),
+  join(MEMBERS_FEATURE, 'components', 'member-stats.tsx'),
+  join(MEMBERS_FEATURE, 'components', 'member-table.tsx'),
+  join(MEMBERS_FEATURE, 'components', 'member-filters.tsx'),
+  join(MEMBERS_FEATURE, 'components', 'cell-view.tsx'),
+  join(MEMBERS_FEATURE, 'components', 'member-count.tsx'),
+  join(MEMBERS_FEATURE, 'utils', 'cell-content.ts'),
+  join(MEMBERS_FEATURE, 'utils', 'sort-glyphs.ts'),
+];
 
 /**
  * The member list's rules, as a `.ts` module that renders nothing.
@@ -90,8 +112,22 @@ const MEMBER_LIST_KEYS = join(srcRoot, 'features', 'members', 'services', 'list.
  * below — which is precisely why they are named here by hand: a `.tsx` that
  * renders and is absent from `SCREENS` is swept by nothing at all.
  */
-const MEMBER_CREATE = join(srcRoot, 'pages', 'ljudi.novi.tsx');
-const MEMBER_EDIT = join(srcRoot, 'pages', 'ljudi.$id.tsx');
+const MEMBER_CREATE: readonly string[] = [
+  join(srcRoot, 'pages', 'ljudi.novi.tsx'),
+  join(MEMBERS_FEATURE, 'hooks', 'use-member-create.ts'),
+  join(MEMBERS_FEATURE, 'components', 'member-create-card.tsx'),
+  join(MEMBERS_FEATURE, 'components', 'member-create-about.tsx'),
+  join(MEMBERS_FEATURE, 'utils', 'refusal-text.ts'),
+];
+const MEMBER_EDIT: readonly string[] = [
+  join(srcRoot, 'pages', 'ljudi.$id.tsx'),
+  join(MEMBERS_FEATURE, 'hooks', 'use-member-edit.ts'),
+  join(MEMBERS_FEATURE, 'components', 'member-basics-card.tsx'),
+  join(MEMBERS_FEATURE, 'components', 'member-team-card.tsx'),
+  join(MEMBERS_FEATURE, 'components', 'member-status-card.tsx'),
+  join(MEMBERS_FEATURE, 'components', 'member-reset-card.tsx'),
+  join(MEMBERS_FEATURE, 'utils', 'refusal-text.ts'),
+];
 
 /**
  * Story 1.7a's two team screens and the two modules holding their rules. Like
@@ -775,8 +811,13 @@ function stripComments(source: string): string {
   return source.replace(BLOCK_COMMENT, '').replace(LINE_SLASH, '$1');
 }
 
-function source(file: string): string {
-  return stripComments(readFileSync(file, 'utf8'));
+/** A screen's file set read as one comment-blind source, joined in order. */
+function screenSource(set: readonly string[]): string {
+  return set.map((file) => stripComments(readFileSync(file, 'utf8'))).join('\n');
+}
+
+function source(file: SourceSet): string {
+  return typeof file === 'string' ? stripComments(readFileSync(file, 'utf8')) : screenSource(file);
 }
 
 /** How many times a needle appears. The counting idiom
@@ -2099,10 +2140,35 @@ describe('the screen is read at all, so every sweep below means something', () =
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
-  // assertion hold against nothing.
+  // assertion hold against nothing. A FILE SET is checked file by file, so one
+  // emptied file cannot hide behind the others, and its PAGE still has to
+  // render something of its own.
   it.each(SCREENS)('finds $name and finds JSX in it', ({ file }) => {
     expect(source(file).length).toBeGreaterThan(200);
     expect(source(file)).toContain('return (');
+    if (typeof file !== 'string') {
+      for (const part of file) expect(source(part).trim(), `${part} is empty`).not.toBe('');
+      expect(source(file[0] ?? ''), 'the page itself renders nothing').toContain('return (');
+    }
+  });
+
+  it('sweeps every part of the member screens, so a new file cannot escape the sets', () => {
+    // SOURCE STRUCTURE B1. A component, hook or helper added to the members
+    // feature and named in no set would be read by no sweep in this file.
+    const swept = new Set([...MEMBER_LIST, ...MEMBER_CREATE, ...MEMBER_EDIT]);
+    const parts = (folder: string): string[] =>
+      readdirSync(join(MEMBERS_FEATURE, folder))
+        .filter((name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name))
+        .map((name) => join(MEMBERS_FEATURE, folder, name));
+    // The rule modules under `utils/` that predate B1 are key sources of
+    // their own, read through `KEY_SOURCES`, and render no screen.
+    const ruleModules = new Set([RANK_KEYS, POSITION_KEYS]);
+    const found = [...parts('components'), ...parts('hooks'), ...parts('utils')].filter(
+      (file) => !ruleModules.has(file),
+    );
+
+    expect(found.length, 'no member screen parts found at all').toBeGreaterThan(10);
+    for (const file of found) expect(swept.has(file), `${file} is in no member file set`).toBe(true);
   });
 
   it('finds the controls it is about to measure', () => {
@@ -3581,9 +3647,9 @@ describe('the member list filters are dead while unanswered, and the reset resto
   });
 
   it.each([
-    { name: 'the level select losing its guard', from: 'onChange={changeLevel}\n            disabled={unanswered}', to: 'onChange={changeLevel}' },
-    { name: 'the team select losing its guard', from: 'onChange={changeTeam}\n            disabled={unanswered}', to: 'onChange={changeTeam}' },
-    { name: 'the search losing its guard', from: 'onChange={changeSearch}\n              disabled={unanswered}', to: 'onChange={changeSearch}' },
+    { name: 'the level select losing its guard', from: 'onChange={changeLevel}\n          disabled={unanswered}', to: 'onChange={changeLevel}' },
+    { name: 'the team select losing its guard', from: 'onChange={changeTeam}\n          disabled={unanswered}', to: 'onChange={changeTeam}' },
+    { name: 'the search losing its guard', from: 'onChange={changeSearch}\n            disabled={unanswered}', to: 'onChange={changeSearch}' },
     { name: 'the reset dropping unanswered', from: 'disabled={unanswered || !isNarrowed(', to: 'disabled={!isNarrowed(' },
     { name: 'the reset dropping isNarrowed', from: 'disabled={unanswered || !isNarrowed(search, level, narrowed.team)}', to: 'disabled={unanswered}' },
     { name: 'the reset keeping the search', from: '    setSearch(NO_TEXT);\n    setLevel(ALL_LEVELS);', to: '    setLevel(ALL_LEVELS);' },
@@ -4453,15 +4519,18 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // The old assertion required an inline arrow whose body contained no `}`,
     // which no real handler can satisfy. This asserts the ORDER instead:
     // prevention inside the handler, before the screen's own effect.
-    const screen = source(file);
+    // READ INSIDE THE HANDLER, not across the file: on a screen that is a file
+    // set, a `preventDefault()` in another file would otherwise satisfy it.
+    const handler = submitHandler(source(file));
 
-    expect(screen, 'the handler does not prevent the default submission').toMatch(
-      /function submit\([\s\S]*?preventDefault\(\)/,
+    expect(handler, 'the handler does not prevent the default submission').toContain(
+      'preventDefault()',
     );
+    expect(handler, `${effect} is not called from the submit handler`).toContain(effect);
     expect(
-      screen.indexOf('preventDefault()'),
+      handler.indexOf('preventDefault()'),
       `${effect} runs before the default submission is stopped`,
-    ).toBeLessThan(screen.indexOf(effect));
+    ).toBeLessThan(handler.indexOf(effect));
   });
 
   it('exchanges credentials through the supabase modules, not inline', () => {
@@ -4524,7 +4593,12 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // The other half: the handler must not assume the element is there. The
     // guard is what turns the mutation above into a no-op rather than a crash,
     // which is also why the assertion above is needed to notice it happening.
-    expect(source(file)).toMatch(/=== null[\s\S]{0,80}?return;/);
+    // Inside the submit handler's own early return, not anywhere in the file
+    // set: another handler's guard is not this one's.
+    const guard = /if\s*\([\s\S]*?\)\s*\{?\s*return;/.exec(submitHandler(source(file)))?.[0] ?? '';
+
+    expect(guard, 'the submit handler has no early return').not.toBe('');
+    expect(guard, 'the early return does not check for a null ref').toContain('=== null');
   });
 
   it('has an in-flight screen to sweep at all', () => {
@@ -5849,21 +5923,63 @@ describe('the two member forms write through the seam and keep nothing back', ()
     }
   });
 
+  /** The one helper the member forms turn a refusal's keys into text with. */
+  const REFUSAL_TEXT = join(MEMBERS_FEATURE, 'utils', 'refusal-text.ts');
+
+  /**
+   * Whether a form card renders its refusal through the helper. Read off the
+   * CARD ALONE: both file sets include the helper, so a set-wide search for
+   * the mapping is satisfied by the helper whatever the card renders.
+   */
+  function rendersRefusalText(card: string): boolean {
+    return card.includes('refusalText(refusal)');
+  }
+
   it.each([
-    { name: 'the member create form', file: MEMBER_CREATE },
-    { name: 'the member edit form', file: MEMBER_EDIT },
-  ])('delegates the failure-to-message pairing on $name rather than branching', ({ file }) => {
+    {
+      name: 'the member create form',
+      file: MEMBER_CREATE,
+      card: join(MEMBERS_FEATURE, 'components', 'member-create-card.tsx'),
+    },
+    {
+      name: 'the member edit form',
+      file: MEMBER_EDIT,
+      card: join(MEMBERS_FEATURE, 'components', 'member-basics-card.tsx'),
+    },
+  ])('delegates the failure-to-message pairing on $name rather than branching', ({ file, card }) => {
     // The shape every screen in this application is held to: a ternary over
     // codes written in a `.tsx` is executed by nothing, and swapping two of its
     // branches reports a taken username as a service outage with the suite
     // green. `memberWriteMessageKeys` is executed in `write.test.ts`.
     const screen = source(file);
+    const helper = source(REFUSAL_TEXT);
 
-    expect(screen, 'the screen no longer renders its message through the mapping').toContain(
+    expect(
+      rendersRefusalText(source(card)),
+      'the form card no longer renders its refusal through refusalText',
+    ).toBe(true);
+    expect(helper, 'the helper no longer renders through the mapping').toContain(
       'memberWriteMessageKeys(refusal)',
+    );
+    expect(helper, 'the helper no longer joins the keys with the separator').toContain(
+      'MESSAGE_SEPARATOR',
     );
     for (const key of ['ljudi.form.error.refused', 'ljudi.form.error.usernameTaken']) {
       expect(screen, `${key} is branched on in the screen`).not.toContain(key);
+    }
+  });
+
+  it('would notice a form card rendering the refusal code instead of its text', () => {
+    // BOTH POLARITIES, on the real card: the swap a reviewer showed passed the
+    // set-wide check, because the helper carried the mapping for it.
+    for (const name of ['member-create-card.tsx', 'member-basics-card.tsx']) {
+      const card = source(join(MEMBERS_FEATURE, 'components', name));
+
+      expect(rendersRefusalText(card), name).toBe(true);
+      expect(
+        rendersRefusalText(card.replace('{refusalText(refusal)}', '{String(refusal.code)}')),
+        name,
+      ).toBe(false);
     }
   });
 

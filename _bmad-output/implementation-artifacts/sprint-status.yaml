@@ -183,7 +183,7 @@ development_status:
   # same convention as the navigation-shell parts. Order: A then B (one PR per
   # feature); C then D in parallel. A waits for PR #71.
   source-structure-a-web-move: review
-  source-structure-b-thin-pages: backlog
+  source-structure-b-thin-pages: in-progress
   source-structure-c-e2e-layout: done
   source-structure-d-e2e-page-objects: done
   # Story 1.5 was split once at step-01's multi-goal check (human decision
