@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import {
+  SIGN_IN_PARTS,
+  SIGN_IN_SCREEN_EXEMPT,
+} from '../apps/web/src/features/auth/sign-in-screen.fixture.ts';
 import { CALENDAR_SCREEN_PARTS } from '../apps/web/src/features/calendar/calendar-screen.fixture.ts';
 import {
   HOUR_BAND_EDIT_PARTS,
@@ -16,6 +20,7 @@ import {
 import {
   TEAM_EDIT_PARTS,
   TEAM_LIST_PARTS,
+  TEAM_ROSTER_PARTS,
   TEAM_SCREENS_EXEMPT,
 } from '../apps/web/src/features/teams/team-screens.fixture.ts';
 
@@ -188,9 +193,56 @@ const HOUR_BANDS_SOURCES_REQUIRED = [
 ];
 
 /**
+ * Every non-test module anywhere under the auth feature — its root and every
+ * folder, at any depth — less its fixture: the sign-in screen's parts since
+ * source structure B7, and the three service modules beside them. A missing
+ * feature folder reads as no parts, so the required-parts case fails instead
+ * of the whole file throwing.
+ */
+const AUTH_FEATURE = join(webRoot, 'src', 'features', 'auth');
+
+function authScreenParts(): string[] {
+  if (!existsSync(AUTH_FEATURE)) return [];
+
+  // RECURSIVE over the whole feature, ANY script extension, less tests,
+  // declaration files and any `*.fixture.*`, which renders nothing.
+  return readdirSync(AUTH_FEATURE, { recursive: true, encoding: 'utf8' })
+    .filter(
+      (name) =>
+        /\.[cm]?[jt]sx?$/.test(name) &&
+        !/\.test\.[cm]?[jt]sx?$/.test(name) &&
+        !/\.d\.[cm]?ts$/.test(name) &&
+        !/\.fixture\.[cm]?[jt]sx?$/.test(name),
+    )
+    .sort()
+    .map((name) => join(AUTH_FEATURE, name));
+}
+
+/** The sign-in page, from the fixture rather than written out. */
+const SIGN_IN_PAGE = join(webRoot, 'src', ...SIGN_IN_PARTS.page);
+
+/** The service modules beside the set's parts, read off the fixture's exempt list. */
+const AUTH_RULE_MODULES = SIGN_IN_SCREEN_EXEMPT.map((entry) => entry.file).filter(
+  (file) => !/\.fixture\.[cm]?[jt]sx?$/.test(file),
+);
+
+/** Every part of the sign-in set outside `pages/`, from the fixture. */
+const AUTH_FEATURE_PARTS = Object.values(SIGN_IN_PARTS).filter((parts) => parts[0] !== 'pages');
+
+/**
+ * What `authScreenParts()` must hold: the sign-in set's hook and form, and the
+ * three service modules beside them.
+ */
+const AUTH_SOURCES_REQUIRED = [
+  ...AUTH_FEATURE_PARTS.map((parts) => join(webRoot, 'src', ...parts)),
+  ...AUTH_RULE_MODULES.map((name) => join(AUTH_FEATURE, ...name.split('/'))),
+];
+
+/**
  * Every non-test module anywhere under the teams feature — its root and every
- * folder, at any depth — less its fixture: both team screens' parts since
- * source structure B6, and the read, the writes and the roster beside them.
+ * folder, at any depth — less its fixture: the three team screens' parts
+ * (the list and the edit form since source structure B6, the roster since
+ * B7), and the read, the writes and the roster rules beside them.
  * The fixture renders nothing and is not a source. A missing feature folder
  * reads as no parts, so the required-parts case fails instead of the whole
  * file throwing.
@@ -215,26 +267,30 @@ function teamsScreenParts(): string[] {
     .map((name) => join(TEAMS_FEATURE, name));
 }
 
-/** The two team pages, from the fixture rather than written out. */
-const TEAM_PAGES = [TEAM_LIST_PARTS.page, TEAM_EDIT_PARTS.page].map((parts) => join(webRoot, 'src', ...parts));
+/** The three team pages (the roster's since source structure B7), from the fixture rather than written out. */
+const TEAM_PAGES = [TEAM_LIST_PARTS.page, TEAM_EDIT_PARTS.page, TEAM_ROSTER_PARTS.page].map((parts) =>
+  join(webRoot, 'src', ...parts),
+);
 
 /**
- * The rule modules beside the two sets' parts, read off the fixture's exempt
- * list rather than written out a second time: every exempt module except the
- * fixture itself, which renders nothing.
+ * The rule modules beside the three sets' parts, read off the fixture's
+ * exempt list rather than written out a second time: every exempt module
+ * except the fixture itself, which renders nothing.
  */
 const TEAMS_RULE_MODULES = TEAM_SCREENS_EXEMPT.map((entry) => entry.file).filter(
   (file) => !/\.fixture\.[cm]?[jt]sx?$/.test(file),
 );
 
-/** Every part of both team sets outside `pages/`, from the fixture. */
-const TEAMS_FEATURE_PARTS = [...Object.values(TEAM_LIST_PARTS), ...Object.values(TEAM_EDIT_PARTS)].filter(
-  (parts) => parts[0] !== 'pages',
-);
+/** Every part of the three team sets outside `pages/`, from the fixture. */
+const TEAMS_FEATURE_PARTS = [
+  ...Object.values(TEAM_LIST_PARTS),
+  ...Object.values(TEAM_EDIT_PARTS),
+  ...Object.values(TEAM_ROSTER_PARTS),
+].filter((parts) => parts[0] !== 'pages');
 
 /**
- * What `teamsScreenParts()` must hold: every part of both team screens' file
- * sets outside `pages/` (`team-screens.fixture.ts`), and the three rule
+ * What `teamsScreenParts()` must hold: every part of the three team screens'
+ * file sets outside `pages/` (`team-screens.fixture.ts`), and the three rule
  * modules beside them. A folder read that silently lost one of these would
  * drop it from `SOURCES` with the freshness guard still green.
  */
@@ -279,7 +335,9 @@ const SOURCES = [
   join(webRoot, 'src', 'lib', 'i18n', 'boot.ts'),
   join(webRoot, 'src', 'lib', 'i18n', 'format.ts'),
   join(webRoot, 'src', 'lib', 'i18n', 'locales', 'hr.json'),
-  join(webRoot, 'src', 'pages', 'prijava.tsx'),
+  // The sign-in page, from the fixture (source structure B7); its hook and
+  // form are read off the auth feature's folders below.
+  SIGN_IN_PAGE,
   join(webRoot, 'src', 'pages', 'not-found.tsx'),
   // The organization prompt at bare `/prijava`, and `/`. A `.tsx` carrying a
   // string that is absent from this list is swept by nothing — the freshness
@@ -304,12 +362,16 @@ const SOURCES = [
   // keys and not for staleness — edit `signInMessageKey`, skip the build, and
   // every chunk sweep below reads output that predates the edit and passes.
   //
-  // Its two neighbours join it for the same reason rather than a different one:
-  // `client.ts` and `address.ts` hold the stable codes the screens import and
-  // log, so a chunk built before an edit to either is equally stale.
-  join(webRoot, 'src', 'features', 'auth', 'services', 'sign-in.ts'),
+  // `client.ts` joins it for the same reason rather than a different one: it
+  // holds the stable codes the screens import and log, as `address.ts` does,
+  // so a chunk built before an edit to either is equally stale.
+  //
+  // `sign-in.ts` and `address.ts` are no longer listed by hand: the auth
+  // feature is READ OFF its folders (source structure B7), which covers the
+  // sign-in screen's hook and form, `sign-in.ts`, `address.ts` and
+  // `sign-out.ts`.
+  ...authScreenParts(),
   join(webRoot, 'src', 'lib', 'supabase', 'client.ts'),
-  join(webRoot, 'src', 'features', 'auth', 'services', 'address.ts'),
   // The navigation shell's route skeleton: the pathless layout plus the eight
   // titled destinations. Every one of the eight renders a `nav.*` label, and
   // those eight words are held to a COUNT in `AUTHORED_VOCABULARY` below — a
@@ -362,7 +424,7 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'navigation', 'utils', 'icons.ts'),
   join(webRoot, 'src', 'features', 'navigation', 'utils', 'messages.ts'),
   join(webRoot, 'src', 'features', 'navigation', 'services', 'role.ts'),
-  join(webRoot, 'src', 'features', 'auth', 'services', 'sign-out.ts'),
+  // `sign-out.ts` is read off the auth feature's folders above.
   // Story 1.5a's member list. `pages/ljudi.tsx` is already listed above with
   // the other seven destinations, and it is no longer a placeholder: it renders
   // a table, a search field, a level filter and a refusal, so a chunk built
@@ -414,15 +476,17 @@ const SOURCES = [
   // the roster and the Danas line are chosen by, as return-type unions; the
   // roster screen renders four more and is no destination, so it is listed
   // nowhere else in this file. `danas.tsx` is already listed above.
-  // `roster.ts` is read off the teams feature's folders below.
-  join(webRoot, 'src', 'pages', 'smjene.$id.tsx'),
-  // Story 1.7a's team screens. The two team screens render and are no
-  // destination, so they are listed nowhere else in this file; the two
-  // `@/features/teams` rule modules own the refusals, the confirmations and the
-  // row and heading keys as return-type unions, so a chunk built before an
-  // edit to either is stale in a way no sweep could see. The whole feature is
-  // READ OFF its folders (source structure B6): both screens' parts, the two
-  // modules and the roster; the two pages come from the fixture.
+  // `roster.ts` is read off the teams feature's folders below, and the
+  // roster page comes from the fixture with the other two (source structure
+  // B7).
+  // Story 1.7a's team screens and story 1.8's roster. The three render and
+  // are no destination, so they are listed nowhere else in this file; the
+  // three `@/features/teams` rule modules own the refusals, the confirmations
+  // and the row and heading keys as return-type unions, so a chunk built
+  // before an edit to any is stale in a way no sweep could see. The whole
+  // feature is READ OFF its folders (source structure B6, the roster since
+  // B7): the three screens' parts and the three modules; the three pages
+  // come from the fixture.
   ...teamsScreenParts(),
   ...TEAM_PAGES,
   // Visual refresh B's layout primitives and the initials module. All five are
@@ -561,6 +625,29 @@ describe('the build being read reflects the current localization source', () => 
     expect(twice, 'SOURCES lists a file twice').toEqual([]);
   });
 
+  it('reads every sign-in part and service module into the sources', () => {
+    const parts = authScreenParts();
+
+    // THE EXACT COUNT, read off the disk and derived from the fixture: the
+    // hook and the form, and the three service modules.
+    // EXACT, so a new exemption is a reviewed change to this test.
+    expect([...AUTH_RULE_MODULES].sort(), 'the fixture exempts other service modules').toEqual(
+      ['services/address.ts', 'services/sign-in.ts', 'services/sign-out.ts'].sort(),
+    );
+    expect(parts, 'the auth feature grew or lost a module').toHaveLength(
+      AUTH_FEATURE_PARTS.length + AUTH_RULE_MODULES.length,
+    );
+    expect(parts, 'the auth feature grew or lost a module').toHaveLength(5);
+    expect(SOURCES, `${SIGN_IN_PAGE} is not in SOURCES`).toContain(SIGN_IN_PAGE);
+    expect([...parts].sort(), 'the feature holds a module no set and no service list names').toEqual(
+      [...AUTH_SOURCES_REQUIRED].sort(),
+    );
+    for (const file of AUTH_SOURCES_REQUIRED) {
+      expect(parts, `${file} is not read by authScreenParts()`).toContain(file);
+      expect(SOURCES, `${file} is not in SOURCES`).toContain(file);
+    }
+  });
+
   it('reads every team screen part and rule module into the sources', () => {
     const parts = teamsScreenParts();
 
@@ -572,6 +659,8 @@ describe('the build being read reflects the current localization source', () => 
     expect(parts, 'the teams feature grew or lost a module').toHaveLength(
       TEAMS_FEATURE_PARTS.length + TEAMS_RULE_MODULES.length,
     );
+    // Ten since source structure B6, twelve since B7: the roster's hook and component.
+    expect(parts, 'the teams feature grew or lost a module').toHaveLength(12);
     for (const page of TEAM_PAGES) expect(SOURCES, `${page} is not in SOURCES`).toContain(page);
     expect([...parts].sort(), 'the feature holds a module no set and no rule list names').toEqual(
       [...TEAMS_SOURCES_REQUIRED].sort(),

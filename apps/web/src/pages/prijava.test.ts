@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
+  SIGN_IN_PARTS,
+  SIGN_IN_SCREEN_EXEMPT,
+} from '@/features/auth/sign-in-screen.fixture';
+import {
   CALENDAR_SCREEN_EXEMPT,
   CALENDAR_SCREEN_PARTS,
 } from '@/features/calendar/calendar-screen.fixture';
@@ -27,6 +31,7 @@ import {
 import {
   TEAM_EDIT_PARTS,
   TEAM_LIST_PARTS,
+  TEAM_ROSTER_PARTS,
   TEAM_SCREENS_EXEMPT,
 } from '@/features/teams/team-screens.fixture';
 
@@ -74,7 +79,19 @@ import {
  */
 
 const srcRoot = fileURLToPath(new URL('..', import.meta.url));
-const SCREEN = join(srcRoot, 'pages', 'prijava.tsx');
+/** The auth feature, which holds the sign-in screen's parts. */
+const AUTH_FEATURE = join(srcRoot, 'features', 'auth');
+/** The sign-in page, which only composes (source structure B7), its hook and its form. */
+const SIGN_IN_PAGE = join(srcRoot, ...SIGN_IN_PARTS.page);
+const SIGN_IN_HOOK = join(srcRoot, ...SIGN_IN_PARTS.hook);
+const SIGN_IN_FORM = join(srcRoot, ...SIGN_IN_PARTS.form);
+/**
+ * The sign-in screen. A FILE SET since source structure B7 — the page, its
+ * hook and its form — read as one source like the team screens, and written
+ * ONCE in `sign-in-screen.fixture.ts`. A per-file needle is asserted in the
+ * part that must hold it.
+ */
+const SCREEN: readonly string[] = Object.values(SIGN_IN_PARTS).map((parts) => join(srcRoot, ...parts));
 const NOT_FOUND = join(srcRoot, 'pages', 'not-found.tsx');
 const ORGANIZATION = join(srcRoot, 'pages', 'prijava-organizacija.tsx');
 // `pages/index.tsx` IS NOT A SCREEN and is swept by nothing here: `/` forwards
@@ -196,9 +213,17 @@ const TEAM_WRITE_KEYS = join(srcRoot, 'features', 'teams', 'services', 'write.ts
 /**
  * Story 1.8's roster screen, the Danas destination it is reached from, and the
  * module holding both surfaces' rules. The roster is not a destination, so it
- * is named here by hand; Danas left the placeholders in the same commit.
+ * is in no destination table; its parts come from `team-screens.fixture.ts`
+ * (source structure B7). Danas left the placeholders in story 1.8.
  */
-const TEAM_ROSTER = join(srcRoot, 'pages', 'smjene.$id.tsx');
+const TEAM_ROSTER_PAGE = join(srcRoot, ...TEAM_ROSTER_PARTS.page);
+const TEAM_ROSTER_HOOK = join(srcRoot, ...TEAM_ROSTER_PARTS.hook);
+const TEAM_ROSTER_PART = join(srcRoot, ...TEAM_ROSTER_PARTS.roster);
+/**
+ * A FILE SET since source structure B7 — the page, its hook and the roster
+ * component — and the third, disjoint set in `team-screens.fixture.ts`.
+ */
+const TEAM_ROSTER: readonly string[] = Object.values(TEAM_ROSTER_PARTS).map((parts) => join(srcRoot, ...parts));
 const DANAS = join(srcRoot, 'pages', 'danas.tsx');
 const TEAM_ROSTER_KEYS = join(srcRoot, 'features', 'teams', 'services', 'roster.ts');
 
@@ -2668,7 +2693,8 @@ describe('the screen is read at all, so every sweep below means something', () =
       )
       .map((name) => join(TEAM_FEATURE, name));
     const found = walked.filter((file) => !/\.fixture\.[cm]?[jt]sx?$/.test(file));
-    const pages = new Set([TEAM_LIST_PAGE, TEAM_EDIT_PAGE]);
+    // THREE SETS SINCE SOURCE STRUCTURE B7: the roster is the third.
+    const pages = new Set([TEAM_LIST_PAGE, TEAM_EDIT_PAGE, TEAM_ROSTER_PAGE]);
 
     expect(walked, 'the walk reaches the feature root').toContain(join(TEAM_FEATURE, 'team-screens.fixture.ts'));
     expect(found, 'the walk reaches services/').toContain(TEAM_LIST_KEYS);
@@ -2686,8 +2712,12 @@ describe('the screen is read at all, so every sweep below means something', () =
     // handlers counted twice.
     for (const file of TEAM_LIST) {
       expect(TEAM_EDIT, `${file} is in both team sets`).not.toContain(file);
+      expect(TEAM_ROSTER, `${file} is in the list and the roster sets`).not.toContain(file);
     }
-    for (const file of [...TEAM_LIST, ...TEAM_EDIT]) {
+    for (const file of TEAM_EDIT) {
+      expect(TEAM_ROSTER, `${file} is in the edit and the roster sets`).not.toContain(file);
+    }
+    for (const file of [...TEAM_LIST, ...TEAM_EDIT, ...TEAM_ROSTER]) {
       expect(existsSync(file), `${file} is in a set and does not exist`).toBe(true);
       // NON-VACUITY PER FILE, with a floor rather than "not empty": a part
       // gutted to its imports would otherwise pass every sweep over the set.
@@ -2695,8 +2725,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     }
     expect(TEAM_LIST[0], 'the list page is read first').toBe(TEAM_LIST_PAGE);
     expect(TEAM_EDIT[0], 'the edit page is read first').toBe(TEAM_EDIT_PAGE);
+    expect(TEAM_ROSTER[0], 'the roster page is read first').toBe(TEAM_ROSTER_PAGE);
     // ONE DECLARATION PER HANDLER PER SET, because the extractors take the
-    // first match in a joined set.
+    // first match in a joined set. The roster declares none (asserted below).
     for (const [set, hookFile, names] of [
       [TEAM_LIST, TEAM_LIST_HOOK, ['submit', 'openAdding']],
       [TEAM_EDIT, TEAM_EDIT_HOOK, ['submit', 'archive', 'refresh', 'close']],
@@ -2714,7 +2745,7 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(
       found.filter((file) => !exempt.has(file)).sort(),
       'the team file sets and the feature folders disagree',
-    ).toEqual([...TEAM_LIST, ...TEAM_EDIT].filter((file) => !pages.has(file)).sort());
+    ).toEqual([...TEAM_LIST, ...TEAM_EDIT, ...TEAM_ROSTER].filter((file) => !pages.has(file)).sort());
   });
 
   /**
@@ -2760,6 +2791,7 @@ describe('the screen is read at all, so every sweep below means something', () =
   it.each([
     { name: 'the team list', set: TEAM_LIST, page: TEAM_LIST_PAGE, hook: 'useTeamList(' },
     { name: 'the team edit form', set: TEAM_EDIT, page: TEAM_EDIT_PAGE, hook: 'useTeamEdit(' },
+    { name: 'the team roster', set: TEAM_ROSTER, page: TEAM_ROSTER_PAGE, hook: 'useTeamRoster(' },
   ])('holds one instance of its hook, in the page, on $name', ({ set, page, hook }) => {
     // ONE INSTANCE PER SET: a part calling the hook itself would hold state of
     // its own, split from the page's, and every guard above would still pass.
@@ -2771,6 +2803,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(occurrences(source(page), hook), `${hook} is not called in the page`).toBe(1);
     expect(occurrences(source(TEAM_LIST_PAGE), 'useTeamEdit('), 'the list page runs the edit hook').toBe(0);
     expect(occurrences(source(TEAM_EDIT), 'useTeamList('), 'the edit set runs the list hook').toBe(0);
+    expect(occurrences(source([...TEAM_LIST, ...TEAM_EDIT]), 'useTeamRoster('), 'a team screen runs the roster hook').toBe(0);
+    expect(occurrences(source(TEAM_ROSTER), 'useTeamList('), 'the roster runs the list hook').toBe(0);
+    expect(occurrences(source(TEAM_ROSTER), 'useTeamEdit('), 'the roster runs the edit hook').toBe(0);
   });
 
   it.each(TEAM_SETS)('creates every attached ref once, in the hook, on $name', ({ set, hookFile }) => {
@@ -2841,7 +2876,245 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(source(hookFile), 'the hook reaches no client').toContain('supabaseClient(');
   });
 
+  /**
+   * STATE AND NAVIGATION OUTSIDE A HOOK (source structure B7, the review):
+   * every React and router hook a part could hold state, a transition or a
+   * navigation of its own with. `useParams` is not among them: each page reads
+   * its route once, which the per-set `useParams(` count pins.
+   */
+  const NON_HOOK_STATE =
+    /\buse(?:State|Ref|Query|Reducer|ActionState|Optimistic|Transition|FormStatus|Router|Navigate|QueryClient)\b/;
+
+  it.each([
+    { name: 'the sign-in screen', set: SCREEN, hookFile: SIGN_IN_HOOK },
+    { name: 'the team roster', set: TEAM_ROSTER, hookFile: TEAM_ROSTER_HOOK },
+  ])('holds no state or navigation outside the hook on $name', ({ set, hookFile }) => {
+    for (const part of set.filter((file) => file !== hookFile)) {
+      expect(source(part), `${part} holds state or navigation of its own`).not.toMatch(NON_HOOK_STATE);
+    }
+    expect(occurrences(source(set), 'useParams('), 'a part reads the route params besides the page').toBe(1);
+    expect(occurrences(source(set[0] ?? ''), 'useParams('), 'the page does not read its route').toBe(1);
+  });
+
+  it('keeps the roster read bounded, and the settings derived only in the hook', () => {
+    const hook = source(TEAM_ROSTER_HOOK);
+    const read = /useQuery\(\{\s*queryKey: TEAM_ROSTER_KEY\(id\),[\s\S]*?\}\);/.exec(hook)?.[0] ?? '';
+
+    expect(read, 'no roster read to inspect').not.toBe('');
+    expect(read, 'the roster read has no cache floor').toContain('staleTime: TEAM_ROSTER_READ_STALE_MS');
+    expect(read, 'the roster read re-runs on every window focus').toContain('refetchOnWindowFocus: false');
+    // The organization read's `retry: false` is pinned by the chrome-policy case.
+    const returned = /\n {2}return \{([^}]*)\};/.exec(hook)?.[1] ?? '';
+
+    expect(returned, "the hook's return object could not be extracted").not.toBe('');
+    for (const name of ['shown', 'positionShown']) {
+      expect(returned, `the hook does not return ${name}`).toMatch(new RegExp(`\\b${name}\\b`));
+    }
+    const component = source(TEAM_ROSTER_PART);
+    const taken = /const \{([^}]*)\} = screen;/.exec(component)?.[1] ?? '';
+
+    for (const name of ['shown', 'positionShown']) {
+      expect(taken, `the component does not take ${name} from the screen`).toMatch(new RegExp(`\\b${name}\\b`));
+      expect(component, `the component declares its own ${name}`).not.toMatch(
+        new RegExp(`\\b(?:const|let|var)\\s+${name}\\b`),
+      );
+    }
+  });
+
+  it('offers no interaction on the roster but its one link back', () => {
+    // The roster is read-only: its one control is the link back to Danas,
+    // drawn as a `<Button asChild>` around the `<Link>` (counted as 1 in
+    // SCREENS). No native button and no event handler of any name.
+    const buttons = buttonElements(source(TEAM_ROSTER));
+
+    expect(buttons, 'a button arrived on the roster').toHaveLength(1);
+    expect(buttons[0], 'the one button is not the link back').toContain('asChild');
+    expect(source(TEAM_ROSTER_PAGE), 'the one button does not wrap the link back').toMatch(
+      /<Button asChild[^>]*>\s*<Link to="\/danas">/,
+    );
+    for (const part of TEAM_ROSTER) {
+      expect(source(part), `${part} renders a native button`).not.toMatch(/<button\b/);
+      expect(source(part), `${part} binds an event handler`).not.toMatch(/\bon[A-Z]\w*=/);
+    }
+  });
+
+  it('keeps the sign-in fields, the slug and the form state where they belong', () => {
+    // NO NATIVE FIELD in any part, so the `<Input>` guards cannot be bypassed.
+    for (const part of SCREEN) {
+      expect(source(part), `${part} renders a bare input`).not.toMatch(/<input\b/);
+      expect(source(part), `${part} declares a slug of its own`).not.toMatch(/\b(?:const|let|var)\s+slug\b/);
+    }
+    // THE SLUG COMES IN: the hook takes it, the page hands its route's in.
+    expect(source(SIGN_IN_HOOK), 'the hook does not take the slug').toContain('export function useSignIn(slug: string)');
+    expect(source(SIGN_IN_PAGE), 'the page does not hand the slug to the hook').toContain('useSignIn(slug)');
+    // THE FORM'S STATE IS THE HOOK'S, taken from the screen and never its own.
+    const form = source(SIGN_IN_FORM);
+    const taken = /const \{([^}]*)\} = screen;/.exec(form)?.[1] ?? '';
+    const names = ['usernameField', 'passwordField', 'failure', 'pending', 'submit'];
+
+    expect(taken, 'the form takes nothing from the screen').not.toBe('');
+    for (const name of names) {
+      expect(taken, `the form does not take ${name} from the screen`).toMatch(new RegExp(`\\b${name}\\b`));
+      expect(form, `the form declares its own ${name}`).not.toMatch(new RegExp(`\\b(?:const|let|var)\\s+${name}\\b`));
+    }
+  });
+
+  /**
+   * The roster's set (source structure B7, on B6's terms): the third team set,
+   * read-only, so what its hook holds is two reads and their derivations, and
+   * what no part may hold is a handler, a ref, a form or an effect.
+   */
+  const ROSTER_WIRING = new RegExp(
+    `\\buseNavigate\\(|\\buseQueryClient\\(|[{,]\\s*(?:${TEAM_HANDLERS})\\s*:|\\bsupabaseClient\\b|\\bORGANIZATION_TABLE\\b|\\bTEAMS_TABLE\\b|\\.from\\(`,
+  );
+
+  it('remounts the roster per route id, with its hook below the key', () => {
+    const page = source(TEAM_ROSTER_PAGE);
+    const wrapper = /export function SmjenaScreen\([\s\S]*?\n\}/.exec(page)?.[0] ?? '';
+    const keyed = /\nfunction RosterScreen\([\s\S]*?\n\}/.exec(page)?.[0] ?? '';
+
+    expect(page, 'the roster is not keyed by the route id').toMatch(/return <RosterScreen key=\{id\} id=\{id\} \/>;/);
+    expect(wrapper, 'the wrapper could not be extracted').toContain('useParams()');
+    expect(keyed, 'the keyed screen could not be extracted').not.toBe('');
+    expect(keyed, 'the roster hook is not called below the key').toContain('useTeamRoster(id)');
+    expect(wrapper, 'the roster hook is called above the key').not.toContain('useTeamRoster(');
+    expect(occurrences(source(TEAM_ROSTER), 'useParams('), 'a part reads the route params besides the page').toBe(1);
+  });
+
+  it('holds no handler, ref, form or effect anywhere on the roster', () => {
+    const set = source(TEAM_ROSTER);
+
+    expect(set, 'the roster declares a handler').not.toMatch(
+      new RegExp(`\\b(?:(?:const|let)\\s+(?:${TEAM_HANDLERS})\\s*=|function\\s+(?:${TEAM_HANDLERS})\\s*\\()`),
+    );
+    expect(occurrences(set, 'useRef'), 'a ref arrived on the roster').toBe(0);
+    expect(set, 'a ref is attached on the roster').not.toMatch(/\b(?:ref|\w+Ref)=\{/);
+    expect(occurrences(set, '<form'), 'a form arrived on the roster').toBe(0);
+    expect(occurrences(set, 'useState'), 'state arrived on the roster').toBe(0);
+    // `Effect(`, so a layout or insertion effect is counted too.
+    expect(occurrences(set, 'Effect('), 'an effect arrived on the roster').toBe(0);
+  });
+
+  it('reads and reaches the client only from the roster hook', () => {
+    for (const part of TEAM_ROSTER.filter((file) => file !== TEAM_ROSTER_HOOK)) {
+      expect(source(part), `${part} builds or hands on wiring of its own`).not.toMatch(ROSTER_WIRING);
+      expect(source(part), `${part} reads of its own`).not.toContain('useQuery(');
+    }
+    expect(source(TEAM_ROSTER_HOOK), 'the roster hook reaches no client').toContain('supabaseClient()');
+  });
+
+  it('sweeps every part of the sign-in screen, so a new file cannot escape the set', () => {
+    // SOURCE STRUCTURE B7, on B6's terms: an EQUALITY between the set and
+    // EVERY non-test module anywhere under the auth feature — its root,
+    // `services/`, and `components/` and `hooks/` at any depth — less the
+    // four modules exempt for a stated reason (`sign-in-screen.fixture.ts`):
+    // the fixture, `services/address.ts`, `services/sign-in.ts` and
+    // `services/sign-out.ts`. ANY
+    // SCRIPT MODULE (`.[cm]?[jt]sx?`), less tests and declaration files, and
+    // ANY `*.fixture.*`, which renders nothing, is left out by its shape.
+    const exempt = new Set(SIGN_IN_SCREEN_EXEMPT.map((entry) => join(AUTH_FEATURE, ...entry.file.split('/'))));
+    const walked = readdirSync(AUTH_FEATURE, { recursive: true, encoding: 'utf8' })
+      .filter(
+        (name) =>
+          /\.[cm]?[jt]sx?$/.test(name) && !/\.test\.[cm]?[jt]sx?$/.test(name) && !/\.d\.[cm]?ts$/.test(name),
+      )
+      .map((name) => join(AUTH_FEATURE, name));
+    const found = walked.filter((file) => !/\.fixture\.[cm]?[jt]sx?$/.test(file));
+
+    expect(walked, 'the walk reaches the feature root').toContain(join(AUTH_FEATURE, 'sign-in-screen.fixture.ts'));
+    expect(found, 'the walk reaches services/').toContain(MESSAGE_KEYS);
+    for (const file of exempt) expect(walked, `${file} is exempt and does not exist`).toContain(file);
+    // THE EXACT EXEMPTIONS, so a new one is a reviewed change to this test.
+    expect([...exempt].sort(), 'the sign-in exemptions changed').toEqual(
+      ['sign-in-screen.fixture.ts', 'services/address.ts', 'services/sign-in.ts', 'services/sign-out.ts']
+        .map((file) => join(AUTH_FEATURE, ...file.split('/')))
+        .sort(),
+    );
+    for (const entry of SIGN_IN_SCREEN_EXEMPT) {
+      expect(entry.why.length, `${entry.file} is exempt without a stated reason`).toBeGreaterThan(20);
+    }
+    // DISJOINT from EVERY other screen in `SCREENS` — the member, settings,
+    // calendar, hour band, shift type and three team sets, the rotation
+    // builder, the organization prompt and every single-file screen — so no
+    // part is counted on two screens.
+    const others = SCREENS.filter((screen) => screen.file !== SCREEN).flatMap((screen) =>
+      typeof screen.file === 'string' ? [screen.file] : [...screen.file],
+    );
+
+    expect(SCREENS.filter((screen) => screen.file === SCREEN), 'the sign-in set is not one screen').toHaveLength(1);
+    expect(others, 'the other sets were not read').toEqual(
+      expect.arrayContaining([ORGANIZATION, ...TEAM_ROSTER, ...KALENDAR, ...SETTINGS, ...MEMBER_EDIT]),
+    );
+    for (const file of SCREEN) expect(others, `${file} is in the sign-in set and another`).not.toContain(file);
+    for (const file of SCREEN) {
+      expect(existsSync(file), `${file} is in the set and does not exist`).toBe(true);
+      // NON-VACUITY PER FILE, with a floor rather than "not empty".
+      expect(source(file).trim().length, `${file} is all but empty`).toBeGreaterThan(150);
+    }
+    expect(SCREEN[0], 'the sign-in page is read first').toBe(SIGN_IN_PAGE);
+    // ONE DECLARATION of the one handler, in the hook, at 2-space indentation.
+    expect(source(SCREEN).match(/function submit\(/g)?.length, 'submit is not declared exactly once').toBe(1);
+    expect(source(SIGN_IN_HOOK), 'submit is not in its hook').toMatch(/\n {2}(?:async )?function submit\(/);
+    expect(
+      found.filter((file) => !exempt.has(file)).sort(),
+      'the sign-in file set and the feature folders disagree',
+    ).toEqual(SCREEN.filter((file) => file !== SIGN_IN_PAGE).sort());
+  });
+
+  it('holds one instance of its hook, in the page, on the sign-in screen', () => {
+    const callers = SCREEN.filter((file) => !source(file).includes('export function useSignIn('));
+
+    expect(callers.length, 'the hook file is not in the set').toBe(SCREEN.length - 1);
+    expect(occurrences(screenSource(callers), 'useSignIn('), 'useSignIn( is not called exactly once').toBe(1);
+    expect(occurrences(source(SIGN_IN_PAGE), 'useSignIn('), 'useSignIn( is not called in the page').toBe(1);
+  });
+
+  it('creates every attached ref once, in the hook, on the sign-in screen', () => {
+    const attached = [...source(SCREEN).matchAll(/\b(?:ref|\w+Ref)=\{([^}]*)\}/g)].map((found) => found[1] ?? '');
+
+    expect(attached.length, 'not both fields carry a ref').toBe(2);
+    // A BARE NAME, so it resolves to a hook-created `const`; `screen.x` would not.
+    for (const name of attached) expect(name, `an attached ref is not a bare name: ${name}`).toMatch(/^\w+$/);
+    for (const name of new Set(attached)) {
+      expect(occurrences(source(SCREEN), `const ${name} = useRef`), `${name} is not created exactly once`).toBe(1);
+      expect(source(SIGN_IN_HOOK), `${name} is not created in the hook`).toContain(`const ${name} = useRef`);
+    }
+    expect(occurrences(source(SCREEN), '= useRef'), 'a ref is created besides the two fields and the in-flight flag').toBe(3);
+    expect(source(SIGN_IN_HOOK), 'the in-flight ref is not in the hook').toContain('const exchanging = useRef(false);');
+  });
+
+  it('declares no handler outside the hook on the sign-in screen', () => {
+    const shadow = /\b(?:(?:const|let)\s+submit\s*=|function\s+submit\s*\()/;
+    // Nor the hooks a handler is built from, nor `submit` handed on as an
+    // object key of a part's own, nor the client a sign-in is made on.
+    const wiring = /\buseNavigate\(|\buseQueryClient\(|[{,]\s*submit\s*:|\bsupabaseClient\b|\.from\(|\bsignIn\(/;
+
+    for (const part of SCREEN.filter((file) => file !== SIGN_IN_HOOK)) {
+      expect(source(part), `${part} declares a handler of its own`).not.toMatch(shadow);
+      expect(source(part), `${part} builds or hands on a handler of its own`).not.toMatch(wiring);
+      expect(source(part), `${part} holds state of its own`).not.toMatch(/\buse(?:State|Ref|Query)\b/);
+    }
+    // THE PAGE HOLDS NO NAVIGATION: `/` is reached from the hook's submit.
+    expect(source(SIGN_IN_PAGE), 'the sign-in page navigates').not.toContain('useNavigate');
+  });
+
+  it('binds its one form to submit, with no effect, on the sign-in screen', () => {
+    const forms = SCREEN.flatMap((part) => [...source(part).matchAll(/<form\b(?:=>|[^>])*>/g)].map((found) => found[0]));
+
+    expect(forms.length, 'not exactly one form').toBe(1);
+    for (const form of forms) {
+      expect(form, 'the form is bound to no named submit handler').toMatch(/onSubmit=\{[\s\S]{0,160}?\bsubmit\b/);
+    }
+    // `Effect(`, so a layout or insertion effect is counted too.
+    expect(occurrences(source(SCREEN), 'Effect('), 'an effect arrived on the sign-in screen').toBe(0);
+    expect(source(SIGN_IN_HOOK), 'the hook reaches no client').toContain('supabaseClient()');
+  });
+
   it('finds the controls it is about to measure', () => {
+    // SOURCE STRUCTURE B7: in the form, the part that renders them, and over
+    // the whole set, so no other part grows a field or a button.
+    expect(inputElements(source(SIGN_IN_FORM))).toHaveLength(2);
+    expect(buttonElements(source(SIGN_IN_FORM))).toHaveLength(1);
     expect(inputElements(source(SCREEN))).toHaveLength(2);
     expect(buttonElements(source(SCREEN))).toHaveLength(1);
   });
@@ -4221,6 +4494,7 @@ describe('the roster and the Danas line read once, show names only, and write no
     {
       name: 'the team roster',
       file: TEAM_ROSTER,
+      hookFile: TEAM_ROSTER_HOOK,
       read: 'readTeamRoster(',
       key: 'TEAM_ROSTER_KEY(id)',
       organizationReads: 1,
@@ -4228,34 +4502,40 @@ describe('the roster and the Danas line read once, show names only, and write no
     {
       name: 'the Danas destination',
       file: DANAS,
+      hookFile: DANAS,
       read: 'readOwnTeamToday(',
       key: 'OWN_TEAM_KEY',
       organizationReads: 0,
     },
   ];
 
-  it.each(SURFACES)('reads exactly once, under its one key, on $name', ({ file, read, key, organizationReads }) => {
+  it.each(SURFACES)('reads exactly once, under its one key, on $name', ({ file, hookFile, read, key, organizationReads }) => {
     // AD-13. The roster's name, flag, count and names are one RPC's answer;
     // the Danas line is the caller's own row, derived in `@/features/teams/services/roster`.
-    const screen = source(file);
-
-    expect(occurrences(screen, 'useQuery(')).toBe(1 + organizationReads);
-    expect(occurrences(screen, read)).toBe(1);
-    expect(occurrences(screen, 'queryKey:')).toBe(1 + organizationReads);
-    expect(occurrences(screen, `queryKey: ${key}`)).toBe(1);
-    expect(occurrences(screen, 'queryKey: ORGANIZATION_SNAPSHOT_KEY')).toBe(organizationReads);
-    expect(screen, 'the read has no cache floor').toContain('staleTime: TEAM_ROSTER_READ_STALE_MS');
+    // SOURCE STRUCTURE B7: counted over the roster's whole set, so a read in
+    // any part fails, and asserted IN THE HOOK, the one file that must hold it.
+    for (const screen of [source(file), source(hookFile)]) {
+      expect(occurrences(screen, 'useQuery(')).toBe(1 + organizationReads);
+      expect(occurrences(screen, read)).toBe(1);
+      expect(occurrences(screen, 'queryKey:')).toBe(1 + organizationReads);
+      expect(occurrences(screen, `queryKey: ${key}`)).toBe(1);
+      expect(occurrences(screen, 'queryKey: ORGANIZATION_SNAPSHOT_KEY')).toBe(organizationReads);
+      expect(screen, 'the read has no cache floor').toContain('staleTime: TEAM_ROSTER_READ_STALE_MS');
+    }
   });
 
   it.each(SURFACES)('offers no write, form or field on $name', ({ file }) => {
-    const screen = source(file);
+    // SOURCE STRUCTURE B7: PER PART of the roster's set.
+    for (const part of typeof file === 'string' ? [file] : file) {
+      const screen = source(part);
 
-    expect(screen).not.toContain('useMutation');
-    expect(screen).not.toMatch(/\.(delete|insert|update|upsert)\(/);
-    expect(screen).not.toMatch(/<(form|Input|input|select|textarea|Label)\b/);
-    expect(screen, 'a surface reached past `@/features/teams/services/roster` for its rules').not.toContain(
-      "from '@/features/members/services/list'",
-    );
+      expect(screen, `${part} reaches for useMutation`).not.toContain('useMutation');
+      expect(screen, `${part} writes`).not.toMatch(/\.(delete|insert|update|upsert)\(/);
+      expect(screen, `${part} renders a form or a field`).not.toMatch(/<(form|Input|input|select|textarea|Label)\b/);
+      expect(screen, `${part} reached past \`@/features/teams/services/roster\` for its rules`).not.toContain(
+        "from '@/features/members/services/list'",
+      );
+    }
   });
 
   it.each(SURFACES)('reaches for no member field but id and name on $name', ({ file }) => {
@@ -4291,7 +4571,11 @@ describe('the roster and the Danas line read once, show names only, and write no
     expect(screen).toContain('params={{ id: shown.team.id }}');
     expect(heightPx(/className="([^"]*)"/.exec(linkElements(screen)[0] ?? '')?.[1] ?? null)).toBeGreaterThanOrEqual(44);
     // The roster's only way out is back to Danas: no other surface links in.
+    // SOURCE STRUCTURE B7: over the whole set, and in the page, which draws it.
     expect(linkElements(source(TEAM_ROSTER)).map((link) => /to="([^"]+)"/.exec(link)?.[1])).toEqual([
+      '/danas',
+    ]);
+    expect(linkElements(source(TEAM_ROSTER_PAGE)).map((link) => /to="([^"]+)"/.exec(link)?.[1])).toEqual([
       '/danas',
     ]);
   });
@@ -4567,7 +4851,7 @@ describe('every control on the screen clears the 44 px tap-target floor', () => 
    * inherited byte-verbatim and must not be edited.
    */
   it.each([0, 1])('gives input %i a height of at least 44 px', (index) => {
-    const element = inputElements(source(SCREEN))[index] ?? '';
+    const element = inputElements(source(SIGN_IN_FORM))[index] ?? '';
     const measured = heightPx(attributeOf(element, 'className'));
 
     expect(measured, `input ${index} declares no usable height class`).not.toBeNull();
@@ -4575,7 +4859,7 @@ describe('every control on the screen clears the 44 px tap-target floor', () => 
   });
 
   it('gives the submit button a height of at least 44 px', () => {
-    const element = buttonElements(source(SCREEN))[0] ?? '';
+    const element = buttonElements(source(SIGN_IN_FORM))[0] ?? '';
     const measured = heightPx(attributeOf(element, 'className'));
 
     expect(measured, 'the submit button declares no usable height class').not.toBeNull();
@@ -4652,8 +4936,10 @@ describe('the boundary the theme layer raised is the one the control draws', () 
 });
 
 describe('both credential fields carry an accessible name', () => {
+  // SOURCE STRUCTURE B7: every claim here is read off the sign-in FORM, the
+  // one part that renders the fields, their labels and what they describe.
   it('gives every input a label bound by htmlFor', () => {
-    const screen = source(SCREEN);
+    const screen = source(SIGN_IN_FORM);
     const targets = labelTargets(screen);
     const inputs = inputElements(screen);
 
@@ -4671,7 +4957,7 @@ describe('both credential fields carry an accessible name', () => {
     // Two inputs sharing one id satisfies the assertion above — every id is
     // pointed at by some label — while one field goes unnamed and the other is
     // named twice.
-    const ids = inputElements(source(SCREEN)).map((input) => attributeOf(input, 'id'));
+    const ids = inputElements(source(SIGN_IN_FORM)).map((input) => attributeOf(input, 'id'));
 
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).not.toContain(null);
@@ -4680,9 +4966,9 @@ describe('both credential fields carry an accessible name', () => {
   it('points every htmlFor at an input that exists', () => {
     // The other direction. A label whose `htmlFor` names nothing is announced
     // as an orphan and names no control at all.
-    const ids = inputElements(source(SCREEN)).map((input) => attributeOf(input, 'id'));
+    const ids = inputElements(source(SIGN_IN_FORM)).map((input) => attributeOf(input, 'id'));
 
-    for (const target of labelTargets(source(SCREEN))) {
+    for (const target of labelTargets(source(SIGN_IN_FORM))) {
       expect(ids, `<Label htmlFor="${target}"> points at no input`).toContain(target);
     }
   });
@@ -4692,7 +4978,7 @@ describe('both credential fields carry an accessible name', () => {
     // `aria-describedby` is the only route to a screen-reader user. Asserted as
     // a RESOLVING reference, not merely a present attribute: every id the
     // attribute can name, in either branch, must be an id this screen renders.
-    const screen = source(SCREEN);
+    const screen = source(SIGN_IN_FORM);
     const password = inputElements(screen).find(
       (input) => attributeOf(input, 'type') === 'password',
     );
@@ -4707,7 +4993,7 @@ describe('both credential fields carry an accessible name', () => {
   it('binds the refusal to the username field too, since it concerns both', () => {
     // One message for the pair. A description reachable from only one of the
     // two fields is unreachable from wherever the person actually is.
-    const screen = source(SCREEN);
+    const screen = source(SIGN_IN_FORM);
     const username = inputElements(screen).find(
       (input) => attributeOf(input, 'autoComplete') === 'username',
     );
@@ -4732,7 +5018,7 @@ describe('both credential fields carry an accessible name', () => {
     //
     // So the shape is asserted, not just the resolution: the error id may only
     // reach the attribute through an expression that branches on the failure.
-    const screen = source(SCREEN);
+    const screen = source(SIGN_IN_FORM);
     // VISUAL REFRESH B: the refusal is drawn by the `Notice` primitive, which
     // renders the `<p>`, so the element read here is `<Notice`. Same shape.
     const errorId = /<Notice\s+id="([\w-]+)"\s+role="alert"/.exec(screen)?.[1];
@@ -4760,7 +5046,7 @@ describe('both credential fields carry an accessible name', () => {
     // conditional on a failure would silently drop the password-reset guidance
     // — permanent, always rendered, and reachable only this way — from every
     // screen that has not failed yet, which is all of them.
-    const screen = source(SCREEN);
+    const screen = source(SIGN_IN_FORM);
     const password =
       inputElements(screen).find((input) => attributeOf(input, 'type') === 'password') ?? '';
     const branches = [...(/aria-describedby=\{([^}]*)\}/.exec(password)?.[1] ?? '').matchAll(
@@ -4781,7 +5067,7 @@ describe('both credential fields carry an accessible name', () => {
     // all — outside a form the attribute is ignored.
     const CREDENTIAL_TOKENS = new Set(['username', 'current-password', 'new-password', 'email']);
 
-    for (const input of inputElements(source(SCREEN))) {
+    for (const input of inputElements(source(SIGN_IN_FORM))) {
       const declared = attributeOf(input, 'autoComplete');
 
       expect(declared, 'an <Input> declares no autoComplete').not.toBeNull();
@@ -4793,14 +5079,14 @@ describe('both credential fields carry an accessible name', () => {
   });
 
   it('masks the password field', () => {
-    const types = inputElements(source(SCREEN)).map((input) => attributeOf(input, 'type'));
+    const types = inputElements(source(SIGN_IN_FORM)).map((input) => attributeOf(input, 'type'));
 
     expect(types).toContain('password');
     expect(types).toContain('text');
   });
 
   it('keeps the phone keyboard out of an admin-issued username', () => {
-    const username = inputElements(source(SCREEN)).find(
+    const username = inputElements(source(SIGN_IN_FORM)).find(
       (input) => attributeOf(input, 'autoComplete') === 'username',
     );
 
@@ -5271,7 +5557,12 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // now: if the handler ever does not run — a bundle that failed to load, a
     // script error — the browser submits the form itself, and the default
     // method is GET.
-    expect(source(SCREEN)).toContain('method="post"');
+    // SOURCE STRUCTURE B7: in the form, the part that renders the `<form>`.
+    const form = /<form\b(?:=>|[^>])*>/.exec(source(SIGN_IN_FORM))?.[0] ?? '';
+
+    expect(form, 'no <form> opening tag in the sign-in form').not.toBe('');
+    expect(form, 'the <form> opening tag is not method="post"').toMatch(/\smethod="post"/);
+    expect(occurrences(source(SCREEN), '<form'), 'a second form arrived on the sign-in screen').toBe(1);
   });
 
   it.each(FORM_SCREENS)("routes $name's own onSubmit into its submit handler", ({ file }) => {
@@ -5320,7 +5611,8 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // The positive half of the frozen boundary's replacement. `supabase` is no
     // longer forbidden here — it is REQUIRED, and required as an import of the
     // two modules that own the client and the mapping.
-    const screen = source(SCREEN);
+    // SOURCE STRUCTURE B7: in the hook, the one part that exchanges.
+    const screen = source(SIGN_IN_HOOK);
 
     for (const required of [
       "from '@/lib/supabase/client'",
@@ -5337,10 +5629,11 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // assembled the AD-12 address itself would put the `@`, the slug and the
     // reserved domain in a file where `prijava.test.ts` forbids every literal —
     // and would be a second place for the expression `seed.sql` already holds.
-    const screen = source(SCREEN);
-
-    for (const forbidden of ['fetch(', 'shift.invalid', 'localStorage', 'createClient(']) {
-      expect(screen, `the sign-in screen reaches for ${forbidden}`).not.toContain(forbidden);
+    // SOURCE STRUCTURE B7: PER PART, so no part of the set reaches for one.
+    for (const part of SCREEN) {
+      for (const forbidden of ['fetch(', 'shift.invalid', 'localStorage', 'createClient(']) {
+        expect(source(part), `${part} reaches for ${forbidden}`).not.toContain(forbidden);
+      }
     }
   });
 
@@ -5529,8 +5822,10 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // this screen holds is the FAILURE, never the credentials. A `value={…}` on
     // either field is the shape that loses them on the render that shows the
     // error.
-    const screen = source(SCREEN);
+    // SOURCE STRUCTURE B7: in the form, the part that renders the fields.
+    const screen = source(SIGN_IN_FORM);
 
+    expect(inputElements(screen), 'the form renders no field to read').toHaveLength(2);
     for (const input of inputElements(screen)) {
       expect(attributeOf(input, 'value'), 'a credential field is controlled').toBeNull();
       expect(input, 'a credential field is controlled').not.toContain('value={');
@@ -5544,13 +5839,15 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // The mapping is executed in `sign-in.test.ts` now, and what is left to
     // assert is that the screen ROUTES through it and holds no branch of its
     // own over the codes.
-    const screen = source(SCREEN);
-
-    expect(screen, 'the screen no longer renders its message through the mapping').toContain(
+    // SOURCE STRUCTURE B7: the mapping in the form, which renders the refusal,
+    // and no branch over the codes in any part.
+    expect(source(SIGN_IN_FORM), 'the screen no longer renders its message through the mapping').toContain(
       't(signInMessageKey(',
     );
-    for (const key of ['auth.error.credentials', 'auth.error.unavailable']) {
-      expect(screen, `${key} is branched on in the screen again`).not.toContain(key);
+    for (const part of SCREEN) {
+      for (const key of ['auth.error.credentials', 'auth.error.unavailable']) {
+        expect(source(part), `${key} is branched on in ${part} again`).not.toContain(key);
+      }
     }
   });
 
@@ -5558,13 +5855,15 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // Nothing pinned this. A hard-coded slug, or `slug` dropped from the
     // credentials object, passed every test in the suite — and would send every
     // sign-in to one tenant, or to none.
-    const screen = source(SCREEN);
-
-    expect(screen, 'the screen never reads the slug from the route params').toMatch(
+    // SOURCE STRUCTURE B7: the page reads the slug and hands it to the hook,
+    // and the hook hands it to `signIn`.
+    expect(source(SIGN_IN_PAGE), 'the screen never reads the slug from the route params').toMatch(
       /const \{\s*slug\s*\}\s*=\s*[\w.]*useParams\(\)/,
     );
+    expect(source(SIGN_IN_PAGE), 'the page does not hand the slug to the hook').toContain('useSignIn(slug)');
+    expect(occurrences(source(SCREEN), 'useParams('), 'a part reads the route params besides the page').toBe(1);
 
-    const call = /signIn\(([\s\S]*?)\}\)/.exec(screen)?.[1];
+    const call = /signIn\(([\s\S]*?)\}\)/.exec(source(SIGN_IN_HOOK))?.[1];
 
     expect(call, 'the screen does not call signIn at all').not.toBeUndefined();
     expect(call, 'the slug is not among the credentials handed to signIn').toMatch(
@@ -5580,7 +5879,8 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // which, with no signed-in guard on that route, renders as though nothing
     // happened. The story's first acceptance criterion was verified only by
     // somebody remembering to run the manual browser check.
-    const handler = submitHandler(source(SCREEN));
+    // SOURCE STRUCTURE B7: inside the hook's own submit.
+    const handler = submitHandler(source(SIGN_IN_HOOK));
 
     expect(handler, 'the sign-in screen has no submit handler').not.toBe('');
     expect(handler, 'a successful sign-in does not navigate to /').toMatch(
@@ -5626,10 +5926,15 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // working-looking form saying "try again" forever and left no trace
     // anywhere — the misconfiguration-as-outage failure `client.ts` exists to
     // prevent, reintroduced two files downstream.
-    const screen = source(SCREEN);
+    // SOURCE STRUCTURE B7: in the hook's submit, with the stable code, and the
+    // code is what the refusal falls back to.
+    const handler = submitHandler(source(SIGN_IN_HOOK));
 
-    expect(screen, 'the catch reports nothing to the console').toMatch(
-      /catch\s*\([\s\S]{0,600}?console\.error\(/,
+    expect(handler, 'the catch reports nothing to the console').toMatch(
+      /catch\s*\([\s\S]{0,600}?console\.error\(SIGN_IN_UNAVAILABLE, cause\)/,
+    );
+    expect(handler, 'the thrown path does not surface the unavailable refusal').toContain(
+      'setFailure(SIGN_IN_UNAVAILABLE)',
     );
   });
 
@@ -5640,7 +5945,9 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // `normalizeUsername`, was refused locally, and rendered "Korisničko ime
     // ili lozinka nisu točni." — telling somebody their credentials are wrong
     // when they had not entered any. UX-DR34 names the problem instead.
-    for (const input of inputElements(source(SCREEN))) {
+    // SOURCE STRUCTURE B7: in the form, the part that renders the fields.
+    expect(inputElements(source(SIGN_IN_FORM)), 'the form renders no field to read').toHaveLength(2);
+    for (const input of inputElements(source(SIGN_IN_FORM))) {
       expect(input, `a credential field is not required: ${input}`).toContain('required');
     }
   });
@@ -6350,7 +6657,8 @@ describe('member rank: the setting gates display and entry, and deletes nothing'
 
   it.each([
     { name: 'the member edit form', file: MEMBER_EDIT },
-    { name: 'the team roster', file: TEAM_ROSTER },
+    // SOURCE STRUCTURE B7: the roster's read, in the hook that holds it.
+    { name: 'the team roster', file: TEAM_ROSTER_HOOK },
   ])("reads the organization on $name under the chrome's own cache policy", ({ file }) => {
     const read =
       /useQuery\(\{\s*queryKey: ORGANIZATION_SNAPSHOT_KEY,[\s\S]*?\}\);/.exec(source(file))?.[0] ?? '';
@@ -6361,10 +6669,13 @@ describe('member rank: the setting gates display and entry, and deletes nothing'
   });
 
   it('shows the rank on the roster only while the setting is on, as text', () => {
-    const screen = source(TEAM_ROSTER);
+    // SOURCE STRUCTURE B7: the setting derived in the hook, the line drawn in
+    // the component.
+    const screen = source(TEAM_ROSTER_PART);
 
     expect(screen).toContain('rosterRankMessageKey(member.fireRank, shown)');
-    expect(screen).toContain('const shown = ranksShown(');
+    expect(source(TEAM_ROSTER_HOOK)).toContain('const shown = ranksShown(');
+    expect(occurrences(source(TEAM_ROSTER), 'ranksShown('), 'the setting is derived twice').toBe(1);
     // WHICH LINE is `rosterLineOf`'s decision (`position.test.ts` runs all four).
     expect(screen).toContain('rosterLineOf(member.name, rank, position, (key) => t(key))');
     expect(screen).toContain('line.key === null ? line.text : t(line.key, line.values)');
@@ -6410,9 +6721,12 @@ describe('team position: the setting gates the position control and the roster t
   });
 
   it('shows the position on the roster only while the setting is on, as text', () => {
-    const screen = source(TEAM_ROSTER);
+    // SOURCE STRUCTURE B7: the setting derived in the hook, the line drawn in
+    // the component.
+    const screen = source(TEAM_ROSTER_PART);
 
-    expect(screen).toContain('const positionShown = positionsShown(snapshot);');
+    expect(source(TEAM_ROSTER_HOOK)).toContain('const positionShown = positionsShown(snapshot);');
+    expect(occurrences(source(TEAM_ROSTER), 'positionsShown('), 'the setting is derived twice').toBe(1);
     expect(screen).toContain('rosterPositionMessageKey(member.position, positionShown)');
     expect(screen).toContain('rosterLineOf(member.name, rank, position, (key) => t(key))');
   });

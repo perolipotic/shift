@@ -1,17 +1,19 @@
 /**
- * THE TEAM SCREENS' FILE SETS, written once (source structure B6).
+ * THE TEAM SCREENS' FILE SETS, written once (source structure B6, and the
+ * roster since B7).
  *
- * `/ljudi/smjene` and `/ljudi/smjene/$id` are more than one file each: a page
- * that only composes, the hook holding its read, its state and its handlers,
- * and the components that draw it. The sign-in suite (`pages/prijava.test.ts`)
+ * `/ljudi/smjene`, `/ljudi/smjene/$id` and `/smjene/$id` are more than one
+ * file each: a page that only composes, the hook holding its reads, its state
+ * and its handlers, and the components that draw it. The sign-in suite (`pages/prijava.test.ts`)
  * reads each set as one source, and `test/localization-applied.test.ts` checks
  * that its folder read holds every part, so both build their paths from this.
  *
- * THE TWO SETS ARE DISJOINT. The edit screen renders the list behind its
- * dialog, but no part belongs to both: a file in both sets would have its
+ * THE THREE SETS ARE DISJOINT. The edit screen renders the list behind its
+ * dialog, but no part belongs to two sets: a file in two would have its
  * strings, controls and handlers counted twice. Each set's handler names
- * (`submit` on both) are declared once within it, so the first-match
- * extractors read the one they mean.
+ * (`submit` on the list and on the edit form) are declared once within it,
+ * so the first-match extractors read the one they mean. The roster is
+ * read-only and declares no handler at all.
  *
  * Paths are SEGMENTS under `apps/web/src`, joined by each suite against its own
  * root, so this module imports nothing and runs in neither the browser nor a
@@ -36,7 +38,17 @@ export const TEAM_EDIT_PARTS = {
 } as const;
 
 /**
- * Non-test modules anywhere under the feature that are in NEITHER set, each
+ * The roster (story 1.8, source structure B7): read-only, reached from Danas,
+ * for every role. Its rules stay in `services/roster.ts`, exempt below.
+ */
+export const TEAM_ROSTER_PARTS = {
+  page: ['pages', 'smjene.$id.tsx'],
+  hook: ['features', 'teams', 'hooks', 'use-team-roster.ts'],
+  roster: ['features', 'teams', 'components', 'team-roster.tsx'],
+} as const;
+
+/**
+ * Non-test modules anywhere under the feature that are in NONE of the three sets, each
  * with the reason. The walk covers the WHOLE feature, recursively — its root
  * and every folder at any depth, not only `services/`, `components/`, `hooks/`
  * and `utils/`. Everything else found there must be listed above, and
@@ -45,7 +57,7 @@ export const TEAM_EDIT_PARTS = {
 export const TEAM_SCREENS_EXEMPT: readonly { readonly file: string; readonly why: string }[] = [
   {
     file: 'team-screens.fixture.ts',
-    why: 'this file: the two sets themselves, read by two suites and rendered by nothing',
+    why: 'this file: the three sets themselves, read by two suites and rendered by nothing',
   },
   {
     file: 'services/list.ts',
@@ -57,6 +69,6 @@ export const TEAM_SCREENS_EXEMPT: readonly { readonly file: string; readonly why
   },
   {
     file: 'services/roster.ts',
-    why: 'the roster and the Danas line (story 1.8), which no team screen renders; a key source of its own in the sign-in suite, executed by roster.test.ts',
+    why: 'the roster read, its refusals and the Danas line (story 1.8); a key source of its own in the sign-in suite, executed by roster.test.ts',
   },
 ];

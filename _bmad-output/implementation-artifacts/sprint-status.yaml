@@ -182,8 +182,8 @@ development_status:
   # reports these as orphans: reconcile with --set rather than dropping them,
   # same convention as the navigation-shell parts. Order: A then B (one PR per
   # feature); C then D in parallel. A waits for PR #71.
-  source-structure-a-web-move: review
-  source-structure-b-thin-pages: in-progress
+  source-structure-a-web-move: done
+  source-structure-b-thin-pages: done
   source-structure-c-e2e-layout: done
   source-structure-d-e2e-page-objects: done
   # Story 1.5 was split once at step-01's multi-goal check (human decision
