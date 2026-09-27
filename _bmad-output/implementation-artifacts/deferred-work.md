@@ -884,3 +884,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b3-calendar-page.md`
   summary: BUG — after browser Back closes an open day detail, focus lands on `<body>` instead of the grid's tab-stop cell (or the month heading); fix the fallback and pin it in E2E (`calendar.spec.ts` "browser Back while the detail is open…").
   evidence: Found by B3's review and reproduced with a temporary E2E assertion on 2026-09-27; the pre-split `kalendar.tsx` behaves the same, so it predates the refactor (likely the Dialog restoring focus after the fallback runs). No test observed it — the spec checks only the dialog count.
+- source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b4-shift-type-pages.md`
+  summary: Add E2E coverage for the shift-type edit dialog's times correction, scheduled-correction cancel and archive flows (status focused after each, archived type moves under the archived heading, archive replaced by the "change scheduled" note while one is pending).
+  evidence: Raised by B4's review; no E2E spec ever exercised these flows (only add, edit link and rename). B4 moved them into new hooks and components and verified them once with a temporary spec that was not kept, because B4 forbade E2E changes.
+- source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b4-shift-type-pages.md`
+  summary: Tidy the shift-type hooks' surface — named transitions (`armArchive`, `openAdding`) instead of raw setters used by components, one shared duration helper and a `ShiftTypeChip`, one shared shift-types read/re-read helper, and `NO_TEXT`/`shownDate` moved out of `features/members` into a shared module.
+  evidence: Raised by B4's review. All duplication and the cross-feature import predate the move; changing them shifts `t()` counts and guard needles, so it is a deliberate follow-up rather than part of a pure move.

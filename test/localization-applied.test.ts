@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { CALENDAR_SCREEN_PARTS } from '../apps/web/src/features/calendar/calendar-screen.fixture.ts';
+import {
+  SHIFT_TYPE_EDIT_PARTS,
+  SHIFT_TYPE_LIST_PARTS,
+} from '../apps/web/src/features/shift-types/shift-type-screens.fixture.ts';
 
 /**
  * The localization layer is not only built but actually WIRED (story 1.1c).
@@ -81,6 +85,49 @@ function calendarScreenParts(): string[] {
       .map((name) => join(feature, folder, name)),
   );
 }
+
+/**
+ * Every non-test module anywhere under the shift types feature — its root and
+ * every folder, at any depth — less its fixture: both shift type screens'
+ * parts since source structure B4, and the read, the writes and the ramp
+ * beside them. The fixture renders nothing and is not a source. A missing
+ * feature folder reads as no parts, so the required-parts case fails instead
+ * of the whole file throwing.
+ */
+const SHIFT_TYPES_FEATURE = join(webRoot, 'src', 'features', 'shift-types');
+const SHIFT_TYPES_FIXTURE = join(SHIFT_TYPES_FEATURE, 'shift-type-screens.fixture.ts');
+
+function shiftTypesScreenParts(): string[] {
+  if (!existsSync(SHIFT_TYPES_FEATURE)) return [];
+
+  // RECURSIVE over the whole feature, so a part in a new folder is still a source.
+  return readdirSync(SHIFT_TYPES_FEATURE, { recursive: true, encoding: 'utf8' })
+    .filter((name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name))
+    .sort()
+    .map((name) => join(SHIFT_TYPES_FEATURE, name))
+    .filter((file) => file !== SHIFT_TYPES_FIXTURE);
+}
+
+/** The two shift type pages, from the fixture rather than written out. */
+const SHIFT_TYPE_PAGES = [SHIFT_TYPE_LIST_PARTS.page, SHIFT_TYPE_EDIT_PARTS.page].map((parts) =>
+  join(webRoot, 'src', ...parts),
+);
+
+/** The rule modules beside the two sets' parts. */
+const SHIFT_TYPES_RULE_MODULES = ['services/list.ts', 'services/write.ts', 'utils/ramp.ts'];
+
+/**
+ * What `shiftTypesScreenParts()` must hold: every part of both shift type
+ * screens' file sets outside `pages/` (`shift-type-screens.fixture.ts`), and
+ * the three rule modules beside them. A folder read that silently lost one of
+ * these would drop it from `SOURCES` with the freshness guard still green.
+ */
+const SHIFT_TYPES_SOURCES_REQUIRED = [
+  ...[...Object.values(SHIFT_TYPE_LIST_PARTS), ...Object.values(SHIFT_TYPE_EDIT_PARTS)]
+    .filter((parts) => parts[0] !== 'pages')
+    .map((parts) => join(webRoot, 'src', ...parts)),
+  ...SHIFT_TYPES_RULE_MODULES.map((name) => join(SHIFT_TYPES_FEATURE, ...name.split('/'))),
+];
 
 /**
  * What `calendarScreenParts()` must hold: every part of the calendar screen's
@@ -164,7 +211,6 @@ const SOURCES = [
   join(webRoot, 'src', 'pages', 'godisnji.tsx'),
   join(webRoot, 'src', 'pages', 'raspored.tsx'),
   join(webRoot, 'src', 'pages', 'ljudi.tsx'),
-  join(webRoot, 'src', 'pages', 'postavke-rotacije.tsx'),
   join(webRoot, 'src', 'pages', 'organizacija.tsx'),
   // Story 1.4a's `snapshot.ts` and 1.4b's `logo.ts` render nothing and are
   // here for the reason `client.ts` is: they hold the stable codes the screen
@@ -279,16 +325,15 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'hour-bands', 'services', 'write.ts'),
   join(webRoot, 'src', 'pages', 'organizacija.satni-pojasi.tsx'),
   join(webRoot, 'src', 'pages', 'organizacija.satni-pojasi.$id.tsx'),
-  // Story 2.2b's four. `postavke-rotacije.tsx` is listed above with the
-  // destinations; the edit screen renders and is no destination, and the two
+  // Story 2.2b's shift type screens. Both pages render, and the two
   // `@/features/shift-types` modules own the duration shapes, the kinds and the
   // refusals as return-type unions, so a chunk built before an edit to any of
   // them is stale in a way no sweep could see. The ramp module holds the chip
-  // classes' slot numbering.
-  join(webRoot, 'src', 'features', 'shift-types', 'services', 'list.ts'),
-  join(webRoot, 'src', 'features', 'shift-types', 'services', 'write.ts'),
-  join(webRoot, 'src', 'features', 'shift-types', 'utils', 'ramp.ts'),
-  join(webRoot, 'src', 'pages', 'postavke-rotacije.tipovi-smjena.$id.tsx'),
+  // classes' slot numbering. The whole feature is READ OFF its folders
+  // (source structure B4): both screens' parts, the two modules and the ramp;
+  // the two pages come from the fixture.
+  ...shiftTypesScreenParts(),
+  ...SHIFT_TYPE_PAGES,
   // Story 2.3b's four. The builder section renders on `postavke-rotacije.tsx`
   // and is no destination of its own; the three `@/features/rotation` modules own the
   // refusals and the read failure as return-type unions and the ramp-chip
@@ -378,6 +423,25 @@ describe('the build being read reflects the current localization source', () => 
     expect(CALENDAR_SOURCES_REQUIRED.length, 'the calendar set is empty').toBeGreaterThan(10);
     for (const file of CALENDAR_SOURCES_REQUIRED) {
       expect(parts, `${file} is not read by calendarScreenParts()`).toContain(file);
+      expect(SOURCES, `${file} is not in SOURCES`).toContain(file);
+    }
+  });
+
+  it('reads every shift type screen part and rule module into the sources', () => {
+    const parts = shiftTypesScreenParts();
+
+    expect(SHIFT_TYPES_SOURCES_REQUIRED, 'the shift type sets and the rule modules disagree in size').toHaveLength(
+      Object.keys(SHIFT_TYPE_LIST_PARTS).length +
+        Object.keys(SHIFT_TYPE_EDIT_PARTS).length -
+        SHIFT_TYPE_PAGES.length +
+        SHIFT_TYPES_RULE_MODULES.length,
+    );
+    for (const page of SHIFT_TYPE_PAGES) expect(SOURCES, `${page} is not in SOURCES`).toContain(page);
+    expect([...parts].sort(), 'the feature holds a module no set and no rule list names').toEqual(
+      [...SHIFT_TYPES_SOURCES_REQUIRED].sort(),
+    );
+    for (const file of SHIFT_TYPES_SOURCES_REQUIRED) {
+      expect(parts, `${file} is not read by shiftTypesScreenParts()`).toContain(file);
       expect(SOURCES, `${file} is not in SOURCES`).toContain(file);
     }
   });
