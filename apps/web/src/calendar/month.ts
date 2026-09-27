@@ -600,24 +600,37 @@ function cellOf(
     throw new RangeError(`shift type ${shiftTypeId} is projected on ${date} but is not in the snapshot`);
   }
 
-  const version = type.isWorking ? shiftTypeVersionOn(type.versions, date) : null;
-
   return {
     teamId,
     shiftTypeId,
     name: type.name,
     letter: letters.get(shiftTypeId) ?? null,
     className: `${CALENDAR_CELL_CLASS} ${fills.get(shiftTypeId) ?? NONWORKING_CHIP_CLASS}`,
-    range: version === null ? null : shiftTimesShownOf(version).range,
+    range: typeRangeOn(type, date),
     modifiers: NO_MODIFIERS,
   };
 }
 
-function dayMonthOf(date: string): string {
+/**
+ * THE ONE RANGE DERIVATION, shared by a cell and the day detail (story 3.4b):
+ * `19:00–07:00` from the type's version on `date`; `null` for a non-working
+ * type, or a working one with no version in effect on it.
+ *
+ * @throws RangeError on any precondition of `shiftTypeVersionOn`.
+ */
+export function typeRangeOn(type: ShiftTypeRow, date: string): string | null {
+  const version = type.isWorking ? shiftTypeVersionOn(type.versions, date) : null;
+
+  return version === null ? null : shiftTimesShownOf(version).range;
+}
+
+/** `26.09.`, as every row and day of the calendar reads it. */
+export function dayMonthOf(date: string): string {
   return formatted(formatIsoDayMonth(date), `the date ${date}`);
 }
 
-function weekdayOf(date: string): string {
+/** `subota`, as every row and day of the calendar reads it. */
+export function weekdayOf(date: string): string {
   return formatted(formatIsoWeekdayName(date), `the weekday of ${date}`);
 }
 

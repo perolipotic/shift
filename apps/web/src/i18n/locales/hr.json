@@ -52,6 +52,14 @@
       "noTeam": "{name} ovaj mjesec nije ni u jednoj smjeni."
     },
     "legend": "Oznake",
+    "detail": {
+      "title": "{team} · {date}",
+      "close": "Zatvori",
+      "roster": "Raspored",
+      "empty": "Taj dan nitko nije raspoređen.",
+      "off": "{team} taj dan ne radi.",
+      "noRotation": "{team} taj dan nema rotacije."
+    },
     "modifier": {
       "conflict": "Konflikt",
       "overridden": "Izmijenjeno",

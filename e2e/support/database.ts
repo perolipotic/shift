@@ -78,7 +78,35 @@ export interface RotationHold {
  * anyway — so the builder opens on an empty draft.
  */
 export function holdRotation(slug: string): RotationHold {
-  const key = `e2e-rotation:${slug}`;
+  return holdLock(`e2e-rotation:${slug}`, async (client) => {
+    await client.query(
+      `delete from rotation_assignments a
+        using organizations o
+        where a.organization_id = o.id and o.slug = $1
+          and a.effective_from >= public.organization_today(o.id)`,
+      [slug],
+    );
+  });
+}
+
+/**
+ * The run organization's fire-rank setting, held by ONE test at a time (story
+ * 3.4b). `fire-ranks.spec.ts` and `team-position.spec.ts` switch it on and
+ * read rank lines; `calendar.spec.ts` switches it on and off to read the day
+ * detail's roster both ways, then restores it. Under the same bounded,
+ * session-level advisory lock as {@link holdRotation}, so none of them reads
+ * a setting another is in the middle of changing.
+ */
+export function holdFireRanks(slug: string): RotationHold {
+  return holdLock(`e2e-fire-ranks:${slug}`, async () => undefined);
+}
+
+/**
+ * A session-level advisory lock on `key`, polled for at most
+ * {@link ROTATION_LOCK_WAIT_MS}, with `onHeld` run once it is held. The hold is
+ * returned synchronously; see {@link holdRotation}.
+ */
+function holdLock(key: string, onHeld: (client: pg.Client) => Promise<void>): RotationHold {
   const client = new pg.Client({ connectionString: DATABASE_URL, connectionTimeoutMillis: REQUEST_TIMEOUT_MS });
   let released = false;
   let ended: Promise<void> | null = null;
@@ -112,13 +140,7 @@ export function holdRotation(slug: string): RotationHold {
         await new Promise((resolve) => setTimeout(resolve, ROTATION_LOCK_POLL_MS));
       }
 
-      await client.query(
-        `delete from rotation_assignments a
-          using organizations o
-          where a.organization_id = o.id and o.slug = $1
-            and a.effective_from >= public.organization_today(o.id)`,
-        [slug],
-      );
+      await onHeld(client);
     } catch (cause) {
       await end();
       throw cause;
@@ -134,12 +156,87 @@ export function holdRotation(slug: string): RotationHold {
   };
 }
 
+/**
+ * Sets the run organization's `uses_fire_ranks` and answers what it was, so
+ * the caller can restore it. Call it under {@link holdFireRanks}.
+ */
+export async function setFireRanks(slug: string, on: boolean): Promise<boolean> {
+  const client = await connect();
+  try {
+    const before = await client.query<{ uses_fire_ranks: boolean }>(
+      'select uses_fire_ranks from organizations where slug = $1',
+      [slug],
+    );
+    const was = before.rows[0]?.uses_fire_ranks;
+    if (was === undefined) throw new Error(`E2E: no organization ${slug}`);
+    await client.query('update organizations set uses_fire_ranks = $2 where slug = $1', [slug, on]);
+
+    return was;
+  } finally {
+    await client.end();
+  }
+}
+
+/** A member's rank and their position on a team, as {@link setRankAndPosition} found them. */
+export interface RankAndPosition {
+  readonly fireRank: string | null;
+  readonly position: string | null;
+}
+
+/**
+ * Gives the run organization's member named `name` a rank and, on EVERY
+ * membership version of theirs on `teamId`, a position — in place, since the
+ * fixture's one version is dated today — and answers what they were, so the
+ * caller can restore them with the same call.
+ */
+export async function setRankAndPosition(
+  slug: string,
+  name: string,
+  teamId: string,
+  { fireRank, position }: RankAndPosition,
+): Promise<RankAndPosition> {
+  const client = await connect();
+  try {
+    await client.query('begin');
+    const found = await client.query<{ id: string; organization_id: string; fire_rank: string | null }>(
+      `select m.id, m.organization_id, m.fire_rank
+         from members m join organizations o on o.id = m.organization_id
+        where o.slug = $1 and m.name = $2`,
+      [slug, name],
+    );
+    const member = found.rows[0];
+    if (member === undefined || found.rows.length !== 1) throw new Error(`E2E: no one member ${name} in ${slug}`);
+    const versions = await client.query<{ position: string | null }>(
+      `select position from team_membership_versions
+        where organization_id = $1 and member_id = $2 and team_id = $3
+        order by effective_from desc limit 1`,
+      [member.organization_id, member.id, teamId],
+    );
+    await client.query('update members set fire_rank = $2 where id = $1', [member.id, fireRank]);
+    await client.query(
+      `update team_membership_versions set position = $4
+        where organization_id = $1 and member_id = $2 and team_id = $3`,
+      [member.organization_id, member.id, teamId, position],
+    );
+    await client.query('commit');
+
+    return { fireRank: member.fire_rank, position: versions.rows[0]?.position ?? null };
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
+  } finally {
+    await client.end();
+  }
+}
+
 /** What {@link seedTeamRotation} wrote: the four-step pattern's type names and the date it starts. */
 export interface SeededRotation {
   /** The organization's today, `YYYY-MM-DD`: the version's effective date and anchor. */
   readonly today: string;
   /** The pattern's step types in order — working, working, non-working, non-working. */
   readonly steps: readonly [string, string, string, string];
+  /** Each step's `19:00–07:00` as the calendar shows it, from the times seeded; `null` for a non-working one. */
+  readonly ranges: readonly [string | null, string | null, string | null, string | null];
   /** What {@link removeSeededRotation} deletes. */
   readonly organizationId: string;
   readonly patternId: string;
@@ -188,10 +285,11 @@ export async function seedTeamRotation(slug: string, teamId: string, suffix: str
       typeIds.push(id);
     }
     const [dan, noc, slobodno] = typeIds as [string, string, string];
-    for (const [shiftTypeId, start, end] of [
+    const times = [
       [dan, '07:00', '19:00'],
       [noc, '19:00', '07:00'],
-    ] as const) {
+    ] as const;
+    for (const [shiftTypeId, start, end] of times) {
       await client.query(
         `insert into shift_type_versions (organization_id, shift_type_id, start_time, end_time, effective_from, created_by)
          values ($1, $2, $3::time, $4::time, date '2020-01-01', $5)`,
@@ -228,6 +326,7 @@ export async function seedTeamRotation(slug: string, teamId: string, suffix: str
     return {
       today,
       steps: [names[0], names[1], names[2], names[2]],
+      ranges: [`${times[0][1]}–${times[0][2]}`, `${times[1][1]}–${times[1][2]}`, null, null],
       organizationId,
       patternId,
       shiftTypeIds: typeIds,

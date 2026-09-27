@@ -1,21 +1,26 @@
 import { useQuery } from '@tanstack/react-query';
 import { createRoute, useNavigate } from '@tanstack/react-router';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
 
 import {
   GRID_CELL_SELECTOR,
+  GRID_TAB_STOP_SELECTOR,
+  MONTH_HEADING_ID,
   gridCellSelectorOf,
   gridFocusAfter,
   gridPositionOf,
   gridTabStopOf,
-  isInertGridKey,
+  gridOpenOnKeyDown,
+  gridOpensOnKeyUp,
   isSameGridPosition,
   keyModifiersOf,
   type GridFocus,
   type GridPosition,
 } from '@/calendar/grid-keys';
+import { DAY_DETAIL_DIALOG_ID, DAY_DETAIL_POPUP, DAY_NO_ROTATION, DAY_OFF, dayDetailShownOf, type DayDetail, type OpenedDay } from '@/calendar/day-detail';
 import {
+  dayListLabelsOf,
   gridCellLabelsOf,
   legendOf,
   modifierMessageKey,
@@ -61,12 +66,15 @@ import {
 } from '@/calendar/snapshot';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Dialog, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { Select } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { t } from '@/i18n';
+import { positionsShown, rosterLineOf, rosterPositionMessageKey } from '@/members/position';
+import { ranksShown, rosterRankMessageKey } from '@/members/rank';
 import { appLayoutRoute } from '@/routes/_app';
 import { supabaseClient } from '@/supabase/client';
 
@@ -112,6 +120,16 @@ import { supabaseClient } from '@/supabase/client';
  * active today is `calendarMonthOf`'s decision, through `activeOn`. A
  * person chosen replaces the grid with their day list — the one *Moj
  * raspored* draws — headed with their name, and wins over a team.
+ *
+ * ONE DAY (story 3.4b): a grid cell — clicked, or Enter or Space on it — and
+ * a day-list day on a team open a read-only Dialog of that team on that date:
+ * the type, its times and who is rostered, as `@/calendar/day-detail` derives
+ * it from the same snapshot, so opening a day reads nothing. Which day is open
+ * lives in `useState`, not in the URL; it is re-derived on every refetch and
+ * closes — for good, never reopening by itself — when the snapshot is gone,
+ * the team disappears, or the month, mode, team or person shown changes.
+ * Every close returns focus to the opener once the Dialog has closed, or to
+ * the grid's tab stop or the month heading when the opener is gone.
  *
  * The session guard is NOT here. It is registered once on the pathless `_app`
  * layout this route nests under.
@@ -177,6 +195,58 @@ export function KalendarScreen() {
   }
 
   const gridRef = useRef<HTMLTableElement>(null);
+  // THE DAY DETAIL (story 3.4b): which day is open; the control that opened
+  // it, which gets focus back; the cell a Space keydown armed; and a count of
+  // closes, which the effect below returns focus after.
+  const [opened, setOpened] = useState<OpenedDay | null>(null);
+  const [closes, setCloses] = useState(0);
+  const openerRef = useRef<HTMLElement | null>(null);
+  const armedRef = useRef<HTMLElement | null>(null);
+  // Whether a close the screen asked for still owes its `close` event. The
+  // browser fires it as a TASK after the dialog has closed, so a day opened in
+  // between (Escape, then Space at once) must not be closed by the late event.
+  const closeEventOwedRef = useRef(false);
+  // Re-derived from the current snapshot while open (`dayDetailShownOf`).
+  const shownDetail = useMemo(() => dayDetailShownOf(snapshot, opened), [snapshot, opened]);
+  const detail = shownDetail.detail;
+  // The key the grid's tab stop resets on, with the mode: any change closes
+  // the detail — browser Back while it is open included.
+  const detailKey = `${shownGrid ?? ALL_TEAMS_FILTER}|${mode ?? ALL_TEAMS_FILTER}`;
+  const [detailFor, setDetailFor] = useState(detailKey);
+
+  if (detailFor !== detailKey) {
+    setDetailFor(detailKey);
+
+    if (opened !== null) {
+      setOpened(null);
+      setCloses((count) => count + 1);
+    }
+  } else if (shownDetail.close) {
+    // No snapshot, the team gone, or a derivation that threw: forget the day,
+    // so it never reopens by itself when data returns.
+    setOpened(null);
+    setCloses((count) => count + 1);
+  }
+
+  // AFTER the Dialog has closed (its own effect runs first, and the browser
+  // restores focus on `close()`), focus goes back to the opener — or, when it
+  // is no longer in the document, to the grid's tab stop or the month heading.
+  useEffect(() => {
+    if (closes === 0) return;
+
+    const frame = requestAnimationFrame(() => {
+      const opener = openerRef.current;
+      const fallback =
+        gridRef.current?.querySelector<HTMLElement>(GRID_TAB_STOP_SELECTOR) ??
+        document.getElementById(MONTH_HEADING_ID);
+
+      (opener?.isConnected === true ? opener : fallback)?.focus();
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [closes]);
   // The reset unmounts itself; focus goes to the filter rather than <body>.
   const filterRef = useRef<HTMLSelectElement>(null);
   // Built once per month shown, not on every focus move.
@@ -192,6 +262,44 @@ export function KalendarScreen() {
 
   function filter(change: CalendarFilterChange): void {
     void navigate({ search: calendarSearchTo(search, change) });
+  }
+
+  /** Opens `teamId` on `date`, remembering `opener` for the return of focus. */
+  function openDay(teamId: string, date: string, opener: HTMLElement): void {
+    openerRef.current = opener;
+    setOpened({ teamId, date });
+  }
+
+  /** Every close by the viewer — Escape, the close button, the backdrop. */
+  function closeDay(): void {
+    const dialog = document.getElementById(DAY_DETAIL_DIALOG_ID);
+
+    // Still open: its `close` event is yet to come, and is this close's.
+    if (dialog instanceof HTMLDialogElement && dialog.open) closeEventOwedRef.current = true;
+    setOpened(null);
+    setCloses((count) => count + 1);
+  }
+
+  /**
+   * The dialog's `close` event: the one a close already handled owes is
+   * consumed; any other — the browser closing it on its own — closes the day.
+   */
+  function closedByBrowser(): void {
+    if (closeEventOwedRef.current) {
+      closeEventOwedRef.current = false;
+
+      return;
+    }
+
+    if (opened !== null) closeDay();
+  }
+
+  /** Opens the detail of the grid cell at `from`, `target` its element. */
+  function openCell(shown: CalendarMonth, from: GridPosition, target: HTMLElement): void {
+    const row = shown.rows[from.row];
+    const cell = row?.cells[from.column];
+
+    if (row !== undefined && cell !== undefined) openDay(cell.teamId, row.date, target);
   }
 
   /** A cell's name or letter; in the grid, every part `aria-hidden` and the letter first. */
@@ -268,8 +376,10 @@ export function KalendarScreen() {
   }
 
   /**
-   * A key on the grid, from the cell that HAS focus: move focus by
-   * `gridFocusAfter`, swallow Space, or leave the key alone.
+   * A key on the grid, from the cell that HAS focus: open its day detail on
+   * Enter, arm it on Space (its default prevented, so Space never scrolls) —
+   * by `gridOpenOnKeyDown` — move focus by `gridFocusAfter`, or leave the key
+   * alone.
    */
   function moveGridFocus(event: KeyboardEvent<HTMLTableElement>, shown: CalendarMonth): void {
     const target = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>(GRID_CELL_SELECTOR) : null;
@@ -279,8 +389,15 @@ export function KalendarScreen() {
 
     const modifiers = keyModifiersOf(event);
 
-    if (isInertGridKey(event.key, modifiers)) {
-      event.preventDefault();
+    const step = gridOpenOnKeyDown(event.key, modifiers, {
+      repeat: event.repeat,
+      composing: event.nativeEvent.isComposing,
+    });
+
+    if (step !== null) {
+      if (step.prevent) event.preventDefault();
+      if (step.arm) armedRef.current = target;
+      if (step.open && target !== null) openCell(shown, from, target);
 
       return;
     }
@@ -297,8 +414,29 @@ export function KalendarScreen() {
     gridRef.current?.querySelector<HTMLElement>(gridCellSelectorOf(next))?.focus();
   }
 
+  /**
+   * A key released on the grid: Space opens the cell its keydown armed
+   * (`gridOpensOnKeyUp`), so its keyup never reaches the Dialog's close
+   * button. Any keyup disarms.
+   */
+  function openOnKeyUp(event: KeyboardEvent<HTMLTableElement>, shown: CalendarMonth): void {
+    const target = event.target instanceof HTMLElement ? event.target.closest<HTMLElement>(GRID_CELL_SELECTOR) : null;
+    const from = target === null ? null : gridPositionOf(target.dataset);
+    const armed = target !== null && armedRef.current === target;
+
+    armedRef.current = null;
+
+    if (from === null || target === null) return;
+
+    if (gridOpensOnKeyUp(event.key, keyModifiersOf(event), { armed, composing: event.nativeEvent.isComposing })) {
+      event.preventDefault();
+      openCell(shown, from, target);
+    }
+  }
+
   function renderCell(
     month: string,
+    date: string,
     cell: CalendarCell,
     label: string | undefined,
     position: GridPosition,
@@ -312,10 +450,14 @@ export function KalendarScreen() {
         data-column={position.column}
         tabIndex={isSameGridPosition(position, tabStop) ? 0 : -1}
         aria-label={label}
+        aria-haspopup={DAY_DETAIL_POPUP}
         onFocus={() => {
           remember(month, position);
         }}
-        className="px-1 py-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        onClick={(event) => {
+          openDay(cell.teamId, date, event.currentTarget);
+        }}
+        className="cursor-pointer px-1 py-1 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
       >
         {renderCellBox(cell, true)}
       </TableCell>
@@ -449,7 +591,78 @@ export function KalendarScreen() {
     );
   }
 
-  function renderDay(day: CalendarDay): ReactNode {
+  /** A day on a team, as a button that opens that team's detail on that date (story 3.4b). */
+  function renderDayButton(teamId: string, date: string, cell: CalendarCell, label: string | null): ReactNode {
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        className="h-auto min-h-11 min-w-0 flex-1 items-stretch whitespace-normal p-0 text-left"
+        aria-label={label ?? undefined}
+        aria-haspopup={DAY_DETAIL_POPUP}
+        onClick={(event) => {
+          openDay(teamId, date, event.currentTarget);
+        }}
+      >
+        {renderCellBox(cell, false)}
+      </Button>
+    );
+  }
+
+  /** The roster, one `Ime · čin · položaj` line per member, rank and position where the organization uses them. */
+  function renderRoster(shown: DayDetail, usesFireRanks: boolean): ReactNode {
+    if (shown.roster.length === 0) {
+      return <p className="text-sm text-muted-foreground">{t('kalendar.detail.empty')}</p>;
+    }
+
+    const rankShown = ranksShown({ usesFireRanks });
+    const positionShown = positionsShown({ usesFireRanks });
+
+    return (
+      <ul aria-labelledby="kalendar-detail-roster" className="grid gap-2">
+        {shown.roster.map((member) => {
+          const rankKey = rosterRankMessageKey(member.fireRank, rankShown);
+          const positionKey = rosterPositionMessageKey(member.position, positionShown);
+          // WHICH SENTENCE is `rosterLineOf`'s decision, executed in a test.
+          const line = rosterLineOf(member.name, rankKey, positionKey, (key) => t(key));
+
+          return (
+            <li key={member.id} className="min-w-0 break-words text-base">
+              {line.key === null ? line.text : t(line.key, line.values)}
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+
+  /** The day detail's body: the type, its times and the roster, or why there is none. */
+  function renderDetail(shown: DayDetail, usesFireRanks: boolean): ReactNode {
+    if (shown.kind === DAY_OFF) {
+      return <p className="text-sm">{t('kalendar.detail.off', { team: shown.teamName })}</p>;
+    }
+
+    if (shown.kind === DAY_NO_ROTATION) {
+      return <p className="text-sm">{t('kalendar.detail.noRotation', { team: shown.teamName })}</p>;
+    }
+
+    return (
+      <div className="grid gap-4">
+        <p className="flex flex-wrap items-baseline gap-x-3 text-base">
+          <span className="font-semibold">{shown.typeName}</span>
+          {shown.range === null ? null : <span className="tabular-nums">{shown.range}</span>}
+        </p>
+        <div className="grid gap-2">
+          <h3 id="kalendar-detail-roster" className="font-heading text-base font-semibold">
+            {t('kalendar.detail.roster')}
+          </h3>
+          {renderRoster(shown, usesFireRanks)}
+        </div>
+      </div>
+    );
+  }
+
+  function renderDay(day: CalendarDay, label: string | null): ReactNode {
     return (
       <li
         key={day.date}
@@ -464,10 +677,10 @@ export function KalendarScreen() {
           <span className="block tabular-nums">{day.dayMonth}</span>
           <span className="block text-xs font-normal text-muted-foreground">{day.weekday}</span>
         </span>
-        {day.cell === null ? (
+        {day.cell === null || day.teamId === null ? (
           <span className="text-sm text-muted-foreground">{t('kalendar.day.noTeam')}</span>
         ) : (
-          renderCellBox(day.cell, false)
+          renderDayButton(day.teamId, day.date, day.cell, label)
         )}
       </li>
     );
@@ -493,13 +706,17 @@ export function KalendarScreen() {
       return <p className="px-4 pb-4 text-sm text-muted-foreground">{noTeam}</p>;
     }
 
+    // The button's name is the grid cell's full label: the date, the team,
+    // the type, the times and each mark.
+    const labels = snapshot === null ? [] : dayListLabelsOf(days.days, snapshot.teams, translateCellLabel);
+
     return (
       <>
         {renderLegend(days.days.map((day) => day.cell))}
         <ol
           aria-labelledby={ofPerson ? 'kalendar-person-heading kalendar-month-heading' : 'kalendar-month-heading'}
           className="divide-y divide-border px-4 pb-4">
-          {days.days.map((day) => renderDay(day))}
+          {days.days.map((day, index) => renderDay(day, labels[index] ?? null))}
         </ol>
       </>
     );
@@ -540,6 +757,9 @@ export function KalendarScreen() {
           onKeyDown={(event) => {
             moveGridFocus(event, shown);
           }}
+          onKeyUp={(event) => {
+            openOnKeyUp(event, shown);
+          }}
         >
           <TableHeader>
             <TableRow>
@@ -571,7 +791,14 @@ export function KalendarScreen() {
                   <span className="block text-xs font-normal text-muted-foreground">{row.weekday}</span>
                 </TableHead>
                 {row.cells.map((cell, column) =>
-                  renderCell(shown.month, cell, labels?.[rowIndex]?.[column], { row: rowIndex, column }, tabStop),
+                  renderCell(
+                    shown.month,
+                    row.date,
+                    cell,
+                    labels?.[rowIndex]?.[column],
+                    { row: rowIndex, column },
+                    tabStop,
+                  ),
                 )}
               </TableRow>
             ))}
@@ -610,7 +837,7 @@ export function KalendarScreen() {
               <div className="h-7 w-40 animate-pulse rounded-sm bg-muted" />
             ) : (
               <>
-                <h2 id="kalendar-month-heading" className="font-heading text-xl font-bold">
+                <h2 id={MONTH_HEADING_ID} tabIndex={-1} className="font-heading text-xl font-bold outline-none">
                   {t('kalendar.monthHeading', { month: month.monthName, year: month.year })}
                 </h2>
                 <div className="ml-auto flex items-center gap-2">
@@ -664,6 +891,28 @@ export function KalendarScreen() {
                 : renderPerson(month.person)}
         </Card>
       )}
+      {/* ESCAPE CLOSES ON `cancel`, which fires at once, and the late `close`
+          event is `closedByBrowser`'s — both through the primitive's own
+          props — so a quick reopen is never closed by the previous one. */}
+      <Dialog
+        id={DAY_DETAIL_DIALOG_ID}
+        open={detail !== null}
+        onOpenChange={(next) => {
+          if (!next) closeDay();
+        }}
+        onCancel={closeDay}
+        onClose={closedByBrowser}
+        aria-labelledby="kalendar-detail-heading"
+      >
+        {detail === null || snapshot === null ? null : (
+          <>
+            <DialogHeader closeLabel={t('kalendar.detail.close')} onClose={closeDay}>
+              <DialogTitle id="kalendar-detail-heading">{t('kalendar.detail.title', { team: detail.teamName, date: detail.date })}</DialogTitle>
+            </DialogHeader>
+            {renderDetail(detail, snapshot.usesFireRanks)}
+          </>
+        )}
+      </Dialog>
     </main>
   );
 }

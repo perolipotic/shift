@@ -256,6 +256,9 @@ const SOURCES = [
   // the grid's keyboard rules render nothing and decide where focus goes.
   join(webRoot, 'src', 'calendar', 'modifiers.ts'),
   join(webRoot, 'src', 'calendar', 'grid-keys.ts'),
+  // Story 3.4b's day detail model: it renders nothing, and its date and range
+  // come through `@/calendar/month`, its roster order through `@/i18n/format`.
+  join(webRoot, 'src', 'calendar', 'day-detail.ts'),
   // The owner layout's numbered section badge, a primitive: text-free, here
   // for freshness like the other primitives.
   join(webRoot, 'src', 'components', 'ui', 'section-number.tsx'),

@@ -14,6 +14,7 @@ import {
   RING_OVERRIDDEN_CLASS,
   LABEL_SEPARATOR,
   cellLabelOf,
+  dayListLabelsOf,
   glyphOf,
   gridCellLabelsOf,
   legendOf,
@@ -206,5 +207,28 @@ describe("the day list's names of the marks", () => {
     expect(modifierNamesTextOf([], translate)).toBe('');
     expect(modifierNamesTextOf(['leave', 'conflict', 'leave'], translate)).toBe(', Konflikt, Godišnji');
     expect(modifierNamesTextOf(['uncovered'], translate)).toBe(', Nepokriveno');
+  });
+});
+
+describe("the day list's button names (story 3.4b)", () => {
+  const cell = { name: 'Noć', range: '19:00–07:00', modifiers: ['leave'] as CalendarModifier[] };
+  const day = { date: '2026-09-26', dayMonth: '26.09.', weekday: 'subota', isToday: true };
+  const teams = [{ id: 'a', name: 'Smjena A' }];
+
+  it("is the grid cell's full label — date, team, type, times, marks — and null for a day with no button", () => {
+    const days = [
+      { ...day, teamId: 'a', cell },
+      { ...day, teamId: null, cell: null },
+      { ...day, teamId: 'gone', cell },
+    ] as unknown as Parameters<typeof dayListLabelsOf>[0];
+
+    expect(dayListLabelsOf(days, teams, translate)).toEqual([
+      cellLabelOf({ weekday: 'subota', dayMonth: '26.09.', teamName: 'Smjena A', ...cell }, translate),
+      null,
+      null,
+    ]);
+    expect(dayListLabelsOf(days, teams, translate)[0]).toBe(
+      ['subota 26.09.', 'Smjena A', 'Noć', '19:00–07:00', t('kalendar.modifier.leave')].join(LABEL_SEPARATOR),
+    );
   });
 });

@@ -428,7 +428,11 @@ const SCREENS = [
   // cells take focus as one roving tab stop, and are cells, not controls.
   // SEVEN SINCE STORY 3.3a: the team filter's `Select` and its reset, the
   // reset written once however often it shows.
-  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 7 },
+  // EIGHT SINCE STORY 3.4b: a day-list day's button that opens its detail,
+  // written once inside the map over the days. A grid cell opens the detail
+  // too, but stays a `gridcell`, not a control, and the Dialog's close is
+  // `DialogHeader`'s own `<Button>`, not the screen's.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 8 },
   // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
   // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
   // row link written once inside the map over the bands — the same count at
@@ -1748,11 +1752,15 @@ const KEY_SOURCES = [
     // marks' labels come through `@/calendar/modifiers`, below. EIGHTEEN SINCE
     // STORY 3.3a: the team filter's label, its all-teams option, the heading
     // over the teams and the reset. TWENTY SINCE STORY 3.3b: the heading over
-    // the people and a person on no team all month.
+    // the people and a person on no team all month. TWENTY-SIX SINCE STORY
+    // 3.4b: the day detail's title, its close, the heading over its roster,
+    // the empty roster, an off day and a day with no rotation. The roster's rank and
+    // position labels come through `@/members/rank` and `@/members/position`,
+    // already key sources.
     name: 'the Kalendar destination',
     file: KALENDAR,
     keys: translationKeys,
-    strings: 20,
+    strings: 26,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's
