@@ -110,7 +110,7 @@ describe('the built stylesheet consumes the tokens it defines', () => {
    * painted: a utility class only exists in the built sheet if some source file
    * asks for it by its WHOLE NAME. Tailwind resolves classes by scanning source
    * text, so the obvious review simplification — replacing
-   * `@/organization/accent`'s hand-written table with
+   * `@/features/organization/utils/accent`'s hand-written table with
    * `` `bg-brand-${key}` `` — emits no `.bg-brand-*` rule at all while every
    * source-level assertion in the repository keeps passing, and no accent
    * paints for anybody.
@@ -126,7 +126,7 @@ describe('the built stylesheet consumes the tokens it defines', () => {
    * than incidental. The scanner is TEXT-based and reads comments too, so a
    * whole class name written in prose anywhere under `apps/web/src` emits that
    * rule into the built sheet whether or not anything renders it: one such
-   * comment in `routes/prijava.test.ts` kept `.bg-brand-blue` alive through a
+   * comment in `pages/prijava.test.ts` kept `.bg-brand-blue` alive through a
    * mutation that had stopped the accent module producing any class at all,
    * which is this guard passing on evidence it manufactured itself.
    */

@@ -166,7 +166,7 @@ export const OPERATION_CODES = [
 /**
  * The reserved domain every synthesized address sits under (RFC 2606, AD-12).
  *
- * THE SECOND AND LAST HOME OF THIS STRING. `apps/web/src/supabase/address.ts`
+ * THE SECOND AND LAST HOME OF THIS STRING. `apps/web/src/features/auth/services/address.ts`
  * holds the first, and the two cannot import each other: that file is bundled
  * into the SPA by Vite and this one runs on Deno with a `npm:` specifier. So
  * they are duplicated deliberately and BOUND BY A TEST — the boundary suite can
@@ -177,7 +177,7 @@ export const OPERATION_CODES = [
 export const ADDRESS_DOMAIN = 'shift.invalid';
 
 /** AD-12's address for one member of one organization. The `@` and the domain
- *  appear here and in `apps/web/src/supabase/address.ts`, nowhere else. */
+ *  appear here and in `apps/web/src/features/auth/services/address.ts`, nowhere else. */
 export function synthesizedAddress(username: string, slug: string): string {
   return `${username}@${slug}.${ADDRESS_DOMAIN}`;
 }
@@ -313,10 +313,10 @@ export const MEMBER_ROLES = ['admin', 'member_role'] as const;
  * lowest to highest.
  *
  * A COPY, because this function cannot import the SPA's tree: the browser's
- * `RANK_CODES` (`apps/web/src/members/rank.ts`) is the other one. Each copy is
+ * `RANK_CODES` (`apps/web/src/features/members/utils/rank.ts`) is the other one. Each copy is
  * pinned to the constraint parsed out of `0014`, never to the other copy or
  * to itself: this one by the boundary suite, the browser's by
- * `apps/web/src/members/rank.test.ts`. A rank outside this list is refused as a payload shape rather
+ * `apps/web/src/features/members/utils/rank.test.ts`. A rank outside this list is refused as a payload shape rather
  * than dropped: a create that silently lost the rank would issue a member the
  * admin did not describe.
  */
@@ -340,7 +340,7 @@ export const FIRE_RANKS = [
  * `0002:145` types the column `smallint`, so 32768 is not a large allowance: it
  * is `22003 numeric_value_out_of_range`, a refusal about a storage type that
  * names nothing an admin can act on. Refused as a PAYLOAD shape here, it is the
- * same "correct a value" every other bad entry is — and `members/wire.ts`
+ * same "correct a value" every other bad entry is — and `features/members/services/wire.ts`
  * carries the same bound for the controls, bound to this one in the file that
  * can import both trees.
  */
@@ -356,7 +356,7 @@ export const LEAVE_ALLOWANCE_MAX = 32767;
  */
 export const EMAIL_EXISTS = 'email_exists';
 
-/** SQLSTATEs this module distinguishes. Exported so `members/write.ts`'s own
+/** SQLSTATEs this module distinguishes. Exported so `features/members/services/write.ts`'s own
  *  copy can be pinned against them in the file that can import both trees. */
 export const UNIQUE_VIOLATION = '23505';
 export const INSUFFICIENT_PRIVILEGE = '42501';
@@ -365,7 +365,7 @@ export const INSUFFICIENT_PRIVILEGE = '42501';
  * The SQLSTATE classes that mean the ROW was wrong rather than the service.
  *
  * `22` is `data_exception` and `23` is `integrity_constraint_violation`.
- * BY CLASS RATHER THAN BY A LIST, the identical rule `members/write.ts`'s
+ * BY CLASS RATHER THAN BY A LIST, the identical rule `features/members/services/write.ts`'s
  * `editFailureOf` applies — a list names the refusals somebody thought of and
  * falls through on `22003` from an allowance that overflows `smallint`, which
  * is a value on the form reported as an outage.
@@ -386,7 +386,7 @@ function namesAValue(code: string | undefined): boolean {
  * `23505` IS THE USERNAME, and it is the only unique constraint on this table a
  * write from here can reach: `id` and `auth_user_id` carry values this module
  * just generated, so the collision is always `0007`'s per-organization index.
- * It is also the ONE case `members/write.ts` deliberately does not share — that
+ * It is also the ONE case `features/members/services/write.ts` deliberately does not share — that
  * path's update never writes `username`, so it could not honestly say a
  * username was taken.
  *

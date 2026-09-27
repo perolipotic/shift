@@ -1,7 +1,7 @@
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 
-import { cn } from "@/components/utils"
+import { cn } from "@/lib/utils"
 
 // The page skeleton's head (visual refresh B), owned once here so every screen
 // opens the same way: the title top-left, the screen's actions at the right,

@@ -21,7 +21,7 @@ import { describe, expect, it } from 'vitest';
  * every marker below was chosen empirically — built once with the wiring and
  * once with it removed, keeping only strings that vanish in the second build.
  *
- * `apps/web/src/i18n/format.test.ts` covers the module's behaviour; this covers
+ * `apps/web/src/lib/i18n/format.test.ts` covers the module's behaviour; this covers
  * its reachability. Both are needed and neither substitutes.
  */
 
@@ -48,12 +48,12 @@ const notBuilt = !existsSync(assets);
 const SOURCES = [
   join(webRoot, 'index.html'),
   join(webRoot, 'src', 'main.tsx'),
-  join(webRoot, 'src', 'i18n', 'index.ts'),
-  join(webRoot, 'src', 'i18n', 'boot.ts'),
-  join(webRoot, 'src', 'i18n', 'format.ts'),
-  join(webRoot, 'src', 'i18n', 'locales', 'hr.json'),
-  join(webRoot, 'src', 'routes', 'prijava.tsx'),
-  join(webRoot, 'src', 'routes', 'not-found.tsx'),
+  join(webRoot, 'src', 'lib', 'i18n', 'index.ts'),
+  join(webRoot, 'src', 'lib', 'i18n', 'boot.ts'),
+  join(webRoot, 'src', 'lib', 'i18n', 'format.ts'),
+  join(webRoot, 'src', 'lib', 'i18n', 'locales', 'hr.json'),
+  join(webRoot, 'src', 'pages', 'prijava.tsx'),
+  join(webRoot, 'src', 'pages', 'not-found.tsx'),
   // The organization prompt at bare `/prijava`, and `/`. A `.tsx` carrying a
   // string that is absent from this list is swept by nothing — the freshness
   // guard would not notice a build that predates it.
@@ -63,11 +63,11 @@ const SOURCES = [
   // signed-in person belongs and redirects. It stays listed because it is still
   // wiring the built chunk depends on — the redirect target and the forward are
   // behaviour a stale build would misreport — not because it carries a key.
-  join(webRoot, 'src', 'routes', 'prijava-organizacija.tsx'),
-  join(webRoot, 'src', 'routes', 'index.tsx'),
+  join(webRoot, 'src', 'pages', 'prijava-organizacija.tsx'),
+  join(webRoot, 'src', 'pages', 'index.tsx'),
   // The sign-in steps' shared frame (visual refresh A), which renders the
   // brand panel's three strings around both steps.
-  join(webRoot, 'src', 'components', 'auth-layout.tsx'),
+  join(webRoot, 'src', 'components', 'layout', 'auth-layout.tsx'),
   // NOT `.tsx`, and that is the point. This list guards build FRESHNESS, and
   // the file that owns `auth.error.credentials` and `auth.error.unavailable` is
   // a plain module: story 1.3b moved the failure-to-message pairing out of the
@@ -80,9 +80,9 @@ const SOURCES = [
   // Its two neighbours join it for the same reason rather than a different one:
   // `client.ts` and `address.ts` hold the stable codes the screens import and
   // log, so a chunk built before an edit to either is equally stale.
-  join(webRoot, 'src', 'supabase', 'sign-in.ts'),
-  join(webRoot, 'src', 'supabase', 'client.ts'),
-  join(webRoot, 'src', 'supabase', 'address.ts'),
+  join(webRoot, 'src', 'features', 'auth', 'services', 'sign-in.ts'),
+  join(webRoot, 'src', 'lib', 'supabase', 'client.ts'),
+  join(webRoot, 'src', 'features', 'auth', 'services', 'address.ts'),
   // The navigation shell's route skeleton: the pathless layout plus the eight
   // titled destinations. Every one of the eight renders a `nav.*` label, and
   // those eight words are held to a COUNT in `AUTHORED_VOCABULARY` below — a
@@ -91,29 +91,29 @@ const SOURCES = [
   // staleness this list exists to refuse. The layout renders no string of its
   // own and is here anyway: it is what puts the eight in the graph at all, so
   // a build predating it has none of them.
-  join(webRoot, 'src', 'routes', '_app.tsx'),
-  join(webRoot, 'src', 'routes', 'danas.tsx'),
-  join(webRoot, 'src', 'routes', 'kalendar.tsx'),
-  join(webRoot, 'src', 'routes', 'sati.tsx'),
-  join(webRoot, 'src', 'routes', 'godisnji.tsx'),
-  join(webRoot, 'src', 'routes', 'raspored.tsx'),
-  join(webRoot, 'src', 'routes', 'ljudi.tsx'),
-  join(webRoot, 'src', 'routes', 'postavke-rotacije.tsx'),
-  join(webRoot, 'src', 'routes', 'organizacija.tsx'),
+  join(webRoot, 'src', 'pages', '_app.tsx'),
+  join(webRoot, 'src', 'pages', 'danas.tsx'),
+  join(webRoot, 'src', 'pages', 'kalendar.tsx'),
+  join(webRoot, 'src', 'pages', 'sati.tsx'),
+  join(webRoot, 'src', 'pages', 'godisnji.tsx'),
+  join(webRoot, 'src', 'pages', 'raspored.tsx'),
+  join(webRoot, 'src', 'pages', 'ljudi.tsx'),
+  join(webRoot, 'src', 'pages', 'postavke-rotacije.tsx'),
+  join(webRoot, 'src', 'pages', 'organizacija.tsx'),
   // Story 1.4a's two modules. `organizacija.tsx` above is no longer a
   // placeholder and `messages.ts` owns four `t()` keys the way `sign-in.ts`
   // owns two — so a chunk built before an edit to either compares `hr.json`
   // against output that never saw it, which is the staleness this list refuses.
   // `snapshot.ts` renders nothing and is here for the same reason `client.ts`
   // is: it holds the stable codes the screen imports and logs.
-  join(webRoot, 'src', 'organization', 'snapshot.ts'),
-  join(webRoot, 'src', 'organization', 'messages.ts'),
+  join(webRoot, 'src', 'features', 'organization', 'services', 'snapshot.ts'),
+  join(webRoot, 'src', 'features', 'organization', 'utils', 'messages.ts'),
   // Story 1.4b's module. `logo.ts` renders nothing and is here for the reason
   // `snapshot.ts` is: it holds the stable codes `messages.ts` pairs with keys,
   // and it owns the `accept` hint the screen imports rather than writes — so a
   // chunk built before an edit to it compares `hr.json` against output that
   // never saw the four logo messages.
-  join(webRoot, 'src', 'organization', 'logo.ts'),
+  join(webRoot, 'src', 'features', 'organization', 'services', 'logo.ts'),
   // Story 1.4c's two. `accent.ts` owns five `t()` keys as a return-type union,
   // exactly as `messages.ts` does, AND the Tailwind class literals the tint is
   // made of — so a chunk built before an edit to it compares `hr.json` against
@@ -121,13 +121,13 @@ const SOURCES = [
   // renders `organization.lockup`, and it renders in the chrome as well as on
   // the settings surface, which makes a stale build here wrong on every
   // signed-in screen rather than on one.
-  join(webRoot, 'src', 'organization', 'accent.ts'),
-  join(webRoot, 'src', 'organization', 'lockup.tsx'),
+  join(webRoot, 'src', 'features', 'organization', 'utils', 'accent.ts'),
+  join(webRoot, 'src', 'features', 'organization', 'components', 'lockup.tsx'),
   // The one signed-URL read behind every lockup. It renders nothing and is here
   // for the reason `snapshot.ts` and `client.ts` are: it holds the query key,
   // the cache bound and the stable code both surfaces now depend on, so a chunk
   // built before an edit to it is stale in a way no vocabulary sweep can see.
-  join(webRoot, 'src', 'organization', 'logo-url.ts'),
+  join(webRoot, 'src', 'features', 'organization', 'hooks', 'logo-url.ts'),
   // The navigation chrome, part B. `chrome.tsx` is the only thing in the
   // application that renders a `nav.*` label more than once — every destination
   // appears in the tab bar and in the sidebar — and the eight words are held to
@@ -141,19 +141,19 @@ const SOURCES = [
   // `messages.ts` owns the two `t()` keys those codes resolve to, and `icons.ts`
   // is what pulls `lucide-react` into the bundle — so a chunk built before an
   // edit to any of them is stale in a way the vocabulary sweeps cannot see.
-  join(webRoot, 'src', 'navigation', 'destinations.ts'),
-  join(webRoot, 'src', 'navigation', 'chrome.tsx'),
-  join(webRoot, 'src', 'navigation', 'icons.ts'),
-  join(webRoot, 'src', 'navigation', 'messages.ts'),
-  join(webRoot, 'src', 'navigation', 'role.ts'),
-  join(webRoot, 'src', 'supabase', 'sign-out.ts'),
-  // Story 1.5a's member list. `routes/ljudi.tsx` is already listed above with
+  join(webRoot, 'src', 'features', 'navigation', 'utils', 'destinations.ts'),
+  join(webRoot, 'src', 'features', 'navigation', 'components', 'chrome.tsx'),
+  join(webRoot, 'src', 'features', 'navigation', 'utils', 'icons.ts'),
+  join(webRoot, 'src', 'features', 'navigation', 'utils', 'messages.ts'),
+  join(webRoot, 'src', 'features', 'navigation', 'services', 'role.ts'),
+  join(webRoot, 'src', 'features', 'auth', 'services', 'sign-out.ts'),
+  // Story 1.5a's member list. `pages/ljudi.tsx` is already listed above with
   // the other seven destinations, and it is no longer a placeholder: it renders
   // a table, a search field, a level filter and a refusal, so a chunk built
   // before an edit to it compares `hr.json` against output that never saw any
   // of them.
   //
-  // `members/list.ts` renders nothing and is here for the reason `snapshot.ts`
+  // `features/members/services/list.ts` renders nothing and is here for the reason `snapshot.ts`
   // and `accent.ts` are — and more so than either: it owns the stable codes,
   // AND the two-key refusal mapping, AND the two permission-level labels, AND
   // the three counted filter options, AND the column table whose four `label`
@@ -164,10 +164,10 @@ const SOURCES = [
   // `components/ui/table.tsx` is vendored and text-free, and it is listed for
   // freshness rather than for strings: it is what puts a `<table>` in the graph
   // at all, so a build predating it has no member list to sweep.
-  join(webRoot, 'src', 'members', 'list.ts'),
+  join(webRoot, 'src', 'features', 'members', 'services', 'list.ts'),
   join(webRoot, 'src', 'components', 'ui', 'table.tsx'),
-  // Story 1.5b's three. `members/write.ts` renders nothing and is here for the
-  // reason `members/list.ts` is, and more so: it owns the ELEVEN refusal keys
+  // Story 1.5b's three. `features/members/services/write.ts` renders nothing and is here for the
+  // reason `features/members/services/list.ts` is, and more so: it owns the ELEVEN refusal keys
   // the two forms show, as a return-type union plus one named constant, so a
   // chunk built before an edit to it compares `hr.json` against output that
   // never saw any of them.
@@ -175,33 +175,33 @@ const SOURCES = [
   // The two screens are `.tsx` that render — twelve keys between them — and
   // neither is a destination, so neither is listed anywhere else in this file.
   // A screen absent from this list is a screen the freshness guard cannot see.
-  join(webRoot, 'src', 'members', 'write.ts'),
+  join(webRoot, 'src', 'features', 'members', 'services', 'write.ts'),
   // The wire vocabulary `write.ts` re-exports. It renders nothing and is here
   // for the reason `snapshot.ts` and `client.ts` are: it holds the stable codes
   // the two screens' messages are chosen by, so a chunk built before an edit to
   // it is stale in a way no vocabulary sweep can see.
-  join(webRoot, 'src', 'members', 'wire.ts'),
-  // Member rank. `members/rank.ts` renders nothing and owns the rank labels
+  join(webRoot, 'src', 'features', 'members', 'services', 'wire.ts'),
+  // Member rank. `features/members/utils/rank.ts` renders nothing and owns the rank labels
   // and the setting's two states as return-type unions, so a chunk built
   // before an edit to it is stale in a way no vocabulary sweep can see.
-  join(webRoot, 'src', 'members', 'rank.ts'),
-  // Team position. `members/position.ts` renders nothing and owns the position
+  join(webRoot, 'src', 'features', 'members', 'utils', 'rank.ts'),
+  // Team position. `features/members/utils/position.ts` renders nothing and owns the position
   // labels as a return-type union, for the rank module's reason.
-  join(webRoot, 'src', 'members', 'position.ts'),
-  join(webRoot, 'src', 'routes', 'ljudi.novi.tsx'),
-  join(webRoot, 'src', 'routes', 'ljudi.$id.tsx'),
-  // Story 1.8's two. `teams/roster.ts` renders nothing and owns the five keys
+  join(webRoot, 'src', 'features', 'members', 'utils', 'position.ts'),
+  join(webRoot, 'src', 'pages', 'ljudi.novi.tsx'),
+  join(webRoot, 'src', 'pages', 'ljudi.$id.tsx'),
+  // Story 1.8's two. `features/teams/services/roster.ts` renders nothing and owns the five keys
   // the roster and the Danas line are chosen by, as return-type unions; the
   // roster screen renders four more and is no destination, so it is listed
   // nowhere else in this file. `danas.tsx` is already listed above.
-  join(webRoot, 'src', 'teams', 'roster.ts'),
-  join(webRoot, 'src', 'routes', 'smjene.$id.tsx'),
+  join(webRoot, 'src', 'features', 'teams', 'services', 'roster.ts'),
+  join(webRoot, 'src', 'pages', 'smjene.$id.tsx'),
   // Visual refresh B's layout primitives and the initials module. All five are
   // text-free and here for freshness rather than for strings: they are what
   // every screen's header, the summary row, the badges and the avatar chips
   // are drawn from, so a chunk built before an edit to one is stale on every
   // screen at once.
-  join(webRoot, 'src', 'components', 'initials.ts'),
+  join(webRoot, 'src', 'utils', 'initials.ts'),
   join(webRoot, 'src', 'components', 'ui', 'page-header.tsx'),
   join(webRoot, 'src', 'components', 'ui', 'stat-card.tsx'),
   join(webRoot, 'src', 'components', 'ui', 'badge.tsx'),
@@ -210,55 +210,55 @@ const SOURCES = [
   // freshness reason.
   join(webRoot, 'src', 'components', 'ui', 'notice.tsx'),
   // Story 2.1b's four. The two band screens render and are no destination, so
-  // they are listed nowhere else in this file; the two `@/hour-bands` modules
+  // they are listed nowhere else in this file; the two `@/features/hour-bands` modules
   // own the duration shapes and the refusals as return-type unions, so a chunk
   // built before an edit to either is stale in a way no sweep could see.
   // `pojasi` is deliberately NOT counted in `AUTHORED_VOCABULARY`: it is also
   // the registered route path `/organizacija/satni-pojasi`, which ships as data.
-  join(webRoot, 'src', 'hour-bands', 'list.ts'),
-  join(webRoot, 'src', 'hour-bands', 'write.ts'),
-  join(webRoot, 'src', 'routes', 'organizacija.satni-pojasi.tsx'),
-  join(webRoot, 'src', 'routes', 'organizacija.satni-pojasi.$id.tsx'),
+  join(webRoot, 'src', 'features', 'hour-bands', 'services', 'list.ts'),
+  join(webRoot, 'src', 'features', 'hour-bands', 'services', 'write.ts'),
+  join(webRoot, 'src', 'pages', 'organizacija.satni-pojasi.tsx'),
+  join(webRoot, 'src', 'pages', 'organizacija.satni-pojasi.$id.tsx'),
   // Story 2.2b's four. `postavke-rotacije.tsx` is listed above with the
   // destinations; the edit screen renders and is no destination, and the two
-  // `@/shift-types` modules own the duration shapes, the kinds and the
+  // `@/features/shift-types` modules own the duration shapes, the kinds and the
   // refusals as return-type unions, so a chunk built before an edit to any of
   // them is stale in a way no sweep could see. The ramp module holds the chip
   // classes' slot numbering.
-  join(webRoot, 'src', 'shift-types', 'list.ts'),
-  join(webRoot, 'src', 'shift-types', 'write.ts'),
-  join(webRoot, 'src', 'shift-types', 'ramp.ts'),
-  join(webRoot, 'src', 'routes', 'postavke-rotacije.tipovi-smjena.$id.tsx'),
+  join(webRoot, 'src', 'features', 'shift-types', 'services', 'list.ts'),
+  join(webRoot, 'src', 'features', 'shift-types', 'services', 'write.ts'),
+  join(webRoot, 'src', 'features', 'shift-types', 'utils', 'ramp.ts'),
+  join(webRoot, 'src', 'pages', 'postavke-rotacije.tipovi-smjena.$id.tsx'),
   // Story 2.3b's four. The builder section renders on `postavke-rotacije.tsx`
-  // and is no destination of its own; the three `@/rotation` modules own the
+  // and is no destination of its own; the three `@/features/rotation` modules own the
   // refusals and the read failure as return-type unions and the ramp-chip
   // display rows, so a chunk built before an edit to any of them is stale in a
   // way no sweep could see.
-  join(webRoot, 'src', 'rotation', 'list.ts'),
-  join(webRoot, 'src', 'rotation', 'draft.ts'),
-  join(webRoot, 'src', 'rotation', 'draft-store.ts'),
-  join(webRoot, 'src', 'rotation', 'write.ts'),
-  join(webRoot, 'src', 'rotation', 'rotation-section.tsx'),
+  join(webRoot, 'src', 'features', 'rotation', 'services', 'list.ts'),
+  join(webRoot, 'src', 'features', 'rotation', 'utils', 'draft.ts'),
+  join(webRoot, 'src', 'features', 'rotation', 'hooks', 'draft-store.ts'),
+  join(webRoot, 'src', 'features', 'rotation', 'services', 'write.ts'),
+  join(webRoot, 'src', 'features', 'rotation', 'components', 'rotation-section.tsx'),
   // Story 2.4's phone stepper rules: the step names and Dalje's labels as
   // return-type unions, and the classes that hide a section below `sm`.
-  join(webRoot, 'src', 'rotation', 'stepper.ts'),
+  join(webRoot, 'src', 'features', 'rotation', 'utils', 'stepper.ts'),
   // Story 2.5's warnings: every key they render through, as return-type unions.
-  join(webRoot, 'src', 'rotation', 'warnings.ts'),
+  join(webRoot, 'src', 'features', 'rotation', 'utils', 'warnings.ts'),
   // Story 2.6's history: the statuses and the unknown author, as return-type unions.
-  join(webRoot, 'src', 'rotation', 'history.ts'),
+  join(webRoot, 'src', 'features', 'rotation', 'services', 'history.ts'),
   // Story 3.1's calendar: the read failure as a return-type union, and the
   // month model the grid renders (its names and ranges come through
-  // `@/i18n/format`). `kalendar.tsx` is listed with the destinations above.
-  join(webRoot, 'src', 'calendar', 'snapshot.ts'),
-  join(webRoot, 'src', 'calendar', 'month.ts'),
+  // `@/lib/i18n/format`). `kalendar.tsx` is listed with the destinations above.
+  join(webRoot, 'src', 'features', 'calendar', 'services', 'snapshot.ts'),
+  join(webRoot, 'src', 'features', 'calendar', 'utils', 'month.ts'),
   // Story 3.2b's two: the modifier vocabulary owns the four marks' labels and
   // the no-rotation label as return-type unions and the treatment classes;
   // the grid's keyboard rules render nothing and decide where focus goes.
-  join(webRoot, 'src', 'calendar', 'modifiers.ts'),
-  join(webRoot, 'src', 'calendar', 'grid-keys.ts'),
+  join(webRoot, 'src', 'features', 'calendar', 'utils', 'modifiers.ts'),
+  join(webRoot, 'src', 'features', 'calendar', 'utils', 'grid-keys.ts'),
   // Story 3.4b's day detail model: it renders nothing, and its date and range
-  // come through `@/calendar/month`, its roster order through `@/i18n/format`.
-  join(webRoot, 'src', 'calendar', 'day-detail.ts'),
+  // come through `@/features/calendar/utils/month`, its roster order through `@/lib/i18n/format`.
+  join(webRoot, 'src', 'features', 'calendar', 'utils', 'day-detail.ts'),
   // The owner layout's numbered section badge, a primitive: text-free, here
   // for freshness like the other primitives.
   join(webRoot, 'src', 'components', 'ui', 'section-number.tsx'),
@@ -415,7 +415,7 @@ describe('the shipped bundle carries the localization wiring', () => {
  */
 describe('a rejected initialization does not mount the application', () => {
   /**
-   * POLARITY lives in `apps/web/src/i18n/boot.test.ts`, which executes the
+   * POLARITY lives in `apps/web/src/lib/i18n/boot.test.ts`, which executes the
    * decision — reject, synchronous throw and resolve — because a source-text
    * assertion structurally cannot see which branch renders. That was the
    * MUTATION-PROVEN GAP: rewriting the boot as `try`/`catch` around the render
@@ -437,7 +437,7 @@ describe('a rejected initialization does not mount the application', () => {
     const gate = source.indexOf('await bootLocalization(initLocalization)');
     const mount = source.indexOf('createRoot(');
 
-    expect(gate, 'main.tsx no longer boots through @/i18n/boot').toBeGreaterThan(-1);
+    expect(gate, 'main.tsx no longer boots through @/lib/i18n/boot').toBeGreaterThan(-1);
     expect(mount, 'the mount is not inside the boot gate').toBeGreaterThan(gate);
   });
 
@@ -1102,7 +1102,7 @@ function withoutSearchParameters(chunk: string): string {
 }
 
 function resourceSource(): string {
-  return readFileSync(join(webRoot, 'src', 'i18n', 'locales', 'hr.json'), 'utf8');
+  return readFileSync(join(webRoot, 'src', 'lib', 'i18n', 'locales', 'hr.json'), 'utf8');
 }
 
 describe('the resource file is the only user-facing Croatian in the build', () => {

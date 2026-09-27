@@ -2,7 +2,7 @@ import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 
-import { cn } from "@/components/utils"
+import { cn } from "@/lib/utils"
 
 // Restyled once, here, to DESIGN.md's register (visual refresh A): a 10px
 // radius, semibold labels and a soft primary-tinted lift on hover. Screens size

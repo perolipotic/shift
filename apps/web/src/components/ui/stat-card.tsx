@@ -1,7 +1,7 @@
 import * as React from "react"
 
 import { Card } from "@/components/ui/card"
-import { cn } from "@/components/utils"
+import { cn } from "@/lib/utils"
 
 // A summary figure on a card (visual refresh B): a small label above a large
 // heading-face value in tabular numerals. Two slots and no copy. The screen

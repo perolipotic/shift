@@ -1,6 +1,6 @@
 import * as React from "react"
 
-import { cn } from "@/components/utils"
+import { cn } from "@/lib/utils"
 
 // A summary figure INSIDE a card (design refresh C), where `StatCard` would be
 // a card inside a card: a muted panel with an icon tile, a small label and a

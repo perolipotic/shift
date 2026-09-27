@@ -260,7 +260,7 @@ async function refused(work: () => Promise<unknown>): Promise<Refusal> {
 
 /** The interface's own labels, so the roster line is the one a screen renders. */
 const hr = JSON.parse(
-  readFileSync(join(repoRoot, 'apps', 'web', 'src', 'i18n', 'locales', 'hr.json'), 'utf8'),
+  readFileSync(join(repoRoot, 'apps', 'web', 'src', 'lib', 'i18n', 'locales', 'hr.json'), 'utf8'),
 ) as {
   ljudi: { rank: Record<string, string> };
   smjene: { position: Record<string, string>; roster: Record<string, string> };

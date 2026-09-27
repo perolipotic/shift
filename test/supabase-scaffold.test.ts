@@ -668,7 +668,7 @@ describe('the access-control migration', () => {
       // STORY 1.4c. The accent is writable for the same reason `logo_path` is —
       // it is the organization's own branding — and it is a SEVENTH column
       // rather than a sixth form field, on the same disjoint-write shape:
-      // `@/organization/snapshot` types the accent write apart from the five
+      // `@/features/organization/services/snapshot` types the accent write apart from the five
       // identity fields and from the logo, so none of the three can clobber
       // another. What it holds is a KEY and never a colour; `0006` says why.
       'brand_accent',
@@ -676,7 +676,7 @@ describe('the access-control migration', () => {
       'leave_year_start_month',
       // STORY 1.4b. The logo reference is writable because it is the
       // organization's own pointer at its own object — and it is a SIXTH column
-      // rather than a sixth form field: `@/organization/snapshot` types the
+      // rather than a sixth form field: `@/features/organization/services/snapshot` types the
       // logo write as a shape disjoint from the five, so a save of the identity
       // fields cannot carry it.
       'logo_path',

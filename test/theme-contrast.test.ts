@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { differenceCiede2000, displayable, rgb, wcagContrast, type Color, type Rgb } from 'culori';
 import { describe, expect, it } from 'vitest';
 
-import { NONWORKING_TOKEN, rampSlotOf, rampTokenOf } from '../apps/web/src/shift-types/ramp.ts';
+import { NONWORKING_TOKEN, rampSlotOf, rampTokenOf } from '../apps/web/src/features/shift-types/utils/ramp.ts';
 import { BASE_TOKENS, BRAND_TOKENS, rawToken, readToken, type Theme } from './theme-css.js';
 
 /**
@@ -40,7 +40,7 @@ const THEMES = ['light', 'dark'] as const;
  *
  * Named once and consumed twice below — as measured text pairs, and as the
  * subjects of the separation from `destructive` — so an accent cannot join one
- * sweep without joining the other. `apps/web/src/organization/accent.test.ts`
+ * sweep without joining the other. `apps/web/src/features/organization/utils/accent.test.ts`
  * separately pins this list against the SPA's own set and against `0006`'s
  * check constraint, so the three cannot drift apart.
  */
@@ -792,7 +792,7 @@ describe('no curated accent is mistakable for any other signal either', () => {
    *   - WHAT ACTUALLY KEEPS THEM UNCONFUSABLE IS ROLE, and it is asserted
    *     elsewhere rather than assumed. The accent is a 1px border on the shell
    *     chrome and a fill behind one letter in the lockup;
-   *     `apps/web/src/organization/accent.test.ts` asserts its class literals
+   *     `apps/web/src/features/organization/utils/accent.test.ts` asserts its class literals
    *     name no ramp slot, no modifier and no reserved token at all, so the two
    *     never appear in the same visual role. And the modifiers are never colour
    *     alone: UX-DR8 pairs each with a hatch AND a glyph, and UX-DR37/Q21 make
@@ -907,7 +907,7 @@ describe('the hour band bar flags its uncovered stretch legibly (story 2.1b)', (
 describe('every slot the ramp can return is measured in both themes (story 2.2b, UX-DR3)', () => {
   /**
    * THE PROOF DESIGN.md POINTS AT. A working shift type is drawn in
-   * `shift-slot-${(i mod 6) + 1}` (`apps/web/src/shift-types/ramp.ts`) and a
+   * `shift-slot-${(i mod 6) + 1}` (`apps/web/src/features/shift-types/utils/ramp.ts`) and a
    * non-working one in `shift-nonworking`. The pairs above are measured for a
    * FIXED list; this is what ties that list to the function that actually
    * picks a slot, so a ramp that could reach a seventh slot — `i mod 7` — or a

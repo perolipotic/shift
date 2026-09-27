@@ -10,7 +10,7 @@
  * The client factories are typed as returning `unknown` on purpose: this
  * module still never touches a client itself. What it does now is hand both
  * values to the operation modules, which cast them to their own narrow
- * structural interfaces — the shape `members/list.ts`'s `MembersTable`
+ * structural interfaces — the shape `features/members/services/list.ts`'s `MembersTable`
  * established, and the reason a `.ts` extension appears on the three imports
  * below: Deno requires it, Vitest resolves it, and an extensionless import
  * works in exactly one of the two runtimes.

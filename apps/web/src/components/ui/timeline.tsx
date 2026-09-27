@@ -1,7 +1,7 @@
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 
-import { cn } from "@/components/utils"
+import { cn } from "@/lib/utils"
 
 // A day drawn as one bar (design refresh C): a scale of hours above it, its
 // stretches in the bar, the boundaries between them labelled beneath, and a

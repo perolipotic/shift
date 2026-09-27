@@ -1,6 +1,6 @@
 import * as React from "react"
 
-import { cn } from "@/components/utils"
+import { cn } from "@/lib/utils"
 
 // A section's number beside its card title (story 2.3b, owner layout): a small
 // round badge in the primary tint the icon tile and badge measure, holding one

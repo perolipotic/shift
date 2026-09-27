@@ -28,9 +28,14 @@ useDefault = true
 # ---------------------------------------------------------------------------
 
 [[allowlists]]
-description = "Unit-test fixture: the generated password a mocked admin-auth reply carries (apps/web/src/members/write.test.ts). No account anywhere has it; the function is stubbed."
+description = "Unit-test fixture: the generated password a mocked admin-auth reply carries (apps/web/src/features/members/services/write.test.ts). No account anywhere has it; the function is stubbed."
 condition = "AND"
-paths = ['''^apps/web/src/members/write\.test\.ts$''']
+# Both paths: the fixture moved in the source-structure change, and the
+# full-history scan still reads the commits that hold it at its old path.
+paths = [
+  '''^apps/web/src/features/members/services/write\.test\.ts$''',
+  '''^apps/web/src/members/write\.test\.ts$''',
+]
 regexes = ['''^Xy7kPq2mRt4vLn8s$''']
 
 [[allowlists]]

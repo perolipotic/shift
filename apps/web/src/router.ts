@@ -1,39 +1,39 @@
 import { createRouter } from '@tanstack/react-router';
 
-import { appLayoutRoute } from '@/routes/_app';
-import { danasRoute } from '@/routes/danas';
-import { godisnjiRoute } from '@/routes/godisnji';
-import { indexRoute } from '@/routes/index';
-import { kalendarRoute } from '@/routes/kalendar';
-import { ljudiMemberRoute } from '@/routes/ljudi.$id';
-import { ljudiNoviRoute } from '@/routes/ljudi.novi';
-import { ljudiSmjenaRoute } from '@/routes/ljudi.smjene.$id';
-import { ljudiSmjeneRoute } from '@/routes/ljudi.smjene';
-import { ljudiRoute } from '@/routes/ljudi';
-import { organizacijaRoute } from '@/routes/organizacija';
-import { organizacijaSatniPojasRoute } from '@/routes/organizacija.satni-pojasi.$id';
-import { organizacijaSatniPojasiRoute } from '@/routes/organizacija.satni-pojasi';
-import { postavkeRotacijeRoute } from '@/routes/postavke-rotacije';
-import { postavkeRotacijeTipSmjeneRoute } from '@/routes/postavke-rotacije.tipovi-smjena.$id';
-import { prijavaOrganizacijaRoute } from '@/routes/prijava-organizacija';
-import { prijavaRoute } from '@/routes/prijava';
-import { rasporedRoute } from '@/routes/raspored';
-import { rootRoute } from '@/routes/__root';
-import { satiRoute } from '@/routes/sati';
-import { smjenaRoute } from '@/routes/smjene.$id';
-import { currentMemberRole } from '@/navigation/role';
-import { currentSession } from '@/supabase/client';
+import { appLayoutRoute } from '@/pages/_app';
+import { danasRoute } from '@/pages/danas';
+import { godisnjiRoute } from '@/pages/godisnji';
+import { indexRoute } from '@/pages/index';
+import { kalendarRoute } from '@/pages/kalendar';
+import { ljudiMemberRoute } from '@/pages/ljudi.$id';
+import { ljudiNoviRoute } from '@/pages/ljudi.novi';
+import { ljudiSmjenaRoute } from '@/pages/ljudi.smjene.$id';
+import { ljudiSmjeneRoute } from '@/pages/ljudi.smjene';
+import { ljudiRoute } from '@/pages/ljudi';
+import { organizacijaRoute } from '@/pages/organizacija';
+import { organizacijaSatniPojasRoute } from '@/pages/organizacija.satni-pojasi.$id';
+import { organizacijaSatniPojasiRoute } from '@/pages/organizacija.satni-pojasi';
+import { postavkeRotacijeRoute } from '@/pages/postavke-rotacije';
+import { postavkeRotacijeTipSmjeneRoute } from '@/pages/postavke-rotacije.tipovi-smjena.$id';
+import { prijavaOrganizacijaRoute } from '@/pages/prijava-organizacija';
+import { prijavaRoute } from '@/pages/prijava';
+import { rasporedRoute } from '@/pages/raspored';
+import { rootRoute } from '@/pages/__root';
+import { satiRoute } from '@/pages/sati';
+import { smjenaRoute } from '@/pages/smjene.$id';
+import { currentMemberRole } from '@/features/navigation/services/role';
+import { currentSession } from '@/lib/supabase/client';
 
 /**
  * The eight destinations, all of them nested under the pathless `_app` layout.
  *
  * Nesting is what registers the session guard for every one of them at once
- * (`routes/_app.tsx`): a route added to this array and not to the layout would
+ * (`pages/_app.tsx`): a route added to this array and not to the layout would
  * be a destination a signed-out visitor reaches, and the guard is not something
  * eight files should each be trusted to remember.
  *
  * Order here is registration, not navigation. What a member or an admin sees,
- * and in which order, is `@/navigation/destinations` — data a test executes
+ * and in which order, is `@/features/navigation/utils/destinations` — data a test executes
  * rather than a shape a reader infers from an array in a wiring module.
  */
 const appDestinations = appLayoutRoute.addChildren([
@@ -46,7 +46,7 @@ const appDestinations = appLayoutRoute.addChildren([
   // TWO ROUTES THAT ARE NOT DESTINATIONS (story 1.5b). `/ljudi/novi` and
   // `/ljudi/$id` nest under the same layout — so the session guard covers them
   // exactly as it covers the eight — and they are deliberately absent from
-  // `@/navigation/destinations`: the chrome offers places, and these two are
+  // `@/features/navigation/utils/destinations`: the chrome offers places, and these two are
   // reached from the member list rather than from the navigation. Each carries
   // its own role guard, because the layout's is session-only and both screens
   // write the data `/ljudi` guards the reading of.
@@ -85,7 +85,7 @@ const appDestinations = appLayoutRoute.addChildren([
  * `/` and both sign-in routes stay OUTSIDE the layout, deliberately.
  *
  * All three are reachable signed out, and `/` carries its own guard already
- * (`routes/index.tsx`). Nesting them would change their match chains and force
+ * (`pages/index.tsx`). Nesting them would change their match chains and force
  * `router.test.ts`'s deployed-root block to be re-derived against a layout for
  * no behaviour this story gains — so all three staying flat here is the evidence
  * that the scope boundary held.
@@ -115,7 +115,7 @@ const routeTree = rootRoute.addChildren([
  * here is executed by no test at all: `router.test.ts` supplies its own context
  * and never touches this one, so `async () => null` in this position kept the
  * entire suite green while every signed-in visitor bounced endlessly between
- * `/` and `/prijava`. `@/supabase/client` builds it from an injected source and
+ * `/` and `/prijava`. `@/lib/supabase/client` builds it from an injected source and
  * asserts the behaviour; this file only has to name it, and `router.test.ts`
  * pins that naming by identity.
  *

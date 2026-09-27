@@ -39,16 +39,17 @@ const RULE = 'no-restricted-syntax';
  * `.tsx` paths under `apps/web` — the only scope the rule covers. The files need
  * not exist; `lintText` lints the string and uses the path to pick the config.
  *
- * THREE paths, not one, and that matters. Every positive assertion here first
- * ran only under `surfaces/`, which today holds nothing but a README — so
- * narrowing the rule to `apps/web/src/surfaces/**\/*.tsx` kept all fourteen
+ * FOUR paths, not one, and that matters. Every positive assertion here first
+ * ran only under a folder that held nothing but a README (the former
+ * `surfaces/`) — so narrowing the rule to that folder kept all fourteen
  * tests green while a literal in a real screen stopped being refused. The rule
  * has to be proved where components actually live.
  */
 const WEB_PROBES = [
-  `${repoRoot}apps/web/src/surfaces/synthetic-probe.tsx`,
-  `${repoRoot}apps/web/src/routes/synthetic-probe.tsx`,
+  `${repoRoot}apps/web/src/features/navigation/components/synthetic-probe.tsx`,
+  `${repoRoot}apps/web/src/pages/synthetic-probe.tsx`,
   `${repoRoot}apps/web/src/components/synthetic-probe.tsx`,
+  `${repoRoot}apps/web/src/components/layout/synthetic-probe.tsx`,
 ];
 const WEB_TSX = WEB_PROBES[0] ?? '';
 /** The same content in the same syntax, outside the rule's file scope. `.tsx`
@@ -107,7 +108,7 @@ const translatedComputedKey = (a: string, b: string): string => `{t(cond ? '${a}
 const component = (body: string): string => `export function Probe() {\n  return ${body};\n}\n`;
 const fragment = (body: string): string => `(<>${body}</>)`;
 /** A compliant probe imports `t` the way a real screen does. */
-const translated = (body: string): string => `import { t } from '@/i18n';\n\n${body}`;
+const translated = (body: string): string => `import { t } from '@/lib/i18n';\n\n${body}`;
 
 /** Croatian words a real surface would want, so the cases read like the
  *  mistake they model. */
@@ -326,7 +327,7 @@ describe('the L2 guard fires on a user-facing literal in a component', () => {
     const { messages } = await report(component(open('p') + DANAS + close('p')));
 
     expect(messages.join('\n')).toContain('L2');
-    expect(messages.join('\n')).toContain('apps/web/src/i18n/locales/hr.json');
+    expect(messages.join('\n')).toContain('apps/web/src/lib/i18n/locales/hr.json');
   });
 });
 
@@ -340,13 +341,13 @@ const COMPLIANT: { name: string; source: string }[] = [
   {
     name: 'text resolved through t()',
     source:
-      `import { t } from '@/i18n';\n\n` +
+      `import { t } from '@/lib/i18n';\n\n` +
       component(`${open('p')}{t('count.days', { count: 2 })}${close('p')}`),
   },
   {
     name: 'an aria-label resolved through t()',
     source:
-      `import { t } from '@/i18n';\n\n` +
+      `import { t } from '@/lib/i18n';\n\n` +
       component(selfClosing('button', ` aria-label={t('count.days', { count: 1 })}`)),
   },
   {
@@ -501,7 +502,7 @@ describe('the L2 guard stays silent on compliant markup', () => {
 });
 
 describe('the branch selectors refuse the literal and accept the fix', () => {
-  // Across all three probe paths, like the violations: narrowing the rule to
+  // Across all four probe paths, like the violations: narrowing the rule to
   // one directory once kept every positive assertion green while a literal in
   // a real screen stopped being refused, and the same trap applies to a
   // false-positive assertion that only ever ran under `surfaces/`.

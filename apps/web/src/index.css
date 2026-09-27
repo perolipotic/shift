@@ -429,7 +429,7 @@
   );
 }
 
-/* STORY 3.2b: the calendar's modifier treatments (`@/calendar/modifiers`),
+/* STORY 3.2b: the calendar's modifier treatments (`@/features/calendar/utils/modifiers`),
  * which compose on any cell. Drawn from the existing `--destructive` and
  * `--modifier-*` tokens, redefined per theme above, so no new token exists and
  * each treatment follows the theme.

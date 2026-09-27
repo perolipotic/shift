@@ -455,7 +455,7 @@ verifies the outcome rather than the intent.
 #### 5.2c The SPA and the schema: order matters, in one direction only
 
 The same shape as §5.2b, one layer up, and it became an application-wide risk in
-story 1.4c. `apps/web/src/organization/snapshot.ts` names every column it reads
+story 1.4c. `apps/web/src/features/organization/services/snapshot.ts` names every column it reads
 in one constant, and the navigation chrome reads that row on **every signed-in
 screen** to draw the organization's lockup and its accent. So a build that
 selects a column the database does not have yet does not degrade — PostgREST

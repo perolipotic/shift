@@ -22,7 +22,7 @@ import {
   TEAM_HISTORY,
   TEAM_HISTORY_ANSWERS,
   TEAM_HISTORY_SPAN,
-} from '../apps/web/src/members/team-history.fixture.ts';
+} from '../apps/web/src/features/members/team-history.fixture.ts';
 import {
   PILOT_HOUR_BANDS,
   PILOT_ROTATION_ASSIGNMENTS,
@@ -397,7 +397,7 @@ interface RestCall {
   /**
    * PostgREST's `Prefer` header, for the one case that needs `count=exact`.
    *
-   * Story 1.5a: `apps/web/src/members/list.ts` asks for an exact count and
+   * Story 1.5a: `apps/web/src/features/members/services/list.ts` asks for an exact count and
    * refuses an answer shorter than it claims, so the whole truncation defence
    * rests on PostgREST actually reporting one. supabase-js sends this header for
    * `select(columns, { count: 'exact' })`, and this is what lets a case here ask
@@ -2242,7 +2242,7 @@ describe('organizations admits exactly one write path, and it is the settings su
         // it sorts first because the set is compared in column order. Writable
         // for the same reason: it is the organization's own branding. What
         // stops the settings FORM from sending it is a TYPE rather than a
-        // privilege (`@/organization/snapshot` makes the accent a shape
+        // privilege (`@/features/organization/services/snapshot` makes the accent a shape
         // disjoint from the five fields and from the logo), and what stops it
         // holding a value this build cannot render is `0006`'s check constraint
         // rather than either.
@@ -2256,7 +2256,7 @@ describe('organizations admits exactly one write path, and it is the settings su
         //
         // Writable, and rightly: it is the organization's own pointer at its own
         // object. What stops the settings form from sending it is not a
-        // privilege but a TYPE — `@/organization/snapshot` makes the logo write
+        // privilege but a TYPE — `@/features/organization/services/snapshot` makes the logo write
         // a shape disjoint from the five fields — so a save of the identity
         // fields cannot carry a stale path over a logo uploaded seconds earlier.
         'logo_path',
@@ -2642,7 +2642,7 @@ describe('a direct API call edits an organization under exactly the same rules',
 
         expect(response.status, 'a check violation reaches the caller as an error').toBe(400);
         expect(refusal.code, 'a check violation is 23514').toBe('23514');
-        // The constant `@/organization/snapshot` reads to tell this refusal from
+        // The constant `@/features/organization/services/snapshot` reads to tell this refusal from
         // every other check on the table. Asserted against the live database, so
         // a constraint renamed by a later migration fails here rather than
         // silently turning a named field into a general message.
@@ -2870,7 +2870,7 @@ describe('the brand accent is an admin’s own to set and nobody else’s', () =
     // The set, read off the RUNNING database rather than off the migration
     // text, which is the only place the constraint is a single fact — a later
     // migration dropping and re-adding it with a fifth value would leave `0006`
-    // reading exactly as it does today. `apps/web/src/organization/accent.test.ts`
+    // reading exactly as it does today. `apps/web/src/features/organization/utils/accent.test.ts`
     // compares the SPA's set to the migration; this is what pins the migration
     // to what actually shipped.
     return inRolledBackTransaction(async (client) => {
@@ -3185,7 +3185,7 @@ describe('a branding asset is readable only within the organization that owns it
     'refuses the $fixture admin a file over the bucket size bound, at the bucket',
     async ({ slug, admin }) => {
       // MATRIX ROW 3, proved against the ENFORCEMENT POINT rather than against a
-      // stub body. `@/organization/logo` also refuses an oversized file before
+      // stub body. `@/features/organization/services/logo` also refuses an oversized file before
       // it sends it, which is a courtesy and not a gate: AD-9 leaves no server
       // tier, so the only thing standing between a 50 MB upload and the bucket
       // is `file_size_limit`, and reading the column out of `storage.buckets`
@@ -3820,7 +3820,7 @@ describe('the member list is one organization own list, at the scale Q20 names',
    *  (`ARCHITECTURE-SPINE.md:337`). */
   const READ_BUDGET_MS = 2000;
 
-  /** The columns `apps/web/src/members/list.ts` selects, written out here
+  /** The columns `apps/web/src/features/members/services/list.ts` selects, written out here
    *  rather than imported: this file asserts what the DATABASE does, and
    *  reading the list from the client would let a renamed column agree with
    *  itself on both sides while every existing read broke. */
@@ -4027,7 +4027,7 @@ describe('the member list is one organization own list, at the scale Q20 names',
     async ({ slug, admin, member }) => {
       // STORY 1.6's TWO EMBEDS, as the database shapes them. `organizations`
       // is a to-one relation and must arrive as an OBJECT; the versions are
-      // to-many and must arrive as an ARRAY the reader can see. `members/list.ts`
+      // to-many and must arrive as an ARRAY the reader can see. `features/members/services/list.ts`
       // refuses a row carrying either the other way round, so a shape nobody
       // sent live is a list that renders "malformed" in production.
       const client = await connect();
@@ -4122,7 +4122,7 @@ describe('the member list is one organization own list, at the scale Q20 names',
         // EXACTLY the seeded members plus the ones this block created. Not
         // "at least": a read that silently truncated at `max_rows` would
         // satisfy a lower bound, and truncation is precisely what
-        // `members/list.ts` refuses on the client.
+        // `features/members/services/list.ts` refuses on the client.
         expect(rows, 'the scale read did not return every member of the organization').toHaveLength(
           seeded.length + SCALE,
         );
@@ -4147,7 +4147,7 @@ describe('the member list is one organization own list, at the scale Q20 names',
         ).toHaveLength(otherBefore.length);
 
         // THE EXACT COUNT, OBSERVED RATHER THAN ASSUMED, and this is the one
-        // place it can be. `members/list.ts` refuses a truncated answer by
+        // place it can be. `features/members/services/list.ts` refuses a truncated answer by
         // comparing the rows it received against the count the transport
         // reported — and it FAILS OPEN when that count is `null`, which is the
         // right call for a header a proxy might strip but useless as a defence
@@ -8019,7 +8019,7 @@ describe('an admin moves a member between teams from a date, and the table only 
     'reads a $fixture member\'s team on every date exactly as the member list derives it',
     async ({ slug, admin }) => {
       // AC 2: `member_team_on` over THE SAME history and written-out answers
-      // `apps/web/src/members/list.test.ts` asserts `memberTeamOn` against, so
+      // `apps/web/src/features/members/services/list.test.ts` asserts `memberTeamOn` against, so
       // the two readings agree on every date rather than each on its own.
       await inRolledBackTransaction(async (client) => {
         const caller = await memberByUsername(client, slug, admin);
@@ -8876,7 +8876,7 @@ describe('a direct API call moves members between teams under exactly the same r
         });
         expect(written.status, `the assignment was refused: ${await written.clone().text()}`).toBe(201);
 
-        // THE SELECT `members/list.ts` SENDS, embeds included, as both levels.
+        // THE SELECT `features/members/services/list.ts` SENDS, embeds included, as both levels.
         const columns =
           'organization_id,id,auth_user_id,name,username,email,role,leave_allowance_days,' +
           'member_status_versions(active,effective_from),' +
@@ -8907,7 +8907,7 @@ describe('a direct API call moves members between teams under exactly the same r
   it.skipIf(noApi).each(FIXTURES)(
     'still embeds an archived team\'s name in the $fixture shipped list read for the admin, and none to a member',
     async ({ slug, admin, member }) => {
-      // R7.6: an archived team stays readable. `members/list.ts` refuses a whole
+      // R7.6: an archived team stays readable. `features/members/services/list.ts` refuses a whole
       // row whose version names a team with no embedded name, so a past version
       // on an archived team that the embed could not see would make the member
       // unlistable.
@@ -9066,7 +9066,7 @@ describe('a direct API call moves members between teams under exactly the same r
   it.skipIf(noApi).each(FIXTURES)(
     'refuses the $fixture admin archiving a team in use over PostgREST as 42501, row unchanged',
     async ({ slug, admin }) => {
-      // THE REFUSAL `teams/write.ts` MAPS TO `TEAM_IN_USE`: WITH CHECK failing
+      // THE REFUSAL `features/teams/services/write.ts` MAPS TO `TEAM_IN_USE`: WITH CHECK failing
       // raises 42501 — unlike a USING miss, which matches no row silently.
       const client = await connect();
       try {
@@ -9458,9 +9458,9 @@ describe('a member sees who is on a team, and nothing more about a colleague', (
     'hands a $fixture member-role session its own row with the team embed Danas reads',
     async ({ slug, admin, member }) => {
       // STORY 1.8. Danas derives the caller's team from its own row, read with
-      // `OWN_TEAM_COLUMNS`. Restated rather than imported: `@/teams/roster`
-      // reaches `@/i18n` through a path alias the root project cannot resolve.
-      // `apps/web/src/teams/roster.test.ts` pins the constant to this literal.
+      // `OWN_TEAM_COLUMNS`. Restated rather than imported: `@/features/teams/services/roster`
+      // reaches `@/lib/i18n` through a path alias the root project cannot resolve.
+      // `apps/web/src/features/teams/services/roster.test.ts` pins the constant to this literal.
       const OWN_TEAM_COLUMNS =
         'team_membership_versions(team_id,position,effective_from,teams(name)),organizations(timezone)';
       const client = await connect();
@@ -10783,7 +10783,7 @@ describe('an admin creates, renames, moves and deletes hour bands, and any count
 
         expect(refusal.code, 'a duplicate start is a unique violation').toBe('23505');
         expect(moveRefusal.code, 'moving onto a taken start is a unique violation').toBe('23505');
-        // STORY 2.1b. The constraint `@/hour-bands/write` reads to tell a taken
+        // STORY 2.1b. The constraint `@/features/hour-bands/services/write` reads to tell a taken
         // start from a taken name — both are 23505 — asserted against the live
         // database, as `organizations_name_check` is, so a rename fails here.
         for (const named of [refusal, moveRefusal]) {
@@ -10803,7 +10803,7 @@ describe('an admin creates, renames, moves and deletes hour bands, and any count
         const caller = await memberByUsername(client, slug, admin);
         await actAs(client, caller.authUserId, caller.organizationId);
 
-        // STORY 2.1b: each with the constraint `@/hour-bands/write` reads, since
+        // STORY 2.1b: each with the constraint `@/features/hour-bands/services/write` reads, since
         // three checks share 23514.
         for (const [start, constraint] of [
           ['24:00', 'hour_bands_start_before_midnight'],
@@ -10843,7 +10843,7 @@ describe('an admin creates, renames, moves and deletes hour bands, and any count
 
         expect(duplicate.code, 'a duplicate name is a unique violation').toBe('23505');
         expect(blank.code, 'a blank name is a check violation').toBe('23514');
-        // STORY 2.1b: the constraint names `@/hour-bands/write` reads.
+        // STORY 2.1b: the constraint names `@/features/hour-bands/services/write` reads.
         expect(duplicate.message, 'the refusal does not name the name index').toContain(
           'hour_bands_organization_name_key',
         );
@@ -11006,7 +11006,7 @@ describe('a direct API call writes hour bands under exactly the same rules', () 
         const duplicateRefusal = await restRefusal(duplicate);
         expect(duplicateRefusal.code).toBe('23505');
         // STORY 2.1b: PostgREST carries the constraint in `message`, which is
-        // where `@/hour-bands/write` reads it.
+        // where `@/features/hour-bands/services/write` reads it.
         expect(duplicateRefusal.message).toContain('hour_bands_organization_id_start_time_key');
 
         // Both fixtures seed a band named `Noć`: a padded, lowercased twin.
@@ -11084,7 +11084,7 @@ describe('a direct API call writes hour bands under exactly the same rules', () 
       const client = await connect();
       try {
         const own = await organizationId(client, slug);
-        // STORY 2.1b: each attempt names the constraint `@/hour-bands/write`
+        // STORY 2.1b: each attempt names the constraint `@/features/hour-bands/services/write`
         // reads, since all three share 23514.
         const attempts = [
           {

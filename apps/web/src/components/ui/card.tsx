@@ -1,7 +1,7 @@
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 
-import { cn } from "@/components/utils"
+import { cn } from "@/lib/utils"
 
 // Restyled once, here, to DESIGN.md's register (visual refresh A): a 12px
 // radius, a 1px border and the soft `sh` elevation, with a divider under the
