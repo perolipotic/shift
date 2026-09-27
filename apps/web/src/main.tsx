@@ -1,12 +1,10 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { RouterProvider } from '@tanstack/react-router';
+import { QueryClient } from '@tanstack/react-query';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { I18nextProvider } from 'react-i18next';
 
-import { i18n, initLocalization } from '@/lib/i18n';
+import { App } from '@/App';
+import { initLocalization } from '@/lib/i18n';
 import { bootLocalization } from '@/lib/i18n/boot';
-import { router } from '@/router';
 
 import '@/index.css';
 
@@ -18,10 +16,11 @@ if (rootElement === null) {
 }
 
 // The one query cache (story 1.4a, AD-13). Built here rather than at the seam
-// that uses it, for the reason exactly one Supabase client is built: a second
-// cache is a second set of query keys, and two caches holding `['organization']`
-// is the stale-total-beside-a-fresh-one failure AD-13 exists to prevent — with
-// the added twist that neither one looks wrong on its own.
+// that uses it (`App.tsx` receives it and holds the providers), for the
+// reason exactly one Supabase client is built: a second cache is a second set
+// of query keys, and two caches holding `['organization']` is the
+// stale-total-beside-a-fresh-one failure AD-13 exists to prevent — with the
+// added twist that neither one looks wrong on its own.
 //
 // No client defaults. The caching and the refetch on focus and on reconnect
 // are what a settings surface wants, and TanStack's `retry: 3` is left as it
@@ -55,15 +54,7 @@ const queryClient = new QueryClient();
 if (await bootLocalization(initLocalization)) {
   createRoot(rootElement).render(
     <StrictMode>
-      <I18nextProvider i18n={i18n}>
-        {/* INSIDE the localization provider and OUTSIDE the router: a query
-            hook is called from a route component, so the cache has to be an
-            ancestor of `RouterProvider` or `useQuery` throws at first render on
-            the one screen that reads data. */}
-        <QueryClientProvider client={queryClient}>
-          <RouterProvider router={router} />
-        </QueryClientProvider>
-      </I18nextProvider>
+      <App queryClient={queryClient} />
     </StrictMode>,
   );
 }

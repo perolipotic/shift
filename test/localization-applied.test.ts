@@ -29,7 +29,9 @@ import {
  *
  * This is the assertion whose absence let the layer ship unreachable. Code
  * review deleted `await initLocalization()`, the `<I18nextProvider>` wrapper
- * and both imports from `main.tsx`, and the result built clean, linted clean,
+ * and both imports from `main.tsx` (the wrapper and the `i18n` import live in
+ * `App.tsx` since source structure A2a; the boot gate and its imports stay in
+ * `main.tsx`), and the result built clean, linted clean,
  * type-checked clean and passed all 648 tests — because every localization
  * assertion in the suite imports `t` and the formatters DIRECTLY, and none of
  * them cares whether the application ever calls them. That is exactly the shape
@@ -331,6 +333,8 @@ const CALENDAR_SOURCES_REQUIRED = [
 const SOURCES = [
   join(webRoot, 'index.html'),
   join(webRoot, 'src', 'main.tsx'),
+  // The providers `main.tsx` mounts, `I18nextProvider` among them (A2a).
+  join(webRoot, 'src', 'App.tsx'),
   join(webRoot, 'src', 'lib', 'i18n', 'index.ts'),
   join(webRoot, 'src', 'lib', 'i18n', 'boot.ts'),
   join(webRoot, 'src', 'lib', 'i18n', 'format.ts'),
@@ -596,7 +600,7 @@ function allChunks(): string {
  *
  * `pnpm test` does not build (`package.json`: `pnpm -r test && vitest run`, no
  * `pretest`), `dist/` is gitignored, and there is no CI — so without this, a
- * `dist` produced before the last edit to `main.tsx` satisfies every assertion
+ * `dist` produced before the last edit to `main.tsx` or `App.tsx` satisfies every assertion
  * below and the wiring could be deleted without a single test noticing.
  *
  * This FAILS rather than skips, because a stale build is a wrong answer while an
@@ -816,8 +820,8 @@ describe('a rejected initialization does not mount the application', () => {
    * mounted the application on a failed init with 900 tests green.
    *
    * What is left here is the two claims that test cannot make: that `main.tsx`
-   * still routes the decision through that module rather than deciding again
-   * inline, and that the module reached the shipped chunk at all.
+   * (the boot, not `App.tsx`, which only holds the providers) still routes the
+   * decision through that module rather than deciding again inline, and that the module reached the shipped chunk at all.
    */
   const main = (): string =>
     readFileSync(join(webRoot, 'src', 'main.tsx'), 'utf8')
