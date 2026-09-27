@@ -372,8 +372,9 @@ describe('the access-control migration', () => {
       'rotation_steps_insert_by_own_active_admin',
       'rotation_steps_select_own_organization',
       // STORY 3.5a, and TWO: read and insert, both an active admin's alone. No
-      // update and no delete policy: removing an override is story 3.5b's, and
-      // members read the live rows through `calendar_shift_type_overrides()`.
+      // update and no delete policy: story 3.5b removes an override through
+      // 0021's definer `remove_shift_type_override()`, and members read the
+      // live rows through `calendar_shift_type_overrides()`.
       'shift_type_overrides_insert_by_own_active_admin',
       'shift_type_overrides_select_by_own_active_admin',
       // STORY 2.2a, and THREE for the reason the membership table has three:
@@ -1732,7 +1733,7 @@ describe('the access-control migration', () => {
     for (const verb of ['update', 'delete', 'all']) {
       expect(
         policies.filter((declaration) => new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration)),
-        `a policy opens ${verb} on shift_type_overrides; removal is story 3.5b's`,
+        `a policy opens ${verb} on shift_type_overrides; removal is 0021's definer function alone (story 3.5b)`,
       ).toEqual([]);
     }
     for (const name of [
@@ -1802,6 +1803,46 @@ describe('the access-control migration', () => {
     expect(migration, 'story 3.5a takes no trigger').not.toMatch(/create (or replace )?trigger/i);
     expect(migration, 'story 3.5a writes or refers to a rotation row').not.toMatch(/rotation_/);
     expect((migration.match(/create function/gi) ?? []).length, 'story 3.5a takes no RPC besides its read').toBe(1);
+  });
+
+  it('removes an override through one definer function that attributes the removal itself (story 3.5b)', () => {
+    const statements = migrationStatements();
+    const remove = /create function public\.remove_shift_type_override\(p_override_id uuid\)[\s\S]*?\$\$;/i.exec(
+      statements,
+    )?.[0];
+    expect(remove, 'remove_shift_type_override is not declared').toBeDefined();
+    expect(remove).toMatch(/returns void/i);
+    expect(remove).toMatch(/language plpgsql/i);
+    expect(remove).toMatch(/security definer/i);
+    expect(remove).toMatch(/set search_path = ''/);
+    expect(remove, 'the removal lost the claim pin').toMatch(
+      /nullif\(\(\(select auth\.jwt\(\)\) ->> 'organization_id'\), ''\)::uuid/,
+    );
+    expect(remove, 'the removal admits a caller who is no active admin').toMatch(
+      /from public\.current_member_access\(\) as access\s+where access\.organization_id = claimed\s+and access\.is_active\s+and access\.member_role = 'admin'/,
+    );
+    expect(remove, 'a refusal of the caller is not 42501').toMatch(/errcode = 'insufficient_privilege'/);
+    expect(remove, 'a missing live row is not P0002').toMatch(/errcode = 'no_data_found'/);
+    expect(remove, 'the removal is not attributed on the server').toMatch(
+      /set removed_by = auth\.uid\(\),\s+removed_at = now\(\)/,
+    );
+    expect(remove, 'the removal reaches a removed row or another tenant').toMatch(
+      /where o\.id = p_override_id\s+and o\.organization_id = claimed\s+and o\.removed_at is null/,
+    );
+    expect(remove, 'the removal hard-deletes').not.toMatch(/\bdelete\b/i);
+    for (const role of ['public', 'anon', 'service_role']) {
+      expect(statements).toContain(`revoke execute on function public.remove_shift_type_override(uuid) from ${role};`);
+    }
+    expect(statements).toContain('grant execute on function public.remove_shift_type_override(uuid) to authenticated;');
+    const migration = readFileSync(
+      join(supabaseRoot, 'migrations', '0021_remove_shift_type_override.sql'),
+      'utf8',
+    ).replaceAll(/--[^\n]*/g, '');
+    expect(migration, 'story 3.5b takes no trigger').not.toMatch(/create (or replace )?trigger/i);
+    expect(migration, 'story 3.5b writes or refers to a rotation row').not.toMatch(/rotation_/);
+    expect(migration, 'story 3.5b changes a policy').not.toMatch(/\b(create|alter|drop) policy\b/i);
+    expect(migration, 'story 3.5b grants on a table').not.toMatch(/\bon table\b/i);
+    expect((migration.match(/create function/gi) ?? []).length, 'story 3.5b takes one function').toBe(1);
   });
 
   it('keeps a team name unique among active teams only, and never blank', () => {

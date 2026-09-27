@@ -146,7 +146,7 @@ export const FEATURE_PUBLIC = {
   teams: [
     'services/list', // calendar, members, rotation, pages
     'services/roster', // pages
-    'services/write', // hour-bands, rotation, shift-types, pages
+    'services/write', // calendar, hour-bands, rotation, shift-types, pages
   ],
 };
 

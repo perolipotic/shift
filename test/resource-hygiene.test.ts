@@ -934,6 +934,26 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.detail.override.unknownAuthor',
   'kalendar.detail.override.savedAt',
   'kalendar.detail.override.reason',
+  // STORY 3.5b: the admin's override form in the day detail — its heading,
+  // the type and reason fields, save and saving; the removal's action, its
+  // neutral confirmation (naming the team, the date and the projected type
+  // restored), confirm, cancel and removing; and the six refusals.
+  'kalendar.detail.override.set.heading',
+  'kalendar.detail.override.set.type',
+  'kalendar.detail.override.set.reason',
+  'kalendar.detail.override.set.save',
+  'kalendar.detail.override.set.saving',
+  'kalendar.detail.override.remove.action',
+  'kalendar.detail.override.remove.prompt',
+  'kalendar.detail.override.remove.confirm',
+  'kalendar.detail.override.remove.cancel',
+  'kalendar.detail.override.remove.removing',
+  'kalendar.detail.override.refused.reason',
+  'kalendar.detail.override.refused.sameAsProjected',
+  'kalendar.detail.override.refused.taken',
+  'kalendar.detail.override.refused.gone',
+  'kalendar.detail.override.refused.denied',
+  'kalendar.detail.override.refused.failed',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
@@ -997,6 +1017,15 @@ const ROTATION_BUILDER_NAMESPACE = 'rotation.builder.';
 const CALENDAR_NAMESPACE = 'kalendar.';
 
 /**
+ * The day detail's override copy (story 3.5b), inside the calendar's
+ * namespace: the admin changes a team's SHIFT TYPE there, so it says the term
+ * — `Tip smjene` is the form's field — and, as in
+ * {@link SHIFT_TYPE_NAMESPACE}, says `smjen` only inside it. The team is named
+ * by its own name through `{team}`, never by the word.
+ */
+const CALENDAR_OVERRIDE_NAMESPACE = 'kalendar.detail.override.';
+
+/**
  * `Tip smjene` in the inflections of `tip` the copy can use — tip, tipa, tipu,
  * tipom, tipovi, tipova, tipove, tipovima — and no other word starting `tip`
  * (`tipka smjene`, `tipično smjena` are not the term).
@@ -1013,7 +1042,7 @@ const SHIFT_TYPE_TERM = /(?<![\p{L}\p{N}])tip(?:a|u|om|ovi|ova|ove|ovima)?\s+smj
 function teamTermOutOfTurn(key: string, message: string): boolean {
   const lowered = message.toLowerCase();
 
-  if (key.startsWith(SHIFT_TYPE_NAMESPACE)) {
+  if (key.startsWith(SHIFT_TYPE_NAMESPACE) || key.startsWith(CALENDAR_OVERRIDE_NAMESPACE)) {
     return lowered.replace(SHIFT_TYPE_TERM, '').includes('smjen');
   }
 
@@ -1156,6 +1185,10 @@ describe('the messages obey the voice rules that bind every string', () => {
     //
     // AMENDED BY STORY 3.1: `kalendar` has a column per team, and says the
     // Team the same way, never the Shift Type.
+    //
+    // AMENDED BY STORY 3.5b, and narrow: `kalendar.detail.override` changes a
+    // team's Shift Type, so there — and only there in `kalendar` — the term
+    // `tip… smjen…` is admitted, and `smjen` only inside it.
     const found = leafKeys(resource())
       .map((key) => ({ key, message: String(messageAt(key)) }))
       .filter(({ key, message }) => teamTermOutOfTurn(key, message));
@@ -1365,6 +1398,13 @@ describe('the detector reads the file it thinks it does', () => {
     expect(teamTermOutOfTurn('rotation.builder.offsetsHeading', 'Smjene i pomaci')).toBe(false);
     expect(teamTermOutOfTurn('rotation.builder.offsetOf', 'Pomak smjene {name}')).toBe(false);
     expect(teamTermOutOfTurn('rotation.builder.patternLede', 'Isti tip smjene može se ponoviti.')).toBe(true);
+    // STORY 3.5b: the day detail's override copy says the Shift Type, and
+    // `smjen` only inside the term; the rest of `kalendar` still never does.
+    expect(teamTermOutOfTurn('kalendar.detail.override.set.type', 'Tip smjene')).toBe(false);
+    expect(teamTermOutOfTurn('kalendar.detail.override.set.heading', 'Promijeni tip smjene')).toBe(false);
+    expect(teamTermOutOfTurn('kalendar.detail.override.remove.prompt', 'Ukloniti izmjenu smjene A?')).toBe(true);
+    expect(teamTermOutOfTurn('kalendar.detail.title', 'Tip smjene')).toBe(true);
+    expect(teamTermOutOfTurn('kalendar.detail.off', 'Smjena taj dan ne radi.')).toBe(false);
     expect(teamTermOutOfTurn('rotation.builder.patternLede', 'Tipovi smjena')).toBe(true);
     expect(teamTermOutOfTurn('rotation.builder.patternLede', 'Isti tip može se ponoviti.')).toBe(false);
     expect(teamTermOutOfTurn('rotation.builderx.heading', 'Smjena')).toBe(true);

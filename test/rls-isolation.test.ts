@@ -1089,7 +1089,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'rotation_steps_select_own_organization',
         // STORY 3.5a: read and insert alone, and both an active admin's only;
         // members read the live rows through `calendar_shift_type_overrides`.
-        // No update and no delete: removal is story 3.5b's.
+        // No update and no delete: story 3.5b removes through 0021's definer.
         'shift_type_overrides_insert_by_own_active_admin',
         'shift_type_overrides_select_by_own_active_admin',
         // STORY 2.2a: the membership table's three on the times versions — a
@@ -1131,6 +1131,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
               'member_team_on',
               'member_team_version_on',
               'organization_today',
+              'remove_shift_type_override',
               'rotation_assignment_latest_version',
               'rotation_assignment_on',
               'rotation_pattern_in_use',
@@ -1164,6 +1165,9 @@ describe('the access-control layer is present, so nothing below passes vacuously
         // changes-the-value rule and the roster.
         'member_team_version_on',
         'organization_today',
+        // STORY 3.5b: the one function that writes — an active admin's
+        // attributed soft-remove of a live override.
+        'remove_shift_type_override',
         // STORY 2.3a: the three readers the rotation policies call.
         'rotation_assignment_latest_version',
         'rotation_assignment_on',
@@ -14110,7 +14114,8 @@ describe('a shift-type override is recorded by an admin alone and read by every 
         await actAsOwner(client);
         expect(duplicate.code, `${slug}: two live overrides on one team and date`).toBe('23505');
 
-        // A removal is 3.5b's to write; here the owner records one.
+        // Here the owner records the removal directly; 3.5b's definer
+        // function is exercised in the story 3.5b block below.
         await client.query('update shift_type_overrides set removed_by = $2, removed_at = now() where id = $1', [
           first,
           owner.authUserId,
@@ -14266,6 +14271,217 @@ describe('a shift-type override is recorded by an admin alone and read by every 
         const table = await restRows('shift_type_overrides?select=id', { token });
         expect(table.length > 0, `${slug}/${reader} reads the table`).toBe(reader === admin);
       }
+    },
+    20_000,
+  );
+});
+
+// ------------------------------- story 3.5b: removing a shift-type override
+
+/**
+ * STORY 3.5b (`0021`). An active admin soft-removes a live override through
+ * `remove_shift_type_override()`, which attributes the removal itself; every
+ * other caller is refused, and nothing but that one row's `removed_by` and
+ * `removed_at` changes. Every SQL case runs in a rolled-back transaction; the
+ * REST cases name an id no override has, and so write nothing.
+ */
+
+/** `remove_shift_type_override(id)`, as whoever the connection currently is. */
+async function removeOverride(client: Client, id: string): Promise<void> {
+  await client.query('select public.remove_shift_type_override($1::uuid)', [id]);
+}
+
+/** One override row, whole, as the owner sees it. */
+async function overrideRow(client: Client, id: string): Promise<Record<string, unknown> | undefined> {
+  const { rows } = await client.query<Record<string, unknown>>(
+    'select to_jsonb(o) as row from shift_type_overrides o where id = $1',
+    [id],
+  );
+  return rows[0]?.['row'] as Record<string, unknown> | undefined;
+}
+
+describe('a shift-type override is removed by an active admin alone, attributed on the server (story 3.5b)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'removes a $fixture override as its admin: attributed, gone from the read, set again on the date, and every rotation row byte-identical',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const organization = owner.organizationId;
+        const team = await seededTeam(client, organization, 'Smjena A');
+        const type = await seededShiftType(client, organization, 'Slobodno');
+        const override = { organization, team, date: '2026-10-01', type, reason: 'Zamjena' };
+        const before = await rotationFingerprint(client);
+
+        await actAs(client, owner.authUserId, organization);
+        const first = await insertOverride(client, override);
+        await actAsOwner(client);
+        const live = await overrideRow(client, first);
+        await actAs(client, owner.authUserId, organization);
+        await removeOverride(client, first);
+        const read = await calendarOverridesOf(client);
+        // RE-SET: the partial key admits a new live override on the date.
+        const second = await insertOverride(client, override);
+        const again = await calendarOverridesOf(client);
+        await actAsOwner(client);
+
+        const { rows } = await client.query<{ removedBy: string; recent: boolean; reason: string }>(
+          `select removed_by as "removedBy", removed_at > now() - interval '1 minute' as recent, reason
+             from shift_type_overrides where id = $1`,
+          [first],
+        );
+        expect(rows, `${slug}: the removal is not attributed to its caller`).toEqual([
+          { removedBy: owner.authUserId, recent: true, reason: 'Zamjena' },
+        ]);
+        // Nothing but the removal pair changed on the row.
+        const removed = await overrideRow(client, first);
+        const { removed_by: _liveBy, removed_at: _liveAt, ...liveRest } = live ?? {};
+        const { removed_by: _by, removed_at: _at, ...removedRest } = removed ?? {};
+        expect(live?.['removed_at'], `${slug}: the override was not live`).toBeNull();
+        expect(removedRest, `${slug}: a removal changed more than removed_by and removed_at`).toEqual(liveRest);
+        expect(read.map((row) => row['id']), `${slug}: a removed override is read`).not.toContain(first);
+        expect(again.map((row) => row['id']), `${slug}: the date cannot be set again`).toContain(second);
+        expect(again.map((row) => row['id'])).not.toContain(first);
+        expect(await rotationFingerprint(client), `${slug}: a set or a removal touched a rotation row`).toBe(before);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a second removal of one $fixture override with P0002, and a removed row stays as it was',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const organization = owner.organizationId;
+        const team = await seededTeam(client, organization, 'Smjena A');
+        const type = await seededShiftType(client, organization, 'Slobodno');
+
+        await actAs(client, owner.authUserId, organization);
+        const id = await insertOverride(client, { organization, team, date: '2026-10-01', type, reason: 'x' });
+        await removeOverride(client, id);
+        await actAsOwner(client);
+        const removed = await overrideRow(client, id);
+
+        await actAs(client, owner.authUserId, organization);
+        const twice = await refusedThenContinue(client, () => removeOverride(client, id));
+        const unknown = await refusedThenContinue(client, () =>
+          removeOverride(client, '00000000-0000-4000-8000-000000000000'),
+        );
+        await actAsOwner(client);
+
+        expect(twice.code, `${slug}: an override was removed twice`).toBe('P0002');
+        expect(unknown.code, `${slug}: an unknown override was removed`).toBe('P0002');
+        expect(await overrideRow(client, id), `${slug}: a second removal changed the row`).toEqual(removed);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture member-role account and an inactive admin with 42501, and changes nothing',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const other = await addThrowawayAdmin(client, organization);
+        const team = await seededTeam(client, organization, 'Smjena A');
+        const type = await seededShiftType(client, organization, 'Slobodno');
+
+        await actAs(client, owner.authUserId, organization);
+        const id = await insertOverride(client, { organization, team, date: '2026-10-01', type, reason: 'x' });
+        await actAsOwner(client);
+        await ownerVersion(client, {
+          organization,
+          member: other.id,
+          active: false,
+          from: await organizationDay(client, organization),
+          by: owner.authUserId,
+        });
+        const before = await overrideRow(client, id);
+
+        await actAs(client, self.authUserId, organization);
+        const asMember = await refusedThenContinue(client, () => removeOverride(client, id));
+        await actAsOwner(client);
+        await actAs(client, other.authUserId, organization);
+        const asInactive = await refusedThenContinue(client, () => removeOverride(client, id));
+        await actAsOwner(client);
+        await actAs(client, owner.authUserId, null);
+        const noClaim = await refusedThenContinue(client, () => removeOverride(client, id));
+        await actAsOwner(client);
+
+        expect(asMember.code, `${slug}: a member-role account removed an override`).toBe('42501');
+        expect(asInactive.code, `${slug}: an inactive admin removed an override`).toBe('42501');
+        expect(noClaim.code, `${slug}: a session with no claim removed an override`).toBe('42501');
+        expect(await overrideRow(client, id), `${slug}: a refused removal changed the row`).toEqual(before);
+        expect(before?.['removed_at'], `${slug}: the override was not live`).toBeNull();
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'never lets a $fixture admin remove a $otherFixture override, under its own claim or a forged one',
+    async ({ slug, admin, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const foreignOwner = await memberByUsername(
+          client,
+          otherSlug,
+          FIXTURES.find((entry) => entry.slug === otherSlug)?.admin ?? '',
+        );
+        const { rows: foreign } = await client.query<{ id: string }>(
+          'select id::text as id from shift_type_overrides where organization_id = $1 and removed_at is null',
+          [foreignOwner.organizationId],
+        );
+        const target = foreign[0]?.id;
+        expect(target, `${otherSlug} has no live override to remove`).toBeDefined();
+        const id = target ?? '';
+        const before = await overrideRow(client, id);
+
+        await actAs(client, owner.authUserId, owner.organizationId);
+        const ownClaim = await refusedThenContinue(client, () => removeOverride(client, id));
+        await actAsOwner(client);
+        await actAs(client, owner.authUserId, foreignOwner.organizationId);
+        const forged = await refusedThenContinue(client, () => removeOverride(client, id));
+        await actAsOwner(client);
+
+        // Another tenant's id is indistinguishable from none under one's own
+        // claim; a forged claim is refused before any row is looked at.
+        expect(ownClaim.code, `${slug}: removed an override of ${otherSlug}`).toBe('P0002');
+        expect(forged.code, `${slug}: a forged claim removed an override of ${otherSlug}`).toBe('42501');
+        expect(await overrideRow(client, id), `${slug}: ${otherSlug}'s override changed`).toEqual(before);
+      });
+    },
+  );
+
+  it.skipIf(noApi)('refuses an anonymous caller the removal', async () => {
+    const response = await rest('rpc/remove_shift_type_override', {
+      method: 'POST',
+      body: { p_override_id: '00000000-0000-4000-8000-000000000000' },
+    });
+    expect(response.status, 'an anonymous caller reached the removal').toBe(401);
+    const refusal = await restRefusal(response);
+    expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
+    expect(refusal.message).toBe('permission denied for function remove_shift_type_override');
+  });
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'answers the $fixture removal over PostgREST: 42501 to a member, P0002 to an admin naming no live override',
+    async ({ slug, admin, member }) => {
+      const body = { p_override_id: '00000000-0000-4000-8000-000000000000' };
+      const asMember = await rest('rpc/remove_shift_type_override', {
+        token: await tokenFor(member, slug),
+        method: 'POST',
+        body,
+      });
+      expect(asMember.ok, `${slug}: a member-role account reached the removal`).toBe(false);
+      expect((await restRefusal(asMember)).code).toBe('42501');
+
+      const asAdmin = await rest('rpc/remove_shift_type_override', {
+        token: await tokenFor(admin, slug),
+        method: 'POST',
+        body,
+      });
+      expect(asAdmin.ok, `${slug}: an unknown override was removed`).toBe(false);
+      expect((await restRefusal(asAdmin)).code).toBe('P0002');
     },
     20_000,
   );

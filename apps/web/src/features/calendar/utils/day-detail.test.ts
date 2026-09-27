@@ -1,6 +1,15 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { dayDetailOf, dayDetailShownOf, type DayDetail } from '@/features/calendar/utils/day-detail';
+import {
+  OVERRIDE_REFUSED_REASON,
+  OVERRIDE_REFUSED_SAME,
+  dayDetailOf,
+  dayDetailShownOf,
+  overrideEntryOf,
+  overrideOffersOf,
+  overrideTypeOptionsOf,
+  type DayDetail,
+} from '@/features/calendar/utils/day-detail';
 import { calendarMonthOf } from '@/features/calendar/utils/month';
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { initLocalization, t } from '@/lib/i18n';
@@ -22,6 +31,7 @@ import {
   overridesAnswerOf,
   statusRow,
   teamRow,
+  typeRow,
   viewerRow,
   viewerSession,
   type FixtureRows,
@@ -126,6 +136,8 @@ describe('the day detail (story 3.4b)', () => {
       teamId: TEAM,
       teamName: 'Smjena B',
       date: 'srijeda 01.01.2020',
+      isoDate: WORKING,
+      projectedShiftTypeId: 'pilot-noc',
       kind: 'working',
       typeName: 'Noć',
       range: '19:00–07:00',
@@ -177,6 +189,8 @@ describe('the day detail (story 3.4b)', () => {
       teamId: TEAM,
       teamName: 'Smjena B',
       date: 'četvrtak 02.01.2020',
+      isoDate: OFF,
+      projectedShiftTypeId: 'pilot-slobodno',
       kind: 'off',
       typeName: null,
       range: null,
@@ -192,6 +206,8 @@ describe('the day detail (story 3.4b)', () => {
       teamId: TEAM,
       teamName: 'Smjena B',
       date: 'utorak 31.12.2019',
+      isoDate: BEFORE,
+      projectedShiftTypeId: null,
       kind: 'noRotation',
       typeName: null,
       range: null,
@@ -326,6 +342,7 @@ describe('the day detail of an overridden day (story 3.5a)', () => {
     expect(detail).toMatchObject({ kind: 'working', typeName: 'Dan', range: '07:00–19:00' });
     expect(detail?.roster.map((member) => member.name)).toEqual(['Ana']);
     expect(detail?.override).toEqual({
+      id: 'o1',
       projectedTypeName: 'Noć',
       authorName: 'Ana',
       savedAt: { date: '12.09.2026', time: '19:05' },
@@ -395,5 +412,117 @@ describe('the day detail of an overridden day (story 3.5a)', () => {
       'Vrijeme: 12.09.2026 u 19:05',
     );
     expect(t('kalendar.detail.override.reason', { reason: 'Vježba.' })).toBe('Razlog: Vježba.');
+  });
+});
+
+describe('what an admin may set on a day (story 3.5b)', () => {
+  it('carries the projected type, the ISO date and the override id, whatever the override made of the day', async () => {
+    const snapshot = await snapshotOf(PILOT, {
+      overrides: [calendarOverrideRow('o1', TEAM, WORKING, 'pilot-slobodno')],
+    });
+    const detail = dayDetailOf(snapshot, TEAM, WORKING);
+
+    expect(detail).toMatchObject({ isoDate: WORKING, projectedShiftTypeId: 'pilot-noc', kind: 'off' });
+    expect(detail?.override?.id).toBe('o1');
+  });
+
+  it('offers every type that is not archived and not the projected one, in the snapshot order', async () => {
+    const rows = {
+      ...PILOT,
+      types: [
+        ...PILOT.types,
+        typeRow('pilot-stara', 'Stara', '2026-09-25T20:07:49.339741+00:00', { archived: true }),
+        typeRow('pilot-pripravnost', 'Pripravnost', '2026-09-25T20:07:49.338741+00:00', { working: false }),
+      ],
+    };
+    const snapshot = await snapshotOf(rows);
+
+    expect(overrideTypeOptionsOf(snapshot, dayDetailOf(snapshot, TEAM, WORKING)!)).toEqual([
+      { id: 'pilot-dan', name: 'Dan' },
+      { id: 'pilot-slobodno', name: 'Slobodno' },
+      { id: 'pilot-pripravnost', name: 'Pripravnost' },
+    ]);
+    expect(overrideTypeOptionsOf(snapshot, dayDetailOf(snapshot, TEAM, OFF)!).map((option) => option.id)).toEqual([
+      'pilot-dan',
+      'pilot-noc',
+      'pilot-pripravnost',
+    ]);
+  });
+
+  it('offers nothing with no rotation, and nothing on a day already overridden', async () => {
+    const snapshot = await snapshotOf(PILOT, {
+      overrides: [calendarOverrideRow('o1', TEAM, WORKING, 'pilot-dan')],
+    });
+
+    expect(overrideTypeOptionsOf(snapshot, dayDetailOf(snapshot, TEAM, BEFORE)!)).toEqual([]);
+    expect(overrideTypeOptionsOf(snapshot, dayDetailOf(snapshot, TEAM, WORKING)!)).toEqual([]);
+  });
+
+  it('preflights the type first, then the reason trimmed to 1–200 characters, and passes the trimmed reason', async () => {
+    const snapshot = await onSmjenaB();
+    const detail = dayDetailOf(snapshot, TEAM, WORKING)!;
+
+    expect(overrideEntryOf(detail, 'pilot-noc', 'Zamjena')).toEqual({ ok: false, code: OVERRIDE_REFUSED_SAME });
+    expect(overrideEntryOf(detail, '', 'Zamjena')).toEqual({ ok: false, code: OVERRIDE_REFUSED_SAME });
+    expect(overrideEntryOf(detail, 'pilot-noc', '  ')).toEqual({ ok: false, code: OVERRIDE_REFUSED_SAME });
+    for (const reason of ['', '  ', '\t\n', 'z'.repeat(201), ` ${'z'.repeat(201)} `]) {
+      expect(overrideEntryOf(detail, 'pilot-dan', reason), JSON.stringify(reason)).toEqual({
+        ok: false,
+        code: OVERRIDE_REFUSED_REASON,
+      });
+    }
+    expect(overrideEntryOf(detail, 'pilot-dan', '  Zamjena \n')).toEqual({
+      ok: true,
+      shiftTypeId: 'pilot-dan',
+      reason: 'Zamjena',
+    });
+    expect(overrideEntryOf(detail, 'pilot-dan', ` ${'z'.repeat(200)} `)).toMatchObject({ ok: true });
+    // Code points, as `char_length` counts them: 200 emoji are 400 UTF-16 units.
+    expect(overrideEntryOf(detail, 'pilot-dan', '🚒'.repeat(200))).toMatchObject({ ok: true });
+    expect(overrideEntryOf(detail, 'pilot-dan', '🚒'.repeat(201))).toMatchObject({ ok: false });
+  });
+
+  it('offers the form or the removal to an admin alone, and neither with no rotation', async () => {
+    const asAdmin = { viewers: [viewerRow([membershipRow('pilot-smjena-a', SEEDED)], { role: 'admin' })] };
+    const admin = await snapshotOf(PILOT, {
+      ...asAdmin,
+      overrides: [calendarOverrideRow('o1', TEAM, OFF, 'pilot-dan')],
+    });
+    const member = await snapshotOf(PILOT, { overrides: [calendarOverrideRow('o1', TEAM, OFF, 'pilot-dan')] });
+
+    expect(overrideOffersOf(admin, dayDetailOf(admin, TEAM, WORKING))).toEqual({
+      options: [
+        { id: 'pilot-dan', name: 'Dan' },
+        { id: 'pilot-slobodno', name: 'Slobodno' },
+      ],
+      set: true,
+      remove: false,
+    });
+    expect(overrideOffersOf(admin, dayDetailOf(admin, TEAM, OFF))).toEqual({ options: [], set: false, remove: true });
+    expect(overrideOffersOf(admin, dayDetailOf(admin, TEAM, BEFORE))).toEqual({ options: [], set: false, remove: false });
+    for (const date of [WORKING, OFF, BEFORE]) {
+      expect(overrideOffersOf(member, dayDetailOf(member, TEAM, date)), date).toEqual({
+        options: [],
+        set: false,
+        remove: false,
+      });
+    }
+    expect(overrideOffersOf(null, null)).toEqual({ options: [], set: false, remove: false });
+    expect(overrideOffersOf(admin, null)).toEqual({ options: [], set: false, remove: false });
+  });
+
+  it('carries the copy the form and the confirmation render', () => {
+    expect(t('kalendar.detail.override.set.heading')).toBe('Promijeni tip smjene');
+    expect(t('kalendar.detail.override.set.type')).toBe('Tip smjene');
+    expect(t('kalendar.detail.override.set.reason')).toBe('Razlog');
+    expect(t('kalendar.detail.override.set.save')).toBe('Spremi izmjenu');
+    expect(t('kalendar.detail.override.set.saving')).toBe('Spremanje…');
+    expect(t('kalendar.detail.override.remove.action')).toBe('Ukloni izmjenu');
+    expect(
+      t('kalendar.detail.override.remove.prompt', { team: 'Smjena A', date: 'subota 26.09.2026', type: 'Dan' }),
+    ).toBe('Ukloniti izmjenu za Smjena A · subota 26.09.2026? Vraća se Dan prema rotaciji.');
+    expect(t('kalendar.detail.override.remove.confirm')).toBe('Ukloni');
+    expect(t('kalendar.detail.override.remove.cancel')).toBe('Odustani od uklanjanja');
+    expect(t('kalendar.detail.override.remove.removing')).toBe('Uklanjanje…');
   });
 });

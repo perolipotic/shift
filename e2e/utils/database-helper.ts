@@ -394,6 +394,26 @@ export async function seedShiftTypeOverride(
 }
 
 /**
+ * Soft-removes the live override of `teamId` on `date` in SQL, attributed to
+ * its own author (story 3.5b) — as another admin's removal landing while the
+ * screen still shows it. {@link removeSeededRotation} deletes it with the
+ * types.
+ */
+export async function removeOverrideInSql(rotation: SeededRotation, teamId: string, date: string): Promise<void> {
+  const client = await connect();
+  try {
+    const { rowCount } = await client.query(
+      `update shift_type_overrides set removed_by = created_by, removed_at = now()
+        where organization_id = $1 and team_id = $2 and date = $3::date and removed_at is null`,
+      [rotation.organizationId, teamId, date],
+    );
+    if (rowCount !== 1) throw new Error('E2E: no live shift-type override to remove');
+  } finally {
+    await client.end();
+  }
+}
+
+/**
  * Deletes everything {@link seedTeamRotation} wrote — the version, the steps,
  * the pattern, the times and the three types — and every override naming one
  * of those types ({@link seedShiftTypeOverride}), in one transaction, so the

@@ -23,6 +23,7 @@ export const CALENDAR_SCREEN_PARTS = {
   page: ['pages', 'kalendar.tsx'],
   screenHook: ['features', 'calendar', 'hooks', 'use-calendar-screen.ts'],
   dayDetailHook: ['features', 'calendar', 'hooks', 'use-day-detail.ts'],
+  overrideFormHook: ['features', 'calendar', 'hooks', 'use-override-form.ts'],
   monthNav: ['features', 'calendar', 'components', 'calendar-month-nav.tsx'],
   modeSwitch: ['features', 'calendar', 'components', 'calendar-mode-switch.tsx'],
   filter: ['features', 'calendar', 'components', 'calendar-filter.tsx'],
@@ -32,6 +33,7 @@ export const CALENDAR_SCREEN_PARTS = {
   legend: ['features', 'calendar', 'components', 'calendar-legend.tsx'],
   dayList: ['features', 'calendar', 'components', 'calendar-day-list.tsx'],
   dayDetailDialog: ['features', 'calendar', 'components', 'day-detail-dialog.tsx'],
+  overrideForm: ['features', 'calendar', 'components', 'override-form.tsx'],
   skeleton: ['features', 'calendar', 'components', 'calendar-skeleton.tsx'],
   cellLabel: ['features', 'calendar', 'utils', 'cell-label.ts'],
   screenKeys: ['features', 'calendar', 'utils', 'screen-keys.ts'],
@@ -51,6 +53,10 @@ export const CALENDAR_SCREEN_EXEMPT: readonly { readonly file: string; readonly 
   {
     file: 'services/snapshot.ts',
     why: 'the one read (AD-13) and its failure messages; a key source of its own in the sign-in suite, executed by snapshot.test.ts',
+  },
+  {
+    file: 'services/override-write.ts',
+    why: 'the override set and removal (story 3.5b) and their refusal messages; a key source of its own in the sign-in suite, executed by override-write.test.ts',
   },
   {
     file: 'utils/month.ts',

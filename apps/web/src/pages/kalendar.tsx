@@ -9,6 +9,7 @@ import { CalendarMonthBody } from '@/features/calendar/components/calendar-month
 import { CalendarMonthNav } from '@/features/calendar/components/calendar-month-nav';
 import { DayDetailDialog } from '@/features/calendar/components/day-detail-dialog';
 import { useCalendarScreen } from '@/features/calendar/hooks/use-calendar-screen';
+import { useOverrideForm } from '@/features/calendar/hooks/use-override-form';
 import { MODE_SVE, calendarSearchOf, type CalendarSearch } from '@/features/calendar/utils/month';
 import { calendarMessageKey } from '@/features/calendar/services/snapshot';
 import { t } from '@/lib/i18n';
@@ -51,6 +52,11 @@ import { appLayoutRoute } from '@/pages/_app';
  * returns focus to the opener, or to the grid's tab stop or the month heading
  * when the opener is gone.
  *
+ * ONE CHANGE (story 3.5b): an admin sets a shift-type override on the open
+ * day from its Dialog, or removes the one it has through a neutral
+ * confirmation — `useOverrideForm`'s state, shown by the viewer's role and
+ * decided by the database.
+ *
  * The session guard is NOT here. It is registered once on the pathless `_app`
  * layout this route nests under.
  */
@@ -61,6 +67,7 @@ export function KalendarScreen() {
     void navigate({ search: next });
   });
   const { snapshot, loading, refusal, month, mode } = screen;
+  const overrideForm = useOverrideForm(snapshot, screen.detail);
 
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6" aria-busy={loading}>
@@ -90,6 +97,7 @@ export function KalendarScreen() {
       <DayDetailDialog
         detail={screen.detail}
         snapshot={snapshot}
+        form={overrideForm}
         onClose={screen.closeDay}
         onClosedByBrowser={screen.closedByBrowser}
       />

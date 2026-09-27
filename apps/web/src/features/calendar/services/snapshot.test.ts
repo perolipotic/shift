@@ -984,6 +984,9 @@ describe('the calendar only reads, and projects nothing of its own', () => {
   const MODIFIERS = feature('utils/modifiers.ts');
   const SNAPSHOT = feature('services/snapshot.ts');
   const DAY_DETAIL = feature('utils/day-detail.ts');
+  // STORY 3.5b: the calendar's one write module — the insert of an override
+  // and the call of its removal function, and nothing else writes.
+  const OVERRIDE_WRITE = feature('services/override-write.ts');
   const route = `${srcRoot}${CALENDAR_SCREEN_PARTS.page.join('/')}`;
   const files = [
     ...readdirSync(directory, { recursive: true, encoding: 'utf8' })
@@ -998,7 +1001,9 @@ describe('the calendar only reads, and projects nothing of its own', () => {
       .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 
   it('sweeps the files it means to', () => {
-    expect(files).toEqual(expect.arrayContaining([MONTH, SNAPSHOT, MODIFIERS, feature('utils/grid-keys.ts'), DAY_DETAIL]));
+    expect(files).toEqual(
+      expect.arrayContaining([MONTH, SNAPSHOT, MODIFIERS, feature('utils/grid-keys.ts'), DAY_DETAIL, OVERRIDE_WRITE]),
+    );
     expect(screen, 'the owner of the screen allowances is in the set').toContain(SHOWS_OWNER);
     // Every part of the screen is swept, and none of them is empty: one
     // emptied file cannot hide behind the others.
@@ -1038,7 +1043,13 @@ describe('the calendar only reads, and projects nothing of its own', () => {
     const text = stripped(file);
 
     expect(text, 'a `%` projection').not.toMatch(/%/);
-    expect(text).not.toMatch(/\.(insert|update|delete|upsert)\(/);
+    expect(text).not.toMatch(/\.(update|delete|upsert)\(/);
+    // Story 3.5b: ONE insert and ONE rpc in the write module, the two read
+    // rpcs in the snapshot, and neither anywhere else.
+    expect(text.match(/\.insert\(/g)?.length ?? 0, `.insert( in ${file}`).toBe(file === OVERRIDE_WRITE ? 1 : 0);
+    expect(text.match(/\.rpc\(/g)?.length ?? 0, `.rpc( in ${file}`).toBe(
+      file === OVERRIDE_WRITE ? 1 : file === SNAPSHOT ? 2 : 0,
+    );
     // Story 3.4a: the snapshot CARRIES rank and position off the wire, to be
     // shown by 3.4b — in the named places only, counted, and nowhere else. No
     // other file reads either, and no rule ever does.
