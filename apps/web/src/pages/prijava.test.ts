@@ -8,6 +8,11 @@ import {
   CALENDAR_SCREEN_EXEMPT,
   CALENDAR_SCREEN_PARTS,
 } from '@/features/calendar/calendar-screen.fixture';
+import {
+  HOUR_BAND_EDIT_PARTS,
+  HOUR_BAND_LIST_PARTS,
+  HOUR_BAND_SCREENS_EXEMPT,
+} from '@/features/hour-bands/hour-band-screens.fixture';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { DESTINATIONS } from '@/features/navigation/utils/destinations';
 import {
@@ -180,13 +185,29 @@ const TEAM_ROSTER = join(srcRoot, 'pages', 'smjene.$id.tsx');
 const DANAS = join(srcRoot, 'pages', 'danas.tsx');
 const TEAM_ROSTER_KEYS = join(srcRoot, 'features', 'teams', 'services', 'roster.ts');
 
+/** The hour bands feature, which holds both hour band screens' parts. */
+const HOUR_BAND_FEATURE = join(srcRoot, 'features', 'hour-bands');
+/** The two hour band pages, which only compose (source structure B5), and their hooks. */
+const HOUR_BAND_LIST_PAGE = join(srcRoot, ...HOUR_BAND_LIST_PARTS.page);
+const HOUR_BAND_LIST_HOOK = join(srcRoot, ...HOUR_BAND_LIST_PARTS.hook);
+const HOUR_BAND_EDIT_PAGE = join(srcRoot, ...HOUR_BAND_EDIT_PARTS.page);
+const HOUR_BAND_EDIT_HOOK = join(srcRoot, ...HOUR_BAND_EDIT_PARTS.hook);
 /**
  * Story 2.1b's two hour band screens and the two modules holding their rules.
  * Neither screen is a destination — both are reached from `Organizacija` — so
  * they are named here by hand, as the team screens are.
+ *
+ * FILE SETS since source structure B5 — each a page, its hook and its
+ * components — read as one source like the shift type screens, and written
+ * ONCE in `hour-band-screens.fixture.ts`. The two sets are DISJOINT, so no
+ * string, control or handler is counted twice.
  */
-const HOUR_BAND_LIST = join(srcRoot, 'pages', 'organizacija.satni-pojasi.tsx');
-const HOUR_BAND_EDIT = join(srcRoot, 'pages', 'organizacija.satni-pojasi.$id.tsx');
+const HOUR_BAND_LIST: readonly string[] = Object.values(HOUR_BAND_LIST_PARTS).map((parts) =>
+  join(srcRoot, ...parts),
+);
+const HOUR_BAND_EDIT: readonly string[] = Object.values(HOUR_BAND_EDIT_PARTS).map((parts) =>
+  join(srcRoot, ...parts),
+);
 const HOUR_BAND_LIST_KEYS = join(srcRoot, 'features', 'hour-bands', 'services', 'list.ts');
 const HOUR_BAND_WRITE_KEYS = join(srcRoot, 'features', 'hour-bands', 'services', 'write.ts');
 
@@ -2426,6 +2447,193 @@ describe('the screen is read at all, so every sweep below means something', () =
     }
   });
 
+  it('sweeps every part of the hour band screens, so a new file cannot escape the sets', () => {
+    // SOURCE STRUCTURE B5, on B4's terms: an EQUALITY between the two sets and
+    // EVERY non-test module anywhere under the hour bands feature — its root,
+    // `services/`, and `components/`, `hooks/` and `utils/` at any depth — less
+    // the modules exempt for a stated reason (`hour-band-screens.fixture.ts`).
+    // Read recursively, so a nested file cannot escape the sets either.
+    // ANY SCRIPT MODULE (`.[cm]?[jt]sx?`), less tests and declaration files,
+    // so a part cannot escape by its extension; and ANY `*.fixture.*`, which
+    // renders nothing, is left out of the comparison by its shape.
+    const exempt = new Set(HOUR_BAND_SCREENS_EXEMPT.map((entry) => join(HOUR_BAND_FEATURE, entry.file)));
+    const walked = readdirSync(HOUR_BAND_FEATURE, { recursive: true, encoding: 'utf8' })
+      .filter(
+        (name) =>
+          /\.[cm]?[jt]sx?$/.test(name) && !/\.test\.[cm]?[jt]sx?$/.test(name) && !/\.d\.[cm]?ts$/.test(name),
+      )
+      .map((name) => join(HOUR_BAND_FEATURE, name));
+    const found = walked.filter((file) => !/\.fixture\.[cm]?[jt]sx?$/.test(file));
+    const pages = new Set([HOUR_BAND_LIST_PAGE, HOUR_BAND_EDIT_PAGE]);
+
+    expect(walked, 'the walk reaches the feature root').toContain(
+      join(HOUR_BAND_FEATURE, 'hour-band-screens.fixture.ts'),
+    );
+    expect(found, 'the walk reaches services/').toContain(HOUR_BAND_LIST_KEYS);
+    for (const file of exempt) expect(walked, `${file} is exempt and does not exist`).toContain(file);
+    // THE EXACT EXEMPTIONS, so a new one is a reviewed change to this test.
+    expect([...exempt].sort(), 'the hour band exemptions changed').toEqual(
+      ['hour-band-screens.fixture.ts', 'services/list.ts', 'services/write.ts']
+        .map((file) => join(HOUR_BAND_FEATURE, ...file.split('/')))
+        .sort(),
+    );
+    for (const entry of HOUR_BAND_SCREENS_EXEMPT) {
+      expect(entry.why.length, `${entry.file} is exempt without a stated reason`).toBeGreaterThan(20);
+    }
+    // DISJOINT: a part in both sets would have its strings, controls and
+    // handlers counted twice.
+    for (const file of HOUR_BAND_LIST) {
+      expect(HOUR_BAND_EDIT, `${file} is in both hour band sets`).not.toContain(file);
+    }
+    for (const file of [...HOUR_BAND_LIST, ...HOUR_BAND_EDIT]) {
+      expect(existsSync(file), `${file} is in a set and does not exist`).toBe(true);
+      // NON-VACUITY PER FILE, with a floor rather than "not empty": a part
+      // gutted to its imports would otherwise pass every sweep over the set.
+      expect(source(file).trim().length, `${file} is all but empty`).toBeGreaterThan(150);
+    }
+    expect(HOUR_BAND_LIST[0], 'the list page is read first').toBe(HOUR_BAND_LIST_PAGE);
+    expect(HOUR_BAND_EDIT[0], 'the edit page is read first').toBe(HOUR_BAND_EDIT_PAGE);
+    // ONE DECLARATION PER HANDLER PER SET, because the extractors take the
+    // first match in a joined set.
+    for (const [set, hookFile, names] of [
+      [HOUR_BAND_LIST, HOUR_BAND_LIST_HOOK, ['submit', 'openAdding']],
+      [HOUR_BAND_EDIT, HOUR_BAND_EDIT_HOOK, ['submit', 'remove', 'refresh', 'close']],
+    ] as const) {
+      for (const name of names) {
+        expect(
+          source(set).match(new RegExp(`function ${name}\\(`, 'g'))?.length,
+          `${name} is not declared exactly once in its set`,
+        ).toBe(1);
+        expect(source(hookFile), `${name} is not in its hook`).toMatch(
+          new RegExp(`\\n {2}(?:async )?function ${name}\\(`),
+        );
+      }
+    }
+    expect(
+      found.filter((file) => !exempt.has(file)).sort(),
+      'the hour band file sets and the feature folders disagree',
+    ).toEqual([...HOUR_BAND_LIST, ...HOUR_BAND_EDIT].filter((file) => !pages.has(file)).sort());
+  });
+
+  /**
+   * The hour band sets' wiring, read PER FILE (source structure B5, on B4's
+   * terms): the set-wide sweeps below take the first match in a joined set, so
+   * a part could shadow the hook's ref, handler or write and still read as
+   * wired.
+   */
+  const HOUR_BAND_SETS = [
+    {
+      name: 'the hour band list',
+      set: HOUR_BAND_LIST,
+      hookFile: HOUR_BAND_LIST_HOOK,
+      submits: ['submit'],
+    },
+    {
+      name: 'the hour band edit form',
+      set: HOUR_BAND_EDIT,
+      hookFile: HOUR_BAND_EDIT_HOOK,
+      submits: ['submit'],
+    },
+  ];
+  const HOUR_BAND_HANDLERS = 'submit|openAdding|remove|refresh|close';
+  const HOUR_BAND_WRITES = [
+    'supabaseClient',
+    'HOUR_BANDS_TABLE',
+    '.from(',
+    'createHourBand(',
+    'updateHourBand(',
+    'removeHourBand(',
+  ];
+
+  it('remounts the band edit screen per band, keyed by the route id', () => {
+    expect(source(HOUR_BAND_EDIT_PAGE), 'the band edit screen is not keyed by the route id').toMatch(
+      /return <HourBandScreen key=\{id\} id=\{id\} \/>;/,
+    );
+    // BELOW THE KEY: the hook is called in the keyed screen, so a new id
+    // remounts its state, and never in the wrapper that reads the id.
+    const page = source(HOUR_BAND_EDIT_PAGE);
+    const wrapper = /export function OrganizacijaSatniPojasScreen\([\s\S]*?\n\}/.exec(page)?.[0] ?? '';
+    const keyed = /\nfunction HourBandScreen\([\s\S]*?\n\}/.exec(page)?.[0] ?? '';
+
+    expect(wrapper, 'the wrapper could not be extracted').toContain('useParams()');
+    expect(keyed, 'the keyed screen could not be extracted').not.toBe('');
+    expect(keyed, 'the edit hook is not called below the key').toContain('useHourBandEdit(id)');
+    expect(wrapper, 'the edit hook is called above the key').not.toContain('useHourBandEdit(');
+    expect(occurrences(page, 'useHourBandEdit('), 'the edit hook is called more than once').toBe(1);
+  });
+
+  it.each(HOUR_BAND_SETS)('creates every attached ref once, in the hook, on $name', ({ set, hookFile }) => {
+    // `closeRef` as well as `ref`: the edit dialog's close takes the focus a
+    // landed removal leaves behind through `DialogHeader`'s `closeRef`.
+    const attached = [...source(set).matchAll(/\b(?:ref|closeRef)=\{([^}]*)\}/g)].map((found) => found[1] ?? '');
+
+    expect(attached.length, 'no ref is attached at all').toBeGreaterThan(1);
+    // A BARE NAME, so it resolves to a hook-created `const`; `screen.x` would not.
+    for (const name of attached) expect(name, `an attached ref is not a bare name: ${name}`).toMatch(/^\w+$/);
+    for (const name of new Set(attached)) {
+      expect(occurrences(source(set), `const ${name} = useRef`), `${name} is not created exactly once`).toBe(1);
+      expect(source(hookFile), `${name} is not created in the hook`).toContain(`const ${name} = useRef`);
+    }
+  });
+
+  it('attaches the dialog close the removal focuses, on the band edit form', () => {
+    expect(source(HOUR_BAND_EDIT_PAGE), 'the dialog close is not attached to the hook ref').toContain(
+      'closeRef={closeButton}',
+    );
+    const remove = namedHandler(source(HOUR_BAND_EDIT_HOOK), 'remove');
+
+    expect(remove.length, 'remove could not be extracted').toBeGreaterThan(80);
+    // ONLY ON A LANDED REMOVAL: a refused one keeps the band, and its block.
+    expect(remove, 'the removal does not focus the dialog close on success only').toMatch(
+      /\n {6}if \(outcome\.ok\) closeButton\.current\?\.focus\(\);/,
+    );
+    expect(occurrences(source(HOUR_BAND_EDIT_HOOK), 'closeButton.current'), 'the close is focused elsewhere').toBe(1);
+    expect(finallyBlock(remove), 'the removal is not disarmed in its finally').toContain('setArmed(false)');
+  });
+
+  it('keys the band form by landed saves, on the band edit form', () => {
+    const form = /<form\b(?:=>|[^>])*>/.exec(source(join(srcRoot, ...HOUR_BAND_EDIT_PARTS.body)))?.[0] ?? '';
+
+    expect(form, 'the band form is gone').not.toBe('');
+    expect(form, 'the band form is not keyed by landed saves').toContain('key={hourBandFormKey(band, saves)}');
+  });
+
+  it('focuses the name field once the add dialog opens, from the list hook only', () => {
+    expect(occurrences(source(HOUR_BAND_LIST), 'useEffect('), 'an effect besides the one focus effect').toBe(1);
+    expect(source(HOUR_BAND_LIST_HOOK), 'the focus effect changed').toMatch(
+      /useEffect\(\s*\(\)\s*=>\s*\{\s*if\s*\(adding\)\s*nameField\.current\?\.focus\(\);?\s*\},\s*\[adding\],?\s*\);/,
+    );
+  });
+
+  it.each(HOUR_BAND_SETS)('declares no handler outside the hook on $name', ({ set, hookFile }) => {
+    const shadow = new RegExp(`\\b(?:(?:const|let)\\s+(?:${HOUR_BAND_HANDLERS})\\s*=|function\\s+(?:${HOUR_BAND_HANDLERS})\\s*\\()`);
+    // Nor the hooks a handler is built from, nor a handler handed on as an
+    // object key of a part's own.
+    const wiring = /\buseNavigate\(|\buseQueryClient\(|[{,]\s*(?:submit|remove|close)\s*:/;
+
+    for (const part of set.filter((file) => file !== hookFile)) {
+      expect(source(part), `${part} declares a handler of its own`).not.toMatch(shadow);
+      expect(source(part), `${part} builds or hands on a handler of its own`).not.toMatch(wiring);
+    }
+  });
+
+  it.each(HOUR_BAND_SETS)('binds every form to a named submit handler on $name', ({ set, submits }) => {
+    const forms = set.flatMap((part) => [...source(part).matchAll(/<form\b(?:=>|[^>])*>/g)].map((found) => found[0]));
+    const bound = new RegExp(`onSubmit=\\{[\\s\\S]{0,160}?\\b(?:${submits.join('|')})\\b`);
+
+    expect(forms.length, 'no form found').toBe(submits.length);
+    for (const form of forms) expect(form, 'a form is bound to no named submit handler').toMatch(bound);
+  });
+
+  it.each(HOUR_BAND_SETS)('writes only from the hook on $name', ({ set, hookFile }) => {
+    for (const part of set.filter((file) => file !== hookFile)) {
+      for (const write of HOUR_BAND_WRITES) {
+        expect(source(part), `${part} calls ${write}`).not.toContain(write);
+      }
+    }
+    expect(source(hookFile), 'the hook reaches no client').toContain('supabaseClient(');
+  });
+
   it('finds the controls it is about to measure', () => {
     expect(inputElements(source(SCREEN))).toHaveLength(2);
     expect(buttonElements(source(SCREEN))).toHaveLength(1);
@@ -3383,51 +3591,78 @@ describe('the member list reads once, under one key', () => {
   });
 
   it.each([
-    { name: 'the hour band list', file: HOUR_BAND_LIST },
-    { name: 'the hour band edit form', file: HOUR_BAND_EDIT },
-  ])('reads the bands exactly once, under the one band key, on $name', ({ file }) => {
+    { name: 'the hour band list', file: HOUR_BAND_LIST, hookFile: HOUR_BAND_LIST_HOOK },
+    { name: 'the hour band edit form', file: HOUR_BAND_EDIT, hookFile: HOUR_BAND_EDIT_HOOK },
+  ])('reads the bands exactly once, under the one band key, on $name', ({ file, hookFile }) => {
     // STORY 2.1b, AD-13. The rows, the count, the bar and the edited band all
     // come from one read under `HOUR_BANDS_LIST_KEY`.
+    // SOURCE STRUCTURE B5: counted over the whole set, so a second read in any
+    // part fails; the read and the re-read are asserted IN THE HOOK, the one
+    // file that must hold them; and every ban holds PER PART.
     const screen = source(file);
+    const hook = source(hookFile);
 
+    expect(file, 'the hook is not in the set').toContain(hookFile);
     expect(occurrences(screen, 'useQuery(')).toBe(1);
     expect(occurrences(screen, 'useQuery(hourBandsQueryOptions(')).toBe(1);
+    expect(occurrences(hook, 'useQuery('), 'the one read is not in the hook').toBe(1);
+    expect(occurrences(hook, 'hourBandsQueryOptions('), 'the one read is not in the hook').toBe(1);
     expect(occurrences(screen, callOf('readHourBands')), 'only the query options call the reader').toBe(0);
     expect(occurrences(screen, 'queryKey: HOUR_BANDS_LIST_KEY')).toBeGreaterThan(0);
     expect(occurrences(screen, 'queryKey:')).toBe(
       occurrences(screen, 'queryKey: HOUR_BANDS_LIST_KEY'),
     );
+    expect(occurrences(hook, 'queryKey:'), 'a key is named outside the hook').toBe(
+      occurrences(screen, 'queryKey:'),
+    );
     expect(source(HOUR_BAND_LIST_KEYS), 'the band read has no cache floor').toContain(
       'staleTime: HOUR_BANDS_READ_STALE_MS',
     );
-    expect(screen, 'a write is not followed by a re-read of the one list').toContain(
+    expect(hook, 'a write is not followed by a re-read of the one list').toContain(
       'invalidateQueries({ queryKey: HOUR_BANDS_LIST_KEY })',
     );
-    expect(screen, 'useMutation arrived; this repository uses a pending ref').not.toContain(
-      'useMutation',
-    );
+    expect(occurrences(hook, 'invalidateQueries(')).toBe(occurrences(screen, 'invalidateQueries('));
+    for (const part of file) {
+      expect(source(part), `useMutation arrived in ${part}; this repository uses a pending ref`).not.toContain(
+        'useMutation',
+      );
+    }
   });
 
   it('enters only a name and a start, and derives nothing on either band screen', () => {
     // STORY 2.1b, AD-3. The window, duration and midnight flag are shown
     // read-only and come from `@/features/hour-bands/services/list`, which reads the domain.
-    for (const file of [HOUR_BAND_LIST, HOUR_BAND_EDIT]) {
-      const screen = source(file);
+    // SOURCE STRUCTURE B5: the two fields are counted over the set, the time
+    // field is asserted in the part that renders it, and the bans hold PER PART.
+    for (const [file, fields] of [
+      [HOUR_BAND_LIST, join(srcRoot, ...HOUR_BAND_LIST_PARTS.addDialog)],
+      [HOUR_BAND_EDIT, join(srcRoot, ...HOUR_BAND_EDIT_PARTS.body)],
+    ] as const) {
+      expect(file, 'the fields part is not in the set').toContain(fields);
+      expect(inputElements(source(file)), `${file[0]} enters something besides a name and a start`).toHaveLength(2);
+      expect(inputElements(source(fields)), `${fields} does not render both fields`).toHaveLength(2);
+      expect(source(fields)).toContain('type="time"');
+      for (const part of file) {
+        const screen = source(part);
 
-      expect(inputElements(screen), `${file} enters something besides a name and a start`).toHaveLength(2);
-      expect(screen).toContain('type="time"');
-      expect(screen, `${file} reaches past the list module into the domain`).not.toContain(
-        '@shift/domain',
-      );
-      expect(screen, `${file} recomputes a band itself`).not.toMatch(
-        /\b1440\b|MINUTES_PER_DAY|startMinute\s*[-+%]/,
-      );
+        expect(screen, `${part} reaches past the list module into the domain`).not.toContain(
+          '@shift/domain',
+        );
+        expect(screen, `${part} recomputes a band itself`).not.toMatch(
+          /\b1440\b|MINUTES_PER_DAY|startMinute\s*[-+%]/,
+        );
+      }
     }
   });
 
   it('draws the bar hidden from assistive technology, its uncovered stretch hatched and flagged', () => {
-    const bar = componentFunction(source(HOUR_BAND_LIST), 'renderBar');
+    // SOURCE STRUCTURE B5: read in the part that renders the bar.
+    const bar = componentFunction(source(join(srcRoot, ...HOUR_BAND_LIST_PARTS.timeline)), 'renderBar');
 
+    expect(HOUR_BAND_LIST, 'the bar part is not in the list set').toContain(
+      join(srcRoot, ...HOUR_BAND_LIST_PARTS.timeline),
+    );
+    expect(occurrences(source(HOUR_BAND_LIST), 'function renderBar('), 'the bar is drawn twice').toBe(1);
     expect(bar.length, 'renderBar could not be extracted').toBeGreaterThan(80);
     expect(bar).toContain('aria-hidden={true}');
     // The hatch is `TimelineGap`'s, the primitive the uncovered stretch is drawn with.
@@ -3437,7 +3672,9 @@ describe('the member list reads once, under one key', () => {
       "t('organization.hourBands.uncovered')",
     );
     expect(bar, 'a covered stretch is not labelled with its band').toContain('{segment.name}');
-    expect(bar, 'the bar paints a shift type colour').not.toContain('shift-slot');
+    for (const part of [...HOUR_BAND_LIST, ...HOUR_BAND_EDIT]) {
+      expect(source(part), `${part} paints a shift type colour`).not.toContain('shift-slot');
+    }
   });
 
   it.each([

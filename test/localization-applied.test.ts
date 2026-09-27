@@ -6,6 +6,10 @@ import { describe, expect, it } from 'vitest';
 
 import { CALENDAR_SCREEN_PARTS } from '../apps/web/src/features/calendar/calendar-screen.fixture.ts';
 import {
+  HOUR_BAND_EDIT_PARTS,
+  HOUR_BAND_LIST_PARTS,
+} from '../apps/web/src/features/hour-bands/hour-band-screens.fixture.ts';
+import {
   SHIFT_TYPE_EDIT_PARTS,
   SHIFT_TYPE_LIST_PARTS,
 } from '../apps/web/src/features/shift-types/shift-type-screens.fixture.ts';
@@ -127,6 +131,55 @@ const SHIFT_TYPES_SOURCES_REQUIRED = [
     .filter((parts) => parts[0] !== 'pages')
     .map((parts) => join(webRoot, 'src', ...parts)),
   ...SHIFT_TYPES_RULE_MODULES.map((name) => join(SHIFT_TYPES_FEATURE, ...name.split('/'))),
+];
+
+/**
+ * Every non-test module anywhere under the hour bands feature — its root and
+ * every folder, at any depth — less its fixture: both hour band screens'
+ * parts since source structure B5, and the read and the writes beside them.
+ * The fixture renders nothing and is not a source. A missing feature folder
+ * reads as no parts, so the required-parts case fails instead of the whole
+ * file throwing.
+ */
+const HOUR_BANDS_FEATURE = join(webRoot, 'src', 'features', 'hour-bands');
+
+function hourBandsScreenParts(): string[] {
+  if (!existsSync(HOUR_BANDS_FEATURE)) return [];
+
+  // RECURSIVE over the whole feature, so a part in a new folder is still a
+  // source; ANY script extension, less tests, declaration files and any
+  // `*.fixture.*`, which renders nothing.
+  return readdirSync(HOUR_BANDS_FEATURE, { recursive: true, encoding: 'utf8' })
+    .filter(
+      (name) =>
+        /\.[cm]?[jt]sx?$/.test(name) &&
+        !/\.test\.[cm]?[jt]sx?$/.test(name) &&
+        !/\.d\.[cm]?ts$/.test(name) &&
+        !/\.fixture\.[cm]?[jt]sx?$/.test(name),
+    )
+    .sort()
+    .map((name) => join(HOUR_BANDS_FEATURE, name));
+}
+
+/** The two hour band pages, from the fixture rather than written out. */
+const HOUR_BAND_PAGES = [HOUR_BAND_LIST_PARTS.page, HOUR_BAND_EDIT_PARTS.page].map((parts) =>
+  join(webRoot, 'src', ...parts),
+);
+
+/** The rule modules beside the two sets' parts. */
+const HOUR_BANDS_RULE_MODULES = ['services/list.ts', 'services/write.ts'];
+
+/**
+ * What `hourBandsScreenParts()` must hold: every part of both hour band
+ * screens' file sets outside `pages/` (`hour-band-screens.fixture.ts`), and
+ * the two rule modules beside them. A folder read that silently lost one of
+ * these would drop it from `SOURCES` with the freshness guard still green.
+ */
+const HOUR_BANDS_SOURCES_REQUIRED = [
+  ...[...Object.values(HOUR_BAND_LIST_PARTS), ...Object.values(HOUR_BAND_EDIT_PARTS)]
+    .filter((parts) => parts[0] !== 'pages')
+    .map((parts) => join(webRoot, 'src', ...parts)),
+  ...HOUR_BANDS_RULE_MODULES.map((name) => join(HOUR_BANDS_FEATURE, ...name.split('/'))),
 ];
 
 /**
@@ -315,16 +368,17 @@ const SOURCES = [
   // The refusal and confirmation box every screen draws through, for the same
   // freshness reason.
   join(webRoot, 'src', 'components', 'ui', 'notice.tsx'),
-  // Story 2.1b's four. The two band screens render and are no destination, so
-  // they are listed nowhere else in this file; the two `@/features/hour-bands` modules
-  // own the duration shapes and the refusals as return-type unions, so a chunk
-  // built before an edit to either is stale in a way no sweep could see.
+  // Story 2.1b's band screens. The two band screens render and are no
+  // destination, so they are listed nowhere else in this file; the two
+  // `@/features/hour-bands` modules own the duration shapes and the refusals as
+  // return-type unions, so a chunk built before an edit to either is stale in a
+  // way no sweep could see. The whole feature is READ OFF its folders (source
+  // structure B5): both screens' parts and the two modules; the two pages come
+  // from the fixture.
   // `pojasi` is deliberately NOT counted in `AUTHORED_VOCABULARY`: it is also
   // the registered route path `/organizacija/satni-pojasi`, which ships as data.
-  join(webRoot, 'src', 'features', 'hour-bands', 'services', 'list.ts'),
-  join(webRoot, 'src', 'features', 'hour-bands', 'services', 'write.ts'),
-  join(webRoot, 'src', 'pages', 'organizacija.satni-pojasi.tsx'),
-  join(webRoot, 'src', 'pages', 'organizacija.satni-pojasi.$id.tsx'),
+  ...hourBandsScreenParts(),
+  ...HOUR_BAND_PAGES,
   // Story 2.2b's shift type screens. Both pages render, and the two
   // `@/features/shift-types` modules own the duration shapes, the kinds and the
   // refusals as return-type unions, so a chunk built before an edit to any of
@@ -423,6 +477,27 @@ describe('the build being read reflects the current localization source', () => 
     expect(CALENDAR_SOURCES_REQUIRED.length, 'the calendar set is empty').toBeGreaterThan(10);
     for (const file of CALENDAR_SOURCES_REQUIRED) {
       expect(parts, `${file} is not read by calendarScreenParts()`).toContain(file);
+      expect(SOURCES, `${file} is not in SOURCES`).toContain(file);
+    }
+  });
+
+  it('reads every hour band screen part and rule module into the sources', () => {
+    const parts = hourBandsScreenParts();
+
+    // THE EXACT COUNT, read off the disk and derived from the fixture: every
+    // part of both sets outside `pages/`, and the two rule modules.
+    expect(parts, 'the hour bands feature grew or lost a module').toHaveLength(
+      Object.keys(HOUR_BAND_LIST_PARTS).length +
+        Object.keys(HOUR_BAND_EDIT_PARTS).length -
+        HOUR_BAND_PAGES.length +
+        HOUR_BANDS_RULE_MODULES.length,
+    );
+    for (const page of HOUR_BAND_PAGES) expect(SOURCES, `${page} is not in SOURCES`).toContain(page);
+    expect([...parts].sort(), 'the feature holds a module no set and no rule list names').toEqual(
+      [...HOUR_BANDS_SOURCES_REQUIRED].sort(),
+    );
+    for (const file of HOUR_BANDS_SOURCES_REQUIRED) {
+      expect(parts, `${file} is not read by hourBandsScreenParts()`).toContain(file);
       expect(SOURCES, `${file} is not in SOURCES`).toContain(file);
     }
   });
