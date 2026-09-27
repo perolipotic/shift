@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { CALENDAR_SCREEN_PARTS } from '../apps/web/src/features/calendar/calendar-screen.fixture.ts';
+
 /**
  * The localization layer is not only built but actually WIRED (story 1.1c).
  *
@@ -61,6 +63,39 @@ function organizationScreenParts(): string[] {
       .map((name) => join(feature, folder, name)),
   );
 }
+
+/**
+ * Every non-test module under the calendar feature's `hooks/`, `components/`
+ * and `utils/` — the calendar screen's parts since source structure B3, and
+ * the month model, the modifier vocabulary, the grid's keyboard rules and the
+ * day detail model beside them.
+ */
+function calendarScreenParts(): string[] {
+  const feature = join(webRoot, 'src', 'features', 'calendar');
+
+  // RECURSIVE, so a part nested one folder deeper is still a source.
+  return ['hooks', 'components', 'utils'].flatMap((folder) =>
+    readdirSync(join(feature, folder), { recursive: true, encoding: 'utf8' })
+      .filter((name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name))
+      .sort()
+      .map((name) => join(feature, folder, name)),
+  );
+}
+
+/**
+ * What `calendarScreenParts()` must hold: every part of the calendar screen's
+ * file set outside `pages/` (`calendar-screen.fixture.ts`), and the four rule
+ * modules beside them. A folder read that silently lost one of these would
+ * drop it from `SOURCES` with the freshness guard still green.
+ */
+const CALENDAR_SOURCES_REQUIRED = [
+  ...Object.values(CALENDAR_SCREEN_PARTS)
+    .filter((parts) => parts[0] !== 'pages')
+    .map((parts) => join(webRoot, 'src', ...parts)),
+  ...['month.ts', 'modifiers.ts', 'grid-keys.ts', 'day-detail.ts'].map((name) =>
+    join(webRoot, 'src', 'features', 'calendar', 'utils', name),
+  ),
+];
 
 /**
  * Every source file whose content must be reflected in the build.
@@ -271,19 +306,14 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'rotation', 'utils', 'warnings.ts'),
   // Story 2.6's history: the statuses and the unknown author, as return-type unions.
   join(webRoot, 'src', 'features', 'rotation', 'services', 'history.ts'),
-  // Story 3.1's calendar: the read failure as a return-type union, and the
-  // month model the grid renders (its names and ranges come through
-  // `@/lib/i18n/format`). `kalendar.tsx` is listed with the destinations above.
+  // Story 3.1's calendar: the read failure as a return-type union.
+  // `kalendar.tsx` is listed with the destinations above.
   join(webRoot, 'src', 'features', 'calendar', 'services', 'snapshot.ts'),
-  join(webRoot, 'src', 'features', 'calendar', 'utils', 'month.ts'),
-  // Story 3.2b's two: the modifier vocabulary owns the four marks' labels and
-  // the no-rotation label as return-type unions and the treatment classes;
-  // the grid's keyboard rules render nothing and decide where focus goes.
-  join(webRoot, 'src', 'features', 'calendar', 'utils', 'modifiers.ts'),
-  join(webRoot, 'src', 'features', 'calendar', 'utils', 'grid-keys.ts'),
-  // Story 3.4b's day detail model: it renders nothing, and its date and range
-  // come through `@/features/calendar/utils/month`, its roster order through `@/lib/i18n/format`.
-  join(webRoot, 'src', 'features', 'calendar', 'utils', 'day-detail.ts'),
+  // The calendar feature's `hooks/`, `components/` and `utils/`, READ OFF the
+  // folders (source structure B3): the screen's parts, and the month model
+  // (story 3.1), the modifier vocabulary and the grid's keyboard rules (story
+  // 3.2b) and the day detail model (story 3.4b) beside them.
+  ...calendarScreenParts(),
   // The owner layout's numbered section badge, a primitive: text-free, here
   // for freshness like the other primitives.
   join(webRoot, 'src', 'components', 'ui', 'section-number.tsx'),
@@ -342,6 +372,16 @@ function allChunks(): string {
  * applies here, and its resolution will cover both files.
  */
 describe('the build being read reflects the current localization source', () => {
+  it('reads every calendar part and rule module into the sources', () => {
+    const parts = calendarScreenParts();
+
+    expect(CALENDAR_SOURCES_REQUIRED.length, 'the calendar set is empty').toBeGreaterThan(10);
+    for (const file of CALENDAR_SOURCES_REQUIRED) {
+      expect(parts, `${file} is not read by calendarScreenParts()`).toContain(file);
+      expect(SOURCES, `${file} is not in SOURCES`).toContain(file);
+    }
+  });
+
   it.skipIf(notBuilt)('is newer than every source it was built from', () => {
     const built = statSync(entryChunkPath()).mtimeMs;
 

@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -32,6 +32,7 @@ import {
   type CalendarSnapshot,
   type CalendarTable,
 } from '@/features/calendar/services/snapshot';
+import { CALENDAR_SCREEN_PARTS } from '@/features/calendar/calendar-screen.fixture';
 import {
   OTHER_ORGANIZATION,
   PILOT,
@@ -962,13 +963,33 @@ const SCREEN_SHOWS = [
 ] as const;
 
 describe('the calendar only reads, and projects nothing of its own', () => {
-  const directory = fileURLToPath(new URL('..', import.meta.url));
-  const route = join(directory, '..', '..', 'pages', 'kalendar.tsx');
+  // ONE PATH CONVENTION: every path here is '/'-separated, and every
+  // comparison is an EXACT path, never a suffix — `utils/cell-modifiers.ts`
+  // must not pass for `utils/modifiers.ts`, nor `hooks/use-day-detail.ts` for
+  // `utils/day-detail.ts`.
+  const slashed = (path: string) => path.split(sep).join('/');
+  /** `apps/web/src/features/calendar/`, with its trailing '/'. */
+  const directory = slashed(fileURLToPath(new URL('..', import.meta.url)));
+  /** `apps/web/src/`, with its trailing '/'. */
+  const srcRoot = slashed(fileURLToPath(new URL('../../..', import.meta.url))).replace(/\/?$/, '/');
+  const feature = (path: string) => `${directory}${path}`;
+  // SOURCE STRUCTURE B3: the screen is a FILE SET (`calendar-screen.fixture.ts`),
+  // the page plus its hooks, components and helpers. The allowances that named
+  // `kalendar.tsx` alone name ONE file of it now — the day detail dialog, which
+  // draws the roster and the override block — and every other file of the set
+  // is held to none, as every file outside it is.
+  const screen: readonly string[] = Object.values(CALENDAR_SCREEN_PARTS).map((parts) => `${srcRoot}${parts.join('/')}`);
+  const SHOWS_OWNER = `${srcRoot}${CALENDAR_SCREEN_PARTS.dayDetailDialog.join('/')}`;
+  const MONTH = feature('utils/month.ts');
+  const MODIFIERS = feature('utils/modifiers.ts');
+  const SNAPSHOT = feature('services/snapshot.ts');
+  const DAY_DETAIL = feature('utils/day-detail.ts');
+  const route = `${srcRoot}${CALENDAR_SCREEN_PARTS.page.join('/')}`;
   const files = [
     ...readdirSync(directory, { recursive: true, encoding: 'utf8' })
-      .map((name) => name.split(sep).join('/'))
+      .map(slashed)
       .filter((name) => /\.tsx?$/.test(name) && !name.endsWith('.test.ts'))
-      .map((name) => join(directory, name)),
+      .map(feature),
     route,
   ];
   const stripped = (file: string) =>
@@ -977,32 +998,32 @@ describe('the calendar only reads, and projects nothing of its own', () => {
       .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 
   it('sweeps the files it means to', () => {
-    expect(files.map((file) => file.slice(directory.length - 1).split(sep).join('/'))).toEqual(
-      expect.arrayContaining([
-        '/utils/month.ts',
-        '/services/snapshot.ts',
-        '/utils/modifiers.ts',
-        '/utils/grid-keys.ts',
-        '/utils/day-detail.ts',
-      ]),
-    );
+    expect(files).toEqual(expect.arrayContaining([MONTH, SNAPSHOT, MODIFIERS, feature('utils/grid-keys.ts'), DAY_DETAIL]));
+    expect(screen, 'the owner of the screen allowances is in the set').toContain(SHOWS_OWNER);
+    // Every part of the screen is swept, and none of them is empty: one
+    // emptied file cannot hide behind the others.
+    for (const file of screen) {
+      expect(files, `${file} is in the screen and not swept`).toContain(file);
+      expect(stripped(file).trim().length, `${file} is all but empty`).toBeGreaterThan(150);
+    }
   });
 
   it('derives one modifier from snapshot data (story 3.5a): overridden, from the domain\'s flag alone', () => {
     // Story 3.2b's vocabulary names every mark; story 3.5a derives the first,
     // `overridden`, in `month.ts` from the domain's `overridden` flag, and
-    // `kalendar.tsx` draws its glyph beside the day detail's override block.
+    // the screen draws its glyph beside the day detail's override block — TWO
+    // in the day detail dialog, and none in any other file of the screen.
     // Conflict, leave and uncovered are still named by the vocabulary alone
     // (3.6 and Epics 4–5), and no string literal names any mark.
-    for (const file of files.filter((one) => !one.endsWith('modifiers.ts'))) {
+    for (const file of files.filter((one) => one !== MODIFIERS)) {
       const text = stripped(file);
 
       expect(text, file).not.toMatch(/'(conflict|overridden|leave|uncovered)'|MODIFIER_(?!OVERRIDDEN\b)[A-Z]+\b/);
       const named = text.match(/\bMODIFIER_OVERRIDDEN\b/g)?.length ?? 0;
 
-      expect(named, file).toBe(file.endsWith('month.ts') || file.endsWith('kalendar.tsx') ? 2 : 0);
+      expect(named, file).toBe(file === MONTH || file === SHOWS_OWNER ? 2 : 0);
     }
-    const month = stripped(join(directory, 'utils', 'month.ts'));
+    const month = stripped(MONTH);
 
     expect(month, 'a cell given modifiers other than none or overridden').not.toMatch(
       /(?<!readonly )\bmodifiers:(?! NO_MODIFIERS\b| overridden \? OVERRIDDEN_MODIFIERS : NO_MODIFIERS\b)/,
@@ -1021,11 +1042,13 @@ describe('the calendar only reads, and projects nothing of its own', () => {
     // Story 3.4a: the snapshot CARRIES rank and position off the wire, to be
     // shown by 3.4b — in the named places only, counted, and nowhere else. No
     // other file reads either, and no rule ever does.
-    const carried = file.endsWith('snapshot.ts')
+    // The screen's allowance lives in the day detail dialog alone, at the
+    // counts it had in the one-file screen.
+    const carried = file === SNAPSHOT
       ? SNAPSHOT_CARRIES
-      : file.endsWith('day-detail.ts')
+      : file === DAY_DETAIL
         ? DETAIL_CARRIES
-        : file.endsWith('kalendar.tsx')
+        : file === SHOWS_OWNER
           ? SCREEN_SHOWS
           : [];
     let rest = text;
@@ -1033,6 +1056,11 @@ describe('the calendar only reads, and projects nothing of its own', () => {
     for (const { token, count } of carried) {
       expect(rest.split(token).length - 1, `${token} in ${file}`).toBe(count);
       rest = rest.replaceAll(token, '');
+    }
+    // Everywhere else none of what the screen shows, including the tokens the
+    // ban below cannot see (`positionsShown`, `member.position`, …).
+    if (carried.length === 0) {
+      for (const { token } of SCREEN_SHOWS) expect(text.split(token).length - 1, `${token} in ${file}`).toBe(0);
     }
     expect(rest).not.toMatch(/fire_?rank|fireRank|\brank\b|team_position|teamPosition|usesFireRanks/i);
     expect(text, 'a second query or key').not.toMatch(/queryKey:\s*\[(?!\s*\])/);
