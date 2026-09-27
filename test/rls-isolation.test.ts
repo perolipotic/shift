@@ -1087,6 +1087,11 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'rotation_patterns_select_own_organization',
         'rotation_steps_insert_by_own_active_admin',
         'rotation_steps_select_own_organization',
+        // STORY 3.5a: read and insert alone, and both an active admin's only;
+        // members read the live rows through `calendar_shift_type_overrides`.
+        // No update and no delete: removal is story 3.5b's.
+        'shift_type_overrides_insert_by_own_active_admin',
+        'shift_type_overrides_select_by_own_active_admin',
         // STORY 2.2a: the membership table's three on the times versions — a
         // version is appended, and cancelled only before it has decided any
         // day — and the teams' three on the types, which archive and are never
@@ -1116,6 +1121,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
             and proname in (
               'calendar_members',
               'calendar_people',
+              'calendar_shift_type_overrides',
               'current_member_access',
               'custom_access_token_hook',
               'member_active_from',
@@ -1144,6 +1150,9 @@ describe('the access-control layer is present, so nothing below passes vacuously
         // id, name and rank through, active or not. It REPLACED 3.3b's
         // `calendar_people`, which is gone — asked for above, and absent.
         'calendar_members',
+        // STORY 3.5a: the one every member reads the live overrides through,
+        // with the author as a member id.
+        'calendar_shift_type_overrides',
         'current_member_access',
         'custom_access_token_hook',
         'member_active_from',
@@ -13795,5 +13804,469 @@ describe('a direct API call writes a rotation under exactly the same rules', () 
       expect(response.status, `an anonymous caller read ${table}`).toBe(401);
       expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
     },
+  );
+});
+
+// ---------------------------------------- story 3.5a: shift-type overrides
+
+/**
+ * STORY 3.5a (`0019`). One live shift-type override per team and date, read
+ * and written by an active admin alone, read by every active member through
+ * `calendar_shift_type_overrides()`. Every SQL case runs in a rolled-back
+ * transaction; the REST cases write nothing.
+ */
+
+/** The seeded override per fixture: its team, date, type and reason. */
+const SEEDED_OVERRIDES: Readonly<Record<string, { team: string; date: string; type: string; reason: string }>> = {
+  'dvd-kastel-novi': { team: 'Smjena A', date: '2026-09-14', type: 'Noć', reason: 'Zamjena sa Smjenom B zbog vježbe.' },
+  'zastita-split': {
+    team: 'Smjena B',
+    date: '2026-09-14',
+    type: 'Jutarnja',
+    reason: 'Pokrivanje izvanrednog događaja.',
+  },
+};
+
+function seededOverrideOf(slug: string): { team: string; date: string; type: string; reason: string } {
+  const seeded = SEEDED_OVERRIDES[slug];
+  if (seeded === undefined) throw new Error(`no seeded override is recorded for ${slug}`);
+  return seeded;
+}
+
+/** `calendar_shift_type_overrides()`, as whoever the connection currently is. */
+async function calendarOverridesOf(client: Client): Promise<Record<string, unknown>[]> {
+  const { rows } = await client.query<Record<string, unknown>>(
+    `select id::text as id, team_id::text as team_id, date::text as date, shift_type_id::text as shift_type_id,
+            reason, created_at, author_member_id::text as author_member_id
+       from public.calendar_shift_type_overrides()`,
+  );
+  return rows;
+}
+
+/** The columns the function answers, exactly, whatever the caller. */
+async function calendarOverrideColumns(client: Client): Promise<string[]> {
+  const { fields } = await client.query('select * from public.calendar_shift_type_overrides() limit 0');
+  return fields.map((field) => field.name);
+}
+
+/** One override, written as whoever the connection currently is: the five columns a session may name. */
+async function insertOverride(
+  client: Client,
+  override: { organization: string; team: string; date: string; type: string; reason: string },
+): Promise<string> {
+  const { rows } = await client.query<{ id: string }>(
+    `insert into shift_type_overrides (organization_id, team_id, date, shift_type_id, reason)
+     values ($1, $2, $3::date, $4, $5)
+     returning id`,
+    [override.organization, override.team, override.date, override.type, override.reason],
+  );
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error('the override insert returned no id');
+  return id;
+}
+
+/** Every rotation rule row of every organization, whole, as text: byte-identity (CAP-12, DI-2). */
+async function rotationFingerprint(client: Client): Promise<string> {
+  const { rows } = await client.query<{ digest: string }>(
+    `select md5(coalesce(string_agg(body, E'\\n' order by body), '')) as digest
+       from (
+         select 'p:' || to_jsonb(x)::text as body from rotation_patterns x
+         union all select 's:' || to_jsonb(x)::text from rotation_steps x
+         union all select 'a:' || to_jsonb(x)::text from rotation_assignments x
+       ) as everything`,
+  );
+  return rows[0]?.digest ?? '';
+}
+
+describe('a shift-type override is recorded by an admin alone and read by every member (story 3.5a)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'seeds one $fixture override, attributed to its admin, and names that admin as a member',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const seeded = seededOverrideOf(slug);
+        const team = await seededTeam(client, owner.organizationId, seeded.team);
+        const type = await seededShiftType(client, owner.organizationId, seeded.type);
+
+        const { rows: stored } = await client.query<{ createdBy: string; removedAt: unknown }>(
+          `select created_by as "createdBy", removed_at as "removedAt" from shift_type_overrides
+            where organization_id = $1`,
+          [owner.organizationId],
+        );
+        expect(stored, `${slug}: the seed is not one live override by its admin`).toEqual([
+          { createdBy: owner.authUserId, removedAt: null },
+        ]);
+
+        for (const reader of [self, owner]) {
+          await actAs(client, reader.authUserId, owner.organizationId);
+          const rows = await calendarOverridesOf(client);
+          const columns = await calendarOverrideColumns(client);
+          await actAsOwner(client);
+
+          expect(columns, `${slug}: the read answers another shape`).toEqual([
+            'id',
+            'team_id',
+            'date',
+            'shift_type_id',
+            'reason',
+            'created_at',
+            'author_member_id',
+          ]);
+          expect(
+            rows.map(({ id: _id, created_at: _at, ...rest }) => rest),
+            `${slug} as ${reader.role}`,
+          ).toEqual([
+            {
+              team_id: team,
+              date: seeded.date,
+              shift_type_id: type,
+              reason: seeded.reason,
+              author_member_id: owner.id,
+            },
+          ]);
+        }
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'records a $fixture admin override on a non-working type, past or future, attributed by default, and leaves every rotation row byte-identical',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const organization = owner.organizationId;
+        const team = await seededTeam(client, organization, 'Smjena A');
+        const off = await seededShiftType(client, organization, 'Slobodno');
+        const before = await rotationFingerprint(client);
+
+        await actAs(client, owner.authUserId, organization);
+        const past = await insertOverride(client, { organization, team, date: '2021-03-04', type: off, reason: 'x' });
+        const future = await insertOverride(client, {
+          organization,
+          team,
+          date: '2031-03-04',
+          type: off,
+          reason: 'y'.repeat(200),
+        });
+        const { rows: visible } = await client.query<{ id: string }>(
+          'select id from shift_type_overrides where id in ($1, $2) order by date',
+          [past, future],
+        );
+        await actAsOwner(client);
+
+        expect(visible.map((row) => row.id), `${slug}: the admin cannot read what it wrote`).toEqual([past, future]);
+        const { rows } = await client.query<{ createdBy: string; recent: boolean }>(
+          `select created_by as "createdBy", created_at > now() - interval '1 minute' as recent
+             from shift_type_overrides where id in ($1, $2)`,
+          [past, future],
+        );
+        expect(rows).toEqual([
+          { createdBy: owner.authUserId, recent: true },
+          { createdBy: owner.authUserId, recent: true },
+        ]);
+        expect(await rotationFingerprint(client), `${slug}: an override touched a rotation row`).toBe(before);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'shows a $fixture member-role account no table row, refuses its insert, and answers it the rpc',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const team = await seededTeam(client, organization, 'Smjena A');
+        const type = await seededShiftType(client, organization, 'Slobodno');
+
+        await actAs(client, self.authUserId, organization);
+        const { rows: table } = await client.query('select * from shift_type_overrides');
+        const viaRpc = await calendarOverridesOf(client);
+        const refusal = await refusedThenContinue(client, () =>
+          insertOverride(client, { organization, team, date: '2026-10-01', type, reason: 'x' }),
+        );
+        await actAsOwner(client);
+
+        expect(table, `${slug}: a member-role account read the table`).toEqual([]);
+        expect(viaRpc.length, `${slug}: a member-role account lost the rpc`).toBe(1);
+        expect(refusal.code, `${slug}: a member-role account wrote an override`).toBe('42501');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'answers a $fixture caller inactive today nothing, and refuses an inactive admin',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const organization = owner.organizationId;
+        const other = await addThrowawayAdmin(client, organization);
+        const team = await seededTeam(client, organization, 'Smjena A');
+        const type = await seededShiftType(client, organization, 'Slobodno');
+        await ownerVersion(client, {
+          organization,
+          member: other.id,
+          active: false,
+          from: await organizationDay(client, organization),
+          by: owner.authUserId,
+        });
+
+        await actAs(client, other.authUserId, organization);
+        const rows = await calendarOverridesOf(client);
+        const { rows: table } = await client.query('select * from shift_type_overrides');
+        const refusal = await refusedThenContinue(client, () =>
+          insertOverride(client, { organization, team, date: '2026-10-01', type, reason: 'x' }),
+        );
+        await actAsOwner(client);
+
+        expect(rows, `${slug}: an inactive caller read the overrides`).toEqual([]);
+        expect(table, `${slug}: an inactive admin read the table`).toEqual([]);
+        expect(refusal.code, `${slug}: an inactive admin wrote an override`).toBe('42501');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'answers a $fixture caller nothing of $otherFixture, under its own claim, a forged one or none',
+    async ({ slug, admin, member, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const foreignOwner = await memberByUsername(
+          client,
+          otherSlug,
+          FIXTURES.find((entry) => entry.slug === otherSlug)?.admin ?? '',
+        );
+        const { rows: foreign } = await client.query<{ id: string }>(
+          'select id::text as id from shift_type_overrides where organization_id = $1',
+          [foreignOwner.organizationId],
+        );
+        expect(foreign.length, `${otherSlug} has no override to leak`).toBeGreaterThan(0);
+        const foreignTeam = await seededTeam(client, foreignOwner.organizationId, 'Smjena A');
+        const ownType = await seededShiftType(client, owner.organizationId, 'Slobodno');
+
+        for (const reader of [self, owner]) {
+          await actAs(client, reader.authUserId, reader.organizationId);
+          const own = await calendarOverridesOf(client);
+          const { rows: table } = await client.query<{ id: string }>('select id::text as id from shift_type_overrides');
+          await actAsOwner(client);
+
+          expect(own.length, `${slug}: its own overrides`).toBeGreaterThan(0);
+          for (const row of [...own, ...table]) {
+            expect(foreign.map((one) => one.id), `${slug}: another tenant's override`).not.toContain(row['id']);
+          }
+
+          await actAs(client, reader.authUserId, foreignOwner.organizationId);
+          expect(await calendarOverridesOf(client), `${slug}: a forged claim read overrides`).toEqual([]);
+          await actAsOwner(client);
+          await actAs(client, reader.authUserId, null);
+          expect(await calendarOverridesOf(client), `${slug}: no claim read overrides`).toEqual([]);
+          await actAsOwner(client);
+        }
+
+        // Another tenant's team under the admin's own tenant: the key refuses it.
+        await actAs(client, owner.authUserId, owner.organizationId);
+        const crossTeam = await refusedThenContinue(client, () =>
+          insertOverride(client, {
+            organization: owner.organizationId,
+            team: foreignTeam,
+            date: '2026-10-01',
+            type: ownType,
+            reason: 'x',
+          }),
+        );
+        // An override written into the other tenant: the policy refuses it.
+        const crossTenant = await refusedThenContinue(client, () =>
+          insertOverride(client, {
+            organization: foreignOwner.organizationId,
+            team: foreignTeam,
+            date: '2026-10-01',
+            type: ownType,
+            reason: 'x',
+          }),
+        );
+        await actAsOwner(client);
+
+        expect(crossTeam.code, `${slug}: another tenant's team was overridden`).toBe('23503');
+        expect(crossTenant.code, `${slug}: an override was written into ${otherSlug}`).toBe('42501');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a second live $fixture override of one team and date, and admits one again once the first is removed',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const organization = owner.organizationId;
+        const team = await seededTeam(client, organization, 'Smjena A');
+        const type = await seededShiftType(client, organization, 'Slobodno');
+        const override = { organization, team, date: '2026-10-01', type, reason: 'x' };
+
+        await actAs(client, owner.authUserId, organization);
+        const first = await insertOverride(client, override);
+        const duplicate = await refusedThenContinue(client, () => insertOverride(client, override));
+        await actAsOwner(client);
+        expect(duplicate.code, `${slug}: two live overrides on one team and date`).toBe('23505');
+
+        // A removal is 3.5b's to write; here the owner records one.
+        await client.query('update shift_type_overrides set removed_by = $2, removed_at = now() where id = $1', [
+          first,
+          owner.authUserId,
+        ]);
+        await actAs(client, owner.authUserId, organization);
+        const second = await insertOverride(client, override);
+        const read = await calendarOverridesOf(client);
+        await actAsOwner(client);
+
+        expect(read.map((row) => row['id']), `${slug}: the removed override is read`).not.toContain(first);
+        expect(read.map((row) => row['id'])).toContain(second);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a blank or overlong $fixture reason, an archived team or type, a forged author, an update, a delete and a half-recorded removal',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const organization = owner.organizationId;
+        const team = await seededTeam(client, organization, 'Smjena A');
+        const type = await seededShiftType(client, organization, 'Slobodno');
+        const archivedType = await addThrowawayShiftType(client, organization, owner.authUserId, { archived: true });
+        const archivedTeam = (await addThrowawayTeam(client, organization, owner.authUserId, true)).id;
+
+        await actAs(client, owner.authUserId, organization);
+        const codes: Record<string, string> = {};
+        for (const [label, reason] of [
+          ['blank', '  '],
+          ['empty', ''],
+          // White space that is not a space: tabs and line breaks alone.
+          ['tabs and line breaks', '\t\n\r\t'],
+          ['overlong', 'z'.repeat(201)],
+        ] as const) {
+          codes[label] = (
+            await refusedThenContinue(client, () =>
+              insertOverride(client, { organization, team, date: '2026-10-01', type, reason }),
+            )
+          ).code;
+        }
+        codes['archived type'] = (
+          await refusedThenContinue(client, () =>
+            insertOverride(client, { organization, team, date: '2026-10-01', type: archivedType, reason: 'x' }),
+          )
+        ).code;
+        codes['archived team'] = (
+          await refusedThenContinue(client, () =>
+            insertOverride(client, { organization, team: archivedTeam, date: '2026-10-01', type, reason: 'x' }),
+          )
+        ).code;
+        // No session names the attribution or the removal, updates or deletes.
+        codes['forged author'] = (
+          await refusedThenContinue(client, () =>
+            client.query(
+              `insert into shift_type_overrides (organization_id, team_id, date, shift_type_id, reason, created_by)
+               values ($1, $2, '2026-10-01', $3, 'x', $4)`,
+              [organization, team, type, owner.authUserId],
+            ),
+          )
+        ).code;
+        codes['update'] = (
+          await refusedThenContinue(client, () => client.query('update shift_type_overrides set removed_at = now()'))
+        ).code;
+        codes['delete'] = (
+          await refusedThenContinue(client, () => client.query('delete from shift_type_overrides'))
+        ).code;
+        await actAsOwner(client);
+
+        const halfRemoved = await refusedThenContinue(client, () =>
+          client.query('update shift_type_overrides set removed_at = now() where organization_id = $1', [organization]),
+        );
+
+        expect(codes, slug).toEqual({
+          blank: '23514',
+          empty: '23514',
+          'tabs and line breaks': '23514',
+          overlong: '23514',
+          'archived type': '42501',
+          'archived team': '42501',
+          'forged author': '42501',
+          update: '42501',
+          delete: '42501',
+        });
+        expect(halfRemoved.code, `${slug}: a removal without its author`).toBe('23514');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('names an author who is no member of the organization as nobody', async () => {
+    await inRolledBackTransaction(async (client) => {
+      const [fixture, other] = FIXTURES;
+      const owner = await memberByUsername(client, fixture.slug, fixture.admin);
+      const self = await memberByUsername(client, fixture.slug, fixture.member);
+      const stranger = await memberByUsername(client, other.slug, other.admin);
+      const organization = owner.organizationId;
+      const team = await seededTeam(client, organization, 'Smjena B');
+      const type = await seededShiftType(client, organization, 'Slobodno');
+      // As the owner, past the policy: an auth user of ANOTHER organization, and nobody at all.
+      const { rows } = await client.query<{ id: string }>(
+        `insert into shift_type_overrides (organization_id, team_id, date, shift_type_id, reason, created_by)
+         values ($1, $2, '2026-10-01', $3, 'x', $4), ($1, $2, '2026-10-02', $3, 'x', gen_random_uuid())
+         returning id::text as id`,
+        [organization, team, type, stranger.authUserId],
+      );
+
+      await actAs(client, self.authUserId, organization);
+      const read = await calendarOverridesOf(client);
+      await actAsOwner(client);
+
+      expect(rows).toHaveLength(2);
+      for (const { id } of rows) {
+        const row = read.find((one) => one['id'] === id);
+        expect(row, id).toBeDefined();
+        expect(row?.['author_member_id'], id).toBeNull();
+      }
+    });
+  });
+
+  it.skipIf(noApi)('refuses an anonymous caller the table and the rpc', async () => {
+    const table = await rest('shift_type_overrides?select=*');
+    expect(table.status, 'an anonymous caller read shift_type_overrides').toBe(401);
+    expect((await restRefusal(table)).code, 'a privilege refusal is 42501').toBe('42501');
+
+    const rpc = await rest('rpc/calendar_shift_type_overrides', { method: 'POST', body: {} });
+    expect(rpc.status, 'an anonymous caller reached the overrides').toBe(401);
+    const refusal = await restRefusal(rpc);
+    expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
+    expect(refusal.message).toBe('permission denied for function calendar_shift_type_overrides');
+  });
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'answers the $fixture overrides over PostgREST to member and admin, and the table to the admin alone',
+    async ({ slug, admin, member }) => {
+      for (const reader of [member, admin]) {
+        const token = await tokenFor(reader, slug);
+        const response = await rest('rpc/calendar_shift_type_overrides', { token, method: 'POST', body: {} });
+        expect(response.status, `${reader}: ${await response.clone().text()}`).toBe(200);
+        const rows = (await response.json()) as Record<string, unknown>[];
+
+        expect(rows.some((row) => row['date'] === seededOverrideOf(slug).date), `${slug}/${reader}`).toBe(true);
+        for (const row of rows) {
+          expect(Object.keys(row).sort(), `${slug}/${reader}: another shape`).toEqual([
+            'author_member_id',
+            'created_at',
+            'date',
+            'id',
+            'reason',
+            'shift_type_id',
+            'team_id',
+          ]);
+        }
+        const table = await restRows('shift_type_overrides?select=id', { token });
+        expect(table.length > 0, `${slug}/${reader} reads the table`).toBe(reader === admin);
+      }
+    },
+    20_000,
   );
 });

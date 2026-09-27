@@ -42,6 +42,12 @@ export {
 } from './projection.js';
 
 export {
+  scheduledShiftTypeOn,
+  type ScheduledShiftType,
+  type ShiftTypeOverride,
+} from './overrides.js';
+
+export {
   COVERAGE_GAP,
   DUPLICATE_COVERAGE,
   REST_GAP,

@@ -1756,11 +1756,13 @@ const KEY_SOURCES = [
     // 3.4b: the day detail's title, its close, the heading over its roster,
     // the empty roster, an off day and a day with no rotation. The roster's rank and
     // position labels come through `@/members/rank` and `@/members/position`,
-    // already key sources.
+    // already key sources. THIRTY-TWO SINCE STORY 3.5a: the override block's
+    // heading, the projected type, the author, the unknown author, the time
+    // it was saved and its reason.
     name: 'the Kalendar destination',
     file: KALENDAR,
     keys: translationKeys,
-    strings: 26,
+    strings: 32,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's

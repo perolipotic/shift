@@ -179,6 +179,12 @@ async function demoSnapshot(client: Client): Promise<string> {
           from rotation_assignments a join demo on demo.id = a.organization_id
           join teams t on t.id = a.team_id
           join rotation_steps rs on rs.id = a.offset_step_id),
+       'shift_type_overrides', (select jsonb_agg(jsonb_build_object(
+          'team', t.name, 'date', o.date, 'type', st.name, 'reason', o.reason,
+          'by_admin', o.created_by = (select auth_user_id from admin)) order by t.name, o.date)
+          from shift_type_overrides o join demo on demo.id = o.organization_id
+          join teams t on t.id = o.team_id
+          join shift_types st on st.id = o.shift_type_id),
        'auth_users', (select count(*) from auth.users where email like '%@' || $2),
        'identities', (select count(*) from auth.identities i join auth.users u on u.id = i.user_id
                        where u.email like '%@' || $2)
@@ -218,6 +224,8 @@ async function othersFingerprint(client: Client): Promise<{ rows: number; digest
             union all select 'rotation_steps', x.id::text, to_jsonb(x)::text from rotation_steps x
               where x.organization_id in (select id from others)
             union all select 'rotation_assignments', x.id::text, to_jsonb(x)::text from rotation_assignments x
+              where x.organization_id in (select id from others)
+            union all select 'shift_type_overrides', x.id::text, to_jsonb(x)::text from shift_type_overrides x
               where x.organization_id in (select id from others)
             union all select 'auth.users', u.id::text, to_jsonb(u)::text from auth.users u
               where u.email is null or u.email not like '%@' || $2
@@ -339,6 +347,7 @@ describe('the demo organization script', () => {
            (select count(*)::int from rotation_patterns where organization_id = $1) as patterns,
            (select count(*)::int from rotation_steps where organization_id = $1) as steps,
            (select count(*)::int from rotation_assignments where organization_id = $1) as assignments,
+           (select count(*)::int from shift_type_overrides where organization_id = $1) as overrides,
            (select count(*)::int from auth.users where email like '%@' || $2) as "authUsers",
            (select count(*)::int from auth.identities i join auth.users u on u.id = i.user_id
              where u.email like '%@' || $2) as identities`,
@@ -355,6 +364,7 @@ describe('the demo organization script', () => {
         patterns: 1,
         steps: 4,
         assignments: 4,
+        overrides: 1,
         authUsers: 17,
         identities: 17,
       });
@@ -511,10 +521,42 @@ describe('the demo organization script', () => {
              union all select created_by from rotation_patterns where organization_id = $1
              union all select created_by from rotation_steps where organization_id = $1
              union all select created_by from rotation_assignments where organization_id = $1
+             union all select created_by from shift_type_overrides where organization_id = $1
            ) as rows`,
         [organizationId],
       );
-      expect(attribution[0]).toEqual({ foreign: 0, attributed: 4 + 16 + 3 + 2 + 1 + 4 + 4 });
+      expect(attribution[0]).toEqual({ foreign: 0, attributed: 4 + 16 + 3 + 2 + 1 + 4 + 4 + 1 });
+
+      // Story 3.5a: one live override, on Smjena A on the organization's
+      // today, naming a type the rotation does not project there (Smjena A
+      // stands at offset 0 from 2020-01-01: Dan, Noć, Slobodno, Slobodno).
+      const { rows: overrides } = await client.query<{
+        team: string;
+        today: boolean;
+        type: string;
+        projected: string;
+        reason: string;
+        removed: boolean;
+      }>(
+        `select t.name as team, o.date = public.organization_today(o.organization_id) as today,
+                st.name as type,
+                (array['Dan', 'Noć', 'Slobodno', 'Slobodno'])[((o.date - date '2020-01-01') % 4) + 1] as projected,
+                o.reason, o.removed_at is not null as removed
+           from shift_type_overrides o
+           join teams t on t.id = o.team_id
+           join shift_types st on st.id = o.shift_type_id
+          where o.organization_id = $1`,
+        [organizationId],
+      );
+      expect(overrides).toHaveLength(1);
+      expect(overrides[0]).toMatchObject({
+        team: 'Smjena A',
+        today: true,
+        type: overrides[0]?.projected === 'Dan' ? 'Noć' : 'Dan',
+        reason: 'Zamjena sa Smjenom B zbog vježbe.',
+        removed: false,
+      });
+      expect(overrides[0]?.type, 'the demo override names the projected type').not.toBe(overrides[0]?.projected);
     });
   });
 
@@ -606,7 +648,16 @@ describe('the demo organization script', () => {
       // aggregate a non-null array of the expected length.
       const parsed = JSON.parse(first) as Record<string, unknown>;
       const lengths = Object.fromEntries(
-        ['members', 'teams', 'memberships', 'hour_bands', 'shift_types', 'rotation_patterns', 'rotation_assignments'].map((key) => [
+        [
+          'members',
+          'teams',
+          'memberships',
+          'hour_bands',
+          'shift_types',
+          'rotation_patterns',
+          'rotation_assignments',
+          'shift_type_overrides',
+        ].map((key) => [
           key,
           Array.isArray(parsed[key]) ? (parsed[key] as unknown[]).length : `not an array: ${String(parsed[key])}`,
         ]),
@@ -619,6 +670,7 @@ describe('the demo organization script', () => {
         shift_types: 3,
         rotation_patterns: 1,
         rotation_assignments: 4,
+        shift_type_overrides: 1,
       });
       expect(
         ((parsed['rotation_patterns'] as { steps: unknown[] }[] | undefined)?.[0]?.steps ?? []).length,

@@ -6,6 +6,7 @@ import {
   holdFireRanks,
   holdRotation,
   removeSeededRotation,
+  seedShiftTypeOverride,
   seedTeamRotation,
   setFireRanks,
   setRankAndPosition,
@@ -47,6 +48,11 @@ import { expect, test } from './support/test.ts';
  * open the read-only day detail: the type, its times and who is rostered as at
  * that date; an off day and a day before the rotation say so. Escape returns
  * focus to the opener.
+ *
+ * Story 3.5a: a shift-type override, written in SQL (`seedShiftTypeOverride`),
+ * marks its cell and its day with `✎`, the persistent legend shows beside the
+ * grid and the day list, and the day detail names the projected type, the
+ * author, the time and the reason.
  */
 
 const kalendar = hr.kalendar;
@@ -506,7 +512,8 @@ for (const [width, height, name] of [
         `${weekdayOf(rotation.today)} ${dayMonth(rotation.today)}, ${fixture.team.name}, ${expectedType(rotation, rotation.today)}, 07:00–19:00`,
       );
 
-      // No mark is on screen, so there is no legend: no list, no tooltip, no icon.
+      // No override is seeded here, so no mark is on screen and there is no
+      // legend: no list, no tooltip, no icon.
       await expect(page.getByText(kalendar.legend, { exact: true })).toHaveCount(0);
 
       // Exactly one tab stop, on today's first team.
@@ -785,6 +792,120 @@ test.describe('the day detail at 390 px, as a member in Moj raspored', () => {
     await page.keyboard.press('Escape');
     await expect(detail).toHaveCount(0);
     await expect(opener).toBeFocused();
+  });
+});
+
+/** The legend's heading and its overridden entry. */
+function legendOf(page: Page): { readonly heading: Locator; readonly list: Locator } {
+  return {
+    heading: page.getByText(kalendar.legend, { exact: true }),
+    list: page.getByRole('list', { name: kalendar.legend, exact: true }),
+  };
+}
+
+const REASON = 'Zamjena zbog vježbe (E2E).';
+
+test.describe('a shift-type override at 1280 px, as an admin', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 1280, height: 800 } });
+
+  test('marks the cell with ✎ and the legend, and the detail names the projected type, author, time and reason', async ({
+    page,
+    fixture,
+  }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    // Today projects the first step (Dan); the team worked the second (Noć).
+    const override = await seedShiftTypeOverride(rotation, fixture.team.id, rotation.today, 1, REASON);
+    const projected = expectedType(rotation, rotation.today);
+    expect(projected).not.toBe(override.typeName);
+
+    await page.goto(gridMonthOf(rotation.today));
+    const cell = await cellOf(page, fixture.team.name, rotation.today);
+    // The mark is on the cell itself, without opening anything.
+    await expect(cell).toContainText(override.typeName);
+    await expect(cell).toContainText('\u270E');
+    await expect(cell).toHaveAccessibleName(
+      `${weekdayOf(rotation.today)} ${dayMonth(rotation.today)}, ${fixture.team.name}, ${override.typeName}, 19:00–07:00, ${kalendar.modifier.overridden}`,
+    );
+    // Only the overridden cell carries it: a neighbour in the same month —
+    // yesterday, or tomorrow on the 1st — is unmarked.
+    const yesterday = addDays(rotation.today, -1);
+    const neighbour = yesterday.slice(0, 7) === rotation.today.slice(0, 7) ? yesterday : addDays(rotation.today, 1);
+    await expect(await cellOf(page, fixture.team.name, neighbour)).not.toContainText('\u270E');
+    // The persistent legend, never a tooltip.
+    const legend = legendOf(page);
+    await expect(legend.heading).toBeVisible();
+    await expect(legend.list.getByRole('listitem')).toHaveText([`\u270E${kalendar.modifier.overridden}`]);
+
+    await cell.click();
+    const detail = detailOf(page, fixture.team.name, rotation.today);
+    await expect(detail).toBeVisible();
+    // The kind, the type and the range follow the type worked.
+    await expect(detail).toContainText('19:00–07:00');
+    await expect(detail.getByRole('list', { name: kalendar.detail.roster, exact: true })).toContainText(
+      fixture.member.name,
+    );
+    const block = detail.getByRole('region', { name: kalendar.detail.override.heading });
+    await expect(block).toBeVisible();
+    await expect(block).toContainText(fill(kalendar.detail.override.projected, { type: projected }));
+    await expect(block).toContainText(fill(kalendar.detail.override.author, { name: fixture.admin.name }));
+    await expect(block).toContainText(
+      fill(kalendar.detail.override.savedAt, { date: override.savedDate, time: override.savedTime }),
+    );
+    await expect(block).toContainText(fill(kalendar.detail.override.reason, { reason: REASON }));
+  });
+
+  test('a working day made an off one: the off text, no roster, and the block naming the projected type', async ({
+    page,
+    fixture,
+  }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    // Today projects the first step (Dan); the team was off (Slobodno).
+    const override = await seedShiftTypeOverride(rotation, fixture.team.id, rotation.today, 2, REASON);
+    const projected = expectedType(rotation, rotation.today);
+    expect(expectedRange(rotation, rotation.today), 'today is not a working day').not.toBeNull();
+
+    await page.goto(gridMonthOf(rotation.today));
+    const cell = await cellOf(page, fixture.team.name, rotation.today);
+    await expect(cell).toContainText(override.typeName);
+    await expect(cell).toContainText('\u270E');
+    await cell.click();
+    const detail = detailOf(page, fixture.team.name, rotation.today);
+    await expect(detail).toBeVisible();
+    await expect(detail).toContainText(fill(kalendar.detail.off, { team: fixture.team.name }));
+    await expect(detail.getByRole('list', { name: kalendar.detail.roster, exact: true })).toHaveCount(0);
+    const block = detail.getByRole('region', { name: kalendar.detail.override.heading });
+    await expect(block).toBeVisible();
+    await expect(block).toContainText(fill(kalendar.detail.override.projected, { type: projected }));
+    await expect(block).toContainText(fill(kalendar.detail.override.reason, { reason: REASON }));
+  });
+});
+
+test.describe('a shift-type override at 390 px, as a member in Moj raspored', () => {
+  test.use({ storageState: MEMBER_STATE, viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('marks the day with ✎ and the legend, and the detail names the change', async ({ page, fixture }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    const override = await seedShiftTypeOverride(rotation, fixture.team.id, rotation.today, 1, REASON);
+
+    await page.goto('/kalendar');
+    const today = dayList(page).locator('li[aria-current="date"]');
+    await expect(today).toContainText(override.typeName);
+    await expect(today).toContainText('\u270E');
+    const legend = legendOf(page);
+    await expect(legend.heading).toBeVisible();
+    await expect(legend.list.getByRole('listitem')).toHaveText([`\u270E${kalendar.modifier.overridden}`]);
+    await expectNoHorizontalScroll(page);
+
+    await today.getByRole('button').tap();
+    const detail = detailOf(page, fixture.team.name, rotation.today);
+    const block = detail.getByRole('region', { name: kalendar.detail.override.heading });
+    await expect(block).toContainText(fill(kalendar.detail.override.projected, { type: expectedType(rotation, rotation.today) }));
+    await expect(block).toContainText(fill(kalendar.detail.override.author, { name: fixture.admin.name }));
+    await expect(block).toContainText(
+      fill(kalendar.detail.override.savedAt, { date: override.savedDate, time: override.savedTime }),
+    );
+    await expect(block).toContainText(fill(kalendar.detail.override.reason, { reason: REASON }));
+    await expectNoHorizontalScroll(page);
   });
 });
 

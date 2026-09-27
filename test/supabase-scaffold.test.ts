@@ -301,7 +301,7 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the thirty-five policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a and 2.3a reviewed, and no thirty-sixth', () => {
+  it('declares exactly the thirty-seven policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a and 3.5a reviewed, and no thirty-eighth', () => {
     // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
     // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
     // copying `members_update_by_own_active_admin`, and its name is added here
@@ -371,6 +371,11 @@ describe('the access-control migration', () => {
       'rotation_patterns_select_own_organization',
       'rotation_steps_insert_by_own_active_admin',
       'rotation_steps_select_own_organization',
+      // STORY 3.5a, and TWO: read and insert, both an active admin's alone. No
+      // update and no delete policy: removing an override is story 3.5b's, and
+      // members read the live rows through `calendar_shift_type_overrides()`.
+      'shift_type_overrides_insert_by_own_active_admin',
+      'shift_type_overrides_select_by_own_active_admin',
       // STORY 2.2a, and THREE for the reason the membership table has three:
       // a times version is appended, cancelled only while it is not yet in
       // effect, and never changed.
@@ -1668,6 +1673,135 @@ describe('the access-control migration', () => {
       (migration.replaceAll(/--[^\n]*/g, '').match(/create function/gi) ?? []).length,
       'story 2.3a takes no RPC: its functions are the three readers',
     ).toBe(3);
+  });
+
+  it('stores a shift-type override as one attributed, soft-removable fact per team and date (story 3.5a)', () => {
+    // STORY 3.5a (CAP-12, AD-3): the exception layer, stored as nothing but the
+    // override itself. No projected type, no schedule and no rotation column;
+    // the domain applies it over the projection.
+    const overrides = columnsOf('shift_type_overrides');
+    expect(overrides.columns, 'shift_type_overrides stores something beyond its reviewed columns').toEqual([
+      'organization_id',
+      'id',
+      'team_id',
+      'date',
+      'shift_type_id',
+      'reason',
+      'created_by',
+      'created_at',
+      'removed_by',
+      'removed_at',
+    ]);
+    expect(overrides.body).toMatch(/created_by uuid not null default auth\.uid\(\)/);
+    expect(overrides.body).toMatch(/created_at timestamptz not null default now\(\)/);
+    expect(overrides.body, 'a team of another tenant is representable').toMatch(
+      /foreign key \(organization_id, team_id\)\s+references teams \(organization_id, id\)/,
+    );
+    expect(overrides.body, 'a type of another tenant is representable').toMatch(
+      /foreign key \(organization_id, shift_type_id\)\s+references shift_types \(organization_id, id\)/,
+    );
+    expect(overrides.body, 'an infinite or BC date is admitted').toMatch(
+      /check \(isfinite\(date\) and date >= date '0001-01-01' and date < date '10000-01-01'\)/,
+    );
+    // Every white space, not spaces alone: `btrim` would admit a reason of
+    // tabs or line breaks only.
+    expect(overrides.body, 'the reason is not 1–200 characters once white space is trimmed').toMatch(
+      /check \(char_length\(regexp_replace\(reason, '\^\[\[:space:\]\]\+\|\[\[:space:\]\]\+\$', '', 'g'\)\) between 1 and 200\)/,
+    );
+    expect(overrides.body, 'the reason is trimmed of spaces alone').not.toMatch(/btrim\(reason\)/);
+    expect(overrides.body, 'a removal may be half-recorded').toMatch(
+      /check \(\(removed_by is null\) = \(removed_at is null\)\)/,
+    );
+    expect(overrides.body, 'the override stores a projection or a rotation').not.toMatch(
+      /projected|pattern|step|assignment|schedule/,
+    );
+    const statements = migrationStatements();
+    expect(statements, 'two live overrides of one team and date are admitted').toMatch(
+      /create unique index \w+\s+on shift_type_overrides \(organization_id, team_id, date\)\s+where removed_at is null;/i,
+    );
+    expect(statements).toMatch(/alter table shift_type_overrides enable row level security;/);
+    expect(statements).toMatch(/create index \w+ on shift_type_overrides \(organization_id\);/);
+  });
+
+  it('opens the override table to an active admin alone, insert only, and never to update or delete (story 3.5a)', () => {
+    const statements = migrationStatements();
+    const policies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter((declaration) =>
+      /on public\.shift_type_overrides\b/i.test(declaration),
+    );
+    expect(policies.length, 'shift_type_overrides does not carry exactly two policies').toBe(2);
+    for (const verb of ['update', 'delete', 'all']) {
+      expect(
+        policies.filter((declaration) => new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration)),
+        `a policy opens ${verb} on shift_type_overrides; removal is story 3.5b's`,
+      ).toEqual([]);
+    }
+    for (const name of [
+      'shift_type_overrides_select_by_own_active_admin',
+      'shift_type_overrides_insert_by_own_active_admin',
+    ]) {
+      const body = policyBody(name);
+      expect(body, `${name} is not declared`).not.toBe('');
+      expect(body, `${name} does not pin the tenant`).toMatch(/organization_id = nullif/);
+      expect(body, `${name} does not re-read active state`).toContain('access.is_active');
+      expect(body, `${name} admits a member-role account`).toContain("access.member_role = 'admin'");
+    }
+    const insert = policyBody('shift_type_overrides_insert_by_own_active_admin');
+    expect(insert, 'the attribution is not pinned to the caller').toMatch(/created_by = \(select auth\.uid\(\)\)/);
+    expect(insert, 'an archived team may be overridden').toMatch(
+      /and team\.id = shift_type_overrides\.team_id\s+and team\.archived/,
+    );
+    expect(insert, 'an archived type may be named').toMatch(
+      /and shift_type\.id = shift_type_overrides\.shift_type_id\s+and shift_type\.archived/,
+    );
+    expect(statements).toMatch(
+      /revoke insert, update, delete, truncate, references, trigger on table public\.shift_type_overrides\s+from anon, authenticated;/i,
+    );
+    expect(statements).toMatch(/revoke select on table public\.shift_type_overrides from anon;/);
+    expect(statements, 'the five facts are not the only insertable columns').toMatch(
+      /grant insert \(organization_id, team_id, date, shift_type_id, reason\) on table public\.shift_type_overrides\s+to authenticated;/i,
+    );
+    expect(statements, 'a later migration grants update or delete on shift_type_overrides').not.toMatch(
+      /grant[^;]*\b(update|delete|all)\b[^;]*on table public\.shift_type_overrides\b/i,
+    );
+    expect(statements, 'a migration grants anon something on shift_type_overrides').not.toMatch(
+      /grant[^;]*on table public\.shift_type_overrides to[^;]*\banon\b/i,
+    );
+  });
+
+  it('reads the live overrides through one definer function that names the author as a member (story 3.5a)', () => {
+    const statements = migrationStatements();
+    const read = /create function public\.calendar_shift_type_overrides\(\)[\s\S]*?\$\$;/i.exec(statements)?.[0];
+    expect(read, 'calendar_shift_type_overrides is not declared').toBeDefined();
+    expect(read).toMatch(
+      /returns table \(\s*id uuid,\s*team_id uuid,\s*date date,\s*shift_type_id uuid,\s*reason text,\s*created_at timestamptz,\s*author_member_id uuid\s*\)/,
+    );
+    expect(read).toMatch(/language sql/i);
+    expect(read).toMatch(/\bstable\b/i);
+    expect(read).toMatch(/security definer/i);
+    expect(read).toMatch(/set search_path = ''/);
+    expect(read, 'the read lost the claim pin').toMatch(
+      /o\.organization_id = nullif\(\(\(select auth\.jwt\(\)\) ->> 'organization_id'\), ''\)::uuid/,
+    );
+    expect(read, 'the read lost the active caller pin').toMatch(/where access\.is_active/);
+    expect(read, 'a removed override is read').toMatch(/and o\.removed_at is null/);
+    expect(read, 'the author is not scoped to the organization').toMatch(
+      /where m\.organization_id = o\.organization_id\s+and m\.auth_user_id = o\.created_by/,
+    );
+    // The auth user id is compared, never returned.
+    expect(read, 'an auth user id or a removal leaves the function').not.toMatch(
+      /select o\.id,[^()]*\b(created_by|removed_by|removed_at|auth_user_id)\b[^()]*\(/,
+    );
+    for (const role of ['public', 'anon', 'service_role']) {
+      expect(statements).toContain(`revoke execute on function public.calendar_shift_type_overrides() from ${role};`);
+    }
+    expect(statements).toContain('grant execute on function public.calendar_shift_type_overrides() to authenticated;');
+    const migration = readFileSync(join(supabaseRoot, 'migrations', '0019_shift_type_overrides.sql'), 'utf8').replaceAll(
+      /--[^\n]*/g,
+      '',
+    );
+    expect(migration, 'story 3.5a takes no trigger').not.toMatch(/create (or replace )?trigger/i);
+    expect(migration, 'story 3.5a writes or refers to a rotation row').not.toMatch(/rotation_/);
+    expect((migration.match(/create function/gi) ?? []).length, 'story 3.5a takes no RPC besides its read').toBe(1);
   });
 
   it('keeps a team name unique among active teams only, and never blank', () => {

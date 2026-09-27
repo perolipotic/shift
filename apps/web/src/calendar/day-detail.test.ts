@@ -14,10 +14,12 @@ import {
   VIEWER_NAME,
   calendarMemberRow,
   calendarOrganizationRow,
+  calendarOverrideRow,
   calendarTableOf,
   memberMembershipRow,
   membersAnswerOf,
   membershipRow,
+  overridesAnswerOf,
   statusRow,
   teamRow,
   viewerRow,
@@ -40,10 +42,15 @@ async function snapshotOf(
     statuses = [] as readonly Record<string, unknown>[],
     members = undefined as readonly Record<string, unknown>[] | undefined,
     usesFireRanks = false,
+    overrides = [] as readonly Record<string, unknown>[],
   } = {},
 ): Promise<CalendarSnapshot> {
   const organization = calendarOrganizationRow(rows, { viewers, versions, statuses, usesFireRanks });
-  const source = calendarTableOf({ data: [organization], error: null, count: 1 }, membersAnswerOf(members));
+  const source = calendarTableOf(
+    { data: [organization], error: null, count: 1 },
+    membersAnswerOf(members),
+    overridesAnswerOf(overrides),
+  );
   const outcome = await readCalendar(source, source, viewerSession());
 
   if (!outcome.ok) throw new Error(outcome.code);
@@ -126,6 +133,7 @@ describe('the day detail (story 3.4b)', () => {
         { id: ANA, name: 'Ana', fireRank: 'firefighter', position: 'driver' },
         { id: BORIS, name: 'Boris', fireRank: null, position: null },
       ],
+      override: null,
     });
   });
 
@@ -173,6 +181,7 @@ describe('the day detail (story 3.4b)', () => {
       typeName: null,
       range: null,
       roster: [],
+      override: null,
     });
   });
 
@@ -187,6 +196,7 @@ describe('the day detail (story 3.4b)', () => {
       typeName: null,
       range: null,
       roster: [],
+      override: null,
     });
   });
 
@@ -294,5 +304,96 @@ describe('the detail shown while open (story 3.4b)', () => {
     } finally {
       logged.mockRestore();
     }
+  });
+});
+
+describe('the day detail of an overridden day (story 3.5a)', () => {
+  const MEMBERS = [calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME), calendarMemberRow(ANA, 'Ana')];
+  const onTeam = {
+    viewers: [viewerRow([membershipRow('pilot-smjena-a', SEEDED)])],
+    versions: [memberMembershipRow(VIEWER_MEMBER, 'pilot-smjena-a', SEEDED), memberMembershipRow(ANA, TEAM, SEEDED)],
+    members: MEMBERS,
+  };
+
+  it('a working day overridden to another working type: the worked type, its range, the roster and the block', async () => {
+    // Smjena B projects Noć on WORKING; the override is Dan, saved 17:05 UTC = 19:05 in Zagreb.
+    const snapshot = await snapshotOf(PILOT, {
+      ...onTeam,
+      overrides: [calendarOverrideRow('o1', TEAM, WORKING, 'pilot-dan', { author: ANA, reason: 'Vježba.' })],
+    });
+    const detail = dayDetailOf(snapshot, TEAM, WORKING);
+
+    expect(detail).toMatchObject({ kind: 'working', typeName: 'Dan', range: '07:00–19:00' });
+    expect(detail?.roster.map((member) => member.name)).toEqual(['Ana']);
+    expect(detail?.override).toEqual({
+      projectedTypeName: 'Noć',
+      authorName: 'Ana',
+      savedAt: { date: '12.09.2026', time: '19:05' },
+      reason: 'Vježba.',
+    });
+  });
+
+  it('an off day made a working one: working, with the roster and the block', async () => {
+    const snapshot = await snapshotOf(PILOT, {
+      ...onTeam,
+      overrides: [calendarOverrideRow('o1', TEAM, OFF, 'pilot-dan')],
+    });
+    const detail = dayDetailOf(snapshot, TEAM, OFF);
+
+    expect(detail).toMatchObject({ kind: 'working', typeName: 'Dan' });
+    expect(detail?.roster.map((member) => member.name)).toEqual(['Ana']);
+    expect(detail?.override).toMatchObject({ projectedTypeName: 'Slobodno', authorName: VIEWER_NAME });
+  });
+
+  it('a working day made an off one: off, no roster, and the block', async () => {
+    const snapshot = await snapshotOf(PILOT, {
+      ...onTeam,
+      overrides: [calendarOverrideRow('o1', TEAM, WORKING, 'pilot-slobodno')],
+    });
+    const detail = dayDetailOf(snapshot, TEAM, WORKING);
+
+    expect(detail).toMatchObject({ kind: 'off', typeName: null, range: null, roster: [] });
+    expect(detail?.override).toMatchObject({ projectedTypeName: 'Noć' });
+  });
+
+  it('an override on a day with no rotation is ignored', async () => {
+    const snapshot = await snapshotOf(PILOT, {
+      ...onTeam,
+      overrides: [calendarOverrideRow('o1', TEAM, BEFORE, 'pilot-dan')],
+    });
+
+    expect(dayDetailOf(snapshot, TEAM, BEFORE)).toMatchObject({ kind: 'noRotation', override: null });
+  });
+
+  it('an author who is no member the snapshot holds is unknown', async () => {
+    for (const author of [null, '00000000-0000-4000-8000-0000000000ff']) {
+      const snapshot = await snapshotOf(PILOT, {
+        ...onTeam,
+        overrides: [calendarOverrideRow('o1', TEAM, WORKING, 'pilot-dan', { author })],
+      });
+
+      expect(dayDetailOf(snapshot, TEAM, WORKING)?.override?.authorName, String(author)).toBeNull();
+    }
+    expect(t('kalendar.detail.override.unknownAuthor')).toBe('Nepoznata osoba');
+  });
+
+  it('another day and another team carry no block', async () => {
+    const snapshot = await snapshotOf(PILOT, {
+      ...onTeam,
+      overrides: [calendarOverrideRow('o1', TEAM, WORKING, 'pilot-dan')],
+    });
+
+    expect(dayDetailOf(snapshot, TEAM, OFF)?.override).toBeNull();
+    expect(dayDetailOf(snapshot, 'pilot-smjena-a', WORKING)?.override).toBeNull();
+  });
+
+  it('carries the copy the block renders', () => {
+    expect(t('kalendar.detail.override.heading')).toBe('Izmjena');
+    expect(t('kalendar.detail.override.projected', { type: 'Dan' })).toBe('Prema rotaciji: Dan');
+    expect(t('kalendar.detail.override.author', { name: 'Ana' })).toBe('Autor: Ana');
+    expect(t('kalendar.detail.override.savedAt', { date: '12.09.2026', time: '19:05' })).toBe(
+      'Vrijeme: 12.09.2026 u 19:05',
+    );
+    expect(t('kalendar.detail.override.reason', { reason: 'Vježba.' })).toBe('Razlog: Vježba.');
   });
 });

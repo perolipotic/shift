@@ -10,7 +10,7 @@ import {
   type StatusVersion,
 } from '@shift/domain';
 
-import type { CalendarModifier } from '@/calendar/modifiers';
+import { MODIFIER_OVERRIDDEN, type CalendarModifier } from '@/calendar/modifiers';
 import { CALENDAR_UNAVAILABLE, type CalendarReadFailure, type CalendarSnapshot } from '@/calendar/snapshot';
 import {
   formatIsoDayMonth,
@@ -37,9 +37,10 @@ import { splitTeams, type TeamRow } from '@/teams/list';
  * markup and nothing else.
  *
  * NOTHING IS PROJECTED HERE (AD-7). Which type a team works on a date is
- * `scheduleOfMonth`'s answer from `@shift/domain`, which asks
- * `projectedShiftTypeOn` and nothing else; which times that type has on that
- * date is `shiftTypeVersionOn`'s. This module names, colours and formats.
+ * `scheduleOfMonth`'s answer from `@shift/domain` — the projection with the
+ * shift-type overrides applied over it (story 3.5a), and whether one was;
+ * which times that type has on that date is `shiftTypeVersionOn`'s. This
+ * module names, colours, marks and formats.
  *
  * A SHIFT CROSSING MIDNIGHT belongs to its start date, as the domain has it:
  * `19:00–07:00` appears once, on the row of the date it starts, and the next
@@ -407,14 +408,18 @@ export interface CalendarCell {
   /** `19:00–07:00` from the type's version on that date; `null` for a non-working type or no times. */
   readonly range: string | null;
   /**
-   * The marks the cell carries (`@/calendar/modifiers`), in any order. ALWAYS
-   * EMPTY in story 3.2b: no data source derives a modifier yet.
+   * The marks the cell carries (`@/calendar/modifiers`), in any order:
+   * `overridden` where a shift-type override replaced the projected type
+   * (story 3.5a), and nothing else yet.
    */
   readonly modifiers: readonly CalendarModifier[];
 }
 
-/** No modifiers: what every cell carries until a later story derives one. */
+/** No modifiers: a cell the domain marks with nothing. */
 const NO_MODIFIERS: readonly CalendarModifier[] = [];
+
+/** An overridden cell's marks (story 3.5a). */
+const OVERRIDDEN_MODIFIERS: readonly CalendarModifier[] = [MODIFIER_OVERRIDDEN];
 
 /** One date of the month. */
 export interface CalendarRow {
@@ -579,6 +584,7 @@ function cellOf(
   teamId: string,
   shiftTypeId: string | null,
   date: string,
+  overridden: boolean,
 ): CalendarCell {
   if (shiftTypeId === null) {
     return {
@@ -607,7 +613,7 @@ function cellOf(
     letter: letters.get(shiftTypeId) ?? null,
     className: `${CALENDAR_CELL_CLASS} ${fills.get(shiftTypeId) ?? NONWORKING_CHIP_CLASS}`,
     range: typeRangeOn(type, date),
-    modifiers: NO_MODIFIERS,
+    modifiers: overridden ? OVERRIDDEN_MODIFIERS : NO_MODIFIERS,
   };
 }
 
@@ -653,7 +659,7 @@ export function calendarDayListOf(
   today: string,
 ): readonly CalendarDay[] | null {
   const schedule = memberScheduleOfMonth(
-    { memberships, statuses, assignments: snapshot.assignments, steps: snapshot.steps },
+    { memberships, statuses, assignments: snapshot.assignments, steps: snapshot.steps, overrides: snapshot.overrides },
     month,
   );
 
@@ -670,7 +676,7 @@ export function calendarDayListOf(
     weekday: weekdayOf(day.date),
     isToday: day.date === today,
     teamId: day.teamId,
-    cell: day.teamId === null ? null : cellOf(lookup, day.teamId, day.shiftTypeId, day.date),
+    cell: day.teamId === null ? null : cellOf(lookup, day.teamId, day.shiftTypeId, day.date, day.overridden),
   }));
 }
 
@@ -735,7 +741,12 @@ export function calendarMonthOf(snapshot: CalendarSnapshot, search: CalendarSear
   const teamLetters = teamLettersOf(active.map((team) => team.name));
   const teams = active.map((team, index) => ({ ...team, letter: teamLetters[index] ?? '' }));
   const schedule = scheduleOfMonth(
-    { teamIds: teams.map((team) => team.id), assignments: snapshot.assignments, steps: snapshot.steps },
+    {
+      teamIds: teams.map((team) => team.id),
+      assignments: snapshot.assignments,
+      steps: snapshot.steps,
+      overrides: snapshot.overrides,
+    },
     month,
   );
   const lookup = cellLookupOf(
@@ -773,7 +784,7 @@ export function calendarMonthOf(snapshot: CalendarSnapshot, search: CalendarSear
       isToday: row.date === today,
       cells: row.cells
         .filter((cell) => shown(cell.teamId))
-        .map((cell) => cellOf(lookup, cell.teamId, cell.shiftTypeId, row.date)),
+        .map((cell) => cellOf(lookup, cell.teamId, cell.shiftTypeId, row.date, cell.overridden)),
     })),
     days: dayListOutcomeOf(snapshot, snapshot.viewer, month, today),
     person:
@@ -794,7 +805,8 @@ export type CalendarMonthOutcome =
 
 /**
  * {@link calendarMonthOf}, GUARDED: a `RangeError` from the domain
- * (`scheduleOfMonth`, `projectedShiftTypeOn`, `shiftTypeVersionOn`) or from
+ * (`scheduleOfMonth`, `projectedShiftTypeOn`, `shiftTypeVersionOn`, an
+ * override's precondition) or from
  * formatting — data `readCalendar` did not fully re-check — becomes
  * `CALENDAR_UNAVAILABLE`, so the screen shows the alert and no grid instead of
  * crashing the route. The cause is logged.

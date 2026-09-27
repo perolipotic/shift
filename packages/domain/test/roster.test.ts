@@ -183,7 +183,7 @@ describe('shiftRoster', () => {
     expect(shiftRoster(members, alfa, '2026-09-11')).toEqual([]);
     expect(shiftRoster(members, alfa, '2026-09-12')).toEqual([{ memberId: 'A', position: 'driver' }]);
     const days = memberScheduleOfMonth(
-      { memberships: members[0]!.memberships, statuses, assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS },
+      { memberships: members[0]!.memberships, statuses, assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS, overrides: [] },
       '2026-09',
     );
     const [pilotA] = PILOT_TEAMS;
@@ -198,6 +198,7 @@ describe('shiftRoster', () => {
         statuses,
         assignments: PILOT_ROTATION_ASSIGNMENTS,
         steps: PILOT_ROTATION_STEPS,
+        overrides: [],
       },
       '2026-09',
     );

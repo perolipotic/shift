@@ -17,6 +17,7 @@ import {
   CALENDAR_FETCH_PAUSED,
   CALENDAR_KEY,
   CALENDAR_MEMBERS_FUNCTION,
+  CALENDAR_OVERRIDES_FUNCTION,
   CALENDAR_READ_STALE_MS,
   CALENDAR_READ_TABLE,
   CALENDAR_UNAVAILABLE,
@@ -41,10 +42,12 @@ import {
   VIEWER_NAME,
   assignmentRow,
   calendarOrganizationRow,
+  calendarOverrideRow,
   calendarTableOf,
   memberMembershipRow,
   membershipRow,
   membersAnswerOf,
+  overridesAnswerOf,
   calendarMemberRow,
   statusRow,
   stepRow,
@@ -71,8 +74,8 @@ function answerOf(rows: FixtureRows, viewers: readonly Record<string, unknown>[]
 
 type Source = CalendarTable & CalendarMembersRpc & { readonly seen: unknown[][] };
 
-function tableOf(answer: CalendarAnswer, members: unknown = membersAnswerOf()): Source {
-  return calendarTableOf(answer, members);
+function tableOf(answer: CalendarAnswer, members: unknown = membersAnswerOf(), overrides: unknown = overridesAnswerOf()): Source {
+  return calendarTableOf(answer, members, overrides);
 }
 
 const session = viewerSession();
@@ -107,12 +110,15 @@ describe('the read', () => {
       ['select', CALENDAR_COLUMNS, CALENDAR_COUNT],
       ['filter', 'members.auth_user_id', 'eq', VIEWER_AUTH_USER],
       ['rpc', 'calendar_members'],
+      ['rpc', 'calendar_shift_type_overrides'],
     ]);
     expect(CALENDAR_MEMBERS_FUNCTION).toBe('calendar_members');
+    expect(CALENDAR_OVERRIDES_FUNCTION).toBe('calendar_shift_type_overrides');
     expect([CALENDAR_VIEWER_COLUMN, CALENDAR_VIEWER_OPERATOR]).toEqual(['members.auth_user_id', 'eq']);
     expect(CALENDAR_COUNT).toEqual({ count: 'exact' });
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
+    expect(outcome.snapshot.overrides).toEqual([]);
     expect(outcome.snapshot.timeZone).toBe('Europe/Zagreb');
     expect(outcome.snapshot.usesFireRanks).toBe(false);
     expect(outcome.snapshot.teams).toHaveLength(teams);
@@ -615,6 +621,110 @@ describe('the read', () => {
     vi.restoreAllMocks();
   });
 
+  it('reads the live overrides, by team then date, and carries only their seven fields (story 3.5a)', async () => {
+    const outcome = await read(
+      tableOf(
+        answerOf(PILOT),
+        membersAnswerOf(),
+        overridesAnswerOf([
+          { ...calendarOverrideRow('o2', 'pilot-smjena-b', '2026-09-03', 'pilot-dan'), created_by: 'never-carried' },
+          calendarOverrideRow('o3', 'pilot-smjena-a', '2026-09-14', 'pilot-noc', { author: null }),
+          calendarOverrideRow('o1', 'pilot-smjena-a', '2026-09-02', 'pilot-slobodno'),
+        ]),
+      ),
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.snapshot.overrides).toEqual([
+      {
+        id: 'o1',
+        teamId: 'pilot-smjena-a',
+        date: '2026-09-02',
+        shiftTypeId: 'pilot-slobodno',
+        reason: 'Zamjena zbog vježbe.',
+        createdAt: '2026-09-12T17:05:00+00:00',
+        authorMemberId: VIEWER_MEMBER,
+      },
+      {
+        id: 'o3',
+        teamId: 'pilot-smjena-a',
+        date: '2026-09-14',
+        shiftTypeId: 'pilot-noc',
+        reason: 'Zamjena zbog vježbe.',
+        createdAt: '2026-09-12T17:05:00+00:00',
+        authorMemberId: null,
+      },
+      {
+        id: 'o2',
+        teamId: 'pilot-smjena-b',
+        date: '2026-09-03',
+        shiftTypeId: 'pilot-dan',
+        reason: 'Zamjena zbog vježbe.',
+        createdAt: '2026-09-12T17:05:00+00:00',
+        authorMemberId: VIEWER_MEMBER,
+      },
+    ]);
+  });
+
+  it('reads any reason the database accepted, white space included: its content is 0019\'s to judge (story 3.5a)', async () => {
+    for (const reason of ['  ', '\t\n', '\u00a0Vježba\u2003', 'z'.repeat(250)]) {
+      const outcome = await read(
+        tableOf(
+          answerOf(PILOT),
+          membersAnswerOf(),
+          overridesAnswerOf([calendarOverrideRow('o1', 'pilot-smjena-a', '2026-09-14', 'pilot-noc', { reason })]),
+        ),
+      );
+
+      expect(outcome.ok, JSON.stringify(reason)).toBe(true);
+      if (!outcome.ok) return;
+      expect(outcome.snapshot.overrides.map((override) => override.reason)).toEqual([reason]);
+    }
+  });
+
+  it('refuses every bad overrides answer (story 3.5a)', async () => {
+    const logged = quiet();
+    const good = calendarOverrideRow('o1', 'pilot-smjena-a', '2026-09-14', 'pilot-noc');
+    const { team_id: _team, ...noTeam } = good;
+
+    for (const overrides of [
+      // An error, data that is not an array, a malformed answer.
+      { data: null, error: { code: '42501' } },
+      { data: [good], error: { code: '500' } },
+      { data: { id: 'o1' }, error: null },
+      { data: null, error: null },
+      null,
+      // A malformed row: not an object, no team, no id.
+      overridesAnswerOf([null as unknown as Record<string, unknown>]),
+      overridesAnswerOf([noTeam]),
+      overridesAnswerOf([{ ...good, id: '' }]),
+      // A team or type the answer lacks.
+      overridesAnswerOf([{ ...good, team_id: 'missing' }]),
+      overridesAnswerOf([{ ...good, shift_type_id: 'missing' }]),
+      // A type that is not text, a malformed date, a reason that is not text,
+      // a time that is no instant or missing.
+      overridesAnswerOf([{ ...good, shift_type_id: 7 }]),
+      overridesAnswerOf([{ ...good, date: '2026-02-30' }]),
+      overridesAnswerOf([{ ...good, reason: null }]),
+      overridesAnswerOf([{ ...good, reason: 7 }]),
+      overridesAnswerOf([{ ...good, created_at: 'yesterday' }]),
+      overridesAnswerOf([{ ...good, created_at: undefined }]),
+      // An author neither text nor null.
+      overridesAnswerOf([{ ...good, author_member_id: 7 }]),
+      overridesAnswerOf([{ ...good, author_member_id: '' }]),
+      // Two live overrides of one team and date, and one id twice.
+      overridesAnswerOf([good, { ...good, id: 'o2', shift_type_id: 'pilot-dan' }]),
+      overridesAnswerOf([good, { ...good, date: '2026-09-15' }]),
+    ]) {
+      expect(await read(tableOf(answerOf(PILOT), membersAnswerOf(), overrides)), JSON.stringify(overrides)).toEqual(
+        REFUSED,
+      );
+    }
+    expect(logged).toHaveBeenCalledWith(CALENDAR_UNAVAILABLE, 'override');
+    vi.restoreAllMocks();
+  });
+
   it('names the read failure through its own key', () => {
     expect(calendarMessageKey(CALENDAR_UNAVAILABLE)).toBe('kalendar.error.unavailable');
   });
@@ -657,7 +767,8 @@ describe('the surface state, driven through the one query definition', () => {
 
     return {
       calls: () => calls,
-      rpc: () => Promise.resolve(membersAnswerOf()),
+      rpc: (fn: string) =>
+        Promise.resolve(fn === CALENDAR_OVERRIDES_FUNCTION ? overridesAnswerOf() : membersAnswerOf()),
       select() {
         return {
           filter() {
@@ -870,20 +981,29 @@ describe('the calendar only reads, and projects nothing of its own', () => {
     );
   });
 
-  it('derives no modifier from snapshot data (story 3.2b): only the vocabulary names one', () => {
-    // Every cell carries `modifiers: []` until 3.5, 3.6 and Epics 4–5 derive
-    // one; no file but the vocabulary names a modifier, and `month.ts` sets
-    // the empty list and nothing else.
+  it('derives one modifier from snapshot data (story 3.5a): overridden, from the domain\'s flag alone', () => {
+    // Story 3.2b's vocabulary names every mark; story 3.5a derives the first,
+    // `overridden`, in `month.ts` from the domain's `overridden` flag, and
+    // `kalendar.tsx` draws its glyph beside the day detail's override block.
+    // Conflict, leave and uncovered are still named by the vocabulary alone
+    // (3.6 and Epics 4–5), and no string literal names any mark.
     for (const file of files.filter((one) => !one.endsWith('modifiers.ts'))) {
-      expect(stripped(file), file).not.toMatch(/'(conflict|overridden|leave|uncovered)'|MODIFIER_[A-Z]+\b/);
+      const text = stripped(file);
+
+      expect(text, file).not.toMatch(/'(conflict|overridden|leave|uncovered)'|MODIFIER_(?!OVERRIDDEN\b)[A-Z]+\b/);
+      const named = text.match(/\bMODIFIER_OVERRIDDEN\b/g)?.length ?? 0;
+
+      expect(named, file).toBe(file.endsWith('month.ts') || file.endsWith('kalendar.tsx') ? 2 : 0);
     }
     const month = stripped(join(directory, 'month.ts'));
 
-    expect(month, 'a cell given modifiers other than the empty list').not.toMatch(
-      /(?<!readonly )\bmodifiers:(?! NO_MODIFIERS\b)/,
+    expect(month, 'a cell given modifiers other than none or overridden').not.toMatch(
+      /(?<!readonly )\bmodifiers:(?! NO_MODIFIERS\b| overridden \? OVERRIDDEN_MODIFIERS : NO_MODIFIERS\b)/,
     );
-    expect(month.match(/\bmodifiers: NO_MODIFIERS\b/g)).toHaveLength(2);
+    expect(month.match(/\bmodifiers: NO_MODIFIERS\b/g)).toHaveLength(1);
+    expect(month.match(/\bmodifiers: overridden \? OVERRIDDEN_MODIFIERS : NO_MODIFIERS\b/g)).toHaveLength(1);
     expect(month).toMatch(/const NO_MODIFIERS: readonly CalendarModifier\[\] = \[\];/);
+    expect(month).toMatch(/const OVERRIDDEN_MODIFIERS: readonly CalendarModifier\[\] = \[MODIFIER_OVERRIDDEN\];/);
   });
 
   it.each(files)('%s has no modulo, no write and no read of rank or position', (file) => {

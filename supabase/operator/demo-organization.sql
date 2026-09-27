@@ -21,7 +21,7 @@
 --
 -- Both refusals raise SQLSTATE P0001 (raise_exception) with a named message,
 -- as does DEMO_ROTATION_INCOMPLETE, raised if the rotation's steps or
--- assignments would be written short.
+-- assignments, or its one shift-type override, would be written short.
 --
 -- Two session settings, both required:
 --
@@ -32,9 +32,10 @@
 --     DEMO_PASSWORD_MISSING. A real password is used untrimmed.
 --
 -- RE-RUNNING REPLACES THE DEMO. The existing `dvd-demo` organization (its
--- members, teams, memberships, bands, shift types and rotation cascade with
--- it) and every auth user under `@dvd-demo.shift.invalid` are deleted, and
--- everything is created again. Nothing else is touched.
+-- members, teams, memberships, bands, shift types, rotation and shift-type
+-- override cascade with it) and every auth user under
+-- `@dvd-demo.shift.invalid` are deleted, and everything is created again.
+-- Nothing else is touched.
 --
 -- One `do $$ … $$;` block, for the reason `provision-organization.sql` gives:
 -- `supabase db query` sends the file as one prepared statement, and a do block
@@ -47,6 +48,8 @@
 -- The rotation is the pilot's (story 2.3a): one pattern, [Dan, Noć,
 -- Slobodno, Slobodno], and Smjena A–D bound to it at offsets 0–3 from the
 -- anchor 2020-01-01, effective from the same date, so any date projects.
+-- One shift-type override (story 3.5a) marks Smjena A on the day the demo is
+-- created.
 
 do $$
 declare
@@ -279,6 +282,31 @@ begin
       errcode = 'raise_exception',
       message = 'DEMO_ROTATION_INCOMPLETE',
       detail = format('%s of 4 assignments written', written);
+  end if;
+
+  -- Story 3.5a: one shift-type override, so the calendar's `✎` has something
+  -- to mark. Smjena A on the organization's today, when the demo is created,
+  -- works a type its rotation does not project there: Noć on a Dan day, Dan on
+  -- any other (offset 0 from the 2020-01-01 anchor, so the step is the day
+  -- count modulo 4). Attributed to the admin; the rotation rows are untouched.
+  insert into shift_type_overrides (
+    organization_id, team_id, date, shift_type_id, reason, created_by
+  )
+  select demo_organization, teams.id, today.date, shift_types.id,
+         'Zamjena sa Smjenom B zbog vježbe.', demo_admin
+    from (select public.organization_today(demo_organization) as date) as today
+    join teams on teams.organization_id = demo_organization
+              and teams.name = 'Smjena A'
+    join shift_types on shift_types.organization_id = demo_organization
+                    and shift_types.name =
+                          case when (today.date - date '2020-01-01') % 4 = 0 then 'Noć' else 'Dan' end;
+
+  get diagnostics written = row_count;
+  if written <> 1 then
+    raise exception using
+      errcode = 'raise_exception',
+      message = 'DEMO_ROTATION_INCOMPLETE',
+      detail = format('%s of 1 shift-type override written', written);
   end if;
 
   raise notice 'demo organization % (%) replaced on %; the admin signs in as admin@%',

@@ -1,4 +1,10 @@
-import type { MembershipVersion, RotationAssignment, RotationStep, StatusVersion } from '@shift/domain';
+import type {
+  MembershipVersion,
+  RotationAssignment,
+  RotationStep,
+  ShiftTypeOverride,
+  StatusVersion,
+} from '@shift/domain';
 import type { Session } from '@supabase/supabase-js';
 import { queryOptions } from '@tanstack/react-query';
 
@@ -31,8 +37,9 @@ import { TEAMS_COLUMNS, teamRowOf, type TeamRow } from '@/teams/list';
  *
  * UNWINDOWED. The configuration is small at pilot scale, so it is read whole
  * and every month is a pure computation over it: the query key carries no
- * month, and moving between months never reads again. When overrides arrive
- * (story 3.5), their window is the part that may need a month in the key.
+ * month, and moving between months never reads again. The live shift-type
+ * overrides (story 3.5a) are read whole too; a window by month is a later
+ * decision, and the part that may then need a month in the key.
  *
  * READABLE BY EVERY MEMBER. The one `members` row embedded is THE VIEWER'S
  * (story 3.2a): the embed is filtered to `members.auth_user_id = <session
@@ -55,7 +62,14 @@ import { TEAMS_COLUMNS, teamRowOf, type TeamRow } from '@/teams/list';
  * "active today" and the roster's "active on the day" alike. The rpc is made
  * beside the select under the same key, so it is still ONE query.
  *
- * `select` AND ONE `rpc`, AND NOTHING ELSE.
+ * THE OVERRIDES (story 3.5a). The table is an admin's alone (0019), so every
+ * member reads the LIVE shift-type overrides through
+ * `calendar_shift_type_overrides()`: each one's team, date, type, reason,
+ * time, and its author as a member id — never an auth user id — which the
+ * members read names. That rpc too is made beside the select, under the same
+ * key.
+ *
+ * `select` AND TWO `rpc`s, AND NOTHING ELSE.
  */
 
 /** The relation the read starts from: the caller's own organization. */
@@ -81,6 +95,9 @@ export const CALENDAR_COLUMNS =
 
 /** The function every member is read through (0018): id, name and fire rank only. */
 export const CALENDAR_MEMBERS_FUNCTION = 'calendar_members';
+
+/** The function the live shift-type overrides are read through (0019). */
+export const CALENDAR_OVERRIDES_FUNCTION = 'calendar_shift_type_overrides';
 
 /** The embedded column the members embed is filtered by: the viewer's own row alone. */
 export const CALENDAR_VIEWER_COLUMN = 'members.auth_user_id';
@@ -146,9 +163,22 @@ export interface CalendarMembersAnswer {
   readonly error: CalendarReadError | null;
 }
 
-/** The members read, named structurally so it can be stubbed. */
+/** The members and overrides reads, named structurally so they can be stubbed. */
 export interface CalendarMembersRpc {
   rpc(fn: string): PromiseLike<CalendarMembersAnswer>;
+}
+
+/**
+ * One live shift-type override (0019, story 3.5a): `teamId` worked
+ * `shiftTypeId` on `date`, for `reason`, saved at `createdAt` by the member
+ * `authorMemberId` — `null` when the author is no member of the organization.
+ */
+export interface CalendarOverride extends ShiftTypeOverride {
+  readonly id: string;
+  readonly reason: string;
+  /** An instant, as the database answers it; formatted in the organization's zone. */
+  readonly createdAt: string;
+  readonly authorMemberId: string | null;
 }
 
 /** A member of the organization, active or not: id, name and rank only (0018). */
@@ -200,6 +230,8 @@ export interface CalendarSnapshot {
    * 3.4a).
    */
   readonly members: readonly CalendarMember[];
+  /** Every live shift-type override, by team then date (story 3.5a); at most one per team and date. */
+  readonly overrides: readonly CalendarOverride[];
 }
 
 // ------------------------------------------------------------- validation
@@ -239,7 +271,8 @@ type CalendarRefusal =
   | 'versions'
   | 'members'
   | 'memberships'
-  | 'statuses';
+  | 'statuses'
+  | 'override';
 
 function unavailable(reason: CalendarRefusal, detail?: unknown): CalendarOutcome {
   if (detail === undefined) console.error(CALENDAR_UNAVAILABLE, reason);
@@ -273,7 +306,12 @@ function embedded(organization: Record<string, unknown>, relation: string): read
  * of another tenant, naming a team the answer lacks, with a position neither
  * text nor null, or on a date its member already has a version on; and on a
  * status version of another tenant, with an `active` that is not a boolean,
- * or on a date its member already has a version on. What the database's keys
+ * or on a date its member already has a version on. Unavailable on an
+ * overrides read that is rejected, errors or answers anything but an array,
+ * or on an override row without a text id, naming a team or a type the
+ * answer lacks, with a malformed date, a reason that is not text, a
+ * creation time that is not an instant, or an author neither text nor null,
+ * or on a second override of one team and date or one id twice. What the database's keys
  * guarantee is re-checked, so a defect surfaces as the message, never as a
  * projection that throws.
  *
@@ -289,17 +327,19 @@ export async function readCalendar(
 ): Promise<CalendarOutcome> {
   let answered: CalendarAnswer;
   let membersAnswered: CalendarMembersAnswer;
+  let overridesAnswered: CalendarMembersAnswer;
 
   try {
     const current = await session();
 
     if (current === null) return unavailable('session');
 
-    [answered, membersAnswered] = await Promise.all([
+    [answered, membersAnswered, overridesAnswered] = await Promise.all([
       table
         .select(CALENDAR_COLUMNS, CALENDAR_COUNT)
         .filter(CALENDAR_VIEWER_COLUMN, CALENDAR_VIEWER_OPERATOR, current.user.id),
       membersRead.rpc(CALENDAR_MEMBERS_FUNCTION),
+      membersRead.rpc(CALENDAR_OVERRIDES_FUNCTION),
     ]);
   } catch (cause) {
     return unavailable('rejected', cause);
@@ -428,12 +468,68 @@ export async function readCalendar(
     }))
     .sort(compareMembers);
 
+  const overrides = overridesOf(overridesAnswered, teamIds, typeIds);
+
+  if (overrides === null) return unavailable('override');
+
   types.sort(compareCreation);
 
   return {
     ok: true,
-    snapshot: { organizationId, timeZone, usesFireRanks, teams, types, steps, assignments, viewer, members },
+    snapshot: { organizationId, timeZone, usesFireRanks, teams, types, steps, assignments, viewer, members, overrides },
   };
+}
+
+/**
+ * The live overrides `calendar_shift_type_overrides()` answered, by team then
+ * date, or `null`: a malformed answer, an error, data that is not an array, a
+ * row that does not validate, a second override of one team and date, or one
+ * id twice. Only the seven columns are carried off a row.
+ */
+function overridesOf(
+  answered: unknown,
+  teamIds: ReadonlySet<string>,
+  typeIds: ReadonlySet<string>,
+): CalendarOverride[] | null {
+  if (!isRecord(answered) || answered['error'] !== null) return null;
+
+  const rows = answered['data'];
+
+  if (!Array.isArray(rows)) return null;
+
+  const overrides: CalendarOverride[] = [];
+
+  for (const row of rows as readonly unknown[]) {
+    if (!isRecord(row)) return null;
+
+    const id = textAt(row, 'id');
+    const teamId = textAt(row, 'team_id');
+    const date = textAt(row, 'date');
+    const shiftTypeId = textAt(row, 'shift_type_id');
+    const reason = row['reason'];
+    const createdAt = textAt(row, 'created_at');
+    const authorMemberId = row['author_member_id'];
+
+    if (id === null || teamId === null || !teamIds.has(teamId)) return null;
+    if (shiftTypeId === null || !typeIds.has(shiftTypeId)) return null;
+    if (date === null || !isIsoDate(date)) return null;
+    // Any text: what a reason may hold is 0019's check alone, and a row the
+    // database accepted is never refused here for its content.
+    if (typeof reason !== 'string') return null;
+    if (createdAt === null || Number.isNaN(Date.parse(createdAt))) return null;
+    if (authorMemberId !== null && (typeof authorMemberId !== 'string' || authorMemberId === '')) return null;
+
+    overrides.push({ id, teamId, date, shiftTypeId, reason, createdAt, authorMemberId });
+  }
+
+  if (new Set(overrides.map((override) => override.id)).size !== overrides.length) return null;
+  if (new Set(overrides.map((override) => `${override.teamId}:${override.date}`)).size !== overrides.length) {
+    return null;
+  }
+
+  return overrides.sort((left, right) =>
+    left.teamId === right.teamId ? (left.date < right.date ? -1 : 1) : left.teamId < right.teamId ? -1 : 1,
+  );
 }
 
 function byEffectiveFrom(left: { readonly effectiveFrom: string }, right: { readonly effectiveFrom: string }): number {
