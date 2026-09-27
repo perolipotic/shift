@@ -1,6 +1,6 @@
 import { expect, type Locator } from '@playwright/test';
 
-import { fill, hr } from '../utils/i18n.ts';
+import { escapeRegExp, fill, hr } from '../utils/i18n.ts';
 import { STEP_NAMES } from '../utils/rotation.ts';
 import { BasePage } from './base.page.ts';
 
@@ -62,6 +62,84 @@ export class RotationPage extends BasePage {
 
   get shiftTypeCloseButton(): Locator {
     return this.page.getByRole('button', { name: shiftTypes.close, exact: true });
+  }
+
+  /** The edit dialog, while the type is active. */
+  get shiftTypeEditDialog(): Locator {
+    return this.dialog(shiftTypes.editHeading);
+  }
+
+  /** The same dialog once the type is archived: its heading says so. */
+  get shiftTypeViewDialog(): Locator {
+    return this.dialog(shiftTypes.viewHeading);
+  }
+
+  /** The times block's `Vrijedi od` date, in the edit dialog. */
+  get timesFromInput(): Locator {
+    return this.shiftTypeEditDialog.getByLabel(shiftTypes.timesFrom, { exact: true });
+  }
+
+  /** The times block's start, in the edit dialog. */
+  get timesStartInput(): Locator {
+    return this.shiftTypeEditDialog.getByLabel(shiftTypes.start, { exact: true });
+  }
+
+  /** The times block's end, in the edit dialog. */
+  get timesEndInput(): Locator {
+    return this.shiftTypeEditDialog.getByLabel(shiftTypes.end, { exact: true });
+  }
+
+  /** Saves the corrected times from the chosen date. */
+  get timesCorrectButton(): Locator {
+    return this.shiftTypeEditDialog.getByRole('button', { name: shiftTypes.timesCorrect, exact: true });
+  }
+
+  /** Cancels the scheduled correction; offered in place of the times form. */
+  get cancelScheduledTimesButton(): Locator {
+    return this.shiftTypeEditDialog.getByRole('button', { name: shiftTypes.cancelScheduled, exact: true });
+  }
+
+  /**
+   * The dialog's `Od {date} vrijedi {range}, {duration}.` line for a correction
+   * scheduled from `date` (as shown, `28.09.2026`) to `range` (`08:00–20:00`).
+   * Everything is matched literally but the duration.
+   */
+  scheduledTimesLine(date: string, range: string): Locator {
+    const message = shiftTypes.scheduled;
+    if (!message.includes('{date}') || !message.includes('{range}') || !message.includes('{duration}')) {
+      throw new Error(`E2E: ${message} lacks {date}, {range} or {duration}`);
+    }
+    const [before = '', after = ''] = fill(message, { date, range }).split('{duration}');
+
+    return this.shiftTypeEditDialog.getByText(new RegExp(`^${escapeRegExp(before)}.+${escapeRegExp(after)}$`));
+  }
+
+  /** Why the archive is not offered while a correction is scheduled. */
+  get changeScheduledNote(): Locator {
+    return this.shiftTypeEditDialog.getByText(shiftTypes.error.changeScheduled, { exact: true });
+  }
+
+  /** The archive offer, named for the type. */
+  archiveShiftTypeButton(name: string): Locator {
+    return this.shiftTypeEditDialog.getByRole('button', { name: fill(shiftTypes.archive, { name }), exact: true });
+  }
+
+  /** The confirmation's answer that archives the type. */
+  archiveShiftTypeConfirmButton(name: string): Locator {
+    return this.shiftTypeEditDialog.getByRole('button', {
+      name: fill(shiftTypes.archiveConfirm, { name }),
+      exact: true,
+    });
+  }
+
+  /** The archived types' table: the one under their heading. */
+  get archivedShiftTypes(): Locator {
+    return this.sectionHeading(shiftTypes.archivedHeading).locator('xpath=ancestor::div[.//table][1]').getByRole('table');
+  }
+
+  /** A type's row in the archived table, by its name. */
+  archivedShiftTypeRow(name: string): Locator {
+    return this.archivedShiftTypes.getByRole('row').filter({ hasText: name });
   }
 
   // ------------------------------------------------------------ pattern
