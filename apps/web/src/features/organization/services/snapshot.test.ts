@@ -67,7 +67,10 @@ const SCREEN: readonly string[] = Object.values(SETTINGS_SCREEN_PARTS).map((part
 const LOCKUP = join(srcRoot, 'features', 'organization', 'components', 'lockup.tsx');
 /** The one signed-URL read behind every lockup, shared by both surfaces. */
 const LOGO_URL = join(srcRoot, 'features', 'organization', 'hooks', 'logo-url.ts');
+/** The boot: the one query client, the localization gate and the mount. */
 const ENTRY = join(srcRoot, 'main.tsx');
+/** The providers the boot mounts: it receives the client and builds none. */
+const APP = join(srcRoot, 'App.tsx');
 
 const BLOCK_COMMENT = /\/\*[\s\S]*?\*\//g;
 /** `//` to end of line. The leading class keeps `https://` inside a string
@@ -1065,8 +1068,9 @@ describe('the surface reads once, under one key', () => {
 
 describe('the query cache is wired into the application, not merely installed', () => {
   /**
-   * `main.tsx` is unreachable from the node suite — it mounts into a DOM AD-15
-   * bans — so the provider is asserted at source level, the way
+   * `main.tsx` and the `App.tsx` it mounts are unreachable from the node suite
+   * — they render into a DOM AD-15 bans — so the provider is asserted at source
+   * level, the way
    * `test/localization-applied.test.ts` asserts the localization provider. The
    * failure this catches is total and silent in the type system: every
    * `useQuery` call throws at first render with no `QueryClientProvider` above
@@ -1074,14 +1078,32 @@ describe('the query cache is wired into the application, not merely installed', 
    */
   it('wraps the router in a QueryClientProvider', () => {
     const entry = source(ENTRY);
+    const app = source(APP);
 
     expect(entry, 'main.tsx builds no query client').toContain('new QueryClient(');
-    expect(entry, 'the provider does not receive the client').toMatch(
+    expect(entry, 'main.tsx does not hand its client to App').toMatch(
+      /<App queryClient=\{queryClient\}\s*\/>/,
+    );
+    expect(app, 'the provider does not receive the client').toMatch(
       /<QueryClientProvider client=\{queryClient\}>/,
     );
-    expect(entry, 'the router is not inside the query provider').toMatch(
+    expect(app, 'the router is not inside the query provider').toMatch(
       /<QueryClientProvider[^>]*>\s*<RouterProvider/,
     );
+  });
+
+  it('builds the client in the boot and the providers in App, never the other way', () => {
+    // A second `new QueryClient(` in `App.tsx` would be a second cache per
+    // render of the providers; a provider left in `main.tsx` would be a second
+    // provider tree beside the one `App.tsx` holds.
+    const entry = source(ENTRY);
+    const app = source(APP);
+
+    expect(app, 'App.tsx builds a query client').not.toContain('new QueryClient(');
+    expect(app, 'App.tsx mounts the application').not.toContain('createRoot(');
+    expect(entry, 'main.tsx holds the query provider').not.toContain('<QueryClientProvider');
+    expect(entry, 'main.tsx holds the router provider').not.toContain('<RouterProvider');
+    expect(occurrences(entry, 'new QueryClient('), 'main.tsx builds more than one client').toBe(1);
   });
 
   it('keeps the cache inside the localization gate it must not outlive', () => {
@@ -1106,7 +1128,8 @@ describe('the detectors read what they claim to read', () => {
     for (const part of SCREEN) {
       expect(source(part).length, `${part} holds almost nothing`).toBeGreaterThan(200);
     }
-    expect(source(ENTRY).length).toBeGreaterThan(200);
+    expect(source(ENTRY).length, `${ENTRY} holds almost nothing`).toBeGreaterThan(200);
+    expect(source(APP).length, `${APP} holds almost nothing`).toBeGreaterThan(200);
   });
 
   it('strips comments before scanning, in both syntaxes', () => {
