@@ -37,18 +37,45 @@ naming `supabase start` or `supabase functions serve` if one is missing.
 
 ```text
 e2e/
+├── pages/                # page objects: one class per screen, locators and actions
+│   ├── base.page.ts      # the shared chrome: navigation, the h1, status, alert, dialog, goto()
+│   └── <screen>.page.ts  # login, calendar, people, teams, organization, hour-bands, rotation
 ├── tests/
 │   ├── auth.setup.ts     # the setup project: signs in and stores the sessions
 │   └── <feature>/        # auth, calendar, people, teams, hour-bands, rotation, layout
-└── utils/                # fixtures, database and run-fixture helpers, i18n, global setup/teardown
+└── utils/                # fixtures, database and run-fixture helpers, i18n, dates, layout checks,
+                          # members and stepper data, stack check, global setup/teardown
 ```
 
 Specs are grouped by feature under `tests/<feature>/` (`testDir` in
 `playwright.config.ts`). A new spec goes in the folder of the screen it drives,
 and a new feature gets its own folder; specs import helpers as
 `../../utils/<name>.ts`. `custom-fixtures.ts` gives the `test` and `expect`
-every spec imports, and `run-fixture.ts` provisions and deletes the run's
+every spec imports, with every page object as a test fixture (`loginPage`,
+`calendarPage`, `peoplePage`, `teamsPage`, `organizationPage`, `hourBandsPage`,
+`rotationPage`), and `run-fixture.ts` provisions and deletes the run's
 organization (`readFixture`).
+
+### Page objects
+
+- A page object owns its screen's **locators** (getters, or methods returning a
+  `Locator`) and **actions** (`signIn`, `addShiftType`, `cellOf`, …). Each
+  extends `BasePage`, which opens its `path` with `goto()`.
+- **No assertions.** A page object `expect`s only to wait for the screen inside
+  an action (`signIn` waiting for `/danas`, `cellOf` waiting for the grid). Every
+  claim a test makes stays in its spec, and an assertion helper is never a page
+  method: it belongs in the spec or in `utils/layout.ts`.
+- Specs take page objects from their fixtures and never call `page.getBy…` or
+  `page.locator` themselves. A second browser context (a member's view in an
+  admin test) wraps its own page: `new TeamsPage(memberPage)`.
+- Data that is not a locator stays in `utils/` (`uniqueMember`, the stepper's
+  `STEP_*` and `NEXT_LABELS`, the calendar's `dayMonth` and `weekdayOf`).
+- Locators are by role or label. A page object may use a structural or
+  ARIA-attribute selector (`thead th`, `tr[aria-current="date"]`,
+  `[data-row][data-column]`, `option:checked`) only where no role or label
+  reaches the element, and never a class or an id.
+- A new page fixture: add the page to the `PageObjects` type and to the
+  `base.extend` block in `utils/custom-fixtures.ts`.
 
 ## Isolation
 
@@ -81,7 +108,10 @@ that count differ and the case fail. Run the two one after the other.
 
 - Locators by role, label or text only, with names from
   `apps/web/src/i18n/locales/hr.json` (`e2e/utils/i18n.ts`). No CSS or id
-  selectors, no `waitForTimeout`; web-first assertions.
+  selectors in a spec (the page-object exception is above), no
+  `waitForTimeout`; web-first assertions.
+- A new locator goes in its page (`e2e/pages/<screen>.page.ts`), never in the
+  spec; a new screen gets its own page object and fixture.
 - A test that writes creates its own rows, unique per ATTEMPT (a retry or a
   `--repeat-each` copy runs against the same organization). The fixture is
   read-only; take it from the `fixture` fixture of

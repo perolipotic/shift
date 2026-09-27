@@ -1,13 +1,19 @@
 import { randomBytes } from 'node:crypto';
 
+import { TeamsPage } from '../../pages/teams.page.ts';
 import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
-import { fill, hr } from '../../utils/i18n.ts';
-import { createMember, uniqueMember } from '../../utils/members.ts';
+import { hr } from '../../utils/i18n.ts';
+import { uniqueMember } from '../../utils/members.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
 test.use({ storageState: ADMIN_STATE });
 
-test('a created team gets a member, and its roster lists them for every role', async ({ page, browser }) => {
+test('a created team gets a member, and its roster lists them for every role', async ({
+  page,
+  browser,
+  peoplePage,
+  teamsPage,
+}) => {
   // EVERYTHING THIS TEST WRITES IS ITS OWN, per attempt: a member can move
   // teams only once per date, so a retry reusing a fixture member would be
   // refused. A fresh team and a fresh member make a second attempt a first.
@@ -15,14 +21,12 @@ test('a created team gets a member, and its roster lists them for every role', a
   const person = uniqueMember('Premjestena');
 
   // Create the team.
-  await page.goto('/ljudi/smjene');
+  await teamsPage.goto();
   // The add form is a dialog, opened from the header.
-  await page.getByRole('button', { name: hr.smjene.open }).click();
-  await page.getByLabel(hr.smjene.name, { exact: true }).fill(teamName);
-  await page.getByRole('button', { name: hr.smjene.add }).click();
-  await expect(page.getByRole('status')).toHaveText(hr.smjene.created);
+  await teamsPage.addTeam(teamName);
+  await expect(teamsPage.status).toHaveText(hr.smjene.created);
 
-  await page.getByRole('link', { name: fill(hr.smjene.edit, { name: teamName }) }).click();
+  await teamsPage.openTeam(teamName);
   const teamPath = /\/ljudi\/smjene\/([0-9a-f-]{36})$/;
   await expect(page).toHaveURL(teamPath);
   const teamId = teamPath.exec(new URL(page.url()).pathname)?.[1];
@@ -30,28 +34,23 @@ test('a created team gets a member, and its roster lists them for every role', a
 
   // Issue the member, then put them on the team from today (the date field's
   // default).
-  await createMember(page, person.name, person.username);
-  await page.goto('/ljudi');
-  await page.getByRole('link', { name: fill(hr.ljudi.form.edit, { name: person.name }) }).click();
-  await page.getByLabel(hr.smjene.membership.team, { exact: true }).selectOption({ label: teamName });
-  await page.getByRole('button', { name: fill(hr.smjene.membership.move, { name: person.name }) }).click();
-  await page
-    .getByRole('button', { name: fill(hr.smjene.membership.moveConfirm, { name: person.name }) })
-    .click();
-  await expect(page.getByText(hr.smjene.membership.saved, { exact: true })).toBeVisible();
+  await peoplePage.createMember(person.name, person.username);
+  await peoplePage.openMember(person.name);
+  await peoplePage.moveToTeam(teamName, person.name);
+  await expect(peoplePage.text(hr.smjene.membership.saved)).toBeVisible();
 
   // The roster, as the admin.
-  await page.goto(`/smjene/${teamId}`);
-  await expect(page.getByRole('heading', { level: 1, name: teamName })).toBeVisible();
-  await expect(page.getByRole('listitem').filter({ hasText: person.name })).toBeVisible();
+  await teamsPage.gotoRoster(teamId);
+  await expect(teamsPage.heading(teamName)).toBeVisible();
+  await expect(teamsPage.rosterEntry(person.name)).toBeVisible();
 
   // And as the member role, which reaches every roster of its organization.
   const memberContext = await browser.newContext({ storageState: MEMBER_STATE });
   try {
-    const memberPage = await memberContext.newPage();
-    await memberPage.goto(`/smjene/${teamId}`);
-    await expect(memberPage.getByRole('heading', { level: 1, name: teamName })).toBeVisible();
-    await expect(memberPage.getByRole('listitem').filter({ hasText: person.name })).toBeVisible();
+    const memberTeams = new TeamsPage(await memberContext.newPage());
+    await memberTeams.gotoRoster(teamId);
+    await expect(memberTeams.heading(teamName)).toBeVisible();
+    await expect(memberTeams.rosterEntry(person.name)).toBeVisible();
   } finally {
     await memberContext.close();
   }

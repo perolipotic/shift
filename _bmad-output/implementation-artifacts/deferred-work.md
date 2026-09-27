@@ -866,3 +866,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-5a-shift-type-override-record-and-display.md`
   summary: `calendar_shift_type_overrides()` returns every live override for all time on every calendar load, under the month-less `CALENDAR_KEY`; decide a window (by month or a bounded range) once real volume or the 2 s budget calls for it.
   evidence: Raised by 3.5a's review. Windowing by month was an Ask First in 3.5a; pilot scale makes it cheap today, but the read grows without bound and there is no date index beyond the partial unique `(organization_id, team_id, date)`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-d-e2e-page-objects.md`
+  summary: Enforce the page-object rule with lint (`no-restricted-syntax` on `page.getBy*`/`page.locator` under `e2e/tests/**`) and tidy the page-object API (public `path` reused by `responsive.spec.ts`'s screens, a `DanasPage`, one `pages` fixture, and collapsing near-duplicate methods such as `listedMember`/`editLink` and `announced`/`text`).
+  evidence: Raised by D's review. Today the rule is only a README line and a grep in the spec's acceptance criteria, so a new spec can reintroduce raw locators. The API duplicates are cosmetic but grow with every screen.
