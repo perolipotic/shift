@@ -22,6 +22,7 @@ import {
   readTeamRoster,
   teamRosterMessageKey,
   teamRosterOf,
+  teamRosterNoticeOf,
   teamRosterSurfaceStateOf,
   type OwnTeamAnswer,
   type OwnTeamOutcome,
@@ -278,10 +279,11 @@ describe('the roster screen state and messages', () => {
       roster: good.ok ? good.roster : null,
       refusal: null,
       loading: false,
+      paused: false,
     });
     expect(
       teamRosterSurfaceStateOf({ ...base, data: { ok: false, code: TEAM_ROSTER_UNKNOWN } }),
-    ).toEqual({ roster: null, refusal: TEAM_ROSTER_UNKNOWN, loading: false });
+    ).toEqual({ roster: null, refusal: TEAM_ROSTER_UNKNOWN, loading: false, paused: false });
     expect(
       teamRosterSurfaceStateOf({
         isPending: true,
@@ -289,15 +291,40 @@ describe('the roster screen state and messages', () => {
         fetchStatus: TEAM_ROSTER_FETCH_PAUSED,
         data: undefined,
       }),
-    ).toEqual({ roster: null, refusal: TEAM_ROSTER_UNAVAILABLE, loading: false });
+    ).toEqual({ roster: null, refusal: TEAM_ROSTER_UNAVAILABLE, loading: false, paused: false });
     expect(teamRosterSurfaceStateOf({ ...base, isError: true, data: good })).toEqual({
       roster: good.ok ? good.roster : null,
       refusal: TEAM_ROSTER_UNAVAILABLE,
       loading: false,
+      paused: false,
     });
     expect(
       teamRosterSurfaceStateOf({ isPending: true, isError: false, fetchStatus: 'fetching', data: undefined }),
-    ).toEqual({ roster: null, refusal: null, loading: true });
+    ).toEqual({ roster: null, refusal: null, loading: true, paused: false });
+  });
+
+  it('keeps a roster a refetch paused offline over, and says so through the notice alone', () => {
+    // Every team and membership write now invalidates every roster, so a
+    // refetch paused offline over a cached roster is an ordinary state. It is
+    // not a refusal; the screen's existing unavailable message says so.
+    const state = teamRosterSurfaceStateOf({
+      isPending: false,
+      isError: false,
+      fetchStatus: TEAM_ROSTER_FETCH_PAUSED,
+      data: good,
+    });
+
+    expect(state).toEqual({
+      roster: good.ok ? good.roster : null,
+      refusal: null,
+      loading: false,
+      paused: true,
+    });
+    expect(teamRosterNoticeOf(state)).toBe(TEAM_ROSTER_UNAVAILABLE);
+    expect(
+      teamRosterNoticeOf(teamRosterSurfaceStateOf({ isPending: false, isError: false, fetchStatus: 'idle', data: good })),
+      'a settled roster announces something',
+    ).toBeNull();
   });
 
   it('maps each failure to its own sentence, and unknown to the named one', () => {

@@ -160,6 +160,25 @@ function holdLock(key: string, onHeld: (client: pg.Client) => Promise<void>): Ro
  * Sets the run organization's `uses_fire_ranks` and answers what it was, so
  * the caller can restore it. Call it under {@link holdFireRanks}.
  */
+/**
+ * Archives the run organization's active shift type by that name, if there is
+ * one: a test's own cleanup, run from a `finally` so a failure part-way leaves
+ * no active type behind in the shared organization. Idempotent.
+ */
+export async function archiveShiftType(slug: string, name: string): Promise<void> {
+  const client = await connect();
+  try {
+    await client.query(
+      `update shift_types set archived = true
+        where not archived and name = $2
+          and organization_id = (select id from organizations where slug = $1)`,
+      [slug, name],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
 export async function setFireRanks(slug: string, on: boolean): Promise<boolean> {
   const client = await connect();
   try {

@@ -67,6 +67,12 @@ import {
 } from '@/features/organization/services/snapshot';
 import { currentSession, supabaseClient } from '@/lib/supabase/client';
 import {
+  MEMBERSHIP_WRITE_DEPENDENTS,
+  MEMBER_SAVE_DEPENDENTS,
+  NO_DEPENDENTS,
+  refreshAfterWrite,
+} from '@/features/teams/services/dependents';
+import {
   TEAMS_LIST_KEY,
   TEAMS_TABLE,
   teamsQueryOptions,
@@ -412,8 +418,14 @@ export function useMemberEdit(id: string) {
       // THE LIST CARRIES THE TEAM HISTORY, and a refusal is refetched too: the
       // likeliest reason for one is a list behind the database. The teams are
       // refetched as well, because a team archived meanwhile is the other.
+      // A LANDED MOVE is re-read wherever it shows — Danas's line and the
+      // rosters (`MEMBERSHIP_WRITE_DEPENDENTS`), started beside the list.
       try {
-        await queryClient.invalidateQueries({ queryKey: MEMBERS_LIST_KEY });
+        await refreshAfterWrite(
+          queryClient,
+          MEMBERS_LIST_KEY,
+          outcome.ok ? MEMBERSHIP_WRITE_DEPENDENTS : NO_DEPENDENTS,
+        );
         if (!outcome.ok) await queryClient.invalidateQueries({ queryKey: TEAMS_LIST_KEY });
         // TEAM POSITION: a refusal for a missing position means the setting
         // moved since this screen read it, so the organization is read again.
@@ -521,10 +533,14 @@ export function useMemberEdit(id: string) {
       // THE LIST CARRIES THE VERSIONS, so the marker, the status line and the
       // next offer all move with it — and it is refetched on a REFUSAL too,
       // because the likeliest reason for one is a list behind the database
-      // (`MEMBER_STATUS_STALE`). Its own failure is isolated, exactly as the
-      // save's is.
+      // (`MEMBER_STATUS_STALE`). A failed re-read resolves, and the `try` is
+      // for a client that throws first, exactly as the save's is. A LANDED CHANGE is re-read wherever it shows, as a move is.
       try {
-        await queryClient.invalidateQueries({ queryKey: MEMBERS_LIST_KEY });
+        await refreshAfterWrite(
+          queryClient,
+          MEMBERS_LIST_KEY,
+          outcome.ok ? MEMBERSHIP_WRITE_DEPENDENTS : NO_DEPENDENTS,
+        );
       } catch (cause) {
         console.error(MEMBER_WRITE_UNAVAILABLE, cause);
       }
@@ -650,23 +666,28 @@ export function useMemberEdit(id: string) {
         },
       );
 
-      // THE OUTCOME FIRST, AND THE CACHE AFTER. `invalidateQueries` awaits the
-      // refetch and so REJECTS when the browser is offline or the session has
-      // just expired — and with the refetch first that rejection jumped to the
-      // catch below and replaced the specific refusal with the generic one,
-      // destroying the `saved: true` fact that says four fields really did
-      // reach the database. That is the partial save reported and then thrown
-      // away by a failure that has nothing to do with it.
+      // THE OUTCOME FIRST, AND THE CACHE AFTER. A failed or paused re-read
+      // resolves rather than rejects (`refreshAfterWrite`, pinned in
+      // `dependents.test.ts`), so it cannot replace the specific refusal; the
+      // order is kept so nothing awaited can ever stand between the write and
+      // the `saved: true` fact that says four fields really reached the
+      // database.
       if (outcome.ok) setSaved({ member: member.id, raised: true });
       else setFailure({ member: member.id, raised: outcome.refusal });
 
       // INVALIDATED ON BOTH OUTCOMES, and the failing one is the reason. A
       // refused RENAME still wrote the four ordinary fields, so a cache left
       // alone would show the old values beside a message saying they were
-      // saved — which is the partial save reported and then contradicted. Its
-      // own failure is ISOLATED for the reason above.
+      // saved — which is the partial save reported and then contradicted. The
+      // `try` is for a client that throws before any re-read starts. Whatever
+      // LANDED — the whole save, or the partial one a refused rename still
+      // wrote — is re-read wherever the row shows (`MEMBER_SAVE_DEPENDENTS`).
       try {
-        await queryClient.invalidateQueries({ queryKey: MEMBERS_LIST_KEY });
+        await refreshAfterWrite(
+          queryClient,
+          MEMBERS_LIST_KEY,
+          outcome.ok || outcome.refusal.saved ? MEMBER_SAVE_DEPENDENTS : NO_DEPENDENTS,
+        );
       } catch (cause) {
         console.error(MEMBER_WRITE_UNAVAILABLE, cause);
       }

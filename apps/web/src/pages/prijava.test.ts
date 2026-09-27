@@ -2755,7 +2755,7 @@ describe('the screen is read at all, so every sweep below means something', () =
     for (const file of exempt) expect(walked, `${file} is exempt and does not exist`).toContain(file);
     // THE EXACT EXEMPTIONS, so a new one is a reviewed change to this test.
     expect([...exempt].sort(), 'the team exemptions changed').toEqual(
-      ['team-screens.fixture.ts', 'services/list.ts', 'services/write.ts', 'services/roster.ts']
+      ['team-screens.fixture.ts', 'services/list.ts', 'services/write.ts', 'services/roster.ts', 'services/dependents.ts']
         .map((file) => join(TEAM_FEATURE, ...file.split('/')))
         .sort(),
     );
@@ -4111,9 +4111,19 @@ describe('the member list reads once, under one key', () => {
   });
 
   it.each([
-    { name: 'the team list', file: TEAM_LIST, hookFile: TEAM_LIST_HOOK },
-    { name: 'the team edit form', file: TEAM_EDIT, hookFile: TEAM_EDIT_HOOK },
-  ])('reads the teams exactly once, under the one team key, on $name', ({ file, hookFile }) => {
+    {
+      name: 'the team list',
+      file: TEAM_LIST,
+      hookFile: TEAM_LIST_HOOK,
+      refreshes: ['queryClient, TEAMS_LIST_KEY, TEAM_CREATE_DEPENDENTS'],
+    },
+    {
+      name: 'the team edit form',
+      file: TEAM_EDIT,
+      hookFile: TEAM_EDIT_HOOK,
+      refreshes: ['queryClient, TEAMS_LIST_KEY, landed ? TEAM_CHANGE_DEPENDENTS : NO_DEPENDENTS'],
+    },
+  ])('reads the teams exactly once, under the one team key, on $name', ({ file, hookFile, refreshes }) => {
     // STORY 1.7a, AD-13. The rows, both counts and the edited team all come
     // from one read under `TEAMS_LIST_KEY`. The create's organization is the
     // session's own claim, never a second query.
@@ -4130,36 +4140,25 @@ describe('the member list reads once, under one key', () => {
     expect(occurrences(hook, 'teamsQueryOptions('), 'the one read is not in the hook').toBe(1);
     expect(occurrences(screen, 'teamsQueryOptions('), 'the team options are called outside the one read').toBe(1);
     expect(occurrences(screen, callOf('readTeams')), 'only the query options call the reader').toBe(0);
-    // Every key named — the re-read's — is the one team key, and (STORY 2.3b)
-    // the rotation builder's, which binds every active team: re-read beside
-    // it, started together so one failing cannot skip the other.
-    expect(occurrences(screen, 'queryKey: TEAMS_LIST_KEY')).toBeGreaterThan(0);
-    expect(occurrences(screen, 'queryKey:')).toBe(
-      occurrences(screen, 'queryKey: TEAMS_LIST_KEY') + occurrences(screen, 'queryKey: ROTATION_KEY'),
-    );
-    expect(occurrences(hook, 'queryKey:'), 'a key is named outside the hook').toBe(
-      occurrences(screen, 'queryKey:'),
-    );
-    expect(occurrences(hook, 'queryKey:'), 'the hook names a key besides the two').toBe(
-      occurrences(hook, 'queryKey: TEAMS_LIST_KEY') + occurrences(hook, 'queryKey: ROTATION_KEY'),
-    );
-    expect(occurrences(screen, 'invalidateQueries({ queryKey: ROTATION_KEY })')).toBe(
-      occurrences(screen, 'invalidateQueries({ queryKey: TEAMS_LIST_KEY })'),
-    );
-    expect(hook, 'the two re-reads are not started together').toMatch(
-      /Promise\.all\(\[\s*queryClient\.invalidateQueries\(\{ queryKey: TEAMS_LIST_KEY \}\),\s*queryClient\.invalidateQueries\(\{ queryKey: ROTATION_KEY \}\),?\s*\]\)/,
+    // THE AMENDED RULE (AD-13): a write re-reads its own key and every key
+    // declared as depending on what it wrote, and nothing else. Every re-read
+    // is `refreshAfterWrite` IN THE HOOK, on the one team key, with one of the
+    // lists `@/features/teams/services/dependents` declares for that write
+    // (the builder, and since the list-refresh fix the member list, Danas and
+    // the rosters) — so no key is named here and nothing bypasses the lists.
+    expect(occurrences(screen, 'queryKey:'), 'a key is named on a team screen').toBe(0);
+    expect(occurrences(screen, 'invalidateQueries('), 'a re-read bypasses the declared dependents').toBe(0);
+    expect(
+      [...screen.matchAll(/refreshAfterWrite\(([^;]*?)\);/g)].map((found) =>
+        (found[1] ?? '').replace(/\s+/g, ' ').replace(/,\s*$/, '').trim(),
+      ),
+      'a write re-reads something besides its own key and its declared dependents',
+    ).toEqual(refreshes);
+    expect(occurrences(hook, 'refreshAfterWrite('), 'a re-read is started outside the hook').toBe(
+      occurrences(screen, 'refreshAfterWrite('),
     );
     expect(source(TEAM_LIST_KEYS), 'the team read has no cache floor').toContain(
       'staleTime: TEAMS_READ_STALE_MS',
-    );
-    expect(hook, 'a write is not followed by a re-read of the one list').toContain(
-      'invalidateQueries({ queryKey: TEAMS_LIST_KEY })',
-    );
-    expect(hook, 'the rotation builder is not re-read beside the list').toContain(
-      'invalidateQueries({ queryKey: ROTATION_KEY })',
-    );
-    expect(occurrences(hook, 'invalidateQueries('), 'a re-read is started outside the hook').toBe(
-      occurrences(screen, 'invalidateQueries('),
     );
     for (const part of file) {
       expect(source(part), `useMutation arrived in ${part}; this repository uses a pending ref`).not.toContain(
@@ -7456,12 +7455,13 @@ describe('the two member forms write through the seam and keep nothing back', ()
     const handler = submitHandler(source(MEMBER_EDIT));
 
     expect(handler, 'no submit handler to read').not.toBe('');
+    expect(handler.search(/refreshAfterWrite\(/), 'the save no longer refreshes the list').toBeGreaterThan(0);
     expect(
       handler.indexOf('setFailure(outcome.refusal)'),
       'the list is refreshed before the refusal is surfaced, so a failed refresh replaces it',
-    ).toBeLessThan(handler.indexOf('invalidateQueries('));
+    ).toBeLessThan(handler.search(/refreshAfterWrite\(/));
     expect(handler, 'the refresh can still take the refusal down with it').toMatch(
-      /try \{[^}]*invalidateQueries\([\s\S]{0,160}?\}\s*catch/,
+      /try \{[^}]*refreshAfterWrite\([\s\S]{0,240}?\}\s*catch/,
     );
   });
 
@@ -7469,11 +7469,14 @@ describe('the two member forms write through the seam and keep nothing back', ()
     // `organizacija.tsx:293`'s rule, and there is no `useMutation` anywhere in
     // this application to carry an optimistic patch instead. What is on screen
     // after a write is what the database holds.
-    for (const file of [MEMBER_CREATE, MEMBER_EDIT]) {
-      expect(source(file), 'the write does not refresh the list').toMatch(
-        /invalidateQueries\(\{\s*queryKey:\s*MEMBERS_LIST_KEY\s*\}\)/,
-      );
-    }
+    expect(source(MEMBER_CREATE), 'the write does not refresh the list').toMatch(
+      /invalidateQueries\(\{\s*queryKey:\s*MEMBERS_LIST_KEY\s*\}\)/,
+    );
+    // The edit screen's writes re-read the list through the declared
+    // dependents' one call, the list as the own key.
+    expect(source(MEMBER_EDIT), 'the write does not refresh the list').toMatch(
+      /refreshAfterWrite\(\s*queryClient,\s*MEMBERS_LIST_KEY,/,
+    );
   });
 
   it('confirms a save, because nothing else on the edit screen would', () => {
@@ -8225,5 +8228,111 @@ describe('the detectors find what they claim to find', () => {
     // both directions of it pass on any file.
     expect(resourceKeys()).toContain('auth.heading');
     expect(resourceKeys()).toContain('count.days');
+  });
+});
+
+describe('a team or membership write re-reads every screen that shows it, once it landed', () => {
+  /**
+   * THE AMENDED CONVENTION (AD-13): a write invalidates its own key AND every
+   * key whose read embeds or derives from the rows it writes. The lists are
+   * declared once, in `@/features/teams/services/dependents`, and executed
+   * against a real cache by `dependents.test.ts`. What is pinned here is the
+   * wiring no node test can run: each write hands its own key and ITS list, and
+   * the list only once the write landed — a refusal changed no row.
+   */
+  const MEMBER_EDIT_HOOK = join(MEMBERS_FEATURE, 'hooks', 'use-member-edit.ts');
+  /** The keys the member edit screen itself reads: the only ones it may name. */
+  const MEMBER_EDIT_OWN = ['MEMBERS_LIST_KEY', 'TEAMS_LIST_KEY', 'ORGANIZATION_SNAPSHOT_KEY'];
+  const refreshesIn = (text: string): string[] =>
+    [...text.matchAll(/refreshAfterWrite\(([^;]*?)\);/g)].map((found) =>
+      (found[1] ?? '').replace(/\s+/g, ' ').replace(/,\s*$/, '').trim(),
+    );
+
+  it.each([
+    { handler: 'changeTeam', gate: 'outcome.ok', dependents: 'MEMBERSHIP_WRITE_DEPENDENTS' },
+    { handler: 'changeStatus', gate: 'outcome.ok', dependents: 'MEMBERSHIP_WRITE_DEPENDENTS' },
+    { handler: 'submit', gate: 'outcome.ok || outcome.refusal.saved', dependents: 'MEMBER_SAVE_DEPENDENTS' },
+  ])('re-reads $dependents after a landed $handler on the member edit screen', ({ handler, gate, dependents }) => {
+    const body = namedHandler(source(MEMBER_EDIT_HOOK), handler);
+
+    expect(body.length, `${handler} could not be extracted`).toBeGreaterThan(80);
+    expect(refreshesIn(body), `${handler} does not re-read its declared dependents once it landed`).toEqual([
+      `queryClient, MEMBERS_LIST_KEY, ${gate} ? ${dependents} : NO_DEPENDENTS`,
+    ]);
+    // AFTER the outcome is known, and in a `try` of its own, so a failed
+    // re-read never turns a landed write into a refusal.
+    expect(body.indexOf('const outcome = await'), `${handler} re-reads before it writes`).toBeLessThan(
+      body.indexOf('refreshAfterWrite('),
+    );
+    expect(body, `${handler}'s re-read can take the outcome down with it`).toMatch(
+      /try \{\s*await refreshAfterWrite\([\s\S]{0,800}?\}\s*catch \(cause\) \{\s*console\.error\(/,
+    );
+  });
+
+  it('names no key on the member edit screen besides its own reads', () => {
+    // Every other key it re-reads is a declared dependent, reached only
+    // through `refreshAfterWrite`.
+    const hook = source(MEMBER_EDIT_HOOK);
+    const named = [...hook.matchAll(/invalidateQueries\(\{ queryKey: (\w+) \}\)/g)].map((found) => found[1]);
+
+    expect(named.length, 'the reader found no re-read at all').toBeGreaterThan(0);
+    expect(occurrences(hook, 'invalidateQueries('), 'a re-read the reader cannot see').toBe(named.length);
+    for (const key of named) expect(MEMBER_EDIT_OWN, `${String(key)} is not the screen's own`).toContain(key);
+    expect(hook, 'a dependent is named outside the declared lists').not.toMatch(/OWN_TEAM_KEY|TEAM_ROSTERS?_KEY/);
+  });
+
+  it.each([
+    { hook: TEAM_LIST_HOOK, state: 'teamsSurfaceStateOf', notice: 'teamsNoticeOf' },
+    { hook: join(MEMBERS_FEATURE, 'hooks', 'use-member-list.ts'), state: 'membersSurfaceStateOf', notice: 'membersNoticeOf' },
+    { hook: HOUR_BAND_LIST_HOOK, state: 'hourBandsSurfaceStateOf', notice: 'hourBandsNoticeOf' },
+    { hook: SHIFT_TYPE_LIST_HOOK, state: 'shiftTypesSurfaceStateOf', notice: 'shiftTypesNoticeOf' },
+    { hook: TEAM_ROSTER_HOOK, state: 'teamRosterSurfaceStateOf', notice: 'teamRosterNoticeOf' },
+  ])('announces a paused refetch on the list through $notice, never through the state', ({ hook, state, notice }) => {
+    // A PAUSE OVER CACHED ROWS IS NOT A REFUSAL (the edit forms stay mounted),
+    // so a list that read `refusal` off the state would say nothing about it.
+    const text = source(hook);
+
+    expect(text, `${hook} no longer reads the state`).toContain(`const state = ${state}(answer);`);
+    expect(text, `${hook} announces the state's refusal, not the notice`).toContain(
+      `const refusal = ${notice}(state);`,
+    );
+    expect(text, `${hook} still takes the refusal off the state`).not.toMatch(
+      /const \{[^}]*\brefusal\b[^}]*\} = state;/,
+    );
+  });
+
+  it.each([TEAM_EDIT_HOOK, HOUR_BAND_EDIT_HOOK, SHIFT_TYPE_EDIT_HOOK, join(MEMBERS_FEATURE, 'hooks', 'use-member-edit.ts')])(
+    'keeps the edit form on a paused refetch in %s',
+    (hook) => {
+      // The edit hooks read the plain refusal: a pause never hides the form.
+      expect(source(hook), 'an edit form hides itself on a pause').not.toMatch(/NoticeOf\(/);
+    },
+  );
+
+  it('re-reads after a team create only once the create landed', () => {
+    // A refused create returns before the re-read: nothing was written, and
+    // the builder has no new team to bind.
+    const body = namedHandler(source(TEAM_LIST_HOOK), 'submit');
+    const refused = /if \(!outcome\.ok\) \{[\s\S]*?\breturn;\s*\}/.exec(body);
+
+    expect(body.length, 'submit could not be extracted').toBeGreaterThan(80);
+    expect(refused, 'the refused create no longer returns').not.toBeNull();
+    expect(occurrences(body, 'refreshAfterWrite('), 'the create re-reads more than once').toBe(1);
+    expect(
+      (refused?.index ?? Infinity) + (refused?.[0].length ?? 0),
+      'the create re-reads before its refusal returns',
+    ).toBeLessThan(body.indexOf('refreshAfterWrite('));
+  });
+
+  it('re-reads the team change dependents only after a landed rename or archive', () => {
+    const hook = source(TEAM_EDIT_HOOK);
+
+    for (const name of ['submit', 'archive']) {
+      const body = namedHandler(hook, name);
+
+      expect(body.length, `${name} could not be extracted`).toBeGreaterThan(80);
+      expect(occurrences(body, 'refresh('), `${name} re-reads more than once`).toBe(1);
+      expect(body, `${name} re-reads the dependents whatever the outcome`).toContain('await refresh(outcome.ok);');
+    }
   });
 });

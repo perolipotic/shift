@@ -1,0 +1,97 @@
+import type { QueryKey } from '@tanstack/react-query';
+
+import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
+import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
+import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
+import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
+import { ROTATION_KEY } from '@/features/rotation/services/list';
+import { OWN_TEAM_KEY, TEAM_ROSTERS_KEY } from '@/features/teams/services/roster';
+
+/**
+ * WHICH READS A TEAM OR MEMBERSHIP WRITE MAKES STALE, named in one place.
+ *
+ * THE CONVENTION (AD-13, amended): a write invalidates its own surface's key
+ * AND every key whose read embeds or derives from the rows it writes. The
+ * first half is each hook's own; the second half is declared here, per write,
+ * so a read that starts embedding a team or a membership is added to one list
+ * rather than hunted for across the handlers. `dependents.test.ts` classifies
+ * every exported query key, so a new key fails there until it is placed.
+ *
+ *   - THE MEMBER LIST embeds `teams(name)` beside each membership version.
+ *   - DANAS'S OWN-TEAM LINE embeds the same team name off the caller's row.
+ *   - EVERY `/smjene/$id` ROSTER answers the team's name, its archived flag and
+ *     today's active members with their names, ranks and positions.
+ *   - THE ROTATION BUILDER binds every active team (story 2.3b) and embeds
+ *     `members(name)` for its history's authors.
+ *   - THE CALENDAR draws every team and who is on it. Its read has a stale time
+ *     of 0, so it re-reads on every mount anyway and listing it is harmless
+ *     today — but the rule requires it, and a later stale time would otherwise
+ *     leave it stale silently.
+ *   - THE CHROME'S OWN NAME AND ROLE are the signed-in member's own row, which
+ *     an admin editing themselves writes.
+ *
+ * THE DEPENDENTS ARE RE-READ ONLY AFTER A WRITE THAT LANDED. A refusal changes
+ * no row, so it re-reads its own screen's reads (the likeliest reason for a
+ * refusal is a list behind the database) and nothing else.
+ *
+ * Plain data and one function over a structural client, so the node suite
+ * executes both.
+ */
+
+/** A new team: nothing embeds a team nobody is on yet, except the builder. */
+export const TEAM_CREATE_DEPENDENTS: readonly QueryKey[] = [ROTATION_KEY];
+
+/** A team renamed or archived: every read that shows a team's name or flag. */
+export const TEAM_CHANGE_DEPENDENTS: readonly QueryKey[] = [
+  ROTATION_KEY,
+  MEMBERS_LIST_KEY,
+  OWN_TEAM_KEY,
+  TEAM_ROSTERS_KEY,
+  CALENDAR_KEY,
+];
+
+/**
+ * A member moved between teams, or their status changed: every read that
+ * says who is on which team today.
+ */
+export const MEMBERSHIP_WRITE_DEPENDENTS: readonly QueryKey[] = [OWN_TEAM_KEY, TEAM_ROSTERS_KEY, CALENDAR_KEY];
+
+/**
+ * A member's own row saved: the rosters and the builder's history show the
+ * name (the rosters the rank too), and the chrome's name and role are the
+ * member's own when an admin edits themselves.
+ */
+export const MEMBER_SAVE_DEPENDENTS: readonly QueryKey[] = [
+  TEAM_ROSTERS_KEY,
+  ROTATION_KEY,
+  MEMBER_NAME_KEY,
+  MEMBER_ROLE_KEY,
+];
+
+/** A refusal's re-read: the surface's own key, and nothing that depends on it. */
+export const NO_DEPENDENTS: readonly QueryKey[] = [];
+
+/** The one call a write makes on the cache, named structurally so it can be stubbed. */
+export interface InvalidatingClient {
+  invalidateQueries(filters: { readonly queryKey: QueryKey }): Promise<void>;
+}
+
+/**
+ * Re-read the surface's own key and every dependent, all started together so
+ * one cannot hold up another.
+ *
+ * IT RESOLVES WHEN A RE-READ FAILS. TanStack Query's `invalidateQueries`
+ * refetches with `throwOnError` false, so a rejecting `queryFn` settles the
+ * query as failed and the promise still resolves, and a refetch paused offline
+ * resolves at once. That, and not the callers' `try`, is what keeps a failed
+ * re-read from ever turning a landed write into a refusal; `dependents.test.ts`
+ * pins it against a real client. The callers' `try` remains for a client that
+ * throws before any re-read starts.
+ */
+export async function refreshAfterWrite(
+  client: InvalidatingClient,
+  own: QueryKey,
+  dependents: readonly QueryKey[],
+): Promise<void> {
+  await Promise.all([own, ...dependents].map((queryKey) => client.invalidateQueries({ queryKey })));
+}

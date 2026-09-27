@@ -2171,6 +2171,13 @@ export interface MembersSurfaceState {
   readonly refusal: MembersFailure | null;
   /** Whether to pulse the skeleton. Never true beside a message. */
   readonly loading: boolean;
+  /**
+   * A REFETCH PAUSED OFFLINE OVER CACHED ROWS. Not a refusal: an edit form
+   * built on this state stays mounted with what was typed. A list screen
+   * announces it through {@link membersNoticeOf}, the unavailable message beside the
+   * kept rows.
+   */
+  readonly paused: boolean;
 }
 
 /**
@@ -2191,6 +2198,11 @@ export interface MembersSurfaceState {
  *   - PAUSED. TanStack Query pauses rather than fails when the browser reports
  *     itself offline: `isPending` stays true with nothing in flight and no error
  *     ever arriving, so the skeleton pulses for ever with nothing saying why.
+ *     A REFETCH paused over a cached answer is NOT a refusal: it is `paused`,
+ *     so the edit form over the cached row keeps what was typed, and the list
+ *     announces it through {@link membersNoticeOf} beside the kept rows.
+ *     `fetchStatus` alone says so, since `isPending` is false once anything is
+ *     cached.
  *   - FAILED OVER A GOOD ANSWER. A refetch that fails while a complete list is
  *     already cached — a network blip after a write's invalidation, on a screen
  *     someone is looking at. Because the failure rejects, TanStack keeps the
@@ -2206,17 +2218,26 @@ export interface MembersSurfaceState {
 export function membersSurfaceStateOf(answer: MembersQueryAnswer): MembersSurfaceState {
   const answered = answer.data;
   const members = answered !== undefined && answered.ok ? answered.members : null;
-  const paused = answer.isPending && answer.fetchStatus === FETCH_PAUSED;
+  const pausedFetch = answer.fetchStatus === FETCH_PAUSED;
 
   // THE CURRENT FAULT WINS: a refetch that failed over a cached refusal is
   // unavailable now, whatever the policy said last time.
-  if (answer.isError || paused) {
-    return { members, refusal: MEMBERS_UNAVAILABLE, loading: false };
+  if (answer.isError || (answer.isPending && pausedFetch)) {
+    return { members, refusal: MEMBERS_UNAVAILABLE, loading: false, paused: false };
   }
 
+  // A PAUSE OVER A CACHED REFUSAL keeps that refusal: nothing new arrived.
   if (answered !== undefined && !answered.ok) {
-    return { members: null, refusal: answered.code, loading: false };
+    return { members: null, refusal: answered.code, loading: false, paused: pausedFetch };
   }
 
-  return { members, refusal: null, loading: answer.isPending };
+  return { members, refusal: null, loading: answer.isPending, paused: pausedFetch };
+}
+
+/**
+ * What the LIST screen announces: the refusal, or over rows a refetch paused
+ * offline, the unavailable message beside them. The edit form reads `refusal`.
+ */
+export function membersNoticeOf(state: MembersSurfaceState): MembersFailure | null {
+  return state.refusal ?? (state.paused ? MEMBERS_UNAVAILABLE : null);
 }

@@ -606,19 +606,34 @@ export interface ShiftTypesSurfaceState {
   readonly refusal: ShiftTypesFailure | null;
   /** Never true beside a message. */
   readonly loading: boolean;
+  /**
+   * A REFETCH PAUSED OFFLINE OVER CACHED ROWS. Not a refusal: an edit form
+   * built on this state stays mounted with what was typed. A list screen
+   * announces it through {@link shiftTypesNoticeOf}, the unavailable message beside the
+   * kept rows.
+   */
+  readonly paused: boolean;
 }
 
 /**
  * One query result as what the screen shows: answered, failed, paused offline,
- * and a failed refetch over a good answer (rows kept, message beside them).
+ * and a failed refetch over a good answer (rows kept, message beside them). A
+ * FIRST READ paused offline is a refusal; a REFETCH paused over a cached
+ * snapshot is `paused`, never a refusal, so the edit form keeps what was typed
+ * and the list says so through {@link shiftTypesNoticeOf}.
  */
 export function shiftTypesSurfaceStateOf(answer: ShiftTypesQueryAnswer): ShiftTypesSurfaceState {
   const snapshot = answer.data ?? null;
-  const paused = answer.isPending && answer.fetchStatus === SHIFT_TYPES_FETCH_PAUSED;
+  const pausedFetch = answer.fetchStatus === SHIFT_TYPES_FETCH_PAUSED;
 
-  if (answer.isError || paused) {
-    return { snapshot, refusal: SHIFT_TYPES_UNAVAILABLE, loading: false };
+  if (answer.isError || (answer.isPending && pausedFetch)) {
+    return { snapshot, refusal: SHIFT_TYPES_UNAVAILABLE, loading: false, paused: false };
   }
 
-  return { snapshot, refusal: null, loading: answer.isPending };
+  return { snapshot, refusal: null, loading: answer.isPending, paused: pausedFetch };
+}
+
+/** What the LIST screen announces, by the teams list's rule. */
+export function shiftTypesNoticeOf(state: ShiftTypesSurfaceState): ShiftTypesFailure | null {
+  return state.refusal ?? (state.paused ? SHIFT_TYPES_UNAVAILABLE : null);
 }

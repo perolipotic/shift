@@ -27,9 +27,16 @@ import { memberTeamOn, teamVersionsIn, type MemberTeam, type MemberTeamVersion }
 /** The function `0011` declares. */
 export const TEAM_ROSTER_FUNCTION = 'team_roster';
 
+/**
+ * The prefix every roster's key starts with: invalidating it re-reads every
+ * team's roster at once, which is what a write that changes who is on a team,
+ * or what a team is called, needs (`@/features/teams/services/dependents`).
+ */
+export const TEAM_ROSTERS_KEY = ['team-roster'] as const;
+
 /** The one query key the roster screen reads under, per team. */
 export function TEAM_ROSTER_KEY(id: string): readonly ['team-roster', string] {
-  return ['team-roster', id] as const;
+  return [TEAM_ROSTERS_KEY[0], id] as const;
 }
 
 /** Five minutes, the bound `TEAMS_READ_STALE_MS` sets, for the same reason. */
@@ -237,6 +244,13 @@ export interface TeamRosterSurfaceState {
   readonly refusal: TeamRosterFailure | null;
   /** Never true beside a message. */
   readonly loading: boolean;
+  /**
+   * A REFETCH PAUSED OFFLINE OVER A CACHED ROSTER — every team and membership
+   * write now invalidates every roster. Kept apart from `refusal` by the list
+   * surfaces' rule; the screen announces it through {@link teamRosterNoticeOf}
+   * with the unavailable message it already has, beside the kept roster.
+   */
+  readonly paused: boolean;
 }
 
 /**
@@ -249,17 +263,22 @@ export function teamRosterSurfaceStateOf(
 ): TeamRosterSurfaceState {
   const answered = answer.data;
   const roster = answered !== undefined && answered.ok ? answered.roster : null;
-  const paused = answer.isPending && answer.fetchStatus === TEAM_ROSTER_FETCH_PAUSED;
+  const pausedFetch = answer.fetchStatus === TEAM_ROSTER_FETCH_PAUSED;
 
   if (answered !== undefined && !answered.ok) {
-    return { roster: null, refusal: answered.code, loading: false };
+    return { roster: null, refusal: answered.code, loading: false, paused: pausedFetch };
   }
 
-  if (answer.isError || paused) {
-    return { roster, refusal: TEAM_ROSTER_UNAVAILABLE, loading: false };
+  if (answer.isError || (answer.isPending && pausedFetch)) {
+    return { roster, refusal: TEAM_ROSTER_UNAVAILABLE, loading: false, paused: false };
   }
 
-  return { roster, refusal: null, loading: answer.isPending };
+  return { roster, refusal: null, loading: answer.isPending, paused: pausedFetch };
+}
+
+/** What the roster screen announces: the refusal, or over a paused refetch, the unavailable message. */
+export function teamRosterNoticeOf(state: TeamRosterSurfaceState): TeamRosterFailure | null {
+  return state.refusal ?? (state.paused ? TEAM_ROSTER_UNAVAILABLE : null);
 }
 
 // ------------------------------------------------------ the caller's team today

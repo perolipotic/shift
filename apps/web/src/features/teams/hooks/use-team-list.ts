@@ -2,12 +2,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 
 import { NO_TEXT } from '@/features/members/services/list';
-import { ROTATION_KEY } from '@/features/rotation/services/list';
+import { TEAM_CREATE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
 import {
   TEAMS_LIST_KEY,
   TEAMS_TABLE,
   splitTeams,
   teamsQueryOptions,
+  teamsNoticeOf,
   teamsSurfaceStateOf,
 } from '@/features/teams/services/list';
 import {
@@ -57,7 +58,11 @@ export function useTeamList() {
 
   const answer = useQuery(teamsQueryOptions(() => supabaseClient().from(TEAMS_TABLE)));
 
-  const { teams, refusal, loading } = teamsSurfaceStateOf(answer);
+  const state = teamsSurfaceStateOf(answer);
+  const { teams, loading } = state;
+  // THE LIST'S NOTICE: the refusal, or the unavailable message beside rows a
+  // refetch paused offline over, which is never a refusal (an edit form keeps them).
+  const refusal = teamsNoticeOf(state);
   const split = teams === null ? null : splitTeams(teams);
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -109,11 +114,9 @@ export function useTeamList() {
 
       try {
         // The rotation builder binds every active team, from its own snapshot
-        // (story 2.3b), so a new team shows there too. Both start together.
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: TEAMS_LIST_KEY }),
-          queryClient.invalidateQueries({ queryKey: ROTATION_KEY }),
-        ]);
+        // (story 2.3b), so a new team shows there too (`TEAM_CREATE_DEPENDENTS`).
+        // Both start together.
+        await refreshAfterWrite(queryClient, TEAMS_LIST_KEY, TEAM_CREATE_DEPENDENTS);
       } catch (cause) {
         console.error(TEAM_WRITE_UNAVAILABLE, cause);
       }

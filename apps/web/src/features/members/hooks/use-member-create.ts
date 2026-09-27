@@ -149,19 +149,19 @@ export function useMemberCreate() {
         return;
       }
 
-      // THE CREDENTIAL FIRST, AND THE CACHE AFTER, and the order is the whole
-      // of it. `invalidateQueries` awaits the refetch, so it REJECTS when the
-      // browser is offline or the session has just expired — and with the
-      // refetch first that rejection jumped to the catch below, replaced the
-      // panel with "try again", and threw away the only copy of a password for
-      // an account that had already been created. The admin was then told the
-      // write had failed about an account they now cannot hand to anybody.
+      // THE CREDENTIAL FIRST, AND THE CACHE AFTER. `invalidateQueries` awaits
+      // the refetch but does not reject when it fails — TanStack refetches with
+      // `throwOnError` false, and a refetch paused offline resolves at once
+      // (`features/teams/services/dependents.test.ts` pins both). The order is
+      // kept anyway: the one unrecoverable value in this system is shown before
+      // anything else is awaited, so no later step can take it down.
       setCredential(outcome.credential);
 
       // REFETCHED rather than patched into the cache, so the list shows what the
-      // database holds — including anything a shape on the table normalized. Its
-      // failure is ISOLATED: a stale list is a list one navigation fixes, and it
-      // may not cost the one value in this system nothing can recover.
+      // database holds — including anything a shape on the table normalized. The
+      // `try` is for a client that throws before the refetch starts: a stale
+      // list is a list one navigation fixes, and it may not cost the one value
+      // in this system nothing can recover.
       try {
         await queryClient.invalidateQueries({ queryKey: MEMBERS_LIST_KEY });
       } catch (cause) {
@@ -169,8 +169,9 @@ export function useMemberCreate() {
       }
     } catch (cause) {
       // Everything `createMember` does not already map: the client throwing
-      // `SUPABASE_ENVIRONMENT_MISSING` on a build with no environment, and a
-      // refetch that rejects. The CAUSE is logged and the credential is not —
+      // `SUPABASE_ENVIRONMENT_MISSING` on a build with no environment. A failed
+      // refetch never reaches here: it resolves. The CAUSE is logged and the
+      // credential is not —
       // `cause` here can only be a client or transport failure, because the
       // success path never throws.
       console.error(MEMBER_WRITE_UNAVAILABLE, cause);

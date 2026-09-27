@@ -29,15 +29,19 @@ export function HourBandAddDialog({ screen }: { readonly screen: HourBandListScr
     screen;
 
   return (
+    // NOT DISMISSIBLE WHILE A CREATE IS IN FLIGHT: Escape, the backdrop, the
+    // close control and Cancel all wait for the outcome, so the dialog that
+    // reports it cannot be closed before it lands.
     <Dialog
       open={adding}
       onOpenChange={setAdding}
+      dismissible={!pending}
       aria-labelledby="hour-band-new-heading"
     >
       <DialogHeader
         closeLabel={t('organization.hourBands.close')}
         onClose={() => {
-          setAdding(false);
+          if (!pending) setAdding(false);
         }}
       >
         <DialogTitle id="hour-band-new-heading">{t('organization.hourBands.addHeading')}</DialogTitle>
@@ -125,6 +129,7 @@ export function HourBandAddDialog({ screen }: { readonly screen: HourBandListScr
             className="h-11"
             type="button"
             variant="outline"
+            disabled={pending}
             onClick={() => {
               setAdding(false);
             }}
