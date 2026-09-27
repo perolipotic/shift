@@ -44,10 +44,12 @@ import {
   VIEWER_NAME,
   assignmentRow,
   calendarOrganizationRow,
+  calendarOverrideRow,
   calendarTableOf,
   memberMembershipRow,
   membershipRow,
   membersAnswerOf,
+  overridesAnswerOf,
   calendarMemberRow,
   statusRow,
   stepRow,
@@ -74,10 +76,15 @@ async function snapshotOf(
     versions = null as readonly Record<string, unknown>[] | null,
     statuses = [] as readonly Record<string, unknown>[],
     members = undefined as readonly Record<string, unknown>[] | undefined,
+    overrides = [] as readonly Record<string, unknown>[],
   } = {},
 ): Promise<CalendarSnapshot> {
   const organization = calendarOrganizationRow(rows, { timezone, viewers, versions, statuses });
-  const source = calendarTableOf({ data: [organization], error: null, count: 1 }, membersAnswerOf(members));
+  const source = calendarTableOf(
+    { data: [organization], error: null, count: 1 },
+    membersAnswerOf(members),
+    overridesAnswerOf(overrides),
+  );
   const outcome = await readCalendar(source, source, viewerSession());
 
   if (!outcome.ok) throw new Error(outcome.code);
@@ -726,6 +733,53 @@ describe('modifiers and labels (story 3.2b)', () => {
     expect(
       cellLabelOf({ ...before.rows[0]!, ...before.rows[0]!.cells[0]!, teamName: before.columns[0]!.name }, translate),
     ).toBe('nedjelja 01.12., Smjena A, Bez rotacije');
+  });
+});
+
+describe('the overridden mark (story 3.5a)', () => {
+  const translate: CellLabelTranslate = (key) => t(key);
+  // Smjena A projects Dan on 2020-01-01 (the anchor); the override is Noć.
+  const overridden = () =>
+    snapshotOf(PILOT, {
+      viewers: [viewerRow([membershipRow('pilot-smjena-a', SEEDED)])],
+      overrides: [calendarOverrideRow('o1', 'pilot-smjena-a', '2020-01-01', 'pilot-noc')],
+    });
+
+  it("marks the overridden cell, draws the worked type, and leaves every other cell as the projection's", async () => {
+    const snapshot = await overridden();
+    const month = calendarMonthOf(snapshot, { mjesec: '2020-01' }, TODAY);
+    const pure = calendarMonthOf(pilot, { mjesec: '2020-01' }, TODAY);
+
+    for (const [index, row] of month.rows.entries()) {
+      for (const [column, cell] of row.cells.entries()) {
+        if (row.date === '2020-01-01' && cell.teamId === 'pilot-smjena-a') {
+          expect(cell).toMatchObject({ shiftTypeId: 'pilot-noc', name: 'Noć', range: '19:00–07:00', modifiers: ['overridden'] });
+        } else {
+          expect(cell, `${cell.teamId} on ${row.date}`).toEqual(pure.rows[index]!.cells[column]);
+        }
+      }
+    }
+    expect(legendOf(month.rows.flatMap((row) => row.cells))).toEqual(['overridden']);
+    expect(gridCellLabelsOf(month, translate)[0]![0]).toBe('srijeda 01.01., Smjena A, Noć, 19:00–07:00, Izmijenjeno');
+  });
+
+  it("marks the day in the viewer's day list, with its legend", async () => {
+    const snapshot = await overridden();
+    const days = daysOf(calendarMonthOf(snapshot, { mjesec: '2020-01' }, TODAY))!;
+
+    expect(days[0]!.cell).toMatchObject({ name: 'Noć', modifiers: ['overridden'] });
+    expect(days.slice(1).every((day) => day.cell?.modifiers.length === 0)).toBe(true);
+    expect(legendOf(days.map((day) => day.cell))).toEqual(['overridden']);
+  });
+
+  it('ignores an override on a day with no rotation: no mark, no legend', async () => {
+    const snapshot = await snapshotOf(PILOT, {
+      overrides: [calendarOverrideRow('o1', 'pilot-smjena-a', '2019-12-31', 'pilot-noc')],
+    });
+    const month = calendarMonthOf(snapshot, { mjesec: '2019-12' }, TODAY);
+
+    expect(month.rows.at(-1)!.cells[0]).toMatchObject({ shiftTypeId: null, modifiers: [] });
+    expect(legendOf(month.rows.flatMap((row) => row.cells))).toEqual([]);
   });
 });
 

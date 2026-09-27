@@ -1,6 +1,6 @@
 import type { Session } from '@supabase/supabase-js';
 
-import { CALENDAR_MEMBERS_FUNCTION } from '@/calendar/snapshot';
+import { CALENDAR_MEMBERS_FUNCTION, CALENDAR_OVERRIDES_FUNCTION } from '@/calendar/snapshot';
 import type { RotationAnswer } from '@/rotation/list';
 
 /**
@@ -257,19 +257,44 @@ export function membersAnswerOf(members: readonly Row[] = [calendarMemberRow(VIE
   return { data: members, error: null };
 }
 
+/** One row of `calendar_shift_type_overrides()` (0019, story 3.5a). */
+export function calendarOverrideRow(
+  id: string,
+  teamId: string,
+  date: string,
+  shiftTypeId: string,
+  options: { readonly reason?: unknown; readonly createdAt?: unknown; readonly author?: unknown } = {},
+): Row {
+  return {
+    id,
+    team_id: teamId,
+    date,
+    shift_type_id: shiftTypeId,
+    reason: options.reason ?? 'Zamjena zbog vježbe.',
+    created_at: options.createdAt ?? '2026-09-12T17:05:00+00:00',
+    author_member_id: options.author === undefined ? VIEWER_MEMBER : options.author,
+  };
+}
+
+/** `calendar_shift_type_overrides()`'s answer: by default none. */
+export function overridesAnswerOf(overrides: readonly Row[] = []): { readonly data: unknown; readonly error: null } {
+  return { data: overrides, error: null };
+}
+
 /** The session the calendar reads as: the viewer's. */
 export function viewerSession(authUserId = VIEWER_AUTH_USER): () => Promise<Session> {
   return () => Promise.resolve({ user: { id: authUserId } } as Session);
 }
 
 /**
- * A calendar table answering once with `answer`, and the members rpc answering
- * with `members`, recording every select, filter and rpc. It stands in for both
- * of `readCalendar`'s sources.
+ * A calendar table answering once with `answer`, the members rpc answering
+ * with `members` and the overrides rpc with `overrides`, recording every
+ * select, filter and rpc. It stands in for both of `readCalendar`'s sources.
  */
 export function calendarTableOf(
   answer: unknown,
   members: unknown = membersAnswerOf(),
+  overrides: unknown = overridesAnswerOf(),
 ): {
   readonly seen: unknown[][];
   select(columns: string, options: unknown): { filter(column: string, operator: string, value: string): Promise<never> };
@@ -282,10 +307,11 @@ export function calendarTableOf(
     rpc(fn) {
       seen.push(['rpc', fn]);
 
-      // The one function the calendar may call (0018).
-      if (fn !== CALENDAR_MEMBERS_FUNCTION) throw new Error(`unexpected rpc ${fn}`);
+      // The two functions the calendar may call (0018, 0019).
+      if (fn === CALENDAR_MEMBERS_FUNCTION) return Promise.resolve(members as never);
+      if (fn === CALENDAR_OVERRIDES_FUNCTION) return Promise.resolve(overrides as never);
 
-      return Promise.resolve(members as never);
+      throw new Error(`unexpected rpc ${fn}`);
     },
     select(columns, options) {
       seen.push(['select', columns, options]);

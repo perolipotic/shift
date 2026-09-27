@@ -458,7 +458,13 @@ development_status:
   # team's type, times and roster as at that date, `Ime · čin · položaj`
   # (spec-3-4b-day-detail-dialog.md); roster overrides arrive with 3.6.
   3-4-opening-a-day-to-see-who-is-actually-on-it: done
-  3-5-an-admin-changes-a-team-s-shift-type-on-one-date: backlog
+  # Story 3.5 was split in three at the user's request (2026-09-27); all parts
+  # ride on this one key. 3.5a records and shows the override — migration
+  # 0019 `shift_type_overrides`, domain `scheduledShiftTypeOn`, `✎` on the
+  # calendar, attribution in the day detail, written only by seeds
+  # (spec-3-5a-shift-type-override-record-and-display.md). 3.5b is the admin's
+  # set/remove form; 3.5c is CAP-9's disposition on a rotation change.
+  3-5-an-admin-changes-a-team-s-shift-type-on-one-date: in-progress
   3-6-an-admin-adds-removes-or-replaces-someone-on-a-shift: backlog
   epic-3-retrospective: optional
 

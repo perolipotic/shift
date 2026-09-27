@@ -11,8 +11,9 @@ import type { CalendarDay, CalendarMonth } from '@/calendar/month';
  * NEVER COLOUR ALONE: every modifier has a glyph and a label beside its
  * treatment, and a cell's label for assistive technology names each one.
  *
- * NOTHING DERIVES A MODIFIER YET. Every cell carries `modifiers: []` in this
- * story; which data produces which mark is 3.5's, 3.6's and Epics 4–5's.
+ * ONE MODIFIER IS DERIVED SO FAR: `overridden`, where a shift-type override
+ * replaced the projected type (story 3.5a, `@/calendar/month`). Which data
+ * produces the other marks is 3.6's and Epics 4–5's.
  *
  * PURE, and executed by the node suite (AD-15): `routes/kalendar.tsx` renders
  * what these rules return.

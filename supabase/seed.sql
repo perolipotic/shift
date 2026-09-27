@@ -21,9 +21,9 @@
 -- created_by or created_at — with two exceptions, whose `created_by` has no
 -- session to default from and is each fixture's own admin, and whose rows
 -- carry an explicit ascending `created_at` because this file runs in one
--- transaction: the shift types and their versions (story 2.2a), and the teams
--- and the rotation — pattern, steps and assignments (story 2.3a). No team
--- membership is seeded.
+-- transaction: the shift types and their versions (story 2.2a), the teams
+-- and the rotation — pattern, steps and assignments (story 2.3a), and one
+-- shift-type override per fixture (story 3.5a). No team membership is seeded.
 --
 -- Both fixtures are provisioned the way a real organization is — see
 -- `supabase/operator/provision-organization.sql`, which carries the same
@@ -44,10 +44,10 @@
 --   organizations -> members -> teams -> team_membership_versions
 --   -> hour_bands -> shift_types -> shift_type_versions
 --   -> rotation_patterns -> rotation_steps -> rotation_assignments
---   -> leave_records
+--   -> shift_type_overrides -> leave_records
 -- Attribution comes from column defaults (AD-11), so inserts here must not
 -- forge created_by or created_at — except the teams, the shift types and their
--- versions, and the rotation, as the header explains.
+-- versions, the rotation and the shift-type override, as the header explains.
 
 insert into organizations (
   slug, name, short_name, description, address, contact_email,
@@ -283,6 +283,27 @@ select organizations.id,
                      and rotation_steps.position = assignment.offset_position
  where organizations.slug = 'dvd-kastel-novi';
 
+-- Story 3.5a: one shift-type override, attributed to the admin. Smjena A
+-- projects Dan on 2026-09-14 and worked Noć instead: working to working. The
+-- rotation rows above are untouched by it (CAP-12).
+insert into shift_type_overrides (
+  organization_id, team_id, date, shift_type_id, reason, created_by, created_at
+)
+select organizations.id,
+       teams.id,
+       date '2026-09-14',
+       shift_types.id,
+       'Zamjena sa Smjenom B zbog vježbe.',
+       (select auth_user_id from members
+         where organization_id = organizations.id and username = 'ivan.maric'),
+       now() + interval '10 milliseconds'
+  from organizations
+  join teams on teams.organization_id = organizations.id
+            and teams.name = 'Smjena A'
+  join shift_types on shift_types.organization_id = organizations.id
+                  and shift_types.name = 'Noć'
+ where organizations.slug = 'dvd-kastel-novi';
+
 
 -- ===========================================================================
 -- Fixture 2 — the UJ-5 security organization
@@ -515,3 +536,25 @@ select organizations.id,
   join rotation_steps on rotation_steps.pattern_id = rotation_patterns.id
                      and rotation_steps.position = assignment.offset_position
  where organizations.slug = 'zastita-split';
+
+-- Story 3.5a: one shift-type override, attributed to the admin. Smjena B
+-- projects Slobodno on 2026-09-14 and worked Jutarnja instead: an off day made
+-- a working one, the pilot's case turned round.
+insert into shift_type_overrides (
+  organization_id, team_id, date, shift_type_id, reason, created_by, created_at
+)
+select organizations.id,
+       teams.id,
+       date '2026-09-14',
+       shift_types.id,
+       'Pokrivanje izvanrednog događaja.',
+       (select auth_user_id from members
+         where organization_id = organizations.id and username = 'josip.peric'),
+       now() + interval '10 milliseconds'
+  from organizations
+  join teams on teams.organization_id = organizations.id
+            and teams.name = 'Smjena B'
+  join shift_types on shift_types.organization_id = organizations.id
+                  and shift_types.name = 'Jutarnja'
+ where organizations.slug = 'zastita-split';
+

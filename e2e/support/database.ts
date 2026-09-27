@@ -339,10 +339,65 @@ export async function seedTeamRotation(slug: string, teamId: string, suffix: str
   }
 }
 
+/** What {@link seedShiftTypeOverride} wrote, as the day detail names it (story 3.5a). */
+export interface SeededOverride {
+  /** The type worked in place of the projected one. */
+  readonly typeName: string;
+  readonly reason: string;
+  /** When it was saved, in the organization's zone: `12.09.2026` and `19:05`. */
+  readonly savedDate: string;
+  readonly savedTime: string;
+}
+
+/**
+ * Overrides `teamId`'s type on `date` with the seeded rotation's step type at
+ * `step` (story 3.5a), attributed to the run's admin, in SQL — no product
+ * surface writes one yet (3.5b). Call it after {@link seedTeamRotation}, under
+ * the same hold; {@link removeSeededRotation} deletes it with the types.
+ */
+export async function seedShiftTypeOverride(
+  rotation: SeededRotation,
+  teamId: string,
+  date: string,
+  step: 0 | 1 | 2 | 3,
+  reason: string,
+): Promise<SeededOverride> {
+  const client = await connect();
+  try {
+    const typeName = rotation.steps[step];
+    const { rows } = await client.query<{ saved_date: string; saved_time: string }>(
+      `with admin as (
+         select m.auth_user_id from members m
+          where m.organization_id = $1 and m.role = 'admin'
+          order by m.created_at, m.id limit 1
+       ),
+       written as (
+         insert into shift_type_overrides (organization_id, team_id, date, shift_type_id, reason, created_by)
+         select $1, $2, $3::date, t.id, $5, (select auth_user_id from admin)
+           from shift_types t
+          where t.organization_id = $1 and t.id = any($6::uuid[]) and t.name = $4
+         returning created_at
+       )
+       select to_char(w.created_at at time zone o.timezone, 'DD.MM.YYYY') as saved_date,
+              to_char(w.created_at at time zone o.timezone, 'HH24:MI') as saved_time
+         from written w cross join organizations o
+        where o.id = $1`,
+      [rotation.organizationId, teamId, date, typeName, reason, rotation.shiftTypeIds],
+    );
+    const written = rows[0];
+    if (written === undefined || rows.length !== 1) throw new Error('E2E: the shift-type override was not written');
+
+    return { typeName, reason, savedDate: written.saved_date, savedTime: written.saved_time };
+  } finally {
+    await client.end();
+  }
+}
+
 /**
  * Deletes everything {@link seedTeamRotation} wrote — the version, the steps,
- * the pattern, the times and the three types — in one transaction, so the run
- * organization is as it was. Safe to call twice.
+ * the pattern, the times and the three types — and every override naming one
+ * of those types ({@link seedShiftTypeOverride}), in one transaction, so the
+ * run organization is as it was. Safe to call twice.
  */
 export async function removeSeededRotation(seeded: SeededRotation): Promise<void> {
   const client = await connect();
@@ -353,6 +408,11 @@ export async function removeSeededRotation(seeded: SeededRotation): Promise<void
     await client.query('delete from rotation_steps where organization_id = $1 and pattern_id = $2', scope);
     await client.query('delete from rotation_patterns where organization_id = $1 and id = $2', scope);
     const types = [seeded.organizationId, seeded.shiftTypeIds];
+    // Before the types: an override keys to its type (0019).
+    await client.query(
+      'delete from shift_type_overrides where organization_id = $1 and shift_type_id = any($2::uuid[])',
+      types,
+    );
     await client.query(
       'delete from shift_type_versions where organization_id = $1 and shift_type_id = any($2::uuid[])',
       types,

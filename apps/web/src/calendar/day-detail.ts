@@ -1,8 +1,9 @@
-import { projectedShiftTypeOn, shiftRoster } from '@shift/domain';
+import { scheduledShiftTypeOn, shiftRoster } from '@shift/domain';
 
 import { typeRangeOn, weekdayOf } from '@/calendar/month';
 import type { CalendarSnapshot } from '@/calendar/snapshot';
-import { compareText, formatIsoDate } from '@/i18n/format';
+import { compareText, formatDate, formatIsoDate, formatTime } from '@/i18n/format';
+import type { ShiftTypeRow } from '@/shift-types/list';
 
 /**
  * One team on one date, opened from the calendar (story 3.4b; CAP-11, AD-2):
@@ -12,10 +13,16 @@ import { compareText, formatIsoDate } from '@/i18n/format';
  * PURE, and executed by the node suite (AD-15): `routes/kalendar.tsx` renders
  * the Dialog and nothing else.
  *
- * NOTHING IS DERIVED TWICE. The type is `projectedShiftTypeOn`'s answer, as
- * the grid's is; the range is `typeRangeOn`, the one derivation a cell reads;
- * the roster is `shiftRoster`'s, the team's members active on the date. This
- * module only names and orders.
+ * NOTHING IS DERIVED TWICE. The type is `scheduledShiftTypeOn`'s answer, as
+ * the grid's is — the projection with the day's shift-type override applied
+ * over it (story 3.5a) — so the kind, the type and the range follow the type
+ * the team WORKED; the range is `typeRangeOn`, the one derivation a cell
+ * reads; the roster is `shiftRoster`'s, the team's members active on the
+ * date. This module only names and orders.
+ *
+ * AN OVERRIDE IS ATTRIBUTED (story 3.5a): its author (named through the
+ * snapshot's members), when it was saved (in the organization's zone), its
+ * reason and the projected type it replaced — on every kind.
  *
  * RANK AND POSITION ARE CARRIED, NEVER USED: they ride along for the screen to
  * show where the organization uses them, and nothing here orders, filters or
@@ -53,6 +60,22 @@ export const DAY_DETAIL_DIALOG_ID = 'kalendar-detail';
 /** What an opener of the day detail announces: `aria-haspopup`, a Dialog. */
 export const DAY_DETAIL_POPUP = 'dialog';
 
+/** When an override was saved, in the organization's zone: `12.09.2026` and `19:05`. */
+export interface DayDetailSavedAt {
+  readonly date: string;
+  readonly time: string;
+}
+
+/** The shift-type override on the day, as the detail names it (story 3.5a). */
+export interface DayDetailOverride {
+  /** The type the rotation projects that day, which the override replaced; a non-working one included. */
+  readonly projectedTypeName: string;
+  /** Who saved it; `null` when they are no member the snapshot holds (`kalendar.detail.override.unknownAuthor`). */
+  readonly authorName: string | null;
+  readonly savedAt: DayDetailSavedAt;
+  readonly reason: string;
+}
+
 /** The day detail, ready to render. */
 export interface DayDetail {
   readonly teamId: string;
@@ -66,6 +89,8 @@ export interface DayDetail {
   readonly range: string | null;
   /** The team's members active on the date, by name then id; empty unless the kind is `working`. */
   readonly roster: readonly DayDetailMember[];
+  /** The override on the day, whatever the kind; `null` for none (and always with no rotation). */
+  readonly override: DayDetailOverride | null;
 }
 
 function compareMembers(left: DayDetailMember, right: DayDetailMember): number {
@@ -81,7 +106,7 @@ function compareMembers(left: DayDetailMember, right: DayDetailMember): number {
  * snapshot does not hold — the screen then closes the Dialog. Archived teams
  * are held, so a day list's past team still opens.
  *
- * @throws RangeError on any precondition of `projectedShiftTypeOn`,
+ * @throws RangeError on any precondition of `scheduledShiftTypeOn`,
  *   `shiftRoster` or `typeRangeOn`, a type the snapshot lacks, a rostered
  *   member the snapshot lacks, or a date that cannot be formatted.
  */
@@ -90,9 +115,11 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
 
   if (team === undefined) return null;
 
-  const shiftTypeId = projectedShiftTypeOn(
+  const scheduled = scheduledShiftTypeOn(
     snapshot.assignments.filter((assignment) => assignment.teamId === teamId),
     snapshot.steps,
+    snapshot.overrides,
+    teamId,
     date,
   );
   const full = formatIsoDate(date);
@@ -101,19 +128,17 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
 
   const base = { teamId, teamName: team.name, date: `${weekdayOf(date)} ${full}` };
 
-  if (shiftTypeId === null) {
-    return { ...base, kind: DAY_NO_ROTATION, typeName: null, range: null, roster: [] };
+  if (scheduled === null) {
+    return { ...base, kind: DAY_NO_ROTATION, typeName: null, range: null, roster: [], override: null };
   }
 
-  const type = snapshot.types.find((one) => one.id === shiftTypeId);
-
-  // Never a raw id as a label, as `cellOf` refuses it.
-  if (type === undefined) {
-    throw new RangeError(`shift type ${shiftTypeId} is projected on ${date} but is not in the snapshot`);
-  }
+  const type = typeOf(snapshot, scheduled.shiftTypeId, date);
+  const override = scheduled.overridden
+    ? overrideOf(snapshot, teamId, date, typeOf(snapshot, scheduled.projectedShiftTypeId, date).name)
+    : null;
 
   if (!type.isWorking) {
-    return { ...base, kind: DAY_OFF, typeName: null, range: null, roster: [] };
+    return { ...base, kind: DAY_OFF, typeName: null, range: null, roster: [], override };
   }
 
   const members = new Map(snapshot.members.map((member) => [member.id, member]));
@@ -131,6 +156,60 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
     typeName: type.name,
     range: typeRangeOn(type, date),
     roster: roster.sort(compareMembers),
+    override,
+  };
+}
+
+/**
+ * A type of the snapshot by id.
+ *
+ * @throws RangeError for a type the snapshot lacks — never a raw id as a
+ *   label, as `cellOf` refuses it.
+ */
+function typeOf(snapshot: CalendarSnapshot, shiftTypeId: string, date: string): ShiftTypeRow {
+  const type = snapshot.types.find((one) => one.id === shiftTypeId);
+
+  if (type === undefined) {
+    throw new RangeError(`shift type ${shiftTypeId} is scheduled on ${date} but is not in the snapshot`);
+  }
+
+  return type;
+}
+
+/**
+ * The override of `teamId` on `date`, as the detail names it: its author
+ * through the snapshot's members (`null` for one it does not hold), its time
+ * in the organization's zone, its reason, and `projectedTypeName`.
+ *
+ * @throws RangeError when the snapshot holds no override of the team on the
+ *   date, or its time is not an instant.
+ */
+function overrideOf(
+  snapshot: CalendarSnapshot,
+  teamId: string,
+  date: string,
+  projectedTypeName: string,
+): DayDetailOverride {
+  const override = snapshot.overrides.find((one) => one.teamId === teamId && one.date === date);
+
+  if (override === undefined) throw new RangeError(`team ${teamId} is overridden on ${date} by no override`);
+
+  const saved = new Date(override.createdAt);
+
+  if (Number.isNaN(saved.getTime())) {
+    throw new RangeError(`the override of team ${teamId} on ${date} was saved at ${override.createdAt}`);
+  }
+
+  const author =
+    override.authorMemberId === null
+      ? undefined
+      : snapshot.members.find((member) => member.id === override.authorMemberId);
+
+  return {
+    projectedTypeName,
+    authorName: author?.name ?? null,
+    savedAt: { date: formatDate(saved, snapshot.timeZone), time: formatTime(saved, snapshot.timeZone) },
+    reason: override.reason,
   };
 }
 

@@ -18,11 +18,21 @@ import {
   type GridFocus,
   type GridPosition,
 } from '@/calendar/grid-keys';
-import { DAY_DETAIL_DIALOG_ID, DAY_DETAIL_POPUP, DAY_NO_ROTATION, DAY_OFF, dayDetailShownOf, type DayDetail, type OpenedDay } from '@/calendar/day-detail';
+import {
+  DAY_DETAIL_DIALOG_ID,
+  DAY_DETAIL_POPUP,
+  DAY_NO_ROTATION,
+  DAY_OFF,
+  dayDetailShownOf,
+  type DayDetail,
+  type DayDetailOverride,
+  type OpenedDay,
+} from '@/calendar/day-detail';
 import {
   dayListLabelsOf,
   gridCellLabelsOf,
   legendOf,
+  MODIFIER_OVERRIDDEN,
   modifierMessageKey,
   modifierNamesTextOf,
   modifierTreatmentOf,
@@ -636,10 +646,57 @@ export function KalendarScreen() {
     );
   }
 
-  /** The day detail's body: the type, its times and the roster, or why there is none. */
+  /**
+   * The shift-type override on the day (story 3.5a): what the rotation
+   * projects, who saved it, when and why. Its glyph and ring are the
+   * calendar's own `✎`, beside the heading that names it; never `destructive`
+   * and never the accent.
+   */
+  function renderOverride(override: DayDetailOverride): ReactNode {
+    const treatment = modifierTreatmentOf([MODIFIER_OVERRIDDEN]);
+
+    return (
+      <section aria-labelledby="kalendar-detail-override" className="grid gap-1 text-sm">
+        <h3 id="kalendar-detail-override" className="flex items-center gap-2 font-heading text-base font-semibold">
+          <span
+            aria-hidden
+            className={`inline-flex size-6 items-center justify-center rounded-sm bg-card text-xs [font-variant-emoji:text] ${treatment.className}`}
+          >
+            {treatment.glyphText}
+          </span>
+          {t('kalendar.detail.override.heading')}
+        </h3>
+        <p>{t('kalendar.detail.override.projected', { type: override.projectedTypeName })}</p>
+        <p>
+          {t('kalendar.detail.override.author', {
+            name: override.authorName ?? t('kalendar.detail.override.unknownAuthor'),
+          })}
+        </p>
+        <p className="tabular-nums">
+          {t('kalendar.detail.override.savedAt', { date: override.savedAt.date, time: override.savedAt.time })}
+        </p>
+        <p className="break-words">{t('kalendar.detail.override.reason', { reason: override.reason })}</p>
+      </section>
+    );
+  }
+
+  /**
+   * The day detail's body: the type, its times and the roster, or why there is
+   * none. A working day and an off day show the override block when the day
+   * has one — an off day made a working one, and a working day made an off
+   * one, alike. A day with no rotation never has one: the domain ignores an
+   * override there.
+   */
   function renderDetail(shown: DayDetail, usesFireRanks: boolean): ReactNode {
+    const override = shown.override === null ? null : renderOverride(shown.override);
+
     if (shown.kind === DAY_OFF) {
-      return <p className="text-sm">{t('kalendar.detail.off', { team: shown.teamName })}</p>;
+      return (
+        <div className="grid gap-4">
+          <p className="text-sm">{t('kalendar.detail.off', { team: shown.teamName })}</p>
+          {override}
+        </div>
+      );
     }
 
     if (shown.kind === DAY_NO_ROTATION) {
@@ -658,6 +715,7 @@ export function KalendarScreen() {
           </h3>
           {renderRoster(shown, usesFireRanks)}
         </div>
+        {override}
       </div>
     );
   }

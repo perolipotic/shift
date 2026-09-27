@@ -925,6 +925,15 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.detail.empty',
   'kalendar.detail.off',
   'kalendar.detail.noRotation',
+  // STORY 3.5a: the day detail's override block — its heading, the type the
+  // rotation projects, the author (or an unknown one), when it was saved and
+  // its reason. `Izmjena` names the change, never a shift type.
+  'kalendar.detail.override.heading',
+  'kalendar.detail.override.projected',
+  'kalendar.detail.override.author',
+  'kalendar.detail.override.unknownAuthor',
+  'kalendar.detail.override.savedAt',
+  'kalendar.detail.override.reason',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

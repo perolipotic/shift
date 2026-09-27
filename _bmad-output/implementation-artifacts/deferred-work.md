@@ -854,3 +854,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-4a-roster-as-at-a-date.md`
   summary: A day on which a member is inactive reads as "no team" in the day lists, so a month the member is wholly inactive (e.g. after a scheduled deactivation) shows `kalendar.noTeam` / `kalendar.person.noTeam`, which names the wrong reason.
   evidence: Raised by 3.4a's review. 3.4a's design note chose "inactive day counts as no team" to avoid new state and copy; a distinct inactive state (domain flag + text) would state what is true (UX-DR20). Consider it with 3.4b's day-detail copy.
+- source_spec: none
+  summary: Story 3.5b — an admin sets or removes a team's shift-type override on one date from the day-detail Dialog (a form with shift type and required reason; removal as a soft-remove through `ConfirmDialog`; an override equal to the projected type, or on a date with no rotation, refused; one query key invalidated).
+  evidence: Split from story 3.5 at the user's request (2026-09-27). 3.5a ships the override table (soft-remove, `removed_by`/`removed_at`, one live override per team and date), domain application, `✎` on the calendar and attribution in the day detail, with overrides written only by seeds and fixtures. Decisions already made — any shift type incl. non-working; reason required, 1–200 chars; past and future dates allowed.
+- source_spec: none
+  summary: Story 3.5c — CAP-9's disposition half: when a rotation change is applied, every live shift-type override dated on or after its effective date is listed for explicit confirm, amend or discard; none silently dropped or reapplied.
+  evidence: Split from story 3.5 at the user's request (2026-09-27). It changes 2.6's rotation save flow and depends on 3.5a's table and 3.5b's write path; riskiest part, so last.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-5a-shift-type-override-record-and-display.md`
+  summary: An override dated where no rotation version is in effect (before a team's first version, or left behind by a cancelled scheduled change) is stored and attributed but ignored by the domain and shown nowhere, so no admin can see or clear it.
+  evidence: Raised by 3.5a's review. 0019 accepts any finite date; `scheduledShiftTypeOn` ignores an override on a no-rotation date by design. 3.5b's write should refuse such a date, and 3.5c's disposition review should surface any that already exist.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-5a-shift-type-override-record-and-display.md`
+  summary: `calendar_shift_type_overrides()` returns every live override for all time on every calendar load, under the month-less `CALENDAR_KEY`; decide a window (by month or a bounded range) once real volume or the 2 s budget calls for it.
+  evidence: Raised by 3.5a's review. Windowing by month was an Ask First in 3.5a; pilot scale makes it cheap today, but the read grows without bound and there is no date index beyond the partial unique `(organization_id, team_id, date)`.
