@@ -8,14 +8,14 @@ import { MODE_MOJ } from '@/features/calendar/utils/month';
 
 /**
  * What the month card shows under its heading: the skeleton while no month is
- * shown, the viewer's day list in *Moj raspored*, and in *Sve smjene* the grid
+ * shown, in the shape the screen will show, the viewer's day list in *Moj raspored*, and in *Sve smjene* the grid
  * — or, a person chosen (story 3.3b), that person's day list in its place.
  */
 export function CalendarMonthBody({ screen }: { readonly screen: CalendarScreenState }): ReactNode {
-  const { snapshot, month, mode, openDay } = screen;
+  const { snapshot, month, mode, skeleton, openDay } = screen;
 
   if (month === null) {
-    return <CalendarSkeleton />;
+    return <CalendarSkeleton shape={skeleton} />;
   }
 
   if (mode === MODE_MOJ) {
