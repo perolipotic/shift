@@ -1,3 +1,7 @@
+import { readdirSync } from 'node:fs';
+import { posix } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import js from '@eslint/js';
 import babelParser from '@babel/eslint-parser';
 import globals from 'globals';
@@ -76,6 +80,279 @@ const ATTRIBUTE_MESSAGE =
 const LABEL_MESSAGE =
   'L2: the label on an optgroup, option or track renders to the user. Add it to apps/web/src/lib/i18n/locales/hr.json and pass t().';
 
+/**
+ * Feature boundaries — the modules of each `apps/web/src/features/<m>` that
+ * code OUTSIDE that feature may import. Module paths, never folder globs, and
+ * each names its consumers today.
+ *
+ * Deliberately a list rather than an `index.ts` barrel per feature (human
+ * decision 2026-09-27): whole-feature barrels would join navigation,
+ * organization, members, teams, rotation, shift-types and hour-bands into one
+ * import cycle, put two top-level consts in TDZ reach
+ * (`members/services/list.ts` `LEVEL_FILTERS`, `rotation/utils/draft.ts`
+ * `NO_CLOCK_RANGE`), and make a service-only importer load the other
+ * feature's components.
+ *
+ * The rules, enforced by the local `shift/feature-boundaries` rule below and
+ * proved in `test/feature-boundaries.test.ts`:
+ *   - a feature deep-imports its own modules freely;
+ *   - a feature imports another feature's module only if it is listed here,
+ *     matched exactly by module path (extension stripped), never by prefix;
+ *   - a feature never imports app-level code (`pages/**`, `router`, `App`,
+ *     `main`);
+ *   - every other file under `apps/web/src` may import a feature's listed
+ *     modules plus any of its `components/**` and `hooks/**`, but never the
+ *     bare `@/features/<m>`;
+ *   - tests (`*.test.*`, `*.spec.*`), fixtures (`*.fixture.*`) and anything
+ *     under `__tests__/` are exempt.
+ *
+ * Adding a module here is a deliberate widening of that feature's API.
+ */
+export const FEATURE_PUBLIC = {
+  auth: [
+    'services/address', // pages
+    'services/sign-out', // navigation
+  ],
+  calendar: [
+    'services/snapshot', // pages
+    'utils/month', // pages
+  ],
+  'hour-bands': [
+    'services/list', // shift-types, pages
+    'services/write', // pages
+  ],
+  members: [
+    'services/list', // hour-bands, shift-types, teams, pages
+    'utils/position', // calendar, teams
+    'utils/rank', // calendar, organization, teams
+  ],
+  navigation: [
+    'services/role', // calendar, members, pages, router
+    'utils/destinations', // calendar, members, pages
+  ],
+  organization: [
+    'components/lockup', // navigation
+    'hooks/logo-url', // navigation
+    'services/snapshot', // members, navigation, teams
+    'utils/accent', // navigation
+  ],
+  rotation: [
+    'services/list', // calendar, shift-types, teams
+  ],
+  'shift-types': [
+    'services/list', // calendar, rotation, pages
+    'services/write', // pages
+  ],
+  teams: [
+    'services/list', // calendar, members, rotation, pages
+    'services/roster', // pages
+    'services/write', // hour-bands, rotation, shift-types, pages
+  ],
+};
+
+/** `apps/web/src` on disk — the root of the `@/` alias. */
+const WEB_SRC = fileURLToPath(new URL('./apps/web/src', import.meta.url));
+const FEATURES_DIR = `${WEB_SRC}/features`;
+
+/** Every feature folder, read from disk so a new feature is covered the day
+ *  it is created — with an empty public surface until it is listed above. */
+export const FEATURES = (() => {
+  let entries;
+  try {
+    entries = readdirSync(FEATURES_DIR, { withFileTypes: true });
+  } catch (error) {
+    throw new Error(
+      `eslint.config.js: the feature-boundaries rule reads its feature list from ${FEATURES_DIR}, which could not be read (${error.code ?? error.message}). If the features folder moved, update WEB_SRC/FEATURES_DIR in eslint.config.js.`,
+      { cause: error },
+    );
+  }
+  return entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort();
+})();
+
+/** Source extensions the rule covers, and that every parser block below lints. */
+const SOURCE_EXTENSION = /\.(?:ts|tsx|js|jsx|mts|cts)$/;
+
+/** Not bound by the rule: tests, specs, fixtures and anything under `__tests__/`. */
+const isExempt = (file) =>
+  /\.(?:test|spec|fixture)\.[^/]+$/.test(file) || file.split('/').includes('__tests__');
+
+/** App-level files a feature may not reach: they compose features, not the
+ *  other way round. Compared case-insensitively, first segment of the path
+ *  relative to `apps/web/src`, extension stripped. */
+const APP_LEVEL = new Set(['pages', 'router', 'app', 'main']);
+
+/**
+ * Whether a specifier is written as a plain path. A relative specifier may
+ * open with `./` or with a run of `../`; after that — and anywhere in an `@/`
+ * specifier — a `.` or `..` segment, or an empty one (`//`, a trailing `/`),
+ * could walk a path across a boundary its text does not show, so it is refused
+ * outright rather than resolved and trusted.
+ */
+function isPlainPath(specifier) {
+  const segments = specifier.split('/');
+  let index = 1;
+  if (segments[0] === '..') {
+    while (segments[index] === '..') index += 1;
+  } else if (segments[0] !== '.' && segments[0] !== '@') {
+    return true;
+  }
+  return segments.slice(index).every((segment) => segment !== '' && segment !== '.' && segment !== '..');
+}
+
+/** The absolute path a specifier names, or null for a package import. */
+function resolveSpecifier(specifier, importer) {
+  if (specifier.startsWith('@/')) return posix.normalize(`${WEB_SRC}/${specifier.slice(2)}`);
+  if (specifier === '.' || specifier === '..' || specifier.startsWith('./') || specifier.startsWith('../')) {
+    return posix.normalize(`${posix.dirname(importer)}/${specifier}`);
+  }
+  return null;
+}
+
+/** Where a path under `apps/web/src` sits: its feature (name as on disk, or
+ *  null), the case it was written in, and the path inside the feature with the
+ *  extension stripped. Null for a path outside `apps/web/src`. */
+function locate(file) {
+  const relative = posix.relative(WEB_SRC, file);
+  if (relative.startsWith('..') || posix.isAbsolute(relative)) return null;
+  const segments = relative.split('/');
+  if (segments[0]?.toLowerCase() !== 'features') {
+    return { feature: null, relative, segments, exactCase: true };
+  }
+  if (segments.length < 2) {
+    // `@/features` itself: no feature, and no barrel to land on.
+    return { feature: '', known: false, exactCase: false, module: '', relative, segments };
+  }
+  const feature = FEATURES.find((name) => name.toLowerCase() === segments[1]?.toLowerCase()) ?? null;
+  return {
+    feature: feature ?? segments[1],
+    known: feature !== null,
+    exactCase: segments[0] === 'features' && feature === segments[1],
+    module: segments.slice(2).join('/').replace(SOURCE_EXTENSION, ''),
+    relative,
+    segments,
+  };
+}
+
+const listPublic = (feature) =>
+  (FEATURE_PUBLIC[feature] ?? []).map((module) => `\`${module}\``).join(', ') || 'none yet';
+
+/**
+ * `shift/feature-boundaries` — the rule stated on `FEATURE_PUBLIC`. It
+ * RESOLVES every specifier (the `@/` alias and relative paths alike) before it
+ * decides, so the verdict follows where an import lands, not how it is spelt.
+ * A local rule rather than `no-restricted-imports`, whose patterns match the
+ * specifier's text and so miss `./features/…`, `..` mid-path, `//`, a
+ * mis-cased path and dynamic `import()`.
+ */
+const featureBoundaries = {
+  meta: {
+    type: 'problem',
+    schema: [],
+    messages: {
+      notPublic:
+        'Feature boundaries: `{{module}}` is not a public module of the {{target}} feature{{outside}}. Import it from one of {{target}}\'s public modules (FEATURE_PUBLIC in eslint.config.js: {{list}}){{extra}}, or add a module there deliberately.',
+      appLevel:
+        'Feature boundaries: the {{feature}} feature may not import app-level code (`{{path}}`). pages/, router.ts, App.tsx and main.tsx compose features, never the other way round; move what is shared into lib/, utils/, components/ or a feature\'s public module.',
+      notPlain:
+        'Feature boundaries: write `{{specifier}}` as a plain, exact-case path ({{reason}}). A `.` or `..` segment after the start, a `//`, or a case that differs from the folder on disk can hide which feature an import reaches.',
+    },
+  },
+  create(context) {
+    const importer = context.filename;
+    const from = locate(importer);
+    if (from === null || isExempt(importer) || !SOURCE_EXTENSION.test(importer)) return {};
+
+    function check(node, specifier) {
+      if (typeof specifier !== 'string') return;
+      const target = resolveSpecifier(specifier, importer);
+      if (target === null) return;
+
+      const to = locate(target);
+      if (!isPlainPath(specifier)) {
+        context.report({
+          node,
+          messageId: 'notPlain',
+          data: { specifier, reason: 'it has a `.`, `..` or empty segment' },
+        });
+        return;
+      }
+      if (to === null) return;
+      if (!to.exactCase) {
+        context.report({
+          node,
+          messageId: 'notPlain',
+          data: {
+            specifier,
+            reason: to.known ? `the folder on disk is \`features/${to.feature}\`` : 'no feature has that name',
+          },
+        });
+        return;
+      }
+
+      if (from.feature !== null) {
+        if (to.feature === null) {
+          const head = (to.segments[0] ?? '').replace(SOURCE_EXTENSION, '').toLowerCase();
+          if (APP_LEVEL.has(head)) {
+            context.report({ node, messageId: 'appLevel', data: { feature: from.feature, path: to.relative } });
+          }
+          return;
+        }
+        if (to.feature === from.feature) return;
+      } else if (to.feature === null) {
+        return;
+      }
+
+      const outsideFeatures = from.feature === null;
+      const isPublic = (FEATURE_PUBLIC[to.feature] ?? []).includes(to.module);
+      const isScreenPart =
+        outsideFeatures && /^(?:components|hooks)\/[^/].*$/.test(to.module ?? '');
+      if (isPublic || isScreenPart) return;
+
+      context.report({
+        node,
+        messageId: 'notPublic',
+        data: {
+          module: to.module || '(the whole feature)',
+          target: to.feature,
+          outside: outsideFeatures ? '' : ` for the ${from.feature} feature`,
+          list: listPublic(to.feature),
+          extra: outsideFeatures ? ', from its components/ or hooks/' : '',
+        },
+      });
+    }
+
+    /** The string a source node carries: a literal, or a template with no
+     *  interpolation. Anything computed is left to `tsc` and review. */
+    const text = (node) => {
+      if (!node) return undefined;
+      if (node.type === 'Literal') return node.value;
+      if (node.type === 'TemplateLiteral' && node.expressions.length === 0) return node.quasis[0]?.value.cooked;
+      if (node.type === 'TSLiteralType') return text(node.literal);
+      return undefined;
+    };
+
+    return {
+      ImportDeclaration: (node) => check(node, text(node.source)),
+      ExportNamedDeclaration: (node) => node.source && check(node, text(node.source)),
+      ExportAllDeclaration: (node) => check(node, text(node.source)),
+      ImportExpression: (node) => check(node, text(node.source)),
+      TSImportType: (node) => check(node, text(node.source ?? node.argument)),
+      TSExternalModuleReference: (node) => check(node, text(node.expression)),
+      CallExpression(node) {
+        const callee = node.callee;
+        if (callee.type === 'Import' || (callee.type === 'Identifier' && callee.name === 'require')) {
+          check(node, text(node.arguments[0]));
+        }
+      },
+    };
+  },
+};
+
+const shiftPlugin = { rules: { 'feature-boundaries': featureBoundaries } };
+
 export default [
   {
     ignores: [
@@ -91,15 +368,17 @@ export default [
 
   // ---------------------------------------------------------------- TypeScript
   {
-    files: ['**/*.ts'],
+    files: ['**/*.ts', '**/*.mts', '**/*.cts'],
     languageOptions: babel({ jsx: false }),
   },
   {
-    files: ['**/*.tsx'],
+    // `.jsx` too, so every extension the feature-boundaries rule names is
+    // actually parsed and linted.
+    files: ['**/*.tsx', '**/*.jsx'],
     languageOptions: babel({ jsx: true }),
   },
   {
-    files: ['**/*.ts', '**/*.tsx'],
+    files: ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts'],
     rules: {
       // `tsc` reports these with types; ESLint's untyped versions produce
       // false positives on type-only declarations.
@@ -265,6 +544,19 @@ export default [
     files: ['apps/web/**/*.ts', 'apps/web/**/*.tsx'],
     languageOptions: {
       globals: globals.browser,
+    },
+  },
+
+  // ------------------------------------------------ feature boundaries
+  // The local rule above, over every source file in the web app. A plugin rule
+  // of its own, so it overlaps nothing: a second `no-restricted-imports` or
+  // `no-restricted-syntax` object here would REPLACE the one already matching
+  // these files (flat config does not merge a rule's options).
+  {
+    files: ['apps/web/src/**/*.{ts,tsx,js,jsx,mts,cts}'],
+    plugins: { shift: shiftPlugin },
+    rules: {
+      'shift/feature-boundaries': 'error',
     },
   },
 

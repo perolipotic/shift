@@ -205,7 +205,7 @@ graph TD
 | Auth context | `organization_id` from the JWT claim; role and active status from the helper (AD-10). Never trust a client-supplied organization or role. |
 | Migrations | Files in `supabase/migrations`, forward-only, promoted local → staging → prod. Never edited after promotion. |
 | Strings | No literal user-facing text outside `i18n`. Domain and database return codes and values only. |
-| Module boundaries | A feature in `apps/web` is imported only through `@/features/<m>` (its `index.ts`). ESLint forbids deep imports across features. A page composes features and holds no query, mutation or derivation of its own. |
+| Module boundaries | A feature in `apps/web` deep-imports its own modules freely, and another feature's only if that module is listed in `FEATURE_PUBLIC` in `eslint.config.js` (module paths, never folders). A feature never imports app-level code (`pages/`, `router`, `App`, `main`). Every other file under `apps/web/src` may also import any feature's `components/**` and `hooks/**`, but never a bare `@/features/<m>`. A local ESLint rule, `shift/feature-boundaries`, enforces it on the resolved path of every import form, and refuses a specifier with a mid-path `.`/`..`, a `//` or a mis-cased feature; tests, specs, fixtures and `__tests__/` are exempt. There are no `index.ts` barrels (human decision 2026-09-27): they would join seven features into one import cycle. A page composes features and holds no query, mutation or derivation of its own. |
 
 ## Stack
 
@@ -306,13 +306,12 @@ shift/
     web/
       src/
         pages/         # one file per route: createRoute + composition, no logic
-        features/      # one module per capability; imported only through index.ts
+        features/      # one module per capability; others reach it only through its public modules (FEATURE_PUBLIC)
           <module>/
             components/  # screen parts; may call t()
             hooks/
             services/    # reads, writes; snapshot.ts is the AD-13 loader
             utils/       # pure rules local to the feature
-            index.ts
         components/    # shadcn primitives (ui/) + shared layout; no t(), no literals
         lib/           # i18n (resources + the single formatting module), supabase client, theme, cn
         utils/         # pure helpers shared by several features
