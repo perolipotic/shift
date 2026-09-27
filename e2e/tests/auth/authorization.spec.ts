@@ -30,5 +30,5 @@ test.describe('a member opening an admin screen directly', () => {
 
 test('a signed-out visitor opening Ljudi is sent to the sign-in prompt', async ({ page }) => {
   await page.goto('/ljudi');
-  await expect(page).toHaveURL('/prijava');
+  await expect(page).toHaveURL(`/prijava?povratak=${encodeURIComponent('/ljudi')}`);
 });

@@ -44,6 +44,10 @@ export const SIGN_IN_SCREEN_EXEMPT: readonly { readonly file: string; readonly w
     why: 'the exchange, its refusals and the failure-to-message mapping; a key source of its own in the sign-in suite, executed by sign-in.test.ts',
   },
   {
+    file: 'services/return-target.ts',
+    why: 'the validator the hook follows the carried deep link through, and the search both sign-in routes carry it in; executed by return-target.test.ts',
+  },
+  {
     file: 'services/sign-out.ts',
     why: 'the exit the navigation chrome offers, which the sign-in screen never renders; executed by sign-out.test.ts',
   },

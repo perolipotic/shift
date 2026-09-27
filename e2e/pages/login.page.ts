@@ -33,13 +33,26 @@ export class LoginPage extends BasePage {
    *  through GoTrue. Leaves the page wherever the attempt lands. */
   async submitSignIn(slug: string, username: string, password: string): Promise<void> {
     await this.goto();
+    await this.continueSignIn(slug, username, password);
+  }
+
+  /** The same two steps from wherever the prompt already is — after a
+   *  signed-out redirect, whose return target rides the URL as `povratak`. */
+  async continueSignIn(slug: string, username: string, password: string): Promise<void> {
+    await this.fillCredentialsFor(slug, username, password);
+    await this.submitButton.click();
+  }
+
+  /** Organization, then username and password, without submitting. */
+  async fillCredentialsFor(slug: string, username: string, password: string): Promise<void> {
+    const carried = new URL(this.page.url()).search;
+
     await this.organizationInput.fill(slug);
     await this.page.getByRole('button', { name: hr.auth.organization.submit }).click();
-    await expect(this.page).toHaveURL(`/prijava/${slug}`);
+    await expect(this.page).toHaveURL(`/prijava/${slug}${carried}`);
 
     await this.usernameInput.fill(username);
     await this.passwordInput.fill(password);
-    await this.submitButton.click();
   }
 
   /** Signs in and waits for the landing destination. */

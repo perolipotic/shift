@@ -359,9 +359,33 @@ export type OrganizationFailure =
   | typeof ORGANIZATION_TIMEZONE_UNKNOWN
   | typeof ORGANIZATION_UNAVAILABLE;
 
+/**
+ * The settings form's controls a check constraint can be attributed to, named
+ * by the snapshot field each one edits.
+ */
+export const ORGANIZATION_NAME_FIELD = 'name';
+export const ORGANIZATION_LEAVE_DAY_FIELD = 'leaveYearStartDay';
+export const ORGANIZATION_LEAVE_MONTH_FIELD = 'leaveYearStartMonth';
+export const ORGANIZATION_ACCENT_FIELD = 'brandAccent';
+
+export type OrganizationField =
+  | typeof ORGANIZATION_NAME_FIELD
+  | typeof ORGANIZATION_LEAVE_DAY_FIELD
+  | typeof ORGANIZATION_LEAVE_MONTH_FIELD
+  | typeof ORGANIZATION_ACCENT_FIELD;
+
+/**
+ * A refusal carries `field` ONLY when the constraint that raised it maps to a
+ * control on the form (see {@link refusedOrganizationFieldOf}); the code, and
+ * so the message, is unchanged either way.
+ */
 export type OrganizationOutcome =
   | { readonly ok: true; readonly snapshot: OrganizationSnapshot }
-  | { readonly ok: false; readonly code: OrganizationFailure };
+  | {
+      readonly ok: false;
+      readonly code: OrganizationFailure;
+      readonly field?: OrganizationField;
+    };
 
 /** As much of a PostgREST error as the mapping below reads. */
 export interface PostgrestFailure {
@@ -424,6 +448,22 @@ const ONE_ROW = 1;
  */
 const CHECK_VIOLATION = '23514';
 const NAME_CHECK_CONSTRAINT = 'organizations_name_check';
+
+/**
+ * Which control each column-level check on the table refuses for, by the
+ * name PostgreSQL gives it (`<table>_<column>_check`): `0002`'s name and two
+ * leave-year bounds and `0006`'s accent. The checks on `organization_type`,
+ * `timezone` and `locale` map to nothing, because no control on the form
+ * edits them — a save writes them back unchanged — and a mark on the wrong
+ * control would be worse than none. `rls-isolation.test.ts` asserts each name
+ * against the live database, so a renamed constraint fails there.
+ */
+export const ORGANIZATION_CONSTRAINT_FIELDS: readonly (readonly [string, OrganizationField])[] = [
+  [NAME_CHECK_CONSTRAINT, ORGANIZATION_NAME_FIELD],
+  ['organizations_leave_year_start_day_check', ORGANIZATION_LEAVE_DAY_FIELD],
+  ['organizations_leave_year_start_month_check', ORGANIZATION_LEAVE_MONTH_FIELD],
+  ['organizations_brand_accent_check', ORGANIZATION_ACCENT_FIELD],
+];
 
 /** A PostgREST answer's rows, or an empty list — `null` data is not a row. */
 function rowsOf(answer: PostgrestAnswer): readonly unknown[] {
@@ -573,9 +613,48 @@ export function organizationEditColumns(
 function failureOf(error: PostgrestFailure): OrganizationFailure {
   if (error.code !== CHECK_VIOLATION) return ORGANIZATION_UNAVAILABLE;
 
-  const named = `${error.message ?? ''} ${error.details ?? ''}`;
+  return violatedConstraintOf(error) === NAME_CHECK_CONSTRAINT
+    ? ORGANIZATION_NAME_BLANK
+    : ORGANIZATION_INVALID;
+}
 
-  return named.includes(NAME_CHECK_CONSTRAINT) ? ORGANIZATION_NAME_BLANK : ORGANIZATION_INVALID;
+/**
+ * PostgreSQL's own sentence for a check violation, and the constraint name it
+ * quotes: `new row for relation "organizations" violates check constraint
+ * "organizations_name_check"`.
+ */
+const CHECK_CONSTRAINT_NAMED = /check constraint "([^"]+)"/;
+
+/**
+ * The constraint a check violation names, read out of the MESSAGE only, and
+ * `null` when there is none.
+ *
+ * NEVER `details`, and never a substring. `details` is "Failing row contains
+ * (…)", which holds the values the person TYPED — a name that happens to spell
+ * another constraint's name would otherwise be read as that constraint. The
+ * quoted name is extracted and compared exactly.
+ */
+function violatedConstraintOf(error: PostgrestFailure): string | null {
+  return CHECK_CONSTRAINT_NAMED.exec(error.message ?? '')?.[1] ?? null;
+}
+
+/**
+ * The form control a PostgREST error refuses, or `null` when it names none.
+ *
+ * Only a check violation names a control, and only through a constraint in
+ * {@link ORGANIZATION_CONSTRAINT_FIELDS}: PostgREST returns the constraint's
+ * name, quoted, in the message, and it is matched EXACTLY
+ * (`violatedConstraintOf`), never as a substring of the message or details. Anything else marks nothing and keeps the general
+ * message (UX-DR34 asks the refusal to name the problem, and a guess is not a
+ * name).
+ */
+export function refusedOrganizationFieldOf(error: PostgrestFailure): OrganizationField | null {
+  if (error.code !== CHECK_VIOLATION) return null;
+
+  const violated = violatedConstraintOf(error);
+  const found = ORGANIZATION_CONSTRAINT_FIELDS.find(([constraint]) => constraint === violated);
+
+  return found === undefined ? null : found[1];
 }
 
 /**
@@ -585,7 +664,8 @@ function failureOf(error: PostgrestFailure): OrganizationFailure {
  * ways an answer can be wrong are the same three either way and they are easy to
  * get subtly different:
  *
- *   - AN ERROR is whatever `failureOf` says it is.
+ *   - AN ERROR is whatever `failureOf` says it is, on the control
+ *     `refusedOrganizationFieldOf` attributes it to, if any.
  *   - NO ROW is the policy's silent refusal. Row level security fails USING, the
  *     statement matches nothing and raises nothing, and that is the only signal
  *     a member-role session, a cross-tenant admin and a deactivated admin
@@ -599,7 +679,12 @@ function failureOf(error: PostgrestFailure): OrganizationFailure {
  *     rights instead of to report a fault.
  */
 function outcomeOf(answer: PostgrestAnswer): OrganizationOutcome {
-  if (answer.error !== null) return { ok: false, code: failureOf(answer.error) };
+  if (answer.error !== null) {
+    const code = failureOf(answer.error);
+    const field = refusedOrganizationFieldOf(answer.error);
+
+    return field === null ? { ok: false, code } : { ok: false, code, field };
+  }
 
   const rows = rowsOf(answer);
 
@@ -640,6 +725,25 @@ export async function readOrganization(table: OrganizationTable): Promise<Organi
   }
 
   return outcomeOf(answered);
+}
+
+/**
+ * What a settled read of the organization failed with, or `null` when it did
+ * not fail (or has not settled).
+ *
+ * A failed ANSWER carries its own code. A read that THREW — the query
+ * function raised before {@link readOrganization} could map anything, as
+ * `supabaseClient()` does with `SUPABASE_ENVIRONMENT_MISSING` — has no answer
+ * at all, and is the service being unavailable: the same code, so the same
+ * message and the same retry, rather than a blank card.
+ */
+export function readFailureOf(read: {
+  readonly data: OrganizationOutcome | undefined;
+  readonly isError: boolean;
+}): OrganizationFailure | null {
+  if (read.data !== undefined) return read.data.ok ? null : read.data.code;
+
+  return read.isError ? ORGANIZATION_UNAVAILABLE : null;
 }
 
 /**

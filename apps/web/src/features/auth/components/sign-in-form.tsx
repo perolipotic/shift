@@ -96,7 +96,18 @@ export function SignInForm({ screen }: { readonly screen: SignInScreenState }): 
           {t(signInMessageKey(failure))}
         </Notice>
       )}
-      <Button className="h-11 w-full" type="submit" disabled={pending}>
+      {/* `aria-disabled`, NEVER `disabled`, while the exchange is in flight.
+          `disabled` on the button somebody has just pressed takes it out of
+          the tab order and drops keyboard focus to `<body>` mid-flow; marked
+          this way it stays focused and says it is inert, and the hook's
+          in-flight ref is what refuses a second submit. `aria-busy` says why,
+          with no new words. */}
+      <Button
+        className="h-11 w-full aria-disabled:opacity-50"
+        type="submit"
+        aria-disabled={pending}
+        aria-busy={pending}
+      >
         {t('auth.submit')}
       </Button>
       {/* States the fact rather than hiding the affordance (UX-DR34):

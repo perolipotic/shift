@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { flushSync } from 'react-dom';
 
 import {
   fireRanksClearsFailure,
@@ -21,10 +22,13 @@ import {
   ORGANIZATION_SNAPSHOT_KEY,
   ORGANIZATION_TABLE,
   ORGANIZATION_UNAVAILABLE,
+  readFailureOf,
   readOrganization,
   updateOrganization,
   type OrganizationFailure,
+  type OrganizationField,
 } from '@/features/organization/services/snapshot';
+import { offersReadRetry } from '@/features/organization/utils/messages';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /**
@@ -69,6 +73,17 @@ import { supabaseClient } from '@/lib/supabase/client';
  * button. The fire-rank setting follows the accent's shape for the accent's
  * reasons.
  *
+ * A REFUSED VALUE IS ATTRIBUTED when the database says which: a check
+ * violation's constraint maps to one control
+ * (`refusedOrganizationFieldOf` in `@/features/organization/services/snapshot`),
+ * which the card marks `aria-invalid` and a refused save focuses. An unmapped
+ * refusal keeps the general message and marks nothing.
+ *
+ * A FAILED WRITE IS THE WRITE'S, NEVER THE REFETCH'S. On every one of the four
+ * handlers the invalidation that follows a landed write sits in a `try` of its
+ * own, so a refetch that rejects is logged and never reported as a refusal of
+ * a value the row already holds.
+ *
  * PRESENCE IS A COLUMN, NOT A PROBE. Whether there is a logo at all is
  * `snapshot.logoPath`, which the one read already carries; nothing here asks
  * storage. The signed URL that renders it is keyed UNDER the snapshot's key
@@ -106,6 +121,14 @@ export function useOrganizationSettings() {
   // themselves by. `@/features/organization/utils/messages` maps both code sets for the same
   // reason.
   const [failure, setFailure] = useState<OrganizationFailure | LogoFailure | null>(null);
+  // WHICH CONTROL the last refusal is about, when the database named one, and
+  // `null` otherwise. Set beside every `setFailure` of a write outcome, cleared
+  // when a handler starts, and returned only while that failure is still on
+  // screen (below), so it can never outlive the refusal it explains.
+  const [refusedField, setRefusedField] = useState<OrganizationField | null>(null);
+  // How many times the read has been retried: the key the alert is mounted
+  // under, so a retry that fails again is announced again (`retryRead`).
+  const [readAttempts, setReadAttempts] = useState(0);
   const [pending, setPending] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [savingAccent, setSavingAccent] = useState(false);
@@ -144,8 +167,22 @@ export function useOrganizationSettings() {
   const organization = answered !== undefined && answered.ok ? answered.snapshot : null;
   // The save's refusal wins over the read's: if a save has just been refused,
   // that is the thing the person is waiting to hear about.
-  const refusal: OrganizationFailure | LogoFailure | null =
-    failure ?? (answered !== undefined && !answered.ok ? answered.code : null);
+  //
+  // A READ THAT THREW is a failed read too (`readFailureOf`): the query
+  // function builds the client before `readOrganization` can catch anything,
+  // so `SUPABASE_ENVIRONMENT_MISSING` arrives as a query error with no data,
+  // and it used to leave the card blank — no message and no retry.
+  const readFailure = readFailureOf(snapshot);
+  const refusal: OrganizationFailure | LogoFailure | null = failure ?? readFailure;
+  // THE READ'S OWN RETRY. A failed read renders no form and so no button, and
+  // the message tells the person to try again: this is the control that can.
+  // Offered only while there is no row and no save refusal on screen, and
+  // only for a code whose message says to try again.
+  const readRetry =
+    organization === null &&
+    failure === null &&
+    readFailure !== null &&
+    offersReadRetry(readFailure);
   // DERIVED, never independent (AD-13), and SHARED with the navigation chrome
   // since story 1.4c. The key is the snapshot's own with the path appended, the
   // fetch is skipped entirely when there is no logo, and a failure surfaces as
@@ -177,6 +214,7 @@ export function useOrganizationSettings() {
 
     saving.current = true;
     setFailure(null);
+    setRefusedField(null);
     setPending(true);
     let refused = false;
 
@@ -200,6 +238,17 @@ export function useOrganizationSettings() {
       if (!outcome.ok) {
         refused = true;
         setFailure(outcome.code);
+        setRefusedField(outcome.field ?? null);
+        // FOCUS GOES TO THE CONTROL THE REFUSAL NAMES, in this handler: the
+        // alert can describe a field scrolled out of view on a five-field form.
+        // The accent is not on this write, so it has no control here.
+        const controls: Partial<Record<OrganizationField, HTMLElement>> = {
+          name,
+          leaveYearStartDay: day,
+          leaveYearStartMonth: month,
+        };
+
+        if (outcome.field !== undefined) controls[outcome.field]?.focus();
 
         return;
       }
@@ -207,13 +256,21 @@ export function useOrganizationSettings() {
       // REFETCHED rather than patched into the cache, so what is on screen after
       // a save is what the database holds — including anything a shape on the
       // table normalized on the way in.
-      await queryClient.invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY });
+      //
+      // ITS FAILURE IS NOT THE WRITE'S, as on the accent path: the row has
+      // already changed, so a refetch that rejects is logged and the save is
+      // not reported as refused.
+      try {
+        await queryClient.invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY });
+      } catch (cause) {
+        console.error(ORGANIZATION_UNAVAILABLE, cause);
+      }
     } catch (cause) {
       // Everything `updateOrganization` does not already map: the client
-      // throwing `SUPABASE_ENVIRONMENT_MISSING` on a build with no environment,
-      // and a refetch that rejects. Logged as well as surfaced, because a
-      // misconfiguration reading as an outage is only the smaller cost while the
-      // cause reaches the console (`lib/supabase/client.ts`).
+      // throwing `SUPABASE_ENVIRONMENT_MISSING` on a build with no environment.
+      // Logged as well as surfaced, because a misconfiguration reading as an
+      // outage is only the smaller cost while the cause reaches the console
+      // (`lib/supabase/client.ts`).
       refused = true;
       console.error(ORGANIZATION_UNAVAILABLE, cause);
       setFailure(ORGANIZATION_UNAVAILABLE);
@@ -266,6 +323,7 @@ export function useOrganizationSettings() {
 
     uploading.current = true;
     setFailure(null);
+    setRefusedField(null);
     setUploadingLogo(true);
     let refused = false;
 
@@ -285,8 +343,13 @@ export function useOrganizationSettings() {
       }
 
       // ONE INVALIDATION for both figures. The derived URL is keyed under this
-      // key, so refetching the row refetches the preview with it.
-      await queryClient.invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY });
+      // key, so refetching the row refetches the preview with it. Its failure
+      // is not the upload's: the object and the row have both landed.
+      try {
+        await queryClient.invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY });
+      } catch (cause) {
+        console.error(LOGO_UNAVAILABLE, cause);
+      }
     } catch (cause) {
       refused = true;
       console.error(LOGO_UNAVAILABLE, cause);
@@ -354,6 +417,7 @@ export function useOrganizationSettings() {
 
     tinting.current = true;
     setFailure(null);
+    setRefusedField(null);
     setSavingAccent(true);
     let refused = false;
 
@@ -367,6 +431,9 @@ export function useOrganizationSettings() {
       if (!outcome.ok) {
         refused = true;
         setFailure(outcome.code);
+        // The accent control is the one just changed, so focus is already on
+        // it; the mark is what says the refusal is about it.
+        setRefusedField(outcome.field ?? null);
 
         return;
       }
@@ -447,6 +514,7 @@ export function useOrganizationSettings() {
       if (!outcome.ok) {
         refused = true;
         setFailure(outcome.code);
+        setRefusedField(outcome.field ?? null);
 
         return;
       }
@@ -460,6 +528,7 @@ export function useOrganizationSettings() {
       refused = true;
       console.error(ORGANIZATION_UNAVAILABLE, cause);
       setFailure(ORGANIZATION_UNAVAILABLE);
+      setRefusedField(null);
     } finally {
       ranking.current = false;
       setSavingFireRanks(false);
@@ -489,6 +558,32 @@ export function useOrganizationSettings() {
   }
 
   /**
+   * Reads the row again after a failed read — the retry the read's message
+   * asks for. A second press while the read is in flight does nothing, rather
+   * than cancelling that read and starting another.
+   *
+   * WHAT HAPPENS TO FOCUS AND TO THE ALERT, in this handler rather than an
+   * effect. `flushSync` commits the answer before either is decided: the
+   * attempt counter keys the alert, so a retry that fails again REMOUNTS it
+   * and `role="alert"` announces it again with the same words; and a retry
+   * that succeeds unmounts this very button, so focus would drop to `<body>`
+   * — it goes to the form's first control, the name field, instead.
+   *
+   * It never rejects — `refetch` settles an error into the query's state
+   * rather than throwing — so it is handed to `onClick` as it is.
+   */
+  async function retryRead(): Promise<void> {
+    if (snapshot.isFetching) return;
+
+    const retried = await snapshot.refetch();
+
+    flushSync(() => {
+      setReadAttempts((attempts) => attempts + 1);
+    });
+    if (retried.data?.ok === true) nameField.current?.focus();
+  }
+
+  /**
    * What the accent control hands back: a curated key, or `null` for no accent.
    *
    * `brandAccentOf` is what makes the crossing safe in the one direction that
@@ -505,6 +600,10 @@ export function useOrganizationSettings() {
     snapshot,
     organization,
     refusal,
+    refusedField: failure === null ? null : refusedField,
+    readRetry,
+    readAttempts,
+    retryRead,
     logo,
     // The identity form.
     nameField,

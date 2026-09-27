@@ -2622,6 +2622,41 @@ describe('a direct API call edits an organization under exactly the same rules',
   );
 
   it.skipIf(noApi).each(FIXTURES)(
+    'names the leave-year constraint the settings form attributes to its control on $fixture',
+    async ({ slug, admin }) => {
+      // THE SETTINGS FIX maps each check's name to the control it refuses for
+      // (`ORGANIZATION_CONSTRAINT_FIELDS` in `@/features/organization/services/snapshot`),
+      // so the `aria-invalid` mark and the focus land on that control. Asserted
+      // against the live database, as `organizations_name_check` is above and
+      // `organizations_brand_accent_check` is below, so a renamed constraint
+      // fails here rather than silently marking nothing.
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      try {
+        const own = await organizationId(client, slug);
+        const before = await organizationById(client, own);
+
+        for (const [body, constraint] of [
+          [{ leave_year_start_day: 29 }, 'organizations_leave_year_start_day_check'],
+          [{ leave_year_start_month: 13 }, 'organizations_leave_year_start_month_check'],
+        ] as const) {
+          const response = await rest(`organizations?id=eq.${own}`, { token, method: 'PATCH', body });
+          const refusal = await restRefusal(response);
+
+          expect(refusal.code, `${constraint} is not a check violation`).toBe('23514');
+          expect(refusal.message, 'the refusal does not name the constraint the form reads').toContain(
+            constraint,
+          );
+        }
+        expect(await organizationById(client, own), `the ${slug} organization changed`).toEqual(before);
+      } finally {
+        await client.end();
+      }
+    },
+    20_000,
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
     'refuses a blank $fixture name by shape rather than by policy',
     async ({ slug, admin }) => {
       // The one refusal on this surface that is the VALUE's rather than the

@@ -107,3 +107,13 @@ export function organizationMessageKey(
  * at nothing after one of them is renamed.
  */
 export const ORGANIZATION_ERROR_ID = 'organization-error';
+
+/**
+ * Whether a failed READ is offered the retry control. Only the service being
+ * unreachable is: its message says to try again, and trying again can help.
+ * A refused read (`organization.error.refused`) tells the person to sign out
+ * and back in, and a retry button beside that would contradict it.
+ */
+export function offersReadRetry(failure: OrganizationFailure): boolean {
+  return failure === ORGANIZATION_UNAVAILABLE;
+}
