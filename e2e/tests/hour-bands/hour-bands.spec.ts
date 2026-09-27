@@ -1,19 +1,19 @@
 import { randomBytes } from 'node:crypto';
 
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
-import { fill, hr } from '../../utils/i18n.ts';
+import { hr } from '../../utils/i18n.ts';
 import { expect, firstBand, test } from '../../utils/custom-fixtures.ts';
 
 test.use({ storageState: ADMIN_STATE });
 
 const bands = hr.organization.hourBands;
 
-test('the hour band list shows the fixture bands', async ({ page, fixture }) => {
-  await page.goto('/organizacija/satni-pojasi');
+test('the hour band list shows the fixture bands', async ({ hourBandsPage, fixture }) => {
+  await hourBandsPage.goto();
 
-  await expect(page.getByRole('heading', { level: 1, name: bands.heading })).toBeVisible();
+  await expect(hourBandsPage.listHeading).toBeVisible();
   for (const band of fixture.bands) {
-    await expect(page.getByRole('link', { name: fill(bands.edit, { name: band.name }) })).toBeVisible();
+    await expect(hourBandsPage.editLink(band.name)).toBeVisible();
   }
 });
 
@@ -31,42 +31,41 @@ function attemptStart(retry: number, repeatEachIndex: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
 }
 
-test('adding a band lists it', async ({ page }, testInfo) => {
+test('adding a band lists it', async ({ hourBandsPage }, testInfo) => {
   const name = `Popodne ${randomBytes(3).toString('hex')}`;
 
-  await page.goto('/organizacija/satni-pojasi');
+  await hourBandsPage.goto();
   // The add form is a dialog, opened from the explainer.
-  await page.getByRole('button', { name: bands.open }).click();
-  await expect(page.getByRole('dialog', { name: bands.addHeading })).toBeVisible();
-  await page.getByLabel(bands.name, { exact: true }).fill(name);
-  await page
-    .getByLabel(bands.start, { exact: true })
-    .fill(attemptStart(testInfo.retry, testInfo.repeatEachIndex));
-  await page.getByRole('button', { name: bands.add }).click();
+  await hourBandsPage.openButton.click();
+  await expect(hourBandsPage.addDialog).toBeVisible();
+  await hourBandsPage.nameInput.fill(name);
+  await hourBandsPage.startInput.fill(attemptStart(testInfo.retry, testInfo.repeatEachIndex));
+  await hourBandsPage.addButton.click();
 
   // The dialog closes on success, and the confirmation is on the page.
-  await expect(page.getByRole('dialog')).toBeHidden();
-  await expect(page.getByRole('status')).toHaveText(bands.created);
-  await expect(page.getByRole('link', { name: fill(bands.edit, { name }) })).toBeVisible();
+  await expect(hourBandsPage.dialog()).toBeHidden();
+  await expect(hourBandsPage.status).toHaveText(bands.created);
+  await expect(hourBandsPage.editLink(name)).toBeVisible();
 });
 
 test('editing a band opens it in a dialog over the list, and its close returns to the list', async ({
   page,
+  hourBandsPage,
   fixture,
 }) => {
   const band = firstBand(fixture);
 
-  await page.goto('/organizacija/satni-pojasi');
-  await page.getByRole('link', { name: fill(bands.edit, { name: band.name }) }).click();
+  await hourBandsPage.goto();
+  await hourBandsPage.editLink(band.name).click();
 
-  const dialog = page.getByRole('dialog', { name: bands.editHeading });
+  const dialog = hourBandsPage.editDialog;
 
   await expect(dialog).toBeVisible();
-  await expect(dialog.getByLabel(bands.name, { exact: true })).toHaveValue(band.name);
+  await expect(hourBandsPage.editDialogName).toHaveValue(band.name);
   // The list stays behind it.
-  await expect(page.getByRole('heading', { level: 1, name: bands.heading })).toBeAttached();
+  await expect(hourBandsPage.listHeading).toBeAttached();
 
-  await dialog.getByRole('button', { name: bands.close }).click();
+  await hourBandsPage.editDialogClose.click();
   await expect(page).toHaveURL('/organizacija/satni-pojasi');
-  await expect(page.getByRole('dialog')).toBeHidden();
+  await expect(hourBandsPage.dialog()).toBeHidden();
 });

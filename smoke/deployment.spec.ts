@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
+import { LoginPage } from '../e2e/pages/login.page.ts';
 import { hr } from '../e2e/utils/i18n.ts';
-import { signIn } from '../e2e/utils/sign-in.ts';
 import { publishableKey, smokeAccount, supabaseUrl } from './support/env.ts';
 
 /**
@@ -103,9 +103,9 @@ test('signs the smoke account in and lands on /danas', async ({ page }) => {
   test.skip(account === null, 'SMOKE_ORG, SMOKE_USERNAME and SMOKE_PASSWORD are not set');
   if (account === null) return;
 
-  // Sign-in, and nothing after it: no sign-out, no write. `signIn` asserts the
+  // Sign-in, and nothing after it: no sign-out, no write. `LoginPage.signIn` asserts the
   // landing itself; the URL is asserted here too so this case states its own
   // claim.
-  await signIn(page, account.organization, account.username, account.password);
+  await new LoginPage(page).signIn(account.organization, account.username, account.password);
   await expect(page).toHaveURL('/danas');
 });

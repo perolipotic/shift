@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto';
 
+import { TeamsPage } from '../../pages/teams.page.ts';
 import { holdFireRanks, type RotationHold } from '../../utils/database-helper.ts';
 import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
 import { fill, hr } from '../../utils/i18n.ts';
-import { createMember, uniqueMember } from '../../utils/members.ts';
+import { uniqueMember } from '../../utils/members.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
 test.use({ storageState: ADMIN_STATE });
@@ -43,14 +44,15 @@ function isoDaysAfter(iso: string, days: number): string {
 test('with positions in use, a member moved in as driver shows it on the roster, and a promotion is scheduled', async ({
   page,
   browser,
+  organizationPage,
+  peoplePage,
+  teamsPage,
 }) => {
   // THE SETTING IS SWITCHED ON and left on, for the reason fire-ranks.spec.ts
   // gives: the run's organization is its own and is deleted at teardown.
-  await page.goto('/organizacija');
-  await page
-    .getByLabel(hr.organization.fireRanks, { exact: true })
-    .selectOption({ label: hr.organization.fireRanksOn });
-  await expect(page.getByText(hr.organization.fireRanksStatusOn, { exact: true })).toBeVisible();
+  await organizationPage.goto();
+  await organizationPage.switchFireRanksOn();
+  await expect(organizationPage.text(hr.organization.fireRanksStatusOn)).toBeVisible();
 
   // A fresh team and a fresh member per attempt: a member changes team or
   // position only once per date.
@@ -59,123 +61,109 @@ test('with positions in use, a member moved in as driver shows it on the roster,
   const driver = hr.smjene.position.driver;
   const commander = hr.smjene.position.commander;
 
-  await page.goto('/ljudi/smjene');
+  await teamsPage.goto();
   // The add form is a dialog, opened from the header.
-  await page.getByRole('button', { name: hr.smjene.open }).click();
-  await page.getByLabel(hr.smjene.name, { exact: true }).fill(teamName);
-  await page.getByRole('button', { name: hr.smjene.add }).click();
-  await expect(page.getByRole('status')).toHaveText(hr.smjene.created);
+  await teamsPage.addTeam(teamName);
+  await expect(teamsPage.status).toHaveText(hr.smjene.created);
 
-  await page.getByRole('link', { name: fill(hr.smjene.edit, { name: teamName }) }).click();
+  await teamsPage.openTeam(teamName);
   const teamPath = /\/ljudi\/smjene\/([0-9a-f-]{36})$/;
   await expect(page).toHaveURL(teamPath);
   const teamId = teamPath.exec(new URL(page.url()).pathname)?.[1];
   if (teamId === undefined) throw new Error(`E2E: no team id in ${page.url()}`);
 
   // Issued with no rank, so the roster line is the name and the position alone.
-  await createMember(page, person.name, person.username);
+  await peoplePage.createMember(person.name, person.username);
 
-  await page.goto('/ljudi');
-  await page.getByRole('link', { name: fill(hr.ljudi.form.edit, { name: person.name }) }).click();
+  await peoplePage.openMember(person.name);
 
   // MOVE IN AS DRIVER, from today. The position control follows the team pick
   // and opens on the default for a move.
-  await page.getByLabel(hr.smjene.membership.team, { exact: true }).selectOption({ label: teamName });
-  const position = page.getByLabel(hr.smjene.position.label, { exact: true });
-  await expect(position.locator('option:checked')).toHaveText(hr.smjene.position.firefighter);
+  await peoplePage.teamSelect.selectOption({ label: teamName });
+  const position = peoplePage.positionSelect;
+  await expect(peoplePage.selectedPosition).toHaveText(hr.smjene.position.firefighter);
   await position.selectOption({ label: driver });
-  await page.getByRole('button', { name: fill(hr.smjene.membership.move, { name: person.name }) }).click();
+  await peoplePage.moveButton(person.name).click();
   await expect(
-    page.getByText(
+    peoplePage.text(
       withAnyDate(hr.smjene.membership.movePositionPrompt, {
         name: person.name,
         team: teamName,
         position: driver,
       }),
+      { exact: false },
     ),
   ).toBeVisible();
-  await page
-    .getByRole('button', { name: fill(hr.smjene.membership.moveConfirm, { name: person.name }) })
-    .click();
-  await expect(page.getByText(hr.smjene.membership.saved, { exact: true })).toBeVisible();
+  await peoplePage.moveConfirmButton(person.name).click();
+  await expect(peoplePage.text(hr.smjene.membership.saved)).toBeVisible();
   await expect(
-    page.getByText(fill(hr.smjene.membership.currentPosition, { team: teamName, position: driver }), {
-      exact: true,
-    }),
+    peoplePage.text(fill(hr.smjene.membership.currentPosition, { team: teamName, position: driver })),
   ).toBeVisible();
 
   // THE ROSTER, for the admin and for the member role.
   const onRoster = fill(hr.smjene.roster.withPosition, { name: person.name, position: driver });
 
-  await page.goto(`/smjene/${teamId}`);
-  await expect(page.getByRole('heading', { level: 1, name: teamName })).toBeVisible();
-  await expect(page.getByRole('listitem').getByText(onRoster, { exact: true })).toBeVisible();
+  await teamsPage.gotoRoster(teamId);
+  await expect(teamsPage.heading(teamName)).toBeVisible();
+  await expect(teamsPage.rosterLine(onRoster)).toBeVisible();
 
   const memberContext = await browser.newContext({ storageState: MEMBER_STATE });
   try {
-    const memberPage = await memberContext.newPage();
-    await memberPage.goto(`/smjene/${teamId}`);
-    await expect(memberPage.getByRole('listitem').getByText(onRoster, { exact: true })).toBeVisible();
+    const memberTeams = new TeamsPage(await memberContext.newPage());
+    await memberTeams.gotoRoster(teamId);
+    await expect(memberTeams.rosterLine(onRoster)).toBeVisible();
   } finally {
     await memberContext.close();
   }
 
   // A POSITION-ONLY CHANGE to commander, from a later date: the same team,
   // still choosable, opens on the member's current position.
-  await page.goto('/ljudi');
-  await page.getByRole('link', { name: fill(hr.ljudi.form.edit, { name: person.name }) }).click();
-  await page.getByLabel(hr.smjene.membership.team, { exact: true }).selectOption({ label: teamName });
-  await expect(position.locator('option:checked')).toHaveText(driver);
+  await peoplePage.openMember(person.name);
+  await peoplePage.teamSelect.selectOption({ label: teamName });
+  await expect(peoplePage.selectedPosition).toHaveText(driver);
   await position.selectOption({ label: commander });
 
-  const date = page.getByLabel(hr.smjene.membership.date, { exact: true });
+  const date = peoplePage.dateInput;
   const minimum = await date.getAttribute('min');
   if (minimum === null) throw new Error('E2E: the team date control has no minimum');
   await date.fill(isoDaysAfter(minimum, 7));
 
-  await page.getByRole('button', { name: fill(hr.smjene.membership.move, { name: person.name }) }).click();
+  await peoplePage.moveButton(person.name).click();
   await expect(
-    page.getByText(
+    peoplePage.text(
       withAnyDate(hr.smjene.membership.positionPromptFuture, {
         name: person.name,
         team: teamName,
         position: commander,
       }),
+      { exact: false },
     ),
   ).toBeVisible();
-  await page
-    .getByRole('button', { name: fill(hr.smjene.membership.moveConfirm, { name: person.name }) })
-    .click();
-  await expect(page.getByText(hr.smjene.membership.saved, { exact: true })).toBeVisible();
+  await peoplePage.moveConfirmButton(person.name).click();
+  await expect(peoplePage.text(hr.smjene.membership.saved)).toBeVisible();
 
   // SCHEDULED — worded as a position change in the same team, never as a move
   // onto it — and offered only as a withdrawal.
-  const scheduledLine = page.getByText(
+  const scheduledLine = peoplePage.text(
     withAnyDate(hr.smjene.membership.scheduledPositionOnly, { team: teamName, position: commander }),
+    { exact: false },
   );
   await expect(scheduledLine).toBeVisible();
-  const withdraw = page.getByRole('button', {
-    name: fill(hr.smjene.membership.withdraw, { name: person.name }),
-  });
+  const withdraw = peoplePage.withdrawButton(person.name);
   await expect(withdraw).toBeVisible();
   await expect(position).toHaveCount(0);
 
   // Today is still driver on the roster.
-  await page.goto(`/smjene/${teamId}`);
-  await expect(page.getByRole('listitem').getByText(onRoster, { exact: true })).toBeVisible();
+  await teamsPage.gotoRoster(teamId);
+  await expect(teamsPage.rosterLine(onRoster)).toBeVisible();
 
   // WITHDRAW it, exactly like a move: the line goes and the offer returns.
-  await page.goto('/ljudi');
-  await page.getByRole('link', { name: fill(hr.ljudi.form.edit, { name: person.name }) }).click();
+  await peoplePage.openMember(person.name);
   await withdraw.click();
-  await page
-    .getByRole('button', { name: fill(hr.smjene.membership.withdrawConfirm, { name: person.name }) })
-    .click();
-  await expect(page.getByText(hr.smjene.membership.saved, { exact: true })).toBeVisible();
+  await peoplePage.withdrawConfirmButton(person.name).click();
+  await expect(peoplePage.text(hr.smjene.membership.saved)).toBeVisible();
   await expect(scheduledLine).toHaveCount(0);
-  await expect(
-    page.getByRole('button', { name: fill(hr.smjene.membership.move, { name: person.name }) }),
-  ).toBeVisible();
-  await page.getByLabel(hr.smjene.membership.team, { exact: true }).selectOption({ label: teamName });
-  await expect(position.locator('option:checked')).toHaveText(driver);
+  await expect(peoplePage.moveButton(person.name)).toBeVisible();
+  await peoplePage.teamSelect.selectOption({ label: teamName });
+  await expect(peoplePage.selectedPosition).toHaveText(driver);
 });

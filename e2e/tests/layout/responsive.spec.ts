@@ -1,10 +1,10 @@
 import type { Locator, Page } from '@playwright/test';
 
+import type { RotationPage } from '../../pages/rotation.page.ts';
 import { ADMIN_STATE, MEMBER_STATE, type Fixture } from '../../utils/run-fixture.ts';
-import { fill, hr } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll, expectTouchTargets } from '../../utils/layout.ts';
-import { NEXT_LABELS, STEP_HEADINGS, stepProgress } from '../../utils/rotation.ts';
-import { expect, firstBand, test } from '../../utils/custom-fixtures.ts';
+import { NEXT_LABELS, STEP_HEADINGS } from '../../utils/rotation.ts';
+import { expect, firstBand, test, type PageObjects } from '../../utils/custom-fixtures.ts';
 
 /**
  * The phone-width criteria no unit test can check: at 320 × 640, on a touch
@@ -18,15 +18,18 @@ import { expect, firstBand, test } from '../../utils/custom-fixtures.ts';
 
 test.use({ viewport: { width: 320, height: 640 }, isMobile: true, hasTouch: true });
 
+/** The page objects a screen's ready element is read from. */
+type ScreenPages = Pick<PageObjects, 'loginPage' | 'peoplePage' | 'teamsPage' | 'hourBandsPage' | 'organizationPage'>;
+
 interface Screen {
   readonly title: string;
   readonly path: (fixture: Fixture) => string;
-  readonly ready: (page: Page, fixture: Fixture) => Locator;
+  readonly ready: (pages: ScreenPages, fixture: Fixture) => Locator;
 }
 
-async function checkScreen(page: Page, fixture: Fixture, screen: Screen): Promise<void> {
+async function checkScreen(page: Page, pages: ScreenPages, fixture: Fixture, screen: Screen): Promise<void> {
   await page.goto(screen.path(fixture));
-  await expect(screen.ready(page, fixture)).toBeVisible();
+  await expect(screen.ready(pages, fixture)).toBeVisible();
 
   await expectNoHorizontalScroll(page);
   await expectTouchTargets(page);
@@ -36,12 +39,12 @@ const signedOut: readonly Screen[] = [
   {
     title: 'organization prompt',
     path: () => '/prijava',
-    ready: (page) => page.getByLabel(hr.auth.organization.label, { exact: true }),
+    ready: ({ loginPage }) => loginPage.organizationInput,
   },
   {
     title: 'sign-in',
     path: (fixture) => `/prijava/${fixture.slug}`,
-    ready: (page) => page.getByLabel(hr.auth.password, { exact: true }),
+    ready: ({ loginPage }) => loginPage.passwordInput,
   },
 ];
 
@@ -49,7 +52,7 @@ const asMember: readonly Screen[] = [
   {
     title: 'Danas',
     path: () => '/danas',
-    ready: (page, fixture) => page.getByRole('link', { name: fixture.team.name }),
+    ready: ({ teamsPage }, fixture) => teamsPage.rosterLink(fixture.team.name),
   },
 ];
 
@@ -57,44 +60,48 @@ const asAdmin: readonly Screen[] = [
   {
     title: 'Ljudi',
     path: () => '/ljudi',
-    ready: (page, fixture) =>
-      page.getByRole('link', { name: fill(hr.ljudi.form.edit, { name: fixture.member.name }) }),
+    ready: ({ peoplePage }, fixture) => peoplePage.editLink(fixture.member.name),
   },
   {
     title: 'new member',
     path: () => '/ljudi/novi',
-    ready: (page) => page.getByLabel(hr.ljudi.form.username, { exact: true }),
+    ready: ({ peoplePage }) => peoplePage.usernameInput,
   },
   {
     title: 'teams',
     path: () => '/ljudi/smjene',
-    ready: (page, fixture) =>
-      page.getByRole('link', { name: fill(hr.smjene.edit, { name: fixture.team.name }) }),
+    ready: ({ teamsPage }, fixture) => teamsPage.editLink(fixture.team.name),
   },
   {
     title: 'roster',
     path: (fixture) => `/smjene/${fixture.team.id}`,
-    ready: (page, fixture) => page.getByRole('listitem').filter({ hasText: fixture.member.name }),
+    ready: ({ teamsPage }, fixture) => teamsPage.rosterEntry(fixture.member.name),
   },
   {
     title: 'hour bands',
     path: () => '/organizacija/satni-pojasi',
-    ready: (page, fixture) =>
-      page.getByRole('link', {
-        name: fill(hr.organization.hourBands.edit, { name: firstBand(fixture).name }),
-      }),
+    ready: ({ hourBandsPage }, fixture) => hourBandsPage.editLink(firstBand(fixture).name),
   },
   {
     title: 'Organizacija',
     path: () => '/organizacija',
-    ready: (page) => page.getByLabel(hr.organization.name, { exact: true }),
+    ready: ({ organizationPage }) => organizationPage.nameInput,
   },
 ];
 
 test.describe('signed out', () => {
   for (const screen of signedOut) {
-    test(`${screen.title} fits 320 px`, async ({ page, fixture }) => {
-      await checkScreen(page, fixture, screen);
+    test(`${screen.title} fits 320 px`, async ({
+      page,
+      fixture,
+      loginPage,
+      peoplePage,
+      teamsPage,
+      hourBandsPage,
+      organizationPage,
+    }) => {
+      const pages = { loginPage, peoplePage, teamsPage, hourBandsPage, organizationPage };
+      await checkScreen(page, pages, fixture, screen);
     });
   }
 });
@@ -103,8 +110,17 @@ test.describe('as a member', () => {
   test.use({ storageState: MEMBER_STATE });
 
   for (const screen of asMember) {
-    test(`${screen.title} fits 320 px`, async ({ page, fixture }) => {
-      await checkScreen(page, fixture, screen);
+    test(`${screen.title} fits 320 px`, async ({
+      page,
+      fixture,
+      loginPage,
+      peoplePage,
+      teamsPage,
+      hourBandsPage,
+      organizationPage,
+    }) => {
+      const pages = { loginPage, peoplePage, teamsPage, hourBandsPage, organizationPage };
+      await checkScreen(page, pages, fixture, screen);
     });
   }
 });
@@ -113,8 +129,17 @@ test.describe('as an admin', () => {
   test.use({ storageState: ADMIN_STATE });
 
   for (const screen of asAdmin) {
-    test(`${screen.title} fits 320 px`, async ({ page, fixture }) => {
-      await checkScreen(page, fixture, screen);
+    test(`${screen.title} fits 320 px`, async ({
+      page,
+      fixture,
+      loginPage,
+      peoplePage,
+      teamsPage,
+      hourBandsPage,
+      organizationPage,
+    }) => {
+      const pages = { loginPage, peoplePage, teamsPage, hourBandsPage, organizationPage };
+      await checkScreen(page, pages, fixture, screen);
     });
   }
 });
@@ -125,15 +150,15 @@ test.describe('as an admin', () => {
  * not only on the first. The preview's wide grid scrolls inside its own
  * container, never the page.
  */
-async function checkRotationSteps(page: Page): Promise<void> {
-  await page.goto('/postavke-rotacije');
+async function checkRotationSteps(page: Page, rotationPage: RotationPage): Promise<void> {
+  await rotationPage.goto();
 
   for (const [index, heading] of STEP_HEADINGS.entries()) {
     const next = NEXT_LABELS[index - 1];
 
-    if (next !== undefined) await page.getByRole('button', { name: next, exact: true }).tap();
-    await expect(stepProgress(page, index + 1)).toBeVisible();
-    await expect(page.getByRole('heading', { name: heading, exact: true })).toBeVisible();
+    if (next !== undefined) await rotationPage.nextButton(next).tap();
+    await expect(rotationPage.stepProgress(index + 1)).toBeVisible();
+    await expect(rotationPage.sectionHeading(heading)).toBeVisible();
 
     await expectNoHorizontalScroll(page);
     await expectTouchTargets(page);
@@ -143,35 +168,31 @@ async function checkRotationSteps(page: Page): Promise<void> {
 test.describe('as an admin, the rotation screen', () => {
   test.use({ storageState: ADMIN_STATE });
 
-  test('Postavke rotacije fits 320 px on each of its four steps', async ({ page }) => {
-    await checkRotationSteps(page);
+  test('Postavke rotacije fits 320 px on each of its four steps', async ({ page, rotationPage }) => {
+    await checkRotationSteps(page, rotationPage);
   });
 
   // STORY 2.4, a regression only: the dialogs of the hour bands and the shift
   // types open at 320 px with no sideways page scroll and 44 px controls.
-  test('the hour band dialogs fit 320 px', async ({ page, fixture }) => {
-    const bands = hr.organization.hourBands;
-
-    await page.goto('/organizacija/satni-pojasi');
-    await page.getByRole('button', { name: bands.open }).tap();
-    await expect(page.getByRole('dialog', { name: bands.addHeading })).toBeVisible();
+  test('the hour band dialogs fit 320 px', async ({ page, hourBandsPage, fixture }) => {
+    await hourBandsPage.goto();
+    await hourBandsPage.openButton.tap();
+    await expect(hourBandsPage.addDialog).toBeVisible();
     await expectNoHorizontalScroll(page);
     await expectTouchTargets(page);
-    await page.getByRole('button', { name: bands.close, exact: true }).tap();
-    await expect(page.getByRole('dialog')).toBeHidden();
+    await hourBandsPage.closeButton.tap();
+    await expect(hourBandsPage.dialog()).toBeHidden();
 
-    await page.getByRole('link', { name: fill(bands.edit, { name: firstBand(fixture).name }) }).tap();
-    await expect(page.getByRole('dialog')).toBeVisible();
+    await hourBandsPage.editLink(firstBand(fixture).name).tap();
+    await expect(hourBandsPage.dialog()).toBeVisible();
     await expectNoHorizontalScroll(page);
     await expectTouchTargets(page);
   });
 
-  test('the new shift type dialog fits 320 px', async ({ page }) => {
-    const shiftTypes = hr.rotation.shiftTypes;
-
-    await page.goto('/postavke-rotacije');
-    await page.getByRole('button', { name: shiftTypes.open }).tap();
-    await expect(page.getByRole('dialog', { name: shiftTypes.addHeading })).toBeVisible();
+  test('the new shift type dialog fits 320 px', async ({ page, rotationPage }) => {
+    await rotationPage.goto();
+    await rotationPage.shiftTypeOpenButton.tap();
+    await expect(rotationPage.addShiftTypeDialog).toBeVisible();
     await expectNoHorizontalScroll(page);
     await expectTouchTargets(page);
   });
@@ -182,7 +203,7 @@ test.describe('as an admin, the rotation screen', () => {
 test.describe('as an admin at 390 px', () => {
   test.use({ storageState: ADMIN_STATE, viewport: { width: 390, height: 844 } });
 
-  test('Postavke rotacije fits 390 px on each of its four steps', async ({ page }) => {
-    await checkRotationSteps(page);
+  test('Postavke rotacije fits 390 px on each of its four steps', async ({ page, rotationPage }) => {
+    await checkRotationSteps(page, rotationPage);
   });
 });
