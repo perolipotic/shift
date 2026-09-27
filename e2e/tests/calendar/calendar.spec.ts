@@ -678,6 +678,36 @@ test.describe('the day detail at 1280 px, as an admin', () => {
     await expect(calendarPage.tabStops).toBeFocused();
   });
 
+  test('a day opened before the late close event of a month change stays open', async ({ page, calendarPage, fixture }) => {
+    // Back to the earlier month closes the detail through a `detailKey`
+    // change, and the dialog's `close` event comes as a later task. A click
+    // the browser runs ahead of that task opens a day of the month Back
+    // showed; the late event is stale and must not close it.
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    const next = firstOfNextMonth(rotation.today);
+
+    await calendarPage.goto(gridMonthOf(rotation.today));
+    const today = calendarPage.detailOf(fixture.team.name, rotation.today);
+    const cell = await calendarPage.cellOf(fixture.team.name, rotation.today);
+    const position = await calendarPage.positionOf(cell);
+    await calendarPage.nextButton.click();
+    await expect(calendarPage.monthHeading(monthHeading(next))).toBeVisible();
+    await (await calendarPage.cellOf(fixture.team.name, next)).click();
+    await expect(calendarPage.detailOf(fixture.team.name, next)).toBeVisible();
+
+    await calendarPage.clickOnDialogClose(position);
+    await page.goBack();
+    await expect(calendarPage.monthHeading(monthHeading(rotation.today))).toBeVisible();
+    await expect.poll(() => calendarPage.clickedOnDialogClose()).toBe(true);
+    await expect(today).toBeVisible();
+    await expect(calendarPage.dialog()).toHaveCount(1);
+
+    // It still closes as any day does, and focus returns to its cell.
+    await page.keyboard.press('Escape');
+    await expect(calendarPage.dialog()).toHaveCount(0);
+    await expect(cell).toBeFocused();
+  });
+
   test('browser Back while the detail is open closes it, and it does not reopen', async ({ page, calendarPage, fixture }) => {
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const next = firstOfNextMonth(rotation.today);

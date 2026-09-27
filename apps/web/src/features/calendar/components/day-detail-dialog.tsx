@@ -127,7 +127,9 @@ function renderDetail(shown: DayDetail, usesFireRanks: boolean): ReactNode {
  *
  * ESCAPE CLOSES ON `cancel`, which fires at once, and the late `close` event
  * is `onClosedByBrowser`'s — both through the primitive's own props — so a
- * quick reopen is never closed by the previous one.
+ * quick reopen is never closed by the previous one. Passing `onClose` REPLACES
+ * the primitive's own `close` handler, so `onOpenChange(false)` reports the
+ * backdrop alone and Escape closes the day once, through `onCancel`.
  */
 export function DayDetailDialog({
   detail,
