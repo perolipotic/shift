@@ -31,6 +31,8 @@
  * only at the edge — `@/features/organization/utils/messages` is that edge.
  */
 
+import { queryOptions } from '@tanstack/react-query';
+
 import { isRenderableTimeZone } from '@/lib/i18n/format';
 import type { BrandAccentKey } from '@/features/organization/utils/accent';
 
@@ -638,6 +640,37 @@ export async function readOrganization(table: OrganizationTable): Promise<Organi
   }
 
   return outcomeOf(answered);
+}
+
+/**
+ * The one query definition the member screens read the organization with.
+ *
+ * ONE READ POLICY ON ONE CACHE ENTRY. The chrome reads this key on every
+ * signed-in screen with `retry: false` and {@link ORGANIZATION_READ_STALE_MS};
+ * a screen that reads it too is a second CONSUMER of that entry, and spelling
+ * the policy out at each call site is how two of them drifted apart. The key,
+ * the retry and the bound are asserted here, in `snapshot.test.ts`.
+ *
+ * `retry: false` because {@link readOrganization} never rejects: every failure
+ * is a settled `{ ok: false }` answer, and retrying a settled refusal only
+ * delays it. The stale bound holds a SNAPSHOT only; a failed answer is stale
+ * at once, so it is read again on the next mount or focus rather than retried.
+ *
+ * THE TABLE IS RESOLVED INSIDE THE QUERY FUNCTION, exactly as
+ * `membersQueryOptions` resolves its own, so `supabaseClient()` raising
+ * `SUPABASE_ENVIRONMENT_MISSING` happens where the query can answer it.
+ */
+export function organizationSnapshotQueryOptions(table: () => OrganizationTable) {
+  return queryOptions({
+    queryKey: ORGANIZATION_SNAPSHOT_KEY,
+    queryFn: () => readOrganization(table()),
+    retry: false,
+    // ONLY A SNAPSHOT IS HELD FRESH. `readOrganization` resolves a failure as
+    // data, so a flat bound would serve a failed answer as fresh for five
+    // minutes — and the create screen withholds its whole form on one. A
+    // failed answer is always stale, so the next mount or focus reads again.
+    staleTime: (query) => (query.state.data?.ok === true ? ORGANIZATION_READ_STALE_MS : 0),
+  });
 }
 
 /**

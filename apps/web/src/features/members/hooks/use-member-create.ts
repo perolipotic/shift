@@ -14,11 +14,10 @@ import {
   type MemberFunctions,
   type MemberWriteRefusal,
 } from '@/features/members/services/write';
-import { rankEditOf, ranksShown } from '@/features/members/utils/rank';
+import { rankEditOf, ranksShownIn } from '@/features/members/utils/rank';
 import {
-  ORGANIZATION_SNAPSHOT_KEY,
   ORGANIZATION_TABLE,
-  readOrganization,
+  organizationSnapshotQueryOptions,
 } from '@/features/organization/services/snapshot';
 import { supabaseClient } from '@/lib/supabase/client';
 
@@ -73,19 +72,18 @@ export function useMemberCreate() {
   // moment where a second create could overwrite a password nobody has read.
   const [credential, setCredential] = useState<IssuedCredential | null>(null);
 
-  const snapshot = useQuery({
-    queryKey: ORGANIZATION_SNAPSHOT_KEY,
-    queryFn: () => readOrganization(supabaseClient().from(ORGANIZATION_TABLE)),
-  });
+  // THE CHROME'S OWN READ POLICY, through the one factory the edit screen uses
+  // too: a second consumer of one cache entry, not a second policy on it.
+  const snapshot = useQuery(
+    organizationSnapshotQueryOptions(() => supabaseClient().from(ORGANIZATION_TABLE)),
+  );
 
   // EVERY STATE THIS SCREEN CAN BE IN, decided in `@/features/members/services/write` and pinned
   // by execution over all three of them.
   const form = createFormStateOf(snapshot);
   // MEMBER RANK: the rank control exists only while the organization uses
   // ranks, read from the same snapshot the form is seeded from.
-  const offersRank = ranksShown(
-    snapshot.data !== undefined && snapshot.data.ok ? snapshot.data.snapshot : null,
-  );
+  const offersRank = ranksShownIn(snapshot.data);
   const refusal: MemberWriteRefusal | null =
     failure ??
     (form.refusal === null ? null : { code: form.refusal, saved: false });

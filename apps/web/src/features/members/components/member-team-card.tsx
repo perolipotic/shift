@@ -64,6 +64,7 @@ export function MemberTeamCard({ edit }: { readonly edit: MemberEdit }): ReactNo
     teamArmedFor,
     teamConfirmed,
     teamRefusal,
+    teamDateInvalid,
     teamStage,
     pickedTeam,
     setTeamArmed,
@@ -208,6 +209,7 @@ export function MemberTeamCard({ edit }: { readonly edit: MemberEdit }): ReactNo
           defaultValue={offered.minimum}
           disabled={!idle}
           aria-describedby={teamRefusal === null ? undefined : 'member-team-error'}
+          aria-invalid={teamDateInvalid}
           className="h-11"
         />
       </>

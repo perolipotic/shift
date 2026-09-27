@@ -28,6 +28,7 @@ import {
   rankOptionsFor,
   rankValue,
   ranksShown,
+  ranksShownIn,
   RANK_CODES,
   RANK_OPTIONS,
   rosterRankMessageKey,
@@ -211,6 +212,15 @@ describe('the setting gates display and entry only', () => {
     expect(ranksShown({ usesFireRanks: true })).toBe(true);
     expect(ranksShown({ usesFireRanks: false })).toBe(false);
     expect(ranksShown(null)).toBe(false);
+  });
+
+  it('reads the setting out of the organization answer, and offers no rank without one', () => {
+    // The one unwrap both member screens share (B1's review found it spelled
+    // out twice): only a settled snapshot with the setting on shows ranks.
+    expect(ranksShownIn({ ok: true, snapshot: { usesFireRanks: true } })).toBe(true);
+    expect(ranksShownIn({ ok: true, snapshot: { usesFireRanks: false } })).toBe(false);
+    expect(ranksShownIn({ ok: false })).toBe(false);
+    expect(ranksShownIn(undefined)).toBe(false);
   });
 
   it('puts a rank beside a roster name only when shown and present', () => {

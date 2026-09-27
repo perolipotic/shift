@@ -47,6 +47,7 @@ export function MemberStatusCard({ edit }: { readonly edit: MemberEdit }): React
     statusArmedFor,
     statusConfirmed,
     statusRefusal,
+    statusDateInvalid,
     statusStage,
     setStatusArmed,
     armStatus,
@@ -138,6 +139,7 @@ export function MemberStatusCard({ edit }: { readonly edit: MemberEdit }): React
           defaultValue={offered.minimum}
           disabled={!idle}
           aria-describedby={statusRefusal === null ? undefined : 'member-status-error'}
+          aria-invalid={statusDateInvalid}
           className="h-11"
         />
       </>

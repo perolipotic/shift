@@ -186,6 +186,7 @@ const MEMBER_EDIT: readonly string[] = [
   join(MEMBERS_FEATURE, 'components', 'member-status-card.tsx'),
   join(MEMBERS_FEATURE, 'components', 'member-reset-card.tsx'),
   join(MEMBERS_FEATURE, 'utils', 'refusal-text.ts'),
+  join(MEMBERS_FEATURE, 'utils', 'date-refusal.ts'),
 ];
 
 /** The teams feature, which holds both team screens' parts. */
@@ -5766,6 +5767,44 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     }
   });
 
+  it.each(IN_FLIGHT_HANDLERS.filter((entry) => entry.file === MEMBER_EDIT))(
+    'calls its effect only from inside its own handler on $name',
+    ({ file, effect, handler: named }) => {
+      // MUTATION-PROVEN GAP, found by B1's implementer: a `changeMemberStatus(`
+      // call placed outside `changeStatus` passed every test here, because the
+      // sweeps below read INSIDE each handler and say nothing about the rest
+      // of the file set. A call outside it skips the in-flight ref, the pending
+      // flag and the refusal the handler owns.
+      //
+      // WHAT THIS CATCHES, and no more: across the edit screen's whole set, the
+      // effect's NAME appears once in an import and once inside its handler,
+      // where it is called, and the import does not rename it. That refuses a
+      // second call, and a reference that could become one — an alias, a
+      // `mutationFn: name`, `name.call(…)`, `name<T>(…)`. It does not follow a
+      // value handed on from inside the handler, and it reads names, not types.
+      const screen = source(file);
+      const scoped = namedHandler(screen, named);
+      const name = effect.slice(0, -1);
+      const bare = new RegExp(`\\b${name}\\b`, 'g');
+      const imports = (screen.match(/import\s*(?:type\s*)?\{[\s\S]*?\}\s*from\s*'[^']*';/g) ?? []).join(
+        '\n',
+      );
+
+      expect(scoped, `${named} could not be extracted, so nothing below is asserted`).not.toBe('');
+      expect(occurrences(scoped, effect), `${effect} is not called from ${named}`).toBe(1);
+      expect(occurrences(screen, effect), `${effect} is called outside ${named}`).toBe(1);
+      expect(imports.match(bare) ?? [], `${name} is not imported exactly once`).toHaveLength(1);
+      expect(imports, `${name} is imported under another name`).not.toMatch(
+        new RegExp(`\\b${name}\\s+as\\b`),
+      );
+      expect(scoped.match(bare) ?? [], `${name} is referenced again inside ${named}`).toHaveLength(1);
+      expect(
+        screen.match(bare) ?? [],
+        `${name} is referenced outside its import and ${named}`,
+      ).toHaveLength(2);
+    },
+  );
+
   it.each(IN_FLIGHT_HANDLERS)(
     'clears the in-flight flag on every path on $name, and guards on a ref not on state',
     ({ file, handler: named, failure }) => {
@@ -6652,10 +6691,16 @@ describe('member rank: the setting gates display and entry, and deletes nothing'
     expect(screen, 'the rank control is not gated on the setting').toMatch(
       /\{offersRank \? renderRank\([^)]*\) : null\}/,
     );
-    expect(screen).toContain('const offersRank = ranksShown(');
-    expect(screen, 'the organization is read under a second key').toContain(
-      'queryKey: ORGANIZATION_SNAPSHOT_KEY',
+    expect(screen).toContain('const offersRank = ranksShownIn(');
+    // THROUGH THE ONE FACTORY, which names the snapshot key; `snapshot.test.ts`
+    // asserts the key it registers. A key written here would be a second one.
+    expect(screen, 'the organization is not read through the one factory').toContain(
+      'organizationSnapshotQueryOptions(',
     );
+    expect(screen, 'the organization is read under a key of its own').not.toMatch(
+      /useQuery\(\{\s*queryKey: ORGANIZATION_SNAPSHOT_KEY/,
+    );
+    expect(screen, 'the snapshot key is spelled by hand').not.toContain("['organization']");
     expect(screen).toContain(options);
     expect(screen).toContain('t(rankMessageKey(option))');
     expect(labelTargets(screen)).toContain('member-rank');
@@ -6672,7 +6717,31 @@ describe('member rank: the setting gates display and entry, and deletes nothing'
   });
 
   it.each([
+    { name: 'the member create form', file: MEMBER_CREATE },
     { name: 'the member edit form', file: MEMBER_EDIT },
+  ])("reads the organization on $name through the one read policy", ({ file }) => {
+    // B1'S REVIEW FOUND TWO POLICIES on one cache entry: the create screen read
+    // `ORGANIZATION_SNAPSHOT_KEY` with no `retry: false` and no `staleTime`, the
+    // edit screen with both. Both now go through the factory, whose key, retry
+    // and bound `snapshot.test.ts` asserts, and neither spells any of it out.
+    const screen = source(file);
+
+    expect(
+      screen.match(/useQuery\(\s*organizationSnapshotQueryOptions\(/g) ?? [],
+      'the organization is not read exactly once through the factory',
+    ).toHaveLength(1);
+    expect(occurrences(screen, 'organizationSnapshotQueryOptions('), 'the factory is called twice').toBe(1);
+    expect(screen, 'the read is spelled out beside the factory').not.toContain('readOrganization(');
+    expect(screen, 'a read policy is spelled out beside the factory').not.toMatch(
+      /retry: false|ORGANIZATION_READ_STALE_MS/,
+    );
+    // THE UNWRAP IS SHARED too, rather than repeated per screen: `ranksShownIn`,
+    // executed in `rank.test.ts`.
+    expect(screen, 'the snapshot is unwrapped by hand').toContain('ranksShownIn(');
+    expect(screen, 'the snapshot is unwrapped by hand').not.toMatch(/\.ok \? [\w.]+\.snapshot : null/);
+  });
+
+  it.each([
     // SOURCE STRUCTURE B7: the roster's read, in the hook that holds it.
     { name: 'the team roster', file: TEAM_ROSTER_HOOK },
   ])("reads the organization on $name under the chrome's own cache policy", ({ file }) => {
@@ -7201,9 +7270,15 @@ describe('the two member forms write through the seam and keep nothing back', ()
   });
 
   it.each([
-    { name: 'the member create form', file: MEMBER_CREATE },
-    { name: 'the member edit form', file: MEMBER_EDIT },
-  ])('names the offending field on $name when it refuses one itself', ({ file }) => {
+    { name: 'the member create form', file: MEMBER_CREATE, marked: ['member-leave'] },
+    // The status and team dates are marked by their own blocks' refusals; see
+    // the date test below.
+    {
+      name: 'the member edit form',
+      file: MEMBER_EDIT,
+      marked: ['member-leave', 'member-status-date', 'member-team-date'],
+    },
+  ])('names the offending field on $name when it refuses one itself', ({ file, marked: ids }) => {
     // THE ONE REFUSAL EACH SCREEN RAISES ITSELF is also the one it knows the
     // FIELD for — an allowance that is not a whole number the column can hold —
     // and a five-field form saying "Unesena vrijednost nije dopuštena." with no
@@ -7226,12 +7301,71 @@ describe('the two member forms write through the seam and keep nothing back', ()
 
     const marked = inputElements(screen).filter((input) => input.includes('aria-invalid'));
 
-    expect(marked, 'no control carries aria-invalid at all').toHaveLength(1);
     expect(
-      attributeOf(marked[0] ?? '', 'id'),
-      'the marked control is not the one the refusal is about',
-    ).toBe('member-leave');
+      marked.map((input) => attributeOf(input, 'id')).sort(),
+      'the marked controls are not the ones the refusals are about',
+    ).toEqual(ids);
+    expect(
+      marked.find((input) => attributeOf(input, 'id') === 'member-leave'),
+      'the leave field is not marked by the form refusal',
+    ).toContain("aria-invalid={invalidField === 'member-leave'}");
   });
+
+  it.each([
+    {
+      name: 'the status block',
+      id: 'member-status-date',
+      flag: 'statusDateInvalid',
+      refusal: 'statusRefusal',
+      mark: 'statusDateMark',
+      setMark: 'setStatusDateMark',
+      key: 'statusBlockKey',
+      arm: 'armStatus',
+      change: 'changeStatus',
+    },
+    {
+      name: 'the team block',
+      id: 'member-team-date',
+      flag: 'teamDateInvalid',
+      refusal: 'teamRefusal',
+      mark: 'teamDateMark',
+      setMark: 'setTeamDateMark',
+      key: 'teamBlockKey',
+      arm: 'armTeam',
+      change: 'changeTeam',
+    },
+  ])(
+    'marks the date on $name invalid when its own refusal names it',
+    ({ id, flag, refusal, mark, setMark, key, arm, change }) => {
+      // FOUND BY B1'S REVIEW: a preflight refusal moved focus to the date and
+      // said nothing to assistive technology about it being the wrong value,
+      // while the leave field on the same screen was marked. WHICH refusals name
+      // the date is `dateMarkFor`'s decision and whether the mark still stands is
+      // `dateMarked`'s, both executed in `date-refusal.test.ts`; what this pins is
+      // that the control reads them off its OWN block's refusal and history.
+      const screen = source(MEMBER_EDIT);
+      const input = inputElements(screen).find((element) => attributeOf(element, 'id') === id) ?? '';
+
+      expect(input, `no ${id} control to read`).not.toBe('');
+      expect(input, 'the date is not marked by the tested decision').toContain(`aria-invalid={${flag}}`);
+      // ON THE BLOCK'S OWN REFUSAL AND HISTORY, so a remounted block starts
+      // unmarked and another block's refusal never marks it.
+      expect(screen, 'the mark is not derived from this block\'s own refusal').toMatch(
+        new RegExp(
+          `const ${flag} = dateMarked\\(\\s*${mark},\\s*${refusal},\\s*` +
+            `form\\.member === null \\? null : ${key}\\(form\\.member\\),?\\s*\\);`,
+        ),
+      );
+      // RAISED FROM BOTH SITES, and told which one: `MEMBER_WRITE_INVALID` names
+      // the date only from the preflight.
+      expect(namedHandler(screen, arm), 'the preflight refusal marks no date').toMatch(
+        new RegExp(`${setMark}\\(dateMarkFor\\(raised, ${key}\\(member\\), true\\)\\)`),
+      );
+      expect(namedHandler(screen, change), 'the server refusal marks no date').toContain(
+        `${setMark}(dateMarkFor(outcome.refusal, ${key}(member), false))`,
+      );
+    },
+  );
 
   it.each([
     { name: 'the member create form', file: MEMBER_CREATE },
