@@ -878,9 +878,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b4-shift-type-pages.md`
   summary: Tidy the shift-type hooks' surface — named transitions (`armArchive`, `openAdding`) instead of raw setters used by components, one shared duration helper and a `ShiftTypeChip`, one shared shift-types read/re-read helper, and `NO_TEXT`/`shownDate` moved out of `features/members` into a shared module.
   evidence: Raised by B4's review. All duplication and the cross-feature import predate the move; changing them shifts `t()` counts and guard needles, so it is a deliberate follow-up rather than part of a pure move.
-- source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b6-team-pages.md`
-  summary: The team add dialog's Cancel is not disabled while a create is in flight (a "created" notice can land after the viewer dismissed the dialog), and the missing-organization-claim refusal skips the name-field focus the ordinary refusal takes.
-  evidence: Raised by B6's review; both carried over unchanged from the pre-split `ljudi.smjene.tsx`. Each is a behaviour change, so outside a pure move.
 - source_spec: `_bmad-output/implementation-artifacts/spec-e2e-flow-coverage.md`
   summary: The local E2E stack keeps GoTrue's default sign-in rate limit; with more sign-in tests (wrong password, retries, `--repeat-each`) a 429 maps to `auth.error.unavailable` and could make sign-in assertions flaky. Consider raising `[auth.rate_limit] sign_in_sign_ups` for the local stack in `supabase/config.toml`.
   evidence: Raised by the E2E coverage review (2026-09-27). Not seen in runs so far; the change touches the shared Supabase config, so it is a deliberate decision rather than part of a test-only change.
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-team-add-dialog.md`
+  summary: The shift-type and hour-band add dialogs let the viewer dismiss them (Cancel, Escape, close) while a create is in flight, as the team add dialog did before its fix; give them the same `disabled={pending}` / `dismissible={!pending}` gating and an E2E pin.
+  evidence: Found while fixing the team add dialog (2026-09-27); left alone because that spec asked first before changing other screens.

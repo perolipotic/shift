@@ -1,5 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
+import type { Route } from '@playwright/test';
+
 import { TeamsPage } from '../../pages/teams.page.ts';
 import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
 import { hr } from '../../utils/i18n.ts';
@@ -81,6 +83,70 @@ test('a taken name is refused in the add dialog, keeping what was typed, with th
   await expect(teamsPage.addNameInput).toHaveValue(fixture.team.name);
   await expect(teamsPage.addNameInput).toHaveAttribute('aria-invalid', 'true');
   await expect(teamsPage.addNameInput).toBeFocused();
+});
+
+/** PostgREST's team insert, `POST /rest/v1/teams`, and nothing else. */
+function isTeamInsert(url: URL): boolean {
+  return url.pathname.endsWith('/rest/v1/teams');
+}
+
+test('the add dialog cannot be dismissed while its create is in flight, and confirms once it lands', async ({
+  page,
+  teamsPage,
+  holdRotationForTeams,
+}) => {
+  // ITS OWN TEAM, per attempt, added under the rotation's hold and archived
+  // at the end.
+  const teamName = `Smjena ${randomBytes(3).toString('hex')}`;
+
+  // THE INSERT IS HELD until the test releases it, for this test's page only:
+  // the create stays in flight for as long as the assertions below need.
+  let release: () => void = () => undefined;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let reached: () => void = () => undefined;
+  const inFlight = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  const holdInsert = async (route: Route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    reached();
+    await released;
+    return route.continue();
+  };
+
+  await teamsPage.goto();
+  await holdRotationForTeams(async () => {
+    await page.route(isTeamInsert, holdInsert);
+    try {
+      await teamsPage.addTeam(teamName);
+      await inFlight;
+
+      // Cancel is disabled, and Escape and the close control do nothing.
+      await expect(teamsPage.addCancelButton).toBeDisabled();
+      await teamsPage.addNameInput.press('Escape');
+      await expect(teamsPage.addDialog).toBeVisible();
+      await teamsPage.addCloseButton.click();
+      await expect(teamsPage.addDialog).toBeVisible();
+      await expect(teamsPage.addCancelButton).toBeDisabled();
+    } finally {
+      // Released even on a failure; the route itself stays until the held
+      // request has gone on, since unrouting first would drop it.
+      release();
+    }
+
+    // Released: the create lands, the dialog closes and the page confirms.
+    await expect(teamsPage.status).toHaveText(hr.smjene.created);
+    await expect(teamsPage.addDialog).toBeHidden();
+    await page.unroute(isTeamInsert, holdInsert);
+  });
+
+  // Archived at the end, so this test leaves no active team behind.
+  await teamsPage.openTeam(teamName);
+  await teamsPage.archiveButton(teamName).click();
+  await teamsPage.archiveConfirmButton(teamName).click();
+  await expect(teamsPage.statusWith(hr.smjene.archivedDone)).toBeVisible();
 });
 
 test('a renamed team is confirmed and listed under its new name', async ({ page, teamsPage, holdRotationForTeams }) => {

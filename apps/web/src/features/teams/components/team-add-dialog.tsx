@@ -21,11 +21,14 @@ export function TeamAddDialog({ screen }: { readonly screen: TeamListScreen }): 
   const { adding, setAdding, submit, nameField, setCreated, failure, pending } = screen;
 
   return (
-    <Dialog open={adding} onOpenChange={setAdding} aria-labelledby="team-new-heading">
+    // NOT DISMISSIBLE WHILE A CREATE IS IN FLIGHT: Escape, the backdrop, the
+    // close control and Cancel all wait for the outcome, so the dialog that
+    // reports it cannot be closed before it lands.
+    <Dialog open={adding} onOpenChange={setAdding} dismissible={!pending} aria-labelledby="team-new-heading">
       <DialogHeader
         closeLabel={t('smjene.close')}
         onClose={() => {
-          setAdding(false);
+          if (!pending) setAdding(false);
         }}
       >
         <DialogTitle id="team-new-heading">{t('smjene.addHeading')}</DialogTitle>
@@ -72,6 +75,7 @@ export function TeamAddDialog({ screen }: { readonly screen: TeamListScreen }): 
             className="h-11"
             type="button"
             variant="outline"
+            disabled={pending}
             onClick={() => {
               setAdding(false);
             }}

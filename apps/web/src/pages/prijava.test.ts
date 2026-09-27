@@ -2845,7 +2845,23 @@ describe('the screen is read at all, so every sweep below means something', () =
     );
   });
 
-  it.each(TEAM_SETS)('declares no handler outside the hook on $name', ({ set, hookFile }) => {
+  it('focuses the name field on every refusal of the add, the missing claim included', () => {
+    // A SOURCE GUARD, not a runtime test: the missing-claim branch reads the
+    // session's own access token inside the hook, and the node suite renders
+    // no hook, so nothing here can drive it. Both refusal branches are read
+    // out of the one `submit`, each up to its own `return`.
+    const submit = namedHandler(source(TEAM_LIST_HOOK), 'submit');
+    const missingClaim = /if \(organization === null\) \{([\s\S]*?)\breturn;/.exec(submit)?.[1] ?? '';
+    const refused = /if \(!outcome\.ok\) \{([\s\S]*?)\breturn;/.exec(submit)?.[1] ?? '';
+
+    expect(submit.length, 'submit could not be extracted').toBeGreaterThan(80);
+    expect(missingClaim, 'the missing-claim refusal is gone').toContain('setFailure(TEAM_WRITE_REFUSED)');
+    expect(missingClaim, 'the missing-claim refusal does not focus the name').toContain('name.focus()');
+    expect(refused, 'the ordinary refusal is gone').toContain('setFailure(outcome.code)');
+    expect(refused, 'the ordinary refusal does not focus the name').toContain('name.focus()');
+  });
+
+  it.each(TEAM_SETS)('declares no handler outside the hook on $name',({ set, hookFile }) => {
     const shadow = new RegExp(`\\b(?:(?:const|let)\\s+(?:${TEAM_HANDLERS})\\s*=|function\\s+(?:${TEAM_HANDLERS})\\s*\\()`);
     // Nor the hooks a handler is built from, nor a handler handed on as an
     // object key of a part's own, nor the client and table a write is made on.

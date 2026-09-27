@@ -22,6 +22,16 @@ export class TeamsPage extends BasePage {
     return this.addDialog.getByLabel(hr.smjene.name, { exact: true });
   }
 
+  /** The add dialog's Odustani. */
+  get addCancelButton(): Locator {
+    return this.addDialog.getByRole('button', { name: hr.smjene.cancel, exact: true });
+  }
+
+  /** The add dialog's own close control. */
+  get addCloseButton(): Locator {
+    return this.addDialog.getByRole('button', { name: hr.smjene.close, exact: true });
+  }
+
   /** The add dialog's own refusal, held inside the dialog. */
   get addRefusal(): Locator {
     return this.addDialog.getByRole('alert');
