@@ -491,18 +491,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-1-anyone-reads-a-month.md`
   summary: The unavailable notices ("Pokušaj ponovno") offer no retry control on the calendar or other read surfaces; retrying means reloading the page.
   evidence: `kalendar.error.unavailable` is rendered in a `Notice` with no button, `retry: 1`, and no refetch on window focus; the rotation builder's notice behaves the same way.
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-anyone-reads-a-month.md`
-  summary: The calendar's team header row is not sticky, so the team names scroll out of view in a 28–31-row month on a phone or short window.
-  evidence: in `apps/web/src/routes/kalendar.tsx` only the date column is `sticky left-0`; story 3.2 (phone and screen reader) is the natural owner.
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-2a-phone-calendar-modes.md`
-  summary: While the calendar loads, the skeleton is always the grid shape and the mode switch is absent, so a member who lands on the day list sees the layout jump when the snapshot arrives.
-  evidence: Raised by 3.2a's review. The default mode needs the role, which arrives with the snapshot; showing a day-list skeleton would need the role before the read (e.g. from the chrome's cached `MEMBER_ROLE_KEY`).
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-2b-calendar-modifiers-and-keyboard-grid.md`
-  summary: When the grid is scrolled sideways, a cell that receives keyboard focus can sit under the sticky date column, hiding the focused cell and its ring.
-  evidence: Raised by 3.2b's review. `kalendar.tsx` calls `cell.focus()` with no `scroll-margin-left` or `scrollIntoView` offset for the `sticky left-0` date column; it shows only on the compressed or a narrow full grid that actually scrolls.
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-2b-calendar-modifiers-and-keyboard-grid.md`
-  summary: Under `forced-colors: active` (Windows High Contrast) the `box-shadow` modifier rings and the background-image hatches are dropped, leaving only the glyphs.
-  evidence: Raised by 3.2b's review. `index.css`'s `modifier-ring-*` and `modifier-hatch-*` utilities have no `@media (forced-colors: active)` fallback (e.g. an `outline` in `CanvasText`); the glyph still carries the meaning, so this is not colour-alone, but the treatment vanishes.
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-4a-roster-as-at-a-date.md`
   summary: A day on which a member is inactive reads as "no team" in the day lists, so a month the member is wholly inactive (e.g. after a scheduled deactivation) shows `kalendar.noTeam` / `kalendar.person.noTeam`, which names the wrong reason.
   evidence: Raised by 3.4a's review. 3.4a's design note chose "inactive day counts as no team" to avoid new state and copy; a distinct inactive state (domain flag + text) would state what is true (UX-DR20). Consider it with 3.4b's day-detail copy.
