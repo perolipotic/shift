@@ -122,6 +122,15 @@ function accessOf(row: unknown): MemberAccess | null {
   return { organizationId, role, isActive };
 }
 
+/** An error's `code` when it is a string, and nothing else of it. Exported so
+ *  the boundary suite can pin that it never returns anything else. */
+export function codeOf(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+  const code = (error as { code?: unknown }).code;
+
+  return typeof code === 'string' ? code : undefined;
+}
+
 /**
  * Whether the caller may act on `organization`, and nothing else.
  *
@@ -139,8 +148,10 @@ export async function authorizeAdminOf(
 
   try {
     answered = await reader.rpc(CURRENT_MEMBER_ACCESS);
-  } catch (cause) {
-    console.error(ACCESS_UNREADABLE, cause);
+  } catch {
+    // THE CODE, NEVER THE THROWN VALUE. The log policy is codes and
+    // non-sensitive scalars; a thrown fetch error can carry the request.
+    console.error(ACCESS_UNREADABLE);
 
     return { ok: false, code: ACCESS_UNREADABLE };
   }
@@ -155,7 +166,8 @@ export async function authorizeAdminOf(
   }
 
   if (answered.error !== null) {
-    console.error(ACCESS_UNREADABLE, answered.error);
+    // The PostgREST error CODE only: its `message` and `details` can quote a row.
+    console.error(ACCESS_UNREADABLE, codeOf(answered.error));
 
     return { ok: false, code: ACCESS_UNREADABLE };
   }

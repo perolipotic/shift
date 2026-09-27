@@ -524,6 +524,19 @@ export function createPayloadOf(body: unknown): PayloadOutcome<CreatePayload> {
   };
 }
 
+/**
+ * Whether `value` is a UUID in its canonical textual form.
+ *
+ * `members.id` is a `uuid` column, so any other string cannot name a row. Sent
+ * to PostgREST it is not "no row" but `22P02 invalid_text_representation`,
+ * which this module reads as an outage — a 503 for what is really an id that
+ * does not exist. Checked BEFORE ANY QUERY, and refused as `MEMBER_UNKNOWN`,
+ * the answer an id that names nobody already gets.
+ */
+export function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
 /** The rename payload, validated. */
 export interface RenamePayload {
   readonly memberId: string;
@@ -725,13 +738,13 @@ export async function createUser(
     const removed = await dependencies.privileged.auth.admin.deleteUser(accountId);
 
     if (removed.error !== null) {
-      console.error(ACCOUNT_NOT_REMOVED, accountId);
+      console.error(ACCOUNT_NOT_REMOVED, removed.error.code, removed.error.status);
 
-      // THE ID STAYS IN THE LOG AND OUT OF THE REPLY. The browser maps the code
-      // and discards every operand, so shipping an internal identifier to it
-      // buys nothing and hands an unauthenticated-at-this-point response an
-      // `auth.users` primary key. The operator needs it, and the line above is
-      // where they read it.
+      // THE ID STAYS OUT OF THE LOG AND OUT OF THE REPLY. The browser maps the
+      // code and discards every operand, so shipping an internal identifier to
+      // it buys nothing; and the log policy is codes and non-sensitive scalars,
+      // never an id. An operator finds the stranded account as the `auth.users`
+      // row with no `members` row, which is a query, not a log search.
       return { status: 500, body: { code: ACCOUNT_NOT_REMOVED } };
     }
 
@@ -777,6 +790,9 @@ export async function updateUserById(
   if (!validated.ok) return { status: 400, body: { code: validated.code } };
 
   const payload = validated.payload;
+
+  // NOT A UUID, NOT A MEMBER — before any query. See `isUuid`.
+  if (!isUuid(payload.memberId)) return { status: 404, body: { code: MEMBER_UNKNOWN } };
 
   // THE TARGET'S OWN ORGANIZATION, read as the caller. `members_select_own_organization`
   // (`0003:289-300`, narrowed by `0011`) shows an active admin their own
@@ -840,7 +856,9 @@ export async function updateUserById(
       .select(MEMBER_WRITE_COLUMNS);
 
     if (restored.error !== null || rowsOf(restored).length === 0) {
-      console.error(USERNAME_NOT_RESTORED, payload.memberId);
+      // `NO_ROW` when the restore matched nothing and raised nothing, so the two
+      // ways it fails read differently in the log. Still no id.
+      console.error(USERNAME_NOT_RESTORED, restored.error?.code ?? 'NO_ROW');
 
       // Logged, not returned — see the note on `ACCOUNT_NOT_REMOVED` above.
       return { status: 500, body: { code: USERNAME_NOT_RESTORED } };
@@ -939,6 +957,9 @@ export async function resetPassword(
   if (!validated.ok) return { status: 400, body: { code: validated.code } };
 
   const payload = validated.payload;
+
+  // NOT A UUID, NOT A MEMBER — before any query. See `isUuid`.
+  if (!isUuid(payload.memberId)) return { status: 404, body: { code: MEMBER_UNKNOWN } };
 
   const found = await dependencies.caller
     .from(MEMBERS_TABLE)

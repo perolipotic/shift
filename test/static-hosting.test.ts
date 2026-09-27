@@ -33,7 +33,87 @@ const PERMITTED_DIST_ENTRIES = new Set([
   'index.html', // the SPA shell
   'assets', // hashed js/css/media
   '_redirects', // the Cloudflare Pages SPA fallback, copied from public/
+  '_headers', // the Cloudflare Pages security headers, copied from public/
 ]);
+
+/**
+ * The security headers every path must carry, as `name: value` pairs.
+ *
+ * NO CONTENT-SECURITY-POLICY, on purpose: its `connect-src` needs the deployed
+ * Supabase origin, and a policy nothing can verify against a real host is one
+ * that can silently break every request the SPA makes. The entry stays open in
+ * `deferred-work.md` as "CSP pending a deployed origin to verify against".
+ */
+const SECURITY_HEADERS: Readonly<Record<string, RegExp>> = {
+  'X-Content-Type-Options': /^nosniff$/,
+  'Referrer-Policy': /^strict-origin-when-cross-origin$/,
+  'X-Frame-Options': /^DENY$/,
+  // RESTRICTIVE: every feature it names is switched off, and the powerful
+  // ones the SPA never uses are named.
+  'Permissions-Policy': /^(?=.*\bcamera=\(\))(?=.*\bmicrophone=\(\))(?=.*\bgeolocation=\(\))(?=.*\bpayment=\(\))(?=.*\busb=\(\))[a-z-]+=\(\)(, [a-z-]+=\(\))*$/,
+};
+
+/** The headers of the `/*` block in a `_headers` file, keyed by lowercase name. */
+function headersForAllPaths(file: string): Map<string, string> {
+  const headers = new Map<string, string>();
+  let inAllPaths = false;
+
+  for (const line of file.split('\n')) {
+    if (line.trim() === '' || line.trimStart().startsWith('#')) continue;
+    if (!/^\s/.test(line)) {
+      inAllPaths = line.trim() === '/*';
+      continue;
+    }
+    if (!inAllPaths) continue;
+    const separator = line.indexOf(':');
+    if (separator === -1) continue;
+    headers.set(line.slice(0, separator).trim().toLowerCase(), line.slice(separator + 1).trim());
+  }
+
+  return headers;
+}
+
+/**
+ * Every header line outside the `/*` block, and every `! Name` detach anywhere.
+ *
+ * Cloudflare Pages applies EVERY matching block, so a later `/app/*` block
+ * that sets `X-Frame-Options: SAMEORIGIN`, or detaches it with
+ * `! X-Frame-Options`, silently weakens the rule for those paths. Nothing may
+ * touch a security header except the `/*` block.
+ */
+function securityOverrides(file: string): string[] {
+  const guarded = new Set(Object.keys(SECURITY_HEADERS).map((name) => name.toLowerCase()));
+  const found: string[] = [];
+  let block = '';
+
+  for (const line of file.split('\n')) {
+    if (line.trim() === '' || line.trimStart().startsWith('#')) continue;
+    if (!/^\s/.test(line)) {
+      block = line.trim();
+      continue;
+    }
+    const entry = line.trim();
+    const detached = entry.startsWith('!');
+    const name = (detached ? entry.slice(1) : entry.split(':')[0] ?? '').trim().toLowerCase();
+
+    if (detached || (block !== '/*' && guarded.has(name))) found.push(`${block}: ${entry}`);
+  }
+
+  return found;
+}
+
+function assertSecurityHeaders(file: string): void {
+  const headers = headersForAllPaths(file);
+
+  expect(securityOverrides(file), 'a block removes or overrides a security header').toEqual([]);
+
+  for (const [name, expected] of Object.entries(SECURITY_HEADERS)) {
+    const value = headers.get(name.toLowerCase());
+
+    expect(value, `${name} is missing from the /* block`).toBeDefined();
+    expect(value, `${name} has the wrong value`).toMatch(expected);
+  }
+}
 
 describe('static host SPA fallback', () => {
   it('serves every client route from index.html with status 200', () => {
@@ -50,6 +130,29 @@ describe('static host SPA fallback', () => {
 
     expect(existsSync(built), `${built} is missing from the build output`).toBe(true);
     expect(SPA_FALLBACK.test(readFileSync(built, 'utf8'))).toBe(true);
+  });
+
+  it('carries every security header on every path', () => {
+    const file = join(repoRoot, 'apps', 'web', 'public', '_headers');
+
+    expect(existsSync(file), `${file} is missing`).toBe(true);
+    assertSecurityHeaders(readFileSync(file, 'utf8'));
+  });
+
+  it('catches a block that removes or overrides a security header', () => {
+    const base = readFileSync(join(repoRoot, 'apps', 'web', 'public', '_headers'), 'utf8');
+
+    expect(securityOverrides(base)).toEqual([]);
+    expect(securityOverrides(`${base}\n/app/*\n  ! X-Frame-Options\n`)).toHaveLength(1);
+    expect(securityOverrides(`${base}\n/app/*\n  X-Frame-Options: SAMEORIGIN\n`)).toHaveLength(1);
+    expect(securityOverrides(`${base}\n/assets/*\n  Cache-Control: max-age=31536000\n`)).toEqual([]);
+  });
+
+  it.skipIf(notBuilt)('ships the security headers into the build output', () => {
+    const built = join(dist, '_headers');
+
+    expect(existsSync(built), `${built} is missing from the build output`).toBe(true);
+    assertSecurityHeaders(readFileSync(built, 'utf8'));
   });
 
   it.skipIf(notBuilt)('emits nothing but the static shell, its assets and the fallback', () => {

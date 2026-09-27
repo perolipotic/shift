@@ -1,0 +1,8 @@
+# Cloudflare Pages response headers for every path. No Content-Security-Policy
+# yet: its connect-src needs the deployed Supabase origin, and nothing can
+# verify one while deploys are off (see deferred-work.md).
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  X-Frame-Options: DENY
+  Permissions-Policy: accelerometer=(), autoplay=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), midi=(), payment=(), usb=(), browsing-topics=()
