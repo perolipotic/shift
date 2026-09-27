@@ -1,4 +1,4 @@
-import hr from '../../apps/web/src/i18n/locales/hr.json' with { type: 'json' };
+import hr from '../../apps/web/src/lib/i18n/locales/hr.json' with { type: 'json' };
 
 /**
  * The application's own resource file. Every locator name comes from here, so a
@@ -12,7 +12,7 @@ export function fill(message: string, values: Readonly<Record<string, string>>):
   return message.replace(/\{(\w+)\}/g, (placeholder, key: string) => values[key] ?? placeholder);
 }
 
-/** The destinations only an admin reaches (`navigation/destinations.ts`). */
+/** The destinations only an admin reaches (`features/navigation/utils/destinations.ts`). */
 export const ADMIN_DESTINATIONS = [
   hr.nav.raspored,
   hr.nav.ljudi,

@@ -107,7 +107,7 @@ that count differ and the case fail. Run the two one after the other.
 ## Writing a spec
 
 - Locators by role, label or text only, with names from
-  `apps/web/src/i18n/locales/hr.json` (`e2e/utils/i18n.ts`). No CSS or id
+  `apps/web/src/lib/i18n/locales/hr.json` (`e2e/utils/i18n.ts`). No CSS or id
   selectors in a spec (the page-object exception is above), no
   `waitForTimeout`; web-first assertions.
 - A new locator goes in its page (`e2e/pages/<screen>.page.ts`), never in the

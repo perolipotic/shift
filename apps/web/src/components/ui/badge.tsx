@@ -1,7 +1,7 @@
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 
-import { cn } from "@/components/utils"
+import { cn } from "@/lib/utils"
 
 // A pill badge (visual refresh B). ITS MEANING IS ITS TEXT: a badge always
 // carries the word it stands for and the variant only reinforces it, so no

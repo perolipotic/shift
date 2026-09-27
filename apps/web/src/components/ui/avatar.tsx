@@ -1,11 +1,11 @@
 import * as React from "react"
 
-import { cn } from "@/components/utils"
+import { cn } from "@/lib/utils"
 
 // A round initials chip (visual refresh B). DECORATIVE: the name it stands for
 // is always rendered beside it, so the chip is hidden from assistive technology
 // here, once, with the bare boolean `aria-hidden`. Screens never spell the
-// attribute. The initials come from `@/components/initials`, which the node
+// attribute. The initials come from `@/utils/initials`, which the node
 // suite executes.
 
 const Avatar = React.forwardRef<

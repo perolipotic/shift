@@ -5,48 +5,48 @@ import type { Session } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 
 import { router } from '@/router';
-import { mayReadMembers } from '@/members/list';
-import { DESTINATIONS, destinationsFor } from '@/navigation/destinations';
+import { mayReadMembers } from '@/features/members/services/list';
+import { DESTINATIONS, destinationsFor } from '@/features/navigation/utils/destinations';
 import {
   currentMemberRole,
   MEMBER_ROLES,
   MEMBER_ROLE_REFUSED,
   MEMBER_ROLE_UNAVAILABLE,
   type MemberRoleOutcome,
-} from '@/navigation/role';
-import { currentSession, SESSION_UNRESOLVED } from '@/supabase/client';
-import { AppLayout, appLayoutRoute } from '@/routes/_app';
-import { DanasScreen, danasRoute } from '@/routes/danas';
-import { GodisnjiScreen, godisnjiRoute } from '@/routes/godisnji';
-import { indexRoute } from '@/routes/index';
-import { KalendarScreen, kalendarRoute } from '@/routes/kalendar';
-import { LjudiMemberScreen, ljudiMemberRoute } from '@/routes/ljudi.$id';
-import { LjudiNoviScreen, ljudiNoviRoute } from '@/routes/ljudi.novi';
-import { LjudiSmjenaScreen, ljudiSmjenaRoute } from '@/routes/ljudi.smjene.$id';
-import { LjudiSmjeneScreen, ljudiSmjeneRoute } from '@/routes/ljudi.smjene';
-import { LjudiScreen, ljudiRoute } from '@/routes/ljudi';
-import { NotFoundScreen } from '@/routes/not-found';
-import { OrganizacijaScreen, organizacijaRoute } from '@/routes/organizacija';
+} from '@/features/navigation/services/role';
+import { currentSession, SESSION_UNRESOLVED } from '@/lib/supabase/client';
+import { AppLayout, appLayoutRoute } from '@/pages/_app';
+import { DanasScreen, danasRoute } from '@/pages/danas';
+import { GodisnjiScreen, godisnjiRoute } from '@/pages/godisnji';
+import { indexRoute } from '@/pages/index';
+import { KalendarScreen, kalendarRoute } from '@/pages/kalendar';
+import { LjudiMemberScreen, ljudiMemberRoute } from '@/pages/ljudi.$id';
+import { LjudiNoviScreen, ljudiNoviRoute } from '@/pages/ljudi.novi';
+import { LjudiSmjenaScreen, ljudiSmjenaRoute } from '@/pages/ljudi.smjene.$id';
+import { LjudiSmjeneScreen, ljudiSmjeneRoute } from '@/pages/ljudi.smjene';
+import { LjudiScreen, ljudiRoute } from '@/pages/ljudi';
+import { NotFoundScreen } from '@/pages/not-found';
+import { OrganizacijaScreen, organizacijaRoute } from '@/pages/organizacija';
 import {
   OrganizacijaSatniPojasScreen,
   organizacijaSatniPojasRoute,
-} from '@/routes/organizacija.satni-pojasi.$id';
+} from '@/pages/organizacija.satni-pojasi.$id';
 import {
   OrganizacijaSatniPojasiScreen,
   organizacijaSatniPojasiRoute,
-} from '@/routes/organizacija.satni-pojasi';
-import { PostavkeRotacijeScreen, postavkeRotacijeRoute } from '@/routes/postavke-rotacije';
+} from '@/pages/organizacija.satni-pojasi';
+import { PostavkeRotacijeScreen, postavkeRotacijeRoute } from '@/pages/postavke-rotacije';
 import {
   PostavkeRotacijeTipSmjeneScreen,
   postavkeRotacijeTipSmjeneRoute,
-} from '@/routes/postavke-rotacije.tipovi-smjena.$id';
-import { OrganizationPromptScreen, prijavaOrganizacijaRoute } from '@/routes/prijava-organizacija';
-import { prijavaRoute, SignInScreen } from '@/routes/prijava';
-import { RasporedScreen, rasporedRoute } from '@/routes/raspored';
-import { SatiScreen, satiRoute } from '@/routes/sati';
-import { SmjenaScreen, smjenaRoute } from '@/routes/smjene.$id';
-import type { AppRouterContext } from '@/routes/__root';
-import { rootRoute } from '@/routes/__root';
+} from '@/pages/postavke-rotacije.tipovi-smjena.$id';
+import { OrganizationPromptScreen, prijavaOrganizacijaRoute } from '@/pages/prijava-organizacija';
+import { prijavaRoute, SignInScreen } from '@/pages/prijava';
+import { RasporedScreen, rasporedRoute } from '@/pages/raspored';
+import { SatiScreen, satiRoute } from '@/pages/sati';
+import { SmjenaScreen, smjenaRoute } from '@/pages/smjene.$id';
+import type { AppRouterContext } from '@/pages/__root';
+import { rootRoute } from '@/pages/__root';
 
 /**
  * The shell's route tree, asserted in the node environment (AD-15).
@@ -70,11 +70,11 @@ function match(pathname: string): { routeId: string; _notFound?: boolean }[] {
  * Every quoted string in a source, read PAST comments rather than through them.
  *
  * For the one sweep that has to ask what a route module STATES: a destination
- * path hard-coded into `routes/index.tsx` is behaviourally identical to the same
+ * path hard-coded into `pages/index.tsx` is behaviourally identical to the same
  * path read from the table, so the source is the only place the two differ.
  *
  * A substring search over the raw text cannot ask that question — it fires on a
- * legitimate `import … from '@/navigation/destinations'` — and the regex comment
+ * legitimate `import … from '@/features/navigation/utils/destinations'` — and the regex comment
  * stripper used elsewhere in this file cannot be used first: it eats real code
  * from the first `//` inside any string. So this walks the source once,
  * skipping both comment forms and collecting each quoted string whole.
@@ -293,7 +293,7 @@ describe('the shell route tree', () => {
       // TWO ROUTES THAT ARE NOT DESTINATIONS (story 1.5b). Both nest under the
       // same pathless layout as the eight, so the session guard covers them
       // without either file carrying a copy of it — and both are deliberately
-      // absent from `@/navigation/destinations`, because the chrome offers
+      // absent from `@/features/navigation/utils/destinations`, because the chrome offers
       // places and these two are reached from the member list.
       //
       // The STATIC id sorts before the parameterized one here only because `$`
@@ -484,7 +484,7 @@ describe('the eight destinations are registered and each renders its own screen'
   });
 
   it('registers exactly the paths the destination table names', () => {
-    // The seam between the two halves of this story. `@/navigation/destinations`
+    // The seam between the two halves of this story. `@/features/navigation/utils/destinations`
     // is what part B renders links from, and a path typo'd on either side is a
     // link to nowhere that neither file can notice alone: the table's test
     // resolves keys against `hr.json` and never sees the router, and the
@@ -613,7 +613,7 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
   it('forwards to the first destination in binding order, read from the table', async () => {
     // FROM THE TABLE, never a literal on either side. A path written here would
     // agree with the same path hard-coded in the route and with nothing else,
-    // and the day the first row of `@/navigation/destinations` changes both
+    // and the day the first row of `@/features/navigation/utils/destinations` changes both
     // would keep naming the old one.
     const thrown = (await beforeLoad(SESSION)) as { options: { to?: string } };
 
@@ -725,7 +725,7 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
     //
     // STRING LITERALS rather than raw text, which matters in both directions. A
     // substring sweep over the source would fire on a future
-    // `import … from '@/navigation/destinations'` — a legitimate line naming no
+    // `import … from '@/features/navigation/utils/destinations'` — a legitimate line naming no
     // path — and a comment stripper run over raw text eats real code from the
     // first `//` inside any string. Reading the quoted strings out and comparing
     // them WHOLE asks the only question worth asking: does this file state a
@@ -734,7 +734,7 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
     // `/prijava` is not on the list and must not be: the signed-out branch names
     // it deliberately, and `/` has no slug in scope to build anything else from.
     const literals = stringLiterals(
-      readFileSync(new URL('./routes/index.tsx', import.meta.url), 'utf8'),
+      readFileSync(new URL('./pages/index.tsx', import.meta.url), 'utf8'),
     );
 
     expect(literals.length, 'no string literal was read out of index.tsx at all').toBeGreaterThan(0);
@@ -771,12 +771,12 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
   });
 
   it('names no role, and nothing that would let it read one', () => {
-    // SESSION ONLY, exactly as `routes/_app.tsx` is, and swept the same way and
+    // SESSION ONLY, exactly as `pages/_app.tsx` is, and swept the same way and
     // for the same reason: a role check written here would be unreachable
     // against these stubs, so no behavioural assertion could see it. `/` sends
     // every role to the same destination — the case above is why that is safe —
     // so there is nothing here for a role to decide.
-    const source = readFileSync(new URL('./routes/index.tsx', import.meta.url), 'utf8')
+    const source = readFileSync(new URL('./pages/index.tsx', import.meta.url), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/(^|[\s;,{}()[\]])\/\/[^\n]*/g, '$1');
 
@@ -849,7 +849,7 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
 
     expect(
       context?.currentSession,
-      'the router does not resolve sessions through @/supabase/client',
+      'the router does not resolve sessions through @/lib/supabase/client',
     ).toBe(currentSession);
     // THE SAME CLAIM FOR THE SECOND READER, story 1.5a. `/ljudi`'s guard reads
     // the level through the context and every assertion about it supplies its
@@ -858,7 +858,7 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
     // everybody with the whole suite green.
     expect(
       context?.currentMemberRole,
-      'the router does not resolve permission levels through @/navigation/role',
+      'the router does not resolve permission levels through @/features/navigation/services/role',
     ).toBe(currentMemberRole);
   });
 
@@ -1092,7 +1092,7 @@ describe('a signed-in visitor is never offered a credential form', () => {
   });
 
   it.each(SIGN_IN_ROUTES)('fails OPEN on $name when the session cannot be read', async ({ route }) => {
-    // THE OPPOSITE DEFAULT to `routes/_app.tsx`, and the asymmetry is the
+    // THE OPPOSITE DEFAULT to `pages/_app.tsx`, and the asymmetry is the
     // decision. The layout treats an unreadable session as no session, because
     // letting somebody through puts them on screens every query refuses. Here
     // the same unreadable session must render the FORM: redirecting on a failed
@@ -1278,13 +1278,13 @@ describe('the signed-in layout guards every destination once, and is pathless', 
     // reaches it, and today that is correct — AD-10 puts isolation and role
     // enforcement in the database, and these eight screens hold no data for a
     // role check to protect. What decides that a member never SEES the
-    // destination is `@/navigation/destinations`.
+    // destination is `@/features/navigation/utils/destinations`.
     //
     // Read off the SOURCE, because a role check that never fires against these
     // stubs is invisible to a behavioural assertion: every branch of it would
     // be unreachable while the screens are empty, so the suite would stay green
     // whichever way it was written.
-    const layout = readFileSync(new URL('./routes/_app.tsx', import.meta.url), 'utf8')
+    const layout = readFileSync(new URL('./pages/_app.tsx', import.meta.url), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/(^|[\s;,{}()[\]])\/\/[^\n]*/g, '$1');
 
@@ -1600,7 +1600,7 @@ describe('the member list is the first destination that refuses a permission lev
   it('decides on the level the rank order names, not on a literal of its own', () => {
     // The guard's decision as a VALUE, so the reorder mutation reaches it. The
     // exhaustive pinning of `MEMBER_ROLES[0]` against the literal `'admin'`
-    // lives in `members/list.test.ts`; what this adds is that the route's
+    // lives in `features/members/services/list.test.ts`; what this adds is that the route's
     // decision is the same function, so the two cannot drift.
     expect(mayReadMembers({ ok: true, role: MEMBER_ROLES[0] })).toBe(true);
     expect(mayReadMembers({ ok: true, role: 'member_role' })).toBe(false);

@@ -1,7 +1,7 @@
 import * as React from "react"
 import { CircleAlert, CircleCheck } from "lucide-react"
 
-import { cn } from "@/components/utils"
+import { cn } from "@/lib/utils"
 
 // The one refusal and confirmation box (visual refresh B), in the Input look:
 // a 1.5px `input` border on the card colour. No copy and no `t()`: the screen

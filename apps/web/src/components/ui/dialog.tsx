@@ -2,7 +2,7 @@ import * as React from "react"
 import { X } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
-import { cn } from "@/components/utils"
+import { cn } from "@/lib/utils"
 
 // The one modal (design refresh C), on the NATIVE `<dialog>` and its
 // `showModal()`: the browser supplies the focus trap, the inert page behind

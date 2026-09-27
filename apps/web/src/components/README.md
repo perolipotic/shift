@@ -7,13 +7,14 @@ never overrides its colour, radius, border, shadow or type. If a screen needs a
 primitive to look different, the primitive changes for every screen, or a new
 primitive is added here.
 
-`utils.ts` holds shadcn's `cn` merger; `components.json` points the `utils`,
-`lib` and `hooks` aliases here so no directory outside the architecture spine's
-`src/` shape is created. `initials.ts` is the one pure rule for initials: the
-avatar chips and the organization lockup's neutral mark both draw from it.
+`layout/auth-layout.tsx` is the shared frame of the sign-in screens. shadcn's
+`cn` merger lives in `lib/utils.ts`, and `components.json` points the `utils`,
+`lib` and `hooks` aliases at `@/lib/utils`, `@/lib` and `@/hooks`, shadcn's own
+defaults. `utils/initials.ts` is the one pure rule for initials: the avatar
+chips and the organization lockup's neutral mark both draw from it.
 
 No component contains a user-facing literal or calls `t()`. Every string comes
-from `i18n/`, passed in by the screen.
+from `lib/i18n/`, passed in by the screen.
 
 ## The page skeleton
 
@@ -66,7 +67,7 @@ Every screen (destination, form, placeholder or not-found) is built the same way
 
 A list the person reorders uses `@dnd-kit` (`core` + `sortable`), never native
 HTML5 drag-and-drop, which is unreliable on touch. The rotation builder's steps
-(`rotation/rotation-section.tsx`) are the reference:
+(`features/rotation/components/rotation-section.tsx`) are the reference:
 
 - Each item is one row that never wraps. Only a ghost `Button` handle
   (`GripVertical`, `h-11 w-11`, `touch-none`) activates the drag

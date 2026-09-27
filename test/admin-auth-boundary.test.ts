@@ -15,8 +15,8 @@ import {
   editFailureOf,
   memberWriteFailureOf,
   memberWriteMessageKey,
-} from '../apps/web/src/members/wire.ts';
-import { normalizeUsername, signInAddress } from '../apps/web/src/supabase/address.ts';
+} from '../apps/web/src/features/members/services/wire.ts';
+import { normalizeUsername, signInAddress } from '../apps/web/src/features/auth/services/address.ts';
 import {
   ACCESS_UNREADABLE,
   ADMIN_ROLE,
@@ -561,7 +561,7 @@ describe('every constant that decides a security outcome is pinned to the databa
   it('refuses exactly the usernames the database refuses, in all three places', () => {
     // THE SHAPE RULE EXISTS THREE TIMES and nothing bound it: `0007`'s CHECK,
     // `normalizedUsername` here, and `normalizeUsername` in
-    // `apps/web/src/supabase/address.ts`. Loosen one and the function accepts a
+    // `apps/web/src/features/auth/services/address.ts`. Loosen one and the function accepts a
     // username the database refuses with a constraint violation naming nothing
     // an admin can act on — or the sign-in path refuses a username an account
     // genuinely holds. Both suites stay green, because each copy is tested
@@ -637,7 +637,7 @@ describe('every constant that decides a security outcome is pinned to the databa
 describe('the function and the SPA speak one vocabulary, bound here', () => {
   /**
    * THE ONE FILE THAT CAN IMPORT BOTH TREES, and the only place this contract
-   * can be made at all. `apps/web/src/members/wire.ts` is a leaf precisely so
+   * can be made at all. `apps/web/src/features/members/services/wire.ts` is a leaf precisely so
    * this import resolves under pnpm's isolated linker.
    *
    * WRITTEN TWICE AND BOUND BY NOTHING, renaming the VALUE of `MEMBER_CREATED`
@@ -899,7 +899,7 @@ describe('the password an admin hands over is generated, not typed', () => {
 
 // ---------------------------------------------------------------------------
 // The stubs the two operations are driven against. Structural and narrow, the
-// shape `members/list.ts`'s `MembersTable` established: a stub does not have to
+// shape `features/members/services/list.ts`'s `MembersTable` established: a stub does not have to
 // impersonate the rest of PostgREST, only the four links these modules use.
 // ---------------------------------------------------------------------------
 

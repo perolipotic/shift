@@ -29,7 +29,7 @@ import { describe, expect, it } from 'vitest';
  */
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
-const RESOURCE = join(repoRoot, 'apps', 'web', 'src', 'i18n', 'locales', 'hr.json');
+const RESOURCE = join(repoRoot, 'apps', 'web', 'src', 'lib', 'i18n', 'locales', 'hr.json');
 
 /** The two plural messages story 1.1c is permitted to ship (`EXPERIENCE.md:81`).
  *  Only these carry an ICU `plural` argument, so only these are checked for the
@@ -133,7 +133,7 @@ const SANCTIONED_SCREEN_KEYS = [
   // (human decision, 2026-09-04). There is still no `nav.odjava`, and there is
   // still not meant to be one — the chrome's exit ships as `shell.signOut`
   // below, because this namespace is DESTINATIONS and the exit is an action
-  // rather than a place. `apps/web/src/navigation/destinations.test.ts` holds
+  // rather than a place. `apps/web/src/features/navigation/utils/destinations.test.ts` holds
   // the two apart by comparing every `nav.*` key to the eight exactly.
   'nav.danas',
   'nav.kalendar',
@@ -192,7 +192,7 @@ const SANCTIONED_SCREEN_KEYS = [
   // FIVE, AND NEVER SIX, is the thing this list is really holding: the option
   // names, `0006`'s check constraint, the tokens in `index.css` and the pairs
   // in `test/theme-contrast.test.ts` are four places one accent exists, and
-  // `apps/web/src/organization/accent.test.ts` refuses them apart. Adding a
+  // `apps/web/src/features/organization/utils/accent.test.ts` refuses them apart. Adding a
   // fifth accent means editing all four in one commit — which is the review
   // moment, and it is deliberately not cheap.
   'organization.accent',
@@ -227,7 +227,7 @@ const SANCTIONED_SCREEN_KEYS = [
   // The one refusal on this surface that is not the database's: `0002:93`
   // leaves `timezone` unchecked because `pg_timezone_names` is not immutable,
   // so the value every later screen renders against is validated in
-  // `@/i18n/format` and refused before the write.
+  // `@/lib/i18n/format` and refused before the write.
   'organization.error.timezone',
   // FIVE MORE from story 1.4b, and the partition is the point again. The
   // storage layer refuses in five distinguishable ways — a refused write, a
@@ -302,7 +302,7 @@ const SANCTIONED_SCREEN_KEYS = [
   // would be two words for one thing — the argument `ljudi.role` already makes
   // about being both a heading and the filter's label. `ljudi.form.username` is
   // the one field with no column, because `0007`'s username renders in no
-  // column (`apps/web/src/members/list.ts`).
+  // column (`apps/web/src/features/members/services/list.ts`).
   'ljudi.form.newHeading',
   'ljudi.form.editHeading',
   'ljudi.form.add',
@@ -491,7 +491,7 @@ const SANCTIONED_SCREEN_KEYS = [
   // TWO refusals, and the partition is the point in one direction and the
   // collapse in the other. A role that cannot be read, one that reaches no row
   // and one this build does not recognise are three CODES
-  // (`apps/web/src/navigation/role.ts`) and one message, because none of the
+  // (`apps/web/src/features/navigation/services/role.ts`) and one message, because none of the
   // three leaves the person anything to do but try again — the unrecognised
   // value is logged, where it can be acted on, rather than rendered. The
   // sign-out failure stays its own message because it is a different action:

@@ -1,6 +1,6 @@
 import * as React from "react"
 
-import { cn } from "@/components/utils"
+import { cn } from "@/lib/utils"
 
 // Restyled once, here (visual refresh A): a 1.5px boundary in `--input` — the
 // token held to 3:1 because it is the field's only affordance — on the card

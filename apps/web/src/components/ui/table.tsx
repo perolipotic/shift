@@ -1,6 +1,6 @@
 import * as React from "react"
 
-import { cn } from "@/components/utils"
+import { cn } from "@/lib/utils"
 
 // Vendored from shadcn/ui and restyled ONCE, here, to DESIGN.md's register
 // (visual refresh A): uppercase header cells on `muted`, dividing rows that

@@ -28,9 +28,9 @@ useDefault = true
 # ---------------------------------------------------------------------------
 
 [[allowlists]]
-description = "Unit-test fixture: the generated password a mocked admin-auth reply carries (apps/web/src/members/write.test.ts). No account anywhere has it; the function is stubbed."
+description = "Unit-test fixture: the generated password a mocked admin-auth reply carries (apps/web/src/features/members/services/write.test.ts). No account anywhere has it; the function is stubbed."
 condition = "AND"
-paths = ['''^apps/web/src/members/write\.test\.ts$''']
+paths = ['''^apps/web/src/features/members/services/write\.test\.ts$''']
 regexes = ['''^Xy7kPq2mRt4vLn8s$''']
 
 [[allowlists]]

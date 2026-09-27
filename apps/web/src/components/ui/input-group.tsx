@@ -1,6 +1,6 @@
 import * as React from "react"
 
-import { cn } from "@/components/utils"
+import { cn } from "@/lib/utils"
 
 // A field with a leading icon (design refresh C). The group makes room for the
 // icon on whichever `Input` or `Select` it wraps, so neither primitive

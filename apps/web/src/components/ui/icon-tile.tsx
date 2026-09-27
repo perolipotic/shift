@@ -1,7 +1,7 @@
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 
-import { cn } from "@/components/utils"
+import { cn } from "@/lib/utils"
 
 // A rounded square holding one icon (design refresh C): beside a row's name, a
 // stat's label or a card's title. DECORATIVE ALWAYS. The tile is hidden from

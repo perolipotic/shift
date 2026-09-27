@@ -869,3 +869,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-d-e2e-page-objects.md`
   summary: Enforce the page-object rule with lint (`no-restricted-syntax` on `page.getBy*`/`page.locator` under `e2e/tests/**`) and tidy the page-object API (public `path` reused by `responsive.spec.ts`'s screens, a `DanasPage`, one `pages` fixture, and collapsing near-duplicate methods such as `listedMember`/`editLink` and `announced`/`text`).
   evidence: Raised by D's review. Today the rule is only a README line and a grep in the spec's acceptance criteria, so a new spec can reintroduce raw locators. The API duplicates are cosmetic but grow with every screen.
+- source_spec: none
+  summary: Source structure A2 — each `features/<m>/index.ts` becomes the module's public API, an ESLint `no-restricted-imports` rule forbids deep imports across features (same-feature deep imports allowed), and `App.tsx` takes the providers out of `main.tsx`.
+  evidence: Split from source-structure-a-web-move at the user's request (2026-09-27, sprint-change-proposal-2026-09-27-source-structure.md §4.1). A is a pure file move with no content change beyond paths. Barrels risk import cycles between features, and the `App.tsx` extraction moves a guarded block (`organization/snapshot.test.ts` reads `main.tsx`), so both are reviewed on their own.

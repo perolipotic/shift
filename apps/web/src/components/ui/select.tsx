@@ -1,7 +1,7 @@
 import * as React from "react"
 import { ChevronDown } from "lucide-react"
 
-import { cn } from "@/components/utils"
+import { cn } from "@/lib/utils"
 
 // The one select, and still the NATIVE `<select>`: it brings keyboard
 // behaviour on every platform, an accessible name through its `<Label>`, a

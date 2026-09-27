@@ -70,11 +70,11 @@ const LABEL_ATTRIBUTE =
   'JSXOpeningElement[name.name=/^(optgroup|option|track)$/] > JSXAttribute[name.name="label"]';
 
 const BRANCH_MESSAGE =
-  'L2: a literal in a ternary or a guard is still a hard-coded string, and a branch between two words is also how a plural gets hand-rolled (L7). Add both outcomes to apps/web/src/i18n/locales/hr.json and branch between t() calls.';
+  'L2: a literal in a ternary or a guard is still a hard-coded string, and a branch between two words is also how a plural gets hand-rolled (L7). Add both outcomes to apps/web/src/lib/i18n/locales/hr.json and branch between t() calls.';
 const ATTRIBUTE_MESSAGE =
-  'L2: an assistive-technology or placeholder string is user-facing too — braces, a template literal and a ternary do not change that. Add it to apps/web/src/i18n/locales/hr.json and pass t() instead.';
+  'L2: an assistive-technology or placeholder string is user-facing too — braces, a template literal and a ternary do not change that. Add it to apps/web/src/lib/i18n/locales/hr.json and pass t() instead.';
 const LABEL_MESSAGE =
-  'L2: the label on an optgroup, option or track renders to the user. Add it to apps/web/src/i18n/locales/hr.json and pass t().';
+  'L2: the label on an optgroup, option or track renders to the user. Add it to apps/web/src/lib/i18n/locales/hr.json and pass t().';
 
 export default [
   {
@@ -175,13 +175,13 @@ export default [
         {
           selector: `JSXText[value=/${CONTENT}/]`,
           message:
-            'L2: no user-facing literal in a component. Add the string to apps/web/src/i18n/locales/hr.json and render it through t(). If this text is not user-facing, it does not belong in JSX.',
+            'L2: no user-facing literal in a component. Add the string to apps/web/src/lib/i18n/locales/hr.json and render it through t(). If this text is not user-facing, it does not belong in JSX.',
         },
         // ---- a string as an element child, braced or templated, branch or not
         {
           selector: `${CHILD_CONTAINER} > ${CONTENT_STRING}`,
           message:
-            'L2: a string in braces is still a hard-coded string, and a template literal assembled around a value is also how a date gets built by hand (L6). Add it to apps/web/src/i18n/locales/hr.json and render it through t().',
+            'L2: a string in braces is still a hard-coded string, and a template literal assembled around a value is also how a date gets built by hand (L6). Add it to apps/web/src/lib/i18n/locales/hr.json and render it through t().',
         },
         {
           selector: `${CHILD_CONTAINER} > ${BRANCH} > ${CONTENT_STRING}`,
@@ -252,7 +252,7 @@ export default [
             {
               group: ['@supabase/*'],
               message:
-                'packages/domain is pure (AD-7): no Supabase client. Data access belongs in apps/web/src/supabase.',
+                'packages/domain is pure (AD-7): no Supabase client. Data access belongs in apps/web/src/features/<module>/services, and the client lives in apps/web/src/lib/supabase.',
             },
           ],
         },

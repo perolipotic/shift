@@ -1,6 +1,6 @@
 import * as React from "react"
 
-import { cn } from "@/components/utils"
+import { cn } from "@/lib/utils"
 
 // An explanation box (design refresh C): a tinted panel with an icon tile, a
 // title, a sentence or two, and an optional action at the right. It EXPLAINS

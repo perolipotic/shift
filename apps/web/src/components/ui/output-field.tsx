@@ -1,6 +1,6 @@
 import * as React from "react"
 
-import { cn } from "@/components/utils"
+import { cn } from "@/lib/utils"
 
 // A computed value shown where a field would be (design refresh C): the same
 // height and radius as `Input`, so it lines up beside one, but DASHED and on
