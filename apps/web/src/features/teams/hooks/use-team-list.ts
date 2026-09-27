@@ -77,8 +77,11 @@ export function useTeamList() {
       const { data } = await client.auth.getSession();
       const organization = claimedOrganizationOf(data.session?.access_token);
 
+      // Refused as an ordinary refusal is: the entered value stays and the
+      // field takes focus.
       if (organization === null) {
         setFailure(TEAM_WRITE_REFUSED);
+        name.focus();
 
         return;
       }
