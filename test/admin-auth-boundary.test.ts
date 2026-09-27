@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,11 +23,16 @@ import {
   CURRENT_MEMBER_ACCESS,
   NOT_AN_ADMIN,
   authorizeAdminOf,
+  codeOf,
   type AccessAnswer,
   type AccessReader,
 } from '../supabase/functions/admin-auth/authorize.ts';
 import {
   AUTHORIZATION_MISSING,
+  BODY_LIMIT_BYTES,
+  BODY_NOT_JSON,
+  BODY_TOO_LARGE,
+  CONTENT_TYPE_UNSUPPORTED,
   OPERATIONS,
   TRANSPORT_CODES,
   createHandler,
@@ -60,6 +65,7 @@ import {
   ORGANIZATION_UNREADABLE,
   createPayloadOf,
   createUser,
+  isUuid,
   membersRefusal,
   normalizedUsername,
   resetAttributes,
@@ -907,7 +913,9 @@ const ORGANIZATION = 'organization-1';
 const OTHER_ORGANIZATION = 'organization-2';
 const SLUG = 'dvd-kastel-novi';
 const ACCOUNT = 'auth-user-1';
-const MEMBER = 'member-1';
+// A UUID, because `members.id` is one and both operations that take a member
+// id refuse anything else before they query.
+const MEMBER = '5d1c6b3e-2f4a-4c8e-9b7d-1a2b3c4d5e6f';
 
 /** One row of `current_member_access()`, spelled the way the function spells it. */
 function accessRow(fields: Readonly<Record<string, unknown>> = {}): Record<string, unknown> {
@@ -1385,7 +1393,12 @@ describe('createUser: an account and the row that gives it an organization', () 
       // operator needs it, and the log line is where they read it.
       expect(reply.body).toEqual({ code: ACCOUNT_NOT_REMOVED });
       expect(JSON.stringify(reply.body), 'the reply carries an internal id').not.toContain(ACCOUNT);
-      expect(logged).toHaveBeenCalledWith(ACCOUNT_NOT_REMOVED, ACCOUNT);
+      // THE LOG CARRIES CODES, NEVER THE ID. The log policy: a stable code and
+      // non-sensitive scalars, never an operand.
+      expect(logged).toHaveBeenCalledWith(ACCOUNT_NOT_REMOVED, 'not_found', undefined);
+      for (const call of logged.mock.calls) {
+        expect(JSON.stringify(call), 'a log line carries an internal id').not.toContain(ACCOUNT);
+      }
     } finally {
       logged.mockRestore();
     }
@@ -1600,7 +1613,10 @@ describe('updateUserById: the row moves first, then the address', () => {
       // The code and nothing else — see the note on `ACCOUNT_NOT_REMOVED`.
       expect(reply.body).toEqual({ code: USERNAME_NOT_RESTORED });
       expect(JSON.stringify(reply.body), 'the reply carries an internal id').not.toContain(MEMBER);
-      expect(logged).toHaveBeenCalledWith(USERNAME_NOT_RESTORED, MEMBER);
+      expect(logged).toHaveBeenCalledWith(USERNAME_NOT_RESTORED, '42501');
+      for (const call of logged.mock.calls) {
+        expect(JSON.stringify(call), 'a log line carries an internal id').not.toContain(MEMBER);
+      }
     } finally {
       logged.mockRestore();
     }
@@ -2172,6 +2188,737 @@ describe('the dispatch is wrapped, so a throw is still a reply the SPA can read'
       }
       expect(JSON.stringify(accounts.log.updated)).toContain(password);
       expect(Object.keys(accounts.log.updated[0]?.attributes ?? {})).toEqual(['password']);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+});
+
+
+describe('admin-auth refuses a malformed request before it parses anything', () => {
+  function raw(
+    headers: Record<string, string>,
+    body: string | ReadableStream<Uint8Array>,
+    extra: RequestInit = {},
+  ): Request {
+    return new Request('http://localhost/admin-auth', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer caller-jwt', Origin: ALLOWED_ORIGIN, ...headers },
+      body,
+      ...extra,
+    });
+  }
+
+  const JSON_TYPE = { 'content-type': 'application/json' };
+  const STREAMED = { duplex: 'half' } as RequestInit;
+
+  /** A JSON body of exactly `bytes` bytes: the probe, padded with spaces. */
+  function bodyOf(bytes: number): string {
+    const probe = JSON.stringify({ operation: TRANSPORT_PROBE });
+
+    return probe + ' '.repeat(bytes - probe.length);
+  }
+
+  function streamOf(text: string, chunk = 1024): ReadableStream<Uint8Array> {
+    const bytes = new TextEncoder().encode(text);
+    let offset = 0;
+
+    return new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (offset >= bytes.length) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(bytes.slice(offset, offset + chunk));
+        offset += chunk;
+      },
+    });
+  }
+
+  async function expectRefusal(response: Response, status: number, code: string): Promise<void> {
+    expect(response.status).toBe(status);
+    expect(await response.json()).toEqual({ code });
+    expect(response.headers.get('access-control-allow-origin')).toBe(ALLOWED_ORIGIN);
+    expect(response.headers.get('vary')).toBe('Origin');
+  }
+
+  it.each([
+    ['no content type', {}],
+    ['text/plain', { 'content-type': 'text/plain' }],
+    ['a form', { 'content-type': 'application/x-www-form-urlencoded' }],
+    ['a JSON look-alike', { 'content-type': 'application/json-patch+json' }],
+  ])('refuses %s as 415 CONTENT_TYPE_UNSUPPORTED, with CORS', async (_label, headers) => {
+    const dependencies = deps();
+    const handle = createHandler(readConfiguration(envFrom()), dependencies);
+
+    const response = await handle(raw(headers, JSON.stringify({ operation: TRANSPORT_PROBE })));
+
+    await expectRefusal(response, 415, CONTENT_TYPE_UNSUPPORTED);
+    expect(dependencies.makePrivilegedClient).not.toHaveBeenCalled();
+  });
+
+  it('admits JSON with a charset parameter, in any case', async () => {
+    const handle = createHandler(readConfiguration(envFrom()), deps());
+
+    const response = await handle(
+      raw({ 'content-type': 'Application/JSON; charset=utf-8' }, JSON.stringify({ operation: TRANSPORT_PROBE })),
+    );
+
+    // Past the transport: refused by the operation's own validation.
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ code: PAYLOAD_INVALID });
+  });
+
+  it('refuses a body one byte over the bound as 413, on the STREAM path', async () => {
+    const dependencies = deps();
+    const handle = createHandler(readConfiguration(envFrom()), dependencies);
+    const request = raw(JSON_TYPE, bodyOf(BODY_LIMIT_BYTES + 1));
+
+    // THE PATH IT TAKES: a string body declares no length on the Request, so
+    // this is refused by counting the bytes read, not by the header.
+    expect(request.headers.get('content-length')).toBeNull();
+
+    await expectRefusal(await handle(request), 413, BODY_TOO_LARGE);
+    expect(dependencies.makePrivilegedClient).not.toHaveBeenCalled();
+  });
+
+  it('refuses an oversized STREAMED body that declares no length, with CORS', async () => {
+    const dependencies = deps();
+    const handle = createHandler(readConfiguration(envFrom()), dependencies);
+    const request = raw(JSON_TYPE, streamOf(bodyOf(BODY_LIMIT_BYTES * 4)), STREAMED);
+
+    expect(request.headers.get('content-length')).toBeNull();
+
+    await expectRefusal(await handle(request), 413, BODY_TOO_LARGE);
+    expect(dependencies.makePrivilegedClient).not.toHaveBeenCalled();
+  });
+
+  it('refuses a declared length over the bound, before reading it, with CORS', async () => {
+    const handle = createHandler(readConfiguration(envFrom()), deps());
+    let pulls = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        controller.enqueue(new TextEncoder().encode(bodyOf(64)));
+        controller.close();
+      },
+    });
+
+    const response = await handle(
+      raw({ ...JSON_TYPE, 'content-length': String(BODY_LIMIT_BYTES + 1) }, body, STREAMED),
+    );
+
+    await expectRefusal(response, 413, BODY_TOO_LARGE);
+    // THE HEADER PATH: nothing was read. (A stream may pull once on its own when
+    // it is constructed, before anybody reads it.)
+    expect(pulls).toBeLessThanOrEqual(1);
+  });
+
+  it('refuses an oversized body that DECLARES a small length, on the stream bound', async () => {
+    // A lying header must not buy a caller an unbounded read.
+    const handle = createHandler(readConfiguration(envFrom()), deps());
+
+    const response = await handle(
+      raw({ ...JSON_TYPE, 'content-length': '10' }, streamOf(bodyOf(BODY_LIMIT_BYTES * 2)), STREAMED),
+    );
+
+    await expectRefusal(response, 413, BODY_TOO_LARGE);
+  });
+
+  it.each(['1e9', '0x10000', '+99999', '99999.0'])(
+    'ignores a declared length %j that is not strictly digits, and relies on the stream',
+    async (declared) => {
+      const handle = createHandler(readConfiguration(envFrom()), deps());
+
+      const response = await handle(
+        raw({ ...JSON_TYPE, 'content-length': declared }, streamOf(bodyOf(64)), STREAMED),
+      );
+
+      // A small real body: past the transport, refused by the operation.
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ code: PAYLOAD_INVALID });
+    },
+  );
+
+  it('counts BYTES, not characters', async () => {
+    // `š` is two bytes in UTF-8. This body is under the bound in characters
+    // and over it in bytes.
+    const body = JSON.stringify({
+      operation: TRANSPORT_PROBE,
+      pad: 'š'.repeat(BODY_LIMIT_BYTES / 2 + 64),
+    });
+
+    expect(body.length).toBeLessThan(BODY_LIMIT_BYTES);
+    expect(new TextEncoder().encode(body).byteLength).toBeGreaterThan(BODY_LIMIT_BYTES);
+
+    const handle = createHandler(readConfiguration(envFrom()), deps());
+
+    await expectRefusal(await handle(raw(JSON_TYPE, body)), 413, BODY_TOO_LARGE);
+  });
+
+  it('stops reading once the bound is passed', async () => {
+    // A stream that would go on far past the bound. A full-buffer
+    // implementation drains all of it (and only then refuses); the bounded
+    // reader stops within a chunk or two of the limit.
+    const CHUNK = 1024;
+    const CAP = 1000;
+    let pulls = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls > CAP) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(new Uint8Array(CHUNK).fill(0x20));
+      },
+    });
+    const handle = createHandler(readConfiguration(envFrom()), deps());
+
+    await expectRefusal(await handle(raw(JSON_TYPE, endless, STREAMED)), 413, BODY_TOO_LARGE);
+    expect(pulls).toBeLessThanOrEqual(BODY_LIMIT_BYTES / CHUNK + 3);
+  });
+
+  it('still answers 413 when cancelling the stream rejects', async () => {
+    // CAPPED, so an implementation that ignores the bound still terminates
+    // (and then fails the assertion) rather than buffering for ever.
+    let pulls = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulls += 1;
+        if (pulls > 1000) {
+          controller.close();
+          return;
+        }
+        controller.enqueue(new Uint8Array(1024).fill(0x20));
+      },
+      cancel() {
+        throw new Error('cancel refused');
+      },
+    });
+    const handle = createHandler(readConfiguration(envFrom()), deps());
+
+    await expectRefusal(await handle(raw(JSON_TYPE, endless, STREAMED)), 413, BODY_TOO_LARGE);
+  });
+
+  it('answers a stream that errors as 400 BODY_NOT_JSON, with CORS', async () => {
+    const broken = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.error(new Error('connection reset'));
+      },
+    });
+    const dependencies = deps();
+    const handle = createHandler(readConfiguration(envFrom()), dependencies);
+
+    await expectRefusal(await handle(raw(JSON_TYPE, broken, STREAMED)), 400, BODY_NOT_JSON);
+    expect(dependencies.makePrivilegedClient).not.toHaveBeenCalled();
+  });
+
+  it('applies the bound BEFORE the parse: an oversized non-JSON body is 413, not 400', async () => {
+    const handle = createHandler(readConfiguration(envFrom()), deps());
+    const garbage = '{ not json' + 'x'.repeat(BODY_LIMIT_BYTES);
+
+    await expectRefusal(await handle(raw(JSON_TYPE, garbage)), 413, BODY_TOO_LARGE);
+  });
+
+  it('checks the media type BEFORE the size: an oversized text/plain body is 415', async () => {
+    const handle = createHandler(readConfiguration(envFrom()), deps());
+
+    await expectRefusal(
+      await handle(raw({ 'content-type': 'text/plain' }, bodyOf(BODY_LIMIT_BYTES * 2))),
+      415,
+      CONTENT_TYPE_UNSUPPORTED,
+    );
+  });
+
+  it('admits a body of exactly the bound', async () => {
+    const handle = createHandler(readConfiguration(envFrom()), deps());
+
+    const response = await handle(raw(JSON_TYPE, bodyOf(BODY_LIMIT_BYTES)));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ code: PAYLOAD_INVALID });
+  });
+
+  it('keeps the bound small: 16 KiB, far above any real payload', () => {
+    expect(BODY_LIMIT_BYTES).toBe(16 * 1024);
+    expect(JSON.stringify({ operation: 'createUser', ...creation() }).length).toBeLessThan(
+      BODY_LIMIT_BYTES / 8,
+    );
+  });
+
+  it('still serves a well-formed request end to end', async () => {
+    const accounts = accountsThat();
+    const caller = callerThat({ reads: SLUG_READ });
+    const handle = createHandler(readConfiguration(envFrom()), {
+      makePrivilegedClient: () => accounts.client,
+      makeCallerClient: () => caller.client,
+    });
+
+    const response = await handle(
+      raw(
+        { 'content-type': 'application/json; charset=utf-8' },
+        JSON.stringify({ operation: 'createUser', ...creation() }),
+      ),
+    );
+
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({ code: MEMBER_CREATED });
+  });
+});
+
+describe('a member id that is not a UUID names nobody, and is refused before any query', () => {
+  const NOT_UUIDS = [
+    'member-1',
+    '1',
+    "5d1c6b3e-2f4a-4c8e-9b7d-1a2b3c4d5e6f' or 1=1",
+    // CANONICAL HYPHENATED FORM ONLY, on purpose: the SPA only ever sends ids
+    // it read back from PostgREST, which prints them this way.
+    '5d1c6b3e2f4a4c8e9b7d1a2b3c4d5e6f',
+    '{5d1c6b3e-2f4a-4c8e-9b7d-1a2b3c4d5e6f}',
+    ' ' + MEMBER,
+  ];
+  const UNKNOWN_READ = { members: [{ data: [], error: null }] };
+
+  it('recognises a canonical UUID and nothing else', () => {
+    expect(isUuid(MEMBER)).toBe(true);
+    expect(isUuid(MEMBER.toUpperCase())).toBe(true);
+    for (const value of NOT_UUIDS) expect(isUuid(value), value).toBe(false);
+  });
+
+  it.each(NOT_UUIDS)('updateUserById answers %j as MEMBER_UNKNOWN and reads nothing', async (memberId) => {
+    const accounts = accountsThat();
+    const caller = callerThat({ reads: MEMBER_READ });
+
+    await expect(
+      updateUserById(
+        { privileged: accounts.client, caller: caller.client },
+        { memberId, username: 'ana.kovacic' },
+      ),
+    ).resolves.toEqual({ status: 404, body: { code: MEMBER_UNKNOWN } });
+    expect(caller.log.reads).toEqual([]);
+    expect(caller.log.rpc).toEqual([]);
+    expect(caller.log.updates).toEqual([]);
+    expect(accounts.log.updated).toEqual([]);
+  });
+
+  it.each(NOT_UUIDS)('resetPassword answers %j as MEMBER_UNKNOWN and reads nothing', async (memberId) => {
+    const accounts = accountsThat();
+    const caller = callerThat({
+      reads: { members: [{ data: [{ organization_id: ORGANIZATION, auth_user_id: ACCOUNT }], error: null }] },
+    });
+
+    await expect(
+      resetPassword({ privileged: accounts.client, caller: caller.client }, { memberId }),
+    ).resolves.toEqual({ status: 404, body: { code: MEMBER_UNKNOWN } });
+    expect(caller.log.reads).toEqual([]);
+    expect(caller.log.rpc).toEqual([]);
+    expect(accounts.log.updated).toEqual([]);
+  });
+
+  it('resetPassword: a malformed id answers exactly what an unknown UUID answers', async () => {
+    const unknown = await resetPassword(
+      { privileged: accountsThat().client, caller: callerThat({ reads: UNKNOWN_READ }).client },
+      { memberId: MEMBER },
+    );
+    const malformed = await resetPassword(
+      { privileged: accountsThat().client, caller: callerThat().client },
+      { memberId: 'member-1' },
+    );
+
+    expect(unknown).toEqual({ status: 404, body: { code: MEMBER_UNKNOWN } });
+    expect(malformed).toEqual(unknown);
+  });
+
+  it('updateUserById: a malformed id answers exactly what an unknown UUID answers', async () => {
+    const unknown = await updateUserById(
+      { privileged: accountsThat().client, caller: callerThat({ reads: UNKNOWN_READ }).client },
+      { memberId: MEMBER, username: 'ana.kovacic' },
+    );
+    const malformed = await updateUserById(
+      { privileged: accountsThat().client, caller: callerThat().client },
+      { memberId: 'member-1', username: 'ana.kovacic' },
+    );
+
+    expect(unknown).toEqual({ status: 404, body: { code: MEMBER_UNKNOWN } });
+    expect(malformed).toEqual(unknown);
+  });
+});
+
+describe('admin-auth logs codes, never operands, causes or key material', () => {
+  /**
+   * A SOURCE GUARD over every `.ts` file of the function, recursively.
+   *
+   * Comments and string CONTENTS are blanked first, so prose that mentions
+   * `console` or a quote inside a string cannot confuse the scan; template
+   * interpolations are kept, since they are code. Then every use of the
+   * `console` identifier must be a direct call — `console.x(` or `console[…](`
+   * — so an alias, a destructuring or `globalThis.console` fails outright.
+   *
+   * Each argument must be: a code the function actually exports, a string
+   * literal, an error's `.code` or `.status`, the operation NAME, `typeof x`,
+   * `codeOf(x)`, or `a ?? b` of those. A caught `cause`, a whole error, an id,
+   * a username or a payload field fails, because a log line outlives the request
+   * and Edge Function logs are readable by anyone with dashboard access.
+   */
+  const functionDir = join(repoRoot, 'supabase', 'functions', 'admin-auth');
+  const KNOWN_CODES = new Set<string>([...TRANSPORT_CODES, ...OPERATION_CODES]);
+  const SCALAR =
+    /^(?:'_'|"_"|operation|typeof [A-Za-z_]\w*|[A-Za-z_][\w.?]*\.(?:code|status)|codeOf\([A-Za-z_][\w.?]*\))$/;
+
+  /** Blank comments and string/template text, keeping `${…}` code and regexes' shape. */
+  function codeOnly(source: string): string {
+    let out = '';
+    let index = 0;
+    const templateDepth: number[] = [];
+    let braces = 0;
+    let previous = '';
+
+    const regexAllowed = (): boolean => previous === '' || /[(,=:[!&|?{};+\-*%<>~^]$/.test(previous) || /\breturn$/.test(previous);
+
+    while (index < source.length) {
+      const char = source[index] ?? '';
+      const next = source[index + 1] ?? '';
+
+      if (char === '/' && next === '/') {
+        while (index < source.length && source[index] !== '\n') index += 1;
+        out += ' ';
+        continue;
+      }
+      if (char === '/' && next === '*') {
+        const end = source.indexOf('*/', index + 2);
+        index = end === -1 ? source.length : end + 2;
+        out += ' ';
+        continue;
+      }
+      if (char === "'" || char === '"') {
+        index += 1;
+        while (index < source.length && source[index] !== char) index += source[index] === '\\' ? 2 : 1;
+        index += 1;
+        out += `${char}_${char}`;
+        previous = char;
+        continue;
+      }
+      if (char === '`' || (char === '}' && templateDepth.length > 0 && templateDepth.at(-1) === braces)) {
+        if (char === '}') templateDepth.pop();
+        out += char === '`' ? '`' : '}';
+        index += 1;
+        // Template text up to the closing backtick or the next interpolation.
+        while (index < source.length && source[index] !== '`' && !(source[index] === '$' && source[index + 1] === '{')) {
+          index += source[index] === '\\' ? 2 : 1;
+        }
+        if (source[index] === '`') {
+          out += '`';
+          index += 1;
+          previous = '`';
+        } else if (index < source.length) {
+          out += '${';
+          index += 2;
+          templateDepth.push(braces);
+          previous = '{';
+        }
+        continue;
+      }
+      if (char === '/' && regexAllowed()) {
+        let inClass = false;
+        index += 1;
+        while (index < source.length && (inClass || source[index] !== '/')) {
+          if (source[index] === '\\') index += 1;
+          else if (source[index] === '[') inClass = true;
+          else if (source[index] === ']') inClass = false;
+          index += 1;
+        }
+        index += 1;
+        while (/[a-z]/.test(source[index] ?? '')) index += 1;
+        out += '/_/';
+        previous = '/';
+        continue;
+      }
+      if (char === '{') braces += 1;
+      if (char === '}') braces -= 1;
+      out += char;
+      if (!/\s/.test(char)) previous = (previous + char).slice(-8);
+      index += 1;
+    }
+
+    return out;
+  }
+
+  function argumentsOf(list: string): string[] {
+    const args: string[] = [];
+    let depth = 0;
+    let current = '';
+    for (const char of list) {
+      if ('([{'.includes(char)) depth += 1;
+      if (')]}'.includes(char)) depth -= 1;
+      if (char === ',' && depth === 0) {
+        args.push(current.trim());
+        current = '';
+        continue;
+      }
+      current += char;
+    }
+    if (current.trim() !== '') args.push(current.trim());
+    return args;
+  }
+
+  function isPermitted(argument: string): boolean {
+    if (argument.includes('??')) return argument.split('??').every((part) => isPermitted(part.trim()));
+    if (/^[A-Z][A-Z0-9_]*$/.test(argument)) return KNOWN_CODES.has(argument);
+    if (SCALAR.test(argument)) return true;
+    // A template literal is permitted when every interpolation is.
+    const template = /^`([^`]*)`$/.exec(argument);
+    if (template === null) return false;
+    return [...(template[1] ?? '').matchAll(/\$\{([^}]*)\}/g)].every((match) =>
+      isPermitted((match[1] ?? '').trim()),
+    );
+  }
+
+  const OPENER = /console\s*(?:\.\s*\w+|\[[^\]]*\])\s*\(/y;
+
+  /** Every console call's arguments, and every use of `console` that is not one. */
+  function scan(source: string): { calls: string[][]; strays: string[] } {
+    const code = codeOnly(source);
+    const calls: string[][] = [];
+    const strays: string[] = [];
+
+    for (const found of code.matchAll(/\bconsole\b/g)) {
+      const at = found.index;
+      const before = code.slice(0, at).trimEnd();
+      OPENER.lastIndex = at;
+      const opener = OPENER.exec(code);
+
+      if (opener === null || before.endsWith('.') || before.endsWith('?.')) {
+        strays.push(code.slice(Math.max(0, at - 20), at + 30).replace(/\s+/g, ' '));
+        continue;
+      }
+
+      let depth = 1;
+      let index = at + opener[0].length;
+      const start = index;
+      while (depth > 0 && index < code.length) {
+        if (code[index] === '(') depth += 1;
+        if (code[index] === ')') depth -= 1;
+        index += 1;
+      }
+      calls.push(argumentsOf(code.slice(start, index - 1)));
+    }
+
+    return { calls, strays };
+  }
+
+  function tsFilesUnder(directory: string): string[] {
+    return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) return tsFilesUnder(path);
+      return entry.name.endsWith('.ts') ? [path] : [];
+    });
+  }
+
+  const files = tsFilesUnder(functionDir);
+  const relative = (path: string): string => path.slice(functionDir.length + 1);
+
+  it('finds the files and the calls it guards, so it cannot pass vacuously', () => {
+    expect(files.map(relative)).toEqual(
+      expect.arrayContaining(['handler.ts', 'authorize.ts', 'operations.ts', 'index.ts']),
+    );
+    const total = files.reduce((sum, path) => sum + scan(readFileSync(path, 'utf8')).calls.length, 0);
+    expect(total).toBeGreaterThanOrEqual(15);
+  });
+
+  it.each(files.map(relative))('%s logs only codes and non-sensitive scalars', (name) => {
+    const { calls, strays } = scan(readFileSync(join(functionDir, name), 'utf8'));
+
+    expect(strays, `${name}: console used other than as a direct call`).toEqual([]);
+    for (const args of calls) {
+      expect(args.length, `${name}: a console call with no code`).toBeGreaterThan(0);
+      for (const argument of args) {
+        expect(isPermitted(argument), `${name}: console argument \`${argument}\` is not a code or scalar`).toBe(true);
+      }
+    }
+  });
+
+  it('rejects the shapes the policy forbids', () => {
+    for (const forbidden of [
+      'cause',
+      'answered.error',
+      'accountId',
+      'payload.memberId',
+      'error',
+      '`${cause}`',
+      'SHIFT_SECRET_KEY',
+      'cause ?? ACCESS_UNREADABLE',
+    ]) {
+      expect(isPermitted(forbidden), forbidden).toBe(false);
+    }
+    expect(isPermitted('ACCESS_UNREADABLE')).toBe(true);
+  });
+
+  it.each([
+    ['a call with a caught cause', 'console.error(ACCESS_UNREADABLE, cause);', 'call'],
+    ['bracket access', "console['error'](cause);", 'call'],
+    ['whitespace before the paren', 'console.error (cause);', 'call'],
+    ['an alias', 'const log = console.error;\nlog(cause);', 'stray'],
+    ['a destructuring', 'const { error } = console;\nerror(cause);', 'stray'],
+    ['globalThis.console', 'globalThis.console.error(cause);', 'stray'],
+  ])('catches %s', (_label, source, kind) => {
+    const { calls, strays } = scan(source);
+
+    if (kind === 'stray') {
+      expect(strays.length).toBeGreaterThan(0);
+    } else {
+      expect(calls.flat().some((argument) => !isPermitted(argument))).toBe(true);
+    }
+  });
+
+  it('does not trip over console in comments, strings or regexes', () => {
+    const { calls, strays } = scan(
+      [
+        '// console.error(cause) in a comment',
+        '/* console.log(secret) */',
+        "const text = 'console.error(cause)';",
+        'const pattern = /console\\.error\\(/;',
+        'const quote = "it\'s \\"console\\"";',
+        'console.error(ACCESS_UNREADABLE, `code ${answered.error.code}`);',
+      ].join('\n'),
+    );
+
+    expect(strays).toEqual([]);
+    // Template TEXT is blanked; the interpolation survives, because it is code.
+    expect(calls).toEqual([['ACCESS_UNREADABLE', '`${answered.error.code}`']]);
+  });
+
+  it('codeOf returns a string code and nothing else of an error', () => {
+    expect(codeOf({ code: 'PGRST301', message: 'secret row', details: 'secret detail' })).toBe('PGRST301');
+    expect(codeOf({ code: 7 })).toBeUndefined();
+    expect(codeOf({ code: { nested: 'secret' } })).toBeUndefined();
+    expect(codeOf({ message: 'secret' })).toBeUndefined();
+    expect(codeOf(null)).toBeUndefined();
+    expect(codeOf(undefined)).toBeUndefined();
+    expect(codeOf('secret string')).toBeUndefined();
+  });
+});
+
+describe('admin-auth logs nothing sensitive at run time', () => {
+  const SECRET_MESSAGE = 'upstream said: token eyJhbGciOi.secret';
+
+  /** Everything a logged argument could print, including an Error's message and stack. */
+  function rendered(calls: readonly unknown[][]): string {
+    return calls
+      .flat()
+      .map((argument) => {
+        if (argument instanceof Error) return `${argument.name} ${argument.message} ${argument.stack ?? ''}`;
+        if (typeof argument === 'object' && argument !== null) return JSON.stringify(argument);
+        return String(argument);
+      })
+      .join(' | ');
+  }
+
+  function expectClean(calls: readonly unknown[][], thrown: unknown, forbidden: readonly string[]): void {
+    expect(calls.length, 'nothing was logged at all').toBeGreaterThan(0);
+    for (const argument of calls.flat()) expect(argument).not.toBe(thrown);
+    const text = rendered(calls);
+    for (const value of forbidden) expect(text, `a log line carries ${value}`).not.toContain(value);
+  }
+
+  it('authorize: a throwing rpc logs the code, not the thrown value', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const thrown = new Error(SECRET_MESSAGE);
+
+    try {
+      await expect(authorizeAdminOf(callerThat({ access: thrown }).client, ORGANIZATION)).resolves.toEqual({
+        ok: false,
+        code: ACCESS_UNREADABLE,
+      });
+      expectClean(logged.mock.calls, thrown, [SECRET_MESSAGE, 'eyJhbGciOi']);
+      expect(logged).toHaveBeenCalledWith(ACCESS_UNREADABLE);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it('authorize: an error carrying message and details logs only its code', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const error = { code: 'PGRST301', message: SECRET_MESSAGE, details: `row ${MEMBER}` };
+
+    try {
+      await authorizeAdminOf(
+        callerThat({ access: { data: null, error } as unknown as AccessAnswer }).client,
+        ORGANIZATION,
+      );
+      expectClean(logged.mock.calls, error, [SECRET_MESSAGE, MEMBER]);
+      expect(logged).toHaveBeenCalledWith(ACCESS_UNREADABLE, 'PGRST301');
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it('handler: a client construction that throws logs the code, not the error', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const thrown = new Error(`bad key ${VALID_ENV.SHIFT_SECRET_KEY}`);
+    const handle = createHandler(readConfiguration(envFrom()), {
+      makePrivilegedClient: () => {
+        throw thrown;
+      },
+      makeCallerClient: () => ({}),
+    });
+
+    try {
+      const response = await handle(post(TRANSPORT_PROBE));
+
+      expect(response.status).toBe(500);
+      expectClean(logged.mock.calls, thrown, [VALID_ENV.SHIFT_SECRET_KEY, 'bad key', 'caller-jwt']);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it('handler: an operation that throws logs its name, not the error', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const thrown = new Error(`${SECRET_MESSAGE} ${MEMBER} Bearer caller-jwt`);
+    const handle = createHandler(readConfiguration(envFrom()), {
+      makePrivilegedClient: () => accountsThat().client,
+      makeCallerClient: () => ({
+        rpc: () => Promise.resolve({ data: [accessRow()], error: null }),
+        from: () => {
+          throw thrown;
+        },
+      }),
+    });
+
+    try {
+      const response = await handle(
+        post('updateUserById', {}, { memberId: MEMBER, username: 'ana.kovacic' }),
+      );
+
+      expect(response.status).toBe(500);
+      expect(logged).toHaveBeenCalledWith(OPERATION_FAILED, 'updateUserById');
+      expectClean(logged.mock.calls, thrown, [SECRET_MESSAGE, MEMBER, 'caller-jwt', 'ana.kovacic']);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it('updateUserById: a restore that matched no row logs NO_ROW, and no id', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const accounts = accountsThat({ updated: { data: null, error: { code: 'unexpected_failure' } } });
+    const caller = callerThat({
+      reads: MEMBER_READ,
+      updates: [
+        { data: [{ id: MEMBER }], error: null },
+        { data: [], error: null },
+      ],
+    });
+
+    try {
+      const reply = await updateUserById(
+        { privileged: accounts.client, caller: caller.client },
+        { memberId: MEMBER, username: 'ana.kovacic' },
+      );
+
+      expect(reply).toEqual({ status: 500, body: { code: USERNAME_NOT_RESTORED } });
+      expect(logged).toHaveBeenCalledWith(USERNAME_NOT_RESTORED, 'NO_ROW');
+      expectClean(logged.mock.calls, undefined, [MEMBER, ACCOUNT]);
     } finally {
       logged.mockRestore();
     }

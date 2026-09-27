@@ -446,7 +446,7 @@ export type MemberWriteFailure =
  * will never succeed.
  */
 export const WIRE_CODES = [
-  // THE TRANSPORT'S OWN FIVE, which `handler.ts` answers with BEFORE any
+  // THE TRANSPORT'S OWN SEVEN, which `handler.ts` answers with BEFORE any
   // operation runs. They were missing from this list and from the mapping
   // below, so every one of them fell through to `MEMBER_WRITE_UNAVAILABLE` —
   // and the one that matters is `AUTHORIZATION_MISSING`: a session that expired
@@ -455,6 +455,10 @@ export const WIRE_CODES = [
   'AUTHORIZATION_MISSING',
   'METHOD_NOT_ALLOWED',
   'BODY_NOT_JSON',
+  // A malformed request the SPA never sends: its client always declares JSON
+  // and its payloads are far below the bound. Both are the unavailable message.
+  'CONTENT_TYPE_UNSUPPORTED',
+  'BODY_TOO_LARGE',
   'OPERATION_UNKNOWN',
   'CLIENT_CONSTRUCTION_FAILED',
   'MEMBER_CREATED',

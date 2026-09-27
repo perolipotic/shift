@@ -284,6 +284,13 @@ Deep links need no configuration beyond what is committed:
 `GET /some/deep/route` serves `index.html` with HTTP 200 rather than a 404.
 There is no server to route it any other way.
 
+Security headers are committed too: `apps/web/public/_headers` sets
+`X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options` and a restrictive
+`Permissions-Policy` on every path, and the build copies it into `dist/`. There
+is no Content-Security-Policy yet: it needs the deployed Supabase origin and a
+deployed host to verify it against (see `deferred-work.md`). Check the headers
+after a deploy with `curl -sI https://<host>/ | grep -iE 'x-content-type|referrer|x-frame|permissions'`.
+
 ---
 
 ## 5. Migration promotion runbook
@@ -526,7 +533,7 @@ verify it with `supabase db reset` locally, and push again.
 
 ```bash
 # Static SPA, no server runtime, no SSR output
-ls apps/web/dist                       # index.html, assets/, _redirects
+ls apps/web/dist                       # index.html, assets/, _redirects, _headers
 
 # The bundle carries no secret
 grep -rn "sb_secret_" apps/web/dist/ || echo CLEAN

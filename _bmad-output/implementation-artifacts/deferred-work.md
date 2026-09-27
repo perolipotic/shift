@@ -15,8 +15,8 @@
   evidence: A browser CORS preflight carries no `Authorization` header, so with platform-level JWT verification enabled the `OPTIONS` branch and the handler's own `AUTHORIZATION_MISSING` reply can never execute in a deployed environment — the platform answers first, with a body carrying no stable `code`. Story 1.2 must verify the caller against the database anyway (AD-16), which is an argument for `verify_jwt = false` plus in-handler verification. Live local testing confirmed the gateway intercepts `OPTIONS`; confirm hosted behaviour before choosing. Related to the gateway/allowlist entry above.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-1a-deployable-shell.md`
-  summary: Add `apps/web/public/_headers` with a Content-Security-Policy and the standard security headers.
-  evidence: The application's central invariant is key containment (AD-17), and a CSP restricting `connect-src` to the environment's Supabase origin is the cheapest available reinforcement of it. Nothing currently sets CSP, `X-Content-Type-Options`, `Referrer-Policy`, `frame-ancestors` or HSTS. Cloudflare Pages reads `_headers` from the same directory as the existing `_redirects`, so the mechanism is already in place.
+  summary: CSP pending a deployed origin to verify against: add a Content-Security-Policy to `apps/web/public/_headers`.
+  evidence: `_headers` now ships `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options` and a restrictive `Permissions-Policy` (spec-fix-admin-auth-hardening). The CSP was left out on purpose: its `connect-src` and `img-src` need the deployed Supabase origin, which exists only as `VITE_SUPABASE_URL` at build time, and while deploys are off (`DEPLOY_ENABLED`) nothing can confirm that a policy leaves Supabase REST, auth and storage reachable from the real host. A wrong CSP breaks every request the SPA makes, which is an Ask First item. Close it when a deployed environment exists: derive the origin at build time, add the policy, and verify it against that host. HSTS is also still unset; Cloudflare can set it at the zone level.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-1a-deployable-shell.md`
   summary: Decide how Cloudflare Pages preview deployments reach `admin-auth`, since their per-commit hostnames are never on the origin allowlist.
@@ -27,8 +27,8 @@
   evidence: `readConfiguration` fails fast on five key and URL problems but accepts a missing allowlist, yielding `allowedOrigins: []`. The result is a function that starts healthy and answers `curl` correctly while being unreachable from every browser — a failure that presents as an opaque network error with no server-side trace. An empty allowlist may be legitimate for server-to-server use, so this is a decision rather than a defect.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-1a-deployable-shell.md`
-  summary: Add request hardening to `admin-auth` — a `content-type` check, a body-size bound, and abuse control — before story 1.2 makes the endpoint act.
-  evidence: `await request.json()` runs with no content-type check and no size bound, and there is no rate limiting anywhere. Exposure is minimal today because every path terminates in 501 before touching data, but the guard should exist before the boundary gains the ability to create, update and ban users.
+  summary: Rate limiting for `admin-auth` is an ops or platform decision, not a code change.
+  evidence: The content-type check and the 16 KiB body bound landed in spec-fix-admin-auth-hardening (`CONTENT_TYPE_UNSUPPORTED` 415, `BODY_TOO_LARGE` 413). What is left is abuse control: nothing limits how often one caller may call the function. The function is stateless and runs on the Supabase edge, so a limiter needs shared state or a platform feature (a gateway or Cloudflare rule in front of it). Decide it with the deployment, not in the handler.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-1a-deployable-shell.md`
   summary: Make `index.html`'s `lang` attribute follow the active locale, and add the missing document metadata.
@@ -41,10 +41,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-1a-deployable-shell.md`
   summary: Add `eslint-plugin-react-hooks`, `eslint-plugin-jsx-a11y` and a formatter to the lint setup.
   evidence: `eslint.config.js` documents why *typed* linting is absent (the TypeScript 7 API gap) but the React and accessibility rule sets do not depend on type information and are simply missing — so the rules most likely to catch real defects in `apps/web` are not running. `jsx-a11y` matters directly to the project's WCAG 2.1 AA target. There is also no Prettier config or `.editorconfig`, yet the diff is uniformly formatted, meaning a convention is being maintained by hand.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-1a-deployable-shell.md`
-  summary: Constrain what `admin-auth` writes to its logs — codes, never operands or key material.
-  evidence: The function logs `console.error('admin-auth could not construct its clients', cause)`, and the leak test asserts only on response bodies and headers. Nothing constrains what reaches Edge Function logs, where a client-construction error could echo connection material. Given how much else in this boundary is test-enforced, a log-hygiene rule plus an assertion is proportionate.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-1b-theme-layer.md`
   summary: Epic 3's `shift-cell` must draw a leave or uncovered hatch and glyph in the underlying ramp slot's own foreground, not in the fixed `modifier-*-foreground` token.
@@ -386,10 +382,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-5c-admin-issued-password-reset.md`
   summary: `apps/web/src/members/wire.ts` declares `PostgrestFailure` and `MemberWriteRefusal` twice each, byte-identical, so an edit to one copy diverges silently.
   evidence: `PostgrestFailure` at `wire.ts:200-207` and `:257-264`; `MemberWriteRefusal` at `:210-223` and `:385-401`. TypeScript's interface declaration merging makes duplicate declarations legal, so the compiler reports nothing today and would report nothing after a field was added to only one copy — the two would merge into a union of both shapes rather than failing. Found during 1.5c's review of a file it edits; pre-existing since 1.5b. Closing it is deleting the second declaration of each, which is mechanical but touches a file two stories are live in.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-5c-admin-issued-password-reset.md`
-  summary: A `memberId` that is a well-formed string but not a UUID reaches Postgres and returns as an outage rather than as an unknown member.
-  evidence: The member-targeted operations pass `memberId` straight into a PostgREST filter, so a non-UUID string raises SQLSTATE `22P02` (invalid text representation) rather than matching no row. That is read as an unreadable access row and answered `503 ACCESS_UNREADABLE`, telling the admin to try again for an id that will never resolve. Not reachable from the SPA, which only ever passes an id read from the list, so it is a direct-API-caller concern rather than a screen defect; it affects `updateUserById` as well as the reset, which is why it belongs in its own change rather than in 1.5c.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-6-member-deactivation.md`
   summary: Status-version writes are not serialized, so concurrent transactions can each pass the insert or delete policy against a snapshot the other is about to change — two admins deactivating each other can leave zero active admins, and two inserts for one member can commit a non-alternating history.

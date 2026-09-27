@@ -57,6 +57,10 @@ export type Operation = (typeof OPERATIONS)[number];
 export const AUTHORIZATION_MISSING = 'AUTHORIZATION_MISSING';
 export const METHOD_NOT_ALLOWED = 'METHOD_NOT_ALLOWED';
 export const BODY_NOT_JSON = 'BODY_NOT_JSON';
+/** The request did not declare `application/json`. Refused before the body is read. */
+export const CONTENT_TYPE_UNSUPPORTED = 'CONTENT_TYPE_UNSUPPORTED';
+/** The body is larger than {@link BODY_LIMIT_BYTES}. Refused before it is parsed. */
+export const BODY_TOO_LARGE = 'BODY_TOO_LARGE';
 export const OPERATION_UNKNOWN = 'OPERATION_UNKNOWN';
 export const CLIENT_CONSTRUCTION_FAILED = 'CLIENT_CONSTRUCTION_FAILED';
 
@@ -66,9 +70,83 @@ export const TRANSPORT_CODES = [
   AUTHORIZATION_MISSING,
   METHOD_NOT_ALLOWED,
   BODY_NOT_JSON,
+  CONTENT_TYPE_UNSUPPORTED,
+  BODY_TOO_LARGE,
   OPERATION_UNKNOWN,
   CLIENT_CONSTRUCTION_FAILED,
 ] as const;
+
+/**
+ * The largest body this boundary will read, in bytes.
+ *
+ * 16 KiB. The largest legitimate request is a `createUser` payload — a name, a
+ * username, an email and four small fields — which is well under 1 KiB. The
+ * bound is what stops a caller making the function buffer an arbitrary body
+ * before anything has refused it.
+ */
+export const BODY_LIMIT_BYTES = 16 * 1024;
+
+/** Whether the request declares a JSON body. Parameters such as `charset` are allowed. */
+function declaresJson(contentType: string | null): boolean {
+  if (contentType === null) return false;
+  const mediaType = contentType.split(';')[0]?.trim().toLowerCase() ?? '';
+
+  return mediaType === 'application/json';
+}
+
+type BodyOutcome =
+  | { readonly ok: true; readonly text: string }
+  | { readonly ok: false; readonly code: typeof BODY_TOO_LARGE | typeof BODY_NOT_JSON };
+
+/**
+ * The body as text, read no further than `limit` bytes.
+ *
+ * READ AS A STREAM, never with `request.text()`: a declared `content-length`
+ * can be absent or wrong, and `text()` buffers the whole body before anything
+ * can look at its size. The declared length is still checked first, so an
+ * honest oversized request is refused without reading a byte of it.
+ */
+async function boundedBodyOf(request: Request, limit: number): Promise<BodyOutcome> {
+  // STRICTLY DIGITS, or ignored. `Number` reads `1e9`, `0x10` and `' 7 '` as
+  // lengths; a header this function did not write is a hint, and the stream
+  // bound below is what actually holds.
+  const declared = request.headers.get('content-length');
+  if (declared !== null && /^\d+$/.test(declared) && Number(declared) > limit) {
+    return { ok: false, code: BODY_TOO_LARGE };
+  }
+
+  if (request.body === null) return { ok: true, text: '' };
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let received = 0;
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      received += value.byteLength;
+      if (received > limit) {
+        // BEST EFFORT, and outside the decision: the bound is already passed,
+        // so a cancel that rejects must not turn a 413 into a 400.
+        reader.cancel().catch(() => undefined);
+        return { ok: false, code: BODY_TOO_LARGE };
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return { ok: false, code: BODY_NOT_JSON };
+  }
+
+  const bytes = new Uint8Array(received);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return { ok: true, text: new TextDecoder().decode(bytes) };
+}
 
 export interface Configuration {
   readonly projectUrl: string;
@@ -214,9 +292,21 @@ export function createHandler(
       return reply(401, { code: AUTHORIZATION_MISSING });
     }
 
+    // THE MEDIA TYPE AND THE SIZE, BEFORE THE PARSE. Neither needs a client or
+    // a query, so a malformed request costs the function a header read and at
+    // most `BODY_LIMIT_BYTES` of buffering.
+    if (!declaresJson(request.headers.get('content-type'))) {
+      return reply(415, { code: CONTENT_TYPE_UNSUPPORTED });
+    }
+
+    const body = await boundedBodyOf(request, BODY_LIMIT_BYTES);
+    if (!body.ok) {
+      return reply(body.code === BODY_TOO_LARGE ? 413 : 400, { code: body.code });
+    }
+
     let payload: unknown;
     try {
-      payload = await request.json();
+      payload = JSON.parse(body.text);
     } catch {
       return reply(400, { code: BODY_NOT_JSON });
     }
@@ -235,8 +325,10 @@ export function createHandler(
     try {
       privileged = dependencies.makePrivilegedClient();
       caller = dependencies.makeCallerClient(authorization);
-    } catch (cause) {
-      console.error('admin-auth could not construct its clients', cause);
+    } catch {
+      // THE CODE AND NOTHING ELSE. A construction error can carry the key it
+      // was handed; the log policy is codes, never operands or key material.
+      console.error(CLIENT_CONSTRUCTION_FAILED);
       return reply(500, { code: CLIENT_CONSTRUCTION_FAILED });
     }
 
@@ -279,8 +371,10 @@ export function createHandler(
       }
 
       if (answered !== null) return reply(answered.status, answered.body);
-    } catch (cause) {
-      console.error(OPERATION_FAILED, operation, cause);
+    } catch {
+      // The operation NAME, never the thrown value: a rejected fetch or a
+      // PostgREST error can carry a request body, a row or a key.
+      console.error(OPERATION_FAILED, operation);
 
       return reply(500, { code: OPERATION_FAILED, operation });
     }
