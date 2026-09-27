@@ -45,7 +45,8 @@ import { TEAMS_COLUMNS, teamRowOf, type TeamRow } from '@/features/teams/service
  * (story 3.2a): the embed is filtered to `members.auth_user_id = <session
  * uid>`, which PostgREST applies to the embed without filtering the
  * organization, so it is still one select. It carries the viewer's role —
- * which only picks the default mode, and authorizes nothing — and their team
+ * which picks the default mode and shows the admin's override form (story
+ * 3.5b), while the database authorizes — and their team
  * membership history, which *Moj raspored* follows. No name, no position, no
  * rank. No attribution either (`created_by`, `created_at` of an assignment):
  * the calendar says what is worked, not who saved the rule. The shift types'
@@ -196,7 +197,10 @@ export interface CalendarMember {
 /** The signed-in member reading the calendar. */
 export interface CalendarViewer {
   readonly memberId: string;
-  /** Picks the default mode only; authorizes nothing. */
+  /**
+   * Picks the default mode, and shows the admin's override form (story
+   * 3.5b); the database authorizes.
+   */
   readonly role: MemberRole;
   /**
    * Every version of the viewer's team membership, in `effectiveFrom` order:

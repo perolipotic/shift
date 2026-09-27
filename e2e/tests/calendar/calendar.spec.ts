@@ -4,6 +4,7 @@ import type { CalendarPage } from '../../pages/calendar.page.ts';
 import {
   holdFireRanks,
   holdRotation,
+  removeOverrideInSql,
   removeSeededRotation,
   seedShiftTypeOverride,
   seedTeamRotation,
@@ -52,6 +53,11 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * marks its cell and its day with `✎`, the persistent legend shows beside the
  * grid and the day list, and the day detail names the projected type, the
  * author, the time and the reason.
+ *
+ * Story 3.5b: an admin sets an override from the day detail — the Dialog
+ * held while the insert is in flight — and removes it through a neutral
+ * confirmation, the cell back to its projection; a blank reason is refused
+ * without a request and keeps the type; a member sees no form.
  */
 
 const kalendar = hr.kalendar;
@@ -858,6 +864,213 @@ test.describe('a shift-type override at 390 px, as a member in Moj raspored', ()
     );
     await expect(block).toContainText(fill(kalendar.detail.override.reason, { reason: REASON }));
     await expectNoHorizontalScroll(page);
+  });
+});
+
+test.describe('an admin sets and removes a shift-type override at 1280 px', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 1280, height: 800 } });
+
+  test('sets Noć on today from the detail, then removes it through the neutral confirmation', async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    // Today projects the first step (Dan); the admin sets the second (Noć).
+    const projected = expectedType(rotation, rotation.today);
+    const worked = rotation.steps[1];
+    expect(projected).not.toBe(worked);
+
+    await calendarPage.goto(gridMonthOf(rotation.today));
+    const cell = await calendarPage.cellOf(fixture.team.name, rotation.today);
+    await expect(cell).not.toContainText('\u270E');
+    await cell.click();
+    const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
+    await expect(detail).toBeVisible();
+    await expect(calendarPage.overrideFormIn(detail)).toBeVisible();
+    await expect(calendarPage.overrideRemoveIn(detail)).toHaveCount(0);
+    // The projected type is not offered.
+    await expect(calendarPage.overrideTypeIn(detail).locator('option', { hasText: projected })).toHaveCount(0);
+
+    // WHILE THE INSERT IS IN FLIGHT, Escape, the backdrop and the close
+    // button close nothing. Every override written here is of a seeded type,
+    // so the `afterEach`'s `removeSeededRotation` deletes it even when a step
+    // below fails.
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    // The insert alone is held: a CORS preflight passes at once.
+    const insert = '**/rest/v1/shift_type_overrides*';
+    await page.route(insert, async (route) => {
+      if (route.request().method() === 'POST') await held;
+      await route.continue();
+    });
+    await calendarPage.setOverrideIn(detail, worked, REASON);
+    await expect(calendarPage.overrideSaveIn(detail)).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await page.mouse.click(5, 5);
+    await calendarPage.closeIn(detail).click();
+    await expect(detail).toBeVisible();
+    release();
+
+    // Set: the block and the removal replace the form, and the cell is marked.
+    const block = calendarPage.overrideIn(detail);
+    await expect(block).toBeVisible();
+    await page.unroute(insert);
+    await expect(block).toContainText(fill(kalendar.detail.override.projected, { type: projected }));
+    await expect(block).toContainText(fill(kalendar.detail.override.author, { name: fixture.admin.name }));
+    await expect(block).toContainText(fill(kalendar.detail.override.reason, { reason: REASON }));
+    await expect(calendarPage.statusIn(detail)).toHaveText(kalendar.detail.override.saved);
+    await expect(calendarPage.overrideFormIn(detail)).toHaveCount(0);
+    const remove = calendarPage.overrideRemoveIn(detail);
+    await expect(remove).toBeFocused();
+    await expect(cell).toContainText(worked);
+    await expect(cell).toContainText('\u270E');
+
+    // Remove: one neutral confirmation naming the team, the date and the type restored.
+    await remove.click();
+    const confirm = calendarPage.removeConfirmOf(fixture.team.name, rotation.today, projected);
+    await expect(confirm).toBeVisible();
+    await expect(confirm.locator('.bg-destructive, .text-destructive, .border-destructive')).toHaveCount(0);
+    // Its cancel keeps the override.
+    await calendarPage.cancelRemoveIn(confirm).click();
+    await expect(confirm).toHaveCount(0);
+    await expect(block).toBeVisible();
+    await expect(remove).toBeFocused();
+    await remove.click();
+    await calendarPage.confirmRemoveIn(confirm).click();
+    await expect(confirm).toHaveCount(0);
+    await expect(block).toHaveCount(0);
+    await expect(calendarPage.overrideFormIn(detail)).toBeVisible();
+    await expect(calendarPage.statusIn(detail)).toHaveText(
+      fill(kalendar.detail.override.removed, { type: projected }),
+    );
+
+    // The cell is back to its projection.
+    await page.keyboard.press('Escape');
+    await expect(detail).toHaveCount(0);
+    await expect(cell).toContainText(projected);
+    await expect(cell).not.toContainText('\u270E');
+  });
+
+  test('a blank reason is refused without a request, keeps the type chosen and focuses the reason', async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    const worked = rotation.steps[1];
+    const writes: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/rest/v1/shift_type_overrides')) writes.push(request.method());
+    });
+
+    await calendarPage.goto(gridMonthOf(rotation.today));
+    await (await calendarPage.cellOf(fixture.team.name, rotation.today)).click();
+    const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
+    await calendarPage.setOverrideIn(detail, worked, '   ');
+
+    await expect(calendarPage.alertIn(detail)).toHaveText(kalendar.detail.override.refused.reason);
+    await expect(calendarPage.overrideTypeIn(detail).locator('option:checked')).toHaveText(worked);
+    await expect(calendarPage.overrideReasonIn(detail)).toHaveValue('   ');
+    await expect(calendarPage.overrideReasonIn(detail)).toBeFocused();
+    await expect(calendarPage.overrideIn(detail)).toHaveCount(0);
+    expect(writes, 'a refused preflight sent a request').toEqual([]);
+
+    // Closed and reopened, the day carries no refusal of the last visit.
+    await page.keyboard.press('Escape');
+    await expect(detail).toHaveCount(0);
+    await (await calendarPage.cellOf(fixture.team.name, rotation.today)).click();
+    await expect(detail).toBeVisible();
+    await expect(calendarPage.alertIn(detail)).toHaveCount(0);
+  });
+
+  test('a removal answered P0002 holds its confirmation while in flight, then says gone and shows the day as it is', async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    // Seeded in SQL on a seeded type: the `afterEach` deletes it whatever happens.
+    await seedShiftTypeOverride(rotation, fixture.team.id, rotation.today, 1, REASON);
+    const projected = expectedType(rotation, rotation.today);
+
+    await calendarPage.goto(gridMonthOf(rotation.today));
+    const cell = await calendarPage.cellOf(fixture.team.name, rotation.today);
+    await expect(cell).toContainText('\u270E');
+    await cell.click();
+    const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
+    await calendarPage.overrideRemoveIn(detail).click();
+    const confirm = calendarPage.removeConfirmOf(fixture.team.name, rotation.today, projected);
+    await expect(confirm).toBeVisible();
+
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const removal = '**/rest/v1/rpc/remove_shift_type_override*';
+    await page.route(removal, async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue();
+
+        return;
+      }
+      await held;
+      await route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 'P0002', message: 'SHIFT_TYPE_OVERRIDE_NOT_LIVE', details: null, hint: null }),
+      });
+    });
+    await calendarPage.confirmRemoveIn(confirm).click();
+    // While held: Escape, the backdrop and the (disabled) cancel leave it open.
+    await page.keyboard.press('Escape');
+    await page.mouse.click(5, 5);
+    await calendarPage.cancelRemoveIn(confirm).click({ force: true });
+    await expect(confirm).toBeVisible();
+    await expect(detail).toBeAttached();
+    // Another admin's removal lands meanwhile; the answer is then P0002.
+    await removeOverrideInSql(rotation, fixture.team.id, rotation.today);
+    release();
+
+    await expect(confirm).toHaveCount(0);
+    await expect(detail).toBeVisible();
+    await expect(calendarPage.alertIn(detail)).toHaveText(kalendar.detail.override.refused.gone);
+    // The re-read shows the day as it is: no override, the form offered again.
+    await expect(calendarPage.overrideIn(detail)).toHaveCount(0);
+    await expect(calendarPage.overrideFormIn(detail)).toBeVisible();
+    await expect(cell).not.toContainText('\u270E');
+    await page.unroute(removal);
+  });
+});
+
+test.describe('the override form at 390 px, as a member', () => {
+  test.use({ storageState: MEMBER_STATE, viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('offers a member-role account no form and no removal in the detail', async ({ page, calendarPage, fixture }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    const tomorrow = addDays(rotation.today, 1);
+    await seedShiftTypeOverride(rotation, fixture.team.id, tomorrow, 1, REASON);
+
+    await calendarPage.goto();
+    await calendarPage.openerIn(calendarPage.today).tap();
+    const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
+    await expect(detail).toBeVisible();
+    await expect(calendarPage.overrideFormIn(detail)).toHaveCount(0);
+    await expect(calendarPage.overrideTypeIn(detail)).toHaveCount(0);
+    await expect(calendarPage.overrideRemoveIn(detail)).toHaveCount(0);
+    await expectNoHorizontalScroll(page);
+    await page.keyboard.press('Escape');
+    await expect(detail).toHaveCount(0);
+
+    // An overridden day too: the block, and still no removal.
+    await calendarPage.goto(`?prikaz=sve&mjesec=${tomorrow.slice(0, 7)}`);
+    await (await calendarPage.cellOf(fixture.team.name, tomorrow)).click();
+    const overridden = calendarPage.detailOf(fixture.team.name, tomorrow);
+    await expect(calendarPage.overrideIn(overridden)).toBeVisible();
+    await expect(calendarPage.overrideRemoveIn(overridden)).toHaveCount(0);
+    await expect(calendarPage.overrideFormIn(overridden)).toHaveCount(0);
   });
 });
 

@@ -462,8 +462,11 @@ development_status:
   # ride on this one key. 3.5a records and shows the override — migration
   # 0019 `shift_type_overrides`, domain `scheduledShiftTypeOn`, `✎` on the
   # calendar, attribution in the day detail, written only by seeds
-  # (spec-3-5a-shift-type-override-record-and-display.md). 3.5b is the admin's
-  # set/remove form; 3.5c is CAP-9's disposition on a rotation change.
+  # (spec-3-5a-shift-type-override-record-and-display.md). 3.5b has landed:
+  # the admin's set form (the plain insert) and the neutral remove confirm,
+  # through migration 0021's definer `remove_shift_type_override`
+  # (spec-3-5b-shift-type-override-form.md). The key stays in-progress for
+  # 3.5c, CAP-9's disposition on a rotation change.
   3-5-an-admin-changes-a-team-s-shift-type-on-one-date: in-progress
   3-6-an-admin-adds-removes-or-replaces-someone-on-a-shift: backlog
   epic-3-retrospective: optional

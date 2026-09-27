@@ -312,6 +312,8 @@ const KALENDAR: readonly string[] = Object.values(CALENDAR_SCREEN_PARTS).map((pa
   join(srcRoot, ...parts),
 );
 const CALENDAR_SNAPSHOT_KEYS = join(srcRoot, 'features', 'calendar', 'services', 'snapshot.ts');
+/** Story 3.5b's override writes: the six refusals the day detail's form and confirmation render. */
+const CALENDAR_OVERRIDE_WRITE_KEYS = join(srcRoot, 'features', 'calendar', 'services', 'override-write.ts');
 /** Story 3.2b's modifier vocabulary: the four marks' labels and a cell with no rotation. */
 const CALENDAR_MODIFIER_KEYS = join(srcRoot, 'features', 'calendar', 'utils', 'modifiers.ts');
 
@@ -590,7 +592,10 @@ const SCREENS = [
   // written once inside the map over the days. A grid cell opens the detail
   // too, but stays a `gridcell`, not a control, and the Dialog's close is
   // `DialogHeader`'s own `<Button>`, not the screen's.
-  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 8 },
+  // FOURTEEN SINCE STORY 3.5b: the admin's override form in the day detail —
+  // its type `Select`, its reason `Input` and its save — the removal's
+  // action, and its confirmation's cancel and confirm.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 14 },
   // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
   // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
   // row link written once inside the map over the bands — the same count at
@@ -767,6 +772,15 @@ const FORM_SCREENS = [
     effect: 'renameShiftType(',
     inFlight: 'writing',
   },
+  // Story 3.5b, on the same terms: the admin's override form in the day
+  // detail, and `writing` shared by its set and its removal, which must never
+  // run at once on the same day.
+  {
+    name: 'the Kalendar override form',
+    file: KALENDAR,
+    effect: 'setShiftTypeOverride(',
+    inFlight: 'writing',
+  },
 ];
 
 /** The form screens that await something, so something can be in flight. */
@@ -893,6 +907,18 @@ const IN_FLIGHT_HANDLERS = [
     handler: 'archive',
     pending: 'setPending',
     failure: 'setArchiveFailure',
+  },
+  {
+    // STORY 3.5b, the calendar override form's second awaiting handler: the
+    // removal, sharing the set's `writing` ref for the reason the band
+    // removal does, with its own refusal announced inside its confirmation.
+    name: "the Kalendar override form's removal",
+    file: KALENDAR,
+    effect: 'removeShiftTypeOverride(',
+    inFlight: 'writing',
+    handler: 'remove',
+    pending: 'setPending',
+    failure: 'setRemoveFailure',
   },
 ];
 
@@ -1042,6 +1068,17 @@ function messageKeyUnion(text: string): string[] {
   const signature = /function \w*MessageKey\([\s\S]*?\):([^{]*)\{/.exec(text)?.[1] ?? '';
 
   return [...signature.matchAll(/'([^']+)'/g)].map((found) => found[1] ?? '');
+}
+
+/**
+ * Every `\w*MessageKey` return union in a file, not only the first: the
+ * calendar's override writes (story 3.5b) map their refusals through one and
+ * what a landed write says through another.
+ */
+function messageKeyUnions(text: string): string[] {
+  return [...text.matchAll(/function \w*MessageKey\([\s\S]*?\):([^{]*)\{/g)].flatMap((found) =>
+    [...(found[1] ?? '').matchAll(/'([^']+)'/g)].map((quoted) => quoted[1] ?? ''),
+  );
 }
 
 /**
@@ -1921,11 +1958,14 @@ const KEY_SOURCES = [
     // position labels come through `@/features/members/utils/rank` and `@/features/members/utils/position`,
     // already key sources. THIRTY-TWO SINCE STORY 3.5a: the override block's
     // heading, the projected type, the author, the unknown author, the time
-    // it was saved and its reason.
+    // it was saved and its reason. FORTY-TWO SINCE STORY 3.5b: the form's
+    // heading, its two labels, save and saving, and the removal's action,
+    // prompt, confirm, cancel and removing. The refusals come through
+    // `@/features/calendar/services/override-write`, below.
     name: 'the Kalendar destination',
     file: KALENDAR,
     keys: translationKeys,
-    strings: 32,
+    strings: 42,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's
@@ -1942,6 +1982,14 @@ const KEY_SOURCES = [
     file: CALENDAR_SNAPSHOT_KEYS,
     keys: messageKeyUnion,
     strings: 1,
+  },
+  {
+    // STORY 3.5b: the six refusals of setting or removing an override, and
+    // the two things a landed write says — saved, and removed.
+    name: 'the calendar override write rules',
+    file: CALENDAR_OVERRIDE_WRITE_KEYS,
+    keys: messageKeyUnions,
+    strings: 8,
   },
   {
     // The read failure.
@@ -2257,8 +2305,10 @@ describe('the screen is read at all, so every sweep below means something', () =
     // `@/features/calendar/services/snapshot` joined.
     //
     // FORTY-FIVE SINCE STORY 3.2b: `@/features/calendar/utils/modifiers`.
+    //
+    // FORTY-SIX SINCE STORY 3.5b: `@/features/calendar/services/override-write`.
     expect(SCREENS).toHaveLength(24);
-    expect(KEY_SOURCES).toHaveLength(45);
+    expect(KEY_SOURCES).toHaveLength(46);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -4618,11 +4668,12 @@ describe('every select is the one Select primitive, in the one Input look', () =
     );
   }
 
-  it('finds all fourteen, so the comparison is not vacuous', () => {
+  it('finds all fifteen, so the comparison is not vacuous', () => {
     // THIRTEEN: the twelve visual refresh B held to one literal, and the shift
     // type kind on `/postavke-rotacije`, which that block never listed.
     // FOURTEEN SINCE STORY 3.3a: the calendar's team filter.
-    expect(selectClasses()).toHaveLength(14);
+    // FIFTEEN SINCE STORY 3.5b: the override form's type.
+    expect(selectClasses()).toHaveLength(15);
   });
 
   it('composes only the 44 px height onto each, so no screen restyles the primitive', () => {
@@ -5705,7 +5756,8 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // screen made the gap obvious.
     // EIGHT SINCE STORY 2.1b: the two hour band screens.
     // TEN SINCE STORY 2.2b: the two shift type screens.
-    expect(IN_FLIGHT_SCREENS.length, 'no form screen declares an in-flight ref').toBe(10);
+    // ELEVEN SINCE STORY 3.5b: the calendar's override form.
+    expect(IN_FLIGHT_SCREENS.length, 'no form screen declares an in-flight ref').toBe(11);
     expect(
       IN_FLIGHT_SCREENS.map((screen) => screen.inFlight).sort(),
       'the in-flight ref names drifted from the screens that hold them',
@@ -5717,6 +5769,7 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'issuing',
       'saving',
       'saving',
+      'writing',
       'writing',
       'writing',
       'writing',
@@ -5733,7 +5786,8 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // form's save and its removal, which is its own handler.
     // EIGHTEEN SINCE STORY 2.2b: the shift type list's add, and the shift
     // type edit form's rename, times, cancellation and archive.
-    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(18);
+    // TWENTY SINCE STORY 3.5b: the calendar override form's set and removal.
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(20);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
       'the in-flight handler names drifted from the handlers that hold them',
@@ -5745,6 +5799,7 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'changeTeam/teaming',
       'issue/resetting',
       'remove/writing',
+      'remove/writing',
       'saveTimes/writing',
       'submit/creating',
       'submit/creating',
@@ -5753,6 +5808,7 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'submit/issuing',
       'submit/saving',
       'submit/saving',
+      'submit/writing',
       'submit/writing',
       'submit/writing',
       'submit/writing',

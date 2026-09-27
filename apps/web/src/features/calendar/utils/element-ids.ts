@@ -21,3 +21,21 @@ export const DAY_DETAIL_ROSTER_ID = 'kalendar-detail-roster';
 
 /** The override block's heading (story 3.5a), which names its section. */
 export const DAY_DETAIL_OVERRIDE_ID = 'kalendar-detail-override';
+
+/** The override form's heading (story 3.5b), which names the form. */
+export const OVERRIDE_SET_HEADING_ID = 'kalendar-override-set-heading';
+
+/** The override form's type `Select`, which its label names. */
+export const OVERRIDE_TYPE_FIELD_ID = 'kalendar-override-type';
+
+/** The override form's reason `Input`, which its label names. */
+export const OVERRIDE_REASON_FIELD_ID = 'kalendar-override-reason';
+
+/** The override form's refusal, which the refused field is described by. */
+export const OVERRIDE_SET_ERROR_ID = 'kalendar-override-set-error';
+
+/** The removal confirmation's prompt, which names its Dialog. */
+export const OVERRIDE_REMOVE_PROMPT_ID = 'kalendar-override-remove-prompt';
+
+/** The removal confirmation's refusal. */
+export const OVERRIDE_REMOVE_ERROR_ID = 'kalendar-override-remove-error';

@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import type { ReactNode, SyntheticEvent } from 'react';
 
 import { Dialog, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
@@ -9,6 +9,14 @@ import {
   type DayDetailOverride,
 } from '@/features/calendar/utils/day-detail';
 import { MODIFIER_OVERRIDDEN, modifierTreatmentOf } from '@/features/calendar/utils/modifiers';
+import {
+  OverrideDoneNotice,
+  OverrideRemoveAction,
+  OverrideRemoveConfirm,
+  OverrideRemoveRefusal,
+  OverrideSetForm,
+} from '@/features/calendar/components/override-form';
+import type { OverrideFormState } from '@/features/calendar/hooks/use-override-form';
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { positionsShown, rosterLineOf, rosterPositionMessageKey } from '@/features/members/utils/position';
 import { ranksShown, rosterRankMessageKey } from '@/features/members/utils/rank';
@@ -87,8 +95,18 @@ function renderOverride(override: DayDetailOverride): ReactNode {
  * one, alike. A day with no rotation never has one: the domain ignores an
  * override there.
  */
-function renderDetail(shown: DayDetail, usesFireRanks: boolean): ReactNode {
-  const override = shown.override === null ? null : renderOverride(shown.override);
+function renderDetail(shown: DayDetail, usesFireRanks: boolean, form: OverrideFormState): ReactNode {
+  // STORY 3.5b: an admin sets an override on a day that has none, or removes
+  // the one it has; `form` decides which, and neither on a day with no rotation.
+  const override = (
+    <>
+      {shown.override === null ? null : renderOverride(shown.override)}
+      <OverrideDoneNotice form={form} />
+      <OverrideRemoveRefusal form={form} />
+      {form.offersRemove ? <OverrideRemoveAction form={form} /> : null}
+      {form.offersSet ? <OverrideSetForm key={`${shown.teamId}:${shown.isoDate}`} form={form} /> : null}
+    </>
+  );
 
   if (shown.kind === DAY_OFF) {
     return (
@@ -130,37 +148,63 @@ function renderDetail(shown: DayDetail, usesFireRanks: boolean): ReactNode {
  * quick reopen is never closed by the previous one. Passing `onClose` REPLACES
  * the primitive's own `close` handler, so `onOpenChange(false)` reports the
  * backdrop alone and Escape closes the day once, through `onCancel`.
+ *
+ * NOT DISMISSIBLE WHILE AN OVERRIDE WRITE IS IN FLIGHT (story 3.5b): the
+ * backdrop waits through `dismissible`, and Escape and the close button
+ * through the guards below — `onCancel` replaces the primitive's own, so it
+ * must refuse the cancel itself. The removal's confirmation is rendered BESIDE
+ * the Dialog, never inside it.
  */
 export function DayDetailDialog({
   detail,
   snapshot,
+  form,
   onClose,
   onClosedByBrowser,
 }: {
   readonly detail: DayDetail | null;
   readonly snapshot: CalendarSnapshot | null;
+  readonly form: OverrideFormState;
   readonly onClose: () => void;
   readonly onClosedByBrowser: () => void;
 }): ReactNode {
+  const pending = form.pending;
+
+  function closeUnlessPending(): void {
+    if (!pending) onClose();
+  }
+
   return (
-    <Dialog
-      id={DAY_DETAIL_DIALOG_ID}
-      open={detail !== null}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-      onCancel={onClose}
-      onClose={onClosedByBrowser}
-      aria-labelledby={DAY_DETAIL_HEADING_ID}
-    >
-      {detail === null || snapshot === null ? null : (
-        <>
-          <DialogHeader closeLabel={t('kalendar.detail.close')} onClose={onClose}>
-            <DialogTitle id={DAY_DETAIL_HEADING_ID}>{t('kalendar.detail.title', { team: detail.teamName, date: detail.date })}</DialogTitle>
-          </DialogHeader>
-          {renderDetail(detail, snapshot.usesFireRanks)}
-        </>
-      )}
-    </Dialog>
+    <>
+      <Dialog
+        id={DAY_DETAIL_DIALOG_ID}
+        open={detail !== null}
+        dismissible={!pending}
+        onOpenChange={(next) => {
+          if (!next) closeUnlessPending();
+        }}
+        onCancel={(event: SyntheticEvent<HTMLDialogElement>) => {
+          if (pending) {
+            event.preventDefault();
+
+            return;
+          }
+
+          onClose();
+        }}
+        onClose={onClosedByBrowser}
+        aria-labelledby={DAY_DETAIL_HEADING_ID}
+      >
+        {detail === null || snapshot === null ? null : (
+          <>
+            <DialogHeader closeLabel={t('kalendar.detail.close')} onClose={closeUnlessPending}>
+              <DialogTitle id={DAY_DETAIL_HEADING_ID} tabIndex={-1}>{t('kalendar.detail.title', { team: detail.teamName, date: detail.date })}</DialogTitle>
+            </DialogHeader>
+            {renderDetail(detail, snapshot.usesFireRanks, form)}
+          </>
+        )}
+      </Dialog>
+      <OverrideRemoveConfirm form={form} detail={detail} />
+    </>
   );
 }

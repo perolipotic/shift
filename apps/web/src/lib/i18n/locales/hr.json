@@ -65,7 +65,31 @@
         "author": "Autor: {name}",
         "unknownAuthor": "Nepoznata osoba",
         "savedAt": "Vrijeme: {date} u {time}",
-        "reason": "Razlog: {reason}"
+        "reason": "Razlog: {reason}",
+        "set": {
+          "heading": "Promijeni tip smjene",
+          "type": "Tip smjene",
+          "reason": "Razlog",
+          "save": "Spremi izmjenu",
+          "saving": "Spremanje…"
+        },
+        "remove": {
+          "action": "Ukloni izmjenu",
+          "prompt": "Ukloniti izmjenu za {team} · {date}? Vraća se {type} prema rotaciji.",
+          "confirm": "Ukloni",
+          "cancel": "Odustani od uklanjanja",
+          "removing": "Uklanjanje…"
+        },
+        "saved": "Izmjena je spremljena.",
+        "removed": "Izmjena je uklonjena. Prema rotaciji: {type}.",
+        "refused": {
+          "reason": "Upiši razlog, 1–200 znakova.",
+          "sameAsProjected": "To je već tip smjene prema rotaciji.",
+          "taken": "Za taj dan već postoji izmjena. Osvježi prikaz.",
+          "gone": "Izmjena je već uklonjena.",
+          "denied": "Ne možeš mijenjati izmjene. Za to trebaš ovlasti administratora.",
+          "failed": "Promjena nije uspjela. Pokušaj ponovno."
+        }
       }
     },
     "modifier": {

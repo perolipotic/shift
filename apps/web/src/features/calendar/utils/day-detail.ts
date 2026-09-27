@@ -30,6 +30,12 @@ import type { ShiftTypeRow } from '@/features/shift-types/services/list';
  *
  * READ-ONLY: it reads the snapshot the calendar already holds, under its one
  * query key, and writes nothing.
+ *
+ * WHAT AN ADMIN MAY SET (story 3.5b) is decided here too, from the same
+ * answer: the day's projected type (`projectedShiftTypeId`, the domain's), the
+ * types the form offers ({@link overrideTypeOptionsOf}) and the browser's
+ * preflight of an entry ({@link overrideEntryOf}). The database's checks and
+ * its partial key stay authoritative; these only spare a request.
  */
 
 /** The team works a type that day. */
@@ -68,6 +74,8 @@ export interface DayDetailSavedAt {
 
 /** The shift-type override on the day, as the detail names it (story 3.5a). */
 export interface DayDetailOverride {
+  /** The override's id, which a removal names (story 3.5b). */
+  readonly id: string;
   /** The type the rotation projects that day, which the override replaced; a non-working one included. */
   readonly projectedTypeName: string;
   /** Who saved it; `null` when they are no member the snapshot holds (`kalendar.detail.override.unknownAuthor`). */
@@ -82,6 +90,10 @@ export interface DayDetail {
   readonly teamName: string;
   /** `subota 26.09.2026`: the calendar's own weekday wording, and the date in the binding shape, year included. */
   readonly date: string;
+  /** The date as the snapshot keys it, `YYYY-MM-DD` (story 3.5b): what an override is written for. */
+  readonly isoDate: string;
+  /** The type the rotation projects that day, before any override; `null` with no rotation (story 3.5b). */
+  readonly projectedShiftTypeId: string | null;
   readonly kind: DayDetailKind;
   /** The type's name; `null` unless the kind is `working`. */
   readonly typeName: string | null;
@@ -126,11 +138,21 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
 
   if (full === null) throw new RangeError(`the date ${date} could not be formatted`);
 
-  const base = { teamId, teamName: team.name, date: `${weekdayOf(date)} ${full}` };
+  const base = { teamId, teamName: team.name, date: `${weekdayOf(date)} ${full}`, isoDate: date };
 
   if (scheduled === null) {
-    return { ...base, kind: DAY_NO_ROTATION, typeName: null, range: null, roster: [], override: null };
+    return {
+      ...base,
+      projectedShiftTypeId: null,
+      kind: DAY_NO_ROTATION,
+      typeName: null,
+      range: null,
+      roster: [],
+      override: null,
+    };
   }
+
+  const projected = { ...base, projectedShiftTypeId: scheduled.projectedShiftTypeId };
 
   const type = typeOf(snapshot, scheduled.shiftTypeId, date);
   const override = scheduled.overridden
@@ -138,7 +160,7 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
     : null;
 
   if (!type.isWorking) {
-    return { ...base, kind: DAY_OFF, typeName: null, range: null, roster: [], override };
+    return { ...projected, kind: DAY_OFF, typeName: null, range: null, roster: [], override };
   }
 
   const members = new Map(snapshot.members.map((member) => [member.id, member]));
@@ -151,7 +173,7 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
   });
 
   return {
-    ...base,
+    ...projected,
     kind: DAY_WORKING,
     typeName: type.name,
     range: typeRangeOn(type, date),
@@ -206,6 +228,7 @@ function overrideOf(
       : snapshot.members.find((member) => member.id === override.authorMemberId);
 
   return {
+    id: override.id,
     projectedTypeName,
     authorName: author?.name ?? null,
     savedAt: { date: formatDate(saved, snapshot.timeZone), time: formatTime(saved, snapshot.timeZone) },
@@ -246,4 +269,93 @@ export function dayDetailShownOf(snapshot: CalendarSnapshot | null, opened: Open
 
     return { detail: null, close: true };
   }
+}
+
+// ------------------------------------------------ setting an override (3.5b)
+
+/** One type the override form offers: its id and name. */
+export interface OverrideTypeOption {
+  readonly id: string;
+  readonly name: string;
+}
+
+/**
+ * The types an admin may set on the day (story 3.5b): every type of the
+ * snapshot that is NOT ARCHIVED and is not the one the rotation projects that
+ * day, in the snapshot's own order (creation order). None for a day with no
+ * rotation, and none for a day already overridden — its override is removed,
+ * never changed in place.
+ */
+export function overrideTypeOptionsOf(snapshot: CalendarSnapshot, detail: DayDetail): readonly OverrideTypeOption[] {
+  const projectedShiftTypeId = detail.projectedShiftTypeId;
+
+  if (projectedShiftTypeId === null || detail.override !== null) return [];
+
+  return snapshot.types
+    .filter((type) => !type.archived && type.id !== projectedShiftTypeId)
+    .map((type) => ({ id: type.id, name: type.name }));
+}
+
+/** The reason's bounds once surrounding white space is trimmed, as 0019's check reads them. */
+export const OVERRIDE_REASON_MIN = 1;
+export const OVERRIDE_REASON_MAX = 200;
+
+/** The reason is blank or longer than {@link OVERRIDE_REASON_MAX} once trimmed. */
+export const OVERRIDE_REFUSED_REASON = 'reason';
+
+/** The type chosen is the one the rotation already projects, or none at all. */
+export const OVERRIDE_REFUSED_SAME = 'sameAsProjected';
+
+export type OverrideEntryRefusal = typeof OVERRIDE_REFUSED_REASON | typeof OVERRIDE_REFUSED_SAME;
+
+export type OverrideEntry =
+  | { readonly ok: true; readonly shiftTypeId: string; readonly reason: string }
+  | { readonly ok: false; readonly code: OverrideEntryRefusal };
+
+/**
+ * The browser's preflight of an override entered on `detail` (story 3.5b):
+ * the type first, as the first field, then the reason. The type may not be
+ * empty or the projected one — "same as projected" is the browser's to
+ * check, because the database cannot project. The reason is trimmed of
+ * surrounding white space and must then hold 1–200 characters (code points,
+ * as `char_length` counts them). What passes is what is sent: the trimmed
+ * reason.
+ */
+export function overrideEntryOf(detail: DayDetail, shiftTypeId: string, reason: string): OverrideEntry {
+  if (shiftTypeId === '' || shiftTypeId === detail.projectedShiftTypeId) {
+    return { ok: false, code: OVERRIDE_REFUSED_SAME };
+  }
+
+  const trimmed = reason.trim();
+  const length = [...trimmed].length;
+
+  if (length < OVERRIDE_REASON_MIN || length > OVERRIDE_REASON_MAX) return { ok: false, code: OVERRIDE_REFUSED_REASON };
+
+  return { ok: true, shiftTypeId, reason: trimmed };
+}
+
+/** What the day detail offers its viewer (story 3.5b): the form and its types, or the removal, or neither. */
+export interface OverrideOffers {
+  readonly options: readonly OverrideTypeOption[];
+  /** The form to set an override: an admin, a day with a rotation and no override, and a type to offer. */
+  readonly set: boolean;
+  /** The removal: an admin, on a day with an override. */
+  readonly remove: boolean;
+}
+
+const NO_OFFERS: OverrideOffers = { options: [], set: false, remove: false };
+
+/**
+ * What `detail` offers the viewer of `snapshot` (story 3.5b). SHOWN BY THE
+ * ROLE, DECIDED BY THE DATABASE: only an admin is offered either, and the
+ * insert policy and the removal function refuse everyone else anyway. A day
+ * with no rotation offers neither.
+ */
+export function overrideOffersOf(snapshot: CalendarSnapshot | null, detail: DayDetail | null): OverrideOffers {
+  if (snapshot === null || detail === null || snapshot.viewer.role !== 'admin') return NO_OFFERS;
+  if (detail.kind === DAY_NO_ROTATION) return NO_OFFERS;
+
+  const options = overrideTypeOptionsOf(snapshot, detail);
+
+  return { options, set: detail.override === null && options.length > 0, remove: detail.override !== null };
 }

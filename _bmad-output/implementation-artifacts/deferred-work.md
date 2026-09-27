@@ -568,3 +568,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-fix-admin-route-guards.md`
   summary: Open decision: keep writing per-function EXECUTE revokes (`anon`, `authenticated`, `service_role`) for every new function in `public`, as 0003 and 0020 do, or write one `alter default privileges` so future functions start with no grant for those roles.
   evidence: 0020 closed the one known gap (`refuse_organization_with_no_admin`) with per-function revokes only; that spec lists `alter default privileges` as Ask First, so nothing was decided. The per-function route relies on each migration author remembering the three revokes; `test/provisioning.test.ts`'s exact-grantee table catches a missed one only for functions listed there.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-5b-shift-type-override-form.md`
+  summary: An override insert refused by 0019's policy because the team or the type was archived while the day detail was open arrives as 42501 and is shown as `refused.denied` ("…trebaš ovlasti administratora"), which tells an admin the wrong reason.
+  evidence: Raised by 3.5b's review. The insert policy folds "active admin" and "not archived" into one WITH CHECK, so PostgREST returns 42501 for both; the form offers only non-archived types, so this needs a concurrent archive, but the message is then false.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-5b-shift-type-override-form.md`
+  summary: The override reason `Input`'s `maxLength` 200 counts UTF-16 code units while the preflight and 0019's `char_length` count code points, so a reason of 101–200 astral characters (emoji) is accepted by the database but cannot be typed.
+  evidence: Raised by 3.5b's review. The frozen spec asks for `maxLength` 200; dropping it or raising it and relying on the preflight is a one-line change once the user decides.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-5b-shift-type-override-form.md`
+  summary: `claimedOrganizationOf` lives in `features/teams/services/write.ts`, and the calendar now imports it (FEATURE_PUBLIC widened); a token-claim helper belongs in a shared lib beside the Supabase client.
+  evidence: Raised by 3.5b's review. The helper predates 3.5b; moving it touches every feature's writes and their guards, so it is a focused follow-up.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-5b-shift-type-override-form.md`
+  summary: The shared `Dialog` primitive's `dismissible={false}` relies on `preventDefault` of `cancel`; Chrome's close-watcher closes a modal dialog on a second Escape without intervening user activation, so a held write's dialog (day detail, team add #89) can still close.
+  evidence: Raised by 3.5b's edge-case review. It affects every non-dismissible Dialog, not just the override form; the fix (re-open on `close` while pending, or a close-watcher-aware primitive) belongs in `components/ui/dialog.tsx`.

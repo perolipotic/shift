@@ -1570,6 +1570,10 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 3.5a. The live overrides, read past the admin-only select policy
     // and past `members` for the author's member id, on the same attributes.
     { name: 'calendar_shift_type_overrides', argumentCount: 0 },
+    // STORY 3.5b. The one function that writes: it soft-removes a live
+    // override past the table's missing update grant, attributing the removal
+    // itself, on the same attributes.
+    { name: 'remove_shift_type_override', argumentCount: 1 },
   ];
 
   it.skipIf(noDatabase).each(ACCESS_CONTROL_FUNCTIONS)(
@@ -1642,6 +1646,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'calendar_members', argumentCount: 0, expected: ['authenticated'] },
     // STORY 3.5a. The live overrides, on the same terms.
     { name: 'calendar_shift_type_overrides', argumentCount: 0, expected: ['authenticated'] },
+    // STORY 3.5b. The removal, on the same terms; the function itself refuses
+    // every caller but an active admin of the claimed organization.
+    { name: 'remove_shift_type_override', argumentCount: 1, expected: ['authenticated'] },
     // The zero-admin trigger function. Nothing calls it by hand and Postgres
     // checks EXECUTE when the trigger is created, not when it fires, so it
     // needs no grantee at all: its owner, and nobody else (0020). The

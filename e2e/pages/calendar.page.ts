@@ -247,9 +247,16 @@ export class CalendarPage extends BasePage {
 
   // --------------------------------------------------------- day detail
 
-  /** The day detail's Dialog, named by its title: the team and the date. */
+  /**
+   * The day detail's Dialog, named by its title: the team and the date. Exact,
+   * because the removal's confirmation (story 3.5b) names the same team and
+   * date inside its prompt.
+   */
   detailOf(teamName: string, date: string): Locator {
-    return this.dialog(fill(kalendar.detail.title, { team: teamName, date: detailDate(date) }));
+    return this.page.getByRole('dialog', {
+      name: fill(kalendar.detail.title, { team: teamName, date: detailDate(date) }),
+      exact: true,
+    });
   }
 
   /** The detail's roster heading. */
@@ -284,6 +291,67 @@ export class CalendarPage extends BasePage {
 
   closeIn(detail: Locator): Locator {
     return detail.getByRole('button', { name: kalendar.detail.close, exact: true });
+  }
+
+  // ------------------------------------------------ the override form (3.5b)
+
+  /** The admin's override form in the detail, named by its heading. */
+  overrideFormIn(detail: Locator): Locator {
+    return detail.getByRole('region', { name: kalendar.detail.override.set.heading, exact: true });
+  }
+
+  /** The form's type `Select`. */
+  overrideTypeIn(detail: Locator): Locator {
+    return detail.getByLabel(kalendar.detail.override.set.type, { exact: true });
+  }
+
+  /** The form's reason field. */
+  overrideReasonIn(detail: Locator): Locator {
+    return detail.getByLabel(kalendar.detail.override.set.reason, { exact: true });
+  }
+
+  /** The form's save. */
+  overrideSaveIn(detail: Locator): Locator {
+    return detail.getByRole('button', { name: kalendar.detail.override.set.save, exact: true });
+  }
+
+  /** The removal's action, beside the override block. */
+  overrideRemoveIn(detail: Locator): Locator {
+    return detail.getByRole('button', { name: kalendar.detail.override.remove.action, exact: true });
+  }
+
+  /** A refusal inside a Dialog. */
+  alertIn(dialog: Locator): Locator {
+    return dialog.getByRole('alert');
+  }
+
+  /** What a landed override write says inside the day detail. */
+  statusIn(dialog: Locator): Locator {
+    return dialog.getByRole('status');
+  }
+
+  /** The removal's confirmation, named by its prompt: the team, the date and the projected type restored. */
+  removeConfirmOf(teamName: string, date: string, projectedType: string): Locator {
+    return this.dialog(
+      fill(kalendar.detail.override.remove.prompt, { team: teamName, date: detailDate(date), type: projectedType }),
+    );
+  }
+
+  /** The confirmation's confirm. */
+  confirmRemoveIn(confirm: Locator): Locator {
+    return confirm.getByRole('button', { name: kalendar.detail.override.remove.confirm, exact: true });
+  }
+
+  /** The confirmation's cancel. */
+  cancelRemoveIn(confirm: Locator): Locator {
+    return confirm.getByRole('button', { name: kalendar.detail.override.remove.cancel, exact: true });
+  }
+
+  /** Chooses `typeName`, types `reason` and saves the override form in `detail`. */
+  async setOverrideIn(detail: Locator, typeName: string, reason: string): Promise<void> {
+    await this.overrideTypeIn(detail).selectOption({ label: typeName });
+    await this.overrideReasonIn(detail).fill(reason);
+    await this.overrideSaveIn(detail).click();
   }
 
   /** A grid cell's position among the data cells, from its `data-row` and `data-column`. */
