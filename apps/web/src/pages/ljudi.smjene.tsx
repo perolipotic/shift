@@ -1,52 +1,18 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, createRoute, redirect } from '@tanstack/react-router';
-import { Eye, Pencil, Plus, Users, UsersRound } from 'lucide-react';
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { Plus, UsersRound } from 'lucide-react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { IconTile } from '@/components/ui/icon-tile';
-import { Input } from '@/components/ui/input';
-import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
-import { Label } from '@/components/ui/label';
-import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import { Notice } from '@/components/ui/notice';
+import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
+import { TeamAddDialog } from '@/features/teams/components/team-add-dialog';
+import { TeamListSection } from '@/features/teams/components/team-list-section';
+import { useTeamList } from '@/features/teams/hooks/use-team-list';
+import { teamsMessageKey } from '@/features/teams/services/list';
 import { t } from '@/lib/i18n';
-import { NO_TEXT, mayReadMembers } from '@/features/members/services/list';
+import { mayReadMembers } from '@/features/members/services/list';
 import { DESTINATIONS } from '@/features/navigation/utils/destinations';
 import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/features/navigation/services/role';
-import { ROTATION_KEY } from '@/features/rotation/services/list';
 import { appLayoutRoute } from '@/pages/_app';
-import { supabaseClient } from '@/lib/supabase/client';
-import {
-  TEAMS_LIST_KEY,
-  TEAMS_TABLE,
-  teamsQueryOptions,
-  splitTeams,
-  teamActionMessageKey,
-  teamsMessageKey,
-  teamsSurfaceStateOf,
-  type TeamRow,
-} from '@/features/teams/services/list';
-import {
-  TEAM_WRITE_REFUSED,
-  TEAM_WRITE_UNAVAILABLE,
-  claimedOrganizationOf,
-  createTeam,
-  teamWriteMessageKey,
-  type TeamWriteFailure,
-  type TeamWriteTable,
-} from '@/features/teams/services/write';
 
 /**
  * `/ljudi/smjene` — the organization's teams (story 1.7a).
@@ -55,150 +21,25 @@ import {
  * is reached from the member list, which lights the `Ljudi` tab.
  *
  * ONE READ (AD-13). The rows, both counts and both groups come from the single
- * `useQuery` under `TEAMS_LIST_KEY`, split by `splitTeams`. The create needs the
+ * read under `TEAMS_LIST_KEY`, split by `splitTeams`. The create needs the
  * caller's organization, which is read from the session's own claim at submit
  * time — not a second query — and the database pins it again.
  *
  * ANY COUNT (DI-8). Nothing here knows how many teams there are; zero renders
- * `0 smjena` in words beside the create form.
+ * `0 smjena` in words, and the add dialog is offered all the same.
  *
- * THIS FILE HOLDS MARKUP AND STATE. Every rule is in `@/features/teams/services/list` and
- * `@/features/teams/services/write`, which the node suite executes.
+ * THIS FILE COMPOSES (source structure B6). The state, the one read and the
+ * add are `useTeamList`; the add dialog and the two groups are components in
+ * `@/features/teams/components`; every rule is in
+ * `@/features/teams/services/list` and `@/features/teams/services/write`,
+ * which the node suite executes.
  */
 
 const FIRST_DESTINATION = DESTINATIONS[0];
 
-const SKELETON_ROWS = [0, 1, 2];
-
 export function LjudiSmjeneScreen() {
-  const queryClient = useQueryClient();
-  const nameField = useRef<HTMLInputElement>(null);
-  const creating = useRef(false);
-  const [pending, setPending] = useState(false);
-  const [failure, setFailure] = useState<TeamWriteFailure | null>(null);
-  const [created, setCreated] = useState(false);
-  const [adding, setAdding] = useState(false);
-
-  // The first field, once the dialog is open. The dialog's own effect runs
-  // first, so `showModal()` has already moved focus into it.
-  useEffect(() => {
-    if (adding) nameField.current?.focus();
-  }, [adding]);
-
-  function openAdding(): void {
-    setFailure(null);
-    setCreated(false);
-    setAdding(true);
-  }
-
-  const answer = useQuery(teamsQueryOptions(() => supabaseClient().from(TEAMS_TABLE)));
-
-  const { teams, refusal, loading } = teamsSurfaceStateOf(answer);
-  const split = teams === null ? null : splitTeams(teams);
-
-  async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-
-    const name = nameField.current;
-
-    if (name === null || creating.current) return;
-
-    creating.current = true;
-    setFailure(null);
-    setCreated(false);
-    setPending(true);
-
-    try {
-      const client = supabaseClient();
-      const { data } = await client.auth.getSession();
-      const organization = claimedOrganizationOf(data.session?.access_token);
-
-      if (organization === null) {
-        setFailure(TEAM_WRITE_REFUSED);
-
-        return;
-      }
-
-      const outcome = await createTeam(
-        client.from(TEAMS_TABLE) as unknown as TeamWriteTable,
-        organization,
-        name.value,
-      );
-
-      // A REFUSED SAVE KEEPS THE ENTERED VALUE: the field is uncontrolled and
-      // nothing here clears it on this path (UX-DR34).
-      if (!outcome.ok) {
-        setFailure(outcome.code);
-        name.focus();
-
-        return;
-      }
-
-      name.value = NO_TEXT;
-      setCreated(true);
-      // Closed, and the confirmation is on the page; focus returns to the
-      // button that opened the dialog.
-      setAdding(false);
-
-      try {
-        // The rotation builder binds every active team, from its own snapshot
-        // (story 2.3b), so a new team shows there too. Both start together.
-        await Promise.all([
-          queryClient.invalidateQueries({ queryKey: TEAMS_LIST_KEY }),
-          queryClient.invalidateQueries({ queryKey: ROTATION_KEY }),
-        ]);
-      } catch (cause) {
-        console.error(TEAM_WRITE_UNAVAILABLE, cause);
-      }
-    } catch (cause) {
-      console.error(TEAM_WRITE_UNAVAILABLE, cause);
-      setFailure(TEAM_WRITE_UNAVAILABLE);
-    } finally {
-      creating.current = false;
-      setPending(false);
-    }
-  }
-
-  /** A group as a table, or nothing at all when it has none: its count says so. */
-  function renderTeams(group: readonly TeamRow[]): ReactNode {
-    if (group.length === 0) return null;
-
-    return (
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{t('smjene.name')}</TableHead>
-            <TableHead className="text-right">{t('smjene.actions')}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {group.map((team) => (
-            <TableRow key={team.id}>
-              <TableCell>
-                <div className="flex min-w-0 items-center gap-3">
-                  <IconTile>
-                    <Users />
-                  </IconTile>
-                  <span className="truncate font-semibold">{team.name}</span>
-                </div>
-              </TableCell>
-              <TableCell className="text-right">
-                {/* NAMED FOR THE TEAM IT OPENS; the name is data, interpolated.
-                    An archived team's row VIEWS it — `teamActionMessageKey`
-                    decides, because its dialog offers no edit. */}
-                <Button asChild variant="ghost" className="h-11 w-11 px-0">
-                  <Link to="/ljudi/smjene/$id" params={{ id: team.id }}>
-                    {team.archived ? <Eye aria-hidden /> : <Pencil aria-hidden />}
-                    <span className="sr-only">{t(teamActionMessageKey(team), { name: team.name })}</span>
-                  </Link>
-                </Button>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    );
-  }
+  const screen = useTeamList();
+  const { loading, openAdding, created, refusal } = screen;
 
   return (
     <main
@@ -231,102 +72,8 @@ export function LjudiSmjeneScreen() {
           {t(teamsMessageKey(refusal))}
         </Notice>
       )}
-      <Dialog open={adding} onOpenChange={setAdding} aria-labelledby="team-new-heading">
-        <DialogHeader
-          closeLabel={t('smjene.close')}
-          onClose={() => {
-            setAdding(false);
-          }}
-        >
-          <DialogTitle id="team-new-heading">{t('smjene.addHeading')}</DialogTitle>
-        </DialogHeader>
-        <form
-          method="post"
-          onSubmit={(event) => {
-            void submit(event);
-          }}
-          className="grid gap-5"
-        >
-          <div className="grid gap-2">
-            <Label htmlFor="team-new-name">{t('smjene.name')}</Label>
-            <InputGroup>
-              <InputGroupIcon>
-                <Users />
-              </InputGroupIcon>
-              <Input
-                ref={nameField}
-                id="team-new-name"
-                name="name"
-                type="text"
-                required
-                defaultValue={NO_TEXT}
-                onChange={() => {
-                  // A confirmation describes the last save, not what is typed now.
-                  setCreated(false);
-                }}
-                aria-invalid={failure !== null}
-                aria-describedby={failure === null ? undefined : 'team-create-error'}
-                className="h-11 w-full"
-              />
-            </InputGroup>
-          </div>
-          {/* THE CREATE FORM'S OWN REFUSAL, inside the dialog. The list-read
-              refusal belongs to the page. */}
-          {failure === null ? null : (
-            <Notice id="team-create-error" role="alert">
-              {t(teamWriteMessageKey(failure))}
-            </Notice>
-          )}
-          <DialogFooter>
-            <Button
-              className="h-11"
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setAdding(false);
-              }}
-            >
-              {t('smjene.cancel')}
-            </Button>
-            <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
-              {t('smjene.add')}
-            </Button>
-          </DialogFooter>
-        </form>
-      </Dialog>
-      {loading ? (
-        <div className="grid gap-2">
-          {SKELETON_ROWS.map((row) => (
-            <div key={row} className="h-11 w-full animate-pulse rounded-md bg-muted" />
-          ))}
-        </div>
-      ) : null}
-      {split === null ? null : (
-        <Card className="min-w-0">
-          <CardHeader className="flex-row flex-wrap items-center gap-3">
-            <CardTitle asChild>
-              <h2>{t('smjene.activeHeading')}</h2>
-            </CardTitle>
-            {/* STATED, AND STATED AT ZERO (UX-DR20). NOT a live region: only
-                confirmations announce, and a count announced on every refetch
-                is noise that buries them. */}
-            <Badge variant="secondary">{t('smjene.count', { count: split.active.length })}</Badge>
-          </CardHeader>
-          {renderTeams(split.active)}
-        </Card>
-      )}
-      {split === null ? null : (
-        <Card className="min-w-0">
-          <CardHeader>
-            {/* The count IS the heading: `Arhivirano: 2 smjene`. A separate
-                `Arhivirano` above it would say the same word twice. */}
-            <CardTitle asChild>
-              <h2>{t('smjene.archivedCount', { count: split.archived.length })}</h2>
-            </CardTitle>
-          </CardHeader>
-          {renderTeams(split.archived)}
-        </Card>
-      )}
+      <TeamAddDialog screen={screen} />
+      <TeamListSection screen={screen} />
     </main>
   );
 }

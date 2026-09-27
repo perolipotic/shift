@@ -1,49 +1,17 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { createRoute, redirect, useNavigate } from '@tanstack/react-router';
-import { Archive, Users } from 'lucide-react';
-import { useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { createRoute, redirect } from '@tanstack/react-router';
 
-import { Button } from '@/components/ui/button';
-import { Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
-import { Label } from '@/components/ui/label';
+import { Dialog, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Notice } from '@/components/ui/notice';
+import { TeamEditBody } from '@/features/teams/components/team-edit-body';
+import { useTeamEdit } from '@/features/teams/hooks/use-team-edit';
+import { teamHeadingMessageKey, teamsMessageKey } from '@/features/teams/services/list';
+import { teamSavedMessageKey, teamWriteMessageKey } from '@/features/teams/services/write';
 import { t } from '@/lib/i18n';
 import { mayReadMembers } from '@/features/members/services/list';
 import { DESTINATIONS } from '@/features/navigation/utils/destinations';
 import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/features/navigation/services/role';
-import { ROTATION_KEY } from '@/features/rotation/services/list';
 import { appLayoutRoute } from '@/pages/_app';
 import { LjudiSmjeneScreen } from '@/pages/ljudi.smjene';
-import { supabaseClient } from '@/lib/supabase/client';
-import {
-  TEAMS_LIST_KEY,
-  TEAMS_TABLE,
-  teamsQueryOptions,
-  teamHeadingMessageKey,
-  teamsMessageKey,
-  teamsSurfaceStateOf,
-  type TeamRow,
-} from '@/features/teams/services/list';
-import {
-  ARCHIVE_ARMED,
-  ARCHIVE_BUSY,
-  TEAM_ARCHIVED,
-  TEAM_RENAMED,
-  TEAM_WRITE_UNAVAILABLE,
-  archiveStageOf,
-  archiveTeam,
-  renameTeam,
-  renamesAfter,
-  teamFormKey,
-  teamFormStateOf,
-  teamSavedMessageKey,
-  teamWriteMessageKey,
-  type TeamSaved,
-  type TeamWriteFailure,
-  type TeamWriteTable,
-} from '@/features/teams/services/write';
 
 /**
  * `/ljudi/smjene/$id` — rename or archive one team, or view an archived one
@@ -69,6 +37,12 @@ import {
  * TWO REFUSALS, EACH WHERE IT HAPPENED. A refused rename is announced above the
  * form and is what the name field is described by; a refused archive is
  * announced inside the archive block, and never marks the name field invalid.
+ *
+ * THIS FILE COMPOSES (source structure B6). The state, the one read and the
+ * two writes are `useTeamEdit`; the dialog's body is components in
+ * `@/features/teams/components`; every rule is in
+ * `@/features/teams/services/list` and `@/features/teams/services/write`,
+ * which the node suite executes.
  */
 
 const FIRST_DESTINATION = DESTINATIONS[0];
@@ -80,272 +54,8 @@ export function LjudiSmjenaScreen() {
 }
 
 function TeamScreen({ id }: { readonly id: string }) {
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const nameField = useRef<HTMLInputElement>(null);
-  const writing = useRef(false);
-  const [pending, setPending] = useState(false);
-  const [armed, setArmed] = useState(false);
-  /** The RENAME's refusal: the one the name field is described by. */
-  const [failure, setFailure] = useState<TeamWriteFailure | null>(null);
-  /** The ARCHIVE's refusal, announced inside the archive block. */
-  const [archiveFailure, setArchiveFailure] = useState<TeamWriteFailure | null>(null);
-  const [saved, setSaved] = useState<TeamSaved | null>(null);
-  /** Landed renames; the form key counts them, never the name. */
-  const [renames, setRenames] = useState(0);
-
-  const answer = useQuery(teamsQueryOptions(() => supabaseClient().from(TEAMS_TABLE)));
-
-  const readState = teamsSurfaceStateOf(answer);
-  const { refusal: readRefusal, loading } = readState;
-  // A read failure hides the form, decided in `teamFormStateOf` from the state.
-  const form = teamFormStateOf(readState, id);
-  const refusal = failure ?? form.refusal;
-  const stage = archiveStageOf(armed, pending);
-  /** The archive is being asked about, or is in flight. */
-  const confirming = stage === ARCHIVE_ARMED || stage === ARCHIVE_BUSY;
-
-  function close(): void {
-    void navigate({ to: '/ljudi/smjene' });
-  }
-
-  /** Re-read the one list, so both screens show what the database holds now. */
-  async function refresh(): Promise<void> {
-    try {
-      // The rotation builder binds every active team, from its own snapshot
-      // (story 2.3b), so a rename or an archive shows there too. Both start
-      // together.
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: TEAMS_LIST_KEY }),
-        queryClient.invalidateQueries({ queryKey: ROTATION_KEY }),
-      ]);
-    } catch (cause) {
-      console.error(TEAM_WRITE_UNAVAILABLE, cause);
-    }
-  }
-
-  /**
-   * Rename. The field is uncontrolled and the form is keyed by landed renames
-   * only, so a refused rename keeps what was typed even when the re-read
-   * brings a name changed elsewhere.
-   */
-  async function submit(event: FormEvent<HTMLFormElement>, team: TeamRow): Promise<void> {
-    event.preventDefault();
-
-    const name = nameField.current;
-
-    if (name === null || writing.current) return;
-
-    writing.current = true;
-    // A rename is a different decision from the archive it may interrupt.
-    setArmed(false);
-    setFailure(null);
-    setArchiveFailure(null);
-    setSaved(null);
-    setPending(true);
-
-    try {
-      const outcome = await renameTeam(
-        supabaseClient().from(TEAMS_TABLE) as unknown as TeamWriteTable,
-        team,
-        name.value,
-      );
-
-      if (!outcome.ok) {
-        setFailure(outcome.code);
-        name.focus();
-      } else {
-        setSaved(TEAM_RENAMED);
-      }
-
-      await refresh();
-      // AFTER the re-read, so a remount shows what the database now holds.
-      setRenames((current) => renamesAfter(current, outcome));
-    } catch (cause) {
-      console.error(TEAM_WRITE_UNAVAILABLE, cause);
-      setFailure(TEAM_WRITE_UNAVAILABLE);
-    } finally {
-      writing.current = false;
-      setPending(false);
-    }
-  }
-
-  /**
-   * Archive, once confirmed. The confirmation stays mounted and disabled while
-   * the write is outstanding, and is disarmed only in the `finally`.
-   */
-  async function archive(team: TeamRow): Promise<void> {
-    if (writing.current) return;
-
-    writing.current = true;
-    setFailure(null);
-    setArchiveFailure(null);
-    setSaved(null);
-    setPending(true);
-
-    try {
-      const outcome = await archiveTeam(
-        supabaseClient().from(TEAMS_TABLE) as unknown as TeamWriteTable,
-        team,
-      );
-
-      if (!outcome.ok) {
-        setArchiveFailure(outcome.code);
-      } else {
-        setSaved(TEAM_ARCHIVED);
-      }
-
-      await refresh();
-    } catch (cause) {
-      console.error(TEAM_WRITE_UNAVAILABLE, cause);
-      setArchiveFailure(TEAM_WRITE_UNAVAILABLE);
-    } finally {
-      writing.current = false;
-      setPending(false);
-      setArmed(false);
-    }
-  }
-
-  function renderArchiveRefusal(): ReactNode {
-    return archiveFailure === null ? null : (
-      <Notice role="alert">
-        {t(teamWriteMessageKey(archiveFailure))}
-      </Notice>
-    );
-  }
-
-  /** The archive offer, beside Save in the dialog's footer. */
-  function renderArchive(team: TeamRow): ReactNode {
-    return (
-      <Button
-        className="h-11"
-        type="button"
-        variant="ghost"
-        disabled={pending}
-        onClick={() => {
-          setArchiveFailure(null);
-          setSaved(null);
-          setArmed(true);
-        }}
-      >
-        <Archive aria-hidden />
-        {/* A short word, and the whole name for assistive technology, which
-            begins with the visible word (WCAG 2.5.3). */}
-        <span aria-hidden>{t('smjene.archiveShort')}</span>
-        <span className="sr-only">{t('smjene.archive', { name: team.name })}</span>
-      </Button>
-    );
-  }
-
-  /**
-   * THE CONFIRMATION, in place of the form inside the same dialog: one question
-   * naming the team, and the two answers side by side. It stays mounted and
-   * disabled while the archive is outstanding.
-   */
-  function renderConfirm(team: TeamRow): ReactNode {
-    const busy = stage === ARCHIVE_BUSY;
-
-    return (
-      <div className="grid gap-5">
-        <p className="text-sm font-medium">{t('smjene.archivePrompt', { name: team.name })}</p>
-        <DialogFooter>
-          <Button
-            className="h-11"
-            type="button"
-            variant="outline"
-            disabled={busy}
-            onClick={() => {
-              setArmed(false);
-            }}
-          >
-            {t('smjene.archiveCancel')}
-          </Button>
-          <Button
-            className="h-11"
-            type="button"
-            disabled={busy}
-            aria-busy={busy}
-            onClick={() => {
-              void archive(team);
-            }}
-          >
-            <Archive aria-hidden />
-            {t('smjene.archiveConfirm', { name: team.name })}
-          </Button>
-        </DialogFooter>
-      </div>
-    );
-  }
-
-  /** An archived team: frozen, so its name and a note, and nothing that writes. */
-  function renderArchived(team: TeamRow): ReactNode {
-    return (
-      <div className="grid gap-2">
-        <p className="break-words text-base font-medium">{team.name}</p>
-        <p className="text-sm text-muted-foreground">{t('smjene.archivedNote')}</p>
-      </div>
-    );
-  }
-
-  function renderTeam(team: TeamRow): ReactNode {
-    if (team.archived) return renderArchived(team);
-
-    return (
-      <>
-        {/* HIDDEN, NOT UNMOUNTED, while the archive is asked about: a
-            cancelled archive returns to the form with what was typed. */}
-        <form
-          key={teamFormKey(team, renames)}
-          method="post"
-          onSubmit={(event) => {
-            void submit(event, team);
-          }}
-          className={confirming ? 'hidden' : 'grid gap-5'}
-        >
-          <div className="grid gap-2">
-            <Label htmlFor="team-name">{t('smjene.name')}</Label>
-            <InputGroup>
-              <InputGroupIcon>
-                <Users />
-              </InputGroupIcon>
-              <Input
-                ref={nameField}
-                id="team-name"
-                name="name"
-                type="text"
-                required
-                defaultValue={team.name}
-                onChange={() => {
-                  // A confirmation describes the last save, not what is typed now.
-                  setSaved(null);
-                }}
-                aria-invalid={failure !== null}
-                aria-describedby={failure === null ? undefined : 'team-form-error'}
-                className="h-11"
-              />
-            </InputGroup>
-          </div>
-          {renderArchiveRefusal()}
-          {/* THE TWO DECISIONS TOGETHER, at the right: archive, then save.
-              Neutral, never `destructive`, which UX-DR4 keeps for conflicts.
-              The dialog's close is the way back. */}
-          <DialogFooter>
-            {renderArchive(team)}
-            <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
-              {t('smjene.save')}
-            </Button>
-          </DialogFooter>
-        </form>
-        {confirming ? renderConfirm(team) : null}
-      </>
-    );
-  }
-
-  function renderBody(): ReactNode {
-    if (form.team !== null) return renderTeam(form.team);
-
-    return loading ? <div className="h-11 w-full animate-pulse rounded-md bg-muted" /> : null;
-  }
+  const screen = useTeamEdit(id);
+  const { close, form, readRefusal, refusal, saved } = screen;
 
   return (
     <>
@@ -376,7 +86,7 @@ function TeamScreen({ id }: { readonly id: string }) {
             {t(teamSavedMessageKey(saved))}
           </Notice>
         )}
-        {renderBody()}
+        <TeamEditBody screen={screen} />
       </Dialog>
     </>
   );

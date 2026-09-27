@@ -24,6 +24,11 @@ import {
   SHIFT_TYPE_LIST_PARTS,
   SHIFT_TYPE_SCREENS_EXEMPT,
 } from '@/features/shift-types/shift-type-screens.fixture';
+import {
+  TEAM_EDIT_PARTS,
+  TEAM_LIST_PARTS,
+  TEAM_SCREENS_EXEMPT,
+} from '@/features/teams/team-screens.fixture';
 
 /**
  * The sign-in path's screens, asserted at source level (story 1.1d, extended by
@@ -166,13 +171,25 @@ const MEMBER_EDIT: readonly string[] = [
   join(MEMBERS_FEATURE, 'utils', 'refusal-text.ts'),
 ];
 
+/** The teams feature, which holds both team screens' parts. */
+const TEAM_FEATURE = join(srcRoot, 'features', 'teams');
+/** The two team pages, which only compose (source structure B6), and their hooks. */
+const TEAM_LIST_PAGE = join(srcRoot, ...TEAM_LIST_PARTS.page);
+const TEAM_LIST_HOOK = join(srcRoot, ...TEAM_LIST_PARTS.hook);
+const TEAM_EDIT_PAGE = join(srcRoot, ...TEAM_EDIT_PARTS.page);
+const TEAM_EDIT_HOOK = join(srcRoot, ...TEAM_EDIT_PARTS.hook);
 /**
  * Story 1.7a's two team screens and the two modules holding their rules. Like
  * the member forms, neither screen is a destination, so they are named here by
  * hand: a `.tsx` absent from `SCREENS` is swept by nothing.
+ *
+ * FILE SETS since source structure B6 — each a page, its hook and its
+ * components — read as one source like the hour band screens, and written
+ * ONCE in `team-screens.fixture.ts`. The two sets are DISJOINT, so no string,
+ * control or handler is counted twice.
  */
-const TEAM_LIST = join(srcRoot, 'pages', 'ljudi.smjene.tsx');
-const TEAM_EDIT = join(srcRoot, 'pages', 'ljudi.smjene.$id.tsx');
+const TEAM_LIST: readonly string[] = Object.values(TEAM_LIST_PARTS).map((parts) => join(srcRoot, ...parts));
+const TEAM_EDIT: readonly string[] = Object.values(TEAM_EDIT_PARTS).map((parts) => join(srcRoot, ...parts));
 const TEAM_LIST_KEYS = join(srcRoot, 'features', 'teams', 'services', 'list.ts');
 const TEAM_WRITE_KEYS = join(srcRoot, 'features', 'teams', 'services', 'write.ts');
 
@@ -2634,6 +2651,196 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(source(hookFile), 'the hook reaches no client').toContain('supabaseClient(');
   });
 
+  it('sweeps every part of the team screens, so a new file cannot escape the sets', () => {
+    // SOURCE STRUCTURE B6, on B4's and B5's terms: an EQUALITY between the two
+    // sets and EVERY non-test module anywhere under the teams feature — its
+    // root, `services/`, and `components/`, `hooks/` and `utils/` at any depth —
+    // less the modules exempt for a stated reason (`team-screens.fixture.ts`).
+    // Read recursively, so a nested file cannot escape the sets either.
+    // ANY SCRIPT MODULE (`.[cm]?[jt]sx?`), less tests and declaration files,
+    // so a part cannot escape by its extension; and ANY `*.fixture.*`, which
+    // renders nothing, is left out of the comparison by its shape.
+    const exempt = new Set(TEAM_SCREENS_EXEMPT.map((entry) => join(TEAM_FEATURE, entry.file)));
+    const walked = readdirSync(TEAM_FEATURE, { recursive: true, encoding: 'utf8' })
+      .filter(
+        (name) =>
+          /\.[cm]?[jt]sx?$/.test(name) && !/\.test\.[cm]?[jt]sx?$/.test(name) && !/\.d\.[cm]?ts$/.test(name),
+      )
+      .map((name) => join(TEAM_FEATURE, name));
+    const found = walked.filter((file) => !/\.fixture\.[cm]?[jt]sx?$/.test(file));
+    const pages = new Set([TEAM_LIST_PAGE, TEAM_EDIT_PAGE]);
+
+    expect(walked, 'the walk reaches the feature root').toContain(join(TEAM_FEATURE, 'team-screens.fixture.ts'));
+    expect(found, 'the walk reaches services/').toContain(TEAM_LIST_KEYS);
+    for (const file of exempt) expect(walked, `${file} is exempt and does not exist`).toContain(file);
+    // THE EXACT EXEMPTIONS, so a new one is a reviewed change to this test.
+    expect([...exempt].sort(), 'the team exemptions changed').toEqual(
+      ['team-screens.fixture.ts', 'services/list.ts', 'services/write.ts', 'services/roster.ts']
+        .map((file) => join(TEAM_FEATURE, ...file.split('/')))
+        .sort(),
+    );
+    for (const entry of TEAM_SCREENS_EXEMPT) {
+      expect(entry.why.length, `${entry.file} is exempt without a stated reason`).toBeGreaterThan(20);
+    }
+    // DISJOINT: a part in both sets would have its strings, controls and
+    // handlers counted twice.
+    for (const file of TEAM_LIST) {
+      expect(TEAM_EDIT, `${file} is in both team sets`).not.toContain(file);
+    }
+    for (const file of [...TEAM_LIST, ...TEAM_EDIT]) {
+      expect(existsSync(file), `${file} is in a set and does not exist`).toBe(true);
+      // NON-VACUITY PER FILE, with a floor rather than "not empty": a part
+      // gutted to its imports would otherwise pass every sweep over the set.
+      expect(source(file).trim().length, `${file} is all but empty`).toBeGreaterThan(150);
+    }
+    expect(TEAM_LIST[0], 'the list page is read first').toBe(TEAM_LIST_PAGE);
+    expect(TEAM_EDIT[0], 'the edit page is read first').toBe(TEAM_EDIT_PAGE);
+    // ONE DECLARATION PER HANDLER PER SET, because the extractors take the
+    // first match in a joined set.
+    for (const [set, hookFile, names] of [
+      [TEAM_LIST, TEAM_LIST_HOOK, ['submit', 'openAdding']],
+      [TEAM_EDIT, TEAM_EDIT_HOOK, ['submit', 'archive', 'refresh', 'close']],
+    ] as const) {
+      for (const name of names) {
+        expect(
+          source(set).match(new RegExp(`function ${name}\\(`, 'g'))?.length,
+          `${name} is not declared exactly once in its set`,
+        ).toBe(1);
+        expect(source(hookFile), `${name} is not in its hook`).toMatch(
+          new RegExp(`\\n {2}(?:async )?function ${name}\\(`),
+        );
+      }
+    }
+    expect(
+      found.filter((file) => !exempt.has(file)).sort(),
+      'the team file sets and the feature folders disagree',
+    ).toEqual([...TEAM_LIST, ...TEAM_EDIT].filter((file) => !pages.has(file)).sort());
+  });
+
+  /**
+   * The team sets' wiring, read PER FILE (source structure B6, on B4's and
+   * B5's terms): the set-wide sweeps below take the first match in a joined
+   * set, so a part could shadow the hook's ref, handler or write and still
+   * read as wired.
+   */
+  const TEAM_SETS = [
+    {
+      name: 'the team list',
+      set: TEAM_LIST,
+      hookFile: TEAM_LIST_HOOK,
+      submits: ['submit'],
+    },
+    {
+      name: 'the team edit form',
+      set: TEAM_EDIT,
+      hookFile: TEAM_EDIT_HOOK,
+      submits: ['submit'],
+    },
+  ];
+  const TEAM_HANDLERS = 'submit|openAdding|archive|refresh|close';
+  const TEAM_WRITES = ['supabaseClient', 'TEAMS_TABLE', '.from(', 'createTeam(', 'renameTeam(', 'archiveTeam('];
+
+  it('remounts the team screen per route id, so no state crosses teams', () => {
+    expect(source(TEAM_EDIT_PAGE), 'the team edit screen is not keyed by the route id').toMatch(
+      /return <TeamScreen key=\{id\} id=\{id\} \/>;/,
+    );
+    // BELOW THE KEY: the hook is called in the keyed screen, so a new id
+    // remounts its state, and never in the wrapper that reads the id.
+    const page = source(TEAM_EDIT_PAGE);
+    const wrapper = /export function LjudiSmjenaScreen\([\s\S]*?\n\}/.exec(page)?.[0] ?? '';
+    const keyed = /\nfunction TeamScreen\([\s\S]*?\n\}/.exec(page)?.[0] ?? '';
+
+    expect(wrapper, 'the wrapper could not be extracted').toContain('useParams()');
+    expect(keyed, 'the keyed screen could not be extracted').not.toBe('');
+    expect(keyed, 'the edit hook is not called below the key').toContain('useTeamEdit(id)');
+    expect(wrapper, 'the edit hook is called above the key').not.toContain('useTeamEdit(');
+    expect(occurrences(page, 'useTeamEdit('), 'the edit hook is called more than once').toBe(1);
+  });
+
+  it.each([
+    { name: 'the team list', set: TEAM_LIST, page: TEAM_LIST_PAGE, hook: 'useTeamList(' },
+    { name: 'the team edit form', set: TEAM_EDIT, page: TEAM_EDIT_PAGE, hook: 'useTeamEdit(' },
+  ])('holds one instance of its hook, in the page, on $name', ({ set, page, hook }) => {
+    // ONE INSTANCE PER SET: a part calling the hook itself would hold state of
+    // its own, split from the page's, and every guard above would still pass.
+    // Counted over the set less the hook file, which declares it.
+    const callers = set.filter((file) => !source(file).includes(`export function ${hook}`));
+
+    expect(callers.length, 'the hook file is not in the set').toBe(set.length - 1);
+    expect(occurrences(screenSource(callers), hook), `${hook} is not called exactly once`).toBe(1);
+    expect(occurrences(source(page), hook), `${hook} is not called in the page`).toBe(1);
+    expect(occurrences(source(TEAM_LIST_PAGE), 'useTeamEdit('), 'the list page runs the edit hook').toBe(0);
+    expect(occurrences(source(TEAM_EDIT), 'useTeamList('), 'the edit set runs the list hook').toBe(0);
+  });
+
+  it.each(TEAM_SETS)('creates every attached ref once, in the hook, on $name', ({ set, hookFile }) => {
+    // `ref` and ANY `*Ref` prop, so a ref handed on through a primitive's own
+    // prop (`closeRef`, as the hour band dialog does) is read too.
+    const attached = [...source(set).matchAll(/\b(?:ref|\w+Ref)=\{([^}]*)\}/g)].map((found) => found[1] ?? '');
+
+    expect(attached.length, 'no ref is attached at all').toBeGreaterThan(0);
+    // A BARE NAME, so it resolves to a hook-created `const`; `screen.x` would not.
+    for (const name of attached) expect(name, `an attached ref is not a bare name: ${name}`).toMatch(/^\w+$/);
+    for (const name of new Set(attached)) {
+      expect(occurrences(source(set), `const ${name} = useRef`), `${name} is not created exactly once`).toBe(1);
+      expect(source(hookFile), `${name} is not created in the hook`).toContain(`const ${name} = useRef`);
+    }
+  });
+
+  it('disarms the archive confirmation in its finally, on the team edit form', () => {
+    const archive = namedHandler(source(TEAM_EDIT_HOOK), 'archive');
+
+    expect(archive.length, 'archive could not be extracted').toBeGreaterThan(80);
+    expect(finallyBlock(archive), 'the archive is not disarmed in its finally').toContain('setArmed(false)');
+  });
+
+  it('keys the team form by landed renames, on the team edit form', () => {
+    const form = /<form\b(?:=>|[^>])*>/.exec(source(join(srcRoot, ...TEAM_EDIT_PARTS.body)))?.[0] ?? '';
+
+    expect(form, 'the team form is gone').not.toBe('');
+    expect(form, 'the team form is not keyed by landed renames').toContain('key={teamFormKey(team, renames)}');
+  });
+
+  it('focuses the name field once the add dialog opens, from the team list hook only', () => {
+    // `Effect(`, so a layout or insertion effect is counted too.
+    expect(occurrences(source(TEAM_LIST), 'Effect('), 'an effect besides the one focus effect').toBe(1);
+    expect(occurrences(source(TEAM_EDIT), 'Effect('), 'an effect arrived on the team edit form').toBe(0);
+    expect(source(TEAM_LIST_HOOK), 'the focus effect changed').toMatch(
+      /useEffect\(\s*\(\)\s*=>\s*\{\s*if\s*\(adding\)\s*nameField\.current\?\.focus\(\);?\s*\},\s*\[adding\],?\s*\);/,
+    );
+  });
+
+  it.each(TEAM_SETS)('declares no handler outside the hook on $name', ({ set, hookFile }) => {
+    const shadow = new RegExp(`\\b(?:(?:const|let)\\s+(?:${TEAM_HANDLERS})\\s*=|function\\s+(?:${TEAM_HANDLERS})\\s*\\()`);
+    // Nor the hooks a handler is built from, nor a handler handed on as an
+    // object key of a part's own, nor the client and table a write is made on.
+    const wiring = new RegExp(
+      `\\buseNavigate\\(|\\buseQueryClient\\(|[{,]\\s*(?:${TEAM_HANDLERS})\\s*:|\\bsupabaseClient\\b|\\bTEAMS_TABLE\\b|\\.from\\(`,
+    );
+
+    for (const part of set.filter((file) => file !== hookFile)) {
+      expect(source(part), `${part} declares a handler of its own`).not.toMatch(shadow);
+      expect(source(part), `${part} builds or hands on a handler of its own`).not.toMatch(wiring);
+    }
+  });
+
+  it.each(TEAM_SETS)('binds every form to a named submit handler on $name', ({ set, submits }) => {
+    const forms = set.flatMap((part) => [...source(part).matchAll(/<form\b(?:=>|[^>])*>/g)].map((found) => found[0]));
+    const bound = new RegExp(`onSubmit=\\{[\\s\\S]{0,160}?\\b(?:${submits.join('|')})\\b`);
+
+    expect(forms.length, 'no form found').toBe(submits.length);
+    for (const form of forms) expect(form, 'a form is bound to no named submit handler').toMatch(bound);
+  });
+
+  it.each(TEAM_SETS)('writes only from the hook on $name', ({ set, hookFile }) => {
+    for (const part of set.filter((file) => file !== hookFile)) {
+      for (const write of TEAM_WRITES) {
+        expect(source(part), `${part} calls ${write}`).not.toContain(write);
+      }
+    }
+    expect(source(hookFile), 'the hook reaches no client').toContain('supabaseClient(');
+  });
+
   it('finds the controls it is about to measure', () => {
     expect(inputElements(source(SCREEN))).toHaveLength(2);
     expect(buttonElements(source(SCREEN))).toHaveLength(1);
@@ -3555,16 +3762,24 @@ describe('the member list reads once, under one key', () => {
   });
 
   it.each([
-    { name: 'the team list', file: TEAM_LIST },
-    { name: 'the team edit form', file: TEAM_EDIT },
-  ])('reads the teams exactly once, under the one team key, on $name', ({ file }) => {
+    { name: 'the team list', file: TEAM_LIST, hookFile: TEAM_LIST_HOOK },
+    { name: 'the team edit form', file: TEAM_EDIT, hookFile: TEAM_EDIT_HOOK },
+  ])('reads the teams exactly once, under the one team key, on $name', ({ file, hookFile }) => {
     // STORY 1.7a, AD-13. The rows, both counts and the edited team all come
     // from one read under `TEAMS_LIST_KEY`. The create's organization is the
     // session's own claim, never a second query.
+    // SOURCE STRUCTURE B6: counted over the whole set, so a second read in any
+    // part fails; the read and the re-reads are asserted IN THE HOOK, the one
+    // file that must hold them; and every ban holds PER PART.
     const screen = source(file);
+    const hook = source(hookFile);
 
+    expect(file, 'the hook is not in the set').toContain(hookFile);
     expect(occurrences(screen, 'useQuery(')).toBe(1);
     expect(occurrences(screen, 'useQuery(teamsQueryOptions(')).toBe(1);
+    expect(occurrences(hook, 'useQuery('), 'the one read is not in the hook').toBe(1);
+    expect(occurrences(hook, 'teamsQueryOptions('), 'the one read is not in the hook').toBe(1);
+    expect(occurrences(screen, 'teamsQueryOptions('), 'the team options are called outside the one read').toBe(1);
     expect(occurrences(screen, callOf('readTeams')), 'only the query options call the reader').toBe(0);
     // Every key named — the re-read's — is the one team key, and (STORY 2.3b)
     // the rotation builder's, which binds every active team: re-read beside
@@ -3573,21 +3788,35 @@ describe('the member list reads once, under one key', () => {
     expect(occurrences(screen, 'queryKey:')).toBe(
       occurrences(screen, 'queryKey: TEAMS_LIST_KEY') + occurrences(screen, 'queryKey: ROTATION_KEY'),
     );
+    expect(occurrences(hook, 'queryKey:'), 'a key is named outside the hook').toBe(
+      occurrences(screen, 'queryKey:'),
+    );
+    expect(occurrences(hook, 'queryKey:'), 'the hook names a key besides the two').toBe(
+      occurrences(hook, 'queryKey: TEAMS_LIST_KEY') + occurrences(hook, 'queryKey: ROTATION_KEY'),
+    );
     expect(occurrences(screen, 'invalidateQueries({ queryKey: ROTATION_KEY })')).toBe(
       occurrences(screen, 'invalidateQueries({ queryKey: TEAMS_LIST_KEY })'),
     );
-    expect(screen, 'the two re-reads are not started together').toMatch(
+    expect(hook, 'the two re-reads are not started together').toMatch(
       /Promise\.all\(\[\s*queryClient\.invalidateQueries\(\{ queryKey: TEAMS_LIST_KEY \}\),\s*queryClient\.invalidateQueries\(\{ queryKey: ROTATION_KEY \}\),?\s*\]\)/,
     );
     expect(source(TEAM_LIST_KEYS), 'the team read has no cache floor').toContain(
       'staleTime: TEAMS_READ_STALE_MS',
     );
-    expect(screen, 'a write is not followed by a re-read of the one list').toContain(
+    expect(hook, 'a write is not followed by a re-read of the one list').toContain(
       'invalidateQueries({ queryKey: TEAMS_LIST_KEY })',
     );
-    expect(screen, 'useMutation arrived; this repository uses a pending ref').not.toContain(
-      'useMutation',
+    expect(hook, 'the rotation builder is not re-read beside the list').toContain(
+      'invalidateQueries({ queryKey: ROTATION_KEY })',
     );
+    expect(occurrences(hook, 'invalidateQueries('), 'a re-read is started outside the hook').toBe(
+      occurrences(screen, 'invalidateQueries('),
+    );
+    for (const part of file) {
+      expect(source(part), `useMutation arrived in ${part}; this repository uses a pending ref`).not.toContain(
+        'useMutation',
+      );
+    }
   });
 
   it.each([
@@ -3883,49 +4112,64 @@ describe('the member list reads once, under one key', () => {
   it('offers an archived team nothing that writes', () => {
     // An archived team is frozen by the database's update policy; its screen
     // must not offer a control the database will refuse.
-    const archived = componentFunction(source(TEAM_EDIT), 'renderArchived');
+    // SOURCE STRUCTURE B6: read in the part that renders the team.
+    const body = join(srcRoot, ...TEAM_EDIT_PARTS.body);
+    const archived = componentFunction(source(body), 'renderArchived');
 
+    expect(TEAM_EDIT, 'the body part is not in the edit set').toContain(body);
+    expect(occurrences(source(TEAM_EDIT), 'function renderArchived('), 'an archived team is drawn twice').toBe(1);
     expect(archived.length, 'renderArchived could not be extracted').toBeGreaterThan(80);
-    expect(archived).not.toMatch(/<(Button|Input|form|select)\b/);
-    expect(componentFunction(source(TEAM_EDIT), 'renderTeam')).toMatch(
+    expect(archived).not.toMatch(/<(Button|Input|form|select|Link|TeamArchive\w*)\b/);
+    expect(componentFunction(source(body), 'renderTeam')).toMatch(
       /if \(team\.archived\) return renderArchived\(team\);/,
     );
   });
 
   it('describes the name field by the rename refusal alone', () => {
-    const screen = source(TEAM_EDIT);
+    // SOURCE STRUCTURE B6: the field in the part that renders it, the archive
+    // in the hook that declares it.
+    const body = source(join(srcRoot, ...TEAM_EDIT_PARTS.body));
 
-    expect(screen).toContain('aria-invalid={failure !== null}');
-    expect(screen).toContain("aria-describedby={failure === null ? undefined : 'team-form-error'}");
-    expect(namedHandler(screen, 'archive'), 'an archive refusal marks the name field').not.toMatch(
-      /\bsetFailure\(outcome/,
-    );
+    expect(body).toContain('aria-invalid={failure !== null}');
+    expect(body).toContain("aria-describedby={failure === null ? undefined : 'team-form-error'}");
+    expect(occurrences(source(TEAM_EDIT), 'aria-invalid='), 'another field is marked invalid').toBe(1);
+    const archive = namedHandler(source(TEAM_EDIT_HOOK), 'archive');
+
+    expect(archive.length, 'archive could not be extracted').toBeGreaterThan(80);
+    expect(archive, 'an archive refusal marks the name field').not.toMatch(/\bsetFailure\(outcome/);
   });
 
   it('disarms the archive confirmation when a rename is submitted', () => {
-    expect(namedHandler(source(TEAM_EDIT), 'submit')).toContain('setArmed(false)');
-  });
+    const submit = namedHandler(source(TEAM_EDIT_HOOK), 'submit');
 
-  it('remounts the team screen per route id, so no state crosses teams', () => {
-    expect(source(TEAM_EDIT)).toMatch(/<TeamScreen key=\{id\} id=\{id\} \/>/);
+    expect(submit.length, 'submit could not be extracted').toBeGreaterThan(80);
+    expect(submit).toContain('setArmed(false)');
   });
 
   it('announces confirmations and never the counts', () => {
+    // SOURCE STRUCTURE B6: counted over the set, and the one live region
+    // asserted in the page, the part that renders it.
     const screen = source(TEAM_LIST);
 
     expect(occurrences(screen, 'role="status"'), 'only the created confirmation is live').toBe(1);
-    expect(screen).toMatch(/role="status"[^>]*>\s*\{t\('smjene\.created'\)\}/);
+    expect(source(TEAM_LIST_PAGE)).toMatch(/role="status"[^>]*>\s*\{t\('smjene\.created'\)\}/);
   });
 
   it('clears a confirmation when the name is edited again', () => {
     // A confirmation describes the last save, not what is typed now.
-    expect(source(TEAM_LIST)).toMatch(/onChange=\{\(\) => \{[\s\S]{0,120}?setCreated\(false\)/);
-    expect(source(TEAM_EDIT)).toMatch(/onChange=\{\(\) => \{[\s\S]{0,120}?setSaved\(null\)/);
+    // SOURCE STRUCTURE B6: each in the part that renders its field.
+    expect(source(join(srcRoot, ...TEAM_LIST_PARTS.addDialog))).toMatch(
+      /onChange=\{\(\) => \{[\s\S]{0,120}?setCreated\(false\)/,
+    );
+    expect(source(join(srcRoot, ...TEAM_EDIT_PARTS.body))).toMatch(
+      /onChange=\{\(\) => \{[\s\S]{0,120}?setSaved\(null\)/,
+    );
   });
 
   it('offers no delete of a team anywhere on the surface', () => {
     // Removing a team archives it; the database refuses a delete from anybody.
-    for (const file of [TEAM_LIST, TEAM_EDIT, TEAM_LIST_KEYS, TEAM_WRITE_KEYS]) {
+    // SOURCE STRUCTURE B6: PER PART of both sets, and the two rule modules.
+    for (const file of [...TEAM_LIST, ...TEAM_EDIT, TEAM_LIST_KEYS, TEAM_WRITE_KEYS]) {
       expect(source(file), `${file} reaches for a delete`).not.toMatch(/\.delete\(/);
       expect(source(file), `${file} writes archived: false`).not.toMatch(/archived:\s*false/);
     }
