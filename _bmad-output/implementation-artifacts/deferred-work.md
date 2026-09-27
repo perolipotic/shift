@@ -890,3 +890,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b4-shift-type-pages.md`
   summary: Tidy the shift-type hooks' surface — named transitions (`armArchive`, `openAdding`) instead of raw setters used by components, one shared duration helper and a `ShiftTypeChip`, one shared shift-types read/re-read helper, and `NO_TEXT`/`shownDate` moved out of `features/members` into a shared module.
   evidence: Raised by B4's review. All duplication and the cross-feature import predate the move; changing them shifts `t()` counts and guard needles, so it is a deliberate follow-up rather than part of a pure move.
+- source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b5-hour-band-pages.md`
+  summary: Add E2E coverage for the hour-band add refusal (typed values kept, refusal in the dialog, refused field focused), the end preview, and the edit dialog's save, remove-cancel and remove-confirm flows (band leaves the list, focus on the dialog close).
+  evidence: Raised by B5's review; the hour-bands spec only covered a successful add and opening/closing the edit dialog. B5 moved these flows into new hooks and components and verified them once with a temporary spec that was not kept, because B5 forbade E2E changes.
