@@ -893,3 +893,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b5-hour-band-pages.md`
   summary: Add E2E coverage for the hour-band add refusal (typed values kept, refusal in the dialog, refused field focused), the end preview, and the edit dialog's save, remove-cancel and remove-confirm flows (band leaves the list, focus on the dialog close).
   evidence: Raised by B5's review; the hour-bands spec only covered a successful add and opening/closing the edit dialog. B5 moved these flows into new hooks and components and verified them once with a temporary spec that was not kept, because B5 forbade E2E changes.
+- source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b6-team-pages.md`
+  summary: Add E2E coverage for the team add refusal (alert in the dialog, typed name kept), rename (saved notice, new name listed) and archive (confirmation names the team, cancel keeps typed values, confirm moves it under the archived heading).
+  evidence: Raised by B6's review; `teams.spec.ts` covered only a successful create and opening the edit URL. B6 moved these flows into new hooks and components and verified them once with a temporary spec that was not kept, because B6 forbade E2E changes.
+- source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b6-team-pages.md`
+  summary: The team add dialog's Cancel is not disabled while a create is in flight (a "created" notice can land after the viewer dismissed the dialog), and the missing-organization-claim refusal skips the name-field focus the ordinary refusal takes.
+  evidence: Raised by B6's review; both carried over unchanged from the pre-split `ljudi.smjene.tsx`. Each is a behaviour change, so outside a pure move.

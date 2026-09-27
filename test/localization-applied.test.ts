@@ -13,6 +13,11 @@ import {
   SHIFT_TYPE_EDIT_PARTS,
   SHIFT_TYPE_LIST_PARTS,
 } from '../apps/web/src/features/shift-types/shift-type-screens.fixture.ts';
+import {
+  TEAM_EDIT_PARTS,
+  TEAM_LIST_PARTS,
+  TEAM_SCREENS_EXEMPT,
+} from '../apps/web/src/features/teams/team-screens.fixture.ts';
 
 /**
  * The localization layer is not only built but actually WIRED (story 1.1c).
@@ -180,6 +185,62 @@ const HOUR_BANDS_SOURCES_REQUIRED = [
     .filter((parts) => parts[0] !== 'pages')
     .map((parts) => join(webRoot, 'src', ...parts)),
   ...HOUR_BANDS_RULE_MODULES.map((name) => join(HOUR_BANDS_FEATURE, ...name.split('/'))),
+];
+
+/**
+ * Every non-test module anywhere under the teams feature — its root and every
+ * folder, at any depth — less its fixture: both team screens' parts since
+ * source structure B6, and the read, the writes and the roster beside them.
+ * The fixture renders nothing and is not a source. A missing feature folder
+ * reads as no parts, so the required-parts case fails instead of the whole
+ * file throwing.
+ */
+const TEAMS_FEATURE = join(webRoot, 'src', 'features', 'teams');
+
+function teamsScreenParts(): string[] {
+  if (!existsSync(TEAMS_FEATURE)) return [];
+
+  // RECURSIVE over the whole feature, so a part in a new folder is still a
+  // source; ANY script extension, less tests, declaration files and any
+  // `*.fixture.*`, which renders nothing.
+  return readdirSync(TEAMS_FEATURE, { recursive: true, encoding: 'utf8' })
+    .filter(
+      (name) =>
+        /\.[cm]?[jt]sx?$/.test(name) &&
+        !/\.test\.[cm]?[jt]sx?$/.test(name) &&
+        !/\.d\.[cm]?ts$/.test(name) &&
+        !/\.fixture\.[cm]?[jt]sx?$/.test(name),
+    )
+    .sort()
+    .map((name) => join(TEAMS_FEATURE, name));
+}
+
+/** The two team pages, from the fixture rather than written out. */
+const TEAM_PAGES = [TEAM_LIST_PARTS.page, TEAM_EDIT_PARTS.page].map((parts) => join(webRoot, 'src', ...parts));
+
+/**
+ * The rule modules beside the two sets' parts, read off the fixture's exempt
+ * list rather than written out a second time: every exempt module except the
+ * fixture itself, which renders nothing.
+ */
+const TEAMS_RULE_MODULES = TEAM_SCREENS_EXEMPT.map((entry) => entry.file).filter(
+  (file) => !/\.fixture\.[cm]?[jt]sx?$/.test(file),
+);
+
+/** Every part of both team sets outside `pages/`, from the fixture. */
+const TEAMS_FEATURE_PARTS = [...Object.values(TEAM_LIST_PARTS), ...Object.values(TEAM_EDIT_PARTS)].filter(
+  (parts) => parts[0] !== 'pages',
+);
+
+/**
+ * What `teamsScreenParts()` must hold: every part of both team screens' file
+ * sets outside `pages/` (`team-screens.fixture.ts`), and the three rule
+ * modules beside them. A folder read that silently lost one of these would
+ * drop it from `SOURCES` with the freshness guard still green.
+ */
+const TEAMS_SOURCES_REQUIRED = [
+  ...TEAMS_FEATURE_PARTS.map((parts) => join(webRoot, 'src', ...parts)),
+  ...TEAMS_RULE_MODULES.map((name) => join(TEAMS_FEATURE, ...name.split('/'))),
 ];
 
 /**
@@ -353,8 +414,17 @@ const SOURCES = [
   // the roster and the Danas line are chosen by, as return-type unions; the
   // roster screen renders four more and is no destination, so it is listed
   // nowhere else in this file. `danas.tsx` is already listed above.
-  join(webRoot, 'src', 'features', 'teams', 'services', 'roster.ts'),
+  // `roster.ts` is read off the teams feature's folders below.
   join(webRoot, 'src', 'pages', 'smjene.$id.tsx'),
+  // Story 1.7a's team screens. The two team screens render and are no
+  // destination, so they are listed nowhere else in this file; the two
+  // `@/features/teams` rule modules own the refusals, the confirmations and the
+  // row and heading keys as return-type unions, so a chunk built before an
+  // edit to either is stale in a way no sweep could see. The whole feature is
+  // READ OFF its folders (source structure B6): both screens' parts, the two
+  // modules and the roster; the two pages come from the fixture.
+  ...teamsScreenParts(),
+  ...TEAM_PAGES,
   // Visual refresh B's layout primitives and the initials module. All five are
   // text-free and here for freshness rather than for strings: they are what
   // every screen's header, the summary row, the badges and the avatar chips
@@ -477,6 +547,37 @@ describe('the build being read reflects the current localization source', () => 
     expect(CALENDAR_SOURCES_REQUIRED.length, 'the calendar set is empty').toBeGreaterThan(10);
     for (const file of CALENDAR_SOURCES_REQUIRED) {
       expect(parts, `${file} is not read by calendarScreenParts()`).toContain(file);
+      expect(SOURCES, `${file} is not in SOURCES`).toContain(file);
+    }
+  });
+
+  it('lists no source twice', () => {
+    // A duplicate is harmless to the freshness guard but hides a list that
+    // has drifted: a hand-written line left behind after a folder read took
+    // the same file over.
+    const seen = new Set<string>();
+    const twice = SOURCES.filter((file) => (seen.has(file) ? true : (seen.add(file), false)));
+
+    expect(twice, 'SOURCES lists a file twice').toEqual([]);
+  });
+
+  it('reads every team screen part and rule module into the sources', () => {
+    const parts = teamsScreenParts();
+
+    // THE EXACT COUNT, read off the disk and derived from the fixture: every
+    // part of both sets outside `pages/`, and the three rule modules.
+    expect(TEAMS_RULE_MODULES, 'the fixture exempts no rule module').toEqual(
+      expect.arrayContaining(['services/list.ts', 'services/write.ts']),
+    );
+    expect(parts, 'the teams feature grew or lost a module').toHaveLength(
+      TEAMS_FEATURE_PARTS.length + TEAMS_RULE_MODULES.length,
+    );
+    for (const page of TEAM_PAGES) expect(SOURCES, `${page} is not in SOURCES`).toContain(page);
+    expect([...parts].sort(), 'the feature holds a module no set and no rule list names').toEqual(
+      [...TEAMS_SOURCES_REQUIRED].sort(),
+    );
+    for (const file of TEAMS_SOURCES_REQUIRED) {
+      expect(parts, `${file} is not read by teamsScreenParts()`).toContain(file);
       expect(SOURCES, `${file} is not in SOURCES`).toContain(file);
     }
   });
