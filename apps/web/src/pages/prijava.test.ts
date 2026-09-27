@@ -14,6 +14,11 @@ import {
   SETTINGS_SCREEN_EXEMPT,
   SETTINGS_SCREEN_PARTS,
 } from '@/features/organization/settings-screen.fixture';
+import {
+  SHIFT_TYPE_EDIT_PARTS,
+  SHIFT_TYPE_LIST_PARTS,
+  SHIFT_TYPE_SCREENS_EXEMPT,
+} from '@/features/shift-types/shift-type-screens.fixture';
 
 /**
  * The sign-in path's screens, asserted at source level (story 1.1d, extended by
@@ -185,13 +190,29 @@ const HOUR_BAND_EDIT = join(srcRoot, 'pages', 'organizacija.satni-pojasi.$id.tsx
 const HOUR_BAND_LIST_KEYS = join(srcRoot, 'features', 'hour-bands', 'services', 'list.ts');
 const HOUR_BAND_WRITE_KEYS = join(srcRoot, 'features', 'hour-bands', 'services', 'write.ts');
 
+/** The shift types feature, which holds both shift type screens' parts. */
+const SHIFT_TYPE_FEATURE = join(srcRoot, 'features', 'shift-types');
+/** The two shift type pages, which only compose (source structure B4), and their hooks. */
+const SHIFT_TYPE_LIST_PAGE = join(srcRoot, ...SHIFT_TYPE_LIST_PARTS.page);
+const SHIFT_TYPE_LIST_HOOK = join(srcRoot, ...SHIFT_TYPE_LIST_PARTS.hook);
+const SHIFT_TYPE_EDIT_PAGE = join(srcRoot, ...SHIFT_TYPE_EDIT_PARTS.page);
+const SHIFT_TYPE_EDIT_HOOK = join(srcRoot, ...SHIFT_TYPE_EDIT_PARTS.hook);
 /**
  * Story 2.2b's two shift type screens and the two modules holding their rules.
  * The list IS the `Postavke rotacije` destination, which left the placeholders
  * when it was built; the edit screen is reached from it only.
+ *
+ * FILE SETS since source structure B4 — each a page, its hook and its
+ * components — read as one source like the member, settings and calendar
+ * screens, and written ONCE in `shift-type-screens.fixture.ts`. The two sets
+ * are DISJOINT, so no string, control or handler is counted twice.
  */
-const SHIFT_TYPE_LIST = join(srcRoot, 'pages', 'postavke-rotacije.tsx');
-const SHIFT_TYPE_EDIT = join(srcRoot, 'pages', 'postavke-rotacije.tipovi-smjena.$id.tsx');
+const SHIFT_TYPE_LIST: readonly string[] = Object.values(SHIFT_TYPE_LIST_PARTS).map((parts) =>
+  join(srcRoot, ...parts),
+);
+const SHIFT_TYPE_EDIT: readonly string[] = Object.values(SHIFT_TYPE_EDIT_PARTS).map((parts) =>
+  join(srcRoot, ...parts),
+);
 const SHIFT_TYPE_LIST_KEYS = join(srcRoot, 'features', 'shift-types', 'services', 'list.ts');
 const SHIFT_TYPE_WRITE_KEYS = join(srcRoot, 'features', 'shift-types', 'services', 'write.ts');
 
@@ -2261,6 +2282,150 @@ describe('the screen is read at all, so every sweep below means something', () =
     ).toEqual(KALENDAR.filter((file) => file !== KALENDAR_PAGE).sort());
   });
 
+  it('sweeps every part of the shift type screens, so a new file cannot escape the sets', () => {
+    // SOURCE STRUCTURE B4, on B3's terms: an EQUALITY between the two sets and
+    // EVERY non-test module anywhere under the shift types feature — its root,
+    // `services/`, and `components/`, `hooks/` and `utils/` at any depth — less
+    // the modules exempt for a stated reason (`shift-type-screens.fixture.ts`).
+    // Read recursively, so a nested file cannot escape the sets either.
+    const exempt = new Set(SHIFT_TYPE_SCREENS_EXEMPT.map((entry) => join(SHIFT_TYPE_FEATURE, entry.file)));
+    const found = readdirSync(SHIFT_TYPE_FEATURE, { recursive: true, encoding: 'utf8' })
+      .filter((name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name))
+      .map((name) => join(SHIFT_TYPE_FEATURE, name));
+    const pages = new Set([SHIFT_TYPE_LIST_PAGE, SHIFT_TYPE_EDIT_PAGE]);
+
+    expect(found, 'the walk reaches the feature root').toContain(
+      join(SHIFT_TYPE_FEATURE, 'shift-type-screens.fixture.ts'),
+    );
+    expect(found, 'the walk reaches services/').toContain(SHIFT_TYPE_LIST_KEYS);
+    for (const file of exempt) expect(found, `${file} is exempt and does not exist`).toContain(file);
+    // THE EXACT EXEMPTIONS, so a new one is a reviewed change to this test.
+    expect([...exempt].sort(), 'the shift type exemptions changed').toEqual(
+      ['shift-type-screens.fixture.ts', 'services/list.ts', 'services/write.ts', 'utils/ramp.ts']
+        .map((file) => join(SHIFT_TYPE_FEATURE, ...file.split('/')))
+        .sort(),
+    );
+    for (const entry of SHIFT_TYPE_SCREENS_EXEMPT) {
+      expect(entry.why.length, `${entry.file} is exempt without a stated reason`).toBeGreaterThan(20);
+    }
+    // DISJOINT: a part in both sets would have its strings, controls and
+    // handlers counted twice.
+    for (const file of SHIFT_TYPE_LIST) {
+      expect(SHIFT_TYPE_EDIT, `${file} is in both shift type sets`).not.toContain(file);
+    }
+    for (const file of [...SHIFT_TYPE_LIST, ...SHIFT_TYPE_EDIT]) {
+      expect(existsSync(file), `${file} is in a set and does not exist`).toBe(true);
+      // NON-VACUITY PER FILE, with a floor rather than "not empty": a part
+      // gutted to its imports would otherwise pass every sweep over the set.
+      expect(source(file).trim().length, `${file} is all but empty`).toBeGreaterThan(150);
+    }
+    expect(SHIFT_TYPE_LIST[0], 'the list page is read first').toBe(SHIFT_TYPE_LIST_PAGE);
+    expect(SHIFT_TYPE_EDIT[0], 'the edit page is read first').toBe(SHIFT_TYPE_EDIT_PAGE);
+    // ONE DECLARATION PER HANDLER PER SET, because the extractors take the
+    // first match in a joined set.
+    for (const [set, hookFile, names] of [
+      [SHIFT_TYPE_LIST, SHIFT_TYPE_LIST_HOOK, ['submit', 'openAdding', 'chooseKind']],
+      [
+        SHIFT_TYPE_EDIT,
+        SHIFT_TYPE_EDIT_HOOK,
+        ['submit', 'saveTimes', 'cancelTimes', 'archive', 'refresh', 'close', 'clearOutcomes'],
+      ],
+    ] as const) {
+      for (const name of names) {
+        expect(
+          source(set).match(new RegExp(`function ${name}\\(`, 'g'))?.length,
+          `${name} is not declared exactly once in its set`,
+        ).toBe(1);
+        expect(source(hookFile), `${name} is not in its hook`).toMatch(
+          new RegExp(`\\n {2}(?:async )?function ${name}\\(`),
+        );
+      }
+    }
+    expect(
+      found.filter((file) => !exempt.has(file)).sort(),
+      'the shift type file sets and the feature folders disagree',
+    ).toEqual([...SHIFT_TYPE_LIST, ...SHIFT_TYPE_EDIT].filter((file) => !pages.has(file)).sort());
+  });
+
+  /**
+   * The shift type sets' wiring, read PER FILE (source structure B4): the
+   * set-wide sweeps below take the first match in a joined set, so a part
+   * could shadow the hook's ref, handler or write and still read as wired.
+   */
+  const SHIFT_TYPE_SETS = [
+    {
+      name: 'the shift type list',
+      set: SHIFT_TYPE_LIST,
+      hookFile: SHIFT_TYPE_LIST_HOOK,
+      submits: ['submit'],
+    },
+    {
+      name: 'the shift type edit form',
+      set: SHIFT_TYPE_EDIT,
+      hookFile: SHIFT_TYPE_EDIT_HOOK,
+      submits: ['submit', 'saveTimes'],
+    },
+  ];
+  const SHIFT_TYPE_HANDLERS =
+    'submit|saveTimes|cancelTimes|archive|chooseKind|openAdding|refresh|close|clearOutcomes';
+  const SHIFT_TYPE_WRITES = [
+    'supabaseClient(',
+    'createShiftType(',
+    'renameShiftType(',
+    'correctShiftTypeTimes(',
+    'cancelScheduledTimes(',
+    'archiveShiftType(',
+  ];
+
+  it('remounts the edit screen per type, keyed by the route id', () => {
+    expect(source(SHIFT_TYPE_EDIT_PAGE), 'the edit screen is not keyed by the route id').toMatch(
+      /return <ShiftTypeScreen key=\{id\} id=\{id\} \/>;/,
+    );
+  });
+
+  it.each(SHIFT_TYPE_SETS)('creates every attached ref once, in the hook, on $name', ({ set, hookFile }) => {
+    const attached = [...source(set).matchAll(/\bref=\{(\w+)\}/g)].map((found) => found[1] ?? '');
+
+    expect(attached.length, 'no ref is attached at all').toBeGreaterThan(3);
+    for (const name of new Set(attached)) {
+      expect(occurrences(source(set), `const ${name} = useRef`), `${name} is not created exactly once`).toBe(1);
+      expect(source(hookFile), `${name} is not created in the hook`).toContain(`const ${name} = useRef`);
+    }
+  });
+
+  it.each(SHIFT_TYPE_SETS)('declares no handler outside the hook on $name', ({ set, hookFile }) => {
+    const shadow = new RegExp(`\\b(?:(?:const|let)\\s+(?:${SHIFT_TYPE_HANDLERS})\\s*=|function\\s+(?:${SHIFT_TYPE_HANDLERS})\\s*\\()`);
+
+    for (const part of set.filter((file) => file !== hookFile)) {
+      expect(source(part), `${part} declares a handler of its own`).not.toMatch(shadow);
+    }
+  });
+
+  it.each(SHIFT_TYPE_SETS)('binds every form to a named submit handler on $name', ({ set, submits }) => {
+    const forms = set.flatMap((part) => [...source(part).matchAll(/<form\b(?:=>|[^>])*>/g)].map((found) => found[0]));
+    const bound = new RegExp(`onSubmit=\\{[\\s\\S]{0,160}?\\b(?:${submits.join('|')})\\b`);
+
+    expect(forms.length, 'no form found').toBe(submits.length);
+    for (const form of forms) expect(form, 'a form is bound to no named submit handler').toMatch(bound);
+  });
+
+  it('binds the times form to saveTimes', () => {
+    const times = /<form\b(?:=>|[^>])*>/.exec(source(join(srcRoot, ...SHIFT_TYPE_EDIT_PARTS.times)))?.[0] ?? '';
+
+    expect(times, 'the times form is gone').not.toBe('');
+    expect(times, 'the times form does not submit through saveTimes').toMatch(
+      /onSubmit=\{[\s\S]{0,160}?\bsaveTimes\(/,
+    );
+  });
+
+  it.each(SHIFT_TYPE_SETS)('writes only from the hook on $name', ({ set, hookFile }) => {
+    for (const part of set.filter((file) => file !== hookFile)) {
+      for (const write of SHIFT_TYPE_WRITES) {
+        expect(source(part), `${part} calls ${write}`).not.toContain(write);
+      }
+    }
+  });
+
   it('finds the controls it is about to measure', () => {
     expect(inputElements(source(SCREEN))).toHaveLength(2);
     expect(buttonElements(source(SCREEN))).toHaveLength(1);
@@ -3276,15 +3441,22 @@ describe('the member list reads once, under one key', () => {
   });
 
   it.each([
-    { name: 'the shift type list', file: SHIFT_TYPE_LIST },
-    { name: 'the shift type edit form', file: SHIFT_TYPE_EDIT },
-  ])('reads the shift types exactly once, under the one key, on $name', ({ file }) => {
+    { name: 'the shift type list', file: SHIFT_TYPE_LIST, hookFile: SHIFT_TYPE_LIST_HOOK },
+    { name: 'the shift type edit form', file: SHIFT_TYPE_EDIT, hookFile: SHIFT_TYPE_EDIT_HOOK },
+  ])('reads the shift types exactly once, under the one key, on $name', ({ file, hookFile }) => {
     // STORY 2.2b, AD-13. The rows, the slots, the times, "today" and the edited
     // type all come from one read under `SHIFT_TYPES_LIST_KEY`.
+    // SOURCE STRUCTURE B4: counted over the whole set, so a second read in any
+    // part fails; the read and the re-reads are asserted IN THE HOOK, the one
+    // file that must hold them; and every ban below holds PER PART.
     const screen = source(file);
+    const hook = source(hookFile);
 
+    expect(file, 'the hook is not in the set').toContain(hookFile);
     expect(occurrences(screen, 'useQuery(')).toBe(1);
     expect(occurrences(screen, 'shiftTypesQueryOptions(')).toBe(1);
+    expect(occurrences(hook, 'useQuery('), 'the one read is not in the hook').toBe(1);
+    expect(occurrences(hook, 'shiftTypesQueryOptions('), 'the one read is not in the hook').toBe(1);
     // STORY 2.3b: a shift type write also invalidates the rotation builder's
     // own snapshot, which draws the types too — and nothing else.
     expect(occurrences(screen, 'queryKey:')).toBe(
@@ -3299,20 +3471,29 @@ describe('the member list reads once, under one key', () => {
     expect(occurrences(screen, 'invalidateQueries({ queryKey: ROTATION_KEY })')).toBe(
       occurrences(screen, 'invalidateQueries({ queryKey: SHIFT_TYPES_LIST_KEY })'),
     );
-    expect(screen, 'the two re-reads are not started together').toMatch(
+    expect(hook, 'the two re-reads are not started together').toMatch(
       /Promise\.all\(\[\s*queryClient\.invalidateQueries\(\{ queryKey: SHIFT_TYPES_LIST_KEY \}\),\s*queryClient\.invalidateQueries\(\{ queryKey: ROTATION_KEY \}\),?\s*\]\)/,
     );
-    expect(screen, 'useMutation arrived; this repository uses a pending ref').not.toContain(
-      'useMutation',
+    expect(occurrences(hook, 'invalidateQueries({ queryKey: SHIFT_TYPES_LIST_KEY })')).toBe(
+      occurrences(screen, 'invalidateQueries({ queryKey: SHIFT_TYPES_LIST_KEY })'),
     );
-    expect(screen, `${file} reaches past the list module into the domain`).not.toContain(
-      '@shift/domain',
-    );
-    expect(screen, `${file} recomputes a duration itself`).not.toMatch(
-      /\b1440\b|MINUTES_PER_DAY|startMinute\s*[-+%]|endMinute\s*[-+%]/,
-    );
-    // UX-DR6: colour is the slot's, never a choice, and never a named token.
-    expect(screen).not.toMatch(/type="color"|shift-day|shift-night|shift-slot-/);
+    for (const part of file) {
+      const text = source(part);
+
+      expect(text, `useMutation arrived in ${part}; this repository uses a pending ref`).not.toContain(
+        'useMutation',
+      );
+      expect(text, `${part} reaches past the list module into the domain`).not.toContain(
+        '@shift/domain',
+      );
+      expect(text, `${part} recomputes a duration itself`).not.toMatch(
+        /\b1440\b|MINUTES_PER_DAY|startMinute\s*[-+%]|endMinute\s*[-+%]/,
+      );
+      // UX-DR6: colour is the slot's, never a choice, and never a named token.
+      expect(text, `${part} paints a colour of its own`).not.toMatch(
+        /type="color"|shift-day|shift-night|shift-slot-/,
+      );
+    }
   });
 
   it('reads the rotation once, under its own key, and invalidates only that key, on the rotation builder', () => {
@@ -3406,11 +3587,14 @@ describe('the member list reads once, under one key', () => {
     }
   });
 
-  it('offers no is_working change and no delete of a type', () => {
+  it('keeps is_working and select off the edit screen, and deletes only a scheduled version, through its seam', () => {
     // STORY 2.2b. `is_working` is fixed at creation; the edit screen has no
     // select at all, and neither screen sends a delete of a type.
-    expect(selectElements(source(SHIFT_TYPE_EDIT))).toEqual([]);
-    expect(source(SHIFT_TYPE_EDIT)).not.toContain('is_working');
+    // PER PART since source structure B4, so a moved file cannot carry one.
+    for (const part of SHIFT_TYPE_EDIT) {
+      expect(selectElements(source(part)), `a select on ${part}`).toEqual([]);
+      expect(source(part), `${part} names is_working`).not.toContain('is_working');
+    }
     expect(source(SHIFT_TYPE_LIST_KEYS) + source(SHIFT_TYPE_WRITE_KEYS)).not.toMatch(
       /archived:\s*false/,
     );
@@ -3426,7 +3610,7 @@ describe('the member list reads once, under one key', () => {
     expect(exportedFunction(writes, 'cancelScheduledTimes'), 'the one delete is not the cancellation').toContain(
       '.delete()',
     );
-    for (const file of [SHIFT_TYPE_LIST, SHIFT_TYPE_EDIT]) {
+    for (const file of [...SHIFT_TYPE_LIST, ...SHIFT_TYPE_EDIT]) {
       expect(source(file), `${file} deletes directly`).not.toContain('.delete(');
     }
   });
