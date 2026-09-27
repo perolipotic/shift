@@ -361,6 +361,8 @@ export default [
       '**/coverage/**',
       '_bmad/**',
       '_bmad-output/**',
+      // Other sessions' worktrees live here; their unfinished code is not this checkout's.
+      '.claude/**',
     ],
   },
 
