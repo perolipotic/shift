@@ -24,6 +24,11 @@ export class LoginPage extends BasePage {
     return this.page.getByLabel(hr.auth.password, { exact: true });
   }
 
+  /** Prijavi se. */
+  get submitButton(): Locator {
+    return this.page.getByRole('button', { name: hr.auth.submit, exact: true });
+  }
+
   /** The real two-step sign-in: organization, then username and password,
    *  through GoTrue. Leaves the page wherever the attempt lands. */
   async submitSignIn(slug: string, username: string, password: string): Promise<void> {
@@ -34,7 +39,7 @@ export class LoginPage extends BasePage {
 
     await this.usernameInput.fill(username);
     await this.passwordInput.fill(password);
-    await this.page.getByRole('button', { name: hr.auth.submit }).click();
+    await this.submitButton.click();
   }
 
   /** Signs in and waits for the landing destination. */

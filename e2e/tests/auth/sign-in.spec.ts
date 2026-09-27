@@ -1,3 +1,5 @@
+import type { Route } from '@playwright/test';
+
 import { ADMIN_DESTINATIONS, MEMBER_DESTINATIONS, hr } from '../../utils/i18n.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
@@ -33,11 +35,60 @@ test('a member signs in and lands on Danas without the admin destinations', asyn
   }
 });
 
+// The refusals below sign in as the SPARE account, never the admin every
+// other spec's stored session belongs to: repeated failed attempts must not
+// throttle or lock the account the rest of the suite depends on.
+
 test('a wrong password is refused on the page', async ({ page, loginPage, fixture }) => {
-  await loginPage.submitSignIn(fixture.slug, fixture.admin.username, `${fixture.password}-wrong`);
+  await loginPage.submitSignIn(fixture.slug, fixture.spare.username, `${fixture.password}-wrong`);
 
   await expect(loginPage.alert).toHaveText(hr.auth.error.credentials);
   await expect(page).toHaveURL(`/prijava/${fixture.slug}`);
+});
+
+test('after a refusal the button is enabled again, and a second attempt with the right password lands on Danas', async ({
+  page,
+  loginPage,
+  fixture,
+}) => {
+  await loginPage.submitSignIn(fixture.slug, fixture.spare.username, `${fixture.password}-wrong`);
+  await expect(loginPage.alert).toHaveText(hr.auth.error.credentials);
+  await expect(loginPage.submitButton).toBeEnabled();
+
+  await loginPage.passwordInput.fill(fixture.password);
+  await loginPage.submitButton.click();
+  await expect(page).toHaveURL('/danas');
+  await expect(loginPage.heading(hr.nav.danas)).toBeVisible();
+});
+
+/** GoTrue's password grant, `POST /auth/v1/token?grant_type=password`, and nothing else. */
+function isPasswordGrant(url: URL): boolean {
+  return url.pathname.endsWith('/auth/v1/token') && url.searchParams.get('grant_type') === 'password';
+}
+
+test('an auth service that cannot be reached says sign-in is unavailable, leaves the form usable, and a retry once it is back signs in', async ({
+  page,
+  loginPage,
+  fixture,
+}) => {
+  // The password grant fails in transport, for this test's page only.
+  const failPasswordGrant = (route: Route) => route.abort('failed');
+  await page.route(isPasswordGrant, failPasswordGrant);
+
+  try {
+    await loginPage.submitSignIn(fixture.slug, fixture.spare.username, fixture.password);
+
+    await expect(loginPage.alert).toHaveText(hr.auth.error.unavailable);
+    await expect(page).toHaveURL(`/prijava/${fixture.slug}`);
+    await expect(loginPage.submitButton).toBeEnabled();
+  } finally {
+    await page.unroute(isPasswordGrant, failPasswordGrant);
+  }
+
+  // The service is back: the same form, submitted again, signs in.
+  await loginPage.submitButton.click();
+  await expect(page).toHaveURL('/danas');
+  await expect(loginPage.heading(hr.nav.danas)).toBeVisible();
 });
 
 test('Odjava signs out and returns to the organization prompt', async ({ page, loginPage, fixture }) => {

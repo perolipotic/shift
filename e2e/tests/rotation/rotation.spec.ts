@@ -398,3 +398,53 @@ test('an admin schedules a change from tomorrow, sees it in the history, is refu
   await expect(rotationPage.historyRow(shownDate(tomorrow))).toHaveCount(0);
   await expect(refusal).toHaveCount(0);
 });
+
+test('a shift type gets a correction from tomorrow, the correction is cancelled, and the type is archived', async ({
+  page,
+  rotationPage,
+}) => {
+  // ITS OWN TYPE, per attempt; nothing here saves a rotation, so the
+  // rotation is not held.
+  const name = `Korekcija ${randomBytes(3).toString('hex')}`;
+  const corrected = '08:00–20:00';
+
+  await rotationPage.goto();
+  await rotationPage.addShiftType(name, ['07:00', '19:00']);
+  await rotationPage.shiftTypeEditLink(name).click();
+  await expect(rotationPage.shiftTypeEditDialog).toBeVisible();
+
+  // CORRECT THE TIMES from the date field's minimum: a type added today has
+  // today's version, so the earliest correction is tomorrow, the default.
+  const tomorrow = organizationDate(1);
+  await expect(rotationPage.timesFromInput).toHaveValue(tomorrow);
+  await rotationPage.timesStartInput.fill('08:00');
+  await rotationPage.timesEndInput.fill('20:00');
+  await rotationPage.timesCorrectButton.click();
+  await expect(rotationPage.statusWith(shiftTypes.timesSaved)).toBeVisible();
+  await expect(rotationPage.scheduledTimesLine(shownDate(tomorrow), corrected)).toBeVisible();
+
+  // While it is scheduled the archive is not offered; the note says why.
+  await expect(rotationPage.archiveShiftTypeButton(name)).toHaveCount(0);
+  await expect(rotationPage.changeScheduledNote).toBeVisible();
+
+  // CANCEL IT: the cancel unmounts with the correction, so focus follows the
+  // confirmation, and the correction is offered again.
+  await rotationPage.cancelScheduledTimesButton.click();
+  await expect(rotationPage.statusWith(shiftTypes.timesCancelled)).toBeFocused();
+  await expect(rotationPage.scheduledTimesLine(shownDate(tomorrow), corrected)).toHaveCount(0);
+  await expect(rotationPage.timesCorrectButton).toBeVisible();
+
+  // ARCHIVE IT: armed, then confirmed. The confirm unmounts with the active
+  // type, so focus follows the confirmation, and the dialog now views it.
+  await rotationPage.archiveShiftTypeButton(name).click();
+  await rotationPage.archiveShiftTypeConfirmButton(name).click();
+  await expect(rotationPage.statusWith(shiftTypes.archivedDone)).toBeFocused();
+  await expect(rotationPage.shiftTypeViewDialog).toBeVisible();
+  await expect(rotationPage.text(shiftTypes.archivedNote)).toBeVisible();
+
+  // Closed, the type is listed under the archived heading, with no edit link.
+  await rotationPage.shiftTypeCloseButton.click();
+  await expect(page).toHaveURL('/postavke-rotacije');
+  await expect(rotationPage.archivedShiftTypeRow(name)).toBeVisible();
+  await expect(rotationPage.shiftTypeEditLink(name)).toHaveCount(0);
+});
