@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto';
 
-import { ADMIN_STATE } from './support/fixture.ts';
-import { fill, hr } from './support/i18n.ts';
-import { expect, firstBand, test } from './support/test.ts';
+import { ADMIN_STATE } from '../../utils/run-fixture.ts';
+import { fill, hr } from '../../utils/i18n.ts';
+import { expect, firstBand, test } from '../../utils/custom-fixtures.ts';
 
 test.use({ storageState: ADMIN_STATE });
 

@@ -1,5 +1,5 @@
-import { requireAdminAuth, requireStack } from './support/database.ts';
-import { provision, sweepStale } from './support/fixture.ts';
+import { requireAdminAuth, requireStack } from './database-helper.ts';
+import { provision, sweepStale } from './run-fixture.ts';
 
 /**
  * Before any test: refuse to start without the stack (database and GoTrue) or

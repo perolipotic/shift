@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import type pg from 'pg';
 
-import { connect } from './database.ts';
+import { connect } from './database-helper.ts';
 
 /**
  * THE PER-RUN ORGANIZATION.

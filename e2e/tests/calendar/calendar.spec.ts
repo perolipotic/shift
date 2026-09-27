@@ -12,12 +12,12 @@ import {
   setRankAndPosition,
   type RotationHold,
   type SeededRotation,
-} from './support/database.ts';
-import { ADMIN_STATE, MEMBER_STATE } from './support/fixture.ts';
-import { fill, hr } from './support/i18n.ts';
-import { MINIMUM_TARGET, expectNoHorizontalScroll, expectTouchTargets } from './support/layout.ts';
-import { signIn } from './support/sign-in.ts';
-import { expect, test } from './support/test.ts';
+} from '../../utils/database-helper.ts';
+import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
+import { fill, hr } from '../../utils/i18n.ts';
+import { MINIMUM_TARGET, expectNoHorizontalScroll, expectTouchTargets } from '../../utils/layout.ts';
+import { signIn } from '../../utils/sign-in.ts';
+import { expect, test } from '../../utils/custom-fixtures.ts';
 
 /**
  * Story 3.1: anyone reads a month. The fixture team gets a rotation from

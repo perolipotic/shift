@@ -1,10 +1,10 @@
 import type { Locator, Page } from '@playwright/test';
 
-import { ADMIN_STATE, MEMBER_STATE, type Fixture } from './support/fixture.ts';
-import { fill, hr } from './support/i18n.ts';
-import { expectNoHorizontalScroll, expectTouchTargets } from './support/layout.ts';
-import { NEXT_LABELS, STEP_HEADINGS, stepProgress } from './support/rotation.ts';
-import { expect, firstBand, test } from './support/test.ts';
+import { ADMIN_STATE, MEMBER_STATE, type Fixture } from '../../utils/run-fixture.ts';
+import { fill, hr } from '../../utils/i18n.ts';
+import { expectNoHorizontalScroll, expectTouchTargets } from '../../utils/layout.ts';
+import { NEXT_LABELS, STEP_HEADINGS, stepProgress } from '../../utils/rotation.ts';
+import { expect, firstBand, test } from '../../utils/custom-fixtures.ts';
 
 /**
  * The phone-width criteria no unit test can check: at 320 × 640, on a touch

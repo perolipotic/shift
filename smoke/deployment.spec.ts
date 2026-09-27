@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
-import { hr } from '../e2e/support/i18n.ts';
-import { signIn } from '../e2e/support/sign-in.ts';
+import { hr } from '../e2e/utils/i18n.ts';
+import { signIn } from '../e2e/utils/sign-in.ts';
 import { publishableKey, smokeAccount, supabaseUrl } from './support/env.ts';
 
 /**
@@ -80,7 +80,7 @@ test('admin-auth answers CORS for the deployed origin', async ({ request, baseUR
   // Not a preflight: a request carrying `Access-Control-Request-Method` can be
   // answered by the gateway itself. `Access-Control-Allow-Methods: POST, OPTIONS`
   // is sent only by the function, and only for an origin its
-  // `SHIFT_ALLOWED_ORIGINS` admits (`e2e/support/database.ts` `requireAdminAuth`).
+  // `SHIFT_ALLOWED_ORIGINS` admits (`e2e/utils/database-helper.ts` `requireAdminAuth`).
   const origin = new URL(baseURL ?? '').origin;
   const response = await request.fetch(`${supabaseUrl()}/functions/v1/admin-auth`, {
     method: 'OPTIONS',

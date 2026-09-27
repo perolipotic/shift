@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url';
 import type pg from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 
-import { connect, requireAdminAuth, requireStack } from '../e2e/support/database.ts';
-import { STALE_AFTER, literal, sweepStale, teardown } from '../e2e/support/fixture.ts';
+import { connect, requireAdminAuth, requireStack } from '../e2e/utils/database-helper.ts';
+import { STALE_AFTER, literal, sweepStale, teardown } from '../e2e/utils/run-fixture.ts';
 
 /**
  * The E2E lifecycle's edge rows (`spec-e2e-smoke-suite.md`, I/O matrix): a
@@ -217,7 +217,7 @@ describe('an E2E run without the stack', () => {
   });
 
   it('stops the web server command before `supabase functions serve`', () => {
-    const { status, stderr } = failureOf(['e2e/support/require-stack.ts']);
+    const { status, stderr } = failureOf(['e2e/utils/require-stack.ts']);
 
     expect(status).toBe(1);
     expect(stderr).toContain('supabase start');
@@ -228,7 +228,7 @@ describe('an E2E run without the stack', () => {
     const { status, stderr } = failureOf([
       '--input-type=module',
       '--eval',
-      "import globalSetup from './e2e/global-setup.ts'; await globalSetup();",
+      "import globalSetup from './e2e/utils/global-setup.ts'; await globalSetup();",
     ]);
 
     expect(status).not.toBe(0);

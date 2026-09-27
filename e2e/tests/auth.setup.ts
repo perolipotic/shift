@@ -1,7 +1,7 @@
-import { ADMIN_STATE, MEMBER_STATE } from './support/fixture.ts';
-import { hr } from './support/i18n.ts';
-import { navigation, signIn } from './support/sign-in.ts';
-import { expect, test as setup } from './support/test.ts';
+import { ADMIN_STATE, MEMBER_STATE } from '../utils/run-fixture.ts';
+import { hr } from '../utils/i18n.ts';
+import { navigation, signIn } from '../utils/sign-in.ts';
+import { expect, test as setup } from '../utils/custom-fixtures.ts';
 
 /**
  * Signs in once per role through the UI and stores the session, so every other

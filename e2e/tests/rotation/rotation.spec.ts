@@ -2,11 +2,11 @@ import { randomBytes } from 'node:crypto';
 
 import type { Locator, Page } from '@playwright/test';
 
-import { holdRotation, type RotationHold } from './support/database.ts';
-import { ADMIN_STATE } from './support/fixture.ts';
-import { fill, hr } from './support/i18n.ts';
-import { addShiftType, previewCell } from './support/rotation.ts';
-import { expect, test } from './support/test.ts';
+import { holdRotation, type RotationHold } from '../../utils/database-helper.ts';
+import { ADMIN_STATE } from '../../utils/run-fixture.ts';
+import { fill, hr } from '../../utils/i18n.ts';
+import { addShiftType, previewCell } from '../../utils/rotation.ts';
+import { expect, test } from '../../utils/custom-fixtures.ts';
 
 test.use({ storageState: ADMIN_STATE });
 

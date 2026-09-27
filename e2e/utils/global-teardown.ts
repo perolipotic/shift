@@ -1,4 +1,4 @@
-import { forgetRun, readRunSlug, teardown } from './support/fixture.ts';
+import { forgetRun, readRunSlug, teardown } from './run-fixture.ts';
 
 /**
  * After every test: delete this run's organization and its auth users, then the
