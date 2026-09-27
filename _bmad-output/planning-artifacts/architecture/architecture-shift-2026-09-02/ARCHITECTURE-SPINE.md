@@ -134,6 +134,7 @@ The derivation lives in one pure package that cannot reach for data. The store e
 - **Binds:** CAP-13, CAP-14, CAP-15, CAP-17; quality-requirements Q19
 - **Prevents:** a screen showing a stale total beside a fresh one, which independent TanStack Query keys do by default.
 - **Rule:** Each surface fetches one composite payload — configuration plus the exception layer for its window — under a single query key. Every figure on that surface is derived from that one snapshot. Two figures on a screen may never come from two reads.
+- **Home:** a surface's loader is `features/<module>/services/snapshot.ts` in `apps/web`. There is no `surfaces/` folder (`sprint-change-proposal-2026-09-27-source-structure.md`).
 
 ### AD-14 — No server runtime beyond the privileged auth boundary
 
@@ -204,6 +205,7 @@ graph TD
 | Auth context | `organization_id` from the JWT claim; role and active status from the helper (AD-10). Never trust a client-supplied organization or role. |
 | Migrations | Files in `supabase/migrations`, forward-only, promoted local → staging → prod. Never edited after promotion. |
 | Strings | No literal user-facing text outside `i18n`. Domain and database return codes and values only. |
+| Module boundaries | A feature in `apps/web` is imported only through `@/features/<m>` (its `index.ts`). ESLint forbids deep imports across features. A page composes features and holds no query, mutation or derivation of its own. |
 
 ## Stack
 
@@ -303,11 +305,21 @@ shift/
   apps/
     web/
       src/
-        routes/        # TanStack Router file routes
-        surfaces/      # AD-13 — one snapshot loader per surface
-        components/    # shadcn primitives + DESIGN.md domain components
-        i18n/          # resources + the single formatting module
-        supabase/      # generated types + client
+        pages/         # one file per route: createRoute + composition, no logic
+        features/      # one module per capability; imported only through index.ts
+          <module>/
+            components/  # screen parts; may call t()
+            hooks/
+            services/    # reads, writes; snapshot.ts is the AD-13 loader
+            utils/       # pure rules local to the feature
+            index.ts
+        components/    # shadcn primitives (ui/) + shared layout; no t(), no literals
+        lib/           # i18n (resources + the single formatting module), supabase client, theme, cn
+        utils/         # pure helpers shared by several features
+  e2e/
+    pages/             # page objects: locators and actions, no assertions
+    tests/<feature>/   # specs
+    utils/             # fixtures, database helper, run provisioning
   supabase/
     migrations/        # forward-only, promoted local -> staging -> prod
     seed.sql           # both fixtures
