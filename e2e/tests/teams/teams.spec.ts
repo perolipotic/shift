@@ -1,7 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
 import { TeamsPage } from '../../pages/teams.page.ts';
-import { holdRotation, type RotationHold } from '../../utils/database-helper.ts';
 import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
 import { hr } from '../../utils/i18n.ts';
 import { uniqueMember } from '../../utils/members.ts';
@@ -9,46 +8,12 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
 
 test.use({ storageState: ADMIN_STATE });
 
-/** The run organization's rotation, while one of this file's tests holds or waits for it (`holdRotation`). */
-let hold: RotationHold | null = null;
-/** Whether `hold` was actually acquired, not just requested. */
-let held = false;
-
-test.afterEach(async () => {
-  const pending = hold;
-  const acquired = held;
-  hold = null;
-  held = false;
-  if (pending === null) return;
-
-  if (acquired) {
-    await pending.release();
-  } else {
-    // An acquire that failed or timed out: the wait is still ended, but a
-    // failure to end it must not replace the test's own error.
-    await pending.release().catch(() => undefined);
-  }
-});
-
-/**
- * Holds the run's rotation while a test adds a team. The builder opens as the
- * rotation in force only while EVERY active team has one, so a team added
- * between a rotation spec's save and its reload would empty that spec's
- * prefill; the rotation specs add their teams under the same hold. Waiting
- * for another holder may take a while, hence the longer timeout.
- */
-async function holdRotationWhileAddingTeams(slug: string): Promise<void> {
-  test.slow();
-  hold = holdRotation(slug);
-  await hold.ready;
-  held = true;
-}
-
 test('a created team gets a member, and its roster lists them for every role', async ({
   page,
   browser,
   peoplePage,
   teamsPage,
+  holdRotationForTeams,
 }) => {
   // EVERYTHING THIS TEST WRITES IS ITS OWN, per attempt: a member can move
   // teams only once per date, so a retry reusing a fixture member would be
@@ -56,11 +21,13 @@ test('a created team gets a member, and its roster lists them for every role', a
   const teamName = `Smjena ${randomBytes(3).toString('hex')}`;
   const person = uniqueMember('Premjestena');
 
-  // Create the team.
+  // Create the team, under the rotation's hold (`holdRotationForTeams`).
   await teamsPage.goto();
-  // The add form is a dialog, opened from the header.
-  await teamsPage.addTeam(teamName);
-  await expect(teamsPage.status).toHaveText(hr.smjene.created);
+  await holdRotationForTeams(async () => {
+    // The add form is a dialog, opened from the header.
+    await teamsPage.addTeam(teamName);
+    await expect(teamsPage.status).toHaveText(hr.smjene.created);
+  });
 
   await teamsPage.openTeam(teamName);
   const teamPath = /\/ljudi\/smjene\/([0-9a-f-]{36})$/;
@@ -116,18 +83,19 @@ test('a taken name is refused in the add dialog, keeping what was typed, with th
   await expect(teamsPage.addNameInput).toBeFocused();
 });
 
-test('a renamed team is confirmed and listed under its new name', async ({ page, teamsPage, fixture }) => {
+test('a renamed team is confirmed and listed under its new name', async ({ page, teamsPage, holdRotationForTeams }) => {
   // ITS OWN TEAM, per attempt, added under the rotation's hold and archived
   // at the end.
-  await holdRotationWhileAddingTeams(fixture.slug);
   // Neither name holds the other, so a link matched by either is that team's alone.
   const suffix = randomBytes(3).toString('hex');
   const teamName = `Smjena ${suffix}`;
   const renamed = `Preimenovana ${suffix}`;
 
   await teamsPage.goto();
-  await teamsPage.addTeam(teamName);
-  await expect(teamsPage.status).toHaveText(hr.smjene.created);
+  await holdRotationForTeams(async () => {
+    await teamsPage.addTeam(teamName);
+    await expect(teamsPage.status).toHaveText(hr.smjene.created);
+  });
   await teamsPage.openTeam(teamName);
   await expect(teamsPage.editDialog).toBeVisible();
 
@@ -141,8 +109,7 @@ test('a renamed team is confirmed and listed under its new name', async ({ page,
   await expect(teamsPage.editLink(renamed)).toBeVisible();
   await expect(teamsPage.editLink(teamName)).toHaveCount(0);
 
-  // Archived before the hold is released, so no active team without a
-  // rotation is left behind for the rotation specs' prefill.
+  // Archived at the end, so this test leaves no active team behind.
   await teamsPage.openTeam(renamed);
   await teamsPage.archiveButton(renamed).click();
   await teamsPage.archiveConfirmButton(renamed).click();
@@ -152,17 +119,18 @@ test('a renamed team is confirmed and listed under its new name', async ({ page,
 test('an archived team asks first, keeps what was typed when cancelled, moves under the archived heading, and its roster says so', async ({
   page,
   teamsPage,
-  fixture,
+  holdRotationForTeams,
 }) => {
   // ITS OWN TEAM, per attempt, added under the rotation's hold, and never
   // given a member: a team with members cannot be archived.
-  await holdRotationWhileAddingTeams(fixture.slug);
   const teamName = `Smjena ${randomBytes(3).toString('hex')}`;
   const typed = `${teamName} upisano`;
 
   await teamsPage.goto();
-  await teamsPage.addTeam(teamName);
-  await expect(teamsPage.status).toHaveText(hr.smjene.created);
+  await holdRotationForTeams(async () => {
+    await teamsPage.addTeam(teamName);
+    await expect(teamsPage.status).toHaveText(hr.smjene.created);
+  });
   await teamsPage.openTeam(teamName);
   await expect(teamsPage.editDialog).toBeVisible();
   const teamId = teamIdOf(page.url());

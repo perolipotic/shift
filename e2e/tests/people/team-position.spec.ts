@@ -47,6 +47,7 @@ test('with positions in use, a member moved in as driver shows it on the roster,
   organizationPage,
   peoplePage,
   teamsPage,
+  holdRotationForTeams,
 }) => {
   // THE SETTING IS SWITCHED ON and left on, for the reason fire-ranks.spec.ts
   // gives: the run's organization is its own and is deleted at teardown.
@@ -62,9 +63,13 @@ test('with positions in use, a member moved in as driver shows it on the roster,
   const commander = hr.smjene.position.commander;
 
   await teamsPage.goto();
-  // The add form is a dialog, opened from the header.
-  await teamsPage.addTeam(teamName);
-  await expect(teamsPage.status).toHaveText(hr.smjene.created);
+  // Under the rotation's hold (`holdRotationForTeams`): a team added between
+  // a rotation spec's save and its reload would empty that spec's prefill.
+  await holdRotationForTeams(async () => {
+    // The add form is a dialog, opened from the header.
+    await teamsPage.addTeam(teamName);
+    await expect(teamsPage.status).toHaveText(hr.smjene.created);
+  });
 
   await teamsPage.openTeam(teamName);
   const teamPath = /\/ljudi\/smjene\/([0-9a-f-]{36})$/;
