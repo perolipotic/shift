@@ -9,6 +9,10 @@ lives inside team detail.
 
 Every destination nests under `_app.tsx`, a pathless layout that carries the
 session guard once for all of them; `/` and both sign-in routes stay outside it.
+Every admin-only destination, and every admin screen beneath one, also carries
+the admin guard of its own (`ljudi.tsx` has the rationale): a member who types
+the URL is forwarded to the first destination. `router.test.ts` derives the
+admin-only destinations from the table and drives each guard.
 Which destinations a role actually SEES is `src/features/navigation/utils/destinations.ts` —
 data, so a test can execute it — never a list re-derived in a component.
 

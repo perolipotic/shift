@@ -1,18 +1,20 @@
-import { createRoute } from '@tanstack/react-router';
+import { createRoute, redirect } from '@tanstack/react-router';
 
 import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { t } from '@/lib/i18n';
+import { mayReadMembers } from '@/features/members/services/list';
+import { DESTINATIONS } from '@/features/navigation/utils/destinations';
+import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/features/navigation/services/role';
 import { appLayoutRoute } from '@/pages/_app';
 
 /**
  * `Raspored` — a titled placeholder, and nothing more.
  *
- * ADMIN ONLY (UX-DR32). The route itself does not say so — `_app`'s guard asks
- * only whether anyone is signed in, and role enforcement lives in the database
- * (AD-10), never in a route. What decides that a member never SEES this
- * destination is `@/features/navigation/utils/destinations`, which part B renders from. The
- * decision and its expiry live in `_app.tsx`, where the guard is, and
- * `router.test.ts` pins it.
+ * ADMIN ONLY (UX-DR32). The navigation never offers it to a member
+ * (`@/features/navigation/utils/destinations`), and the route carries the admin
+ * guard `/ljudi/smjene` does, so a member who types this URL is forwarded
+ * rather than shown an admin screen shell. `router.test.ts` derives the guarded
+ * routes from the destination table's `ADMIN_ONLY` rows and drives this copy.
  *
  * It renders its own `nav.raspored` heading and no other element, because the
  * destination it names is a LATER story's and putting anything else here would
@@ -29,6 +31,9 @@ import { appLayoutRoute } from '@/pages/_app';
  * layout this route nests under, so a signed-out visitor opening this URL is
  * redirected before the component is ever asked for.
  */
+
+const FIRST_DESTINATION = DESTINATIONS[0];
+
 export function RasporedScreen() {
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6">
@@ -44,5 +49,21 @@ export function RasporedScreen() {
 export const rasporedRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/raspored',
+  /** The guard `/ljudi/smjene` carries, copied verbatim; `router.test.ts` drives it. */
+  beforeLoad: async ({ context }) => {
+    let outcome: MemberRoleOutcome;
+
+    try {
+      outcome = await context.currentMemberRole();
+    } catch (cause) {
+      console.error(MEMBER_ROLE_UNAVAILABLE, cause);
+
+      outcome = { ok: false, code: MEMBER_ROLE_UNAVAILABLE };
+    }
+
+    if (mayReadMembers(outcome)) return;
+
+    throw redirect({ to: FIRST_DESTINATION.path, replace: true });
+  },
   component: RasporedScreen,
 });

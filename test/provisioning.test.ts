@@ -1642,6 +1642,12 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'calendar_members', argumentCount: 0, expected: ['authenticated'] },
     // STORY 3.5a. The live overrides, on the same terms.
     { name: 'calendar_shift_type_overrides', argumentCount: 0, expected: ['authenticated'] },
+    // The zero-admin trigger function. Nothing calls it by hand and Postgres
+    // checks EXECUTE when the trigger is created, not when it fires, so it
+    // needs no grantee at all: its owner, and nobody else (0020). The
+    // PUBLIC-only revoke 0002 wrote left `anon`, `authenticated` and
+    // `service_role` holding EXECUTE on a function that runs as the owner.
+    { name: 'refuse_organization_with_no_admin', argumentCount: 0, expected: [] },
   ];
 
   it.skipIf(noDatabase).each([

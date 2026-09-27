@@ -1,0 +1,31 @@
+-- 0020_refuse_no_admin_execute_grants.sql
+--
+-- Forward-only. Once this file has been promoted past local it is never edited;
+-- a correction is a new migration with a higher number.
+--
+-- The zero-admin trigger function runs for its owner and nobody else.
+--
+-- `refuse_organization_with_no_admin()` (0002, rewritten by 0008) is SECURITY
+-- DEFINER and reads `members` past row level security. 0002 revoked EXECUTE
+-- from PUBLIC only, and that does not make the function private: Supabase's
+-- default privileges grant EXECUTE on a new function in `public` to `anon`,
+-- `authenticated` and `service_role` individually, so all three kept an entry
+-- point to a function that runs as the owner. 0003 wrote the three revokes out
+-- for its own functions for exactly this reason; this does the same here.
+--
+-- NOTHING CALLS IT BY HAND. It is a trigger function, and Postgres checks
+-- EXECUTE when the trigger is created, not when it fires, so the constraint
+-- trigger keeps firing for every session. What shows it still fires for the
+-- REQUEST roles is `test/rls-isolation.test.ts`: its zero-admin cases run as
+-- `authenticated` with injected claims and through PostgREST, and are still
+-- refused with `ORGANIZATION_WOULD_HAVE_NO_ADMIN`. (`test/provisioning.test.ts`
+-- connects as `postgres`, the owner, so its refusals cannot show that; it pins
+-- the grantee list instead.) `create or replace`
+-- (0008) keeps an existing ACL, so the revokes 0002 wrote survived it and these
+-- will survive a later replace too.
+--
+-- IDEMPOTENT: revoking a privilege that is not held is a no-op. Only these
+-- three roles; default privileges are left as they are.
+revoke execute on function public.refuse_organization_with_no_admin() from anon;
+revoke execute on function public.refuse_organization_with_no_admin() from authenticated;
+revoke execute on function public.refuse_organization_with_no_admin() from service_role;
