@@ -872,3 +872,9 @@
 - source_spec: none
   summary: Source structure A2 — each `features/<m>/index.ts` becomes the module's public API, an ESLint `no-restricted-imports` rule forbids deep imports across features (same-feature deep imports allowed), and `App.tsx` takes the providers out of `main.tsx`.
   evidence: Split from source-structure-a-web-move at the user's request (2026-09-27, sprint-change-proposal-2026-09-27-source-structure.md §4.1). A is a pure file move with no content change beyond paths. Barrels risk import cycles between features, and the `App.tsx` extraction moves a guarded block (`organization/snapshot.test.ts` reads `main.tsx`), so both are reviewed on their own.
+- source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b1-members-pages.md`
+  summary: No source guard catches an edit-screen effect call (`changeMemberStatus(`, `changeMemberTeam(`, `resetPassword(`) placed outside its named in-flight handler; only `submit`'s effect has an ordering check.
+  evidence: Found by B1's implementer and confirmed on unmodified HEAD, where the same mutation passes all 542 `prijava.test.ts` tests. Pre-existing; closing it is a new guard, not part of the move.
+- source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b1-members-pages.md`
+  summary: The member screens read `ORGANIZATION_SNAPSHOT_KEY` with two policies (create has no `retry: false`/`staleTime`, edit sets both), and the edit screen can show several `role="alert"` notices at once; the status and team date fields also lack `aria-invalid` on a preflight refusal.
+  evidence: Raised by B1's review. All pre-existing in the pre-split screens and carried over unchanged by the move; an `organizationSnapshotQueryOptions()` beside `readOrganization` and one alert per screen would settle them.

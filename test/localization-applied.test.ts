@@ -32,6 +32,21 @@ const assets = join(webRoot, 'dist', 'assets');
 const notBuilt = !existsSync(assets);
 
 /**
+ * Every non-test module under the members feature's `hooks/`, `components/`
+ * and `utils/` — the member screens' parts since source structure B1.
+ */
+function memberScreenParts(): string[] {
+  const feature = join(webRoot, 'src', 'features', 'members');
+
+  return ['hooks', 'components', 'utils'].flatMap((folder) =>
+    readdirSync(join(feature, folder))
+      .filter((name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name))
+      .sort()
+      .map((name) => join(feature, folder, name)),
+  );
+}
+
+/**
  * Every source file whose content must be reflected in the build.
  *
  * MUTATION-PROVEN GAP. The list held only the four localization sources, so
@@ -181,15 +196,19 @@ const SOURCES = [
   // the two screens' messages are chosen by, so a chunk built before an edit to
   // it is stale in a way no vocabulary sweep can see.
   join(webRoot, 'src', 'features', 'members', 'services', 'wire.ts'),
-  // Member rank. `features/members/utils/rank.ts` renders nothing and owns the rank labels
-  // and the setting's two states as return-type unions, so a chunk built
-  // before an edit to it is stale in a way no vocabulary sweep can see.
-  join(webRoot, 'src', 'features', 'members', 'utils', 'rank.ts'),
-  // Team position. `features/members/utils/position.ts` renders nothing and owns the position
-  // labels as a return-type union, for the rank module's reason.
-  join(webRoot, 'src', 'features', 'members', 'utils', 'position.ts'),
+  // Member rank and team position: `features/members/utils/rank.ts` and
+  // `position.ts` render nothing and own the rank and position labels as
+  // return-type unions, so a chunk built before an edit to either is stale in
+  // a way no vocabulary sweep can see. Both are read off `utils/` below.
   join(webRoot, 'src', 'pages', 'ljudi.novi.tsx'),
   join(webRoot, 'src', 'pages', 'ljudi.$id.tsx'),
+  // Source structure B1: the three member screens' parts. The pages compose;
+  // the hooks hold their state, reads and handlers, and the components and
+  // helpers render the keys the pages used to — so a chunk built before an
+  // edit to any of them is as stale as one built before an edit to a page.
+  // READ OFF THE FOLDERS rather than listed, so a part added later is covered
+  // the day it exists. `utils/` includes the rank and position modules.
+  ...memberScreenParts(),
   // Story 1.8's two. `features/teams/services/roster.ts` renders nothing and owns the five keys
   // the roster and the Danas line are chosen by, as return-type unions; the
   // roster screen renders four more and is no destination, so it is listed
