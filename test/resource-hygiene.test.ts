@@ -916,6 +916,15 @@ const SANCTIONED_SCREEN_KEYS = [
   // reads `Smjena ili osoba`; `Smjena` is still the Team.
   'kalendar.filter.people',
   'kalendar.person.noTeam',
+  // STORY 3.4b: the day detail — its title (the team and the date), its close, the heading over the roster, a
+  // working day with nobody on it, an off day and a day with no rotation.
+  // `{team}` is the Team.
+  'kalendar.detail.title',
+  'kalendar.detail.close',
+  'kalendar.detail.roster',
+  'kalendar.detail.empty',
+  'kalendar.detail.off',
+  'kalendar.detail.noRotation',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

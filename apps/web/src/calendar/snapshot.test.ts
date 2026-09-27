@@ -827,6 +827,29 @@ const SNAPSHOT_CARRIES = [
   { token: "version['position']", count: 1 },
 ] as const;
 
+/**
+ * Story 3.4b: the day detail CARRIES each rostered member's rank and position
+ * to the screen (the type's field and the copy into it; EVERY `position` in the
+ * file is one of those), and the screen SHOWS them — the members modules'
+ * imports, the setting handed to `ranksShown` and `positionsShown`, and the
+ * one rank and one position read into `rosterRankMessageKey` and
+ * `rosterPositionMessageKey`. Neither orders, filters or decides by them; a
+ * new use is a new count here, reviewed.
+ */
+const DETAIL_CARRIES = [
+  { token: 'fireRank', count: 3 },
+  { token: 'position', count: 3 },
+] as const;
+const SCREEN_SHOWS = [
+  { token: "'@/members/rank'", count: 1 },
+  { token: 'usesFireRanks', count: 6 },
+  { token: 'member.fireRank', count: 1 },
+  { token: "'@/members/position'", count: 1 },
+  { token: 'positionsShown', count: 2 },
+  { token: 'rosterPositionMessageKey', count: 2 },
+  { token: 'member.position', count: 1 },
+] as const;
+
 describe('the calendar only reads, and projects nothing of its own', () => {
   const directory = fileURLToPath(new URL('.', import.meta.url));
   const route = join(directory, '..', 'routes', 'kalendar.tsx');
@@ -843,7 +866,7 @@ describe('the calendar only reads, and projects nothing of its own', () => {
 
   it('sweeps the files it means to', () => {
     expect(files.map((file) => file.slice(directory.length - 1))).toEqual(
-      expect.arrayContaining(['/month.ts', '/snapshot.ts', '/modifiers.ts', '/grid-keys.ts']),
+      expect.arrayContaining(['/month.ts', '/snapshot.ts', '/modifiers.ts', '/grid-keys.ts', '/day-detail.ts']),
     );
   });
 
@@ -871,7 +894,13 @@ describe('the calendar only reads, and projects nothing of its own', () => {
     // Story 3.4a: the snapshot CARRIES rank and position off the wire, to be
     // shown by 3.4b — in the named places only, counted, and nowhere else. No
     // other file reads either, and no rule ever does.
-    const carried = file.endsWith('snapshot.ts') ? SNAPSHOT_CARRIES : [];
+    const carried = file.endsWith('snapshot.ts')
+      ? SNAPSHOT_CARRIES
+      : file.endsWith('day-detail.ts')
+        ? DETAIL_CARRIES
+        : file.endsWith('kalendar.tsx')
+          ? SCREEN_SHOWS
+          : [];
     let rest = text;
 
     for (const { token, count } of carried) {

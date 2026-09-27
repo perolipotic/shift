@@ -7,7 +7,9 @@ import {
   gridCellSelectorOf,
   gridFocusAfter,
   gridPositionOf,
-  isInertGridKey,
+  gridOpenOnKeyDown,
+  gridOpensOnKeyUp,
+  isOpenGridKey,
   keyModifiersOf,
   type KeyModifiers,
   gridTabStopOf,
@@ -163,18 +165,64 @@ describe('the modifier keys', () => {
   });
 });
 
-describe('Space and Enter', () => {
-  it('swallows Space, with or without Shift, and moves nothing', () => {
-    expect(isInertGridKey(' ', NO_KEY_MODIFIERS)).toBe(true);
-    expect(isInertGridKey(' ', { ...NO_KEY_MODIFIERS, shift: true })).toBe(true);
-    expect(gridFocusAfter(' ', NO_KEY_MODIFIERS, MIDDLE, MONTH)).toBeNull();
+describe('Space and Enter (story 3.4b)', () => {
+  const PLAIN = { repeat: false, composing: false };
+
+  it('are the opening keys, with or without Shift, and move nothing', () => {
+    for (const key of [' ', 'Enter']) {
+      expect(isOpenGridKey(key, NO_KEY_MODIFIERS), key).toBe(true);
+      expect(isOpenGridKey(key, { ...NO_KEY_MODIFIERS, shift: true }), key).toBe(true);
+      expect(gridFocusAfter(key, NO_KEY_MODIFIERS, MIDDLE, MONTH), key).toBeNull();
+    }
   });
 
-  it('leaves Enter, Tab, Space with Ctrl, Alt or Meta, and the arrows unswallowed', () => {
-    for (const key of ['Enter', 'Tab', 'ArrowDown', 'Home', 'a']) expect(isInertGridKey(key, NO_KEY_MODIFIERS), key).toBe(false);
-    for (const held of ['ctrl', 'alt', 'meta'] as const) {
-      expect(isInertGridKey(' ', { ...NO_KEY_MODIFIERS, [held]: true }), held).toBe(false);
+  it('leave Tab, the arrows, and Space or Enter with Ctrl, Alt or Meta alone', () => {
+    for (const key of ['Tab', 'ArrowDown', 'Home', 'a', 'Escape']) {
+      expect(isOpenGridKey(key, NO_KEY_MODIFIERS), key).toBe(false);
+      expect(gridOpenOnKeyDown(key, NO_KEY_MODIFIERS, PLAIN), key).toBeNull();
     }
+    for (const held of ['ctrl', 'alt', 'meta'] as const) {
+      const modifiers = { ...NO_KEY_MODIFIERS, [held]: true };
+
+      expect(isOpenGridKey(' ', modifiers), held).toBe(false);
+      expect(isOpenGridKey('Enter', modifiers), held).toBe(false);
+      expect(gridOpenOnKeyDown(' ', modifiers, PLAIN), held).toBeNull();
+      expect(gridOpensOnKeyUp(' ', modifiers, { armed: true, composing: false }), held).toBe(false);
+    }
+  });
+
+  it('Enter opens on keydown, once: an auto-repeat opens nothing more', () => {
+    expect(gridOpenOnKeyDown('Enter', NO_KEY_MODIFIERS, PLAIN)).toEqual({ prevent: true, open: true, arm: false });
+    expect(gridOpenOnKeyDown('Enter', NO_KEY_MODIFIERS, { ...PLAIN, repeat: true })).toEqual({
+      prevent: true,
+      open: false,
+      arm: false,
+    });
+    expect(gridOpensOnKeyUp('Enter', NO_KEY_MODIFIERS, { armed: true, composing: false })).toBe(false);
+  });
+
+  it('Space is prevented and arms on keydown, and opens on the keyup of the armed cell only', () => {
+    expect(gridOpenOnKeyDown(' ', NO_KEY_MODIFIERS, PLAIN)).toEqual({ prevent: true, open: false, arm: true });
+    // A repeat is still prevented, so the page never scrolls, but does not re-arm.
+    expect(gridOpenOnKeyDown(' ', NO_KEY_MODIFIERS, { ...PLAIN, repeat: true })).toEqual({
+      prevent: true,
+      open: false,
+      arm: false,
+    });
+    expect(gridOpensOnKeyUp(' ', NO_KEY_MODIFIERS, { armed: true, composing: false })).toBe(true);
+    expect(gridOpensOnKeyUp(' ', { ...NO_KEY_MODIFIERS, shift: true }, { armed: true, composing: false })).toBe(true);
+    expect(gridOpensOnKeyUp(' ', NO_KEY_MODIFIERS, { armed: false, composing: false })).toBe(false);
+  });
+
+  it('does nothing while an input method is composing', () => {
+    for (const key of [' ', 'Enter', 'ArrowDown']) {
+      expect(gridOpenOnKeyDown(key, NO_KEY_MODIFIERS, { repeat: false, composing: true }), key).toEqual({
+        prevent: false,
+        open: false,
+        arm: false,
+      });
+    }
+    expect(gridOpensOnKeyUp(' ', NO_KEY_MODIFIERS, { armed: true, composing: true })).toBe(false);
   });
 });
 

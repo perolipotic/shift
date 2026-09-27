@@ -3,9 +3,12 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import type { Locator, Page } from '@playwright/test';
 
 import {
+  holdFireRanks,
   holdRotation,
   removeSeededRotation,
   seedTeamRotation,
+  setFireRanks,
+  setRankAndPosition,
   type RotationHold,
   type SeededRotation,
 } from './support/database.ts';
@@ -39,6 +42,11 @@ import { expect, test } from './support/test.ts';
  * admin and to a member-role account alike; choosing one replaces the grid
  * with their day list headed with their name, kept across months, dropped by
  * choosing a team and by the reset, and a person on no team is explained.
+ *
+ * Story 3.4b: a cell — clicked, or Enter or Space on it — and a day-list day
+ * open the read-only day detail: the type, its times and who is rostered as at
+ * that date; an off day and a day before the rotation say so. Escape returns
+ * focus to the opener.
  */
 
 const kalendar = hr.kalendar;
@@ -47,9 +55,23 @@ const kalendar = hr.kalendar;
 let hold: RotationHold | null = null;
 /** What this file's test seeded, removed before the hold is released. */
 let seed: SeededRotation | null = null;
+/** The fire-rank setting, while the rank test holds it (`holdFireRanks`). */
+let ranksHold: RotationHold | null = null;
+/** What the rank test changed, put back before its hold is released. */
+let restoreRanks: (() => Promise<void>) | null = null;
+let restoreMember: (() => Promise<void>) | null = null;
 
 test.afterEach(async () => {
   try {
+    try {
+      await restoreMember?.();
+      await restoreRanks?.();
+    } finally {
+      restoreMember = null;
+      restoreRanks = null;
+      await ranksHold?.release();
+      ranksHold = null;
+    }
     if (seed !== null) await removeSeededRotation(seed);
   } finally {
     seed = null;
@@ -509,13 +531,18 @@ for (const [width, height, name] of [
       expect(await focusedCell(page), 'a second Tab stayed in the grid').toBeNull();
       await page.keyboard.press('Shift+Tab');
       expect(await focusedCell(page)).toEqual(start);
-      // Space on a cell is swallowed, near the top where the page could still scroll.
+      // Space on a cell opens its detail and never scrolls, near the top
+      // where the page could still scroll (story 3.4b); Escape comes back.
       await page.keyboard.press('Control+Home');
-      const origin = () => page.evaluate(() => document.activeElement?.getBoundingClientRect().top ?? Number.NaN);
+      const first = grid.locator('[role="gridcell"][data-row="0"][data-column="0"]');
+      const origin = () => first.evaluate((element) => element.getBoundingClientRect().top);
       const before = await origin();
       await page.keyboard.press('Space');
-      expect(await focusedCell(page)).toEqual({ row: 0, column: 0 });
+      await expect(page.getByRole('dialog')).toBeVisible();
       expect(await origin(), 'Space scrolled the page').toBe(before);
+      await page.keyboard.press('Escape');
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      expect(await focusedCell(page)).toEqual({ row: 0, column: 0 });
 
       const lastRow = rows - 1;
       const lastColumn = columns - 1;
@@ -539,17 +566,23 @@ for (const [width, height, name] of [
         await expect(stops).toHaveCount(1);
       }
       const here = { row: lastRow - 1, column: lastColumn };
-      // Enter and Space do nothing yet (day detail is 3.4): focus, the URL and
-      // the scroll stay — Space never scrolls the page.
+      // Enter and Space open the focused cell's detail (story 3.4b): the URL
+      // stays, Space never scrolls the page, and Escape returns focus.
       const url = page.url();
+      const focused = grid.locator(
+        `[role="gridcell"][data-row="${String(here.row)}"][data-column="${String(here.column)}"]`,
+      );
       // Where the focused cell sits on screen: any scroller moving would move it.
-      const top = () => page.evaluate(() => document.activeElement?.getBoundingClientRect().top ?? Number.NaN);
+      const top = () => focused.evaluate((element) => element.getBoundingClientRect().top);
       const scrolled = await top();
-      await page.keyboard.press('Enter');
-      expect(await focusedCell(page)).toEqual(here);
-      await page.keyboard.press('Space');
-      expect(await focusedCell(page)).toEqual(here);
-      expect(await top(), 'Space scrolled the page').toBe(scrolled);
+      for (const key of ['Enter', 'Space']) {
+        await page.keyboard.press(key);
+        await expect(page.getByRole('dialog'), key).toBeVisible();
+        expect(await top(), `${key} scrolled the page`).toBe(scrolled);
+        await page.keyboard.press('Escape');
+        await expect(page.getByRole('dialog'), key).toHaveCount(0);
+        expect(await focusedCell(page), key).toEqual(here);
+      }
       expect(page.url()).toBe(url);
       // With Shift, Alt or Meta held, or Ctrl with an arrow, the key is the browser's: focus stays.
       // Last, since the browser may scroll the page for some of them.
@@ -574,6 +607,186 @@ for (const [width, height, name] of [
     });
   });
 }
+
+/** `subota 05.10.2026` — a date as the day detail's title names it, year included. */
+function detailDate(date: string): string {
+  return `${weekdayOf(date)} ${dayMonth(date)}${date.slice(0, 4)}`;
+}
+
+/** The day detail's Dialog, named by its title: the team and the date. */
+function detailOf(page: Page, teamName: string, date: string): Locator {
+  return page.getByRole('dialog', { name: fill(kalendar.detail.title, { team: teamName, date: detailDate(date) }) });
+}
+
+/** `/kalendar`'s grid on the month `date` falls in. */
+function gridMonthOf(date: string): string {
+  return `/kalendar?prikaz=sve&mjesec=${date.slice(0, 7)}`;
+}
+
+/** The range the seeded pattern shows on `date`, from the times seeded; `null` on a non-working day. */
+function expectedRange(rotation: SeededRotation, date: string): string | null {
+  const days = Math.round(
+    (Date.parse(`${date}T12:00:00Z`) - Date.parse(`${rotation.today}T12:00:00Z`)) / 86_400_000,
+  );
+
+  return rotation.ranges[((days % 4) + 4) % 4] ?? null;
+}
+
+test.describe('the day detail at 1280 px, as an admin', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 1280, height: 800 } });
+
+  test('a working cell shows the type, both times and the roster; Escape closes it and focus returns', async ({
+    page,
+    fixture,
+  }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    const range = expectedRange(rotation, rotation.today);
+    if (range === null) throw new Error('E2E: the seeded rotation does not work today');
+
+    await page.goto(gridMonthOf(rotation.today));
+    const cell = await cellOf(page, fixture.team.name, rotation.today);
+    await expect(cell).toHaveAttribute('aria-haspopup', 'dialog');
+    await cell.click();
+    const detail = detailOf(page, fixture.team.name, rotation.today);
+    await expect(detail).toBeVisible();
+    await expect(detail).toContainText(expectedType(rotation, rotation.today));
+    await expect(detail).toContainText(range);
+    await expect(detail.getByRole('heading', { name: kalendar.detail.roster, exact: true })).toBeVisible();
+    // The rank test below may have ranks on: the line starts with her name.
+    const roster = detail.getByRole('list', { name: kalendar.detail.roster, exact: true });
+    await expect(roster.getByRole('listitem')).toHaveCount(1);
+    await expect(roster.getByRole('listitem')).toContainText(fixture.member.name);
+    // Toni is on no team, and the admin is on none either.
+    await expect(detail).not.toContainText(fixture.spare.name);
+
+    await page.keyboard.press('Escape');
+    await expect(detail).toHaveCount(0);
+    await expect(cell).toBeFocused();
+
+    // The close button closes it too, and focus returns the same way.
+    await cell.click();
+    await detailOf(page, fixture.team.name, rotation.today)
+      .getByRole('button', { name: kalendar.detail.close, exact: true })
+      .click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(cell).toBeFocused();
+  });
+
+  test('the roster line reads `Ime · čin · položaj` with ranks on, and the name alone with them off', async ({
+    page,
+    fixture,
+  }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    ranksHold = holdFireRanks(fixture.slug);
+    await ranksHold.ready;
+    const was = await setFireRanks(fixture.slug, true);
+    restoreRanks = async () => {
+      await setFireRanks(fixture.slug, was);
+    };
+    const before = await setRankAndPosition(fixture.slug, fixture.member.name, fixture.team.id, {
+      fireRank: 'nco',
+      position: 'driver',
+    });
+    restoreMember = async () => {
+      await setRankAndPosition(fixture.slug, fixture.member.name, fixture.team.id, before);
+    };
+
+    const line = (page: Page) =>
+      detailOf(page, fixture.team.name, rotation.today)
+        .getByRole('list', { name: kalendar.detail.roster, exact: true })
+        .getByRole('listitem');
+
+    await page.goto(gridMonthOf(rotation.today));
+    await (await cellOf(page, fixture.team.name, rotation.today)).click();
+    await expect(line(page)).toHaveText(
+      fill(hr.smjene.roster.withRankAndPosition, {
+        name: fixture.member.name,
+        rank: hr.ljudi.rank.nco,
+        position: hr.smjene.position.driver,
+      }),
+    );
+
+    await setFireRanks(fixture.slug, false);
+    await page.reload();
+    await (await cellOf(page, fixture.team.name, rotation.today)).click();
+    await expect(line(page)).toHaveText(fixture.member.name);
+  });
+
+  test('a day before the rotation shows the no-rotation text and no roster', async ({ page, fixture }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    // The seeded rotation starts today, so yesterday has none.
+    const yesterday = addDays(rotation.today, -1);
+
+    await page.goto(gridMonthOf(yesterday));
+    await (await cellOf(page, fixture.team.name, yesterday)).click();
+    const detail = detailOf(page, fixture.team.name, yesterday);
+    await expect(detail).toBeVisible();
+    await expect(detail).toContainText(fill(kalendar.detail.noRotation, { team: fixture.team.name }));
+    await expect(detail).not.toContainText(fixture.member.name);
+    await expect(detail.getByRole('list')).toHaveCount(0);
+  });
+
+  test('an off-day cell says the team does not work, with no roster', async ({ page, fixture }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    // Dan, Noć, Slobodno, Slobodno from today: the day after tomorrow is off.
+    const off = addDays(rotation.today, 2);
+    expect(expectedRange(rotation, off)).toBeNull();
+
+    await page.goto(gridMonthOf(off));
+    await (await cellOf(page, fixture.team.name, off)).click();
+    const detail = detailOf(page, fixture.team.name, off);
+    await expect(detail).toBeVisible();
+    await expect(detail).toContainText(fill(kalendar.detail.off, { team: fixture.team.name }));
+    await expect(detail).not.toContainText(fixture.member.name);
+    await expect(detail.getByRole('list')).toHaveCount(0);
+  });
+
+  test('browser Back while the detail is open closes it, and it does not reopen', async ({ page, fixture }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    const next = firstOfNextMonth(rotation.today);
+
+    await page.goto(gridMonthOf(rotation.today));
+    await page.goto(gridMonthOf(next));
+    await (await cellOf(page, fixture.team.name, next)).click();
+    await expect(detailOf(page, fixture.team.name, next)).toBeVisible();
+    await page.goBack();
+    await expect(page.getByRole('heading', { level: 2, name: monthHeading(rotation.today) })).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.goForward();
+    await expect(page.getByRole('heading', { level: 2, name: monthHeading(next) })).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+});
+
+test.describe('the day detail at 390 px, as a member in Moj raspored', () => {
+  test.use({ storageState: MEMBER_STATE, viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test("tapping today's day opens the detail naming her", async ({ page, fixture }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    const range = expectedRange(rotation, rotation.today);
+    if (range === null) throw new Error('E2E: the seeded rotation does not work today');
+
+    await page.goto('/kalendar');
+    const today = dayList(page).locator('li[aria-current="date"]');
+    await expect(today).toContainText(expectedType(rotation, rotation.today));
+    const opener = today.getByRole('button');
+    // Named in full, as the grid's cell is, and announcing its Dialog.
+    await expect(opener).toHaveAccessibleName(
+      `${weekdayOf(rotation.today)} ${dayMonth(rotation.today)}, ${fixture.team.name}, ${expectedType(rotation, rotation.today)}, ${range}`,
+    );
+    await expect(opener).toHaveAttribute('aria-haspopup', 'dialog');
+    await opener.tap();
+    const detail = detailOf(page, fixture.team.name, rotation.today);
+    await expect(detail).toBeVisible();
+    await expect(detail).toContainText(expectedType(rotation, rotation.today));
+    await expect(detail.getByRole('listitem')).toContainText(fixture.member.name);
+    await expectNoHorizontalScroll(page);
+
+    await page.keyboard.press('Escape');
+    await expect(detail).toHaveCount(0);
+    await expect(opener).toBeFocused();
+  });
+});
 
 /** The team filter's native select. */
 function teamFilterOf(page: Page): Locator {

@@ -1,11 +1,28 @@
 import { randomBytes } from 'node:crypto';
 
+import { holdFireRanks, type RotationHold } from './support/database.ts';
 import { ADMIN_STATE, MEMBER_STATE } from './support/fixture.ts';
 import { fill, hr } from './support/i18n.ts';
 import { createMember, uniqueMember } from './support/members.ts';
 import { expect, test } from './support/test.ts';
 
 test.use({ storageState: ADMIN_STATE });
+
+/**
+ * The fire-rank setting, held for this test (story 3.4b): `calendar.spec.ts`
+ * switches it off for a moment to read the day detail without ranks.
+ */
+let ranksHold: RotationHold | null = null;
+
+test.beforeEach(async ({ fixture }) => {
+  ranksHold = holdFireRanks(fixture.slug);
+  await ranksHold.ready;
+});
+
+test.afterEach(async () => {
+  await ranksHold?.release();
+  ranksHold = null;
+});
 
 /** A message as a pattern, with `{date}` standing for whatever the screen
  *  formats the date as and every other placeholder filled. */

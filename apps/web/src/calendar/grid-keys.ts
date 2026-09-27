@@ -55,7 +55,8 @@ export function keyModifiersOf(event: {
 /**
  * Where focus goes from `position` on `key` (`KeyboardEvent.key`), with the
  * `modifiers` held; `null` for a key the grid does not handle — Tab leaves the
- * grid, and Enter and Space move nothing until day detail (3.4).
+ * grid, and Enter and Space move nothing: they open the cell's day detail
+ * ({@link isOpenGridKey}, story 3.4b).
  *
  * Arrows move one cell and STOP at the edges; Home and End go to the start and
  * end of the row; Ctrl+Home and Ctrl+End to the first and last cell of the
@@ -97,16 +98,73 @@ export function gridFocusAfter(
 }
 
 /**
- * Whether a key on a cell is SWALLOWED — its default prevented, nothing moved:
- * Space (with Shift too), which would otherwise scroll the page. It does
- * nothing until day detail (3.4); Enter has no default to prevent.
+ * Whether a key on a cell is one that OPENS its day detail (story 3.4b):
+ * Enter or Space, Shift allowed, never with Ctrl, Alt or Meta — those belong
+ * to the browser and assistive technology.
  */
-export function isInertGridKey(key: string, modifiers: KeyModifiers): boolean {
-  return key === ' ' && !modifiers.ctrl && !modifiers.alt && !modifiers.meta;
+export function isOpenGridKey(key: string, modifiers: KeyModifiers): boolean {
+  return (key === 'Enter' || key === ' ') && !modifiers.ctrl && !modifiers.alt && !modifiers.meta;
+}
+
+/** What a key event's own flags say: auto-repeat, and an input method composing. */
+export interface GridKeyFlags {
+  readonly repeat: boolean;
+  readonly composing: boolean;
+}
+
+/** What the screen does with a keydown on a cell that is an opening key, or composing. */
+export interface GridOpenStep {
+  /** Prevent the key's default: Space would scroll the page. */
+  readonly prevent: boolean;
+  /** Open the cell's detail now. */
+  readonly open: boolean;
+  /** Arm the cell for Space's keyup, which opens it (`gridOpensOnKeyUp`). */
+  readonly arm: boolean;
+}
+
+const NOTHING: GridOpenStep = { prevent: false, open: false, arm: false };
+
+/**
+ * A keydown on a cell (story 3.4b), or `null` for a key that does not open —
+ * the caller then moves focus by {@link gridFocusAfter}.
+ *
+ * - While an input method is composing, the keyboard is the IME's: nothing.
+ * - ENTER opens on keydown; a held, auto-repeating Enter opens nothing more.
+ * - SPACE is prevented on keydown, so the page never scrolls, and only ARMS
+ *   the cell: it opens on keyup, so that keyup cannot land on the Dialog's
+ *   close button and activate it. An auto-repeat does not re-arm.
+ */
+export function gridOpenOnKeyDown(key: string, modifiers: KeyModifiers, flags: GridKeyFlags): GridOpenStep | null {
+  if (flags.composing) return NOTHING;
+  if (!isOpenGridKey(key, modifiers)) return null;
+  if (key === 'Enter') return { prevent: true, open: !flags.repeat, arm: false };
+
+  return { prevent: true, open: false, arm: !flags.repeat };
+}
+
+/**
+ * Whether a keyup on a cell opens its detail: Space, on the cell its keydown
+ * armed (`armed`), with no input method composing.
+ */
+export function gridOpensOnKeyUp(
+  key: string,
+  modifiers: KeyModifiers,
+  { armed, composing }: { readonly armed: boolean; readonly composing: boolean },
+): boolean {
+  return key === ' ' && armed && !composing && isOpenGridKey(key, modifiers);
 }
 
 /** Every data cell of the grid, and the one a position names (by `data-row`, `data-column`). */
 export const GRID_CELL_SELECTOR = '[role="gridcell"]';
+
+/** The grid's one tab stop: where focus falls back to when a day detail's opener is gone (story 3.4b). */
+export const GRID_TAB_STOP_SELECTOR = `${GRID_CELL_SELECTOR}[tabindex="0"]`;
+
+/**
+ * The month heading's id: it names the grid and the day list, and takes focus
+ * when a day detail's opener is gone and no grid is shown (story 3.4b).
+ */
+export const MONTH_HEADING_ID = 'kalendar-month-heading';
 
 export function gridCellSelectorOf(position: GridPosition): string {
   return `${GRID_CELL_SELECTOR}[data-row="${String(position.row)}"][data-column="${String(position.column)}"]`;
