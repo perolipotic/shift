@@ -875,9 +875,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b1-members-pages.md`
   summary: The member screens read `ORGANIZATION_SNAPSHOT_KEY` with two policies (create has no `retry: false`/`staleTime`, edit sets both), and the edit screen can show several `role="alert"` notices at once; the status and team date fields also lack `aria-invalid` on a preflight refusal.
   evidence: Raised by B1's review. All pre-existing in the pre-split screens and carried over unchanged by the move; an `organizationSnapshotQueryOptions()` beside `readOrganization` and one alert per screen would settle them.
-- source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b3-calendar-page.md`
-  summary: The calendar's day-detail close path has three pre-existing hazards carried over unchanged by B3 — the render-phase `shownDetail.close` branch resets without checking `opened !== null`, a close caused by a `detailKey` change never sets `closeEventOwedRef` (so a late native `close` can shut a newly opened day), and `onOpenChange(false)` plus `onCancel` may both call `closeDay` on Escape.
-  evidence: Raised by B3's review; all three were copied verbatim from the pre-split `kalendar.tsx`. None is covered by a test; each needs a behaviour decision and an E2E or render test, so they are outside a pure move.
 - source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b4-shift-type-pages.md`
   summary: Tidy the shift-type hooks' surface — named transitions (`armArchive`, `openAdding`) instead of raw setters used by components, one shared duration helper and a `ShiftTypeChip`, one shared shift-types read/re-read helper, and `NO_TEXT`/`shownDate` moved out of `features/members` into a shared module.
   evidence: Raised by B4's review. All duplication and the cross-feature import predate the move; changing them shifts `t()` counts and guard needles, so it is a deliberate follow-up rather than part of a pure move.

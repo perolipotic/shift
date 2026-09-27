@@ -286,6 +286,47 @@ export class CalendarPage extends BasePage {
     return detail.getByRole('button', { name: kalendar.detail.close, exact: true });
   }
 
+  /** A grid cell's position among the data cells, from its `data-row` and `data-column`. */
+  async positionOf(cell: Locator): Promise<GridPosition> {
+    const [row, column] = await Promise.all([cell.getAttribute('data-row'), cell.getAttribute('data-column')]);
+    if (row === null || column === null) throw new Error('E2E: the cell carries no grid position');
+
+    return { row: Number(row), column: Number(column) };
+  }
+
+  /**
+   * Arms a one-shot listener: when the next dialog `close` event is
+   * dispatched, the grid cell at `position` is clicked BEFORE the app hears
+   * that event — as a click the browser runs ahead of the queued event would
+   * be. `clickedOnDialogClose` reports whether it ran.
+   */
+  async clickOnDialogClose(position: GridPosition): Promise<void> {
+    const selector = `[role="gridcell"][data-row="${String(position.row)}"][data-column="${String(position.column)}"]`;
+
+    await this.page.evaluate((cellSelector) => {
+      const flags = window as unknown as { e2eClickedOnDialogClose?: boolean };
+      flags.e2eClickedOnDialogClose = false;
+      window.addEventListener(
+        'close',
+        (event) => {
+          if (!(event.target instanceof HTMLDialogElement)) return;
+          const cell = document.querySelector<HTMLElement>(cellSelector);
+          if (cell === null) throw new Error(`E2E: no cell ${cellSelector} when the dialog closed`);
+          cell.click();
+          flags.e2eClickedOnDialogClose = true;
+        },
+        { capture: true, once: true },
+      );
+    }, selector);
+  }
+
+  /** Whether the listener `clickOnDialogClose` armed has run. */
+  async clickedOnDialogClose(): Promise<boolean> {
+    return this.page.evaluate(
+      () => (window as unknown as { e2eClickedOnDialogClose?: boolean }).e2eClickedOnDialogClose === true,
+    );
+  }
+
   // ------------------------------------------------------------- filter
 
   /** The team and person filter's native select. */

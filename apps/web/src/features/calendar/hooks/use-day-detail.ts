@@ -42,9 +42,11 @@ export function useDayDetail(
       setOpened(null);
       setCloses((count) => count + 1);
     }
-  } else if (shownDetail.close) {
+  } else if (shownDetail.close && opened !== null) {
     // No snapshot, the team gone, or a derivation that threw: forget the day,
-    // so it never reopens by itself when data returns.
+    // so it never reopens by itself when data returns. `dayDetailShownOf`
+    // never asks to close with nothing open (day-detail.test.ts pins it); the
+    // `opened` check keeps a change there from making this render loop forever.
     setOpened(null);
     setCloses((count) => count + 1);
   }
@@ -77,6 +79,12 @@ export function useDayDetail(
 
   /** Every close by the viewer — Escape, the close button, the backdrop. */
   function closeDay(): void {
+    // Nothing open is nothing to close. Escape reaches this once, through
+    // `onCancel` (the dialog's own `onClose` replaces the primitive's, so
+    // `onOpenChange(false)` comes from the backdrop alone); should two callbacks
+    // ever report one close, the second finds the day gone and counts nothing.
+    if (opened === null) return;
+
     const dialog = document.getElementById(DAY_DETAIL_DIALOG_ID);
 
     // Still open: its `close` event is yet to come, and is this close's.
@@ -87,7 +95,10 @@ export function useDayDetail(
 
   /**
    * The dialog's `close` event: the one a close already handled owes is
-   * consumed; any other — the browser closing it on its own — closes the day.
+   * consumed; one that finds the dialog open again is stale — a close with no
+   * debt (a `detailKey` change) whose event arrived after a new day opened —
+   * and closes nothing; any other — the browser closing it on its own —
+   * closes the day.
    */
   function closedByBrowser(): void {
     if (closeEventOwedRef.current) {
@@ -96,6 +107,9 @@ export function useDayDetail(
       return;
     }
 
+    const dialog = document.getElementById(DAY_DETAIL_DIALOG_ID);
+
+    if (dialog instanceof HTMLDialogElement && dialog.open) return;
     if (opened !== null) closeDay();
   }
 
