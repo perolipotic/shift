@@ -11,7 +11,7 @@
     "declarationMap": false,
     "sourceMap": false,
     // The E2E files import each other by their `.ts` path, which Playwright's
-    // loader and Node's own type stripping (`support/require-stack.ts`, run
+    // loader and Node's own type stripping (`utils/require-stack.ts`, run
     // directly by `playwright.config.ts`) both resolve.
     "allowImportingTsExtensions": true
   },

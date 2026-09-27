@@ -1,6 +1,6 @@
 import { test as base } from '@playwright/test';
 
-import { readFixture, type Fixture, type FixtureBand } from './fixture.ts';
+import { readFixture, type Fixture, type FixtureBand } from './run-fixture.ts';
 
 export { expect } from '@playwright/test';
 

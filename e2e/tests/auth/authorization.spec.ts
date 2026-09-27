@@ -1,5 +1,5 @@
-import { MEMBER_STATE } from './support/fixture.ts';
-import { expect, test } from './support/test.ts';
+import { MEMBER_STATE } from '../../utils/run-fixture.ts';
+import { expect, test } from '../../utils/custom-fixtures.ts';
 
 /**
  * The route guards, opened directly rather than through the navigation (which

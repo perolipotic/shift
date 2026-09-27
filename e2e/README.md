@@ -14,7 +14,7 @@ pnpm test:e2e                     # or: pnpm test:e2e:ui
 
 Prerequisites:
 
-- **Node 24** (`.nvmrc`). `playwright.config.ts` runs `e2e/support/require-stack.ts`
+- **Node 24** (`.nvmrc`). `playwright.config.ts` runs `e2e/utils/require-stack.ts`
   with Node's own type stripping.
 - **The local stack is running.** Without it the run stops before any test, with
   a message naming `supabase start`.
@@ -33,12 +33,29 @@ naming `supabase start` or `supabase functions serve` if one is missing.
 > server first (or run `pnpm test:e2e` from the checkout that owns it). The port
 > cannot simply be changed: the Edge Function's CORS admits only that origin.
 
+## Layout
+
+```text
+e2e/
+├── tests/
+│   ├── auth.setup.ts     # the setup project: signs in and stores the sessions
+│   └── <feature>/        # auth, calendar, people, teams, hour-bands, rotation, layout
+└── utils/                # fixtures, database and run-fixture helpers, i18n, global setup/teardown
+```
+
+Specs are grouped by feature under `tests/<feature>/` (`testDir` in
+`playwright.config.ts`). A new spec goes in the folder of the screen it drives,
+and a new feature gets its own folder; specs import helpers as
+`../../utils/<name>.ts`. `custom-fixtures.ts` gives the `test` and `expect`
+every spec imports, and `run-fixture.ts` provisions and deletes the run's
+organization (`readFixture`).
+
 ## Isolation
 
 Every run provisions its own organization, `e2e-<runId>`, with the operator
 script (`supabase/operator/provision-organization.sql`), adds two members, a team
 and two hour bands, and deletes the organization and its auth users when the run
-ends (`e2e/support/fixture.ts`). Tests write only inside that organization; the
+ends (`e2e/utils/run-fixture.ts`). Tests write only inside that organization; the
 seeded `dvd-kastel-novi` and `zastita-split` are never touched, and nothing runs
 `db reset`.
 
@@ -63,11 +80,12 @@ that count differ and the case fail. Run the two one after the other.
 ## Writing a spec
 
 - Locators by role, label or text only, with names from
-  `apps/web/src/i18n/locales/hr.json` (`e2e/support/i18n.ts`). No CSS or id
+  `apps/web/src/i18n/locales/hr.json` (`e2e/utils/i18n.ts`). No CSS or id
   selectors, no `waitForTimeout`; web-first assertions.
 - A test that writes creates its own rows, unique per ATTEMPT (a retry or a
   `--repeat-each` copy runs against the same organization). The fixture is
-  read-only; take it from the `fixture` fixture of `e2e/support/test.ts`, never
-  at module level, so `playwright test --list` works without a run.
+  read-only; take it from the `fixture` fixture of
+  `e2e/utils/custom-fixtures.ts`, never at module level, so
+  `playwright test --list` works without a run.
 - Authenticated specs use the stored `ADMIN_STATE` / `MEMBER_STATE`. Never sign
   out with those accounts: a sign-out revokes every session of the account.

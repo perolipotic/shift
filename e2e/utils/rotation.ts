@@ -1,7 +1,7 @@
 import type { Locator, Page } from '@playwright/test';
 
 import { fill, hr } from './i18n.ts';
-import { expect } from './test.ts';
+import { expect } from './custom-fixtures.ts';
 
 /**
  * The rotation screen's shared steps, for the desktop builder spec and the

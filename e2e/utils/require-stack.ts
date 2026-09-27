@@ -4,7 +4,7 @@
  * with the stack down the first thing to fail would otherwise be the CLI, with a
  * message about containers rather than about what to do.
  */
-import { requireStack } from './database.ts';
+import { requireStack } from './database-helper.ts';
 
 try {
   await requireStack();

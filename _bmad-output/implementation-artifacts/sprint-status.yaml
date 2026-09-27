@@ -184,7 +184,7 @@ development_status:
   # feature); C then D in parallel. A waits for PR #71.
   source-structure-a-web-move: backlog
   source-structure-b-thin-pages: backlog
-  source-structure-c-e2e-layout: backlog
+  source-structure-c-e2e-layout: review
   source-structure-d-e2e-page-objects: backlog
   # Story 1.5 was split once at step-01's multi-goal check (human decision
   # 2026-09-17). Same convention as 1.1, 1.3 and 1.4: the parent key below stays

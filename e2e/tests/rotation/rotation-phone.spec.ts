@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto';
 
-import { holdRotation, type RotationHold } from './support/database.ts';
-import { ADMIN_STATE } from './support/fixture.ts';
-import { fill, hr } from './support/i18n.ts';
+import { holdRotation, type RotationHold } from '../../utils/database-helper.ts';
+import { ADMIN_STATE } from '../../utils/run-fixture.ts';
+import { fill, hr } from '../../utils/i18n.ts';
 import {
   NEXT_LABELS,
   STEP_HEADINGS,
@@ -11,8 +11,8 @@ import {
   stepBar,
   stepButton,
   stepProgress,
-} from './support/rotation.ts';
-import { expect, test } from './support/test.ts';
+} from '../../utils/rotation.ts';
+import { expect, test } from '../../utils/custom-fixtures.ts';
 
 /**
  * Story 2.4: the rotation configured end to end on a phone. Below 640 px the

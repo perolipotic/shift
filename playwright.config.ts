@@ -6,19 +6,19 @@ import { defineConfig, devices } from '@playwright/test';
  * admits (`supabase/functions/.env`), which is why the port is strict.
  *
  * Every run provisions its own organization in globalSetup and deletes it in
- * globalTeardown (`e2e/support/fixture.ts`). See `e2e/README.md`.
+ * globalTeardown (`e2e/utils/run-fixture.ts`). See `e2e/README.md`.
  */
 
 const BASE_URL = 'http://127.0.0.1:5173';
 
 export default defineConfig({
-  testDir: 'e2e',
+  testDir: 'e2e/tests',
   fullyParallel: true,
   forbidOnly: !!process.env['CI'],
   retries: process.env['CI'] ? 1 : 0,
   reporter: process.env['CI'] ? 'github' : 'list',
-  globalSetup: './e2e/global-setup.ts',
-  globalTeardown: './e2e/global-teardown.ts',
+  globalSetup: './e2e/utils/global-setup.ts',
+  globalTeardown: './e2e/utils/global-teardown.ts',
   use: {
     baseURL: BASE_URL,
     locale: 'hr-HR',
@@ -45,7 +45,7 @@ export default defineConfig({
       // The function answers 401 without a JWT once it is served, which
       // Playwright counts as up. The stack check first, because web servers
       // start before globalSetup.
-      command: 'node e2e/support/require-stack.ts && pnpm exec supabase functions serve admin-auth',
+      command: 'node e2e/utils/require-stack.ts && pnpm exec supabase functions serve admin-auth',
       url: 'http://127.0.0.1:54321/functions/v1/admin-auth',
       reuseExistingServer: true,
       timeout: 120_000,

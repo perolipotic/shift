@@ -1,6 +1,6 @@
-import { ADMIN_DESTINATIONS, MEMBER_DESTINATIONS, hr } from './support/i18n.ts';
-import { navigation, signIn, submitSignIn } from './support/sign-in.ts';
-import { expect, test } from './support/test.ts';
+import { ADMIN_DESTINATIONS, MEMBER_DESTINATIONS, hr } from '../../utils/i18n.ts';
+import { navigation, signIn, submitSignIn } from '../../utils/sign-in.ts';
+import { expect, test } from '../../utils/custom-fixtures.ts';
 
 /**
  * The full sign-in flow, per test, through GoTrue and the access token hook.

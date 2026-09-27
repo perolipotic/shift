@@ -1,10 +1,10 @@
 import { randomBytes } from 'node:crypto';
 
-import { holdFireRanks, type RotationHold } from './support/database.ts';
-import { ADMIN_STATE, MEMBER_STATE } from './support/fixture.ts';
-import { fill, hr } from './support/i18n.ts';
-import { createMember, uniqueMember } from './support/members.ts';
-import { expect, test } from './support/test.ts';
+import { holdFireRanks, type RotationHold } from '../../utils/database-helper.ts';
+import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
+import { fill, hr } from '../../utils/i18n.ts';
+import { createMember, uniqueMember } from '../../utils/members.ts';
+import { expect, test } from '../../utils/custom-fixtures.ts';
 
 test.use({ storageState: ADMIN_STATE });
 
