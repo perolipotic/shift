@@ -1,33 +1,14 @@
-import { useQuery } from '@tanstack/react-query';
 import { Link, createRoute } from '@tanstack/react-router';
-import type { ReactNode } from 'react';
 
-import { initialsOf } from '@/utils/initials';
-import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageActions, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { Notice } from '@/components/ui/notice';
+import { TeamRoster } from '@/features/teams/components/team-roster';
+import { useTeamRoster } from '@/features/teams/hooks/use-team-roster';
+import { teamRosterMessageKey } from '@/features/teams/services/roster';
 import { t } from '@/lib/i18n';
-import { positionsShown, rosterLineOf, rosterPositionMessageKey } from '@/features/members/utils/position';
-import { ranksShown, rosterRankMessageKey } from '@/features/members/utils/rank';
-import {
-  ORGANIZATION_READ_STALE_MS,
-  ORGANIZATION_SNAPSHOT_KEY,
-  ORGANIZATION_TABLE,
-  readOrganization,
-} from '@/features/organization/services/snapshot';
 import { appLayoutRoute } from '@/pages/_app';
-import { supabaseClient } from '@/lib/supabase/client';
-import {
-  TEAM_ROSTER_KEY,
-  TEAM_ROSTER_READ_STALE_MS,
-  readTeamRoster,
-  teamRosterMessageKey,
-  teamRosterSurfaceStateOf,
-  type TeamRoster,
-  type TeamRosterRpc,
-} from '@/features/teams/services/roster';
 
 /**
  * `/smjene/$id` — who is on one team today, for every role (story 1.8).
@@ -45,17 +26,14 @@ import {
  * teams remounts the screen and starts it clean.
  *
  * THE RANK BESIDE A NAME (member rank) is shown only when the organization
- * uses fire ranks. The setting comes from the one organization snapshot under
- * its shared key — the navigation chrome already reads it on every screen, so
- * this is a second consumer of one cache entry, not a second read. Until it
- * arrives, or if it fails, the roster shows names only: the rank is an
- * addition to a name, never a reason to withhold one.
+ * uses fire ranks, from the one organization snapshot under its shared key.
+ * Until it arrives, or if it fails, the roster shows names only.
  *
- * THIS FILE HOLDS MARKUP. Every rule is in `@/features/teams/services/roster`, which the node
- * suite executes.
+ * THIS FILE COMPOSES (source structure B7). The two reads and their
+ * derivations are `useTeamRoster`; the members are
+ * `@/features/teams/components/team-roster`; every rule is in
+ * `@/features/teams/services/roster`, which the node suite executes.
  */
-
-const SKELETON_ROWS = [0, 1, 2];
 
 export function SmjenaScreen() {
   const { id } = smjenaRoute.useParams();
@@ -64,74 +42,8 @@ export function SmjenaScreen() {
 }
 
 function RosterScreen({ id }: { readonly id: string }) {
-  const answer = useQuery({
-    queryKey: TEAM_ROSTER_KEY(id),
-    queryFn: () => readTeamRoster(supabaseClient() as unknown as TeamRosterRpc, id),
-    staleTime: TEAM_ROSTER_READ_STALE_MS,
-    refetchOnWindowFocus: false,
-  });
-
-  const { roster, refusal, loading } = teamRosterSurfaceStateOf(answer);
-
-  const organization = useQuery({
-    queryKey: ORGANIZATION_SNAPSHOT_KEY,
-    queryFn: () => readOrganization(supabaseClient().from(ORGANIZATION_TABLE)),
-    // The chrome's own cache policy for this entry (`features/navigation/components/chrome.tsx`).
-    retry: false,
-    staleTime: ORGANIZATION_READ_STALE_MS,
-  });
-  const snapshot =
-    organization.data !== undefined && organization.data.ok ? organization.data.snapshot : null;
-  const shown = ranksShown(snapshot);
-  // TEAM POSITION: the same setting, "uses fire ranks and positions".
-  const positionShown = positionsShown(snapshot);
-
-  function renderRoster(team: TeamRoster): ReactNode {
-    return (
-      <div className="grid gap-4">
-        {team.archived ? (
-          <p className="text-sm text-muted-foreground">{t('smjene.roster.archived')}</p>
-        ) : null}
-        <p className="text-sm font-medium">
-          {t('smjene.roster.count', { count: team.members.length })}
-        </p>
-        {team.members.length === 0 ? null : (
-          <ul className="grid gap-2">
-            {team.members.map((member) => {
-              const initials = initialsOf(member.name);
-              const rank = rosterRankMessageKey(member.fireRank, shown);
-              const position = rosterPositionMessageKey(member.position, positionShown);
-              // WHICH SENTENCE is `rosterLineOf`'s decision, executed in a test.
-              const line = rosterLineOf(member.name, rank, position, (key) => t(key));
-
-              return (
-                <li key={member.id} className="flex min-w-0 items-center gap-3 text-base">
-                  {/* EMPTY for a name with no letter, so the names stay aligned. */}
-                  <Avatar>{initials}</Avatar>
-                  {/* TEXT, never a colour or an icon: rank and position are words. */}
-                  <span className="min-w-0 break-words">
-                    {line.key === null ? line.text : t(line.key, line.values)}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </div>
-    );
-  }
-
-  function renderBody(): ReactNode {
-    if (roster !== null) return renderRoster(roster);
-
-    return loading ? (
-      <div className="grid gap-2">
-        {SKELETON_ROWS.map((row) => (
-          <div key={row} className="h-6 w-full animate-pulse rounded-md bg-muted" />
-        ))}
-      </div>
-    ) : null;
-  }
+  const screen = useTeamRoster(id);
+  const { roster, refusal } = screen;
 
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6">
@@ -152,7 +64,7 @@ function RosterScreen({ id }: { readonly id: string }) {
               {t(teamRosterMessageKey(refusal))}
             </Notice>
           )}
-          {renderBody()}
+          <TeamRoster screen={screen} />
         </CardContent>
       </Card>
     </main>

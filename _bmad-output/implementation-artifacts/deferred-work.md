@@ -899,3 +899,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b6-team-pages.md`
   summary: The team add dialog's Cancel is not disabled while a create is in flight (a "created" notice can land after the viewer dismissed the dialog), and the missing-organization-claim refusal skips the name-field focus the ordinary refusal takes.
   evidence: Raised by B6's review; both carried over unchanged from the pre-split `ljudi.smjene.tsx`. Each is a behaviour change, so outside a pure move.
+- source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b7-sign-in-and-roster-pages.md`
+  summary: Add E2E coverage for the team roster's member-count line and archived notice, and for sign-in's recovery after a refusal (button re-enabled, second attempt succeeds) and its unavailable path (auth request fails → `auth.error.unavailable`).
+  evidence: Raised by B7's review; no E2E asserted these (roster specs only find entries by name; sign-in covers success and wrong password). B7 moved these paths into new hooks and components and verified them once with a temporary spec that was not kept, because B7 forbade E2E changes.
