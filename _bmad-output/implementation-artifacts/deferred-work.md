@@ -888,8 +888,5 @@
   summary: The team add dialog's Cancel is not disabled while a create is in flight (a "created" notice can land after the viewer dismissed the dialog), and the missing-organization-claim refusal skips the name-field focus the ordinary refusal takes.
   evidence: Raised by B6's review; both carried over unchanged from the pre-split `ljudi.smjene.tsx`. Each is a behaviour change, so outside a pure move.
 - source_spec: `_bmad-output/implementation-artifacts/spec-e2e-flow-coverage.md`
-  summary: E2E tests that create a team without holding the rotation (the first test in `teams.spec.ts`, `fire-ranks.spec.ts`, `team-position.spec.ts`) can intermittently break `rotation.spec.ts` "a saved rotation reports its coverage gap…", because the builder opens on the rotation in force only when every active team has one.
-  evidence: Found while adding the E2E flow coverage (2026-09-27): the new rename/archive tests broke that rotation test in both full runs until they took `holdRotation`. The older team-creating tests still lack the hold.
-- source_spec: `_bmad-output/implementation-artifacts/spec-e2e-flow-coverage.md`
   summary: The local E2E stack keeps GoTrue's default sign-in rate limit; with more sign-in tests (wrong password, retries, `--repeat-each`) a 429 maps to `auth.error.unavailable` and could make sign-in assertions flaky. Consider raising `[auth.rate_limit] sign_in_sign_ups` for the local stack in `supabase/config.toml`.
   evidence: Raised by the E2E coverage review (2026-09-27). Not seen in runs so far; the change touches the shared Supabase config, so it is a deliberate decision rather than part of a test-only change.

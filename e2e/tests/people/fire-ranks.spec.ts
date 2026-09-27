@@ -31,6 +31,7 @@ test('with fire ranks switched on, a member created with a rank shows it on the 
   organizationPage,
   peoplePage,
   teamsPage,
+  holdRotationForTeams,
 }) => {
   // The setting is switched ON and left on: the run's organization is its own
   // and is deleted at teardown, and switching it back off could race another
@@ -47,9 +48,13 @@ test('with fire ranks switched on, a member created with a rank shows it on the 
   const rank = hr.ljudi.rank.nco;
 
   await teamsPage.goto();
-  // The add form is a dialog, opened from the header.
-  await teamsPage.addTeam(teamName);
-  await expect(teamsPage.status).toHaveText(hr.smjene.created);
+  // Under the rotation's hold (`holdRotationForTeams`): a team added between
+  // a rotation spec's save and its reload would empty that spec's prefill.
+  await holdRotationForTeams(async () => {
+    // The add form is a dialog, opened from the header.
+    await teamsPage.addTeam(teamName);
+    await expect(teamsPage.status).toHaveText(hr.smjene.created);
+  });
 
   await teamsPage.openTeam(teamName);
   const teamPath = /\/ljudi\/smjene\/([0-9a-f-]{36})$/;

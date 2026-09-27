@@ -7,6 +7,7 @@ import { OrganizationPage } from '../pages/organization.page.ts';
 import { PeoplePage } from '../pages/people.page.ts';
 import { RotationPage } from '../pages/rotation.page.ts';
 import { TeamsPage } from '../pages/teams.page.ts';
+import { holdRotation, type RotationHold } from './database-helper.ts';
 import { readFixture, type Fixture, type FixtureBand } from './run-fixture.ts';
 
 export { expect } from '@playwright/test';
@@ -23,11 +24,23 @@ export interface PageObjects {
 }
 
 /**
+ * Adds a team under the run's rotation hold, released as soon as the add
+ * lands. The builder opens as the rotation in force only while EVERY active
+ * team has one, so a team added between a rotation spec's save and its
+ * reload would empty that spec's prefill; the rotation specs hold the same
+ * lock around that window. Held only around the add, never for the rest of
+ * the test, so no other holder waits longer than an add takes.
+ */
+export interface RotationHoldFixtures {
+  readonly holdRotationForTeams: (add: () => Promise<void>) => Promise<void>;
+}
+
+/**
  * `test` with the screens' page objects as test-scoped fixtures, and the run's
  * fixture as a worker-scoped one: read on first use inside a test, never when
  * a spec file is loaded, so listing the suite needs no provisioned run.
  */
-export const test = base.extend<PageObjects, { fixture: Fixture }>({
+export const test = base.extend<PageObjects & RotationHoldFixtures, { fixture: Fixture }>({
   loginPage: async ({ page }, use) => {
     await use(new LoginPage(page));
   },
@@ -48,6 +61,26 @@ export const test = base.extend<PageObjects, { fixture: Fixture }>({
   },
   rotationPage: async ({ page }, use) => {
     await use(new RotationPage(page));
+  },
+  holdRotationForTeams: async ({ fixture }, use, testInfo) => {
+    await use(async (add) => {
+      // Waiting for another holder may take a while.
+      testInfo.slow();
+      const hold: RotationHold = holdRotation(fixture.slug);
+      try {
+        await hold.ready;
+      } catch (cause) {
+        // An acquire that failed or timed out: the wait is still ended, but a
+        // failure to end it must not replace the acquire's own error.
+        await hold.release().catch(() => undefined);
+        throw cause;
+      }
+      try {
+        await add();
+      } finally {
+        await hold.release();
+      }
+    });
   },
   fixture: [
     // eslint-disable-next-line no-empty-pattern -- Playwright requires the destructuring
