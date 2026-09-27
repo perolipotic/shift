@@ -881,9 +881,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b3-calendar-page.md`
   summary: The calendar's day-detail close path has three pre-existing hazards carried over unchanged by B3 — the render-phase `shownDetail.close` branch resets without checking `opened !== null`, a close caused by a `detailKey` change never sets `closeEventOwedRef` (so a late native `close` can shut a newly opened day), and `onOpenChange(false)` plus `onCancel` may both call `closeDay` on Escape.
   evidence: Raised by B3's review; all three were copied verbatim from the pre-split `kalendar.tsx`. None is covered by a test; each needs a behaviour decision and an E2E or render test, so they are outside a pure move.
-- source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b3-calendar-page.md`
-  summary: BUG — after browser Back closes an open day detail, focus lands on `<body>` instead of the grid's tab-stop cell (or the month heading); fix the fallback and pin it in E2E (`calendar.spec.ts` "browser Back while the detail is open…").
-  evidence: Found by B3's review and reproduced with a temporary E2E assertion on 2026-09-27; the pre-split `kalendar.tsx` behaves the same, so it predates the refactor (likely the Dialog restoring focus after the fallback runs). No test observed it — the spec checks only the dialog count.
 - source_spec: `_bmad-output/implementation-artifacts/spec-source-structure-b4-shift-type-pages.md`
   summary: Add E2E coverage for the shift-type edit dialog's times correction, scheduled-correction cancel and archive flows (status focused after each, archived type moves under the archived heading, archive replaced by the "change scheduled" note while one is pending).
   evidence: Raised by B4's review; no E2E spec ever exercised these flows (only add, edit link and rename). B4 moved them into new hooks and components and verified them once with a temporary spec that was not kept, because B4 forbade E2E changes.
