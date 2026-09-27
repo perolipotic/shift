@@ -325,6 +325,11 @@ export class CalendarPage extends BasePage {
     return dialog.getByRole('alert');
   }
 
+  /** What a landed override write says inside the day detail. */
+  statusIn(dialog: Locator): Locator {
+    return dialog.getByRole('status');
+  }
+
   /** The removal's confirmation, named by its prompt: the team, the date and the projected type restored. */
   removeConfirmOf(teamName: string, date: string, projectedType: string): Locator {
     return this.dialog(

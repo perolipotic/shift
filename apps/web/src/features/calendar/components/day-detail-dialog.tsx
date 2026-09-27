@@ -10,6 +10,7 @@ import {
 } from '@/features/calendar/utils/day-detail';
 import { MODIFIER_OVERRIDDEN, modifierTreatmentOf } from '@/features/calendar/utils/modifiers';
 import {
+  OverrideDoneNotice,
   OverrideRemoveAction,
   OverrideRemoveConfirm,
   OverrideRemoveRefusal,
@@ -100,6 +101,7 @@ function renderDetail(shown: DayDetail, usesFireRanks: boolean, form: OverrideFo
   const override = (
     <>
       {shown.override === null ? null : renderOverride(shown.override)}
+      <OverrideDoneNotice form={form} />
       <OverrideRemoveRefusal form={form} />
       {form.offersRemove ? <OverrideRemoveAction form={form} /> : null}
       {form.offersSet ? <OverrideSetForm key={`${shown.teamId}:${shown.isoDate}`} form={form} /> : null}

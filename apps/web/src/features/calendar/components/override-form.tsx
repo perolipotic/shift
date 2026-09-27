@@ -7,7 +7,11 @@ import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
 import type { OverrideFormState } from '@/features/calendar/hooks/use-override-form';
-import { overrideWriteMessageKey } from '@/features/calendar/services/override-write';
+import {
+  OVERRIDE_REMOVED,
+  overrideDoneMessageKey,
+  overrideWriteMessageKey,
+} from '@/features/calendar/services/override-write';
 import { OVERRIDE_REASON_MAX, OVERRIDE_REFUSED_REASON, type DayDetail } from '@/features/calendar/utils/day-detail';
 import {
   OVERRIDE_REASON_FIELD_ID,
@@ -126,6 +130,24 @@ export function OverrideRemoveRefusal({ form }: { readonly form: OverrideFormSta
   return (
     <Notice id={OVERRIDE_REMOVE_ERROR_ID} role="alert">
       {t(overrideWriteMessageKey(removeFailure))}
+    </Notice>
+  );
+}
+
+/**
+ * A write that landed (story 3.5b), said in the day detail as a
+ * `role="status"` Notice: the save, or the removal and the type it restored.
+ */
+export function OverrideDoneNotice({ form }: { readonly form: OverrideFormState }): ReactNode {
+  const { done } = form;
+
+  if (done === null) return null;
+
+  return (
+    <Notice role="status">
+      {done.code === OVERRIDE_REMOVED
+        ? t(overrideDoneMessageKey(done), { type: done.projectedTypeName })
+        : t(overrideDoneMessageKey(done))}
     </Notice>
   );
 }

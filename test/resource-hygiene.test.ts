@@ -954,6 +954,10 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.detail.override.refused.gone',
   'kalendar.detail.override.refused.denied',
   'kalendar.detail.override.refused.failed',
+  // STORY 3.5b, after review: what a landed write says, in a `role="status"`
+  // Notice — the save, and the removal with the type the rotation restores.
+  'kalendar.detail.override.saved',
+  'kalendar.detail.override.removed',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

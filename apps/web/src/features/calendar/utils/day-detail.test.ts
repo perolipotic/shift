@@ -10,6 +10,7 @@ import {
   overrideTypeOptionsOf,
   type DayDetail,
 } from '@/features/calendar/utils/day-detail';
+import { OVERRIDE_REMOVED, OVERRIDE_SAVED, overrideDoneMessageKey } from '@/features/calendar/services/override-write';
 import { calendarMonthOf } from '@/features/calendar/utils/month';
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { initLocalization, t } from '@/lib/i18n';
@@ -509,6 +510,16 @@ describe('what an admin may set on a day (story 3.5b)', () => {
     }
     expect(overrideOffersOf(null, null)).toEqual({ options: [], set: false, remove: false });
     expect(overrideOffersOf(admin, null)).toEqual({ options: [], set: false, remove: false });
+  });
+
+  it('says a landed save, and a landed removal with the type the rotation restores', () => {
+    const saved = overrideDoneMessageKey({ code: OVERRIDE_SAVED });
+    const removed = overrideDoneMessageKey({ code: OVERRIDE_REMOVED, projectedTypeName: 'Dan' });
+
+    expect(saved).toBe('kalendar.detail.override.saved');
+    expect(removed).toBe('kalendar.detail.override.removed');
+    expect(t(saved)).toBe('Izmjena je spremljena.');
+    expect(t(removed, { type: 'Dan' })).toBe('Izmjena je uklonjena. Prema rotaciji: Dan.');
   });
 
   it('carries the copy the form and the confirmation render', () => {

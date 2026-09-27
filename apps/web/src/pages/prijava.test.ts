@@ -1071,6 +1071,17 @@ function messageKeyUnion(text: string): string[] {
 }
 
 /**
+ * Every `\w*MessageKey` return union in a file, not only the first: the
+ * calendar's override writes (story 3.5b) map their refusals through one and
+ * what a landed write says through another.
+ */
+function messageKeyUnions(text: string): string[] {
+  return [...text.matchAll(/function \w*MessageKey\([\s\S]*?\):([^{]*)\{/g)].flatMap((found) =>
+    [...(found[1] ?? '').matchAll(/'([^']+)'/g)].map((quoted) => quoted[1] ?? ''),
+  );
+}
+
+/**
  * Every key the member-list module declares, in EITHER shape.
  *
  * `messageKeyUnion` above reads one signature — it uses `exec`, so the first —
@@ -1973,11 +1984,12 @@ const KEY_SOURCES = [
     strings: 1,
   },
   {
-    // STORY 3.5b: the six refusals of setting or removing an override.
+    // STORY 3.5b: the six refusals of setting or removing an override, and
+    // the two things a landed write says — saved, and removed.
     name: 'the calendar override write rules',
     file: CALENDAR_OVERRIDE_WRITE_KEYS,
-    keys: messageKeyUnion,
-    strings: 6,
+    keys: messageKeyUnions,
+    strings: 8,
   },
   {
     // The read failure.

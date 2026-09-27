@@ -159,6 +159,20 @@ export async function removeShiftTypeOverride(
   return settled(() => client.rpc(REMOVE_OVERRIDE_FUNCTION, { p_override_id: overrideId }));
 }
 
+/** An override was saved on the open day. */
+export const OVERRIDE_SAVED = 'saved';
+
+/** The open day's override was removed, and the projected type is back. */
+export const OVERRIDE_REMOVED = 'removed';
+
+/**
+ * What the day detail confirms once a write has landed, in a `role="status"`
+ * Notice: the save, or the removal with the type the rotation restores.
+ */
+export type OverrideDone =
+  | { readonly code: typeof OVERRIDE_SAVED }
+  | { readonly code: typeof OVERRIDE_REMOVED; readonly projectedTypeName: string };
+
 // ------------------------------------------------------------ the messages
 
 /** The edge, and the only place one of these codes becomes Croatian. */
@@ -181,4 +195,13 @@ export function overrideWriteMessageKey(
   const unhandled: never = failure;
 
   return unhandled;
+}
+
+/** The key a landed write is said with. */
+export function overrideDoneMessageKey(
+  done: OverrideDone,
+): 'kalendar.detail.override.saved' | 'kalendar.detail.override.removed' {
+  if (done.code === OVERRIDE_SAVED) return 'kalendar.detail.override.saved';
+
+  return 'kalendar.detail.override.removed';
 }

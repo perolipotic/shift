@@ -921,6 +921,7 @@ test.describe('an admin sets and removes a shift-type override at 1280 px', () =
     await expect(block).toContainText(fill(kalendar.detail.override.projected, { type: projected }));
     await expect(block).toContainText(fill(kalendar.detail.override.author, { name: fixture.admin.name }));
     await expect(block).toContainText(fill(kalendar.detail.override.reason, { reason: REASON }));
+    await expect(calendarPage.statusIn(detail)).toHaveText(kalendar.detail.override.saved);
     await expect(calendarPage.overrideFormIn(detail)).toHaveCount(0);
     const remove = calendarPage.overrideRemoveIn(detail);
     await expect(remove).toBeFocused();
@@ -942,6 +943,9 @@ test.describe('an admin sets and removes a shift-type override at 1280 px', () =
     await expect(confirm).toHaveCount(0);
     await expect(block).toHaveCount(0);
     await expect(calendarPage.overrideFormIn(detail)).toBeVisible();
+    await expect(calendarPage.statusIn(detail)).toHaveText(
+      fill(kalendar.detail.override.removed, { type: projected }),
+    );
 
     // The cell is back to its projection.
     await page.keyboard.press('Escape');

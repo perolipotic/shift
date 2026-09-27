@@ -5,10 +5,13 @@ import {
   OVERRIDE_DENIED,
   OVERRIDE_FAILED,
   OVERRIDE_GONE,
+  OVERRIDE_REMOVED,
+  OVERRIDE_SAVED,
   OVERRIDE_TAKEN,
   OVERRIDES_TABLE,
   removeShiftTypeOverride,
   setShiftTypeOverride,
+  type OverrideDone,
   type OverrideRemoval,
   type OverrideTable,
   type OverrideWriteFailure,
@@ -44,6 +47,10 @@ import { supabaseClient } from '@/lib/supabase/client';
  * override block and the form or the removal follow by themselves. A write
  * that settles after another day was opened drops its result there.
  *
+ * A WRITE THAT LANDED IS SAID: `done` holds the save, or the removal and the
+ * type it restored, for a `role="status"` Notice, until the next write or
+ * another day.
+ *
  * Every rule is in `@/features/calendar/services/override-write` and
  * `@/features/calendar/utils/day-detail`, which the node suite executes;
  * this hook holds state and wiring only.
@@ -59,6 +66,7 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
   const [failure, setFailure] = useState<OverrideWriteFailure | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [removeFailure, setRemoveFailure] = useState<OverrideWriteFailure | null>(null);
+  const [done, setDone] = useState<OverrideDone | null>(null);
   const day = detail === null ? null : `${detail.teamId}:${detail.isoDate}`;
   const [shownFor, setShownFor] = useState(day);
   // The day open NOW, read after an await: a write settled for another day
@@ -75,6 +83,7 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
     setFailure(null);
     setConfirming(false);
     setRemoveFailure(null);
+    setDone(null);
   }
 
   const offers = overrideOffersOf(snapshot, detail);
@@ -124,6 +133,7 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
     writing.current = true;
     setFailure(null);
     setRemoveFailure(null);
+    setDone(null);
     setPending(true);
 
     try {
@@ -160,6 +170,7 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
 
       await invalidate();
       if (!stillOn(startedFor)) return;
+      setDone({ code: OVERRIDE_SAVED });
       // The form gives way to the override block and its removal.
       focusLater(removeAction);
     } catch (cause) {
@@ -192,9 +203,11 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
     if (override === null || writing.current) return;
 
     const startedFor = day;
+    const projectedTypeName = override.projectedTypeName;
 
     writing.current = true;
     setRemoveFailure(null);
+    setDone(null);
     setPending(true);
 
     try {
@@ -222,6 +235,7 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
       await invalidate();
       if (!stillOn(startedFor)) return;
       setConfirming(false);
+      setDone({ code: OVERRIDE_REMOVED, projectedTypeName });
       // The projection is back, and so is the form — or, with no type to
       // offer, the dialog's title.
       focusLater(typeField);
@@ -245,6 +259,7 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
     failure,
     confirming,
     removeFailure,
+    done,
     options: offers.options,
     offersSet: offers.set,
     offersRemove: offers.remove,
