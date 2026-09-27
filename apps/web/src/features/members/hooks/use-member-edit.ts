@@ -58,12 +58,12 @@ import {
   type TeamOffer,
   type TeamPick,
 } from '@/features/members/services/write';
-import { rankEditOf, ranksShown } from '@/features/members/utils/rank';
+import { dateMarkFor, dateMarked, type DateMark } from '@/features/members/utils/date-refusal';
+import { rankEditOf, ranksShownIn } from '@/features/members/utils/rank';
 import {
-  ORGANIZATION_READ_STALE_MS,
   ORGANIZATION_SNAPSHOT_KEY,
   ORGANIZATION_TABLE,
-  readOrganization,
+  organizationSnapshotQueryOptions,
 } from '@/features/organization/services/snapshot';
 import { currentSession, supabaseClient } from '@/lib/supabase/client';
 import {
@@ -177,6 +177,8 @@ export function useMemberEdit(id: string) {
   /** Why the last status change did not land. Keyed to the member. */
   const [statusFailure, setStatusFailure] =
     useState<RaisedForMember<MemberWriteRefusal> | null>(null);
+  /** The date the last status refusal named, if it named one. */
+  const [statusDateMark, setStatusDateMark] = useState<DateMark | null>(null);
   // THE TEAM BLOCK'S OWN STATE and its own in-flight ref, for the reason the
   // status block has its own.
   const teaming = useRef(false);
@@ -187,6 +189,7 @@ export function useMemberEdit(id: string) {
   const [teamFailure, setTeamFailure] = useState<RaisedForMember<MemberWriteRefusal> | null>(
     null,
   );
+  const [teamDateMark, setTeamDateMark] = useState<DateMark | null>(null);
   // TEAM POSITION. The position control, and the team the picker holds, so the
   // position control can follow it.
   const positionField = useRef<HTMLSelectElement>(null);
@@ -198,17 +201,13 @@ export function useMemberEdit(id: string) {
   // organization snapshot under its shared key (AD-13) — the chrome already
   // reads it on every screen. Until it arrives the control is absent and the
   // save leaves the stored rank alone.
-  const organization = useQuery({
-    queryKey: ORGANIZATION_SNAPSHOT_KEY,
-    queryFn: () => readOrganization(supabaseClient().from(ORGANIZATION_TABLE)),
-    // The chrome's own cache policy for this entry, so this is a second
-    // consumer of one cache entry rather than a second read policy on it.
-    retry: false,
-    staleTime: ORGANIZATION_READ_STALE_MS,
-  });
-  const organizationSnapshot =
-    organization.data !== undefined && organization.data.ok ? organization.data.snapshot : null;
-  const offersRank = ranksShown(organizationSnapshot);
+  // The chrome's own cache policy for this entry, through the one factory, so
+  // this is a second consumer of one cache entry rather than a second read
+  // policy on it.
+  const organization = useQuery(
+    organizationSnapshotQueryOptions(() => supabaseClient().from(ORGANIZATION_TABLE)),
+  );
+  const offersRank = ranksShownIn(organization.data);
   // TEAM POSITION: the same setting, as `@/features/members/services/write` reads it — on, off,
   // pending or failed. Until it is KNOWN no move is offered, so no position is
   // ever sent on a guess.
@@ -260,6 +259,13 @@ export function useMemberEdit(id: string) {
   );
   const statusConfirmed = raisedForMember(statusSaved, id) !== null;
   const statusRefusal = raisedForMember(statusFailure, id);
+  // THE DATE IS MARKED INVALID only while the refusal that named it stands, on
+  // the history it was named on, as the leave field is through `invalidField`.
+  const statusDateInvalid = dateMarked(
+    statusDateMark,
+    statusRefusal,
+    form.member === null ? null : statusBlockKey(form.member),
+  );
   const statusStage = statusStageOf(statusArmedFor !== null, statusPending);
   const offer = form.member === null ? null : statusOfferOf(form.member, callerAuthUserId, today);
   const teamArmedFor = standingTeamConfirmation(
@@ -269,6 +275,11 @@ export function useMemberEdit(id: string) {
   );
   const teamConfirmed = raisedForMember(teamSaved, id) !== null;
   const teamRefusal = raisedForMember(teamFailure, id);
+  const teamDateInvalid = dateMarked(
+    teamDateMark,
+    teamRefusal,
+    form.member === null ? null : teamBlockKey(form.member),
+  );
   const teamStage = statusStageOf(teamArmedFor !== null, teamPending);
   const teamOffer =
     form.member === null ? null : teamOfferFor(form.member, activeTeams, today, positionsSetting);
@@ -315,7 +326,10 @@ export function useMemberEdit(id: string) {
     setTeamSaved(null);
 
     if (refusal !== null) {
-      setTeamFailure({ member: member.id, raised: { code: refusal, saved: false } });
+      const raised = { code: refusal, saved: false };
+
+      setTeamFailure({ member: member.id, raised });
+      setTeamDateMark(dateMarkFor(raised, teamBlockKey(member), true));
       (offered.change === WITHDRAW ? null : dateField)?.focus();
 
       return;
@@ -392,6 +406,7 @@ export function useMemberEdit(id: string) {
         setTeamPick(null);
       } else {
         setTeamFailure({ member: member.id, raised: outcome.refusal });
+        setTeamDateMark(dateMarkFor(outcome.refusal, teamBlockKey(member), false));
       }
 
       // THE LIST CARRIES THE TEAM HISTORY, and a refusal is refetched too: the
@@ -447,7 +462,10 @@ export function useMemberEdit(id: string) {
     if (refusal !== null) {
       // FOCUS MOVES TO THE DATE, which the block's own alert names; that alert
       // is what the field's `aria-describedby` points at.
-      setStatusFailure({ member: member.id, raised: { code: refusal, saved: false } });
+      const raised = { code: refusal, saved: false };
+
+      setStatusFailure({ member: member.id, raised });
+      setStatusDateMark(dateMarkFor(raised, statusBlockKey(member), true));
       field?.focus();
 
       return;
@@ -493,8 +511,12 @@ export function useMemberEdit(id: string) {
         { member, members: organizationMembers, callerAuthUserId, today },
       );
 
-      if (outcome.ok) setStatusSaved({ member: member.id, raised: true });
-      else setStatusFailure({ member: member.id, raised: outcome.refusal });
+      if (outcome.ok) {
+        setStatusSaved({ member: member.id, raised: true });
+      } else {
+        setStatusFailure({ member: member.id, raised: outcome.refusal });
+        setStatusDateMark(dateMarkFor(outcome.refusal, statusBlockKey(member), false));
+      }
 
       // THE LIST CARRIES THE VERSIONS, so the marker, the status line and the
       // next offer all move with it — and it is refetched on a REFUSAL too,
@@ -686,6 +708,7 @@ export function useMemberEdit(id: string) {
     statusArmedFor,
     statusConfirmed,
     statusRefusal,
+    statusDateInvalid,
     statusStage,
     setStatusArmed,
     armStatus,
@@ -701,6 +724,7 @@ export function useMemberEdit(id: string) {
     teamArmedFor,
     teamConfirmed,
     teamRefusal,
+    teamDateInvalid,
     teamStage,
     pickedTeam,
     setTeamArmed,

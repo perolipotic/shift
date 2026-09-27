@@ -131,6 +131,10 @@ export function useOrganizationSettings() {
   // by its own.
   const writingBesideFireRanks = pending || uploadingLogo || savingAccent;
 
+  // NOT `organizationSnapshotQueryOptions()`, and on purpose. This screen keeps
+  // TanStack Query's defaults — no stale bound, so opening it re-reads the row
+  // the admin is about to edit — and the factory's five-minute bound would
+  // change when that happens. The member screens only read a setting off it.
   const snapshot = useQuery({
     queryKey: ORGANIZATION_SNAPSHOT_KEY,
     queryFn: () => readOrganization(supabaseClient().from(ORGANIZATION_TABLE)),

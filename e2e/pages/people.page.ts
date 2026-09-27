@@ -93,6 +93,16 @@ export class PeoplePage extends BasePage {
     await this.submitNewMember(name, username);
   }
 
+  // ------------------------------------------------------- the status
+
+  get statusDateInput(): Locator {
+    return this.page.getByLabel(hr.ljudi.status.date, { exact: true });
+  }
+
+  deactivateButton(name: string): Locator {
+    return this.page.getByRole('button', { name: fill(hr.ljudi.status.deactivate, { name }) });
+  }
+
   // ------------------------------------------------ the team membership
 
   get teamSelect(): Locator {

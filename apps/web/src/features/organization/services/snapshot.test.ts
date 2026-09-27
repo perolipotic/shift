@@ -10,6 +10,7 @@ import { SETTINGS_SCREEN_PARTS } from '@/features/organization/settings-screen.f
 import {
   ORGANIZATION_COLUMNS,
   ORGANIZATION_INVALID,
+  ORGANIZATION_READ_STALE_MS,
   ORGANIZATION_NAME_BLANK,
   ORGANIZATION_REFUSED,
   ORGANIZATION_SNAPSHOT_KEY,
@@ -18,11 +19,13 @@ import {
   ORGANIZATION_UNAVAILABLE,
   organizationEditColumns,
   organizationSnapshotOf,
+  organizationSnapshotQueryOptions,
   organizationTimeZone,
   readOrganization,
   updateOrganization,
   type OrganizationEdits,
   type OrganizationFailure,
+  type OrganizationOutcome,
   type OrganizationTable,
   type OrganizationFireRanksEdit,
   type OrganizationWrite,
@@ -441,6 +444,61 @@ describe('the read returns one snapshot or one code', () => {
       ok: false,
       code: ORGANIZATION_UNAVAILABLE,
     });
+  });
+});
+
+// ------------------------------------------------------ the one read policy
+
+describe('the member screens read the organization through one query definition', () => {
+  it("registers the snapshot key under the chrome's own policy", () => {
+    // B1'S REVIEW: the create screen read this key with no retry bound and no
+    // stale bound while the edit screen set both — two policies on one cache
+    // entry. The factory is the one place the policy is written; each hook is
+    // pinned in `pages/prijava.test.ts` to call it exactly once.
+    const options = organizationSnapshotQueryOptions(() =>
+      answering({ data: [PILOT_ROW], error: null }),
+    );
+
+    expect(options.queryKey).toBe(ORGANIZATION_SNAPSHOT_KEY);
+    expect(options.retry, 'a settled refusal is retried as though it were slow').toBe(false);
+  });
+
+  it('holds a snapshot fresh for the bound, and a failed answer fresh for no time at all', () => {
+    // `readOrganization` RESOLVES a failure as data, so a flat bound served a
+    // failed answer as fresh for five minutes — and the create screen
+    // withholds its whole form on one. Executed over the query state the
+    // bound is handed, one answer of each kind.
+    const staleTime = organizationSnapshotQueryOptions(() =>
+      answering({ data: [PILOT_ROW], error: null }),
+    ).staleTime as (query: { state: { data: OrganizationOutcome | undefined } }) => number;
+
+    expect(typeof staleTime, 'the bound is flat, so a failure is held fresh too').toBe('function');
+    expect(staleTime({ state: { data: { ok: true, snapshot: pilotSnapshot() } } })).toBe(
+      ORGANIZATION_READ_STALE_MS,
+    );
+    expect(staleTime({ state: { data: { ok: false, code: ORGANIZATION_REFUSED } } })).toBe(0);
+    expect(staleTime({ state: { data: { ok: false, code: ORGANIZATION_UNAVAILABLE } } })).toBe(0);
+    expect(staleTime({ state: { data: undefined } })).toBe(0);
+  });
+
+  it('reads the row through the one read, resolving the table only when it runs', async () => {
+    // RESOLVED INSIDE THE QUERY FUNCTION, so `supabaseClient()` raising
+    // `SUPABASE_ENVIRONMENT_MISSING` is a query rejection, not a render throw.
+    let resolved = 0;
+    const log = recorder();
+    const options = organizationSnapshotQueryOptions(() => {
+      resolved += 1;
+
+      return answering({ data: [PILOT_ROW], error: null }, log);
+    });
+
+    expect(resolved, 'the table is resolved before the query runs').toBe(0);
+
+    const queryFn = options.queryFn as () => Promise<OrganizationOutcome>;
+
+    expect(await queryFn()).toEqual({ ok: true, snapshot: pilotSnapshot() });
+    expect(resolved).toBe(1);
+    expect(log.selected).toEqual([ORGANIZATION_COLUMNS]);
   });
 });
 

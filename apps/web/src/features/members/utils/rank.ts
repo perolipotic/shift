@@ -204,6 +204,20 @@ export function ranksShown(organization: { readonly usesFireRanks: boolean } | n
 }
 
 /**
+ * {@link ranksShown} over the organization read's answer as the query holds
+ * it: unread and refused both offer no rank. The one unwrap the member screens
+ * share, so neither spells `data.ok ? data.snapshot : null` out by hand.
+ */
+export function ranksShownIn(
+  answer:
+    | { readonly ok: true; readonly snapshot: { readonly usesFireRanks: boolean } }
+    | { readonly ok: false }
+    | undefined,
+): boolean {
+  return ranksShown(answer !== undefined && answer.ok ? answer.snapshot : null);
+}
+
+/**
  * The rank text the roster shows beside one member's name, or `null` for
  * none: the setting off, or the member has no rank. A code this build lacks
  * is still shown, as "unknown rank" — in the roster's own LOWERCASE form,
