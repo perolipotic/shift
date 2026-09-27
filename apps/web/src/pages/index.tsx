@@ -2,6 +2,7 @@ import { createRoute, redirect } from '@tanstack/react-router';
 import type { Session } from '@supabase/supabase-js';
 
 import { DESTINATIONS } from '@/features/navigation/utils/destinations';
+import { returnSearchFor } from '@/features/auth/services/return-target';
 import { rootRoute } from '@/pages/__root';
 import { SESSION_UNRESOLVED } from '@/lib/supabase/client';
 
@@ -25,14 +26,16 @@ import { SESSION_UNRESOLVED } from '@/lib/supabase/client';
  * There is therefore NO COMPONENT here, and there must not be one: a
  * redirect-only route that registers one is a screen nobody can reach.
  *
- * SEARCH AND HASH RIDE THE SIGNED-OUT REDIRECT ONLY, and the asymmetry is the
+ * THE LOCATION RIDES THE SIGNED-OUT REDIRECT ONLY, and the asymmetry is the
  * decision. AD-14 has the host answer every path with `index.html` at 200, so
  * `/?invite=…#section` is a shape a real link takes; `/prijava` is where that
- * link's owner carries on, and dropping them there would make them
- * unrecoverable — silently, since the visitor lands on a working screen either
- * way. The forward carries neither, because a destination knows nothing about
- * parameters addressed to `/`: passing them on would invent a meaning for them
- * rather than preserve one.
+ * link's owner carries on. The redirect carries the href in `povratak`
+ * (`@/features/auth/services/return-target`) — nothing for a bare `/` — so a
+ * sign-in returns here with the search and the hash intact, rather than
+ * keeping them on the prompt for one hop as it used to. The forward carries
+ * neither, because a destination knows nothing about parameters addressed to
+ * `/`: passing them on would invent a meaning for them rather than preserve
+ * one.
  *
  * BOTH REPLACE. `/` is a decision, and a decision has no business in the
  * history stack: left there, Back from wherever the visitor landed returns to
@@ -66,7 +69,7 @@ const FIRST_DESTINATION = DESTINATIONS[0];
 export const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  beforeLoad: async ({ context }) => {
+  beforeLoad: async ({ context, location }) => {
     // THREE outcomes reach this line, not two, and the third is why the read is
     // wrapped. `currentSession` can REJECT: the client throws its stable code on
     // a build with no environment, and `getSession` rejects wherever storage is
@@ -109,6 +112,6 @@ export const indexRoute = createRoute({
     // pins the ordinary path instead of pretending the pathological one away.
     if (session !== null) throw redirect({ to: FIRST_DESTINATION.path, replace: true });
 
-    throw redirect({ to: '/prijava', search: true, hash: true, replace: true });
+    throw redirect({ to: '/prijava', search: returnSearchFor(location.href), replace: true });
   },
 });

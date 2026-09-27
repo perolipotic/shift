@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { SignInForm } from '@/features/auth/components/sign-in-form';
 import { useSignIn } from '@/features/auth/hooks/use-sign-in';
 import { organizationDestination } from '@/features/auth/services/address';
+import { returnSearchOf } from '@/features/auth/services/return-target';
 import { t } from '@/lib/i18n';
 import { resolvedSession } from '@/lib/supabase/client';
 import { rootRoute } from '@/pages/__root';
@@ -59,6 +60,9 @@ export function SignInScreen() {
 export const prijavaRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/prijava/$slug',
+  // THE RETURN TARGET, carried and nothing more: `useSignIn` validates it at
+  // the moment it is followed (`@/features/auth/services/return-target`).
+  validateSearch: returnSearchOf,
   // A slug that cannot be one never reaches the form (review decision,
   // 2026-09-08). Normalization already closed the case a URL creates most
   // often — `/prijava/DVD-Kastel-Novi`, shared, typed or autocapitalized by a
@@ -94,7 +98,11 @@ export const prijavaRoute = createRoute({
   // unreachable. Same read, opposite default, because the cost of being wrong
   // points the other way. `resolvedSession` is the read; the default is here.
   beforeLoad: async ({ context, params }) => {
-    if (organizationDestination(params.slug) === null) throw redirect({ to: '/prijava' });
+    // `search: true` keeps the return target on the way to the prompt, so a
+    // malformed segment costs the visitor the slug and never the destination.
+    if (organizationDestination(params.slug) === null) {
+      throw redirect({ to: '/prijava', search: true });
+    }
 
     // ONE HELPER, TWO ROUTES. The read, the `catch` and the logging were copied
     // verbatim into both sign-in routes, which is the same hand-copied block

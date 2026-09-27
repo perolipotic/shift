@@ -2,6 +2,7 @@ import { Outlet, createRoute, redirect } from '@tanstack/react-router';
 import type { Session } from '@supabase/supabase-js';
 
 import { AppChrome } from '@/features/navigation/components/chrome';
+import { returnSearchFor } from '@/features/auth/services/return-target';
 import { rootRoute } from '@/pages/__root';
 import { SESSION_UNRESOLVED } from '@/lib/supabase/client';
 
@@ -27,8 +28,8 @@ import { SESSION_UNRESOLVED } from '@/lib/supabase/client';
  *
  * `/` AND BOTH SIGN-IN ROUTES STAY OUTSIDE IT, deliberately. Nesting `/` would
  * change its match chain from `['__root__', '/']` to one with the layout in it
- * and force the whole deployed-root block — the redirect cases, `search`/`hash`
- * preservation — to be re-derived against a layout, for nothing gained. `/`
+ * and force the whole deployed-root block — the redirect cases, the carried
+ * location — to be re-derived against a layout, for nothing gained. `/`
  * carries the equivalent guard itself (`index.tsx`) and is redirect-only, so it
  * renders nothing this chrome would need to wrap: a signed-in visitor reaches
  * the chrome by being forwarded INTO a destination. The duplicated guard is two
@@ -92,7 +93,7 @@ export const appLayoutRoute = createRoute({
   // convention for a pathless route, kept here so the id reads the same way in
   // `routesById` as the file does on disk.
   id: '_app',
-  beforeLoad: async ({ context }) => {
+  beforeLoad: async ({ context, location }) => {
     // THREE outcomes, not two, and the third is why the read is wrapped.
     // `currentSession` can REJECT: the client throws its stable code on a build
     // with no environment, and `getSession` rejects wherever storage is blocked
@@ -116,12 +117,15 @@ export const appLayoutRoute = createRoute({
 
     if (session !== null) return;
 
-    // `search: true` / `hash: true` are TanStack's "retain the current values".
-    // AD-14 has the host answer every path with `index.html` at 200, so
-    // `/kalendar?tim=2#tjedan` is a shape a real link takes, and a redirect that
-    // discarded them would make those parameters unrecoverable — silently,
-    // since the visitor lands on a working screen either way.
-    throw redirect({ to: '/prijava', search: true, hash: true });
+    // THE WHOLE LOCATION TRAVELS, path included. AD-14 has the host answer every
+    // path with `index.html` at 200, so `/kalendar?tim=2#tjedan` is a shape a
+    // real link takes. This redirect used to keep only the search and the hash
+    // (`search: true` / `hash: true`) on the prompt, where nothing used them
+    // and the next hop dropped them — and the path never travelled at all.
+    // Now the href rides `povratak` through both sign-in routes and the
+    // sign-in hook returns there, through the validator in
+    // `@/features/auth/services/return-target`.
+    throw redirect({ to: '/prijava', search: returnSearchFor(location.href) });
   },
   component: AppLayout,
 });

@@ -10,6 +10,7 @@ import { t } from '@/lib/i18n';
 import { rootRoute } from '@/pages/__root';
 import { ORGANIZATION_NAVIGATION_FAILED, organizationDestination } from '@/features/auth/services/address';
 import { resolvedSession } from '@/lib/supabase/client';
+import { returnSearchOf } from '@/features/auth/services/return-target';
 
 /**
  * Which organization (story 1.3b), at bare `/prijava`.
@@ -46,6 +47,7 @@ import { resolvedSession } from '@/lib/supabase/client';
  */
 export function OrganizationPromptScreen() {
   const navigate = useNavigate();
+  const search = prijavaOrganizacijaRoute.useSearch();
   const organizationField = useRef<HTMLInputElement>(null);
 
   function submit(event: FormEvent<HTMLFormElement>): void {
@@ -67,7 +69,9 @@ export function OrganizationPromptScreen() {
     // `try`/`catch` for the same reason. There is nothing to say to the person
     // here (a message would begin the oracle this screen refuses to be), so the
     // console carries it and the prompt stays put.
-    navigate({ to: '/prijava/$slug', params: { slug } }).catch((cause: unknown) => {
+    // THE RETURN TARGET TRAVELS ON, untouched: the signed-out redirect put it
+    // here and the credential form is what follows it.
+    navigate({ to: '/prijava/$slug', params: { slug }, search }).catch((cause: unknown) => {
       console.error(ORGANIZATION_NAVIGATION_FAILED, cause);
     });
   }
@@ -110,6 +114,8 @@ export function OrganizationPromptScreen() {
 export const prijavaOrganizacijaRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/prijava',
+  // The return target the signed-out redirect carries, and nothing else.
+  validateSearch: returnSearchOf,
   // THE ROUTE THAT HAD NO GUARD AT ALL, and the one a signed-in visitor is most
   // likely to reach: it is where `/`'s redirect, a typed `/prijava` and
   // `not-found.tsx`'s link back all land. Offered to a session that already

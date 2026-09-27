@@ -505,7 +505,9 @@ const SCREENS = [
   // change like the accent.
   // NINE SINCE DESIGN REFRESH C: the type and zone inputs left the form; the
   // leave year's day and month are selects now, still two controls.
-  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 9 },
+  // TEN SINCE THE SETTINGS FIX: the read's retry, rendered beside the message
+  // only when a read has failed, so a failed read has something to act with.
+  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 10 },
   // THREE on the member list, and the count is what keeps a fourth from
   // arriving unreviewed: the search field, the permission-level filter, and ONE
   // `<Button>` — the sort control, written once inside a map over
@@ -1652,7 +1654,8 @@ const KEY_SOURCES = [
   //
   // EIGHTEEN SINCE DESIGN REFRESH C: the lede, the logo's accepted formats,
   // and the aside's title and body.
-  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 18 },
+  // NINETEEN since the settings fix: the read's retry reuses `shell.retry`.
+  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 19 },
   {
     // EIGHT on the member list since story 1.5b, up from five, and the number is
     // still small because most of what this screen says is read off a table
@@ -3093,7 +3096,13 @@ describe('the screen is read at all, so every sweep below means something', () =
     for (const file of exempt) expect(walked, `${file} is exempt and does not exist`).toContain(file);
     // THE EXACT EXEMPTIONS, so a new one is a reviewed change to this test.
     expect([...exempt].sort(), 'the sign-in exemptions changed').toEqual(
-      ['sign-in-screen.fixture.ts', 'services/address.ts', 'services/sign-in.ts', 'services/sign-out.ts']
+      [
+        'sign-in-screen.fixture.ts',
+        'services/address.ts',
+        'services/return-target.ts',
+        'services/sign-in.ts',
+        'services/sign-out.ts',
+      ]
         .map((file) => join(AUTH_FEATURE, ...file.split('/')))
         .sort(),
     );
@@ -5301,7 +5310,11 @@ describe('every field on the settings surface carries an accessible name', () =>
   it('builds no request and no client of its own', () => {
     const screen = source(SETTINGS);
 
-    for (const forbidden of ['fetch(', 'createClient(', 'localStorage']) {
+    // A WORD BOUNDARY on `fetch(`, since the read's retry calls the query's
+    // own `refetch()`, which is the query re-reading rather than a request
+    // this screen builds.
+    expect(screen, 'the settings screen reaches for fetch(').not.toMatch(/(?<![\w.])fetch\(/);
+    for (const forbidden of ['createClient(', 'localStorage']) {
       expect(screen, `the settings screen reaches for ${forbidden}`).not.toContain(forbidden);
     }
   });
@@ -5406,8 +5419,9 @@ describe('the logo control the general sweeps structurally cannot see', () => {
     const screen = source(SETTINGS);
     const buttons = buttonElements(screen);
 
-    // FOUR SINCE STORY 2.1b: the link to the hour band editor.
-    expect(buttons, 'the settings surface lost a button').toHaveLength(4);
+    // FOUR SINCE STORY 2.1b: the link to the hour band editor. FIVE since the
+    // settings fix: the read's retry.
+    expect(buttons, 'the settings surface lost a button').toHaveLength(5);
 
     const choose = buttons.find((element) => element.includes('onClick={openLogoPicker}')) ?? null;
 
@@ -5437,10 +5451,16 @@ describe('the logo control the general sweeps structurally cannot see', () => {
     // so no in-flight flag applies to it — and exactly one such link exists,
     // so this exemption cannot quietly widen to a write.
     const links = buttonElements(screen).filter((element) => element.includes('asChild'));
+    // THE READ'S RETRY is exempt on the same terms: it renders only while there
+    // is no row, so no write — and no in-flight flag — can exist beside it.
+    const retries = buttonElements(screen).filter((element) => element.includes('onClick={retryRead}'));
 
     expect(links, 'the settings surface grew a second link').toHaveLength(1);
+    expect(retries, 'the settings surface has not exactly one read retry').toHaveLength(1);
 
-    for (const element of buttonElements(screen).filter((candidate) => !links.includes(candidate))) {
+    for (const element of buttonElements(screen).filter(
+      (candidate) => !links.includes(candidate) && !retries.includes(candidate),
+    )) {
       expect(
         element,
         `a control is disabled by only some of the in-flight flags: ${element}`,
@@ -5982,7 +6002,7 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     );
   });
 
-  it('lands a signed-in visitor on / and nowhere else', () => {
+  it('lands a signed-in visitor on the validated return target, and nowhere else', () => {
     // MUTATION-PROVEN GAP. Nothing in this repository read a `navigate(` call:
     // a grep across every test file returned zero matches, so `to: '/prijava'`
     // here passed the entire suite while a correct sign-in established a
@@ -5991,11 +6011,45 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // happened. The story's first acceptance criterion was verified only by
     // somebody remembering to run the manual browser check.
     // SOURCE STRUCTURE B7: inside the hook's own submit.
-    const handler = submitHandler(source(SIGN_IN_HOOK));
+    //
+    // SINCE THE SIGN-IN FIX the landing is the deep link the signed-out
+    // redirect carried, and only ever through the validator: a raw
+    // `navigate({ href: povratak })` would be an open redirect, and `to: '/'`
+    // would drop the destination the visitor asked for. `returnTargetOf` falls
+    // back to `/` itself, which `return-target.test.ts` executes.
+    const hook = source(SIGN_IN_HOOK);
+    const handler = submitHandler(hook);
 
     expect(handler, 'the sign-in screen has no submit handler').not.toBe('');
-    expect(handler, 'a successful sign-in does not navigate to /').toMatch(
-      /navigate\(\{\s*to:\s*'\/'\s*\}\)/,
+    expect(occurrences(handler, 'navigate('), 'a sign-in navigates more than once').toBe(1);
+    expect(handler, 'a successful sign-in does not follow the validated target').toMatch(
+      /navigate\(\{\s*href:\s*returnTargetOf\(povratak,\s*knownPathOf\(router\)\),\s*replace:\s*true\s*\}\)/,
+    );
+    expect(hook, 'the return target is not read off the route').toMatch(
+      /const \{\s*povratak\s*\}\s*=\s*useSearch\(/,
+    );
+  });
+
+  it('keeps focus on a pending submit, and moves it on a refusal', () => {
+    // `disabled={pending}` took the button a person had just pressed out of the
+    // tab order and dropped keyboard focus to `<body>` mid-flow. The button is
+    // `aria-disabled` now and the in-flight ref refuses the second submit; a
+    // refusal moves focus to the password field the message describes, in the
+    // handler, on both the refused and the thrown path.
+    const button = buttonElements(source(SIGN_IN_FORM))[0] ?? '';
+    const handler = submitHandler(source(SIGN_IN_HOOK));
+
+    expect(button, 'the submit button is disabled natively, which drops focus').not.toMatch(
+      /\sdisabled=/,
+    );
+    expect(button, 'the pending state is not stated').toContain('aria-disabled={pending}');
+    // FOCUS AFTER THE COMMIT: the refusal is rendered through `flushSync`
+    // first, so the field is announced with the error it now points at.
+    expect(handler, 'a refused sign-in leaves focus where it was, or focuses before the commit').toMatch(
+      /!outcome\.ok\)\s*\{[\s\S]{0,400}?flushSync\(\(\) => \{\s*setFailure\(outcome\.code\);\s*\}\);\s*password\.focus\(\);\s*return;/,
+    );
+    expect(handler, 'an unavailable sign-in leaves focus where it was, or focuses before the commit').toMatch(
+      /flushSync\(\(\) => \{\s*setFailure\(SIGN_IN_UNAVAILABLE\);\s*\}\);\s*password\.focus\(\);/,
     );
   });
 
@@ -6499,22 +6553,154 @@ describe('the accent control offers a curated set and nothing else', () => {
     );
   });
 
-  it('keeps a failed refetch out of the write’s own outcome', () => {
+  it.each(['submit', 'uploadLogo', 'applyAccent', 'applyFireRanks'])(
+    'keeps a failed refetch out of the write’s own outcome on %s',
+    (handler) => {
     // The row has already changed by the time the invalidation runs, so a
     // refetch that rejects must not be reported as a refused save: that tells
     // somebody their accent was rejected while the database holds it and the
     // next reload shows it. Its own `catch`, and no `setFailure` inside it.
-    const accentWrite = componentFunction(source(SETTINGS), 'applyAccent');
+    // OVER ALL FOUR WRITES since the settings fix: part C fixed the accent
+    // path only, and `submit` and `uploadLogo` kept the invalidation inside
+    // the write's own `try`.
+    const write = componentFunction(source(SETTINGS), handler);
     const invalidation =
       /try \{\s*await queryClient\.invalidateQueries[\s\S]*?catch[\s\S]*?\n {6}\}/.exec(
-        accentWrite,
+        write,
       )?.[0] ?? '';
 
+    expect(write, `no ${handler} function to read`).not.toBe('');
+    expect(
+      occurrences(write, 'invalidateQueries('),
+      'an invalidation escapes its own try',
+    ).toBe(occurrences(invalidation, 'invalidateQueries('));
     expect(invalidation, 'the invalidation is not guarded at all').not.toBe('');
     expect(invalidation, 'a failed refetch reports the landed write as refused').not.toContain(
       'setFailure(',
     );
     expect(invalidation, 'a failed refetch is swallowed in silence').toContain('console.error(');
+    },
+  );
+
+  it('marks and focuses the control a refused save names, and only that one', () => {
+    // The database names the constraint, and `refusedOrganizationFieldOf`
+    // (executed in `snapshot.test.ts`) maps it to a control. What is left to
+    // pin here is the wiring: each of the four controls compares against its
+    // OWN field, and a refused save moves focus to the named control in the
+    // handler — never an effect.
+    const card = source(SETTINGS_CARD);
+    const save = submitHandler(source(SETTINGS));
+
+    for (const [id, field] of [
+      ['organization-name', 'ORGANIZATION_NAME_FIELD'],
+      ['organization-leave-day', 'ORGANIZATION_LEAVE_DAY_FIELD'],
+      ['organization-leave-month', 'ORGANIZATION_LEAVE_MONTH_FIELD'],
+      ['organization-accent', 'ORGANIZATION_ACCENT_FIELD'],
+    ] as const) {
+      const control = new RegExp(`id="${id}"[\\s\\S]{0,400}?aria-invalid=\\{([^}]*)\\}`).exec(card)?.[1];
+
+      expect(control, `${id} carries no aria-invalid`).toBe(`refusedField === ${field}`);
+    }
+    expect(save, 'a refused save does not keep the field it names').toMatch(
+      /setRefusedField\(outcome\.field \?\? null\)/,
+    );
+    expect(save, 'a refused save does not move focus to the named control').toMatch(
+      /controls\[outcome\.field\]\?\.focus\(\)/,
+    );
+    // THE MAP, read entry by entry: each field sends focus to the element its
+    // own ref holds, the shorthand `name` included — a `name` entry pointing
+    // at `day` would pass a substring check for `name,` and focus the wrong
+    // control.
+    const body = /const controls[^=]*=\s*\{([\s\S]*?)\};/.exec(save)?.[1] ?? '';
+    const entries = new Map(
+      body
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry !== '')
+        .map((entry) => {
+          const [key, value] = entry.split(':').map((part) => part.trim());
+
+          return [key, value ?? key] as const;
+        }),
+    );
+
+    expect(body, 'no controls map to read').not.toBe('');
+    expect([...entries.keys()].sort(), 'the controls map names other fields').toEqual(
+      ['leaveYearStartDay', 'leaveYearStartMonth', 'name'],
+    );
+    for (const [field, element, ref] of [
+      ['name', 'name', 'nameField'],
+      ['leaveYearStartDay', 'day', 'dayField'],
+      ['leaveYearStartMonth', 'month', 'monthField'],
+    ] as const) {
+      expect(entries.get(field), `a ${field} refusal focuses another control`).toBe(element);
+      expect(save, `${element} is not the element ${ref} holds`).toContain(
+        `const ${element} = ${ref}.current;`,
+      );
+    }
+    // THE OTHER WRITES KEEP THE FIELD TOO, and it is shown only while its
+    // refusal is: a field outliving the refusal would mark a valid control.
+    for (const handler of ['applyAccent', 'applyFireRanks']) {
+      expect(
+        componentFunction(source(SETTINGS), handler),
+        `${handler} drops the field its refusal names`,
+      ).toMatch(/setFailure\(outcome\.code\);[\s\S]{0,200}?setRefusedField\(outcome\.field \?\? null\)/);
+    }
+    expect(source(SETTINGS_HOOK), 'the field outlives the refusal it explains').toContain(
+      'refusedField: failure === null ? null : refusedField,',
+    );
+  });
+
+  it('draws the form’s shape while the read is pending, and says it is busy', () => {
+    const gated = componentFunction(source(SETTINGS), 'renderSettings');
+    const skeleton = /isPending \? \(([\s\S]*?)\) : null;/.exec(gated)?.[1] ?? '';
+
+    expect(skeleton, 'no pending branch to read').not.toBe('');
+    expect(skeleton, 'the skeleton region is not marked busy').toMatch(/^\s*<div aria-busy\b/);
+    expect(
+      occurrences(skeleton, '<FieldSkeleton'),
+      'the skeleton does not reserve one row per field',
+    ).toBe(4);
+  });
+
+  it('offers the failed read a retry that re-reads the one query', () => {
+    const hook = source(SETTINGS_HOOK);
+    const retry = componentFunction(hook, 'retryRead');
+    const button = buttonElements(source(SETTINGS_CARD)).find((element) =>
+      element.includes('onClick={retryRead}'),
+    );
+
+    expect(retry, 'no retryRead function to read').not.toBe('');
+    expect(retry, 'the retry does not re-read the snapshot query').toContain('snapshot.refetch()');
+    expect(hook, 'the retry is offered for a code whose message asks for none').toContain(
+      'offersReadRetry(readFailure)',
+    );
+    // A THROWN read is a failed read: the refusal and the retry both read
+    // `readFailureOf(snapshot)` (executed in `snapshot.test.ts`), never the
+    // answer alone, which is `undefined` when the query function threw.
+    expect(hook, 'a read that threw is not treated as a failed read').toContain(
+      'const readFailure = readFailureOf(snapshot);',
+    );
+    expect(hook, 'the refusal ignores a read that threw').toMatch(/failure \?\? readFailure;/);
+    // AFTER THE RETRY: the answer is committed through `flushSync`, then a
+    // success focuses the name field (the button just unmounted) and every
+    // attempt re-keys the alert, so a second failure is announced again.
+    expect(retry, 'the retry does not commit before deciding focus').toMatch(
+      /await snapshot\.refetch\(\);\s*flushSync\(\(\) => \{\s*setReadAttempts\(/,
+    );
+    expect(retry, 'a successful retry drops focus to the body').toMatch(
+      /\}\);\s*if \(retried\.data\?\.ok === true\) nameField\.current\?\.focus\(\);/,
+    );
+    expect(source(SETTINGS_CARD), 'a retry that fails again is not re-announced').toMatch(
+      /<Notice id=\{ORGANIZATION_ERROR_ID\} role="alert" key=\{readAttempts\}>/,
+    );
+    expect(button, 'nothing on the card calls the retry').toBeDefined();
+    expect(source(SETTINGS_CARD), 'the retry is not labelled by the existing key').toMatch(
+      /onClick=\{retryRead\}\s*>\s*\{t\('shell\.retry'\)\}/,
+    );
+    expect(source(SETTINGS_CARD), 'the retry renders whether or not a read failed').toMatch(
+      /\{readRetry \? \(\s*<Button/,
+    );
   });
 
   it('shows what the row holds beside the control that changes it', () => {

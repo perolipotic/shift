@@ -105,7 +105,74 @@ test('Odjava signs out and returns to the organization prompt', async ({ page, l
   await expect(page).toHaveURL('/prijava');
   await expect(loginPage.organizationHeading).toBeVisible();
 
-  // Signed out for real: an app route sends the visitor back to the prompt.
+  // Signed out for real: an app route sends the visitor back to the prompt,
+  // carrying the route it asked for.
   await page.goto('/danas');
-  await expect(page).toHaveURL('/prijava');
+  await expect(page).toHaveURL(`/prijava?povratak=${encodeURIComponent('/danas')}`);
+});
+
+test('a signed-out deep link to Kalendar lands back on it, search and hash intact, after sign-in', async ({
+  page,
+  loginPage,
+  fixture,
+}) => {
+  const deepLink = '/kalendar?mjesec=2031-02#tjedan';
+
+  await page.goto(deepLink);
+  await expect(page).toHaveURL(`/prijava?povratak=${encodeURIComponent(deepLink)}`);
+  await expect(loginPage.organizationHeading).toBeVisible();
+
+  await loginPage.continueSignIn(fixture.slug, fixture.spare.username, fixture.password);
+
+  await expect(page).toHaveURL(deepLink);
+  await expect(loginPage.heading(hr.nav.kalendar)).toBeVisible();
+});
+
+test('a return target that points off the application lands on Danas instead', async ({
+  page,
+  loginPage,
+  fixture,
+}) => {
+  await page.goto(`/prijava?povratak=${encodeURIComponent('//evil.example/kalendar')}`);
+
+  await loginPage.continueSignIn(fixture.slug, fixture.spare.username, fixture.password);
+
+  await expect(page).toHaveURL('/danas');
+});
+
+test('the submit keeps keyboard focus while pending, and a refusal moves it to the password', async ({
+  page,
+  loginPage,
+  fixture,
+}) => {
+  // The password grant is HELD until the assertions on the pending state have
+  // run, so the in-flight window is observed rather than raced.
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const holdPasswordGrant = async (route: Route) => {
+    await held;
+    await route.continue();
+  };
+  await page.route(isPasswordGrant, holdPasswordGrant);
+
+  try {
+    await loginPage.goto();
+    await loginPage.fillCredentialsFor(fixture.slug, fixture.spare.username, `${fixture.password}-wrong`);
+    await loginPage.submitButton.focus();
+    await page.keyboard.press('Enter');
+
+    await expect(loginPage.submitButton).toHaveAttribute('aria-disabled', 'true');
+    await expect(loginPage.submitButton).toBeFocused();
+
+    release();
+
+    await expect(loginPage.alert).toHaveText(hr.auth.error.credentials);
+    await expect(loginPage.passwordInput).toBeFocused();
+    await expect(loginPage.submitButton).toHaveAttribute('aria-disabled', 'false');
+  } finally {
+    release();
+    await page.unroute(isPasswordGrant, holdPasswordGrant);
+  }
 });

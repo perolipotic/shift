@@ -111,6 +111,7 @@ const LABEL_MESSAGE =
 export const FEATURE_PUBLIC = {
   auth: [
     'services/address', // pages
+    'services/return-target', // pages
     'services/sign-out', // navigation
   ],
   calendar: [

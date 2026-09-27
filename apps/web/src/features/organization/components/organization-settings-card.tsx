@@ -28,6 +28,12 @@ import {
 import { storedAccentLabel } from '@/features/organization/utils/accent-label';
 import { LEAVE_START_DAYS, LEAVE_START_MONTHS } from '@/features/organization/utils/leave-start';
 import { ORGANIZATION_ERROR_ID, organizationMessageKey } from '@/features/organization/utils/messages';
+import {
+  ORGANIZATION_ACCENT_FIELD,
+  ORGANIZATION_LEAVE_DAY_FIELD,
+  ORGANIZATION_LEAVE_MONTH_FIELD,
+  ORGANIZATION_NAME_FIELD,
+} from '@/features/organization/services/snapshot';
 
 /**
  * The settings screen's main card (stories 1.4a-1.4c and member rank): the
@@ -81,6 +87,10 @@ export function OrganizationSettingsCard({
     snapshot,
     organization,
     refusal,
+    refusedField,
+    readRetry,
+    readAttempts,
+    retryRead,
     nameField,
     monthField,
     dayField,
@@ -119,8 +129,23 @@ export function OrganizationSettingsCard({
       // like — identical to a slow one, with the message that explains it
       // rendered by nothing. The alert lives outside this function now, so a
       // settled failure renders the message and no skeleton.
+      //
+      // THE FORM'S SHAPE, one placeholder per row it draws — the name, the
+      // leave-year start, the accent and the fire-rank setting with their
+      // status lines, and the two buttons — so the snapshot's arrival moves
+      // nothing. `aria-busy` says the region is in flight; there is no loading
+      // string in `hr.json` to name it with, so it carries no label.
       return snapshot.isPending ? (
-        <div className="h-11 w-full animate-pulse rounded-md bg-muted" />
+        <div aria-busy className="grid animate-pulse gap-6">
+          <FieldSkeleton described={false} />
+          <FieldSkeleton described={false} />
+          <FieldSkeleton described />
+          <FieldSkeleton described />
+          <div className="grid gap-2 border-t pt-6 sm:grid-cols-2">
+            <div className="h-11 w-full rounded-md bg-muted" />
+            <div className="h-11 w-full rounded-md bg-muted" />
+          </div>
+        </div>
       ) : null;
     }
 
@@ -145,6 +170,7 @@ export function OrganizationSettingsCard({
               type="text"
               required
               defaultValue={organization.name}
+              aria-invalid={refusedField === ORGANIZATION_NAME_FIELD}
               aria-describedby={refusal === null ? undefined : ORGANIZATION_ERROR_ID}
               className="h-11"
             />
@@ -169,6 +195,7 @@ export function OrganizationSettingsCard({
                 name="leaveYearStartDay"
                 required
                 defaultValue={organization.leaveYearStartDay}
+                aria-invalid={refusedField === ORGANIZATION_LEAVE_DAY_FIELD}
                 aria-describedby={refusal === null ? undefined : ORGANIZATION_ERROR_ID}
                 className="h-11"
               >
@@ -193,6 +220,7 @@ export function OrganizationSettingsCard({
                   name="leaveYearStartMonth"
                   required
                   defaultValue={organization.leaveYearStartMonth}
+                  aria-invalid={refusedField === ORGANIZATION_LEAVE_MONTH_FIELD}
                   aria-describedby={refusal === null ? undefined : ORGANIZATION_ERROR_ID}
                   className="h-11"
                 >
@@ -247,6 +275,7 @@ export function OrganizationSettingsCard({
               onChange={chooseAccent}
               disabled={writingElsewhere}
               aria-busy={savingAccent}
+              aria-invalid={refusedField === ORGANIZATION_ACCENT_FIELD}
               aria-describedby={refusal === null ? undefined : ORGANIZATION_ERROR_ID}
               className="h-11"
             >
@@ -366,13 +395,47 @@ export function OrganizationSettingsCard({
           silence rather than reported. */}
       <CardContent className="grid gap-6">
         {refusal === null ? null : (
-          <Notice id={ORGANIZATION_ERROR_ID} role="alert">
+          // KEYED ON THE READ'S ATTEMPTS: a retry that fails again remounts
+          // the region, which is what makes `role="alert"` announce it again.
+          <Notice id={ORGANIZATION_ERROR_ID} role="alert" key={readAttempts}>
             {t(organizationMessageKey(refusal))}
           </Notice>
         )}
+        {/* THE READ'S RETRY, beside the message that asks for one. A failed
+            read renders no form, so without this nothing on the screen could
+            act on "try again" short of a reload. `aria-disabled` rather than
+            `disabled` while the read is in flight, so the person who pressed
+            it keeps their place. */}
+        {readRetry ? (
+          <Button
+            className="h-11 w-full aria-disabled:opacity-50 sm:w-auto sm:justify-self-start"
+            type="button"
+            variant="outline"
+            aria-disabled={snapshot.isFetching}
+            aria-busy={snapshot.isFetching}
+            aria-describedby={ORGANIZATION_ERROR_ID}
+            onClick={retryRead}
+          >
+            {t('shell.retry')}
+          </Button>
+        ) : null}
         <OrganizationLogoCard settings={settings} />
         {renderSettings()}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * One field row's placeholder in the loading skeleton: a label and a 44 px
+ * control, and the status line under the two selects that write on change.
+ */
+function FieldSkeleton({ described }: { readonly described: boolean }): ReactNode {
+  return (
+    <div className="grid gap-2">
+      <div className="h-3.5 w-32 rounded bg-muted" />
+      <div className="h-11 w-full rounded-md bg-muted" />
+      {described ? <div className="h-5 w-48 rounded bg-muted" /> : null}
+    </div>
   );
 }

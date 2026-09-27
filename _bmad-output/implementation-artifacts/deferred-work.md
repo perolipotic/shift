@@ -230,14 +230,6 @@
 ## Deferred from: build review of spec-1-3b-spa-sign-in-path (2026-09-08)
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-3b-spa-sign-in-path.md`
-  summary: The deep-link search and hash are preserved for exactly one hop and then lost, and the bounced visitor also loses the organization they were on.
-  evidence: `index.tsx`'s redirect carries `search: true` / `hash: true` onto `/prijava` — defended at length in that file — and nothing forwards them to `/prijava/$slug`, while `submit()` ends with `navigate({ to: '/' })` carrying neither. So `/?invite=abc#section` survives the redirect and dies at the next navigation, which makes the careful preservation decorative. The same redirect sends the visitor to the bare prompt rather than the slug they were on, so an expired session means retyping it. Both want the same fix — a redirect-back target threaded through the sign-in path — which is why they are one entry. No route declares a search schema yet, so nothing is broken today; this becomes real with the first invite or deep link.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-3b-spa-sign-in-path.md`
-  summary: No focus management or busy state around a refused sign-in, and `disabled={pending}` drops keyboard focus to `<body>` mid-flow.
-  evidence: On refusal nothing moves focus to the message, so a screen-reader user is not told the submission failed unless they navigate back to it; `aria-live` is absent. Separately, disabling the submit button the user has just activated removes the focused element from the tab order, which drops focus to the document body — the keyboard user loses their position at exactly the moment they need to correct a field. UX-DR34's "state the fact rather than hide the affordance" also argues against silently disabling the only control while saying nothing; a pending label would need a new resource key. Wants a considered accessibility pass across every form the app grows, not a local fix on one screen.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-3b-spa-sign-in-path.md`
   summary: `/`'s `beforeLoad` is now async and may perform a network token refresh, with no pending component configured anywhere.
   evidence: Every resolution of `/` awaits `getSession()`, which supabase-js may satisfy by refreshing the token over the network. Neither `createRouter` nor the root route declares `pendingComponent` or `defaultPendingMs`, so the post-sign-in navigation can sit on a blank frame for the duration on a slow connection. The awaited-reader design is right and well argued in `__root.tsx` — reading the session fresh on every resolution is what makes a stale snapshot impossible — but its latency consequence was never addressed. Decide alongside the first route that loads data, since the answer (a shared pending treatment) should not be invented twice.
 
@@ -270,10 +262,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-3b-spa-sign-in-path.md`
   summary: Decide whether `iceberg-js@0.8.1` belongs in the browser bundle's dependency graph.
   evidence: The spec's Verification section expected `pnpm install` to add `@supabase/supabase-js@2.113.0` "and nothing else"; the lockfile gained `iceberg-js@0.8.1` and `tslib@2.8.1` as new package entries. `iceberg-js` is a table-format library reachable via `storage-js`, for a story — and an application — that makes no storage call. Transitive rather than declared, so the "Ask First" dependency gate was not bypassed, but it widens the supply-chain surface of a bundle whose central invariant is key containment. Verify whether it is tree-shaken from the production build before deciding.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-navigation-shell-a-route-skeleton.md`
-  summary: The signed-out redirect discards the destination the visitor asked for, which makes its `search`/`hash` preservation theatre.
-  evidence: `_app.tsx` throws `redirect({ to: '/prijava', search: true, hash: true })`, and both the comment and the test argue those values would otherwise be "unrecoverable" — but the PATHNAME is dropped, and `prijava.tsx` navigates to `/` after a successful sign-in (`prijava.test.ts`: "lands a signed-in visitor on / and nowhere else"). So `/kalendar?tim=2#tjedan` becomes `/prijava?tim=2#tjedan`, carries `tim=2` onto a screen with no use for it, and discards it at `/`. The parameters are unrecoverable either way, so the preservation currently buys nothing while reading as though it buys something. The fix is a return path (a `redirect` search param on `/prijava` consumed after sign-in), which touches `prijava.tsx` — a file this spec deliberately put behind Ask First. Pairs naturally with part B, which already owns the already-signed-in guard on the same routes.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-navigation-shell-a-route-skeleton.md`
   summary: The ~20-line session-guard body is duplicated verbatim between `_app.tsx` and `index.tsx` with nothing enforcing the two stay identical.
@@ -320,14 +308,6 @@
   evidence: `required`, `min`, `max` and `type="number"` without `noValidate` produce validation bubbles in the browser's or OS's locale. `localization-applied.test.ts` and `resource-hygiene.test.ts` check every authored string to the byte, and this is the one class of user-facing text that walks past both. Adding `noValidate` means re-homing those refusals into the application's own message set, which is a design change rather than a patch.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
-  summary: A refused value is never attributed to the field that caused it — `organization.error.invalid` names nothing and no input carries `aria-invalid`.
-  evidence: "Unesena vrijednost nije dopuštena." tells the person a value was rejected without saying which of five fields. UX-DR34 is cited throughout this change as requiring the refusal to name the problem, and the blank-name code honours it while the general check-violation code does not — although PostgREST returns the constraint name, from which the column is derivable exactly as `organizations_name_check` already is. Focus is also never moved to the message, so on a five-field form the `role="alert"` announcement can refer to a control scrolled out of view.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
-  summary: The loading skeleton is a single 44px bar standing in for a five-field form, with no `aria-busy` and no accessible loading text.
-  evidence: It neither reserves the form's layout — guaranteeing a jump when the snapshot arrives — nor tells a screen-reader user that anything is in flight. UX-DR40 requires a skeleton rather than a spinner, which this satisfies in kind but not in shape.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
   summary: The screen assembles its own data access at two call sites, so `ORGANIZATION_TABLE` has to be part of the snapshot module's public surface.
   evidence: `supabaseClient().from(ORGANIZATION_TABLE)` appears in both the query function and the submit handler. `snapshot.ts` goes to real trouble to make the table an injected parameter so the module is stubbable, then exports the table name so the screen can build the client itself. An `organizationTable()` helper would keep the seam in one place and let the constant stop being exported.
 
@@ -339,10 +319,6 @@
   summary: `variant` was added to the global `STRUCTURAL_ATTRIBUTES` allowlist to serve one button, widening the exemption beyond its justification.
   evidence: The entry is argued honestly and proved on both polarities, but the allowlist is consulted for every screen in the sweep, so it also exempts `variant` on any future component where the prop is not drawn from `buttonVariants`' closed set. Scoping the exemption to `<Button>` would keep the widening as narrow as the argument that earned it.
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
-  summary: There is no retry affordance on the read-failure path, although the message tells the person to try again.
-  evidence: `organization.error.unavailable` reads "Pokušaj ponovno.", but on a failed read there is no form and therefore no button, and `useQuery`'s `refetch` is never called. Once the refusal is made visible (patched in this review pass), nothing on the screen can still act on it short of a browser reload.
-
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-4b-organization-logo.md`
   summary: `expectedControls` in `apps/web/src/routes/prijava.test.ts` sums `<Input>` and `<Button>` occurrences into one number, so it cannot notice the substitution its own comment claims it catches.
   evidence: The comment says the number is what notices a sixth field, but because the count is a single total, a sixth field arriving in the same change as a removed button leaves the total unchanged and the assertion passes. The 44px sweep still measures whatever controls it finds, so this is a weakened tripwire rather than an unguarded surface. Splitting the expectation into a field count and a button count restores the claim the comment makes, and would do so for every screen in `SCREENS` at once rather than only for the settings surface.
@@ -350,10 +326,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-navigation-shell-b-chrome-and-sign-out.md`
   summary: On a phone an admin's later destinations scroll horizontally out of view with no indicator, no overflow affordance, and no guarantee the current destination is in view.
   evidence: The bottom bar is `overflow-x-auto` with `shrink-0` entries because nine 44px targets plus the exit do not fit across a phone — a deliberate choice recorded in the code, and the right one for keeping the PAGE from scrolling sideways. What it leaves open is discovery: nothing signals that more destinations exist past the right edge, nothing scrolls the active entry into view on load, and the exit sits last so it is the most likely to be off-screen for exactly the admin role that has the most destinations. The member role reaches four and is unaffected, so this is admin-on-a-phone only. The fix is a design question — an overflow menu, a scroll affordance, or a different mobile treatment for the admin set — rather than a patch, and no artifact in `ux-designs/` covers it.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-4c-brand-accent-and-lockup.md`
-  summary: `invalidateQueries` rejecting after a successful write reports that write as a refusal, in `submit` and `uploadLogo` on the settings surface.
-  evidence: Part C fixed this on the accent path only, because that was the path in its diff. The identical shape sits in the two handlers 1.4a and 1.4b shipped: the invalidation is inside the same `try` as the write, so a rejection there sets the failure state for a write the database already accepted, and the person is told their save was refused while the row holds the new value. It is a narrow window — an invalidation rejects only if the query client is torn down or a queryFn throws synchronously during the refetch — which is why it has survived two reviews, but the accent path now behaves differently from its two neighbours on the same screen, and that inconsistency is the more likely source of a future misreading than the bug itself.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-4c-brand-accent-and-lockup.md`
   summary: DESIGN.md's `colors:` front matter does not describe the eight brand accent tokens, so the design source of truth no longer covers what ships and `theme-fidelity.test.ts` structurally cannot see them.
@@ -580,3 +552,23 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-5b-shift-type-override-form.md`
   summary: The shared `Dialog` primitive's `dismissible={false}` relies on `preventDefault` of `cancel`; Chrome's close-watcher closes a modal dialog on a second Escape without intervening user activation, so a held write's dialog (day detail, team add #89) can still close.
   evidence: Raised by 3.5b's edge-case review. It affects every non-dismissible Dialog, not just the override form; the fix (re-open on `close` while pending, or a close-watcher-aware primitive) belongs in `components/ui/dialog.tsx`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-sign-in-and-settings.md`
+  summary: No pending state on the sign-in or settings screens is one assistive technology can actually hear. The sign-in button's `aria-busy` is not announced by NVDA or JAWS, and the settings skeleton's `aria-busy` region has no label, because `hr.json` has no loading string.
+  evidence: The skeleton now reserves the form's shape and marks its region `aria-busy` (the rest of the 1.4a entry this narrows), and the sign-in submit is `aria-disabled` + `aria-busy` instead of natively disabled. Both states are silent to the common screen readers without words. Adding those words needs a new resource string, which that spec lists as Ask First, so it was left for a decision.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-sign-in-and-settings.md`
+  summary: On organization settings, a refused save whose constraint maps to no control (and every non-constraint refusal) still leaves focus where it was, and Save's `disabled={busy}` drops keyboard focus to `<body>` while the save is in flight.
+  evidence: The fix focuses and marks the control a mapped check constraint names; an unmapped refusal keeps the general message and marks nothing, as that spec asked, but nothing moves focus to the `role="alert"` region, which on a five-field form can be scrolled out of view. The Save and Cancel buttons still use native `disabled={busy}`, which is the same focus drop the sign-in button had; that spec's focus fix covered the sign-in submit only.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-sign-in-and-settings.md`
+  summary: A signed-out or expired bounce from `_app` still lands on the bare `/prijava` prompt, not on the organization the visitor was on, so they retype the slug.
+  evidence: This is the slug half of the 1-3b deep-link entry this spec closed. The destination now survives the bounce (`povratak`), but the organization does not. At redirect time there is no session to read the slug from, and `session-cache` clears the cached snapshot on a sign-out. Keeping it would need the slug remembered from the last session or carried on the redirect.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-sign-in-and-settings.md`
+  summary: The signed-in guards on `/prijava` and `/prijava/$slug` send the visitor to `/` and ignore `povratak`.
+  evidence: A signed-in visitor who opens `/prijava/<slug>?povratak=/kalendar` (a second tab, or Back into the sign-in form) is forwarded to `/`, then to the first destination, rather than to the carried target. That spec covered only the signed-out flow, so the guards' `redirect({ to: '/' })` was left as it was.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-sign-in-and-settings.md`
+  summary: A deep link carried by the session-change re-guard (a user signing out to nobody) can be followed by the NEXT person who signs in on the same device, possibly from another organization.
+  evidence: When `session-cache` re-runs the guards after a sign-out or expiry elsewhere, `_app` sends the tab to `/prijava?povratak=<the previous user's path>`. Whoever signs in next is returned there. The path passes the validator, since it is a known route, and RLS refuses its data. But the previous user's resource path (a member id, a shift type) shows in the address bar, and the new user lands on a refusal. Possible fixes are to bind the target to the organization (the slug) it was raised in, or to drop it when the subject signing in differs from the last one.
