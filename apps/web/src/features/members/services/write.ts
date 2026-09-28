@@ -1091,6 +1091,17 @@ export function statusFailureOf(
 ): MemberWriteFailure {
   if (error?.code === '23505') return MEMBER_STATUS_DATE_TAKEN;
 
+  // `0023`'s re-check raises the last-admin rule itself, as 23514, when an
+  // admin it counted was demoted while the write waited. BOTH FIELDS, as
+  // `editFailureOf` reads them, and BEFORE class 23, which would otherwise call
+  // it a value to correct.
+  if (
+    error !== null &&
+    `${error.message ?? ''} ${error.details ?? ''}`.includes(ORGANIZATION_WOULD_HAVE_NO_ADMIN)
+  ) {
+    return ORGANIZATION_WOULD_HAVE_NO_ADMIN;
+  }
+
   if (error === null || error.code === '42501') {
     const named = statusPreflightOf(change, day, context);
 

@@ -823,6 +823,26 @@ describe('a rename goes through the privileged boundary and reports what it did'
   });
 });
 
+describe('a status write refused by the last-admin re-check reads as the last-admin rule', () => {
+  // `0023`'s AFTER trigger raises 23514 `ORGANIZATION_WOULD_HAVE_NO_ADMIN`
+  // when an admin the policy counted was demoted while the write waited. Class
+  // 23 otherwise reads as a value to correct, and there is none on the form.
+  it.each([
+    { message: ORGANIZATION_WOULD_HAVE_NO_ADMIN },
+    { message: 'raised', details: ORGANIZATION_WOULD_HAVE_NO_ADMIN },
+  ])('maps 23514 carrying the code in either field', (carried) => {
+    expect(statusFailureOf({ code: '23514', ...carried }, DEACTIVATE, TODAY, statusContext())).toBe(
+      ORGANIZATION_WOULD_HAVE_NO_ADMIN,
+    );
+  });
+
+  it('still reads any other class-23 refusal as a value to correct', () => {
+    expect(
+      statusFailureOf({ code: '23514', message: 'member_status_versions_effective_from_finite' }, DEACTIVATE, TODAY, statusContext()),
+    ).toBe(MEMBER_WRITE_INVALID);
+  });
+});
+
 describe('an edit reaches the privileged function only when the identity moves', () => {
   it('writes the four ordinary fields through PostgREST and calls nothing else', async () => {
     // THE STORY'S CENTRAL BRANCH, and it is asserted by COUNTING WHAT THE STUB

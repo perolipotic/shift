@@ -30,11 +30,13 @@
 --     organization. One key per statement covers every row it can touch.
 --   * WHY ONLY `authenticated`. The races are between request writers, whose
 --     rules are policies. An owner, `postgres` or `service_role` write (the
---     seed, the demo script, an operator's delete, a cascade the owner starts,
---     `admin-auth`'s member insert and username update) takes no lock and
---     behaves exactly as before. 0002's deferred zero-admins check still runs
---     at commit for everyone. A missing or malformed claim takes no lock; the
---     policies refuse that session anyway.
+--     seed, the demo script, an operator's delete, a cascade the owner starts)
+--     takes no lock and behaves exactly as before. `admin-auth` writes
+--     `members` as `authenticated`, through the caller's client: its member
+--     insert takes the lock, and its username update does not, because the
+--     trigger fires only on an update naming `role`. 0002's deferred
+--     zero-admins check still runs at commit for everyone. A missing or
+--     malformed claim takes no lock; the policies refuse that session anyway.
 --   * WHY IT CANNOT DEADLOCK. A BEFORE STATEMENT trigger fires before the
 --     statement finds, locks or inserts any row, so a request statement takes
 --     the advisory lock before any tuple lock of its own: before the row locks
@@ -84,8 +86,12 @@
 --      admin active from that date on? If not, 0002's
 --      `ORGANIZATION_WOULD_HAVE_NO_ADMIN` (23514), the code the browser maps.
 --
--- For a single, non-concurrent write, both reads see the rows the policy saw,
--- so the trigger never refuses what the policy admitted. THE GATE is the
+-- For a single-row, non-concurrent statement, both reads see the rows the
+-- policy saw, so the trigger never refuses what the policy admitted. A
+-- MULTI-ROW statement can be stricter: WITH CHECK judges each row as it is
+-- written, while this AFTER ROW trigger runs once the statement has written
+-- every row, and so sees all of them. The SPA always sends one row, so only a
+-- multi-row insert through the API directly can meet that. THE GATE is the
 -- session role: it runs only when `role` is `authenticated` and the write is a
 -- top-level statement, not one issued from inside a trigger such as a cascade
 -- (`pg_trigger_depth() = 1`). It keys on the role alone and cannot tell whether

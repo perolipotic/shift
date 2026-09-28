@@ -90,6 +90,7 @@ context:
 - **2026-09-28, review triage item 3: the AFTER trigger also re-reads the caller.** It now first asks `current_member_access()` again, in a fresh query, whether the caller is still an active admin of the row's organization, and raises 42501 if not. A policy-admitted single write already has such a caller, so no single-write outcome changes. The gate is now stated precisely: the trigger runs when the session role is `authenticated` and the statement is top level (`pg_trigger_depth() = 1`, so a cascade from a self-delete is not re-checked). It keys on the role and cannot tell whether a policy actually governed the write.
 - **2026-09-28, review triage item 4: 0010 is restored byte for byte.** It is forward-only. The narrowed KNOWN GAP (only the archive-and-assign race is left open) is recorded in 0023's header and in deferred-work.
 - **2026-09-28, review triage items 5 and 6.** 0023's header now states that correctness relies on READ COMMITTED, with no behaviour change, and names `member_team_on` (0010) as well as `member_team_version_on` (0015) among the readers.
+- **2026-09-28, final re-review: the status path maps the re-check's 23514.** `statusFailureOf` read every class-23 error other than 23505 as `MEMBER_WRITE_INVALID`, so the re-check's `ORGANIZATION_WOULD_HAVE_NO_ADMIN` would have shown "correct a value". It now checks `message` and `details` for that code first, as `editFailureOf` does, and returns the existing last-admin failure with no new text. `teamFailureOf` needs nothing: the only triggers on `team_membership_versions` are the lock, which never raises, and the TRUNCATE refusal, which no API write reaches. The 0023 header now says that "never refuses what the policy admitted" holds for single-row statements; a multi-row direct API insert can be stricter, because the AFTER ROW re-check sees every row the statement wrote. It also says that `admin-auth` writes as `authenticated`: its member insert takes the lock, and its username update does not.
 - **2026-09-28, the membership deferred-work entry was narrowed, not removed.** Its archive-and-assign half is not closed, because `teams` takes no lock and is outside the spec's table list. New deferred entries: a demoted caller on the other two tables, unserialized owner writes, future definer RPCs, and the unasserted isolation level.
 
 ## Verification
@@ -119,7 +120,13 @@ context:
 | Rename without the cached-field condition | 1 / 197 | untouched field plus concurrent rename |
 | Rename without the stored-value condition | 1 / 197 | edited field the database already holds |
 | `username` removed from `MEMBER_EDIT_COLUMNS` | 1 / 197 | the column pin |
-| All restored | 0 | 18 / 18 and 197 / 197 pass |
+| `statusFailureOf` without the last-admin check | 2 / 199 | both 23514 cases (message and details) |
+| `statusFailureOf` reading `message` only | 1 / 199 | the 23514 case carried in `details` |
+| All restored | 0 | 18 / 18, and 397 / 397 in `members/services` |
+
+The BEFORE placement of the lock (and so its deadlock-freedom) is also pinned by the catalog check, "declares each trigger on the events and level it is proved for", which asserts each trigger's `tgtype` bits: the lock is BEFORE (2) and statement level (no row bit), and the TRUNCATE triggers are BEFORE TRUNCATE (2 | 32).
+
+After the final re-review (comments only in 0023, no `db reset`): `pnpm typecheck` and `pnpm lint` exit 0, and `apps/web` `src/features/members/services` passes 397 / 397.
 
 ## Suggested Review Order
 
