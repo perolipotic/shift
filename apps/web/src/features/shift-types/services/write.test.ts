@@ -436,6 +436,26 @@ describe('rename', () => {
   });
 });
 
+describe('a type name is blank in the database\'s white-space class (0024)', () => {
+  it.each([['\u0085'], ['\u001F'], ['\u00A0\u202F'], ['\uFEFF\u2007']])(
+    'refuses %j before sending anything',
+    async (entered) => {
+      const stub = tableAnswering(ONE_ROW);
+
+      expect(await renameShiftType(stub, DAN, entered)).toEqual({ ok: false, code: SHIFT_TYPE_NAME_EMPTY });
+      expect(stub.calls).toEqual([]);
+    },
+  );
+
+  it('sends a decomposed name as typed, and reads its duplicate as the name being taken', async () => {
+    const decomposed = 'Noc\u0301'.normalize('NFD');
+    const stub = tableAnswering(errorOn('23505', 'shift_types_organization_name_key'));
+
+    expect(await renameShiftType(stub, DAN, decomposed)).toEqual({ ok: false, code: SHIFT_TYPE_NAME_TAKEN });
+    expect(stub.calls[0]?.values).toEqual({ name: decomposed });
+  });
+});
+
 describe('correcting the times', () => {
   it('the minimum is today when the latest version is in the past', () => {
     expect(timesMinimumOf(DAN, TODAY)).toBe(TODAY);

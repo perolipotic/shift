@@ -9,6 +9,7 @@ import {
 } from '@/features/shift-types/services/list';
 import { claimedOrganizationOf } from '@/features/teams/services/write';
 import type { ShiftTypeVersion } from '@shift/domain';
+import { enteredName } from '@/utils/name';
 
 /**
  * The organization the caller's token names, or `null` — the claim reader
@@ -142,11 +143,12 @@ const DATE_COLUMN = 'effective_from';
 
 // ---------------------------------------------------------------- the rules
 
-/** The name as it will be stored — trimmed — or `null` when nothing is left. */
+/**
+ * The name as it will be stored — trimmed — or `null` when nothing is left, in
+ * the white-space class `0024`'s check refuses (`@/utils/name`).
+ */
 export function enteredShiftTypeName(value: string): string | null {
-  const trimmed = value.trim();
-
-  return trimmed === '' ? null : trimmed;
+  return enteredName(value);
 }
 
 /**

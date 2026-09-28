@@ -153,6 +153,37 @@ describe('what is entered', () => {
   });
 });
 
+describe('a band name is blank in the database\'s white-space class (0024)', () => {
+  it.each([['\u0085'], ['\u001F'], ['\u00A0\u202F'], ['\uFEFF\u2007']])(
+    'refuses %j before sending anything',
+    async (entered) => {
+      const table = tableAnswering(ONE_ROW);
+
+      expect(await createHourBand(table, ORGANIZATION, entered, '05:00')).toEqual({
+        ok: false,
+        code: HOUR_BAND_NAME_EMPTY,
+      });
+      expect(table.calls).toEqual([]);
+    },
+  );
+
+  it('sends a decomposed name as typed, and reads its duplicate as the name being taken', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const decomposed = 'Noc\u0301'.normalize('NFD');
+    const table = tableAnswering(uniqueOn('hour_bands_organization_name_key'));
+
+    expect(await createHourBand(table, ORGANIZATION, decomposed, '19:00')).toEqual({
+      ok: false,
+      code: HOUR_BAND_NAME_TAKEN,
+    });
+    expect(table.calls[0]?.values).toEqual({
+      organization_id: ORGANIZATION,
+      name: decomposed,
+      start_time: '19:00',
+    });
+  });
+});
+
 describe('adding a band', () => {
   it('writes the name and the start and nothing derived', async () => {
     const table = tableAnswering(ONE_ROW);

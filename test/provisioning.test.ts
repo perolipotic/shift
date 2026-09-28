@@ -956,7 +956,7 @@ describe('every organization table carries row level security, and only its revi
       ).toBe(true);
       expect(
         rows.some((row) =>
-          /UNIQUE INDEX .* \(organization_id, lower\(btrim\(name\)\)\)$/.test(row.indexdef),
+          /UNIQUE INDEX .* \(organization_id, (public\.)?name_key\(name\)\)$/.test(row.indexdef),
         ),
         'two bands may share a name, or the unique is partial',
       ).toBe(true);
@@ -1082,7 +1082,7 @@ describe('every organization table carries row level security, and only its revi
       ).toBe(true);
       expect(
         rows.some((row) =>
-          /UNIQUE INDEX .* \(organization_id, lower\(btrim\(name\)\)\) WHERE \(NOT archived\)$/.test(
+          /UNIQUE INDEX .* \(organization_id, (public\.)?name_key\(name\)\) WHERE \(NOT archived\)$/.test(
             row.indexdef,
           ),
         ),
@@ -1672,6 +1672,13 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'serialize_organization_writes', argumentCount: 0, expected: [] },
     { name: 'refuse_status_version_leaving_no_admin', argumentCount: 0, expected: [] },
     { name: 'refuse_truncate', argumentCount: 0, expected: [] },
+    // 0024's name key. Every name check and name unique index calls it, and
+    // both are permission-checked against the WRITING role, so the request
+    // role must hold EXECUTE or an admin's insert fails with `permission
+    // denied`. It is immutable and reads no table, so the grant discloses
+    // nothing. `anon` writes none of these tables and `service_role` makes no
+    // domain-table write.
+    { name: 'name_key', argumentCount: 1, expected: ['authenticated'] },
   ];
 
   it.skipIf(noDatabase).each([
@@ -1691,6 +1698,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'rotation_assignment_latest_version', argumentCount: 1 },
     // 0023's TRUNCATE refusal reads nothing, so it has no reason to be a definer.
     { name: 'refuse_truncate', argumentCount: 0 },
+    // 0024's name key reads nothing; it runs as whoever writes the name.
+    { name: 'name_key', argumentCount: 1 },
   ])('runs $name as the caller, with an empty search_path', async ({ name, argumentCount }) => {
     // INVOKER, the opposite of the helper and the hook. They are reached from
     // the helper, the hook and the zero-admins function as the owner, and from

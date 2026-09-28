@@ -1957,6 +1957,50 @@ describe('the access-control migration', () => {
     );
   });
 
+  it('checks and keys every name through one name_key, over one literal white-space class (0024)', () => {
+    // `btrim` strips spaces alone and `lower` ignores normalization; 0024
+    // replaces both with `name_key`. The class is a literal list, because
+    // `[[:space:]]` follows the collation and matches ASCII alone under `C`.
+    const migration = readFileSync(join(supabaseRoot, 'migrations', '0024_name_key.sql'), 'utf8');
+    const statements = migration.replace(/^\s*--.*$/gm, '');
+    const helper = /create or replace function public\.name_key\(name text\)[\s\S]*?\$\$;/.exec(statements)?.[0];
+
+    expect(helper, '0024 does not define name_key').toBeDefined();
+    expect(helper).toMatch(/\bimmutable\b/);
+    expect(helper).toMatch(/set search_path = ''/);
+    expect(helper, 'name_key does not normalize to NFC').toMatch(/normalize\([\s\S]*NFC\s*\)/);
+    expect(helper, 'name_key trims with a named class').not.toMatch(/\[\[:space:\]\]|\\s/);
+    for (const character of ['\\u0009-\\u000d', '\\u001c-\\u001f', '\\u0085', '\\u00a0', '\\u2000-\\u200a', '\\u202f', '\\ufeff']) {
+      expect(helper, `the class lacks ${character}`).toContain(character);
+    }
+
+    for (const [table, constraint] of [
+      ['organizations', 'organizations_name_check'],
+      ['members', 'members_name_check'],
+      ['teams', 'teams_name_not_blank'],
+      ['hour_bands', 'hour_bands_name_not_blank'],
+      ['shift_types', 'shift_types_name_not_blank'],
+    ]) {
+      expect(statements, `${constraint} is not rebuilt on name_key`).toContain(
+        `alter table public.${table}\n  add constraint ${constraint} check (public.name_key(name) <> '');`,
+      );
+    }
+    expect(statements).toMatch(
+      /create unique index teams_organization_name_key\s+on public\.teams \(organization_id, public\.name_key\(name\)\)\s+where not archived;/,
+    );
+    expect(statements).toMatch(
+      /create unique index hour_bands_organization_name_key\s+on public\.hour_bands \(organization_id, public\.name_key\(name\)\);/,
+    );
+    expect(statements).toMatch(
+      /create unique index shift_types_organization_name_key\s+on public\.shift_types \(organization_id, public\.name_key\(name\)\)\s+where not archived;/,
+    );
+
+    // The guard runs before the first constraint changes.
+    expect(statements.indexOf('NAME_KEY_CONFLICT')).toBeGreaterThan(0);
+    expect(statements.indexOf('NAME_KEY_CONFLICT')).toBeLessThan(statements.indexOf('drop constraint'));
+    expect(statements, '0024 rewrites a stored name').not.toMatch(/\bupdate public\./);
+  });
+
   it('refuses a past date, an out-of-order or redundant version, the caller own row and the last active admin in the insert policy', () => {
     // Source text only; what each clause does is `test/rls-isolation.test.ts`.
     // Asserted here as well because that file skips without a database, and

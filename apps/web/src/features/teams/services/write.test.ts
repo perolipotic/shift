@@ -114,6 +114,27 @@ describe('a team name is trimmed and never blank', () => {
   });
 });
 
+describe('a team name is blank in the database\'s white-space class (0024)', () => {
+  it.each([['\u0085'], ['\u001F'], ['\u00A0\u202F'], ['\uFEFF\u2007']])(
+    'refuses %j before sending anything',
+    async (entered) => {
+      const table = tableAnswering(ONE_ROW);
+
+      expect(await createTeam(table, ORGANIZATION, entered)).toEqual({ ok: false, code: TEAM_NAME_EMPTY });
+      expect(table.calls).toEqual([]);
+    },
+  );
+
+  it('sends a decomposed name as typed, and reads its duplicate as the name being taken', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const decomposed = 'Noc\u0301'.normalize('NFD');
+    const table = tableAnswering(refusedWith('23505'));
+
+    expect(await createTeam(table, ORGANIZATION, decomposed)).toEqual({ ok: false, code: TEAM_NAME_TAKEN });
+    expect(table.calls[0]?.values).toEqual({ organization_id: ORGANIZATION, name: decomposed });
+  });
+});
+
 describe('create', () => {
   it('inserts the tenant and the trimmed name, and nothing else', async () => {
     const table = tableAnswering(ONE_ROW);

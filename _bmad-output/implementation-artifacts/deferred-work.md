@@ -364,10 +364,6 @@
   evidence: `epics.md:99` words AD-16 as exposing "`createUser`, `updateUserById` and ban/unban", and story 1.6's acceptance criteria (`epics.md:405`) say authentication is blocked "via the privileged auth function". Story 1.6 (04f8768, PR #20) removed ban/unban and amended `ARCHITECTURE-SPINE.md` AD-16: the function exposes only `createUser`, `updateUserById` and `resetPassword`, deactivation is a versioned RLS-governed write, and sign-in is refused by the custom access token hook. Found while recompiling `epic-1-context.md` on 2026-09-23, which follows the spine. epics.md should be brought in line through the planning workflow rather than edited during a build.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-7a-teams.md`
-  summary: Name checks use `btrim(name)`, which strips only spaces, while the client's `trim()` strips all whitespace — so a direct API caller can store a tab/newline/NBSP-only name, or `'Tim\t'` beside an active `'Tim'` past the teams unique index.
-  evidence: Found by 1.7a's edge-case and blind review layers. `0009_teams.sql` copies the `btrim(name) <> ''` rule from `members` and `organizations` (`0002:73,130`), and its partial unique index keys on `lower(btrim(name))`; `enteredTeamName` uses JS `trim()`. Only reachable by a caller bypassing the SPA, and the same gap exists on both older tables, so the fix — one whitespace class (e.g. `name ~ '\S'` and a regex trim in the index) applied to all three tables in one forward migration — belongs in its own change rather than diverging teams from the pattern.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-7a-teams.md`
   summary: No name column has a length limit; a very long team name makes the unique-index entry exceed the btree row size (54000) and is reported as "try again", which can never succeed.
   evidence: Found by 1.7a's edge-case review layer. `teams.name`, `members.name` and `organizations.name` are unbounded `text`; `teams_organization_name_key` (and `members_organization_username_key`, `0007:92`) index the value, so a name over roughly 2.7 KB fails with 54000, which `editFailureOf` maps to unavailable. A product decision on a maximum length (with a matching client check and a named refusal) applies to every name field at once.
 
@@ -385,10 +381,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-visual-refresh-a-design-system-and-shell.md`
   summary: When shift cells are first built, confirm the enlarged small radius (`radius-sm` 6px → 8px after `--radius` 0.625rem → 0.75rem) still reads as a grid rather than a field of pills at 390px with 30px cells.
   evidence: DESIGN.md keeps "shift cells use the small radius so a dense grid reads as a grid", but no shift cell exists yet to judge it against; found by the visual-refresh A blind review.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-2-2a-shift-type-rule.md`
-  summary: Case-insensitive name uniqueness (`lower(btrim(name))`) on `teams`, `hour_bands` and now `shift_types` ignores Unicode normalization, so NFC `Noć` and NFD `Noć` (c + combining acute) are two distinct active names that render identically.
-  evidence: Raised by 2.2a's review; the pattern is pre-existing (`0009_teams.sql:66-68`, `0012_hour_bands.sql:70-71`) and 2.2a copied it as the spec required. Croatian diacritics (č ć đ š ž) make it reachable by paste from another source. A fix is one migration for all three indexes (`lower(normalize(btrim(name), NFC))`) plus a normalize in each surface's duplicate-name message path, and a test per table.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-list-reader-refetch-failure.md`
   summary: The list and edit screens offer no "try again" action after a read failure, so the unavailable message (now shown beside kept rows) stays until a remount, a reconnect or the next write.
