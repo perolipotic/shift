@@ -1,9 +1,10 @@
 import { randomBytes } from 'node:crypto';
 
-import type { Locator } from '@playwright/test';
+import type { Locator, Route } from '@playwright/test';
 
 import type { RotationPage } from '../../pages/rotation.page.ts';
 import {
+  archiveShiftType,
   databaseNow,
   holdRotation,
   removeRotationChangesOver,
@@ -431,6 +432,98 @@ test('an admin schedules a change from tomorrow, sees it in the history, is refu
   await expect(rotationPage.statusWith(builder.cancelScheduled.done)).toBeVisible();
   await expect(rotationPage.historyRow(shownDate(tomorrow))).toHaveCount(0);
   await expect(refusal).toHaveCount(0);
+});
+
+/**
+ * Holds every `POST` to one PostgREST table until released, for this test's
+ * page only: the create stays in flight for as long as the assertions need.
+ * #89's hold, for the team insert, on a table named by the caller.
+ */
+function heldInsert(table: string) {
+  let release: () => void = () => undefined;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let reached: () => void = () => undefined;
+  const inFlight = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  const matches = (url: URL): boolean => url.pathname.endsWith(`/rest/v1/${table}`);
+  const handler = async (route: Route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    reached();
+    await released;
+    return route.continue();
+  };
+
+  return { matches, handler, inFlight, release: () => release() };
+}
+
+test('the shift type add dialog cannot be dismissed while its create is in flight, and confirms once it lands', async ({
+  page,
+  rotationPage,
+  fixture,
+}) => {
+  // ITS OWN TYPE, per attempt, non-working so only the one insert is made;
+  // nothing here saves a rotation, so the rotation is not held. Archived at
+  // the end through the screen, and in a `finally` whatever happened.
+  const name = `Zadrzano ${randomBytes(3).toString('hex')}`;
+  const hold = heldInsert('shift_types');
+
+  try {
+    await rotationPage.goto();
+    await page.route(hold.matches, hold.handler);
+    try {
+      await rotationPage.shiftTypeOpenButton.click();
+      await rotationPage.addShiftTypeName.fill(name);
+      await page.getByLabel(shiftTypes.kind, { exact: true }).selectOption({ label: shiftTypes.nonworking });
+      await rotationPage.addShiftTypeDialog.getByRole('button', { name: shiftTypes.add, exact: true }).click();
+      await hold.inFlight;
+
+      // Cancel is disabled, and Escape (once, twice, three times) and the close
+      // control do nothing.
+      await expect(rotationPage.addShiftTypeCancel).toBeDisabled();
+      // ESCAPE, AGAIN AND AGAIN: a second Escape with no user activation between
+      // is one the browser's close watcher will not let a `cancel` stop.
+      await rotationPage.addShiftTypeName.press('Escape');
+      await expect(rotationPage.addShiftTypeDialog).toBeVisible();
+      // Pressed from the keyboard with the field kept focused, so a close the
+      // dialog then undoes still shows: focus would move to its first control.
+      for (const presses of [2, 3]) {
+        await rotationPage.addShiftTypeName.focus();
+        for (let press = 0; press < presses; press += 1) await page.keyboard.press('Escape');
+        await expect(
+          rotationPage.addShiftTypeDialog,
+          `${String(presses)} Escapes closed the dialog`,
+        ).toBeVisible();
+        await expect(
+          rotationPage.addShiftTypeName,
+          `${String(presses)} Escapes closed and reopened it`,
+        ).toBeFocused();
+      }
+      await rotationPage.addShiftTypeClose.click();
+      await expect(rotationPage.addShiftTypeDialog).toBeVisible();
+      await expect(rotationPage.addShiftTypeCancel).toBeDisabled();
+    } finally {
+      // Released even on a failure; the route stays until the held request has
+      // gone on, since unrouting first would drop it.
+      hold.release();
+    }
+
+    // Released: the create lands, the dialog closes and the page confirms.
+    await expect(rotationPage.statusWith(shiftTypes.created)).toBeVisible();
+    await expect(rotationPage.addShiftTypeDialog).toBeHidden();
+    await page.unroute(hold.matches, hold.handler);
+
+    await rotationPage.shiftTypeEditLink(name).click();
+    await rotationPage.archiveShiftTypeButton(name).click();
+    await rotationPage.archiveShiftTypeConfirmButton(name).click();
+    await expect(rotationPage.statusWith(shiftTypes.archivedDone)).toBeFocused();
+  } finally {
+    // THE TYPE IS ARCHIVED WHATEVER HAPPENED, so a failure part-way leaves no
+    // active non-working type in the shared organization. Idempotent.
+    await archiveShiftType(fixture.slug, name);
+  }
 });
 
 test('a shift type gets a correction from tomorrow, the correction is cancelled, and the type is archived', async ({

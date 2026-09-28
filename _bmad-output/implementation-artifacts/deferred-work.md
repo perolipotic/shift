@@ -230,14 +230,6 @@
 ## Deferred from: build review of spec-1-3b-spa-sign-in-path (2026-09-08)
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-3b-spa-sign-in-path.md`
-  summary: The deep-link search and hash are preserved for exactly one hop and then lost, and the bounced visitor also loses the organization they were on.
-  evidence: `index.tsx`'s redirect carries `search: true` / `hash: true` onto `/prijava` — defended at length in that file — and nothing forwards them to `/prijava/$slug`, while `submit()` ends with `navigate({ to: '/' })` carrying neither. So `/?invite=abc#section` survives the redirect and dies at the next navigation, which makes the careful preservation decorative. The same redirect sends the visitor to the bare prompt rather than the slug they were on, so an expired session means retyping it. Both want the same fix — a redirect-back target threaded through the sign-in path — which is why they are one entry. No route declares a search schema yet, so nothing is broken today; this becomes real with the first invite or deep link.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-3b-spa-sign-in-path.md`
-  summary: No focus management or busy state around a refused sign-in, and `disabled={pending}` drops keyboard focus to `<body>` mid-flow.
-  evidence: On refusal nothing moves focus to the message, so a screen-reader user is not told the submission failed unless they navigate back to it; `aria-live` is absent. Separately, disabling the submit button the user has just activated removes the focused element from the tab order, which drops focus to the document body — the keyboard user loses their position at exactly the moment they need to correct a field. UX-DR34's "state the fact rather than hide the affordance" also argues against silently disabling the only control while saying nothing; a pending label would need a new resource key. Wants a considered accessibility pass across every form the app grows, not a local fix on one screen.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-3b-spa-sign-in-path.md`
   summary: `/`'s `beforeLoad` is now async and may perform a network token refresh, with no pending component configured anywhere.
   evidence: Every resolution of `/` awaits `getSession()`, which supabase-js may satisfy by refreshing the token over the network. Neither `createRouter` nor the root route declares `pendingComponent` or `defaultPendingMs`, so the post-sign-in navigation can sit on a blank frame for the duration on a slow connection. The awaited-reader design is right and well argued in `__root.tsx` — reading the session fresh on every resolution is what makes a stale snapshot impossible — but its latency consequence was never addressed. Decide alongside the first route that loads data, since the answer (a shared pending treatment) should not be invented twice.
 
@@ -270,10 +262,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-3b-spa-sign-in-path.md`
   summary: Decide whether `iceberg-js@0.8.1` belongs in the browser bundle's dependency graph.
   evidence: The spec's Verification section expected `pnpm install` to add `@supabase/supabase-js@2.113.0` "and nothing else"; the lockfile gained `iceberg-js@0.8.1` and `tslib@2.8.1` as new package entries. `iceberg-js` is a table-format library reachable via `storage-js`, for a story — and an application — that makes no storage call. Transitive rather than declared, so the "Ask First" dependency gate was not bypassed, but it widens the supply-chain surface of a bundle whose central invariant is key containment. Verify whether it is tree-shaken from the production build before deciding.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-navigation-shell-a-route-skeleton.md`
-  summary: The signed-out redirect discards the destination the visitor asked for, which makes its `search`/`hash` preservation theatre.
-  evidence: `_app.tsx` throws `redirect({ to: '/prijava', search: true, hash: true })`, and both the comment and the test argue those values would otherwise be "unrecoverable" — but the PATHNAME is dropped, and `prijava.tsx` navigates to `/` after a successful sign-in (`prijava.test.ts`: "lands a signed-in visitor on / and nowhere else"). So `/kalendar?tim=2#tjedan` becomes `/prijava?tim=2#tjedan`, carries `tim=2` onto a screen with no use for it, and discards it at `/`. The parameters are unrecoverable either way, so the preservation currently buys nothing while reading as though it buys something. The fix is a return path (a `redirect` search param on `/prijava` consumed after sign-in), which touches `prijava.tsx` — a file this spec deliberately put behind Ask First. Pairs naturally with part B, which already owns the already-signed-in guard on the same routes.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-navigation-shell-a-route-skeleton.md`
   summary: The ~20-line session-guard body is duplicated verbatim between `_app.tsx` and `index.tsx` with nothing enforcing the two stay identical.
@@ -320,14 +308,6 @@
   evidence: `required`, `min`, `max` and `type="number"` without `noValidate` produce validation bubbles in the browser's or OS's locale. `localization-applied.test.ts` and `resource-hygiene.test.ts` check every authored string to the byte, and this is the one class of user-facing text that walks past both. Adding `noValidate` means re-homing those refusals into the application's own message set, which is a design change rather than a patch.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
-  summary: A refused value is never attributed to the field that caused it — `organization.error.invalid` names nothing and no input carries `aria-invalid`.
-  evidence: "Unesena vrijednost nije dopuštena." tells the person a value was rejected without saying which of five fields. UX-DR34 is cited throughout this change as requiring the refusal to name the problem, and the blank-name code honours it while the general check-violation code does not — although PostgREST returns the constraint name, from which the column is derivable exactly as `organizations_name_check` already is. Focus is also never moved to the message, so on a five-field form the `role="alert"` announcement can refer to a control scrolled out of view.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
-  summary: The loading skeleton is a single 44px bar standing in for a five-field form, with no `aria-busy` and no accessible loading text.
-  evidence: It neither reserves the form's layout — guaranteeing a jump when the snapshot arrives — nor tells a screen-reader user that anything is in flight. UX-DR40 requires a skeleton rather than a spinner, which this satisfies in kind but not in shape.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
   summary: The screen assembles its own data access at two call sites, so `ORGANIZATION_TABLE` has to be part of the snapshot module's public surface.
   evidence: `supabaseClient().from(ORGANIZATION_TABLE)` appears in both the query function and the submit handler. `snapshot.ts` goes to real trouble to make the table an injected parameter so the module is stubbable, then exports the table name so the screen can build the client itself. An `organizationTable()` helper would keep the seam in one place and let the constant stop being exported.
 
@@ -339,10 +319,6 @@
   summary: `variant` was added to the global `STRUCTURAL_ATTRIBUTES` allowlist to serve one button, widening the exemption beyond its justification.
   evidence: The entry is argued honestly and proved on both polarities, but the allowlist is consulted for every screen in the sweep, so it also exempts `variant` on any future component where the prop is not drawn from `buttonVariants`' closed set. Scoping the exemption to `<Button>` would keep the widening as narrow as the argument that earned it.
 
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-4a-organization-settings.md`
-  summary: There is no retry affordance on the read-failure path, although the message tells the person to try again.
-  evidence: `organization.error.unavailable` reads "Pokušaj ponovno.", but on a failed read there is no form and therefore no button, and `useQuery`'s `refetch` is never called. Once the refusal is made visible (patched in this review pass), nothing on the screen can still act on it short of a browser reload.
-
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-4b-organization-logo.md`
   summary: `expectedControls` in `apps/web/src/routes/prijava.test.ts` sums `<Input>` and `<Button>` occurrences into one number, so it cannot notice the substitution its own comment claims it catches.
   evidence: The comment says the number is what notices a sixth field, but because the count is a single total, a sixth field arriving in the same change as a removed button leaves the total unchanged and the assertion passes. The 44px sweep still measures whatever controls it finds, so this is a weakened tripwire rather than an unguarded surface. Splitting the expectation into a field count and a button count restores the claim the comment makes, and would do so for every screen in `SCREENS` at once rather than only for the settings surface.
@@ -350,10 +326,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-navigation-shell-b-chrome-and-sign-out.md`
   summary: On a phone an admin's later destinations scroll horizontally out of view with no indicator, no overflow affordance, and no guarantee the current destination is in view.
   evidence: The bottom bar is `overflow-x-auto` with `shrink-0` entries because nine 44px targets plus the exit do not fit across a phone — a deliberate choice recorded in the code, and the right one for keeping the PAGE from scrolling sideways. What it leaves open is discovery: nothing signals that more destinations exist past the right edge, nothing scrolls the active entry into view on load, and the exit sits last so it is the most likely to be off-screen for exactly the admin role that has the most destinations. The member role reaches four and is unaffected, so this is admin-on-a-phone only. The fix is a design question — an overflow menu, a scroll affordance, or a different mobile treatment for the admin set — rather than a patch, and no artifact in `ux-designs/` covers it.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-4c-brand-accent-and-lockup.md`
-  summary: `invalidateQueries` rejecting after a successful write reports that write as a refusal, in `submit` and `uploadLogo` on the settings surface.
-  evidence: Part C fixed this on the accent path only, because that was the path in its diff. The identical shape sits in the two handlers 1.4a and 1.4b shipped: the invalidation is inside the same `try` as the write, so a rejection there sets the failure state for a write the database already accepted, and the person is told their save was refused while the row holds the new value. It is a narrow window — an invalidation rejects only if the query client is torn down or a queryFn throws synchronously during the refetch — which is why it has survived two reviews, but the accent path now behaves differently from its two neighbours on the same screen, and that inconsistency is the more likely source of a future misreading than the bug itself.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-4c-brand-accent-and-lockup.md`
   summary: DESIGN.md's `colors:` front matter does not describe the eight brand accent tokens, so the design source of truth no longer covers what ships and `theme-fidelity.test.ts` structurally cannot see them.
@@ -420,16 +392,8 @@
   evidence: Found by 1.7b's edge-case and blind review layers. The insert policy's date-order and at-most-one-future checks read committed rows only under READ COMMITTED, and `unique (member_id, effective_from)` catches only the same date; `0010`'s KNOWN GAP comment records both races. Same class as 1.6's cross-transaction serialization entry for `member_status_versions` — one fix (per-member advisory lock or a serializable check) belongs to both tables at once.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-7b-team-membership.md`
-  summary: A team rename or archive does not refresh the member list, so the list and the member edit screen show the team's old name for up to the members read's 5-minute stale time in the same session.
-  evidence: Found by 1.7b's verification-gap layer. `MEMBERS_COLUMNS` now embeds `teams(name)` under `MEMBERS_LIST_KEY`, while `ljudi.smjene.$id.tsx`'s `refresh()` invalidates only `TEAMS_LIST_KEY` — by the architecture's rule that a write invalidates only its own surface's key, pinned by `prijava.test.ts:2347`. Fixing it means amending that rule for embeds that cross surfaces (or a shorter stale time), which is an architecture decision, not a patch.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-7b-team-membership.md`
   summary: The member list embeds every member's full team history on every read, unbounded, though the list needs only today's version and at most one scheduled one.
   evidence: Found by 1.7b's blind review layer. `team_membership_versions(team_id,effective_from,teams(name))` in `MEMBERS_COLUMNS` has no date filter or limit; the payload grows with years of moves at several hundred members (Q20), and `member_status_versions` has the same shape. A bounded read (a view or a date-filtered embed) applies to both at once and should be measured before it is needed.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-8-team-roster.md`
-  summary: An admin's membership move, team rename or archive does not refresh Danas's own-team line or the `/smjene/$id` roster, which stay stale for up to their 5-minute stale time in the same session.
-  evidence: The write handlers in `routes/ljudi.$id.tsx` and `routes/ljudi.smjene.$id.tsx` invalidate only `MEMBERS_LIST_KEY`/`TEAMS_LIST_KEY`, per the "a write invalidates only that key" convention; `OWN_TEAM_KEY` and `TEAM_ROSTER_KEY` are new keys no write touches. Same class as the 1.7b entry about a rename not refreshing the member list — a cross-surface invalidation rule should settle both together.
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-1a-hour-band-rule.md`
   summary: `unique (organization_id, start_time)` on `hour_bands` is checked row by row, so swapping two bands' start times — or shifting every start by an hour — cannot be written as one statement or transaction even though the end state is a valid partition.
   evidence: Raised by 2.1a's review (blind hunter and edge-case hunter independently). The constraint is not `deferrable`, so an `update` that moves 07:00→19:00 while another band still holds 19:00 fails 23505 part-way through. Harmless while every write is a single-row PostgREST call, but 2.1b's editor is where an admin first tries to swap or shift bands: decide there whether the editor sequences through a temporary start, or the constraint becomes `deferrable initially deferred` (which also changes `on conflict` behaviour and needs its own test). The case-insensitive name index has the same shape for a name swap.
@@ -441,10 +405,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-2-2a-shift-type-rule.md`
   summary: Case-insensitive name uniqueness (`lower(btrim(name))`) on `teams`, `hour_bands` and now `shift_types` ignores Unicode normalization, so NFC `Noć` and NFD `Noć` (c + combining acute) are two distinct active names that render identically.
   evidence: Raised by 2.2a's review; the pattern is pre-existing (`0009_teams.sql:66-68`, `0012_hour_bands.sql:70-71`) and 2.2a copied it as the spec required. Croatian diacritics (č ć đ š ž) make it reachable by paste from another source. A fix is one migration for all three indexes (`lower(normalize(btrim(name), NFC))`) plus a normalize in each surface's duplicate-name message path, and a test per table.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-list-reader-refetch-failure.md`
-  summary: A refetch that pauses offline over cached rows (`isPending` false, `fetchStatus` `paused`) shows the stale rows with no message on the teams, members and hour-bands surfaces.
-  evidence: Every `*SurfaceStateOf` treats "paused" only as `isPending && fetchStatus === 'paused'`, i.e. a first read. The shape predates this spec: before, the same case also showed cached rows silently. It became more visible now that a failed refetch keeps rows. Found by the review edge-case hunter.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-list-reader-refetch-failure.md`
   summary: The list and edit screens offer no "try again" action after a read failure, so the unavailable message (now shown beside kept rows) stays until a remount, a reconnect or the next write.
@@ -519,18 +479,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-1-anyone-reads-a-month.md`
   summary: The unavailable notices ("Pokušaj ponovno") offer no retry control on the calendar or other read surfaces; retrying means reloading the page.
   evidence: `kalendar.error.unavailable` is rendered in a `Notice` with no button, `retry: 1`, and no refetch on window focus; the rotation builder's notice behaves the same way.
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-1-anyone-reads-a-month.md`
-  summary: The calendar's team header row is not sticky, so the team names scroll out of view in a 28–31-row month on a phone or short window.
-  evidence: in `apps/web/src/routes/kalendar.tsx` only the date column is `sticky left-0`; story 3.2 (phone and screen reader) is the natural owner.
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-2a-phone-calendar-modes.md`
-  summary: While the calendar loads, the skeleton is always the grid shape and the mode switch is absent, so a member who lands on the day list sees the layout jump when the snapshot arrives.
-  evidence: Raised by 3.2a's review. The default mode needs the role, which arrives with the snapshot; showing a day-list skeleton would need the role before the read (e.g. from the chrome's cached `MEMBER_ROLE_KEY`).
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-2b-calendar-modifiers-and-keyboard-grid.md`
-  summary: When the grid is scrolled sideways, a cell that receives keyboard focus can sit under the sticky date column, hiding the focused cell and its ring.
-  evidence: Raised by 3.2b's review. `kalendar.tsx` calls `cell.focus()` with no `scroll-margin-left` or `scrollIntoView` offset for the `sticky left-0` date column; it shows only on the compressed or a narrow full grid that actually scrolls.
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-2b-calendar-modifiers-and-keyboard-grid.md`
-  summary: Under `forced-colors: active` (Windows High Contrast) the `box-shadow` modifier rings and the background-image hatches are dropped, leaving only the glyphs.
-  evidence: Raised by 3.2b's review. `index.css`'s `modifier-ring-*` and `modifier-hatch-*` utilities have no `@media (forced-colors: active)` fallback (e.g. an `outline` in `CanvasText`); the glyph still carries the meaning, so this is not colour-alone, but the treatment vanishes.
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-4a-roster-as-at-a-date.md`
   summary: A day on which a member is inactive reads as "no team" in the day lists, so a month the member is wholly inactive (e.g. after a scheduled deactivation) shows `kalendar.noTeam` / `kalendar.person.noTeam`, which names the wrong reason.
   evidence: Raised by 3.4a's review. 3.4a's design note chose "inactive day counts as no team" to avoid new state and copy; a distinct inactive state (domain flag + text) would state what is true (UX-DR20). Consider it with 3.4b's day-detail copy.
@@ -561,10 +509,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-e2e-flow-coverage.md`
   summary: The local E2E stack keeps GoTrue's default sign-in rate limit; with more sign-in tests (wrong password, retries, `--repeat-each`) a 429 maps to `auth.error.unavailable` and could make sign-in assertions flaky. Consider raising `[auth.rate_limit] sign_in_sign_ups` for the local stack in `supabase/config.toml`.
   evidence: Raised by the E2E coverage review (2026-09-27). Not seen in runs so far; the change touches the shared Supabase config, so it is a deliberate decision rather than part of a test-only change.
-- source_spec: `_bmad-output/implementation-artifacts/spec-fix-team-add-dialog.md`
-  summary: The shift-type and hour-band add dialogs let the viewer dismiss them (Cancel, Escape, close) while a create is in flight, as the team add dialog did before its fix; give them the same `disabled={pending}` / `dismissible={!pending}` gating and an E2E pin.
-  evidence: Found while fixing the team add dialog (2026-09-27); left alone because that spec asked first before changing other screens.
-
 - source_spec: `_bmad-output/implementation-artifacts/spec-fix-admin-route-guards.md`
   summary: Open decision: keep writing per-function EXECUTE revokes (`anon`, `authenticated`, `service_role`) for every new function in `public`, as 0003 and 0020 do, or write one `alter default privileges` so future functions start with no grant for those roles.
   evidence: 0020 closed the one known gap (`refuse_organization_with_no_admin`) with per-function revokes only; that spec lists `alter default privileges` as Ask First, so nothing was decided. The per-function route relies on each migration author remembering the three revokes; `test/provisioning.test.ts`'s exact-grantee table catches a missed one only for functions listed there.
@@ -586,3 +530,26 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-5c-override-disposition-on-rotation-change.md`
   summary: An amend leaves no link between the soft-removed row and its replacement, so the record cannot tell an amend from a removal followed by an unrelated new override.
   evidence: Raised by 3.5c's review. `amend_shift_type_override` removes and inserts in one transaction but stores no `amended_from`/`replaced_by`. There is no audit UI yet, so this matters only once one exists.
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-sign-in-and-settings.md`
+  summary: No pending state on the sign-in or settings screens is one assistive technology can actually hear. The sign-in button's `aria-busy` is not announced by NVDA or JAWS, and the settings skeleton's `aria-busy` region has no label, because `hr.json` has no loading string.
+  evidence: The skeleton now reserves the form's shape and marks its region `aria-busy` (the rest of the 1.4a entry this narrows), and the sign-in submit is `aria-disabled` + `aria-busy` instead of natively disabled. Both states are silent to the common screen readers without words. Adding those words needs a new resource string, which that spec lists as Ask First, so it was left for a decision.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-sign-in-and-settings.md`
+  summary: On organization settings, a refused save whose constraint maps to no control (and every non-constraint refusal) still leaves focus where it was, and Save's `disabled={busy}` drops keyboard focus to `<body>` while the save is in flight.
+  evidence: The fix focuses and marks the control a mapped check constraint names; an unmapped refusal keeps the general message and marks nothing, as that spec asked, but nothing moves focus to the `role="alert"` region, which on a five-field form can be scrolled out of view. The Save and Cancel buttons still use native `disabled={busy}`, which is the same focus drop the sign-in button had; that spec's focus fix covered the sign-in submit only.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-sign-in-and-settings.md`
+  summary: A signed-out or expired bounce from `_app` still lands on the bare `/prijava` prompt, not on the organization the visitor was on, so they retype the slug.
+  evidence: This is the slug half of the 1-3b deep-link entry this spec closed. The destination now survives the bounce (`povratak`), but the organization does not. At redirect time there is no session to read the slug from, and `session-cache` clears the cached snapshot on a sign-out. Keeping it would need the slug remembered from the last session or carried on the redirect.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-sign-in-and-settings.md`
+  summary: The signed-in guards on `/prijava` and `/prijava/$slug` send the visitor to `/` and ignore `povratak`.
+  evidence: A signed-in visitor who opens `/prijava/<slug>?povratak=/kalendar` (a second tab, or Back into the sign-in form) is forwarded to `/`, then to the first destination, rather than to the carried target. That spec covered only the signed-out flow, so the guards' `redirect({ to: '/' })` was left as it was.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-sign-in-and-settings.md`
+  summary: A deep link carried by the session-change re-guard (a user signing out to nobody) can be followed by the NEXT person who signs in on the same device, possibly from another organization.
+  evidence: When `session-cache` re-runs the guards after a sign-out or expiry elsewhere, `_app` sends the tab to `/prijava?povratak=<the previous user's path>`. Whoever signs in next is returned there. The path passes the validator, since it is a known route, and RLS refuses its data. But the previous user's resource path (a member id, a shift type) shows in the address bar, and the new user lands on a refusal. Possible fixes are to bind the target to the organization (the slug) it was raised in, or to drop it when the subject signing in differs from the last one.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-list-refresh.md`
+  summary: A create request that never resolves traps the viewer in its add dialog (team, hour band, shift type): while it is pending the dialog cannot be dismissed, and nothing bounds how long the insert may take.
+  evidence: Raised by the fix-list-refresh review (2026-09-28). The dialogs are non-dismissible while `pending` by design (#89 and this fix), and the Supabase client sets no request timeout, so a request the network holds open indefinitely keeps the modal up until a reload. A fix is either a request timeout on the write (mapped to the existing unavailable refusal) or allowing dismissal after N seconds; both are behaviour decisions beyond this fix.

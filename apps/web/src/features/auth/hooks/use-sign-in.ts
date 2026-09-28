@@ -1,6 +1,8 @@
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useRouter, useSearch } from '@tanstack/react-router';
 import { useRef, useState, type FormEvent } from 'react';
+import { flushSync } from 'react-dom';
 
+import { knownPathOf, returnTargetOf } from '@/features/auth/services/return-target';
 import {
   SIGN_IN_UNAVAILABLE,
   signIn,
@@ -24,18 +26,38 @@ import { supabaseClient } from '@/lib/supabase/client';
  * `prijava.test.ts` makes any other literal an offence, and reading the form's
  * `elements.namedItem('username')` would be one.
  *
+ * THE RETURN TARGET COMES IN ON THE URL. The signed-out redirect put the
+ * location the visitor asked for into `povratak`, and the organization prompt
+ * handed it on; a successful sign-in navigates there through
+ * `returnTargetOf`, which refuses anything that is not a same-app path this
+ * tree knows and falls back to `/`. The route tree is asked through the router
+ * this hook already runs under, so nothing here imports it.
+ *
+ * FOCUS NEVER DROPS TO `<body>`. The button used to carry `disabled={pending}`,
+ * and disabling the element that has just been activated takes it out of the
+ * tab order mid-flow. The form marks it `aria-disabled` instead, and the
+ * in-flight ref below is what actually refuses a second submit. On a refusal
+ * focus moves to the password field, which the refusal describes and which is
+ * what a person corrects next — in this handler, not an effect, and only after
+ * `flushSync` has committed the refusal, so the field is announced with it.
+ *
  * Every rule is in `@/features/auth/services/sign-in`, which the node suite
  * executes; this hook holds state and wiring only.
  */
 export function useSignIn(slug: string) {
   const navigate = useNavigate();
+  const router = useRouter();
+  // NOT STRICT, so no route id is spelt here (`prijava.test.ts` refuses the
+  // literal): this hook runs only on `/prijava/$slug`, whose `validateSearch`
+  // is what shapes `povratak`.
+  const { povratak } = useSearch({ strict: false });
   const usernameField = useRef<HTMLInputElement>(null);
   const passwordField = useRef<HTMLInputElement>(null);
   // The in-flight flag is a REF as well as state, and the two are not
-  // redundant. State drives the disabled button, and state is stale inside a
-  // handler that has already been called once this tick — a second submit
-  // (double click, Enter while the click lands) reads `false` and fires a
-  // second concurrent exchange. The ref is written synchronously, so it is what
+  // redundant. State drives the button's `aria-disabled`, and state is stale
+  // inside a handler that has already been called once this tick — a second
+  // submit (double click, Enter while the click lands) reads `false` and fires
+  // a second concurrent exchange. The ref is written synchronously, so it is what
   // the guard reads; the state exists only to re-render.
   const exchanging = useRef(false);
   const [failure, setFailure] = useState<SignInFailure | null>(null);
@@ -61,14 +83,26 @@ export function useSignIn(slug: string) {
       });
 
       if (!outcome.ok) {
-        setFailure(outcome.code);
+        // COMMITTED FIRST, then focused: `flushSync` renders the refusal and
+        // the field's `aria-describedby` pointing at it before focus lands, so
+        // the field is announced WITH its error rather than without it.
+        flushSync(() => {
+          setFailure(outcome.code);
+        });
+        password.focus();
 
         return;
       }
 
-      // `/` reads the session itself, so nothing is handed to it: the session
-      // is established inside the client by the time the call above resolves.
-      await navigate({ to: '/' });
+      // The return target, or `/` when there is none that is safe. Neither is
+      // handed the session: it is established inside the client by the time
+      // the call above resolves, and `@/lib/supabase/session-cache` leaves the
+      // router alone on a sign-in so this navigation is the only one.
+      //
+      // REPLACING, so Back from the returned destination does not land on the
+      // credential form, whose guard would only forward a signed-in visitor to
+      // `/` and on to the first destination.
+      await navigate({ href: returnTargetOf(povratak, knownPathOf(router)), replace: true });
     } catch (cause) {
       // Everything `signIn` does not already map: the client throwing its
       // stable code on a build with no environment, and a navigation that
@@ -82,7 +116,10 @@ export function useSignIn(slug: string) {
       // never shows "try again" with an empty console — the failure
       // `client.ts` was written to prevent. `lib/i18n/boot.ts` sets the shape.
       console.error(SIGN_IN_UNAVAILABLE, cause);
-      setFailure(SIGN_IN_UNAVAILABLE);
+      flushSync(() => {
+        setFailure(SIGN_IN_UNAVAILABLE);
+      });
+      password.focus();
     } finally {
       // On EVERY path, including the successful one. Clearing it only on
       // failure left the button permanently disabled the moment `navigate`

@@ -639,15 +639,21 @@ describe('the build being read reflects the current localization source', () => 
     const parts = authScreenParts();
 
     // THE EXACT COUNT, read off the disk and derived from the fixture: the
-    // hook and the form, and the three service modules.
+    // hook and the form, and the four service modules — the fourth the return
+    // target the sign-in fix carries through both sign-in routes.
     // EXACT, so a new exemption is a reviewed change to this test.
     expect([...AUTH_RULE_MODULES].sort(), 'the fixture exempts other service modules').toEqual(
-      ['services/address.ts', 'services/sign-in.ts', 'services/sign-out.ts'].sort(),
+      [
+        'services/address.ts',
+        'services/return-target.ts',
+        'services/sign-in.ts',
+        'services/sign-out.ts',
+      ].sort(),
     );
     expect(parts, 'the auth feature grew or lost a module').toHaveLength(
       AUTH_FEATURE_PARTS.length + AUTH_RULE_MODULES.length,
     );
-    expect(parts, 'the auth feature grew or lost a module').toHaveLength(5);
+    expect(parts, 'the auth feature grew or lost a module').toHaveLength(6);
     expect(SOURCES, `${SIGN_IN_PAGE} is not in SOURCES`).toContain(SIGN_IN_PAGE);
     expect([...parts].sort(), 'the feature holds a module no set and no service list names').toEqual(
       [...AUTH_SOURCES_REQUIRED].sort(),
@@ -669,8 +675,9 @@ describe('the build being read reflects the current localization source', () => 
     expect(parts, 'the teams feature grew or lost a module').toHaveLength(
       TEAMS_FEATURE_PARTS.length + TEAMS_RULE_MODULES.length,
     );
-    // Ten since source structure B6, twelve since B7: the roster's hook and component.
-    expect(parts, 'the teams feature grew or lost a module').toHaveLength(12);
+    // Ten since source structure B6, twelve since B7: the roster's hook and
+    // component; thirteen since the list-refresh fix: the write dependents.
+    expect(parts, 'the teams feature grew or lost a module').toHaveLength(13);
     for (const page of TEAM_PAGES) expect(SOURCES, `${page} is not in SOURCES`).toContain(page);
     expect([...parts].sort(), 'the feature holds a module no set and no rule list names').toEqual(
       [...TEAMS_SOURCES_REQUIRED].sort(),

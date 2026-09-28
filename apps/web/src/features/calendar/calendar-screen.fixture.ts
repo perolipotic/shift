@@ -71,6 +71,10 @@ export const CALENDAR_SCREEN_EXEMPT: readonly { readonly file: string; readonly 
     why: 'the grid keyboard rules, executed by grid-keys.test.ts; renders nothing and declares no key',
   },
   {
+    file: 'utils/skeleton.ts',
+    why: 'the skeleton shape rule, executed by skeleton.test.ts; renders nothing and declares no key',
+  },
+  {
     file: 'utils/element-ids.ts',
     why: 'the ids one element carries and another names; literals no screen part may hold, which the literal sweep would read as copy',
   },

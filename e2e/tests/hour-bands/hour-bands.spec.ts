@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto';
 
-import type { TestInfo } from '@playwright/test';
+import type { Route, TestInfo } from '@playwright/test';
 
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { fill, hr } from '../../utils/i18n.ts';
@@ -69,6 +69,89 @@ test('adding a band lists it', async ({ hourBandsPage }, testInfo) => {
   await expect(hourBandsPage.dialog()).toBeHidden();
   await expect(hourBandsPage.status).toHaveText(bands.created);
   await expect(hourBandsPage.editLink(name)).toBeVisible();
+});
+
+/**
+ * Holds every `POST` to one PostgREST table until released, for this test's
+ * page only: the create stays in flight for as long as the assertions need.
+ * #89's hold, for the team insert, on a table named by the caller.
+ */
+function heldInsert(table: string) {
+  let release: () => void = () => undefined;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let reached: () => void = () => undefined;
+  const inFlight = new Promise<void>((resolve) => {
+    reached = resolve;
+  });
+  const matches = (url: URL): boolean => url.pathname.endsWith(`/rest/v1/${table}`);
+  const handler = async (route: Route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    reached();
+    await released;
+    return route.continue();
+  };
+
+  return { matches, handler, inFlight, release: () => release() };
+}
+
+test('the add dialog cannot be dismissed while its create is in flight, and confirms once it lands', async ({
+  page,
+  hourBandsPage,
+}, testInfo) => {
+  // ITS OWN BAND, per attempt, in an hour no other test writes in (21), after
+  // the fixture's last start, so no other test's end moves.
+  const name = `Kasno ${randomBytes(3).toString('hex')}`;
+  const hold = heldInsert('hour_bands');
+
+  await hourBandsPage.goto();
+  await page.route(hold.matches, hold.handler);
+  try {
+    await hourBandsPage.openButton.click();
+    await hourBandsPage.nameInput.fill(name);
+    await hourBandsPage.startInput.fill(attemptStart(21, testInfo));
+    await hourBandsPage.addButton.click();
+    await hold.inFlight;
+
+    // Cancel is disabled, and Escape (once, twice, three times) and the close
+    // control do nothing.
+    await expect(hourBandsPage.addDialogCancel).toBeDisabled();
+    // ESCAPE, AGAIN AND AGAIN: a second Escape with no user activation between
+    // is one the browser's close watcher will not let a `cancel` stop.
+    await hourBandsPage.nameInput.press('Escape');
+    await expect(hourBandsPage.addDialog).toBeVisible();
+    // Pressed from the keyboard with the field kept focused, so a close the
+    // dialog then undoes still shows: focus would move to its first control.
+    for (const presses of [2, 3]) {
+      await hourBandsPage.nameInput.focus();
+      for (let press = 0; press < presses; press += 1) await page.keyboard.press('Escape');
+      await expect(hourBandsPage.addDialog, `${String(presses)} Escapes closed the dialog`).toBeVisible();
+      await expect(
+        hourBandsPage.nameInput,
+        `${String(presses)} Escapes closed and reopened it`,
+      ).toBeFocused();
+    }
+    await hourBandsPage.addDialogClose.click();
+    await expect(hourBandsPage.addDialog).toBeVisible();
+    await expect(hourBandsPage.addDialogCancel).toBeDisabled();
+  } finally {
+    // Released even on a failure; the route stays until the held request has
+    // gone on, since unrouting first would drop it.
+    hold.release();
+  }
+
+  // Released: the create lands, the dialog closes and the page confirms.
+  await expect(hourBandsPage.status).toHaveText(bands.created);
+  await expect(hourBandsPage.addDialog).toBeHidden();
+  await expect(hourBandsPage.editLink(name)).toBeVisible();
+  await page.unroute(hold.matches, hold.handler);
+
+  // Removed at the end, so this test leaves no band behind to move another's end.
+  await hourBandsPage.editLink(name).click();
+  await hourBandsPage.removeButton(name).click();
+  await hourBandsPage.removeConfirmButton(name).click();
+  await expect(hourBandsPage.statusWith(bands.removed)).toBeVisible();
 });
 
 test('editing a band opens it in a dialog over the list, and its close returns to the list', async ({

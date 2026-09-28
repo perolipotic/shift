@@ -1,9 +1,11 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
 
 import { useDayDetail } from '@/features/calendar/hooks/use-day-detail';
 import {
   GRID_CELL_SELECTOR,
+  FOCUS_VISIBLE,
+  GRID_REVEAL,
   gridCellSelectorOf,
   gridFocusAfter,
   gridPositionOf,
@@ -27,6 +29,7 @@ import {
   type CalendarSearch,
 } from '@/features/calendar/utils/month';
 import { translateCellLabel } from '@/features/calendar/utils/cell-label';
+import { cachedRoleOf, calendarSkeletonShapeOf, earlyCalendarModeOf } from '@/features/calendar/utils/skeleton';
 import { dayDetailKeyOf, gridFocusKeyOf } from '@/features/calendar/utils/screen-keys';
 import {
   CALENDAR_READ_TABLE,
@@ -34,12 +37,17 @@ import {
   calendarQueryOptions,
   calendarSurfaceStateOf,
 } from '@/features/calendar/services/snapshot';
+import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import { supabaseClient } from '@/lib/supabase/client';
 
 const phone = phoneStoreOf((query) => window.matchMedia(query));
 
 function isPhoneOnServer(): boolean {
   return false;
+}
+
+function noRoleOnServer(): null {
+  return null;
 }
 
 /**
@@ -81,7 +89,20 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
   const month = outcome !== null && outcome.ok ? outcome.month : null;
   // READ LIVE: crossing 640 px changes the default mode while no `prikaz` is chosen.
   const isPhone = useSyncExternalStore(phone.subscribe, phone.get, isPhoneOnServer);
-  const mode = snapshot === null ? null : calendarModeOf(search, snapshot.viewer.role, isPhone);
+  // Before the snapshot lands, the mode switch and the skeleton's shape follow
+  // the chrome's role answer, if the cache already holds it, read and followed
+  // there — never fetched here, so the calendar still makes its one read.
+  const client = useQueryClient();
+  const [roleStore] = useState(() => ({
+    subscribe: (onChange: () => void) => client.getQueryCache().subscribe(onChange),
+    get: () => cachedRoleOf(client.getQueryData(MEMBER_ROLE_KEY)),
+  }));
+  const cachedRole = useSyncExternalStore(roleStore.subscribe, roleStore.get, noRoleOnServer);
+  const mode =
+    snapshot === null
+      ? earlyCalendarModeOf(search, cachedRole, isPhone)
+      : calendarModeOf(search, snapshot.viewer.role, isPhone);
+  const skeleton = calendarSkeletonShapeOf(search, cachedRole, isPhone);
   // The grid's one tab stop, remembered across re-renders and FORGOTTEN
   // whenever the month shown, the team chosen (story 3.3a) or the person
   // chosen (story 3.3b) changes — by the buttons, the filter, the URL or
@@ -182,7 +203,23 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
 
     event.preventDefault();
     remember(shown.month, next);
-    gridRef.current?.querySelector<HTMLElement>(gridCellSelectorOf(next))?.focus();
+    const cell = gridRef.current?.querySelector<HTMLElement>(gridCellSelectorOf(next));
+
+    // Focus without the browser's own scroll: the cell's `onFocus` reveals it
+    // (`reveal`), once.
+    cell?.focus({ preventScroll: true });
+  }
+
+  /**
+   * A cell received focus, from any source — the keys, Tab, or the day
+   * detail's close returning it: shown whole by `GRID_REVEAL`, inside its
+   * `scroll-margin`, so it lands clear of the sticky date column and header,
+   * which the browser's own focus scroll ignores. Only while the focus is
+   * shown (`:focus-visible`): a click lands where the pointer already is, and
+   * scrolling under it could move the cell away before the click completes.
+   */
+  function reveal(cell: HTMLElement): void {
+    if (cell.matches(FOCUS_VISIBLE)) cell.scrollIntoView(GRID_REVEAL);
   }
 
   /**
@@ -211,6 +248,7 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
     refusal,
     month,
     mode,
+    skeleton,
     labels,
     gridFocus,
     gridRef,
@@ -221,6 +259,7 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
     filter,
     resetFilter,
     remember,
+    reveal,
     moveGridFocus,
     openOnKeyUp,
     openDay,

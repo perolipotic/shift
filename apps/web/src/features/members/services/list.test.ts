@@ -69,6 +69,7 @@ import {
   memberRowOutcomeOf,
   membersMessageKey,
   membersQueryOptions,
+  membersNoticeOf,
   membersSurfaceStateOf,
   narrowFrom,
   narrowMembers,
@@ -1421,6 +1422,7 @@ describe('the things the surface can be showing, driven through the one query de
       members: null,
       refusal: null,
       loading: true,
+      paused: false,
     });
   });
 
@@ -1432,6 +1434,7 @@ describe('the things the surface can be showing, driven through the one query de
       members: goodMembers,
       refusal: null,
       loading: false,
+      paused: false,
     });
   });
 
@@ -1446,6 +1449,7 @@ describe('the things the surface can be showing, driven through the one query de
       members: null,
       refusal: MEMBERS_UNAVAILABLE,
       loading: false,
+      paused: false,
     });
   });
 
@@ -1494,6 +1498,7 @@ describe('the things the surface can be showing, driven through the one query de
       members: goodMembers,
       refusal: null,
       loading: false,
+      paused: false,
     });
   });
 
@@ -1509,6 +1514,7 @@ describe('the things the surface can be showing, driven through the one query de
       members: null,
       refusal: MEMBERS_REFUSED,
       loading: false,
+      paused: false,
     });
   });
 
@@ -1523,6 +1529,7 @@ describe('the things the surface can be showing, driven through the one query de
       members: null,
       refusal: MEMBERS_REFUSED,
       loading: false,
+      paused: false,
     });
     expect(table.calls()).toBe(2);
   });
@@ -1544,7 +1551,55 @@ describe('the things the surface can be showing, driven through the one query de
       members: null,
       refusal: MEMBERS_UNAVAILABLE,
       loading: false,
+      paused: false,
     });
+  });
+
+  it('keeps a cached refusal, and marks the pause, when a refetch pauses over it', async () => {
+    // Nothing new arrived, so the policy's last answer still stands; the pause
+    // is marked beside it, and the list announces the refusal it already had.
+    const observer = observe(() => answeringInTurn(refused));
+    await settled(observer);
+
+    onlineManager.setOnline(false);
+    void client.invalidateQueries({ queryKey: MEMBERS_LIST_KEY });
+    await vi.waitFor(() => {
+      expect(observer.getCurrentResult().fetchStatus).toBe('paused');
+    });
+    const state = membersSurfaceStateOf(observer.getCurrentResult());
+
+    expect(state).toEqual({ members: null, refusal: MEMBERS_REFUSED, loading: false, paused: true });
+    expect(membersNoticeOf(state)).toBe(MEMBERS_REFUSED);
+  });
+
+  it('says so when a refetch pauses offline over cached rows', async () => {
+    // THE WRITE'S RE-READ, OR A STALE MOUNT, WITH THE BROWSER OFFLINE: TanStack
+    // pauses the refetch over the cached answer, so `isPending` is false and no
+    // error ever arrives. The rows stay on screen and the message says they
+    // may be behind, rather than old rows looking current.
+    const observer = observe(() => answeringInTurn(good));
+    const cached = await settled(observer);
+
+    expect(membersSurfaceStateOf(cached).members, 'nothing good was cached').toEqual(goodMembers);
+    onlineManager.setOnline(false);
+    void client.invalidateQueries({ queryKey: MEMBERS_LIST_KEY });
+    await vi.waitFor(() => {
+      expect(observer.getCurrentResult().fetchStatus).toBe('paused');
+    });
+    const result = observer.getCurrentResult();
+
+    expect(result.isPending, 'nothing was cached before the pause').toBe(false);
+    // NOT A REFUSAL: an edit form over these rows stays mounted. The list
+    // announces the pause through its notice, beside the kept rows.
+    expect(membersSurfaceStateOf(result)).toEqual({
+      members: goodMembers,
+      refusal: null,
+      loading: false,
+      paused: true,
+    });
+    expect(membersNoticeOf(membersSurfaceStateOf(result)), 'the list says nothing about the pause').toBe(
+      MEMBERS_UNAVAILABLE,
+    );
   });
 
   it('explains a paused fetch rather than pulsing for ever', () => {
@@ -1560,6 +1615,7 @@ describe('the things the surface can be showing, driven through the one query de
       members: null,
       refusal: MEMBERS_UNAVAILABLE,
       loading: false,
+      paused: false,
     });
   });
 

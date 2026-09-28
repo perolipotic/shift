@@ -24,6 +24,7 @@ import {
   teamRowOf,
   teamsMessageKey,
   teamsQueryOptions,
+  teamsNoticeOf,
   teamsSurfaceStateOf,
   writableTeamsOf,
   type TeamRow,
@@ -315,6 +316,7 @@ describe('the surface state, driven through the one query definition', () => {
       teams: null,
       refusal: null,
       loading: true,
+      paused: false,
     });
   });
 
@@ -328,6 +330,7 @@ describe('the surface state, driven through the one query definition', () => {
       teams: rows(count).map((row) => teamRowOf(row)),
       refusal: null,
       loading: false,
+      paused: false,
     });
   });
 
@@ -342,6 +345,7 @@ describe('the surface state, driven through the one query definition', () => {
       teams: null,
       refusal: TEAMS_UNAVAILABLE,
       loading: false,
+      paused: false,
     });
   });
 
@@ -360,6 +364,7 @@ describe('the surface state, driven through the one query definition', () => {
       teams: goodTeams,
       refusal: TEAMS_UNAVAILABLE,
       loading: false,
+      paused: false,
     });
   });
 
@@ -393,11 +398,11 @@ describe('the surface state, driven through the one query definition', () => {
   });
 
   it('offers the teams to write from only while the read is healthy', () => {
-    expect(writableTeamsOf({ teams: goodTeams, refusal: null, loading: false })).toEqual(goodTeams);
-    expect(writableTeamsOf({ teams: [], refusal: null, loading: false })).toEqual([]);
-    expect(writableTeamsOf({ teams: null, refusal: null, loading: true })).toBeNull();
-    expect(writableTeamsOf({ teams: goodTeams, refusal: TEAMS_UNAVAILABLE, loading: false })).toBeNull();
-    expect(writableTeamsOf({ teams: null, refusal: TEAMS_UNAVAILABLE, loading: false })).toBeNull();
+    expect(writableTeamsOf({ teams: goodTeams, refusal: null, loading: false, paused: false })).toEqual(goodTeams);
+    expect(writableTeamsOf({ teams: [], refusal: null, loading: false, paused: false })).toEqual([]);
+    expect(writableTeamsOf({ teams: null, refusal: null, loading: true, paused: false })).toBeNull();
+    expect(writableTeamsOf({ teams: goodTeams, refusal: TEAMS_UNAVAILABLE, loading: false, paused: false })).toBeNull();
+    expect(writableTeamsOf({ teams: null, refusal: TEAMS_UNAVAILABLE, loading: false, paused: false })).toBeNull();
   });
 
   it('settles as a success when a transient failure is followed by an answer', async () => {
@@ -406,7 +411,7 @@ describe('the surface state, driven through the one query definition', () => {
 
     expect(table.calls()).toBe(2);
     expect(result.status).toBe('success');
-    expect(teamsSurfaceStateOf(result)).toEqual({ teams: goodTeams, refusal: null, loading: false });
+    expect(teamsSurfaceStateOf(result)).toEqual({ teams: goodTeams, refusal: null, loading: false, paused: false });
   });
 
   it('rejects when the table cannot even be built', async () => {
@@ -423,7 +428,37 @@ describe('the surface state, driven through the one query definition', () => {
       teams: null,
       refusal: TEAMS_UNAVAILABLE,
       loading: false,
+      paused: false,
     });
+  });
+
+  it('says so when a refetch pauses offline over cached rows', async () => {
+    // THE WRITE'S RE-READ, OR A STALE MOUNT, WITH THE BROWSER OFFLINE: TanStack
+    // pauses the refetch over the cached answer, so `isPending` is false and no
+    // error ever arrives. The rows stay on screen and the message says they
+    // may be behind, rather than old rows looking current.
+    const observer = observe(() => answeringInTurn(good));
+    const cached = await settled(observer);
+
+    onlineManager.setOnline(false);
+    void client.invalidateQueries({ queryKey: TEAMS_LIST_KEY });
+    await vi.waitFor(() => {
+      expect(observer.getCurrentResult().fetchStatus).toBe(TEAMS_FETCH_PAUSED);
+    });
+    const result = observer.getCurrentResult();
+
+    expect(result.isPending, 'nothing was cached before the pause').toBe(false);
+    // NOT A REFUSAL: an edit form over these rows stays mounted. The list
+    // announces the pause through its notice, beside the kept rows.
+    expect(teamsSurfaceStateOf(result)).toEqual({
+      teams: cached.data,
+      refusal: null,
+      loading: false,
+      paused: true,
+    });
+    expect(teamsNoticeOf(teamsSurfaceStateOf(result)), 'the list says nothing about the pause').toBe(
+      TEAMS_UNAVAILABLE,
+    );
   });
 
   it('says why rather than pulsing while paused offline', () => {
@@ -436,6 +471,7 @@ describe('the surface state, driven through the one query definition', () => {
       teams: null,
       refusal: TEAMS_UNAVAILABLE,
       loading: false,
+      paused: false,
     });
   });
 

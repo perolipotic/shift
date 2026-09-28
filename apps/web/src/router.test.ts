@@ -5,6 +5,11 @@ import type { Session } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 
 import { router } from '@/router';
+import {
+  knownPathOf,
+  returnTargetOf,
+  type RouteMatcher,
+} from '@/features/auth/services/return-target';
 import { mayReadMembers } from '@/features/members/services/list';
 import { DESTINATIONS, destinationsFor } from '@/features/navigation/utils/destinations';
 import {
@@ -544,6 +549,62 @@ describe('an unknown path renders a screen rather than an empty layout', () => {
   });
 });
 
+describe('the return target a sign-in follows is a path this tree knows', () => {
+  /**
+   * `@/features/auth/services/return-target` takes the tree as a predicate so
+   * its own suite can run without one; this is the predicate against the REAL
+   * tree, which is the half a stub cannot prove. An unknown path must read as
+   * unknown here, or the validator admits every path a link can spell.
+   */
+  const known = knownPathOf(router as unknown as RouteMatcher);
+
+  it.each(['/', '/kalendar', '/danas', '/organizacija', '/ljudi/novi', '/prijava/dvd-kastel-novi'])(
+    'knows %s',
+    (pathname) => {
+      expect(known(pathname)).toBe(true);
+    },
+  );
+
+  it.each([
+    '/does-not-exist',
+    '/kalendar/2026-09/does-not-exist',
+    '/javascript:alert(1)',
+    // PINNED, because the validator's own `//` check is the first line and this
+    // is the second: the tree must not resolve a protocol-relative shape.
+    '//evil.example',
+    '//kalendar',
+  ])(
+    'does not know %s',
+    (pathname) => {
+      expect(known(pathname)).toBe(false);
+    },
+  );
+
+  it('follows a deep link back to itself, and turns an unknown one into /', () => {
+    expect(returnTargetOf('/kalendar?mjesec=2031-02#tjedan', known)).toBe(
+      '/kalendar?mjesec=2031-02#tjedan',
+    );
+    expect(returnTargetOf('/nowhere?x=1', known)).toBe('/');
+  });
+
+  it.each([
+    { name: 'the organization prompt', route: prijavaOrganizacijaRoute },
+    { name: 'the credential form', route: prijavaRoute },
+  ])('carries the return target on $name, and only it', ({ route }) => {
+    const validate = (route.options as { validateSearch?: unknown }).validateSearch;
+
+    expect(validate, 'the route validates no search, so the target is not carried').toBeTypeOf(
+      'function',
+    );
+    expect(
+      (validate as (search: Record<string, unknown>) => unknown)({
+        povratak: '/kalendar?tim=2',
+        tim: 2,
+      }),
+    ).toEqual({ povratak: '/kalendar?tim=2' });
+  });
+});
+
 describe('the deployed root resolves both ways and is never a blank page', () => {
   /**
    * `/` decides where a signed-in person belongs, and the invariant 1.1d wrote
@@ -570,15 +631,22 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
   /** Enough of a session to be distinguishable from `null`. */
   const SESSION = { access_token: 'token', user: { id: 'member' } } as unknown as Session;
 
-  type BeforeLoad = (options: { context: AppRouterContext }) => unknown;
+  /** The location `/` is loaded at: a real link's shape, with a search and a hash. */
+  const ROOT_LINK = { href: '/?invite=abc#section' };
 
-  async function beforeLoad(session: Session | null): Promise<unknown> {
+  type BeforeLoad = (options: {
+    context: AppRouterContext;
+    location: { href: string };
+  }) => unknown;
+
+  async function beforeLoad(session: Session | null, location = ROOT_LINK): Promise<unknown> {
     const run = (indexRoute.options as unknown as { beforeLoad?: BeforeLoad }).beforeLoad;
 
     expect(run, '/ has no beforeLoad — the redirect is gone').toBeTypeOf('function');
 
     try {
       await run?.({
+        location,
         context: {
           currentSession: () => Promise.resolve(session),
           currentMemberRole: REFUSES_ROLE,
@@ -606,16 +674,24 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
     expect(thrown.options.to).toBe('/prijava');
   });
 
-  it('carries the search and the hash through on that redirect', async () => {
-    // `search: true` / `hash: true` are TanStack's "retain the current values".
+  it('carries the location, search and hash included, through on that redirect', async () => {
+    // THE HREF RIDES `povratak`, and the sign-in returns to it. This redirect
+    // used to keep the search and the hash as the prompt's own (`search: true`
+    // / `hash: true`), where they lived for one hop and died at the next.
     // Dropping them makes a deep link's parameters unrecoverable, and silently:
     // the user lands on a working screen either way, so nothing looks wrong.
-    // They survive the conditional — the signed-out branch is the only one that
-    // redirects, so it is the only one that can keep them.
     const { options } = (await beforeLoad(null)) as { options: { search?: unknown; hash?: unknown } };
 
-    expect(options.search, 'the redirect drops the search parameters').toBe(true);
-    expect(options.hash, 'the redirect drops the hash').toBe(true);
+    expect(options.search, 'the redirect drops the location').toEqual({
+      povratak: '/?invite=abc#section',
+    });
+    expect(options.hash, 'the prompt carries a hash that belongs to the location').toBeUndefined();
+  });
+
+  it('carries nothing for a bare /, where a sign-in lands anyway', async () => {
+    const { options } = (await beforeLoad(null, { href: '/' })) as { options: { search?: unknown } };
+
+    expect(options.search).toEqual({});
   });
 
   it('forwards a signed-in visitor on rather than resolving to a screen', async () => {
@@ -718,6 +794,7 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
 
     await expect(
       run?.({
+        location: ROOT_LINK,
         context: {
           currentSession: () => Promise.resolve(SESSION),
           currentMemberRole: REFUSES_ROLE,
@@ -833,6 +910,7 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
 
     try {
       await run?.({
+        location: ROOT_LINK,
         context: {
           currentSession: () => Promise.reject(new Error('SecurityError')),
           currentMemberRole: REFUSES_ROLE,
@@ -896,6 +974,7 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
 
     try {
       await run?.({
+        location: ROOT_LINK,
         context: {
           currentSession: () => {
             asked += 1;
@@ -990,6 +1069,12 @@ describe('a slug that cannot be one never reaches the credential form', () => {
     expect(thrown, `/prijava/${slug} still renders the credential form`).not.toBeNull();
     expect(isRedirect(thrown), 'the guard threw something that is not a redirect').toBe(true);
     expect((thrown as { options: { to?: string } }).options.to).toBe('/prijava');
+    // The return target survives the bounce: a malformed slug costs the
+    // visitor the slug, never the destination they were signing in for.
+    expect(
+      (thrown as { options: { search?: unknown } }).options.search,
+      'the bounce to the prompt drops the return target',
+    ).toBe(true);
   });
 
   it.each([
@@ -1180,7 +1265,13 @@ describe('the signed-in layout guards every destination once, and is pathless', 
   /** Enough of a session to be distinguishable from `null`. */
   const SESSION = { access_token: 'token', user: { id: 'member' } } as unknown as Session;
 
-  type BeforeLoad = (options: { context: AppRouterContext }) => unknown;
+  /** The destination the guard is loaded at, as a real deep link. */
+  const DEEP_LINK = { href: '/kalendar?tim=2#tjedan' };
+
+  type BeforeLoad = (options: {
+    context: AppRouterContext;
+    location: { href: string };
+  }) => unknown;
 
   /** What running the guard did: it either threw something, or returned
    *  something. Collapsing "returned normally" to `null` made a guard that
@@ -1206,6 +1297,7 @@ describe('the signed-in layout guards every destination once, and is pathless', 
     try {
       return {
         returned: await guard()({
+          location: DEEP_LINK,
           context: { currentSession, currentMemberRole: REFUSES_ROLE },
         }),
       };
@@ -1323,17 +1415,19 @@ describe('the signed-in layout guards every destination once, and is pathless', 
     expect((thrown as { options: { to?: string } }).options.to).toBe('/prijava');
   });
 
-  it('carries the search and the hash through on that redirect', async () => {
+  it('carries the whole location, path included, through on that redirect', async () => {
     // AD-14 has the host answer every path with `index.html` at 200, so
-    // `/kalendar?tim=2#tjedan` is a shape a real link takes. Dropping them makes
-    // a deep link's parameters unrecoverable, and silently — the visitor lands
-    // on a working screen either way.
+    // `/kalendar?tim=2#tjedan` is a shape a real link takes. The redirect kept
+    // the search and the hash and dropped the PATH, so a sign-in came back to
+    // `/`; now the href rides `povratak` and the sign-in returns to it.
     const { options } = thrownBy(await beforeLoad(() => Promise.resolve(null))) as {
       options: { search?: unknown; hash?: unknown };
     };
 
-    expect(options.search, 'the redirect drops the search parameters').toBe(true);
-    expect(options.hash, 'the redirect drops the hash').toBe(true);
+    expect(options.search, 'the redirect drops the location').toEqual({
+      povratak: '/kalendar?tim=2#tjedan',
+    });
+    expect(options.hash, 'the prompt carries a hash that belongs to the location').toBeUndefined();
   });
 
   it('resolves to the same redirect when the session cannot be read at all', async () => {

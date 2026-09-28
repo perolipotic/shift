@@ -283,23 +283,42 @@ export interface TeamsSurfaceState {
   readonly refusal: TeamsFailure | null;
   /** Never true beside a message. */
   readonly loading: boolean;
+  /**
+   * A REFETCH PAUSED OFFLINE OVER CACHED ROWS. Not a refusal: an edit form
+   * built on this state stays mounted with what was typed. A list screen
+   * announces it through {@link teamsNoticeOf}, the unavailable message beside the
+   * kept rows.
+   */
+  readonly paused: boolean;
 }
 
 /**
  * One query result as what the screen shows: answered, failed, paused offline,
  * and a failed refetch over a good answer (rows kept, message beside them).
  * Every failure reaches here as `isError`, because {@link teamsQueryOptions}
- * rejects on it.
+ * rejects on it. A FIRST READ paused offline is a refusal: there is nothing to
+ * draw. A REFETCH paused over cached rows is `paused`, never a refusal, so the
+ * edit form over those rows keeps what was typed; the list says so through
+ * {@link teamsNoticeOf}.
  */
 export function teamsSurfaceStateOf(answer: TeamsQueryAnswer): TeamsSurfaceState {
   const teams = answer.data ?? null;
-  const paused = answer.isPending && answer.fetchStatus === TEAMS_FETCH_PAUSED;
+  const pausedFetch = answer.fetchStatus === TEAMS_FETCH_PAUSED;
 
-  if (answer.isError || paused) {
-    return { teams, refusal: TEAMS_UNAVAILABLE, loading: false };
+  if (answer.isError || (answer.isPending && pausedFetch)) {
+    return { teams, refusal: TEAMS_UNAVAILABLE, loading: false, paused: false };
   }
 
-  return { teams, refusal: null, loading: answer.isPending };
+  return { teams, refusal: null, loading: answer.isPending, paused: pausedFetch };
+}
+
+/**
+ * What a LIST screen announces: the refusal, or over rows a refetch paused
+ * offline, the unavailable message beside them — without it old rows look
+ * current while nothing can reach the database. Edit forms read `refusal`.
+ */
+export function teamsNoticeOf(state: TeamsSurfaceState): TeamsFailure | null {
+  return state.refusal ?? (state.paused ? TEAMS_UNAVAILABLE : null);
 }
 
 /**

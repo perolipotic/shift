@@ -71,4 +71,8 @@ export const TEAM_SCREENS_EXEMPT: readonly { readonly file: string; readonly why
     file: 'services/roster.ts',
     why: 'the roster read, its refusals and the Danas line (story 1.8); a key source of its own in the sign-in suite, executed by roster.test.ts',
   },
+  {
+    file: 'services/dependents.ts',
+    why: 'the reads a team or membership write makes stale, and the one re-read over them; renders nothing, executed by dependents.test.ts',
+  },
 ];

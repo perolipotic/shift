@@ -89,6 +89,11 @@ export class HourBandsPage extends BasePage {
     return this.addDialog.getByRole('button', { name: bands.cancel, exact: true });
   }
 
+  /** The add dialog's own close control. */
+  get addDialogClose(): Locator {
+    return this.addDialog.getByRole('button', { name: bands.close, exact: true });
+  }
+
   /** The edit dialog's start field. */
   get editDialogStart(): Locator {
     return this.editDialog.getByLabel(bands.start, { exact: true });

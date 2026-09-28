@@ -31,6 +31,18 @@ export class PeoplePage extends BasePage {
     return this.page.getByRole('link', { name: hr.ljudi.form.add });
   }
 
+  /** A member's row in the list's table: the one holding their edit link. */
+  memberRow(name: string): Locator {
+    return this.table
+      .getByRole('row')
+      .filter({ has: this.page.getByRole('link', { name: fill(hr.ljudi.form.edit, { name }) }) });
+  }
+
+  /** The way from the list to the teams screen, a client-side link. */
+  get teamsLink(): Locator {
+    return this.page.getByRole('link', { name: hr.smjene.heading, exact: true });
+  }
+
   /** Opens `/ljudi` and a member's edit screen from it. */
   async openMember(name: string): Promise<void> {
     await this.goto();

@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -234,5 +238,85 @@ describe('the tokens are actually applied to the document', () => {
 
     expect(forcedColorsBlock, 'no @media (forced-colors: active) rule in @layer base').not.toBeUndefined();
     expect(forcedColorsBlock).toMatch(/:focus-visible\s*\{[^}]*outline:\s*2px solid CanvasText/);
+  });
+});
+
+describe('the calendar modifiers survive forced colours', () => {
+  /**
+   * Package 3c. A forced-colours mode (Windows High Contrast) drops every
+   * box-shadow and every gradient `background-image`, which is all the
+   * `modifier-ring-*` and `modifier-hatch-*` utilities draw with, so each
+   * carries its own `@media (forced-colors: active)` fallback: a ring an
+   * outline, a hatch a border, in a system colour keyword. The class names are
+   * read from `modifiers.ts`, the one place the screen takes them from, so a
+   * treatment added there without a fallback here fails.
+   */
+  const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+  const modifiers = readFileSync(
+    join(repoRoot, 'apps', 'web', 'src', 'features', 'calendar', 'utils', 'modifiers.ts'),
+    'utf8',
+  );
+  const treatments = [...modifiers.matchAll(/export const (RING|HATCH)_\w+_CLASS = '([\w-]+)';/g)].map(
+    ([, kind, name]) => ({ kind: kind === 'RING' ? 'ring' : 'hatch', name: name ?? '' }),
+  );
+  const SYSTEM_COLOUR = /\b(CanvasText|Highlight|LinkText|ButtonText)\b/;
+
+  /** A utility's body, brace-matched so its nested `@media` is inside it. */
+  function utility(name: string): string {
+    const css = stripped();
+    const start = css.indexOf(`@utility ${name} {`);
+    if (start === -1) return '';
+    const open = css.indexOf('{', start);
+    let depth = 0;
+
+    for (let index = open; index < css.length; index += 1) {
+      if (css[index] === '{') depth += 1;
+      if (css[index] === '}') depth -= 1;
+      if (depth === 0) return css.slice(open + 1, index);
+    }
+
+    return '';
+  }
+
+  /** The declarations of the utility's forced-colours fallback, or `null`. */
+  function fallback(name: string): string | null {
+    return /@media\s*\(forced-colors:\s*active\)\s*\{([^{}]*)\}/.exec(utility(name))?.[1]?.trim() ?? null;
+  }
+
+  it('reads the six treatments off modifiers.ts', () => {
+    expect(treatments.map((treatment) => treatment.name)).toEqual([
+      'modifier-ring-conflict',
+      'modifier-ring-overridden',
+      'modifier-ring-conflict-overridden',
+      'modifier-hatch-leave',
+      'modifier-hatch-uncovered',
+      'modifier-hatch-leave-uncovered',
+    ]);
+  });
+
+  it.each(treatments)('gives $name a forced-colours fallback', ({ kind, name }) => {
+    const body = utility(name);
+    const declarations = fallback(name);
+
+    expect(body, `no @utility ${name}`).not.toBe('');
+    expect(body, `${name} no longer draws with what forced colours drop`).toMatch(
+      kind === 'ring' ? /box-shadow:/ : /background-image:/,
+    );
+    expect(declarations, `${name} has no @media (forced-colors: active) fallback`).not.toBeNull();
+    const property = kind === 'ring' ? 'outline' : 'border';
+
+    expect(declarations, `${name}'s fallback draws no ${property}`).toMatch(
+      new RegExp(`(^|;)\\s*${property}:\\s*\\d+px (solid|dashed|dotted|double) `),
+    );
+    expect(declarations, `${name}'s fallback names no system colour`).toMatch(SYSTEM_COLOUR);
+    expect(declarations, `${name}'s fallback reaches for a token forced colours override`).not.toMatch(/var\(/);
+  });
+
+  it('keeps the treatments apart under forced colours too', () => {
+    for (const kind of ['ring', 'hatch']) {
+      const shown = treatments.filter((treatment) => treatment.kind === kind).map(({ name }) => fallback(name));
+
+      expect(new Set(shown).size, `two ${kind} fallbacks draw the same`).toBe(shown.length);
+    }
   });
 });

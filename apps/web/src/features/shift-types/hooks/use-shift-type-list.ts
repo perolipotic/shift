@@ -10,6 +10,7 @@ import {
   SHIFT_TYPE_VERSIONS_TABLE,
   shiftTypeListOf,
   shiftTypesQueryOptions,
+  shiftTypesNoticeOf,
   shiftTypesSurfaceStateOf,
   shiftTypesTodayOf,
 } from '@/features/shift-types/services/list';
@@ -73,7 +74,11 @@ export function useShiftTypeList() {
     shiftTypesQueryOptions(() => supabaseClient().from(SHIFT_TYPES_READ_TABLE)),
   );
 
-  const { snapshot, refusal, loading } = shiftTypesSurfaceStateOf(answer);
+  const state = shiftTypesSurfaceStateOf(answer);
+  const { snapshot, loading } = state;
+  // THE LIST'S NOTICE: the refusal, or the unavailable message beside rows a
+  // refetch paused offline over, which is never a refusal (an edit form keeps them).
+  const refusal = shiftTypesNoticeOf(state);
   const today = snapshot === null ? null : shiftTypesTodayOf(snapshot, new Date());
   const list = snapshot === null || today === null ? null : shiftTypeListOf(snapshot, today);
 

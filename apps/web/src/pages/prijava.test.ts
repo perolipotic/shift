@@ -512,7 +512,9 @@ const SCREENS = [
   // change like the accent.
   // NINE SINCE DESIGN REFRESH C: the type and zone inputs left the form; the
   // leave year's day and month are selects now, still two controls.
-  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 9 },
+  // TEN SINCE THE SETTINGS FIX: the read's retry, rendered beside the message
+  // only when a read has failed, so a failed read has something to act with.
+  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 10 },
   // THREE on the member list, and the count is what keeps a fourth from
   // arriving unreviewed: the search field, the permission-level filter, and ONE
   // `<Button>` — the sort control, written once inside a map over
@@ -1664,7 +1666,8 @@ const KEY_SOURCES = [
   //
   // EIGHTEEN SINCE DESIGN REFRESH C: the lede, the logo's accepted formats,
   // and the aside's title and body.
-  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 18 },
+  // NINETEEN since the settings fix: the read's retry reuses `shell.retry`.
+  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 19 },
   {
     // EIGHT on the member list since story 1.5b, up from five, and the number is
     // still small because most of what this screen says is read off a table
@@ -2795,7 +2798,7 @@ describe('the screen is read at all, so every sweep below means something', () =
     for (const file of exempt) expect(walked, `${file} is exempt and does not exist`).toContain(file);
     // THE EXACT EXEMPTIONS, so a new one is a reviewed change to this test.
     expect([...exempt].sort(), 'the team exemptions changed').toEqual(
-      ['team-screens.fixture.ts', 'services/list.ts', 'services/write.ts', 'services/roster.ts']
+      ['team-screens.fixture.ts', 'services/list.ts', 'services/write.ts', 'services/roster.ts', 'services/dependents.ts']
         .map((file) => join(TEAM_FEATURE, ...file.split('/')))
         .sort(),
     );
@@ -3136,7 +3139,13 @@ describe('the screen is read at all, so every sweep below means something', () =
     for (const file of exempt) expect(walked, `${file} is exempt and does not exist`).toContain(file);
     // THE EXACT EXEMPTIONS, so a new one is a reviewed change to this test.
     expect([...exempt].sort(), 'the sign-in exemptions changed').toEqual(
-      ['sign-in-screen.fixture.ts', 'services/address.ts', 'services/sign-in.ts', 'services/sign-out.ts']
+      [
+        'sign-in-screen.fixture.ts',
+        'services/address.ts',
+        'services/return-target.ts',
+        'services/sign-in.ts',
+        'services/sign-out.ts',
+      ]
         .map((file) => join(AUTH_FEATURE, ...file.split('/')))
         .sort(),
     );
@@ -4145,9 +4154,19 @@ describe('the member list reads once, under one key', () => {
   });
 
   it.each([
-    { name: 'the team list', file: TEAM_LIST, hookFile: TEAM_LIST_HOOK },
-    { name: 'the team edit form', file: TEAM_EDIT, hookFile: TEAM_EDIT_HOOK },
-  ])('reads the teams exactly once, under the one team key, on $name', ({ file, hookFile }) => {
+    {
+      name: 'the team list',
+      file: TEAM_LIST,
+      hookFile: TEAM_LIST_HOOK,
+      refreshes: ['queryClient, TEAMS_LIST_KEY, TEAM_CREATE_DEPENDENTS'],
+    },
+    {
+      name: 'the team edit form',
+      file: TEAM_EDIT,
+      hookFile: TEAM_EDIT_HOOK,
+      refreshes: ['queryClient, TEAMS_LIST_KEY, landed ? TEAM_CHANGE_DEPENDENTS : NO_DEPENDENTS'],
+    },
+  ])('reads the teams exactly once, under the one team key, on $name', ({ file, hookFile, refreshes }) => {
     // STORY 1.7a, AD-13. The rows, both counts and the edited team all come
     // from one read under `TEAMS_LIST_KEY`. The create's organization is the
     // session's own claim, never a second query.
@@ -4164,36 +4183,25 @@ describe('the member list reads once, under one key', () => {
     expect(occurrences(hook, 'teamsQueryOptions('), 'the one read is not in the hook').toBe(1);
     expect(occurrences(screen, 'teamsQueryOptions('), 'the team options are called outside the one read').toBe(1);
     expect(occurrences(screen, callOf('readTeams')), 'only the query options call the reader').toBe(0);
-    // Every key named — the re-read's — is the one team key, and (STORY 2.3b)
-    // the rotation builder's, which binds every active team: re-read beside
-    // it, started together so one failing cannot skip the other.
-    expect(occurrences(screen, 'queryKey: TEAMS_LIST_KEY')).toBeGreaterThan(0);
-    expect(occurrences(screen, 'queryKey:')).toBe(
-      occurrences(screen, 'queryKey: TEAMS_LIST_KEY') + occurrences(screen, 'queryKey: ROTATION_KEY'),
-    );
-    expect(occurrences(hook, 'queryKey:'), 'a key is named outside the hook').toBe(
-      occurrences(screen, 'queryKey:'),
-    );
-    expect(occurrences(hook, 'queryKey:'), 'the hook names a key besides the two').toBe(
-      occurrences(hook, 'queryKey: TEAMS_LIST_KEY') + occurrences(hook, 'queryKey: ROTATION_KEY'),
-    );
-    expect(occurrences(screen, 'invalidateQueries({ queryKey: ROTATION_KEY })')).toBe(
-      occurrences(screen, 'invalidateQueries({ queryKey: TEAMS_LIST_KEY })'),
-    );
-    expect(hook, 'the two re-reads are not started together').toMatch(
-      /Promise\.all\(\[\s*queryClient\.invalidateQueries\(\{ queryKey: TEAMS_LIST_KEY \}\),\s*queryClient\.invalidateQueries\(\{ queryKey: ROTATION_KEY \}\),?\s*\]\)/,
+    // THE AMENDED RULE (AD-13): a write re-reads its own key and every key
+    // declared as depending on what it wrote, and nothing else. Every re-read
+    // is `refreshAfterWrite` IN THE HOOK, on the one team key, with one of the
+    // lists `@/features/teams/services/dependents` declares for that write
+    // (the builder, and since the list-refresh fix the member list, Danas and
+    // the rosters) — so no key is named here and nothing bypasses the lists.
+    expect(occurrences(screen, 'queryKey:'), 'a key is named on a team screen').toBe(0);
+    expect(occurrences(screen, 'invalidateQueries('), 'a re-read bypasses the declared dependents').toBe(0);
+    expect(
+      [...screen.matchAll(/refreshAfterWrite\(([^;]*?)\);/g)].map((found) =>
+        (found[1] ?? '').replace(/\s+/g, ' ').replace(/,\s*$/, '').trim(),
+      ),
+      'a write re-reads something besides its own key and its declared dependents',
+    ).toEqual(refreshes);
+    expect(occurrences(hook, 'refreshAfterWrite('), 'a re-read is started outside the hook').toBe(
+      occurrences(screen, 'refreshAfterWrite('),
     );
     expect(source(TEAM_LIST_KEYS), 'the team read has no cache floor').toContain(
       'staleTime: TEAMS_READ_STALE_MS',
-    );
-    expect(hook, 'a write is not followed by a re-read of the one list').toContain(
-      'invalidateQueries({ queryKey: TEAMS_LIST_KEY })',
-    );
-    expect(hook, 'the rotation builder is not re-read beside the list').toContain(
-      'invalidateQueries({ queryKey: ROTATION_KEY })',
-    );
-    expect(occurrences(hook, 'invalidateQueries('), 'a re-read is started outside the hook').toBe(
-      occurrences(screen, 'invalidateQueries('),
     );
     for (const part of file) {
       expect(source(part), `useMutation arrived in ${part}; this repository uses a pending ref`).not.toContain(
@@ -5370,7 +5378,11 @@ describe('every field on the settings surface carries an accessible name', () =>
   it('builds no request and no client of its own', () => {
     const screen = source(SETTINGS);
 
-    for (const forbidden of ['fetch(', 'createClient(', 'localStorage']) {
+    // A WORD BOUNDARY on `fetch(`, since the read's retry calls the query's
+    // own `refetch()`, which is the query re-reading rather than a request
+    // this screen builds.
+    expect(screen, 'the settings screen reaches for fetch(').not.toMatch(/(?<![\w.])fetch\(/);
+    for (const forbidden of ['createClient(', 'localStorage']) {
       expect(screen, `the settings screen reaches for ${forbidden}`).not.toContain(forbidden);
     }
   });
@@ -5475,8 +5487,9 @@ describe('the logo control the general sweeps structurally cannot see', () => {
     const screen = source(SETTINGS);
     const buttons = buttonElements(screen);
 
-    // FOUR SINCE STORY 2.1b: the link to the hour band editor.
-    expect(buttons, 'the settings surface lost a button').toHaveLength(4);
+    // FOUR SINCE STORY 2.1b: the link to the hour band editor. FIVE since the
+    // settings fix: the read's retry.
+    expect(buttons, 'the settings surface lost a button').toHaveLength(5);
 
     const choose = buttons.find((element) => element.includes('onClick={openLogoPicker}')) ?? null;
 
@@ -5506,10 +5519,16 @@ describe('the logo control the general sweeps structurally cannot see', () => {
     // so no in-flight flag applies to it — and exactly one such link exists,
     // so this exemption cannot quietly widen to a write.
     const links = buttonElements(screen).filter((element) => element.includes('asChild'));
+    // THE READ'S RETRY is exempt on the same terms: it renders only while there
+    // is no row, so no write — and no in-flight flag — can exist beside it.
+    const retries = buttonElements(screen).filter((element) => element.includes('onClick={retryRead}'));
 
     expect(links, 'the settings surface grew a second link').toHaveLength(1);
+    expect(retries, 'the settings surface has not exactly one read retry').toHaveLength(1);
 
-    for (const element of buttonElements(screen).filter((candidate) => !links.includes(candidate))) {
+    for (const element of buttonElements(screen).filter(
+      (candidate) => !links.includes(candidate) && !retries.includes(candidate),
+    )) {
       expect(
         element,
         `a control is disabled by only some of the in-flight flags: ${element}`,
@@ -6051,7 +6070,7 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     );
   });
 
-  it('lands a signed-in visitor on / and nowhere else', () => {
+  it('lands a signed-in visitor on the validated return target, and nowhere else', () => {
     // MUTATION-PROVEN GAP. Nothing in this repository read a `navigate(` call:
     // a grep across every test file returned zero matches, so `to: '/prijava'`
     // here passed the entire suite while a correct sign-in established a
@@ -6060,11 +6079,45 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // happened. The story's first acceptance criterion was verified only by
     // somebody remembering to run the manual browser check.
     // SOURCE STRUCTURE B7: inside the hook's own submit.
-    const handler = submitHandler(source(SIGN_IN_HOOK));
+    //
+    // SINCE THE SIGN-IN FIX the landing is the deep link the signed-out
+    // redirect carried, and only ever through the validator: a raw
+    // `navigate({ href: povratak })` would be an open redirect, and `to: '/'`
+    // would drop the destination the visitor asked for. `returnTargetOf` falls
+    // back to `/` itself, which `return-target.test.ts` executes.
+    const hook = source(SIGN_IN_HOOK);
+    const handler = submitHandler(hook);
 
     expect(handler, 'the sign-in screen has no submit handler').not.toBe('');
-    expect(handler, 'a successful sign-in does not navigate to /').toMatch(
-      /navigate\(\{\s*to:\s*'\/'\s*\}\)/,
+    expect(occurrences(handler, 'navigate('), 'a sign-in navigates more than once').toBe(1);
+    expect(handler, 'a successful sign-in does not follow the validated target').toMatch(
+      /navigate\(\{\s*href:\s*returnTargetOf\(povratak,\s*knownPathOf\(router\)\),\s*replace:\s*true\s*\}\)/,
+    );
+    expect(hook, 'the return target is not read off the route').toMatch(
+      /const \{\s*povratak\s*\}\s*=\s*useSearch\(/,
+    );
+  });
+
+  it('keeps focus on a pending submit, and moves it on a refusal', () => {
+    // `disabled={pending}` took the button a person had just pressed out of the
+    // tab order and dropped keyboard focus to `<body>` mid-flow. The button is
+    // `aria-disabled` now and the in-flight ref refuses the second submit; a
+    // refusal moves focus to the password field the message describes, in the
+    // handler, on both the refused and the thrown path.
+    const button = buttonElements(source(SIGN_IN_FORM))[0] ?? '';
+    const handler = submitHandler(source(SIGN_IN_HOOK));
+
+    expect(button, 'the submit button is disabled natively, which drops focus').not.toMatch(
+      /\sdisabled=/,
+    );
+    expect(button, 'the pending state is not stated').toContain('aria-disabled={pending}');
+    // FOCUS AFTER THE COMMIT: the refusal is rendered through `flushSync`
+    // first, so the field is announced with the error it now points at.
+    expect(handler, 'a refused sign-in leaves focus where it was, or focuses before the commit').toMatch(
+      /!outcome\.ok\)\s*\{[\s\S]{0,400}?flushSync\(\(\) => \{\s*setFailure\(outcome\.code\);\s*\}\);\s*password\.focus\(\);\s*return;/,
+    );
+    expect(handler, 'an unavailable sign-in leaves focus where it was, or focuses before the commit').toMatch(
+      /flushSync\(\(\) => \{\s*setFailure\(SIGN_IN_UNAVAILABLE\);\s*\}\);\s*password\.focus\(\);/,
     );
   });
 
@@ -6568,22 +6621,154 @@ describe('the accent control offers a curated set and nothing else', () => {
     );
   });
 
-  it('keeps a failed refetch out of the write’s own outcome', () => {
+  it.each(['submit', 'uploadLogo', 'applyAccent', 'applyFireRanks'])(
+    'keeps a failed refetch out of the write’s own outcome on %s',
+    (handler) => {
     // The row has already changed by the time the invalidation runs, so a
     // refetch that rejects must not be reported as a refused save: that tells
     // somebody their accent was rejected while the database holds it and the
     // next reload shows it. Its own `catch`, and no `setFailure` inside it.
-    const accentWrite = componentFunction(source(SETTINGS), 'applyAccent');
+    // OVER ALL FOUR WRITES since the settings fix: part C fixed the accent
+    // path only, and `submit` and `uploadLogo` kept the invalidation inside
+    // the write's own `try`.
+    const write = componentFunction(source(SETTINGS), handler);
     const invalidation =
       /try \{\s*await queryClient\.invalidateQueries[\s\S]*?catch[\s\S]*?\n {6}\}/.exec(
-        accentWrite,
+        write,
       )?.[0] ?? '';
 
+    expect(write, `no ${handler} function to read`).not.toBe('');
+    expect(
+      occurrences(write, 'invalidateQueries('),
+      'an invalidation escapes its own try',
+    ).toBe(occurrences(invalidation, 'invalidateQueries('));
     expect(invalidation, 'the invalidation is not guarded at all').not.toBe('');
     expect(invalidation, 'a failed refetch reports the landed write as refused').not.toContain(
       'setFailure(',
     );
     expect(invalidation, 'a failed refetch is swallowed in silence').toContain('console.error(');
+    },
+  );
+
+  it('marks and focuses the control a refused save names, and only that one', () => {
+    // The database names the constraint, and `refusedOrganizationFieldOf`
+    // (executed in `snapshot.test.ts`) maps it to a control. What is left to
+    // pin here is the wiring: each of the four controls compares against its
+    // OWN field, and a refused save moves focus to the named control in the
+    // handler — never an effect.
+    const card = source(SETTINGS_CARD);
+    const save = submitHandler(source(SETTINGS));
+
+    for (const [id, field] of [
+      ['organization-name', 'ORGANIZATION_NAME_FIELD'],
+      ['organization-leave-day', 'ORGANIZATION_LEAVE_DAY_FIELD'],
+      ['organization-leave-month', 'ORGANIZATION_LEAVE_MONTH_FIELD'],
+      ['organization-accent', 'ORGANIZATION_ACCENT_FIELD'],
+    ] as const) {
+      const control = new RegExp(`id="${id}"[\\s\\S]{0,400}?aria-invalid=\\{([^}]*)\\}`).exec(card)?.[1];
+
+      expect(control, `${id} carries no aria-invalid`).toBe(`refusedField === ${field}`);
+    }
+    expect(save, 'a refused save does not keep the field it names').toMatch(
+      /setRefusedField\(outcome\.field \?\? null\)/,
+    );
+    expect(save, 'a refused save does not move focus to the named control').toMatch(
+      /controls\[outcome\.field\]\?\.focus\(\)/,
+    );
+    // THE MAP, read entry by entry: each field sends focus to the element its
+    // own ref holds, the shorthand `name` included — a `name` entry pointing
+    // at `day` would pass a substring check for `name,` and focus the wrong
+    // control.
+    const body = /const controls[^=]*=\s*\{([\s\S]*?)\};/.exec(save)?.[1] ?? '';
+    const entries = new Map(
+      body
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry !== '')
+        .map((entry) => {
+          const [key, value] = entry.split(':').map((part) => part.trim());
+
+          return [key, value ?? key] as const;
+        }),
+    );
+
+    expect(body, 'no controls map to read').not.toBe('');
+    expect([...entries.keys()].sort(), 'the controls map names other fields').toEqual(
+      ['leaveYearStartDay', 'leaveYearStartMonth', 'name'],
+    );
+    for (const [field, element, ref] of [
+      ['name', 'name', 'nameField'],
+      ['leaveYearStartDay', 'day', 'dayField'],
+      ['leaveYearStartMonth', 'month', 'monthField'],
+    ] as const) {
+      expect(entries.get(field), `a ${field} refusal focuses another control`).toBe(element);
+      expect(save, `${element} is not the element ${ref} holds`).toContain(
+        `const ${element} = ${ref}.current;`,
+      );
+    }
+    // THE OTHER WRITES KEEP THE FIELD TOO, and it is shown only while its
+    // refusal is: a field outliving the refusal would mark a valid control.
+    for (const handler of ['applyAccent', 'applyFireRanks']) {
+      expect(
+        componentFunction(source(SETTINGS), handler),
+        `${handler} drops the field its refusal names`,
+      ).toMatch(/setFailure\(outcome\.code\);[\s\S]{0,200}?setRefusedField\(outcome\.field \?\? null\)/);
+    }
+    expect(source(SETTINGS_HOOK), 'the field outlives the refusal it explains').toContain(
+      'refusedField: failure === null ? null : refusedField,',
+    );
+  });
+
+  it('draws the form’s shape while the read is pending, and says it is busy', () => {
+    const gated = componentFunction(source(SETTINGS), 'renderSettings');
+    const skeleton = /isPending \? \(([\s\S]*?)\) : null;/.exec(gated)?.[1] ?? '';
+
+    expect(skeleton, 'no pending branch to read').not.toBe('');
+    expect(skeleton, 'the skeleton region is not marked busy').toMatch(/^\s*<div aria-busy\b/);
+    expect(
+      occurrences(skeleton, '<FieldSkeleton'),
+      'the skeleton does not reserve one row per field',
+    ).toBe(4);
+  });
+
+  it('offers the failed read a retry that re-reads the one query', () => {
+    const hook = source(SETTINGS_HOOK);
+    const retry = componentFunction(hook, 'retryRead');
+    const button = buttonElements(source(SETTINGS_CARD)).find((element) =>
+      element.includes('onClick={retryRead}'),
+    );
+
+    expect(retry, 'no retryRead function to read').not.toBe('');
+    expect(retry, 'the retry does not re-read the snapshot query').toContain('snapshot.refetch()');
+    expect(hook, 'the retry is offered for a code whose message asks for none').toContain(
+      'offersReadRetry(readFailure)',
+    );
+    // A THROWN read is a failed read: the refusal and the retry both read
+    // `readFailureOf(snapshot)` (executed in `snapshot.test.ts`), never the
+    // answer alone, which is `undefined` when the query function threw.
+    expect(hook, 'a read that threw is not treated as a failed read').toContain(
+      'const readFailure = readFailureOf(snapshot);',
+    );
+    expect(hook, 'the refusal ignores a read that threw').toMatch(/failure \?\? readFailure;/);
+    // AFTER THE RETRY: the answer is committed through `flushSync`, then a
+    // success focuses the name field (the button just unmounted) and every
+    // attempt re-keys the alert, so a second failure is announced again.
+    expect(retry, 'the retry does not commit before deciding focus').toMatch(
+      /await snapshot\.refetch\(\);\s*flushSync\(\(\) => \{\s*setReadAttempts\(/,
+    );
+    expect(retry, 'a successful retry drops focus to the body').toMatch(
+      /\}\);\s*if \(retried\.data\?\.ok === true\) nameField\.current\?\.focus\(\);/,
+    );
+    expect(source(SETTINGS_CARD), 'a retry that fails again is not re-announced').toMatch(
+      /<Notice id=\{ORGANIZATION_ERROR_ID\} role="alert" key=\{readAttempts\}>/,
+    );
+    expect(button, 'nothing on the card calls the retry').toBeDefined();
+    expect(source(SETTINGS_CARD), 'the retry is not labelled by the existing key').toMatch(
+      /onClick=\{retryRead\}\s*>\s*\{t\('shell\.retry'\)\}/,
+    );
+    expect(source(SETTINGS_CARD), 'the retry renders whether or not a read failed').toMatch(
+      /\{readRetry \? \(\s*<Button/,
+    );
   });
 
   it('shows what the row holds beside the control that changes it', () => {
@@ -7339,12 +7524,13 @@ describe('the two member forms write through the seam and keep nothing back', ()
     const handler = submitHandler(source(MEMBER_EDIT));
 
     expect(handler, 'no submit handler to read').not.toBe('');
+    expect(handler.search(/refreshAfterWrite\(/), 'the save no longer refreshes the list').toBeGreaterThan(0);
     expect(
       handler.indexOf('setFailure(outcome.refusal)'),
       'the list is refreshed before the refusal is surfaced, so a failed refresh replaces it',
-    ).toBeLessThan(handler.indexOf('invalidateQueries('));
+    ).toBeLessThan(handler.search(/refreshAfterWrite\(/));
     expect(handler, 'the refresh can still take the refusal down with it').toMatch(
-      /try \{[^}]*invalidateQueries\([\s\S]{0,160}?\}\s*catch/,
+      /try \{[^}]*refreshAfterWrite\([\s\S]{0,240}?\}\s*catch/,
     );
   });
 
@@ -7352,11 +7538,14 @@ describe('the two member forms write through the seam and keep nothing back', ()
     // `organizacija.tsx:293`'s rule, and there is no `useMutation` anywhere in
     // this application to carry an optimistic patch instead. What is on screen
     // after a write is what the database holds.
-    for (const file of [MEMBER_CREATE, MEMBER_EDIT]) {
-      expect(source(file), 'the write does not refresh the list').toMatch(
-        /invalidateQueries\(\{\s*queryKey:\s*MEMBERS_LIST_KEY\s*\}\)/,
-      );
-    }
+    expect(source(MEMBER_CREATE), 'the write does not refresh the list').toMatch(
+      /invalidateQueries\(\{\s*queryKey:\s*MEMBERS_LIST_KEY\s*\}\)/,
+    );
+    // The edit screen's writes re-read the list through the declared
+    // dependents' one call, the list as the own key.
+    expect(source(MEMBER_EDIT), 'the write does not refresh the list').toMatch(
+      /refreshAfterWrite\(\s*queryClient,\s*MEMBERS_LIST_KEY,/,
+    );
   });
 
   it('confirms a save, because nothing else on the edit screen would', () => {
@@ -8108,5 +8297,111 @@ describe('the detectors find what they claim to find', () => {
     // both directions of it pass on any file.
     expect(resourceKeys()).toContain('auth.heading');
     expect(resourceKeys()).toContain('count.days');
+  });
+});
+
+describe('a team or membership write re-reads every screen that shows it, once it landed', () => {
+  /**
+   * THE AMENDED CONVENTION (AD-13): a write invalidates its own key AND every
+   * key whose read embeds or derives from the rows it writes. The lists are
+   * declared once, in `@/features/teams/services/dependents`, and executed
+   * against a real cache by `dependents.test.ts`. What is pinned here is the
+   * wiring no node test can run: each write hands its own key and ITS list, and
+   * the list only once the write landed — a refusal changed no row.
+   */
+  const MEMBER_EDIT_HOOK = join(MEMBERS_FEATURE, 'hooks', 'use-member-edit.ts');
+  /** The keys the member edit screen itself reads: the only ones it may name. */
+  const MEMBER_EDIT_OWN = ['MEMBERS_LIST_KEY', 'TEAMS_LIST_KEY', 'ORGANIZATION_SNAPSHOT_KEY'];
+  const refreshesIn = (text: string): string[] =>
+    [...text.matchAll(/refreshAfterWrite\(([^;]*?)\);/g)].map((found) =>
+      (found[1] ?? '').replace(/\s+/g, ' ').replace(/,\s*$/, '').trim(),
+    );
+
+  it.each([
+    { handler: 'changeTeam', gate: 'outcome.ok', dependents: 'MEMBERSHIP_WRITE_DEPENDENTS' },
+    { handler: 'changeStatus', gate: 'outcome.ok', dependents: 'MEMBERSHIP_WRITE_DEPENDENTS' },
+    { handler: 'submit', gate: 'outcome.ok || outcome.refusal.saved', dependents: 'MEMBER_SAVE_DEPENDENTS' },
+  ])('re-reads $dependents after a landed $handler on the member edit screen', ({ handler, gate, dependents }) => {
+    const body = namedHandler(source(MEMBER_EDIT_HOOK), handler);
+
+    expect(body.length, `${handler} could not be extracted`).toBeGreaterThan(80);
+    expect(refreshesIn(body), `${handler} does not re-read its declared dependents once it landed`).toEqual([
+      `queryClient, MEMBERS_LIST_KEY, ${gate} ? ${dependents} : NO_DEPENDENTS`,
+    ]);
+    // AFTER the outcome is known, and in a `try` of its own, so a failed
+    // re-read never turns a landed write into a refusal.
+    expect(body.indexOf('const outcome = await'), `${handler} re-reads before it writes`).toBeLessThan(
+      body.indexOf('refreshAfterWrite('),
+    );
+    expect(body, `${handler}'s re-read can take the outcome down with it`).toMatch(
+      /try \{\s*await refreshAfterWrite\([\s\S]{0,800}?\}\s*catch \(cause\) \{\s*console\.error\(/,
+    );
+  });
+
+  it('names no key on the member edit screen besides its own reads', () => {
+    // Every other key it re-reads is a declared dependent, reached only
+    // through `refreshAfterWrite`.
+    const hook = source(MEMBER_EDIT_HOOK);
+    const named = [...hook.matchAll(/invalidateQueries\(\{ queryKey: (\w+) \}\)/g)].map((found) => found[1]);
+
+    expect(named.length, 'the reader found no re-read at all').toBeGreaterThan(0);
+    expect(occurrences(hook, 'invalidateQueries('), 'a re-read the reader cannot see').toBe(named.length);
+    for (const key of named) expect(MEMBER_EDIT_OWN, `${String(key)} is not the screen's own`).toContain(key);
+    expect(hook, 'a dependent is named outside the declared lists').not.toMatch(/OWN_TEAM_KEY|TEAM_ROSTERS?_KEY/);
+  });
+
+  it.each([
+    { hook: TEAM_LIST_HOOK, state: 'teamsSurfaceStateOf', notice: 'teamsNoticeOf' },
+    { hook: join(MEMBERS_FEATURE, 'hooks', 'use-member-list.ts'), state: 'membersSurfaceStateOf', notice: 'membersNoticeOf' },
+    { hook: HOUR_BAND_LIST_HOOK, state: 'hourBandsSurfaceStateOf', notice: 'hourBandsNoticeOf' },
+    { hook: SHIFT_TYPE_LIST_HOOK, state: 'shiftTypesSurfaceStateOf', notice: 'shiftTypesNoticeOf' },
+    { hook: TEAM_ROSTER_HOOK, state: 'teamRosterSurfaceStateOf', notice: 'teamRosterNoticeOf' },
+  ])('announces a paused refetch on the list through $notice, never through the state', ({ hook, state, notice }) => {
+    // A PAUSE OVER CACHED ROWS IS NOT A REFUSAL (the edit forms stay mounted),
+    // so a list that read `refusal` off the state would say nothing about it.
+    const text = source(hook);
+
+    expect(text, `${hook} no longer reads the state`).toContain(`const state = ${state}(answer);`);
+    expect(text, `${hook} announces the state's refusal, not the notice`).toContain(
+      `const refusal = ${notice}(state);`,
+    );
+    expect(text, `${hook} still takes the refusal off the state`).not.toMatch(
+      /const \{[^}]*\brefusal\b[^}]*\} = state;/,
+    );
+  });
+
+  it.each([TEAM_EDIT_HOOK, HOUR_BAND_EDIT_HOOK, SHIFT_TYPE_EDIT_HOOK, join(MEMBERS_FEATURE, 'hooks', 'use-member-edit.ts')])(
+    'keeps the edit form on a paused refetch in %s',
+    (hook) => {
+      // The edit hooks read the plain refusal: a pause never hides the form.
+      expect(source(hook), 'an edit form hides itself on a pause').not.toMatch(/NoticeOf\(/);
+    },
+  );
+
+  it('re-reads after a team create only once the create landed', () => {
+    // A refused create returns before the re-read: nothing was written, and
+    // the builder has no new team to bind.
+    const body = namedHandler(source(TEAM_LIST_HOOK), 'submit');
+    const refused = /if \(!outcome\.ok\) \{[\s\S]*?\breturn;\s*\}/.exec(body);
+
+    expect(body.length, 'submit could not be extracted').toBeGreaterThan(80);
+    expect(refused, 'the refused create no longer returns').not.toBeNull();
+    expect(occurrences(body, 'refreshAfterWrite('), 'the create re-reads more than once').toBe(1);
+    expect(
+      (refused?.index ?? Infinity) + (refused?.[0].length ?? 0),
+      'the create re-reads before its refusal returns',
+    ).toBeLessThan(body.indexOf('refreshAfterWrite('));
+  });
+
+  it('re-reads the team change dependents only after a landed rename or archive', () => {
+    const hook = source(TEAM_EDIT_HOOK);
+
+    for (const name of ['submit', 'archive']) {
+      const body = namedHandler(hook, name);
+
+      expect(body.length, `${name} could not be extracted`).toBeGreaterThan(80);
+      expect(occurrences(body, 'refresh('), `${name} re-reads more than once`).toBe(1);
+      expect(body, `${name} re-reads the dependents whatever the outcome`).toContain('await refresh(outcome.ok);');
+    }
   });
 });

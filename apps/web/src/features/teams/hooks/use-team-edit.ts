@@ -2,7 +2,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useRef, useState, type FormEvent } from 'react';
 
-import { ROTATION_KEY } from '@/features/rotation/services/list';
+import {
+  NO_DEPENDENTS,
+  TEAM_CHANGE_DEPENDENTS,
+  refreshAfterWrite,
+} from '@/features/teams/services/dependents';
 import {
   TEAMS_LIST_KEY,
   TEAMS_TABLE,
@@ -74,16 +78,18 @@ export function useTeamEdit(id: string) {
     void navigate({ to: '/ljudi/smjene' });
   }
 
-  /** Re-read the one list, so both screens show what the database holds now. */
-  async function refresh(): Promise<void> {
+  /**
+   * Re-read the one list, so both screens show what the database holds now,
+   * on either outcome. Once the write LANDED, every read that shows a team's
+   * name or flag is re-read beside it — the builder, the member list, Danas's
+   * line, the rosters and the calendar (`TEAM_CHANGE_DEPENDENTS`) — all
+   * started together. A failed or paused re-read resolves rather than rejects
+   * (pinned in `dependents.test.ts`); the `try` is for a client that throws
+   * before any re-read starts.
+   */
+  async function refresh(landed: boolean): Promise<void> {
     try {
-      // The rotation builder binds every active team, from its own snapshot
-      // (story 2.3b), so a rename or an archive shows there too. Both start
-      // together.
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: TEAMS_LIST_KEY }),
-        queryClient.invalidateQueries({ queryKey: ROTATION_KEY }),
-      ]);
+      await refreshAfterWrite(queryClient, TEAMS_LIST_KEY, landed ? TEAM_CHANGE_DEPENDENTS : NO_DEPENDENTS);
     } catch (cause) {
       console.error(TEAM_WRITE_UNAVAILABLE, cause);
     }
@@ -123,7 +129,7 @@ export function useTeamEdit(id: string) {
         setSaved(TEAM_RENAMED);
       }
 
-      await refresh();
+      await refresh(outcome.ok);
       // AFTER the re-read, so a remount shows what the database now holds.
       setRenames((current) => renamesAfter(current, outcome));
     } catch (cause) {
@@ -160,7 +166,7 @@ export function useTeamEdit(id: string) {
         setSaved(TEAM_ARCHIVED);
       }
 
-      await refresh();
+      await refresh(outcome.ok);
     } catch (cause) {
       console.error(TEAM_WRITE_UNAVAILABLE, cause);
       setArchiveFailure(TEAM_WRITE_UNAVAILABLE);

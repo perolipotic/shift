@@ -154,6 +154,17 @@ export function gridOpensOnKeyUp(
   return key === ' ' && armed && !composing && isOpenGridKey(key, modifiers);
 }
 
+/**
+ * How a focused cell is scrolled into view: the least scroll that shows
+ * it whole, on both axes, inside its `scroll-margin` — the sticky date
+ * column's width and the sticky header's height (`calendar-grid.tsx`) — so it
+ * never lands under either (package 3c).
+ */
+export const GRID_REVEAL: ScrollIntoViewOptions = { block: 'nearest', inline: 'nearest' };
+
+/** The state a focused cell is revealed in: its focus shown, so a keyboard, not a pointer, put it there. */
+export const FOCUS_VISIBLE = ':focus-visible';
+
 /** Every data cell of the grid, and the one a position names (by `data-row`, `data-column`). */
 export const GRID_CELL_SELECTOR = '[role="gridcell"]';
 

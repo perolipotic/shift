@@ -7,6 +7,7 @@ import {
   hourBandDisplayRowsOf,
   hourBandPreviewOf,
   hourBandsQueryOptions,
+  hourBandsNoticeOf,
   hourBandsSurfaceStateOf,
   partitionBarOf,
 } from '@/features/hour-bands/services/list';
@@ -57,7 +58,11 @@ export function useHourBandList() {
 
   const answer = useQuery(hourBandsQueryOptions(() => supabaseClient().from(HOUR_BANDS_TABLE)));
 
-  const { bands, refusal, loading } = hourBandsSurfaceStateOf(answer);
+  const state = hourBandsSurfaceStateOf(answer);
+  const { bands, loading } = state;
+  // THE LIST'S NOTICE: the refusal, or the unavailable message beside rows a
+  // refetch paused offline over, which is never a refusal (an edit form keeps them).
+  const refusal = hourBandsNoticeOf(state);
   const rows = bands === null ? null : hourBandDisplayRowsOf(bands);
   const bar = bands === null ? null : partitionBarOf(bands);
   const preview = bands === null ? null : hourBandPreviewOf(bands, typedStart, null);

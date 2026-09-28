@@ -386,6 +386,19 @@
     font-family: var(--font-heading);
   }
 
+  /* The phone's sticky bottom bar (`chrome.tsx`) covers the page's last 4 rem
+   * below 640 px — the space the content above it already clears with its own
+   * `pb-[calc(4rem+…)]` — so the page's scroll padding says the same: a
+   * `scrollIntoView` (the calendar's focused cell) stops above the bar rather
+   * than under it. From 640 px up there is no bar. */
+  html {
+    scroll-padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+
+    @media (min-width: 640px) {
+      scroll-padding-bottom: 0;
+    }
+  }
+
   /* The focus indicator in a forced-colours mode, which is the one place the
    * token layer cannot reach.
    *
@@ -443,19 +456,44 @@
  * cross-hatch: leave at −45°, uncovered at 45°. `hatch-uncovered` above is the
  * hour band bar's and stays as it is.
  *
- * Never colour alone: each mark carries a glyph and a label beside it. */
+ * Never colour alone: each mark carries a glyph and a label beside it.
+ *
+ * FORCED COLOURS (Windows High Contrast) drop every box-shadow and every
+ * gradient `background-image`, so each treatment carries its own fallback
+ * there, in system colour keywords, since colours are not ours to choose: a
+ * RING becomes an inset OUTLINE — conflict's solid in `CanvasText`,
+ * overridden's dashed in `Highlight`, both a double band no deeper than the
+ * cell's 4 px padding, so it never covers the label — and a HATCH becomes
+ * a BORDER — leave dotted, uncovered dashed, both dotted across and dashed
+ * down. Outline and border are separate properties, so a ring and a hatch on
+ * one cell still show together. */
 @utility modifier-ring-conflict {
   box-shadow: inset 0 0 0 2px var(--destructive);
+
+  @media (forced-colors: active) {
+    outline: 2px solid CanvasText;
+    outline-offset: -2px;
+  }
 }
 
 @utility modifier-ring-overridden {
   box-shadow: inset 0 0 0 2px var(--modifier-overridden);
+
+  @media (forced-colors: active) {
+    outline: 2px dashed Highlight;
+    outline-offset: -2px;
+  }
 }
 
 @utility modifier-ring-conflict-overridden {
   box-shadow:
     inset 0 0 0 2px var(--destructive),
     inset 0 0 0 4px var(--modifier-overridden);
+
+  @media (forced-colors: active) {
+    outline: 4px double CanvasText;
+    outline-offset: -4px;
+  }
 }
 
 @utility modifier-hatch-leave {
@@ -466,6 +504,10 @@
     transparent 4px,
     transparent 8px
   );
+
+  @media (forced-colors: active) {
+    border: 2px dotted CanvasText;
+  }
 }
 
 @utility modifier-hatch-uncovered {
@@ -476,6 +518,10 @@
     transparent 4px,
     transparent 8px
   );
+
+  @media (forced-colors: active) {
+    border: 2px dashed CanvasText;
+  }
 }
 
 @utility modifier-hatch-leave-uncovered {
@@ -494,4 +540,9 @@
       transparent 4px,
       transparent 8px
     );
+
+  @media (forced-colors: active) {
+    border: 2px dotted CanvasText;
+    border-inline-style: dashed;
+  }
 }

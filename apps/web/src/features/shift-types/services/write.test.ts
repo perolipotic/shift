@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   SHIFT_TYPES_UNAVAILABLE,
+  shiftTypesSurfaceStateOf,
   type ShiftTypeRow,
   type ShiftTypesSnapshot,
   type ShiftTypesSurfaceState,
@@ -754,6 +755,7 @@ describe('fields, keys and messages', () => {
       snapshot: value,
       refusal: failed ? SHIFT_TYPES_UNAVAILABLE : null,
       loading,
+      paused: false,
     });
 
     expect(shiftTypeFormStateOf(state(null, true), 'pilot-dan')).toEqual({ type: null, refusal: null });
@@ -766,5 +768,11 @@ describe('fields, keys and messages', () => {
       type: null,
       refusal: null,
     });
+    // A PAUSE IS NOT A REFUSAL: over a snapshot a refetch paused offline over,
+    // the edit form stays with what was typed.
+    const paused = shiftTypesSurfaceStateOf({ isPending: false, isError: false, fetchStatus: 'paused', data: snapshot });
+
+    expect(paused.paused, 'the state is not the paused one').toBe(true);
+    expect(shiftTypeFormStateOf(paused, 'pilot-dan')).toEqual({ type: DAN, refusal: null });
   });
 });

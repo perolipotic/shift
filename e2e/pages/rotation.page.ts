@@ -31,6 +31,21 @@ export class RotationPage extends BasePage {
     return this.dialog(shiftTypes.addHeading);
   }
 
+  /** The add dialog's name field. */
+  get addShiftTypeName(): Locator {
+    return this.addShiftTypeDialog.getByLabel(shiftTypes.name, { exact: true });
+  }
+
+  /** The add dialog's Odustani. */
+  get addShiftTypeCancel(): Locator {
+    return this.addShiftTypeDialog.getByRole('button', { name: shiftTypes.cancel, exact: true });
+  }
+
+  /** The add dialog's own close control. */
+  get addShiftTypeClose(): Locator {
+    return this.addShiftTypeDialog.getByRole('button', { name: shiftTypes.close, exact: true });
+  }
+
   /** Adds a shift type through its dialog: working with its times, or non-working with `null`. */
   async addShiftType(name: string, times: readonly [string, string] | null): Promise<void> {
     await this.shiftTypeOpenButton.click();

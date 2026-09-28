@@ -5,11 +5,16 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import { formatDate, isRenderableTimeZone } from '@/lib/i18n/format';
-import { organizationMessageKey } from '@/features/organization/utils/messages';
+import { offersReadRetry, organizationMessageKey } from '@/features/organization/utils/messages';
 import { SETTINGS_SCREEN_PARTS } from '@/features/organization/settings-screen.fixture';
 import {
+  ORGANIZATION_ACCENT_FIELD,
   ORGANIZATION_COLUMNS,
+  ORGANIZATION_CONSTRAINT_FIELDS,
   ORGANIZATION_INVALID,
+  ORGANIZATION_LEAVE_DAY_FIELD,
+  ORGANIZATION_LEAVE_MONTH_FIELD,
+  ORGANIZATION_NAME_FIELD,
   ORGANIZATION_READ_STALE_MS,
   ORGANIZATION_NAME_BLANK,
   ORGANIZATION_REFUSED,
@@ -21,7 +26,9 @@ import {
   organizationSnapshotOf,
   organizationSnapshotQueryOptions,
   organizationTimeZone,
+  readFailureOf,
   readOrganization,
+  refusedOrganizationFieldOf,
   updateOrganization,
   type OrganizationEdits,
   type OrganizationFailure,
@@ -821,15 +828,51 @@ describe('the update writes the edited fields and answers with the row', () => {
     expect(await updateOrganization(answering(BLANK_NAME), PILOT_ROW.id, EDITS)).toEqual({
       ok: false,
       code: ORGANIZATION_NAME_BLANK,
+      field: ORGANIZATION_NAME_FIELD,
     });
   });
 
-  it('does not name the field when some other shape refuses the value', async () => {
+  it('keeps the general message for some other shape, and marks the control it names', async () => {
     // A leave-year day of 30 is refused by `between 1 and 28`. Reporting it as a
-    // blank name would be actionable and wrong, which is worse than general.
+    // blank name would be actionable and wrong, which is worse than general —
+    // so the MESSAGE stays general, and the constraint's name is what marks
+    // the day control as the one refused.
     expect(
       await updateOrganization(answering(LEAVE_DAY_OUT_OF_RANGE), PILOT_ROW.id, EDITS),
-    ).toEqual({ ok: false, code: ORGANIZATION_INVALID });
+    ).toEqual({ ok: false, code: ORGANIZATION_INVALID, field: ORGANIZATION_LEAVE_DAY_FIELD });
+  });
+
+  it('does not report a blank name because a typed value spells the name check', async () => {
+    const misleading: PostgrestAnswer = {
+      data: null,
+      error: {
+        code: '23514',
+        message:
+          'new row for relation "organizations" violates check constraint "organizations_leave_year_start_day_check"',
+        details: 'Failing row contains (…, organizations_name_check, …, 29).',
+      },
+    };
+
+    expect(await updateOrganization(answering(misleading), PILOT_ROW.id, EDITS)).toEqual({
+      ok: false,
+      code: ORGANIZATION_INVALID,
+      field: ORGANIZATION_LEAVE_DAY_FIELD,
+    });
+  });
+
+  it('marks nothing when the constraint names no control on the form', async () => {
+    const unmapped: PostgrestAnswer = {
+      data: null,
+      error: {
+        code: '23514',
+        message:
+          'new row for relation "organizations" violates check constraint "organizations_timezone_check"',
+      },
+    };
+    const outcome = await updateOrganization(answering(unmapped), PILOT_ROW.id, EDITS);
+
+    expect(outcome).toEqual({ ok: false, code: ORGANIZATION_INVALID });
+    expect('field' in outcome, 'an unmapped refusal carries a field anyway').toBe(false);
   });
 
   it('reports every non-constraint error as the service', async () => {
@@ -946,6 +989,116 @@ describe('the organization is the frame every date renders in', () => {
 });
 
 // ---------------------------------------------------------------- the mapping
+
+describe('a check violation is attributed to the control its constraint names', () => {
+  /** A check violation naming one constraint, as PostgREST reports it. */
+  function violating(constraint: string, code = '23514') {
+    return {
+      code,
+      message: `new row for relation "organizations" violates check constraint "${constraint}"`,
+      details: 'Failing row contains (…).',
+    };
+  }
+
+  it.each([
+    ['organizations_name_check', ORGANIZATION_NAME_FIELD],
+    ['organizations_leave_year_start_day_check', ORGANIZATION_LEAVE_DAY_FIELD],
+    ['organizations_leave_year_start_month_check', ORGANIZATION_LEAVE_MONTH_FIELD],
+    ['organizations_brand_accent_check', ORGANIZATION_ACCENT_FIELD],
+  ])('attributes %s to its control', (constraint, field) => {
+    expect(refusedOrganizationFieldOf(violating(constraint))).toBe(field);
+  });
+
+  it.each([
+    'organizations_organization_type_check',
+    'organizations_timezone_check',
+    'organizations_locale_check',
+    'organizations_slug_check',
+  ])('attributes %s to nothing, because no control edits it', (constraint) => {
+    expect(refusedOrganizationFieldOf(violating(constraint))).toBeNull();
+  });
+
+  it('attributes nothing that is not a check violation, whatever it names', () => {
+    expect(refusedOrganizationFieldOf(violating('organizations_name_check', '57014'))).toBeNull();
+    expect(refusedOrganizationFieldOf({ code: '23514' })).toBeNull();
+  });
+
+  it('reads the constraint from the message only, never from details', () => {
+    // `details` is the failing row — the values the person typed.
+    expect(
+      refusedOrganizationFieldOf({
+        code: '23514',
+        details: 'organizations_leave_year_start_month_check',
+      }),
+    ).toBeNull();
+  });
+
+  it('is not misled by a typed value that spells another constraint', () => {
+    // The day is refused while the NAME the person typed spells the name
+    // check: the refusal is the day's, and the code is the general one.
+    const error = {
+      code: '23514',
+      message:
+        'new row for relation "organizations" violates check constraint "organizations_leave_year_start_day_check"',
+      details: 'Failing row contains (…, organizations_name_check, …, 29).',
+    };
+
+    expect(refusedOrganizationFieldOf(error)).toBe(ORGANIZATION_LEAVE_DAY_FIELD);
+  });
+
+  it('matches the quoted name exactly, not a constraint it merely contains', () => {
+    expect(
+      refusedOrganizationFieldOf(violating('organizations_name_check_extended')),
+    ).toBeNull();
+  });
+
+  it('maps four constraints to four distinct controls', () => {
+    expect(new Set(ORGANIZATION_CONSTRAINT_FIELDS.map(([, field]) => field)).size).toBe(
+      ORGANIZATION_CONSTRAINT_FIELDS.length,
+    );
+  });
+});
+
+describe('a read that threw is a failed read, not a blank card', () => {
+  it('reads a thrown query with no answer as the service being unavailable', () => {
+    expect(readFailureOf({ data: undefined, isError: true })).toBe(ORGANIZATION_UNAVAILABLE);
+  });
+
+  it('reads a settled refusal as its own code, whatever the error flag says', () => {
+    const refused: OrganizationOutcome = { ok: false, code: ORGANIZATION_REFUSED };
+
+    expect(readFailureOf({ data: refused, isError: false })).toBe(ORGANIZATION_REFUSED);
+    expect(readFailureOf({ data: refused, isError: true })).toBe(ORGANIZATION_REFUSED);
+  });
+
+  it('reads a snapshot, or a read not yet settled, as no failure', () => {
+    const snapshot = organizationSnapshotOf(PILOT_ROW);
+
+    if (snapshot === null) throw new Error('the pilot row is not a snapshot');
+    expect(readFailureOf({ data: { ok: true, snapshot }, isError: true })).toBeNull();
+    expect(readFailureOf({ data: undefined, isError: false })).toBeNull();
+  });
+});
+
+describe('a failed read offers a retry only where trying again can help', () => {
+  it('offers one when the service could not be reached', () => {
+    expect(offersReadRetry(ORGANIZATION_UNAVAILABLE)).toBe(true);
+  });
+
+  const OTHERS: OrganizationFailure[] = [
+    ORGANIZATION_REFUSED,
+    ORGANIZATION_NAME_BLANK,
+    ORGANIZATION_INVALID,
+    ORGANIZATION_TIMEZONE_UNKNOWN,
+  ];
+
+  it.each(OTHERS)(
+    'offers none for %s, whose message asks for something else',
+    (code) => {
+      expect(offersReadRetry(code)).toBe(false);
+    },
+  );
+});
 
 describe('every failure code has its own message key', () => {
   const CODES: OrganizationFailure[] = [

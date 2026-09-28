@@ -123,10 +123,24 @@ test('the add dialog cannot be dismissed while its create is in flight, and conf
       await teamsPage.addTeam(teamName);
       await inFlight;
 
-      // Cancel is disabled, and Escape and the close control do nothing.
+      // Cancel is disabled, and Escape (once, twice, three times) and the close
+      // control do nothing.
       await expect(teamsPage.addCancelButton).toBeDisabled();
+      // ESCAPE, AGAIN AND AGAIN: a second Escape with no user activation between
+      // is one the browser's close watcher will not let a `cancel` stop.
       await teamsPage.addNameInput.press('Escape');
       await expect(teamsPage.addDialog).toBeVisible();
+      // Pressed from the keyboard with the field kept focused, so a close the
+      // dialog then undoes still shows: focus would move to its first control.
+      for (const presses of [2, 3]) {
+        await teamsPage.addNameInput.focus();
+        for (let press = 0; press < presses; press += 1) await page.keyboard.press('Escape');
+        await expect(teamsPage.addDialog, `${String(presses)} Escapes closed the dialog`).toBeVisible();
+        await expect(
+          teamsPage.addNameInput,
+          `${String(presses)} Escapes closed and reopened it`,
+        ).toBeFocused();
+      }
       await teamsPage.addCloseButton.click();
       await expect(teamsPage.addDialog).toBeVisible();
       await expect(teamsPage.addCancelButton).toBeDisabled();
@@ -147,6 +161,50 @@ test('the add dialog cannot be dismissed while its create is in flight, and conf
   await teamsPage.archiveButton(teamName).click();
   await teamsPage.archiveConfirmButton(teamName).click();
   await expect(teamsPage.statusWith(hr.smjene.archivedDone)).toBeVisible();
+});
+
+test('a renamed team shows under its new name on the member list, without a reload', async ({
+  page,
+  peoplePage,
+  teamsPage,
+  holdRotationForTeams,
+}) => {
+  // ITS OWN TEAM AND MEMBER, per attempt, as the roster test's are: a member
+  // moves teams once per date. The team keeps its member, so it is not
+  // archived at the end, exactly as the roster test's is not.
+  const suffix = randomBytes(3).toString('hex');
+  const teamName = `Smjena ${suffix}`;
+  const renamed = `Preimenovana ${suffix}`;
+  const person = uniqueMember('Preimenovani');
+
+  await teamsPage.goto();
+  await holdRotationForTeams(async () => {
+    await teamsPage.addTeam(teamName);
+    await expect(teamsPage.status).toHaveText(hr.smjene.created);
+  });
+  await peoplePage.createMember(person.name, person.username);
+  await peoplePage.openMember(person.name);
+  await peoplePage.moveToTeam(teamName, person.name);
+  await expect(peoplePage.text(hr.smjene.membership.saved)).toBeVisible();
+
+  // THE MEMBER LIST IS READ AND CACHED, under its five-minute floor, showing
+  // the old name. Everything from here on is a client-side navigation: a
+  // reload would re-read the list whatever the rename did.
+  await peoplePage.goto();
+  await expect(peoplePage.memberRow(person.name)).toContainText(teamName);
+  await peoplePage.teamsLink.click();
+  await teamsPage.openTeam(teamName);
+  await teamsPage.editNameInput.fill(renamed);
+  await teamsPage.editSaveButton.click();
+  await expect(teamsPage.statusWith(hr.smjene.saved)).toBeVisible();
+  await teamsPage.closeButton.click();
+  await expect(page).toHaveURL('/ljudi/smjene');
+
+  // Back on the list: the rename re-read it, so the row names the new team.
+  await peoplePage.navigationLink(hr.nav.ljudi, { exact: true }).click();
+  await expect(page).toHaveURL('/ljudi');
+  await expect(peoplePage.memberRow(person.name)).toContainText(renamed);
+  await expect(peoplePage.memberRow(person.name)).not.toContainText(teamName);
 });
 
 test('a renamed team is confirmed and listed under its new name', async ({ page, teamsPage, holdRotationForTeams }) => {

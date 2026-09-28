@@ -12,6 +12,7 @@ import {
   TEAM_ROSTER_KEY,
   TEAM_ROSTER_READ_STALE_MS,
   readTeamRoster,
+  teamRosterNoticeOf,
   teamRosterSurfaceStateOf,
   type TeamRosterRpc,
 } from '@/features/teams/services/roster';
@@ -44,7 +45,11 @@ export function useTeamRoster(id: string) {
     refetchOnWindowFocus: false,
   });
 
-  const { roster, refusal, loading } = teamRosterSurfaceStateOf(answer);
+  const state = teamRosterSurfaceStateOf(answer);
+  const { roster, loading } = state;
+  // The refusal, or the unavailable message beside a roster a refetch paused
+  // offline over — the message this screen already has, so no new text.
+  const refusal = teamRosterNoticeOf(state);
 
   const organization = useQuery({
     queryKey: ORGANIZATION_SNAPSHOT_KEY,

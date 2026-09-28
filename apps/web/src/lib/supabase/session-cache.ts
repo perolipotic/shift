@@ -39,9 +39,10 @@ import { SESSION_UNRESOLVED } from '@/lib/supabase/client';
  *     the tab is already on, so there is no second navigation.
  *   - NOBODY TO A USER (a sign-in): the cache is cleared and the router is
  *     LEFT ALONE. `SIGNED_IN` fires inside `signInWithPassword`, before the
- *     sign-in hook navigates to `/`; invalidating here would re-run the
- *     sign-in route's guard, which redirects a signed-in visitor, and race the
- *     hook's own navigation. Nothing the previous state rendered belongs to a
+ *     sign-in hook navigates to its return target (the carried deep link, or
+ *     `/`); invalidating here would re-run the sign-in route's guard, which
+ *     redirects a signed-in visitor to `/`, and race the hook's own
+ *     navigation — dropping the deep link. Nothing the previous state rendered belongs to a
  *     user, so there is no mounted screen to reset, and a reset would refetch
  *     the sign-in screen's own reads under the person typing.
  *

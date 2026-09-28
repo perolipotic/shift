@@ -4,6 +4,7 @@ import {
   HOUR_BANDS_UNAVAILABLE,
   type HourBandRow,
   type HourBandsSurfaceState,
+  hourBandsSurfaceStateOf,
 } from '@/features/hour-bands/services/list';
 import {
   HOUR_BAND_NAME_EMPTY,
@@ -54,7 +55,12 @@ function readOf(
   loading: boolean,
   failed = false,
 ): HourBandsSurfaceState {
-  return { bands, refusal: failed ? HOUR_BANDS_UNAVAILABLE : null, loading: failed ? false : loading };
+  return {
+    bands,
+    refusal: failed ? HOUR_BANDS_UNAVAILABLE : null,
+    loading: failed ? false : loading,
+    paused: false,
+  };
 }
 
 interface Recorded {
@@ -406,6 +412,14 @@ describe('the screen state', () => {
       band: null,
       refusal: HOUR_BAND_UNKNOWN,
     });
+  });
+
+  it('keeps the form over bands a refetch paused offline over', () => {
+    // A PAUSE IS NOT A REFUSAL: the edit form keeps what was typed.
+    const paused = hourBandsSurfaceStateOf({ isPending: false, isError: false, fetchStatus: 'paused', data: [DAN] });
+
+    expect(paused.paused, 'the state is not the paused one').toBe(true);
+    expect(hourBandFormStateOf(paused, 'pilot-dan', false)).toEqual({ band: DAN, refusal: null });
   });
 
   it('hides the form and names nothing when the read failed, even over cached rows', () => {
