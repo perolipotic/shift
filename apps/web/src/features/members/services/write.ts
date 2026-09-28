@@ -479,6 +479,20 @@ export async function resetPassword(
 }
 
 /**
+ * The username the database holds, read off the row the update returned.
+ *
+ * The update does not write `username`, and it returns the row as it stands
+ * after the write, so another admin's rename that committed after this screen
+ * read the list is in it. The cached value is used only when the answer carries
+ * no username.
+ */
+export function storedUsernameOf(rows: readonly unknown[] | null, cached: string): string {
+  const stored = fieldsOf(rows?.[0])?.['username'];
+
+  return typeof stored === 'string' ? stored : cached;
+}
+
+/**
  * Save an edit: the ordinary fields through PostgREST, the username through the
  * function, and the function only when the username actually moved.
  *
@@ -532,7 +546,17 @@ export async function saveMember(
     return { ok: false, refusal: { code: MEMBER_WRITE_REFUSED, saved: false } };
   }
 
-  if (!usernameChanged(member.username, edits.username)) return { ok: true };
+  // TWO CONDITIONS, BOTH REQUIRED. The admin edited the field: the entered
+  // value differs from the one this form was opened with. An untouched field
+  // is the cached username, and renaming to it would silently undo another
+  // admin's rename that landed meanwhile. AND the database does not already
+  // hold it: another admin may have made this very rename first.
+  if (
+    !usernameChanged(member.username, edits.username) ||
+    !usernameChanged(storedUsernameOf(answered.data, member.username), edits.username)
+  ) {
+    return { ok: true };
+  }
 
   const renamed = await renameMember(functions, member.id, edits.username);
 
@@ -1066,6 +1090,17 @@ export function statusFailureOf(
   context: StatusContext,
 ): MemberWriteFailure {
   if (error?.code === '23505') return MEMBER_STATUS_DATE_TAKEN;
+
+  // `0023`'s re-check raises the last-admin rule itself, as 23514, when an
+  // admin it counted was demoted while the write waited. BOTH FIELDS, as
+  // `editFailureOf` reads them, and BEFORE class 23, which would otherwise call
+  // it a value to correct.
+  if (
+    error !== null &&
+    `${error.message ?? ''} ${error.details ?? ''}`.includes(ORGANIZATION_WOULD_HAVE_NO_ADMIN)
+  ) {
+    return ORGANIZATION_WOULD_HAVE_NO_ADMIN;
+  }
 
   if (error === null || error.code === '42501') {
     const named = statusPreflightOf(change, day, context);
