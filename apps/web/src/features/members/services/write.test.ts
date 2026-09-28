@@ -79,6 +79,7 @@ import {
   statusStageOf,
   statusTodayMessageKey,
   storedEmail,
+  storedUsernameOf,
   usernameChanged,
   type FunctionsAnswer,
   type MemberStatusTable,
@@ -909,6 +910,68 @@ describe('an edit reaches the privileged function only when the identity moves',
     expect(calls, 'the ordinary fields were not written first').toHaveLength(1);
     expect(invoked).toHaveLength(1);
     expect(invoked[0]?.body).toMatchObject({ username: 'ana.kovacic', memberId: 'member-1' });
+  });
+
+  it('leaves an untouched username alone when another admin renamed the member meanwhile', async () => {
+    // TWO ADMINS, ONE MEMBER. This screen read `ana.kovac`; another admin has
+    // since renamed her `ana.babic`. This admin edited only the email, so the
+    // field still holds the cached name. Renaming to it would undo the other
+    // admin's rename without anyone having asked for that.
+    const { table } = tableThat({
+      data: [{ id: 'member-1', username: 'ana.babic' }],
+      error: null,
+    });
+    const { functions, calls: invoked } = functionsThat(replied({ code: USERNAME_CHANGED }));
+
+    expect(
+      await saveMember(table, functions, member(), edits({ email: 'ana@example.invalid' })),
+    ).toEqual({ ok: true });
+    expect(invoked, 'an untouched field reverted a concurrent rename').toEqual([]);
+  });
+
+  it('renames an edited username even when the cached row is stale', async () => {
+    // The admin typed a new name. The cache is behind the database, but the
+    // stored name is neither the cached nor the entered one, so the identity
+    // moves to what the admin typed.
+    const { table } = tableThat({
+      data: [{ id: 'member-1', username: 'ana.babic' }],
+      error: null,
+    });
+    const { functions, calls: invoked } = functionsThat(replied({ code: USERNAME_CHANGED }));
+
+    expect(
+      await saveMember(table, functions, member(), edits({ username: 'ana.novak' })),
+    ).toEqual({ ok: true });
+    expect(invoked, 'an edited username was not renamed').toHaveLength(1);
+    expect(invoked[0]?.body).toMatchObject({ username: 'ana.novak', memberId: 'member-1' });
+  });
+
+  it('calls nothing when the database already holds the edited username', async () => {
+    // Another admin already made this same rename, so there is nothing left to
+    // move; calling the boundary would reach GoTrue with the address the
+    // account already holds.
+    const { table } = tableThat({
+      data: [{ id: 'member-1', username: 'Ana.Kovacic' }],
+      error: null,
+    });
+    const { functions, calls: invoked } = functionsThat(replied({ code: USERNAME_CHANGED }));
+
+    expect(
+      await saveMember(table, functions, member(), edits({ username: 'ana.kovacic' })),
+    ).toEqual({ ok: true });
+    expect(invoked, 'a rename the database already held reached the boundary').toEqual([]);
+  });
+
+  it('asks the update to return the stored username, which the rename is decided on', () => {
+    expect(MEMBER_EDIT_COLUMNS.split(',')).toContain('username');
+  });
+
+  it('reads the stored username off the returned row, and the cache only without one', () => {
+    expect(storedUsernameOf([{ id: 'member-1', username: 'ana.babic' }], 'ana.kovac')).toBe(
+      'ana.babic',
+    );
+    expect(storedUsernameOf([{ id: 'member-1' }], 'ana.kovac')).toBe('ana.kovac');
+    expect(storedUsernameOf(null, 'ana.kovac')).toBe('ana.kovac');
   });
 
   it('reports a PARTIAL SAVE when the fields landed and the rename was refused', async () => {

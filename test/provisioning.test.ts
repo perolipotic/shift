@@ -1578,6 +1578,11 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // and an atomic amend that soft-removes and inserts, on the same attributes.
     { name: 'confirm_shift_type_override', argumentCount: 1 },
     { name: 'amend_shift_type_override', argumentCount: 3 },
+    // 0023. The lock is taken from a trigger every writer fires, and the
+    // last-admin re-check reads `members` and the status history past row
+    // level security, as 0002's trigger does, on the same attributes.
+    { name: 'serialize_organization_writes', argumentCount: 0 },
+    { name: 'refuse_status_version_leaving_no_admin', argumentCount: 0 },
   ];
 
   it.skipIf(noDatabase).each(ACCESS_CONTROL_FUNCTIONS)(
@@ -1662,6 +1667,11 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // PUBLIC-only revoke 0002 wrote left `anon`, `authenticated` and
     // `service_role` holding EXECUTE on a function that runs as the owner.
     { name: 'refuse_organization_with_no_admin', argumentCount: 0, expected: [] },
+    // 0023's three trigger functions, on the same terms: the per-organization
+    // lock, the last-admin re-check after it, and the TRUNCATE refusal.
+    { name: 'serialize_organization_writes', argumentCount: 0, expected: [] },
+    { name: 'refuse_status_version_leaving_no_admin', argumentCount: 0, expected: [] },
+    { name: 'refuse_truncate', argumentCount: 0, expected: [] },
   ];
 
   it.skipIf(noDatabase).each([
@@ -1679,6 +1689,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'rotation_pattern_in_use', argumentCount: 1 },
     { name: 'rotation_assignment_on', argumentCount: 2 },
     { name: 'rotation_assignment_latest_version', argumentCount: 1 },
+    // 0023's TRUNCATE refusal reads nothing, so it has no reason to be a definer.
+    { name: 'refuse_truncate', argumentCount: 0 },
   ])('runs $name as the caller, with an empty search_path', async ({ name, argumentCount }) => {
     // INVOKER, the opposite of the helper and the hook. They are reached from
     // the helper, the hook and the zero-admins function as the owner, and from

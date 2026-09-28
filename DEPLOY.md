@@ -610,6 +610,29 @@ update members m
 Then ask the admin to try the rename again. If it keeps failing, the cause is in
 the function's log line above the code.
 
+### TRUNCATE is refused, for `postgres` too
+
+`0023` puts a `before truncate` trigger on `members`, `member_status_versions`
+and `team_membership_versions`. Each raises `23001 TRUNCATE_REFUSED`, for every
+role, and so does any `truncate ... cascade` that reaches one of them. TRUNCATE
+fires no row trigger, so it would bypass the zero-admins rule and every version
+rule. To remove one organization, `delete from organizations where id = ...`:
+the cascade runs row by row, and every rule still holds.
+
+If a maintenance job really must TRUNCATE one of these tables, disable that
+table's trigger in the same transaction, so it cannot outlive the job:
+
+```sql
+begin;
+alter table public.member_status_versions disable trigger member_status_versions_refuse_truncate;
+truncate public.member_status_versions;
+alter table public.member_status_versions enable trigger member_status_versions_refuse_truncate;
+commit;
+```
+
+The `alter table` takes ACCESS EXCLUSIVE on the table until commit, so run it
+in a maintenance window.
+
 ### Signup is off, remotely
 
 `config push` (§5.2a) is the only thing that turns Supabase's default open

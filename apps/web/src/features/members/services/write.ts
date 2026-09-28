@@ -479,6 +479,20 @@ export async function resetPassword(
 }
 
 /**
+ * The username the database holds, read off the row the update returned.
+ *
+ * The update does not write `username`, and it returns the row as it stands
+ * after the write, so another admin's rename that committed after this screen
+ * read the list is in it. The cached value is used only when the answer carries
+ * no username.
+ */
+export function storedUsernameOf(rows: readonly unknown[] | null, cached: string): string {
+  const stored = fieldsOf(rows?.[0])?.['username'];
+
+  return typeof stored === 'string' ? stored : cached;
+}
+
+/**
  * Save an edit: the ordinary fields through PostgREST, the username through the
  * function, and the function only when the username actually moved.
  *
@@ -532,7 +546,17 @@ export async function saveMember(
     return { ok: false, refusal: { code: MEMBER_WRITE_REFUSED, saved: false } };
   }
 
-  if (!usernameChanged(member.username, edits.username)) return { ok: true };
+  // TWO CONDITIONS, BOTH REQUIRED. The admin edited the field: the entered
+  // value differs from the one this form was opened with. An untouched field
+  // is the cached username, and renaming to it would silently undo another
+  // admin's rename that landed meanwhile. AND the database does not already
+  // hold it: another admin may have made this very rename first.
+  if (
+    !usernameChanged(member.username, edits.username) ||
+    !usernameChanged(storedUsernameOf(answered.data, member.username), edits.username)
+  ) {
+    return { ok: true };
+  }
 
   const renamed = await renameMember(functions, member.id, edits.username);
 
