@@ -35,6 +35,7 @@ import {
   stepRow,
   teamRow,
   type FixtureRows,
+  rotationTableOf,
 } from '@/features/rotation/rotation.fixture';
 import {
   ROTATION_CANCELLED_MESSAGE_KEY,
@@ -62,7 +63,7 @@ import {
  */
 
 async function snapshotOf(rows: FixtureRows): Promise<RotationSnapshot> {
-  const outcome = await readRotation({ select: () => Promise.resolve(answerOf(rows)) });
+  const outcome = await readRotation(rotationTableOf(answerOf(rows)));
 
   if (!outcome.ok) throw new Error(outcome.code);
 
@@ -705,17 +706,34 @@ describe('the rotation modules write nothing they must not', () => {
         'utils/draft.ts',
         'hooks/draft-store.ts',
         'components/rotation-section.tsx',
+        'components/override-review.tsx',
+        'services/override-disposition.ts',
       ]),
     );
+
+    let rpcs = 0;
 
     for (const file of files) {
       const source = readFileSync(new URL(file, directory), 'utf8');
 
       deletes += source.split('.delete(').length - 1;
+      rpcs += source.split('.rpc(').length - 1;
       if (file !== 'services/write.ts') expect(source, file).not.toContain('.delete(');
+      // STORY 3.5c: the three disposition calls, in their one module alone.
+      if (file !== 'services/override-disposition.ts') expect(source, file).not.toContain('.rpc(');
       expect(source, file).not.toContain('.update(');
       expect(source, file).not.toContain('.upsert(');
     }
+
+    const disposition = readFileSync(new URL('services/override-disposition.ts', directory), 'utf8');
+
+    expect(rpcs, 'a disposition call arrived outside confirm, amend and discard').toBe(3);
+    for (const name of ['confirmShiftTypeOverride', 'amendShiftTypeOverride', 'discardShiftTypeOverride']) {
+      const body = new RegExp(`export async function ${name}\\([\\s\\S]*?\\n\\}`).exec(disposition)?.[0] ?? '';
+
+      expect(body, `${name} does not make its one call`).toContain('client.rpc(');
+    }
+    expect(disposition, 'a disposition writes a rotation row').not.toMatch(/rotation_(patterns|steps|assignments)/);
 
     // STORY 2.6: exactly one delete, and it is inside `cancelScheduledRotation`.
     const write = readFileSync(new URL('services/write.ts', directory), 'utf8');

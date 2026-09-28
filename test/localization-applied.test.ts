@@ -543,6 +543,10 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'rotation', 'utils', 'warnings.ts'),
   // Story 2.6's history: the statuses and the unknown author, as return-type unions.
   join(webRoot, 'src', 'features', 'rotation', 'services', 'history.ts'),
+  // Story 3.5c's override review: the component, and the disposition module's
+  // refusals and landed dispositions as return-type unions.
+  join(webRoot, 'src', 'features', 'rotation', 'components', 'override-review.tsx'),
+  join(webRoot, 'src', 'features', 'rotation', 'services', 'override-disposition.ts'),
   // Story 3.1's calendar: the read failure as a return-type union.
   // `kalendar.tsx` is listed with the destinations above.
   join(webRoot, 'src', 'features', 'calendar', 'services', 'snapshot.ts'),

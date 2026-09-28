@@ -167,11 +167,13 @@ export const OVERRIDE_REMOVED = 'removed';
 
 /**
  * What the day detail confirms once a write has landed, in a `role="status"`
- * Notice: the save, or the removal with the type the rotation restores.
+ * Notice: the save, or the removal with the type the rotation restores —
+ * `null` for an override pending review (story 3.5c), on any kind of day,
+ * whose removal restores nothing the day did not already show.
  */
 export type OverrideDone =
   | { readonly code: typeof OVERRIDE_SAVED }
-  | { readonly code: typeof OVERRIDE_REMOVED; readonly projectedTypeName: string };
+  | { readonly code: typeof OVERRIDE_REMOVED; readonly projectedTypeName: string | null };
 
 // ------------------------------------------------------------ the messages
 
@@ -200,8 +202,12 @@ export function overrideWriteMessageKey(
 /** The key a landed write is said with. */
 export function overrideDoneMessageKey(
   done: OverrideDone,
-): 'kalendar.detail.override.saved' | 'kalendar.detail.override.removed' {
+):
+  | 'kalendar.detail.override.saved'
+  | 'kalendar.detail.override.removed'
+  | 'kalendar.detail.override.pending.removed' {
   if (done.code === OVERRIDE_SAVED) return 'kalendar.detail.override.saved';
+  if (done.projectedTypeName === null) return 'kalendar.detail.override.pending.removed';
 
   return 'kalendar.detail.override.removed';
 }

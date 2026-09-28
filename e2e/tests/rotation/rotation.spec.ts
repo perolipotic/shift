@@ -3,7 +3,17 @@ import { randomBytes } from 'node:crypto';
 import type { Locator, Route } from '@playwright/test';
 
 import type { RotationPage } from '../../pages/rotation.page.ts';
-import { archiveShiftType, holdRotation, type RotationHold } from '../../utils/database-helper.ts';
+import {
+  archiveShiftType,
+  databaseNow,
+  holdRotation,
+  removeRotationChangesOver,
+  removeSeededRotation,
+  seedShiftTypeOverride,
+  seedTeamRotation,
+  type RotationHold,
+  type SeededRotation,
+} from '../../utils/database-helper.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { fill, hr } from '../../utils/i18n.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
@@ -12,10 +22,35 @@ test.use({ storageState: ADMIN_STATE });
 
 /** The run organization's rotation, while this file's test holds it (`holdRotation`). */
 let hold: RotationHold | null = null;
+/** What the override review's test seeded (story 3.5c), removed before the hold is released. */
+let seed: SeededRotation | null = null;
+/** The database instant that test started at: its cleanup reaches nothing written before it. */
+let seededSince: string | null = null;
 
 test.afterEach(async () => {
-  await hold?.release();
+  // EVERY STEP RUNS, whichever fails: a failed undo of the builder's change
+  // must not leave the seed, nor the hold, behind. The first failure is
+  // reported once all have run.
+  const failures: unknown[] = [];
+  const attempt = async (step: () => Promise<void>): Promise<void> => {
+    try {
+      await step();
+    } catch (cause) {
+      failures.push(cause);
+    }
+  };
+  const seeded = seed;
+  const since = seededSince;
+
+  if (seeded !== null && since !== null) await attempt(() => removeRotationChangesOver(seeded, since));
+  if (seeded !== null) await attempt(() => removeSeededRotation(seeded));
+  seed = null;
+  seededSince = null;
+  await attempt(async () => {
+    await hold?.release();
+  });
   hold = null;
+  if (failures.length > 0) throw failures[0];
 });
 
 const builder = hr.rotation.builder;
@@ -539,4 +574,105 @@ test('a shift type gets a correction from tomorrow, the correction is cancelled,
   await expect(page).toHaveURL('/postavke-rotacije');
   await expect(rotationPage.archivedShiftTypeRow(name)).toBeVisible();
   await expect(rotationPage.shiftTypeEditLink(name)).toHaveCount(0);
+});
+
+/** A `YYYY-MM-DD` date `days` days from `date`, by UTC arithmetic. */
+function addDays(date: string, days: number): string {
+  const instant = new Date(`${date}T12:00:00Z`);
+  instant.setUTCDate(instant.getUTCDate() + days);
+
+  return instant.toISOString().slice(0, 10);
+}
+
+test('a change saved over three overrides lists them for review; one is confirmed, one amended, one discarded', async ({
+  fixture,
+  rotationPage,
+  calendarPage,
+}) => {
+  // STORY 3.5c. The fixture team gets a rotation from today in SQL, and three
+  // overrides on D+3..D+5 written after it; the builder then saves a change
+  // from D+1, which leaves all three pending. Everything seeded names the
+  // seed's own types, so the `afterEach` removes it whatever happens.
+  test.slow();
+  hold = holdRotation(fixture.slug);
+  await hold.ready;
+  seededSince = await databaseNow();
+  seed = await seedTeamRotation(fixture.slug, fixture.team.id, randomBytes(3).toString('hex'));
+  const rotation = seed;
+  const team = fixture.team.name;
+  const [confirmed, amended, discarded] = [3, 4, 5].map((days) => addDays(rotation.today, days)) as [
+    string,
+    string,
+    string,
+  ];
+  const reason = 'Zamjena zbog vježbe (E2E).';
+  for (const date of [confirmed, amended, discarded]) {
+    await seedShiftTypeOverride(rotation, fixture.team.id, date, 1, reason);
+  }
+  const overrides = builder.overrides;
+
+  // Nothing waits before the change: the review is absent.
+  await rotationPage.goto();
+  await expect(rotationPage.effectiveFromInput).toBeVisible();
+  await expect(rotationPage.overrideReview).toHaveCount(0);
+
+  // A CHANGE FROM D+1: one more step, from tomorrow. The save writes no
+  // override; its confirmation counts the three left pending.
+  await rotationPage.newStepSelect.selectOption({ label: rotation.steps[0] });
+  await rotationPage.addStepButton.click();
+  await rotationPage.effectiveFromInput.fill(addDays(rotation.today, 1));
+  await rotationPage.saveButton.click();
+  await expect(rotationPage.savedConfirmation).toContainText(fewForm(overrides.count, 3));
+  await expect(rotationPage.overrideReviewRows).toHaveCount(3);
+  for (const date of [confirmed, amended, discarded]) {
+    const row = rotationPage.overrideReviewRow(team, shownDate(date));
+    await expect(row, date).toHaveCount(1);
+    await expect(row).toContainText(fill(overrides.type, { type: rotation.steps[1] }));
+    await expect(row).toContainText(fill(overrides.reason, { reason }));
+    await expect(row).toContainText(fill(overrides.author, { name: fixture.admin.name }));
+  }
+
+  // CONFIRM: the row leaves the review.
+  await rotationPage.confirmOverrideIn(rotationPage.overrideReviewRow(team, shownDate(confirmed))).click();
+  await expect(rotationPage.statusWith(overrides.done.confirmed)).toBeVisible();
+  await expect(rotationPage.overrideReviewRows).toHaveCount(2);
+
+  // AMEND: a new type and reason, in a dialog; the old row is replaced.
+  await rotationPage.amendOverrideIn(rotationPage.overrideReviewRow(team, shownDate(amended))).click();
+  const amend = rotationPage.amendDialogOf(team, shownDate(amended));
+  await expect(amend).toBeVisible();
+  const offered = await rotationPage.amendTypeNamesIn(amend);
+  // It opens on the override's own reason, and its own type where it may be chosen.
+  await expect(rotationPage.amendReasonIn(amend)).toHaveValue(reason);
+  if (offered.includes(rotation.steps[1])) {
+    await expect(rotationPage.amendTypeIn(amend).locator('option:checked')).toHaveText(rotation.steps[1]);
+  }
+  const worked = rotation.steps.find((name) => offered.includes(name));
+  expect(worked, 'the amend offers none of the seeded types').toBeDefined();
+  await rotationPage.amendOverride(amend, worked ?? '', 'Izmjena nakon promjene (E2E).');
+  await expect(amend).toHaveCount(0);
+  await expect(rotationPage.statusWith(overrides.done.amended)).toBeVisible();
+  await expect(rotationPage.overrideReviewRows).toHaveCount(1);
+
+  // DISCARD: one neutral confirmation naming the team and the date.
+  await rotationPage.discardOverrideIn(rotationPage.overrideReviewRow(team, shownDate(discarded))).click();
+  const confirm = rotationPage.dialog();
+  await expect(confirm).toContainText(`${team} · ${shownDate(discarded)}`);
+  await expect(confirm.locator('.bg-destructive, .text-destructive, .border-destructive')).toHaveCount(0);
+  await rotationPage.confirmDiscardIn(confirm).click();
+  await expect(rotationPage.statusWith(overrides.done.discarded)).toBeVisible();
+  await expect(rotationPage.overrideReview).toHaveCount(0);
+
+  // THE CALENDAR follows: the confirmed and the amended are applied (✎),
+  // the discarded is gone.
+  for (const [date, marked] of [
+    [confirmed, true],
+    [amended, true],
+    [discarded, false],
+  ] as const) {
+    await calendarPage.goto(`?prikaz=sve&mjesec=${date.slice(0, 7)}`);
+    const cell = await calendarPage.cellOf(team, date);
+    if (marked) await expect(cell, date).toContainText('\u270E');
+    else await expect(cell, date).not.toContainText('\u270E');
+  }
 });

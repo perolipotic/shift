@@ -3,11 +3,14 @@ import { describe, expect, it } from 'vitest';
 import {
   datesOfMonth,
   memberScheduleOfMonth,
+  overrideStandingOf,
   projectedShiftTypeOn,
   scheduleOfMonth,
   scheduledShiftTypeOn,
   type RotationAssignment,
+  type RotationVersionStamp,
   type ShiftTypeOverride,
+  type StampedShiftTypeOverride,
 } from '../src/index.js';
 import {
   PILOT_ROTATION_ASSIGNMENTS,
@@ -266,5 +269,125 @@ describe('scheduleOfMonth and memberScheduleOfMonth apply overrides', () => {
         '2026-09',
       ),
     ).toThrow(/2026-09-05/);
+  });
+});
+
+/**
+ * Story 3.5c — an override under a rotation change waits for the admin's
+ * disposition (CAP-9). The rule is a timestamp one: pending iff no version
+ * governs the date, or the governing version was created after the override
+ * was written or last confirmed.
+ */
+describe('overrideStandingOf', () => {
+  const SEEDED_AT = 1_000;
+  const WRITTEN_AT = 2_000;
+  const CHANGED_AT = 3_000;
+  const CHANGE_FROM = '2026-09-11';
+
+  function stampsOf(assignments: readonly RotationAssignment[], changed: boolean): RotationVersionStamp[] {
+    const seeded = assignments.map((assignment) => ({
+      teamId: assignment.teamId,
+      effectiveFrom: assignment.effectiveFrom,
+      createdAt: SEEDED_AT,
+    }));
+    if (!changed) return seeded;
+    return [
+      ...seeded,
+      ...assignments.map((assignment) => ({ teamId: assignment.teamId, effectiveFrom: CHANGE_FROM, createdAt: CHANGED_AT })),
+    ];
+  }
+
+  function overrideOf(teamId: string, date: string, writtenAt: number, shiftTypeId = 'x'): StampedShiftTypeOverride {
+    return { id: `${teamId}-${date}`, teamId, date, shiftTypeId, writtenAt };
+  }
+
+  it.each(FIXTURES)('$fixture: before, on and after the effective date of a change', ({ teams, assignments }) => {
+    for (const team of teams) {
+      const before = overrideOf(team.id, '2026-09-10', WRITTEN_AT);
+      const on = overrideOf(team.id, CHANGE_FROM, WRITTEN_AT);
+      const after = overrideOf(team.id, '2026-09-14', WRITTEN_AT);
+      const standing = overrideStandingOf(stampsOf(assignments, true), [before, on, after]);
+      expect(standing.inForce).toEqual([before]);
+      expect(standing.pending).toEqual([on, after]);
+      // With no change saved, all three are in force.
+      expect(overrideStandingOf(stampsOf(assignments, false), [before, on, after])).toEqual({
+        inForce: [before, on, after],
+        pending: [],
+      });
+    }
+  });
+
+  it.each(FIXTURES)('$fixture: written or confirmed after the change, it is in force', ({ teams, assignments }) => {
+    for (const team of teams) {
+      const writtenAfter = overrideOf(team.id, '2026-09-14', CHANGED_AT + 1);
+      const sameInstant = overrideOf(team.id, '2026-09-15', CHANGED_AT);
+      expect(overrideStandingOf(stampsOf(assignments, true), [writtenAfter, sameInstant])).toEqual({
+        inForce: [writtenAfter, sameInstant],
+        pending: [],
+      });
+    }
+  });
+
+  it('a version saved one microsecond after the override leaves it pending; at the same instant, in force', () => {
+    const at = Date.UTC(2026, 8, 15) * 1000;
+    const override = overrideOf(alfa, '2026-09-14', at);
+    const stamps = (createdAt: number) => [
+      { teamId: alfa, effectiveFrom: SEEDED_EFFECTIVE_FROM, createdAt: SEEDED_AT },
+      { teamId: alfa, effectiveFrom: CHANGE_FROM, createdAt },
+    ];
+
+    expect(overrideStandingOf(stamps(at + 1), [override]).pending).toEqual([override]);
+    expect(overrideStandingOf(stamps(at), [override]).inForce).toEqual([override]);
+  });
+
+  it.each(FIXTURES)('$fixture: with no version on its date, it is pending', ({ teams, assignments }) => {
+    for (const team of teams) {
+      const early = overrideOf(team.id, '2019-12-31', WRITTEN_AT);
+      expect(overrideStandingOf(stampsOf(assignments, false), [early])).toEqual({ inForce: [], pending: [early] });
+      const unrotated = overrideOf(`${team.id}-none`, '2026-09-14', WRITTEN_AT);
+      expect(overrideStandingOf(stampsOf(assignments, true), [unrotated]).pending).toEqual([unrotated]);
+    }
+  });
+
+  it.each(FIXTURES)('$fixture: cancelling the change puts its overrides back in force, without a write', ({ teams, assignments }) => {
+    const overrides = teams.map((team) => overrideOf(team.id, '2026-09-20', WRITTEN_AT));
+    expect(overrideStandingOf(stampsOf(assignments, true), overrides).pending).toEqual(overrides);
+    // The scheduled versions are hard-deleted; the seeded ones govern again.
+    expect(overrideStandingOf(stampsOf(assignments, false), overrides)).toEqual({ inForce: overrides, pending: [] });
+  });
+
+  it.each(FIXTURES)('$fixture: every override pending equals the pure projection', ({ teams, steps, assignments }) => {
+    const teamIds = teams.map((team) => team.id);
+    const overrides: StampedShiftTypeOverride[] = [];
+    for (const [index, teamId] of teamIds.entries()) {
+      for (const date of datesOfMonth('2026-09').filter((_, day) => day % 7 === index % 7)) {
+        if (date < CHANGE_FROM) continue;
+        overrides.push(overrideOf(teamId, date, WRITTEN_AT, steps[(index + 1) % steps.length]!.shiftTypeId));
+      }
+    }
+    const standing = overrideStandingOf(stampsOf(assignments, true), overrides);
+    expect(standing.pending).toEqual(overrides);
+    expect(scheduleOfMonth({ teamIds, assignments, steps, overrides: standing.inForce }, '2026-09')).toEqual(
+      scheduleOfMonth({ teamIds, assignments, steps, overrides: [] }, '2026-09'),
+    );
+    for (const team of teams) {
+      const memberships = [{ teamId: team.id, position: null, effectiveFrom: SEEDED_EFFECTIVE_FROM }];
+      expect(
+        memberScheduleOfMonth({ memberships, statuses: [], assignments, steps, overrides: standing.inForce }, '2026-09'),
+      ).toEqual(memberScheduleOfMonth({ memberships, statuses: [], assignments, steps, overrides: [] }, '2026-09'));
+    }
+  });
+
+  it('throws a RangeError on a bad instant, a bad date, two versions on one date, or two overrides on one date', () => {
+    const stamps = stampsOf(PILOT_ROTATION_ASSIGNMENTS, false);
+    expect(() => overrideStandingOf(stamps, [overrideOf(alfa, '2026-09-14', 1.5)])).toThrow(RangeError);
+    expect(() => overrideStandingOf(stamps, [overrideOf(alfa, '2026-02-30', WRITTEN_AT)])).toThrow(RangeError);
+    expect(() => overrideStandingOf([{ teamId: alfa, effectiveFrom: '2026-09-01', createdAt: Number.NaN }], [])).toThrow(
+      RangeError,
+    );
+    expect(() => overrideStandingOf([...stamps, stamps[0]!], [])).toThrow(RangeError);
+    expect(() =>
+      overrideStandingOf(stamps, [overrideOf(alfa, '2026-09-14', WRITTEN_AT), overrideOf(alfa, '2026-09-14', WRITTEN_AT)]),
+    ).toThrow(/2026-09-14/);
   });
 });

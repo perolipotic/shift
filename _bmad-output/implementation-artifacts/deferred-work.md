@@ -489,7 +489,7 @@
   summary: Story 3.5c — CAP-9's disposition half: when a rotation change is applied, every live shift-type override dated on or after its effective date is listed for explicit confirm, amend or discard; none silently dropped or reapplied.
   evidence: Split from story 3.5 at the user's request (2026-09-27). It changes 2.6's rotation save flow and depends on 3.5a's table and 3.5b's write path; riskiest part, so last.
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-5a-shift-type-override-record-and-display.md`
-  summary: An override dated where no rotation version is in effect (before a team's first version, or left behind by a cancelled scheduled change) is stored and attributed but ignored by the domain and shown nowhere, so no admin can see or clear it.
+  summary: RESOLVED by 3.5c — An override dated where no rotation version is in effect (before a team's first version, or left behind by a cancelled scheduled change) is stored and attributed but ignored by the domain and shown nowhere, so no admin can see or clear it. Since 3.5c `overrideStandingOf` counts such an override as pending: the rotation builder's `Izmjene za pregled` lists it with Odbaci alone, and the day detail shows it as waiting for review with `Ukloni izmjenu` for an admin.
   evidence: Raised by 3.5a's review. 0019 accepts any finite date; `scheduledShiftTypeOn` ignores an override on a no-rotation date by design. 3.5b's write should refuse such a date, and 3.5c's disposition review should surface any that already exist.
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-5a-shift-type-override-record-and-display.md`
   summary: `calendar_shift_type_overrides()` returns every live override for all time on every calendar load, under the month-less `CALENDAR_KEY`; decide a window (by month or a bounded range) once real volume or the 2 s budget calls for it.
@@ -521,6 +521,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-5b-shift-type-override-form.md`
   summary: `claimedOrganizationOf` lives in `features/teams/services/write.ts`, and the calendar now imports it (FEATURE_PUBLIC widened); a token-claim helper belongs in a shared lib beside the Supabase client.
   evidence: Raised by 3.5b's review. The helper predates 3.5b; moving it touches every feature's writes and their guards, so it is a focused follow-up.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-5b-shift-type-override-form.md`
+  summary: The shared `Dialog` primitive's `dismissible={false}` relies on `preventDefault` of `cancel`; Chrome's close-watcher closes a modal dialog on a second Escape without intervening user activation, so a held write's dialog (day detail, team add #89) can still close.
+  evidence: Raised by 3.5b's edge-case review. It affects every non-dismissible Dialog, not just the override form; the fix (re-open on `close` while pending, or a close-watcher-aware primitive) belongs in `components/ui/dialog.tsx`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-5c-override-disposition-on-rotation-change.md`
+  summary: `confirm_shift_type_override` has no concurrency token, so a confirm made after another admin saved a newer rotation change re-anchors the override to a version this admin never reviewed.
+  evidence: Raised by 3.5c's review. The rpc sets `confirmed_at = now()` unconditionally. Passing the governing version's `created_at` (or the prior `confirmed_at`) and refusing on a mismatch would close it. The race is rare, since at most one change can be scheduled.
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-5c-override-disposition-on-rotation-change.md`
+  summary: An amend leaves no link between the soft-removed row and its replacement, so the record cannot tell an amend from a removal followed by an unrelated new override.
+  evidence: Raised by 3.5c's review. `amend_shift_type_override` removes and inserts in one transaction but stores no `amended_from`/`replaced_by`. There is no audit UI yet, so this matters only once one exists.
 - source_spec: `_bmad-output/implementation-artifacts/spec-fix-sign-in-and-settings.md`
   summary: No pending state on the sign-in or settings screens is one assistive technology can actually hear. The sign-in button's `aria-busy` is not announced by NVDA or JAWS, and the settings skeleton's `aria-busy` region has no label, because `hr.json` has no loading string.
   evidence: The skeleton now reserves the form's shape and marks its region `aria-busy` (the rest of the 1.4a entry this narrows), and the sign-in submit is `aria-disabled` + `aria-busy` instead of natively disabled. Both states are silent to the common screen readers without words. Adding those words needs a new resource string, which that spec lists as Ask First, so it was left for a decision.

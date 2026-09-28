@@ -465,9 +465,12 @@ development_status:
   # (spec-3-5a-shift-type-override-record-and-display.md). 3.5b has landed:
   # the admin's set form (the plain insert) and the neutral remove confirm,
   # through migration 0021's definer `remove_shift_type_override`
-  # (spec-3-5b-shift-type-override-form.md). The key stays in-progress for
-  # 3.5c, CAP-9's disposition on a rotation change.
-  3-5-an-admin-changes-a-team-s-shift-type-on-one-date: in-progress
+  # (spec-3-5b-shift-type-override-form.md). 3.5c completes CAP-9's
+  # disposition: an override under a later rotation version is PENDING (derived
+  # by `overrideStandingOf`, not stored), not applied, and listed in the
+  # builder's `Izmjene za pregled` to confirm, amend or discard, through
+  # migration 0022's definers (spec-3-5c-override-disposition-on-rotation-change.md).
+  3-5-an-admin-changes-a-team-s-shift-type-on-one-date: done
   3-6-an-admin-adds-removes-or-replaces-someone-on-a-shift: backlog
   epic-3-retrospective: optional
 

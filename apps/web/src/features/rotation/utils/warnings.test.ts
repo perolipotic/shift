@@ -14,7 +14,7 @@ import {
   type RotationDraft,
 } from '@/features/rotation/utils/draft';
 import { readRotation, rotationTeamsOf, type RotationSnapshot } from '@/features/rotation/services/list';
-import { PILOT, TODAY, UJ5, answerOf, typeRow, type FixtureRows } from '@/features/rotation/rotation.fixture';
+import { PILOT, TODAY, UJ5, answerOf, rotationTableOf, typeRow, type FixtureRows } from '@/features/rotation/rotation.fixture';
 import {
   ROTATION_WARNINGS_FAILED,
   WARNING_CHAIN,
@@ -35,7 +35,7 @@ import {
  */
 
 async function snapshotOf(rows: FixtureRows): Promise<RotationSnapshot> {
-  const outcome = await readRotation({ select: () => Promise.resolve(answerOf(rows)) });
+  const outcome = await readRotation(rotationTableOf(answerOf(rows)));
 
   if (!outcome.ok) throw new Error(outcome.code);
 

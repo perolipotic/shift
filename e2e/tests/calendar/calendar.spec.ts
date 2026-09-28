@@ -6,6 +6,7 @@ import {
   holdRotation,
   removeOverrideInSql,
   removeSeededRotation,
+  seedRotationChange,
   seedShiftTypeOverride,
   seedTeamRotation,
   setFireRanks,
@@ -1353,5 +1354,85 @@ test.describe('the team filter at 320 px', () => {
     }
     await expectNoHorizontalScroll(page);
     await expectTouchTargets(page);
+  });
+});
+
+test.describe('an override a rotation change left pending, at 1280 px, as an admin', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 1280, height: 800 } });
+
+  test('the day shows the projection with no ✎, and the detail says the override waits for review', async ({
+    calendarPage,
+    fixture,
+  }) => {
+    // STORY 3.5c. An override on D+3, then a change from D+1 saved after it:
+    // the new version anchors D+1 on the third step, so D+3 projects the
+    // first (Dan) where the override names the second (Noć).
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    const date = addDays(rotation.today, 3);
+    const override = await seedShiftTypeOverride(rotation, fixture.team.id, date, 1, REASON);
+    await seedRotationChange(rotation, fixture.team.id, addDays(rotation.today, 1), 2);
+    const projected = rotation.steps[0];
+    expect(projected).not.toBe(override.typeName);
+
+    await calendarPage.goto(gridMonthOf(date));
+    const cell = await calendarPage.cellOf(fixture.team.name, date);
+    await expect(cell).toContainText(projected);
+    await expect(cell).not.toContainText('\u270E');
+
+    await cell.click();
+    const detail = calendarPage.detailOf(fixture.team.name, date);
+    await expect(detail).toBeVisible();
+    await expect(calendarPage.overrideIn(detail)).toHaveCount(0);
+    const pending = calendarPage.pendingOverrideIn(detail);
+    await expect(pending).toBeVisible();
+    await expect(pending).toContainText(fill(kalendar.detail.override.pending.type, { type: override.typeName }));
+    await expect(pending).toContainText(fill(kalendar.detail.override.reason, { reason: REASON }));
+    await expect(pending).toContainText(fill(kalendar.detail.override.author, { name: fixture.admin.name }));
+    // The admin may only remove it here; no set form.
+    const remove = calendarPage.overrideRemoveIn(detail);
+    await expect(remove).toBeVisible();
+    await expect(calendarPage.overrideFormIn(detail)).toHaveCount(0);
+
+    // Removed through the pending copy: the day already shows the projection.
+    await remove.click();
+    const confirm = calendarPage.pendingRemoveConfirmOf(fixture.team.name, date);
+    await expect(confirm).toBeVisible();
+    await expect(confirm.locator('.bg-destructive, .text-destructive, .border-destructive')).toHaveCount(0);
+    await calendarPage.confirmRemoveIn(confirm).click();
+    await expect(confirm).toHaveCount(0);
+    await expect(pending).toHaveCount(0);
+    await expect(calendarPage.statusIn(detail)).toHaveText(kalendar.detail.override.pending.removed);
+    // With nothing pending, the set form is back.
+    await expect(calendarPage.overrideFormIn(detail)).toBeVisible();
+    await calendarPage.closeIn(detail).click();
+    await expect(cell).toContainText(projected);
+    await expect(cell).not.toContainText('\u270E');
+  });
+
+  test('an override before the team\'s first version is pending on a day with no rotation, and can be removed', async ({
+    calendarPage,
+    fixture,
+  }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    const date = addDays(rotation.today, -2);
+    const override = await seedShiftTypeOverride(rotation, fixture.team.id, date, 1, REASON);
+
+    await calendarPage.goto(gridMonthOf(date));
+    const cell = await calendarPage.cellOf(fixture.team.name, date);
+    await expect(cell).not.toContainText('\u270E');
+    await cell.click();
+    const detail = calendarPage.detailOf(fixture.team.name, date);
+    await expect(detail).toContainText(fill(kalendar.detail.noRotation, { team: fixture.team.name }));
+    const pending = calendarPage.pendingOverrideIn(detail);
+    await expect(pending).toContainText(fill(kalendar.detail.override.pending.type, { type: override.typeName }));
+    await expect(calendarPage.overrideFormIn(detail)).toHaveCount(0);
+
+    await calendarPage.overrideRemoveIn(detail).click();
+    const confirm = calendarPage.pendingRemoveConfirmOf(fixture.team.name, date);
+    await calendarPage.confirmRemoveIn(confirm).click();
+    await expect(confirm).toHaveCount(0);
+    await expect(pending).toHaveCount(0);
+    await expect(calendarPage.statusIn(detail)).toHaveText(kalendar.detail.override.pending.removed);
+    await expect(calendarPage.overrideRemoveIn(detail)).toHaveCount(0);
   });
 });

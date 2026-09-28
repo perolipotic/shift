@@ -7,6 +7,7 @@ import {
   dayDetailShownOf,
   overrideEntryOf,
   overrideOffersOf,
+  overrideRemovalTargetOf,
   overrideTypeOptionsOf,
   type DayDetail,
 } from '@/features/calendar/utils/day-detail';
@@ -20,6 +21,7 @@ import {
   PILOT,
   SEEDED,
   UJ5,
+  assignmentRow,
   VIEWER_MEMBER,
   VIEWER_NAME,
   calendarMemberRow,
@@ -147,6 +149,7 @@ describe('the day detail (story 3.4b)', () => {
         { id: BORIS, name: 'Boris', fireRank: null, position: null },
       ],
       override: null,
+      pending: null,
     });
   });
 
@@ -197,6 +200,7 @@ describe('the day detail (story 3.4b)', () => {
       range: null,
       roster: [],
       override: null,
+      pending: null,
     });
   });
 
@@ -214,6 +218,7 @@ describe('the day detail (story 3.4b)', () => {
       range: null,
       roster: [],
       override: null,
+      pending: null,
     });
   });
 
@@ -535,5 +540,123 @@ describe('what an admin may set on a day (story 3.5b)', () => {
     expect(t('kalendar.detail.override.remove.confirm')).toBe('Ukloni');
     expect(t('kalendar.detail.override.remove.cancel')).toBe('Odustani od uklanjanja');
     expect(t('kalendar.detail.override.remove.removing')).toBe('Uklanjanje…');
+  });
+});
+
+describe('an override a rotation change left pending (story 3.5c)', () => {
+  // Smjena B changes pattern phase from CHANGE, saved after every override
+  // below was written (2026-09-12 17:05 UTC) — unless it was confirmed later.
+  const CHANGE = '2026-09-20';
+  const CHANGED_AT = '2026-09-15T10:00:00+00:00';
+  const AFTER = '2026-09-21';
+  const EARLIER = '2026-09-19';
+  const withChange: FixtureRows = {
+    ...PILOT,
+    assignments: [
+      ...PILOT.assignments,
+      assignmentRow(TEAM, 'pilot-rotation', 'pilot-step-2', CHANGE, CHANGE, undefined, { createdAt: CHANGED_AT }),
+    ],
+  };
+  const asAdmin = { viewers: [viewerRow([membershipRow('pilot-smjena-a', SEEDED)], { role: 'admin' })] };
+
+  it('is not applied: the day is the projection, with the block that says it waits', async () => {
+    const snapshot = await snapshotOf(withChange, {
+      ...asAdmin,
+      overrides: [
+        calendarOverrideRow('o1', TEAM, AFTER, 'pilot-dan', { reason: 'Vježba.' }),
+        calendarOverrideRow('o2', TEAM, EARLIER, 'pilot-dan'),
+      ],
+    });
+    const pure = await snapshotOf(withChange, asAdmin);
+    const pending = dayDetailOf(snapshot, TEAM, AFTER);
+    const projected = dayDetailOf(pure, TEAM, AFTER);
+
+    // The change anchors CHANGE on the third step, so AFTER is the fourth: Slobodno, an off day.
+    expect(projected).not.toBeNull();
+    expect(projected?.kind).toBe('off');
+    if (projected === null) return;
+    expect(pending).toEqual({
+      ...projected,
+      pending: {
+        id: 'o1',
+        typeName: 'Dan',
+        projectedTypeName: 'Slobodno',
+        authorName: VIEWER_NAME,
+        reason: 'Vježba.',
+      },
+    });
+    expect(pending?.override).toBeNull();
+    // Before the change's date the override was written for the version still in force.
+    expect(dayDetailOf(snapshot, TEAM, EARLIER)).toMatchObject({ typeName: 'Dan', pending: null });
+    expect(dayDetailOf(snapshot, TEAM, EARLIER)?.override?.id).toBe('o2');
+  });
+
+  it('is in force again once confirmed after the change, or written after it', async () => {
+    const snapshot = await snapshotOf(withChange, {
+      overrides: [
+        calendarOverrideRow('o1', TEAM, AFTER, 'pilot-dan', { confirmedAt: '2026-09-16T08:00:00+00:00' }),
+        calendarOverrideRow('o2', TEAM, '2026-09-22', 'pilot-dan', { createdAt: '2026-09-16T08:00:00+00:00' }),
+      ],
+    });
+
+    for (const date of [AFTER, '2026-09-22']) {
+      expect(dayDetailOf(snapshot, TEAM, date), date).toMatchObject({ kind: 'working', typeName: 'Dan', pending: null });
+      expect(dayDetailOf(snapshot, TEAM, date)?.override, date).not.toBeNull();
+    }
+  });
+
+  it('is in force again, without a write, once the change is cancelled', async () => {
+    const overrides = [calendarOverrideRow('o1', TEAM, AFTER, 'pilot-dan')];
+    const changed = await snapshotOf(withChange, { overrides });
+    const cancelled = await snapshotOf(PILOT, { overrides });
+
+    expect(dayDetailOf(changed, TEAM, AFTER)?.pending?.id).toBe('o1');
+    expect(dayDetailOf(cancelled, TEAM, AFTER)).toMatchObject({ typeName: 'Dan', pending: null });
+  });
+
+  it('offers the admin its removal alone, on a working day and on a day with no rotation', async () => {
+    const admin = await snapshotOf(withChange, {
+      ...asAdmin,
+      overrides: [
+        calendarOverrideRow('o1', TEAM, AFTER, 'pilot-dan'),
+        calendarOverrideRow('o2', TEAM, BEFORE, 'pilot-dan'),
+      ],
+    });
+    const member = await snapshotOf(withChange, { overrides: [calendarOverrideRow('o1', TEAM, AFTER, 'pilot-dan')] });
+    const after = dayDetailOf(admin, TEAM, AFTER);
+    const before = dayDetailOf(admin, TEAM, BEFORE);
+
+    expect(overrideOffersOf(admin, after)).toEqual({ options: [], set: false, remove: true });
+    expect(overrideTypeOptionsOf(admin, after!)).toEqual([]);
+    // A pending override is removed with the pending copy, on a working day too.
+    expect(overrideRemovalTargetOf(after)).toEqual({ id: 'o1', projectedTypeName: null });
+    expect(before).toMatchObject({ kind: 'noRotation', override: null, pending: { id: 'o2', projectedTypeName: null } });
+    expect(overrideOffersOf(admin, before)).toEqual({ options: [], set: false, remove: true });
+    expect(overrideRemovalTargetOf(before)).toEqual({ id: 'o2', projectedTypeName: null });
+    expect(overrideOffersOf(member, dayDetailOf(member, TEAM, AFTER))).toEqual({ options: [], set: false, remove: false });
+    expect(overrideRemovalTargetOf(null)).toBeNull();
+  });
+
+  it('leaves the month cell unmarked: the projection, no ✎', async () => {
+    const snapshot = await snapshotOf(withChange, { overrides: [calendarOverrideRow('o1', TEAM, AFTER, 'pilot-dan')] });
+    const pure = await snapshotOf(withChange);
+    const search = { mjesec: '2026-09' };
+    const cells = calendarMonthOf(snapshot, search, '2026-09-26').rows.flatMap((row) => row.cells);
+    const pureCells = calendarMonthOf(pure, search, '2026-09-26').rows.flatMap((row) => row.cells);
+
+    expect(cells).toEqual(pureCells);
+    expect(cells.some((cell) => cell.modifiers.length > 0)).toBe(false);
+  });
+
+  it('says a pending removal in the pending copy, and carries the block\'s copy', () => {
+    const removed = overrideDoneMessageKey({ code: OVERRIDE_REMOVED, projectedTypeName: null });
+
+    expect(removed).toBe('kalendar.detail.override.pending.removed');
+    expect(t(removed)).toBe('Izmjena koja je čekala pregled je uklonjena.');
+    expect(t('kalendar.detail.override.pending.heading')).toBe('Izmjena čeka pregled');
+    expect(t('kalendar.detail.override.pending.type', { type: 'Dan' })).toBe('Upisana izmjena: Dan');
+    expect(t('kalendar.detail.override.pending.removePrompt', { team: 'Smjena B', date: 'ponedjeljak 21.09.2026' })).toBe(
+      'Ukloniti izmjenu koja čeka pregled za Smjena B · ponedjeljak 21.09.2026? Ona se već ne primjenjuje, pa se prikaz dana ne mijenja.',
+    );
   });
 });

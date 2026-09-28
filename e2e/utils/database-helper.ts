@@ -433,6 +433,98 @@ export async function removeOverrideInSql(rotation: SeededRotation, teamId: stri
 }
 
 /**
+ * A rotation change of `teamId` from `date`, in SQL (story 3.5c): a second
+ * version of the seeded pattern, anchored on `date` at the seeded step
+ * `step`, attributed to the run's admin and saved NOW — after every override
+ * written before it, which it therefore leaves pending review. Call it under
+ * the seed's hold; {@link removeSeededRotation} deletes it with the pattern.
+ */
+export async function seedRotationChange(
+  rotation: SeededRotation,
+  teamId: string,
+  date: string,
+  step: 0 | 1 | 2 | 3,
+): Promise<void> {
+  const client = await connect();
+  try {
+    const { rowCount } = await client.query(
+      `insert into rotation_assignments
+         (organization_id, team_id, pattern_id, offset_step_id, anchor_date, effective_from, created_by)
+       select $1, $2, $3, s.id, $4::date, $4::date,
+              (select m.auth_user_id from members m
+                where m.organization_id = $1 and m.role = 'admin'
+                order by m.created_at, m.id limit 1)
+         from rotation_steps s
+        where s.organization_id = $1 and s.pattern_id = $3 and s.position = $5`,
+      [rotation.organizationId, teamId, rotation.patternId, date, step],
+    );
+    if (rowCount !== 1) throw new Error('E2E: the rotation change was not written');
+  } finally {
+    await client.end();
+  }
+}
+
+/** The database's own now, as text: a stamp to scope a test's cleanup by. */
+export async function databaseNow(): Promise<string> {
+  const client = await connect();
+  try {
+    const { rows } = await client.query<{ now: string }>('select now()::text as now');
+    const now = rows[0]?.now;
+    if (now === undefined) throw new Error('E2E: the database answered no time');
+
+    return now;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Undoes a rotation change the BUILDER saved over {@link seedTeamRotation}'s
+ * rotation (story 3.5c), so {@link removeSeededRotation} can then delete the
+ * seeded types. Only what the test wrote SINCE `since` (a database instant
+ * taken at its start, {@link databaseNow}): the versions saved since then and
+ * dated after the seed's today, and every pattern created since then that no
+ * version names any more and whose steps name a seeded type, with its steps.
+ * In this run's organization only, under the seed's hold. Safe to call twice.
+ */
+export async function removeRotationChangesOver(seeded: SeededRotation, since: string): Promise<void> {
+  const client = await connect();
+  try {
+    await client.query('begin');
+    await client.query(
+      `delete from rotation_assignments
+        where organization_id = $1 and effective_from > $2::date and created_at >= $3::timestamptz`,
+      [seeded.organizationId, seeded.today, since],
+    );
+    const { rows } = await client.query<{ id: string }>(
+      `select p.id from rotation_patterns p
+        where p.organization_id = $1 and p.id <> $2 and p.created_at >= $4::timestamptz
+          and not exists (select 1 from rotation_assignments a
+                           where a.organization_id = p.organization_id and a.pattern_id = p.id)
+          and exists (select 1 from rotation_steps s
+                       where s.organization_id = p.organization_id and s.pattern_id = p.id
+                         and s.shift_type_id = any($3::uuid[]))`,
+      [seeded.organizationId, seeded.patternId, seeded.shiftTypeIds, since],
+    );
+    const orphans = rows.map((row) => row.id);
+    await client.query('delete from rotation_steps where organization_id = $1 and pattern_id = any($2::uuid[])', [
+      seeded.organizationId,
+      orphans,
+    ]);
+    await client.query('delete from rotation_patterns where organization_id = $1 and id = any($2::uuid[])', [
+      seeded.organizationId,
+      orphans,
+    ]);
+    await client.query('commit');
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
  * Deletes everything {@link seedTeamRotation} wrote — the version, the steps,
  * the pattern, the times and the three types — and every override naming one
  * of those types ({@link seedShiftTypeOverride}), in one transaction, so the

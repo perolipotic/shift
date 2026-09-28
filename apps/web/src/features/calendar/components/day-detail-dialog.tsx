@@ -7,6 +7,7 @@ import {
   DAY_OFF,
   type DayDetail,
   type DayDetailOverride,
+  type DayDetailPendingOverride,
 } from '@/features/calendar/utils/day-detail';
 import { MODIFIER_OVERRIDDEN, modifierTreatmentOf } from '@/features/calendar/utils/modifiers';
 import {
@@ -23,6 +24,7 @@ import { ranksShown, rosterRankMessageKey } from '@/features/members/utils/rank'
 import {
   DAY_DETAIL_HEADING_ID,
   DAY_DETAIL_OVERRIDE_ID,
+  DAY_DETAIL_PENDING_ID,
   DAY_DETAIL_ROSTER_ID,
 } from '@/features/calendar/utils/element-ids';
 import { t } from '@/lib/i18n';
@@ -89,18 +91,44 @@ function renderOverride(override: DayDetailOverride): ReactNode {
 }
 
 /**
+ * An override a rotation change left pending review (story 3.5c): its type,
+ * reason and author, said in words. No `✎` and no ring — it is not applied,
+ * and the day shows the projection — and never `destructive` or the accent.
+ */
+function renderPending(pending: DayDetailPendingOverride): ReactNode {
+  return (
+    <section aria-labelledby={DAY_DETAIL_PENDING_ID} className="grid gap-1 rounded-md border p-3 text-sm">
+      <h3 id={DAY_DETAIL_PENDING_ID} className="font-heading text-base font-semibold">
+        {t('kalendar.detail.override.pending.heading')}
+      </h3>
+      <p>{t('kalendar.detail.override.pending.body')}</p>
+      <p>{t('kalendar.detail.override.pending.type', { type: pending.typeName })}</p>
+      <p className="break-words">{t('kalendar.detail.override.reason', { reason: pending.reason })}</p>
+      <p>
+        {t('kalendar.detail.override.author', {
+          name: pending.authorName ?? t('kalendar.detail.override.unknownAuthor'),
+        })}
+      </p>
+    </section>
+  );
+}
+
+/**
  * The day detail's body: the type, its times and the roster, or why there is
  * none. A working day and an off day show the override block when the day
  * has one — an off day made a working one, and a working day made an off
- * one, alike. A day with no rotation never has one: the domain ignores an
- * override there.
+ * one, alike. A day with no rotation never has one applied: an override
+ * there is pending review (story 3.5c), shown as such on any kind of day.
  */
 function renderDetail(shown: DayDetail, usesFireRanks: boolean, form: OverrideFormState): ReactNode {
   // STORY 3.5b: an admin sets an override on a day that has none, or removes
-  // the one it has; `form` decides which, and neither on a day with no rotation.
+  // the one it has; `form` decides which, and neither on a day with no
+  // rotation — unless an override is pending review there (story 3.5c), which
+  // is shown and offered for removal alone.
   const override = (
     <>
       {shown.override === null ? null : renderOverride(shown.override)}
+      {shown.pending === null ? null : renderPending(shown.pending)}
       <OverrideDoneNotice form={form} />
       <OverrideRemoveRefusal form={form} />
       {form.offersRemove ? <OverrideRemoveAction form={form} /> : null}
@@ -118,7 +146,13 @@ function renderDetail(shown: DayDetail, usesFireRanks: boolean, form: OverrideFo
   }
 
   if (shown.kind === DAY_NO_ROTATION) {
-    return <p className="text-sm">{t('kalendar.detail.noRotation', { team: shown.teamName })}</p>;
+    return (
+      <div className="grid gap-4">
+        <p className="text-sm">{t('kalendar.detail.noRotation', { team: shown.teamName })}</p>
+        {/* STORY 3.5c: an override on a date no version governs is pending, and can be removed. */}
+        {override}
+      </div>
+    );
   }
 
   return (

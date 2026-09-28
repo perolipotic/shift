@@ -14,6 +14,8 @@ import {
   ROTATION_READ_STALE_MS,
   ROTATION_UNAVAILABLE,
   assignmentInForceOf,
+  instantMicrosOf,
+  overrideStandingOfSnapshot,
   patternStepsOf,
   readRotation,
   rotationChangedTodayOf,
@@ -42,6 +44,7 @@ import {
   answerOf,
   assignmentRow,
   memberRow,
+  overrideRow,
   stepRow,
   teamRow,
   type FixtureRows,
@@ -61,7 +64,13 @@ function tableOf(answer: RotationAnswer): RotationTable & { readonly seen: unkno
     select(columns, options) {
       seen.push([columns, options]);
 
-      return Promise.resolve(answer);
+      return {
+        filter(column, operator, value) {
+          seen.push([column, operator, value]);
+
+          return Promise.resolve(answer);
+        },
+      };
     },
   };
 }
@@ -85,7 +94,10 @@ describe('the read', () => {
     const table = tableOf(answerOf(PILOT));
     const outcome = await readRotation(table);
 
-    expect(table.seen).toEqual([[ROTATION_COLUMNS, ROTATION_COUNT]]);
+    expect(table.seen).toEqual([
+      [ROTATION_COLUMNS, ROTATION_COUNT],
+      ['shift_type_overrides.removed_at', 'is', 'null'],
+    ]);
     expect(ROTATION_COLUMNS).toContain('teams(organization_id,id,name,archived)');
     expect(ROTATION_COLUMNS).toContain('shift_types(');
     expect(ROTATION_COLUMNS).toContain('rotation_steps(');
@@ -111,7 +123,7 @@ describe('the read', () => {
     const spy = quiet();
 
     expect(
-      await readRotation({ select: () => Promise.reject(new Error('down')) }),
+      await readRotation({ select: () => ({ filter: () => Promise.reject(new Error('down')) }) }),
     ).toEqual({ ok: false, code: ROTATION_UNAVAILABLE });
     expect(await readRotation(tableOf({ data: null, error: { code: '500' }, count: null }))).toEqual({
       ok: false,
@@ -378,7 +390,7 @@ describe('the surface state, driven through the one query definition', () => {
 
         calls += 1;
 
-        return Promise.resolve(answer as RotationAnswer);
+        return { filter: () => Promise.resolve(answer as RotationAnswer) };
       },
     };
   }
@@ -490,5 +502,91 @@ describe('the surface state, driven through the one query definition', () => {
 
   it('names the read failure through its own key', () => {
     expect(rotationMessageKey(ROTATION_UNAVAILABLE)).toBe('rotation.builder.error.unavailable');
+  });
+});
+
+describe('the live overrides (story 3.5c)', () => {
+  it('embeds the live overrides, filtered on the server, and carries them by team then date', async () => {
+    expect(ROTATION_COLUMNS).toContain(
+      'shift_type_overrides(organization_id,id,team_id,date,shift_type_id,reason,created_by,created_at,confirmed_at)',
+    );
+    expect(ROTATION_COLUMNS, 'a removal leaves the read').not.toMatch(/removed_by|removed_at/);
+    const snapshot = await snapshotOf({
+      ...PILOT,
+      overrides: [
+        overrideRow('o2', 'pilot-smjena-b', '2026-09-03', 'pilot-dan'),
+        overrideRow('o1', 'pilot-smjena-a', '2026-09-14', 'pilot-noc', { confirmedAt: '2026-09-20T08:00:00+00:00' }),
+      ],
+    });
+
+    expect(snapshot.overrides).toEqual([
+      {
+        id: 'o1',
+        teamId: 'pilot-smjena-a',
+        date: '2026-09-14',
+        shiftTypeId: 'pilot-noc',
+        reason: 'Zamjena zbog vježbe.',
+        createdBy: ADMIN,
+        createdAt: '2026-09-12T17:05:00+00:00',
+        confirmedAt: '2026-09-20T08:00:00+00:00',
+      },
+      {
+        id: 'o2',
+        teamId: 'pilot-smjena-b',
+        date: '2026-09-03',
+        shiftTypeId: 'pilot-dan',
+        reason: 'Zamjena zbog vježbe.',
+        createdBy: ADMIN,
+        createdAt: '2026-09-12T17:05:00+00:00',
+        confirmedAt: null,
+      },
+    ]);
+    // Nothing is pending on the seeded rotation: it predates both.
+    expect(overrideStandingOfSnapshot(snapshot).pending).toEqual([]);
+    expect(overrideStandingOfSnapshot(snapshot).inForce.map((override) => override.id)).toEqual(['o1', 'o2']);
+  });
+
+  it('refuses a malformed, foreign or doubled override', async () => {
+    quiet();
+    const good = overrideRow('o1', 'pilot-smjena-a', '2026-09-14', 'pilot-noc');
+
+    for (const overrides of [
+      [{ ...good, organization_id: OTHER_ORGANIZATION }],
+      [{ ...good, team_id: 'missing' }],
+      [{ ...good, shift_type_id: 'missing' }],
+      [{ ...good, date: '2026-02-30' }],
+      [{ ...good, reason: 7 }],
+      [{ ...good, created_by: null }],
+      [{ ...good, created_at: '2026-09-12' }],
+      [{ ...good, confirmed_at: 'yesterday' }],
+      [good, { ...good, id: 'o2' }],
+      [good, { ...good, date: '2026-09-15' }],
+    ]) {
+      expect(await refusedOf({ ...PILOT, overrides }), JSON.stringify(overrides)).toEqual({
+        ok: false,
+        code: ROTATION_UNAVAILABLE,
+      });
+    }
+    const { shift_type_overrides: _gone, ...noEmbed } = answerOf(PILOT).data![0] as Record<string, unknown>;
+
+    expect(await readRotation(tableOf({ data: [noEmbed], error: null, count: 1 }))).toEqual({
+      ok: false,
+      code: ROTATION_UNAVAILABLE,
+    });
+    vi.restoreAllMocks();
+  });
+
+  it('reads an instant, to the microsecond, only from a full timestamp with an offset', () => {
+    const at = Date.UTC(2026, 8, 12, 17, 5) * 1000;
+
+    expect(instantMicrosOf('2026-09-12T17:05:00+00:00')).toBe(at);
+    expect(instantMicrosOf('2026-09-12T19:05:00.5+02:00')).toBe(at + 500_000);
+    expect(instantMicrosOf('2026-09-12T19:05:00.123456+0200')).toBe(at + 123_456);
+    expect(instantMicrosOf('2026-09-12T17:05:00.88Z')).toBe(at + 880_000);
+    // Within one millisecond, the later is still later.
+    expect(instantMicrosOf('2026-09-12T17:05:00.000002Z')!).toBeGreaterThan(instantMicrosOf('2026-09-12T17:05:00.000001Z')!);
+    for (const text of ['2026-09-12', '2026', 'yesterday', '', null, 7, '2026-09-12T17:05:00']) {
+      expect(instantMicrosOf(text), String(text)).toBeNull();
+    }
   });
 });

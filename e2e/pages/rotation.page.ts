@@ -350,6 +350,77 @@ export class RotationPage extends BasePage {
     return this.dialog().getByRole('button', { name: builder.cancelScheduled.confirm });
   }
 
+  // ------------------------------------------- override review (story 3.5c)
+
+  /** `Izmjene za pregled`, named by its heading. */
+  get overrideReview(): Locator {
+    return this.page.getByRole('list', { name: builder.overrides.heading, exact: true });
+  }
+
+  /** The review's rows. */
+  get overrideReviewRows(): Locator {
+    return this.overrideReview.getByRole('listitem');
+  }
+
+  /** The review's row of `teamName` on `date` (`21.09.2026`). */
+  overrideReviewRow(teamName: string, date: string): Locator {
+    return this.overrideReviewRows.filter({
+      hasText: fill(builder.overrides.title, { team: teamName, date }),
+    });
+  }
+
+  /** A row's confirm. */
+  confirmOverrideIn(row: Locator): Locator {
+    return row.getByRole('button', { name: builder.overrides.confirm, exact: true });
+  }
+
+  /** A row's amend, which opens its dialog. */
+  amendOverrideIn(row: Locator): Locator {
+    return row.getByRole('button', { name: builder.overrides.amend, exact: true });
+  }
+
+  /** A row's discard, which opens its confirmation. */
+  discardOverrideIn(row: Locator): Locator {
+    return row.getByRole('button', { name: builder.overrides.discard, exact: true });
+  }
+
+  /** The amend's dialog, named by its title. */
+  amendDialogOf(teamName: string, date: string): Locator {
+    return this.dialog(fill(builder.overrides.amendDialog.title, { team: teamName, date }));
+  }
+
+  /** The amend's type `Select`. */
+  amendTypeIn(dialog: Locator): Locator {
+    return dialog.getByLabel(builder.overrides.amendDialog.type, { exact: true });
+  }
+
+  /** The amend's reason field. */
+  amendReasonIn(dialog: Locator): Locator {
+    return dialog.getByLabel(builder.overrides.amendDialog.reason, { exact: true });
+  }
+
+  /** The names the amend's type `Select` offers, in order. */
+  async amendTypeNamesIn(dialog: Locator): Promise<string[]> {
+    return this.amendTypeIn(dialog).locator('option').allInnerTexts();
+  }
+
+  /** Chooses `typeName` and types `reason` in the amend's dialog, then saves. */
+  async amendOverride(dialog: Locator, typeName: string, reason: string): Promise<void> {
+    await this.amendTypeIn(dialog).selectOption({ label: typeName });
+    await this.amendReasonIn(dialog).fill(reason);
+    await dialog.getByRole('button', { name: builder.overrides.amendDialog.save, exact: true }).click();
+  }
+
+  /** The discard's confirmation, named by its prompt: the team, the date and the type restored. */
+  discardConfirmOf(teamName: string, date: string, type: string): Locator {
+    return this.dialog(fill(builder.overrides.discardDialog.prompt, { team: teamName, date, type }));
+  }
+
+  /** The discard confirmation's confirm. */
+  confirmDiscardIn(confirm: Locator): Locator {
+    return confirm.getByRole('button', { name: builder.overrides.discardDialog.confirm, exact: true });
+  }
+
   // ------------------------------------------------------------ stepper
 
   /** The progress line above the bar: `Korak N od 4`, the total being the stepper's step count. */

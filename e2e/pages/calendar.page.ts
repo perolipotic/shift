@@ -286,7 +286,13 @@ export class CalendarPage extends BasePage {
 
   /** The override's block: the projected type, the author, the time and the reason. */
   overrideIn(detail: Locator): Locator {
-    return detail.getByRole('region', { name: kalendar.detail.override.heading });
+    // Exact, so the pending block's `Izmjena čeka pregled` (story 3.5c) is not it.
+    return detail.getByRole('region', { name: kalendar.detail.override.heading, exact: true });
+  }
+
+  /** The block of an override a rotation change left pending (story 3.5c). */
+  pendingOverrideIn(detail: Locator): Locator {
+    return detail.getByRole('region', { name: kalendar.detail.override.pending.heading, exact: true });
   }
 
   closeIn(detail: Locator): Locator {
@@ -335,6 +341,11 @@ export class CalendarPage extends BasePage {
     return this.dialog(
       fill(kalendar.detail.override.remove.prompt, { team: teamName, date: detailDate(date), type: projectedType }),
     );
+  }
+
+  /** The removal's confirmation of an override pending review (story 3.5c), named by its prompt. */
+  pendingRemoveConfirmOf(teamName: string, date: string): Locator {
+    return this.dialog(fill(kalendar.detail.override.pending.removePrompt, { team: teamName, date: detailDate(date) }));
   }
 
   /** The confirmation's confirm. */

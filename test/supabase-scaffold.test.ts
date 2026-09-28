@@ -1693,6 +1693,7 @@ describe('the access-control migration', () => {
       'removed_by',
       'removed_at',
     ]);
+    // Story 3.5c adds `confirmed_by` and `confirmed_at` by `alter table`; see its own case.
     expect(overrides.body).toMatch(/created_by uuid not null default auth\.uid\(\)/);
     expect(overrides.body).toMatch(/created_at timestamptz not null default now\(\)/);
     expect(overrides.body, 'a team of another tenant is representable').toMatch(
@@ -1843,6 +1844,102 @@ describe('the access-control migration', () => {
     expect(migration, 'story 3.5b changes a policy').not.toMatch(/\b(create|alter|drop) policy\b/i);
     expect(migration, 'story 3.5b grants on a table').not.toMatch(/\bon table\b/i);
     expect((migration.match(/create function/gi) ?? []).length, 'story 3.5b takes one function').toBe(1);
+  });
+
+  it('confirms or amends a pending override through two attributed definer functions, and reads confirmed_at (story 3.5c)', () => {
+    const statements = migrationStatements();
+    const migration = readFileSync(
+      join(supabaseRoot, 'migrations', '0022_shift_type_override_disposition.sql'),
+      'utf8',
+    ).replaceAll(/--[^\n]*/g, '');
+
+    // The confirmation: both or neither, and no session privilege on either.
+    expect(migration).toMatch(
+      /alter table public\.shift_type_overrides\s+add column confirmed_by uuid,\s+add column confirmed_at timestamptz,/,
+    );
+    expect(migration, 'a confirmation may be half-recorded').toMatch(
+      /check \(\(confirmed_by is null\) = \(confirmed_at is null\)\)/,
+    );
+    expect(migration, 'a session is granted something on the override table').not.toMatch(/\bon table\b/i);
+    expect(migration, 'story 3.5c changes a policy').not.toMatch(/\b(create|alter|drop) policy\b/i);
+    expect(migration, 'story 3.5c takes a trigger').not.toMatch(/create (or replace )?trigger/i);
+    expect(migration, 'story 3.5c writes or refers to a rotation row').not.toMatch(/rotation_/);
+    expect(migration, 'story 3.5c hard-deletes').not.toMatch(/\bdelete\b/i);
+    expect((migration.match(/create function/gi) ?? []).length, 'story 3.5c takes two functions and the replaced read').toBe(3);
+
+    const definers = [
+      { name: 'confirm_shift_type_override', signature: 'p_override_id uuid', args: 'uuid', returns: 'void' },
+      {
+        name: 'amend_shift_type_override',
+        signature: 'p_override_id uuid, p_shift_type_id uuid, p_reason text',
+        args: 'uuid, uuid, text',
+        returns: 'uuid',
+      },
+    ];
+    for (const { name, signature, args, returns } of definers) {
+      const body = new RegExp(`create function public\\.${name}\\(${signature}\\)[\\s\\S]*?\\$\\$;`, 'i').exec(migration)?.[0];
+      expect(body, `${name} is not declared`).toBeDefined();
+      expect(body).toMatch(new RegExp(`returns ${returns}\\b`, 'i'));
+      expect(body).toMatch(/language plpgsql/i);
+      expect(body).toMatch(/security definer/i);
+      expect(body).toMatch(/set search_path = ''/);
+      expect(body, `${name} lost the claim pin`).toMatch(/nullif\(\(\(select auth\.jwt\(\)\) ->> 'organization_id'\), ''\)::uuid/);
+      expect(body, `${name} admits a caller who is no active admin`).toMatch(
+        /from public\.current_member_access\(\) as access\s+where access\.organization_id = claimed\s+and access\.is_active\s+and access\.member_role = 'admin'/,
+      );
+      expect(body, `${name}: a refusal of the caller is not 42501`).toMatch(/errcode = 'insufficient_privilege'/);
+      expect(body, `${name}: a missing live row is not P0002`).toMatch(/errcode = 'no_data_found'/);
+      // An archived team or type is refused with a code of its own, never 42501.
+      expect(body, `${name} admits an archived team`).toMatch(/and team\.id = (confirmed|amended)_team\s+and team\.archived/);
+      expect(body, `${name} admits an archived type`).toMatch(
+        /and shift_type\.id = (confirmed_type|p_shift_type_id)\s+and shift_type\.archived/,
+      );
+      expect(body, `${name}: an archived refusal is not its own code`).toMatch(
+        /errcode = 'P0001',\s+message = 'SHIFT_TYPE_OVERRIDE_ARCHIVED'/,
+      );
+      expect(
+        (body?.match(/errcode = 'insufficient_privilege'/g) ?? []).length,
+        `${name}: 42501 is raised for more than the caller`,
+      ).toBe(1);
+      expect(body, `${name} reaches a removed row or another tenant`).toMatch(
+        /where o\.id = p_override_id\s+and o\.organization_id = claimed\s+and o\.removed_at is null/,
+      );
+      for (const role of ['public', 'anon', 'service_role']) {
+        expect(migration).toContain(`revoke execute on function public.${name}(${args}) from ${role};`);
+      }
+      expect(migration).toContain(`grant execute on function public.${name}(${args}) to authenticated;`);
+    }
+    const confirm = /create function public\.confirm_shift_type_override[\s\S]*?\$\$;/i.exec(migration)?.[0] ?? '';
+    expect(confirm, 'the confirmation is not attributed on the server').toMatch(
+      /set confirmed_by = auth\.uid\(\),\s+confirmed_at = now\(\)/,
+    );
+    const amend = /create function public\.amend_shift_type_override[\s\S]*?\$\$;/i.exec(migration)?.[0] ?? '';
+    expect(amend, 'the amend does not soft-remove the live row').toMatch(/set removed_by = auth\.uid\(\),\s+removed_at = now\(\)/);
+    expect(amend, 'the amend names its own attribution').toMatch(
+      /insert into public\.shift_type_overrides \(organization_id, team_id, date, shift_type_id, reason\)/,
+    );
+
+    // The replaced read: `confirmed_at` and nothing else new.
+    expect(migration).toMatch(/drop function public\.calendar_shift_type_overrides\(\);/);
+    const reads = [...statements.matchAll(/create function public\.calendar_shift_type_overrides\(\)[\s\S]*?\$\$;/gi)].map(
+      (match) => match[0],
+    );
+    const read = reads.at(-1) ?? '';
+    expect(read).toMatch(
+      /returns table \(\s*id uuid,\s*team_id uuid,\s*date date,\s*shift_type_id uuid,\s*reason text,\s*created_at timestamptz,\s*confirmed_at timestamptz,\s*author_member_id uuid\s*\)/,
+    );
+    expect(read, 'the read lost the claim pin').toMatch(
+      /o\.organization_id = nullif\(\(\(select auth\.jwt\(\)\) ->> 'organization_id'\), ''\)::uuid/,
+    );
+    expect(read, 'the read lost the active caller pin').toMatch(/where access\.is_active/);
+    expect(read, 'a removed override is read').toMatch(/and o\.removed_at is null/);
+    expect(read, 'an auth user id, a confirmer or a removal leaves the function').not.toMatch(
+      /select o\.id,[^()]*\b(created_by|removed_by|removed_at|confirmed_by|auth_user_id)\b[^()]*\(/,
+    );
+    for (const role of ['public', 'anon', 'service_role']) {
+      expect(migration).toContain(`revoke execute on function public.calendar_shift_type_overrides() from ${role};`);
+    }
+    expect(migration).toContain('grant execute on function public.calendar_shift_type_overrides() to authenticated;');
   });
 
   it('keeps a team name unique among active teams only, and never blank', () => {

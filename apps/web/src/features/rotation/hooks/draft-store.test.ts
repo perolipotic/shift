@@ -18,6 +18,7 @@ import {
   teamRow,
   typeRow,
   type FixtureRows,
+  rotationTableOf,
 } from '@/features/rotation/rotation.fixture';
 
 /**
@@ -27,7 +28,7 @@ import {
  */
 
 async function snapshotOf(rows: FixtureRows): Promise<RotationSnapshot> {
-  const outcome = await readRotation({ select: () => Promise.resolve(answerOf(rows)) });
+  const outcome = await readRotation(rotationTableOf(answerOf(rows)));
 
   if (!outcome.ok) throw new Error(outcome.code);
 

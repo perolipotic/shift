@@ -8,8 +8,12 @@
  * is the pure projection again, exactly.
  *
  * An override applies only where a rotation is in effect. On a date before a
- * team's first rotation version there is nothing to override, so an override
- * there is ignored and the date stays without a rotation.
+ * team's first rotation version there is nothing to override: such an
+ * override is PENDING (story 3.5c), never applied, and the date stays without
+ * a rotation. So is one a later rotation change left behind.
+ * {@link overrideStandingOf} splits the live overrides into those in force
+ * and those waiting for the admin's disposition, and callers pass only the
+ * ones in force to the derivations below.
  *
  * Only live overrides reach this module: a removed one is filtered out by the
  * read, so at most one override names a team and a date. Two are a breached
@@ -90,7 +94,7 @@ export function applyOverride(
  * and date when there is one, else {@link projectedShiftTypeOn} of the team's
  * rotation `versions` — with the projected type alongside either way. `null`
  * when no rotation version is in effect on `date`; an override on such a date
- * is ignored.
+ * is not applied (it is pending, story 3.5c).
  *
  * `overrides` may name any team and date; only `teamId` on `date` is read, but
  * every override is checked.
@@ -112,4 +116,93 @@ export function scheduledShiftTypeOn(
   }
   const indexed = overridesByTeamAndDate(overrides);
   return applyOverride(indexed, teamId, date, projectedShiftTypeOn(versions, steps, date));
+}
+
+/**
+ * When one rotation version was saved (story 3.5c): the version of team
+ * `teamId` effective from `effectiveFrom` was created at `createdAt`, an
+ * integer instant (µs since the epoch) parsed at the edge — no `Date` enters
+ * here, and the database's own precision is kept.
+ */
+export interface RotationVersionStamp {
+  readonly teamId: string;
+  readonly effectiveFrom: string;
+  readonly createdAt: number;
+}
+
+/**
+ * A live override with its identity and the instant it was written: its
+ * `confirmedAt` when an admin confirmed it, else its `createdAt`, as an
+ * integer instant (µs since the epoch).
+ */
+export interface StampedShiftTypeOverride extends ShiftTypeOverride {
+  readonly id: string;
+  readonly writtenAt: number;
+}
+
+/** Every live override, split into those applied and those waiting for the admin's disposition. */
+export interface OverrideStanding<Override extends StampedShiftTypeOverride> {
+  readonly inForce: readonly Override[];
+  readonly pending: readonly Override[];
+}
+
+function checkInstant(label: string, value: number): void {
+  if (!Number.isSafeInteger(value)) {
+    throw new RangeError(`${label} ${String(value)}, which is not an integer instant (µs)`);
+  }
+}
+
+/**
+ * Which live overrides are IN FORCE and which are PENDING the admin's
+ * disposition after a rotation change (story 3.5c; CAP-9).
+ *
+ * An override is pending when no rotation version of its team governs its date
+ * — there is no rotation to override there — or when the version governing it,
+ * the one with the greatest `effectiveFrom` on or before the date (the rule of
+ * `rotationAssignmentOn`), was created AFTER the override was written or last
+ * confirmed: the shift it was written for is no longer the one projected.
+ * Every other override is in force. Only the in-force ones are applied.
+ *
+ * Nothing is stored: cancelling a scheduled change deletes its versions, the
+ * earlier version governs again, and it predates the override. Both lists keep
+ * the order of `overrides`.
+ *
+ * @throws RangeError when a date or `effectiveFrom` is not a calendar
+ *   `YYYY-MM-DD`, when an instant is not an integer, when two versions of one
+ *   team share an `effectiveFrom`, or when two overrides name one team and date.
+ */
+export function overrideStandingOf<Override extends StampedShiftTypeOverride>(
+  versions: readonly RotationVersionStamp[],
+  overrides: readonly Override[],
+): OverrideStanding<Override> {
+  const byTeam = new Map<string, RotationVersionStamp[]>();
+  const seen = new Set<string>();
+  for (const version of versions) {
+    checkDate(`a rotation version of team ${version.teamId} is effective from`, version.effectiveFrom);
+    checkInstant(`the rotation version of team ${version.teamId} from ${version.effectiveFrom} was created at`, version.createdAt);
+    const key = keyOf(version.teamId, version.effectiveFrom);
+    if (seen.has(key)) {
+      throw new RangeError(`two rotation versions of team ${version.teamId} are effective from ${version.effectiveFrom}`);
+    }
+    seen.add(key);
+    const team = byTeam.get(version.teamId);
+    if (team === undefined) byTeam.set(version.teamId, [version]);
+    else team.push(version);
+  }
+  overridesByTeamAndDate(overrides);
+
+  const inForce: Override[] = [];
+  const pending: Override[] = [];
+  for (const override of overrides) {
+    checkInstant(`shift-type override ${override.id} was written at`, override.writtenAt);
+    let governing: RotationVersionStamp | null = null;
+    for (const version of byTeam.get(override.teamId) ?? []) {
+      if (version.effectiveFrom <= override.date && (governing === null || version.effectiveFrom > governing.effectiveFrom)) {
+        governing = version;
+      }
+    }
+    if (governing === null || governing.createdAt > override.writtenAt) pending.push(override);
+    else inForce.push(override);
+  }
+  return { inForce, pending };
 }
