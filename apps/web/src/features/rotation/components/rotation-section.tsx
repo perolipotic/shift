@@ -116,6 +116,7 @@ import {
   rotationTeamsOf,
   rotationTodayOf,
   writableRotationOf,
+  type RotationSnapshot,
 } from '@/features/rotation/services/list';
 import {
   rotationHistoryAuthorMessageKey,
@@ -161,6 +162,8 @@ import {
   type ShownSaveOutcome,
   type WarningTranslate,
 } from '@/features/rotation/utils/warnings';
+import { savedPendingCountOf } from '@/features/rotation/services/override-disposition';
+import { OverrideReview } from '@/features/rotation/components/override-review';
 import { durationValuesOf, shiftTypeDurationMessageKey } from '@/features/shift-types/services/list';
 import { supabaseClient } from '@/lib/supabase/client';
 
@@ -199,6 +202,11 @@ import { supabaseClient } from '@/lib/supabase/client';
  * refused and, beside that refusal, the change can be cancelled — confirmed in
  * a `ConfirmDialog`, re-reading only `ROTATION_KEY`. `Povijest rotacije`
  * lists every saved change after the step sections, at every width.
+ *
+ * OVERRIDES UNDER A CHANGE WAIT FOR REVIEW (story 3.5c). A save never writes
+ * or removes an override; one dated under a version saved after it is pending,
+ * and `Izmjene za pregled`, after the notices, lists each for the admin to
+ * confirm, amend or discard. The save's confirmation counts them.
  */
 
 export function RotationSection({
@@ -220,6 +228,14 @@ export function RotationSection({
   const stepMoved = useRef(false);
   const [pending, setPending] = useState(false);
   const [outcome, setOutcome] = useState<ShownSaveOutcome | null>(null);
+  /**
+   * How many overrides the landed save left pending (story 3.5c), captured
+   * once from the re-read that followed it; `null` until then, or when the
+   * re-read failed or could not be derived.
+   */
+  const [savedPending, setSavedPending] = useState<number | null>(null);
+  /** How many saves have started: the override review clears what it said last on each. */
+  const [savedTimes, setSavedTimes] = useState(0);
   const [cancelArmed, setCancelArmed] = useState(false);
   const [cancelled, setCancelled] = useState<RotationCancelOutcome | null>(null);
   /** The cancel's confirmation, where focus goes when the pressed control unmounts. */
@@ -265,6 +281,7 @@ export function RotationSection({
   /** Every change goes through a draft operation, into the store; a message describes the last save only. */
   function change(next: RotationDraft): void {
     setOutcome(null);
+    setSavedPending(null);
     setCancelled(null);
     if (snapshot !== null) rotationDraftStore.set(snapshot.organizationId, next);
   }
@@ -328,6 +345,8 @@ export function RotationSection({
 
     saving.current = true;
     setOutcome(null);
+    setSavedPending(null);
+    setSavedTimes((count) => count + 1);
     setCancelled(null);
     setPending(true);
 
@@ -381,8 +400,15 @@ export function RotationSection({
       }
 
       // The draft re-opens as what is now in force — but only from a fresh
-      // read; over a failed one it stays as it was saved.
-      if (reopensAfterSaveOf(queryClient.getQueryState(ROTATION_KEY)?.status)) rotationDraftStore.reset();
+      // read; over a failed one it stays as it was saved. The count of
+      // overrides left pending is taken from that same fresh read, once.
+      if (reopensAfterSaveOf(queryClient.getQueryState(ROTATION_KEY)?.status)) {
+        rotationDraftStore.reset();
+
+        const reread = queryClient.getQueryData<RotationSnapshot>(ROTATION_KEY);
+
+        if (reread !== undefined) setSavedPending(savedPendingCountOf(reread));
+      }
     } catch (cause) {
       console.error(ROTATION_WRITE_UNAVAILABLE, cause);
       setOutcome({ ok: false, code: ROTATION_WRITE_UNAVAILABLE, afterPattern: false });
@@ -436,7 +462,10 @@ export function RotationSection({
       // The scheduled refusal it was offered beside no longer holds — landed,
       // or stale and about to be re-read; a save after the re-read refuses
       // again if a change is still scheduled.
-      if (reread) setOutcome(null);
+      if (reread) {
+        setOutcome(null);
+        setSavedPending(null);
+      }
       setCancelled(outcome);
 
       if (reread) {
@@ -1122,6 +1151,9 @@ export function RotationSection({
           {/* The confirmation on its own line, and its own element, whether
               or not warnings follow it. */}
           <span className="block">{t(ROTATION_SAVED_MESSAGE_KEY)}</span>
+          {savedPending === null || savedPending === 0 ? null : (
+            <span className="mt-2 block">{t('rotation.builder.overrides.count', { count: savedPending })}</span>
+          )}
           {outcome.warnings.length === 0 ? null : (
             <>
               <span className="mt-2 block">{warningTextOf(warningsSummaryOf(outcome.warnings), translate)}</span>
@@ -1148,6 +1180,8 @@ export function RotationSection({
         </Notice>
       ) : null}
       {refusal === null ? null : <Notice role="alert">{t(rotationMessageKey(refusal))}</Notice>}
+      {/* STORY 3.5c: the overrides a rotation change left pending, after the notices. */}
+      <OverrideReview snapshot={snapshot} busy={pending} savedTimes={savedTimes} />
       {draft === null ? null : renderStepBar()}
       {/* SECTIONS 1 AND 2 side by side from `lg` up, stacked below it. The
           shift types' table gets the wider share, so it does not scroll; the

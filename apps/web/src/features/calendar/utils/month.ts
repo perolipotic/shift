@@ -4,14 +4,21 @@ import {
   datesOfMonth,
   memberScheduleOfMonth,
   monthOf,
+  overrideStandingOf,
   scheduleOfMonth,
   shiftTypeVersionOn,
   type MembershipVersion,
+  type OverrideStanding,
   type StatusVersion,
 } from '@shift/domain';
 
 import { MODIFIER_OVERRIDDEN, type CalendarModifier } from '@/features/calendar/utils/modifiers';
-import { CALENDAR_UNAVAILABLE, type CalendarReadFailure, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
+import {
+  CALENDAR_UNAVAILABLE,
+  type CalendarOverride,
+  type CalendarReadFailure,
+  type CalendarSnapshot,
+} from '@/features/calendar/services/snapshot';
 import {
   formatIsoDayMonth,
   formatIsoMonthName,
@@ -28,6 +35,7 @@ import {
   type ShiftTypeRow,
 } from '@/features/shift-types/services/list';
 import { splitTeams, type TeamRow } from '@/features/teams/services/list';
+import { instantMicrosOf } from '@/features/rotation/services/list';
 
 /**
  * One month of the calendar as the screen draws it (story 3.1): the heading,
@@ -38,7 +46,8 @@ import { splitTeams, type TeamRow } from '@/features/teams/services/list';
  *
  * NOTHING IS PROJECTED HERE (AD-7). Which type a team works on a date is
  * `scheduleOfMonth`'s answer from `@shift/domain` — the projection with the
- * shift-type overrides applied over it (story 3.5a), and whether one was;
+ * shift-type overrides IN FORCE applied over it (stories 3.5a, 3.5c), and
+ * whether one was; an override a rotation change left pending is not applied;
  * which times that type has on that date is `shiftTypeVersionOn`'s. This
  * module names, colours, marks and formats.
  *
@@ -51,6 +60,38 @@ import { splitTeams, type TeamRow } from '@/features/teams/services/list';
  * same snapshot; the compressed phone grid is the same grid, its letters
  * switched in by CSS.
  */
+
+/** One live override of the calendar with the instant it was written or last confirmed. */
+export type StampedCalendarOverride = CalendarOverride & { readonly writtenAt: number };
+
+const STANDINGS = new WeakMap<CalendarSnapshot, OverrideStanding<StampedCalendarOverride>>();
+
+/**
+ * The snapshot's live overrides IN FORCE and those PENDING the admin's review
+ * (story 3.5c): `overrideStandingOf`'s answer from `@shift/domain`, over the
+ * versions' save times and each override's `confirmedAt ?? createdAt`, as
+ * epoch microseconds parsed at the edge by `instantMicrosOf`. Only `inForce` reaches a cell,
+ * a day or a roster. Worked out once per snapshot.
+ *
+ * @throws RangeError on any precondition of `overrideStandingOf`.
+ */
+export function overrideStandingOfCalendar(snapshot: CalendarSnapshot): OverrideStanding<StampedCalendarOverride> {
+  const known = STANDINGS.get(snapshot);
+
+  if (known !== undefined) return known;
+
+  const standing = overrideStandingOf(
+    snapshot.assignmentStamps,
+    snapshot.overrides.map((override) => ({
+      ...override,
+      writtenAt: instantMicrosOf(override.confirmedAt ?? override.createdAt) ?? Number.NaN,
+    })),
+  );
+
+  STANDINGS.set(snapshot, standing);
+
+  return standing;
+}
 
 /** The search parameter that names the month shown: `?mjesec=2026-09`. */
 export const MONTH_SEARCH_PARAM = 'mjesec';
@@ -659,7 +700,13 @@ export function calendarDayListOf(
   today: string,
 ): readonly CalendarDay[] | null {
   const schedule = memberScheduleOfMonth(
-    { memberships, statuses, assignments: snapshot.assignments, steps: snapshot.steps, overrides: snapshot.overrides },
+    {
+      memberships,
+      statuses,
+      assignments: snapshot.assignments,
+      steps: snapshot.steps,
+      overrides: overrideStandingOfCalendar(snapshot).inForce,
+    },
     month,
   );
 
@@ -745,7 +792,7 @@ export function calendarMonthOf(snapshot: CalendarSnapshot, search: CalendarSear
       teamIds: teams.map((team) => team.id),
       assignments: snapshot.assignments,
       steps: snapshot.steps,
-      overrides: snapshot.overrides,
+      overrides: overrideStandingOfCalendar(snapshot).inForce,
     },
     month,
   );

@@ -89,6 +89,10 @@ const SANCTIONED_PLURAL_KEYS = [
   // STORY 2.6: how many teams one saved change binds, in the history —
   // `1 smjena`, `2 smjene`, `5 smjena`. The builder's namespace may say the Team.
   'rotation.builder.history.teamCount',
+  // STORY 3.5c: how many overrides wait for review after a rotation change —
+  // `1 izmjena čeka`, `2 izmjene čekaju`, `5 izmjena čeka` — in the review and
+  // in the save's confirmation.
+  'rotation.builder.overrides.count',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -958,6 +962,52 @@ const SANCTIONED_SCREEN_KEYS = [
   // Notice — the save, and the removal with the type the rotation restores.
   'kalendar.detail.override.saved',
   'kalendar.detail.override.removed',
+  // STORY 3.5c: an override a rotation change left pending, in the day detail
+  // — the block's heading, body and the type it names, and the removal's
+  // prompt and confirmation where no rotation governs the day; and in the
+  // rotation builder, `Izmjene za pregled` — its heading and lede, a row's
+  // title, type, projected type or no rotation, reason, author and unknown
+  // author, the three actions, the amend's dialog, the discard's neutral
+  // confirmation, what a landed disposition says and the five refusals.
+  'kalendar.detail.override.pending.heading',
+  'kalendar.detail.override.pending.body',
+  'kalendar.detail.override.pending.type',
+  'kalendar.detail.override.pending.removePrompt',
+  'kalendar.detail.override.pending.removed',
+  'rotation.builder.overrides.heading',
+  'rotation.builder.overrides.lede',
+  'rotation.builder.overrides.title',
+  'rotation.builder.overrides.type',
+  'rotation.builder.overrides.projected',
+  'rotation.builder.overrides.noRotation',
+  'rotation.builder.overrides.reason',
+  'rotation.builder.overrides.author',
+  'rotation.builder.overrides.unknownAuthor',
+  'rotation.builder.overrides.unavailable',
+  'rotation.builder.overrides.confirm',
+  'rotation.builder.overrides.amend',
+  'rotation.builder.overrides.discard',
+  'rotation.builder.overrides.amendDialog.title',
+  'rotation.builder.overrides.amendDialog.type',
+  'rotation.builder.overrides.amendDialog.reason',
+  'rotation.builder.overrides.amendDialog.save',
+  'rotation.builder.overrides.amendDialog.saving',
+  'rotation.builder.overrides.amendDialog.cancel',
+  'rotation.builder.overrides.amendDialog.close',
+  'rotation.builder.overrides.discardDialog.prompt',
+  'rotation.builder.overrides.discardDialog.promptNoRotation',
+  'rotation.builder.overrides.discardDialog.confirm',
+  'rotation.builder.overrides.discardDialog.cancel',
+  'rotation.builder.overrides.discardDialog.discarding',
+  'rotation.builder.overrides.done.confirmed',
+  'rotation.builder.overrides.done.amended',
+  'rotation.builder.overrides.done.discarded',
+  'rotation.builder.overrides.refused.denied',
+  'rotation.builder.overrides.refused.gone',
+  'rotation.builder.overrides.refused.archived',
+  'rotation.builder.overrides.refused.reason',
+  'rotation.builder.overrides.refused.sameAsProjected',
+  'rotation.builder.overrides.refused.failed',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
@@ -1030,6 +1080,16 @@ const CALENDAR_NAMESPACE = 'kalendar.';
 const CALENDAR_OVERRIDE_NAMESPACE = 'kalendar.detail.override.';
 
 /**
+ * The rotation builder's override review (story 3.5c): the admin amends an
+ * override's SHIFT TYPE there, so it says the term — `Tip smjene` is the
+ * amend's field — and, being the builder's, the TEAM too, as `smjena` (an
+ * archived `Smjena ili tip smjene`). Both words, each in its own sense: once
+ * the term is taken out, what is left of `smjen` is the Team, which is
+ * `rotation.builder`'s to say.
+ */
+const ROTATION_OVERRIDE_NAMESPACE = 'rotation.builder.overrides.';
+
+/**
  * `Tip smjene` in the inflections of `tip` the copy can use — tip, tipa, tipu,
  * tipom, tipovi, tipova, tipove, tipovima — and no other word starting `tip`
  * (`tipka smjene`, `tipično smjena` are not the term).
@@ -1045,6 +1105,11 @@ const SHIFT_TYPE_TERM = /(?<![\p{L}\p{N}])tip(?:a|u|om|ovi|ova|ove|ovima)?\s+smj
  */
 function teamTermOutOfTurn(key: string, message: string): boolean {
   const lowered = message.toLowerCase();
+
+  if (key.startsWith(ROTATION_OVERRIDE_NAMESPACE)) {
+    // The term taken out, `smjen` may remain only as the Team's noun.
+    return /smjen(?!a\b|e\b|u\b|om\b|ama\b)/.test(lowered.replace(SHIFT_TYPE_TERM, ''));
+  }
 
   if (key.startsWith(SHIFT_TYPE_NAMESPACE) || key.startsWith(CALENDAR_OVERRIDE_NAMESPACE)) {
     return lowered.replace(SHIFT_TYPE_TERM, '').includes('smjen');
@@ -1193,6 +1258,10 @@ describe('the messages obey the voice rules that bind every string', () => {
     // AMENDED BY STORY 3.5b, and narrow: `kalendar.detail.override` changes a
     // team's Shift Type, so there — and only there in `kalendar` — the term
     // `tip… smjen…` is admitted, and `smjen` only inside it.
+    //
+    // AMENDED BY STORY 3.5c: `rotation.builder.overrides` amends an
+    // override's Shift Type and names the Team, so there both are admitted:
+    // the term `tip… smjen…`, and `smjen` otherwise only as the Team's noun.
     const found = leafKeys(resource())
       .map((key) => ({ key, message: String(messageAt(key)) }))
       .filter(({ key, message }) => teamTermOutOfTurn(key, message));

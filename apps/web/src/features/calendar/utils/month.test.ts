@@ -783,6 +783,41 @@ describe('the overridden mark (story 3.5a)', () => {
   });
 });
 
+describe('an override a rotation change left pending (story 3.5c)', () => {
+  // Smjena A changes phase from 2026-09-20, saved after the override on the
+  // 21st was written (2026-09-12): that override is pending, and not applied.
+  const changed: FixtureRows = {
+    ...PILOT,
+    assignments: [
+      ...PILOT.assignments,
+      assignmentRow('pilot-smjena-a', 'pilot-rotation', 'pilot-step-2', '2026-09-20', '2026-09-20', undefined, {
+        createdAt: '2026-09-15T10:00:00+00:00',
+      }),
+    ],
+  };
+  const onTeam = { viewers: [viewerRow([membershipRow('pilot-smjena-a', SEEDED)])] };
+
+  it("leaves the viewer's day list and the chosen person's as the pure projection, unmarked", async () => {
+    const pending = await snapshotOf(changed, {
+      ...onTeam,
+      overrides: [calendarOverrideRow('o1', 'pilot-smjena-a', '2026-09-21', 'pilot-dan')],
+    });
+    const pure = await snapshotOf(changed, onTeam);
+    const search = { mjesec: '2026-09', osoba: VIEWER_MEMBER };
+    const month = calendarMonthOf(pending, search, TODAY);
+    const expected = calendarMonthOf(pure, search, TODAY);
+
+    expect(month.person?.id).toBe(VIEWER_MEMBER);
+    expect(month.days).toEqual(expected.days);
+    expect(month.person?.days).toEqual(expected.person?.days);
+    const days = daysOf(month)!;
+    const day = days.find((one) => one.date === '2026-09-21');
+
+    expect(day?.cell?.modifiers).toEqual([]);
+    expect(month.rows.flatMap((row) => row.cells).every((cell) => cell.modifiers.length === 0)).toBe(true);
+  });
+});
+
 describe('the team filter (story 3.3a)', () => {
   it('keeps any non-empty smjena and drops anything else', () => {
     expect(calendarSearchOf({ smjena: 'pilot-smjena-a' })).toEqual({ smjena: 'pilot-smjena-a' });

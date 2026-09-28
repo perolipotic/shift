@@ -89,6 +89,13 @@
           "gone": "Izmjena je već uklonjena.",
           "denied": "Ne možeš mijenjati izmjene. Za to trebaš ovlasti administratora.",
           "failed": "Promjena nije uspjela. Pokušaj ponovno."
+        },
+        "pending": {
+          "heading": "Izmjena čeka pregled",
+          "body": "Rotacija se promijenila nakon što je izmjena upisana, pa se prikazuje tip smjene prema rotaciji. Administrator izmjenu pregledava u postavkama rotacije.",
+          "type": "Upisana izmjena: {type}",
+          "removePrompt": "Ukloniti izmjenu koja čeka pregled za {team} · {date}? Ona se već ne primjenjuje, pa se prikaz dana ne mijenja.",
+          "removed": "Izmjena koja je čekala pregled je uklonjena."
         }
       }
     },
@@ -458,6 +465,51 @@
         "keep": "Odustani",
         "done": "Zakazana promjena rotacije je poništena.",
         "stale": "Zakazana promjena više ne postoji: poništena je ili je već na snazi. Prikazano je trenutačno stanje."
+      },
+      "overrides": {
+        "heading": "Izmjene za pregled",
+        "lede": "Promjena rotacije zahvatila je ove izmjene tipa smjene. Dok ih ne pregledaš, kalendar prikazuje tip smjene prema rotaciji.",
+        "count": "{count, plural, one {# izmjena čeka pregled.} few {# izmjene čekaju pregled.} other {# izmjena čeka pregled.}}",
+        "unavailable": "Izmjene za pregled nije moguće prikazati. Osvježi stranicu.",
+        "title": "{team} · {date}",
+        "type": "Izmjena: {type}",
+        "projected": "Prema rotaciji sada: {type}",
+        "noRotation": "Na taj dan nema rotacije, pa izmjenu možeš samo odbaciti.",
+        "reason": "Razlog: {reason}",
+        "author": "Autor: {name}",
+        "unknownAuthor": "Nepoznata osoba",
+        "confirm": "Potvrdi",
+        "amend": "Promijeni",
+        "discard": "Odbaci",
+        "amendDialog": {
+          "title": "Promijeni izmjenu: {team} · {date}",
+          "type": "Tip smjene",
+          "reason": "Razlog",
+          "save": "Spremi izmjenu",
+          "saving": "Spremanje…",
+          "cancel": "Odustani",
+          "close": "Zatvori"
+        },
+        "discardDialog": {
+          "prompt": "Odbaciti izmjenu za {team} · {date}? Vraća se {type} prema rotaciji.",
+          "promptNoRotation": "Odbaciti izmjenu za {team} · {date}? Na taj dan nema rotacije.",
+          "confirm": "Odbaci",
+          "cancel": "Odustani od odbacivanja",
+          "discarding": "Odbacivanje…"
+        },
+        "done": {
+          "confirmed": "Izmjena je potvrđena i ponovno vrijedi.",
+          "amended": "Izmjena je promijenjena.",
+          "discarded": "Izmjena je odbačena."
+        },
+        "refused": {
+          "denied": "Ne možeš mijenjati izmjene. Za to trebaš ovlasti administratora.",
+          "gone": "Izmjena je već pregledana ili uklonjena. Prikaz je osvježen.",
+          "archived": "Smjena ili tip smjene je arhiviran. Osvježi prikaz.",
+          "reason": "Upiši razlog, 1–200 znakova.",
+          "sameAsProjected": "To je već tip smjene prema rotaciji.",
+          "failed": "Promjena nije uspjela. Pokušaj ponovno."
+        }
       },
       "history": {
         "heading": "Povijest rotacije",

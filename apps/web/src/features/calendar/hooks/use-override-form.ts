@@ -20,6 +20,7 @@ import { CALENDAR_KEY, type CalendarSnapshot } from '@/features/calendar/service
 import {
   OVERRIDE_REFUSED_REASON,
   overrideOffersOf,
+  overrideRemovalTargetOf,
   type DayDetail,
 } from '@/features/calendar/utils/day-detail';
 import { DAY_DETAIL_HEADING_ID } from '@/features/calendar/utils/element-ids';
@@ -87,7 +88,8 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
   }
 
   const offers = overrideOffersOf(snapshot, detail);
-  const override = detail?.override ?? null;
+  // The override in force, or — story 3.5c — the one pending review.
+  const override = overrideRemovalTargetOf(detail);
 
   /** Whether the day a write started for is still the one open. */
   function stillOn(startedFor: string | null): boolean {

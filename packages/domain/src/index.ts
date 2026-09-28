@@ -42,9 +42,13 @@ export {
 } from './projection.js';
 
 export {
+  overrideStandingOf,
   scheduledShiftTypeOn,
+  type OverrideStanding,
+  type RotationVersionStamp,
   type ScheduledShiftType,
   type ShiftTypeOverride,
+  type StampedShiftTypeOverride,
 } from './overrides.js';
 
 export {

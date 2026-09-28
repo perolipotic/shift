@@ -1,7 +1,10 @@
 import {
+  overrideStandingOf,
   rotationAssignmentOn,
+  type OverrideStanding,
   type RotationAssignment,
   type RotationStep,
+  type RotationVersionStamp,
 } from '@shift/domain';
 import { queryOptions } from '@tanstack/react-query';
 
@@ -32,7 +35,13 @@ import { TEAMS_COLUMNS, splitTeams, teamRowOf, type TeamRow } from '@/features/t
  * validated by the parsers their own lists use (`teamRowOf`, `shiftTypeRowOf`),
  * so a row one list refuses the other refuses too.
  *
- * `select` AND NOTHING ELSE. Writing is `@/features/rotation/services/write`.
+ * THE LIVE SHIFT-TYPE OVERRIDES (story 3.5c) ride along, embedded and
+ * filtered to the live ones, so the builder can list those a rotation change
+ * left pending. The table is an active admin's alone (0019), as the builder is.
+ *
+ * `select` AND ITS ONE FILTER, AND NOTHING ELSE. Writing is
+ * `@/features/rotation/services/write`, and the dispositions are
+ * `@/features/rotation/services/override-disposition`.
  */
 
 /** The relation the read starts from: the caller's own organization. */
@@ -61,7 +70,16 @@ export const ROTATION_COLUMNS =
   // STORY 2.6: who saved each change. `created_by` is an auth user id with no
   // key to `members`, so the names are joined here, on the client; an active
   // admin reads every member of the organization (0011).
-  'members(organization_id,auth_user_id,name)';
+  'members(organization_id,auth_user_id,name),' +
+  // STORY 3.5c: the live overrides, for the review a rotation change leaves.
+  'shift_type_overrides(organization_id,id,team_id,date,shift_type_id,reason,created_by,created_at,confirmed_at)';
+
+/** The embedded column the overrides embed is filtered by: live ones only (`removed_at is null`). */
+export const ROTATION_OVERRIDES_LIVE_COLUMN = 'shift_type_overrides.removed_at';
+
+/** The operator and value of that filter. */
+export const ROTATION_OVERRIDES_LIVE_OPERATOR = 'is';
+export const ROTATION_OVERRIDES_LIVE_VALUE = 'null';
 
 /** The exact count, so an answer reaching two organizations is caught. */
 export const ROTATION_COUNT: RotationCountOptions = { count: 'exact' };
@@ -100,9 +118,14 @@ export interface RotationAnswer {
   readonly count: number | null;
 }
 
+/** The select, narrowed to the live overrides. */
+export interface RotationSelectFilter {
+  filter(column: string, operator: string, value: string): PromiseLike<RotationAnswer>;
+}
+
 /** The one call this module makes, named structurally so it can be stubbed. */
 export interface RotationTable {
-  select(columns: string, options: RotationCountOptions): PromiseLike<RotationAnswer>;
+  select(columns: string, options: RotationCountOptions): RotationSelectFilter;
 }
 
 /** The one answer the builder draws from. */
@@ -126,6 +149,25 @@ export interface RotationSnapshot {
   readonly history: readonly RotationHistoryRecord[];
   /** The organization's members as the history names them: by auth user id. */
   readonly authors: readonly RotationAuthor[];
+  /** Every LIVE shift-type override, by team then date (story 3.5c); at most one per team and date. */
+  readonly overrides: readonly RotationOverride[];
+}
+
+/**
+ * One live shift-type override as the builder reviews it (story 3.5c): the
+ * fact, its author by auth user id (named through `authors`), and when it was
+ * written and last confirmed, as sent.
+ */
+export interface RotationOverride {
+  readonly id: string;
+  readonly teamId: string;
+  readonly date: string;
+  readonly shiftTypeId: string;
+  readonly reason: string;
+  readonly createdBy: string;
+  readonly createdAt: string;
+  /** `null` until an admin confirms it. */
+  readonly confirmedAt: string | null;
 }
 
 /** One stored assignment's attribution: which version, who saved it, when. */
@@ -190,8 +232,80 @@ export function rotationAssignmentOf(row: unknown, organizationId: string): Rota
   return { teamId, patternId, offsetStepId, anchorDate, effectiveFrom };
 }
 
-/** A full ISO timestamp WITH an offset, as PostgREST renders a `timestamptz`. */
-const TIMESTAMP_WITH_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:?\d{2})$/;
+/**
+ * A full ISO timestamp WITH an offset, as PostgREST renders a `timestamptz`:
+ * the date and time, the fraction (Postgres drops trailing zeros, so `.88`),
+ * and the offset.
+ */
+const TIMESTAMP_WITH_OFFSET = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?)(?:\.(\d+))?(Z|[+-]\d{2}:?\d{2})$/;
+
+const MICROS_PER_MILLI = 1000;
+const MICRO_DIGITS = 6;
+
+/**
+ * A `timestamptz` as PostgREST renders it, as epoch MICROSECONDS — the one
+ * edge where an instant becomes the integer `@shift/domain` compares (story
+ * 3.5c) — or `null` for anything that is not a full timestamp with an offset.
+ *
+ * NOT `Date.parse` alone: it keeps milliseconds, and the database stamps
+ * microseconds, so a version saved in the same millisecond as an override,
+ * but after it, would read as no later. The fraction is read as digits and
+ * padded to six; the rest is `Date.parse`'s, at whole seconds.
+ */
+export function instantMicrosOf(text: unknown): number | null {
+  if (typeof text !== 'string') return null;
+
+  const matched = TIMESTAMP_WITH_OFFSET.exec(text);
+
+  if (matched === null) return null;
+
+  const [, base = '', fraction = '', zone = ''] = matched;
+  const offset = zone === 'Z' || zone.includes(':') ? zone : `${zone.slice(0, 3)}:${zone.slice(3)}`;
+  const millis = Date.parse(`${base}${offset}`);
+
+  if (Number.isNaN(millis)) return null;
+
+  const micros = millis * MICROS_PER_MILLI + Number(fraction.slice(0, MICRO_DIGITS).padEnd(MICRO_DIGITS, '0'));
+
+  return Number.isSafeInteger(micros) ? micros : null;
+}
+
+/**
+ * One embedded assignment as the domain's stamp of when it was saved (story
+ * 3.5c), or `null` (another tenant included, and a `created_at` that is not
+ * an instant).
+ */
+export function rotationVersionStampOf(row: unknown, organizationId: string): RotationVersionStamp | null {
+  const assignment = rotationAssignmentOf(row, organizationId);
+  const createdAt = isRecord(row) ? instantMicrosOf(row['created_at']) : null;
+
+  if (assignment === null || createdAt === null) return null;
+
+  return { teamId: assignment.teamId, effectiveFrom: assignment.effectiveFrom, createdAt };
+}
+
+/** One embedded live override, validated field by field, or `null` (another tenant included). */
+export function rotationOverrideOf(row: unknown, organizationId: string): RotationOverride | null {
+  if (!isRecord(row) || textAt(row, 'organization_id') !== organizationId) return null;
+
+  const id = textAt(row, 'id');
+  const teamId = textAt(row, 'team_id');
+  const date = textAt(row, 'date');
+  const shiftTypeId = textAt(row, 'shift_type_id');
+  const reason = row['reason'];
+  const createdBy = textAt(row, 'created_by');
+  const createdAt = textAt(row, 'created_at');
+  const confirmedAt = row['confirmed_at'];
+
+  if (id === null || teamId === null || shiftTypeId === null || createdBy === null) return null;
+  if (date === null || !isIsoDate(date)) return null;
+  // Any text: what a reason may hold is 0019's check alone.
+  if (typeof reason !== 'string') return null;
+  if (createdAt === null || instantMicrosOf(createdAt) === null) return null;
+  if (confirmedAt !== null && instantMicrosOf(confirmedAt) === null) return null;
+
+  return { id, teamId, date, shiftTypeId, reason, createdBy, createdAt, confirmedAt: confirmedAt as string | null };
+}
 
 /**
  * One embedded assignment's attribution, validated field by field, or `null`
@@ -208,7 +322,7 @@ export function rotationHistoryRecordOf(row: unknown, organizationId: string): R
   const createdAt = textAt(row, 'created_at');
 
   if (id === null || createdBy === null || createdAt === null) return null;
-  if (!TIMESTAMP_WITH_OFFSET.test(createdAt) || Number.isNaN(Date.parse(createdAt))) return null;
+  if (instantMicrosOf(createdAt) === null) return null;
 
   return {
     id,
@@ -258,7 +372,9 @@ export async function readRotation(table: RotationTable): Promise<RotationOutcom
   let answered: RotationAnswer;
 
   try {
-    answered = await table.select(ROTATION_COLUMNS, ROTATION_COUNT);
+    answered = await table
+      .select(ROTATION_COLUMNS, ROTATION_COUNT)
+      .filter(ROTATION_OVERRIDES_LIVE_COLUMN, ROTATION_OVERRIDES_LIVE_OPERATOR, ROTATION_OVERRIDES_LIVE_VALUE);
   } catch (cause) {
     return unavailable(cause);
   }
@@ -282,6 +398,7 @@ export async function readRotation(table: RotationTable): Promise<RotationOutcom
   const stepRows = embedded(organization, 'rotation_steps');
   const assignmentRows = embedded(organization, 'rotation_assignments');
   const memberRows = embedded(organization, 'members');
+  const overrideRows = embedded(organization, 'shift_type_overrides');
 
   if (organizationId === null || timeZone === null) return unavailable('organization');
   if (
@@ -289,7 +406,8 @@ export async function readRotation(table: RotationTable): Promise<RotationOutcom
     typeRows === null ||
     stepRows === null ||
     assignmentRows === null ||
-    memberRows === null
+    memberRows === null ||
+    overrideRows === null
   ) {
     return unavailable('organization');
   }
@@ -347,12 +465,29 @@ export async function readRotation(table: RotationTable): Promise<RotationOutcom
     authors.push(author);
   }
 
+  const overrides: RotationOverride[] = [];
+
+  for (const row of overrideRows) {
+    const override = rotationOverrideOf(row, organizationId);
+
+    if (override === null) return unavailable('override');
+
+    overrides.push(override);
+  }
+
   const teamIds = new Set(teams.map((team) => team.id));
   const typeIds = new Set(types.map((type) => type.id));
   const stepById = new Map(steps.map((step) => [step.id, step]));
 
   if (teamIds.size !== teams.length || typeIds.size !== types.length) return unavailable('ids');
   if (stepById.size !== steps.length) return unavailable('ids');
+  if (overrides.some((override) => !teamIds.has(override.teamId) || !typeIds.has(override.shiftTypeId))) {
+    return unavailable('override');
+  }
+  if (new Set(overrides.map((override) => override.id)).size !== overrides.length) return unavailable('ids');
+  if (new Set(overrides.map((override) => `${override.teamId}:${override.date}`)).size !== overrides.length) {
+    return unavailable('override');
+  }
   if (steps.some((step) => !typeIds.has(step.shiftTypeId))) return unavailable('step type');
   if (new Set(steps.map((step) => `${step.patternId}:${String(step.position)}`)).size !== steps.length) {
     return unavailable('positions');
@@ -374,10 +509,13 @@ export async function readRotation(table: RotationTable): Promise<RotationOutcom
   if (new Set(authors.map((author) => author.authUserId)).size !== authors.length) return unavailable('ids');
 
   types.sort(compareCreation);
+  overrides.sort((left, right) =>
+    left.teamId === right.teamId ? (left.date < right.date ? -1 : 1) : left.teamId < right.teamId ? -1 : 1,
+  );
 
   return {
     ok: true,
-    snapshot: { organizationId, timeZone, teams, types, steps, assignments, history, authors },
+    snapshot: { organizationId, timeZone, teams, types, steps, assignments, history, authors, overrides },
   };
 }
 
@@ -460,6 +598,28 @@ export function rotationChangedTodayOf(snapshot: RotationSnapshot, effectiveFrom
 
     return latest === effectiveFrom;
   });
+}
+
+/**
+ * Every live override IN FORCE and every one PENDING the admin's disposition
+ * (story 3.5c): `overrideStandingOf` from `@shift/domain`, over the versions'
+ * save times and each override's `confirmedAt ?? createdAt`. The instants are
+ * parsed here, at the edge; the rule is the domain's.
+ */
+export function overrideStandingOfSnapshot(
+  snapshot: RotationSnapshot,
+): OverrideStanding<RotationOverride & { readonly writtenAt: number }> {
+  const stamps = snapshot.history.map((record) => ({
+    teamId: record.teamId,
+    effectiveFrom: record.effectiveFrom,
+    createdAt: instantMicrosOf(record.createdAt) ?? Number.NaN,
+  }));
+  const overrides = snapshot.overrides.map((override) => ({
+    ...override,
+    writtenAt: instantMicrosOf(override.confirmedAt ?? override.createdAt) ?? Number.NaN,
+  }));
+
+  return overrideStandingOf(stamps, overrides);
 }
 
 /** The message a read failure renders as. Exhaustive. */

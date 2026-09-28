@@ -295,6 +295,13 @@ const ROTATION_STEPPER_KEYS = join(srcRoot, 'features', 'rotation', 'utils', 'st
 const ROTATION_WARNING_KEYS = join(srcRoot, 'features', 'rotation', 'utils', 'warnings.ts');
 /** Story 2.6's rotation history: the three statuses and the unknown author. */
 const ROTATION_HISTORY_KEYS = join(srcRoot, 'features', 'rotation', 'services', 'history.ts');
+/**
+ * Story 3.5c's review of the overrides a rotation change left pending: a
+ * component of its own, rendered by the builder after its notices, and the
+ * module holding its refusals and what a landed disposition says.
+ */
+const ROTATION_OVERRIDE_REVIEW = join(srcRoot, 'features', 'rotation', 'components', 'override-review.tsx');
+const ROTATION_DISPOSITION_KEYS = join(srcRoot, 'features', 'rotation', 'services', 'override-disposition.ts');
 
 /** The calendar feature, which holds the calendar screen's parts. */
 const CALENDAR_FEATURE = join(srcRoot, 'features', 'calendar');
@@ -639,6 +646,11 @@ const SCREENS = [
   // the scheduled refusal, and its confirmation's keep and confirm. The
   // history is a table and offers nothing.
   { name: 'the rotation builder', file: ROTATION_SECTION, expectedControls: 16 },
+  // STORY 3.5c. NINE on the override review, each written once however many
+  // overrides are pending: a row's confirm, amend and discard; the amend's
+  // type `<select>`, reason, cancel and save; and the discard's cancel and
+  // confirm. The amend dialog's close is `DialogHeader`'s, not the screen's.
+  { name: 'the rotation override review', file: ROTATION_OVERRIDE_REVIEW, expectedControls: 9 },
   // ZERO on every remaining placeholder (four since story 2.2b built
   // `/postavke-rotacije`), and asserted rather than assumed: a placeholder is a
   // heading and nothing else, so the first control any of them grows is a
@@ -1912,8 +1924,32 @@ const KEY_SOURCES = [
     // keep and confirm; and the history's heading, lede, empty note, five
     // column heads, save time and team count. The statuses and the unknown
     // author come through `@/features/rotation/services/history`, counted below.
+    // SIXTY-FOUR SINCE STORY 3.5c: the save's confirmation counts the
+    // overrides left pending. The review itself is the next entry.
     keys: translationKeys,
-    strings: 63,
+    strings: 64,
+  },
+  {
+    // STORY 3.5c: the review's heading, lede and count; a row's title, type,
+    // projected type or no rotation, reason, author and unknown author, and
+    // its three actions; the amend's title, close, two labels, cancel, save
+    // and saving; and the discard's two prompts, cancel, confirm and
+    // discarding; and the review that cannot be derived. The refusals and
+    // what a landed disposition says come through
+    // `@/features/rotation/services/override-disposition`, below.
+    name: 'the rotation override review',
+    file: ROTATION_OVERRIDE_REVIEW,
+    keys: translationKeys,
+    strings: 26,
+  },
+  {
+    // STORY 3.5c: the six refusals of a disposition (an archived team or type
+    // among them) and the three things a landed one says — confirmed,
+    // amended, discarded.
+    name: 'the rotation disposition rules',
+    file: ROTATION_DISPOSITION_KEYS,
+    keys: memberListKeys,
+    strings: 9,
   },
   {
     // STORY 2.4: the four step names and Dalje's three labels, one per step
@@ -1961,11 +1997,13 @@ const KEY_SOURCES = [
     // it was saved and its reason. FORTY-TWO SINCE STORY 3.5b: the form's
     // heading, its two labels, save and saving, and the removal's action,
     // prompt, confirm, cancel and removing. The refusals come through
-    // `@/features/calendar/services/override-write`, below.
+    // `@/features/calendar/services/override-write`, below. FORTY-NINE SINCE
+    // STORY 3.5c: the pending block's heading, body and type, its reason,
+    // author and unknown author, and the removal's prompt with no rotation.
     name: 'the Kalendar destination',
     file: KALENDAR,
     keys: translationKeys,
-    strings: 42,
+    strings: 49,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's
@@ -1985,11 +2023,12 @@ const KEY_SOURCES = [
   },
   {
     // STORY 3.5b: the six refusals of setting or removing an override, and
-    // the two things a landed write says — saved, and removed.
+    // the two things a landed write says — saved, and removed. NINE SINCE
+    // STORY 3.5c: a pending override removed from a day with no rotation.
     name: 'the calendar override write rules',
     file: CALENDAR_OVERRIDE_WRITE_KEYS,
     keys: messageKeyUnions,
-    strings: 8,
+    strings: 9,
   },
   {
     // The read failure.
@@ -2307,8 +2346,12 @@ describe('the screen is read at all, so every sweep below means something', () =
     // FORTY-FIVE SINCE STORY 3.2b: `@/features/calendar/utils/modifiers`.
     //
     // FORTY-SIX SINCE STORY 3.5b: `@/features/calendar/services/override-write`.
-    expect(SCREENS).toHaveLength(24);
-    expect(KEY_SOURCES).toHaveLength(46);
+    //
+    // TWENTY-FIVE AND FORTY-EIGHT SINCE STORY 3.5c: the override review is a
+    // new `.tsx` that renders strings (one each), and
+    // `@/features/rotation/services/override-disposition` is a key source.
+    expect(SCREENS).toHaveLength(25);
+    expect(KEY_SOURCES).toHaveLength(48);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -4366,6 +4409,8 @@ describe('the member list reads once, under one key', () => {
       ROTATION_STEPPER_KEYS,
       ROTATION_WARNING_KEYS,
       ROTATION_HISTORY_KEYS,
+      ROTATION_OVERRIDE_REVIEW,
+      ROTATION_DISPOSITION_KEYS,
     ]) {
       const text = readFileSync(file, 'utf8');
 
@@ -4447,6 +4492,30 @@ describe('the member list reads once, under one key', () => {
     expect(finallyBlock(cancel)).toContain('saving.current = false');
     expect(finallyBlock(cancel)).toContain('setPending(false)');
     expect(cancel).toContain('invalidateQueries({ queryKey: ROTATION_KEY })');
+  });
+
+  it('reviews the pending overrides neutrally, holds its dialogs while a write is in flight, and re-reads only the rotation', () => {
+    // STORY 3.5c. The review reads nothing of its own — the builder's snapshot
+    // is its answer — and every call it makes is
+    // `@/features/rotation/services/override-disposition`'s.
+    const review = source(ROTATION_OVERRIDE_REVIEW);
+
+    expect(occurrences(review, 'useQuery('), 'the review reads a second time').toBe(0);
+    expect(occurrences(review, 'queryKey:')).toBe(occurrences(review, 'queryKey: ROTATION_KEY'));
+    expect(review).toContain('invalidateQueries({ queryKey: ROTATION_KEY })');
+    expect(review, 'the review reaches past its modules into the domain').not.toContain('@shift/domain');
+    expect(review, 'the review calls a function directly').not.toContain('.rpc(');
+    expect(review, 'the review writes a table').not.toMatch(/\.(insert|update|upsert|delete)\(/);
+    expect(review).not.toContain('destructive');
+    expect(review).not.toMatch(/\baccent\b/);
+    // The discard is ONE neutral confirmation; the amend a Dialog that the
+    // backdrop and Escape cannot close while it saves.
+    expect(review).toContain('<ConfirmDialog busy={pending}');
+    expect(review).toContain('dismissible={!pending}');
+    expect(review, 'no in-flight ref guards a second write').toMatch(/writing\.current = true/);
+    expect(review, 'the in-flight ref is never released').toMatch(/finally \{\s*writing\.current = false;/);
+    // The builder renders it once, after its notices, and no second time.
+    expect(occurrences(source(ROTATION_SECTION), '<OverrideReview ')).toBe(1);
   });
 
   it('offers an archived team nothing that writes', () => {

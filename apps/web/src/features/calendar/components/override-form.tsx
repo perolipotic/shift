@@ -12,7 +12,12 @@ import {
   overrideDoneMessageKey,
   overrideWriteMessageKey,
 } from '@/features/calendar/services/override-write';
-import { OVERRIDE_REASON_MAX, OVERRIDE_REFUSED_REASON, type DayDetail } from '@/features/calendar/utils/day-detail';
+import {
+  OVERRIDE_REASON_MAX,
+  OVERRIDE_REFUSED_REASON,
+  overrideRemovalTargetOf,
+  type DayDetail,
+} from '@/features/calendar/utils/day-detail';
 import {
   OVERRIDE_REASON_FIELD_ID,
   OVERRIDE_REMOVE_ERROR_ID,
@@ -145,7 +150,7 @@ export function OverrideDoneNotice({ form }: { readonly form: OverrideFormState 
 
   return (
     <Notice role="status">
-      {done.code === OVERRIDE_REMOVED
+      {done.code === OVERRIDE_REMOVED && done.projectedTypeName !== null
         ? t(overrideDoneMessageKey(done), { type: done.projectedTypeName })
         : t(overrideDoneMessageKey(done))}
     </Notice>
@@ -157,7 +162,9 @@ export function OverrideDoneNotice({ form }: { readonly form: OverrideFormState 
  * names what is removed — the team and the date — and what is restored, the
  * type the rotation projects. Rendered BESIDE the day detail, never inside
  * it, so its Escape and `close` reach the detail through no React ancestor.
- * While the removal is in flight nothing dismisses it.
+ * While the removal is in flight nothing dismisses it. An override pending
+ * review (story 3.5c) is removed through the same confirmation; on a day with
+ * no rotation it names no type restored.
  */
 export function OverrideRemoveConfirm({
   form,
@@ -167,18 +174,20 @@ export function OverrideRemoveConfirm({
   readonly detail: DayDetail | null;
 }): ReactNode {
   const { confirming, pending, removeFailure, removeCancel, cancelRemove, remove } = form;
-  const override = detail?.override ?? null;
+  const override = overrideRemovalTargetOf(detail);
 
   if (!confirming || detail === null || override === null) return null;
 
   return (
     <ConfirmDialog busy={pending} onCancel={cancelRemove} aria-labelledby={OVERRIDE_REMOVE_PROMPT_ID}>
       <p id={OVERRIDE_REMOVE_PROMPT_ID} className="text-sm font-medium">
-        {t('kalendar.detail.override.remove.prompt', {
-          team: detail.teamName,
-          date: detail.date,
-          type: override.projectedTypeName,
-        })}
+        {override.projectedTypeName === null
+          ? t('kalendar.detail.override.pending.removePrompt', { team: detail.teamName, date: detail.date })
+          : t('kalendar.detail.override.remove.prompt', {
+              team: detail.teamName,
+              date: detail.date,
+              type: override.projectedTypeName,
+            })}
       </p>
       {removeFailure === null ? null : (
         <Notice id={OVERRIDE_REMOVE_ERROR_ID} role="alert">

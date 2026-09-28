@@ -22,6 +22,9 @@ export const DAY_DETAIL_ROSTER_ID = 'kalendar-detail-roster';
 /** The override block's heading (story 3.5a), which names its section. */
 export const DAY_DETAIL_OVERRIDE_ID = 'kalendar-detail-override';
 
+/** The pending-review block's heading (story 3.5c), which names its section. */
+export const DAY_DETAIL_PENDING_ID = 'kalendar-detail-pending';
+
 /** The override form's heading (story 3.5b), which names the form. */
 export const OVERRIDE_SET_HEADING_ID = 'kalendar-override-set-heading';
 

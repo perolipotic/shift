@@ -1,7 +1,7 @@
 import type { Session } from '@supabase/supabase-js';
 
 import { CALENDAR_MEMBERS_FUNCTION, CALENDAR_OVERRIDES_FUNCTION } from '@/features/calendar/services/snapshot';
-import type { RotationAnswer } from '@/features/rotation/services/list';
+import type { RotationAnswer, RotationTable } from '@/features/rotation/services/list';
 
 /**
  * Both fixtures' rotation snapshots as PostgREST embeds them under the
@@ -33,6 +33,8 @@ export interface FixtureRows {
   readonly assignments: readonly Row[];
   /** The members embed; the admin alone when a fixture names none. */
   readonly members?: readonly Row[];
+  /** The live shift-type overrides embed (story 3.5c); none when a fixture names none. */
+  readonly overrides?: readonly Row[];
 }
 
 export function memberRow(authUserId: string, name: string, organization = ORGANIZATION): Row {
@@ -119,7 +121,40 @@ export function organizationRow(rows: FixtureRows, timezone = 'Europe/Zagreb'): 
     rotation_steps: rows.steps,
     rotation_assignments: rows.assignments,
     members: rows.members ?? [memberRow(ADMIN, ADMIN_NAME)],
+    shift_type_overrides: rows.overrides ?? [],
   };
+}
+
+/** One live shift-type override as the builder embeds it (story 3.5c). */
+export function overrideRow(
+  id: string,
+  teamId: string,
+  date: string,
+  shiftTypeId: string,
+  {
+    reason = 'Zamjena zbog vježbe.' as unknown,
+    createdBy = ADMIN as unknown,
+    createdAt = '2026-09-12T17:05:00+00:00' as unknown,
+    confirmedAt = null as unknown,
+    organization = ORGANIZATION,
+  } = {},
+): Row {
+  return {
+    organization_id: organization,
+    id,
+    team_id: teamId,
+    date,
+    shift_type_id: shiftTypeId,
+    reason,
+    created_by: createdBy,
+    created_at: createdAt,
+    confirmed_at: confirmedAt,
+  };
+}
+
+/** A rotation table answering `answer` through its one select and filter, as `readRotation` calls it. */
+export function rotationTableOf(answer: RotationAnswer | Promise<RotationAnswer>): RotationTable {
+  return { select: () => ({ filter: () => Promise.resolve(answer) }) };
 }
 
 export function answerOf(rows: FixtureRows, timezone = 'Europe/Zagreb'): RotationAnswer {
@@ -257,13 +292,18 @@ export function membersAnswerOf(members: readonly Row[] = [calendarMemberRow(VIE
   return { data: members, error: null };
 }
 
-/** One row of `calendar_shift_type_overrides()` (0019, story 3.5a). */
+/** One row of `calendar_shift_type_overrides()` (0019, story 3.5a; 0022, story 3.5c). */
 export function calendarOverrideRow(
   id: string,
   teamId: string,
   date: string,
   shiftTypeId: string,
-  options: { readonly reason?: unknown; readonly createdAt?: unknown; readonly author?: unknown } = {},
+  options: {
+    readonly reason?: unknown;
+    readonly createdAt?: unknown;
+    readonly confirmedAt?: unknown;
+    readonly author?: unknown;
+  } = {},
 ): Row {
   return {
     id,
@@ -272,6 +312,8 @@ export function calendarOverrideRow(
     shift_type_id: shiftTypeId,
     reason: options.reason ?? 'Zamjena zbog vježbe.',
     created_at: options.createdAt ?? '2026-09-12T17:05:00+00:00',
+    // STORY 3.5c (0022): never confirmed, unless a case says otherwise.
+    confirmed_at: options.confirmedAt ?? null,
     author_member_id: options.author === undefined ? VIEWER_MEMBER : options.author,
   };
 }

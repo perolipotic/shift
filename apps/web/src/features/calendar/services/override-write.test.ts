@@ -41,6 +41,7 @@ const DETAIL: DayDetail = {
   range: '07:00–19:00',
   roster: [],
   override: null,
+  pending: null,
 };
 
 function tableAnswering(answer: OverrideWriteAnswer | Promise<never>): OverrideTable & { readonly sent: unknown[] } {

@@ -2,6 +2,7 @@ import type {
   MembershipVersion,
   RotationAssignment,
   RotationStep,
+  RotationVersionStamp,
   ShiftTypeOverride,
   StatusVersion,
 } from '@shift/domain';
@@ -12,7 +13,12 @@ import { compareText, isIsoDate } from '@/lib/i18n/format';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
 import { memberRoleOf } from '@/features/navigation/services/role';
 
-import { rotationAssignmentOf, rotationStepOf } from '@/features/rotation/services/list';
+import {
+  instantMicrosOf,
+  rotationAssignmentOf,
+  rotationStepOf,
+  rotationVersionStampOf,
+} from '@/features/rotation/services/list';
 import {
   ORGANIZATION_ZONE_COLUMNS,
   SHIFT_TYPES_EMBED,
@@ -48,10 +54,13 @@ import { TEAMS_COLUMNS, teamRowOf, type TeamRow } from '@/features/teams/service
  * which picks the default mode and shows the admin's override form (story
  * 3.5b), while the database authorizes — and their team
  * membership history, which *Moj raspored* follows. No name, no position, no
- * rank. No attribution either (`created_by`, `created_at` of an assignment):
- * the calendar says what is worked, not who saved the rule. The shift types'
- * `created_at` stays, because the ramp slot is derived from the creation
- * order, and it is the column `shiftTypeRowOf` checks.
+ * rank. No author either (`created_by` of an assignment): the calendar says
+ * what is worked, not who saved the rule. An assignment's `created_at` is read
+ * since story 3.5c, as WHEN, never who: a version saved after an override was
+ * written leaves that override pending review, and it is not applied. It is
+ * kept as a stamp beside the domain's assignment, never on it. The shift
+ * types' `created_at` stays, because the ramp slot is derived from the
+ * creation order, and it is the column `shiftTypeRowOf` checks.
  *
  * THE MEMBERS (stories 3.3b, 3.4a). A member-role session reads only its own
  * `members` row (0011), so the colleagues come from `calendar_members()`
@@ -68,7 +77,8 @@ import { TEAMS_COLUMNS, teamRowOf, type TeamRow } from '@/features/teams/service
  * `calendar_shift_type_overrides()`: each one's team, date, type, reason,
  * time, and its author as a member id — never an auth user id — which the
  * members read names. That rpc too is made beside the select, under the same
- * key.
+ * key. Since story 3.5c it answers `confirmed_at` too: when an admin last
+ * confirmed the override after a rotation change.
  *
  * `select` AND TWO `rpc`s, AND NOTHING ELSE.
  */
@@ -89,7 +99,7 @@ export const CALENDAR_COLUMNS =
   `teams(${TEAMS_COLUMNS}),` +
   `${SHIFT_TYPES_EMBED},` +
   'rotation_steps(organization_id,id,pattern_id,position,shift_type_id),' +
-  'rotation_assignments(organization_id,team_id,pattern_id,offset_step_id,anchor_date,effective_from),' +
+  'rotation_assignments(organization_id,team_id,pattern_id,offset_step_id,anchor_date,effective_from,created_at),' +
   'members(organization_id,id,role,team_membership_versions(organization_id,team_id,effective_from)),' +
   'team_membership_versions(organization_id,member_id,team_id,position,effective_from),' +
   'member_status_versions(organization_id,member_id,active,effective_from)';
@@ -179,6 +189,8 @@ export interface CalendarOverride extends ShiftTypeOverride {
   readonly reason: string;
   /** An instant, as the database answers it; formatted in the organization's zone. */
   readonly createdAt: string;
+  /** When an admin last confirmed it after a rotation change (story 3.5c), as answered; `null` for never. */
+  readonly confirmedAt: string | null;
   readonly authorMemberId: string | null;
 }
 
@@ -226,6 +238,12 @@ export interface CalendarSnapshot {
   readonly steps: readonly RotationStep[];
   /** Every version of every team's rotation. */
   readonly assignments: readonly RotationAssignment[];
+  /**
+   * When each of those versions was saved (story 3.5c), one stamp per
+   * assignment, kept beside the domain's type: what decides whether an
+   * override is pending review.
+   */
+  readonly assignmentStamps: readonly RotationVersionStamp[];
   /** The viewer's own member row. */
   readonly viewer: CalendarViewer;
   /**
@@ -234,7 +252,12 @@ export interface CalendarSnapshot {
    * 3.4a).
    */
   readonly members: readonly CalendarMember[];
-  /** Every live shift-type override, by team then date (story 3.5a); at most one per team and date. */
+  /**
+   * Every live shift-type override, by team then date (story 3.5a); at most
+   * one per team and date. In force or pending review alike: which is which
+   * is `overrideStandingOfCalendar`'s (story 3.5c), and only those in force
+   * are applied.
+   */
   readonly overrides: readonly CalendarOverride[];
 }
 
@@ -314,7 +337,8 @@ function embedded(organization: Record<string, unknown>, relation: string): read
  * overrides read that is rejected, errors or answers anything but an array,
  * or on an override row without a text id, naming a team or a type the
  * answer lacks, with a malformed date, a reason that is not text, a
- * creation time that is not an instant, or an author neither text nor null,
+ * creation time that is not an instant, a confirmation time neither an
+ * instant nor null, or an author neither text nor null,
  * or on a second override of one team and date or one id twice. What the database's keys
  * guarantee is re-checked, so a defect surfaces as the message, never as a
  * projection that throws.
@@ -412,13 +436,16 @@ export async function readCalendar(
   }
 
   const assignments: RotationAssignment[] = [];
+  const assignmentStamps: RotationVersionStamp[] = [];
 
   for (const row of assignmentRows) {
     const assignment = rotationAssignmentOf(row, organizationId);
+    const stamp = rotationVersionStampOf(row, organizationId);
 
-    if (assignment === null) return unavailable('assignment');
+    if (assignment === null || stamp === null) return unavailable('assignment');
 
     assignments.push(assignment);
+    assignmentStamps.push(stamp);
   }
 
   const teamIds = new Set(teams.map((team) => team.id));
@@ -480,7 +507,19 @@ export async function readCalendar(
 
   return {
     ok: true,
-    snapshot: { organizationId, timeZone, usesFireRanks, teams, types, steps, assignments, viewer, members, overrides },
+    snapshot: {
+      organizationId,
+      timeZone,
+      usesFireRanks,
+      teams,
+      types,
+      steps,
+      assignments,
+      assignmentStamps,
+      viewer,
+      members,
+      overrides,
+    },
   };
 }
 
@@ -488,7 +527,7 @@ export async function readCalendar(
  * The live overrides `calendar_shift_type_overrides()` answered, by team then
  * date, or `null`: a malformed answer, an error, data that is not an array, a
  * row that does not validate, a second override of one team and date, or one
- * id twice. Only the seven columns are carried off a row.
+ * id twice. Only the eight columns are carried off a row.
  */
 function overridesOf(
   answered: unknown,
@@ -512,6 +551,7 @@ function overridesOf(
     const shiftTypeId = textAt(row, 'shift_type_id');
     const reason = row['reason'];
     const createdAt = textAt(row, 'created_at');
+    const confirmedAt = row['confirmed_at'];
     const authorMemberId = row['author_member_id'];
 
     if (id === null || teamId === null || !teamIds.has(teamId)) return null;
@@ -520,10 +560,20 @@ function overridesOf(
     // Any text: what a reason may hold is 0019's check alone, and a row the
     // database accepted is never refused here for its content.
     if (typeof reason !== 'string') return null;
-    if (createdAt === null || Number.isNaN(Date.parse(createdAt))) return null;
+    if (createdAt === null || instantMicrosOf(createdAt) === null) return null;
+    if (confirmedAt !== null && instantMicrosOf(confirmedAt) === null) return null;
     if (authorMemberId !== null && (typeof authorMemberId !== 'string' || authorMemberId === '')) return null;
 
-    overrides.push({ id, teamId, date, shiftTypeId, reason, createdAt, authorMemberId });
+    overrides.push({
+      id,
+      teamId,
+      date,
+      shiftTypeId,
+      reason,
+      createdAt,
+      confirmedAt: confirmedAt as string | null,
+      authorMemberId,
+    });
   }
 
   if (new Set(overrides.map((override) => override.id)).size !== overrides.length) return null;

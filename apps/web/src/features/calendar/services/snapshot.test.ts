@@ -37,6 +37,7 @@ import {
   OTHER_ORGANIZATION,
   PILOT,
   SEEDED,
+  SEEDED_AT,
   UJ5,
   VIEWER_AUTH_USER,
   VIEWER_MEMBER,
@@ -180,7 +181,9 @@ describe('the read', () => {
     expect(CALENDAR_COLUMNS).not.toContain('created_by');
     const assignments = /rotation_assignments\(([^)]*)\)/.exec(CALENDAR_COLUMNS)?.[1] ?? '';
 
-    expect(assignments).toBe('organization_id,team_id,pattern_id,offset_step_id,anchor_date,effective_from');
+    // STORY 3.5c: `created_at`, WHEN a version was saved, decides whether an
+    // override is pending review; who saved it (`created_by`) stays out.
+    expect(assignments).toBe('organization_id,team_id,pattern_id,offset_step_id,anchor_date,effective_from,created_at');
     // No member's fire rank (that is the rpc's), nothing projected or stored
     // as a schedule.
     expect(CALENDAR_COLUMNS.replace('uses_fire_ranks', '')).not.toMatch(/rank|cycle|projected|schedule|override/);
@@ -259,6 +262,15 @@ describe('the read', () => {
       { ...PILOT, assignments: [...PILOT.assignments, PILOT.assignments[0]!] },
       // A malformed date.
       { ...PILOT, assignments: [assignmentRow('pilot-smjena-a', 'pilot-rotation', 'pilot-step-0', '2020-01-01', '2020-02-30')] },
+      // STORY 3.5c: a version whose save time is no instant.
+      {
+        ...PILOT,
+        assignments: [
+          assignmentRow('pilot-smjena-a', 'pilot-rotation', 'pilot-step-0', '2020-01-01', '2020-01-01', undefined, {
+            createdAt: '2020-01-01',
+          }),
+        ],
+      },
     ]) {
       expect(await read(tableOf(answerOf(rows)), session)).toEqual(REFUSED);
     }
@@ -622,14 +634,17 @@ describe('the read', () => {
     vi.restoreAllMocks();
   });
 
-  it('reads the live overrides, by team then date, and carries only their seven fields (story 3.5a)', async () => {
+  it('reads the live overrides, by team then date, and carries only their eight fields (stories 3.5a, 3.5c)', async () => {
     const outcome = await read(
       tableOf(
         answerOf(PILOT),
         membersAnswerOf(),
         overridesAnswerOf([
           { ...calendarOverrideRow('o2', 'pilot-smjena-b', '2026-09-03', 'pilot-dan'), created_by: 'never-carried' },
-          calendarOverrideRow('o3', 'pilot-smjena-a', '2026-09-14', 'pilot-noc', { author: null }),
+          calendarOverrideRow('o3', 'pilot-smjena-a', '2026-09-14', 'pilot-noc', {
+            author: null,
+            confirmedAt: '2026-09-20T08:00:00+00:00',
+          }),
           calendarOverrideRow('o1', 'pilot-smjena-a', '2026-09-02', 'pilot-slobodno'),
         ]),
       ),
@@ -645,6 +660,7 @@ describe('the read', () => {
         shiftTypeId: 'pilot-slobodno',
         reason: 'Zamjena zbog vježbe.',
         createdAt: '2026-09-12T17:05:00+00:00',
+        confirmedAt: null,
         authorMemberId: VIEWER_MEMBER,
       },
       {
@@ -654,6 +670,7 @@ describe('the read', () => {
         shiftTypeId: 'pilot-noc',
         reason: 'Zamjena zbog vježbe.',
         createdAt: '2026-09-12T17:05:00+00:00',
+        confirmedAt: '2026-09-20T08:00:00+00:00',
         authorMemberId: null,
       },
       {
@@ -663,9 +680,18 @@ describe('the read', () => {
         shiftTypeId: 'pilot-dan',
         reason: 'Zamjena zbog vježbe.',
         createdAt: '2026-09-12T17:05:00+00:00',
+        confirmedAt: null,
         authorMemberId: VIEWER_MEMBER,
       },
     ]);
+    // STORY 3.5c: each version's save time, as an epoch-millisecond stamp beside it.
+    expect(outcome.snapshot.assignmentStamps).toEqual(
+      outcome.snapshot.assignments.map((assignment) => ({
+        teamId: assignment.teamId,
+        effectiveFrom: assignment.effectiveFrom,
+        createdAt: Date.parse(SEEDED_AT) * 1000,
+      })),
+    );
   });
 
   it('reads any reason the database accepted, white space included: its content is 0019\'s to judge (story 3.5a)', async () => {
@@ -711,6 +737,10 @@ describe('the read', () => {
       overridesAnswerOf([{ ...good, reason: 7 }]),
       overridesAnswerOf([{ ...good, created_at: 'yesterday' }]),
       overridesAnswerOf([{ ...good, created_at: undefined }]),
+      // STORY 3.5c: a confirmation time neither an instant nor null.
+      overridesAnswerOf([{ ...good, confirmed_at: 'yesterday' }]),
+      overridesAnswerOf([{ ...good, confirmed_at: '2026-09-20' }]),
+      overridesAnswerOf([{ ...good, confirmed_at: 7 }]),
       // An author neither text nor null.
       overridesAnswerOf([{ ...good, author_member_id: 7 }]),
       overridesAnswerOf([{ ...good, author_member_id: '' }]),

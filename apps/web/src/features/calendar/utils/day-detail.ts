@@ -1,7 +1,7 @@
 import { scheduledShiftTypeOn, shiftRoster } from '@shift/domain';
 
-import { typeRangeOn, weekdayOf } from '@/features/calendar/utils/month';
-import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
+import { overrideStandingOfCalendar, typeRangeOn, weekdayOf } from '@/features/calendar/utils/month';
+import type { CalendarOverride, CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { compareText, formatDate, formatIsoDate, formatTime } from '@/lib/i18n/format';
 import type { ShiftTypeRow } from '@/features/shift-types/services/list';
 
@@ -36,6 +36,13 @@ import type { ShiftTypeRow } from '@/features/shift-types/services/list';
  * types the form offers ({@link overrideTypeOptionsOf}) and the browser's
  * preflight of an entry ({@link overrideEntryOf}). The database's checks and
  * its partial key stay authoritative; these only spare a request.
+ *
+ * AN OVERRIDE A ROTATION CHANGE LEFT PENDING (story 3.5c) is not applied: the
+ * type is the projection's, with no `✎`, and the detail says the override is
+ * waiting for review — its type, reason and author — in `pending`. Which are
+ * pending is `overrideStandingOf`'s answer from `@shift/domain`. The admin is
+ * offered only its removal here; confirming and amending are the rotation
+ * builder's.
  */
 
 /** The team works a type that day. */
@@ -84,6 +91,19 @@ export interface DayDetailOverride {
   readonly reason: string;
 }
 
+/** A live override on the day that a rotation change left pending (story 3.5c): shown, not applied. */
+export interface DayDetailPendingOverride {
+  /** The override's id, which a removal names. */
+  readonly id: string;
+  /** The type the override names, which the day does not show while it is pending. */
+  readonly typeName: string;
+  /** The type the rotation projects that day, which a removal leaves; `null` with no rotation. */
+  readonly projectedTypeName: string | null;
+  /** Who saved it; `null` when they are no member the snapshot holds. */
+  readonly authorName: string | null;
+  readonly reason: string;
+}
+
 /** The day detail, ready to render. */
 export interface DayDetail {
   readonly teamId: string;
@@ -103,6 +123,8 @@ export interface DayDetail {
   readonly roster: readonly DayDetailMember[];
   /** The override on the day, whatever the kind; `null` for none (and always with no rotation). */
   readonly override: DayDetailOverride | null;
+  /** The override on the day a rotation change left pending (story 3.5c), whatever the kind; `null` for none. */
+  readonly pending: DayDetailPendingOverride | null;
 }
 
 function compareMembers(left: DayDetailMember, right: DayDetailMember): number {
@@ -127,13 +149,15 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
 
   if (team === undefined) return null;
 
+  const standing = overrideStandingOfCalendar(snapshot);
   const scheduled = scheduledShiftTypeOn(
     snapshot.assignments.filter((assignment) => assignment.teamId === teamId),
     snapshot.steps,
-    snapshot.overrides,
+    standing.inForce,
     teamId,
     date,
   );
+  const waiting = standing.pending.find((one) => one.teamId === teamId && one.date === date);
   const full = formatIsoDate(date);
 
   if (full === null) throw new RangeError(`the date ${date} could not be formatted`);
@@ -149,15 +173,19 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
       range: null,
       roster: [],
       override: null,
+      pending: waiting === undefined ? null : pendingOf(snapshot, waiting, null, date),
     };
   }
 
-  const projected = { ...base, projectedShiftTypeId: scheduled.projectedShiftTypeId };
+  const projectedTypeName = typeOf(snapshot, scheduled.projectedShiftTypeId, date).name;
+  const projected = {
+    ...base,
+    projectedShiftTypeId: scheduled.projectedShiftTypeId,
+    pending: waiting === undefined ? null : pendingOf(snapshot, waiting, projectedTypeName, date),
+  };
 
   const type = typeOf(snapshot, scheduled.shiftTypeId, date);
-  const override = scheduled.overridden
-    ? overrideOf(snapshot, teamId, date, typeOf(snapshot, scheduled.projectedShiftTypeId, date).name)
-    : null;
+  const override = scheduled.overridden ? overrideOf(snapshot, standing.inForce, teamId, date, projectedTypeName) : null;
 
   if (!type.isWorking) {
     return { ...projected, kind: DAY_OFF, typeName: null, range: null, roster: [], override };
@@ -198,21 +226,53 @@ function typeOf(snapshot: CalendarSnapshot, shiftTypeId: string, date: string): 
   return type;
 }
 
+/** The author of `override` through the snapshot's members, or `null` for one it does not hold. */
+function authorNameOf(snapshot: CalendarSnapshot, override: CalendarOverride): string | null {
+  const author =
+    override.authorMemberId === null
+      ? undefined
+      : snapshot.members.find((member) => member.id === override.authorMemberId);
+
+  return author?.name ?? null;
+}
+
+/**
+ * A pending override as the detail names it: its type, the type a removal
+ * leaves (`projectedTypeName`), its author and its reason.
+ *
+ * @throws RangeError for a type the snapshot lacks.
+ */
+function pendingOf(
+  snapshot: CalendarSnapshot,
+  override: CalendarOverride,
+  projectedTypeName: string | null,
+  date: string,
+): DayDetailPendingOverride {
+  return {
+    id: override.id,
+    typeName: typeOf(snapshot, override.shiftTypeId, date).name,
+    projectedTypeName,
+    authorName: authorNameOf(snapshot, override),
+    reason: override.reason,
+  };
+}
+
 /**
  * The override of `teamId` on `date`, as the detail names it: its author
  * through the snapshot's members (`null` for one it does not hold), its time
  * in the organization's zone, its reason, and `projectedTypeName`.
  *
- * @throws RangeError when the snapshot holds no override of the team on the
+ * @throws RangeError when `inForce` holds no override of the team on the
  *   date, or its time is not an instant.
  */
 function overrideOf(
   snapshot: CalendarSnapshot,
+  inForce: readonly CalendarOverride[],
   teamId: string,
   date: string,
   projectedTypeName: string,
 ): DayDetailOverride {
-  const override = snapshot.overrides.find((one) => one.teamId === teamId && one.date === date);
+  const override = inForce.find((one) => one.teamId === teamId && one.date === date);
 
   if (override === undefined) throw new RangeError(`team ${teamId} is overridden on ${date} by no override`);
 
@@ -222,15 +282,10 @@ function overrideOf(
     throw new RangeError(`the override of team ${teamId} on ${date} was saved at ${override.createdAt}`);
   }
 
-  const author =
-    override.authorMemberId === null
-      ? undefined
-      : snapshot.members.find((member) => member.id === override.authorMemberId);
-
   return {
     id: override.id,
     projectedTypeName,
-    authorName: author?.name ?? null,
+    authorName: authorNameOf(snapshot, override),
     savedAt: { date: formatDate(saved, snapshot.timeZone), time: formatTime(saved, snapshot.timeZone) },
     reason: override.reason,
   };
@@ -284,12 +339,12 @@ export interface OverrideTypeOption {
  * snapshot that is NOT ARCHIVED and is not the one the rotation projects that
  * day, in the snapshot's own order (creation order). None for a day with no
  * rotation, and none for a day already overridden — its override is removed,
- * never changed in place.
+ * never changed in place — or with an override pending review (story 3.5c).
  */
 export function overrideTypeOptionsOf(snapshot: CalendarSnapshot, detail: DayDetail): readonly OverrideTypeOption[] {
   const projectedShiftTypeId = detail.projectedShiftTypeId;
 
-  if (projectedShiftTypeId === null || detail.override !== null) return [];
+  if (projectedShiftTypeId === null || detail.override !== null || detail.pending !== null) return [];
 
   return snapshot.types
     .filter((type) => !type.archived && type.id !== projectedShiftTypeId)
@@ -339,7 +394,7 @@ export interface OverrideOffers {
   readonly options: readonly OverrideTypeOption[];
   /** The form to set an override: an admin, a day with a rotation and no override, and a type to offer. */
   readonly set: boolean;
-  /** The removal: an admin, on a day with an override. */
+  /** The removal: an admin, on a day with an override, or one pending review (story 3.5c). */
   readonly remove: boolean;
 }
 
@@ -349,13 +404,38 @@ const NO_OFFERS: OverrideOffers = { options: [], set: false, remove: false };
  * What `detail` offers the viewer of `snapshot` (story 3.5b). SHOWN BY THE
  * ROLE, DECIDED BY THE DATABASE: only an admin is offered either, and the
  * insert policy and the removal function refuse everyone else anyway. A day
- * with no rotation offers neither.
+ * with no rotation offers neither, unless an override is pending on it. A
+ * PENDING OVERRIDE (story 3.5c) offers its removal alone, on any kind of day:
+ * no form, because confirming or amending it is the rotation builder's.
  */
 export function overrideOffersOf(snapshot: CalendarSnapshot | null, detail: DayDetail | null): OverrideOffers {
   if (snapshot === null || detail === null || snapshot.viewer.role !== 'admin') return NO_OFFERS;
+  if (detail.pending !== null) return { options: [], set: false, remove: true };
   if (detail.kind === DAY_NO_ROTATION) return NO_OFFERS;
 
   const options = overrideTypeOptionsOf(snapshot, detail);
 
   return { options, set: detail.override === null && options.length > 0, remove: detail.override !== null };
+}
+
+/** What a removal from the day detail names (stories 3.5b, 3.5c): the override, and the type the day then shows. */
+export interface OverrideRemovalTarget {
+  readonly id: string;
+  /**
+   * The projected type an override IN FORCE gives way to, which the
+   * confirmation and the done notice name; `null` for an override PENDING
+   * review (story 3.5c), which is not applied, so the day already shows the
+   * projection — or no rotation — and its removal changes nothing on screen.
+   * Those say the pending copy instead.
+   */
+  readonly projectedTypeName: string | null;
+}
+
+/** The override a removal from `detail` names: the one in force, else the one pending review, else none. */
+export function overrideRemovalTargetOf(detail: DayDetail | null): OverrideRemovalTarget | null {
+  if (detail === null) return null;
+  if (detail.override !== null) return { id: detail.override.id, projectedTypeName: detail.override.projectedTypeName };
+  if (detail.pending !== null) return { id: detail.pending.id, projectedTypeName: null };
+
+  return null;
 }
