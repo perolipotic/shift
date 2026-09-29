@@ -108,9 +108,10 @@ grant delete on table public.rotation_steps to authenticated;
 -- `packages/domain`'s projection counts it. Every date then projects the same
 -- step, so such a version changes nothing, and it is refused as a literal
 -- no-op is (42501). A difference of zero is a multiple, so the literal no-op
--- is still refused. The domain mirror is `sameRotationValue` in
--- `packages/domain/src/projection.ts`; the builder's preflight
--- (`draftUnchangedOf`) judges by projection and so already agrees.
+-- is still refused. This rule guards DIRECT API callers: the builder always
+-- saves a fresh pattern, so its versions never share this one's pattern, and
+-- its own no-op is caught before anything is sent by its preflight
+-- (`draftUnchangedOf`), which judges by projection.
 --
 -- THE COUNT is of the pattern's steps as this session sees them, which is all
 -- of them: the insert is an active admin's of this organization. Steps of a
@@ -155,7 +156,7 @@ alter policy rotation_assignments_insert_by_own_active_admin on public.rotation_
 
 -- --------------------------------------------------------- 2. the bounded read
 
--- Two COMPUTED RELATIONSHIPS PostgREST embeds from `organizations`, as the
+-- Three COMPUTED RELATIONSHIPS PostgREST embeds from `organizations`, as the
 -- builder's one read does (`@/features/rotation/services/list`): each takes an
 -- organization row and returns rows of the table it bounds, so the read keeps
 -- its one request and its one query key.
@@ -165,24 +166,40 @@ alter policy rotation_assignments_insert_by_own_active_admin on public.rotation_
 -- the plain embed would not. The organization is only the row PostgREST hands
 -- over; the tenant is the policies'.
 --
+-- PENDING, the rule of story 3.5c (`overrideStandingOf` in `packages/domain`):
+-- a live override is pending when no version of its team governs its date, or
+-- when the version governing it — the one with the greatest `effective_from`
+-- on or before the date — was saved after `coalesce(confirmed_at,
+-- created_at)`. Every other live override is in force, and the builder reads
+-- none of those: it lists only the pending ones.
+--
 -- THE SELECTION, per team:
 --
---   * THE HORIZON is the organization's today, or the date of the team's
---     earliest LIVE shift-type override when that is earlier. The overrides
+--   * THE HORIZON is the organization's YESTERDAY, or the date of the team's
+--     earliest PENDING override that a version governs, when that is earlier.
+--     A DAY OF MARGIN: the builder's "today" is the device clock read in the
+--     organization's zone, so a device a few minutes behind at midnight is
+--     still on yesterday — and finds the version in force then. The overrides
 --     are an active admin's alone to read (0019), and the builder is an
---     admin's; for any other caller the horizon is today.
+--     admin's; for any other caller the horizon is yesterday.
 --   * An ASSIGNMENT is kept when it is in force on the horizon or starts
 --     after it: no later version of its team starts on or before the horizon.
---     So the version in force today and the one scheduled after it are always
---     kept, and so is every version that governs a live override's date.
+--     So the versions in force yesterday and today and the one scheduled after
+--     them are always kept, and so is every version that governs a pending
+--     override's date.
 --   * A STEP is kept when its pattern is named by a kept assignment, or by no
 --     assignment at all — a pattern not yet assigned, which the builder's
 --     cleanup may still remove.
+--   * An OVERRIDE is kept when it is live and pending.
 --
--- WHY THE OVERRIDES' DATES, and not today alone: story 3.5c lists an override
--- a rotation change left pending beside the type the rotation projects on its
--- date, which may lie before today and under an older version. Dropping that
--- version would show such an override as governed by nothing.
+-- WHY PENDING OVERRIDES MOVE THE HORIZON, and nothing else does: story 3.5c
+-- lists a pending override beside the type the rotation projects on its
+-- date, which may lie before yesterday and under an older version. Dropping
+-- that version would show such an override as governed by nothing. An
+-- override in force is never read, and a pending one no version governs is
+-- governed by nothing in any selection, so neither keeps a version. A future
+-- override's date is later than yesterday, so `least` ignores it. Once an
+-- admin confirms, amends or discards it, the horizon moves up again.
 --
 -- WHAT IS NOT BOUNDED, and why: the rotation HISTORY (story 2.6, `Povijest
 -- rotacije`) lists every saved change, the previous ones included, and 3.5c
@@ -210,13 +227,21 @@ as $$
         where later.team_id = a.team_id
           and later.effective_from > a.effective_from
           and later.effective_from <= least(
-                public.organization_today(($1).id),
+                public.organization_today(($1).id) - 1,
                 (
                   select min(o.date)
                     from public.shift_type_overrides o
                    where o.organization_id = ($1).id
                      and o.team_id = a.team_id
                      and o.removed_at is null
+                     and (
+                       select governing.created_at
+                         from public.rotation_assignments governing
+                        where governing.team_id = o.team_id
+                          and governing.effective_from <= o.date
+                        order by governing.effective_from desc
+                        limit 1
+                     ) > coalesce(o.confirmed_at, o.created_at)
                 )
               )
      )
@@ -243,9 +268,35 @@ as $$
      )
 $$;
 
+-- A pending override no version governs is kept too: the admin still
+-- disposes of it (discard), and `coalesce(…, true)` keeps it.
+create or replace function public.rotation_overrides_in_view(public.organizations)
+returns setof public.shift_type_overrides
+language sql
+stable
+security invoker
+set search_path = ''
+as $$
+  select o.*
+    from public.shift_type_overrides o
+   where o.organization_id = ($1).id
+     and o.removed_at is null
+     and coalesce(
+           (
+             select governing.created_at
+               from public.rotation_assignments governing
+              where governing.team_id = o.team_id
+                and governing.effective_from <= o.date
+              order by governing.effective_from desc
+              limit 1
+           ) > coalesce(o.confirmed_at, o.created_at),
+           true
+         )
+$$;
+
 -- The explicit grants every reader here writes: `authenticated` keeps EXECUTE
--- because PostgREST calls both as the request role; `anon` and `service_role`
--- have no read that needs either.
+-- because PostgREST calls each as the request role; `anon` and `service_role`
+-- have no read that needs any.
 revoke execute on function public.rotation_assignments_in_view(public.organizations) from public;
 revoke execute on function public.rotation_assignments_in_view(public.organizations) from anon;
 revoke execute on function public.rotation_assignments_in_view(public.organizations) from service_role;
@@ -255,3 +306,8 @@ revoke execute on function public.rotation_steps_in_view(public.organizations) f
 revoke execute on function public.rotation_steps_in_view(public.organizations) from anon;
 revoke execute on function public.rotation_steps_in_view(public.organizations) from service_role;
 grant execute on function public.rotation_steps_in_view(public.organizations) to authenticated;
+
+revoke execute on function public.rotation_overrides_in_view(public.organizations) from public;
+revoke execute on function public.rotation_overrides_in_view(public.organizations) from anon;
+revoke execute on function public.rotation_overrides_in_view(public.organizations) from service_role;
+grant execute on function public.rotation_overrides_in_view(public.organizations) to authenticated;

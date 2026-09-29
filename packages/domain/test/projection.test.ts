@@ -8,7 +8,6 @@ import {
   projectedShiftTypeOn,
   projectedStepId,
   rotationAssignmentOn,
-  sameRotationValue,
   type RotationAssignment,
   type RotationStep,
   type ShiftType,
@@ -461,66 +460,6 @@ describe('a rotation change from a date forward (story 2.6)', () => {
       // Not vacuous: the change changes something the old version said.
       expect(differs, team.id).toBe(true);
     }
-  });
-});
-
-describe('the same value: whole cycles of the anchor change nothing (0025)', () => {
-  it.each(FIXTURES)(
-    '$fixture: an anchor moved by +1, +2 or −1 cycles is the same value, and projects the same on every date',
-    ({ teams, steps, assignments }) => {
-      for (const team of teams) {
-        const stored = assignmentOf(assignments, team);
-
-        for (const cycles of [1, 2, -1]) {
-          const moved: RotationAssignment = {
-            ...stored,
-            anchorDate: walk(stored.anchorDate, cycles * steps.length, 0, 1).date,
-            effectiveFrom: '2026-10-03',
-          };
-
-          expect(sameRotationValue(steps, stored, moved), `${team.id} by ${String(cycles)} cycles`).toBe(true);
-          expect(sameRotationValue(steps, moved, stored), `${team.id} by ${String(cycles)} cycles, reversed`).toBe(true);
-          for (let days = -steps.length; days <= steps.length * 2; days += 1) {
-            const { date } = walk('2026-10-03', days, 0, 1);
-
-            expect(projectedStepId(steps, moved, date), `${team.id} on ${date}`).toBe(projectedStepId(steps, stored, date));
-          }
-        }
-        expect(sameRotationValue(steps, stored, stored), 'the literal no-op is the same value').toBe(true);
-      }
-    },
-  );
-
-  it.each(FIXTURES)(
-    '$fixture: an anchor moved by a non-multiple, another offset step or another pattern is a change',
-    ({ teams, steps, assignments }) => {
-      for (const team of teams) {
-        const stored = assignmentOf(assignments, team);
-        const otherStep = steps.find((step) => step.id !== stored.offsetStepId);
-        if (otherStep === undefined) throw new Error('a fixture pattern has one step');
-
-        for (const days of [1, steps.length - 1, steps.length + 1, -1, 2 * steps.length + 1]) {
-          const moved = { ...stored, anchorDate: walk(stored.anchorDate, days, 0, 1).date };
-
-          expect(sameRotationValue(steps, stored, moved), `${team.id} by ${String(days)} days`).toBe(false);
-        }
-        expect(sameRotationValue(steps, stored, { ...stored, offsetStepId: otherStep.id })).toBe(false);
-
-        const copy = steps.map((step) => ({ ...step, id: `copy-${step.id}`, patternId: 'copy' }));
-        const onCopy = { ...stored, patternId: 'copy', offsetStepId: `copy-${stored.offsetStepId}` };
-
-        expect(sameRotationValue([...steps, ...copy], stored, onCopy), 'the same steps on another pattern').toBe(false);
-      }
-    },
-  );
-
-  it('refuses an offset step outside the pattern, and a malformed anchor', () => {
-    const stored = assignmentOf(PILOT_ROTATION_ASSIGNMENTS, PILOT_TEAMS[0]!);
-
-    expect(() => sameRotationValue(PILOT_ROTATION_STEPS, { ...stored, offsetStepId: 'nowhere' }, { ...stored, offsetStepId: 'nowhere' })).toThrow(
-      RangeError,
-    );
-    expect(() => sameRotationValue(PILOT_ROTATION_STEPS, stored, { ...stored, anchorDate: '2026-02-30' })).toThrow(RangeError);
   });
 });
 

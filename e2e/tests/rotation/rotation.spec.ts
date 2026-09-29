@@ -7,11 +7,11 @@ import {
   archiveShiftType,
   databaseNow,
   holdRotation,
+  patternRowsLeft,
   removeRotationChangesOver,
   removeSeededRotation,
   seedShiftTypeOverride,
   seedTeamRotation,
-  unassignedPatternsSince,
   type RotationHold,
   type SeededRotation,
 } from '../../utils/database-helper.ts';
@@ -464,7 +464,6 @@ test('a save that fails after its pattern removes the pattern again, says nothin
   }
   await expect(steps).toHaveCount(before + 2);
 
-  const since = await databaseNow();
   const matches = (url: URL): boolean => url.pathname.endsWith('/rest/v1/rotation_assignments');
   const refuse = async (route: Route) => {
     if (route.request().method() !== 'POST') return route.fallback();
@@ -474,9 +473,25 @@ test('a save that fails after its pattern removes the pattern again, says nothin
       body: JSON.stringify({ code: '42501', message: 'new row violates row-level security policy' }),
     });
   };
+  // THE PATTERN THIS SAVE WRITES, by the id its insert answered: the check
+  // below counts that one pattern and its steps, and nothing a parallel
+  // session writes.
+  const posted = (table: string) =>
+    page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname.endsWith(`/rest/v1/${table}`) && response.request().method() === 'POST',
+    );
+  const patternCreated = posted('rotation_patterns');
+  const stepsCreated = posted('rotation_steps');
   await page.route(matches, refuse);
+  let patternId: string | undefined;
   try {
     await rotationPage.saveButton.click();
+    const created = await patternCreated;
+    expect(created.ok(), 'the pattern insert was refused').toBe(true);
+    patternId = ((await created.json()) as { id?: string }[])[0]?.id;
+    // The steps landed too, so the cleanup had steps to remove first.
+    expect((await stepsCreated).ok(), 'the steps insert was refused').toBe(true);
 
     // The refusal as before, with "nothing changed" beside it, and the draft kept.
     await expect(rotationPage.alertWith(builder.error.refused)).toBeVisible();
@@ -488,7 +503,8 @@ test('a save that fails after its pattern removes the pattern again, says nothin
   }
 
   // No orphan: the pattern this save wrote, and its steps, are gone.
-  await expect.poll(() => unassignedPatternsSince(fixture.slug, since)).toEqual([]);
+  expect(patternId, 'the pattern insert answered no id').toBeDefined();
+  await expect.poll(() => patternRowsLeft(patternId ?? '')).toEqual({ patterns: 0, steps: 0 });
 });
 
 /**

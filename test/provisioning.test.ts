@@ -1156,10 +1156,10 @@ describe('every organization table carries row level security, and only its revi
   }
 
   it.skipIf(noDatabase)('holds no privilege on rotation_patterns but read and a tenant-only insert, a delete, and never update', async () => {
-    // STORY 2.3a, and 0025's DELETE, which its policy narrows to a pattern no
-    // version names (the cleanup of a failed save). Otherwise as 2.3a: A pattern is IMMUTABLE: `authenticated` reads, and inserts
-    // naming nothing but the tenant; update and delete are revoked outright,
-    // and `anon` keeps nothing — not even SELECT.
+    // STORY 2.3a: a pattern is IMMUTABLE. `authenticated` reads, and inserts
+    // naming nothing but the tenant; update is revoked outright, and `anon`
+    // keeps nothing — not even SELECT. 0025 grants DELETE, which its policy
+    // narrows to a pattern no version names (the cleanup of a failed save).
     const client = await connect();
     try {
       const held = await heldPrivileges(client, 'rotation_patterns', [
@@ -1178,10 +1178,11 @@ describe('every organization table carries row level security, and only its revi
   });
 
   it.skipIf(noDatabase)('holds no privilege on rotation_steps but read and a four-column insert, a delete, and never update', async () => {
-    // STORY 2.3a, and 0025's DELETE, which its policy narrows to a pattern no
-    // version names (the cleanup of a failed save). Otherwise as 2.3a: A step is IMMUTABLE: `authenticated` reads, and inserts its
-    // tenant, pattern, position and type; no session updates or deletes one,
-    // names its attribution, or holds anything as `anon`.
+    // STORY 2.3a: a step is IMMUTABLE. `authenticated` reads, and inserts its
+    // tenant, pattern, position and type; no session updates one, names its
+    // attribution, or holds anything as `anon`. 0025 grants DELETE, which its
+    // policy narrows to a step of a pattern no version names (the cleanup of
+    // a failed save).
     const client = await connect();
     try {
       const held = await heldPrivileges(client, 'rotation_steps', [
@@ -1650,10 +1651,11 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'rotation_pattern_in_use', argumentCount: 1, expected: ['authenticated'] },
     { name: 'rotation_assignment_on', argumentCount: 2, expected: ['authenticated'] },
     { name: 'rotation_assignment_latest_version', argumentCount: 1, expected: ['authenticated'] },
-    // 0025's two computed relationships the builder's bounded read embeds, on
-    // the same terms: PostgREST calls them as the request role.
+    // 0025's three computed relationships the builder's bounded read embeds,
+    // on the same terms: PostgREST calls them as the request role.
     { name: 'rotation_assignments_in_view', argumentCount: 1, expected: ['authenticated'] },
     { name: 'rotation_steps_in_view', argumentCount: 1, expected: ['authenticated'] },
+    { name: 'rotation_overrides_in_view', argumentCount: 1, expected: ['authenticated'] },
     // STORY 1.8. The roster is called by a signed-in session over REST, and by
     // nobody else: an anonymous caller has no organization to scope it to.
     { name: 'team_roster', argumentCount: 1, expected: ['authenticated'] },
@@ -1706,6 +1708,7 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'rotation_assignment_latest_version', argumentCount: 1 },
     { name: 'rotation_assignments_in_view', argumentCount: 1 },
     { name: 'rotation_steps_in_view', argumentCount: 1 },
+    { name: 'rotation_overrides_in_view', argumentCount: 1 },
     // 0023's TRUNCATE refusal reads nothing, so it has no reason to be a definer.
     { name: 'refuse_truncate', argumentCount: 0 },
     // 0024's name key reads nothing; it runs as whoever writes the name.

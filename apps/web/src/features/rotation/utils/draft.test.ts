@@ -795,7 +795,7 @@ describe('refused before anything is sent', () => {
     expect(draftRefusalOf(snapshot, withTeamStep(draft, 'pilot-smjena-a', 1), TODAY)).toBeNull();
   });
 
-  it('agrees with 0025: the anchor moved by whole cycles is unchanged, by a non-multiple is a change', async () => {
+  it('judges by projection: an anchor moved by whole cycles projects the same and is unchanged, by a non-multiple is a change', async () => {
     for (const rows of [PILOT, UJ5]) {
       const snapshot = await snapshotOf(rows);
       const draft = prefillOf(snapshot, TODAY);

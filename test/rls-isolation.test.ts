@@ -1140,6 +1140,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
               'rotation_assignment_latest_version',
               'rotation_assignment_on',
               'rotation_assignments_in_view',
+              'rotation_overrides_in_view',
               'rotation_pattern_in_use',
               'rotation_steps_in_view',
               'shift_type_latest_version',
@@ -1186,6 +1187,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'rotation_assignment_on',
         // 0025: the builder's bounded read, as computed relationships.
         'rotation_assignments_in_view',
+        'rotation_overrides_in_view',
         'rotation_pattern_in_use',
         'rotation_steps_in_view',
         // STORY 2.2a: the two readers the version and archive policies call.
@@ -14119,7 +14121,7 @@ describe('an anchor moved by whole cycles is the same value (0025)', () => {
 
 describe('the builder read embeds what is in force from the horizon on (0025)', () => {
   it.skipIf(noDatabase).each(FIXTURES)(
-    'selects the $fixture versions in force today or on a live override date, and later, and their or unassigned patterns steps',
+    'selects the $fixture versions in force yesterday or on a pending override date, and later, their or unassigned patterns steps, and the pending overrides',
     async ({ slug, admin, member }) => {
       await inRolledBackTransaction(async (client) => {
         const owner = await memberByUsername(client, slug, admin);
@@ -14127,70 +14129,112 @@ describe('the builder read embeds what is in force from the horizon on (0025)', 
         const own = owner.organizationId;
         const types = await seededTypeIds(client, slug, own);
         const today = await organizationDay(client, own);
-        const plain = await addThrowawayTeam(client, own, owner.authUserId);
-        const overridden = await addThrowawayTeam(client, own, owner.authUserId);
-        const make = () => ownerPattern(client, own, owner.authUserId, [types[0]!, types.at(-1)!]);
-        const [oldest, previous, inForce, scheduled, open, beforeOverride, current] = [
-          await make(), await make(), await make(), await make(), await make(), await make(), await make(),
+        // One throwaway team per case. Every version is saved at the
+        // transaction's `now()`; an override's stamps are set against that.
+        const [plain, margin, pending, confirmed, future] = [
+          await addThrowawayTeam(client, own, owner.authUserId),
+          await addThrowawayTeam(client, own, owner.authUserId),
+          await addThrowawayTeam(client, own, owner.authUserId),
+          await addThrowawayTeam(client, own, owner.authUserId),
+          await addThrowawayTeam(client, own, owner.authUserId),
         ];
-        const version = async (team: string, pattern: { id: string; steps: readonly string[] }, days: number) =>
+        const labels = [
+          'oldest', 'previous', 'inForce', 'scheduled', 'open',
+          'beforeMidnight', 'fromToday',
+          'beforePending', 'afterPending',
+          'beforeConfirmed', 'afterConfirmed',
+          'futureInForce', 'futureScheduled',
+        ] as const;
+        const pattern = {} as Record<(typeof labels)[number], { readonly id: string; readonly steps: readonly string[] }>;
+        for (const label of labels) {
+          pattern[label] = await ownerPattern(client, own, owner.authUserId, [types[0]!, types.at(-1)!]);
+        }
+        const version = async (team: { id: string }, label: (typeof labels)[number], days: number) =>
           ownerAssignment(client, {
             organization: own,
-            team,
-            pattern: pattern.id,
-            offsetStep: pattern.steps[0]!,
+            team: team.id,
+            pattern: pattern[label].id,
+            offsetStep: pattern[label].steps[0]!,
             anchor: SEEDED_ANCHOR_DATE,
             from: await dayPlus(client, today, days),
             by: owner.authUserId,
           });
-        await version(plain.id, oldest, -400);
-        await version(plain.id, previous, -30);
-        await version(plain.id, inForce, -10);
-        await version(plain.id, scheduled, 5);
-        await version(overridden.id, beforeOverride, -400);
-        await version(overridden.id, current, -20);
-        // A live override on a date the older version governs, and a removed
-        // one earlier still, which moves nothing.
-        await client.query(
-          `insert into shift_type_overrides (organization_id, team_id, date, shift_type_id, reason, created_by)
-           values ($1, $2, $3::date, $4, 'rls-isolation-test override', $5)`,
-          [own, overridden.id, await dayPlus(client, today, -25), types.at(-1), owner.authUserId],
-        );
-        await client.query(
-          `insert into shift_type_overrides (organization_id, team_id, date, shift_type_id, reason, created_by, removed_by, removed_at)
-           values ($1, $2, $3::date, $4, 'rls-isolation-test removed', $5, $5, now())`,
-          [own, plain.id, await dayPlus(client, today, -60), types.at(-1), owner.authUserId],
-        );
+        const override = async (
+          team: { id: string },
+          days: number,
+          stamps: { created: string; confirmed?: string; removed?: boolean },
+        ): Promise<string> => {
+          const { rows } = await client.query<{ id: string }>(
+            `insert into shift_type_overrides
+               (organization_id, team_id, date, shift_type_id, reason, created_by, created_at,
+                confirmed_by, confirmed_at, removed_by, removed_at)
+             values ($1, $2, $3::date, $4, 'rls-isolation-test override', $5::uuid, now() + $6::interval,
+                     case when $7::interval is null then null else $5::uuid end, now() + $7::interval,
+                     case when $8::boolean then $5::uuid end, case when $8::boolean then now() end)
+             returning id`,
+            [own, team.id, await dayPlus(client, today, days), types.at(-1), owner.authUserId, stamps.created, stamps.confirmed ?? null, stamps.removed ?? false],
+          );
+          const id = rows[0]?.id;
+          if (id === undefined) throw new Error('shift_type_overrides insert returned no row');
+          return id;
+        };
 
-        const ours = [oldest, previous, inForce, scheduled, open, beforeOverride, current];
-        const name = new Map(
-          ours.map((pattern, index) => [
-            pattern.id,
-            ['oldest', 'previous', 'inForce', 'scheduled', 'open', 'beforeOverride', 'current'][index]!,
-          ]),
-        );
+        // PLAIN: yesterday's version, the one scheduled, and the older ones,
+        // which nothing keeps. A removed override, and a pending one no
+        // version governs (before the oldest), move nothing.
+        await version(plain, 'oldest', -400);
+        await version(plain, 'previous', -30);
+        await version(plain, 'inForce', -10);
+        await version(plain, 'scheduled', 5);
+        await override(plain, -60, { created: '-1 year', removed: true });
+        const ungoverned = await override(plain, -500, { created: '-1 year' });
+        // THE MARGIN: a version from today keeps the one in force yesterday.
+        await version(margin, 'beforeMidnight', -50);
+        await version(margin, 'fromToday', 0);
+        // PENDING: written a year before its governing version was saved.
+        await version(pending, 'beforePending', -400);
+        await version(pending, 'afterPending', -20);
+        const pendingPast = await override(pending, -25, { created: '-1 year' });
+        // CONFIRMED after its governing version was saved: in force, not pending.
+        await version(confirmed, 'beforeConfirmed', -400);
+        await version(confirmed, 'afterConfirmed', -20);
+        await override(confirmed, -25, { created: '-1 year', confirmed: '1 minute' });
+        // FUTURE: pending under the scheduled version, later than yesterday.
+        await version(future, 'futureInForce', -10);
+        await version(future, 'futureScheduled', 5);
+        const pendingFuture = await override(future, 8, { created: '-1 year' });
+
+        const teams = [plain, margin, pending, confirmed, future].map((team) => team.id);
+        const name = new Map(labels.map((label) => [pattern[label].id, label]));
         const read = async () => {
           const { rows: kept } = await client.query<{ patternId: string }>(
             `select a.pattern_id as "patternId"
                from organizations o, public.rotation_assignments_in_view(o) as a
               where o.id = $1 and a.team_id = any($2::uuid[])`,
-            [own, [plain.id, overridden.id]],
+            [own, teams],
           );
           const { rows: steps } = await client.query<{ patternId: string }>(
             `select distinct s.pattern_id as "patternId"
                from organizations o, public.rotation_steps_in_view(o) as s
               where o.id = $1 and s.pattern_id = any($2::uuid[])`,
-            [own, ours.map((pattern) => pattern.id)],
+            [own, labels.map((label) => pattern[label].id)],
+          );
+          const { rows: overrides } = await client.query<{ id: string }>(
+            `select v.id
+               from organizations o, public.rotation_overrides_in_view(o) as v
+              where o.id = $1 and v.team_id = any($2::uuid[])`,
+            [own, teams],
           );
           const { rows: seededKept } = await client.query<{ total: number }>(
             `select count(*)::int as total
                from organizations o, public.rotation_assignments_in_view(o) as a
               where o.id = $1 and a.team_id <> all($2::uuid[])`,
-            [own, [plain.id, overridden.id]],
+            [own, teams],
           );
           return {
             kept: kept.map((row) => name.get(row.patternId)).sort(),
             steps: steps.map((row) => name.get(row.patternId)).sort(),
+            overrides: overrides.map((row) => row.id).sort(),
             seeded: seededKept[0]?.total,
           };
         };
@@ -14202,13 +14246,20 @@ describe('the builder read embeds what is in force from the horizon on (0025)', 
         const asMember = await read();
         await actAsOwner(client);
 
-        // The admin: in force today and scheduled, and — the override's
-        // horizon — the version governing its date and the one after it.
-        expect(asAdmin.kept).toEqual(['beforeOverride', 'current', 'inForce', 'scheduled']);
-        expect(asAdmin.steps).toEqual(['beforeOverride', 'current', 'inForce', 'open', 'scheduled']);
-        // The member reads no override, so the horizon is today.
-        expect(asMember.kept).toEqual(['current', 'inForce', 'scheduled']);
-        expect(asMember.steps).toEqual(['current', 'inForce', 'open', 'scheduled']);
+        // Every team keeps what is in force YESTERDAY and later; the pending
+        // override keeps the older version governing its date. The confirmed
+        // one keeps nothing older, and the future one does not pin its team
+        // on its own date, past the version in force now.
+        const always = ['afterConfirmed', 'afterPending', 'beforeMidnight', 'fromToday', 'futureInForce', 'futureScheduled', 'inForce', 'scheduled'];
+        expect(asAdmin.kept).toEqual([...always, 'beforePending'].sort());
+        expect(asAdmin.steps).toEqual([...always, 'beforePending', 'open'].sort());
+        // The pending overrides alone, the ungoverned one included: not the
+        // confirmed one, and not the removed one.
+        expect(asAdmin.overrides).toEqual([ungoverned, pendingPast, pendingFuture].sort());
+        // The member reads no override, so every horizon is yesterday.
+        expect(asMember.kept).toEqual([...always].sort());
+        expect(asMember.steps).toEqual([...always, 'open'].sort());
+        expect(asMember.overrides).toEqual([]);
         // The seeded rotation: one version per team, in force today, all kept.
         expect(asAdmin.seeded).toBe(seededRotationOf(slug).teams.length);
       });
@@ -14216,12 +14267,13 @@ describe('the builder read embeds what is in force from the horizon on (0025)', 
   );
 
   it.skipIf(noApi).each(FIXTURES)(
-    'embeds the $fixture bounded steps and assignments, and every version as history, over PostgREST',
+    'embeds the $fixture bounded steps, assignments and overrides, and every version as history, over PostgREST',
     async ({ slug, admin, member }) => {
       for (const username of [admin, member]) {
         const token = await tokenFor(username, slug);
+        // The builder's own shape: the overrides aliased, and filtered by the alias.
         const rows = await restRows(
-          'organizations?select=id,rotation_steps:rotation_steps_in_view(id),rotation_assignments:rotation_assignments_in_view(id),rotation_history:rotation_assignments(id)',
+          'organizations?select=id,rotation_steps:rotation_steps_in_view(id),rotation_assignments:rotation_assignments_in_view(id),rotation_history:rotation_assignments(id),shift_type_overrides:rotation_overrides_in_view(id)&shift_type_overrides.removed_at=is.null',
           { token },
         );
 
@@ -14229,6 +14281,7 @@ describe('the builder read embeds what is in force from the horizon on (0025)', 
         expect((rows[0]?.['rotation_steps'] as unknown[]).length, username).toBe(seededRotationOf(slug).steps.length);
         expect((rows[0]?.['rotation_assignments'] as unknown[]).length, username).toBe(seededRotationOf(slug).teams.length);
         expect((rows[0]?.['rotation_history'] as unknown[]).length, username).toBe(seededRotationOf(slug).teams.length);
+        expect(rows[0]?.['shift_type_overrides'], username).toEqual([]);
       }
     },
     20_000,

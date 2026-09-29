@@ -465,24 +465,20 @@ export async function seedRotationChange(
 }
 
 /**
- * The rotation patterns of the run organization created since `since` (a
- * database instant, {@link databaseNow}) that no version names, with their
- * step counts: what a failed save would leave behind if it did not clean up
- * after itself (`0025`).
+ * What is left of one rotation pattern, by id: the pattern row, and its steps.
+ * A failed save that cleaned up after itself (`0025`) leaves `{ patterns: 0,
+ * steps: 0 }`. Scoped to the one id, so no other session's patterns count.
  */
-export async function unassignedPatternsSince(slug: string, since: string): Promise<readonly number[]> {
+export async function patternRowsLeft(patternId: string): Promise<{ patterns: number; steps: number }> {
   const client = await connect();
   try {
-    const { rows } = await client.query<{ steps: number }>(
-      `select (select count(*)::int from rotation_steps s where s.pattern_id = p.id) as steps
-         from rotation_patterns p
-         join organizations o on o.id = p.organization_id
-        where o.slug = $1 and p.created_at >= $2::timestamptz
-          and not exists (select 1 from rotation_assignments a where a.pattern_id = p.id)`,
-      [slug, since],
+    const { rows } = await client.query<{ patterns: number; steps: number }>(
+      `select (select count(*)::int from rotation_patterns where id = $1) as patterns,
+              (select count(*)::int from rotation_steps where pattern_id = $1) as steps`,
+      [patternId],
     );
 
-    return rows.map((row) => row.steps);
+    return rows[0] ?? { patterns: -1, steps: -1 };
   } finally {
     await client.end();
   }

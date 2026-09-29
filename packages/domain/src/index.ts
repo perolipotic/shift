@@ -36,7 +36,6 @@ export {
   projectedShiftTypeOn,
   projectedStepId,
   rotationAssignmentOn,
-  sameRotationValue,
   type RotationAssignment,
   type RotationPattern,
   type RotationStep,

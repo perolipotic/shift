@@ -22,13 +22,14 @@ import { TEAMS_COLUMNS, splitTeams, teamRowOf, type TeamRow } from '@/features/t
  * The rotation snapshot: one organization's teams, shift types with their
  * versions, rotation steps and rotation assignments, read once (story 2.3b).
  *
- * THE STEPS AND ASSIGNMENTS ARE BOUNDED (`0025`): the versions in force today
- * (or on a live override's earlier date) and later, and the steps they name or
- * of a pattern no version names yet. Every consumer reads from the horizon on:
- * the prefill and the preview (today), 2.6's checks (the effective date, today
- * or later), the scheduled change, and 3.5c's projection on a pending
- * override's date. The history is the exception, and is read whole — its
- * attribution columns only.
+ * THE STEPS, ASSIGNMENTS AND OVERRIDES ARE BOUNDED (`0025`): the versions in
+ * force yesterday — a day of margin for a device clock behind the server's at
+ * midnight — or on a pending override's earlier date, and later; the steps
+ * they name or of a pattern no version names yet; and the pending overrides
+ * alone. Every consumer reads from the horizon on: the prefill and the preview
+ * (today), 2.6's checks (the effective date, today or later), the scheduled
+ * change, and 3.5c's projection on a pending override's date. The history is
+ * the exception, and is read whole — its attribution columns only.
  *
  * EVERYTHING THE BUILDER DECIDES IS IN the `.ts` modules under `@/features/rotation`, for the reason
  * `@/features/shift-types/services/list` gives: a `.tsx` is collected by no test (AD-15).
@@ -43,9 +44,11 @@ import { TEAMS_COLUMNS, splitTeams, teamRowOf, type TeamRow } from '@/features/t
  * validated by the parsers their own lists use (`teamRowOf`, `shiftTypeRowOf`),
  * so a row one list refuses the other refuses too.
  *
- * THE LIVE SHIFT-TYPE OVERRIDES (story 3.5c) ride along, embedded and
- * filtered to the live ones, so the builder can list those a rotation change
- * left pending. The table is an active admin's alone (0019), as the builder is.
+ * THE PENDING SHIFT-TYPE OVERRIDES (story 3.5c) ride along, through `0025`'s
+ * computed relationship and filtered to the live ones again, so the builder
+ * can list those a rotation change left pending. Only those: the builder
+ * reads no override in force. The table is an active admin's alone (0019), as
+ * the builder is.
  *
  * `select` AND ITS ONE FILTER, AND NOTHING ELSE. Writing is
  * `@/features/rotation/services/write`, and the dispositions are
@@ -65,12 +68,13 @@ export const ROTATION_KEY = ['rotation'] as const;
 
 /**
  * `0025`'s computed relationships the bounded read embeds from the
- * organization: the assignments in force on the horizon (today, or a live
- * override's earlier date) or later, and the steps of the patterns those name
- * or no version names yet.
+ * organization: the assignments in force on the horizon (yesterday, or a
+ * pending override's earlier date) or later, the steps of the patterns those
+ * name or no version names yet, and the pending overrides.
  */
 export const ROTATION_ASSIGNMENTS_IN_VIEW = 'rotation_assignments_in_view';
 export const ROTATION_STEPS_IN_VIEW = 'rotation_steps_in_view';
+export const ROTATION_OVERRIDES_IN_VIEW = 'rotation_overrides_in_view';
 
 /** The alias every version's attribution arrives under, unbounded (2.6's history, 3.5c's stamps). */
 export const ROTATION_HISTORY_EMBED = 'rotation_history';
@@ -85,9 +89,9 @@ export const ROTATION_COLUMNS =
   `${ORGANIZATION_ZONE_COLUMNS},` +
   `teams(${TEAMS_COLUMNS}),` +
   `${SHIFT_TYPES_EMBED},` +
-  // BOUNDED (`0025`): the versions in force today, or on the date of a live
-  // override before it, and later, and the steps of the patterns they name or
-  // of a pattern no version names yet — through the two computed
+  // BOUNDED (`0025`): the versions in force yesterday, or on the date of a
+  // pending override before it, and later, and the steps of the patterns they
+  // name or of a pattern no version names yet — through the computed
   // relationships, aliased to the names the parser reads.
   `rotation_steps:${ROTATION_STEPS_IN_VIEW}(organization_id,id,pattern_id,position,shift_type_id),` +
   `rotation_assignments:${ROTATION_ASSIGNMENTS_IN_VIEW}(organization_id,id,team_id,pattern_id,offset_step_id,anchor_date,effective_from,created_by,created_at),` +
@@ -99,8 +103,9 @@ export const ROTATION_COLUMNS =
   // key to `members`, so the names are joined here, on the client; an active
   // admin reads every member of the organization (0011).
   'members(organization_id,auth_user_id,name),' +
-  // STORY 3.5c: the live overrides, for the review a rotation change leaves.
-  'shift_type_overrides(organization_id,id,team_id,date,shift_type_id,reason,created_by,created_at,confirmed_at)';
+  // STORY 3.5c: the PENDING overrides (`0025`), for the review a rotation
+  // change leaves; the builder reads no override in force.
+  `shift_type_overrides:${ROTATION_OVERRIDES_IN_VIEW}(organization_id,id,team_id,date,shift_type_id,reason,created_by,created_at,confirmed_at)`;
 
 /** The embedded column the overrides embed is filtered by: live ones only (`removed_at is null`). */
 export const ROTATION_OVERRIDES_LIVE_COLUMN = 'shift_type_overrides.removed_at';
@@ -171,8 +176,8 @@ export interface RotationSnapshot {
    */
   readonly steps: readonly RotationStep[];
   /**
-   * The versions in force on each team's horizon — today, or the date of its
-   * earliest live override when that is earlier — and every later one
+   * The versions in force on each team's horizon — yesterday, or the date of
+   * its earliest pending override when that is earlier — and every later one
    * (`0025`'s bound). Every date from the horizon on projects exactly as over
    * all versions.
    */
@@ -185,7 +190,11 @@ export interface RotationSnapshot {
   readonly history: readonly RotationHistoryRecord[];
   /** The organization's members as the history names them: by auth user id. */
   readonly authors: readonly RotationAuthor[];
-  /** Every LIVE shift-type override, by team then date (story 3.5c); at most one per team and date. */
+  /**
+   * Every live shift-type override a rotation change left PENDING (story 3.5c,
+   * `0025`'s bound), by team then date; at most one per team and date. The
+   * overrides in force are not read: nothing in the builder uses them.
+   */
   readonly overrides: readonly RotationOverride[];
 }
 

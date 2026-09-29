@@ -49,6 +49,11 @@ import {
   teamRow,
   type FixtureRows,
 } from '@/features/rotation/rotation.fixture';
+import { scheduledChangeOf } from '@/features/rotation/services/history';
+import { pendingOverrideCountOf, pendingOverrideRowsOf } from '@/features/rotation/services/override-disposition';
+import { cancelScheduledRotation, type RotationAssignmentDeleteTable } from '@/features/rotation/services/write';
+import { datesFrom, draftRefusalOf, prefillOf, withEffectiveFrom } from '@/features/rotation/utils/draft';
+import { rotationWarningLinesOf, shownSaveOutcomeOf } from '@/features/rotation/utils/warnings';
 
 /**
  * Story 2.3b's read half, executed rather than read (AD-15): the one
@@ -275,13 +280,14 @@ describe('the attribution, read in the same snapshot (story 2.6)', () => {
 });
 
 describe('the bounded read (0025)', () => {
-  it('embeds the steps and assignments through the computed relationships, and the history whole but without a step', () => {
+  it('embeds the steps, assignments and overrides through the computed relationships, and the history whole but without a step', () => {
     const embeds = ROTATION_COLUMNS.split(/,(?![^(]*\))/);
 
-    expect(embeds.filter((embed) => /rotation_(steps|assignments)/.test(embed)).map((embed) => embed.split('(')[0])).toEqual([
+    expect(embeds.filter((embed) => /rotation_|overrides/.test(embed)).map((embed) => embed.split('(')[0])).toEqual([
       'rotation_steps:rotation_steps_in_view',
       'rotation_assignments:rotation_assignments_in_view',
       'rotation_history:rotation_assignments',
+      'shift_type_overrides:rotation_overrides_in_view',
     ]);
     // The unbounded embed carries the attribution alone: no offset, no anchor, and no step embed.
     const history = embeds.find((embed) => embed.startsWith('rotation_history:')) ?? '';
@@ -318,6 +324,167 @@ describe('the bounded read (0025)', () => {
 
     expect((await readRotation(tableOf({ data: [organization], error: null, count: 1 }))).ok).toBe(false);
     spy.mockRestore();
+  });
+});
+
+describe('every consumer over a strictly bounded snapshot (0025)', () => {
+  // THE FULL HISTORY, for every pilot team: the seed (2020), two older
+  // patterns (2023, 2025), the seed's pattern again (2026-06-01, in force
+  // today) and a change scheduled after today (2026-10-01). An override
+  // written before the 2025 version was saved is PENDING under it, and pins
+  // Smjena A's horizon on its date; one written after its version is IN
+  // FORCE, and a FUTURE pending one sits under the scheduled change.
+  const letters = ['a', 'b', 'c', 'd'] as const;
+  const patternSteps = (pattern: string, types: readonly string[]) =>
+    types.map((type, position) => stepRow(`${pattern}-${String(position)}`, pattern, position, type));
+  const ancientSteps = patternSteps('pilot-ancient', ['pilot-dan', 'pilot-slobodno']);
+  const oldSteps = patternSteps('pilot-old', ['pilot-noc', 'pilot-slobodno', 'pilot-slobodno', 'pilot-dan']);
+  const nextSteps = patternSteps('pilot-next', ['pilot-dan', 'pilot-dan', 'pilot-slobodno', 'pilot-noc']);
+  const versionsOn = (pattern: string, prefix: string, from: string, createdAt: string) =>
+    letters.map((letter, offset) =>
+      assignmentRow(`pilot-smjena-${letter}`, pattern, `${prefix}-${String(offset)}`, SEEDED, from, ORGANIZATION, {
+        createdAt,
+      }),
+    );
+  const seed = PILOT.assignments;
+  const ancient = letters.map((letter) =>
+    assignmentRow(`pilot-smjena-${letter}`, 'pilot-ancient', 'pilot-ancient-0', SEEDED, '2023-01-01', ORGANIZATION, {
+      createdAt: '2022-12-20T10:00:00+00:00',
+    }),
+  );
+  const older = versionsOn('pilot-old', 'pilot-old', '2025-01-01', '2024-12-20T10:00:00+00:00');
+  const current = versionsOn('pilot-rotation', 'pilot-step', '2026-06-01', '2026-05-20T10:00:00+00:00');
+  const scheduled = versionsOn('pilot-next', 'pilot-next', '2026-10-01', '2026-09-20T10:00:00+00:00');
+  const everyVersion = [...seed, ...ancient, ...older, ...current, ...scheduled];
+  const pendingPast = overrideRow('o-pending', 'pilot-smjena-a', '2025-03-10', 'pilot-slobodno', {
+    createdAt: '2024-12-01T08:00:00+00:00',
+  });
+  const inForce = overrideRow('o-in-force', 'pilot-smjena-b', '2025-03-01', 'pilot-dan', {
+    createdAt: '2025-02-01T08:00:00+00:00',
+  });
+  const pendingFuture = overrideRow('o-future', 'pilot-smjena-c', '2026-10-05', 'pilot-noc', {
+    createdAt: '2026-09-01T08:00:00+00:00',
+  });
+  const FULL: FixtureRows = {
+    ...PILOT,
+    steps: [...PILOT.steps, ...ancientSteps, ...oldSteps, ...nextSteps],
+    assignments: everyVersion,
+    history: everyVersion,
+    overrides: [pendingPast, inForce, pendingFuture],
+  };
+  // What 0025 selects: Smjena A's horizon is the pending override's date, so
+  // it keeps the 2025 version that governs it; every other team's is
+  // yesterday. All keep 2026-06-01 and later. The 2020 and 2023 versions,
+  // the 2023 pattern's steps and the override in force are not read.
+  const BOUNDED: FixtureRows = {
+    ...PILOT,
+    steps: [...PILOT.steps, ...oldSteps, ...nextSteps],
+    assignments: [older[0]!, ...current, ...scheduled],
+    history: everyVersion,
+    overrides: [pendingPast, pendingFuture],
+  };
+  const YESTERDAY = '2026-09-25';
+  const fromHorizon = datesFrom(YESTERDAY, 30);
+
+  const cancelTable = (log: string[]): RotationAssignmentDeleteTable => ({
+    delete: () => ({
+      eq: (tenantColumn: string, tenant: string) => ({
+        eq: (dateColumn: string, date: string) => ({
+          in: (teamColumn: string, teams: readonly string[]) => ({
+            select: () => {
+              log.push(`${tenantColumn}=${tenant},${dateColumn}=${date},${teamColumn}=${teams.join('|')}`);
+
+              return Promise.resolve({ data: teams.map((team) => ({ id: team })), error: null });
+            },
+          }),
+        }),
+      }),
+    }),
+  });
+
+  it('is strictly smaller than the full set, and keeps the whole history', async () => {
+    const full = await snapshotOf(FULL);
+    const bounded = await snapshotOf(BOUNDED);
+
+    expect(bounded.assignments.length).toBeLessThan(full.assignments.length);
+    expect(bounded.steps.length).toBeLessThan(full.steps.length);
+    expect(bounded.overrides.length).toBeLessThan(full.overrides.length);
+    expect(bounded.history).toEqual(full.history);
+  });
+
+  it('judges and lists the pending overrides exactly as over the full set', async () => {
+    const full = await snapshotOf(FULL);
+    const bounded = await snapshotOf(BOUNDED);
+
+    expect(overrideStandingOfSnapshot(bounded).pending).toEqual(overrideStandingOfSnapshot(full).pending);
+    expect(overrideStandingOfSnapshot(full).pending.map((one) => one.id)).toEqual(['o-pending', 'o-future']);
+    // The disposition rows project each pending date through the kept versions.
+    expect(pendingOverrideRowsOf(bounded)).toEqual(pendingOverrideRowsOf(full));
+    expect(pendingOverrideRowsOf(full).map((row) => row.governed)).toEqual([true, true]);
+    // On 2025-03-10 the 2025 pattern projects Dan, where the seed's would project Slobodno.
+    expect(pendingOverrideRowsOf(full)[0]?.projectedShiftTypeId).toBe('pilot-dan');
+    expect(pendingOverrideCountOf(bounded)).toBe(pendingOverrideCountOf(full));
+  });
+
+  it('answers the version in force, and the prefill, on every date from the horizon on', async () => {
+    const full = await snapshotOf(FULL);
+    const bounded = await snapshotOf(BOUNDED);
+
+    for (const date of [...datesFrom('2025-03-10', 3), ...fromHorizon]) {
+      for (const letter of letters) {
+        const team = `pilot-smjena-${letter}`;
+
+        if (letter !== 'a' && date < YESTERDAY) continue;
+        expect(assignmentInForceOf(bounded, team, date), `${team} on ${date}`).toEqual(
+          assignmentInForceOf(full, team, date),
+        );
+      }
+    }
+    for (const date of fromHorizon) {
+      expect(prefillOf(bounded, date), date).toEqual(prefillOf(full, date));
+    }
+    expect(prefillOf(full, TODAY).steps).toEqual(['pilot-dan', 'pilot-noc', 'pilot-slobodno', 'pilot-slobodno']);
+  });
+
+  it('answers the scheduled change, the cancel and the save refusals as over the full set', async () => {
+    const full = await snapshotOf(FULL);
+    const bounded = await snapshotOf(BOUNDED);
+
+    for (const date of fromHorizon) {
+      expect(rotationScheduledOf(bounded, date), date).toBe(rotationScheduledOf(full, date));
+      expect(rotationScheduledDateOf(bounded, date), date).toBe(rotationScheduledDateOf(full, date));
+      expect(scheduledChangeOf(bounded, date), date).toEqual(scheduledChangeOf(full, date));
+      expect(rotationChangedTodayOf(bounded, date), date).toBe(rotationChangedTodayOf(full, date));
+      expect(draftRefusalOf(bounded, prefillOf(full, date), date), date).toBe(
+        draftRefusalOf(full, prefillOf(full, date), date),
+      );
+    }
+    expect(rotationScheduledDateOf(full, TODAY)).toBe('2026-10-01');
+
+    const sent: string[][] = [[], []];
+    const outcomes = await Promise.all(
+      [bounded, full].map((snapshot, index) =>
+        cancelScheduledRotation(cancelTable(sent[index] ?? []), ORGANIZATION, snapshot, TODAY, '2026-10-01'),
+      ),
+    );
+
+    expect(outcomes[0]).toEqual({ ok: true });
+    expect(outcomes[0]).toEqual(outcomes[1]);
+    expect(sent[0]).toEqual(sent[1]);
+  });
+
+  it('gives a landed save the same 2.5 warnings as over the full set', async () => {
+    const full = await snapshotOf(FULL);
+    const bounded = await snapshotOf(BOUNDED);
+
+    for (const date of [TODAY, '2026-10-02']) {
+      const draft = withEffectiveFrom(prefillOf(full, TODAY), date);
+
+      expect(rotationWarningLinesOf(bounded, draft, date), date).toEqual(rotationWarningLinesOf(full, draft, date));
+      expect(shownSaveOutcomeOf({ ok: true }, bounded, draft, date)).toEqual(
+        shownSaveOutcomeOf({ ok: true }, full, draft, date),
+      );
+    }
   });
 });
 
@@ -556,9 +723,9 @@ describe('the surface state, driven through the one query definition', () => {
 });
 
 describe('the live overrides (story 3.5c)', () => {
-  it('embeds the live overrides, filtered on the server, and carries them by team then date', async () => {
+  it('embeds the pending live overrides, bounded and filtered on the server, and carries them by team then date', async () => {
     expect(ROTATION_COLUMNS).toContain(
-      'shift_type_overrides(organization_id,id,team_id,date,shift_type_id,reason,created_by,created_at,confirmed_at)',
+      'shift_type_overrides:rotation_overrides_in_view(organization_id,id,team_id,date,shift_type_id,reason,created_by,created_at,confirmed_at)',
     );
     expect(ROTATION_COLUMNS, 'a removal leaves the read').not.toMatch(/removed_by|removed_at/);
     const snapshot = await snapshotOf({

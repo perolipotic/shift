@@ -1707,7 +1707,7 @@ describe('the access-control migration', () => {
     ).toBe(3);
   });
 
-  it('bounds the builder read through two invoker computed relationships (0025)', () => {
+  it('bounds the builder read through three invoker computed relationships (0025)', () => {
     // 0025: the steps and assignments the builder embeds, bounded to what is
     // in force from the horizon on. Source text only; what they select is
     // `test/rls-isolation.test.ts`, the catalogue `test/provisioning.test.ts`.
@@ -1715,6 +1715,7 @@ describe('the access-control migration', () => {
     for (const [name, table] of [
       ['rotation_assignments_in_view', 'rotation_assignments'],
       ['rotation_steps_in_view', 'rotation_steps'],
+      ['rotation_overrides_in_view', 'shift_type_overrides'],
     ] as const) {
       const body = new RegExp(`create or replace function public\\.${name}\\([\\s\\S]*?\\$\\$;`, 'i').exec(statements)?.[0];
       expect(body, `${name} is not declared`).toBeDefined();
