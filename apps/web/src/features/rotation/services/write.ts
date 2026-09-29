@@ -30,16 +30,20 @@ export { claimedOrganizationOf };
  * assignment per active team in one bulk insert, every version effective from
  * the DRAFT'S EFFECTIVE DATE — today or later (story 2.6) — at the draft's
  * shared anchor. A failure after the
- * pattern leaves an unreferenced pattern, which projects nothing, and changes
- * no team's rotation — so it says NOTHING CHANGED. A retry builds a fresh
- * pattern every time; a half-written one is never reused (its steps may be
- * incomplete, and once a team stands on it no step can be added).
+ * pattern changes no team's rotation — so it says NOTHING CHANGED — and the
+ * save then REMOVES THE PATTERN IT WROTE, best-effort
+ * ({@link discardUnassignedPattern}): its steps, then the pattern, through
+ * `0025`'s delete policies, which admit only a pattern no version names. A
+ * failed cleanup is logged and never changes the refusal. A retry builds a
+ * fresh pattern every time; a half-written one is never reused (its steps may
+ * be incomplete, and once a team stands on it no step can be added).
  *
- * PATTERNS AND STEPS ARE NEVER UPDATED OR DELETED (`0016` grants neither), and
- * nothing here calls either verb. THE ONE DELETE is {@link cancelScheduledRotation}:
- * the organization's assignments at the one scheduled date, which `0016`'s
- * delete policy admits only while they are in the future and each team's
- * latest (story 2.6, decision 2a). Nothing is ever updated.
+ * PATTERNS AND STEPS ARE NEVER UPDATED (`0016` grants no update). TWO DELETES,
+ * and only these: {@link cancelScheduledRotation}, the organization's
+ * assignments at the one scheduled date, which `0016`'s delete policy admits
+ * only while they are in the future and each team's latest (story 2.6,
+ * decision 2a); and {@link discardUnassignedPattern}, the pattern a failed
+ * save just wrote. Nothing is ever updated.
  *
  * Codes, never messages: {@link rotationWriteMessageKey} is the one edge.
  */
@@ -60,9 +64,9 @@ export type RotationSaveOutcome =
       readonly ok: false;
       readonly code: RotationWriteFailure;
       /**
-       * The pattern was written and a later write failed: an unreferenced
-       * pattern is left behind and no team's rotation changed, which the
-       * builder says in so many words.
+       * The pattern was written and a later write failed: no team's rotation
+       * changed, which the builder says in so many words. The pattern is
+       * removed again, best-effort, before this is answered.
        */
       readonly afterPattern: boolean;
     };
@@ -86,7 +90,7 @@ interface Selecting {
 
 type Row = Readonly<Record<string, unknown>>;
 
-/** The one call made on each rotation table by the save: an insert returning rows. No update, no delete. */
+/** The one call the save makes on each rotation table: an insert returning rows. No update. */
 export interface RotationInsertTable {
   insert(values: Row | readonly Row[]): Selecting;
 }
@@ -112,10 +116,82 @@ export interface RotationAssignmentDeleteTable {
   delete(): FilteringByTenant;
 }
 
+interface FilteringByPattern {
+  eq(column: string, value: string): Selecting;
+}
+
+interface FilteringCleanupByTenant {
+  eq(column: string, value: string): FilteringByPattern;
+}
+
+/**
+ * The cleanup's one call on `rotation_patterns` and `rotation_steps`: a delete
+ * filtered by the tenant and the pattern the failed save wrote, returning the
+ * rows removed (`0025`).
+ */
+export interface RotationCleanupTable {
+  delete(): FilteringCleanupByTenant;
+}
+
+/** A table the save inserts into and a failed save cleans up: patterns and steps. */
+export type RotationPatternTable = RotationInsertTable & RotationCleanupTable;
+
 export interface RotationWriteTables {
-  readonly patterns: RotationInsertTable;
-  readonly steps: RotationInsertTable;
+  readonly patterns: RotationPatternTable;
+  readonly steps: RotationPatternTable;
   readonly assignments: RotationInsertTable;
+}
+
+/** What a cleanup that could not remove the pattern it wrote is logged under. */
+export const ROTATION_CLEANUP_FAILED = 'ROTATION_CLEANUP_FAILED';
+
+/**
+ * Remove the pattern a failed save wrote, and its steps — the steps first,
+ * since `0016`'s step key does not cascade — through `0025`'s delete
+ * policies, which admit only a pattern no assignment names. So a pattern a
+ * version did land on (an insert that committed but whose answer was lost) is
+ * never removed: its delete matches no row. BEST-EFFORT: any failure, zero
+ * patterns removed included, is logged under {@link ROTATION_CLEANUP_FAILED}
+ * and nothing is thrown, so the caller's refusal stays what it was.
+ */
+export async function discardUnassignedPattern(
+  tables: Pick<RotationWriteTables, 'patterns' | 'steps'>,
+  organizationId: string,
+  patternId: string,
+): Promise<boolean> {
+  const removals: readonly [RotationCleanupTable, string][] = [
+    [tables.steps, 'pattern_id'],
+    [tables.patterns, 'id'],
+  ];
+  let removedPatterns = 0;
+
+  for (const [table, column] of removals) {
+    let answered: RotationWriteAnswer;
+
+    try {
+      answered = await table.delete().eq(ORGANIZATION_COLUMN, organizationId).eq(column, patternId).select(PATTERN_RETURNED);
+    } catch (cause) {
+      console.error(ROTATION_CLEANUP_FAILED, cause);
+
+      return false;
+    }
+
+    if (!isRecord(answered) || (answered.error !== null && answered.error !== undefined)) {
+      console.error(ROTATION_CLEANUP_FAILED, isRecord(answered) ? answered.error?.code : typeof answered);
+
+      return false;
+    }
+
+    removedPatterns = Array.isArray(answered.data) ? answered.data.length : 0;
+  }
+
+  if (removedPatterns !== 1) {
+    console.error(ROTATION_CLEANUP_FAILED, 'pattern', removedPatterns);
+
+    return false;
+  }
+
+  return true;
 }
 
 const PATTERN_RETURNED = 'id';
@@ -231,6 +307,7 @@ export async function saveRotation(
   const patternId = textOf(pattern.rows[0], 'id');
 
   if (patternId === null) {
+    // No id to remove it by: the one failure after the pattern that cannot be cleaned up.
     console.error(ROTATION_WRITE_UNAVAILABLE, 'pattern id');
 
     return { ok: false, code: ROTATION_WRITE_UNAVAILABLE, afterPattern: true };
@@ -251,11 +328,18 @@ export async function saveRotation(
     draft.steps.length,
   );
 
-  if (!steps.ok) return { ...steps, afterPattern: true };
+  // EVERY FAILURE FROM HERE ON is answered after the pattern is removed again.
+  const failedAfterPattern = async (code: RotationWriteFailure): Promise<RotationSaveOutcome> => {
+    await discardUnassignedPattern(tables, organizationId, patternId);
+
+    return { ok: false, code, afterPattern: true };
+  };
+
+  if (!steps.ok) return failedAfterPattern(steps.code);
 
   // THE STEPS CAME BACK AS SENT: every position 0…n−1 exactly once, each with
   // an id. Anything else is the service, and — like any failure after the
-  // pattern — leaves an orphan pattern and changes nothing.
+  // pattern — changes nothing, and the pattern is removed again.
   const stepIdAt = new Map<number, string>();
 
   for (const row of steps.rows) {
@@ -272,7 +356,7 @@ export async function saveRotation(
     ) {
       console.error(ROTATION_WRITE_UNAVAILABLE, 'step positions');
 
-      return { ok: false, code: ROTATION_WRITE_UNAVAILABLE, afterPattern: true };
+      return failedAfterPattern(ROTATION_WRITE_UNAVAILABLE);
     }
 
     stepIdAt.set(position, id);
@@ -286,7 +370,7 @@ export async function saveRotation(
     if (offsetStepId === undefined) {
       console.error(ROTATION_WRITE_UNAVAILABLE, 'step ids');
 
-      return { ok: false, code: ROTATION_WRITE_UNAVAILABLE, afterPattern: true };
+      return failedAfterPattern(ROTATION_WRITE_UNAVAILABLE);
     }
 
     assignments.push({
@@ -304,7 +388,7 @@ export async function saveRotation(
     assignments.length,
   );
 
-  if (!bound.ok) return { ...bound, afterPattern: true };
+  if (!bound.ok) return failedAfterPattern(bound.code);
 
   return { ok: true };
 }

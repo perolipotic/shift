@@ -250,3 +250,41 @@ export function projectedShiftTypeOn(
     date,
   );
 }
+
+/**
+ * Whether two versions of a team's rotation hold THE SAME VALUE: the same
+ * pattern, the same offset step, and anchors a whole number of cycles apart
+ * (story 2.3a's deferred "changes the value" rule, `0025_rotation_orphans.sql`).
+ * Every date then projects the same step under both, so a version that is the
+ * same value as the latest one changes nothing, and the database refuses it
+ * as it refuses a literal no-op. A difference of zero days is a whole number
+ * of cycles, so the literal no-op is the same value too.
+ *
+ * The cycle length is the number of `steps` of the pattern, as
+ * {@link projectedStepId} counts it; `steps` may hold other patterns' steps,
+ * which are ignored. Versions on two patterns, or on two steps, are never the
+ * same value, whatever they project — the rule compares the stored facts, as
+ * the database does.
+ *
+ * @throws RangeError naming the value when an anchor is not a calendar
+ *   `YYYY-MM-DD`, or, for two versions on one pattern and one step, on every
+ *   precondition of {@link projectedStepId}.
+ */
+export function sameRotationValue(
+  steps: readonly RotationStep[],
+  one: RotationAssignment,
+  other: RotationAssignment,
+): boolean {
+  checkDate(`the anchor of team ${one.teamId}'s rotation`, one.anchorDate);
+  checkDate(`the anchor of team ${other.teamId}'s rotation`, other.anchorDate);
+  if (one.patternId !== other.patternId || one.offsetStepId !== other.offsetStepId) return false;
+
+  const ordered = orderedSteps(
+    steps.filter((step) => step.patternId === one.patternId),
+    one.patternId,
+  );
+  if (!ordered.some((step) => step.id === one.offsetStepId)) {
+    throw new RangeError(`offset step ${one.offsetStepId} is not a step of rotation pattern ${one.patternId}`);
+  }
+  return modulo(daysBetween(one.anchorDate, other.anchorDate), ordered.length) === 0;
+}

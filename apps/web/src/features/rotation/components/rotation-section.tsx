@@ -140,6 +140,7 @@ import {
   type RotationAssignmentDeleteTable,
   type RotationCancelOutcome,
   type RotationInsertTable,
+  type RotationPatternTable,
 } from '@/features/rotation/services/write';
 import {
   STEPPER_STEPS,
@@ -375,8 +376,8 @@ export function RotationSection({
 
       const saved = await saveRotation(
         {
-          patterns: client.from(ROTATION_PATTERNS_TABLE) as unknown as RotationInsertTable,
-          steps: client.from(ROTATION_STEPS_TABLE) as unknown as RotationInsertTable,
+          patterns: client.from(ROTATION_PATTERNS_TABLE) as unknown as RotationPatternTable,
+          steps: client.from(ROTATION_STEPS_TABLE) as unknown as RotationPatternTable,
           assignments: client.from(ROTATION_ASSIGNMENTS_TABLE) as unknown as RotationInsertTable,
         },
         organization,

@@ -464,6 +464,30 @@ export async function seedRotationChange(
   }
 }
 
+/**
+ * The rotation patterns of the run organization created since `since` (a
+ * database instant, {@link databaseNow}) that no version names, with their
+ * step counts: what a failed save would leave behind if it did not clean up
+ * after itself (`0025`).
+ */
+export async function unassignedPatternsSince(slug: string, since: string): Promise<readonly number[]> {
+  const client = await connect();
+  try {
+    const { rows } = await client.query<{ steps: number }>(
+      `select (select count(*)::int from rotation_steps s where s.pattern_id = p.id) as steps
+         from rotation_patterns p
+         join organizations o on o.id = p.organization_id
+        where o.slug = $1 and p.created_at >= $2::timestamptz
+          and not exists (select 1 from rotation_assignments a where a.pattern_id = p.id)`,
+      [slug, since],
+    );
+
+    return rows.map((row) => row.steps);
+  } finally {
+    await client.end();
+  }
+}
+
 /** The database's own now, as text: a stamp to scope a test's cleanup by. */
 export async function databaseNow(): Promise<string> {
   const client = await connect();

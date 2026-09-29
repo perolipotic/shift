@@ -31,6 +31,11 @@ export interface FixtureRows {
   readonly types: readonly Row[];
   readonly steps: readonly Row[];
   readonly assignments: readonly Row[];
+  /**
+   * Every stored version's attribution (`0025`'s unbounded history embed);
+   * the bounded assignments themselves when a fixture names none.
+   */
+  readonly history?: readonly Row[];
   /** The members embed; the admin alone when a fixture names none. */
   readonly members?: readonly Row[];
   /** The live shift-type overrides embed (story 3.5c); none when a fixture names none. */
@@ -120,6 +125,7 @@ export function organizationRow(rows: FixtureRows, timezone = 'Europe/Zagreb'): 
     shift_types: rows.types,
     rotation_steps: rows.steps,
     rotation_assignments: rows.assignments,
+    rotation_history: rows.history ?? rows.assignments,
     members: rows.members ?? [memberRow(ADMIN, ADMIN_NAME)],
     shift_type_overrides: rows.overrides ?? [],
   };

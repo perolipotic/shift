@@ -1057,7 +1057,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
       );
       expect(
         policies.map((row) => row.policyname),
-        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a and 2.3a own exactly these thirty-two policies; a missing one refuses silently and looks like a working refusal',
+        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
       ).toEqual([
         // STORY 2.1a: read, and all three writes for an active admin. Bands are
         // current-state and any of them may be deleted, the last one included.
@@ -1083,8 +1083,11 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'rotation_assignments_delete_scheduled_by_own_active_admin',
         'rotation_assignments_insert_by_own_active_admin',
         'rotation_assignments_select_own_organization',
+        // 0025: a delete each, reaching only a pattern no version names.
+        'rotation_patterns_delete_unassigned_by_own_active_admin',
         'rotation_patterns_insert_by_own_active_admin',
         'rotation_patterns_select_own_organization',
+        'rotation_steps_delete_unassigned_by_own_active_admin',
         'rotation_steps_insert_by_own_active_admin',
         'rotation_steps_select_own_organization',
         // STORY 3.5a: read and insert alone, and both an active admin's only;
@@ -1136,7 +1139,9 @@ describe('the access-control layer is present, so nothing below passes vacuously
               'remove_shift_type_override',
               'rotation_assignment_latest_version',
               'rotation_assignment_on',
+              'rotation_assignments_in_view',
               'rotation_pattern_in_use',
+              'rotation_steps_in_view',
               'shift_type_latest_version',
               'shift_type_times_on',
               'team_in_use',
@@ -1179,7 +1184,10 @@ describe('the access-control layer is present, so nothing below passes vacuously
         // STORY 2.3a: the three readers the rotation policies call.
         'rotation_assignment_latest_version',
         'rotation_assignment_on',
+        // 0025: the builder's bounded read, as computed relationships.
+        'rotation_assignments_in_view',
         'rotation_pattern_in_use',
+        'rotation_steps_in_view',
         // STORY 2.2a: the two readers the version and archive policies call.
         'shift_type_latest_version',
         'shift_type_times_on',
@@ -13338,7 +13346,7 @@ describe('an admin saves a rotation: a pattern, its steps, then the assignments'
   );
 
   it.skipIf(noDatabase).each(FIXTURES)(
-    'refuses the $fixture admin editing or removing a pattern or a step, or naming a column the grant does not admit',
+    'refuses the $fixture admin editing a pattern or a step, removing one a team stands on, or naming a column the grant does not admit',
     async ({ slug, admin }) => {
       await inRolledBackTransaction(async (client) => {
         const caller = await memberByUsername(client, slug, admin);
@@ -13349,10 +13357,8 @@ describe('an admin saves a rotation: a pattern, its steps, then the assignments'
 
         const attempts = {
           'update a pattern': () => client.query('update rotation_patterns set organization_id = organization_id where id = $1', [seeded.id]),
-          'delete a pattern': () => client.query('delete from rotation_patterns where id = $1', [seeded.id]),
           'reorder a step': () => client.query('update rotation_steps set position = position + 10 where id = $1', [seeded.steps[0]]),
           'retype a step': () => client.query('update rotation_steps set shift_type_id = $2 where id = $1', [seeded.steps[0], types[1]]),
-          'delete a step': () => client.query('delete from rotation_steps where id = $1', [seeded.steps[0]]),
           'forge a pattern created_by': () =>
             client.query('insert into rotation_patterns (organization_id, created_by) values ($1, $2)', [own, caller.authUserId]),
           'forge a pattern id': () =>
@@ -13377,9 +13383,15 @@ describe('an admin saves a rotation: a pattern, its steps, then the assignments'
         for (const [label, attempt] of Object.entries(attempts)) {
           refusals[label] = (await refusedThenContinue(client, attempt)).code;
         }
+        // 0025: a delete of a pattern a team stands on, or of its step,
+        // matches no row — the policy's refusal, as a cancelled past version's.
+        const patternRemoved = await client.query('delete from rotation_patterns where id = $1', [seeded.id]);
+        const stepRemoved = await client.query('delete from rotation_steps where id = $1', [seeded.steps[0]]);
         await actAsOwner(client);
 
         expect(refusals).toEqual(Object.fromEntries(Object.keys(attempts).map((label) => [label, '42501'])));
+        expect(patternRemoved.rowCount, 'a pattern a team stands on was removed').toBe(0);
+        expect(stepRemoved.rowCount, 'a step of a pattern a team stands on was removed').toBe(0);
         const { rows } = await client.query<{ total: number }>(
           'select count(*)::int as total from rotation_steps where pattern_id = $1',
           [seeded.id],
@@ -13741,9 +13753,12 @@ describe('a direct API call writes a rotation under exactly the same rules', () 
         });
         expect(reordered.ok, 'a step was edited').toBe(false);
         expect((await restRefusal(reordered)).code).toBe('42501');
-        const removed = await rest(`rotation_patterns?id=eq.${pattern}`, { token, method: 'DELETE' });
-        expect(removed.ok, 'a pattern was deleted').toBe(false);
-        expect((await restRefusal(removed)).code).toBe('42501');
+        // 0025: a pattern a team stands on, and its steps, match no delete.
+        for (const path of [`rotation_steps?pattern_id=eq.${pattern}&select=id`, `rotation_patterns?id=eq.${pattern}&select=id`]) {
+          const removed = await rest(path, { token, method: 'DELETE', prefer: 'return=representation' });
+          expect(removed.ok, `${path} was refused outright`).toBe(true);
+          expect(await removed.json(), `${path} removed a row a team stands on`).toEqual([]);
+        }
 
         const change = await rest('rotation_assignments', {
           token,
@@ -13851,6 +13866,372 @@ describe('a direct API call writes a rotation under exactly the same rules', () 
       expect(response.status, `an anonymous caller read ${table}`).toBe(401);
       expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
     },
+  );
+});
+
+// ------------------------------- 0025: orphan patterns, whole cycles, the bound
+
+/**
+ * `0025_rotation_orphans.sql`. A pattern no version names — and its steps —
+ * may be removed by an active admin of its organization, and by nobody else;
+ * a version whose anchor moves by whole cycles on the same pattern and step
+ * is the same value; and the builder's read embeds only what is in force from
+ * the horizon on. Every SQL case runs in a rolled-back transaction; the REST
+ * case deletes its own rows in `finally`.
+ */
+
+/** `day` moved by `days`, as a date string, in SQL. */
+async function dayPlus(client: Client, day: string, days: number): Promise<string> {
+  const { rows } = await client.query<{ day: string }>('select ($1::date + $2::int)::text as day', [day, days]);
+  const moved = rows[0]?.day;
+  if (moved === undefined) throw new Error('date arithmetic answered nothing');
+  return moved;
+}
+
+/** How many of a pattern, and of its steps, the owner still sees. */
+async function patternLeft(client: Client, pattern: string): Promise<{ patterns: number; steps: number }> {
+  const { rows } = await client.query<{ patterns: number; steps: number }>(
+    `select (select count(*)::int from rotation_patterns where id = $1) as patterns,
+            (select count(*)::int from rotation_steps where pattern_id = $1) as steps`,
+    [pattern],
+  );
+  return rows[0] ?? { patterns: -1, steps: -1 };
+}
+
+describe('a never-assigned pattern can be removed by an active admin, and nothing else can (0025)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'lets the $fixture admin take back one step, then remove the pattern with its steps, steps first',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const own = caller.organizationId;
+        const types = await seededTypeIds(client, slug, own);
+        await actAs(client, caller.authUserId, own);
+
+        const pattern = await insertPattern(client, own);
+        const steps = await insertSteps(client, own, pattern, [types[0]!, types[1]!, types.at(-1)!]);
+        // A wrong step added before the first assignment is taken back.
+        const oneStep = await client.query('delete from rotation_steps where id = $1', [steps[1]]);
+        // The key refuses a pattern that still has steps: the steps go first.
+        const withSteps = await refusedThenContinue(client, () =>
+          client.query('delete from rotation_patterns where id = $1', [pattern]),
+        );
+        const remaining = await client.query('delete from rotation_steps where pattern_id = $1', [pattern]);
+        const removed = await client.query('delete from rotation_patterns where id = $1', [pattern]);
+        await actAsOwner(client);
+
+        expect(oneStep.rowCount, 'a step of a never-assigned pattern was not removed').toBe(1);
+        expect(withSteps.code, 'a pattern was removed from under its steps').toBe('23503');
+        expect(remaining.rowCount).toBe(2);
+        expect(removed.rowCount, 'a never-assigned pattern was not removed').toBe(1);
+        expect(await patternLeft(client, pattern)).toEqual({ patterns: 0, steps: 0 });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses the $fixture admin and member a pattern any version names, and the member every pattern',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const own = await organizationId(client, slug);
+        const owner = await memberByUsername(client, slug, admin);
+        const caller = await memberByUsername(client, slug, member);
+        const seeded = await seededPattern(client, own);
+        const types = await seededTypeIds(client, slug, own);
+        const team = await seededTeam(client, own, seededRotationOf(slug).teams[0]!);
+        // Named by a SCHEDULED version alone: still referenced, still kept.
+        const scheduledOnly = await ownerPattern(client, own, owner.authUserId, [types[0]!, types.at(-1)!]);
+        await ownerAssignment(client, {
+          organization: own,
+          team,
+          pattern: scheduledOnly.id,
+          offsetStep: scheduledOnly.steps[0]!,
+          anchor: SEEDED_ANCHOR_DATE,
+          from: await organizationDay(client, own, 4),
+          by: owner.authUserId,
+        });
+        const open = await ownerPattern(client, own, owner.authUserId, [types[0]!]);
+
+        // Steps first, then the pattern, as the builder's cleanup sends them.
+        const attempt = async () => {
+          const removed: number[] = [];
+          for (const pattern of [seeded.id, scheduledOnly.id, open.id]) {
+            removed.push((await client.query('delete from rotation_steps where pattern_id = $1', [pattern])).rowCount ?? -1);
+            removed.push(await patternDeleteProbe(client, pattern));
+          }
+          return removed;
+        };
+
+        await actAs(client, caller.authUserId, own);
+        const byMember = await attempt();
+        await actAsOwner(client);
+        await actAs(client, owner.authUserId, own);
+        const byAdmin = await attempt();
+        await actAsOwner(client);
+
+        // The member removes nothing, never-assigned pattern included: every
+        // delete matches no row.
+        expect(byMember, 'a member-role account removed a pattern or a step').toEqual([0, 0, 0, 0, 0, 0]);
+        // The admin: nothing of a referenced pattern, all of the open one.
+        expect(byAdmin, 'the admin removed a referenced pattern or step').toEqual([0, 0, 0, 0, 1, 1]);
+        expect(await patternLeft(client, seeded.id)).toEqual({ patterns: 1, steps: seeded.steps.length });
+        expect(await patternLeft(client, scheduledOnly.id)).toEqual({ patterns: 1, steps: 2 });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'refuses the $fixture admin the $otherFixture never-assigned pattern and its steps',
+    async ({ slug, admin, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const other = await organizationId(client, otherSlug);
+        const otherAdmin = await memberByUsername(client, otherSlug, seededRotationOf(otherSlug).admin);
+        const otherTypes = await seededTypeIds(client, otherSlug, other);
+        const open = await ownerPattern(client, other, otherAdmin.authUserId, [otherTypes[0]!]);
+        await actAs(client, caller.authUserId, caller.organizationId);
+
+        const steps = await client.query('delete from rotation_steps where pattern_id = $1', [open.id]);
+        const removed = await patternDeleteProbe(client, open.id);
+        await actAsOwner(client);
+
+        expect(steps.rowCount, `${slug} removed a ${otherSlug} step`).toBe(0);
+        expect(removed, `${slug} removed a ${otherSlug} pattern`).toBe(0);
+        expect(await patternLeft(client, open.id)).toEqual({ patterns: 1, steps: 1 });
+      });
+    },
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'lets the $fixture admin remove a never-assigned pattern over PostgREST, the way the builder cleans up',
+    async ({ slug, admin }) => {
+      const token = await tokenFor(admin, slug);
+      const client = await connect();
+      let pattern: string | undefined;
+      try {
+        const own = (await memberByUsername(client, slug, admin)).organizationId;
+        const working = (await seededTypeIds(client, slug, own))[0]!;
+        const created = await restRows('rotation_patterns?select=id', {
+          token,
+          method: 'POST',
+          body: { organization_id: own },
+          prefer: 'return=representation',
+        });
+        pattern = created[0]?.['id'] as string | undefined;
+        if (pattern === undefined) throw new Error('a permitted pattern insert returned no row');
+        await restRows('rotation_steps?select=id', {
+          token,
+          method: 'POST',
+          body: [0, 1].map((position) => ({ organization_id: own, pattern_id: pattern, position, shift_type_id: working })),
+          prefer: 'return=representation',
+        });
+
+        const steps = await restRows(`rotation_steps?organization_id=eq.${own}&pattern_id=eq.${pattern}&select=id`, {
+          token,
+          method: 'DELETE',
+          prefer: 'return=representation',
+        });
+        const removed = await restRows(`rotation_patterns?organization_id=eq.${own}&id=eq.${pattern}&select=id`, {
+          token,
+          method: 'DELETE',
+          prefer: 'return=representation',
+        });
+
+        expect(steps).toHaveLength(2);
+        expect(removed).toEqual([{ id: pattern }]);
+        expect(await patternLeft(client, pattern)).toEqual({ patterns: 0, steps: 0 });
+      } finally {
+        if (pattern !== undefined) {
+          await client.query('delete from rotation_steps where pattern_id = $1', [pattern]);
+          await client.query('delete from rotation_patterns where id = $1', [pattern]);
+        }
+        await client.end();
+      }
+    },
+    20_000,
+  );
+});
+
+/** A pattern delete in a savepoint, answering the rows removed, or -1 when a key refused it. */
+async function patternDeleteProbe(client: Client, pattern: string): Promise<number> {
+  await client.query('savepoint pattern_probe');
+  try {
+    return (await client.query('delete from rotation_patterns where id = $1', [pattern])).rowCount ?? -1;
+  } catch {
+    return -1;
+  } finally {
+    await client.query('rollback to savepoint pattern_probe');
+  }
+}
+
+describe('an anchor moved by whole cycles is the same value (0025)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture version moving the anchor by +1, +2 or −1 cycles, and admits a non-multiple, another step or pattern',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const caller = await memberByUsername(client, slug, admin);
+        const own = caller.organizationId;
+        const soon = await organizationDay(client, own, 5);
+        const seeded = await seededPattern(client, own);
+        const team = await seededTeam(client, own, seededRotationOf(slug).teams[0]!);
+        const types = await seededTypeIds(client, slug, own);
+        const latest = (await assignmentsOf(client, team)).at(-1)!;
+        const cycle = seeded.steps.length;
+        const otherStep = seeded.steps.find((step) => step !== latest.offsetStepId)!;
+        await actAs(client, caller.authUserId, own);
+
+        const on = { organization: own, team, pattern: seeded.id, offsetStep: latest.offsetStepId, from: soon } as const;
+        const refusals: Record<string, string> = {};
+        for (const cycles of [1, 2, -1, 0]) {
+          const anchor = await dayPlus(client, latest.anchor, cycles * cycle);
+          refusals[String(cycles)] = (
+            await refusedThenContinue(client, () => insertAssignment(client, { ...on, anchor }))
+          ).code;
+        }
+        const admitted: Record<string, number | null> = {};
+        const changes = {
+          'a non-multiple': { ...on, anchor: await dayPlus(client, latest.anchor, cycle + 1) },
+          'one day': { ...on, anchor: await dayPlus(client, latest.anchor, -1) },
+          'another step': { ...on, offsetStep: otherStep, anchor: latest.anchor },
+        } as const;
+        for (const [label, facts] of Object.entries(changes)) {
+          admitted[label] = (await insertAssignment(client, facts)).rowCount;
+          await cancelAssignment(client, { team, from: soon });
+        }
+        const fresh = await insertPattern(client, own);
+        const freshSteps = await insertSteps(client, own, fresh, seededRotationOf(slug).steps.map(() => types[0]!));
+        admitted['another pattern'] = (
+          await insertAssignment(client, { ...on, pattern: fresh, offsetStep: freshSteps[0]!, anchor: latest.anchor })
+        ).rowCount;
+        await actAsOwner(client);
+
+        expect(refusals, 'a whole-cycle move of the anchor was admitted as a change').toEqual({
+          '1': '42501',
+          '2': '42501',
+          '-1': '42501',
+          '0': '42501',
+        });
+        expect(admitted).toEqual({ 'a non-multiple': 1, 'one day': 1, 'another step': 1, 'another pattern': 1 });
+      });
+    },
+  );
+});
+
+describe('the builder read embeds what is in force from the horizon on (0025)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'selects the $fixture versions in force today or on a live override date, and later, and their or unassigned patterns steps',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const viewer = await memberByUsername(client, slug, member);
+        const own = owner.organizationId;
+        const types = await seededTypeIds(client, slug, own);
+        const today = await organizationDay(client, own);
+        const plain = await addThrowawayTeam(client, own, owner.authUserId);
+        const overridden = await addThrowawayTeam(client, own, owner.authUserId);
+        const make = () => ownerPattern(client, own, owner.authUserId, [types[0]!, types.at(-1)!]);
+        const [oldest, previous, inForce, scheduled, open, beforeOverride, current] = [
+          await make(), await make(), await make(), await make(), await make(), await make(), await make(),
+        ];
+        const version = async (team: string, pattern: { id: string; steps: readonly string[] }, days: number) =>
+          ownerAssignment(client, {
+            organization: own,
+            team,
+            pattern: pattern.id,
+            offsetStep: pattern.steps[0]!,
+            anchor: SEEDED_ANCHOR_DATE,
+            from: await dayPlus(client, today, days),
+            by: owner.authUserId,
+          });
+        await version(plain.id, oldest, -400);
+        await version(plain.id, previous, -30);
+        await version(plain.id, inForce, -10);
+        await version(plain.id, scheduled, 5);
+        await version(overridden.id, beforeOverride, -400);
+        await version(overridden.id, current, -20);
+        // A live override on a date the older version governs, and a removed
+        // one earlier still, which moves nothing.
+        await client.query(
+          `insert into shift_type_overrides (organization_id, team_id, date, shift_type_id, reason, created_by)
+           values ($1, $2, $3::date, $4, 'rls-isolation-test override', $5)`,
+          [own, overridden.id, await dayPlus(client, today, -25), types.at(-1), owner.authUserId],
+        );
+        await client.query(
+          `insert into shift_type_overrides (organization_id, team_id, date, shift_type_id, reason, created_by, removed_by, removed_at)
+           values ($1, $2, $3::date, $4, 'rls-isolation-test removed', $5, $5, now())`,
+          [own, plain.id, await dayPlus(client, today, -60), types.at(-1), owner.authUserId],
+        );
+
+        const ours = [oldest, previous, inForce, scheduled, open, beforeOverride, current];
+        const name = new Map(
+          ours.map((pattern, index) => [
+            pattern.id,
+            ['oldest', 'previous', 'inForce', 'scheduled', 'open', 'beforeOverride', 'current'][index]!,
+          ]),
+        );
+        const read = async () => {
+          const { rows: kept } = await client.query<{ patternId: string }>(
+            `select a.pattern_id as "patternId"
+               from organizations o, public.rotation_assignments_in_view(o) as a
+              where o.id = $1 and a.team_id = any($2::uuid[])`,
+            [own, [plain.id, overridden.id]],
+          );
+          const { rows: steps } = await client.query<{ patternId: string }>(
+            `select distinct s.pattern_id as "patternId"
+               from organizations o, public.rotation_steps_in_view(o) as s
+              where o.id = $1 and s.pattern_id = any($2::uuid[])`,
+            [own, ours.map((pattern) => pattern.id)],
+          );
+          const { rows: seededKept } = await client.query<{ total: number }>(
+            `select count(*)::int as total
+               from organizations o, public.rotation_assignments_in_view(o) as a
+              where o.id = $1 and a.team_id <> all($2::uuid[])`,
+            [own, [plain.id, overridden.id]],
+          );
+          return {
+            kept: kept.map((row) => name.get(row.patternId)).sort(),
+            steps: steps.map((row) => name.get(row.patternId)).sort(),
+            seeded: seededKept[0]?.total,
+          };
+        };
+
+        await actAs(client, owner.authUserId, own);
+        const asAdmin = await read();
+        await actAsOwner(client);
+        await actAs(client, viewer.authUserId, own);
+        const asMember = await read();
+        await actAsOwner(client);
+
+        // The admin: in force today and scheduled, and — the override's
+        // horizon — the version governing its date and the one after it.
+        expect(asAdmin.kept).toEqual(['beforeOverride', 'current', 'inForce', 'scheduled']);
+        expect(asAdmin.steps).toEqual(['beforeOverride', 'current', 'inForce', 'open', 'scheduled']);
+        // The member reads no override, so the horizon is today.
+        expect(asMember.kept).toEqual(['current', 'inForce', 'scheduled']);
+        expect(asMember.steps).toEqual(['current', 'inForce', 'open', 'scheduled']);
+        // The seeded rotation: one version per team, in force today, all kept.
+        expect(asAdmin.seeded).toBe(seededRotationOf(slug).teams.length);
+      });
+    },
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'embeds the $fixture bounded steps and assignments, and every version as history, over PostgREST',
+    async ({ slug, admin, member }) => {
+      for (const username of [admin, member]) {
+        const token = await tokenFor(username, slug);
+        const rows = await restRows(
+          'organizations?select=id,rotation_steps:rotation_steps_in_view(id),rotation_assignments:rotation_assignments_in_view(id),rotation_history:rotation_assignments(id)',
+          { token },
+        );
+
+        expect(rows).toHaveLength(1);
+        expect((rows[0]?.['rotation_steps'] as unknown[]).length, username).toBe(seededRotationOf(slug).steps.length);
+        expect((rows[0]?.['rotation_assignments'] as unknown[]).length, username).toBe(seededRotationOf(slug).teams.length);
+        expect((rows[0]?.['rotation_history'] as unknown[]).length, username).toBe(seededRotationOf(slug).teams.length);
+      }
+    },
+    20_000,
   );
 });
 

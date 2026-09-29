@@ -100,8 +100,8 @@ describe('the read', () => {
     ]);
     expect(ROTATION_COLUMNS).toContain('teams(organization_id,id,name,archived)');
     expect(ROTATION_COLUMNS).toContain('shift_types(');
-    expect(ROTATION_COLUMNS).toContain('rotation_steps(');
-    expect(ROTATION_COLUMNS).toContain('rotation_assignments(');
+    expect(ROTATION_COLUMNS).toContain('rotation_steps:rotation_steps_in_view(');
+    expect(ROTATION_COLUMNS).toContain('rotation_assignments:rotation_assignments_in_view(');
     expect(ROTATION_COLUMNS).not.toMatch(/cycle|offset_index|projected/);
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
@@ -192,7 +192,10 @@ describe('the read', () => {
 describe('the attribution, read in the same snapshot (story 2.6)', () => {
   it('selects each version\'s id, author and time, and the members as names', () => {
     expect(ROTATION_COLUMNS).toContain(
-      'rotation_assignments(organization_id,id,team_id,pattern_id,offset_step_id,anchor_date,effective_from,created_by,created_at)',
+      'rotation_assignments:rotation_assignments_in_view(organization_id,id,team_id,pattern_id,offset_step_id,anchor_date,effective_from,created_by,created_at)',
+    );
+    expect(ROTATION_COLUMNS).toContain(
+      'rotation_history:rotation_assignments(organization_id,id,team_id,pattern_id,effective_from,created_by,created_at)',
     );
     expect(ROTATION_COLUMNS).toContain('members(organization_id,auth_user_id,name)');
     // Names only: no role, email, rank or position reaches the builder.
@@ -268,6 +271,53 @@ describe('the attribution, read in the same snapshot (story 2.6)', () => {
 
     expect(snapshot.authors).toEqual([]);
     expect(snapshot.history.every((record) => record.createdBy === ADMIN)).toBe(true);
+  });
+});
+
+describe('the bounded read (0025)', () => {
+  it('embeds the steps and assignments through the computed relationships, and the history whole but without a step', () => {
+    const embeds = ROTATION_COLUMNS.split(/,(?![^(]*\))/);
+
+    expect(embeds.filter((embed) => /rotation_(steps|assignments)/.test(embed)).map((embed) => embed.split('(')[0])).toEqual([
+      'rotation_steps:rotation_steps_in_view',
+      'rotation_assignments:rotation_assignments_in_view',
+      'rotation_history:rotation_assignments',
+    ]);
+    // The unbounded embed carries the attribution alone: no offset, no anchor, and no step embed.
+    const history = embeds.find((embed) => embed.startsWith('rotation_history:')) ?? '';
+
+    expect(history).not.toMatch(/offset_step_id|anchor_date|rotation_steps/);
+  });
+
+  it('keeps every stored version in the history while the assignments are only the kept ones', async () => {
+    const older = assignmentRow('pilot-smjena-a', 'pilot-old', 'pilot-old-0', '2019-01-01', '2019-01-01');
+    const snapshot = await snapshotOf({ ...PILOT, history: [older, ...PILOT.assignments] });
+
+    expect(snapshot.assignments).toHaveLength(PILOT.assignments.length);
+    expect(snapshot.history).toHaveLength(PILOT.assignments.length + 1);
+    expect(snapshot.history.map((record) => record.patternId)).toContain('pilot-old');
+    // The old pattern's steps are not read, and nothing projects through it.
+    expect(snapshot.steps.some((step) => step.patternId === 'pilot-old')).toBe(false);
+    expect(assignmentInForceOf(snapshot, 'pilot-smjena-a', TODAY)?.patternId).toBe('pilot-rotation');
+  });
+
+  it('refuses a kept version the history does not hold, a history row of another tenant, and no history embed', async () => {
+    const spy = quiet();
+
+    for (const history of [
+      PILOT.assignments.slice(1),
+      PILOT.assignments.map((row, index) => (index === 0 ? { ...row, effective_from: '2019-06-01' } : row)),
+      [...PILOT.assignments, assignmentRow('pilot-smjena-a', 'x', 'x-0', SEEDED, '2019-01-01', OTHER_ORGANIZATION)],
+      [...PILOT.assignments, { ...PILOT.assignments[0], id: 'twice' }],
+    ]) {
+      expect((await refusedOf({ ...PILOT, history })).ok, JSON.stringify(history[0])).toBe(false);
+    }
+    const organization = { ...(answerOf(PILOT).data?.[0] as Record<string, unknown>) };
+
+    Reflect.deleteProperty(organization, 'rotation_history');
+
+    expect((await readRotation(tableOf({ data: [organization], error: null, count: 1 }))).ok).toBe(false);
+    spy.mockRestore();
   });
 });
 
