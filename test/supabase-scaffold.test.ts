@@ -366,11 +366,14 @@ describe('the access-control migration', () => {
       'rotation_assignments_delete_scheduled_by_own_active_admin',
       'rotation_assignments_insert_by_own_active_admin',
       'rotation_assignments_select_own_organization',
-      // STORY 2.3a, and TWO each: patterns and steps are IMMUTABLE, so read and
-      // insert are all there is. A third name here is a pattern being edited
-      // under the teams that stand on it.
+      // STORY 2.3a, and THREE each since 0025: patterns and steps are
+      // IMMUTABLE, so read and insert, and a delete that reaches only a
+      // pattern no version names (the cleanup of a failed save). A fourth
+      // name here is a pattern being edited under the teams that stand on it.
+      'rotation_patterns_delete_unassigned_by_own_active_admin',
       'rotation_patterns_insert_by_own_active_admin',
       'rotation_patterns_select_own_organization',
+      'rotation_steps_delete_unassigned_by_own_active_admin',
       'rotation_steps_insert_by_own_active_admin',
       'rotation_steps_select_own_organization',
       // STORY 3.5a, and TWO: read and insert, both an active admin's alone. No
@@ -1508,6 +1511,8 @@ describe('the access-control migration', () => {
       ['rotation_patterns_insert_by_own_active_admin', 1, true],
       ['rotation_steps_select_own_organization', 1, false],
       ['rotation_steps_insert_by_own_active_admin', 1, true],
+      ['rotation_patterns_delete_unassigned_by_own_active_admin', 1, true],
+      ['rotation_steps_delete_unassigned_by_own_active_admin', 1, true],
       ['rotation_assignments_select_own_organization', 1, false],
       ['rotation_assignments_insert_by_own_active_admin', 1, true],
       ['rotation_assignments_delete_scheduled_by_own_active_admin', 1, true],
@@ -1531,15 +1536,27 @@ describe('the access-control migration', () => {
   });
 
   it('keeps patterns and steps immutable, and refuses a step once the pattern is in use', () => {
-    // STORY 2.3a. Two policies each — read and insert — and update and delete
-    // revoked outright, in this and every later migration.
+    // STORY 2.3a. Read and insert, and update revoked outright, in this and
+    // every later migration. 0025 adds ONE delete policy each, for a pattern
+    // no version names, and the delete privilege it narrows.
     const statements = migrationStatements();
     for (const table of ['rotation_patterns', 'rotation_steps']) {
       const policies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter((declaration) =>
         new RegExp(`on public\\.${table}\\b`, 'i').test(declaration),
       );
-      expect(policies.length, `${table} does not carry exactly two policies`).toBe(2);
-      for (const verb of ['update', 'delete', 'all']) {
+      expect(policies.length, `${table} does not carry exactly three policies`).toBe(3);
+      const deletes = policies.filter((declaration) => /\bfor delete\b/i.test(declaration));
+      expect(deletes, `${table} has no single delete policy`).toHaveLength(1);
+      expect(deletes[0], `a delete on ${table} reaches a pattern a team stands on`).toMatch(
+        table === 'rotation_patterns'
+          ? /and not public\.rotation_pattern_in_use\(id\)\s*\)/
+          : /and not public\.rotation_pattern_in_use\(pattern_id\)\s*\)/,
+      );
+      expect(deletes[0], `a member-role account can delete on ${table}`).toContain("access.member_role = 'admin'");
+      expect(statements, `the delete privilege on ${table} is not the one 0025 grants`).toMatch(
+        new RegExp(`grant delete on table public\\.${table} to authenticated;`),
+      );
+      for (const verb of ['update', 'all']) {
         expect(
           policies.filter((declaration) => new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration)),
           `a policy opens ${verb} on ${table}; it is immutable`,
@@ -1551,8 +1568,8 @@ describe('the access-control migration', () => {
           'i',
         ),
       );
-      expect(statements, `a later migration grants update or delete on ${table} back`).not.toMatch(
-        new RegExp(`grant[^;]*\\b(update|delete|all)\\b[^;]*on table public\\.${table}\\b`, 'i'),
+      expect(statements, `a later migration grants update on ${table} back`).not.toMatch(
+        new RegExp(`grant[^;]*\\b(update|all)\\b[^;]*on table public\\.${table}\\b`, 'i'),
       );
       expect(statements, `a later migration grants anon something on ${table}`).not.toMatch(
         new RegExp(`grant[^;]*on table public\\.${table} to[^;]*\\banon\\b`, 'i'),
@@ -1627,7 +1644,19 @@ describe('the access-control migration', () => {
       /grant[^;]*on table public\.rotation_assignments to[^;]*\banon\b/i,
     );
 
-    const insert = policyBody('rotation_assignments_insert_by_own_active_admin');
+    // THE POLICY THE DATABASE RUNS: `0016` declares it and `0025` ALTERS its
+    // WITH CHECK (whole cycles), so the latest `alter policy` is what is read.
+    expect(
+      statements.match(/create policy rotation_assignments_insert_by_own_active_admin\b/gi) ?? [],
+      'the assignment insert policy is declared other than once',
+    ).toHaveLength(1);
+    const alterations = [
+      ...statements.matchAll(
+        /alter policy rotation_assignments_insert_by_own_active_admin on public\.rotation_assignments[\s\S]*?\n {2}\);/gi,
+      ),
+    ].map((found) => found[0]);
+    expect(alterations, 'the assignment insert policy is not altered for whole cycles').toHaveLength(1);
+    const insert = alterations.at(-1) ?? '';
     expect(insert, 'the assignment insert policy is not declared').not.toBe('');
     expect(insert, 'the tenant is not pinned from the signed claim').toMatch(/with check[\s\S]*organization_id = nullif/i);
     expect(insert, 'role and active state are not re-read').toContain("access.member_role = 'admin'");
@@ -1639,8 +1668,8 @@ describe('the access-control migration', () => {
     expect(insert, 'a second change may be scheduled on top of one').toMatch(
       /coalesce\(public\.rotation_assignment_latest_version\(team_id\), '-infinity'::date\)\s*<= public\.organization_today\(organization_id\)/,
     );
-    expect(insert, 'a version may leave the pattern, offset step and anchor unchanged').toMatch(
-      /not exists \(\s*select 1\s+from public\.rotation_assignment_on\(rotation_assignments\.team_id, 'infinity'::date\) as latest\s+where latest\.pattern_id = rotation_assignments\.pattern_id\s+and latest\.offset_step_id = rotation_assignments\.offset_step_id\s+and latest\.anchor_date = rotation_assignments\.anchor_date\s*\)/,
+    expect(insert, 'a version may leave the pattern, offset step and anchor, up to whole cycles, unchanged').toMatch(
+      /not exists \(\s*select 1\s+from public\.rotation_assignment_on\(rotation_assignments\.team_id, 'infinity'::date\) as latest\s+where latest\.pattern_id = rotation_assignments\.pattern_id\s+and latest\.offset_step_id = rotation_assignments\.offset_step_id\s+and \(rotation_assignments\.anchor_date - latest\.anchor_date\) % nullif\(\(\s*select count\(\*\)::integer\s+from public\.rotation_steps step\s+where step\.organization_id = rotation_assignments\.organization_id\s+and step\.pattern_id = rotation_assignments\.pattern_id\s*\), 0\) = 0\s*\)/,
     );
     expect(insert, 'the policy reads its own table directly, which recurses (42P17)').not.toMatch(
       /from public\.rotation_assignments\b/,
@@ -1676,6 +1705,27 @@ describe('the access-control migration', () => {
       (migration.replaceAll(/--[^\n]*/g, '').match(/create function/gi) ?? []).length,
       'story 2.3a takes no RPC: its functions are the three readers',
     ).toBe(3);
+  });
+
+  it('bounds the builder read through three invoker computed relationships (0025)', () => {
+    // 0025: the steps and assignments the builder embeds, bounded to what is
+    // in force from the horizon on. Source text only; what they select is
+    // `test/rls-isolation.test.ts`, the catalogue `test/provisioning.test.ts`.
+    const statements = migrationStatements();
+    for (const [name, table] of [
+      ['rotation_assignments_in_view', 'rotation_assignments'],
+      ['rotation_steps_in_view', 'rotation_steps'],
+      ['rotation_overrides_in_view', 'shift_type_overrides'],
+    ] as const) {
+      const body = new RegExp(`create or replace function public\\.${name}\\([\\s\\S]*?\\$\\$;`, 'i').exec(statements)?.[0];
+      expect(body, `${name} is not declared`).toBeDefined();
+      expect(body).toContain(`${name}(public.organizations)\nreturns setof public.${table}`);
+      expect(body).toMatch(/language sql\s+stable\s+security invoker\s+set search_path = ''/);
+      for (const role of ['public', 'anon', 'service_role']) {
+        expect(statements).toContain(`revoke execute on function public.${name}(public.organizations) from ${role};`);
+      }
+      expect(statements).toContain(`grant execute on function public.${name}(public.organizations) to authenticated;`);
+    }
   });
 
   it('stores a shift-type override as one attributed, soft-removable fact per team and date (story 3.5a)', () => {

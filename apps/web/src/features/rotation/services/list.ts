@@ -22,6 +22,15 @@ import { TEAMS_COLUMNS, splitTeams, teamRowOf, type TeamRow } from '@/features/t
  * The rotation snapshot: one organization's teams, shift types with their
  * versions, rotation steps and rotation assignments, read once (story 2.3b).
  *
+ * THE STEPS, ASSIGNMENTS AND OVERRIDES ARE BOUNDED (`0025`): the versions in
+ * force yesterday — a day of margin for a device clock behind the server's at
+ * midnight — or on a pending override's earlier date, and later; the steps
+ * they name or of a pattern no version names yet; and the pending overrides
+ * alone. Every consumer reads from the horizon on: the prefill and the preview
+ * (today), 2.6's checks (the effective date, today or later), the scheduled
+ * change, and 3.5c's projection on a pending override's date. The history is
+ * the exception, and is read whole — its attribution columns only.
+ *
  * EVERYTHING THE BUILDER DECIDES IS IN the `.ts` modules under `@/features/rotation`, for the reason
  * `@/features/shift-types/services/list` gives: a `.tsx` is collected by no test (AD-15).
  *
@@ -35,9 +44,11 @@ import { TEAMS_COLUMNS, splitTeams, teamRowOf, type TeamRow } from '@/features/t
  * validated by the parsers their own lists use (`teamRowOf`, `shiftTypeRowOf`),
  * so a row one list refuses the other refuses too.
  *
- * THE LIVE SHIFT-TYPE OVERRIDES (story 3.5c) ride along, embedded and
- * filtered to the live ones, so the builder can list those a rotation change
- * left pending. The table is an active admin's alone (0019), as the builder is.
+ * THE PENDING SHIFT-TYPE OVERRIDES (story 3.5c) ride along, through `0025`'s
+ * computed relationship and filtered to the live ones again, so the builder
+ * can list those a rotation change left pending. Only those: the builder
+ * reads no override in force. The table is an active admin's alone (0019), as
+ * the builder is.
  *
  * `select` AND ITS ONE FILTER, AND NOTHING ELSE. Writing is
  * `@/features/rotation/services/write`, and the dispositions are
@@ -56,6 +67,19 @@ export const ROTATION_ASSIGNMENTS_TABLE = 'rotation_assignments';
 export const ROTATION_KEY = ['rotation'] as const;
 
 /**
+ * `0025`'s computed relationships the bounded read embeds from the
+ * organization: the assignments in force on the horizon (yesterday, or a
+ * pending override's earlier date) or later, the steps of the patterns those
+ * name or no version names yet, and the pending overrides.
+ */
+export const ROTATION_ASSIGNMENTS_IN_VIEW = 'rotation_assignments_in_view';
+export const ROTATION_STEPS_IN_VIEW = 'rotation_steps_in_view';
+export const ROTATION_OVERRIDES_IN_VIEW = 'rotation_overrides_in_view';
+
+/** The alias every version's attribution arrives under, unbounded (2.6's history, 3.5c's stamps). */
+export const ROTATION_HISTORY_EMBED = 'rotation_history';
+
+/**
  * The columns this read selects. `organization_id` on every embedded row
  * renders nowhere and is the tripwire {@link readRotation} uses to refuse a
  * row of another tenant. No cycle length, offset integer or projected shift
@@ -65,14 +89,23 @@ export const ROTATION_COLUMNS =
   `${ORGANIZATION_ZONE_COLUMNS},` +
   `teams(${TEAMS_COLUMNS}),` +
   `${SHIFT_TYPES_EMBED},` +
-  'rotation_steps(organization_id,id,pattern_id,position,shift_type_id),' +
-  'rotation_assignments(organization_id,id,team_id,pattern_id,offset_step_id,anchor_date,effective_from,created_by,created_at),' +
+  // BOUNDED (`0025`): the versions in force yesterday, or on the date of a
+  // pending override before it, and later, and the steps of the patterns they
+  // name or of a pattern no version names yet — through the computed
+  // relationships, aliased to the names the parser reads.
+  `rotation_steps:${ROTATION_STEPS_IN_VIEW}(organization_id,id,pattern_id,position,shift_type_id),` +
+  `rotation_assignments:${ROTATION_ASSIGNMENTS_IN_VIEW}(organization_id,id,team_id,pattern_id,offset_step_id,anchor_date,effective_from,created_by,created_at),` +
+  // NOT BOUNDED, and only the attribution: the history (2.6) lists every saved
+  // change, previous ones included, and 3.5c's pending rule reads every
+  // version's save time. No step and no anchor rides along.
+  `${ROTATION_HISTORY_EMBED}:rotation_assignments(organization_id,id,team_id,pattern_id,effective_from,created_by,created_at),` +
   // STORY 2.6: who saved each change. `created_by` is an auth user id with no
   // key to `members`, so the names are joined here, on the client; an active
   // admin reads every member of the organization (0011).
   'members(organization_id,auth_user_id,name),' +
-  // STORY 3.5c: the live overrides, for the review a rotation change leaves.
-  'shift_type_overrides(organization_id,id,team_id,date,shift_type_id,reason,created_by,created_at,confirmed_at)';
+  // STORY 3.5c: the PENDING overrides (`0025`), for the review a rotation
+  // change leaves; the builder reads no override in force.
+  `shift_type_overrides:${ROTATION_OVERRIDES_IN_VIEW}(organization_id,id,team_id,date,shift_type_id,reason,created_by,created_at,confirmed_at)`;
 
 /** The embedded column the overrides embed is filtered by: live ones only (`removed_at is null`). */
 export const ROTATION_OVERRIDES_LIVE_COLUMN = 'shift_type_overrides.removed_at';
@@ -137,19 +170,31 @@ export interface RotationSnapshot {
   readonly teams: readonly TeamRow[];
   /** Every shift type, archived ones included, in creation order. */
   readonly types: readonly ShiftTypeRow[];
-  /** Every step of every pattern. */
+  /**
+   * The steps of every pattern a kept version names, and of every pattern no
+   * version names yet (`0025`'s bound).
+   */
   readonly steps: readonly RotationStep[];
-  /** Every version of every team's rotation. */
+  /**
+   * The versions in force on each team's horizon — yesterday, or the date of
+   * its earliest pending override when that is earlier — and every later one
+   * (`0025`'s bound). Every date from the horizon on projects exactly as over
+   * all versions.
+   */
   readonly assignments: readonly RotationAssignment[];
   /**
-   * The same versions' ATTRIBUTION (story 2.6, AD-11), one record per
-   * assignment, kept beside the domain's type rather than on it: the domain
-   * projects dates and never reads who saved a version or when.
+   * EVERY version's ATTRIBUTION (story 2.6, AD-11), one record per stored
+   * assignment, unbounded, kept beside the domain's type rather than on it:
+   * the domain projects dates and never reads who saved a version or when.
    */
   readonly history: readonly RotationHistoryRecord[];
   /** The organization's members as the history names them: by auth user id. */
   readonly authors: readonly RotationAuthor[];
-  /** Every LIVE shift-type override, by team then date (story 3.5c); at most one per team and date. */
+  /**
+   * Every live shift-type override a rotation change left PENDING (story 3.5c,
+   * `0025`'s bound), by team then date; at most one per team and date. The
+   * overrides in force are not read: nothing in the builder uses them.
+   */
   readonly overrides: readonly RotationOverride[];
 }
 
@@ -309,29 +354,26 @@ export function rotationOverrideOf(row: unknown, organizationId: string): Rotati
 
 /**
  * One embedded assignment's attribution, validated field by field, or `null`
- * (another tenant included). `created_at` must be a full timestamp with an
- * offset that reads as an instant — `2026` or a bare date is not one.
+ * (another tenant included). It needs the attribution columns alone — the
+ * history embed carries no offset and no anchor (`0025`). `created_at` must be
+ * a full timestamp with an offset that reads as an instant — `2026` or a bare
+ * date is not one.
  */
 export function rotationHistoryRecordOf(row: unknown, organizationId: string): RotationHistoryRecord | null {
-  const assignment = rotationAssignmentOf(row, organizationId);
-
-  if (assignment === null || !isRecord(row)) return null;
+  if (!isRecord(row) || textAt(row, 'organization_id') !== organizationId) return null;
 
   const id = textAt(row, 'id');
+  const teamId = textAt(row, 'team_id');
+  const patternId = textAt(row, 'pattern_id');
+  const effectiveFrom = textAt(row, 'effective_from');
   const createdBy = textAt(row, 'created_by');
   const createdAt = textAt(row, 'created_at');
 
-  if (id === null || createdBy === null || createdAt === null) return null;
+  if (id === null || teamId === null || patternId === null || createdBy === null || createdAt === null) return null;
+  if (effectiveFrom === null || !isIsoDate(effectiveFrom)) return null;
   if (instantMicrosOf(createdAt) === null) return null;
 
-  return {
-    id,
-    teamId: assignment.teamId,
-    patternId: assignment.patternId,
-    effectiveFrom: assignment.effectiveFrom,
-    createdBy,
-    createdAt,
-  };
+  return { id, teamId, patternId, effectiveFrom, createdBy, createdAt };
 }
 
 /** One embedded member as an author, or `null` (another tenant included). */
@@ -397,6 +439,7 @@ export async function readRotation(table: RotationTable): Promise<RotationOutcom
   const typeRows = embedded(organization, 'shift_types');
   const stepRows = embedded(organization, 'rotation_steps');
   const assignmentRows = embedded(organization, 'rotation_assignments');
+  const historyRows = embedded(organization, ROTATION_HISTORY_EMBED);
   const memberRows = embedded(organization, 'members');
   const overrideRows = embedded(organization, 'shift_type_overrides');
 
@@ -406,6 +449,7 @@ export async function readRotation(table: RotationTable): Promise<RotationOutcom
     typeRows === null ||
     stepRows === null ||
     assignmentRows === null ||
+    historyRows === null ||
     memberRows === null ||
     overrideRows === null
   ) {
@@ -445,6 +489,8 @@ export async function readRotation(table: RotationTable): Promise<RotationOutcom
   const assignments: RotationAssignment[] = [];
   const history: RotationHistoryRecord[] = [];
 
+  const keptIds: string[] = [];
+
   for (const row of assignmentRows) {
     const assignment = rotationAssignmentOf(row, organizationId);
     const record = rotationHistoryRecordOf(row, organizationId);
@@ -452,6 +498,14 @@ export async function readRotation(table: RotationTable): Promise<RotationOutcom
     if (assignment === null || record === null) return unavailable('assignment');
 
     assignments.push(assignment);
+    keptIds.push(record.id);
+  }
+
+  for (const row of historyRows) {
+    const record = rotationHistoryRecordOf(row, organizationId);
+
+    if (record === null) return unavailable('history');
+
     history.push(record);
   }
 
@@ -506,6 +560,28 @@ export async function readRotation(table: RotationTable): Promise<RotationOutcom
 
   if (versions.size !== assignments.length) return unavailable('versions');
   if (new Set(history.map((record) => record.id)).size !== history.length) return unavailable('ids');
+  if (new Set(history.map((record) => `${record.teamId}:${record.effectiveFrom}`)).size !== history.length) {
+    return unavailable('versions');
+  }
+
+  // THE BOUND IS A SUBSET OF THE HISTORY: every kept version is one of the
+  // stored ones, on the same team, pattern and date.
+  const recordById = new Map(history.map((record) => [record.id, record]));
+
+  for (const [index, id] of keptIds.entries()) {
+    const record = recordById.get(id);
+    const assignment = assignments[index];
+
+    if (
+      record === undefined ||
+      assignment === undefined ||
+      record.teamId !== assignment.teamId ||
+      record.patternId !== assignment.patternId ||
+      record.effectiveFrom !== assignment.effectiveFrom
+    ) {
+      return unavailable('history');
+    }
+  }
   if (new Set(authors.map((author) => author.authUserId)).size !== authors.length) return unavailable('ids');
 
   types.sort(compareCreation);

@@ -40,10 +40,13 @@ import {
 import {
   ROTATION_CANCELLED_MESSAGE_KEY,
   ROTATION_CANCEL_STALE,
+  ROTATION_CLEANUP_FAILED,
+  ROTATION_CLEANUP_TIMEOUT_MS,
   ROTATION_SAVED_MESSAGE_KEY,
   ROTATION_WRITE_REFUSED,
   ROTATION_WRITE_UNAVAILABLE,
   cancelScheduledRotation,
+  discardUnassignedPattern,
   rotationCancelMessageKey,
   rotationPartialMessageKey,
   rotationWriteFailureOf,
@@ -51,6 +54,7 @@ import {
   saveRotation,
   type RotationAssignmentDeleteTable,
   type RotationCancelFailure,
+  type RotationCleanupTable,
   type RotationInsertTable,
   type RotationWriteAnswer,
   type RotationWriteFailure,
@@ -72,11 +76,67 @@ async function snapshotOf(rows: FixtureRows): Promise<RotationSnapshot> {
 
 type Answer = RotationWriteAnswer | Error;
 
-/** One table that records every insert and answers from a script, in turn. */
-function tableOf(name: string, log: string[], ...answers: ((sent: unknown) => Answer)[]) {
+/** What a cleanup delete answers: one row removed, as the table names it. */
+const removedOne = (): RotationWriteAnswer => ({ data: [{ id: 'removed' }], error: null });
+
+/** A cleanup delete that never answers, whatever its abort signal says. */
+const HANG = 'hang';
+
+type Removal = () => Answer | typeof HANG;
+
+/**
+ * One table that records every insert and every cleanup delete, and answers
+ * each from its own script, in turn.
+ */
+function tableOf(
+  name: string,
+  log: string[],
+  answers: ((sent: unknown) => Answer)[],
+  removals: Removal[] = [removedOne],
+  signals: AbortSignal[] = [],
+) {
   const sent: unknown[] = [];
   let calls = 0;
-  const table: RotationInsertTable = {
+  let deletes = 0;
+  const table: RotationInsertTable & RotationCleanupTable = {
+    delete() {
+      const filters: string[] = [];
+      const filtering = {
+        eq(column: string, value: string) {
+          filters.push(`${column}=${value}`);
+
+          return filters.length === 1
+            ? filtering
+            : {
+                select(columns: string) {
+                  log.push(`${name}.delete(${filters.join(',')}).select(${columns})`);
+                  const script = removals[Math.min(deletes, removals.length - 1)];
+
+                  deletes += 1;
+                  const answer = script === undefined ? new Error('unscripted') : script();
+                  const settle = (): Promise<RotationWriteAnswer> =>
+                    answer === HANG
+                      ? new Promise<never>(() => undefined)
+                      : answer instanceof Error
+                        ? Promise.reject(answer)
+                        : Promise.resolve(answer);
+
+                  return {
+                    then: (resolve: (value: RotationWriteAnswer) => unknown, reject: (reason: unknown) => unknown) =>
+                      settle().then(resolve, reject),
+                    abortSignal(signal: AbortSignal) {
+                      signals.push(signal);
+
+                      return settle();
+                    },
+                  };
+                },
+              };
+        },
+      };
+
+      return filtering as unknown as ReturnType<RotationCleanupTable['delete']>;
+    },
     insert(values) {
       sent.push(values);
       log.push(name);
@@ -119,14 +179,17 @@ function tablesOf(
   patterns: ((sent: unknown) => Answer)[] = [patternMade],
   steps: ((sent: unknown) => Answer)[] = [stepsMade],
   assignments: ((sent: unknown) => Answer)[] = [assignmentsMade],
+  removals: { readonly patterns?: Removal[]; readonly steps?: Removal[] } = {},
 ) {
   const log: string[] = [];
-  const p = tableOf('patterns', log, ...patterns);
-  const s = tableOf('steps', log, ...steps);
-  const a = tableOf('assignments', log, ...assignments);
+  const signals: AbortSignal[] = [];
+  const p = tableOf('patterns', log, patterns, removals.patterns, signals);
+  const s = tableOf('steps', log, steps, removals.steps, signals);
+  const a = tableOf('assignments', log, assignments);
 
   return {
     log,
+    signals,
     sent: { patterns: p.sent, steps: s.sent, assignments: a.sent },
     tables: { patterns: p.table, steps: s.table, assignments: a.table },
   };
@@ -618,6 +681,132 @@ describe('the failures, by code and by constraint', () => {
     }
   });
 
+  it('a failure after the pattern removes it again, steps first, before the refusal is answered', async () => {
+    const { snapshot, draft } = await changed();
+    const refusedToday = refusedWith(
+      '23505',
+      'duplicate key value violates unique constraint "rotation_assignments_team_id_effective_from_key"',
+    );
+
+    for (const [label, steps, assignments, code] of [
+      ['the steps refused', [refusedWith('42501')], [assignmentsMade], ROTATION_WRITE_REFUSED],
+      ['the steps at other positions', [() => ({ data: [{ id: 's', position: 7 }], error: null })], [assignmentsMade], ROTATION_WRITE_UNAVAILABLE],
+      ['the assignments refused', [stepsMade], [refusedWith('42501')], ROTATION_WRITE_REFUSED],
+      ['already changed today', [stepsMade], [refusedToday], ROTATION_CHANGED_TODAY],
+      ['the steps thrown', [() => new Error('down')], [assignmentsMade], ROTATION_WRITE_UNAVAILABLE],
+    ] as const) {
+      const { log, tables } = tablesOf([patternMade], [...steps], [...assignments]);
+      const outcome = await saveRotation(tables, ORGANIZATION, snapshot, draft, TODAY);
+      const pattern = `pattern-${String(serial)}`;
+
+      expect(outcome, label).toEqual({ ok: false, code, afterPattern: true });
+      expect(log.filter((line) => line.includes('.delete(')), label).toEqual([
+        `steps.delete(organization_id=${ORGANIZATION},pattern_id=${pattern}).select(id)`,
+        `patterns.delete(organization_id=${ORGANIZATION},id=${pattern}).select(id)`,
+      ]);
+      expect(rotationPartialMessageKey(outcome), label).toBe('rotation.builder.error.nothingChanged');
+    }
+  });
+
+  it('an assignment insert whose outcome is unknown removes nothing: it may still commit', async () => {
+    const { snapshot, draft } = await changed();
+
+    for (const [label, assignments] of [
+      ['the assignments thrown', () => new Error('down')],
+      ['no rows back', () => ({ data: null, error: null })],
+      ['fewer rows back', () => ({ data: [{ team_id: 'pilot-smjena-a' }], error: null })],
+    ] as const) {
+      const { log, tables } = tablesOf([patternMade], [stepsMade], [assignments]);
+      const outcome = await saveRotation(tables, ORGANIZATION, snapshot, draft, TODAY);
+
+      expect(outcome, label).toEqual({ ok: false, code: ROTATION_WRITE_UNAVAILABLE, afterPattern: true });
+      expect(log.filter((line) => line.includes('.delete(')), label).toEqual([]);
+    }
+  });
+
+  it('a cleanup that hangs is aborted at its time box, and the refusal is answered unchanged', async () => {
+    const { snapshot, draft } = await changed();
+    const logged = vi.mocked(console.error);
+
+    vi.useFakeTimers();
+    try {
+      const hung: Removal = () => HANG;
+      const cases: { readonly patterns?: Removal[]; readonly steps?: Removal[] }[] = [{ steps: [hung] }, { patterns: [hung] }];
+
+      for (const removals of cases) {
+        logged.mockClear();
+        const { log, signals, tables } = tablesOf([patternMade], [stepsMade], [refusedWith('42501')], removals);
+        let answered: unknown = null;
+        const saving = saveRotation(tables, ORGANIZATION, snapshot, draft, TODAY).then((outcome) => {
+          answered = outcome;
+
+          return outcome;
+        });
+
+        await vi.advanceTimersByTimeAsync(ROTATION_CLEANUP_TIMEOUT_MS - 1);
+        expect(answered, 'the save answered before its cleanup gave up').toBeNull();
+        expect(signals.every((signal) => !signal.aborted)).toBe(true);
+        await vi.advanceTimersByTimeAsync(1);
+
+        expect(await saving).toEqual({ ok: false, code: ROTATION_WRITE_REFUSED, afterPattern: true });
+        expect(signals.length, JSON.stringify(Object.keys(removals))).toBeGreaterThan(0);
+        expect(signals.every((signal) => signal.aborted), 'a hung delete was not aborted').toBe(true);
+        expect(logged.mock.calls.some(([first]) => first === ROTATION_CLEANUP_FAILED)).toBe(true);
+        // Nothing is sent after the budget: a hung step delete is not followed by the pattern's.
+        if ('steps' in removals) expect(log.some((line) => line.startsWith('patterns.delete('))).toBe(false);
+        expect(vi.getTimerCount(), 'the time box was left running').toBe(0);
+      }
+
+      // A cleanup that answers in time clears its time box and aborts nothing.
+      const { signals, tables } = tablesOf();
+
+      expect(await discardUnassignedPattern(tables, ORGANIZATION, 'p')).toBe(true);
+      expect(signals).toHaveLength(2);
+      expect(signals.some((signal) => signal.aborted)).toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a landed save, and a failure before or without a pattern id, remove nothing', async () => {
+    const { snapshot, draft } = await changed();
+
+    for (const patterns of [[patternMade], [refusedWith('42501')], [() => ({ data: [{ id: '' }], error: null })]]) {
+      const { log, tables } = tablesOf(patterns);
+
+      await saveRotation(tables, ORGANIZATION, snapshot, draft, TODAY);
+      expect(log.filter((line) => line.includes('.delete('))).toEqual([]);
+    }
+  });
+
+  it('a failed cleanup is logged and never turns the refusal into something else', async () => {
+    const { snapshot, draft } = await changed();
+    const logged = vi.mocked(console.error);
+
+    for (const removals of [
+      { steps: [() => new Error('down')] },
+      { steps: [refusedWith('42501')] },
+      { patterns: [refusedWith('23503')] },
+      { patterns: [() => ({ data: [], error: null })] },
+      { patterns: [() => ({ data: null, error: null })] },
+    ]) {
+      logged.mockClear();
+      const { tables } = tablesOf([patternMade], [stepsMade], [refusedWith('42501')], removals);
+      const outcome = await saveRotation(tables, ORGANIZATION, snapshot, draft, TODAY);
+
+      expect(outcome, JSON.stringify(removals)).toEqual({ ok: false, code: ROTATION_WRITE_REFUSED, afterPattern: true });
+      expect(logged.mock.calls.some(([first]) => first === ROTATION_CLEANUP_FAILED), JSON.stringify(removals)).toBe(true);
+    }
+  });
+
+  it('the cleanup reports whether it removed exactly the one pattern', async () => {
+    const { tables } = tablesOf();
+
+    expect(await discardUnassignedPattern(tables, ORGANIZATION, 'p')).toBe(true);
+    expect(await discardUnassignedPattern(tablesOf([], [], [], { patterns: [() => ({ data: [], error: null })] }).tables, ORGANIZATION, 'p')).toBe(false);
+  });
+
   it('maps every other refusal: another 23505, a 42501, any other code', () => {
     expect(rotationWriteFailureOf({ code: '23505', message: 'rotation_steps_pattern_id_position_key' })).toBe(
       ROTATION_WRITE_UNAVAILABLE,
@@ -691,7 +880,7 @@ describe('the messages', () => {
 });
 
 describe('the rotation modules write nothing they must not', () => {
-  it('never update a pattern, a step or an assignment, and delete only in the cancel of a scheduled change', () => {
+  it('never update a pattern, a step or an assignment, and delete only in the cancel and in the cleanup of a failed save', () => {
     const directory = new URL('../', import.meta.url);
     let deletes = 0;
 
@@ -735,12 +924,16 @@ describe('the rotation modules write nothing they must not', () => {
     }
     expect(disposition, 'a disposition writes a rotation row').not.toMatch(/rotation_(patterns|steps|assignments)/);
 
-    // STORY 2.6: exactly one delete, and it is inside `cancelScheduledRotation`.
+    // STORY 2.6: one delete inside `cancelScheduledRotation`; 0025: one inside
+    // `discardUnassignedPattern`, the cleanup of a failed save. No third.
     const write = readFileSync(new URL('services/write.ts', directory), 'utf8');
     const cancel = /export async function cancelScheduledRotation\([\s\S]*?\n\}/.exec(write)?.[0] ?? '';
+    const discard = /export async function discardUnassignedPattern\([\s\S]*?\n\}/.exec(write)?.[0] ?? '';
 
-    expect(deletes, 'a second delete arrived').toBe(1);
+    expect(deletes, 'a third delete arrived').toBe(2);
     expect(cancel, 'the cancel could not be extracted').toContain('rotationScheduledDateOf(');
-    expect(cancel, 'the one delete is not the cancel').toContain('.delete()');
+    expect(cancel, 'a delete is not the cancel').toContain('.delete()');
+    expect(discard, 'the cleanup could not be extracted').toContain("[tables.patterns, 'id']");
+    expect(discard, 'a delete is not the cleanup').toContain('.delete()');
   });
 });

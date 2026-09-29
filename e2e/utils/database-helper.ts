@@ -464,6 +464,26 @@ export async function seedRotationChange(
   }
 }
 
+/**
+ * What is left of one rotation pattern, by id: the pattern row, and its steps.
+ * A failed save that cleaned up after itself (`0025`) leaves `{ patterns: 0,
+ * steps: 0 }`. Scoped to the one id, so no other session's patterns count.
+ */
+export async function patternRowsLeft(patternId: string): Promise<{ patterns: number; steps: number }> {
+  const client = await connect();
+  try {
+    const { rows } = await client.query<{ patterns: number; steps: number }>(
+      `select (select count(*)::int from rotation_patterns where id = $1) as patterns,
+              (select count(*)::int from rotation_steps where pattern_id = $1) as steps`,
+      [patternId],
+    );
+
+    return rows[0] ?? { patterns: -1, steps: -1 };
+  } finally {
+    await client.end();
+  }
+}
+
 /** The database's own now, as text: a stamp to scope a test's cleanup by. */
 export async function databaseNow(): Promise<string> {
   const client = await connect();

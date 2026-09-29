@@ -795,6 +795,26 @@ describe('refused before anything is sent', () => {
     expect(draftRefusalOf(snapshot, withTeamStep(draft, 'pilot-smjena-a', 1), TODAY)).toBeNull();
   });
 
+  it('judges by projection: an anchor moved by whole cycles projects the same and is unchanged, by a non-multiple is a change', async () => {
+    for (const rows of [PILOT, UJ5]) {
+      const snapshot = await snapshotOf(rows);
+      const draft = prefillOf(snapshot, TODAY);
+      const cycle = draft.steps.length;
+      // The anchor `days` after (or, from `back`, before) the prefill's own, today.
+      const dates = datesFrom('2026-01-01', 400);
+      const moved = (days: number) => withAnchor(draft, dates[dates.indexOf(TODAY) + days] ?? '');
+      const back = (days: number) => moved(-days);
+
+      for (const shifted of [moved(cycle), moved(2 * cycle), back(cycle)]) {
+        expect(shifted.anchorDate).not.toBe(draft.anchorDate);
+        expect(draftRefusalOf(snapshot, shifted, TODAY), shifted.anchorDate).toBe(ROTATION_UNCHANGED);
+      }
+      for (const shifted of [moved(1), moved(cycle + 1), back(1)]) {
+        expect(draftUnchangedOf(snapshot, shifted, TODAY), shifted.anchorDate).toBe(false);
+      }
+    }
+  });
+
   it('a new team with no rotation yet makes the same pattern a change', async () => {
     const snapshot = await snapshotOf({ ...PILOT, teams: [...PILOT.teams, teamRow('new', 'Smjena E')] });
     const draft = normalizedDraftOf(prefillOf(await snapshotOf(PILOT), TODAY), rotationTeamsOf(snapshot));

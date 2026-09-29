@@ -7,6 +7,7 @@ import {
   archiveShiftType,
   databaseNow,
   holdRotation,
+  patternRowsLeft,
   removeRotationChangesOver,
   removeSeededRotation,
   seedShiftTypeOverride,
@@ -432,6 +433,78 @@ test('an admin schedules a change from tomorrow, sees it in the history, is refu
   await expect(rotationPage.statusWith(builder.cancelScheduled.done)).toBeVisible();
   await expect(rotationPage.historyRow(shownDate(tomorrow))).toHaveCount(0);
   await expect(refusal).toHaveCount(0);
+});
+
+test('a save that fails after its pattern removes the pattern again, says nothing changed, and keeps the draft', async ({
+  page,
+  fixture,
+  rotationPage,
+}) => {
+  // Its own types, per attempt, and the run's rotation held (a save binds
+  // every active team). The ASSIGNMENTS insert is refused at the network, so
+  // the pattern and its steps are written and must be removed again (0025).
+  test.slow();
+  hold = holdRotation(fixture.slug);
+  await hold.ready;
+
+  const suffix = randomBytes(3).toString('hex');
+  const a = `Dnevna ${suffix}`;
+  const off = `Slobodno ${suffix}`;
+
+  await rotationPage.goto();
+  await rotationPage.addShiftType(a, ['07:00', '19:00']);
+  await rotationPage.addShiftType(off, null);
+
+  const newStep = rotationPage.newStepSelect;
+  const steps = rotationPage.steps;
+  const before = await steps.count();
+  for (const name of [a, off]) {
+    await newStep.selectOption({ label: name });
+    await rotationPage.addStepButton.click();
+  }
+  await expect(steps).toHaveCount(before + 2);
+
+  const matches = (url: URL): boolean => url.pathname.endsWith('/rest/v1/rotation_assignments');
+  const refuse = async (route: Route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    return route.fulfill({
+      status: 403,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: '42501', message: 'new row violates row-level security policy' }),
+    });
+  };
+  // THE PATTERN THIS SAVE WRITES, by the id its insert answered: the check
+  // below counts that one pattern and its steps, and nothing a parallel
+  // session writes.
+  const posted = (table: string) =>
+    page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname.endsWith(`/rest/v1/${table}`) && response.request().method() === 'POST',
+    );
+  const patternCreated = posted('rotation_patterns');
+  const stepsCreated = posted('rotation_steps');
+  await page.route(matches, refuse);
+  let patternId: string | undefined;
+  try {
+    await rotationPage.saveButton.click();
+    const created = await patternCreated;
+    expect(created.ok(), 'the pattern insert was refused').toBe(true);
+    patternId = ((await created.json()) as { id?: string }[])[0]?.id;
+    // The steps landed too, so the cleanup had steps to remove first.
+    expect((await stepsCreated).ok(), 'the steps insert was refused').toBe(true);
+
+    // The refusal as before, with "nothing changed" beside it, and the draft kept.
+    await expect(rotationPage.alertWith(builder.error.refused)).toBeVisible();
+    await expect(rotationPage.text(builder.error.nothingChanged, { exact: false })).toBeVisible();
+    await expect(steps).toHaveCount(before + 2);
+    await expect(steps.nth(before)).toContainText(a);
+  } finally {
+    await page.unroute(matches, refuse);
+  }
+
+  // No orphan: the pattern this save wrote, and its steps, are gone.
+  expect(patternId, 'the pattern insert answered no id').toBeDefined();
+  await expect.poll(() => patternRowsLeft(patternId ?? '')).toEqual({ patterns: 0, steps: 0 });
 });
 
 /**

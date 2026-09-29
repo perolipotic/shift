@@ -30,16 +30,25 @@ export { claimedOrganizationOf };
  * assignment per active team in one bulk insert, every version effective from
  * the DRAFT'S EFFECTIVE DATE — today or later (story 2.6) — at the draft's
  * shared anchor. A failure after the
- * pattern leaves an unreferenced pattern, which projects nothing, and changes
- * no team's rotation — so it says NOTHING CHANGED. A retry builds a fresh
- * pattern every time; a half-written one is never reused (its steps may be
- * incomplete, and once a team stands on it no step can be added).
+ * pattern changes no team's rotation — so it says NOTHING CHANGED — and the
+ * save then REMOVES THE PATTERN IT WROTE, best-effort
+ * ({@link discardUnassignedPattern}): its steps, then the pattern, through
+ * `0025`'s delete policies, which admit only a pattern no version names. Only
+ * after a DEFINITE failure: a refusal the database answered, or a failure at
+ * the pattern or steps stage. An assignment insert that THREW has an unknown
+ * outcome — it may still commit — so nothing is removed after it. The cleanup
+ * is TIME-BOXED ({@link ROTATION_CLEANUP_TIMEOUT_MS}), so it never holds the
+ * save's answer; a failed or timed-out cleanup is logged and never changes
+ * the refusal. A retry builds a
+ * fresh pattern every time; a half-written one is never reused (its steps may
+ * be incomplete, and once a team stands on it no step can be added).
  *
- * PATTERNS AND STEPS ARE NEVER UPDATED OR DELETED (`0016` grants neither), and
- * nothing here calls either verb. THE ONE DELETE is {@link cancelScheduledRotation}:
- * the organization's assignments at the one scheduled date, which `0016`'s
- * delete policy admits only while they are in the future and each team's
- * latest (story 2.6, decision 2a). Nothing is ever updated.
+ * PATTERNS AND STEPS ARE NEVER UPDATED (`0016` grants no update). TWO DELETES,
+ * and only these: {@link cancelScheduledRotation}, the organization's
+ * assignments at the one scheduled date, which `0016`'s delete policy admits
+ * only while they are in the future and each team's latest (story 2.6,
+ * decision 2a); and {@link discardUnassignedPattern}, the pattern a failed
+ * save just wrote. Nothing is ever updated.
  *
  * Codes, never messages: {@link rotationWriteMessageKey} is the one edge.
  */
@@ -60,9 +69,9 @@ export type RotationSaveOutcome =
       readonly ok: false;
       readonly code: RotationWriteFailure;
       /**
-       * The pattern was written and a later write failed: an unreferenced
-       * pattern is left behind and no team's rotation changed, which the
-       * builder says in so many words.
+       * The pattern was written and a later write failed: no team's rotation
+       * changed, which the builder says in so many words. The pattern is
+       * removed again, best-effort, before this is answered.
        */
       readonly afterPattern: boolean;
     };
@@ -86,7 +95,7 @@ interface Selecting {
 
 type Row = Readonly<Record<string, unknown>>;
 
-/** The one call made on each rotation table by the save: an insert returning rows. No update, no delete. */
+/** The one call the save makes on each rotation table: an insert returning rows. No update. */
 export interface RotationInsertTable {
   insert(values: Row | readonly Row[]): Selecting;
 }
@@ -112,10 +121,127 @@ export interface RotationAssignmentDeleteTable {
   delete(): FilteringByTenant;
 }
 
+/** A cleanup delete's answer, which can be aborted (supabase-js's `abortSignal`). */
+export interface AbortableAnswer extends PromiseLike<RotationWriteAnswer> {
+  abortSignal(signal: AbortSignal): PromiseLike<RotationWriteAnswer>;
+}
+
+interface SelectingAbortably {
+  select(columns: string): AbortableAnswer;
+}
+
+interface FilteringByPattern {
+  eq(column: string, value: string): SelectingAbortably;
+}
+
+interface FilteringCleanupByTenant {
+  eq(column: string, value: string): FilteringByPattern;
+}
+
+/**
+ * The cleanup's one call on `rotation_patterns` and `rotation_steps`: a delete
+ * filtered by the tenant and the pattern the failed save wrote, returning the
+ * rows removed (`0025`).
+ */
+export interface RotationCleanupTable {
+  delete(): FilteringCleanupByTenant;
+}
+
+/** A table the save inserts into and a failed save cleans up: patterns and steps. */
+export type RotationPatternTable = RotationInsertTable & RotationCleanupTable;
+
 export interface RotationWriteTables {
-  readonly patterns: RotationInsertTable;
-  readonly steps: RotationInsertTable;
+  readonly patterns: RotationPatternTable;
+  readonly steps: RotationPatternTable;
   readonly assignments: RotationInsertTable;
+}
+
+/** What a cleanup that could not remove the pattern it wrote is logged under. */
+export const ROTATION_CLEANUP_FAILED = 'ROTATION_CLEANUP_FAILED';
+
+/** The whole cleanup's budget: past it, its requests are aborted and the refusal is answered. */
+export const ROTATION_CLEANUP_TIMEOUT_MS = 5000;
+
+const CLEANUP_TIMED_OUT = 'timed out';
+
+/**
+ * Remove the pattern a failed save wrote, and its steps — the steps first,
+ * since `0016`'s step key does not cascade — through `0025`'s delete
+ * policies, which admit only a pattern no assignment names. So a pattern a
+ * version did land on (an insert that committed but whose answer was lost) is
+ * never removed: its delete matches no row. BEST-EFFORT: any failure, zero
+ * patterns removed included, is logged under {@link ROTATION_CLEANUP_FAILED}
+ * and nothing is thrown, so the caller's refusal stays what it was.
+ *
+ * TIME-BOXED: both deletes share one budget of `timeoutMs`. When it runs out,
+ * the request in flight is aborted, the cleanup answers `false` (logged), and
+ * nothing further is sent — whether or not the transport honours the abort.
+ */
+export async function discardUnassignedPattern(
+  tables: Pick<RotationWriteTables, 'patterns' | 'steps'>,
+  organizationId: string,
+  patternId: string,
+  timeoutMs: number = ROTATION_CLEANUP_TIMEOUT_MS,
+): Promise<boolean> {
+  const removals: readonly [RotationCleanupTable, string][] = [
+    [tables.steps, 'pattern_id'],
+    [tables.patterns, 'id'],
+  ];
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<typeof CLEANUP_TIMED_OUT>((resolve) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      resolve(CLEANUP_TIMED_OUT);
+    }, timeoutMs);
+  });
+  let removedPatterns = 0;
+
+  try {
+    for (const [table, column] of removals) {
+      let answered: RotationWriteAnswer | typeof CLEANUP_TIMED_OUT;
+
+      try {
+        answered = await Promise.race([
+          table
+            .delete()
+            .eq(ORGANIZATION_COLUMN, organizationId)
+            .eq(column, patternId)
+            .select(PATTERN_RETURNED)
+            .abortSignal(controller.signal),
+          expired,
+        ]);
+      } catch (cause) {
+        console.error(ROTATION_CLEANUP_FAILED, cause);
+
+        return false;
+      }
+
+      if (answered === CLEANUP_TIMED_OUT) {
+        console.error(ROTATION_CLEANUP_FAILED, CLEANUP_TIMED_OUT, timeoutMs);
+
+        return false;
+      }
+
+      if (!isRecord(answered) || (answered.error !== null && answered.error !== undefined)) {
+        console.error(ROTATION_CLEANUP_FAILED, isRecord(answered) ? answered.error?.code : typeof answered);
+
+        return false;
+      }
+
+      removedPatterns = Array.isArray(answered.data) ? answered.data.length : 0;
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (removedPatterns !== 1) {
+    console.error(ROTATION_CLEANUP_FAILED, 'pattern', removedPatterns);
+
+    return false;
+  }
+
+  return true;
 }
 
 const PATTERN_RETURNED = 'id';
@@ -149,7 +275,16 @@ export function rotationWriteFailureOf(error: RotationWriteError): RotationWrite
 
 type Settled =
   | { readonly ok: true; readonly rows: readonly Record<string, unknown>[] }
-  | { readonly ok: false; readonly code: RotationWriteFailure };
+  | {
+      readonly ok: false;
+      readonly code: RotationWriteFailure;
+      /**
+       * The database ANSWERED with a refusal, so nothing of this write
+       * landed. `false` when the call threw or the answer is malformed: its
+       * outcome is unknown, and it may still commit.
+       */
+      readonly refused: boolean;
+    };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -167,13 +302,13 @@ async function settledRows(write: () => PromiseLike<RotationWriteAnswer>, expect
   } catch (cause) {
     console.error(ROTATION_WRITE_UNAVAILABLE, cause);
 
-    return { ok: false, code: ROTATION_WRITE_UNAVAILABLE };
+    return { ok: false, code: ROTATION_WRITE_UNAVAILABLE, refused: false };
   }
 
   if (!isRecord(answered)) {
     console.error(ROTATION_WRITE_UNAVAILABLE, typeof answered);
 
-    return { ok: false, code: ROTATION_WRITE_UNAVAILABLE };
+    return { ok: false, code: ROTATION_WRITE_UNAVAILABLE, refused: false };
   }
 
   if (answered.error !== null && answered.error !== undefined) {
@@ -181,7 +316,7 @@ async function settledRows(write: () => PromiseLike<RotationWriteAnswer>, expect
 
     console.error(code, answered.error.code);
 
-    return { ok: false, code };
+    return { ok: false, code, refused: true };
   }
 
   const rows = answered.data;
@@ -189,7 +324,7 @@ async function settledRows(write: () => PromiseLike<RotationWriteAnswer>, expect
   if (!Array.isArray(rows) || rows.length !== expected || !rows.every(isRecord)) {
     console.error(ROTATION_WRITE_UNAVAILABLE, 'rows');
 
-    return { ok: false, code: ROTATION_WRITE_UNAVAILABLE };
+    return { ok: false, code: ROTATION_WRITE_UNAVAILABLE, refused: false };
   }
 
   return { ok: true, rows: rows as readonly Record<string, unknown>[] };
@@ -226,11 +361,12 @@ export async function saveRotation(
     1,
   );
 
-  if (!pattern.ok) return { ...pattern, afterPattern: false };
+  if (!pattern.ok) return { ok: false, code: pattern.code, afterPattern: false };
 
   const patternId = textOf(pattern.rows[0], 'id');
 
   if (patternId === null) {
+    // No id to remove it by: the one failure after the pattern that cannot be cleaned up.
     console.error(ROTATION_WRITE_UNAVAILABLE, 'pattern id');
 
     return { ok: false, code: ROTATION_WRITE_UNAVAILABLE, afterPattern: true };
@@ -251,11 +387,19 @@ export async function saveRotation(
     draft.steps.length,
   );
 
-  if (!steps.ok) return { ...steps, afterPattern: true };
+  // A FAILURE AT THE STEPS STAGE, or a refusal of the assignments, is
+  // answered after the pattern is removed again (time-boxed).
+  const failedAfterPattern = async (code: RotationWriteFailure): Promise<RotationSaveOutcome> => {
+    await discardUnassignedPattern(tables, organizationId, patternId);
+
+    return { ok: false, code, afterPattern: true };
+  };
+
+  if (!steps.ok) return failedAfterPattern(steps.code);
 
   // THE STEPS CAME BACK AS SENT: every position 0…n−1 exactly once, each with
   // an id. Anything else is the service, and — like any failure after the
-  // pattern — leaves an orphan pattern and changes nothing.
+  // pattern — changes nothing, and the pattern is removed again.
   const stepIdAt = new Map<number, string>();
 
   for (const row of steps.rows) {
@@ -272,7 +416,7 @@ export async function saveRotation(
     ) {
       console.error(ROTATION_WRITE_UNAVAILABLE, 'step positions');
 
-      return { ok: false, code: ROTATION_WRITE_UNAVAILABLE, afterPattern: true };
+      return failedAfterPattern(ROTATION_WRITE_UNAVAILABLE);
     }
 
     stepIdAt.set(position, id);
@@ -286,7 +430,7 @@ export async function saveRotation(
     if (offsetStepId === undefined) {
       console.error(ROTATION_WRITE_UNAVAILABLE, 'step ids');
 
-      return { ok: false, code: ROTATION_WRITE_UNAVAILABLE, afterPattern: true };
+      return failedAfterPattern(ROTATION_WRITE_UNAVAILABLE);
     }
 
     assignments.push({
@@ -304,7 +448,11 @@ export async function saveRotation(
     assignments.length,
   );
 
-  if (!bound.ok) return { ...bound, afterPattern: true };
+  // An assignment insert whose outcome is UNKNOWN — it threw, or its answer
+  // is malformed — may still commit. A cleanup would then race it, so nothing
+  // is removed: the refusal is answered as it stands.
+  if (!bound.ok && !bound.refused) return { ok: false, code: bound.code, afterPattern: true };
+  if (!bound.ok) return failedAfterPattern(bound.code);
 
   return { ok: true };
 }

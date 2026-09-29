@@ -4474,18 +4474,18 @@ describe('the member list reads once, under one key', () => {
     }
   });
 
-  it('deletes only the scheduled rotation change, in one place, through the cancel', () => {
-    // STORY 2.6, decision 2a. The one delete in `@/features/rotation` is the cancel's,
+  it('deletes only the scheduled rotation change through the cancel, and a failed save\'s own pattern through the cleanup', () => {
+    // STORY 2.6, decision 2a. The deletes in `@/features/rotation` are the cancel's,
+    // on its own seam, and (0025) the cleanup of a failed save's own pattern,
     // on its own seam; the save's insert seam grew no delete and no update.
     const writes = source(ROTATION_WRITE_KEYS);
     const insertSeam = /export interface RotationInsertTable \{[\s\S]*?\n\}/.exec(writes)?.[0] ?? '';
 
     expect(insertSeam, 'the insert seam could not be extracted').toContain('insert(');
     expect(insertSeam, 'the insert seam grew a delete').not.toContain('delete(');
-    expect(occurrences(writes, '.delete()'), 'a second delete arrived').toBe(1);
-    expect(exportedFunction(writes, 'cancelScheduledRotation'), 'the one delete is not the cancel').toContain(
-      '.delete()',
-    );
+    expect(occurrences(writes, '.delete()'), 'a third delete arrived').toBe(2);
+    expect(exportedFunction(writes, 'cancelScheduledRotation'), 'a delete is not the cancel').toContain('.delete()');
+    expect(exportedFunction(writes, 'discardUnassignedPattern'), 'a delete is not the cleanup').toContain('.delete()');
     expect(source(ROTATION_SECTION), 'the builder deletes directly').not.toContain('.delete(');
     // Neutral, never `destructive`, and confirmed in a `ConfirmDialog`.
     expect(source(ROTATION_SECTION)).toContain('<ConfirmDialog');
