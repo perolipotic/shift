@@ -80,6 +80,15 @@ context:
 - **Existing-data guard**: a `do` block before any constraint changes raises `NAME_KEY_CONFLICT` (23514) with the offending tables in `DETAIL` (blank names on all five tables, duplicate keys on the three indexes with their own predicates). The first version appended untyped literals to a `text[]` (Postgres read them as array literals, 22P02); the new guard tests caught it before commit.
 - **Existing source-text tests** in `supabase-scaffold.test.ts` that match `btrim` in 0002/0009/0012/0013 are left as is (they describe those files, which are forward-only); a new scaffold test pins 0024's final shape. The two live `pg_indexes` assertions in `provisioning.test.ts` now expect `name_key(name)`.
 - **E2E**: the first full run had 6 failures in rotation/team-position specs (a focus timeout in `rotation-phone.spec.ts` and then `the lock e2e-rotation… was not released` cascading). Those specs passed alone (11/11) and a second full run passed 106/106. Nothing in them touches name validation; treated as a flake.
+- **Review round 1 (2026-09-29).** Patches from the review, each tested and mutation-proved (N1–N22 below):
+  - **Linear trim, no regex.** `name_key` trims with `btrim(name, U&'<the 30 code points>')`; `trimName` scans the ends against a `Set`. Probed: Postgres's own regex engine answered the old anchored pattern on 100k characters in under a millisecond (it is not the O(n²) case V8 is), so the SQL change is for a plainly linear definition and a list the source test can decode; the client change is the real ReDoS fix (V8's `[class]+$` on `'a' + ' '.repeat(100000) + 'b'` takes seconds). The live pathological test runs under `set local statement_timeout = '5s'`, so a quadratic trim fails with 57014 rather than hanging; nothing reads a clock.
+  - **`private` schema.** The helper moved to `private` (created if missing), which `supabase/config.toml` does not expose, so `POST /rest/v1/rpc/name_key` as a signed-in member answers 404 PGRST202. This supersedes the earlier "granted to `authenticated`" entry's placement in `public`.
+  - **Grants, superseding the entry above:** EXECUTE and USAGE to `authenticated` and `service_role`, revoked from PUBLIC and `anon`. A check runs on every update of its row, so a secret-key operator update of any column needs EXECUTE; a live test updates all five tables as `service_role`. Found while proving it: stored check and index expressions name the function by OID, so writes need EXECUTE but NOT schema USAGE (N4 first survived). USAGE is kept as the review asked and pinned by a live ACL test instead.
+  - **Member create and edit use the class.** `createPayloadOf` blank-checks with a Deno copy of the class (`isBlankName` in `operations.ts`) and refuses with PAYLOAD_INVALID before any account call; `saveMember` refuses with MEMBER_WRITE_INVALID before sending. Both still store `trim()`. The Deno list equals `NAME_WHITESPACE` (boundary test), and the SQL `U&` list decodes to it too (scaffold test).
+  - **Guard tests** cover blank organizations, bands and types, and two negatives (an archived team, an archived type sharing a key with an active row). The old "passes the seeded data" case is renamed to what it shows: `supabase db reset` loads the seed AFTER every migration, so the guard never sees the seed; the seed is proved by loading under the 0024 constraints.
+  - **Rule for later migrations:** a Consistency Conventions row in the architecture spine, and a scaffold test that fails a migration numbered after 0024 whose statements contain `lower(btrim(` or `btrim(name)` (comments stripped).
+  - **Accuracy.** 0024's header states what immutability rests on (the trim is collation-independent; `lower()` follows the collation and ICU version and `normalize()` Postgres's Unicode tables, so an upgrade may need a REINDEX; UTF-8 required). `nameKey` takes no locale: `'hr'` only, verified against the local ICU collation only. Stale `btrim` comments in the organization and calendar services (and their two tests) now name `private.name_key`.
+  - **Deferred** (five new entries in `deferred-work.md`): invisible characters outside the class, NFC vs NFKC, the stored value keeping NEL/U+001C–001F, the operator script's `btrim` setting check, and the guard's check-then-alter window.
 
 ## Verification
 
@@ -102,6 +111,37 @@ context:
 - M9 client class lacks U+0085 → 2 fail (BMP agreement).
 - M10 teams / hour bands / shift types store NFC → 1 fail each (NFD sent as typed).
 - M11 teams / hour bands / shift types blank by `trim()` → 2 fail each.
+
+**Review round 1 results (2026-09-29):**
+- `pnpm typecheck`, `pnpm lint`: exit 0.
+- `supabase db reset` (worktree), web build, `pnpm test`: 268 + 2893 + 3282 = 6443 passed, 0 failed.
+- `pnpm test:e2e`: 106 passed, first run.
+- `supabase db reset` from the main checkout afterwards.
+
+**Review round 1 mutation proof** (`scratchpad/name-normalization/mutate2.py`, log `mutations2.log`; each planted, run, restored; count = failing tests):
+
+| # | Mutation | Failing tests |
+| --- | --- | --- |
+| N1 | `name_key` also created in `public`, granted to `authenticated` (an RPC again) | 1 (RPC refused as PGRST202) |
+| N2 | `name_key` trims one character per loop step (quadratic plpgsql) | 1 (100k pathological key, cancelled by `statement_timeout`) |
+| N3 | EXECUTE revoked from `service_role` | 2 (operator update of the five tables, grantee list) |
+| N4 | USAGE on `private` revoked from `service_role` | 0 at first: writes need EXECUTE only (see change log); after adding the schema ACL test, 1 |
+| N5 | EXECUTE granted to `anon` | 1 (grantee list) |
+| N6 | `name_key` trims spaces only (M1 redone on the `btrim` form) | 21 |
+| N7 | EXECUTE revoked from `authenticated` (M3 redone) | 10 |
+| N8 | client `trimName` back to an anchored regex | 1 (100k pathological trim exceeds its 2 s limit) |
+| N9 | `createPayloadOf` blank-checks with `trim()` | 2 (NEL alone, information separators) |
+| N10 | Deno class lacks U+0085 | 2 (NEL alone, Deno/client list agreement) |
+| N11 | `saveMember` blank check removed | 1 |
+| N12–N14 | guard skips blank organizations / hour_bands / shift_types | 1 each (its blank case) |
+| N15 | guard's teams duplicate query loses `where not archived` | 1 (archived team negative) |
+| N16 | guard's shift_types duplicate query loses `where not archived` | 1 (archived type negative) |
+| N17 | guard always raises (M4 inverted) | 3 (both negatives, the clean run) |
+| N18 | a planted `0099_*.sql` with `check (btrim(name) <> '')` | 1 spine-rule test (+1 numbering test, expected) |
+| N19 | a planted `0099_*.sql` with `lower(btrim(name))` | 1 spine-rule test (+1 numbering test, expected) |
+| N20 | SQL `U&` list lacks U+0085 | 1 (source list decodes to the client's) |
+| N21 | helper defined in `public` again (source) | 1 |
+| N22 | USAGE on `private` granted to `anon` | 1 (schema ACL) |
 
 **Commands:**
 - `pnpm typecheck`, `pnpm lint` -- expected: exit 0.

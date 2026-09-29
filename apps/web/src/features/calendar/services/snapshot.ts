@@ -707,7 +707,7 @@ function identitiesOf(answered: unknown): CalendarMemberIdentity[] | null {
     const name = row['name'];
     const fireRank = row['fire_rank'];
 
-    // Blank is not a name `members` can hold (`btrim(name) <> ''`).
+    // Blank is not a name `members` can hold (`private.name_key(name) <> ''`, 0024).
     if (id === null || typeof name !== 'string' || name.trim() === '') return null;
     if (fireRank !== null && typeof fireRank !== 'string') return null;
 

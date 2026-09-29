@@ -76,9 +76,12 @@
 -- whatever column it names. So both roles that write these tables hold USAGE
 -- on `private` and EXECUTE: `authenticated` (every request write) and
 -- `service_role` (a secret-key operator update of any column of these five
--- tables). Granting it discloses nothing: the function is immutable, reads no
--- table and answers only about its argument. PUBLIC and `anon` are revoked;
--- the owner holds it implicitly.
+-- tables). The writes themselves need EXECUTE alone: a stored check or index
+-- expression names the function by OID, so schema USAGE is not checked
+-- (verified); USAGE is what lets a writer's own statement name it. Granting it
+-- discloses nothing: the function is immutable, reads no table and answers
+-- only about its argument. PUBLIC and `anon` are revoked; the owner holds it
+-- implicitly.
 --
 -- IDEMPOTENT: `create schema if not exists`, `create or replace` keeps the
 -- ACL, revokes and grants are no-ops when repeated, and every constraint and

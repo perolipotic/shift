@@ -546,3 +546,23 @@
   summary: `0023`'s serialization relies on READ COMMITTED, and nothing asserts the isolation level.
   evidence: The volatile readers and the deferred zero-admins check see the first writer's commit only because each new query takes a new snapshot. Under REPEATABLE READ or SERIALIZABLE the lock still orders the writers, but the second one keeps its first snapshot and can pass on stale data. PostgREST and the SPA use the default level today. A live test that asserts `current_setting('transaction_isolation')` for a PostgREST request would pin it.
 
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-name-normalization.md`
+  summary: Zero-width and invisible characters are not in `name_key`'s white-space class, so a name that renders blank, or `'Tim'` + U+200B beside `'Tim'`, is allowed. Decide whether a "renders blank" class belongs in the key.
+  evidence: Raised by the fix-name-normalization review (2026-09-29). The class in `0024` is the union of Postgres's `\s`/`[[:space:]]` and `String.prototype.trim`; U+200B/C/D (zero-width space, non-joiner, joiner), U+2060 (word joiner), U+00AD (soft hyphen), U+034F (combining grapheme joiner), U+115F and U+3164 (Hangul fillers) and U+2800 (Braille blank) are in neither. So `private.name_key(E'​')` is `E'​'`, not `''`, and the checks admit it; `apps/web/src/utils/name.test.ts` pins U+200B as not blank. ZWJ and ZWNJ are meaningful inside some scripts, so stripping them everywhere is a product decision, not a defect fix.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-name-normalization.md`
+  summary: The name key normalizes to NFC, not NFKC, so compatibility forms stay distinct names, and a name of a lone combining mark is allowed. Decide whether uniqueness should fold them.
+  evidence: Raised by the fix-name-normalization review (2026-09-29). The spec asked for NFC. Under it the `ǆ` ligature (U+01C6) and `dž`, fullwidth `Ｔｉｍ` and `Tim`, and `ﬁ` (U+FB01) and `fi` are different keys, so both can be active in one organization and look alike on screen. A name of U+0301 alone is not white space and passes the blank check. NFKC would fold the first three but also changes characters people may mean (superscripts, circled digits), so it is a decision.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-name-normalization.md`
+  summary: The stored name keeps leading and trailing U+0085 and U+001C–001F, which the key strips. Storing `trimName(value)` instead of `value.trim()` would fix it but changes what a name valid today stores, which the spec's Never rule forbids.
+  evidence: Raised by the fix-name-normalization review (2026-09-29). `enteredName` (`apps/web/src/utils/name.ts`), `saveMember` (`apps/web/src/features/members/services/write.ts`) and `createPayloadOf` (`supabase/functions/admin-auth/operations.ts`) decide blank with `0024`'s class but store `value.trim()`, which keeps NEL and the information separators. So `'Ana\u0085'` stores as typed, and is one key with `'Ana'` but a different stored string. Changing the stored value needs the human.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-name-normalization.md`
+  summary: `supabase/operator/provision-organization.sql` checks for a missing setting with `nullif(btrim(...), '')`, which strips spaces only.
+  evidence: Raised by the fix-name-normalization review (2026-09-29). Lines 37–54 read every `shift.*` setting through `nullif(btrim(coalesce(current_setting(...), '')), '')`, so a setting of a tab or NBSP alone is "present". For the two names the insert still fails on `organizations_name_check` or `members_name_check` (now `private.name_key(name) <> ''`), so no blank name is stored; the other settings would carry the white space. Operator-only, run by hand, so low exposure.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-name-normalization.md`
+  summary: `0024`'s guard checks, then alters: a write landing between the guard and the constraint step fails that step with a raw 23514 or 23505 instead of `NAME_KEY_CONFLICT`.
+  evidence: Raised by the fix-name-normalization review (2026-09-29). The guard's `do` block reads the five tables without locking them, and each `alter table ... add constraint` and `create unique index` then takes its own lock. A concurrent write of a blank or duplicate name in that window makes the constraint step fail with the ordinary violation code, so the operator sees a less specific error. The migration still rolls back whole and nothing is rewritten. Taking `share row exclusive` locks on the five tables before the guard would close it, at the cost of blocking writes for the migration's duration.

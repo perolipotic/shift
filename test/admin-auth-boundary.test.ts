@@ -1492,6 +1492,7 @@ describe('createUser: an account and the row that gives it an organization', () 
       createUser({ privileged: accounts.client, caller: caller.client }, payload),
     ).resolves.toEqual({ status: 400, body: { code: PAYLOAD_INVALID } });
     expect(caller.log.rpc, 'a malformed payload still reached the database').toEqual([]);
+    expect(accounts.log.created, 'a malformed payload still created an account').toEqual([]);
   });
 
   it.each([

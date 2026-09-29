@@ -343,7 +343,7 @@ function isIdentityEdit(write: OrganizationWrite): write is OrganizationEdits {
  * on — and the database gives no signal that could tell them apart.
  */
 export const ORGANIZATION_REFUSED = 'ORGANIZATION_REFUSED';
-/** The `btrim(name) <> ''` check (`0002:72`) refused the value. */
+/** The `private.name_key(name) <> ''` check (`0024`) refused the value. */
 export const ORGANIZATION_NAME_BLANK = 'ORGANIZATION_NAME_BLANK';
 /** Some other shape on the table refused the value — a leave-year day out of range. */
 export const ORGANIZATION_INVALID = 'ORGANIZATION_INVALID';
@@ -440,8 +440,8 @@ const ONE_ROW = 1;
  * The SQLSTATE a check constraint raises, and the constraint that names `name`.
  *
  * The constraint name is PostgreSQL's own for a column-level check —
- * `<table>_<column>_check` — on `0002`'s `name text not null check (btrim(name)
- * <> '')`. Matching it is what lets the surface NAME THE FIELD rather than say
+ * `<table>_<column>_check` — on `0002`'s `name` column, and `0024` rebuilds it
+ * under that name as `check (private.name_key(name) <> '')`. Matching it is what lets the surface NAME THE FIELD rather than say
  * "something was wrong", which is what UX-DR34 asks for; every other check on
  * the table falls through to the general code, because a message that named the
  * wrong field would be worse than a general one.

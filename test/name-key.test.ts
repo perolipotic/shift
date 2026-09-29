@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,6 +40,32 @@ async function reachable(): Promise<boolean> {
 
 const noDatabase = !(await reachable());
 
+/**
+ * The local API and its publishable key, or `undefined`: read from `supabase
+ * status` once, as `test/rls-isolation.test.ts` does, so no key is tracked.
+ */
+const apiEndpoint: { readonly url: string; readonly key: string } | undefined = (() => {
+  if (noDatabase) return undefined;
+  try {
+    const status = execFileSync(join(repoRoot, 'node_modules', '.bin', 'supabase'), ['status', '-o', 'json'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const fields = JSON.parse(status) as Record<string, unknown>;
+    const key = fields['PUBLISHABLE_KEY'] ?? fields['ANON_KEY'];
+    const url = fields['API_URL'] ?? 'http://127.0.0.1:54321';
+    return typeof key === 'string' && typeof url === 'string' ? { url, key } : undefined;
+  } catch {
+    return undefined;
+  }
+})();
+
+const noApi = noDatabase || apiEndpoint === undefined;
+
+/** `supabase/seed.sql` — one password, shared, local and test only. */
+const FIXTURE_PASSWORD = 'local-fixture-password';
+
 async function connect(): Promise<Client> {
   const client = new Client({ connectionString: databaseUrl });
   await client.connect();
@@ -47,6 +74,7 @@ async function connect(): Promise<Client> {
 
 const PILOT = 'dvd-kastel-novi';
 const PILOT_ADMIN = 'ivan.maric';
+const PILOT_MEMBER = 'ana.kovac';
 
 interface Admin {
   readonly authUserId: string;
@@ -225,7 +253,7 @@ describe('the client and the database agree on a name (0024)', () => {
     try {
       const { rows } = await client.query<{ code: number }>(
         `select c as code from generate_series(1, 65535) c
-          where c not between 55296 and 57343 and public.name_key(chr(c)) = ''
+          where c not between 55296 and 57343 and private.name_key(chr(c)) = ''
           order by c`,
       );
       const database = rows.map((row) => row.code);
@@ -244,7 +272,7 @@ describe('the client and the database agree on a name (0024)', () => {
         `select c as code from generate_series(1, 65535) c
           where c not between 55296 and 57343
             and (chr(c) ~ '^\\s$' or chr(c) ~ '^[[:space:]]$')
-            and public.name_key(chr(c)) <> ''`,
+            and private.name_key(chr(c)) <> ''`,
       );
       expect(rows, 'Postgres counts these as white space and name_key keeps them').toEqual([]);
 
@@ -275,9 +303,119 @@ describe('the client and the database agree on a name (0024)', () => {
   it.skipIf(noDatabase).each(NAMES.map((name) => [name]))('on the key of %j', async (name) => {
     const client = await connect();
     try {
-      const { rows } = await client.query<{ key: string }>('select public.name_key($1) as key', [name]);
-      expect(rows[0]?.key).toBe(nameKey(name, 'hr'));
+      const { rows } = await client.query<{ key: string }>('select private.name_key($1) as key', [name]);
+      expect(rows[0]?.key).toBe(nameKey(name));
     } finally {
+      await client.end();
+    }
+  });
+});
+
+describe('name_key is no RPC, and trims in linear time (0024)', () => {
+  it.skipIf(noApi)('refuses a signed-in member calling it over PostgREST', async () => {
+    // `private` is not in `supabase/config.toml`'s exposed schemas, so the
+    // function is not in PostgREST's schema cache at all: not a privilege
+    // refusal (42501) but "no such function" (PGRST202), answered 404.
+    const endpoint = apiEndpoint;
+    if (endpoint === undefined) throw new Error('unreachable: gated by skipIf');
+
+    const signIn = await fetch(`${endpoint.url}/auth/v1/token?grant_type=password`, {
+      method: 'POST',
+      headers: { apikey: endpoint.key, 'content-type': 'application/json' },
+      body: JSON.stringify({ email: `${PILOT_MEMBER}@${PILOT}.shift.invalid`, password: FIXTURE_PASSWORD }),
+    });
+    const { access_token: token } = (await signIn.json()) as { access_token?: string };
+    expect(token, `${PILOT_MEMBER} could not sign in: ${signIn.status}`).toEqual(expect.any(String));
+
+    const response = await fetch(`${endpoint.url}/rest/v1/rpc/name_key`, {
+      method: 'POST',
+      headers: {
+        apikey: endpoint.key,
+        Authorization: `Bearer ${token ?? ''}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ name: ' Tim ' }),
+    });
+    const body = (await response.json()) as { code?: string };
+
+    expect(response.status, 'a member reached name_key as an RPC').toBe(404);
+    expect(body.code).toBe('PGRST202');
+  });
+
+  it.skipIf(noDatabase)('opens `private` to the two writing roles and to nobody else', async () => {
+    // A stored check or index expression names `name_key` by OID, so writes
+    // need EXECUTE, not USAGE (a revoked USAGE still lets every write through).
+    // USAGE is granted anyway so that a writer's own statement may name the
+    // function; it is pinned here so it cannot widen to `anon` or PUBLIC.
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ role: string; usage: boolean }>(
+        `select role, pg_catalog.has_schema_privilege(role, 'private', 'USAGE') as usage
+           from unnest(array['anon', 'authenticated', 'service_role']) as role order by role`,
+      );
+      expect(rows).toEqual([
+        { role: 'anon', usage: false },
+        { role: 'authenticated', usage: true },
+        { role: 'service_role', usage: true },
+      ]);
+      const { rows: acl } = await client.query<{ publicUsage: boolean }>(
+        `select exists (select 1 from pg_namespace n, aclexplode(n.nspacl) a
+                         where n.nspname = 'private' and a.grantee = 0) as "publicUsage"`,
+      );
+      expect(acl[0]?.publicUsage, 'PUBLIC holds a privilege on private').toBe(false);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('lets a secret-key operator update any column of the five tables', async () => {
+    // A check runs on EVERY update of its row, whatever column it names, and
+    // it is permission-checked against the writer. So `service_role` must hold
+    // USAGE on `private` and EXECUTE on `name_key`, or an operator update of a
+    // leave allowance would fail with `permission denied for function`.
+    const client = await connect();
+    try {
+      await client.query('begin');
+      const admin = await pilotAdmin(client);
+      await client.query('set local role service_role');
+      for (const [table, id] of [
+        ['organizations', admin.organizationId],
+        ['members', admin.memberId],
+      ] as const) {
+        const { rowCount } = await client.query(`update ${table} set name = name where id = $1`, [id]);
+        expect(rowCount, `${table} was not updated`).toBe(1);
+      }
+      for (const table of ['teams', 'hour_bands', 'shift_types']) {
+        await client.query(`update ${table} set name = name where organization_id = $1`, [admin.organizationId]);
+      }
+      const { rowCount } = await client.query(
+        'update members set leave_allowance_days = leave_allowance_days where id = $1',
+        [admin.memberId],
+      );
+      expect(rowCount).toBe(1);
+    } finally {
+      await client.query('rollback');
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('keys a 100 000-character pathological name inside a statement timeout', async () => {
+    // `'a' || repeat(' ', n) || 'b'` is the input a backtracking trim costs
+    // O(n²) on. The `statement_timeout` is what decides, not a clock read here:
+    // `btrim` answers in about a millisecond, so five seconds is never close,
+    // and a quadratic trim is cancelled with 57014 instead of hanging the run.
+    const client = await connect();
+    try {
+      await client.query('begin');
+      await client.query(`set local statement_timeout = '5s'`);
+      const { rows } = await client.query<{ inside: number; padded: number; blank: string }>(
+        `select pg_catalog.length(private.name_key('a' || repeat(' ', 100000) || 'b')) as inside,
+                pg_catalog.length(private.name_key(repeat(' ', 100000) || 'a' || repeat(' ', 100000) || 'b' || repeat(' ', 100000))) as padded,
+                private.name_key(repeat(E'\\u00a0', 100000)) as blank`,
+      );
+      expect(rows[0]).toEqual({ inside: 100_002, padded: 100_002, blank: '' });
+    } finally {
+      await client.query('rollback');
       await client.end();
     }
   });
@@ -306,6 +444,30 @@ describe('existing rows the new rules would refuse stop the migration (0024)', (
       detail: 'members (blank name)',
     },
     {
+      label: 'a blank organization',
+      setup: [
+        'alter table organizations drop constraint organizations_name_check',
+        `update organizations set name = E'\\u2007' where id = $1`,
+      ],
+      detail: 'organizations (blank name)',
+    },
+    {
+      label: 'a blank band',
+      setup: [
+        'alter table hour_bands drop constraint hour_bands_name_not_blank',
+        `insert into hour_bands (organization_id, name, start_time) values ($1, E'\\u0085', '03:10')`,
+      ],
+      detail: 'hour_bands (blank name)',
+    },
+    {
+      label: 'a blank type',
+      setup: [
+        'alter table shift_types drop constraint shift_types_name_not_blank',
+        `insert into shift_types (organization_id, name, is_working) values ($1, E'\\ufeff', false)`,
+      ],
+      detail: 'shift_types (blank name)',
+    },
+    {
       label: 'two active teams with one key',
       setup: [
         'drop index teams_organization_name_key',
@@ -332,7 +494,13 @@ describe('existing rows the new rules would refuse stop the migration (0024)', (
     },
   ];
 
-  it.skipIf(noDatabase).each(CASES)('$label', async ({ setup, detail }) => {
+  /**
+   * Plant the rows as the owner inside a transaction that is rolled back, then
+   * run the guard: its refusal, or `null` when it passed.
+   */
+  async function guardAfter(
+    setup: readonly string[],
+  ): Promise<{ code?: string; message?: string; detail?: string } | null> {
     const client = await connect();
     try {
       await client.query('begin');
@@ -352,26 +520,52 @@ describe('existing rows the new rules would refuse stop the migration (0024)', (
         await client.query(statement.replace('$2', '$1'), params);
       }
 
-      const refusal = await client.query(guard ?? '').then(
+      return await client.query(guard ?? '').then(
         () => null,
         (cause: { code?: string; message?: string; detail?: string }) => cause,
       );
-
-      expect(refusal?.code, 'the guard let the rows through').toBe('23514');
-      expect(refusal?.message).toBe('NAME_KEY_CONFLICT');
-      expect(refusal?.detail).toContain(detail);
     } finally {
       await client.query('rollback');
       await client.end();
     }
+  }
+
+  it.skipIf(noDatabase).each(CASES)('$label', async ({ setup, detail }) => {
+    const refusal = await guardAfter(setup);
+
+    expect(refusal?.code, 'the guard let the rows through').toBe('23514');
+    expect(refusal?.message).toBe('NAME_KEY_CONFLICT');
+    expect(refusal?.detail).toContain(detail);
   });
 
-  it.skipIf(noDatabase)('passes the seeded data', async () => {
-    const client = await connect();
-    try {
-      await expect(client.query(guard ?? '')).resolves.toBeDefined();
-    } finally {
-      await client.end();
-    }
+  // AN ARCHIVED ROW NEVER COMPETES. Both partial indexes bind active rows only,
+  // so the guard's `where not archived` must too: an archived team or type
+  // sharing a key with an active one is data 0024 admits, and refusing it
+  // would stop the migration over rows nothing is wrong with.
+  it.skipIf(noDatabase).each([
+    {
+      label: 'an archived team sharing a key with an active one',
+      setup: [
+        `insert into teams (organization_id, name, archived) values ($1, 'Probni X', false), ($1, E'probni x\\t', true)`,
+      ],
+    },
+    {
+      label: 'an archived type sharing a key with an active one',
+      setup: [
+        `insert into shift_types (organization_id, name, is_working, archived)
+           values ($1, 'Probni', false, false), ($1, E'PROBNI\\u00a0', false, true)`,
+      ],
+    },
+  ])('lets through $label', async ({ setup }) => {
+    expect(await guardAfter(setup), 'the guard refused an archived duplicate').toBeNull();
+  });
+
+  // WHAT THIS DOES AND DOES NOT PROVE. `supabase db reset` applies 0024 to an
+  // empty database and loads the seed afterwards, and the constraints already
+  // hold for every row here, so this shows only that the guard's SQL runs
+  // clean over the stored data. That the seed and demo data satisfy the new
+  // rules is proved by their loading under the 0024 constraints at all.
+  it.skipIf(noDatabase)('runs clean over the data the constraints already admit', async () => {
+    expect(await guardAfter([])).toBeNull();
   });
 });
