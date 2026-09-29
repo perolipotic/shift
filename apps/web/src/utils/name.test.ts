@@ -62,8 +62,8 @@ describe('the stored name is what it was before 0024', () => {
 
 describe('the key compares trimmed, NFC and lower-cased', () => {
   it('reads a padded name as the name', () => {
-    expect(nameKey('Tim\t', 'hr')).toBe(nameKey('Tim', 'hr'));
-    expect(nameKey('\u00A0TIM\u202F', 'hr')).toBe('tim');
+    expect(nameKey('Tim\t')).toBe(nameKey('Tim'));
+    expect(nameKey('\u00A0TIM\u202F')).toBe('tim');
   });
 
   it('reads composed and decomposed as one name', () => {
@@ -71,11 +71,25 @@ describe('the key compares trimmed, NFC and lower-cased', () => {
     const decomposed = 'Noc\u0301';
 
     expect(composed).not.toBe(decomposed);
-    expect(nameKey(decomposed, 'hr')).toBe(nameKey(composed, 'hr'));
-    expect(nameKey('ČAĐA', 'hr')).toBe(nameKey('C\u030CAĐA', 'hr'));
+    expect(nameKey(decomposed)).toBe(nameKey(composed));
+    expect(nameKey('ČAĐA')).toBe(nameKey('C\u030CAĐA'));
   });
 
   it('keeps apart names that differ inside', () => {
-    expect(nameKey('Ana Marija', 'hr')).not.toBe(nameKey('AnaMarija', 'hr'));
+    expect(nameKey('Ana Marija')).not.toBe(nameKey('AnaMarija'));
+  });
+});
+
+describe('trimming is linear in the input', () => {
+  // `'a' + ' '.repeat(n) + 'b'` is the input an anchored `[class]+$` regex
+  // retries from every run start on: about five seconds at this length in V8.
+  // The index scan finishes in milliseconds, so the generous limit below is
+  // never the thing that decides.
+  it('trims a 100 000-character pathological name well inside the limit', { timeout: 2_000 }, () => {
+    const spaces = ' '.repeat(100_000);
+
+    expect(trimName(`a${spaces}b`)).toBe(`a${spaces}b`);
+    expect(trimName(`${spaces}a${spaces}b${spaces}`)).toBe(`a${spaces}b`);
+    expect(isBlankName(spaces)).toBe(true);
   });
 });
