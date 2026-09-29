@@ -815,8 +815,8 @@ describe('the neutral mark carries a character a person can actually read', () =
   });
 
   it('answers null for a name with nothing in it, so no mark goes unnamed', () => {
-    // `0002:72` makes this unreachable from the database — `btrim(name) <> ''`
-    // is a check on the column — but an empty accessible name on a `role="img"`
+    // `0024` makes this unreachable from the database — `private.name_key(name)
+    // <> ''` is a check on the column — but an empty accessible name on a `role="img"`
     // is an element a screen reader announces as nothing at all, so the caller
     // needs to be able to tell.
     expect(organizationLogoMark('')).toBeNull();

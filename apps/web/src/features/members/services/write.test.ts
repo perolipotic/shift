@@ -920,6 +920,29 @@ describe('an edit reaches the privileged function only when the identity moves',
     });
   });
 
+  it('refuses a name blank in 0024\'s class before anything is sent, and stores the rest trimmed', async () => {
+    // `trim()` keeps U+0085 and U+001C–001F, which `members_name_check` counts
+    // as white space; the blank verdict uses the database's class, the stored
+    // value stays `trim()`med as it was before 0024.
+    for (const name of ['   ', '\u0085', '\u001C\u001F', '\u00A0\uFEFF']) {
+      const { table, calls } = tableThat({ data: [{ id: 'member-1' }], error: null });
+      const { functions, calls: invoked } = functionsThat(replied({ code: USERNAME_CHANGED }));
+
+      expect(await saveMember(table, functions, member(), edits({ name })), JSON.stringify(name)).toEqual({
+        ok: false,
+        refusal: { code: MEMBER_WRITE_INVALID, saved: false },
+      });
+      expect(calls, `${JSON.stringify(name)} was sent`).toEqual([]);
+      expect(invoked).toEqual([]);
+    }
+
+    const { table, calls } = tableThat({ data: [{ id: 'member-1' }], error: null });
+    const { functions } = functionsThat(replied({ code: USERNAME_CHANGED }));
+
+    expect(await saveMember(table, functions, member(), edits({ name: ' Ana\u0085 ' }))).toEqual({ ok: true });
+    expect(calls[0]?.values['name']).toBe('Ana\u0085');
+  });
+
   it('calls the function once when the username moves, after the fields landed', async () => {
     const { table, calls } = tableThat({ data: [{ id: 'member-1' }], error: null });
     const { functions, calls: invoked } = functionsThat(replied({ code: USERNAME_CHANGED }));

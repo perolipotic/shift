@@ -276,6 +276,7 @@ async function functionSecurity(
   client: Client,
   name: string,
   argumentCount: number,
+  schema = 'public',
 ): Promise<FunctionSecurity> {
   const { rows } = await client.query<FunctionSecurity & { hasAcl: boolean }>(
     `select p.prosecdef,
@@ -290,10 +291,10 @@ async function functionSecurity(
                from unnest(coalesce(p.proacl, '{}'::aclitem[])) as entry) as grantees,
             pg_get_userbyid(p.proowner) as owner
        from pg_proc p
-      where p.pronamespace = 'public'::regnamespace
+      where p.pronamespace = $3::regnamespace
         and p.proname = $1
         and p.pronargs = $2`,
-    [name, argumentCount],
+    [name, argumentCount, schema],
   );
 
   // Exactly one, and qualified by argument count. `proname` alone matches every
@@ -302,17 +303,17 @@ async function functionSecurity(
   // silently, and in whichever direction the planner happened to return first.
   expect(
     rows.length,
-    `expected exactly one public.${name} taking ${argumentCount} argument(s); found ${rows.length}`,
+    `expected exactly one ${schema}.${name} taking ${argumentCount} argument(s); found ${rows.length}`,
   ).toBe(1);
   const security = rows[0];
-  if (security === undefined) throw new Error(`unreachable: public.${name} was asserted to exist`);
+  if (security === undefined) throw new Error(`unreachable: ${schema}.${name} was asserted to exist`);
 
   // A null `proacl` means no grant or revoke was ever written, so the defaults
   // are in force — and it yields zero PUBLIC entries, which makes the check
   // below pass on precisely the function that has no access control at all.
   expect(
     security.hasAcl,
-    `public.${name} has no ACL entries at all, so its default privileges are whatever the platform grants; write the revokes`,
+    `${schema}.${name} has no ACL entries at all, so its default privileges are whatever the platform grants; write the revokes`,
   ).toBe(true);
 
   return security;
@@ -956,7 +957,7 @@ describe('every organization table carries row level security, and only its revi
       ).toBe(true);
       expect(
         rows.some((row) =>
-          /UNIQUE INDEX .* \(organization_id, lower\(btrim\(name\)\)\)$/.test(row.indexdef),
+          /UNIQUE INDEX .* \(organization_id, private\.name_key\(name\)\)$/.test(row.indexdef),
         ),
         'two bands may share a name, or the unique is partial',
       ).toBe(true);
@@ -1082,7 +1083,7 @@ describe('every organization table carries row level security, and only its revi
       ).toBe(true);
       expect(
         rows.some((row) =>
-          /UNIQUE INDEX .* \(organization_id, lower\(btrim\(name\)\)\) WHERE \(NOT archived\)$/.test(
+          /UNIQUE INDEX .* \(organization_id, private\.name_key\(name\)\) WHERE \(NOT archived\)$/.test(
             row.indexdef,
           ),
         ),
@@ -1672,6 +1673,14 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'serialize_organization_writes', argumentCount: 0, expected: [] },
     { name: 'refuse_status_version_leaving_no_admin', argumentCount: 0, expected: [] },
     { name: 'refuse_truncate', argumentCount: 0, expected: [] },
+    // 0024's name key, in `private`, which PostgREST does not expose. Every
+    // name check and name unique index calls it, and both are
+    // permission-checked against the WRITING role — and a check runs on every
+    // update of the row, whatever column it names. So both roles that write
+    // these tables hold EXECUTE: `authenticated` (every request write) and
+    // `service_role` (a secret-key operator update). It is immutable and reads
+    // no table, so the grant discloses nothing. `anon` writes none of them.
+    { name: 'name_key', argumentCount: 1, expected: ['authenticated', 'service_role'], schema: 'private' },
   ];
 
   it.skipIf(noDatabase).each([
@@ -1691,14 +1700,16 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'rotation_assignment_latest_version', argumentCount: 1 },
     // 0023's TRUNCATE refusal reads nothing, so it has no reason to be a definer.
     { name: 'refuse_truncate', argumentCount: 0 },
-  ])('runs $name as the caller, with an empty search_path', async ({ name, argumentCount }) => {
+    // 0024's name key reads nothing; it runs as whoever writes the name.
+    { name: 'name_key', argumentCount: 1, schema: 'private' },
+  ] as { name: string; argumentCount: number; schema?: string }[])('runs $name as the caller, with an empty search_path', async ({ name, argumentCount, schema }) => {
     // INVOKER, the opposite of the helper and the hook. They are reached from
     // the helper, the hook and the zero-admins function as the owner, and from
     // the status insert policy as the session — where running as the owner
     // would let any session read any organization's status history by id.
     const client = await connect();
     try {
-      const security = await functionSecurity(client, name, argumentCount);
+      const security = await functionSecurity(client, name, argumentCount, schema);
       expect(security.prosecdef, `${name} must be SECURITY INVOKER`).toBe(false);
       const searchPath = (security.proconfig ?? []).find((entry) =>
         entry.startsWith('search_path='),
@@ -1710,7 +1721,7 @@ describe('the access-control layer runs as the owner and hands that power to nob
     }
   });
 
-  it.skipIf(noDatabase).each(grantees)('grants execute on $name to $expected and no one else', async ({ name, argumentCount, expected }) => {
+  it.skipIf(noDatabase).each(grantees)('grants execute on $name to $expected and no one else', async ({ name, argumentCount, expected, schema }) => {
     // An exact list, not a subset. Supabase's default privileges grant EXECUTE
     // on every new function in `public` to `anon`, `authenticated` and
     // `service_role` individually, so a `revoke ... from public` leaves all
@@ -1718,7 +1729,7 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // thing a subset check would not notice coming back.
     const client = await connect();
     try {
-      const security = await functionSecurity(client, name, argumentCount);
+      const security = await functionSecurity(client, name, argumentCount, schema);
       expect(
         security.grantees,
         `${name} is executable by a role that has no business calling it`,

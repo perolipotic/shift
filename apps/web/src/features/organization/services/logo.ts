@@ -445,9 +445,9 @@ export async function replaceOrganizationLogo(
  * iterates code POINTS, which fixes the first and halves the second; the
  * remaining combining-mark case is why the value is normalized first.
  *
- * `null` for a name that is blank or whitespace only. `0002:72` makes that
- * unreachable from the database — `btrim(name) <> ''` is a check on the column
- * — but the mark's accessible name is the organization's name, and an empty
+ * `null` for a name that is blank or whitespace only. `0024` makes that
+ * unreachable from the database — `private.name_key(name) <> ''` is a check on
+ * the column — but the mark's accessible name is the organization's name, and an empty
  * accessible name on a `role="img"` is an element a screen reader announces as
  * nothing at all. The caller substitutes a generic label.
  */

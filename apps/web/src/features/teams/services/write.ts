@@ -1,4 +1,5 @@
 import { teamById, type TeamRow, type TeamsSurfaceState } from '@/features/teams/services/list';
+import { enteredName } from '@/utils/name';
 
 /**
  * Creating, renaming and archiving a team — every decision the two team
@@ -90,11 +91,12 @@ const ID_COLUMN = 'id';
 
 // ---------------------------------------------------------------- the rules
 
-/** The name as it will be stored — trimmed — or `null` when nothing is left. */
+/**
+ * The name as it will be stored — trimmed — or `null` when nothing is left, in
+ * the white-space class `0024`'s check refuses (`@/utils/name`).
+ */
 export function enteredTeamName(value: string): string | null {
-  const trimmed = value.trim();
-
-  return trimmed === '' ? null : trimmed;
+  return enteredName(value);
 }
 
 const INSUFFICIENT_PRIVILEGE = '42501';

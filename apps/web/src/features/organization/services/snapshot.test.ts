@@ -823,8 +823,8 @@ describe('the update writes the edited fields and answers with the row', () => {
   });
 
   it('names the field when the blank-name check refuses the value', async () => {
-    // UX-DR34: the refusal names the problem. `btrim(name) <> ''` is the shape
-    // that refuses `'   '`, and its constraint carries the column's name.
+    // UX-DR34: the refusal names the problem. `private.name_key(name) <> ''`
+    // (0024) refuses `'   '`, and its constraint carries the column's name.
     expect(await updateOrganization(answering(BLANK_NAME), PILOT_ROW.id, EDITS)).toEqual({
       ok: false,
       code: ORGANIZATION_NAME_BLANK,

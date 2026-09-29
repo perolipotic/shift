@@ -364,10 +364,6 @@
   evidence: `epics.md:99` words AD-16 as exposing "`createUser`, `updateUserById` and ban/unban", and story 1.6's acceptance criteria (`epics.md:405`) say authentication is blocked "via the privileged auth function". Story 1.6 (04f8768, PR #20) removed ban/unban and amended `ARCHITECTURE-SPINE.md` AD-16: the function exposes only `createUser`, `updateUserById` and `resetPassword`, deactivation is a versioned RLS-governed write, and sign-in is refused by the custom access token hook. Found while recompiling `epic-1-context.md` on 2026-09-23, which follows the spine. epics.md should be brought in line through the planning workflow rather than edited during a build.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-1-7a-teams.md`
-  summary: Name checks use `btrim(name)`, which strips only spaces, while the client's `trim()` strips all whitespace — so a direct API caller can store a tab/newline/NBSP-only name, or `'Tim\t'` beside an active `'Tim'` past the teams unique index.
-  evidence: Found by 1.7a's edge-case and blind review layers. `0009_teams.sql` copies the `btrim(name) <> ''` rule from `members` and `organizations` (`0002:73,130`), and its partial unique index keys on `lower(btrim(name))`; `enteredTeamName` uses JS `trim()`. Only reachable by a caller bypassing the SPA, and the same gap exists on both older tables, so the fix — one whitespace class (e.g. `name ~ '\S'` and a regex trim in the index) applied to all three tables in one forward migration — belongs in its own change rather than diverging teams from the pattern.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-1-7a-teams.md`
   summary: No name column has a length limit; a very long team name makes the unique-index entry exceed the btree row size (54000) and is reported as "try again", which can never succeed.
   evidence: Found by 1.7a's edge-case review layer. `teams.name`, `members.name` and `organizations.name` are unbounded `text`; `teams_organization_name_key` (and `members_organization_username_key`, `0007:92`) index the value, so a name over roughly 2.7 KB fails with 54000, which `editFailureOf` maps to unavailable. A product decision on a maximum length (with a matching client check and a named refusal) applies to every name field at once.
 
@@ -385,10 +381,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-visual-refresh-a-design-system-and-shell.md`
   summary: When shift cells are first built, confirm the enlarged small radius (`radius-sm` 6px → 8px after `--radius` 0.625rem → 0.75rem) still reads as a grid rather than a field of pills at 390px with 30px cells.
   evidence: DESIGN.md keeps "shift cells use the small radius so a dense grid reads as a grid", but no shift cell exists yet to judge it against; found by the visual-refresh A blind review.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-2-2a-shift-type-rule.md`
-  summary: Case-insensitive name uniqueness (`lower(btrim(name))`) on `teams`, `hour_bands` and now `shift_types` ignores Unicode normalization, so NFC `Noć` and NFD `Noć` (c + combining acute) are two distinct active names that render identically.
-  evidence: Raised by 2.2a's review; the pattern is pre-existing (`0009_teams.sql:66-68`, `0012_hour_bands.sql:70-71`) and 2.2a copied it as the spec required. Croatian diacritics (č ć đ š ž) make it reachable by paste from another source. A fix is one migration for all three indexes (`lower(normalize(btrim(name), NFC))`) plus a normalize in each surface's duplicate-name message path, and a test per table.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-list-reader-refetch-failure.md`
   summary: The list and edit screens offer no "try again" action after a read failure, so the unavailable message (now shown beside kept rows) stays until a remount, a reconnect or the next write.
@@ -554,3 +546,23 @@
   summary: `0023`'s serialization relies on READ COMMITTED, and nothing asserts the isolation level.
   evidence: The volatile readers and the deferred zero-admins check see the first writer's commit only because each new query takes a new snapshot. Under REPEATABLE READ or SERIALIZABLE the lock still orders the writers, but the second one keeps its first snapshot and can pass on stale data. PostgREST and the SPA use the default level today. A live test that asserts `current_setting('transaction_isolation')` for a PostgREST request would pin it.
 
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-name-normalization.md`
+  summary: Zero-width and invisible characters are not in `name_key`'s white-space class, so a name that renders blank, or `'Tim'` + U+200B beside `'Tim'`, is allowed. Decide whether a "renders blank" class belongs in the key.
+  evidence: Raised by the fix-name-normalization review (2026-09-29). The class in `0024` is the union of Postgres's `\s`/`[[:space:]]` and `String.prototype.trim`; U+200B/C/D (zero-width space, non-joiner, joiner), U+2060 (word joiner), U+00AD (soft hyphen), U+034F (combining grapheme joiner), U+115F and U+3164 (Hangul fillers) and U+2800 (Braille blank) are in neither. So `private.name_key(E'​')` is `E'​'`, not `''`, and the checks admit it; `apps/web/src/utils/name.test.ts` pins U+200B as not blank. ZWJ and ZWNJ are meaningful inside some scripts, so stripping them everywhere is a product decision, not a defect fix.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-name-normalization.md`
+  summary: The name key normalizes to NFC, not NFKC, so compatibility forms stay distinct names, and a name of a lone combining mark is allowed. Decide whether uniqueness should fold them.
+  evidence: Raised by the fix-name-normalization review (2026-09-29). The spec asked for NFC. Under it the `ǆ` ligature (U+01C6) and `dž`, fullwidth `Ｔｉｍ` and `Tim`, and `ﬁ` (U+FB01) and `fi` are different keys, so both can be active in one organization and look alike on screen. A name of U+0301 alone is not white space and passes the blank check. NFKC would fold the first three but also changes characters people may mean (superscripts, circled digits), so it is a decision.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-name-normalization.md`
+  summary: The stored name keeps leading and trailing U+0085 and U+001C–001F, which the key strips. Storing `trimName(value)` instead of `value.trim()` would fix it but changes what a name valid today stores, which the spec's Never rule forbids.
+  evidence: Raised by the fix-name-normalization review (2026-09-29). `enteredName` (`apps/web/src/utils/name.ts`), `saveMember` (`apps/web/src/features/members/services/write.ts`) and `createPayloadOf` (`supabase/functions/admin-auth/operations.ts`) decide blank with `0024`'s class but store `value.trim()`, which keeps NEL and the information separators. So `'Ana\u0085'` stores as typed, and is one key with `'Ana'` but a different stored string. Changing the stored value needs the human.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-name-normalization.md`
+  summary: `supabase/operator/provision-organization.sql` checks for a missing setting with `nullif(btrim(...), '')`, which strips spaces only.
+  evidence: Raised by the fix-name-normalization review (2026-09-29). Lines 37–54 read every `shift.*` setting through `nullif(btrim(coalesce(current_setting(...), '')), '')`, so a setting of a tab or NBSP alone is "present". For the two names the insert still fails on `organizations_name_check` or `members_name_check` (now `private.name_key(name) <> ''`), so no blank name is stored; the other settings would carry the white space. Operator-only, run by hand, so low exposure.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-name-normalization.md`
+  summary: `0024`'s guard checks, then alters: a write landing between the guard and the constraint step fails that step with a raw 23514 or 23505 instead of `NAME_KEY_CONFLICT`.
+  evidence: Raised by the fix-name-normalization review (2026-09-29). The guard's `do` block reads the five tables without locking them, and each `alter table ... add constraint` and `create unique index` then takes its own lock. A concurrent write of a blank or duplicate name in that window makes the constraint step fail with the ordinary violation code, so the operator sees a less specific error. The migration still rolls back whole and nothing is rewritten. Taking `share row exclusive` locks on the five tables before the guard would close it, at the cost of blocking writes for the migration's duration.

@@ -17,6 +17,7 @@ import {
   memberWriteMessageKey,
 } from '../apps/web/src/features/members/services/wire.ts';
 import { normalizeUsername, signInAddress } from '../apps/web/src/features/auth/services/address.ts';
+import { NAME_WHITESPACE as CLIENT_NAME_WHITESPACE } from '../apps/web/src/utils/name.ts';
 import {
   ACCESS_UNREADABLE,
   ADMIN_ROLE,
@@ -64,6 +65,7 @@ import {
   USERNAME_TAKEN,
   ORGANIZATION_UNREADABLE,
   createPayloadOf,
+  NAME_WHITESPACE as FUNCTION_NAME_WHITESPACE,
   createUser,
   isUuid,
   membersRefusal,
@@ -1461,6 +1463,12 @@ describe('createUser: an account and the row that gives it an organization', () 
   it.each([
     ['no organization', creation({ organizationId: '' })],
     ['a blank name', creation({ name: '   ' })],
+    // BLANK IN `0024`'s CLASS, which `trim()` does not strip: NEL and the
+    // information separators. Sent through, GoTrue would create the account,
+    // `members_name_check` would refuse the insert, and it would be removed.
+    ['a name of NEL alone', creation({ name: '\u0085' })],
+    ['a name of information separators', creation({ name: '\u001C\u001F' })],
+    ['a name of NBSP and a BOM', creation({ name: '\u00A0\uFEFF' })],
     ['a level the check constraint refuses', creation({ role: 'supervisor' })],
     ['an allowance that is not a whole number', creation({ leaveAllowanceDays: 1.5 })],
     ['a negative allowance', creation({ leaveAllowanceDays: -1 })],
@@ -1484,6 +1492,7 @@ describe('createUser: an account and the row that gives it an organization', () 
       createUser({ privileged: accounts.client, caller: caller.client }, payload),
     ).resolves.toEqual({ status: 400, body: { code: PAYLOAD_INVALID } });
     expect(caller.log.rpc, 'a malformed payload still reached the database').toEqual([]);
+    expect(accounts.log.created, 'a malformed payload still created an account').toEqual([]);
   });
 
   it.each([
@@ -2922,5 +2931,24 @@ describe('admin-auth logs nothing sensitive at run time', () => {
     } finally {
       logged.mockRestore();
     }
+  });
+});
+
+describe('the member name is blank in the same class as the database (0024)', () => {
+  it('carries the class character for character as the client does', () => {
+    // The Edge Function cannot import from `apps/web`, so it holds a copy.
+    expect(FUNCTION_NAME_WHITESPACE).toBe(CLIENT_NAME_WHITESPACE);
+    expect([...FUNCTION_NAME_WHITESPACE]).toHaveLength(30);
+  });
+
+  it('keeps an ordinary name, and one with a NEL beside it, as trim() stores it', () => {
+    expect(createPayloadOf(creation({ name: '  Ana Marija ' }))).toMatchObject({
+      ok: true,
+      payload: { name: 'Ana Marija' },
+    });
+    expect(createPayloadOf(creation({ name: 'Ana\u0085' }))).toMatchObject({
+      ok: true,
+      payload: { name: 'Ana\u0085' },
+    });
   });
 });

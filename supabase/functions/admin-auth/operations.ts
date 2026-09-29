@@ -347,6 +347,33 @@ export const FIRE_RANKS = [
 export const LEAVE_ALLOWANCE_MAX = 32767;
 
 /**
+ * The white space a member name is blank in: `0024`'s `private.name_key` class,
+ * character for character.
+ *
+ * A COPY, because this function cannot import from `apps/web`: it is
+ * `NAME_WHITESPACE` in `apps/web/src/utils/name.ts`, and
+ * `test/admin-auth-boundary.test.ts` fails the moment the two differ. Checked
+ * here so that a name `members_name_check` would refuse (U+0085 alone, say,
+ * which `trim()` keeps) is refused as a payload BEFORE an account is created,
+ * rather than creating one, failing the insert with 23514 and compensating.
+ */
+export const NAME_WHITESPACE =
+  '\u0009\u000A\u000B\u000C\u000D\u001C\u001D\u001E\u001F\u0020\u0085\u00A0\u1680' +
+  '\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200A' +
+  '\u2028\u2029\u202F\u205F\u3000\uFEFF';
+
+const NAME_WHITE = new Set(NAME_WHITESPACE);
+
+/** Whether a name is nothing but that white space. A linear scan, no regex. */
+export function isBlankName(value: string): boolean {
+  for (const character of value) {
+    if (!NAME_WHITE.has(character)) return false;
+  }
+
+  return true;
+}
+
+/**
  * GoTrue's own code for "an account already holds this address".
  *
  * THE CODE AND NOT THE STATUS. Every validation refusal GoTrue makes carries
@@ -478,7 +505,8 @@ export function createPayloadOf(body: unknown): PayloadOutcome<CreatePayload> {
 
   const organizationId = textAt(fields, 'organizationId');
   const rawName = fields['name'];
-  const name = typeof rawName === 'string' ? rawName.trim() : '';
+  // STORED `trim()`med, as before; BLANK in `0024`'s class, as the check is.
+  const name = typeof rawName === 'string' && !isBlankName(rawName) ? rawName.trim() : '';
   const rawEmail = fields['email'];
   const role = MEMBER_ROLES.find((known) => known === fields['role']);
   const leaveAllowanceDays = fields['leaveAllowanceDays'];

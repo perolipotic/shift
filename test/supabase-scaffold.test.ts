@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
+import { NAME_WHITESPACE } from '../apps/web/src/utils/name.ts';
+
 /**
  * The Supabase scaffold's shape: forward-only migrations, a seed carrying both
  * fixtures, and exactly one Edge Function (AD-14, AD-15).
@@ -1955,6 +1957,85 @@ describe('the access-control migration', () => {
     expect(statements, 'nothing gives 1.7b a composite key to reference').toMatch(
       /unique \(organization_id, id\)/,
     );
+  });
+
+  it('checks and keys every name through one name_key, over one literal white-space class (0024)', () => {
+    // `btrim` strips spaces alone and `lower` ignores normalization; 0024
+    // replaces both with `name_key`. The class is a literal list, because
+    // `[[:space:]]` follows the collation and matches ASCII alone under `C`.
+    const migration = readFileSync(join(supabaseRoot, 'migrations', '0024_name_key.sql'), 'utf8');
+    const statements = migration.replace(/^\s*--.*$/gm, '');
+    const helper = /create or replace function private\.name_key\(name text\)[\s\S]*?\$\$;/.exec(statements)?.[0];
+
+    expect(helper, '0024 does not define private.name_key').toBeDefined();
+    expect(helper).toMatch(/\bimmutable\b/);
+    expect(helper).toMatch(/set search_path = ''/);
+    expect(helper, 'name_key does not normalize to NFC').toMatch(/normalize\([\s\S]*NFC\s*\)/);
+    expect(helper, 'name_key trims with a named class').not.toMatch(/\[\[:space:\]\]|\\s/);
+    // LINEAR: `btrim` over a literal character list, never a regex.
+    expect(helper, 'name_key trims with a regex').not.toMatch(/regexp_replace|~/);
+    const list = /pg_catalog\.btrim\(\s*name,\s*U&'((?:\\[0-9A-Fa-f]{4})+)'\s*\)/.exec(helper ?? '')?.[1];
+    expect(list, 'name_key does not btrim with a U& character list').toBeDefined();
+    const decoded = (list ?? '')
+      .split('\\')
+      .filter((hex) => hex !== '')
+      .map((hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
+      .join('');
+    expect(decoded, 'the SQL list and apps/web/src/utils/name.ts disagree').toBe(NAME_WHITESPACE);
+
+    // NOT AN RPC: in `private`, which PostgREST does not expose, and executable
+    // by the two roles that write the tables and nobody else.
+    expect(statements).toContain('create schema if not exists private;');
+    expect(statements).toContain('revoke all on schema private from public;');
+    for (const role of ['authenticated', 'service_role']) {
+      expect(statements).toContain(`grant usage on schema private to ${role};`);
+      expect(statements).toContain(`grant execute on function private.name_key(text) to ${role};`);
+    }
+    for (const role of ['public', 'anon']) {
+      expect(statements).toContain(`revoke execute on function private.name_key(text) from ${role};`);
+    }
+    expect(statements, 'name_key is defined in an exposed schema').not.toMatch(/function public\.name_key/);
+
+    for (const [table, constraint] of [
+      ['organizations', 'organizations_name_check'],
+      ['members', 'members_name_check'],
+      ['teams', 'teams_name_not_blank'],
+      ['hour_bands', 'hour_bands_name_not_blank'],
+      ['shift_types', 'shift_types_name_not_blank'],
+    ]) {
+      expect(statements, `${constraint} is not rebuilt on name_key`).toContain(
+        `alter table public.${table}\n  add constraint ${constraint} check (private.name_key(name) <> '');`,
+      );
+    }
+    expect(statements).toMatch(
+      /create unique index teams_organization_name_key\s+on public\.teams \(organization_id, private\.name_key\(name\)\)\s+where not archived;/,
+    );
+    expect(statements).toMatch(
+      /create unique index hour_bands_organization_name_key\s+on public\.hour_bands \(organization_id, private\.name_key\(name\)\);/,
+    );
+    expect(statements).toMatch(
+      /create unique index shift_types_organization_name_key\s+on public\.shift_types \(organization_id, private\.name_key\(name\)\)\s+where not archived;/,
+    );
+
+    // The guard runs before the first constraint changes.
+    expect(statements.indexOf('NAME_KEY_CONFLICT')).toBeGreaterThan(0);
+    expect(statements.indexOf('NAME_KEY_CONFLICT')).toBeLessThan(statements.indexOf('drop constraint'));
+    expect(statements, '0024 rewrites a stored name').not.toMatch(/\bupdate public\./);
+  });
+
+  it('keeps every later name check and name index on name_key (the spine rule since 0024)', () => {
+    // ARCHITECTURE-SPINE.md, Consistency Conventions: a name is blank, or two
+    // names are one name, only by `private.name_key`. A migration after 0024
+    // that went back to `btrim(name)` or `lower(btrim(...))` would bring back
+    // the space-only trim and the unnormalized key 0024 closed. Comments are
+    // stripped, so a header may still say what an older file did.
+    const later = migrationNames().filter((name) => Number.parseInt(name, 10) > 24);
+    for (const name of later) {
+      const statements = readFileSync(join(supabaseRoot, 'migrations', name), 'utf8').replaceAll(/--[^\n]*/g, '');
+      expect(statements, `${name} blank-checks or keys a name with btrim`).not.toMatch(
+        /lower\s*\(\s*btrim\s*\(|btrim\s*\(\s*name\s*\)/i,
+      );
+    }
   });
 
   it('refuses a past date, an out-of-order or redundant version, the caller own row and the last active admin in the insert policy', () => {

@@ -14,6 +14,7 @@ import {
   type MemberTeamVersion,
   type MembersSurfaceState,
 } from '@/features/members/services/list';
+import { isBlankName } from '@/utils/name';
 import {
   CREATE_USER_OPERATION,
   DEACTIVATE,
@@ -507,6 +508,14 @@ export async function saveMember(
   member: MemberListRow,
   edits: MemberEdits,
 ): Promise<MemberWriteOutcome> {
+  // BLANK IN `0024`'s CLASS, refused before anything is sent and with the code
+  // `members_name_check`'s 23514 would reach through `editFailureOf`: a value to
+  // correct. `trim()` keeps U+0085 and U+001C–001F, so without this a name of
+  // those alone would travel to the database only to be refused there.
+  if (isBlankName(edits.name)) {
+    return { ok: false, refusal: { code: MEMBER_WRITE_INVALID, saved: false } };
+  }
+
   let answered: PostgrestAnswer;
 
   try {
