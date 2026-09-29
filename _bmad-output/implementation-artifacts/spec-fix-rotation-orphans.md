@@ -94,6 +94,15 @@ context:
 - **The cycle-equivalence rule lives in 0025's `alter policy rotation_assignments_insert_by_own_active_admin`** (anchors differ by a multiple of the pattern's step count). The domain mirror is `sameRotationValue` in `packages/domain/src/projection.ts` (exported, tested; the app does not call it, because the builder always saves a new pattern). The client preflight `draftUnchangedOf` already judged by projection and so already agrees; a test now pins that agreement.
 - **Known gap recorded, not closed:** a step delete (like 0016's step insert) and a concurrent first assignment of the same pattern can both pass under READ COMMITTED. New deferred-work entry; attaching 0023's lock to the rotation tables would also change `test/concurrent-writes.test.ts`'s pinned trigger list.
 - The cleanup's outcome shape and texts are unchanged (`afterPattern` still says "nothing changed"); the only UI-file change is the typed table seam in `rotation-section.tsx`.
+- **2026-09-29, review round (2c patches).** Supersedes the horizon and domain-mirror bullets above:
+  - **The horizon comes from PENDING overrides only**, and has **a day of margin**: per team `least(organization_today - 1, earliest pending override date)`. Pending is 3.5c's rule: the governing version (greatest `effective_from` on or before the date) was saved after `coalesce(confirmed_at, created_at)`. An override in force, a removed one, and one no version governs keep no older version; a future one is later than yesterday, so `least` ignores it. The margin covers a device clock behind the server's at midnight: its "today" is still yesterday, and the version in force then is read.
+  - **The overrides embed is bounded too**, by a third computed relationship `rotation_overrides_in_view` (live and pending, an ungoverned one included, so the admin can still discard it). The builder reads no override in force; nothing in it used them.
+  - **The cleanup never races an unknown outcome**: `discardUnassignedPattern` runs only after a definite failure (a refusal the database answered, or a failure at the pattern or steps stage). An assignment insert that threw, or answered malformed rows, may still commit, so nothing is removed after it.
+  - **The cleanup is time-boxed** (`ROTATION_CLEANUP_TIMEOUT_MS`, 5 s for both deletes): past it the request in flight is aborted through `abortSignal`, nothing further is sent, and the refusal is answered unchanged.
+  - **`sameRotationValue` is removed** from `packages/domain` (export and tests): nothing called it, and the builder's own no-op is judged by projection (`draftUnchangedOf`). The draft test now claims only that.
+  - **A strict-subset unit test** (`list.test.ts`, "every consumer over a strictly bounded snapshot (0025)") feeds the selection 0025 makes, and the full set, through the disposition rows, the version in force and the prefill, the scheduled and cancel helpers, the save refusals and the 2.5 warnings; each answers the same from the horizon on. (The 2.5 warnings read the draft and the shift types, not the assignments, so their check pins only that the bound does not reach them.)
+  - **The E2E cleanup check** counts the one pattern the failing save created (by the id its insert answered) and its steps, not every unassigned pattern of the organization.
+  - **Still linear, recorded in deferred-work**: the `rotation_history` embed (attribution columns of every version), and a pending override left undisposed keeps every version from its date on.
 
 ## Verification
 
@@ -120,7 +129,34 @@ context:
 | T8 | `draftUnchangedOf` compares over no dates | `draft.test.ts` "agrees with 0025" |
 | D1 | `sameRotationValue` literal on the anchor | domain 2 tests |
 | D2 | `sameRotationValue` ignores the offset step | domain 2 tests |
-| D3 | `sameRotationValue` ignores the pattern | domain 2 tests |
+| D3 | `sameRotationValue` ignores the pattern | domain 2 tests (function since removed, review round) |
+
+**Review round (2c patches)**, each planted, run and restored (`sqlmut.py`, `tsmut.py`, `e2emut.py`; SQL mutants applied to the live stack under the E2E lock):
+
+| # | Mutation | Failed |
+|---|---|---|
+| M10 | horizon from every live override (pending rule dropped) | rls: bounded selection (both fixtures) |
+| M11 | horizon ignores pending overrides | rls: bounded selection (both) |
+| M12 | an override date always wins over yesterday (a future pending override moves the horizon) | rls: bounded selection (both) |
+| M13 | no day of margin (horizon today) | rls: bounded selection (both) |
+| M14 | `rotation_overrides_in_view` keeps every live override | rls: bounded selection (both), PostgREST embed (both) |
+| M15 | `rotation_overrides_in_view` drops a pending override no version governs | rls: bounded selection (both) |
+| T9 | cleanup runs after an assignment insert that threw | `write.test.ts` "an assignment insert whose outcome is unknown removes nothing" |
+| T10 | no time box on the cleanup | `write.test.ts` "a cleanup that hangs is aborted at its time box" |
+| T11 | the cleanup passes a signal nothing aborts | `write.test.ts` "a cleanup that hangs…" |
+| T12 | the time box is never cleared | `write.test.ts` "a cleanup that hangs…" |
+| T8′ | `draftUnchangedOf` compares over no dates | `draft.test.ts` "judges by projection…" (reworded), and 4 more |
+| T13 | a pending row projects through the team's first version | `list.test.ts` strict subset: disposition rows |
+| T14 | the prefill reads a version from before the horizon | `list.test.ts` strict subset: version in force and prefill |
+| T15 | the cancel expects every version up to the scheduled date | `list.test.ts` strict subset: scheduled, cancel, refusals |
+| T16 | the scheduled date is the earliest version before today | `list.test.ts` strict subset: scheduled, and "flags a version scheduled after today" |
+| T17 | the version in force is judged over the team's first two versions | `list.test.ts` strict subset: 2 tests |
+| E1 | no cleanup after a refused save | E2E "a save that fails after its pattern…" (the one pattern's rows counted) |
+| E2 | the cleanup removes the steps but not the pattern | E2E "a save that fails after its pattern…" |
+
+The 2.5 warnings read the draft and the shift types, never the assignments, so no subset mutant can reach them; the strict-subset test pins only that they agree.
+
+**Review-round run:** `pnpm typecheck`, `pnpm lint` exit 0; `supabase db reset` + web build + `pnpm test`: domain 268, web 2908, root 3303 passed; `pnpm test:e2e`: 107 passed.
 
 **Commands:**
 - `pnpm typecheck`, `pnpm lint` -- expected: exit 0.
@@ -129,12 +165,12 @@ context:
 
 ## Suggested Review Order
 
-1. `supabase/migrations/0025_rotation_orphans.sql` -- the two delete policies and grants, the altered assignment insert policy (whole cycles), and the two computed relationships with the horizon rule.
+1. `supabase/migrations/0025_rotation_orphans.sql` -- the two delete policies and grants, the altered assignment insert policy (whole cycles), and the three computed relationships with the horizon rule (pending overrides, a day of margin).
 2. `apps/web/src/features/rotation/services/list.ts` -- the bounded embeds, the unbounded attribution-only `rotation_history` embed, and the subset check.
-3. `apps/web/src/features/rotation/services/write.ts` -- `discardUnassignedPattern` and `failedAfterPattern` in `saveRotation`.
-4. `packages/domain/src/projection.ts` -- `sameRotationValue`, the domain mirror.
+3. `apps/web/src/features/rotation/services/write.ts` -- `discardUnassignedPattern` (time-boxed) and `failedAfterPattern` in `saveRotation`, skipped after an unknown assignment outcome.
+4. `apps/web/src/features/rotation/services/list.test.ts` -- "every consumer over a strictly bounded snapshot (0025)": the subset the bound selects answers every consumer as the full set does.
 5. `test/rls-isolation.test.ts` -- the four 0025 describes, and the changed 2.3a removal expectations.
 6. `apps/web/src/features/rotation/services/{write,list}.test.ts`, `utils/draft.test.ts`, `packages/domain/test/projection.test.ts` -- unit coverage.
 7. `e2e/tests/rotation/rotation.spec.ts`, `e2e/utils/database-helper.ts` -- the save-failure cleanup E2E.
 8. `test/supabase-scaffold.test.ts`, `test/provisioning.test.ts` -- guard and catalogue updates.
-9. `_bmad-output/implementation-artifacts/deferred-work.md` -- three entries removed, one added.
+9. `_bmad-output/implementation-artifacts/deferred-work.md` -- three entries removed, two added (the rotation write serialization gap; the linear history embed).
