@@ -1017,6 +1017,33 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.detail.rosterChange.removed',
   'kalendar.detail.rosterChange.replaced',
   'kalendar.detail.rosterChange.pendingHeading',
+  // STORY 3.6b: the admin's roster form — its heading, "Skida se" and
+  // "Dolazi", the "— nitko —" option, the reason, save and saving, and a
+  // member on no team — the removal's action, prompt, confirm, cancel and
+  // removing, the two landed notices, the heading of the inert changes, and
+  // the six refusals.
+  'kalendar.detail.rosterChange.inertHeading',
+  'kalendar.detail.rosterChange.set.heading',
+  'kalendar.detail.rosterChange.set.out',
+  'kalendar.detail.rosterChange.set.in',
+  'kalendar.detail.rosterChange.set.none',
+  'kalendar.detail.rosterChange.set.reason',
+  'kalendar.detail.rosterChange.set.save',
+  'kalendar.detail.rosterChange.set.saving',
+  'kalendar.detail.rosterChange.set.noTeam',
+  'kalendar.detail.rosterChange.remove.action',
+  'kalendar.detail.rosterChange.remove.prompt',
+  'kalendar.detail.rosterChange.remove.confirm',
+  'kalendar.detail.rosterChange.remove.cancel',
+  'kalendar.detail.rosterChange.remove.removing',
+  'kalendar.detail.rosterChange.saved',
+  'kalendar.detail.rosterChange.removedDone',
+  'kalendar.detail.rosterChange.refused.member',
+  'kalendar.detail.rosterChange.refused.reason',
+  'kalendar.detail.rosterChange.refused.taken',
+  'kalendar.detail.rosterChange.refused.gone',
+  'kalendar.detail.rosterChange.refused.denied',
+  'kalendar.detail.rosterChange.refused.failed',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

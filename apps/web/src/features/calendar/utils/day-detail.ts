@@ -1,4 +1,4 @@
-import { rosterOn, scheduledShiftTypeOn } from '@shift/domain';
+import { activeOn, membershipOn, rosterOn, scheduledShiftTypeOn, shiftRoster } from '@shift/domain';
 
 import {
   overrideStandingOfCalendar,
@@ -12,6 +12,8 @@ import type {
   CalendarSnapshot,
 } from '@/features/calendar/services/snapshot';
 import { compareText, formatDate, formatIsoDate, formatTime } from '@/lib/i18n/format';
+import { rosterLineOf, rosterPositionMessageKey, type RosterLine } from '@/features/members/utils/position';
+import { rosterRankMessageKey } from '@/features/members/utils/rank';
 import type { ShiftTypeRow } from '@/features/shift-types/services/list';
 
 /**
@@ -56,9 +58,16 @@ import type { ShiftTypeRow } from '@/features/shift-types/services/list';
  *
  * A ROSTER OVERRIDE IS LISTED (story 3.6a): each one that applied on the
  * day — an addition, a removal or a replacement — with its author, time and
- * reason, and each one pending review apart, under its own heading. One that
- * applies to nothing (an inert one) is shown nowhere: in this story only
- * seeds write them, and 3.6b's removal will list it.
+ * reason, and each one pending review apart, under its own heading. One in
+ * force that applies to nothing (an INERT one, story 3.6b) is listed apart
+ * too, in `rosterInert`, for the admin to remove.
+ *
+ * WHAT AN ADMIN MAY CHANGE ON A SHIFT (story 3.6b) is decided here as well:
+ * the members to take off and to put on ({@link rosterOffersOf}), against the
+ * DEFAULT roster alone (`shiftRoster`, `activeOn` and `membershipOn` from
+ * `@shift/domain`), the browser's preflight ({@link rosterEntryOf}) and what
+ * a removal names ({@link rosterRemovalTargetOf}). The database's checks and
+ * its partial keys stay authoritative.
  */
 
 /** The team works a type that day. */
@@ -174,6 +183,12 @@ export interface DayDetail {
   readonly rosterChanges: readonly DayDetailRosterChange[];
   /** The roster overrides on the day a rotation change left pending (story 3.6a), whatever the kind. */
   readonly rosterPending: readonly DayDetailRosterChange[];
+  /**
+   * The roster overrides IN FORCE on the day that `rosterOn` did not apply
+   * (story 3.6b) — inert, whatever the kind: on a day that is not a working
+   * one, every one in force is. In the snapshot's order.
+   */
+  readonly rosterInert: readonly DayDetailRosterChange[];
 }
 
 function compareMembers(left: DayDetailMember, right: DayDetailMember): number {
@@ -217,6 +232,12 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
   const rosterPending = rosterStanding.pending
     .filter((one) => one.teamId === teamId && one.date === date)
     .map((one) => rosterChangeOf(snapshot, one));
+  const rosterInForce = rosterStanding.inForce.filter((one) => one.teamId === teamId && one.date === date);
+  // Inert is in force less applied (story 3.6b): with no working shift, all of them.
+  const inertOf = (applied: readonly { readonly id: string }[]): readonly DayDetailRosterChange[] =>
+    rosterInForce
+      .filter((one) => !applied.some((used) => used.id === one.id))
+      .map((one) => rosterChangeOf(snapshot, one));
   const full = formatIsoDate(date);
 
   if (full === null) throw new RangeError(`the date ${date} could not be formatted`);
@@ -234,6 +255,7 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
       override: null,
       pending: waiting === undefined ? null : pendingOf(snapshot, waiting, null, date),
       rosterChanges: [],
+      rosterInert: inertOf([]),
     };
   }
 
@@ -248,7 +270,16 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
   const override = scheduled.overridden ? overrideOf(snapshot, standing.inForce, teamId, date, projectedTypeName) : null;
 
   if (!type.isWorking) {
-    return { ...projected, kind: DAY_OFF, typeName: null, range: null, roster: [], override, rosterChanges: [] };
+    return {
+      ...projected,
+      kind: DAY_OFF,
+      typeName: null,
+      range: null,
+      roster: [],
+      override,
+      rosterChanges: [],
+      rosterInert: inertOf([]),
+    };
   }
 
   const members = new Map(snapshot.members.map((member) => [member.id, member]));
@@ -273,6 +304,7 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
     roster: roster.sort(compareMembers),
     override,
     rosterChanges: shown.applied.map((one) => rosterChangeOf(snapshot, one)),
+    rosterInert: inertOf(shown.applied),
   };
 }
 
@@ -540,4 +572,237 @@ export function overrideRemovalTargetOf(detail: DayDetail | null): OverrideRemov
   if (detail.pending !== null) return { id: detail.pending.id, projectedTypeName: null };
 
   return null;
+}
+
+// ------------------------------------------- changing a shift's roster (3.6b)
+
+/** A member the roster form may take off the shift: on its default roster (story 3.6b). */
+export interface RosterOutCandidate {
+  readonly id: string;
+  readonly name: string;
+  /** Shown, never used; `null` is no rank. */
+  readonly fireRank: string | null;
+  /** Their position in the team on the date; shown, never used. */
+  readonly position: string | null;
+}
+
+/** A member the roster form may put on the shift: active on the date and not on its default roster. */
+export interface RosterInCandidate {
+  readonly id: string;
+  readonly name: string;
+  /** Shown, never used; `null` is no rank. */
+  readonly fireRank: string | null;
+  /** The name of their own team on the date, which may work too; `null` for none. */
+  readonly teamName: string | null;
+}
+
+/** What the day detail offers an admin for its roster (story 3.6b). */
+export interface RosterOffers {
+  /** The form: an admin, on a working day. */
+  readonly set: boolean;
+  /** A removal on every listed change — applied, pending and inert alike: an admin, on any kind of day. */
+  readonly remove: boolean;
+  readonly out: readonly RosterOutCandidate[];
+  readonly in: readonly RosterInCandidate[];
+}
+
+const NO_ROSTER_OFFERS: RosterOffers = { set: false, remove: false, out: [], in: [] };
+
+/**
+ * What `detail` offers the viewer of `snapshot` for its roster (story 3.6b).
+ * SHOWN BY THE ROLE, DECIDED BY THE DATABASE: only an admin is offered
+ * anything. The form only on a working day; the removal on any.
+ *
+ * THE CANDIDATES ARE THE DEFAULT ROSTER'S, never the changed one's: to take
+ * off, its members (`shiftRoster`); to put on, every member active on the
+ * date (`activeOn`) who is not on it — their own team may work that date too.
+ * Both leave out every member any LIVE roster override on the team and date
+ * names, on either side — applied, pending or inert — so a change is always
+ * made against the default roster, and the live keys do not answer `taken`.
+ * To change a change, remove it and save a new one. Those to take off are in
+ * `shiftRoster`'s order, and those to put on in `snapshot.members`' order;
+ * nothing is warned, blocked or suggested.
+ *
+ * AN ARCHIVED TEAM (a day list's past team still opens) offers no form: the
+ * insert policy refuses it. Its changes can still be removed.
+ *
+ * @throws RangeError on any precondition of `shiftRoster`, `activeOn` or
+ *   `membershipOn`.
+ */
+export function rosterOffersOf(snapshot: CalendarSnapshot | null, detail: DayDetail | null): RosterOffers {
+  if (snapshot === null || detail === null || snapshot.viewer.role !== 'admin') return NO_ROSTER_OFFERS;
+  const { teamId, isoDate } = detail;
+  const archived = snapshot.teams.find((team) => team.id === teamId)?.archived ?? false;
+
+  if (detail.kind !== DAY_WORKING || archived) return { ...NO_ROSTER_OFFERS, remove: true };
+
+  const named = new Set<string>();
+
+  for (const one of snapshot.rosterOverrides) {
+    if (one.teamId !== teamId || one.date !== isoDate) continue;
+    if (one.memberOutId !== null) named.add(one.memberOutId);
+    if (one.memberInId !== null) named.add(one.memberInId);
+  }
+
+  const onDefault = shiftRoster(snapshot.members, teamId, isoDate);
+  const onDefaultIds = new Set(onDefault.map((entry) => entry.memberId));
+  const byId = new Map(snapshot.members.map((member) => [member.id, member]));
+  const teams = new Map(snapshot.teams.map((team) => [team.id, team.name]));
+  const out: RosterOutCandidate[] = [];
+
+  for (const entry of onDefault) {
+    const member = byId.get(entry.memberId);
+
+    if (member === undefined || named.has(member.id)) continue;
+    out.push({ id: member.id, name: member.name, fireRank: member.fireRank, position: entry.position });
+  }
+
+  const put: RosterInCandidate[] = [];
+
+  for (const member of snapshot.members) {
+    if (named.has(member.id) || onDefaultIds.has(member.id)) continue;
+    if (!activeOn(member.statuses, isoDate)) continue;
+
+    const own = membershipOn(member.memberships, isoDate);
+
+    put.push({
+      id: member.id,
+      name: member.name,
+      fireRank: member.fireRank,
+      teamName: own === null ? null : (teams.get(own.teamId) ?? null),
+    });
+  }
+
+  return { set: true, remove: true, out, in: put };
+}
+
+/** The value of a roster form's "— nitko —" option: no member on that side. */
+export const ROSTER_NOBODY = '';
+
+/** One member a roster form's `Select` offers: their id and the line it reads. */
+export interface RosterOption {
+  readonly id: string;
+  readonly label: string;
+}
+
+type RosterWordKey =
+  | NonNullable<ReturnType<typeof rosterRankMessageKey>>
+  | NonNullable<ReturnType<typeof rosterPositionMessageKey>>;
+type RosterSentence = Extract<RosterLine, { readonly key: string }>;
+
+/**
+ * The words of a candidate line: `word` for a rank or position label, and
+ * `line` for the roster sentence with its values — `t` on the screen,
+ * anything in a test.
+ */
+export interface RosterLineTranslate {
+  readonly word: (key: RosterWordKey) => string;
+  readonly line: (key: RosterSentence['key'], values: RosterSentence['values']) => string;
+}
+
+/** A {@link RosterLine} as words. */
+function rosterLineText(line: RosterLine, translate: RosterLineTranslate): string {
+  return line.key === null ? line.text : translate.line(line.key, line.values);
+}
+
+/**
+ * The line a member to take off reads in the roster form (story 3.6b):
+ * `Ime · čin · položaj`, as the roster reads it, rank and position only where
+ * the organization uses them (`rankShown`, `positionShown`). Shown, never used.
+ */
+export function outOptionOf(
+  candidate: RosterOutCandidate,
+  rankShown: boolean,
+  positionShown: boolean,
+  translate: RosterLineTranslate,
+): RosterOption {
+  const rankKey = rosterRankMessageKey(candidate.fireRank, rankShown);
+  const positionKey = rosterPositionMessageKey(candidate.position, positionShown);
+
+  return {
+    id: candidate.id,
+    label: rosterLineText(rosterLineOf(candidate.name, rankKey, positionKey, translate.word), translate),
+  };
+}
+
+/**
+ * The line a member to put on reads in the roster form (story 3.6b):
+ * `Ime · čin · Smjena X`, their own team on the date in the position's place,
+ * or `noTeam` ("bez smjene"), rank only where the organization uses it.
+ * Shown, never used.
+ */
+export function inOptionOf(
+  candidate: RosterInCandidate,
+  rankShown: boolean,
+  noTeam: string,
+  translate: RosterLineTranslate,
+): RosterOption {
+  const rankKey = rosterRankMessageKey(candidate.fireRank, rankShown);
+  const team = candidate.teamName ?? noTeam;
+  // Both beside the name are words already, so their translation is the words.
+  const line = rosterLineOf(candidate.name, rankKey === null ? null : translate.word(rankKey), team, (words) => words);
+
+  return { id: candidate.id, label: rosterLineText(line, translate) };
+}
+
+/** Neither a member to take off nor one to put on was chosen, or one member on both sides. */
+export const ROSTER_REFUSED_MEMBER = 'member';
+
+/** The reason is blank or longer than {@link OVERRIDE_REASON_MAX} once trimmed, as 0026 checks it. */
+export const ROSTER_REFUSED_REASON = 'reason';
+
+export type RosterEntryRefusal = typeof ROSTER_REFUSED_MEMBER | typeof ROSTER_REFUSED_REASON;
+
+export type RosterEntry =
+  | {
+      readonly ok: true;
+      readonly memberOutId: string | null;
+      readonly memberInId: string | null;
+      readonly reason: string;
+    }
+  | { readonly ok: false; readonly code: RosterEntryRefusal };
+
+/**
+ * The browser's preflight of a roster change (story 3.6b), field by field:
+ * the members first — at least one chosen ({@link ROSTER_NOBODY} being
+ * "— nitko —"), and never one member on both sides, as 0026's
+ * `_member_present` and `_members_distinct` checks have it — then the reason,
+ * trimmed and then 1–200 characters (code points, as `char_length` counts
+ * them). The database's checks stay authoritative. What passes is what is
+ * sent: the trimmed reason, and `null` for the side not chosen. Taking off
+ * only removes, putting on only adds, and both replace, in one row.
+ */
+export function rosterEntryOf(memberOutId: string, memberInId: string, reason: string): RosterEntry {
+  if (memberOutId === ROSTER_NOBODY && memberInId === ROSTER_NOBODY) return { ok: false, code: ROSTER_REFUSED_MEMBER };
+  if (memberOutId === memberInId) return { ok: false, code: ROSTER_REFUSED_MEMBER };
+
+  const trimmed = reason.trim();
+  const length = [...trimmed].length;
+
+  if (length < OVERRIDE_REASON_MIN || length > OVERRIDE_REASON_MAX) return { ok: false, code: ROSTER_REFUSED_REASON };
+
+  return {
+    ok: true,
+    memberOutId: memberOutId === ROSTER_NOBODY ? null : memberOutId,
+    memberInId: memberInId === ROSTER_NOBODY ? null : memberInId,
+    reason: trimmed,
+  };
+}
+
+/** What a roster change's removal names (story 3.6b): the change, and the team and date it is on. */
+export interface RosterRemovalTarget {
+  readonly change: DayDetailRosterChange;
+  readonly teamName: string;
+  readonly date: string;
+}
+
+/** The listed roster change `overrideId` on `detail` — applied, pending or inert — or `null` for none. */
+export function rosterRemovalTargetOf(detail: DayDetail | null, overrideId: string | null): RosterRemovalTarget | null {
+  if (detail === null || overrideId === null) return null;
+
+  const change = [...detail.rosterChanges, ...detail.rosterPending, ...detail.rosterInert].find(
+    (one) => one.id === overrideId,
+  );
+
+  return change === undefined ? null : { change, teamName: detail.teamName, date: detail.date };
 }

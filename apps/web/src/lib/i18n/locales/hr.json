@@ -64,7 +64,35 @@
         "added": "Dodano: {name}",
         "removed": "Uklonjeno: {name}",
         "replaced": "Zamjena: {out} → {in}",
-        "pendingHeading": "Promjena sastava čeka pregled"
+        "pendingHeading": "Promjena sastava čeka pregled",
+        "inertHeading": "Promjena sastava se ne primjenjuje",
+        "set": {
+          "heading": "Promjena sastava",
+          "out": "Skida se",
+          "in": "Dolazi",
+          "none": "— nitko —",
+          "reason": "Razlog",
+          "save": "Spremi promjenu",
+          "saving": "Spremanje…",
+          "noTeam": "bez smjene"
+        },
+        "remove": {
+          "action": "Ukloni promjenu",
+          "prompt": "Ukloniti promjenu „{change}” za {team} · {date}? Sastav se vraća prema rotaciji.",
+          "confirm": "Ukloni",
+          "cancel": "Odustani od uklanjanja",
+          "removing": "Uklanjanje…"
+        },
+        "saved": "Promjena sastava je spremljena.",
+        "removedDone": "Promjena sastava je uklonjena.",
+        "refused": {
+          "member": "Odaberi koga skidaš, koga dodaješ ili oboje.",
+          "reason": "Upiši razlog, 1–200 znakova.",
+          "taken": "Taj je član već u promjeni za ovu smjenu. Osvježi prikaz.",
+          "gone": "Promjena je već uklonjena.",
+          "denied": "Ne možeš mijenjati sastav. Za to trebaš ovlasti administratora.",
+          "failed": "Promjena nije uspjela. Pokušaj ponovno."
+        }
       },
       "override": {
         "heading": "Izmjena",

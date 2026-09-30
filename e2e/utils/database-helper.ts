@@ -470,8 +470,9 @@ export interface SeededRosterOverride {
 /**
  * A roster override on `teamId`'s shift on `date` (story 3.6a): the member
  * named `outName` taken off and the one named `inName` put on — either
- * `null` — attributed to the run's admin, in SQL; no product surface writes
- * one yet (3.6b). Written now, after the seeded rotation, so it is in force.
+ * `null` — attributed to the run's admin, in SQL, as the admin's form (story
+ * 3.6b) would write it; an inert one, too, which the form never offers.
+ * Written now, after the seeded rotation, so it is in force.
  * Call it after {@link seedTeamRotation}, under the same hold;
  * {@link removeSeededRotation} deletes it.
  */
@@ -543,6 +544,26 @@ export async function removeOverrideInSql(rotation: SeededRotation, teamId: stri
       [rotation.organizationId, teamId, date],
     );
     if (rowCount !== 1) throw new Error('E2E: no live shift-type override to remove');
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Soft-removes every live roster override of `teamId` on `date` in SQL,
+ * attributed to its own author (story 3.6b) — as another admin's removal
+ * landing while the screen still shows it. {@link removeSeededRotation}
+ * deletes it.
+ */
+export async function removeRosterOverridesInSql(rotation: SeededRotation, teamId: string, date: string): Promise<void> {
+  const client = await connect();
+  try {
+    const { rowCount } = await client.query(
+      `update roster_overrides set removed_by = created_by, removed_at = now()
+        where organization_id = $1 and team_id = $2 and date = $3::date and removed_at is null`,
+      [rotation.organizationId, teamId, date],
+    );
+    if ((rowCount ?? 0) < 1) throw new Error('E2E: no live roster override to remove');
   } finally {
     await client.end();
   }

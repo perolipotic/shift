@@ -35,7 +35,14 @@ import { t } from '@/lib/i18n';
  * refusal is the form's own `Notice`, inside the Dialog. Neutral: never
  * `destructive` and never the accent.
  */
-export function OverrideSetForm({ form }: { readonly form: OverrideFormState }): ReactNode {
+export function OverrideSetForm({
+  form,
+  busy,
+}: {
+  readonly form: OverrideFormState;
+  /** The roster form's write is in flight (story 3.6b): nothing here may start one. */
+  readonly busy: boolean;
+}): ReactNode {
   const { typeField, reasonField, pending, failure, options, submit } = form;
   const reasonRefused = failure === OVERRIDE_REFUSED_REASON;
   const typeRefused = failure !== null && !reasonRefused;
@@ -94,7 +101,7 @@ export function OverrideSetForm({ form }: { readonly form: OverrideFormState }):
           </Notice>
         )}
         <DialogFooter>
-          <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
+          <Button className="h-11" type="submit" disabled={pending || busy} aria-busy={pending}>
             {pending ? t('kalendar.detail.override.set.saving') : t('kalendar.detail.override.set.save')}
           </Button>
         </DialogFooter>
@@ -104,7 +111,14 @@ export function OverrideSetForm({ form }: { readonly form: OverrideFormState }):
 }
 
 /** The admin's way to remove the day's override: it opens the confirmation. */
-export function OverrideRemoveAction({ form }: { readonly form: OverrideFormState }): ReactNode {
+export function OverrideRemoveAction({
+  form,
+  busy,
+}: {
+  readonly form: OverrideFormState;
+  /** The roster form's write is in flight (story 3.6b). */
+  readonly busy: boolean;
+}): ReactNode {
   const { removeAction, pending, openRemove } = form;
 
   return (
@@ -114,7 +128,7 @@ export function OverrideRemoveAction({ form }: { readonly form: OverrideFormStat
         className="h-11"
         type="button"
         variant="outline"
-        disabled={pending}
+        disabled={pending || busy}
         onClick={openRemove}
       >
         {t('kalendar.detail.override.remove.action')}
@@ -169,9 +183,12 @@ export function OverrideDoneNotice({ form }: { readonly form: OverrideFormState 
 export function OverrideRemoveConfirm({
   form,
   detail,
+  busy,
 }: {
   readonly form: OverrideFormState;
   readonly detail: DayDetail | null;
+  /** The roster form's write is in flight (story 3.6b). */
+  readonly busy: boolean;
 }): ReactNode {
   const { confirming, pending, removeFailure, removeCancel, cancelRemove, remove } = form;
   const override = overrideRemovalTargetOf(detail);
@@ -200,7 +217,7 @@ export function OverrideRemoveConfirm({
           className="h-11"
           type="button"
           variant="outline"
-          disabled={pending}
+          disabled={pending || busy}
           onClick={cancelRemove}
         >
           {t('kalendar.detail.override.remove.cancel')}
@@ -208,7 +225,7 @@ export function OverrideRemoveConfirm({
         <Button
           className="h-11"
           type="button"
-          disabled={pending}
+          disabled={pending || busy}
           aria-busy={pending}
           onClick={() => {
             void remove();

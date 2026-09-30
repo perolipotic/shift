@@ -472,9 +472,13 @@ development_status:
   # migration 0022's definers (spec-3-5c-override-disposition-on-rotation-change.md).
   3-5-an-admin-changes-a-team-s-shift-type-on-one-date: done
   # Story 3.6 is split (2026-09-30): 3.6a records and shows roster overrides
-  # (spec-3-6a-roster-override-record-and-display.md); 3.6b adds the admin's
-  # add, remove and replace form and the removal.
-  3-6-an-admin-adds-removes-or-replaces-someone-on-a-shift: in-progress
+  # (spec-3-6a-roster-override-record-and-display.md); 3.6b has landed: the
+  # admin's add, remove and replace form in the day detail (the plain insert,
+  # candidates against the default roster only), the inert changes listed to
+  # the admin, and the removal through migration 0027's definer
+  # `remove_roster_override` (spec-3-6b-roster-override-form.md). Builder
+  # disposition of pending roster overrides stays deferred (deferred-work.md).
+  3-6-an-admin-adds-removes-or-replaces-someone-on-a-shift: review
   epic-3-retrospective: optional
 
   epic-4: backlog

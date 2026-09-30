@@ -1654,6 +1654,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // and an atomic amend that soft-removes and inserts, on the same attributes.
     { name: 'confirm_shift_type_override', argumentCount: 1 },
     { name: 'amend_shift_type_override', argumentCount: 3 },
+    // STORY 3.6b. The roster override's soft-remove, on 3.5b's attributes.
+    { name: 'remove_roster_override', argumentCount: 1 },
     // 0023. The lock is taken from a trigger every writer fires, and the
     // last-admin re-check reads `members` and the status history past row
     // level security, as 0002's trigger does, on the same attributes.
@@ -1744,6 +1746,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 3.5c. The confirmation and the amend, on the removal's terms.
     { name: 'confirm_shift_type_override', argumentCount: 1, expected: ['authenticated'] },
     { name: 'amend_shift_type_override', argumentCount: 3, expected: ['authenticated'] },
+    // STORY 3.6b. The roster override's removal, on 3.5b's removal's terms.
+    { name: 'remove_roster_override', argumentCount: 1, expected: ['authenticated'] },
     // The zero-admin trigger function. Nothing calls it by hand and Postgres
     // checks EXECUTE when the trigger is created, not when it fires, so it
     // needs no grantee at all: its owner, and nobody else (0020). The

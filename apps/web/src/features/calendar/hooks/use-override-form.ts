@@ -35,7 +35,9 @@ import { supabaseClient } from '@/lib/supabase/client';
  * removal are offered only while `snapshot.viewer.role` is `admin`; the
  * insert policy and the removal function refuse everyone else anyway.
  *
- * ONE WRITE AT A TIME. `writing` latches a second submit, and `pending` keeps
+ * ONE WRITE AT A TIME, in the whole day detail: `writing` latches a second
+ * submit, and the roster form (story 3.6b) takes the same latch as `latch`,
+ * so neither form starts a write while the other's is in flight. `pending` keeps
  * the day detail and the confirmation from being dismissed, and their buttons
  * disabled, until the write has settled.
  *
@@ -189,6 +191,9 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
   function openRemove(): void {
     if (writing.current) return;
 
+    // What the last write said belongs to it, not to the removal now armed.
+    setFailure(null);
+    setDone(null);
     setRemoveFailure(null);
     setConfirming(true);
   }
@@ -208,6 +213,7 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
     const projectedTypeName = override.projectedTypeName;
 
     writing.current = true;
+    setFailure(null);
     setRemoveFailure(null);
     setDone(null);
     setPending(true);
@@ -253,6 +259,7 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
   }
 
   return {
+    latch: writing,
     typeField,
     reasonField,
     removeAction,

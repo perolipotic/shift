@@ -565,9 +565,6 @@
   evidence: Raised by the fix-rotation-orphans review (2026-09-29). `0025` bounds the steps, the assignments and the overrides (pending only), from a horizon of yesterday or the earliest pending override's date. The history stays whole because 2.6's `Povijest rotacije` lists every saved change, the previous ones included, and 3.5c judges an override pending from its governing version's save time (the client re-derives it from `rotation_history`). Six columns per version, no step and no anchor, so it is small at pilot scale. Bounding it means paging the history list (a separate read and key for 2.6) and having 3.5c's pending rule come from the server instead of from every stamp, which `rotation_overrides_in_view` already computes. An undisposed pending override is the admin's to confirm, amend or discard, and the builder lists it.
 
 - source_spec: none
-  summary: Story 3.6b — the admin's add, remove and replace form for roster overrides in the day detail (candidates shown with rank · position, information only), and undoing a roster override through a definer soft-remove.
-  evidence: Split from Story 3.6 by the human on 2026-09-30, as 3.5 was split into 3.5a and 3.5b. 3.6a records and displays roster overrides; 3.6b adds the write path.
-- source_spec: none
   summary: List pending roster overrides in the rotation builder's "Izmjene za pregled" card for confirm, amend or discard, as 3.5c does for shift-type overrides.
   evidence: The human decided on 2026-09-30 that 3.6 reuses 3.5c's derived pending rule for roster overrides: a pending one is not applied, the day detail flags it and the admin may only remove it. Disposition in the builder is deferred to a later story.
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-6a-roster-override-record-and-display.md`
@@ -576,6 +573,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-6a-roster-override-record-and-display.md`
   summary: The override reason checks (0019 and 0026) trim with `[[:space:]]`, so a reason of only NBSP or other Unicode white space passes, unlike `name_key` since 0024.
   evidence: Raised by the 3.6a review (2026-09-30). `char_length(regexp_replace(reason, '^[[:space:]]+|[[:space:]]+$', ''))` does not strip U+00A0 or U+2003; the tests cover only ASCII space, tab and newline. 0026 copies 0019's check, so both tables share the gap.
-- source_spec: `_bmad-output/implementation-artifacts/spec-3-6a-roster-override-record-and-display.md`
-  summary: The roster applies rule judges every override against the default roster only, so a second override chained on the first (A→B, then B→C) is inert; 3.6b's form must offer changes against the default roster, or the rule must fold overrides in order.
-  evidence: Raised by the 3.6a review (2026-09-30). `rosterOverrideApplies` checks the out-member against `shiftRoster` and never against the roster after other overrides. With only seeds writing that cannot happen yet; 3.6b's form decides whether a correction is "remove the first, add a new one" or a chained change.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-3-6b-roster-override-form.md`
+  summary: The override soft-remove definers (0021 `remove_shift_type_override`, 0027 `remove_roster_override`) check `current_member_access()` without taking 0023's per-organization lock, so a removal racing the caller's own demotion or deactivation can still land.
+  evidence: 0023's `serialize_organization_writes` triggers cover members, status and membership writes only; neither definer takes the lock before its admin check (the review of 3.6b, 2026-09-30).

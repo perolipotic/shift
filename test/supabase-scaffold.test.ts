@@ -361,9 +361,9 @@ describe('the access-control migration', () => {
       'organizations_select_own_organization',
       'organizations_update_by_own_active_admin',
       // STORY 3.6a, and TWO, as 3.5a's: read and insert, both an active
-      // admin's alone. No update and no delete policy: removal is story
-      // 3.6b's, and members read the live rows through
-      // `calendar_roster_overrides()`.
+      // admin's alone. No update and no delete policy: story 3.6b removes a
+      // roster override through 0027's definer `remove_roster_override()`,
+      // and members read the live rows through `calendar_roster_overrides()`.
       'roster_overrides_insert_by_own_active_admin',
       'roster_overrides_select_by_own_active_admin',
       // STORY 2.3a, and THREE for the reason the membership table has three:
@@ -2067,7 +2067,7 @@ describe('the access-control migration', () => {
     for (const verb of ['update', 'delete', 'all']) {
       expect(
         policies.filter((declaration) => new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration)),
-        `a policy opens ${verb} on roster_overrides; removal is story 3.6b's`,
+        `a policy opens ${verb} on roster_overrides; removal is 0027's definer function alone (story 3.6b)`,
       ).toEqual([]);
     }
     for (const name of ['roster_overrides_select_by_own_active_admin', 'roster_overrides_insert_by_own_active_admin']) {
@@ -2132,6 +2132,52 @@ describe('the access-control migration', () => {
       /rotation_|team_membership_versions|member_status_versions/,
     );
     expect((migration.match(/create function/gi) ?? []).length, 'story 3.6a takes no RPC besides its read').toBe(1);
+  });
+
+  it('removes a roster override through one definer function that attributes the removal itself (story 3.6b)', () => {
+    const statements = migrationStatements();
+    const remove = /create function public\.remove_roster_override\(p_override_id uuid\)[\s\S]*?\$\$;/i.exec(
+      statements,
+    )?.[0];
+    expect(remove, 'remove_roster_override is not declared').toBeDefined();
+    expect(remove).toMatch(/returns void/i);
+    expect(remove).toMatch(/language plpgsql/i);
+    expect(remove).toMatch(/security definer/i);
+    expect(remove).toMatch(/set search_path = ''/);
+    expect(remove, 'the removal lost the claim pin').toMatch(
+      /nullif\(\(\(select auth\.jwt\(\)\) ->> 'organization_id'\), ''\)::uuid/,
+    );
+    expect(remove, 'the removal admits a caller who is no active admin').toMatch(
+      /from public\.current_member_access\(\) as access\s+where access\.organization_id = claimed\s+and access\.is_active\s+and access\.member_role = 'admin'/,
+    );
+    expect(remove, 'a refusal of the caller is not 42501').toMatch(
+      /errcode = 'insufficient_privilege',\s+message = 'ROSTER_OVERRIDE_REMOVAL_REFUSED'/,
+    );
+    expect(remove, 'a missing live row is not P0002').toMatch(
+      /errcode = 'no_data_found',\s+message = 'ROSTER_OVERRIDE_NOT_LIVE'/,
+    );
+    expect(remove, 'the removal is not attributed on the server').toMatch(
+      /update public\.roster_overrides o\s+set removed_by = auth\.uid\(\),\s+removed_at = now\(\)/,
+    );
+    expect(remove, 'the removal reaches a removed row or another tenant').toMatch(
+      /where o\.id = p_override_id\s+and o\.organization_id = claimed\s+and o\.removed_at is null/,
+    );
+    expect(remove, 'the removal hard-deletes').not.toMatch(/\bdelete\b/i);
+    for (const role of ['public', 'anon', 'service_role']) {
+      expect(statements).toContain(`revoke execute on function public.remove_roster_override(uuid) from ${role};`);
+    }
+    expect(statements).toContain('grant execute on function public.remove_roster_override(uuid) to authenticated;');
+    const migration = readFileSync(join(supabaseRoot, 'migrations', '0027_remove_roster_override.sql'), 'utf8').replaceAll(
+      /--[^\n]*/g,
+      '',
+    );
+    expect(migration, 'story 3.6b takes no trigger').not.toMatch(/create (or replace )?trigger/i);
+    expect(migration, 'story 3.6b writes or refers to a rotation, membership or status row').not.toMatch(
+      /rotation_|team_membership_versions|member_status_versions/,
+    );
+    expect(migration, 'story 3.6b changes a policy').not.toMatch(/\b(create|alter|drop) policy\b/i);
+    expect(migration, 'story 3.6b grants on a table').not.toMatch(/\bon table\b/i);
+    expect((migration.match(/create function/gi) ?? []).length, 'story 3.6b takes one function').toBe(1);
   });
 
   it('keeps a team name unique among active teams only, and never blank', () => {

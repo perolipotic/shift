@@ -1142,6 +1142,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
               'member_team_on',
               'member_team_version_on',
               'organization_today',
+              'remove_roster_override',
               'remove_shift_type_override',
               'rotation_assignment_latest_version',
               'rotation_assignment_on',
@@ -1188,6 +1189,9 @@ describe('the access-control layer is present, so nothing below passes vacuously
         // changes-the-value rule and the roster.
         'member_team_version_on',
         'organization_today',
+        // STORY 3.6b: an active admin's attributed soft-remove of a live
+        // roster override, copied from 3.5b's.
+        'remove_roster_override',
         // STORY 3.5b: the one function that writes — an active admin's
         // attributed soft-remove of a live override.
         'remove_shift_type_override',
@@ -15701,12 +15705,9 @@ describe('a roster override is recorded by an admin alone and read by every memb
         expect(outTwice.code, `${slug}: one member taken off one shift twice`).toBe('23505');
         expect(inTwice.code, `${slug}: one member put on one shift twice`).toBe('23505');
 
-        // Here the owner records the removal directly; story 3.6b decides how a session does.
-        await client.query('update roster_overrides set removed_by = $2, removed_at = now() where id = $1', [
-          first,
-          owner.authUserId,
-        ]);
+        // Story 3.6b's removal, as the admin: 0027's definer attributes it.
         await actAs(client, owner.authUserId, organization);
+        await removeRosterOverride(client, first);
         const second = await insertRosterOverride(client, { ...on, out: self.id, in: other.id });
         const read = await calendarRosterOverridesOf(client);
         await actAsOwner(client);
@@ -15845,6 +15846,249 @@ describe('a roster override is recorded by an admin alone and read by every memb
         const table = await restRows('roster_overrides?select=id', { token });
         expect(table.length > 0, `${slug}/${reader} reads the table`).toBe(reader === admin);
       }
+    },
+    20_000,
+  );
+});
+
+// ------------------------------------ story 3.6b: removing a roster override
+
+/**
+ * STORY 3.6b (`0027`). An active admin soft-removes a live roster override
+ * through `remove_roster_override()`, which attributes the removal itself;
+ * every other caller is refused, and nothing but that one row's `removed_by`
+ * and `removed_at` changes. Every SQL case runs in a rolled-back transaction;
+ * the REST cases name an id no roster override has, and so write nothing.
+ */
+
+/** `remove_roster_override(id)`, as whoever the connection currently is. */
+async function removeRosterOverride(client: Client, id: string): Promise<void> {
+  await client.query('select public.remove_roster_override($1::uuid)', [id]);
+}
+
+/** One roster override row, whole, as the owner sees it. */
+async function rosterOverrideRow(client: Client, id: string): Promise<Record<string, unknown> | undefined> {
+  const { rows } = await client.query<Record<string, unknown>>(
+    'select to_jsonb(o) as row from roster_overrides o where id = $1',
+    [id],
+  );
+  return rows[0]?.['row'] as Record<string, unknown> | undefined;
+}
+
+describe('a roster override is removed by an active admin alone, attributed on the server (story 3.6b)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'removes a $fixture replacement as its admin: attributed, gone from the read, written again, and every rotation, membership and status row byte-identical',
+    async ({ slug, admin, member, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const other = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+        const team = await seededTeam(client, organization, 'Smjena C');
+        const change = { organization, team, date: '2026-10-01', out: self.id, in: other.id, reason: 'Zamjena' };
+        const before = await scheduleRulesFingerprint(client);
+
+        await actAs(client, owner.authUserId, organization);
+        const first = await insertRosterOverride(client, change);
+        await actAsOwner(client);
+        const live = await rosterOverrideRow(client, first);
+        const afterInsert = await scheduleRulesFingerprint(client);
+        await actAs(client, owner.authUserId, organization);
+        await removeRosterOverride(client, first);
+        const read = await calendarRosterOverridesOf(client);
+        // RE-INSERT: the partial keys admit the same members on the shift again.
+        const second = await insertRosterOverride(client, change);
+        const again = await calendarRosterOverridesOf(client);
+        await actAsOwner(client);
+
+        const { rows } = await client.query<{ removedBy: string; recent: boolean; reason: string }>(
+          `select removed_by as "removedBy", removed_at > now() - interval '1 minute' as recent, reason
+             from roster_overrides where id = $1`,
+          [first],
+        );
+        expect(rows, `${slug}: the removal is not attributed to its caller`).toEqual([
+          { removedBy: owner.authUserId, recent: true, reason: 'Zamjena' },
+        ]);
+        // Nothing but the removal pair changed on the row.
+        const removed = await rosterOverrideRow(client, first);
+        const { removed_by: _liveBy, removed_at: _liveAt, ...liveRest } = live ?? {};
+        const { removed_by: _by, removed_at: _at, ...removedRest } = removed ?? {};
+        expect(live?.['removed_at'], `${slug}: the roster override was not live`).toBeNull();
+        expect(removedRest, `${slug}: a removal changed more than removed_by and removed_at`).toEqual(liveRest);
+        expect(read.map((row) => row['id']), `${slug}: a removed roster override is read`).not.toContain(first);
+        expect(again.map((row) => row['id']), `${slug}: the members cannot be changed again`).toContain(second);
+        expect(again.map((row) => row['id'])).not.toContain(first);
+        expect(afterInsert, `${slug}: an insert touched a rotation, membership or status row`).toBe(before);
+        expect(
+          await scheduleRulesFingerprint(client),
+          `${slug}: a removal touched a rotation, membership or status row`,
+        ).toBe(before);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a second removal of one $fixture roster override with P0002, and a removed row stays as it was',
+    async ({ slug, admin, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const other = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+        const team = await seededTeam(client, organization, 'Smjena A');
+
+        await actAs(client, owner.authUserId, organization);
+        const id = await insertRosterOverride(client, {
+          organization,
+          team,
+          date: '2026-10-01',
+          out: null,
+          in: other.id,
+          reason: 'x',
+        });
+        await removeRosterOverride(client, id);
+        await actAsOwner(client);
+        const removed = await rosterOverrideRow(client, id);
+
+        await actAs(client, owner.authUserId, organization);
+        const twice = await refusedThenContinue(client, () => removeRosterOverride(client, id));
+        const unknown = await refusedThenContinue(client, () =>
+          removeRosterOverride(client, '00000000-0000-4000-8000-000000000000'),
+        );
+        await actAsOwner(client);
+
+        expect(twice.code, `${slug}: a roster override was removed twice`).toBe('P0002');
+        expect(unknown.code, `${slug}: an unknown roster override was removed`).toBe('P0002');
+        expect(await rosterOverrideRow(client, id), `${slug}: a second removal changed the row`).toEqual(removed);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture member-role account, an inactive admin and a session with no claim with 42501, and changes nothing',
+    async ({ slug, admin, member, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const bystanding = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+        const other = await addThrowawayAdmin(client, organization);
+        const team = await seededTeam(client, organization, 'Smjena A');
+
+        await actAs(client, owner.authUserId, organization);
+        const id = await insertRosterOverride(client, {
+          organization,
+          team,
+          date: '2026-10-01',
+          out: null,
+          in: bystanding.id,
+          reason: 'x',
+        });
+        await actAsOwner(client);
+        await ownerVersion(client, {
+          organization,
+          member: other.id,
+          active: false,
+          from: await organizationDay(client, organization),
+          by: owner.authUserId,
+        });
+        const before = await rosterOverrideRow(client, id);
+
+        await actAs(client, self.authUserId, organization);
+        const asMember = await refusedThenContinue(client, () => removeRosterOverride(client, id));
+        await actAsOwner(client);
+        await actAs(client, other.authUserId, organization);
+        const asInactive = await refusedThenContinue(client, () => removeRosterOverride(client, id));
+        await actAsOwner(client);
+        await actAs(client, owner.authUserId, null);
+        const noClaim = await refusedThenContinue(client, () => removeRosterOverride(client, id));
+        await actAsOwner(client);
+
+        expect(asMember.code, `${slug}: a member-role account removed a roster override`).toBe('42501');
+        expect(asInactive.code, `${slug}: an inactive admin removed a roster override`).toBe('42501');
+        expect(noClaim.code, `${slug}: a session with no claim removed a roster override`).toBe('42501');
+        expect(await rosterOverrideRow(client, id), `${slug}: a refused removal changed the row`).toEqual(before);
+        expect(before?.['removed_at'], `${slug}: the roster override was not live`).toBeNull();
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'never lets a $fixture admin remove a $otherFixture roster override, under its own claim or a forged one',
+    async ({ slug, admin, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const foreignOwner = await memberByUsername(
+          client,
+          otherSlug,
+          FIXTURES.find((entry) => entry.slug === otherSlug)?.admin ?? '',
+        );
+        const foreignMember = await memberByUsername(
+          client,
+          otherSlug,
+          FIXTURES.find((entry) => entry.slug === otherSlug)?.member ?? '',
+        );
+        const foreignTeam = await seededTeam(client, foreignOwner.organizationId, 'Smjena A');
+        // The target is written here, as the other tenant's admin, so the case
+        // never rests on what that fixture happens to seed.
+        await actAs(client, foreignOwner.authUserId, foreignOwner.organizationId);
+        const id = await insertRosterOverride(client, {
+          organization: foreignOwner.organizationId,
+          team: foreignTeam,
+          date: '2026-10-07',
+          out: null,
+          in: foreignMember.id,
+          reason: 'x',
+        });
+        await actAsOwner(client);
+        const before = await rosterOverrideRow(client, id);
+        expect(before?.['removed_at'], `${otherSlug}'s roster override is not live`).toBeNull();
+
+        await actAs(client, owner.authUserId, owner.organizationId);
+        const ownClaim = await refusedThenContinue(client, () => removeRosterOverride(client, id));
+        await actAsOwner(client);
+        await actAs(client, owner.authUserId, foreignOwner.organizationId);
+        const forged = await refusedThenContinue(client, () => removeRosterOverride(client, id));
+        await actAsOwner(client);
+
+        // Another tenant's id is indistinguishable from none under one's own
+        // claim; a forged claim is refused before any row is looked at.
+        expect(ownClaim.code, `${slug}: removed a roster override of ${otherSlug}`).toBe('P0002');
+        expect(forged.code, `${slug}: a forged claim removed a roster override of ${otherSlug}`).toBe('42501');
+        expect(await rosterOverrideRow(client, id), `${slug}: ${otherSlug}'s roster override changed`).toEqual(before);
+      });
+    },
+  );
+
+  it.skipIf(noApi)('refuses an anonymous caller the removal', async () => {
+    const response = await rest('rpc/remove_roster_override', {
+      method: 'POST',
+      body: { p_override_id: '00000000-0000-4000-8000-000000000000' },
+    });
+    expect(response.status, 'an anonymous caller reached the removal').toBe(401);
+    const refusal = await restRefusal(response);
+    expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
+    expect(refusal.message).toBe('permission denied for function remove_roster_override');
+  });
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'answers the $fixture roster removal over PostgREST: 42501 to a member, P0002 to an admin naming no live roster override',
+    async ({ slug, admin, member }) => {
+      const body = { p_override_id: '00000000-0000-4000-8000-000000000000' };
+      const asMember = await rest('rpc/remove_roster_override', {
+        token: await tokenFor(member, slug),
+        method: 'POST',
+        body,
+      });
+      expect(asMember.ok, `${slug}: a member-role account reached the removal`).toBe(false);
+      expect((await restRefusal(asMember)).code).toBe('42501');
+
+      const asAdmin = await rest('rpc/remove_roster_override', {
+        token: await tokenFor(admin, slug),
+        method: 'POST',
+        body,
+      });
+      expect(asAdmin.ok, `${slug}: an unknown roster override was removed`).toBe(false);
+      expect((await restRefusal(asAdmin)).code).toBe('P0002');
     },
     20_000,
   );

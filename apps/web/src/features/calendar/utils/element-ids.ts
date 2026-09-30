@@ -48,3 +48,32 @@ export const OVERRIDE_REMOVE_PROMPT_ID = 'kalendar-override-remove-prompt';
 
 /** The removal confirmation's refusal. */
 export const OVERRIDE_REMOVE_ERROR_ID = 'kalendar-override-remove-error';
+
+/** The inert roster changes block's heading (story 3.6b), which names its list. */
+export const DAY_DETAIL_ROSTER_INERT_ID = 'kalendar-detail-roster-inert';
+
+/** The roster form's heading (story 3.6b), which names the form. */
+export const ROSTER_SET_HEADING_ID = 'kalendar-roster-set-heading';
+
+/** The roster form's "Skida se" `Select`, which its label names. */
+export const ROSTER_OUT_FIELD_ID = 'kalendar-roster-out';
+
+/** The roster form's "Dolazi" `Select`, which its label names. */
+export const ROSTER_IN_FIELD_ID = 'kalendar-roster-in';
+
+/** The roster form's reason `Input`, which its label names. */
+export const ROSTER_REASON_FIELD_ID = 'kalendar-roster-reason';
+
+/** The roster form's refusal, which the refused field is described by. */
+export const ROSTER_SET_ERROR_ID = 'kalendar-roster-set-error';
+
+/** The roster removal confirmation's prompt, which names its Dialog. */
+export const ROSTER_REMOVE_PROMPT_ID = 'kalendar-roster-remove-prompt';
+
+/** The roster removal's refusal. */
+export const ROSTER_REMOVE_ERROR_ID = 'kalendar-roster-remove-error';
+
+/** One roster change's line in the day detail (story 3.6b), which its removal is described by. */
+export function rosterChangeLineIdOf(overrideId: string): string {
+  return `kalendar-roster-change-${overrideId}`;
+}
