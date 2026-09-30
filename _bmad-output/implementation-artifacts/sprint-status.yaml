@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 2026-09-27
+last_updated: 2026-09-30
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -471,7 +471,10 @@ development_status:
   # builder's `Izmjene za pregled` to confirm, amend or discard, through
   # migration 0022's definers (spec-3-5c-override-disposition-on-rotation-change.md).
   3-5-an-admin-changes-a-team-s-shift-type-on-one-date: done
-  3-6-an-admin-adds-removes-or-replaces-someone-on-a-shift: backlog
+  # Story 3.6 is split (2026-09-30): 3.6a records and shows roster overrides
+  # (spec-3-6a-roster-override-record-and-display.md); 3.6b adds the admin's
+  # add, remove and replace form and the removal.
+  3-6-an-admin-adds-removes-or-replaces-someone-on-a-shift: in-progress
   epic-3-retrospective: optional
 
   epic-4: backlog

@@ -42,6 +42,8 @@ const DETAIL: DayDetail = {
   roster: [],
   override: null,
   pending: null,
+  rosterChanges: [],
+  rosterPending: [],
 };
 
 function tableAnswering(answer: OverrideWriteAnswer | Promise<never>): OverrideTable & { readonly sent: unknown[] } {

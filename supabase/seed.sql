@@ -22,8 +22,9 @@
 -- session to default from and is each fixture's own admin, and whose rows
 -- carry an explicit ascending `created_at` because this file runs in one
 -- transaction: the shift types and their versions (story 2.2a), the teams
--- and the rotation — pattern, steps and assignments (story 2.3a), and one
--- shift-type override per fixture (story 3.5a). No team membership is seeded.
+-- and the rotation — pattern, steps and assignments (story 2.3a), one
+-- shift-type override per fixture (story 3.5a), and one roster override per
+-- fixture (story 3.6a). No team membership is seeded.
 --
 -- Both fixtures are provisioned the way a real organization is — see
 -- `supabase/operator/provision-organization.sql`, which carries the same
@@ -44,10 +45,11 @@
 --   organizations -> members -> teams -> team_membership_versions
 --   -> hour_bands -> shift_types -> shift_type_versions
 --   -> rotation_patterns -> rotation_steps -> rotation_assignments
---   -> shift_type_overrides -> leave_records
+--   -> shift_type_overrides -> roster_overrides -> leave_records
 -- Attribution comes from column defaults (AD-11), so inserts here must not
 -- forge created_by or created_at — except the teams, the shift types and their
--- versions, the rotation and the shift-type override, as the header explains.
+-- versions, the rotation, the shift-type override and the roster override, as
+-- the header explains.
 
 insert into organizations (
   slug, name, short_name, description, address, contact_email,
@@ -304,6 +306,33 @@ select organizations.id,
                   and shift_types.name = 'Noć'
  where organizations.slug = 'dvd-kastel-novi';
 
+-- Story 3.6a: one roster override, attributed to the admin and written after
+-- the rotation, so it is in force. A replacement: on Smjena A's 2026-09-14
+-- shift (Noć, by the override above), Ana Kovač is taken off and Marko Novak
+-- put on, in one row. No membership is seeded, so Ana is on no default roster
+-- and the domain leaves it INERT: the record is the fixture, not a changed
+-- shift. The rotation, membership and status rows are untouched (CAP-12).
+insert into roster_overrides (
+  organization_id, team_id, date, member_out_id, member_in_id, reason, created_by, created_at
+)
+select organizations.id,
+       teams.id,
+       date '2026-09-14',
+       member_out.id,
+       member_in.id,
+       'Zamjena zbog bolovanja.',
+       (select auth_user_id from members
+         where organization_id = organizations.id and username = 'ivan.maric'),
+       now() + interval '11 milliseconds'
+  from organizations
+  join teams on teams.organization_id = organizations.id
+            and teams.name = 'Smjena A'
+  join members member_out on member_out.organization_id = organizations.id
+                         and member_out.username = 'ana.kovac'
+  join members member_in on member_in.organization_id = organizations.id
+                        and member_in.username = 'marko.novak'
+ where organizations.slug = 'dvd-kastel-novi';
+
 
 -- ===========================================================================
 -- Fixture 2 — the UJ-5 security organization
@@ -558,3 +587,25 @@ select organizations.id,
                   and shift_types.name = 'Jutarnja'
  where organizations.slug = 'zastita-split';
 
+-- Story 3.6a: one roster override, attributed to the admin and written after
+-- the rotation. An addition alone: Tomislav Jurić is put on Smjena B's
+-- 2026-09-14 shift (Jutarnja, by the override above), the pilot's replacement
+-- turned into its other shape. He is on no team, so it applies.
+insert into roster_overrides (
+  organization_id, team_id, date, member_out_id, member_in_id, reason, created_by, created_at
+)
+select organizations.id,
+       teams.id,
+       date '2026-09-14',
+       null,
+       member_in.id,
+       'Pojačanje za izvanredni događaj.',
+       (select auth_user_id from members
+         where organization_id = organizations.id and username = 'josip.peric'),
+       now() + interval '11 milliseconds'
+  from organizations
+  join teams on teams.organization_id = organizations.id
+            and teams.name = 'Smjena B'
+  join members member_in on member_in.organization_id = organizations.id
+                        and member_in.username = 'tomislav.juric'
+ where organizations.slug = 'zastita-split';

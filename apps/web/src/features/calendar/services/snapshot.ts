@@ -1,10 +1,12 @@
-import type {
-  MembershipVersion,
-  RotationAssignment,
-  RotationStep,
-  RotationVersionStamp,
-  ShiftTypeOverride,
-  StatusVersion,
+import {
+  checkRosterOverrides,
+  type MembershipVersion,
+  type RosterOverride,
+  type RotationAssignment,
+  type RotationStep,
+  type RotationVersionStamp,
+  type ShiftTypeOverride,
+  type StatusVersion,
 } from '@shift/domain';
 import type { Session } from '@supabase/supabase-js';
 import { queryOptions } from '@tanstack/react-query';
@@ -80,7 +82,15 @@ import { TEAMS_COLUMNS, teamRowOf, type TeamRow } from '@/features/teams/service
  * key. Since story 3.5c it answers `confirmed_at` too: when an admin last
  * confirmed the override after a rotation change.
  *
- * `select` AND TWO `rpc`s, AND NOTHING ELSE.
+ * THE ROSTER OVERRIDES (story 3.6a). The table is an admin's alone (0026), so
+ * every member reads the LIVE roster overrides through
+ * `calendar_roster_overrides()`: each one's team, date, the member taken off
+ * and the member put on, reason, time, and its author as a member id. A
+ * third rpc beside the select, under the same key. Whether one applies, and
+ * whether it is pending review, is the domain's (`rosterOn`,
+ * `overrideStandingOf`).
+ *
+ * `select` AND THREE `rpc`s, AND NOTHING ELSE.
  */
 
 /** The relation the read starts from: the caller's own organization. */
@@ -109,6 +119,9 @@ export const CALENDAR_MEMBERS_FUNCTION = 'calendar_members';
 
 /** The function the live shift-type overrides are read through (0019). */
 export const CALENDAR_OVERRIDES_FUNCTION = 'calendar_shift_type_overrides';
+
+/** The function the live roster overrides are read through (0026, story 3.6a). */
+export const CALENDAR_ROSTER_OVERRIDES_FUNCTION = 'calendar_roster_overrides';
 
 /** The embedded column the members embed is filtered by: the viewer's own row alone. */
 export const CALENDAR_VIEWER_COLUMN = 'members.auth_user_id';
@@ -168,15 +181,16 @@ export interface CalendarTable {
   select(columns: string, options: CalendarCountOptions): CalendarSelectFilter;
 }
 
-/** As much of the rpc's answer as this module reads. */
-export interface CalendarMembersAnswer {
+/** As much of any of the three read rpcs' answers as this module reads. */
+export interface CalendarRpcAnswer {
   readonly data: unknown;
   readonly error: CalendarReadError | null;
 }
 
+
 /** The members and overrides reads, named structurally so they can be stubbed. */
 export interface CalendarMembersRpc {
-  rpc(fn: string): PromiseLike<CalendarMembersAnswer>;
+  rpc(fn: string): PromiseLike<CalendarRpcAnswer>;
 }
 
 /**
@@ -191,6 +205,19 @@ export interface CalendarOverride extends ShiftTypeOverride {
   readonly createdAt: string;
   /** When an admin last confirmed it after a rotation change (story 3.5c), as answered; `null` for never. */
   readonly confirmedAt: string | null;
+  readonly authorMemberId: string | null;
+}
+
+/**
+ * One live roster override (0026, story 3.6a): on `date`, `memberOutId` was
+ * taken off the shift of `teamId` and `memberInId` put on it — either `null`,
+ * never both — for `reason`, saved at `createdAt` by the member
+ * `authorMemberId`, `null` when the author is no member of the organization.
+ */
+export interface CalendarRosterOverride extends RosterOverride {
+  readonly reason: string;
+  /** An instant, as the database answers it; formatted in the organization's zone. */
+  readonly createdAt: string;
   readonly authorMemberId: string | null;
 }
 
@@ -259,6 +286,12 @@ export interface CalendarSnapshot {
    * are applied.
    */
   readonly overrides: readonly CalendarOverride[];
+  /**
+   * Every live roster override, by team, date and id (story 3.6a). In force
+   * or pending review alike, applying or inert alike: which is which is the
+   * domain's, and only those in force reach a rule.
+   */
+  readonly rosterOverrides: readonly CalendarRosterOverride[];
 }
 
 // ------------------------------------------------------------- validation
@@ -299,7 +332,8 @@ type CalendarRefusal =
   | 'members'
   | 'memberships'
   | 'statuses'
-  | 'override';
+  | 'override'
+  | 'rosterOverride';
 
 function unavailable(reason: CalendarRefusal, detail?: unknown): CalendarOutcome {
   if (detail === undefined) console.error(CALENDAR_UNAVAILABLE, reason);
@@ -339,7 +373,10 @@ function embedded(organization: Record<string, unknown>, relation: string): read
  * answer lacks, with a malformed date, a reason that is not text, a
  * creation time that is not an instant, a confirmation time neither an
  * instant nor null, or an author neither text nor null,
- * or on a second override of one team and date or one id twice. What the database's keys
+ * or on a second override of one team and date or one id twice. Unavailable,
+ * too, on a roster overrides read that fails in any of those ways, or holds a
+ * row naming no member or one member twice, or a member taken off or put on
+ * one team's date twice (story 3.6a). What the database's keys
  * guarantee is re-checked, so a defect surfaces as the message, never as a
  * projection that throws.
  *
@@ -354,20 +391,22 @@ export async function readCalendar(
   session: () => Promise<Session | null>,
 ): Promise<CalendarOutcome> {
   let answered: CalendarAnswer;
-  let membersAnswered: CalendarMembersAnswer;
-  let overridesAnswered: CalendarMembersAnswer;
+  let membersAnswered: CalendarRpcAnswer;
+  let overridesAnswered: CalendarRpcAnswer;
+  let rosterOverridesAnswered: CalendarRpcAnswer;
 
   try {
     const current = await session();
 
     if (current === null) return unavailable('session');
 
-    [answered, membersAnswered, overridesAnswered] = await Promise.all([
+    [answered, membersAnswered, overridesAnswered, rosterOverridesAnswered] = await Promise.all([
       table
         .select(CALENDAR_COLUMNS, CALENDAR_COUNT)
         .filter(CALENDAR_VIEWER_COLUMN, CALENDAR_VIEWER_OPERATOR, current.user.id),
       membersRead.rpc(CALENDAR_MEMBERS_FUNCTION),
       membersRead.rpc(CALENDAR_OVERRIDES_FUNCTION),
+      membersRead.rpc(CALENDAR_ROSTER_OVERRIDES_FUNCTION),
     ]);
   } catch (cause) {
     return unavailable('rejected', cause);
@@ -503,6 +542,10 @@ export async function readCalendar(
 
   if (overrides === null) return unavailable('override');
 
+  const rosterOverrides = rosterOverridesOf(rosterOverridesAnswered, teamIds);
+
+  if (rosterOverrides === null) return unavailable('rosterOverride');
+
   types.sort(compareCreation);
 
   return {
@@ -519,8 +562,84 @@ export async function readCalendar(
       viewer,
       members,
       overrides,
+      rosterOverrides,
     },
   };
+}
+
+/** A member id as a roster override answers it: text, or `null`; `undefined` for neither. */
+function memberIdAt(row: Record<string, unknown>, column: string): string | null | undefined {
+  const value = row[column];
+
+  if (value === null) return null;
+
+  return typeof value === 'string' && value !== '' ? value : undefined;
+}
+
+/**
+ * The live roster overrides `calendar_roster_overrides()` answered, by team,
+ * date and id, or `null`: a malformed answer, an error, data that is not an
+ * array, a row that does not validate — no text id, a team the answer lacks,
+ * a malformed date, a member neither text nor null, no member at all or one
+ * member twice, a reason that is not text, a creation time that is not an
+ * instant, or an author neither text nor null — one id twice, or a member
+ * taken off or put on one team's date twice (0026's live keys). A member the
+ * members read does not name is kept: the detail names them as nobody. Only
+ * the eight columns are carried off a row.
+ */
+function rosterOverridesOf(answered: unknown, teamIds: ReadonlySet<string>): CalendarRosterOverride[] | null {
+  if (!isRecord(answered) || answered['error'] !== null) return null;
+
+  const rows = answered['data'];
+
+  if (!Array.isArray(rows)) return null;
+
+  const overrides: CalendarRosterOverride[] = [];
+
+  for (const row of rows as readonly unknown[]) {
+    if (!isRecord(row)) return null;
+
+    const id = textAt(row, 'id');
+    const teamId = textAt(row, 'team_id');
+    const date = textAt(row, 'date');
+    const memberOutId = memberIdAt(row, 'member_out_id');
+    const memberInId = memberIdAt(row, 'member_in_id');
+    const reason = row['reason'];
+    const createdAt = textAt(row, 'created_at');
+    const authorMemberId = memberIdAt(row, 'author_member_id');
+
+    if (id === null || teamId === null || !teamIds.has(teamId)) return null;
+    if (date === null || !isIsoDate(date)) return null;
+    if (memberOutId === undefined || memberInId === undefined || authorMemberId === undefined) return null;
+    if (memberOutId === memberInId) return null;
+    // Any text, as for a shift-type override: its content is 0026's check alone.
+    if (typeof reason !== 'string') return null;
+    if (createdAt === null || instantMicrosOf(createdAt) === null) return null;
+
+    overrides.push({ id, teamId, date, memberOutId, memberInId, reason, createdAt, authorMemberId });
+  }
+
+  if (new Set(overrides.map((override) => override.id)).size !== overrides.length) return null;
+
+  try {
+    checkRosterOverrides(overrides);
+  } catch {
+    return null;
+  }
+
+  return overrides.sort((left, right) =>
+    left.teamId !== right.teamId
+      ? left.teamId < right.teamId
+        ? -1
+        : 1
+      : left.date !== right.date
+        ? left.date < right.date
+          ? -1
+          : 1
+        : left.id < right.id
+          ? -1
+          : 1,
+  );
 }
 
 /**

@@ -28,6 +28,7 @@ import {
   teamLettersOf,
   phoneStoreOf,
   typeLettersOf,
+  type CalendarCell,
   type CalendarDay,
   type CalendarMonth,
   type PhoneMediaQuery,
@@ -90,6 +91,20 @@ async function snapshotOf(
   if (!outcome.ok) throw new Error(outcome.code);
 
   return outcome.snapshot;
+}
+
+/** A day's team, from its one shift (story 3.6a); with no roster override a day has at most one. */
+function soleTeamOf(day: CalendarDay): string | null {
+  if (day.shifts.length > 1) throw new Error(`${day.date} has ${String(day.shifts.length)} shifts`);
+
+  return day.shifts[0]?.teamId ?? null;
+}
+
+/** A day's cell, from its one shift. */
+function soleCellOf(day: CalendarDay): CalendarCell | null {
+  if (day.shifts.length > 1) throw new Error(`${day.date} has ${String(day.shifts.length)} shifts`);
+
+  return day.shifts[0]?.cell ?? null;
 }
 
 /** The day list of a month whose day list did not fail. */
@@ -512,8 +527,8 @@ describe('the day list (story 3.2a)', () => {
       expect(day.dayMonth).toBe(row.dayMonth);
       expect(day.weekday).toBe(row.weekday);
       expect(day.isToday).toBe(row.isToday);
-      expect(day.teamId).toBe(team);
-      expect(day.cell).toEqual(row.cells[column]);
+      expect(soleTeamOf(day)).toBe(team);
+      expect(soleCellOf(day)).toEqual(row.cells[column]);
     }
     expect(daysOf(month)!.filter((day) => day.isToday).map((day) => day.date)).toEqual([TODAY]);
     expect(calendarDayListOf(shown, shown.viewer, '2026-09', TODAY)).toEqual(daysOf(month));
@@ -528,8 +543,8 @@ describe('the day list (story 3.2a)', () => {
     for (const [index, day] of daysOf(month)!.entries()) {
       const column = day.date < '2026-10-15' ? 0 : 1;
 
-      expect(day.teamId, day.date).toBe(column === 0 ? 'pilot-smjena-a' : 'pilot-smjena-b');
-      expect(day.cell, day.date).toEqual(month.rows[index]!.cells[column]);
+      expect(soleTeamOf(day), day.date).toBe(column === 0 ? 'pilot-smjena-a' : 'pilot-smjena-b');
+      expect(soleCellOf(day), day.date).toEqual(month.rows[index]!.cells[column]);
     }
   });
 
@@ -539,8 +554,8 @@ describe('the day list (story 3.2a)', () => {
     });
     const september = daysOf(calendarMonthOf(left, { mjesec: '2026-09' }, TODAY))!;
 
-    expect(september.slice(0, 9).every((day) => day.teamId === 'pilot-smjena-a' && day.cell !== null)).toBe(true);
-    expect(september.slice(9).every((day) => day.teamId === null && day.cell === null)).toBe(true);
+    expect(september.slice(0, 9).every((day) => soleTeamOf(day) === 'pilot-smjena-a' && soleCellOf(day) !== null)).toBe(true);
+    expect(september.slice(9).every((day) => soleTeamOf(day) === null && soleCellOf(day) === null)).toBe(true);
     expect(daysOf(calendarMonthOf(left, { mjesec: '2026-10' }, TODAY))).toBeNull();
 
     const none = await snapshotOf(PILOT, { viewers: [viewerRow([])] });
@@ -563,8 +578,8 @@ describe('the day list (story 3.2a)', () => {
     const month = calendarMonthOf(archived, { mjesec: '2020-01' }, TODAY);
 
     expect(month.columns.map((column) => column.id)).not.toContain('pilot-smjena-x');
-    expect(daysOf(month)![0]!.teamId).toBe('pilot-smjena-x');
-    expect(daysOf(month)![0]!.cell?.name).toBe('Dan');
+    expect(soleTeamOf(daysOf(month)![0]!)).toBe('pilot-smjena-x');
+    expect(soleCellOf(daysOf(month)![0]!)?.name).toBe('Dan');
   });
 
   it('draws a day before the team has a rotation as the grid draws it: the mark', async () => {
@@ -575,7 +590,7 @@ describe('the day list (story 3.2a)', () => {
     const early = await snapshotOf(PILOT, { viewers: [viewerRow([membershipRow('pilot-smjena-a', '2019-12-01')])] });
     const days = daysOf(calendarMonthOf(early, { mjesec: '2019-12' }, TODAY))!;
 
-    expect(days.every((day) => day.cell?.name === null && day.cell.letter === null)).toBe(true);
+    expect(days.every((day) => soleCellOf(day)?.name === null && soleCellOf(day)?.letter === null)).toBe(true);
   });
 });
 
@@ -691,11 +706,11 @@ describe('modifiers and labels (story 3.2b)', () => {
       const cells = month.rows.flatMap((row) => row.cells);
       const days = daysOf(month) ?? [];
 
-      for (const cell of [...cells, ...days.map((day) => day.cell)]) {
+      for (const cell of [...cells, ...days.map((day) => soleCellOf(day))]) {
         if (cell !== null) expect(cell.modifiers).toEqual([]);
       }
       expect(legendOf(cells)).toEqual([]);
-      expect(legendOf(days.map((day) => day.cell))).toEqual([]);
+      expect(legendOf(days.map((day) => soleCellOf(day)))).toEqual([]);
     }
   });
 
@@ -767,9 +782,9 @@ describe('the overridden mark (story 3.5a)', () => {
     const snapshot = await overridden();
     const days = daysOf(calendarMonthOf(snapshot, { mjesec: '2020-01' }, TODAY))!;
 
-    expect(days[0]!.cell).toMatchObject({ name: 'Noć', modifiers: ['overridden'] });
-    expect(days.slice(1).every((day) => day.cell?.modifiers.length === 0)).toBe(true);
-    expect(legendOf(days.map((day) => day.cell))).toEqual(['overridden']);
+    expect(soleCellOf(days[0]!)).toMatchObject({ name: 'Noć', modifiers: ['overridden'] });
+    expect(days.slice(1).every((day) => soleCellOf(day)?.modifiers.length === 0)).toBe(true);
+    expect(legendOf(days.map((day) => soleCellOf(day)))).toEqual(['overridden']);
   });
 
   it('ignores an override on a day with no rotation: no mark, no legend', async () => {
@@ -813,7 +828,7 @@ describe('an override a rotation change left pending (story 3.5c)', () => {
     const days = daysOf(month)!;
     const day = days.find((one) => one.date === '2026-09-21');
 
-    expect(day?.cell?.modifiers).toEqual([]);
+    expect((day === undefined ? undefined : soleCellOf(day)?.modifiers)).toEqual([]);
     expect(month.rows.flatMap((row) => row.cells).every((cell) => cell.modifiers.length === 0)).toBe(true);
   });
 });
@@ -951,7 +966,7 @@ describe('the team filter (story 3.3a)', () => {
     const unfiltered = daysOf(calendarMonthOf(pilot, {}, TODAY));
 
     expect(unfiltered, 'the viewer is on no team, so the day list proves nothing').not.toBeNull();
-    expect(unfiltered!.every((day) => day.teamId === own)).toBe(true);
+    expect(unfiltered!.every((day) => soleTeamOf(day) === own)).toBe(true);
     for (const team of calendarMonthOf(pilot, {}, TODAY).filter.teams) {
       expect(daysOf(calendarMonthOf(pilot, { smjena: team.id }, TODAY)), team.id).toEqual(unfiltered);
     }
@@ -1078,11 +1093,11 @@ describe('the person filter (story 3.3b)', () => {
     for (const [index, day] of days.entries()) {
       const column = day.date < '2026-09-15' ? a : b;
 
-      expect(day.teamId, day.date).toBe(day.date < '2026-09-15' ? 'pilot-smjena-a' : 'pilot-smjena-b');
-      expect(day.cell, day.date).toEqual(grid.rows[index]!.cells[column]);
+      expect(soleTeamOf(day), day.date).toBe(day.date < '2026-09-15' ? 'pilot-smjena-a' : 'pilot-smjena-b');
+      expect(soleCellOf(day), day.date).toEqual(grid.rows[index]!.cells[column]);
     }
     expect(month.person.days.days).toEqual(
-      calendarDayListOf(colleagues, colleagues.members.find((one) => one.id === COLLEAGUE)!, '2026-09', TODAY),
+      calendarDayListOf(colleagues, { ...colleagues.members.find((one) => one.id === COLLEAGUE)!, memberId: COLLEAGUE }, '2026-09', TODAY),
     );
     // The grid is not narrowed by a person, and the viewer's own list is theirs.
     expect(month.columns).toEqual(grid.columns);
@@ -1230,13 +1245,13 @@ describe('the roster as at a date (story 3.4a)', () => {
     for (const [index, day] of days.entries()) {
       const inactive = day.date >= '2026-09-05' && day.date < '2026-09-20';
 
-      expect(day.teamId, day.date).toBe(inactive ? null : 'pilot-smjena-a');
-      expect(day.cell, day.date).toEqual(inactive ? null : month.rows[index]!.cells[column]);
+      expect(soleTeamOf(day), day.date).toBe(inactive ? null : 'pilot-smjena-a');
+      expect(soleCellOf(day), day.date).toEqual(inactive ? null : month.rows[index]!.cells[column]);
     }
     const returned = calendarMonthOf(snapshot, { mjesec: '2026-09', osoba: RETURNED }, TODAY).person;
 
     if (returned === null || !returned.days.ok) throw new Error('no day list');
-    expect(returned.days.days!.map((day) => day.teamId !== null)).toEqual(
+    expect(returned.days.days!.map((day) => soleTeamOf(day) !== null)).toEqual(
       datesOfSeptember().map((date) => date >= '2026-09-20'),
     );
   });

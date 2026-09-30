@@ -1,5 +1,6 @@
 import {
   overrideStandingOf,
+  overridesByTeamAndDate,
   rotationAssignmentOn,
   type OverrideStanding,
   type RotationAssignment,
@@ -694,6 +695,10 @@ export function overrideStandingOfSnapshot(
     ...override,
     writtenAt: instantMicrosOf(override.confirmedAt ?? override.createdAt) ?? Number.NaN,
   }));
+
+  // One live override per team and date is the shift-type layer's own
+  // precondition (story 3.6a moved it out of the shared pending rule).
+  overridesByTeamAndDate(overrides);
 
   return overrideStandingOf(stamps, overrides);
 }

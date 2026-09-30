@@ -1,6 +1,10 @@
 import type { Session } from '@supabase/supabase-js';
 
-import { CALENDAR_MEMBERS_FUNCTION, CALENDAR_OVERRIDES_FUNCTION } from '@/features/calendar/services/snapshot';
+import {
+  CALENDAR_MEMBERS_FUNCTION,
+  CALENDAR_OVERRIDES_FUNCTION,
+  CALENDAR_ROSTER_OVERRIDES_FUNCTION,
+} from '@/features/calendar/services/snapshot';
 import type { RotationAnswer, RotationTable } from '@/features/rotation/services/list';
 
 /**
@@ -329,6 +333,32 @@ export function overridesAnswerOf(overrides: readonly Row[] = []): { readonly da
   return { data: overrides, error: null };
 }
 
+/** One row of `calendar_roster_overrides()` (0026, story 3.6a). */
+export function calendarRosterOverrideRow(
+  id: string,
+  teamId: string,
+  date: string,
+  memberOutId: unknown,
+  memberInId: unknown,
+  options: { readonly reason?: unknown; readonly createdAt?: unknown; readonly author?: unknown } = {},
+): Row {
+  return {
+    id,
+    team_id: teamId,
+    date,
+    member_out_id: memberOutId,
+    member_in_id: memberInId,
+    reason: options.reason ?? 'Zamjena zbog bolovanja.',
+    created_at: options.createdAt ?? '2026-09-12T17:05:00+00:00',
+    author_member_id: options.author === undefined ? VIEWER_MEMBER : options.author,
+  };
+}
+
+/** `calendar_roster_overrides()`'s answer: by default none. */
+export function rosterOverridesAnswerOf(overrides: readonly Row[] = []): { readonly data: unknown; readonly error: null } {
+  return { data: overrides, error: null };
+}
+
 /** The session the calendar reads as: the viewer's. */
 export function viewerSession(authUserId = VIEWER_AUTH_USER): () => Promise<Session> {
   return () => Promise.resolve({ user: { id: authUserId } } as Session);
@@ -336,13 +366,15 @@ export function viewerSession(authUserId = VIEWER_AUTH_USER): () => Promise<Sess
 
 /**
  * A calendar table answering once with `answer`, the members rpc answering
- * with `members` and the overrides rpc with `overrides`, recording every
- * select, filter and rpc. It stands in for both of `readCalendar`'s sources.
+ * with `members`, the overrides rpc with `overrides` and the roster overrides
+ * rpc with `rosterOverrides` (story 3.6a), recording every select, filter and
+ * rpc. It stands in for both of `readCalendar`'s sources.
  */
 export function calendarTableOf(
   answer: unknown,
   members: unknown = membersAnswerOf(),
   overrides: unknown = overridesAnswerOf(),
+  rosterOverrides: unknown = rosterOverridesAnswerOf(),
 ): {
   readonly seen: unknown[][];
   select(columns: string, options: unknown): { filter(column: string, operator: string, value: string): Promise<never> };
@@ -355,9 +387,10 @@ export function calendarTableOf(
     rpc(fn) {
       seen.push(['rpc', fn]);
 
-      // The two functions the calendar may call (0018, 0019).
+      // The three functions the calendar may call (0018, 0019, 0026).
       if (fn === CALENDAR_MEMBERS_FUNCTION) return Promise.resolve(members as never);
       if (fn === CALENDAR_OVERRIDES_FUNCTION) return Promise.resolve(overrides as never);
+      if (fn === CALENDAR_ROSTER_OVERRIDES_FUNCTION) return Promise.resolve(rosterOverrides as never);
 
       throw new Error(`unexpected rpc ${fn}`);
     },

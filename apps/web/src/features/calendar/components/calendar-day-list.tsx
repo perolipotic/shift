@@ -45,7 +45,7 @@ function renderDayButton(
   );
 }
 
-function renderDay(openDay: OpenDay, day: CalendarDay, label: string | null): ReactNode {
+function renderDay(openDay: OpenDay, day: CalendarDay, labels: readonly (string | null)[]): ReactNode {
   return (
     <li
       key={day.date}
@@ -60,10 +60,18 @@ function renderDay(openDay: OpenDay, day: CalendarDay, label: string | null): Re
         <span className="block tabular-nums">{day.dayMonth}</span>
         <span className="block text-xs font-normal text-muted-foreground">{day.weekday}</span>
       </span>
-      {day.cell === null || day.teamId === null ? (
+      {day.shifts.length === 0 ? (
         <span className="text-sm text-muted-foreground">{t('kalendar.day.noTeam')}</span>
       ) : (
-        renderDayButton(openDay, day.teamId, day.date, day.cell, label)
+        // STORY 3.6a: one row per shift — the member's own team's, then each
+        // one a roster override put them on.
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          {day.shifts.map((shift, index) => (
+            <span key={shift.teamId} className="flex min-w-0">
+              {renderDayButton(openDay, shift.teamId, day.date, shift.cell, labels[index] ?? null)}
+            </span>
+          ))}
+        </span>
       )}
     </li>
   );
@@ -101,11 +109,11 @@ function renderDayList(
 
   return (
     <>
-      <CalendarLegend cells={days.days.map((day) => day.cell)} />
+      <CalendarLegend cells={days.days.flatMap((day) => day.shifts.map((shift) => shift.cell))} />
       <ol
         aria-labelledby={ofPerson ? `${PERSON_HEADING_ID} ${MONTH_HEADING_ID}` : MONTH_HEADING_ID}
         className="divide-y divide-border px-4 pb-4">
-        {days.days.map((day, index) => renderDay(openDay, day, labels[index] ?? null))}
+        {days.days.map((day, index) => renderDay(openDay, day, labels[index] ?? []))}
       </ol>
     </>
   );

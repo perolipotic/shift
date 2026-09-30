@@ -7,8 +7,13 @@
  * {@link projectedShiftTypeOn}, replaced by the team's override on that date
  * when there is one ({@link scheduledShiftTypeOn}). Each cell carries the
  * projected type beside the scheduled one, so with no overrides the month IS
- * the pure projection, day by day. Roster overrides (story 3.6) are not a
- * shift type and do not reach this module.
+ * the pure projection, day by day.
+ *
+ * ROSTER OVERRIDES (story 3.6a) change who works a shift, never its type. A
+ * cell says whether one applies on it (`rosterChanged`), by `rosterOn`'s rule,
+ * and a member's month follows them: a working shift of their own team they
+ * were taken off is dropped, and a shift they were put on appears. With none,
+ * every cell and every member's month is the pure projection's.
  *
  * A month is a `YYYY-MM` string in years 0001–9999, as a date is a
  * `YYYY-MM-DD` one: civil, never an instant. The functions return ids, never
@@ -20,7 +25,18 @@
 import { checkDate, civilDayNumber, dateOfCivilDay } from './calendar.js';
 import { applyOverride, overridesByTeamAndDate, type ScheduledShiftType, type ShiftTypeOverride } from './overrides.js';
 import { projectedShiftTypeOn, type RotationAssignment, type RotationStep } from './projection.js';
-import { orderedVersions, versionOn, type MembershipVersion, type StatusVersion } from './roster.js';
+import {
+  orderedVersions,
+  rosterOverrideApplies,
+  rosterOverridesAt,
+  rosterOverridesByTeamAndDate,
+  shiftRoster,
+  versionOn,
+  type MembershipVersion,
+  type RosterMember,
+  type RosterOverride,
+  type StatusVersion,
+} from './roster.js';
 
 const MONTH_SHAPE = /^(\d{4})-(\d{2})$/;
 
@@ -34,18 +50,26 @@ export interface ScheduleInput {
   readonly steps: readonly RotationStep[];
   /** Every live shift-type override, of any team and date; at most one per team and date. */
   readonly overrides: readonly ShiftTypeOverride[];
+  /** Every member, whose default rosters decide whether a roster override applies (story 3.6a). */
+  readonly members: readonly RosterMember[];
+  /** Every live roster override IN FORCE, of any team and date (story 3.6a). */
+  readonly rosterOverrides: readonly RosterOverride[];
+  /** The ids of the working shift types: a roster override applies only on a working shift. */
+  readonly workingShiftTypeIds: readonly string[];
 }
 
 /**
  * One team on one date: the shift type it works and the one its rotation
- * projects — both `null` when no rotation version is in effect yet — and
- * whether an override replaced the projected type.
+ * projects — both `null` when no rotation version is in effect yet — whether
+ * an override replaced the projected type, and whether a roster override
+ * applies on it (story 3.6a).
  */
 export interface ScheduleCell {
   readonly teamId: string;
   readonly shiftTypeId: string | null;
   readonly projectedShiftTypeId: string | null;
   readonly overridden: boolean;
+  readonly rosterChanged: boolean;
 }
 
 /** One date of a month, with a cell per team in the order asked for. */
@@ -122,10 +146,15 @@ export function adjacentMonth(month: string, step: 1 | -1): string | null {
  * for that team's versions and overrides on that date — `null` before its
  * first version, whatever override that date has.
  *
+ * `rosterChanged` is true exactly where a roster override applies: the cell's
+ * type is a working one, and the override passes `rosterOn`'s rule against
+ * the team's default roster on that date.
+ *
  * @throws RangeError when `month` is not a `YYYY-MM` in years 0001–9999, when
  *   a team is asked for twice, when an override's date is not a calendar date
- *   or two overrides name one team and date, or on any precondition of
- *   {@link projectedShiftTypeOn} for a team asked for.
+ *   or two overrides name one team and date, on any precondition of
+ *   {@link projectedShiftTypeOn} for a team asked for, and on any of
+ *   `checkRosterOverrides` or `shiftRoster`.
  */
 export function scheduleOfMonth(input: ScheduleInput, month: string): readonly ScheduleRow[] {
   const dates = datesOfMonth(month);
@@ -141,17 +170,43 @@ export function scheduleOfMonth(input: ScheduleInput, month: string): readonly S
     versionsOf.get(assignment.teamId)?.push(assignment);
   }
   const overrides = overridesByTeamAndDate(input.overrides);
+  const rosterOverrides = rosterOverridesByTeamAndDate(input.rosterOverrides);
+  const working = new Set(input.workingShiftTypeIds);
 
   return dates.map((date) => ({
     date,
-    cells: input.teamIds.map((teamId) =>
-      cellOf(teamId, applyOverride(overrides, teamId, date, projectedShiftTypeOn(versionsOf.get(teamId) ?? [], input.steps, date))),
-    ),
+    cells: input.teamIds.map((teamId) => {
+      const scheduled = applyOverride(overrides, teamId, date, projectedShiftTypeOn(versionsOf.get(teamId) ?? [], input.steps, date));
+      const changed = appliedRosterOverrides(rosterOverrides, input.members, working, scheduled, teamId, date).length > 0;
+      return { ...cellOf(teamId, scheduled), rosterChanged: changed };
+    }),
   }));
+}
+
+/**
+ * The roster overrides of `teamId` on `date` that APPLY: none unless the
+ * scheduled type is a working one, and of the rest those passing the rule of
+ * `rosterOn` against the default roster — computed only when there is one to
+ * judge.
+ */
+function appliedRosterOverrides(
+  indexed: ReadonlyMap<string, readonly RosterOverride[]>,
+  members: readonly RosterMember[],
+  working: ReadonlySet<string>,
+  scheduled: ScheduledShiftType | null,
+  teamId: string,
+  date: string,
+): readonly RosterOverride[] {
+  const candidates = rosterOverridesAt(indexed, teamId, date);
+  if (candidates.length === 0 || scheduled === null || !working.has(scheduled.shiftTypeId)) return [];
+  const base = shiftRoster(members, teamId, date);
+  return candidates.filter((override) => rosterOverrideApplies(base, members, override));
 }
 
 /** What one member's month is derived from: their membership and status histories and the configuration. */
 export interface MemberScheduleInput {
+  /** The member's id, which a roster override names (story 3.6a). */
+  readonly memberId: string;
   /** Every membership version of ONE member, in any order. */
   readonly memberships: readonly MembershipVersion[];
   /** Every status version of the same member, in any order; none means always active. */
@@ -162,20 +217,43 @@ export interface MemberScheduleInput {
   readonly steps: readonly RotationStep[];
   /** Every live shift-type override, of any team and date; at most one per team and date. */
   readonly overrides: readonly ShiftTypeOverride[];
+  /**
+   * Every member, this one included, whose default rosters decide whether a
+   * roster override applies (story 3.6a): a replacement applies to the member
+   * put on only if the member taken off is on the default roster.
+   */
+  readonly members: readonly RosterMember[];
+  /** Every live roster override IN FORCE, of any team and date (story 3.6a). */
+  readonly rosterOverrides: readonly RosterOverride[];
+  /** The ids of the working shift types: a roster override applies only on a working shift. */
+  readonly workingShiftTypeIds: readonly string[];
 }
 
 /**
- * One date of a member's month: the team they belong to on it (`null` when
- * none, or when the member is inactive on it), the shift type that team works
- * and the one its rotation projects (both `null` when there is no team or no
- * rotation version in effect yet), and whether an override replaced it.
+ * One shift of a member's day (story 3.6a): the team, the shift type it works
+ * and the one its rotation projects (both `null` when no rotation version is
+ * in effect yet), whether a shift-type override replaced it, whether a roster
+ * override applies on it, and whether the member holds it only through a
+ * roster override (`viaOverride`) rather than as a member of the team.
  */
-export interface MemberScheduleDay {
-  readonly date: string;
-  readonly teamId: string | null;
+export interface MemberShift {
+  readonly teamId: string;
   readonly shiftTypeId: string | null;
   readonly projectedShiftTypeId: string | null;
   readonly overridden: boolean;
+  readonly rosterChanged: boolean;
+  readonly viaOverride: boolean;
+}
+
+/**
+ * One date of a member's month: their shifts on it. Their own team's comes
+ * first — absent when they are on no team or inactive that day, or when a
+ * roster override took them off its working shift — then each shift a roster
+ * override put them on, in the overrides' order.
+ */
+export interface MemberScheduleDay {
+  readonly date: string;
+  readonly shifts: readonly MemberShift[];
 }
 
 /**
@@ -184,14 +262,17 @@ export interface MemberScheduleDay {
  * before it (none before the first version) — the rule of `membershipOn` —
  * and no team at all on a date the member is inactive (`activeOn`); the shift
  * type is {@link scheduledShiftTypeOn} for that team's rotation versions and
- * overrides.
+ * overrides. The roster overrides that APPLY (the rule of `rosterOn`) then
+ * drop the own team's working shift the member was taken off, and add each
+ * working shift of another team they were put on.
  *
  * @throws RangeError when `month` is not a `YYYY-MM` in years 0001–9999, when
  *   a membership or status version's `effectiveFrom` is not a calendar
  *   `YYYY-MM-DD`, when two membership versions or two status versions share
  *   an `effectiveFrom`, when an override's date is not a calendar date or two
- *   overrides name one team and date, or on any precondition of
- *   {@link projectedShiftTypeOn} for a team the member is in.
+ *   overrides name one team and date, on any precondition of
+ *   {@link projectedShiftTypeOn} for a team the member is in or is put on, and
+ *   on any of `checkRosterOverrides` or `shiftRoster`.
  */
 export function memberScheduleOfMonth(input: MemberScheduleInput, month: string): readonly MemberScheduleDay[] {
   const dates = datesOfMonth(month);
@@ -206,15 +287,42 @@ export function memberScheduleOfMonth(input: MemberScheduleInput, month: string)
     else versions.push(assignment);
   }
   const overrides = overridesByTeamAndDate(input.overrides);
+  const rosterOverrides = rosterOverridesByTeamAndDate(input.rosterOverrides);
+  const working = new Set(input.workingShiftTypeIds);
+  const scheduledOf = (teamId: string, date: string): ScheduledShiftType | null =>
+    applyOverride(overrides, teamId, date, projectedShiftTypeOn(versionsOf.get(teamId) ?? [], input.steps, date));
+
+  // The roster overrides putting this member on a shift, by date.
+  const putOn = new Map<string, RosterOverride[]>();
+  for (const override of input.rosterOverrides) {
+    if (override.memberInId !== input.memberId) continue;
+    const known = putOn.get(override.date);
+    if (known === undefined) putOn.set(override.date, [override]);
+    else known.push(override);
+  }
 
   return dates.map((date) => {
+    const shifts: MemberShift[] = [];
     const active = versionOn(statuses, date)?.active ?? true;
     const teamId = active ? (versionOn(memberships, date)?.teamId ?? null) : null;
-    const scheduled =
-      teamId === null
-        ? null
-        : applyOverride(overrides, teamId, date, projectedShiftTypeOn(versionsOf.get(teamId) ?? [], input.steps, date));
-    return { date, ...cellOf(teamId, scheduled) };
+
+    if (teamId !== null) {
+      const scheduled = scheduledOf(teamId, date);
+      const applied = appliedRosterOverrides(rosterOverrides, input.members, working, scheduled, teamId, date);
+      if (!applied.some((override) => override.memberOutId === input.memberId)) {
+        shifts.push({ ...cellOf(teamId, scheduled), rosterChanged: applied.length > 0, viaOverride: false });
+      }
+    }
+
+    for (const override of putOn.get(date) ?? []) {
+      const scheduled = scheduledOf(override.teamId, date);
+      const applied = appliedRosterOverrides(rosterOverrides, input.members, working, scheduled, override.teamId, date);
+      if (applied.includes(override)) {
+        shifts.push({ ...cellOf(override.teamId, scheduled), rosterChanged: true, viaOverride: true });
+      }
+    }
+
+    return { date, shifts };
   });
 }
 

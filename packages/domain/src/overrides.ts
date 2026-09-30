@@ -131,17 +131,24 @@ export interface RotationVersionStamp {
 }
 
 /**
- * A live override with its identity and the instant it was written: its
- * `confirmedAt` when an admin confirmed it, else its `createdAt`, as an
- * integer instant (µs since the epoch).
+ * Any live override — a shift-type one (story 3.5a) or a roster one (story
+ * 3.6a) — as the pending rule reads it: its identity, the team and date it
+ * changes, and the instant it was written, as an integer instant (µs since the
+ * epoch). A shift-type override's is its `confirmedAt` when an admin confirmed
+ * it, else its `createdAt`; a roster override's is its `createdAt`.
  */
-export interface StampedShiftTypeOverride extends ShiftTypeOverride {
+export interface StampedOverride {
   readonly id: string;
+  readonly teamId: string;
+  readonly date: string;
   readonly writtenAt: number;
 }
 
+/** A live shift-type override with its identity and the instant it was written or last confirmed. */
+export interface StampedShiftTypeOverride extends ShiftTypeOverride, StampedOverride {}
+
 /** Every live override, split into those applied and those waiting for the admin's disposition. */
-export interface OverrideStanding<Override extends StampedShiftTypeOverride> {
+export interface OverrideStanding<Override extends StampedOverride> {
   readonly inForce: readonly Override[];
   readonly pending: readonly Override[];
 }
@@ -167,11 +174,17 @@ function checkInstant(label: string, value: number): void {
  * earlier version governs again, and it predates the override. Both lists keep
  * the order of `overrides`.
  *
+ * ONE RULE FOR BOTH LAYERS (story 3.6a): a roster override is pending by the
+ * same rule, over its `createdAt`. How many overrides one team and date may
+ * carry is each layer's own precondition — one shift-type override
+ * ({@link overridesByTeamAndDate}), and one roster override per member taken
+ * off or put on — so it is checked by the callers of each layer, not here.
+ *
  * @throws RangeError when a date or `effectiveFrom` is not a calendar
- *   `YYYY-MM-DD`, when an instant is not an integer, when two versions of one
- *   team share an `effectiveFrom`, or when two overrides name one team and date.
+ *   `YYYY-MM-DD`, when an instant is not an integer, or when two versions of
+ *   one team share an `effectiveFrom`.
  */
-export function overrideStandingOf<Override extends StampedShiftTypeOverride>(
+export function overrideStandingOf<Override extends StampedOverride>(
   versions: readonly RotationVersionStamp[],
   overrides: readonly Override[],
 ): OverrideStanding<Override> {
@@ -189,12 +202,11 @@ export function overrideStandingOf<Override extends StampedShiftTypeOverride>(
     if (team === undefined) byTeam.set(version.teamId, [version]);
     else team.push(version);
   }
-  overridesByTeamAndDate(overrides);
-
   const inForce: Override[] = [];
   const pending: Override[] = [];
   for (const override of overrides) {
-    checkInstant(`shift-type override ${override.id} was written at`, override.writtenAt);
+    checkDate(`override ${override.id} of team ${override.teamId} is dated`, override.date);
+    checkInstant(`override ${override.id} was written at`, override.writtenAt);
     let governing: RotationVersionStamp | null = null;
     for (const version of byTeam.get(override.teamId) ?? []) {
       if (version.effectiveFrom <= override.date && (governing === null || version.effectiveFrom > governing.effectiveFrom)) {

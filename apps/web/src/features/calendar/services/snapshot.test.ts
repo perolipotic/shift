@@ -18,6 +18,7 @@ import {
   CALENDAR_KEY,
   CALENDAR_MEMBERS_FUNCTION,
   CALENDAR_OVERRIDES_FUNCTION,
+  CALENDAR_ROSTER_OVERRIDES_FUNCTION,
   CALENDAR_READ_STALE_MS,
   CALENDAR_READ_TABLE,
   CALENDAR_UNAVAILABLE,
@@ -51,6 +52,8 @@ import {
   membersAnswerOf,
   overridesAnswerOf,
   calendarMemberRow,
+  calendarRosterOverrideRow,
+  rosterOverridesAnswerOf,
   statusRow,
   stepRow,
   teamRow,
@@ -76,8 +79,13 @@ function answerOf(rows: FixtureRows, viewers: readonly Record<string, unknown>[]
 
 type Source = CalendarTable & CalendarMembersRpc & { readonly seen: unknown[][] };
 
-function tableOf(answer: CalendarAnswer, members: unknown = membersAnswerOf(), overrides: unknown = overridesAnswerOf()): Source {
-  return calendarTableOf(answer, members, overrides);
+function tableOf(
+  answer: CalendarAnswer,
+  members: unknown = membersAnswerOf(),
+  overrides: unknown = overridesAnswerOf(),
+  rosterOverrides: unknown = rosterOverridesAnswerOf(),
+): Source {
+  return calendarTableOf(answer, members, overrides, rosterOverrides);
 }
 
 const session = viewerSession();
@@ -113,14 +121,18 @@ describe('the read', () => {
       ['filter', 'members.auth_user_id', 'eq', VIEWER_AUTH_USER],
       ['rpc', 'calendar_members'],
       ['rpc', 'calendar_shift_type_overrides'],
+      // STORY 3.6a: the third rpc, under the same key.
+      ['rpc', 'calendar_roster_overrides'],
     ]);
     expect(CALENDAR_MEMBERS_FUNCTION).toBe('calendar_members');
     expect(CALENDAR_OVERRIDES_FUNCTION).toBe('calendar_shift_type_overrides');
+    expect(CALENDAR_ROSTER_OVERRIDES_FUNCTION).toBe('calendar_roster_overrides');
     expect([CALENDAR_VIEWER_COLUMN, CALENDAR_VIEWER_OPERATOR]).toEqual(['members.auth_user_id', 'eq']);
     expect(CALENDAR_COUNT).toEqual({ count: 'exact' });
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.snapshot.overrides).toEqual([]);
+    expect(outcome.snapshot.rosterOverrides).toEqual([]);
     expect(outcome.snapshot.timeZone).toBe('Europe/Zagreb');
     expect(outcome.snapshot.usesFireRanks).toBe(false);
     expect(outcome.snapshot.teams).toHaveLength(teams);
@@ -756,6 +768,82 @@ describe('the read', () => {
     vi.restoreAllMocks();
   });
 
+  it('reads the live roster overrides, by team, date and id, and carries only their eight fields (story 3.6a)', async () => {
+    const outcome = await read(
+      tableOf(
+        answerOf(PILOT),
+        membersAnswerOf(),
+        overridesAnswerOf(),
+        rosterOverridesAnswerOf([
+          { ...calendarRosterOverrideRow('r3', 'pilot-smjena-b', '2026-09-03', 'm-out', null), created_by: 'never-carried' },
+          calendarRosterOverrideRow('r2', 'pilot-smjena-a', '2026-09-14', null, 'm-in', { author: null }),
+          calendarRosterOverrideRow('r1', 'pilot-smjena-a', '2026-09-14', 'm-out', 'm-other'),
+        ]),
+      ),
+    );
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    const base = { reason: 'Zamjena zbog bolovanja.', createdAt: '2026-09-12T17:05:00+00:00' };
+    expect(outcome.snapshot.rosterOverrides).toEqual([
+      { id: 'r1', teamId: 'pilot-smjena-a', date: '2026-09-14', memberOutId: 'm-out', memberInId: 'm-other', ...base, authorMemberId: VIEWER_MEMBER },
+      { id: 'r2', teamId: 'pilot-smjena-a', date: '2026-09-14', memberOutId: null, memberInId: 'm-in', ...base, authorMemberId: null },
+      { id: 'r3', teamId: 'pilot-smjena-b', date: '2026-09-03', memberOutId: 'm-out', memberInId: null, ...base, authorMemberId: VIEWER_MEMBER },
+    ]);
+  });
+
+  it('refuses every bad roster overrides answer with its own refusal (story 3.6a)', async () => {
+    const logged = quiet();
+    const good = calendarRosterOverrideRow('r1', 'pilot-smjena-a', '2026-09-14', 'm-out', 'm-in');
+    const { team_id: _team, ...noTeam } = good;
+
+    for (const rosterOverrides of [
+      // An error, data that is not an array, a malformed answer.
+      { data: null, error: { code: '42501' } },
+      { data: [good], error: { code: '500' } },
+      { data: { id: 'r1' }, error: null },
+      { data: null, error: null },
+      null,
+      // A malformed row: not an object, no team, no id, a team the answer lacks, a malformed date.
+      rosterOverridesAnswerOf([null as unknown as Record<string, unknown>]),
+      rosterOverridesAnswerOf([noTeam]),
+      rosterOverridesAnswerOf([{ ...good, id: '' }]),
+      rosterOverridesAnswerOf([{ ...good, team_id: 'missing' }]),
+      rosterOverridesAnswerOf([{ ...good, date: '2026-02-30' }]),
+      // A member neither text nor null; no member at all; one member twice.
+      rosterOverridesAnswerOf([{ ...good, member_out_id: 7 }]),
+      rosterOverridesAnswerOf([{ ...good, member_in_id: '' }]),
+      rosterOverridesAnswerOf([{ ...good, member_in_id: undefined }]),
+      rosterOverridesAnswerOf([{ ...good, member_out_id: null, member_in_id: null }]),
+      rosterOverridesAnswerOf([{ ...good, member_in_id: 'm-out' }]),
+      // A reason that is not text, a time that is no instant, an author neither text nor null.
+      rosterOverridesAnswerOf([{ ...good, reason: null }]),
+      rosterOverridesAnswerOf([{ ...good, created_at: 'yesterday' }]),
+      rosterOverridesAnswerOf([{ ...good, author_member_id: 7 }]),
+      // One id twice; one member taken off, or put on, one team's date twice.
+      rosterOverridesAnswerOf([good, { ...good, member_out_id: 'm-other', member_in_id: null }]),
+      rosterOverridesAnswerOf([good, { ...good, id: 'r2', member_in_id: null }]),
+      rosterOverridesAnswerOf([good, { ...good, id: 'r2', member_out_id: null }]),
+    ]) {
+      expect(
+        await read(tableOf(answerOf(PILOT), membersAnswerOf(), overridesAnswerOf(), rosterOverrides)),
+        JSON.stringify(rosterOverrides),
+      ).toEqual(REFUSED);
+    }
+    expect(logged).toHaveBeenCalledWith(CALENDAR_UNAVAILABLE, 'rosterOverride');
+    // The same member on two teams' shifts, or on two dates, is no defect.
+    const twice = await read(
+      tableOf(
+        answerOf(PILOT),
+        membersAnswerOf(),
+        overridesAnswerOf(),
+        rosterOverridesAnswerOf([good, { ...good, id: 'r2', team_id: 'pilot-smjena-b' }, { ...good, id: 'r3', date: '2026-09-15' }]),
+      ),
+    );
+    expect(twice.ok).toBe(true);
+    vi.restoreAllMocks();
+  });
+
   it('names the read failure through its own key', () => {
     expect(calendarMessageKey(CALENDAR_UNAVAILABLE)).toBe('kalendar.error.unavailable');
   });
@@ -799,7 +887,13 @@ describe('the surface state, driven through the one query definition', () => {
     return {
       calls: () => calls,
       rpc: (fn: string) =>
-        Promise.resolve(fn === CALENDAR_OVERRIDES_FUNCTION ? overridesAnswerOf() : membersAnswerOf()),
+        Promise.resolve(
+          fn === CALENDAR_OVERRIDES_FUNCTION
+            ? overridesAnswerOf()
+            : fn === CALENDAR_ROSTER_OVERRIDES_FUNCTION
+              ? rosterOverridesAnswerOf()
+              : membersAnswerOf(),
+        ),
       select() {
         return {
           filter() {
@@ -1074,11 +1168,12 @@ describe('the calendar only reads, and projects nothing of its own', () => {
 
     expect(text, 'a `%` projection').not.toMatch(/%/);
     expect(text).not.toMatch(/\.(update|delete|upsert)\(/);
-    // Story 3.5b: ONE insert and ONE rpc in the write module, the two read
-    // rpcs in the snapshot, and neither anywhere else.
+    // Story 3.5b: ONE insert and ONE rpc in the write module, the three read
+    // rpcs in the snapshot (the third is story 3.6a's roster overrides), and
+    // neither anywhere else.
     expect(text.match(/\.insert\(/g)?.length ?? 0, `.insert( in ${file}`).toBe(file === OVERRIDE_WRITE ? 1 : 0);
     expect(text.match(/\.rpc\(/g)?.length ?? 0, `.rpc( in ${file}`).toBe(
-      file === OVERRIDE_WRITE ? 1 : file === SNAPSHOT ? 2 : 0,
+      file === OVERRIDE_WRITE ? 1 : file === SNAPSHOT ? 3 : 0,
     );
     // Story 3.4a: the snapshot CARRIES rank and position off the wire, to be
     // shown by 3.4b — in the named places only, counted, and nowhere else. No

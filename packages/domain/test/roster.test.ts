@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   activeOn,
-  memberScheduleOfMonth,
   membershipOn,
   shiftRoster,
   type MembershipVersion,
@@ -15,6 +14,7 @@ import {
   PILOT_TEAMS,
   SEEDED_EFFECTIVE_FROM,
   UJ5_TEAMS,
+  soleShiftDaysOf,
 } from './fixtures.js';
 
 /**
@@ -182,7 +182,7 @@ describe('shiftRoster', () => {
     expect(shiftRoster(members, alfa, '2026-09-05')).toEqual([]);
     expect(shiftRoster(members, alfa, '2026-09-11')).toEqual([]);
     expect(shiftRoster(members, alfa, '2026-09-12')).toEqual([{ memberId: 'A', position: 'driver' }]);
-    const days = memberScheduleOfMonth(
+    const days = soleShiftDaysOf(
       { memberships: members[0]!.memberships, statuses, assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS, overrides: [] },
       '2026-09',
     );
@@ -192,7 +192,7 @@ describe('shiftRoster', () => {
       days.map((day) => day.date).filter((date) => date >= '2026-09-12'),
     );
     // The same history on a team the pilot rotates: types from the 12th only.
-    const onPilot = memberScheduleOfMonth(
+    const onPilot = soleShiftDaysOf(
       {
         memberships: [{ teamId: pilotA!.id, position: 'driver', effectiveFrom: '2026-09-12' }],
         statuses,

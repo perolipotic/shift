@@ -790,7 +790,7 @@ describe('every organization table carries row level security, and only its revi
               'organizations', 'members', 'member_status_versions', 'teams',
               'team_membership_versions', 'hour_bands', 'shift_types',
               'shift_type_versions', 'rotation_patterns', 'rotation_steps',
-              'rotation_assignments', 'shift_type_overrides'
+              'rotation_assignments', 'shift_type_overrides', 'roster_overrides'
             )
           order by relname`,
       );
@@ -801,12 +801,13 @@ describe('every organization table carries row level security, and only its revi
       // membership. STORY 2.1a adds the hour bands, STORY 2.2a the shift
       // types and their versioned times, and STORY 2.3a the rotation: its
       // patterns, their steps and the versioned team assignments. STORY 3.5a
-      // adds the shift-type overrides.
+      // adds the shift-type overrides, and STORY 3.6a the roster overrides.
       expect(rows.map((row) => row.relname)).toEqual([
         'hour_bands',
         'member_status_versions',
         'members',
         'organizations',
+        'roster_overrides',
         'rotation_assignments',
         'rotation_patterns',
         'rotation_steps',
@@ -1347,6 +1348,75 @@ describe('every organization table carries row level security, and only its revi
     }
   });
 
+  it.skipIf(noDatabase)('holds no privilege on roster_overrides but read and a six-column insert, and never update or delete (story 3.6a)', async () => {
+    // As 3.5a's: `authenticated` reads (narrowed to an active admin by the
+    // policy) and inserts the six facts; no session updates or deletes one,
+    // names its attribution or its removal, or holds anything as `anon`.
+    const client = await connect();
+    try {
+      const held = await heldPrivileges(client, 'roster_overrides', [
+        'organization_id',
+        'id',
+        'team_id',
+        'date',
+        'member_out_id',
+        'member_in_id',
+        'reason',
+        'created_by',
+        'created_at',
+        'removed_by',
+        'removed_at',
+      ]);
+      expect(held.tables).toEqual(['authenticated:SELECT']);
+      expect(held.columns, 'the writable roster override columns changed, or anon holds one').toEqual([
+        'authenticated:INSERT:date',
+        'authenticated:INSERT:member_in_id',
+        'authenticated:INSERT:member_out_id',
+        'authenticated:INSERT:organization_id',
+        'authenticated:INSERT:reason',
+        'authenticated:INSERT:team_id',
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('keys a roster override to its tenant\'s team and members, one live per member taken off or put on, cascading from the organization alone (story 3.6a)', async () => {
+    const client = await connect();
+    try {
+      const { rows: keys } = await client.query<{ definition: string }>(
+        `select pg_get_constraintdef(oid) as definition
+           from pg_constraint
+          where contype = 'f' and conrelid = 'public.roster_overrides'::regclass`,
+      );
+      expect(keys.map((row) => row.definition).sort()).toEqual([
+        'FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE',
+        'FOREIGN KEY (organization_id, member_in_id) REFERENCES members(organization_id, id)',
+        'FOREIGN KEY (organization_id, member_out_id) REFERENCES members(organization_id, id)',
+        'FOREIGN KEY (organization_id, team_id) REFERENCES teams(organization_id, id)',
+      ]);
+      const { rows: indexes } = await client.query<{ indexdef: string }>(
+        `select indexdef from pg_indexes where schemaname = 'public' and tablename = 'roster_overrides'`,
+      );
+      expect(
+        indexes.some((row) => /\(organization_id\)$/.test(row.indexdef)),
+        'no index on roster_overrides leads with organization_id alone',
+      ).toBe(true);
+      for (const column of ['member_out_id', 'member_in_id']) {
+        expect(
+          indexes.some((row) =>
+            new RegExp(`UNIQUE INDEX .* \\(organization_id, team_id, date, ${column}\\) WHERE \\(removed_at IS NULL\\)$`).test(
+              row.indexdef,
+            ),
+          ),
+          `one ${column} may be named twice on one live shift`,
+        ).toBe(true);
+      }
+    } finally {
+      await client.end();
+    }
+  });
+
   it.skipIf(noDatabase)('keys the offset to a step of the same pattern, and cascades from nothing but the organization', async () => {
     // AD-3's shape: the offset key is THREE columns, so an offset outside the
     // cycle is unrepresentable. Every key toward another rule is NO ACTION;
@@ -1574,6 +1644,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 3.5a. The live overrides, read past the admin-only select policy
     // and past `members` for the author's member id, on the same attributes.
     { name: 'calendar_shift_type_overrides', argumentCount: 0 },
+    // STORY 3.6a. The live roster overrides, on 3.5a's attributes.
+    { name: 'calendar_roster_overrides', argumentCount: 0 },
     // STORY 3.5b. The one function that writes: it soft-removes a live
     // override past the table's missing update grant, attributing the removal
     // itself, on the same attributes.
@@ -1664,6 +1736,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'calendar_members', argumentCount: 0, expected: ['authenticated'] },
     // STORY 3.5a. The live overrides, on the same terms.
     { name: 'calendar_shift_type_overrides', argumentCount: 0, expected: ['authenticated'] },
+    // STORY 3.6a. The live roster overrides, on the same terms.
+    { name: 'calendar_roster_overrides', argumentCount: 0, expected: ['authenticated'] },
     // STORY 3.5b. The removal, on the same terms; the function itself refuses
     // every caller but an active admin of the claimed organization.
     { name: 'remove_shift_type_override', argumentCount: 1, expected: ['authenticated'] },

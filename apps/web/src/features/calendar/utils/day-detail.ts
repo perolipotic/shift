@@ -1,7 +1,16 @@
-import { scheduledShiftTypeOn, shiftRoster } from '@shift/domain';
+import { rosterOn, scheduledShiftTypeOn } from '@shift/domain';
 
-import { overrideStandingOfCalendar, typeRangeOn, weekdayOf } from '@/features/calendar/utils/month';
-import type { CalendarOverride, CalendarSnapshot } from '@/features/calendar/services/snapshot';
+import {
+  overrideStandingOfCalendar,
+  rosterStandingOfCalendar,
+  typeRangeOn,
+  weekdayOf,
+} from '@/features/calendar/utils/month';
+import type {
+  CalendarOverride,
+  CalendarRosterOverride,
+  CalendarSnapshot,
+} from '@/features/calendar/services/snapshot';
 import { compareText, formatDate, formatIsoDate, formatTime } from '@/lib/i18n/format';
 import type { ShiftTypeRow } from '@/features/shift-types/services/list';
 
@@ -17,8 +26,9 @@ import type { ShiftTypeRow } from '@/features/shift-types/services/list';
  * the grid's is — the projection with the day's shift-type override applied
  * over it (story 3.5a) — so the kind, the type and the range follow the type
  * the team WORKED; the range is `typeRangeOn`, the one derivation a cell
- * reads; the roster is `shiftRoster`'s, the team's members active on the
- * date. This module only names and orders.
+ * reads; the roster is `rosterOn`'s, the team's members active on the date
+ * with the roster overrides in force applied (story 3.6a). This module only
+ * names and orders.
  *
  * AN OVERRIDE IS ATTRIBUTED (story 3.5a): its author (named through the
  * snapshot's members), when it was saved (in the organization's zone), its
@@ -43,6 +53,12 @@ import type { ShiftTypeRow } from '@/features/shift-types/services/list';
  * pending is `overrideStandingOf`'s answer from `@shift/domain`. The admin is
  * offered only its removal here; confirming and amending are the rotation
  * builder's.
+ *
+ * A ROSTER OVERRIDE IS LISTED (story 3.6a): each one that applied on the
+ * day — an addition, a removal or a replacement — with its author, time and
+ * reason, and each one pending review apart, under its own heading. One that
+ * applies to nothing (an inert one) is shown nowhere: in this story only
+ * seeds write them, and 3.6b's removal will list it.
  */
 
 /** The team works a type that day. */
@@ -60,7 +76,11 @@ export type DayDetailKind = typeof DAY_WORKING | typeof DAY_OFF | typeof DAY_NO_
 /** One member rostered on the day: shown as `Ime · čin · položaj`. */
 export interface DayDetailMember {
   readonly id: string;
-  readonly name: string;
+  /**
+   * `null` for a member put on by a roster override whom the snapshot does
+   * not hold (`kalendar.detail.override.unknownAuthor`, story 3.6a).
+   */
+  readonly name: string | null;
   /** Shown, never used; `null` is no rank. */
   readonly fireRank: string | null;
   /** Their position in the team on that date; shown, never used. */
@@ -104,6 +124,31 @@ export interface DayDetailPendingOverride {
   readonly reason: string;
 }
 
+/** A roster override that adds a member (story 3.6a). */
+export const ROSTER_ADDED = 'added';
+
+/** A roster override that removes a member. */
+export const ROSTER_REMOVED = 'removed';
+
+/** A roster override that replaces one member with another, in one row. */
+export const ROSTER_REPLACED = 'replaced';
+
+export type DayDetailRosterChangeKind = typeof ROSTER_ADDED | typeof ROSTER_REMOVED | typeof ROSTER_REPLACED;
+
+/** One roster override on the day, as the detail lists it (story 3.6a). */
+export interface DayDetailRosterChange {
+  readonly id: string;
+  readonly kind: DayDetailRosterChangeKind;
+  /** The member taken off; `null` for an addition, or for one the snapshot does not hold. */
+  readonly outName: string | null;
+  /** The member put on; `null` for a removal, or for one the snapshot does not hold. */
+  readonly inName: string | null;
+  /** Who saved it; `null` when they are no member the snapshot holds. */
+  readonly authorName: string | null;
+  readonly savedAt: DayDetailSavedAt;
+  readonly reason: string;
+}
+
 /** The day detail, ready to render. */
 export interface DayDetail {
   readonly teamId: string;
@@ -125,12 +170,21 @@ export interface DayDetail {
   readonly override: DayDetailOverride | null;
   /** The override on the day a rotation change left pending (story 3.5c), whatever the kind; `null` for none. */
   readonly pending: DayDetailPendingOverride | null;
+  /** The roster overrides that applied on the day, in the snapshot's order (story 3.6a); empty unless `working`. */
+  readonly rosterChanges: readonly DayDetailRosterChange[];
+  /** The roster overrides on the day a rotation change left pending (story 3.6a), whatever the kind. */
+  readonly rosterPending: readonly DayDetailRosterChange[];
 }
 
 function compareMembers(left: DayDetailMember, right: DayDetailMember): number {
-  const byName = compareText(left.name, right.name);
+  // A member the snapshot does not hold sorts after every named one.
+  if (left.name === null || right.name === null) {
+    if (left.name !== right.name) return left.name === null ? 1 : -1;
+  } else {
+    const byName = compareText(left.name, right.name);
 
-  if (byName !== 0) return byName;
+    if (byName !== 0) return byName;
+  }
 
   return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
 }
@@ -141,8 +195,9 @@ function compareMembers(left: DayDetailMember, right: DayDetailMember): number {
  * are held, so a day list's past team still opens.
  *
  * @throws RangeError on any precondition of `scheduledShiftTypeOn`,
- *   `shiftRoster` or `typeRangeOn`, a type the snapshot lacks, a rostered
- *   member the snapshot lacks, or a date that cannot be formatted.
+ *   `rosterOn` or `typeRangeOn`, a type the snapshot lacks, a member of the
+ *   default roster the snapshot lacks, or a date or time that cannot be
+ *   formatted.
  */
 export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: string): DayDetail | null {
   const team = snapshot.teams.find((one) => one.id === teamId);
@@ -158,11 +213,15 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
     date,
   );
   const waiting = standing.pending.find((one) => one.teamId === teamId && one.date === date);
+  const rosterStanding = rosterStandingOfCalendar(snapshot);
+  const rosterPending = rosterStanding.pending
+    .filter((one) => one.teamId === teamId && one.date === date)
+    .map((one) => rosterChangeOf(snapshot, one));
   const full = formatIsoDate(date);
 
   if (full === null) throw new RangeError(`the date ${date} could not be formatted`);
 
-  const base = { teamId, teamName: team.name, date: `${weekdayOf(date)} ${full}`, isoDate: date };
+  const base = { teamId, teamName: team.name, date: `${weekdayOf(date)} ${full}`, isoDate: date, rosterPending };
 
   if (scheduled === null) {
     return {
@@ -174,6 +233,7 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
       roster: [],
       override: null,
       pending: waiting === undefined ? null : pendingOf(snapshot, waiting, null, date),
+      rosterChanges: [],
     };
   }
 
@@ -188,16 +248,21 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
   const override = scheduled.overridden ? overrideOf(snapshot, standing.inForce, teamId, date, projectedTypeName) : null;
 
   if (!type.isWorking) {
-    return { ...projected, kind: DAY_OFF, typeName: null, range: null, roster: [], override };
+    return { ...projected, kind: DAY_OFF, typeName: null, range: null, roster: [], override, rosterChanges: [] };
   }
 
   const members = new Map(snapshot.members.map((member) => [member.id, member]));
-  const roster = shiftRoster(snapshot.members, teamId, date).map((entry): DayDetailMember => {
+  const shown = rosterOn(snapshot.members, rosterStanding.inForce, teamId, date);
+  const roster = shown.roster.map((entry): DayDetailMember => {
     const member = members.get(entry.memberId);
 
-    if (member === undefined) throw new RangeError(`member ${entry.memberId} is rostered but is not in the snapshot`);
+    // A member of the default roster comes from the snapshot's own members;
+    // one a roster override put on may be one the members read did not name.
+    if (member === undefined && !entry.added) {
+      throw new RangeError(`member ${entry.memberId} is rostered but is not in the snapshot`);
+    }
 
-    return { id: member.id, name: member.name, fireRank: member.fireRank, position: entry.position };
+    return { id: entry.memberId, name: member?.name ?? null, fireRank: member?.fireRank ?? null, position: entry.position };
   });
 
   return {
@@ -207,6 +272,49 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
     range: typeRangeOn(type, date),
     roster: roster.sort(compareMembers),
     override,
+    rosterChanges: shown.applied.map((one) => rosterChangeOf(snapshot, one)),
+  };
+}
+
+/** A member's name through the snapshot's members, or `null` for one it does not hold. */
+function memberNameOf(snapshot: CalendarSnapshot, memberId: string | null): string | null {
+  if (memberId === null) return null;
+
+  return snapshot.members.find((member) => member.id === memberId)?.name ?? null;
+}
+
+/**
+ * When an override was saved, in the organization's zone.
+ *
+ * @throws RangeError when `createdAt` is not an instant.
+ */
+function savedAtOf(snapshot: CalendarSnapshot, createdAt: string, what: string): DayDetailSavedAt {
+  const saved = new Date(createdAt);
+
+  if (Number.isNaN(saved.getTime())) throw new RangeError(`${what} was saved at ${createdAt}`);
+
+  return { date: formatDate(saved, snapshot.timeZone), time: formatTime(saved, snapshot.timeZone) };
+}
+
+/**
+ * A roster override as the detail lists it (story 3.6a): added, removed or
+ * replaced, the members named through the snapshot's, its author, time and
+ * reason.
+ *
+ * @throws RangeError when its time is not an instant.
+ */
+function rosterChangeOf(snapshot: CalendarSnapshot, override: CalendarRosterOverride): DayDetailRosterChange {
+  const kind =
+    override.memberOutId === null ? ROSTER_ADDED : override.memberInId === null ? ROSTER_REMOVED : ROSTER_REPLACED;
+
+  return {
+    id: override.id,
+    kind,
+    outName: memberNameOf(snapshot, override.memberOutId),
+    inName: memberNameOf(snapshot, override.memberInId),
+    authorName: memberNameOf(snapshot, override.authorMemberId),
+    savedAt: savedAtOf(snapshot, override.createdAt, `the roster override ${override.id}`),
+    reason: override.reason,
   };
 }
 
@@ -276,17 +384,11 @@ function overrideOf(
 
   if (override === undefined) throw new RangeError(`team ${teamId} is overridden on ${date} by no override`);
 
-  const saved = new Date(override.createdAt);
-
-  if (Number.isNaN(saved.getTime())) {
-    throw new RangeError(`the override of team ${teamId} on ${date} was saved at ${override.createdAt}`);
-  }
-
   return {
     id: override.id,
     projectedTypeName,
     authorName: authorNameOf(snapshot, override),
-    savedAt: { date: formatDate(saved, snapshot.timeZone), time: formatTime(saved, snapshot.timeZone) },
+    savedAt: savedAtOf(snapshot, override.createdAt, `the override of team ${teamId} on ${date}`),
     reason: override.reason,
   };
 }

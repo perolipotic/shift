@@ -1008,6 +1008,15 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.builder.overrides.refused.reason',
   'rotation.builder.overrides.refused.sameAsProjected',
   'rotation.builder.overrides.refused.failed',
+  // STORY 3.6a: the day detail's roster changes — the block's heading, an
+  // addition, a removal and a replacement (`{out} → {in}`), and the heading
+  // of those a rotation change left pending. The author, time, reason and an
+  // unknown member reuse 3.5a's `kalendar.detail.override.*`.
+  'kalendar.detail.rosterChange.heading',
+  'kalendar.detail.rosterChange.added',
+  'kalendar.detail.rosterChange.removed',
+  'kalendar.detail.rosterChange.replaced',
+  'kalendar.detail.rosterChange.pendingHeading',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

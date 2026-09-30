@@ -2003,10 +2003,14 @@ const KEY_SOURCES = [
     // `@/features/calendar/services/override-write`, below. FORTY-NINE SINCE
     // STORY 3.5c: the pending block's heading, body and type, its reason,
     // author and unknown author, and the removal's prompt with no rotation.
+    // FIFTY-NINE SINCE STORY 3.6a: the roster changes' heading and pending
+    // heading, an addition, a removal and a replacement, each change's
+    // author, time and reason, and the unknown member twice — named on the
+    // roster and in a change.
     name: 'the Kalendar destination',
     file: KALENDAR,
     keys: translationKeys,
-    strings: 49,
+    strings: 59,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's

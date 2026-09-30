@@ -5,9 +5,12 @@ import {
   DAY_DETAIL_DIALOG_ID,
   DAY_NO_ROTATION,
   DAY_OFF,
+  ROSTER_ADDED,
+  ROSTER_REMOVED,
   type DayDetail,
   type DayDetailOverride,
   type DayDetailPendingOverride,
+  type DayDetailRosterChange,
 } from '@/features/calendar/utils/day-detail';
 import { MODIFIER_OVERRIDDEN, modifierTreatmentOf } from '@/features/calendar/utils/modifiers';
 import {
@@ -25,9 +28,14 @@ import {
   DAY_DETAIL_HEADING_ID,
   DAY_DETAIL_OVERRIDE_ID,
   DAY_DETAIL_PENDING_ID,
+  DAY_DETAIL_ROSTER_CHANGES_ID,
   DAY_DETAIL_ROSTER_ID,
+  DAY_DETAIL_ROSTER_PENDING_ID,
 } from '@/features/calendar/utils/element-ids';
 import { t } from '@/lib/i18n';
+
+/** The calendar's own `✎` and ring, beside the headings of what changed the day. */
+const OVERRIDDEN_TREATMENT = modifierTreatmentOf([MODIFIER_OVERRIDDEN]);
 
 /** The roster, one `Ime · čin · položaj` line per member, rank and position where the organization uses them. */
 function renderRoster(shown: DayDetail, usesFireRanks: boolean): ReactNode {
@@ -44,7 +52,12 @@ function renderRoster(shown: DayDetail, usesFireRanks: boolean): ReactNode {
         const rankKey = rosterRankMessageKey(member.fireRank, rankShown);
         const positionKey = rosterPositionMessageKey(member.position, positionShown);
         // WHICH SENTENCE is `rosterLineOf`'s decision, executed in a test.
-        const line = rosterLineOf(member.name, rankKey, positionKey, (key) => t(key));
+        const line = rosterLineOf(
+          member.name ?? t('kalendar.detail.override.unknownAuthor'),
+          rankKey,
+          positionKey,
+          (key) => t(key),
+        );
 
         return (
           <li key={member.id} className="min-w-0 break-words text-base">
@@ -63,7 +76,7 @@ function renderRoster(shown: DayDetail, usesFireRanks: boolean): ReactNode {
  * and never the accent.
  */
 function renderOverride(override: DayDetailOverride): ReactNode {
-  const treatment = modifierTreatmentOf([MODIFIER_OVERRIDDEN]);
+  const treatment = OVERRIDDEN_TREATMENT;
 
   return (
     <section aria-labelledby={DAY_DETAIL_OVERRIDE_ID} className="grid gap-1 text-sm">
@@ -113,6 +126,69 @@ function renderPending(pending: DayDetailPendingOverride): ReactNode {
   );
 }
 
+/** A member a roster change names, or `unknownAuthor` for one the snapshot does not hold. */
+function memberNameShown(name: string | null): string {
+  return name ?? t('kalendar.detail.override.unknownAuthor');
+}
+
+/** One roster change's line: added, removed, or replaced (story 3.6a). */
+function rosterChangeLine(change: DayDetailRosterChange): string {
+  if (change.kind === ROSTER_ADDED) return t('kalendar.detail.rosterChange.added', { name: memberNameShown(change.inName) });
+  if (change.kind === ROSTER_REMOVED) {
+    return t('kalendar.detail.rosterChange.removed', { name: memberNameShown(change.outName) });
+  }
+
+  return t('kalendar.detail.rosterChange.replaced', {
+    out: memberNameShown(change.outName),
+    in: memberNameShown(change.inName),
+  });
+}
+
+/**
+ * The roster changes on the day (story 3.6a), each with its author, time and
+ * reason — those applied under "Promjene sastava", with the calendar's own
+ * `✎` beside the heading, and those pending review under their own heading,
+ * with none. Never `destructive` and never the accent.
+ */
+function renderRosterChanges(
+  changes: readonly DayDetailRosterChange[],
+  headingId: string,
+  heading: string,
+  marked: boolean,
+): ReactNode {
+  if (changes.length === 0) return null;
+
+  const treatment = OVERRIDDEN_TREATMENT;
+
+  return (
+    <section aria-labelledby={headingId} className={marked ? 'grid gap-2 text-sm' : 'grid gap-2 rounded-md border p-3 text-sm'}>
+      <h3 id={headingId} className="flex items-center gap-2 font-heading text-base font-semibold">
+        {marked ? (
+          <span
+            aria-hidden
+            className={`inline-flex size-6 items-center justify-center rounded-sm bg-card text-xs [font-variant-emoji:text] ${treatment.className}`}
+          >
+            {treatment.glyphText}
+          </span>
+        ) : null}
+        {heading}
+      </h3>
+      <ul aria-labelledby={headingId} className="grid gap-3">
+        {changes.map((change) => (
+          <li key={change.id} className="grid gap-1">
+            <p className="break-words font-semibold">{rosterChangeLine(change)}</p>
+            <p>{t('kalendar.detail.override.author', { name: memberNameShown(change.authorName) })}</p>
+            <p className="tabular-nums">
+              {t('kalendar.detail.override.savedAt', { date: change.savedAt.date, time: change.savedAt.time })}
+            </p>
+            <p className="break-words">{t('kalendar.detail.override.reason', { reason: change.reason })}</p>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 /**
  * The day detail's body: the type, its times and the roster, or why there is
  * none. A working day and an off day show the override block when the day
@@ -129,6 +205,12 @@ function renderDetail(shown: DayDetail, usesFireRanks: boolean, form: OverrideFo
     <>
       {shown.override === null ? null : renderOverride(shown.override)}
       {shown.pending === null ? null : renderPending(shown.pending)}
+      {renderRosterChanges(
+        shown.rosterPending,
+        DAY_DETAIL_ROSTER_PENDING_ID,
+        t('kalendar.detail.rosterChange.pendingHeading'),
+        false,
+      )}
       <OverrideDoneNotice form={form} />
       <OverrideRemoveRefusal form={form} />
       {form.offersRemove ? <OverrideRemoveAction form={form} /> : null}
@@ -167,6 +249,12 @@ function renderDetail(shown: DayDetail, usesFireRanks: boolean, form: OverrideFo
         </h3>
         {renderRoster(shown, usesFireRanks)}
       </div>
+      {renderRosterChanges(
+        shown.rosterChanges,
+        DAY_DETAIL_ROSTER_CHANGES_ID,
+        t('kalendar.detail.rosterChange.heading'),
+        true,
+      )}
       {override}
     </div>
   );

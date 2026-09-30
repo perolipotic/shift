@@ -413,6 +413,122 @@ export async function seedShiftTypeOverride(
 }
 
 /**
+ * A second active team in the run organization (story 3.6a), attributed to
+ * its admin, in SQL — so a member of the fixture team can be put on another
+ * team's shift while their own works: a double shift. Other specs already
+ * leave teams of their own in the run organization, so nothing counts on one.
+ * {@link removeTeamInSql} deletes it.
+ */
+export async function seedExtraTeam(slug: string, name: string): Promise<{ readonly id: string; readonly name: string }> {
+  const client = await connect();
+  try {
+    const { rows } = await client.query<{ id: string }>(
+      `insert into teams (organization_id, name, created_by)
+       select o.id, $2,
+              (select m.auth_user_id from members m
+                where m.organization_id = o.id and m.role = 'admin'
+                order by m.created_at, m.id limit 1)
+         from organizations o
+        where o.slug = $1
+       returning id::text as id`,
+      [slug, name],
+    );
+    const id = rows[0]?.id;
+    if (id === undefined || rows.length !== 1) throw new Error(`E2E: the team ${name} was not written`);
+
+    return { id, name };
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Deletes a team {@link seedExtraTeam} wrote, once its rotation and every
+ * roster override naming it are gone ({@link removeSeededRotation}). Safe to
+ * call twice.
+ */
+export async function removeTeamInSql(slug: string, teamId: string): Promise<void> {
+  const client = await connect();
+  try {
+    await client.query(
+      `delete from teams where id = $2 and organization_id = (select id from organizations where slug = $1)`,
+      [slug, teamId],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
+/** What {@link seedRosterOverride} wrote, as the day detail names it (story 3.6a). */
+export interface SeededRosterOverride {
+  readonly reason: string;
+  /** When it was saved, in the organization's zone: `12.09.2026` and `19:05`. */
+  readonly savedDate: string;
+  readonly savedTime: string;
+}
+
+/**
+ * A roster override on `teamId`'s shift on `date` (story 3.6a): the member
+ * named `outName` taken off and the one named `inName` put on — either
+ * `null` — attributed to the run's admin, in SQL; no product surface writes
+ * one yet (3.6b). Written now, after the seeded rotation, so it is in force.
+ * Call it after {@link seedTeamRotation}, under the same hold;
+ * {@link removeSeededRotation} deletes it.
+ */
+export async function seedRosterOverride(
+  rotation: SeededRotation,
+  teamId: string,
+  date: string,
+  outName: string | null,
+  inName: string | null,
+  reason: string,
+): Promise<SeededRosterOverride> {
+  const client = await connect();
+  try {
+    // Each named member resolves to exactly one, or the seed throws: a name
+    // that silently became null would turn a replacement into an addition or
+    // a removal.
+    const idOf = async (name: string | null): Promise<string | null> => {
+      if (name === null) return null;
+      const { rows: found } = await client.query<{ id: string }>(
+        'select id::text as id from members where organization_id = $1 and name = $2',
+        [rotation.organizationId, name],
+      );
+      const [only] = found;
+      if (only === undefined || found.length !== 1) {
+        throw new Error(`E2E: the roster override names ${name}, who is ${String(found.length)} members, not one`);
+      }
+      return only.id;
+    };
+    const outId = await idOf(outName);
+    const inId = await idOf(inName);
+    const { rows } = await client.query<{ saved_date: string; saved_time: string }>(
+      `with admin as (
+         select m.auth_user_id from members m
+          where m.organization_id = $1 and m.role = 'admin'
+          order by m.created_at, m.id limit 1
+       ),
+       written as (
+         insert into roster_overrides (organization_id, team_id, date, member_out_id, member_in_id, reason, created_by)
+         select $1, $2, $3::date, $4::uuid, $5::uuid, $6, (select auth_user_id from admin)
+         returning created_at
+       )
+       select to_char(w.created_at at time zone o.timezone, 'DD.MM.YYYY') as saved_date,
+              to_char(w.created_at at time zone o.timezone, 'HH24:MI') as saved_time
+         from written w cross join organizations o
+        where o.id = $1`,
+      [rotation.organizationId, teamId, date, outId, inId, reason],
+    );
+    const written = rows[0];
+    if (written === undefined || rows.length !== 1) throw new Error('E2E: the roster override was not written');
+
+    return { reason, savedDate: written.saved_date, savedTime: written.saved_time };
+  } finally {
+    await client.end();
+  }
+}
+
+/**
  * Soft-removes the live override of `teamId` on `date` in SQL, attributed to
  * its own author (story 3.5b) — as another admin's removal landing while the
  * screen still shows it. {@link removeSeededRotation} deletes it with the
@@ -546,15 +662,18 @@ export async function removeRotationChangesOver(seeded: SeededRotation, since: s
 
 /**
  * Deletes everything {@link seedTeamRotation} wrote — the version, the steps,
- * the pattern, the times and the three types — and every override naming one
- * of those types ({@link seedShiftTypeOverride}), in one transaction, so the
- * run organization is as it was. Safe to call twice.
+ * the pattern, the times and the three types — every override naming one of
+ * those types ({@link seedShiftTypeOverride}), and every roster override of
+ * the run organization ({@link seedRosterOverride}, written only under the
+ * same hold), in one transaction, so the run organization is as it was. Safe
+ * to call twice.
  */
 export async function removeSeededRotation(seeded: SeededRotation): Promise<void> {
   const client = await connect();
   try {
     await client.query('begin');
     const scope = [seeded.organizationId, seeded.patternId];
+    await client.query('delete from roster_overrides where organization_id = $1', [seeded.organizationId]);
     await client.query('delete from rotation_assignments where organization_id = $1 and pattern_id = $2', scope);
     await client.query('delete from rotation_steps where organization_id = $1 and pattern_id = $2', scope);
     await client.query('delete from rotation_patterns where organization_id = $1 and id = $2', scope);

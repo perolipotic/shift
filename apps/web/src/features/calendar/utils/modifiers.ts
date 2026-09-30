@@ -263,33 +263,35 @@ export function gridCellLabelsOf(
 }
 
 /**
- * Every day-list day's {@link cellLabelOf}, the grid cell's full label, for
- * the button that opens its detail (story 3.4b); `null` for a day on no team,
- * which is no button, and for a team `teams` lacks — never a label with no
- * team.
+ * Every day-list shift's {@link cellLabelOf}, the grid cell's full label, for
+ * the button that opens its detail (story 3.4b), day for day and shift for
+ * shift (story 3.6a); `null` for a team `teams` lacks — never a label with no
+ * team. A day with no shift has none.
  */
 export function dayListLabelsOf(
   days: readonly CalendarDay[],
   teams: readonly { readonly id: string; readonly name: string }[],
   translate: CellLabelTranslate,
-): readonly (string | null)[] {
+): readonly (readonly (string | null)[])[] {
   const names = new Map(teams.map((team) => [team.id, team.name]));
 
-  return days.map((day) => {
-    const teamName = day.teamId === null ? undefined : names.get(day.teamId);
+  return days.map((day) =>
+    day.shifts.map((shift) => {
+      const teamName = names.get(shift.teamId);
 
-    if (day.cell === null || teamName === undefined) return null;
+      if (teamName === undefined) return null;
 
-    return cellLabelOf(
-      {
-        weekday: day.weekday,
-        dayMonth: day.dayMonth,
-        teamName,
-        name: day.cell.name,
-        range: day.cell.range,
-        modifiers: day.cell.modifiers,
-      },
-      translate,
-    );
-  });
+      return cellLabelOf(
+        {
+          weekday: day.weekday,
+          dayMonth: day.dayMonth,
+          teamName,
+          name: shift.cell.name,
+          range: shift.cell.range,
+          modifiers: shift.cell.modifiers,
+        },
+        translate,
+      );
+    }),
+  );
 }

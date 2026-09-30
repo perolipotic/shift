@@ -21,7 +21,8 @@
 --
 -- Both refusals raise SQLSTATE P0001 (raise_exception) with a named message,
 -- as does DEMO_ROTATION_INCOMPLETE, raised if the rotation's steps or
--- assignments, or its one shift-type override, would be written short.
+-- assignments, its one shift-type override or its one roster override, would
+-- be written short.
 --
 -- Two session settings, both required:
 --
@@ -32,8 +33,8 @@
 --     DEMO_PASSWORD_MISSING. A real password is used untrimmed.
 --
 -- RE-RUNNING REPLACES THE DEMO. The existing `dvd-demo` organization (its
--- members, teams, memberships, bands, shift types, rotation and shift-type
--- override cascade with it) and every auth user under
+-- members, teams, memberships, bands, shift types, rotation, shift-type
+-- override and roster override cascade with it) and every auth user under
 -- `@dvd-demo.shift.invalid` are deleted, and everything is created again.
 -- Nothing else is touched.
 --
@@ -49,7 +50,8 @@
 -- Slobodno, Slobodno], and Smjena A–D bound to it at offsets 0–3 from the
 -- anchor 2020-01-01, effective from the same date, so any date projects.
 -- One shift-type override (story 3.5a) marks Smjena A on the day the demo is
--- created.
+-- created, and one roster override (story 3.6a) replaces a firefighter on that
+-- same shift. Both are written after the rotation, so both are in force.
 
 do $$
 declare
@@ -289,11 +291,13 @@ begin
   -- works a type its rotation does not project there: Noć on a Dan day, Dan on
   -- any other (offset 0 from the 2020-01-01 anchor, so the step is the day
   -- count modulo 4). Attributed to the admin; the rotation rows are untouched.
+  -- `created_at` after the assignments' (story 3.5c): an override written
+  -- before the version governing its date is pending, and not applied.
   insert into shift_type_overrides (
-    organization_id, team_id, date, shift_type_id, reason, created_by
+    organization_id, team_id, date, shift_type_id, reason, created_by, created_at
   )
   select demo_organization, teams.id, today.date, shift_types.id,
-         'Zamjena sa Smjenom B zbog vježbe.', demo_admin
+         'Zamjena sa Smjenom B zbog vježbe.', demo_admin, now() + interval '10 milliseconds'
     from (select public.organization_today(demo_organization) as date) as today
     join teams on teams.organization_id = demo_organization
               and teams.name = 'Smjena A'
@@ -307,6 +311,54 @@ begin
       errcode = 'raise_exception',
       message = 'DEMO_ROTATION_INCOMPLETE',
       detail = format('%s of 1 shift-type override written', written);
+  end if;
+
+  -- Story 3.6a: one roster override, a replacement on that same shift — which
+  -- is a working one, whatever the rotation projects: Mate Radić of Smjena A
+  -- is taken off, and a firefighter of a crew whose rotation projects a
+  -- NON-WORKING type today is put on — the first such crew in name order, and
+  -- its first firefighter by username — so the demo never shows a double
+  -- shift by accident. The projection is the rotation's own: the step at the
+  -- crew's offset plus the days since the anchor, modulo the cycle. Mate is on
+  -- Smjena A's default roster and the member put on is not, so it applies.
+  -- Attributed to the admin, after the rotation; nothing else is written by it.
+  insert into roster_overrides (
+    organization_id, team_id, date, member_out_id, member_in_id, reason, created_by, created_at
+  )
+  select demo_organization, teams.id, public.organization_today(demo_organization),
+         member_out.id, member_in.id, 'Zamjena zbog bolovanja.', demo_admin,
+         now() + interval '11 milliseconds'
+    from teams
+    join members member_out on member_out.organization_id = demo_organization
+                           and member_out.username = 'mate.radic'
+    cross join lateral (
+      select m.id
+        from teams off_team
+        join rotation_assignments a on a.team_id = off_team.id
+        join rotation_steps offset_step on offset_step.id = a.offset_step_id
+        join rotation_steps today_step
+          on today_step.pattern_id = a.pattern_id
+         and today_step.position = (offset_step.position
+               + (public.organization_today(demo_organization) - a.anchor_date))
+               % (select count(*) from rotation_steps s where s.pattern_id = a.pattern_id)
+        join shift_types today_type on today_type.id = today_step.shift_type_id
+        join team_membership_versions v on v.team_id = off_team.id and v.position = 'firefighter'
+        join members m on m.id = v.member_id
+       where off_team.organization_id = demo_organization
+         and off_team.name <> 'Smjena A'
+         and not today_type.is_working
+       order by off_team.name, m.username
+       limit 1
+    ) as member_in
+   where teams.organization_id = demo_organization
+     and teams.name = 'Smjena A';
+
+  get diagnostics written = row_count;
+  if written <> 1 then
+    raise exception using
+      errcode = 'raise_exception',
+      message = 'DEMO_ROTATION_INCOMPLETE',
+      detail = format('%s of 1 roster override written', written);
   end if;
 
   raise notice 'demo organization % (%) replaced on %; the admin signs in as admin@%',

@@ -227,7 +227,17 @@ export class CalendarPage extends BasePage {
     return this.dayList.locator('li[aria-current="date"]');
   }
 
-  /** A day's button, which opens its detail. */
+  /** Today's day in a given day list — a chosen person's (story 3.6a). */
+  todayIn(list: Locator): Locator {
+    return list.locator('li[aria-current="date"]');
+  }
+
+  /** A day's button anywhere on the page, by its full label (story 3.6a). */
+  dayOpenerNamed(name: string): Locator {
+    return this.page.getByRole('button', { name, exact: true });
+  }
+
+  /** A day's button, which opens its detail — one per shift, in order (story 3.6a). */
   openerIn(day: Locator): Locator {
     return day.getByRole('button');
   }
@@ -288,6 +298,21 @@ export class CalendarPage extends BasePage {
   overrideIn(detail: Locator): Locator {
     // Exact, so the pending block's `Izmjena čeka pregled` (story 3.5c) is not it.
     return detail.getByRole('region', { name: kalendar.detail.override.heading, exact: true });
+  }
+
+  /** The roster changes block (story 3.6a): each change, its author, time and reason. */
+  rosterChangesIn(detail: Locator): Locator {
+    return detail.getByRole('region', { name: kalendar.detail.rosterChange.heading, exact: true });
+  }
+
+  /** The roster changes block's entries. */
+  rosterChangeItemsIn(detail: Locator): Locator {
+    return this.rosterChangesIn(detail).getByRole('listitem');
+  }
+
+  /** The block of roster changes a rotation change left pending (story 3.6a). */
+  rosterPendingIn(detail: Locator): Locator {
+    return detail.getByRole('region', { name: kalendar.detail.rosterChange.pendingHeading, exact: true });
   }
 
   /** The block of an override a rotation change left pending (story 3.5c). */
