@@ -35,6 +35,7 @@ import {
 } from '@/features/calendar/services/snapshot';
 import { CALENDAR_SCREEN_PARTS } from '@/features/calendar/calendar-screen.fixture';
 import {
+  FIXTURE_ORGANIZATION_NAME,
   OTHER_ORGANIZATION,
   PILOT,
   SEEDED,
@@ -142,6 +143,7 @@ describe('the read', () => {
     expect(outcome.snapshot.rosterOverrides).toEqual([]);
     expect(outcome.snapshot.timeZone).toBe('Europe/Zagreb');
     expect(outcome.snapshot.usesFireRanks).toBe(false);
+    expect(outcome.snapshot.organizationName).toBe(FIXTURE_ORGANIZATION_NAME);
     expect(outcome.snapshot.teams).toHaveLength(teams);
     expect(outcome.snapshot.types).toHaveLength(types);
     expect(outcome.snapshot.steps).toHaveLength(steps);
@@ -194,8 +196,9 @@ describe('the read', () => {
     expect([...CALENDAR_COLUMNS.matchAll(/member_status_versions\(([^)]*)\)/g)].map((found) => found[1])).toEqual([
       'organization_id,member_id,active,effective_from',
     ]);
-    // The organization's own columns: its id, zone and whether it uses ranks.
-    expect(CALENDAR_COLUMNS.startsWith('id,timezone,uses_fire_ranks,teams(')).toBe(true);
+    // The organization's own columns: its id, zone, name (story 4.3: the hours
+    // export's file name) and whether it uses ranks.
+    expect(CALENDAR_COLUMNS.startsWith('id,timezone,name,uses_fire_ranks,teams(')).toBe(true);
     expect(CALENDAR_COLUMNS).not.toMatch(/auth_user_id|email/);
     expect(CALENDAR_COLUMNS).not.toContain('created_by');
     const assignments = /rotation_assignments\(([^)]*)\)/.exec(CALENDAR_COLUMNS)?.[1] ?? '';
@@ -682,6 +685,16 @@ describe('the read', () => {
     const { member_status_versions: _statuses, ...noEmbed } = calendarOrganizationRow(PILOT);
 
     expect(await read(tableOf({ data: [noEmbed], error: null, count: 1 }))).toEqual(REFUSED);
+    vi.restoreAllMocks();
+  });
+
+  it('refuses an organization whose name is not text (story 4.3)', async () => {
+    quiet();
+    for (const name of [null, '', 7, { text: 'DVD' }]) {
+      const answer = { data: [calendarOrganizationRow(PILOT, { name })], error: null, count: 1 };
+
+      expect(await read(tableOf(answer)), String(name)).toEqual(REFUSED);
+    }
     vi.restoreAllMocks();
   });
 

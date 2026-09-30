@@ -609,13 +609,36 @@ function chunkPaths(): string[] {
   return chunks.map((name) => join(assets, name));
 }
 
-/** The entry chunk. One today; named separately from the sweep below so a
- *  future code-split does not silently narrow what the sweep reads. */
+/**
+ * The entry chunk: the one `dist/index.html`'s module script loads. Named
+ * separately from the sweep below so a code-split does not silently narrow
+ * what the sweep reads.
+ *
+ * READ OFF THE PAGE since story 4.3, not off the folder: the XLSX writer is
+ * its own lazily loaded chunk, so `dist/assets` holds more than one `.js` and
+ * "the only one" no longer names the entry. The page is what a browser boots.
+ */
 function entryChunkPath(): string {
-  const chunks = chunkPaths();
-  expect(chunks.length, 'expected exactly one built entry chunk').toBe(1);
+  const distRoot = join(webRoot, 'dist');
+  const page = readFileSync(join(distRoot, 'index.html'), 'utf8');
+  // Each tag's attributes read on their own, in any order and either quote.
+  const attributesOf = (tag: string): Map<string, string> =>
+    new Map(
+      [...tag.matchAll(/([\w-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)].map((found) => [
+        (found[1] ?? '').toLowerCase(),
+        found[2] ?? found[3] ?? '',
+      ]),
+    );
+  const sources = [...page.matchAll(/<script\b([^>]*)>/gi)]
+    .map((found) => attributesOf(found[1] ?? ''))
+    .filter((attributes) => attributes.get('type') === 'module' && attributes.has('src'))
+    .map((attributes) => attributes.get('src') ?? '');
+  expect(sources.length, 'expected exactly one module script on the built page').toBe(1);
+  // Relative to the dist root, whatever base the build was given.
+  const path = join(distRoot, (sources[0] ?? '').replace(/^\.?\//, ''));
+  expect(chunkPaths(), 'the page loads a chunk the build did not write').toContain(path);
 
-  return chunks[0] ?? '';
+  return path;
 }
 
 function entryChunk(): string {
@@ -1587,6 +1610,26 @@ describe('the resource file is the only user-facing Croatian in the build', () =
     // literal in a lazily split component invisible.
     expect(chunkPaths().length).toBeGreaterThan(0);
     expect(allChunks().length).toBeGreaterThanOrEqual(entryChunk().length);
+  });
+
+  it.skipIf(notBuilt)('keeps the XLSX writer out of the entry chunk, loaded only by import() (story 4.3)', () => {
+    // `xl/worksheets/` is the path every sheet the writer zips is stored
+    // under: a string the writer cannot work without and nothing else in the
+    // application says. Absent from the entry, present in exactly one other
+    // chunk, and that chunk named by the entry only inside a dynamic
+    // `import()` — so it loads when the export is chosen, never at boot.
+    const marker = 'xl/worksheets/';
+    const entry = entryChunk();
+    const writers = chunkPaths().filter((path) => readFileSync(path, 'utf8').includes(marker));
+
+    expect(entry.includes(marker), 'the XLSX writer is in the entry chunk').toBe(false);
+    expect(writers, 'no chunk holds the XLSX writer').toHaveLength(1);
+    const name = (writers[0] ?? '').split(/[\\/]/).at(-1) ?? '';
+
+    const quoted = `[\`'"]\\./${name.replaceAll('.', '\\.')}[\`'"]`;
+
+    expect(entry, 'the entry does not load the writer lazily').toMatch(new RegExp(`import\\(\\s*${quoted}\\s*\\)`));
+    expect(entry, 'the entry imports the writer statically').not.toMatch(new RegExp(`from\\s*${quoted}`));
   });
 
   it('counts occurrences the way the sweep above assumes', () => {

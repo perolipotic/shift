@@ -113,7 +113,7 @@ export const CALENDAR_KEY = ['calendar'] as const;
  * row of another tenant.
  */
 export const CALENDAR_COLUMNS =
-  `${ORGANIZATION_ZONE_COLUMNS},uses_fire_ranks,` +
+  `${ORGANIZATION_ZONE_COLUMNS},name,uses_fire_ranks,` +
   `teams(${TEAMS_COLUMNS}),` +
   `${SHIFT_TYPES_EMBED},` +
   `hour_bands(${HOUR_BANDS_COLUMNS}),` +
@@ -263,6 +263,11 @@ export interface CalendarViewer {
 /** The one answer the calendar draws from. */
 export interface CalendarSnapshot {
   readonly organizationId: string;
+  /**
+   * The organization's name as stored (story 4.3): the hours export's file
+   * name carries it. Read on the same row, so no second read.
+   */
+  readonly organizationName: string;
   /** The organization's zone: "today" is the organization's, never the device's (L8). */
   readonly timeZone: string;
   /** Whether the organization uses fire ranks: rank is shown where it does, and never used. */
@@ -442,6 +447,7 @@ export async function readCalendar(
   if (!isRecord(organization)) return unavailable('organization');
 
   const organizationId = textAt(organization, 'id');
+  const organizationName = textAt(organization, 'name');
   const timeZone = textAt(organization, 'timezone');
   const usesFireRanks = organization['uses_fire_ranks'];
   const teamRows = embedded(organization, 'teams');
@@ -453,7 +459,7 @@ export async function readCalendar(
   const membershipRows = embedded(organization, 'team_membership_versions');
   const statusRows = embedded(organization, 'member_status_versions');
 
-  if (organizationId === null || timeZone === null) return unavailable('organization');
+  if (organizationId === null || organizationName === null || timeZone === null) return unavailable('organization');
   if (typeof usesFireRanks !== 'boolean') return unavailable('organization');
   if (teamRows === null || typeRows === null || bandRows === null || stepRows === null || assignmentRows === null) {
     return unavailable('organization');
@@ -587,6 +593,7 @@ export async function readCalendar(
     ok: true,
     snapshot: {
       organizationId,
+      organizationName,
       timeZone,
       usesFireRanks,
       teams,

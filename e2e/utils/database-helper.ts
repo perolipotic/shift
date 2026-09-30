@@ -157,10 +157,6 @@ function holdLock(key: string, onHeld: (client: pg.Client) => Promise<void>): Ro
 }
 
 /**
- * Sets the run organization's `uses_fire_ranks` and answers what it was, so
- * the caller can restore it. Call it under {@link holdFireRanks}.
- */
-/**
  * Archives the run organization's active shift type by that name, if there is
  * one: a test's own cleanup, run from a `finally` so a failure part-way leaves
  * no active type behind in the shared organization. Idempotent.
@@ -179,6 +175,28 @@ export async function archiveShiftType(slug: string, name: string): Promise<void
   }
 }
 
+/**
+ * The run organization's name as stored (story 4.3): what the hours export's
+ * file name carries. Read, never assumed from how the fixture was provisioned.
+ */
+export async function organizationNameOf(slug: string): Promise<string> {
+  const client = await connect();
+  try {
+    const answer = await client.query<{ name: string }>('select name from organizations where slug = $1', [slug]);
+    const name = answer.rows[0]?.name;
+
+    if (name === undefined) throw new Error(`E2E: no organization ${slug}`);
+
+    return name;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Sets the run organization's `uses_fire_ranks` and answers what it was, so
+ * the caller can restore it. Call it under {@link holdFireRanks}.
+ */
 export async function setFireRanks(slug: string, on: boolean): Promise<boolean> {
   const client = await connect();
   try {

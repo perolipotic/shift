@@ -226,7 +226,7 @@ Verified against the npm registry and vendor documentation on 2026-09-02.
 | i18next | 26.4.1 |
 | Vitest | current, node environment |
 | PostgreSQL | Supabase-managed |
-| XLSX writer (client-side, lazy-loaded; `apps/web` only) | chosen and pinned in Story 4.3 |
+| XLSX writer (client-side, lazy-loaded; `apps/web` only): `write-excel-file` | 4.1.1 |
 
 ## Structural Seed
 

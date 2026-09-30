@@ -69,5 +69,8 @@ export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
     change(hoursSortChangeOf(nextHoursSort(surface.organization.sort, key)));
   }
 
-  return { ...surface, show, change, pressColumn };
+  // The export's file name carries it (story 4.3): the same row, the same read.
+  const organizationName = snapshot === null ? null : snapshot.organizationName;
+
+  return { ...surface, organizationName, show, change, pressColumn };
 }

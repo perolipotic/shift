@@ -265,6 +265,9 @@ export function statusRow(
   return { organization_id: organization, member_id: memberId, active, effective_from: effectiveFrom };
 }
 
+/** The name the calendar's organization row carries by default (story 4.3). */
+export const FIXTURE_ORGANIZATION_NAME = 'DVD Fixture';
+
 /**
  * The organization as the calendar's read embeds it: the rotation fixture's
  * embeds, and in place of the members list, the viewer's row alone — by
@@ -272,12 +275,14 @@ export function statusRow(
  * organization-level `team_membership_versions` embed is `versions`, or by
  * default every viewer row's own versions, stamped with its member id and a
  * `null` position. The `member_status_versions` embed is `statuses`, by
- * default none (story 3.4a).
+ * default none (story 3.4a). Its `name` is `name`, by default
+ * {@link FIXTURE_ORGANIZATION_NAME} (story 4.3).
  */
 export function calendarOrganizationRow(
   rows: FixtureRows,
   {
     timezone = 'Europe/Zagreb',
+    name = FIXTURE_ORGANIZATION_NAME as unknown,
     viewers = null as readonly Row[] | null,
     versions = null as readonly Row[] | null,
     statuses = [] as readonly Row[],
@@ -297,6 +302,7 @@ export function calendarOrganizationRow(
 
   return {
     ...organizationRow(rows, timezone),
+    name,
     uses_fire_ranks: usesFireRanks,
     hour_bands: rows.bands ?? [],
     members,

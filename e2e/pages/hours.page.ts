@@ -1,4 +1,4 @@
-import type { Locator } from '@playwright/test';
+import type { Download, Locator } from '@playwright/test';
 
 import { escapeRegExp, hr } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
@@ -11,7 +11,8 @@ const organization = hr.sati.organization;
  * `/sati`: the viewer's own month of hours (story 4.1b) — the month
  * navigation it shares with the calendar, the total and the shift count, a
  * row per band, the leave row and the failure — and for an admin, every
- * member's month in one table (story 4.2), its filters and sortable headings.
+ * member's month in one table (story 4.2), its filters and sortable headings,
+ * and its export (story 4.3).
  */
 export class HoursPage extends BasePage {
   protected readonly path = '/sati';
@@ -165,6 +166,46 @@ export class HoursPage extends BasePage {
   /** The person filter's native select. */
   get personFilter(): Locator {
     return this.page.getByRole('combobox', { name: organization.personFilter, exact: true });
+  }
+
+  // ------------------------------------------------ the export (story 4.3)
+
+  /** `Izvezi u Excel`, beside the filters; while building, it wears the pending label. */
+  get exportButton(): Locator {
+    return this.page.getByRole('button', { name: organization.export.action, exact: true });
+  }
+
+  /** The line a failed build shows. */
+  get exportFailed(): Locator {
+    return this.page.getByRole('alert').filter({ hasText: organization.export.failed });
+  }
+
+  /** Chooses the export and answers the download it starts. */
+  async exportDownload(): Promise<Download> {
+    const [download] = await Promise.all([this.page.waitForEvent('download'), this.exportButton.click()]);
+
+    return download;
+  }
+
+  /** Every body row's cells as shown, a band cell by its hours alone, in table order. */
+  async organizationMatrix(): Promise<string[][]> {
+    const labels = (await this.columnHeaders.allTextContents()).map((text) => text.trim());
+    const fixed = [organization.member, organization.team, organization.shifts, organization.total, organization.leave];
+    const bandLabels = new Set(labels.filter((label) => !fixed.includes(label)));
+    const rows = await this.organizationRows.all();
+
+    return Promise.all(
+      rows.map(async (row) =>
+        Promise.all(
+          labels.map(async (label, index) => {
+            const cell = row.getByRole('cell').nth(index);
+            const shown = bandLabels.has(label) ? this.bandCellHours(cell) : cell;
+
+            return ((await shown.textContent()) ?? '').trim();
+          }),
+        ),
+      ),
+    );
   }
 
   /** The index of a heading among the table's headings, for reading its column. */
