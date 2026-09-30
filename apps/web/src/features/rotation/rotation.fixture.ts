@@ -44,6 +44,13 @@ export interface FixtureRows {
   readonly members?: readonly Row[];
   /** The live shift-type overrides embed (story 3.5c); none when a fixture names none. */
   readonly overrides?: readonly Row[];
+  /** The hour bands the calendar embeds (story 4.1b); none when a fixture names none. */
+  readonly bands?: readonly Row[];
+}
+
+/** One hour band as the calendar embeds it (story 4.1b). */
+export function bandRow(id: string, name: string, startTime: string, organization = ORGANIZATION): Row {
+  return { organization_id: organization, id, name, start_time: startTime };
 }
 
 export function memberRow(authUserId: string, name: string, organization = ORGANIZATION): Row {
@@ -186,6 +193,8 @@ export const PILOT: FixtureRows = {
   assignments: ['a', 'b', 'c', 'd'].map((letter, offset) =>
     assignmentRow(`pilot-smjena-${letter}`, 'pilot-rotation', `pilot-step-${String(offset)}`, SEEDED, SEEDED),
   ),
+  // `packages/domain/test/fixtures.ts`'s `PILOT_HOUR_BANDS`.
+  bands: [bandRow('pilot-band-dan', 'Dan', '07:00:00'), bandRow('pilot-band-noc', 'Noć', '19:00:00')],
 };
 
 export const UJ5: FixtureRows = {
@@ -202,6 +211,12 @@ export const UJ5: FixtureRows = {
   assignments: ['a', 'b', 'c'].map((letter, offset) =>
     assignmentRow(`uj5-smjena-${letter}`, 'uj5-rotation', `uj5-step-${String(offset)}`, SEEDED, SEEDED),
   ),
+  // `packages/domain/test/fixtures.ts`'s `UJ5_HOUR_BANDS`: every shift straddles a band edge.
+  bands: [
+    bandRow('uj5-band-jutro', 'Jutro', '05:00:00'),
+    bandRow('uj5-band-popodne', 'Popodne', '13:00:00'),
+    bandRow('uj5-band-noc', 'Noć', '21:00:00'),
+  ],
 };
 
 // ------------------------------------------------ the calendar's viewer (3.2a)
@@ -283,6 +298,7 @@ export function calendarOrganizationRow(
   return {
     ...organizationRow(rows, timezone),
     uses_fire_ranks: usesFireRanks,
+    hour_bands: rows.bands ?? [],
     members,
     team_membership_versions: versions ?? stamped,
     member_status_versions: statuses,

@@ -93,6 +93,11 @@ const SANCTIONED_PLURAL_KEYS = [
   // `1 izmjena čeka`, `2 izmjene čekaju`, `5 izmjena čeka` — in the review and
   // in the save's confirmation.
   'rotation.builder.overrides.count',
+  // STORY 4.1b: how many shifts the viewer works in the month and in each
+  // band — `0 smjena`, `1 smjena`, `2 smjene`, `21 smjena` — and the note on
+  // the ones with no times, shown only when there is one.
+  'sati.shiftCount',
+  'sati.untimed',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -1044,6 +1049,14 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.detail.rosterChange.refused.gone',
   'kalendar.detail.rosterChange.refused.denied',
   'kalendar.detail.rosterChange.refused.failed',
+  // STORY 4.1b: *Sati* — the total's and the shift count's labels, the bands'
+  // heading, the leave row and the one failure. The hours themselves are the
+  // band screens' `organization.hourBands.duration.*` units.
+  'sati.total',
+  'sati.shifts',
+  'sati.bands',
+  'sati.leave',
+  'sati.error.unavailable',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
@@ -1107,6 +1120,14 @@ const ROTATION_BUILDER_NAMESPACE = 'rotation.builder.';
 const CALENDAR_NAMESPACE = 'kalendar.';
 
 /**
+ * The hours' namespace (story 4.1b). *Sati* counts the SHIFTS a member works,
+ * so `smjen` names a worked shift there — `15 smjena`, as the epic's "5 day
+ * shifts, 60 hours" reads — and `tip… smjen…` is refused: an hour is never
+ * counted by shift type, and nothing there names one.
+ */
+const HOURS_NAMESPACE = 'sati.';
+
+/**
  * The day detail's override copy (story 3.5b), inside the calendar's
  * namespace: the admin changes a team's SHIFT TYPE there, so it says the term
  * — `Tip smjene` is the form's field — and, as in
@@ -1154,7 +1175,8 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
   if (
     !key.startsWith(TEAM_NAMESPACE) &&
     !key.startsWith(ROTATION_BUILDER_NAMESPACE) &&
-    !key.startsWith(CALENDAR_NAMESPACE)
+    !key.startsWith(CALENDAR_NAMESPACE) &&
+    !key.startsWith(HOURS_NAMESPACE)
   ) {
     return lowered.includes('smjen');
   }
@@ -1522,6 +1544,10 @@ describe('the detector reads the file it thinks it does', () => {
     expect(teamTermOutOfTurn('rotation.builder.stepper.step.types', 'Tipovi')).toBe(false);
     expect(teamTermOutOfTurn('rotation.builder.stepper.step.types', 'Tipovi smjena')).toBe(true);
     expect(teamTermOutOfTurn('rotation.pattern.heading', 'Smjena')).toBe(true);
+    // STORY 4.1b: a worked shift in *Sati*, never the Shift Type.
+    expect(teamTermOutOfTurn('sati.shiftCount', '{count, plural, one {# smjena}}')).toBe(false);
+    expect(teamTermOutOfTurn('sati.shifts', 'Tip smjene')).toBe(true);
+    expect(teamTermOutOfTurn('satix.shifts', 'Smjene')).toBe(true);
   });
 
   it('resolves a nested key path to its message and a wrong one to nothing', () => {

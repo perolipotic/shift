@@ -8,6 +8,7 @@ import {
   overridesByTeamAndDate,
   scheduleOfMonth,
   shiftTypeVersionOn,
+  type MemberScheduleInput,
   type MembershipVersion,
   type OverrideStanding,
   type StatusVersion,
@@ -38,6 +39,12 @@ import {
 } from '@/features/shift-types/services/list';
 import { splitTeams, type TeamRow } from '@/features/teams/services/list';
 import { instantMicrosOf } from '@/features/rotation/services/list';
+
+/**
+ * The month heading's id, re-exported for the page, which hands it to the
+ * shared `@/components/month-nav` (story 4.1b): the rule is `grid-keys`'s.
+ */
+export { MONTH_HEADING_ID } from '@/features/calendar/utils/grid-keys';
 
 /**
  * One month of the calendar as the screen draws it (story 3.1): the heading,
@@ -482,6 +489,24 @@ export function monthShownOf(search: CalendarSearch, today: string): string {
   return search.mjesec !== undefined && isCalendarMonth(search.mjesec) ? search.mjesec : monthOf(today);
 }
 
+/**
+ * `month`'s heading and navigation, `today` the organization's
+ * ({@link calendarTodayOf}): the one rule both the calendar and *Sati* draw
+ * their month navigation from (story 4.1b).
+ *
+ * @throws RangeError when `month` is not a `YYYY-MM` or cannot be formatted.
+ */
+export function monthHeaderOf(month: string, today: string): MonthHeader {
+  return {
+    month,
+    monthName: capitalized(formatted(formatIsoMonthName(`${month}-01`), `the month ${month}`)),
+    year: month.slice(0, 4),
+    previous: adjacentMonth(month, -1),
+    next: adjacentMonth(month, 1),
+    isCurrent: month === monthOf(today),
+  };
+}
+
 /** One team on one date, as the grid draws it. */
 export interface CalendarCell {
   readonly teamId: string;
@@ -598,8 +623,11 @@ export interface CalendarDay {
   readonly shifts: readonly CalendarDayShift[];
 }
 
-/** One month, ready to render. */
-export interface CalendarMonth {
+/**
+ * A month's heading and its way to the adjacent months, as the shared month
+ * navigation draws it — the calendar's and *Sati*'s alike (story 4.1b).
+ */
+export interface MonthHeader {
   /** `2026-09` */
   readonly month: string;
   /** `Rujan`, capitalized: it starts the heading. */
@@ -612,6 +640,10 @@ export interface CalendarMonth {
   readonly next: string | null;
   /** Whether the month shown is the one today falls in. */
   readonly isCurrent: boolean;
+}
+
+/** One month, ready to render. */
+export interface CalendarMonth extends MonthHeader {
   /**
    * The active teams, in the order the team list shows them — narrowed to
    * `filter.chosen` when a team is chosen, and every row's `cells` with them.
@@ -745,6 +777,30 @@ export function weekdayOf(date: string): string {
 }
 
 /**
+ * What `memberScheduleOfMonth` walks for one member, from the one snapshot:
+ * their histories, every rotation, and the shift-type and roster overrides IN
+ * FORCE. THE ONE RECIPE: the day list below and *Sati*'s hours (story 4.1b)
+ * both start from it, so the shifts counted in hours are exactly the working
+ * shifts of the day list.
+ */
+export function memberScheduleInputOf(
+  snapshot: CalendarSnapshot,
+  { memberId, memberships, statuses }: CalendarMemberHistory,
+): MemberScheduleInput {
+  return {
+    memberId,
+    memberships,
+    statuses,
+    assignments: snapshot.assignments,
+    steps: snapshot.steps,
+    overrides: overrideStandingOfCalendar(snapshot).inForce,
+    members: snapshot.members,
+    rosterOverrides: rosterStandingOfCalendar(snapshot).inForce,
+    workingShiftTypeIds: workingShiftTypeIdsOf(snapshot),
+  };
+}
+
+/**
  * One member's day list of `month` — the viewer's in *Moj raspored*, or the
  * person chosen in the filter (story 3.3b) — from their membership and status
  * histories: a day per date, each the type the member's team that day works —
@@ -764,20 +820,7 @@ export function calendarDayListOf(
   month: string,
   today: string,
 ): readonly CalendarDay[] | null {
-  const schedule = memberScheduleOfMonth(
-    {
-      memberId,
-      memberships,
-      statuses,
-      assignments: snapshot.assignments,
-      steps: snapshot.steps,
-      overrides: overrideStandingOfCalendar(snapshot).inForce,
-      members: snapshot.members,
-      rosterOverrides: rosterStandingOfCalendar(snapshot).inForce,
-      workingShiftTypeIds: workingShiftTypeIdsOf(snapshot),
-    },
-    month,
-  );
+  const schedule = memberScheduleOfMonth(memberScheduleInputOf(snapshot, { memberId, memberships, statuses }), month);
 
   if (schedule.every((day) => day.shifts.length === 0)) return null;
 
@@ -886,12 +929,7 @@ export function calendarMonthOf(snapshot: CalendarSnapshot, search: CalendarSear
   const columns = teams.filter((team) => shown(team.id));
 
   return {
-    month,
-    monthName: capitalized(formatted(formatIsoMonthName(`${month}-01`), `the month ${month}`)),
-    year: month.slice(0, 4),
-    previous: adjacentMonth(month, -1),
-    next: adjacentMonth(month, 1),
-    isCurrent: month === monthOf(today),
+    ...monthHeaderOf(month, today),
     columns,
     filter: {
       teams,

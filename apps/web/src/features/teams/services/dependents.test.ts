@@ -15,6 +15,7 @@ import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snap
 import { ROTATION_KEY } from '@/features/rotation/services/list';
 import { SHIFT_TYPES_LIST_KEY } from '@/features/shift-types/services/list';
 import {
+  HOUR_BAND_WRITE_DEPENDENTS,
   MEMBERSHIP_WRITE_DEPENDENTS,
   MEMBER_SAVE_DEPENDENTS,
   NO_DEPENDENTS,
@@ -189,6 +190,13 @@ describe('the reads a team or membership write makes stale', () => {
       // and the chrome's name and role are the admin's own when they edit
       // themselves.
       stale: [MEMBERS_LIST_KEY, ROSTER_A, ROSTER_B, ROTATION_KEY, MEMBER_NAME_KEY, MEMBER_ROLE_KEY],
+    },
+    {
+      write: 'an hour band write (story 4.1b)',
+      own: HOUR_BANDS_LIST_KEY,
+      dependents: HOUR_BAND_WRITE_DEPENDENTS,
+      // The calendar snapshot embeds every band, which *Sati* splits hours by.
+      stale: [CALENDAR_KEY, HOUR_BANDS_LIST_KEY],
     },
     {
       write: 'a refusal',

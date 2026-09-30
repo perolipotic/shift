@@ -144,6 +144,17 @@
       "unavailable": "Kalendar trenutačno nije moguće učitati. Pokušaj ponovno."
     }
   },
+  "sati": {
+    "total": "Ukupno sati",
+    "shifts": "Broj smjena",
+    "shiftCount": "{count, plural, one {# smjena} few {# smjene} other {# smjena}}",
+    "bands": "Po satnim pojasevima",
+    "leave": "Godišnji odmor",
+    "untimed": "{count, plural, one {# smjena nema upisano vrijeme pa nije uračunata u sate.} few {# smjene nemaju upisano vrijeme pa nisu uračunate u sate.} other {# smjena nema upisano vrijeme pa nije uračunato u sate.}}",
+    "error": {
+      "unavailable": "Sate trenutačno nije moguće učitati. Pokušaj ponovno."
+    }
+  },
   "ljudi": {
     "lede": "Osobe u organizaciji, njihove razine ovlasti i dani godišnjeg odmora.",
     "caption": "Popis osoba u organizaciji",

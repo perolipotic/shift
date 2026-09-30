@@ -103,6 +103,24 @@ function calendarScreenParts(): string[] {
 }
 
 /**
+ * Every non-test module anywhere under the hours feature (story 4.1b), less
+ * any fixture: *Sati*'s hook, components and rules module.
+ */
+function hoursFeatureParts(): string[] {
+  const feature = join(webRoot, 'src', 'features', 'hours');
+
+  if (!existsSync(feature)) return [];
+
+  return readdirSync(feature, { recursive: true, encoding: 'utf8' })
+    .filter(
+      (name) =>
+        /\.[cm]?[jt]sx?$/.test(name) && !/\.test\.[cm]?[jt]sx?$/.test(name) && !/\.fixture\.[cm]?[jt]sx?$/.test(name),
+    )
+    .sort()
+    .map((name) => join(feature, name));
+}
+
+/**
  * Every non-test module anywhere under the shift types feature — its root and
  * every folder, at any depth — less its fixture: both shift type screens'
  * parts since source structure B4, and the read, the writes and the ramp
@@ -309,7 +327,9 @@ const TEAMS_SOURCES_REQUIRED = [
  */
 const CALENDAR_SOURCES_REQUIRED = [
   ...Object.values(CALENDAR_SCREEN_PARTS)
-    .filter((parts) => parts[0] !== 'pages')
+    // The month navigation is shared with *Sati* from `components/` since story
+    // 4.1b, and listed in `SOURCES` by name.
+    .filter((parts) => parts[0] === 'features')
     .map((parts) => join(webRoot, 'src', ...parts)),
   ...['month.ts', 'modifiers.ts', 'grid-keys.ts', 'day-detail.ts'].map((name) =>
     join(webRoot, 'src', 'features', 'calendar', 'utils', name),
@@ -559,6 +579,13 @@ const SOURCES = [
   // (story 3.1), the modifier vocabulary and the grid's keyboard rules (story
   // 3.2b) and the day detail model (story 3.4b) beside them.
   ...calendarScreenParts(),
+  // Story 4.1b: the month navigation *Kalendar* and *Sati* share — it renders
+  // the heading and the three buttons' copy — and the hours feature, READ OFF
+  // its folders: *Sati*'s hook and components, and its rules module, which
+  // owns the failure key as a return-type union. `sati.tsx` is listed with the
+  // destinations above.
+  join(webRoot, 'src', 'components', 'month-nav.tsx'),
+  ...hoursFeatureParts(),
   // The owner layout's numbered section badge, a primitive: text-free, here
   // for freshness like the other primitives.
   join(webRoot, 'src', 'components', 'ui', 'section-number.tsx'),

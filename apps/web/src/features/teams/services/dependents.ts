@@ -29,6 +29,9 @@ import { OWN_TEAM_KEY, TEAM_ROSTERS_KEY } from '@/features/teams/services/roster
  *     leave it stale silently.
  *   - THE CHROME'S OWN NAME AND ROLE are the signed-in member's own row, which
  *     an admin editing themselves writes.
+ *   - THE CALENDAR SNAPSHOT embeds every hour band (story 4.1b), which *Sati*
+ *     splits a member's hours by, so a band write names it too — declared
+ *     here beside the others, though the write is the band screens'.
  *
  * THE DEPENDENTS ARE RE-READ ONLY AFTER A WRITE THAT LANDED. A refusal changes
  * no row, so it re-reads its own screen's reads (the likeliest reason for a
@@ -67,6 +70,9 @@ export const MEMBER_SAVE_DEPENDENTS: readonly QueryKey[] = [
   MEMBER_NAME_KEY,
   MEMBER_ROLE_KEY,
 ];
+
+/** An hour band added, changed or removed (story 4.1b): the snapshot *Sati* derives band hours from. */
+export const HOUR_BAND_WRITE_DEPENDENTS: readonly QueryKey[] = [CALENDAR_KEY];
 
 /** A refusal's re-read: the surface's own key, and nothing that depends on it. */
 export const NO_DEPENDENTS: readonly QueryKey[] = [];
