@@ -478,7 +478,7 @@ development_status:
   # the admin, and the removal through migration 0027's definer
   # `remove_roster_override` (spec-3-6b-roster-override-form.md). Builder
   # disposition of pending roster overrides stays deferred (deferred-work.md).
-  3-6-an-admin-adds-removes-or-replaces-someone-on-a-shift: review
+  3-6-an-admin-adds-removes-or-replaces-someone-on-a-shift: done
   epic-3-retrospective: optional
 
   epic-4: backlog
