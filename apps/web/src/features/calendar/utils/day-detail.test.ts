@@ -1,3 +1,4 @@
+import { shiftRoster } from '@shift/domain';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -9,7 +10,15 @@ import {
   overrideOffersOf,
   overrideRemovalTargetOf,
   overrideTypeOptionsOf,
+  ROSTER_REFUSED_MEMBER,
+  ROSTER_REFUSED_REASON,
+  inOptionOf,
+  outOptionOf,
+  rosterEntryOf,
+  rosterOffersOf,
+  rosterRemovalTargetOf,
   type DayDetail,
+  type RosterLineTranslate,
 } from '@/features/calendar/utils/day-detail';
 import { OVERRIDE_REMOVED, OVERRIDE_SAVED, overrideDoneMessageKey } from '@/features/calendar/services/override-write';
 import { calendarMonthOf } from '@/features/calendar/utils/month';
@@ -162,6 +171,7 @@ describe('the day detail (story 3.4b)', () => {
       pending: null,
       rosterChanges: [],
       rosterPending: [],
+      rosterInert: [],
     });
   });
 
@@ -215,6 +225,7 @@ describe('the day detail (story 3.4b)', () => {
       pending: null,
       rosterChanges: [],
       rosterPending: [],
+      rosterInert: [],
     });
   });
 
@@ -235,6 +246,7 @@ describe('the day detail (story 3.4b)', () => {
       pending: null,
       rosterChanges: [],
       rosterPending: [],
+      rosterInert: [],
     });
   });
 
@@ -729,15 +741,19 @@ describe('a roster override is recorded and shown (story 3.6a)', () => {
     );
   });
 
-  it('leaves an inert override unshown: a member not on the roster taken off, or an off day', async () => {
+  it('leaves an inert override unapplied, listed as inert alone (3.6b): a member not on the roster taken off, or an off day', async () => {
     const snapshot = await onSmjenaB(false, 'firefighter', [
       calendarRosterOverrideRow('r1', TEAM, WORKING, VIEWER_MEMBER, null),
       calendarRosterOverrideRow('r2', TEAM, OFF, ANA, VIEWER_MEMBER),
     ]);
     const pure = await onSmjenaB();
+    const working = dayDetailOf(snapshot, TEAM, WORKING);
+    const off = dayDetailOf(snapshot, TEAM, OFF);
 
-    expect(dayDetailOf(snapshot, TEAM, WORKING)).toEqual(dayDetailOf(pure, TEAM, WORKING));
-    expect(dayDetailOf(snapshot, TEAM, OFF)).toEqual(dayDetailOf(pure, TEAM, OFF));
+    expect(working?.rosterInert.map((change) => [change.id, change.kind])).toEqual([['r1', 'removed']]);
+    expect(off?.rosterInert.map((change) => [change.id, change.kind])).toEqual([['r2', 'replaced']]);
+    expect({ ...working, rosterInert: [] }).toEqual(dayDetailOf(pure, TEAM, WORKING));
+    expect({ ...off, rosterInert: [] }).toEqual(dayDetailOf(pure, TEAM, OFF));
     const month = calendarMonthOf(snapshot, { mjesec: '2020-01' }, '2020-01-01');
     expect(month).toEqual(calendarMonthOf(pure, { mjesec: '2020-01' }, '2020-01-01'));
   });
@@ -752,8 +768,12 @@ describe('a roster override is recorded and shown (story 3.6a)', () => {
     const pure = await onSmjenaB();
 
     expect(dayDetailOf(snapshot, alfa, WORKING)?.kind).toBe('working');
-    expect(dayDetailOf(snapshot, alfa, WORKING)).toEqual(dayDetailOf(pure, alfa, WORKING));
-    expect(dayDetailOf(snapshot, alfa, '2020-01-05')).toEqual(dayDetailOf(pure, alfa, '2020-01-05'));
+    expect(dayDetailOf(snapshot, alfa, WORKING)?.rosterInert.map((change) => change.id)).toEqual(['r1']);
+    expect(dayDetailOf(snapshot, alfa, '2020-01-05')?.rosterInert.map((change) => change.id)).toEqual(['r2']);
+    expect({ ...dayDetailOf(snapshot, alfa, WORKING), rosterInert: [] }).toEqual(dayDetailOf(pure, alfa, WORKING));
+    expect({ ...dayDetailOf(snapshot, alfa, '2020-01-05'), rosterInert: [] }).toEqual(
+      dayDetailOf(pure, alfa, '2020-01-05'),
+    );
     const search = { mjesec: '2020-01' };
     expect(calendarMonthOf(snapshot, search, WORKING)).toEqual(calendarMonthOf(pure, search, WORKING));
     expect(calendarMonthOf(snapshot, { ...search, osoba: CVITA }, WORKING)).toEqual(
@@ -821,5 +841,326 @@ describe('a roster override is recorded and shown (story 3.6a)', () => {
     expect(t('kalendar.detail.rosterChange.removed', { name: 'Ana' })).toBe('Uklonjeno: Ana');
     expect(t('kalendar.detail.rosterChange.replaced', { out: 'Ana', in: 'Boris' })).toBe('Zamjena: Ana → Boris');
     expect(t('kalendar.detail.rosterChange.pendingHeading')).toBe('Promjena sastava čeka pregled');
+  });
+});
+
+describe('an admin adds, removes or replaces someone on a shift (story 3.6b)', () => {
+  const DORA = '00000000-0000-4000-8000-0000000000d4';
+
+  /** `onSmjenaB`'s organization, the viewer an admin (or not), with Dora on no team at all. */
+  async function asAdmin(
+    rosterOverrides: readonly Record<string, unknown>[] = [],
+    { role = 'admin', rows = PILOT }: { readonly role?: string; readonly rows?: FixtureRows } = {},
+  ): Promise<CalendarSnapshot> {
+    return snapshotOf(rows, {
+      rosterOverrides,
+      viewers: [viewerRow([membershipRow('pilot-smjena-a', SEEDED)], { role })],
+      versions: [
+        memberMembershipRow(VIEWER_MEMBER, 'pilot-smjena-a', SEEDED),
+        memberMembershipRow(BORIS, TEAM, SEEDED),
+        memberMembershipRow(ANA, TEAM, SEEDED, undefined, 'driver'),
+        memberMembershipRow(CVITA, TEAM, SEEDED),
+      ],
+      statuses: [statusRow(BORIS, false, '2020-01-11'), statusRow(CVITA, false, '2019-12-29')],
+      members: [
+        calendarMemberRow(BORIS, 'Boris'),
+        calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME),
+        calendarMemberRow(ANA, 'Ana', 'firefighter'),
+        calendarMemberRow(CVITA, 'Cvita'),
+        calendarMemberRow(DORA, 'Dora'),
+      ],
+    });
+  }
+
+  const ids = (candidates: readonly { readonly id: string }[]) => candidates.map((one) => one.id);
+
+  it('offers the default roster to take off, and every other active member to put on, in the snapshot order', async () => {
+    const snapshot = await asAdmin();
+    const offers = rosterOffersOf(snapshot, dayDetailOf(snapshot, TEAM, WORKING));
+
+    expect(offers.set).toBe(true);
+    expect(offers.remove).toBe(true);
+    // Cvita is inactive on the date: on neither list.
+    expect(offers.out).toEqual([
+      { id: ANA, name: 'Ana', fireRank: 'firefighter', position: 'driver' },
+      { id: BORIS, name: 'Boris', fireRank: null, position: null },
+    ]);
+    // Lana's own team works Dan that day: a double shift is offered, never warned of.
+    expect(offers.in).toEqual([
+      { id: DORA, name: 'Dora', fireRank: null, teamName: null },
+      { id: VIEWER_MEMBER, name: VIEWER_NAME, fireRank: null, teamName: 'Smjena A' },
+    ]);
+  });
+
+  it('leaves out every member a live change on the shift names, applied, pending or inert, on either side', async () => {
+    const applied = await asAdmin([calendarRosterOverrideRow('r1', TEAM, WORKING, ANA, VIEWER_MEMBER)]);
+    const appliedDetail = dayDetailOf(applied, TEAM, WORKING);
+    const offers = rosterOffersOf(applied, appliedDetail);
+
+    expect(appliedDetail?.rosterChanges.map((change) => [change.kind, change.outName, change.inName])).toEqual([
+      ['replaced', 'Ana', VIEWER_NAME],
+    ]);
+    expect(ids(offers.out)).toEqual([BORIS]);
+    expect(ids(offers.in)).toEqual([DORA]);
+
+    // Inert: Dora taken off a shift she is not on still names her.
+    const inert = await asAdmin([calendarRosterOverrideRow('r2', TEAM, WORKING, DORA, null)]);
+    const inertDetail = dayDetailOf(inert, TEAM, WORKING);
+
+    expect(inertDetail?.rosterInert.map((change) => change.id)).toEqual(['r2']);
+    expect(ids(rosterOffersOf(inert, inertDetail).in)).toEqual([VIEWER_MEMBER]);
+    // Another team's or another date's change names nobody here.
+    const elsewhere = await asAdmin([
+      calendarRosterOverrideRow('r3', 'pilot-smjena-a', WORKING, VIEWER_MEMBER, BORIS),
+      calendarRosterOverrideRow('r4', TEAM, '2020-01-05', ANA, null),
+    ]);
+
+    expect(rosterOffersOf(elsewhere, dayDetailOf(elsewhere, TEAM, WORKING))).toEqual(
+      rosterOffersOf(await asAdmin(), dayDetailOf(await asAdmin(), TEAM, WORKING)),
+    );
+  });
+
+  it('leaves out a member named by a change pending review', async () => {
+    const withChange: FixtureRows = {
+      ...PILOT,
+      assignments: [
+        ...PILOT.assignments,
+        assignmentRow(TEAM, 'pilot-rotation', 'pilot-step-2', '2026-09-20', '2026-09-20', undefined, {
+          createdAt: '2026-09-15T10:00:00+00:00',
+        }),
+      ],
+    };
+    const date = '2026-09-22';
+    const snapshot = await asAdmin([calendarRosterOverrideRow('r1', TEAM, date, ANA, null)], { rows: withChange });
+    const detail = dayDetailOf(snapshot, TEAM, date);
+
+    expect(detail?.rosterPending.map((change) => change.id)).toEqual(['r1']);
+    expect(ids(rosterOffersOf(snapshot, detail).out)).toEqual([]);
+    expect(rosterRemovalTargetOf(detail, 'r1')?.change.id).toBe('r1');
+  });
+
+  it('offers no form but every removal on a day that is not working, and nothing to a member-role account', async () => {
+    const snapshot = await asAdmin([calendarRosterOverrideRow('r1', TEAM, OFF, ANA, VIEWER_MEMBER)]);
+    const off = dayDetailOf(snapshot, TEAM, OFF);
+    const before = dayDetailOf(snapshot, TEAM, BEFORE);
+
+    expect(off?.kind).toBe('off');
+    expect(rosterOffersOf(snapshot, off)).toEqual({ set: false, remove: true, out: [], in: [] });
+    expect(off?.rosterInert.map((change) => change.id)).toEqual(['r1']);
+    expect(rosterRemovalTargetOf(off, 'r1')).toEqual({
+      change: off?.rosterInert[0],
+      teamName: 'Smjena B',
+      date: off?.date,
+    });
+    expect(before?.kind).toBe('noRotation');
+    expect(rosterOffersOf(snapshot, before)).toEqual({ set: false, remove: true, out: [], in: [] });
+
+    const member = await asAdmin([calendarRosterOverrideRow('r1', TEAM, OFF, ANA, VIEWER_MEMBER)], {
+      role: 'member_role',
+    });
+    const none = { set: false, remove: false, out: [], in: [] };
+
+    expect(rosterOffersOf(member, dayDetailOf(member, TEAM, WORKING))).toEqual(none);
+    expect(rosterOffersOf(member, dayDetailOf(member, TEAM, OFF))).toEqual(none);
+    expect(rosterOffersOf(null, null)).toEqual(none);
+  });
+
+  it('names the removal target among applied, pending and inert changes, and nothing else', async () => {
+    const snapshot = await asAdmin([
+      calendarRosterOverrideRow('r1', TEAM, WORKING, ANA, VIEWER_MEMBER, { reason: 'Bolovanje.' }),
+      calendarRosterOverrideRow('r2', TEAM, WORKING, DORA, null),
+    ]);
+    const detail = dayDetailOf(snapshot, TEAM, WORKING);
+
+    expect(rosterRemovalTargetOf(detail, 'r1')).toMatchObject({
+      change: { id: 'r1', kind: 'replaced', outName: 'Ana', inName: VIEWER_NAME, reason: 'Bolovanje.' },
+      teamName: 'Smjena B',
+      date: 'srijeda 01.01.2020',
+    });
+    expect(rosterRemovalTargetOf(detail, 'r2')?.change.kind).toBe('removed');
+    expect(rosterRemovalTargetOf(detail, 'r9')).toBeNull();
+    expect(rosterRemovalTargetOf(detail, null)).toBeNull();
+    expect(rosterRemovalTargetOf(null, 'r1')).toBeNull();
+  });
+
+  it('once removed, the default roster and its candidates are back exactly', async () => {
+    const pure = await asAdmin();
+    const replaced = await asAdmin([calendarRosterOverrideRow('r1', TEAM, WORKING, ANA, VIEWER_MEMBER)]);
+
+    // Written, the month and the detail move; the rpc then no longer answers the removed row.
+    expect(calendarMonthOf(replaced, { mjesec: '2020-01' }, WORKING)).not.toEqual(
+      calendarMonthOf(pure, { mjesec: '2020-01' }, WORKING),
+    );
+    const removed: CalendarSnapshot = {
+      ...replaced,
+      rosterOverrides: replaced.rosterOverrides.filter((one) => one.id !== 'r1'),
+    };
+
+    expect(replaced.rosterOverrides.map((one) => one.id)).toEqual(['r1']);
+
+    expect(dayDetailOf(removed, TEAM, WORKING)).toEqual(dayDetailOf(pure, TEAM, WORKING));
+    expect(rosterOffersOf(removed, dayDetailOf(removed, TEAM, WORKING))).toEqual(
+      rosterOffersOf(pure, dayDetailOf(pure, TEAM, WORKING)),
+    );
+    expect(calendarMonthOf(removed, { mjesec: '2020-01' }, WORKING)).toEqual(
+      calendarMonthOf(pure, { mjesec: '2020-01' }, WORKING),
+    );
+  });
+
+  it('on UJ-5 too: a replacement leaves both members off both lists, and its removal gives them back', async () => {
+    const team = 'uj5-smjena-b';
+    const rows = (overrides: readonly Record<string, unknown>[]) =>
+      snapshotOf(UJ5, {
+        rosterOverrides: overrides,
+        viewers: [viewerRow([membershipRow('uj5-smjena-a', SEEDED)], { role: 'admin' })],
+        versions: [
+          memberMembershipRow(VIEWER_MEMBER, 'uj5-smjena-a', SEEDED),
+          memberMembershipRow(ANA, team, SEEDED),
+          memberMembershipRow(BORIS, 'uj5-smjena-c', SEEDED),
+        ],
+        members: [
+          calendarMemberRow(ANA, 'Ana'),
+          calendarMemberRow(BORIS, 'Boris'),
+          calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME),
+        ],
+      });
+    const pure = await rows([]);
+    const before = rosterOffersOf(pure, dayDetailOf(pure, team, SEEDED));
+
+    expect(dayDetailOf(pure, team, SEEDED)?.kind).toBe('working');
+    expect(ids(before.out)).toEqual([ANA]);
+    expect(before.in.map((one) => [one.id, one.teamName])).toEqual([
+      [BORIS, 'Smjena C'],
+      [VIEWER_MEMBER, 'Smjena A'],
+    ]);
+
+    const replaced = await rows([calendarRosterOverrideRow('r1', team, SEEDED, ANA, BORIS)]);
+    const detail = dayDetailOf(replaced, team, SEEDED);
+    const after = rosterOffersOf(replaced, detail);
+
+    expect(detail?.roster.map((member) => member.id)).toEqual([BORIS]);
+    expect(ids(after.out)).toEqual([]);
+    expect(ids(after.in)).toEqual([VIEWER_MEMBER]);
+    const removed: CalendarSnapshot = {
+      ...replaced,
+      rosterOverrides: replaced.rosterOverrides.filter((one) => one.id !== 'r1'),
+    };
+
+    expect(rosterOffersOf(removed, dayDetailOf(removed, team, SEEDED))).toEqual(before);
+    expect(dayDetailOf(removed, team, SEEDED)).toEqual(dayDetailOf(pure, team, SEEDED));
+    expect(calendarMonthOf(removed, { mjesec: '2020-01' }, SEEDED)).toEqual(
+      calendarMonthOf(pure, { mjesec: '2020-01' }, SEEDED),
+    );
+  });
+
+  it('preflights the members first, then the trimmed reason; what passes is what is sent', () => {
+    expect(rosterEntryOf('', '', 'Zamjena')).toEqual({ ok: false, code: ROSTER_REFUSED_MEMBER });
+    expect(rosterEntryOf('', '', '  ')).toEqual({ ok: false, code: ROSTER_REFUSED_MEMBER });
+    // One member on both sides, as 0026's `_members_distinct` refuses it.
+    expect(rosterEntryOf(ANA, ANA, 'Zamjena')).toEqual({ ok: false, code: ROSTER_REFUSED_MEMBER });
+    for (const reason of ['', '  ', '\t\n', 'z'.repeat(201), '🚒'.repeat(201)]) {
+      expect(rosterEntryOf(ANA, '', reason), JSON.stringify(reason)).toEqual({ ok: false, code: ROSTER_REFUSED_REASON });
+    }
+    expect(rosterEntryOf(ANA, BORIS, '  Zamjena \n')).toEqual({
+      ok: true,
+      memberOutId: ANA,
+      memberInId: BORIS,
+      reason: 'Zamjena',
+    });
+    expect(rosterEntryOf('', CVITA, 'x')).toEqual({ ok: true, memberOutId: null, memberInId: CVITA, reason: 'x' });
+    expect(rosterEntryOf(ANA, '', 'x')).toEqual({ ok: true, memberOutId: ANA, memberInId: null, reason: 'x' });
+    expect(rosterEntryOf(ANA, '', '🚒'.repeat(200))).toMatchObject({ ok: true });
+  });
+
+  it('reads a candidate line as the roster does: Ime · čin · položaj off, Ime · čin · smjena on', async () => {
+    const snapshot = await asAdmin();
+    const offers = rosterOffersOf(snapshot, dayDetailOf(snapshot, TEAM, WORKING));
+    const words: RosterLineTranslate = { word: (key) => t(key), line: (key, values) => t(key, values) };
+    const noTeam = t('kalendar.detail.rosterChange.set.noTeam');
+    const out = (rank: boolean, position: boolean) => offers.out.map((one) => outOptionOf(one, rank, position, words).label);
+    const put = (rank: boolean) => offers.in.map((one) => inOptionOf(one, rank, noTeam, words).label);
+
+    expect(out(true, true)).toEqual(['Ana · vatrogasac · vozač', 'Boris']);
+    expect(out(false, false)).toEqual(['Ana', 'Boris']);
+    expect(put(true)).toEqual(['Dora · bez smjene', `${VIEWER_NAME} · Smjena A`]);
+    expect(put(false)).toEqual(['Dora · bez smjene', `${VIEWER_NAME} · Smjena A`]);
+    expect(outOptionOf(offers.out[0]!, true, true, words).id).toBe(ANA);
+    // A member put on with a rank: Ime · čin · smjena, and the rank alone is gated.
+    const ranked = { id: DORA, name: 'Dora', fireRank: 'nco', teamName: 'Smjena C' };
+
+    expect(inOptionOf(ranked, true, noTeam, words).label).toBe(
+      t('smjene.roster.withRankAndPosition', { name: 'Dora', rank: t('ljudi.rank.nco'), position: 'Smjena C' }),
+    );
+    expect(inOptionOf(ranked, false, noTeam, words).label).toBe('Dora · Smjena C');
+    // The screen's own setting reading, off: neither rank nor position.
+    expect(ranksShown({ usesFireRanks: false })).toBe(false);
+    expect(positionsShown({ usesFireRanks: false })).toBe(false);
+  });
+
+  it('offers those to take off in the default roster order and those to put on in the snapshot order, whatever the input order', async () => {
+    const snapshot = await snapshotOf(PILOT, {
+      viewers: [viewerRow([membershipRow('pilot-smjena-a', SEEDED)], { role: 'admin' })],
+      versions: [
+        memberMembershipRow(VIEWER_MEMBER, 'pilot-smjena-a', SEEDED),
+        memberMembershipRow(DORA, TEAM, SEEDED),
+        memberMembershipRow(ANA, TEAM, SEEDED),
+      ],
+      // Out of name order on the wire: Zora, Dora, Ana, Lana.
+      members: [
+        calendarMemberRow(BORIS, 'Zora'),
+        calendarMemberRow(DORA, 'Dora'),
+        calendarMemberRow(ANA, 'Ana'),
+        calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME),
+      ],
+    });
+    const detail = dayDetailOf(snapshot, TEAM, WORKING);
+    const offers = rosterOffersOf(snapshot, detail);
+
+    expect(snapshot.members.map((member) => member.name)).toEqual(['Ana', 'Dora', VIEWER_NAME, 'Zora']);
+    expect(ids(offers.out)).toEqual(
+      shiftRoster(snapshot.members, TEAM, WORKING).map((entry) => entry.memberId),
+    );
+    expect(ids(offers.out)).toEqual([ANA, DORA]);
+    expect(ids(offers.in)).toEqual(
+      snapshot.members.filter((member) => member.id === VIEWER_MEMBER || member.id === BORIS).map((member) => member.id),
+    );
+    expect(ids(offers.in)).toEqual([VIEWER_MEMBER, BORIS]);
+  });
+
+  it('offers no form on an archived team, and still every removal', async () => {
+    const archivedRows: FixtureRows = {
+      ...PILOT,
+      teams: PILOT.teams.map((team) => (team['id'] === TEAM ? teamRow(TEAM, 'Smjena B', { archived: true }) : team)),
+    };
+    const snapshot = await asAdmin([calendarRosterOverrideRow('r1', TEAM, WORKING, ANA, VIEWER_MEMBER)], {
+      rows: archivedRows,
+    });
+    const detail = dayDetailOf(snapshot, TEAM, WORKING);
+
+    expect(detail?.kind).toBe('working');
+    expect(rosterOffersOf(snapshot, detail)).toEqual({ set: false, remove: true, out: [], in: [] });
+    expect(rosterRemovalTargetOf(detail, 'r1')?.change.id).toBe('r1');
+  });
+
+  it('carries the form, removal and notice copy', () => {
+    expect(t('kalendar.detail.rosterChange.set.heading')).toBe('Promjena sastava');
+    expect(t('kalendar.detail.rosterChange.set.out')).toBe('Skida se');
+    expect(t('kalendar.detail.rosterChange.set.in')).toBe('Dolazi');
+    expect(t('kalendar.detail.rosterChange.set.none')).toBe('— nitko —');
+    expect(t('kalendar.detail.rosterChange.set.reason')).toBe('Razlog');
+    expect(t('kalendar.detail.rosterChange.set.save')).toBe('Spremi promjenu');
+    expect(t('kalendar.detail.rosterChange.set.saving')).toBe('Spremanje…');
+    expect(t('kalendar.detail.rosterChange.remove.action')).toBe('Ukloni promjenu');
+    expect(
+      t('kalendar.detail.rosterChange.remove.prompt', {
+        change: 'Zamjena: Ana → Boris',
+        team: 'Smjena B',
+        date: 'srijeda 01.01.2020',
+      }),
+    ).toBe('Ukloniti promjenu „Zamjena: Ana → Boris” za Smjena B · srijeda 01.01.2020? Sastav se vraća prema rotaciji.');
+    expect(t('kalendar.detail.rosterChange.remove.confirm')).toBe('Ukloni');
+    expect(t('kalendar.detail.rosterChange.remove.cancel')).toBe('Odustani od uklanjanja');
+    expect(t('kalendar.detail.rosterChange.remove.removing')).toBe('Uklanjanje…');
+    expect(t('kalendar.detail.rosterChange.inertHeading')).toBe('Promjena sastava se ne primjenjuje');
   });
 });

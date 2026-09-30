@@ -7,6 +7,11 @@ import { BasePage } from './base.page.ts';
 const kalendar = hr.kalendar;
 
 /** `subota 05.10.2026` — a date as the day detail's title names it, year included. */
+/** `text` as a pattern that matches it literally. */
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 function detailDate(date: string): string {
   return `${weekdayOf(date)} ${dayMonth(date)}${date.slice(0, 4)}`;
 }
@@ -336,9 +341,9 @@ export class CalendarPage extends BasePage {
     return detail.getByLabel(kalendar.detail.override.set.type, { exact: true });
   }
 
-  /** The form's reason field. */
+  /** The form's reason field, inside the form: the roster form (story 3.6b) has a `Razlog` too. */
   overrideReasonIn(detail: Locator): Locator {
-    return detail.getByLabel(kalendar.detail.override.set.reason, { exact: true });
+    return this.overrideFormIn(detail).getByLabel(kalendar.detail.override.set.reason, { exact: true });
   }
 
   /** The form's save. */
@@ -388,6 +393,88 @@ export class CalendarPage extends BasePage {
     await this.overrideTypeIn(detail).selectOption({ label: typeName });
     await this.overrideReasonIn(detail).fill(reason);
     await this.overrideSaveIn(detail).click();
+  }
+
+  // -------------------------------------------------- the roster form (3.6b)
+
+  /** The admin's roster form in the detail, named by its heading. */
+  rosterFormIn(detail: Locator): Locator {
+    return detail.getByRole('region', { name: kalendar.detail.rosterChange.set.heading, exact: true });
+  }
+
+  /** The form's "Skida se" `Select`. */
+  rosterOutIn(detail: Locator): Locator {
+    return this.rosterFormIn(detail).getByLabel(kalendar.detail.rosterChange.set.out, { exact: true });
+  }
+
+  /** The form's "Dolazi" `Select`. */
+  rosterInIn(detail: Locator): Locator {
+    return this.rosterFormIn(detail).getByLabel(kalendar.detail.rosterChange.set.in, { exact: true });
+  }
+
+  /** One `Select`'s option, by the whole line it reads. */
+  optionIn(select: Locator, label: string): Locator {
+    return select.locator('option').filter({ hasText: new RegExp(`^${escapeRegExp(label)}$`) });
+  }
+
+  /** A member's option in one `Select`: their name, alone or followed by ` · ` and what the line adds. */
+  memberOptionIn(select: Locator, name: string): Locator {
+    return select.locator('option').filter({ hasText: new RegExp(`^${escapeRegExp(name)}(?: · .*)?$`) });
+  }
+
+  /** The form's reason field. */
+  rosterReasonIn(detail: Locator): Locator {
+    return this.rosterFormIn(detail).getByLabel(kalendar.detail.rosterChange.set.reason, { exact: true });
+  }
+
+  /** The form's save. */
+  rosterSaveIn(detail: Locator): Locator {
+    return this.rosterFormIn(detail).getByRole('button', { name: kalendar.detail.rosterChange.set.save, exact: true });
+  }
+
+  /** The block of in-force roster changes that apply to nothing (story 3.6b), an admin's alone. */
+  rosterInertIn(detail: Locator): Locator {
+    return detail.getByRole('region', { name: kalendar.detail.rosterChange.inertHeading, exact: true });
+  }
+
+  /** Every roster change's removal inside `scope` — a block, or the whole detail. */
+  rosterRemoveIn(scope: Locator): Locator {
+    return scope.getByRole('button', { name: kalendar.detail.rosterChange.remove.action, exact: true });
+  }
+
+  /** A roster change's removal confirmation, named by its prompt: the change's line, the team and the date. */
+  rosterRemoveConfirmOf(change: string, teamName: string, date: string): Locator {
+    return this.dialog(
+      fill(kalendar.detail.rosterChange.remove.prompt, { change, team: teamName, date: detailDate(date) }),
+    );
+  }
+
+  /** The roster confirmation's confirm. */
+  confirmRosterRemoveIn(confirm: Locator): Locator {
+    return confirm.getByRole('button', { name: kalendar.detail.rosterChange.remove.confirm, exact: true });
+  }
+
+  /** The roster confirmation's cancel. */
+  cancelRosterRemoveIn(confirm: Locator): Locator {
+    return confirm.getByRole('button', { name: kalendar.detail.rosterChange.remove.cancel, exact: true });
+  }
+
+  /** Chooses the one option of `select` that names the member `name`. */
+  async chooseIn(select: Locator, name: string): Promise<void> {
+    const value = await this.memberOptionIn(select, name).getAttribute('value');
+    if (value === null) throw new Error(`E2E: no option names ${name}`);
+    await select.selectOption(value);
+  }
+
+  /**
+   * Fills the roster form in `detail` — the member taken off and the one put
+   * on by their names, `null` leaving "— nitko —" — types `reason` and saves.
+   */
+  async changeRosterIn(detail: Locator, out: string | null, put: string | null, reason: string): Promise<void> {
+    if (out !== null) await this.chooseIn(this.rosterOutIn(detail), out);
+    if (put !== null) await this.chooseIn(this.rosterInIn(detail), put);
+    await this.rosterReasonIn(detail).fill(reason);
+    await this.rosterSaveIn(detail).click();
   }
 
   /** A grid cell's position among the data cells, from its `data-row` and `data-column`. */

@@ -24,6 +24,7 @@ export const CALENDAR_SCREEN_PARTS = {
   screenHook: ['features', 'calendar', 'hooks', 'use-calendar-screen.ts'],
   dayDetailHook: ['features', 'calendar', 'hooks', 'use-day-detail.ts'],
   overrideFormHook: ['features', 'calendar', 'hooks', 'use-override-form.ts'],
+  rosterFormHook: ['features', 'calendar', 'hooks', 'use-roster-form.ts'],
   monthNav: ['features', 'calendar', 'components', 'calendar-month-nav.tsx'],
   modeSwitch: ['features', 'calendar', 'components', 'calendar-mode-switch.tsx'],
   filter: ['features', 'calendar', 'components', 'calendar-filter.tsx'],
@@ -34,6 +35,7 @@ export const CALENDAR_SCREEN_PARTS = {
   dayList: ['features', 'calendar', 'components', 'calendar-day-list.tsx'],
   dayDetailDialog: ['features', 'calendar', 'components', 'day-detail-dialog.tsx'],
   overrideForm: ['features', 'calendar', 'components', 'override-form.tsx'],
+  rosterForm: ['features', 'calendar', 'components', 'roster-form.tsx'],
   skeleton: ['features', 'calendar', 'components', 'calendar-skeleton.tsx'],
   cellLabel: ['features', 'calendar', 'utils', 'cell-label.ts'],
   screenKeys: ['features', 'calendar', 'utils', 'screen-keys.ts'],
@@ -57,6 +59,10 @@ export const CALENDAR_SCREEN_EXEMPT: readonly { readonly file: string; readonly 
   {
     file: 'services/override-write.ts',
     why: 'the override set and removal (story 3.5b) and their refusal messages; a key source of its own in the sign-in suite, executed by override-write.test.ts',
+  },
+  {
+    file: 'services/roster-write.ts',
+    why: 'the roster change and its removal (story 3.6b) and their refusal and notice messages; a key source of its own in the sign-in suite, executed by roster-write.test.ts',
   },
   {
     file: 'utils/month.ts',

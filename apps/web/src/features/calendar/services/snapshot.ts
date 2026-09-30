@@ -238,7 +238,8 @@ export interface CalendarViewer {
   readonly memberId: string;
   /**
    * Picks the default mode, and shows the admin's override form (story
-   * 3.5b); the database authorizes.
+   * 3.5b) and roster form, its removals and the inert changes (story 3.6b);
+   * the database authorizes.
    */
   readonly role: MemberRole;
   /**

@@ -10,6 +10,7 @@ import { CalendarMonthNav } from '@/features/calendar/components/calendar-month-
 import { DayDetailDialog } from '@/features/calendar/components/day-detail-dialog';
 import { useCalendarScreen } from '@/features/calendar/hooks/use-calendar-screen';
 import { useOverrideForm } from '@/features/calendar/hooks/use-override-form';
+import { useRosterForm } from '@/features/calendar/hooks/use-roster-form';
 import { MODE_SVE, calendarSearchOf, type CalendarSearch } from '@/features/calendar/utils/month';
 import { calendarMessageKey } from '@/features/calendar/services/snapshot';
 import { t } from '@/lib/i18n';
@@ -57,6 +58,10 @@ import { appLayoutRoute } from '@/pages/_app';
  * confirmation — `useOverrideForm`'s state, shown by the viewer's role and
  * decided by the database.
  *
+ * ONE ROSTER CHANGE (story 3.6b): an admin takes a member off the open day's
+ * shift, puts one on, or both, and removes any listed change through a
+ * neutral confirmation — `useRosterForm`'s state, on the same terms.
+ *
  * The session guard is NOT here. It is registered once on the pathless `_app`
  * layout this route nests under.
  */
@@ -68,6 +73,7 @@ export function KalendarScreen() {
   });
   const { snapshot, loading, refusal, month, mode } = screen;
   const overrideForm = useOverrideForm(snapshot, screen.detail);
+  const rosterForm = useRosterForm(snapshot, screen.detail, overrideForm.latch);
 
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6" aria-busy={loading}>
@@ -98,6 +104,7 @@ export function KalendarScreen() {
         detail={screen.detail}
         snapshot={snapshot}
         form={overrideForm}
+        roster={rosterForm}
         onClose={screen.closeDay}
         onClosedByBrowser={screen.closedByBrowser}
       />

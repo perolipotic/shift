@@ -1071,17 +1071,28 @@ const SNAPSHOT_CARRIES = [
  * one rank and one position read into `rosterRankMessageKey` and
  * `rosterPositionMessageKey`. Neither orders, filters or decides by them; a
  * new use is a new count here, reviewed.
+ *
+ * STORY 3.6b: the roster form's candidates carry them too — a member to take
+ * off, rank and position (a field and a copy each), and one to put on, rank
+ * alone (a field and a copy) — and the day detail words each candidate's line
+ * as the roster does (`outOptionOf`, `inOptionOf`): the members modules'
+ * imports, and each candidate's rank read into `rosterRankMessageKey` twice
+ * and position into `rosterPositionMessageKey` once, gated by the flags the
+ * screen hands in. The screen shows them: the setting handed to `ranksShown`
+ * and `positionsShown` once more in the working branch, and passed down.
  */
 const DETAIL_CARRIES = [
-  { token: 'fireRank', count: 3 },
-  { token: 'position', count: 3 },
+  { token: "'@/features/members/utils/rank'", count: 1 },
+  { token: "'@/features/members/utils/position'", count: 1 },
+  { token: 'fireRank', count: 11 },
+  { token: 'position', count: 11 },
 ] as const;
 const SCREEN_SHOWS = [
   { token: "'@/features/members/utils/rank'", count: 1 },
-  { token: 'usesFireRanks', count: 6 },
+  { token: 'usesFireRanks', count: 8 },
   { token: 'member.fireRank', count: 1 },
   { token: "'@/features/members/utils/position'", count: 1 },
-  { token: 'positionsShown', count: 2 },
+  { token: 'positionsShown', count: 3 },
   { token: 'rosterPositionMessageKey', count: 2 },
   { token: 'member.position', count: 1 },
 ] as const;
@@ -1108,9 +1119,12 @@ describe('the calendar only reads, and projects nothing of its own', () => {
   const MODIFIERS = feature('utils/modifiers.ts');
   const SNAPSHOT = feature('services/snapshot.ts');
   const DAY_DETAIL = feature('utils/day-detail.ts');
-  // STORY 3.5b: the calendar's one write module — the insert of an override
-  // and the call of its removal function, and nothing else writes.
+  // STORY 3.5b: the calendar's write modules — the insert of an override
+  // and the call of its removal function — and, since story 3.6b, the insert
+  // of a roster change and the call of its removal; nothing else writes.
   const OVERRIDE_WRITE = feature('services/override-write.ts');
+  const ROSTER_WRITE = feature('services/roster-write.ts');
+  const WRITES = [OVERRIDE_WRITE, ROSTER_WRITE];
   const route = `${srcRoot}${CALENDAR_SCREEN_PARTS.page.join('/')}`;
   const files = [
     ...readdirSync(directory, { recursive: true, encoding: 'utf8' })
@@ -1126,7 +1140,15 @@ describe('the calendar only reads, and projects nothing of its own', () => {
 
   it('sweeps the files it means to', () => {
     expect(files).toEqual(
-      expect.arrayContaining([MONTH, SNAPSHOT, MODIFIERS, feature('utils/grid-keys.ts'), DAY_DETAIL, OVERRIDE_WRITE]),
+      expect.arrayContaining([
+        MONTH,
+        SNAPSHOT,
+        MODIFIERS,
+        feature('utils/grid-keys.ts'),
+        DAY_DETAIL,
+        OVERRIDE_WRITE,
+        ROSTER_WRITE,
+      ]),
     );
     expect(screen, 'the owner of the screen allowances is in the set').toContain(SHOWS_OWNER);
     // Every part of the screen is swept, and none of them is empty: one
@@ -1168,12 +1190,12 @@ describe('the calendar only reads, and projects nothing of its own', () => {
 
     expect(text, 'a `%` projection').not.toMatch(/%/);
     expect(text).not.toMatch(/\.(update|delete|upsert)\(/);
-    // Story 3.5b: ONE insert and ONE rpc in the write module, the three read
-    // rpcs in the snapshot (the third is story 3.6a's roster overrides), and
-    // neither anywhere else.
-    expect(text.match(/\.insert\(/g)?.length ?? 0, `.insert( in ${file}`).toBe(file === OVERRIDE_WRITE ? 1 : 0);
+    // Story 3.5b: ONE insert and ONE rpc in each write module (story 3.6b's
+    // roster write is the second), the three read rpcs in the snapshot (the
+    // third is story 3.6a's roster overrides), and neither anywhere else.
+    expect(text.match(/\.insert\(/g)?.length ?? 0, `.insert( in ${file}`).toBe(WRITES.includes(file) ? 1 : 0);
     expect(text.match(/\.rpc\(/g)?.length ?? 0, `.rpc( in ${file}`).toBe(
-      file === OVERRIDE_WRITE ? 1 : file === SNAPSHOT ? 3 : 0,
+      WRITES.includes(file) ? 1 : file === SNAPSHOT ? 3 : 0,
     );
     // Story 3.4a: the snapshot CARRIES rank and position off the wire, to be
     // shown by 3.4b — in the named places only, counted, and nowhere else. No

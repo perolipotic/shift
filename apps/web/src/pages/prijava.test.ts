@@ -321,6 +321,8 @@ const KALENDAR: readonly string[] = Object.values(CALENDAR_SCREEN_PARTS).map((pa
 const CALENDAR_SNAPSHOT_KEYS = join(srcRoot, 'features', 'calendar', 'services', 'snapshot.ts');
 /** Story 3.5b's override writes: the six refusals the day detail's form and confirmation render. */
 const CALENDAR_OVERRIDE_WRITE_KEYS = join(srcRoot, 'features', 'calendar', 'services', 'override-write.ts');
+/** Story 3.6b's roster writes: the six refusals and the two landed notices the roster form and confirmation render. */
+const CALENDAR_ROSTER_WRITE_KEYS = join(srcRoot, 'features', 'calendar', 'services', 'roster-write.ts');
 /** Story 3.2b's modifier vocabulary: the four marks' labels and a cell with no rotation. */
 const CALENDAR_MODIFIER_KEYS = join(srcRoot, 'features', 'calendar', 'utils', 'modifiers.ts');
 
@@ -604,7 +606,11 @@ const SCREENS = [
   // FOURTEEN SINCE STORY 3.5b: the admin's override form in the day detail —
   // its type `Select`, its reason `Input` and its save — the removal's
   // action, and its confirmation's cancel and confirm.
-  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 14 },
+  // TWENTY-ONE SINCE STORY 3.6b: the admin's roster form — its "Skida se"
+  // and "Dolazi" `Select`s, its reason `Input` and its save — the removal
+  // written once inside the map over a block's changes, and its
+  // confirmation's cancel and confirm.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 21 },
   // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
   // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
   // row link written once inside the map over the bands — the same count at
@@ -931,6 +937,27 @@ const IN_FLIGHT_HANDLERS = [
     effect: 'removeShiftTypeOverride(',
     inFlight: 'writing',
     handler: 'remove',
+    pending: 'setPending',
+    failure: 'setRemoveFailure',
+  },
+  {
+    // STORY 3.6b, the calendar roster form's two awaiting handlers: the save
+    // and the removal of a change, sharing their own hook's `writing` ref for
+    // the reason the override form's do, each with its own refusal state.
+    name: "the Kalendar roster form's save",
+    file: KALENDAR,
+    effect: 'setRosterOverride(',
+    inFlight: 'writing',
+    handler: 'saveRoster',
+    pending: 'setPending',
+    failure: 'setFailure',
+  },
+  {
+    name: "the Kalendar roster form's removal",
+    file: KALENDAR,
+    effect: 'removeRosterOverride(',
+    inFlight: 'writing',
+    handler: 'removeChange',
     pending: 'setPending',
     failure: 'setRemoveFailure',
   },
@@ -2007,10 +2034,17 @@ const KEY_SOURCES = [
     // heading, an addition, a removal and a replacement, each change's
     // author, time and reason, and the unknown member twice — named on the
     // roster and in a change.
+    // SEVENTY-FOUR SINCE STORY 3.6b: the roster form's heading, its two
+    // member labels, "— nitko —" twice (one per `Select`), its reason, save
+    // and saving; the removal's action, prompt, confirm, cancel and removing;
+    // the inert block's heading; and a member on no team. The unknown member
+    // of a change line moved with the line to `roster-form.tsx` (net zero).
+    // The refusals and the notices come through
+    // `@/features/calendar/services/roster-write`, below.
     name: 'the Kalendar destination',
     file: KALENDAR,
     keys: translationKeys,
-    strings: 59,
+    strings: 74,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's
@@ -2036,6 +2070,14 @@ const KEY_SOURCES = [
     file: CALENDAR_OVERRIDE_WRITE_KEYS,
     keys: messageKeyUnions,
     strings: 9,
+  },
+  {
+    // STORY 3.6b: the six refusals of changing a roster or removing a
+    // change, and the two things a landed write says — saved, and removed.
+    name: 'the calendar roster write rules',
+    file: CALENDAR_ROSTER_WRITE_KEYS,
+    keys: messageKeyUnions,
+    strings: 8,
   },
   {
     // The read failure.
@@ -2358,7 +2400,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // new `.tsx` that renders strings (one each), and
     // `@/features/rotation/services/override-disposition` is a key source.
     expect(SCREENS).toHaveLength(25);
-    expect(KEY_SOURCES).toHaveLength(48);
+    //
+    // FORTY-NINE SINCE STORY 3.6b: `@/features/calendar/services/roster-write`.
+    expect(KEY_SOURCES).toHaveLength(49);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -4749,12 +4793,13 @@ describe('every select is the one Select primitive, in the one Input look', () =
     );
   }
 
-  it('finds all fifteen, so the comparison is not vacuous', () => {
+  it('finds all seventeen, so the comparison is not vacuous', () => {
     // THIRTEEN: the twelve visual refresh B held to one literal, and the shift
     // type kind on `/postavke-rotacije`, which that block never listed.
     // FOURTEEN SINCE STORY 3.3a: the calendar's team filter.
     // FIFTEEN SINCE STORY 3.5b: the override form's type.
-    expect(selectClasses()).toHaveLength(15);
+    // SEVENTEEN SINCE STORY 3.6b: the roster form's "Skida se" and "Dolazi".
+    expect(selectClasses()).toHaveLength(17);
   });
 
   it('composes only the 44 px height onto each, so no screen restyles the primitive', () => {
@@ -5879,7 +5924,8 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // EIGHTEEN SINCE STORY 2.2b: the shift type list's add, and the shift
     // type edit form's rename, times, cancellation and archive.
     // TWENTY SINCE STORY 3.5b: the calendar override form's set and removal.
-    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(20);
+    // TWENTY-TWO SINCE STORY 3.6b: the calendar roster form's save and removal.
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(22);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
       'the in-flight handler names drifted from the handlers that hold them',
@@ -5892,6 +5938,8 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'issue/resetting',
       'remove/writing',
       'remove/writing',
+      'removeChange/writing',
+      'saveRoster/writing',
       'saveTimes/writing',
       'submit/creating',
       'submit/creating',

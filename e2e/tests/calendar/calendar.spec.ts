@@ -5,6 +5,7 @@ import {
   holdFireRanks,
   holdRotation,
   removeOverrideInSql,
+  removeRosterOverridesInSql,
   removeSeededRotation,
   removeTeamInSql,
   seedExtraTeam,
@@ -69,6 +70,13 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * roster follows it and its change block names the change, author, time and
  * reason; the member put on reads that shift in their own Moj raspored at
  * 390 px, and the person filter on the member taken off lacks it.
+ *
+ * Story 3.6b: an admin replaces the team's member with the member on no team
+ * from the day detail's roster form — the Dialog held while the insert is in
+ * flight, the member put on offered with their rank — and removes it through
+ * a neutral confirmation, the roster back to its default; "nothing chosen" is
+ * refused without a request; a seeded inert change is listed to the admin and
+ * removed; and a member sees no form, no removal and no inert block.
  */
 
 const kalendar = hr.kalendar;
@@ -613,8 +621,9 @@ test.describe('the day detail at 1280 px, as an admin', () => {
     // The rank test below may have ranks on: the line starts with her name.
     await expect(calendarPage.rosterLinesIn(detail)).toHaveCount(1);
     await expect(calendarPage.rosterLinesIn(detail)).toContainText(fixture.member.name);
-    // Toni is on no team, and the admin is on none either.
-    await expect(detail).not.toContainText(fixture.spare.name);
+    // Toni is on no team, and the admin is on none either: neither is on the
+    // roster (story 3.6b offers both to put on, in the admin's roster form).
+    await expect(calendarPage.rosterIn(detail)).not.toContainText(fixture.spare.name);
 
     await page.keyboard.press('Escape');
     await expect(detail).toHaveCount(0);
@@ -1105,6 +1114,278 @@ test.describe('a roster override a rotation change left pending, at 1280 px, as 
       fill(kalendar.detail.override.savedAt, { date: change.savedDate, time: change.savedTime }),
     );
     await expect(pending).toContainText(fill(kalendar.detail.override.reason, { reason: ROSTER_REASON }));
+  });
+});
+
+test.describe('an admin changes a shift roster at 1280 px', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 1280, height: 800 } });
+
+  test('replaces the member with the member on no team, then removes the change through the neutral confirmation', async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    // Ranks on, and the member on no team given one: the candidate line shows it.
+    ranksHold = holdFireRanks(fixture.slug);
+    await ranksHold.ready;
+    const was = await setFireRanks(fixture.slug, true);
+    restoreRanks = async () => {
+      await setFireRanks(fixture.slug, was);
+    };
+    const before = await setRankAndPosition(fixture.slug, fixture.spare.name, fixture.team.id, {
+      fireRank: 'firefighter',
+      position: null,
+    });
+    restoreMember = async () => {
+      await setRankAndPosition(fixture.slug, fixture.spare.name, fixture.team.id, before);
+    };
+    const replaced = fill(kalendar.detail.rosterChange.replaced, { out: fixture.member.name, in: fixture.spare.name });
+
+    await calendarPage.goto(gridMonthOf(rotation.today));
+    const cell = await calendarPage.cellOf(fixture.team.name, rotation.today);
+    await expect(cell).not.toContainText('\u270E');
+    await cell.click();
+    const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
+    await expect(detail).toBeVisible();
+    await expect(calendarPage.rosterFormIn(detail)).toBeVisible();
+    await expect(calendarPage.rosterRemoveIn(detail)).toHaveCount(0);
+    // The member put on reads `Ime · čin · Smjena` — on no team here.
+    const spareLine = fill(hr.smjene.roster.withRankAndPosition, {
+      name: fixture.spare.name,
+      rank: hr.ljudi.rank.firefighter,
+      position: kalendar.detail.rosterChange.set.noTeam,
+    });
+    await expect(calendarPage.optionIn(calendarPage.rosterInIn(detail), spareLine)).toHaveCount(1);
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterInIn(detail), fixture.spare.name)).toHaveText(spareLine);
+    // The member on the default roster is offered to take off, not to put on.
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterOutIn(detail), fixture.member.name)).toHaveCount(1);
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterInIn(detail), fixture.member.name)).toHaveCount(0);
+
+    // WHILE THE INSERT IS IN FLIGHT, Escape, the backdrop and the close
+    // button close nothing. `removeSeededRotation` deletes every roster
+    // change of the run organization even when a step below fails.
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const insert = '**/rest/v1/roster_overrides*';
+    await page.route(insert, async (route) => {
+      if (route.request().method() === 'POST') await held;
+      await route.continue();
+    });
+    await calendarPage.changeRosterIn(detail, fixture.member.name, fixture.spare.name, ROSTER_REASON);
+    await expect(calendarPage.rosterSaveIn(detail)).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await page.mouse.click(5, 5);
+    await calendarPage.closeIn(detail).click();
+    await expect(detail).toBeVisible();
+    release();
+
+    const block = calendarPage.rosterChangesIn(detail);
+    await expect(block).toBeVisible();
+    await page.unroute(insert);
+    await expect(block).toContainText(replaced);
+    await expect(block).toContainText(fill(kalendar.detail.override.author, { name: fixture.admin.name }));
+    await expect(block).toContainText(fill(kalendar.detail.override.reason, { reason: ROSTER_REASON }));
+    await expect(calendarPage.statusIn(detail)).toHaveText(kalendar.detail.rosterChange.saved);
+    await expect(calendarPage.rosterLinesIn(detail)).toHaveCount(1);
+    await expect(calendarPage.rosterLinesIn(detail)).toContainText(fixture.spare.name);
+    // Both members are named by a live change: neither is offered again.
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterOutIn(detail), fixture.member.name)).toHaveCount(0);
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterInIn(detail), fixture.spare.name)).toHaveCount(0);
+    await expect(cell).toContainText('\u270E');
+
+    // Remove: one neutral confirmation naming the change, the team and the date.
+    const remove = calendarPage.rosterRemoveIn(block);
+    await remove.click();
+    const confirm = calendarPage.rosterRemoveConfirmOf(replaced, fixture.team.name, rotation.today);
+    await expect(confirm).toBeVisible();
+    await expect(confirm.locator('.bg-destructive, .text-destructive, .border-destructive')).toHaveCount(0);
+    // Its cancel keeps the change, and focus returns to its removal.
+    await calendarPage.cancelRosterRemoveIn(confirm).click();
+    await expect(confirm).toHaveCount(0);
+    await expect(block).toBeVisible();
+    await expect(remove).toBeFocused();
+    await remove.click();
+    await calendarPage.confirmRosterRemoveIn(confirm).click();
+    await expect(confirm).toHaveCount(0);
+    await expect(block).toHaveCount(0);
+    await expect(calendarPage.statusIn(detail)).toHaveText(kalendar.detail.rosterChange.removedDone);
+    // The default roster, and its candidates, are back.
+    await expect(calendarPage.rosterLinesIn(detail)).toHaveCount(1);
+    await expect(calendarPage.rosterLinesIn(detail)).toContainText(fixture.member.name);
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterOutIn(detail), fixture.member.name)).toHaveCount(1);
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterInIn(detail), fixture.spare.name)).toHaveCount(1);
+
+    await page.keyboard.press('Escape');
+    await expect(detail).toHaveCount(0);
+    await expect(cell).not.toContainText('\u270E');
+  });
+
+  test('nothing chosen is refused without a request and keeps the reason', async ({ page, calendarPage, fixture }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    const writes: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/rest/v1/roster_overrides')) writes.push(request.method());
+    });
+
+    await calendarPage.goto(gridMonthOf(rotation.today));
+    await (await calendarPage.cellOf(fixture.team.name, rotation.today)).click();
+    const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
+    await calendarPage.changeRosterIn(detail, null, null, ROSTER_REASON);
+
+    await expect(calendarPage.alertIn(detail)).toHaveText(kalendar.detail.rosterChange.refused.member);
+    await expect(calendarPage.rosterReasonIn(detail)).toHaveValue(ROSTER_REASON);
+    await expect(calendarPage.rosterOutIn(detail)).toBeFocused();
+    await expect(calendarPage.rosterChangesIn(detail)).toHaveCount(0);
+    expect(writes, 'a refused preflight sent a request').toEqual([]);
+  });
+
+  test('a save answered 23505 says taken, keeps the reason, and the re-read no longer offers the member', async ({
+    calendarPage,
+    fixture,
+  }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+
+    await calendarPage.goto(gridMonthOf(rotation.today));
+    await (await calendarPage.cellOf(fixture.team.name, rotation.today)).click();
+    const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterOutIn(detail), fixture.member.name)).toHaveCount(1);
+    // Another admin takes her off the shift while the day is open.
+    await seedRosterOverride(rotation, fixture.team.id, rotation.today, fixture.member.name, null, ROSTER_REASON);
+    await calendarPage.changeRosterIn(detail, fixture.member.name, fixture.spare.name, ROSTER_REASON);
+
+    await expect(calendarPage.alertIn(detail)).toHaveText(kalendar.detail.rosterChange.refused.taken);
+    await expect(calendarPage.rosterReasonIn(detail)).toHaveValue(ROSTER_REASON);
+    // The re-read shows the day as it is: her removal applied, and she is offered no more.
+    await expect(calendarPage.rosterChangesIn(detail)).toContainText(
+      fill(kalendar.detail.rosterChange.removed, { name: fixture.member.name }),
+    );
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterOutIn(detail), fixture.member.name)).toHaveCount(0);
+  });
+
+  test('a removal answered P0002 holds its confirmation while in flight, then says gone and shows the day as it is', async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    await seedRosterOverride(rotation, fixture.team.id, rotation.today, fixture.member.name, fixture.spare.name, ROSTER_REASON);
+    const replaced = fill(kalendar.detail.rosterChange.replaced, { out: fixture.member.name, in: fixture.spare.name });
+
+    await calendarPage.goto(gridMonthOf(rotation.today));
+    const cell = await calendarPage.cellOf(fixture.team.name, rotation.today);
+    await expect(cell).toContainText('\u270E');
+    await cell.click();
+    const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
+    const block = calendarPage.rosterChangesIn(detail);
+    await calendarPage.rosterRemoveIn(block).click();
+    const confirm = calendarPage.rosterRemoveConfirmOf(replaced, fixture.team.name, rotation.today);
+    await expect(confirm).toBeVisible();
+
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const removal = '**/rest/v1/rpc/remove_roster_override*';
+    await page.route(removal, async (route) => {
+      if (route.request().method() !== 'POST') {
+        await route.continue();
+
+        return;
+      }
+      await held;
+      await route.fulfill({
+        status: 404,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 'P0002', message: 'ROSTER_OVERRIDE_NOT_LIVE', details: null, hint: null }),
+      });
+    });
+    await calendarPage.confirmRosterRemoveIn(confirm).click();
+    // While held: Escape, the backdrop and the (disabled) cancel leave it open.
+    await page.keyboard.press('Escape');
+    await page.mouse.click(5, 5);
+    await calendarPage.cancelRosterRemoveIn(confirm).click({ force: true });
+    await expect(confirm).toBeVisible();
+    await expect(detail).toBeAttached();
+    // Another admin's removal lands meanwhile; the answer is then P0002.
+    await removeRosterOverridesInSql(rotation, fixture.team.id, rotation.today);
+    release();
+
+    await expect(confirm).toHaveCount(0);
+    await expect(detail).toBeVisible();
+    await expect(calendarPage.alertIn(detail)).toHaveText(kalendar.detail.rosterChange.refused.gone);
+    // The re-read shows the day as it is: no change, the default roster.
+    await expect(block).toHaveCount(0);
+    await expect(calendarPage.rosterLinesIn(detail)).toContainText(fixture.member.name);
+    await expect(cell).not.toContainText('\u270E');
+    await page.unroute(removal);
+  });
+
+  test('lists a seeded inert change apart, and removes it', async ({ calendarPage, fixture }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    // The member on no team is not on the roster, so taking him off applies to nothing.
+    await seedRosterOverride(rotation, fixture.team.id, rotation.today, fixture.spare.name, null, ROSTER_REASON);
+    const removed = fill(kalendar.detail.rosterChange.removed, { name: fixture.spare.name });
+
+    await calendarPage.goto(gridMonthOf(rotation.today));
+    const cell = await calendarPage.cellOf(fixture.team.name, rotation.today);
+    await expect(cell).not.toContainText('\u270E');
+    await cell.click();
+    const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
+    const inert = calendarPage.rosterInertIn(detail);
+    await expect(inert).toBeVisible();
+    await expect(inert).toContainText(removed);
+    await expect(inert).toContainText(fill(kalendar.detail.override.reason, { reason: ROSTER_REASON }));
+    await expect(calendarPage.rosterChangesIn(detail)).toHaveCount(0);
+    await expect(calendarPage.rosterLinesIn(detail)).toContainText(fixture.member.name);
+
+    await calendarPage.rosterRemoveIn(inert).click();
+    const confirm = calendarPage.rosterRemoveConfirmOf(removed, fixture.team.name, rotation.today);
+    await expect(confirm).toBeVisible();
+    await calendarPage.confirmRosterRemoveIn(confirm).click();
+    await expect(confirm).toHaveCount(0);
+    await expect(inert).toHaveCount(0);
+    await expect(calendarPage.statusIn(detail)).toHaveText(kalendar.detail.rosterChange.removedDone);
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterInIn(detail), fixture.spare.name)).toHaveCount(1);
+  });
+});
+
+test.describe('the roster form at 390 px, as an admin', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('a working day shows the form, and the page never scrolls sideways', async ({ page, calendarPage, fixture }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+
+    await calendarPage.goto(gridMonthOf(rotation.today));
+    await (await calendarPage.cellOf(fixture.team.name, rotation.today)).tap();
+    const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
+    await expect(detail).toBeVisible();
+    await expect(calendarPage.rosterFormIn(detail)).toBeVisible();
+    await expect(calendarPage.rosterSaveIn(detail)).toBeVisible();
+    await expectNoHorizontalScroll(page);
+  });
+});
+
+test.describe('the roster form at 390 px, as a member', () => {
+  test.use({ storageState: MEMBER_STATE, viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('offers a member-role account no form, no removal and no inert block', async ({ page, calendarPage, fixture }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    // An inert change: the member on no team taken off a shift he is not on.
+    await seedRosterOverride(rotation, fixture.team.id, rotation.today, fixture.spare.name, null, ROSTER_REASON);
+
+    await calendarPage.goto();
+    await calendarPage.openerIn(calendarPage.today).tap();
+    const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
+    await expect(detail).toBeVisible();
+    await expect(calendarPage.rosterLinesIn(detail)).toContainText(fixture.member.name);
+    await expect(calendarPage.rosterFormIn(detail)).toHaveCount(0);
+    await expect(calendarPage.rosterRemoveIn(detail)).toHaveCount(0);
+    await expect(calendarPage.rosterInertIn(detail)).toHaveCount(0);
+    await expect(detail).not.toContainText(fixture.spare.name);
+    await expectNoHorizontalScroll(page);
   });
 });
 

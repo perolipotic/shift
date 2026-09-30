@@ -552,6 +552,8 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'calendar', 'services', 'snapshot.ts'),
   // Story 3.5b's override writes: the six refusals as a return-type union.
   join(webRoot, 'src', 'features', 'calendar', 'services', 'override-write.ts'),
+  // Story 3.6b's roster writes: the six refusals and two notices as return-type unions.
+  join(webRoot, 'src', 'features', 'calendar', 'services', 'roster-write.ts'),
   // The calendar feature's `hooks/`, `components/` and `utils/`, READ OFF the
   // folders (source structure B3): the screen's parts, and the month model
   // (story 3.1), the modifier vocabulary and the grid's keyboard rules (story
