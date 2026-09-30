@@ -577,3 +577,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-3-6b-roster-override-form.md`
   summary: The override soft-remove definers (0021 `remove_shift_type_override`, 0027 `remove_roster_override`) check `current_member_access()` without taking 0023's per-organization lock, so a removal racing the caller's own demotion or deactivation can still land.
   evidence: 0023's `serialize_organization_writes` triggers cover members, status and membership writes only; neither definer takes the lock before its admin check (the review of 3.6b, 2026-09-30).
+- source_spec: none
+  summary: Story 4-1b, the member's `Sati` screen. It loads one month snapshot (`?mjesec=YYYY-MM`, navigated like the calendar) and shows the viewer's own shift counts, band hours, total and an empty leave figure from `domain/hours`. An admin also sees only their own hours until 4.2.
+  evidence: The human split story 4.1 on 2026-09-30 into 4-1a (the pure `domain/hours` rule) and 4-1b (the screen), following the 2-1a/2-1b and 3-6a/3-6b pattern. They also chose a calendar-month period and own hours for an admin in 4.1.

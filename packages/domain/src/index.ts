@@ -31,6 +31,14 @@ export {
 } from './duration.js';
 
 export {
+  memberHoursOfMonth,
+  type BandHours,
+  type MemberHours,
+  type MemberHoursInput,
+  type ShiftTypeWithVersions,
+} from './hours.js';
+
+export {
   daysBetween,
   projectedShiftType,
   projectedShiftTypeOn,
