@@ -115,12 +115,15 @@ export const FEATURE_PUBLIC = {
     'services/sign-out', // navigation
   ],
   calendar: [
-    'services/snapshot', // pages, teams
-    'utils/month', // pages
+    'services/snapshot', // hours, pages, teams
+    'utils/month', // hours, pages
   ],
   'hour-bands': [
-    'services/list', // shift-types, pages
+    'services/list', // calendar, hours, shift-types, pages
     'services/write', // pages
+  ],
+  hours: [
+    'services/my-hours', // pages
   ],
   members: [
     'services/list', // hour-bands, shift-types, teams, pages
@@ -146,7 +149,7 @@ export const FEATURE_PUBLIC = {
     'services/write', // pages
   ],
   teams: [
-    'services/dependents', // members
+    'services/dependents', // hour-bands, members
     'services/list', // calendar, members, rotation, pages
     'services/roster', // pages
     'services/write', // calendar, hour-bands, rotation, shift-types, pages

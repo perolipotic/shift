@@ -580,3 +580,6 @@
 - source_spec: none
   summary: Story 4-1b, the member's `Sati` screen. It loads one month snapshot (`?mjesec=YYYY-MM`, navigated like the calendar) and shows the viewer's own shift counts, band hours, total and an empty leave figure from `domain/hours`. An admin also sees only their own hours until 4.2.
   evidence: The human split story 4.1 on 2026-09-30 into 4-1a (the pure `domain/hours` rule) and 4-1b (the screen), following the 2-1a/2-1b and 3-6a/3-6b pattern. They also chose a calendar-month period and own hours for an admin in 4.1.
+- source_spec: `_bmad-output/implementation-artifacts/spec-4-1b-my-hours-screen.md`
+  summary: Pressing `Ovaj mjesec` in the shared `MonthNav` disables the focused button, so focus drops to `<body>` on both Kalendar and Sati; focus should move to the month heading (the nav already takes `headingId`).
+  evidence: Raised by the 4.1b review (2026-09-30). The behaviour predates 4.1b: it came from `calendar-month-nav.tsx` unchanged, and `Sati` inherits it.

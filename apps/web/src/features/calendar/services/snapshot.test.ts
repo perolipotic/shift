@@ -41,6 +41,7 @@ import {
   SEEDED_AT,
   UJ5,
   VIEWER_AUTH_USER,
+  bandRow,
   VIEWER_MEMBER,
   VIEWER_NAME,
   assignmentRow,
@@ -104,6 +105,12 @@ async function snapshotOf(rows: FixtureRows): Promise<CalendarSnapshot> {
 }
 
 const quiet = () => vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+// Every console spy is restored even when an assertion before a test's own
+// restore fails, so one failure cannot silence the next test's errors.
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 const REFUSED = { ok: false, code: CALENDAR_UNAVAILABLE } as const;
 
@@ -217,6 +224,48 @@ describe('the read', () => {
 
     expect(snapshot.teams).toEqual([]);
     expect(snapshot.assignments).toEqual([]);
+  });
+
+  it.each([
+    { fixture: 'pilot', rows: PILOT, ids: ['pilot-band-dan', 'pilot-band-noc'], starts: [420, 1140] },
+    {
+      fixture: 'UJ-5',
+      rows: UJ5,
+      ids: ['uj5-band-jutro', 'uj5-band-popodne', 'uj5-band-noc'],
+      starts: [300, 780, 1260],
+    },
+  ])('$fixture: carries every hour band in start order, whatever order they arrive in (story 4.1b)', async ({ rows, ids, starts }) => {
+    expect(CALENDAR_COLUMNS).toContain(',hour_bands(organization_id,id,name,start_time),');
+    const snapshot = await snapshotOf({ ...rows, bands: [...(rows.bands ?? [])].reverse() });
+
+    expect(snapshot.bands.map((band) => band.id)).toEqual(ids);
+    expect(snapshot.bands.map((band) => band.startMinute)).toEqual(starts);
+    // Each carries its tenant, the tripwire the read checked.
+    expect(snapshot.bands.every((band) => band.organizationId === snapshot.organizationId)).toBe(true);
+  });
+
+  it('answers zero hour bands as an answer (story 4.1b)', async () => {
+    const snapshot = await snapshotOf({ ...PILOT, bands: [] });
+
+    expect(snapshot.bands).toEqual([]);
+  });
+
+  it('refuses a missing, malformed, duplicated or other-tenant hour band (story 4.1b)', async () => {
+    quiet();
+    const organization = calendarOrganizationRow(PILOT);
+    const { hour_bands: _omitted, ...withoutBands } = organization;
+
+    expect(await read(tableOf({ data: [withoutBands], error: null, count: 1 }), session)).toEqual(REFUSED);
+    for (const bands of [
+      [...(PILOT.bands ?? []), bandRow('stranger', 'X', '03:00:00', OTHER_ORGANIZATION)],
+      [...(PILOT.bands ?? []), bandRow('bad-time', 'X', '25:00:00')],
+      [...(PILOT.bands ?? []), { ...bandRow('no-name', 'X', '03:00:00'), name: null }],
+      // Two bands sharing a start, and two sharing an id.
+      [...(PILOT.bands ?? []), bandRow('twin-start', 'X', '07:00:00')],
+      [...(PILOT.bands ?? []), bandRow('pilot-band-dan', 'X', '03:00:00')],
+    ]) {
+      expect(await read(tableOf(answerOf({ ...PILOT, bands })), session)).toEqual(REFUSED);
+    }
   });
 
   it('orders the types by creation, whatever order they arrive in', async () => {
@@ -1126,12 +1175,15 @@ describe('the calendar only reads, and projects nothing of its own', () => {
   const ROSTER_WRITE = feature('services/roster-write.ts');
   const WRITES = [OVERRIDE_WRITE, ROSTER_WRITE];
   const route = `${srcRoot}${CALENDAR_SCREEN_PARTS.page.join('/')}`;
+  // STORY 4.1b: the month navigation, shared with *Sati* from `@/components`.
+  const monthNav = `${srcRoot}${CALENDAR_SCREEN_PARTS.monthNav.join('/')}`;
   const files = [
     ...readdirSync(directory, { recursive: true, encoding: 'utf8' })
       .map(slashed)
       .filter((name) => /\.tsx?$/.test(name) && !name.endsWith('.test.ts'))
       .map(feature),
     route,
+    monthNav,
   ];
   const stripped = (file: string) =>
     readFileSync(file, 'utf8')

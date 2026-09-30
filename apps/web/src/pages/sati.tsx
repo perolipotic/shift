@@ -1,40 +1,59 @@
-import { createRoute } from '@tanstack/react-router';
+import { createRoute, useNavigate } from '@tanstack/react-router';
 
+import { MonthNav } from '@/components/month-nav';
+import { Card } from '@/components/ui/card';
 import { PageHeader, PageTitle } from '@/components/ui/page-header';
+import { HoursBody, HoursNotice } from '@/features/hours/components/hours-body';
+import { useMyHours } from '@/features/hours/hooks/use-my-hours';
+import { HOURS_MONTH_HEADING_ID, hoursSearchOf, type HoursSearch } from '@/features/hours/services/my-hours';
 import { t } from '@/lib/i18n';
 import { appLayoutRoute } from '@/pages/_app';
 
 /**
- * `Sati` — a titled placeholder, and nothing more.
+ * `Sati` — the viewer's own month of hours (story 4.1b). This file composes
+ * the screen; its one read and its state are `useMyHours`, its sections are
+ * components in `@/features/hours/components`, and every rule is in
+ * `@/features/hours/services/my-hours`, which the node suite executes.
  *
- * ONE destination, not two. UX-DR31 lists `Sati` for the member role and
- * UX-DR32 lists it again for an admin; the human decision of 2026-09-04 resolved
- * that overlap as one destination whose CONTENT is role-scoped, which is why
- * there are eight routes here and not nine.
+ * ONE DESTINATION, not two. UX-DR31 lists `Sati` for the member role and
+ * UX-DR32 lists it again for an admin; the human decision of 2026-09-04
+ * resolved that overlap as one destination whose CONTENT is role-scoped.
+ * Until story 4.2 brings the organization's hours, member and admin alike see
+ * their own.
  *
- * It renders its own `nav.sati` heading and no other element, because the
- * destination it names is a LATER story's and putting anything else here would
- * be that story's work done without its review. What this file is for is that
- * the route EXISTS: TanStack Router typechecks `<Link to>` against the route
- * tree, so part B's navigation cannot compile until every destination it points
- * at is registered.
- *
- * No literal — the heading resolves through `t()` (L1/L2), and the key was
- * authored in `hr.json` first because `lib/i18n/index.ts` types the argument off
- * that file.
+ * The month is chosen in the URL (`?mjesec=2026-09`), as on the calendar, and
+ * moved through the month navigation the two screens share. The figures come
+ * from the calendar's ONE snapshot, under its one key. A failed read is the
+ * message alone; a month whose hours the domain refuses keeps its navigation,
+ * the message in place of the figures (`myHoursSurfaceOf` decides which).
  *
  * The session guard is NOT here. It is registered once on the pathless `_app`
- * layout this route nests under, so a signed-out visitor opening this URL is
- * redirected before the component is ever asked for.
+ * layout this route nests under.
  */
 export function SatiScreen() {
+  const search = satiRoute.useSearch();
+  const navigate = useNavigate({ from: satiRoute.fullPath });
+  const { view, month, navShown, refusal, loading, show } = useMyHours(search, (next) => {
+    void navigate({ search: next });
+  });
+
   return (
-    <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6">
+    <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6" aria-busy={loading}>
       <PageHeader>
         <PageTitle asChild>
           <h1>{t('nav.sati')}</h1>
         </PageTitle>
       </PageHeader>
+      {navShown ? (
+        <Card className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-3 px-4 py-4">
+            <MonthNav month={month} headingId={HOURS_MONTH_HEADING_ID} onShow={show} />
+          </div>
+          <HoursBody refusal={refusal} view={view} />
+        </Card>
+      ) : (
+        <HoursNotice refusal={refusal} />
+      )}
     </main>
   );
 }
@@ -42,5 +61,6 @@ export function SatiScreen() {
 export const satiRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/sati',
+  validateSearch: (search: Record<string, unknown>): HoursSearch => hoursSearchOf(search),
   component: SatiScreen,
 });

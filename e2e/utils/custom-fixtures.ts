@@ -2,6 +2,7 @@ import { test as base } from '@playwright/test';
 
 import { CalendarPage } from '../pages/calendar.page.ts';
 import { HourBandsPage } from '../pages/hour-bands.page.ts';
+import { HoursPage } from '../pages/hours.page.ts';
 import { LoginPage } from '../pages/login.page.ts';
 import { OrganizationPage } from '../pages/organization.page.ts';
 import { PeoplePage } from '../pages/people.page.ts';
@@ -20,6 +21,7 @@ export interface PageObjects {
   readonly teamsPage: TeamsPage;
   readonly organizationPage: OrganizationPage;
   readonly hourBandsPage: HourBandsPage;
+  readonly hoursPage: HoursPage;
   readonly rotationPage: RotationPage;
 }
 
@@ -58,6 +60,9 @@ export const test = base.extend<PageObjects & RotationHoldFixtures, { fixture: F
   },
   hourBandsPage: async ({ page }, use) => {
     await use(new HourBandsPage(page));
+  },
+  hoursPage: async ({ page }, use) => {
+    await use(new HoursPage(page));
   },
   rotationPage: async ({ page }, use) => {
     await use(new RotationPage(page));

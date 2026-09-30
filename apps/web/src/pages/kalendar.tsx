@@ -1,17 +1,17 @@
 import { createRoute, useNavigate } from '@tanstack/react-router';
 
+import { MonthNav } from '@/components/month-nav';
 import { Card } from '@/components/ui/card';
 import { Notice } from '@/components/ui/notice';
 import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { CalendarFilter } from '@/features/calendar/components/calendar-filter';
 import { CalendarModeSwitch } from '@/features/calendar/components/calendar-mode-switch';
 import { CalendarMonthBody } from '@/features/calendar/components/calendar-month-body';
-import { CalendarMonthNav } from '@/features/calendar/components/calendar-month-nav';
 import { DayDetailDialog } from '@/features/calendar/components/day-detail-dialog';
 import { useCalendarScreen } from '@/features/calendar/hooks/use-calendar-screen';
 import { useOverrideForm } from '@/features/calendar/hooks/use-override-form';
 import { useRosterForm } from '@/features/calendar/hooks/use-roster-form';
-import { MODE_SVE, calendarSearchOf, type CalendarSearch } from '@/features/calendar/utils/month';
+import { MODE_SVE, MONTH_HEADING_ID, calendarSearchOf, type CalendarSearch } from '@/features/calendar/utils/month';
 import { calendarMessageKey } from '@/features/calendar/services/snapshot';
 import { t } from '@/lib/i18n';
 import { appLayoutRoute } from '@/pages/_app';
@@ -86,7 +86,7 @@ export function KalendarScreen() {
       {refusal !== null ? null : (
         <Card className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-3 px-4 py-4">
-            <CalendarMonthNav month={month} onShow={screen.show} />
+            <MonthNav month={month} headingId={MONTH_HEADING_ID} onShow={screen.show} />
             {mode === null ? null : <CalendarModeSwitch chosen={mode} onChoose={screen.choose} />}
           </div>
           {month === null || mode !== MODE_SVE ? null : (

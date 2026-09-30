@@ -30,6 +30,7 @@ import {
 } from '@/features/shift-types/services/list';
 import { currentSession } from '@/lib/supabase/client';
 import { TEAMS_COLUMNS, teamRowOf, type TeamRow } from '@/features/teams/services/list';
+import { HOUR_BANDS_COLUMNS, hourBandRowOf, type HourBandRow } from '@/features/hour-bands/services/list';
 
 /**
  * The calendar snapshot: one organization's zone, teams, shift types with
@@ -90,6 +91,13 @@ import { TEAMS_COLUMNS, teamRowOf, type TeamRow } from '@/features/teams/service
  * whether it is pending review, is the domain's (`rosterOn`,
  * `overrideStandingOf`).
  *
+ * THE HOUR BANDS (story 4.1b). Every band of the organization, embedded
+ * beside the shift types so *Sati* derives a member's hours from this same
+ * snapshot (AD-13): one read for both surfaces, and never a second query for
+ * the bands. Each row is `@/features/hour-bands/services/list`'s
+ * `hourBandRowOf`, and its `organization_id` is the tripwire the other
+ * embeds carry. A band write invalidates `CALENDAR_KEY` too.
+ *
  * `select` AND THREE `rpc`s, AND NOTHING ELSE.
  */
 
@@ -108,6 +116,7 @@ export const CALENDAR_COLUMNS =
   `${ORGANIZATION_ZONE_COLUMNS},uses_fire_ranks,` +
   `teams(${TEAMS_COLUMNS}),` +
   `${SHIFT_TYPES_EMBED},` +
+  `hour_bands(${HOUR_BANDS_COLUMNS}),` +
   'rotation_steps(organization_id,id,pattern_id,position,shift_type_id),' +
   'rotation_assignments(organization_id,team_id,pattern_id,offset_step_id,anchor_date,effective_from,created_at),' +
   'members(organization_id,id,role,team_membership_versions(organization_id,team_id,effective_from)),' +
@@ -262,6 +271,11 @@ export interface CalendarSnapshot {
   readonly teams: readonly TeamRow[];
   /** Every shift type, archived ones included, in creation order. */
   readonly types: readonly ShiftTypeRow[];
+  /**
+   * Every hour band of the organization, in start order (story 4.1b); none is
+   * a valid configuration. Only *Sati* reads them: the calendar draws no band.
+   */
+  readonly bands: readonly HourBandRow[];
   /** Every step of every pattern. */
   readonly steps: readonly RotationStep[];
   /** Every version of every team's rotation. */
@@ -322,6 +336,7 @@ type CalendarRefusal =
   | 'viewer'
   | 'team'
   | 'type'
+  | 'band'
   | 'step'
   | 'assignment'
   | 'ids'
@@ -358,7 +373,8 @@ function embedded(organization: Record<string, unknown>, relation: string): read
  * names another tenant, on a step naming a type the answer lacks or two steps
  * of one pattern at one position, and on an assignment naming a team the
  * answer lacks, a step outside its own pattern, or a date its team already
- * has a version on. Unavailable, too, on no session and on anything but
+ * has a version on, and on two hour bands sharing an id or a start (story
+ * 4.1b). Unavailable, too, on no session and on anything but
  * EXACTLY ONE viewer member row, whose role is not one this build knows,
  * whose own membership versions name another tenant, a team the answer lacks,
  * or one date twice, or whose id the members read does not name.
@@ -430,6 +446,7 @@ export async function readCalendar(
   const usesFireRanks = organization['uses_fire_ranks'];
   const teamRows = embedded(organization, 'teams');
   const typeRows = embedded(organization, 'shift_types');
+  const bandRows = embedded(organization, 'hour_bands');
   const stepRows = embedded(organization, 'rotation_steps');
   const assignmentRows = embedded(organization, 'rotation_assignments');
   const memberRows = embedded(organization, 'members');
@@ -438,7 +455,7 @@ export async function readCalendar(
 
   if (organizationId === null || timeZone === null) return unavailable('organization');
   if (typeof usesFireRanks !== 'boolean') return unavailable('organization');
-  if (teamRows === null || typeRows === null || stepRows === null || assignmentRows === null) {
+  if (teamRows === null || typeRows === null || bandRows === null || stepRows === null || assignmentRows === null) {
     return unavailable('organization');
   }
   if (memberRows === null || memberRows.length !== 1) return unavailable('viewer');
@@ -464,6 +481,23 @@ export async function readCalendar(
 
     types.push(type);
   }
+
+  const bands: HourBandRow[] = [];
+
+  for (const row of bandRows) {
+    const band = hourBandRowOf(row);
+
+    if (band === null || band.organizationId !== organizationId) return unavailable('band');
+
+    bands.push(band);
+  }
+
+  // One band per id and per start: the schema's keys, re-checked so a defect
+  // is the message, never a domain precondition thrown on *Sati*.
+  if (new Set(bands.map((band) => band.id)).size !== bands.length) return unavailable('band');
+  if (new Set(bands.map((band) => band.startMinute)).size !== bands.length) return unavailable('band');
+
+  bands.sort((left, right) => left.startMinute - right.startMinute);
 
   const steps: RotationStep[] = [];
 
@@ -557,6 +591,7 @@ export async function readCalendar(
       usesFireRanks,
       teams,
       types,
+      bands,
       steps,
       assignments,
       assignmentStamps,

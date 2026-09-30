@@ -1,0 +1,34 @@
+/**
+ * THE SATI SCREEN'S FILE SET, written once (story 4.1b), on the calendar's
+ * terms (`calendar-screen.fixture.ts`): a page that only composes, the hook
+ * holding its one read, the components that draw it, and the month
+ * navigation it shares with the calendar. `pages/prijava.test.ts` reads it as
+ * source.
+ *
+ * Paths are SEGMENTS under `apps/web/src`, so this module imports nothing.
+ * The page is first: the "the page itself renders" check reads it.
+ */
+export const HOURS_SCREEN_PARTS = {
+  page: ['pages', 'sati.tsx'],
+  hook: ['features', 'hours', 'hooks', 'use-my-hours.ts'],
+  body: ['features', 'hours', 'components', 'hours-body.tsx'],
+  summary: ['features', 'hours', 'components', 'hours-summary.tsx'],
+  skeleton: ['features', 'hours', 'components', 'hours-skeleton.tsx'],
+  monthNav: ['components', 'month-nav.tsx'],
+} as const;
+
+/**
+ * Non-test modules under the feature that are NOT part of the set, each with
+ * the reason. Everything else found there must be listed above. Paths are
+ * relative to the feature.
+ */
+export const HOURS_SCREEN_EXEMPT: readonly { readonly file: string; readonly why: string }[] = [
+  {
+    file: 'hours-screen.fixture.ts',
+    why: 'this file: the set itself, read by the sign-in suite and rendered by nothing',
+  },
+  {
+    file: 'services/my-hours.ts',
+    why: 'every rule of the screen and its failure message; a key source of its own, executed by my-hours.test.ts',
+  },
+];

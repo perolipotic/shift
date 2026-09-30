@@ -25,7 +25,8 @@ export const CALENDAR_SCREEN_PARTS = {
   dayDetailHook: ['features', 'calendar', 'hooks', 'use-day-detail.ts'],
   overrideFormHook: ['features', 'calendar', 'hooks', 'use-override-form.ts'],
   rosterFormHook: ['features', 'calendar', 'hooks', 'use-roster-form.ts'],
-  monthNav: ['features', 'calendar', 'components', 'calendar-month-nav.tsx'],
+  // Shared with *Sati* since story 4.1b, and still part of this screen.
+  monthNav: ['components', 'month-nav.tsx'],
   modeSwitch: ['features', 'calendar', 'components', 'calendar-mode-switch.tsx'],
   filter: ['features', 'calendar', 'components', 'calendar-filter.tsx'],
   monthBody: ['features', 'calendar', 'components', 'calendar-month-body.tsx'],

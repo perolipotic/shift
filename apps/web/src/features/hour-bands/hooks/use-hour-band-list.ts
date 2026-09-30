@@ -22,6 +22,7 @@ import {
   type HourBandWriteTable,
 } from '@/features/hour-bands/services/write';
 import { NO_TEXT } from '@/features/members/services/list';
+import { HOUR_BAND_WRITE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /**
@@ -123,7 +124,8 @@ export function useHourBandList() {
       setAdding(false);
 
       try {
-        await queryClient.invalidateQueries({ queryKey: HOUR_BANDS_LIST_KEY });
+        // The list, and the calendar snapshot *Sati* derives hours from (story 4.1b).
+        await refreshAfterWrite(queryClient, HOUR_BANDS_LIST_KEY, HOUR_BAND_WRITE_DEPENDENTS);
       } catch (cause) {
         console.error(HOUR_BAND_WRITE_UNAVAILABLE, cause);
       }

@@ -12,6 +12,7 @@ import {
   CALENDAR_SCREEN_EXEMPT,
   CALENDAR_SCREEN_PARTS,
 } from '@/features/calendar/calendar-screen.fixture';
+import { HOURS_SCREEN_EXEMPT, HOURS_SCREEN_PARTS } from '@/features/hours/hours-screen.fixture';
 import {
   HOUR_BAND_EDIT_PARTS,
   HOUR_BAND_LIST_PARTS,
@@ -319,6 +320,20 @@ const KALENDAR: readonly string[] = Object.values(CALENDAR_SCREEN_PARTS).map((pa
   join(srcRoot, ...parts),
 );
 const CALENDAR_SNAPSHOT_KEYS = join(srcRoot, 'features', 'calendar', 'services', 'snapshot.ts');
+/** The month navigation *Kalendar* and *Sati* share (story 4.1b): a part of both sets. */
+const SHARED_MONTH_NAV = join(srcRoot, ...CALENDAR_SCREEN_PARTS.monthNav);
+
+/** The hours feature, which holds the *Sati* screen's parts (story 4.1b). */
+const HOURS_FEATURE = join(srcRoot, 'features', 'hours');
+/** The *Sati* screen's page, which only composes. */
+const SATI_PAGE = join(srcRoot, ...HOURS_SCREEN_PARTS.page);
+/**
+ * Story 4.1b's *Sati*: the viewer's own month of hours, a file set on the
+ * calendar's terms, written ONCE in `hours-screen.fixture.ts`.
+ */
+const SATI: readonly string[] = Object.values(HOURS_SCREEN_PARTS).map((parts) => join(srcRoot, ...parts));
+/** Story 4.1b's rules: the one failure message *Sati* renders. */
+const HOURS_KEYS = join(srcRoot, 'features', 'hours', 'services', 'my-hours.ts');
 /** Story 3.5b's override writes: the six refusals the day detail's form and confirmation render. */
 const CALENDAR_OVERRIDE_WRITE_KEYS = join(srcRoot, 'features', 'calendar', 'services', 'override-write.ts');
 /** Story 3.6b's roster writes: the six refusals and the two landed notices the roster form and confirmation render. */
@@ -431,7 +446,6 @@ const LOGO_URL = join(srcRoot, 'features', 'organization', 'hooks', 'logo-url.ts
  * registered router, so the four copies are held together end to end.
  */
 const PLACEHOLDER_SLUGS = [
-  'sati',
   'godisnji',
   'raspored',
 ];
@@ -455,7 +469,10 @@ const PLACEHOLDER_SLUGS = [
 //
 // FIVE SINCE STORY 3.1: `/kalendar` left the placeholders when it gained the
 // month grid and its navigation.
-const BUILT_SLUGS = ['organizacija', 'ljudi', 'danas', 'postavke-rotacije', 'kalendar'];
+//
+// SIX SINCE STORY 4.1b: `/sati` left the placeholders when it gained the
+// viewer's month of hours and the month navigation it shares with the calendar.
+const BUILT_SLUGS = ['organizacija', 'ljudi', 'danas', 'postavke-rotacije', 'kalendar', 'sati'];
 
 /** Every registered destination, however much of it is built. */
 const DESTINATION_SLUGS = [...PLACEHOLDER_SLUGS, ...BUILT_SLUGS];
@@ -611,6 +628,10 @@ const SCREENS = [
   // written once inside the map over a block's changes, and its
   // confirmation's cancel and confirm.
   { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 21 },
+  // STORY 4.1b. THREE on Sati: the month navigation it shares with the
+  // calendar — the previous month, `Ovaj mjesec` and the next month. The
+  // figures are read, never pressed.
+  { name: 'the Sati destination', file: SATI, expectedControls: 3 },
   // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
   // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
   // row link written once inside the map over the bands — the same count at
@@ -2056,6 +2077,27 @@ const KEY_SOURCES = [
     strings: 5,
   },
   {
+    // STORY 4.1b. TWELVE on Sati: its own `nav.sati` heading; the shared month
+    // navigation's four (the heading, previous, current, next — counted in the
+    // Kalendar set too, and deduped by the set comparison); and the summary's
+    // seven — the total's and the count's labels, the shift count twice (the
+    // month's and a band's), the bands' heading, the leave row and the
+    // untimed note. Every hour figure reaches `t()` through
+    // `@/features/hour-bands/services/list`'s `durationMessageKey`, already a
+    // key source, and the failure through `@/features/hours/services/my-hours`.
+    name: 'the Sati destination',
+    file: SATI,
+    keys: translationKeys,
+    strings: 12,
+  },
+  {
+    // STORY 4.1b: the hours' one failure, a read or a domain refusal alike.
+    name: 'the hours rules',
+    file: HOURS_KEYS,
+    keys: messageKeyUnion,
+    strings: 1,
+  },
+  {
     // STORY 3.1: the calendar's one read failure.
     name: 'the calendar read rules',
     file: CALENDAR_SNAPSHOT_KEYS,
@@ -2402,7 +2444,11 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(SCREENS).toHaveLength(25);
     //
     // FORTY-NINE SINCE STORY 3.6b: `@/features/calendar/services/roster-write`.
-    expect(KEY_SOURCES).toHaveLength(49);
+    //
+    // STILL TWENTY-FIVE AND FIFTY SINCE STORY 4.1b: `/sati` left the
+    // placeholders and arrived as a built entry (net zero on both lists), and
+    // `@/features/hours/services/my-hours` is a key source (one more).
+    expect(KEY_SOURCES).toHaveLength(50);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -2484,10 +2530,36 @@ describe('the screen is read at all, so every sweep below means something', () =
       expect(source(file).trim().length, `${file} is all but empty`).toBeGreaterThan(150);
     }
     expect(KALENDAR[0], 'the page is read first').toBe(KALENDAR_PAGE);
+    // STORY 4.1b: the month navigation is shared with *Sati*, so it lives
+    // outside the feature (`@/components/month-nav`) and is in the set still.
+    expect(KALENDAR, 'the shared month navigation left the set').toContain(SHARED_MONTH_NAV);
     expect(
       found.filter((file) => !exempt.has(file)).sort(),
       'the calendar file set and the feature folders disagree',
-    ).toEqual(KALENDAR.filter((file) => file !== KALENDAR_PAGE).sort());
+    ).toEqual(KALENDAR.filter((file) => file !== KALENDAR_PAGE && file !== SHARED_MONTH_NAV).sort());
+  });
+
+  it('sweeps every part of the Sati screen, so a new file cannot escape the set', () => {
+    // STORY 4.1b, on the calendar's terms: an EQUALITY between the set and
+    // every non-test module under the hours feature, less the exempt ones.
+    const exempt = new Set(HOURS_SCREEN_EXEMPT.map((entry) => join(HOURS_FEATURE, entry.file)));
+    const found = readdirSync(HOURS_FEATURE, { recursive: true, encoding: 'utf8' })
+      .filter((name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name))
+      .map((name) => join(HOURS_FEATURE, name));
+
+    expect(found, 'the walk reaches services/').toContain(HOURS_KEYS);
+    for (const file of exempt) expect(found, `${file} is exempt and does not exist`).toContain(file);
+    for (const entry of HOURS_SCREEN_EXEMPT) expect(entry.why.length).toBeGreaterThan(20);
+    for (const file of SATI) {
+      expect(existsSync(file), `${file} is in the set and does not exist`).toBe(true);
+      expect(source(file).trim().length, `${file} is all but empty`).toBeGreaterThan(150);
+    }
+    expect(SATI[0], 'the page is read first').toBe(SATI_PAGE);
+    expect(SATI, 'the shared month navigation left the set').toContain(SHARED_MONTH_NAV);
+    expect(
+      found.filter((file) => !exempt.has(file)).sort(),
+      'the Sati file set and the feature folders disagree',
+    ).toEqual(SATI.filter((file) => file !== SATI_PAGE && file !== SHARED_MONTH_NAV).sort());
   });
 
   it('sweeps every part of the shift type screens, so a new file cannot escape the sets', () => {
@@ -4259,9 +4331,19 @@ describe('the member list reads once, under one key', () => {
   });
 
   it.each([
-    { name: 'the hour band list', file: HOUR_BAND_LIST, hookFile: HOUR_BAND_LIST_HOOK },
-    { name: 'the hour band edit form', file: HOUR_BAND_EDIT, hookFile: HOUR_BAND_EDIT_HOOK },
-  ])('reads the bands exactly once, under the one band key, on $name', ({ file, hookFile }) => {
+    {
+      name: 'the hour band list',
+      file: HOUR_BAND_LIST,
+      hookFile: HOUR_BAND_LIST_HOOK,
+      refreshes: ['queryClient, HOUR_BANDS_LIST_KEY, HOUR_BAND_WRITE_DEPENDENTS'],
+    },
+    {
+      name: 'the hour band edit form',
+      file: HOUR_BAND_EDIT,
+      hookFile: HOUR_BAND_EDIT_HOOK,
+      refreshes: ['queryClient, HOUR_BANDS_LIST_KEY, landed ? HOUR_BAND_WRITE_DEPENDENTS : NO_DEPENDENTS'],
+    },
+  ])('reads the bands exactly once, under the one band key, on $name', ({ file, hookFile, refreshes }) => {
     // STORY 2.1b, AD-13. The rows, the count, the bar and the edited band all
     // come from one read under `HOUR_BANDS_LIST_KEY`.
     // SOURCE STRUCTURE B5: counted over the whole set, so a second read in any
@@ -4276,20 +4358,24 @@ describe('the member list reads once, under one key', () => {
     expect(occurrences(hook, 'useQuery('), 'the one read is not in the hook').toBe(1);
     expect(occurrences(hook, 'hourBandsQueryOptions('), 'the one read is not in the hook').toBe(1);
     expect(occurrences(screen, callOf('readHourBands')), 'only the query options call the reader').toBe(0);
-    expect(occurrences(screen, 'queryKey: HOUR_BANDS_LIST_KEY')).toBeGreaterThan(0);
-    expect(occurrences(screen, 'queryKey:')).toBe(
-      occurrences(screen, 'queryKey: HOUR_BANDS_LIST_KEY'),
-    );
-    expect(occurrences(hook, 'queryKey:'), 'a key is named outside the hook').toBe(
-      occurrences(screen, 'queryKey:'),
+    // STORY 4.1b, THE AMENDED RULE (AD-13), on the team screens' terms: every
+    // re-read is `refreshAfterWrite` IN THE HOOK, on the one band key, with the
+    // dependents `@/features/teams/services/dependents` declares for a band
+    // write (the calendar snapshot *Sati* derives hours from).
+    expect(occurrences(screen, 'queryKey:'), 'a key is named on a band screen').toBe(0);
+    expect(occurrences(screen, 'invalidateQueries('), 'a re-read bypasses the declared dependents').toBe(0);
+    expect(
+      [...screen.matchAll(/refreshAfterWrite\(([^;]*?)\);/g)].map((found) =>
+        (found[1] ?? '').replace(/\s+/g, ' ').replace(/,\s*$/, '').trim(),
+      ),
+      'a write re-reads something besides its own key and its declared dependents',
+    ).toEqual(refreshes);
+    expect(occurrences(hook, 'refreshAfterWrite('), 'a re-read is started outside the hook').toBe(
+      occurrences(screen, 'refreshAfterWrite('),
     );
     expect(source(HOUR_BAND_LIST_KEYS), 'the band read has no cache floor').toContain(
       'staleTime: HOUR_BANDS_READ_STALE_MS',
     );
-    expect(hook, 'a write is not followed by a re-read of the one list').toContain(
-      'invalidateQueries({ queryKey: HOUR_BANDS_LIST_KEY })',
-    );
-    expect(occurrences(hook, 'invalidateQueries(')).toBe(occurrences(screen, 'invalidateQueries('));
     for (const part of file) {
       expect(source(part), `useMutation arrived in ${part}; this repository uses a pending ref`).not.toContain(
         'useMutation',

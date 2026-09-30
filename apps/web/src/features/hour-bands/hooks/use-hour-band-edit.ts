@@ -28,6 +28,11 @@ import {
   type HourBandWriteFailure,
   type HourBandWriteTable,
 } from '@/features/hour-bands/services/write';
+import {
+  HOUR_BAND_WRITE_DEPENDENTS,
+  NO_DEPENDENTS,
+  refreshAfterWrite,
+} from '@/features/teams/services/dependents';
 import { formatMinuteOfDay } from '@/lib/i18n/format';
 import { supabaseClient } from '@/lib/supabase/client';
 
@@ -88,10 +93,14 @@ export function useHourBandEdit(id: string) {
     void navigate({ to: '/organizacija/satni-pojasi' });
   }
 
-  /** Re-read the one list, so both screens show what the database holds now. */
-  async function refresh(): Promise<void> {
+  /**
+   * Re-read the one list, so both screens show what the database holds now,
+   * and — after a write that landed — the calendar snapshot, whose bands
+   * *Sati* derives hours from (story 4.1b).
+   */
+  async function refresh(landed: boolean): Promise<void> {
     try {
-      await queryClient.invalidateQueries({ queryKey: HOUR_BANDS_LIST_KEY });
+      await refreshAfterWrite(queryClient, HOUR_BANDS_LIST_KEY, landed ? HOUR_BAND_WRITE_DEPENDENTS : NO_DEPENDENTS);
     } catch (cause) {
       console.error(HOUR_BAND_WRITE_UNAVAILABLE, cause);
     }
@@ -133,7 +142,7 @@ export function useHourBandEdit(id: string) {
         setSaved(HOUR_BAND_SAVED);
       }
 
-      await refresh();
+      await refresh(outcome.ok);
       // AFTER the re-read, so a remount shows what the database now holds.
       setSaves((current) => savesAfter(current, outcome));
       if (outcome.ok) setTypedStart(null);
@@ -171,7 +180,7 @@ export function useHourBandEdit(id: string) {
         setSaved(HOUR_BAND_REMOVED);
       }
 
-      await refresh();
+      await refresh(outcome.ok);
 
       // The confirm button this press came from is gone with the band, so
       // focus would fall to the document. The dialog's close is where a
