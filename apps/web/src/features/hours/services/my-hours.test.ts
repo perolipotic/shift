@@ -104,13 +104,39 @@ describe('the search', () => {
     expect(hoursSearchOf({ mjesec: '2026-13' })).toEqual({});
     expect(hoursSearchOf({ mjesec: '2026-9' })).toEqual({});
     expect(hoursSearchOf({ mjesec: 202609 })).toEqual({});
-    expect(hoursSearchOf({ prikaz: 'moj', osoba: 'x' })).toEqual({});
+    expect(hoursSearchOf({ prikaz: 'moj', smjena: 'x' })).toEqual({});
     expect(hoursSearchOf({})).toEqual({});
   });
 
-  it('navigates to a month, and to the current one by dropping the parameter', () => {
-    expect(hoursSearchTo('2026-10')).toEqual({ mjesec: '2026-10' });
-    expect(hoursSearchTo(null)).toEqual({});
+  it("reads the organization table's team, person, sort and direction, each dropped on its own when invalid", () => {
+    expect(
+      hoursSearchOf({ mjesec: '2026-09', tim: 't', osoba: 'o', sort: 'ukupno', smjer: 'silazno' }),
+    ).toEqual({ mjesec: '2026-09', tim: 't', osoba: 'o', sort: 'ukupno', smjer: 'silazno' });
+    for (const sort of ['ime', 'tim', 'smjene', 'ukupno', 'dopust', 'pojas-b1']) {
+      expect(hoursSearchOf({ sort })).toEqual({ sort });
+    }
+    expect(hoursSearchOf({ sort: 'pojas-' })).toEqual({});
+    expect(hoursSearchOf({ sort: 'total' })).toEqual({});
+    expect(hoursSearchOf({ smjer: 'gore' })).toEqual({});
+    expect(hoursSearchOf({ smjer: 'uzlazno' })).toEqual({ smjer: 'uzlazno' });
+    expect(hoursSearchOf({ tim: '', osoba: 3 })).toEqual({});
+  });
+
+  it('navigates to a month, and to the current one by dropping the parameter, keeping the rest', () => {
+    expect(hoursSearchTo({}, { mjesec: '2026-10' })).toEqual({ mjesec: '2026-10' });
+    expect(hoursSearchTo({ mjesec: '2026-10' }, { mjesec: null })).toEqual({});
+    const table: HoursSearch = { mjesec: '2026-10', tim: 't', osoba: 'o', sort: 'ukupno', smjer: 'silazno' };
+
+    expect(hoursSearchTo(table, { mjesec: null })).toEqual({ tim: 't', osoba: 'o', sort: 'ukupno', smjer: 'silazno' });
+    expect(hoursSearchTo(table, { tim: null })).toEqual({ mjesec: '2026-10', osoba: 'o', sort: 'ukupno', smjer: 'silazno' });
+    expect(hoursSearchTo(table, { osoba: 'p' })).toEqual({
+      mjesec: '2026-10',
+      tim: 't',
+      osoba: 'p',
+      sort: 'ukupno',
+      smjer: 'silazno',
+    });
+    expect(hoursSearchTo(table, { sort: null, smjer: null })).toEqual({ mjesec: '2026-10', tim: 't', osoba: 'o' });
   });
 
   it('names its own month heading, apart from the calendar, and its bands heading', () => {

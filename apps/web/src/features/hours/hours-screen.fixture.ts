@@ -1,5 +1,6 @@
 /**
- * THE SATI SCREEN'S FILE SET, written once (story 4.1b), on the calendar's
+ * THE SATI SCREEN'S FILE SET, written once (story 4.1b; the organization
+ * table's parts since story 4.2), on the calendar's
  * terms (`calendar-screen.fixture.ts`): a page that only composes, the hook
  * holding its one read, the components that draw it, and the month
  * navigation it shares with the calendar. `pages/prijava.test.ts` reads it as
@@ -10,10 +11,12 @@
  */
 export const HOURS_SCREEN_PARTS = {
   page: ['pages', 'sati.tsx'],
-  hook: ['features', 'hours', 'hooks', 'use-my-hours.ts'],
+  hook: ['features', 'hours', 'hooks', 'use-hours.ts'],
   body: ['features', 'hours', 'components', 'hours-body.tsx'],
   summary: ['features', 'hours', 'components', 'hours-summary.tsx'],
   skeleton: ['features', 'hours', 'components', 'hours-skeleton.tsx'],
+  organizationFilters: ['features', 'hours', 'components', 'organization-hours-filters.tsx'],
+  organizationTable: ['features', 'hours', 'components', 'organization-hours-table.tsx'],
   monthNav: ['components', 'month-nav.tsx'],
 } as const;
 
@@ -30,5 +33,9 @@ export const HOURS_SCREEN_EXEMPT: readonly { readonly file: string; readonly why
   {
     file: 'services/my-hours.ts',
     why: 'every rule of the screen and its failure message; a key source of its own, executed by my-hours.test.ts',
+  },
+  {
+    file: 'services/organization-hours.ts',
+    why: "every rule of the admin's organization table (story 4.2); renders nothing, executed by organization-hours.test.ts",
   },
 ];

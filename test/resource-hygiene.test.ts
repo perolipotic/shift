@@ -1057,6 +1057,24 @@ const SANCTIONED_SCREEN_KEYS = [
   'sati.bands',
   'sati.leave',
   'sati.error.unavailable',
+  // STORY 4.2: an admin's organization table on *Sati* — its caption, its
+  // column headings, its two filters with their "all" options, the mark of a
+  // member on no team, and the two lines an empty table shows (nobody matches
+  // the filter; nobody has a row this month). Band headings are
+  // the bands' names as stored, never keys.
+  'sati.organization.caption',
+  'sati.organization.member',
+  'sati.organization.team',
+  'sati.organization.shifts',
+  'sati.organization.total',
+  'sati.organization.leave',
+  'sati.organization.teamFilter',
+  'sati.organization.personFilter',
+  'sati.organization.allTeams',
+  'sati.organization.allPeople',
+  'sati.organization.noTeam',
+  'sati.organization.empty',
+  'sati.organization.emptyMonth',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

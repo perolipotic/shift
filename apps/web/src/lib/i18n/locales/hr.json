@@ -153,6 +153,21 @@
     "untimed": "{count, plural, one {# smjena nema upisano vrijeme pa nije uračunata u sate.} few {# smjene nemaju upisano vrijeme pa nisu uračunate u sate.} other {# smjena nema upisano vrijeme pa nije uračunato u sate.}}",
     "error": {
       "unavailable": "Sate trenutačno nije moguće učitati. Pokušaj ponovno."
+    },
+    "organization": {
+      "caption": "Sati svih osoba: {month} {year}",
+      "member": "Osoba",
+      "team": "Smjena",
+      "shifts": "Smjene",
+      "total": "Ukupno",
+      "leave": "Godišnji odmor",
+      "teamFilter": "Smjena",
+      "personFilter": "Osoba",
+      "allTeams": "Sve smjene",
+      "allPeople": "Sve osobe",
+      "noTeam": "—",
+      "empty": "Nijedna osoba ne odgovara odabranom filtru.",
+      "emptyMonth": "U ovom mjesecu nema nijedne osobe."
     }
   },
   "ljudi": {
