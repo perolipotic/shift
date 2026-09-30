@@ -8,6 +8,7 @@ import {
   MONTH_SEARCH_PARAM,
   isCalendarMonth,
   memberScheduleInputOf,
+  type CalendarMemberHistory,
   monthHeaderOf,
   monthShownOf,
   type MonthHeader,
@@ -15,8 +16,10 @@ import {
 import { durationMessageKey, durationValuesOf, type DurationValues } from '@/features/hour-bands/services/list';
 
 /**
- * *Sati*: the viewer's own month of hours (story 4.1b). Member and admin
- * alike see their own figures only; the organization's view is story 4.2's.
+ * *Sati*: the viewer's own month of hours (story 4.1b). A member sees their
+ * own figures; an admin sees every member's (story 4.2,
+ * `@/features/hours/services/organization-hours`), each row this module's
+ * recipe for that member.
  *
  * EVERY RULE OF THE SCREEN IS HERE (AD-15), and the node suite executes it:
  * the search, the month heading, the snapshot as the domain's input, the
@@ -48,35 +51,136 @@ export const HOURS_UNAVAILABLE = 'HOURS_UNAVAILABLE';
 
 export type HoursFailure = typeof HOURS_UNAVAILABLE;
 
-/** *Sati*'s search, as `validateSearch` returns it: a valid month, or nothing. */
+/** The search parameter naming the one team the organization's table is narrowed to (story 4.2). */
+export const HOURS_TEAM_PARAM = 'tim';
+
+/** The search parameter naming the one person the organization's table is narrowed to (story 4.2). */
+export const HOURS_PERSON_PARAM = 'osoba';
+
+/** The search parameter naming the column the organization's table is sorted by (story 4.2). */
+export const HOURS_SORT_PARAM = 'sort';
+
+/** The search parameter naming the sort's direction (story 4.2). */
+export const HOURS_DIRECTION_PARAM = 'smjer';
+
+/** The fixed sortable columns, as `sort` names them. */
+export const SORT_NAME = 'ime';
+export const SORT_TEAM = 'tim';
+export const SORT_SHIFTS = 'smjene';
+export const SORT_TOTAL = 'ukupno';
+export const SORT_LEAVE = 'dopust';
+
+const FIXED_SORT_KEYS = [SORT_NAME, SORT_TEAM, SORT_SHIFTS, SORT_TOTAL, SORT_LEAVE] as const;
+
+/** A band's column, as `sort` names it: `pojas-<band id>`. */
+export const BAND_SORT_PREFIX = 'pojas-';
+
+export type HoursSortKey = (typeof FIXED_SORT_KEYS)[number] | `${typeof BAND_SORT_PREFIX}${string}`;
+
+/** The two directions, as `smjer` names them. */
+export const SORT_UP = 'uzlazno';
+export const SORT_DOWN = 'silazno';
+
+export type HoursSortDirection = typeof SORT_UP | typeof SORT_DOWN;
+
+/**
+ * *Sati*'s search, as `validateSearch` returns it: each parameter valid in
+ * its own shape, or absent. Whether `tim`, `osoba` or a band's `sort` names
+ * something the snapshot holds is the organization view's decision, not the
+ * parser's: the parser cannot see the snapshot.
+ */
 export interface HoursSearch {
   readonly mjesec?: string | undefined;
+  readonly tim?: string | undefined;
+  readonly osoba?: string | undefined;
+  readonly sort?: HoursSortKey | undefined;
+  readonly smjer?: HoursSortDirection | undefined;
+}
+
+/** Whether a value is a column `sort` can name: a fixed one, or `pojas-<id>` with an id. */
+export function isHoursSortKey(value: unknown): value is HoursSortKey {
+  if (typeof value !== 'string') return false;
+  if (FIXED_SORT_KEYS.some((key) => key === value)) return true;
+
+  return value.startsWith(BAND_SORT_PREFIX) && value.length > BAND_SORT_PREFIX.length;
+}
+
+/** Whether a value is one of the two directions. */
+export function isHoursSortDirection(value: unknown): value is HoursSortDirection {
+  return value === SORT_UP || value === SORT_DOWN;
+}
+
+function nonEmptyText(value: unknown): value is string {
+  return typeof value === 'string' && value !== '';
 }
 
 /**
  * The raw search as *Sati* reads it: `?mjesec=YYYY-MM`, the calendar's own
- * rule. An invalid or missing month is dropped, so the screen falls back to
- * the organization's current month; every other parameter is dropped too.
+ * rule, and for an admin's table (story 4.2) `tim`, `osoba`, `sort` and
+ * `smjer`. Each invalid or missing parameter is dropped on its own — a month
+ * falls back to the organization's current one, a sort to the name,
+ * ascending — and every other parameter is dropped too.
  */
 export function hoursSearchOf(search: Record<string, unknown>): HoursSearch {
   const month = search[MONTH_SEARCH_PARAM];
+  const team = search[HOURS_TEAM_PARAM];
+  const person = search[HOURS_PERSON_PARAM];
+  const sort = search[HOURS_SORT_PARAM];
+  const direction = search[HOURS_DIRECTION_PARAM];
 
-  return isCalendarMonth(month) ? { mjesec: month } : {};
-}
-
-/** The search to navigate to: `null` is the current month, and drops the parameter. */
-export function hoursSearchTo(mjesec: string | null): HoursSearch {
-  return mjesec === null ? {} : { mjesec };
+  return {
+    ...(isCalendarMonth(month) ? { mjesec: month } : {}),
+    ...(nonEmptyText(team) ? { tim: team } : {}),
+    ...(nonEmptyText(person) ? { osoba: person } : {}),
+    ...(isHoursSortKey(sort) ? { sort } : {}),
+    ...(isHoursSortDirection(direction) ? { smjer: direction } : {}),
+  };
 }
 
 /**
- * The viewer's month as the domain's input: the calendar's schedule recipe
- * for the viewer, plus every hour band and every shift type with its
- * versions — archived ones included, as the schedule may still name them.
+ * A change of the search: the month (`null`: the current one), the team or
+ * the person (`null`: all), or the sort (both keys; `null` drops either, the
+ * default).
  */
-export function memberHoursInputOf(snapshot: CalendarSnapshot): MemberHoursInput {
+export type HoursSearchChange =
+  | { readonly mjesec: string | null }
+  | { readonly tim: string | null }
+  | { readonly osoba: string | null }
+  | { readonly sort: HoursSortKey | null; readonly smjer: HoursSortDirection | null };
+
+/**
+ * The search to navigate to: the one `change` applied, everything else the
+ * search names kept, so the month keeps the filters and the sort, and a
+ * filter or a sort keeps the month. `null` drops a parameter.
+ */
+export function hoursSearchTo(search: HoursSearch, change: HoursSearchChange): HoursSearch {
+  const mjesec = 'mjesec' in change ? change.mjesec : (search.mjesec ?? null);
+  const tim = 'tim' in change ? change.tim : (search.tim ?? null);
+  const osoba = 'osoba' in change ? change.osoba : (search.osoba ?? null);
+  const sort = 'sort' in change ? change.sort : (search.sort ?? null);
+  const smjer = 'smjer' in change ? change.smjer : (search.smjer ?? null);
+
   return {
-    ...memberScheduleInputOf(snapshot, snapshot.viewer),
+    ...(mjesec === null ? {} : { mjesec }),
+    ...(tim === null ? {} : { tim }),
+    ...(osoba === null ? {} : { osoba }),
+    ...(sort === null ? {} : { sort }),
+    ...(smjer === null ? {} : { smjer }),
+  };
+}
+
+/**
+ * One member's month as the domain's input — the viewer's unless `history`
+ * names another (story 4.2): the calendar's schedule recipe for that member,
+ * plus every hour band and every shift type with its versions — archived ones
+ * included, as the schedule may still name them.
+ */
+export function memberHoursInputOf(
+  snapshot: CalendarSnapshot,
+  history: CalendarMemberHistory = snapshot.viewer,
+): MemberHoursInput {
+  return {
+    ...memberScheduleInputOf(snapshot, history),
     bands: snapshot.bands,
     shiftTypes: snapshot.types.map((type) => ({ type, versions: type.versions })),
   };
@@ -88,7 +192,8 @@ export interface HoursFigure {
   readonly values: DurationValues;
 }
 
-function figureOf(minutes: number): HoursFigure {
+/** Minutes as a figure `t()` renders; never summed, rounded or recomputed. */
+export function figureOf(minutes: number): HoursFigure {
   return { key: durationMessageKey(minutes), values: durationValuesOf(minutes) };
 }
 
@@ -191,7 +296,7 @@ export interface MyHoursSurface {
 }
 
 /** The heading of the month `search` names, or `null` when even that is refused. */
-function monthShownHeaderOf(search: HoursSearch, today: string): MonthHeader | null {
+export function monthShownHeaderOf(search: HoursSearch, today: string): MonthHeader | null {
   try {
     return monthHeaderOf(monthShownOf(search, today), today);
   } catch (cause) {

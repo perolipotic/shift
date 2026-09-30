@@ -11,6 +11,7 @@ import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
 import { fill, hr, plural } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll } from '../../utils/layout.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
+import { HoursPage } from '../../pages/hours.page.ts';
 
 /**
  * Story 4.1b: *Sati*, the viewer's own month of hours. The fixture team gets
@@ -18,12 +19,17 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * Slobodno]`, 12 h each working step), under the run's rotation hold, and the
  * member on that team reads a non-zero total equal to the seeded shifts left
  * in the month times 12 h, with the same count, each band's own hours and
- * shifts, band hours summing to the total, and no untimed note. The admin, on
- * no team, reads 0 h while that team works. A bad `mjesec` falls back to the current month, and
- * the screen does not scroll sideways at 390 px.
+ * shifts, band hours summing to the total, and no untimed note. A bad
+ * `mjesec` falls back to the current month, and the screen does not scroll
+ * sideways at 390 px. Story 4.2: the admin reads a table of every member,
+ * whose row for that member equals what the member reads; it filters by team
+ * and by person, sorts by total across a reload, keeps both across a month
+ * change, links a name to that member's calendar month, and does not scroll
+ * the page sideways at 390 px.
  */
 
 const sati = hr.sati;
+const organization = hr.sati.organization;
 const hours = hr.organization.hourBands.duration.hours;
 
 /** The run organization's rotation, while this file's test holds it (`holdRotation`). */
@@ -188,15 +194,144 @@ test.describe('as a member', () => {
 test.describe('as an admin', () => {
   test.use({ storageState: ADMIN_STATE });
 
-  test('an admin on no team reads their own 0 h, never the organization', async ({ hoursPage, fixture }) => {
-    // The member's team works this month, so the organization has hours: the
-    // admin's page must still show only the admin's own, none.
+  test("the table's row for the member equals what the member reads, and filters, sorts, keeps them across months and links", async ({
+    browser,
+    page,
+    hoursPage,
+    calendarPage,
+    fixture,
+  }) => {
     const rotation = await seeded(fixture.slug, fixture.team.id);
-    expect(workingShiftsIn(rotation.today.slice(0, 7), rotation.today)).toBeGreaterThan(0);
+    const month = rotation.today.slice(0, 7);
+    expect(workingShiftsIn(month, rotation.today), 'the seeded month holds a working shift').toBeGreaterThan(0);
+
+    // WHAT THE MEMBER READS on their own Sati, in a session of their own:
+    // the text actually shown, never a value worked out here.
+    const memberContext = await browser.newContext({ storageState: MEMBER_STATE });
+    let memberTotal: string;
+    let memberShifts: string;
+    let memberBandNames: string[];
+    let memberBandHours: string[];
+    let memberBandShifts: string[];
+    try {
+      const memberHours = new HoursPage(await memberContext.newPage());
+      await memberHours.goto();
+      await expect(memberHours.tileValue(sati.total)).toHaveText(/\S/);
+      await expect(memberHours.bandNames.first()).toBeVisible();
+      memberTotal = ((await memberHours.tileValue(sati.total).textContent()) ?? '').trim();
+      memberShifts = ((await memberHours.tileValue(sati.shifts).textContent()) ?? '').trim();
+      memberBandNames = (await memberHours.bandNames.allTextContents()).map((text) => text.trim());
+      memberBandHours = (await memberHours.bandHourFigures.allTextContents()).map((text) => text.trim());
+      memberBandShifts = (await memberHours.bandShiftFigures.allTextContents()).map((text) => text.trim());
+    } finally {
+      await memberContext.close();
+    }
+    // Every fixture band is among them (the hour band spec may add its own
+    // while the whole suite runs), each with its hours and its shifts.
+    for (const band of fixture.bands) expect(memberBandNames).toContain(band.name);
+    expect(memberBandHours).toHaveLength(memberBandNames.length);
+    expect(memberBandShifts).toHaveLength(memberBandNames.length);
 
     await hoursPage.goto();
     await expect(hoursPage.heading(hr.nav.sati)).toBeVisible();
-    await expect(hoursPage.figureIn(hoursPage.totalTile, hoursOf(0))).toBeVisible();
-    await expect(hoursPage.figureIn(hoursPage.shiftsTile, plural(sati.shiftCount, 0))).toBeVisible();
+    await expect(hoursPage.organizationTable).toBeVisible();
+    // An admin never sees their own tiles: the table stands in their place.
+    await expect(hoursPage.totalTile).toHaveCount(0);
+
+    const row = hoursPage.organizationRow(fixture.member.name);
+    await expect(row).toHaveCount(1);
+    await expect(await hoursPage.cellIn(row, organization.total)).toHaveText(memberTotal);
+    await expect(await hoursPage.cellIn(row, organization.shifts)).toHaveText(memberShifts);
+    await expect(await hoursPage.cellIn(row, organization.team)).toHaveText(fixture.team.name);
+    await expect(await hoursPage.cellIn(row, organization.leave)).toHaveText(hoursOf(0));
+    // ONE COLUMN PER BAND, the member's bands exactly, each cell the member's figures.
+    await expect(hoursPage.columnHeaders).toHaveText([
+      organization.member,
+      organization.team,
+      organization.shifts,
+      ...memberBandNames,
+      organization.total,
+      organization.leave,
+    ]);
+    for (const [index, name] of memberBandNames.entries()) {
+      const cell = await hoursPage.cellIn(row, name);
+      await expect(hoursPage.bandCellHours(cell)).toHaveText(memberBandHours[index] ?? '');
+      await expect(hoursPage.bandCellShifts(cell)).toHaveText(memberBandShifts[index] ?? '');
+    }
+
+    // THE TEAM FILTER NARROWS: the admin, on no team, leaves the table, and
+    // every row left is on the chosen team.
+    const adminRow = hoursPage.organizationRow(fixture.admin.name);
+    await expect(adminRow).toHaveCount(1);
+    await hoursPage.teamFilter.selectOption({ label: fixture.team.name });
+    await expect(page).toHaveURL(/[?&]tim=/);
+    await expect(adminRow).toHaveCount(0);
+    await expect(row).toHaveCount(1);
+    await expect
+      .poll(async () => {
+        const teams = await hoursPage.columnTexts(organization.team);
+        return teams.length > 0 && teams.every((team) => team === fixture.team.name);
+      })
+      .toBe(true);
+
+    // THE PERSON FILTER: the member alone, and chosen.
+    await hoursPage.teamFilter.selectOption({ index: 0 });
+    await expect(page).not.toHaveURL(/[?&]tim=/);
+    await expect(adminRow).toHaveCount(1);
+    await hoursPage.personFilter.selectOption({ label: fixture.member.name });
+    await expect(page).toHaveURL(/[?&]osoba=/);
+    await expect(hoursPage.organizationRows).toHaveCount(1);
+    await expect(row).toHaveCount(1);
+    await expect(hoursPage.chosenOption(hoursPage.personFilter)).toHaveText(fixture.member.name);
+    await hoursPage.personFilter.selectOption({ index: 0 });
+    await expect(page).not.toHaveURL(/[?&]osoba=/);
+    await expect(adminRow).toHaveCount(1);
+
+    // SORTING BY TOTAL: ascending first, then descending, and a reload keeps it.
+    await hoursPage.sortButton(organization.total).click();
+    await expect(page).toHaveURL(/[?&]sort=ukupno/);
+    await expect(hoursPage.columnHeader(organization.total)).toHaveAttribute('aria-sort', 'ascending');
+    await hoursPage.sortButton(organization.total).click();
+    await expect(page).toHaveURL(/[?&]smjer=silazno/);
+    await expect(hoursPage.columnHeader(organization.total)).toHaveAttribute('aria-sort', 'descending');
+    await expect(hoursPage.columnHeader(organization.member)).toHaveAttribute('aria-sort', 'none');
+    await expect
+      .poll(async () => {
+        const totals = (await hoursPage.columnTexts(organization.total)).map(minutesOfFigure);
+        return (
+          totals.length > 1 &&
+          !totals.includes(null) &&
+          totals.every((total, index) => index === 0 || (totals[index - 1] ?? 0) >= (total ?? 0))
+        );
+      })
+      .toBe(true);
+    const order = (await hoursPage.organizationRows.allTextContents()).map((text) => text.trim());
+    await page.reload();
+    await expect(hoursPage.columnHeader(organization.total)).toHaveAttribute('aria-sort', 'descending');
+    await expect(hoursPage.organizationRows).toHaveText(order);
+
+    // THE MONTH KEEPS THE FILTER AND THE SORT.
+    await hoursPage.teamFilter.selectOption({ label: fixture.team.name });
+    await expect(page).toHaveURL(/[?&]tim=/);
+    const next = nextMonth(month);
+    await hoursPage.nextButton.click();
+    await expect(page).toHaveURL(new RegExp(`[?&]mjesec=${next}`));
+    await expect(page).toHaveURL(/[?&]tim=/);
+    await expect(page).toHaveURL(/[?&]sort=ukupno/);
+    await expect(page).toHaveURL(/[?&]smjer=silazno/);
+    await expect(hoursPage.columnHeader(organization.total)).toHaveAttribute('aria-sort', 'descending');
+    await expect(hoursPage.chosenOption(hoursPage.teamFilter)).toHaveText(fixture.team.name);
+
+    // No sideways page scroll at phone width: the table scrolls in its own box.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(hoursPage.organizationTable).toBeVisible();
+    await expectNoHorizontalScroll(page);
+
+    // The name opens their calendar month, where the roster changes behind a figure show.
+    await hoursPage.memberLink(fixture.member.name).click();
+    await expect(page).toHaveURL(new RegExp(`/kalendar\\?.*mjesec=${next}`));
+    await expect(page).toHaveURL(/[?&]prikaz=sve/);
+    await expect(page).toHaveURL(/[?&]osoba=/);
+    await expect(calendarPage.personHeading(fixture.member.name)).toBeVisible();
   });
 });

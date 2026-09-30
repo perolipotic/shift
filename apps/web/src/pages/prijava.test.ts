@@ -334,6 +334,8 @@ const SATI_PAGE = join(srcRoot, ...HOURS_SCREEN_PARTS.page);
 const SATI: readonly string[] = Object.values(HOURS_SCREEN_PARTS).map((parts) => join(srcRoot, ...parts));
 /** Story 4.1b's rules: the one failure message *Sati* renders. */
 const HOURS_KEYS = join(srcRoot, 'features', 'hours', 'services', 'my-hours.ts');
+/** Story 4.2's rules: the two lines an admin's empty table renders. */
+const ORGANIZATION_HOURS_KEYS = join(srcRoot, 'features', 'hours', 'services', 'organization-hours.ts');
 /** Story 3.5b's override writes: the six refusals the day detail's form and confirmation render. */
 const CALENDAR_OVERRIDE_WRITE_KEYS = join(srcRoot, 'features', 'calendar', 'services', 'override-write.ts');
 /** Story 3.6b's roster writes: the six refusals and the two landed notices the roster form and confirmation render. */
@@ -631,7 +633,11 @@ const SCREENS = [
   // STORY 4.1b. THREE on Sati: the month navigation it shares with the
   // calendar — the previous month, `Ovaj mjesec` and the next month. The
   // figures are read, never pressed.
-  { name: 'the Sati destination', file: SATI, expectedControls: 3 },
+  // SIX SINCE STORY 4.2: an admin's organization table — its team and person
+  // `Select`s, and ONE sortable heading `Button` written once in `SortHead`,
+  // however many columns. The name links are `<Link>`s, which no detector
+  // reads; each carries `min-h-11` all the same.
+  { name: 'the Sati destination', file: SATI, expectedControls: 6 },
   // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
   // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
   // row link written once inside the map over the bands — the same count at
@@ -2085,10 +2091,17 @@ const KEY_SOURCES = [
     // untimed note. Every hour figure reaches `t()` through
     // `@/features/hour-bands/services/list`'s `durationMessageKey`, already a
     // key source, and the failure through `@/features/hours/services/my-hours`.
+    //
+    // TWENTY-SIX SINCE STORY 4.2: an admin's organization table — its
+    // caption, its five fixed headings (a band's is its name as stored), the
+    // two filters' labels and "all" options and the no-team mark (eleven);
+    // the shift count twice more (a row's and a band cell's) and the untimed
+    // note once more (the table's own). Its empty lines come through
+    // `@/features/hours/services/organization-hours`, a key source.
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 12,
+    strings: 26,
   },
   {
     // STORY 4.1b: the hours' one failure, a read or a domain refusal alike.
@@ -2096,6 +2109,14 @@ const KEY_SOURCES = [
     file: HOURS_KEYS,
     keys: messageKeyUnion,
     strings: 1,
+  },
+  {
+    // STORY 4.2: why an admin's table is empty — nobody matches the filter,
+    // or nobody has a row this month.
+    name: 'the organization hours rules',
+    file: ORGANIZATION_HOURS_KEYS,
+    keys: messageKeyUnion,
+    strings: 2,
   },
   {
     // STORY 3.1: the calendar's one read failure.
@@ -2448,7 +2469,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // STILL TWENTY-FIVE AND FIFTY SINCE STORY 4.1b: `/sati` left the
     // placeholders and arrived as a built entry (net zero on both lists), and
     // `@/features/hours/services/my-hours` is a key source (one more).
-    expect(KEY_SOURCES).toHaveLength(50);
+    //
+    // FIFTY-ONE SINCE STORY 4.2: `@/features/hours/services/organization-hours`.
+    expect(KEY_SOURCES).toHaveLength(51);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
