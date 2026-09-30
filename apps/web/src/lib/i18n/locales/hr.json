@@ -59,6 +59,13 @@
       "empty": "Taj dan nitko nije raspoređen.",
       "off": "{team} taj dan ne radi.",
       "noRotation": "{team} taj dan nema rotacije.",
+      "rosterChange": {
+        "heading": "Promjene sastava",
+        "added": "Dodano: {name}",
+        "removed": "Uklonjeno: {name}",
+        "replaced": "Zamjena: {out} → {in}",
+        "pendingHeading": "Promjena sastava čeka pregled"
+      },
       "override": {
         "heading": "Izmjena",
         "projected": "Prema rotaciji: {type}",

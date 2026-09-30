@@ -6,6 +6,9 @@ import {
   holdRotation,
   removeOverrideInSql,
   removeSeededRotation,
+  removeTeamInSql,
+  seedExtraTeam,
+  seedRosterOverride,
   seedRotationChange,
   seedShiftTypeOverride,
   seedTeamRotation,
@@ -59,6 +62,13 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * held while the insert is in flight — and removes it through a neutral
  * confirmation, the cell back to its projection; a blank reason is refused
  * without a request and keeps the type; a member sees no form.
+ *
+ * Story 3.6a: a roster override, written in SQL (`seedRosterOverride`) — a
+ * replacement on the fixture team today, its member taken off and the member
+ * on no team put on — marks the cell with the same `✎`; the day detail's
+ * roster follows it and its change block names the change, author, time and
+ * reason; the member put on reads that shift in their own Moj raspored at
+ * 390 px, and the person filter on the member taken off lacks it.
  */
 
 const kalendar = hr.kalendar;
@@ -72,6 +82,8 @@ let ranksHold: RotationHold | null = null;
 /** What the rank test changed, put back before its hold is released. */
 let restoreRanks: (() => Promise<void>) | null = null;
 let restoreMember: (() => Promise<void>) | null = null;
+/** A second team and its rotation (story 3.6a), removed after the fixture team's seed, before the hold is released. */
+let extra: { readonly slug: string; readonly teamId: string; readonly seed: SeededRotation | null } | null = null;
 
 test.afterEach(async () => {
   try {
@@ -85,8 +97,13 @@ test.afterEach(async () => {
       ranksHold = null;
     }
     if (seed !== null) await removeSeededRotation(seed);
+    if (extra !== null) {
+      if (extra.seed !== null) await removeSeededRotation(extra.seed);
+      await removeTeamInSql(extra.slug, extra.teamId);
+    }
   } finally {
     seed = null;
+    extra = null;
     await hold?.release();
     hold = null;
   }
@@ -98,6 +115,17 @@ async function seeded(slug: string, teamId: string): Promise<SeededRotation> {
   seed = await seedTeamRotation(slug, teamId, randomBytes(3).toString('hex'));
 
   return seed;
+}
+
+/**
+ * Holds the run organization's rotation without seeding one (story 3.6a): a
+ * test that reads the member on no team as on no team all month must not run
+ * while another test's roster override puts him on a shift, and every roster
+ * override is seeded under this same hold.
+ */
+async function held(slug: string): Promise<void> {
+  hold = holdRotation(slug);
+  await hold.ready;
 }
 
 /** A `YYYY-MM-DD` date `days` days from `date`, by UTC arithmetic. */
@@ -413,6 +441,7 @@ test.describe('on a phone, as the member on no team', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
   test('reads the notice, never an empty list', async ({ page, calendarPage, loginPage, fixture }) => {
+    await held(fixture.slug);
     await loginPage.signIn(fixture.slug, fixture.spare.username, fixture.password);
     await calendarPage.goto();
 
@@ -868,6 +897,217 @@ test.describe('a shift-type override at 390 px, as a member in Moj raspored', ()
   });
 });
 
+const ROSTER_REASON = 'Zamjena zbog bolovanja (E2E).';
+
+test.describe('a roster override at 1280 px, as an admin', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 1280, height: 800 } });
+
+  test('a replacement marks the cell with ✎, and the detail shows the roster it leaves and the change', async ({
+    calendarPage,
+    fixture,
+  }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    const range = expectedRange(rotation, rotation.today);
+    if (range === null) throw new Error('E2E: the seeded rotation does not work today');
+    const change = await seedRosterOverride(
+      rotation,
+      fixture.team.id,
+      rotation.today,
+      fixture.member.name,
+      fixture.spare.name,
+      ROSTER_REASON,
+    );
+
+    await calendarPage.goto(gridMonthOf(rotation.today));
+    const cell = await calendarPage.cellOf(fixture.team.name, rotation.today);
+    // The type is the projection's; the mark is the roster's, on the cell itself.
+    await expect(cell).toContainText(expectedType(rotation, rotation.today));
+    await expect(cell).toContainText('\u270E');
+    await expect(cell).toHaveAccessibleName(
+      `${weekdayOf(rotation.today)} ${dayMonth(rotation.today)}, ${fixture.team.name}, ${expectedType(rotation, rotation.today)}, ${range}, ${kalendar.modifier.overridden}`,
+    );
+    const yesterday = addDays(rotation.today, -1);
+    const neighbour = yesterday.slice(0, 7) === rotation.today.slice(0, 7) ? yesterday : addDays(rotation.today, 1);
+    await expect(await calendarPage.cellOf(fixture.team.name, neighbour)).not.toContainText('\u270E');
+    const legend = calendarPage.legendOf();
+    await expect(legend.items).toHaveText([`\u270E${kalendar.modifier.overridden}`]);
+
+    await cell.click();
+    const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
+    await expect(detail).toBeVisible();
+    // Toni is put on, and she is taken off.
+    await expect(calendarPage.rosterLinesIn(detail)).toHaveCount(1);
+    await expect(calendarPage.rosterLinesIn(detail)).toContainText(fixture.spare.name);
+    await expect(calendarPage.rosterIn(detail)).not.toContainText(fixture.member.name);
+    const block = calendarPage.rosterChangesIn(detail);
+    await expect(block).toBeVisible();
+    await expect(calendarPage.rosterChangeItemsIn(detail)).toHaveCount(1);
+    await expect(block).toContainText(
+      fill(kalendar.detail.rosterChange.replaced, { out: fixture.member.name, in: fixture.spare.name }),
+    );
+    await expect(block).toContainText(fill(kalendar.detail.override.author, { name: fixture.admin.name }));
+    await expect(block).toContainText(
+      fill(kalendar.detail.override.savedAt, { date: change.savedDate, time: change.savedTime }),
+    );
+    await expect(block).toContainText(fill(kalendar.detail.override.reason, { reason: ROSTER_REASON }));
+    // No shift-type override: its block is absent.
+    await expect(calendarPage.overrideIn(detail)).toHaveCount(0);
+  });
+
+  test('the person filter on the member taken off lacks the shift', async ({ page, calendarPage, fixture }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    const range = expectedRange(rotation, rotation.today);
+    if (range === null) throw new Error('E2E: the seeded rotation does not work today');
+    await seedRosterOverride(rotation, fixture.team.id, rotation.today, fixture.member.name, fixture.spare.name, ROSTER_REASON);
+    // Today's shift of the team, as a day list's button is named.
+    const shift = `${weekdayOf(rotation.today)} ${dayMonth(rotation.today)}, ${fixture.team.name}, ${expectedType(rotation, rotation.today)}, ${range}, ${kalendar.modifier.overridden}`;
+
+    await calendarPage.goto(gridMonthOf(rotation.today));
+    await calendarPage.teamFilter.selectOption({ label: fixture.member.name });
+    await expect(page).toHaveURL(anySearchParamPattern('osoba'));
+    await expect(calendarPage.personHeading(fixture.member.name)).toBeVisible();
+    await expect(calendarPage.anyGrid).toHaveCount(0);
+    // Her month rendered — the list, or the notice when today was her one day
+    // on the team this month — and holds no such day: she was taken off.
+    await expect(
+      calendarPage.personListOf(fixture.member.name).or(calendarPage.personNoTeam(fixture.member.name)),
+    ).toBeVisible();
+    await expect(calendarPage.dayOpenerNamed(shift)).toHaveCount(0);
+
+    // Toni, on no team, holds that one shift this month.
+    await calendarPage.teamFilter.selectOption({ label: fixture.spare.name });
+    const spare = calendarPage.personListOf(fixture.spare.name);
+    await expect(spare).toBeVisible();
+    await expect(calendarPage.todayIn(spare)).toContainText('\u270E');
+    await expect(calendarPage.dayOpenerNamed(shift)).toHaveCount(1);
+  });
+});
+
+test.describe('a roster override at 390 px, as the member put on', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test("the member on no team reads the shift they were put on in Moj raspored, and its detail", async ({
+    page,
+    calendarPage,
+    loginPage,
+    fixture,
+  }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    const range = expectedRange(rotation, rotation.today);
+    if (range === null) throw new Error('E2E: the seeded rotation does not work today');
+    await seedRosterOverride(rotation, fixture.team.id, rotation.today, fixture.member.name, fixture.spare.name, ROSTER_REASON);
+
+    await loginPage.signIn(fixture.slug, fixture.spare.username, fixture.password);
+    await calendarPage.goto();
+    await expect(calendarPage.modes().moj).toHaveAttribute('aria-pressed', 'true');
+    await expect(calendarPage.noTeamNotice).toHaveCount(0);
+    const today = calendarPage.today;
+    await expect(today).toContainText(expectedType(rotation, rotation.today));
+    await expect(today).toContainText('\u270E');
+    const opener = calendarPage.openerIn(today);
+    await expect(opener).toHaveAccessibleName(
+      `${weekdayOf(rotation.today)} ${dayMonth(rotation.today)}, ${fixture.team.name}, ${expectedType(rotation, rotation.today)}, ${range}, ${kalendar.modifier.overridden}`,
+    );
+    await expectNoHorizontalScroll(page);
+
+    await opener.tap();
+    const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
+    await expect(detail).toBeVisible();
+    await expect(calendarPage.rosterLinesIn(detail)).toContainText(fixture.spare.name);
+    await expect(calendarPage.rosterChangesIn(detail)).toContainText(
+      fill(kalendar.detail.rosterChange.replaced, { out: fixture.member.name, in: fixture.spare.name }),
+    );
+    await expectNoHorizontalScroll(page);
+  });
+});
+
+test.describe('a double shift at 390 px, as the member put on in Moj raspored', () => {
+  test.use({ storageState: MEMBER_STATE, viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('her own team works today and she is put on another team\'s shift: two openers, her own first', async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    const suffix = randomBytes(3).toString('hex');
+    const beta = await seedExtraTeam(fixture.slug, `Smjena Beta ${suffix}`);
+    extra = { slug: fixture.slug, teamId: beta.id, seed: null };
+    const other = await seedTeamRotation(fixture.slug, beta.id, randomBytes(3).toString('hex'));
+    extra = { ...extra, seed: other };
+    const range = expectedRange(rotation, rotation.today);
+    if (range === null) throw new Error('E2E: the seeded rotation does not work today');
+    await seedRosterOverride(rotation, beta.id, rotation.today, null, fixture.member.name, ROSTER_REASON);
+    const prefix = `${weekdayOf(rotation.today)} ${dayMonth(rotation.today)}`;
+
+    await calendarPage.goto();
+    const openers = calendarPage.openerIn(calendarPage.today);
+    await expect(openers).toHaveCount(2);
+    await expect(openers.nth(0)).toHaveAccessibleName(
+      `${prefix}, ${fixture.team.name}, ${expectedType(rotation, rotation.today)}, ${range}`,
+    );
+    await expect(openers.nth(1)).toHaveAccessibleName(
+      `${prefix}, ${beta.name}, ${expectedType(other, rotation.today)}, ${range}, ${kalendar.modifier.overridden}`,
+    );
+    await expectNoHorizontalScroll(page);
+    await expectTouchTargets(page);
+
+    await openers.nth(1).tap();
+    const detail = calendarPage.detailOf(beta.name, rotation.today);
+    await expect(detail).toBeVisible();
+    await expect(calendarPage.rosterLinesIn(detail)).toContainText(fixture.member.name);
+    await expect(calendarPage.rosterChangesIn(detail)).toContainText(
+      fill(kalendar.detail.rosterChange.added, { name: fixture.member.name }),
+    );
+  });
+});
+
+test.describe('a roster override a rotation change left pending, at 1280 px, as an admin', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 1280, height: 800 } });
+
+  test('the day keeps its default roster and no ✎, and the detail lists the change as waiting for review', async ({
+    calendarPage,
+    fixture,
+  }) => {
+    // A replacement on D+3, then a change from D+1 saved after it: the new
+    // version anchors D+1 on the third step, so D+3 projects Dan — a working
+    // day, where the change would otherwise apply.
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    const date = addDays(rotation.today, 3);
+    const change = await seedRosterOverride(
+      rotation,
+      fixture.team.id,
+      date,
+      fixture.member.name,
+      fixture.spare.name,
+      ROSTER_REASON,
+    );
+    await seedRotationChange(rotation, fixture.team.id, addDays(rotation.today, 1), 2);
+
+    await calendarPage.goto(gridMonthOf(date));
+    const cell = await calendarPage.cellOf(fixture.team.name, date);
+    await expect(cell).toContainText(rotation.steps[0]);
+    await expect(cell).not.toContainText('\u270E');
+
+    await cell.click();
+    const detail = calendarPage.detailOf(fixture.team.name, date);
+    await expect(detail).toBeVisible();
+    await expect(calendarPage.rosterLinesIn(detail)).toContainText(fixture.member.name);
+    await expect(calendarPage.rosterIn(detail)).not.toContainText(fixture.spare.name);
+    await expect(calendarPage.rosterChangesIn(detail)).toHaveCount(0);
+    const pending = calendarPage.rosterPendingIn(detail);
+    await expect(pending).toBeVisible();
+    await expect(pending).toContainText(
+      fill(kalendar.detail.rosterChange.replaced, { out: fixture.member.name, in: fixture.spare.name }),
+    );
+    await expect(pending).toContainText(fill(kalendar.detail.override.author, { name: fixture.admin.name }));
+    await expect(pending).toContainText(
+      fill(kalendar.detail.override.savedAt, { date: change.savedDate, time: change.savedTime }),
+    );
+    await expect(pending).toContainText(fill(kalendar.detail.override.reason, { reason: ROSTER_REASON }));
+  });
+});
+
 test.describe('an admin sets and removes a shift-type override at 1280 px', () => {
   test.use({ storageState: ADMIN_STATE, viewport: { width: 1280, height: 800 } });
 
@@ -1267,6 +1507,7 @@ test.describe('the person filter at 1280 px', () => {
   });
 
   test('a person on no team all month is explained, never an empty list', async ({ page, calendarPage, fixture }) => {
+    await held(fixture.slug);
     await calendarPage.goto();
     const select = calendarPage.teamFilter;
     await expect(calendarPage.peopleOptions.filter({ hasText: fixture.spare.name })).toHaveCount(1);
@@ -1311,6 +1552,7 @@ test.describe('the person filter for a member-role account', () => {
   test.use({ storageState: MEMBER_STATE, viewport: { width: 1280, height: 800 } });
 
   test('lists the colleagues under Osobe', async ({ page, calendarPage, fixture }) => {
+    await held(fixture.slug);
     await calendarPage.goto('?prikaz=sve');
     await expect(calendarPage.teamFilter).toBeVisible();
     for (const person of [fixture.admin, fixture.member, fixture.spare]) {

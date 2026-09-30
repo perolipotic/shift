@@ -185,6 +185,13 @@ async function demoSnapshot(client: Client): Promise<string> {
           from shift_type_overrides o join demo on demo.id = o.organization_id
           join teams t on t.id = o.team_id
           join shift_types st on st.id = o.shift_type_id),
+       'roster_overrides', (select jsonb_agg(jsonb_build_object(
+          'team', t.name, 'date', o.date, 'out', mo.username, 'in', mi.username, 'reason', o.reason,
+          'by_admin', o.created_by = (select auth_user_id from admin)) order by t.name, o.date)
+          from roster_overrides o join demo on demo.id = o.organization_id
+          join teams t on t.id = o.team_id
+          left join members mo on mo.id = o.member_out_id
+          left join members mi on mi.id = o.member_in_id),
        'auth_users', (select count(*) from auth.users where email like '%@' || $2),
        'identities', (select count(*) from auth.identities i join auth.users u on u.id = i.user_id
                        where u.email like '%@' || $2)
@@ -226,6 +233,8 @@ async function othersFingerprint(client: Client): Promise<{ rows: number; digest
             union all select 'rotation_assignments', x.id::text, to_jsonb(x)::text from rotation_assignments x
               where x.organization_id in (select id from others)
             union all select 'shift_type_overrides', x.id::text, to_jsonb(x)::text from shift_type_overrides x
+              where x.organization_id in (select id from others)
+            union all select 'roster_overrides', x.id::text, to_jsonb(x)::text from roster_overrides x
               where x.organization_id in (select id from others)
             union all select 'auth.users', u.id::text, to_jsonb(u)::text from auth.users u
               where u.email is null or u.email not like '%@' || $2
@@ -348,6 +357,7 @@ describe('the demo organization script', () => {
            (select count(*)::int from rotation_steps where organization_id = $1) as steps,
            (select count(*)::int from rotation_assignments where organization_id = $1) as assignments,
            (select count(*)::int from shift_type_overrides where organization_id = $1) as overrides,
+           (select count(*)::int from roster_overrides where organization_id = $1) as "rosterOverrides",
            (select count(*)::int from auth.users where email like '%@' || $2) as "authUsers",
            (select count(*)::int from auth.identities i join auth.users u on u.id = i.user_id
              where u.email like '%@' || $2) as identities`,
@@ -365,6 +375,7 @@ describe('the demo organization script', () => {
         steps: 4,
         assignments: 4,
         overrides: 1,
+        rosterOverrides: 1,
         authUsers: 17,
         identities: 17,
       });
@@ -522,10 +533,11 @@ describe('the demo organization script', () => {
              union all select created_by from rotation_steps where organization_id = $1
              union all select created_by from rotation_assignments where organization_id = $1
              union all select created_by from shift_type_overrides where organization_id = $1
+             union all select created_by from roster_overrides where organization_id = $1
            ) as rows`,
         [organizationId],
       );
-      expect(attribution[0]).toEqual({ foreign: 0, attributed: 4 + 16 + 3 + 2 + 1 + 4 + 4 + 1 });
+      expect(attribution[0]).toEqual({ foreign: 0, attributed: 4 + 16 + 3 + 2 + 1 + 4 + 4 + 1 + 1 });
 
       // Story 3.5a: one live override, on Smjena A on the organization's
       // today, naming a type the rotation does not project there (Smjena A
@@ -557,6 +569,48 @@ describe('the demo organization script', () => {
         removed: false,
       });
       expect(overrides[0]?.type, 'the demo override names the projected type').not.toBe(overrides[0]?.projected);
+
+      // Story 3.6a: one live roster override on that same shift, a
+      // replacement: Mate Radić of Smjena A taken off, and a firefighter of a
+      // crew OFF on that date put on — never a double shift. The crew's type
+      // is projected here on its own terms: Smjena A–D stand at offsets 0–3
+      // from 2020-01-01 on [Dan, Noć, Slobodno, Slobodno]. Both overrides are
+      // written after the rotation, so neither is pending.
+      const { rows: rosterOverrides } = await client.query<Record<string, unknown>>(
+        `select t.name as team, o.date = public.organization_today(o.organization_id) as today,
+                mo.username as "out", o.reason, o.removed_at is not null as removed,
+                ti.name as "inTeam", v.position as "inPosition",
+                (array['Dan', 'Noć', 'Slobodno', 'Slobodno'])[
+                  ((o.date - date '2020-01-01')
+                   + (array_position(array['Smjena A', 'Smjena B', 'Smjena C', 'Smjena D'], ti.name) - 1)) % 4 + 1
+                ] as "inTeamType",
+                o.created_at > (select max(a.created_at) from rotation_assignments a
+                                 where a.organization_id = o.organization_id) as "afterRotation",
+                (select s.created_at > (select max(a.created_at) from rotation_assignments a
+                                         where a.organization_id = o.organization_id)
+                   from shift_type_overrides s where s.organization_id = o.organization_id) as "typeAfterRotation"
+           from roster_overrides o
+           join teams t on t.id = o.team_id
+           join members mo on mo.id = o.member_out_id
+           join members mi on mi.id = o.member_in_id
+           join team_membership_versions v on v.member_id = mi.id
+           join teams ti on ti.id = v.team_id
+          where o.organization_id = $1`,
+        [organizationId],
+      );
+      expect(rosterOverrides).toHaveLength(1);
+      expect(rosterOverrides[0]).toMatchObject({
+        team: 'Smjena A',
+        today: true,
+        out: 'mate.radic',
+        inPosition: 'firefighter',
+        reason: 'Zamjena zbog bolovanja.',
+        removed: false,
+        afterRotation: true,
+        typeAfterRotation: true,
+      });
+      expect(rosterOverrides[0]?.['inTeam'], 'the member put on is of Smjena A').not.toBe('Smjena A');
+      expect(rosterOverrides[0]?.['inTeamType'], 'the member put on has a shift of their own that day').toBe('Slobodno');
     });
   });
 
@@ -657,6 +711,7 @@ describe('the demo organization script', () => {
           'rotation_patterns',
           'rotation_assignments',
           'shift_type_overrides',
+          'roster_overrides',
         ].map((key) => [
           key,
           Array.isArray(parsed[key]) ? (parsed[key] as unknown[]).length : `not an array: ${String(parsed[key])}`,
@@ -671,6 +726,7 @@ describe('the demo organization script', () => {
         rotation_patterns: 1,
         rotation_assignments: 4,
         shift_type_overrides: 1,
+        roster_overrides: 1,
       });
       expect(
         ((parsed['rotation_patterns'] as { steps: unknown[] }[] | undefined)?.[0]?.steps ?? []).length,

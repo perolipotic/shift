@@ -25,6 +25,12 @@ export const DAY_DETAIL_OVERRIDE_ID = 'kalendar-detail-override';
 /** The pending-review block's heading (story 3.5c), which names its section. */
 export const DAY_DETAIL_PENDING_ID = 'kalendar-detail-pending';
 
+/** The roster changes block's heading (story 3.6a), which names its list. */
+export const DAY_DETAIL_ROSTER_CHANGES_ID = 'kalendar-detail-roster-changes';
+
+/** The pending roster changes block's heading (story 3.6a), which names its list. */
+export const DAY_DETAIL_ROSTER_PENDING_ID = 'kalendar-detail-roster-pending';
+
 /** The override form's heading (story 3.5b), which names the form. */
 export const OVERRIDE_SET_HEADING_ID = 'kalendar-override-set-heading';
 

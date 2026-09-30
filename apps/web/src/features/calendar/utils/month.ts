@@ -5,6 +5,7 @@ import {
   memberScheduleOfMonth,
   monthOf,
   overrideStandingOf,
+  overridesByTeamAndDate,
   scheduleOfMonth,
   shiftTypeVersionOn,
   type MembershipVersion,
@@ -17,6 +18,7 @@ import {
   CALENDAR_UNAVAILABLE,
   type CalendarOverride,
   type CalendarReadFailure,
+  type CalendarRosterOverride,
   type CalendarSnapshot,
 } from '@/features/calendar/services/snapshot';
 import {
@@ -48,8 +50,10 @@ import { instantMicrosOf } from '@/features/rotation/services/list';
  * `scheduleOfMonth`'s answer from `@shift/domain` — the projection with the
  * shift-type overrides IN FORCE applied over it (stories 3.5a, 3.5c), and
  * whether one was; an override a rotation change left pending is not applied;
- * which times that type has on that date is `shiftTypeVersionOn`'s. This
- * module names, colours, marks and formats.
+ * which times that type has on that date is `shiftTypeVersionOn`'s. Whether a
+ * roster override changed who works a cell, and which shifts a member holds
+ * through one (story 3.6a), is the same answer's too. This module names,
+ * colours, marks and formats.
  *
  * A SHIFT CROSSING MIDNIGHT belongs to its start date, as the domain has it:
  * `19:00–07:00` appears once, on the row of the date it starts, and the next
@@ -73,12 +77,18 @@ const STANDINGS = new WeakMap<CalendarSnapshot, OverrideStanding<StampedCalendar
  * epoch microseconds parsed at the edge by `instantMicrosOf`. Only `inForce` reaches a cell,
  * a day or a roster. Worked out once per snapshot.
  *
- * @throws RangeError on any precondition of `overrideStandingOf`.
+ * @throws RangeError on any precondition of `overrideStandingOf`, or on two
+ *   shift-type overrides of one team and date (`overridesByTeamAndDate`).
  */
 export function overrideStandingOfCalendar(snapshot: CalendarSnapshot): OverrideStanding<StampedCalendarOverride> {
   const known = STANDINGS.get(snapshot);
 
   if (known !== undefined) return known;
+
+  // One live shift-type override per team and date is that layer's own
+  // precondition, which the shared pending rule no longer checks (story
+  // 3.6a): the day detail's pending lookup must never pick one of two.
+  overridesByTeamAndDate(snapshot.overrides);
 
   const standing = overrideStandingOf(
     snapshot.assignmentStamps,
@@ -91,6 +101,42 @@ export function overrideStandingOfCalendar(snapshot: CalendarSnapshot): Override
   STANDINGS.set(snapshot, standing);
 
   return standing;
+}
+
+/** One live roster override of the calendar with the instant it was written (story 3.6a). */
+export type StampedCalendarRosterOverride = CalendarRosterOverride & { readonly writtenAt: number };
+
+const ROSTER_STANDINGS = new WeakMap<CalendarSnapshot, OverrideStanding<StampedCalendarRosterOverride>>();
+
+/**
+ * The snapshot's live roster overrides IN FORCE and those PENDING review
+ * (story 3.6a): the twin of {@link overrideStandingOfCalendar}, over each
+ * roster override's `createdAt` — it has no confirmation. Only `inForce`
+ * reaches a cell, a day or a roster. Worked out once per snapshot.
+ *
+ * @throws RangeError on any precondition of `overrideStandingOf`.
+ */
+export function rosterStandingOfCalendar(snapshot: CalendarSnapshot): OverrideStanding<StampedCalendarRosterOverride> {
+  const known = ROSTER_STANDINGS.get(snapshot);
+
+  if (known !== undefined) return known;
+
+  const standing = overrideStandingOf(
+    snapshot.assignmentStamps,
+    snapshot.rosterOverrides.map((override) => ({
+      ...override,
+      writtenAt: instantMicrosOf(override.createdAt) ?? Number.NaN,
+    })),
+  );
+
+  ROSTER_STANDINGS.set(snapshot, standing);
+
+  return standing;
+}
+
+/** The ids of the snapshot's working shift types: a roster override applies on a working shift alone. */
+export function workingShiftTypeIdsOf(snapshot: CalendarSnapshot): readonly string[] {
+  return snapshot.types.filter((type) => type.isWorking).map((type) => type.id);
 }
 
 /** The search parameter that names the month shown: `?mjesec=2026-09`. */
@@ -451,7 +497,8 @@ export interface CalendarCell {
   /**
    * The marks the cell carries (`@/features/calendar/utils/modifiers`), in any order:
    * `overridden` where a shift-type override replaced the projected type
-   * (story 3.5a), and nothing else yet.
+   * (story 3.5a) or a roster override changed who works it (story 3.6a), and
+   * nothing else yet.
    */
   readonly modifiers: readonly CalendarModifier[];
 }
@@ -483,8 +530,12 @@ export type CalendarColumn = TeamRow & {
   readonly letter: string;
 };
 
-/** One member's two version histories, which their day list is derived from (story 3.4a). */
+/**
+ * One member's two version histories, which their day list is derived from
+ * (story 3.4a), and their id, which a roster override names (story 3.6a).
+ */
 export interface CalendarMemberHistory {
+  readonly memberId: string;
   readonly memberships: readonly MembershipVersion[];
   readonly statuses: readonly StatusVersion[];
 }
@@ -521,6 +572,16 @@ export interface CalendarPersonMonth {
   readonly days: CalendarDayListOutcome;
 }
 
+/** One shift of a day in the day list (story 3.6a): a team the member works with that day. */
+export interface CalendarDayShift {
+  /** The team, archived or not. */
+  readonly teamId: string;
+  /** That team's cell, as the grid draws it. */
+  readonly cell: CalendarCell;
+  /** Held only through a roster override: another team's shift the member was put on. */
+  readonly viaOverride: boolean;
+}
+
 /** One date of the viewer's own day list (*Moj raspored*). */
 export interface CalendarDay {
   readonly date: string;
@@ -529,10 +590,12 @@ export interface CalendarDay {
   /** `subota` */
   readonly weekday: string;
   readonly isToday: boolean;
-  /** The viewer's team that day, archived or not; `null` when they are on none (`kalendar.day.noTeam`). */
-  readonly teamId: string | null;
-  /** That team's cell, as the grid draws it; `null` with the team. */
-  readonly cell: CalendarCell | null;
+  /**
+   * The member's shifts that day, a row each: their own team's first, then
+   * each one a roster override put them on (story 3.6a). Empty when they are
+   * on no team, or were taken off their team's shift (`kalendar.day.noTeam`).
+   */
+  readonly shifts: readonly CalendarDayShift[];
 }
 
 /** One month, ready to render. */
@@ -687,34 +750,40 @@ export function weekdayOf(date: string): string {
  * histories: a day per date, each the type the member's team that day works —
  * through `memberScheduleOfMonth`, so a move between teams in the middle of
  * the month changes rotation on the day it takes effect — or no team, which a
- * day the member is inactive on is too (story 3.4a). `null` when there is no
- * team on any date: the screen explains, never draws an empty list.
+ * day the member is inactive on is too (story 3.4a). The roster overrides IN
+ * FORCE drop a working shift the member was taken off, and add each one they
+ * were put on (story 3.6a). `null` when there is no shift on any date: the
+ * screen explains, never draws an empty list.
  *
  * @throws RangeError on any precondition of `memberScheduleOfMonth`, a type
  *   the snapshot lacks, or a date that cannot be formatted.
  */
 export function calendarDayListOf(
   snapshot: CalendarSnapshot,
-  { memberships, statuses }: CalendarMemberHistory,
+  { memberId, memberships, statuses }: CalendarMemberHistory,
   month: string,
   today: string,
 ): readonly CalendarDay[] | null {
   const schedule = memberScheduleOfMonth(
     {
+      memberId,
       memberships,
       statuses,
       assignments: snapshot.assignments,
       steps: snapshot.steps,
       overrides: overrideStandingOfCalendar(snapshot).inForce,
+      members: snapshot.members,
+      rosterOverrides: rosterStandingOfCalendar(snapshot).inForce,
+      workingShiftTypeIds: workingShiftTypeIdsOf(snapshot),
     },
     month,
   );
 
-  if (schedule.every((day) => day.teamId === null)) return null;
+  if (schedule.every((day) => day.shifts.length === 0)) return null;
 
   const lookup = cellLookupOf(
     snapshot,
-    schedule.map((day) => day.shiftTypeId),
+    schedule.flatMap((day) => day.shifts.map((shift) => shift.shiftTypeId)),
   );
 
   return schedule.map((day) => ({
@@ -722,8 +791,11 @@ export function calendarDayListOf(
     dayMonth: dayMonthOf(day.date),
     weekday: weekdayOf(day.date),
     isToday: day.date === today,
-    teamId: day.teamId,
-    cell: day.teamId === null ? null : cellOf(lookup, day.teamId, day.shiftTypeId, day.date, day.overridden),
+    shifts: day.shifts.map((shift) => ({
+      teamId: shift.teamId,
+      cell: cellOf(lookup, shift.teamId, shift.shiftTypeId, day.date, shift.overridden || shift.rosterChanged),
+      viaOverride: shift.viaOverride,
+    })),
   }));
 }
 
@@ -793,6 +865,9 @@ export function calendarMonthOf(snapshot: CalendarSnapshot, search: CalendarSear
       assignments: snapshot.assignments,
       steps: snapshot.steps,
       overrides: overrideStandingOfCalendar(snapshot).inForce,
+      members: snapshot.members,
+      rosterOverrides: rosterStandingOfCalendar(snapshot).inForce,
+      workingShiftTypeIds: workingShiftTypeIdsOf(snapshot),
     },
     month,
   );
@@ -831,7 +906,7 @@ export function calendarMonthOf(snapshot: CalendarSnapshot, search: CalendarSear
       isToday: row.date === today,
       cells: row.cells
         .filter((cell) => shown(cell.teamId))
-        .map((cell) => cellOf(lookup, cell.teamId, cell.shiftTypeId, row.date, cell.overridden)),
+        .map((cell) => cellOf(lookup, cell.teamId, cell.shiftTypeId, row.date, cell.overridden || cell.rosterChanged)),
     })),
     days: dayListOutcomeOf(snapshot, snapshot.viewer, month, today),
     person:
@@ -840,7 +915,7 @@ export function calendarMonthOf(snapshot: CalendarSnapshot, search: CalendarSear
         : {
             id: personShown.id,
             name: personShown.name,
-            days: dayListOutcomeOf(snapshot, personShown, month, today),
+            days: dayListOutcomeOf(snapshot, { ...personShown, memberId: personShown.id }, month, today),
           },
   };
 }

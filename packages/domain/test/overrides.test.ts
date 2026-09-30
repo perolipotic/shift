@@ -2,10 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import {
   datesOfMonth,
-  memberScheduleOfMonth,
   overrideStandingOf,
   projectedShiftTypeOn,
-  scheduleOfMonth,
   scheduledShiftTypeOn,
   type RotationAssignment,
   type RotationVersionStamp,
@@ -20,6 +18,8 @@ import {
   UJ5_ROTATION_ASSIGNMENTS,
   UJ5_ROTATION_STEPS,
   UJ5_TEAMS,
+  shiftTypeScheduleOf,
+  soleShiftDaysOf,
 } from './fixtures.js';
 
 /**
@@ -70,7 +70,7 @@ describe('with no override, the schedule equals the pure projection', () => {
   it.each(FIXTURES)('$fixture: scheduleOfMonth, every cell', ({ teams, steps, assignments }) => {
     const teamIds = teams.map((team) => team.id);
     for (const month of MONTHS) {
-      for (const row of scheduleOfMonth({ teamIds, assignments, steps, overrides: [] }, month)) {
+      for (const row of shiftTypeScheduleOf({ teamIds, assignments, steps, overrides: [] }, month)) {
         for (const cell of row.cells) {
           const projected = projectedShiftTypeOn(versionsOf(assignments, cell.teamId), steps, row.date);
           expect(cell, `${cell.teamId} on ${row.date}`).toEqual({
@@ -78,6 +78,7 @@ describe('with no override, the schedule equals the pure projection', () => {
             shiftTypeId: projected,
             projectedShiftTypeId: projected,
             overridden: false,
+            rosterChanged: false,
           });
         }
       }
@@ -88,7 +89,7 @@ describe('with no override, the schedule equals the pure projection', () => {
     for (const team of teams) {
       const memberships = [{ teamId: team.id, position: null, effectiveFrom: SEEDED_EFFECTIVE_FROM }];
       for (const month of MONTHS) {
-        for (const day of memberScheduleOfMonth({ memberships, statuses: [], assignments, steps, overrides: [] }, month)) {
+        for (const day of soleShiftDaysOf({ memberships, statuses: [], assignments, steps, overrides: [] }, month)) {
           const projected = day.teamId === null ? null : projectedShiftTypeOn(versionsOf(assignments, team.id), steps, day.date);
           expect(day, `${team.id} on ${day.date}`).toEqual({
             date: day.date,
@@ -111,8 +112,8 @@ describe('with no override, the schedule equals the pure projection', () => {
         overrides.push({ teamId, date, shiftTypeId: steps[(index + 1) % steps.length]!.shiftTypeId });
       }
     }
-    const withOverrides = scheduleOfMonth({ teamIds, assignments, steps, overrides }, '2026-09');
-    const without = scheduleOfMonth({ teamIds, assignments, steps, overrides: [] }, '2026-09');
+    const withOverrides = shiftTypeScheduleOf({ teamIds, assignments, steps, overrides }, '2026-09');
+    const without = shiftTypeScheduleOf({ teamIds, assignments, steps, overrides: [] }, '2026-09');
     for (const [rowIndex, row] of withOverrides.entries()) {
       for (const [cellIndex, cell] of row.cells.entries()) {
         const pure = without[rowIndex]!.cells[cellIndex]!;
@@ -202,12 +203,12 @@ describe('scheduleOfMonth and memberScheduleOfMonth apply overrides', () => {
     const date = '2026-09-14';
     const projected = projectedShiftTypeOn(versionsOf(assignments, first!), steps, date)!;
     const other = steps.find((step) => step.shiftTypeId !== projected)!.shiftTypeId;
-    const rows = scheduleOfMonth({ teamIds, assignments, steps, overrides: [{ teamId: first!, date, shiftTypeId: other }] }, '2026-09');
-    const pure = scheduleOfMonth({ teamIds, assignments, steps, overrides: [] }, '2026-09');
+    const rows = shiftTypeScheduleOf({ teamIds, assignments, steps, overrides: [{ teamId: first!, date, shiftTypeId: other }] }, '2026-09');
+    const pure = shiftTypeScheduleOf({ teamIds, assignments, steps, overrides: [] }, '2026-09');
     for (const [rowIndex, row] of rows.entries()) {
       for (const [cellIndex, cell] of row.cells.entries()) {
         if (row.date === date && cell.teamId === first) {
-          expect(cell).toEqual({ teamId: first, shiftTypeId: other, projectedShiftTypeId: projected, overridden: true });
+          expect(cell).toEqual({ teamId: first, shiftTypeId: other, projectedShiftTypeId: projected, overridden: true, rosterChanged: false });
         } else {
           expect(cell).toEqual(pure[rowIndex]!.cells[cellIndex]);
         }
@@ -216,7 +217,7 @@ describe('scheduleOfMonth and memberScheduleOfMonth apply overrides', () => {
   });
 
   it('ignores an override in a month before any rotation', () => {
-    const rows = scheduleOfMonth(
+    const rows = shiftTypeScheduleOf(
       {
         teamIds: [alfa],
         assignments: PILOT_ROTATION_ASSIGNMENTS,
@@ -225,7 +226,7 @@ describe('scheduleOfMonth and memberScheduleOfMonth apply overrides', () => {
       },
       '2019-12',
     );
-    expect(rows[9]!.cells[0]).toEqual({ teamId: alfa, shiftTypeId: null, projectedShiftTypeId: null, overridden: false });
+    expect(rows[9]!.cells[0]).toEqual({ teamId: alfa, shiftTypeId: null, projectedShiftTypeId: null, overridden: false, rosterChanged: false });
   });
 
   it("applies the override of the member's team on that date, and none on a day they are on no team", () => {
@@ -239,7 +240,7 @@ describe('scheduleOfMonth and memberScheduleOfMonth apply overrides', () => {
       { teamId: bravo, date: '2026-09-06', shiftTypeId: 'pilot-noc' },
       { teamId: alfa, date: '2026-09-25', shiftTypeId: 'pilot-noc' },
     ];
-    const days = memberScheduleOfMonth(
+    const days = soleShiftDaysOf(
       { memberships, statuses: [], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS, overrides },
       '2026-09',
     );
@@ -261,10 +262,10 @@ describe('scheduleOfMonth and memberScheduleOfMonth apply overrides', () => {
       { teamId: alfa, date: '2026-09-05', shiftTypeId: 'pilot-dan' },
     ];
     expect(() =>
-      scheduleOfMonth({ teamIds: [alfa], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS, overrides }, '2026-09'),
+      shiftTypeScheduleOf({ teamIds: [alfa], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS, overrides }, '2026-09'),
     ).toThrow(/2026-09-05/);
     expect(() =>
-      memberScheduleOfMonth(
+      soleShiftDaysOf(
         { memberships: [], statuses: [], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS, overrides },
         '2026-09',
       ),
@@ -367,18 +368,18 @@ describe('overrideStandingOf', () => {
     }
     const standing = overrideStandingOf(stampsOf(assignments, true), overrides);
     expect(standing.pending).toEqual(overrides);
-    expect(scheduleOfMonth({ teamIds, assignments, steps, overrides: standing.inForce }, '2026-09')).toEqual(
-      scheduleOfMonth({ teamIds, assignments, steps, overrides: [] }, '2026-09'),
+    expect(shiftTypeScheduleOf({ teamIds, assignments, steps, overrides: standing.inForce }, '2026-09')).toEqual(
+      shiftTypeScheduleOf({ teamIds, assignments, steps, overrides: [] }, '2026-09'),
     );
     for (const team of teams) {
       const memberships = [{ teamId: team.id, position: null, effectiveFrom: SEEDED_EFFECTIVE_FROM }];
       expect(
-        memberScheduleOfMonth({ memberships, statuses: [], assignments, steps, overrides: standing.inForce }, '2026-09'),
-      ).toEqual(memberScheduleOfMonth({ memberships, statuses: [], assignments, steps, overrides: [] }, '2026-09'));
+        soleShiftDaysOf({ memberships, statuses: [], assignments, steps, overrides: standing.inForce }, '2026-09'),
+      ).toEqual(soleShiftDaysOf({ memberships, statuses: [], assignments, steps, overrides: [] }, '2026-09'));
     }
   });
 
-  it('throws a RangeError on a bad instant, a bad date, two versions on one date, or two overrides on one date', () => {
+  it('throws a RangeError on a bad instant, a bad date, or two versions on one date', () => {
     const stamps = stampsOf(PILOT_ROTATION_ASSIGNMENTS, false);
     expect(() => overrideStandingOf(stamps, [overrideOf(alfa, '2026-09-14', 1.5)])).toThrow(RangeError);
     expect(() => overrideStandingOf(stamps, [overrideOf(alfa, '2026-02-30', WRITTEN_AT)])).toThrow(RangeError);
@@ -386,8 +387,27 @@ describe('overrideStandingOf', () => {
       RangeError,
     );
     expect(() => overrideStandingOf([...stamps, stamps[0]!], [])).toThrow(RangeError);
+  });
+
+  it('leaves how many overrides one team and date may carry to each layer (story 3.6a)', () => {
+    const stamps = stampsOf(PILOT_ROTATION_ASSIGNMENTS, false);
+    // Two roster overrides on one team and date are one shift's two changes.
+    const twice = [
+      { id: 'r1', teamId: alfa, date: '2026-09-14', writtenAt: WRITTEN_AT },
+      { id: 'r2', teamId: alfa, date: '2026-09-14', writtenAt: WRITTEN_AT },
+    ];
+    expect(overrideStandingOf(stamps, twice)).toEqual({ inForce: twice, pending: [] });
+    // Two shift-type overrides are still refused, by the shift-type layer.
     expect(() =>
-      overrideStandingOf(stamps, [overrideOf(alfa, '2026-09-14', WRITTEN_AT), overrideOf(alfa, '2026-09-14', WRITTEN_AT)]),
+      shiftTypeScheduleOf(
+        {
+          teamIds: [alfa],
+          assignments: PILOT_ROTATION_ASSIGNMENTS,
+          steps: PILOT_ROTATION_STEPS,
+          overrides: [overrideOf(alfa, '2026-09-14', WRITTEN_AT), overrideOf(alfa, '2026-09-14', WRITTEN_AT)],
+        },
+        '2026-09',
+      ),
     ).toThrow(/2026-09-14/);
   });
 });

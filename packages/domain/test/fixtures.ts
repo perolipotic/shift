@@ -1,10 +1,15 @@
-import type {
-  HourBand,
-  RotationAssignment,
-  RotationPattern,
-  RotationStep,
-  ShiftType,
-  ShiftTypeVersion,
+import {
+  memberScheduleOfMonth,
+  scheduleOfMonth,
+  type HourBand,
+  type MemberScheduleInput,
+  type RotationAssignment,
+  type RotationPattern,
+  type RotationStep,
+  type ScheduleInput,
+  type ScheduleRow,
+  type ShiftType,
+  type ShiftTypeVersion,
 } from '../src/index.js';
 
 /**
@@ -151,3 +156,52 @@ export const UJ5_ROTATION_ASSIGNMENTS: readonly RotationAssignment[] = UJ5_TEAMS
 }));
 
 export { at };
+
+/**
+ * STORY 3.6a. No roster override, and nobody to judge one against: what the
+ * suites written before roster overrides pass, so their month is exactly the
+ * shift-type schedule. `roster-overrides.test.ts` asserts that real members
+ * with no roster override give that same month.
+ */
+export const NO_ROSTER = { members: [], rosterOverrides: [], workingShiftTypeIds: [] } as const;
+
+/** A schedule input of the suites before story 3.6a: no roster layer. */
+export type ShiftTypeScheduleInput = Omit<ScheduleInput, keyof typeof NO_ROSTER>;
+
+/** {@link scheduleOfMonth} with {@link NO_ROSTER}. */
+export function shiftTypeScheduleOf(input: ShiftTypeScheduleInput, month: string): readonly ScheduleRow[] {
+  return scheduleOfMonth({ ...NO_ROSTER, ...input }, month);
+}
+
+/** One member's day as the suites before story 3.6a read it: their own team's shift, or none. */
+export interface SoleShiftDay {
+  readonly date: string;
+  readonly teamId: string | null;
+  readonly shiftTypeId: string | null;
+  readonly projectedShiftTypeId: string | null;
+  readonly overridden: boolean;
+}
+
+/** A member schedule input of the suites before story 3.6a: no member id, no roster layer. */
+export type ShiftTypeMemberInput = Omit<MemberScheduleInput, 'memberId' | keyof typeof NO_ROSTER>;
+
+/**
+ * {@link memberScheduleOfMonth} with {@link NO_ROSTER}, each day flattened to
+ * its one shift — with no roster override a day has at most one, its own
+ * team's, and this throws if it ever has more.
+ */
+export function soleShiftDaysOf(input: ShiftTypeMemberInput, month: string): readonly SoleShiftDay[] {
+  return memberScheduleOfMonth({ memberId: 'fixture-member', ...NO_ROSTER, ...input }, month).map((day) => {
+    if (day.shifts.length > 1) throw new Error(`${day.date} has ${String(day.shifts.length)} shifts with no roster override`);
+    const [shift] = day.shifts;
+    return shift === undefined
+      ? { date: day.date, teamId: null, shiftTypeId: null, projectedShiftTypeId: null, overridden: false }
+      : {
+          date: day.date,
+          teamId: shift.teamId,
+          shiftTypeId: shift.shiftTypeId,
+          projectedShiftTypeId: shift.projectedShiftTypeId,
+          overridden: shift.overridden,
+        };
+  });
+}

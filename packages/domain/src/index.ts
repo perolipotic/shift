@@ -43,11 +43,13 @@ export {
 
 export {
   overrideStandingOf,
+  overridesByTeamAndDate,
   scheduledShiftTypeOn,
   type OverrideStanding,
   type RotationVersionStamp,
   type ScheduledShiftType,
   type ShiftTypeOverride,
+  type StampedOverride,
   type StampedShiftTypeOverride,
 } from './overrides.js';
 
@@ -72,6 +74,7 @@ export {
   scheduleOfMonth,
   type MemberScheduleDay,
   type MemberScheduleInput,
+  type MemberShift,
   type ScheduleCell,
   type ScheduleInput,
   type ScheduleRow,
@@ -79,11 +82,16 @@ export {
 
 export {
   activeOn,
+  checkRosterOverrides,
   membershipOn,
+  rosterOn,
   shiftRoster,
   type MembershipOn,
   type MembershipVersion,
   type RosterEntry,
   type RosterMember,
+  type RosterOnDate,
+  type RosterOnEntry,
+  type RosterOverride,
   type StatusVersion,
 } from './roster.js';

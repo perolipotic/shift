@@ -3,10 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   adjacentMonth,
   datesOfMonth,
-  memberScheduleOfMonth,
   monthOf,
   projectedShiftTypeOn,
-  scheduleOfMonth,
   type RotationAssignment,
   type RotationStep,
 } from '../src/index.js';
@@ -18,6 +16,8 @@ import {
   UJ5_ROTATION_ASSIGNMENTS,
   UJ5_ROTATION_STEPS,
   UJ5_TEAMS,
+  shiftTypeScheduleOf,
+  soleShiftDaysOf,
 } from './fixtures.js';
 
 /**
@@ -102,7 +102,7 @@ describe('scheduleOfMonth', () => {
   it.each(FIXTURES)('$fixture: every cell equals projectedShiftTypeOn for its team and date', ({ teams, steps, assignments }) => {
     const teamIds = teams.map((team) => team.id);
     for (const month of MONTHS) {
-      const rows = scheduleOfMonth({ teamIds, assignments, steps, overrides: [] }, month);
+      const rows = shiftTypeScheduleOf({ teamIds, assignments, steps, overrides: [] }, month);
       expect(rows.map((row) => row.date)).toEqual(datesOfMonth(month));
       for (const row of rows) {
         expect(row.cells.map((cell) => cell.teamId)).toEqual(teamIds);
@@ -115,19 +115,19 @@ describe('scheduleOfMonth', () => {
   });
 
   it.each(FIXTURES)('$fixture: a month before every version is null in every cell', ({ teams, steps, assignments }) => {
-    const rows = scheduleOfMonth({ teamIds: teams.map((team) => team.id), assignments, steps, overrides: [] }, '2019-12');
+    const rows = shiftTypeScheduleOf({ teamIds: teams.map((team) => team.id), assignments, steps, overrides: [] }, '2019-12');
     expect(rows).toHaveLength(31);
     expect(rows.flatMap((row) => row.cells).every((cell) => cell.shiftTypeId === null)).toBe(true);
     // And the month the versions begin is fully projected.
-    const first = scheduleOfMonth({ teamIds: teams.map((team) => team.id), assignments, steps, overrides: [] }, SEEDED_EFFECTIVE_FROM.slice(0, 7));
+    const first = shiftTypeScheduleOf({ teamIds: teams.map((team) => team.id), assignments, steps, overrides: [] }, SEEDED_EFFECTIVE_FROM.slice(0, 7));
     expect(first.flatMap((row) => row.cells).every((cell) => cell.shiftTypeId !== null)).toBe(true);
   });
 
   it('projects 28 and 29 days of February', () => {
     const input = { teamIds: [PILOT_TEAMS[0]!.id], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS, overrides: [] };
-    expect(scheduleOfMonth(input, '2031-02')).toHaveLength(28);
-    expect(scheduleOfMonth(input, '2028-02')).toHaveLength(29);
-    expect(scheduleOfMonth(input, '2031-02').every((row) => row.cells[0]!.shiftTypeId !== null)).toBe(true);
+    expect(shiftTypeScheduleOf(input, '2031-02')).toHaveLength(28);
+    expect(shiftTypeScheduleOf(input, '2028-02')).toHaveLength(29);
+    expect(shiftTypeScheduleOf(input, '2031-02').every((row) => row.cells[0]!.shiftTypeId !== null)).toBe(true);
   });
 
   it('switches pattern on the day a change takes effect in the middle of the month (story 2.6)', () => {
@@ -143,7 +143,7 @@ describe('scheduleOfMonth', () => {
       effectiveFrom: '2026-10-15',
     };
     const steps = [...PILOT_ROTATION_STEPS, ...changedSteps];
-    const rows = scheduleOfMonth({ teamIds: [old.teamId], assignments: [old, changed], steps, overrides: [] }, '2026-10');
+    const rows = shiftTypeScheduleOf({ teamIds: [old.teamId], assignments: [old, changed], steps, overrides: [] }, '2026-10');
 
     let differs = false;
     for (const row of rows) {
@@ -162,7 +162,7 @@ describe('scheduleOfMonth', () => {
 
   it('keeps the column order asked for and ignores versions of teams not asked for', () => {
     const teamIds = [PILOT_TEAMS[2]!.id, PILOT_TEAMS[0]!.id];
-    const rows = scheduleOfMonth(
+    const rows = shiftTypeScheduleOf(
       { teamIds, assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS, overrides: [] },
       '2026-09',
     );
@@ -170,30 +170,30 @@ describe('scheduleOfMonth', () => {
   });
 
   it('gives a team with no version null on every date, and no teams no cells', () => {
-    const rows = scheduleOfMonth({ teamIds: ['no-rotation'], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS, overrides: [] }, '2026-09');
+    const rows = shiftTypeScheduleOf({ teamIds: ['no-rotation'], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS, overrides: [] }, '2026-09');
     expect(rows.every((row) => row.cells[0]!.shiftTypeId === null)).toBe(true);
-    const empty = scheduleOfMonth({ teamIds: [], assignments: [], steps: [], overrides: [] }, '2026-09');
+    const empty = shiftTypeScheduleOf({ teamIds: [], assignments: [], steps: [], overrides: [] }, '2026-09');
     expect(empty).toHaveLength(30);
     expect(empty.every((row) => row.cells.length === 0)).toBe(true);
   });
 
   it('projects the calendar bounds', () => {
     const input = { teamIds: PILOT_TEAMS.map((team) => team.id), assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS, overrides: [] };
-    expect(scheduleOfMonth(input, '9999-12').at(-1)!.date).toBe('9999-12-31');
-    expect(scheduleOfMonth(input, '0001-01').every((row) => row.cells.every((cell) => cell.shiftTypeId === null))).toBe(true);
+    expect(shiftTypeScheduleOf(input, '9999-12').at(-1)!.date).toBe('9999-12-31');
+    expect(shiftTypeScheduleOf(input, '0001-01').every((row) => row.cells.every((cell) => cell.shiftTypeId === null))).toBe(true);
   });
 
   it('throws a RangeError on bad input', () => {
     const input = { teamIds: [PILOT_TEAMS[0]!.id], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS, overrides: [] };
-    expect(() => scheduleOfMonth(input, '2026-13')).toThrow(RangeError);
-    expect(() => scheduleOfMonth(input, 'abc')).toThrow(RangeError);
-    expect(() => scheduleOfMonth({ ...input, teamIds: ['a', 'a'] }, '2026-09')).toThrow(/team a/);
+    expect(() => shiftTypeScheduleOf(input, '2026-13')).toThrow(RangeError);
+    expect(() => shiftTypeScheduleOf(input, 'abc')).toThrow(RangeError);
+    expect(() => shiftTypeScheduleOf({ ...input, teamIds: ['a', 'a'] }, '2026-09')).toThrow(/team a/);
     // A version whose pattern has no steps among those given.
-    expect(() => scheduleOfMonth({ ...input, steps: UJ5_ROTATION_STEPS }, '2026-09')).toThrow(RangeError);
+    expect(() => shiftTypeScheduleOf({ ...input, steps: UJ5_ROTATION_STEPS }, '2026-09')).toThrow(RangeError);
     // Two versions of one team on one date.
     const twin = { ...PILOT_ROTATION_ASSIGNMENTS[0]! };
     expect(() =>
-      scheduleOfMonth({ ...input, assignments: [PILOT_ROTATION_ASSIGNMENTS[0]!, twin] }, '2026-09'),
+      shiftTypeScheduleOf({ ...input, assignments: [PILOT_ROTATION_ASSIGNMENTS[0]!, twin] }, '2026-09'),
     ).toThrow(RangeError);
   });
 });
@@ -203,7 +203,7 @@ describe('memberScheduleOfMonth', () => {
     for (const team of teams) {
       const memberships = [{ teamId: team.id, position: null, effectiveFrom: SEEDED_EFFECTIVE_FROM }];
       for (const month of MONTHS) {
-        const days = memberScheduleOfMonth({ memberships, statuses: [], assignments, steps, overrides: [] }, month);
+        const days = soleShiftDaysOf({ memberships, statuses: [], assignments, steps, overrides: [] }, month);
         expect(days.map((day) => day.date)).toEqual(datesOfMonth(month));
         const versions = assignments.filter((assignment) => assignment.teamId === team.id);
         for (const day of days) {
@@ -223,7 +223,7 @@ describe('memberScheduleOfMonth', () => {
       { teamId: second, position: null, effectiveFrom: '2026-10-15' },
       { teamId: first, position: null, effectiveFrom: '2026-10-01' },
     ];
-    const days = memberScheduleOfMonth(
+    const days = soleShiftDaysOf(
       { memberships, statuses: [], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS, overrides: [] },
       '2026-10',
     );
@@ -247,7 +247,7 @@ describe('memberScheduleOfMonth', () => {
       { teamId: team, position: null, effectiveFrom: '2020-01-01' },
       { teamId: null, position: null, effectiveFrom: '2026-09-10' },
     ];
-    const days = memberScheduleOfMonth(
+    const days = soleShiftDaysOf(
       { memberships, statuses: [], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS, overrides: [] },
       '2026-09',
     );
@@ -262,7 +262,7 @@ describe('memberScheduleOfMonth', () => {
   });
 
   it('gives a member with no versions no team on any date', () => {
-    const days = memberScheduleOfMonth(
+    const days = soleShiftDaysOf(
       { memberships: [], statuses: [], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS, overrides: [] },
       '2026-09',
     );
@@ -271,7 +271,7 @@ describe('memberScheduleOfMonth', () => {
   });
 
   it('gives a team with no rotation version its team and a null type', () => {
-    const days = memberScheduleOfMonth(
+    const days = soleShiftDaysOf(
       { memberships: [{ teamId: 'no-rotation', position: null, effectiveFrom: '2020-01-01' }], statuses: [], assignments: PILOT_ROTATION_ASSIGNMENTS, steps: PILOT_ROTATION_STEPS, overrides: [] },
       '2026-09',
     );
@@ -287,7 +287,7 @@ describe('memberScheduleOfMonth', () => {
       { active: false, effectiveFrom: '2026-09-05' },
       { active: true, effectiveFrom: '2026-09-20' },
     ];
-    const days = memberScheduleOfMonth({ memberships, statuses, assignments, steps, overrides: [] }, '2026-09');
+    const days = soleShiftDaysOf({ memberships, statuses, assignments, steps, overrides: [] }, '2026-09');
     const versions = assignments.filter((assignment) => assignment.teamId === team);
     for (const day of days) {
       if (day.date >= '2026-09-05' && day.date < '2026-09-20') {
@@ -312,10 +312,10 @@ describe('memberScheduleOfMonth', () => {
       overrides: [],
     };
     expect(() =>
-      memberScheduleOfMonth({ ...input, statuses: [{ active: false, effectiveFrom: '2026-02-30' }] }, '2026-09'),
+      soleShiftDaysOf({ ...input, statuses: [{ active: false, effectiveFrom: '2026-02-30' }] }, '2026-09'),
     ).toThrow(RangeError);
     expect(() =>
-      memberScheduleOfMonth(
+      soleShiftDaysOf(
         {
           ...input,
           statuses: [
@@ -336,18 +336,18 @@ describe('memberScheduleOfMonth', () => {
       steps: PILOT_ROTATION_STEPS,
       overrides: [],
     };
-    expect(() => memberScheduleOfMonth(input, '2026-13')).toThrow(RangeError);
+    expect(() => soleShiftDaysOf(input, '2026-13')).toThrow(RangeError);
     // Two versions on one date.
     expect(() =>
-      memberScheduleOfMonth(
+      soleShiftDaysOf(
         { ...input, memberships: [...input.memberships, { teamId: null, position: null, effectiveFrom: '2020-01-01' }] },
         '2026-09',
       ),
     ).toThrow(/2020-01-01/);
     expect(() =>
-      memberScheduleOfMonth({ ...input, memberships: [{ teamId: null, position: null, effectiveFrom: '2026-02-30' }] }, '2026-09'),
+      soleShiftDaysOf({ ...input, memberships: [{ teamId: null, position: null, effectiveFrom: '2026-02-30' }] }, '2026-09'),
     ).toThrow(RangeError);
     // A version whose pattern has no steps among those given.
-    expect(() => memberScheduleOfMonth({ ...input, steps: UJ5_ROTATION_STEPS }, '2026-09')).toThrow(RangeError);
+    expect(() => soleShiftDaysOf({ ...input, steps: UJ5_ROTATION_STEPS }, '2026-09')).toThrow(RangeError);
   });
 });

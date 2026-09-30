@@ -215,19 +215,32 @@ describe("the day list's button names (story 3.4b)", () => {
   const day = { date: '2026-09-26', dayMonth: '26.09.', weekday: 'subota', isToday: true };
   const teams = [{ id: 'a', name: 'Smjena A' }];
 
-  it("is the grid cell's full label — date, team, type, times, marks — and null for a day with no button", () => {
+  it("is the grid cell's full label — date, team, type, times, marks — per shift, and null for a team it lacks", () => {
     const days = [
-      { ...day, teamId: 'a', cell },
-      { ...day, teamId: null, cell: null },
-      { ...day, teamId: 'gone', cell },
+      { ...day, shifts: [{ teamId: 'a', cell, viaOverride: false }] },
+      { ...day, shifts: [] },
+      { ...day, shifts: [{ teamId: 'gone', cell, viaOverride: false }] },
+      // STORY 3.6a: a day of two shifts, the second held through a roster override.
+      {
+        ...day,
+        shifts: [
+          { teamId: 'a', cell, viaOverride: false },
+          { teamId: 'b', cell, viaOverride: true },
+        ],
+      },
     ] as unknown as Parameters<typeof dayListLabelsOf>[0];
+    const both = [...teams, { id: 'b', name: 'Smjena B' }];
 
-    expect(dayListLabelsOf(days, teams, translate)).toEqual([
-      cellLabelOf({ weekday: 'subota', dayMonth: '26.09.', teamName: 'Smjena A', ...cell }, translate),
-      null,
-      null,
+    expect(dayListLabelsOf(days, both, translate)).toEqual([
+      [cellLabelOf({ weekday: 'subota', dayMonth: '26.09.', teamName: 'Smjena A', ...cell }, translate)],
+      [],
+      [null],
+      [
+        cellLabelOf({ weekday: 'subota', dayMonth: '26.09.', teamName: 'Smjena A', ...cell }, translate),
+        cellLabelOf({ weekday: 'subota', dayMonth: '26.09.', teamName: 'Smjena B', ...cell }, translate),
+      ],
     ]);
-    expect(dayListLabelsOf(days, teams, translate)[0]).toBe(
+    expect(dayListLabelsOf(days, teams, translate)[0]?.[0]).toBe(
       ['subota 26.09.', 'Smjena A', 'Noć', '19:00–07:00', t('kalendar.modifier.leave')].join(LABEL_SEPARATOR),
     );
   });
