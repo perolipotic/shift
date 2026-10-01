@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import type pg from 'pg';
 
-import { connect } from './database-helper.ts';
+import { addressDomain, connect, insertMember } from './database-helper.ts';
 
 /**
  * THE PER-RUN ORGANIZATION.
@@ -76,10 +76,6 @@ function newRunId(): string {
   return `${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`;
 }
 
-function addressDomain(slug: string): string {
-  return `${slug}.shift.invalid`;
-}
-
 /** `LIKE` treats `_` and `%` as wildcards; a slug holds neither, but the
  *  pattern is escaped anyway so the delete can only ever reach this run. */
 export function literal(pattern: string): string {
@@ -91,54 +87,6 @@ async function parameterize(client: pg.Client, values: Readonly<Record<string, s
     // `is_local` true: the settings end with the transaction below.
     await client.query('select set_config($1, $2, true)', [`shift.${name}`, value]);
   }
-}
-
-/** The seed recipe (`supabase/seed.sql`): an auth user, its identity and its
- *  member row, `'{}'` user metadata and the four empty-string token columns. */
-async function insertMember(
-  client: pg.Client,
-  organizationId: string,
-  slug: string,
-  person: FixturePerson,
-  password: string,
-): Promise<{ memberId: string; authUserId: string }> {
-  const address = `${person.username}@${addressDomain(slug)}`;
-  const { rows } = await client.query<{ id: string }>(
-    `insert into auth.users (
-       instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
-       raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
-       confirmation_token, recovery_token, email_change, email_change_token_new
-     ) values (
-       '00000000-0000-0000-0000-000000000000', gen_random_uuid(), 'authenticated', 'authenticated',
-       $1, extensions.crypt($2, extensions.gen_salt('bf', 10)), now(),
-       jsonb_build_object('provider', 'email', 'providers', jsonb_build_array('email')),
-       '{}'::jsonb, now(), now(), '', '', '', ''
-     )
-     returning id`,
-    [address, password],
-  );
-  const authUserId = rows[0]?.id;
-  if (authUserId === undefined) throw new Error('auth.users insert returned no row');
-
-  await client.query(
-    `insert into auth.identities (provider_id, user_id, identity_data, provider, created_at, updated_at)
-     values ($1::text, $1::uuid,
-             jsonb_build_object('sub', $1::text, 'email', $2::text,
-                                'email_verified', true, 'phone_verified', false),
-             'email', now(), now())`,
-    [authUserId, address],
-  );
-
-  const member = await client.query<{ id: string }>(
-    `insert into members (organization_id, auth_user_id, name, username, email, role, leave_allowance_days)
-     values ($1, $2, $3, $4, null, 'member_role', 20)
-     returning id`,
-    [organizationId, authUserId, person.name, person.username],
-  );
-  const memberId = member.rows[0]?.id;
-  if (memberId === undefined) throw new Error('members insert returned no row');
-
-  return { memberId, authUserId };
 }
 
 /** Provisions this run's organization and its read-only fixture, in ONE
