@@ -581,8 +581,9 @@ export interface CalendarFilter {
    */
   readonly chosen: string | null;
   /**
-   * Its person options: every member active on the organization's today
-   * (`activeOn`), in the snapshot's name order.
+   * Its person options: every member active on at least one date of the
+   * month shown (`activeOn`) — the same rule as a Sati row — in the
+   * snapshot's name order.
    */
   readonly people: readonly CalendarFilterPerson[];
   /** The person shown, one of `people`; `null` for none. */
@@ -876,8 +877,9 @@ export function chosenTeamOf(search: CalendarSearch, teams: readonly { readonly 
 
 /**
  * The person shown: `osoba` when it names one of `people` — the members active
- * today — and `null` otherwise. An unknown or inactive id is no person, the
- * harmless direction, as {@link chosenTeamOf}.
+ * on at least one date of the month shown, as a Sati row — and `null`
+ * otherwise. An unknown id, or one inactive all month, is no person, the
+ * harmless direction, as {@link chosenTeamOf}; the URL keeps it.
  */
 export function chosenPersonOf(search: CalendarSearch, people: readonly { readonly id: string }[]): string | null {
   const wanted = search.osoba;
@@ -918,10 +920,12 @@ export function calendarMonthOf(snapshot: CalendarSnapshot, search: CalendarSear
     snapshot,
     schedule.flatMap((row) => row.cells.map((cell) => cell.shiftTypeId)),
   );
-  // "Active today" is the domain's rule over each member's status versions
-  // (story 3.4a), so the filter offers exactly whom 3.3b's `calendar_people()`
-  // answered.
-  const people = snapshot.members.filter((member) => activeOn(member.statuses, today));
+  // ACTIVE IN THE MONTH SHOWN: a member active on at least one of its dates,
+  // by the domain's rule over their status versions (story 3.4a) — the same
+  // membership rule as a Sati row, so a Sati name always opens that member.
+  // One list feeds both the Select and `chosenPersonOf`.
+  const dates = datesOfMonth(month);
+  const people = snapshot.members.filter((member) => dates.some((date) => activeOn(member.statuses, date)));
   const person = chosenPersonOf(search, people);
   const chosen = person === null ? chosenTeamOf(search, teams) : null;
   const personShown = people.find((one) => one.id === person) ?? null;

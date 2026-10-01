@@ -4,7 +4,9 @@ import { readFileSync } from 'node:fs';
 import {
   holdRotation,
   organizationNameOf,
+  removeFormerMemberInSql,
   removeSeededRotation,
+  seedFormerMember,
   seedTeamRotation,
   type RotationHold,
   type SeededRotation,
@@ -44,14 +46,21 @@ const hours = hr.organization.hourBands.duration.hours;
 let hold: RotationHold | null = null;
 /** What this file's test seeded, removed before the hold is released. */
 let seed: SeededRotation | null = null;
+/** The former member this file's test seeded, removed before the hold is released. */
+let former: { readonly slug: string; readonly id: string } | null = null;
 
 test.afterEach(async () => {
   try {
     if (seed !== null) await removeSeededRotation(seed);
   } finally {
     seed = null;
-    await hold?.release();
-    hold = null;
+    try {
+      if (former !== null) await removeFormerMemberInSql(former.slug, former.id);
+    } finally {
+      former = null;
+      await hold?.release();
+      hold = null;
+    }
   }
 });
 
@@ -410,6 +419,36 @@ test.describe('as an admin', () => {
     await expect(page).toHaveURL(/[?&]prikaz=sve/);
     await expect(page).toHaveURL(/[?&]osoba=/);
     await expect(calendarPage.personHeading(fixture.member.name)).toBeVisible();
+  });
+
+  test("a member who has left since keeps their row last month, and their name opens their calendar month", async ({
+    page,
+    hoursPage,
+    calendarPage,
+    fixture,
+  }) => {
+    // Epic 4 retro, C1: active all last month, inactive from this month's first
+    // day — so inactive today. The calendar offers everyone active in the month
+    // shown, as a Sati row, so the link opens them and not the whole grid.
+    // The member is in the shared run organization only while this test holds
+    // its rotation lock, and is removed (afterEach) before the lock is released.
+    hold = holdRotation(fixture.slug);
+    await hold.ready;
+    const seededFormer = await seedFormerMember(fixture.slug, fixture.team.id);
+    former = { slug: fixture.slug, id: seededFormer.id };
+
+    await hoursPage.goto(`?mjesec=${seededFormer.month}`);
+    await expect(hoursPage.organizationTable).toBeVisible();
+    await expect(hoursPage.memberLink(seededFormer.name)).toBeVisible();
+
+    await hoursPage.memberLink(seededFormer.name).click();
+    await expect(page).toHaveURL(new RegExp(`/kalendar\\?.*mjesec=${seededFormer.month}`));
+    await expect(page).toHaveURL(new RegExp(`[?&]osoba=${seededFormer.id}`));
+    await expect(calendarPage.personHeading(seededFormer.name)).toBeVisible();
+    await expect(calendarPage.personListOf(seededFormer.name)).toBeVisible();
+    await expect(calendarPage.anyGrid).toHaveCount(0);
+    // Their days last month are on their team — what the seeded membership is for.
+    await expect(calendarPage.personDaysOnTeam(seededFormer.name, fixture.team.name).first()).toBeVisible();
   });
 
   test('a filter that leaves no row closes the export', async ({ page, hoursPage, fixture }) => {

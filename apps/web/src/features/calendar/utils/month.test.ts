@@ -1226,14 +1226,133 @@ describe('the roster as at a date (story 3.4a)', () => {
     snapshot = await withStatuses();
   });
 
-  it('offers only the members active on the organization today', () => {
-    // Matrix: filter — a member inactive today is not among `filter.people`.
-    const month = calendarMonthOf(snapshot, {}, TODAY);
+  /** `snapshot` with `id`'s status versions replaced by `statuses`. */
+  function withStatusesOf(id: string, statuses: CalendarSnapshot['members'][number]['statuses']): CalendarSnapshot {
+    return {
+      ...snapshot,
+      members: snapshot.members.map((member) => (member.id === id ? { ...member, statuses } : member)),
+    };
+  }
 
-    expect(month.filter.people.map((person) => person.id)).toEqual([COLLEAGUE, LATER, RETURNED, VIEWER_MEMBER]);
-    expect(month.filter.people).not.toContainEqual(expect.objectContaining({ id: RETIRED }));
+  it('offers every member active on at least one date of the month shown, in name order', () => {
+    // Matrix: left this month — the member retired 2026-09-10 is offered in
+    // September, as a Sati row, though inactive today.
+    const month = calendarMonthOf(snapshot, { mjesec: '2026-09' }, TODAY);
+
+    expect(month.filter.people.map((person) => person.id)).toEqual([
+      COLLEAGUE,
+      LATER,
+      RETURNED,
+      VIEWER_MEMBER,
+      RETIRED,
+    ]);
+    expect(month.filter.people.map((person) => person.name)).toEqual(
+      snapshot.members.map((member) => member.name),
+    );
+  });
+
+  it("shows a member who left this month: their heading and day list, inactive dates as no team", () => {
+    // Matrix: left this month — `osoba` names them, so their day list shows.
+    const month = calendarMonthOf(snapshot, { mjesec: '2026-09', osoba: RETIRED }, TODAY);
+
+    expect(month.filter.person).toBe(RETIRED);
+    expect(month.person?.id).toBe(RETIRED);
+    expect(month.person?.name).toBe('Zoran Umirovljeni');
+    if (month.person === null || !month.person.days.ok) throw new Error('no day list');
+    expect(month.person.days.days!.map((day) => soleTeamOf(day) !== null)).toEqual(
+      datesOfSeptember().map((date) => date < '2026-09-10'),
+    );
+    expect(chosenPersonOf({ osoba: RETIRED }, month.filter.people)).toBe(RETIRED);
+  });
+
+  it('does not offer a member who left before the month shown, and their osoba is no person', () => {
+    // Matrix: left before the month — October, the whole grid.
+    const month = calendarMonthOf(snapshot, { mjesec: '2026-10', osoba: RETIRED }, TODAY);
+
+    expect(month.filter.people.map((person) => person.id)).not.toContain(RETIRED);
+    expect(month.filter.person).toBeNull();
+    expect(month.person).toBeNull();
+    const plain = calendarMonthOf(snapshot, { mjesec: '2026-10' }, TODAY);
+
+    expect(month.columns.map((team) => team.id)).toEqual(plain.columns.map((team) => team.id));
+    expect(month.rows).toEqual(plain.rows);
+    expect(chosenPersonOf({ osoba: RETIRED }, month.filter.people)).toBeNull();
     // Everyone is still in the snapshot, the retired member included.
     expect(snapshot.members.map((member) => member.id)).toContain(RETIRED);
+  });
+
+  it('offers a member who becomes active later in the month shown, though inactive today', () => {
+    // Matrix: joins later — first active 2026-09-16, and out again from
+    // 2026-09-21, so inactive today: "active today" would not offer them.
+    const joining = withStatusesOf(LATER, [
+      { active: false, effectiveFrom: SEEDED },
+      { active: true, effectiveFrom: '2026-09-16' },
+      { active: false, effectiveFrom: '2026-09-21' },
+    ]);
+    const month = calendarMonthOf(joining, { mjesec: '2026-09', osoba: LATER }, TODAY);
+
+    expect(month.filter.people.map((person) => person.id)).toContain(LATER);
+    expect(month.filter.person).toBe(LATER);
+    expect(month.person?.id).toBe(LATER);
+  });
+
+  it('offers a member active only on the first, or only on the last, day of the month shown', () => {
+    // The month's edges: inactive from 2026-09-02, or active only from 2026-09-30.
+    const firstDayOnly = withStatusesOf(LATER, [{ active: false, effectiveFrom: '2026-09-02' }]);
+    const lastDayOnly = withStatusesOf(LATER, [
+      { active: false, effectiveFrom: SEEDED },
+      { active: true, effectiveFrom: '2026-09-30' },
+    ]);
+
+    for (const [label, edge] of [
+      ['first day', firstDayOnly],
+      ['last day', lastDayOnly],
+    ] as const) {
+      const month = calendarMonthOf(edge, { mjesec: '2026-09', osoba: LATER }, TODAY);
+
+      expect(month.filter.people.map((person) => person.id), label).toContain(LATER);
+      expect(month.person?.id, label).toBe(LATER);
+    }
+    // And neither is offered in a month they are inactive throughout.
+    expect(calendarMonthOf(firstDayOnly, { mjesec: '2026-10' }, TODAY).filter.people.map((one) => one.id)).not.toContain(
+      LATER,
+    );
+    expect(calendarMonthOf(lastDayOnly, { mjesec: '2026-08' }, TODAY).filter.people.map((one) => one.id)).not.toContain(
+      LATER,
+    );
+  });
+
+  it('does not offer a member inactive all month who is active only later', () => {
+    // Matrix: inactive all month, active later — August, active from 2026-09-01 only.
+    const starting = withStatusesOf(LATER, [
+      { active: false, effectiveFrom: SEEDED },
+      { active: true, effectiveFrom: '2026-09-01' },
+    ]);
+    const august = calendarMonthOf(starting, { mjesec: '2026-08', osoba: LATER }, TODAY);
+
+    expect(august.filter.people.map((person) => person.id)).not.toContain(LATER);
+    expect(august.filter.person).toBeNull();
+    expect(august.person).toBeNull();
+    expect(calendarMonthOf(starting, { mjesec: '2026-09' }, TODAY).filter.people.map((one) => one.id)).toContain(
+      LATER,
+    );
+  });
+
+  it('keeps osoba across months, and draws the whole grid where the person is inactive throughout', () => {
+    // Matrix: kept across months — chosen in September, next month inactive.
+    const september = { mjesec: '2026-09', osoba: RETIRED };
+    const october = calendarSearchTo(september, { mjesec: '2026-10' });
+
+    expect(october).toEqual({ mjesec: '2026-10', osoba: RETIRED });
+    expect(calendarMonthOf(snapshot, september, TODAY).person?.id).toBe(RETIRED);
+    const month = calendarMonthOf(snapshot, october, TODAY);
+
+    expect(month.filter.person).toBeNull();
+    expect(month.person).toBeNull();
+    const plain = calendarMonthOf(snapshot, { mjesec: '2026-10' }, TODAY);
+
+    expect(month.columns.map((team) => team.id)).toEqual(plain.columns.map((team) => team.id));
+    expect(month.rows).toEqual(plain.rows);
   });
 
   it('draws the days a member is inactive as no team, and the rest as their team', () => {
