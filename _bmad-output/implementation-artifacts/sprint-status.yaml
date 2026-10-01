@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 10-01-2026 10:58
+last_updated: 10-01-2026 11:08
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -537,7 +537,7 @@ action_items:
     action: "Process L1: story specs carry an Epic AC deviations list; deferrals go
       to deferred-work; review checks spec against epic"
     owner: "Perolipotic (bmad-customize)"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-10-01.md"
   - id: "epic-4-retro-item-6-record-hours-feature-cleanups-d1-d3-p1-p"
     epic: 4
