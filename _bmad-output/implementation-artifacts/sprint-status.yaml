@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 10-01-2026 09:25
+last_updated: 10-01-2026 10:58
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -351,7 +351,7 @@ development_status:
   1-9b-team-position: done
   epic-1-retrospective: optional
 
-  epic-2: in-progress
+  epic-2: done
   # Story 2.1 was split once at step-02's token gate (human decision
   # 2026-09-25). Same convention as 1.1, 1.3, 1.4, 1.5 and 1.7: the parent key
   # below stays in-progress until every part lands; the parts carry their own
@@ -433,7 +433,7 @@ development_status:
   2-6-an-admin-changes-the-rotation-from-a-date-forward: done
   epic-2-retrospective: optional
 
-  epic-3: in-progress
+  epic-3: done
   3-1-anyone-reads-a-month: done
   # Story 3.2 was split in two at the user's request (2026-09-26). Both parts
   # ride on this one key, and BOTH HAVE LANDED. 3.2a is the phone modes — Moj
@@ -481,7 +481,7 @@ development_status:
   3-6-an-admin-adds-removes-or-replaces-someone-on-a-shift: done
   epic-3-retrospective: optional
 
-  epic-4: in-progress
+  epic-4: done
   4-1-a-member-sees-their-own-hours-split-by-band: done
   4-1a-hours-rule: done
   4-1b-my-hours-screen: done
@@ -509,28 +509,28 @@ action_items:
     action: "Fix C1: a Sati name for a member no longer active today still opens their
       calendar month; unit + e2e case for a deactivated member"
     owner: "Dev (bmad-build)"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-10-01.md"
   - id: "epic-4-retro-item-2-fix-r2-leave-figure-renders-empty-dash-o"
     epic: 4
     action: "Fix R2: leave figure renders empty (dash on screen, empty xlsx cell)
       until Epic 5, filling with no further change"
     owner: "Dev (bmad-build)"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-10-01.md"
   - id: "epic-4-retro-item-3-c2-3-6b-put-on-form-warns-does-not-block"
     epic: 4
     action: "C2: 3.6b put-on form warns (does not block) when the member already works
       an overlapping window with their own team"
     owner: "Dev (bmad-build)"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-10-01.md"
   - id: "epic-4-retro-item-4-carry-r1-into-epic-5-deferred-work-entry"
     epic: 4
     action: "Carry R1 into Epic 5: deferred-work entry naming MemberHours, OrganizationHoursRow
       and hoursExportOf as surfaces 5.3/5.4 must give the unresolved-conflict state"
     owner: "Perolipotic"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-10-01.md"
   - id: "epic-4-retro-item-5-process-l1-story-specs-carry-an-epic-ac"
     epic: 4
@@ -544,11 +544,11 @@ action_items:
     action: "Record hours-feature cleanups D1-D3, P1, P2, C3-C5, C8 as one deferred-work
       entry"
     owner: "Dev"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-10-01.md"
   - id: "epic-4-retro-item-7-mark-epic-2-epic-3-epic-4-done-in-sprint"
     epic: 4
     action: "Mark epic-2, epic-3, epic-4 done in sprint-status"
     owner: "Perolipotic (bmad-sprint-planning)"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-10-01.md"
