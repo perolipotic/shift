@@ -33,6 +33,8 @@ export const CALENDAR_SCREEN_PARTS = {
   grid: ['features', 'calendar', 'components', 'calendar-grid.tsx'],
   cell: ['features', 'calendar', 'components', 'calendar-cell.tsx'],
   legend: ['features', 'calendar', 'components', 'calendar-legend.tsx'],
+  // Story 5.3c: the marks' glyphs, text and icon, drawn by the cell and the legend.
+  modifierGlyphs: ['features', 'calendar', 'components', 'modifier-glyphs.tsx'],
   dayList: ['features', 'calendar', 'components', 'calendar-day-list.tsx'],
   dayDetailDialog: ['features', 'calendar', 'components', 'day-detail-dialog.tsx'],
   overrideForm: ['features', 'calendar', 'components', 'override-form.tsx'],
@@ -64,6 +66,10 @@ export const CALENDAR_SCREEN_EXEMPT: readonly { readonly file: string; readonly 
   {
     file: 'services/roster-write.ts',
     why: 'the roster change and its removal (story 3.6b) and their refusal and notice messages; a key source of its own in the sign-in suite, executed by roster-write.test.ts',
+  },
+  {
+    file: 'services/marks.ts',
+    why: 'the conflict and leave marks (story 5.3c), derived from the two reads; renders nothing and declares no key, executed by marks.test.ts',
   },
   {
     file: 'utils/month.ts',

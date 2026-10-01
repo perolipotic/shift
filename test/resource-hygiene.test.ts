@@ -930,6 +930,9 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.modifier.overridden',
   'kalendar.modifier.leave',
   'kalendar.modifier.uncovered',
+  // STORY 5.3c: the unavailable alert's retry, which reads the schedule and
+  // the leave the marks stand on again.
+  'kalendar.retry',
   // STORY 3.3a: the team filter — its label, the all-teams option with its
   // count, the heading over the teams and the reset. `Smjena` is the Team.
   'kalendar.filter.label',

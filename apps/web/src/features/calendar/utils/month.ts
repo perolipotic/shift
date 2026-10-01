@@ -8,13 +8,20 @@ import {
   overridesByTeamAndDate,
   scheduleOfMonth,
   shiftTypeVersionOn,
+  type Collision,
+  type LeaveRange,
   type MemberScheduleInput,
   type MembershipVersion,
   type OverrideStanding,
   type StatusVersion,
 } from '@shift/domain';
 
-import { MODIFIER_OVERRIDDEN, type CalendarModifier } from '@/features/calendar/utils/modifiers';
+import {
+  MODIFIER_CONFLICT,
+  MODIFIER_LEAVE,
+  MODIFIER_OVERRIDDEN,
+  type CalendarModifier,
+} from '@/features/calendar/utils/modifiers';
 import {
   CALENDAR_UNAVAILABLE,
   type CalendarOverride,
@@ -520,19 +527,121 @@ export interface CalendarCell {
   /** `19:00–07:00` from the type's version on that date; `null` for a non-working type or no times. */
   readonly range: string | null;
   /**
-   * The marks the cell carries (`@/features/calendar/utils/modifiers`), in any order:
+   * The marks the cell carries (`@/features/calendar/utils/modifiers`), in
+   * canonical order — conflict, overridden, leave, uncovered: `conflict`
+   * where a collision falls on it (story 5.3c, {@link CalendarMarks}),
    * `overridden` where a shift-type override replaced the projected type
    * (story 3.5a) or a roster override changed who works it (story 3.6a), and
-   * nothing else yet.
+   * `leave` where leave covers it (story 5.3c). Never `uncovered` yet: that
+   * is story 5.4's. A cell with no rotation in effect carries none.
    */
   readonly modifiers: readonly CalendarModifier[];
 }
 
-/** No modifiers: a cell the domain marks with nothing. */
+/**
+ * What the conflict and leave marks are set from (story 5.3c), DERIVED on
+ * every read and never stored: `collisionsOf`'s collisions over the calendar
+ * snapshot and the live leave the viewer may see, and those records' ranges
+ * by member. Built by `@/features/calendar/services/marks`; read here alone.
+ *
+ * WHO SEES WHAT is the builder's: an admin's marks carry every collision and
+ * every member's leave; a member's carry no collision and their own leave
+ * alone, so no other member's leave and no conflict can ever reach a cell.
+ */
+export interface CalendarMarks {
+  /** Every collision shown: none for a member. */
+  readonly collisions: readonly Collision[];
+  /** Each member's live leave ranges, by member id: only the viewer's own for a member. */
+  readonly leave: ReadonlyMap<string, readonly LeaveRange[]>;
+}
+
+/** No modifiers: a cell with no rotation in effect, which has no schedule to mark. */
 const NO_MODIFIERS: readonly CalendarModifier[] = [];
 
-/** An overridden cell's marks (story 3.5a). */
-const OVERRIDDEN_MODIFIERS: readonly CalendarModifier[] = [MODIFIER_OVERRIDDEN];
+/** No collision and no leave: a calendar with nothing to mark. */
+export const NO_MARKS: CalendarMarks = { collisions: [], leave: new Map() };
+
+/** The key a grid cell's collisions are found under: its team and date. */
+function teamDateKeyOf(teamId: string, date: string): string {
+  return `${teamId}|${date}`;
+}
+
+/** The key a member's cell's collision is found under: member, team and date. */
+function memberTeamDateKeyOf(memberId: string, teamId: string, date: string): string {
+  return `${memberId}|${teamId}|${date}`;
+}
+
+/** {@link CalendarMarks} indexed once per month, for the cells to look up. */
+interface MarksLookup {
+  readonly teamDates: ReadonlySet<string>;
+  readonly memberTeamDates: ReadonlySet<string>;
+  readonly leave: ReadonlyMap<string, readonly LeaveRange[]>;
+}
+
+function marksLookupOf(marks: CalendarMarks): MarksLookup {
+  return {
+    teamDates: new Set(marks.collisions.map((collision) => teamDateKeyOf(collision.teamId, collision.date))),
+    memberTeamDates: new Set(
+      marks.collisions.map((collision) => memberTeamDateKeyOf(collision.memberId, collision.teamId, collision.date)),
+    ),
+    leave: marks.leave,
+  };
+}
+
+/** Whether `memberId`'s leave covers `date`, every date of a range inclusive — a non-working one too. */
+function onLeave(lookup: MarksLookup, memberId: string, date: string): boolean {
+  return (lookup.leave.get(memberId) ?? []).some((range) => range.from <= date && date <= range.to);
+}
+
+/** What one cell is marked for. */
+interface CellMarks {
+  readonly conflict: boolean;
+  readonly leave: boolean;
+  readonly overridden: boolean;
+}
+
+/**
+ * THE ONE PLACE A CELL'S MARKS ARE SET, in canonical order: conflict, then
+ * overridden, then leave.
+ */
+function cellModifiersOf({ conflict, leave, overridden }: CellMarks): readonly CalendarModifier[] {
+  const modifiers: CalendarModifier[] = [];
+
+  if (conflict) modifiers.push(MODIFIER_CONFLICT);
+  if (overridden) modifiers.push(MODIFIER_OVERRIDDEN);
+  if (leave) modifiers.push(MODIFIER_LEAVE);
+
+  return modifiers;
+}
+
+/**
+ * A grid cell's marks: conflict AND leave where any collision falls on its
+ * team and date — the grid names the shift, not the person on leave.
+ */
+function gridCellMarksOf(lookup: MarksLookup, teamId: string, date: string, overridden: boolean): CellMarks {
+  const collided = lookup.teamDates.has(teamDateKeyOf(teamId, date));
+
+  return { conflict: collided, leave: collided, overridden };
+}
+
+/**
+ * A member's own cell's marks (*Moj raspored*, the person shown): leave on
+ * every date their leave covers, and conflict where their own collision falls
+ * on that team and date.
+ */
+function memberCellMarksOf(
+  lookup: MarksLookup,
+  memberId: string,
+  teamId: string,
+  date: string,
+  overridden: boolean,
+): CellMarks {
+  return {
+    conflict: lookup.memberTeamDates.has(memberTeamDateKeyOf(memberId, teamId, date)),
+    leave: onLeave(lookup, memberId, date),
+    overridden,
+  };
+}
 
 /** One date of the month. */
 export interface CalendarRow {
@@ -721,8 +830,10 @@ function cellOf(
   teamId: string,
   shiftTypeId: string | null,
   date: string,
-  overridden: boolean,
+  marks: CellMarks,
 ): CalendarCell {
+  // NO ROTATION, NO MARK: there is no schedule to mark, so the cell carries
+  // none — no overridden, no conflict and no leave — whatever the marks say.
   if (shiftTypeId === null) {
     return {
       teamId,
@@ -734,6 +845,8 @@ function cellOf(
       modifiers: NO_MODIFIERS,
     };
   }
+
+  const modifiers = cellModifiersOf(marks);
 
   const type = types.get(shiftTypeId);
 
@@ -750,7 +863,7 @@ function cellOf(
     letter: letters.get(shiftTypeId) ?? null,
     className: `${CALENDAR_CELL_CLASS} ${fills.get(shiftTypeId) ?? NONWORKING_CHIP_CLASS}`,
     range: typeRangeOn(type, date),
-    modifiers: overridden ? OVERRIDDEN_MODIFIERS : NO_MODIFIERS,
+    modifiers,
   };
 }
 
@@ -820,8 +933,10 @@ export function calendarDayListOf(
   { memberId, memberships, statuses }: CalendarMemberHistory,
   month: string,
   today: string,
+  marks: CalendarMarks = NO_MARKS,
 ): readonly CalendarDay[] | null {
   const schedule = memberScheduleOfMonth(memberScheduleInputOf(snapshot, { memberId, memberships, statuses }), month);
+  const marked = marksLookupOf(marks);
 
   if (schedule.every((day) => day.shifts.length === 0)) return null;
 
@@ -837,7 +952,13 @@ export function calendarDayListOf(
     isToday: day.date === today,
     shifts: day.shifts.map((shift) => ({
       teamId: shift.teamId,
-      cell: cellOf(lookup, shift.teamId, shift.shiftTypeId, day.date, shift.overridden || shift.rosterChanged),
+      cell: cellOf(
+        lookup,
+        shift.teamId,
+        shift.shiftTypeId,
+        day.date,
+        memberCellMarksOf(marked, memberId, shift.teamId, day.date, shift.overridden || shift.rosterChanged),
+      ),
       viaOverride: shift.viaOverride,
     })),
   }));
@@ -854,9 +975,10 @@ function dayListOutcomeOf(
   history: CalendarMemberHistory,
   month: string,
   today: string,
+  marks: CalendarMarks,
 ): CalendarDayListOutcome {
   try {
-    return { ok: true, days: calendarDayListOf(snapshot, history, month, today) };
+    return { ok: true, days: calendarDayListOf(snapshot, history, month, today, marks) };
   } catch (cause) {
     console.error(CALENDAR_UNAVAILABLE, cause);
 
@@ -899,8 +1021,14 @@ export function chosenPersonOf(search: CalendarSearch, people: readonly { readon
  * are computed over every active team first, so a column and its cells draw
  * the same with the filter as without it.
  */
-export function calendarMonthOf(snapshot: CalendarSnapshot, search: CalendarSearch, today: string): CalendarMonth {
+export function calendarMonthOf(
+  snapshot: CalendarSnapshot,
+  search: CalendarSearch,
+  today: string,
+  marks: CalendarMarks = NO_MARKS,
+): CalendarMonth {
   const month = monthShownOf(search, today);
+  const marked = marksLookupOf(marks);
   const active = splitTeams(snapshot.teams).active;
   const teamLetters = teamLettersOf(active.map((team) => team.name));
   const teams = active.map((team, index) => ({ ...team, letter: teamLetters[index] ?? '' }));
@@ -948,16 +1076,24 @@ export function calendarMonthOf(snapshot: CalendarSnapshot, search: CalendarSear
       isToday: row.date === today,
       cells: row.cells
         .filter((cell) => shown(cell.teamId))
-        .map((cell) => cellOf(lookup, cell.teamId, cell.shiftTypeId, row.date, cell.overridden || cell.rosterChanged)),
+        .map((cell) =>
+          cellOf(
+            lookup,
+            cell.teamId,
+            cell.shiftTypeId,
+            row.date,
+            gridCellMarksOf(marked, cell.teamId, row.date, cell.overridden || cell.rosterChanged),
+          ),
+        ),
     })),
-    days: dayListOutcomeOf(snapshot, snapshot.viewer, month, today),
+    days: dayListOutcomeOf(snapshot, snapshot.viewer, month, today, marks),
     person:
       personShown === null
         ? null
         : {
             id: personShown.id,
             name: personShown.name,
-            days: dayListOutcomeOf(snapshot, { ...personShown, memberId: personShown.id }, month, today),
+            days: dayListOutcomeOf(snapshot, { ...personShown, memberId: personShown.id }, month, today, marks),
           },
   };
 }
@@ -979,9 +1115,10 @@ export function calendarMonthOutcomeOf(
   snapshot: CalendarSnapshot,
   search: CalendarSearch,
   today: string,
+  marks: CalendarMarks = NO_MARKS,
 ): CalendarMonthOutcome {
   try {
-    return { ok: true, month: calendarMonthOf(snapshot, search, today) };
+    return { ok: true, month: calendarMonthOf(snapshot, search, today, marks) };
   } catch (cause) {
     console.error(CALENDAR_UNAVAILABLE, cause);
 

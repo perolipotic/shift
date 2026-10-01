@@ -118,6 +118,11 @@ export const FEATURE_PUBLIC = {
     'services/snapshot', // conflicts, hours, leave, pages, teams
     'utils/month', // conflicts, hours, leave, pages
   ],
+  // Story 5.3c: the calendar's marks derive every collision through
+  // *Raspored*'s own recipe (`collisionInputOf`), never a second one.
+  conflicts: [
+    'services/conflicts-queue', // calendar
+  ],
   'hour-bands': [
     'services/list', // calendar, hours, shift-types, pages
     'services/write', // pages
@@ -133,9 +138,10 @@ export const FEATURE_PUBLIC = {
   // test-only consumer outside `apps/web/src`, which this rule does not govern.
   // Story 5.3b: the conflicts queue reads the organization's records, and the
   // table's name, through `leave-list`, and writes a record's range as the
-  // member's card does (`leave-section`).
+  // member's card does (`leave-section`). Story 5.3c: the calendar's marks
+  // read the organization's records or the viewer's own through `leave-list`.
   leave: [
-    'services/leave-list', // conflicts, teams
+    'services/leave-list', // calendar, conflicts, teams
     'services/leave-section', // conflicts
   ],
   members: [

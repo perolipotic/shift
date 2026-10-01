@@ -52,6 +52,7 @@
       "noTeam": "{name} ovaj mjesec nije ni u jednoj smjeni."
     },
     "legend": "Oznake",
+    "retry": "Pokušaj ponovno",
     "detail": {
       "title": "{team} · {date}",
       "close": "Zatvori",

@@ -63,9 +63,13 @@ describe("the cells' scroll margins are the sticky sizes", () => {
   });
 });
 
-describe('the calendar makes one read', () => {
-  it('holds exactly one useQuery in the screen hook, and no other way to fetch', () => {
-    expect(hook.split('useQuery(').length - 1).toBe(1);
+describe('the calendar makes one schedule read, and one leave read by role (story 5.3c)', () => {
+  it('holds exactly three useQuery calls in the screen hook — the snapshot, and the two leave reads only one role enables — and no other way to fetch', () => {
+    expect(hook.split('useQuery(').length - 1).toBe(3);
+    expect(hook.split('calendarQueryOptions(').length - 1).toBe(1);
+    expect(hook.split('organizationLeaveRecordsQueryOptions(').length - 1).toBe(1);
+    expect(hook.split('myLeaveRecordsQueryOptions(').length - 1).toBe(1);
+    expect(hook.split('enabled:').length - 1).toBe(2);
     expect(hook).not.toMatch(/\b(fetchQuery|ensureQueryData|prefetchQuery|fetchInfiniteQuery|refetchQueries)\b/);
   });
 });

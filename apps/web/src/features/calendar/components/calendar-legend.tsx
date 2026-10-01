@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { ModifierGlyphs } from '@/features/calendar/components/modifier-glyphs';
 import { legendOf, modifierMessageKey, modifierTreatmentOf } from '@/features/calendar/utils/modifiers';
 import type { CalendarCell } from '@/features/calendar/utils/month';
 import { LEGEND_HEADING_ID } from '@/features/calendar/utils/element-ids';
@@ -23,7 +24,7 @@ export function CalendarLegend({ cells }: { readonly cells: Iterable<CalendarCel
               aria-hidden
               className={`inline-flex size-6 items-center justify-center rounded-sm bg-card text-xs [font-variant-emoji:text] ${modifierTreatmentOf([modifier]).className}`}
             >
-              {modifierTreatmentOf([modifier]).glyphText}
+              <ModifierGlyphs glyphs={modifierTreatmentOf([modifier]).glyphs} />
             </span>
             <span>{t(modifierMessageKey(modifier))}</span>
           </li>
