@@ -126,11 +126,14 @@ export const FEATURE_PUBLIC = {
     'services/my-hours', // pages
   ],
   // Story 5.1c: the member page composes `components/member-leave-card`,
-  // which every page may import; no other feature imports a leave module yet.
+  // which every page may import. Story 5.2c: the teams feature's dependents
+  // name the viewer's own leave key, so a leave write re-reads *Godišnji*.
   // The root database test `test/rls-isolation.test.ts` imports
   // `leave-write.ts` directly, to drive `recordLeave` over real PostgREST: a
   // test-only consumer outside `apps/web/src`, which this rule does not govern.
-  leave: [],
+  leave: [
+    'services/leave-list', // teams
+  ],
   members: [
     'services/list', // hour-bands, leave, shift-types, teams, pages
     'utils/position', // calendar, teams

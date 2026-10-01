@@ -1,6 +1,7 @@
 import type { QueryKey } from '@tanstack/react-query';
 
 import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
+import { MY_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
@@ -75,11 +76,13 @@ export const MEMBER_SAVE_DEPENDENTS: readonly QueryKey[] = [
 export const HOUR_BAND_WRITE_DEPENDENTS: readonly QueryKey[] = [CALENDAR_KEY];
 
 /**
- * A leave record saved (story 5.1c): its own key is the member's live
- * records, and no other read embeds a leave record yet — the calendar, *Sati*
- * and the conflicts queue start reading leave in story 5.3, and join here then.
+ * A leave record saved, amended or removed (stories 5.1c, 5.2b): its own key
+ * is the member's live records. Since story 5.2c the viewer's own records
+ * (*Godišnji*) depend on it too — an admin's write to their own leave changes
+ * their own tab. The calendar, *Sati* and the conflicts queue start reading
+ * leave in story 5.3, and join here then.
  */
-export const LEAVE_WRITE_DEPENDENTS: readonly QueryKey[] = [];
+export const LEAVE_WRITE_DEPENDENTS: readonly QueryKey[] = [MY_LEAVE_RECORDS_KEY];
 
 /** A refusal's re-read: the surface's own key, and nothing that depends on it. */
 export const NO_DEPENDENTS: readonly QueryKey[] = [];

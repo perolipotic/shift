@@ -586,6 +586,14 @@ const SOURCES = [
   // destinations above.
   join(webRoot, 'src', 'components', 'month-nav.tsx'),
   ...hoursFeatureParts(),
+  // Story 5.2c: *Godišnji*'s hook and components, and its rules module, which
+  // owns the two lines' keys as a return-type union and the tiles' labels.
+  // `godisnji.tsx` is listed with the destinations above.
+  join(webRoot, 'src', 'features', 'leave', 'hooks', 'use-my-leave.ts'),
+  join(webRoot, 'src', 'features', 'leave', 'components', 'my-leave-body.tsx'),
+  join(webRoot, 'src', 'features', 'leave', 'components', 'my-leave-summary.tsx'),
+  join(webRoot, 'src', 'features', 'leave', 'components', 'my-leave-skeleton.tsx'),
+  join(webRoot, 'src', 'features', 'leave', 'services', 'my-leave.ts'),
   // The owner layout's numbered section badge, a primitive: text-free, here
   // for freshness like the other primitives.
   join(webRoot, 'src', 'components', 'ui', 'section-number.tsx'),

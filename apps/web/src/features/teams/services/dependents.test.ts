@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
 import { HOUR_BANDS_LIST_KEY } from '@/features/hour-bands/services/list';
-import { LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
+import { LEAVE_RECORDS_KEY, MY_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { SESSION_SUBJECT_KEY } from '@/features/members/services/write';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
@@ -68,6 +68,7 @@ const CLASSIFIED: Readonly<Record<string, readonly QueryKey[]>> = {
   SHIFT_TYPES_LIST_KEY: [SHIFT_TYPES_LIST_KEY],
   ORGANIZATION_SNAPSHOT_KEY: [ORGANIZATION_SNAPSHOT_KEY],
   LEAVE_RECORDS_KEY: [LEAVE_A, LEAVE_B],
+  MY_LEAVE_RECORDS_KEY: [MY_LEAVE_RECORDS_KEY],
 };
 
 /**
@@ -208,8 +209,9 @@ describe('the reads a team or membership write makes stale', () => {
       write: 'a leave record saved (story 5.1c)',
       own: LEAVE_A,
       dependents: LEAVE_WRITE_DEPENDENTS,
-      // No other read embeds a leave record yet: the member's own records alone.
-      stale: [LEAVE_A],
+      // The member's own records, and since story 5.2c the viewer's own
+      // (*Godišnji*); never another member's.
+      stale: [LEAVE_A, MY_LEAVE_RECORDS_KEY],
     },
     {
       write: 'a refusal',
