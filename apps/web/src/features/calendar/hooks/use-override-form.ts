@@ -26,6 +26,7 @@ import {
 import { DAY_DETAIL_HEADING_ID } from '@/features/calendar/utils/element-ids';
 import { claimedOrganizationOf } from '@/features/teams/services/write';
 import { supabaseClient } from '@/lib/supabase/client';
+import { focusLater } from '@/utils/focus-later';
 
 /**
  * THE ADMIN'S OVERRIDE FORM (story 3.5b): setting a shift-type override on
@@ -99,16 +100,15 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
   }
 
   /**
-   * Focus, once the write has settled and `pending` no longer disables the
-   * controls: the first of `targets` still in the document, else the day
-   * detail's title, so focus never falls to the page body.
+   * Focus, once the write has settled and the next render has drawn it: the
+   * first of `targets` in the document and enabled, else the day detail's
+   * title, so focus never falls to the page body.
    */
-  function focusLater(...targets: readonly { readonly current: HTMLElement | null }[]): void {
-    requestAnimationFrame(() => {
-      const found = targets.map((target) => target.current).find((element) => element?.isConnected === true);
-
-      (found ?? document.getElementById(DAY_DETAIL_HEADING_ID))?.focus();
-    });
+  function focusAfterWrite(...targets: readonly { readonly current: HTMLElement | null }[]): void {
+    focusLater(
+      targets.map((target) => () => target.current),
+      () => document.getElementById(DAY_DETAIL_HEADING_ID),
+    );
   }
 
   async function invalidate(): Promise<void> {
@@ -121,7 +121,7 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
 
   /** The refused field takes focus: the reason for its own refusal, the type (the first field) for any other. */
   function focusRefused(code: OverrideWriteFailure): void {
-    focusLater(code === OVERRIDE_REFUSED_REASON ? reasonField : typeField, typeField, removeAction);
+    focusAfterWrite(code === OVERRIDE_REFUSED_REASON ? reasonField : typeField, typeField, removeAction);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
@@ -176,7 +176,7 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
       if (!stillOn(startedFor)) return;
       setDone({ code: OVERRIDE_SAVED });
       // The form gives way to the override block and its removal.
-      focusLater(removeAction);
+      focusAfterWrite(removeAction);
     } catch (cause) {
       console.error(OVERRIDE_FAILED, cause);
       if (!stillOn(startedFor)) return;
@@ -203,7 +203,7 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
 
     setConfirming(false);
     setRemoveFailure(null);
-    focusLater(removeAction);
+    focusAfterWrite(removeAction);
   }
 
   async function remove(): Promise<void> {
@@ -229,13 +229,13 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
           if (!stillOn(startedFor)) return;
           setRemoveFailure(outcome.code);
           setConfirming(false);
-          focusLater(removeAction, typeField);
+          focusAfterWrite(removeAction, typeField);
 
           return;
         }
         if (!stillOn(startedFor)) return;
         setRemoveFailure(outcome.code);
-        focusLater(removeCancel);
+        focusAfterWrite(removeCancel);
 
         return;
       }
@@ -246,12 +246,12 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
       setDone({ code: OVERRIDE_REMOVED, projectedTypeName });
       // The projection is back, and so is the form — or, with no type to
       // offer, the dialog's title.
-      focusLater(typeField);
+      focusAfterWrite(typeField);
     } catch (cause) {
       console.error(OVERRIDE_FAILED, cause);
       if (!stillOn(startedFor)) return;
       setRemoveFailure(OVERRIDE_FAILED);
-      focusLater(removeCancel);
+      focusAfterWrite(removeCancel);
     } finally {
       writing.current = false;
       setPending(false);
