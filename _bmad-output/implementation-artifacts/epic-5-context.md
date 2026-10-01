@@ -56,7 +56,7 @@ An admin records a member's annual leave as a date range and sees what it costs 
 - **No bulk resolution anywhere.** Amending a leave record still clears every conflict it caused, because that removes the cause and is not batching.
 - **Signals.** `destructive` is reserved for unresolved conflicts: an inset 2 px ring plus `⚠`. It is never used for delete buttons or errors. Uncovered uses hatch plus `◌`, and leave uses hatch plus `◷`. Use non-Unicode or covered marks, because Geist lacks U+25F7 and U+25CC. Keep a persistent legend wherever glyphs render. No state is conveyed by colour alone.
 - **Deleting leave** takes exactly one confirmation step, with neutral styling.
-- **Empty and zero.** Empty states state what is true: *"Nema konflikata između godišnjih odmora i rasporeda."* A zero count is still shown (`0 nerješenih konflikata`). Use skeletons, not spinners. Warnings appear at save time with numbers and never persist as banners.
+- **Empty and zero.** Empty states state what is true: *"Nema konflikata između godišnjih odmora i rasporeda."* A zero count is still shown (`0 neriješenih konflikata`). Use skeletons, not spinners. Warnings appear at save time with numbers and never persist as banners.
 - **UJ-3.** Damir opens Ana's record (30 allocated, 12 used, 18 remaining) and enters 10.09–16.09. He sees the cost in leave days before saving. On save, four conflicts are queued soonest first. He resolves two by replacement and two as uncovered, each on its own screen.
 
 ## Cross-Story Dependencies

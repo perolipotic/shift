@@ -129,7 +129,7 @@ From `DESIGN.md` (visual) and `EXPERIENCE.md` (behavioural). Both are binding an
 - **UX-DR19** Team/member filter — populated from live records, never hard-coded; shows a count in its label; resets to all-teams in one action without leaving the calendar.
 
 **State language**
-- **UX-DR20** Empty states state what is true, never absence. A zero count is still shown — `0 nerješenih konflikata` — because hiding it is indistinguishable from not having loaded.
+- **UX-DR20** Empty states state what is true, never absence. A zero count is still shown — `0 neriješenih konflikata` — because hiding it is indistinguishable from not having loaded.
 - **UX-DR21** Loading uses skeletons matching final layout for the calendar grid and tables; no spinners on primary surfaces. A visited and an unvisited month must feel the same.
 - **UX-DR22** A refused save names the specific problem in hours and keeps every entered value.
 - **UX-DR23** Warnings appear at save time with the consequence in numbers and never block, and never persist as standing banners.

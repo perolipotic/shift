@@ -12,6 +12,7 @@ import {
   CALENDAR_SCREEN_EXEMPT,
   CALENDAR_SCREEN_PARTS,
 } from '@/features/calendar/calendar-screen.fixture';
+import { CONFLICTS_SCREEN_EXEMPT, CONFLICTS_SCREEN_PARTS } from '@/features/conflicts/conflicts-screen.fixture';
 import { HOURS_SCREEN_EXEMPT, HOURS_SCREEN_PARTS } from '@/features/hours/hours-screen.fixture';
 import { LEAVE_SCREEN_EXEMPT, LEAVE_SCREEN_PARTS } from '@/features/leave/leave-screen.fixture';
 import {
@@ -193,6 +194,17 @@ const GODISNJI_PAGE = join(srcRoot, ...LEAVE_SCREEN_PARTS.page);
 const GODISNJI: readonly string[] = Object.values(LEAVE_SCREEN_PARTS).map((parts) => join(srcRoot, ...parts));
 /** Story 5.2c's rules: the screen's two lines and its three tiles' labels. */
 const MY_LEAVE_KEYS = join(LEAVE_FEATURE, 'services', 'my-leave.ts');
+/** The conflicts feature, which holds the *Raspored* screen's parts (story 5.3b). */
+const CONFLICTS_FEATURE = join(srcRoot, 'features', 'conflicts');
+/** The *Raspored* screen's page, which only composes (story 5.3b). */
+const RASPORED_PAGE = join(srcRoot, ...CONFLICTS_SCREEN_PARTS.page);
+/**
+ * Story 5.3b's *Raspored*: the conflicts queue, a file set on *Sati*'s terms,
+ * written ONCE in `conflicts-screen.fixture.ts`.
+ */
+const RASPORED: readonly string[] = Object.values(CONFLICTS_SCREEN_PARTS).map((parts) => join(srcRoot, ...parts));
+/** Story 5.3b's rules: the queue's input, order, rows and guard. Renders no string. */
+const CONFLICTS_QUEUE_RULES = join(CONFLICTS_FEATURE, 'services', 'conflicts-queue.ts');
 const MEMBER_EDIT: readonly string[] = [
   join(srcRoot, 'pages', 'ljudi.$id.tsx'),
   join(MEMBERS_FEATURE, 'hooks', 'use-member-edit.ts'),
@@ -469,9 +481,10 @@ const LOGO_URL = join(srcRoot, 'features', 'organization', 'hooks', 'logo-url.ts
  * what this list names. `router.test.ts` pins the same table against the
  * registered router, so the four copies are held together end to end.
  */
-const PLACEHOLDER_SLUGS = [
-  'raspored',
-];
+// EMPTY SINCE STORY 5.3b: `/raspored` was the last placeholder, and left when
+// it gained the conflicts queue. The list and its cross-checks stay, so a new
+// destination registered as only a heading still lands under the tight counts.
+const PLACEHOLDER_SLUGS: readonly string[] = [];
 
 /**
  * The destinations that are built screens rather than placeholders.
@@ -498,7 +511,10 @@ const PLACEHOLDER_SLUGS = [
 //
 // SEVEN SINCE STORY 5.2c: `/godisnji` left the placeholders when it gained the
 // viewer's own allowance, days used and balance.
-const BUILT_SLUGS = ['organizacija', 'ljudi', 'danas', 'postavke-rotacije', 'kalendar', 'sati', 'godisnji'];
+//
+// EIGHT SINCE STORY 5.3b: `/raspored` left the placeholders when it gained the
+// conflicts queue — every destination is built.
+const BUILT_SLUGS = ['organizacija', 'ljudi', 'danas', 'postavke-rotacije', 'kalendar', 'sati', 'godisnji', 'raspored'];
 
 /** Every registered destination, however much of it is built. */
 const DESTINATION_SLUGS = [...PLACEHOLDER_SLUGS, ...BUILT_SLUGS];
@@ -674,6 +690,10 @@ const SCREENS = [
   // three figures are read, never pressed, and nothing here writes: a member
   // requests no leave (story 5.3 is conflicts, not requests).
   { name: 'the Godišnji destination', file: GODISNJI, expectedControls: 1 },
+  // STORY 5.3b. ONE on Raspored: the retry its unavailable alert offers. The
+  // queue is read, never pressed: no `Riješi`, no link and no bulk action
+  // until story 5.4 builds the resolution screen.
+  { name: 'the Raspored destination', file: RASPORED, expectedControls: 1 },
   // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
   // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
   // row link written once inside the map over the bands — the same count at
@@ -2199,6 +2219,17 @@ const KEY_SOURCES = [
     strings: 3,
   },
   {
+    // STORY 5.3b. NINE on Raspored: its own `nav.raspored` heading; the
+    // unavailable line and its retry; the count, always shown, and the empty
+    // sentence; and a row's four — the past words, the member and team, and
+    // the shift with the causing range, with and without times. Its rules
+    // module renders no string, so it is no key source.
+    name: 'the Raspored destination',
+    file: RASPORED,
+    keys: translationKeys,
+    strings: 9,
+  },
+  {
     // STORY 5.2c: the two lines in place of the figures (unavailable,
     // unscheduled), off `myLeaveMessageKey`, and the three tiles' labels, as
     // `label` entries — `memberListKeys` reads both shapes.
@@ -2774,6 +2805,28 @@ describe('the screen is read at all, so every sweep below means something', () =
       found.filter((file) => !exempt.has(file)).sort(),
       'the Godišnji file set and the feature folders disagree',
     ).toEqual(GODISNJI.filter((file) => file !== GODISNJI_PAGE).sort());
+  });
+
+  it('sweeps every part of the Raspored screen, so a new file cannot escape the set', () => {
+    // STORY 5.3b, on *Sati*'s terms: an EQUALITY between the set and every
+    // non-test module under the conflicts feature, less the exempt ones.
+    const exempt = new Set(CONFLICTS_SCREEN_EXEMPT.map((entry) => join(CONFLICTS_FEATURE, entry.file)));
+    const found = readdirSync(CONFLICTS_FEATURE, { recursive: true, encoding: 'utf8' })
+      .filter((name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name))
+      .map((name) => join(CONFLICTS_FEATURE, name));
+
+    expect(found, 'the walk reaches services/').toContain(CONFLICTS_QUEUE_RULES);
+    for (const file of exempt) expect(found, `${file} is exempt and does not exist`).toContain(file);
+    for (const entry of CONFLICTS_SCREEN_EXEMPT) expect(entry.why.length).toBeGreaterThan(20);
+    for (const file of RASPORED) {
+      expect(existsSync(file), `${file} is in the set and does not exist`).toBe(true);
+      expect(source(file).trim().length, `${file} is all but empty`).toBeGreaterThan(150);
+    }
+    expect(RASPORED[0], 'the page is read first').toBe(RASPORED_PAGE);
+    expect(
+      found.filter((file) => !exempt.has(file)).sort(),
+      'the Raspored file set and the feature folders disagree',
+    ).toEqual(RASPORED.filter((file) => file !== RASPORED_PAGE).sort());
   });
 
   it('sweeps every part of the shift type screens, so a new file cannot escape the sets', () => {

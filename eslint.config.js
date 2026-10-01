@@ -115,8 +115,8 @@ export const FEATURE_PUBLIC = {
     'services/sign-out', // navigation
   ],
   calendar: [
-    'services/snapshot', // hours, leave, pages, teams
-    'utils/month', // hours, leave, pages
+    'services/snapshot', // conflicts, hours, leave, pages, teams
+    'utils/month', // conflicts, hours, leave, pages
   ],
   'hour-bands': [
     'services/list', // calendar, hours, shift-types, pages
@@ -131,8 +131,12 @@ export const FEATURE_PUBLIC = {
   // The root database test `test/rls-isolation.test.ts` imports
   // `leave-write.ts` directly, to drive `recordLeave` over real PostgREST: a
   // test-only consumer outside `apps/web/src`, which this rule does not govern.
+  // Story 5.3b: the conflicts queue reads the organization's records, and the
+  // table's name, through `leave-list`, and writes a record's range as the
+  // member's card does (`leave-section`).
   leave: [
-    'services/leave-list', // teams
+    'services/leave-list', // conflicts, teams
+    'services/leave-section', // conflicts
   ],
   members: [
     'services/list', // hour-bands, leave, shift-types, teams, pages
