@@ -26,6 +26,7 @@ import {
 import { DAY_DETAIL_HEADING_ID } from '@/features/calendar/utils/element-ids';
 import { claimedOrganizationOf } from '@/features/teams/services/write';
 import { supabaseClient } from '@/lib/supabase/client';
+import { focusLater } from '@/utils/focus-later';
 
 /**
  * THE ADMIN'S ROSTER FORM (story 3.6b): taking a member off the open day's
@@ -108,16 +109,12 @@ export function useRosterForm(
   }
 
   /**
-   * Focus, once the write has settled and `pending` no longer disables the
-   * controls: the first of `targets` still in the document, else the day
-   * detail's title, so focus never falls to the page body.
+   * Focus, once the write has settled and the next render has drawn it: the
+   * first of `targets` in the document and enabled, else the day detail's
+   * title, so focus never falls to the page body.
    */
-  function focusLater(...targets: readonly (() => HTMLElement | null)[]): void {
-    requestAnimationFrame(() => {
-      const found = targets.map((target) => target()).find((element) => element?.isConnected === true);
-
-      (found ?? document.getElementById(DAY_DETAIL_HEADING_ID))?.focus();
-    });
+  function focusAfterWrite(...targets: readonly (() => HTMLElement | null)[]): void {
+    focusLater(targets, () => document.getElementById(DAY_DETAIL_HEADING_ID));
   }
 
   const first = () => outField.current;
@@ -132,7 +129,7 @@ export function useRosterForm(
     if (!lost) return;
     setConfirming(null);
     setRemoveFailure(ROSTER_GONE);
-    focusLater(first);
+    focusAfterWrite(first);
   });
 
   async function invalidate(): Promise<void> {
@@ -145,13 +142,13 @@ export function useRosterForm(
 
   /** The refused field takes focus: the reason for its own refusal, the first field for any other. */
   function focusRefused(code: RosterWriteFailure): void {
-    focusLater(code === ROSTER_REFUSED_REASON ? reasonShown : first, first);
+    focusAfterWrite(code === ROSTER_REFUSED_REASON ? reasonShown : first, first);
   }
 
   /** The callback ref of one listed change's removal button. */
   function removeActionRef(id: string): (element: HTMLButtonElement | null) => void {
     return (element) => {
-      // A detached button is skipped by `focusLater`, so none is ever dropped.
+      // A detached button is skipped by `focusAfterWrite`, so none is ever dropped.
       if (element !== null) removeActions.current.set(id, element);
     };
   }
@@ -210,7 +207,7 @@ export function useRosterForm(
       if (!stillOn(startedFor)) return;
       setSaves((count) => count + 1);
       setDone(ROSTER_SAVED);
-      focusLater(first);
+      focusAfterWrite(first);
     } catch (cause) {
       console.error(ROSTER_FAILED, cause);
       if (!stillOn(startedFor)) return;
@@ -239,7 +236,7 @@ export function useRosterForm(
 
     setConfirming(null);
     setRemoveFailure(null);
-    focusLater(actionOf(from), first);
+    focusAfterWrite(actionOf(from), first);
   }
 
   async function removeChange(): Promise<void> {
@@ -265,13 +262,13 @@ export function useRosterForm(
           if (!stillOn(startedFor)) return;
           setRemoveFailure(outcome.code);
           setConfirming(null);
-          focusLater(actionOf(id), first);
+          focusAfterWrite(actionOf(id), first);
 
           return;
         }
         if (!stillOn(startedFor)) return;
         setRemoveFailure(outcome.code);
-        focusLater(cancelShown);
+        focusAfterWrite(cancelShown);
 
         return;
       }
@@ -282,12 +279,12 @@ export function useRosterForm(
       setDone(ROSTER_REMOVED_DONE);
       // The default roster is back, and so are its candidates in the form —
       // or, on a day with no form, the dialog's title.
-      focusLater(first);
+      focusAfterWrite(first);
     } catch (cause) {
       console.error(ROSTER_FAILED, cause);
       if (!stillOn(startedFor)) return;
       setRemoveFailure(ROSTER_FAILED);
-      focusLater(cancelShown);
+      focusAfterWrite(cancelShown);
     } finally {
       writing.current = false;
       setPending(false);
