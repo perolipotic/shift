@@ -611,19 +611,20 @@
     None of these is a live defect at pilot scale. Low risk, but they compound.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-1a-leave-rule.md`
-  summary: Story 5.1b — the leave record. It covers:
-    - the `leave_records` migration: organization first, member, `daterange during`, `EXCLUDE USING gist (member_id WITH =, during WITH &&)` with `btree_gist`, `created_by`/`created_at`;
-    - RLS: admin writes, a member reads only their own records;
-    - the write path, which must NOT refuse an over-balance record (R4.7) — only the 5.1c screen warns;
-    - the overlap refusal, mapped to a code that names the conflicting record, with every entered value kept for the screen (UX-DR22).
-    It also carries the 5.1 AC "a saved record leaves every scheduled shift in place and the rotation untouched" (R4.1, DI-3), asserted by re-reading the schedule after a save. No UI.
-  evidence: The human split story 5.1 on 2026-10-01 into 5.1a (pure `domain/leave`), 5.1b (the record) and 5.1c (the screen), following the 4.1a/4.1b and 3.6a/3.6b pattern. The Epic AC Auditor on 5.1a found this entry missing the DI-3 AC.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-5-1a-leave-rule.md`
   summary: Story 5.1c — the admin's leave section on the member's page in Ljudi. Shows allowance, days used and balance; a range form with the cost from `domain/leave` before saving; the overlap refusal names the record and keeps every value; over-balance saves with a warning.
   evidence: The human split story 5.1 on 2026-10-01 and placed admin leave entry on the member's page; the Godišnji tab stays the member's own view for a later story.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-1a-leave-rule.md`
   summary: Story 5.2 needs to preview an amended record. `leavePreviewOf` has no "this replaces record X", so the amend flow must leave the old record out of `records`. Add a replacing parameter or document the caller contract when 5.2 is planned.
   evidence: Raised by the 5.1a review (2026-10-01). Today the preview treats any record covering the range as an overlap (`overlapsRecord`) and does not charge those dates.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-1b-leave-record.md`
+  summary: A member's direct select on `leave_records` returns `created_by`/`removed_by`, which are admin auth user ids. When the member's own leave view is built (the Godišnji tab), read through a definer function or a column-limited view, as 0026's calendar reads do.
+  evidence: Raised by the 5.1b implementation and review (2026-10-01). The spec asks for a direct own-row select policy, and no member surface reads leave yet, so nothing is shown today.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-1b-leave-record.md`
+  summary: The 5.1b matrix says a cross-tenant member insert is 42501 and a bad range a check violation. Postgres gives 23503 for another tenant's member under one's own organization, 22000 for a reversed range and 22008 for an infinite bound. All are refusals and map to `LEAVE_FAILED`. Recorded so later reviews read the codes the tests assert.
+  evidence: Raised by the 5.1b review (2026-10-01). The matrix sits in the approved frozen block; the behaviour meets its intent (refused).
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-1b-leave-record.md`
+  summary: `members_delete_by_own_active_admin` still allows a direct API delete of a member. Once the member has a leave record (live or removed), it fails with 23503, because `leave_records`' member key does not cascade, by design. Any future member-deletion flow must handle or forbid this.
+  evidence: Found by the 5.1b review (2026-10-01). No current flow hard-deletes a member who has leave; deleting the whole organization still cascades (tested).
 

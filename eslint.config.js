@@ -125,6 +125,13 @@ export const FEATURE_PUBLIC = {
   hours: [
     'services/my-hours', // pages
   ],
+  // Story 5.1b: `services/leave-write` has no outside consumer in
+  // `apps/web/src` yet; story 5.1c's leave form lists it here when a page
+  // first imports it. The root database test `test/rls-isolation.test.ts`
+  // imports `leave-write.ts` directly, to drive `recordLeave` over real
+  // PostgREST: a test-only consumer outside `apps/web/src`, which this rule
+  // does not govern and which does not make the module public.
+  leave: [],
   members: [
     'services/list', // hour-bands, shift-types, teams, pages
     'utils/position', // calendar, teams

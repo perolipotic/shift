@@ -790,7 +790,8 @@ describe('every organization table carries row level security, and only its revi
               'organizations', 'members', 'member_status_versions', 'teams',
               'team_membership_versions', 'hour_bands', 'shift_types',
               'shift_type_versions', 'rotation_patterns', 'rotation_steps',
-              'rotation_assignments', 'shift_type_overrides', 'roster_overrides'
+              'rotation_assignments', 'shift_type_overrides', 'roster_overrides',
+              'leave_records'
             )
           order by relname`,
       );
@@ -801,9 +802,11 @@ describe('every organization table carries row level security, and only its revi
       // membership. STORY 2.1a adds the hour bands, STORY 2.2a the shift
       // types and their versioned times, and STORY 2.3a the rotation: its
       // patterns, their steps and the versioned team assignments. STORY 3.5a
-      // adds the shift-type overrides, and STORY 3.6a the roster overrides.
+      // adds the shift-type overrides, STORY 3.6a the roster overrides, and
+      // STORY 5.1b the leave records.
       expect(rows.map((row) => row.relname)).toEqual([
         'hour_bands',
+        'leave_records',
         'member_status_versions',
         'members',
         'organizations',
@@ -1412,6 +1415,67 @@ describe('every organization table carries row level security, and only its revi
           `one ${column} may be named twice on one live shift`,
         ).toBe(true);
       }
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('holds no privilege on leave_records but read and a three-column insert, and never update or delete (story 5.1b)', async () => {
+    // As 3.6a's: `authenticated` reads (narrowed by the policy to an active
+    // admin's organization or a member's own rows) and inserts the three
+    // facts; no session updates or deletes one, names its attribution or its
+    // removal, or holds anything as `anon`.
+    const client = await connect();
+    try {
+      const held = await heldPrivileges(client, 'leave_records', [
+        'organization_id',
+        'id',
+        'member_id',
+        'during',
+        'created_by',
+        'created_at',
+        'removed_by',
+        'removed_at',
+      ]);
+      expect(held.tables).toEqual(['authenticated:SELECT']);
+      expect(held.columns, 'the writable leave record columns changed, or anon holds one').toEqual([
+        'authenticated:INSERT:during',
+        'authenticated:INSERT:member_id',
+        'authenticated:INSERT:organization_id',
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('keys a leave record to its tenant\'s member, refuses a live overlap by exclusion, and cascades from the organization alone (story 5.1b)', async () => {
+    const client = await connect();
+    try {
+      const { rows: keys } = await client.query<{ definition: string }>(
+        `select pg_get_constraintdef(oid) as definition
+           from pg_constraint
+          where contype in ('f', 'x') and conrelid = 'public.leave_records'::regclass`,
+      );
+      expect(keys.map((row) => row.definition).sort()).toEqual([
+        'EXCLUDE USING gist (member_id WITH =, during WITH &&) WHERE ((removed_at IS NULL))',
+        'FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE',
+        'FOREIGN KEY (organization_id, member_id) REFERENCES members(organization_id, id)',
+      ]);
+      const { rows: indexes } = await client.query<{ indexdef: string }>(
+        `select indexdef from pg_indexes where schemaname = 'public' and tablename = 'leave_records'`,
+      );
+      expect(
+        indexes.some((row) => /\(organization_id\)$/.test(row.indexdef)),
+        'no index on leave_records leads with organization_id alone',
+      ).toBe(true);
+      expect(
+        indexes.some((row) => /\(organization_id, member_id\)$/.test(row.indexdef)),
+        'no index on leave_records serves one member\'s records',
+      ).toBe(true);
+      const { rows: triggers } = await client.query<{ tgname: string }>(
+        `select tgname from pg_trigger where tgrelid = 'public.leave_records'::regclass and not tgisinternal`,
+      );
+      expect(triggers, 'story 5.1b takes no trigger').toEqual([]);
     } finally {
       await client.end();
     }
