@@ -42,6 +42,8 @@ This gives 7 unresolved conflicts (6 upcoming, 1 past), and every file uses the 
 
 ## Rule changes that need human approval
 
+> **Approved 2026-10-02 by the human: all 27 decisions below, as proposed.** New capabilities (12b first-password sign-in, 17 hours explanation drawer, 18 admin leave overview, 20 resolved-conflicts history, 23 member directory by team) become their own backlog stories. Binding docs (DESIGN.md, EXPERIENCE.md, UX-DR) change when those stories land, via `bmad-correct-course`.
+
 Each item changes a rule in DESIGN.md, EXPERIENCE.md, epics.md (UX-DR or stories) or the IA.
 Treat them as recommendations, and implement none until a person approves it.
 
