@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 2026-10-01
+last_updated: 10-01-2026 09:25
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -488,7 +488,7 @@ development_status:
   4-2-an-admin-sees-hours-for-everyone-and-can-explain-any-figure: done
   # Added 2026-09-26 by sprint change (sprint-change-proposal-2026-09-26-hours-export.md).
   4-3-an-admin-exports-the-month-s-hours-to-excel: done
-  epic-4-retrospective: optional
+  epic-4-retrospective: done
 
   epic-5: backlog
   5-1-an-admin-records-leave-and-sees-what-it-costs-first: backlog
@@ -503,3 +503,52 @@ development_status:
   6-2-a-24-hour-duty-reads-as-one-duty-not-two-unrelated-shifts: backlog
   6-3-an-admin-opens-the-app-and-sees-what-needs-them: backlog
   epic-6-retrospective: optional
+action_items:
+  - id: "epic-4-retro-item-1-fix-c1-a-sati-name-for-a-member-no-longe"
+    epic: 4
+    action: "Fix C1: a Sati name for a member no longer active today still opens their
+      calendar month; unit + e2e case for a deactivated member"
+    owner: "Dev (bmad-build)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-10-01.md"
+  - id: "epic-4-retro-item-2-fix-r2-leave-figure-renders-empty-dash-o"
+    epic: 4
+    action: "Fix R2: leave figure renders empty (dash on screen, empty xlsx cell)
+      until Epic 5, filling with no further change"
+    owner: "Dev (bmad-build)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-10-01.md"
+  - id: "epic-4-retro-item-3-c2-3-6b-put-on-form-warns-does-not-block"
+    epic: 4
+    action: "C2: 3.6b put-on form warns (does not block) when the member already works
+      an overlapping window with their own team"
+    owner: "Dev (bmad-build)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-10-01.md"
+  - id: "epic-4-retro-item-4-carry-r1-into-epic-5-deferred-work-entry"
+    epic: 4
+    action: "Carry R1 into Epic 5: deferred-work entry naming MemberHours, OrganizationHoursRow
+      and hoursExportOf as surfaces 5.3/5.4 must give the unresolved-conflict state"
+    owner: "Perolipotic"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-10-01.md"
+  - id: "epic-4-retro-item-5-process-l1-story-specs-carry-an-epic-ac"
+    epic: 4
+    action: "Process L1: story specs carry an Epic AC deviations list; deferrals go
+      to deferred-work; review checks spec against epic"
+    owner: "Perolipotic (bmad-customize)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-10-01.md"
+  - id: "epic-4-retro-item-6-record-hours-feature-cleanups-d1-d3-p1-p"
+    epic: 4
+    action: "Record hours-feature cleanups D1-D3, P1, P2, C3-C5, C8 as one deferred-work
+      entry"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-10-01.md"
+  - id: "epic-4-retro-item-7-mark-epic-2-epic-3-epic-4-done-in-sprint"
+    epic: 4
+    action: "Mark epic-2, epic-3, epic-4 done in sprint-status"
+    owner: "Perolipotic (bmad-sprint-planning)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-10-01.md"
