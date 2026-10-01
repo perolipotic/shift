@@ -143,6 +143,7 @@ A Member can authenticate with email and password, and the system resolves their
 - A valid credential pair returns a session scoped to exactly one Organization and one Role.
 - An authenticated request for a record belonging to another Organization fails at the data layer, not only in application code (DI-9).
 - Every surface other than sign-in and password reset refuses an unauthenticated request.
+- Every surface other than setting a new password refuses a session whose password was issued or reset by an Admin and not yet replaced by the Member (FR-3a; changed 2026-10-02, sprint-change-proposal-2026-10-02-ux-redesign).
 
 #### FR-2: Operator provisions an Organization
 The platform operator can create an Organization together with its first Admin.
@@ -160,6 +161,15 @@ An Admin can create a Member account with credentials, or send an email invitati
 - A usable Member account can be created with no email address present.
 - An invited Member sets their own password before first access.
 - A Member created by an Admin belongs to that Admin's Organization and no other.
+
+#### FR-3a: First sign-in sets the password (added 2026-10-02, sprint-change-proposal-2026-10-02-ux-redesign)
+A Member whose password was issued or reset by an Admin sets their own password before any surface opens.
+
+**Consequences (testable):**
+- After signing in with an Admin-issued or Admin-reset password, the Member reaches only the set-password step; every other surface is refused until a new password is saved (FR-1).
+- The Admin-issued password is four words, shown to the Admin once.
+- Saving the new password lets the Member continue to their landing surface without signing in again.
+- An Admin reset (FR-4) puts the Member back under this rule.
 
 #### FR-4: Password reset
 A Member can reset their own password; an Admin can reset any Member's password within their Organization.
@@ -270,6 +280,7 @@ An Admin can search, sort, and filter the Member list.
 A Member Role account can view the Organization's Members and their Teams.
 
 **Consequences (testable):**
+- The directory is grouped by Team and reachable from *Više*, not only from inside a Team's detail (changed 2026-10-02, sprint-change-proposal-2026-10-02-ux-redesign).
 - The directory shows name and Team — and, where the Organization uses them, Fire Rank and Team Position; it does not expose Leave Allowance, Leave Balance, Leave Records, hours, or contact details of other Members. `[ASSUMPTION: other Members' leave and hours are private to Admins; confirm — a volunteer organization may prefer full transparency.]`
 - No write action is reachable from the directory for a Member Role account.
 
@@ -502,6 +513,7 @@ The Calendar visually distinguishes shifts in Conflict and Uncovered Shifts.
 
 **Consequences (testable):**
 - An unresolved Conflict is visible to an Admin on the Calendar without opening any detail view (DI-4).
+- This applies to an Admin. A Member Role account sees no Conflict marks; their own schedule shows their own leave only (changed 2026-10-02, sprint-change-proposal-2026-10-02-ux-redesign).
 - Distinction does not rely on color alone.
 
 #### FR-39: Shift types are visually distinguishable
@@ -556,6 +568,15 @@ An Admin can export the Organization hours for a selected period to an Excel fil
 - A shift in unresolved Conflict is marked in the file as it is on screen (FR-41), so no exported total is silently wrong.
 - Only an Admin can export. A Member cannot export anyone's hours, their own included, in MVP.
 
+#### FR-42b: An hours figure explains itself (added 2026-10-02, sprint-change-proposal-2026-10-02-ux-redesign)
+Any figure on the Member or Organization hours view can be opened to show the Scheduled Shifts and Hour Bands that compose it. Realizes UJ-4.
+
+**Consequences (testable):**
+- The explanation lists every shift counted in the figure, with its date, Shift Type, Band Hours, and whether it came from the Rotation, an Override, or leave.
+- The equation is computed by the domain as codes and operands, never as prose, and sums exactly to the figure it explains (DI-7).
+- The explained figure and the figure on the view are always equal (FR-41, FR-42).
+- A shift in unresolved Conflict is marked in the explanation as it is on the view (FR-41).
+
 **Out of Scope for MVP:** export as CSV or PDF, and any export other than FR-42a; pay rates and premiums; overtime rules; breaks within a shift; actual attendance as distinct from scheduled; period locking.
 
 ### 5.11 Annual Leave
@@ -590,6 +611,14 @@ A Member can see their Leave Allowance, Leave Days used, and Leave Balance for t
 - Deleting a Leave Record restores the consumed Balance.
 - Balance is computed only from Leave Days inside the current Leave Year (FR-10).
 
+#### FR-45a: Admin leave overview (added 2026-10-02, sprint-change-proposal-2026-10-02-ux-redesign)
+An Admin can see every Member's Leave Allowance, Leave Days used, and Leave Balance for the Leave Year on one surface. Realizes UJ-3.
+
+**Consequences (testable):**
+- Each Member's three figures equal that Member's own view exactly (FR-45).
+- Allowance minus used equals Balance on every row.
+- A Member Role account cannot reach the overview or any other Member's figures (FR-5, FR-16).
+
 #### FR-46: Amend or delete leave
 An Admin can change a Leave Record's dates or delete it.
 
@@ -622,6 +651,14 @@ An Admin can see all unresolved Conflicts for their Organization, soonest first.
 - Each entry shows date, Team, Shift Type, Member, and the Leave Record that caused it.
 - Conflicts for dates already past remain listed and are distinguishable from upcoming ones.
 - The count matches the Admin dashboard figure exactly (FR-53).
+
+#### FR-48a: Resolved conflicts stay readable (added 2026-10-02, sprint-change-proposal-2026-10-02-ux-redesign)
+An Admin can see the Organization's resolved Conflicts, each with its resolution, the acting Admin, and the timestamp.
+
+**Consequences (testable):**
+- Each entry shows date, Team, Shift Type, Member, the resolution chosen, who chose it, and when (DI-11).
+- The list is a read of stored Conflict Resolutions only; it adds no new record and is not an audit-log interface (§7.2).
+- A resolved Conflict never reappears in the unresolved list (FR-48).
 
 #### FR-49: Resolve as Uncovered
 An Admin can resolve a Conflict by accepting the shift as an Uncovered Shift.
@@ -704,7 +741,7 @@ Grouped with reasons where the reason matters.
 - Export beyond FR-42a's Excel file of Organization hours (CSV, PDF, payroll formats, other surfaces); advanced reporting; analytics; team statistics.
 - Minimum-staffing rules; qualification constraints; statutory rest-period enforcement.
 - Weekly and daily Calendar views; drag-and-drop editing; print; iCal feeds.
-- Audit-log user interface. The data model supports auditability (DI-11); no screen exposes it.
+- Audit-log user interface. The data model supports auditability (DI-11); no screen exposes it. **Carve-out:** the resolved-Conflicts list of FR-48a is not an audit-log interface. It reads only the stored Conflict Resolutions, and exposes no other change history (added 2026-10-02, sprint-change-proposal-2026-10-02-ux-redesign).
 - Multiple Teams per Member; multiple Organizations per user.
 
 **Deferred because it is a go-to-market decision, not a product one:**
@@ -742,7 +779,7 @@ Grouped with reasons where the reason matters.
 - **NFR-12.** The application is a responsive web application supporting mobile, tablet, and desktop. No native application in MVP.
 - **NFR-13.** Members are assumed to be primarily on phones. Their priority order on small viewports is: today's shift, next shift, calendar, hours, leave.
 - **NFR-14.** Admins are assumed to be primarily on desktop or tablet, with every administrative task also completable on mobile — degraded in comfort, never in capability.
-- **NFR-15.** No screen requires horizontal scrolling at a phone-width viewport. Wide content — the Calendar, the member list, the hours table — scrolls within its own container.
+- **NFR-15.** No screen requires horizontal scrolling at a phone-width viewport. A table — the member list, the hours table — becomes stacked rows below 640 px, and the Calendar grid still scrolls within its own container (changed 2026-10-02, sprint-change-proposal-2026-10-02-ux-redesign).
 
 ### 8.4 Domain Logic Isolation
 

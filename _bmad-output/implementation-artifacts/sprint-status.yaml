@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 10-02-2026 00:05
+last_updated: 10-02-2026 00:14
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -513,6 +513,29 @@ development_status:
   6-2-a-24-hour-duty-reads-as-one-duty-not-two-unrelated-shifts: backlog
   6-3-an-admin-opens-the-app-and-sees-what-needs-them: backlog
   epic-6-retrospective: optional
+
+  # Epic 7 added by sprint-change-proposal-2026-10-02-ux-redesign.md (approved 2026-10-02).
+  # Order: 7.1-7.4 (foundations) ship before Epic 6; 7.5-7.18 follow Epic 6, by dependency.
+  epic-7: backlog
+  7-1-dark-slot-tokens-are-re-tuned-so-noc-never-reads-as-a-free-d: backlog
+  7-2-every-number-is-set-in-dm-sans-tabular-figures: backlog
+  7-3-the-phone-bar-has-four-tabs-and-vise: backlog
+  7-4-kalendar-and-sati-share-one-month-toolbar: backlog
+  7-5-filters-are-chips-that-say-what-is-shown-and-clear-in-one-ac: backlog
+  7-6-tables-become-stacked-rows-on-a-phone: backlog
+  7-7-sign-in-is-one-form: backlog
+  7-8-a-member-s-first-sign-in-makes-them-set-their-own-password: backlog
+  7-9-day-detail-changes-open-in-their-own-dialogs: backlog
+  7-10-a-member-s-own-schedule-shows-their-leave-and-no-conflict-m: backlog
+  7-11-the-member-page-shows-facts-and-each-change-opens-one-dialo: backlog
+  7-12-the-leave-dialog-shows-what-a-record-costs-and-creates-befo: backlog
+  7-13-ljudi-shows-each-member-s-status-and-adds-a-member-in-a-dia: backlog
+  7-14-an-hours-figure-explains-itself: backlog
+  7-15-an-admin-sees-everyone-s-leave-in-one-overview: backlog
+  7-16-resolved-conflicts-stay-readable: backlog
+  7-17-members-find-the-directory-by-team-in-vise: backlog
+  7-18-organization-settings-show-facts-and-change-through-dialogs: backlog
+  epic-7-retrospective: optional
 action_items:
   - id: "epic-4-retro-item-1-fix-c1-a-sati-name-for-a-member-no-longe"
     epic: 4
