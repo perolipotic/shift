@@ -191,11 +191,11 @@ Capabilities are the functional requirements (see basis note above). Every capab
 
 **Non-functional allocation.** Q1–Q3 and Q6 land in Epic 1 and are re-asserted by every epic that adds a table. Q7–Q10 land in Epic 2 with the domain package and both fixtures, and each later epic extends the suite. Q11–Q12 land in Epic 3 with the first attributable writes. Q13–Q16 and Q21–Q23 are definition-of-done on every epic with a surface. Q17–Q18 are proven in Epic 3, Q19 in Epic 6, Q20 in Epic 1. The localization contract L1–L8 is definition-of-done everywhere.
 
-**UX design requirement allocation.** UX-DR1–2, 4–5, 31–32, 34, 40 land in Epic 1 — the theme layer and the i18n layer are built once, first. UX-DR3, 6, 13–16, 23, 35, 43 land in Epic 2, including the ramp-slot contrast verification, which belongs where shift types are first assigned to slots. UX-DR7–8, 12, 18–21, 24, 26, 30, 33, 36–39, 41–42 land in Epic 3 with the calendar, skeleton loading included. UX-DR17, 29, 44 land in Epic 4. UX-DR10–11, 22, 25, 27–28 land in Epic 5. UX-DR9 (duty-block) lands in Epic 6.
+**UX design requirement allocation.** UX-DR1–2, 4–5, 31–32, 34, 40 land in Epic 1 — the theme layer and the i18n layer are built once, first. UX-DR3, 6, 13–16, 23, 35, 43 land in Epic 2, including the ramp-slot contrast verification, which belongs where shift types are first assigned to slots. UX-DR7–8, 12, 18–21, 24, 26, 30, 33, 36–39, 41–42 land in Epic 3 with the calendar, skeleton loading included. UX-DR17, 29, 44 land in Epic 4. UX-DR10–11, 22, 25, 27–28 land in Epic 5. UX-DR9 (duty-block) lands in Epic 6. Epic 7 (sprint change 2026-10-02) revises UX-DR1, 2, 10, 16–17, 19–20, 23, 25, 29–34, 36 and 40 on shipped surfaces; each line is rewritten by the story that ships its change, not up front.
 
 ## Epic List
 
-Six epics. Each stands alone and enables the next without requiring it.
+Seven epics. Each stands alone and enables the next without requiring it. Epic 7 was added on 2026-10-02 by `sprint-change-proposal-2026-10-02-ux-redesign.md`; its four foundation stories (7.1–7.4) ship before Epic 6.
 
 ### Epic 1: An organization exists, and its people can sign in
 
@@ -243,7 +243,15 @@ A member opens the app and knows whether they are working today — stated in wo
 
 **Capabilities covered:** CAP-17
 **Standalone:** every figure it shows already exists; this epic is where they must all agree.
-**Implementation notes:** where Q19 is proven — every dashboard figure equals its detail view, guaranteed by AD-13 rather than by checking. Carries `duty-block` (UX-DR9), the subtlest component in the set: it presents a 24-hour duty spanning two dates as one card while the data stays two scheduled shifts on two dates.
+**Implementation notes:** where Q19 is proven — every dashboard figure equals its detail view, guaranteed by AD-13 rather than by checking. Carries `duty-block` (UX-DR9), the subtlest component in the set: it presents a 24-hour duty spanning two dates as one card while the data stays two scheduled shifts on two dates. Built on Epic 7's foundations (7.1–7.4: dark tokens, numerals, phone navigation, month toolbar), which ship first (sprint change 2026-10-02).
+
+### Epic 7: The app is calm on every screen (added 2026-10-02, sprint change)
+
+Every screen reads calm, minimal and simple on a phone and a desktop, in both themes. A pilot user finds each answer in one glance and makes each change behind one Save. The phone tab bar fits, a night shift never reads as a free day in the dark theme, tables do not scroll sideways on a phone, and Kalendar and Sati share one toolbar.
+
+**Capabilities covered:** none exclusively — it reworks the surfaces of CAP-1, CAP-4, CAP-5, CAP-13, CAP-14, CAP-15 and CAP-16, and adds PRD FR-3a, FR-42b, FR-45a and FR-48a
+**Standalone:** every story improves a surface that already works; no story is required for any earlier epic to be correct.
+**Implementation notes:** source is `sprint-change-proposal-2026-10-02-ux-redesign.md` and the 27 approved decisions in `ux-designs/ux-shift-2026-10-01-redesign/README.md`. Foundations 7.1–7.4 ship before Epic 6; 7.5–7.18 follow Epic 6, ordered by dependency. Each story updates the DESIGN.md, EXPERIENCE.md and UX-DR lines it changes in the same PR, so no binding doc describes unbuilt UI.
 
 
 ---
@@ -1040,6 +1048,25 @@ So that I am choosing an outcome rather than clearing a list.
 
 **Note (sprint change 2026-09-25):** for the replace-the-member outcome, where the organization uses fire ranks, candidates may be shown with rank and position — information only; nothing blocks, warns or suggests from them (FR-18a, §7.2).
 
+**Given** the replace-the-member outcome (sprint change 2026-10-02)
+**When** its candidates are listed
+**Then** they keep rank and position as above (FR-18a)
+**And** candidates are grouped `slobodan` / `radi taj dan · 24 h bez pauze`, informing only and never blocking (FR-50, FR-18a)
+**And** the grouping is one helper, reused by story 7.9's roster dialog
+
+**Given** a decision is recorded (sprint change 2026-10-02)
+**When** the screen returns
+**Then** a `Notice role="status"` line confirms it and is gone on navigation; it is not a toast and persists nowhere (UX-DR29)
+
+**Given** the amend-leave option (sprint change 2026-10-02)
+**When** it is shown
+**Then** it carries the computed start date that would clear this conflict
+**And** that date is unselected and is not labelled recommended (UX-DR10)
+
+**Given** the resolution screen (sprint change 2026-10-02)
+**When** the admin presses ‹ or ›
+**Then** it moves to the adjacent unresolved conflict in queue order
+
 ### Story 5.5: A configuration change cannot quietly erase a pending decision
 
 As an admin,
@@ -1050,8 +1077,12 @@ So that a decision I still owed someone is not silently taken off my list.
 
 **Given** unresolved conflicts and a rotation, roster or membership change that would remove their cause
 **When** the change is saved
-**Then** the unresolved collision set is computed before and after, and every collision the change would erase is surfaced for explicit confirm, amend or discard (AD-5, CAP-16)
+**Then** the unresolved collision set is computed before and after, and every collision the change would erase is surfaced in the rotation save confirmation dialog for explicit confirm, amend or discard; rotation warnings in the same dialog still do not block (AD-5, CAP-16, UX-DR23; changed by sprint change 2026-10-02)
 **And** the change is not applied until they are dispositioned
+
+**Given** rotation settings with unsaved changes (sprint change 2026-10-02)
+**When** the admin scrolls the page
+**Then** a sticky save bar keeps `Spremi` and `Odbaci promjene` in reach until the changes are saved or discarded
 
 **Given** that same diff
 **When** it runs
@@ -1080,6 +1111,8 @@ So that I can check between other tasks, in a vehicle, before bed.
 **Given** a member who is not working today
 **When** their dashboard opens
 **Then** it says so in words — `Danas ne radiš` — rather than showing an empty area to interpret (CAP-17, UX-DR20, UX-DR34)
+**And** Danas states each case in words: on shift today (type and times), free today (`Danas ne radiš`), on a 24 h duty (as one duty, per 6.2) and on leave today (sprint change 2026-10-02)
+**And** while loading it shows a skeleton, never a spinner (UX-DR21)
 
 **Given** a member who has a next working shift
 **When** their dashboard opens
@@ -1103,7 +1136,7 @@ So that finishing at 07:00 does not look like two separate shifts with a gap bet
 
 **Given** consecutive working shifts with no non-working interval between them
 **When** the member dashboard renders
-**Then** they are presented as one duty: the end time as the headline, the span and total hours as metadata, a progress bar, and one leg per constituent shift marked done or in progress (UX-DR9)
+**Then** they are presented as one duty: the end time as the headline, the span and total hours as metadata, a progress bar, and one leg per constituent shift marked done or in progress, and, where the leg is a replacement, the name of the member replaced (UX-DR9; changed by sprint change 2026-10-02)
 
 **Given** that same duty
 **When** the underlying data is inspected
@@ -1123,7 +1156,7 @@ So that I can configure once and then simply be told when something needs me.
 
 **Given** an organization with any number of teams
 **When** an admin's dashboard opens
-**Then** it shows today's coverage across all of them (CAP-17)
+**Then** the unresolved-conflict card (*Treba tebe*) renders first, showing `0 neriješenih konflikata` at zero and equal to the queue; today's coverage across all of them and the week follow (CAP-17; changed by sprint change 2026-10-02)
 
 **Given** an unresolved conflict count
 **When** the dashboard renders
@@ -1133,3 +1166,474 @@ So that I can configure once and then simply be told when something needs me.
 **Given** the dashboard
 **When** it is operated by keyboard and by assistive technology
 **Then** both are supported, as they are for the calendar and the conflict queue (Q22, UX-DR38)
+
+---
+
+## Epic 7: The app is calm on every screen
+
+Every screen reads calm, minimal and simple on a phone and a desktop, in both themes. A pilot user finds each answer in one glance and makes each change behind one Save.
+
+Added 2026-10-02 by `sprint-change-proposal-2026-10-02-ux-redesign.md`, from the 27 decisions approved that day in `ux-designs/ux-shift-2026-10-01-redesign/README.md` (mockups in its `mockups/` folder). Foundations 7.1–7.4 ship before Epic 6; 7.5–7.18 follow Epic 6, ordered by dependency. No completed story is rolled back: this epic rewrites the surfaces of 1.3/1.3b, 1.4, 1.8, 2.4, 3.3–3.6, 4.1b, 4.2 and 5.1/5.2 through new stories, and their original criteria stay in history.
+
+**Capabilities:** CAP-1, CAP-4, CAP-5, CAP-13, CAP-14, CAP-15, CAP-16 (surfaces only), PRD FR-3a, FR-42b, FR-45a, FR-48a · **Governed by:** AD-8, AD-13, AD-16 · **Proves:** Q4, Q13–Q16, Q19, Q21–Q23 · **UX:** UX-DR1–2, 10, 16–17, 19–21, 23, 25, 29–34, 36, 40
+
+### Story 7.1: Dark slot tokens are re-tuned so Noć never reads as a free day
+
+As a member using the dark theme,
+I want a night shift to look different from a free day,
+So that I do not misread my schedule at a glance.
+
+**Depends on:** none (foundation; ships before Epic 6).
+
+**Acceptance Criteria:**
+
+**Given** the dark theme
+**When** the six working-shift slot values are re-tuned and `shift-nonworking-border` is added
+**Then** the brand delta has 24 names, each defined in both light and dark (UX-DR1)
+**And** `theme-fidelity` pins the new values
+
+**Given** a *Noć* cell next to a non-working cell in the dark theme
+**When** the calendar renders
+**Then** they are told apart by hue, the non-working border and the always-visible label, not by luminance alone, and their contrast is re-measured by `theme-contrast` (UX-DR3, Q21)
+
+**Given** any slot fill in either theme
+**When** its label text is measured
+**Then** it meets WCAG 2.1 AA contrast (Q23)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (DESIGN.md §Colors, UX-DR1)
+
+### Story 7.2: Every number is set in DM Sans tabular figures
+
+As a member,
+I want every number to be easy to read,
+So that I never misread "17" as "ı7".
+
+**Depends on:** none (foundation; ships before Epic 6).
+
+**Acceptance Criteria:**
+
+**Given** any rendered number — a count, hours, a date, a time, a balance
+**When** it is displayed, including large stat numerals
+**Then** it is set in DM Sans with tabular figures
+**And** Syne is used for words and headings only
+
+**Given** columns of numbers in a table or a stat row
+**When** they render
+**Then** their digits align (UX-DR40)
+
+**Given** the DM Sans face
+**When** its coverage is checked
+**Then** it renders **č ć ž š đ Č Ć Ž Đ Š** without falling back mid-word (UX-DR40)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (DESIGN.md §Typography and §Components, UX-DR40)
+
+### Story 7.3: The phone bar has four tabs and Više
+
+As a member or an admin on a phone,
+I want every destination reachable without the tab bar scrolling sideways,
+So that the tab I am on is always visible.
+
+**Depends on:** none (foundation; ships before Epic 6).
+
+**Acceptance Criteria:**
+
+**Given** a phone-width viewport (390 px)
+**When** a member signs in
+**Then** the bottom bar shows four fixed tabs plus *Više*, with no horizontal overflow, and the active tab is always visible (Q16)
+
+**Given** an admin on a phone
+**When** the bar renders
+**Then** it shows Danas, Kalendar, Raspored and Ljudi plus *Više*; Sati, Godišnji and the configuration groups sit in the *Više* sheet (UX-DR31, UX-DR32)
+
+**Given** the theme control and Odjava
+**When** a person looks for them
+**Then** they are in *Više* on a phone and in the user menu on desktop, and the theme keeps its three options Sustav / Svijetla / Tamna (UX-DR2)
+**And** *Više* opens as a sheet that is keyboard operable and labelled for assistive technology (Q22)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §Responsive & Platform and §IA, UX-DR2, 31, 32, story 1.8's reach)
+
+### Story 7.4: Kalendar and Sati share one month toolbar
+
+As a member or an admin,
+I want one way to change the month on every screen that has one,
+So that I do not learn two controls for the same thing.
+
+**Depends on:** none (foundation; ships before Epic 6).
+
+**Acceptance Criteria:**
+
+**Given** Kalendar or Sati
+**When** it renders
+**Then** the month control is one shared toolbar: ‹ month ▾ ›, where the month opens a month-grid popover
+
+**Given** the toolbar has focus
+**When** the person presses PgUp or PgDn, or ‹ or ›
+**Then** the month moves back or forward by one, symmetric and unbounded in both directions (UX-DR30)
+
+**Given** the current month is shown
+**When** the toolbar renders
+**Then** `Ovaj mjesec` is a label, not a disabled button; on any other month it is a button that returns to the current month
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §Interaction Primitives, UX-DR30)
+
+### Story 7.5: Filters are chips that say what is shown and clear in one action
+
+As a member or an admin,
+I want to see at once what a filter is hiding and clear it in one tap,
+So that an empty result never looks like missing data.
+
+**Depends on:** 7.4.
+
+**Acceptance Criteria:**
+
+**Given** Kalendar or Sati with a filter applied
+**When** the toolbar renders
+**Then** each active filter is a chip (Smjena, Osoba) with ✕, a summary line states what is shown, and one `Poništi filtre` clears them all without leaving the screen (UX-DR19, FR-36)
+**And** in Kalendar picking a person still replaces the team (3.3b), while in Sati the two filters combine
+
+**Given** a phone-width viewport
+**When** the person opens filters
+**Then** they open in a sheet, and the active chips stay visible above the content
+
+**Given** an old Sati URL carrying `?tim=`
+**When** it is opened
+**Then** it redirects to the same view under `?smjena=`
+
+**Given** a filter that matches nothing
+**When** the result renders
+**Then** the copy states what is true — for example `Luka Knežević nije u Smjeni B u listopadu 2026.` (UX-DR20, UX-DR34)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §Interaction Primitives, UX-DR19, 20, 34, 36)
+
+### Story 7.6: Tables become stacked rows on a phone
+
+As a member or an admin on a phone,
+I want a table to read as a list of rows,
+So that I never scroll sideways to find a number.
+
+**Depends on:** 7.2.
+
+**Acceptance Criteria:**
+
+**Given** the Sati, Ljudi and shift-types tables
+**When** the viewport is below 640 px
+**Then** each row renders as a stacked card with its labels, and no table scrolls sideways (NFR-15, Q16)
+
+**Given** a viewport of 640 px or wider
+**When** the same tables render
+**Then** they stay tables with tabular numerals, sortable as before (UX-DR17)
+
+**Given** the stacked rows
+**When** they are read by assistive technology
+**Then** each value keeps its column label (Q22)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (DESIGN.md §Layout, EXPERIENCE.md §Responsive, UX-DR17)
+
+### Story 7.7: Sign-in is one form
+
+As a member,
+I want to sign in with one form,
+So that getting in takes one step, not two.
+
+**Depends on:** PRD edit (FR-1, sprint change 2026-10-02).
+
+**Acceptance Criteria:**
+
+**Given** the sign-in screen
+**When** it opens
+**Then** it is one form — organization, username, password — with one `Prijava` button and a show/hide toggle on the password
+
+**Given** a URL carrying the organization (`/prijava/dvd-demo`)
+**When** the screen opens
+**Then** the organization shows as the slug only, read-only, with `Promijeni`; no organization name or logo is looked up or shown before sign-in (Q4, NFR-4, 1.3b)
+**And** without that URL the field is prefilled with the last organization used on this device, and is empty when storage is unavailable
+
+**Given** a wrong organization, a wrong username or a wrong password
+**When** sign-in fails
+**Then** the same message shows for all three — `Organizacija, korisničko ime ili lozinka nisu točni.` — so the form reveals no organization or username (CAP-1)
+**And** `Zaboravljena lozinka?` opens in place and says the admin sets the password
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §Key Flows, sign-in)
+
+### Story 7.8: A member's first sign-in makes them set their own password
+
+As a member,
+I want to choose my own password the first time I sign in,
+So that the password my admin read out to me does not stay my password.
+
+**Depends on:** 7.7, PRD FR-3a, AD-16 edit (applied with this story).
+
+**Acceptance Criteria:**
+
+**Given** an admin creates a member or resets their password
+**When** the admin-auth function runs `createUser` or `resetPassword`
+**Then** it sets `app_metadata.must_set_password` on that account (AD-16)
+**And** the admin's dialog shows the new four-word password once, with `Kopiraj` (FR-3a)
+
+**Given** a session whose account carries `app_metadata.must_set_password`
+**When** any route other than setting a password is requested
+**Then** a route guard keeps it closed and shows the set-password step (FR-1, FR-3a)
+
+**Given** the member saves a new password
+**When** `auth.updateUser({ password })` succeeds
+**Then** the one added function operation clears `app_metadata.must_set_password` for the calling user only, and the member continues to their landing surface
+**And** no caller can clear the flag for another account
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §Key Flows, sign-in), with ARCHITECTURE-SPINE.md AD-16 and the claim-code deferred note
+
+### Story 7.9: Day detail changes open in their own dialogs
+
+As an admin,
+I want each change to a day to open its own small dialog,
+So that I see what will change before I save it.
+
+**Depends on:** 7.5, 5.4's candidate-grouping helper.
+
+**Acceptance Criteria:**
+
+**Given** day detail
+**When** it opens
+**Then** it is one readable dialog of facts — the conflict with `Riješi konflikt`, the roster as `Ime · čin · položaj`, and the changes — with no inline form
+
+**Given** `Promijeni sastav` or `Promijeni tip smjene`
+**When** the admin chooses it
+**Then** it opens its own dialog with one Save, showing a computed *Što se mijenja* before saving
+**And** replacement candidates are grouped by availability with 5.4's helper, informing only (FR-18a, FR-50)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §Component Patterns, UX-DR10, 23)
+
+### Story 7.10: A member's own schedule shows their leave and no conflict marks
+
+As a member,
+I want my own schedule to show my leave and nothing meant for the admin,
+So that I am not alarmed by a decision that is not mine to make.
+
+**Depends on:** PRD FR-38 edit (CAP-13 role qualifier).
+
+**Acceptance Criteria:**
+
+**Given** a member-role account in *Moj raspored*
+**When** they have leave in the month
+**Then** their leave dates show with the leave mark (UX-DR8)
+**And** no conflict mark (`⚠`) renders anywhere on their calendar (FR-38)
+
+**Given** an admin on the calendar
+**When** an unresolved conflict exists
+**Then** it is still visible without opening detail, unchanged from 5.3c (CAP-13)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §State Patterns)
+
+### Story 7.11: The member page shows facts and each change opens one dialog
+
+As an admin,
+I want a member's page to read as facts with one Save per change,
+So that a hurried click never moves someone to the wrong team.
+
+**Depends on:** none.
+
+**Acceptance Criteria:**
+
+**Given** a member's page
+**When** it opens
+**Then** it shows the person's facts under their name, with no stacked forms
+
+**Given** a change to role, team, allowance, rank or status
+**When** the admin chooses it
+**Then** it opens its own dialog with one Save
+**And** a team change starts empty, never preselecting a different team
+
+**Given** the allowance (*Dani godišnjeg*)
+**When** the page renders
+**Then** it sits in the leave section
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (DESIGN.md §Components, EXPERIENCE.md §Component Patterns and §IA)
+
+### Story 7.12: The leave dialog shows what a record costs and creates before saving
+
+As an admin,
+I want to see a leave record's cost, balance and conflicts before I save it,
+So that I know what I am agreeing to.
+
+**Depends on:** 7.11.
+
+**Acceptance Criteria:**
+
+**Given** the leave dialog on the member page
+**When** the admin enters a range
+**Then** it shows, before saving, the cost in leave days, the remaining balance and the conflicts the record will create, in neutral text (CAP-15, CAP-16)
+**And** the conflict preview is the domain collision function, never a second implementation (Q8)
+
+**Given** an amend
+**When** the range changes
+**Then** the dialog shows *bilo / sada* and which conflicts clear
+
+**Given** a removal
+**When** the admin chooses it
+**Then** one neutral confirmation asks it (UX-DR27)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §Component Patterns, UX-DR23)
+
+### Story 7.13: Ljudi shows each member's status and adds a member in a dialog
+
+As an admin,
+I want to filter people by status and add someone without leaving the list,
+So that the list answers who is active and adding a person is quick.
+
+**Depends on:** 7.6, 7.11.
+
+**Acceptance Criteria:**
+
+**Given** Ljudi
+**When** it renders
+**Then** it has a status filter chip and a status column that marks scheduled changes (FR-15)
+
+**Given** `Novi član`
+**When** the admin chooses it
+**Then** a short dialog creates the member and ends by showing the password once
+
+**Given** a deactivation
+**When** the admin chooses it
+**Then** one neutral question asks it, with a date and the consequence in numbers (UX-DR27)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (DESIGN.md §Components, EXPERIENCE.md §Component Patterns and §IA)
+
+### Story 7.14: An hours figure explains itself
+
+As an admin or a member,
+I want to open any hours figure and see what composes it,
+So that I can answer a question about a number without reconstructing it.
+
+**Depends on:** 7.6, PRD FR-42b.
+
+**Acceptance Criteria:**
+
+**Given** any figure on Sati
+**When** its ⓘ is chosen
+**Then** a drawer lists the shifts and bands that compose it — rotation, changes and leave — as an equation with dates (FR-42b)
+**And** the equation comes from `domain/hours` as codes and operands, and sums exactly to the figure (AD-8, DI-7)
+
+**Given** the organization hours table
+**When** it renders
+**Then** it has a footer total, and the export keeps a status line about the downloaded file (FR-42a)
+
+**Given** a member's own hours
+**When** the page opens
+**Then** its title is *Moji sati*
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §IA, UX-DR33)
+
+### Story 7.15: An admin sees everyone's leave in one overview
+
+As an admin,
+I want every member's allowance, days used and balance on one screen,
+So that I can see who still has leave without opening each person.
+
+**Depends on:** 7.6, PRD FR-45a.
+
+**Acceptance Criteria:**
+
+**Given** an admin on Godišnji
+**When** the overview opens
+**Then** every member appears with allowance, days used and balance for the leave year, and allowance minus used equals balance on every row (FR-45a)
+**And** each row equals that member's own view (Q19)
+
+**Given** a member-role account
+**When** it requests the overview
+**Then** it is refused, and the member sees only their own leave (FR-5, CAP-5)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §IA, UX-DR33)
+
+### Story 7.16: Resolved conflicts stay readable
+
+As an admin,
+I want to see conflicts already decided, and how,
+So that I can answer who decided what without asking around.
+
+**Depends on:** 5.4, PRD FR-48a and its §7.2 carve-out.
+
+**Acceptance Criteria:**
+
+**Given** Raspored
+**When** it opens
+**Then** it has *Neriješeni* and *Riješeni* tabs, and *Neriješeni* stays the default and keeps its count even at zero (UX-DR20, UX-DR25)
+
+**Given** the *Riješeni* tab
+**When** it renders
+**Then** each entry shows date, team, shift type, member, the resolution, the acting admin and the timestamp, read from `conflict_resolutions` only (FR-48a, Q11)
+**And** it offers no other change history, because it is not an audit-log UI (§7.2)
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §IA, UX-DR25, 33)
+
+### Story 7.17: Members find the directory by team in Više
+
+As a member,
+I want to see who is on each team from one place,
+So that I do not have to find a team first to see its people.
+
+**Depends on:** 7.3, PRD FR-16 edit (CAP-5).
+
+**Acceptance Criteria:**
+
+**Given** a member-role account
+**When** they open the directory from *Više*
+**Then** it lists members grouped by team, read-only (CAP-5, FR-16)
+**And** it shows name, team and, where used, rank and position — no allowance, balance, leave, hours or contact details
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (EXPERIENCE.md §IA, UX-DR33)
+
+### Story 7.18: Organization settings show facts and change through dialogs
+
+As an admin,
+I want organization settings to read as facts with a dialog per change,
+So that I change one thing at a time.
+
+**Depends on:** none.
+
+**Acceptance Criteria:**
+
+**Given** Organizacija
+**When** it opens
+**Then** it is a page of facts, each change opens its own dialog with one Save, and the accent picker uses named radio cards (UX-DR5)
+**And** the timezone is shown locked, and the page says why (FR-8)
+
+**Given** *Povijest rotacije*
+**When** the admin looks for it
+**Then** it sits behind a header button rather than on the page
+
+**Given** this story ships
+**When** it is merged
+**Then** the DESIGN.md / EXPERIENCE.md / UX-DR lines this story changes are updated in the same change (DESIGN.md §Components, EXPERIENCE.md §Component Patterns and §IA)
