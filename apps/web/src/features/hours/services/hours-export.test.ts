@@ -13,7 +13,8 @@ import {
   type HoursExport,
   type HoursExportCell,
 } from '@/features/hours/services/hours-export';
-import { hoursSearchOf, type HoursSearch } from '@/features/hours/services/my-hours';
+import { monthHeaderOf } from '@/features/calendar/utils/month';
+import { hoursSearchOf, myHoursViewOf, type HoursSearch } from '@/features/hours/services/my-hours';
 import { organizationHoursOf, type OrganizationHoursView } from '@/features/hours/services/organization-hours';
 import { HOURS_CELL_FORMAT, columnWidthsOf, sheetDataOf } from '@/features/hours/services/xlsx';
 import { initLocalization, t } from '@/lib/i18n';
@@ -101,13 +102,13 @@ function viewOf(snapshot: CalendarSnapshot, search: HoursSearch = { mjesec: MONT
 }
 
 function valueOf(cell: HoursExportCell | undefined): string | number {
-  if (cell === undefined) throw new Error('no cell');
+  if (cell === undefined || cell.kind === 'empty') throw new Error('no cell');
 
   return cell.value;
 }
 
 function numbersOf(row: readonly HoursExportCell[]): readonly number[] {
-  return row.filter((cell) => cell.kind === 'hours').map((cell) => cell.value as number);
+  return row.flatMap((cell) => (cell.kind === 'hours' ? [cell.value] : []));
 }
 
 afterEach(() => {
@@ -154,8 +155,10 @@ describe('the sheet', () => {
           value: row.hours.bands.find((one) => one.bandId === band.bandId)!.minutes / 1440,
         })),
         { kind: 'hours', value: row.hours.totalMinutes / 1440 },
-        { kind: 'hours', value: row.hours.leaveMinutes / 1440 },
+        // No leave before Epic 5: the cell is empty, as the screen's `—`.
+        { kind: 'empty' },
       ]);
+      expect(row.hours.leaveMinutes).toBe(0);
     });
   });
 
@@ -207,6 +210,24 @@ describe('the sheet', () => {
     expect(long.rows[0]!.at(-2)).toEqual({ kind: 'hours', value: 4.5 });
   });
 
+  it('leave: 0 is an empty cell, and a positive leave a [h]:mm duration with no further change', () => {
+    const view = viewOf(pilot);
+    const [first] = view.rows;
+    const withLeave = { ...first!.hours, leaveMinutes: 750 };
+    // The row's leave figure through the one rule that sets it, as the table's rows are built.
+    const leave = myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), withLeave).leave;
+    const some = hoursExportOf({ ...view, rows: [{ ...first!, hours: withLeave, leave }] }, pilot.organizationName);
+    const none = hoursExportOf({ ...view, rows: [first!] }, pilot.organizationName);
+
+    expect(first!.leave).toBeNull();
+    expect(none.rows[0]!.at(-1)).toEqual({ kind: 'empty' });
+    expect(sheetDataOf(none)[1]!.at(-1)).toBeNull();
+    expect(some.rows[0]!.at(-1)).toEqual({ kind: 'hours', value: 750 / 1440 });
+    expect(sheetDataOf(some)[1]!.at(-1)).toEqual({ type: Number, value: 750 / 1440, format: HOURS_CELL_FORMAT });
+    // Every other figure is unchanged by the leave.
+    expect(some.rows[0]!.slice(0, -1)).toEqual(none.rows[0]!.slice(0, -1));
+  });
+
   it('no team: the cell is the text the screen shows', () => {
     const sheet = hoursExportOf(viewOf(pilot, { mjesec: MONTH, osoba: DORA }), pilot.organizationName);
 
@@ -236,16 +257,23 @@ describe('the sheet', () => {
     expect(() => hoursExportOf(broken, pilot.organizationName)).toThrow(RangeError);
   });
 
-  it('writes every figure as a number cell and every heading as text', () => {
-    const sheet = hoursExportOf(viewOf(uj5), uj5.organizationName);
+  it('writes every figure as a number cell, every heading as text, and an empty leave as no cell', () => {
+    const view = viewOf(uj5);
+    const sheet = hoursExportOf(view, uj5.organizationName);
     const [header, ...rows] = sheetDataOf(sheet);
 
     expect(header).toEqual(sheet.columns.map((column) => ({ type: String, value: column, fontWeight: 'bold' })));
-    for (const row of rows) {
+    for (const [index, row] of rows.entries()) {
+      const figures = row.slice(2, -1);
+      const leave = view.rows[index]!.leave;
+
       expect(row.slice(0, 2).map((cell) => (cell as { type: unknown }).type)).toEqual([String, String]);
-      expect(row.slice(2).every((cell) => (cell as { type: unknown }).type === Number)).toBe(true);
-      expect(row.slice(3).every((cell) => (cell as { format?: string }).format === HOURS_CELL_FORMAT)).toBe(true);
+      expect(figures.every((cell) => (cell as { type: unknown }).type === Number)).toBe(true);
+      expect(figures.slice(1).every((cell) => (cell as { format?: string }).format === HOURS_CELL_FORMAT)).toBe(true);
       expect((row[2] as { format?: string }).format).toBeUndefined();
+      // The leave cell as its row has it: none when empty, else a duration.
+      if (leave === null) expect(row.at(-1)).toBeNull();
+      else expect(row.at(-1)).toMatchObject({ type: Number, format: HOURS_CELL_FORMAT });
     }
   });
 });
