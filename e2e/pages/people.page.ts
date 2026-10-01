@@ -4,6 +4,7 @@ import { fill, hr } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 
 const membership = hr.smjene.membership;
+const leave = hr.ljudi.leaveRecord;
 
 /** `/ljudi`, `/ljudi/novi` and `/ljudi/:id`: the member list, the new-member
  *  form and a member's edit screen with its team membership. */
@@ -148,6 +149,58 @@ export class PeoplePage extends BasePage {
 
   withdrawConfirmButton(name: string): Locator {
     return this.page.getByRole('button', { name: fill(membership.withdrawConfirm, { name }) });
+  }
+
+  // ------------------------------------------------------------ the leave
+
+  /** Opens a member's edit screen by id. */
+  async gotoMember(id: string): Promise<void> {
+    await this.page.goto(`/ljudi/${id}`);
+  }
+
+  /** The leave card's heading. */
+  get leaveHeading(): Locator {
+    return this.page.getByRole('heading', { level: 2, name: leave.heading });
+  }
+
+  /** The leave card, a region named by its heading. */
+  get leaveCard(): Locator {
+    return this.page.getByRole('region', { name: leave.heading });
+  }
+
+  /**
+   * The figure under `label` in the leave card — the allowance, used, the
+   * balance, the cost or the balance after. A `<dt>`/`<dd>` pair in its own
+   * `<div>`, which no role or label reaches as a pair.
+   */
+  leaveFigure(label: string): Locator {
+    return this.leaveCard
+      .locator('dl > div')
+      .filter({ has: this.page.getByRole('term').getByText(label, { exact: true }) })
+      .getByRole('definition');
+  }
+
+  get leaveFromInput(): Locator {
+    return this.page.getByLabel(leave.from, { exact: true });
+  }
+
+  get leaveToInput(): Locator {
+    return this.page.getByLabel(leave.to, { exact: true });
+  }
+
+  get saveLeaveButton(): Locator {
+    return this.page.getByRole('button', { name: leave.save });
+  }
+
+  /** The retry the leave card's unavailable line offers. */
+  get retryLeaveButton(): Locator {
+    return this.leaveCard.getByRole('button', { name: leave.retry });
+  }
+
+  /** Enters an od–do range, both `YYYY-MM-DD`. */
+  async enterLeave(from: string, to: string): Promise<void> {
+    await this.leaveFromInput.fill(from);
+    await this.leaveToInput.fill(to);
   }
 
   /** Puts the open member on a team from the date field's value, confirmed. */

@@ -74,6 +74,13 @@ export const MEMBER_SAVE_DEPENDENTS: readonly QueryKey[] = [
 /** An hour band added, changed or removed (story 4.1b): the snapshot *Sati* derives band hours from. */
 export const HOUR_BAND_WRITE_DEPENDENTS: readonly QueryKey[] = [CALENDAR_KEY];
 
+/**
+ * A leave record saved (story 5.1c): its own key is the member's live
+ * records, and no other read embeds a leave record yet — the calendar, *Sati*
+ * and the conflicts queue start reading leave in story 5.3, and join here then.
+ */
+export const LEAVE_WRITE_DEPENDENTS: readonly QueryKey[] = [];
+
 /** A refusal's re-read: the surface's own key, and nothing that depends on it. */
 export const NO_DEPENDENTS: readonly QueryKey[] = [];
 

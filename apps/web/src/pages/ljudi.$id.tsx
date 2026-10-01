@@ -4,6 +4,7 @@ import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { t } from '@/lib/i18n';
+import { MemberLeaveCard } from '@/features/leave/components/member-leave-card';
 import { MemberBasicsCard } from '@/features/members/components/member-basics-card';
 import { MemberResetCard } from '@/features/members/components/member-reset-card';
 import { MemberStatusCard } from '@/features/members/components/member-status-card';
@@ -65,6 +66,10 @@ export function LjudiMemberScreen() {
       <MemberTeamCard edit={edit} />
       {/* STORY 1.6. */}
       <MemberStatusCard edit={edit} />
+      {/* STORY 5.1c: the member's leave — figures, the od–do form and what
+          a range costs before it is saved. Keyed by the member, so nothing it
+          raised about one member stands over another's. */}
+      <MemberLeaveCard key={id} memberId={id} />
       <MemberResetCard edit={edit} />
     </main>
   );

@@ -179,6 +179,10 @@ const MEMBER_CREATE: readonly string[] = [
   join(MEMBERS_FEATURE, 'components', 'member-create-about.tsx'),
   join(MEMBERS_FEATURE, 'utils', 'refusal-text.ts'),
 ];
+/** The leave feature, which holds the member page's leave card (story 5.1c). */
+const LEAVE_FEATURE = join(srcRoot, 'features', 'leave');
+/** Story 5.1c's rules: the leave card's reasons and refusals, off two `\w*MessageKey` unions. */
+const LEAVE_SECTION_KEYS = join(LEAVE_FEATURE, 'services', 'leave-section.ts');
 const MEMBER_EDIT: readonly string[] = [
   join(srcRoot, 'pages', 'ljudi.$id.tsx'),
   join(MEMBERS_FEATURE, 'hooks', 'use-member-edit.ts'),
@@ -188,6 +192,10 @@ const MEMBER_EDIT: readonly string[] = [
   join(MEMBERS_FEATURE, 'components', 'member-reset-card.tsx'),
   join(MEMBERS_FEATURE, 'utils', 'refusal-text.ts'),
   join(MEMBERS_FEATURE, 'utils', 'date-refusal.ts'),
+  // STORY 5.1c: the leave card the page composes after the status card, and
+  // its hook. Its rules are `LEAVE_SECTION_KEYS`, a key source of its own.
+  join(LEAVE_FEATURE, 'hooks', 'use-member-leave.ts'),
+  join(LEAVE_FEATURE, 'components', 'member-leave-card.tsx'),
 ];
 
 /** The teams feature, which holds both team screens' parts. */
@@ -595,7 +603,10 @@ const SCREENS = [
   //
   // TWENTY-THREE SINCE TEAM POSITION: the position `<select>` in the team
   // block, written once and shown only while the setting is on.
-  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 23 },
+  //
+  // TWENTY-SEVEN SINCE STORY 5.1c: the leave card's od and do `<Input>`s, its
+  // save `<Button>`, and the retry its unavailable line offers.
+  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 27 },
   // STORY 1.7a. FOUR on the team list: the link back to `Ljudi`, the one name
   // `<Input>`, the add `<Button>`, and ONE row link written once inside the map
   // over the teams — the same count at zero teams as at nine. SIX on one team:
@@ -900,6 +911,18 @@ const IN_FLIGHT_HANDLERS = [
     handler: 'changeTeam',
     pending: 'setTeamPending',
     failure: 'setTeamFailure',
+  },
+  {
+    // STORY 5.1c, THE FIFTH AWAITING HANDLER ON THE EDIT SCREEN: the leave
+    // card's save, with its own flags for the reason the team change has its
+    // own — a leave write in flight must never disable another card.
+    name: "the member edit screen's leave save",
+    file: MEMBER_EDIT,
+    effect: 'recordLeave(',
+    inFlight: 'recording',
+    handler: 'save',
+    pending: 'setRecordPending',
+    failure: 'setLeaveFailure',
   },
   {
     // STORY 1.7a, the team edit form's second awaiting handler. It shares the
@@ -1273,6 +1296,12 @@ const STRUCTURAL_ATTRIBUTES = new Set([
   // attribute names against an element the file actually renders, so an
   // exempted value that points at nothing is still a failure.
   'aria-controls',
+  // ADDED by story 5.1c's leave card, and named for the reason `aria-current`
+  // is: `aria-live` takes its value from a CLOSED, NON-TEXTUAL vocabulary the
+  // ARIA specification fixes — `off`, `polite`, `assertive` — and renders
+  // nowhere. The leave preview's reason is announced through it without the
+  // `status` role, which the screen's own confirmations already carry.
+  'aria-live',
   // ADDED by story 1.5a's member list, and it is a loosening of a GLOBAL
   // allowlist — this set applies to all fourteen swept screens — so it is named
   // and justified rather than waved through, exactly as `role`, `variant`,
@@ -2142,6 +2171,17 @@ const KEY_SOURCES = [
     strings: 10,
   },
   {
+    // STORY 5.1c: the leave card's four reasons for no preview (incomplete,
+    // reversed, over a year, refused by the domain), its four refusals — the
+    // overlap with and without the conflict's dates, denied and failed — and
+    // the two lines in place of the figures (unavailable, unscheduled), off
+    // `leaveReasonMessageKey`, `leaveRefusalMessageKey` and `leaveBaseMessageKey`.
+    name: 'the leave card rules',
+    file: LEAVE_SECTION_KEYS,
+    keys: messageKeyUnions,
+    strings: 10,
+  },
+  {
     // STORY 3.1: the calendar's one read failure.
     name: 'the calendar read rules',
     file: CALENDAR_SNAPSHOT_KEYS,
@@ -2239,10 +2279,24 @@ const KEY_SOURCES = [
     //
     // THIRTY-FOUR SINCE DESIGN REFRESH C: the form's two section headings, and
     // the headings of the cards the team, status and password moved into.
+    //
+    // FIFTY-THREE SINCE STORY 5.1c: the leave card's nineteen literal calls —
+    // its heading, the three figures' labels (the allowance's is `ljudi.leave`)
+    // and `count.days` for a figure, the form's legend, the od and do labels,
+    // the preview's two labels and `count.days` for each, the overlap and
+    // over-balance notes, the unavailable line twice (in place of the figures
+    // and of a preview the domain refused), the save's two status lines and
+    // the save action. Its reasons and refusals reach `t()` through
+    // `@/features/leave/services/leave-section`, the entry below.
+    //
+    // FIFTY-FOUR SINCE THE 5.1c REVIEW: three more — the in-year charge, the
+    // plain saved line and the retry — and two fewer, the unavailable line's
+    // two literal calls, which now come through `leaveBaseMessageKey` (a
+    // preview the domain refuses is a reason, through `leaveReasonMessageKey`).
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 34,
+    strings: 54,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
@@ -2496,7 +2550,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // FIFTY-ONE SINCE STORY 4.2: `@/features/hours/services/organization-hours`.
     //
     // FIFTY-TWO SINCE STORY 4.3: `@/features/hours/services/hours-export`.
-    expect(KEY_SOURCES).toHaveLength(52);
+    //
+    // FIFTY-THREE SINCE STORY 5.1c: `@/features/leave/services/leave-section`.
+    expect(KEY_SOURCES).toHaveLength(53);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -5112,8 +5168,16 @@ describe('the keys rendered and the keys declared are the same set', () => {
   const used = (): string[] =>
     [...new Set(KEY_SOURCES.flatMap((entry) => entry.keys(source(entry.file))))].sort();
 
-  /** The resource file's screen strings: everything that is not a plural. */
-  const declared = (): string[] => resourceKeys().filter((key) => !key.startsWith('count.')).sort();
+  /**
+   * The resource file's screen strings: everything that is not a shared
+   * `count.*` plural — except `count.days`, which story 5.1c's leave card is
+   * the first screen to render (the allowance, the days used, the balance, the
+   * cost and the balance after). `count.conflicts` still waits for its screen.
+   */
+  const declared = (): string[] =>
+    resourceKeys()
+      .filter((key) => !key.startsWith('count.') || key === 'count.days')
+      .sort();
 
   it('renders every screen key the resource file declares', () => {
     expect(used()).toEqual(declared());
@@ -5142,6 +5206,9 @@ describe('the keys rendered and the keys declared are the same set', () => {
       MEMBER_EDIT,
       MEMBER_WRITE_KEYS,
       RANK_KEYS,
+      // STORY 5.1c: `@/features/leave/services/leave-section` maps the leave
+      // card's reasons and refusals.
+      LEAVE_SECTION_KEYS,
     ]
       .map((file) => source(file))
       .join('\n');
@@ -6059,7 +6126,9 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // type edit form's rename, times, cancellation and archive.
     // TWENTY SINCE STORY 3.5b: the calendar override form's set and removal.
     // TWENTY-TWO SINCE STORY 3.6b: the calendar roster form's save and removal.
-    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(22);
+    // TWENTY-THREE SINCE STORY 5.1c: the member edit screen's fifth, the leave
+    // card's save.
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(23);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
       'the in-flight handler names drifted from the handlers that hold them',
@@ -6073,6 +6142,7 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'remove/writing',
       'remove/writing',
       'removeChange/writing',
+      'save/recording',
       'saveRoster/writing',
       'saveTimes/writing',
       'submit/creating',
@@ -7213,20 +7283,35 @@ describe('member rank: the setting gates display and entry, and deletes nothing'
   });
 
   it.each([
-    { name: 'the member create form', file: MEMBER_CREATE },
-    { name: 'the member edit form', file: MEMBER_EDIT },
-  ])("reads the organization on $name through the one read policy", ({ file }) => {
+    { name: 'the member create form', file: MEMBER_CREATE, readers: [join(MEMBERS_FEATURE, 'hooks', 'use-member-create.ts')] },
+    // TWO HOOKS SINCE STORY 5.1c, ONE READ EACH: the leave card's hook reads
+    // the leave year off the same cache entry, through the same factory — a
+    // second consumer of one read policy, never a second policy.
+    {
+      name: 'the member edit form',
+      file: MEMBER_EDIT,
+      readers: [join(MEMBERS_FEATURE, 'hooks', 'use-member-edit.ts'), join(LEAVE_FEATURE, 'hooks', 'use-member-leave.ts')],
+    },
+  ])("reads the organization on $name through the one read policy", ({ file, readers }) => {
     // B1'S REVIEW FOUND TWO POLICIES on one cache entry: the create screen read
     // `ORGANIZATION_SNAPSHOT_KEY` with no `retry: false` and no `staleTime`, the
     // edit screen with both. Both now go through the factory, whose key, retry
     // and bound `snapshot.test.ts` asserts, and neither spells any of it out.
+    // COUNTED PER FILE: each named hook reads it exactly once, every other
+    // file of the set not at all.
     const screen = source(file);
 
-    expect(
-      screen.match(/useQuery\(\s*organizationSnapshotQueryOptions\(/g) ?? [],
-      'the organization is not read exactly once through the factory',
-    ).toHaveLength(1);
-    expect(occurrences(screen, 'organizationSnapshotQueryOptions('), 'the factory is called twice').toBe(1);
+    for (const part of typeof file === 'string' ? [file] : file) {
+      const reads = readers.includes(part) ? 1 : 0;
+
+      expect(
+        source(part).match(/useQuery\(\s*organizationSnapshotQueryOptions\(/g) ?? [],
+        `the organization is not read exactly ${String(reads)} time(s) through the factory in ${part}`,
+      ).toHaveLength(reads);
+      expect(occurrences(source(part), 'organizationSnapshotQueryOptions('), `the factory is called again in ${part}`).toBe(
+        reads,
+      );
+    }
     expect(screen, 'the read is spelled out beside the factory').not.toContain('readOrganization(');
     expect(screen, 'a read policy is spelled out beside the factory').not.toMatch(
       /retry: false|ORGANIZATION_READ_STALE_MS/,
@@ -7776,7 +7861,8 @@ describe('the two member forms write through the seam and keep nothing back', ()
     {
       name: 'the member edit form',
       file: MEMBER_EDIT,
-      marked: ['member-leave', 'member-status-date', 'member-team-date'],
+      // STORY 5.1c: the leave card's od and do, marked by its own refusals.
+      marked: ['member-leave', 'member-leave-from', 'member-leave-to', 'member-status-date', 'member-team-date'],
     },
   ])('names the offending field on $name when it refuses one itself', ({ file, marked: ids }) => {
     // THE ONE REFUSAL EACH SCREEN RAISES ITSELF is also the one it knows the

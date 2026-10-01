@@ -611,10 +611,6 @@
     None of these is a live defect at pilot scale. Low risk, but they compound.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-1a-leave-rule.md`
-  summary: Story 5.1c — the admin's leave section on the member's page in Ljudi. Shows allowance, days used and balance; a range form with the cost from `domain/leave` before saving; the overlap refusal names the record and keeps every value; over-balance saves with a warning.
-  evidence: The human split story 5.1 on 2026-10-01 and placed admin leave entry on the member's page; the Godišnji tab stays the member's own view for a later story.
-
-- source_spec: `_bmad-output/implementation-artifacts/spec-5-1a-leave-rule.md`
   summary: Story 5.2 needs to preview an amended record. `leavePreviewOf` has no "this replaces record X", so the amend flow must leave the old record out of `records`. Add a replacing parameter or document the caller contract when 5.2 is planned.
   evidence: Raised by the 5.1a review (2026-10-01). Today the preview treats any record covering the range as an overlap (`overlapsRecord`) and does not charge those dates.
 
@@ -627,4 +623,10 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-1b-leave-record.md`
   summary: `members_delete_by_own_active_admin` still allows a direct API delete of a member. Once the member has a leave record (live or removed), it fails with 23503, because `leave_records`' member key does not cascade, by design. Any future member-deletion flow must handle or forbid this.
   evidence: Found by the 5.1b review (2026-10-01). No current flow hard-deletes a member who has leave; deleting the whole organization still cascades (tested).
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-1c-leave-screen.md`
+  summary: When `recordLeave`'s overlap read-back fails (`conflict: null`), the screen shows a generic overlap line, so the specific conflict is not named, against the 5.1 AC "the refusal names the specific conflict". The 5.1c spec allowed this fallback but listed no deviation. Either retry the read-back, or record the fallback as an accepted deviation.
+  evidence: Raised by the Epic AC Auditor on 5.1c (2026-10-01). It is rare: it needs a failed admin select straight after a refused insert.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-1c-leave-screen.md`
+  summary: The leave card's hook (`use-member-leave.ts`) has no direct tests. Its edit-clears, in-flight, focus and reset rules are reached only through the e2e paths, because render tests are deferred project-wide.
+  evidence: Raised by the 5.1c review (2026-10-01).
 

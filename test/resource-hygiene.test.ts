@@ -98,6 +98,15 @@ const SANCTIONED_PLURAL_KEYS = [
   // the ones with no times, shown only when there is one.
   'sati.shiftCount',
   'sati.untimed',
+  // STORY 5.1c: the leave card's three day counts that are a sentence of their
+  // own — the preview's over-balance note and the two lines a landed save
+  // shows — each carrying a number that may be negative (`−2 dana`) — and the
+  // part of a range crossing the leave year's edge charged to this year. The
+  // bare figures render through `count.days`.
+  'ljudi.leaveRecord.exceeds',
+  'ljudi.leaveRecord.costInYear',
+  'ljudi.leaveRecord.saved',
+  'ljudi.leaveRecord.savedExceeds',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -1090,6 +1099,37 @@ const SANCTIONED_SCREEN_KEYS = [
   'sati.organization.export.failed',
   'sati.organization.export.sheetName',
   'sati.organization.export.fileName',
+  // STORY 5.1c: the member page's leave card — its heading, the used and
+  // balance figures' labels (the allowance's is `ljudi.leave`), the form's
+  // legend, its two date labels and its action, the preview's two labels, the
+  // three reasons no preview is shown, the overlap line (a preview note, and
+  // the refusal when the conflict could not be read), the refusal naming the
+  // conflicting record's dates, the denied and failed refusals, the line a
+  // failed read shows in place of the figures with its retry, the line for a
+  // member with no schedule to cost against, the reason a range the domain
+  // will not cost is not sent, and the saved line when the re-read after a
+  // save did not answer.
+  'ljudi.leaveRecord.heading',
+  'ljudi.leaveRecord.used',
+  'ljudi.leaveRecord.balance',
+  'ljudi.leaveRecord.newHeading',
+  'ljudi.leaveRecord.from',
+  'ljudi.leaveRecord.to',
+  'ljudi.leaveRecord.cost',
+  'ljudi.leaveRecord.balanceAfter',
+  'ljudi.leaveRecord.incomplete',
+  'ljudi.leaveRecord.reversed',
+  'ljudi.leaveRecord.tooLong',
+  'ljudi.leaveRecord.refused',
+  'ljudi.leaveRecord.savedPlain',
+  'ljudi.leaveRecord.unscheduled',
+  'ljudi.leaveRecord.retry',
+  'ljudi.leaveRecord.overlap',
+  'ljudi.leaveRecord.overlapConflict',
+  'ljudi.leaveRecord.save',
+  'ljudi.leaveRecord.denied',
+  'ljudi.leaveRecord.failed',
+  'ljudi.leaveRecord.unavailable',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

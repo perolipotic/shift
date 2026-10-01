@@ -115,8 +115,8 @@ export const FEATURE_PUBLIC = {
     'services/sign-out', // navigation
   ],
   calendar: [
-    'services/snapshot', // hours, pages, teams
-    'utils/month', // hours, pages
+    'services/snapshot', // hours, leave, pages, teams
+    'utils/month', // hours, leave, pages
   ],
   'hour-bands': [
     'services/list', // calendar, hours, shift-types, pages
@@ -125,15 +125,14 @@ export const FEATURE_PUBLIC = {
   hours: [
     'services/my-hours', // pages
   ],
-  // Story 5.1b: `services/leave-write` has no outside consumer in
-  // `apps/web/src` yet; story 5.1c's leave form lists it here when a page
-  // first imports it. The root database test `test/rls-isolation.test.ts`
-  // imports `leave-write.ts` directly, to drive `recordLeave` over real
-  // PostgREST: a test-only consumer outside `apps/web/src`, which this rule
-  // does not govern and which does not make the module public.
+  // Story 5.1c: the member page composes `components/member-leave-card`,
+  // which every page may import; no other feature imports a leave module yet.
+  // The root database test `test/rls-isolation.test.ts` imports
+  // `leave-write.ts` directly, to drive `recordLeave` over real PostgREST: a
+  // test-only consumer outside `apps/web/src`, which this rule does not govern.
   leave: [],
   members: [
-    'services/list', // hour-bands, shift-types, teams, pages
+    'services/list', // hour-bands, leave, shift-types, teams, pages
     'utils/position', // calendar, teams
     'utils/rank', // calendar, organization, teams
   ],
@@ -145,7 +144,7 @@ export const FEATURE_PUBLIC = {
   organization: [
     'components/lockup', // navigation
     'hooks/logo-url', // navigation
-    'services/snapshot', // members, navigation, teams
+    'services/snapshot', // leave, members, navigation, teams
     'utils/accent', // navigation
   ],
   rotation: [
@@ -156,7 +155,7 @@ export const FEATURE_PUBLIC = {
     'services/write', // pages
   ],
   teams: [
-    'services/dependents', // hour-bands, members
+    'services/dependents', // hour-bands, leave, members
     'services/list', // calendar, members, rotation, pages
     'services/roster', // pages
     'services/write', // calendar, hour-bands, rotation, shift-types, pages
