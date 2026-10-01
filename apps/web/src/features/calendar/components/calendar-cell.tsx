@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { ModifierGlyphs } from '@/features/calendar/components/modifier-glyphs';
 import { modifierNamesTextOf, modifierTreatmentOf } from '@/features/calendar/utils/modifiers';
 import {
   COMPRESSED_CELL_CLASS,
@@ -62,9 +63,7 @@ export function CalendarCellBox({
       ) : (
         <span className="flex items-center gap-1">
           {renderCellName(cell, inGrid)}
-          <span aria-hidden className="font-normal [font-variant-emoji:text]">
-            {treatment.glyphText}
-          </span>
+          <ModifierGlyphs glyphs={treatment.glyphs} />
         </span>
       )}
       {cell.range === null ? null : (

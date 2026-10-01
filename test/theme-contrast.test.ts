@@ -6,7 +6,7 @@ import { differenceCiede2000, displayable, rgb, wcagContrast, type Color, type R
 import { describe, expect, it } from 'vitest';
 
 import { NONWORKING_TOKEN, rampSlotOf, rampTokenOf } from '../apps/web/src/features/shift-types/utils/ramp.ts';
-import { BASE_TOKENS, BRAND_TOKENS, rawToken, readToken, type Theme } from './theme-css.js';
+import { BASE_TOKENS, BRAND_TOKENS, STYLESHEET, rawToken, readToken, type Theme } from './theme-css.js';
 
 /**
  * Contrast, measured rather than promised (story 1.1b, UX-DR3).
@@ -81,31 +81,44 @@ const FILLS = [
 ] as const;
 
 /**
- * `shift-slot-2` is excluded from the alpha-overlay sweep, deliberately.
+ * The calendar's leave and uncovered hatches (story 5.3c), and the share of
+ * the cell's own foreground each stripe is drawn in.
  *
- * It is the one inverted slot: in the LIGHT theme its fill is a dark navy, so a
- * fixed dark modifier foreground lands dark-on-dark (1.84:1 and 1.78:1). No
- * token value fixes that — the resolution is that `shift-cell` draws its hatch
- * and glyph in the underlying slot's own foreground (9.49:1 for leave, 8.30:1
- * for uncovered). That is a composition rule for a component built in Epic 3,
- * recorded in deferred-work.md rather than asserted here against code that does
- * not exist. `modifier-overridden` is opaque, so the exclusion does not apply
- * to it.
+ * SLOT-2 IS SWEPT AGAIN. It is the one inverted slot: in the LIGHT theme its
+ * fill is a dark navy, so the fixed dark `--modifier-*` tints the first
+ * derivation drew with landed dark-on-dark (1.84:1 and 1.78:1) and slot-2 was
+ * excluded from these sweeps. Story 5.3c draws the hatch and its glyph in the
+ * slot's OWN foreground (`currentColor`, mixed to a share with
+ * `color-mix(in oklch, currentColor N%, transparent)`), so every fill is
+ * measured against its own foreground and no fill is excluded.
+ *
+ * THE SHARE IS READ FROM `index.css`, not restated here, so the measured value
+ * is the shipped one: every stripe of every calendar hatch utility.
  */
-const OVERLAY_FILLS = FILLS.filter((name) => name !== 'shift-slot-2');
-const OVERLAYS = ['modifier-leave', 'modifier-uncovered'] as const;
+const HATCH_UTILITIES = [
+  'modifier-hatch-leave',
+  'modifier-hatch-uncovered',
+  'modifier-hatch-leave-uncovered',
+] as const;
 
-/**
- * The exclusion above is exactly as wide as the finding behind it.
- *
- * It is argued from one measurement: a fixed dark modifier foreground over
- * slot-2's inverted LIGHT fill. That covers the light-theme glyph cases and
- * nothing else. Slot-2 is not inverted in dark (glyph measures 6.43 and 6.04),
- * and the hatch metric does not involve the foreground at all (ΔE 7.50-15.52).
- * Applying it to all four sweeps dropped six passing cases of live coverage.
- */
-const GLYPH_FILLS = (theme: Theme): readonly string[] =>
-  theme === 'light' ? OVERLAY_FILLS : FILLS;
+/** The block of one `@utility` in the stylesheet, up to the next top-level rule. */
+function utilityBlock(name: string): string {
+  const css = readFileSync(STYLESHEET, 'utf8');
+  const start = css.indexOf(`@utility ${name} {`);
+
+  expect(start, `@utility ${name} is missing`).toBeGreaterThanOrEqual(0);
+
+  const next = css.indexOf('\n@', start + 1);
+
+  return css.slice(start, next === -1 ? undefined : next);
+}
+
+/** Every stripe share in a hatch utility, as a 0–1 alpha. */
+function stripeSharesOf(name: string): number[] {
+  return [...utilityBlock(name).matchAll(/color-mix\(in oklch, currentColor (\d+(?:\.\d+)?)%, transparent\)/g)].map(
+    (found) => Number(found[1]) / 100,
+  );
+}
 
 function colour(theme: Theme, name: string): Color {
   const found = readToken(theme, name);
@@ -616,21 +629,58 @@ describe('the decorative border contrast is pinned, not merely floored', () => {
   });
 });
 
+describe('the calendar hatches are drawn in the cell\'s own foreground (story 5.3c)', () => {
+  it.each(HATCH_UTILITIES)('%s draws every stripe in currentColor, at one share', (name) => {
+    const block = utilityBlock(name);
+    const shares = stripeSharesOf(name);
+
+    // Two colour stops per stripe: one stripe, or two for the cross-hatch.
+    expect(shares).toHaveLength(name === 'modifier-hatch-leave-uncovered' ? 4 : 2);
+    expect(new Set(shares).size, `${name} mixes more than one share`).toBe(1);
+    expect(block, `${name} still draws in a fixed tint`).not.toMatch(/var\(--modifier-/);
+  });
+
+  it('is one share across the three utilities', () => {
+    expect(new Set(HATCH_UTILITIES.flatMap((name) => stripeSharesOf(name))).size).toBe(1);
+  });
+});
+
+/** The one stripe share, as an alpha. */
+function stripeShare(): number {
+  const share = stripeSharesOf('modifier-hatch-leave')[0];
+
+  expect(share, 'no stripe share in modifier-hatch-leave').toBeDefined();
+
+  return share as number;
+}
+
+/** A fill's own foreground, mixed to `alpha` as `color-mix` with transparent draws it. */
+function stripeOf(theme: Theme, fill: string, alpha: number): Color {
+  return { ...rgb(colour(theme, `${fill}-foreground`)), alpha };
+}
+
 describe('overlay glyphs clear the UI-component threshold over every fill', () => {
-  // UX-DR8 makes leave and uncovered a hatch plus a glyph — `◷` and `◌` — not
-  // body text. WCAG holds graphical objects needed to understand content to
-  // 3:1, and UX-DR37/Q21 make the glyph the non-colour carrier of meaning.
+  // UX-DR8 makes leave and uncovered a hatch plus a glyph — lucide's `Clock`
+  // and `CircleDashed` since story 5.3c — not body text. WCAG holds graphical
+  // objects needed to understand content to 3:1, and UX-DR37/Q21 make the
+  // glyph the non-colour carrier of meaning. The glyph is drawn in the fill's
+  // own foreground, over the fill with one stripe on it — or two where the
+  // cross-hatch's stripes cross, the darkest backing a glyph can land on.
   const cases = THEMES.flatMap((theme) =>
-    OVERLAYS.flatMap((overlay) => GLYPH_FILLS(theme).map((fill) => ({ theme, overlay, fill }))),
+    [1, 2].flatMap((stripes) => FILLS.map((fill) => ({ theme, stripes, fill }))),
   );
 
-  it.each(cases)('$overlay glyph over $fill in $theme', ({ theme, overlay, fill }) => {
-    const composited = composite(colour(theme, overlay), colour(theme, fill));
-    const measured = ratio(colour(theme, `${overlay}-foreground`), composited);
+  it.each(cases)('the glyph over $fill under $stripes stripe(s) in $theme', ({ theme, stripes, fill }) => {
+    const alpha = stripeShare();
+    let backing: Color = colour(theme, fill);
+
+    for (let index = 0; index < stripes; index += 1) backing = composite(stripeOf(theme, fill, alpha), backing);
+
+    const measured = ratio(colour(theme, `${fill}-foreground`), backing);
 
     expect(
       measured,
-      `${overlay}-foreground over ${overlay} on ${fill} (${theme}) measured ${measured.toFixed(2)}:1`,
+      `${fill}-foreground over ${String(stripes)} stripe(s) on ${fill} (${theme}) measured ${measured.toFixed(2)}:1`,
     ).toBeGreaterThanOrEqual(AA_LARGE);
   });
 });
@@ -640,28 +690,27 @@ describe('the hatch itself is perceivable, not only the glyph on it', () => {
    * UX-DR8 pairs a hatch WITH a glyph, and the first derivation measured only
    * the glyph — the stripe against the fill around it went unasserted.
    *
-   * Measured as perceptual difference, not contrast ratio. A 16-22% alpha tint
-   * over its own base cannot reach 3:1 by construction: the arithmetic ceiling
-   * across every fill here is 1.26:1, so a WCAG threshold would demand the
-   * impossible rather than describe the requirement. WCAG's 3:1 governs the
-   * signal that *identifies* the state, which UX-DR8 assigns to the glyph; the
-   * hatch is the redundant texture beside it, and the question for a texture is
-   * whether the eye can see it at all. CIEDE2000 answers that: ~2.3 is the
-   * just-noticeable bound and 3 is comfortably perceptible.
+   * Measured as perceptual difference, not contrast ratio. A low-share tint
+   * over its own base cannot reach 3:1 by construction, so a WCAG threshold
+   * would demand the impossible rather than describe the requirement. WCAG's
+   * 3:1 governs the signal that *identifies* the state, which UX-DR8 assigns
+   * to the glyph; the hatch is the redundant texture beside it, and the
+   * question for a texture is whether the eye can see it at all. CIEDE2000
+   * answers that: ~2.3 is the just-noticeable bound and 3 is comfortably
+   * perceptible. Since story 5.3c the stripe is the fill's own foreground at
+   * the shipped share, over every fill, slot-2 included.
    */
   const PERCEPTIBLE = 3;
   const difference = differenceCiede2000();
-  const cases = THEMES.flatMap((theme) =>
-    OVERLAYS.flatMap((overlay) => FILLS.map((fill) => ({ theme, overlay, fill }))),
-  );
+  const cases = THEMES.flatMap((theme) => FILLS.map((fill) => ({ theme, fill })));
 
-  it.each(cases)('$overlay stripe against $fill in $theme', ({ theme, overlay, fill }) => {
+  it.each(cases)('the stripe against $fill in $theme', ({ theme, fill }) => {
     const under = colour(theme, fill);
-    const measured = difference(composite(colour(theme, overlay), under), under);
+    const measured = difference(composite(stripeOf(theme, fill, stripeShare()), under), under);
 
     expect(
       measured,
-      `${overlay} stripe against ${fill} (${theme}) measured ΔE ${measured.toFixed(2)}`,
+      `the stripe against ${fill} (${theme}) measured ΔE ${measured.toFixed(2)}`,
     ).toBeGreaterThanOrEqual(PERCEPTIBLE);
   });
 });

@@ -1224,30 +1224,42 @@ describe('the calendar only reads, and projects nothing of its own', () => {
     }
   });
 
-  it('derives one modifier from snapshot data (story 3.5a): overridden, from the domain\'s flag alone', () => {
+  it('derives three modifiers, in one place (stories 3.5a, 5.3c): overridden, conflict and leave — never uncovered', () => {
     // Story 3.2b's vocabulary names every mark; story 3.5a derives the first,
     // `overridden`, in `month.ts` from the domain's `overridden` flag, and
     // the screen draws its glyph beside the day detail's override block — TWO
-    // in the day detail dialog, and none in any other file of the screen.
-    // Conflict, leave and uncovered are still named by the vocabulary alone
-    // (3.6 and Epics 4–5), and no string literal names any mark.
+    // in the day detail dialog. Story 5.3c derives `conflict` and `leave` in
+    // `month.ts` from the marks `services/marks.ts` builds. `uncovered` is
+    // still named by the vocabulary alone (story 5.4), and no string literal
+    // names any mark.
+    const NAMED: Readonly<Record<string, Readonly<Record<string, number>>>> = {
+      [MONTH]: { MODIFIER_OVERRIDDEN: 2, MODIFIER_CONFLICT: 2, MODIFIER_LEAVE: 2 },
+      [SHOWS_OWNER]: { MODIFIER_OVERRIDDEN: 2 },
+    };
+
     for (const file of files.filter((one) => one !== MODIFIERS)) {
       const text = stripped(file);
 
-      expect(text, file).not.toMatch(/'(conflict|overridden|leave|uncovered)'|MODIFIER_(?!OVERRIDDEN\b)[A-Z]+\b/);
-      const named = text.match(/\bMODIFIER_OVERRIDDEN\b/g)?.length ?? 0;
+      expect(text, file).not.toMatch(/'(conflict|overridden|leave|uncovered)'|MODIFIER_UNCOVERED\b/);
+      for (const name of ['MODIFIER_OVERRIDDEN', 'MODIFIER_CONFLICT', 'MODIFIER_LEAVE']) {
+        const named = text.match(new RegExp(`\\b${name}\\b`, 'g'))?.length ?? 0;
 
-      expect(named, file).toBe(file === MONTH || file === SHOWS_OWNER ? 2 : 0);
+        expect(named, `${name} in ${file}`).toBe(NAMED[file]?.[name] ?? 0);
+      }
     }
     const month = stripped(MONTH);
 
-    expect(month, 'a cell given modifiers other than none or overridden').not.toMatch(
-      /(?<!readonly )\bmodifiers:(?! NO_MODIFIERS\b| overridden \? OVERRIDDEN_MODIFIERS : NO_MODIFIERS\b)/,
+    // ONE PLACE SETS THE MARKS: `cellModifiersOf`, whose answer every cell
+    // carries as it is.
+    // A cell with no rotation carries none, whatever the marks say.
+    expect(month, 'a cell given modifiers other than its marks').not.toMatch(
+      /(?<!readonly |const )\bmodifiers:(?! NO_MODIFIERS,)/,
     );
-    expect(month.match(/\bmodifiers: NO_MODIFIERS\b/g)).toHaveLength(1);
-    expect(month.match(/\bmodifiers: overridden \? OVERRIDDEN_MODIFIERS : NO_MODIFIERS\b/g)).toHaveLength(1);
+    expect(month.match(/\bmodifiers: NO_MODIFIERS,/g)).toHaveLength(1);
     expect(month).toMatch(/const NO_MODIFIERS: readonly CalendarModifier\[\] = \[\];/);
-    expect(month).toMatch(/const OVERRIDDEN_MODIFIERS: readonly CalendarModifier\[\] = \[MODIFIER_OVERRIDDEN\];/);
+    expect(month.match(/\bconst modifiers = cellModifiersOf\(marks\);/g)).toHaveLength(1);
+    expect(month.match(/^\s+modifiers,$/gm)).toHaveLength(1);
+    expect(month.match(/\bmodifiers\.push\(/g)).toHaveLength(3);
   });
 
   it.each(files)('%s has no modulo, no write and no read of rank or position', (file) => {

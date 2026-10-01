@@ -456,6 +456,14 @@
  * cross-hatch: leave at −45°, uncovered at 45°. `hatch-uncovered` above is the
  * hour band bar's and stays as it is.
  *
+ * STORY 5.3c: the calendar's hatches are drawn in the cell's OWN foreground
+ * (`currentColor`, the slot's `-foreground` text colour) at 16%, never in a
+ * fixed `--modifier-*` tint, so the stripe follows the fill it lies on — the
+ * inverted `shift-slot-2` included, where a fixed dark tint landed
+ * dark-on-dark. Their glyphs are drawn in the same foreground.
+ * `test/theme-contrast.test.ts` reads the 16% from here and measures stripe
+ * and glyph over every fill, in both themes.
+ *
  * Never colour alone: each mark carries a glyph and a label beside it.
  *
  * FORCED COLOURS (Windows High Contrast) drop every box-shadow and every
@@ -499,8 +507,8 @@
 @utility modifier-hatch-leave {
   background-image: repeating-linear-gradient(
     -45deg,
-    var(--modifier-leave) 0,
-    var(--modifier-leave) 4px,
+    color-mix(in oklch, currentColor 16%, transparent) 0,
+    color-mix(in oklch, currentColor 16%, transparent) 4px,
     transparent 4px,
     transparent 8px
   );
@@ -513,8 +521,8 @@
 @utility modifier-hatch-uncovered {
   background-image: repeating-linear-gradient(
     45deg,
-    var(--modifier-uncovered) 0,
-    var(--modifier-uncovered) 4px,
+    color-mix(in oklch, currentColor 16%, transparent) 0,
+    color-mix(in oklch, currentColor 16%, transparent) 4px,
     transparent 4px,
     transparent 8px
   );
@@ -528,15 +536,15 @@
   background-image:
     repeating-linear-gradient(
       -45deg,
-      var(--modifier-leave) 0,
-      var(--modifier-leave) 4px,
+      color-mix(in oklch, currentColor 16%, transparent) 0,
+      color-mix(in oklch, currentColor 16%, transparent) 4px,
       transparent 4px,
       transparent 8px
     ),
     repeating-linear-gradient(
       45deg,
-      var(--modifier-uncovered) 0,
-      var(--modifier-uncovered) 4px,
+      color-mix(in oklch, currentColor 16%, transparent) 0,
+      color-mix(in oklch, currentColor 16%, transparent) 4px,
       transparent 4px,
       transparent 8px
     );

@@ -1,11 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
+import { CircleDashed, Clock } from 'lucide-react';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 import {
   CALENDAR_MODIFIERS,
   CALENDAR_MODIFIER_IDS,
+  GLYPH_ICON,
+  GLYPH_TEXT,
   HATCH_BOTH_CLASS,
   HATCH_LEAVE_CLASS,
   HATCH_UNCOVERED_CLASS,
@@ -49,7 +52,13 @@ function subsets(): readonly (readonly CalendarModifier[])[] {
 describe('the vocabulary', () => {
   it('is the four marks, in canonical order, each with its glyph, treatment and label', () => {
     expect(CALENDAR_MODIFIERS.map((entry) => entry.id)).toEqual(['conflict', 'overridden', 'leave', 'uncovered']);
-    expect(CALENDAR_MODIFIERS.map((entry) => entry.glyph)).toEqual(['⚠', '✎', '◷', '◌']);
+    // Story 5.3c (human): ⚠ and ✎ stay text; leave and uncovered are lucide icons.
+    expect(CALENDAR_MODIFIERS.map((entry) => entry.glyph)).toEqual([
+      { kind: GLYPH_TEXT, text: '⚠' },
+      { kind: GLYPH_TEXT, text: '✎' },
+      { kind: GLYPH_ICON, icon: Clock },
+      { kind: GLYPH_ICON, icon: CircleDashed },
+    ]);
     expect(CALENDAR_MODIFIERS.map((entry) => entry.treatment)).toEqual(['ring', 'ring', 'hatch', 'hatch']);
     expect(CALENDAR_MODIFIERS.map((entry) => entry.labelKey)).toEqual([
       'kalendar.modifier.conflict',
@@ -66,7 +75,10 @@ describe('the vocabulary', () => {
   });
 
   it.each(CALENDAR_MODIFIER_IDS)('never colour alone: %s has a glyph, a label and a treatment', (modifier) => {
-    expect(glyphOf(modifier)).toMatch(/^\S$/u);
+    const glyph = glyphOf(modifier);
+
+    if (glyph.kind === GLYPH_TEXT) expect(glyph.text).toMatch(/^\S$/u);
+    else expect(glyph.icon).toBeDefined();
     expect(modifierMessageKey(modifier)).toBe(`kalendar.modifier.${modifier}`);
     expect(t(modifierMessageKey(modifier))).not.toMatch(/⟦/);
     expect(modifierTreatmentOf([modifier]).className).not.toBe('');
@@ -83,9 +95,17 @@ describe('the vocabulary', () => {
       const body = utilities.get(name);
 
       expect(body, `${name} is not a utility`).toBeDefined();
-      expect(body, name).toMatch(/var\(--(destructive|modifier-(overridden|leave|uncovered))\)/);
+      // A ring is drawn in its reserved token; a hatch, since story 5.3c, in
+      // the cell's own foreground — never a fixed tint.
+      if (name.startsWith('modifier-ring-')) {
+        expect(body, name).toMatch(/var\(--(destructive|modifier-overridden)\)/);
+      } else {
+        expect(body, name).toMatch(/color-mix\(in oklch, currentColor \d+%, transparent\)/);
+        expect(body, name).not.toMatch(/var\(--modifier-/);
+      }
       expect(body?.includes('--destructive'), name).toBe(name.includes('conflict'));
-      expect(body, name).not.toMatch(/accent|oklch|#[0-9a-f]{3}/i);
+      // No literal colour: the one `oklch` allowed is `color-mix`'s interpolation space.
+      expect(body?.replaceAll('color-mix(in oklch,', ''), name).not.toMatch(/accent|oklch|#[0-9a-f]{3}/i);
     }
     // The rings nest: conflict's band outermost, overridden's inside it.
     expect(utilities.get(RING_BOTH_CLASS)).toMatch(/2px var\(--destructive\)[\s\S]*4px var\(--modifier-overridden\)/);
@@ -110,8 +130,19 @@ describe('composing', () => {
 
     expect(shown.modifiers).toEqual(['conflict', 'overridden']);
     expect(shown.className).toBe(RING_BOTH_CLASS);
-    expect(shown.glyphs).toEqual(['⚠', '✎']);
+    expect(shown.glyphs).toEqual([
+      { kind: GLYPH_TEXT, text: '⚠' },
+      { kind: GLYPH_TEXT, text: '✎' },
+    ]);
     expect(shown.glyphText).toBe('⚠✎');
+  });
+
+  it('runs only the text glyphs together; an icon is drawn by its glyph (story 5.3c)', () => {
+    const shown = modifierTreatmentOf(['leave', 'conflict', 'uncovered', 'overridden']);
+
+    expect(shown.glyphs.map((glyph) => glyph.kind)).toEqual([GLYPH_TEXT, GLYPH_TEXT, GLYPH_ICON, GLYPH_ICON]);
+    expect(shown.glyphText).toBe('⚠✎');
+    expect(modifierTreatmentOf(['leave']).glyphText).toBe('');
   });
 
   it('both hatches together', () => {

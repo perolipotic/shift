@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -45,17 +45,14 @@ const FACES = [
 ] as const;
 
 /**
- * UX-DR8's leave `◷` (U+25F7) and uncovered `◌` (U+25CC) marks are deliberately
- * NOT asserted here.
- *
- * Measured: neither is in any subset of either face, so both fall back to
- * whatever face the OS supplies. That is a real finding, recorded in
- * deferred-work.md — but UX-DR40 scopes this check to Latin Extended-A, nothing
- * renders a glyph until Epic 3's `shift-cell`, and the fix is a choice between
- * lucide icons (already installed, and what `components.json` declares) and
- * covered alternatives. Asserting it here would gate the token layer on a
- * decision belonging to a component that does not exist.
+ * UX-DR8's leave `◷` (U+25F7) and uncovered `◌` (U+25CC) marks are in no
+ * subset of either face, so as text both would fall back to whatever face the
+ * OS supplies. Story 5.3c resolved that by drawing them as lucide icons —
+ * `Clock` and `CircleDashed` (human) — so neither character is rendered at
+ * all. The block at the end pins that: no source the application ships holds
+ * either character, so a regression to the uncovered text glyph fails here.
  */
+const UNCOVERED_MARKS = ['◷', '◌'] as const;
 
 function appCss(): string {
   return readFileSync(join(repoRoot, 'apps', 'web', 'src', 'index.css'), 'utf8');
@@ -162,16 +159,6 @@ describe.each(FACES)('the $family entry point', ({ specifier }) => {
   it.each(CROATIAN)('declares a unicode-range covering %s', (character) => {
     expect(covers(specifier, character), `${character} (${label(character)}) is in no declared range`).toBe(true);
   });
-
-  // Locks the measurement that sent this to Epic 3. If a future release of
-  // either face adds these codepoints, this test fails and the deferred entry
-  // can close.
-  it.each(['◷', '◌'])('%s is still outside every subset', (glyph) => {
-    expect(
-      covers(specifier, glyph),
-      `${glyph} (${label(glyph)}) is now covered — the Epic 3 deferral can be revisited`,
-    ).toBe(false);
-  });
 });
 
 describe('each face is actually bound to its stack', () => {
@@ -205,5 +192,32 @@ describe('each face is actually bound to its stack', () => {
 
     expect(title, 'no CardTitle in card.tsx').not.toBe('');
     expect(title).toMatch(/\bfont-heading\b/);
+  });
+});
+
+describe('the calendar draws leave and uncovered as icons, never as uncovered text (story 5.3c)', () => {
+  const sourceRoot = join(repoRoot, 'apps', 'web', 'src');
+  const sources = readdirSync(sourceRoot, { recursive: true, encoding: 'utf8' })
+    .filter((name) => /\.(tsx?|css|json)$/.test(name) && !/\.test\.tsx?$/.test(name))
+    .map((name) => join(sourceRoot, name));
+
+  it('sweeps the sources it means to', () => {
+    expect(sources).toContain(join(sourceRoot, 'features', 'calendar', 'utils', 'modifiers.ts'));
+  });
+
+  it.each(UNCOVERED_MARKS)('no shipped source holds %s', (mark) => {
+    expect(sources.filter((file) => readFileSync(file, 'utf8').includes(mark))).toEqual([]);
+  });
+
+  it.each(UNCOVERED_MARKS)('%s is still outside every subset, which is why it is an icon', (mark) => {
+    for (const { specifier } of FACES) expect(covers(specifier, mark), `${label(mark)} in ${specifier}`).toBe(false);
+  });
+
+  it('draws them with lucide Clock and CircleDashed', () => {
+    const vocabulary = readFileSync(join(sourceRoot, 'features', 'calendar', 'utils', 'modifiers.ts'), 'utf8');
+
+    expect(vocabulary).toMatch(/import \{ CircleDashed, Clock, type LucideIcon \} from 'lucide-react';/);
+    expect(vocabulary).toMatch(/glyph: \{ kind: GLYPH_ICON, icon: Clock \}/);
+    expect(vocabulary).toMatch(/glyph: \{ kind: GLYPH_ICON, icon: CircleDashed \}/);
   });
 });

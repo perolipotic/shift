@@ -1,3 +1,5 @@
+import { CircleDashed, Clock, type LucideIcon } from 'lucide-react';
+
 import type { CalendarDay, CalendarMonth } from '@/features/calendar/utils/month';
 
 /**
@@ -11,9 +13,16 @@ import type { CalendarDay, CalendarMonth } from '@/features/calendar/utils/month
  * NEVER COLOUR ALONE: every modifier has a glyph and a label beside its
  * treatment, and a cell's label for assistive technology names each one.
  *
- * ONE MODIFIER IS DERIVED SO FAR: `overridden`, where a shift-type override
- * replaced the projected type (story 3.5a, `@/features/calendar/utils/month`). Which data
- * produces the other marks is 3.6's and Epics 4–5's.
+ * THREE MODIFIERS ARE DERIVED SO FAR, all in `@/features/calendar/utils/month`:
+ * `overridden`, where a shift-type override replaced the projected type
+ * (story 3.5a) or a roster override changed who works it (story 3.6a), and
+ * `conflict` and `leave`, from the collisions and the live leave the viewer
+ * may see (story 5.3c). `uncovered` is story 5.4's.
+ *
+ * TWO GLYPHS ARE TEXT AND TWO ARE ICONS (story 5.3c, human): `⚠` and `✎` stay
+ * text; leave and uncovered are lucide's `Clock` and `CircleDashed`, because
+ * neither face covers U+25F7 or U+25CC. Every glyph is `aria-hidden` and drawn in
+ * the cell's own foreground (`currentColor`), as its hatch is.
  *
  * PURE, and executed by the node suite (AD-15): `pages/kalendar.tsx` renders
  * what these rules return.
@@ -38,11 +47,21 @@ export type CalendarModifier = (typeof CALENDAR_MODIFIER_IDS)[number];
 /** How a modifier is drawn: a 2 px inset ring, or a hatch over the type's own fill. */
 export type ModifierTreatment = 'ring' | 'hatch';
 
+/** A glyph drawn as text. */
+export const GLYPH_TEXT = 'text';
+/** A glyph drawn as a lucide icon, in `currentColor`. */
+export const GLYPH_ICON = 'icon';
+
+/** A modifier's glyph: a character, or an icon. */
+export type ModifierGlyph =
+  | { readonly kind: typeof GLYPH_TEXT; readonly text: string }
+  | { readonly kind: typeof GLYPH_ICON; readonly icon: LucideIcon };
+
 /** One modifier as the calendar draws and names it. */
 export interface CalendarModifierEntry {
   readonly id: CalendarModifier;
   /** Beside the name or letter, `aria-hidden`: the label carries the meaning. */
-  readonly glyph: string;
+  readonly glyph: ModifierGlyph;
   readonly treatment: ModifierTreatment;
   /** What it is called, in the legend and in a cell's label. */
   readonly labelKey: ReturnType<typeof modifierMessageKey>;
@@ -50,10 +69,30 @@ export interface CalendarModifierEntry {
 
 /** The vocabulary, in canonical order. */
 export const CALENDAR_MODIFIERS: readonly CalendarModifierEntry[] = [
-  { id: MODIFIER_CONFLICT, glyph: '⚠', treatment: 'ring', labelKey: modifierMessageKey(MODIFIER_CONFLICT) },
-  { id: MODIFIER_OVERRIDDEN, glyph: '✎', treatment: 'ring', labelKey: modifierMessageKey(MODIFIER_OVERRIDDEN) },
-  { id: MODIFIER_LEAVE, glyph: '◷', treatment: 'hatch', labelKey: modifierMessageKey(MODIFIER_LEAVE) },
-  { id: MODIFIER_UNCOVERED, glyph: '◌', treatment: 'hatch', labelKey: modifierMessageKey(MODIFIER_UNCOVERED) },
+  {
+    id: MODIFIER_CONFLICT,
+    glyph: { kind: GLYPH_TEXT, text: '⚠' },
+    treatment: 'ring',
+    labelKey: modifierMessageKey(MODIFIER_CONFLICT),
+  },
+  {
+    id: MODIFIER_OVERRIDDEN,
+    glyph: { kind: GLYPH_TEXT, text: '✎' },
+    treatment: 'ring',
+    labelKey: modifierMessageKey(MODIFIER_OVERRIDDEN),
+  },
+  {
+    id: MODIFIER_LEAVE,
+    glyph: { kind: GLYPH_ICON, icon: Clock },
+    treatment: 'hatch',
+    labelKey: modifierMessageKey(MODIFIER_LEAVE),
+  },
+  {
+    id: MODIFIER_UNCOVERED,
+    glyph: { kind: GLYPH_ICON, icon: CircleDashed },
+    treatment: 'hatch',
+    labelKey: modifierMessageKey(MODIFIER_UNCOVERED),
+  },
 ];
 
 /** The label a modifier is named by, in the legend and in a cell's label. Exhaustive. */
@@ -97,7 +136,9 @@ export const RING_BOTH_CLASS = 'modifier-ring-conflict-overridden';
 
 /**
  * The hatches, `background-image` layers over the type's `bg-*` base fill:
- * leave at −45°, uncovered at 45°, and both together a cross-hatch.
+ * leave at −45°, uncovered at 45°, and both together a cross-hatch — each
+ * drawn in the cell's own foreground (`currentColor`), so the stripe reads
+ * on every slot, the inverted `shift-slot-2` included (story 5.3c).
  */
 export const HATCH_LEAVE_CLASS = 'modifier-hatch-leave';
 export const HATCH_UNCOVERED_CLASS = 'modifier-hatch-uncovered';
@@ -116,9 +157,9 @@ export interface ModifierTreatmentShown {
   readonly modifiers: readonly CalendarModifier[];
   /** The ring and hatch classes, space-separated; `''` for none. */
   readonly className: string;
-  /** The glyphs, in canonical order. */
-  readonly glyphs: readonly string[];
-  /** The glyphs as one run, drawn beside the name or letter: `⚠✎`. */
+  /** The glyphs, in canonical order, text and icon alike. */
+  readonly glyphs: readonly ModifierGlyph[];
+  /** The TEXT glyphs alone as one run: `⚠✎`. An icon is drawn by its glyph, never here. */
   readonly glyphText: string;
 }
 
@@ -152,8 +193,9 @@ export function modifierTreatmentOf(modifiers: readonly CalendarModifier[]): Mod
   ].filter((name) => name !== null);
 
   const glyphs = shown.map((modifier) => glyphOf(modifier));
+  const glyphText = glyphs.map((glyph) => (glyph.kind === GLYPH_TEXT ? glyph.text : '')).join('');
 
-  return { modifiers: shown, className: classes.join(' '), glyphs, glyphText: glyphs.join('') };
+  return { modifiers: shown, className: classes.join(' '), glyphs, glyphText };
 }
 
 /**
@@ -161,7 +203,7 @@ export function modifierTreatmentOf(modifiers: readonly CalendarModifier[]): Mod
  *
  * @throws RangeError for a value outside the vocabulary — never a blank mark.
  */
-export function glyphOf(modifier: CalendarModifier): string {
+export function glyphOf(modifier: CalendarModifier): ModifierGlyph {
   const entry = CALENDAR_MODIFIERS.find((one) => one.id === modifier);
 
   if (entry === undefined) throw new RangeError(`${String(modifier)} is not a calendar modifier`);

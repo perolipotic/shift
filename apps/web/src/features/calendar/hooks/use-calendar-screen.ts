@@ -32,11 +32,28 @@ import { translateCellLabel } from '@/features/calendar/utils/cell-label';
 import { cachedRoleOf, calendarSkeletonShapeOf, earlyCalendarModeOf } from '@/features/calendar/utils/skeleton';
 import { dayDetailKeyOf, gridFocusKeyOf } from '@/features/calendar/utils/screen-keys';
 import {
+  CALENDAR_KEY,
   CALENDAR_READ_TABLE,
   type CalendarMembersRpc,
   calendarQueryOptions,
   calendarSurfaceStateOf,
 } from '@/features/calendar/services/snapshot';
+import {
+  MARKS_LOADING,
+  MARKS_READY,
+  calendarMarksStateOf,
+  calendarRefusalOf,
+  readsOrganizationLeave,
+} from '@/features/calendar/services/marks';
+import {
+  LEAVE_RECORDS_TABLE,
+  MY_LEAVE_RECORDS_KEY,
+  ORGANIZATION_LEAVE_RECORDS_KEY,
+  myLeaveRecordsQueryOptions,
+  organizationLeaveRecordsQueryOptions,
+  type MyLeaveRecordsRpc,
+  type OrganizationLeaveRecordsTable,
+} from '@/features/leave/services/leave-list';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import { supabaseClient } from '@/lib/supabase/client';
 
@@ -51,15 +68,23 @@ function noRoleOnServer(): null {
 }
 
 /**
- * The calendar screen's state, its one read and its handlers (stories 3.1 to
- * 3.5a). `search` is the route's search; `go` navigates to another one.
+ * The calendar screen's state, its reads and its handlers (stories 3.1 to
+ * 3.5a, 5.3c). `search` is the route's search; `go` navigates to another one.
  *
- * ONE READ (AD-13) under `CALENDAR_KEY`, unwindowed, so moving between months
- * never reads again: every month is `@/features/calendar/utils/month`'s pure
- * computation over the one snapshot, and the projection inside it is
- * `@shift/domain`'s. Every rule is in
+ * THE SCHEDULE IS ONE READ (AD-13) under `CALENDAR_KEY`, unwindowed, so
+ * moving between months never reads again: every month is
+ * `@/features/calendar/utils/month`'s pure computation over the one snapshot,
+ * and the projection inside it is `@shift/domain`'s. Every rule is in
  * `@/features/calendar/services/snapshot` and the `utils/` modules, which the
  * node suite executes; this hook holds state and wiring only.
+ *
+ * THE MARKS ARE THE SECOND (story 5.3c), by the viewer's role once the
+ * snapshot names it: an admin reads the organization's live leave under
+ * `ORGANIZATION_LEAVE_RECORDS_KEY`, a member their own under
+ * `MY_LEAVE_RECORDS_KEY` — never both. Every leave write names both keys
+ * among its dependents, and a schedule write re-reads the first read, so the
+ * marks follow without a reload. The month waits for both reads, and a
+ * failed leave read is the calendar's unavailable state with its retry.
  */
 export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSearch) => void) {
   const answer = useQuery(
@@ -71,7 +96,40 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
     ),
   );
   const state = calendarSurfaceStateOf(answer);
-  const { snapshot, loading } = state;
+  const { snapshot } = state;
+  const role = snapshot === null ? null : snapshot.viewer.role;
+  const organizationLeave = useQuery({
+    // Named structurally, as *Raspored*'s read is.
+    ...organizationLeaveRecordsQueryOptions(
+      () => supabaseClient().from(LEAVE_RECORDS_TABLE) as unknown as OrganizationLeaveRecordsTable,
+    ),
+    enabled: role !== null && readsOrganizationLeave(role),
+  });
+  const ownLeave = useQuery({
+    // Named structurally, as *Godišnji*'s read is.
+    ...myLeaveRecordsQueryOptions(() => supabaseClient() as unknown as MyLeaveRecordsRpc),
+    enabled: role !== null && !readsOrganizationLeave(role),
+  });
+  const leaveAnswer = role !== null && readsOrganizationLeave(role) ? organizationLeave : ownLeave;
+  const leaveData = leaveAnswer.data;
+  const leaveIsError = leaveAnswer.isError;
+  const leaveIsPending = leaveAnswer.isPending;
+  const leaveFetchStatus = leaveAnswer.fetchStatus;
+  // Derived once per answer, not on every render: the collisions walk every record.
+  const marksState = useMemo(
+    () =>
+      snapshot === null
+        ? null
+        : calendarMarksStateOf(snapshot, {
+            data: leaveData,
+            isError: leaveIsError,
+            isPending: leaveIsPending,
+            fetchStatus: leaveFetchStatus,
+          }),
+    [snapshot, leaveData, leaveIsError, leaveIsPending, leaveFetchStatus],
+  );
+  const marks = marksState?.kind === MARKS_READY ? marksState.marks : null;
+  const loading = state.loading || marksState?.kind === MARKS_LOADING;
   const today = snapshot === null ? null : calendarTodayOf(snapshot, new Date());
   const mjesec = search.mjesec;
   const smjena = search.smjena;
@@ -80,12 +138,17 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
   // failure, never a crashed route.
   const outcome = useMemo(
     () =>
-      snapshot === null || today === null
+      snapshot === null || today === null || marks === null
         ? null
-        : calendarMonthOutcomeOf(snapshot, { mjesec, smjena, osoba }, today),
-    [snapshot, mjesec, smjena, osoba, today],
+        : calendarMonthOutcomeOf(snapshot, { mjesec, smjena, osoba }, today, marks),
+    [snapshot, mjesec, smjena, osoba, today, marks],
   );
-  const refusal = state.refusal ?? (outcome !== null && !outcome.ok ? outcome.code : null);
+  // A retry only where reading again can help: a failed or paused read.
+  const { refusal, retryable } = calendarRefusalOf(
+    state.refusal,
+    marksState,
+    outcome !== null && !outcome.ok ? outcome.code : null,
+  );
   const month = outcome !== null && outcome.ok ? outcome.month : null;
   // READ LIVE: crossing 640 px changes the default mode while no `prikaz` is chosen.
   const isPhone = useSyncExternalStore(phone.subscribe, phone.get, isPhoneOnServer);
@@ -131,6 +194,13 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
   const filterRef = useRef<HTMLSelectElement>(null);
   // Built once per month shown, not on every focus move.
   const labels = useMemo(() => (month === null ? null : gridCellLabelsOf(month, translateCellLabel)), [month]);
+
+  /** Read again both reads the month stands on, from the unavailable alert's retry (`retryable` alone). */
+  function retry(): void {
+    for (const queryKey of [CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, MY_LEAVE_RECORDS_KEY]) {
+      void client.invalidateQueries({ queryKey });
+    }
+  }
 
   function show(mjesec: string | null): void {
     go(calendarSearchTo(search, { mjesec }));
@@ -246,6 +316,7 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
     snapshot,
     loading,
     refusal,
+    retryable,
     month,
     mode,
     skeleton,
@@ -254,6 +325,7 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
     gridRef,
     filterRef,
     detail,
+    retry,
     show,
     choose,
     filter,

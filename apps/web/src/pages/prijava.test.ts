@@ -676,7 +676,9 @@ const SCREENS = [
   // and "Dolazi" `Select`s, its reason `Input` and its save — the removal
   // written once inside the map over a block's changes, and its
   // confirmation's cancel and confirm.
-  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 21 },
+  // TWENTY-TWO SINCE STORY 5.3c: the unavailable alert's retry, which reads
+  // the schedule and the leave the marks stand on again.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 22 },
   // STORY 4.1b. THREE on Sati: the month navigation it shares with the
   // calendar — the previous month, `Ovaj mjesec` and the next month. The
   // figures are read, never pressed.
@@ -2166,10 +2168,12 @@ const KEY_SOURCES = [
     // The refusals and the notices come through
     // `@/features/calendar/services/roster-write`, below.
     // SEVENTY-FIVE SINCE EPIC 4 RETRO C2: the roster form's overlap hint.
+    // SEVENTY-SIX SINCE STORY 5.3c: the unavailable alert's retry. The marks'
+    // labels still come through `@/features/calendar/utils/modifiers`.
     name: 'the Kalendar destination',
     file: KALENDAR,
     keys: translationKeys,
-    strings: 75,
+    strings: 76,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's

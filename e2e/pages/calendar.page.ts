@@ -65,6 +65,11 @@ export class CalendarPage extends BasePage {
     return this.alertWith(kalendar.error.unavailable);
   }
 
+  /** The unavailable alert's retry (story 5.3c), which reads the schedule and the leave again. */
+  get retryButton(): Locator {
+    return this.page.getByRole('button', { name: kalendar.retry, exact: true });
+  }
+
   /** The notice the member on no team reads. */
   get noTeamNotice(): Locator {
     return this.text(kalendar.noTeam);
@@ -258,6 +263,50 @@ export class CalendarPage extends BasePage {
       list,
       items: list.getByRole('listitem'),
     };
+  }
+
+  /** The legend's entries' names, in the order shown, each without its `aria-hidden` swatch (story 5.3c). */
+  async legendNames(): Promise<string[]> {
+    return (await this.legendOf().items.locator(':scope > span:not([aria-hidden])').allInnerTexts()).map((text) =>
+      text.trim(),
+    );
+  }
+
+  // ---------------------------------------------------------------- marks
+
+  /**
+   * Shows the month `date` falls in by the month buttons alone — never a
+   * reload — from the month the URL names, or today's when it names none.
+   */
+  async showMonthOf(date: string, today: string): Promise<void> {
+    const wanted = date.slice(0, 7);
+    const heading = this.monthHeading();
+
+    for (;;) {
+      const shown = new URL(this.page.url()).searchParams.get('mjesec') ?? today.slice(0, 7);
+      if (shown === wanted) return;
+      const before = (await heading.innerText()).trim();
+      await (shown < wanted ? this.nextButton : this.previousButton).click();
+      await expect(heading).not.toHaveText(before);
+    }
+  }
+
+  /**
+   * A day-list button of `teamName` on `date` in `list`, by the start of its
+   * full label: the date and the team. Its name carries the marks after the
+   * type and range.
+   */
+  dayButtonIn(list: Locator, teamName: string, date: string): Locator {
+    return list.getByRole('button', {
+      name: new RegExp(`^${escapeRegExp(`${weekdayOf(date)} ${dayMonth(date)}, ${teamName}, `)}`),
+    });
+  }
+
+  /** Every gridcell whose label names a conflict or leave mark (story 5.3c). */
+  get cellsMarkedConflictOrLeave(): Locator {
+    return this.grid.getByRole('gridcell', {
+      name: new RegExp(`, (${escapeRegExp(kalendar.modifier.conflict)}|${escapeRegExp(kalendar.modifier.leave)})(,|$)`),
+    });
   }
 
   // --------------------------------------------------------- day detail

@@ -1,6 +1,7 @@
 import { createRoute, useNavigate } from '@tanstack/react-router';
 
 import { MonthNav } from '@/components/month-nav';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Notice } from '@/components/ui/notice';
 import { PageHeader, PageTitle } from '@/components/ui/page-header';
@@ -62,6 +63,12 @@ import { appLayoutRoute } from '@/pages/_app';
  * shift, puts one on, or both, and removes any listed change through a
  * neutral confirmation — `useRosterForm`'s state, on the same terms.
  *
+ * THE MARKS (story 5.3c): an admin sees every conflict on the month, and
+ * leave as a hatch, without opening a day; a member sees their own leave and
+ * nothing else. The month waits for the leave read too, and any read that
+ * failed shows the one alert with a retry — a deterministic refusal shows the
+ * alert alone — never a month without its marks.
+ *
  * The session guard is NOT here. It is registered once on the pathless `_app`
  * layout this route nests under.
  */
@@ -82,7 +89,21 @@ export function KalendarScreen() {
           <h1>{t('nav.kalendar')}</h1>
         </PageTitle>
       </PageHeader>
-      {refusal === null ? null : <Notice role="alert">{t(calendarMessageKey(refusal))}</Notice>}
+      {refusal === null ? null : (
+        <div className="grid min-w-0 gap-2">
+          <Notice role="alert">{t(calendarMessageKey(refusal))}</Notice>
+          {screen.retryable ? (
+            <Button
+              className="h-11 w-full sm:w-auto sm:justify-self-start"
+              type="button"
+              variant="outline"
+              onClick={screen.retry}
+            >
+              {t('kalendar.retry')}
+            </Button>
+          ) : null}
+        </div>
+      )}
       {refusal !== null ? null : (
         <Card className="min-w-0">
           <div className="flex min-w-0 flex-wrap items-center gap-3 px-4 py-4">
