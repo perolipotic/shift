@@ -41,8 +41,11 @@ import {
   type FixtureTeam,
 } from '../packages/domain/test/fixtures.ts';
 import {
+  leaveBalanceOf,
+  leaveCostOf,
   leavePreviewOf,
   leaveYearOf,
+  type LeaveRange,
   projectedShiftTypeOn,
   type MemberScheduleInput,
   type RotationAssignment,
@@ -51,10 +54,17 @@ import {
 } from '../packages/domain/src/index.ts';
 import {
   LEAVE_DENIED,
+  LEAVE_FAILED,
+  LEAVE_GONE,
   LEAVE_OVERLAP,
+  amendLeave,
+  leaveRangeOf,
   recordLeave,
+  removeLeave,
+  type LeaveAmendAnswer,
   type LeaveQuery,
   type LeaveReadAnswer,
+  type LeaveRecordRpc,
   type LeaveTable,
   type LeaveWriteAnswer,
 } from '../apps/web/src/features/leave/services/leave-write.ts';
@@ -1079,7 +1089,8 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'hour_bands_update_by_own_active_admin',
         // STORY 5.1b: an active admin inserts; the read is an active admin's
         // for the organization and an active member's for their own rows. No
-        // update and no delete: removal is story 5.2's.
+        // update and no delete: removal and amend are 0029's definer
+        // functions (story 5.2a).
         'leave_records_insert_by_own_active_admin',
         'leave_records_select_own_organization',
         // STORY 1.6: select, insert, and a delete that reaches only a version
@@ -1144,6 +1155,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
         `select proname from pg_proc
           where pronamespace = 'public'::regnamespace
             and proname in (
+              'amend_leave_record',
               'amend_shift_type_override',
               'calendar_members',
               'calendar_people',
@@ -1159,6 +1171,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
               'member_team_on',
               'member_team_version_on',
               'organization_today',
+              'remove_leave_record',
               'remove_roster_override',
               'remove_shift_type_override',
               'rotation_assignment_latest_version',
@@ -1179,6 +1192,10 @@ describe('the access-control layer is present, so nothing below passes vacuously
         functions.map((row) => row.proname),
         'the helper and the hook are what every policy and every claim depend on, and since story 1.6 both read active state through the status readers',
       ).toEqual([
+        // STORY 5.2a: the atomic amend of a leave record — soft-remove and
+        // insert the replacement range in one transaction, attributed to the
+        // caller, copied from 3.5c's.
+        'amend_leave_record',
         // STORY 3.5c: the atomic amend — soft-remove and insert in one
         // transaction, both attributed to the caller.
         'amend_shift_type_override',
@@ -1206,6 +1223,9 @@ describe('the access-control layer is present, so nothing below passes vacuously
         // changes-the-value rule and the roster.
         'member_team_version_on',
         'organization_today',
+        // STORY 5.2a: an active admin's attributed soft-remove of a live
+        // leave record, copied from 3.6b's.
+        'remove_leave_record',
         // STORY 3.6b: an active admin's attributed soft-remove of a live
         // roster override, copied from 3.5b's.
         'remove_roster_override',
@@ -16192,6 +16212,10 @@ function restLeaveTable(token: string): LeaveTable {
           params.push(`${column}=eq.${encodeURIComponent(value)}`);
           return query;
         },
+        neq(column, value) {
+          params.push(`${column}=neq.${encodeURIComponent(value)}`);
+          return query;
+        },
         is(column, value) {
           params.push(`${column}=is.${String(value)}`);
           return query;
@@ -16367,12 +16391,9 @@ describe('a leave record is recorded by an admin, refused on overlap by the data
           equal: '23P01',
         });
 
-        // Story 5.2's soft-removal, as the owner: the removed record leaves the key.
-        await client.query('update leave_records set removed_by = $1, removed_at = now() where id = $2', [
-          owner.authUserId,
-          existing,
-        ]);
+        // Story 5.2a's soft-removal, through 0029: the removed record leaves the key.
         await actAs(client, owner.authUserId, organization);
+        await removeLeaveRecord(client, existing);
         const replacement = await insertLeave(client, { organization, member: self.id, during: '[2026-09-12,2026-09-20]' });
         const visible = await visibleLeave(client);
         await actAsOwner(client);
@@ -16758,6 +16779,537 @@ describe('a leave record is recorded by an admin, refused on overlap by the data
           await client.query('delete from leave_records where member_id = any($1::uuid[]) and during && $2::daterange', [
             cleanup,
             year2040,
+          ]);
+        }
+        await client.end();
+      }
+    },
+    20_000,
+  );
+});
+
+// ------------------------------- story 5.2a: amending and removing leave records
+
+/**
+ * STORY 5.2a (`0029`). An active admin soft-removes a live leave record
+ * through `remove_leave_record()`, or amends it through
+ * `amend_leave_record()`, which soft-removes it and inserts the replacement
+ * range for the same member in one transaction; both attribute on the server.
+ * Every other caller is refused, any refused amend leaves the original live and
+ * unchanged, and the balance `packages/domain` computes from the live read
+ * follows. Every SQL case runs in a rolled-back transaction; the REST cases
+ * commit inside year 2041 and delete what they wrote in `finally`.
+ */
+
+/** `remove_leave_record(id)`, as whoever the connection currently is. */
+async function removeLeaveRecord(client: Client, id: string): Promise<void> {
+  await client.query('select public.remove_leave_record($1::uuid)', [id]);
+}
+
+/** `amend_leave_record(id, from, to)`, as whoever the connection currently is: the replacement's id. */
+async function amendLeaveRecord(client: Client, id: string, from: string, to: string): Promise<string> {
+  const { rows } = await client.query<{ id: string | null }>(
+    'select public.amend_leave_record($1::uuid, $2::date, $3::date)::text as id',
+    [id, from, to],
+  );
+  const replacement = rows[0]?.id;
+  if (replacement === undefined || replacement === null) throw new Error('the amend returned no id');
+  return replacement;
+}
+
+/** One leave record row, whole, as the owner sees it. */
+async function leaveRow(client: Client, id: string): Promise<Record<string, unknown> | undefined> {
+  const { rows } = await client.query<Record<string, unknown>>(
+    'select to_jsonb(r) as row from leave_records r where id = $1',
+    [id],
+  );
+  return rows[0]?.['row'] as Record<string, unknown> | undefined;
+}
+
+/**
+ * The member's live records as the CURRENT SESSION reads them — the filter
+ * `readLeaveRecords` sends (`removed_at is null`) — each parsed by the
+ * client's own `leaveRangeOf`, with their ids.
+ */
+async function liveLeaveOf(client: Client, memberId: string): Promise<{ id: string; range: LeaveRange }[]> {
+  const { rows } = await client.query<{ id: string; during: string }>(
+    `select id::text as id, during::text as during from leave_records
+      where member_id = $1 and removed_at is null order by during`,
+    [memberId],
+  );
+  return rows.map((row) => {
+    const range = leaveRangeOf(row.during);
+    if (range === null) throw new Error(`a live record does not parse: ${row.during}`);
+    return { id: row.id, range };
+  });
+}
+
+/** The two functions over real PostgREST with a real token, sent the way supabase-js sends `rpc`. */
+function restLeaveRpc(token: string): LeaveRecordRpc {
+  return {
+    async rpc(fn: string, args: Readonly<Record<string, unknown>>): Promise<LeaveAmendAnswer> {
+      const response = await rest(`rpc/${fn}`, { token, method: 'POST', body: args });
+      if (!response.ok) return { data: null, error: await restRefusal(response) };
+      const text = await response.text();
+      return { data: text === '' ? null : (JSON.parse(text) as unknown), error: null };
+    },
+  } as LeaveRecordRpc;
+}
+
+/**
+ * A member put on a seeded team for the whole current leave year, with an
+ * allowance of 20, and the first range from the year's start costing exactly
+ * `cost` leave days, for each cost asked, by `packages/domain`'s own rule.
+ */
+async function leaveYearSetup(
+  client: Client,
+  organization: string,
+  owner: MemberRow,
+  memberId: string,
+  costs: readonly number[],
+): Promise<{
+  today: string;
+  leaveYearStart: { month: number; day: number };
+  ranges: LeaveRange[];
+  balance: () => Promise<number>;
+}> {
+  const settings = await organizationById(client, organization);
+  if (settings === undefined) throw new Error(`${organization} is not in the database`);
+  const today = await organizationDay(client, organization);
+  const leaveYearStart = { month: settings.leaveYearStartMonth, day: settings.leaveYearStartDay };
+  const year = leaveYearOf(today, leaveYearStart);
+  // A future fixture change that seeds leave would otherwise fail as a bare
+  // 23P01 or a wrong balance.
+  expect(
+    await liveLeaveOf(client, memberId),
+    `${organization}: the member already holds live leave, so the 5.2a balance cases cannot start from 20`,
+  ).toEqual([]);
+  await ownerMembership(client, {
+    organization,
+    member: memberId,
+    team: await seededTeam(client, organization, 'Smjena A'),
+    from: year.from,
+    by: owner.authUserId,
+  });
+  await client.query('update members set leave_allowance_days = 20 where id = $1', [memberId]);
+  const input = await memberScheduleInputOf(client, organization, memberId);
+
+  const ranges = costs.map((cost) => {
+    const end = new Date(`${year.from}T00:00:00Z`);
+    for (;;) {
+      const to = end.toISOString().slice(0, 10);
+      if (to > year.to) throw new Error(`no range from ${year.from} inside the leave year costs ${String(cost)}`);
+      if (leaveCostOf(input, year.from, to) === cost) return { from: year.from, to };
+      end.setUTCDate(end.getUTCDate() + 1);
+    }
+  });
+
+  return {
+    today,
+    leaveYearStart,
+    ranges,
+    // The balance from the records the admin's session reads live, as the
+    // member page computes it.
+    balance: async () => {
+      await actAs(client, owner.authUserId, organization);
+      const live = await liveLeaveOf(client, memberId);
+      await actAsOwner(client);
+      return leaveBalanceOf({
+        input,
+        allowanceDays: 20,
+        records: live.map((record) => record.range),
+        today,
+        leaveYearStart,
+      }).balanceDays;
+    },
+  };
+}
+
+describe('a leave record is amended or removed by an active admin alone, attributed on the server, and the balance follows (story 5.2a)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'removes a $fixture record costing 3 as its admin: attributed, dropped from the live read, the balance back to 20, the range recordable again, and no schedule row touched',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const setup = await leaveYearSetup(client, organization, owner, self.id, [3]);
+        const [range] = setup.ranges;
+        if (range === undefined) throw new Error('no range');
+        const rulesBefore = await scheduleRulesFingerprint(client);
+        const overridesBefore = await overridesFingerprint(client);
+
+        await actAs(client, owner.authUserId, organization);
+        const id = await insertLeave(client, { organization, member: self.id, during: `[${range.from},${range.to}]` });
+        await actAsOwner(client);
+        const live = await leaveRow(client, id);
+        expect(await setup.balance(), `${slug}: the record does not cost 3`).toBe(17);
+
+        await actAs(client, owner.authUserId, organization);
+        await removeLeaveRecord(client, id);
+        const read = await liveLeaveOf(client, self.id);
+        await actAsOwner(client);
+
+        const { rows } = await client.query<{ removedBy: string; recent: boolean }>(
+          `select removed_by as "removedBy", removed_at > now() - interval '1 minute' as recent
+             from leave_records where id = $1`,
+          [id],
+        );
+        expect(rows, `${slug}: the removal is not attributed to its caller`).toEqual([
+          { removedBy: owner.authUserId, recent: true },
+        ]);
+        const removed = await leaveRow(client, id);
+        const { removed_by: _liveBy, removed_at: _liveAt, ...liveRest } = live ?? {};
+        const { removed_by: _by, removed_at: _at, ...removedRest } = removed ?? {};
+        expect(live?.['removed_at'], `${slug}: the record was not live`).toBeNull();
+        expect(removedRest, `${slug}: a removal changed more than removed_by and removed_at`).toEqual(liveRest);
+        expect(read, `${slug}: a removed record is read live`).toEqual([]);
+        expect(await setup.balance(), `${slug}: the removal did not restore the balance`).toBe(20);
+        expect(await scheduleRulesFingerprint(client), `${slug}: a removal touched a rotation, membership or status row`).toBe(
+          rulesBefore,
+        );
+        expect(await overridesFingerprint(client), `${slug}: a removal touched a time or an override`).toBe(overridesBefore);
+
+        // THEN RE-RECORD: the removed row has left the exclusion.
+        await actAs(client, owner.authUserId, organization);
+        const again = await insertLeave(client, { organization, member: self.id, during: `[${range.from},${range.to}]` });
+        const reread = await liveLeaveOf(client, self.id);
+        await actAsOwner(client);
+        expect(reread.map((record) => record.id), `${slug}: the same range cannot be recorded again`).toEqual([again]);
+        expect(await setup.balance()).toBe(17);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'amends a $fixture record costing 3 to an overlapping range costing 5: the old removed, the new returned and live alone, attributed, the same member, and the balance 15',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const setup = await leaveYearSetup(client, organization, owner, self.id, [3, 5]);
+        const [costing3, costing5] = setup.ranges;
+        if (costing3 === undefined || costing5 === undefined) throw new Error('no range');
+        const rulesBefore = await scheduleRulesFingerprint(client);
+        const overridesBefore = await overridesFingerprint(client);
+
+        await actAs(client, owner.authUserId, organization);
+        const id = await insertLeave(client, { organization, member: self.id, during: `[${costing3.from},${costing3.to}]` });
+        await actAsOwner(client);
+        expect(await setup.balance()).toBe(17);
+
+        await actAs(client, owner.authUserId, organization);
+        // The new range overlaps the old one: the old leaves the exclusion first.
+        const replacement = await amendLeaveRecord(client, id, costing5.from, costing5.to);
+        const read = await liveLeaveOf(client, self.id);
+        await actAsOwner(client);
+
+        expect(replacement, `${slug}: the amend returned the old id`).not.toBe(id);
+        expect(read, `${slug}: not exactly the replacement is live`).toEqual([{ id: replacement, range: costing5 }]);
+        expect(await setup.balance(), `${slug}: the balance does not reflect only the new cost`).toBe(15);
+        const { rows } = await client.query<{
+          id: string;
+          organization: string;
+          member: string;
+          createdBy: string;
+          removedBy: string | null;
+          live: boolean;
+          recent: boolean;
+        }>(
+          `select id::text as id, organization_id::text as organization, member_id::text as member,
+                  created_by::text as "createdBy", removed_by::text as "removedBy", removed_at is null as live,
+                  coalesce(removed_at, created_at) > now() - interval '1 minute' as recent
+             from leave_records where id = any($1::uuid[]) order by removed_at is null`,
+          [[id, replacement]],
+        );
+        expect(rows, slug).toEqual([
+          { id, organization, member: self.id, createdBy: owner.authUserId, removedBy: owner.authUserId, live: false, recent: true },
+          { id: replacement, organization, member: self.id, createdBy: owner.authUserId, removedBy: null, live: true, recent: true },
+        ]);
+        expect(await scheduleRulesFingerprint(client), `${slug}: an amend touched a rotation, membership or status row`).toBe(
+          rulesBefore,
+        );
+        expect(await overridesFingerprint(client), `${slug}: an amend touched a time or an override`).toBe(overridesBefore);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture amend onto another live record (23P01) or to a reversed, infinite or 367-day range, and every original stays live and unchanged',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+
+        await actAs(client, owner.authUserId, organization);
+        const amended = await insertLeave(client, { organization, member: self.id, during: '[2026-09-10,2026-09-14]' });
+        const other = await insertLeave(client, { organization, member: self.id, during: '[2026-09-18,2026-09-25]' });
+        await actAsOwner(client);
+        const before = [await leaveRow(client, amended), await leaveRow(client, other)];
+
+        await actAs(client, owner.authUserId, organization);
+        const codes: Record<string, string> = {};
+        for (const [label, from, to] of [
+          ['onto another record', '2026-09-12', '2026-09-20'],
+          ['reversed', '2026-09-14', '2026-09-10'],
+          ['infinite end', '2026-09-10', 'infinity'],
+          ['infinite start', '-infinity', '2026-09-14'],
+          ['no end', '2026-09-10', null],
+          ['367 days', '2026-01-01', '2027-01-02'],
+        ] as const) {
+          codes[label] = (await refusedThenContinue(client, () => amendLeaveRecord(client, amended, from, to as string))).code;
+        }
+        const live = await liveLeaveOf(client, self.id);
+        await actAsOwner(client);
+
+        expect(codes, slug).toEqual({
+          'onto another record': '23P01',
+          reversed: '22000',
+          'infinite end': '22008',
+          'infinite start': '22008',
+          'no end': '23514',
+          '367 days': '23514',
+        });
+        expect([await leaveRow(client, amended), await leaveRow(client, other)], `${slug}: a refused amend changed a row`).toEqual(
+          before,
+        );
+        expect(live.map((record) => record.id), `${slug}: a refused amend left the originals not live`).toEqual([
+          amended,
+          other,
+        ]);
+        const { rows } = await client.query<{ count: number }>(
+          'select count(*)::int as count from leave_records where member_id = $1',
+          [self.id],
+        );
+        expect(rows, `${slug}: a refused amend left a row behind`).toEqual([{ count: 2 }]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a second $fixture removal, an amend of a removed record and an unknown id with P0002, and a removed row stays as it was',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const unknown = '00000000-0000-4000-8000-000000000000';
+
+        await actAs(client, owner.authUserId, organization);
+        const id = await insertLeave(client, { organization, member: self.id, during: '[2026-09-10,2026-09-14]' });
+        await removeLeaveRecord(client, id);
+        await actAsOwner(client);
+        const removed = await leaveRow(client, id);
+
+        await actAs(client, owner.authUserId, organization);
+        const codes = {
+          'remove twice': (await refusedThenContinue(client, () => removeLeaveRecord(client, id))).code,
+          'amend removed': (
+            await refusedThenContinue(client, () => amendLeaveRecord(client, id, '2026-09-10', '2026-09-14'))
+          ).code,
+          'remove unknown': (await refusedThenContinue(client, () => removeLeaveRecord(client, unknown))).code,
+          'amend unknown': (
+            await refusedThenContinue(client, () => amendLeaveRecord(client, unknown, '2026-09-10', '2026-09-14'))
+          ).code,
+        };
+        const live = await liveLeaveOf(client, self.id);
+        await actAsOwner(client);
+
+        expect(codes, slug).toEqual({
+          'remove twice': 'P0002',
+          'amend removed': 'P0002',
+          'remove unknown': 'P0002',
+          'amend unknown': 'P0002',
+        });
+        expect(await leaveRow(client, id), `${slug}: a refused call changed a removed row`).toEqual(removed);
+        expect(live, `${slug}: a refused amend of a removed record wrote one`).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture member-role account, an inactive admin and a session with no claim either call with 42501, and changes nothing',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const inactive = await addThrowawayAdmin(client, organization);
+
+        await actAs(client, owner.authUserId, organization);
+        const id = await insertLeave(client, { organization, member: self.id, during: '[2026-09-10,2026-09-14]' });
+        await actAsOwner(client);
+        await ownerVersion(client, {
+          organization,
+          member: inactive.id,
+          active: false,
+          from: await organizationDay(client, organization),
+          by: owner.authUserId,
+        });
+        const before = await leaveRow(client, id);
+
+        const codes: Record<string, string> = {};
+        for (const [label, caller, claim] of [
+          ['member', self.authUserId, organization],
+          ['inactive admin', inactive.authUserId, organization],
+          ['no claim', owner.authUserId, null],
+        ] as const) {
+          await actAs(client, caller, claim);
+          codes[`${label} removes`] = (await refusedThenContinue(client, () => removeLeaveRecord(client, id))).code;
+          codes[`${label} amends`] = (
+            await refusedThenContinue(client, () => amendLeaveRecord(client, id, '2026-09-11', '2026-09-12'))
+          ).code;
+          await actAsOwner(client);
+        }
+
+        expect(Object.values(codes), `${slug}: ${JSON.stringify(codes)}`).toEqual(Array(6).fill('42501'));
+        expect(await leaveRow(client, id), `${slug}: a refused call changed the row`).toEqual(before);
+        expect(before?.['removed_at'], `${slug}: the record was not live`).toBeNull();
+        const { rows } = await client.query<{ count: number }>(
+          'select count(*)::int as count from leave_records where member_id = $1',
+          [self.id],
+        );
+        expect(rows, `${slug}: a refused amend wrote a row`).toEqual([{ count: 1 }]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'never lets a $fixture admin remove or amend a $otherFixture record, under its own claim or a forged one',
+    async ({ slug, admin, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const foreignFixture = FIXTURES.find((entry) => entry.slug === otherSlug);
+        const foreignOwner = await memberByUsername(client, otherSlug, foreignFixture?.admin ?? '');
+        const foreignMember = await memberByUsername(client, otherSlug, foreignFixture?.member ?? '');
+        // The target is written here, as the other tenant's admin, so the case
+        // never rests on what that fixture happens to seed.
+        await actAs(client, foreignOwner.authUserId, foreignOwner.organizationId);
+        const id = await insertLeave(client, {
+          organization: foreignOwner.organizationId,
+          member: foreignMember.id,
+          during: '[2026-10-07,2026-10-09]',
+        });
+        await actAsOwner(client);
+        const before = await leaveRow(client, id);
+
+        const codes: Record<string, string> = {};
+        for (const [label, claim] of [
+          ['own claim', owner.organizationId],
+          ['forged claim', foreignOwner.organizationId],
+        ] as const) {
+          await actAs(client, owner.authUserId, claim);
+          codes[`${label} removes`] = (await refusedThenContinue(client, () => removeLeaveRecord(client, id))).code;
+          codes[`${label} amends`] = (
+            await refusedThenContinue(client, () => amendLeaveRecord(client, id, '2026-10-07', '2026-10-08'))
+          ).code;
+          await actAsOwner(client);
+        }
+
+        // Another tenant's id is indistinguishable from none under one's own
+        // claim; a forged claim is refused before any row is looked at.
+        expect(codes, `${slug} against ${otherSlug}`).toEqual({
+          'own claim removes': 'P0002',
+          'own claim amends': 'P0002',
+          'forged claim removes': '42501',
+          'forged claim amends': '42501',
+        });
+        expect(await leaveRow(client, id), `${slug}: ${otherSlug}'s record changed`).toEqual(before);
+        expect(before?.['removed_at'], `${otherSlug}'s record is not live`).toBeNull();
+      });
+    },
+  );
+
+  it.skipIf(noApi).each(['remove_leave_record', 'amend_leave_record'])(
+    'refuses an anonymous caller %s',
+    async (fn) => {
+      const response = await rest(`rpc/${fn}`, {
+        method: 'POST',
+        body:
+          fn === 'remove_leave_record'
+            ? { p_record_id: '00000000-0000-4000-8000-000000000000' }
+            : { p_record_id: '00000000-0000-4000-8000-000000000000', p_from: '2041-09-10', p_to: '2041-09-14' },
+      });
+      expect(response.status, `an anonymous caller reached ${fn}`).toBe(401);
+      const refusal = await restRefusal(response);
+      expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
+      expect(refusal.message).toBe(`permission denied for function ${fn}`);
+    },
+  );
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'maps the $fixture amend and removal over PostgREST: the new id, LEAVE_OVERLAP naming the other record and never the amended one, LEAVE_FAILED, LEAVE_GONE and LEAVE_DENIED',
+    async ({ slug, admin, member }) => {
+      const client = await connect();
+      const year2041 = '[2041-01-01,2042-01-01)';
+      let cleanup: string[] = [];
+      try {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        cleanup = [self.id];
+        const by = owner.authUserId;
+        // Leftovers of an interrupted run, before anything is seeded.
+        await client.query('delete from leave_records where member_id = any($1::uuid[]) and during && $2::daterange', [
+          cleanup,
+          year2041,
+        ]);
+
+        // As the owner, committed: the record amended, and another from 18.09.
+        const amended = await insertLeave(client, { organization, member: self.id, during: '[2041-09-10,2041-09-14]', by });
+        await insertLeave(client, { organization, member: self.id, during: '[2041-09-18,2041-09-25]', by });
+        const adminToken = await tokenFor(admin, slug);
+        const asAdmin = restLeaveRpc(adminToken);
+        const table = restLeaveTable(adminToken);
+
+        // The entered 12.09–20.09 overlaps the amended record too, which the
+        // read-back leaves out: the conflict named is 18.09–25.09.
+        expect(await amendLeave(asAdmin, table, organization, self.id, amended, '2041-09-12', '2041-09-20'), slug).toEqual({
+          ok: false,
+          code: LEAVE_OVERLAP,
+          conflict: { from: '2041-09-18', to: '2041-09-25' },
+        });
+        expect(await amendLeave(asAdmin, table, organization, self.id, amended, '2041-09-14', '2041-09-10'), slug).toEqual({
+          ok: false,
+          code: LEAVE_FAILED,
+        });
+        expect(
+          await amendLeave(restLeaveRpc(await tokenFor(member, slug)), table, organization, self.id, amended, '2041-09-11', '2041-09-12'),
+          slug,
+        ).toEqual({ ok: false, code: LEAVE_DENIED });
+        expect(await removeLeave(restLeaveRpc(await tokenFor(member, slug)), amended), slug).toEqual({
+          ok: false,
+          code: LEAVE_DENIED,
+        });
+
+        const landed = await amendLeave(asAdmin, table, organization, self.id, amended, '2041-09-11', '2041-09-15');
+        expect(landed.ok, `${slug}: ${JSON.stringify(landed)}`).toBe(true);
+        const replacement = landed.ok ? landed.id : '';
+        expect(replacement).toMatch(/^[0-9a-f-]{36}$/);
+        expect(await removeLeave(asAdmin, amended), `${slug}: the amended record is still live`).toEqual({
+          ok: false,
+          code: LEAVE_GONE,
+        });
+        expect(await removeLeave(asAdmin, replacement), slug).toEqual({ ok: true });
+        expect(await removeLeave(asAdmin, replacement), slug).toEqual({ ok: false, code: LEAVE_GONE });
+
+        const { rows } = await client.query<{ id: string; during: string; createdBy: string; removedBy: string | null }>(
+          `select id::text as id, during::text as during, created_by::text as "createdBy", removed_by::text as "removedBy"
+             from leave_records where member_id = $1 and during && $2::daterange order by lower(during), created_at`,
+          [self.id, year2041],
+        );
+        expect(rows).toEqual([
+          { id: amended, during: '[2041-09-10,2041-09-15)', createdBy: by, removedBy: by },
+          { id: replacement, during: '[2041-09-11,2041-09-16)', createdBy: by, removedBy: by },
+          { id: expect.any(String) as string, during: '[2041-09-18,2041-09-26)', createdBy: by, removedBy: null },
+        ]);
+      } finally {
+        if (cleanup.length > 0) {
+          await client.query('delete from leave_records where member_id = any($1::uuid[]) and during && $2::daterange', [
+            cleanup,
+            year2041,
           ]);
         }
         await client.end();

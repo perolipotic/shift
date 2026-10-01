@@ -630,3 +630,24 @@
   summary: The leave card's hook (`use-member-leave.ts`) has no direct tests. Its edit-clears, in-flight, focus and reset rules are reached only through the e2e paths, because render tests are deferred project-wide.
   evidence: Raised by the 5.1c review (2026-10-01).
 
+- source_spec: none
+  summary: Story 5.2b, the admin's leave screen. The member page's Godišnji card lists the member's live records, each with amend (the od–do form previewing the amended cost, the old record left out of `leavePreviewOf`'s records) and delete (exactly one confirmation step, signalled by more than colour, neutral styling, UX-DR27, UX-DR4), all through 5.2a's services.
+  evidence: Split from story 5.2 on 2026-10-01 by the human ([S] Split). 5.2a builds the amend and removal record and services with no UI, as 5.1b did for 5.1c.
+- source_spec: none
+  summary: Story 5.2c, the member's own leave view. The member tab Godišnji (now a placeholder, `pages/godisnji.tsx`) shows the viewer's allowance, days used this leave year and balance, and no other member's (CAP-15, CAP-5). Read through a definer function or a column-limited view, never a direct select that returns `created_by`/`removed_by` (the 5.1b entry above).
+  evidence: Split from story 5.2 on 2026-10-01 by the human ([S] Split). It is a separate surface with its own read path, shippable apart from the admin's amend and delete.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-2a-leave-amend-and-removal.md`
+  summary: Story 5.3 must assert the 5.2 AC "Given a leave record that caused conflicts, When it is amended so it no longer collides, Then every conflict it caused is cleared" (UX-DR28), with a node case that amends and removes a record through 0029's functions and finds its derived conflicts gone, as one edit to one record, not a batch resolution.
+  evidence: Deferred by 5.2a on 2026-10-01 (human-approved). Conflicts do not exist until 5.3; they are derived from live leave records, so the soft-removed row stops raising them with no further write.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-2a-leave-amend-and-removal.md`
+  summary: Story 5.4 must make sure amending or removing a leave record whose conflict was resolved by Replace member never silently reverts that roster override. The situation is surfaced to the admin (epic 5 constraint "Leave never silently reverts a replacement").
+  evidence: Deferred by 5.2a on 2026-10-01 (human-approved). Resolutions do not exist until 5.4, and 0029's amend and removal touch no roster override.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-2a-leave-amend-and-removal.md`
+  summary: Story 5.2b prerequisites. Add `id` to `LEAVE_RECORDS_COLUMNS` (`leave-list.ts`). Re-read the records after every amend or remove outcome. Give `LEAVE_GONE` its own line ("already removed", list refreshed) and `LEAVE_DENIED` its own line. Do not offer an amend whose range equals the record's current range, because 0029 would remove the row and insert an identical one with a new id.
+  evidence: Raised by the 5.2a review on 2026-10-01; 0029 accepts a same-range amend by design.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-2a-leave-amend-and-removal.md`
+  summary: Story 5.4 and history. An amended record and a removal followed by an unrelated new record look the same in `leave_records`, because there is no replacement-to-original link (left under 5.2a's Ask First). If 5.4's "never silently revert a replacement", or any audit view, must tell them apart, add the link column then.
+  evidence: Raised by the 5.2a review on 2026-10-01.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-2a-leave-amend-and-removal.md`
+  summary: The anon matrix row. The 5.2a matrix row "anon over REST" names `LEAVE_FAILED`. PostgREST answers an anonymous rpc call with 42501, which `leaveChangeFailureOf` maps to `LEAVE_DENIED`. Both are refusals, and the SPA never calls these as anon. Recorded so later reviews read the code the tests assert, as for the 5.1b codes entry.
+  evidence: Raised by the 5.2a verification-gap and blind reviews on 2026-10-01; the matrix sits in the approved frozen block.

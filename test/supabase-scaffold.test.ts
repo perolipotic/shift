@@ -334,7 +334,8 @@ describe('the access-control migration', () => {
       'hour_bands_update_by_own_active_admin',
       // STORY 5.1b, and TWO: an active admin inserts, and the read is the
       // admin's for the organization and a member's for their own rows. No
-      // update and no delete policy: removal is story 5.2's.
+      // update and no delete policy: removal and amend are 0029's definer
+      // functions (story 5.2a).
       'leave_records_insert_by_own_active_admin',
       'leave_records_select_own_organization',
       // STORY 1.6, and THREE rather than four: a status version is appended,
@@ -2185,6 +2186,69 @@ describe('the access-control migration', () => {
     expect((migration.match(/create function/gi) ?? []).length, 'story 3.6b takes one function').toBe(1);
   });
 
+  it('removes and amends a leave record through two definer functions that attribute the change themselves (story 5.2a)', () => {
+    const statements = migrationStatements();
+    const remove = /create function public\.remove_leave_record\(p_record_id uuid\)[\s\S]*?\$\$;/i.exec(statements)?.[0];
+    const amend = /create function public\.amend_leave_record\(p_record_id uuid, p_from date, p_to date\)[\s\S]*?\$\$;/i.exec(
+      statements,
+    )?.[0];
+    expect(remove, 'remove_leave_record is not declared').toBeDefined();
+    expect(amend, 'amend_leave_record is not declared').toBeDefined();
+    expect(remove).toMatch(/returns void/i);
+    expect(amend, 'the amend does not answer the replacement').toMatch(/returns uuid/i);
+    for (const [name, body, refused] of [
+      ['remove_leave_record', remove, 'LEAVE_RECORD_REMOVAL_REFUSED'],
+      ['amend_leave_record', amend, 'LEAVE_RECORD_AMEND_REFUSED'],
+    ] as const) {
+      expect(body, name).toMatch(/language plpgsql/i);
+      expect(body, name).toMatch(/security definer/i);
+      expect(body, name).toMatch(/set search_path = ''/);
+      expect(body, `${name} lost the claim pin`).toMatch(
+        /nullif\(\(\(select auth\.jwt\(\)\) ->> 'organization_id'\), ''\)::uuid/,
+      );
+      expect(body, `${name} admits a caller who is no active admin`).toMatch(
+        /from public\.current_member_access\(\) as access\s+where access\.organization_id = claimed\s+and access\.is_active\s+and access\.member_role = 'admin'/,
+      );
+      expect(body, `${name}: a refusal of the caller is not 42501`).toMatch(
+        new RegExp(`errcode = 'insufficient_privilege',\\s+message = '${refused}'`),
+      );
+      expect(body, `${name}: a missing live row is not P0002`).toMatch(
+        /errcode = 'no_data_found',\s+message = 'LEAVE_RECORD_NOT_LIVE'/,
+      );
+      expect(body, `${name}: the removal is not attributed on the server`).toMatch(
+        /update public\.leave_records r\s+set removed_by = auth\.uid\(\),\s+removed_at = now\(\)/,
+      );
+      expect(body, `${name} reaches a removed row or another tenant`).toMatch(
+        /where r\.id = p_record_id\s+and r\.organization_id = claimed\s+and r\.removed_at is null/,
+      );
+      expect(body, `${name} hard-deletes`).not.toMatch(/\bdelete\b/i);
+      expect(body, `${name} computes a cost or a balance`).not.toMatch(/cost|balance|allowance/i);
+    }
+    expect(amend, 'the replacement is not the old row\'s member, or names its own attribution').toMatch(
+      /insert into public\.leave_records \(organization_id, member_id, during\)\s+values \(claimed, amended_member, pg_catalog\.daterange\(p_from, p_to, '\[\]'\)\)\s+returning id into replacement/,
+    );
+    expect(amend, 'the amend does not take the old row\'s member').toMatch(/returning r\.member_id into amended_member/);
+    // The removal precedes the insert, so the old range leaves the exclusion first.
+    expect(amend?.indexOf('update public.leave_records')).toBeLessThan(amend?.indexOf('insert into public.leave_records') ?? 0);
+    for (const signature of ['remove_leave_record(uuid)', 'amend_leave_record(uuid, date, date)']) {
+      for (const role of ['public', 'anon', 'service_role']) {
+        expect(statements).toContain(`revoke execute on function public.${signature} from ${role};`);
+      }
+      expect(statements).toContain(`grant execute on function public.${signature} to authenticated;`);
+    }
+    const migration = readFileSync(join(supabaseRoot, 'migrations', '0029_amend_remove_leave_record.sql'), 'utf8').replaceAll(
+      /--[^\n]*/g,
+      '',
+    );
+    expect(migration, 'story 5.2a takes no trigger').not.toMatch(/create (or replace )?trigger/i);
+    expect(migration, 'story 5.2a writes or refers to a rotation, membership, status or override row').not.toMatch(
+      /rotation_|team_membership_versions|member_status_versions|_overrides/,
+    );
+    expect(migration, 'story 5.2a changes a policy').not.toMatch(/\b(create|alter|drop) policy\b/i);
+    expect(migration, 'story 5.2a grants on a table').not.toMatch(/\bon table\b/i);
+    expect((migration.match(/create function/gi) ?? []).length, 'story 5.2a takes two functions').toBe(2);
+  });
+
   it('stores a leave record as one member and one bounded inclusive range, refusing a live overlap by exclusion (story 5.1b)', () => {
     // STORY 5.1b (R4.1, R4.4, AD-3): one member, one daterange, attributed and
     // soft-removable. No cost, balance, allowance or schedule column: those
@@ -2252,7 +2316,7 @@ describe('the access-control migration', () => {
     for (const verb of ['update', 'delete', 'all']) {
       expect(
         policies.filter((declaration) => new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration)),
-        `a policy opens ${verb} on leave_records; removal is story 5.2's`,
+        `a policy opens ${verb} on leave_records; removal and amend are 0029's definer functions`,
       ).toEqual([]);
     }
     for (const name of ['leave_records_select_own_organization', 'leave_records_insert_by_own_active_admin']) {
