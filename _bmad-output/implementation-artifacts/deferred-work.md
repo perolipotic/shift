@@ -610,3 +610,20 @@
     - C8: the admin table recomputes the schedule input once per member.
     None of these is a live defect at pilot scale. Low risk, but they compound.
 
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-1a-leave-rule.md`
+  summary: Story 5.1b — the leave record. It covers:
+    - the `leave_records` migration: organization first, member, `daterange during`, `EXCLUDE USING gist (member_id WITH =, during WITH &&)` with `btree_gist`, `created_by`/`created_at`;
+    - RLS: admin writes, a member reads only their own records;
+    - the write path, which must NOT refuse an over-balance record (R4.7) — only the 5.1c screen warns;
+    - the overlap refusal, mapped to a code that names the conflicting record, with every entered value kept for the screen (UX-DR22).
+    It also carries the 5.1 AC "a saved record leaves every scheduled shift in place and the rotation untouched" (R4.1, DI-3), asserted by re-reading the schedule after a save. No UI.
+  evidence: The human split story 5.1 on 2026-10-01 into 5.1a (pure `domain/leave`), 5.1b (the record) and 5.1c (the screen), following the 4.1a/4.1b and 3.6a/3.6b pattern. The Epic AC Auditor on 5.1a found this entry missing the DI-3 AC.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-1a-leave-rule.md`
+  summary: Story 5.1c — the admin's leave section on the member's page in Ljudi. Shows allowance, days used and balance; a range form with the cost from `domain/leave` before saving; the overlap refusal names the record and keeps every value; over-balance saves with a warning.
+  evidence: The human split story 5.1 on 2026-10-01 and placed admin leave entry on the member's page; the Godišnji tab stays the member's own view for a later story.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-1a-leave-rule.md`
+  summary: Story 5.2 needs to preview an amended record. `leavePreviewOf` has no "this replaces record X", so the amend flow must leave the old record out of `records`. Add a replacing parameter or document the caller contract when 5.2 is planned.
+  evidence: Raised by the 5.1a review (2026-10-01). Today the preview treats any record covering the range as an overlap (`overlapsRecord`) and does not charge those dates.
+

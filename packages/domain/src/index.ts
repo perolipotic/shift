@@ -39,6 +39,21 @@ export {
 } from './hours.js';
 
 export {
+  isLeaveDay,
+  leaveBalanceOf,
+  leaveCostOf,
+  leavePreviewOf,
+  leaveYearOf,
+  MAX_LEAVE_RANGE_DAYS,
+  type LeaveBalance,
+  type LeaveBalanceInput,
+  type LeavePreview,
+  type LeavePreviewInput,
+  type LeaveRange,
+  type LeaveYearStart,
+} from './leave.js';
+
+export {
   daysBetween,
   projectedShiftType,
   projectedShiftTypeOn,
