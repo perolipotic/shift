@@ -45,6 +45,7 @@ import {
   OVERRIDE_REVIEW_HEADING_ID,
 } from '@/features/rotation/utils/element-ids';
 import { supabaseClient } from '@/lib/supabase/client';
+import { focusLater } from '@/utils/focus-later';
 
 /** The dialog open over the review: an amend or a discard of one row. */
 type Armed =
@@ -112,13 +113,12 @@ export function OverrideReview({
     setRefusal(null);
   }
 
-  /** Focus a frame later, once `pending` no longer disables the control: the first target still there, else the heading. */
-  function focusLater(...targets: readonly { readonly current: HTMLElement | null }[]): void {
-    requestAnimationFrame(() => {
-      const found = targets.map((target) => target.current).find((element) => element?.isConnected === true);
-
-      (found ?? heading.current)?.focus();
-    });
+  /** Focus once the next render has drawn it and `pending` no longer disables it: the first target ready, else the heading. */
+  function focusAfterWrite(...targets: readonly { readonly current: HTMLElement | null }[]): void {
+    focusLater(
+      targets.map((target) => () => target.current),
+      () => heading.current,
+    );
   }
 
   async function reread(): Promise<void> {
@@ -155,7 +155,7 @@ export function OverrideReview({
         setArmed(null);
         setDone(kind);
         // The row has left the review, and the review may have gone with it.
-        focusLater(doneNotice, heading);
+        focusAfterWrite(doneNotice, heading);
 
         return;
       }
@@ -166,13 +166,13 @@ export function OverrideReview({
         if (stale) await reread();
         setArmed(null);
         setRefusal(outcome.code);
-        focusLater(refusalNotice, heading);
+        focusAfterWrite(refusalNotice, heading);
 
         return;
       }
 
       setFailure(outcome.code);
-      focusLater(
+      focusAfterWrite(
         outcome.code === DISPOSITION_REASON ? reasonField : kind === DISPOSITION_AMENDED ? typeField : discardCancel,
         typeField,
         discardCancel,
@@ -201,7 +201,7 @@ export function OverrideReview({
 
     setArmed(null);
     setFailure(null);
-    focusLater(heading);
+    focusAfterWrite(heading);
   }
 
   function submitAmend(event: FormEvent<HTMLFormElement>, row: PendingOverrideRow): void {
