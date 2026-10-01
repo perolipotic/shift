@@ -499,11 +499,11 @@ development_status:
   5-2a-leave-amend-and-removal: done
   5-2b-leave-amend-screen: done
   5-2c-member-leave-view: done
-  5-3-a-collision-with-a-rostered-shift-becomes-a-visible-conflict: in-progress
+  5-3-a-collision-with-a-rostered-shift-becomes-a-visible-conflict: done
   5-3a-collision-rule: done
   5-3b-conflicts-queue: done
   5-3c-calendar-marks: done
-  5-3d-hours-conflict-state: review
+  5-3d-hours-conflict-state: done
   5-4-an-admin-decides-each-conflict-on-its-own-screen: backlog
   5-5-a-configuration-change-cannot-quietly-erase-a-pending-decisi: backlog
   epic-5-retrospective: optional
