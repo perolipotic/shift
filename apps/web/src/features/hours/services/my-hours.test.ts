@@ -14,6 +14,9 @@ import {
   hoursMessageKey,
   hoursSearchOf,
   hoursSearchTo,
+  figureOf,
+  leaveIsEmpty,
+  leaveShownOf,
   memberHoursInputOf,
   myHoursOf,
   myHoursSurfaceOf,
@@ -169,7 +172,10 @@ describe("the viewer's month", () => {
       expect(band.shiftCount).toBe(domain.shiftCount);
       expect(band.hours.values.hours * 60 + band.hours.values.minutes).toBe(domain.minutes);
     }
-    expect(shown(view.leave)).toBe('0 h');
+    // No leave exists before Epic 5: the figure is empty, never `0 h`.
+    expect(hours.leaveMinutes).toBe(0);
+    expect(view.leave).toBeNull();
+    expect(t('sati.noFigure')).toBe('—');
     // No untimed shift, so no note.
     expect(view.untimedShiftCount).toBeNull();
   });
@@ -323,6 +329,40 @@ describe('the matrix edges', () => {
 
     expect(view.bands.map((band) => shown(band.hours))).toEqual(['12 h 30 min', '45 min']);
     expect(shown(view.total)).toBe('13 h 15 min');
+  });
+
+  it('leave: 0 is empty, and a positive leave reads as a duration with no further change', () => {
+    const hoursWith = (leaveMinutes: number): MemberHours => ({
+      shiftCount: 1,
+      bands: [
+        { bandId: 'pilot-band-dan', minutes: 720, shiftCount: 1 },
+        { bandId: 'pilot-band-noc', minutes: 0, shiftCount: 0 },
+      ],
+      unbandedMinutes: 0,
+      totalMinutes: 720,
+      leaveMinutes,
+      untimedShiftCount: 0,
+    });
+    const none = myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hoursWith(0));
+    const some = myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hoursWith(750));
+
+    expect(none.leave).toBeNull();
+    expect(some.leave).not.toBeNull();
+    expect(shown(some.leave!)).toBe('12 h 30 min');
+    // Leave is never in the total or a band.
+    expect(shown(some.total)).toBe('12 h');
+    expect(some.bands.map((band) => shown(band.hours))).toEqual(['12 h', '0 h']);
+  });
+
+  it('leave: zero is the one empty rule, and what a leave reads as goes through t()', () => {
+    expect(leaveIsEmpty(0)).toBe(true);
+    expect(leaveIsEmpty(1)).toBe(false);
+    expect(leaveIsEmpty(750)).toBe(false);
+    const none = leaveShownOf(null);
+    const some = leaveShownOf(figureOf(750));
+
+    expect(t(none.key, none.values)).toBe('—');
+    expect(t(some.key, some.values)).toBe('12 h 30 min');
   });
 
   it('a band the snapshot lacks is refused, never shown nameless', () => {

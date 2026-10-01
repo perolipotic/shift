@@ -583,3 +583,16 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-1b-my-hours-screen.md`
   summary: Pressing `Ovaj mjesec` in the shared `MonthNav` disables the focused button, so focus drops to `<body>` on both Kalendar and Sati; focus should move to the month heading (the nav already takes `headingId`).
   evidence: Raised by the 4.1b review (2026-09-30). The behaviour predates 4.1b: it came from `calendar-month-nav.tsx` unchanged, and `Sati` inherits it.
+
+- source_spec: none
+  summary: Epic 4 retro item 1 (C1). A Sati name for a member no longer active today must still open that member's calendar month. The calendar person filter will offer everyone active on at least one date of the month shown, not only those active today.
+  evidence: Split from the retro items 1–3 build on 2026-10-01; the human chose split, in the order R2, C1, C2, and chose the "active in the month shown" filter rule. Source: epic-4-retro-2026-10-01.md C1.
+- source_spec: none
+  summary: Epic 4 retro item 3 (C2). The 3.6b roster "put on" form warns, without blocking, when the chosen member already works an overlapping window that date with their own team.
+  evidence: Split from the retro items 1–3 build on 2026-10-01 (human chose split, order R2, C1, C2). Source: epic-4-retro-2026-10-01.md C2; double counting at packages/domain/src/hours.ts:174-199.
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-leave-figure-empty.md`
+  summary: The bare `—` marks on Sati (`sati.noFigure` for an empty leave, `sati.organization.noTeam` for no team) carry no accessible meaning; a screen reader announces "dash" or nothing. Give both a visually hidden word (e.g. "nema") or an `aria-label`, as one design for every empty mark.
+  evidence: Raised by the leave-figure-empty review (2026-10-01). `hours-summary.tsx` and `organization-hours-table.tsx` render the glyph alone; `noTeam` set the precedent in 4.2.
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-leave-figure-empty.md`
+  summary: No test renders the hours components with a positive leave; the screen half of "fills with no further change" rests on the pure `leaveShownOf` choice. Add a render or e2e case once render tests exist or Epic 5 seeds leave.
+  evidence: Raised by the leave-figure-empty verification-gap review (2026-10-01). E2E leave is always 0, and render tests are deferred project-wide.

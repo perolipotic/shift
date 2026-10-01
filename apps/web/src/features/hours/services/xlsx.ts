@@ -9,7 +9,8 @@ import type { HoursExport, HoursExportCell } from '@/features/hours/services/hou
  * enters the entry chunk (`test/localization-applied.test.ts` holds that).
  *
  * It decides nothing: `./hours-export` built the sheet, and this maps each of
- * its cells onto the writer's — text as text, a count as a number, and hours
+ * its cells onto the writer's — text as text, a count as a number, an empty
+ * figure as no cell at all, and hours
  * as a duration in `[h]:mm`, so 750 minutes reads `12:30` as the screen's
  * `12 h 30 min`, a total past a day keeps its hours (`108:00`), and a column
  * sums natively.
@@ -45,6 +46,8 @@ function cellOf(cell: HoursExportCell): Cell {
       return { type: Number, value: cell.value };
     case 'hours':
       return { type: Number, value: cell.value, format: HOURS_CELL_FORMAT };
+    case 'empty':
+      return null;
   }
 }
 

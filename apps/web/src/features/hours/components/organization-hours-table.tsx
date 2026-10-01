@@ -12,7 +12,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { SORT_LEAVE, SORT_NAME, SORT_SHIFTS, SORT_TEAM, SORT_TOTAL, type HoursSortKey } from '@/features/hours/services/my-hours';
+import {
+  SORT_LEAVE,
+  SORT_NAME,
+  SORT_SHIFTS,
+  SORT_TEAM,
+  SORT_TOTAL,
+  leaveShownOf,
+  type HoursSortKey,
+} from '@/features/hours/services/my-hours';
 import {
   hoursAriaSortOf,
   hoursSortArrowOf,
@@ -100,39 +108,43 @@ export function OrganizationHoursTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {view.rows.map((row) => (
-            <TableRow key={row.memberId}>
-              <TableCell className="whitespace-nowrap">
-                <Link
-                  to="/kalendar"
-                  search={row.calendar}
-                  className="inline-flex min-h-11 items-center font-medium underline-offset-4 hover:underline"
-                >
-                  {row.name}
-                </Link>
-              </TableCell>
-              <TableCell className="whitespace-nowrap">{row.team?.name ?? t('sati.organization.noTeam')}</TableCell>
-              <TableCell className="whitespace-nowrap text-right tabular-nums">
-                {t('sati.shiftCount', { count: row.shiftCount })}
-              </TableCell>
-              {row.bands.map((band) => (
-                <TableCell key={band.bandId} className="whitespace-nowrap text-right tabular-nums">
-                  <span className="flex flex-col items-end">
-                    <span className="font-semibold">{t(band.hours.key, band.hours.values)}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {t('sati.shiftCount', { count: band.shiftCount })}
-                    </span>
-                  </span>
+          {view.rows.map((row) => {
+            const leave = leaveShownOf(row.leave);
+
+            return (
+              <TableRow key={row.memberId}>
+                <TableCell className="whitespace-nowrap">
+                  <Link
+                    to="/kalendar"
+                    search={row.calendar}
+                    className="inline-flex min-h-11 items-center font-medium underline-offset-4 hover:underline"
+                  >
+                    {row.name}
+                  </Link>
                 </TableCell>
-              ))}
-              <TableCell className="whitespace-nowrap text-right font-semibold tabular-nums">
-                {t(row.total.key, row.total.values)}
-              </TableCell>
-              <TableCell className="whitespace-nowrap text-right tabular-nums">
-                {t(row.leave.key, row.leave.values)}
-              </TableCell>
-            </TableRow>
-          ))}
+                <TableCell className="whitespace-nowrap">{row.team?.name ?? t('sati.organization.noTeam')}</TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {t('sati.shiftCount', { count: row.shiftCount })}
+                </TableCell>
+                {row.bands.map((band) => (
+                  <TableCell key={band.bandId} className="whitespace-nowrap text-right tabular-nums">
+                    <span className="flex flex-col items-end">
+                      <span className="font-semibold">{t(band.hours.key, band.hours.values)}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {t('sati.shiftCount', { count: band.shiftCount })}
+                      </span>
+                    </span>
+                  </TableCell>
+                ))}
+                <TableCell className="whitespace-nowrap text-right font-semibold tabular-nums">
+                  {t(row.total.key, row.total.values)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {t(leave.key, leave.values)}
+                </TableCell>
+              </TableRow>
+            );
+          })}
           {view.empty === null ? null : (
             <TableRow>
               <TableCell colSpan={view.columnCount} className="text-muted-foreground">
