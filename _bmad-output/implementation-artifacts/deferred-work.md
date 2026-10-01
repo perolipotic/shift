@@ -584,15 +584,29 @@
   summary: Pressing `Ovaj mjesec` in the shared `MonthNav` disables the focused button, so focus drops to `<body>` on both Kalendar and Sati; focus should move to the month heading (the nav already takes `headingId`).
   evidence: Raised by the 4.1b review (2026-09-30). The behaviour predates 4.1b: it came from `calendar-month-nav.tsx` unchanged, and `Sati` inherits it.
 
-- source_spec: none
-  summary: Epic 4 retro item 1 (C1). A Sati name for a member no longer active today must still open that member's calendar month. The calendar person filter will offer everyone active on at least one date of the month shown, not only those active today.
-  evidence: Split from the retro items 1–3 build on 2026-10-01; the human chose split, in the order R2, C1, C2, and chose the "active in the month shown" filter rule. Source: epic-4-retro-2026-10-01.md C1.
-- source_spec: none
-  summary: Epic 4 retro item 3 (C2). The 3.6b roster "put on" form warns, without blocking, when the chosen member already works an overlapping window that date with their own team.
-  evidence: Split from the retro items 1–3 build on 2026-10-01 (human chose split, order R2, C1, C2). Source: epic-4-retro-2026-10-01.md C2; double counting at packages/domain/src/hours.ts:174-199.
 - source_spec: `_bmad-output/implementation-artifacts/spec-fix-leave-figure-empty.md`
   summary: The bare `—` marks on Sati (`sati.noFigure` for an empty leave, `sati.organization.noTeam` for no team) carry no accessible meaning; a screen reader announces "dash" or nothing. Give both a visually hidden word (e.g. "nema") or an `aria-label`, as one design for every empty mark.
   evidence: Raised by the leave-figure-empty review (2026-10-01). `hours-summary.tsx` and `organization-hours-table.tsx` render the glyph alone; `noTeam` set the precedent in 4.2.
 - source_spec: `_bmad-output/implementation-artifacts/spec-fix-leave-figure-empty.md`
   summary: No test renders the hours components with a positive leave; the screen half of "fills with no further change" rests on the pure `leaveShownOf` choice. Add a render or e2e case once render tests exist or Epic 5 seeds leave.
   evidence: Raised by the leave-figure-empty verification-gap review (2026-10-01). E2E leave is always 0, and render tests are deferred project-wide.
+
+## Deferred from: epic 4 retrospective (2026-10-01)
+
+- source_spec: `_bmad-output/implementation-artifacts/epic-4-retro-2026-10-01.md`
+  summary: Epic 5 (stories 5.3/5.4) must give the unresolved-conflict state to the hours surfaces as well as the calendar: `MemberHours`/`MyHoursView`, `OrganizationHoursRow` and the export (`hoursExportOf` is the one place that maps it). The member view, the organization table and the `.xlsx` row each show it distinctly, so no total is silently wrong (FR-41, 4.3 AC).
+  evidence: Retro finding R1. The 4.3 AC "that row carries the same distinct state the table shows" is unmet. Every Epic 4 spec put conflict state under Never, against `epic-4-context.md:25` ("the state must be representable before any conflict exists"), and no ledger entry carried it until now. `spec-4-3:92` names `hoursExportOf` as the mapping point.
+- source_spec: `_bmad-output/implementation-artifacts/epic-4-retro-2026-10-01.md`
+  summary: Hours-feature cleanup in one pass. Covers retro findings D1–D3, P1, P2, C3–C5 and C8; see the evidence for each.
+  evidence: All are from retro findings, with file anchors in the retro document.
+    - D1: the search/URL helpers and the query wiring are copied from calendar (`my-hours.ts` `hoursSearchOf`/`hoursSearchTo`, `HOURS_PERSON_PARAM`, `use-hours.ts` vs `use-calendar-screen.ts`).
+    - D2: the sort vocabulary and `SORT_GLYPHS` are copied from members.
+    - D3: `MINUTES_PER_DAY` is redefined in `hours-export.ts` although the domain exports it; the missing-band rule differs (0 in the table, a throw in the export); the RangeError guard is written twice.
+    - P1: the 4.2 table vocabulary (`tim`/`osoba`/`sort`/`smjer`, `SORT_*`, `HoursSortKey`) lives in `my-hours.ts`.
+    - P2: hours names a team `tim` and drops unknown parameters, while calendar uses `smjena` and keeps them.
+    - C3: the export omits the untimed-shift note, so shifts × length ≠ Total in the file.
+    - C4: the untimed note is an organization-wide sum, not per row.
+    - C5: a filter that matches no row in the new month is silently dropped from the next URL.
+    - C8: the admin table recomputes the schedule input once per member.
+    None of these is a live defect at pilot scale. Low risk, but they compound.
+
