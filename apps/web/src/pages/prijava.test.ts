@@ -2071,10 +2071,11 @@ const KEY_SOURCES = [
     // of a change line moved with the line to `roster-form.tsx` (net zero).
     // The refusals and the notices come through
     // `@/features/calendar/services/roster-write`, below.
+    // SEVENTY-FIVE SINCE EPIC 4 RETRO C2: the roster form's overlap hint.
     name: 'the Kalendar destination',
     file: KALENDAR,
     keys: translationKeys,
-    strings: 74,
+    strings: 75,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's

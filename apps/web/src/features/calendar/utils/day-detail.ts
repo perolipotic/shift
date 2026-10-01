@@ -1,6 +1,20 @@
-import { activeOn, membershipOn, rosterOn, scheduledShiftTypeOn, shiftRoster } from '@shift/domain';
+import {
+  activeOn,
+  daysBetween,
+  deriveShiftTimes,
+  MINUTES_PER_DAY,
+  memberScheduleOfMonth,
+  membershipOn,
+  monthOf,
+  rosterOn,
+  scheduledShiftTypeOn,
+  shiftRoster,
+  shiftTypeVersionOn,
+} from '@shift/domain';
 
 import {
+  dayMonthOf,
+  memberScheduleInputOf,
   overrideStandingOfCalendar,
   rosterStandingOfCalendar,
   typeRangeOn,
@@ -14,7 +28,7 @@ import type {
 import { compareText, formatDate, formatIsoDate, formatTime } from '@/lib/i18n/format';
 import { rosterLineOf, rosterPositionMessageKey, type RosterLine } from '@/features/members/utils/position';
 import { rosterRankMessageKey } from '@/features/members/utils/rank';
-import type { ShiftTypeRow } from '@/features/shift-types/services/list';
+import { shiftTimesShownOf, type ShiftTypeRow } from '@/features/shift-types/services/list';
 
 /**
  * One team on one date, opened from the calendar (story 3.4b; CAP-11, AD-2):
@@ -67,7 +81,9 @@ import type { ShiftTypeRow } from '@/features/shift-types/services/list';
  * DEFAULT roster alone (`shiftRoster`, `activeOn` and `membershipOn` from
  * `@shift/domain`), the browser's preflight ({@link rosterEntryOf}) and what
  * a removal names ({@link rosterRemovalTargetOf}). The database's checks and
- * its partial keys stay authoritative.
+ * its partial keys stay authoritative. A member chosen to put on who already
+ * works an overlapping shift is warned of, never refused
+ * ({@link rosterOverlapOf}, Epic 4 retro C2).
  */
 
 /** The team works a type that day. */
@@ -168,6 +184,12 @@ export interface DayDetail {
   readonly isoDate: string;
   /** The type the rotation projects that day, before any override; `null` with no rotation (story 3.5b). */
   readonly projectedShiftTypeId: string | null;
+  /**
+   * The type the team WORKS that day, the override applied (the roster form's
+   * overlap hint derives the shift's window from it, Epic 4 retro C2); `null`
+   * with no rotation.
+   */
+  readonly shiftTypeId: string | null;
   readonly kind: DayDetailKind;
   /** The type's name; `null` unless the kind is `working`. */
   readonly typeName: string | null;
@@ -248,6 +270,7 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
     return {
       ...base,
       projectedShiftTypeId: null,
+      shiftTypeId: null,
       kind: DAY_NO_ROTATION,
       typeName: null,
       range: null,
@@ -263,6 +286,7 @@ export function dayDetailOf(snapshot: CalendarSnapshot, teamId: string, date: st
   const projected = {
     ...base,
     projectedShiftTypeId: scheduled.projectedShiftTypeId,
+    shiftTypeId: scheduled.shiftTypeId,
     pending: waiting === undefined ? null : pendingOf(snapshot, waiting, projectedTypeName, date),
   };
 
@@ -620,8 +644,10 @@ const NO_ROSTER_OFFERS: RosterOffers = { set: false, remove: false, out: [], in:
  * names, on either side — applied, pending or inert — so a change is always
  * made against the default roster, and the live keys do not answer `taken`.
  * To change a change, remove it and save a new one. Those to take off are in
- * `shiftRoster`'s order, and those to put on in `snapshot.members`' order;
- * nothing is warned, blocked or suggested.
+ * `shiftRoster`'s order, and those to put on in `snapshot.members`' order.
+ * Nothing is blocked or suggested, and the list marks no one: a member put on
+ * while they already work an overlapping shift is WARNED of once chosen
+ * ({@link rosterOverlapOf}), never refused (Epic 4 retro C2, 2026-10-01).
  *
  * AN ARCHIVED TEAM (a day list's past team still opens) offers no form: the
  * insert policy refuses it. Its changes can still be removed.
@@ -678,6 +704,207 @@ export function rosterOffersOf(snapshot: CalendarSnapshot | null, detail: DayDet
 
 /** The value of a roster form's "— nitko —" option: no member on that side. */
 export const ROSTER_NOBODY = '';
+
+/**
+ * `date` (`YYYY-MM-DD`) moved by `days` whole days, as `YYYY-MM-DD`: civil-day
+ * arithmetic on the UTC axis, so no zone or daylight-saving change moves it.
+ *
+ * @throws RangeError when `date` is not a calendar `YYYY-MM-DD` (`2020-02-31`
+ *   and `2020-13-01` included), when `days` is not a safe integer, or when the
+ *   result falls outside years 0001–9999.
+ */
+export function isoDateShiftedBy(date: string, days: number): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+
+  if (match === null) throw new RangeError(`the date ${date} is not a YYYY-MM-DD`);
+  if (!Number.isSafeInteger(days)) throw new RangeError(`${String(days)} is not a whole number of days`);
+
+  const pad = (value: number, width: number) => String(value).padStart(width, '0');
+  const isoOf = (instant: Date) =>
+    `${pad(instant.getUTCFullYear(), 4)}-${pad(instant.getUTCMonth() + 1, 2)}-${pad(instant.getUTCDate(), 2)}`;
+  const at = (offset: number): Date => {
+    const instant = new Date(0);
+
+    instant.setUTCFullYear(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + offset);
+
+    return instant;
+  };
+
+  // The round trip: a date the calendar does not have comes back as another one.
+  if (Number(match[1]) < 1 || isoOf(at(0)) !== date) throw new RangeError(`the date ${date} is not a calendar date`);
+
+  const moved = at(days);
+  const year = moved.getUTCFullYear();
+
+  if (Number.isNaN(year) || year < 1 || year > 9999) {
+    throw new RangeError(`${date} moved by ${String(days)} days leaves years 0001–9999`);
+  }
+
+  return isoOf(moved);
+}
+
+/**
+ * A shift a member put on would double-book (Epic 4 retro C2): the member,
+ * the team they already work, the day that shift starts and its times.
+ */
+export interface RosterOverlap {
+  readonly memberName: string;
+  readonly teamName: string;
+  /** The day the shift they already work starts, `YYYY-MM-DD`: the open day, or the one before or after. */
+  readonly date: string;
+  /** That day as the calendar reads it: `četvrtak 01.01.`. */
+  readonly day: string;
+  /** `19:00–07:00`, the times of the shift they already work. */
+  readonly range: string;
+}
+
+/** A nominal window on an absolute axis: minutes from the start of the open day. */
+interface NominalWindow {
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * The nominal window of the type `shiftTypeId` on `date`, `offset` days from
+ * the open day; `null` for a type the snapshot lacks, a non-working one, or
+ * one with no version in effect.
+ *
+ * @throws RangeError on any precondition of `shiftTypeVersionOn` or `deriveShiftTimes`.
+ */
+function windowOf(
+  snapshot: CalendarSnapshot,
+  shiftTypeId: string,
+  date: string,
+  offset: number,
+): { readonly window: NominalWindow; readonly range: string } | null {
+  const type = snapshot.types.find((one) => one.id === shiftTypeId);
+
+  if (type === undefined || !type.isWorking) return null;
+
+  const version = shiftTypeVersionOn(type.versions, date);
+
+  if (version === null) return null;
+
+  const times = deriveShiftTimes(version.startMinute, version.endMinute);
+  const start = offset * MINUTES_PER_DAY + times.startMinute;
+
+  return { window: { start, end: start + times.durationMinutes }, range: shiftTimesShownOf(version).range };
+}
+
+/** One shift the member already works near the open day, in the order the hint names them. */
+interface NearbyShift {
+  readonly date: string;
+  readonly teamId: string;
+  readonly shiftTypeId: string;
+  /** Their own team's shift, rather than one a roster override puts them on. */
+  readonly own: boolean;
+}
+
+/** By date, then the member's own team before a shift a roster override puts them on. */
+function compareNearby(left: NearbyShift, right: NearbyShift): number {
+  if (left.date !== right.date) return left.date < right.date ? -1 : 1;
+  if (left.own !== right.own) return left.own ? -1 : 1;
+
+  return 0;
+}
+
+/**
+ * WHETHER PUTTING `memberId` ON THE SHIFT OF `detail` WOULD DOUBLE-BOOK THEM
+ * (Epic 4 retro C2; human decision 2026-10-01: warn, never block): a shift
+ * the member already works on the day before, the day itself or the day
+ * after whose NOMINAL window overlaps the open shift's; `null` for none, for
+ * nobody ({@link ROSTER_NOBODY}), for a member the snapshot does not hold,
+ * and for a day that is not a working one or whose type has no times.
+ *
+ * ONLY THE FIRST OVERLAP IS NAMED: by date, then the member's own team before
+ * a shift a roster override puts them on, then the domain's order.
+ *
+ * "Already works" is `memberScheduleOfMonth`'s answer through
+ * `memberScheduleInputOf` — the very shifts *Sati* counts — read for each
+ * month the three days fall in. As in hours, ONLY OVERRIDES IN FORCE count,
+ * shift-type and roster alike: one pending review or inert changes nothing.
+ * Windows are integer minutes on one axis (day offset × 1440 + start, + the
+ * duration `deriveShiftTimes` derives), half-open, so a shift ending at 07:00
+ * and one starting at 07:00 do not overlap. Only working types with times
+ * count; a neighbouring shift whose type or team the snapshot lacks is
+ * skipped. The open shift (its team on its date) is never counted against
+ * itself.
+ *
+ * @throws RangeError on any precondition of `memberScheduleOfMonth`,
+ *   `shiftTypeVersionOn` or `deriveShiftTimes`, or a date that cannot be
+ *   formatted. {@link rosterOverlapShownOf} is its guarded form.
+ */
+export function rosterOverlapOf(snapshot: CalendarSnapshot, detail: DayDetail, memberId: string): RosterOverlap | null {
+  if (memberId === ROSTER_NOBODY || detail.kind !== DAY_WORKING || detail.shiftTypeId === null) return null;
+
+  const member = snapshot.members.find((one) => one.id === memberId);
+
+  if (member === undefined) return null;
+
+  const day = detail.isoDate;
+  const open = windowOf(snapshot, detail.shiftTypeId, day, 0);
+
+  if (open === null) return null;
+
+  const dates = [isoDateShiftedBy(day, -1), day, isoDateShiftedBy(day, 1)];
+  const input = memberScheduleInputOf(snapshot, {
+    memberId: member.id,
+    memberships: member.memberships,
+    statuses: member.statuses,
+  });
+  const months = [...new Set(dates.map((date) => monthOf(date)))];
+  const nearby: NearbyShift[] = [];
+
+  for (const { date, shifts } of months.flatMap((month) => memberScheduleOfMonth(input, month))) {
+    if (!dates.includes(date)) continue;
+
+    for (const shift of shifts) {
+      if (shift.shiftTypeId === null) continue;
+      if (shift.teamId === detail.teamId && date === day) continue;
+      nearby.push({ date, teamId: shift.teamId, shiftTypeId: shift.shiftTypeId, own: !shift.viaOverride });
+    }
+  }
+
+  // `Array.prototype.sort` is stable: equal ones keep the domain's order.
+  for (const shift of nearby.sort(compareNearby)) {
+    const team = snapshot.teams.find((one) => one.id === shift.teamId);
+    const theirs = windowOf(snapshot, shift.shiftTypeId, shift.date, daysBetween(day, shift.date));
+
+    if (team === undefined || theirs === null) continue;
+    if (theirs.window.start < open.window.end && open.window.start < theirs.window.end) {
+      return {
+        memberName: member.name,
+        teamName: team.name,
+        date: shift.date,
+        day: `${weekdayOf(shift.date)} ${dayMonthOf(shift.date)}`,
+        range: theirs.range,
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * {@link rosterOverlapOf}, GUARDED: nothing open or nobody chosen is no hint,
+ * and a hint that cannot be derived is no hint either — the cause logged —
+ * so it never takes the form down. The save decides nothing by it.
+ */
+export function rosterOverlapShownOf(
+  snapshot: CalendarSnapshot | null,
+  detail: DayDetail | null,
+  memberId: string,
+): RosterOverlap | null {
+  if (snapshot === null || detail === null || memberId === ROSTER_NOBODY) return null;
+
+  try {
+    return rosterOverlapOf(snapshot, detail, memberId);
+  } catch (cause) {
+    console.error(cause);
+
+    return null;
+  }
+}
 
 /** One member a roster form's `Select` offers: their id and the line it reads. */
 export interface RosterOption {

@@ -361,9 +361,13 @@ export class CalendarPage extends BasePage {
     return dialog.getByRole('alert');
   }
 
-  /** What a landed override write says inside the day detail. */
+  /**
+   * What a landed write says inside the day detail: a `status` that says
+   * something. The roster form's overlap hint is a `status` too, always
+   * attached and empty while silent (Epic 4 retro C2), so an empty one is not it.
+   */
   statusIn(dialog: Locator): Locator {
-    return dialog.getByRole('status');
+    return dialog.getByRole('status').filter({ hasText: /\S/ });
   }
 
   /** The removal's confirmation, named by its prompt: the team, the date and the projected type restored. */
@@ -420,6 +424,16 @@ export class CalendarPage extends BasePage {
   /** A member's option in one `Select`: their name, alone or followed by ` · ` and what the line adds. */
   memberOptionIn(select: Locator, name: string): Locator {
     return select.locator('option').filter({ hasText: new RegExp(`^${escapeRegExp(name)}(?: · .*)?$`) });
+  }
+
+  /**
+   * The form's overlap hint (Epic 4 retro C2): the polite live region right after
+   * the "Dolazi" `Select`'s wrapper, which it describes while it says anything.
+   * Always attached — empty while there is nothing to say — so an empty hint
+   * is asserted on the one node, never on a locator that matches nothing.
+   */
+  rosterOverlapIn(detail: Locator): Locator {
+    return this.rosterInIn(detail).locator('xpath=../following-sibling::*[@role="status"][1]');
   }
 
   /** The form's reason field. */

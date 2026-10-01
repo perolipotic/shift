@@ -77,6 +77,10 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * a neutral confirmation, the roster back to its default; "nothing chosen" is
  * refused without a request; a seeded inert change is listed to the admin and
  * removed; and a member sees no form, no removal and no inert block.
+ *
+ * Epic 4 retro C2: putting on a member whose own team works the same window
+ * shows a neutral hint beside "Dolazi", gone for nobody or a member on no
+ * team, and the save still lands.
  */
 
 const kalendar = hr.kalendar;
@@ -1221,6 +1225,82 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     await page.keyboard.press('Escape');
     await expect(detail).toHaveCount(0);
     await expect(cell).not.toContainText('\u270E');
+  });
+
+  test('putting on a member whose own team works the same window warns beside "Dolazi", and saving still succeeds', async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
+    // Both teams work the seeded rotation's first step today: Dan 07:00–19:00.
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    const beta = await seedExtraTeam(fixture.slug, `Smjena Beta ${randomBytes(3).toString('hex')}`);
+    extra = { slug: fixture.slug, teamId: beta.id, seed: null };
+    const other = await seedTeamRotation(fixture.slug, beta.id, randomBytes(3).toString('hex'));
+    extra = { ...extra, seed: other };
+    const range = expectedRange(rotation, rotation.today);
+    if (range === null) throw new Error('E2E: the seeded rotation does not work today');
+    const hintText = fill(kalendar.detail.rosterChange.set.overlap, {
+      name: fixture.member.name,
+      team: fixture.team.name,
+      day: `${weekdayOf(rotation.today)} ${dayMonth(rotation.today)}`,
+      range,
+    });
+    const added = fill(kalendar.detail.rosterChange.added, { name: fixture.member.name });
+
+    await calendarPage.goto(gridMonthOf(rotation.today));
+    const betaCell = await calendarPage.cellOf(beta.name, rotation.today);
+    await betaCell.click();
+    const detail = calendarPage.detailOf(beta.name, rotation.today);
+    await expect(detail).toBeVisible();
+    const put = calendarPage.rosterInIn(detail);
+    const hint = calendarPage.rosterOverlapIn(detail);
+    // The live region is there from the start, empty, and describes nothing.
+    await expect(hint).toHaveCount(1);
+    await expect(hint).toBeEmpty();
+    await expect(put).toHaveAccessibleDescription('');
+
+    // Her own team works the same window: the hint names it, tied to the field, neutral.
+    await calendarPage.chooseIn(put, fixture.member.name);
+    await expect(hint).toHaveText(hintText);
+    await expect(put).toHaveAccessibleDescription(hintText);
+    await expect(calendarPage.rosterFormIn(detail).locator('.text-destructive, .bg-destructive')).toHaveCount(0);
+    await expect(calendarPage.rosterSaveIn(detail)).toBeEnabled();
+
+    // Nobody, and then a member on no team: no hint.
+    await put.selectOption({ label: kalendar.detail.rosterChange.set.none });
+    await expect(hint).toBeEmpty();
+    await calendarPage.chooseIn(put, fixture.spare.name);
+    await expect(hint).toBeEmpty();
+
+    // Warned, never blocked: the save lands, and the hint goes with the chosen member.
+    await calendarPage.changeRosterIn(detail, null, fixture.member.name, ROSTER_REASON);
+    await expect(calendarPage.statusIn(detail)).toHaveText(kalendar.detail.rosterChange.saved);
+    await expect(hint).toBeEmpty();
+    const block = calendarPage.rosterChangesIn(detail);
+    await expect(block).toContainText(added);
+
+    await calendarPage.rosterRemoveIn(block).click();
+    const confirm = calendarPage.rosterRemoveConfirmOf(added, beta.name, rotation.today);
+    await calendarPage.confirmRosterRemoveIn(confirm).click();
+    await expect(confirm).toHaveCount(0);
+    await expect(block).toHaveCount(0);
+    await expect(calendarPage.statusIn(detail)).toHaveText(kalendar.detail.rosterChange.removedDone);
+    // She is offered again, on "— nitko —": no hint from before the save.
+    await expect(calendarPage.memberOptionIn(put, fixture.member.name)).toHaveCount(1);
+    await expect(hint).toBeEmpty();
+
+    // Chosen, then the day closed: another team's working day in the same window starts with no hint.
+    await calendarPage.chooseIn(put, fixture.member.name);
+    await expect(hint).toHaveText(hintText);
+    await page.keyboard.press('Escape');
+    await expect(detail).toHaveCount(0);
+    await (await calendarPage.cellOf(fixture.team.name, rotation.today)).click();
+    const own = calendarPage.detailOf(fixture.team.name, rotation.today);
+    await expect(own).toBeVisible();
+    await expect(calendarPage.rosterOverlapIn(own)).toHaveCount(1);
+    await expect(calendarPage.rosterOverlapIn(own)).toBeEmpty();
+    await expect(calendarPage.rosterInIn(own)).toHaveAccessibleDescription('');
   });
 
   test('nothing chosen is refused without a request and keeps the reason', async ({ page, calendarPage, fixture }) => {

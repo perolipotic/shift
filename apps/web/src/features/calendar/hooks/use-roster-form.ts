@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from 'react';
 
 import {
   ROSTER_DENIED,
@@ -18,8 +18,10 @@ import {
 } from '@/features/calendar/services/roster-write';
 import { CALENDAR_KEY, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import {
+  ROSTER_NOBODY,
   ROSTER_REFUSED_REASON,
   rosterOffersOf,
+  rosterOverlapShownOf,
   rosterRemovalTargetOf,
   type DayDetail,
 } from '@/features/calendar/utils/day-detail';
@@ -56,6 +58,13 @@ import { focusLater } from '@/utils/focus-later';
  * change blocks and the candidates follow by themselves. A write that
  * settles after another day was opened drops its result there.
  *
+ * A MEMBER WHO WOULD BE DOUBLE-BOOKED IS WARNED OF, NEVER REFUSED (Epic 4
+ * retro C2): the "Dolazi" `Select` stays uncontrolled, and `chosenIn` only
+ * mirrors its value for `rosterOverlapShownOf`, which decides the hint. The
+ * form re-syncs it on every mount and forgets it on unmount (`chooseIn`), and
+ * it is forgotten on another day, after a save, and as soon as the member is
+ * no longer offered — so it never names someone the `Select` does not show.
+ *
  * Every rule is in `@/features/calendar/services/roster-write` and
  * `@/features/calendar/utils/day-detail`, which the node suite executes;
  * this hook holds state and wiring only.
@@ -80,6 +89,8 @@ export function useRosterForm(
   const [removeFailure, setRemoveFailure] = useState<RosterWriteFailure | null>(null);
   const [done, setDone] = useState<RosterDone | null>(null);
   const [saves, setSaves] = useState(0);
+  // The "Dolazi" value, mirrored for the overlap hint alone: the save reads the field.
+  const [chosenIn, setChosenIn] = useState<string>(ROSTER_NOBODY);
   const day = detail === null ? null : `${detail.teamId}:${detail.isoDate}`;
   const [shownFor, setShownFor] = useState(day);
   // The day open NOW, read after an await: a write settled for another day
@@ -97,11 +108,23 @@ export function useRosterForm(
     setConfirming(null);
     setRemoveFailure(null);
     setDone(null);
+    setChosenIn(ROSTER_NOBODY);
   }
 
   const offers = rosterOffersOf(snapshot, detail);
+
+  // A member no longer offered (a save, or a re-read after `taken`) is no
+  // longer chosen: the remounted `Select` shows "— nitko —".
+  if (chosenIn !== ROSTER_NOBODY && !offers.in.some((one) => one.id === chosenIn)) {
+    setChosenIn(ROSTER_NOBODY);
+  }
+
   const target = rosterRemovalTargetOf(detail, confirming);
   const lost = confirming !== null && target === null && !pending;
+  const overlap = useMemo(() => rosterOverlapShownOf(snapshot, detail, chosenIn), [snapshot, detail, chosenIn]);
+  const chooseIn = useCallback((id: string): void => {
+    setChosenIn(id);
+  }, []);
 
   /** Whether the day a write started for is still the one open. */
   function stillOn(startedFor: string | null): boolean {
@@ -206,6 +229,7 @@ export function useRosterForm(
       await invalidate();
       if (!stillOn(startedFor)) return;
       setSaves((count) => count + 1);
+      setChosenIn(ROSTER_NOBODY);
       setDone(ROSTER_SAVED);
       focusAfterWrite(first);
     } catch (cause) {
@@ -304,6 +328,8 @@ export function useRosterForm(
     removeFailure,
     done,
     formKey: saves,
+    overlap,
+    chooseIn,
     outOptions: offers.out,
     inOptions: offers.in,
     offersSet: offers.set,

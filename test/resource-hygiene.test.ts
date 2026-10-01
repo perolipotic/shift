@@ -1049,6 +1049,9 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.detail.rosterChange.refused.gone',
   'kalendar.detail.rosterChange.refused.denied',
   'kalendar.detail.rosterChange.refused.failed',
+  // EPIC 4 RETRO C2: the roster form's neutral hint for a member who already
+  // works an overlapping shift.
+  'kalendar.detail.rosterChange.set.overlap',
   // STORY 4.1b: *Sati* — the total's and the shift count's labels, the bands'
   // heading, the leave row and the one failure. The hours themselves are the
   // band screens' `organization.hourBands.duration.*` units.

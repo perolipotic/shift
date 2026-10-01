@@ -36,6 +36,7 @@ const DETAIL: DayDetail = {
   date: 'subota 26.09.2026',
   isoDate: '2026-09-26',
   projectedShiftTypeId: 'pilot-dan',
+  shiftTypeId: 'pilot-dan',
   kind: DAY_WORKING,
   typeName: 'Dan',
   range: '07:00–19:00',

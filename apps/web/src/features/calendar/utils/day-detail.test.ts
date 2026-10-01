@@ -15,7 +15,11 @@ import {
   inOptionOf,
   outOptionOf,
   rosterEntryOf,
+  ROSTER_NOBODY,
+  isoDateShiftedBy,
   rosterOffersOf,
+  rosterOverlapOf,
+  rosterOverlapShownOf,
   rosterRemovalTargetOf,
   type DayDetail,
   type RosterLineTranslate,
@@ -160,6 +164,7 @@ describe('the day detail (story 3.4b)', () => {
       date: 'srijeda 01.01.2020',
       isoDate: WORKING,
       projectedShiftTypeId: 'pilot-noc',
+      shiftTypeId: 'pilot-noc',
       kind: 'working',
       typeName: 'Noć',
       range: '19:00–07:00',
@@ -217,6 +222,7 @@ describe('the day detail (story 3.4b)', () => {
       date: 'četvrtak 02.01.2020',
       isoDate: OFF,
       projectedShiftTypeId: 'pilot-slobodno',
+      shiftTypeId: 'pilot-slobodno',
       kind: 'off',
       typeName: null,
       range: null,
@@ -238,6 +244,7 @@ describe('the day detail (story 3.4b)', () => {
       date: 'utorak 31.12.2019',
       isoDate: BEFORE,
       projectedShiftTypeId: null,
+      shiftTypeId: null,
       kind: 'noRotation',
       typeName: null,
       range: null,
@@ -885,7 +892,7 @@ describe('an admin adds, removes or replaces someone on a shift (story 3.6b)', (
       { id: ANA, name: 'Ana', fireRank: 'firefighter', position: 'driver' },
       { id: BORIS, name: 'Boris', fireRank: null, position: null },
     ]);
-    // Lana's own team works Dan that day: a double shift is offered, never warned of.
+    // Lana's own team works Dan that day: offered; whether it overlaps is `rosterOverlapOf`'s to warn of.
     expect(offers.in).toEqual([
       { id: DORA, name: 'Dora', fireRank: null, teamName: null },
       { id: VIEWER_MEMBER, name: VIEWER_NAME, fireRank: null, teamName: 'Smjena A' },
@@ -1162,5 +1169,283 @@ describe('an admin adds, removes or replaces someone on a shift (story 3.6b)', (
     expect(t('kalendar.detail.rosterChange.remove.cancel')).toBe('Odustani od uklanjanja');
     expect(t('kalendar.detail.rosterChange.remove.removing')).toBe('Uklanjanje…');
     expect(t('kalendar.detail.rosterChange.inertHeading')).toBe('Promjena sastava se ne primjenjuje');
+  });
+});
+
+describe('putting someone on a shift they would double-book warns (Epic 4 retro C2)', () => {
+  const DORA = '00000000-0000-4000-8000-0000000000d4';
+  const EMA = '00000000-0000-4000-8000-0000000000d5';
+  const SMJENA_A = 'pilot-smjena-a';
+  const SMJENA_C = 'pilot-smjena-c';
+  const SMJENA_D = 'pilot-smjena-d';
+  /**
+   * PILOT plus Rano, 06:00–18:00. The rotation from 2020-01-01, by team A–D:
+   * 01-01 Dan, Noć, –, –; 01-02 Noć, –, –, Dan; 01-03 –, –, Dan, Noć;
+   * 01-04 –, Dan, Noć, –; then again from 01-05.
+   */
+  const ROWS: FixtureRows = {
+    ...PILOT,
+    types: [
+      ...PILOT.types,
+      typeRow('pilot-rano', 'Rano', '2026-09-25T20:07:49.339741+00:00', { times: ['06:00:00', '18:00:00'] }),
+    ],
+  };
+
+  /** Lana on Smjena A, Ana on Smjena B, Ema on Smjena D, Dora on no team; the viewer an admin. */
+  async function withShifts(
+    overrides: readonly Record<string, unknown>[] = [],
+    rosterOverrides: readonly Record<string, unknown>[] = [],
+  ): Promise<CalendarSnapshot> {
+    return snapshotOf(ROWS, {
+      overrides,
+      rosterOverrides,
+      viewers: [viewerRow([membershipRow(SMJENA_A, SEEDED)], { role: 'admin' })],
+      versions: [
+        memberMembershipRow(VIEWER_MEMBER, SMJENA_A, SEEDED),
+        memberMembershipRow(ANA, TEAM, SEEDED),
+        memberMembershipRow(EMA, SMJENA_D, SEEDED),
+      ],
+      members: [
+        calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME),
+        calendarMemberRow(ANA, 'Ana'),
+        calendarMemberRow(DORA, 'Dora'),
+        calendarMemberRow(EMA, 'Ema'),
+      ],
+    });
+  }
+
+  function detailOn(snapshot: CalendarSnapshot, teamId: string, date: string): DayDetail {
+    const detail = dayDetailOf(snapshot, teamId, date);
+
+    if (detail === null) throw new Error(`no detail of ${teamId} on ${date}`);
+
+    return detail;
+  }
+
+  function overlapOn(snapshot: CalendarSnapshot, teamId: string, date: string, memberId: string) {
+    return rosterOverlapOf(snapshot, detailOn(snapshot, teamId, date), memberId);
+  }
+
+  it('own team, same window: names the team, the day and its times', async () => {
+    // Smjena C is off on 01-01, made a Dan; Lana's own Smjena A works Dan.
+    const snapshot = await withShifts([calendarOverrideRow('o1', SMJENA_C, WORKING, 'pilot-dan')]);
+
+    expect(dayDetailOf(snapshot, SMJENA_C, WORKING)?.shiftTypeId).toBe('pilot-dan');
+    expect(overlapOn(snapshot, SMJENA_C, WORKING, VIEWER_MEMBER)).toEqual({
+      memberName: VIEWER_NAME,
+      teamName: 'Smjena A',
+      date: WORKING,
+      day: 'srijeda 01.01.',
+      range: '07:00–19:00',
+    });
+  });
+
+  it("a night that crosses into the day: Lana's own Noć on D-1 overlaps a 06–18 shift on D, and names D-1", async () => {
+    const snapshot = await withShifts([calendarOverrideRow('o1', SMJENA_C, '2020-01-03', 'pilot-rano')]);
+
+    expect(overlapOn(snapshot, SMJENA_C, '2020-01-03', VIEWER_MEMBER)).toEqual({
+      memberName: VIEWER_NAME,
+      teamName: 'Smjena A',
+      date: '2020-01-02',
+      day: 'četvrtak 02.01.',
+      range: '19:00–07:00',
+    });
+  });
+
+  it('touching ends do not overlap: own Noć on D-1 ending 07:00, a Dan on D starting 07:00', async () => {
+    const snapshot = await withShifts();
+
+    expect(overlapOn(snapshot, SMJENA_C, '2020-01-03', VIEWER_MEMBER)).toBeNull();
+  });
+
+  it('their own team works that day in a window that does not overlap: no hint', async () => {
+    // Lana's Smjena A works Dan 07–19 on 01-01; Smjena B works Noć 19–07 the same day.
+    const snapshot = await withShifts();
+
+    expect(detailOn(snapshot, SMJENA_A, WORKING).kind).toBe('working');
+    expect(overlapOn(snapshot, TEAM, WORKING, VIEWER_MEMBER)).toBeNull();
+  });
+
+  it('a next-day start: put on a Noć on D, their own 06–18 on D+1, named as D+1', async () => {
+    const snapshot = await withShifts([calendarOverrideRow('o1', SMJENA_A, '2020-01-05', 'pilot-rano')]);
+
+    expect(overlapOn(snapshot, SMJENA_C, '2020-01-04', VIEWER_MEMBER)).toEqual({
+      memberName: VIEWER_NAME,
+      teamName: 'Smjena A',
+      date: '2020-01-05',
+      day: 'nedjelja 05.01.',
+      range: '06:00–18:00',
+    });
+  });
+
+  it('already put on elsewhere: a roster override puts Dora on Smjena D in the same window', async () => {
+    const snapshot = await withShifts(
+      [
+        calendarOverrideRow('o1', SMJENA_C, WORKING, 'pilot-dan'),
+        calendarOverrideRow('o2', SMJENA_D, WORKING, 'pilot-dan'),
+      ],
+      [calendarRosterOverrideRow('r1', SMJENA_D, WORKING, null, DORA)],
+    );
+
+    expect(overlapOn(snapshot, SMJENA_C, WORKING, DORA)).toMatchObject({
+      memberName: 'Dora',
+      teamName: 'Smjena D',
+      date: WORKING,
+      range: '07:00–19:00',
+    });
+  });
+
+  it('two overlaps: the earlier day is named, and on one day their own team before a shift an override puts them on', async () => {
+    // Open: Smjena C on 01-03 made a Rano 06–18. Lana's own Noć on 01-02 (D-1)
+    // reaches 07:00; an override puts her on Smjena D's Noć 19–07 on 01-03 —
+    // no overlap — so make Smjena B's 01-03 a Dan and put her on it: 07–18 overlaps.
+    const snapshot = await withShifts(
+      [
+        calendarOverrideRow('o1', SMJENA_C, '2020-01-03', 'pilot-rano'),
+        calendarOverrideRow('o2', TEAM, '2020-01-03', 'pilot-dan'),
+      ],
+      [calendarRosterOverrideRow('r1', TEAM, '2020-01-03', null, VIEWER_MEMBER)],
+    );
+
+    expect(overlapOn(snapshot, SMJENA_C, '2020-01-03', VIEWER_MEMBER)).toMatchObject({
+      teamName: 'Smjena A',
+      date: '2020-01-02',
+    });
+
+    // On one day: Lana's own Dan on 01-01 and an override putting her on Smjena D's Dan.
+    const sameDay = await withShifts(
+      [
+        calendarOverrideRow('o1', SMJENA_C, WORKING, 'pilot-dan'),
+        calendarOverrideRow('o2', SMJENA_D, WORKING, 'pilot-dan'),
+      ],
+      [calendarRosterOverrideRow('r1', SMJENA_D, WORKING, null, VIEWER_MEMBER)],
+    );
+
+    expect(overlapOn(sameDay, SMJENA_C, WORKING, VIEWER_MEMBER)).toMatchObject({ teamName: 'Smjena A', date: WORKING });
+  });
+
+  it('their own day off, and no shift on either side that reaches the window: no hint', async () => {
+    // Smjena A is off on 01-03 and 01-04, and works Dan 07–19 on 01-05.
+    const snapshot = await withShifts();
+
+    expect(overlapOn(snapshot, TEAM, '2020-01-04', VIEWER_MEMBER)).toBeNull();
+    // Dora is on no team at all.
+    expect(overlapOn(snapshot, SMJENA_C, '2020-01-03', DORA)).toBeNull();
+  });
+
+  it("the month's edge: D the 1st, Ema's own Noć on the last day of the month before", async () => {
+    // Smjena D works Noć on 2020-01-31; Smjena B works Dan on 2020-02-01, made a Rano.
+    const touching = await withShifts();
+
+    expect(overlapOn(touching, TEAM, '2020-02-01', EMA)).toBeNull();
+
+    const snapshot = await withShifts([calendarOverrideRow('o1', TEAM, '2020-02-01', 'pilot-rano')]);
+
+    expect(overlapOn(snapshot, TEAM, '2020-02-01', EMA)).toEqual({
+      memberName: 'Ema',
+      teamName: 'Smjena D',
+      date: '2020-01-31',
+      day: 'petak 31.01.',
+      range: '19:00–07:00',
+    });
+  });
+
+  it('nobody chosen, a member the snapshot lacks, and the open shift itself: no hint', async () => {
+    const snapshot = await withShifts([calendarOverrideRow('o1', SMJENA_C, WORKING, 'pilot-dan')]);
+
+    expect(overlapOn(snapshot, SMJENA_C, WORKING, ROSTER_NOBODY)).toBeNull();
+    expect(overlapOn(snapshot, SMJENA_C, WORKING, '00000000-0000-4000-8000-0000000000ff')).toBeNull();
+    // Ana's own Smjena B Noć on 01-01 is the shift open: never counted against itself.
+    expect(overlapOn(snapshot, TEAM, WORKING, ANA)).toBeNull();
+  });
+
+  it('a day that is not working offers no window', async () => {
+    const snapshot = await withShifts();
+    const off = dayDetailOf(snapshot, TEAM, OFF);
+
+    expect(off).not.toBeNull();
+    expect(off?.kind).toBe('off');
+    if (off !== null) expect(rosterOverlapOf(snapshot, off, VIEWER_MEMBER)).toBeNull();
+  });
+
+  it('skips a neighbouring shift whose team or type the snapshot lacks, and keeps checking the others', async () => {
+    const snapshot = await withShifts([calendarOverrideRow('o1', SMJENA_C, WORKING, 'pilot-dan')]);
+    const detail = detailOn(snapshot, SMJENA_C, WORKING);
+    const noTeamA: CalendarSnapshot = { ...snapshot, teams: snapshot.teams.filter((team) => team.id !== SMJENA_A) };
+
+    // Lana's only overlap is on Smjena A: without it, nothing to name, and nothing thrown.
+    expect(rosterOverlapOf(noTeamA, detail, VIEWER_MEMBER)).toBeNull();
+
+    // Dora on Smjena D's Dan too, Smjena A's type unknown: Smjena A is skipped, Smjena D still named.
+    const both = await withShifts(
+      [
+        calendarOverrideRow('o1', SMJENA_C, WORKING, 'pilot-dan'),
+        calendarOverrideRow('o2', SMJENA_D, WORKING, 'pilot-rano'),
+      ],
+      [calendarRosterOverrideRow('r1', SMJENA_D, WORKING, null, VIEWER_MEMBER)],
+    );
+    const bothDetail = detailOn(both, SMJENA_C, WORKING);
+    const noDan: CalendarSnapshot = {
+      ...both,
+      // Smjena C keeps its own window: only Smjena A's Dan is made unknown.
+      types: both.types.map((type) => (type.id === 'pilot-dan' ? { ...type, id: 'pilot-dan-unknown' } : type)),
+    };
+    const withOpen: DayDetail = { ...bothDetail, shiftTypeId: 'pilot-dan-unknown' };
+
+    expect(rosterOverlapOf(noDan, withOpen, VIEWER_MEMBER)).toMatchObject({ teamName: 'Smjena D', range: '06:00–18:00' });
+  });
+
+  it('the guarded form: nothing open or nobody is no hint, and a derivation that throws is logged and no hint', async () => {
+    const snapshot = await withShifts([calendarOverrideRow('o1', SMJENA_C, WORKING, 'pilot-dan')]);
+    const detail = detailOn(snapshot, SMJENA_C, WORKING);
+
+    expect(rosterOverlapShownOf(snapshot, detail, VIEWER_MEMBER)).toMatchObject({ teamName: 'Smjena A' });
+    expect(rosterOverlapShownOf(null, detail, VIEWER_MEMBER)).toBeNull();
+    expect(rosterOverlapShownOf(snapshot, null, VIEWER_MEMBER)).toBeNull();
+    expect(rosterOverlapShownOf(snapshot, detail, ROSTER_NOBODY)).toBeNull();
+
+    // Two membership versions on one date: `memberScheduleOfMonth` throws.
+    const broken: CalendarSnapshot = {
+      ...snapshot,
+      members: snapshot.members.map((member) =>
+        member.id === VIEWER_MEMBER ? { ...member, memberships: [...member.memberships, ...member.memberships] } : member,
+      ),
+    };
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      expect(() => rosterOverlapOf(broken, detail, VIEWER_MEMBER)).toThrow(RangeError);
+      expect(rosterOverlapShownOf(broken, detail, VIEWER_MEMBER)).toBeNull();
+      expect(logged).toHaveBeenCalledTimes(1);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it('moves a date by whole days across months, years and leap days, and refuses what is no date or no whole day', () => {
+    expect(isoDateShiftedBy('2020-03-01', -1)).toBe('2020-02-29');
+    expect(isoDateShiftedBy('2019-12-31', 1)).toBe('2020-01-01');
+    expect(isoDateShiftedBy('2020-01-01', -1)).toBe('2019-12-31');
+    expect(isoDateShiftedBy('0050-06-15', 1)).toBe('0050-06-16');
+    expect(isoDateShiftedBy('2020-01-01', 0)).toBe('2020-01-01');
+    expect(() => isoDateShiftedBy('9999-12-31', 1)).toThrow(RangeError);
+    expect(() => isoDateShiftedBy('2020-1-1', 1)).toThrow(RangeError);
+    for (const impossible of ['2020-02-31', '2020-13-01', '2019-02-29', '2020-00-10', '2020-01-00', '0000-01-01']) {
+      expect(() => isoDateShiftedBy(impossible, 1), impossible).toThrow(RangeError);
+    }
+    for (const days of [0.5, Number.NaN, Number.POSITIVE_INFINITY, 2 ** 53]) {
+      expect(() => isoDateShiftedBy('2020-01-01', days), String(days)).toThrow(RangeError);
+    }
+  });
+
+  it('carries the hint copy', () => {
+    expect(
+      t('kalendar.detail.rosterChange.set.overlap', {
+        name: 'Ana',
+        team: 'Smjena A',
+        day: 'četvrtak 02.01.',
+        range: '19:00–07:00',
+      }),
+    ).toBe('Ana tada već radi: Smjena A, četvrtak 02.01. 19:00–07:00. Ti bi se sati brojali dvaput.');
   });
 });

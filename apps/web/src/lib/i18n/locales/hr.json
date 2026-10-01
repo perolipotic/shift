@@ -74,7 +74,8 @@
           "reason": "Razlog",
           "save": "Spremi promjenu",
           "saving": "Spremanje…",
-          "noTeam": "bez smjene"
+          "noTeam": "bez smjene",
+          "overlap": "{name} tada već radi: {team}, {day} {range}. Ti bi se sati brojali dvaput."
         },
         "remove": {
           "action": "Ukloni promjenu",
