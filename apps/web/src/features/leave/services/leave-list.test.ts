@@ -4,12 +4,17 @@ import {
   LEAVE_RECORDS_COLUMNS,
   LEAVE_RECORDS_KEY,
   LEAVE_RECORDS_UNAVAILABLE,
+  MY_LEAVE_RECORDS_FUNCTION,
+  MY_LEAVE_RECORDS_KEY,
   leaveRecordsAfterWriteOf,
   leaveRecordsOf,
   leaveRecordsQueryOptions,
   leaveRecordsStateOf,
+  myLeaveRecordsQueryOptions,
   readLeaveRecords,
+  readMyLeaveRows,
   type LeaveRecordsAnswer,
+  type MyLeaveRecordsRpc,
   type LeaveRecordsQuery,
   type LeaveRecordsTable,
 } from '@/features/leave/services/leave-list';
@@ -233,5 +238,67 @@ describe('the records after a write', () => {
     ['a re-read still under way', { status: 'success', fetchStatus: 'fetching', data: RECORDS }],
   ] as const)('answers nothing on %s', (_name, state) => {
     expect(leaveRecordsAfterWriteOf(state)).toBeNull();
+  });
+});
+
+describe("the viewer's own records (story 5.2c)", () => {
+  function rpcAnswering(answer: LeaveRecordsAnswer | Promise<never>): MyLeaveRecordsRpc & { calls: unknown[] } {
+    const calls: unknown[] = [];
+
+    return {
+      calls,
+      rpc(fn) {
+        calls.push(fn);
+
+        return answer instanceof Promise ? answer : Promise.resolve(answer);
+      },
+    };
+  }
+
+  const ROW = { id: FIRST, member_id: MEMBER, during: '[2026-09-10,2026-09-15)' };
+
+  it('calls my_leave_records with no argument and never selects the table', async () => {
+    const client = rpcAnswering({ data: [ROW], error: null });
+
+    expect(await readMyLeaveRows(client)).toEqual({ ok: true, rows: [ROW] });
+    expect(client.calls).toEqual([MY_LEAVE_RECORDS_FUNCTION]);
+    expect(MY_LEAVE_RECORDS_FUNCTION).toBe('my_leave_records');
+  });
+
+  it('answers the rows unparsed, so the viewer they are checked against is the snapshot\'s', async () => {
+    const other = { ...ROW, member_id: OTHER };
+
+    expect(await readMyLeaveRows(rpcAnswering({ data: [other], error: null }))).toEqual({ ok: true, rows: [other] });
+    expect(leaveRecordsOf([other], MEMBER)).toBeNull();
+  });
+
+  it.each([
+    ['an error', { data: null, error: { code: '42501' } }],
+    ['no array', { data: null, error: null }],
+  ] as const)('is unavailable on %s', async (_name, answer) => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(await readMyLeaveRows(rpcAnswering(answer))).toEqual({ ok: false, code: LEAVE_RECORDS_UNAVAILABLE });
+  });
+
+  it('is unavailable when the call rejects', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(await readMyLeaveRows(rpcAnswering(Promise.reject(new Error('offline'))))).toEqual({
+      ok: false,
+      code: LEAVE_RECORDS_UNAVAILABLE,
+    });
+  });
+
+  it('reads under its own key, and throws on a failure so the query settles failed', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const ok = myLeaveRecordsQueryOptions(() => rpcAnswering({ data: [ROW], error: null }));
+    const failed = myLeaveRecordsQueryOptions(() => rpcAnswering({ data: null, error: { code: 'x' } }));
+    const run = (options: typeof ok) => (options.queryFn as () => Promise<unknown>)();
+
+    expect(ok.queryKey).toEqual(MY_LEAVE_RECORDS_KEY);
+    expect(MY_LEAVE_RECORDS_KEY).toEqual(['my-leave-records']);
+    await expect(run(ok)).resolves.toEqual([ROW]);
+    await expect(run(failed)).rejects.toThrow(LEAVE_RECORDS_UNAVAILABLE);
   });
 });

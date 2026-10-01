@@ -13,6 +13,7 @@ import {
   CALENDAR_SCREEN_PARTS,
 } from '@/features/calendar/calendar-screen.fixture';
 import { HOURS_SCREEN_EXEMPT, HOURS_SCREEN_PARTS } from '@/features/hours/hours-screen.fixture';
+import { LEAVE_SCREEN_EXEMPT, LEAVE_SCREEN_PARTS } from '@/features/leave/leave-screen.fixture';
 import {
   HOUR_BAND_EDIT_PARTS,
   HOUR_BAND_LIST_PARTS,
@@ -183,6 +184,15 @@ const MEMBER_CREATE: readonly string[] = [
 const LEAVE_FEATURE = join(srcRoot, 'features', 'leave');
 /** Story 5.1c's rules: the leave card's reasons and refusals, off two `\w*MessageKey` unions. */
 const LEAVE_SECTION_KEYS = join(LEAVE_FEATURE, 'services', 'leave-section.ts');
+/** The *Godišnji* screen's page, which only composes (story 5.2c). */
+const GODISNJI_PAGE = join(srcRoot, ...LEAVE_SCREEN_PARTS.page);
+/**
+ * Story 5.2c's *Godišnji*: the viewer's own allowance, days used and balance,
+ * a file set on *Sati*'s terms, written ONCE in `leave-screen.fixture.ts`.
+ */
+const GODISNJI: readonly string[] = Object.values(LEAVE_SCREEN_PARTS).map((parts) => join(srcRoot, ...parts));
+/** Story 5.2c's rules: the screen's two lines and its three tiles' labels. */
+const MY_LEAVE_KEYS = join(LEAVE_FEATURE, 'services', 'my-leave.ts');
 const MEMBER_EDIT: readonly string[] = [
   join(srcRoot, 'pages', 'ljudi.$id.tsx'),
   join(MEMBERS_FEATURE, 'hooks', 'use-member-edit.ts'),
@@ -460,7 +470,6 @@ const LOGO_URL = join(srcRoot, 'features', 'organization', 'hooks', 'logo-url.ts
  * registered router, so the four copies are held together end to end.
  */
 const PLACEHOLDER_SLUGS = [
-  'godisnji',
   'raspored',
 ];
 
@@ -486,7 +495,10 @@ const PLACEHOLDER_SLUGS = [
 //
 // SIX SINCE STORY 4.1b: `/sati` left the placeholders when it gained the
 // viewer's month of hours and the month navigation it shares with the calendar.
-const BUILT_SLUGS = ['organizacija', 'ljudi', 'danas', 'postavke-rotacije', 'kalendar', 'sati'];
+//
+// SEVEN SINCE STORY 5.2c: `/godisnji` left the placeholders when it gained the
+// viewer's own allowance, days used and balance.
+const BUILT_SLUGS = ['organizacija', 'ljudi', 'danas', 'postavke-rotacije', 'kalendar', 'sati', 'godisnji'];
 
 /** Every registered destination, however much of it is built. */
 const DESTINATION_SLUGS = [...PLACEHOLDER_SLUGS, ...BUILT_SLUGS];
@@ -658,6 +670,10 @@ const SCREENS = [
   // reads; each carries `min-h-11` all the same.
   // SEVEN SINCE STORY 4.3: the table's one export `Button`, beside the filters.
   { name: 'the Sati destination', file: SATI, expectedControls: 7 },
+  // STORY 5.2c. ONE on Godišnji: the retry its unavailable alert offers. The
+  // three figures are read, never pressed, and nothing here writes: a member
+  // requests no leave (story 5.3 is conflicts, not requests).
+  { name: 'the Godišnji destination', file: GODISNJI, expectedControls: 1 },
   // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
   // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
   // row link written once inside the map over the bands — the same count at
@@ -2173,6 +2189,25 @@ const KEY_SOURCES = [
     strings: 27,
   },
   {
+    // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the
+    // retry, and `count.days` once — written once inside the map over the
+    // three tiles. The tiles' labels and the two lines in place of the figures
+    // come through `@/features/leave/services/my-leave`, a key source.
+    name: 'the Godišnji destination',
+    file: GODISNJI,
+    keys: translationKeys,
+    strings: 3,
+  },
+  {
+    // STORY 5.2c: the two lines in place of the figures (unavailable,
+    // unscheduled), off `myLeaveMessageKey`, and the three tiles' labels, as
+    // `label` entries — `memberListKeys` reads both shapes.
+    name: 'the Godišnji rules',
+    file: MY_LEAVE_KEYS,
+    keys: memberListKeys,
+    strings: 5,
+  },
+  {
     // STORY 4.1b: the hours' one failure, a read or a domain refusal alike.
     // TWO SINCE THE EMPTY LEAVE FIX (Epic 4 retro, R2): the empty figure `—`
     // a leave of 0 reads, off `leaveMessageKey`.
@@ -2597,7 +2632,11 @@ describe('the screen is read at all, so every sweep below means something', () =
     // FIFTY-TWO SINCE STORY 4.3: `@/features/hours/services/hours-export`.
     //
     // FIFTY-THREE SINCE STORY 5.1c: `@/features/leave/services/leave-section`.
-    expect(KEY_SOURCES).toHaveLength(53);
+    //
+    // STILL TWENTY-FIVE AND FIFTY-FOUR SINCE STORY 5.2c: `/godisnji` left the
+    // placeholders and arrived as a built entry (net zero on both lists), and
+    // `@/features/leave/services/my-leave` is a key source (one more).
+    expect(KEY_SOURCES).toHaveLength(54);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -2709,6 +2748,32 @@ describe('the screen is read at all, so every sweep below means something', () =
       found.filter((file) => !exempt.has(file)).sort(),
       'the Sati file set and the feature folders disagree',
     ).toEqual(SATI.filter((file) => file !== SATI_PAGE && file !== SHARED_MONTH_NAV).sort());
+  });
+
+  it('sweeps every part of the Godišnji screen, so a new file cannot escape the set', () => {
+    // STORY 5.2c, on *Sati*'s terms: an EQUALITY between the set and every
+    // non-test module under the leave feature, less the exempt ones — the
+    // admin card's parts among them, which the member edit set sweeps.
+    const exempt = new Set(LEAVE_SCREEN_EXEMPT.map((entry) => join(LEAVE_FEATURE, entry.file)));
+    const found = readdirSync(LEAVE_FEATURE, { recursive: true, encoding: 'utf8' })
+      .filter((name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name))
+      .map((name) => join(LEAVE_FEATURE, name));
+
+    expect(found, 'the walk reaches services/').toContain(MY_LEAVE_KEYS);
+    for (const file of exempt) expect(found, `${file} is exempt and does not exist`).toContain(file);
+    for (const entry of LEAVE_SCREEN_EXEMPT) expect(entry.why.length).toBeGreaterThan(20);
+    for (const file of MEMBER_EDIT.filter((part) => part.startsWith(LEAVE_FEATURE))) {
+      expect(exempt.has(file), `${file} is a member edit part and not exempt here`).toBe(true);
+    }
+    for (const file of GODISNJI) {
+      expect(existsSync(file), `${file} is in the set and does not exist`).toBe(true);
+      expect(source(file).trim().length, `${file} is all but empty`).toBeGreaterThan(150);
+    }
+    expect(GODISNJI[0], 'the page is read first').toBe(GODISNJI_PAGE);
+    expect(
+      found.filter((file) => !exempt.has(file)).sort(),
+      'the Godišnji file set and the feature folders disagree',
+    ).toEqual(GODISNJI.filter((file) => file !== GODISNJI_PAGE).sort());
   });
 
   it('sweeps every part of the shift type screens, so a new file cannot escape the sets', () => {

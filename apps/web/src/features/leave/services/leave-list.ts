@@ -242,3 +242,83 @@ export function leaveRecordsAfterWriteOf(state: LeaveRecordsCacheState | undefin
 
   return state.data ?? null;
 }
+
+// ------------------------------------------- the viewer's own records (5.2c)
+
+/**
+ * THE VIEWER'S OWN LIVE RECORDS (story 5.2c), the read *Godišnji* stands on.
+ * Never a select on `leave_records`, which would carry the admins' auth ids
+ * (`created_by`, `removed_by`): `my_leave_records()` (0030) answers the
+ * caller's own live rows alone, shaped as {@link LEAVE_RECORDS_COLUMNS}.
+ *
+ * THE ROWS COME BACK UNPARSED. The function takes no argument, so this read
+ * does not know whose rows to expect; the member is the calendar snapshot's
+ * viewer, and `myLeaveOf` parses the rows with {@link leaveRecordsOf} against
+ * that id, so a row of anybody else makes the whole answer unavailable.
+ */
+
+/** The one query key the viewer's own live leave records are read under. */
+export const MY_LEAVE_RECORDS_KEY = ['my-leave-records'] as const;
+
+/** The definer function the viewer's own records are read through (0030). */
+export const MY_LEAVE_RECORDS_FUNCTION = 'my_leave_records';
+
+/** The one call made here, named structurally so it can be stubbed, as the calendar's `rpc` is. */
+export interface MyLeaveRecordsRpc {
+  rpc(fn: string): PromiseLike<LeaveRecordsAnswer>;
+}
+
+export type MyLeaveRowsOutcome =
+  | { readonly ok: true; readonly rows: readonly unknown[] }
+  | { readonly ok: false; readonly code: typeof LEAVE_RECORDS_UNAVAILABLE };
+
+/** The viewer's own live rows as the function answered them, or unavailable. */
+export async function readMyLeaveRows(client: MyLeaveRecordsRpc): Promise<MyLeaveRowsOutcome> {
+  let answered: LeaveRecordsAnswer;
+
+  try {
+    answered = await client.rpc(MY_LEAVE_RECORDS_FUNCTION);
+  } catch (cause) {
+    console.error(LEAVE_RECORDS_UNAVAILABLE, cause);
+
+    return { ok: false, code: LEAVE_RECORDS_UNAVAILABLE };
+  }
+
+  if (!isRecord(answered)) {
+    console.error(LEAVE_RECORDS_UNAVAILABLE, typeof answered);
+
+    return { ok: false, code: LEAVE_RECORDS_UNAVAILABLE };
+  }
+
+  if (answered.error !== null) {
+    console.error(LEAVE_RECORDS_UNAVAILABLE, answered.error?.code);
+
+    return { ok: false, code: LEAVE_RECORDS_UNAVAILABLE };
+  }
+
+  if (!Array.isArray(answered.data)) {
+    console.error(LEAVE_RECORDS_UNAVAILABLE, 'shape');
+
+    return { ok: false, code: LEAVE_RECORDS_UNAVAILABLE };
+  }
+
+  return { ok: true, rows: answered.data as readonly unknown[] };
+}
+
+/** The query options the viewer's own records are read with, under {@link MY_LEAVE_RECORDS_KEY}. */
+export function myLeaveRecordsQueryOptions(client: () => MyLeaveRecordsRpc) {
+  return queryOptions({
+    queryKey: MY_LEAVE_RECORDS_KEY,
+    queryFn: async (): Promise<readonly unknown[]> => {
+      const outcome = await readMyLeaveRows(client());
+
+      if (!outcome.ok) throw new Error(outcome.code);
+
+      return outcome.rows;
+    },
+    staleTime: LEAVE_RECORDS_READ_STALE_MS,
+    refetchOnWindowFocus: false,
+    retry: 1,
+    retryDelay: 1000,
+  });
+}

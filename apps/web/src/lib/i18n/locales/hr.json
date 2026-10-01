@@ -145,6 +145,14 @@
       "unavailable": "Kalendar trenutačno nije moguće učitati. Pokušaj ponovno."
     }
   },
+  "godisnji": {
+    "allowance": "Pravo na godišnji odmor",
+    "used": "Iskorišteno u tekućoj godini",
+    "balance": "Preostalo",
+    "unavailable": "Godišnji odmor trenutačno nije moguće učitati. Pokušaj ponovno.",
+    "unscheduled": "Za tebe još ne postoji raspored, pa se godišnji odmor ne može izračunati.",
+    "retry": "Pokušaj ponovno"
+  },
   "sati": {
     "total": "Ukupno sati",
     "shifts": "Broj smjena",

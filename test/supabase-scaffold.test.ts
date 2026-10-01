@@ -2249,6 +2249,42 @@ describe('the access-control migration', () => {
     expect((migration.match(/create function/gi) ?? []).length, 'story 5.2a takes two functions').toBe(2);
   });
 
+  it("reads a member's own live leave records through one definer function that names no author (story 5.2c)", () => {
+    const statements = migrationStatements();
+    const read = /create function public\.my_leave_records\(\)[\s\S]*?\$\$;/i.exec(statements)?.[0];
+    expect(read, 'my_leave_records is not declared').toBeDefined();
+    expect(read).toMatch(/returns table \(\s*id uuid,\s*member_id uuid,\s*during daterange\s*\)/);
+    expect(read).toMatch(/language sql/i);
+    expect(read).toMatch(/\bstable\b/i);
+    expect(read).toMatch(/security definer/i);
+    expect(read).toMatch(/set search_path = ''/);
+    expect(read, 'the read lost the claim pin').toMatch(
+      /r\.organization_id = nullif\(\(\(select auth\.jwt\(\)\) ->> 'organization_id'\), ''\)::uuid/,
+    );
+    expect(read, 'the read lost the active caller pin').toMatch(/where access\.is_active/);
+    expect(read, "the read is not the caller's own member row").toMatch(/and m\.auth_user_id = \(select auth\.uid\(\)\)/);
+    expect(read, 'a removed record is read').toMatch(/and r\.removed_at is null/);
+    expect(read, 'an author or a removal leaves the function').not.toMatch(
+      /select r\.id,[^$]*\b(created_by|removed_by|removed_at|auth_user_id)\b[^$]*from public\.leave_records/,
+    );
+    for (const role of ['public', 'anon', 'service_role']) {
+      expect(statements).toContain(`revoke execute on function public.my_leave_records() from ${role};`);
+    }
+    expect(statements).toContain('grant execute on function public.my_leave_records() to authenticated;');
+    const migration = readFileSync(join(supabaseRoot, 'migrations', '0030_my_leave_records.sql'), 'utf8').replaceAll(
+      /--[^\n]*/g,
+      '',
+    );
+    expect(migration, 'story 5.2c takes no trigger').not.toMatch(/create (or replace )?trigger/i);
+    expect(migration, 'story 5.2c writes or refers to a rotation, membership, status or override row').not.toMatch(
+      /rotation_|team_membership_versions|member_status_versions|_overrides/,
+    );
+    expect(migration, 'story 5.2c changes a policy').not.toMatch(/\b(create|alter|drop) policy\b/i);
+    expect(migration, 'story 5.2c grants on a table').not.toMatch(/\bon table\b/i);
+    expect(migration, 'story 5.2c writes a row').not.toMatch(/\b(insert|update|delete)\b/i);
+    expect((migration.match(/create function/gi) ?? []).length, 'story 5.2c takes one function').toBe(1);
+  });
+
   it('stores a leave record as one member and one bounded inclusive range, refusing a live overlap by exclusion (story 5.1b)', () => {
     // STORY 5.1b (R4.1, R4.4, AD-3): one member, one daterange, attributed and
     // soft-removable. No cost, balance, allowance or schedule column: those

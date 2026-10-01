@@ -222,6 +222,13 @@ export async function removeFormerMemberInSql(slug: string, memberId: string): P
 export interface SeededLeaveMember {
   readonly id: string;
   readonly name: string;
+  /**
+   * Its credentials (story 5.2c), so a test can sign the member in to a fresh
+   * context of its own and read *Godišnji* as them — the shared fixture
+   * member then never holds leave. Random per member, never logged.
+   */
+  readonly username: string;
+  readonly password: string;
 }
 
 /**
@@ -260,7 +267,8 @@ export async function seedLeaveMember(
     if (organization === undefined) throw new Error(`E2E: no organization ${slug}`);
     const { organization_id: organizationId, admin_user: adminUser } = organization;
     if (adminUser === null) throw new Error(`E2E: the organization ${slug} has no admin to write as`);
-    const { memberId } = await insertMember(client, organizationId, slug, person, randomBytes(18).toString('base64url'));
+    const password = randomBytes(18).toString('base64url');
+    const { memberId } = await insertMember(client, organizationId, slug, person, password);
     await client.query('update members set leave_allowance_days = $2 where id = $1', [memberId, allowanceDays]);
     await client.query(
       `insert into team_membership_versions (organization_id, member_id, team_id, effective_from, created_by)
@@ -269,7 +277,7 @@ export async function seedLeaveMember(
     );
     await client.query('commit');
 
-    return { id: memberId, name: person.name };
+    return { id: memberId, name: person.name, username: person.username, password };
   } catch (cause) {
     await client.query('rollback').catch(() => undefined);
     throw cause;

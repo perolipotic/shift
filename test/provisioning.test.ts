@@ -1724,6 +1724,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // 3.6b's and 3.5c's attributes.
     { name: 'remove_leave_record', argumentCount: 1 },
     { name: 'amend_leave_record', argumentCount: 3 },
+    // STORY 5.2c. The member's own live leave records, read past 0028's
+    // select policy so no author leaves, on 3.6a's attributes.
+    { name: 'my_leave_records', argumentCount: 0 },
     // 0023. The lock is taken from a trigger every writer fires, and the
     // last-admin re-check reads `members` and the status history past row
     // level security, as 0002's trigger does, on the same attributes.
@@ -1819,6 +1822,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 5.2a. The leave record's removal and amend, on 3.6b's terms.
     { name: 'remove_leave_record', argumentCount: 1, expected: ['authenticated'] },
     { name: 'amend_leave_record', argumentCount: 3, expected: ['authenticated'] },
+    // STORY 5.2c. The member's own leave records, on 3.6a's read's terms.
+    { name: 'my_leave_records', argumentCount: 0, expected: ['authenticated'] },
     // The zero-admin trigger function. Nothing calls it by hand and Postgres
     // checks EXECUTE when the trigger is created, not when it fires, so it
     // needs no grantee at all: its owner, and nobody else (0020). The

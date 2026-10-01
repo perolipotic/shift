@@ -1167,6 +1167,16 @@ const SANCTIONED_SCREEN_KEYS = [
   // while it is in amend mode.
   'ljudi.leaveRecord.removePromptInYear',
   'ljudi.leaveRecord.amending',
+  // STORY 5.2c: *Godišnji*, the viewer's own leave — the three tiles' labels
+  // (the figures themselves render through `count.days`), the line a failed
+  // read shows in place of the figures with its retry, and the viewer's own
+  // line, worded to them, when they have never been on a team.
+  'godisnji.allowance',
+  'godisnji.used',
+  'godisnji.balance',
+  'godisnji.unavailable',
+  'godisnji.unscheduled',
+  'godisnji.retry',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

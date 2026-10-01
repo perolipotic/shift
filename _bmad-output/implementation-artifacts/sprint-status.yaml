@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 10-01-2026 15:01
+last_updated: 10-01-2026 17:00
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -495,10 +495,10 @@ development_status:
   5-1a-leave-rule: done
   5-1b-leave-record: done
   5-1c-leave-screen: done
-  5-2-an-admin-amends-or-deletes-leave-and-the-balance-follows: in-progress
+  5-2-an-admin-amends-or-deletes-leave-and-the-balance-follows: done
   5-2a-leave-amend-and-removal: done
   5-2b-leave-amend-screen: done
-  5-2c-member-leave-view: backlog
+  5-2c-member-leave-view: done
   5-3-a-collision-with-a-rostered-shift-becomes-a-visible-conflict: backlog
   5-4-an-admin-decides-each-conflict-on-its-own-screen: backlog
   5-5-a-configuration-change-cannot-quietly-erase-a-pending-decisi: backlog
