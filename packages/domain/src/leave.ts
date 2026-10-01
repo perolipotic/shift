@@ -117,11 +117,14 @@ export function isLeaveDay(day: MemberScheduleDay, workingShiftTypeIds: readonly
 }
 
 /**
+ * INTERNAL: shared with `collisions.ts` (story 5.3a) and not re-exported from
+ * `index.ts`.
+ *
  * @throws RangeError naming `what` when either end is not a calendar
  *   `YYYY-MM-DD`, when `from` is after `to`, or when the range is longer than
  *   {@link MAX_LEAVE_RANGE_DAYS}.
  */
-function checkRange(what: string, range: LeaveRange): void {
+export function checkRange(what: string, range: LeaveRange): void {
   checkDate(`the start of ${what}`, range.from);
   checkDate(`the end of ${what}`, range.to);
   if (range.from > range.to) {

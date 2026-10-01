@@ -22,6 +22,14 @@ export {
 } from './bands.js';
 
 export {
+  collisionKeyOf,
+  collisionsOf,
+  type Collision,
+  type CollisionInput,
+  type CollisionLeaveRecord,
+} from './collisions.js';
+
+export {
   deriveShiftTimes,
   shiftDurationOn,
   shiftTypeVersionOn,
