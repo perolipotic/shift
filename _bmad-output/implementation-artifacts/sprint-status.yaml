@@ -496,7 +496,7 @@ development_status:
   5-1b-leave-record: done
   5-1c-leave-screen: done
   5-2-an-admin-amends-or-deletes-leave-and-the-balance-follows: in-progress
-  5-2a-leave-amend-and-removal: review
+  5-2a-leave-amend-and-removal: done
   5-2b-leave-amend-screen: backlog
   5-2c-member-leave-view: backlog
   5-3-a-collision-with-a-rostered-shift-becomes-a-visible-conflict: backlog
