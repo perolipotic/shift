@@ -492,8 +492,8 @@ development_status:
 
   epic-5: in-progress
   5-1-an-admin-records-leave-and-sees-what-it-costs-first: in-progress
-  5-1a-leave-rule: review
-  5-1b-leave-record: backlog
+  5-1a-leave-rule: done
+  5-1b-leave-record: review
   5-1c-leave-screen: backlog
   5-2-an-admin-amends-or-deletes-leave-and-the-balance-follows: backlog
   5-3-a-collision-with-a-rostered-shift-becomes-a-visible-conflict: backlog

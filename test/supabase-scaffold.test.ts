@@ -303,7 +303,7 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the forty-one policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a and 0025 reviewed, and no forty-second', () => {
+  it('declares exactly the forty-three policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b and 0025 reviewed, and no forty-fourth', () => {
     // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
     // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
     // copying `members_update_by_own_active_admin`, and its name is added here
@@ -332,6 +332,11 @@ describe('the access-control migration', () => {
       'hour_bands_insert_by_own_active_admin',
       'hour_bands_select_own_organization',
       'hour_bands_update_by_own_active_admin',
+      // STORY 5.1b, and TWO: an active admin inserts, and the read is the
+      // admin's for the organization and a member's for their own rows. No
+      // update and no delete policy: removal is story 5.2's.
+      'leave_records_insert_by_own_active_admin',
+      'leave_records_select_own_organization',
       // STORY 1.6, and THREE rather than four: a status version is appended,
       // cancelled only while it is not yet in effect, and never changed, so
       // there is no update policy and that verb matches no row. A fourth name
@@ -2178,6 +2183,113 @@ describe('the access-control migration', () => {
     expect(migration, 'story 3.6b changes a policy').not.toMatch(/\b(create|alter|drop) policy\b/i);
     expect(migration, 'story 3.6b grants on a table').not.toMatch(/\bon table\b/i);
     expect((migration.match(/create function/gi) ?? []).length, 'story 3.6b takes one function').toBe(1);
+  });
+
+  it('stores a leave record as one member and one bounded inclusive range, refusing a live overlap by exclusion (story 5.1b)', () => {
+    // STORY 5.1b (R4.1, R4.4, AD-3): one member, one daterange, attributed and
+    // soft-removable. No cost, balance, allowance or schedule column: those
+    // are `packages/domain`'s (AD-7), and an over-balance record saves (R4.7).
+    const leave = columnsOf('leave_records');
+    expect(leave.columns, 'leave_records stores something beyond its reviewed columns').toEqual([
+      'organization_id',
+      'id',
+      'member_id',
+      'during',
+      'created_by',
+      'created_at',
+      'removed_by',
+      'removed_at',
+    ]);
+    expect(leave.body).toMatch(/organization_id uuid not null references organizations \(id\) on delete cascade/);
+    expect(leave.body).toMatch(/during daterange not null/);
+    expect(leave.body).toMatch(/created_by uuid not null default auth\.uid\(\)/);
+    expect(leave.body).toMatch(/created_at timestamptz not null default now\(\)/);
+    expect(leave.body, 'a member of another tenant is representable').toMatch(
+      /foreign key \(organization_id, member_id\)\s+references members \(organization_id, id\)/,
+    );
+    expect(leave.body, 'the record cascades away with its member').not.toMatch(/on delete cascade[\s\S]*on delete cascade/);
+    expect(leave.body, 'an empty range is admitted').toMatch(/check \(not isempty\(during\)\)/);
+    expect(leave.body, 'an unbounded range is admitted').toMatch(
+      /check \(not lower_inf\(during\) and not upper_inf\(during\)\)/,
+    );
+    expect(leave.body, 'an exclusive lower bound is admitted').toMatch(/check \(lower_inc\(during\)\)/);
+    expect(leave.body, 'an infinite or BC date is admitted').toMatch(
+      /check \(lower\(during\) >= date '0001-01-01' and upper\(during\) <= date '10000-01-01'\)/,
+    );
+    expect(leave.body, 'a range longer than MAX_LEAVE_RANGE_DAYS is admitted').toMatch(
+      /check \(upper\(during\) - lower\(during\) <= 366\)/,
+    );
+    expect(leave.body, 'a removal may be half-recorded').toMatch(/check \(\(removed_by is null\) = \(removed_at is null\)\)/);
+    expect(leave.body, 'two live records of one member may share a date').toMatch(
+      /exclude using gist \(member_id with =, during with &&\)\s+where \(removed_at is null\)/,
+    );
+    expect(leave.body, 'the record stores a cost, a balance or a schedule').not.toMatch(
+      /cost|balance|allowance|shift|rotation|schedule|reason/,
+    );
+    const statements = migrationStatements();
+    expect(statements).toMatch(/alter table leave_records enable row level security;/);
+    expect(statements).toMatch(/create index \w+ on leave_records \(organization_id\);/);
+    expect(statements, 'no index serves one member\'s records').toMatch(
+      /create index \w+ on leave_records \(organization_id, member_id\);/,
+    );
+    const migration = readFileSync(join(supabaseRoot, 'migrations', '0028_leave_records.sql'), 'utf8').replaceAll(
+      /--[^\n]*/g,
+      '',
+    );
+    expect(migration, 'story 5.1b takes no trigger').not.toMatch(/create (or replace )?trigger/i);
+    expect(migration, 'story 5.1b takes no function').not.toMatch(/create (or replace )?function/i);
+    expect(migration, 'story 5.1b writes or refers to a rotation, membership, status or override row').not.toMatch(
+      /rotation_|team_membership_versions|member_status_versions|_overrides/,
+    );
+  });
+
+  it('opens leave records to an active admin\'s insert and a member\'s own read, and never to update or delete (story 5.1b)', () => {
+    const statements = migrationStatements();
+    const policies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter((declaration) =>
+      /on public\.leave_records\b/i.test(declaration),
+    );
+    expect(policies.length, 'leave_records does not carry exactly two policies').toBe(2);
+    for (const verb of ['update', 'delete', 'all']) {
+      expect(
+        policies.filter((declaration) => new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration)),
+        `a policy opens ${verb} on leave_records; removal is story 5.2's`,
+      ).toEqual([]);
+    }
+    for (const name of ['leave_records_select_own_organization', 'leave_records_insert_by_own_active_admin']) {
+      const body = policyBody(name);
+      expect(body, `${name} is not declared`).not.toBe('');
+      expect(body, `${name} does not pin the tenant`).toMatch(/organization_id = nullif/);
+      expect(body, `${name} does not re-read active state`).toContain('access.is_active');
+      expect(body, `${name} admits nobody as an admin`).toContain("access.member_role = 'admin'");
+    }
+    const select = policyBody('leave_records_select_own_organization');
+    expect(select, 'the admin branch does not pin organization, active state and role in one subquery').toMatch(
+      /organization_id = \(\s*select access\.organization_id\s+from public\.current_member_access\(\) as access\s+where access\.is_active\s+and access\.member_role = 'admin'\s*\)\s+or exists/,
+    );
+    expect(select, 'the admin branch is unpinned from the organization').not.toMatch(
+      /exists \(\s*select 1\s+from public\.current_member_access\(\)/,
+    );
+    expect(select, 'a member reads a colleague\'s leave').toMatch(
+      /member\.id = leave_records\.member_id\s+and member\.auth_user_id = \(select auth\.uid\(\)\)/,
+    );
+    const insert = policyBody('leave_records_insert_by_own_active_admin');
+    expect(insert, 'the attribution is not pinned to the caller').toMatch(/created_by = \(select auth\.uid\(\)\)/);
+    expect(insert, 'a member-role account may record leave').toMatch(
+      /where access\.is_active\s+and access\.member_role = 'admin'/,
+    );
+    expect(statements).toMatch(
+      /revoke insert, update, delete, truncate, references, trigger on table public\.leave_records\s+from anon, authenticated;/i,
+    );
+    expect(statements).toMatch(/revoke select on table public\.leave_records from anon;/);
+    expect(statements, 'the three facts are not the only insertable columns').toMatch(
+      /grant insert \(organization_id, member_id, during\) on table public\.leave_records\s+to authenticated;/i,
+    );
+    expect(statements, 'a migration grants update or delete on leave_records').not.toMatch(
+      /grant[^;]*\b(update|delete|all)\b[^;]*on table public\.leave_records\b/i,
+    );
+    expect(statements, 'a migration grants anon something on leave_records').not.toMatch(
+      /grant[^;]*on table public\.leave_records to[^;]*\banon\b/i,
+    );
   });
 
   it('keeps a team name unique among active teams only, and never blank', () => {

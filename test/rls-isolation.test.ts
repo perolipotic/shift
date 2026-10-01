@@ -41,11 +41,23 @@ import {
   type FixtureTeam,
 } from '../packages/domain/test/fixtures.ts';
 import {
+  leavePreviewOf,
+  leaveYearOf,
   projectedShiftTypeOn,
+  type MemberScheduleInput,
   type RotationAssignment,
   type RotationStep,
   type ShiftType,
 } from '../packages/domain/src/index.ts';
+import {
+  LEAVE_DENIED,
+  LEAVE_OVERLAP,
+  recordLeave,
+  type LeaveQuery,
+  type LeaveReadAnswer,
+  type LeaveTable,
+  type LeaveWriteAnswer,
+} from '../apps/web/src/features/leave/services/leave-write.ts';
 
 /**
  * Q1 and Q2, executed rather than read — and the regression suite every later
@@ -1057,7 +1069,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
       );
       expect(
         policies.map((row) => row.policyname),
-        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
+        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
       ).toEqual([
         // STORY 2.1a: read, and all three writes for an active admin. Bands are
         // current-state and any of them may be deleted, the last one included.
@@ -1065,6 +1077,11 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'hour_bands_insert_by_own_active_admin',
         'hour_bands_select_own_organization',
         'hour_bands_update_by_own_active_admin',
+        // STORY 5.1b: an active admin inserts; the read is an active admin's
+        // for the organization and an active member's for their own rows. No
+        // update and no delete: removal is story 5.2's.
+        'leave_records_insert_by_own_active_admin',
+        'leave_records_select_own_organization',
         // STORY 1.6: select, insert, and a delete that reaches only a version
         // not yet in effect — and never update: a status version is appended,
         // and cancelled only before it has decided any day.
@@ -16089,6 +16106,662 @@ describe('a roster override is removed by an active admin alone, attributed on t
       });
       expect(asAdmin.ok, `${slug}: an unknown roster override was removed`).toBe(false);
       expect((await restRefusal(asAdmin)).code).toBe('P0002');
+    },
+    20_000,
+  );
+});
+
+// ------------------------------------------------ story 5.1b: leave records
+
+/**
+ * STORY 5.1b (`0028`). An active admin records one member's leave as an
+ * inclusive date range; the database refuses a live overlap for the same
+ * member by exclusion (R4.4, AD-3, R8.3), saves an over-balance record (R4.7),
+ * and nothing in the schedule changes (R4.1, DI-3). A member reads their own
+ * records alone. Every SQL case runs in a rolled-back transaction; the REST
+ * cases commit inside year 2040 and delete what they wrote in `finally`.
+ */
+
+/**
+ * One leave record, written as whoever the connection currently is: the three
+ * columns a session may name. `by` is for the owner alone, past the policy,
+ * where `auth.uid()` — the attribution's default — is null.
+ */
+async function insertLeave(
+  client: Client,
+  leave: { organization: string; member: string; during: string; by?: string },
+): Promise<string> {
+  const { rows } =
+    leave.by === undefined
+      ? await client.query<{ id: string }>(
+          `insert into leave_records (organization_id, member_id, during)
+           values ($1, $2, $3::daterange)
+           returning id::text as id`,
+          [leave.organization, leave.member, leave.during],
+        )
+      : await client.query<{ id: string }>(
+          `insert into leave_records (organization_id, member_id, during, created_by)
+           values ($1, $2, $3::daterange, $4)
+           returning id::text as id`,
+          [leave.organization, leave.member, leave.during, leave.by],
+        );
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error('the leave record insert returned no id');
+  return id;
+}
+
+/**
+ * Every shift-type override, roster override and shift-type times version
+ * (`shift_type_versions`) of every organization, whole, as text: the rows
+ * `scheduleRulesFingerprint` leaves out that also decide a scheduled shift.
+ */
+async function overridesFingerprint(client: Client): Promise<string> {
+  const { rows } = await client.query<{ digest: string }>(
+    `select md5(coalesce(string_agg(body, E'\\n' order by body), '')) as digest
+       from (
+         select 't:' || to_jsonb(x)::text as body from shift_type_overrides x
+         union all select 'r:' || to_jsonb(x)::text from roster_overrides x
+         union all select 'y:' || to_jsonb(x)::text from shift_type_versions x
+       ) as everything`,
+  );
+  return rows[0]?.digest ?? '';
+}
+
+/** The ids of the leave records the connection currently sees, oldest range first. */
+async function visibleLeave(client: Client): Promise<string[]> {
+  const { rows } = await client.query<{ id: string }>(
+    'select id::text as id from leave_records order by lower(during), id',
+  );
+  return rows.map((row) => row.id);
+}
+
+/**
+ * `recordLeave`'s table, over real PostgREST with a real token: the insert and
+ * the one overlap read, sent the way supabase-js sends them.
+ */
+function restLeaveTable(token: string): LeaveTable {
+  return {
+    async insert(values): Promise<LeaveWriteAnswer> {
+      const response = await rest('leave_records', { token, method: 'POST', body: values });
+      return { error: response.ok ? null : await restRefusal(response) };
+    },
+    select(columns) {
+      const params = [`select=${encodeURIComponent(columns)}`];
+      const query: LeaveQuery = {
+        eq(column, value) {
+          params.push(`${column}=eq.${encodeURIComponent(value)}`);
+          return query;
+        },
+        is(column, value) {
+          params.push(`${column}=is.${String(value)}`);
+          return query;
+        },
+        overlaps(column, range) {
+          params.push(`${column}=ov.${encodeURIComponent(range)}`);
+          return query;
+        },
+        order(column, options) {
+          params.push(`order=${column}.${options.ascending ? 'asc' : 'desc'}`);
+          return query;
+        },
+        async limit(count): Promise<LeaveReadAnswer> {
+          params.push(`limit=${String(count)}`);
+          const response = await rest(`leave_records?${params.join('&')}`, { token });
+          if (!response.ok) return { data: null, error: await restRefusal(response) };
+          return { data: (await response.json()) as unknown[], error: null };
+        },
+      };
+      return query;
+    },
+  };
+}
+
+/**
+ * One member's schedule input as `packages/domain` reads it, from the rows as
+ * the owner sees them: their memberships and statuses, every rotation version
+ * and step of the organization, its live shift-type and roster overrides, and
+ * every member a roster override could be judged against.
+ */
+async function memberScheduleInputOf(
+  client: Client,
+  organization: string,
+  memberId: string,
+): Promise<MemberScheduleInput> {
+  const { rows: memberships } = await client.query<{ member: string; teamId: string | null; position: string | null; effectiveFrom: string }>(
+    `select member_id::text as member, team_id::text as "teamId", position, effective_from::text as "effectiveFrom"
+       from team_membership_versions where organization_id = $1`,
+    [organization],
+  );
+  const { rows: statuses } = await client.query<{ member: string; active: boolean; effectiveFrom: string }>(
+    `select member_id::text as member, active, effective_from::text as "effectiveFrom"
+       from member_status_versions where organization_id = $1`,
+    [organization],
+  );
+  const { rows: members } = await client.query<{ id: string }>(
+    'select id::text as id from members where organization_id = $1',
+    [organization],
+  );
+  const { rows: assignments } = await client.query<RotationAssignment>(
+    `select team_id::text as "teamId", pattern_id::text as "patternId", offset_step_id::text as "offsetStepId",
+            anchor_date::text as "anchorDate", effective_from::text as "effectiveFrom"
+       from rotation_assignments where organization_id = $1`,
+    [organization],
+  );
+  const { rows: steps } = await client.query<RotationStep>(
+    `select id::text as id, pattern_id::text as "patternId", position, shift_type_id::text as "shiftTypeId"
+       from rotation_steps where organization_id = $1`,
+    [organization],
+  );
+  const { rows: overrides } = await client.query<{ teamId: string; date: string; shiftTypeId: string }>(
+    `select team_id::text as "teamId", date::text as date, shift_type_id::text as "shiftTypeId"
+       from shift_type_overrides where organization_id = $1 and removed_at is null`,
+    [organization],
+  );
+  const { rows: rosterOverrides } = await client.query<{
+    id: string;
+    teamId: string;
+    date: string;
+    memberOutId: string | null;
+    memberInId: string | null;
+  }>(
+    `select id::text as id, team_id::text as "teamId", date::text as date,
+            member_out_id::text as "memberOutId", member_in_id::text as "memberInId"
+       from roster_overrides where organization_id = $1 and removed_at is null`,
+    [organization],
+  );
+  const { rows: working } = await client.query<{ id: string }>(
+    'select id::text as id from shift_types where organization_id = $1 and is_working',
+    [organization],
+  );
+  const membershipsOfMember = (id: string) =>
+    memberships
+      .filter((row) => row.member === id)
+      .map(({ teamId, position, effectiveFrom }) => ({ teamId, position, effectiveFrom }));
+  const statusesOfMember = (id: string) =>
+    statuses.filter((row) => row.member === id).map(({ active, effectiveFrom }) => ({ active, effectiveFrom }));
+
+  return {
+    memberId,
+    memberships: membershipsOfMember(memberId),
+    statuses: statusesOfMember(memberId),
+    assignments,
+    steps,
+    overrides,
+    members: members.map(({ id }) => ({ id, memberships: membershipsOfMember(id), statuses: statusesOfMember(id) })),
+    rosterOverrides,
+    workingShiftTypeIds: working.map((row) => row.id),
+  };
+}
+
+describe('a leave record is recorded by an admin, refused on overlap by the database, and touches no schedule (story 5.1b)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'records a $fixture admin\'s 10.09–14.09 for a member, attributed by default, and leaves every rotation, membership, status, member, shift-type times and override row byte-identical',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const rulesBefore = await scheduleRulesFingerprint(client);
+        const overridesBefore = await overridesFingerprint(client);
+
+        await actAs(client, owner.authUserId, organization);
+        const id = await insertLeave(client, { organization, member: self.id, during: '[2026-09-10,2026-09-14]' });
+        const visible = await visibleLeave(client);
+        await actAsOwner(client);
+
+        expect(visible, `${slug}: the admin cannot read what it wrote`).toContain(id);
+        const { rows } = await client.query<{ createdBy: string; recent: boolean; during: string; removedAt: unknown }>(
+          `select created_by as "createdBy", created_at > now() - interval '1 minute' as recent,
+                  during::text as during, removed_at as "removedAt"
+             from leave_records where id = $1`,
+          [id],
+        );
+        expect(rows).toEqual([
+          { createdBy: owner.authUserId, recent: true, during: '[2026-09-10,2026-09-15)', removedAt: null },
+        ]);
+        expect(
+          await scheduleRulesFingerprint(client),
+          `${slug}: a leave record touched a rotation, membership or status row`,
+        ).toBe(rulesBefore);
+        expect(await overridesFingerprint(client), `${slug}: a leave record touched a time or an override`).toBe(
+          overridesBefore,
+        );
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture range overlapping a live record of the same member (23P01), and stores a touching range, one over a removed record and another member\'s',
+    async ({ slug, admin, member, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const other = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+
+        await actAs(client, owner.authUserId, organization);
+        const existing = await insertLeave(client, { organization, member: self.id, during: '[2026-09-12,2026-09-20]' });
+        const codes: Record<string, string> = {};
+        for (const [label, during] of [
+          ['inside its start', '[2026-09-10,2026-09-14]'],
+          ['inside its end', '[2026-09-20,2026-09-25]'],
+          ['within', '[2026-09-15,2026-09-15]'],
+          ['around', '[2026-09-01,2026-09-30]'],
+          ['equal', '[2026-09-12,2026-09-20]'],
+        ] as const) {
+          codes[label] = (
+            await refusedThenContinue(client, () => insertLeave(client, { organization, member: self.id, during }))
+          ).code;
+        }
+        // Touching at either end shares no date; another member shares none of this one's.
+        const before = await insertLeave(client, { organization, member: self.id, during: '[2026-09-01,2026-09-11]' });
+        const after = await insertLeave(client, { organization, member: self.id, during: '[2026-09-21,2026-09-25]' });
+        const colleague = await insertLeave(client, { organization, member: other.id, during: '[2026-09-12,2026-09-20]' });
+        await actAsOwner(client);
+
+        expect(codes, slug).toEqual({
+          'inside its start': '23P01',
+          'inside its end': '23P01',
+          within: '23P01',
+          around: '23P01',
+          equal: '23P01',
+        });
+
+        // Story 5.2's soft-removal, as the owner: the removed record leaves the key.
+        await client.query('update leave_records set removed_by = $1, removed_at = now() where id = $2', [
+          owner.authUserId,
+          existing,
+        ]);
+        await actAs(client, owner.authUserId, organization);
+        const replacement = await insertLeave(client, { organization, member: self.id, during: '[2026-09-12,2026-09-20]' });
+        const visible = await visibleLeave(client);
+        await actAsOwner(client);
+
+        for (const id of [existing, before, after, colleague, replacement]) {
+          expect(visible, `${slug}: a stored record is not read by its admin`).toContain(id);
+        }
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'stores a $fixture record whose cost the domain puts above the member\'s balance: no balance is checked here (R4.7)',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const settings = await organizationById(client, organization);
+        if (settings === undefined) throw new Error(`${slug} is not in the database`);
+        const today = await organizationDay(client, organization);
+        const leaveYearStart = { month: settings.leaveYearStartMonth, day: settings.leaveYearStartDay };
+        // The whole current leave year: at most 366 days, so 0028 admits it.
+        const range = leaveYearOf(today, leaveYearStart);
+        // The fixture member is on no team, so nothing would cost a day: put
+        // them on a seeded team from the leave year's first day.
+        await ownerMembership(client, {
+          organization,
+          member: self.id,
+          team: await seededTeam(client, organization, 'Smjena A'),
+          from: range.from,
+          by: owner.authUserId,
+        });
+        const { rows: existing } = await client.query<{ from: string; to: string }>(
+          `select lower(during)::text as "from", (upper(during) - 1)::text as "to"
+             from leave_records where member_id = $1 and removed_at is null`,
+          [self.id],
+        );
+        const preview = leavePreviewOf({
+          input: await memberScheduleInputOf(client, organization, self.id),
+          allowanceDays: self.leaveAllowanceDays,
+          records: existing,
+          today,
+          leaveYearStart,
+          range,
+        });
+
+        expect(preview.overlapsRecord, `${slug}: the member already has leave this year`).toBe(false);
+        expect(preview.costInYearDays, `${slug}: the range does not cost more than the balance`).toBeGreaterThan(
+          preview.balanceDays,
+        );
+        expect(preview.exceedsBalance).toBe(true);
+
+        await actAs(client, owner.authUserId, organization);
+        const id = await insertLeave(client, { organization, member: self.id, during: `[${range.from},${range.to}]` });
+        const visible = await visibleLeave(client);
+        await actAsOwner(client);
+
+        expect(visible, `${slug}: the over-balance record was not stored`).toContain(id);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture empty, unbounded, reversed, infinite or 367-day range, and stores 366 days and the last representable date',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+
+        await actAs(client, owner.authUserId, organization);
+        const codes: Record<string, string> = {};
+        for (const [label, during] of [
+          ['empty', '[2026-09-10,2026-09-10)'],
+          ['empty literal', 'empty'],
+          ['no end', '[2026-09-10,)'],
+          ['no start', '(,2026-09-10]'],
+          ['reversed', '[2026-09-14,2026-09-10]'],
+          ['infinite end', '[2026-09-10,infinity)'],
+          ['infinite start', '[-infinity,2026-09-10]'],
+          ['before year 1', '[0001-01-01 BC,0001-01-05 BC]'],
+          ['after year 9999', '[9999-12-31,10000-01-01]'],
+          ['367 days', '[2026-01-01,2027-01-02]'],
+        ] as const) {
+          codes[label] = (
+            await refusedThenContinue(client, () => insertLeave(client, { organization, member: self.id, during }))
+          ).code;
+        }
+        const longest = await insertLeave(client, { organization, member: self.id, during: '[2027-01-01,2028-01-01]' });
+        const last = await insertLeave(client, { organization, member: self.id, during: '[9999-12-31,9999-12-31]' });
+        const first = await insertLeave(client, { organization, member: self.id, during: '[0001-01-01,0001-01-01]' });
+        await actAsOwner(client);
+
+        expect(codes, slug).toEqual({
+          empty: '23514',
+          'empty literal': '23514',
+          'no end': '23514',
+          'no start': '23514',
+          reversed: '22000',
+          // `infinity` is past every date a range can be canonicalized around.
+          'infinite end': '22008',
+          'infinite start': '22008',
+          'before year 1': '23514',
+          'after year 9999': '23514',
+          '367 days': '23514',
+        });
+        const { rows } = await client.query<{ days: number }>(
+          'select upper(during) - lower(during) as days from leave_records where id = any($1::uuid[]) order by lower(during)',
+          [[longest, last, first]],
+        );
+        expect(rows.map((row) => row.days)).toEqual([1, 366, 1]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture member-role account\'s insert, and shows it its own records and no colleague\'s',
+    async ({ slug, admin, member, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const other = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+
+        await actAs(client, owner.authUserId, organization);
+        const own = await insertLeave(client, { organization, member: self.id, during: '[2026-09-10,2026-09-14]' });
+        const colleague = await insertLeave(client, { organization, member: other.id, during: '[2026-09-10,2026-09-14]' });
+        const adminOwn = await insertLeave(client, { organization, member: owner.id, during: '[2026-10-10,2026-10-14]' });
+        await actAsOwner(client);
+
+        await actAs(client, self.authUserId, organization);
+        const asSelf = await visibleLeave(client);
+        const forSelf = await refusedThenContinue(client, () =>
+          insertLeave(client, { organization, member: self.id, during: '[2026-11-10,2026-11-14]' }),
+        );
+        const forOther = await refusedThenContinue(client, () =>
+          insertLeave(client, { organization, member: other.id, during: '[2026-11-10,2026-11-14]' }),
+        );
+        await actAsOwner(client);
+        await actAs(client, other.authUserId, organization);
+        const asOther = await visibleLeave(client);
+        await actAsOwner(client);
+        await actAs(client, owner.authUserId, organization);
+        const asAdmin = await visibleLeave(client);
+        await actAsOwner(client);
+
+        expect(asSelf, `${slug}: a member reads other than their own leave`).toEqual([own]);
+        expect(asOther, `${slug}: a bystander reads other than their own leave`).toEqual([colleague]);
+        expect(asAdmin, `${slug}: the admin does not read the organization's leave`).toEqual(
+          expect.arrayContaining([own, colleague, adminOwn]),
+        );
+        expect(forSelf.code, `${slug}: a member recorded their own leave`).toBe('42501');
+        expect(forOther.code, `${slug}: a member recorded a colleague's leave`).toBe('42501');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'answers a $fixture admin or member-role account inactive today nothing, its own records included, and refuses an inactive admin',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const inactive = await addThrowawayAdmin(client, organization);
+        const inactiveMember = await addThrowawayMember(client, organization);
+        const by = owner.authUserId;
+        await insertLeave(client, { organization, member: inactive.id, during: '[2026-09-10,2026-09-14]', by });
+        await insertLeave(client, { organization, member: inactiveMember.id, during: '[2026-09-10,2026-09-14]', by });
+        await insertLeave(client, { organization, member: self.id, during: '[2026-09-10,2026-09-14]', by });
+        const day = await organizationDay(client, organization);
+        for (const deactivated of [inactive, inactiveMember]) {
+          await ownerVersion(client, { organization, member: deactivated.id, active: false, from: day, by });
+        }
+
+        await actAs(client, inactive.authUserId, organization);
+        const read = await visibleLeave(client);
+        const refusal = await refusedThenContinue(client, () =>
+          insertLeave(client, { organization, member: self.id, during: '[2026-11-10,2026-11-14]' }),
+        );
+        await actAsOwner(client);
+        await actAs(client, inactiveMember.authUserId, organization);
+        const readByMember = await visibleLeave(client);
+        await actAsOwner(client);
+
+        expect(read, `${slug}: an inactive admin read leave, its own included`).toEqual([]);
+        expect(readByMember, `${slug}: an inactive member-role account read its own leave`).toEqual([]);
+        expect(refusal.code, `${slug}: an inactive admin recorded leave`).toBe('42501');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'answers a $fixture caller nothing of $otherFixture, under its own claim, a forged one or none, and refuses its members and its tenant',
+    async ({ slug, admin, member, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const foreignFixture = FIXTURES.find((entry) => entry.slug === otherSlug);
+        const foreignOwner = await memberByUsername(client, otherSlug, foreignFixture?.admin ?? '');
+        const foreignMember = await memberByUsername(client, otherSlug, foreignFixture?.member ?? '');
+        // As the owner: one record in each tenant, so a leak has something to show.
+        const ownRecord = await insertLeave(client, {
+          organization: owner.organizationId,
+          member: self.id,
+          during: '[2026-09-10,2026-09-14]',
+          by: owner.authUserId,
+        });
+        const foreignRecord = await insertLeave(client, {
+          organization: foreignOwner.organizationId,
+          member: foreignMember.id,
+          during: '[2026-09-10,2026-09-14]',
+          by: foreignOwner.authUserId,
+        });
+
+        for (const reader of [self, owner]) {
+          await actAs(client, reader.authUserId, reader.organizationId);
+          const own = await visibleLeave(client);
+          await actAsOwner(client);
+          expect(own, `${slug} as ${reader.role}: its own leave`).toContain(ownRecord);
+          expect(own, `${slug} as ${reader.role}: another tenant's leave`).not.toContain(foreignRecord);
+
+          await actAs(client, reader.authUserId, foreignOwner.organizationId);
+          expect(await visibleLeave(client), `${slug}: a forged claim read leave`).toEqual([]);
+          await actAsOwner(client);
+          await actAs(client, reader.authUserId, null);
+          expect(await visibleLeave(client), `${slug}: no claim read leave`).toEqual([]);
+          await actAsOwner(client);
+        }
+
+        await actAs(client, owner.authUserId, owner.organizationId);
+        const codes: Record<string, string> = {};
+        // Another tenant's member under the admin's own tenant: the key refuses it.
+        codes['foreign member'] = (
+          await refusedThenContinue(client, () =>
+            insertLeave(client, {
+              organization: owner.organizationId,
+              member: foreignMember.id,
+              during: '[2026-11-10,2026-11-14]',
+            }),
+          )
+        ).code;
+        // A record written into the other tenant: the policy refuses it.
+        codes['foreign tenant'] = (
+          await refusedThenContinue(client, () =>
+            insertLeave(client, {
+              organization: foreignOwner.organizationId,
+              member: foreignMember.id,
+              during: '[2026-11-10,2026-11-14]',
+            }),
+          )
+        ).code;
+        await actAsOwner(client);
+
+        expect(codes, slug).toEqual({ 'foreign member': '23503', 'foreign tenant': '42501' });
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture forged author, an update, a delete and a half-recorded removal',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const id = await insertLeave(client, { organization, member: self.id, during: '[2026-09-10,2026-09-14]', by: owner.authUserId });
+
+        await actAs(client, owner.authUserId, organization);
+        const codes: Record<string, string> = {};
+        // Another user's id as the author: the policy pins `created_by` to the caller.
+        codes['forged author'] = (
+          await refusedThenContinue(client, () =>
+            client.query(
+              `insert into leave_records (organization_id, member_id, during, created_by)
+               values ($1, $2, '[2026-11-10,2026-11-14]', $3)`,
+              [organization, self.id, self.authUserId],
+            ),
+          )
+        ).code;
+        codes['update'] = (
+          await refusedThenContinue(client, () => client.query('update leave_records set removed_at = now()'))
+        ).code;
+        codes['delete'] = (await refusedThenContinue(client, () => client.query('delete from leave_records'))).code;
+        await actAsOwner(client);
+
+        const halfRemoved = await refusedThenContinue(client, () =>
+          client.query('update leave_records set removed_at = now() where id = $1', [id]),
+        );
+
+        expect(codes, slug).toEqual({ 'forged author': '42501', update: '42501', delete: '42501' });
+        expect(halfRemoved.code, `${slug}: a removal without its author`).toBe('23514');
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('deletes an organization whose members hold live and removed leave, through the cascade, with no 23503', async () => {
+    await inRolledBackTransaction(async (client) => {
+      const [fixture] = FIXTURES;
+      const owner = await memberByUsername(client, fixture.slug, fixture.admin);
+      const self = await memberByUsername(client, fixture.slug, fixture.member);
+      const organization = owner.organizationId;
+      const by = owner.authUserId;
+      await insertLeave(client, { organization, member: self.id, during: '[2026-09-10,2026-09-14]', by });
+      const removed = await insertLeave(client, { organization, member: owner.id, during: '[2026-09-10,2026-09-14]', by });
+      await client.query('update leave_records set removed_by = $1, removed_at = now() where id = $2', [by, removed]);
+
+      const deleted = await client.query('delete from organizations where id = $1', [organization]);
+      // The zero-admins trigger is deferred to commit; this transaction rolls back.
+      const { rows } = await client.query<{ left: number }>(
+        'select count(*)::int as left from leave_records where organization_id = $1',
+        [organization],
+      );
+
+      expect(deleted.rowCount).toBe(1);
+      expect(rows).toEqual([{ left: 0 }]);
+    });
+  });
+
+  it.skipIf(noApi)('refuses an anonymous caller the table', async () => {
+    const read = await rest('leave_records?select=*');
+    expect(read.status, 'an anonymous caller read leave_records').toBe(401);
+    expect((await restRefusal(read)).code, 'a privilege refusal is 42501').toBe('42501');
+  });
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'maps a $fixture overlap over PostgREST to LEAVE_OVERLAP naming the earliest live record of that member, and a member\'s insert to LEAVE_DENIED',
+    async ({ slug, admin, member, bystander }) => {
+      const client = await connect();
+      const year2040 = '[2040-01-01,2041-01-01)';
+      let cleanup: string[] = [];
+      try {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const other = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+        cleanup = [self.id, other.id];
+        const by = owner.authUserId;
+        // Leftovers of an interrupted run, before anything is seeded.
+        await client.query('delete from leave_records where member_id = any($1::uuid[]) and during && $2::daterange', [
+          cleanup,
+          year2040,
+        ]);
+
+        // As the owner, committed. Inside the entered 2040-09-10–2040-09-20, in
+        // order: a REMOVED record of the member from 09-08 (not a conflict), the
+        // EARLIEST live one from 09-12, a later live one from 09-18, and a live
+        // record of ANOTHER member from 09-09 (not this member's conflict).
+        const removed = await insertLeave(client, { organization, member: self.id, during: '[2040-09-08,2040-09-16]', by });
+        await client.query('update leave_records set removed_by = $1, removed_at = now() where id = $2', [by, removed]);
+        await insertLeave(client, { organization, member: self.id, during: '[2040-09-12,2040-09-15]', by });
+        await insertLeave(client, { organization, member: self.id, during: '[2040-09-18,2040-09-25]', by });
+        await insertLeave(client, { organization, member: other.id, during: '[2040-09-09,2040-09-20]', by });
+        const asAdmin = restLeaveTable(await tokenFor(admin, slug));
+
+        expect(await recordLeave(asAdmin, organization, self.id, '2040-09-10', '2040-09-20'), slug).toEqual({
+          ok: false,
+          code: LEAVE_OVERLAP,
+          conflict: { from: '2040-09-12', to: '2040-09-15' },
+        });
+        expect(await recordLeave(asAdmin, organization, self.id, '2040-09-26', '2040-09-30'), slug).toEqual({
+          ok: true,
+        });
+        expect(
+          await recordLeave(restLeaveTable(await tokenFor(member, slug)), organization, self.id, '2040-10-01', '2040-10-02'),
+          slug,
+        ).toEqual({ ok: false, code: LEAVE_DENIED });
+
+        const { rows } = await client.query<{ during: string; createdBy: string; live: boolean }>(
+          `select during::text as during, created_by as "createdBy", removed_at is null as live from leave_records
+            where member_id = $1 and during && $2::daterange order by lower(during)`,
+          [self.id, year2040],
+        );
+        expect(rows).toEqual([
+          { during: '[2040-09-08,2040-09-17)', createdBy: by, live: false },
+          { during: '[2040-09-12,2040-09-16)', createdBy: by, live: true },
+          { during: '[2040-09-18,2040-09-26)', createdBy: by, live: true },
+          { during: '[2040-09-26,2040-10-01)', createdBy: by, live: true },
+        ]);
+      } finally {
+        if (cleanup.length > 0) {
+          await client.query('delete from leave_records where member_id = any($1::uuid[]) and during && $2::daterange', [
+            cleanup,
+            year2040,
+          ]);
+        }
+        await client.end();
+      }
     },
     20_000,
   );
