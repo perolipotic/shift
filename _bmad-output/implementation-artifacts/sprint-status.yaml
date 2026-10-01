@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 2026-09-30
+last_updated: 2026-10-01
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -487,7 +487,7 @@ development_status:
   4-1b-my-hours-screen: done
   4-2-an-admin-sees-hours-for-everyone-and-can-explain-any-figure: done
   # Added 2026-09-26 by sprint change (sprint-change-proposal-2026-09-26-hours-export.md).
-  4-3-an-admin-exports-the-month-s-hours-to-excel: review
+  4-3-an-admin-exports-the-month-s-hours-to-excel: done
   epic-4-retrospective: optional
 
   epic-5: backlog
