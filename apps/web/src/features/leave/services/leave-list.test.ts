@@ -22,6 +22,8 @@ import {
 
 const MEMBER = '00000000-0000-4000-8000-0000000000b2';
 const OTHER = '00000000-0000-4000-8000-0000000000b3';
+const FIRST = '00000000-0000-4000-8000-0000000000c1';
+const SECOND = '00000000-0000-4000-8000-0000000000c2';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -71,11 +73,15 @@ describe('the read', () => {
     ]);
   });
 
-  it('parses each canonical range into the inclusive dates it records, in start order', async () => {
+  it('asks for the id an amend or a removal names', () => {
+    expect(LEAVE_RECORDS_COLUMNS.split(',')).toEqual(['id', 'member_id', 'during']);
+  });
+
+  it('parses each canonical range into the inclusive dates it records, with its id, in start order', async () => {
     const table = tableAnswering({
       data: [
-        { member_id: MEMBER, during: '[2026-10-01,2026-10-04)' },
-        { member_id: MEMBER, during: '[2026-09-10,2026-09-15)' },
+        { id: SECOND, member_id: MEMBER, during: '[2026-10-01,2026-10-04)' },
+        { id: FIRST, member_id: MEMBER, during: '[2026-09-10,2026-09-15)' },
       ],
       error: null,
     });
@@ -83,8 +89,8 @@ describe('the read', () => {
     expect(await readLeaveRecords(table, MEMBER)).toEqual({
       ok: true,
       records: [
-        { from: '2026-09-10', to: '2026-09-14' },
-        { from: '2026-10-01', to: '2026-10-03' },
+        { id: FIRST, from: '2026-09-10', to: '2026-09-14' },
+        { id: SECOND, from: '2026-10-01', to: '2026-10-03' },
       ],
     });
   });
@@ -92,14 +98,33 @@ describe('the read', () => {
   it.each([
     ['an error', { data: null, error: { code: '42501' } }],
     ['no array', { data: null, error: null }],
-    ['a row of another member', { data: [{ member_id: OTHER, during: '[2026-09-10,2026-09-15)' }], error: null }],
-    ['a range that does not parse', { data: [{ member_id: MEMBER, during: '(2026-09-10,2026-09-15]' }], error: null }],
+    [
+      'a row of another member',
+      { data: [{ id: FIRST, member_id: OTHER, during: '[2026-09-10,2026-09-15)' }], error: null },
+    ],
+    [
+      'a range that does not parse',
+      { data: [{ id: FIRST, member_id: MEMBER, during: '(2026-09-10,2026-09-15]' }], error: null },
+    ],
+    ['a row with no id', { data: [{ member_id: MEMBER, during: '[2026-09-10,2026-09-15)' }], error: null }],
+    ['a row whose id is no string', { data: [{ id: 7, member_id: MEMBER, during: '[2026-09-10,2026-09-15)' }], error: null }],
+    [
+      'two rows sharing an id',
+      {
+        data: [
+          { id: FIRST, member_id: MEMBER, during: '[2026-09-10,2026-09-15)' },
+          { id: FIRST, member_id: MEMBER, during: '[2026-10-01,2026-10-04)' },
+        ],
+        error: null,
+      },
+    ],
+    ['a row whose id is empty', { data: [{ id: '', member_id: MEMBER, during: '[2026-09-10,2026-09-15)' }], error: null }],
     [
       'two records sharing a date',
       {
         data: [
-          { member_id: MEMBER, during: '[2026-09-10,2026-09-15)' },
-          { member_id: MEMBER, during: '[2026-09-14,2026-09-20)' },
+          { id: FIRST, member_id: MEMBER, during: '[2026-09-10,2026-09-15)' },
+          { id: SECOND, member_id: MEMBER, during: '[2026-09-14,2026-09-20)' },
         ],
         error: null,
       },
@@ -126,14 +151,14 @@ describe('the read', () => {
     expect(
       leaveRecordsOf(
         [
-          { member_id: MEMBER, during: '[2026-09-10,2026-09-15)' },
-          { member_id: MEMBER, during: '[2026-09-15,2026-09-16)' },
+          { id: FIRST, member_id: MEMBER, during: '[2026-09-10,2026-09-15)' },
+          { id: SECOND, member_id: MEMBER, during: '[2026-09-15,2026-09-16)' },
         ],
         MEMBER,
       ),
     ).toEqual([
-      { from: '2026-09-10', to: '2026-09-14' },
-      { from: '2026-09-15', to: '2026-09-15' },
+      { id: FIRST, from: '2026-09-10', to: '2026-09-14' },
+      { id: SECOND, from: '2026-09-15', to: '2026-09-15' },
     ]);
   });
 });
@@ -181,7 +206,7 @@ describe('the query', () => {
     ],
     [
       'a failed refetch over cached records',
-      { isPending: false, isError: true, fetchStatus: 'idle', data: [{ from: '2026-09-10', to: '2026-09-14' }] },
+      { isPending: false, isError: true, fetchStatus: 'idle', data: [{ id: FIRST, from: '2026-09-10', to: '2026-09-14' }] },
       { records: null, loading: false, refreshing: false },
     ],
     [
@@ -195,7 +220,7 @@ describe('the query', () => {
 });
 
 describe('the records after a write', () => {
-  const RECORDS = [{ from: '2026-09-10', to: '2026-09-14' }];
+  const RECORDS = [{ id: FIRST, from: '2026-09-10', to: '2026-09-14' }];
 
   it('answers the records only once the re-read has settled successfully', () => {
     expect(leaveRecordsAfterWriteOf({ status: 'success', fetchStatus: 'idle', data: RECORDS })).toEqual(RECORDS);

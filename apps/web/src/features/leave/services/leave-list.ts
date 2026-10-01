@@ -34,15 +34,25 @@ export const LEAVE_RECORDS_FETCH_PAUSED = 'paused';
 /** The records could not be read, or what came back cannot be trusted. */
 export const LEAVE_RECORDS_UNAVAILABLE = 'LEAVE_RECORDS_UNAVAILABLE';
 
-/** The columns read: the member, as a tripwire, and the range. */
-export const LEAVE_RECORDS_COLUMNS = 'member_id,during';
+/** The columns read: the id an amend or a removal names, the member, as a tripwire, and the range. */
+export const LEAVE_RECORDS_COLUMNS = 'id,member_id,during';
 
+const ID_COLUMN = 'id';
 const MEMBER_COLUMN = 'member_id';
 const REMOVED_COLUMN = 'removed_at';
 const DURING_COLUMN = 'during';
 
+/**
+ * One live record: the inclusive range it records and its id, which an amend
+ * or a removal names (story 5.2b). Still a `LeaveRange`, so the records go to
+ * `packages/domain` as they are.
+ */
+export interface LeaveRecord extends LeaveRange {
+  readonly id: string;
+}
+
 export type LeaveRecordsOutcome =
-  | { readonly ok: true; readonly records: readonly LeaveRange[] }
+  | { readonly ok: true; readonly records: readonly LeaveRecord[] }
   | { readonly ok: false; readonly code: typeof LEAVE_RECORDS_UNAVAILABLE };
 
 export interface LeaveRecordsReadError {
@@ -72,19 +82,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * The rows as the member's records, in start order, or null when any row is
- * another member's, does not parse, or shares a date with the one before it.
+ * another member's, carries no id or one another row carries, does not
+ * parse, or shares a date with the one before it.
  */
-export function leaveRecordsOf(rows: readonly unknown[], memberId: string): readonly LeaveRange[] | null {
-  const records: LeaveRange[] = [];
+export function leaveRecordsOf(rows: readonly unknown[], memberId: string): readonly LeaveRecord[] | null {
+  const records: LeaveRecord[] = [];
+  const ids = new Set<string>();
 
   for (const row of rows) {
     if (!isRecord(row) || row[MEMBER_COLUMN] !== memberId) return null;
+
+    const id = row[ID_COLUMN];
+
+    if (typeof id !== 'string' || id === '' || ids.has(id)) return null;
+
+    ids.add(id);
 
     const range = leaveRangeOf(row[DURING_COLUMN]);
 
     if (range === null) return null;
 
-    records.push(range);
+    records.push({ id, from: range.from, to: range.to });
   }
 
   records.sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
@@ -152,7 +170,7 @@ export async function readLeaveRecords(table: LeaveRecordsTable, memberId: strin
 export function leaveRecordsQueryOptions(table: () => LeaveRecordsTable, memberId: string) {
   return queryOptions({
     queryKey: LEAVE_RECORDS_KEY(memberId),
-    queryFn: async (): Promise<readonly LeaveRange[]> => {
+    queryFn: async (): Promise<readonly LeaveRecord[]> => {
       const outcome = await readLeaveRecords(table(), memberId);
 
       if (!outcome.ok) throw new Error(outcome.code);
@@ -171,7 +189,7 @@ export interface LeaveRecordsQueryAnswer {
   readonly isPending: boolean;
   readonly isError: boolean;
   readonly fetchStatus: string;
-  readonly data: readonly LeaveRange[] | undefined;
+  readonly data: readonly LeaveRecord[] | undefined;
 }
 
 /** TanStack Query's name for a fetch under way. */
@@ -179,7 +197,7 @@ export const LEAVE_RECORDS_FETCHING = 'fetching';
 
 /** What the records read gives the card: the records, or still loading, or neither (failed). */
 export interface LeaveRecordsState {
-  readonly records: readonly LeaveRange[] | null;
+  readonly records: readonly LeaveRecord[] | null;
   readonly loading: boolean;
   /**
    * A re-read is under way over records already held — after a write, most
@@ -210,7 +228,7 @@ export function leaveRecordsStateOf(answer: LeaveRecordsQueryAnswer): LeaveRecor
 export interface LeaveRecordsCacheState {
   readonly status: string;
   readonly fetchStatus: string;
-  readonly data: readonly LeaveRange[] | undefined;
+  readonly data: readonly LeaveRecord[] | undefined;
 }
 
 /**
@@ -219,7 +237,7 @@ export interface LeaveRecordsCacheState {
  * there is no entry — so the saved line is never computed from the records
  * held before the write.
  */
-export function leaveRecordsAfterWriteOf(state: LeaveRecordsCacheState | undefined): readonly LeaveRange[] | null {
+export function leaveRecordsAfterWriteOf(state: LeaveRecordsCacheState | undefined): readonly LeaveRecord[] | null {
   if (state === undefined || state.status !== 'success' || state.fetchStatus !== 'idle') return null;
 
   return state.data ?? null;

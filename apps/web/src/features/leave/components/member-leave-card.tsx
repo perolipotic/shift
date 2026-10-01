@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/lib/i18n';
 import { useMemberLeave } from '@/features/leave/hooks/use-member-leave';
+import { MemberLeaveRecords, MemberLeaveRemoveConfirm } from '@/features/leave/components/member-leave-records';
 import {
   LEAVE_ABSENT,
   LEAVE_ERROR_ID,
@@ -20,8 +21,10 @@ import {
   LEAVE_UNSCHEDULED,
   leaveBaseMessageKey,
   leaveDescribedByOf,
+  leaveFormFailureOf,
   leaveInYearChargeOf,
   leaveOverlapNoteShown,
+  leaveRangeValuesOf,
   leaveReasonMessageKey,
   leaveRefusalMessageKey,
   leaveRefusalValuesOf,
@@ -30,7 +33,9 @@ import {
 /**
  * The member page's *Godišnji* card (story 5.1c): the member's allowance, the
  * days used in the current leave year and the balance, then an od–do form
- * that shows what the range would cost before anything is saved.
+ * that shows what the range would cost before anything is saved. Between
+ * the two, the member's live records (story 5.2b), each of which the form
+ * can amend in place and its own confirmation can remove.
  *
  * Every figure, reason and message is
  * `@/features/leave/services/leave-section`'s decision; this renders them.
@@ -40,8 +45,22 @@ import {
  */
 export function MemberLeaveCard({ memberId }: { readonly memberId: string }): ReactNode {
   const leave = useMemberLeave(memberId);
-  const { base, preview, invalidField, leaveFailure, leaveSaved, recordPending, formDisabled, fromField, toField } =
-    leave;
+  const {
+    base,
+    preview,
+    invalidField,
+    leaveSaved,
+    leaveAmended,
+    amendTarget,
+    recordPending,
+    amendPending,
+    formDisabled,
+    fromField,
+    toField,
+  } = leave;
+  /** What the form says went wrong: never that an amended record is gone, which the list says. */
+  const leaveFailure = leaveFormFailureOf(leave.leaveFailure);
+  const formPending = recordPending || amendPending;
 
   if (base.kind === LEAVE_ABSENT) return null;
 
@@ -152,6 +171,21 @@ export function MemberLeaveCard({ memberId }: { readonly memberId: string }): Re
       );
     }
 
+    if (leaveAmended !== null) {
+      return (
+        <Notice ref={leave.noticeField} role="status" tabIndex={-1}>
+          {leaveAmended.costDays === null
+            ? t('ljudi.leaveRecord.amendedPlain')
+            : t('ljudi.leaveRecord.amended', { count: leaveAmended.costDays })}
+          {leaveAmended.overBalanceDays === null ? null : (
+            <span className="mt-1 block">
+              {t('ljudi.leaveRecord.savedExceeds', { count: leaveAmended.overBalanceDays })}
+            </span>
+          )}
+        </Notice>
+      );
+    }
+
     if (leaveSaved === null) return null;
 
     return (
@@ -169,59 +203,81 @@ export function MemberLeaveCard({ memberId }: { readonly memberId: string }): Re
   }
 
   return (
-    <Card role="region" aria-labelledby={LEAVE_HEADING_ID} className="w-full min-w-0 max-w-2xl">
-      <CardHeader>
-        <CardTitle asChild>
-          <h2 id={LEAVE_HEADING_ID}>{t('ljudi.leaveRecord.heading')}</h2>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="grid min-w-0 gap-4">
-        {renderFigures()}
-        <form ref={leave.formField} noValidate className="grid min-w-0 gap-4" onSubmit={(event) => void leave.save(event)}>
-          {/* DISABLED WHILE A SAVE IS OUTSTANDING, the fields included, so
-              nothing typed after the press is lost to the reset after it. */}
-          <fieldset disabled={formDisabled} aria-busy={recordPending} className="grid min-w-0 gap-4">
-            <legend className="mb-2 text-sm font-semibold">{t('ljudi.leaveRecord.newHeading')}</legend>
-            <div className="grid min-w-0 gap-4 sm:grid-cols-2">
-              <div className="grid min-w-0 gap-2">
-                <Label htmlFor="member-leave-from">{t('ljudi.leaveRecord.from')}</Label>
-                <Input
-                  ref={fromField}
-                  id="member-leave-from"
-                  name={LEAVE_FROM_FIELD}
-                  type="date"
-                  required
-                  onChange={leave.change}
-                  aria-invalid={invalidField === LEAVE_FROM_FIELD}
-                  aria-describedby={leaveDescribedByOf(LEAVE_FROM_FIELD, leaveFailure, invalidField)}
-                  className="h-11 min-w-0"
-                />
+    <>
+      <Card role="region" aria-labelledby={LEAVE_HEADING_ID} className="w-full min-w-0 max-w-2xl">
+        <CardHeader>
+          <CardTitle asChild>
+            <h2 id={LEAVE_HEADING_ID}>{t('ljudi.leaveRecord.heading')}</h2>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid min-w-0 gap-4">
+          {renderFigures()}
+          <MemberLeaveRecords leave={leave} />
+          <form
+            ref={leave.formField}
+            noValidate
+            className="grid min-w-0 gap-4"
+            onSubmit={(event) => void (amendTarget === null ? leave.save(event) : leave.amend(event))}
+          >
+            {/* DISABLED WHILE A SAVE IS OUTSTANDING, the fields included, so
+                nothing typed after the press is lost to the reset after it. */}
+            <fieldset disabled={formDisabled} aria-busy={formPending} className="grid min-w-0 gap-4">
+              {/* ONE FORM, TWO MODES (story 5.2b): the legend names the record
+                  being amended, so the one od/do pair keeps its labels. */}
+              <legend className="mb-2 text-sm font-semibold">
+                {amendTarget === null
+                  ? t('ljudi.leaveRecord.newHeading')
+                  : t('ljudi.leaveRecord.amendHeading', leaveRangeValuesOf(amendTarget))}
+              </legend>
+              <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+                <div className="grid min-w-0 gap-2">
+                  <Label htmlFor="member-leave-from">{t('ljudi.leaveRecord.from')}</Label>
+                  <Input
+                    ref={fromField}
+                    id="member-leave-from"
+                    name={LEAVE_FROM_FIELD}
+                    type="date"
+                    required
+                    onChange={leave.change}
+                    aria-invalid={invalidField === LEAVE_FROM_FIELD}
+                    aria-describedby={leaveDescribedByOf(LEAVE_FROM_FIELD, leaveFailure, invalidField)}
+                    className="h-11 min-w-0"
+                  />
+                </div>
+                <div className="grid min-w-0 gap-2">
+                  <Label htmlFor="member-leave-to">{t('ljudi.leaveRecord.to')}</Label>
+                  <Input
+                    ref={toField}
+                    id="member-leave-to"
+                    name={LEAVE_TO_FIELD}
+                    type="date"
+                    required
+                    onChange={leave.change}
+                    aria-invalid={invalidField === LEAVE_TO_FIELD}
+                    aria-describedby={leaveDescribedByOf(LEAVE_TO_FIELD, leaveFailure, invalidField)}
+                    className="h-11 min-w-0"
+                  />
+                </div>
               </div>
-              <div className="grid min-w-0 gap-2">
-                <Label htmlFor="member-leave-to">{t('ljudi.leaveRecord.to')}</Label>
-                <Input
-                  ref={toField}
-                  id="member-leave-to"
-                  name={LEAVE_TO_FIELD}
-                  type="date"
-                  required
-                  onChange={leave.change}
-                  aria-invalid={invalidField === LEAVE_TO_FIELD}
-                  aria-describedby={leaveDescribedByOf(LEAVE_TO_FIELD, leaveFailure, invalidField)}
-                  className="h-11 min-w-0"
-                />
+              <div aria-live="polite" className="grid min-w-0 gap-2">
+                {renderPreview()}
               </div>
-            </div>
-            <div aria-live="polite" className="grid min-w-0 gap-2">
-              {renderPreview()}
-            </div>
-            {renderOutcome()}
-            <Button className="h-11 w-full sm:w-auto sm:justify-self-start" type="submit" aria-busy={recordPending}>
-              {t('ljudi.leaveRecord.save')}
-            </Button>
-          </fieldset>
-        </form>
-      </CardContent>
-    </Card>
+              {renderOutcome()}
+              <div className="flex min-w-0 flex-col gap-2 sm:flex-row">
+                <Button className="h-11 w-full sm:w-auto" type="submit" aria-busy={formPending}>
+                  {amendTarget === null ? t('ljudi.leaveRecord.save') : t('ljudi.leaveRecord.amendSave')}
+                </Button>
+                {amendTarget === null ? null : (
+                  <Button className="h-11 w-full sm:w-auto" type="button" variant="outline" onClick={leave.cancelAmend}>
+                    {t('ljudi.leaveRecord.amendCancel')}
+                  </Button>
+                )}
+              </div>
+            </fieldset>
+          </form>
+        </CardContent>
+      </Card>
+      <MemberLeaveRemoveConfirm leave={leave} />
+    </>
   );
 }

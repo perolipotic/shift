@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type MouseEvent } from 'react';
 
 import {
   CALENDAR_KEY,
@@ -13,26 +13,37 @@ import {
   leaveRecordsAfterWriteOf,
   leaveRecordsQueryOptions,
   leaveRecordsStateOf,
+  type LeaveRecord,
   type LeaveRecordsTable,
 } from '@/features/leave/services/leave-list';
 import {
+  LEAVE_AMEND_ACTION,
   LEAVE_FROM_FIELD,
   LEAVE_NO_DATE,
   LEAVE_PREVIEW_REASON,
   LEAVE_READY,
+  LEAVE_RECORD_ACTION,
+  LEAVE_REMOVE_ACTION,
+  leaveAmendedOf,
   leaveConflictOf,
+  leaveFormFailureOf,
   leaveInvalidFieldOf,
   leavePreviewStateOf,
   leaveSavedOf,
   memberLeaveBaseOf,
   type LeaveFailure,
   type LeaveField,
+  type LeaveRecordRow,
   type LeaveSaved,
 } from '@/features/leave/services/leave-section';
 import {
   LEAVE_FAILED,
+  LEAVE_GONE,
   LEAVE_RECORDS_TABLE,
+  amendLeave,
   recordLeave,
+  removeLeave,
+  type LeaveRecordRpc,
   type LeaveTable,
 } from '@/features/leave/services/leave-write';
 import {
@@ -72,6 +83,16 @@ import { focusLater } from '@/utils/focus-later';
  * re-read answered, never from the records held before it. No figure is
  * optimistic, and no preview is drawn while a re-read is under way.
  *
+ * AMEND AND REMOVE (story 5.2b). `startAmend` puts the one od–do form into
+ * amend mode for one record — prefilled with its range, previewed without it —
+ * and `amend` sends it through `amendLeave`; `cancelAmend` returns the form to
+ * a new record. `openRemove` arms one confirmation for one record, and
+ * `remove` sends it through `removeLeave`. Each write has its own in-flight
+ * ref and pending flag, and after every outcome the records and the leave
+ * write's dependents are re-read: an amend that failed may still have landed
+ * (`amendLeave`'s doc). A record found gone closes amend mode or the
+ * confirmation, and the list says so over the records it re-read.
+ *
  * The component is keyed by the member, so nothing raised here outlives the
  * member it was raised about.
  */
@@ -82,10 +103,33 @@ export function useMemberLeave(memberId: string) {
   const toField = useRef<HTMLInputElement>(null);
   /** The alert or status line the last save raised: `Notice` renders a `<p>`. */
   const noticeField = useRef<HTMLParagraphElement>(null);
+  /** What the list says after an amend or a removal: the removed line, or that the record is gone. */
+  const listNoticeField = useRef<HTMLParagraphElement>(null);
+  /** The removal confirmation's cancel, which a refused removal focuses. */
+  const removeCancel = useRef<HTMLButtonElement>(null);
+  /** The list's heading, where focus lands when nothing nearer is left to take it. */
+  const listHeading = useRef<HTMLHeadingElement>(null);
+  /** The Izmijeni that opened amend mode, which a cancel returns focus to. */
+  const amendReturn = useRef<HTMLButtonElement | null>(null);
+  /** The Ukloni that opened the confirmation, which a cancel returns focus to. */
+  const removeReturn = useRef<HTMLButtonElement | null>(null);
   // A REF as well as state: state drives the disabled form, and state is
   // stale inside a handler already called once this tick.
   const recording = useRef(false);
+  const amending = useRef(false);
+  const removing = useRef(false);
   const [recordPending, setRecordPending] = useState(false);
+  const [amendPending, setAmendPending] = useState(false);
+  const [removePending, setRemovePending] = useState(false);
+  /** The record the form amends, or null for a new record. One at a time. */
+  const [amendTarget, setAmendTarget] = useState<LeaveRecord | null>(null);
+  /** The row whose removal is being confirmed, or null. */
+  const [confirming, setConfirming] = useState<LeaveRecordRow | null>(null);
+  const [removeFailure, setRemoveFailure] = useState<LeaveFailure | null>(null);
+  /** The row a landed removal took away, for the list's status line. */
+  const [leaveRemoved, setLeaveRemoved] = useState<LeaveRecordRow | null>(null);
+  /** What a landed amend cost, for the form's status line. */
+  const [leaveAmended, setLeaveAmended] = useState<LeaveSaved | null>(null);
   const [from, setFrom] = useState(LEAVE_NO_DATE);
   const [to, setTo] = useState(LEAVE_NO_DATE);
   const [leaveFailure, setLeaveFailure] = useState<LeaveFailure | null>(null);
@@ -133,9 +177,57 @@ export function useMemberLeave(memberId: string) {
   );
   // NO PREVIEW WHILE THE RECORDS ARE BEING RE-READ: what they cost may be about to change.
   const preview =
-    base.kind === LEAVE_READY && !recordsState.refreshing ? leavePreviewStateOf(base.input, from, to) : null;
-  const invalidField = leaveInvalidFieldOf(leaveFailure, refusedField);
-  const formDisabled = base.kind !== LEAVE_READY || recordPending || recordsState.refreshing;
+    base.kind === LEAVE_READY && !recordsState.refreshing
+      ? leavePreviewStateOf(base.input, from, to, amendTarget)
+      : null;
+  const invalidField = leaveInvalidFieldOf(leaveFormFailureOf(leaveFailure), refusedField);
+  /** Any leave write outstanding: every leave control waits for it. */
+  const writePending = recordPending || amendPending || removePending;
+  const formDisabled = base.kind !== LEAVE_READY || writePending || recordsState.refreshing;
+  /** The live records' ids, or null while the card is not ready. */
+  const liveIds = base.kind === LEAVE_READY ? base.rows.map((row) => row.record.id) : null;
+  /** What the effect below follows: the ids change, not the array's identity each render. */
+  const liveKey = JSON.stringify(liveIds);
+
+  // A RECORD THAT LEFT THE LIST — removed or amended elsewhere, seen on a
+  // re-read — takes amend mode and its confirmation with it, and so does a
+  // card that is no longer ready. Never while that record's own write is in
+  // flight: its handler settles what it leaves, and this runs again after.
+  useEffect(() => {
+    const live = liveIds;
+
+    if (amendTarget !== null && !amendPending && (live === null || !live.includes(amendTarget.id))) {
+      setAmendTarget(null);
+      formField.current?.reset();
+      setFrom(LEAVE_NO_DATE);
+      setTo(LEAVE_NO_DATE);
+    }
+    if (confirming !== null && !removePending && (live === null || !live.includes(confirming.record.id))) {
+      setConfirming(null);
+    }
+  }, [liveKey, amendTarget, amendPending, confirming, removePending]);
+
+  /** Clear everything the last write raised, before another is armed or sent. */
+  function clearRaised(): void {
+    setRefusedField(null);
+    setLeaveSaved(null);
+    setLeaveAmended(null);
+    setLeaveFailure(null);
+    setRemoveFailure(null);
+    setLeaveRemoved(null);
+  }
+
+  /** Put the od and do fields, and the state the preview follows, to `range`; empty for none. */
+  function fillFields(range: { readonly from: string; readonly to: string } | null): void {
+    const nextFrom = range?.from ?? LEAVE_NO_DATE;
+    const nextTo = range?.to ?? LEAVE_NO_DATE;
+
+    if (range === null) formField.current?.reset();
+    if (fromField.current !== null) fromField.current.value = nextFrom;
+    if (toField.current !== null) toField.current.value = nextTo;
+    setFrom(nextFrom);
+    setTo(nextTo);
+  }
 
   /** Mirror an edited date into state, for the preview; an edit clears everything raised. */
   function change(event: ChangeEvent<HTMLInputElement>): void {
@@ -143,9 +235,55 @@ export function useMemberLeave(memberId: string) {
 
     if (event.currentTarget.name === LEAVE_FROM_FIELD) setFrom(value);
     else setTo(value);
-    setRefusedField(null);
-    setLeaveSaved(null);
-    setLeaveFailure(null);
+    clearRaised();
+  }
+
+  /**
+   * Put the form into amend mode for `row`'s record: its range in the
+   * fields, the preview without it, and the od field focused. Only one record
+   * at a time; another row's Izmijeni moves amend mode to that record.
+   */
+  function startAmend(row: LeaveRecordRow, event: MouseEvent<HTMLButtonElement>): void {
+    if (recording.current || amending.current || removing.current) return;
+
+    amendReturn.current = event.currentTarget;
+    clearRaised();
+    setAmendTarget(row.record);
+    fillFields(row.record);
+    focusLater([() => fromField.current], () => toField.current);
+  }
+
+  /** Return the form to a new record, empty, and focus back on the row action that opened amend mode. */
+  function cancelAmend(): void {
+    if (amending.current) return;
+
+    clearRaised();
+    setAmendTarget(null);
+    fillFields(null);
+    // Its Izmijeni, unless its row left the list meanwhile: then the od field.
+    focusLater([() => amendReturn.current, () => fromField.current], () => fromField.current);
+  }
+
+  /** Arm the one confirmation for `row`'s removal. */
+  function openRemove(row: LeaveRecordRow, event: MouseEvent<HTMLButtonElement>): void {
+    if (recording.current || amending.current || removing.current) return;
+
+    removeReturn.current = event.currentTarget;
+    clearRaised();
+    setConfirming(row);
+  }
+
+  /** Close the confirmation with nothing sent, focus back on Ukloni. */
+  function cancelRemove(): void {
+    if (removing.current) return;
+
+    setConfirming(null);
+    setRemoveFailure(null);
+    // Its Ukloni, unless its row left the list meanwhile: then what the list says, or its heading.
+    focusLater(
+      [() => removeReturn.current, () => listNoticeField.current, () => listHeading.current],
+      () => fromField.current,
+    );
   }
 
   /** Read again every read the card stands on, from the unavailable line's retry. */
@@ -170,8 +308,7 @@ export function useMemberLeave(memberId: string) {
 
     if (base.kind !== LEAVE_READY || preview === null || recording.current) return;
 
-    setLeaveSaved(null);
-    setLeaveFailure(null);
+    clearRaised();
 
     if (preview.kind === LEAVE_PREVIEW_REASON) {
       const field = preview.field;
@@ -203,7 +340,7 @@ export function useMemberLeave(memberId: string) {
 
       // A REFUSAL KEEPS EVERY ENTERED VALUE: nothing here resets the fields.
       if (!outcome.ok) {
-        setLeaveFailure({ code: outcome.code, conflict: leaveConflictOf(outcome) });
+        setLeaveFailure({ code: outcome.code, action: LEAVE_RECORD_ACTION, conflict: leaveConflictOf(outcome) });
         focusNotice = false;
       }
 
@@ -229,7 +366,7 @@ export function useMemberLeave(memberId: string) {
       }
     } catch (cause) {
       console.error(LEAVE_FAILED, cause);
-      setLeaveFailure({ code: LEAVE_FAILED, conflict: null });
+      setLeaveFailure({ code: LEAVE_FAILED, action: LEAVE_RECORD_ACTION, conflict: null });
       focusNotice = false;
     } finally {
       recording.current = false;
@@ -240,21 +377,178 @@ export function useMemberLeave(memberId: string) {
     else focusLater([() => fromField.current], () => noticeField.current);
   }
 
+  /** Re-read the records and the leave write's dependents, after any amend or removal outcome. */
+  async function refreshAfterChange(): Promise<void> {
+    try {
+      await refreshAfterWrite(queryClient, LEAVE_RECORDS_KEY(memberId), LEAVE_WRITE_DEPENDENTS);
+    } catch (cause) {
+      console.error(LEAVE_FAILED, cause);
+    }
+  }
+
+  /**
+   * Save the amend of the record in amend mode. A range the preview does not
+   * cost, or the record's own range unchanged, is refused here before any
+   * request, as a new record's is. An overlap or a refusal keeps every value
+   * and amend mode; a gone record closes amend mode and the list says so.
+   */
+  async function amend(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+
+    if (base.kind !== LEAVE_READY || preview === null || amendTarget === null || amending.current) return;
+
+    clearRaised();
+
+    if (preview.kind === LEAVE_PREVIEW_REASON) {
+      const field = preview.field;
+
+      setRefusedField(field);
+      focusLater([() => fieldOf(field)], () => fromField.current);
+
+      return;
+    }
+
+    const sent = preview;
+    const sentInput = base.input;
+    const target = amendTarget;
+    // Where focus goes once the form is enabled again, after the `finally`:
+    // the status line, else the od field, else the list's gone line.
+    let focusField = false;
+    let focusList = false;
+
+    amending.current = true;
+    setRefusedField(null);
+    setAmendPending(true);
+
+    try {
+      const outcome = await amendLeave(
+        // Structurally, for the reason the records read is.
+        supabaseClient() as unknown as LeaveRecordRpc,
+        supabaseClient().from(LEAVE_RECORDS_TABLE) as unknown as LeaveTable,
+        base.organizationId,
+        memberId,
+        target.id,
+        sent.range.from,
+        sent.range.to,
+      );
+
+      if (!outcome.ok) {
+        setLeaveFailure({ code: outcome.code, action: LEAVE_AMEND_ACTION, conflict: leaveConflictOf(outcome) });
+        focusList = outcome.code === LEAVE_GONE;
+        focusField = !focusList;
+      }
+
+      // AFTER EVERY OUTCOME, a failure too: an amend that answered no id may have landed.
+      await refreshAfterChange();
+
+      if (outcome.ok) {
+        // FROM THE RE-READ, by the id the amend returned.
+        const fresh = leaveRecordsAfterWriteOf(queryClient.getQueryState(LEAVE_RECORDS_KEY(memberId)));
+
+        setLeaveAmended(leaveAmendedOf(sentInput, fresh, outcome.id));
+        setAmendTarget(null);
+        fillFields(null);
+      } else if (outcome.code === LEAVE_GONE) {
+        setAmendTarget(null);
+        fillFields(null);
+      }
+    } catch (cause) {
+      console.error(LEAVE_FAILED, cause);
+      setLeaveFailure({ code: LEAVE_FAILED, action: LEAVE_AMEND_ACTION, conflict: null });
+      focusField = true;
+      focusList = false;
+      // A THROWN AMEND IS RE-READ TOO: it may have landed before the throw.
+      await refreshAfterChange();
+    } finally {
+      amending.current = false;
+      setAmendPending(false);
+    }
+
+    if (focusList) focusLater([() => listNoticeField.current], () => fromField.current);
+    else if (focusField) focusLater([() => fromField.current], () => noticeField.current);
+    else focusLater([() => noticeField.current], () => fromField.current);
+  }
+
+  /**
+   * Remove the record whose confirmation is open. A refusal keeps the
+   * confirmation open with its alert and focuses its cancel; a gone record
+   * closes it and the list says so; a landed removal closes it and the list
+   * says what was removed. Amend mode on the same record ends with it.
+   */
+  async function remove(): Promise<void> {
+    if (confirming === null || removing.current || base.kind !== LEAVE_READY || recordsState.refreshing) return;
+
+    const target = confirming;
+    let landed = false;
+
+    removing.current = true;
+    setRemoveFailure(null);
+    setLeaveRemoved(null);
+    setRemovePending(true);
+
+    try {
+      const outcome = await removeLeave(supabaseClient() as unknown as LeaveRecordRpc, target.record.id);
+
+      if (!outcome.ok) {
+        setRemoveFailure({ code: outcome.code, action: LEAVE_REMOVE_ACTION, conflict: null });
+      }
+
+      await refreshAfterChange();
+
+      landed = outcome.ok || outcome.code === LEAVE_GONE;
+      if (outcome.ok) setLeaveRemoved(target);
+      if (landed) {
+        setConfirming(null);
+        if (amendTarget?.id === target.record.id) {
+          setAmendTarget(null);
+          fillFields(null);
+        }
+      }
+    } catch (cause) {
+      console.error(LEAVE_FAILED, cause);
+      setRemoveFailure({ code: LEAVE_FAILED, action: LEAVE_REMOVE_ACTION, conflict: null });
+      // A THROWN REMOVAL IS RE-READ TOO; its alert stands in the open confirmation.
+      await refreshAfterChange();
+    } finally {
+      removing.current = false;
+      setRemovePending(false);
+    }
+
+    if (landed) focusLater([() => listNoticeField.current, () => listHeading.current], () => fromField.current);
+    else focusLater([() => removeCancel.current], () => fromField.current);
+  }
+
   return {
     base,
     preview,
     invalidField,
     leaveFailure,
     leaveSaved,
+    leaveAmended,
+    leaveRemoved,
+    removeFailure,
+    amendTarget,
+    confirming,
     recordPending,
+    amendPending,
+    removePending,
     formDisabled,
+    listHeading,
     formField,
     fromField,
     toField,
     noticeField,
+    listNoticeField,
+    removeCancel,
     change,
     retry,
     save,
+    startAmend,
+    cancelAmend,
+    amend,
+    openRemove,
+    cancelRemove,
+    remove,
   };
 }
 

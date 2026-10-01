@@ -107,6 +107,9 @@ const SANCTIONED_PLURAL_KEYS = [
   'ljudi.leaveRecord.costInYear',
   'ljudi.leaveRecord.saved',
   'ljudi.leaveRecord.savedExceeds',
+  // STORY 5.2b: the line a landed amend shows, with what the new range cost.
+  // Its over-balance warning is 5.1c's `savedExceeds`.
+  'ljudi.leaveRecord.amended',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -1130,6 +1133,40 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.leaveRecord.denied',
   'ljudi.leaveRecord.failed',
   'ljudi.leaveRecord.unavailable',
+  // STORY 5.2b: the card's list of live records — its heading and the line
+  // for none — each row's two actions, short and named in full; the form's
+  // amend mode — its legend naming the record, its save and cancel, and the
+  // reason an unchanged range is not sent — the plain amended line and the
+  // amend's denied and failed refusals; the removal's confirmation — its
+  // prompt naming the range and its cost, confirm, cancel and the label it
+  // wears in flight — the removed line, the removal's denied and failed
+  // refusals, and the line for a record already gone.
+  'ljudi.leaveRecord.recordsHeading',
+  'ljudi.leaveRecord.recordsEmpty',
+  'ljudi.leaveRecord.amend',
+  'ljudi.leaveRecord.amendName',
+  'ljudi.leaveRecord.amendHeading',
+  'ljudi.leaveRecord.amendSave',
+  'ljudi.leaveRecord.amendCancel',
+  'ljudi.leaveRecord.unchanged',
+  'ljudi.leaveRecord.amendedPlain',
+  'ljudi.leaveRecord.amendDenied',
+  'ljudi.leaveRecord.amendFailed',
+  'ljudi.leaveRecord.remove',
+  'ljudi.leaveRecord.removeName',
+  'ljudi.leaveRecord.removePrompt',
+  'ljudi.leaveRecord.removeConfirm',
+  'ljudi.leaveRecord.removeCancel',
+  'ljudi.leaveRecord.removing',
+  'ljudi.leaveRecord.removed',
+  'ljudi.leaveRecord.removeDenied',
+  'ljudi.leaveRecord.removeFailed',
+  'ljudi.leaveRecord.gone',
+  // THE 5.2b REVIEW: the removal prompt's form for a record not wholly in the
+  // current leave year, naming the in-year part too, and the row's marker
+  // while it is in amend mode.
+  'ljudi.leaveRecord.removePromptInYear',
+  'ljudi.leaveRecord.amending',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

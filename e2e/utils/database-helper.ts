@@ -295,6 +295,73 @@ export async function leaveYearStartOf(slug: string): Promise<{ readonly month: 
   }
 }
 
+/**
+ * A live leave record of `memberId` from `from` to `to` (both `YYYY-MM-DD`,
+ * both included), in SQL (story 5.2b), attributed to the run organization's
+ * first admin. 0028's checks and its exclusion constraint still apply: the
+ * superuser bypasses only the insert policy. Throws naming the lookup that
+ * failed: the member in the organization, or its admin.
+ */
+export async function seedLeaveRecord(slug: string, memberId: string, from: string, to: string): Promise<string> {
+  const client = await connect();
+  try {
+    const found = await client.query<{ organization_id: string; admin_user: string | null }>(
+      `select o.id as organization_id,
+              (select a.auth_user_id from members a
+                where a.organization_id = o.id and a.role = 'admin'
+                order by a.created_at, a.id limit 1) as admin_user
+         from organizations o join members m on m.organization_id = o.id
+        where o.slug = $1 and m.id = $2`,
+      [slug, memberId],
+    );
+    const organization = found.rows[0];
+    if (organization === undefined) throw new Error(`E2E: no member ${memberId} in the organization ${slug}`);
+    if (organization.admin_user === null) {
+      throw new Error(`E2E: the organization ${slug} has no admin to attribute the leave record to`);
+    }
+    const { rows } = await client.query<{ id: string }>(
+      `insert into leave_records (organization_id, member_id, during, created_by)
+       values ($1, $2, daterange($3::date, $4::date, '[]'), $5)
+       returning id`,
+      [organization.organization_id, memberId, from, to, organization.admin_user],
+    );
+    const record = rows[0];
+    if (record === undefined) throw new Error(`E2E: the leave record ${from}–${to} of ${memberId} was not inserted`);
+
+    return record.id;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Soft-removes every live leave record of `memberId` in SQL, as 0029's
+ * `remove_leave_record` would (story 5.2b): `removed_by` and `removed_at`
+ * together, attributed to the organization's first admin. For a test that
+ * needs a record gone from under the screen showing it. Throws when it
+ * removes nothing, so a test never goes on believing a record is gone.
+ */
+export async function removeLeaveRecordsInSql(slug: string, memberId: string): Promise<void> {
+  const client = await connect();
+  try {
+    const { rowCount } = await client.query(
+      `update leave_records r
+          set removed_by = (select a.auth_user_id from members a
+                             where a.organization_id = o.id and a.role = 'admin'
+                             order by a.created_at, a.id limit 1),
+              removed_at = now()
+         from organizations o
+        where o.slug = $1 and r.organization_id = o.id and r.member_id = $2 and r.removed_at is null`,
+      [slug, memberId],
+    );
+    if (rowCount === null || rowCount === 0) {
+      throw new Error(`E2E: no live leave record of ${memberId} in ${slug} to remove`);
+    }
+  } finally {
+    await client.end();
+  }
+}
+
 /** How long a test waits for another to release the run's rotation. */
 const ROTATION_LOCK_WAIT_MS = 60_000;
 const ROTATION_LOCK_POLL_MS = 250;
