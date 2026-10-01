@@ -64,6 +64,9 @@ export const ROSTER_IN_FIELD_ID = 'kalendar-roster-in';
 /** The roster form's reason `Input`, which its label names. */
 export const ROSTER_REASON_FIELD_ID = 'kalendar-roster-reason';
 
+/** The roster form's overlap hint (Epic 4 retro C2), which the "Dolazi" `Select` is described by. */
+export const ROSTER_OVERLAP_ID = 'kalendar-roster-overlap';
+
 /** The roster form's refusal, which the refused field is described by. */
 export const ROSTER_SET_ERROR_ID = 'kalendar-roster-set-error';
 
@@ -76,4 +79,14 @@ export const ROSTER_REMOVE_ERROR_ID = 'kalendar-roster-remove-error';
 /** One roster change's line in the day detail (story 3.6b), which its removal is described by. */
 export function rosterChangeLineIdOf(overrideId: string): string {
   return `kalendar-roster-change-${overrideId}`;
+}
+
+/**
+ * An `aria-describedby` of the ids given that are not `null`, space-separated;
+ * `undefined` for none, so the attribute is left off.
+ */
+export function describedByOf(...ids: readonly (string | null)[]): string | undefined {
+  const named = ids.filter((id): id is string => id !== null);
+
+  return named.length === 0 ? undefined : named.join(' ');
 }

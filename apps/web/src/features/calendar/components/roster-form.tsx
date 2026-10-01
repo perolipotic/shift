@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog, DialogFooter } from '@/components/ui/dialog';
@@ -20,11 +20,13 @@ import {
 import {
   ROSTER_IN_FIELD_ID,
   ROSTER_OUT_FIELD_ID,
+  ROSTER_OVERLAP_ID,
   ROSTER_REASON_FIELD_ID,
   ROSTER_REMOVE_ERROR_ID,
   ROSTER_REMOVE_PROMPT_ID,
   ROSTER_SET_ERROR_ID,
   ROSTER_SET_HEADING_ID,
+  describedByOf,
   rosterChangeLineIdOf,
 } from '@/features/calendar/utils/element-ids';
 import { t } from '@/lib/i18n';
@@ -56,7 +58,9 @@ export function rosterChangeLine(change: DayDetailRosterChange): string {
  * field is uncontrolled, so a refused save keeps them; the refusal is the
  * form's own `Notice`, inside the Dialog. Neutral: never `destructive` and
  * never the accent. The lines each option reads are the day detail's to
- * word.
+ * word. A member chosen in "Dolazi" who already works an overlapping shift
+ * gets a neutral hint beside the field, announced politely; saving is
+ * unchanged (Epic 4 retro C2).
  */
 export function RosterSetForm({
   form,
@@ -70,9 +74,23 @@ export function RosterSetForm({
   readonly outOptions: readonly RosterOption[];
   readonly inOptions: readonly RosterOption[];
 }): ReactNode {
-  const { outField, inField, rosterReasonField, pending, failure, saveRoster } = form;
+  const { outField, inField, rosterReasonField, pending, failure, saveRoster, overlap, chooseIn } = form;
   const reasonRefused = failure === ROSTER_REFUSED_REASON;
   const memberRefused = failure !== null && !reasonRefused;
+  // EPIC 4 RETRO C2: every mount starts from what the "Dolazi" `Select`
+  // shows, and an unmounted form chooses nobody, so the hint never outlives it.
+  useEffect(() => {
+    chooseIn(inField.current?.value ?? ROSTER_NOBODY);
+
+    return () => {
+      chooseIn(ROSTER_NOBODY);
+    };
+  }, [chooseIn, inField]);
+
+  const inDescribedBy = describedByOf(
+    memberRefused ? ROSTER_SET_ERROR_ID : null,
+    overlap === null ? null : ROSTER_OVERLAP_ID,
+  );
 
   return (
     <section aria-labelledby={ROSTER_SET_HEADING_ID} className="grid gap-3">
@@ -116,8 +134,11 @@ export function RosterSetForm({
             defaultValue={ROSTER_NOBODY}
             disabled={pending}
             aria-invalid={memberRefused}
-            aria-describedby={memberRefused ? ROSTER_SET_ERROR_ID : undefined}
+            aria-describedby={inDescribedBy}
             className="h-11"
+            onChange={(event) => {
+              chooseIn(event.target.value);
+            }}
           >
             <option value={ROSTER_NOBODY}>{t('kalendar.detail.rosterChange.set.none')}</option>
             {inOptions.map((option) => (
@@ -126,6 +147,22 @@ export function RosterSetForm({
               </option>
             ))}
           </Select>
+          {/*
+            EPIC 4 RETRO C2: a double booking is warned of, neutrally, and never
+            refused. The live region stays in the accessibility tree, empty
+            while there is nothing to say, so its text is announced when it
+            fills; only the text toggles.
+          */}
+          <p id={ROSTER_OVERLAP_ID} role="status" className="text-sm">
+            {overlap === null
+              ? null
+              : t('kalendar.detail.rosterChange.set.overlap', {
+                  name: overlap.memberName,
+                  team: overlap.teamName,
+                  day: overlap.day,
+                  range: overlap.range,
+                })}
+          </p>
         </div>
         <div className="grid gap-2">
           <Label htmlFor={ROSTER_REASON_FIELD_ID}>{t('kalendar.detail.rosterChange.set.reason')}</Label>
