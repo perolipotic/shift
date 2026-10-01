@@ -578,6 +578,14 @@ export class CalendarPage extends BasePage {
     return this.page.getByRole('list', { name: new RegExp(`^${escaped} \\S+ \\d{4}$`) });
   }
 
+  /**
+   * A person's days on `teamName`: the day buttons in their day list whose
+   * name — the cell's full label — carries the team.
+   */
+  personDaysOnTeam(name: string, teamName: string): Locator {
+    return this.personListOf(name).getByRole('button', { name: new RegExp(escapeRegExp(teamName)) });
+  }
+
   /** The explanation for a person on no team all month. */
   personNoTeam(name: string): Locator {
     return this.text(fill(kalendar.person.noTeam, { name }));

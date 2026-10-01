@@ -2,7 +2,7 @@ import { memberHoursOfMonth } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { CALENDAR_UNAVAILABLE, readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
-import { calendarDayListOf, monthHeaderOf } from '@/features/calendar/utils/month';
+import { calendarDayListOf, calendarMonthOf, monthHeaderOf } from '@/features/calendar/utils/month';
 import {
   HOURS_UNAVAILABLE,
   hoursSearchOf,
@@ -26,6 +26,7 @@ import {
   hoursTeamChangeOf,
   nextHoursSort,
   organizationHoursOf,
+  organizationHoursRowsOf,
   type OrganizationHoursView,
 } from '@/features/hours/services/organization-hours';
 import { initLocalization, t } from '@/lib/i18n';
@@ -290,6 +291,32 @@ describe('the rows', () => {
 
     expect(row.calendar).toEqual({ prikaz: 'sve', osoba: ANA, mjesec: '2026-10' });
     expect(calendarLinkSearchOf(ANA, MONTH)).toEqual({ prikaz: 'sve', osoba: ANA, mjesec: MONTH });
+  });
+});
+
+describe('the calendar person filter (epic 4 retro, C1)', () => {
+  it.each([
+    { fixture: 'pilot', snapshot: () => pilot },
+    { fixture: 'UJ-5', snapshot: () => uj5 },
+  ])('$fixture: offers exactly the members Sati has a row for, month by month', ({ snapshot }) => {
+    const current = snapshot();
+
+    for (const month of ['2026-08', MONTH, '2026-10']) {
+      const rows = organizationHoursRowsOf(current, month, monthHeaderOf(month, TODAY)).map((row) => row.memberId);
+      const people = calendarMonthOf(current, { mjesec: month }, TODAY).filter.people.map((person) => person.id);
+
+      expect(people, month).toEqual(rows);
+    }
+    // The guard bites: Filip, inactive from the 11th and so inactive today,
+    // has a row in September and is offered; Ema, inactive since August,
+    // has neither then.
+    const september = calendarMonthOf(current, { mjesec: MONTH }, TODAY).filter.people.map((person) => person.id);
+
+    expect(september).toContain(FILIP);
+    expect(september).not.toContain(EMA);
+    expect(calendarMonthOf(current, { mjesec: '2026-07' }, TODAY).filter.people.map((person) => person.id)).toContain(
+      EMA,
+    );
   });
 });
 

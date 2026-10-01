@@ -1,3 +1,5 @@
+import { randomBytes } from 'node:crypto';
+
 import pg from 'pg';
 
 /**
@@ -41,6 +43,179 @@ export async function connect(url: string = DATABASE_URL): Promise<pg.Client> {
   const client = new pg.Client({ connectionString: url, connectionTimeoutMillis: REQUEST_TIMEOUT_MS });
   await client.connect();
   return client;
+}
+
+/** The address domain every member of the run organization `slug` signs in under. */
+export function addressDomain(slug: string): string {
+  return `${slug}.shift.invalid`;
+}
+
+/** The seed recipe (`supabase/seed.sql`): an auth user, its identity and its
+ *  member row, `'{}'` user metadata and the four empty-string token columns. */
+export async function insertMember(
+  client: pg.Client,
+  organizationId: string,
+  slug: string,
+  person: { readonly name: string; readonly username: string },
+  password: string,
+): Promise<{ memberId: string; authUserId: string }> {
+  const address = `${person.username}@${addressDomain(slug)}`;
+  const { rows } = await client.query<{ id: string }>(
+    `insert into auth.users (
+       instance_id, id, aud, role, email, encrypted_password, email_confirmed_at,
+       raw_app_meta_data, raw_user_meta_data, created_at, updated_at,
+       confirmation_token, recovery_token, email_change, email_change_token_new
+     ) values (
+       '00000000-0000-0000-0000-000000000000', gen_random_uuid(), 'authenticated', 'authenticated',
+       $1, extensions.crypt($2, extensions.gen_salt('bf', 10)), now(),
+       jsonb_build_object('provider', 'email', 'providers', jsonb_build_array('email')),
+       '{}'::jsonb, now(), now(), '', '', '', ''
+     )
+     returning id`,
+    [address, password],
+  );
+  const authUserId = rows[0]?.id;
+  if (authUserId === undefined) throw new Error('auth.users insert returned no row');
+
+  await client.query(
+    `insert into auth.identities (provider_id, user_id, identity_data, provider, created_at, updated_at)
+     values ($1::text, $1::uuid,
+             jsonb_build_object('sub', $1::text, 'email', $2::text,
+                                'email_verified', true, 'phone_verified', false),
+             'email', now(), now())`,
+    [authUserId, address],
+  );
+
+  const member = await client.query<{ id: string }>(
+    `insert into members (organization_id, auth_user_id, name, username, email, role, leave_allowance_days)
+     values ($1, $2, $3, $4, null, 'member_role', 20)
+     returning id`,
+    [organizationId, authUserId, person.name, person.username],
+  );
+  const memberId = member.rows[0]?.id;
+  if (memberId === undefined) throw new Error('members insert returned no row');
+
+  return { memberId, authUserId };
+}
+
+/** What {@link seedFormerMember} wrote, and the month to read them in. */
+export interface SeededFormerMember {
+  readonly id: string;
+  readonly name: string;
+  /** The month before the organization's current one, `YYYY-MM`: active throughout it. */
+  readonly month: string;
+}
+
+/**
+ * The username prefix of every member {@link seedFormerMember} writes — and
+ * the only members {@link removeFormerMemberInSql} will delete. Neither the
+ * fixture's admin (`e2e.admin`) nor its members carry it.
+ */
+export const FORMER_MEMBER_USERNAME_PREFIX = 'e2e.bivsi.';
+
+/**
+ * A member who has LEFT (epic 4 retro, C1), with a fresh name and username
+ * under {@link FORMER_MEMBER_USERNAME_PREFIX}: on `teamId` from the first day
+ * of the month before the organization's current one, and inactive from the
+ * first day of the current one — so they are active on every date of the
+ * month returned and inactive today.
+ *
+ * ACTIVE ALL LAST MONTH relies on the member having NO status version before
+ * the inactive one: a member with none is active (0008), and this member is
+ * new. No explicit active version is written, because one would change
+ * nothing, which the product's history never holds.
+ *
+ * WHAT THE SQL PATH BYPASSES. This connection is the `postgres` superuser,
+ * which is exempt from row level security, so the two insert POLICIES do not
+ * apply: `member_status_versions_insert_by_own_active_admin` (0008) and
+ * `team_membership_versions_insert_by_own_active_admin` (0010, altered by
+ * 0015). Both require a session admin and `effective_from >=
+ * organization_today(...)`, and a member who left needs past-dated versions,
+ * which only an operator can write. TRIGGERS still fire: the per-statement
+ * `*_serialize_organization_writes` (0023) and `member_status_versions_keeps_an_admin`
+ * (0023), which this member-role account passes.
+ *
+ * Call it under the run's rotation hold, and remove the member with
+ * {@link removeFormerMemberInSql} before releasing it.
+ */
+export async function seedFormerMember(slug: string, teamId: string): Promise<SeededFormerMember> {
+  const suffix = randomBytes(3).toString('hex');
+  const person = { name: `Bivši Član ${suffix}`, username: `${FORMER_MEMBER_USERNAME_PREFIX}${suffix}` };
+  const client = await connect();
+  try {
+    await client.query('begin');
+    const found = await client.query<{
+      organization_id: string;
+      admin_user: string | null;
+      this_month: string | null;
+      month: string | null;
+    }>(
+      `select o.id as organization_id,
+              (select m.auth_user_id from members m
+                where m.organization_id = o.id and m.role = 'admin'
+                order by m.created_at, m.id limit 1) as admin_user,
+              to_char(date_trunc('month', public.organization_today(o.id)), 'YYYY-MM-DD') as this_month,
+              to_char(date_trunc('month', public.organization_today(o.id)) - interval '1 month', 'YYYY-MM') as month
+         from organizations o
+        where o.slug = $1`,
+      [slug],
+    );
+    const organization = found.rows[0];
+    if (organization === undefined) throw new Error(`E2E: no organization ${slug}`);
+    const { organization_id: organizationId, admin_user: adminUser, this_month: thisMonth, month } = organization;
+    if (adminUser === null) throw new Error(`E2E: the organization ${slug} has no admin to write as`);
+    if (thisMonth === null || month === null) throw new Error(`E2E: organization_today is null for ${slug}`);
+    const { memberId } = await insertMember(client, organizationId, slug, person, randomBytes(18).toString('base64url'));
+    await client.query(
+      `insert into team_membership_versions (organization_id, member_id, team_id, effective_from, created_by)
+       values ($1, $2, $3, $4::date, $5)`,
+      [organizationId, memberId, teamId, `${month}-01`, adminUser],
+    );
+    await client.query(
+      `insert into member_status_versions (organization_id, member_id, active, effective_from, created_by)
+       values ($1, $2, false, $3::date, $4)`,
+      [organizationId, memberId, thisMonth, adminUser],
+    );
+    await client.query('commit');
+
+    return { id: memberId, name: person.name, month };
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Deletes a member {@link seedFormerMember} wrote, through their auth user, from
+ * which the member row and its versions cascade. Safe to call twice: a member
+ * already gone is nothing to do. REFUSES any member of `slug` whose username
+ * lacks {@link FORMER_MEMBER_USERNAME_PREFIX}, so a wrong id never deletes the
+ * fixture's admin or members.
+ */
+export async function removeFormerMemberInSql(slug: string, memberId: string): Promise<void> {
+  const client = await connect();
+  try {
+    const found = await client.query<{ username: string | null }>(
+      `select m.username from members m join organizations o on o.id = m.organization_id
+        where o.slug = $1 and m.id = $2`,
+      [slug, memberId],
+    );
+    const member = found.rows[0];
+    if (member === undefined) return;
+    if (member.username === null || !member.username.startsWith(FORMER_MEMBER_USERNAME_PREFIX)) {
+      throw new Error(`E2E: refusing to delete ${memberId}, not a member seedFormerMember wrote (${member.username})`);
+    }
+    await client.query(
+      `delete from auth.users u
+        using members m join organizations o on o.id = m.organization_id
+        where m.auth_user_id = u.id and m.id = $2 and o.slug = $1 and m.username like $3`,
+      [slug, memberId, `${FORMER_MEMBER_USERNAME_PREFIX.replace(/[\\%_]/g, (c) => `\\${c}`)}%`],
+    );
+  } finally {
+    await client.end();
+  }
 }
 
 /** How long a test waits for another to release the run's rotation. */
