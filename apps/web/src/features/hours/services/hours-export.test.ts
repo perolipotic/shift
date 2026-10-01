@@ -1,3 +1,4 @@
+import type { Collision } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
@@ -47,6 +48,9 @@ import {
 
 const MONTH = '2026-09';
 
+/** No leave, so no collision: every row's conflict cell is 0. */
+const NO_COLLISIONS: readonly Collision[] = [];
+
 const ANA = '00000000-0000-4000-8000-0000000000c1';
 const CEDO = '00000000-0000-4000-8000-0000000000c2';
 const DORA = '00000000-0000-4000-8000-0000000000c3';
@@ -94,7 +98,7 @@ async function organizationOf(rows: FixtureRows): Promise<CalendarSnapshot> {
 }
 
 function viewOf(snapshot: CalendarSnapshot, search: HoursSearch = { mjesec: MONTH }): OrganizationHoursView {
-  const outcome = organizationHoursOf(snapshot, search, TODAY);
+  const outcome = organizationHoursOf(snapshot, search, TODAY, NO_COLLISIONS);
 
   if (!outcome.ok) throw new Error(outcome.code);
 
@@ -139,6 +143,7 @@ describe('the sheet', () => {
       ...view.bands.map((band) => band.name),
       t('sati.organization.total'),
       t('sati.organization.leave'),
+      t('sati.organization.conflicts'),
     ]);
     expect(sheet.sheetName).toBe(t('sati.organization.export.sheetName'));
     expect(sheet.rows).toHaveLength(view.rows.length);
@@ -157,6 +162,8 @@ describe('the sheet', () => {
         { kind: 'hours', value: row.hours.totalMinutes / 1440 },
         // No leave before Epic 5: the cell is empty, as the screen's `—`.
         { kind: 'empty' },
+        // No collision without leave: a zero, never an empty cell.
+        { kind: 'count', value: 0 },
       ]);
       expect(row.hours.leaveMinutes).toBe(0);
     });
@@ -169,7 +176,7 @@ describe('the sheet', () => {
     expect(view.rows.length).toBeGreaterThan(1);
     expect(view.rows.length).toBeLessThan(viewOf(pilot).rows.length);
     expect(sheet.rows.map((row) => valueOf(row[0]))).toEqual(view.rows.map((row) => row.name));
-    expect(sheet.rows.map((row) => valueOf(row.at(-2)))).toEqual(view.rows.map((row) => row.hours.totalMinutes / 1440));
+    expect(sheet.rows.map((row) => valueOf(row.at(-3)))).toEqual(view.rows.map((row) => row.hours.totalMinutes / 1440));
   });
 
   it('UJ-5: the band cells show the split, and sum to Total on every row, in minutes', () => {
@@ -197,17 +204,17 @@ describe('the sheet', () => {
     const [first] = view.rows;
     const half = { ...first!, hours: { ...first!.hours, totalMinutes: 750 } };
     const sheet = hoursExportOf({ ...view, rows: [half] }, pilot.organizationName);
-    const total = sheet.rows[0]!.at(-2);
+    const total = sheet.rows[0]!.at(-3);
 
     expect(total).toEqual({ kind: 'hours', value: 750 / 1440 });
-    const written = sheetDataOf(sheet)[1]!.at(-2);
+    const written = sheetDataOf(sheet)[1]!.at(-3);
 
     expect(written).toEqual({ type: Number, value: 750 / 1440, format: HOURS_CELL_FORMAT });
     expect(HOURS_CELL_FORMAT).toBe('[h]:mm');
     // `[h]` does not wrap at a day: 108 hours stays 108:00.
     const long = hoursExportOf({ ...view, rows: [{ ...first!, hours: { ...first!.hours, totalMinutes: 6480 } }] }, 'DVD');
 
-    expect(long.rows[0]!.at(-2)).toEqual({ kind: 'hours', value: 4.5 });
+    expect(long.rows[0]!.at(-3)).toEqual({ kind: 'hours', value: 4.5 });
   });
 
   it('leave: 0 is an empty cell, and a positive leave a [h]:mm duration with no further change', () => {
@@ -215,17 +222,18 @@ describe('the sheet', () => {
     const [first] = view.rows;
     const withLeave = { ...first!.hours, leaveMinutes: 750 };
     // The row's leave figure through the one rule that sets it, as the table's rows are built.
-    const leave = myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), withLeave).leave;
+    const leave = myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), withLeave, 0).leave;
     const some = hoursExportOf({ ...view, rows: [{ ...first!, hours: withLeave, leave }] }, pilot.organizationName);
     const none = hoursExportOf({ ...view, rows: [first!] }, pilot.organizationName);
 
     expect(first!.leave).toBeNull();
-    expect(none.rows[0]!.at(-1)).toEqual({ kind: 'empty' });
-    expect(sheetDataOf(none)[1]!.at(-1)).toBeNull();
-    expect(some.rows[0]!.at(-1)).toEqual({ kind: 'hours', value: 750 / 1440 });
-    expect(sheetDataOf(some)[1]!.at(-1)).toEqual({ type: Number, value: 750 / 1440, format: HOURS_CELL_FORMAT });
+    expect(none.rows[0]!.at(-2)).toEqual({ kind: 'empty' });
+    expect(sheetDataOf(none)[1]!.at(-2)).toBeNull();
+    expect(some.rows[0]!.at(-2)).toEqual({ kind: 'hours', value: 750 / 1440 });
+    expect(sheetDataOf(some)[1]!.at(-2)).toEqual({ type: Number, value: 750 / 1440, format: HOURS_CELL_FORMAT });
     // Every other figure is unchanged by the leave.
-    expect(some.rows[0]!.slice(0, -1)).toEqual(none.rows[0]!.slice(0, -1));
+    expect(some.rows[0]!.slice(0, -2)).toEqual(none.rows[0]!.slice(0, -2));
+    expect(some.rows[0]!.at(-1)).toEqual(none.rows[0]!.at(-1));
   });
 
   it('no team: the cell is the text the screen shows', () => {
@@ -236,7 +244,7 @@ describe('the sheet', () => {
     expect(t('sati.organization.noTeam')).toBe('—');
   });
 
-  it('zero bands: Member, Team, shifts, Total, Leave', async () => {
+  it('zero bands: Member, Team, shifts, Total, Leave, conflicts', async () => {
     const view = viewOf(await organizationOf({ ...PILOT, bands: [] }));
     const sheet = hoursExportOf(view, pilot.organizationName);
 
@@ -246,8 +254,9 @@ describe('the sheet', () => {
       t('sati.organization.shifts'),
       t('sati.organization.total'),
       t('sati.organization.leave'),
+      t('sati.organization.conflicts'),
     ]);
-    for (const row of sheet.rows) expect(row).toHaveLength(5);
+    for (const row of sheet.rows) expect(row).toHaveLength(6);
   });
 
   it('a band a row does not carry refuses the sheet', () => {
@@ -264,7 +273,7 @@ describe('the sheet', () => {
 
     expect(header).toEqual(sheet.columns.map((column) => ({ type: String, value: column, fontWeight: 'bold' })));
     for (const [index, row] of rows.entries()) {
-      const figures = row.slice(2, -1);
+      const figures = row.slice(2, -2);
       const leave = view.rows[index]!.leave;
 
       expect(row.slice(0, 2).map((cell) => (cell as { type: unknown }).type)).toEqual([String, String]);
@@ -272,8 +281,10 @@ describe('the sheet', () => {
       expect(figures.slice(1).every((cell) => (cell as { format?: string }).format === HOURS_CELL_FORMAT)).toBe(true);
       expect((row[2] as { format?: string }).format).toBeUndefined();
       // The leave cell as its row has it: none when empty, else a duration.
-      if (leave === null) expect(row.at(-1)).toBeNull();
-      else expect(row.at(-1)).toMatchObject({ type: Number, format: HOURS_CELL_FORMAT });
+      if (leave === null) expect(row.at(-2)).toBeNull();
+      else expect(row.at(-2)).toMatchObject({ type: Number, format: HOURS_CELL_FORMAT });
+      // The conflict count: a plain number, no duration format, 0 included.
+      expect(row.at(-1)).toEqual({ type: Number, value: view.rows[index]!.conflictCount });
     }
   });
 });

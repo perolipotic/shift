@@ -67,11 +67,17 @@ export interface CalendarModifierEntry {
   readonly labelKey: ReturnType<typeof modifierMessageKey>;
 }
 
+/**
+ * An unresolved conflict's mark, `aria-hidden` wherever it is drawn: the
+ * calendar's cells, and *Sati*'s count beside the figures (story 5.3d).
+ */
+export const CONFLICT_GLYPH = '⚠';
+
 /** The vocabulary, in canonical order. */
 export const CALENDAR_MODIFIERS: readonly CalendarModifierEntry[] = [
   {
     id: MODIFIER_CONFLICT,
-    glyph: { kind: GLYPH_TEXT, text: '⚠' },
+    glyph: { kind: GLYPH_TEXT, text: CONFLICT_GLYPH },
     treatment: 'ring',
     labelKey: modifierMessageKey(MODIFIER_CONFLICT),
   },

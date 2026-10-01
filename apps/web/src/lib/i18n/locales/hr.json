@@ -172,6 +172,8 @@
     "leave": "Godišnji odmor",
     "noFigure": "—",
     "untimed": "{count, plural, one {# smjena nema upisano vrijeme pa nije uračunata u sate.} few {# smjene nemaju upisano vrijeme pa nisu uračunate u sate.} other {# smjena nema upisano vrijeme pa nije uračunato u sate.}}",
+    "conflicts": "{count, plural, one {# smjena u neriješenom konfliktu} few {# smjene u neriješenom konfliktu} other {# smjena u neriješenom konfliktu}}",
+    "retry": "Pokušaj ponovno",
     "error": {
       "unavailable": "Sate trenutačno nije moguće učitati. Pokušaj ponovno."
     },
@@ -182,6 +184,7 @@
       "shifts": "Smjene",
       "total": "Ukupno",
       "leave": "Godišnji odmor",
+      "conflicts": "Neriješeni konflikti",
       "teamFilter": "Smjena",
       "personFilter": "Osoba",
       "allTeams": "Sve smjene",

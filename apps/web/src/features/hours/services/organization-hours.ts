@@ -1,4 +1,4 @@
-import { activeOn, datesOfMonth, memberHoursOfMonth, membershipOn, type MemberHours } from '@shift/domain';
+import { activeOn, datesOfMonth, memberHoursOfMonth, membershipOn, type Collision, type MemberHours } from '@shift/domain';
 
 import {
   type CalendarMember,
@@ -12,6 +12,7 @@ import {
   type CalendarSearch,
   type MonthHeader,
 } from '@/features/calendar/utils/month';
+import { conflictCountIn, conflictCountsOf, type HoursConflictsState } from '@/features/hours/services/hours-conflicts';
 import {
   BAND_SORT_PREFIX,
   HOURS_UNAVAILABLE,
@@ -22,6 +23,7 @@ import {
   SORT_TEAM,
   SORT_TOTAL,
   SORT_UP,
+  hoursReadsOf,
   memberHoursInputOf,
   monthShownHeaderOf,
   myHoursSurfaceOf,
@@ -52,6 +54,11 @@ import { compareText } from '@/lib/i18n/format';
  * figures are `myHoursViewOf`'s, so a member's own screen and the admin's row
  * for them cannot disagree. The only sum is the untimed shifts of the rows
  * shown, a count of shifts, never of hours.
+ *
+ * EACH ROW CARRIES ITS CONFLICT COUNT (story 5.3d): the member's shifts in
+ * unresolved conflict in the month, `./hours-conflicts`'s count over the
+ * organization's collisions, beside the figures it changes none of. It is no
+ * sort key.
  */
 
 /** A band's column: its id and its name as stored, in band order. */
@@ -85,6 +92,8 @@ export interface OrganizationHoursRow {
   readonly leave: HoursFigure | null;
   /** Working shifts with no times, counted as shifts and never in hours. */
   readonly untimedShiftCount: number;
+  /** The month's working shifts in unresolved conflict, 0 included: the table and the file show a zero. */
+  readonly conflictCount: number;
   /** Where the name leads: `/kalendar?prikaz=sve&osoba=<id>&mjesec=<month>`. */
   readonly calendar: CalendarSearch;
   /** The domain's answer, which the sort orders by. */
@@ -100,8 +109,8 @@ export interface HoursSort {
 /** The order the table opens in: by name, ascending. */
 export const DEFAULT_HOURS_SORT: HoursSort = { key: SORT_NAME, direction: SORT_UP };
 
-/** The fixed columns the table draws besides a column per band: member, team, shifts, total, leave. */
-const FIXED_COLUMN_COUNT = 5;
+/** The fixed columns the table draws besides a column per band: member, team, shifts, total, leave, conflicts. */
+const FIXED_COLUMN_COUNT = 6;
 
 /** The organization's month, ready to render. */
 export interface OrganizationHoursView {
@@ -128,7 +137,7 @@ export interface OrganizationHoursView {
   readonly search: HoursSearch;
   /** The untimed shifts of the rows shown, or `null` when there are none. */
   readonly untimedShiftCount: number | null;
-  /** How many columns a row has: the fixed five and one per band. */
+  /** How many columns a row has: the fixed six and one per band. */
   readonly columnCount: number;
   /** The line an empty table shows, or `null` while it has a row. */
   readonly empty: HoursEmptyMessageKey | null;
@@ -161,7 +170,8 @@ function lastActiveDateOf(member: CalendarMember, dates: readonly string[]): str
 
 /**
  * Every row of `month`, in the snapshot's name order: each member active on
- * at least one of its dates, and any member with a shift in it.
+ * at least one of its dates, and any member with a shift in it — each with
+ * their conflicts of the month counted from `collisions`.
  *
  * @throws RangeError on any precondition of the domain, a band the snapshot
  *   lacks, or a team the snapshot does not name.
@@ -170,10 +180,13 @@ export function organizationHoursRowsOf(
   snapshot: CalendarSnapshot,
   month: string,
   header: MonthHeader,
+  collisions: readonly Collision[],
 ): readonly OrganizationHoursRow[] {
   const dates = datesOfMonth(month);
   const teams = new Map(snapshot.teams.map((team) => [team.id, team.name]));
   const rows: OrganizationHoursRow[] = [];
+  // Counted once for the month, then looked up per row.
+  const counts = conflictCountsOf(collisions, month);
 
   for (const member of snapshot.members) {
     const hours = memberHoursOfMonth(memberHoursInputOf(snapshot, { ...member, memberId: member.id }), month);
@@ -186,7 +199,8 @@ export function organizationHoursRowsOf(
 
     if (teamId !== null && teamName === undefined) throw new RangeError(`team ${teamId} is not in the snapshot`);
 
-    const figures = myHoursViewOf(snapshot, header, hours);
+    const conflictCount = conflictCountIn(counts, member.id);
+    const figures = myHoursViewOf(snapshot, header, hours, conflictCount);
 
     rows.push({
       memberId: member.id,
@@ -197,6 +211,7 @@ export function organizationHoursRowsOf(
       total: figures.total,
       leave: figures.leave,
       untimedShiftCount: hours.untimedShiftCount,
+      conflictCount,
       calendar: calendarLinkSearchOf(member.id, month),
       hours,
     });
@@ -374,7 +389,8 @@ export function untimedShiftsOf(rows: readonly OrganizationHoursRow[]): number |
 }
 
 /**
- * The organization's month `search` names, `today` the organization's.
+ * The organization's month `search` names, `today` the organization's, the
+ * conflicts counted from `collisions`.
  *
  * @throws RangeError on any precondition of the rows.
  */
@@ -382,11 +398,12 @@ export function organizationHoursViewOf(
   snapshot: CalendarSnapshot,
   search: HoursSearch,
   today: string,
+  collisions: readonly Collision[],
 ): OrganizationHoursView {
   const month = monthShownOf(search, today);
   const header = monthHeaderOf(month, today);
   const bands = snapshot.bands.map((band) => ({ bandId: band.id, name: band.name, sortKey: bandSortKeyOf(band.id) }));
-  const all = organizationHoursRowsOf(snapshot, month, header);
+  const all = organizationHoursRowsOf(snapshot, month, header, collisions);
   const teams = hoursTeamsOf(all);
   const people = all.map((row) => ({ id: row.memberId, name: row.name }));
   const team = teams.find((one) => one.id === search.tim)?.id ?? null;
@@ -427,9 +444,10 @@ export function organizationHoursOf(
   snapshot: CalendarSnapshot,
   search: HoursSearch,
   today: string,
+  collisions: readonly Collision[],
 ): OrganizationHoursOutcome {
   try {
-    return { ok: true, view: organizationHoursViewOf(snapshot, search, today) };
+    return { ok: true, view: organizationHoursViewOf(snapshot, search, today, collisions) };
   } catch (cause) {
     if (!(cause instanceof RangeError)) throw cause;
 
@@ -449,18 +467,26 @@ export interface HoursSurface extends MyHoursSurface {
 }
 
 /**
- * The calendar read's surface state as *Sati*: a member-role viewer's own
- * month exactly as story 4.1b draws it, and for an admin
- * (`snapshot.viewer.role`) every member's. A read refusal is the message
- * alone; a pending read the skeleton; a domain refusal of the table the
- * message in place of it, the month navigation kept.
+ * The calendar read's and the leave read's surface states as *Sati*
+ * (`hoursReadsOf`): a member-role viewer's own month exactly as
+ * `myHoursSurfaceOf` draws it, and for an admin (`snapshot.viewer.role`)
+ * every member's. A refused read is the message alone, with a retry only
+ * where reading again can help; a pending one the skeleton; a domain refusal
+ * of the table the message in place of it, the month navigation kept.
  */
-export function hoursSurfaceOf(state: CalendarSurfaceState, search: HoursSearch, today: string | null): HoursSurface {
-  if (state.refusal !== null || state.snapshot === null || today === null || state.snapshot.viewer.role !== 'admin') {
-    return { ...myHoursSurfaceOf(state, search, today), organization: null };
+export function hoursSurfaceOf(
+  state: CalendarSurfaceState,
+  conflicts: HoursConflictsState | null,
+  search: HoursSearch,
+  today: string | null,
+): HoursSurface {
+  const reads = hoursReadsOf(state, conflicts, today);
+
+  if (!reads.ready || reads.snapshot.viewer.role !== 'admin') {
+    return { ...myHoursSurfaceOf(state, conflicts, search, today), organization: null };
   }
 
-  const outcome = organizationHoursOf(state.snapshot, search, today);
+  const outcome = organizationHoursOf(reads.snapshot, search, reads.today, reads.collisions);
 
   if (outcome.ok) {
     return {
@@ -469,11 +495,20 @@ export function hoursSurfaceOf(state: CalendarSurfaceState, search: HoursSearch,
       month: outcome.view.header,
       navShown: true,
       refusal: null,
+      retryable: false,
       loading: false,
     };
   }
 
-  const month = monthShownHeaderOf(search, today);
+  const month = monthShownHeaderOf(search, reads.today);
 
-  return { view: null, organization: null, month, navShown: month !== null, refusal: outcome.code, loading: false };
+  return {
+    view: null,
+    organization: null,
+    month,
+    navShown: month !== null,
+    refusal: outcome.code,
+    retryable: false,
+    loading: false,
+  };
 }

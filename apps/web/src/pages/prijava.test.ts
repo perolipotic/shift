@@ -687,7 +687,10 @@ const SCREENS = [
   // however many columns. The name links are `<Link>`s, which no detector
   // reads; each carries `min-h-11` all the same.
   // SEVEN SINCE STORY 4.3: the table's one export `Button`, beside the filters.
-  { name: 'the Sati destination', file: SATI, expectedControls: 7 },
+  // EIGHT SINCE STORY 5.3d: the unavailable message's retry, which reads the
+  // snapshot and the leave the conflict count stands on again. The conflicts
+  // heading is plain text, never a sort.
+  { name: 'the Sati destination', file: SATI, expectedControls: 8 },
   // STORY 5.2c. ONE on Godišnji: the retry its unavailable alert offers. The
   // three figures are read, never pressed, and nothing here writes: a member
   // requests no leave (story 5.3 is conflicts, not requests).
@@ -2207,10 +2210,14 @@ const KEY_SOURCES = [
     // a key source.
     // The empty leave mark comes through `leaveShownOf` in
     // `@/features/hours/services/my-hours`, a key source.
+    //
+    // THIRTY SINCE STORY 5.3d: the viewer's own line of shifts in unresolved
+    // conflict, the table's conflicts heading, and the retry the unavailable
+    // message offers when a read failed.
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 27,
+    strings: 30,
   },
   {
     // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the
@@ -2264,10 +2271,11 @@ const KEY_SOURCES = [
     // column headings 4.2 already renders, the no-team mark, the sheet's name
     // and the file's — and its action's two labels, the imperative and the
     // one it wears while the file is built, off `hoursExportMessageKey`.
+    // ELEVEN SINCE STORY 5.3d: the conflicts column's heading, the table's own.
     name: 'the hours export rules',
     file: HOURS_EXPORT_KEYS,
     keys: (text: string) => [...translationKeys(text), ...messageKeyUnions(text)],
-    strings: 10,
+    strings: 11,
   },
   {
     // STORY 5.1c: the leave card's four reasons for no preview (incomplete,

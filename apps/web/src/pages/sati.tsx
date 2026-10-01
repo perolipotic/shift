@@ -29,15 +29,22 @@ import { appLayoutRoute } from '@/pages/_app';
  * message alone; a month whose hours the domain refuses keeps its navigation,
  * the message in place of the figures (`myHoursSurfaceOf` decides which).
  *
+ * THE CONFLICT COUNT (story 5.3d): *Sati* also waits for the leave the
+ * viewer's role reads — the organization's for an admin, their own for a
+ * member — and shows each member's shifts in unresolved conflict beside the
+ * figures it changes none of. A read that failed shows the message with a
+ * retry; a refusal reading again would repeat shows the message alone.
+ *
  * The session guard is NOT here. It is registered once on the pathless `_app`
  * layout this route nests under.
  */
 export function SatiScreen() {
   const search = satiRoute.useSearch();
   const navigate = useNavigate({ from: satiRoute.fullPath });
-  const { view, organization, organizationName, month, navShown, refusal, loading, show, change, pressColumn } = useHours(search, (next) => {
-    void navigate({ search: next });
-  });
+  const { view, organization, organizationName, month, navShown, refusal, retryable, loading, retry, show, change, pressColumn } =
+    useHours(search, (next) => {
+      void navigate({ search: next });
+    });
 
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6" aria-busy={loading}>
@@ -61,7 +68,7 @@ export function SatiScreen() {
           />
         </Card>
       ) : (
-        <HoursNotice refusal={refusal} />
+        <HoursNotice refusal={refusal} onRetry={retryable ? retry : null} />
       )}
     </main>
   );

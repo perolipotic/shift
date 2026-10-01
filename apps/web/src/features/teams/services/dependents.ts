@@ -83,8 +83,9 @@ export const HOUR_BAND_WRITE_DEPENDENTS: readonly QueryKey[] = [CALENDAR_KEY];
  * conflicts queue (*Raspored*) derives every collision from, depend on it
  * too. Since story 5.3c the calendar's marks read the same two keys — the
  * organization's records for an admin, the viewer's own for a member — so
- * they follow every leave write with no key of their own. *Sati* starts
- * reading leave in story 5.3d.
+ * they follow every leave write with no key of their own. Since story 5.3d
+ * *Sati*'s conflict count reads the same two keys, by the same role rule, so
+ * it follows too.
  */
 export const LEAVE_WRITE_DEPENDENTS: readonly QueryKey[] = [MY_LEAVE_RECORDS_KEY, ORGANIZATION_LEAVE_RECORDS_KEY];
 

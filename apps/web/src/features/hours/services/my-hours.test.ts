@@ -1,4 +1,4 @@
-import { memberHoursOfMonth, type MemberHours } from '@shift/domain';
+import { memberHoursOfMonth, type Collision, type MemberHours } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -7,6 +7,7 @@ import {
   type CalendarSnapshot,
 } from '@/features/calendar/services/snapshot';
 import { calendarDayListOf, monthHeaderOf } from '@/features/calendar/utils/month';
+import { HOURS_CONFLICTS_READY, type HoursConflictsState } from '@/features/hours/services/hours-conflicts';
 import {
   HOURS_BANDS_HEADING_ID,
   HOURS_MONTH_HEADING_ID,
@@ -52,6 +53,10 @@ import {
 
 const MONTH = '2026-09';
 
+/** No leave, so no collision: the figures exactly as before story 5.3d. */
+const NO_COLLISIONS: readonly Collision[] = [];
+const READY: HoursConflictsState = { kind: HOURS_CONFLICTS_READY, collisions: NO_COLLISIONS };
+
 async function snapshotOf(
   rows: FixtureRows,
   {
@@ -73,7 +78,7 @@ async function snapshotOf(
 }
 
 function viewOf(snapshot: CalendarSnapshot, search: HoursSearch = { mjesec: MONTH }): MyHoursView {
-  const outcome = myHoursOf(snapshot, search, TODAY);
+  const outcome = myHoursOf(snapshot, search, TODAY, NO_COLLISIONS);
 
   if (!outcome.ok) throw new Error(outcome.code);
 
@@ -325,7 +330,7 @@ describe('the matrix edges', () => {
       leaveMinutes: 0,
       untimedShiftCount: 0,
     };
-    const view = myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hours);
+    const view = myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hours, 0);
 
     expect(view.bands.map((band) => shown(band.hours))).toEqual(['12 h 30 min', '45 min']);
     expect(shown(view.total)).toBe('13 h 15 min');
@@ -343,8 +348,8 @@ describe('the matrix edges', () => {
       leaveMinutes,
       untimedShiftCount: 0,
     });
-    const none = myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hoursWith(0));
-    const some = myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hoursWith(750));
+    const none = myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hoursWith(0), 0);
+    const some = myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hoursWith(750), 0);
 
     expect(none.leave).toBeNull();
     expect(some.leave).not.toBeNull();
@@ -375,51 +380,52 @@ describe('the matrix edges', () => {
       untimedShiftCount: 0,
     };
 
-    expect(() => myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hours)).toThrow(RangeError);
+    expect(() => myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hours, 0)).toThrow(RangeError);
   });
 
   it('a RangeError from the domain is the one failure, logged, and no figure', () => {
     const errors = quiet();
     const broken: CalendarSnapshot = { ...pilot, bands: [...pilot.bands, { ...pilot.bands[0]!, startMinute: 3 }] };
 
-    expect(myHoursOf(broken, { mjesec: MONTH }, TODAY)).toEqual({ ok: false, code: HOURS_UNAVAILABLE });
+    expect(myHoursOf(broken, { mjesec: MONTH }, TODAY, NO_COLLISIONS)).toEqual({ ok: false, code: HOURS_UNAVAILABLE });
     expect(errors).toHaveBeenCalledWith(HOURS_UNAVAILABLE, expect.any(RangeError));
   });
 
   it('anything but a RangeError is not swallowed', () => {
     const broken = { ...pilot, get bands(): never { throw new TypeError('defect'); } } as unknown as CalendarSnapshot;
 
-    expect(() => myHoursOf(broken, { mjesec: MONTH }, TODAY)).toThrow(TypeError);
+    expect(() => myHoursOf(broken, { mjesec: MONTH }, TODAY, NO_COLLISIONS)).toThrow(TypeError);
   });
 });
 
 describe('the surface state', () => {
   it('a failed or paused read is the message alone: no figure and no navigation', () => {
-    const alone = { view: null, month: null, navShown: false, refusal: HOURS_UNAVAILABLE, loading: false };
+    const alone = { view: null, month: null, navShown: false, refusal: HOURS_UNAVAILABLE, retryable: true, loading: false };
 
-    expect(myHoursSurfaceOf({ snapshot: null, refusal: CALENDAR_UNAVAILABLE, loading: false }, {}, null)).toEqual(alone);
+    expect(myHoursSurfaceOf({ snapshot: null, refusal: CALENDAR_UNAVAILABLE, loading: false }, null, {}, null)).toEqual(alone);
     // ANY read refusal, a code added later included, and over a cached snapshot
     // too: never an endless skeleton, never a stale figure.
     const later = 'CALENDAR_SOMETHING_ELSE' as unknown as typeof CALENDAR_UNAVAILABLE;
 
-    expect(myHoursSurfaceOf({ snapshot: null, refusal: later, loading: false }, {}, null)).toEqual(alone);
-    expect(myHoursSurfaceOf({ snapshot: pilot, refusal: later, loading: false }, {}, TODAY)).toEqual(alone);
+    expect(myHoursSurfaceOf({ snapshot: null, refusal: later, loading: false }, null, {}, null)).toEqual(alone);
+    expect(myHoursSurfaceOf({ snapshot: pilot, refusal: later, loading: false }, READY, {}, TODAY)).toEqual(alone);
     expect(hoursMessageKey(HOURS_UNAVAILABLE)).toBe('sati.error.unavailable');
     expect(t(hoursMessageKey(HOURS_UNAVAILABLE))).toBe('Sate trenutačno nije moguće učitati. Pokušaj ponovno.');
   });
 
   it('a pending read is the skeleton, and no figure', () => {
-    expect(myHoursSurfaceOf({ snapshot: null, refusal: null, loading: true }, {}, null)).toEqual({
+    expect(myHoursSurfaceOf({ snapshot: null, refusal: null, loading: true }, null, {}, null)).toEqual({
       view: null,
       month: null,
       navShown: true,
       refusal: null,
+      retryable: false,
       loading: true,
     });
   });
 
   it('an answer is the month, and never a message beside it', () => {
-    const surface = myHoursSurfaceOf({ snapshot: pilot, refusal: null, loading: false }, { mjesec: MONTH }, TODAY);
+    const surface = myHoursSurfaceOf({ snapshot: pilot, refusal: null, loading: false }, READY, { mjesec: MONTH }, TODAY);
 
     expect(surface.refusal).toBeNull();
     expect(surface.loading).toBe(false);
@@ -432,16 +438,17 @@ describe('the surface state', () => {
     quiet();
     const broken: CalendarSnapshot = { ...pilot, bands: [...pilot.bands, pilot.bands[0]!] };
 
-    expect(myHoursSurfaceOf({ snapshot: broken, refusal: null, loading: false }, {}, TODAY)).toEqual({
+    expect(myHoursSurfaceOf({ snapshot: broken, refusal: null, loading: false }, READY, {}, TODAY)).toEqual({
       view: null,
       month: monthHeaderOf(MONTH, TODAY),
       navShown: true,
       refusal: HOURS_UNAVAILABLE,
+      retryable: false,
       loading: false,
     });
     // The month named, so the viewer can leave it.
     expect(
-      myHoursSurfaceOf({ snapshot: broken, refusal: null, loading: false }, { mjesec: '2026-10' }, TODAY).month,
+      myHoursSurfaceOf({ snapshot: broken, refusal: null, loading: false }, READY, { mjesec: '2026-10' }, TODAY).month,
     ).toMatchObject({ month: '2026-10', previous: '2026-09', next: '2026-11' });
   });
 
@@ -450,11 +457,12 @@ describe('the surface state', () => {
     const broken: CalendarSnapshot = { ...pilot, bands: [...pilot.bands, pilot.bands[0]!] };
 
     // `today` malformed: neither the hours nor the heading can be worked out.
-    expect(myHoursSurfaceOf({ snapshot: broken, refusal: null, loading: false }, {}, 'not-a-date')).toEqual({
+    expect(myHoursSurfaceOf({ snapshot: broken, refusal: null, loading: false }, READY, {}, 'not-a-date')).toEqual({
       view: null,
       month: null,
       navShown: false,
       refusal: HOURS_UNAVAILABLE,
+      retryable: false,
       loading: false,
     });
   });
