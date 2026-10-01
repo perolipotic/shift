@@ -1075,6 +1075,15 @@ const SANCTIONED_SCREEN_KEYS = [
   'sati.organization.noTeam',
   'sati.organization.empty',
   'sati.organization.emptyMonth',
+  // STORY 4.3: the organization table's one export — its action, the label
+  // it wears while the file is built, the line a failed build shows, and the
+  // sheet's and the file's names. The column headings are 4.2's keys above;
+  // the file's band headings are the bands' names as stored.
+  'sati.organization.export.action',
+  'sati.organization.export.pending',
+  'sati.organization.export.failed',
+  'sati.organization.export.sheetName',
+  'sati.organization.export.fileName',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
@@ -1495,6 +1504,9 @@ describe('the messages obey the voice rules that bind every string', () => {
     // naturally have been the noun `Poništavanje` — the prompt's subject.
     expect(messageAt('rotation.builder.cancelScheduled.offer')).toBe('Poništi promjenu zakazanu od {date}');
     expect(messageAt('rotation.builder.cancelScheduled.confirm')).toBe('Potvrdi poništavanje promjene');
+    // STORY 4.3's one, in the same voice: `Izvezi`, not the noun `Izvoz`,
+    // which is the label the control wears while the file is built.
+    expect(messageAt('sati.organization.export.action')).toBe('Izvezi u Excel');
   });
 });
 

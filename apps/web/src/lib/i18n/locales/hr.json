@@ -167,7 +167,14 @@
       "allPeople": "Sve osobe",
       "noTeam": "—",
       "empty": "Nijedna osoba ne odgovara odabranom filtru.",
-      "emptyMonth": "U ovom mjesecu nema nijedne osobe."
+      "emptyMonth": "U ovom mjesecu nema nijedne osobe.",
+      "export": {
+        "action": "Izvezi u Excel",
+        "pending": "Izvoz…",
+        "failed": "Izvoz nije uspio. Osvježi stranicu i pokušaj ponovno.",
+        "sheetName": "Sati",
+        "fileName": "Sati {organization} {month} {year}"
+      }
     }
   },
   "ljudi": {

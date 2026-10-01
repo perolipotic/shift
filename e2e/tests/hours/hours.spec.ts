@@ -1,7 +1,9 @@
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 
 import {
   holdRotation,
+  organizationNameOf,
   removeSeededRotation,
   seedTeamRotation,
   type RotationHold,
@@ -10,6 +12,7 @@ import {
 import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
 import { fill, hr, plural } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll } from '../../utils/layout.ts';
+import { hoursExportFileName, readXlsx, type XlsxCell } from '../../utils/xlsx.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 import { HoursPage } from '../../pages/hours.page.ts';
 
@@ -25,7 +28,12 @@ import { HoursPage } from '../../pages/hours.page.ts';
  * whose row for that member equals what the member reads; it filters by team
  * and by person, sorts by total across a reload, keeps both across a month
  * change, links a name to that member's calendar month, and does not scroll
- * the page sideways at 390 px.
+ * the page sideways at 390 px. Story 4.3: sorted, then filtered, the admin
+ * exports the month, and the downloaded `.xlsx` — unzipped and read back —
+ * carries the table's headings, rows, order and figures, every figure a
+ * number cell; a filter that leaves no row closes the export; a writer that
+ * cannot load shows the failure and leaves the action usable; a member has
+ * no export.
  */
 
 const sati = hr.sati;
@@ -102,6 +110,59 @@ function hoursOf(shifts: number): string {
   return fill(hours, { hours: String(shifts * 12) });
 }
 
+/** A downloaded duration as minutes: a spreadsheet stores one as a fraction of a day. */
+function exportedMinutes(cell: XlsxCell | null | undefined): number | null {
+  return cell?.type === 'number' ? Math.round(cell.value * 1440) : null;
+}
+
+/**
+ * Exports what the table shows and holds the file to it (story 4.3): its
+ * name, the sheet's, the headings, and every row in order — text as shown,
+ * the shift count a number, every hour figure a `[h]:mm` duration equal to
+ * the screen's minutes. Answers each row's total, in minutes, in file order.
+ */
+async function expectExportIsTable(hoursPage: HoursPage, fileName: string): Promise<number[]> {
+  await expect(hoursPage.exportButton).toBeEnabled();
+  const headings = (await hoursPage.columnHeaders.allTextContents()).map((text) => text.trim());
+  const shown = await hoursPage.organizationMatrix();
+  expect(shown.length, 'the table shows a row').toBeGreaterThan(0);
+  const download = await hoursPage.exportDownload();
+  expect(download.suggestedFilename()).toBe(fileName);
+  const workbook = readXlsx(readFileSync(await download.path()));
+  expect(workbook.name).toBe(organization.export.sheetName);
+  const [header, ...body] = workbook.rows;
+  expect(header?.map((cell) => (cell?.type === 'text' ? cell.value : null))).toEqual(headings);
+  expect(body).toHaveLength(shown.length);
+  for (const [index, cells] of body.entries()) {
+    const texts = shown[index] ?? [];
+    expect(cells).toHaveLength(headings.length);
+    for (const [column, label] of headings.entries()) {
+      const cell = cells[column];
+      const text = texts[column] ?? '';
+      if (label === organization.member || label === organization.team) {
+        expect(cell, `${label} of row ${String(index)}`).toEqual({ type: 'text', value: text });
+      } else if (label === organization.shifts) {
+        expect(cell, `${label} of row ${String(index)}`).toEqual({
+          type: 'number',
+          value: Number(/^\d+/.exec(text)?.[0]),
+          format: null,
+        });
+      } else {
+        // A band, the total or the leave: a duration, read back as the screen's minutes.
+        expect(cell?.type, `${label} of row ${String(index)} is a number`).toBe('number');
+        expect(cell?.type === 'number' ? cell.format : null).toBe('[h]:mm');
+        expect(exportedMinutes(cell), `${label} of row ${String(index)}`).toBe(minutesOfFigure(text));
+      }
+    }
+  }
+  // THE ORDER IS THE SCREEN'S.
+  expect(body.map((cells) => (cells[0]?.type === 'text' ? cells[0].value : null))).toEqual(shown.map((row) => row[0]));
+  await expect(hoursPage.exportButton).toBeEnabled();
+  await expect(hoursPage.exportFailed).toHaveCount(0);
+
+  return body.map((cells) => exportedMinutes(cells[headings.indexOf(organization.total)]) ?? -1);
+}
+
 /** `Listopad 2026` — the heading a month carries. */
 function monthHeading(date: string): string {
   const name = new Intl.DateTimeFormat('hr', { month: 'long', timeZone: 'UTC' }).format(
@@ -132,6 +193,8 @@ test.describe('as a member', () => {
     await expect(hoursPage.heading(hr.nav.sati)).toBeVisible();
     await expect(hoursPage.monthHeading(monthHeading(rotation.today))).toBeVisible();
     await expect(hoursPage.figureIn(hoursPage.totalTile, hoursOf(shifts))).toBeVisible();
+    // No export for a member-role account, not even of their own hours (story 4.3).
+    await expect(hoursPage.exportButton).toHaveCount(0);
     await expect(hoursPage.figureIn(hoursPage.shiftsTile, plural(sati.shiftCount, shifts))).toBeVisible();
 
     // PER BAND, under the run fixture's two bands (Dan from 07:00, Noć from
@@ -310,9 +373,23 @@ test.describe('as an admin', () => {
     await expect(hoursPage.columnHeader(organization.total)).toHaveAttribute('aria-sort', 'descending');
     await expect(hoursPage.organizationRows).toHaveText(order);
 
+    // THE EXPORT KEEPS THE ORDER (story 4.3): every row, sorted by total
+    // descending — the seeded member above those with none, so the order is
+    // one the file could get wrong.
+    const fileName = hoursExportFileName(await organizationNameOf(fixture.slug), month);
+    const totals = await expectExportIsTable(hoursPage, fileName);
+    expect(totals.length, 'the unfiltered table has more than one row').toBeGreaterThan(1);
+    expect(new Set(totals).size, 'the totals differ, so the order is tested').toBeGreaterThan(1);
+    expect(totals).toEqual([...totals].sort((first, second) => second - first));
+
     // THE MONTH KEEPS THE FILTER AND THE SORT.
     await hoursPage.teamFilter.selectOption({ label: fixture.team.name });
     await expect(page).toHaveURL(/[?&]tim=/);
+
+    // THE EXPORT IS THE SCREEN, FILTERED (story 4.3): by team, sorted by
+    // total descending, the file holds exactly the rows shown.
+    await expect(hoursPage.chosenOption(hoursPage.teamFilter)).toHaveText(fixture.team.name);
+    await expectExportIsTable(hoursPage, fileName);
     const next = nextMonth(month);
     await hoursPage.nextButton.click();
     await expect(page).toHaveURL(new RegExp(`[?&]mjesec=${next}`));
@@ -333,5 +410,43 @@ test.describe('as an admin', () => {
     await expect(page).toHaveURL(/[?&]prikaz=sve/);
     await expect(page).toHaveURL(/[?&]osoba=/);
     await expect(calendarPage.personHeading(fixture.member.name)).toBeVisible();
+  });
+
+  test('a filter that leaves no row closes the export', async ({ page, hoursPage, fixture }) => {
+    await hoursPage.goto();
+    await expect(hoursPage.organizationTable).toBeVisible();
+    await expect(hoursPage.exportButton).toBeEnabled();
+    // The admin is on no team: on the fixture team AND the admin, nobody is left.
+    await hoursPage.teamFilter.selectOption({ label: fixture.team.name });
+    await expect(page).toHaveURL(/[?&]tim=/);
+    await hoursPage.personFilter.selectOption({ label: fixture.admin.name });
+    await expect(page).toHaveURL(/[?&]osoba=/);
+    await expect(hoursPage.organizationRows.filter({ has: page.getByRole('link') })).toHaveCount(0);
+    await expect(hoursPage.exportButton).toBeDisabled();
+    await hoursPage.personFilter.selectOption({ index: 0 });
+    await expect(hoursPage.exportButton).toBeEnabled();
+  });
+
+  test('a writer that cannot load shows the failure, and the action is usable again', async ({ page, hoursPage }) => {
+    // The writer's own module, whichever server serves it: Vite's optimized
+    // dependency in development, the lazily split chunk in a build.
+    let aborted = 0;
+    await page.route(/write-excel-file|\/assets\/browser-[\w-]+\.js(?:\?|$)/, async (route) => {
+      aborted += 1;
+      await route.abort();
+    });
+    await hoursPage.goto();
+    await expect(hoursPage.organizationTable).toBeVisible();
+    await expect(hoursPage.exportFailed).toHaveCount(0);
+    await hoursPage.exportButton.click();
+    await expect(hoursPage.exportFailed).toBeVisible();
+    expect(aborted, 'the writer was requested, and refused').toBeGreaterThan(0);
+    // Usable again: open, its own label back, and the focus the press gave it kept.
+    await expect(hoursPage.exportButton).toBeEnabled();
+    await expect(hoursPage.exportButton).not.toHaveAttribute('aria-disabled', 'true');
+    await expect(hoursPage.exportButton).toBeFocused();
+    await hoursPage.exportButton.click();
+    await expect(hoursPage.exportFailed).toBeVisible();
+    await expect(hoursPage.exportButton).toBeEnabled();
   });
 });

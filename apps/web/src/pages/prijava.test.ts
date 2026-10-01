@@ -336,6 +336,8 @@ const SATI: readonly string[] = Object.values(HOURS_SCREEN_PARTS).map((parts) =>
 const HOURS_KEYS = join(srcRoot, 'features', 'hours', 'services', 'my-hours.ts');
 /** Story 4.2's rules: the two lines an admin's empty table renders. */
 const ORGANIZATION_HOURS_KEYS = join(srcRoot, 'features', 'hours', 'services', 'organization-hours.ts');
+/** Story 4.3's rules: the export's headings, sheet and file names, and its action's two labels. */
+const HOURS_EXPORT_KEYS = join(srcRoot, 'features', 'hours', 'services', 'hours-export.ts');
 /** Story 3.5b's override writes: the six refusals the day detail's form and confirmation render. */
 const CALENDAR_OVERRIDE_WRITE_KEYS = join(srcRoot, 'features', 'calendar', 'services', 'override-write.ts');
 /** Story 3.6b's roster writes: the six refusals and the two landed notices the roster form and confirmation render. */
@@ -637,7 +639,8 @@ const SCREENS = [
   // `Select`s, and ONE sortable heading `Button` written once in `SortHead`,
   // however many columns. The name links are `<Link>`s, which no detector
   // reads; each carries `min-h-11` all the same.
-  { name: 'the Sati destination', file: SATI, expectedControls: 6 },
+  // SEVEN SINCE STORY 4.3: the table's one export `Button`, beside the filters.
+  { name: 'the Sati destination', file: SATI, expectedControls: 7 },
   // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
   // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
   // row link written once inside the map over the bands — the same count at
@@ -2098,10 +2101,15 @@ const KEY_SOURCES = [
     // the shift count twice more (a row's and a band cell's) and the untimed
     // note once more (the table's own). Its empty lines come through
     // `@/features/hours/services/organization-hours`, a key source.
+    //
+    // TWENTY-SEVEN SINCE STORY 4.3: the export's failure line. Its action's
+    // two labels come through `hoursExportMessageKey`, and the sheet's
+    // headings and names through `@/features/hours/services/hours-export`,
+    // a key source.
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 26,
+    strings: 27,
   },
   {
     // STORY 4.1b: the hours' one failure, a read or a domain refusal alike.
@@ -2117,6 +2125,16 @@ const KEY_SOURCES = [
     file: ORGANIZATION_HOURS_KEYS,
     keys: messageKeyUnion,
     strings: 2,
+  },
+  {
+    // STORY 4.3: the export's sheet — its eight `t()` calls: the five fixed
+    // column headings 4.2 already renders, the no-team mark, the sheet's name
+    // and the file's — and its action's two labels, the imperative and the
+    // one it wears while the file is built, off `hoursExportMessageKey`.
+    name: 'the hours export rules',
+    file: HOURS_EXPORT_KEYS,
+    keys: (text: string) => [...translationKeys(text), ...messageKeyUnions(text)],
+    strings: 10,
   },
   {
     // STORY 3.1: the calendar's one read failure.
@@ -2471,7 +2489,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // `@/features/hours/services/my-hours` is a key source (one more).
     //
     // FIFTY-ONE SINCE STORY 4.2: `@/features/hours/services/organization-hours`.
-    expect(KEY_SOURCES).toHaveLength(51);
+    //
+    // FIFTY-TWO SINCE STORY 4.3: `@/features/hours/services/hours-export`.
+    expect(KEY_SOURCES).toHaveLength(52);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"

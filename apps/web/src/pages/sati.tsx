@@ -35,7 +35,7 @@ import { appLayoutRoute } from '@/pages/_app';
 export function SatiScreen() {
   const search = satiRoute.useSearch();
   const navigate = useNavigate({ from: satiRoute.fullPath });
-  const { view, organization, month, navShown, refusal, loading, show, change, pressColumn } = useHours(search, (next) => {
+  const { view, organization, organizationName, month, navShown, refusal, loading, show, change, pressColumn } = useHours(search, (next) => {
     void navigate({ search: next });
   });
 
@@ -55,6 +55,7 @@ export function SatiScreen() {
             refusal={refusal}
             view={view}
             organization={organization}
+            organizationName={organizationName}
             onChange={change}
             onPress={pressColumn}
           />
