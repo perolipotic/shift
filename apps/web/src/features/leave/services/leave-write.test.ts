@@ -1,15 +1,23 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  AMEND_LEAVE_RECORD_FUNCTION,
   LEAVE_DENIED,
   LEAVE_FAILED,
+  LEAVE_GONE,
   LEAVE_OVERLAP,
   LEAVE_RECORDS_TABLE,
+  REMOVE_LEAVE_RECORD_FUNCTION,
+  amendLeave,
+  leaveChangeFailureOf,
   leaveInsertFailureOf,
   isCalendarDate,
   leaveRangeOf,
   recordLeave,
+  removeLeave,
+  type LeaveAmendAnswer,
   type LeaveQuery,
+  type LeaveRecordRpc,
   type LeaveReadAnswer,
   type LeaveTable,
   type LeaveWriteAnswer,
@@ -52,6 +60,11 @@ function tableAnswering(
       const query: LeaveQuery = {
         eq(column, value) {
           call.push(['eq', column, value]);
+
+          return query;
+        },
+        neq(column, value) {
+          call.push(['neq', column, value]);
 
           return query;
         },
@@ -243,4 +256,172 @@ describe('a stored range read back as inclusive dates', () => {
       expect(leaveRangeOf(during)).toBeNull();
     },
   );
+});
+
+const RECORD = '00000000-0000-4000-8000-0000000000c3';
+const REPLACEMENT = '00000000-0000-4000-8000-0000000000d4';
+
+interface FakeRpc extends LeaveRecordRpc {
+  readonly called: unknown[];
+}
+
+function rpcAnswering(answer: LeaveAmendAnswer | Promise<never>): FakeRpc {
+  const called: unknown[] = [];
+
+  return {
+    called,
+    rpc(fn: string, args: unknown) {
+      called.push([fn, args]);
+
+      return answer instanceof Promise ? answer : Promise.resolve(answer);
+    },
+  } as FakeRpc;
+}
+
+describe('removing a leave record (story 5.2a)', () => {
+  it('names the function 0029 created', () => {
+    expect(REMOVE_LEAVE_RECORD_FUNCTION).toBe('remove_leave_record');
+  });
+
+  it('calls the removal with the record alone, and lands', async () => {
+    const client = rpcAnswering({ data: null, error: null });
+
+    expect(await removeLeave(client, RECORD)).toEqual({ ok: true });
+    expect(client.called).toEqual([['remove_leave_record', { p_record_id: RECORD }]]);
+  });
+
+  it.each([
+    ['P0002', LEAVE_GONE, 0],
+    ['42501', LEAVE_DENIED, 0],
+    ['23P01', LEAVE_FAILED, 1],
+    ['23514', LEAVE_FAILED, 1],
+    [undefined, LEAVE_FAILED, 1],
+  ] as const)('maps a refused removal %s to %s', async (code, expected, logs) => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(await removeLeave(rpcAnswering({ data: null, error: { code } }), RECORD)).toEqual({ ok: false, code: expected });
+    expect(logged).toHaveBeenCalledTimes(logs);
+  });
+
+  it.each([
+    ['a thrown call', 'throws'],
+    ['a null answer', null],
+    ['an absent error', {}],
+    ['a string error', { error: 'P0002' }],
+  ] as const)('reads %s as failed, never throwing', async (_label, answer) => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const client = rpcAnswering(
+      answer === 'throws' ? Promise.reject(new Error('offline')) : (answer as unknown as LeaveAmendAnswer),
+    );
+
+    expect(await removeLeave(client, RECORD)).toEqual({ ok: false, code: LEAVE_FAILED });
+  });
+});
+
+describe('amending a leave record (story 5.2a)', () => {
+  it('names the function 0029 created', () => {
+    expect(AMEND_LEAVE_RECORD_FUNCTION).toBe('amend_leave_record');
+  });
+
+  it('sends the record and the inclusive dates, answers the replacement\'s id, and reads nothing back', async () => {
+    const client = rpcAnswering({ data: REPLACEMENT, error: null });
+    const table = tableAnswering({ error: null });
+
+    expect(await amendLeave(client, table, ORGANIZATION, MEMBER, RECORD, '2026-09-12', '2026-09-20')).toEqual({
+      ok: true,
+      id: REPLACEMENT,
+    });
+    expect(client.called).toEqual([
+      ['amend_leave_record', { p_record_id: RECORD, p_from: '2026-09-12', p_to: '2026-09-20' }],
+    ]);
+    expect(table.sent).toEqual([]);
+    expect(table.read).toEqual([]);
+  });
+
+  it('answers an overlap with the earliest conflicting live record other than the amended one, read once, and logs nothing', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const table = tableAnswering({ error: null }, { data: [{ during: '[2026-09-18,2026-09-26)' }], error: null });
+
+    expect(
+      await amendLeave(rpcAnswering({ data: null, error: { code: '23P01' } }), table, ORGANIZATION, MEMBER, RECORD, '2026-09-12', '2026-09-20'),
+    ).toEqual({ ok: false, code: LEAVE_OVERLAP, conflict: { from: '2026-09-18', to: '2026-09-25' } });
+    expect(table.read).toEqual([
+      [
+        ['select', 'during'],
+        ['eq', 'organization_id', ORGANIZATION],
+        ['eq', 'member_id', MEMBER],
+        ['is', 'removed_at', null],
+        ['neq', 'id', RECORD],
+        ['overlaps', 'during', '[2026-09-12,2026-09-20]'],
+        ['order', 'during', { ascending: true }],
+        ['limit', 1],
+      ],
+    ]);
+    expect(table.sent).toEqual([]);
+    expect(logged).not.toHaveBeenCalled();
+  });
+
+  it('answers an overlap with the code alone when the conflict cannot be read', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const table = tableAnswering({ error: null }, { data: [], error: null });
+
+    expect(
+      await amendLeave(rpcAnswering({ data: null, error: { code: '23P01' } }), table, ORGANIZATION, MEMBER, RECORD, '2026-09-12', '2026-09-20'),
+    ).toEqual({ ok: false, code: LEAVE_OVERLAP, conflict: null });
+  });
+
+  it.each([
+    ['P0002', LEAVE_GONE],
+    ['42501', LEAVE_DENIED],
+    ['22000', LEAVE_FAILED],
+    ['22008', LEAVE_FAILED],
+    ['23514', LEAVE_FAILED],
+    ['23503', LEAVE_FAILED],
+    [undefined, LEAVE_FAILED],
+  ] as const)('maps a refused amend %s to %s, and reads nothing back', async (code, expected) => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const table = tableAnswering({ error: null });
+
+    expect(
+      await amendLeave(rpcAnswering({ data: null, error: { code } }), table, ORGANIZATION, MEMBER, RECORD, '2026-09-12', '2026-09-20'),
+    ).toEqual({ ok: false, code: expected });
+    expect(leaveChangeFailureOf({ code })).toBe(expected);
+    expect(table.read).toEqual([]);
+    expect(logged).toHaveBeenCalledTimes(expected === LEAVE_FAILED ? 1 : 0);
+  });
+
+  it.each([
+    ['a thrown call', 'throws'],
+    ['a null answer', null],
+    ['an absent error', {}],
+    ['a numeric error', { error: 42 }],
+    ['no id', { data: null, error: null }],
+    ['an empty id', { data: '', error: null }],
+    ['a non-string id', { data: [REPLACEMENT], error: null }],
+  ] as const)('reads %s as failed, never throwing', async (_label, answer) => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const client = rpcAnswering(
+      answer === 'throws' ? Promise.reject(new Error('offline')) : (answer as unknown as LeaveAmendAnswer),
+    );
+
+    expect(await amendLeave(client, tableAnswering({ error: null }), ORGANIZATION, MEMBER, RECORD, '2026-09-12', '2026-09-20')).toEqual({
+      ok: false,
+      code: LEAVE_FAILED,
+    });
+  });
+
+  it.each([
+    ['2026-13-45', '2026-09-14'],
+    ['2026-09-10', '2026-02-30'],
+    ['', '2026-09-14'],
+  ])('refuses %s–%s as failed without a request', async (from, to) => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const client = rpcAnswering({ data: REPLACEMENT, error: null });
+
+    expect(await amendLeave(client, tableAnswering({ error: null }), ORGANIZATION, MEMBER, RECORD, from, to)).toEqual({
+      ok: false,
+      code: LEAVE_FAILED,
+    });
+    expect(client.called).toEqual([]);
+  });
 });

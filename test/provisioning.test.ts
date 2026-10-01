@@ -1475,7 +1475,7 @@ describe('every organization table carries row level security, and only its revi
       const { rows: triggers } = await client.query<{ tgname: string }>(
         `select tgname from pg_trigger where tgrelid = 'public.leave_records'::regclass and not tgisinternal`,
       );
-      expect(triggers, 'story 5.1b takes no trigger').toEqual([]);
+      expect(triggers, 'neither story 5.1b nor 5.2a takes a trigger').toEqual([]);
     } finally {
       await client.end();
     }
@@ -1720,6 +1720,10 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'amend_shift_type_override', argumentCount: 3 },
     // STORY 3.6b. The roster override's soft-remove, on 3.5b's attributes.
     { name: 'remove_roster_override', argumentCount: 1 },
+    // STORY 5.2a. The leave record's soft-remove and its atomic amend, on
+    // 3.6b's and 3.5c's attributes.
+    { name: 'remove_leave_record', argumentCount: 1 },
+    { name: 'amend_leave_record', argumentCount: 3 },
     // 0023. The lock is taken from a trigger every writer fires, and the
     // last-admin re-check reads `members` and the status history past row
     // level security, as 0002's trigger does, on the same attributes.
@@ -1812,6 +1816,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'amend_shift_type_override', argumentCount: 3, expected: ['authenticated'] },
     // STORY 3.6b. The roster override's removal, on 3.5b's removal's terms.
     { name: 'remove_roster_override', argumentCount: 1, expected: ['authenticated'] },
+    // STORY 5.2a. The leave record's removal and amend, on 3.6b's terms.
+    { name: 'remove_leave_record', argumentCount: 1, expected: ['authenticated'] },
+    { name: 'amend_leave_record', argumentCount: 3, expected: ['authenticated'] },
     // The zero-admin trigger function. Nothing calls it by hand and Postgres
     // checks EXECUTE when the trigger is created, not when it fires, so it
     // needs no grantee at all: its owner, and nobody else (0020). The
