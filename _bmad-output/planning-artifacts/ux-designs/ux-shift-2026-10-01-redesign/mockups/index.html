@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shift redizajn makete</title>
+<meta name="description" content="Index of the 2026-10-01 redesign mockups, by area in flow order.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Syne:wght@600;700;800&display=swap&subset=latin-ext" rel="stylesheet">
+<style>
+/* ── Tokens: DESIGN.md base-palette + brand delta. Light on :root. ──────────
+   Dark shift slots use the PROPOSED values from dark-tokens-1.html
+   (slot-1 #00415D, slot-2 #2F3641, non-working #0E1828). */
+:root{
+ --canvas:#D9E0E8;--canvas-ink:#1E293B;--canvas-mut:#475569;--note:#F8FAFC;--note-bd:#94A3B8;
+ --bg:#F8FAFC;--fg:#0F172A;--card:#FFFFFF;--muted:#F1F5F9;--mfg:#556275;--bd:#E2E8F0;--input:#7B8AA0;--ring:#1A3275;
+ --side:#0B1628;--sidefg:#CBD5E1;--sidepri:#2563EB;--sideacc:#1A2D47;--sidebd:rgba(255,255,255,.08);
+ --pri:#2563EB;--prifg:#FFFFFF;--pritint:rgba(37,99,235,.12);
+ --dng:#D93A46;--dngfg:#FFFFFF;--dngtint:rgba(217,58,70,.08);
+ --brand:#2E8A35;--brandfg:#FFFFFF;
+ --s1:#E4F0FA;--s1f:#14496F;--s2:#1B2735;--s2f:#CBD8E6;--s3:#EFE7F7;--s3f:#4B3168;
+ --nw:#F0F3F6;--nwf:#66717E;--nwbd:transparent;
+ --lv:rgba(33,96,63,.16);--lvf:#21603F;--unc:rgba(160,110,20,.22);--uncf:#7A5410;--ovr:#7A6BC4;
+ --sh:0 1px 3px rgba(0,0,0,.07),0 4px 16px rgba(0,0,0,.05);--shlg:0 8px 32px rgba(0,0,0,.10);
+ --scrim:rgba(11,22,40,.45);--skel:#E2E8F0;
+ color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+ --canvas:#03070D;--canvas-ink:#E2E8F0;--canvas-mut:#94A3B8;--note:#0B1424;--note-bd:#475569;
+ --bg:#0D1829;--fg:#E2E8F0;--card:#132035;--muted:#1C2B44;--mfg:#94A3B8;--bd:rgba(255,255,255,.10);--input:rgba(255,255,255,.36);--ring:#B4D2FD;
+ --side:#070E1A;--sidefg:#C0CBDA;--sidepri:#1D4ED8;--sideacc:#132035;--sidebd:rgba(255,255,255,.07);
+ --pri:#3B82F6;--prifg:#0B1628;--pritint:rgba(59,130,246,.16);
+ --dng:#E85B66;--dngfg:#1A0C0E;--dngtint:rgba(232,91,102,.10);
+ --brand:#7AD07E;--brandfg:#0B1A0C;
+ --s1:#00415D;--s1f:#B8E2FA;--s2:#2F3641;--s2f:#DCE3EE;--s3:#2A2038;--s3f:#CBB4E8;
+ --nw:#0E1828;--nwf:#8494A8;--nwbd:rgba(255,255,255,.07);
+ --lv:rgba(132,204,167,.15);--lvf:#84CCA7;--unc:rgba(230,170,60,.16);--uncf:#E0AE5C;--ovr:#9A8BE0;
+ --sh:0 1px 3px rgba(0,0,0,.30),0 4px 16px rgba(0,0,0,.22);--shlg:0 8px 32px rgba(0,0,0,.45);
+ --scrim:rgba(0,0,0,.55);--skel:#1C2B44;
+ color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+ --canvas:#03070D;--canvas-ink:#E2E8F0;--canvas-mut:#94A3B8;--note:#0B1424;--note-bd:#475569;
+ --bg:#0D1829;--fg:#E2E8F0;--card:#132035;--muted:#1C2B44;--mfg:#94A3B8;--bd:rgba(255,255,255,.10);--input:rgba(255,255,255,.36);--ring:#B4D2FD;
+ --side:#070E1A;--sidefg:#C0CBDA;--sidepri:#1D4ED8;--sideacc:#132035;--sidebd:rgba(255,255,255,.07);
+ --pri:#3B82F6;--prifg:#0B1628;--pritint:rgba(59,130,246,.16);
+ --dng:#E85B66;--dngfg:#1A0C0E;--dngtint:rgba(232,91,102,.10);
+ --brand:#7AD07E;--brandfg:#0B1A0C;
+ --s1:#00415D;--s1f:#B8E2FA;--s2:#2F3641;--s2f:#DCE3EE;--s3:#2A2038;--s3f:#CBB4E8;
+ --nw:#0E1828;--nwf:#8494A8;--nwbd:rgba(255,255,255,.07);
+ --lv:rgba(132,204,167,.15);--lvf:#84CCA7;--unc:rgba(230,170,60,.16);--uncf:#E0AE5C;--ovr:#9A8BE0;
+ --sh:0 1px 3px rgba(0,0,0,.30),0 4px 16px rgba(0,0,0,.22);--shlg:0 8px 32px rgba(0,0,0,.45);
+ --scrim:rgba(0,0,0,.55);--skel:#1C2B44;
+ color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--canvas);color:var(--canvas-ink);font:14px/1.5 'DM Sans',ui-sans-serif,system-ui,sans-serif;overflow-x:hidden}
+.num,.tnum{font-variant-numeric:tabular-nums}
+h1,h2,h3,h4,.syne{font-family:'Syne','DM Sans',sans-serif}
+svg.i{width:18px;height:18px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+svg.i.sm{width:15px;height:15px}svg.i.lg{width:22px;height:22px}
+
+/* ── Presentation chrome (not product UI) ─────────────────────────────── */
+.doc{max-width:1480px;margin:0 auto;padding:28px 16px 80px}
+.doc>header{display:flex;gap:16px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px}
+.doc h1.t{font-size:26px;font-weight:800;margin:0 0 6px;letter-spacing:-.01em}
+.lead{color:var(--canvas-mut);max-width:86ch;margin:0 0 6px;font-size:14px}
+.doc h2.s{font-size:18px;font-weight:700;margin:40px 0 6px}
+.doc h3.s{font-size:14px;font-weight:700;margin:0 0 2px;font-family:'DM Sans',sans-serif}
+.why{color:var(--canvas-mut);font-size:12.5px;margin:0 0 10px;max-width:60ch}
+.row{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap}
+.col{flex:0 0 auto;max-width:100%}
+.col>.why{min-height:58px;max-width:390px}
+.note{background:var(--note);border:1.5px dashed var(--note-bd);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--canvas-ink);max-width:420px}
+.note b{font-weight:700}
+.note ul{margin:4px 0 0;padding-left:18px}.note li{margin:2px 0}
+.flag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border:1.5px solid currentColor;border-radius:99px;padding:0 7px;margin-right:4px}
+.back{font-size:13px;color:var(--canvas-mut);text-decoration:none}
+.back:hover{text-decoration:underline}
+.theme{display:inline-flex;border:1.5px solid var(--note-bd);border-radius:99px;padding:3px;gap:2px;background:var(--note)}
+.theme button{border:0;background:transparent;color:var(--canvas-ink);font:inherit;font-size:12px;font-weight:600;padding:5px 11px;border-radius:99px;cursor:pointer;display:inline-flex;gap:5px;align-items:center;min-height:32px}
+.theme button[aria-pressed="true"]{background:var(--canvas-ink);color:var(--canvas)}
+
+/* ── Device frames ────────────────────────────────────────────────────── */
+.ph{width:390px;max-width:100%;height:800px;background:var(--bg);color:var(--fg);border-radius:30px;border:1px solid rgba(0,0,0,.25);box-shadow:0 18px 50px rgba(0,0,0,.28);overflow:hidden;display:flex;flex-direction:column;position:relative}
+.ph.tall{height:900px}.ph.short{height:700px}
+.ph .sbar{height:34px;flex:0 0 auto;display:flex;justify-content:space-between;align-items:center;padding:0 24px;font-size:12px;font-weight:600;color:var(--fg)}
+.ph .scr{flex:1;overflow:hidden;padding:4px 16px 16px;position:relative}
+.cap{font-size:13px;font-weight:700;margin:0 0 2px}
+.dkw{max-width:100%;overflow-x:auto;border-radius:14px}
+.dk{width:1080px;height:760px;background:var(--bg);color:var(--fg);border-radius:14px;border:1px solid rgba(0,0,0,.25);box-shadow:0 18px 50px rgba(0,0,0,.28);overflow:hidden;display:flex;position:relative}
+.dk.tall{height:900px}
+.dk .main{flex:1;overflow:hidden;padding:28px 32px}
+.dk .inner{max-width:880px;margin:0 auto}
+
+/* ── Product primitives (shiftapp-v2 register) ────────────────────────── */
+.ptitle{font-family:'Syne',sans-serif;font-weight:800;font-size:24px;letter-spacing:-.01em;margin:0;line-height:1.15}
+.pdesc{font-size:13px;color:var(--mfg);margin:3px 0 0}
+.phead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin:6px 0 16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;box-shadow:var(--sh)}
+.card .ch{padding:13px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px}
+.card .ct{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;flex:1;margin:0}
+.card .cb{padding:14px 16px}
+.kick{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mfg)}
+.mut{color:var(--mfg)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 16px;border-radius:10px;font:inherit;font-weight:600;font-size:14px;cursor:pointer;border:1.5px solid transparent;text-decoration:none;white-space:nowrap}
+.btn.p{background:var(--pri);color:var(--prifg)}
+.btn.o{background:var(--card);color:var(--fg);border-color:var(--input)}
+.btn.g{background:transparent;color:var(--fg)}
+.btn.sm{min-height:36px;padding:0 12px;font-size:13px}
+.btn.w{width:100%}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.ibtn{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;border:1.5px solid var(--input);background:var(--card);color:var(--fg)}
+.ibtn.ghost{border-color:transparent;background:transparent}
+.badge{display:inline-flex;align-items:center;gap:4px;border-radius:99px;font-size:12px;font-weight:600;padding:1px 9px;white-space:nowrap}
+.badge.d{background:var(--pritint);color:var(--fg)}
+.badge.s{background:var(--muted);color:var(--fg)}
+.badge.o{border:1.5px solid var(--input);color:var(--mfg);padding:0 8px}
+.badge.c{background:var(--dng);color:var(--dngfg)}
+.av{width:36px;height:36px;border-radius:50%;background:var(--muted);color:var(--fg);display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:0 0 auto}
+.av.lg{width:56px;height:56px;font-size:18px}
+.chip{display:inline-flex;align-items:center;gap:4px;border-radius:8px;font-size:12px;font-weight:700;padding:2px 8px;white-space:nowrap}
+.chip.s1{background:var(--s1);color:var(--s1f)}.chip.s2{background:var(--s2);color:var(--s2f)}.chip.s3{background:var(--s3);color:var(--s3f)}
+.chip.nw{background:var(--nw);color:var(--nwf);box-shadow:inset 0 0 0 1px var(--nwbd)}
+.chip.lv{background:var(--nw);color:var(--lvf);background-image:repeating-linear-gradient(-45deg,var(--lv) 0 4px,transparent 4px 8px)}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.field label,.flabel{font-size:13px;font-weight:600}
+.inp{min-height:44px;border:1.5px solid var(--input);border-radius:10px;background:var(--card);color:var(--fg);padding:0 12px;display:flex;align-items:center;gap:8px;font-size:14px}
+.inp.ph-t{color:var(--mfg)}
+.inp.sel::after{content:"";margin-left:auto;width:8px;height:8px;border-right:2px solid var(--mfg);border-bottom:2px solid var(--mfg);transform:rotate(45deg) translate(-2px,-2px)}
+.inp.focus{box-shadow:0 0 0 2px var(--card),0 0 0 4px var(--ring)}
+.out{min-height:44px;border:1.5px dashed var(--input);border-radius:10px;background:var(--muted);padding:9px 12px;font-size:13.5px}
+.hint{font-size:12px;color:var(--mfg)}
+.notice{border:1.5px solid var(--input);background:var(--card);border-radius:10px;padding:10px 12px;font-size:13px;font-weight:500;display:flex;gap:8px;align-items:flex-start}
+.callout{background:color-mix(in srgb,var(--pri) 6%,var(--bg));border:1px solid color-mix(in srgb,var(--pri) 22%,transparent);border-radius:12px;padding:12px 14px;font-size:13px;display:flex;gap:10px}
+.tile{background:var(--muted);border-radius:10px;padding:10px 12px}
+.tile .tl{font-size:12px;color:var(--mfg);font-weight:500}
+.tile .tv{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em;line-height:1.2}
+.div{height:1px;background:var(--bd);margin:12px 0}
+.skel{background:var(--skel);border-radius:8px}
+.lnk{color:var(--fg);text-decoration:underline;text-underline-offset:3px;font-weight:600}
+
+/* ── Shell: desktop sidebar ───────────────────────────────────────────── */
+.sb{width:236px;flex:0 0 auto;background:var(--side);color:var(--sidefg);display:flex;flex-direction:column;border-right:2px solid var(--brand);padding:12px 10px}
+.lock{display:flex;align-items:center;gap:10px;padding:6px 6px 14px;border-bottom:1px solid var(--sidebd);margin-bottom:8px}
+.lock .lm{width:32px;height:32px;border-radius:9px;background:var(--brand);color:var(--brandfg);display:flex;align-items:center;justify-content:center;font-family:'Syne';font-weight:800;font-size:13px}
+.lock .ln{font-weight:700;font-size:13.5px;color:#fff;line-height:1.2}
+.lock .ls{font-size:11px;color:var(--sidefg);opacity:.8}
+.sgl{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--sidefg);opacity:.7;padding:12px 10px 4px}
+.ni{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;border-radius:9px;font-size:13.5px;font-weight:500;color:var(--sidefg)}
+.ni.on{background:var(--sidepri);color:#fff;font-weight:700}
+.ni.on span{text-decoration:underline;text-underline-offset:3px}
+.ni .cnt{margin-left:auto}
+.sb .usr{margin-top:auto;border-top:1px solid var(--sidebd);padding:12px 6px 2px;display:flex;align-items:center;gap:10px}
+.sb .usr .av{background:var(--sideacc);color:#fff}
+.sb .usr b{color:#fff;font-size:13px;display:block}.sb .usr small{font-size:11px}
+
+/* ── Shell: phone top bar + bottom tab bar ────────────────────────────── */
+.tbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0 6px}
+.mini-lock{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--mfg)}
+.mini-lock .lm{width:24px;height:24px;border-radius:7px;background:var(--brand);color:var(--brandfg);display:flex;align-items:center;justify-content:center;font-family:'Syne';font-weight:800;font-size:11px}
+.tabs{flex:0 0 auto;background:var(--side);border-top:2px solid var(--brand);display:grid;grid-template-columns:repeat(5,1fr);padding:6px 4px 18px;position:relative;z-index:5}
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;min-height:52px;justify-content:center;color:var(--sidefg);font-size:11px;font-weight:500;position:relative;text-align:center}
+.tab .pill{width:56px;height:30px;border-radius:99px;display:flex;align-items:center;justify-content:center;position:relative}
+.tab.on{color:#fff;font-weight:700}
+.tab.on .pill{background:var(--sidepri)}
+.tab.on .lbl{text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:2px}
+.tab .bdg{position:absolute;top:-4px;right:2px;background:var(--dng);color:var(--dngfg);font-size:10px;font-weight:700;border-radius:99px;padding:0 5px;line-height:16px;box-shadow:0 0 0 2px var(--side);font-variant-numeric:tabular-nums}
+.tab .sub{font-size:9.5px;opacity:.8;font-weight:500;text-decoration:none;margin-top:-3px}
+
+/* ── Sheet + dialog ───────────────────────────────────────────────────── */
+.scrim{position:absolute;inset:0;background:var(--scrim);z-index:3}
+.sheet{position:absolute;left:0;right:0;bottom:76px;background:var(--card);color:var(--fg);border-radius:22px 22px 0 0;box-shadow:var(--shlg);z-index:4;padding:8px 16px 14px;border:1px solid var(--bd);border-bottom:0}
+.grab{width:40px;height:4px;border-radius:2px;background:var(--input);opacity:.6;margin:2px auto 10px}
+.sh-h{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.sh-g{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mfg);margin:12px 0 4px}
+.srow{display:flex;align-items:center;gap:12px;min-height:52px;padding:0 4px;border-bottom:1px solid var(--bd)}
+.srow:last-child{border-bottom:0}
+.srow .it{width:36px;height:36px;border-radius:10px;background:var(--muted);display:flex;align-items:center;justify-content:center}
+.srow .tx{flex:1;min-width:0}.srow .tx b{display:block;font-size:14px;font-weight:600}.srow .tx small{display:block;font-size:12px;color:var(--mfg)}
+.seg3{display:grid;grid-template-columns:repeat(3,1fr);border:1.5px solid var(--input);border-radius:10px;overflow:hidden}
+.seg3 span{min-height:42px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;font-weight:600;border-right:1.5px solid var(--input)}
+.seg3 span:last-child{border-right:0}
+.seg3 span.on{background:var(--pritint);text-decoration:underline;text-underline-offset:3px}
+.dlg{position:absolute;z-index:4;background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:14px;box-shadow:var(--shlg)}
+.dlg .dh{display:flex;align-items:center;gap:8px;padding:10px 10px 10px 20px;border-bottom:1px solid var(--bd)}
+.dlg .dh h3{margin:0;font-size:17px;font-weight:700;flex:1}
+.dlg .db{padding:16px 20px}
+.dlg .df{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px 16px;border-top:1px solid var(--bd)}
+
+/* ── Shift cell (calendar) ────────────────────────────────────────────── */
+.cell{min-height:34px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;position:relative}
+.cell.s1{background:var(--s1);color:var(--s1f)}.cell.s2{background:var(--s2);color:var(--s2f)}
+.cell.nw{background:var(--nw);color:var(--nwf);box-shadow:inset 0 0 0 1px var(--nwbd);font-weight:600}
+.cell .gl{position:absolute;top:1px;left:4px;font-size:9px}
+.cell.cf{box-shadow:inset 0 0 0 2px var(--dng)}
+.cell.ov{box-shadow:inset 0 0 0 2px var(--ovr)}
+.cell.lv{background-image:repeating-linear-gradient(-45deg,var(--lv) 0 4px,transparent 4px 8px);color:var(--lvf)}
+.cell.un{background-image:repeating-linear-gradient(45deg,var(--unc) 0 4px,transparent 4px 8px)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:11.5px;color:var(--mfg);margin-top:10px}
+.legend span{display:inline-flex;align-items:center;gap:4px}
+
+@media (max-width:640px){.doc{padding:20px 16px 60px}.row{gap:20px}}
+
+.area{margin-top:30px}
+.area h2{font-size:18px;margin:0 0 4px}
+.area .ad{color:var(--canvas-mut);font-size:13px;margin:0 0 12px;max-width:80ch}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px}
+.it{display:flex;flex-direction:column;gap:6px;background:var(--note);border:1.5px solid var(--note-bd);border-radius:14px;padding:16px;color:var(--canvas-ink);text-decoration:none;min-height:150px}
+.it:hover{border-color:var(--canvas-ink)}
+.it .n{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--canvas-mut)}
+.it h3{margin:0;font-size:16px;font-weight:700}
+.it p{margin:0;font-size:13px;color:var(--canvas-mut)}
+.it .f{margin-top:auto;font-size:12px;font-family:ui-monospace,Menlo,monospace;color:var(--canvas-mut)}
+.it .fl{font-size:12px;color:var(--canvas-ink)}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+<symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="i-leave" viewBox="0 0 24 24"><path d="M22 12a10 10 0 0 0-20 0Z"/><path d="M12 12v7a2 2 0 0 0 4 0"/><path d="M12 2v1"/></symbol>
+<symbol id="i-sched" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/><path d="m9 15 2 2 4-4"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6"/><path d="M16 4a4 4 0 0 1 0 8M22 21c0-3-1.5-5-4-5.6"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+<symbol id="i-rot" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
+<symbol id="i-org" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4M8 6h.01M12 6h.01M16 6h.01M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01"/></symbol>
+<symbol id="i-out" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+<symbol id="i-mon" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+<symbol id="i-chevl" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+<symbol id="i-pen" viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></symbol>
+<symbol id="i-warn" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></symbol>
+<symbol id="i-ok" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+<symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 5h18M6 12h12M10 19h4"/></symbol>
+<symbol id="i-dl" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M5 21h14"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+<symbol id="i-moonsm" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+<symbol id="i-team" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3"/><circle cx="5" cy="10" r="2.5"/><circle cx="19" cy="10" r="2.5"/><path d="M7 20c0-3 2.2-5 5-5s5 2 5 5M1.5 19c0-2.3 1.5-4 3.5-4M22.5 19c0-2.3-1.5-4-3.5-4"/></symbol>
+<symbol id="i-band" viewBox="0 0 24 24"><rect x="2" y="9" width="20" height="6" rx="2"/><path d="M9 9v6M15 9v6"/></symbol>
+<symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m5.7 5.7 12.6 12.6"/></symbol>
+<symbol id="i-hist" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></symbol>
+<symbol id="i-dash" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-dasharray="3.2 3"/></symbol>
+<symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01"/></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V3m-5 5 5-5 5 5M5 21h14"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+<symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+<symbol id="i-userplus" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M19 8v6M16 11h6"/></symbol>
+<symbol id="i-sort" viewBox="0 0 24 24"><path d="M7 4v16m-4-4 4 4 4-4M17 20V4m-4 4 4-4 4 4"/></symbol>
+<symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 7h14l-3-3M20 17H6l3 3"/></symbol>
+<symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 22c4 0 7-3 7-7 0-4-3-6-4-9-1 2-2 3-4 3 0-2 0-4-2-7-1 4-4 7-4 12 0 5 3 8 7 8z"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></symbol>
+</defs></svg>
+<div class="doc">
+<header><div><h1 class="t">Shift · redizajn 01.10.2026.</h1>
+<p class="lead">Cijela aplikacija, redom kojim je čovjek koristi: od prijave do postavki. Svaka maketa ima desktop (1440 px) i telefon (390 px), u svijetloj i tamnoj temi (prekidač gore desno, a tamni primjeri su i na samoj stranici). Podaci su pilotovi: DVD Kaštel Novi, listopad 2026., Smjena A–D. Godišnji Ivane, Mirele i Nikole izmišljeni su da bi se konflikti mogli prikazati. Oznaka ⚑ znači da maketa mijenja pravilo i treba ljudsku potvrdu (README.md).</p></div><div class="theme" role="group" aria-label="Tema prikaza"><button data-v="system" aria-pressed="true"><svg class="i sm" aria-hidden="true"><use href="#i-mon"/></svg>Sustav</button><button data-v="light" aria-pressed="false"><svg class="i sm" aria-hidden="true"><use href="#i-sun"/></svg>Svijetla</button><button data-v="dark" aria-pressed="false"><svg class="i sm" aria-hidden="true"><use href="#i-moon"/></svg>Tamna</button></div></header>
+<section class="area"><h2>1 · Ulaz</h2><p class="ad">Prvi susret: organizacija, prijava i lozinka.</p><div class="grid"><a class="it" href="sign-in-1.html"><span class="n">Krug 2</span><h3>Prijava</h3><p>Jedan korak: organizacija, korisničko ime i lozinka u jednom obrascu. Organizacija dolazi iz URL-a ili je zapamćena na uređaju. Poruka o pogrešci ne otkriva koje polje nije točno. Tu su i prva prijava sa svojom lozinkom te lozinka koju administrator izdaje jednom.</p><span class="fl">⚑ Prijava u jednom koraku; opća poruka o pogrešci; prva prijava postavlja svoju lozinku</span><span class="f">sign-in-1.html</span></a></div></section><section class="area"><h2>2 · Danas</h2><p class="ad">Svaka uloga dobije odgovor bez ijednog dodira.</p><div class="grid"><a class="it" href="danas-1.html"><span class="n">Nalaz 2</span><h3>Danas</h3><p>Član: radiš, ne radiš, na dužnosti (24 h kao jedna dužnost), na godišnjem. Admin: „Treba tebe” s brojem konflikata, i kad je 0.</p><span class="fl">⚑ Konflikti iznad pokrivenosti (priča 6.3)</span><span class="f">danas-1.html</span></a></div></section><section class="area"><h2>3 · Kalendar</h2><p class="ad">Mjesec, prikaz i filtri u istoj traci, a promjene u malim dijalozima.</p><div class="grid"><a class="it" href="calendar-1.html"><span class="n">Krug 2</span><h3>Kalendar</h3><p>Mreža Sve smjene s oznakama ⚠, ✎, Clock i CircleDashed, Moj raspored, prikaz osobe, detalj dana te dijalozi za tip smjene i sastav.</p><span class="fl">⚑ Detalj dana bez obrazaca; član ne vidi konflikte</span><span class="f">calendar-1.html</span></a><a class="it" href="filters-and-month-nav-1.html"><span class="n">Filtri</span><h3>Filtri i promjena mjeseca</h3><p>Jedna traka za Kalendar i Sati: ‹ mjesec ▾ ›, segmentirani prikaz, čipovi s ✕ i jedno „Poništi filtre”. Tri smjera i preporuka A.</p><span class="fl">⚑ ?tim= postaje ?smjena=; dva čipa u Kalendaru</span><span class="f">filters-and-month-nav-1.html</span></a></div></section><section class="area"><h2>4 · Sati</h2><p class="ad">Broj koji se objašnjava sam.</p><div class="grid"><a class="it" href="hours-1.html"><span class="n">Krug 2</span><h3>Sati</h3><p>Moji sati s pojasima, tablica organizacije s objašnjenjem svakog broja i izvoz koji izvozi ono što tablica prikazuje.</p><span class="fl">⚑ Nova mogućnost: objašnjenje broja</span><span class="f">hours-1.html</span></a></div></section><section class="area"><h2>5 · Godišnji</h2><p class="ad">Jedna brojka za člana, trošak prije spremanja za administratora.</p><div class="grid"><a class="it" href="leave-1.html"><span class="n">Krug 2</span><h3>Godišnji</h3><p>Preostalo kao naslov, upis s troškom i konfliktima prije spremanja, izmjena „bilo / sada” i neutralno uklanjanje.</p><span class="fl">⚑ Novi ekran: pregled godišnjeg za administratora</span><span class="f">leave-1.html</span></a></div></section><section class="area"><h2>6 · Raspored</h2><p class="ad">Red odluka i jedna odluka po ekranu.</p><div class="grid"><a class="it" href="conflicts-1.html"><span class="n">Krug 2</span><h3>Konflikti</h3><p>Red s brojem koji se uvijek vidi (nadolazeći od najranijeg, prošli posebno) i ekran odluke s tri jednake kartice i nizom posljedica.</p><span class="fl">⚑ Kartice Neriješeni / Riješeni, navigacija ‹ ›</span><span class="f">conflicts-1.html</span></a></div></section><section class="area"><h2>7 · Ljudi</h2><p class="ad">Popis, nova osoba, stranica osobe i imenik.</p><div class="grid"><a class="it" href="people-1.html"><span class="n">Krug 2</span><h3>Ljudi</h3><p>Tablica s pretragom, filtrima i poretkom, nova osoba s jednokratnom lozinkom, deaktivacija, smjene i imenik po smjenama za člana.</p><span class="fl">⚑ Imenik za člana u izborniku Više</span><span class="f">people-1.html</span></a><a class="it" href="member-page-1.html"><span class="n">Nalaz 4</span><h3>Stranica osobe</h3><p>Stranica činjenica s imenom osobe kao naslovom. Svaka promjena ima svoj dijalog i jedan Spremi. Nova smjena nije unaprijed odabrana.</p><span class="fl">⚑ Uređivanje osobe u dijalozima</span><span class="f">member-page-1.html</span></a></div></section><section class="area"><h2>8 · Postavke</h2><p class="ad">Rijetko, ali mora biti točno.</p><div class="grid"><a class="it" href="setup-1.html"><span class="n">Krug 2</span><h3>Postavke</h3><p>Rotacija na jednoj stranici s trakom za spremanje, upozorenja i blokada iz priče 5.5, satni pojasi s trakom od 24 h i organizacija kao činjenice.</p><span class="fl">⚑ Traka za spremanje; dijalog upozorenja; organizacija u dijalozima</span><span class="f">setup-1.html</span></a></div></section><section class="area"><h2>Temelji</h2><p class="ad">Odluke koje vrijede za sve ekrane.</p><div class="grid"><a class="it" href="mobile-navigation-1.html"><span class="n">Nalaz 1</span><h3>Mobilna navigacija</h3><p>Četiri stalne kartice i Više. Logotip, tema i Odjava idu u izbornik Više. Aktivna kartica se uvijek vidi.</p><span class="fl">⚑ Prioritet admin kartica na telefonu</span><span class="f">mobile-navigation-1.html</span></a><a class="it" href="dark-tokens-1.html"><span class="n">Nalaz 3</span><h3>Tamni tokeni smjena</h3><p>Noć i Slobodno su sada 1,02:1, a prijedlog ih daje kao 1,46:1 (ΔE 12,3). Tri razine svjetline, izmjereno.</p><span class="fl">⚑ 6 tamnih vrijednosti + 1 novi token</span><span class="f">dark-tokens-1.html</span></a><a class="it" href="mobile-tables-1.html"><span class="n">Nalaz 5</span><h3>Tablice na telefonu</h3><p>Popisi redaka ispod 640 px i brojke u DM Sansu s tabličnim znamenkama.</p><span class="fl">⚑ Brojke iz Synea u DM Sans</span><span class="f">mobile-tables-1.html</span></a></div></section>
+<div class="note" style="max-width:none;margin-top:28px"><b>Zajedničko svim maketama:</b> hrvatski tekst s tri oblika množine. Nema obavijesti koje se pojave i nestanu ni stalnih traka s upozorenjima. <code>destructive</code> se koristi samo za neriješene konflikte. Nijedno stanje nije označeno samo bojom. Učitavanje prikazuje kostur, ne vrtuljak. Prazna stanja kažu što je istina. Tipkovnica i čitač zaslona su opisani na svakoj stranici. Filtri su u URL-u. Odluke iz prvog kruga (7) uzete su kao preporuke i ostaju označene za potvrdu.</div>
+</div>
+<script>
+(function(){
+ var KEY='shift-mock-theme',root=document.documentElement;
+ function apply(v){ if(v==='light'||v==='dark'){root.setAttribute('data-theme',v);} else {root.removeAttribute('data-theme');}
+  document.querySelectorAll('.theme button').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.v===(v||'system')));}); }
+ var saved=null; try{saved=localStorage.getItem(KEY);}catch(e){}
+ apply(saved);
+ document.addEventListener('click',function(e){var b=e.target.closest('.theme button'); if(!b)return;
+  var v=b.dataset.v==='system'?null:b.dataset.v; apply(v); try{ if(v)localStorage.setItem(KEY,v); else localStorage.removeItem(KEY);}catch(e){} });
+})();
+</script>
+</body>
+</html>
