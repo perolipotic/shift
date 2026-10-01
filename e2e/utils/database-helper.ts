@@ -218,6 +218,83 @@ export async function removeFormerMemberInSql(slug: string, memberId: string): P
   }
 }
 
+/** A member {@link seedLeaveMember} wrote. */
+export interface SeededLeaveMember {
+  readonly id: string;
+  readonly name: string;
+}
+
+/**
+ * A fresh active member-role account of the run organization, on `teamId`
+ * from `today` — the organization's, as the caller already read it (a
+ * {@link SeededRotation}'s `today`) — with `allowanceDays` of annual leave, in SQL
+ * (story 5.1c). FRESH PER TEST: leave records persist for the run and a
+ * member a record names is never deleted (0028's key does not cascade), so
+ * each test records leave on a member nobody else has touched. The member
+ * stays until the run's organization is deleted at teardown.
+ *
+ * Same SQL path as {@link seedFormerMember}: the superuser bypasses the
+ * insert policies, and the per-statement triggers still fire.
+ */
+export async function seedLeaveMember(
+  slug: string,
+  teamId: string,
+  today: string,
+  allowanceDays: number,
+): Promise<SeededLeaveMember> {
+  const suffix = randomBytes(3).toString('hex');
+  const person = { name: `Godišnji ${suffix}`, username: `e2e.godisnji.${suffix}` };
+  const client = await connect();
+  try {
+    await client.query('begin');
+    const found = await client.query<{ organization_id: string; admin_user: string | null }>(
+      `select o.id as organization_id,
+              (select m.auth_user_id from members m
+                where m.organization_id = o.id and m.role = 'admin'
+                order by m.created_at, m.id limit 1) as admin_user
+         from organizations o
+        where o.slug = $1`,
+      [slug],
+    );
+    const organization = found.rows[0];
+    if (organization === undefined) throw new Error(`E2E: no organization ${slug}`);
+    const { organization_id: organizationId, admin_user: adminUser } = organization;
+    if (adminUser === null) throw new Error(`E2E: the organization ${slug} has no admin to write as`);
+    const { memberId } = await insertMember(client, organizationId, slug, person, randomBytes(18).toString('base64url'));
+    await client.query('update members set leave_allowance_days = $2 where id = $1', [memberId, allowanceDays]);
+    await client.query(
+      `insert into team_membership_versions (organization_id, member_id, team_id, effective_from, created_by)
+       values ($1, $2, $3, $4::date, $5)`,
+      [organizationId, memberId, teamId, today, adminUser],
+    );
+    await client.query('commit');
+
+    return { id: memberId, name: person.name };
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
+  } finally {
+    await client.end();
+  }
+}
+
+/** Where the run organization's leave year begins (story 5.1c): a month 1–12 and a day 1–28. */
+export async function leaveYearStartOf(slug: string): Promise<{ readonly month: number; readonly day: number }> {
+  const client = await connect();
+  try {
+    const { rows } = await client.query<{ month: number; day: number }>(
+      `select leave_year_start_month as month, leave_year_start_day as day from organizations where slug = $1`,
+      [slug],
+    );
+    const start = rows[0];
+    if (start === undefined) throw new Error(`E2E: no organization ${slug}`);
+
+    return { month: Number(start.month), day: Number(start.day) };
+  } finally {
+    await client.end();
+  }
+}
+
 /** How long a test waits for another to release the run's rotation. */
 const ROTATION_LOCK_WAIT_MS = 60_000;
 const ROTATION_LOCK_POLL_MS = 250;

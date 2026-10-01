@@ -7,6 +7,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
 import { HOUR_BANDS_LIST_KEY } from '@/features/hour-bands/services/list';
+import { LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { SESSION_SUBJECT_KEY } from '@/features/members/services/write';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
@@ -16,6 +17,7 @@ import { ROTATION_KEY } from '@/features/rotation/services/list';
 import { SHIFT_TYPES_LIST_KEY } from '@/features/shift-types/services/list';
 import {
   HOUR_BAND_WRITE_DEPENDENTS,
+  LEAVE_WRITE_DEPENDENTS,
   MEMBERSHIP_WRITE_DEPENDENTS,
   MEMBER_SAVE_DEPENDENTS,
   NO_DEPENDENTS,
@@ -41,6 +43,9 @@ import { OWN_TEAM_KEY, TEAM_ROSTERS_KEY, TEAM_ROSTER_KEY } from '@/features/team
 /** Two teams' rosters, so the prefix is shown to reach every one. */
 const ROSTER_A = TEAM_ROSTER_KEY('team-a');
 const ROSTER_B = TEAM_ROSTER_KEY('team-b');
+/** Two members' leave records, so a leave write is shown to re-read its own member's alone. */
+const LEAVE_A = LEAVE_RECORDS_KEY('member-a');
+const LEAVE_B = LEAVE_RECORDS_KEY('member-b');
 
 /**
  * EVERY EXPORTED QUERY KEY, by its exported name. The sweep below reads the
@@ -62,6 +67,7 @@ const CLASSIFIED: Readonly<Record<string, readonly QueryKey[]>> = {
   HOUR_BANDS_LIST_KEY: [HOUR_BANDS_LIST_KEY],
   SHIFT_TYPES_LIST_KEY: [SHIFT_TYPES_LIST_KEY],
   ORGANIZATION_SNAPSHOT_KEY: [ORGANIZATION_SNAPSHOT_KEY],
+  LEAVE_RECORDS_KEY: [LEAVE_A, LEAVE_B],
 };
 
 /**
@@ -197,6 +203,13 @@ describe('the reads a team or membership write makes stale', () => {
       dependents: HOUR_BAND_WRITE_DEPENDENTS,
       // The calendar snapshot embeds every band, which *Sati* splits hours by.
       stale: [CALENDAR_KEY, HOUR_BANDS_LIST_KEY],
+    },
+    {
+      write: 'a leave record saved (story 5.1c)',
+      own: LEAVE_A,
+      dependents: LEAVE_WRITE_DEPENDENTS,
+      // No other read embeds a leave record yet: the member's own records alone.
+      stale: [LEAVE_A],
     },
     {
       write: 'a refusal',

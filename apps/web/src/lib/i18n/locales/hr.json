@@ -292,6 +292,33 @@
       "reactivateConfirm": "Potvrdi ponovnu aktivaciju osobe {name}",
       "cancel": "Odustani od promjene statusa",
       "saved": "Promjena statusa je spremljena."
+    },
+    "leaveRecord": {
+      "heading": "Godišnji odmor",
+      "used": "Iskorišteno u tekućoj godini",
+      "balance": "Preostalo",
+      "newHeading": "Novi godišnji odmor",
+      "from": "Od",
+      "to": "Do",
+      "cost": "Trošak",
+      "balanceAfter": "Preostalo nakon spremanja",
+      "costInYear": "{count, plural, one {U tekuću godinu ulazi # dan.} few {U tekuću godinu ulaze # dana.} other {U tekuću godinu ulazi # dana.}}",
+      "incomplete": "Upiši oba datuma za izračun troška.",
+      "reversed": "Datum završetka ne može biti prije datuma početka.",
+      "tooLong": "Godišnji odmor može trajati najviše 366 dana.",
+      "refused": "Za ovaj raspon trošak nije moguće izračunati, pa se ne sprema. Provjeri datume.",
+      "overlap": "Raspon se preklapa s već upisanim godišnjim odmorom.",
+      "overlapConflict": "Raspon se preklapa s već upisanim godišnjim odmorom {from}–{to}.",
+      "exceeds": "{count, plural, one {Trošak premašuje preostale dane. Preostalo nakon spremanja: # dan.} few {Trošak premašuje preostale dane. Preostalo nakon spremanja: # dana.} other {Trošak premašuje preostale dane. Preostalo nakon spremanja: # dana.}}",
+      "save": "Spremi godišnji odmor",
+      "saved": "{count, plural, one {Godišnji odmor je spremljen. Trošak: # dan.} few {Godišnji odmor je spremljen. Trošak: # dana.} other {Godišnji odmor je spremljen. Trošak: # dana.}}",
+      "savedExceeds": "{count, plural, one {Upozorenje: trošak premašuje preostale dane. Preostalo: # dan.} few {Upozorenje: trošak premašuje preostale dane. Preostalo: # dana.} other {Upozorenje: trošak premašuje preostale dane. Preostalo: # dana.}}",
+      "savedPlain": "Godišnji odmor je spremljen.",
+      "denied": "Ne možeš upisati godišnji odmor. Za to trebaš ovlasti administratora.",
+      "failed": "Godišnji odmor nije spremljen. Pokušaj ponovno.",
+      "unavailable": "Godišnji odmor trenutačno nije moguće učitati. Pokušaj ponovno.",
+      "unscheduled": "Za osobu još ne postoji raspored, pa se trošak godišnjeg odmora ne može izračunati.",
+      "retry": "Pokušaj ponovno"
     }
   },
   "nav": {
