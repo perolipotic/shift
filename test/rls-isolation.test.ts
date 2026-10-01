@@ -41,6 +41,9 @@ import {
   type FixtureTeam,
 } from '../packages/domain/test/fixtures.ts';
 import {
+  collisionKeyOf,
+  collisionsOf,
+  type CollisionInput,
   leaveBalanceOf,
   leaveCostOf,
   leavePreviewOf,
@@ -16245,16 +16248,15 @@ function restLeaveTable(token: string): LeaveTable {
 }
 
 /**
- * One member's schedule input as `packages/domain` reads it, from the rows as
- * the owner sees them: their memberships and statuses, every rotation version
- * and step of the organization, its live shift-type and roster overrides, and
- * every member a roster override could be judged against.
+ * The organization-wide schedule fields `packages/domain` reads, from the rows
+ * as the connection sees them: every member with their memberships and
+ * statuses, every rotation version and step, the live shift-type and roster
+ * overrides, and the working shift types.
  */
-async function memberScheduleInputOf(
+async function organizationScheduleInputOf(
   client: Client,
   organization: string,
-  memberId: string,
-): Promise<MemberScheduleInput> {
+): Promise<Omit<CollisionInput, 'leaveRecords'>> {
   const { rows: memberships } = await client.query<{ member: string; teamId: string | null; position: string | null; effectiveFrom: string }>(
     `select member_id::text as member, team_id::text as "teamId", position, effective_from::text as "effectiveFrom"
        from team_membership_versions where organization_id = $1`,
@@ -16309,15 +16311,37 @@ async function memberScheduleInputOf(
     statuses.filter((row) => row.member === id).map(({ active, effectiveFrom }) => ({ active, effectiveFrom }));
 
   return {
-    memberId,
-    memberships: membershipsOfMember(memberId),
-    statuses: statusesOfMember(memberId),
     assignments,
     steps,
     overrides,
     members: members.map(({ id }) => ({ id, memberships: membershipsOfMember(id), statuses: statusesOfMember(id) })),
     rosterOverrides,
     workingShiftTypeIds: working.map((row) => row.id),
+  };
+}
+
+/**
+ * One member's schedule input as `packages/domain` reads it, from the rows as
+ * the owner sees them: their memberships and statuses, every rotation version
+ * and step of the organization, its live shift-type and roster overrides, and
+ * every member a roster override could be judged against.
+ *
+ * @throws Error when `memberId` is not among the organization's members — a
+ *   wrong id would otherwise read as a member on no team, costing nothing.
+ */
+async function memberScheduleInputOf(
+  client: Client,
+  organization: string,
+  memberId: string,
+): Promise<MemberScheduleInput> {
+  const shared = await organizationScheduleInputOf(client, organization);
+  const member = shared.members.find((one) => one.id === memberId);
+  if (member === undefined) throw new Error(`member ${memberId} is not among the members of ${organization}`);
+  return {
+    memberId,
+    memberships: member.memberships,
+    statuses: member.statuses,
+    ...shared,
   };
 }
 
@@ -17510,5 +17534,153 @@ describe("a member reads their own live leave records alone, with no author and 
       }
     },
     20_000,
+  );
+});
+
+/**
+ * STORY 5.3a. A collision is derived on read, `leave ∩ working shift ∩
+ * roster` (AD-4), by `packages/domain` alone: no table holds one and no
+ * routine computes one. From the live rows, the collisions a record raises
+ * agree with its cost; amended through `amend_leave_record()` (0029) onto
+ * non-working dates, every collision it caused is gone, and removed through
+ * `remove_leave_record()`, none remain — and nothing but the leave rows was
+ * written to clear them. Every case runs in a rolled-back transaction.
+ */
+
+/**
+ * The organization-wide collision input from the rows as the connection sees
+ * them: the shared schedule fields and every live leave record, parsed by the
+ * client's own `leaveRangeOf`.
+ */
+async function collisionInputOf(client: Client, organization: string): Promise<CollisionInput> {
+  const shared = await organizationScheduleInputOf(client, organization);
+  const { rows } = await client.query<{ id: string; memberId: string; during: string }>(
+    `select id::text as id, member_id::text as "memberId", during::text as during
+       from leave_records where organization_id = $1 and removed_at is null`,
+    [organization],
+  );
+  return {
+    ...shared,
+    leaveRecords: rows.map((row) => {
+      const range = leaveRangeOf(row.during);
+      if (range === null) throw new Error(`a live record does not parse: ${row.during}`);
+      return { id: row.id, memberId: row.memberId, ...range };
+    }),
+  };
+}
+
+describe('a collision is derived from the live leave rows, agrees with the cost, and clears when the leave is amended off working days or removed (story 5.3a)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'raises a $fixture record\'s collisions on its working dates alone, clears them when 0029 amends it onto non-working dates, and leaves none after its removal',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const setup = await leaveYearSetup(client, organization, owner, self.id, [3]);
+        const [range] = setup.ranges;
+        if (range === undefined) throw new Error('no range');
+        const input = await memberScheduleInputOf(client, organization, self.id);
+        const baseline = collisionsOf(await collisionInputOf(client, organization));
+        expect(
+          baseline.filter((one) => one.memberId === self.id),
+          `${slug}: the member collides before any leave`,
+        ).toEqual([]);
+
+        // Two consecutive non-working dates for the member after the range, inside the current leave year and
+        // clear of every other live record of theirs: where the amend moves it, so 0029 cannot refuse it for an
+        // unrelated overlap.
+        const year = leaveYearOf(setup.today, setup.leaveYearStart);
+        const others = (await liveLeaveOf(client, self.id)).map((record) => record.range);
+        const end = new Date(`${range.to}T00:00:00Z`);
+        let off: LeaveRange | undefined;
+        for (let day = 0; day < 60 && off === undefined; day += 1) {
+          end.setUTCDate(end.getUTCDate() + 1);
+          const from = end.toISOString().slice(0, 10);
+          const next = new Date(end);
+          next.setUTCDate(next.getUTCDate() + 1);
+          const to = next.toISOString().slice(0, 10);
+          if (to > year.to) break;
+          if (others.some((other) => other.from <= to && other.to >= from)) continue;
+          if (leaveCostOf(input, from, to) === 0) off = { from, to };
+        }
+        if (off === undefined) {
+          throw new Error(
+            `${slug}: no two non-working dates after ${range.to} inside the leave year ${year.from}–${year.to} and clear of live leave`,
+          );
+        }
+
+        // RECORD: one collision per working date of the range, agreeing with its cost of 3.
+        const rulesBeforeInsert = await scheduleRulesFingerprint(client);
+        const overridesBeforeInsert = await overridesFingerprint(client);
+        await actAs(client, owner.authUserId, organization);
+        const id = await insertLeave(client, { organization, member: self.id, during: `[${range.from},${range.to}]` });
+        await actAsOwner(client);
+        expect(await scheduleRulesFingerprint(client), `${slug}: recording touched a rotation, membership or status row`).toBe(
+          rulesBeforeInsert,
+        );
+        expect(await overridesFingerprint(client), `${slug}: recording touched a time or an override`).toBe(overridesBeforeInsert);
+        const recorded = collisionsOf(await collisionInputOf(client, organization));
+        const own = recorded.filter((one) => one.memberId === self.id);
+        expect(own.length, `${slug}: the record raises no collision`).toBeGreaterThan(0);
+        expect(own.every((one) => one.leaveRecordId === id), `${slug}: a collision names another record`).toBe(true);
+        expect(new Set(own.map((one) => one.date)).size, `${slug}: the collision dates disagree with the cost`).toBe(
+          leaveCostOf(input, range.from, range.to),
+        );
+        expect(
+          new Set(own.map((one) => one.date)).size,
+          `${slug}: leaveYearSetup(..., [3]) chose a range costing 3, so it raises collisions on exactly 3 dates`,
+        ).toBe(3);
+        expect(
+          recorded.filter((one) => one.memberId !== self.id).map(collisionKeyOf),
+          `${slug}: recording one member's leave changed another's collisions`,
+        ).toEqual(baseline.map(collisionKeyOf));
+
+        // AMEND onto non-working dates: every collision it caused is gone, and only the leave rows were written.
+        const rulesBefore = await scheduleRulesFingerprint(client);
+        const overridesBefore = await overridesFingerprint(client);
+        await actAs(client, owner.authUserId, organization);
+        const replacement = await amendLeaveRecord(client, id, off.from, off.to);
+        await actAsOwner(client);
+        const amended = collisionsOf(await collisionInputOf(client, organization));
+        expect(amended.filter((one) => one.leaveRecordId === id), `${slug}: a collision still names the amended record`).toEqual([]);
+        expect(amended.filter((one) => one.memberId === self.id), `${slug}: leave on non-working dates collides`).toEqual([]);
+        expect(amended, `${slug}: the amend left the organization's collisions changed`).toEqual(baseline);
+        expect(await scheduleRulesFingerprint(client), `${slug}: clearing touched a rotation, membership or status row`).toBe(
+          rulesBefore,
+        );
+        expect(await overridesFingerprint(client), `${slug}: clearing touched a time or an override`).toBe(overridesBefore);
+        const { rows: leaveRows } = await client.query<{ id: string; live: boolean }>(
+          `select id::text as id, removed_at is null as live from leave_records
+            where id = any($1::uuid[]) order by id`,
+          [[id, replacement]],
+        );
+        const expectedRows = [
+          { id, live: false },
+          { id: replacement, live: true },
+        ].sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0));
+        expect(leaveRows, `${slug}: the amend did not leave the original removed and the replacement live`).toEqual(expectedRows);
+        const { rows: liveRows } = await client.query<{ id: string }>(
+          'select id::text as id from leave_records where member_id = $1 and removed_at is null',
+          [self.id],
+        );
+        expect(liveRows.map((row) => row.id), `${slug}: the amend left more than the replacement live`).toEqual([replacement]);
+
+        // REMOVE: none remain.
+        await actAs(client, owner.authUserId, organization);
+        await removeLeaveRecord(client, replacement);
+        await actAsOwner(client);
+        expect(await scheduleRulesFingerprint(client), `${slug}: removing touched a rotation, membership or status row`).toBe(
+          rulesBefore,
+        );
+        expect(await overridesFingerprint(client), `${slug}: removing touched a time or an override`).toBe(overridesBefore);
+        const removed = collisionsOf(await collisionInputOf(client, organization));
+        expect(
+          removed.filter((one) => one.memberId === self.id || one.leaveRecordId === id || one.leaveRecordId === replacement),
+          `${slug}: a collision survives the removal`,
+        ).toEqual([]);
+        expect(removed, `${slug}: the removal left the organization's collisions changed`).toEqual(baseline);
+      });
+    },
   );
 });

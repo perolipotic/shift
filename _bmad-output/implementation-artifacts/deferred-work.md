@@ -637,7 +637,7 @@
   summary: Story 5.2c, the member's own leave view. The member tab Godišnji (now a placeholder, `pages/godisnji.tsx`) shows the viewer's allowance, days used this leave year and balance, and no other member's (CAP-15, CAP-5). Read through a definer function or a column-limited view, never a direct select that returns `created_by`/`removed_by` (the 5.1b entry above).
   evidence: Split from story 5.2 on 2026-10-01 by the human ([S] Split). It is a separate surface with its own read path, shippable apart from the admin's amend and delete.
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-2a-leave-amend-and-removal.md`
-  summary: Story 5.3 must assert the 5.2 AC "Given a leave record that caused conflicts, When it is amended so it no longer collides, Then every conflict it caused is cleared" (UX-DR28), with a node case that amends and removes a record through 0029's functions and finds its derived conflicts gone, as one edit to one record, not a batch resolution.
+  summary: RESOLVED by 5.3a — Story 5.3 must assert the 5.2 AC "Given a leave record that caused conflicts, When it is amended so it no longer collides, Then every conflict it caused is cleared" (UX-DR28), with a node case that amends and removes a record through 0029's functions and finds its derived conflicts gone, as one edit to one record, not a batch resolution.
   evidence: Deferred by 5.2a on 2026-10-01 (human-approved). Conflicts do not exist until 5.3; they are derived from live leave records, so the soft-removed row stops raising them with no further write.
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-2a-leave-amend-and-removal.md`
   summary: Story 5.4 must make sure amending or removing a leave record whose conflict was resolved by Replace member never silently reverts that roster override. The situation is surfaced to the admin (epic 5 constraint "Leave never silently reverts a replacement").
@@ -651,3 +651,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-2a-leave-amend-and-removal.md`
   summary: The anon matrix row. The 5.2a matrix row "anon over REST" names `LEAVE_FAILED`. PostgREST answers an anonymous rpc call with 42501, which `leaveChangeFailureOf` maps to `LEAVE_DENIED`. Both are refusals, and the SPA never calls these as anon. Recorded so later reviews read the code the tests assert, as for the 5.1b codes entry.
   evidence: Raised by the 5.2a verification-gap and blind reviews on 2026-10-01; the matrix sits in the approved frozen block.
+- source_spec: none
+  summary: Story 5.3b, the conflicts queue. `/raspored` (now a placeholder) lists every unresolved conflict from 5.3a's derivation, soonest first, with date, team, shift type, member and the causing leave record. Past unresolved conflicts stay listed and are visually distinguished (UX-DR25). With none, it states what is true and still shows the zero count (UX-DR20).
+  evidence: Split from story 5.3 on 2026-10-01 by the human ([S] Split, four parts). 5.3a builds `domain/collisions` with no UI, as 5.1b and 5.2a did.
+- source_spec: none
+  summary: Story 5.3c, the calendar marks. An admin's calendar carries `⚠` and the inset `destructive` ring on every unresolved conflict without opening a detail view (UX-DR8, Q21), and the leave hatch `◷` on leave-covered cells. Draw the leave and uncovered hatch and glyph in the slot's own foreground, and restore `shift-slot-2` to the overlay sweep in `test/theme-contrast.test.ts` (carried constraint).
+  evidence: Split from story 5.3 on 2026-10-01 by the human ([S] Split, four parts); the human put the leave hatch and the slot-2 contrast fix in this part.
+- source_spec: none
+  summary: Story 5.3d, conflict state on the hours surfaces (Epic 4 retro R1). `MemberHours`/`MyHoursView`, `OrganizationHoursRow` and the `.xlsx` row (mapped once in `hoursExportOf`) each show the unresolved-conflict state distinctly, so no total is silently wrong (FR-41, 4.3 AC).
+  evidence: Split from story 5.3 on 2026-10-01 by the human ([S] Split, four parts). Closes the R1 ledger entry above once shipped.
