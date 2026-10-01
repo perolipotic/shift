@@ -27,6 +27,7 @@ import {
   type HoursSortArrow,
   type OrganizationHoursView,
 } from '@/features/hours/services/organization-hours';
+import { CONFLICT_GLYPH } from '@/features/calendar/utils/modifiers';
 import { t } from '@/lib/i18n';
 
 /**
@@ -77,7 +78,9 @@ function SortHead({
 /**
  * Every member's month (story 4.2): Member, Team, shift count, a column per
  * band (its name as stored; the cell its hours over its shifts), Total and
- * Leave, every heading sortable. The name leads to the member's calendar
+ * Leave, every heading sortable, and the shifts in unresolved conflict (story
+ * 5.3d) — a plain heading, no sort — `⚠` and the number above 0, `0` at
+ * zero, the glyph hidden from readers. The name leads to the member's calendar
  * month, where the roster changes behind a figure show. It scrolls inside its
  * own container, never the page. Every figure is
  * `@/features/hours/services/organization-hours`'s, in tabular numerals.
@@ -105,6 +108,7 @@ export function OrganizationHoursTable({
             ))}
             <SortHead view={view} sortKey={SORT_TOTAL} label={t('sati.organization.total')} numeric onPress={onPress} />
             <SortHead view={view} sortKey={SORT_LEAVE} label={t('sati.organization.leave')} numeric onPress={onPress} />
+            <TableHead className="whitespace-nowrap px-4 text-right">{t('sati.organization.conflicts')}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -141,6 +145,16 @@ export function OrganizationHoursTable({
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-right tabular-nums">
                   {t(leave.key, leave.values)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {row.conflictCount === 0 ? (
+                    row.conflictCount
+                  ) : (
+                    <span className="inline-flex items-center gap-1 font-semibold">
+                      <span aria-hidden>{CONFLICT_GLYPH}</span>
+                      <span>{row.conflictCount}</span>
+                    </span>
+                  )}
                 </TableCell>
               </TableRow>
             );

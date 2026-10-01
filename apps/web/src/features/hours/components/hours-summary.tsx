@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { StatTile, StatTileLabel, StatTileValue } from '@/components/ui/stat-tile';
+import { CONFLICT_GLYPH } from '@/features/calendar/utils/modifiers';
 import { HOURS_BANDS_HEADING_ID, leaveShownOf, type MyHoursView } from '@/features/hours/services/my-hours';
 import { t } from '@/lib/i18n';
 
@@ -10,6 +11,10 @@ import { t } from '@/lib/i18n';
  * that overlap it — the leave row apart, and, only when there are any, the
  * shifts with no times that no hour counts. Every figure is
  * `@/features/hours/services/my-hours`'s, in tabular numerals.
+ *
+ * Beside the figures, only when there are any, the shifts in unresolved
+ * conflict (story 5.3d): `⚠`, hidden from readers, and the words that carry
+ * the meaning. The figures above still count those shifts.
  */
 export function HoursSummary({ view }: { readonly view: MyHoursView }): ReactNode {
   const leave = leaveShownOf(view.leave);
@@ -30,6 +35,12 @@ export function HoursSummary({ view }: { readonly view: MyHoursView }): ReactNod
           </div>
         </StatTile>
       </div>
+      {view.conflictCount === null ? null : (
+        <p className="flex min-w-0 items-center gap-2 font-semibold">
+          <span aria-hidden>{CONFLICT_GLYPH}</span>
+          <span className="min-w-0 break-words">{t('sati.conflicts', { count: view.conflictCount })}</span>
+        </p>
+      )}
       {view.bands.length === 0 ? null : (
         <section className="flex min-w-0 flex-col gap-1">
           <h3 id={HOURS_BANDS_HEADING_ID} className="text-sm font-semibold text-muted-foreground">

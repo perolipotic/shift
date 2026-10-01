@@ -1,14 +1,22 @@
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
+import type { Browser, Page } from '@playwright/test';
+
+import { LoginPage } from '../../pages/login.page.ts';
 import {
   holdRotation,
   organizationNameOf,
   removeFormerMemberInSql,
+  removeLeaveRecordsInSql,
   removeSeededRotation,
+  seedExtraTeam,
   seedFormerMember,
+  seedLeaveMember,
+  seedLeaveRecord,
   seedTeamRotation,
   type RotationHold,
+  type SeededLeaveMember,
   type SeededRotation,
 } from '../../utils/database-helper.ts';
 import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
@@ -37,6 +45,17 @@ import { HoursPage } from '../../pages/hours.page.ts';
  * number cell and an empty leave an empty cell; a filter that leaves no row closes the export; a writer that
  * cannot load shows the failure and leaves the action usable; a member has
  * no export.
+ *
+ * Story 5.3d: a team of the test's own gets the same rotation, and a fresh
+ * member on it. The admin opens *Sati* first, so its reads are cached; then,
+ * in the app alone — never a reload — records today to today + 4 (Dan, Noć,
+ * Slobodno, Slobodno, Dan, the worked example) on the member's page and goes
+ * back to *Sati*: the member's row shows `⚠` and the month's count of the
+ * three colliding dates, every figure as before, and the run's member and
+ * admin show `0`; the downloaded `.xlsx` carries the same numbers in its own
+ * column. A member with their own leave reads their own line; the run's
+ * member, with none, reads no line. A failed leave read shows the
+ * unavailable message and no figure, and its retry brings the table back.
  */
 
 const sati = hr.sati;
@@ -49,11 +68,15 @@ let hold: RotationHold | null = null;
 let seed: SeededRotation | null = null;
 /** The former member this file's test seeded, removed before the hold is released. */
 let former: { readonly slug: string; readonly id: string } | null = null;
+/** Members whose live records are soft-removed afterwards (story 5.3d). */
+let withLeave: { readonly slug: string; readonly id: string }[] = [];
 
 test.afterEach(async () => {
   try {
+    for (const member of withLeave) await removeLeaveRecordsInSql(member.slug, member.id).catch(() => undefined);
     if (seed !== null) await removeSeededRotation(seed);
   } finally {
+    withLeave = [];
     seed = null;
     try {
       if (former !== null) await removeFormerMemberInSql(former.slug, former.id);
@@ -125,13 +148,30 @@ function exportedMinutes(cell: XlsxCell | null | undefined): number | null {
   return cell?.type === 'number' ? Math.round(cell.value * 1440) : null;
 }
 
+/** The number a conflicts cell shows: `0`, or `⚠` and the number. */
+function conflictsOf(text: string): number {
+  const found = /^(?:⚠\s*)?(\d+)$/.exec(text.trim());
+
+  if (found === null) throw new Error(`E2E: a conflicts cell reads ${text}`);
+
+  return Number(found[1]);
+}
+
+/** What a downloaded sheet holds: each row's total, in minutes, and every row as read back, in file order. */
+interface ExportedTable {
+  readonly totals: number[];
+  readonly headings: readonly string[];
+  readonly body: readonly (readonly (XlsxCell | null)[])[];
+}
+
 /**
  * Exports what the table shows and holds the file to it (story 4.3): its
  * name, the sheet's, the headings, and every row in order — text as shown,
- * the shift count a number, every hour figure a `[h]:mm` duration equal to
- * the screen's minutes, and an empty figure (`—`) an absent cell. Answers each row's total, in minutes, in file order.
+ * the shift count and the conflict count (story 5.3d) numbers, every hour
+ * figure a `[h]:mm` duration equal to the screen's minutes, and an empty
+ * figure (`—`) an absent cell.
  */
-async function expectExportIsTable(hoursPage: HoursPage, fileName: string): Promise<number[]> {
+async function expectExportIsTable(hoursPage: HoursPage, fileName: string): Promise<ExportedTable> {
   await expect(hoursPage.exportButton).toBeEnabled();
   const headings = (await hoursPage.columnHeaders.allTextContents()).map((text) => text.trim());
   const shown = await hoursPage.organizationMatrix();
@@ -159,6 +199,9 @@ async function expectExportIsTable(hoursPage: HoursPage, fileName: string): Prom
       const text = texts[column] ?? '';
       if (label === organization.member || label === organization.team) {
         expect(cell, `${label} of row ${String(index)}`).toEqual({ type: 'text', value: text });
+      } else if (label === organization.conflicts) {
+        // The state is the column and the number, 0 included: never a colour or a glyph.
+        expect(cell, `${label} of row ${String(index)}`).toEqual({ type: 'number', value: conflictsOf(text), format: null });
       } else if (label === organization.shifts) {
         expect(cell, `${label} of row ${String(index)}`).toEqual({
           type: 'number',
@@ -181,7 +224,11 @@ async function expectExportIsTable(hoursPage: HoursPage, fileName: string): Prom
   await expect(hoursPage.exportButton).toBeEnabled();
   await expect(hoursPage.exportFailed).toHaveCount(0);
 
-  return body.map((cells) => exportedMinutes(cells[headings.indexOf(organization.total)]) ?? -1);
+  return {
+    totals: body.map((cells) => exportedMinutes(cells[headings.indexOf(organization.total)]) ?? -1),
+    headings,
+    body,
+  };
 }
 
 /** `Listopad 2026` — the heading a month carries. */
@@ -247,7 +294,29 @@ test.describe('as a member', () => {
     await expect(hoursPage.figureIn(hoursPage.leaveRow, hoursOf(0))).toHaveCount(0);
     // Every seeded shift has times, so no note says otherwise.
     await expect(hoursPage.untimedNote).toHaveCount(0);
+    // No leave, so no shift in conflict: nothing is added (story 5.3d).
+    await expect(hoursPage.conflictsLine).toHaveCount(0);
     await expect(hoursPage.currentButton).toBeDisabled();
+  });
+
+  test("a failed read of their own leave shows the unavailable message with a retry, and the retry brings their figures back", async ({
+    page,
+    hoursPage,
+  }) => {
+    const own = '**/rest/v1/rpc/my_leave_records*';
+    await page.route(own, (route) => route.fulfill({ status: 500, body: '{}' }));
+
+    await hoursPage.goto();
+    await expect(hoursPage.unavailableAlert).toBeVisible();
+    await expect(hoursPage.retryButton).toBeVisible();
+    await expect(hoursPage.totalTile).toHaveCount(0);
+
+    await page.unroute(own);
+    await hoursPage.retryButton.click();
+    await expect(hoursPage.totalTile).toBeVisible();
+    await expect(hoursPage.shiftsTile).toBeVisible();
+    await expect(hoursPage.unavailableAlert).toHaveCount(0);
+    await expect(hoursPage.retryButton).toHaveCount(0);
   });
 
   test('a bad month falls back to the current one, and the phone does not scroll sideways', async ({
@@ -338,7 +407,10 @@ test.describe('as an admin', () => {
       ...memberBandNames,
       organization.total,
       organization.leave,
+      organization.conflicts,
     ]);
+    // No leave on the run's member: a zero, shown.
+    await expect(await hoursPage.cellIn(row, organization.conflicts)).toHaveText('0');
     for (const [index, name] of memberBandNames.entries()) {
       const cell = await hoursPage.cellIn(row, name);
       await expect(hoursPage.bandCellHours(cell)).toHaveText(memberBandHours[index] ?? '');
@@ -400,7 +472,7 @@ test.describe('as an admin', () => {
     // descending — the seeded member above those with none, so the order is
     // one the file could get wrong.
     const fileName = hoursExportFileName(await organizationNameOf(fixture.slug), month);
-    const totals = await expectExportIsTable(hoursPage, fileName);
+    const { totals } = await expectExportIsTable(hoursPage, fileName);
     expect(totals.length, 'the unfiltered table has more than one row').toBeGreaterThan(1);
     expect(new Set(totals).size, 'the totals differ, so the order is tested').toBeGreaterThan(1);
     expect(totals).toEqual([...totals].sort((first, second) => second - first));
@@ -502,4 +574,182 @@ test.describe('as an admin', () => {
     await expect(hoursPage.exportFailed).toBeVisible();
     await expect(hoursPage.exportButton).toBeEnabled();
   });
+});
+
+/** An ISO date `count` days after another, by calendar arithmetic in UTC. */
+function isoDaysAfter(iso: string, count: number): string {
+  const day = new Date(`${iso}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() + count);
+
+  return day.toISOString().slice(0, 10);
+}
+
+/** The worked example's colliding offsets from today: Dan, Noć and Dan. */
+const COLLIDING = [0, 1, 4] as const;
+
+/** How many of the worked example's collisions, leave from `today`, fall in `month`. */
+function collidingIn(month: string, today: string): number {
+  return COLLIDING.filter((offset) => isoDaysAfter(today, offset).startsWith(`${month}-`)).length;
+}
+
+/** A team of the test's own with the seeded rotation from today, under the hold. */
+async function seededTeam(slug: string): Promise<{ readonly today: string; readonly team: { readonly id: string; readonly name: string } }> {
+  hold = holdRotation(slug);
+  await hold.ready;
+  const suffix = randomBytes(3).toString('hex');
+  const team = await seedExtraTeam(slug, `Smjena ${suffix}`);
+  seed = await seedTeamRotation(slug, team.id, suffix);
+
+  return { today: seed.today, team };
+}
+
+/** *Sati* as `member`, in a fresh context of its own. */
+async function signedInAs(browser: Browser, slug: string, member: SeededLeaveMember): Promise<{ page: Page; hours: HoursPage }> {
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+  try {
+    const page = await context.newPage();
+    await new LoginPage(page).signIn(slug, member.username, member.password);
+
+    return { page, hours: new HoursPage(page) };
+  } catch (cause) {
+    await context.close();
+    throw cause;
+  }
+}
+
+test.describe('the conflict count, as an admin', () => {
+  test.use({ storageState: ADMIN_STATE });
+
+  test('the admin records leave and opens Sati: the count is in the table and the file without a reload, and no figure moves', async ({
+    page,
+    hoursPage,
+    peoplePage,
+    fixture,
+  }) => {
+    const { today, team } = await seededTeam(fixture.slug);
+    const member = await seedLeaveMember(fixture.slug, team.id, today, 20);
+    withLeave.push({ slug: fixture.slug, id: member.id });
+    const month = today.slice(0, 7);
+    const expected = collidingIn(month, today);
+    expect(expected, "today's own Dan collides, so the month counts one at least").toBeGreaterThan(0);
+
+    // SATI FIRST, so its reads are cached before the write: what follows
+    // proves the write's invalidation, never a first read.
+    await hoursPage.goto();
+    const row = hoursPage.organizationRow(member.name);
+    await expect(row).toHaveCount(1);
+    await expect(await hoursPage.cellIn(row, organization.conflicts)).toHaveText('0');
+    const before = await row.textContent();
+    expect(before, 'the row reads before the write').not.toBeNull();
+    // A marker on the window: if any step below reloads the page, it is gone.
+    await page.evaluate(() => {
+      (window as unknown as { noReload: boolean }).noReload = true;
+    });
+
+    // RECORD THE WORKED EXAMPLE on the member's page, reached in the app alone.
+    await peoplePage.navigationLink(hr.nav.ljudi, { exact: true }).click();
+    await peoplePage.listedMember(member.name).click();
+    await expect(peoplePage.leaveHeading).toBeVisible();
+    await peoplePage.enterLeave(today, isoDaysAfter(today, 4));
+    await peoplePage.saveLeaveButton.click();
+    await expect(peoplePage.status).toBeVisible();
+
+    // BACK TO SATI through the navigation.
+    await peoplePage.navigationLink(hr.nav.sati, { exact: true }).click();
+    await expect(hoursPage.organizationTable).toBeVisible();
+    const conflicts = await hoursPage.cellIn(row, organization.conflicts);
+    await expect(conflicts).toHaveText(`⚠${String(expected)}`);
+    // The glyph is hidden from readers: the heading and the number carry it.
+    await expect(conflicts.locator('[aria-hidden]')).toHaveText('⚠');
+    // EVERY FIGURE AS BEFORE: the shifts in conflict still count, and the leave stays empty.
+    await expect(await hoursPage.cellIn(row, organization.leave)).toHaveText(sati.noFigure);
+    const after = await row.textContent();
+    expect(after, 'the row reads after the write').not.toBeNull();
+    expect(after?.replace(/⚠\d+$/, '')).toBe(before?.replace(/0$/, ''));
+    // Nobody else's count moves.
+    await expect(await hoursPage.cellIn(hoursPage.organizationRow(fixture.member.name), organization.conflicts)).toHaveText('0');
+    await expect(await hoursPage.cellIn(hoursPage.organizationRow(fixture.admin.name), organization.conflicts)).toHaveText('0');
+
+    // THE FILE: the same numbers in their own column.
+    const { headings, body } = await expectExportIsTable(
+      hoursPage,
+      hoursExportFileName(await organizationNameOf(fixture.slug), month),
+    );
+    const column = headings.indexOf(organization.conflicts);
+    expect(column, 'the file has the conflicts column').toBeGreaterThan(-1);
+    const countOf = (name: string) =>
+      body.find((cells) => cells[0]?.type === 'text' && cells[0].value === name)?.[column] ?? null;
+    expect(countOf(member.name)).toEqual({ type: 'number', value: expected, format: null });
+    expect(countOf(fixture.member.name)).toEqual({ type: 'number', value: 0, format: null });
+    expect(countOf(fixture.admin.name)).toEqual({ type: 'number', value: 0, format: null });
+
+    // THE NEXT MONTH counts only its own dates.
+    await hoursPage.nextButton.click();
+    await expect(page).toHaveURL(new RegExp(`[?&]mjesec=${nextMonth(month)}`));
+    const later = collidingIn(nextMonth(month), today);
+    await expect(await hoursPage.cellIn(row, organization.conflicts)).toHaveText(
+      later === 0 ? '0' : `⚠${String(later)}`,
+    );
+    expect(await page.evaluate(() => (window as unknown as { noReload?: boolean }).noReload)).toBe(true);
+  });
+
+  test('a failed leave read shows the unavailable message and no figure, and the retry brings the table back', async ({
+    page,
+    hoursPage,
+  }) => {
+    const records = '**/rest/v1/leave_records*';
+    await page.route(records, (route) => route.fulfill({ status: 500, body: '{}' }));
+
+    await hoursPage.goto();
+    await expect(hoursPage.unavailableAlert).toBeVisible();
+    await expect(hoursPage.retryButton).toBeVisible();
+    await expect(hoursPage.organizationTable).toHaveCount(0);
+
+    await page.unroute(records);
+    await hoursPage.retryButton.click();
+    await expect(hoursPage.organizationTable).toBeVisible();
+    await expect(hoursPage.columnHeader(organization.conflicts)).toBeVisible();
+    await expect(hoursPage.unavailableAlert).toHaveCount(0);
+    await expect(hoursPage.retryButton).toHaveCount(0);
+  });
+
+  test('a leave row that cannot be trusted shows the unavailable message with no retry', async ({ page, hoursPage }) => {
+    // The real answer's headers (CORS and the count) kept; its rows replaced
+    // by one of a member the organization does not hold.
+    await page.route('**/rest/v1/leave_records*', async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({
+        response,
+        headers: { ...response.headers(), 'content-range': '0-0/1' },
+        body: JSON.stringify([
+          { id: 'e2e-untrusted', member_id: '00000000-0000-4000-8000-00000000dead', during: '[2026-09-10,2026-09-11)' },
+        ]),
+      });
+    });
+
+    await hoursPage.goto();
+    await expect(hoursPage.unavailableAlert).toBeVisible();
+    await expect(hoursPage.organizationTable).toHaveCount(0);
+    // Reading the same rows again would refuse them again: no retry is offered.
+    await expect(hoursPage.retryButton).toHaveCount(0);
+  });
+});
+
+test('a member with their own leave reads their own line of shifts in conflict', async ({ browser, fixture }) => {
+  const { today, team } = await seededTeam(fixture.slug);
+  const member = await seedLeaveMember(fixture.slug, team.id, today, 20);
+  withLeave.push({ slug: fixture.slug, id: member.id });
+  await seedLeaveRecord(fixture.slug, member.id, today, isoDaysAfter(today, 4));
+  const expected = collidingIn(today.slice(0, 7), today);
+
+  const { page, hours } = await signedInAs(browser, fixture.slug, member);
+  try {
+    await hours.goto();
+    await expect(hours.totalTile).toBeVisible();
+    await expect(hours.conflictsLine).toHaveText(plural(sati.conflicts, expected));
+    // Their own figures, never the table.
+    await expect(hours.organizationTable).toHaveCount(0);
+  } finally {
+    await page.context().close();
+  }
 });

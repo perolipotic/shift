@@ -1,6 +1,8 @@
-import { memberHoursOfMonth, type MemberHours, type MemberHoursInput } from '@shift/domain';
+import { memberHoursOfMonth, type Collision, type MemberHours, type MemberHoursInput } from '@shift/domain';
 
 import {
+  calendarSurfaceStateOf,
+  type CalendarQueryAnswer,
   type CalendarSnapshot,
   type CalendarSurfaceState,
 } from '@/features/calendar/services/snapshot';
@@ -14,6 +16,13 @@ import {
   type MonthHeader,
 } from '@/features/calendar/utils/month';
 import { durationMessageKey, durationValuesOf, type DurationValues } from '@/features/hour-bands/services/list';
+import {
+  FETCH_FETCHING,
+  HOURS_CONFLICTS_LOADING,
+  HOURS_CONFLICTS_UNAVAILABLE,
+  conflictCountOf,
+  type HoursConflictsState,
+} from '@/features/hours/services/hours-conflicts';
 
 /**
  * *Sati*: the viewer's own month of hours (story 4.1b). A member sees their
@@ -34,6 +43,10 @@ import { durationMessageKey, durationValuesOf, type DurationValues } from '@/fea
  * (`durationValuesOf`), never summed, rounded or recomputed.
  *
  * Nothing reads a band's name for meaning: it is shown as stored.
+ *
+ * THE CONFLICT COUNT STANDS BESIDE THE FIGURES (story 5.3d): the viewer's
+ * shifts in unresolved conflict in the month, `./hours-conflicts`'s count,
+ * which changes no figure. *Sati* waits for the leave read it stands on.
  */
 
 /** The month heading's id on *Sati*: the calendar's is its own. */
@@ -255,6 +268,12 @@ export interface MyHoursView {
    * hours — or `null` when there are none, so the note is not shown.
    */
   readonly untimedShiftCount: number | null;
+  /**
+   * The month's working shifts in unresolved conflict (story 5.3d) — still
+   * counted in every figure above — or `null` when there are none, so the
+   * line is not shown.
+   */
+  readonly conflictCount: number | null;
 }
 
 export type MyHoursOutcome =
@@ -267,7 +286,12 @@ export type MyHoursOutcome =
  *
  * @throws RangeError when the domain names a band the snapshot lacks.
  */
-export function myHoursViewOf(snapshot: CalendarSnapshot, header: MonthHeader, hours: MemberHours): MyHoursView {
+export function myHoursViewOf(
+  snapshot: CalendarSnapshot,
+  header: MonthHeader,
+  hours: MemberHours,
+  conflictCount: number,
+): MyHoursView {
   const names = new Map(snapshot.bands.map((band) => [band.id, band.name]));
 
   return {
@@ -283,21 +307,28 @@ export function myHoursViewOf(snapshot: CalendarSnapshot, header: MonthHeader, h
     }),
     leave: leaveFigureOf(hours.leaveMinutes),
     untimedShiftCount: hours.untimedShiftCount > 0 ? hours.untimedShiftCount : null,
+    conflictCount: conflictCount > 0 ? conflictCount : null,
   };
 }
 
 /**
  * The viewer's hours of the month `search` names — or today's, `today` being
- * the organization's (`calendarTodayOf`) — GUARDED: a `RangeError` from the
- * domain is logged and is the one failure, never a crashed route and never a
- * figure.
+ * the organization's (`calendarTodayOf`) — with their own conflicts of that
+ * month counted from `collisions`, GUARDED: a `RangeError` from the domain is
+ * logged and is the one failure, never a crashed route and never a figure.
  */
-export function myHoursOf(snapshot: CalendarSnapshot, search: HoursSearch, today: string): MyHoursOutcome {
+export function myHoursOf(
+  snapshot: CalendarSnapshot,
+  search: HoursSearch,
+  today: string,
+  collisions: readonly Collision[],
+): MyHoursOutcome {
   try {
     const month = monthShownOf(search, today);
     const hours = memberHoursOfMonth(memberHoursInputOf(snapshot), month);
+    const conflictCount = conflictCountOf(collisions, snapshot.viewer.memberId, month);
 
-    return { ok: true, view: myHoursViewOf(snapshot, monthHeaderOf(month, today), hours) };
+    return { ok: true, view: myHoursViewOf(snapshot, monthHeaderOf(month, today), hours, conflictCount) };
   } catch (cause) {
     if (!(cause instanceof RangeError)) throw cause;
 
@@ -326,6 +357,13 @@ export interface MyHoursSurface {
    */
   readonly navShown: boolean;
   readonly refusal: HoursFailure | null;
+  /**
+   * Whether the message offers a retry: only for a read that failed or is
+   * paused offline — the snapshot's or the leave's — never for rows that
+   * cannot be trusted or hours the domain refused, which reading again
+   * leaves as they are.
+   */
+  readonly retryable: boolean;
   /** Never true beside a message or a figure. */
   readonly loading: boolean;
 }
@@ -342,33 +380,93 @@ export function monthShownHeaderOf(search: HoursSearch, today: string): MonthHea
 }
 
 /**
- * The calendar read's surface state (`calendarSurfaceStateOf`) as *Sati*. ANY
- * read refusal is the message alone, with no navigation and no figure, so a
- * refusal code added later can never fall through to an endless skeleton. A
- * pending read is the skeleton under the navigation's placeholder. An answer
- * is the viewer's month, or — when the domain refuses its hours — the message
- * in place of the figures, the month navigation kept. No figure is ever
- * optimistic.
+ * The calendar read as *Sati* stands on it: `calendarSurfaceStateOf`, except
+ * that a failed read being read again is loading, not the refusal —
+ * TanStack Query keeps `isError` while the retry is in flight, so the message
+ * and its retry would otherwise stand unchanged under the press. Never the
+ * cached snapshot: the skeleton, until the new answer is in.
  */
-export function myHoursSurfaceOf(state: CalendarSurfaceState, search: HoursSearch, today: string | null): MyHoursSurface {
-  if (state.refusal !== null) {
-    return { view: null, month: null, navShown: false, refusal: HOURS_UNAVAILABLE, loading: false };
+export function hoursSnapshotStateOf(answer: CalendarQueryAnswer): CalendarSurfaceState {
+  if (answer.isError && answer.fetchStatus === FETCH_FETCHING) return { snapshot: null, refusal: null, loading: true };
+
+  return calendarSurfaceStateOf(answer);
+}
+
+/** The message alone, no navigation and no figure: a read refused. */
+export function hoursReadRefusedOf(retryable: boolean): MyHoursSurface {
+  return { view: null, month: null, navShown: false, refusal: HOURS_UNAVAILABLE, retryable, loading: false };
+}
+
+/** The skeleton under the navigation's placeholder: a read still pending. */
+export const HOURS_LOADING: MyHoursSurface = {
+  view: null,
+  month: null,
+  navShown: true,
+  refusal: null,
+  retryable: false,
+  loading: true,
+};
+
+/**
+ * The two reads *Sati* stands on, before any figure: the message alone for a
+ * refused read — the snapshot's (ANY refusal code, so one added later can
+ * never fall through to an endless skeleton) or the leave's — and the
+ * skeleton while either is pending; otherwise the collisions to count.
+ */
+export function hoursReadsOf(
+  state: CalendarSurfaceState,
+  conflicts: HoursConflictsState | null,
+  today: string | null,
+):
+  | { readonly ready: false; readonly surface: MyHoursSurface }
+  | { readonly ready: true; readonly snapshot: CalendarSnapshot; readonly today: string; readonly collisions: readonly Collision[] } {
+  if (state.refusal !== null) return { ready: false, surface: hoursReadRefusedOf(true) };
+  if (conflicts?.kind === HOURS_CONFLICTS_UNAVAILABLE) {
+    return { ready: false, surface: hoursReadRefusedOf(conflicts.retryable) };
   }
-  if (state.snapshot === null || today === null) {
-    return { view: null, month: null, navShown: true, refusal: null, loading: true };
+  if (state.snapshot === null || today === null || conflicts === null || conflicts.kind === HOURS_CONFLICTS_LOADING) {
+    return { ready: false, surface: HOURS_LOADING };
   }
 
-  const outcome = myHoursOf(state.snapshot, search, today);
+  return { ready: true, snapshot: state.snapshot, today, collisions: conflicts.collisions };
+}
+
+/**
+ * The calendar read's surface state (`calendarSurfaceStateOf`) and the leave
+ * read's (`hoursConflictsStateOf`, `null` before the snapshot names the
+ * viewer) as *Sati* ({@link hoursReadsOf}). An answer to both is the viewer's
+ * month with its conflict count, or — when the domain refuses its hours — the
+ * message in place of the figures, the month navigation kept. No figure is
+ * ever optimistic, and none is ever shown without the count.
+ */
+export function myHoursSurfaceOf(
+  state: CalendarSurfaceState,
+  conflicts: HoursConflictsState | null,
+  search: HoursSearch,
+  today: string | null,
+): MyHoursSurface {
+  const reads = hoursReadsOf(state, conflicts, today);
+
+  if (!reads.ready) return reads.surface;
+
+  const outcome = myHoursOf(reads.snapshot, search, reads.today, reads.collisions);
 
   if (outcome.ok) {
-    return { view: outcome.view, month: outcome.view.header, navShown: true, refusal: null, loading: false };
+    return {
+      view: outcome.view,
+      month: outcome.view.header,
+      navShown: true,
+      refusal: null,
+      retryable: false,
+      loading: false,
+    };
   }
 
   // A month the navigation cannot even head is the message alone, never a
   // placeholder bar beside it.
-  const month = monthShownHeaderOf(search, today);
+  const month = monthShownHeaderOf(search, reads.today);
 
-  return { view: null, month, navShown: month !== null, refusal: outcome.code, loading: false };
+  return { view: null, month, navShown: month !== null, refusal: outcome.code, retryable: false, loading: false };
 }
 
 /** The message a failure renders as. Exhaustive. */

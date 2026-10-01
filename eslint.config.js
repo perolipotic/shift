@@ -114,14 +114,20 @@ export const FEATURE_PUBLIC = {
     'services/return-target', // pages
     'services/sign-out', // navigation
   ],
+  // Story 5.3d: *Sati* reads leave by the marks' own role rule
+  // (`readsOrganizationLeave`), and draws the conflict's one glyph
+  // (`CONFLICT_GLYPH`) from the modifier vocabulary.
   calendar: [
+    'services/marks', // hours
     'services/snapshot', // conflicts, hours, leave, pages, teams
+    'utils/modifiers', // hours
     'utils/month', // conflicts, hours, leave, pages
   ],
   // Story 5.3c: the calendar's marks derive every collision through
-  // *Raspored*'s own recipe (`collisionInputOf`), never a second one.
+  // *Raspored*'s own recipe (`collisionInputOf`), never a second one. Story
+  // 5.3d: so does *Sati*'s conflict count.
   conflicts: [
-    'services/conflicts-queue', // calendar
+    'services/conflicts-queue', // calendar, hours
   ],
   'hour-bands': [
     'services/list', // calendar, hours, shift-types, pages
@@ -139,9 +145,10 @@ export const FEATURE_PUBLIC = {
   // Story 5.3b: the conflicts queue reads the organization's records, and the
   // table's name, through `leave-list`, and writes a record's range as the
   // member's card does (`leave-section`). Story 5.3c: the calendar's marks
-  // read the organization's records or the viewer's own through `leave-list`.
+  // read the organization's records or the viewer's own through `leave-list`,
+  // and since story 5.3d so does *Sati*'s conflict count.
   leave: [
-    'services/leave-list', // calendar, conflicts, teams
+    'services/leave-list', // calendar, conflicts, hours, teams
     'services/leave-section', // conflicts
   ],
   members: [

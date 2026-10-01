@@ -98,6 +98,9 @@ const SANCTIONED_PLURAL_KEYS = [
   // the ones with no times, shown only when there is one.
   'sati.shiftCount',
   'sati.untimed',
+  // STORY 5.3d: the viewer's shifts in unresolved conflict on *Sati*, shown
+  // only above 0 — `1 smjena`, `2 smjene`, `5 smjena u neriješenom konfliktu`.
+  'sati.conflicts',
   // STORY 5.1c: the leave card's three day counts that are a sentence of their
   // own — the preview's over-balance note and the two lines a landed save
   // shows — each carrying a number that may be negative (`−2 dana`) — and the
@@ -1109,6 +1112,11 @@ const SANCTIONED_SCREEN_KEYS = [
   'sati.organization.export.failed',
   'sati.organization.export.sheetName',
   'sati.organization.export.fileName',
+  // STORY 5.3d: the organization table's and the file's column of shifts in
+  // unresolved conflict, and the retry the unavailable message offers when a
+  // read failed — the snapshot's or the leave's *Sati* now waits for.
+  'sati.organization.conflicts',
+  'sati.retry',
   // STORY 5.1c: the member page's leave card — its heading, the used and
   // balance figures' labels (the allowance's is `ljudi.leave`), the form's
   // legend, its two date labels and its action, the preview's two labels, the

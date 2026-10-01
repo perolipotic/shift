@@ -12,7 +12,9 @@ const organization = hr.sati.organization;
  * navigation it shares with the calendar, the total and the shift count, a
  * row per band, the leave row and the failure — and for an admin, every
  * member's month in one table (story 4.2), its filters and sortable headings,
- * and its export (story 4.3).
+ * and its export (story 4.3). Since story 5.3d, the shifts in unresolved
+ * conflict: the viewer's own line, the table's column, and the unavailable
+ * message's retry.
  */
 export class HoursPage extends BasePage {
   protected readonly path = '/sati';
@@ -72,6 +74,23 @@ export class HoursPage extends BasePage {
     const forms = [...sati.untimed.matchAll(/\{# ([^{}]+)\}/g)].map((found) => escapeRegExp(found[1] ?? ''));
 
     return this.page.getByText(new RegExp(`^\\d+ (?:${forms.join('|')})$`));
+  }
+
+  /** The line of the viewer's shifts in unresolved conflict, whatever its count: any of its plural forms. */
+  get conflictsLine(): Locator {
+    const forms = [...sati.conflicts.matchAll(/\{# ([^{}]+)\}/g)].map((found) => escapeRegExp(found[1] ?? ''));
+
+    return this.page.getByText(new RegExp(`^\\d+ (?:${forms.join('|')})$`));
+  }
+
+  /** The one message a refused read shows (`Sate trenutačno nije moguće učitati…`). */
+  get unavailableAlert(): Locator {
+    return this.alertWith(sati.error.unavailable);
+  }
+
+  /** The unavailable message's retry (story 5.3d), which reads the snapshot and the leave again. */
+  get retryButton(): Locator {
+    return this.page.getByRole('button', { name: sati.retry, exact: true });
   }
 
   /** The leave row, apart from the bands. */
@@ -190,7 +209,14 @@ export class HoursPage extends BasePage {
   /** Every body row's cells as shown, a band cell by its hours alone, in table order. */
   async organizationMatrix(): Promise<string[][]> {
     const labels = (await this.columnHeaders.allTextContents()).map((text) => text.trim());
-    const fixed = [organization.member, organization.team, organization.shifts, organization.total, organization.leave];
+    const fixed = [
+      organization.member,
+      organization.team,
+      organization.shifts,
+      organization.total,
+      organization.leave,
+      organization.conflicts,
+    ];
     const bandLabels = new Set(labels.filter((label) => !fixed.includes(label)));
     const rows = await this.organizationRows.all();
 

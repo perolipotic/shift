@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { Button } from '@/components/ui/button';
 import { Notice } from '@/components/ui/notice';
 import { HoursSkeleton } from '@/features/hours/components/hours-skeleton';
 import { HoursSummary } from '@/features/hours/components/hours-summary';
@@ -16,13 +17,32 @@ import {
 import type { OrganizationHoursView } from '@/features/hours/services/organization-hours';
 import { t } from '@/lib/i18n';
 
-/** The one message *Sati* shows, or nothing. */
-export function HoursNotice({ refusal }: { readonly refusal: HoursFailure | null }): ReactNode {
+/**
+ * The one message *Sati* shows, or nothing — with its retry when `onRetry` is
+ * given: a read that failed or is paused offline (`retryable`, story 5.3d),
+ * never a refusal reading again would repeat.
+ */
+export function HoursNotice({
+  refusal,
+  onRetry = null,
+}: {
+  readonly refusal: HoursFailure | null;
+  readonly onRetry?: (() => void) | null;
+}): ReactNode {
   if (refusal === null) {
     return null;
   }
 
-  return <Notice role="alert">{t(hoursMessageKey(refusal))}</Notice>;
+  return (
+    <div className="grid min-w-0 gap-2">
+      <Notice role="alert">{t(hoursMessageKey(refusal))}</Notice>
+      {onRetry === null ? null : (
+        <Button className="h-11 w-full sm:w-auto sm:justify-self-start" type="button" variant="outline" onClick={onRetry}>
+          {t('sati.retry')}
+        </Button>
+      )}
+    </div>
+  );
 }
 
 /**

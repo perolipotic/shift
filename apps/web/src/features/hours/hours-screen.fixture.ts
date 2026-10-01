@@ -45,6 +45,10 @@ export const HOURS_SCREEN_EXEMPT: readonly { readonly file: string; readonly why
     why: "every rule of the table's export (story 4.3): columns, cells, names, the guard; renders nothing, executed by hours-export.test.ts",
   },
   {
+    file: 'services/hours-conflicts.ts',
+    why: "the conflict count beside the figures (story 5.3d): the leave read's state and the collisions; renders nothing, executed by hours-conflicts.test.ts",
+  },
+  {
     file: 'services/xlsx.ts',
     why: 'the only module that knows the lazily loaded XLSX writer (story 4.3); maps cells and renders nothing',
   },

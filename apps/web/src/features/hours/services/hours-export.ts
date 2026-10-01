@@ -25,7 +25,7 @@ export type HoursExportCell =
   | { readonly kind: 'text'; readonly value: string }
   /** A duration: `minutes / 1440`, a fraction of a day. */
   | { readonly kind: 'hours'; readonly value: number }
-  /** A count of shifts. */
+  /** A count of shifts: worked, or in unresolved conflict. */
   | { readonly kind: 'count'; readonly value: number }
   /** No figure: a leave of 0, which the screen draws `—` and the file leaves blank. */
   | { readonly kind: 'empty' };
@@ -34,7 +34,7 @@ export type HoursExportCell =
 export interface HoursExport {
   readonly fileName: string;
   readonly sheetName: string;
-  /** The header row: Member, Team, shifts, one per band (its name as stored), Total, Leave. */
+  /** The header row: Member, Team, shifts, one per band (its name as stored), Total, Leave, unresolved conflicts. */
   readonly columns: readonly string[];
   /** One row per `view.rows` entry, in order; each as long as `columns`. */
   readonly rows: readonly (readonly HoursExportCell[])[];
@@ -105,6 +105,8 @@ function cellsOf(row: OrganizationHoursRow, bandIds: readonly string[]): readonl
     ...bands,
     hours(row.hours.totalMinutes),
     leaveIsEmpty(row.hours.leaveMinutes) ? { kind: 'empty' } : hours(row.hours.leaveMinutes),
+    // Story 5.3d: the state is the column and the number, 0 included — never a colour.
+    { kind: 'count', value: row.conflictCount },
   ];
 }
 
@@ -137,6 +139,7 @@ export function hoursExportOf(view: OrganizationHoursView, organizationName: str
       ...view.bands.map((band) => band.name),
       t('sati.organization.total'),
       t('sati.organization.leave'),
+      t('sati.organization.conflicts'),
     ],
     rows: view.rows.map((row) => cellsOf(row, bandIds)),
   };
