@@ -595,8 +595,10 @@ export async function setRankAndPosition(
 
 /** What {@link seedTeamRotation} wrote: the four-step pattern's type names and the date it starts. */
 export interface SeededRotation {
-  /** The organization's today, `YYYY-MM-DD`: the version's effective date and anchor. */
+  /** The organization's today, `YYYY-MM-DD`. */
   readonly today: string;
+  /** The version's effective date and anchor, `YYYY-MM-DD`: `today`, unless the seed started earlier. */
+  readonly start: string;
   /** The pattern's step types in order — working, working, non-working, non-working. */
   readonly steps: readonly [string, string, string, string];
   /** Each step's `19:00–07:00` as the calendar shows it, from the times seeded; `null` for a non-working one. */
@@ -613,28 +615,37 @@ export interface SeededRotation {
  * 19:00–07:00 and `Slobodno <suffix>` — a pattern `[Dan, Noć, Slobodno,
  * Slobodno]`, and a version for `teamId` effective from and anchored on the
  * organization's today at the first step, attributed to the run's admin.
+ * `daysBefore` starts the version that many days before today instead (story
+ * 5.3b), so dates already past are scheduled too; the policy that refuses a
+ * past version is the API's, and this SQL path bypasses it.
  *
  * CALL IT UNDER {@link holdRotation}, and undo it with
  * {@link removeSeededRotation} before releasing the hold, so no other spec
  * ever lists, counts or ramps these types.
  */
-export async function seedTeamRotation(slug: string, teamId: string, suffix: string): Promise<SeededRotation> {
+export async function seedTeamRotation(
+  slug: string,
+  teamId: string,
+  suffix: string,
+  daysBefore = 0,
+): Promise<SeededRotation> {
   const client = await connect();
   try {
     await client.query('begin');
-    const found = await client.query<{ organization_id: string; admin_user: string; today: string }>(
+    const found = await client.query<{ organization_id: string; admin_user: string; today: string; start: string }>(
       `select o.id as organization_id, m.auth_user_id as admin_user,
-              to_char(public.organization_today(o.id), 'YYYY-MM-DD') as today
+              to_char(public.organization_today(o.id), 'YYYY-MM-DD') as today,
+              to_char(public.organization_today(o.id) - $2::int, 'YYYY-MM-DD') as start
          from organizations o
          join members m on m.organization_id = o.id and m.role = 'admin'
         where o.slug = $1
         order by m.created_at, m.id
         limit 1`,
-      [slug],
+      [slug, daysBefore],
     );
     const organization = found.rows[0];
     if (organization === undefined) throw new Error(`E2E: no organization ${slug} to seed a rotation in`);
-    const { organization_id: organizationId, admin_user: admin, today } = organization;
+    const { organization_id: organizationId, admin_user: admin, today, start } = organization;
 
     const names = [`Dan ${suffix}`, `Noć ${suffix}`, `Slobodno ${suffix}`] as const;
     const typeIds: string[] = [];
@@ -683,12 +694,13 @@ export async function seedTeamRotation(slug: string, teamId: string, suffix: str
       `insert into rotation_assignments
          (organization_id, team_id, pattern_id, offset_step_id, anchor_date, effective_from, created_by)
        values ($1, $2, $3, $4, $5::date, $5::date, $6)`,
-      [organizationId, teamId, patternId, firstStep, today, admin],
+      [organizationId, teamId, patternId, firstStep, start, admin],
     );
     await client.query('commit');
 
     return {
       today,
+      start,
       steps: [names[0], names[1], names[2], names[2]],
       ranges: [`${times[0][1]}–${times[0][2]}`, `${times[1][1]}–${times[1][2]}`, null, null],
       organizationId,

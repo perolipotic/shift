@@ -660,3 +660,9 @@
 - source_spec: none
   summary: Story 5.3d, conflict state on the hours surfaces (Epic 4 retro R1). `MemberHours`/`MyHoursView`, `OrganizationHoursRow` and the `.xlsx` row (mapped once in `hoursExportOf`) each show the unresolved-conflict state distinctly, so no total is silently wrong (FR-41, 4.3 AC).
   evidence: Split from story 5.3 on 2026-10-01 by the human ([S] Split, four parts). Closes the R1 ledger entry above once shipped.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-3b-conflicts-queue.md`
+  summary: Story 5.4 collisionKeyOf filter. Once `conflict_resolutions` exists, the Raspored queue (`features/conflicts/services/conflicts-queue.ts`) and its header count must drop every collision whose `collisionKeyOf` has a resolution, so "unresolved" stops meaning "every derived collision" (5.3b NARROWED AC).
+  evidence: Raised by the 5.3b epic AC audit on 2026-10-01; the spec claimed an entry that did not exist.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-3b-conflicts-queue.md`
+  summary: The queue reads "today" once per render (`new Date()` in `use-conflicts-queue.ts`), so a Raspored page left open across the organization's midnight keeps yesterday's conflicts as upcoming until something re-renders it. Same for the calendar's today; a shared org-midnight tick would fix both.
+  evidence: Raised by the 5.3b review on 2026-10-01; pre-existing pattern from `calendarTodayOf` callers, not introduced by the queue.

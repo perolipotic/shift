@@ -153,6 +153,16 @@
     "unscheduled": "Za tebe još ne postoji raspored, pa se godišnji odmor ne može izračunati.",
     "retry": "Pokušaj ponovno"
   },
+  "raspored": {
+    "count": "{count, plural, one {# neriješen konflikt} few {# neriješena konflikta} other {# neriješenih konflikata}}",
+    "empty": "Nema konflikata između godišnjih odmora i rasporeda.",
+    "past": "Prošli datum",
+    "who": "{member} · {team}",
+    "detail": "{type} · Godišnji odmor {from}–{to}",
+    "detailTimed": "{type} {times} · Godišnji odmor {from}–{to}",
+    "unavailable": "Konflikte trenutačno nije moguće učitati. Pokušaj ponovno.",
+    "retry": "Pokušaj ponovno"
+  },
   "sati": {
     "total": "Ukupno sati",
     "shifts": "Broj smjena",

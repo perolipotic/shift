@@ -110,6 +110,10 @@ const SANCTIONED_PLURAL_KEYS = [
   // STORY 5.2b: the line a landed amend shows, with what the new range cost.
   // Its over-balance warning is 5.1c's `savedExceeds`.
   'ljudi.leaveRecord.amended',
+  // STORY 5.3b: the conflicts queue's count, always shown — `0 neriješenih
+  // konflikata` included (UX-DR20). Its own key rather than `count.conflicts`,
+  // because the adjective agrees with the noun in all three forms.
+  'raspored.count',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -1177,6 +1181,18 @@ const SANCTIONED_SCREEN_KEYS = [
   'godisnji.unavailable',
   'godisnji.unscheduled',
   'godisnji.retry',
+  // STORY 5.3b: *Raspored*, the conflicts queue — the true sentence an empty
+  // queue states, the words a past row carries beside its dashed border, a
+  // row's member and team, its shift type (with its times, or a type with
+  // none in effect) and the causing record's range, and the line a refused
+  // queue shows with its retry. The count is a plural, listed above.
+  'raspored.empty',
+  'raspored.past',
+  'raspored.who',
+  'raspored.detail',
+  'raspored.detailTimed',
+  'raspored.unavailable',
+  'raspored.retry',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

@@ -104,7 +104,7 @@ Behavioural specs. Visual specs are in `DESIGN.md` § Components.
 
 ## State Patterns
 
-- **Empty.** States what is true. Conflicts empty: *"Nema konflikata između godišnjih odmora i rasporeda."* Member with no team: an explanation, never a blank schedule. A count that is zero is still shown — `0 nerješenih konflikata` — because hiding it is indistinguishable from not having loaded.
+- **Empty.** States what is true. Conflicts empty: *"Nema konflikata između godišnjih odmora i rasporeda."* Member with no team: an explanation, never a blank schedule. A count that is zero is still shown — `0 neriješenih konflikata` — because hiding it is indistinguishable from not having loaded.
 - **Loading.** Skeletons matching final layout for the calendar grid and tables; no spinners on primary surfaces. A month already visited and a month never visited must feel the same.
 - **Error.** States what failed and what to do. A refused save keeps the entered values.
 - **Refusal, blocking.** Two validations refuse a save outright, and only two: Hour Bands that leave a gap or an overlap, and a Rotation Offset outside the cycle. Both are refused because the resulting state is not merely unwise but unrepresentable — an hour belonging to no band has nowhere to be counted. The refusal names the specific gap in hours and keeps every entered value.

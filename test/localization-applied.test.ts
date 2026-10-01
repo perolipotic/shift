@@ -594,6 +594,13 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'leave', 'components', 'my-leave-summary.tsx'),
   join(webRoot, 'src', 'features', 'leave', 'components', 'my-leave-skeleton.tsx'),
   join(webRoot, 'src', 'features', 'leave', 'services', 'my-leave.ts'),
+  // Story 5.3b: *Raspored*'s conflicts queue — its hook, components and rules
+  // module. `raspored.tsx` is listed with the destinations above.
+  join(webRoot, 'src', 'features', 'conflicts', 'hooks', 'use-conflicts-queue.ts'),
+  join(webRoot, 'src', 'features', 'conflicts', 'components', 'conflicts-body.tsx'),
+  join(webRoot, 'src', 'features', 'conflicts', 'components', 'conflicts-list.tsx'),
+  join(webRoot, 'src', 'features', 'conflicts', 'components', 'conflicts-skeleton.tsx'),
+  join(webRoot, 'src', 'features', 'conflicts', 'services', 'conflicts-queue.ts'),
   // The owner layout's numbered section badge, a primitive: text-free, here
   // for freshness like the other primitives.
   join(webRoot, 'src', 'components', 'ui', 'section-number.tsx'),
@@ -1061,8 +1068,8 @@ const AUTHORED_VOCABULARY = [
   // `Neutralna` is on this list rather than the ban list for the reason every
   // other count here is: the claim is not "nobody says it" but "only `hr.json`
   // does". It is also the word that exists because `Nema` may not — the voice
-  // rule states the fact rather than the absence, and `Nema` is banned outright
-  // below.
+  // rule states the fact rather than the absence, and `Nema` was banned
+  // outright until story 5.3b, whose empty state UX-DR20 words itself.
   //
   // `Logotip` is NOT repeated here, and the reason is worth naming: it is
   // already counted above, and the count is read off `hr.json` rather than
@@ -1468,6 +1475,14 @@ const AUTHORED_VOCABULARY = [
   // hard-coded mark label is a count that no longer matches.
   'Oznake',
   'Konflikt',
+  // STORY 5.3b: `Nema`, MOVED from the ban list below. The conflicts queue's
+  // empty state is worded by UX-DR20 itself — `Nema konflikata između
+  // godišnjih odmora i rasporeda.` — a fact about the organization rather than
+  // an absence of the screen's, and the human-owned spec fixes the sentence.
+  // A count is the stronger claim the other moved words make: only `hr.json`
+  // may say it, so a hard-coded `Nema…` is still a count that no longer
+  // matches.
+  'Nema',
   'Izmijenjeno',
   // STORY 3.3a: the team filter's reset, so a hard-coded reset label is a
   // count that no longer matches.
@@ -1477,7 +1492,7 @@ const AUTHORED_VOCABULARY = [
 /** Everything the terminology contract and the unshipped affordances still own.
  *  None of it may reach the build. `Spremi` and `Odustani` LEFT in story 1.4a,
  *  which ships the first screen that saves anything; they are held to a count
- *  above now. `Nema` stays, and it is the one that bites: the voice rules say
+ *  above now. `Nema` stayed until story 5.3b, and it was the one that bit: the voice rules say
  *  state the fact rather than the absence, so a refusal worded `Nemaš ovlasti`
  *  fails this sweep by SUBSTRING — which is why 1.4a's refusal says what is
  *  needed instead.
@@ -1490,7 +1505,11 @@ const AUTHORED_VOCABULARY = [
  *  no ban, because it stops anybody looking. Both forms are counted above
  *  instead, which is the claim this list cannot make: not "nobody says it" but
  *  "only `hr.json` does". */
-const NAVIGATION_AND_TERMINOLOGY = ['Nema'];
+//
+// EMPTY SINCE STORY 5.3b, AND THE MECHANISM STAYS: `Nema` moved to a count
+// above. The sweep below loops over the list in one case rather than
+// `it.each`, so an empty list is a pass that says so rather than no case.
+const NAVIGATION_AND_TERMINOLOGY: readonly string[] = [];
 
 /** The static Croatian in `index.html` (story 1.1d): the boot fallback, shown
  *  when localization init rejects or the bundle never loads at all. It cannot
@@ -1579,11 +1598,15 @@ function resourceSource(): string {
 describe('the resource file is the only user-facing Croatian in the build', () => {
   // `skipIf` rather than an early `return`, in both sweeps: the early-return
   // form reported green on a build-less checkout having read nothing.
-  it.skipIf(notBuilt).each(NAVIGATION_AND_TERMINOLOGY)('does not ship the literal %s', (word) => {
-    expect(
-      allChunks().includes(word),
-      `${word} is in a built chunk — a screen literal has been hard-coded instead of added to hr.json (L1/L2)`,
-    ).toBe(false);
+  it.skipIf(notBuilt)('does not ship any banned literal', () => {
+    const chunks = allChunks();
+
+    for (const word of NAVIGATION_AND_TERMINOLOGY) {
+      expect(
+        chunks.includes(word),
+        `${word} is in a built chunk — a screen literal has been hard-coded instead of added to hr.json (L1/L2)`,
+      ).toBe(false);
+    }
   });
 
   it.skipIf(notBuilt).each(AUTHORED_VOCABULARY)('ships %s only from the resource file', (word) => {

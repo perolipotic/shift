@@ -4,6 +4,12 @@ import type { LeaveRange } from '@shift/domain';
 import { leaveRangeOf } from '@/features/leave/services/leave-write';
 
 /**
+ * The table the records are read from, named where they are read, so a
+ * feature that reads them needs no import from the write module.
+ */
+export { LEAVE_RECORDS_TABLE } from '@/features/leave/services/leave-write';
+
+/**
  * One member's live leave records (story 5.1c) — the read beside
  * `leave-write.ts`, in a `.ts` that renders nothing (AD-15).
  *
@@ -268,12 +274,12 @@ export interface MyLeaveRecordsRpc {
   rpc(fn: string): PromiseLike<LeaveRecordsAnswer>;
 }
 
-export type MyLeaveRowsOutcome =
+export type LeaveRowsOutcome =
   | { readonly ok: true; readonly rows: readonly unknown[] }
   | { readonly ok: false; readonly code: typeof LEAVE_RECORDS_UNAVAILABLE };
 
 /** The viewer's own live rows as the function answered them, or unavailable. */
-export async function readMyLeaveRows(client: MyLeaveRecordsRpc): Promise<MyLeaveRowsOutcome> {
+export async function readMyLeaveRows(client: MyLeaveRecordsRpc): Promise<LeaveRowsOutcome> {
   let answered: LeaveRecordsAnswer;
 
   try {
@@ -284,6 +290,11 @@ export async function readMyLeaveRows(client: MyLeaveRecordsRpc): Promise<MyLeav
     return { ok: false, code: LEAVE_RECORDS_UNAVAILABLE };
   }
 
+  return rowsOfAnswer(answered);
+}
+
+/** An answer's rows, unparsed, or unavailable when it is not an answer, an error, or not a list. */
+function rowsOfAnswer(answered: LeaveRecordsAnswer): LeaveRowsOutcome {
   if (!isRecord(answered)) {
     console.error(LEAVE_RECORDS_UNAVAILABLE, typeof answered);
 
@@ -321,4 +332,172 @@ export function myLeaveRecordsQueryOptions(client: () => MyLeaveRecordsRpc) {
     retry: 1,
     retryDelay: 1000,
   });
+}
+
+// ------------------------------------- the organization's records (5.3b)
+
+/**
+ * EVERY LIVE RECORD OF THE ORGANIZATION (story 5.3b), the read the conflicts
+ * queue stands on. A select on `leave_records` with no member filter: the
+ * policy (0028) shows an admin every record of their organization, and the
+ * route that reads it is admin-only. The columns are
+ * {@link LEAVE_RECORDS_COLUMNS}; a removed record (`removed_at` set) is not
+ * read.
+ *
+ * THE ROWS COME BACK UNPARSED, as the viewer's own do: whose rows are
+ * trustworthy is the calendar snapshot's question — every row's member must
+ * be one of its members — so {@link organizationLeaveRecordsOf} parses them
+ * against those ids where both reads meet.
+ */
+
+/** The one query key the organization's live leave records are read under. */
+export const ORGANIZATION_LEAVE_RECORDS_KEY = ['organization-leave-records'] as const;
+
+/**
+ * Rows per page of the organization's read: PostgREST's `max_rows`
+ * (`supabase/config.toml`), so no page is ever cut short by the server and
+ * a short page means the last.
+ */
+export const ORGANIZATION_LEAVE_PAGE_ROWS = 1000;
+
+/** The organization's read: the live filter, a stable order, and one page of it. */
+export interface OrganizationLeaveRecordsQuery {
+  is(column: string, value: null): OrganizationLeaveRecordsQuery;
+  order(column: string, options: { readonly ascending: boolean }): OrganizationLeaveRecordsQuery;
+  range(from: number, to: number): PromiseLike<OrganizationLeaveRecordsAnswer>;
+}
+
+/** One page's answer, with the exact count of every row the filter matches. */
+export interface OrganizationLeaveRecordsAnswer extends LeaveRecordsAnswer {
+  readonly count?: number | null;
+}
+
+/** The one call made on `leave_records` for the organization, named structurally so it can be stubbed. */
+export interface OrganizationLeaveRecordsTable {
+  select(columns: string, options: { readonly count: 'exact' }): OrganizationLeaveRecordsQuery;
+}
+
+/**
+ * The organization's live rows as the table answered them, EVERY ONE, or
+ * unavailable. Read in pages of {@link ORGANIZATION_LEAVE_PAGE_ROWS} ordered
+ * by id — unique, so the pages neither overlap nor skip — until every
+ * counted row is in or a page comes back short, because a single select is capped at `max_rows` and would end in a partial
+ * list without a word. Each page carries the exact count of the filter's rows:
+ * a count that is missing, changes between pages, or disagrees with the rows
+ * assembled — a write landing mid-read — is unavailable, never a guess.
+ */
+export async function readOrganizationLeaveRows(table: OrganizationLeaveRecordsTable): Promise<LeaveRowsOutcome> {
+  const rows: unknown[] = [];
+  let expected: number | null = null;
+
+  for (let from = 0; ; from += ORGANIZATION_LEAVE_PAGE_ROWS) {
+    let answered: OrganizationLeaveRecordsAnswer;
+
+    try {
+      answered = await table
+        .select(LEAVE_RECORDS_COLUMNS, { count: 'exact' })
+        .is(REMOVED_COLUMN, null)
+        .order(ID_COLUMN, { ascending: true })
+        .range(from, from + ORGANIZATION_LEAVE_PAGE_ROWS - 1);
+    } catch (cause) {
+      console.error(LEAVE_RECORDS_UNAVAILABLE, cause);
+
+      return { ok: false, code: LEAVE_RECORDS_UNAVAILABLE };
+    }
+
+    const page = rowsOfAnswer(answered);
+
+    if (!page.ok) return page;
+
+    const count = answered.count;
+
+    if (typeof count !== 'number' || (expected !== null && count !== expected)) {
+      console.error(LEAVE_RECORDS_UNAVAILABLE, 'count');
+
+      return { ok: false, code: LEAVE_RECORDS_UNAVAILABLE };
+    }
+
+    expected = count;
+    rows.push(...page.rows);
+
+    // Every row counted is in, or the page was short: no page after it. Never
+    // asked past the count, which PostgREST answers 416 rather than empty.
+    if (rows.length >= count || page.rows.length < ORGANIZATION_LEAVE_PAGE_ROWS) break;
+  }
+
+  if (rows.length !== expected) {
+    console.error(LEAVE_RECORDS_UNAVAILABLE, 'count');
+
+    return { ok: false, code: LEAVE_RECORDS_UNAVAILABLE };
+  }
+
+  return { ok: true, rows };
+}
+
+/** The query options the organization's records are read with, under {@link ORGANIZATION_LEAVE_RECORDS_KEY}. */
+export function organizationLeaveRecordsQueryOptions(table: () => OrganizationLeaveRecordsTable) {
+  return queryOptions({
+    queryKey: ORGANIZATION_LEAVE_RECORDS_KEY,
+    queryFn: async (): Promise<readonly unknown[]> => {
+      const outcome = await readOrganizationLeaveRows(table());
+
+      if (!outcome.ok) throw new Error(outcome.code);
+
+      return outcome.rows;
+    },
+    staleTime: LEAVE_RECORDS_READ_STALE_MS,
+    refetchOnWindowFocus: false,
+    retry: 1,
+    retryDelay: 1000,
+  });
+}
+
+/** One live record of the organization: a {@link LeaveRecord} and the member it is of. */
+export interface OrganizationLeaveRecord extends LeaveRecord {
+  readonly memberId: string;
+}
+
+/**
+ * The organization's rows as records, by member and then start order, or
+ * null when any row's member is not one of `memberIds`, or any one member's
+ * rows fail {@link leaveRecordsOf} — no id, a bad range, two sharing a date —
+ * or two rows of any members share an id.
+ */
+export function organizationLeaveRecordsOf(
+  rows: readonly unknown[],
+  memberIds: readonly string[],
+): readonly OrganizationLeaveRecord[] | null {
+  const known = new Set(memberIds);
+  const byMember = new Map<string, unknown[]>();
+
+  for (const row of rows) {
+    if (!isRecord(row)) return null;
+
+    const memberId = row[MEMBER_COLUMN];
+
+    if (typeof memberId !== 'string' || !known.has(memberId)) return null;
+
+    const own = byMember.get(memberId);
+
+    if (own === undefined) byMember.set(memberId, [row]);
+    else own.push(row);
+  }
+
+  const records: OrganizationLeaveRecord[] = [];
+  const ids = new Set<string>();
+
+  for (const [memberId, own] of byMember) {
+    const parsed = leaveRecordsOf(own, memberId);
+
+    if (parsed === null) return null;
+
+    for (const record of parsed) {
+      if (ids.has(record.id)) return null;
+
+      ids.add(record.id);
+      records.push({ ...record, memberId });
+    }
+  }
+
+  return records;
 }
