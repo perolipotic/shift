@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tablice na telefonu</title>
+<meta name="description" content="Ljudi, Sati and rotation shift types as stacked rows on phones; Syne vs DM Sans tabular numerals.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&family=Syne:wght@600;700;800&display=swap&subset=latin-ext" rel="stylesheet">
+<style>
+/* ── Tokens: DESIGN.md base-palette + brand delta. Light on :root. ──────────
+   Dark shift slots use the PROPOSED values from dark-tokens-1.html
+   (slot-1 #00415D, slot-2 #2F3641, non-working #0E1828). */
+:root{
+ --canvas:#D9E0E8;--canvas-ink:#1E293B;--canvas-mut:#475569;--note:#F8FAFC;--note-bd:#94A3B8;
+ --bg:#F8FAFC;--fg:#0F172A;--card:#FFFFFF;--muted:#F1F5F9;--mfg:#556275;--bd:#E2E8F0;--input:#7B8AA0;--ring:#1A3275;
+ --side:#0B1628;--sidefg:#CBD5E1;--sidepri:#2563EB;--sideacc:#1A2D47;--sidebd:rgba(255,255,255,.08);
+ --pri:#2563EB;--prifg:#FFFFFF;--pritint:rgba(37,99,235,.12);
+ --dng:#D93A46;--dngfg:#FFFFFF;--dngtint:rgba(217,58,70,.08);
+ --brand:#2E8A35;--brandfg:#FFFFFF;
+ --s1:#E4F0FA;--s1f:#14496F;--s2:#1B2735;--s2f:#CBD8E6;--s3:#EFE7F7;--s3f:#4B3168;
+ --nw:#F0F3F6;--nwf:#66717E;--nwbd:transparent;
+ --lv:rgba(33,96,63,.16);--lvf:#21603F;--unc:rgba(160,110,20,.22);--uncf:#7A5410;--ovr:#7A6BC4;
+ --sh:0 1px 3px rgba(0,0,0,.07),0 4px 16px rgba(0,0,0,.05);--shlg:0 8px 32px rgba(0,0,0,.10);
+ --scrim:rgba(11,22,40,.45);--skel:#E2E8F0;
+ color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+ --canvas:#03070D;--canvas-ink:#E2E8F0;--canvas-mut:#94A3B8;--note:#0B1424;--note-bd:#475569;
+ --bg:#0D1829;--fg:#E2E8F0;--card:#132035;--muted:#1C2B44;--mfg:#94A3B8;--bd:rgba(255,255,255,.10);--input:rgba(255,255,255,.36);--ring:#B4D2FD;
+ --side:#070E1A;--sidefg:#C0CBDA;--sidepri:#1D4ED8;--sideacc:#132035;--sidebd:rgba(255,255,255,.07);
+ --pri:#3B82F6;--prifg:#0B1628;--pritint:rgba(59,130,246,.16);
+ --dng:#E85B66;--dngfg:#1A0C0E;--dngtint:rgba(232,91,102,.10);
+ --brand:#7AD07E;--brandfg:#0B1A0C;
+ --s1:#00415D;--s1f:#B8E2FA;--s2:#2F3641;--s2f:#DCE3EE;--s3:#2A2038;--s3f:#CBB4E8;
+ --nw:#0E1828;--nwf:#8494A8;--nwbd:rgba(255,255,255,.07);
+ --lv:rgba(132,204,167,.15);--lvf:#84CCA7;--unc:rgba(230,170,60,.16);--uncf:#E0AE5C;--ovr:#9A8BE0;
+ --sh:0 1px 3px rgba(0,0,0,.30),0 4px 16px rgba(0,0,0,.22);--shlg:0 8px 32px rgba(0,0,0,.45);
+ --scrim:rgba(0,0,0,.55);--skel:#1C2B44;
+ color-scheme:dark;
+}}
+:root[data-theme="dark"]{
+ --canvas:#03070D;--canvas-ink:#E2E8F0;--canvas-mut:#94A3B8;--note:#0B1424;--note-bd:#475569;
+ --bg:#0D1829;--fg:#E2E8F0;--card:#132035;--muted:#1C2B44;--mfg:#94A3B8;--bd:rgba(255,255,255,.10);--input:rgba(255,255,255,.36);--ring:#B4D2FD;
+ --side:#070E1A;--sidefg:#C0CBDA;--sidepri:#1D4ED8;--sideacc:#132035;--sidebd:rgba(255,255,255,.07);
+ --pri:#3B82F6;--prifg:#0B1628;--pritint:rgba(59,130,246,.16);
+ --dng:#E85B66;--dngfg:#1A0C0E;--dngtint:rgba(232,91,102,.10);
+ --brand:#7AD07E;--brandfg:#0B1A0C;
+ --s1:#00415D;--s1f:#B8E2FA;--s2:#2F3641;--s2f:#DCE3EE;--s3:#2A2038;--s3f:#CBB4E8;
+ --nw:#0E1828;--nwf:#8494A8;--nwbd:rgba(255,255,255,.07);
+ --lv:rgba(132,204,167,.15);--lvf:#84CCA7;--unc:rgba(230,170,60,.16);--uncf:#E0AE5C;--ovr:#9A8BE0;
+ --sh:0 1px 3px rgba(0,0,0,.30),0 4px 16px rgba(0,0,0,.22);--shlg:0 8px 32px rgba(0,0,0,.45);
+ --scrim:rgba(0,0,0,.55);--skel:#1C2B44;
+ color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--canvas);color:var(--canvas-ink);font:14px/1.5 'DM Sans',ui-sans-serif,system-ui,sans-serif;overflow-x:hidden}
+.num,.tnum{font-variant-numeric:tabular-nums}
+h1,h2,h3,h4,.syne{font-family:'Syne','DM Sans',sans-serif}
+svg.i{width:18px;height:18px;flex:0 0 auto;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+svg.i.sm{width:15px;height:15px}svg.i.lg{width:22px;height:22px}
+
+/* ── Presentation chrome (not product UI) ─────────────────────────────── */
+.doc{max-width:1480px;margin:0 auto;padding:28px 16px 80px}
+.doc>header{display:flex;gap:16px;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px}
+.doc h1.t{font-size:26px;font-weight:800;margin:0 0 6px;letter-spacing:-.01em}
+.lead{color:var(--canvas-mut);max-width:86ch;margin:0 0 6px;font-size:14px}
+.doc h2.s{font-size:18px;font-weight:700;margin:40px 0 6px}
+.doc h3.s{font-size:14px;font-weight:700;margin:0 0 2px;font-family:'DM Sans',sans-serif}
+.why{color:var(--canvas-mut);font-size:12.5px;margin:0 0 10px;max-width:60ch}
+.row{display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap}
+.col{flex:0 0 auto;max-width:100%}
+.col>.why{min-height:58px;max-width:390px}
+.note{background:var(--note);border:1.5px dashed var(--note-bd);border-radius:10px;padding:10px 12px;font-size:12.5px;color:var(--canvas-ink);max-width:420px}
+.note b{font-weight:700}
+.note ul{margin:4px 0 0;padding-left:18px}.note li{margin:2px 0}
+.flag{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border:1.5px solid currentColor;border-radius:99px;padding:0 7px;margin-right:4px}
+.back{font-size:13px;color:var(--canvas-mut);text-decoration:none}
+.back:hover{text-decoration:underline}
+.theme{display:inline-flex;border:1.5px solid var(--note-bd);border-radius:99px;padding:3px;gap:2px;background:var(--note)}
+.theme button{border:0;background:transparent;color:var(--canvas-ink);font:inherit;font-size:12px;font-weight:600;padding:5px 11px;border-radius:99px;cursor:pointer;display:inline-flex;gap:5px;align-items:center;min-height:32px}
+.theme button[aria-pressed="true"]{background:var(--canvas-ink);color:var(--canvas)}
+
+/* ── Device frames ────────────────────────────────────────────────────── */
+.ph{width:390px;max-width:100%;height:800px;background:var(--bg);color:var(--fg);border-radius:30px;border:1px solid rgba(0,0,0,.25);box-shadow:0 18px 50px rgba(0,0,0,.28);overflow:hidden;display:flex;flex-direction:column;position:relative}
+.ph.tall{height:900px}.ph.short{height:700px}
+.ph .sbar{height:34px;flex:0 0 auto;display:flex;justify-content:space-between;align-items:center;padding:0 24px;font-size:12px;font-weight:600;color:var(--fg)}
+.ph .scr{flex:1;overflow:hidden;padding:4px 16px 16px;position:relative}
+.cap{font-size:13px;font-weight:700;margin:0 0 2px}
+.dkw{max-width:100%;overflow-x:auto;border-radius:14px}
+.dk{width:1080px;height:760px;background:var(--bg);color:var(--fg);border-radius:14px;border:1px solid rgba(0,0,0,.25);box-shadow:0 18px 50px rgba(0,0,0,.28);overflow:hidden;display:flex;position:relative}
+.dk.tall{height:900px}
+.dk .main{flex:1;overflow:hidden;padding:28px 32px}
+.dk .inner{max-width:880px;margin:0 auto}
+
+/* ── Product primitives (shiftapp-v2 register) ────────────────────────── */
+.ptitle{font-family:'Syne',sans-serif;font-weight:800;font-size:24px;letter-spacing:-.01em;margin:0;line-height:1.15}
+.pdesc{font-size:13px;color:var(--mfg);margin:3px 0 0}
+.phead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin:6px 0 16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;box-shadow:var(--sh)}
+.card .ch{padding:13px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px}
+.card .ct{font-family:'Syne',sans-serif;font-weight:700;font-size:14px;flex:1;margin:0}
+.card .cb{padding:14px 16px}
+.kick{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mfg)}
+.mut{color:var(--mfg)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:44px;padding:0 16px;border-radius:10px;font:inherit;font-weight:600;font-size:14px;cursor:pointer;border:1.5px solid transparent;text-decoration:none;white-space:nowrap}
+.btn.p{background:var(--pri);color:var(--prifg)}
+.btn.o{background:var(--card);color:var(--fg);border-color:var(--input)}
+.btn.g{background:transparent;color:var(--fg)}
+.btn.sm{min-height:36px;padding:0 12px;font-size:13px}
+.btn.w{width:100%}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.ibtn{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border-radius:10px;border:1.5px solid var(--input);background:var(--card);color:var(--fg)}
+.ibtn.ghost{border-color:transparent;background:transparent}
+.badge{display:inline-flex;align-items:center;gap:4px;border-radius:99px;font-size:12px;font-weight:600;padding:1px 9px;white-space:nowrap}
+.badge.d{background:var(--pritint);color:var(--fg)}
+.badge.s{background:var(--muted);color:var(--fg)}
+.badge.o{border:1.5px solid var(--input);color:var(--mfg);padding:0 8px}
+.badge.c{background:var(--dng);color:var(--dngfg)}
+.av{width:36px;height:36px;border-radius:50%;background:var(--muted);color:var(--fg);display:inline-flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;flex:0 0 auto}
+.av.lg{width:56px;height:56px;font-size:18px}
+.chip{display:inline-flex;align-items:center;gap:4px;border-radius:8px;font-size:12px;font-weight:700;padding:2px 8px;white-space:nowrap}
+.chip.s1{background:var(--s1);color:var(--s1f)}.chip.s2{background:var(--s2);color:var(--s2f)}.chip.s3{background:var(--s3);color:var(--s3f)}
+.chip.nw{background:var(--nw);color:var(--nwf);box-shadow:inset 0 0 0 1px var(--nwbd)}
+.chip.lv{background:var(--nw);color:var(--lvf);background-image:repeating-linear-gradient(-45deg,var(--lv) 0 4px,transparent 4px 8px)}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.field label,.flabel{font-size:13px;font-weight:600}
+.inp{min-height:44px;border:1.5px solid var(--input);border-radius:10px;background:var(--card);color:var(--fg);padding:0 12px;display:flex;align-items:center;gap:8px;font-size:14px}
+.inp.ph-t{color:var(--mfg)}
+.inp.sel::after{content:"";margin-left:auto;width:8px;height:8px;border-right:2px solid var(--mfg);border-bottom:2px solid var(--mfg);transform:rotate(45deg) translate(-2px,-2px)}
+.inp.focus{box-shadow:0 0 0 2px var(--card),0 0 0 4px var(--ring)}
+.out{min-height:44px;border:1.5px dashed var(--input);border-radius:10px;background:var(--muted);padding:9px 12px;font-size:13.5px}
+.hint{font-size:12px;color:var(--mfg)}
+.notice{border:1.5px solid var(--input);background:var(--card);border-radius:10px;padding:10px 12px;font-size:13px;font-weight:500;display:flex;gap:8px;align-items:flex-start}
+.callout{background:color-mix(in srgb,var(--pri) 6%,var(--bg));border:1px solid color-mix(in srgb,var(--pri) 22%,transparent);border-radius:12px;padding:12px 14px;font-size:13px;display:flex;gap:10px}
+.tile{background:var(--muted);border-radius:10px;padding:10px 12px}
+.tile .tl{font-size:12px;color:var(--mfg);font-weight:500}
+.tile .tv{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em;line-height:1.2}
+.div{height:1px;background:var(--bd);margin:12px 0}
+.skel{background:var(--skel);border-radius:8px}
+.lnk{color:var(--fg);text-decoration:underline;text-underline-offset:3px;font-weight:600}
+
+/* ── Shell: desktop sidebar ───────────────────────────────────────────── */
+.sb{width:236px;flex:0 0 auto;background:var(--side);color:var(--sidefg);display:flex;flex-direction:column;border-right:2px solid var(--brand);padding:12px 10px}
+.lock{display:flex;align-items:center;gap:10px;padding:6px 6px 14px;border-bottom:1px solid var(--sidebd);margin-bottom:8px}
+.lock .lm{width:32px;height:32px;border-radius:9px;background:var(--brand);color:var(--brandfg);display:flex;align-items:center;justify-content:center;font-family:'Syne';font-weight:800;font-size:13px}
+.lock .ln{font-weight:700;font-size:13.5px;color:#fff;line-height:1.2}
+.lock .ls{font-size:11px;color:var(--sidefg);opacity:.8}
+.sgl{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--sidefg);opacity:.7;padding:12px 10px 4px}
+.ni{display:flex;align-items:center;gap:10px;min-height:40px;padding:0 10px;border-radius:9px;font-size:13.5px;font-weight:500;color:var(--sidefg)}
+.ni.on{background:var(--sidepri);color:#fff;font-weight:700}
+.ni.on span{text-decoration:underline;text-underline-offset:3px}
+.ni .cnt{margin-left:auto}
+.sb .usr{margin-top:auto;border-top:1px solid var(--sidebd);padding:12px 6px 2px;display:flex;align-items:center;gap:10px}
+.sb .usr .av{background:var(--sideacc);color:#fff}
+.sb .usr b{color:#fff;font-size:13px;display:block}.sb .usr small{font-size:11px}
+
+/* ── Shell: phone top bar + bottom tab bar ────────────────────────────── */
+.tbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:2px 0 6px}
+.mini-lock{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--mfg)}
+.mini-lock .lm{width:24px;height:24px;border-radius:7px;background:var(--brand);color:var(--brandfg);display:flex;align-items:center;justify-content:center;font-family:'Syne';font-weight:800;font-size:11px}
+.tabs{flex:0 0 auto;background:var(--side);border-top:2px solid var(--brand);display:grid;grid-template-columns:repeat(5,1fr);padding:6px 4px 18px;position:relative;z-index:5}
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;min-height:52px;justify-content:center;color:var(--sidefg);font-size:11px;font-weight:500;position:relative;text-align:center}
+.tab .pill{width:56px;height:30px;border-radius:99px;display:flex;align-items:center;justify-content:center;position:relative}
+.tab.on{color:#fff;font-weight:700}
+.tab.on .pill{background:var(--sidepri)}
+.tab.on .lbl{text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:2px}
+.tab .bdg{position:absolute;top:-4px;right:2px;background:var(--dng);color:var(--dngfg);font-size:10px;font-weight:700;border-radius:99px;padding:0 5px;line-height:16px;box-shadow:0 0 0 2px var(--side);font-variant-numeric:tabular-nums}
+.tab .sub{font-size:9.5px;opacity:.8;font-weight:500;text-decoration:none;margin-top:-3px}
+
+/* ── Sheet + dialog ───────────────────────────────────────────────────── */
+.scrim{position:absolute;inset:0;background:var(--scrim);z-index:3}
+.sheet{position:absolute;left:0;right:0;bottom:76px;background:var(--card);color:var(--fg);border-radius:22px 22px 0 0;box-shadow:var(--shlg);z-index:4;padding:8px 16px 14px;border:1px solid var(--bd);border-bottom:0}
+.grab{width:40px;height:4px;border-radius:2px;background:var(--input);opacity:.6;margin:2px auto 10px}
+.sh-h{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.sh-g{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mfg);margin:12px 0 4px}
+.srow{display:flex;align-items:center;gap:12px;min-height:52px;padding:0 4px;border-bottom:1px solid var(--bd)}
+.srow:last-child{border-bottom:0}
+.srow .it{width:36px;height:36px;border-radius:10px;background:var(--muted);display:flex;align-items:center;justify-content:center}
+.srow .tx{flex:1;min-width:0}.srow .tx b{display:block;font-size:14px;font-weight:600}.srow .tx small{display:block;font-size:12px;color:var(--mfg)}
+.seg3{display:grid;grid-template-columns:repeat(3,1fr);border:1.5px solid var(--input);border-radius:10px;overflow:hidden}
+.seg3 span{min-height:42px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;font-weight:600;border-right:1.5px solid var(--input)}
+.seg3 span:last-child{border-right:0}
+.seg3 span.on{background:var(--pritint);text-decoration:underline;text-underline-offset:3px}
+.dlg{position:absolute;z-index:4;background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:14px;box-shadow:var(--shlg)}
+.dlg .dh{display:flex;align-items:center;gap:8px;padding:10px 10px 10px 20px;border-bottom:1px solid var(--bd)}
+.dlg .dh h3{margin:0;font-size:17px;font-weight:700;flex:1}
+.dlg .db{padding:16px 20px}
+.dlg .df{display:flex;justify-content:flex-end;gap:8px;padding:12px 20px 16px;border-top:1px solid var(--bd)}
+
+/* ── Shift cell (calendar) ────────────────────────────────────────────── */
+.cell{min-height:34px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;position:relative}
+.cell.s1{background:var(--s1);color:var(--s1f)}.cell.s2{background:var(--s2);color:var(--s2f)}
+.cell.nw{background:var(--nw);color:var(--nwf);box-shadow:inset 0 0 0 1px var(--nwbd);font-weight:600}
+.cell .gl{position:absolute;top:1px;left:4px;font-size:9px}
+.cell.cf{box-shadow:inset 0 0 0 2px var(--dng)}
+.cell.ov{box-shadow:inset 0 0 0 2px var(--ovr)}
+.cell.lv{background-image:repeating-linear-gradient(-45deg,var(--lv) 0 4px,transparent 4px 8px);color:var(--lvf)}
+.cell.un{background-image:repeating-linear-gradient(45deg,var(--unc) 0 4px,transparent 4px 8px)}
+.legend{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:11.5px;color:var(--mfg);margin-top:10px}
+.legend span{display:inline-flex;align-items:center;gap:4px}
+
+@media (max-width:640px){.doc{padding:20px 16px 60px}.row{gap:20px}}
+
+.ph.full{height:auto;min-height:800px}.ph.full .scr{overflow:visible}
+.sum{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
+.sum span{background:var(--card);border:1px solid var(--bd);border-radius:99px;padding:4px 10px;font-size:12.5px}
+.sum b{font-variant-numeric:tabular-nums}
+.tools{display:flex;gap:8px;margin-bottom:12px}
+.tools .inp{flex:1}
+.lr{display:flex;align-items:center;gap:12px;min-height:62px;padding:8px 14px;border-bottom:1px solid var(--bd)}
+.lr:last-child{border-bottom:0}
+.lr .nm{flex:1;min-width:0}
+.lr .nm b{display:block;font-size:14.5px;font-weight:600}
+.lr .nm small{display:flex;gap:6px;align-items:center;color:var(--mfg);font-size:12.5px;flex-wrap:wrap}
+.lr .tr{text-align:right;font-size:12px;color:var(--mfg);line-height:1.2}
+.lr .tr b{display:block;color:var(--fg);font-size:14px;font-variant-numeric:tabular-nums}
+.month{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.month .t{flex:1;text-align:center;font-weight:700;font-size:16px}
+.hc{padding:12px 14px;border-bottom:1px solid var(--bd)}
+.hc:last-child{border-bottom:0}
+.hc .top{display:flex;align-items:flex-start;gap:10px}
+.hc .top .nm{flex:1}
+.hc .top .nm b{display:block;font-size:14.5px}
+.hc .top .nm small{color:var(--mfg);font-size:12.5px}
+.hc .tot{text-align:right}
+.hc .tot .k{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--mfg)}
+.hc .tot .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.hc .br{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:8px}
+.hc .br div{background:var(--muted);border-radius:8px;padding:6px 8px;font-size:12px;line-height:1.25}
+.hc .br div .k{color:var(--mfg);font-size:11px}
+.hc .br div b{display:block;font-size:14px;font-variant-numeric:tabular-nums}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:12px}
+.steps span{min-height:44px;border:1.5px solid var(--input);border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11.5px;line-height:1.15;color:var(--mfg)}
+.steps span b{font-size:13px;color:var(--fg);font-variant-numeric:tabular-nums}
+.steps span.on{background:var(--pri);border-color:var(--pri);color:var(--prifg)}
+.steps span.on b{color:var(--prifg)}
+.steps span.on{text-decoration:underline;text-underline-offset:2px}
+.tr2{display:flex;align-items:center;gap:12px;min-height:64px;padding:8px 8px 8px 14px;border-bottom:1px solid var(--bd)}
+.tr2:last-child{border-bottom:0}
+.tr2 .mid{flex:1;min-width:0}
+.tr2 .mid .l1{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+.tr2 .mid .l2{font-size:12.5px;color:var(--mfg);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.numdemo{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;max-width:980px}
+.nd{background:var(--card);color:var(--fg);border:1px solid var(--bd);border-radius:12px;padding:16px}
+.nd .lbl{font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--mfg);margin-bottom:8px}
+.nd .stat{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.nd .stat div{background:var(--muted);border-radius:10px;padding:10px}
+.nd .stat small{display:block;min-height:30px;font-size:10.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--mfg)}
+.syne-n{font-family:'Syne';font-weight:800;font-size:30px;line-height:1.1}
+.dm-n{font-family:'DM Sans';font-weight:700;font-size:30px;line-height:1.1;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.colx{margin-top:14px;display:grid;grid-template-columns:1fr auto;gap:2px 16px;font-size:16px;max-width:260px}
+.colx .r{text-align:right}
+.prop{font-variant-numeric:proportional-nums}
+@media (max-width:760px){.numdemo{grid-template-columns:1fr}.nd .stat{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+<symbol id="i-cal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+<symbol id="i-leave" viewBox="0 0 24 24"><path d="M22 12a10 10 0 0 0-20 0Z"/><path d="M12 12v7a2 2 0 0 0 4 0"/><path d="M12 2v1"/></symbol>
+<symbol id="i-sched" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 10h18M8 2v4M16 2v4"/><path d="m9 15 2 2 4-4"/></symbol>
+<symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6"/><path d="M16 4a4 4 0 0 1 0 8M22 21c0-3-1.5-5-4-5.6"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></symbol>
+<symbol id="i-rot" viewBox="0 0 24 24"><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></symbol>
+<symbol id="i-org" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4M8 6h.01M12 6h.01M16 6h.01M8 10h.01M12 10h.01M16 10h.01M8 14h.01M12 14h.01M16 14h.01"/></symbol>
+<symbol id="i-out" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5M21 12H9"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+<symbol id="i-mon" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+<symbol id="i-chev" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+<symbol id="i-chevl" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+<symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+<symbol id="i-pen" viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></symbol>
+<symbol id="i-warn" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></symbol>
+<symbol id="i-ok" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8 12 3 3 5-6"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+<symbol id="i-filter" viewBox="0 0 24 24"><path d="M3 5h18M6 12h12M10 19h4"/></symbol>
+<symbol id="i-dl" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M5 21h14"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+<symbol id="i-moonsm" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+<symbol id="i-team" viewBox="0 0 24 24"><circle cx="12" cy="7" r="3"/><circle cx="5" cy="10" r="2.5"/><circle cx="19" cy="10" r="2.5"/><path d="M7 20c0-3 2.2-5 5-5s5 2 5 5M1.5 19c0-2.3 1.5-4 3.5-4M22.5 19c0-2.3-1.5-4-3.5-4"/></symbol>
+<symbol id="i-band" viewBox="0 0 24 24"><rect x="2" y="9" width="20" height="6" rx="2"/><path d="M9 9v6M15 9v6"/></symbol>
+<symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m5.7 5.7 12.6 12.6"/></symbol>
+<symbol id="i-hist" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></symbol>
+<symbol id="i-dash" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-dasharray="3.2 3"/></symbol>
+<symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01"/></symbol>
+<symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V3m-5 5 5-5 5 5M5 21h14"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+<symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+<symbol id="i-userplus" viewBox="0 0 24 24"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-6 7-6s7 2 7 6M19 8v6M16 11h6"/></symbol>
+<symbol id="i-sort" viewBox="0 0 24 24"><path d="M7 4v16m-4-4 4 4 4-4M17 20V4m-4 4 4-4 4 4"/></symbol>
+<symbol id="i-swap" viewBox="0 0 24 24"><path d="M4 7h14l-3-3M20 17H6l3 3"/></symbol>
+<symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 22c4 0 7-3 7-7 0-4-3-6-4-9-1 2-2 3-4 3 0-2 0-4-2-7-1 4-4 7-4 12 0 5 3 8 7 8z"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></symbol>
+</defs></svg>
+<div class="doc">
+<header><div><a class="back" href="index.html">← Sve makete · redizajn 01.10.2026.</a>
+<h1 class="t">Tablice na telefonu</h1><p class="lead">Ispod 640 px tablica postaje popis redaka, a stranica se nikad ne pomiče vodoravno. Svaki redak ima ime i ono po čemu se osoba traži lijevo, a broj koji se uspoređuje desno. Na tabletu i desktopu tablice ostaju kakve jesu.</p></div><div class="theme" role="group" aria-label="Tema prikaza"><button data-v="system" aria-pressed="true"><svg class="i sm" aria-hidden="true"><use href="#i-mon"/></svg>Sustav</button><button data-v="light" aria-pressed="false"><svg class="i sm" aria-hidden="true"><use href="#i-sun"/></svg>Svijetla</button><button data-v="dark" aria-pressed="false"><svg class="i sm" aria-hidden="true"><use href="#i-moon"/></svg>Tamna</button></div></header>
+
+<div class="note" style="max-width:none;margin-top:14px"><b>Što ovo popravlja (nalaz 5):</b> danas se na 390 px Ljudi, Sati i Tipovi smjena pomiču vodoravno. Stupac „Ukupno” u Satima i radnje u Ljudima su izvan ekrana, a velike brojke u Syneu čitaju se krivo („17” kao „ı7”). Ovdje se svaki podatak iz tablice vidi bez pomicanja, a brojevi su u DM Sansu s tabličnim znamenkama.</div>
+
+<h2 class="s">1 · Tri tablice kao popisi</h2>
+<div class="row">
+ <div class="col"><p class="cap">A · Ljudi</p><p class="why">Četiri kartice s brojevima postaju jedan red oznaka. Tri filtra se skupljaju u „Filtri”, koji otvara listu. Cijeli redak je meta i vodi na stranicu osobe, a ikona olovke više ne treba. E-pošta je samo na stranici osobe.</p>
+  <div class="ph full"><div class="sbar"><span class="num">14:20</span><span aria-hidden="true">●●● ▮</span></div><div class="scr">
+<div class="phead" style="margin-bottom:10px"><div><h2 class="ptitle">Ljudi</h2><p class="pdesc">Osobe, razine ovlasti i dani godišnjeg</p></div></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px"><button class="btn o"><svg class="i sm" aria-hidden="true"><use href="#i-team"/></svg>Smjene</button><button class="btn p"><svg class="i sm" aria-hidden="true"><use href="#i-plus"/></svg>Dodaj osobu</button></div>
+<div class="sum"><span><b>17</b> osoba</span><span><b>1</b> administrator</span><span><b>17</b> aktivnih danas</span><span><b>0</b> neaktivnih</span></div>
+<div class="tools"><div class="inp ph-t"><svg class="i sm" aria-hidden="true"><use href="#i-search"/></svg>Ime ili adresa</div><button class="btn o" aria-label="Filtri, nijedan nije uključen"><svg class="i sm" aria-hidden="true"><use href="#i-filter"/></svg>Filtri</button></div>
+<div class="card"><a class="lr"><span class="av" aria-hidden="true">AB</span><span class="nm"><b>Ante Bilić</b><small>Smjena C · <span>Član</span></small></span><span class="tr"><b>20</b>dana god.</span><svg class="i sm" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="lr"><span class="av" aria-hidden="true">DH</span><span class="nm"><b>Davor Horvat</b><small>Smjena A · <span>Član</span></small></span><span class="tr"><b>20</b>dana god.</span><svg class="i sm" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="lr"><span class="av" aria-hidden="true">DA</span><span class="nm"><b>Demo Admin</b><small>Bez smjene · <span class="badge d">Administrator</span></small></span><span class="tr"><b>20</b>dana god.</span><svg class="i sm" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="lr"><span class="av" aria-hidden="true">DG</span><span class="nm"><b>Dino Grgić</b><small>Smjena B · <span>Član</span></small></span><span class="tr"><b>20</b>dana god.</span><svg class="i sm" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="lr"><span class="av" aria-hidden="true">DT</span><span class="nm"><b>Duje Tomić</b><small>Smjena D · <span>Član</span></small></span><span class="tr"><b>20</b>dana god.</span><svg class="i sm" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="lr"><span class="av" aria-hidden="true">FL</span><span class="nm"><b>Frane Lozić</b><small>Smjena C · <span>Član</span></small></span><span class="tr"><b>20</b>dana god.</span><svg class="i sm" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="lr"><span class="av" aria-hidden="true">IV</span><span class="nm"><b>Ivana Vuković</b><small>Smjena A · <span>Član</span></small></span><span class="tr"><b>20</b>dana god.</span><svg class="i sm" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="lr"><span class="av" aria-hidden="true">KJ</span><span class="nm"><b>Karlo Jelić</b><small>Smjena C · <span>Član</span></small></span><span class="tr"><b>20</b>dana god.</span><svg class="i sm" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="lr"><span class="av" aria-hidden="true">LB</span><span class="nm"><b>Lea Bašić</b><small>Smjena D · <span>Član</span></small></span><span class="tr"><b>20</b>dana god.</span><svg class="i sm" aria-hidden="true"><use href="#i-chev"/></svg></a><a class="lr"><span class="av" aria-hidden="true">LK</span><span class="nm"><b>Luka Knežević</b><small>Smjena A · <span>Član</span></small></span><span class="tr"><b>20</b>dana god.</span><svg class="i sm" aria-hidden="true"><use href="#i-chev"/></svg></a></div>
+<p class="hint" style="margin:10px 2px">Prikazano 17 od 17 osoba · poredano po imenu</p>
+</div><nav class="tabs" aria-label="Glavna navigacija"><a class="tab"><span class="pill"><svg class="i" aria-hidden="true"><use href="#i-home"/></svg></span><span class="lbl">Danas</span></a><a class="tab"><span class="pill"><svg class="i" aria-hidden="true"><use href="#i-cal"/></svg></span><span class="lbl">Kalendar</span></a><a class="tab" aria-label="Raspored, 7 neriješenih konflikata"><span class="pill"><svg class="i" aria-hidden="true"><use href="#i-sched"/></svg><span class="bdg" aria-hidden="true">⚠ 7</span></span><span class="lbl">Raspored</span></a><a class="tab on" aria-current="page"><span class="pill"><svg class="i" aria-hidden="true"><use href="#i-users"/></svg></span><span class="lbl">Ljudi</span></a><a class="tab"><span class="pill"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></span><span class="lbl">Više</span></a></nav></div></div>
+ <div class="col"><p class="cap">B · Sati</p><p class="why">Ukupno je desno gore na svakoj kartici, u najvećoj brojci, pa nikad nije izvan ekrana. Dan, Noć i Godišnji su tri jednaka polja. Zbroj svih stoji iznad popisa. Izvoz izvozi isti mjesec, filtar i poredak (UX-DR44).</p>
+  <div class="ph full"><div class="sbar"><span class="num">14:20</span><span aria-hidden="true">●●● ▮</span></div><div class="scr">
+<div class="phead" style="margin-bottom:10px"><div><h2 class="ptitle">Sati</h2><p class="pdesc">Sati svih osoba po mjesecu</p></div></div>
+<div class="month"><button class="ibtn" aria-label="Prethodni mjesec"><svg class="i" aria-hidden="true"><use href="#i-chevl"/></svg></button><span class="t">Listopad 2026.</span><button class="ibtn" aria-label="Sljedeći mjesec"><svg class="i" aria-hidden="true"><use href="#i-chev"/></svg></button></div>
+<div class="tools"><button class="btn o" style="flex:1"><svg class="i sm" aria-hidden="true"><use href="#i-filter"/></svg>Sve smjene · sve osobe</button><button class="btn o" aria-label="Izvezi u Excel: listopad 2026."><svg class="i sm" aria-hidden="true"><use href="#i-dl"/></svg>Excel</button></div>
+<div class="card" style="margin-bottom:12px"><div class="cb" style="display:flex;align-items:flex-end;gap:10px">
+<div style="flex:1"><div class="kick">Ukupno · 17 osoba</div><div class="num" style="font-size:28px;font-weight:700;line-height:1.1">2.976 h</div></div>
+<div class="hint" style="text-align:right">Dan 1.488 h · Noć 1.488 h<br>248 smjena</div></div></div>
+<div class="hint" style="margin:0 2px 6px;display:flex;justify-content:space-between"><span>Poredano: ime ↑</span><span>Ukupno je uvijek desno gore</span></div>
+<div class="card"><div class="hc"><div class="top"><div class="nm"><b>Ante Bilić</b><small>Smjena C · 16 smjena</small></div>
+<div class="tot"><div class="k">Ukupno</div><div class="v">192 h</div></div></div>
+<div class="br"><div><span class="k">Dan</span><b>96 h</b>8 smjena</div><div><span class="k">Noć</span><b>96 h</b>8 smjena</div><div><span class="k">Godišnji</span><b>—</b>0 dana</div></div></div><div class="hc"><div class="top"><div class="nm"><b>Davor Horvat</b><small>Smjena A · 15 smjena</small></div>
+<div class="tot"><div class="k">Ukupno</div><div class="v">180 h</div></div></div>
+<div class="br"><div><span class="k">Dan</span><b>84 h</b>7 smjena</div><div><span class="k">Noć</span><b>96 h</b>8 smjena</div><div><span class="k">Godišnji</span><b>—</b>0 dana</div></div></div><div class="hc"><div class="top"><div class="nm"><b>Demo Admin</b><small>Bez smjene · 0 smjena</small></div>
+<div class="tot"><div class="k">Ukupno</div><div class="v">0 h</div></div></div>
+<div class="br"><div><span class="k">Dan</span><b>0 h</b>0 smjena</div><div><span class="k">Noć</span><b>0 h</b>0 smjena</div><div><span class="k">Godišnji</span><b>—</b>0 dana</div></div></div><div class="hc"><div class="top"><div class="nm"><b>Dino Grgić</b><small>Smjena B · 15 smjena</small></div>
+<div class="tot"><div class="k">Ukupno</div><div class="v">180 h</div></div></div>
+<div class="br"><div><span class="k">Dan</span><b>96 h</b>8 smjena</div><div><span class="k">Noć</span><b>84 h</b>7 smjena</div><div><span class="k">Godišnji</span><b>—</b>0 dana</div></div></div><div class="hc"><div class="top"><div class="nm"><b>Duje Tomić</b><small>Smjena D · 16 smjena</small></div>
+<div class="tot"><div class="k">Ukupno</div><div class="v">192 h</div></div></div>
+<div class="br"><div><span class="k">Dan</span><b>96 h</b>8 smjena</div><div><span class="k">Noć</span><b>96 h</b>8 smjena</div><div><span class="k">Godišnji</span><b>—</b>0 dana</div></div></div><div class="hc"><div class="top"><div class="nm"><b>Frane Lozić</b><small>Smjena C · 16 smjena</small></div>
+<div class="tot"><div class="k">Ukupno</div><div class="v">192 h</div></div></div>
+<div class="br"><div><span class="k">Dan</span><b>96 h</b>8 smjena</div><div><span class="k">Noć</span><b>96 h</b>8 smjena</div><div><span class="k">Godišnji</span><b>—</b>0 dana</div></div></div></div>
+</div><nav class="tabs" aria-label="Glavna navigacija"><a class="tab"><span class="pill"><svg class="i" aria-hidden="true"><use href="#i-home"/></svg></span><span class="lbl">Danas</span></a><a class="tab"><span class="pill"><svg class="i" aria-hidden="true"><use href="#i-cal"/></svg></span><span class="lbl">Kalendar</span></a><a class="tab" aria-label="Raspored, 7 neriješenih konflikata"><span class="pill"><svg class="i" aria-hidden="true"><use href="#i-sched"/></svg><span class="bdg" aria-hidden="true">⚠ 7</span></span><span class="lbl">Raspored</span></a><a class="tab"><span class="pill"><svg class="i" aria-hidden="true"><use href="#i-users"/></svg></span><span class="lbl">Ljudi</span></a><a class="tab on" aria-current="page"><span class="pill"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></span><span class="lbl">Više</span><span class="sub">Sati</span></a></nav></div></div>
+ <div class="col"><p class="cap">C · Postavke rotacije · tipovi smjena</p><p class="why">Redak ima čip tipa, vrijeme kao glavni podatak, trajanje i „prelazi ponoć” ispod, te radnju od 44 px s imenom tipa. Povijest rotacije koristi isti oblik retka.</p>
+  <div class="ph full"><div class="sbar"><span class="num">14:20</span><span aria-hidden="true">●●● ▮</span></div><div class="scr">
+<div class="phead" style="margin-bottom:10px"><div><h2 class="ptitle">Postavke rotacije</h2><p class="pdesc">Rotacija vrijedi od odabranog datuma.</p></div></div>
+<div class="steps" role="list"><span class="on" aria-current="step"><b>1</b>Tipovi</span><span><b>2</b>Uzorak</span><span><b>3</b>Pomaci</span><span><b>4</b>Pregled</span></div>
+<div class="card"><div class="ch"><h3 class="ct">Tipovi smjena</h3><span class="badge s">3 tipa smjene</span></div>
+<div class="tr2"><span class="chip s1">Dan</span><div class="mid"><div class="l1">07:00–19:00</div><div class="l2">12 h · radni</div></div><button class="ibtn" aria-label="Uredi tip smjene: Dan"><svg class="i sm" aria-hidden="true"><use href="#i-pen"/></svg></button></div>
+<div class="tr2"><span class="chip s2">Noć</span><div class="mid"><div class="l1">19:00–07:00</div><div class="l2">12 h · radni · <span class="badge o">prelazi ponoć</span></div></div><button class="ibtn" aria-label="Uredi tip smjene: Noć"><svg class="i sm" aria-hidden="true"><use href="#i-pen"/></svg></button></div>
+<div class="tr2"><span class="chip nw">Slobodno</span><div class="mid"><div class="l1 mut" style="font-weight:500">bez vremena</div><div class="l2">neradni</div></div><button class="ibtn" aria-label="Uredi tip smjene: Slobodno"><svg class="i sm" aria-hidden="true"><use href="#i-pen"/></svg></button></div>
+<div class="cb" style="border-top:1px solid var(--bd)"><button class="btn o w"><svg class="i sm" aria-hidden="true"><use href="#i-plus"/></svg>Novi tip smjene</button></div></div>
+<button class="btn p w" style="margin-top:12px">Dalje: uzorak</button>
+<div class="card" style="margin-top:14px"><div class="ch"><h3 class="ct">Povijest rotacije</h3></div>
+<div class="tr2"><span class="av" style="border-radius:10px"><svg class="i sm" aria-hidden="true"><use href="#i-hist"/></svg></span><div class="mid"><div class="l1">od 01.01.2020.</div><div class="l2"><span class="badge o">na snazi</span> Demo Admin · 30.09.2026. u 11:25 · 4 smjene</div></div></div></div>
+</div><nav class="tabs" aria-label="Glavna navigacija"><a class="tab"><span class="pill"><svg class="i" aria-hidden="true"><use href="#i-home"/></svg></span><span class="lbl">Danas</span></a><a class="tab"><span class="pill"><svg class="i" aria-hidden="true"><use href="#i-cal"/></svg></span><span class="lbl">Kalendar</span></a><a class="tab" aria-label="Raspored, 7 neriješenih konflikata"><span class="pill"><svg class="i" aria-hidden="true"><use href="#i-sched"/></svg><span class="bdg" aria-hidden="true">⚠ 7</span></span><span class="lbl">Raspored</span></a><a class="tab"><span class="pill"><svg class="i" aria-hidden="true"><use href="#i-users"/></svg></span><span class="lbl">Ljudi</span></a><a class="tab on" aria-current="page"><span class="pill"><svg class="i" aria-hidden="true"><use href="#i-more"/></svg></span><span class="lbl">Više</span><span class="sub">Rotacija</span></a></nav></div></div>
+</div>
+
+<h2 class="s">2 · Brojke: Syne i DM Sans</h2>
+<div class="numdemo">
+<div class="nd"><div class="lbl">Sada · Syne 800</div>
+<div class="stat"><div><small>Ukupno osoba</small><span class="syne-n">17</span></div><div><small>Administratori</small><span class="syne-n">1</span></div><div><small>Aktivne danas</small><span class="syne-n">17</span></div><div><small>Neaktivne</small><span class="syne-n">0</span></div></div>
+<div class="colx" style="font-family:'Syne';font-weight:700"><span style="font-family:DM Sans;font-weight:500">Ante Bilić</span><span class="r">192 h</span><span style="font-family:DM Sans;font-weight:500">Davor Horvat</span><span class="r">180 h</span><span style="font-family:DM Sans;font-weight:500">Demo Admin</span><span class="r">0 h</span><span style="font-family:DM Sans;font-weight:500">Luka Knežević</span><span class="r">171 h</span><span style="font-family:DM Sans;font-weight:500">Nikola Barišić</span><span class="r">111 h</span></div>
+<p class="hint" style="margin:10px 0 0">U Syneu 800 „1” ima tek naznaku kape, pa „17” čitamo kao „ı7”. „0” je širok i nizak, pa izgleda kao „o”. Znamenke su različitih širina, pa se stupac ne poravnava.</p></div>
+<div class="nd"><div class="lbl">Prijedlog · DM Sans 700, tablične znamenke</div>
+<div class="stat"><div><small>Ukupno osoba</small><span class="dm-n">17</span></div><div><small>Administratori</small><span class="dm-n">1</span></div><div><small>Aktivne danas</small><span class="dm-n">17</span></div><div><small>Neaktivne</small><span class="dm-n">0</span></div></div>
+<div class="colx"><span>Ante Bilić</span><span class="r num" style="font-weight:600">192 h</span><span>Davor Horvat</span><span class="r num" style="font-weight:600">180 h</span><span>Demo Admin</span><span class="r num" style="font-weight:600">0 h</span><span>Luka Knežević</span><span class="r num" style="font-weight:600">171 h</span><span>Nikola Barišić</span><span class="r num" style="font-weight:600">111 h</span></div>
+<p class="hint" style="margin:10px 0 0">Svaka znamenka je iste širine (<code>tabular-nums</code>), „1” ima kapu i nema stopu, a „0” je uži od „O”. Syne ostaje za naslove i riječi.</p></div>
+</div>
+
+<h2 class="s">3 · Pravila</h2>
+<div class="row">
+ <div class="note"><b>Kad tablica postaje popis</b><ul>
+ <li>Prijelom je 640 px, isti kao traka i bočna traka. Jedna komponenta ima dva prikaza i iste podatke.</li>
+ <li>Poredak i filtar ostaju isti pri prijelazu. Poredak se bira u listi Filtri („Poredano: ime ↑”).</li>
+ <li>Kostur redaka ima isti oblik kao redak (UX-DR21).</li></ul></div>
+ <div class="note"><b>Množina u retcima</b><ul>
+ <li>1 smjena · 2 smjene · 7 smjena · 8 smjena · 15 smjena · 22 smjene</li>
+ <li>3 tipa smjene · 1 tip smjene · 5 tipova smjene</li>
+ <li>17 osoba · 1 osoba · 2 osobe · 1 administrator · 2 administratora</li></ul></div>
+ <div class="note"><span class="flag">Odluka</span><b>Treba ljudsku potvrdu</b><ul>
+ <li>DESIGN.md · Typography i StatCard/StatTile kažu da su velike brojke u Syneu. Prijedlog: <b>sve brojke u DM Sansu</b> (600–700, <code>tabular-nums</code>), a Syne samo za naslove i riječi.</li>
+ <li>DESIGN.md · Layout kaže „wide content scrolls inside its own container”. Za Ljude, Sate i Tipove smjena na telefonu to se mijenja u popis. Kalendarska mreža i dalje se pomiče unutar svog okvira.</li></ul></div>
+</div>
+</div>
+<script>
+(function(){
+ var KEY='shift-mock-theme',root=document.documentElement;
+ function apply(v){ if(v==='light'||v==='dark'){root.setAttribute('data-theme',v);} else {root.removeAttribute('data-theme');}
+  document.querySelectorAll('.theme button').forEach(function(b){b.setAttribute('aria-pressed',String(b.dataset.v===(v||'system')));}); }
+ var saved=null; try{saved=localStorage.getItem(KEY);}catch(e){}
+ apply(saved);
+ document.addEventListener('click',function(e){var b=e.target.closest('.theme button'); if(!b)return;
+  var v=b.dataset.v==='system'?null:b.dataset.v; apply(v); try{ if(v)localStorage.setItem(KEY,v); else localStorage.removeItem(KEY);}catch(e){} });
+})();
+</script>
+</body>
+</html>
