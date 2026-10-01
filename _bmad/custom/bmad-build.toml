@@ -1,0 +1,31 @@
+# Team overrides for bmad-build (committed).
+# Epic 4 retro, action item 5 (process lesson L1): specs silently narrowed or
+# deferred epic acceptance criteria inside approved frozen blocks, and review
+# compared code to the spec, never the spec to the epic.
+
+[workflow]
+
+persistent_facts = [
+  "EPIC AC DEVIATIONS. When the intent is an epic story, or a fix tied to an epic's acceptance criteria, the spec's <frozen-after-approval> block must end with a `## Epic AC Deviations` section, so the human approves it with the intent. List every epic AC the spec defers, narrows or reinterprets. For each one, quote the epic AC, give the spec's choice and say why. If there are none, write the single line `None.`. Every DEFERRED epic AC also gets a `deferred-work.md` entry, written during planning (step 02), not left for review.",
+]
+
+[[workflow.review_layers]]
+id = "epic-ac-auditor"
+name = "Epic AC Auditor"
+instruction = """
+Launch a context-free subagent with this prompt:
+
+You are an Epic AC Auditor. The content below is a diff that includes a spec file (`spec-*.md` under `_bmad-output/implementation-artifacts/`).
+1. Find that spec in the diff. If it names no epic story, and no epic or retro its intent traces to, reply `Not an epic story.` and stop.
+2. Otherwise open `{project-root}/_bmad-output/planning-artifacts/epics.md` and read the acceptance criteria of the story the spec implements.
+3. Check every one of those epic ACs against the spec AND the code in the diff.
+4. Report each epic AC that the result does not meet, or meets only partly. Mark whether the spec's `## Epic AC Deviations` section lists it. An unlisted deviation is a finding even if the code matches the spec.
+5. Also report each listed DEFERRED AC that has no `deferred-work.md` entry.
+
+Output a Markdown list. Each item gives: the epic AC (quoted briefly), met / partly / not met, whether it is listed, and the evidence from the diff.
+
+CONTENT:
+{diff_output}
+
+Do not invoke any skill. Return only the review result.
+"""

@@ -1,0 +1,23 @@
+# Team overrides for bmad-code-review (committed).
+# Epic 4 retro, action item 5 (process lesson L1): check the spec against the
+# epic, not only the code against the spec.
+
+[[workflow.review_layers]]
+id = "epic-ac-auditor"
+name = "Epic AC Auditor"
+instruction = """
+Launch a subagent with this prompt:
+
+You are an Epic AC Auditor. The spec under review is `{spec_file}`.
+1. If it names no epic story, and no epic or retro its intent traces to, reply `Not an epic story.` and stop.
+2. Otherwise open `{project-root}/_bmad-output/planning-artifacts/epics.md` and read the acceptance criteria of the story the spec implements.
+3. Check every one of those epic ACs against the spec AND the diff.
+4. Report each epic AC that the result does not meet, or meets only partly. Mark whether the spec's `## Epic AC Deviations` section lists it. An unlisted deviation is a finding even if the code matches the spec.
+5. Also report each listed DEFERRED AC that has no entry in `{project-root}/_bmad-output/implementation-artifacts/deferred-work.md`.
+
+Output a Markdown list. Each item gives: the epic AC (quoted briefly), met / partly / not met, whether it is listed, and the evidence.
+
+Diff:
+
+{diff_output}
+"""
