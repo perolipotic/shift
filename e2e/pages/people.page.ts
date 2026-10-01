@@ -1,6 +1,7 @@
 import { expect, type Locator } from '@playwright/test';
 
-import { fill, hr } from '../utils/i18n.ts';
+import { fullDate } from '../utils/dates.ts';
+import { fill, hr, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 
 const membership = hr.smjene.membership;
@@ -181,15 +182,93 @@ export class PeoplePage extends BasePage {
   }
 
   get leaveFromInput(): Locator {
-    return this.page.getByLabel(leave.from, { exact: true });
+    return this.leaveCard.getByLabel(leave.from, { exact: true });
   }
 
   get leaveToInput(): Locator {
-    return this.page.getByLabel(leave.to, { exact: true });
+    return this.leaveCard.getByLabel(leave.to, { exact: true });
   }
 
   get saveLeaveButton(): Locator {
-    return this.page.getByRole('button', { name: leave.save });
+    return this.leaveCard.getByRole('button', { name: leave.save, exact: true });
+  }
+
+  /** The amend-mode legend naming the record `from`–`to`, both `YYYY-MM-DD`. */
+  leaveAmendGroup(from: string, to: string): Locator {
+    return this.leaveCard.getByRole('group', { name: fill(leave.amendHeading, { from: fullDate(from), to: fullDate(to) }) });
+  }
+
+  /** The form in new-record mode. */
+  get leaveNewGroup(): Locator {
+    return this.leaveCard.getByRole('group', { name: leave.newHeading, exact: true });
+  }
+
+  get amendSaveButton(): Locator {
+    return this.leaveCard.getByRole('button', { name: leave.amendSave, exact: true });
+  }
+
+  get amendCancelButton(): Locator {
+    return this.leaveCard.getByRole('button', { name: leave.amendCancel, exact: true });
+  }
+
+  /** The card's list of live records, a section named by its heading. */
+  get leaveRecordsList(): Locator {
+    return this.leaveCard.getByRole('region', { name: leave.recordsHeading });
+  }
+
+  /** Each live record's row, in the order shown. */
+  get leaveRecordRows(): Locator {
+    return this.leaveRecordsList.getByRole('listitem');
+  }
+
+  /** The row of the record `from`–`to`, both `YYYY-MM-DD`. */
+  leaveRecordRow(from: string, to: string): Locator {
+    return this.leaveRecordRows.filter({ hasText: `${fullDate(from)}–${fullDate(to)}` });
+  }
+
+  /** The record's Izmijeni, named by its range. */
+  amendLeaveButton(from: string, to: string): Locator {
+    return this.leaveRecordsList.getByRole('button', {
+      name: fill(leave.amendName, { from: fullDate(from), to: fullDate(to) }),
+      exact: true,
+    });
+  }
+
+  /** The record's Ukloni, named by its range. */
+  removeLeaveButton(from: string, to: string): Locator {
+    return this.leaveRecordsList.getByRole('button', {
+      name: fill(leave.removeName, { from: fullDate(from), to: fullDate(to) }),
+      exact: true,
+    });
+  }
+
+  /**
+   * The removal's confirmation, named by its prompt: the range and what it
+   * costs, and the part charged to this leave year when that differs.
+   */
+  removeLeaveConfirmOf(from: string, to: string, cost: number, inYear?: number): Locator {
+    const values = { from: fullDate(from), to: fullDate(to), cost: plural(hr.count.days, cost) };
+
+    return this.dialog(
+      inYear === undefined
+        ? fill(leave.removePrompt, values)
+        : fill(leave.removePromptInYear, { ...values, inYear: plural(hr.count.days, inYear) }),
+    );
+  }
+
+  /** The confirmation's confirm. */
+  confirmRemoveLeaveIn(confirm: Locator): Locator {
+    return confirm.getByRole('button', { name: leave.removeConfirm, exact: true });
+  }
+
+  /** The confirmation's cancel. */
+  cancelRemoveLeaveIn(confirm: Locator): Locator {
+    return confirm.getByRole('button', { name: leave.removeCancel, exact: true });
+  }
+
+  /** The alert inside the confirmation that holds `text`: a refused removal. */
+  alertIn(confirm: Locator, text: string): Locator {
+    return confirm.getByRole('alert').filter({ hasText: text });
   }
 
   /** The retry the leave card's unavailable line offers. */

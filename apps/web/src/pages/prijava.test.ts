@@ -196,6 +196,8 @@ const MEMBER_EDIT: readonly string[] = [
   // its hook. Its rules are `LEAVE_SECTION_KEYS`, a key source of its own.
   join(LEAVE_FEATURE, 'hooks', 'use-member-leave.ts'),
   join(LEAVE_FEATURE, 'components', 'member-leave-card.tsx'),
+  // STORY 5.2b: the card's list of live records and its removal confirmation.
+  join(LEAVE_FEATURE, 'components', 'member-leave-records.tsx'),
 ];
 
 /** The teams feature, which holds both team screens' parts. */
@@ -606,7 +608,11 @@ const SCREENS = [
   //
   // TWENTY-SEVEN SINCE STORY 5.1c: the leave card's od and do `<Input>`s, its
   // save `<Button>`, and the retry its unavailable line offers.
-  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 27 },
+  //
+  // THIRTY-TWO SINCE STORY 5.2b: each record row's Izmijeni and Ukloni,
+  // written once inside the map over the records, the form's amend cancel,
+  // and the removal confirmation's cancel and confirm.
+  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 32 },
   // STORY 1.7a. FOUR on the team list: the link back to `Ljudi`, the one name
   // `<Input>`, the add `<Button>`, and ONE row link written once inside the map
   // over the teams — the same count at zero teams as at nine. SIX on one team:
@@ -923,6 +929,29 @@ const IN_FLIGHT_HANDLERS = [
     handler: 'save',
     pending: 'setRecordPending',
     failure: 'setLeaveFailure',
+  },
+  {
+    // STORY 5.2b, THE SIXTH AWAITING HANDLER ON THE EDIT SCREEN: the leave
+    // card's amend. It shares the form's failure — an amend's refusal stands
+    // where a new record's does — but holds its own ref and pending flag.
+    name: "the member edit screen's leave amend",
+    file: MEMBER_EDIT,
+    effect: 'amendLeave(',
+    inFlight: 'amending',
+    handler: 'amend',
+    pending: 'setAmendPending',
+    failure: 'setLeaveFailure',
+  },
+  {
+    // STORY 5.2b, THE SEVENTH: a record's removal, from its confirmation, with
+    // a failure of its own that stands inside the confirmation.
+    name: "the member edit screen's leave removal",
+    file: MEMBER_EDIT,
+    effect: 'removeLeave(',
+    inFlight: 'removing',
+    handler: 'remove',
+    pending: 'setRemovePending',
+    failure: 'setRemoveFailure',
   },
   {
     // STORY 1.7a, the team edit form's second awaiting handler. It shares the
@@ -2176,10 +2205,15 @@ const KEY_SOURCES = [
     // overlap with and without the conflict's dates, denied and failed — and
     // the two lines in place of the figures (unavailable, unscheduled), off
     // `leaveReasonMessageKey`, `leaveRefusalMessageKey` and `leaveBaseMessageKey`.
+    // SIXTEEN SINCE STORY 5.2b: the reason an unchanged amend is not sent,
+    // the amend's and the removal's own denied and failed lines, and the line
+    // for a record already gone.
+    // EIGHTEEN SINCE THE 5.2b REVIEW: the removal prompt's two forms, with
+    // and without the in-year part, off `leaveRemovePromptMessageKey`.
     name: 'the leave card rules',
     file: LEAVE_SECTION_KEYS,
     keys: messageKeyUnions,
-    strings: 10,
+    strings: 18,
   },
   {
     // STORY 3.1: the calendar's one read failure.
@@ -2293,10 +2327,21 @@ const KEY_SOURCES = [
     // plain saved line and the retry — and two fewer, the unavailable line's
     // two literal calls, which now come through `leaveBaseMessageKey` (a
     // preview the domain refuses is a reason, through `leaveReasonMessageKey`).
+    //
+    // SEVENTY-THREE SINCE STORY 5.2b: nineteen more. The records list's
+    // heading and empty line, each row's `count.days`, its two short actions
+    // and their two full names, and the removed line; the removal prompt with
+    // its `count.days`, its cancel, confirm and in-flight label; and the
+    // form's amend legend, save and cancel, and the amended line's two forms
+    // with its over-balance warning.
+    //
+    // SEVENTY-FIVE SINCE THE 5.2b REVIEW: the prompt itself now comes through
+    // `leaveRemovePromptMessageKey` (one fewer), and three more — the prompt's
+    // in-year `count.days`, a row's in-year line and the row's amend marker.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 54,
+    strings: 75,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
@@ -6128,17 +6173,21 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // TWENTY-TWO SINCE STORY 3.6b: the calendar roster form's save and removal.
     // TWENTY-THREE SINCE STORY 5.1c: the member edit screen's fifth, the leave
     // card's save.
-    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(23);
+    // TWENTY-FIVE SINCE STORY 5.2b: its sixth and seventh, the leave card's
+    // amend and a record's removal.
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(25);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
       'the in-flight handler names drifted from the handlers that hold them',
     ).toEqual([
+      'amend/amending',
       'archive/writing',
       'archive/writing',
       'cancelTimes/writing',
       'changeStatus/statusing',
       'changeTeam/teaming',
       'issue/resetting',
+      'remove/removing',
       'remove/writing',
       'remove/writing',
       'removeChange/writing',

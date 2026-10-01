@@ -2,6 +2,7 @@ import {
   MAX_LEAVE_RANGE_DAYS,
   daysBetween,
   leaveBalanceOf,
+  leaveCostOf,
   leavePreviewOf,
   type LeaveBalance,
   type LeaveBalanceInput,
@@ -12,22 +13,27 @@ import {
 
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { calendarTodayOf, memberScheduleInputOf } from '@/features/calendar/utils/month';
-import type { LeaveRecordsState } from '@/features/leave/services/leave-list';
+import type { LeaveRecord, LeaveRecordsState } from '@/features/leave/services/leave-list';
 import {
   LEAVE_DENIED,
   LEAVE_FAILED,
+  LEAVE_GONE,
   LEAVE_OVERLAP,
   isCalendarDate,
-  type LeaveWriteFailure,
+  type LeaveAmendOutcome,
+  type LeaveChangeFailure,
   type LeaveWriteOutcome,
 } from '@/features/leave/services/leave-write';
-import { formatIsoDate } from '@/lib/i18n/format';
+import { RANGE_DASH, formatIsoDate } from '@/lib/i18n/format';
 
 /**
  * The member page's leave card (story 5.1c) as a pure view model, in a `.ts`
  * that renders nothing (AD-15): what the card shows from its four reads, what
  * the entered range would cost, whether a save may be sent, and what each
  * outcome says. The hook only wires these; the node suite executes them.
+ * Story 5.2b adds the member's live records as a list, each with what it
+ * costs, the amend preview that leaves the amended record out, and what an
+ * amend or a removal says.
  *
  * ONE COMPUTATION. Every figure and every day count is `@shift/domain`'s —
  * `leaveBalanceOf` for the three figures, `leavePreviewOf` for the range and
@@ -110,9 +116,71 @@ export type MemberLeaveBase =
       readonly kind: typeof LEAVE_READY;
       /** The organization a record is written to: the calendar snapshot's. */
       readonly organizationId: string;
-      readonly input: LeaveBalanceInput;
+      readonly input: LeaveRecordsInput;
       readonly balance: LeaveBalance;
+      /** The member's live records, soonest first, each with what it costs (story 5.2b). */
+      readonly rows: readonly LeaveRecordRow[];
     };
+
+/** The balance input over the member's live records, each with the id an amend or a removal names. */
+export interface LeaveRecordsInput extends LeaveBalanceInput {
+  readonly records: readonly LeaveRecord[];
+}
+
+/** One live record as the list shows it: the record, its dates as written, and what it costs. */
+export interface LeaveRecordRow {
+  readonly record: LeaveRecord;
+  /** `10.09.2026`, the first date as the card writes it. */
+  readonly from: string;
+  /** `14.09.2026`, the last. */
+  readonly to: string;
+  /** `10.09.2026–14.09.2026`, the two joined by an en dash. */
+  readonly label: string;
+  /** The domain's `leaveCostOf` over the whole range. */
+  readonly costDays: number;
+  /**
+   * The part of that cost charged to the current leave year, when it differs
+   * — a record crossing the leave year's edge or outside it — as 5.1c's
+   * preview states it (`leaveInYearChargeOf`); null when the two agree.
+   */
+  readonly inYearDays: number | null;
+}
+
+/** A range's two dates as the card writes them, `23.09.2026`; an unparsable one as it came. */
+export function leaveRangeValuesOf(range: LeaveRange): { readonly from: string; readonly to: string } {
+  return { from: formatIsoDate(range.from) ?? range.from, to: formatIsoDate(range.to) ?? range.to };
+}
+
+/**
+ * The records as the list's rows, in the order `leaveRecordsOf` gives them —
+ * soonest first — each costed by `leaveCostOf` over the member's schedule,
+ * and its in-year part by `leavePreviewOf` against every other record.
+ * Throws what the domain throws, so a record it will not cost makes the
+ * whole card unavailable.
+ */
+export function leaveRecordRowsOf(input: LeaveRecordsInput): readonly LeaveRecordRow[] {
+  return input.records.map((record) => {
+    const values = leaveRangeValuesOf(record);
+    const range = { from: record.from, to: record.to };
+    const others = input.records.filter((other) => other.id !== record.id);
+
+    return {
+      record,
+      from: values.from,
+      to: values.to,
+      label: `${values.from}${RANGE_DASH}${values.to}`,
+      costDays: leaveCostOf(input.input, record.from, record.to),
+      inYearDays: leaveInYearChargeOf(leavePreviewOf({ ...input, records: others, range })),
+    };
+  });
+}
+
+/** The removal prompt: the range and its cost, and the in-year part when it differs. */
+export function leaveRemovePromptMessageKey(
+  row: LeaveRecordRow,
+): 'ljudi.leaveRecord.removePrompt' | 'ljudi.leaveRecord.removePromptInYear' {
+  return row.inYearDays === null ? 'ljudi.leaveRecord.removePrompt' : 'ljudi.leaveRecord.removePromptInYear';
+}
 
 /** Where the leave year begins, or null while it is not known. */
 function leaveYearStartOf(answer: LeaveOrganizationAnswer): LeaveYearStart | null {
@@ -156,7 +224,7 @@ export function memberLeaveBaseOf(sources: MemberLeaveSources, memberId: string,
 
   if (scheduled === undefined || scheduled.memberships.length === 0) return { kind: LEAVE_UNSCHEDULED };
 
-  const input: LeaveBalanceInput = {
+  const input: LeaveRecordsInput = {
     input: memberScheduleInputOf(snapshot, { ...scheduled, memberId: scheduled.id }),
     allowanceDays: member.leaveAllowanceDays,
     records: recorded,
@@ -165,7 +233,13 @@ export function memberLeaveBaseOf(sources: MemberLeaveSources, memberId: string,
   };
 
   try {
-    return { kind: LEAVE_READY, organizationId: snapshot.organizationId, input, balance: leaveBalanceOf(input) };
+    return {
+      kind: LEAVE_READY,
+      organizationId: snapshot.organizationId,
+      input,
+      balance: leaveBalanceOf(input),
+      rows: leaveRecordRowsOf(input),
+    };
   } catch (cause) {
     console.error(LEAVE_UNAVAILABLE, cause);
 
@@ -190,12 +264,15 @@ export const LEAVE_RANGE_REVERSED = 'reversed';
 export const LEAVE_RANGE_TOO_LONG = 'tooLong';
 /** `@shift/domain` refused to cost the range: it cannot be previewed, so it is not sent. */
 export const LEAVE_RANGE_REFUSED = 'refused';
+/** An amend to the range the record already holds: nothing to change, so it is not sent. */
+export const LEAVE_RANGE_UNCHANGED = 'unchanged';
 
 export type LeaveRangeReason =
   | typeof LEAVE_RANGE_INCOMPLETE
   | typeof LEAVE_RANGE_REVERSED
   | typeof LEAVE_RANGE_TOO_LONG
-  | typeof LEAVE_RANGE_REFUSED;
+  | typeof LEAVE_RANGE_REFUSED
+  | typeof LEAVE_RANGE_UNCHANGED;
 
 /** The od field. */
 export const LEAVE_FROM_FIELD = 'from';
@@ -212,6 +289,12 @@ export const LEAVE_ERROR_ID = 'member-leave-error';
 
 /** The card's heading id, which names its region. */
 export const LEAVE_HEADING_ID = 'member-leave-heading';
+
+/** The records list's heading id, which names its section (story 5.2b). */
+export const LEAVE_RECORDS_HEADING_ID = 'member-leave-records-heading';
+
+/** The removal prompt's id, which names its confirmation (story 5.2b). */
+export const LEAVE_REMOVE_PROMPT_ID = 'member-leave-remove-prompt';
 
 /** The reason's id, which the field it names is described by while that field is marked. */
 export const LEAVE_REASON_ID = 'member-leave-reason';
@@ -230,22 +313,36 @@ export type LeavePreviewState =
 
 /**
  * What the entered `from`–`to` would do, over a ready base: a reason in place
- * of a preview while either date is incomplete, the range is reversed, it is
- * longer than {@link MAX_LEAVE_RANGE_DAYS}, or the domain refuses to cost it;
- * otherwise `leavePreviewOf`'s figures. Only a ready preview may be sent.
+ * of a preview while either date is incomplete, an amend leaves the range as
+ * it was, the range is reversed, it is longer than
+ * {@link MAX_LEAVE_RANGE_DAYS}, or the domain refuses to cost it; otherwise
+ * `leavePreviewOf`'s figures. Only a ready preview may be sent.
+ *
+ * AN AMEND (story 5.2b) previews against every record but the one amended:
+ * its own dates are no overlap, and what it cost now is given back before the
+ * new range is charged.
  */
-export function leavePreviewStateOf(input: LeaveBalanceInput, from: string, to: string): LeavePreviewState {
+export function leavePreviewStateOf(
+  input: LeaveRecordsInput,
+  from: string,
+  to: string,
+  amending: LeaveRecord | null = null,
+): LeavePreviewState {
   if (!isCalendarDate(from)) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_INCOMPLETE, field: LEAVE_FROM_FIELD };
   if (!isCalendarDate(to)) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_INCOMPLETE, field: LEAVE_TO_FIELD };
+  if (amending !== null && from === amending.from && to === amending.to) {
+    return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_UNCHANGED, field: LEAVE_FROM_FIELD };
+  }
   if (to < from) return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_REVERSED, field: LEAVE_TO_FIELD };
   if (daysBetween(from, to) + 1 > MAX_LEAVE_RANGE_DAYS) {
     return { kind: LEAVE_PREVIEW_REASON, reason: LEAVE_RANGE_TOO_LONG, field: LEAVE_TO_FIELD };
   }
 
   const range = { from, to };
+  const records = amending === null ? input.records : input.records.filter((record) => record.id !== amending.id);
 
   try {
-    return { kind: LEAVE_PREVIEW_READY, range, preview: leavePreviewOf({ ...input, range }) };
+    return { kind: LEAVE_PREVIEW_READY, range, preview: leavePreviewOf({ ...input, records, range }) };
   } catch (cause) {
     console.error(LEAVE_RANGE_REFUSED, cause);
 
@@ -260,7 +357,8 @@ export function leaveReasonMessageKey(
   | 'ljudi.leaveRecord.incomplete'
   | 'ljudi.leaveRecord.reversed'
   | 'ljudi.leaveRecord.tooLong'
-  | 'ljudi.leaveRecord.refused' {
+  | 'ljudi.leaveRecord.refused'
+  | 'ljudi.leaveRecord.unchanged' {
   switch (reason) {
     case LEAVE_RANGE_INCOMPLETE:
       return 'ljudi.leaveRecord.incomplete';
@@ -270,6 +368,8 @@ export function leaveReasonMessageKey(
       return 'ljudi.leaveRecord.tooLong';
     case LEAVE_RANGE_REFUSED:
       return 'ljudi.leaveRecord.refused';
+    case LEAVE_RANGE_UNCHANGED:
+      return 'ljudi.leaveRecord.unchanged';
     default: {
       const unhandled: never = reason;
 
@@ -297,6 +397,9 @@ export interface LeaveSaved {
   readonly overBalanceDays: number | null;
 }
 
+/** The saved line with no figure. */
+const PLAIN_SAVED: LeaveSaved = { costDays: null, overBalanceDays: null };
+
 /**
  * The status line of a landed save, from the records the re-read after it
  * answered (`fresh`, null when it did not): the domain's preview of the saved
@@ -306,14 +409,38 @@ export interface LeaveSaved {
  * or the domain refuses them.
  */
 export function leaveSavedOf(input: LeaveBalanceInput, fresh: readonly LeaveRange[] | null, range: LeaveRange): LeaveSaved {
-  const plain = { costDays: null, overBalanceDays: null };
-
-  if (fresh === null) return plain;
+  if (fresh === null) return PLAIN_SAVED;
 
   const others = fresh.filter((record) => record.from !== range.from || record.to !== range.to);
 
-  if (others.length !== fresh.length - 1) return plain;
+  if (others.length !== fresh.length - 1) return PLAIN_SAVED;
 
+  return savedAgainst(input, others, range);
+}
+
+/**
+ * The status line of a landed amend (story 5.2b): the replacement record,
+ * found in the fresh records by the id the amend returned, previewed against
+ * every other fresh record — so its cost and any over-balance warning are the
+ * database's. A plain line when the re-read did not answer, holds no record
+ * of that id, or the domain refuses them.
+ */
+export function leaveAmendedOf(input: LeaveBalanceInput, fresh: readonly LeaveRecord[] | null, id: string): LeaveSaved {
+  if (fresh === null) return PLAIN_SAVED;
+
+  const replacement = fresh.find((record) => record.id === id);
+
+  if (replacement === undefined) return PLAIN_SAVED;
+
+  return savedAgainst(
+    input,
+    fresh.filter((record) => record.id !== id),
+    { from: replacement.from, to: replacement.to },
+  );
+}
+
+/** What `range` cost against `others`, and how far over the balance it went; plain when the domain refuses. */
+function savedAgainst(input: LeaveBalanceInput, others: readonly LeaveRange[], range: LeaveRange): LeaveSaved {
   try {
     const preview = leavePreviewOf({ ...input, records: others, range });
 
@@ -321,38 +448,67 @@ export function leaveSavedOf(input: LeaveBalanceInput, fresh: readonly LeaveRang
   } catch (cause) {
     console.error(LEAVE_UNAVAILABLE, cause);
 
-    return plain;
+    return PLAIN_SAVED;
   }
 }
 
-/** Why a save did not land, and the conflicting record when an overlap named one. */
+/** A new record saved through the form. */
+export const LEAVE_RECORD_ACTION = 'record';
+/** A record amended through the form (story 5.2b). */
+export const LEAVE_AMEND_ACTION = 'amend';
+/** A record removed through its confirmation (story 5.2b). */
+export const LEAVE_REMOVE_ACTION = 'remove';
+
+export type LeaveAction = typeof LEAVE_RECORD_ACTION | typeof LEAVE_AMEND_ACTION | typeof LEAVE_REMOVE_ACTION;
+
+/**
+ * Why a write did not land, which write it was, and the conflicting record
+ * when an overlap named one. Only an amend or a removal can find its record
+ * gone.
+ */
 export interface LeaveFailure {
-  readonly code: LeaveWriteFailure;
+  readonly code: LeaveChangeFailure;
+  readonly action: LeaveAction;
   readonly conflict: LeaveRange | null;
 }
 
 /** The conflicting record an outcome names: an overlap's, when it could be read. */
-export function leaveConflictOf(outcome: LeaveWriteOutcome): LeaveRange | null {
+export function leaveConflictOf(outcome: LeaveWriteOutcome | LeaveAmendOutcome): LeaveRange | null {
   return !outcome.ok && outcome.code === LEAVE_OVERLAP ? outcome.conflict : null;
 }
 
-/** The alert a failure renders as. Exhaustive. */
+/** The alert a failure renders as: denied and failed in the words of the write that failed. Exhaustive. */
 export function leaveRefusalMessageKey(
   failure: LeaveFailure,
 ):
   | 'ljudi.leaveRecord.overlap'
   | 'ljudi.leaveRecord.overlapConflict'
   | 'ljudi.leaveRecord.denied'
-  | 'ljudi.leaveRecord.failed' {
+  | 'ljudi.leaveRecord.failed'
+  | 'ljudi.leaveRecord.amendDenied'
+  | 'ljudi.leaveRecord.amendFailed'
+  | 'ljudi.leaveRecord.removeDenied'
+  | 'ljudi.leaveRecord.removeFailed'
+  | 'ljudi.leaveRecord.gone' {
   const code = failure.code;
 
   switch (code) {
     case LEAVE_OVERLAP:
       return failure.conflict === null ? 'ljudi.leaveRecord.overlap' : 'ljudi.leaveRecord.overlapConflict';
     case LEAVE_DENIED:
-      return 'ljudi.leaveRecord.denied';
+      return failure.action === LEAVE_AMEND_ACTION
+        ? 'ljudi.leaveRecord.amendDenied'
+        : failure.action === LEAVE_REMOVE_ACTION
+          ? 'ljudi.leaveRecord.removeDenied'
+          : 'ljudi.leaveRecord.denied';
     case LEAVE_FAILED:
-      return 'ljudi.leaveRecord.failed';
+      return failure.action === LEAVE_AMEND_ACTION
+        ? 'ljudi.leaveRecord.amendFailed'
+        : failure.action === LEAVE_REMOVE_ACTION
+          ? 'ljudi.leaveRecord.removeFailed'
+          : 'ljudi.leaveRecord.failed';
+    case LEAVE_GONE:
+      return 'ljudi.leaveRecord.gone';
     default: {
       const unhandled: never = code;
 
@@ -370,7 +526,36 @@ export function leaveRefusalValuesOf(failure: LeaveFailure): { readonly from: st
 
   if (conflict === null) return undefined;
 
-  return { from: formatIsoDate(conflict.from) ?? conflict.from, to: formatIsoDate(conflict.to) ?? conflict.to };
+  return leaveRangeValuesOf(conflict);
+}
+
+/**
+ * The failure the form shows: the record's or the amend's, but never that
+ * the amended record is gone — amend mode has closed by then, and the list
+ * says so, beside the records it refreshed.
+ */
+export function leaveFormFailureOf(failure: LeaveFailure | null): LeaveFailure | null {
+  return failure?.code === LEAVE_GONE ? null : failure;
+}
+
+/**
+ * The refusal the list shows (story 5.2b): an amend or a removal that found
+ * its record gone, once its form mode or its confirmation has closed. Any
+ * other removal refusal stays inside the open confirmation.
+ */
+export function leaveListFailureOf(
+  formFailure: LeaveFailure | null,
+  removeFailure: LeaveFailure | null,
+  confirming: boolean,
+): LeaveFailure | null {
+  if (!confirming && removeFailure?.code === LEAVE_GONE) return removeFailure;
+
+  return formFailure?.code === LEAVE_GONE ? formFailure : null;
+}
+
+/** The refusal shown inside the open removal confirmation: any but gone, which closes it. */
+export function leaveConfirmFailureOf(removeFailure: LeaveFailure | null): LeaveFailure | null {
+  return removeFailure?.code === LEAVE_GONE ? null : removeFailure;
 }
 
 /** Whether the preview's overlap note shows: not while an overlap alert already says it. */
