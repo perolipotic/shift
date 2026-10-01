@@ -2106,6 +2106,8 @@ const KEY_SOURCES = [
     // two labels come through `hoursExportMessageKey`, and the sheet's
     // headings and names through `@/features/hours/services/hours-export`,
     // a key source.
+    // The empty leave mark comes through `leaveShownOf` in
+    // `@/features/hours/services/my-hours`, a key source.
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
@@ -2113,10 +2115,12 @@ const KEY_SOURCES = [
   },
   {
     // STORY 4.1b: the hours' one failure, a read or a domain refusal alike.
+    // TWO SINCE THE EMPTY LEAVE FIX (Epic 4 retro, R2): the empty figure `—`
+    // a leave of 0 reads, off `leaveMessageKey`.
     name: 'the hours rules',
     file: HOURS_KEYS,
-    keys: messageKeyUnion,
-    strings: 1,
+    keys: messageKeyUnions,
+    strings: 2,
   },
   {
     // STORY 4.2: why an admin's table is empty — nobody matches the filter,

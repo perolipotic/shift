@@ -22,7 +22,8 @@ import { HoursPage } from '../../pages/hours.page.ts';
  * Slobodno]`, 12 h each working step), under the run's rotation hold, and the
  * member on that team reads a non-zero total equal to the seeded shifts left
  * in the month times 12 h, with the same count, each band's own hours and
- * shifts, band hours summing to the total, and no untimed note. A bad
+ * shifts, band hours summing to the total, an empty (`—`) leave, and no
+ * untimed note. A bad
  * `mjesec` falls back to the current month, and the screen does not scroll
  * sideways at 390 px. Story 4.2: the admin reads a table of every member,
  * whose row for that member equals what the member reads; it filters by team
@@ -31,7 +32,7 @@ import { HoursPage } from '../../pages/hours.page.ts';
  * the page sideways at 390 px. Story 4.3: sorted, then filtered, the admin
  * exports the month, and the downloaded `.xlsx` — unzipped and read back —
  * carries the table's headings, rows, order and figures, every figure a
- * number cell; a filter that leaves no row closes the export; a writer that
+ * number cell and an empty leave an empty cell; a filter that leaves no row closes the export; a writer that
  * cannot load shows the failure and leaves the action usable; a member has
  * no export.
  */
@@ -119,7 +120,7 @@ function exportedMinutes(cell: XlsxCell | null | undefined): number | null {
  * Exports what the table shows and holds the file to it (story 4.3): its
  * name, the sheet's, the headings, and every row in order — text as shown,
  * the shift count a number, every hour figure a `[h]:mm` duration equal to
- * the screen's minutes. Answers each row's total, in minutes, in file order.
+ * the screen's minutes, and an empty figure (`—`) an absent cell. Answers each row's total, in minutes, in file order.
  */
 async function expectExportIsTable(hoursPage: HoursPage, fileName: string): Promise<number[]> {
   await expect(hoursPage.exportButton).toBeEnabled();
@@ -133,8 +134,16 @@ async function expectExportIsTable(hoursPage: HoursPage, fileName: string): Prom
   const [header, ...body] = workbook.rows;
   expect(header?.map((cell) => (cell?.type === 'text' ? cell.value : null))).toEqual(headings);
   expect(body).toHaveLength(shown.length);
-  for (const [index, cells] of body.entries()) {
+  for (const [index, written] of body.entries()) {
     const texts = shown[index] ?? [];
+    // The writer may leave out an empty trailing cell. Only the leave, the
+    // last column, may be empty, and only where the screen shows `—`: then,
+    // and only then, the row is one short, and that one cell is padded.
+    const leaveEmpty = headings.at(-1) === organization.leave && texts[headings.length - 1] === sati.noFigure;
+    expect(written.length, `cells of row ${String(index)}`).toBe(
+      leaveEmpty && written.length === headings.length - 1 ? headings.length - 1 : headings.length,
+    );
+    const cells = written.length === headings.length ? written : [...written, null];
     expect(cells).toHaveLength(headings.length);
     for (const [column, label] of headings.entries()) {
       const cell = cells[column];
@@ -147,8 +156,11 @@ async function expectExportIsTable(hoursPage: HoursPage, fileName: string): Prom
           value: Number(/^\d+/.exec(text)?.[0]),
           format: null,
         });
+      } else if (label === organization.leave && text === sati.noFigure) {
+        // An empty figure (a leave of 0): no cell, never a 0:00.
+        expect(cell ?? null, `${label} of row ${String(index)} is empty`).toBeNull();
       } else {
-        // A band, the total or the leave: a duration, read back as the screen's minutes.
+        // A band, the total or a leave: a duration, read back as the screen's minutes.
         expect(cell?.type, `${label} of row ${String(index)} is a number`).toBe('number');
         expect(cell?.type === 'number' ? cell.format : null).toBe('[h]:mm');
         expect(exportedMinutes(cell), `${label} of row ${String(index)}`).toBe(minutesOfFigure(text));
@@ -221,7 +233,9 @@ test.describe('as a member', () => {
     expect(minutes, 'a band row reads no figure').not.toContain(null);
     expect(minutes.reduce<number>((sum, value) => sum + (value ?? 0), 0)).toBe(shifts * 12 * 60);
 
-    await expect(hoursPage.figureIn(hoursPage.leaveRow, hoursOf(0))).toBeVisible();
+    // No leave exists before Epic 5: the figure reads empty, never `0 h`.
+    await expect(hoursPage.figureIn(hoursPage.leaveRow, sati.noFigure)).toBeVisible();
+    await expect(hoursPage.figureIn(hoursPage.leaveRow, hoursOf(0))).toHaveCount(0);
     // Every seeded shift has times, so no note says otherwise.
     await expect(hoursPage.untimedNote).toHaveCount(0);
     await expect(hoursPage.currentButton).toBeDisabled();
@@ -306,7 +320,7 @@ test.describe('as an admin', () => {
     await expect(await hoursPage.cellIn(row, organization.total)).toHaveText(memberTotal);
     await expect(await hoursPage.cellIn(row, organization.shifts)).toHaveText(memberShifts);
     await expect(await hoursPage.cellIn(row, organization.team)).toHaveText(fixture.team.name);
-    await expect(await hoursPage.cellIn(row, organization.leave)).toHaveText(hoursOf(0));
+    await expect(await hoursPage.cellIn(row, organization.leave)).toHaveText(sati.noFigure);
     // ONE COLUMN PER BAND, the member's bands exactly, each cell the member's figures.
     await expect(hoursPage.columnHeaders).toHaveText([
       organization.member,

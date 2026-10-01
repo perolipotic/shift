@@ -1,4 +1,5 @@
 import type { OrganizationHoursRow, OrganizationHoursView } from '@/features/hours/services/organization-hours';
+import { leaveIsEmpty } from '@/features/hours/services/my-hours';
 import { t } from '@/lib/i18n';
 import { formatIsoMonthName } from '@/lib/i18n/format';
 
@@ -25,7 +26,9 @@ export type HoursExportCell =
   /** A duration: `minutes / 1440`, a fraction of a day. */
   | { readonly kind: 'hours'; readonly value: number }
   /** A count of shifts. */
-  | { readonly kind: 'count'; readonly value: number };
+  | { readonly kind: 'count'; readonly value: number }
+  /** No figure: a leave of 0, which the screen draws `—` and the file leaves blank. */
+  | { readonly kind: 'empty' };
 
 /** The sheet, ready for a writer: one header row, then one row per table row. */
 export interface HoursExport {
@@ -101,7 +104,7 @@ function cellsOf(row: OrganizationHoursRow, bandIds: readonly string[]): readonl
     { kind: 'count', value: row.shiftCount },
     ...bands,
     hours(row.hours.totalMinutes),
-    hours(row.hours.leaveMinutes),
+    leaveIsEmpty(row.hours.leaveMinutes) ? { kind: 'empty' } : hours(row.hours.leaveMinutes),
   ];
 }
 

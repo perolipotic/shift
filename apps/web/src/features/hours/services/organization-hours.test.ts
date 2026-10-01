@@ -185,7 +185,7 @@ describe('the rows', () => {
       expect(row.bands.map((band) => [band.bandId, minutesOf(band.hours), band.shiftCount])).toEqual(
         hours.bands.map((band) => [band.bandId, band.minutes, band.shiftCount]),
       );
-      expect(shown(row.leave)).toBe('0 h');
+      expect(row.leave).toBeNull();
     }
 
     const own = myHoursOf(current, { mjesec: MONTH }, TODAY);

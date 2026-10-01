@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 
 import { StatTile, StatTileLabel, StatTileValue } from '@/components/ui/stat-tile';
-import { HOURS_BANDS_HEADING_ID, type MyHoursView } from '@/features/hours/services/my-hours';
+import { HOURS_BANDS_HEADING_ID, leaveShownOf, type MyHoursView } from '@/features/hours/services/my-hours';
 import { t } from '@/lib/i18n';
 
 /**
@@ -12,6 +12,8 @@ import { t } from '@/lib/i18n';
  * `@/features/hours/services/my-hours`'s, in tabular numerals.
  */
 export function HoursSummary({ view }: { readonly view: MyHoursView }): ReactNode {
+  const leave = leaveShownOf(view.leave);
+
   return (
     <div className="flex min-w-0 flex-col gap-4 px-4 pb-4">
       <div className="grid min-w-0 grid-cols-1 gap-3 min-[360px]:grid-cols-2">
@@ -50,7 +52,7 @@ export function HoursSummary({ view }: { readonly view: MyHoursView }): ReactNod
       )}
       <div className="flex min-h-11 min-w-0 items-center justify-between gap-3 border-t border-border pt-2">
         <span className="min-w-0 break-words font-medium">{t('sati.leave')}</span>
-        <span className="shrink-0 font-semibold tabular-nums">{t(view.leave.key, view.leave.values)}</span>
+        <span className="shrink-0 font-semibold tabular-nums">{t(leave.key, leave.values)}</span>
       </div>
       {view.untimedShiftCount === null ? null : (
         <p className="text-sm text-muted-foreground">{t('sati.untimed', { count: view.untimedShiftCount })}</p>

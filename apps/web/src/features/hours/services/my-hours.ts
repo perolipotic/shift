@@ -197,6 +197,36 @@ export function figureOf(minutes: number): HoursFigure {
   return { key: durationMessageKey(minutes), values: durationValuesOf(minutes) };
 }
 
+/**
+ * THE ONE RULE OF AN EMPTY LEAVE: zero means empty — an absence, never a
+ * claimed `0 h` or `0:00`. The screen (`leaveFigureOf`) and the file
+ * (`./hours-export`) both decide by it, from the domain's minutes.
+ */
+export function leaveIsEmpty(minutes: number): boolean {
+  return minutes === 0;
+}
+
+/** Leave as a figure, or `null` when it is empty ({@link leaveIsEmpty}). */
+function leaveFigureOf(minutes: number): HoursFigure | null {
+  return leaveIsEmpty(minutes) ? null : figureOf(minutes);
+}
+
+/** The key a leave reads through: its duration's, or the empty mark `—` for none. */
+export function leaveMessageKey(leave: HoursFigure | null): ReturnType<typeof durationMessageKey> | 'sati.noFigure' {
+  return leave === null ? 'sati.noFigure' : leave.key;
+}
+
+/** A leave as `t()` renders it: the empty mark takes no values. */
+export interface LeaveShown {
+  readonly key: ReturnType<typeof leaveMessageKey>;
+  readonly values: Partial<DurationValues>;
+}
+
+/** The leave as Sati and the table render it: `—` for none, else its duration. */
+export function leaveShownOf(leave: HoursFigure | null): LeaveShown {
+  return { key: leaveMessageKey(leave), values: leave?.values ?? {} };
+}
+
 /** One band's row: its name as stored, its hours, and the shifts overlapping it. */
 export interface HoursBandRow {
   readonly bandId: string;
@@ -213,8 +243,13 @@ export interface MyHoursView {
   readonly shiftCount: number;
   /** Every band, in start order, those with 0 h included; none with no bands. */
   readonly bands: readonly HoursBandRow[];
-  /** Always `0 h` until leave records exist (Epic 5); never in a band or the total. */
-  readonly leave: HoursFigure;
+  /**
+   * The month's leave, or `null` when it is 0 — drawn empty (`—`), an absence
+   * rather than a claimed `0 h`. Never in a band or the total. Before Epic 5
+   * brings leave records it is always `null`; a positive leave fills it with
+   * no further change.
+   */
+  readonly leave: HoursFigure | null;
   /**
    * Working shifts with no times on their date — counted as shifts, never in
    * hours — or `null` when there are none, so the note is not shown.
@@ -246,7 +281,7 @@ export function myHoursViewOf(snapshot: CalendarSnapshot, header: MonthHeader, h
 
       return { bandId: band.bandId, name, hours: figureOf(band.minutes), shiftCount: band.shiftCount };
     }),
-    leave: figureOf(hours.leaveMinutes),
+    leave: leaveFigureOf(hours.leaveMinutes),
     untimedShiftCount: hours.untimedShiftCount > 0 ? hours.untimedShiftCount : null,
   };
 }

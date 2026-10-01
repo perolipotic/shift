@@ -1056,6 +1056,9 @@ const SANCTIONED_SCREEN_KEYS = [
   'sati.shifts',
   'sati.bands',
   'sati.leave',
+  // The mark of an empty figure: a member's leave of 0 reads as an absence,
+  // never as `0 h` (Epic 4 retro, R2).
+  'sati.noFigure',
   'sati.error.unavailable',
   // STORY 4.2: an admin's organization table on *Sati* — its caption, its
   // column headings, its two filters with their "all" options, the mark of a

@@ -81,8 +81,8 @@ export interface OrganizationHoursRow {
   /** One cell per band column, in the same order: its hours and its shifts. */
   readonly bands: readonly HoursBandRow[];
   readonly total: HoursFigure;
-  /** Always `0 h` until leave records exist (Epic 5). */
-  readonly leave: HoursFigure;
+  /** The month's leave, or `null` when it is 0 — drawn `—` (`MyHoursView.leave`). */
+  readonly leave: HoursFigure | null;
   /** Working shifts with no times, counted as shifts and never in hours. */
   readonly untimedShiftCount: number;
   /** Where the name leads: `/kalendar?prikaz=sve&osoba=<id>&mjesec=<month>`. */
