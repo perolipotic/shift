@@ -3,15 +3,33 @@ import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import {
+  CANDIDATES_FREE,
+  CANDIDATES_ON_LEAVE,
+  CANDIDATES_WORKING,
+} from '@/features/calendar/utils/replacement-candidates';
+import {
+  NO_CANDIDATE,
   NO_OPTION,
   OPTION_ACCEPT_UNCOVERED,
+  OPTION_REPLACE_MEMBER,
+  RESOLUTION_OPTIONS,
   RESOLUTION_LOADING,
   RESOLUTION_MISSING,
   RESOLUTION_READY,
   RESOLUTION_SAVED_STATE,
   RESOLUTION_UNAVAILABLE,
+  candidateGroupMessageKey,
+  candidateIdOf,
   coverageMessageKey,
   coworkersMessageKey,
+  hasCandidates,
+  SAVE_FOCUS_CANDIDATES,
+  SAVE_FOCUS_CHOICE,
+  SAVE_FOCUS_REPLACE,
+  readyToSave,
+  replacedSavedOf,
+  saveFocusOf,
+  replacementOf,
   leaveHoursMessageKey,
   resolutionOptionOf,
   refetchingAfterFailure,
@@ -36,6 +54,7 @@ import {
   VIEWER_NAME,
   calendarMemberRow,
   calendarOrganizationRow,
+  calendarRosterOverrideRow,
   calendarTableOf,
   memberMembershipRow,
   membersAnswerOf,
@@ -74,7 +93,20 @@ function teamOf(rows: FixtureRows, index: number): string {
 
 const A = teamOf(PILOT, 0);
 
-async function snapshotOf(usesFireRanks = false, rows: FixtureRows = PILOT): Promise<CalendarSnapshot> {
+/** Dino on Smjena C, which is off on the 10th; Eva on Smjena B, which works Noć that day. */
+const DINO = '00000000-0000-4000-8000-0000000000d4';
+const EVA = '00000000-0000-4000-8000-0000000000d5';
+
+async function snapshotOf(
+  usesFireRanks = false,
+  rows: FixtureRows = PILOT,
+  others = false,
+  rosterOverrides: readonly Row[] = [],
+): Promise<CalendarSnapshot> {
+  const extraVersions = others
+    ? [memberMembershipRow(DINO, teamOf(rows, 2), SEEDED), memberMembershipRow(EVA, teamOf(rows, 1), SEEDED)]
+    : [];
+  const extraMembers = others ? [calendarMemberRow(DINO, 'Dino Grgić'), calendarMemberRow(EVA, 'Eva Šarić')] : [];
   const source = calendarTableOf(
     {
       data: [
@@ -86,6 +118,7 @@ async function snapshotOf(usesFireRanks = false, rows: FixtureRows = PILOT): Pro
             memberMembershipRow(ANTE, A, SEEDED),
             memberMembershipRow(FRANE, A, SEEDED),
             memberMembershipRow(KARLO, A, SEEDED),
+            ...extraVersions,
           ],
         }),
       ],
@@ -97,9 +130,10 @@ async function snapshotOf(usesFireRanks = false, rows: FixtureRows = PILOT): Pro
       calendarMemberRow(ANTE, 'Ante Bilić'),
       calendarMemberRow(FRANE, 'Frane Lozić'),
       calendarMemberRow(KARLO, 'Karlo Jelić'),
+      ...extraMembers,
     ]),
     overridesAnswerOf(),
-    rosterOverridesAnswerOf(),
+    rosterOverridesAnswerOf(rosterOverrides),
   );
   const outcome = await readCalendar(source, source, viewerSession());
 
@@ -367,15 +401,42 @@ describe('the reads', () => {
 });
 
 describe('the choice', () => {
-  it('starts with nothing chosen, and admits the one outcome alone', () => {
+  it('starts with nothing chosen, and admits the two outcomes in their fixed order alone', () => {
+    expect(RESOLUTION_OPTIONS).toEqual([OPTION_ACCEPT_UNCOVERED, OPTION_REPLACE_MEMBER]);
     expect(resolutionOptionOf(NO_OPTION)).toBeNull();
     expect(resolutionOptionOf(OPTION_ACCEPT_UNCOVERED)).toBe(OPTION_ACCEPT_UNCOVERED);
-    expect(resolutionOptionOf('replace-member')).toBeNull();
+    expect(resolutionOptionOf(OPTION_REPLACE_MEMBER)).toBe(OPTION_REPLACE_MEMBER);
+    expect(resolutionOptionOf('amend-leave')).toBeNull();
   });
 
   it('says why Spremi waits, and then what saving records', () => {
     expect(t(saveHintMessageKey(null))).toBe('Odaberi odluku.');
     expect(t(saveHintMessageKey(OPTION_ACCEPT_UNCOVERED))).toBe('Odluka se bilježi s tvojim imenom i vremenom.');
+  });
+
+  it('No pick: the second card with nobody chosen waits, and says who is missing', () => {
+    expect(t(saveHintMessageKey(OPTION_REPLACE_MEMBER, null))).toBe('Odaberi tko odrađuje smjenu.');
+    expect(readyToSave(OPTION_REPLACE_MEMBER, null)).toBe(false);
+    expect(readyToSave(null, null)).toBe(false);
+    expect(readyToSave(OPTION_REPLACE_MEMBER, DINO)).toBe(true);
+    expect(readyToSave(OPTION_ACCEPT_UNCOVERED, null)).toBe(true);
+    expect(t(saveHintMessageKey(OPTION_REPLACE_MEMBER, DINO))).toBe('Odluka se bilježi s tvojim imenom i vremenom.');
+    expect(candidateIdOf(NO_CANDIDATE)).toBeNull();
+    expect(candidateIdOf(DINO)).toBe(DINO);
+  });
+
+  it('No candidates: the second card says to choose another outcome, and Spremi sends focus back to that card', () => {
+    expect(saveHintMessageKey(OPTION_REPLACE_MEMBER, null, false)).toBe('raspored.resolution.hintNoCandidates');
+    expect(t(saveHintMessageKey(OPTION_REPLACE_MEMBER, null, false))).toBe(
+      'Nitko ne može preuzeti ovu smjenu. Odaberi drugu odluku.',
+    );
+    // The first card does not care whether anybody could replace.
+    expect(saveHintMessageKey(OPTION_ACCEPT_UNCOVERED, null, false)).toBe('raspored.resolution.hintRecorded');
+    expect(saveFocusOf(OPTION_REPLACE_MEMBER, null, false)).toBe(SAVE_FOCUS_REPLACE);
+    expect(saveFocusOf(OPTION_REPLACE_MEMBER, null, true)).toBe(SAVE_FOCUS_CANDIDATES);
+    expect(saveFocusOf(null, null, true)).toBe(SAVE_FOCUS_CHOICE);
+    expect(saveFocusOf(OPTION_REPLACE_MEMBER, DINO, true)).toBeNull();
+    expect(saveFocusOf(OPTION_ACCEPT_UNCOVERED, null, false)).toBeNull();
   });
 });
 
@@ -496,5 +557,89 @@ describe('the patch round', () => {
     const view = viewOf(resolutionScreenOf(sourcesOf(pilot), paramsOn('2026-09-10'), new Date('2027-01-01T08:00:00Z')));
 
     expect(view.balanceDays).toBe(16);
+  });
+});
+
+describe('replacing the absent member (story 5.4c)', () => {
+  let others: CalendarSnapshot;
+
+  beforeAll(async () => {
+    others = await snapshotOf(false, PILOT, true);
+  });
+
+  it('Groups: offers Dino as free and Eva as working that day, never the team itself', () => {
+    const view = viewOf(resolutionScreenOf(sourcesOf(others), paramsOn('2026-09-10'), NOW));
+
+    expect(view.candidates.map((group) => [group.kind, group.candidates.map((one) => one.name)])).toEqual([
+      [CANDIDATES_FREE, ['Dino Grgić']],
+      [CANDIDATES_WORKING, ['Eva Šarić']],
+      [CANDIDATES_ON_LEAVE, []],
+    ]);
+    expect(hasCandidates(view)).toBe(true);
+    expect(hasCandidates(viewOf(resolutionScreenOf(sourcesOf(pilot), paramsOn('2026-09-10'), NOW)))).toBe(false);
+    expect(t(candidateGroupMessageKey(CANDIDATES_FREE))).toBe('slobodan');
+    expect(t(candidateGroupMessageKey(CANDIDATES_WORKING))).toBe('radi taj dan · 24 h bez pauze');
+    expect(t(candidateGroupMessageKey(CANDIDATES_ON_LEAVE))).toBe('na godišnjem taj dan');
+  });
+
+  it('Leave pick: offers a member on leave that date, in their own group', () => {
+    const view = viewOf(
+      resolutionScreenOf(sourcesOf(others, [WORKED, rowOf('record-eva', '2026-09-10', '2026-09-11', EVA)]), paramsOn('2026-09-10'), NOW),
+    );
+
+    expect(view.candidates[2]?.candidates.map((one) => one.name)).toEqual(['Eva Šarić']);
+    expect(view.candidates[1]?.candidates).toEqual([]);
+  });
+
+  it('Strip: "4 od 4 člana · Dino Grgić", "12 h kao godišnji" and "16 dana preostalo · bez promjene"', () => {
+    const view = viewOf(resolutionScreenOf(sourcesOf(others), paramsOn('2026-09-10'), NOW));
+    const dino = replacementOf(view, DINO);
+
+    expect(dino?.name).toBe('Dino Grgić');
+    expect(
+      `${t(coverageMessageKey(), { covered: view.replaceCovered, total: view.total })} ${t('raspored.resolution.replacementShown', { name: dino!.name })}`,
+    ).toBe('4 od 4 člana · Dino Grgić');
+    expect(t(leaveHoursMessageKey(view.leaveHours), { hours: t(view.leaveHours!.key, view.leaveHours!.values) })).toBe(
+      '12 h kao godišnji',
+    );
+    expect(`${t('raspored.resolution.balance', { count: view.balanceDays })} · ${t('raspored.resolution.balanceUnchanged')}`).toBe(
+      '16 dana preostalo · bez promjene',
+    );
+    expect(replacementOf(view, 'nobody')).toBeNull();
+    expect(replacementOf(view, null)).toBeNull();
+  });
+
+  it('Leave pick: Eva put on the shift while on leave has her own new conflict in the queue, and the replaced one is resolved', async () => {
+    const replaced = await snapshotOf(false, PILOT, true, [calendarRosterOverrideRow('ro-eva', A, '2026-09-10', null, EVA)]);
+    const leave = [WORKED, rowOf('record-eva', '2026-09-10', '2026-09-11', EVA)];
+    const eva = viewOf(resolutionScreenOf(sourcesOf(replaced, leave, [resolutionOf(VIEWER_MEMBER, '2026-09-10', A, 'replace_member')]), paramsOn('2026-09-10', EVA), NOW));
+
+    expect(eva.memberName).toBe('Eva Šarić');
+    expect(eva.teamName).toBe('Smjena A');
+    // The viewer's three, less the replaced one, plus Eva's on A — and Eva's own team's Noć that day.
+    expect(eva.count).toBe(4);
+  });
+
+  it('generates the reason through t(), with no field for it', () => {
+    expect(t('raspored.resolution.replaceReason', { member: VIEWER_NAME })).toBe(`Zamjena za ${VIEWER_NAME} (godišnji)`);
+  });
+
+  it('names the replacement on the queue\'s status line, and reads it back from router state', () => {
+    const view = viewOf(resolutionScreenOf(sourcesOf(others), paramsOn('2026-09-10'), NOW));
+    const saved = replacedSavedOf(view.saved, 'Dino Grgić');
+
+    expect(saved.kind).toBe('replace_member');
+    expect(resolutionSavedOf(withResolutionSaved({}, saved))).toEqual(saved);
+    expect(resolutionSavedMessageKey(saved.kind)).toBe('raspored.savedReplace');
+    expect(
+      t(resolutionSavedMessageKey(saved.kind), {
+        type: saved.shiftTypeName,
+        team: saved.teamName,
+        date: saved.dateShown,
+        member: saved.memberName,
+        replacement: 'Dino Grgić',
+      }),
+    ).toBe(`Odluka je spremljena: Dan · Smjena A · četvrtak 10.09.2026 · ${VIEWER_NAME}, zamjena: Dino Grgić.`);
+    expect(resolutionSavedOf({ resolutionSaved: { ...saved, replacementName: 3 } })).toBeNull();
   });
 });

@@ -1185,6 +1185,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
               'remove_leave_record',
               'remove_roster_override',
               'remove_shift_type_override',
+              'replace_conflict_member',
               'rotation_assignment_latest_version',
               'rotation_assignment_on',
               'rotation_assignments_in_view',
@@ -1250,6 +1251,10 @@ describe('the access-control layer is present, so nothing below passes vacuously
         // STORY 3.5b: the one function that writes — an active admin's
         // attributed soft-remove of a live override.
         'remove_shift_type_override',
+        // STORY 5.4c: an active admin's replacement — the override that puts
+        // someone on the absent member's shift and the resolution linked to
+        // it, in one transaction.
+        'replace_conflict_member',
         // STORY 2.3a: the three readers the rotation policies call.
         'rotation_assignment_latest_version',
         'rotation_assignment_on',
@@ -17783,7 +17788,9 @@ describe('a conflict resolution is recorded by an active admin alone, one live p
           member: self.id,
           date: '2042-09-12',
           team: otherTeam,
-          kind: 'replace_member',
+          // Not `replace_member`: since story 5.4c that kind is written only
+          // through 0032's function, with its override.
+          kind: 'amend_leave',
         });
         const { rows: read } = await client.query<{ id: string }>(
           'select id::text as id from conflict_resolutions where member_id = $1 order by team_id',
@@ -18328,4 +18335,319 @@ describe('an admin who is no longer an active admin reads no resolution (story 5
       });
     },
   );
+});
+
+/**
+ * STORY 5.4c. A conflict resolved by putting someone else on the shift is two
+ * rows written together by 0032's `replace_conflict_member()`: a roster
+ * override that ONLY ADDS the replacement (nobody taken off), and a
+ * `replace_member` resolution linked to it. The link has no grant and a check
+ * ties it to the kind, so a direct `replace_member` insert is 23514. The
+ * function re-checks what the insert policies would — an active admin of the
+ * claim, a team that is not archived — and any refusal leaves neither row.
+ * Every case runs in a rolled-back transaction.
+ */
+
+/**
+ * Two teams of the organization that are NOT archived, in name order: 0032
+ * refuses an archived team, and the REST cases above commit archived teams of
+ * their own until the file's cleanup.
+ */
+async function twoLiveTeamsOf(client: Client, organization: string): Promise<[string, string]> {
+  const { rows } = await client.query<{ id: string }>(
+    'select id::text as id from teams where organization_id = $1 and not archived order by name limit 2',
+    [organization],
+  );
+  const [first, second] = rows;
+  if (first === undefined || second === undefined) throw new Error(`organization ${organization} has fewer than two live teams`);
+  return [first.id, second.id];
+}
+
+/** `replace_conflict_member()`, as whoever the connection currently is: the resolution's id. */
+async function replaceConflictMember(
+  client: Client,
+  call: { member: string; date: string; team: string; replacement: string; reason?: string },
+): Promise<string> {
+  const { rows } = await client.query<{ id: string }>(
+    'select public.replace_conflict_member($1, $2::date, $3, $4, $5)::text as id',
+    [call.member, call.date, call.team, call.replacement, call.reason ?? 'Zamjena za člana (godišnji)'],
+  );
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error('replace_conflict_member returned no id');
+  return id;
+}
+
+/** Every roster override of the team, whole, as the owner sees it. */
+async function rosterOverrideRowsOf(
+  client: Client,
+  team: string,
+): Promise<{ id: string; date: string; memberOutId: string | null; memberInId: string | null; reason: string; createdBy: string; live: boolean }[]> {
+  const { rows } = await client.query<{
+    id: string;
+    date: string;
+    memberOutId: string | null;
+    memberInId: string | null;
+    reason: string;
+    createdBy: string;
+    live: boolean;
+  }>(
+    `select id::text as id, date::text as date, member_out_id::text as "memberOutId", member_in_id::text as "memberInId",
+            reason, created_by::text as "createdBy", removed_at is null as live
+       from roster_overrides where team_id = $1 and date between '2042-09-10' and '2042-09-14' order by created_at, id`,
+    [team],
+  );
+  return rows;
+}
+
+describe('a conflict is resolved by putting someone else on the shift, the override and its resolution in one call (story 5.4c)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'records a $fixture replacement as an addition alone, linked from a replace_member resolution, both attributed to the admin',
+    async ({ slug, admin, member, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const replacement = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+        const [team] = await twoLiveTeamsOf(client, organization);
+
+        await actAs(client, owner.authUserId, organization);
+        await leaveOver(client, organization, [self.id]);
+        const id = await replaceConflictMember(client, {
+          member: self.id,
+          date: '2042-09-12',
+          team,
+          replacement: replacement.id,
+          reason: 'Zamjena za Anu (godišnji)',
+        });
+        await actAsOwner(client);
+
+        const overrides = await rosterOverrideRowsOf(client, team);
+        expect(overrides, `${slug}: the override is not the replacement's addition alone`).toEqual([
+          {
+            id: overrides[0]?.id,
+            date: '2042-09-12',
+            memberOutId: null,
+            memberInId: replacement.id,
+            reason: 'Zamjena za Anu (godišnji)',
+            createdBy: owner.authUserId,
+            live: true,
+          },
+        ]);
+        const { rows } = await client.query<{ kind: string; link: string | null; createdBy: string; live: boolean }>(
+          `select kind, roster_override_id::text as link, created_by::text as "createdBy", removed_at is null as live
+             from conflict_resolutions where id = $1`,
+          [id],
+        );
+        expect(rows, `${slug}: the resolution is not linked to its override`).toEqual([
+          { kind: 'replace_member', link: overrides[0]?.id, createdBy: owner.authUserId, live: true },
+        ]);
+        expect(
+          (await resolutionRowsOf(client, self.id)).map((row) => ({ date: row.date, teamId: row.teamId, live: row.live })),
+          `${slug}: the resolution is not the conflict's key`,
+        ).toEqual([{ date: '2042-09-12', teamId: team, live: true }]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a direct $fixture replace_member insert (23514) and a session naming the link (42501), and, past the grants, a link on another kind (23514)',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const [team] = await twoLiveTeamsOf(client, organization);
+
+        await actAs(client, owner.authUserId, organization);
+        await leaveOver(client, organization, [self.id]);
+        const codes = {
+          'direct replace_member': (
+            await refusedThenContinue(client, () =>
+              insertResolution(client, { organization, member: self.id, date: '2042-09-12', team, kind: 'replace_member' }),
+            )
+          ).code,
+          'named link': (
+            await refusedThenContinue(client, () =>
+              client.query(
+                `insert into conflict_resolutions (organization_id, member_id, date, team_id, kind, roster_override_id)
+                 values ($1, $2, '2042-09-12', $3, 'accept_uncovered', null)`,
+                [organization, self.id, team],
+              ),
+            )
+          ).code,
+        };
+        await actAsOwner(client);
+        // As the owner, past the column grant: a link on another kind is the check's to refuse.
+        const { rows: written } = await client.query<{ id: string }>(
+          `insert into roster_overrides (organization_id, team_id, date, member_out_id, member_in_id, reason, created_by)
+           values ($1, $2, '2042-09-12', null, $3, 'Zamjena', $4)
+           returning id::text as id`,
+          [organization, team, owner.id, owner.authUserId],
+        );
+        const linked = await refusedThenContinue(client, () =>
+          client.query(
+            `insert into conflict_resolutions (organization_id, member_id, date, team_id, kind, created_by, roster_override_id)
+             values ($1, $2, '2042-09-12', $3, 'accept_uncovered', $4, $5)`,
+            [organization, self.id, team, owner.authUserId, written[0]?.id],
+          ),
+        );
+        expect(codes, slug).toEqual({ 'direct replace_member': '23514', 'named link': '42501' });
+        expect(linked.code, slug).toBe('23514');
+        expect(linked.message, `${slug}: the link on another kind is not the linked check's refusal`).toMatch(
+          /conflict_resolutions_replacement_linked/,
+        );
+        expect(await resolutionRowsOf(client, self.id), `${slug}: a refused insert wrote a row`).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'leaves no $fixture override behind when the resolution is refused inside the call: already resolved (23505) or off leave (P0002)',
+    async ({ slug, admin, member, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const replacement = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+        const [team] = await twoLiveTeamsOf(client, organization);
+
+        await actAs(client, owner.authUserId, organization);
+        await leaveOver(client, organization, [self.id]);
+        await insertResolution(client, { organization, member: self.id, date: '2042-09-12', team });
+        const resolved = await refusedThenContinue(client, () =>
+          replaceConflictMember(client, { member: self.id, date: '2042-09-12', team, replacement: replacement.id }),
+        );
+        // 2042-09-20 is outside the leave: 0031's trigger refuses the resolution.
+        const offLeave = await refusedThenContinue(client, () =>
+          replaceConflictMember(client, { member: self.id, date: '2042-09-20', team, replacement: replacement.id }),
+        );
+        await actAsOwner(client);
+
+        expect({ resolved: resolved.code, offLeave: offLeave.code }, slug).toEqual({ resolved: '23505', offLeave: 'P0002' });
+        expect(resolved.message, `${slug}: an already-resolved conflict is not refused before the override`).toBe(
+          'CONFLICT_RESOLUTION_EXISTS',
+        );
+        expect(offLeave.message, slug).toBe('CONFLICT_RESOLUTION_NOT_ON_LEAVE');
+        const { rows } = await client.query<{ count: number }>(
+          `select count(*)::int as count from roster_overrides
+            where team_id = $1 and member_in_id = $2 and date between '2042-09-10' and '2042-09-20'`,
+          [team, replacement.id],
+        );
+        expect(rows[0]?.count, `${slug}: a refused call left its override behind`).toBe(0);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'refuses a $fixture member, a forged claim and an archived team (42501), a replacement already put on (23505), the absent member themself (23514), and another tenant\'s replacement or team (23503)',
+    async ({ slug, admin, member, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const replacement = await memberByUsername(client, slug, FIXTURES.find((entry) => entry.slug === slug)?.bystander ?? '');
+        const organization = owner.organizationId;
+        const [team, otherTeam] = await twoLiveTeamsOf(client, organization);
+        const foreignFixture = FIXTURES.find((entry) => entry.slug === otherSlug);
+        const foreignOwner = await memberByUsername(client, otherSlug, foreignFixture?.admin ?? '');
+        const foreignMember = await memberByUsername(client, otherSlug, foreignFixture?.member ?? '');
+        const [foreignTeam] = await twoTeamsOf(client, foreignOwner.organizationId);
+        const call = { member: self.id, date: '2042-09-12', team, replacement: replacement.id };
+
+        await actAs(client, owner.authUserId, organization);
+        await leaveOver(client, organization, [self.id]);
+        // The replacement is already put on the shift.
+        await client.query(
+          `insert into roster_overrides (organization_id, team_id, date, member_out_id, member_in_id, reason)
+           values ($1, $2, '2042-09-12', null, $3, 'Već dodan')`,
+          [organization, team, replacement.id],
+        );
+        const refusals: Record<string, Refusal> = {};
+        refusals['taken'] = await refusedThenContinue(client, () => replaceConflictMember(client, call));
+        refusals['absent member'] = await refusedThenContinue(client, () =>
+          replaceConflictMember(client, { ...call, date: '2042-09-13', replacement: self.id }),
+        );
+        refusals['another tenant\'s replacement'] = await refusedThenContinue(client, () =>
+          replaceConflictMember(client, { ...call, date: '2042-09-13', replacement: foreignMember.id }),
+        );
+        refusals['another tenant\'s team'] = await refusedThenContinue(client, () =>
+          replaceConflictMember(client, { ...call, date: '2042-09-13', team: foreignTeam }),
+        );
+
+        await actAs(client, owner.authUserId, foreignOwner.organizationId);
+        refusals['forged claim'] = await refusedThenContinue(client, () =>
+          replaceConflictMember(client, { ...call, date: '2042-09-13' }),
+        );
+        await actAs(client, self.authUserId, organization);
+        refusals['member'] = await refusedThenContinue(client, () => replaceConflictMember(client, { ...call, date: '2042-09-13' }));
+        await actAsOwner(client);
+        await client.query('update teams set archived = true where id = $1', [otherTeam]);
+        await actAs(client, owner.authUserId, organization);
+        refusals['archived team'] = await refusedThenContinue(client, () =>
+          replaceConflictMember(client, { ...call, date: '2042-09-13', team: otherTeam }),
+        );
+        await actAsOwner(client);
+
+        expect(
+          Object.fromEntries(Object.entries(refusals).map(([name, refusal]) => [name, refusal.code])),
+          slug,
+        ).toEqual({
+          taken: '23505',
+          'absent member': '23514',
+          'another tenant\'s replacement': '23503',
+          'another tenant\'s team': '23503',
+          'forged claim': '42501',
+          member: '42501',
+          'archived team': '42501',
+        });
+        expect(refusals['taken']?.message, `${slug}: a replacement already put on is not named`).toBe('CONFLICT_REPLACEMENT_TAKEN');
+        expect(await resolutionRowsOf(client, self.id), `${slug}: a refused call wrote a resolution`).toEqual([]);
+        expect(
+          (await rosterOverrideRowsOf(client, team)).map((row) => row.reason),
+          `${slug}: a refused call wrote an override`,
+        ).toEqual(['Već dodan']);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture conflict already resolved by that very replacement as resolved (plain 23505), never as taken',
+    async ({ slug, admin, member, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const replacement = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+        const [team] = await twoLiveTeamsOf(client, organization);
+        const call = { member: self.id, date: '2042-09-12', team, replacement: replacement.id };
+
+        await actAs(client, owner.authUserId, organization);
+        await leaveOver(client, organization, [self.id]);
+        await replaceConflictMember(client, call);
+        // Again, with the same replacement: both live keys are taken, and the resolution's is said.
+        const again = await refusedThenContinue(client, () => replaceConflictMember(client, call));
+        await actAsOwner(client);
+
+        expect(again.code, slug).toBe('23505');
+        expect(again.message, `${slug}: an already-resolved conflict was refused as taken`).toBe('CONFLICT_RESOLUTION_EXISTS');
+        expect((await rosterOverrideRowsOf(client, team)).length, `${slug}: a refused call wrote an override`).toBe(1);
+      });
+    },
+  );
+
+  it.skipIf(noApi)('refuses an anonymous caller of replace_conflict_member', async () => {
+    const response = await rest('rpc/replace_conflict_member', {
+      method: 'POST',
+      body: {
+        p_member_id: '00000000-0000-0000-0000-000000000000',
+        p_date: '2042-09-12',
+        p_team_id: '00000000-0000-0000-0000-000000000000',
+        p_replacement_id: '00000000-0000-0000-0000-000000000001',
+        p_reason: 'x',
+      },
+    });
+    expect(response.status, 'an anonymous caller reached replace_conflict_member').toBe(401);
+    const refusal = await restRefusal(response);
+    expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
+    expect(refusal.message).toBe('permission denied for function replace_conflict_member');
+  });
 });

@@ -10,23 +10,31 @@ import { Notice } from '@/components/ui/notice';
 import { PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { RadioGroup } from '@/components/ui/radio-group';
 import { CONFLICT_GLYPH } from '@/features/calendar/utils/modifiers';
-import { AcceptUncoveredOption } from '@/features/conflicts/components/resolution-option';
+import { AcceptUncoveredOption, ReplaceMemberOption } from '@/features/conflicts/components/resolution-option';
+import { ReplacementPicker } from '@/features/conflicts/components/replacement-picker';
 import { ResolutionSkeleton } from '@/features/conflicts/components/resolution-skeleton';
 import type { ConflictResolutionState } from '@/features/conflicts/hooks/use-conflict-resolution';
 import {
   NO_OPTION,
+  OPTION_REPLACE_MEMBER,
   RESOLUTION_CHOICE_HEADING_ID,
   RESOLUTION_LOADING,
   RESOLUTION_MISSING,
   RESOLUTION_SAVE_HINT_ID,
   RESOLUTION_UNAVAILABLE,
   coworkersMessageKey,
+  readyToSave,
   saveHintMessageKey,
   shiftFactsMessageKey,
   type ResolutionLink,
   type ResolutionView,
 } from '@/features/conflicts/services/resolution-screen';
-import { RESOLUTION_GONE, resolutionFailureMessageKey } from '@/features/conflicts/services/resolution-write';
+import {
+  RESOLUTION_GONE,
+  resolutionFailureLineOf,
+  resolutionFailureMessageKey,
+  type ResolutionWriteFailure,
+} from '@/features/conflicts/services/resolution-write';
 import { rosterLineOf } from '@/features/members/utils/position';
 import { formatList } from '@/lib/i18n/format';
 import { t } from '@/lib/i18n';
@@ -127,10 +135,19 @@ function ResolutionFacts({ view }: { readonly view: ResolutionView }): ReactNode
   );
 }
 
+/** A refusal's line: the taken one names who was already on the shift (story 5.4c), and is never drawn without the name. */
+function FailureNotice({ failure, taken }: { readonly failure: ResolutionWriteFailure; readonly taken: string | null }): ReactNode {
+  const line = resolutionFailureLineOf(failure, taken);
+
+  return <Notice role="alert">{line.values === undefined ? t(line.key) : t(line.key, line.values)}</Notice>;
+}
+
 /** The ready screen: the header with ‹ ›, the facts, the choice and the footer. */
 function ResolutionReady({ state, view }: { readonly state: ConflictResolutionState; readonly view: ResolutionView }): ReactNode {
-  const { choice, choose, pending, failure, save, go, firstOption } = state;
-  const unchosen = choice === null;
+  const { choice, choose, pending, failure, save, go, firstOption, firstCandidate, replaceOption, candidatesExist, replacement, pick, taken } =
+    state;
+  const pickedId = replacement?.id ?? null;
+  const waiting = !readyToSave(choice, pickedId);
   const gone = failure === RESOLUTION_GONE;
 
   return (
@@ -162,13 +179,28 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
           disabled={pending}
         >
           <AcceptUncoveredOption view={view} optionRef={firstOption} />
+          <ReplaceMemberOption
+            view={view}
+            optionRef={replaceOption}
+            replacementName={choice === OPTION_REPLACE_MEMBER ? (replacement?.name ?? null) : null}
+          />
         </RadioGroup>
-        {failure === null ? null : <Notice role="alert">{t(resolutionFailureMessageKey(failure))}</Notice>}
+        {/* A sibling after the second card, never inside it: the card is a `<button>`. */}
+        {choice === OPTION_REPLACE_MEMBER ? (
+          <ReplacementPicker
+            view={view}
+            value={pickedId}
+            onValueChange={pick}
+            disabled={pending}
+            firstCandidate={firstCandidate}
+          />
+        ) : null}
+        {failure === null ? null : <FailureNotice failure={failure} taken={taken} />}
         {/* GONE: nothing left to save, and the header's way back is the one way on. */}
         {gone ? null : (
           <div className="flex min-w-0 flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center">
             <p id={RESOLUTION_SAVE_HINT_ID} className="min-w-0 flex-1 break-words text-sm text-muted-foreground">
-              {t(saveHintMessageKey(choice))}
+              {t(saveHintMessageKey(choice, pickedId, candidatesExist))}
             </p>
             <Button asChild variant="outline" className="h-11 w-full sm:w-auto">
               <Link to="/raspored" disabled={pending}>
@@ -178,10 +210,10 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
             <Button
               type="button"
               className="h-11 w-full sm:w-auto aria-disabled:opacity-50"
-              aria-disabled={unchosen || pending}
+              aria-disabled={waiting || pending}
               aria-describedby={RESOLUTION_SAVE_HINT_ID}
               onClick={() => {
-                void save();
+                void save((member) => t('raspored.resolution.replaceReason', { member }));
               }}
             >
               {pending ? t('raspored.resolution.saving') : t('raspored.resolution.save')}

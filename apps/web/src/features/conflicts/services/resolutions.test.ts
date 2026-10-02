@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   ACCEPT_UNCOVERED,
+  REPLACE_MEMBER,
   acceptedUncoveredOf,
+  leaveHoursKeysOf,
   type ConflictResolution,
   CONFLICT_RESOLUTIONS_COLUMNS,
   CONFLICT_RESOLUTIONS_PAGE_ROWS,
@@ -285,6 +287,20 @@ describe('the split by kind (story 5.4b)', () => {
       { memberId: 'm2', date: '2026-09-11', teamId: 't2' },
     ]);
     expect(acceptedUncoveredOf([])).toEqual([]);
+  });
+
+  it('feeds the leave hours from the accepted and, since story 5.4c, the replaced, in order, never the amend kind', () => {
+    const resolutions: readonly ConflictResolution[] = [
+      { memberId: 'm1', date: '2026-09-12', teamId: 't1', kind: ACCEPT_UNCOVERED },
+      { memberId: 'm1', date: '2026-09-13', teamId: 't1', kind: REPLACE_MEMBER },
+      { memberId: 'm2', date: '2026-09-14', teamId: 't2', kind: 'amend_leave' as const },
+    ];
+
+    expect(leaveHoursKeysOf(resolutions)).toEqual([
+      { memberId: 'm1', date: '2026-09-12', teamId: 't1' },
+      { memberId: 'm1', date: '2026-09-13', teamId: 't1' },
+    ]);
+    expect(leaveHoursKeysOf([])).toEqual([]);
   });
 });
 

@@ -1257,6 +1257,24 @@ const SANCTIONED_SCREEN_KEYS = [
   'raspored.resolution.error.gone',
   'raspored.resolution.error.denied',
   'raspored.resolution.error.failed',
+  // STORY 5.4c: the second card — its title and sentence, the replacement's
+  // name in its strip — the picker's heading, its three group headings and
+  // its nobody-to-add line, the hint while nobody is picked or nobody can be, the reason the
+  // override is written with, the refusal naming a replacement already on the
+  // shift, and the queue's status line naming the replacement.
+  'raspored.savedReplace',
+  'raspored.resolution.replaceTitle',
+  'raspored.resolution.replaceBody',
+  'raspored.resolution.replaceReason',
+  'raspored.resolution.candidatesHeading',
+  'raspored.resolution.candidates.free',
+  'raspored.resolution.candidates.working',
+  'raspored.resolution.candidates.onLeave',
+  'raspored.resolution.noCandidates',
+  'raspored.resolution.replacementShown',
+  'raspored.resolution.hintChooseReplacement',
+  'raspored.resolution.hintNoCandidates',
+  'raspored.resolution.error.taken',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

@@ -57,4 +57,26 @@ const RadioCard = React.forwardRef<
 ))
 RadioCard.displayName = "RadioCard"
 
-export { RadioGroup, RadioCard }
+// `RadioRow` (story 5.4c) is one line of a list to pick from — the
+// replacement candidates — on the card's terms: the dot, then the words,
+// which wrap rather than truncate; 44 px tall at least; the chosen row gets a
+// primary border, never a different fill.
+const RadioRow = React.forwardRef<
+  React.ElementRef<typeof RadioGroupPrimitive.Item>,
+  React.ComponentPropsWithoutRef<typeof RadioGroupPrimitive.Item>
+>(({ className, children, ...props }, ref) => (
+  <RadioGroupPrimitive.Item
+    ref={ref}
+    className={cn(
+      "group flex min-h-11 w-full min-w-0 items-start gap-3 rounded-md border-[1.5px] border-transparent px-3 py-2.5 text-left text-sm transition-[border-color] motion-reduce:transition-none hover:border-input focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-primary",
+      className
+    )}
+    {...props}
+  >
+    <RadioDot />
+    <span className="min-w-0 flex-1 break-words">{children}</span>
+  </RadioGroupPrimitive.Item>
+))
+RadioRow.displayName = "RadioRow"
+
+export { RadioGroup, RadioCard, RadioRow }

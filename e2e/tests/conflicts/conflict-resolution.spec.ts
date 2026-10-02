@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 
 import {
   holdRotation,
@@ -11,6 +11,7 @@ import {
   seedExtraTeam,
   seedLeaveMember,
   seedLeaveRecord,
+  seedRosterOverride,
   seedTeamRotation,
   type RotationHold,
   type SeededRotation,
@@ -39,6 +40,11 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * Each test holds the run's rotation for its whole length, so the matrix's
  * rows share three tests rather than one each: Open, Ends, Missing and the
  * phone; Accept, end to end; and Failed then both Gone refusals.
+ *
+ * Story 5.4c adds the second card, "Zamijeni osobu": a replacement by
+ * keyboard end to end, the arrow keys across the two cards, Taken and Gone.
+ * The replacement is a fresh member on a second team of the test's own with
+ * no rotation, so they are `slobodan` that day.
  */
 
 test.use({ storageState: ADMIN_STATE });
@@ -53,9 +59,13 @@ const resolution = raspored.resolution;
 let hold: RotationHold | null = null;
 let seed: SeededRotation | null = null;
 let member: { readonly slug: string; readonly id: string } | null = null;
+/** Other members a test recorded leave for (story 5.4c's leave pick), removed with the test's own. */
+let othersOnLeave: { readonly slug: string; readonly id: string }[] = [];
 
 test.afterEach(async () => {
   try {
+    for (const other of othersOnLeave) await removeLeaveRecordsInSql(other.slug, other.id).catch(() => undefined);
+    othersOnLeave = [];
     if (member !== null) await removeLeaveRecordsInSql(member.slug, member.id).catch(() => undefined);
     if (seed !== null) await removeSeededRotation(seed);
   } finally {
@@ -143,9 +153,11 @@ test('opens a conflict from its queue row, shows K of N, moves with ‹ › in t
   await expect(resolutionPage.nextButton).toHaveAccessibleName(fill(resolution.next, { date: dayMonth(dates[2]) }));
   await expect(resolutionPage.previousButton).toBeEnabled();
   await expect(resolutionPage.nextButton).toBeEnabled();
-  // ONE card, nothing preselected.
-  await expect(resolutionPage.options).toHaveCount(1);
+  // TWO cards since story 5.4c, in their fixed order, nothing preselected.
+  await expect(resolutionPage.options).toHaveCount(2);
+  await expect(resolutionPage.options).toHaveText([new RegExp(`^${resolution.acceptTitle}`), new RegExp(`^${resolution.replaceTitle}`)]);
   await expect(resolutionPage.acceptOption).toHaveAttribute('aria-checked', 'false');
+  await expect(resolutionPage.replaceOption).toHaveAttribute('aria-checked', 'false');
   await expect(resolutionPage.line(resolution.hintChoose)).toBeVisible();
 
   // ‹ TO THE 1ST: ‹ disabled there, nothing saved.
@@ -375,6 +387,322 @@ test('a failed save says so and Spremi saves again, the saved line is gone on na
   await expect(resolutionPage.saveButton).toHaveCount(0);
   await expect(resolutionPage.backLink).toHaveCount(1);
   await expect(page).toHaveURL(`/raspored/${seeded.id}/${last}/${team.id}`);
+});
+
+/**
+ * An arrow key held until focus lands on `target`, then released. Radix's
+ * roving focus moves focus a tick after the keydown, and a radio is checked
+ * only when it gains focus WHILE an arrow key is down — a person's key stays
+ * down that long; Playwright's `press` does not.
+ */
+async function arrowTo(page: Page, key: 'ArrowDown' | 'ArrowUp' | 'ArrowRight' | 'ArrowLeft', target: Locator): Promise<void> {
+  await page.keyboard.down(key);
+  await expect(target).toBeFocused();
+  await page.keyboard.up(key);
+}
+
+/** A fresh member on a second team of the test's own, with no rotation: `slobodan` on every date. */
+async function replacementOf(slug: string, today: string, nameTail = ''): Promise<{ readonly id: string; readonly name: string }> {
+  const other = await seedExtraTeam(slug, `Smjena ${randomBytes(3).toString('hex')}`);
+  const seeded = await seedLeaveMember(slug, other.id, today, 20, nameTail);
+
+  return { id: seeded.id, name: seeded.name };
+}
+
+/** Card 2's coverage for a team of one: `1 od 1 člana` — the absent member's shift, covered by the replacement. */
+function replaceCoverageOfOne(): string {
+  return `1 od ${plural(resolution.coverage.replace(/^\{covered\} od /, '').replace('{total,', '{count,'), 1)}`;
+}
+
+test('moves the selection across the two cards with the arrow keys, and Tab reaches only the checked card, or the first', async ({
+  page,
+  resolutionPage,
+  fixture,
+}) => {
+  const { team, seeded, today } = await scenarioOf(fixture.slug);
+  await resolutionPage.gotoConflict(seeded.id, today, team.id);
+  await expect(resolutionPage.acceptOption).toBeVisible();
+
+  // NOTHING CHECKED: Tab reaches the first card, and the next Tab leaves the group.
+  await resolutionPage.nextButton.focus();
+  await page.keyboard.press('Tab');
+  await expect(resolutionPage.acceptOption).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(resolutionPage.cancelLink).toBeFocused();
+
+  // THE ARROWS move the selection, both ways.
+  await page.keyboard.press('Shift+Tab');
+  await expect(resolutionPage.acceptOption).toBeFocused();
+  await arrowTo(page, 'ArrowDown', resolutionPage.replaceOption);
+  await expect(resolutionPage.replaceOption).toHaveAttribute('aria-checked', 'true');
+  await expect(resolutionPage.acceptOption).toHaveAttribute('aria-checked', 'false');
+  await arrowTo(page, 'ArrowUp', resolutionPage.acceptOption);
+  await expect(resolutionPage.acceptOption).toHaveAttribute('aria-checked', 'true');
+  await arrowTo(page, 'ArrowRight', resolutionPage.replaceOption);
+  await expect(resolutionPage.replaceOption).toHaveAttribute('aria-checked', 'true');
+
+  // THE CHECKED CARD is the group's one tab stop: from ‹ › Tab lands on it,
+  // and Shift+Tab from the picker after it comes back to it.
+  await resolutionPage.nextButton.focus();
+  await page.keyboard.press('Tab');
+  await expect(resolutionPage.replaceOption).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(resolutionPage.candidates.getByRole('radio').first()).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(resolutionPage.replaceOption).toBeFocused();
+});
+
+test('replaces the absent member by keyboard: the queue drops the conflict with a status line naming the replacement, the day roster holds them with no uncovered mark, and Sati moves 12 h to leave and gives the replacement the shift', async ({
+  page,
+  conflictsPage,
+  resolutionPage,
+  calendarPage,
+  hoursPage,
+  fixture,
+}) => {
+  const { team, seeded, today } = await scenarioOf(fixture.slug);
+  const dino = await replacementOf(fixture.slug, today);
+  const sati = hr.sati.organization;
+
+  // SATI BEFORE: the replacement's shifts.
+  await hoursPage.goto();
+  const dinoRow = hoursPage.organizationRow(dino.name);
+  await expect(dinoRow).toHaveCount(1);
+  const shiftsOf = async (row: typeof dinoRow): Promise<number> => {
+    const text = ((await (await hoursPage.cellIn(row, sati.shifts)).textContent()) ?? '').trim();
+    const count = /^\d+/.exec(text)?.[0];
+
+    return count === undefined ? 0 : Number(count);
+  };
+  const dinoBefore = await shiftsOf(dinoRow);
+
+  await conflictsPage.goto();
+  const rows = conflictsPage.rowsOf(seeded.name);
+  await expect(rows).toHaveCount(3);
+  await conflictsPage.rowLink(rows.nth(0)).click();
+  await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
+
+  // CARD 2 BY KEYBOARD: Tab to the group, the arrow to the second card.
+  await resolutionPage.nextButton.focus();
+  await page.keyboard.press('Tab');
+  await expect(resolutionPage.acceptOption).toBeFocused();
+  await arrowTo(page, 'ArrowDown', resolutionPage.replaceOption);
+  await expect(resolutionPage.replaceOption).toHaveAttribute('aria-checked', 'true');
+  // Its strip: the coverage one higher, never "Nepokriveno", the hours and the balance as the first card's.
+  await expect(resolutionPage.replaceOption).toContainText(replaceCoverageOfOne());
+  await expect(resolutionPage.replaceOption).not.toContainText(resolution.uncovered);
+  await expect(resolutionPage.replaceOption).toContainText(fill(resolution.hoursAsLeave, { hours: '12 h' }));
+  await expect(resolutionPage.replaceOption).toContainText(resolution.balanceUnchanged);
+
+  // THE PICKER, after the card, nothing picked: Spremi waits and says who is missing.
+  await expect(resolutionPage.candidates).toBeVisible();
+  await expect(resolutionPage.candidates.getByRole('radio', { checked: true })).toHaveCount(0);
+  await expect(resolutionPage.candidateGroup(resolution.candidates.free)).toBeVisible();
+  await expect(resolutionPage.candidateGroup(resolution.candidates.free).getByRole('radio', { name: new RegExp(`^${escapeRegExp(dino.name)}`) })).toHaveCount(1);
+  // Neither the absent member nor anyone on the team is offered.
+  await expect(resolutionPage.candidate(seeded.name)).toHaveCount(0);
+  await expect(resolutionPage.line(resolution.hintChooseReplacement)).toBeVisible();
+  await expect(resolutionPage.saveButton).toHaveAttribute('aria-disabled', 'true');
+  await resolutionPage.saveButton.focus();
+  await page.keyboard.press('Enter');
+  await expect(resolutionPage.candidates.getByRole('radio').first()).toBeFocused();
+  await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
+
+  // PICK DINO with the arrow keys: each one moves the pick, across the groups, which block nothing.
+  const dinoRadio = resolutionPage.candidate(dino.name);
+  const radios = resolutionPage.candidates.getByRole('radio');
+  const names = await radios.evaluateAll((all) => all.map((radio) => radio.textContent ?? ''));
+  const at = names.findIndex((name) => name.startsWith(dino.name));
+  expect(at).toBeGreaterThanOrEqual(0);
+  for (let step = 1; step <= at; step += 1) await arrowTo(page, 'ArrowDown', radios.nth(step));
+  await expect(dinoRadio).toHaveAttribute('aria-checked', 'true');
+  await expect(dinoRadio).toBeFocused();
+  await expect(resolutionPage.replaceOption).toContainText(`${replaceCoverageOfOne()}${fill(resolution.replacementShown, { name: dino.name })}`);
+  await expect(resolutionPage.line(resolution.hintRecorded)).toBeVisible();
+  await page.keyboard.press('Tab');
+  await expect(resolutionPage.cancelLink).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(resolutionPage.saveButton).toBeFocused();
+  await page.keyboard.press('Enter');
+
+  // BACK ON THE QUEUE: the status line names the replacement, and the row is gone.
+  await expect(page).toHaveURL('/raspored');
+  await expect(conflictsPage.savedStatus).toContainText(seeded.name);
+  await expect(conflictsPage.savedStatus).toContainText(dino.name);
+  await expect(conflictsPage.savedStatus).toBeFocused();
+  await expect(rows).toHaveCount(2);
+
+  // THE DAY ROSTER holds Dino beside the absent member; the cell is not uncovered.
+  await calendarPage.goto();
+  const cell = await calendarPage.cellOf(team.name, today);
+  await expect(cell).not.toHaveAccessibleName(new RegExp(`, ${escapeRegExp(hr.kalendar.modifier.uncovered)}(,|$)`));
+  await expect(cell).not.toHaveAccessibleName(new RegExp(`, ${escapeRegExp(hr.kalendar.modifier.conflict)}(,|$)`));
+  await cell.click();
+  const detail = calendarPage.detailOf(team.name, today);
+  await expect(calendarPage.rosterIn(detail)).toContainText(dino.name);
+  await expect(calendarPage.rosterIn(detail)).toContainText(seeded.name);
+  // The roster change is the one 0032 wrote, with the reason generated through t().
+  await expect(calendarPage.rosterChangeItemsIn(detail)).toHaveCount(1);
+  await expect(calendarPage.rosterChangeItemsIn(detail)).toContainText(fill(resolution.replaceReason, { member: seeded.name }));
+  await page.keyboard.press('Escape');
+
+  // SATI: the absent member's 12 h are leave; Dino has the shift.
+  await hoursPage.goto();
+  const absentRow = hoursPage.organizationRow(seeded.name);
+  await expect(absentRow).toHaveCount(1);
+  await expect(await hoursPage.cellIn(absentRow, sati.leave)).toHaveText('12 h');
+  await expect.poll(() => shiftsOf(dinoRow)).toBe(dinoBefore + 1);
+  await expect(await hoursPage.cellIn(dinoRow, sati.leave)).toHaveText(hr.sati.noFigure);
+});
+
+test('a replacement already put on the shift meanwhile is named and leaves the list, and a conflict resolved meanwhile or whose leave was removed is no longer open', async ({
+  page,
+  resolutionPage,
+  fixture,
+}) => {
+  const { team, seeded, dates } = await scenarioOf(fixture.slug);
+  const [today, next, last] = dates;
+  const dino = await replacementOf(fixture.slug, today);
+  const eva = await replacementOf(fixture.slug, today);
+
+  // TAKEN, 23505 on the override's key: Dino put on the shift in SQL while the screen is open.
+  await resolutionPage.gotoConflict(seeded.id, today, team.id);
+  await resolutionPage.replaceOption.click();
+  await resolutionPage.candidate(dino.name).click();
+  if (seed === null) throw new Error('E2E: no seeded rotation');
+  await seedRosterOverride(seed, team.id, today, null, dino.name, 'E2E: već dodan');
+  await resolutionPage.saveButton.click();
+  await expect(resolutionPage.alertWith(fill(resolution.error.taken, { name: dino.name }))).toBeVisible();
+  // The candidates are read again: Dino is gone from the list, and nobody is picked.
+  await expect(resolutionPage.candidate(dino.name)).toHaveCount(0);
+  await expect(resolutionPage.line(resolution.hintChooseReplacement)).toBeVisible();
+  // The next step is another pick: focus is on the re-read list.
+  await expect(resolutionPage.candidates.getByRole('radio').first()).toBeFocused();
+  await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
+
+  // GONE, 23505 on the resolution's key: resolved meanwhile, in SQL.
+  await resolutionPage.gotoConflict(seeded.id, next, team.id);
+  await resolutionPage.replaceOption.click();
+  await resolutionPage.candidate(eva.name).click();
+  await seedConflictResolution(fixture.slug, seeded.id, next, team.id);
+  await resolutionPage.saveButton.click();
+  await expect(resolutionPage.alertWith(resolution.error.gone)).toBeVisible();
+  await expect(resolutionPage.saveButton).toHaveCount(0);
+  await expect(resolutionPage.backLink).toHaveCount(1);
+
+  // GONE, P0002: the leave removed meanwhile, in SQL.
+  await resolutionPage.gotoConflict(seeded.id, last, team.id);
+  await resolutionPage.replaceOption.click();
+  await resolutionPage.candidate(eva.name).click();
+  await removeLeaveRecordsInSql(fixture.slug, seeded.id);
+  await resolutionPage.saveButton.click();
+  await expect(resolutionPage.alertWith(resolution.error.gone)).toBeVisible();
+  await expect(resolutionPage.options).toHaveCount(0);
+  await expect(resolutionPage.backLink).toHaveCount(1);
+});
+
+test('fits the picker on a phone: no sideways scroll, and every candidate line wraps rather than truncating', async ({
+  page,
+  resolutionPage,
+  fixture,
+}) => {
+  const { team, seeded, today } = await scenarioOf(fixture.slug);
+  // A name far wider than a phone, one unbroken word in it, so a line that
+  // truncated or pushed the page sideways would show.
+  const long = await replacementOf(
+    fixture.slug,
+    today,
+    'Ana-Marija Kovačević-Horvatinčić Zrinski-Frankopan Nepregledivodugoprezimekojesenemozeprelomitinarazmaku',
+  );
+  await page.setViewportSize({ width: 390, height: 844 });
+  await resolutionPage.gotoConflict(seeded.id, today, team.id);
+  await resolutionPage.replaceOption.click();
+  await expect(resolutionPage.candidates).toBeVisible();
+  await expectNoHorizontalScroll(page);
+  const clipped = await resolutionPage.candidates.getByRole('radio').evaluateAll((radios) =>
+    radios.filter((radio) => radio.scrollWidth > radio.clientWidth + 1 || getComputedStyle(radio).textOverflow === 'ellipsis').length,
+  );
+  expect(clipped, 'a candidate line is cut off').toBe(0);
+  // The long line is there in full, and wraps onto more than one line.
+  const longRadio = resolutionPage.candidate(long.name);
+  await expect(longRadio).toHaveText(new RegExp(`^${escapeRegExp(long.name)}`));
+  const box = await longRadio.boundingBox();
+  expect(box?.height ?? 0, 'the long candidate line does not wrap').toBeGreaterThan(50);
+  expect((box?.x ?? 0) + (box?.width ?? 0)).toBeLessThanOrEqual(390);
+});
+
+test('a pick is dropped when the choice moves to the first card: accepting saves as uncovered, with no override and no replacement on the day', async ({
+  page,
+  conflictsPage,
+  resolutionPage,
+  calendarPage,
+  fixture,
+}) => {
+  const { team, seeded, today } = await scenarioOf(fixture.slug);
+  const dino = await replacementOf(fixture.slug, today);
+
+  await resolutionPage.gotoConflict(seeded.id, today, team.id);
+  await resolutionPage.replaceOption.click();
+  await resolutionPage.candidate(dino.name).click();
+  await expect(resolutionPage.replaceOption).toContainText(dino.name);
+
+  // TO CARD 1: the picker goes, and card 2 no longer names anybody.
+  await resolutionPage.acceptOption.click();
+  await expect(resolutionPage.candidates).toHaveCount(0);
+  await expect(resolutionPage.replaceOption).not.toContainText(dino.name);
+  // BACK TO CARD 2: nobody is picked.
+  await resolutionPage.replaceOption.click();
+  await expect(resolutionPage.candidates.getByRole('radio', { checked: true })).toHaveCount(0);
+  await expect(resolutionPage.line(resolution.hintChooseReplacement)).toBeVisible();
+  await resolutionPage.acceptOption.click();
+  await resolutionPage.saveButton.click();
+
+  await expect(page).toHaveURL('/raspored');
+  await expect(conflictsPage.savedStatus).toContainText(raspored.saved.replace(/^[\s\S]*\{member\}/, ''));
+  await expect(conflictsPage.savedStatus).not.toContainText(dino.name);
+
+  await calendarPage.goto();
+  const cell = await calendarPage.cellOf(team.name, today);
+  await expect(cell).toHaveAccessibleName(new RegExp(`, ${escapeRegExp(hr.kalendar.modifier.uncovered)}(,|$)`));
+  await cell.click();
+  const detail = calendarPage.detailOf(team.name, today);
+  await expect(calendarPage.rosterIn(detail)).toContainText(seeded.name);
+  await expect(calendarPage.rosterIn(detail)).not.toContainText(dino.name);
+  await expect(calendarPage.rosterChangesIn(detail)).toHaveCount(0);
+});
+
+test('Leave pick: a member on leave that date can be picked, and back on the queue, with no reload, their own new conflict is listed', async ({
+  page,
+  conflictsPage,
+  resolutionPage,
+  fixture,
+}) => {
+  const { team, seeded, today } = await scenarioOf(fixture.slug);
+  const eva = await replacementOf(fixture.slug, today);
+  await seedLeaveRecord(fixture.slug, eva.id, today, today);
+  othersOnLeave.push({ slug: fixture.slug, id: eva.id });
+
+  await conflictsPage.goto();
+  await expect(conflictsPage.rowsOf(seeded.name)).toHaveCount(3);
+  await expect(conflictsPage.rowsOf(eva.name)).toHaveCount(0);
+  await conflictsPage.rowLink(conflictsPage.rowsOf(seeded.name).nth(0)).click();
+  await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
+
+  await resolutionPage.replaceOption.click();
+  // Offered under its own heading, and selectable: the group only informs.
+  const evaRadio = resolutionPage.candidateGroup(resolution.candidates.onLeave).getByRole('radio', {
+    name: new RegExp(`^${escapeRegExp(eva.name)}`),
+  });
+  await expect(evaRadio).toBeEnabled();
+  await evaRadio.click();
+  await resolutionPage.saveButton.click();
+
+  // In-app, no reload: the calendar read is invalidated, so Eva's own conflict is derived at once.
+  await expect(page).toHaveURL('/raspored');
+  await expect(conflictsPage.savedStatus).toContainText(eva.name);
+  await expect(conflictsPage.rowsOf(seeded.name)).toHaveCount(2);
+  await expect(conflictsPage.rowsOf(eva.name)).toHaveCount(1);
+  await expect(conflictsPage.rowsOf(eva.name)).toContainText(team.name);
 });
 
 test.describe('a member', () => {

@@ -1,6 +1,6 @@
 import type { Locator } from '@playwright/test';
 
-import { hr, plural } from '../utils/i18n.ts';
+import { escapeRegExp, hr, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 
 const raspored = hr.raspored;
@@ -64,8 +64,9 @@ const resolution = raspored.resolution;
 
 /**
  * `/raspored/$memberId/$date/$teamId`: one conflict's resolution screen
- * (story 5.4b) — the way back, ‹ ›, the facts, the one radio card with its
- * consequence strip, and Odustani and Spremi odluku.
+ * (story 5.4b) — the way back, ‹ ›, the facts, the radio cards with their
+ * consequence strips, and Odustani and Spremi odluku. Since story 5.4c, the
+ * second card, "Zamijeni osobu", and the candidate picker after it.
  */
 export class ConflictResolutionPage extends BasePage {
   protected readonly path = '/raspored';
@@ -103,9 +104,29 @@ export class ConflictResolutionPage extends BasePage {
     return this.page.getByRole('radiogroup', { name: resolution.choice });
   }
 
-  /** The one card, "Prihvati kao nepokriveno". */
+  /** The first card, "Prihvati kao nepokriveno". */
   get acceptOption(): Locator {
     return this.choice.getByRole('radio', { name: resolution.acceptTitle });
+  }
+
+  /** The second card, "Zamijeni osobu" (story 5.4c). */
+  get replaceOption(): Locator {
+    return this.choice.getByRole('radio', { name: resolution.replaceTitle });
+  }
+
+  /** The candidate picker's own radio group, "Tko odrađuje smjenu" (story 5.4c). */
+  get candidates(): Locator {
+    return this.page.getByRole('radiogroup', { name: resolution.candidatesHeading });
+  }
+
+  /** One candidate, by the name their line starts with. */
+  candidate(name: string): Locator {
+    return this.candidates.getByRole('radio', { name: new RegExp(`^${escapeRegExp(name)}( ·|$)`) });
+  }
+
+  /** One candidate group, by its heading: `slobodan`, `radi taj dan · 24 h bez pauze` or `na godišnjem taj dan`. */
+  candidateGroup(heading: string): Locator {
+    return this.candidates.getByRole('group', { name: heading, exact: true });
   }
 
   /** Every card in the group. */

@@ -10,6 +10,7 @@ import {
   type ConflictsQueue,
 } from '@/features/conflicts/services/conflicts-queue';
 import { resolutionSavedMessageKey, type ResolutionSaved } from '@/features/conflicts/services/resolution-screen';
+import { REPLACE_MEMBER } from '@/features/conflicts/services/resolutions';
 import { t } from '@/lib/i18n';
 
 /**
@@ -40,6 +41,7 @@ export function ConflictsBody({
             team: saved.teamName,
             date: saved.dateShown,
             member: saved.memberName,
+            replacement: saved.kind === REPLACE_MEMBER ? saved.replacementName : undefined,
           })}
         </Notice>
       )}

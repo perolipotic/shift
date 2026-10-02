@@ -23,6 +23,15 @@ import { isIsoDate } from '@/lib/i18n/format';
  *
  * Nothing is optimistic: the caller re-reads the resolutions after any
  * outcome, and the queue drops the conflict only from what the re-read says.
+ *
+ * THE SECOND WRITE (story 5.4c): a replacement, through 0032's definer
+ * function `replace_conflict_member` ALONE — the roster override that puts
+ * the replacement on (nobody taken off) and the `replace_member` resolution
+ * linked to it, in one transaction. The reason is the caller's, generated
+ * through `t()`. Its refusals map as the insert's, plus one: a 23505 named
+ * `CONFLICT_REPLACEMENT_TAKEN` — the replacement is already put on that
+ * shift — is {@link RESOLUTION_TAKEN}; any other 23505 is the resolution's
+ * live key, {@link RESOLUTION_GONE}.
  */
 
 /** The conflict is no longer open: resolved meanwhile, or its leave removed. */
@@ -31,8 +40,14 @@ export const RESOLUTION_GONE = 'gone';
 export const RESOLUTION_DENIED = 'denied';
 /** Anything else; saving again may land. */
 export const RESOLUTION_FAILED = 'failed';
+/** The replacement is already put on that shift (story 5.4c): pick someone else. */
+export const RESOLUTION_TAKEN = 'taken';
 
-export type ResolutionWriteFailure = typeof RESOLUTION_GONE | typeof RESOLUTION_DENIED | typeof RESOLUTION_FAILED;
+export type ResolutionWriteFailure =
+  | typeof RESOLUTION_GONE
+  | typeof RESOLUTION_DENIED
+  | typeof RESOLUTION_FAILED
+  | typeof RESOLUTION_TAKEN;
 
 export type ResolutionWriteOutcome =
   | { readonly ok: true }
@@ -47,6 +62,7 @@ const INSUFFICIENT_PRIVILEGE = '42501';
 
 export interface ResolutionWriteError {
   readonly code?: string | undefined;
+  readonly message?: string | undefined;
 }
 
 export interface ResolutionWriteAnswer {
@@ -78,6 +94,45 @@ export interface ResolutionTarget {
   readonly teamId: string;
 }
 
+/** The function a replacement is written through (0032). */
+export const REPLACE_CONFLICT_MEMBER_FUNCTION = 'replace_conflict_member';
+
+/** 0032's message for a replacement already put on the shift, under 23505. */
+const REPLACEMENT_TAKEN_MESSAGE = 'CONFLICT_REPLACEMENT_TAKEN';
+
+/** The arguments 0032's function takes. */
+export interface ReplaceConflictMemberArgs {
+  readonly p_member_id: string;
+  readonly p_date: string;
+  readonly p_team_id: string;
+  readonly p_replacement_id: string;
+  readonly p_reason: string;
+}
+
+/** The one call a replacement makes, named structurally so it can be stubbed. */
+export interface ResolutionReplaceRpc {
+  rpc(fn: typeof REPLACE_CONFLICT_MEMBER_FUNCTION, args: ReplaceConflictMemberArgs): PromiseLike<ResolutionWriteAnswer>;
+}
+
+/** What a replacement adds to the target: who is put on, and why. */
+export interface ReplacementTarget extends ResolutionTarget {
+  readonly replacementId: string;
+  /** Generated through `t()` by the caller: "Zamjena za {member} (godišnji)". */
+  readonly reason: string;
+}
+
+/** 0026's bound on a roster override's reason, in code points once trimmed (`char_length`). */
+export const REPLACEMENT_REASON_MAX = 200;
+
+/**
+ * The reason as 0026 admits it: trimmed, then clipped to
+ * {@link REPLACEMENT_REASON_MAX} code points and trimmed again — so a long
+ * member name never makes every replacement fail with 23514.
+ */
+export function replacementReasonOf(reason: string): string {
+  return Array.from(reason.trim()).slice(0, REPLACEMENT_REASON_MAX).join('').trim();
+}
+
 /** A refused insert as this application's own failure. */
 export function resolutionInsertFailureOf(error: ResolutionWriteError): ResolutionWriteFailure {
   if (error.code === UNIQUE_VIOLATION || error.code === NO_DATA_FOUND) return RESOLUTION_GONE;
@@ -86,12 +141,59 @@ export function resolutionInsertFailureOf(error: ResolutionWriteError): Resoluti
   return RESOLUTION_FAILED;
 }
 
+/** A refused replacement as this application's own failure: the insert's, plus the replacement already put on. */
+export function resolutionReplaceFailureOf(error: ResolutionWriteError): ResolutionWriteFailure {
+  if (error.code === UNIQUE_VIOLATION && error.message === REPLACEMENT_TAKEN_MESSAGE) return RESOLUTION_TAKEN;
+
+  return resolutionInsertFailureOf(error);
+}
+
 /**
  * Accept the conflict as uncovered. A date that is not a calendar
  * `YYYY-MM-DD` is {@link RESOLUTION_FAILED} without a request.
  */
 export async function acceptUncovered(table: ResolutionInsertTable, target: ResolutionTarget): Promise<ResolutionWriteOutcome> {
-  if (!isIsoDate(target.date)) {
+  return settledWrite(
+    target.date,
+    () =>
+      table.insert({
+        organization_id: target.organizationId,
+        member_id: target.memberId,
+        date: target.date,
+        team_id: target.teamId,
+        kind: ACCEPT_UNCOVERED,
+      }),
+    resolutionInsertFailureOf,
+  );
+}
+
+/**
+ * Resolve the conflict by putting `replacementId` on the shift (story 5.4c),
+ * through 0032's function. A date that is not a calendar `YYYY-MM-DD` is
+ * {@link RESOLUTION_FAILED} without a request.
+ */
+export async function replaceMember(client: ResolutionReplaceRpc, target: ReplacementTarget): Promise<ResolutionWriteOutcome> {
+  return settledWrite(
+    target.date,
+    () =>
+      client.rpc(REPLACE_CONFLICT_MEMBER_FUNCTION, {
+        p_member_id: target.memberId,
+        p_date: target.date,
+        p_team_id: target.teamId,
+        p_replacement_id: target.replacementId,
+        p_reason: replacementReasonOf(target.reason),
+      }),
+    resolutionReplaceFailureOf,
+  );
+}
+
+/** One write, settled: no request for a bad date, and every answer — thrown, malformed or refused — as an outcome. */
+async function settledWrite(
+  date: string,
+  write: () => PromiseLike<ResolutionWriteAnswer>,
+  failureOf: (error: ResolutionWriteError) => ResolutionWriteFailure,
+): Promise<ResolutionWriteOutcome> {
+  if (!isIsoDate(date)) {
     console.error(RESOLUTION_FAILED, 'not a calendar date');
 
     return { ok: false, code: RESOLUTION_FAILED };
@@ -100,13 +202,7 @@ export async function acceptUncovered(table: ResolutionInsertTable, target: Reso
   let answered: unknown;
 
   try {
-    answered = await table.insert({
-      organization_id: target.organizationId,
-      member_id: target.memberId,
-      date: target.date,
-      team_id: target.teamId,
-      kind: ACCEPT_UNCOVERED,
-    });
+    answered = await write();
   } catch (cause) {
     console.error(RESOLUTION_FAILED, cause);
 
@@ -130,17 +226,52 @@ export async function acceptUncovered(table: ResolutionInsertTable, target: Reso
     return { ok: false, code: RESOLUTION_FAILED };
   }
 
-  const code = resolutionInsertFailureOf(error as ResolutionWriteError);
+  const code = failureOf(error as ResolutionWriteError);
 
   if (code === RESOLUTION_FAILED) console.error(code, (error as ResolutionWriteError).code);
 
   return { ok: false, code };
 }
 
+type FailureKey = ReturnType<typeof resolutionFailureMessageKey>;
+
+/** A failure's line: its key, and for the taken line the name it says. */
+export interface ResolutionFailureLine {
+  readonly key: FailureKey;
+  readonly values?: { readonly name: string };
+}
+
+/**
+ * The line a failure renders as, with its values: the taken line names who
+ * was already on the shift, and without a name falls back to the failed line
+ * — the taken key is never rendered without one.
+ */
+export function resolutionFailureLineOf(failure: ResolutionWriteFailure, taken: string | null): ResolutionFailureLine {
+  switch (failure) {
+    case RESOLUTION_GONE:
+    case RESOLUTION_DENIED:
+    case RESOLUTION_FAILED:
+      return { key: resolutionFailureMessageKey(failure) };
+    case RESOLUTION_TAKEN:
+      return taken === null
+        ? { key: resolutionFailureMessageKey(RESOLUTION_FAILED) }
+        : { key: resolutionFailureMessageKey(failure), values: { name: taken } };
+    default: {
+      const unhandled: never = failure;
+
+      return unhandled;
+    }
+  }
+}
+
 /** The line a failure renders as. Exhaustive. */
 export function resolutionFailureMessageKey(
   failure: ResolutionWriteFailure,
-): 'raspored.resolution.error.gone' | 'raspored.resolution.error.denied' | 'raspored.resolution.error.failed' {
+):
+  | 'raspored.resolution.error.gone'
+  | 'raspored.resolution.error.denied'
+  | 'raspored.resolution.error.failed'
+  | 'raspored.resolution.error.taken' {
   switch (failure) {
     case RESOLUTION_GONE:
       return 'raspored.resolution.error.gone';
@@ -148,6 +279,8 @@ export function resolutionFailureMessageKey(
       return 'raspored.resolution.error.denied';
     case RESOLUTION_FAILED:
       return 'raspored.resolution.error.failed';
+    case RESOLUTION_TAKEN:
+      return 'raspored.resolution.error.taken';
     default: {
       const unhandled: never = failure;
 

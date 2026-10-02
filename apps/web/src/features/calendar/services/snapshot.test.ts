@@ -1149,6 +1149,16 @@ const DETAIL_CARRIES = [
   { token: 'fireRank', count: 11 },
   { token: 'position', count: 11 },
 ] as const;
+/**
+ * STORY 5.4c: the replacement candidates CARRY each candidate's rank and
+ * position to the conflict screen (a copy each into the day detail's own
+ * candidate shape), and decide nothing by them: the groups are by work and
+ * leave alone, the order the snapshot's by name.
+ */
+const CANDIDATES_CARRY = [
+  { token: 'fireRank', count: 2 },
+  { token: 'position', count: 2 },
+] as const;
 const SCREEN_SHOWS = [
   { token: "'@/features/members/utils/rank'", count: 1 },
   { token: 'usesFireRanks', count: 8 },
@@ -1181,6 +1191,7 @@ describe('the calendar only reads, and projects nothing of its own', () => {
   const MODIFIERS = feature('utils/modifiers.ts');
   const SNAPSHOT = feature('services/snapshot.ts');
   const DAY_DETAIL = feature('utils/day-detail.ts');
+  const CANDIDATES = feature('utils/replacement-candidates.ts');
   // STORY 3.5b: the calendar's write modules — the insert of an override
   // and the call of its removal function — and, since story 3.6b, the insert
   // of a roster change and the call of its removal; nothing else writes.
@@ -1283,7 +1294,9 @@ describe('the calendar only reads, and projects nothing of its own', () => {
       ? SNAPSHOT_CARRIES
       : file === DAY_DETAIL
         ? DETAIL_CARRIES
-        : file === SHOWS_OWNER
+        : file === CANDIDATES
+          ? CANDIDATES_CARRY
+          : file === SHOWS_OWNER
           ? SCREEN_SHOWS
           : [];
     let rest = text;

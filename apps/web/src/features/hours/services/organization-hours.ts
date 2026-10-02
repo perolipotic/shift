@@ -180,7 +180,7 @@ function lastActiveDateOf(member: CalendarMember, dates: readonly string[]): str
  * Every row of `month`, in the snapshot's name order: each member active on
  * at least one of its dates, and any member with a shift in it — each with
  * their conflicts of the month counted from `collisions`, and their
- * accepted-uncovered shifts in `uncovered` counted as leave (story 5.4b).
+ * accepted-uncovered shifts in `leaveKeys` counted as leave (story 5.4b).
  *
  * @throws RangeError on any precondition of the domain, a band the snapshot
  *   lacks, or a team the snapshot does not name.
@@ -190,7 +190,7 @@ export function organizationHoursRowsOf(
   month: string,
   header: MonthHeader,
   collisions: readonly Collision[],
-  uncovered: readonly CollisionResolution[] = [],
+  leaveKeys: readonly CollisionResolution[] = [],
 ): readonly OrganizationHoursRow[] {
   const dates = datesOfMonth(month);
   const teams = new Map(snapshot.teams.map((team) => [team.id, team.name]));
@@ -199,7 +199,7 @@ export function organizationHoursRowsOf(
   const counts = conflictCountsOf(collisions, month);
 
   for (const member of snapshot.members) {
-    const hours = memberHoursOfMonth(memberHoursInputOf(snapshot, { ...member, memberId: member.id }, uncovered), month);
+    const hours = memberHoursOfMonth(memberHoursInputOf(snapshot, { ...member, memberId: member.id }, leaveKeys), month);
     const lastActive = lastActiveDateOf(member, dates);
 
     if (lastActive === null && hours.shiftCount === 0) continue;
@@ -401,7 +401,7 @@ export function untimedShiftsOf(rows: readonly OrganizationHoursRow[]): number |
 /**
  * The organization's month `search` names, `today` the organization's, the
  * conflicts counted from `collisions`, the accepted-uncovered shifts in
- * `uncovered` counted as leave.
+ * `leaveKeys` counted as leave.
  *
  * @throws RangeError on any precondition of the rows.
  */
@@ -410,12 +410,12 @@ export function organizationHoursViewOf(
   search: HoursSearch,
   today: string,
   collisions: readonly Collision[],
-  uncovered: readonly CollisionResolution[] = [],
+  leaveKeys: readonly CollisionResolution[] = [],
 ): OrganizationHoursView {
   const month = monthShownOf(search, today);
   const header = monthHeaderOf(month, today);
   const bands = snapshot.bands.map((band) => ({ bandId: band.id, name: band.name, sortKey: bandSortKeyOf(band.id) }));
-  const all = organizationHoursRowsOf(snapshot, month, header, collisions, uncovered);
+  const all = organizationHoursRowsOf(snapshot, month, header, collisions, leaveKeys);
   const teams = hoursTeamsOf(all);
   const people = all.map((row) => ({ id: row.memberId, name: row.name }));
   const team = teams.find((one) => one.id === search.tim)?.id ?? null;
@@ -457,10 +457,10 @@ export function organizationHoursOf(
   search: HoursSearch,
   today: string,
   collisions: readonly Collision[],
-  uncovered: readonly CollisionResolution[] = [],
+  leaveKeys: readonly CollisionResolution[] = [],
 ): OrganizationHoursOutcome {
   try {
-    return { ok: true, view: organizationHoursViewOf(snapshot, search, today, collisions, uncovered) };
+    return { ok: true, view: organizationHoursViewOf(snapshot, search, today, collisions, leaveKeys) };
   } catch (cause) {
     if (!(cause instanceof RangeError)) throw cause;
 
@@ -499,7 +499,7 @@ export function hoursSurfaceOf(
     return { ...myHoursSurfaceOf(state, conflicts, search, today), organization: null };
   }
 
-  const outcome = organizationHoursOf(reads.snapshot, search, reads.today, reads.collisions, reads.uncovered);
+  const outcome = organizationHoursOf(reads.snapshot, search, reads.today, reads.collisions, reads.leaveKeys);
 
   if (outcome.ok) {
     return {

@@ -2489,6 +2489,82 @@ describe('the access-control migration', () => {
     expect(amend?.indexOf('insert into public.leave_records')).toBeLessThan(amend?.indexOf('update public.conflict_resolutions') ?? 0);
   });
 
+  it('replaces the absent member through one definer function that adds the override and its linked resolution together (story 5.4c)', () => {
+    // STORY 5.4c (human, 2026-10-02): the override ONLY ADDS — the replacement
+    // in, nobody out — and the resolution names it. The link has no grant, and
+    // a check ties it to the kind, so a direct `replace_member` insert is 23514.
+    const migration = readFileSync(join(supabaseRoot, 'migrations', '0032_replace_conflict_member.sql'), 'utf8').replaceAll(
+      /--[^\n]*/g,
+      '',
+    );
+    expect(migration, 'the override has no (organization_id, id) key for the link').toMatch(
+      /alter table public\.roster_overrides\s+add constraint \w+ unique \(organization_id, id\);/,
+    );
+    expect(migration).toMatch(/alter table public\.conflict_resolutions\s+add column roster_override_id uuid;/);
+    expect(migration, 'the link is not a tenant-scoped no-action key').toMatch(
+      /foreign key \(organization_id, roster_override_id\)\s+references public\.roster_overrides \(organization_id, id\);/,
+    );
+    expect(migration, 'the link cascades').not.toMatch(/on delete/i);
+    expect(migration, 'the link is not backed by an index').toMatch(
+      /create index \w+\s+on public\.conflict_resolutions \(organization_id, roster_override_id\);/,
+    );
+    expect(migration, 'the link is not tied to the kind').toMatch(
+      /check \(\(kind = 'replace_member'\) = \(roster_override_id is not null\)\)/,
+    );
+    expect(migration, 'a session may name the link').not.toMatch(/\bgrant\b[^;]*\bon table\b/i);
+    const replace =
+      /create function public\.replace_conflict_member\(\s*p_member_id uuid,\s*p_date date,\s*p_team_id uuid,\s*p_replacement_id uuid,\s*p_reason text\s*\)[\s\S]*?\$\$;/i.exec(
+        migration,
+      )?.[0];
+    expect(replace, 'replace_conflict_member is not declared').toBeDefined();
+    expect(replace).toMatch(/returns uuid/i);
+    expect(replace).toMatch(/language plpgsql/i);
+    expect(replace).toMatch(/security definer/i);
+    expect(replace).toMatch(/set search_path = ''/);
+    expect(replace, 'the replacement lost the claim pin').toMatch(
+      /nullif\(\(\(select auth\.jwt\(\)\) ->> 'organization_id'\), ''\)::uuid/,
+    );
+    expect(replace, 'the replacement admits a caller who is no active admin').toMatch(
+      /from public\.current_member_access\(\) as access\s+where access\.organization_id = claimed\s+and access\.is_active\s+and access\.member_role = 'admin'/,
+    );
+    expect(replace, 'an archived team is not refused').toMatch(
+      /where team\.organization_id = claimed\s+and team\.id = p_team_id\s+and team\.archived/,
+    );
+    expect(replace, 'a refusal of the caller is not 42501').toMatch(
+      /errcode = 'insufficient_privilege',\s+message = 'CONFLICT_REPLACEMENT_REFUSED'/,
+    );
+    expect(replace, 'a replacement already put on is not 23505 by name').toMatch(
+      /when unique_violation then\s+raise exception using\s+errcode = 'unique_violation',\s+message = 'CONFLICT_REPLACEMENT_TAKEN'/,
+    );
+    expect(replace, 'the override takes someone off, or is not the claimed organization\'s').toMatch(
+      /insert into public\.roster_overrides \(organization_id, team_id, date, member_out_id, member_in_id, reason\)\s+values \(claimed, p_team_id, p_date, null, p_replacement_id, p_reason\)/,
+    );
+    expect(replace, 'the resolution is not linked to the override').toMatch(
+      /insert into public\.conflict_resolutions \(organization_id, member_id, date, team_id, kind, roster_override_id\)\s+values \(claimed, p_member_id, p_date, p_team_id, 'replace_member', override_id\)/,
+    );
+    expect(replace, 'an already-resolved conflict is not refused as plain 23505 before the override').toMatch(
+      /from public\.conflict_resolutions c\s+where c\.organization_id = claimed\s+and c\.member_id = p_member_id\s+and c\.date = p_date\s+and c\.team_id = p_team_id\s+and c\.removed_at is null\s+\) then\s+raise exception using\s+errcode = 'unique_violation',\s+message = 'CONFLICT_RESOLUTION_EXISTS'/,
+    );
+    expect(replace?.indexOf('CONFLICT_RESOLUTION_EXISTS')).toBeLessThan(replace?.indexOf('insert into public.roster_overrides') ?? 0);
+    // The override first, so 0031's trigger runs on the resolution after it.
+    expect(replace?.indexOf('insert into public.roster_overrides')).toBeLessThan(
+      replace?.indexOf('insert into public.conflict_resolutions') ?? 0,
+    );
+    expect(replace, 'the replacement updates or deletes a row').not.toMatch(/\b(update|delete)\b/i);
+    expect(replace, 'the replacement derives a collision or a candidate').not.toMatch(
+      /rotation_|team_membership_versions|member_status_versions|leave_records/,
+    );
+    for (const role of ['public', 'anon', 'service_role']) {
+      expect(migration).toContain(
+        `revoke execute on function public.replace_conflict_member(uuid, date, uuid, uuid, text) from ${role};`,
+      );
+    }
+    expect(migration).toContain('grant execute on function public.replace_conflict_member(uuid, date, uuid, uuid, text) to authenticated;');
+    expect(migration, 'story 5.4c takes a trigger').not.toMatch(/create (or replace )?trigger/i);
+    expect(migration, 'story 5.4c changes a policy').not.toMatch(/\b(create|alter|drop) policy\b/i);
+    expect((migration.match(/create (or replace )?function/gi) ?? []).length, 'story 5.4c takes one function').toBe(1);
+  });
+
   it('stores a leave record as one member and one bounded inclusive range, refusing a live overlap by exclusion (story 5.1b)', () => {
     // STORY 5.1b (R4.1, R4.4, AD-3): one member, one daterange, attributed and
     // soft-removable. No cost, balance, allowance or schedule column: those
