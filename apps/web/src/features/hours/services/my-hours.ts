@@ -1,4 +1,10 @@
-import { memberHoursOfMonth, type Collision, type MemberHours, type MemberHoursInput } from '@shift/domain';
+import {
+  memberHoursOfMonth,
+  type Collision,
+  type CollisionResolution,
+  type MemberHours,
+  type MemberHoursInput,
+} from '@shift/domain';
 
 import {
   calendarSurfaceStateOf,
@@ -21,6 +27,7 @@ import {
   HOURS_CONFLICTS_LOADING,
   HOURS_CONFLICTS_UNAVAILABLE,
   conflictCountOf,
+  leaveShiftsOf,
   type HoursConflictsState,
 } from '@/features/hours/services/hours-conflicts';
 
@@ -186,16 +193,20 @@ export function hoursSearchTo(search: HoursSearch, change: HoursSearchChange): H
  * One member's month as the domain's input — the viewer's unless `history`
  * names another (story 4.2): the calendar's schedule recipe for that member,
  * plus every hour band and every shift type with its versions — archived ones
- * included, as the schedule may still name them.
+ * included, as the schedule may still name them — and, since story 5.4b, the
+ * member's shifts accepted as uncovered (`uncovered`, every member's keys or
+ * only theirs), which the domain counts as leave rather than work.
  */
 export function memberHoursInputOf(
   snapshot: CalendarSnapshot,
   history: CalendarMemberHistory = snapshot.viewer,
+  uncovered: readonly CollisionResolution[] = [],
 ): MemberHoursInput {
   return {
     ...memberScheduleInputOf(snapshot, history),
     bands: snapshot.bands,
     shiftTypes: snapshot.types.map((type) => ({ type, versions: type.versions })),
+    leaveShifts: leaveShiftsOf(uncovered, history.memberId),
   };
 }
 
@@ -258,9 +269,9 @@ export interface MyHoursView {
   readonly bands: readonly HoursBandRow[];
   /**
    * The month's leave, or `null` when it is 0 — drawn empty (`—`), an absence
-   * rather than a claimed `0 h`. Never in a band or the total. Before Epic 5
-   * brings leave records it is always `null`; a positive leave fills it with
-   * no further change.
+   * rather than a claimed `0 h`. Never in a band or the total. Since story
+   * 5.4b it is the month's shifts accepted as uncovered, which the domain
+   * moves out of the bands, the total and the shift count.
    */
   readonly leave: HoursFigure | null;
   /**
@@ -314,18 +325,21 @@ export function myHoursViewOf(
 /**
  * The viewer's hours of the month `search` names — or today's, `today` being
  * the organization's (`calendarTodayOf`) — with their own conflicts of that
- * month counted from `collisions`, GUARDED: a `RangeError` from the domain is
- * logged and is the one failure, never a crashed route and never a figure.
+ * month counted from `collisions` and their accepted-uncovered shifts in
+ * `uncovered` counted as leave (story 5.4b), GUARDED: a `RangeError` from the
+ * domain is logged and is the one failure, never a crashed route and never a
+ * figure.
  */
 export function myHoursOf(
   snapshot: CalendarSnapshot,
   search: HoursSearch,
   today: string,
   collisions: readonly Collision[],
+  uncovered: readonly CollisionResolution[] = [],
 ): MyHoursOutcome {
   try {
     const month = monthShownOf(search, today);
-    const hours = memberHoursOfMonth(memberHoursInputOf(snapshot), month);
+    const hours = memberHoursOfMonth(memberHoursInputOf(snapshot, snapshot.viewer, uncovered), month);
     const conflictCount = conflictCountOf(collisions, snapshot.viewer.memberId, month);
 
     return { ok: true, view: myHoursViewOf(snapshot, monthHeaderOf(month, today), hours, conflictCount) };
@@ -419,7 +433,13 @@ export function hoursReadsOf(
   today: string | null,
 ):
   | { readonly ready: false; readonly surface: MyHoursSurface }
-  | { readonly ready: true; readonly snapshot: CalendarSnapshot; readonly today: string; readonly collisions: readonly Collision[] } {
+  | {
+      readonly ready: true;
+      readonly snapshot: CalendarSnapshot;
+      readonly today: string;
+      readonly collisions: readonly Collision[];
+      readonly uncovered: readonly CollisionResolution[];
+    } {
   if (state.refusal !== null) return { ready: false, surface: hoursReadRefusedOf(true) };
   if (conflicts?.kind === HOURS_CONFLICTS_UNAVAILABLE) {
     return { ready: false, surface: hoursReadRefusedOf(conflicts.retryable) };
@@ -428,7 +448,13 @@ export function hoursReadsOf(
     return { ready: false, surface: HOURS_LOADING };
   }
 
-  return { ready: true, snapshot: state.snapshot, today, collisions: conflicts.collisions };
+  return {
+    ready: true,
+    snapshot: state.snapshot,
+    today,
+    collisions: conflicts.collisions,
+    uncovered: conflicts.uncovered,
+  };
 }
 
 /**
@@ -449,7 +475,7 @@ export function myHoursSurfaceOf(
 
   if (!reads.ready) return reads.surface;
 
-  const outcome = myHoursOf(reads.snapshot, search, reads.today, reads.collisions);
+  const outcome = myHoursOf(reads.snapshot, search, reads.today, reads.collisions, reads.uncovered);
 
   if (outcome.ok) {
     return {

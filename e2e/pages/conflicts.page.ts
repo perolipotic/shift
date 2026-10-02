@@ -48,4 +48,95 @@ export class ConflictsPage extends BasePage {
   get retryButton(): Locator {
     return this.page.getByRole('button', { name: raspored.retry, exact: true });
   }
+
+  /** The link a row is, to its conflict's resolution screen (story 5.4b). */
+  rowLink(row: Locator): Locator {
+    return row.getByRole('link');
+  }
+
+  /** The status line a saved decision returns with (story 5.4b). */
+  get savedStatus(): Locator {
+    return this.page.getByRole('main').getByRole('status');
+  }
+}
+
+const resolution = raspored.resolution;
+
+/**
+ * `/raspored/$memberId/$date/$teamId`: one conflict's resolution screen
+ * (story 5.4b) — the way back, ‹ ›, the facts, the one radio card with its
+ * consequence strip, and Odustani and Spremi odluku.
+ */
+export class ConflictResolutionPage extends BasePage {
+  protected readonly path = '/raspored';
+
+  /** Opens the screen of the conflict `(memberId, date, teamId)`. */
+  async gotoConflict(memberId: string, date: string, teamId: string): Promise<void> {
+    await this.page.goto(`${this.path}/${memberId}/${date}/${teamId}`);
+  }
+
+  /** The way back to the queue, with its count (`Raspored · 3 neriješena`) or plainly. */
+  get backLink(): Locator {
+    return this.page.getByRole('main').getByRole('link', { name: new RegExp(`^(Raspored · |${resolution.backToQueue})`) });
+  }
+
+  /** `2 od 3 · odluči što vrijedi za ovu smjenu.` */
+  position(position: number, count: number): Locator {
+    return this.page.getByText(
+      resolution.position.replace('{position}', String(position)).replace('{count}', String(count)),
+      { exact: true },
+    );
+  }
+
+  /** ‹ — named by the target's date, or plainly at the queue's start. */
+  get previousButton(): Locator {
+    return this.page.getByRole('button', { name: new RegExp(`^${resolution.previousNone}`) });
+  }
+
+  /** › — named by the target's date, or plainly at the queue's end. */
+  get nextButton(): Locator {
+    return this.page.getByRole('button', { name: new RegExp(`^${resolution.nextNone}`) });
+  }
+
+  /** The radio group, named by its heading. */
+  get choice(): Locator {
+    return this.page.getByRole('radiogroup', { name: resolution.choice });
+  }
+
+  /** The one card, "Prihvati kao nepokriveno". */
+  get acceptOption(): Locator {
+    return this.choice.getByRole('radio', { name: resolution.acceptTitle });
+  }
+
+  /** Every card in the group. */
+  get options(): Locator {
+    return this.choice.getByRole('radio');
+  }
+
+  /** Spremi odluku. */
+  get saveButton(): Locator {
+    return this.page.getByRole('button', { name: new RegExp(`^(${resolution.save}|${resolution.saving})$`) });
+  }
+
+  /** Odustani, back to the queue. */
+  get cancelLink(): Locator {
+    return this.page.getByRole('link', { name: resolution.cancel, exact: true });
+  }
+
+  /** A message on the screen, matched whole. */
+  line(message: string): Locator {
+    return this.page.getByText(message, { exact: true });
+  }
+
+  /** The line a conflict no longer open states. */
+  get missingLine(): Locator {
+    return this.page.getByText(resolution.missing, { exact: true });
+  }
+
+  /** The strip's three terms, in order: their labels. */
+  get stripLabels(): Locator {
+    return this.acceptOption.getByText(
+      new RegExp(`^(${resolution.coverageLabel}|${resolution.hoursLabel}|${resolution.balanceLabel})$`),
+    );
+  }
 }

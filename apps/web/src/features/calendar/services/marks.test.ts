@@ -444,7 +444,7 @@ describe('the leave read, never hidden', () => {
 });
 
 describe('the refusal and its retry', () => {
-  const ready = { kind: MARKS_READY, marks: { collisions: [], leave: new Map() } } as const;
+  const ready = { kind: MARKS_READY, marks: { collisions: [], uncovered: [], leave: new Map() } } as const;
 
   it('refuses with a retry when the snapshot read failed or is paused, whatever else', () => {
     expect(calendarRefusalOf(CALENDAR_UNAVAILABLE, null, null)).toEqual({ refusal: CALENDAR_UNAVAILABLE, retryable: true });
@@ -517,11 +517,19 @@ describe('resolutions (story 5.4a)', () => {
 
     expect(Object.fromEntries(COLLIDING_DATES.map((date) => [date, gridCellOf(month, a, date).modifiers]))).toEqual({
       '2026-09-10': ['conflict', 'leave'],
-      // The grid names the shift, not the person on leave: no collision, no mark.
-      '2026-09-11': [],
+      // The grid names the shift, not the person on leave: no collision, no
+      // conflict mark — and, accepted as uncovered (story 5.4b), the
+      // uncovered mark alone.
+      '2026-09-11': ['uncovered'],
       '2026-09-14': ['conflict', 'leave'],
     });
     expect(dayMarksOf(daysOf(month.days), ['2026-09-11'])).toEqual({ '2026-09-11': [['leave']] });
+  });
+
+  it('takes the mark off with no uncovered mark for a resolution of another kind', () => {
+    const month = monthOf(pilot, [WORKED], SEPTEMBER, [resolutionOf(VIEWER_MEMBER, '2026-09-11', a, 'replace_member')]);
+
+    expect(gridCellOf(month, a, '2026-09-11').modifiers).toEqual([]);
   });
 
   it("keeps the other team's mark when the member is on two teams and one is resolved", async () => {
@@ -531,7 +539,7 @@ describe('resolutions (story 5.4a)', () => {
     });
     const month = monthOf(snapshot, [WORKED], SEPTEMBER, [resolutionOf(VIEWER_MEMBER, '2026-09-10', a)]);
 
-    expect(gridCellOf(month, a, '2026-09-10').modifiers).toEqual([]);
+    expect(gridCellOf(month, a, '2026-09-10').modifiers).toEqual(['uncovered']);
     expect(gridCellOf(month, b, '2026-09-10').modifiers).toEqual(['conflict', 'overridden', 'leave']);
   });
 
@@ -564,5 +572,51 @@ describe('resolutions (story 5.4a)', () => {
     expect(calendarMarksStateOf(pilot, answered([WORKED]), null)).toEqual({ kind: MARKS_UNAVAILABLE, retryable: true });
     expect(logged).toHaveBeenCalledWith(MARKS_UNAVAILABLE, 'resolutions');
     expect(calendarMarksStateOf(member, answered([WORKED]), null).kind).toBe(MARKS_READY);
+  });
+});
+
+describe('uncovered (story 5.4b)', () => {
+  const a = teamOf(PILOT, 0);
+
+  it("marks the admin's grid cell uncovered, and lists the key in the marks", () => {
+    const accepted = [resolutionOf(VIEWER_MEMBER, '2026-09-10', a)];
+    const state = calendarMarksStateOf(pilot, answered([WORKED]), answered(accepted));
+
+    expect(state.kind).toBe(MARKS_READY);
+    if (state.kind !== MARKS_READY) return;
+    expect(state.marks.uncovered).toEqual([{ memberId: VIEWER_MEMBER, date: '2026-09-10', teamId: a }]);
+    expect(gridCellOf(monthOf(pilot, [WORKED], SEPTEMBER, accepted), a, '2026-09-10').modifiers).toEqual(['uncovered']);
+  });
+
+  it('keeps the conflict and adds the uncovered mark where another conflict on the same shift is still open', async () => {
+    // Ana, of the other team, is put on the viewer's team's 10.09 shift, and is on leave that day too.
+    const snapshot = await snapshotOf(PILOT, {
+      rosterOverrides: [calendarRosterOverrideRow('put-on', a, '2026-09-10', null, ANA)],
+    });
+    const both = [WORKED, rowOf('record-ana', '2026-09-10', '2026-09-11', ANA)];
+    const month = monthOf(snapshot, both, SEPTEMBER, [resolutionOf(VIEWER_MEMBER, '2026-09-10', a)]);
+
+    // `overridden` too: the roster override that put Ana on changed who works it.
+    expect(gridCellOf(month, a, '2026-09-10').modifiers).toEqual(['conflict', 'overridden', 'leave', 'uncovered']);
+  });
+
+  it('marks nothing for a live key over a non-working day, or a shift its member is not rostered on', () => {
+    // 12.09 is Slobodno for the viewer's team; Ana is on the other team, so not on 10.09's roster here.
+    const month = monthOf(pilot, [WORKED], SEPTEMBER, [
+      resolutionOf(VIEWER_MEMBER, '2026-09-12', a),
+      resolutionOf(ANA, '2026-09-10', a),
+    ]);
+
+    expect(gridCellOf(month, a, '2026-09-12').modifiers).toEqual([]);
+    expect(gridCellOf(month, a, '2026-09-10').modifiers).toEqual(['conflict', 'leave']);
+  });
+
+  it('gives a member no uncovered mark: they read no organization resolution', async () => {
+    const member = await snapshotOf(PILOT, { role: 'member_role' });
+    const state = calendarMarksStateOf(member, answered([WORKED]), null);
+
+    expect(state.kind).toBe(MARKS_READY);
+    if (state.kind !== MARKS_READY) return;
+    expect(state.marks.uncovered).toEqual([]);
   });
 });

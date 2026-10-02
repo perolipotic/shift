@@ -43,6 +43,7 @@ export {
 export {
   memberHoursOfMonth,
   type BandHours,
+  type LeaveShift,
   type MemberHours,
   type MemberHoursInput,
   type ShiftTypeWithVersions,

@@ -177,7 +177,11 @@ describe('the worked example', () => {
 
     expect(first).toEqual({
       key: collisionKeyOf({ memberId: VIEWER_MEMBER, date: '2026-09-10', teamId: teamOf(PILOT, 0) }),
+      memberId: VIEWER_MEMBER,
       date: '2026-09-10',
+      teamId: teamOf(PILOT, 0),
+      shiftTypeId: 'pilot-dan',
+      leaveRecordId: 'record-worked',
       dateShown: '10.09.2026',
       past: false,
       memberName: VIEWER_NAME,

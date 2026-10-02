@@ -18,6 +18,7 @@ import {
   formatDate,
   formatDayMonthRange,
   formatMonthName,
+  formatList,
   formatNumber,
   formatTime,
   formatTimeRange,
@@ -266,6 +267,8 @@ const UNZONED_ENTRY_POINTS = [
   // Story 2.1b. A nominal minute of the day — an hour band's start — which has
   // no date and so no instant for a zone to resolve.
   'formatMinuteOfDay',
+  // Story 5.4b. Names joined as prose: no instant at all.
+  'formatList',
 ];
 
 /**
@@ -464,6 +467,9 @@ describe("month and day names are CLDR verbatim and lowercase", () => {
 describe('numbers use Croatian grouping and decimal separators', () => {
   it('renders 1234.5 as 1.234,50', () => {
     expect(formatNumber(1234.5)).toBe('1.234,50');
+    // Story 5.4b: names joined as Croatian prose.
+    expect(formatList(['Ante Bilić', 'Frane Lozić', 'Karlo Jelić'])).toBe('Ante Bilić, Frane Lozić i Karlo Jelić');
+    expect(formatList(['Ante Bilić'])).toBe('Ante Bilić');
   });
 
   it('renders a count without decimals when asked', () => {

@@ -48,6 +48,7 @@ import {
 import { OrganizationPromptScreen, prijavaOrganizacijaRoute } from '@/pages/prijava-organizacija';
 import { prijavaRoute, SignInScreen } from '@/pages/prijava';
 import { RasporedScreen, rasporedRoute } from '@/pages/raspored';
+import { RasporedKonfliktScreen, rasporedKonfliktRoute } from '@/pages/raspored.$memberId.$date.$teamId';
 import { SatiScreen, satiRoute } from '@/pages/sati';
 import { SmjenaScreen, smjenaRoute } from '@/pages/smjene.$id';
 import type { AppRouterContext } from '@/pages/__root';
@@ -228,6 +229,14 @@ const LEVEL_GUARDED_ROUTES = [
   // THE ADMIN ROUTE GUARD FIX: the two `ADMIN_ONLY` destinations that carried
   // no guard, now copies of the same one.
   { id: '/_app/raspored', path: '/raspored', route: rasporedRoute, component: RasporedScreen },
+  // STORY 5.4b: one conflict's resolution screen, admin-only, a copy of the
+  // same guard, and not a destination.
+  {
+    id: '/_app/raspored/$memberId/$date/$teamId',
+    path: '/raspored/$memberId/$date/$teamId',
+    route: rasporedKonfliktRoute,
+    component: RasporedKonfliktScreen,
+  },
   {
     id: '/_app/organizacija',
     path: '/organizacija',
@@ -337,6 +346,8 @@ describe('the shell route tree', () => {
       // STORY 2.2b. One shift type, reached from `Postavke rotacije` only.
       '/_app/postavke-rotacije/tipovi-smjena/$id',
       '/_app/raspored',
+      // STORY 5.4b. One conflict's resolution screen, reached from the queue only.
+      '/_app/raspored/$memberId/$date/$teamId',
       '/_app/sati',
       // STORY 1.8. One team's roster, for every role, reached from Danas only.
       '/_app/smjene/$id',
@@ -1704,11 +1715,12 @@ describe('the member list is the first destination that refuses a permission lev
      * over the branches that decide who gets in, so a copy that was pasted and
      * then quietly loosened fails here rather than shipping.
      */
-    it('guards exactly the eleven routes the table names, and no fewer', () => {
+    it('guards exactly the twelve routes the table names, and no fewer', () => {
       // NON-VACUITY. An entry deleted from the table takes its cases with it and
       // Vitest reports the shorter run as a pass. SEVEN SINCE STORY 2.1b.
       // NINE SINCE STORY 2.2b. ELEVEN SINCE THE ADMIN ROUTE GUARD FIX.
-      expect(LEVEL_GUARDED_ROUTES).toHaveLength(11);
+      // TWELVE SINCE STORY 5.4b.
+      expect(LEVEL_GUARDED_ROUTES).toHaveLength(12);
       for (const { path, route } of LEVEL_GUARDED_ROUTES) {
         expect(
           (route.options as { beforeLoad?: unknown }).beforeLoad,
@@ -1857,6 +1869,11 @@ describe('the member list is the first destination that refuses a permission lev
       expect(match('/ljudi/smjene').at(-1)?.routeId).toBe('/_app/ljudi/smjene');
       expect(match('/ljudi/smjene/abc').at(-1)?.routeId).toBe('/_app/ljudi/smjene/$id');
       expect(match('/ljudi/abc').at(-1)?.routeId).toBe('/_app/ljudi/$id');
+    });
+
+    it('resolves a conflict\'s three-part URL to its resolution screen, and /raspored to the queue (story 5.4b)', () => {
+      expect(match('/raspored').at(-1)?.routeId).toBe('/_app/raspored');
+      expect(match('/raspored/m-1/2026-10-02/t-1').at(-1)?.routeId).toBe('/_app/raspored/$memberId/$date/$teamId');
     });
 
     it.each(LEVEL_GUARDED_ROUTES)('resolves $path to $id and to its own screen', ({ id, path, component }) => {

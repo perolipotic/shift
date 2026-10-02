@@ -6,9 +6,11 @@ import {
   monthOf,
   overrideStandingOf,
   overridesByTeamAndDate,
+  rosterOn,
   scheduleOfMonth,
   shiftTypeVersionOn,
   type Collision,
+  type CollisionResolution,
   type LeaveRange,
   type MemberScheduleInput,
   type MembershipVersion,
@@ -20,6 +22,7 @@ import {
   MODIFIER_CONFLICT,
   MODIFIER_LEAVE,
   MODIFIER_OVERRIDDEN,
+  MODIFIER_UNCOVERED,
   type CalendarModifier,
 } from '@/features/calendar/utils/modifiers';
 import {
@@ -531,9 +534,10 @@ export interface CalendarCell {
    * canonical order — conflict, overridden, leave, uncovered: `conflict`
    * where a collision falls on it (story 5.3c, {@link CalendarMarks}),
    * `overridden` where a shift-type override replaced the projected type
-   * (story 3.5a) or a roster override changed who works it (story 3.6a), and
-   * `leave` where leave covers it (story 5.3c). Never `uncovered` yet: that
-   * is story 5.4's. A cell with no rotation in effect carries none.
+   * (story 3.5a) or a roster override changed who works it (story 3.6a),
+   * `leave` where leave covers it (story 5.3c), and `uncovered` on an
+   * admin's grid cell whose shift a member's conflict was accepted as
+   * uncovered on (story 5.4b). A cell with no rotation in effect carries none.
    */
   readonly modifiers: readonly CalendarModifier[];
 }
@@ -551,6 +555,12 @@ export interface CalendarCell {
 export interface CalendarMarks {
   /** Every collision shown: none for a member. */
   readonly collisions: readonly Collision[];
+  /**
+   * The keys of the conflicts accepted as uncovered (story 5.4b): the
+   * admin's, from the organization's live resolutions; none for a member,
+   * who reads no organization resolution and is shown no uncovered mark.
+   */
+  readonly uncovered: readonly CollisionResolution[];
   /** Each member's live leave ranges, by member id: only the viewer's own for a member. */
   readonly leave: ReadonlyMap<string, readonly LeaveRange[]>;
 }
@@ -559,7 +569,7 @@ export interface CalendarMarks {
 const NO_MODIFIERS: readonly CalendarModifier[] = [];
 
 /** No collision and no leave: a calendar with nothing to mark. */
-export const NO_MARKS: CalendarMarks = { collisions: [], leave: new Map() };
+export const NO_MARKS: CalendarMarks = { collisions: [], uncovered: [], leave: new Map() };
 
 /** The key a grid cell's collisions are found under: its team and date. */
 function teamDateKeyOf(teamId: string, date: string): string {
@@ -574,6 +584,8 @@ function memberTeamDateKeyOf(memberId: string, teamId: string, date: string): st
 /** {@link CalendarMarks} indexed once per month, for the cells to look up. */
 interface MarksLookup {
   readonly teamDates: ReadonlySet<string>;
+  /** The team and date of every accepted-uncovered key. */
+  readonly uncoveredTeamDates: ReadonlySet<string>;
   readonly memberTeamDates: ReadonlySet<string>;
   readonly leave: ReadonlyMap<string, readonly LeaveRange[]>;
 }
@@ -581,6 +593,7 @@ interface MarksLookup {
 function marksLookupOf(marks: CalendarMarks): MarksLookup {
   return {
     teamDates: new Set(marks.collisions.map((collision) => teamDateKeyOf(collision.teamId, collision.date))),
+    uncoveredTeamDates: new Set(marks.uncovered.map((key) => teamDateKeyOf(key.teamId, key.date))),
     memberTeamDates: new Set(
       marks.collisions.map((collision) => memberTeamDateKeyOf(collision.memberId, collision.teamId, collision.date)),
     ),
@@ -598,30 +611,34 @@ interface CellMarks {
   readonly conflict: boolean;
   readonly leave: boolean;
   readonly overridden: boolean;
+  readonly uncovered: boolean;
 }
 
 /**
  * THE ONE PLACE A CELL'S MARKS ARE SET, in canonical order: conflict, then
- * overridden, then leave.
+ * overridden, then leave, then uncovered.
  */
-function cellModifiersOf({ conflict, leave, overridden }: CellMarks): readonly CalendarModifier[] {
+function cellModifiersOf({ conflict, leave, overridden, uncovered }: CellMarks): readonly CalendarModifier[] {
   const modifiers: CalendarModifier[] = [];
 
   if (conflict) modifiers.push(MODIFIER_CONFLICT);
   if (overridden) modifiers.push(MODIFIER_OVERRIDDEN);
   if (leave) modifiers.push(MODIFIER_LEAVE);
+  if (uncovered) modifiers.push(MODIFIER_UNCOVERED);
 
   return modifiers;
 }
 
 /**
  * A grid cell's marks: conflict AND leave where any collision falls on its
- * team and date — the grid names the shift, not the person on leave.
+ * team and date — the grid names the shift, not the person on leave — and
+ * uncovered where a conflict on it was accepted as uncovered (story 5.4b).
  */
 function gridCellMarksOf(lookup: MarksLookup, teamId: string, date: string, overridden: boolean): CellMarks {
-  const collided = lookup.teamDates.has(teamDateKeyOf(teamId, date));
+  const key = teamDateKeyOf(teamId, date);
+  const collided = lookup.teamDates.has(key);
 
-  return { conflict: collided, leave: collided, overridden };
+  return { conflict: collided, leave: collided, overridden, uncovered: lookup.uncoveredTeamDates.has(key) };
 }
 
 /**
@@ -640,7 +657,42 @@ function memberCellMarksOf(
     conflict: lookup.memberTeamDates.has(memberTeamDateKeyOf(memberId, teamId, date)),
     leave: onLeave(lookup, memberId, date),
     overridden,
+    uncovered: false,
   };
+}
+
+/**
+ * The accepted-uncovered keys that still name a shift (story 5.4b): those
+ * whose team works a WORKING shift that date in `schedule`, with the key's
+ * member on its roster (`rosterOn`, the overrides in force applied). A key
+ * over a non-working day, a day with no rotation, or a shift the member is no
+ * longer rostered on marks nothing.
+ */
+function uncoveredOnRosterOf(
+  snapshot: CalendarSnapshot,
+  schedule: readonly { readonly date: string; readonly cells: readonly { readonly teamId: string; readonly shiftTypeId: string | null }[] }[],
+  uncovered: readonly CollisionResolution[],
+): readonly CollisionResolution[] {
+  if (uncovered.length === 0) return uncovered;
+
+  const working = new Set(workingShiftTypeIdsOf(snapshot));
+  const typeOn = new Map<string, string | null>();
+
+  for (const row of schedule) {
+    for (const cell of row.cells) typeOn.set(teamDateKeyOf(cell.teamId, row.date), cell.shiftTypeId);
+  }
+
+  const inForce = rosterStandingOfCalendar(snapshot).inForce;
+
+  return uncovered.filter((key) => {
+    const type = typeOn.get(teamDateKeyOf(key.teamId, key.date)) ?? null;
+
+    return (
+      type !== null &&
+      working.has(type) &&
+      rosterOn(snapshot.members, inForce, key.teamId, key.date).roster.some((entry) => entry.memberId === key.memberId)
+    );
+  });
 }
 
 /** One date of the month. */
@@ -1028,7 +1080,6 @@ export function calendarMonthOf(
   marks: CalendarMarks = NO_MARKS,
 ): CalendarMonth {
   const month = monthShownOf(search, today);
-  const marked = marksLookupOf(marks);
   const active = splitTeams(snapshot.teams).active;
   const teamLetters = teamLettersOf(active.map((team) => team.name));
   const teams = active.map((team, index) => ({ ...team, letter: teamLetters[index] ?? '' }));
@@ -1048,6 +1099,7 @@ export function calendarMonthOf(
     snapshot,
     schedule.flatMap((row) => row.cells.map((cell) => cell.shiftTypeId)),
   );
+  const marked = marksLookupOf({ ...marks, uncovered: uncoveredOnRosterOf(snapshot, schedule, marks.uncovered) });
   // ACTIVE IN THE MONTH SHOWN: a member active on at least one of its dates,
   // by the domain's rule over their status versions (story 3.4a) — the same
   // membership rule as a Sati row, so a Sati name always opens that member.

@@ -168,9 +168,13 @@ test('lists the new conflicts without a reload, upcoming first and past ones aft
       return heading === plural(raspored.count, shown);
     })
     .toBe(true);
-  // No `Riješi` and no link: resolving is story 5.4's.
+  // No `Riješi`, no checkbox and no bulk action: since story 5.4b each row is
+  // one link to its resolution screen, and nothing else.
   await expect(conflictsPage.rows.getByRole('button')).toHaveCount(0);
-  await expect(conflictsPage.rows.getByRole('link')).toHaveCount(0);
+  await expect(conflictsPage.rows.getByRole('checkbox')).toHaveCount(0);
+  await expect
+    .poll(async () => (await conflictsPage.rows.getByRole('link').count()) === (await conflictsPage.rows.count()))
+    .toBe(true);
 
   // REMOVE THE RECORD on the member's page: its three rows clear.
   await page.goBack();

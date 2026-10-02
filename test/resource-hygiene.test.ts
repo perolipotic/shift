@@ -117,6 +117,14 @@ const SANCTIONED_PLURAL_KEYS = [
   // konflikata` included (UX-DR20). Its own key rather than `count.conflicts`,
   // because the adjective agrees with the noun in all three forms.
   'raspored.count',
+  // STORY 5.4b: the resolution screen's four counts — the way back's
+  // `Raspored · 7 neriješenih`, the causing record's cost in days, the
+  // coverage term's roster (`3 od 4 člana`, `od 5 članova`), and the balance
+  // the decision leaves (`16 dana preostalo`).
+  'raspored.resolution.back',
+  'raspored.resolution.leave',
+  'raspored.resolution.coverage',
+  'raspored.resolution.balance',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -1204,6 +1212,51 @@ const SANCTIONED_SCREEN_KEYS = [
   'raspored.detailTimed',
   'raspored.unavailable',
   'raspored.retry',
+  // STORY 5.4b: the resolution screen — the queue's status line once a
+  // decision lands; the screen's heading, its place in the queue and ‹ ›
+  // (named by the target's date, or plainly at an end); the facts (the
+  // conflict's mark, the shift with or without times, who else works that
+  // day, or nobody); the radio group's heading and hint, the one card's title
+  // and sentence; the strip's three labels, the uncovered mark, the hours as
+  // leave (or the empty mark when untimed) and the unchanged balance; the
+  // save hint before and after a choice, Odustani, Spremi odluku and its
+  // pending label; the line a conflict no longer open shows with its way
+  // back, the unavailable line with its retry, and the three refusals.
+  'raspored.saved',
+  'raspored.resolution.heading',
+  'raspored.resolution.position',
+  'raspored.resolution.previous',
+  'raspored.resolution.previousNone',
+  'raspored.resolution.next',
+  'raspored.resolution.nextNone',
+  'raspored.resolution.mark',
+  'raspored.resolution.shiftTimed',
+  'raspored.resolution.shift',
+  'raspored.resolution.coworkers',
+  'raspored.resolution.noCoworkers',
+  'raspored.resolution.choice',
+  'raspored.resolution.choiceHint',
+  'raspored.resolution.acceptTitle',
+  'raspored.resolution.acceptBody',
+  'raspored.resolution.coverageLabel',
+  'raspored.resolution.uncovered',
+  'raspored.resolution.hoursLabel',
+  'raspored.resolution.hoursAsLeave',
+  'raspored.resolution.noHours',
+  'raspored.resolution.balanceLabel',
+  'raspored.resolution.balanceUnchanged',
+  'raspored.resolution.hintChoose',
+  'raspored.resolution.hintRecorded',
+  'raspored.resolution.cancel',
+  'raspored.resolution.save',
+  'raspored.resolution.saving',
+  'raspored.resolution.missing',
+  'raspored.resolution.backToQueue',
+  'raspored.resolution.unavailable',
+  'raspored.resolution.retry',
+  'raspored.resolution.error.gone',
+  'raspored.resolution.error.denied',
+  'raspored.resolution.error.failed',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
@@ -1275,6 +1328,14 @@ const CALENDAR_NAMESPACE = 'kalendar.';
 const HOURS_NAMESPACE = 'sati.';
 
 /**
+ * The resolution screen's namespace (story 5.4b). It decides what holds for
+ * ONE rostered shift — `odluči što vrijedi za ovu smjenu`, the mockup's own
+ * words — so `smjen` names that shift there, as on *Sati*, and `tip… smjen…`
+ * is refused: the shift type is shown by its name.
+ */
+const RESOLUTION_NAMESPACE = 'raspored.resolution.';
+
+/**
  * The day detail's override copy (story 3.5b), inside the calendar's
  * namespace: the admin changes a team's SHIFT TYPE there, so it says the term
  * — `Tip smjene` is the form's field — and, as in
@@ -1323,7 +1384,8 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     !key.startsWith(TEAM_NAMESPACE) &&
     !key.startsWith(ROTATION_BUILDER_NAMESPACE) &&
     !key.startsWith(CALENDAR_NAMESPACE) &&
-    !key.startsWith(HOURS_NAMESPACE)
+    !key.startsWith(HOURS_NAMESPACE) &&
+    !key.startsWith(RESOLUTION_NAMESPACE)
   ) {
     return lowered.includes('smjen');
   }

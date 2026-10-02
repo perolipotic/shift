@@ -58,6 +58,9 @@ export const CONFLICT_RESOLUTION_KINDS = ['accept_uncovered', 'replace_member', 
 
 export type ConflictResolutionKind = (typeof CONFLICT_RESOLUTION_KINDS)[number];
 
+/** The kind story 5.4b writes: the shift goes uncovered, and the absent member's hours become leave hours. */
+export const ACCEPT_UNCOVERED = 'accept_uncovered' satisfies ConflictResolutionKind;
+
 const ID_COLUMN = 'id';
 const MEMBER_COLUMN = 'member_id';
 const DATE_COLUMN = 'date';
@@ -284,4 +287,16 @@ export function conflictResolutionsAnswerOf<Answer extends ConflictResolutionRow
   own: Answer,
 ): Answer {
   return readsOrganization ? organization : own;
+}
+
+/**
+ * THE SPLIT BY KIND (story 5.4b): the keys of the resolutions that accepted
+ * their conflict as uncovered, in the order given. *Sati* moves each one's
+ * shift into the absent member's leave hours, and the admin's calendar marks
+ * its cell uncovered; no other kind does either.
+ */
+export function acceptedUncoveredOf(resolutions: readonly ConflictResolution[]): readonly CollisionResolution[] {
+  return resolutions
+    .filter((resolution) => resolution.kind === ACCEPT_UNCOVERED)
+    .map(({ memberId, date, teamId }) => ({ memberId, date, teamId }));
 }

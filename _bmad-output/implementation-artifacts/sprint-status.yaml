@@ -506,7 +506,7 @@ development_status:
   5-3d-hours-conflict-state: done
   5-4-an-admin-decides-each-conflict-on-its-own-screen: in-progress
   5-4a-conflict-resolutions: done
-  5-4b-resolution-screen: backlog
+  5-4b-resolution-screen: review
   5-4c-replace-member: backlog
   5-4d-amend-leave: backlog
   5-5-a-configuration-change-cannot-quietly-erase-a-pending-decisi: backlog

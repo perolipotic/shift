@@ -432,3 +432,16 @@ export function formatNumber(value: number, fractionDigits = 2): string {
 
   return formatter.format(value);
 }
+
+/** One list formatter per process: names joined as Croatian prose reads them. */
+const listFormatter = new Intl.ListFormat(LOCALE, { style: 'long', type: 'conjunction' });
+
+/**
+ * `Ante Bilić, Frane Lozić i Karlo Jelić` — names joined as a Croatian
+ * sentence lists them (story 5.4b: who else works the day). Here because this
+ * file is the only one permitted to touch `Intl`; it formats no instant, so it
+ * takes no zone.
+ */
+export function formatList(items: readonly string[]): string {
+  return listFormatter.format(items);
+}

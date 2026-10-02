@@ -101,6 +101,28 @@ export const LEAVE_WRITE_DEPENDENTS: readonly QueryKey[] = [
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
 ];
 
+/**
+ * A conflict resolution recorded (story 5.4b): both live resolution reads.
+ * The organization's is what the queue (*Raspored*), the calendar's marks
+ * (the conflict ring, and the uncovered mark an accepted conflict leaves) and
+ * an admin's *Sati* (the count, and the leave hours an accepted conflict
+ * moves) derive from; the viewer's own is a member's *Sati* — an admin's
+ * decision on their own conflict changes it. No leave, schedule or member row
+ * changes, so nothing else is re-read.
+ */
+export const CONFLICT_RESOLUTION_WRITE_DEPENDENTS: readonly QueryKey[] = [
+  ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+  MY_CONFLICT_RESOLUTIONS_KEY,
+];
+
+/**
+ * A conflict resolution refused as no longer open (story 5.4b): beside the
+ * resolutions themselves, the organization's live leave — a P0002 means the
+ * leave covering the date is gone, and only the leave read takes the
+ * conflict away.
+ */
+export const CONFLICT_RESOLUTION_GONE_DEPENDENTS: readonly QueryKey[] = [ORGANIZATION_LEAVE_RECORDS_KEY];
+
 /** A refusal's re-read: the surface's own key, and nothing that depends on it. */
 export const NO_DEPENDENTS: readonly QueryKey[] = [];
 
