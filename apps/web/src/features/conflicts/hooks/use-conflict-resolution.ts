@@ -10,11 +10,13 @@ import {
   type CalendarMembersRpc,
 } from '@/features/calendar/services/snapshot';
 import {
+  OPTION_AMEND_LEAVE,
   OPTION_REPLACE_MEMBER,
   RESOLUTION_LOADING,
   RESOLUTION_READY,
   SAVE_FOCUS_CANDIDATES,
   SAVE_FOCUS_CHOICE,
+  amendHandoffOf,
   candidateIdOf,
   hasCandidates,
   saveFocusOf,
@@ -54,6 +56,7 @@ import {
   organizationLeaveRecordsQueryOptions,
   type OrganizationLeaveRecordsTable,
 } from '@/features/leave/services/leave-list';
+import { withLeaveHandoff } from '@/features/leave/services/leave-section';
 import {
   MEMBERS_LIST_KEY,
   MEMBERS_TABLE,
@@ -112,6 +115,12 @@ import { supabaseClient } from '@/lib/supabase/client';
  * replacement. Refused as TAKEN — the replacement is already on the shift —
  * the snapshot is re-read so the candidates drop them, the pick is cleared,
  * and the line names who was taken.
+ *
+ * AMENDING (story 5.4d): the third card writes nothing. Its Spremi goes to the
+ * member page with the record and the range that would clear the conflict, or
+ * its removal, in router state (`amendHandoffOf`) — no pending, no write and
+ * nothing held. The member page's own amend or removal does the write, and
+ * the conflict clears by derivation once it lands.
  */
 export function useConflictResolution(params: ResolutionParams) {
   const queryClient = useQueryClient();
@@ -263,6 +272,27 @@ export function useConflictResolution(params: ResolutionParams) {
     if (screen.kind !== RESOLUTION_READY || saving.current || failure === RESOLUTION_GONE) return;
 
     const view = screen.view;
+
+    // NO RESOLUTION ROW (human, 2026-10-02): the leave amend is the write, on the member page.
+    // A double press or a repeated Enter pushes one entry: the in-flight ref, as a write's.
+    if (choice === OPTION_AMEND_LEAVE) {
+      const handoff = amendHandoffOf(view, params);
+
+      saving.current = true;
+
+      try {
+        await navigate({
+          to: '/ljudi/$id',
+          params: { id: params.memberId },
+          state: (entry) => withLeaveHandoff(entry, handoff),
+        });
+      } finally {
+        saving.current = false;
+      }
+
+      return;
+    }
+
     const target = { organizationId: view.organizationId, memberId: params.memberId, date: params.date, teamId: params.teamId };
     const replacing = choice === OPTION_REPLACE_MEMBER && replacement !== null ? replacement : null;
 

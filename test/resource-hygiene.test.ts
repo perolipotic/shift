@@ -125,6 +125,8 @@ const SANCTIONED_PLURAL_KEYS = [
   'raspored.resolution.leave',
   'raspored.resolution.coverage',
   'raspored.resolution.balance',
+  // STORY 5.4d: what the third card gives back to the balance, `+1 dan`.
+  'raspored.resolution.balanceGained',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -1275,6 +1277,19 @@ const SANCTIONED_SCREEN_KEYS = [
   'raspored.resolution.hintChooseReplacement',
   'raspored.resolution.hintNoCandidates',
   'raspored.resolution.error.taken',
+  // STORY 5.4d: the third card — its title, its three sentences (the leave
+  // starts later, ends earlier, or is removed), the absent member working in
+  // its strip and their hours as work — the hint once it is chosen, with a
+  // date or for a removal, and the member page's way back to the conflicts.
+  'raspored.resolution.amendTitle',
+  'raspored.resolution.amendBodyStarts',
+  'raspored.resolution.amendBodyEnds',
+  'raspored.resolution.amendBodyRemoves',
+  'raspored.resolution.amendWorks',
+  'raspored.resolution.hoursAsWork',
+  'raspored.resolution.hintAmend',
+  'raspored.resolution.hintAmendRemove',
+  'ljudi.form.backToConflicts',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
