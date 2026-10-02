@@ -28,6 +28,7 @@ import {
   leaveReasonMessageKey,
   leaveRefusalMessageKey,
   leaveRefusalValuesOf,
+  type LeaveHandoff,
 } from '@/features/leave/services/leave-section';
 
 /**
@@ -42,9 +43,18 @@ import {
  * Neutral styling throughout: `destructive` is reserved for conflicts, and an
  * over-balance range is a note, never a refusal. Day counts render through
  * `count.days`, so `−2 dana` reads as a number.
+ *
+ * Reached from a conflict (story 5.4d), `handoff` opens amend mode with the
+ * computed range, or the record's removal confirmation, once.
  */
-export function MemberLeaveCard({ memberId }: { readonly memberId: string }): ReactNode {
-  const leave = useMemberLeave(memberId);
+export function MemberLeaveCard({
+  memberId,
+  handoff = null,
+}: {
+  readonly memberId: string;
+  readonly handoff?: LeaveHandoff | null;
+}): ReactNode {
+  const leave = useMemberLeave(memberId, handoff);
   const {
     base,
     preview,

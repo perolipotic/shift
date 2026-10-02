@@ -15,6 +15,7 @@ import {
   isIsoDate,
   nextIsoDate,
   organizationIsoDate,
+  previousIsoDate,
   formatDate,
   formatDayMonthRange,
   formatMonthName,
@@ -264,6 +265,8 @@ const UNZONED_ENTRY_POINTS = [
   'formatIsoWeekdayName',
   'isIsoDate',
   'nextIsoDate',
+  // Story 5.4d: the day before, as the day after.
+  'previousIsoDate',
   // Story 2.1b. A nominal minute of the day — an hour band's start — which has
   // no date and so no instant for a zone to resolve.
   'formatMinuteOfDay',
@@ -1156,6 +1159,23 @@ describe('the one ISO-date validator', () => {
     // and `0008` refuses year 10000.
     expect(nextIsoDate('9999-12-30')).toBe('9999-12-31');
     expect(nextIsoDate('9999-12-31')).toBeNull();
+  });
+});
+
+describe('previousIsoDate (story 5.4d)', () => {
+  it('names the previous calendar day across a month, a year and a leap day', () => {
+    expect(previousIsoDate('2026-10-09')).toBe('2026-10-08');
+    expect(previousIsoDate('2026-10-01')).toBe('2026-09-30');
+    expect(previousIsoDate('2027-01-01')).toBe('2026-12-31');
+    expect(previousIsoDate('2024-03-01')).toBe('2024-02-29');
+    expect(previousIsoDate('2026-02-31')).toBeNull();
+    expect(previousIsoDate('')).toBeNull();
+  });
+
+  it('names the day before the first of year 1000, and has none before the first day a four-digit year names', () => {
+    expect(previousIsoDate('1000-01-01')).toBe('0999-12-31');
+    expect(previousIsoDate('0001-01-02')).toBe('0001-01-01');
+    expect(previousIsoDate('0001-01-01')).toBeNull();
   });
 });
 

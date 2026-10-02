@@ -45,6 +45,11 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * keyboard end to end, the arrow keys across the two cards, Taken and Gone.
  * The replacement is a fresh member on a second team of the test's own with
  * no rotation, so they are `slobodan` that day.
+ *
+ * Story 5.4d adds the third card, "Izmijeni godišnji odmor", which writes no
+ * resolution: by keyboard to the member page's amend form, prefilled — a
+ * cancel leaves the conflict in the queue, a saved amend takes it away — and
+ * a one-day record to its removal confirmation, or nothing once it is gone.
  */
 
 test.use({ storageState: ADMIN_STATE });
@@ -153,11 +158,16 @@ test('opens a conflict from its queue row, shows K of N, moves with ‹ › in t
   await expect(resolutionPage.nextButton).toHaveAccessibleName(fill(resolution.next, { date: dayMonth(dates[2]) }));
   await expect(resolutionPage.previousButton).toBeEnabled();
   await expect(resolutionPage.nextButton).toBeEnabled();
-  // TWO cards since story 5.4c, in their fixed order, nothing preselected.
-  await expect(resolutionPage.options).toHaveCount(2);
-  await expect(resolutionPage.options).toHaveText([new RegExp(`^${resolution.acceptTitle}`), new RegExp(`^${resolution.replaceTitle}`)]);
+  // THREE cards since story 5.4d, in their fixed order, nothing preselected.
+  await expect(resolutionPage.options).toHaveCount(3);
+  await expect(resolutionPage.options).toHaveText([
+    new RegExp(`^${resolution.acceptTitle}`),
+    new RegExp(`^${resolution.replaceTitle}`),
+    new RegExp(`^${resolution.amendTitle}`),
+  ]);
   await expect(resolutionPage.acceptOption).toHaveAttribute('aria-checked', 'false');
   await expect(resolutionPage.replaceOption).toHaveAttribute('aria-checked', 'false');
+  await expect(resolutionPage.amendOption).toHaveAttribute('aria-checked', 'false');
   await expect(resolutionPage.line(resolution.hintChoose)).toBeVisible();
 
   // ‹ TO THE 1ST: ‹ disabled there, nothing saved.
@@ -196,6 +206,14 @@ test('opens a conflict from its queue row, shows K of N, moves with ‹ › in t
   const tops = await resolutionPage.stripLabels.evaluateAll((labels) => labels.map((label) => label.getBoundingClientRect().top));
   expect(tops).toHaveLength(3);
   expect(Math.max(...tops) - Math.min(...tops), 'the strip wraps into rows').toBeLessThan(2);
+  // The third card's strip too (story 5.4d): three columns, its words wrapping inside them.
+  await resolutionPage.amendOption.scrollIntoViewIfNeeded();
+  const amendTops = await resolutionPage
+    .stripLabelsOf(resolutionPage.amendOption)
+    .evaluateAll((labels) => labels.map((label) => label.getBoundingClientRect().top));
+  expect(amendTops).toHaveLength(3);
+  expect(Math.max(...amendTops) - Math.min(...amendTops), 'the third strip wraps into rows').toBeLessThan(2);
+  await expectNoHorizontalScroll(page);
   await expect(resolutionPage.previousButton).toBeVisible();
   await expect(resolutionPage.nextButton).toBeVisible();
   const card = await resolutionPage.acceptOption.boundingBox();
@@ -414,7 +432,7 @@ function replaceCoverageOfOne(): string {
   return `1 od ${plural(resolution.coverage.replace(/^\{covered\} od /, '').replace('{total,', '{count,'), 1)}`;
 }
 
-test('moves the selection across the two cards with the arrow keys, and Tab reaches only the checked card, or the first', async ({
+test('moves the selection across the three cards with the arrow keys, and Tab reaches only the checked card, or the first', async ({
   page,
   resolutionPage,
   fixture,
@@ -439,6 +457,12 @@ test('moves the selection across the two cards with the arrow keys, and Tab reac
   await arrowTo(page, 'ArrowUp', resolutionPage.acceptOption);
   await expect(resolutionPage.acceptOption).toHaveAttribute('aria-checked', 'true');
   await arrowTo(page, 'ArrowRight', resolutionPage.replaceOption);
+  await expect(resolutionPage.replaceOption).toHaveAttribute('aria-checked', 'true');
+  // ON TO THE THIRD (story 5.4d), and back.
+  await arrowTo(page, 'ArrowDown', resolutionPage.amendOption);
+  await expect(resolutionPage.amendOption).toHaveAttribute('aria-checked', 'true');
+  await expect(resolutionPage.replaceOption).toHaveAttribute('aria-checked', 'false');
+  await arrowTo(page, 'ArrowUp', resolutionPage.replaceOption);
   await expect(resolutionPage.replaceOption).toHaveAttribute('aria-checked', 'true');
 
   // THE CHECKED CARD is the group's one tab stop: from ‹ › Tab lands on it,
@@ -712,4 +736,184 @@ test.describe('a member', () => {
     await page.goto('/raspored/00000000-0000-4000-8000-000000000000/2026-10-02/00000000-0000-4000-8000-000000000000');
     await expect(page).toHaveURL('/danas');
   });
+});
+
+/**
+ * Counts every resolution write from here on — an insert into
+ * `conflict_resolutions` or 0032's `replace_conflict_member` — and, as the
+ * positive control that the listener sees writes at all, every leave amend
+ * (`amend_leave_record`). The third card makes no resolution write.
+ */
+function resolutionWritesOf(page: Page): { readonly count: () => number; readonly amends: () => number } {
+  let writes = 0;
+  let amends = 0;
+
+  page.on('request', (request) => {
+    if (request.method() === 'GET') return;
+    if (/\/rest\/v1\/(conflict_resolutions|rpc\/replace_conflict_member)\b/.test(request.url())) writes += 1;
+    if (/\/rest\/v1\/rpc\/amend_leave_record\b/.test(request.url())) amends += 1;
+  });
+
+  return { count: () => writes, amends: () => amends };
+}
+
+test('amends the leave by keyboard: card 3 opens the member page\'s amend form prefilled with the range that clears the conflict, a cancel leaves it in the queue, a saved amend takes it away, and no resolution is written', async ({
+  page,
+  conflictsPage,
+  resolutionPage,
+  peoplePage,
+  fixture,
+}) => {
+  const { team, seeded, today } = await scenarioOf(fixture.slug);
+  const last = isoDaysAfter(today, 4);
+  const start = isoDaysAfter(today, 1);
+  const writes = resolutionWritesOf(page);
+
+  await conflictsPage.goto();
+  const rows = conflictsPage.rowsOf(seeded.name);
+  await expect(rows).toHaveCount(3);
+
+  /** From the queue's first row to the member page, by keyboard, through card 3. */
+  async function amendByKeyboard(): Promise<void> {
+    await conflictsPage.rowLink(rows.nth(0)).click();
+    await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
+    await amendFromScreen();
+  }
+
+  /** From the open resolution screen to the member page, by keyboard, through card 3. */
+  async function amendFromScreen(): Promise<void> {
+    await expect(resolutionPage.amendOption).toBeVisible();
+    await resolutionPage.nextButton.focus();
+    await page.keyboard.press('Tab');
+    await expect(resolutionPage.acceptOption).toBeFocused();
+    await arrowTo(page, 'ArrowDown', resolutionPage.replaceOption);
+    await arrowTo(page, 'ArrowDown', resolutionPage.amendOption);
+    await expect(resolutionPage.amendOption).toHaveAttribute('aria-checked', 'true');
+    // Tab leaves the group: the picker is card 2's alone.
+    await page.keyboard.press('Tab');
+    await expect(resolutionPage.cancelLink).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(resolutionPage.saveButton).toBeFocused();
+    await expect(resolutionPage.saveButton).toHaveAttribute('aria-disabled', 'false');
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(`/ljudi/${seeded.id}`);
+  }
+
+  // CARD 3: the computed start, the strip in the same three terms, and nothing marked recommended.
+  await conflictsPage.rowLink(rows.nth(0)).click();
+  await expect(resolutionPage.amendOption).toContainText(
+    fill(resolution.amendBodyStarts, { name: seeded.name, date: dayMonth(today), newDate: dayMonth(start) }),
+  );
+  await expect(resolutionPage.stripLabelsOf(resolutionPage.amendOption)).toHaveText([
+    resolution.coverageLabel,
+    resolution.hoursLabel,
+    resolution.balanceLabel,
+  ]);
+  // Card 3's coverage, one higher, as card 2's: the absent member works their own shift.
+  await expect(resolutionPage.amendOption).toContainText(replaceCoverageOfOne());
+  await expect(resolutionPage.amendOption).toContainText(fill(resolution.amendWorks, { name: seeded.name }));
+  await expect(resolutionPage.amendOption).toContainText(fill(resolution.hoursAsWork, { hours: '12 h' }));
+  // 20 less the record's 3 is 17; dropping today gives one back.
+  await expect(resolutionPage.amendOption).toContainText(plural(resolution.balance, 18));
+  await expect(resolutionPage.amendOption).toContainText(plural(resolution.balanceGained, 1));
+  await expect(resolutionPage.amendOption).not.toContainText(/preporu/i);
+  await resolutionPage.amendOption.click();
+  await expect(resolutionPage.line(fill(resolution.hintAmend, { date: dayMonth(start) }))).toBeVisible();
+  await resolutionPage.cancelLink.click();
+  await expect(page).toHaveURL('/raspored');
+
+  // THE LAST DAY (today + 4): the leave ends the day before, and the hint names that date.
+  const dayBefore = isoDaysAfter(today, 3);
+  await resolutionPage.gotoConflict(seeded.id, last, team.id);
+  await expect(resolutionPage.amendOption).toContainText(
+    fill(resolution.amendBodyEnds, { name: seeded.name, date: dayMonth(last), newDate: dayMonth(dayBefore) }),
+  );
+  await resolutionPage.amendOption.click();
+  await expect(resolutionPage.line(fill(resolution.hintAmend, { date: dayMonth(dayBefore) }))).toBeVisible();
+  await resolutionPage.cancelLink.click();
+  await expect(page).toHaveURL('/raspored');
+
+  // THE AMEND FORM, prefilled with the range that clears the conflict, focus in it.
+  await amendByKeyboard();
+  await expect(peoplePage.leaveAmendGroup(today, last)).toBeVisible();
+  await expect(peoplePage.leaveFromInput).toBeFocused();
+  await expect(peoplePage.leaveFromInput).toHaveValue(start);
+  await expect(peoplePage.leaveToInput).toHaveValue(last);
+  await expect(peoplePage.backToConflictsLink).toBeVisible();
+
+  // A RELOAD reopens nothing — the opening has left the entry — and the way back stays.
+  await page.reload();
+  await expect(peoplePage.leaveNewGroup).toBeVisible();
+  await expect(peoplePage.leaveFromInput).toHaveValue('');
+  await expect(peoplePage.backToConflictsLink).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
+  await amendFromScreen();
+  await expect(peoplePage.leaveAmendGroup(today, last)).toBeVisible();
+
+  // CANCEL: the conflict is still open.
+  await peoplePage.amendCancelButton.click();
+  await expect(peoplePage.leaveNewGroup).toBeVisible();
+  await peoplePage.backToConflictsLink.click();
+  await expect(page).toHaveURL('/raspored');
+  await expect(rows).toHaveCount(3);
+
+  // SAVE THE AMEND: back on the queue, today's conflict is gone, the other two stand.
+  await amendByKeyboard();
+  await expect(peoplePage.leaveFromInput).toBeFocused();
+  await peoplePage.amendSaveButton.click();
+  await expect(peoplePage.leaveNewGroup).toBeVisible();
+  await expect(peoplePage.leaveRecordRow(start, last)).toHaveCount(1);
+  await peoplePage.backToConflictsLink.click();
+  await expect(page).toHaveURL('/raspored');
+  await expect(rows).toHaveCount(2);
+
+  // NOTHING WAS WRITTEN as a resolution: the leave amend is the write, and the listener saw it.
+  expect(writes.amends()).toBe(1);
+  expect(writes.count()).toBe(0);
+  // Reached any other way, the member page offers no way back to the conflicts.
+  await peoplePage.gotoMember(seeded.id);
+  await expect(peoplePage.leaveHeading).toBeVisible();
+  await expect(peoplePage.backToConflictsLink).toHaveCount(0);
+});
+
+test('a one-day record: card 3 says the leave is removed and Spremi opens its removal confirmation; a record gone before arrival opens nothing', async ({
+  page,
+  resolutionPage,
+  peoplePage,
+  fixture,
+}) => {
+  const { team, seeded, today } = await scenarioOf(fixture.slug);
+  await removeLeaveRecordsInSql(fixture.slug, seeded.id);
+  await seedLeaveRecord(fixture.slug, seeded.id, today, today);
+  const writes = resolutionWritesOf(page);
+
+  // ONE DAY: the removal sentence and hint.
+  await resolutionPage.gotoConflict(seeded.id, today, team.id);
+  await expect(resolutionPage.amendOption).toContainText(
+    fill(resolution.amendBodyRemoves, { name: seeded.name, date: dayMonth(today) }),
+  );
+  await resolutionPage.amendOption.click();
+  await expect(resolutionPage.line(resolution.hintAmendRemove)).toBeVisible();
+  await resolutionPage.saveButton.click();
+  await expect(page).toHaveURL(`/ljudi/${seeded.id}`);
+  const confirm = peoplePage.removeLeaveConfirmOf(today, today, 1);
+  await expect(confirm).toBeVisible();
+  // Focus is in the confirmation, the modal's own.
+  await expect(confirm.locator(':focus')).toHaveCount(1);
+  await peoplePage.cancelRemoveLeaveIn(confirm).click();
+  await expect(confirm).toHaveCount(0);
+
+  // GONE: the record removed while the screen is open — the member page opens nothing.
+  await resolutionPage.gotoConflict(seeded.id, today, team.id);
+  await expect(resolutionPage.amendOption).toBeVisible();
+  await removeLeaveRecordsInSql(fixture.slug, seeded.id);
+  await resolutionPage.amendOption.click();
+  await resolutionPage.saveButton.click();
+  await expect(page).toHaveURL(`/ljudi/${seeded.id}`);
+  await expect(peoplePage.leaveNewGroup).toBeVisible();
+  await expect(peoplePage.leaveRecordRows).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(peoplePage.backToConflictsLink).toBeVisible();
+  expect(writes.count()).toBe(0);
 });

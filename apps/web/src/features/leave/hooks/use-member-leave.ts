@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type MouseEvent } from 'react';
 
 import {
@@ -27,12 +28,16 @@ import {
   leaveAmendedOf,
   leaveConflictOf,
   leaveFormFailureOf,
+  leaveHandoffKeyOf,
+  leaveHandoffOpeningOf,
   leaveInvalidFieldOf,
   leavePreviewStateOf,
   leaveSavedOf,
   memberLeaveBaseOf,
+  withoutLeaveHandoffOpening,
   type LeaveFailure,
   type LeaveField,
+  type LeaveHandoff,
   type LeaveRecordRow,
   type LeaveSaved,
 } from '@/features/leave/services/leave-section';
@@ -93,11 +98,22 @@ import { focusLater } from '@/utils/focus-later';
  * (`amendLeave`'s doc). A record found gone closes amend mode or the
  * confirmation, and the list says so over the records it re-read.
  *
+ * THE HAND-OFF FROM A CONFLICT (story 5.4d). Reached from a resolution
+ * screen's third card, the card opens ONCE, after its rows are first ready:
+ * amend mode for the record with the computed range in the fields and the od
+ * field focused, or that record's removal confirmation — by the rule applied
+ * to the record as it is now. A record already gone, or no longer covering
+ * the conflict's date, opens nothing, and the card stays as it was. Either
+ * way the history entry is then replaced without the opening, so a reload or
+ * Back never reopens it; the origin stays, for "Natrag na konflikte". Nothing
+ * is written here until the admin saves; cancelling leaves the conflict open.
+ *
  * The component is keyed by the member, so nothing raised here outlives the
  * member it was raised about.
  */
-export function useMemberLeave(memberId: string) {
+export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = null) {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const formField = useRef<HTMLFormElement>(null);
   const fromField = useRef<HTMLInputElement>(null);
   const toField = useRef<HTMLInputElement>(null);
@@ -136,6 +152,8 @@ export function useMemberLeave(memberId: string) {
   const [leaveSaved, setLeaveSaved] = useState<LeaveSaved | null>(null);
   /** The field a save refused before any request named, until it is edited. */
   const [refusedField, setRefusedField] = useState<LeaveField | null>(null);
+  /** The hand-off already looked at once the rows were ready, by its identity: each opens once. */
+  const handedOff = useRef<string | null>(null);
 
   const members = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
   const organization = useQuery(
@@ -206,6 +224,44 @@ export function useMemberLeave(memberId: string) {
       setConfirming(null);
     }
   }, [liveKey, amendTarget, amendPending, confirming, removePending]);
+
+  const handoffReady = base.kind === LEAVE_READY && !recordsState.refreshing;
+  const handoffKey = leaveHandoffKeyOf(handoff);
+
+  // THE HAND-OFF OPENS ONCE, the first time the rows are ready — after the
+  // effect above, so its clearing never closes what this opens — and the
+  // entry is then replaced without it, so a reload or Back never reopens it.
+  useEffect(() => {
+    if (handoffKey === null || handedOff.current === handoffKey || !handoffReady || base.kind !== LEAVE_READY) return;
+
+    handedOff.current = handoffKey;
+
+    const opening = leaveHandoffOpeningOf(handoff, memberId, base.rows);
+
+    void navigate({
+      to: '/ljudi/$id',
+      params: { id: memberId },
+      replace: true,
+      state: (entry) => withoutLeaveHandoffOpening(entry),
+    });
+
+    if (opening === null) return;
+
+    // No row action opened it, so a cancel has nothing to return to but the card's own fallbacks.
+    amendReturn.current = null;
+    removeReturn.current = null;
+    clearRaised();
+
+    if (opening.kind === LEAVE_AMEND_ACTION) {
+      setAmendTarget(opening.row.record);
+      fillFields(opening.range);
+      focusLater([() => fromField.current], () => toField.current);
+    } else {
+      setConfirming(opening.row);
+    }
+    // `handoff` and the rows are read through their key and readiness: the
+    // objects are new on every render.
+  }, [handoffKey, handoffReady, liveKey, memberId]);
 
   /** Clear everything the last write raised, before another is armed or sent. */
   function clearRaised(): void {

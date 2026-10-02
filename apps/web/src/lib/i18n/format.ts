@@ -284,6 +284,29 @@ export function nextIsoDate(isoDate: string): string | null {
 }
 
 /**
+ * The calendar day before an ISO date, or `null` if it is not one — or if it
+ * is the first day a four-digit year can name.
+ *
+ * The last date a leave record keeps when an amend drops its final day
+ * (story 5.4d).
+ */
+export function previousIsoDate(isoDate: string): string | null {
+  if (!isIsoDate(isoDate)) return null;
+
+  const instant = noonOf(isoDate);
+
+  instant.setUTCDate(instant.getUTCDate() - 1);
+
+  // `0001-01-01` HAS NO PREVIOUS DAY this shape can carry: year 0 is no
+  // four-digit year, and the formatter would name it year 1 (an era wraps).
+  if (instant.getUTCFullYear() < 1) return null;
+
+  const previous = organizationIsoDate(instant, FALLBACK_TIME_ZONE);
+
+  return isIsoDate(previous) ? previous : null;
+}
+
+/**
  * `23.09.2026` — an ISO calendar date in the binding shape (UX-DR34).
  *
  * A DATE, not an instant, so no zone applies: the string already names the

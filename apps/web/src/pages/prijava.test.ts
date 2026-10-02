@@ -656,7 +656,10 @@ const SCREENS = [
   // THIRTY-TWO SINCE STORY 5.2b: each record row's Izmijeni and Ukloni,
   // written once inside the map over the records, the form's amend cancel,
   // and the removal confirmation's cancel and confirm.
-  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 32 },
+  //
+  // THIRTY-THREE SINCE STORY 5.4d: "Natrag na konflikte", shown while the
+  // page was reached from a conflict.
+  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 33 },
   // STORY 1.7a. FOUR on the team list: the link back to `Ljudi`, the one name
   // `<Input>`, the add `<Button>`, and ONE row link written once inside the map
   // over the teams — the same count at zero teams as at nine. SIX on one team:
@@ -2279,10 +2282,12 @@ const KEY_SOURCES = [
     // THIRTY-THREE SINCE STORY 5.4c: the second card's title and sentence,
     // the replacement's name in its strip, the picker's heading and its
     // nobody-to-add line, and the generated reason.
+    // THIRTY-SIX SINCE STORY 5.4d: the third card's title, the absent member
+    // working in its strip, and the balance it gives back.
     name: 'the conflict resolution screen',
     file: RESOLUTION,
     keys: translationKeys,
-    strings: 33,
+    strings: 36,
   },
   {
     // STORY 5.4b: the facts line with and without times, who else works or
@@ -2292,10 +2297,14 @@ const KEY_SOURCES = [
     // SIXTEEN SINCE STORY 5.4c: the hint while nobody is picked and while
     // nobody can be, the three candidate group headings, and the status line
     // naming the replacement.
+    // TWENTY-THREE SINCE STORY 5.4d: the third card's three sentences (the
+    // leave starts later, ends earlier, or is removed), its hours as work or
+    // the empty mark, and the hint once it is chosen, with a date or for a
+    // removal.
     name: 'the conflict resolution rules',
     file: RESOLUTION_SCREEN_KEYS,
     keys: messageKeyUnions,
-    strings: 16,
+    strings: 23,
   },
   {
     // STORY 5.4b: the write's three refusals — gone, denied, failed. FOUR
@@ -2481,10 +2490,12 @@ const KEY_SOURCES = [
     // SEVENTY-FIVE SINCE THE 5.2b REVIEW: the prompt itself now comes through
     // `leaveRemovePromptMessageKey` (one fewer), and three more — the prompt's
     // in-year `count.days`, a row's in-year line and the row's amend marker.
+    //
+    // SEVENTY-SIX SINCE STORY 5.4d: "Natrag na konflikte".
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 75,
+    strings: 76,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
@@ -7933,8 +7944,14 @@ describe('the two member forms write through the seam and keep nothing back', ()
     const screen = source(file);
     const links = linkElements(screen);
 
-    expect(links, 'the screen offers no link at all').toHaveLength(1);
+    // STORY 5.4d: the edit form adds ONE more, "Natrag na konflikte" to the
+    // queue, shown only while the page was reached from a conflict.
+    expect(links, 'the screen offers a different number of links than its ways back').toHaveLength(file === MEMBER_EDIT ? 2 : 1);
     expect(attributeOf(links[0] ?? '', 'to'), 'the way back does not go to the list').toBe('/ljudi');
+    expect(
+      links.slice(1).map((link) => attributeOf(link, 'to')),
+      'a link beyond the way back to the list goes anywhere but the conflicts queue',
+    ).toEqual(file === MEMBER_EDIT ? ['/raspored'] : []);
     // And the link is NOT inside the gated branch: a read that settled failed
     // renders no form, and an exit rendered inside one would be the element
     // nobody can reach.

@@ -22,15 +22,28 @@ import { ACCEPT_UNCOVERED, REPLACE_MEMBER } from '@/features/conflicts/services/
 import { durationMessageKey, durationValuesOf, type DurationValues } from '@/features/hour-bands/services/list';
 import {
   organizationLeaveRecordsOf,
+  type LeaveRecord,
   type OrganizationLeaveRecord,
 } from '@/features/leave/services/leave-list';
 import {
+  AMEND_ENDS,
+  AMEND_REMOVES,
+  AMEND_STARTS,
+  LEAVE_AMEND_ACTION,
   LEAVE_LOADING,
+  LEAVE_PREVIEW_READY,
   LEAVE_READY,
+  LEAVE_REMOVE_ACTION,
+  amendTargetOf,
+  leavePreviewStateOf,
   leaveRangeValuesOf,
   memberLeaveBaseOf,
+  type LeaveHandoff,
+  type ResolutionAmendKind,
+  type ResolutionAmendTarget,
   type LeaveMembersSource,
   type LeaveOrganizationSource,
+  type LeaveRecordsInput,
 } from '@/features/leave/services/leave-section';
 import { positionsShown, rosterPositionMessageKey } from '@/features/members/utils/position';
 import { ranksShown, rosterRankMessageKey } from '@/features/members/utils/rank';
@@ -61,6 +74,17 @@ import { ranksShown, rosterRankMessageKey } from '@/features/members/utils/rank'
  * leaves unchanged — `leaveBalanceOf` through the member card's own recipe
  * (`memberLeaveBaseOf`).
  *
+ * AMENDING THE LEAVE (story 5.4d) is the third card, and writes nothing. It
+ * states the range that would clear this conflict (rule A, human,
+ * 2026-10-02: a date before the record's end moves its start to the day
+ * after; its last day moves its end to the day before; a one-day record is
+ * removed) — a computation, never a recommendation — and its strip reads the
+ * coverage one higher with the absent member working, the shift's hours as
+ * work, and the balance in the conflict date's leave year once those days are
+ * given back. Its Spremi hands that range to the member page's own amend or
+ * removal (`amendHandoffOf`); the conflict clears by derivation once that
+ * amend is saved (5.4a).
+ *
  * REPLACING (story 5.4c) is the second card. Its candidates are
  * `replacementCandidatesOf`'s three groups for the conflict's team and date,
  * over the same snapshot and leave; its strip reads the coverage one higher
@@ -85,14 +109,17 @@ export const RESOLUTION_READY = 'ready';
 /** Story 5.4b's outcome, as the radio group's value: fixed position 1. */
 export const OPTION_ACCEPT_UNCOVERED = 'accept-uncovered';
 
-/** Story 5.4c's outcome: fixed position 2. Story 5.4d adds its own at position 3. */
+/** Story 5.4c's outcome: fixed position 2. */
 export const OPTION_REPLACE_MEMBER = 'replace-member';
+
+/** Story 5.4d's outcome: fixed position 3. It records no resolution; it opens the leave amend. */
+export const OPTION_AMEND_LEAVE = 'amend-leave';
 
 /** The radio group's value while nothing is chosen: Radix's own "none". */
 export const NO_OPTION = '';
 
 /** The outcomes, in their fixed order. */
-export const RESOLUTION_OPTIONS = [OPTION_ACCEPT_UNCOVERED, OPTION_REPLACE_MEMBER] as const;
+export const RESOLUTION_OPTIONS = [OPTION_ACCEPT_UNCOVERED, OPTION_REPLACE_MEMBER, OPTION_AMEND_LEAVE] as const;
 
 export type ResolutionOption = (typeof RESOLUTION_OPTIONS)[number];
 
@@ -111,6 +138,12 @@ export const RESOLUTION_REPLACE_TITLE_ID = 'resolution-replace-title';
 export const RESOLUTION_REPLACE_BODY_ID = 'resolution-replace-body';
 export const RESOLUTION_REPLACE_STRIP_ID = 'resolution-replace-strip';
 export const RESOLUTION_REPLACE_DESCRIBED_BY = `${RESOLUTION_REPLACE_BODY_ID} ${RESOLUTION_REPLACE_STRIP_ID}`;
+
+/** The same three for the third card (story 5.4d). */
+export const RESOLUTION_AMEND_TITLE_ID = 'resolution-amend-title';
+export const RESOLUTION_AMEND_BODY_ID = 'resolution-amend-body';
+export const RESOLUTION_AMEND_STRIP_ID = 'resolution-amend-strip';
+export const RESOLUTION_AMEND_DESCRIBED_BY = `${RESOLUTION_AMEND_BODY_ID} ${RESOLUTION_AMEND_STRIP_ID}`;
 
 /** The id the candidate picker's heading carries, which names its own radio group (story 5.4c). */
 export const RESOLUTION_CANDIDATES_HEADING_ID = 'resolution-candidates';
@@ -163,6 +196,64 @@ export type ResolutionSaved =
   | (ResolutionSavedFacts & { readonly kind: typeof ACCEPT_UNCOVERED })
   | (ResolutionSavedFacts & { readonly kind: typeof REPLACE_MEMBER; readonly replacementName: string });
 
+// THE DATE RULE lives beside the leave card that re-applies it on arrival (story 5.4d).
+export {
+  AMEND_ENDS,
+  AMEND_REMOVES,
+  AMEND_STARTS,
+  amendTargetOf,
+  type ResolutionAmendKind,
+  type ResolutionAmendTarget,
+} from '@/features/leave/services/leave-section';
+
+/** The third card's figures (story 5.4d): the target, the date it names, and the balance once it is saved. */
+export interface ResolutionAmend {
+  readonly target: ResolutionAmendTarget;
+  /** `03.10.`, the date the card and the hint name: the new start or the new end; `null` for a removal. */
+  readonly dateShown: string | null;
+  /** The balance after it, in the conflict date's leave year. */
+  readonly balanceDays: number;
+  /** What it gives back: the balance after it less the balance now. */
+  readonly gainedDays: number;
+}
+
+/**
+ * The third card's figures for `record` and the conflict's `date`, over the
+ * member's balance input. Both balances are the conflict date's leave year,
+ * as the other cards'; the amend's is `leavePreviewStateOf`'s, against every
+ * record but this one, and a removal's is the balance without it.
+ *
+ * @throws RangeError on {@link amendTargetOf}'s, or when the domain will not cost the new range.
+ */
+export function resolutionAmendOf(input: LeaveRecordsInput, record: LeaveRecord, date: string): ResolutionAmend {
+  const target = amendTargetOf(record, date);
+  const inYear = { ...input, today: date };
+  const before = leaveBalanceOf(inYear).balanceDays;
+  let after: number;
+
+  if (target.kind === AMEND_REMOVES) {
+    after = leaveBalanceOf({ ...inYear, records: input.records.filter((one) => one.id !== record.id) }).balanceDays;
+  } else {
+    const preview = leavePreviewStateOf(inYear, target.range.from, target.range.to, record);
+
+    if (preview.kind !== LEAVE_PREVIEW_READY) throw new RangeError(`the amend of ${record.id} cannot be costed: ${preview.reason}`);
+
+    after = preview.preview.balanceAfterDays;
+  }
+
+  return {
+    target,
+    dateShown:
+      target.kind === AMEND_STARTS
+        ? dayMonthOf(target.range.from)
+        : target.kind === AMEND_ENDS
+          ? dayMonthOf(target.range.to)
+          : null,
+    balanceDays: after,
+    gainedDays: after - before,
+  };
+}
+
 /** The screen, ready to render. */
 export interface ResolutionView {
   readonly key: string;
@@ -205,6 +296,12 @@ export interface ResolutionView {
   readonly positionShown: boolean;
   /** The coverage once someone is put on: {@link covered} + 1. */
   readonly replaceCovered: number;
+  /** `02.10.`, the conflict's date as the third card's sentence names it (story 5.4d). */
+  readonly dayMonth: string;
+  /** The causing record, which the third card hands to the member page. */
+  readonly leaveRecordId: string;
+  /** The third card's target and figures (story 5.4d). */
+  readonly amend: ResolutionAmend;
   /** The insert's columns: the organization and the key. */
   readonly organizationId: string;
   /** What the queue's status line names once an acceptance lands; a replacement adds its name ({@link replacedSavedOf}). */
@@ -472,6 +569,9 @@ function resolutionScreenFrom(
       rankShown: ranksShown(snapshot),
       positionShown: positionsShown(snapshot),
       replaceCovered: coworkers.length + 1,
+      dayMonth: dayMonthOf(collision.date),
+      leaveRecordId: record.record.id,
+      amend: resolutionAmendOf(base.input, record.record, collision.date),
       organizationId: snapshot.organizationId,
       saved: { kind: ACCEPT_UNCOVERED, shiftTypeName: typeName, teamName: detail.teamName, dateShown, memberName: member.name },
     },
@@ -498,27 +598,38 @@ export function coworkersMessageKey(
 /**
  * The save hint: why Spremi waits — no card, or the second card with nobody
  * picked (story 5.4c), or with nobody to pick at all, which only another
- * outcome can resolve — or what saving records.
+ * outcome can resolve — or what saving does: records the decision, or, on the
+ * third card (story 5.4d), opens the leave amend with its date or the
+ * record's removal.
  */
 export function saveHintMessageKey(
   choice: ResolutionOption | null,
   replacementId: string | null = null,
   candidatesExist = true,
+  amendKind: ResolutionAmendKind | null = null,
 ):
   | 'raspored.resolution.hintChoose'
   | 'raspored.resolution.hintChooseReplacement'
   | 'raspored.resolution.hintNoCandidates'
-  | 'raspored.resolution.hintRecorded' {
+  | 'raspored.resolution.hintRecorded'
+  | 'raspored.resolution.hintAmend'
+  | 'raspored.resolution.hintAmendRemove' {
   if (choice === null) return 'raspored.resolution.hintChoose';
   if (choice === OPTION_REPLACE_MEMBER && !candidatesExist) return 'raspored.resolution.hintNoCandidates';
   if (choice === OPTION_REPLACE_MEMBER && replacementId === null) return 'raspored.resolution.hintChooseReplacement';
+  if (choice === OPTION_AMEND_LEAVE) {
+    return amendKind === AMEND_REMOVES ? 'raspored.resolution.hintAmendRemove' : 'raspored.resolution.hintAmend';
+  }
 
   return 'raspored.resolution.hintRecorded';
 }
 
-/** Whether Spremi can save: a card, and for the second one a candidate (story 5.4c). */
+/** Whether Spremi can save: a card, and for the second one a candidate (story 5.4c); the third at once (story 5.4d). */
 export function readyToSave(choice: ResolutionOption | null, replacementId: string | null): boolean {
-  return saveHintMessageKey(choice, replacementId) === 'raspored.resolution.hintRecorded';
+  if (choice === null) return false;
+  if (choice === OPTION_REPLACE_MEMBER) return replacementId !== null;
+
+  return true;
 }
 
 /** Where Spremi pressed too early sends focus (story 5.4c). */
@@ -591,6 +702,49 @@ export function hasCandidates(view: ResolutionView): boolean {
 /** What the queue's status line names once a replacement by `replacementName` lands (story 5.4c). */
 export function replacedSavedOf(saved: ResolutionView['saved'], replacementName: string): ResolutionSaved {
   return { ...saved, kind: REPLACE_MEMBER, replacementName };
+}
+
+/** The third card's sentence (story 5.4d), by its target. Exhaustive. */
+export function amendBodyMessageKey(
+  kind: ResolutionAmendKind,
+):
+  | 'raspored.resolution.amendBodyStarts'
+  | 'raspored.resolution.amendBodyEnds'
+  | 'raspored.resolution.amendBodyRemoves' {
+  switch (kind) {
+    case AMEND_STARTS:
+      return 'raspored.resolution.amendBodyStarts';
+    case AMEND_ENDS:
+      return 'raspored.resolution.amendBodyEnds';
+    case AMEND_REMOVES:
+      return 'raspored.resolution.amendBodyRemoves';
+    default: {
+      const unhandled: never = kind;
+
+      return unhandled;
+    }
+  }
+}
+
+/** The third card's hours term: the duration as work, or the empty mark for an untimed shift. */
+export function workHoursMessageKey(
+  hours: ResolutionHours | null,
+): 'raspored.resolution.hoursAsWork' | 'raspored.resolution.noHours' {
+  return hours === null ? 'raspored.resolution.noHours' : 'raspored.resolution.hoursAsWork';
+}
+
+/**
+ * The router state the third card's Spremi takes to the member page (story
+ * 5.4d): the record, the range or its removal, and the conflict it came from.
+ * Nothing goes in the URL, and nothing is written.
+ */
+export function amendHandoffOf(view: ResolutionView, origin: ResolutionParams): LeaveHandoff {
+  const from = { memberId: origin.memberId, date: origin.date, teamId: origin.teamId };
+  const target = view.amend.target;
+
+  return target.kind === AMEND_REMOVES
+    ? { kind: LEAVE_REMOVE_ACTION, recordId: view.leaveRecordId, origin: from }
+    : { kind: LEAVE_AMEND_ACTION, recordId: view.leaveRecordId, range: target.range, origin: from };
 }
 
 /** The absent member's hours term: the duration as leave, or the empty mark for an untimed shift. */

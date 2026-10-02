@@ -159,6 +159,11 @@ export class PeoplePage extends BasePage {
     await this.page.goto(`/ljudi/${id}`);
   }
 
+  /** "Natrag na konflikte", shown while the member page was reached from a conflict (story 5.4d). */
+  get backToConflictsLink(): Locator {
+    return this.page.getByRole('main').getByRole('link', { name: hr.ljudi.form.backToConflicts, exact: true });
+  }
+
   /** The leave card's heading. */
   get leaveHeading(): Locator {
     return this.page.getByRole('heading', { level: 2, name: leave.heading });

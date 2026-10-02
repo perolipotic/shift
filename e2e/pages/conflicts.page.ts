@@ -66,7 +66,8 @@ const resolution = raspored.resolution;
  * `/raspored/$memberId/$date/$teamId`: one conflict's resolution screen
  * (story 5.4b) — the way back, ‹ ›, the facts, the radio cards with their
  * consequence strips, and Odustani and Spremi odluku. Since story 5.4c, the
- * second card, "Zamijeni osobu", and the candidate picker after it.
+ * second card, "Zamijeni osobu", and the candidate picker after it. Since
+ * story 5.4d, the third card, "Izmijeni godišnji odmor".
  */
 export class ConflictResolutionPage extends BasePage {
   protected readonly path = '/raspored';
@@ -114,6 +115,11 @@ export class ConflictResolutionPage extends BasePage {
     return this.choice.getByRole('radio', { name: resolution.replaceTitle });
   }
 
+  /** The third card, "Izmijeni godišnji odmor" (story 5.4d). */
+  get amendOption(): Locator {
+    return this.choice.getByRole('radio', { name: resolution.amendTitle });
+  }
+
   /** The candidate picker's own radio group, "Tko odrađuje smjenu" (story 5.4c). */
   get candidates(): Locator {
     return this.page.getByRole('radiogroup', { name: resolution.candidatesHeading });
@@ -156,8 +162,11 @@ export class ConflictResolutionPage extends BasePage {
 
   /** The strip's three terms, in order: their labels. */
   get stripLabels(): Locator {
-    return this.acceptOption.getByText(
-      new RegExp(`^(${resolution.coverageLabel}|${resolution.hoursLabel}|${resolution.balanceLabel})$`),
-    );
+    return this.stripLabelsOf(this.acceptOption);
+  }
+
+  /** One card's strip labels, in order. */
+  stripLabelsOf(option: Locator): Locator {
+    return option.getByText(new RegExp(`^(${resolution.coverageLabel}|${resolution.hoursLabel}|${resolution.balanceLabel})$`));
   }
 }

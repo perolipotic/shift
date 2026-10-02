@@ -8,9 +8,13 @@ import {
   CANDIDATES_WORKING,
 } from '@/features/calendar/utils/replacement-candidates';
 import {
+  AMEND_ENDS,
+  AMEND_REMOVES,
+  AMEND_STARTS,
   NO_CANDIDATE,
   NO_OPTION,
   OPTION_ACCEPT_UNCOVERED,
+  OPTION_AMEND_LEAVE,
   OPTION_REPLACE_MEMBER,
   RESOLUTION_OPTIONS,
   RESOLUTION_LOADING,
@@ -18,6 +22,9 @@ import {
   RESOLUTION_READY,
   RESOLUTION_SAVED_STATE,
   RESOLUTION_UNAVAILABLE,
+  amendBodyMessageKey,
+  amendHandoffOf,
+  amendTargetOf,
   candidateGroupMessageKey,
   candidateIdOf,
   coverageMessageKey,
@@ -41,11 +48,13 @@ import {
   shiftFactsMessageKey,
   withResolutionSaved,
   withoutResolutionSaved,
+  workHoursMessageKey,
   type ResolutionParams,
   type ResolutionScreen,
   type ResolutionSources,
   type ResolutionView,
 } from '@/features/conflicts/services/resolution-screen';
+import { LEAVE_HANDOFF_ORIGIN_STATE, LEAVE_HANDOFF_STATE, leaveHandoffOf, withLeaveHandoff } from '@/features/leave/services/leave-section';
 import { initLocalization, t } from '@/lib/i18n';
 import {
   PILOT,
@@ -401,16 +410,17 @@ describe('the reads', () => {
 });
 
 describe('the choice', () => {
-  it('starts with nothing chosen, and admits the two outcomes in their fixed order alone', () => {
-    expect(RESOLUTION_OPTIONS).toEqual([OPTION_ACCEPT_UNCOVERED, OPTION_REPLACE_MEMBER]);
+  it('starts with nothing chosen, and admits the three outcomes in their fixed order alone', () => {
+    expect(RESOLUTION_OPTIONS).toEqual([OPTION_ACCEPT_UNCOVERED, OPTION_REPLACE_MEMBER, OPTION_AMEND_LEAVE]);
     expect(resolutionOptionOf(NO_OPTION)).toBeNull();
     expect(resolutionOptionOf(OPTION_ACCEPT_UNCOVERED)).toBe(OPTION_ACCEPT_UNCOVERED);
     expect(resolutionOptionOf(OPTION_REPLACE_MEMBER)).toBe(OPTION_REPLACE_MEMBER);
-    expect(resolutionOptionOf('amend-leave')).toBeNull();
+    expect(resolutionOptionOf(OPTION_AMEND_LEAVE)).toBe(OPTION_AMEND_LEAVE);
+    expect(resolutionOptionOf('amend_leave')).toBeNull();
   });
 
   it('says why Spremi waits, and then what saving records', () => {
-    expect(t(saveHintMessageKey(null))).toBe('Odaberi odluku.');
+    expect(t(saveHintMessageKey(null))).toBe('Odaberi jednu od tri odluke.');
     expect(t(saveHintMessageKey(OPTION_ACCEPT_UNCOVERED))).toBe('Odluka se bilježi s tvojim imenom i vremenom.');
   });
 
@@ -641,5 +651,112 @@ describe('replacing the absent member (story 5.4c)', () => {
       }),
     ).toBe(`Odluka je spremljena: Dan · Smjena A · četvrtak 10.09.2026 · ${VIEWER_NAME}, zamjena: Dino Grgić.`);
     expect(resolutionSavedOf({ resolutionSaved: { ...saved, replacementName: 3 } })).toBeNull();
+  });
+});
+
+describe('amending the leave (story 5.4d)', () => {
+  /** The view of the conflict on `date` with `rows` as the leave. */
+  function amendViewOn(date: string, rows: readonly Row[] = [WORKED]): ResolutionView {
+    return viewOf(resolutionScreenOf(sourcesOf(pilot, rows), paramsOn(date), NOW));
+  }
+
+  it('Rule A: the day after before the end, the day before on the last day, and a removal for one day', () => {
+    const record = { from: '2026-10-02', to: '2026-10-09' };
+
+    expect(amendTargetOf(record, '2026-10-02')).toEqual({ kind: AMEND_STARTS, range: { from: '2026-10-03', to: '2026-10-09' } });
+    expect(amendTargetOf(record, '2026-10-06')).toEqual({ kind: AMEND_STARTS, range: { from: '2026-10-07', to: '2026-10-09' } });
+    expect(amendTargetOf(record, '2026-10-09')).toEqual({ kind: AMEND_ENDS, range: { from: '2026-10-02', to: '2026-10-08' } });
+    expect(amendTargetOf({ from: '2026-10-02', to: '2026-10-02' }, '2026-10-02')).toEqual({ kind: AMEND_REMOVES });
+    // Outside the record, there is nothing to amend: refused, never guessed.
+    expect(() => amendTargetOf(record, '2026-10-10')).toThrow(RangeError);
+    expect(() => amendTargetOf(record, '2026-10-01')).toThrow(RangeError);
+  });
+
+  it('First day: "počinje 11.09.", "4 od 4 člana · {name} radi", "12 h rada" and "17 dana preostalo · +1 dan"', () => {
+    const view = amendViewOn('2026-09-10');
+
+    expect(view.amend.target).toEqual({ kind: AMEND_STARTS, range: { from: '2026-09-11', to: '2026-09-14' } });
+    expect(
+      t(amendBodyMessageKey(view.amend.target.kind), { name: view.memberName, date: view.dayMonth, newDate: view.amend.dateShown ?? '' }),
+    ).toBe(`${view.memberName} radi 10.09., a godišnji počinje 11.09. Otvara izmjenu godišnjeg s tim datumom.`);
+    expect(
+      `${t(coverageMessageKey(), { covered: view.replaceCovered, total: view.total })} ${t('raspored.resolution.amendWorks', { name: view.memberName })}`,
+    ).toBe(`4 od 4 člana · ${view.memberName} radi`);
+    expect(t(workHoursMessageKey(view.leaveHours), { hours: t(view.leaveHours!.key, view.leaveHours!.values) })).toBe('12 h rada');
+    expect(
+      `${t('raspored.resolution.balance', { count: view.amend.balanceDays })} · ${t('raspored.resolution.balanceGained', { count: view.amend.gainedDays })}`,
+    ).toBe('17 dana preostalo · +1 dan');
+    expect(view.leaveRecordId).toBe('record-worked');
+  });
+
+  it('Mid range: "počinje 12.09.", and +N counts every leave day dropped', () => {
+    const view = amendViewOn('2026-09-11');
+
+    expect(view.amend.target).toEqual({ kind: AMEND_STARTS, range: { from: '2026-09-12', to: '2026-09-14' } });
+    expect(view.amend.dateShown).toBe('12.09.');
+    // 10.09. and 11.09. are dropped, both working days.
+    expect([view.amend.balanceDays, view.amend.gainedDays]).toEqual([18, 2]);
+    expect(t('raspored.resolution.balanceGained', { count: 2 })).toBe('+2 dana');
+  });
+
+  it('Last day: "završava 13.09."', () => {
+    const view = amendViewOn('2026-09-14');
+
+    expect(view.amend.target).toEqual({ kind: AMEND_ENDS, range: { from: '2026-09-10', to: '2026-09-13' } });
+    expect(
+      t(amendBodyMessageKey(view.amend.target.kind), { name: 'Mirela', date: view.dayMonth, newDate: view.amend.dateShown ?? '' }),
+    ).toBe('Mirela radi 14.09., a godišnji završava 13.09. Otvara izmjenu godišnjeg s tim datumom.');
+    expect([view.amend.balanceDays, view.amend.gainedDays]).toEqual([17, 1]);
+  });
+
+  it('One day: the removal sentence, and the balance without the record', () => {
+    // `rowOf`'s upper bound is exclusive, as `leave_records` answers it: [10.09., 11.09.) is the 10th alone.
+    const view = amendViewOn('2026-09-10', [rowOf('record-one', '2026-09-10', '2026-09-11')]);
+
+    expect(view.amend.target).toEqual({ kind: AMEND_REMOVES });
+    expect(view.amend.dateShown).toBeNull();
+    expect(t(amendBodyMessageKey(AMEND_REMOVES), { name: 'Mirela', date: view.dayMonth, newDate: '' })).toBe(
+      'Mirela radi 10.09., a ovaj godišnji se briše. Otvara brisanje godišnjeg.',
+    );
+    expect([view.amend.balanceDays, view.amend.gainedDays]).toEqual([19, 1]);
+  });
+
+  it('Year edge: the balance after and what it gives back are the conflict date\'s leave year', () => {
+    // 28.12.2026–04.01.2027 collides on 28.12., 31.12., 01.01. and 04.01.: two leave days in each year, 17 left in each.
+    const edge = rowOf('record-edge', '2026-12-28', '2027-01-05');
+    const lastOf2026 = viewOf(resolutionScreenOf(sourcesOf(pilot, [edge]), paramsOn('2026-12-31'), NOW));
+    const firstOf2027 = viewOf(resolutionScreenOf(sourcesOf(pilot, [edge]), paramsOn('2027-01-01'), NOW));
+
+    // 31.12.: the leave starts 01.01., so both of 2026's days come back in 2026.
+    expect(lastOf2026.amend.target).toEqual({ kind: AMEND_STARTS, range: { from: '2027-01-01', to: '2027-01-04' } });
+    expect([lastOf2026.balanceDays, lastOf2026.amend.balanceDays, lastOf2026.amend.gainedDays]).toEqual([17, 19, 2]);
+    // 01.01.: the leave starts 02.01. — 28.12. and 31.12. are dropped too, but they are 2026's: only 01.01. comes back in 2027.
+    expect(firstOf2027.amend.target).toEqual({ kind: AMEND_STARTS, range: { from: '2027-01-02', to: '2027-01-04' } });
+    expect([firstOf2027.balanceDays, firstOf2027.amend.balanceDays, firstOf2027.amend.gainedDays]).toEqual([17, 18, 1]);
+  });
+
+  it('Hint: Spremi is ready at once, and says it opens the amend with its date or the removal', () => {
+    expect(readyToSave(OPTION_AMEND_LEAVE, null)).toBe(true);
+    expect(saveFocusOf(OPTION_AMEND_LEAVE, null, false)).toBeNull();
+    expect(t(saveHintMessageKey(OPTION_AMEND_LEAVE, null, true, AMEND_STARTS), { date: '11.09.' })).toBe(
+      'Spremi otvara izmjenu godišnjeg s datumom 11.09.',
+    );
+    expect(t(saveHintMessageKey(OPTION_AMEND_LEAVE, null, true, AMEND_REMOVES))).toBe('Spremi otvara brisanje ovog godišnjeg.');
+    expect(workHoursMessageKey(null)).toBe('raspored.resolution.noHours');
+  });
+
+  it('Save: hands the record, the range and the conflict over in router state, beside the router\'s own keys', () => {
+    const params = paramsOn('2026-09-10');
+    const view = amendViewOn('2026-09-10');
+    const handoff = amendHandoffOf(view, params);
+    const state = withLeaveHandoff({ __TSR_index: 3 }, handoff);
+
+    expect(handoff).toEqual({ kind: 'amend', recordId: 'record-worked', range: { from: '2026-09-11', to: '2026-09-14' }, origin: params });
+    expect(state).toEqual({ __TSR_index: 3, [LEAVE_HANDOFF_STATE]: handoff, [LEAVE_HANDOFF_ORIGIN_STATE]: params });
+    expect(leaveHandoffOf(state)).toEqual(handoff);
+
+    const one = amendViewOn('2026-09-10', [rowOf('record-one', '2026-09-10', '2026-09-11')]);
+
+    expect(amendHandoffOf(one, params)).toEqual({ kind: 'remove', recordId: 'record-one', origin: params });
   });
 });

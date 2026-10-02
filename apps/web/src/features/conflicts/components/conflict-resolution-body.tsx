@@ -10,7 +10,7 @@ import { Notice } from '@/components/ui/notice';
 import { PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { RadioGroup } from '@/components/ui/radio-group';
 import { CONFLICT_GLYPH } from '@/features/calendar/utils/modifiers';
-import { AcceptUncoveredOption, ReplaceMemberOption } from '@/features/conflicts/components/resolution-option';
+import { AcceptUncoveredOption, AmendLeaveOption, ReplaceMemberOption } from '@/features/conflicts/components/resolution-option';
 import { ReplacementPicker } from '@/features/conflicts/components/replacement-picker';
 import { ResolutionSkeleton } from '@/features/conflicts/components/resolution-skeleton';
 import type { ConflictResolutionState } from '@/features/conflicts/hooks/use-conflict-resolution';
@@ -184,8 +184,9 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
             optionRef={replaceOption}
             replacementName={choice === OPTION_REPLACE_MEMBER ? (replacement?.name ?? null) : null}
           />
+          <AmendLeaveOption view={view} />
         </RadioGroup>
-        {/* A sibling after the second card, never inside it: the card is a `<button>`. */}
+        {/* A sibling after the cards, never inside one: a card is a `<button>`, and the group is one arrow-key group of three. */}
         {choice === OPTION_REPLACE_MEMBER ? (
           <ReplacementPicker
             view={view}
@@ -200,7 +201,9 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
         {gone ? null : (
           <div className="flex min-w-0 flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center">
             <p id={RESOLUTION_SAVE_HINT_ID} className="min-w-0 flex-1 break-words text-sm text-muted-foreground">
-              {t(saveHintMessageKey(choice, pickedId, candidatesExist))}
+              {t(saveHintMessageKey(choice, pickedId, candidatesExist, view.amend.target.kind), {
+                date: view.amend.dateShown ?? undefined,
+              })}
             </p>
             <Button asChild variant="outline" className="h-11 w-full sm:w-auto">
               <Link to="/raspored" disabled={pending}>

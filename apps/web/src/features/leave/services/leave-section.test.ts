@@ -30,6 +30,10 @@ import {
   leaveConflictOf,
   leaveDescribedByOf,
   leaveFormFailureOf,
+  leaveHandoffKeyOf,
+  leaveHandoffOf,
+  leaveHandoffOpeningOf,
+  leaveHandoffOriginOf,
   leaveInYearChargeOf,
   leaveInvalidFieldOf,
   leaveListFailureOf,
@@ -47,6 +51,10 @@ import {
   type LeaveOrganizationSource,
   type MemberLeaveBase,
   type MemberLeaveSources,
+  LEAVE_HANDOFF_ORIGIN_STATE,
+  LEAVE_HANDOFF_STATE,
+  withLeaveHandoff,
+  withoutLeaveHandoffOpening,
 } from '@/features/leave/services/leave-section';
 import { LEAVE_DENIED, LEAVE_FAILED, LEAVE_GONE, LEAVE_OVERLAP } from '@/features/leave/services/leave-write';
 import { initLocalization, t } from '@/lib/i18n';
@@ -714,5 +722,93 @@ describe('what an amend or a removal says', () => {
     expect(prompt).toContain('10.09.2026–14.09.2026');
     expect(prompt).toContain('3 dana');
     expect(t('ljudi.leaveRecord.removed', values)).toContain('10.09.2026–14.09.2026');
+  });
+});
+
+describe('the hand-off from a conflict (story 5.4d)', () => {
+  const ORIGIN = { memberId: VIEWER_MEMBER, date: '2026-09-10', teamId: 'team-a' };
+  const AMEND = { kind: LEAVE_AMEND_ACTION, recordId: WORKED.id, range: { from: '2026-09-11', to: '2026-09-14' }, origin: ORIGIN } as const;
+  const REMOVE = { kind: LEAVE_REMOVE_ACTION, recordId: WORKED.id, origin: ORIGIN } as const;
+
+  function rowsOf(records: readonly LeaveRecord[]) {
+    return readyOf(memberLeaveBaseOf(sourcesOf(pilot, { records: recordsOf(records) }), VIEWER_MEMBER, NOW)).rows;
+  }
+
+  it('travels in router state beside the router\'s own keys, and is read back as it went', () => {
+    const state = withLeaveHandoff({ key: 'abc' }, AMEND);
+
+    expect(state).toEqual({ key: 'abc', [LEAVE_HANDOFF_STATE]: AMEND, [LEAVE_HANDOFF_ORIGIN_STATE]: ORIGIN });
+    expect(leaveHandoffOf(state)).toEqual(AMEND);
+    expect(leaveHandoffOriginOf(state)).toEqual(ORIGIN);
+    expect(leaveHandoffOf(withLeaveHandoff({}, REMOVE))).toEqual(REMOVE);
+    expect(leaveHandoffKeyOf(AMEND)).toBe(leaveHandoffKeyOf({ ...AMEND }));
+    expect(leaveHandoffKeyOf(AMEND)).not.toBe(leaveHandoffKeyOf(REMOVE));
+    expect(leaveHandoffKeyOf(null)).toBeNull();
+  });
+
+  it('once opened, is taken off the entry with the origin and every other key kept: a reload or Back reopens nothing, and the way back stays', () => {
+    const opened = withoutLeaveHandoffOpening(withLeaveHandoff({ key: 'abc' }, AMEND));
+
+    expect(opened).toEqual({ key: 'abc', [LEAVE_HANDOFF_ORIGIN_STATE]: ORIGIN });
+    expect(leaveHandoffOf(opened)).toBeNull();
+    expect(leaveHandoffOriginOf(opened)).toEqual(ORIGIN);
+    expect(withoutLeaveHandoffOpening(undefined)).toEqual({});
+    expect(leaveHandoffOriginOf({})).toBeNull();
+    expect(leaveHandoffOriginOf({ [LEAVE_HANDOFF_ORIGIN_STATE]: { ...ORIGIN, teamId: '' } })).toBeNull();
+  });
+
+  it('reads nothing from an entry without it, or a malformed one', () => {
+    expect(leaveHandoffOf(undefined)).toBeNull();
+    expect(leaveHandoffOf({})).toBeNull();
+    expect(leaveHandoffOf({ [LEAVE_HANDOFF_STATE]: { ...AMEND, kind: 'record' } })).toBeNull();
+    expect(leaveHandoffOf({ [LEAVE_HANDOFF_STATE]: { ...AMEND, recordId: '' } })).toBeNull();
+    expect(leaveHandoffOf({ [LEAVE_HANDOFF_STATE]: { ...AMEND, range: { from: '2026-09-14', to: '2026-09-11' } } })).toBeNull();
+    expect(leaveHandoffOf({ [LEAVE_HANDOFF_STATE]: { ...AMEND, range: null } })).toBeNull();
+    expect(leaveHandoffOf({ [LEAVE_HANDOFF_STATE]: { ...REMOVE, origin: { ...ORIGIN, date: '2026-02-31' } } })).toBeNull();
+  });
+
+  it('Save: opens amend mode for its record with the computed range, or that record\'s removal', () => {
+    const rows = rowsOf([WORKED]);
+
+    expect(leaveHandoffOpeningOf(AMEND, VIEWER_MEMBER, rows)).toEqual({ kind: LEAVE_AMEND_ACTION, row: rows[0], range: AMEND.range });
+    const oneDay = rowsOf([{ id: WORKED.id, from: '2026-09-10', to: '2026-09-10' }]);
+
+    expect(leaveHandoffOpeningOf(REMOVE, VIEWER_MEMBER, oneDay)).toEqual({ kind: LEAVE_REMOVE_ACTION, row: oneDay[0] });
+  });
+
+  it('Gone: opens nothing when the record was removed before arrival, for another member, or with no hand-off', () => {
+    expect(leaveHandoffOpeningOf(AMEND, VIEWER_MEMBER, rowsOf([]))).toBeNull();
+    expect(leaveHandoffOpeningOf(AMEND, 'someone-else', rowsOf([WORKED]))).toBeNull();
+    expect(leaveHandoffOpeningOf(null, VIEWER_MEMBER, rowsOf([WORKED]))).toBeNull();
+  });
+
+  it('Changed elsewhere: re-applies the rule to the record as it is now, so a lengthened record is never removed and a shortened one never stretched', () => {
+    // Handed over as a one-day removal, the record has since grown to 10.09–14.09: amend, starting 11.09.
+    const lengthened = rowsOf([WORKED]);
+
+    expect(leaveHandoffOpeningOf(REMOVE, VIEWER_MEMBER, lengthened)).toEqual({
+      kind: LEAVE_AMEND_ACTION,
+      row: lengthened[0],
+      range: { from: '2026-09-11', to: '2026-09-14' },
+    });
+
+    // Handed over as 11.09–14.09, the record has since shrunk to 10.09–12.09: 11.09–12.09, never back to the 14th.
+    const shrunk = rowsOf([{ id: WORKED.id, from: '2026-09-10', to: '2026-09-12' }]);
+
+    expect(leaveHandoffOpeningOf(AMEND, VIEWER_MEMBER, shrunk)).toEqual({
+      kind: LEAVE_AMEND_ACTION,
+      row: shrunk[0],
+      range: { from: '2026-09-11', to: '2026-09-12' },
+    });
+
+    // Shrunk to the conflict's date alone: the removal.
+    const oneDay = rowsOf([{ id: WORKED.id, from: '2026-09-10', to: '2026-09-10' }]);
+
+    expect(leaveHandoffOpeningOf(AMEND, VIEWER_MEMBER, oneDay)).toEqual({ kind: LEAVE_REMOVE_ACTION, row: oneDay[0] });
+  });
+
+  it('Changed elsewhere: opens nothing once the record no longer covers the conflict\'s date', () => {
+    expect(leaveHandoffOpeningOf(AMEND, VIEWER_MEMBER, rowsOf([{ id: WORKED.id, from: '2026-09-11', to: '2026-09-14' }]))).toBeNull();
+    expect(leaveHandoffOpeningOf(REMOVE, VIEWER_MEMBER, rowsOf([{ id: WORKED.id, from: '2026-09-01', to: '2026-09-09' }]))).toBeNull();
   });
 });
