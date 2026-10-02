@@ -53,8 +53,16 @@ export const CONFLICTS_READY = 'ready';
 export interface ConflictRow {
   /** `collisionKeyOf`'s key: unique per row, and what story 5.4 matches a resolution on. */
   readonly key: string;
+  /** The member on leave: with `date` and `teamId`, what the row's resolution screen is opened by (story 5.4b). */
+  readonly memberId: string;
   /** `YYYY-MM-DD`, as the domain answered it. */
   readonly date: string;
+  /** The team whose working shift collides. */
+  readonly teamId: string;
+  /** The shift type that shift works. */
+  readonly shiftTypeId: string;
+  /** The leave record that covers the date. */
+  readonly leaveRecordId: string;
   /** `12.09.2026`. */
   readonly dateShown: string;
   /** Before the organization's today: drawn dashed and muted, with its own words. */
@@ -205,7 +213,11 @@ export function conflictsQueueViewOf(
 
     return {
       key: collisionKeyOf(collision),
+      memberId: collision.memberId,
       date: collision.date,
+      teamId: collision.teamId,
+      shiftTypeId: collision.shiftTypeId,
+      leaveRecordId: collision.leaveRecordId,
       dateShown,
       past: collision.date < today,
       memberName,
@@ -256,6 +268,11 @@ export interface LeaveRowsAnswer {
 /** Whether a read failed, is paused offline, or settled with nothing: the queue's unavailable. */
 function readFailed(answer: LeaveRowsAnswer): boolean {
   return answer.isError || answer.fetchStatus === FETCH_PAUSED || (!answer.isPending && answer.data === undefined);
+}
+
+/** Whether a read failed, is paused offline, or settled with nothing (story 5.4b's screen reads the same). */
+export function queueReadFailed(answer: LeaveRowsAnswer): boolean {
+  return readFailed(answer);
 }
 
 /** The three reads the queue stands on, each as far as it is read here. */

@@ -12,7 +12,11 @@ import {
   CALENDAR_SCREEN_EXEMPT,
   CALENDAR_SCREEN_PARTS,
 } from '@/features/calendar/calendar-screen.fixture';
-import { CONFLICTS_SCREEN_EXEMPT, CONFLICTS_SCREEN_PARTS } from '@/features/conflicts/conflicts-screen.fixture';
+import {
+  CONFLICTS_QUEUE_PARTS,
+  CONFLICTS_SCREEN_EXEMPT,
+  CONFLICT_RESOLUTION_PARTS,
+} from '@/features/conflicts/conflicts-screen.fixture';
 import { HOURS_SCREEN_EXEMPT, HOURS_SCREEN_PARTS } from '@/features/hours/hours-screen.fixture';
 import { LEAVE_SCREEN_EXEMPT, LEAVE_SCREEN_PARTS } from '@/features/leave/leave-screen.fixture';
 import {
@@ -197,14 +201,26 @@ const MY_LEAVE_KEYS = join(LEAVE_FEATURE, 'services', 'my-leave.ts');
 /** The conflicts feature, which holds the *Raspored* screen's parts (story 5.3b). */
 const CONFLICTS_FEATURE = join(srcRoot, 'features', 'conflicts');
 /** The *Raspored* screen's page, which only composes (story 5.3b). */
-const RASPORED_PAGE = join(srcRoot, ...CONFLICTS_SCREEN_PARTS.page);
+const RASPORED_PAGE = join(srcRoot, ...CONFLICTS_QUEUE_PARTS.page);
 /**
  * Story 5.3b's *Raspored*: the conflicts queue, a file set on *Sati*'s terms,
  * written ONCE in `conflicts-screen.fixture.ts`.
  */
-const RASPORED: readonly string[] = Object.values(CONFLICTS_SCREEN_PARTS).map((parts) => join(srcRoot, ...parts));
+const RASPORED: readonly string[] = Object.values(CONFLICTS_QUEUE_PARTS).map((parts) => join(srcRoot, ...parts));
+/** Story 5.4b's resolution screen's page, which only composes. */
+const RESOLUTION_PAGE = join(srcRoot, ...CONFLICT_RESOLUTION_PARTS.page);
+/**
+ * Story 5.4b's one conflict, decided on its own screen: the second, disjoint
+ * set in `conflicts-screen.fixture.ts`. Not a destination, so named here by
+ * hand, as the member forms are.
+ */
+const RESOLUTION: readonly string[] = Object.values(CONFLICT_RESOLUTION_PARTS).map((parts) => join(srcRoot, ...parts));
 /** Story 5.3b's rules: the queue's input, order, rows and guard. Renders no string. */
 const CONFLICTS_QUEUE_RULES = join(CONFLICTS_FEATURE, 'services', 'conflicts-queue.ts');
+/** Story 5.4b's rules: the resolution screen's facts, strip and lines, off `\w*MessageKey` unions. */
+const RESOLUTION_SCREEN_KEYS = join(CONFLICTS_FEATURE, 'services', 'resolution-screen.ts');
+/** Story 5.4b's write: its three refusals, off `resolutionFailureMessageKey`. */
+const RESOLUTION_WRITE_KEYS = join(CONFLICTS_FEATURE, 'services', 'resolution-write.ts');
 const MEMBER_EDIT: readonly string[] = [
   join(srcRoot, 'pages', 'ljudi.$id.tsx'),
   join(MEMBERS_FEATURE, 'hooks', 'use-member-edit.ts'),
@@ -696,9 +712,16 @@ const SCREENS = [
   // requests no leave (story 5.3 is conflicts, not requests).
   { name: 'the Godišnji destination', file: GODISNJI, expectedControls: 1 },
   // STORY 5.3b. ONE on Raspored: the retry its unavailable alert offers. The
-  // queue is read, never pressed: no `Riješi`, no link and no bulk action
-  // until story 5.4 builds the resolution screen.
+  // queue is read, never pressed: no `Riješi` and no bulk action. STILL ONE
+  // SINCE STORY 5.4b: each row became a `<Link>` to its resolution screen,
+  // written once inside the map over the rows, which no detector reads.
   { name: 'the Raspored destination', file: RASPORED, expectedControls: 1 },
+  // STORY 5.4b. On one conflict's screen: the way back (written once, drawn
+  // in every state and again under a refusal that the conflict is gone), ‹
+  // and ›, Odustani and Spremi odluku, and the unavailable alert's retry. The
+  // one radio card is the radio group's, not a `<Button>`. No checkbox and no
+  // bulk action exist, which is what the count keeps true.
+  { name: 'the conflict resolution screen', file: RESOLUTION, expectedControls: 6 },
   // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
   // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
   // row link written once inside the map over the bands — the same count at
@@ -2238,7 +2261,40 @@ const KEY_SOURCES = [
     name: 'the Raspored destination',
     file: RASPORED,
     keys: translationKeys,
+    // STILL NINE SINCE STORY 5.4b: the status line a decision returns with
+    // reads through `resolutionSavedMessageKey`, the rules' union below.
     strings: 9,
+  },
+  {
+    // STORY 5.4b. On one conflict's screen, through `t('…')`: the way back
+    // with its count and plainly, the heading, the place in the queue, ‹ and
+    // › with a date and at an end, the conflict's mark, the absent member's
+    // leave, the choice's heading and hint, the card's title and sentence,
+    // the strip's three labels, the uncovered mark, the balance and its
+    // unchanged line, Odustani, Spremi odluku and its pending label, the
+    // missing line, and the unavailable line with its retry. The rest come
+    // through the rules' unions below.
+    name: 'the conflict resolution screen',
+    file: RESOLUTION,
+    keys: translationKeys,
+    strings: 27,
+  },
+  {
+    // STORY 5.4b: the facts line with and without times, who else works or
+    // nobody, the save hint before and after a choice, the hours as leave or
+    // the empty mark, the coverage term, and the queue's status line by the
+    // saved outcome.
+    name: 'the conflict resolution rules',
+    file: RESOLUTION_SCREEN_KEYS,
+    keys: messageKeyUnions,
+    strings: 10,
+  },
+  {
+    // STORY 5.4b: the write's three refusals — gone, denied, failed.
+    name: 'the conflict resolution write',
+    file: RESOLUTION_WRITE_KEYS,
+    keys: messageKeyUnions,
+    strings: 3,
   },
   {
     // STORY 5.2c: the two lines in place of the figures (unavailable,
@@ -2662,7 +2718,7 @@ describe('the screen is read at all, so every sweep below means something', () =
     // TWENTY-FIVE AND FORTY-EIGHT SINCE STORY 3.5c: the override review is a
     // new `.tsx` that renders strings (one each), and
     // `@/features/rotation/services/override-disposition` is a key source.
-    expect(SCREENS).toHaveLength(25);
+    expect(SCREENS).toHaveLength(26);
     //
     // FORTY-NINE SINCE STORY 3.6b: `@/features/calendar/services/roster-write`.
     //
@@ -2679,7 +2735,13 @@ describe('the screen is read at all, so every sweep below means something', () =
     // STILL TWENTY-FIVE AND FIFTY-FOUR SINCE STORY 5.2c: `/godisnji` left the
     // placeholders and arrived as a built entry (net zero on both lists), and
     // `@/features/leave/services/my-leave` is a key source (one more).
-    expect(KEY_SOURCES).toHaveLength(54);
+    //
+    // TWENTY-SIX AND FIFTY-SEVEN SINCE STORY 5.4b: one conflict's resolution
+    // screen is a new `.tsx` set that renders strings (one each), and
+    // `@/features/conflicts/services/resolution-screen` and
+    // `@/features/conflicts/services/resolution-write` are key sources (two
+    // more).
+    expect(KEY_SOURCES).toHaveLength(57);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -2819,9 +2881,11 @@ describe('the screen is read at all, so every sweep below means something', () =
     ).toEqual(GODISNJI.filter((file) => file !== GODISNJI_PAGE).sort());
   });
 
-  it('sweeps every part of the Raspored screen, so a new file cannot escape the set', () => {
-    // STORY 5.3b, on *Sati*'s terms: an EQUALITY between the set and every
+  it('sweeps every part of the Raspored screens, so a new file cannot escape the sets', () => {
+    // STORY 5.3b, on *Sati*'s terms: an EQUALITY between the sets and every
     // non-test module under the conflicts feature, less the exempt ones.
+    // TWO DISJOINT SETS SINCE STORY 5.4b: the queue, and one conflict's
+    // resolution screen.
     const exempt = new Set(CONFLICTS_SCREEN_EXEMPT.map((entry) => join(CONFLICTS_FEATURE, entry.file)));
     const found = readdirSync(CONFLICTS_FEATURE, { recursive: true, encoding: 'utf8' })
       .filter((name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name))
@@ -2830,15 +2894,17 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(found, 'the walk reaches services/').toContain(CONFLICTS_QUEUE_RULES);
     for (const file of exempt) expect(found, `${file} is exempt and does not exist`).toContain(file);
     for (const entry of CONFLICTS_SCREEN_EXEMPT) expect(entry.why.length).toBeGreaterThan(20);
-    for (const file of RASPORED) {
-      expect(existsSync(file), `${file} is in the set and does not exist`).toBe(true);
+    for (const file of [...RASPORED, ...RESOLUTION]) {
+      expect(existsSync(file), `${file} is in a set and does not exist`).toBe(true);
       expect(source(file).trim().length, `${file} is all but empty`).toBeGreaterThan(150);
     }
+    expect(RASPORED.filter((file) => RESOLUTION.includes(file)), 'the two sets share a part').toEqual([]);
     expect(RASPORED[0], 'the page is read first').toBe(RASPORED_PAGE);
+    expect(RESOLUTION[0], 'the page is read first').toBe(RESOLUTION_PAGE);
     expect(
       found.filter((file) => !exempt.has(file)).sort(),
-      'the Raspored file set and the feature folders disagree',
-    ).toEqual(RASPORED.filter((file) => file !== RASPORED_PAGE).sort());
+      'the Raspored file sets and the feature folders disagree',
+    ).toEqual([...RASPORED, ...RESOLUTION].filter((file) => file !== RASPORED_PAGE && file !== RESOLUTION_PAGE).sort());
   });
 
   it('sweeps every part of the shift type screens, so a new file cannot escape the sets', () => {

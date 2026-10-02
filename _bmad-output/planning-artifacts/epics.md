@@ -117,8 +117,8 @@ From `DESIGN.md` (visual) and `EXPERIENCE.md` (behavioural). Both are binding an
 - **UX-DR7** `shift-cell` — base fill from the assigned slot, label always visible, time range shown when width allows and dropped rather than abbreviated, 30 px minimum height, tap opens day detail.
 - **UX-DR8** `shift-cell` modifiers, composable on any base and on each other: conflict (inset 2 px `destructive` + `⚠`), overridden (inset 2 px + `✎`), leave (hatch + `◷`), uncovered (hatch + `◌`).
 - **UX-DR9** `duty-block` — groups consecutive working shifts with no non-working interval into one duty; end time as headline, span and total as metadata, progress bar, one leg per constituent shift marked done or in progress. Presentation only; the data remains two scheduled shifts on two dates.
-- **UX-DR10** `resolution-option` — radio-selection card, exactly one selected, no option primary-styled or labelled recommended, fixed order so muscle memory is possible.
-- **UX-DR11** `consequence-strip` — three fixed terms in a fixed order on every resolution option: coverage, the absent member's hours, the leave balance.
+- **UX-DR10** `resolution-option` — radio-selection card, exactly one selected, no option primary-styled or labelled recommended, fixed order so muscle memory is possible. Nothing is preselected; the selected card takes a border, a ring and a filled radio, never a new background. ‹ › move to the adjacent unresolved conflict in queue order, without saving (decision 20, story 5.4b).
+- **UX-DR11** `consequence-strip` — three fixed terms in a fixed order on every resolution option: coverage, the absent member's hours, the leave balance. Three columns at every width, a phone's included; uncovered coverage carries lucide `CircleDashed` (story 5.4b).
 - **UX-DR12** `state-glyph` — the fixed four-mark vocabulary with a persistent legend anywhere glyphs render. Not a tooltip, not behind an info icon.
 - **UX-DR13** Hour Band editor — name and start time only, with window, duration and midnight-crossing derived and read-only; a 24-hour partition bar with any gap hatched and flagged.
 - **UX-DR14** Pattern builder — ordered, reorderable, arbitrary length, the same shift type may repeat; cycle length, working steps and hours per cycle update live beneath it.
@@ -140,7 +140,7 @@ From `DESIGN.md` (visual) and `EXPERIENCE.md` (behavioural). Both are binding an
 - **UX-DR26** 44 px minimum tap targets on touch, including calendar cells — which sets the real floor for grid density.
 - **UX-DR27** One destructive confirmation step, never a colour-only signal.
 - **UX-DR28** No bulk conflict resolution anywhere. Amending a leave record still clears every conflict it caused — cause-removal, not batching.
-- **UX-DR29** No optimistic updates for hours, leave balance or conflict state.
+- **UX-DR29** No optimistic updates for hours, leave balance or conflict state. A recorded conflict decision is confirmed by a `Notice role="status"` line on the queue, not a toast: it is gone on navigation and persists nowhere (decision 21, story 5.4b).
 - **UX-DR30** Month navigation symmetric and unbounded in both directions; no month unreachable or slower.
 
 **Information architecture**

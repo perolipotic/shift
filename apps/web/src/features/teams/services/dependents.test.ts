@@ -20,6 +20,8 @@ import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snap
 import { ROTATION_KEY } from '@/features/rotation/services/list';
 import { SHIFT_TYPES_LIST_KEY } from '@/features/shift-types/services/list';
 import {
+  CONFLICT_RESOLUTION_GONE_DEPENDENTS,
+  CONFLICT_RESOLUTION_WRITE_DEPENDENTS,
   HOUR_BAND_WRITE_DEPENDENTS,
   LEAVE_WRITE_DEPENDENTS,
   MEMBERSHIP_WRITE_DEPENDENTS,
@@ -221,6 +223,22 @@ describe('the reads a team or membership write makes stale', () => {
       // conflicts queue derives from; never another member's. Since story
       // 5.4a both resolution reads, which a removal or an amend can end.
       stale: [LEAVE_A, MY_LEAVE_RECORDS_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, MY_CONFLICT_RESOLUTIONS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
+    },
+    {
+      write: 'a conflict resolution recorded (story 5.4b)',
+      own: ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+      dependents: CONFLICT_RESOLUTION_WRITE_DEPENDENTS,
+      // Both resolution reads: the queue, the calendar's marks and an
+      // admin's *Sati* derive from the organization's, a member's *Sati* from
+      // their own. No leave, schedule or member row changes.
+      stale: [MY_CONFLICT_RESOLUTIONS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
+    },
+    {
+      write: 'a conflict resolution refused as no longer open (story 5.4b)',
+      own: ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+      dependents: CONFLICT_RESOLUTION_GONE_DEPENDENTS,
+      // The resolutions, and the leave a P0002 says is gone.
+      stale: [ORGANIZATION_LEAVE_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
     },
     {
       write: 'a refusal',

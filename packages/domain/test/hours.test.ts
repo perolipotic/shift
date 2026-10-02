@@ -7,6 +7,7 @@ import {
   memberScheduleOfMonth,
   projectedShiftTypeOn,
   type HourBand,
+  type LeaveShift,
   type MemberHours,
   type MemberHoursInput,
   type RosterMember,
@@ -82,13 +83,18 @@ function oracleHours(input: MemberHoursInput, month: string): MemberHours {
   let untimedShiftCount = 0;
   let unbandedMinutes = 0;
   let totalMinutes = 0;
+  let leaveMinutes = 0;
 
   for (const day of memberScheduleOfMonth(input, month)) {
     for (const shift of day.shifts) {
       const entry = input.shiftTypes.find((one) => one.type.id === shift.shiftTypeId);
       if (entry === undefined || !entry.type.isWorking) continue;
-      shiftCount += 1;
       const version = oracleVersionOn(entry.versions, day.date);
+      if ((input.leaveShifts ?? []).some((one) => one.date === day.date && one.teamId === shift.teamId)) {
+        if (version !== null) leaveMinutes += (version.endMinute - version.startMinute + 1440) % 1440 || 1440;
+        continue;
+      }
+      shiftCount += 1;
       if (version === null) {
         untimedShiftCount += 1;
         continue;
@@ -114,7 +120,7 @@ function oracleHours(input: MemberHoursInput, month: string): MemberHours {
     bands: ordered.map((band) => ({ bandId: band.id, minutes: minutes.get(band.id)!, shiftCount: counts.get(band.id)! })),
     unbandedMinutes,
     totalMinutes,
-    leaveMinutes: 0,
+    leaveMinutes,
     untimedShiftCount,
   };
 }
@@ -122,7 +128,7 @@ function oracleHours(input: MemberHoursInput, month: string): MemberHours {
 function expectInvariant(hours: MemberHours, label: string): void {
   const banded = hours.bands.reduce((sum, band) => sum + band.minutes, 0);
   expect(banded + hours.unbandedMinutes, `${label}: bands + unbanded = total`).toBe(hours.totalMinutes);
-  expect(hours.leaveMinutes, `${label}: leave`).toBe(0);
+  expect(Number.isInteger(hours.leaveMinutes) && hours.leaveMinutes >= 0, `${label}: leave whole and never negative`).toBe(true);
   for (const band of hours.bands) {
     expect(Number.isInteger(band.minutes), `${label}: ${band.bandId} whole minutes`).toBe(true);
     expect(band.shiftCount, `${label}: ${band.bandId} count`).toBeLessThanOrEqual(hours.shiftCount);
@@ -183,6 +189,7 @@ function membersOf(teams: readonly { readonly id: string }[]): readonly RosterMe
 }
 
 interface FixtureOptions {
+  readonly leaveShifts?: readonly LeaveShift[];
   readonly rosterOverrides?: readonly RosterOverride[];
   readonly overrides?: readonly ShiftTypeOverride[];
   readonly bands?: readonly HourBand[];
@@ -203,6 +210,7 @@ function fixtureInput(fx: Fixture, memberId: string, options: FixtureOptions = {
     workingShiftTypeIds: workingOf(fx.types),
     bands: options.bands ?? fx.bands,
     shiftTypes: withVersions(fx.types, fx.versions),
+    ...(options.leaveShifts === undefined ? {} : { leaveShifts: options.leaveShifts }),
   };
 }
 
@@ -543,6 +551,110 @@ describe('hours follow the roster', () => {
     expect(oneShift[0]).toBe(1);
     expect(oneShift[1]).toBeGreaterThan(0);
     expect(subtract(before, after)).toEqual(oneShift);
+  });
+});
+
+describe('an accepted-uncovered shift counts as leave, not as work (story 5.4b)', () => {
+  it.each(FIXTURES)('$fixture: no leave shifts, or an empty list, leaves every figure as it was', (fx) => {
+    for (const member of membersOf(fx.teams)) {
+      const plain = memberHoursOfMonth(fixtureInput(fx, member.id), MONTH);
+      expect(plain.leaveMinutes, member.id).toBe(0);
+      expect(memberHoursOfMonth(fixtureInput(fx, member.id, { leaveShifts: [] }), MONTH), member.id).toEqual(plain);
+    }
+  });
+
+  it.each(FIXTURES)('$fixture: the shift\'s duration moves out of the bands, the total and the count, into leave', (fx) => {
+    const alfa = fx.teams[0]!.id;
+    const date = dateWhere(fx, [alfa], null);
+    const id = `${alfa}-1`;
+    const type = projectedShiftTypeOn(fx.assignments.filter((one) => one.teamId === alfa), fx.steps, date)!;
+    const oneShift = oneShiftOf(fx, date, type);
+    expect(oneShift[0]).toBe(1);
+
+    const before = memberHoursOfMonth(fixtureInput(fx, id), MONTH);
+    const input = fixtureInput(fx, id, { leaveShifts: [{ date, teamId: alfa }] });
+    const after = memberHoursOfMonth(input, MONTH);
+
+    expect(subtract(before, after)).toEqual(oneShift);
+    expect(after.leaveMinutes).toBe(oneShift[1]);
+    expect(after.untimedShiftCount).toBe(before.untimedShiftCount);
+    expectInvariant(after, id);
+    expect(after).toEqual(oracleHours(input, MONTH));
+  });
+
+  it('gives a 12-hour pilot shift 720 leave minutes, and takes 720 and one shift from the rest', () => {
+    const shiftTypes = withVersions(PILOT_SHIFT_TYPES, PILOT_SHIFT_TYPE_VERSIONS);
+    const shifts = [
+      { date: '2026-09-10', shiftTypeId: 'pilot-dan' },
+      { date: '2026-09-11', shiftTypeId: 'pilot-dan' },
+    ];
+    const worked = memberHoursOfMonth(soloInput(PILOT_HOUR_BANDS, shiftTypes, 'pilot-slobodno', shifts), MONTH);
+    const accepted = memberHoursOfMonth(
+      { ...soloInput(PILOT_HOUR_BANDS, shiftTypes, 'pilot-slobodno', shifts), leaveShifts: [{ date: '2026-09-10', teamId: 't' }] },
+      MONTH,
+    );
+    expect(worked.totalMinutes).toBe(1440);
+    expect(accepted).toEqual({
+      ...worked,
+      shiftCount: 1,
+      bands: [
+        { bandId: 'pilot-dan', minutes: 720, shiftCount: 1 },
+        { bandId: 'pilot-noc', minutes: 0, shiftCount: 0 },
+      ],
+      totalMinutes: 720,
+      leaveMinutes: 720,
+    });
+  });
+
+  it('moves a midnight-crossing Noć, hand-computed: 720 leave minutes, and the Dan beside it untouched', () => {
+    // Dan 07:00–19:00 on the 29th, Noć 19:00–07:00 on the 30th (into October), the Noć accepted.
+    const shiftTypes = withVersions(PILOT_SHIFT_TYPES, PILOT_SHIFT_TYPE_VERSIONS);
+    const input: MemberHoursInput = {
+      ...soloInput(PILOT_HOUR_BANDS, shiftTypes, 'pilot-slobodno', [
+        { date: '2026-09-29', shiftTypeId: 'pilot-dan' },
+        { date: '2026-09-30', shiftTypeId: 'pilot-noc' },
+      ]),
+      leaveShifts: [{ date: '2026-09-30', teamId: 't' }],
+    };
+
+    expect(memberHoursOfMonth(input, MONTH)).toEqual({
+      shiftCount: 1,
+      bands: [
+        { bandId: 'pilot-dan', minutes: 720, shiftCount: 1 },
+        { bandId: 'pilot-noc', minutes: 0, shiftCount: 0 },
+      ],
+      unbandedMinutes: 0,
+      totalMinutes: 720,
+      leaveMinutes: 720,
+      untimedShiftCount: 0,
+    });
+    // Wholly in its start month: October holds none of it.
+    expect(memberHoursOfMonth(input, '2026-10').leaveMinutes).toBe(0);
+  });
+
+  it('adds nothing anywhere for an untimed shift', () => {
+    const later = typeOf('x', at(7), at(19), '2026-09-15');
+    const base = soloInput(PILOT_HOUR_BANDS, [later, offEntry], 'off', [
+      { date: '2026-09-10', shiftTypeId: 'x' },
+      { date: '2026-09-20', shiftTypeId: 'x' },
+    ]);
+    const before = memberHoursOfMonth(base, MONTH);
+    const after = memberHoursOfMonth({ ...base, leaveShifts: [{ date: '2026-09-10', teamId: 't' }] }, MONTH);
+    expect(before.untimedShiftCount).toBe(1);
+    expect(after).toEqual({ ...before, shiftCount: 1, untimedShiftCount: 0, leaveMinutes: 0 });
+  });
+
+  it.each(FIXTURES)('$fixture: a leave shift on another team, a date off or another month changes nothing', (fx) => {
+    const alfa = fx.teams[0]!.id;
+    const bravo = fx.teams[1]!.id;
+    const date = dateWhere(fx, [alfa], bravo);
+    const id = `${alfa}-1`;
+    const before = memberHoursOfMonth(fixtureInput(fx, id), MONTH);
+    const leaveShifts: LeaveShift[] = [
+      { date, teamId: bravo },
+      { date: '2026-10-05', teamId: alfa },
+    ];
+    expect(memberHoursOfMonth(fixtureInput(fx, id, { leaveShifts }), MONTH)).toEqual(before);
   });
 });
 

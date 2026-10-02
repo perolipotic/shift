@@ -4,7 +4,8 @@ import {
   type CalendarSnapshot,
 } from '@/features/calendar/services/snapshot';
 import type { CalendarMarks } from '@/features/calendar/utils/month';
-import { unresolvedOf, type LeaveRowsAnswer } from '@/features/conflicts/services/conflicts-queue';
+import { resolutionsOf, unresolvedOf, type LeaveRowsAnswer } from '@/features/conflicts/services/conflicts-queue';
+import { acceptedUncoveredOf } from '@/features/conflicts/services/resolutions';
 import { leaveRecordsOf, organizationLeaveRecordsOf } from '@/features/leave/services/leave-list';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
 
@@ -22,6 +23,10 @@ import type { MemberRole } from '@/features/navigation/utils/destinations';
  * read through `my_leave_records()` and parsed against their own id: no other
  * member's leave ever reaches them, and they read no resolution, since they
  * are shown no conflict.
+ *
+ * UNCOVERED (story 5.4b). An admin's marks also carry the keys the same
+ * resolution rows accepted as uncovered, which mark their shift's grid cell
+ * uncovered. A member's carry none.
  *
  * NEVER A MONTH WITHOUT ITS MARKS. The calendar waits for its reads: a leave
  * or resolution read that failed, is paused offline, or answered a row that
@@ -84,6 +89,7 @@ export function calendarMarksOf(
 
     return {
       collisions: [],
+      uncovered: [],
       leave: new Map([[viewer.memberId, own.map(({ from, to }) => ({ from, to }))]]),
     };
   }
@@ -104,7 +110,11 @@ export function calendarMarksOf(
     else ranges.push({ from, to });
   }
 
-  return { collisions: unresolvedOf(snapshot, records, resolutionRows), leave };
+  return {
+    collisions: unresolvedOf(snapshot, records, resolutionRows),
+    uncovered: acceptedUncoveredOf(resolutionsOf(snapshot, resolutionRows)),
+    leave,
+  };
 }
 
 /** Whether a read failed or is paused offline, a failed refetch over cached rows included. */

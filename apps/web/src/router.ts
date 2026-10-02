@@ -17,6 +17,7 @@ import { postavkeRotacijeRoute } from '@/pages/postavke-rotacije';
 import { postavkeRotacijeTipSmjeneRoute } from '@/pages/postavke-rotacije.tipovi-smjena.$id';
 import { prijavaOrganizacijaRoute } from '@/pages/prijava-organizacija';
 import { prijavaRoute } from '@/pages/prijava';
+import { rasporedKonfliktRoute } from '@/pages/raspored.$memberId.$date.$teamId';
 import { rasporedRoute } from '@/pages/raspored';
 import { rootRoute } from '@/pages/__root';
 import { satiRoute } from '@/pages/sati';
@@ -42,6 +43,10 @@ const appDestinations = appLayoutRoute.addChildren([
   satiRoute,
   godisnjiRoute,
   rasporedRoute,
+  // STORY 5.4b: one conflict's resolution screen, on 1.7a's terms — nested
+  // under the layout, absent from the destinations (the `Raspored` tab lights
+  // for it), with the admin guard `/raspored` carries.
+  rasporedKonfliktRoute,
   ljudiRoute,
   // TWO ROUTES THAT ARE NOT DESTINATIONS (story 1.5b). `/ljudi/novi` and
   // `/ljudi/$id` nest under the same layout — so the session guard covers them

@@ -44,8 +44,9 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * alert, never a month without its marks, and its retry brings the month back.
  *
  * Story 5.4a: a resolution seeded in SQL on today's conflict takes that
- * cell's mark off the grid, and the other two stay marked; the member's
- * person view still hatches the date as leave. A failed resolutions read
+ * cell's conflict mark off the grid, and the other two stay marked; the
+ * member's person view still hatches the date as leave. Since story 5.4b the
+ * seeded kind, accepted as uncovered, leaves the uncovered mark on the cell. A failed resolutions read
  * shows the same alert, and its retry brings the month back.
  */
 
@@ -54,6 +55,7 @@ test.use({ storageState: ADMIN_STATE });
 const kalendar = hr.kalendar;
 const CONFLICT = kalendar.modifier.conflict;
 const LEAVE = kalendar.modifier.leave;
+const UNCOVERED = kalendar.modifier.uncovered;
 
 /** The run organization's rotation, while this file's test holds it. */
 let hold: RotationHold | null = null;
@@ -305,7 +307,7 @@ test('a failed leave read shows the unavailable alert and no month, and the retr
   await expect(calendarPage.retryButton).toHaveCount(0);
 });
 
-test('a resolved conflict carries no mark on the grid, the other two still do, and the person view keeps its leave', async ({
+test('a conflict accepted as uncovered carries the uncovered mark and no conflict mark on the grid, the other two still do, and the person view keeps its leave', async ({
   calendarPage,
   fixture,
 }) => {
@@ -323,8 +325,10 @@ test('a resolved conflict carries no mark on the grid, the other two still do, a
     const cell = await calendarPage.cellOf(team.name, date);
 
     if (offset === 0) {
+      // Story 5.4b: accepted as uncovered — the uncovered mark alone.
       await expect(cell, date).not.toHaveAccessibleName(names(CONFLICT));
-      await expect(cell.locator('[class*="modifier-"]')).toHaveCount(0);
+      await expect(cell, date).not.toHaveAccessibleName(names(LEAVE));
+      await expect(cell, date).toHaveAccessibleName(names(UNCOVERED));
     } else {
       await expect(cell, date).toHaveAccessibleName(names(CONFLICT));
     }

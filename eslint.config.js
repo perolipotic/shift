@@ -117,10 +117,14 @@ export const FEATURE_PUBLIC = {
   // Story 5.3d: *Sati* reads leave by the marks' own role rule
   // (`readsOrganizationLeave`), and draws the conflict's one glyph
   // (`CONFLICT_GLYPH`) from the modifier vocabulary.
+  // Story 5.4b: the resolution screen reads who works that day off the day
+  // detail's own roster (`dayDetailOf`), never a second one, and draws the
+  // conflict's glyph.
   calendar: [
     'services/marks', // hours
     'services/snapshot', // conflicts, hours, leave, pages, teams
-    'utils/modifiers', // hours
+    'utils/day-detail', // conflicts
+    'utils/modifiers', // conflicts, hours
     'utils/month', // conflicts, hours, leave, pages
   ],
   // Story 5.3c: the calendar's marks derive every collision through
@@ -134,7 +138,7 @@ export const FEATURE_PUBLIC = {
     'services/resolutions', // calendar, hours, teams
   ],
   'hour-bands': [
-    'services/list', // calendar, hours, shift-types, pages
+    'services/list', // calendar, conflicts, hours, shift-types, pages
     'services/write', // pages
   ],
   hours: [
@@ -156,9 +160,9 @@ export const FEATURE_PUBLIC = {
     'services/leave-section', // conflicts
   ],
   members: [
-    'services/list', // hour-bands, leave, shift-types, teams, pages
-    'utils/position', // calendar, teams
-    'utils/rank', // calendar, organization, teams
+    'services/list', // conflicts, hour-bands, leave, shift-types, teams, pages
+    'utils/position', // calendar, conflicts, teams
+    'utils/rank', // calendar, conflicts, organization, teams
   ],
   navigation: [
     'services/profile', // teams
@@ -168,7 +172,7 @@ export const FEATURE_PUBLIC = {
   organization: [
     'components/lockup', // navigation
     'hooks/logo-url', // navigation
-    'services/snapshot', // leave, members, navigation, teams
+    'services/snapshot', // conflicts, leave, members, navigation, teams
     'utils/accent', // navigation
   ],
   rotation: [
@@ -179,7 +183,7 @@ export const FEATURE_PUBLIC = {
     'services/write', // pages
   ],
   teams: [
-    'services/dependents', // hour-bands, leave, members
+    'services/dependents', // conflicts, hour-bands, leave, members
     'services/list', // calendar, members, rotation, pages
     'services/roster', // pages
     'services/write', // calendar, hour-bands, rotation, shift-types, pages

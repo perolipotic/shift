@@ -13,11 +13,12 @@ import type { CalendarDay, CalendarMonth } from '@/features/calendar/utils/month
  * NEVER COLOUR ALONE: every modifier has a glyph and a label beside its
  * treatment, and a cell's label for assistive technology names each one.
  *
- * THREE MODIFIERS ARE DERIVED SO FAR, all in `@/features/calendar/utils/month`:
- * `overridden`, where a shift-type override replaced the projected type
- * (story 3.5a) or a roster override changed who works it (story 3.6a), and
- * `conflict` and `leave`, from the collisions and the live leave the viewer
- * may see (story 5.3c). `uncovered` is story 5.4's.
+ * ALL FOUR ARE DERIVED, in `@/features/calendar/utils/month`: `overridden`,
+ * where a shift-type override replaced the projected type (story 3.5a) or a
+ * roster override changed who works it (story 3.6a); `conflict` and `leave`,
+ * from the collisions and the live leave the viewer may see (story 5.3c); and
+ * `uncovered`, on an admin's grid cell whose conflict was accepted as
+ * uncovered (story 5.4b).
  *
  * TWO GLYPHS ARE TEXT AND TWO ARE ICONS (story 5.3c, human): `⚠` and `✎` stay
  * text; leave and uncovered are lucide's `Clock` and `CircleDashed`, because

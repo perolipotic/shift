@@ -52,7 +52,7 @@ Specs are grouped by feature under `tests/<feature>/` (`testDir` in
 and a new feature gets its own folder; specs import helpers as
 `../../utils/<name>.ts`. `custom-fixtures.ts` gives the `test` and `expect`
 every spec imports, with every page object as a test fixture (`loginPage`,
-`calendarPage`, `conflictsPage`, `peoplePage`, `teamsPage`, `organizationPage`, `hourBandsPage`,
+`calendarPage`, `conflictsPage`, `resolutionPage`, `peoplePage`, `teamsPage`, `organizationPage`, `hourBandsPage`,
 `hoursPage`, `leavePage`, `rotationPage`), and `run-fixture.ts` provisions and deletes the run's
 organization (`readFixture`).
 

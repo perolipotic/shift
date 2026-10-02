@@ -1,4 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useLocation, useNavigate } from '@tanstack/react-router';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   CALENDAR_KEY,
@@ -8,6 +10,12 @@ import {
   type CalendarMembersRpc,
 } from '@/features/calendar/services/snapshot';
 import { CONFLICTS_LOADING, conflictsQueueOf } from '@/features/conflicts/services/conflicts-queue';
+import {
+  resolutionSavedOf,
+  resolutionSavedStepOf,
+  withoutResolutionSaved,
+  type ResolutionSaved,
+} from '@/features/conflicts/services/resolution-screen';
 import {
   CONFLICT_RESOLUTIONS_TABLE,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
@@ -33,9 +41,46 @@ import { supabaseClient } from '@/lib/supabase/client';
  * every leave write names the other two among its dependents, so a conflict
  * appears or clears without a reload. Nothing is written, and no conflict set
  * is kept: the queue is derived from the three answers on every render.
+ *
+ * THE STATUS LINE (story 5.4b). A decision that landed returns here with what
+ * it saved in ROUTER STATE — never the URL, never storage. It is derived per
+ * location (`resolutionSavedStepOf`): the location that brings it shows it
+ * and clears it off the entry through the router, so a reload or Back to the
+ * entry later finds none; any other navigation, the Raspored tab's included,
+ * drops it. Focus moves to it once drawn, so it is announced.
  */
 export function useConflictsQueue() {
   const queryClient = useQueryClient();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [saved, setSaved] = useState<ResolutionSaved | null>(() => resolutionSavedOf(location.state));
+  /** Whether the next location is our own clearing replace. */
+  const clearing = useRef(false);
+  /** The location state already stepped over: an effect run twice steps once. */
+  const stepped = useRef<unknown>(undefined);
+  /** The status line, which takes focus once drawn. */
+  const savedField = useRef<HTMLParagraphElement>(null);
+  const state = location.state;
+
+  useEffect(() => {
+    if (stepped.current === state) return;
+
+    stepped.current = state;
+
+    const step = resolutionSavedStepOf(saved, state, clearing.current);
+
+    clearing.current = step.clearing;
+    setSaved(step.shown);
+    if (step.clear) {
+      void navigate({ to: '/raspored', replace: true, state: (entry) => withoutResolutionSaved(entry) });
+    }
+    // The line's own state is read, never followed: only a new location steps.
+  }, [state]);
+
+  useEffect(() => {
+    if (saved !== null) savedField.current?.focus();
+  }, [saved]);
+
   const calendar = useQuery(
     calendarQueryOptions(
       () => supabaseClient().from(CALENDAR_READ_TABLE),
@@ -65,5 +110,5 @@ export function useConflictsQueue() {
     }
   }
 
-  return { queue, loading: queue.kind === CONFLICTS_LOADING, retry };
+  return { queue, saved, savedField, loading: queue.kind === CONFLICTS_LOADING, retry };
 }

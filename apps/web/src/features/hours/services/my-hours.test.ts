@@ -55,7 +55,7 @@ const MONTH = '2026-09';
 
 /** No leave, so no collision: the figures exactly as before story 5.3d. */
 const NO_COLLISIONS: readonly Collision[] = [];
-const READY: HoursConflictsState = { kind: HOURS_CONFLICTS_READY, collisions: NO_COLLISIONS };
+const READY: HoursConflictsState = { kind: HOURS_CONFLICTS_READY, collisions: NO_COLLISIONS, uncovered: [] };
 
 async function snapshotOf(
   rows: FixtureRows,

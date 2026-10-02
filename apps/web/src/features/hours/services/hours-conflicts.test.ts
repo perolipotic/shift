@@ -1,4 +1,4 @@
-import { collisionsOf, type Collision } from '@shift/domain';
+import { collisionsOf, type Collision, type CollisionResolution } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { CALENDAR_UNAVAILABLE, readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
@@ -13,6 +13,8 @@ import {
   conflictCountsOf,
   hoursCollisionsOf,
   hoursConflictsStateOf,
+  hoursUncoveredOf,
+  leaveShiftsOf,
   type HoursConflictsState,
 } from '@/features/hours/services/hours-conflicts';
 import {
@@ -129,8 +131,13 @@ function collisionsFrom(snapshot: CalendarSnapshot, rows: readonly Row[], resolu
   return hoursCollisionsOf(snapshot, rows, resolutionRows);
 }
 
-function tableOf(snapshot: CalendarSnapshot, collisions: readonly Collision[], month = SEPTEMBER): OrganizationHoursView {
-  const outcome = organizationHoursOf(snapshot, { mjesec: month }, TODAY, collisions);
+function tableOf(
+  snapshot: CalendarSnapshot,
+  collisions: readonly Collision[],
+  month = SEPTEMBER,
+  uncovered: readonly CollisionResolution[] = [],
+): OrganizationHoursView {
+  const outcome = organizationHoursOf(snapshot, { mjesec: month }, TODAY, collisions, uncovered);
 
   if (!outcome.ok) throw new Error(outcome.code);
 
@@ -145,8 +152,13 @@ function rowOfMember(view: OrganizationHoursView, memberId: string): Organizatio
   return row;
 }
 
-function ownOf(snapshot: CalendarSnapshot, collisions: readonly Collision[], month = SEPTEMBER): MyHoursView {
-  const outcome = myHoursOf(snapshot, { mjesec: month }, TODAY, collisions);
+function ownOf(
+  snapshot: CalendarSnapshot,
+  collisions: readonly Collision[],
+  month = SEPTEMBER,
+  uncovered: readonly CollisionResolution[] = [],
+): MyHoursView {
+  const outcome = myHoursOf(snapshot, { mjesec: month }, TODAY, collisions, uncovered);
 
   if (!outcome.ok) throw new Error(outcome.code);
 
@@ -370,7 +382,7 @@ describe('the read', () => {
   });
 
   it('is ready with the collisions once the rows are in', () => {
-    expect(ready(admin, [WORKED])).toEqual({ kind: HOURS_CONFLICTS_READY, collisions: collisionsFrom(admin, [WORKED]) });
+    expect(ready(admin, [WORKED])).toEqual({ kind: HOURS_CONFLICTS_READY, collisions: collisionsFrom(admin, [WORKED]), uncovered: [] });
   });
 });
 
@@ -544,5 +556,71 @@ describe('resolutions (story 5.4a)', () => {
     ]) {
       expect(hoursConflictsStateOf(admin, settled([WORKED]), answer)).toEqual({ kind: HOURS_CONFLICTS_LOADING });
     }
+  });
+});
+
+describe('accepted as uncovered is leave, not work (story 5.4b)', () => {
+  const a = teamOf(PILOT, 0);
+  // 10.09 is a 12 h Dan of the viewer's team, in conflict with WORKED.
+  const accepted = [resolutionOf(VIEWER_MEMBER, '2026-09-10', a)];
+  const TWELVE_HOURS = 720;
+
+  function stateOf(snapshot: CalendarSnapshot, resolutionRows: readonly Row[]) {
+    const state = ready(snapshot, [WORKED], resolutionRows);
+
+    if (state.kind !== HOURS_CONFLICTS_READY) throw new Error(state.kind);
+
+    return state;
+  }
+
+  it('reads the accepted-uncovered keys alone, never another kind', () => {
+    expect(stateOf(admin, accepted).uncovered).toEqual([{ memberId: VIEWER_MEMBER, date: '2026-09-10', teamId: a }]);
+    expect(stateOf(admin, [resolutionOf(VIEWER_MEMBER, '2026-09-10', a, 'replace_member')]).uncovered).toEqual([]);
+    expect(hoursUncoveredOf(member, accepted)).toEqual([{ memberId: VIEWER_MEMBER, date: '2026-09-10', teamId: a }]);
+    expect(leaveShiftsOf(stateOf(admin, accepted).uncovered, ANA)).toEqual([]);
+  });
+
+  it("moves the shift into the admin's table and the sheet as 12 h of leave: band, total and shift count −12 h / −1", () => {
+    const { collisions, uncovered } = stateOf(admin, accepted);
+    const before = rowOfMember(tableOf(admin, collisionsFrom(admin, [WORKED])), VIEWER_MEMBER);
+    const view = tableOf(admin, collisions, SEPTEMBER, uncovered);
+    const after = rowOfMember(view, VIEWER_MEMBER);
+
+    expect(after.conflictCount).toBe(2);
+    expect(after.hours.leaveMinutes).toBe(TWELVE_HOURS);
+    expect(after.leave).not.toBeNull();
+    expect(t(after.leave!.key, after.leave!.values)).toBe('12 h');
+    expect(after.shiftCount).toBe(before.shiftCount - 1);
+    expect(after.hours.totalMinutes).toBe(before.hours.totalMinutes - TWELVE_HOURS);
+    expect(after.hours.bands.map((band) => band.minutes).reduce((x, y) => x + y, 0)).toBe(
+      before.hours.bands.map((band) => band.minutes).reduce((x, y) => x + y, 0) - TWELVE_HOURS,
+    );
+    expect(rowOfMember(view, ANA)).toEqual(rowOfMember(tableOf(admin, collisions), ANA));
+
+    const sheet = hoursExportOf(view, admin.organizationName);
+    const index = view.rows.findIndex((row) => row.memberId === VIEWER_MEMBER);
+    const header = sheet.columns.findIndex((cell) => cell === t('sati.organization.leave'));
+
+    expect(header).toBeGreaterThan(-1);
+    expect(sheet.rows[index]![header]).toEqual({ kind: 'hours', value: TWELVE_HOURS / 1440 });
+  });
+
+  it("fills a member's own month with 12 h of leave", () => {
+    const { collisions, uncovered } = stateOf(member, accepted);
+    const view = ownOf(member, collisions, SEPTEMBER, uncovered);
+    const plain = ownOf(member, collisionsFrom(member, [WORKED]));
+
+    expect(view.leave).not.toBeNull();
+    expect(t(view.leave!.key, view.leave!.values)).toBe('12 h');
+    expect(view.shiftCount).toBe(plain.shiftCount - 1);
+    expect(view.conflictCount).toBe(2);
+  });
+
+  it('passes the keys through the surface: the table the state gives is the one with leave', () => {
+    const state = stateOf(admin, accepted);
+    const surface = hoursSurfaceOf({ snapshot: admin, refusal: null, loading: false }, state, { mjesec: SEPTEMBER }, TODAY);
+
+    expect(surface.organization).toEqual(tableOf(admin, state.collisions, SEPTEMBER, state.uncovered));
+    expect(rowOfMember(surface.organization!, VIEWER_MEMBER).hours.leaveMinutes).toBe(TWELVE_HOURS);
   });
 });

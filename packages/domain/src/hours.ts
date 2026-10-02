@@ -19,8 +19,16 @@
  * The invariant: the band minutes plus `unbandedMinutes` equal `totalMinutes`,
  * and `totalMinutes` is the sum of the durations of the timed working shifts.
  * `unbandedMinutes` is non-zero only when the organization has no bands.
- * Leave minutes are always 0 until leave records exist (Epic 5), and never
- * enter a band or the total.
+ *
+ * LEAVE SHIFTS (story 5.4b). A shift the caller names in `leaveShifts` — an
+ * accepted-uncovered conflict of THIS member: the member was on leave and the
+ * shift went without them — is not worked. Its duration counts in
+ * `leaveMinutes` and nowhere else: in no band, not in the total and not in
+ * `shiftCount`. An untimed one adds nothing anywhere, not even to
+ * `untimedShiftCount`. A name that matches no working shift of the member's
+ * schedule changes nothing, and no `leaveShifts` at all leaves every figure as
+ * it was. The leave minutes never enter a band or the total, so the invariant
+ * holds as it is.
  *
  * The result is numbers and ids only; nothing here reads a name.
  *
@@ -47,6 +55,18 @@ export interface MemberHoursInput extends MemberScheduleInput {
    * working ones must be exactly `workingShiftTypeIds`.
    */
   readonly shiftTypes: readonly ShiftTypeWithVersions[];
+  /**
+   * The member's shifts that count as leave, not as work (story 5.4b): each
+   * `(date, teamId)` of an accepted-uncovered conflict of THIS member, in any
+   * order. Absent or empty, every shift is worked.
+   */
+  readonly leaveShifts?: readonly LeaveShift[];
+}
+
+/** One shift of a member, by its date and team, that counts as leave (story 5.4b). */
+export interface LeaveShift {
+  readonly date: string;
+  readonly teamId: string;
 }
 
 /** The minutes one band holds in the month, and how many shifts overlap it. */
@@ -73,7 +93,10 @@ export interface MemberHours {
   readonly unbandedMinutes: number;
   /** The sum of the durations of the timed working shifts. */
   readonly totalMinutes: number;
-  /** Always 0 until leave records exist (Epic 5); never in a band or the total. */
+  /**
+   * The durations of the timed working shifts named in `leaveShifts` (story
+   * 5.4b); never in a band, the total or `shiftCount`.
+   */
   readonly leaveMinutes: number;
   /** Working shifts on a date before their type's first version: counted in `shiftCount`, in no minutes. */
   readonly untimedShiftCount: number;
@@ -170,6 +193,8 @@ export function memberHoursOfMonth(input: MemberHoursInput, month: string): Memb
   let untimedShiftCount = 0;
   let unbandedMinutes = 0;
   let totalMinutes = 0;
+  let leaveMinutes = 0;
+  const leaveShifts = new Set((input.leaveShifts ?? []).map((shift) => JSON.stringify([shift.date, shift.teamId])));
 
   for (const day of memberScheduleOfMonth(input, month)) {
     for (const shift of day.shifts) {
@@ -180,8 +205,14 @@ export function memberHoursOfMonth(input: MemberHoursInput, month: string): Memb
       }
       if (!entry.type.isWorking) continue;
 
-      shiftCount += 1;
       const version = shiftTypeVersionOn(entry.versions, day.date);
+      if (leaveShifts.has(JSON.stringify([day.date, shift.teamId]))) {
+        // A leave shift is not worked: only its duration, as leave.
+        if (version !== null) leaveMinutes += deriveShiftTimes(version.startMinute, version.endMinute).durationMinutes;
+        continue;
+      }
+
+      shiftCount += 1;
       if (version === null) {
         untimedShiftCount += 1;
         continue;
@@ -208,7 +239,7 @@ export function memberHoursOfMonth(input: MemberHoursInput, month: string): Memb
     })),
     unbandedMinutes,
     totalMinutes,
-    leaveMinutes: 0,
+    leaveMinutes,
     untimedShiftCount,
   };
 }

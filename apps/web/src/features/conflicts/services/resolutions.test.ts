@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  ACCEPT_UNCOVERED,
+  acceptedUncoveredOf,
+  type ConflictResolution,
   CONFLICT_RESOLUTIONS_COLUMNS,
   CONFLICT_RESOLUTIONS_PAGE_ROWS,
   CONFLICT_RESOLUTIONS_TABLE,
@@ -267,3 +270,21 @@ describe('the role-gated answer', () => {
     expect(conflictResolutionsAnswerOf(false, organization, own)).toBe(own);
   });
 });
+
+describe('the split by kind (story 5.4b)', () => {
+  it('keeps the keys accepted as uncovered, in order, and no other kind', () => {
+    const resolutions: readonly ConflictResolution[] = [
+      { memberId: 'm1', date: '2026-09-12', teamId: 't1', kind: ACCEPT_UNCOVERED },
+      { memberId: 'm1', date: '2026-09-13', teamId: 't1', kind: 'replace_member' as const },
+      { memberId: 'm2', date: '2026-09-11', teamId: 't2', kind: ACCEPT_UNCOVERED },
+      { memberId: 'm2', date: '2026-09-14', teamId: 't2', kind: 'amend_leave' as const },
+    ];
+
+    expect(acceptedUncoveredOf(resolutions)).toEqual([
+      { memberId: 'm1', date: '2026-09-12', teamId: 't1' },
+      { memberId: 'm2', date: '2026-09-11', teamId: 't2' },
+    ]);
+    expect(acceptedUncoveredOf([])).toEqual([]);
+  });
+});
+

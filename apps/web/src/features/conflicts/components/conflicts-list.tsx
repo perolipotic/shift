@@ -1,3 +1,5 @@
+import { Link } from '@tanstack/react-router';
+import { ChevronRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Badge } from '@/components/ui/badge';
@@ -14,28 +16,36 @@ import { t } from '@/lib/i18n';
  * times, and the causing record's range. A PAST row is told apart by more
  * than colour: a dashed border, muted text and the words `Prošli datum`.
  * Neutral styling throughout — `destructive` belongs to the calendar's
- * conflict cells (story 5.3c) — and no action: resolving is story 5.4's.
+ * conflict cells (story 5.3c). The whole row is the link to the conflict's
+ * own resolution screen (story 5.4b): no checkbox, and no bulk action.
  */
 function ConflictItem({ row }: { readonly row: ConflictRow }): ReactNode {
   return (
-    <li
-      className={cn(
-        'grid min-w-0 gap-1 rounded-md border bg-card p-3',
-        row.past && 'border-dashed bg-transparent text-muted-foreground',
-      )}
-    >
-      <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <span className={cn('tabular-nums', row.past ? 'font-normal' : 'font-semibold')}>{row.dateShown}</span>
-        {row.past ? <Badge variant="outline">{t('raspored.past')}</Badge> : null}
-      </div>
-      <p className={cn('min-w-0 break-words', !row.past && 'font-medium')}>
-        {t('raspored.who', { member: row.memberName, team: row.teamName })}
-      </p>
-      <p className="min-w-0 break-words text-sm text-muted-foreground">
-        {row.times === null
-          ? t('raspored.detail', { type: row.shiftTypeName, from: row.leaveFrom, to: row.leaveTo })
-          : t('raspored.detailTimed', { type: row.shiftTypeName, times: row.times, from: row.leaveFrom, to: row.leaveTo })}
-      </p>
+    <li className="min-w-0">
+      <Link
+        to="/raspored/$memberId/$date/$teamId"
+        params={{ memberId: row.memberId, date: row.date, teamId: row.teamId }}
+        className={cn(
+          'flex min-h-11 min-w-0 items-center gap-3 rounded-md border bg-card p-3 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          row.past && 'border-dashed bg-transparent text-muted-foreground',
+        )}
+      >
+        <span className="grid min-w-0 flex-1 gap-1">
+          <span className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className={cn('tabular-nums', row.past ? 'font-normal' : 'font-semibold')}>{row.dateShown}</span>
+            {row.past ? <Badge variant="outline">{t('raspored.past')}</Badge> : null}
+          </span>
+          <span className={cn('min-w-0 break-words', !row.past && 'font-medium')}>
+            {t('raspored.who', { member: row.memberName, team: row.teamName })}
+          </span>
+          <span className="min-w-0 break-words text-sm text-muted-foreground">
+            {row.times === null
+              ? t('raspored.detail', { type: row.shiftTypeName, from: row.leaveFrom, to: row.leaveTo })
+              : t('raspored.detailTimed', { type: row.shiftTypeName, times: row.times, from: row.leaveFrom, to: row.leaveTo })}
+          </span>
+        </span>
+        <ChevronRight aria-hidden className="size-4 shrink-0" />
+      </Link>
     </li>
   );
 }
