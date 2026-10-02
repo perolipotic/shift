@@ -24,6 +24,7 @@ export const CONFLICT_RESOLUTION_PARTS = {
   hook: ['features', 'conflicts', 'hooks', 'use-conflict-resolution.ts'],
   body: ['features', 'conflicts', 'components', 'conflict-resolution-body.tsx'],
   option: ['features', 'conflicts', 'components', 'resolution-option.tsx'],
+  picker: ['features', 'conflicts', 'components', 'replacement-picker.tsx'],
   skeleton: ['features', 'conflicts', 'components', 'resolution-skeleton.tsx'],
 } as const;
 
@@ -51,6 +52,6 @@ export const CONFLICTS_SCREEN_EXEMPT: readonly { readonly file: string; readonly
   },
   {
     file: 'services/resolution-write.ts',
-    why: 'the one resolution write (story 5.4b) and its refusals; a key source of its own, executed by resolution-write.test.ts',
+    why: 'the two resolution writes (stories 5.4b, 5.4c) and their refusals; a key source of its own, executed by resolution-write.test.ts',
   },
 ];

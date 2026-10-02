@@ -20,6 +20,8 @@ import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snap
 import { ROTATION_KEY } from '@/features/rotation/services/list';
 import { SHIFT_TYPES_LIST_KEY } from '@/features/shift-types/services/list';
 import {
+  CONFLICT_REPLACE_TAKEN_DEPENDENTS,
+  CONFLICT_REPLACE_WRITE_DEPENDENTS,
   CONFLICT_RESOLUTION_GONE_DEPENDENTS,
   CONFLICT_RESOLUTION_WRITE_DEPENDENTS,
   HOUR_BAND_WRITE_DEPENDENTS,
@@ -232,6 +234,21 @@ describe('the reads a team or membership write makes stale', () => {
       // admin's *Sati* derive from the organization's, a member's *Sati* from
       // their own. No leave, schedule or member row changes.
       stale: [MY_CONFLICT_RESOLUTIONS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
+    },
+    {
+      write: 'a conflict resolved by a replacement (story 5.4c)',
+      own: ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+      dependents: CONFLICT_REPLACE_WRITE_DEPENDENTS,
+      // Both resolution reads, and the calendar snapshot: the override 0032
+      // writes puts the replacement on the day's roster and in *Sati*.
+      stale: [CALENDAR_KEY, MY_CONFLICT_RESOLUTIONS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
+    },
+    {
+      write: 'a replacement refused as already on the shift (story 5.4c)',
+      own: ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+      dependents: CONFLICT_REPLACE_TAKEN_DEPENDENTS,
+      // The resolutions, and the snapshot the candidates are derived from.
+      stale: [CALENDAR_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
     },
     {
       write: 'a conflict resolution refused as no longer open (story 5.4b)',

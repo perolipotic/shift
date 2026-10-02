@@ -164,6 +164,7 @@
     "unavailable": "Konflikte trenutačno nije moguće učitati. Pokušaj ponovno.",
     "retry": "Pokušaj ponovno",
     "saved": "Odluka je spremljena: {type} · {team} · {date} · {member}, prihvaćeno kao nepokriveno.",
+    "savedReplace": "Odluka je spremljena: {type} · {team} · {date} · {member}, zamjena: {replacement}.",
     "resolution": {
       "back": "Raspored · {count, plural, one {# neriješen} few {# neriješena} other {# neriješenih}}",
       "heading": "Konflikt",
@@ -182,8 +183,19 @@
       "choiceHint": "redoslijed je uvijek isti",
       "acceptTitle": "Prihvati kao nepokriveno",
       "acceptBody": "{team} taj dan radi bez osobe na godišnjem. Nitko je ne zamjenjuje.",
+      "replaceTitle": "Zamijeni osobu",
+      "replaceBody": "Netko drugi odrađuje smjenu, a osoba na godišnjem ostaje na godišnjem.",
+      "replaceReason": "Zamjena za {member} (godišnji)",
+      "candidatesHeading": "Tko odrađuje smjenu",
+      "candidates": {
+        "free": "slobodan",
+        "working": "radi taj dan · 24 h bez pauze",
+        "onLeave": "na godišnjem taj dan"
+      },
+      "noCandidates": "Nema nikoga koga se može dodati na ovu smjenu.",
       "coverageLabel": "Pokrivenost",
       "coverage": "{covered} od {total, plural, one {# člana} few {# člana} other {# članova}}",
+      "replacementShown": "· {name}",
       "uncovered": "Nepokriveno",
       "hoursLabel": "Sati",
       "hoursAsLeave": "{hours} kao godišnji",
@@ -192,6 +204,8 @@
       "balance": "{count, plural, one {# dan} few {# dana} other {# dana}} preostalo",
       "balanceUnchanged": "bez promjene",
       "hintChoose": "Odaberi odluku.",
+      "hintChooseReplacement": "Odaberi tko odrađuje smjenu.",
+      "hintNoCandidates": "Nitko ne može preuzeti ovu smjenu. Odaberi drugu odluku.",
       "hintRecorded": "Odluka se bilježi s tvojim imenom i vremenom.",
       "cancel": "Odustani",
       "save": "Spremi odluku",
@@ -203,7 +217,8 @@
       "error": {
         "gone": "Ovaj konflikt više nije otvoren: odluka je već zabilježena ili godišnji više ne pokriva taj datum.",
         "denied": "Nemaš ovlasti odlučiti o ovom konfliktu.",
-        "failed": "Odluku nije bilo moguće spremiti. Pokušaj ponovno."
+        "failed": "Odluku nije bilo moguće spremiti. Pokušaj ponovno.",
+        "taken": "{name} je već na ovoj smjeni. Odaberi nekoga drugoga."
       }
     }
   },

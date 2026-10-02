@@ -8,7 +8,7 @@ import {
   unresolvedOf,
   type LeaveRowsAnswer,
 } from '@/features/conflicts/services/conflicts-queue';
-import { acceptedUncoveredOf, conflictResolutionsOf } from '@/features/conflicts/services/resolutions';
+import { conflictResolutionsOf, leaveHoursKeysOf } from '@/features/conflicts/services/resolutions';
 import { leaveRecordsOf, organizationLeaveRecordsOf } from '@/features/leave/services/leave-list';
 
 /**
@@ -33,10 +33,12 @@ import { leaveRecordsOf, organizationLeaveRecordsOf } from '@/features/leave/ser
  * THE COUNT CHANGES NO FIGURE (human, 2026-10-01). A shift in conflict still
  * counts in band hours, total and shift count; the count stands beside them.
  *
- * AN ACCEPTED-UNCOVERED SHIFT IS LEAVE (story 5.4b). The same resolution
- * rows name the conflicts accepted as uncovered ({@link hoursUncoveredOf});
- * the domain moves each one's shift out of the absent member's band hours,
- * total and shift count and into their leave hours. No other kind does.
+ * AN ACCEPTED-UNCOVERED OR REPLACED SHIFT IS LEAVE (stories 5.4b, 5.4c). The
+ * same resolution rows name the conflicts accepted as uncovered and those
+ * resolved by a replacement ({@link hoursLeaveKeysOf}); the domain moves each
+ * one's shift out of the absent member's band hours, total and shift count
+ * and into their leave hours. A replacement's own band hours rise through its
+ * roster override, with no code here. No other kind does either.
  *
  * NEVER FIGURES WITHOUT THE COUNT. *Sati* waits for the leave and resolution
  * reads: one that failed, is paused offline, or answered a row that cannot be
@@ -71,8 +73,12 @@ export type HoursConflictsState =
   | {
       readonly kind: typeof HOURS_CONFLICTS_READY;
       readonly collisions: readonly Collision[];
-      /** The accepted-uncovered keys the viewer reads (story 5.4b): every member's for an admin, their own for a member. */
-      readonly uncovered: readonly CollisionResolution[];
+      /**
+       * The keys whose absent member's shift counts as leave — accepted as
+       * uncovered (story 5.4b) or replaced (story 5.4c) — the viewer reads:
+       * every member's for an admin, their own for a member.
+       */
+      readonly leaveKeys: readonly CollisionResolution[];
     };
 
 /**
@@ -125,16 +131,17 @@ export function hoursCollisionsOf(
 }
 
 /**
- * The accepted-uncovered keys (story 5.4b) of the resolution rows the
- * viewer's role read, parsed as {@link hoursCollisionsOf} parses them: every
+ * The leave-hours keys (stories 5.4b, 5.4c: accepted as uncovered, or
+ * replaced) of the resolution rows the viewer's role read, through
+ * `leaveHoursKeysOf`, parsed as {@link hoursCollisionsOf} parses them: every
  * member's for an admin, the viewer's own for a member.
  *
  * @throws RangeError when a row cannot be trusted.
  */
-export function hoursUncoveredOf(snapshot: CalendarSnapshot, resolutionRows: readonly unknown[]): readonly CollisionResolution[] {
+export function hoursLeaveKeysOf(snapshot: CalendarSnapshot, resolutionRows: readonly unknown[]): readonly CollisionResolution[] {
   const viewer = snapshot.viewer;
 
-  if (readsOrganizationLeave(viewer.role)) return acceptedUncoveredOf(resolutionsOf(snapshot, resolutionRows));
+  if (readsOrganizationLeave(viewer.role)) return leaveHoursKeysOf(resolutionsOf(snapshot, resolutionRows));
 
   const own = conflictResolutionsOf(
     resolutionRows,
@@ -144,7 +151,7 @@ export function hoursUncoveredOf(snapshot: CalendarSnapshot, resolutionRows: rea
 
   if (own === null) throw new RangeError('an own conflict resolution row cannot be trusted');
 
-  return acceptedUncoveredOf(own);
+  return leaveHoursKeysOf(own);
 }
 
 /** Whether a read failed or is paused offline, a failed refetch over cached rows included. */
@@ -179,7 +186,7 @@ export function hoursConflictsStateOf(
     return {
       kind: HOURS_CONFLICTS_READY,
       collisions: hoursCollisionsOf(snapshot, answer.data, resolutions.data),
-      uncovered: hoursUncoveredOf(snapshot, resolutions.data),
+      leaveKeys: hoursLeaveKeysOf(snapshot, resolutions.data),
     };
   } catch (cause) {
     if (!(cause instanceof RangeError)) throw cause;
@@ -220,10 +227,10 @@ export function conflictCountIn(counts: ConflictCounts, memberId: string): numbe
  * `leaveShifts`.
  */
 export function leaveShiftsOf(
-  uncovered: readonly CollisionResolution[],
+  leaveKeys: readonly CollisionResolution[],
   memberId: string,
 ): readonly { readonly date: string; readonly teamId: string }[] {
-  return uncovered.filter((key) => key.memberId === memberId).map(({ date, teamId }) => ({ date, teamId }));
+  return leaveKeys.filter((key) => key.memberId === memberId).map(({ date, teamId }) => ({ date, teamId }));
 }
 
 /** One member's count of `month`, for a surface that shows one member alone. */

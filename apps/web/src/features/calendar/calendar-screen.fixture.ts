@@ -76,6 +76,10 @@ export const CALENDAR_SCREEN_EXEMPT: readonly { readonly file: string; readonly 
     why: 'the month model, executed by month.test.ts; declares no key and is swept by the snapshot suite under its own counts',
   },
   {
+    file: 'utils/replacement-candidates.ts',
+    why: 'the replacement candidates of one shift, grouped (story 5.4c) for the conflict screen; declares no key, executed by replacement-candidates.test.ts',
+  },
+  {
     file: 'utils/modifiers.ts',
     why: 'the mark vocabulary; a key source of its own in the sign-in suite, so in the set its strings would count twice',
   },

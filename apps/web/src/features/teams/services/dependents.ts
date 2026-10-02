@@ -116,6 +116,26 @@ export const CONFLICT_RESOLUTION_WRITE_DEPENDENTS: readonly QueryKey[] = [
 ];
 
 /**
+ * A conflict resolved by a replacement (story 5.4c): both live resolution
+ * reads, for the reasons a recorded resolution names them, AND the calendar
+ * snapshot — 0032 writes a roster override beside the resolution, which puts
+ * the replacement on the day's roster, raises their band hours in *Sati* and
+ * takes them out of the next conflict's candidates.
+ */
+export const CONFLICT_REPLACE_WRITE_DEPENDENTS: readonly QueryKey[] = [
+  ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+  MY_CONFLICT_RESOLUTIONS_KEY,
+  CALENDAR_KEY,
+];
+
+/**
+ * A replacement refused because the replacement is already put on the shift
+ * (story 5.4c): the calendar snapshot, whose live roster overrides the
+ * candidates are derived from, so the re-read takes them out of the list.
+ */
+export const CONFLICT_REPLACE_TAKEN_DEPENDENTS: readonly QueryKey[] = [CALENDAR_KEY];
+
+/**
  * A conflict resolution refused as no longer open (story 5.4b): beside the
  * resolutions themselves, the organization's live leave — a P0002 means the
  * leave covering the date is gone, and only the leave read takes the

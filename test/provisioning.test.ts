@@ -1406,6 +1406,11 @@ describe('every organization table carries row level security, and only its revi
         indexes.some((row) => /\(organization_id\)$/.test(row.indexdef)),
         'no index on roster_overrides leads with organization_id alone',
       ).toBe(true);
+      // STORY 5.4c: the key a `replace_member` resolution's link references.
+      expect(
+        indexes.some((row) => /UNIQUE INDEX .* \(organization_id, id\)$/.test(row.indexdef)),
+        'no unique (organization_id, id) on roster_overrides for a composite foreign key',
+      ).toBe(true);
       for (const column of ['member_out_id', 'member_in_id']) {
         expect(
           indexes.some((row) =>
@@ -1439,6 +1444,10 @@ describe('every organization table carries row level security, and only its revi
         'created_at',
         'removed_by',
         'removed_at',
+        // STORY 5.4c: the link to the replacement's override has NO grant, so
+        // 0032's definer function is the only way a `replace_member` row is
+        // written.
+        'roster_override_id',
       ]);
       expect(held.tables).toEqual(['authenticated:SELECT']);
       expect(held.columns, 'the writable conflict resolution columns changed, or anon holds one').toEqual([
@@ -1464,7 +1473,17 @@ describe('every organization table carries row level security, and only its revi
       expect(keys.map((row) => row.definition).sort()).toEqual([
         'FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE',
         'FOREIGN KEY (organization_id, member_id) REFERENCES members(organization_id, id)',
+        // STORY 5.4c: a `replace_member` row names its tenant's override, never cascading.
+        'FOREIGN KEY (organization_id, roster_override_id) REFERENCES roster_overrides(organization_id, id)',
         'FOREIGN KEY (organization_id, team_id) REFERENCES teams(organization_id, id)',
+      ]);
+      const { rows: checks } = await client.query<{ definition: string }>(
+        `select pg_get_constraintdef(oid) as definition
+           from pg_constraint
+          where contype = 'c' and conname = 'conflict_resolutions_replacement_linked'`,
+      );
+      expect(checks.map((row) => row.definition), 'a replacement and only a replacement names its override').toEqual([
+        "CHECK (((kind = 'replace_member'::text) = (roster_override_id IS NOT NULL)))",
       ]);
       const { rows: indexes } = await client.query<{ indexdef: string }>(
         `select indexdef from pg_indexes where schemaname = 'public' and tablename = 'conflict_resolutions'`,
@@ -1480,6 +1499,11 @@ describe('every organization table carries row level security, and only its revi
           ),
         ),
         'no unique index keeps one live resolution per conflict',
+      ).toBe(true);
+      // STORY 5.4c: the link's key is backed by an index.
+      expect(
+        indexes.some((row) => /^CREATE INDEX \w+ ON public\.conflict_resolutions USING btree \(organization_id, roster_override_id\)$/.test(row.indexdef)),
+        'no index backs the link to the replacement\'s override',
       ).toBe(true);
       const { rows: triggers } = await client.query<{ definition: string }>(
         `select pg_get_triggerdef(oid) as definition
@@ -1804,6 +1828,10 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // 0031's admin-only select policy so no author leaves, on 5.2c's
     // attributes.
     { name: 'my_conflict_resolutions', argumentCount: 0 },
+    // STORY 5.4c. The replacement's override and its linked resolution,
+    // inserted in one transaction past both insert policies, which it
+    // re-checks itself, on 5.2a's amend's attributes.
+    { name: 'replace_conflict_member', argumentCount: 5 },
     // STORY 5.4a. The born-on-leave trigger reads `leave_records` past row
     // level security and share-locks the row, as 0023's triggers read past it.
     { name: 'refuse_conflict_resolution_off_leave', argumentCount: 0 },
@@ -1906,6 +1934,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'my_leave_records', argumentCount: 0, expected: ['authenticated'] },
     // STORY 5.4a. The member's own conflict resolutions, on 5.2c's terms.
     { name: 'my_conflict_resolutions', argumentCount: 0, expected: ['authenticated'] },
+    // STORY 5.4c. The replacement, on 5.2a's amend's terms.
+    { name: 'replace_conflict_member', argumentCount: 5, expected: ['authenticated'] },
     // The zero-admin trigger function. Nothing calls it by hand and Postgres
     // checks EXECUTE when the trigger is created, not when it fires, so it
     // needs no grantee at all: its owner, and nobody else (0020). The

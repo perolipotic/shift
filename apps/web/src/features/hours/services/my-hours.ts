@@ -194,19 +194,19 @@ export function hoursSearchTo(search: HoursSearch, change: HoursSearchChange): H
  * names another (story 4.2): the calendar's schedule recipe for that member,
  * plus every hour band and every shift type with its versions — archived ones
  * included, as the schedule may still name them — and, since story 5.4b, the
- * member's shifts accepted as uncovered (`uncovered`, every member's keys or
+ * member's shifts accepted as uncovered or, since story 5.4c, replaced (`leaveKeys`, every member's keys or
  * only theirs), which the domain counts as leave rather than work.
  */
 export function memberHoursInputOf(
   snapshot: CalendarSnapshot,
   history: CalendarMemberHistory = snapshot.viewer,
-  uncovered: readonly CollisionResolution[] = [],
+  leaveKeys: readonly CollisionResolution[] = [],
 ): MemberHoursInput {
   return {
     ...memberScheduleInputOf(snapshot, history),
     bands: snapshot.bands,
     shiftTypes: snapshot.types.map((type) => ({ type, versions: type.versions })),
-    leaveShifts: leaveShiftsOf(uncovered, history.memberId),
+    leaveShifts: leaveShiftsOf(leaveKeys, history.memberId),
   };
 }
 
@@ -326,7 +326,7 @@ export function myHoursViewOf(
  * The viewer's hours of the month `search` names — or today's, `today` being
  * the organization's (`calendarTodayOf`) — with their own conflicts of that
  * month counted from `collisions` and their accepted-uncovered shifts in
- * `uncovered` counted as leave (story 5.4b), GUARDED: a `RangeError` from the
+ * `leaveKeys` counted as leave (story 5.4b), GUARDED: a `RangeError` from the
  * domain is logged and is the one failure, never a crashed route and never a
  * figure.
  */
@@ -335,11 +335,11 @@ export function myHoursOf(
   search: HoursSearch,
   today: string,
   collisions: readonly Collision[],
-  uncovered: readonly CollisionResolution[] = [],
+  leaveKeys: readonly CollisionResolution[] = [],
 ): MyHoursOutcome {
   try {
     const month = monthShownOf(search, today);
-    const hours = memberHoursOfMonth(memberHoursInputOf(snapshot, snapshot.viewer, uncovered), month);
+    const hours = memberHoursOfMonth(memberHoursInputOf(snapshot, snapshot.viewer, leaveKeys), month);
     const conflictCount = conflictCountOf(collisions, snapshot.viewer.memberId, month);
 
     return { ok: true, view: myHoursViewOf(snapshot, monthHeaderOf(month, today), hours, conflictCount) };
@@ -438,7 +438,7 @@ export function hoursReadsOf(
       readonly snapshot: CalendarSnapshot;
       readonly today: string;
       readonly collisions: readonly Collision[];
-      readonly uncovered: readonly CollisionResolution[];
+      readonly leaveKeys: readonly CollisionResolution[];
     } {
   if (state.refusal !== null) return { ready: false, surface: hoursReadRefusedOf(true) };
   if (conflicts?.kind === HOURS_CONFLICTS_UNAVAILABLE) {
@@ -453,7 +453,7 @@ export function hoursReadsOf(
     snapshot: state.snapshot,
     today,
     collisions: conflicts.collisions,
-    uncovered: conflicts.uncovered,
+    leaveKeys: conflicts.leaveKeys,
   };
 }
 
@@ -475,7 +475,7 @@ export function myHoursSurfaceOf(
 
   if (!reads.ready) return reads.surface;
 
-  const outcome = myHoursOf(reads.snapshot, search, reads.today, reads.collisions, reads.uncovered);
+  const outcome = myHoursOf(reads.snapshot, search, reads.today, reads.collisions, reads.leaveKeys);
 
   if (outcome.ok) {
     return {

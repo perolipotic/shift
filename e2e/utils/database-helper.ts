@@ -255,9 +255,11 @@ export async function seedLeaveMember(
   teamId: string,
   today: string,
   allowanceDays: number,
+  /** Words after the fresh `Godišnji {suffix}`, for a longer name (story 5.4c's phone test). */
+  nameTail = '',
 ): Promise<SeededLeaveMember> {
   const suffix = randomBytes(3).toString('hex');
-  const person = { name: `Godišnji ${suffix}`, username: `e2e.godisnji.${suffix}` };
+  const person = { name: `Godišnji ${suffix}${nameTail === '' ? '' : ` ${nameTail}`}`, username: `e2e.godisnji.${suffix}` };
   const client = await connect();
   try {
     await client.query('begin');
@@ -355,8 +357,13 @@ export async function seedLeaveRecord(slug: string, memberId: string, from: stri
  * first admin: what 5.4b–d's screen will record. 0031's checks and its live
  * key still apply: the superuser bypasses only the insert policy. No collision
  * need exist — none is stored — but a test seeds one on a collision it reads.
- * Throws naming the lookup that failed: the member or team in the
- * organization, or its admin.
+ *
+ * A `replace_member` resolution (story 5.4c) names its roster override, which
+ * 0032's check requires: pass `replacementId`, and the override putting them
+ * on the shift is written first, in the same transaction, as 0032's function
+ * writes it — call it under the rotation hold, so {@link removeSeededRotation}
+ * deletes both. Throws naming the lookup that failed: the member or team in
+ * the organization, or its admin.
  */
 export async function seedConflictResolution(
   slug: string,
@@ -364,9 +371,14 @@ export async function seedConflictResolution(
   date: string,
   teamId: string,
   kind: 'accept_uncovered' | 'replace_member' | 'amend_leave' = 'accept_uncovered',
+  replacementId: string | null = null,
 ): Promise<string> {
+  if ((kind === 'replace_member') !== (replacementId !== null)) {
+    throw new Error('E2E: a replace_member resolution, and only one, names its replacement');
+  }
   const client = await connect();
   try {
+    await client.query('begin');
     const found = await client.query<{ organization_id: string; admin_user: string | null }>(
       `select o.id as organization_id,
               (select a.auth_user_id from members a
@@ -383,16 +395,31 @@ export async function seedConflictResolution(
     if (organization.admin_user === null) {
       throw new Error(`E2E: the organization ${slug} has no admin to attribute the resolution to`);
     }
+    let overrideId: string | null = null;
+    if (replacementId !== null) {
+      const written = await client.query<{ id: string }>(
+        `insert into roster_overrides (organization_id, team_id, date, member_out_id, member_in_id, reason, created_by)
+         values ($1, $2, $3::date, null, $4, 'E2E zamjena', $5)
+         returning id`,
+        [organization.organization_id, teamId, date, replacementId, organization.admin_user],
+      );
+      overrideId = written.rows[0]?.id ?? null;
+      if (overrideId === null) throw new Error(`E2E: the replacement's override on ${date} was not inserted`);
+    }
     const { rows } = await client.query<{ id: string }>(
-      `insert into conflict_resolutions (organization_id, member_id, date, team_id, kind, created_by)
-       values ($1, $2, $3::date, $4, $5, $6)
+      `insert into conflict_resolutions (organization_id, member_id, date, team_id, kind, created_by, roster_override_id)
+       values ($1, $2, $3::date, $4, $5, $6, $7)
        returning id`,
-      [organization.organization_id, memberId, date, teamId, kind, organization.admin_user],
+      [organization.organization_id, memberId, date, teamId, kind, organization.admin_user, overrideId],
     );
     const resolution = rows[0];
     if (resolution === undefined) throw new Error(`E2E: the resolution of ${memberId} on ${date} was not inserted`);
+    await client.query('commit');
 
     return resolution.id;
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
   } finally {
     await client.end();
   }
@@ -1128,14 +1155,19 @@ export async function removeRotationChangesOver(seeded: SeededRotation, since: s
  * the pattern, the times and the three types — every override naming one of
  * those types ({@link seedShiftTypeOverride}), and every roster override of
  * the run organization ({@link seedRosterOverride}, written only under the
- * same hold), in one transaction, so the run organization is as it was. Safe
- * to call twice.
+ * same hold) with every resolution linked to one (story 5.4c's replacements,
+ * whose key does not cascade), in one transaction, so the run organization is
+ * as it was. Safe to call twice.
  */
 export async function removeSeededRotation(seeded: SeededRotation): Promise<void> {
   const client = await connect();
   try {
     await client.query('begin');
     const scope = [seeded.organizationId, seeded.patternId];
+    // Before the overrides: a replacement's resolution keys to its override (0032).
+    await client.query('delete from conflict_resolutions where organization_id = $1 and roster_override_id is not null', [
+      seeded.organizationId,
+    ]);
     await client.query('delete from roster_overrides where organization_id = $1', [seeded.organizationId]);
     await client.query('delete from rotation_assignments where organization_id = $1 and pattern_id = $2', scope);
     await client.query('delete from rotation_steps where organization_id = $1 and pattern_id = $2', scope);

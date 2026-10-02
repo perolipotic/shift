@@ -721,6 +721,8 @@ const SCREENS = [
   // and ›, Odustani and Spremi odluku, and the unavailable alert's retry. The
   // one radio card is the radio group's, not a `<Button>`. No checkbox and no
   // bulk action exist, which is what the count keeps true.
+  // STILL SIX SINCE STORY 5.4c: the second card and the candidate picker's
+  // rows are radio items of their own groups, never a `<Button>`.
   { name: 'the conflict resolution screen', file: RESOLUTION, expectedControls: 6 },
   // STORY 2.1b. FIVE on the band list: the link back to `Organizacija`, the
   // name `<Input>`, the start `<Input type="time">`, the add `<Button>`, and ONE
@@ -2274,27 +2276,34 @@ const KEY_SOURCES = [
     // unchanged line, Odustani, Spremi odluku and its pending label, the
     // missing line, and the unavailable line with its retry. The rest come
     // through the rules' unions below.
+    // THIRTY-THREE SINCE STORY 5.4c: the second card's title and sentence,
+    // the replacement's name in its strip, the picker's heading and its
+    // nobody-to-add line, and the generated reason.
     name: 'the conflict resolution screen',
     file: RESOLUTION,
     keys: translationKeys,
-    strings: 27,
+    strings: 33,
   },
   {
     // STORY 5.4b: the facts line with and without times, who else works or
     // nobody, the save hint before and after a choice, the hours as leave or
     // the empty mark, the coverage term, and the queue's status line by the
     // saved outcome.
+    // SIXTEEN SINCE STORY 5.4c: the hint while nobody is picked and while
+    // nobody can be, the three candidate group headings, and the status line
+    // naming the replacement.
     name: 'the conflict resolution rules',
     file: RESOLUTION_SCREEN_KEYS,
     keys: messageKeyUnions,
-    strings: 10,
+    strings: 16,
   },
   {
-    // STORY 5.4b: the write's three refusals — gone, denied, failed.
+    // STORY 5.4b: the write's three refusals — gone, denied, failed. FOUR
+    // SINCE STORY 5.4c: the replacement already on the shift.
     name: 'the conflict resolution write',
     file: RESOLUTION_WRITE_KEYS,
     keys: messageKeyUnions,
-    strings: 3,
+    strings: 4,
   },
   {
     // STORY 5.2c: the two lines in place of the figures (unavailable,

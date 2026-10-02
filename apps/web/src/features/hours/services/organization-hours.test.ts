@@ -65,7 +65,7 @@ const MONTH = '2026-09';
 
 /** No leave, so no collision: the figures exactly as before story 5.3d. */
 const NO_COLLISIONS: readonly Collision[] = [];
-const READY: HoursConflictsState = { kind: HOURS_CONFLICTS_READY, collisions: NO_COLLISIONS, uncovered: [] };
+const READY: HoursConflictsState = { kind: HOURS_CONFLICTS_READY, collisions: NO_COLLISIONS, leaveKeys: [] };
 
 const ANA = '00000000-0000-4000-8000-0000000000c1';
 const CEDO = '00000000-0000-4000-8000-0000000000c2';

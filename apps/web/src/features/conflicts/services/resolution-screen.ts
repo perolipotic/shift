@@ -4,12 +4,21 @@ import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar
 import { dayDetailOf } from '@/features/calendar/utils/day-detail';
 import { calendarTodayOf, dayMonthOf } from '@/features/calendar/utils/month';
 import {
+  CANDIDATES_FREE,
+  CANDIDATES_ON_LEAVE,
+  CANDIDATES_WORKING,
+  replacementCandidatesOf,
+  type CandidateGroup,
+  type CandidateGroupKind,
+  type ReplacementCandidate,
+} from '@/features/calendar/utils/replacement-candidates';
+import {
   queueOrderOf,
   queueReadFailed,
   unresolvedOf,
   type LeaveRowsAnswer,
 } from '@/features/conflicts/services/conflicts-queue';
-import { ACCEPT_UNCOVERED } from '@/features/conflicts/services/resolutions';
+import { ACCEPT_UNCOVERED, REPLACE_MEMBER } from '@/features/conflicts/services/resolutions';
 import { durationMessageKey, durationValuesOf, type DurationValues } from '@/features/hour-bands/services/list';
 import {
   organizationLeaveRecordsOf,
@@ -52,6 +61,13 @@ import { ranksShown, rosterRankMessageKey } from '@/features/members/utils/rank'
  * leaves unchanged — `leaveBalanceOf` through the member card's own recipe
  * (`memberLeaveBaseOf`).
  *
+ * REPLACING (story 5.4c) is the second card. Its candidates are
+ * `replacementCandidatesOf`'s three groups for the conflict's team and date,
+ * over the same snapshot and leave; its strip reads the coverage one higher
+ * (`covered + 1 of total`), never "Nepokriveno", and the same hours and
+ * balance as the first card — the replacement's override only adds, so the
+ * absent member stays rostered on leave (human, 2026-10-02).
+ *
  * NEVER A PARTIAL SCREEN. A read that failed or is paused offline, a row that
  * cannot be trusted, and any `RangeError` of a derivation make the screen
  * unavailable, logged, with a retry.
@@ -66,27 +82,46 @@ export const RESOLUTION_MISSING = 'missing';
 /** Everything read: the facts, the choice and the strip. */
 export const RESOLUTION_READY = 'ready';
 
-/** The one outcome story 5.4b ships, as the radio group's value. 5.4c and 5.4d add theirs at fixed positions 2 and 3. */
+/** Story 5.4b's outcome, as the radio group's value: fixed position 1. */
 export const OPTION_ACCEPT_UNCOVERED = 'accept-uncovered';
+
+/** Story 5.4c's outcome: fixed position 2. Story 5.4d adds its own at position 3. */
+export const OPTION_REPLACE_MEMBER = 'replace-member';
 
 /** The radio group's value while nothing is chosen: Radix's own "none". */
 export const NO_OPTION = '';
 
 /** The outcomes, in their fixed order. */
-export const RESOLUTION_OPTIONS = [OPTION_ACCEPT_UNCOVERED] as const;
+export const RESOLUTION_OPTIONS = [OPTION_ACCEPT_UNCOVERED, OPTION_REPLACE_MEMBER] as const;
 
 export type ResolutionOption = (typeof RESOLUTION_OPTIONS)[number];
 
 /** The id the choice's heading carries, which names the radio group. */
 export const RESOLUTION_CHOICE_HEADING_ID = 'resolution-choice';
 
-/** The ids that name and describe the one card: its title, its sentence and its strip. */
+/** The ids that name and describe the first card: its title, its sentence and its strip. */
 export const RESOLUTION_ACCEPT_TITLE_ID = 'resolution-accept-title';
 export const RESOLUTION_ACCEPT_BODY_ID = 'resolution-accept-body';
 export const RESOLUTION_ACCEPT_STRIP_ID = 'resolution-accept-strip';
 /** The card's description: its sentence, then its strip. */
 export const RESOLUTION_ACCEPT_DESCRIBED_BY = `${RESOLUTION_ACCEPT_BODY_ID} ${RESOLUTION_ACCEPT_STRIP_ID}`;
 
+/** The same three for the second card (story 5.4c). */
+export const RESOLUTION_REPLACE_TITLE_ID = 'resolution-replace-title';
+export const RESOLUTION_REPLACE_BODY_ID = 'resolution-replace-body';
+export const RESOLUTION_REPLACE_STRIP_ID = 'resolution-replace-strip';
+export const RESOLUTION_REPLACE_DESCRIBED_BY = `${RESOLUTION_REPLACE_BODY_ID} ${RESOLUTION_REPLACE_STRIP_ID}`;
+
+/** The id the candidate picker's heading carries, which names its own radio group (story 5.4c). */
+export const RESOLUTION_CANDIDATES_HEADING_ID = 'resolution-candidates';
+
+/** The id one candidate group's heading carries, which names that group. */
+export function candidateGroupHeadingId(kind: CandidateGroupKind): string {
+  return `resolution-candidates-${kind}`;
+}
+
+/** The candidate picker's value while nobody is chosen: Radix's own "none". */
+export const NO_CANDIDATE = '';
 /** The id the save hint carries, which describes the save button. */
 export const RESOLUTION_SAVE_HINT_ID = 'resolution-save-hint';
 
@@ -109,17 +144,24 @@ export interface ResolutionHours {
   readonly values: DurationValues;
 }
 
-/** The outcomes a landed decision can name on the queue: story 5.4b's alone so far. */
-export type ResolutionSavedKind = typeof ACCEPT_UNCOVERED;
+/** The outcomes a landed decision can name on the queue: stories 5.4b and 5.4c. */
+export type ResolutionSavedKind = typeof ACCEPT_UNCOVERED | typeof REPLACE_MEMBER;
 
-/** What a landed decision names on the queue (story 5.4b): the outcome, the shift, the date and the member, as shown. */
-export interface ResolutionSaved {
-  readonly kind: ResolutionSavedKind;
+/** What every landed decision names on the queue: the shift, the date and the member, as shown. */
+interface ResolutionSavedFacts {
   readonly shiftTypeName: string;
   readonly teamName: string;
   readonly dateShown: string;
   readonly memberName: string;
 }
+
+/**
+ * What a landed decision names on the queue (stories 5.4b, 5.4c): the
+ * outcome and the facts, and for a replacement the replacement's name.
+ */
+export type ResolutionSaved =
+  | (ResolutionSavedFacts & { readonly kind: typeof ACCEPT_UNCOVERED })
+  | (ResolutionSavedFacts & { readonly kind: typeof REPLACE_MEMBER; readonly replacementName: string });
 
 /** The screen, ready to render. */
 export interface ResolutionView {
@@ -154,12 +196,19 @@ export interface ResolutionView {
   readonly covered: number;
   /** The shift's duration, as the absent member's leave hours; `null` when the shift has no times. */
   readonly leaveHours: ResolutionHours | null;
-  /** The absent member's balance in the leave year that holds the conflict's date, which accepting does not change. */
+  /** The absent member's balance in the leave year that holds the conflict's date, which neither outcome changes. */
   readonly balanceDays: number;
+  /** Who may be put on the shift (story 5.4c): the three groups, in their fixed order, each by name. */
+  readonly candidates: readonly CandidateGroup[];
+  /** Whether rank and position are shown beside a candidate: where the organization uses them. */
+  readonly rankShown: boolean;
+  readonly positionShown: boolean;
+  /** The coverage once someone is put on: {@link covered} + 1. */
+  readonly replaceCovered: number;
   /** The insert's columns: the organization and the key. */
   readonly organizationId: string;
-  /** What the queue's status line names once the decision lands. */
-  readonly saved: ResolutionSaved;
+  /** What the queue's status line names once an acceptance lands; a replacement adds its name ({@link replacedSavedOf}). */
+  readonly saved: Extract<ResolutionSaved, { readonly kind: typeof ACCEPT_UNCOVERED }>;
 }
 
 export type ResolutionScreen =
@@ -390,6 +439,7 @@ function resolutionScreenFrom(
     return one.name;
   });
   const minutes = shiftMinutesOf(snapshot, collision);
+  const candidates = replacementCandidatesOf(snapshot, records, collision.teamId, collision.date);
   const range = leaveRangeValuesOf(record.record);
   const dateShown = detail.date;
   const typeName = detail.typeName ?? type.name;
@@ -418,13 +468,17 @@ function resolutionScreenFrom(
       leaveHours: minutes === null ? null : { key: durationMessageKey(minutes), values: durationValuesOf(minutes) },
       // THE LEAVE YEAR OF THE CONFLICT'S DATE, not today's: the balance the decision is about.
       balanceDays: leaveBalanceOf({ ...base.input, today: collision.date }).balanceDays,
+      candidates,
+      rankShown: ranksShown(snapshot),
+      positionShown: positionsShown(snapshot),
+      replaceCovered: coworkers.length + 1,
       organizationId: snapshot.organizationId,
       saved: { kind: ACCEPT_UNCOVERED, shiftTypeName: typeName, teamName: detail.teamName, dateShown, memberName: member.name },
     },
   };
 }
 
-/** The key the radio card's coverage term reads through: covered of total, and the uncovered mark. */
+/** The key a radio card's coverage term reads through: covered of total (the first card adds the uncovered mark). */
 export function coverageMessageKey(): 'raspored.resolution.coverage' {
   return 'raspored.resolution.coverage';
 }
@@ -441,11 +495,102 @@ export function coworkersMessageKey(
   return coworkers.length === 0 ? 'raspored.resolution.noCoworkers' : 'raspored.resolution.coworkers';
 }
 
-/** The save hint: why Spremi waits, or what saving records. */
+/**
+ * The save hint: why Spremi waits — no card, or the second card with nobody
+ * picked (story 5.4c), or with nobody to pick at all, which only another
+ * outcome can resolve — or what saving records.
+ */
 export function saveHintMessageKey(
   choice: ResolutionOption | null,
-): 'raspored.resolution.hintChoose' | 'raspored.resolution.hintRecorded' {
-  return choice === null ? 'raspored.resolution.hintChoose' : 'raspored.resolution.hintRecorded';
+  replacementId: string | null = null,
+  candidatesExist = true,
+):
+  | 'raspored.resolution.hintChoose'
+  | 'raspored.resolution.hintChooseReplacement'
+  | 'raspored.resolution.hintNoCandidates'
+  | 'raspored.resolution.hintRecorded' {
+  if (choice === null) return 'raspored.resolution.hintChoose';
+  if (choice === OPTION_REPLACE_MEMBER && !candidatesExist) return 'raspored.resolution.hintNoCandidates';
+  if (choice === OPTION_REPLACE_MEMBER && replacementId === null) return 'raspored.resolution.hintChooseReplacement';
+
+  return 'raspored.resolution.hintRecorded';
+}
+
+/** Whether Spremi can save: a card, and for the second one a candidate (story 5.4c). */
+export function readyToSave(choice: ResolutionOption | null, replacementId: string | null): boolean {
+  return saveHintMessageKey(choice, replacementId) === 'raspored.resolution.hintRecorded';
+}
+
+/** Where Spremi pressed too early sends focus (story 5.4c). */
+export const SAVE_FOCUS_CHOICE = 'choice';
+export const SAVE_FOCUS_REPLACE = 'replace';
+export const SAVE_FOCUS_CANDIDATES = 'candidates';
+
+/**
+ * Where focus goes when Spremi is pressed before it can save: the first card
+ * while none is chosen; the first candidate while the second card waits for a
+ * pick; the second card itself when there is nobody to pick, so the admin
+ * can move to another outcome. `null` once it can save.
+ */
+export function saveFocusOf(
+  choice: ResolutionOption | null,
+  replacementId: string | null,
+  candidatesExist: boolean,
+): typeof SAVE_FOCUS_CHOICE | typeof SAVE_FOCUS_REPLACE | typeof SAVE_FOCUS_CANDIDATES | null {
+  if (choice === null) return SAVE_FOCUS_CHOICE;
+  if (readyToSave(choice, replacementId)) return null;
+
+  return candidatesExist ? SAVE_FOCUS_CANDIDATES : SAVE_FOCUS_REPLACE;
+}
+
+/** The candidate of `view` with `id`, in whichever group, or `null` for none — a pick a re-read took away included. */
+export function replacementOf(view: ResolutionView, id: string | null): ReplacementCandidate | null {
+  if (id === null) return null;
+
+  for (const group of view.candidates) {
+    const found = group.candidates.find((candidate) => candidate.id === id);
+
+    if (found !== undefined) return found;
+  }
+
+  return null;
+}
+
+/** The candidate picker's value as a candidate's id, or `null` for nobody. */
+export function candidateIdOf(value: string): string | null {
+  return value === NO_CANDIDATE ? null : value;
+}
+
+/** A candidate group's heading, by its kind. Exhaustive. */
+export function candidateGroupMessageKey(
+  kind: CandidateGroupKind,
+):
+  | 'raspored.resolution.candidates.free'
+  | 'raspored.resolution.candidates.working'
+  | 'raspored.resolution.candidates.onLeave' {
+  switch (kind) {
+    case CANDIDATES_FREE:
+      return 'raspored.resolution.candidates.free';
+    case CANDIDATES_WORKING:
+      return 'raspored.resolution.candidates.working';
+    case CANDIDATES_ON_LEAVE:
+      return 'raspored.resolution.candidates.onLeave';
+    default: {
+      const unhandled: never = kind;
+
+      return unhandled;
+    }
+  }
+}
+
+/** Whether there is anybody at all to put on the shift. */
+export function hasCandidates(view: ResolutionView): boolean {
+  return view.candidates.some((group) => group.candidates.length > 0);
+}
+
+/** What the queue's status line names once a replacement by `replacementName` lands (story 5.4c). */
+export function replacedSavedOf(saved: ResolutionView['saved'], replacementName: string): ResolutionSaved {
+  return { ...saved, kind: REPLACE_MEMBER, replacementName };
 }
 
 /** The absent member's hours term: the duration as leave, or the empty mark for an untimed shift. */
@@ -517,10 +662,9 @@ export function resolutionSavedOf(state: unknown): ResolutionSaved | null {
 
   if (typeof saved !== 'object' || saved === null) return null;
 
-  const { kind, shiftTypeName, teamName, dateShown, memberName } = saved as Record<string, unknown>;
+  const { kind, shiftTypeName, teamName, dateShown, memberName, replacementName } = saved as Record<string, unknown>;
 
   if (
-    kind !== ACCEPT_UNCOVERED ||
     typeof shiftTypeName !== 'string' ||
     typeof teamName !== 'string' ||
     typeof dateShown !== 'string' ||
@@ -529,12 +673,19 @@ export function resolutionSavedOf(state: unknown): ResolutionSaved | null {
     return null;
   }
 
-  return { kind, shiftTypeName, teamName, dateShown, memberName };
+  if (kind === ACCEPT_UNCOVERED) return { kind, shiftTypeName, teamName, dateShown, memberName };
+
+  if (kind === REPLACE_MEMBER && typeof replacementName === 'string') {
+    return { kind, shiftTypeName, teamName, dateShown, memberName, replacementName };
+  }
+
+  return null;
 }
 
 /** The queue's status line for a landed decision, by its outcome. Exhaustive. */
-export function resolutionSavedMessageKey(kind: ResolutionSavedKind): 'raspored.saved' {
+export function resolutionSavedMessageKey(kind: ResolutionSavedKind): 'raspored.saved' | 'raspored.savedReplace' {
   if (kind === ACCEPT_UNCOVERED) return 'raspored.saved';
+  if (kind === REPLACE_MEMBER) return 'raspored.savedReplace';
 
   const unhandled: never = kind;
 

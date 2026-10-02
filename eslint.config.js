@@ -126,6 +126,9 @@ export const FEATURE_PUBLIC = {
     'utils/day-detail', // conflicts
     'utils/modifiers', // conflicts, hours
     'utils/month', // conflicts, hours, leave, pages
+    // Story 5.4c: the replacement candidates, grouped once, for the conflict
+    // screen's second card (and story 7.9's roster dialog).
+    'utils/replacement-candidates', // conflicts
   ],
   // Story 5.3c: the calendar's marks derive every collision through
   // *Raspored*'s own recipe (`collisionInputOf`), never a second one. Story
