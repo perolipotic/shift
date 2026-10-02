@@ -189,10 +189,11 @@ export async function seedFormerMember(slug: string, teamId: string): Promise<Se
 
 /**
  * Deletes a member {@link seedFormerMember} wrote, through their auth user, from
- * which the member row and its versions cascade. Safe to call twice: a member
- * already gone is nothing to do. REFUSES any member of `slug` whose username
- * lacks {@link FORMER_MEMBER_USERNAME_PREFIX}, so a wrong id never deletes the
- * fixture's admin or members.
+ * which the member row and its versions cascade. Their conflict resolutions
+ * (story 5.4a) go first: 0031's member key does not cascade. Safe to call
+ * twice: a member already gone is nothing to do. REFUSES any member of `slug`
+ * whose username lacks {@link FORMER_MEMBER_USERNAME_PREFIX}, so a wrong id
+ * never deletes the fixture's admin or members.
  */
 export async function removeFormerMemberInSql(slug: string, memberId: string): Promise<void> {
   const client = await connect();
@@ -207,6 +208,12 @@ export async function removeFormerMemberInSql(slug: string, memberId: string): P
     if (member.username === null || !member.username.startsWith(FORMER_MEMBER_USERNAME_PREFIX)) {
       throw new Error(`E2E: refusing to delete ${memberId}, not a member seedFormerMember wrote (${member.username})`);
     }
+    await client.query(
+      `delete from conflict_resolutions c
+        using organizations o
+        where o.slug = $1 and c.organization_id = o.id and c.member_id = $2`,
+      [slug, memberId],
+    );
     await client.query(
       `delete from auth.users u
         using members m join organizations o on o.id = m.organization_id
@@ -343,28 +350,106 @@ export async function seedLeaveRecord(slug: string, memberId: string, from: stri
 }
 
 /**
- * Soft-removes every live leave record of `memberId` in SQL, as 0029's
- * `remove_leave_record` would (story 5.2b): `removed_by` and `removed_at`
- * together, attributed to the organization's first admin. For a test that
- * needs a record gone from under the screen showing it. Throws when it
- * removes nothing, so a test never goes on believing a record is gone.
+ * A live conflict resolution of `memberId`'s conflict on `date` on `teamId`
+ * (`YYYY-MM-DD`), in SQL (story 5.4a), attributed to the run organization's
+ * first admin: what 5.4b–d's screen will record. 0031's checks and its live
+ * key still apply: the superuser bypasses only the insert policy. No collision
+ * need exist — none is stored — but a test seeds one on a collision it reads.
+ * Throws naming the lookup that failed: the member or team in the
+ * organization, or its admin.
+ */
+export async function seedConflictResolution(
+  slug: string,
+  memberId: string,
+  date: string,
+  teamId: string,
+  kind: 'accept_uncovered' | 'replace_member' | 'amend_leave' = 'accept_uncovered',
+): Promise<string> {
+  const client = await connect();
+  try {
+    const found = await client.query<{ organization_id: string; admin_user: string | null }>(
+      `select o.id as organization_id,
+              (select a.auth_user_id from members a
+                where a.organization_id = o.id and a.role = 'admin'
+                order by a.created_at, a.id limit 1) as admin_user
+         from organizations o
+         join members m on m.organization_id = o.id
+         join teams t on t.organization_id = o.id
+        where o.slug = $1 and m.id = $2 and t.id = $3`,
+      [slug, memberId, teamId],
+    );
+    const organization = found.rows[0];
+    if (organization === undefined) throw new Error(`E2E: no member ${memberId} and team ${teamId} in the organization ${slug}`);
+    if (organization.admin_user === null) {
+      throw new Error(`E2E: the organization ${slug} has no admin to attribute the resolution to`);
+    }
+    const { rows } = await client.query<{ id: string }>(
+      `insert into conflict_resolutions (organization_id, member_id, date, team_id, kind, created_by)
+       values ($1, $2, $3::date, $4, $5, $6)
+       returning id`,
+      [organization.organization_id, memberId, date, teamId, kind, organization.admin_user],
+    );
+    const resolution = rows[0];
+    if (resolution === undefined) throw new Error(`E2E: the resolution of ${memberId} on ${date} was not inserted`);
+
+    return resolution.id;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Soft-removes every live leave record of `memberId` in SQL, as 0031's
+ * `remove_leave_record` would (stories 5.2b, 5.4a): `removed_by` and
+ * `removed_at` together, attributed to the organization's first admin, and
+ * the lifetime rule with them — every live conflict resolution of the member
+ * dated in a removed range is soft-removed the same way, in the same
+ * transaction. For a test that needs a record gone from under the screen
+ * showing it. Throws when it removes nothing, so a test never goes on
+ * believing a record is gone.
  */
 export async function removeLeaveRecordsInSql(slug: string, memberId: string): Promise<void> {
   const client = await connect();
   try {
+    await client.query('begin');
     const { rowCount } = await client.query(
-      `update leave_records r
-          set removed_by = (select a.auth_user_id from members a
-                             where a.organization_id = o.id and a.role = 'admin'
-                             order by a.created_at, a.id limit 1),
-              removed_at = now()
-         from organizations o
-        where o.slug = $1 and r.organization_id = o.id and r.member_id = $2 and r.removed_at is null`,
+      `with admin as (
+         select o.id as organization_id,
+                (select a.auth_user_id from members a
+                  where a.organization_id = o.id and a.role = 'admin'
+                  order by a.created_at, a.id limit 1) as auth_user_id
+           from organizations o
+          where o.slug = $1
+       ),
+       removed as (
+         update leave_records r
+            set removed_by = admin.auth_user_id,
+                removed_at = now()
+           from admin
+          where r.organization_id = admin.organization_id and r.member_id = $2 and r.removed_at is null
+         returning r.organization_id, r.member_id, r.during, r.removed_by
+       ),
+       ended as (
+         update conflict_resolutions c
+            set removed_by = removed.removed_by,
+                removed_at = now()
+           from removed
+          where c.organization_id = removed.organization_id
+            and c.member_id = removed.member_id
+            and c.removed_at is null
+            and c.date <@ removed.during
+         returning c.id
+       )
+       select 1 from removed`,
       [slug, memberId],
     );
     if (rowCount === null || rowCount === 0) {
       throw new Error(`E2E: no live leave record of ${memberId} in ${slug} to remove`);
     }
+    await client.query('commit');
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
   } finally {
     await client.end();
   }

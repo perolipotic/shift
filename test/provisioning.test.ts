@@ -791,7 +791,7 @@ describe('every organization table carries row level security, and only its revi
               'team_membership_versions', 'hour_bands', 'shift_types',
               'shift_type_versions', 'rotation_patterns', 'rotation_steps',
               'rotation_assignments', 'shift_type_overrides', 'roster_overrides',
-              'leave_records'
+              'leave_records', 'conflict_resolutions'
             )
           order by relname`,
       );
@@ -802,9 +802,10 @@ describe('every organization table carries row level security, and only its revi
       // membership. STORY 2.1a adds the hour bands, STORY 2.2a the shift
       // types and their versioned times, and STORY 2.3a the rotation: its
       // patterns, their steps and the versioned team assignments. STORY 3.5a
-      // adds the shift-type overrides, STORY 3.6a the roster overrides, and
-      // STORY 5.1b the leave records.
+      // adds the shift-type overrides, STORY 3.6a the roster overrides,
+      // STORY 5.1b the leave records, and STORY 5.4a the conflict resolutions.
       expect(rows.map((row) => row.relname)).toEqual([
+        'conflict_resolutions',
         'hour_bands',
         'leave_records',
         'member_status_versions',
@@ -1420,6 +1421,78 @@ describe('every organization table carries row level security, and only its revi
     }
   });
 
+  it.skipIf(noDatabase)('holds no privilege on conflict_resolutions but read and a five-column insert, and never update or delete (story 5.4a)', async () => {
+    // As 5.1b's: `authenticated` reads (narrowed by the policy to an active
+    // admin's organization) and inserts the five facts; no session updates or
+    // deletes one, names its attribution or its removal, or holds anything as
+    // `anon`.
+    const client = await connect();
+    try {
+      const held = await heldPrivileges(client, 'conflict_resolutions', [
+        'organization_id',
+        'id',
+        'member_id',
+        'date',
+        'team_id',
+        'kind',
+        'created_by',
+        'created_at',
+        'removed_by',
+        'removed_at',
+      ]);
+      expect(held.tables).toEqual(['authenticated:SELECT']);
+      expect(held.columns, 'the writable conflict resolution columns changed, or anon holds one').toEqual([
+        'authenticated:INSERT:date',
+        'authenticated:INSERT:kind',
+        'authenticated:INSERT:member_id',
+        'authenticated:INSERT:organization_id',
+        'authenticated:INSERT:team_id',
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase)('keys a conflict resolution to its tenant\'s member and team, one live per conflict, and cascades from the organization alone (story 5.4a)', async () => {
+    const client = await connect();
+    try {
+      const { rows: keys } = await client.query<{ definition: string }>(
+        `select pg_get_constraintdef(oid) as definition
+           from pg_constraint
+          where contype in ('f', 'x') and conrelid = 'public.conflict_resolutions'::regclass`,
+      );
+      expect(keys.map((row) => row.definition).sort()).toEqual([
+        'FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE',
+        'FOREIGN KEY (organization_id, member_id) REFERENCES members(organization_id, id)',
+        'FOREIGN KEY (organization_id, team_id) REFERENCES teams(organization_id, id)',
+      ]);
+      const { rows: indexes } = await client.query<{ indexdef: string }>(
+        `select indexdef from pg_indexes where schemaname = 'public' and tablename = 'conflict_resolutions'`,
+      );
+      expect(
+        indexes.some((row) => /\(organization_id\)$/.test(row.indexdef)),
+        'no index on conflict_resolutions leads with organization_id alone',
+      ).toBe(true);
+      expect(
+        indexes.some((row) =>
+          /^CREATE UNIQUE INDEX \w+ ON public\.conflict_resolutions USING btree \(organization_id, member_id, date, team_id\) WHERE \(removed_at IS NULL\)$/.test(
+            row.indexdef,
+          ),
+        ),
+        'no unique index keeps one live resolution per conflict',
+      ).toBe(true);
+      const { rows: triggers } = await client.query<{ definition: string }>(
+        `select pg_get_triggerdef(oid) as definition
+           from pg_trigger where tgrelid = 'public.conflict_resolutions'::regclass and not tgisinternal`,
+      );
+      expect(triggers.map((row) => row.definition), 'story 5.4a takes exactly its born-on-leave trigger').toEqual([
+        'CREATE TRIGGER conflict_resolutions_on_live_leave BEFORE INSERT ON public.conflict_resolutions FOR EACH ROW EXECUTE FUNCTION refuse_conflict_resolution_off_leave()',
+      ]);
+    } finally {
+      await client.end();
+    }
+  });
+
   it.skipIf(noDatabase)('holds no privilege on leave_records but read and a three-column insert, and never update or delete (story 5.1b)', async () => {
     // As 3.6a's: `authenticated` reads (narrowed by the policy to an active
     // admin's organization or a member's own rows) and inserts the three
@@ -1727,6 +1800,13 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 5.2c. The member's own live leave records, read past 0028's
     // select policy so no author leaves, on 3.6a's attributes.
     { name: 'my_leave_records', argumentCount: 0 },
+    // STORY 5.4a. The member's own live conflict resolutions, read past
+    // 0031's admin-only select policy so no author leaves, on 5.2c's
+    // attributes.
+    { name: 'my_conflict_resolutions', argumentCount: 0 },
+    // STORY 5.4a. The born-on-leave trigger reads `leave_records` past row
+    // level security and share-locks the row, as 0023's triggers read past it.
+    { name: 'refuse_conflict_resolution_off_leave', argumentCount: 0 },
     // 0023. The lock is taken from a trigger every writer fires, and the
     // last-admin re-check reads `members` and the status history past row
     // level security, as 0002's trigger does, on the same attributes.
@@ -1824,6 +1904,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'amend_leave_record', argumentCount: 3, expected: ['authenticated'] },
     // STORY 5.2c. The member's own leave records, on 3.6a's read's terms.
     { name: 'my_leave_records', argumentCount: 0, expected: ['authenticated'] },
+    // STORY 5.4a. The member's own conflict resolutions, on 5.2c's terms.
+    { name: 'my_conflict_resolutions', argumentCount: 0, expected: ['authenticated'] },
     // The zero-admin trigger function. Nothing calls it by hand and Postgres
     // checks EXECUTE when the trigger is created, not when it fires, so it
     // needs no grantee at all: its owner, and nobody else (0020). The
@@ -1835,6 +1917,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'serialize_organization_writes', argumentCount: 0, expected: [] },
     { name: 'refuse_status_version_leaving_no_admin', argumentCount: 0, expected: [] },
     { name: 'refuse_truncate', argumentCount: 0, expected: [] },
+    // STORY 5.4a's trigger function, on 0023's terms: its owner, and nobody else.
+    { name: 'refuse_conflict_resolution_off_leave', argumentCount: 0, expected: [] },
     // 0024's name key, in `private`, which PostgREST does not expose. Every
     // name check and name unique index calls it, and both are
     // permission-checked against the WRITING role — and a check runs on every

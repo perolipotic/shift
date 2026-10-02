@@ -32,8 +32,9 @@
  * Detection reads its input and writes nothing (R6.2): no shift, record or
  * override is deleted, hidden or altered. The result is ids and dates only —
  * no name and no text (AD-8) — ordered soonest first (R6.8), then by team,
- * then by member. Resolutions (story 5.4) match a collision by
- * {@link collisionKeyOf}; none is read here.
+ * then by member. Resolutions (story 5.4a) match a collision by
+ * {@link collisionKeyOf}; none is read by {@link collisionsOf}, and
+ * {@link unresolvedCollisionsOf} is the one filter that drops the resolved.
  *
  * Ranges are inclusive `from`–`to` calendar dates as in `leave.ts`. Dates are
  * `YYYY-MM-DD` strings: no `Date`, no time zone. Every breached precondition
@@ -204,4 +205,29 @@ export function collisionsOf(input: CollisionInput): readonly Collision[] {
   }
 
   return collisions.sort(compareCollisions);
+}
+
+/**
+ * One live conflict resolution, as far as matching goes (story 5.4a): the
+ * `(memberId, date, teamId)` it was recorded against. Its kind and author do
+ * not bear on whether a collision is resolved, so they are not read here.
+ */
+export interface CollisionResolution {
+  readonly memberId: string;
+  readonly date: string;
+  readonly teamId: string;
+}
+
+/**
+ * The ONE resolution filter (story 5.4a; AD-4): `collisions` without each one
+ * that a live resolution matches by {@link collisionKeyOf}, in their given
+ * order. A resolution on another team's key of the same member and date drops
+ * nothing, and a resolution that matches no collision has no effect. Every
+ * surface that counts or lists unresolved conflicts derives through this, so
+ * they agree on one set. Reads its input and writes nothing.
+ */
+export function unresolvedCollisionsOf(collisions: readonly Collision[], resolutions: readonly CollisionResolution[]): readonly Collision[] {
+  if (resolutions.length === 0) return collisions;
+  const resolved = new Set(resolutions.map(collisionKeyOf));
+  return collisions.filter((collision) => !resolved.has(collisionKeyOf(collision)));
 }

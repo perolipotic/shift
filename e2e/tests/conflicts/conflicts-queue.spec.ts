@@ -4,6 +4,7 @@ import {
   holdRotation,
   removeLeaveRecordsInSql,
   removeSeededRotation,
+  seedConflictResolution,
   seedExtraTeam,
   seedLeaveMember,
   seedLeaveRecord,
@@ -35,6 +36,16 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * leave, so the member's own rows are read by name; the count is checked
  * against every row shown. The zero state is read with the records answered
  * empty, and a failed read shows the alert whose retry brings the queue back.
+ *
+ * Story 5.4a: a resolution seeded in SQL on one of three conflicts takes it
+ * off the queue and its count. Removing the record and recording it again in
+ * the app — never a reload — brings it back unresolved: the removal ended the
+ * resolution with the leave that covered it (0031). Amending the record in
+ * the app so one resolved date falls out of the range ends that resolution
+ * alone: leave recorded over the date again shows it unresolved on the queue,
+ * the calendar and *Sati*, while the resolved date that stayed covered stays
+ * resolved — again without a reload. A failed resolutions read
+ * shows the same alert, and its retry brings the queue back.
  */
 
 test.use({ storageState: ADMIN_STATE });
@@ -66,6 +77,11 @@ function isoDaysAfter(iso: string, count: number): string {
   day.setUTCDate(day.getUTCDate() + count);
 
   return day.toISOString().slice(0, 10);
+}
+
+/** A row that is dated `iso`: its text starts with the date, ahead of the range it names. */
+function datedOn(iso: string): RegExp {
+  return new RegExp(`^${fullDate(iso).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
 }
 
 /** How many days before today the seeded rotation and membership start. */
@@ -175,6 +191,151 @@ test('lists the new conflicts without a reload, upcoming first and past ones aft
   await expectNoHorizontalScroll(page);
 });
 
+test('a resolved conflict leaves the queue and its count, and comes back unresolved once its leave is removed and recorded again', async ({
+  page,
+  conflictsPage,
+  peoplePage,
+  fixture,
+}) => {
+  hold = holdRotation(fixture.slug);
+  await hold.ready;
+  const suffix = randomBytes(3).toString('hex');
+  const team = await seedExtraTeam(fixture.slug, `Smjena ${suffix}`);
+  seed = await seedTeamRotation(fixture.slug, team.id, suffix);
+  const { today } = seed;
+  const seeded = await seedLeaveMember(fixture.slug, team.id, today, 20);
+  member = { slug: fixture.slug, id: seeded.id };
+  // The worked example from today: Dan, Noć, Slobodno, Slobodno, Dan — three conflicts, today's resolved.
+  const worked = { from: today, to: isoDaysAfter(today, 4) };
+  await seedLeaveRecord(fixture.slug, seeded.id, worked.from, worked.to);
+  await seedConflictResolution(fixture.slug, seeded.id, today, team.id);
+
+  await conflictsPage.goto();
+  const rows = conflictsPage.rowsOf(seeded.name);
+  await expect(rows).toHaveCount(2);
+  // Today's is resolved: the two left are 1 and 4 days on.
+  await expect(rows.nth(0)).toHaveText(datedOn(isoDaysAfter(today, 1)));
+  await expect(rows.nth(1)).toHaveText(datedOn(isoDaysAfter(today, 4)));
+  // The count is every row shown, whoever's, read together and retried.
+  await expect
+    .poll(async () => {
+      const shown = await conflictsPage.rows.count();
+      const heading = await conflictsPage.anyCountHeading.textContent();
+
+      return heading === plural(raspored.count, shown);
+    })
+    .toBe(true);
+  await page.evaluate(() => {
+    (window as unknown as { noReload: boolean }).noReload = true;
+  });
+
+  // REMOVE THEN RE-RECORD in the app: the removal ended the resolution with its leave.
+  await peoplePage.navigationLink(hr.nav.ljudi, { exact: true }).click();
+  await peoplePage.listedMember(seeded.name).click();
+  await expect(peoplePage.leaveHeading).toBeVisible();
+  await peoplePage.removeLeaveButton(worked.from, worked.to).click();
+  const confirm = peoplePage.dialog();
+  await peoplePage.confirmRemoveLeaveIn(confirm).click();
+  await expect(confirm).toHaveCount(0);
+  await expect(peoplePage.removeLeaveButton(worked.from, worked.to)).toHaveCount(0);
+  await peoplePage.enterLeave(worked.from, worked.to);
+  await peoplePage.saveLeaveButton.click();
+  await expect(peoplePage.status).toBeVisible();
+
+  await peoplePage.navigationLink(hr.nav.raspored, { exact: true }).click();
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(0)).toHaveText(datedOn(today));
+  expect(await page.evaluate(() => (window as unknown as { noReload?: boolean }).noReload)).toBe(true);
+});
+
+test('an amend that takes a resolved date out of the range ends that resolution alone, on every surface, without a reload', async ({
+  page,
+  conflictsPage,
+  peoplePage,
+  calendarPage,
+  hoursPage,
+  fixture,
+}) => {
+  hold = holdRotation(fixture.slug);
+  await hold.ready;
+  const suffix = randomBytes(3).toString('hex');
+  const team = await seedExtraTeam(fixture.slug, `Smjena ${suffix}`);
+  seed = await seedTeamRotation(fixture.slug, team.id, suffix);
+  const { today } = seed;
+  const seeded = await seedLeaveMember(fixture.slug, team.id, today, 20);
+  member = { slug: fixture.slug, id: seeded.id };
+  // The worked example: conflicts on today (Dan), +1 (Noć) and +4 (Dan); today and +4 resolved.
+  const worked = { from: today, to: isoDaysAfter(today, 4) };
+  const dropped = isoDaysAfter(today, 4);
+  await seedLeaveRecord(fixture.slug, seeded.id, worked.from, worked.to);
+  await seedConflictResolution(fixture.slug, seeded.id, today, team.id);
+  await seedConflictResolution(fixture.slug, seeded.id, dropped, team.id);
+
+  await conflictsPage.goto();
+  const rows = conflictsPage.rowsOf(seeded.name);
+  await expect(rows).toHaveCount(1);
+  await expect(rows.nth(0)).toHaveText(datedOn(isoDaysAfter(today, 1)));
+  await page.evaluate(() => {
+    (window as unknown as { noReload: boolean }).noReload = true;
+  });
+
+  // AMEND SHRINK in the app: today–+1. Today stays covered, +4 leaves the range.
+  const amended = { from: today, to: isoDaysAfter(today, 1) };
+  await peoplePage.navigationLink(hr.nav.ljudi, { exact: true }).click();
+  await peoplePage.listedMember(seeded.name).click();
+  await expect(peoplePage.leaveHeading).toBeVisible();
+  await peoplePage.amendLeaveButton(worked.from, worked.to).click();
+  await expect(peoplePage.leaveAmendGroup(worked.from, worked.to)).toBeVisible();
+  await peoplePage.leaveToInput.fill(amended.to);
+  await peoplePage.amendSaveButton.click();
+  await expect(peoplePage.leaveNewGroup).toBeVisible();
+  await expect(peoplePage.leaveRecordRows).toHaveCount(1);
+
+  await peoplePage.navigationLink(hr.nav.raspored, { exact: true }).click();
+  // Today is still resolved; +1 stands; +4 is no longer on leave.
+  await expect(rows).toHaveCount(1);
+  await expect(rows.nth(0)).toHaveText(datedOn(isoDaysAfter(today, 1)));
+
+  // LEAVE OVER +4 AGAIN: the amend ended its resolution, so it comes back unresolved.
+  await page.goBack();
+  await expect(peoplePage.leaveHeading).toBeVisible();
+  await peoplePage.enterLeave(dropped, dropped);
+  await peoplePage.saveLeaveButton.click();
+  await expect(peoplePage.status).toBeVisible();
+
+  await peoplePage.navigationLink(hr.nav.raspored, { exact: true }).click();
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toHaveText(datedOn(isoDaysAfter(today, 1)));
+  await expect(rows.nth(1)).toHaveText(datedOn(dropped));
+
+  // THE CALENDAR agrees: +4 marked, today not.
+  const conflict = new RegExp(`, ${hr.kalendar.modifier.conflict}(,|$)`);
+  await peoplePage.navigationLink(hr.nav.kalendar, { exact: true }).click();
+  await expect(calendarPage.columnHeader(team.name)).toBeVisible();
+  for (const [date, marked] of [
+    [today, false],
+    [isoDaysAfter(today, 1), true],
+    [dropped, true],
+  ] as const) {
+    await calendarPage.showMonthOf(date, today);
+    const cell = await calendarPage.cellOf(team.name, date);
+    if (marked) await expect(cell, date).toHaveAccessibleName(conflict);
+    else await expect(cell, date).not.toHaveAccessibleName(conflict);
+  }
+
+  // SATI agrees: this month's unresolved of +1 and +4.
+  const month = today.slice(0, 7);
+  const expected = [isoDaysAfter(today, 1), dropped].filter((date) => date.startsWith(`${month}-`)).length;
+  await peoplePage.navigationLink(hr.nav.sati, { exact: true }).click();
+  const row = hoursPage.organizationRow(seeded.name);
+  await expect(row).toHaveCount(1);
+  // On the month's last day both fall in the next month, and this month's cell reads 0.
+  await expect(await hoursPage.cellIn(row, hr.sati.organization.conflicts)).toHaveText(
+    expected === 0 ? '0' : `⚠${String(expected)}`,
+  );
+  expect(await page.evaluate(() => (window as unknown as { noReload?: boolean }).noReload)).toBe(true);
+});
+
 test('shows the zero count and the true sentence when there is no live leave', async ({ page, conflictsPage }) => {
   // Answered as PostgREST answers an exact count of none: the read checks the
   // count against the rows, so the header is part of the answer.
@@ -209,6 +370,21 @@ test('a failed read refuses the whole list, and the retry brings it back', async
   await expect(conflictsPage.rows).toHaveCount(0);
 
   await page.unroute(records);
+  await conflictsPage.retryButton.click();
+  await expect(conflictsPage.anyCountHeading).toBeVisible();
+  await expect(conflictsPage.alertWith(raspored.unavailable)).toHaveCount(0);
+});
+
+test('a failed resolutions read refuses the whole list, and the retry brings it back', async ({ page, conflictsPage }) => {
+  const resolutions = '**/rest/v1/conflict_resolutions*';
+  await page.route(resolutions, (route) => route.fulfill({ status: 500, body: '{}' }));
+
+  await conflictsPage.goto();
+  await expect(conflictsPage.alertWith(raspored.unavailable)).toBeVisible();
+  await expect(conflictsPage.anyCountHeading).toHaveCount(0);
+  await expect(conflictsPage.rows).toHaveCount(0);
+
+  await page.unroute(resolutions);
   await conflictsPage.retryButton.click();
   await expect(conflictsPage.anyCountHeading).toBeVisible();
   await expect(conflictsPage.alertWith(raspored.unavailable)).toHaveCount(0);

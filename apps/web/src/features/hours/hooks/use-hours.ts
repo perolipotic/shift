@@ -9,6 +9,16 @@ import {
   type CalendarMembersRpc,
 } from '@/features/calendar/services/snapshot';
 import { calendarTodayOf } from '@/features/calendar/utils/month';
+import {
+  CONFLICT_RESOLUTIONS_TABLE,
+  MY_CONFLICT_RESOLUTIONS_KEY,
+  ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+  conflictResolutionsAnswerOf,
+  myConflictResolutionsQueryOptions,
+  organizationConflictResolutionsQueryOptions,
+  type MyConflictResolutionsRpc,
+  type OrganizationConflictResolutionsTable,
+} from '@/features/conflicts/services/resolutions';
 import { hoursConflictsStateOf } from '@/features/hours/services/hours-conflicts';
 import {
   hoursSearchTo,
@@ -55,6 +65,11 @@ import { supabaseClient } from '@/lib/supabase/client';
  * names both keys among its dependents, so the conflict count follows without
  * a reload. *Sati* waits for both reads, and a failed leave read is its
  * unavailable state with its retry.
+ *
+ * THE RESOLUTIONS ARE THE THIRD (story 5.4a), by the same role rule: an
+ * admin reads the organization's under `ORGANIZATION_CONFLICT_RESOLUTIONS_KEY`,
+ * a member their own under `MY_CONFLICT_RESOLUTIONS_KEY` — never both. Every
+ * leave write names both keys too, and the retry reads them again.
  */
 export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
   const answer = useQuery(
@@ -78,23 +93,61 @@ export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
     ...myLeaveRecordsQueryOptions(() => supabaseClient() as unknown as MyLeaveRecordsRpc),
     enabled: role !== null && !readsOrganizationLeave(role),
   });
+  const organizationResolutions = useQuery({
+    ...organizationConflictResolutionsQueryOptions(
+      () => supabaseClient().from(CONFLICT_RESOLUTIONS_TABLE) as unknown as OrganizationConflictResolutionsTable,
+    ),
+    enabled: role !== null && readsOrganizationLeave(role),
+  });
+  const ownResolutions = useQuery({
+    ...myConflictResolutionsQueryOptions(() => supabaseClient() as unknown as MyConflictResolutionsRpc),
+    enabled: role !== null && !readsOrganizationLeave(role),
+  });
   const leaveAnswer = role !== null && readsOrganizationLeave(role) ? organizationLeave : ownLeave;
   const leaveData = leaveAnswer.data;
   const leaveIsError = leaveAnswer.isError;
   const leaveIsPending = leaveAnswer.isPending;
   const leaveFetchStatus = leaveAnswer.fetchStatus;
+  const resolutionsAnswer = conflictResolutionsAnswerOf(
+    role !== null && readsOrganizationLeave(role),
+    organizationResolutions,
+    ownResolutions,
+  );
+  const resolutionsData = resolutionsAnswer.data;
+  const resolutionsIsError = resolutionsAnswer.isError;
+  const resolutionsIsPending = resolutionsAnswer.isPending;
+  const resolutionsFetchStatus = resolutionsAnswer.fetchStatus;
   // Derived once per answer, not on every render: the collisions walk every record.
   const conflicts = useMemo(
     () =>
       snapshot === null
         ? null
-        : hoursConflictsStateOf(snapshot, {
-            data: leaveData,
-            isError: leaveIsError,
-            isPending: leaveIsPending,
-            fetchStatus: leaveFetchStatus,
-          }),
-    [snapshot, leaveData, leaveIsError, leaveIsPending, leaveFetchStatus],
+        : hoursConflictsStateOf(
+            snapshot,
+            {
+              data: leaveData,
+              isError: leaveIsError,
+              isPending: leaveIsPending,
+              fetchStatus: leaveFetchStatus,
+            },
+            {
+              data: resolutionsData,
+              isError: resolutionsIsError,
+              isPending: resolutionsIsPending,
+              fetchStatus: resolutionsFetchStatus,
+            },
+          ),
+    [
+      snapshot,
+      leaveData,
+      leaveIsError,
+      leaveIsPending,
+      leaveFetchStatus,
+      resolutionsData,
+      resolutionsIsError,
+      resolutionsIsPending,
+      resolutionsFetchStatus,
+    ],
   );
   const today = snapshot === null ? null : calendarTodayOf(snapshot, new Date());
   const { mjesec, tim, osoba, sort, smjer } = search;
@@ -105,9 +158,15 @@ export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
   );
   const client = useQueryClient();
 
-  /** Read again both reads *Sati* stands on, from the unavailable message's retry (`retryable` alone). */
+  /** Read again every read *Sati* stands on, from the unavailable message's retry (`retryable` alone). */
   function retry(): void {
-    for (const queryKey of [CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, MY_LEAVE_RECORDS_KEY]) {
+    for (const queryKey of [
+      CALENDAR_KEY,
+      ORGANIZATION_LEAVE_RECORDS_KEY,
+      MY_LEAVE_RECORDS_KEY,
+      ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+      MY_CONFLICT_RESOLUTIONS_KEY,
+    ]) {
       // A read already in flight is left to land: repeated presses never restart it.
       void client.invalidateQueries({ queryKey }, { cancelRefetch: false });
     }

@@ -24,9 +24,11 @@ export {
 export {
   collisionKeyOf,
   collisionsOf,
+  unresolvedCollisionsOf,
   type Collision,
   type CollisionInput,
   type CollisionLeaveRecord,
+  type CollisionResolution,
 } from './collisions.js';
 
 export {

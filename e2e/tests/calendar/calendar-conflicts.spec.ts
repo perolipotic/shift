@@ -8,6 +8,7 @@ import {
   holdRotation,
   removeLeaveRecordsInSql,
   removeSeededRotation,
+  seedConflictResolution,
   seedExtraTeam,
   seedLeaveMember,
   seedLeaveRecord,
@@ -41,6 +42,11 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * in *Moj raspored* with no `⚠`, nothing new on the grid, and nothing of a
  * teammate's leave. A failed leave read shows the calendar's unavailable
  * alert, never a month without its marks, and its retry brings the month back.
+ *
+ * Story 5.4a: a resolution seeded in SQL on today's conflict takes that
+ * cell's mark off the grid, and the other two stay marked; the member's
+ * person view still hatches the date as leave. A failed resolutions read
+ * shows the same alert, and its retry brings the month back.
  */
 
 test.use({ storageState: ADMIN_STATE });
@@ -297,4 +303,58 @@ test('a failed leave read shows the unavailable alert and no month, and the retr
   await expect(calendarPage.columnHeader(fixture.team.name)).toBeVisible();
   await expect(calendarPage.unavailableAlert).toHaveCount(0);
   await expect(calendarPage.retryButton).toHaveCount(0);
+});
+
+test('a resolved conflict carries no mark on the grid, the other two still do, and the person view keeps its leave', async ({
+  calendarPage,
+  fixture,
+}) => {
+  const { today, team } = await seeded(fixture.slug);
+  const member = await seedLeaveMember(fixture.slug, team.id, today, 20);
+  withLeave.push({ slug: fixture.slug, id: member.id });
+  await seedLeaveRecord(fixture.slug, member.id, today, isoDaysAfter(today, 4));
+  await seedConflictResolution(fixture.slug, member.id, today, team.id);
+
+  await calendarPage.goto('?prikaz=sve');
+  await expect(calendarPage.columnHeader(team.name)).toBeVisible();
+  for (const offset of COLLIDING) {
+    const date = isoDaysAfter(today, offset);
+    await calendarPage.showMonthOf(date, today);
+    const cell = await calendarPage.cellOf(team.name, date);
+
+    if (offset === 0) {
+      await expect(cell, date).not.toHaveAccessibleName(names(CONFLICT));
+      await expect(cell.locator('[class*="modifier-"]')).toHaveCount(0);
+    } else {
+      await expect(cell, date).toHaveAccessibleName(names(CONFLICT));
+    }
+  }
+
+  // The person view: today is still leave, and no longer a conflict.
+  await calendarPage.showMonthOf(today, today);
+  await calendarPage.teamFilter.selectOption({ label: member.name });
+  const list = calendarPage.personListOf(member.name);
+  await expect(list).toBeVisible();
+  const day = calendarPage.dayButtonIn(list, team.name, today);
+  await expect(day).toHaveAccessibleName(names(LEAVE));
+  await expect(day).not.toHaveAccessibleName(names(CONFLICT));
+});
+
+test('a failed resolutions read shows the unavailable alert and no month, and the retry brings the month back', async ({
+  page,
+  calendarPage,
+  fixture,
+}) => {
+  const resolutions = '**/rest/v1/conflict_resolutions*';
+  await page.route(resolutions, (route) => route.fulfill({ status: 500, body: '{}' }));
+
+  await calendarPage.goto('?prikaz=sve');
+  await expect(calendarPage.unavailableAlert).toBeVisible();
+  await expect(calendarPage.retryButton).toBeVisible();
+  await expect(calendarPage.anyGrid).toHaveCount(0);
+
+  await page.unroute(resolutions);
+  await calendarPage.retryButton.click();
+  await expect(calendarPage.columnHeader(fixture.team.name)).toBeVisible();
+  await expect(calendarPage.unavailableAlert).toHaveCount(0);
 });

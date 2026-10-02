@@ -106,8 +106,13 @@ function rowOf(id: string, from: string, toExclusive: string, memberId: string =
 /** The pilot's worked example: 10.09–14.09 over Dan, Noć, Slobodno, Slobodno, Dan. */
 const WORKED = rowOf('record-worked', '2026-09-10', '2026-09-15');
 
-function viewOf(snapshot: CalendarSnapshot, rows: readonly unknown[], today: string): ConflictsQueueView {
-  const outcome = conflictsQueueOutcomeOf(snapshot, rows, today);
+function viewOf(
+  snapshot: CalendarSnapshot,
+  rows: readonly unknown[],
+  today: string,
+  resolutionRows: readonly unknown[] = [],
+): ConflictsQueueView {
+  const outcome = conflictsQueueOutcomeOf(snapshot, rows, resolutionRows, today);
 
   if (!outcome.ok) throw new Error(outcome.code);
 
@@ -271,7 +276,7 @@ describe('the order', () => {
     // 22:30 UTC on the 10th is already the 11th in Zagreb: the 10th (Dan) is
     // PAST there, though the UTC date would still call it today.
     const queue = conflictsQueueOf(
-      { calendar: { snapshot: pilot, refusal: null, loading: false }, records: answered([WORKED]) },
+      { calendar: { snapshot: pilot, refusal: null, loading: false }, records: answered([WORKED]), resolutions: answered([]) },
       new Date('2026-09-10T22:30:00Z'),
     );
 
@@ -288,7 +293,7 @@ describe('the order', () => {
     // 02:00 UTC on the 11th is still the 10th in New York: the 10th is today, not past.
     const behind: CalendarSnapshot = { ...pilot, timeZone: 'America/New_York' };
     const queue = conflictsQueueOf(
-      { calendar: { snapshot: behind, refusal: null, loading: false }, records: answered([WORKED]) },
+      { calendar: { snapshot: behind, refusal: null, loading: false }, records: answered([WORKED]), resolutions: answered([]) },
       new Date('2026-09-11T02:00:00Z'),
     );
 
@@ -423,7 +428,7 @@ describe('corrupt data refuses the whole queue', () => {
   ])('refuses %s, and logs it', (_name, rows) => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    expect(conflictsQueueOutcomeOf(pilot, rows, '2026-09-01')).toEqual({ ok: false, code: CONFLICTS_UNAVAILABLE });
+    expect(conflictsQueueOutcomeOf(pilot, rows, [], '2026-09-01')).toEqual({ ok: false, code: CONFLICTS_UNAVAILABLE });
     expect(logged).toHaveBeenCalledWith(CONFLICTS_UNAVAILABLE, expect.any(RangeError));
   });
 });
@@ -433,11 +438,14 @@ function answered(rows: readonly unknown[]): LeaveRowsAnswer {
   return { isPending: false, isError: false, fetchStatus: 'idle', data: rows };
 }
 
-describe('the two reads', () => {
+describe('the three reads', () => {
   const ready: CalendarSurfaceState = { snapshot: null, refusal: null, loading: false };
 
   it('is ready once both answered', () => {
-    const queue = conflictsQueueOf({ calendar: { ...ready, snapshot: pilot }, records: answered([WORKED]) }, nowOn('2026-09-01'));
+    const queue = conflictsQueueOf(
+      { calendar: { ...ready, snapshot: pilot }, records: answered([WORKED]), resolutions: answered([]) },
+      nowOn('2026-09-01'),
+    );
 
     expect(queue.kind).toBe(CONFLICTS_READY);
   });
@@ -445,12 +453,15 @@ describe('the two reads', () => {
   it('is loading while either read is pending', () => {
     const pending: LeaveRowsAnswer = { isPending: true, isError: false, fetchStatus: 'fetching', data: undefined };
 
-    expect(conflictsQueueOf({ calendar: { ...ready, loading: true }, records: answered([]) }, nowOn('2026-09-01'))).toEqual({
-      kind: CONFLICTS_LOADING,
-    });
-    expect(conflictsQueueOf({ calendar: { ...ready, snapshot: pilot }, records: pending }, nowOn('2026-09-01'))).toEqual({
-      kind: CONFLICTS_LOADING,
-    });
+    expect(
+      conflictsQueueOf({ calendar: { ...ready, loading: true }, records: answered([]), resolutions: answered([]) }, nowOn('2026-09-01')),
+    ).toEqual({ kind: CONFLICTS_LOADING });
+    expect(
+      conflictsQueueOf({ calendar: { ...ready, snapshot: pilot }, records: pending, resolutions: answered([]) }, nowOn('2026-09-01')),
+    ).toEqual({ kind: CONFLICTS_LOADING });
+    expect(
+      conflictsQueueOf({ calendar: { ...ready, snapshot: pilot }, records: answered([WORKED]), resolutions: pending }, nowOn('2026-09-01')),
+    ).toEqual({ kind: CONFLICTS_LOADING });
   });
 
   it.each([
@@ -461,7 +472,9 @@ describe('the two reads', () => {
   ] as const)('is unavailable when %s, ahead of any skeleton', (_name, calendar, records) => {
     const state: CalendarSurfaceState = { ...calendar, snapshot: calendar.refusal === null && !calendar.loading ? pilot : null };
 
-    expect(conflictsQueueOf({ calendar: state, records }, nowOn('2026-09-01'))).toEqual({ kind: CONFLICTS_UNAVAILABLE });
+    expect(conflictsQueueOf({ calendar: state, records, resolutions: answered([]) }, nowOn('2026-09-01'))).toEqual({
+      kind: CONFLICTS_UNAVAILABLE,
+    });
   });
 
   it('derives the same queue on every read and changes nothing it reads', () => {
@@ -469,5 +482,82 @@ describe('the two reads', () => {
     const first = viewOf(pilot, rows, '2026-09-01');
 
     expect(viewOf(pilot, rows, '2026-09-01')).toEqual(first);
+  });
+});
+
+/** A resolution row as `conflict_resolutions` answers it. */
+function resolutionOf(memberId: string, date: string, teamId: string, kind = 'accept_uncovered'): Row {
+  return { member_id: memberId, date, team_id: teamId, kind };
+}
+
+describe('resolutions (story 5.4a)', () => {
+  const a = teamOf(PILOT, 0);
+
+  it('drops the resolved conflict: 3 collisions, 1 resolved, 2 listed and counted', () => {
+    const view = viewOf(pilot, [WORKED], '2026-09-01', [resolutionOf(VIEWER_MEMBER, '2026-09-11', a)]);
+
+    expect(view.count).toBe(2);
+    expect(view.rows).toHaveLength(view.count);
+    expect(view.rows.map((row) => row.date)).toEqual(['2026-09-10', '2026-09-14']);
+    expect(t('raspored.count', { count: view.count })).toBe('2 neriješena konflikta');
+  });
+
+  it.each([
+    ['the pilot', () => pilot],
+    ['UJ5', () => uj5],
+  ])("lists exactly the domain's unresolved collisions over %s", (_name, snapshotFor) => {
+    const snapshot = snapshotFor();
+    const rows = [WORKED, rowOf('record-ana', '2026-09-01', '2026-09-08', ANA)];
+    const domain = domainOf(snapshot, rows);
+    const [resolved] = domain;
+
+    if (resolved === undefined) throw new Error('no collision');
+
+    const view = viewOf(snapshot, rows, '2026-09-01', [resolutionOf(resolved.memberId, resolved.date, resolved.teamId)]);
+
+    expect(view.count).toBe(domain.length - 1);
+    expect(view.rows.map((row) => row.key)).toEqual(domain.slice(1).map(collisionKeyOf));
+  });
+
+  it("keeps the other team's conflict when a roster override puts the member on two teams and one is resolved", async () => {
+    const b = teamOf(PILOT, 1);
+    const snapshot = await snapshotOf(PILOT, [calendarRosterOverrideRow('put-on', b, '2026-09-10', null, VIEWER_MEMBER)]);
+    const view = viewOf(snapshot, [WORKED], '2026-09-01', [resolutionOf(VIEWER_MEMBER, '2026-09-10', a)]);
+
+    expect(view.rows.filter((row) => row.date === '2026-09-10').map((row) => row.teamName)).toEqual(['Smjena B']);
+    expect(view.count).toBe(viewOf(snapshot, [WORKED], '2026-09-01').count - 1);
+  });
+
+  it('ignores a resolution that matches no collision, whatever its kind', () => {
+    const view = viewOf(pilot, [WORKED], '2026-09-01', [
+      resolutionOf(VIEWER_MEMBER, '2026-09-12', a, 'amend_leave'),
+      resolutionOf(ANA, '2026-09-10', a, 'replace_member'),
+    ]);
+
+    expect(view.count).toBe(3);
+  });
+
+  it.each([
+    ['an unknown team', [resolutionOf(VIEWER_MEMBER, '2026-09-11', 'no-such-team')]],
+    ['an unknown member', [resolutionOf('stranger', '2026-09-11', a)]],
+    ['a date that is no calendar date', [resolutionOf(VIEWER_MEMBER, '2026-02-30', a)]],
+    ['an unknown kind', [resolutionOf(VIEWER_MEMBER, '2026-09-11', a, 'uncovered')]],
+    ['two live rows of one key', [resolutionOf(VIEWER_MEMBER, '2026-09-11', a), resolutionOf(VIEWER_MEMBER, '2026-09-11', a, 'amend_leave')]],
+    ['a row that is not a record', [null]],
+  ])('refuses the whole queue for %s, and logs it', (_name, resolutionRows) => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(conflictsQueueOutcomeOf(pilot, [WORKED], resolutionRows, '2026-09-01')).toEqual({ ok: false, code: CONFLICTS_UNAVAILABLE });
+    expect(logged).toHaveBeenCalledWith(CONFLICTS_UNAVAILABLE, expect.any(RangeError));
+  });
+
+  it.each([
+    ['failed', { isPending: true, isError: true, fetchStatus: 'idle', data: undefined }],
+    ['failed on a refetch over cached rows', { isPending: false, isError: true, fetchStatus: 'idle', data: [] }],
+    ['paused offline', { isPending: false, isError: false, fetchStatus: 'paused', data: [] }],
+  ] as const)('is unavailable when the resolutions read %s, never a count without them', (_name, resolutions) => {
+    expect(
+      conflictsQueueOf({ calendar: { snapshot: pilot, refusal: null, loading: false }, records: answered([WORKED]), resolutions }, nowOn('2026-09-01')),
+    ).toEqual({ kind: CONFLICTS_UNAVAILABLE });
   });
 });

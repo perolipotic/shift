@@ -1,9 +1,10 @@
-import { collisionKeyOf, collisionsOf, type Collision, type CollisionInput } from '@shift/domain';
+import { collisionKeyOf, collisionsOf, unresolvedCollisionsOf, type Collision, type CollisionInput } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import { calendarTodayOf, memberScheduleInputOf, typeRangeOn } from '@/features/calendar/utils/month';
 import { organizationLeaveRecordsOf, type OrganizationLeaveRecord } from '@/features/leave/services/leave-list';
 import { leaveRangeValuesOf } from '@/features/leave/services/leave-section';
+import { conflictResolutionsOf, type ConflictResolution } from '@/features/conflicts/services/resolutions';
 import { formatIsoDate } from '@/lib/i18n/format';
 
 /**
@@ -14,12 +15,14 @@ import { formatIsoDate } from '@/lib/i18n/format';
  * DERIVED, NEVER STORED (AD-4). Every row is one of `collisionsOf`'s
  * collisions, from the calendar's one snapshot and the organization's live
  * leave records, on every read: nothing here is written or cached apart from
- * the two reads themselves. The schedule fields are the one recipe
+ * the reads themselves. The schedule fields are the one recipe
  * (`memberScheduleInputOf`) every other leave and hours figure stands on, so
  * a conflict listed here is exactly a leave day charged on the member's card.
  *
- * EVERY COLLISION IS UNRESOLVED until story 5.4 records resolutions: it will
- * filter by `collisionKeyOf`, which already keys each row.
+ * ONLY THE UNRESOLVED (story 5.4a). The organization's live resolutions
+ * (`./resolutions`) drop each collision they match by `collisionKeyOf`,
+ * through the domain's one filter, `unresolvedCollisionsOf`, which the
+ * calendar's marks and *Sati*'s count apply too ({@link unresolvedOf}).
  *
  * THE ORDER (human, 2026-10-01): upcoming conflicts first — dated today or
  * later in the organization's zone — soonest first; then past ones, most
@@ -27,9 +30,10 @@ import { formatIsoDate } from '@/lib/i18n/format';
  *
  * NEVER A PARTIAL LIST. A read that failed or is paused offline, a record
  * row that does not parse, belongs to nobody in the snapshot or shares a date
- * with another of the same member, and any `RangeError` of the derivation
- * refuse the whole queue, logged; no row is drawn from data that cannot be
- * trusted.
+ * with another of the same member, a resolution row that cannot be trusted,
+ * and any `RangeError` of the derivation refuse the whole queue, logged; no
+ * row is drawn from data that cannot be trusted, and no count from
+ * collisions not yet filtered by their resolutions.
  */
 
 /** TanStack Query's name for a fetch it has not started (offline). */
@@ -125,10 +129,43 @@ export function collisionInputOf(
 }
 
 /**
- * The queue from the snapshot, the organization's record rows as read, and
- * `today` in the organization's zone.
+ * The resolution rows as read, parsed against the snapshot's members and
+ * teams.
  *
- * @throws RangeError when a row cannot be trusted ({@link organizationLeaveRecordsOf}),
+ * @throws RangeError when a row cannot be trusted (`conflictResolutionsOf`).
+ */
+export function resolutionsOf(snapshot: CalendarSnapshot, rows: readonly unknown[]): readonly ConflictResolution[] {
+  const resolutions = conflictResolutionsOf(
+    rows,
+    snapshot.members.map((member) => member.id),
+    snapshot.teams.map((team) => team.id),
+  );
+
+  if (resolutions === null) throw new RangeError('a conflict resolution row cannot be trusted');
+
+  return resolutions;
+}
+
+/**
+ * THE ONE DERIVATION every unresolved surface stands on (story 5.4a): the
+ * collisions of `records`, without those the resolution rows resolve.
+ *
+ * @throws RangeError when a resolution row cannot be trusted, or on any
+ *   precondition of `collisionsOf`.
+ */
+export function unresolvedOf(
+  snapshot: CalendarSnapshot,
+  records: readonly OrganizationLeaveRecord[],
+  resolutionRows: readonly unknown[],
+): readonly Collision[] {
+  return unresolvedCollisionsOf(collisionsOf(collisionInputOf(snapshot, records)), resolutionsOf(snapshot, resolutionRows));
+}
+
+/**
+ * The queue from the snapshot, the organization's record and resolution rows
+ * as read, and `today` in the organization's zone.
+ *
+ * @throws RangeError when a row cannot be trusted ({@link organizationLeaveRecordsOf}, {@link resolutionsOf}),
  *   on any precondition of `collisionsOf`, or when a collision names a
  *   member, team, shift type or record the inputs lack, or a date that cannot
  *   be formatted.
@@ -136,6 +173,7 @@ export function collisionInputOf(
 export function conflictsQueueViewOf(
   snapshot: CalendarSnapshot,
   rows: readonly unknown[],
+  resolutionRows: readonly unknown[],
   today: string,
 ): ConflictsQueueView {
   const records = organizationLeaveRecordsOf(
@@ -150,7 +188,7 @@ export function conflictsQueueViewOf(
   const types = new Map(snapshot.types.map((type) => [type.id, type]));
   const byId = new Map(records.map((record) => [record.id, record]));
 
-  const shown = queueOrderOf(collisionsOf(collisionInputOf(snapshot, records)), today).map((collision) => {
+  const shown = queueOrderOf(unresolvedOf(snapshot, records, resolutionRows), today).map((collision) => {
     const memberName = members.get(collision.memberId);
     const teamName = teams.get(collision.teamId);
     const type = types.get(collision.shiftTypeId);
@@ -193,10 +231,11 @@ export type ConflictsQueueOutcome =
 export function conflictsQueueOutcomeOf(
   snapshot: CalendarSnapshot,
   rows: readonly unknown[],
+  resolutionRows: readonly unknown[],
   today: string,
 ): ConflictsQueueOutcome {
   try {
-    return { ok: true, view: conflictsQueueViewOf(snapshot, rows, today) };
+    return { ok: true, view: conflictsQueueViewOf(snapshot, rows, resolutionRows, today) };
   } catch (cause) {
     if (!(cause instanceof RangeError)) throw cause;
 
@@ -214,35 +253,42 @@ export interface LeaveRowsAnswer {
   readonly data: readonly unknown[] | undefined;
 }
 
-/** The two reads the queue stands on, each as far as it is read here. */
+/** Whether a read failed, is paused offline, or settled with nothing: the queue's unavailable. */
+function readFailed(answer: LeaveRowsAnswer): boolean {
+  return answer.isError || answer.fetchStatus === FETCH_PAUSED || (!answer.isPending && answer.data === undefined);
+}
+
+/** The three reads the queue stands on, each as far as it is read here. */
 export interface ConflictsQueueSources {
   readonly calendar: CalendarSurfaceState;
   readonly records: LeaveRowsAnswer;
+  /** The organization's live resolution rows (story 5.4a). */
+  readonly resolutions: LeaveRowsAnswer;
 }
 
 /**
- * What *Raspored* shows from its two reads at `now`: unavailable when either
+ * What *Raspored* shows from its three reads at `now`: unavailable when any
  * read failed or is paused offline — first, so a failure is never hidden
- * behind the other's skeleton — a failed refetch over cached data included;
- * loading while either is pending; otherwise the guarded queue.
+ * behind another's skeleton — a failed refetch over cached data included;
+ * loading while any is pending; otherwise the guarded queue.
  */
 export function conflictsQueueOf(sources: ConflictsQueueSources, now: Date): ConflictsQueue {
-  const { calendar, records } = sources;
+  const { calendar, records, resolutions } = sources;
   const failed =
     calendar.refusal !== null ||
     (!calendar.loading && calendar.snapshot === null) ||
-    records.isError ||
-    records.fetchStatus === FETCH_PAUSED ||
-    (!records.isPending && records.data === undefined);
+    readFailed(records) ||
+    readFailed(resolutions);
 
   if (failed) return { kind: CONFLICTS_UNAVAILABLE };
 
   const snapshot = calendar.snapshot;
   const rows = records.data;
+  const resolutionRows = resolutions.data;
 
-  if (snapshot === null || rows === undefined) return { kind: CONFLICTS_LOADING };
+  if (snapshot === null || rows === undefined || resolutionRows === undefined) return { kind: CONFLICTS_LOADING };
 
-  const outcome = conflictsQueueOutcomeOf(snapshot, rows, calendarTodayOf(snapshot, now));
+  const outcome = conflictsQueueOutcomeOf(snapshot, rows, resolutionRows, calendarTodayOf(snapshot, now));
 
   return outcome.ok ? { kind: CONFLICTS_READY, view: outcome.view } : { kind: CONFLICTS_UNAVAILABLE };
 }

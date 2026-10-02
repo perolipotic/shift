@@ -303,7 +303,7 @@ describe('the access-control migration', () => {
     ).toEqual([]);
   });
 
-  it('declares exactly the forty-three policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b and 0025 reviewed, and no forty-fourth', () => {
+  it('declares exactly the forty-five policies stories 1.3a, 1.4a, 1.4b, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a and 0025 reviewed, and no forty-sixth', () => {
     // EXTENDED BY STORY 1.4a, exactly as this comment asked: `0004_organization
     // _settings.sql` adds `organizations_update_by_own_active_admin`, built by
     // copying `members_update_by_own_active_admin`, and its name is added here
@@ -325,6 +325,12 @@ describe('the access-control migration', () => {
       .sort();
 
     expect(declared, 'the declared policy set changed').toEqual([
+      // STORY 5.4a, and TWO: an active admin inserts and reads; a member reads
+      // their own live rows through `my_conflict_resolutions()`. No update and
+      // no delete policy: the lifetime rule soft-removes through 0031's
+      // re-created leave definer functions.
+      'conflict_resolutions_insert_by_own_active_admin',
+      'conflict_resolutions_select_own_active_admin',
       // STORY 2.1a, and FOUR: bands are current-state and any band may be
       // deleted, the last one included, so an active admin holds every write
       // verb. Each is its own policy, never `for all`.
@@ -2283,6 +2289,204 @@ describe('the access-control migration', () => {
     expect(migration, 'story 5.2c grants on a table').not.toMatch(/\bon table\b/i);
     expect(migration, 'story 5.2c writes a row').not.toMatch(/\b(insert|update|delete)\b/i);
     expect((migration.match(/create function/gi) ?? []).length, 'story 5.2c takes one function').toBe(1);
+  });
+
+  it('stores a conflict resolution as its collision key, a kind and its attribution, one live per conflict (story 5.4a)', () => {
+    // STORY 5.4a (AD-4): conflicts are derived, only the decision is stored,
+    // keyed by `collisionKeyOf`'s `(member, date, team)` and never by a leave
+    // record. No collision, shift, cost or hours column.
+    const resolutions = columnsOf('conflict_resolutions');
+    expect(resolutions.columns, 'conflict_resolutions stores something beyond its reviewed columns').toEqual([
+      'organization_id',
+      'id',
+      'member_id',
+      'date',
+      'team_id',
+      'kind',
+      'created_by',
+      'created_at',
+      'removed_by',
+      'removed_at',
+    ]);
+    expect(resolutions.body).toMatch(/organization_id uuid not null references organizations \(id\) on delete cascade/);
+    expect(resolutions.body).toMatch(/created_by uuid not null default auth\.uid\(\)/);
+    expect(resolutions.body).toMatch(/created_at timestamptz not null default now\(\)/);
+    // Each key exactly, through to the comma or the end that closes it: no
+    // `on delete` or `on update` action of any kind on the member or the team.
+    const keys = [
+      ...resolutions.body.matchAll(/constraint (\w+)\s+foreign key (\([^)]*\))\s+references (\w+) (\([^)]*\))([^,]*)/g),
+    ].map((match) =>
+      `${match[1] ?? ''} foreign key ${match[2] ?? ''} references ${match[3] ?? ''} ${match[4] ?? ''} ${match[5] ?? ''}`
+        .replace(/\s+/g, ' ')
+        .trim(),
+    );
+    expect(keys, 'the member and team keys are not exactly the tenant-scoped no-action keys').toEqual([
+      'conflict_resolutions_member_fkey foreign key (organization_id, member_id) references members (organization_id, id)',
+      'conflict_resolutions_team_fkey foreign key (organization_id, team_id) references teams (organization_id, id)',
+    ]);
+    expect(
+      (resolutions.body.match(/\breferences\b/g) ?? []).length,
+      'a key beyond the organization, the member and the team',
+    ).toBe(3);
+    expect(resolutions.body, 'the kind is not one of the three').toMatch(
+      /check \(kind in \('accept_uncovered', 'replace_member', 'amend_leave'\)\)/,
+    );
+    expect(resolutions.body, 'a removal may be half-recorded').toMatch(
+      /check \(\(removed_by is null\) = \(removed_at is null\)\)/,
+    );
+    expect(resolutions.body, 'a resolution is keyed on a leave record, or stores a derived figure').not.toMatch(
+      /leave_record|shift|cost|balance|minutes|hours/,
+    );
+    const statements = migrationStatements();
+    expect(statements).toMatch(/alter table conflict_resolutions enable row level security;/);
+    expect(statements).toMatch(/create index \w+ on conflict_resolutions \(organization_id\);/);
+    expect(statements, 'two live resolutions of one conflict are representable').toMatch(
+      /create unique index \w+\s+on conflict_resolutions \(organization_id, member_id, date, team_id\)\s+where removed_at is null;/,
+    );
+    const migration = readFileSync(join(supabaseRoot, 'migrations', '0031_conflict_resolutions.sql'), 'utf8').replaceAll(
+      /--[^\n]*/g,
+      '',
+    );
+    expect((migration.match(/create (or replace )?trigger/gi) ?? []).length, 'story 5.4a takes one trigger').toBe(1);
+    expect(migration, 'the born-on-leave trigger is not before insert, row by row').toMatch(
+      /create trigger conflict_resolutions_on_live_leave\s+before insert on public\.conflict_resolutions\s+for each row\s+execute function public\.refuse_conflict_resolution_off_leave\(\);/,
+    );
+    const guard = /create function public\.refuse_conflict_resolution_off_leave\(\) returns trigger[\s\S]*?\$\$;/.exec(migration)?.[0];
+    expect(guard, 'the born-on-leave trigger function is not declared').toBeDefined();
+    expect(guard).toMatch(/security definer/);
+    expect(guard).toMatch(/set search_path = ''/);
+    expect(guard, 'the leave row is not share-locked').toMatch(
+      /from public\.leave_records r\s+where r\.organization_id = new\.organization_id\s+and r\.member_id = new\.member_id\s+and r\.removed_at is null\s+and new\.date <@ r\.during\s+for share;/,
+    );
+    expect(guard, 'an insert off leave is not refused by name').toMatch(
+      /errcode = 'no_data_found',\s+message = 'CONFLICT_RESOLUTION_NOT_ON_LEAVE'/,
+    );
+    for (const role of ['public', 'anon', 'authenticated', 'service_role']) {
+      expect(migration).toContain(`revoke execute on function public.refuse_conflict_resolution_off_leave() from ${role};`);
+    }
+    expect(migration, 'story 5.4a writes or refers to a rotation, membership, status or override row').not.toMatch(
+      /rotation_|team_membership_versions|member_status_versions|_overrides/,
+    );
+    expect(migration, 'story 5.4a hard-deletes').not.toMatch(/\bdelete from\b/i);
+    expect(
+      (migration.match(/create (or replace )?function/gi) ?? []).length,
+      'story 5.4a takes one new read and one trigger function, and re-creates the two leave writes',
+    ).toBe(4);
+  });
+
+  it('opens conflict resolutions to an active admin\'s insert and read, and never to update or delete (story 5.4a)', () => {
+    const statements = migrationStatements();
+    const policies = (statements.match(/create policy[\s\S]*?;/gi) ?? []).filter((declaration) =>
+      /on public\.conflict_resolutions\b/i.test(declaration),
+    );
+    expect(policies.length, 'conflict_resolutions does not carry exactly two policies').toBe(2);
+    for (const verb of ['update', 'delete', 'all']) {
+      expect(
+        policies.filter((declaration) => new RegExp(`\\bfor ${verb}\\b`, 'i').test(declaration)),
+        `a policy opens ${verb} on conflict_resolutions`,
+      ).toEqual([]);
+    }
+    for (const name of ['conflict_resolutions_select_own_active_admin', 'conflict_resolutions_insert_by_own_active_admin']) {
+      const body = policyBody(name);
+      expect(body, `${name} is not declared`).not.toBe('');
+      expect(body, `${name} does not pin the tenant`).toMatch(/organization_id = nullif/);
+      expect(body, `${name} is not an active admin's alone`).toMatch(
+        /organization_id = \(\s*select access\.organization_id\s+from public\.current_member_access\(\) as access\s+where access\.is_active\s+and access\.member_role = 'admin'\s*\)/,
+      );
+      expect(body, `${name} lets a member read or write through a branch`).not.toMatch(/\bor\b/);
+    }
+    expect(policyBody('conflict_resolutions_insert_by_own_active_admin'), 'the attribution is not pinned to the caller').toMatch(
+      /created_by = \(select auth\.uid\(\)\)/,
+    );
+    expect(statements).toMatch(
+      /revoke insert, update, delete, truncate, references, trigger on table public\.conflict_resolutions\s+from anon, authenticated;/i,
+    );
+    expect(statements).toMatch(/revoke select on table public\.conflict_resolutions from anon;/);
+    expect(statements, 'the five facts are not the only insertable columns').toMatch(
+      /grant insert \(organization_id, member_id, date, team_id, kind\) on table public\.conflict_resolutions\s+to authenticated;/i,
+    );
+    expect(statements, 'a migration grants update or delete on conflict_resolutions').not.toMatch(
+      /grant[^;]*\b(update|delete|all)\b[^;]*on table public\.conflict_resolutions\b/i,
+    );
+    expect(statements, 'a migration grants anon something on conflict_resolutions').not.toMatch(
+      /grant[^;]*on table public\.conflict_resolutions to[^;]*\banon\b/i,
+    );
+  });
+
+  it("reads a member's own live conflict resolutions through one definer function that names no author (story 5.4a)", () => {
+    const statements = migrationStatements();
+    const read = /create function public\.my_conflict_resolutions\(\)[\s\S]*?\$\$;/i.exec(statements)?.[0];
+    expect(read, 'my_conflict_resolutions is not declared').toBeDefined();
+    expect(read).toMatch(/returns table \(\s*member_id uuid,\s*date date,\s*team_id uuid,\s*kind text\s*\)/);
+    expect(read).toMatch(/language sql/i);
+    expect(read).toMatch(/\bstable\b/i);
+    expect(read).toMatch(/security definer/i);
+    expect(read).toMatch(/set search_path = ''/);
+    expect(read, 'the read lost the claim pin').toMatch(
+      /c\.organization_id = nullif\(\(\(select auth\.jwt\(\)\) ->> 'organization_id'\), ''\)::uuid/,
+    );
+    expect(read, 'the read lost the active caller pin').toMatch(/where access\.is_active/);
+    expect(read, "the read is not the caller's own member row").toMatch(/and m\.auth_user_id = \(select auth\.uid\(\)\)/);
+    expect(read, 'a removed resolution is read').toMatch(/and c\.removed_at is null/);
+    expect(read, 'an author or a removal leaves the function').not.toMatch(
+      /select c\.member_id,[^$]*\b(created_by|removed_by|removed_at|auth_user_id)\b[^$]*from public\.conflict_resolutions/,
+    );
+    for (const role of ['public', 'anon', 'service_role']) {
+      expect(statements).toContain(`revoke execute on function public.my_conflict_resolutions() from ${role};`);
+    }
+    expect(statements).toContain('grant execute on function public.my_conflict_resolutions() to authenticated;');
+  });
+
+  it('ends a resolution in the same call that ends its leave cover, and keeps 0029\'s refusals (story 5.4a)', () => {
+    // The lifetime rule (human, 2026-10-02): a resolution lives while a live
+    // leave record of its member covers its date. 0031 re-creates 0029's two
+    // definer writes with their bodies and refusals, plus the soft-removal.
+    const migration = readFileSync(join(supabaseRoot, 'migrations', '0031_conflict_resolutions.sql'), 'utf8').replaceAll(
+      /--[^\n]*/g,
+      '',
+    );
+    const remove = /create or replace function public\.remove_leave_record\(p_record_id uuid\)[\s\S]*?\$\$;/i.exec(migration)?.[0];
+    const amend = /create or replace function public\.amend_leave_record\(p_record_id uuid, p_from date, p_to date\)[\s\S]*?\$\$;/i.exec(
+      migration,
+    )?.[0];
+    expect(remove, 'remove_leave_record is not re-created').toBeDefined();
+    expect(amend, 'amend_leave_record is not re-created').toBeDefined();
+    expect(remove).toMatch(/returns void/i);
+    expect(amend).toMatch(/returns uuid/i);
+    for (const [name, body, refused] of [
+      ['remove_leave_record', remove, 'LEAVE_RECORD_REMOVAL_REFUSED'],
+      ['amend_leave_record', amend, 'LEAVE_RECORD_AMEND_REFUSED'],
+    ] as const) {
+      expect(body, name).toMatch(/language plpgsql/i);
+      expect(body, name).toMatch(/security definer/i);
+      expect(body, name).toMatch(/set search_path = ''/);
+      expect(body, `${name} admits a caller who is no active admin`).toMatch(
+        /from public\.current_member_access\(\) as access\s+where access\.organization_id = claimed\s+and access\.is_active\s+and access\.member_role = 'admin'/,
+      );
+      expect(body, `${name}: a refusal of the caller is not 42501`).toMatch(
+        new RegExp(`errcode = 'insufficient_privilege',\\s+message = '${refused}'`),
+      );
+      expect(body, `${name}: a missing live row is not P0002`).toMatch(
+        /errcode = 'no_data_found',\s+message = 'LEAVE_RECORD_NOT_LIVE'/,
+      );
+      expect(body, `${name} reaches a removed row or another tenant`).toMatch(
+        /where r\.id = p_record_id\s+and r\.organization_id = claimed\s+and r\.removed_at is null/,
+      );
+      expect(body, `${name}: the resolutions are not soft-removed by the caller`).toMatch(
+        /update public\.conflict_resolutions c\s+set removed_by = auth\.uid\(\),\s+removed_at = now\(\)\s+where c\.organization_id = claimed\s+and c\.member_id = \w+\s+and c\.removed_at is null/,
+      );
+      expect(body, `${name} hard-deletes`).not.toMatch(/\bdelete\b/i);
+      expect(body, `${name} derives a collision`).not.toMatch(/shift|rotation|roster/i);
+    }
+    expect(remove, 'the removal does not end the resolutions in the removed range').toMatch(/and c\.date <@ removed_during;/);
+    expect(amend, 'the amend does not end exactly the old range less the new one').toMatch(
+      /and c\.date <@ amended_during\s+and not \(c\.date <@ replacement_during\);/,
+    );
+    expect(amend, 'the replacement is not the old row\'s member, or names its own attribution').toMatch(
+      /insert into public\.leave_records \(organization_id, member_id, during\)\s+values \(claimed, amended_member, pg_catalog\.daterange\(p_from, p_to, '\[\]'\)\)/,
+    );
+    // A refused insert aborts the call before any resolution is touched.
+    expect(amend?.indexOf('insert into public.leave_records')).toBeLessThan(amend?.indexOf('update public.conflict_resolutions') ?? 0);
   });
 
   it('stores a leave record as one member and one bounded inclusive range, refusing a live overlap by exclusion (story 5.1b)', () => {
