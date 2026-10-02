@@ -46,6 +46,12 @@ import {
   readsOrganizationLeave,
 } from '@/features/calendar/services/marks';
 import {
+  CONFLICT_RESOLUTIONS_TABLE,
+  ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+  organizationConflictResolutionsQueryOptions,
+  type OrganizationConflictResolutionsTable,
+} from '@/features/conflicts/services/resolutions';
+import {
   LEAVE_RECORDS_TABLE,
   MY_LEAVE_RECORDS_KEY,
   ORGANIZATION_LEAVE_RECORDS_KEY,
@@ -85,6 +91,12 @@ function noRoleOnServer(): null {
  * among its dependents, and a schedule write re-reads the first read, so the
  * marks follow without a reload. The month waits for both reads, and a
  * failed leave read is the calendar's unavailable state with its retry.
+ *
+ * AN ADMIN'S MARKS READ A THIRD (story 5.4a): the organization's live
+ * conflict resolutions under `ORGANIZATION_CONFLICT_RESOLUTIONS_KEY`, enabled
+ * by role as the leave is, so a resolved conflict is never marked. A member
+ * is shown no conflict and reads none, so the retry reads the organization's
+ * key alone. Every leave write names it among its dependents.
  */
 export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSearch) => void) {
   const answer = useQuery(
@@ -110,23 +122,58 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
     ...myLeaveRecordsQueryOptions(() => supabaseClient() as unknown as MyLeaveRecordsRpc),
     enabled: role !== null && !readsOrganizationLeave(role),
   });
+  // An admin's alone: a member is shown no conflict.
+  const readsResolutions = role !== null && readsOrganizationLeave(role);
+  const resolutions = useQuery({
+    // Named structurally, as *Raspored*'s read is.
+    ...organizationConflictResolutionsQueryOptions(
+      () => supabaseClient().from(CONFLICT_RESOLUTIONS_TABLE) as unknown as OrganizationConflictResolutionsTable,
+    ),
+    enabled: readsResolutions,
+  });
   const leaveAnswer = role !== null && readsOrganizationLeave(role) ? organizationLeave : ownLeave;
   const leaveData = leaveAnswer.data;
   const leaveIsError = leaveAnswer.isError;
   const leaveIsPending = leaveAnswer.isPending;
   const leaveFetchStatus = leaveAnswer.fetchStatus;
+  const resolutionsData = resolutions.data;
+  const resolutionsIsError = resolutions.isError;
+  const resolutionsIsPending = resolutions.isPending;
+  const resolutionsFetchStatus = resolutions.fetchStatus;
   // Derived once per answer, not on every render: the collisions walk every record.
   const marksState = useMemo(
     () =>
       snapshot === null
         ? null
-        : calendarMarksStateOf(snapshot, {
-            data: leaveData,
-            isError: leaveIsError,
-            isPending: leaveIsPending,
-            fetchStatus: leaveFetchStatus,
-          }),
-    [snapshot, leaveData, leaveIsError, leaveIsPending, leaveFetchStatus],
+        : calendarMarksStateOf(
+            snapshot,
+            {
+              data: leaveData,
+              isError: leaveIsError,
+              isPending: leaveIsPending,
+              fetchStatus: leaveFetchStatus,
+            },
+            readsResolutions
+              ? {
+                  data: resolutionsData,
+                  isError: resolutionsIsError,
+                  isPending: resolutionsIsPending,
+                  fetchStatus: resolutionsFetchStatus,
+                }
+              : null,
+          ),
+    [
+      snapshot,
+      leaveData,
+      leaveIsError,
+      leaveIsPending,
+      leaveFetchStatus,
+      readsResolutions,
+      resolutionsData,
+      resolutionsIsError,
+      resolutionsIsPending,
+      resolutionsFetchStatus,
+    ],
   );
   const marks = marksState?.kind === MARKS_READY ? marksState.marks : null;
   const loading = state.loading || marksState?.kind === MARKS_LOADING;
@@ -195,9 +242,14 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
   // Built once per month shown, not on every focus move.
   const labels = useMemo(() => (month === null ? null : gridCellLabelsOf(month, translateCellLabel)), [month]);
 
-  /** Read again both reads the month stands on, from the unavailable alert's retry (`retryable` alone). */
+  /** Read again every read the month stands on, from the unavailable alert's retry (`retryable` alone): the calendar never reads the viewer's own resolutions. */
   function retry(): void {
-    for (const queryKey of [CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, MY_LEAVE_RECORDS_KEY]) {
+    for (const queryKey of [
+      CALENDAR_KEY,
+      ORGANIZATION_LEAVE_RECORDS_KEY,
+      MY_LEAVE_RECORDS_KEY,
+      ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+    ]) {
       void client.invalidateQueries({ queryKey });
     }
   }

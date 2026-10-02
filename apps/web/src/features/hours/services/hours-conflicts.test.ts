@@ -116,12 +116,17 @@ const ACROSS = rowOf('record-across', '2026-09-29', '2026-10-03');
 /** Only the worked example's two free days. */
 const FREE = rowOf('record-free', '2026-09-12', '2026-09-14');
 
-function ready(snapshot: CalendarSnapshot, rows: readonly Row[]): HoursConflictsState {
-  return hoursConflictsStateOf(snapshot, { data: rows, isError: false, isPending: false, fetchStatus: 'idle' });
+/** A settled read that answered `rows`. */
+function settled(rows: readonly unknown[]) {
+  return { data: rows, isError: false, isPending: false, fetchStatus: 'idle' };
 }
 
-function collisionsFrom(snapshot: CalendarSnapshot, rows: readonly Row[]): readonly Collision[] {
-  return hoursCollisionsOf(snapshot, rows);
+function ready(snapshot: CalendarSnapshot, rows: readonly Row[], resolutionRows: readonly Row[] = []): HoursConflictsState {
+  return hoursConflictsStateOf(snapshot, settled(rows), settled(resolutionRows));
+}
+
+function collisionsFrom(snapshot: CalendarSnapshot, rows: readonly Row[], resolutionRows: readonly Row[] = []): readonly Collision[] {
+  return hoursCollisionsOf(snapshot, rows, resolutionRows);
 }
 
 function tableOf(snapshot: CalendarSnapshot, collisions: readonly Collision[], month = SEPTEMBER): OrganizationHoursView {
@@ -323,21 +328,21 @@ describe('the property', () => {
 
 describe('the read', () => {
   it('is loading while the read is pending', () => {
-    expect(hoursConflictsStateOf(admin, { data: undefined, isError: false, isPending: true, fetchStatus: 'fetching' })).toEqual({
+    expect(hoursConflictsStateOf(admin, { data: undefined, isError: false, isPending: true, fetchStatus: 'fetching' }, settled([]))).toEqual({
       kind: HOURS_CONFLICTS_LOADING,
     });
   });
 
   it('is loading, not unavailable, while a role-gated read is not yet enabled', () => {
     // Between the snapshot naming the role and the read starting: pending, idle.
-    expect(hoursConflictsStateOf(admin, { data: undefined, isError: false, isPending: true, fetchStatus: 'idle' })).toEqual({
+    expect(hoursConflictsStateOf(admin, { data: undefined, isError: false, isPending: true, fetchStatus: 'idle' }, settled([]))).toEqual({
       kind: HOURS_CONFLICTS_LOADING,
     });
   });
 
   it('is loading while a failed read is read again, cached rows or not: the retry is seen to work', () => {
     for (const data of [undefined, [WORKED]]) {
-      expect(hoursConflictsStateOf(admin, { data, isError: true, isPending: data === undefined, fetchStatus: 'fetching' })).toEqual({
+      expect(hoursConflictsStateOf(admin, { data, isError: true, isPending: data === undefined, fetchStatus: 'fetching' }, settled([]))).toEqual({
         kind: HOURS_CONFLICTS_LOADING,
       });
     }
@@ -350,7 +355,7 @@ describe('the read', () => {
       { data: undefined, isError: false, isPending: true, fetchStatus: 'paused' },
       { data: [WORKED], isError: false, isPending: false, fetchStatus: 'paused' },
     ]) {
-      expect(hoursConflictsStateOf(admin, answer)).toEqual({ kind: HOURS_CONFLICTS_UNAVAILABLE, retryable: true });
+      expect(hoursConflictsStateOf(admin, answer, settled([]))).toEqual({ kind: HOURS_CONFLICTS_UNAVAILABLE, retryable: true });
     }
   });
 
@@ -457,5 +462,87 @@ describe('the surface', () => {
 
     expect(surface.organization).toEqual(tableOf(admin, collisionsFrom(admin, [WORKED])));
     expect(surface.retryable).toBe(false);
+  });
+});
+
+/** A resolution row as `conflict_resolutions` and `my_conflict_resolutions()` answer it. */
+function resolutionOf(memberId: string, date: string, teamId: string, kind = 'accept_uncovered'): Row {
+  return { member_id: memberId, date, team_id: teamId, kind };
+}
+
+describe('resolutions (story 5.4a)', () => {
+  const a = teamOf(PILOT, 0);
+  const resolved = [resolutionOf(VIEWER_MEMBER, '2026-09-11', a)];
+
+  it("counts 2 of 3 on the admin's table and in the sheet when one is resolved, every other figure unchanged", () => {
+    const view = tableOf(admin, collisionsFrom(admin, [WORKED], resolved));
+    const sheet = hoursExportOf(view, admin.organizationName);
+
+    expect(rowOfMember(view, VIEWER_MEMBER).conflictCount).toBe(2);
+    expect(view.rows.map(figuresOf)).toEqual(tableOf(admin, NO_COLLISIONS).rows.map(figuresOf));
+    view.rows.forEach((row, index) => {
+      expect(sheet.rows[index]!.at(-1)).toEqual({ kind: 'count', value: row.memberId === VIEWER_MEMBER ? 2 : 0 });
+    });
+  });
+
+  it('counts exactly the queue\'s unresolved set: the domain\'s collisions less the resolved key', () => {
+    const records = organizationLeaveRecordsOf([WORKED], admin.members.map((one) => one.id))!;
+    const direct = collisionsOf(collisionInputOf(admin, records));
+
+    expect(collisionsFrom(admin, [WORKED], resolved)).toEqual(direct.filter((one) => one.date !== '2026-09-11'));
+  });
+
+  it("keeps the other team's conflict when the member is on two teams and one is resolved", async () => {
+    const b = teamOf(PILOT, 1);
+    const snapshot = await snapshotOf(PILOT, {
+      rosterOverrides: [calendarRosterOverrideRow('put-on', b, '2026-09-10', null, VIEWER_MEMBER)],
+    });
+    const collisions = collisionsFrom(snapshot, [WORKED], [resolutionOf(VIEWER_MEMBER, '2026-09-10', a)]);
+
+    expect(collisions.filter((one) => one.date === '2026-09-10').map((one) => one.teamId)).toEqual([b]);
+    expect(rowOfMember(tableOf(snapshot, collisions), VIEWER_MEMBER).conflictCount).toBe(3);
+  });
+
+  it("counts 1 on a member's own month with 1 of 2 own collisions resolved", () => {
+    // 10.09 Dan and 11.09 Noć: two own collisions, 10.09 resolved.
+    const two = rowOf('record-two', '2026-09-10', '2026-09-12');
+
+    expect(ownOf(member, collisionsFrom(member, [two])).conflictCount).toBe(2);
+    expect(ownOf(member, collisionsFrom(member, [two], [resolutionOf(VIEWER_MEMBER, '2026-09-10', a)])).conflictCount).toBe(1);
+  });
+
+  it("refuses a member's read, with no retry, when a resolution of anybody else comes back", () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(ready(member, [WORKED], [resolutionOf(ANA, '2026-09-11', a)])).toEqual({ kind: HOURS_CONFLICTS_UNAVAILABLE, retryable: false });
+    expect(errors).toHaveBeenCalledWith(HOURS_CONFLICTS_UNAVAILABLE, expect.any(RangeError));
+  });
+
+  it.each([
+    ['an unknown team', [resolutionOf(VIEWER_MEMBER, '2026-09-11', 'no-such-team')]],
+    ['an unknown member', [resolutionOf('stranger', '2026-09-11', a)]],
+    ['two live rows of one key', [...resolved, resolutionOf(VIEWER_MEMBER, '2026-09-11', a, 'amend_leave')]],
+  ])('is unavailable, logged, with no retry, for %s', (_name, rows) => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(ready(admin, [WORKED], rows)).toEqual({ kind: HOURS_CONFLICTS_UNAVAILABLE, retryable: false });
+    expect(errors).toHaveBeenCalledWith(HOURS_CONFLICTS_UNAVAILABLE, expect.any(RangeError));
+  });
+
+  it('is unavailable with a retry when the resolutions read failed or is paused, and loading while it is pending or read again', () => {
+    for (const answer of [
+      { data: undefined, isError: true, isPending: false, fetchStatus: 'idle' },
+      { data: [], isError: true, isPending: false, fetchStatus: 'idle' },
+      { data: [], isError: false, isPending: false, fetchStatus: 'paused' },
+    ]) {
+      expect(hoursConflictsStateOf(admin, settled([WORKED]), answer)).toEqual({ kind: HOURS_CONFLICTS_UNAVAILABLE, retryable: true });
+    }
+    for (const answer of [
+      { data: undefined, isError: false, isPending: true, fetchStatus: 'fetching' },
+      { data: undefined, isError: false, isPending: true, fetchStatus: 'idle' },
+      { data: undefined, isError: true, isPending: true, fetchStatus: 'fetching' },
+    ]) {
+      expect(hoursConflictsStateOf(admin, settled([WORKED]), answer)).toEqual({ kind: HOURS_CONFLICTS_LOADING });
+    }
   });
 });

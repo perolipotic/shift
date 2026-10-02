@@ -1082,8 +1082,14 @@ describe('the access-control layer is present, so nothing below passes vacuously
       );
       expect(
         policies.map((row) => row.policyname),
-        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
+        'stories 1.3a, 1.4a, 1.6, 1.7a, 1.7b, 2.1a, 2.2a, 2.3a, 3.5a, 3.6a, 5.1b, 5.4a and 0025 own exactly these policies; a missing one refuses silently and looks like a working refusal',
       ).toEqual([
+        // STORY 5.4a: read and insert alone, and both an active admin's only;
+        // a member reads their own live rows through `my_conflict_resolutions`.
+        // No update and no delete: the lifetime rule soft-removes through
+        // 0031's re-created leave definer functions.
+        'conflict_resolutions_insert_by_own_active_admin',
+        'conflict_resolutions_select_own_active_admin',
         // STORY 2.1a: read, and all three writes for an active admin. Bands are
         // current-state and any of them may be deleted, the last one included.
         'hour_bands_delete_by_own_active_admin',
@@ -1173,6 +1179,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
               'member_team_has_version',
               'member_team_on',
               'member_team_version_on',
+              'my_conflict_resolutions',
               'my_leave_records',
               'organization_today',
               'remove_leave_record',
@@ -1226,6 +1233,10 @@ describe('the access-control layer is present, so nothing below passes vacuously
         // TEAM POSITION: team and position at a date, for the insert policy's
         // changes-the-value rule and the roster.
         'member_team_version_on',
+        // STORY 5.4a: the one a member reads their own live conflict
+        // resolutions through, shaped `member_id, date, team_id, kind`, with
+        // no author.
+        'my_conflict_resolutions',
         // STORY 5.2c: the one a member reads their own live leave records
         // through, shaped `id, member_id, during`, with no author.
         'my_leave_records',
@@ -17680,6 +17691,640 @@ describe('a collision is derived from the live leave rows, agrees with the cost,
           `${slug}: a collision survives the removal`,
         ).toEqual([]);
         expect(removed, `${slug}: the removal left the organization's collisions changed`).toEqual(baseline);
+      });
+    },
+  );
+});
+
+/**
+ * STORY 5.4a. A resolution is stored against `collisionKeyOf`'s `(member,
+ * date, team)`, attributed, one live per conflict, by an active admin alone
+ * (0031); a member reads their own live rows through
+ * `my_conflict_resolutions()` and the table not at all. A resolution lives
+ * while a live leave record of its member covers its date: 0031's re-created
+ * `remove_leave_record()` and `amend_leave_record()` soft-remove the ones they
+ * uncover, in the same call. No database routine derives a collision, so the
+ * rows here need none. Every case runs in a rolled-back transaction.
+ */
+
+/** Two teams of the organization, in name order: a resolution's key needs a team, not a collision. */
+async function twoTeamsOf(client: Client, organization: string): Promise<[string, string]> {
+  const { rows } = await client.query<{ id: string }>(
+    'select id::text as id from teams where organization_id = $1 order by name limit 2',
+    [organization],
+  );
+  const [first, second] = rows;
+  if (first === undefined || second === undefined) throw new Error(`organization ${organization} has fewer than two teams`);
+  return [first.id, second.id];
+}
+
+/** The leave every resolution case stands on (0031's trigger): 10.–14.09.2042 for each of `members`, as the current session. */
+async function leaveOver(client: Client, organization: string, members: readonly string[]): Promise<void> {
+  for (const member of members) await insertLeave(client, { organization, member, during: '[2042-09-10,2042-09-14]' });
+}
+
+/** One resolution, written as whoever the connection currently is: the five columns a session may name. */
+async function insertResolution(
+  client: Client,
+  resolution: { organization: string; member: string; date: string; team: string; kind?: string },
+): Promise<string> {
+  const { rows } = await client.query<{ id: string }>(
+    `insert into conflict_resolutions (organization_id, member_id, date, team_id, kind)
+     values ($1, $2, $3::date, $4, $5)
+     returning id::text as id`,
+    [resolution.organization, resolution.member, resolution.date, resolution.team, resolution.kind ?? 'accept_uncovered'],
+  );
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error('the resolution insert returned no id');
+  return id;
+}
+
+/** Every resolution of the member, whole and in date order, as the owner sees it. */
+async function resolutionRowsOf(
+  client: Client,
+  memberId: string,
+): Promise<{ id: string; date: string; teamId: string; createdBy: string; removedBy: string | null; live: boolean }[]> {
+  const { rows } = await client.query<{ id: string; date: string; teamId: string; createdBy: string; removedBy: string | null; live: boolean }>(
+    `select id::text as id, date::text as date, team_id::text as "teamId", created_by::text as "createdBy",
+            removed_by::text as "removedBy", removed_at is null as live
+       from conflict_resolutions where member_id = $1 order by date, team_id, created_at`,
+    [memberId],
+  );
+  return rows;
+}
+
+/** `my_conflict_resolutions()`, as whoever the connection currently is. */
+async function myConflictResolutions(
+  client: Client,
+): Promise<{ memberId: string; date: string; teamId: string; kind: string }[]> {
+  const { rows } = await client.query<{ memberId: string; date: string; teamId: string; kind: string }>(
+    `select member_id::text as "memberId", date::text as date, team_id::text as "teamId", kind
+       from public.my_conflict_resolutions()`,
+  );
+  return rows;
+}
+
+describe('a conflict resolution is recorded by an active admin alone, one live per conflict, and read by its member alone (story 5.4a)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'records a $fixture resolution as its admin, attributed by default, with two teams of one date keyed apart',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const [team, otherTeam] = await twoTeamsOf(client, organization);
+
+        await actAs(client, owner.authUserId, organization);
+        await leaveOver(client, organization, [self.id]);
+        const id = await insertResolution(client, { organization, member: self.id, date: '2042-09-12', team });
+        // Two teams on one date are two conflicts, so two keys.
+        const second = await insertResolution(client, {
+          organization,
+          member: self.id,
+          date: '2042-09-12',
+          team: otherTeam,
+          kind: 'replace_member',
+        });
+        const { rows: read } = await client.query<{ id: string }>(
+          'select id::text as id from conflict_resolutions where member_id = $1 order by team_id',
+          [self.id],
+        );
+        await actAsOwner(client);
+
+        expect(new Set(read.map((row) => row.id)), `${slug}: the admin does not read the organization's rows`).toEqual(
+          new Set([id, second]),
+        );
+        const { rows } = await client.query<{ createdBy: string; recent: boolean; removedBy: string | null; removedAt: string | null }>(
+          `select created_by::text as "createdBy", created_at > now() - interval '1 minute' as recent,
+                  removed_by::text as "removedBy", removed_at::text as "removedAt"
+             from conflict_resolutions where id = $1`,
+          [id],
+        );
+        expect(rows, `${slug}: the resolution is not attributed to its caller`).toEqual([
+          { createdBy: owner.authUserId, recent: true, removedBy: null, removedAt: null },
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a second live $fixture resolution of one key (23505), an unknown kind (23514), and admits the key again once the first is removed',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const [team] = await twoTeamsOf(client, organization);
+        const key = { organization, member: self.id, date: '2042-09-12', team };
+
+        await actAs(client, owner.authUserId, organization);
+        await leaveOver(client, organization, [self.id]);
+        await insertResolution(client, key);
+        const codes = {
+          duplicate: (await refusedThenContinue(client, () => insertResolution(client, { ...key, kind: 'amend_leave' }))).code,
+          'unknown kind': (
+            await refusedThenContinue(client, () => insertResolution(client, { ...key, date: '2042-09-13', kind: 'uncovered' }))
+          ).code,
+        };
+        await actAsOwner(client);
+        expect(codes, slug).toEqual({ duplicate: '23505', 'unknown kind': '23514' });
+
+        // A removed row leaves the key.
+        await client.query(
+          'update conflict_resolutions set removed_by = $2, removed_at = now() where member_id = $1',
+          [self.id, owner.authUserId],
+        );
+        await actAs(client, owner.authUserId, organization);
+        await insertResolution(client, key);
+        await actAsOwner(client);
+        expect((await resolutionRowsOf(client, self.id)).map((row) => row.live), slug).toEqual([false, true]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'refuses a $fixture member, a forged author, another organization and an update or a delete (42501), another tenant\'s team (23503), and another tenant\'s member as off leave (P0002)',
+    async ({ slug, admin, member, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const [team] = await twoTeamsOf(client, organization);
+        const foreignFixture = FIXTURES.find((entry) => entry.slug === otherSlug);
+        const foreignOwner = await memberByUsername(client, otherSlug, foreignFixture?.admin ?? '');
+        const foreignMember = await memberByUsername(client, otherSlug, foreignFixture?.member ?? '');
+        const [foreignTeam] = await twoTeamsOf(client, foreignOwner.organizationId);
+        const key = { organization, member: self.id, date: '2042-09-12', team };
+
+        await actAs(client, owner.authUserId, organization);
+        await leaveOver(client, organization, [self.id]);
+        const id = await insertResolution(client, key);
+        const codes: Record<string, string> = {};
+        codes['forged author'] = (
+          await refusedThenContinue(client, () =>
+            client.query(
+              `insert into conflict_resolutions (organization_id, member_id, date, team_id, kind, created_by)
+               values ($1, $2, '2042-09-13', $3, 'accept_uncovered', $4)`,
+              [organization, self.id, team, self.authUserId],
+            ),
+          )
+        ).code;
+        codes['another organization'] = (
+          await refusedThenContinue(client, () =>
+            insertResolution(client, {
+              organization: foreignOwner.organizationId,
+              member: foreignMember.id,
+              date: '2042-09-12',
+              team: foreignTeam,
+            }),
+          )
+        ).code;
+        codes['another tenant\'s member'] = (
+          await refusedThenContinue(client, () => insertResolution(client, { ...key, member: foreignMember.id }))
+        ).code;
+        codes['another tenant\'s team'] = (
+          await refusedThenContinue(client, () => insertResolution(client, { ...key, team: foreignTeam }))
+        ).code;
+        codes['update'] = (
+          await refusedThenContinue(client, () =>
+            client.query('update conflict_resolutions set removed_by = $2, removed_at = now() where id = $1', [id, owner.authUserId]),
+          )
+        ).code;
+        codes['delete'] = (await refusedThenContinue(client, () => client.query('delete from conflict_resolutions'))).code;
+
+        await actAs(client, owner.authUserId, foreignOwner.organizationId);
+        codes['forged claim'] = (
+          await refusedThenContinue(client, () =>
+            insertResolution(client, {
+              organization: foreignOwner.organizationId,
+              member: foreignMember.id,
+              date: '2042-09-12',
+              team: foreignTeam,
+            }),
+          )
+        ).code;
+        const { rows: forgedRead } = await client.query('select 1 from conflict_resolutions');
+
+        await actAs(client, self.authUserId, organization);
+        codes['member'] = (await refusedThenContinue(client, () => insertResolution(client, { ...key, date: '2042-09-13' }))).code;
+        const { rows: memberRead } = await client.query('select 1 from conflict_resolutions');
+        await actAsOwner(client);
+
+        expect(codes, slug).toEqual({
+          'forged author': '42501',
+          'another organization': '42501',
+          // 0031's trigger runs before the key: no live leave of that member in this organization.
+          'another tenant\'s member': 'P0002',
+          'another tenant\'s team': '23503',
+          update: '42501',
+          delete: '42501',
+          'forged claim': '42501',
+          member: '42501',
+        });
+        expect(forgedRead, `${slug}: a forged claim read ${otherSlug}'s resolutions or its own`).toEqual([]);
+        expect(memberRead, `${slug}: a member-role session read the table, authors and all`).toEqual([]);
+        expect(await resolutionRowsOf(client, self.id), `${slug}: a refused write changed a row`).toEqual([
+          { id, date: '2042-09-12', teamId: team, createdBy: owner.authUserId, removedBy: null, live: true },
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('my_conflict_resolutions returns exactly member_id, date, team_id and kind', async () => {
+    const client = await connect();
+    try {
+      const { fields } = await client.query('select * from public.my_conflict_resolutions() limit 0');
+      expect(fields.map((field) => field.name)).toEqual(['member_id', 'date', 'team_id', 'kind']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "gives the $fixture member their own live resolutions, never a removed one or the bystander's, and nothing with no claim or inactive",
+    async ({ slug, admin, member, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const other = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+        const [team, otherTeam] = await twoTeamsOf(client, organization);
+
+        await actAs(client, owner.authUserId, organization);
+        await leaveOver(client, organization, [self.id, other.id]);
+        await insertResolution(client, { organization, member: self.id, date: '2042-09-14', team: otherTeam, kind: 'amend_leave' });
+        await insertResolution(client, { organization, member: self.id, date: '2042-09-12', team });
+        await insertResolution(client, { organization, member: self.id, date: '2042-09-13', team });
+        await insertResolution(client, { organization, member: other.id, date: '2042-09-12', team });
+        await actAsOwner(client);
+        await client.query(
+          "update conflict_resolutions set removed_by = $2, removed_at = now() where member_id = $1 and date = '2042-09-13'",
+          [self.id, owner.authUserId],
+        );
+
+        await actAs(client, self.authUserId, organization);
+        const asMember = await myConflictResolutions(client);
+        await actAs(client, other.authUserId, organization);
+        const asBystander = await myConflictResolutions(client);
+        await actAs(client, self.authUserId, null);
+        const noClaim = await myConflictResolutions(client);
+        await actAsOwner(client);
+        await client.query("update auth.users set banned_until = now() + interval '1 day' where id = $1", [self.authUserId]);
+        await actAs(client, self.authUserId, organization);
+        const inactive = await myConflictResolutions(client);
+        await actAsOwner(client);
+
+        expect(asMember, `${slug}: the member's own live resolutions, soonest first`).toEqual([
+          { memberId: self.id, date: '2042-09-12', teamId: team, kind: 'accept_uncovered' },
+          { memberId: self.id, date: '2042-09-14', teamId: otherTeam, kind: 'amend_leave' },
+        ]);
+        expect(asBystander.map((row) => row.memberId), `${slug}: the bystander read another member's resolution`).toEqual([other.id]);
+        expect(noClaim, `${slug}: a session with no organization claim read a resolution`).toEqual([]);
+        expect(inactive, `${slug}: an inactive member read a resolution`).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'never gives a $fixture member a $otherFixture resolution, under its own claim or a forged one',
+    async ({ slug, member, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const self = await memberByUsername(client, slug, member);
+        const foreignFixture = FIXTURES.find((entry) => entry.slug === otherSlug);
+        const foreignOwner = await memberByUsername(client, otherSlug, foreignFixture?.admin ?? '');
+        const foreignMember = await memberByUsername(client, otherSlug, foreignFixture?.member ?? '');
+        const [foreignTeam] = await twoTeamsOf(client, foreignOwner.organizationId);
+        await actAs(client, foreignOwner.authUserId, foreignOwner.organizationId);
+        await leaveOver(client, foreignOwner.organizationId, [foreignMember.id]);
+        await insertResolution(client, {
+          organization: foreignOwner.organizationId,
+          member: foreignMember.id,
+          date: '2042-09-12',
+          team: foreignTeam,
+        });
+
+        await actAs(client, self.authUserId, self.organizationId);
+        const ownClaim = await myConflictResolutions(client);
+        await actAs(client, self.authUserId, foreignOwner.organizationId);
+        const forgedClaim = await myConflictResolutions(client);
+        await actAsOwner(client);
+
+        expect(ownClaim, `${slug} read a ${otherSlug} resolution`).toEqual([]);
+        expect(forgedClaim, `${slug} read a ${otherSlug} resolution under a forged claim`).toEqual([]);
+      });
+    },
+  );
+
+  it.skipIf(noApi)('refuses an anonymous caller of my_conflict_resolutions and of the table', async () => {
+    const response = await rest('rpc/my_conflict_resolutions', { method: 'POST', body: {} });
+    expect(response.status, 'an anonymous caller reached my_conflict_resolutions').toBe(401);
+    const refusal = await restRefusal(response);
+    expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
+    expect(refusal.message).toBe('permission denied for function my_conflict_resolutions');
+    const table = await rest('conflict_resolutions?select=id');
+    expect(table.status, 'an anonymous caller read conflict_resolutions').toBe(401);
+    expect((await restRefusal(table)).code).toBe('42501');
+  });
+});
+
+describe('a resolution lives while a live leave record of its member covers its date (story 5.4a, human 2026-10-02)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'a $fixture removal soft-removes the resolutions dated in the removed range, attributed to the admin, and nothing else; new leave over the date finds it unresolved',
+    async ({ slug, admin, member, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const other = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+        const [team, otherTeam] = await twoTeamsOf(client, organization);
+
+        await actAs(client, owner.authUserId, organization);
+        const leave = await insertLeave(client, { organization, member: self.id, during: '[2042-09-10,2042-09-14]' });
+        await insertLeave(client, { organization, member: self.id, during: '[2042-09-20,2042-09-21]' });
+        await insertLeave(client, { organization, member: other.id, during: '[2042-09-10,2042-09-14]' });
+        await insertResolution(client, { organization, member: self.id, date: '2042-09-10', team });
+        await insertResolution(client, { organization, member: self.id, date: '2042-09-12', team });
+        await insertResolution(client, { organization, member: self.id, date: '2042-09-12', team: otherTeam });
+        await insertResolution(client, { organization, member: self.id, date: '2042-09-20', team });
+        await insertResolution(client, { organization, member: other.id, date: '2042-09-12', team });
+
+        await removeLeaveRecord(client, leave);
+        await actAsOwner(client);
+
+        const rows = await resolutionRowsOf(client, self.id);
+        const byDateThenTeam = (left: { date: string; teamId: string }, right: { date: string; teamId: string }): number =>
+          left.date !== right.date ? (left.date < right.date ? -1 : 1) : left.teamId < right.teamId ? -1 : left.teamId > right.teamId ? 1 : 0;
+        expect(
+          rows.map(({ date, teamId, removedBy, live }) => ({ date, teamId, removedBy, live })),
+          `${slug}: the removal did not end exactly the resolutions in its range, as the admin`,
+        ).toEqual(
+          [
+            { date: '2042-09-10', teamId: team, removedBy: owner.authUserId, live: false },
+            { date: '2042-09-12', teamId: team, removedBy: owner.authUserId, live: false },
+            { date: '2042-09-12', teamId: otherTeam, removedBy: owner.authUserId, live: false },
+            { date: '2042-09-20', teamId: team, removedBy: null, live: true },
+          ].sort(byDateThenTeam),
+        );
+        expect(
+          (await resolutionRowsOf(client, other.id)).map((row) => row.live),
+          `${slug}: another member's resolution was ended`,
+        ).toEqual([true]);
+
+        // REMOVE THEN RE-ADD: new leave over 12.09 finds no live resolution there.
+        await actAs(client, owner.authUserId, organization);
+        await insertLeave(client, { organization, member: self.id, during: '[2042-09-11,2042-09-13]' });
+        await actAs(client, self.authUserId, organization);
+        const asMember = await myConflictResolutions(client);
+        await actAsOwner(client);
+        expect(asMember.map((row) => row.date), `${slug}: a resolution came back with new leave`).toEqual(['2042-09-20']);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'a $fixture amend ends only the resolutions dated in the old range and not the new one; one whose date stays covered survives unchanged',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const [team] = await twoTeamsOf(client, organization);
+
+        await actAs(client, owner.authUserId, organization);
+        const leave = await insertLeave(client, { organization, member: self.id, during: '[2042-09-10,2042-09-14]' });
+        await insertResolution(client, { organization, member: self.id, date: '2042-09-11', team });
+        await insertResolution(client, { organization, member: self.id, date: '2042-09-12', team });
+        await insertResolution(client, { organization, member: self.id, date: '2042-09-14', team });
+        await actAsOwner(client);
+        const before = await resolutionRowsOf(client, self.id);
+
+        // AMEND KEEP: 10–14.09 to 12–16.09. 11.09 leaves the cover; 12.09 and 14.09 stay.
+        await actAs(client, owner.authUserId, organization);
+        const kept = await amendLeaveRecord(client, leave, '2042-09-12', '2042-09-16');
+        await actAsOwner(client);
+        const afterKeep = await resolutionRowsOf(client, self.id);
+        expect(afterKeep.find((row) => row.date === '2042-09-11'), `${slug}: 11.09 left the cover and kept its resolution`).toMatchObject({
+          removedBy: owner.authUserId,
+          live: false,
+        });
+        expect(
+          afterKeep.filter((row) => row.date !== '2042-09-11'),
+          `${slug}: a resolution whose date stays covered changed`,
+        ).toEqual(before.filter((row) => row.date !== '2042-09-11'));
+
+        // AMEND SHRINK: 12–16.09 to 15–16.09. 12.09 and 14.09 leave the cover.
+        await actAs(client, owner.authUserId, organization);
+        await amendLeaveRecord(client, kept, '2042-09-15', '2042-09-16');
+        await actAsOwner(client);
+        expect(
+          (await resolutionRowsOf(client, self.id)).map(({ date, removedBy, live }) => ({ date, removedBy, live })),
+          `${slug}: the shrink did not end the resolutions it uncovered`,
+        ).toEqual([
+          { date: '2042-09-11', removedBy: owner.authUserId, live: false },
+          { date: '2042-09-12', removedBy: owner.authUserId, live: false },
+          { date: '2042-09-14', removedBy: owner.authUserId, live: false },
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'a refused $fixture amend or removal leaves every resolution live and unchanged',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const [team] = await twoTeamsOf(client, organization);
+
+        await actAs(client, owner.authUserId, organization);
+        const leave = await insertLeave(client, { organization, member: self.id, during: '[2042-09-10,2042-09-14]' });
+        await insertLeave(client, { organization, member: self.id, during: '[2042-09-18,2042-09-25]' });
+        await insertResolution(client, { organization, member: self.id, date: '2042-09-11', team });
+        await actAsOwner(client);
+        const before = await resolutionRowsOf(client, self.id);
+
+        await actAs(client, owner.authUserId, organization);
+        const overlap = (await refusedThenContinue(client, () => amendLeaveRecord(client, leave, '2042-09-13', '2042-09-20'))).code;
+        await actAs(client, self.authUserId, organization);
+        const asMember = (await refusedThenContinue(client, () => removeLeaveRecord(client, leave))).code;
+        await actAsOwner(client);
+
+        expect({ overlap, asMember }, slug).toEqual({ overlap: '23P01', asMember: '42501' });
+        expect(await resolutionRowsOf(client, self.id), `${slug}: a refused leave write ended a resolution`).toEqual(before);
+      });
+    },
+  );
+});
+
+describe('a resolution is born on live leave, and races neither a removal nor an amend (story 5.4a, 0031 trigger)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture resolution with no leave or only removed leave (P0002), and admits one on every date of a live range alone',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const [team] = await twoTeamsOf(client, organization);
+        const on = (date: string) => ({ organization, member: self.id, date, team });
+
+        await actAs(client, owner.authUserId, organization);
+        const none = await refusedThenContinue(client, () => insertResolution(client, on('2042-09-12')));
+        const removed = await insertLeave(client, { organization, member: self.id, during: '[2042-09-10,2042-09-14]' });
+        await removeLeaveRecord(client, removed);
+        const onlyRemoved = await refusedThenContinue(client, () => insertResolution(client, on('2042-09-12')));
+        await insertLeave(client, { organization, member: self.id, during: '[2042-09-20,2042-09-22]' });
+        const before = await refusedThenContinue(client, () => insertResolution(client, on('2042-09-19')));
+        const after = await refusedThenContinue(client, () => insertResolution(client, on('2042-09-23')));
+        for (const date of ['2042-09-20', '2042-09-21', '2042-09-22']) await insertResolution(client, on(date));
+        await actAsOwner(client);
+
+        for (const refusal of [none, onlyRemoved, before, after]) {
+          expect(refusal, slug).toEqual({ code: 'P0002', message: 'CONFLICT_RESOLUTION_NOT_ON_LEAVE' });
+        }
+        expect((await resolutionRowsOf(client, self.id)).map((row) => row.date), slug).toEqual([
+          '2042-09-20',
+          '2042-09-21',
+          '2042-09-22',
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'never tells a $fixture member about anyone\'s leave: their insert is the policy\'s 42501, with leave or without',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const [team] = await twoTeamsOf(client, organization);
+
+        await actAs(client, owner.authUserId, organization);
+        await insertLeave(client, { organization, member: self.id, during: '[2042-09-10,2042-09-14]' });
+        await actAs(client, self.authUserId, organization);
+        const onLeave = await refusedThenContinue(client, () =>
+          insertResolution(client, { organization, member: self.id, date: '2042-09-12', team }),
+        );
+        const offLeave = await refusedThenContinue(client, () =>
+          insertResolution(client, { organization, member: self.id, date: '2042-09-20', team }),
+        );
+        await actAsOwner(client);
+
+        expect([onLeave.code, offLeave.code], slug).toEqual(['42501', '42501']);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'serialises a $fixture insert against a removal of the leave it stands on, in either order',
+    async ({ slug, admin, member }) => {
+      const setup = await connect();
+      const first = await connect();
+      const second = await connect();
+      const year2043 = '[2043-01-01,2044-01-01)';
+      let memberId: string | null = null;
+      try {
+        const owner = await memberByUsername(setup, slug, admin);
+        const self = await memberByUsername(setup, slug, member);
+        memberId = self.id;
+        const organization = owner.organizationId;
+        const [team] = await twoTeamsOf(setup, organization);
+        const clear = async (): Promise<void> => {
+          await setup.query("delete from conflict_resolutions where member_id = $1 and date >= '2043-01-01' and date < '2044-01-01'", [
+            self.id,
+          ]);
+          await setup.query('delete from leave_records where member_id = $1 and during && $2::daterange', [self.id, year2043]);
+        };
+        await clear();
+        const key = { organization, member: self.id, date: '2043-09-12', team };
+
+        // REMOVAL FIRST: the insert waits on the leave row, then finds it removed.
+        const leave = await insertLeave(setup, { organization, member: self.id, during: '[2043-09-10,2043-09-14]', by: owner.authUserId });
+        await first.query('begin');
+        await actAs(first, owner.authUserId, organization);
+        await removeLeaveRecord(first, leave);
+        await second.query('begin');
+        await actAs(second, owner.authUserId, organization);
+        const waiting = refused(() => insertResolution(second, key));
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        await first.query('commit');
+        expect(await waiting, `${slug}: an insert after a committed removal stood`).toEqual({
+          code: 'P0002',
+          message: 'CONFLICT_RESOLUTION_NOT_ON_LEAVE',
+        });
+        await second.query('rollback');
+
+        // INSERT FIRST: the removal waits on the share lock, then ends the new resolution with the rest.
+        const again = await insertLeave(setup, { organization, member: self.id, during: '[2043-09-10,2043-09-14]', by: owner.authUserId });
+        await second.query('begin');
+        await actAs(second, owner.authUserId, organization);
+        const id = await insertResolution(second, key);
+        await first.query('begin');
+        await actAs(first, owner.authUserId, organization);
+        const removal = removeLeaveRecord(first, again);
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        await second.query('commit');
+        await removal;
+        await first.query('commit');
+        const { rows } = await setup.query<{ live: boolean; removedBy: string | null }>(
+          'select removed_at is null as live, removed_by::text as "removedBy" from conflict_resolutions where id = $1',
+          [id],
+        );
+        expect(rows, `${slug}: a resolution outlived the leave it was recorded on`).toEqual([
+          { live: false, removedBy: owner.authUserId },
+        ]);
+        await clear();
+      } finally {
+        await first.query('rollback').catch(() => undefined);
+        await second.query('rollback').catch(() => undefined);
+        if (memberId !== null) {
+          await setup
+            .query("delete from conflict_resolutions where member_id = $1 and date >= '2043-01-01' and date < '2044-01-01'", [memberId])
+            .catch(() => undefined);
+          await setup
+            .query('delete from leave_records where member_id = $1 and during && $2::daterange', [memberId, year2043])
+            .catch(() => undefined);
+        }
+        await Promise.all([setup.end(), first.end(), second.end()]);
+      }
+    },
+    20_000,
+  );
+});
+
+describe('an admin who is no longer an active admin reads no resolution (story 5.4a)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'shows a $fixture admin the rows, then none once demoted, and none once inactive',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const [team] = await twoTeamsOf(client, organization);
+        const visible = async (): Promise<number> => {
+          await actAs(client, owner.authUserId, organization);
+          const { rows } = await client.query<{ count: number }>('select count(*)::int as count from conflict_resolutions');
+          await actAsOwner(client);
+
+          return rows[0]?.count ?? -1;
+        };
+
+        await actAs(client, owner.authUserId, organization);
+        await leaveOver(client, organization, [self.id]);
+        await insertResolution(client, { organization, member: self.id, date: '2042-09-12', team });
+        await actAsOwner(client);
+        expect(await visible(), `${slug}: the active admin does not read the row`).toBeGreaterThan(0);
+
+        await client.query('savepoint before_demotion');
+        await client.query(`update members set role = 'member_role' where id = $1`, [owner.id]);
+        expect(await visible(), `${slug}: a demoted admin read the resolutions`).toBe(0);
+        await client.query('rollback to savepoint before_demotion');
+        expect(await visible(), `${slug}: the admin lost the rows with the demotion rolled back`).toBeGreaterThan(0);
+
+        // Banned: `current_member_access()` reports the account inactive.
+        await client.query("update auth.users set banned_until = now() + interval '1 day' where id = $1", [owner.authUserId]);
+        expect(await visible(), `${slug}: an inactive admin read the resolutions`).toBe(0);
       });
     },
   );

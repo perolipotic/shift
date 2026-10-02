@@ -1,0 +1,269 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+import {
+  CONFLICT_RESOLUTIONS_COLUMNS,
+  CONFLICT_RESOLUTIONS_PAGE_ROWS,
+  CONFLICT_RESOLUTIONS_TABLE,
+  CONFLICT_RESOLUTIONS_UNAVAILABLE,
+  MY_CONFLICT_RESOLUTIONS_FUNCTION,
+  MY_CONFLICT_RESOLUTIONS_KEY,
+  ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+  conflictResolutionsAnswerOf,
+  conflictResolutionsOf,
+  myConflictResolutionsQueryOptions,
+  organizationConflictResolutionsQueryOptions,
+  readMyConflictResolutionRows,
+  readOrganizationConflictResolutionRows,
+  type ConflictResolutionRowsAnswer,
+  type ConflictResolutionsAnswer,
+  type MyConflictResolutionsRpc,
+  type OrganizationConflictResolutionsAnswer,
+  type OrganizationConflictResolutionsQuery,
+  type OrganizationConflictResolutionsTable,
+} from '@/features/conflicts/services/resolutions';
+
+/**
+ * Story 5.4a's reads, executed (AD-15): the organization's live resolutions
+ * read in pages with their exact count, the viewer's own through
+ * `my_conflict_resolutions()`, each under its own key, and every row that
+ * cannot be trusted refusing the whole answer.
+ */
+
+const MEMBER = '00000000-0000-4000-8000-0000000000b2';
+const OTHER = '00000000-0000-4000-8000-0000000000b3';
+const TEAM = '00000000-0000-4000-8000-0000000000d1';
+const TEAM_B = '00000000-0000-4000-8000-0000000000d2';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+const row = (memberId: string, date: string, teamId: string, kind: unknown = 'accept_uncovered') => ({
+  member_id: memberId,
+  date,
+  team_id: teamId,
+  kind,
+});
+const A = row(MEMBER, '2026-09-12', TEAM);
+const B = row(OTHER, '2026-09-10', TEAM_B, 'replace_member');
+
+/** The table, answering each page in turn from `pages`, recording every call. */
+function tableAnswering(
+  pages: readonly (OrganizationConflictResolutionsAnswer | Promise<never>)[],
+): OrganizationConflictResolutionsTable & { calls: unknown[] } {
+  const calls: unknown[] = [];
+  let next = 0;
+
+  return {
+    calls,
+    select(columns, options) {
+      calls.push(['select', columns, options]);
+
+      const query: OrganizationConflictResolutionsQuery = {
+        is(column, value) {
+          calls.push(['is', column, value]);
+
+          return query;
+        },
+        order(column, options) {
+          calls.push(['order', column, options]);
+
+          return query;
+        },
+        range(from, to) {
+          calls.push(['range', from, to]);
+
+          const page = pages[next];
+          next += 1;
+
+          if (page === undefined) throw new Error('no page left');
+
+          return page instanceof Promise ? page : Promise.resolve(page);
+        },
+      };
+
+      return query;
+    },
+  };
+}
+
+function rpcAnswering(answer: ConflictResolutionsAnswer | Promise<never>): MyConflictResolutionsRpc & { calls: string[] } {
+  const calls: string[] = [];
+
+  return {
+    calls,
+    rpc(fn) {
+      calls.push(fn);
+
+      return answer instanceof Promise ? answer : Promise.resolve(answer);
+    },
+  };
+}
+
+describe("the organization's read", () => {
+  const LAST = CONFLICT_RESOLUTIONS_PAGE_ROWS - 1;
+  const many = (count: number) => Array.from({ length: count }, (_, index) => row(MEMBER, '2026-09-12', `t${String(index)}`));
+
+  it('asks for every live resolution by id, a page at a time, with its exact count, and no author column', async () => {
+    const table = tableAnswering([{ data: [A, B], error: null, count: 2 }]);
+
+    expect(await readOrganizationConflictResolutionRows(table)).toEqual({ ok: true, rows: [A, B] });
+    expect(table.calls).toEqual([
+      ['select', CONFLICT_RESOLUTIONS_COLUMNS, { count: 'exact' }],
+      ['is', 'removed_at', null],
+      ['order', 'id', { ascending: true }],
+      ['range', 0, LAST],
+    ]);
+    expect(CONFLICT_RESOLUTIONS_COLUMNS).toBe('member_id,date,team_id,kind');
+    expect(CONFLICT_RESOLUTIONS_COLUMNS).not.toMatch(/created_by|removed_by/);
+    expect(CONFLICT_RESOLUTIONS_TABLE).toBe('conflict_resolutions');
+  });
+
+  it('pages the server cap, so a full page is followed', async () => {
+    const first = many(CONFLICT_RESOLUTIONS_PAGE_ROWS);
+    const total = CONFLICT_RESOLUTIONS_PAGE_ROWS + 1;
+    const table = tableAnswering([
+      { data: first, error: null, count: total },
+      { data: [A], error: null, count: total },
+    ]);
+
+    expect(await readOrganizationConflictResolutionRows(table)).toEqual({ ok: true, rows: [...first, A] });
+  });
+
+  it.each([
+    ['no count', [{ data: [A], error: null }]],
+    ['a count above the rows', [{ data: [A], error: null, count: 2 }]],
+    ['an error', [{ data: null, error: { code: '42501' } }]],
+    ['no list', [{ data: null, error: null }]],
+    [
+      'a count that drops between pages',
+      [
+        { data: many(CONFLICT_RESOLUTIONS_PAGE_ROWS), error: null, count: CONFLICT_RESOLUTIONS_PAGE_ROWS + 1 },
+        { data: [], error: null, count: CONFLICT_RESOLUTIONS_PAGE_ROWS },
+      ],
+    ],
+    [
+      'a count that grows between pages',
+      [
+        { data: many(CONFLICT_RESOLUTIONS_PAGE_ROWS), error: null, count: CONFLICT_RESOLUTIONS_PAGE_ROWS + 1 },
+        { data: [A], error: null, count: CONFLICT_RESOLUTIONS_PAGE_ROWS + 2 },
+      ],
+    ],
+    [
+      'a later page that fails',
+      [
+        { data: many(CONFLICT_RESOLUTIONS_PAGE_ROWS), error: null, count: CONFLICT_RESOLUTIONS_PAGE_ROWS + 1 },
+        { data: null, error: { code: '57014' }, count: null },
+      ],
+    ],
+    ['a full page holding more rows than the count', [{ data: many(CONFLICT_RESOLUTIONS_PAGE_ROWS), error: null, count: 3 }]],
+  ] as const)('is unavailable, logged, never a partial list, on %s', async (_name, pages) => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(await readOrganizationConflictResolutionRows(tableAnswering(pages))).toEqual({
+      ok: false,
+      code: CONFLICT_RESOLUTIONS_UNAVAILABLE,
+    });
+    expect(logged).toHaveBeenCalled();
+  });
+
+  it('is unavailable, logged, when the call rejects', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(await readOrganizationConflictResolutionRows(tableAnswering([Promise.reject(new Error('offline'))]))).toEqual({
+      ok: false,
+      code: CONFLICT_RESOLUTIONS_UNAVAILABLE,
+    });
+    expect(logged).toHaveBeenCalled();
+  });
+
+  it('reads under its own key, and throws on a failure so the query settles failed', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const ok = organizationConflictResolutionsQueryOptions(() => tableAnswering([{ data: [A], error: null, count: 1 }]));
+    const failed = organizationConflictResolutionsQueryOptions(() => tableAnswering([{ data: null, error: { code: 'x' } }]));
+    const run = (options: typeof ok) => (options.queryFn as () => Promise<unknown>)();
+
+    expect(ok.queryKey).toEqual(ORGANIZATION_CONFLICT_RESOLUTIONS_KEY);
+    expect(ORGANIZATION_CONFLICT_RESOLUTIONS_KEY).toEqual(['organization-conflict-resolutions']);
+    await expect(run(ok)).resolves.toEqual([A]);
+    await expect(run(failed)).rejects.toThrow(CONFLICT_RESOLUTIONS_UNAVAILABLE);
+  });
+});
+
+describe("the viewer's own read", () => {
+  it('calls my_conflict_resolutions with no argument and answers the rows unparsed', async () => {
+    const client = rpcAnswering({ data: [A], error: null });
+
+    expect(await readMyConflictResolutionRows(client)).toEqual({ ok: true, rows: [A] });
+    expect(client.calls).toEqual([MY_CONFLICT_RESOLUTIONS_FUNCTION]);
+    expect(MY_CONFLICT_RESOLUTIONS_FUNCTION).toBe('my_conflict_resolutions');
+  });
+
+  it.each([
+    ['an error', { data: null, error: { code: '42501' } }],
+    ['no array', { data: null, error: null }],
+  ] as const)('is unavailable on %s', async (_name, answer) => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(await readMyConflictResolutionRows(rpcAnswering(answer))).toEqual({ ok: false, code: CONFLICT_RESOLUTIONS_UNAVAILABLE });
+  });
+
+  it('is unavailable when the call rejects', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(await readMyConflictResolutionRows(rpcAnswering(Promise.reject(new Error('offline'))))).toEqual({
+      ok: false,
+      code: CONFLICT_RESOLUTIONS_UNAVAILABLE,
+    });
+  });
+
+  it('reads under its own key, and throws on a failure so the query settles failed', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const ok = myConflictResolutionsQueryOptions(() => rpcAnswering({ data: [A], error: null }));
+    const failed = myConflictResolutionsQueryOptions(() => rpcAnswering({ data: null, error: { code: 'x' } }));
+    const run = (options: typeof ok) => (options.queryFn as () => Promise<unknown>)();
+
+    expect(ok.queryKey).toEqual(MY_CONFLICT_RESOLUTIONS_KEY);
+    expect(MY_CONFLICT_RESOLUTIONS_KEY).toEqual(['my-conflict-resolutions']);
+    await expect(run(ok)).resolves.toEqual([A]);
+    await expect(run(failed)).rejects.toThrow(CONFLICT_RESOLUTIONS_UNAVAILABLE);
+  });
+});
+
+describe('the parser', () => {
+  it('parses every row into its key and kind, in the order given', () => {
+    expect(conflictResolutionsOf([A, B], [MEMBER, OTHER], [TEAM, TEAM_B])).toEqual([
+      { memberId: MEMBER, date: '2026-09-12', teamId: TEAM, kind: 'accept_uncovered' },
+      { memberId: OTHER, date: '2026-09-10', teamId: TEAM_B, kind: 'replace_member' },
+    ]);
+    expect(conflictResolutionsOf([], [MEMBER], [TEAM])).toEqual([]);
+  });
+
+  it('keeps two teams of one member and date apart', () => {
+    expect(conflictResolutionsOf([A, row(MEMBER, '2026-09-12', TEAM_B, 'amend_leave')], [MEMBER], [TEAM, TEAM_B])).toHaveLength(2);
+  });
+
+  it.each([
+    ['an unknown member', [A, row('stranger', '2026-09-12', TEAM)]],
+    ['an unknown team', [A, row(MEMBER, '2026-09-13', 'no-such-team')]],
+    ['a date that is no calendar date', [row(MEMBER, '2026-02-30', TEAM)]],
+    ['a date that is not a date', [row(MEMBER, '12.09.2026', TEAM)]],
+    ['an unknown kind', [row(MEMBER, '2026-09-12', TEAM, 'uncovered')]],
+    ['no kind', [row(MEMBER, '2026-09-12', TEAM, null)]],
+    ['two live rows of one key', [A, row(MEMBER, '2026-09-12', TEAM, 'amend_leave')]],
+    ['a row that is not a record', [A, 'row']],
+    ['a list for a row', [[A]]],
+  ])('refuses the whole answer for %s', (_name, rows) => {
+    expect(conflictResolutionsOf(rows, [MEMBER, OTHER], [TEAM, TEAM_B])).toBeNull();
+  });
+});
+
+describe('the role-gated answer', () => {
+  it("is the organization's for a viewer who reads the organization, the viewer's own otherwise", () => {
+    const organization: ConflictResolutionRowsAnswer = { isPending: false, isError: false, fetchStatus: 'idle', data: [A] };
+    const own: ConflictResolutionRowsAnswer = { isPending: true, isError: false, fetchStatus: 'idle', data: undefined };
+
+    expect(conflictResolutionsAnswerOf(true, organization, own)).toBe(organization);
+    expect(conflictResolutionsAnswerOf(false, organization, own)).toBe(own);
+  });
+});

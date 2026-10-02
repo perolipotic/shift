@@ -125,9 +125,13 @@ export const FEATURE_PUBLIC = {
   ],
   // Story 5.3c: the calendar's marks derive every collision through
   // *Raspored*'s own recipe (`collisionInputOf`), never a second one. Story
-  // 5.3d: so does *Sati*'s conflict count.
+  // 5.3d: so does *Sati*'s conflict count. Story 5.4a: the calendar's marks
+  // and *Sati*'s count read the live resolutions through `resolutions`, and
+  // the teams feature's dependents name both its keys, so a leave write
+  // re-reads them.
   conflicts: [
     'services/conflicts-queue', // calendar, hours
+    'services/resolutions', // calendar, hours, teams
   ],
   'hour-bands': [
     'services/list', // calendar, hours, shift-types, pages

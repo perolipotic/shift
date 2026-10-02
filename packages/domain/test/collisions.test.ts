@@ -9,9 +9,11 @@ import {
   leaveCostOf,
   MAX_LEAVE_RANGE_DAYS,
   scheduleOfMonth,
+  unresolvedCollisionsOf,
   type Collision,
   type CollisionInput,
   type CollisionLeaveRecord,
+  type CollisionResolution,
   type MemberScheduleInput,
   type RosterMember,
   type RosterOverride,
@@ -556,6 +558,69 @@ describe('collisionKeyOf (AD-4)', () => {
     expect(collisionKeyOf(one)).not.toBe(collisionKeyOf({ ...one, teamId: 'u' }));
     expect(collisionKeyOf(one)).not.toBe(collisionKeyOf({ ...one, memberId: 'n' }));
     expect(collisionKeyOf(one)).not.toBe(collisionKeyOf({ ...one, date: '2026-09-11' }));
+  });
+});
+
+describe.each(FIXTURES)('unresolvedCollisionsOf under $fixture (story 5.4a)', (fx) => {
+  const team = teamOnStep(fx, '2026-09-10', 0);
+  const memberId = memberOf(fx, team);
+  const records = [{ id: 'leave-1', memberId, from: '2026-09-10', to: '2026-09-14' }];
+  const collisions = collisionsOf(inputOf(fx, records));
+  const keyOf = (collision: Collision): CollisionResolution => ({ memberId: collision.memberId, date: collision.date, teamId: collision.teamId });
+
+  it('derives 3 collisions to filter', () => {
+    expect(collisions).toHaveLength(3);
+  });
+
+  it('keeps every collision, as given, when nothing is resolved', () => {
+    expect(unresolvedCollisionsOf(collisions, [])).toEqual(collisions);
+  });
+
+  it('drops exactly the resolved one and keeps the order of the rest', () => {
+    const [first, second, third] = collisions as [Collision, Collision, Collision];
+    expect(unresolvedCollisionsOf(collisions, [keyOf(second)])).toEqual([first, third]);
+    expect(unresolvedCollisionsOf(collisions, [keyOf(third), keyOf(first)])).toEqual([second]);
+    expect(unresolvedCollisionsOf(collisions, collisions.map(keyOf))).toEqual([]);
+  });
+
+  it('matches whatever shift type or leave record the collision carries', () => {
+    const [first] = collisions as [Collision];
+    const moved = { ...first, shiftTypeId: 'other', leaveRecordId: 'leave-2' };
+    expect(unresolvedCollisionsOf([moved], [keyOf(first)])).toEqual([]);
+  });
+
+  it('keeps the other team\'s collision when a roster override puts the member on two teams and one is resolved', () => {
+    const date = '2026-09-10';
+    const other = teamOnStep(fx, date, 1);
+    const twoTeams = collisionsOf(
+      inputOf(fx, [{ id: 'l', memberId, from: date, to: date }], {
+        rosterOverrides: [{ id: 'r1', teamId: fx.teams[other]!.id, date, memberOutId: memberOf(fx, other), memberInId: memberId }],
+      }),
+    );
+    expect(twoTeams).toHaveLength(2);
+    const [resolved, kept] = twoTeams as [Collision, Collision];
+    expect(unresolvedCollisionsOf(twoTeams, [keyOf(resolved)])).toEqual([kept]);
+    expect(unresolvedCollisionsOf(twoTeams, [keyOf(kept)])).toEqual([resolved]);
+  });
+
+  it('a resolution that matches no collision has no effect', () => {
+    const [first] = collisions as [Collision];
+    const strays: CollisionResolution[] = [
+      { ...keyOf(first), teamId: 'no-such-team' },
+      { ...keyOf(first), memberId: 'no-such-member' },
+      { ...keyOf(first), date: '2026-09-20' },
+    ];
+    expect(unresolvedCollisionsOf(collisions, strays)).toEqual(collisions);
+    expect(unresolvedCollisionsOf([], collisions.map(keyOf))).toEqual([]);
+  });
+
+  it('mutates neither input', () => {
+    const given = collisions.map((one) => ({ ...one }));
+    const resolutions = [keyOf(collisions[0]!)];
+    const frozen = Object.freeze([...collisions.map((one) => Object.freeze({ ...one }))]);
+    unresolvedCollisionsOf(frozen, Object.freeze(resolutions.map((one) => Object.freeze(one))));
+    expect(collisions).toEqual(given);
+    expect(resolutions).toEqual([keyOf(collisions[0]!)]);
   });
 });
 

@@ -6,6 +6,10 @@ import { QueryClient, QueryObserver, environmentManager, onlineManager, type Que
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
+import {
+  MY_CONFLICT_RESOLUTIONS_KEY,
+  ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+} from '@/features/conflicts/services/resolutions';
 import { HOUR_BANDS_LIST_KEY } from '@/features/hour-bands/services/list';
 import { LEAVE_RECORDS_KEY, MY_LEAVE_RECORDS_KEY, ORGANIZATION_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
@@ -70,6 +74,8 @@ const CLASSIFIED: Readonly<Record<string, readonly QueryKey[]>> = {
   LEAVE_RECORDS_KEY: [LEAVE_A, LEAVE_B],
   MY_LEAVE_RECORDS_KEY: [MY_LEAVE_RECORDS_KEY],
   ORGANIZATION_LEAVE_RECORDS_KEY: [ORGANIZATION_LEAVE_RECORDS_KEY],
+  MY_CONFLICT_RESOLUTIONS_KEY: [MY_CONFLICT_RESOLUTIONS_KEY],
+  ORGANIZATION_CONFLICT_RESOLUTIONS_KEY: [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
 };
 
 /**
@@ -212,8 +218,9 @@ describe('the reads a team or membership write makes stale', () => {
       dependents: LEAVE_WRITE_DEPENDENTS,
       // The member's own records, since story 5.2c the viewer's own
       // (*Godišnji*), and since story 5.3b the organization's, which the
-      // conflicts queue derives from; never another member's.
-      stale: [LEAVE_A, MY_LEAVE_RECORDS_KEY, ORGANIZATION_LEAVE_RECORDS_KEY],
+      // conflicts queue derives from; never another member's. Since story
+      // 5.4a both resolution reads, which a removal or an amend can end.
+      stale: [LEAVE_A, MY_LEAVE_RECORDS_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, MY_CONFLICT_RESOLUTIONS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
     },
     {
       write: 'a refusal',

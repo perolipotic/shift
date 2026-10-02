@@ -9,6 +9,12 @@ import {
 } from '@/features/calendar/services/snapshot';
 import { CONFLICTS_LOADING, conflictsQueueOf } from '@/features/conflicts/services/conflicts-queue';
 import {
+  CONFLICT_RESOLUTIONS_TABLE,
+  ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+  organizationConflictResolutionsQueryOptions,
+  type OrganizationConflictResolutionsTable,
+} from '@/features/conflicts/services/resolutions';
+import {
   LEAVE_RECORDS_TABLE,
   ORGANIZATION_LEAVE_RECORDS_KEY,
   organizationLeaveRecordsQueryOptions,
@@ -17,16 +23,16 @@ import {
 import { supabaseClient } from '@/lib/supabase/client';
 
 /**
- * *Raspored*'s two reads and its state (story 5.3b). Wiring only — every
- * decision is `@/features/conflicts/services/conflicts-queue`'s, which the
- * node suite executes.
+ * *Raspored*'s three reads and its state (stories 5.3b, 5.4a). Wiring only —
+ * every decision is `@/features/conflicts/services/conflicts-queue`'s, which
+ * the node suite executes.
  *
  * THE READS, each under its own key (AD-13): the calendar snapshot, shared
- * with the screens that own it, and the organization's live leave records.
- * A schedule write re-reads the first, and every leave write names the second
- * among its dependents, so a conflict appears or clears without a reload.
- * Nothing is written, and no conflict set is kept: the queue is derived from
- * the two answers on every render.
+ * with the screens that own it, the organization's live leave records, and
+ * its live conflict resolutions. A schedule write re-reads the first, and
+ * every leave write names the other two among its dependents, so a conflict
+ * appears or clears without a reload. Nothing is written, and no conflict set
+ * is kept: the queue is derived from the three answers on every render.
  */
 export function useConflictsQueue() {
   const queryClient = useQueryClient();
@@ -44,11 +50,17 @@ export function useConflictsQueue() {
     ),
   );
 
-  const queue = conflictsQueueOf({ calendar: calendarSurfaceStateOf(calendar), records }, new Date());
+  const resolutions = useQuery(
+    organizationConflictResolutionsQueryOptions(
+      () => supabaseClient().from(CONFLICT_RESOLUTIONS_TABLE) as unknown as OrganizationConflictResolutionsTable,
+    ),
+  );
 
-  /** Read again both reads the queue stands on, from the unavailable alert's retry. */
+  const queue = conflictsQueueOf({ calendar: calendarSurfaceStateOf(calendar), records, resolutions }, new Date());
+
+  /** Read again every read the queue stands on, from the unavailable alert's retry. */
   function retry(): void {
-    for (const queryKey of [CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY]) {
+    for (const queryKey of [CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY]) {
       void queryClient.invalidateQueries({ queryKey });
     }
   }

@@ -10,6 +10,7 @@ import {
   removeFormerMemberInSql,
   removeLeaveRecordsInSql,
   removeSeededRotation,
+  seedConflictResolution,
   seedExtraTeam,
   seedFormerMember,
   seedLeaveMember,
@@ -56,6 +57,11 @@ import { HoursPage } from '../../pages/hours.page.ts';
  * column. A member with their own leave reads their own line; the run's
  * member, with none, reads no line. A failed leave read shows the
  * unavailable message and no figure, and its retry brings the table back.
+ *
+ * Story 5.4a: a resolution seeded in SQL on today's conflict takes it off the
+ * member's count in the table and the `.xlsx`, and off a member's own line. A
+ * failed resolutions read shows the unavailable message, and its retry brings
+ * the table back.
  */
 
 const sati = hr.sati;
@@ -733,6 +739,92 @@ test.describe('the conflict count, as an admin', () => {
     // Reading the same rows again would refuse them again: no retry is offered.
     await expect(hoursPage.retryButton).toHaveCount(0);
   });
+});
+
+/**
+ * The first start, a whole rotation cycle (4 days) on from `today` at a time,
+ * so it is a Dan, whose worked example (Dan, Noć, Slobodno, Slobodno, Dan)
+ * lies in one month: all three of its conflicts count there.
+ */
+function oneMonthWorkedExample(today: string): { readonly from: string; readonly to: string; readonly month: string } {
+  for (let offset = 0; ; offset += 4) {
+    const from = isoDaysAfter(today, offset);
+    const to = isoDaysAfter(from, 4);
+    if (from.slice(0, 7) === to.slice(0, 7)) return { from, to, month: from.slice(0, 7) };
+  }
+}
+
+test.describe('resolutions, as an admin', () => {
+  test.use({ storageState: ADMIN_STATE });
+
+  test("a resolved conflict takes exactly one off the member's count in the table and the file", async ({ hoursPage, fixture }) => {
+    const { today, team } = await seededTeam(fixture.slug);
+    const member = await seedLeaveMember(fixture.slug, team.id, today, 20);
+    withLeave.push({ slug: fixture.slug, id: member.id });
+    const worked = oneMonthWorkedExample(today);
+    await seedLeaveRecord(fixture.slug, member.id, worked.from, worked.to);
+    const row = hoursPage.organizationRow(member.name);
+
+    // BEFORE: all three of the worked example's conflicts, in one month.
+    await hoursPage.goto(`?mjesec=${worked.month}`);
+    await expect(row).toHaveCount(1);
+    await expect(await hoursPage.cellIn(row, organization.conflicts)).toHaveText('⚠3');
+
+    // AFTER: the first Dan resolved, and exactly one less.
+    await seedConflictResolution(fixture.slug, member.id, worked.from, team.id);
+    await hoursPage.goto(`?mjesec=${worked.month}`);
+    await expect(row).toHaveCount(1);
+    await expect(await hoursPage.cellIn(row, organization.conflicts)).toHaveText('⚠2');
+
+    const { headings, body } = await expectExportIsTable(
+      hoursPage,
+      hoursExportFileName(await organizationNameOf(fixture.slug), worked.month),
+    );
+    const column = headings.indexOf(organization.conflicts);
+    expect(column, 'the file has the conflicts column').toBeGreaterThan(-1);
+    const counted = body.find((cells) => cells[0]?.type === 'text' && cells[0].value === member.name)?.[column] ?? null;
+    expect(counted).toEqual({ type: 'number', value: 2, format: null });
+  });
+
+  test('a failed resolutions read shows the unavailable message and no figure, and the retry brings the table back', async ({
+    page,
+    hoursPage,
+  }) => {
+    const resolutions = '**/rest/v1/conflict_resolutions*';
+    await page.route(resolutions, (route) => route.fulfill({ status: 500, body: '{}' }));
+
+    await hoursPage.goto();
+    await expect(hoursPage.unavailableAlert).toBeVisible();
+    await expect(hoursPage.retryButton).toBeVisible();
+    await expect(hoursPage.organizationTable).toHaveCount(0);
+
+    await page.unroute(resolutions);
+    await hoursPage.retryButton.click();
+    await expect(hoursPage.organizationTable).toBeVisible();
+    await expect(hoursPage.unavailableAlert).toHaveCount(0);
+  });
+});
+
+test('a member with one of their own conflicts resolved reads exactly one fewer on their own line', async ({ browser, fixture }) => {
+  const { today, team } = await seededTeam(fixture.slug);
+  const member = await seedLeaveMember(fixture.slug, team.id, today, 20);
+  withLeave.push({ slug: fixture.slug, id: member.id });
+  const worked = oneMonthWorkedExample(today);
+  await seedLeaveRecord(fixture.slug, member.id, worked.from, worked.to);
+
+  const { page, hours } = await signedInAs(browser, fixture.slug, member);
+  try {
+    await hours.goto(`?mjesec=${worked.month}`);
+    await expect(hours.totalTile).toBeVisible();
+    await expect(hours.conflictsLine).toHaveText(plural(sati.conflicts, 3));
+
+    await seedConflictResolution(fixture.slug, member.id, worked.from, team.id);
+    await hours.goto(`?mjesec=${worked.month}`);
+    await expect(hours.totalTile).toBeVisible();
+    await expect(hours.conflictsLine).toHaveText(plural(sati.conflicts, 2));
+  } finally {
+    await page.context().close();
+  }
 });
 
 test('a member with their own leave reads their own line of shifts in conflict', async ({ browser, fixture }) => {

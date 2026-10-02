@@ -1,6 +1,10 @@
 import type { QueryKey } from '@tanstack/react-query';
 
 import { CALENDAR_KEY } from '@/features/calendar/services/snapshot';
+import {
+  MY_CONFLICT_RESOLUTIONS_KEY,
+  ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+} from '@/features/conflicts/services/resolutions';
 import { MY_LEAVE_RECORDS_KEY, ORGANIZATION_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
@@ -85,9 +89,17 @@ export const HOUR_BAND_WRITE_DEPENDENTS: readonly QueryKey[] = [CALENDAR_KEY];
  * organization's records for an admin, the viewer's own for a member — so
  * they follow every leave write with no key of their own. Since story 5.3d
  * *Sati*'s conflict count reads the same two keys, by the same role rule, so
- * it follows too.
+ * it follows too. Since story 5.4a the live conflict resolutions — the
+ * organization's and the viewer's own — depend on it too: a removal or an
+ * amend ends the resolutions whose date its leave stops covering (0031), and
+ * every unresolved surface reads them.
  */
-export const LEAVE_WRITE_DEPENDENTS: readonly QueryKey[] = [MY_LEAVE_RECORDS_KEY, ORGANIZATION_LEAVE_RECORDS_KEY];
+export const LEAVE_WRITE_DEPENDENTS: readonly QueryKey[] = [
+  MY_LEAVE_RECORDS_KEY,
+  ORGANIZATION_LEAVE_RECORDS_KEY,
+  MY_CONFLICT_RESOLUTIONS_KEY,
+  ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+];
 
 /** A refusal's re-read: the surface's own key, and nothing that depends on it. */
 export const NO_DEPENDENTS: readonly QueryKey[] = [];

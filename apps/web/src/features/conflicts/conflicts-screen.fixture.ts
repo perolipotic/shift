@@ -1,7 +1,7 @@
 /**
  * THE RASPORED SCREEN'S FILE SET, written once (story 5.3b), on the *Sati*
  * screen's terms (`hours-screen.fixture.ts`): a page that only composes, the
- * hook holding its two reads, and the components that draw the conflicts
+ * hook holding its reads, and the components that draw the conflicts
  * queue. `pages/prijava.test.ts` reads it as source.
  *
  * Paths are SEGMENTS under `apps/web/src`, so this module imports nothing.
@@ -28,5 +28,9 @@ export const CONFLICTS_SCREEN_EXEMPT: readonly { readonly file: string; readonly
   {
     file: 'services/conflicts-queue.ts',
     why: 'every rule of the queue — its input, order, rows and guard; renders nothing, executed by conflicts-queue.test.ts',
+  },
+  {
+    file: 'services/resolutions.ts',
+    why: 'the live conflict resolutions (story 5.4a) — their two reads, keys and parser; renders nothing, executed by resolutions.test.ts',
   },
 ];
