@@ -46,6 +46,14 @@ import {
   leaveRemovePromptMessageKey,
   leaveSavedOf,
   memberLeaveBaseOf,
+  NO_REPLACEMENTS,
+  REPLACEMENTS_KNOWN,
+  REPLACEMENTS_UNKNOWN,
+  leaveUncoversDate,
+  replacementGuardOf,
+  replacementLinesShown,
+  replacementWarningsOf,
+  type ReplacementResolutionsSource,
   type LeaveCalendarSource,
   type LeaveMembersSource,
   type LeaveOrganizationSource,
@@ -61,11 +69,18 @@ import { initLocalization, t } from '@/lib/i18n';
 import { formatIsoDate } from '@/lib/i18n/format';
 import {
   PILOT,
+  SEEDED,
   UJ5,
   VIEWER_MEMBER,
+  VIEWER_NAME,
+  calendarMemberRow,
   calendarOrganizationRow,
+  calendarRosterOverrideRow,
   calendarTableOf,
+  memberMembershipRow,
+  membershipRow,
   membersAnswerOf,
+  statusRow,
   overridesAnswerOf,
   rosterOverridesAnswerOf,
   viewerRow,
@@ -810,5 +825,206 @@ describe('the hand-off from a conflict (story 5.4d)', () => {
   it('Changed elsewhere: opens nothing once the record no longer covers the conflict\'s date', () => {
     expect(leaveHandoffOpeningOf(AMEND, VIEWER_MEMBER, rowsOf([{ id: WORKED.id, from: '2026-09-11', to: '2026-09-14' }]))).toBeNull();
     expect(leaveHandoffOpeningOf(REMOVE, VIEWER_MEMBER, rowsOf([{ id: WORKED.id, from: '2026-09-01', to: '2026-09-09' }]))).toBeNull();
+  });
+});
+
+describe('the replacement guard (story 5.4e)', () => {
+  // On 2026-09-10 the pilot's Smjena A works Dan and B works Noć; on the 12th A is off.
+  const DINO = '00000000-0000-4000-8000-0000000000e2';
+  const KARLO = '00000000-0000-4000-8000-0000000000e5';
+  const TEAM_A = 'pilot-smjena-a';
+  const TEAM_B = 'pilot-smjena-b';
+  const RECORD = { from: '2026-09-10', to: '2026-09-14' };
+
+  /** The viewer and Karlo on A, Dino on no team — inactive from `dinoInactiveFrom` when given. */
+  async function guardSnapshotOf(
+    rosterOverrides: readonly Record<string, unknown>[],
+    dinoInactiveFrom: string | null = null,
+  ): Promise<CalendarSnapshot> {
+    const source = calendarTableOf(
+      {
+        data: [
+          calendarOrganizationRow(PILOT, {
+            viewers: [viewerRow([membershipRow(TEAM_A, SEEDED)], { role: 'admin' })],
+            versions: [memberMembershipRow(VIEWER_MEMBER, TEAM_A, SEEDED), memberMembershipRow(KARLO, TEAM_A, SEEDED)],
+            statuses: dinoInactiveFrom === null ? [] : [statusRow(DINO, false, dinoInactiveFrom)],
+          }),
+        ],
+        error: null,
+        count: 1,
+      },
+      membersAnswerOf([
+        calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME),
+        calendarMemberRow(DINO, 'Dino Grgić'),
+        calendarMemberRow(KARLO, 'Karlo Jelić'),
+      ]),
+      overridesAnswerOf(),
+      rosterOverridesAnswerOf(rosterOverrides),
+    );
+    const outcome = await readCalendar(source, source, viewerSession());
+
+    if (!outcome.ok) throw new Error(outcome.code);
+
+    return outcome.snapshot;
+  }
+
+  const link = (rosterOverrideId: string, date: string, teamId = TEAM_A, memberId = VIEWER_MEMBER) => ({
+    memberId,
+    date,
+    teamId,
+    rosterOverrideId,
+  });
+  const row = (rosterOverrideId: string | null, date: string, kind = 'replace_member', teamId = TEAM_A) => ({
+    member_id: VIEWER_MEMBER,
+    date,
+    team_id: teamId,
+    kind,
+    roster_override_id: rosterOverrideId,
+  });
+  const DINO_10 = calendarRosterOverrideRow('ro-dino-10', TEAM_A, '2026-09-10', null, DINO);
+  const DINO_11 = calendarRosterOverrideRow('ro-dino-11', TEAM_A, '2026-09-11', null, DINO);
+  const DINO_B_10 = calendarRosterOverrideRow('ro-dino-b-10', TEAM_B, '2026-09-10', null, DINO);
+  const stays = (overrideId: string, date: string, team = 'Smjena A') => ({ overrideId, name: 'Dino Grgić', team, date });
+
+  it.each([
+    ['a removal uncovers every date of the record', null, '2026-09-10', true],
+    ['a removal, the last date', null, '2026-09-14', true],
+    ['a removal, a date outside the record', null, '2026-09-15', false],
+    ['an amend that starts later uncovers the dates it drops', { from: '2026-09-11', to: '2026-09-14' }, '2026-09-10', true],
+    ['an amend keeps the dates it still covers', { from: '2026-09-11', to: '2026-09-14' }, '2026-09-11', false],
+    ['an amend that ends earlier uncovers the tail', { from: '2026-09-10', to: '2026-09-13' }, '2026-09-14', true],
+    ['an amend never uncovers a date the old range did not hold', { from: '2026-09-12', to: '2026-09-20' }, '2026-09-18', false],
+  ])('%s', (_name, next, date, uncovered) => {
+    expect(leaveUncoversDate(RECORD, next, date)).toBe(uncovered);
+  });
+
+  it('Amend uncovers: names the replacement who stays on the dropped date', async () => {
+    const snapshot = await guardSnapshotOf([DINO_10]);
+
+    expect(
+      replacementWarningsOf([link('ro-dino-10', '2026-09-10')], snapshot, VIEWER_MEMBER, RECORD, {
+        from: '2026-09-11',
+        to: '2026-09-14',
+      }),
+    ).toEqual([stays('ro-dino-10', '10.09.')]);
+  });
+
+  it('Amend keeps: no line for a date the new range still covers', async () => {
+    const snapshot = await guardSnapshotOf([DINO_10]);
+
+    expect(
+      replacementWarningsOf([link('ro-dino-10', '2026-09-10')], snapshot, VIEWER_MEMBER, RECORD, {
+        from: '2026-09-10',
+        to: '2026-09-13',
+      }),
+    ).toEqual([]);
+  });
+
+  it('Removal and Several: every replacement in the range, by date, then by team name', async () => {
+    const snapshot = await guardSnapshotOf([DINO_10, DINO_11, DINO_B_10]);
+    const links = [link('ro-dino-11', '2026-09-11'), link('ro-dino-b-10', '2026-09-10', TEAM_B), link('ro-dino-10', '2026-09-10')];
+
+    expect(replacementWarningsOf(links, snapshot, VIEWER_MEMBER, RECORD, null)).toEqual([
+      stays('ro-dino-10', '10.09.'),
+      stays('ro-dino-b-10', '10.09.', 'Smjena B'),
+      stays('ro-dino-11', '11.09.'),
+    ]);
+  });
+
+  it('cannot be known when a link and the override it names disagree on the team or the date', async () => {
+    const snapshot = await guardSnapshotOf([DINO_10]);
+
+    expect(replacementWarningsOf([link('ro-dino-10', '2026-09-10', TEAM_B)], snapshot, VIEWER_MEMBER, RECORD, null)).toBeNull();
+    expect(replacementWarningsOf([link('ro-dino-10', '2026-09-11')], snapshot, VIEWER_MEMBER, RECORD, null)).toBeNull();
+  });
+
+  it('Override removed: a resolution whose override is no longer live gives no line', async () => {
+    const snapshot = await guardSnapshotOf([]);
+
+    expect(replacementWarningsOf([link('ro-dino-10', '2026-09-10')], snapshot, VIEWER_MEMBER, RECORD, null)).toEqual([]);
+  });
+
+  it('Inert override: a replacement deactivated by then gives no line, nor one already on the roster', async () => {
+    const deactivated = await guardSnapshotOf([DINO_10], '2026-09-01');
+
+    expect(replacementWarningsOf([link('ro-dino-10', '2026-09-10')], deactivated, VIEWER_MEMBER, RECORD, null)).toEqual([]);
+
+    const already = await guardSnapshotOf([calendarRosterOverrideRow('ro-karlo', TEAM_A, '2026-09-10', null, KARLO)]);
+
+    expect(replacementWarningsOf([link('ro-karlo', '2026-09-10')], already, VIEWER_MEMBER, RECORD, null)).toEqual([]);
+  });
+
+  it('gives no line on a day the team is off, or for another member\'s replacement', async () => {
+    const snapshot = await guardSnapshotOf([
+      calendarRosterOverrideRow('ro-dino-12', TEAM_A, '2026-09-12', null, DINO),
+      DINO_10,
+    ]);
+
+    expect(replacementWarningsOf([link('ro-dino-12', '2026-09-12')], snapshot, VIEWER_MEMBER, RECORD, null)).toEqual([]);
+    expect(replacementWarningsOf([link('ro-dino-10', '2026-09-10', TEAM_A, KARLO)], snapshot, VIEWER_MEMBER, RECORD, null)).toEqual(
+      [],
+    );
+  });
+
+  describe('the guard over the read', () => {
+    const answered = (data: readonly unknown[]): ReplacementResolutionsSource => ({
+      isPending: false,
+      isError: false,
+      fetchStatus: 'idle',
+      data,
+    });
+
+    it('Accept only: an accepted conflict on the date gives no line', async () => {
+      const snapshot = await guardSnapshotOf([DINO_10]);
+
+      expect(replacementGuardOf(answered([row(null, '2026-09-10', 'accept_uncovered')]), snapshot, VIEWER_MEMBER, RECORD, null)).toEqual(
+        NO_REPLACEMENTS,
+      );
+    });
+
+    it('names the replacement from the rows it read', async () => {
+      const snapshot = await guardSnapshotOf([DINO_10]);
+
+      expect(replacementGuardOf(answered([row('ro-dino-10', '2026-09-10')]), snapshot, VIEWER_MEMBER, RECORD, null)).toEqual({
+        kind: REPLACEMENTS_KNOWN,
+        lines: [stays('ro-dino-10', '10.09.')],
+      });
+    });
+
+    it("ignores another member's malformed replacement, so one bad row never blinds this member's guard", async () => {
+      const snapshot = await guardSnapshotOf([DINO_10]);
+      const elsewhere = { ...row(null, '2026-09-10'), member_id: KARLO };
+
+      expect(
+        replacementGuardOf(answered([elsewhere, row('ro-dino-10', '2026-09-10')]), snapshot, VIEWER_MEMBER, RECORD, null),
+      ).toEqual({ kind: REPLACEMENTS_KNOWN, lines: [stays('ro-dino-10', '10.09.')] });
+    });
+
+    it.each([
+      ['pending', { isPending: true, isError: false, fetchStatus: 'fetching', data: undefined }],
+      ['failed', { isPending: false, isError: true, fetchStatus: 'idle', data: undefined }],
+      ['paused offline', { isPending: false, isError: false, fetchStatus: 'paused', data: [] }],
+      ['rows that cannot be trusted', { isPending: false, isError: false, fetchStatus: 'idle', data: [row(null, '2026-09-10')] }],
+    ])('Read failed: cannot check while the read is %s', async (_name, read) => {
+      const snapshot = await guardSnapshotOf([DINO_10]);
+
+      expect(replacementGuardOf(read as ReplacementResolutionsSource, snapshot, VIEWER_MEMBER, RECORD, null)).toEqual({
+        kind: REPLACEMENTS_UNKNOWN,
+      });
+    });
+
+    it('shows lines for an unknown guard or one with a replacement, and none for no guard or no replacement', () => {
+      expect(replacementLinesShown(null)).toBe(false);
+      expect(replacementLinesShown(NO_REPLACEMENTS)).toBe(false);
+      expect(replacementLinesShown({ kind: REPLACEMENTS_UNKNOWN })).toBe(true);
+      expect(replacementLinesShown({ kind: REPLACEMENTS_KNOWN, lines: [stays('ro', '02.10.')] })).toBe(true);
+    });
+
+    it('renders the line the spec states', () => {
+      expect(t('ljudi.leaveRecord.replacementStays', stays('ro', '02.10.', 'Smjena C'))).toBe(
+        'Dino Grgić ostaje na smjeni Smjena C · 02.10. kao zamjena. Ukloni zamjenu u kalendaru ako više ne treba.',
+      );
+      expect(t('ljudi.leaveRecord.replacementsUnknown')).toBe('Ne mogu provjeriti zamjene za ove datume.');
+    });
   });
 });

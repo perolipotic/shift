@@ -4,7 +4,9 @@ import {
   holdRotation,
   leaveYearStartOf,
   removeLeaveRecordsInSql,
+  removeRosterOverridesInSql,
   removeSeededRotation,
+  seedConflictResolution,
   seedExtraTeam,
   seedLeaveMember,
   seedLeaveRecord,
@@ -52,6 +54,16 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * record in amend mode, or cancelling the amend, returns the form to a new
  * record. Records are seeded in SQL (`seedLeaveRecord`)
  * and removed from under the screen the same way (`removeLeaveRecordsInSql`).
+ *
+ * Story 5.4e: an amend or a removal that uncovers a date someone replaced the
+ * member on names that replacement, who stays rostered, in the amend preview
+ * (inside its polite live region) or the removal confirmation, and again in
+ * the notice after the write lands; an amend that keeps the date says
+ * nothing, and neither does a replacement whose override was removed. A
+ * failed resolutions read says the replacements cannot be checked and blocks
+ * nothing, and opening a removal re-reads them, so a replacement written
+ * since the page loaded is named. Each replacement is seeded with its
+ * override in SQL (`seedConflictResolution`).
  */
 
 test.use({ storageState: ADMIN_STATE });
@@ -127,6 +139,8 @@ function labelOf(range: Range): string {
 
 interface Seeded {
   readonly member: SeededLeaveMember;
+  /** The test's own team, which the seeded rotation runs on. */
+  readonly team: { readonly id: string; readonly name: string };
   readonly today: string;
   /** Today + 4, or the leave year's last day when that comes first. */
   readonly last: string;
@@ -154,7 +168,7 @@ async function seeded(slug: string, allowanceOf: (cost: number) => number): Prom
   const cost = workingDaysOf(today, last);
   const member = await seedLeaveMember(slug, team.id, today, allowanceOf(cost));
 
-  return { member, today, last, cost, yearEnd };
+  return { member, team, today, last, cost, yearEnd };
 }
 
 /** What a record charges the current leave year: its working days up to the year's last day. */
@@ -570,4 +584,160 @@ test('cancelling an amend, or removing the record it amends, returns the form to
   await expect(peoplePage.leaveFromInput).toHaveValue('');
   await expect(peoplePage.leaveToInput).toHaveValue('');
   await expect(peoplePage.leaveRecordRows).toHaveCount(0);
+});
+
+/**
+ * Story 5.4e: a second fresh member on a team of their own, put on the test
+ * team's shift on each of `dates` in place of the seeded member — the
+ * override and its `replace_member` resolution, as 0032 writes them. The
+ * leave covering those dates must already be seeded.
+ */
+async function replacedOn(slug: string, setup: Seeded, dates: readonly string[]): Promise<SeededLeaveMember> {
+  const own = await seedExtraTeam(slug, `Zamjene ${randomBytes(3).toString('hex')}`);
+  const replacement = await seedLeaveMember(slug, own.id, setup.today, 20);
+  for (const date of dates) {
+    await seedConflictResolution(slug, setup.member.id, date, setup.team.id, 'replace_member', replacement.id);
+  }
+
+  return replacement;
+}
+
+test('an amend that uncovers a replaced date names the replacement in the preview and the notice; one that keeps it says nothing', async ({
+  peoplePage,
+  fixture,
+}) => {
+  const setup = await seeded(fixture.slug, () => 20);
+  const { member, team, today } = setup;
+  const record = { from: today, to: isoDaysAfter(today, 4) };
+  await seedLeaveRecord(fixture.slug, member.id, record.from, record.to);
+  // Today is the seeded pattern's Dan: the member works it, and someone else is put on it.
+  const replacement = await replacedOn(fixture.slug, setup, [today]);
+  const line = peoplePage.replacementStaysLine(replacement.name, team.name, today);
+
+  await peoplePage.gotoMember(member.id);
+  await peoplePage.amendLeaveButton(record.from, record.to).click();
+
+  // UNCOVERS: the amend starts the day after, so today is the member's again
+  // — and the replacement stays. A note in the polite live region, never a gate.
+  const later = isoDaysAfter(today, 1);
+  await peoplePage.leaveFromInput.fill(later);
+  await expect(peoplePage.leavePreviewRegion).toHaveAttribute('aria-live', 'polite');
+  await expect(peoplePage.leavePreviewRegion.getByText(line, { exact: true })).toBeVisible();
+  await expect(peoplePage.amendSaveButton).toBeEnabled();
+
+  // KEEPS: today is still covered, so nothing is said.
+  await peoplePage.leaveFromInput.fill(today);
+  await peoplePage.leaveToInput.fill(isoDaysAfter(today, 3));
+  await expect(peoplePage.leaveFigure(leave.cost)).toHaveText(plural(days, workingDaysIn(today, today, isoDaysAfter(today, 3))));
+  await expect(peoplePage.text(line)).toHaveCount(0);
+  await expect(peoplePage.text(leave.replacementsUnknown)).toHaveCount(0);
+
+  // THE SAVE of the uncovering amend: the notice repeats the line captured before it.
+  await peoplePage.leaveFromInput.fill(later);
+  await peoplePage.leaveToInput.fill(record.to);
+  await expect(peoplePage.leavePreviewRegion.getByText(line, { exact: true })).toBeVisible();
+  await peoplePage.amendSaveButton.click();
+  const notice = peoplePage.statusWith(plural(leave.amended, workingDaysIn(today, later, record.to)));
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText(line);
+  await expect(peoplePage.leaveNewGroup).toBeVisible();
+});
+
+test('a removal names every replacement left rostered, by date, and none whose override was removed; the phone does not scroll sideways', async ({
+  page,
+  peoplePage,
+  fixture,
+}) => {
+  const setup = await seeded(fixture.slug, () => 20);
+  const { member, team, today } = setup;
+  const record = { from: today, to: isoDaysAfter(today, 4) };
+  const cost = workingDaysIn(today, record.from, record.to);
+  await seedLeaveRecord(fixture.slug, member.id, record.from, record.to);
+  // Dan and Noć, the two working days at the record's start.
+  const tomorrow = isoDaysAfter(today, 1);
+  const replacement = await replacedOn(fixture.slug, setup, [tomorrow, today]);
+  const first = peoplePage.replacementStaysLine(replacement.name, team.name, today);
+  const second = peoplePage.replacementStaysLine(replacement.name, team.name, tomorrow);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await peoplePage.gotoMember(member.id);
+  const confirm = peoplePage.removeLeaveConfirmOf(record.from, record.to, cost, inYearOf(setup, record));
+
+  // SEVERAL: two lines, by date, beside an enabled confirm.
+  await peoplePage.removeLeaveButton(record.from, record.to).click();
+  await expect(confirm).toBeVisible();
+  await expect(confirm.getByRole('listitem')).toHaveText([first, second]);
+  await expect(peoplePage.confirmRemoveLeaveIn(confirm)).toBeEnabled();
+  await expectNoHorizontalScroll(page);
+  await peoplePage.cancelRemoveLeaveIn(confirm).click();
+  await expect(confirm).toBeHidden();
+
+  // OVERRIDE REMOVED: tomorrow's replacement is taken off the roster, so it no longer stays.
+  if (seed === null) throw new Error('E2E: the rotation was not seeded');
+  await removeRosterOverridesInSql(seed, team.id, tomorrow);
+  await peoplePage.gotoMember(member.id);
+  await peoplePage.removeLeaveButton(record.from, record.to).click();
+  await expect(confirm).toBeVisible();
+  await expect(confirm.getByRole('listitem')).toHaveText([first]);
+
+  // THE REMOVAL lands, and its notice repeats the line captured before it.
+  await peoplePage.confirmRemoveLeaveIn(confirm).click();
+  const notice = peoplePage.statusWith(fill(leave.removed, { from: fullDate(record.from), to: fullDate(record.to) }));
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText(first);
+  await expect(notice).not.toContainText(second);
+  await expectNoHorizontalScroll(page);
+});
+
+test('a failed resolutions read says the replacements cannot be checked, in the preview and the confirmation, and blocks nothing', async ({
+  page,
+  peoplePage,
+  fixture,
+}) => {
+  const setup = await seeded(fixture.slug, () => 20);
+  const { member, today } = setup;
+  const record = { from: today, to: isoDaysAfter(today, 4) };
+  const cost = workingDaysIn(today, record.from, record.to);
+  await seedLeaveRecord(fixture.slug, member.id, record.from, record.to);
+  const resolutions = '**/rest/v1/conflict_resolutions*';
+  await page.route(resolutions, (route) => route.fulfill({ status: 500, body: '{}' }));
+
+  await peoplePage.gotoMember(member.id);
+
+  // AN AMEND that uncovers today: the line in the preview's live region, the save still enabled.
+  await peoplePage.amendLeaveButton(record.from, record.to).click();
+  await peoplePage.leaveFromInput.fill(isoDaysAfter(today, 1));
+  await expect(peoplePage.leavePreviewRegion.getByText(leave.replacementsUnknown, { exact: true })).toBeVisible();
+  await expect(peoplePage.amendSaveButton).toBeEnabled();
+  await peoplePage.amendCancelButton.click();
+
+  // A REMOVAL: the line in the confirmation, the confirm still enabled.
+  const confirm = peoplePage.removeLeaveConfirmOf(record.from, record.to, cost, inYearOf(setup, record));
+  await peoplePage.removeLeaveButton(record.from, record.to).click();
+  await expect(confirm).toBeVisible();
+  await expect(confirm.getByText(leave.replacementsUnknown, { exact: true })).toBeVisible();
+  await expect(peoplePage.confirmRemoveLeaveIn(confirm)).toBeEnabled();
+  await peoplePage.cancelRemoveLeaveIn(confirm).click();
+  await page.unroute(resolutions);
+});
+
+test('opening a removal re-reads the replacements, so one written since the page loaded is named', async ({
+  peoplePage,
+  fixture,
+}) => {
+  const setup = await seeded(fixture.slug, () => 20);
+  const { member, team, today } = setup;
+  const record = { from: today, to: isoDaysAfter(today, 4) };
+  const cost = workingDaysIn(today, record.from, record.to);
+  await seedLeaveRecord(fixture.slug, member.id, record.from, record.to);
+
+  await peoplePage.gotoMember(member.id);
+  await expect(peoplePage.leaveRecordRows).toHaveCount(1);
+
+  // Written in SQL with the page open: neither the resolutions nor the override was ever read.
+  const replacement = await replacedOn(fixture.slug, setup, [today]);
+  const confirm = peoplePage.removeLeaveConfirmOf(record.from, record.to, cost, inYearOf(setup, record));
+  await peoplePage.removeLeaveButton(record.from, record.to).click();
+  await expect(confirm).toBeVisible();
+  await expect(confirm.getByRole('listitem')).toHaveText([peoplePage.replacementStaysLine(replacement.name, team.name, today)]);
 });

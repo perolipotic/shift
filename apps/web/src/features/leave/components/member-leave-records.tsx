@@ -6,16 +6,77 @@ import { ConfirmDialog, DialogFooter } from '@/components/ui/dialog';
 import { Notice } from '@/components/ui/notice';
 import type { MemberLeave } from '@/features/leave/hooks/use-member-leave';
 import {
+  LEAVE_LINE_SEPARATOR,
   LEAVE_LOADING,
   LEAVE_READY,
   LEAVE_RECORDS_HEADING_ID,
   LEAVE_REMOVE_PROMPT_ID,
+  LEAVE_REMOVE_REPLACEMENTS_ID,
+  REPLACEMENTS_UNKNOWN,
   leaveConfirmFailureOf,
   leaveListFailureOf,
   leaveRefusalMessageKey,
   leaveRemovePromptMessageKey,
+  replacementLinesShown,
+  type ReplacementGuard,
 } from '@/features/leave/services/leave-section';
 import { t } from '@/lib/i18n';
+
+/**
+ * THE REPLACEMENT GUARD'S LINES (story 5.4e): one line per replacement an
+ * amend or a removal would leave rostered, or the line that they cannot be
+ * checked. NOTES, never a gate and never `destructive`: they sit beside the
+ * action and change nothing about it. `inline` renders them inside a
+ * `Notice`'s paragraph as block lines, each after a space, so a screen reader
+ * never runs the sentences together; otherwise as their own list, named by
+ * `id`. They wrap at any width.
+ */
+export function LeaveReplacementLines({
+  guard,
+  inline = false,
+  id,
+}: {
+  readonly guard: ReplacementGuard | null;
+  readonly inline?: boolean;
+  readonly id?: string;
+}): ReactNode {
+  const lines = replacementLinesOf(guard);
+
+  if (lines.length === 0) return null;
+
+  if (inline) {
+    return lines.map((line) => (
+      <span key={line.key}>
+        {LEAVE_LINE_SEPARATOR}
+        <span className="mt-1 block break-words">{line.text}</span>
+      </span>
+    ));
+  }
+
+  return (
+    <ul id={id} className="grid min-w-0 gap-1">
+      {lines.map((line) => (
+        <li key={line.key} className="min-w-0 break-words text-sm font-medium">
+          {line.text}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** The guard's lines as text, each with a stable key: its override, or the one unknown line. */
+function replacementLinesOf(guard: ReplacementGuard | null): readonly { readonly key: string; readonly text: string }[] {
+  if (guard === null) return [];
+
+  if (guard.kind === REPLACEMENTS_UNKNOWN) {
+    return [{ key: REPLACEMENTS_UNKNOWN, text: t('ljudi.leaveRecord.replacementsUnknown') }];
+  }
+
+  return guard.lines.map((line) => ({
+    key: line.overrideId,
+    text: t('ljudi.leaveRecord.replacementStays', { name: line.name, team: line.team, date: line.date }),
+  }));
+}
 
 /**
  * The member's live leave records on the *Godišnji* card (story 5.2b),
@@ -28,7 +89,8 @@ import { t } from '@/lib/i18n';
  * decision; this renders them. Neutral styling throughout (UX-DR4, UX-DR27).
  */
 export function MemberLeaveRecords({ leave }: { readonly leave: MemberLeave }): ReactNode {
-  const { base, formDisabled, leaveFailure, removeFailure, confirming, leaveRemoved, amendTarget } = leave;
+  const { base, formDisabled, leaveFailure, removeFailure, confirming, leaveRemoved, removedReplacements, amendTarget } =
+    leave;
 
   if (base.kind !== LEAVE_READY && base.kind !== LEAVE_LOADING) return null;
 
@@ -123,6 +185,7 @@ export function MemberLeaveRecords({ leave }: { readonly leave: MemberLeave }): 
     return (
       <Notice ref={leave.listNoticeField} role="status" tabIndex={-1}>
         {t('ljudi.leaveRecord.removed', { from: leaveRemoved.from, to: leaveRemoved.to })}
+        <LeaveReplacementLines guard={removedReplacements} inline />
       </Notice>
     );
   }
@@ -140,20 +203,28 @@ export function MemberLeaveRecords({ leave }: { readonly leave: MemberLeave }): 
 
 /**
  * REMOVING A RECORD (story 5.2b): exactly one neutral modal confirmation that
- * names the range and what it costs — the removal confirm of
+ * names the range and what it costs, and each replacement the removal would
+ * leave rostered (story 5.4e) — the removal confirm of
  * `override-form.tsx`. Cancel is `outline`, confirm the default variant, and
  * nothing is `destructive`. A refusal keeps it open with its alert inside;
  * while the removal is in flight nothing dismisses it.
  */
 export function MemberLeaveRemoveConfirm({ leave }: { readonly leave: MemberLeave }): ReactNode {
-  const { confirming, removePending, removeFailure, removeCancel, cancelRemove, formDisabled } = leave;
+  const { confirming, removePending, removeFailure, removeCancel, cancelRemove, formDisabled, removeGuard } = leave;
 
   if (confirming === null) return null;
 
   const failure = leaveConfirmFailureOf(removeFailure);
+  // THE REPLACEMENT LINES DESCRIBE THE DIALOG while there are any (story 5.4e); the prompt already names it.
+  const describedBy = replacementLinesShown(removeGuard) ? LEAVE_REMOVE_REPLACEMENTS_ID : undefined;
 
   return (
-    <ConfirmDialog busy={removePending} onCancel={cancelRemove} aria-labelledby={LEAVE_REMOVE_PROMPT_ID}>
+    <ConfirmDialog
+      busy={removePending}
+      onCancel={cancelRemove}
+      aria-labelledby={LEAVE_REMOVE_PROMPT_ID}
+      aria-describedby={describedBy}
+    >
       <p id={LEAVE_REMOVE_PROMPT_ID} className="text-sm font-medium">
         {t(leaveRemovePromptMessageKey(confirming), {
           from: confirming.from,
@@ -162,6 +233,8 @@ export function MemberLeaveRemoveConfirm({ leave }: { readonly leave: MemberLeav
           inYear: t('count.days', { count: confirming.inYearDays ?? confirming.costDays }),
         })}
       </p>
+      {/* STORY 5.4e: a note beside the confirm, never a gate. */}
+      <LeaveReplacementLines guard={removeGuard} id={LEAVE_REMOVE_REPLACEMENTS_ID} />
       {failure === null ? null : <Notice role="alert">{t(leaveRefusalMessageKey(failure))}</Notice>}
       <DialogFooter>
         <Button

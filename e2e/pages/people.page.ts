@@ -1,6 +1,6 @@
 import { expect, type Locator } from '@playwright/test';
 
-import { fullDate } from '../utils/dates.ts';
+import { dayMonth, fullDate } from '../utils/dates.ts';
 import { fill, hr, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 
@@ -274,6 +274,22 @@ export class PeoplePage extends BasePage {
   /** The alert inside the confirmation that holds `text`: a refused removal. */
   alertIn(confirm: Locator, text: string): Locator {
     return confirm.getByRole('alert').filter({ hasText: text });
+  }
+
+  /**
+   * The replacement guard's line (story 5.4e): `name` stays on `team`'s shift
+   * on `date` (`YYYY-MM-DD`) as a replacement — the exact sentence.
+   */
+  replacementStaysLine(name: string, team: string, date: string): string {
+    return fill(leave.replacementStays, { name, team, date: dayMonth(date) });
+  }
+
+  /**
+   * The amend preview's polite live region, by its own id (story 5.4e reads
+   * its replacement lines there); a spec asserts its `aria-live` too.
+   */
+  get leavePreviewRegion(): Locator {
+    return this.leaveCard.locator('#member-leave-preview');
   }
 
   /** The retry the leave card's unavailable line offers. */

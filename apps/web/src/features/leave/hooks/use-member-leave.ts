@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type MouseEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type MouseEvent } from 'react';
 
 import {
   CALENDAR_KEY,
@@ -9,6 +9,12 @@ import {
   calendarSurfaceStateOf,
   type CalendarMembersRpc,
 } from '@/features/calendar/services/snapshot';
+import {
+  CONFLICT_RESOLUTIONS_TABLE,
+  ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+  organizationConflictResolutionsQueryOptions,
+  type OrganizationConflictResolutionsTable,
+} from '@/features/conflicts/services/resolutions';
 import {
   LEAVE_RECORDS_KEY,
   leaveRecordsAfterWriteOf,
@@ -21,6 +27,7 @@ import {
   LEAVE_AMEND_ACTION,
   LEAVE_FROM_FIELD,
   LEAVE_NO_DATE,
+  LEAVE_PREVIEW_READY,
   LEAVE_PREVIEW_REASON,
   LEAVE_READY,
   LEAVE_RECORD_ACTION,
@@ -34,12 +41,15 @@ import {
   leavePreviewStateOf,
   leaveSavedOf,
   memberLeaveBaseOf,
+  REPLACEMENTS_UNKNOWN,
+  replacementGuardOf,
   withoutLeaveHandoffOpening,
   type LeaveFailure,
   type LeaveField,
   type LeaveHandoff,
   type LeaveRecordRow,
   type LeaveSaved,
+  type ReplacementGuard,
 } from '@/features/leave/services/leave-section';
 import {
   LEAVE_FAILED,
@@ -108,6 +118,20 @@ import { focusLater } from '@/utils/focus-later';
  * Back never reopens it; the origin stays, for "Natrag na konflikte". Nothing
  * is written here until the admin saves; cancelling leaves the conflict open.
  *
+ * THE REPLACEMENT GUARD (story 5.4e). The organization's live resolutions
+ * are read too, and they and the calendar snapshot (whose live overrides the
+ * guard joins to) are re-read whenever an amend or a removal confirmation
+ * opens — by a row action or by the hand-off. While an amend range is
+ * previewed, or a removal confirmation is open, `amendGuard` / `removeGuard`
+ * name each replacement the change would leave rostered, or that they cannot
+ * be checked; during a re-read the cached answer stays on screen. A note
+ * only: nothing here waits for it or is disabled by it. The lines are
+ * captured just before the write, because the write removes the resolutions
+ * they come from — as unknown when either read is still fetching then, never
+ * from rows the re-read is about to replace — and a landed write's notice
+ * repeats them. A removal in flight, or refused, keeps the lines it was sent
+ * with on its open confirmation.
+ *
  * The component is keyed by the member, so nothing raised here outlives the
  * member it was raised about.
  */
@@ -152,6 +176,16 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   const [leaveSaved, setLeaveSaved] = useState<LeaveSaved | null>(null);
   /** The field a save refused before any request named, until it is edited. */
   const [refusedField, setRefusedField] = useState<LeaveField | null>(null);
+  /** The replacement lines captured before a landed amend, for its notice (story 5.4e). */
+  const [amendedReplacements, setAmendedReplacements] = useState<ReplacementGuard | null>(null);
+  /** The replacement lines captured before a landed removal, for the list's notice (story 5.4e). */
+  const [removedReplacements, setRemovedReplacements] = useState<ReplacementGuard | null>(null);
+  /**
+   * The lines a sent removal was captured with, held on its open confirmation
+   * while it is in flight and after a refusal, so the re-read after it never
+   * changes them under the admin (story 5.4e). Cleared when a confirmation opens.
+   */
+  const [sentRemoveGuard, setSentRemoveGuard] = useState<ReplacementGuard | null>(null);
   /** The hand-off already looked at once the rows were ready, by its identity: each opens once. */
   const handedOff = useRef<string | null>(null);
 
@@ -174,6 +208,12 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
       memberId,
     ),
   );
+  const resolutions = useQuery(
+    organizationConflictResolutionsQueryOptions(
+      // Named structurally, as the queue's read is.
+      () => supabaseClient().from(CONFLICT_RESOLUTIONS_TABLE) as unknown as OrganizationConflictResolutionsTable,
+    ),
+  );
 
   // A VALUE ALREADY IN A FIELD when it mounts — restored by the browser on
   // back-navigation, or autofilled — is previewed like a typed one.
@@ -183,10 +223,11 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   }, []);
 
   const recordsState = leaveRecordsStateOf(records);
+  const calendarState = calendarSurfaceStateOf(calendar);
   const base = memberLeaveBaseOf(
     {
       members: membersSurfaceStateOf(members),
-      calendar: calendarSurfaceStateOf(calendar),
+      calendar: calendarState,
       organization,
       records: recordsState,
     },
@@ -198,6 +239,42 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     base.kind === LEAVE_READY && !recordsState.refreshing
       ? leavePreviewStateOf(base.input, from, to, amendTarget)
       : null;
+  const snapshot = base.kind === LEAVE_READY ? calendarState.snapshot : null;
+  /** What the previewed amend would leave rostered (story 5.4e), or null while no amend range is previewed. */
+  // ONLY A READY PREVIEW CAN BE SAVED (`amend` returns before any request
+  // otherwise), so a guard over the ready preview's range guards every amend sent.
+  const amendFrom = amendTarget !== null && preview?.kind === LEAVE_PREVIEW_READY ? preview.range.from : null;
+  const amendTo = amendTarget !== null && preview?.kind === LEAVE_PREVIEW_READY ? preview.range.to : null;
+  const { isPending: resolutionsPending, isError: resolutionsFailed, fetchStatus: resolutionsFetch, data: resolutionRows } =
+    resolutions;
+  const resolutionsRead = useMemo(
+    () => ({ isPending: resolutionsPending, isError: resolutionsFailed, fetchStatus: resolutionsFetch, data: resolutionRows }),
+    [resolutionsPending, resolutionsFailed, resolutionsFetch, resolutionRows],
+  );
+  const amendGuard = useMemo(
+    () =>
+      snapshot !== null && amendTarget !== null && amendFrom !== null && amendTo !== null
+        ? replacementGuardOf(resolutionsRead, snapshot, memberId, amendTarget, { from: amendFrom, to: amendTo })
+        : null,
+    [resolutionsRead, snapshot, memberId, amendTarget, amendFrom, amendTo],
+  );
+  /** What the confirmed removal would leave rostered (story 5.4e), or null while no confirmation is open. */
+  const liveRemoveGuard = useMemo(
+    () =>
+      snapshot !== null && confirming !== null
+        ? replacementGuardOf(resolutionsRead, snapshot, memberId, confirming.record, null)
+        : null,
+    [resolutionsRead, snapshot, memberId, confirming],
+  );
+  // A SENT REMOVAL'S LINES stand on its confirmation until it closes or another opens.
+  const removeGuard = confirming !== null && sentRemoveGuard !== null ? sentRemoveGuard : liveRemoveGuard;
+  /** Either read the guard stands on is being re-read: a capture now would be of rows about to be replaced. */
+  const guardFetching = resolutions.isFetching || calendar.isFetching;
+
+  /** The guard to send a write with: unknown while a read it stands on is still fetching. */
+  function capturedGuard(guard: ReplacementGuard | null): ReplacementGuard | null {
+    return guard !== null && guardFetching ? { kind: REPLACEMENTS_UNKNOWN } : guard;
+  }
   const invalidField = leaveInvalidFieldOf(leaveFormFailureOf(leaveFailure), refusedField);
   /** Any leave write outstanding: every leave control waits for it. */
   const writePending = recordPending || amendPending || removePending;
@@ -251,6 +328,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     amendReturn.current = null;
     removeReturn.current = null;
     clearRaised();
+    rereadResolutions();
 
     if (opening.kind === LEAVE_AMEND_ACTION) {
       setAmendTarget(opening.row.record);
@@ -271,6 +349,19 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     setLeaveFailure(null);
     setRemoveFailure(null);
     setLeaveRemoved(null);
+    setAmendedReplacements(null);
+    setRemovedReplacements(null);
+  }
+
+  /**
+   * Read the organization's resolutions and the calendar snapshot again, as an
+   * amend or a removal confirmation opens (story 5.4e): the guard joins the
+   * one to the other's live overrides, so both must be fresh.
+   */
+  function rereadResolutions(): void {
+    setSentRemoveGuard(null);
+    void queryClient.invalidateQueries({ queryKey: ORGANIZATION_CONFLICT_RESOLUTIONS_KEY });
+    void queryClient.invalidateQueries({ queryKey: CALENDAR_KEY });
   }
 
   /** Put the od and do fields, and the state the preview follows, to `range`; empty for none. */
@@ -304,6 +395,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
 
     amendReturn.current = event.currentTarget;
     clearRaised();
+    rereadResolutions();
     setAmendTarget(row.record);
     fillFields(row.record);
     focusLater([() => fromField.current], () => toField.current);
@@ -326,6 +418,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
 
     removeReturn.current = event.currentTarget;
     clearRaised();
+    rereadResolutions();
     setConfirming(row);
   }
 
@@ -344,7 +437,13 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
 
   /** Read again every read the card stands on, from the unavailable line's retry. */
   function retry(): void {
-    for (const queryKey of [MEMBERS_LIST_KEY, ORGANIZATION_SNAPSHOT_KEY, CALENDAR_KEY, LEAVE_RECORDS_KEY(memberId)]) {
+    for (const queryKey of [
+      MEMBERS_LIST_KEY,
+      ORGANIZATION_SNAPSHOT_KEY,
+      CALENDAR_KEY,
+      LEAVE_RECORDS_KEY(memberId),
+      ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+    ]) {
       void queryClient.invalidateQueries({ queryKey });
     }
   }
@@ -467,6 +566,8 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     const sent = preview;
     const sentInput = base.input;
     const target = amendTarget;
+    // BEFORE THE WRITE, which removes the resolutions these lines come from.
+    const replacements = capturedGuard(amendGuard);
     // Where focus goes once the form is enabled again, after the `finally`:
     // the status line, else the od field, else the list's gone line.
     let focusField = false;
@@ -474,6 +575,8 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
 
     amending.current = true;
     setRefusedField(null);
+    // No earlier amend's lines carry into this one's failure or gone line.
+    setAmendedReplacements(null);
     setAmendPending(true);
 
     try {
@@ -502,6 +605,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
         const fresh = leaveRecordsAfterWriteOf(queryClient.getQueryState(LEAVE_RECORDS_KEY(memberId)));
 
         setLeaveAmended(leaveAmendedOf(sentInput, fresh, outcome.id));
+        setAmendedReplacements(replacements);
         setAmendTarget(null);
         fillFields(null);
       } else if (outcome.code === LEAVE_GONE) {
@@ -535,11 +639,15 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     if (confirming === null || removing.current || base.kind !== LEAVE_READY || recordsState.refreshing) return;
 
     const target = confirming;
+    // BEFORE THE WRITE, which removes the resolutions these lines come from.
+    const replacements = capturedGuard(removeGuard);
     let landed = false;
 
     removing.current = true;
     setRemoveFailure(null);
     setLeaveRemoved(null);
+    setRemovedReplacements(null);
+    setSentRemoveGuard(replacements);
     setRemovePending(true);
 
     try {
@@ -552,7 +660,10 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
       await refreshAfterChange();
 
       landed = outcome.ok || outcome.code === LEAVE_GONE;
-      if (outcome.ok) setLeaveRemoved(target);
+      if (outcome.ok) {
+        setLeaveRemoved(target);
+        setRemovedReplacements(replacements);
+      }
       if (landed) {
         setConfirming(null);
         if (amendTarget?.id === target.record.id) {
@@ -582,6 +693,10 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     leaveSaved,
     leaveAmended,
     leaveRemoved,
+    amendGuard,
+    removeGuard,
+    amendedReplacements,
+    removedReplacements,
     removeFailure,
     amendTarget,
     confirming,

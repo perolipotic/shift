@@ -432,7 +432,9 @@
       "removeDenied": "Ne možeš ukloniti godišnji odmor. Za to trebaš ovlasti administratora.",
       "removeFailed": "Godišnji odmor nije uklonjen. Pokušaj ponovno.",
       "gone": "Taj zapis godišnjeg odmora više ne postoji (uklonjen je ili izmijenjen).",
-      "amending": "u izmjeni"
+      "amending": "u izmjeni",
+      "replacementStays": "{name} ostaje na smjeni {team} · {date} kao zamjena. Ukloni zamjenu u kalendaru ako više ne treba.",
+      "replacementsUnknown": "Ne mogu provjeriti zamjene za ove datume."
     }
   },
   "nav": {
