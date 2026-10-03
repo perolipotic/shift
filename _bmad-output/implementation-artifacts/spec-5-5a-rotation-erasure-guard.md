@@ -74,6 +74,8 @@ context:
 
 - **INTERPRETED:** "explicit confirm, amend or discard". Confirm is "Potvrdi brisanje". Amend is "Zadrži", followed by "Natrag na uređivanje". Discarding the draft is 5.5c's "Odbaci promjene" (human, 2026-10-03, mockup).
 - **NARROWED:** "a rotation, roster or membership change". This slice covers rotation only. Roster and membership are 5.5b, and the sticky save bar is 5.5c; both are in `deferred-work.md`.
+- **DEFERRED:** "a sticky save bar keeps `Spremi` and `Odbaci promjene` in reach". This is story 5.5c, already in `deferred-work.md` (human, 2026-10-03).
+- **NARROWED:** "only an erasure blocks". A save is also refused while the erasures cannot be checked (a failed or pending read, or an underivable diff), so nothing is saved unchecked (human, 2026-10-03, AD-5).
 
 </frozen-after-approval>
 
