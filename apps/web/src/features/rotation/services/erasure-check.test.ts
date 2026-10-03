@@ -1,0 +1,157 @@
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+
+import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
+import {
+  CHECK_READY,
+  CHECK_REFUSED,
+  CHECK_UNAVAILABLE,
+  erasureCheckOf,
+  type ErasureReads,
+} from '@/features/rotation/services/erasure-check';
+import { readRotation, type RotationSnapshot } from '@/features/rotation/services/list';
+import { prefillOf, withEffectiveFrom, type RotationDraft } from '@/features/rotation/utils/draft';
+import { initLocalization } from '@/lib/i18n';
+import {
+  PILOT,
+  SEEDED,
+  VIEWER_MEMBER,
+  VIEWER_NAME,
+  answerOf,
+  assignmentRow,
+  calendarMemberRow,
+  calendarOrganizationRow,
+  calendarTableOf,
+  memberMembershipRow,
+  membersAnswerOf,
+  membershipRow,
+  rotationTableOf,
+  viewerRow,
+  viewerSession,
+  type FixtureRows,
+} from '@/features/rotation/rotation.fixture';
+
+/**
+ * Story 5.5a's check run, executed (AD-15): the hook's every path but the
+ * fetching itself — offline, a read that rejects, a fresh rotation that
+ * refuses the draft, a derivation that cannot be trusted, and a ready answer.
+ * The organization's today is 2026-09-01 throughout.
+ */
+
+const TODAY = '2026-09-01';
+const A = 'pilot-smjena-a';
+
+async function calendarOf(): Promise<CalendarSnapshot> {
+  const source = calendarTableOf(
+    {
+      data: [
+        calendarOrganizationRow(PILOT, {
+          viewers: [viewerRow([membershipRow(A, SEEDED)], { role: 'admin' })],
+          versions: [memberMembershipRow(VIEWER_MEMBER, A, SEEDED)],
+        }),
+      ],
+      error: null,
+      count: 1,
+    },
+    membersAnswerOf([calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME)]),
+  );
+  const outcome = await readCalendar(source, source, viewerSession());
+
+  if (!outcome.ok) throw new Error(outcome.code);
+
+  return outcome.snapshot;
+}
+
+async function rotationOf(rows: FixtureRows): Promise<RotationSnapshot> {
+  const outcome = await readRotation(rotationTableOf(answerOf(rows)));
+
+  if (!outcome.ok) throw new Error(outcome.code);
+
+  return outcome.snapshot;
+}
+
+/** Every team free, from tomorrow. */
+function freeFrom(rotation: RotationSnapshot, from: string): RotationDraft {
+  return {
+    ...withEffectiveFrom(prefillOf(rotation, TODAY), from),
+    steps: ['pilot-slobodno'],
+    keys: ['step-0'],
+    offsets: Object.fromEntries(PILOT.teams.map((team) => [team['id'], 0])),
+  };
+}
+
+const LEAVE = [{ id: 'record-1', member_id: VIEWER_MEMBER, during: '[2026-09-10,2026-09-12)' }];
+
+let calendar: CalendarSnapshot;
+let rotation: RotationSnapshot;
+
+beforeAll(async () => {
+  await initLocalization();
+  calendar = await calendarOf();
+  rotation = await rotationOf(PILOT);
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+function readsOf(overrides: Partial<ErasureReads> = {}): () => Promise<ErasureReads> {
+  return () => Promise.resolve({ rotation, calendar, records: LEAVE, resolutions: [], ...overrides });
+}
+
+describe('erasureCheckOf', () => {
+  it('answers the erasures, the fresh rotation and the draft it checked', async () => {
+    const check = await erasureCheckOf(readsOf(), freeFrom(rotation, '2026-09-02'), TODAY, true);
+
+    if (check.kind !== CHECK_READY) throw new Error(check.kind);
+
+    expect(check.rows.map((row) => row.date)).toEqual(['2026-09-10', '2026-09-11']);
+    expect(check.rotation).toBe(rotation);
+    expect(Object.keys(check.draft.offsets).sort()).toEqual(PILOT.teams.map((team) => team['id']).sort());
+  });
+
+  it('answers unavailable offline, without reading', async () => {
+    const read = vi.fn(readsOf());
+
+    expect(await erasureCheckOf(read, freeFrom(rotation, '2026-09-02'), TODAY, false)).toEqual({ kind: CHECK_UNAVAILABLE });
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('answers unavailable, logged, when a read rejects', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const failed = new Error('unavailable');
+
+    expect(await erasureCheckOf(() => Promise.reject(failed), freeFrom(rotation, '2026-09-02'), TODAY, true)).toEqual({
+      kind: CHECK_UNAVAILABLE,
+    });
+    expect(logged).toHaveBeenCalledWith(CHECK_UNAVAILABLE, failed);
+  });
+
+  it('answers unavailable when the derivation cannot be trusted', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(
+      await erasureCheckOf(readsOf({ records: [{ id: 'x', member_id: 'stranger', during: '[2026-09-10,2026-09-11)' }] }), freeFrom(rotation, '2026-09-02'), TODAY, true),
+    ).toEqual({ kind: CHECK_UNAVAILABLE });
+  });
+
+  it('answers unavailable when a throw is not a RangeError', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const broken = { ...calendar, members: null } as unknown as CalendarSnapshot;
+
+    expect(await erasureCheckOf(readsOf({ calendar: broken }), freeFrom(rotation, '2026-09-02'), TODAY, true)).toEqual({
+      kind: CHECK_UNAVAILABLE,
+    });
+  });
+
+  it('answers refused, with the fresh rotation, when it refuses the draft: a version already dated the effective date', async () => {
+    const changed = await rotationOf({
+      ...PILOT,
+      assignments: [...PILOT.assignments, assignmentRow(A, 'pilot-rotation', 'pilot-step-2', SEEDED, '2026-09-02')],
+    });
+
+    expect(await erasureCheckOf(readsOf({ rotation: changed }), freeFrom(rotation, '2026-09-02'), TODAY, true)).toEqual({
+      kind: CHECK_REFUSED,
+      rotation: changed,
+    });
+  });
+});

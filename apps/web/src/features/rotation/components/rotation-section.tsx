@@ -31,11 +31,13 @@ import {
   Plus,
   Rows3,
   Save,
+  TriangleAlert,
   Undo2,
   X,
 } from 'lucide-react';
 import {
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -74,10 +76,12 @@ import {
   addableTypesOf,
   draftStepRowsOf,
   draftTeamRowsOf,
+  draftRefusalOf,
   dropOf,
   figuresOf,
   focusAfterDropOf,
   focusAfterRemoveOf,
+  normalizedDraftOf,
   previewGridOf,
   spreadOfferedOf,
   stepControlIdOf,
@@ -102,6 +106,18 @@ import {
   rotationStepperStore,
   shownDraftOf,
 } from '@/features/rotation/hooks/draft-store';
+import { useErasureCheck } from '@/features/rotation/hooks/use-erasure-check';
+import { CHECK_REFUSED, CHECK_UNAVAILABLE } from '@/features/rotation/services/erasure-check';
+import {
+  ERASURE_CONFIRMED,
+  ERASURE_KEPT,
+  erasureKeptOf,
+  erasuresConfirmedOf,
+  sameErasuresOf,
+  type ErasureDecision,
+  type ErasureDecisions,
+  type ErasureRow,
+} from '@/features/rotation/services/erasures';
 import {
   ROTATION_ASSIGNMENTS_TABLE,
   ROTATION_KEY,
@@ -157,15 +173,18 @@ import {
   stepStatusOf,
 } from '@/features/rotation/utils/stepper';
 import {
+  rotationWarningLinesOf,
   shownSaveOutcomeOf,
   warningTextOf,
   warningsSummaryOf,
+  type RotationWarningLine,
   type ShownSaveOutcome,
   type WarningTranslate,
 } from '@/features/rotation/utils/warnings';
 import { savedPendingCountOf } from '@/features/rotation/services/override-disposition';
 import { OverrideReview } from '@/features/rotation/components/override-review';
 import { durationValuesOf, shiftTypeDurationMessageKey } from '@/features/shift-types/services/list';
+import { ROTATION_SAVE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /**
@@ -208,7 +227,30 @@ import { supabaseClient } from '@/lib/supabase/client';
  * or removes an override; one dated under a version saved after it is pending,
  * and `Izmjene za pregled`, after the notices, lists each for the admin to
  * confirm, amend or discard. The save's confirmation counts them.
+ *
+ * A SAVE NEVER QUIETLY ERASES A CONFLICT (story 5.5a). "Spremi rotaciju"
+ * first re-reads the calendar, the organization's leave and its resolutions
+ * and derives which unresolved conflicts the draft would erase
+ * (`@/features/rotation/services/erasures`). None: it saves as it always did.
+ * Some: a `ConfirmDialog` lists each, and saving waits until every one is
+ * confirmed; the check is derived again before the write, and a changed set
+ * is shown again, undecided. A check that cannot be derived refuses the save,
+ * with a retry. A draft the save refuses anyway is refused as before, with no
+ * check.
  */
+
+/** The confirmation's list, and what was checked to derive it: the write writes exactly this. */
+interface ShownErasures {
+  readonly rows: readonly ErasureRow[];
+  /** The fresh rotation the check stood on. */
+  readonly rotation: RotationSnapshot;
+  /** The draft as checked, normalized to that rotation's active teams. */
+  readonly draft: RotationDraft;
+  /** The organization's today when the save was asked. */
+  readonly today: string;
+  /** Shown again because the list changed since it was decided. */
+  readonly changed: boolean;
+}
 
 export function RotationSection({
   heading,
@@ -243,6 +285,61 @@ export function RotationSection({
   const cancelConfirmation = useRef<HTMLParagraphElement>(null);
   const [focus, setFocus] = useState<StepFocus | null>(null);
   const controls = useRef(new Map<string, HTMLButtonElement>());
+  const checkErasures = useErasureCheck();
+  /** The conflicts the draft would erase and what was checked, while their confirmation is open; `null` when it is closed. */
+  const [erasures, setErasures] = useState<ShownErasures | null>(null);
+  /** Each listed conflict's decision; a fresh list starts with none. */
+  const [decisions, setDecisions] = useState<ErasureDecisions>({});
+  /** The last save could not check what it would erase, so it saved nothing. */
+  const [erasuresUnavailable, setErasuresUnavailable] = useState(false);
+  /** The first row's "Potvrdi brisanje", where focus starts whenever a list is shown. */
+  const firstErasure = useRef<HTMLButtonElement>(null);
+  /** How many conflicts the last landed save removed, confirmed in its dialog; 0 for none. */
+  const [erasedCount, setErasedCount] = useState(0);
+  /** The builder's own "Spremi rotaciju", where focus returns when the confirmation closes. */
+  const saveButton = useRef<HTMLButtonElement>(null);
+  /** The refusal's retry, which takes focus when the check cannot be derived. */
+  const retryButton = useRef<HTMLButtonElement>(null);
+  /** Set when the confirmation closes, until focus is back on the save. */
+  const returnFocus = useRef(false);
+
+  // A LIST SHOWN, OR SHOWN AGAIN, STARTS ON ITS FIRST ROW: the dialog is
+  // already open when a changed list replaces the one decided.
+  useEffect(() => {
+    if (erasures !== null) firstErasure.current?.focus();
+  }, [erasures]);
+
+  // CLOSED, FOCUS GOES BACK TO THE SAVE — once it is enabled again, after a
+  // write the close started.
+  useEffect(() => {
+    if (erasures !== null || pending || !returnFocus.current) return;
+
+    returnFocus.current = false;
+    saveButton.current?.focus();
+  }, [erasures, pending]);
+
+  // A CHECK THAT CANNOT BE DERIVED: focus on its retry, so it is announced and in reach.
+  useEffect(() => {
+    if (erasuresUnavailable && !pending) retryButton.current?.focus();
+  }, [erasuresUnavailable, pending]);
+
+  /**
+   * The checked draft's warnings (story 2.5), for the confirmation: from the
+   * same rotation and normalized draft the check stood on, worked out once
+   * per list shown. A throw computing them is logged and shows none; they
+   * never block either way.
+   */
+  const erasureWarnings = useMemo((): readonly RotationWarningLine[] => {
+    if (erasures === null) return [];
+
+    try {
+      return rotationWarningLinesOf(erasures.rotation, erasures.draft, erasures.draft.effectiveFrom);
+    } catch (cause) {
+      console.error(ROTATION_WRITE_UNAVAILABLE, cause);
+
+      return [];
+    }
+  }, [erasures]);
 
   // WHERE FOCUS GOES after a move or a removal is `@/features/rotation/utils/draft`'s rule;
   // here it is only applied, once the rows have re-rendered.
@@ -281,9 +378,15 @@ export function RotationSection({
 
   /** Every change goes through a draft operation, into the store; a message describes the last save only. */
   function change(next: RotationDraft): void {
+    // NOTHING CHANGES THE DRAFT while a check or a write is in flight: the
+    // controls are disabled then, and this holds even if one is not.
+    if (saving.current) return;
+
     setOutcome(null);
     setSavedPending(null);
+    setErasedCount(0);
     setCancelled(null);
+    setErasuresUnavailable(false);
     if (snapshot !== null) rotationDraftStore.set(snapshot.organizationId, next);
   }
 
@@ -339,7 +442,84 @@ export function RotationSection({
     setFocus(focusAfterRemoveOf(next, index));
   }
 
-  async function save(): Promise<void> {
+  /**
+   * THE WRITE ITSELF, under a guard its caller already holds: `saveRotation`
+   * on `today` — the organization's today when the save was asked, so the
+   * refusal checked then is the one the write applies — from `writable`, the
+   * rotation the check (if any) stood on, and `current`, the draft it checked.
+   * `erased` is how many conflicts the admin confirmed it removes.
+   */
+  async function write(writable: RotationSnapshot, current: RotationDraft, today: string, erased: number): Promise<void> {
+    setSavedTimes((count) => count + 1);
+
+    const client = supabaseClient();
+    const { data } = await client.auth.getSession();
+    const organization = claimedOrganizationOf(data.session?.access_token);
+
+    if (organization === null) {
+      setOutcome({ ok: false, code: ROTATION_WRITE_REFUSED, afterPattern: false });
+
+      return;
+    }
+
+    const saved = await saveRotation(
+      {
+        patterns: client.from(ROTATION_PATTERNS_TABLE) as unknown as RotationPatternTable,
+        steps: client.from(ROTATION_STEPS_TABLE) as unknown as RotationPatternTable,
+        assignments: client.from(ROTATION_ASSIGNMENTS_TABLE) as unknown as RotationInsertTable,
+      },
+      organization,
+      writable,
+      current,
+      today,
+    );
+
+    // A REFUSED SAVE KEEPS THE DRAFT: nothing below touches it on that path.
+    // A LANDED ONE CARRIES ITS WARNINGS (story 2.5), from the draft just
+    // saved and the date its versions apply from (story 2.6) — before the
+    // draft re-opens below. They never block: the rows are already written.
+    setOutcome(shownSaveOutcomeOf(saved, writable, current, current.effectiveFrom));
+
+    if (!saved.ok) return;
+
+    setErasedCount(erased);
+
+    // THE SCHEDULE CHANGED (story 5.5a): beside the builder's own read, the
+    // calendar snapshot and the two reads the queue derives with it, so an
+    // erased conflict leaves the queue on the next read.
+    try {
+      await refreshAfterWrite(queryClient, ROTATION_KEY, ROTATION_SAVE_DEPENDENTS);
+    } catch (cause) {
+      console.error(ROTATION_WRITE_UNAVAILABLE, cause);
+    }
+
+    // The draft re-opens as what is now in force — but only from a fresh
+    // read; over a failed one it stays as it was saved. The count of
+    // overrides left pending is taken from that same fresh read, once.
+    if (reopensAfterSaveOf(queryClient.getQueryState(ROTATION_KEY)?.status)) {
+      rotationDraftStore.reset();
+
+      const reread = queryClient.getQueryData<RotationSnapshot>(ROTATION_KEY);
+
+      if (reread !== undefined) setSavedPending(savedPendingCountOf(reread));
+    }
+  }
+
+  /**
+   * "Spremi rotaciju" and the refusal's "Pokušaj ponovno" (story 5.5a): the
+   * erasure check, then the write, under ONE guard held from the press to the
+   * write's end — the builder's inputs stay disabled and nothing else starts
+   * in between.
+   *
+   * TODAY IS TAKEN ONCE, at the press: a tab left open past the
+   * organization's midnight runs the refusal, the check and the write on the
+   * day the save is actually made. A draft the save refuses anyway goes
+   * straight to the write, which refuses it as it always did; so does one the
+   * check's fresh rotation refuses. Otherwise the check: none erased writes at
+   * once, some open their confirmation, and a check that cannot be derived
+   * refuses the save with a retry. Nothing is saved unchecked.
+   */
+  async function requestSave(): Promise<void> {
     const writable = writableRotationOf(state);
 
     if (draft === null || saving.current) return;
@@ -347,8 +527,9 @@ export function RotationSection({
     saving.current = true;
     setOutcome(null);
     setSavedPending(null);
-    setSavedTimes((count) => count + 1);
+    setErasedCount(0);
     setCancelled(null);
+    setErasuresUnavailable(false);
     setPending(true);
 
     try {
@@ -358,58 +539,36 @@ export function RotationSection({
         return;
       }
 
-      // TODAY AT THE MOMENT OF SAVING, not when the screen last rendered: a
-      // tab left open past the organization's midnight runs the checks — the
-      // effective date may be no earlier, and nothing may be scheduled after
-      // it — on the day the save is actually made.
-      const savedToday = rotationTodayOf(writable, new Date());
+      const today = rotationTodayOf(writable, new Date());
 
-      const client = supabaseClient();
-      const { data } = await client.auth.getSession();
-      const organization = claimedOrganizationOf(data.session?.access_token);
-
-      if (organization === null) {
-        setOutcome({ ok: false, code: ROTATION_WRITE_REFUSED, afterPattern: false });
+      if (draftRefusalOf(writable, normalizedDraftOf(draft, rotationTeamsOf(writable)), today) !== null) {
+        await write(writable, draft, today, 0);
 
         return;
       }
 
-      const saved = await saveRotation(
-        {
-          patterns: client.from(ROTATION_PATTERNS_TABLE) as unknown as RotationPatternTable,
-          steps: client.from(ROTATION_STEPS_TABLE) as unknown as RotationPatternTable,
-          assignments: client.from(ROTATION_ASSIGNMENTS_TABLE) as unknown as RotationInsertTable,
-        },
-        organization,
-        writable,
-        draft,
-        savedToday,
-      );
+      const check = await checkErasures(draft, today);
 
-      // A REFUSED SAVE KEEPS THE DRAFT: nothing below touches it on that path.
-      // A LANDED ONE CARRIES ITS WARNINGS (story 2.5), from the draft just
-      // saved and the date its versions apply from (story 2.6) — before the
-      // draft re-opens below. They never block: the rows are already written.
-      setOutcome(shownSaveOutcomeOf(saved, writable, draft, draft.effectiveFrom));
+      if (check.kind === CHECK_UNAVAILABLE) {
+        setErasuresUnavailable(true);
 
-      if (!saved.ok) return;
-
-      try {
-        await queryClient.invalidateQueries({ queryKey: ROTATION_KEY });
-      } catch (cause) {
-        console.error(ROTATION_WRITE_UNAVAILABLE, cause);
+        return;
       }
 
-      // The draft re-opens as what is now in force — but only from a fresh
-      // read; over a failed one it stays as it was saved. The count of
-      // overrides left pending is taken from that same fresh read, once.
-      if (reopensAfterSaveOf(queryClient.getQueryState(ROTATION_KEY)?.status)) {
-        rotationDraftStore.reset();
+      if (check.kind === CHECK_REFUSED) {
+        await write(check.rotation, draft, today, 0);
 
-        const reread = queryClient.getQueryData<RotationSnapshot>(ROTATION_KEY);
-
-        if (reread !== undefined) setSavedPending(savedPendingCountOf(reread));
+        return;
       }
+
+      if (check.rows.length === 0) {
+        await write(check.rotation, check.draft, today, 0);
+
+        return;
+      }
+
+      setDecisions({});
+      setErasures({ rows: check.rows, rotation: check.rotation, draft: check.draft, today, changed: false });
     } catch (cause) {
       console.error(ROTATION_WRITE_UNAVAILABLE, cause);
       setOutcome({ ok: false, code: ROTATION_WRITE_UNAVAILABLE, afterPattern: false });
@@ -417,6 +576,68 @@ export function RotationSection({
       saving.current = false;
       setPending(false);
     }
+  }
+
+  /**
+   * The confirmation's own save, once every row is confirmed, under the same
+   * one guard: the check is derived again from fresh reads for the very draft
+   * and day it was shown for. The same conflicts, as shown: the dialog closes
+   * and the write runs. A changed list: it is shown again, undecided, with a
+   * line saying so. A check that cannot be derived closes the dialog and
+   * refuses the save; a draft the fresh rotation refuses takes the save's own
+   * refusal.
+   */
+  async function confirmErasures(shown: ShownErasures): Promise<void> {
+    if (saving.current || !erasuresConfirmedOf(shown.rows, decisions)) return;
+
+    saving.current = true;
+    setPending(true);
+
+    try {
+      const check = await checkErasures(shown.draft, shown.today);
+
+      if (check.kind === CHECK_UNAVAILABLE) {
+        setErasures(null);
+        setErasuresUnavailable(true);
+
+        return;
+      }
+
+      if (check.kind === CHECK_REFUSED) {
+        closeErasures();
+        await write(check.rotation, shown.draft, shown.today, 0);
+
+        return;
+      }
+
+      if (check.rows.length > 0 && !sameErasuresOf(shown.rows, check.rows)) {
+        setDecisions({});
+        setErasures({ rows: check.rows, rotation: check.rotation, draft: check.draft, today: shown.today, changed: true });
+
+        return;
+      }
+
+      closeErasures();
+      await write(check.rotation, check.draft, shown.today, check.rows.length);
+    } catch (cause) {
+      console.error(ROTATION_WRITE_UNAVAILABLE, cause);
+      setErasures(null);
+      setOutcome({ ok: false, code: ROTATION_WRITE_UNAVAILABLE, afterPattern: false });
+    } finally {
+      saving.current = false;
+      setPending(false);
+    }
+  }
+
+  /** Closes the confirmation; focus goes back to the builder's own "Spremi rotaciju". */
+  function closeErasures(): void {
+    returnFocus.current = true;
+    setErasures(null);
+  }
+
+  /** One row's decision, replacing whatever it had. */
+  function decide(key: string, decision: ErasureDecision): void {
+    setDecisions((current) => ({ ...current, [key]: decision }));
   }
 
   /**
@@ -1086,6 +1307,166 @@ export function RotationSection({
     );
   }
 
+  /**
+   * The draft's warnings (story 2.5) as lines: the summary, then each line
+   * with its dates. SPANS WITH LIST ROLES, because the save's Notice is a
+   * `<p>` and a `<ul>` may not sit in one. Nothing when there is none.
+   */
+  function renderWarnings(lines: readonly RotationWarningLine[]): ReactNode {
+    if (lines.length === 0) return null;
+
+    return (
+      <>
+        <span className="mt-2 block">{warningTextOf(warningsSummaryOf(lines), translate)}</span>
+        <span role="list" className="mt-1 grid gap-1">
+          {lines.map((line, index) => (
+            <span role="listitem" key={index} className="block">
+              {warningTextOf(line.text, translate)}
+              {line.details.length === 0 ? null : (
+                <span role="list" className="mt-0.5 grid gap-0.5 pl-4 font-normal">
+                  {line.details.map((detail, detailIndex) => (
+                    <span role="listitem" key={detailIndex} className="block">
+                      {warningTextOf(detail, translate)}
+                    </span>
+                  ))}
+                </span>
+              )}
+            </span>
+          ))}
+        </span>
+      </>
+    );
+  }
+
+  /**
+   * The erasure confirmation (story 5.5a, mockup `setup-1.html` §2): one row
+   * per conflict the draft would erase, by date then team, each with its own
+   * "Potvrdi brisanje" / "Zadrži" toggles — nothing preselected — and the
+   * draft's warnings, which never block. "Spremi rotaciju" is `aria-disabled`
+   * until every row is confirmed; "Natrag na uređivanje", Escape and the
+   * backdrop close it and keep the draft. Neutral, never `destructive`.
+   */
+  function renderErasures(shown: ShownErasures): ReactNode {
+    const { rows } = shown;
+    const confirmed = erasuresConfirmedOf(rows, decisions);
+    const kept = erasureKeptOf(rows, decisions);
+    const blocked = !confirmed || pending;
+
+    return (
+      <ConfirmDialog
+        busy={pending}
+        onCancel={closeErasures}
+        aria-labelledby="rotation-erasures-title"
+        aria-describedby="rotation-erasures-lede"
+        className="max-w-2xl"
+      >
+        <div className="grid min-w-0 gap-1.5">
+          <h2 id="rotation-erasures-title" className="font-heading text-lg font-bold leading-tight tracking-tight">
+            {t('rotation.builder.erasures.title', { count: rows.length })}
+          </h2>
+          <p id="rotation-erasures-lede" className="text-sm">
+            {t('rotation.builder.erasures.lede', { count: rows.length })}
+          </p>
+        </div>
+        {/* THE LIST CHANGED since it was decided: said politely, once, above it. */}
+        {shown.changed ? (
+          <p role="status" className="text-sm font-medium">
+            {t('rotation.builder.erasures.changed')}
+          </p>
+        ) : null}
+        <ul className="grid min-w-0 gap-2">
+          {rows.map((row, index) => {
+            const decision = decisions[row.key];
+            const parts = { team: row.teamName, weekday: row.weekday, date: row.dayMonth, type: row.shiftTypeName };
+
+            return (
+              <li key={row.key} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-md border p-3">
+                {/* THE CONFLICT MARK as a shape, never a colour alone. */}
+                <TriangleAlert aria-hidden className="size-4 shrink-0" />
+                <span className="grid min-w-0 flex-1 basis-48 gap-0.5">
+                  <span className="break-words font-semibold tabular-nums">
+                    {t('rotation.builder.erasures.rowTitle', parts)}
+                  </span>
+                  <span className="break-words text-sm text-muted-foreground">
+                    {row.teamWorks
+                      ? t('rotation.builder.erasures.rowWithout', { member: row.memberName, team: row.teamName })
+                      : t('rotation.builder.erasures.rowFree', { member: row.memberName, team: row.teamName })}
+                  </span>
+                </span>
+                <span
+                  role="group"
+                  aria-label={t('rotation.builder.erasures.decision', parts)}
+                  className="flex min-w-0 flex-wrap gap-2"
+                >
+                  <Button
+                    ref={index === 0 ? firstErasure : undefined}
+                    className="h-11 aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+                    type="button"
+                    variant="outline"
+                    aria-pressed={decision === ERASURE_CONFIRMED}
+                    disabled={pending}
+                    onClick={() => {
+                      decide(row.key, ERASURE_CONFIRMED);
+                    }}
+                  >
+                    {decision === ERASURE_CONFIRMED ? <Check aria-hidden /> : null}
+                    {t('rotation.builder.erasures.confirm')}
+                  </Button>
+                  <Button
+                    className="h-11 aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
+                    type="button"
+                    variant="outline"
+                    aria-pressed={decision === ERASURE_KEPT}
+                    disabled={pending}
+                    onClick={() => {
+                      decide(row.key, ERASURE_KEPT);
+                    }}
+                  >
+                    {decision === ERASURE_KEPT ? <Check aria-hidden /> : null}
+                    {t('rotation.builder.erasures.keep')}
+                  </Button>
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+        {/* THE WARNINGS NEVER BLOCK: shown, and nothing waits on them. */}
+        <p className="text-sm empty:hidden">{renderWarnings(erasureWarnings)}</p>
+        {kept ? (
+          <p id="rotation-erasures-kept" className="text-sm font-medium">
+            {t('rotation.builder.erasures.kept')}
+          </p>
+        ) : null}
+        <DialogFooter>
+          <Button
+            className="h-11"
+            type="button"
+            variant="outline"
+            disabled={pending}
+            onClick={closeErasures}
+          >
+            {t('rotation.builder.erasures.back')}
+          </Button>
+          {/* `aria-disabled` rather than `disabled`, so it stays in the tab
+              order and its hint is read; a press while blocked does nothing. */}
+          <Button
+            className="h-11 aria-disabled:opacity-50"
+            type="button"
+            aria-disabled={blocked}
+            aria-describedby={kept ? 'rotation-erasures-kept' : undefined}
+            aria-busy={pending}
+            onClick={() => {
+              if (!blocked) void confirmErasures(shown);
+            }}
+          >
+            <Save aria-hidden />
+            {t('rotation.builder.save')}
+          </Button>
+        </DialogFooter>
+      </ConfirmDialog>
+    );
+  }
+
   const partial = outcome === null ? null : rotationPartialMessageKey(outcome);
   // THE CANCEL IS OFFERED ONLY BESIDE THE SCHEDULED REFUSAL, and only while a
   // change is still scheduled in the snapshot.
@@ -1104,12 +1485,13 @@ export function RotationSection({
         <PageActions>
           {/* THE SAVE, in the page's own actions (owner layout). */}
           <Button
+            ref={saveButton}
             className="h-11"
             type="button"
             disabled={pending || draft === null}
             aria-busy={pending}
             onClick={() => {
-              void save();
+              void requestSave();
             }}
           >
             <Save aria-hidden />
@@ -1140,6 +1522,25 @@ export function RotationSection({
         </Notice>
       )}
       {cancelArmed && scheduled !== null ? renderCancelConfirmation(scheduled) : null}
+      {/* STORY 5.5a: a save that could not check what it would erase saved nothing. */}
+      {erasuresUnavailable ? (
+        <Notice role="alert">
+          {t('rotation.builder.erasures.unavailable')}
+          <Button
+            ref={retryButton}
+            className="mt-3 flex h-11"
+            type="button"
+            variant="outline"
+            disabled={pending}
+            onClick={() => {
+              void requestSave();
+            }}
+          >
+            {t('rotation.builder.erasures.retry')}
+          </Button>
+        </Notice>
+      ) : null}
+      {erasures === null ? null : renderErasures(erasures)}
       {cancelled === null ? null : cancelled.ok ? (
         <Notice ref={cancelConfirmation} tabIndex={-1} role="status">
           {t(ROTATION_CANCELLED_MESSAGE_KEY)}
@@ -1152,32 +1553,14 @@ export function RotationSection({
           {/* The confirmation on its own line, and its own element, whether
               or not warnings follow it. */}
           <span className="block">{t(ROTATION_SAVED_MESSAGE_KEY)}</span>
+          {/* STORY 5.5a: how many conflicts the save removed, as confirmed in its dialog. */}
+          {erasedCount === 0 ? null : (
+            <span className="mt-2 block">{t('rotation.builder.erasures.removed', { count: erasedCount })}</span>
+          )}
           {savedPending === null || savedPending === 0 ? null : (
             <span className="mt-2 block">{t('rotation.builder.overrides.count', { count: savedPending })}</span>
           )}
-          {outcome.warnings.length === 0 ? null : (
-            <>
-              <span className="mt-2 block">{warningTextOf(warningsSummaryOf(outcome.warnings), translate)}</span>
-              {/* SPANS WITH LIST ROLES, because the Notice is a `<p>` and a `<ul>`
-                  may not sit in one. */}
-              <span role="list" className="mt-1 grid gap-1">
-                {outcome.warnings.map((line, index) => (
-                  <span role="listitem" key={index} className="block">
-                    {warningTextOf(line.text, translate)}
-                    {line.details.length === 0 ? null : (
-                      <span role="list" className="mt-0.5 grid gap-0.5 pl-4 font-normal">
-                        {line.details.map((detail, detailIndex) => (
-                          <span role="listitem" key={detailIndex} className="block">
-                            {warningTextOf(detail, translate)}
-                          </span>
-                        ))}
-                      </span>
-                    )}
-                  </span>
-                ))}
-              </span>
-            </>
-          )}
+          {renderWarnings(outcome.warnings)}
         </Notice>
       ) : null}
       {refusal === null ? null : <Notice role="alert">{t(rotationMessageKey(refusal))}</Notice>}

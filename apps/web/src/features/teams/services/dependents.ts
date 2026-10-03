@@ -143,6 +143,20 @@ export const CONFLICT_REPLACE_TAKEN_DEPENDENTS: readonly QueryKey[] = [CALENDAR_
  */
 export const CONFLICT_RESOLUTION_GONE_DEPENDENTS: readonly QueryKey[] = [ORGANIZATION_LEAVE_RECORDS_KEY];
 
+/**
+ * A rotation saved (story 5.5a): beside the builder's own read, the calendar
+ * snapshot, which embeds every rotation version and decides which overrides
+ * are pending, so the calendar, the conflicts queue, *Sati* and the next
+ * save's erasure check all derive from it; and the organization's live leave
+ * records and resolutions, the other two reads that check stands on, so a
+ * save that erased a conflict takes it out of the queue on the next read.
+ */
+export const ROTATION_SAVE_DEPENDENTS: readonly QueryKey[] = [
+  CALENDAR_KEY,
+  ORGANIZATION_LEAVE_RECORDS_KEY,
+  ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+];
+
 /** A refusal's re-read: the surface's own key, and nothing that depends on it. */
 export const NO_DEPENDENTS: readonly QueryKey[] = [];
 

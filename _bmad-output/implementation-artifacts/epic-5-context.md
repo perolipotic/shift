@@ -4,15 +4,15 @@
 
 ## Goal
 
-An admin records a member's annual leave as a date range and sees its cost before saving. Leave never removes a shift or touches the rotation. Instead, every working shift the member is rostered for on a leave date becomes a visible conflict. The conflict stands until an admin decides it on its own screen: accept as uncovered, replace the member, or amend the leave. Each decision is attributable, and its consequences are stated in the same three terms. This is the product's core stance: an absence never quietly becomes an uncovered shift that someone discovers on the day. Status (2026-10-03): 5.1–5.3 are done. In 5.4, the resolution store (5.4a), the resolution screen with accept-as-uncovered (5.4b), replace-member (5.4c) and amend-leave (5.4d) are done. The replacement guard (5.4e) is in review; the erasure guard (5.5) is in backlog.
+An admin records a member's annual leave as a date range and sees its cost before saving. Leave never removes a shift or touches the rotation. Instead, every working shift the member is rostered for on a leave date becomes a visible conflict. The conflict stands until an admin decides it on its own screen: accept as uncovered, replace the member, or amend the leave. Each decision is attributable, and its consequences are stated in the same three terms. This is the product's core stance: an absence never quietly becomes an uncovered shift that someone discovers on the day. Status (2026-10-03): 5.1–5.4 are done, 5.4a–e included. Story 5.5, the erasure guard, is the last story of the epic: 5.5a (the rotation save's guard) is in review; 5.5b–d are backlog.
 
 ## Stories
 
 - Story 5.1: An admin records leave and sees what it costs first (done)
 - Story 5.2: An admin amends or deletes leave, and the balance follows (done)
 - Story 5.3: A collision with a rostered shift becomes a visible conflict (done)
-- Story 5.4: An admin decides each conflict on its own screen (5.4a–d done; 5.4e replacement guard in review)
-- Story 5.5: A configuration change cannot quietly erase a pending decision (backlog)
+- Story 5.4: An admin decides each conflict on its own screen (done, 5.4a–e)
+- Story 5.5: A configuration change cannot quietly erase a pending decision (in progress: 5.5a in review, 5.5b–d backlog)
 
 ## Requirements & Constraints
 
@@ -23,7 +23,11 @@ An admin records a member's annual leave as a date range and sees its cost befor
   - **Replace member** (5.4c). Recorded with the acting admin and a timestamp. This is a roster override, and the rotation stays as it is. The replacement gains band hours. If the replacement is on leave or already rostered that date, the screen warns and never blocks. The override and its resolution are written atomically.
   - **Amend leave** (5.4d). Writes no resolution row (human, 2026-10-02): the leave amend is the attributable write, and the conflict clears by derivation. The card states the range that would clear this conflict (rule A: start the day after; end the day before on the record's last day; remove a one-day record) and hands it to the member page's own amend or removal. Amending a record so it no longer collides clears every conflict it caused. That is removing the cause, not a bulk resolution.
 - **A replacement is never silently reverted (5.4e).** Amending or removing leave soft-removes, inside the database leave call, every live resolution on a date the change uncovers (removal: the whole range; amend: dates in the old range but not the new one). A `replace_member` resolution goes with it, while its linked roster override stays, so the replacement remains on the roster. Before that call, the leave screen's amend preview and its removal confirmation must name every live `replace_member` resolution on an uncovered date, together with the replacement who stays rostered. The guard lives on the leave screen, not the resolution screen, and needs its own read of the replacement overrides. As shipped (5.4e): the admin's resolutions read carries `roster_override_id`, joined by id to the calendar snapshot's live overrides; a line shows only while the override is applied (`rosterOn`), one per replacement, ordered by date then team ("{ime} ostaje na smjeni {smjena} · {datum} kao zamjena. Ukloni zamjenu u kalendaru ako više ne treba."), and repeats in the notice after the write. An unreadable read says "Ne mogu provjeriti zamjene za ove datume." The lines are notes and never block, gate or ask.
-- **Resolution lifetime.** A resolution lives while live leave of that member covers its date. Only leave changes end one. Open question for 5.5: a later override, rotation or membership change on the same key can make a collision reappear while the old resolution still hides it, or can leave the resolution matching nothing.
+- **Resolution lifetime (open, 5.5 decides).** A resolution lives while live leave of that member covers its date. Only leave changes end one ("nothing else removes a resolution"). Four still-open gaps follow from this:
+  - **Hidden re-collision.** A later rotation, membership or roster-override change on the same `(member, date, team)` can make the member collide again while the old live resolution keeps hiding it.
+  - **Orphaned row.** A membership change or override that moves the member's shift on that date to another team leaves the old row matching nothing. The conflict then reappears unresolved on the new team.
+  - **Override behind `replace_member`.** `remove_roster_override()` soft-removes the override a `replace_member` resolution names while the resolution stays live. The conflict stays hidden with nobody covering the shift. The leave writes deliberately do not remove the linked override.
+  - **Inert replacement override.** `replace_conflict_member` trusts the browser's candidate list and checks only for an active admin and a non-archived team. A replacement who is inactive on the date, or already on the team's default roster, gets an override the domain treats as inert, while the resolution still hides the conflict. The shift is really uncovered and nothing says so. Decide this without computing rosters in the database.
 - **Erasure guard (5.5).** Every write that can change the projected schedule computes the unresolved collision set before and after the change. Each collision the change would erase must be confirmed, amended or discarded before the change applies. Only an erasure blocks; warnings never do. The diff is bounded by the union of existing leave ranges intersected with the change's validity range.
 - **Quality.** No literal UI strings. Counts use Croatian's three plural forms. Every admin task completes on a phone with no horizontal scroll. Nothing is shown by colour alone. Hours, balance and conflict state are never updated optimistically.
 
@@ -34,7 +38,7 @@ An admin records a member's annual leave as a date range and sees its cost befor
 - **Integrity by shape.** Leave overlap is enforced by `EXCLUDE USING gist` (`btree_gist`). There are no new triggers. Writes go through PostgREST or definer calls under RLS, and there is no server tier.
 - **Migrations** are forward-only. Parallel sessions share the stack, so check the main checkout for untracked migrations before picking a number.
 - **One snapshot per surface.** Every figure on a screen, the consequence strips included, derives from one composite read.
-- **5.5 placement.** The guard lives in the existing rotation save confirmation dialog, next to the non-blocking warnings. Pending roster overrides are still not dispositioned in the rotation builder's review card, as shift-type overrides are. That deferred work belongs beside this guard.
+- **5.5 placement.** The guard lives in a rotation save confirmation dialog that 5.5a creates: today "Spremi rotaciju" saves at once, warnings appear only in the success notice, and 3.5c's override review is a card shown after a save, not a dialog. Pending roster overrides are still not listed in the builder's "Izmjene za pregled" card for confirm, amend or discard (today a pending one is not applied, the day detail flags it, and the admin can only remove it). That deferred work belongs beside this guard.
 
 ## UX & Interaction Patterns
 
@@ -50,6 +54,7 @@ An admin records a member's annual leave as a date range and sees its cost befor
 ## Cross-Story Dependencies
 
 - 5.4d plugs into 5.4b's screen at card position 3 and reuses 5.2's leave amend flow; card 3's hand-off lands in the same member-page amend and removal that 5.4e guards. 5.4e adds the replace-member guard on the leave screen, accounting for the overrides 5.4c creates.
+- 5.5 must account for the `replace_member` resolutions and linked overrides that 5.4c writes, and for the resolution-lifetime gaps above.
 - Epic 4's hours take accepted-uncovered shifts as leave hours.
 - 5.5 ships last. It adds a guard to the configuration saves of Epics 2 and 3.
 - Order: 5.4 → 5.5 → 7.1–7.4 → Epic 6. Epic 6's admin conflict count must equal the queue, zero included. Epic 7 reuses the candidate helper (7.9) and the collision diff (7.12), and adds the Riješeni history (7.16).

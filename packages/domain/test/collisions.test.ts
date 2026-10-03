@@ -6,7 +6,9 @@ import {
   collisionKeyOf,
   collisionsOf,
   datesOfMonth,
+  erasedCollisionsOf,
   leaveCostOf,
+  leaveRecordsFrom,
   MAX_LEAVE_RANGE_DAYS,
   scheduleOfMonth,
   unresolvedCollisionsOf,
@@ -621,6 +623,114 @@ describe.each(FIXTURES)('unresolvedCollisionsOf under $fixture (story 5.4a)', (f
     unresolvedCollisionsOf(frozen, Object.freeze(resolutions.map((one) => Object.freeze(one))));
     expect(collisions).toEqual(given);
     expect(resolutions).toEqual([keyOf(collisions[0]!)]);
+  });
+});
+
+describe('leaveRecordsFrom (story 5.5a): the bound of a change\'s diff', () => {
+  const records: readonly CollisionLeaveRecord[] = [
+    { id: 'ended', memberId: 'm1', from: '2026-09-01', to: '2026-09-09' },
+    { id: 'across', memberId: 'm1', from: '2026-09-08', to: '2026-09-12' },
+    { id: 'starts-on', memberId: 'm2', from: '2026-09-10', to: '2026-09-10' },
+    { id: 'later', memberId: 'm2', from: '2026-09-20', to: '2026-09-22' },
+  ];
+
+  it('drops a record ending before the date, clips one across it, and keeps the rest as given', () => {
+    expect(leaveRecordsFrom(records, '2026-09-10')).toEqual([
+      { id: 'across', memberId: 'm1', from: '2026-09-10', to: '2026-09-12' },
+      { id: 'starts-on', memberId: 'm2', from: '2026-09-10', to: '2026-09-10' },
+      { id: 'later', memberId: 'm2', from: '2026-09-20', to: '2026-09-22' },
+    ]);
+  });
+
+  it('keeps a record ending on the date, as one day', () => {
+    expect(leaveRecordsFrom(records, '2026-09-09')).toContainEqual({ id: 'ended', memberId: 'm1', from: '2026-09-09', to: '2026-09-09' });
+  });
+
+  it('mutates nothing', () => {
+    const frozen = Object.freeze(records.map((one) => Object.freeze({ ...one })));
+    leaveRecordsFrom(frozen, '2026-09-10');
+    expect(frozen).toEqual(records);
+  });
+
+  it('refuses a date that is not a calendar date', () => {
+    expect(() => leaveRecordsFrom(records, '2026-02-30')).toThrow(RangeError);
+    expect(() => leaveRecordsFrom([], 'soon')).toThrow(/"soon"/);
+  });
+});
+
+describe.each(FIXTURES)('erasedCollisionsOf under $fixture (story 5.5a; AD-5)', (fx) => {
+  const team = teamOnStep(fx, '2026-09-10', 0);
+  const memberId = memberOf(fx, team);
+  const teamId = fx.teams[team]!.id;
+  const records = [{ id: 'leave-1', memberId, from: '2026-09-10', to: '2026-09-14' }];
+  const before = inputOf(fx, records);
+  const collisions = collisionsOf(before);
+  const [first, second, third] = collisions as [Collision, Collision, Collision];
+  const off = offTypeOf(fx);
+  /** "After": the member's team off on the first two collision dates. */
+  const after = inputOf(fx, records, {
+    overrides: [
+      { teamId, date: first.date, shiftTypeId: off },
+      { teamId, date: second.date, shiftTypeId: off },
+    ],
+  });
+  const keyOf = (collision: Collision): CollisionResolution => ({ memberId: collision.memberId, date: collision.date, teamId: collision.teamId });
+
+  it('lists each unresolved collision the change takes away, as "before" raised it, in order', () => {
+    expect(erasedCollisionsOf(before, after, [], '2026-09-01')).toEqual([first, second]);
+  });
+
+  it('erases nothing when nothing changes', () => {
+    expect(erasedCollisionsOf(before, before, [], '2026-09-01')).toEqual([]);
+  });
+
+  it('never compares a date before the change applies', () => {
+    expect(erasedCollisionsOf(before, after, [], second.date)).toEqual([second]);
+    expect(erasedCollisionsOf(before, after, [], third.date)).toEqual([]);
+  });
+
+  it('keeps the stored record id when the record is clipped', () => {
+    expect(erasedCollisionsOf(before, after, [], second.date)[0]!.leaveRecordId).toBe('leave-1');
+  });
+
+  it('does not list a resolved collision', () => {
+    expect(erasedCollisionsOf(before, after, [keyOf(first)], '2026-09-01')).toEqual([second]);
+  });
+
+  it('never counts an added collision as an erasure', () => {
+    const offDate = ['2026-09-12', '2026-09-13'].find((one) => !collisions.some((collision) => collision.date === one))!;
+    const added = inputOf(fx, records, {
+      overrides: [
+        { teamId, date: first.date, shiftTypeId: off },
+        { teamId, date: offDate, shiftTypeId: workingOf(fx)[0]! },
+      ],
+    });
+    expect(collisionsOf(added).some((collision) => collision.date === offDate)).toBe(true);
+    expect(erasedCollisionsOf(before, added, [], '2026-09-01')).toEqual([first]);
+  });
+
+  it('erases a collision whose roster override no longer applies after the change', () => {
+    const date = '2026-09-10';
+    const other = teamOnStep(fx, date, 1);
+    const putOn = inputOf(fx, [{ id: 'l', memberId, from: date, to: date }], {
+      rosterOverrides: [{ id: 'r1', teamId: fx.teams[other]!.id, date, memberOutId: memberOf(fx, other), memberInId: memberId }],
+    });
+    const pending = { ...putOn, rosterOverrides: [] };
+    const erased = erasedCollisionsOf(putOn, pending, [], date);
+    expect(erased).toHaveLength(1);
+    expect(erased[0]!.teamId).toBe(fx.teams[other]!.id);
+  });
+
+  it('mutates neither input', () => {
+    const given = JSON.stringify([before, after]);
+    erasedCollisionsOf(Object.freeze({ ...before }), Object.freeze({ ...after }), Object.freeze([keyOf(first)]), '2026-09-01');
+    expect(JSON.stringify([before, after])).toBe(given);
+  });
+
+  it('refuses a date that is not a calendar date, and a breached precondition of either side', () => {
+    expect(() => erasedCollisionsOf(before, after, [], '2026-13-01')).toThrow(RangeError);
+    const broken = { ...after, leaveRecords: [...records, { id: 'leave-1', memberId, from: '2026-09-20', to: '2026-09-20' }] };
+    expect(() => erasedCollisionsOf(before, broken, [], '2026-09-01')).toThrow(RangeError);
   });
 });
 

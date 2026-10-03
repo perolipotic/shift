@@ -29,6 +29,7 @@ import {
   MEMBERSHIP_WRITE_DEPENDENTS,
   MEMBER_SAVE_DEPENDENTS,
   NO_DEPENDENTS,
+  ROTATION_SAVE_DEPENDENTS,
   TEAM_CHANGE_DEPENDENTS,
   TEAM_CREATE_DEPENDENTS,
   refreshAfterWrite,
@@ -256,6 +257,15 @@ describe('the reads a team or membership write makes stale', () => {
       dependents: CONFLICT_RESOLUTION_GONE_DEPENDENTS,
       // The resolutions, and the leave a P0002 says is gone.
       stale: [ORGANIZATION_LEAVE_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
+    },
+    {
+      write: 'a rotation saved (story 5.5a)',
+      own: ROTATION_KEY,
+      dependents: ROTATION_SAVE_DEPENDENTS,
+      // The builder's own read, the calendar snapshot that embeds every
+      // version, and the leave and resolutions the erasure check and the
+      // queue derive from with it.
+      stale: [ROTATION_KEY, CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
     },
     {
       write: 'a refusal',

@@ -724,6 +724,22 @@
           "failed": "Promjena nije uspjela. Pokušaj ponovno."
         }
       },
+      "erasures": {
+        "title": "{count, plural, one {Promjena briše # konflikt} few {Promjena briše # konflikta} other {Promjena briše # konflikata}}",
+        "lede": "{count, plural, one {Ova promjena uklanja uzrok # neriješenog konflikta.} few {Ova promjena uklanja uzrok # neriješena konflikta.} other {Ova promjena uklanja uzrok # neriješenih konflikata.}} Prije spremanja odluči za svaki.",
+        "rowTitle": "{team} · {weekday} {date} · {type}",
+        "rowFree": "{member} na godišnjem · nova rotacija: {team} taj dan slobodna",
+        "rowWithout": "{member} na godišnjem · nova rotacija: {team} taj dan bez {member}",
+        "decision": "Odluka: {team} · {weekday} {date} · {type}",
+        "confirm": "Potvrdi brisanje",
+        "keep": "Zadrži",
+        "back": "Natrag na uređivanje",
+        "kept": "Zadržan konflikt: promijeni rotaciju ili se vrati na uređivanje.",
+        "changed": "Popis konflikata se promijenio. Odluči ponovno za svaki.",
+        "unavailable": "Ne mogu provjeriti konflikte koje bi promjena izbrisala.",
+        "retry": "Pokušaj ponovno",
+        "removed": "{count, plural, one {Uklonjen # konflikt.} few {Uklonjena # konflikta.} other {Uklonjeno # konflikata.}}"
+      },
       "history": {
         "heading": "Povijest rotacije",
         "lede": "Svaka spremljena promjena: od kada vrijedi, tko ju je spremio i kada.",
