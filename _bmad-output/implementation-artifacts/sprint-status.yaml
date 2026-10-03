@@ -511,7 +511,7 @@ development_status:
   5-4d-amend-leave: done
   5-4e-replacement-guard: done
   5-5-a-configuration-change-cannot-quietly-erase-a-pending-decisi: in-progress
-  5-5a-rotation-erasure-guard: review
+  5-5a-rotation-erasure-guard: done
   5-5b-roster-erasure-guard: backlog
   5-5c-rotation-save-bar: backlog
   5-5d-resolution-lifetime: backlog
