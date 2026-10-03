@@ -769,7 +769,10 @@ const SCREENS = [
   // SIXTEEN SINCE STORY 2.6: the `Vrijedi od` date, the cancel offered beside
   // the scheduled refusal, and its confirmation's keep and confirm. The
   // history is a table and offers nothing.
-  { name: 'the rotation builder', file: ROTATION_SECTION, expectedControls: 16 },
+  // TWENTY-ONE SINCE STORY 5.5a: the erasure confirmation's two toggles per
+  // row (written once), its "Natrag na uređivanje" and its own save, and the
+  // retry beside the refusal when the check cannot be derived.
+  { name: 'the rotation builder', file: ROTATION_SECTION, expectedControls: 21 },
   // STORY 3.5c. NINE on the override review, each written once however many
   // overrides are pending: a row's confirm, amend and discard; the amend's
   // type `<select>`, reason, cancel and save; and the discard's cancel and
@@ -2113,8 +2116,17 @@ const KEY_SOURCES = [
     // author come through `@/features/rotation/services/history`, counted below.
     // SIXTY-FOUR SINCE STORY 3.5c: the save's confirmation counts the
     // overrides left pending. The review itself is the next entry.
+    // SEVENTY-SEVEN SINCE STORY 5.5a: the erasure confirmation's title, lede,
+    // row title, the row's two second lines (the team free, or working
+    // without the member), the toggles' group label, the two toggles, the way
+    // back, the kept hint and its own save (the builder's save key, written a
+    // second time); and the refusal when the check cannot be derived, with
+    // its retry.
+    // SEVENTY-NINE SINCE THE 5.5a REVIEW: the line when the list changed
+    // since it was decided, and the save's confirmation counting the
+    // conflicts it removed.
     keys: translationKeys,
-    strings: 64,
+    strings: 79,
   },
   {
     // STORY 3.5c: the review's heading, lede and count; a row's title, type,
@@ -4857,15 +4869,25 @@ describe('the member list reads once, under one key', () => {
     }
   });
 
-  it('reads the rotation once, under its own key, and invalidates only that key, on the rotation builder', () => {
+  it('reads the rotation once, under its own key, and re-reads only its declared dependents, on the rotation builder', () => {
     // STORY 2.3b, AD-13. The teams, types, steps, assignments and "today" all
-    // come from one read under `ROTATION_KEY`; the save re-reads only it.
+    // come from one read under `ROTATION_KEY`; the cancel re-reads only it.
+    // STORY 5.5a: a landed save re-reads its own key and the dependents
+    // `@/features/teams/services/dependents` declares for it — the calendar
+    // snapshot, the leave and the resolutions — through `refreshAfterWrite`,
+    // and the erasure check's three reads are the hook's, fetched on a press.
     const screen = source(ROTATION_SECTION);
+    const check = source(join(srcRoot, 'features', 'rotation', 'hooks', 'use-erasure-check.ts'));
 
     expect(occurrences(screen, 'useQuery(')).toBe(1);
     expect(occurrences(screen, 'useQuery(rotationQueryOptions(')).toBe(1);
     expect(occurrences(screen, 'queryKey:')).toBe(occurrences(screen, 'queryKey: ROTATION_KEY'));
     expect(screen).toContain('invalidateQueries({ queryKey: ROTATION_KEY })');
+    expect(screen).toContain('refreshAfterWrite(queryClient, ROTATION_KEY, ROTATION_SAVE_DEPENDENTS)');
+    expect(occurrences(screen, 'refreshAfterWrite(')).toBe(1);
+    expect(occurrences(check, 'useQuery('), 'the check observes its reads between presses').toBe(0);
+    expect(occurrences(check, 'staleTime: 0')).toBe(4);
+    expect(occurrences(check, "networkMode: 'always'"), 'a fetch could pause offline').toBe(4);
     expect(screen, 'useMutation arrived; this repository uses a pending ref').not.toContain('useMutation');
     expect(screen, 'no in-flight ref guards a second save').toMatch(/saving\.current = true/);
     expect(screen, 'the in-flight ref is never released').toMatch(/finally \{\s*saving\.current = false;/);

@@ -225,6 +225,9 @@ export async function removeFormerMemberInSql(slug: string, memberId: string): P
   }
 }
 
+/** What every username {@link seedLeaveMember} writes starts with. */
+const LEAVE_MEMBER_USERNAME_PREFIX = 'e2e.godisnji.';
+
 /** A member {@link seedLeaveMember} wrote. */
 export interface SeededLeaveMember {
   readonly id: string;
@@ -259,7 +262,7 @@ export async function seedLeaveMember(
   nameTail = '',
 ): Promise<SeededLeaveMember> {
   const suffix = randomBytes(3).toString('hex');
-  const person = { name: `Godišnji ${suffix}${nameTail === '' ? '' : ` ${nameTail}`}`, username: `e2e.godisnji.${suffix}` };
+  const person = { name: `Godišnji ${suffix}${nameTail === '' ? '' : ` ${nameTail}`}`, username: `${LEAVE_MEMBER_USERNAME_PREFIX}${suffix}` };
   const client = await connect();
   try {
     await client.query('begin');
@@ -287,6 +290,46 @@ export async function seedLeaveMember(
     await client.query('commit');
 
     return { id: memberId, name: person.name, username: person.username, password };
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * Deletes a member {@link seedLeaveMember} wrote (story 5.5a's cleanup), with
+ * everything that names them: their conflict resolutions and leave records —
+ * neither key cascades (0028, 0031) — and then their auth user, from which
+ * the member row and its versions cascade. Run it after the rotation seed is
+ * removed, so no roster override names them. Safe to call twice: a member
+ * already gone is nothing to do. REFUSES any member whose username is not one
+ * {@link seedLeaveMember} writes, so a wrong id never deletes the fixture's
+ * admin or members.
+ */
+export async function removeLeaveMemberInSql(slug: string, memberId: string): Promise<void> {
+  const client = await connect();
+  try {
+    const found = await client.query<{ username: string | null; organization_id: string }>(
+      `select m.username, m.organization_id from members m join organizations o on o.id = m.organization_id
+        where o.slug = $1 and m.id = $2`,
+      [slug, memberId],
+    );
+    const member = found.rows[0];
+    if (member === undefined) return;
+    if (member.username === null || !member.username.startsWith(LEAVE_MEMBER_USERNAME_PREFIX)) {
+      throw new Error(`E2E: refusing to delete ${memberId}, not a member seedLeaveMember wrote (${member.username})`);
+    }
+    await client.query('begin');
+    const scope = [member.organization_id, memberId];
+    await client.query('delete from conflict_resolutions where organization_id = $1 and member_id = $2', scope);
+    await client.query('delete from leave_records where organization_id = $1 and member_id = $2', scope);
+    await client.query(
+      'delete from auth.users u using members m where m.auth_user_id = u.id and m.organization_id = $1 and m.id = $2',
+      scope,
+    );
+    await client.query('commit');
   } catch (cause) {
     await client.query('rollback').catch(() => undefined);
     throw cause;

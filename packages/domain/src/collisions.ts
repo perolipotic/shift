@@ -41,6 +41,7 @@
  * throws a `RangeError` naming the offending value.
  */
 
+import { checkDate } from './calendar.js';
 import { activeOn, type RosterMember } from './roster.js';
 import { checkRange, isLeaveDay, type LeaveRange } from './leave.js';
 import { adjacentMonth, memberScheduleOfMonth, monthOf, type MemberScheduleDay, type MemberScheduleInput } from './schedule.js';
@@ -230,4 +231,53 @@ export function unresolvedCollisionsOf(collisions: readonly Collision[], resolut
   if (resolutions.length === 0) return collisions;
   const resolved = new Set(resolutions.map(collisionKeyOf));
   return collisions.filter((collision) => !resolved.has(collisionKeyOf(collision)));
+}
+
+/**
+ * THE BOUND OF A CHANGE'S DIFF (story 5.5a; AD-5): `records` clipped to the
+ * dates from `from` on — each one's start moved up to `from` when it starts
+ * earlier, and each one that ends before `from` dropped. The id, member and
+ * end are kept, so a collision derived from a clipped record still names the
+ * record as stored. A change that applies from `from` cannot alter an earlier
+ * date, so no collision before it is compared. In the given order; reads its
+ * input and writes nothing.
+ *
+ * @throws RangeError when `from` is not a calendar `YYYY-MM-DD`.
+ */
+export function leaveRecordsFrom(records: readonly CollisionLeaveRecord[], from: string): readonly CollisionLeaveRecord[] {
+  checkDate('the date a change applies from', from);
+  const clipped: CollisionLeaveRecord[] = [];
+  for (const record of records) {
+    if (record.to < from) continue;
+    clipped.push(record.from < from ? { ...record, from } : record);
+  }
+  return clipped;
+}
+
+/**
+ * THE ERASURE DIFF (story 5.5a; AD-5; Epic 7 reuses it): the unresolved
+ * collisions `before` raises from `from` on that `after` no longer raises —
+ * the decisions a change would take away without anyone making them.
+ *
+ * Both inputs are bounded by {@link leaveRecordsFrom} and filtered through
+ * the ONE resolution filter, {@link unresolvedCollisionsOf}, with the same
+ * live `resolutions`. An erasure is a key ({@link collisionKeyOf}) of
+ * "before" absent from "after"; a collision only "after" raises is added,
+ * never erased, and is not returned. Each erasure is "before"'s own
+ * collision, in {@link collisionsOf}'s order: soonest first, then by team,
+ * then by member. Reads its inputs and writes nothing.
+ *
+ * @throws RangeError when `from` is not a calendar `YYYY-MM-DD`, and on any
+ *   precondition of {@link collisionsOf} for either input.
+ */
+export function erasedCollisionsOf(
+  before: CollisionInput,
+  after: CollisionInput,
+  resolutions: readonly CollisionResolution[],
+  from: string,
+): readonly Collision[] {
+  const bounded = (input: CollisionInput): readonly Collision[] =>
+    unresolvedCollisionsOf(collisionsOf({ ...input, leaveRecords: leaveRecordsFrom(input.leaveRecords, from) }), resolutions);
+  const kept = new Set(bounded(after).map(collisionKeyOf));
+  return bounded(before).filter((collision) => !kept.has(collisionKeyOf(collision)));
 }

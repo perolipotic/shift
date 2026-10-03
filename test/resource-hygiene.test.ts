@@ -93,6 +93,14 @@ const SANCTIONED_PLURAL_KEYS = [
   // `1 izmjena čeka`, `2 izmjene čekaju`, `5 izmjena čeka` — in the review and
   // in the save's confirmation.
   'rotation.builder.overrides.count',
+  // STORY 5.5a: how many conflicts a rotation change would erase, in the
+  // confirmation's title (`1 konflikt`, `2 konflikta`, `5 konflikata`) and
+  // its lede (`1 neriješenog`, `2 neriješena`, `5 neriješenih konflikata`).
+  'rotation.builder.erasures.title',
+  'rotation.builder.erasures.lede',
+  // STORY 5.5a (review): what a guarded save removed, in its confirmation —
+  // `Uklonjen 1 konflikt`, `Uklonjena 2 konflikta`, `Uklonjeno 5 konflikata`.
+  'rotation.builder.erasures.removed',
   // STORY 4.1b: how many shifts the viewer works in the month and in each
   // band — `0 smjena`, `1 smjena`, `2 smjene`, `21 smjena` — and the note on
   // the ones with no times, shown only when there is one.
@@ -1045,6 +1053,24 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.builder.overrides.refused.reason',
   'rotation.builder.overrides.refused.sameAsProjected',
   'rotation.builder.overrides.refused.failed',
+  // STORY 5.5a: the rotation save's erasure confirmation — a row's title and
+  // its two second lines (the team free that day, or working without the
+  // member), the toggles' group label, "Potvrdi brisanje" and "Zadrži", the
+  // way back and the kept hint — and the refusal when what the save would
+  // erase cannot be checked, with its retry. The title and the lede are
+  // plurals, above.
+  'rotation.builder.erasures.rowTitle',
+  'rotation.builder.erasures.rowFree',
+  'rotation.builder.erasures.rowWithout',
+  'rotation.builder.erasures.decision',
+  'rotation.builder.erasures.confirm',
+  'rotation.builder.erasures.keep',
+  'rotation.builder.erasures.back',
+  'rotation.builder.erasures.kept',
+  // The polite line when the list changed since it was decided (review).
+  'rotation.builder.erasures.changed',
+  'rotation.builder.erasures.unavailable',
+  'rotation.builder.erasures.retry',
   // STORY 3.6a: the day detail's roster changes — the block's heading, an
   // addition, a removal and a replacement (`{out} → {in}`), and the heading
   // of those a rotation change left pending. The author, time, reason and an

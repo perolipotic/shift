@@ -1,12 +1,13 @@
 import { expect, type Locator } from '@playwright/test';
 
-import { escapeRegExp, fill, hr } from '../utils/i18n.ts';
+import { escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
 import { STEP_NAMES } from '../utils/rotation.ts';
 import { BasePage } from './base.page.ts';
 
 const builder = hr.rotation.builder;
 const shiftTypes = hr.rotation.shiftTypes;
 const stepper = builder.stepper;
+const erasures = builder.erasures;
 
 /**
  * `/postavke-rotacije`: the shift types, the rotation builder (pattern,
@@ -449,5 +450,53 @@ export class RotationPage extends BasePage {
   /** Natrag. */
   get backButton(): Locator {
     return this.page.getByRole('button', { name: stepper.back, exact: true });
+  }
+  // ------------------------------------------- erasure guard (story 5.5a)
+
+  /** The save's confirmation of the conflicts it would erase, named by its title for `count` of them. */
+  erasureDialog(count: number): Locator {
+    return this.dialog(plural(erasures.title, count));
+  }
+
+  /** The confirmation's conflict rows, in order: each holds its own "Potvrdi brisanje". */
+  erasureRowsIn(dialog: Locator): Locator {
+    return dialog
+      .getByRole('listitem')
+      .filter({ has: this.page.getByRole('button', { name: erasures.confirm, exact: true }) });
+  }
+
+  /** A row's "Potvrdi brisanje" toggle. */
+  erasureConfirmIn(row: Locator): Locator {
+    return row.getByRole('button', { name: erasures.confirm, exact: true });
+  }
+
+  /** A row's "Zadrži" toggle. */
+  erasureKeepIn(row: Locator): Locator {
+    return row.getByRole('button', { name: erasures.keep, exact: true });
+  }
+
+  /** The confirmation's "Natrag na uređivanje". */
+  erasureBackIn(dialog: Locator): Locator {
+    return dialog.getByRole('button', { name: erasures.back, exact: true });
+  }
+
+  /** The confirmation's own "Spremi rotaciju". */
+  erasureSaveIn(dialog: Locator): Locator {
+    return dialog.getByRole('button', { name: builder.save, exact: true });
+  }
+
+  /** The hint while a row is kept. */
+  erasureKeptIn(dialog: Locator): Locator {
+    return dialog.getByText(erasures.kept, { exact: true });
+  }
+
+  /** The refusal when what the save would erase cannot be checked. */
+  get erasuresUnavailable(): Locator {
+    return this.alertWith(erasures.unavailable);
+  }
+
+  /** The refusal's retry. */
+  get erasuresRetry(): Locator {
+    return this.erasuresUnavailable.getByRole('button', { name: erasures.retry, exact: true });
   }
 }

@@ -726,3 +726,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-4d-amend-leave.md`
   summary: Under rule A, a conflict in the middle of a record moves the start to d+1, which drops every day from `from` to d, past days included. Card 3 shows only the +N working days given back and the new start. It never names the dropped range or says that past leave would be rewritten.
   evidence: Raised by the 5.4d blind and edge-case reviews on 2026-10-02. The rule and the card text are frozen (human, rule A), so a warning line needs a human decision.
+- source_spec: none
+  summary: Story 5.5b — the erasure guard on the roster and membership saves: team roster edits, a member's team change, member deactivation, and calendar roster overrides (including removing the override behind a `replace_member`). Each save surfaces every unresolved collision it would erase for explicit confirmation before it applies, reusing 5.5a's bounded diff. Note (5.5a, 2026-10-03): the rotation save's guard shipped; the diff is `erasedCollisionsOf` / `leaveRecordsFrom` in `packages/domain/src/collisions.ts`, the after-snapshot recipe is `draftCalendarSnapshotOf` in `apps/web/src/features/rotation/services/erasures.ts`, and the row toggles live in `rotation-section.tsx`.
+  evidence: Split from Story 5.5 at bmad-build step 1 on 2026-10-03 (human chose [S] Split). These surfaces have no save confirmation dialog today, so each needs its own.
+- source_spec: none
+  summary: Story 5.5c — the sticky save bar on rotation settings, keeping `Spremi` and `Odbaci promjene` in reach while the rotation has unsaved changes (epic 5.5 AC, sprint change 2026-10-02).
+  evidence: Split from Story 5.5 at bmad-build step 1 on 2026-10-03 (human chose [S] Split); pure UI, independent of the guard.
+- source_spec: none
+  summary: Story 5.5d — resolution lifetime. Decide what happens to a live resolution when a later rotation, membership or override change makes the same key collide again, or moves the shift to another team, or removes the override behind a `replace_member`, or when `replace_conflict_member` wrote an inert override. See the 5.4a and 5.4c entries above.
+  evidence: Split from Story 5.5 at bmad-build step 1 on 2026-10-03 (human chose [S] Split); the four gaps are ledgered by 5.4a and 5.4c.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-5a-rotation-erasure-guard.md`
+  summary: The erasure check runs only in the browser. A leave, override or resolution written between the dialog's final re-check and `saveRotation`'s inserts can be erased with nobody confirming it. Closing the window needs the checked key set sent with the write and verified in a definer call, or a server-side diff.
+  evidence: Raised by the 5.5a edge-case review on 2026-10-03. The spec puts any server-side check under Ask First, and the 0023 lock is per statement, so the three inserts are not atomic with the check.

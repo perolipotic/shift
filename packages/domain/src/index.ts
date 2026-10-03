@@ -24,6 +24,8 @@ export {
 export {
   collisionKeyOf,
   collisionsOf,
+  erasedCollisionsOf,
+  leaveRecordsFrom,
   unresolvedCollisionsOf,
   type Collision,
   type CollisionInput,
