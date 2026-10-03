@@ -153,7 +153,7 @@ Why stamps matter: a real save makes every override on or after the effective da
 **The check**
 
 - Four fresh reads; ready, refused or unavailable, and nothing saves unchecked.
-  [`erasure-check.ts:`](../../apps/web/src/features/rotation/services/erasure-check.ts#L)
+  [`erasure-check.ts:58`](../../apps/web/src/features/rotation/services/erasure-check.ts#L58)
   [`use-erasure-check.ts:40`](../../apps/web/src/features/rotation/hooks/use-erasure-check.ts#L40)
 
 **The save flow**
