@@ -508,7 +508,7 @@ development_status:
   5-4a-conflict-resolutions: done
   5-4b-resolution-screen: done
   5-4c-replace-member: done
-  5-4d-amend-leave: review
+  5-4d-amend-leave: done
   5-4e-replacement-guard: backlog
   5-5-a-configuration-change-cannot-quietly-erase-a-pending-decisi: backlog
   epic-5-retrospective: optional
