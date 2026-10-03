@@ -1192,6 +1192,11 @@ const SANCTIONED_SCREEN_KEYS = [
   // while it is in amend mode.
   'ljudi.leaveRecord.removePromptInYear',
   'ljudi.leaveRecord.amending',
+  // STORY 5.4e: the replacement guard — the line naming a replacement an
+  // amend or a removal would leave rostered, and the line in its place when
+  // the resolutions cannot be read.
+  'ljudi.leaveRecord.replacementStays',
+  'ljudi.leaveRecord.replacementsUnknown',
   // STORY 5.2c: *Godišnji*, the viewer's own leave — the three tiles' labels
   // (the figures themselves render through `count.days`), the line a failed
   // read shows in place of the figures with its retry, and the viewer's own
@@ -1369,6 +1374,15 @@ const HOURS_NAMESPACE = 'sati.';
 const RESOLUTION_NAMESPACE = 'raspored.resolution.';
 
 /**
+ * The leave card's replacement guard (story 5.4e), ONE KEY and no namespace:
+ * it names the rostered shift a replacement stays on — `ostaje na smjeni
+ * {team}`, the spec's own words — so `smjen` names that shift there, as on
+ * the resolution screen, and `tip… smjen…` is refused. Every other
+ * `ljudi.leaveRecord` message still may not say `smjen` at all.
+ */
+const LEAVE_REPLACEMENT_KEY = 'ljudi.leaveRecord.replacementStays';
+
+/**
  * The day detail's override copy (story 3.5b), inside the calendar's
  * namespace: the admin changes a team's SHIFT TYPE there, so it says the term
  * — `Tip smjene` is the form's field — and, as in
@@ -1418,7 +1432,8 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     !key.startsWith(ROTATION_BUILDER_NAMESPACE) &&
     !key.startsWith(CALENDAR_NAMESPACE) &&
     !key.startsWith(HOURS_NAMESPACE) &&
-    !key.startsWith(RESOLUTION_NAMESPACE)
+    !key.startsWith(RESOLUTION_NAMESPACE) &&
+    key !== LEAVE_REPLACEMENT_KEY
   ) {
     return lowered.includes('smjen');
   }
@@ -1793,6 +1808,10 @@ describe('the detector reads the file it thinks it does', () => {
     expect(teamTermOutOfTurn('sati.shiftCount', '{count, plural, one {# smjena}}')).toBe(false);
     expect(teamTermOutOfTurn('sati.shifts', 'Tip smjene')).toBe(true);
     expect(teamTermOutOfTurn('satix.shifts', 'Smjene')).toBe(true);
+    // Story 5.4e: the one guard line names the shift; its siblings still may not.
+    expect(teamTermOutOfTurn('ljudi.leaveRecord.replacementStays', 'Dino ostaje na smjeni Smjena C')).toBe(false);
+    expect(teamTermOutOfTurn('ljudi.leaveRecord.replacementStays', 'Tip smjene')).toBe(true);
+    expect(teamTermOutOfTurn('ljudi.leaveRecord.replacementsUnknown', 'na smjeni')).toBe(true);
   });
 
   it('resolves a nested key path to its message and a wrong one to nothing', () => {

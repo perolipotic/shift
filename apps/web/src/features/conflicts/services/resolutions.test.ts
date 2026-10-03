@@ -19,6 +19,7 @@ import {
   organizationConflictResolutionsQueryOptions,
   readMyConflictResolutionRows,
   readOrganizationConflictResolutionRows,
+  replacementLinksOf,
   type ConflictResolutionRowsAnswer,
   type ConflictResolutionsAnswer,
   type MyConflictResolutionsRpc,
@@ -119,7 +120,7 @@ describe("the organization's read", () => {
       ['order', 'id', { ascending: true }],
       ['range', 0, LAST],
     ]);
-    expect(CONFLICT_RESOLUTIONS_COLUMNS).toBe('member_id,date,team_id,kind');
+    expect(CONFLICT_RESOLUTIONS_COLUMNS).toBe('member_id,date,team_id,kind,roster_override_id');
     expect(CONFLICT_RESOLUTIONS_COLUMNS).not.toMatch(/created_by|removed_by/);
     expect(CONFLICT_RESOLUTIONS_TABLE).toBe('conflict_resolutions');
   });
@@ -304,3 +305,40 @@ describe('the split by kind (story 5.4b)', () => {
   });
 });
 
+describe('the replacement links (story 5.4e)', () => {
+  const OVERRIDE = '00000000-0000-4000-8000-0000000000e1';
+  const replaced = { ...row(MEMBER, '2026-10-02', TEAM, 'replace_member'), roster_override_id: OVERRIDE };
+  const others = { ...row(OTHER, '2026-10-03', TEAM_B, 'replace_member'), roster_override_id: OVERRIDE };
+
+  it("keeps this member's replacements with the override each names, in order, and skips every other kind and member", () => {
+    const accepted = { ...A, roster_override_id: null };
+
+    expect(replacementLinksOf([accepted, others, replaced], MEMBER)).toEqual([
+      { memberId: MEMBER, date: '2026-10-02', teamId: TEAM, rosterOverrideId: OVERRIDE },
+    ]);
+    expect(replacementLinksOf([], MEMBER)).toEqual([]);
+  });
+
+  it.each([
+    ['no override', { roster_override_id: null }],
+    ['an empty override', { roster_override_id: '' }],
+    ['no team', { team_id: 7 }],
+    ['a date that is no date', { date: '2026-02-30' }],
+  ])("ignores another member's malformed replacement with %s", (_name, broken) => {
+    expect(replacementLinksOf([{ ...others, ...broken }, replaced], MEMBER)).toEqual([
+      { memberId: MEMBER, date: '2026-10-02', teamId: TEAM, rosterOverrideId: OVERRIDE },
+    ]);
+  });
+
+  it.each([
+    ['a row that is no record', ['x']],
+    ['a row whose member cannot be read', [{ ...others, member_id: null }]],
+    ['a row with an empty member', [{ ...A, member_id: '' }]],
+    ['a replacement of this member with no override', [{ ...replaced, roster_override_id: null }]],
+    ['a replacement of this member with an empty override', [{ ...replaced, roster_override_id: '' }]],
+    ['a replacement of this member with no team', [{ ...replaced, team_id: 7 }]],
+    ['a replacement of this member with a date that is no date', [{ ...replaced, date: '2026-02-30' }]],
+  ])('trusts none of it on %s', (_name, rows) => {
+    expect(replacementLinksOf(rows, MEMBER)).toBeNull();
+  });
+});

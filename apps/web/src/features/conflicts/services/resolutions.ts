@@ -41,8 +41,11 @@ export const MY_CONFLICT_RESOLUTIONS_KEY = ['my-conflict-resolutions'] as const;
 /** The resolutions could not be read, or what came back cannot be trusted. */
 export const CONFLICT_RESOLUTIONS_UNAVAILABLE = 'CONFLICT_RESOLUTIONS_UNAVAILABLE';
 
-/** The columns read: the key and the kind, and never an author. */
-export const CONFLICT_RESOLUTIONS_COLUMNS = 'member_id,date,team_id,kind';
+/**
+ * The columns read: the key, the kind and the override a replacement names
+ * (0032; story 5.4e), and never an author.
+ */
+export const CONFLICT_RESOLUTIONS_COLUMNS = 'member_id,date,team_id,kind,roster_override_id';
 
 /** Five minutes, the bound the leave reads set; every leave write re-reads it. */
 export const CONFLICT_RESOLUTIONS_READ_STALE_MS = 300000;
@@ -74,6 +77,7 @@ const DATE_COLUMN = 'date';
 const TEAM_COLUMN = 'team_id';
 const KIND_COLUMN = 'kind';
 const REMOVED_COLUMN = 'removed_at';
+const ROSTER_OVERRIDE_COLUMN = 'roster_override_id';
 
 /** One live resolution: the key it matches a collision on, and its kind. */
 export interface ConflictResolution extends CollisionResolution {
@@ -325,4 +329,50 @@ export function leaveHoursKeysOf(resolutions: readonly ConflictResolution[]): re
   return resolutions
     .filter((resolution) => LEAVE_HOURS_KINDS.has(resolution.kind))
     .map(({ memberId, date, teamId }) => ({ memberId, date, teamId }));
+}
+
+/**
+ * One live `replace_member` resolution and the roster override it put in
+ * place (0032's `roster_override_id`; story 5.4e).
+ */
+export interface ReplacementLink extends CollisionResolution {
+  readonly rosterOverrideId: string;
+}
+
+/**
+ * THE REPLACEMENT LINKS (story 5.4e): every `replace_member` row of
+ * `memberId` in the organization's read, with the override it names, in the
+ * order given; every other kind and every other member is skipped.
+ *
+ * TRUST IS JUDGED FOR THIS MEMBER ONLY, so one malformed row elsewhere in the
+ * organization never blinds every member's guard. Null — never a guess — when
+ * a row is not a record or its member cannot be read (it might be this
+ * member's), or a replacement row of this member carries no team or override
+ * id, or a date that is no calendar `YYYY-MM-DD`. Kept apart from
+ * {@link conflictResolutionsOf}, whose shape the queue, the member path and
+ * *Sati* consume.
+ */
+export function replacementLinksOf(rows: readonly unknown[], memberId: string): readonly ReplacementLink[] | null {
+  const links: ReplacementLink[] = [];
+
+  for (const row of rows) {
+    if (!isRecord(row)) return null;
+
+    const rowMember = row[MEMBER_COLUMN];
+
+    if (typeof rowMember !== 'string' || rowMember === '') return null;
+    if (rowMember !== memberId || row[KIND_COLUMN] !== REPLACE_MEMBER) continue;
+
+    const date = row[DATE_COLUMN];
+    const teamId = row[TEAM_COLUMN];
+    const rosterOverrideId = row[ROSTER_OVERRIDE_COLUMN];
+
+    if (typeof teamId !== 'string' || teamId === '') return null;
+    if (typeof rosterOverrideId !== 'string' || rosterOverrideId === '') return null;
+    if (typeof date !== 'string' || !isIsoDate(date)) return null;
+
+    links.push({ memberId, date, teamId, rosterOverrideId });
+  }
+
+  return links;
 }

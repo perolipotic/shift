@@ -7,12 +7,17 @@ import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/lib/i18n';
 import { useMemberLeave } from '@/features/leave/hooks/use-member-leave';
-import { MemberLeaveRecords, MemberLeaveRemoveConfirm } from '@/features/leave/components/member-leave-records';
+import {
+  LeaveReplacementLines,
+  MemberLeaveRecords,
+  MemberLeaveRemoveConfirm,
+} from '@/features/leave/components/member-leave-records';
 import {
   LEAVE_ABSENT,
   LEAVE_ERROR_ID,
   LEAVE_FROM_FIELD,
   LEAVE_HEADING_ID,
+  LEAVE_PREVIEW_ID,
   LEAVE_PREVIEW_REASON,
   LEAVE_READY,
   LEAVE_REASON_ID,
@@ -61,6 +66,8 @@ export function MemberLeaveCard({
     invalidField,
     leaveSaved,
     leaveAmended,
+    amendedReplacements,
+    amendGuard,
     amendTarget,
     recordPending,
     amendPending,
@@ -125,7 +132,8 @@ export function MemberLeaveCard({
   /**
    * What the entered range would do: its cost, the part charged to this leave
    * year when that differs, the balance after it, and a note for an overlap
-   * or an over-balance range; or the short reason there is no preview. The
+   * or an over-balance range, and in amend mode each replacement the amend
+   * would leave rostered (story 5.4e); or the short reason there is no preview. The
    * reason sits in a polite live region and describes the field it names
    * whenever that field is marked. Nothing while there is no preview to draw.
    */
@@ -164,6 +172,8 @@ export function MemberLeaveCard({
         {figures.exceedsBalance ? (
           <p className="text-sm font-medium">{t('ljudi.leaveRecord.exceeds', { count: figures.balanceAfterDays })}</p>
         ) : null}
+        {/* STORY 5.4e: inside the polite live region, a note and never a gate. */}
+        <LeaveReplacementLines guard={amendGuard} />
       </div>
     );
   }
@@ -192,6 +202,7 @@ export function MemberLeaveCard({
               {t('ljudi.leaveRecord.savedExceeds', { count: leaveAmended.overBalanceDays })}
             </span>
           )}
+          <LeaveReplacementLines guard={amendedReplacements} inline />
         </Notice>
       );
     }
@@ -269,7 +280,7 @@ export function MemberLeaveCard({
                   />
                 </div>
               </div>
-              <div aria-live="polite" className="grid min-w-0 gap-2">
+              <div id={LEAVE_PREVIEW_ID} aria-live="polite" className="grid min-w-0 gap-2">
                 {renderPreview()}
               </div>
               {renderOutcome()}

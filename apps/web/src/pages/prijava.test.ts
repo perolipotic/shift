@@ -2492,10 +2492,15 @@ const KEY_SOURCES = [
     // in-year `count.days`, a row's in-year line and the row's amend marker.
     //
     // SEVENTY-SIX SINCE STORY 5.4d: "Natrag na konflikte".
+    //
+    // SEVENTY-EIGHT SINCE STORY 5.4e: the replacement guard's two lines — a
+    // replacement left rostered, and that the replacements cannot be checked
+    // — written once in `LeaveReplacementLines` and rendered in the amend
+    // preview, the removal confirmation and both notices.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 76,
+    strings: 78,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
