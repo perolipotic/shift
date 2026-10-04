@@ -1,8 +1,9 @@
 import { expect, type Locator } from '@playwright/test';
 
-import { escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
+import { escapeRegExp, fill, hr } from '../utils/i18n.ts';
 import { STEP_NAMES } from '../utils/rotation.ts';
 import { BasePage } from './base.page.ts';
+import { ErasureDialogParts } from './erasure-dialog.ts';
 
 const builder = hr.rotation.builder;
 const shiftTypes = hr.rotation.shiftTypes;
@@ -453,41 +454,44 @@ export class RotationPage extends BasePage {
   }
   // ------------------------------------------- erasure guard (story 5.5a)
 
+  /** The shared confirmation's locators, in the builder's words (story 5.5b). */
+  private get erasureParts(): ErasureDialogParts {
+    return new ErasureDialogParts(this.page, { ...erasures, save: builder.save });
+  }
+
   /** The save's confirmation of the conflicts it would erase, named by its title for `count` of them. */
   erasureDialog(count: number): Locator {
-    return this.dialog(plural(erasures.title, count));
+    return this.erasureParts.dialog(count);
   }
 
   /** The confirmation's conflict rows, in order: each holds its own "Potvrdi brisanje". */
   erasureRowsIn(dialog: Locator): Locator {
-    return dialog
-      .getByRole('listitem')
-      .filter({ has: this.page.getByRole('button', { name: erasures.confirm, exact: true }) });
+    return this.erasureParts.rowsIn(dialog);
   }
 
   /** A row's "Potvrdi brisanje" toggle. */
   erasureConfirmIn(row: Locator): Locator {
-    return row.getByRole('button', { name: erasures.confirm, exact: true });
+    return this.erasureParts.confirmIn(row);
   }
 
   /** A row's "Zadrži" toggle. */
   erasureKeepIn(row: Locator): Locator {
-    return row.getByRole('button', { name: erasures.keep, exact: true });
+    return this.erasureParts.keepIn(row);
   }
 
   /** The confirmation's "Natrag na uređivanje". */
   erasureBackIn(dialog: Locator): Locator {
-    return dialog.getByRole('button', { name: erasures.back, exact: true });
+    return this.erasureParts.backIn(dialog);
   }
 
   /** The confirmation's own "Spremi rotaciju". */
   erasureSaveIn(dialog: Locator): Locator {
-    return dialog.getByRole('button', { name: builder.save, exact: true });
+    return this.erasureParts.saveIn(dialog);
   }
 
   /** The hint while a row is kept. */
   erasureKeptIn(dialog: Locator): Locator {
-    return dialog.getByText(erasures.kept, { exact: true });
+    return this.erasureParts.keptIn(dialog);
   }
 
   /** The refusal when what the save would erase cannot be checked. */

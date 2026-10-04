@@ -31,7 +31,6 @@ import {
   Plus,
   Rows3,
   Save,
-  TriangleAlert,
   Undo2,
   X,
 } from 'lucide-react';
@@ -108,16 +107,9 @@ import {
 } from '@/features/rotation/hooks/draft-store';
 import { useErasureCheck } from '@/features/rotation/hooks/use-erasure-check';
 import { CHECK_REFUSED, CHECK_UNAVAILABLE } from '@/features/rotation/services/erasure-check';
-import {
-  ERASURE_CONFIRMED,
-  ERASURE_KEPT,
-  erasureKeptOf,
-  erasuresConfirmedOf,
-  sameErasuresOf,
-  type ErasureDecision,
-  type ErasureDecisions,
-  type ErasureRow,
-} from '@/features/rotation/services/erasures';
+import { ErasureDialog } from '@/features/conflicts/components/erasure-dialog';
+import { useErasureConfirmation } from '@/features/conflicts/hooks/use-erasure-confirmation';
+import { RECHECK_CHANGED } from '@/features/conflicts/services/erasures';
 import {
   ROTATION_ASSIGNMENTS_TABLE,
   ROTATION_KEY,
@@ -239,17 +231,14 @@ import { supabaseClient } from '@/lib/supabase/client';
  * check.
  */
 
-/** The confirmation's list, and what was checked to derive it: the write writes exactly this. */
-interface ShownErasures {
-  readonly rows: readonly ErasureRow[];
+/** What the erasure check stood on: the write writes exactly this. */
+interface CheckedSave {
   /** The fresh rotation the check stood on. */
   readonly rotation: RotationSnapshot;
   /** The draft as checked, normalized to that rotation's active teams. */
   readonly draft: RotationDraft;
   /** The organization's today when the save was asked. */
   readonly today: string;
-  /** Shown again because the list changed since it was decided. */
-  readonly changed: boolean;
 }
 
 export function RotationSection({
@@ -286,37 +275,21 @@ export function RotationSection({
   const [focus, setFocus] = useState<StepFocus | null>(null);
   const controls = useRef(new Map<string, HTMLButtonElement>());
   const checkErasures = useErasureCheck();
-  /** The conflicts the draft would erase and what was checked, while their confirmation is open; `null` when it is closed. */
-  const [erasures, setErasures] = useState<ShownErasures | null>(null);
-  /** Each listed conflict's decision; a fresh list starts with none. */
-  const [decisions, setDecisions] = useState<ErasureDecisions>({});
-  /** The last save could not check what it would erase, so it saved nothing. */
-  const [erasuresUnavailable, setErasuresUnavailable] = useState(false);
-  /** The first row's "Potvrdi brisanje", where focus starts whenever a list is shown. */
-  const firstErasure = useRef<HTMLButtonElement>(null);
-  /** How many conflicts the last landed save removed, confirmed in its dialog; 0 for none. */
-  const [erasedCount, setErasedCount] = useState(0);
   /** The builder's own "Spremi rotaciju", where focus returns when the confirmation closes. */
   const saveButton = useRef<HTMLButtonElement>(null);
+  /**
+   * The conflicts the draft would erase and what was checked, while their
+   * confirmation is open, with each row's decision (the shared freshness
+   * hook, story 5.5b).
+   */
+  const confirmation = useErasureConfirmation<CheckedSave>(pending, () => saveButton.current);
+  const erasures = confirmation.shown;
+  /** The last save could not check what it would erase, so it saved nothing. */
+  const [erasuresUnavailable, setErasuresUnavailable] = useState(false);
+  /** How many conflicts the last landed save removed, confirmed in its dialog; 0 for none. */
+  const [erasedCount, setErasedCount] = useState(0);
   /** The refusal's retry, which takes focus when the check cannot be derived. */
   const retryButton = useRef<HTMLButtonElement>(null);
-  /** Set when the confirmation closes, until focus is back on the save. */
-  const returnFocus = useRef(false);
-
-  // A LIST SHOWN, OR SHOWN AGAIN, STARTS ON ITS FIRST ROW: the dialog is
-  // already open when a changed list replaces the one decided.
-  useEffect(() => {
-    if (erasures !== null) firstErasure.current?.focus();
-  }, [erasures]);
-
-  // CLOSED, FOCUS GOES BACK TO THE SAVE — once it is enabled again, after a
-  // write the close started.
-  useEffect(() => {
-    if (erasures !== null || pending || !returnFocus.current) return;
-
-    returnFocus.current = false;
-    saveButton.current?.focus();
-  }, [erasures, pending]);
 
   // A CHECK THAT CANNOT BE DERIVED: focus on its retry, so it is announced and in reach.
   useEffect(() => {
@@ -333,7 +306,7 @@ export function RotationSection({
     if (erasures === null) return [];
 
     try {
-      return rotationWarningLinesOf(erasures.rotation, erasures.draft, erasures.draft.effectiveFrom);
+      return rotationWarningLinesOf(erasures.subject.rotation, erasures.subject.draft, erasures.subject.draft.effectiveFrom);
     } catch (cause) {
       console.error(ROTATION_WRITE_UNAVAILABLE, cause);
 
@@ -567,8 +540,7 @@ export function RotationSection({
         return;
       }
 
-      setDecisions({});
-      setErasures({ rows: check.rows, rotation: check.rotation, draft: check.draft, today, changed: false });
+      confirmation.show(check.rows, { rotation: check.rotation, draft: check.draft, today });
     } catch (cause) {
       console.error(ROTATION_WRITE_UNAVAILABLE, cause);
       setOutcome({ ok: false, code: ROTATION_WRITE_UNAVAILABLE, afterPattern: false });
@@ -587,57 +559,45 @@ export function RotationSection({
    * refuses the save; a draft the fresh rotation refuses takes the save's own
    * refusal.
    */
-  async function confirmErasures(shown: ShownErasures): Promise<void> {
-    if (saving.current || !erasuresConfirmedOf(shown.rows, decisions)) return;
+  async function confirmErasures(shown: NonNullable<typeof erasures>): Promise<void> {
+    if (saving.current || !confirmation.confirmed) return;
+
+    const { draft: checked, today: savedToday } = shown.subject;
 
     saving.current = true;
     setPending(true);
 
     try {
-      const check = await checkErasures(shown.draft, shown.today);
+      const check = await checkErasures(checked, savedToday);
 
       if (check.kind === CHECK_UNAVAILABLE) {
-        setErasures(null);
+        confirmation.drop();
         setErasuresUnavailable(true);
 
         return;
       }
 
       if (check.kind === CHECK_REFUSED) {
-        closeErasures();
-        await write(check.rotation, shown.draft, shown.today, 0);
+        confirmation.close();
+        await write(check.rotation, checked, savedToday, 0);
 
         return;
       }
 
-      if (check.rows.length > 0 && !sameErasuresOf(shown.rows, check.rows)) {
-        setDecisions({});
-        setErasures({ rows: check.rows, rotation: check.rotation, draft: check.draft, today: shown.today, changed: true });
+      const fresh = { rotation: check.rotation, draft: check.draft, today: savedToday };
 
-        return;
-      }
+      if (confirmation.recheck(shown, check.rows, fresh) === RECHECK_CHANGED) return;
 
-      closeErasures();
-      await write(check.rotation, check.draft, shown.today, check.rows.length);
+      confirmation.close();
+      await write(check.rotation, check.draft, savedToday, check.rows.length);
     } catch (cause) {
       console.error(ROTATION_WRITE_UNAVAILABLE, cause);
-      setErasures(null);
+      confirmation.drop();
       setOutcome({ ok: false, code: ROTATION_WRITE_UNAVAILABLE, afterPattern: false });
     } finally {
       saving.current = false;
       setPending(false);
     }
-  }
-
-  /** Closes the confirmation; focus goes back to the builder's own "Spremi rotaciju". */
-  function closeErasures(): void {
-    returnFocus.current = true;
-    setErasures(null);
-  }
-
-  /** One row's decision, replacing whatever it had. */
-  function decide(key: string, decision: ErasureDecision): void {
-    setDecisions((current) => ({ ...current, [key]: decision }));
   }
 
   /**
@@ -1339,131 +1299,54 @@ export function RotationSection({
   }
 
   /**
-   * The erasure confirmation (story 5.5a, mockup `setup-1.html` §2): one row
-   * per conflict the draft would erase, by date then team, each with its own
-   * "Potvrdi brisanje" / "Zadrži" toggles — nothing preselected — and the
-   * draft's warnings, which never block. "Spremi rotaciju" is `aria-disabled`
-   * until every row is confirmed; "Natrag na uređivanje", Escape and the
-   * backdrop close it and keep the draft. Neutral, never `destructive`.
+   * The erasure confirmation (story 5.5a, mockup `setup-1.html` §2), the
+   * shared `ErasureDialog` (story 5.5b) in the builder's words: one row per
+   * conflict the draft would erase, by date then team, and the draft's
+   * warnings, which never block. "Spremi rotaciju" is `aria-disabled` until
+   * every row is confirmed; "Natrag na uređivanje", Escape and the backdrop
+   * close it and keep the draft.
    */
-  function renderErasures(shown: ShownErasures): ReactNode {
+  function renderErasures(shown: NonNullable<typeof erasures>): ReactNode {
     const { rows } = shown;
-    const confirmed = erasuresConfirmedOf(rows, decisions);
-    const kept = erasureKeptOf(rows, decisions);
-    const blocked = !confirmed || pending;
+    const partsOf = (row: (typeof rows)[number]) => ({
+      team: row.teamName,
+      weekday: row.weekday,
+      date: row.dayMonth,
+      type: row.shiftTypeName,
+    });
 
     return (
-      <ConfirmDialog
+      <ErasureDialog
+        id="rotation-erasures"
+        rows={rows}
+        changed={shown.changed}
+        decisions={confirmation.decisions}
         busy={pending}
-        onCancel={closeErasures}
-        aria-labelledby="rotation-erasures-title"
-        aria-describedby="rotation-erasures-lede"
-        className="max-w-2xl"
-      >
-        <div className="grid min-w-0 gap-1.5">
-          <h2 id="rotation-erasures-title" className="font-heading text-lg font-bold leading-tight tracking-tight">
-            {t('rotation.builder.erasures.title', { count: rows.length })}
-          </h2>
-          <p id="rotation-erasures-lede" className="text-sm">
-            {t('rotation.builder.erasures.lede', { count: rows.length })}
-          </p>
-        </div>
-        {/* THE LIST CHANGED since it was decided: said politely, once, above it. */}
-        {shown.changed ? (
-          <p role="status" className="text-sm font-medium">
-            {t('rotation.builder.erasures.changed')}
-          </p>
-        ) : null}
-        <ul className="grid min-w-0 gap-2">
-          {rows.map((row, index) => {
-            const decision = decisions[row.key];
-            const parts = { team: row.teamName, weekday: row.weekday, date: row.dayMonth, type: row.shiftTypeName };
-
-            return (
-              <li key={row.key} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 rounded-md border p-3">
-                {/* THE CONFLICT MARK as a shape, never a colour alone. */}
-                <TriangleAlert aria-hidden className="size-4 shrink-0" />
-                <span className="grid min-w-0 flex-1 basis-48 gap-0.5">
-                  <span className="break-words font-semibold tabular-nums">
-                    {t('rotation.builder.erasures.rowTitle', parts)}
-                  </span>
-                  <span className="break-words text-sm text-muted-foreground">
-                    {row.teamWorks
-                      ? t('rotation.builder.erasures.rowWithout', { member: row.memberName, team: row.teamName })
-                      : t('rotation.builder.erasures.rowFree', { member: row.memberName, team: row.teamName })}
-                  </span>
-                </span>
-                <span
-                  role="group"
-                  aria-label={t('rotation.builder.erasures.decision', parts)}
-                  className="flex min-w-0 flex-wrap gap-2"
-                >
-                  <Button
-                    ref={index === 0 ? firstErasure : undefined}
-                    className="h-11 aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
-                    type="button"
-                    variant="outline"
-                    aria-pressed={decision === ERASURE_CONFIRMED}
-                    disabled={pending}
-                    onClick={() => {
-                      decide(row.key, ERASURE_CONFIRMED);
-                    }}
-                  >
-                    {decision === ERASURE_CONFIRMED ? <Check aria-hidden /> : null}
-                    {t('rotation.builder.erasures.confirm')}
-                  </Button>
-                  <Button
-                    className="h-11 aria-pressed:border-primary aria-pressed:bg-primary aria-pressed:text-primary-foreground"
-                    type="button"
-                    variant="outline"
-                    aria-pressed={decision === ERASURE_KEPT}
-                    disabled={pending}
-                    onClick={() => {
-                      decide(row.key, ERASURE_KEPT);
-                    }}
-                  >
-                    {decision === ERASURE_KEPT ? <Check aria-hidden /> : null}
-                    {t('rotation.builder.erasures.keep')}
-                  </Button>
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-        {/* THE WARNINGS NEVER BLOCK: shown, and nothing waits on them. */}
-        <p className="text-sm empty:hidden">{renderWarnings(erasureWarnings)}</p>
-        {kept ? (
-          <p id="rotation-erasures-kept" className="text-sm font-medium">
-            {t('rotation.builder.erasures.kept')}
-          </p>
-        ) : null}
-        <DialogFooter>
-          <Button
-            className="h-11"
-            type="button"
-            variant="outline"
-            disabled={pending}
-            onClick={closeErasures}
-          >
-            {t('rotation.builder.erasures.back')}
-          </Button>
-          {/* `aria-disabled` rather than `disabled`, so it stays in the tab
-              order and its hint is read; a press while blocked does nothing. */}
-          <Button
-            className="h-11 aria-disabled:opacity-50"
-            type="button"
-            aria-disabled={blocked}
-            aria-describedby={kept ? 'rotation-erasures-kept' : undefined}
-            aria-busy={pending}
-            onClick={() => {
-              if (!blocked) void confirmErasures(shown);
-            }}
-          >
-            <Save aria-hidden />
-            {t('rotation.builder.save')}
-          </Button>
-        </DialogFooter>
-      </ConfirmDialog>
+        firstErasure={confirmation.firstErasure}
+        copy={{
+          title: t('rotation.builder.erasures.title', { count: rows.length }),
+          lede: t('rotation.builder.erasures.lede', { count: rows.length }),
+          changed: t('rotation.builder.erasures.changed'),
+          rowTitle: (row) => t('rotation.builder.erasures.rowTitle', partsOf(row)),
+          rowDetail: (row) =>
+            row.teamWorks
+              ? t('rotation.builder.erasures.rowWithout', { member: row.memberName, team: row.teamName })
+              : t('rotation.builder.erasures.rowFree', { member: row.memberName, team: row.teamName }),
+          decision: (row) => t('rotation.builder.erasures.decision', partsOf(row)),
+          confirm: t('rotation.builder.erasures.confirm'),
+          keep: t('rotation.builder.erasures.keep'),
+          back: t('rotation.builder.erasures.back'),
+          kept: t('rotation.builder.erasures.kept'),
+          save: t('rotation.builder.save'),
+        }}
+        saveIcon={<Save aria-hidden />}
+        notes={renderWarnings(erasureWarnings)}
+        onDecide={confirmation.decide}
+        onBack={confirmation.close}
+        onSave={() => {
+          void confirmErasures(shown);
+        }}
+      />
     );
   }
 

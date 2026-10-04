@@ -1,20 +1,27 @@
-import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import {
-  ERASURES_UNAVAILABLE,
-  rotationErasuresOutcomeOf,
-  type ErasureRow,
-} from '@/features/rotation/services/erasures';
+  CHECK_READY,
+  CHECK_REFUSED,
+  CHECK_UNAVAILABLE,
+  checkedOf,
+  type ErasureReads as CoreErasureReads,
+} from '@/features/conflicts/services/erasure-check';
+import type { ErasureRow } from '@/features/conflicts/services/erasures';
+import { rotationErasuresOutcomeOf } from '@/features/rotation/services/erasures';
 import { rotationTeamsOf, type RotationSnapshot } from '@/features/rotation/services/list';
 import { draftRefusalOf, normalizedDraftOf, type RotationDraft } from '@/features/rotation/utils/draft';
+
+export { CHECK_READY, CHECK_REFUSED, CHECK_UNAVAILABLE };
 
 /**
  * One run of the rotation save's erasure check (story 5.5a), over reads the
  * caller fetches afresh: the decision the builder acts on, as a `.ts` the
- * node suite executes. The hook (`use-erasure-check`) only fetches.
+ * node suite executes. The hook (`use-erasure-check`) only fetches; the
+ * never-throwing run is the shared `checkedOf` (story 5.5b).
  *
- * FOUR READS, ALL FRESH: the rotation the save will be built from, and the
- * calendar snapshot, the organization's live leave and its live resolutions
- * the diff stands on. A read that rejects — failed, or offline — answers
+ * FOUR READS, ALL FRESH: the three core reads every erasure check stands on
+ * — the calendar snapshot, the organization's live leave and its live
+ * resolutions — and, the builder's own addition, the rotation the save will
+ * be built from. A read that rejects — failed, or offline — answers
  * unavailable: the save is refused and nothing is written unchecked.
  *
  * THE FRESH ROTATION DECIDES FIRST. When it refuses the draft — another
@@ -24,19 +31,9 @@ import { draftRefusalOf, normalizedDraftOf, type RotationDraft } from '@/feature
  */
 
 /** The four reads, as their query functions answer them (each throws on a failure). */
-export interface ErasureReads {
+export interface ErasureReads extends CoreErasureReads {
   readonly rotation: RotationSnapshot;
-  readonly calendar: CalendarSnapshot;
-  readonly records: readonly unknown[];
-  readonly resolutions: readonly unknown[];
 }
-
-/** The check could not be derived: the save is refused, with a retry. */
-export const CHECK_UNAVAILABLE = ERASURES_UNAVAILABLE;
-/** The fresh rotation refuses the draft: the save's own refusal is shown. */
-export const CHECK_REFUSED = 'refused';
-/** Derived: the erasures, none included, and what the save will write. */
-export const CHECK_READY = 'ready';
 
 export type ErasureCheck =
   | { readonly kind: typeof CHECK_UNAVAILABLE }
@@ -61,21 +58,17 @@ export async function erasureCheckOf(
   today: string,
   online: boolean,
 ): Promise<ErasureCheck> {
-  // A fetch paused offline would wait for the network rather than fail.
-  if (!online) return { kind: CHECK_UNAVAILABLE };
+  return checkedOf(
+    read,
+    ({ rotation, calendar, records, resolutions }): ErasureCheck => {
+      const draft = normalizedDraftOf(entered, rotationTeamsOf(rotation));
 
-  try {
-    const { rotation, calendar, records, resolutions } = await read();
-    const draft = normalizedDraftOf(entered, rotationTeamsOf(rotation));
+      if (draftRefusalOf(rotation, draft, today) !== null) return { kind: CHECK_REFUSED, rotation };
 
-    if (draftRefusalOf(rotation, draft, today) !== null) return { kind: CHECK_REFUSED, rotation };
+      const outcome = rotationErasuresOutcomeOf(calendar, rotation, draft, records, resolutions);
 
-    const outcome = rotationErasuresOutcomeOf(calendar, rotation, draft, records, resolutions);
-
-    return outcome.ok ? { kind: CHECK_READY, rotation, draft, rows: outcome.rows } : { kind: CHECK_UNAVAILABLE };
-  } catch (cause) {
-    console.error(CHECK_UNAVAILABLE, cause);
-
-    return { kind: CHECK_UNAVAILABLE };
-  }
+      return outcome.ok ? { kind: CHECK_READY, rotation, draft, rows: outcome.rows } : { kind: CHECK_UNAVAILABLE };
+    },
+    online,
+  );
 }

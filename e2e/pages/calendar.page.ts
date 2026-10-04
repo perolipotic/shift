@@ -3,6 +3,7 @@ import { expect, type Locator } from '@playwright/test';
 import { dayMonth, weekdayOf } from '../utils/dates.ts';
 import { fill, hr } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
+import { ErasureDialogParts } from './erasure-dialog.ts';
 
 const kalendar = hr.kalendar;
 
@@ -538,6 +539,32 @@ export class CalendarPage extends BasePage {
     if (put !== null) await this.chooseIn(this.rosterInIn(detail), put);
     await this.rosterReasonIn(detail).fill(reason);
     await this.rosterSaveIn(detail).click();
+  }
+
+  // ------------------------------- the roster change's erasure guard (5.5b)
+
+  /**
+   * The roster change's erasure confirmation, in the calendar's words: its
+   * own save says "Spremi promjenu" after the form's save and "Ukloni" after
+   * a removal's confirmation.
+   */
+  rosterErasures(after: 'save' | 'removal'): ErasureDialogParts {
+    const change = kalendar.detail.rosterChange;
+
+    return new ErasureDialogParts(this.page, {
+      ...change.erasures,
+      save: after === 'save' ? change.set.save : change.remove.confirm,
+    });
+  }
+
+  /** The refusal when what a roster change would erase cannot be checked. */
+  get rosterUnchecked(): Locator {
+    return this.alertWith(kalendar.detail.rosterChange.erasures.unavailable);
+  }
+
+  /** The refusal's retry. */
+  get rosterUncheckedRetry(): Locator {
+    return this.rosterUnchecked.getByRole('button', { name: kalendar.detail.rosterChange.erasures.retry, exact: true });
   }
 
   /** A grid cell's position among the data cells, from its `data-row` and `data-column`. */

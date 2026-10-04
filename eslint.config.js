@@ -136,8 +136,17 @@ export const FEATURE_PUBLIC = {
   // and *Sati*'s count read the live resolutions through `resolutions`, and
   // the teams feature's dependents name both its keys, so a leave write
   // re-reads them.
+  // Story 5.5b: the erasure guard, lifted out of the rotation builder, is
+  // shared by the builder and the calendar's roster changes — the diff, rows
+  // and decisions, the never-throwing check run, the three fresh reads, the
+  // confirmation's state and freshness loop, and the dialog itself.
   conflicts: [
+    'components/erasure-dialog', // calendar, rotation
+    'hooks/use-erasure-confirmation', // calendar, rotation
+    'hooks/use-erasure-reads', // calendar, rotation
     'services/conflicts-queue', // calendar, hours
+    'services/erasure-check', // calendar, rotation
+    'services/erasures', // calendar, rotation
     'services/resolutions', // calendar, hours, teams
   ],
   'hour-bands': [

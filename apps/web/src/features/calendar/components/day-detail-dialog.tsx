@@ -23,6 +23,7 @@ import {
 } from '@/features/calendar/components/override-form';
 import {
   RosterDoneNotice,
+  RosterErasureConfirm,
   RosterRemoveAction,
   RosterRemoveConfirm,
   RosterRemoveRefusal,
@@ -378,6 +379,7 @@ export function DayDetailDialog({
       </Dialog>
       <OverrideRemoveConfirm form={form} detail={detail} busy={roster.pending} />
       <RosterRemoveConfirm form={roster} busy={form.pending} />
+      <RosterErasureConfirm form={roster} busy={form.pending} />
     </>
   );
 }

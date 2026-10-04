@@ -68,6 +68,10 @@ export const CALENDAR_SCREEN_EXEMPT: readonly { readonly file: string; readonly 
     why: 'the roster change and its removal (story 3.6b) and their refusal and notice messages; a key source of its own in the sign-in suite, executed by roster-write.test.ts',
   },
   {
+    file: 'services/roster-erasures.ts',
+    why: 'the roster change\'s erasure check (story 5.5b): the "after" snapshot of a save or a removal and one run of the check; renders nothing and declares no key, executed by roster-erasures.test.ts',
+  },
+  {
     file: 'services/marks.ts',
     why: 'the conflict and leave marks (story 5.3c), derived from the two reads; renders nothing and declares no key, executed by marks.test.ts',
   },
