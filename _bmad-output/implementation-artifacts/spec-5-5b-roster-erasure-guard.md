@@ -73,6 +73,7 @@ context:
 
 - **NARROWED:** "a rotation, roster or membership change". 5.5b covers calendar roster overrides only. Members are 5.5e, shift-type overrides 5.5f and rotation cancel 5.5g, all in `deferred-work.md`.
 - **INTERPRETED:** "surfaced in the rotation save confirmation dialog". Outside the rotation builder, the same dialog opens beside the surface's own form (human, 2026-10-04).
+- **DEFERRED:** "a sticky save bar keeps `Spremi` and `Odbaci promjene` in reach". This is story 5.5c, already in `deferred-work.md` (human, 2026-10-04).
 
 </frozen-after-approval>
 
