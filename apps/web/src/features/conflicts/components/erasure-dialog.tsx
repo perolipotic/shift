@@ -42,7 +42,9 @@ export interface ErasureDialogCopy {
  * "Natrag na uređivanje", Escape and the backdrop close it and keep what was
  * entered. Neutral, never `destructive`. Every word is the surface's
  * ({@link ErasureDialogCopy}); `notes` (the rotation's warnings) never block.
- * Rows wrap at 390 px: nothing here scrolls sideways.
+ * Rows wrap at 390 px: nothing here scrolls sideways. With `scrollRows`
+ * (story 5.5e) the list scrolls inside the dialog, so its heading, its way
+ * back and its save stay in reach however many rows there are.
  */
 export function ErasureDialog({
   id,
@@ -54,6 +56,7 @@ export function ErasureDialog({
   copy,
   saveIcon,
   notes,
+  scrollRows = false,
   onDecide,
   onBack,
   onSave,
@@ -69,6 +72,12 @@ export function ErasureDialog({
   readonly copy: ErasureDialogCopy;
   readonly saveIcon?: ReactNode;
   readonly notes?: ReactNode;
+  /**
+   * The rows scroll inside the dialog rather than the dialog growing past the
+   * screen (story 5.5e: a deactivation can erase many). Off for the rotation
+   * and the calendar, whose layouts stay as they were.
+   */
+  readonly scrollRows?: boolean;
   readonly onDecide: (key: string, decision: ErasureDecision) => void;
   readonly onBack: () => void;
   readonly onSave: () => void;
@@ -94,7 +103,13 @@ export function ErasureDialog({
           {copy.changed}
         </p>
       ) : null}
-      <ul className="grid min-w-0 gap-2">
+      <ul
+        className={
+          scrollRows
+            ? 'grid max-h-[45vh] min-w-0 gap-2 overflow-y-auto overflow-x-hidden overscroll-contain supports-[height:1dvh]:max-h-[45dvh]'
+            : 'grid min-w-0 gap-2'
+        }
+      >
         {rows.map((row, index) => {
           const decision = decisions[row.key];
 

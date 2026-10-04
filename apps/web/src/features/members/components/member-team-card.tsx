@@ -1,6 +1,8 @@
 import { CalendarClock } from 'lucide-react';
 import { Fragment, type ReactNode } from 'react';
 
+import { ErasureDialog } from '@/features/conflicts/components/erasure-dialog';
+
 import { Button } from '@/components/ui/button';
 import { Callout, CalloutBody } from '@/components/ui/callout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,6 +14,7 @@ import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
 import { t } from '@/lib/i18n';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
+import { memberErasureCopyOf } from '@/features/members/utils/erasure-copy';
 import { NO_TEXT, shownDate, type MemberListRow } from '@/features/members/services/list';
 import {
   NO_TEAM_VALUE,
@@ -71,6 +74,12 @@ export function MemberTeamCard({ edit }: { readonly edit: MemberEdit }): ReactNo
     armTeam,
     pickTeam,
     changeTeam,
+    teamOfferButton,
+    teamRetryButton,
+    teamUnchecked,
+    teamErased,
+    teamErasures,
+    confirmTeamErasures,
   } = edit;
 
   /**
@@ -145,10 +154,53 @@ export function MemberTeamCard({ edit }: { readonly edit: MemberEdit }): ReactNo
           : renderTeamControls(member, teamOffer, idle, today)}
         {teamConfirmed ? (
           <Notice role="status">
-            {t('smjene.membership.saved')}
+            <span className="block">{t('smjene.membership.saved')}</span>
+            {/* WHAT THE GUARDED WRITE REMOVED (story 5.5e), as confirmed in its dialog. */}
+            {teamErased === 0 ? null : (
+              <span className="mt-2 block">{t('ljudi.erasures.removed', { count: teamErased })}</span>
+            )}
           </Notice>
         ) : null}
+        {renderTeamErasures(member)}
       </div>
+    );
+  }
+
+  /**
+   * THE MOVE'S ERASURE DIALOG (story 5.5e): the shared `ErasureDialog`, open
+   * after the card's own confirmation closed, one row per conflict the move
+   * or the withdrawal would erase — "{member} na godišnjem · nakon promjene:
+   * {team} taj dan bez {member}", the team the conflict was on. Its save is
+   * the confirmation's own words, `aria-disabled` until every row is
+   * confirmed; "Natrag na uređivanje" returns to the card with what was
+   * entered kept. The rows scroll inside it.
+   */
+  function renderTeamErasures(member: MemberListRow): ReactNode {
+    const shown = teamErasures.shown;
+
+    if (shown === null || shown.subject.member !== member.id) return null;
+
+    const { confirmation } = shown.subject;
+
+    return (
+      <ErasureDialog
+        id="member-team-erasures"
+        rows={shown.rows}
+        changed={shown.changed}
+        decisions={teamErasures.decisions}
+        busy={teamStage === STATUS_BUSY}
+        firstErasure={teamErasures.firstErasure}
+        copy={memberErasureCopyOf(
+          shown.rows,
+          t(teamConfirmMessageKey(confirmation.change), { name: confirmation.name }),
+        )}
+        scrollRows
+        onDecide={teamErasures.decide}
+        onBack={teamErasures.close}
+        onSave={() => {
+          void confirmTeamErasures(shown);
+        }}
+      />
     );
   }
 
@@ -253,6 +305,7 @@ export function MemberTeamCard({ edit }: { readonly edit: MemberEdit }): ReactNo
   function renderTeamOffer(member: MemberListRow, offered: TeamOffer): ReactNode {
     return (
       <Button
+        ref={teamOfferButton}
         className="h-11 w-full"
         type="button"
         variant="outline"
@@ -295,6 +348,25 @@ export function MemberTeamCard({ edit }: { readonly edit: MemberEdit }): ReactNo
               teamArmedFor.position === null ? NO_TEXT : t(positionMessageKey(teamArmedFor.position)),
           })}
         </p>
+        {/* WHAT THE MOVE WOULD ERASE COULD NOT BE CHECKED (story 5.5e), so
+            nothing was written: said here, with a retry of the same write. */}
+        {teamUnchecked ? (
+          <Notice id="member-team-unchecked" role="alert">
+            {t('ljudi.erasures.unavailable')}
+            <Button
+              ref={teamRetryButton}
+              className="mt-3 flex h-11"
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                void changeTeam();
+              }}
+            >
+              {t('ljudi.erasures.retry')}
+            </Button>
+          </Notice>
+        ) : null}
         <DialogFooter>
           <Button
             className="h-11"

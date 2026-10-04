@@ -400,6 +400,21 @@
       "cancel": "Odustani od promjene statusa",
       "saved": "Promjena statusa je spremljena."
     },
+    "erasures": {
+      "title": "{count, plural, one {Promjena briše # konflikt} few {Promjena briše # konflikta} other {Promjena briše # konflikata}}",
+      "lede": "{count, plural, one {Ova promjena uklanja uzrok # neriješenog konflikta.} few {Ova promjena uklanja uzrok # neriješena konflikta.} other {Ova promjena uklanja uzrok # neriješenih konflikata.}} Prije potvrde odluči za svaki.",
+      "rowTitle": "{team} · {weekday} {date} · {type}",
+      "rowWithout": "{member} na godišnjem · nakon promjene: {team} taj dan bez {member}",
+      "decision": "Odluka: {team} · {weekday} {date} · {type}",
+      "confirm": "Potvrdi brisanje",
+      "keep": "Zadrži",
+      "back": "Natrag na uređivanje",
+      "kept": "Zadržan konflikt: odustani od promjene ili se vrati na uređivanje.",
+      "changed": "Popis konflikata se promijenio. Odluči ponovno za svaki.",
+      "unavailable": "Ne mogu provjeriti konflikte koje bi promjena izbrisala.",
+      "retry": "Pokušaj ponovno",
+      "removed": "{count, plural, one {Uklonjen # konflikt.} few {Uklonjena # konflikta.} other {Uklonjeno # konflikata.}}"
+    },
     "leaveRecord": {
       "heading": "Godišnji odmor",
       "used": "Iskorišteno u tekućoj godini",

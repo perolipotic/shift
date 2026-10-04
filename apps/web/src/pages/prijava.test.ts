@@ -230,6 +230,8 @@ const MEMBER_EDIT: readonly string[] = [
   join(MEMBERS_FEATURE, 'components', 'member-reset-card.tsx'),
   join(MEMBERS_FEATURE, 'utils', 'refusal-text.ts'),
   join(MEMBERS_FEATURE, 'utils', 'date-refusal.ts'),
+  // STORY 5.5e: the copy of the team and status cards' erasure dialogs.
+  join(MEMBERS_FEATURE, 'utils', 'erasure-copy.ts'),
   // STORY 5.1c: the leave card the page composes after the status card, and
   // its hook. Its rules are `LEAVE_SECTION_KEYS`, a key source of its own.
   join(LEAVE_FEATURE, 'hooks', 'use-member-leave.ts'),
@@ -665,7 +667,12 @@ const SCREENS = [
   //
   // THIRTY-THREE SINCE STORY 5.4d: "Natrag na konflikte", shown while the
   // page was reached from a conflict.
-  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 33 },
+  //
+  // THIRTY-FIVE SINCE STORY 5.5e: the "Pokušaj ponovno" a team or status
+  // confirmation offers when what its change would erase cannot be checked,
+  // one in each card. The erasure dialog's own controls are the shared
+  // component's, swept as an entry of their own.
+  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 35 },
   // STORY 1.7a. FOUR on the team list: the link back to `Ljudi`, the one name
   // `<Input>`, the add `<Button>`, and ONE row link written once inside the map
   // over the teams — the same count at zero teams as at nine. SIX on one team:
@@ -988,6 +995,10 @@ const IN_FLIGHT_HANDLERS = [
     effect: 'changeMemberStatus(',
     inFlight: 'statusing',
     handler: 'changeStatus',
+    // STORY 5.5e: the handler runs the erasure check first and hands the
+    // write itself to `writeStatus`, which the erasure dialog's save calls
+    // too — so the refused outcome is read off that WRITER.
+    writers: [{ name: 'writeStatus', failure: 'setStatusFailure' }],
     pending: 'setStatusPending',
     // ITS OWN REFUSAL STATE, so the date control is described by the status
     // block's alert and never by an unrelated error on the form.
@@ -1003,8 +1014,33 @@ const IN_FLIGHT_HANDLERS = [
     effect: 'changeMemberTeam(',
     inFlight: 'teaming',
     handler: 'changeTeam',
+    // STORY 5.5e, as the status change: the write is `writeTeam`'s.
+    writers: [{ name: 'writeTeam', failure: 'setTeamFailure' }],
     pending: 'setTeamPending',
     failure: 'setTeamFailure',
+  },
+  {
+    // STORY 5.5e: the two cards' erasure dialogs' own saves, which re-derive
+    // the check and then write through the card's writer, under the card's
+    // own in-flight ref. What each surfaces itself is the thrown path.
+    name: "the member edit form's team erasure dialog",
+    file: MEMBER_EDIT,
+    effect: 'changeMemberTeam(',
+    inFlight: 'teaming',
+    handler: 'confirmTeamErasures',
+    writers: [{ name: 'writeTeam', failure: 'setTeamFailure' }],
+    pending: 'setTeamPending',
+    failure: 'setTeamFailure',
+  },
+  {
+    name: "the member edit form's status erasure dialog",
+    file: MEMBER_EDIT,
+    effect: 'changeMemberStatus(',
+    inFlight: 'statusing',
+    handler: 'confirmStatusErasures',
+    writers: [{ name: 'writeStatus', failure: 'setStatusFailure' }],
+    pending: 'setStatusPending',
+    failure: 'setStatusFailure',
   },
   {
     // STORY 5.1c, THE FIFTH AWAITING HANDLER ON THE EDIT SCREEN: the leave
@@ -2560,10 +2596,17 @@ const KEY_SOURCES = [
     // replacement left rostered, and that the replacements cannot be checked
     // — written once in `LeaveReplacementLines` and rendered in the amend
     // preview, the removal confirmation and both notices.
+    //
+    // NINETY-FOUR SINCE STORY 5.5e: sixteen more. The erasure dialogs' ten
+    // words, written once in `memberErasureCopyOf` (title, lede, changed
+    // line, a row's title and second line, the toggles' group label,
+    // "Potvrdi brisanje", "Zadrži", the way back and the kept hint); and in
+    // each of the two cards the unavailable line, its retry and the removed
+    // count beside the saved line.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 78,
+    strings: 94,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
@@ -6482,7 +6525,9 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // amend and a record's removal.
     // TWENTY-SIX SINCE STORY 5.5b: the calendar roster form's erasure
     // confirmation; its save's handler is `submitRoster` now.
-    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(26);
+    // TWENTY-EIGHT SINCE STORY 5.5e: the member edit form's team and status
+    // erasure dialogs' own saves.
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(28);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
       'the in-flight handler names drifted from the handlers that hold them',
@@ -6494,6 +6539,8 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'changeStatus/statusing',
       'changeTeam/teaming',
       'confirmErasures/writing',
+      'confirmStatusErasures/statusing',
+      'confirmTeamErasures/teaming',
       'issue/resetting',
       'remove/removing',
       'remove/writing',
@@ -6526,7 +6573,17 @@ describe('the screen reaches the authentication seam rather than faking one', ()
 
   it.each(IN_FLIGHT_HANDLERS.filter((entry) => entry.file === MEMBER_EDIT))(
     'calls its effect only from inside its own handler on $name',
-    ({ file, effect, handler: named }) => {
+    (entry) => {
+      const { file, effect } = entry;
+      // STORY 5.5e: a handler that hands its write to a writer is read
+      // through it — the effect is called from the writer, and the handler
+      // calls the writer.
+      const writer = 'writers' in entry ? entry.writers[0]?.name : undefined;
+      const named = writer ?? entry.handler;
+
+      if (writer !== undefined) {
+        expect(namedHandler(source(file), entry.handler), `${entry.handler} never calls ${writer}`).toContain(`${writer}(`);
+      }
       // MUTATION-PROVEN GAP, found by B1's implementer: a `changeMemberStatus(`
       // call placed outside `changeStatus` passed every test here, because the
       // sweeps below read INSIDE each handler and say nothing about the rest
@@ -8284,7 +8341,7 @@ describe('the two member forms write through the seam and keep nothing back', ()
       setMark: 'setStatusDateMark',
       key: 'statusBlockKey',
       arm: 'armStatus',
-      change: 'changeStatus',
+      change: 'writeStatus',
     },
     {
       name: 'the team block',
@@ -8295,7 +8352,8 @@ describe('the two member forms write through the seam and keep nothing back', ()
       setMark: 'setTeamDateMark',
       key: 'teamBlockKey',
       arm: 'armTeam',
-      change: 'changeTeam',
+      // STORY 5.5e: the server refusal is the writer's.
+      change: 'writeTeam',
     },
   ])(
     'marks the date on $name invalid when its own refusal names it',
@@ -8967,8 +9025,10 @@ describe('a team or membership write re-reads every screen that shows it, once i
     );
 
   it.each([
-    { handler: 'changeTeam', gate: 'outcome.ok', dependents: 'MEMBERSHIP_WRITE_DEPENDENTS' },
-    { handler: 'changeStatus', gate: 'outcome.ok', dependents: 'MEMBERSHIP_WRITE_DEPENDENTS' },
+    // STORY 5.5e: the team and status writes are their writers', which the
+    // cards' confirmations and their erasure dialogs both call.
+    { handler: 'writeTeam', gate: 'outcome.ok', dependents: 'MEMBERSHIP_WRITE_DEPENDENTS' },
+    { handler: 'writeStatus', gate: 'outcome.ok', dependents: 'MEMBERSHIP_WRITE_DEPENDENTS' },
     { handler: 'submit', gate: 'outcome.ok || outcome.refusal.saved', dependents: 'MEMBER_SAVE_DEPENDENTS' },
   ])('re-reads $dependents after a landed $handler on the member edit screen', ({ handler, gate, dependents }) => {
     const body = namedHandler(source(MEMBER_EDIT_HOOK), handler);

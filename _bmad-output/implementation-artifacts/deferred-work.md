@@ -739,7 +739,7 @@
   summary: The erasure check runs only in the browser. A leave, override or resolution written between the dialog's final re-check and `saveRotation`'s inserts can be erased with nobody confirming it. Closing the window needs the checked key set sent with the write and verified in a definer call, or a server-side diff.
   evidence: Raised by the 5.5a edge-case review on 2026-10-03. The spec puts any server-side check under Ask First, and the 0023 lock is per statement, so the three inserts are not atomic with the check.
 - source_spec: none
-  summary: Story 5.5e — the erasure guard on the member page's team move (to another team or to no team, and withdrawing a scheduled move) and status (deactivation, and withdrawing a scheduled reactivation), reusing 5.5b's shared guard. A move to another working team erases the old team's key and adds a new one; it still blocks on the erasure.
+  summary: RESOLVED by 5.5e (`spec-5-5e-member-erasure-guard.md`) — the member page's team card (a move to another team or to no team, and withdrawing a scheduled move) and status card (deactivation, and withdrawing a scheduled reactivation) are guarded through 5.5b's shared pieces; the "after" is `features/members/services/member-erasures.ts`, wired in `use-member-edit.ts` and the two cards, and the shared dialog's rows can now scroll inside it (`scrollRows`). Original: Story 5.5e — the erasure guard on the member page's team move (to another team or to no team, and withdrawing a scheduled move) and status (deactivation, and withdrawing a scheduled reactivation), reusing 5.5b's shared guard. A move to another working team erases the old team's key and adds a new one; it still blocks on the erasure.
   evidence: Split from 5.5b at bmad-build step 1 on 2026-10-04 (human chose [S] Split). The member page already has confirmation dialogs; the erasure rows follow them.
 - source_spec: none
   summary: Story 5.5f — the erasure guard on shift-type overrides: calendar set and remove, plus confirm and amend in the rotation builder's override review (confirm stops being single-click when it erases).
@@ -750,3 +750,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-5-5b-roster-erasure-guard.md`
   summary: A calendar take-off of a member on leave, paired with putting someone in, is in effect a replacement, but 5.5b records it as an unattributed erasure. The dialog could point to the conflict's resolution screen ("Zamijeni osobu") instead, so the decision stays attributable (AD-4).
   evidence: Raised by the 5.5b blind review on 2026-10-04. The spec writes nothing on a confirmed erasure (Ask First), so the confirmation carries no author.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-5e-member-erasure-guard.md`
+  summary: The browser-only race window recorded for `saveRotation` (5.5a) also applies to the calendar roster writes (5.5b) and to the member page's team and status writes (5.5e). A leave or resolution written between the final re-check and the write can be erased with nobody confirming it.
+  evidence: Raised by the 5.5e epic AC audit on 2026-10-04. Each spec puts a server-side check under Ask First.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-5e-member-erasure-guard.md`
+  summary: A deactivation shows the erasure dialog before the database's last-admin rule is known, so an admin can decide every row and then be refused. Checking `leavesNoAdmin` / the status preflight before the dialog would avoid the wasted decisions.
+  evidence: Left under Ask First by the 5.5e spec; raised again by the 5.5e blind review on 2026-10-04.

@@ -52,23 +52,23 @@ export const CONFLICTS_SCREEN_EXEMPT: readonly { readonly file: string; readonly
   },
   {
     file: 'services/erasures.ts',
-    why: 'the surface-neutral erasure diff, rows and decisions (stories 5.5a, 5.5b); renders nothing and declares no key, executed by erasures.test.ts',
+    why: 'the surface-neutral erasure diff, rows and decisions (stories 5.5a, 5.5b, 5.5e); renders nothing and declares no key, executed by erasures.test.ts',
   },
   {
     file: 'services/erasure-check.ts',
-    why: 'one never-throwing run of an erasure check over the three core reads (story 5.5b); renders nothing, executed by erasure-check.test.ts',
+    why: 'one never-throwing run of an erasure check over the three core reads (story 5.5b; the member page since 5.5e); renders nothing, executed by erasure-check.test.ts',
   },
   {
     file: 'hooks/use-erasure-reads.ts',
-    why: 'the three fresh reads every erasure check stands on (story 5.5b), used by the rotation builder and the calendar; wiring only, swept by the sign-in suite',
+    why: 'the three fresh reads every erasure check stands on (story 5.5b), used by the rotation builder, the calendar and the member page (5.5e); wiring only, swept by the sign-in suite',
   },
   {
     file: 'hooks/use-erasure-confirmation.ts',
-    why: 'the erasure confirmation state, decisions, freshness loop and focus (story 5.5b), shared by the rotation builder and the calendar; renders nothing',
+    why: 'the erasure confirmation state, decisions, freshness loop and focus (story 5.5b), shared by the rotation builder, the calendar and the member page (5.5e); renders nothing',
   },
   {
     file: 'components/erasure-dialog.tsx',
-    why: 'the shared erasure confirmation (story 5.5b), rendered by the rotation builder and the calendar with their own words; a screen entry of its own in the sign-in suite',
+    why: 'the shared erasure confirmation (story 5.5b), rendered by the rotation builder, the calendar and the member page\'s two cards (5.5e, its rows scrolling inside) with their own words; a screen entry of its own in the sign-in suite',
   },
   {
     file: 'services/resolution-write.ts',

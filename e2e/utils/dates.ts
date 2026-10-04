@@ -14,3 +14,11 @@ export function weekdayOf(date: string): string {
 export function fullDate(date: string): string {
   return `${date.slice(8, 10)}.${date.slice(5, 7)}.${date.slice(0, 4)}`;
 }
+
+/** A `YYYY-MM-DD` date `days` days from `date`, by UTC arithmetic. */
+export function addDays(date: string, days: number): string {
+  const instant = new Date(`${date}T12:00:00Z`);
+  instant.setUTCDate(instant.getUTCDate() + days);
+
+  return instant.toISOString().slice(0, 10);
+}

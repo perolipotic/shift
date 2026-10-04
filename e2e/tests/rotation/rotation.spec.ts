@@ -16,6 +16,7 @@ import {
   type SeededRotation,
 } from '../../utils/database-helper.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
+import { addDays } from '../../utils/dates.ts';
 import { fill, hr } from '../../utils/i18n.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
@@ -648,14 +649,6 @@ test('a shift type gets a correction from tomorrow, the correction is cancelled,
   await expect(rotationPage.archivedShiftTypeRow(name)).toBeVisible();
   await expect(rotationPage.shiftTypeEditLink(name)).toHaveCount(0);
 });
-
-/** A `YYYY-MM-DD` date `days` days from `date`, by UTC arithmetic. */
-function addDays(date: string, days: number): string {
-  const instant = new Date(`${date}T12:00:00Z`);
-  instant.setUTCDate(instant.getUTCDate() + days);
-
-  return instant.toISOString().slice(0, 10);
-}
 
 test('a change saved over three overrides lists them for review; one is confirmed, one amended, one discarded', async ({
   fixture,

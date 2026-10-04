@@ -299,6 +299,49 @@ export async function seedLeaveMember(
 }
 
 /**
+ * Status versions of a member {@link seedLeaveMember} wrote (story 5.5e), in
+ * SQL, attributed to the run organization's first admin — a deactivation from
+ * a date and a reactivation scheduled after it, say. The superuser bypasses
+ * the insert policy (0008); the triggers still fire. The versions cascade
+ * with the member ({@link removeLeaveMemberInSql}).
+ */
+export async function seedMemberStatusVersions(
+  slug: string,
+  memberId: string,
+  versions: readonly { readonly active: boolean; readonly effectiveFrom: string }[],
+): Promise<void> {
+  const client = await connect();
+  try {
+    await client.query('begin');
+    const found = await client.query<{ organization_id: string; admin_user: string | null }>(
+      `select o.id as organization_id,
+              (select a.auth_user_id from members a
+                where a.organization_id = o.id and a.role = 'admin'
+                order by a.created_at, a.id limit 1) as admin_user
+         from organizations o join members m on m.organization_id = o.id
+        where o.slug = $1 and m.id = $2`,
+      [slug, memberId],
+    );
+    const organization = found.rows[0];
+    if (organization === undefined) throw new Error(`E2E: no member ${memberId} in the organization ${slug}`);
+    if (organization.admin_user === null) throw new Error(`E2E: the organization ${slug} has no admin to write as`);
+    for (const version of versions) {
+      await client.query(
+        `insert into member_status_versions (organization_id, member_id, active, effective_from, created_by)
+         values ($1, $2, $3, $4::date, $5)`,
+        [organization.organization_id, memberId, version.active, version.effectiveFrom, organization.admin_user],
+      );
+    }
+    await client.query('commit');
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
  * Deletes a member {@link seedLeaveMember} wrote (story 5.5a's cleanup), with
  * everything that names them: their conflict resolutions and leave records —
  * neither key cascades (0028, 0031) — and then their auth user, from which

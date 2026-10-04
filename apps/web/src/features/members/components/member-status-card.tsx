@@ -1,6 +1,8 @@
 import { CalendarClock } from 'lucide-react';
 import type { ReactNode } from 'react';
 
+import { ErasureDialog } from '@/features/conflicts/components/erasure-dialog';
+
 import { Button } from '@/components/ui/button';
 import { Callout, CalloutBody } from '@/components/ui/callout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/lib/i18n';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
+import { memberErasureCopyOf } from '@/features/members/utils/erasure-copy';
 import { shownDate, type MemberListRow } from '@/features/members/services/list';
 import {
   STATUS_ARMED,
@@ -52,6 +55,12 @@ export function MemberStatusCard({ edit }: { readonly edit: MemberEdit }): React
     setStatusArmed,
     armStatus,
     changeStatus,
+    statusOfferButton,
+    statusRetryButton,
+    statusUnchecked,
+    statusErased,
+    statusErasures,
+    confirmStatusErasures,
   } = edit;
 
   /**
@@ -108,10 +117,49 @@ export function MemberStatusCard({ edit }: { readonly edit: MemberEdit }): React
         {idle ? renderStatusOffer(member, offer) : renderStatusConfirmation()}
         {statusConfirmed ? (
           <Notice role="status">
-            {t('ljudi.status.saved')}
+            <span className="block">{t('ljudi.status.saved')}</span>
+            {/* WHAT THE GUARDED WRITE REMOVED (story 5.5e), as confirmed in its dialog. */}
+            {statusErased === 0 ? null : (
+              <span className="mt-2 block">{t('ljudi.erasures.removed', { count: statusErased })}</span>
+            )}
           </Notice>
         ) : null}
+        {renderStatusErasures(member)}
       </div>
+    );
+  }
+
+  /**
+   * THE STATUS CHANGE'S ERASURE DIALOG (story 5.5e): the team card's twin,
+   * for a deactivation or the withdrawal of a scheduled reactivation. A
+   * deactivation can erase many conflicts, so the rows scroll inside it.
+   */
+  function renderStatusErasures(member: MemberListRow): ReactNode {
+    const shown = statusErasures.shown;
+
+    if (shown === null || shown.subject.member !== member.id) return null;
+
+    const { confirmation } = shown.subject;
+
+    return (
+      <ErasureDialog
+        id="member-status-erasures"
+        rows={shown.rows}
+        changed={shown.changed}
+        decisions={statusErasures.decisions}
+        busy={statusStage === STATUS_BUSY}
+        firstErasure={statusErasures.firstErasure}
+        copy={memberErasureCopyOf(
+          shown.rows,
+          t(statusConfirmMessageKey(confirmation.change), { name: confirmation.name }),
+        )}
+        scrollRows
+        onDecide={statusErasures.decide}
+        onBack={statusErasures.close}
+        onSave={() => {
+          void confirmStatusErasures(shown);
+        }}
+      />
     );
   }
 
@@ -150,6 +198,7 @@ export function MemberStatusCard({ edit }: { readonly edit: MemberEdit }): React
   function renderStatusOffer(member: MemberListRow, offered: StatusOffer): ReactNode {
     return (
       <Button
+        ref={statusOfferButton}
         className="h-11 w-full"
         type="button"
         variant="outline"
@@ -189,6 +238,25 @@ export function MemberStatusCard({ edit }: { readonly edit: MemberEdit }): React
             date: shownDate(statusArmedFor.day),
           })}
         </p>
+        {/* WHAT THE CHANGE WOULD ERASE COULD NOT BE CHECKED (story 5.5e), so
+            nothing was written: said here, with a retry of the same write. */}
+        {statusUnchecked ? (
+          <Notice id="member-status-unchecked" role="alert">
+            {t('ljudi.erasures.unavailable')}
+            <Button
+              ref={statusRetryButton}
+              className="mt-3 flex h-11"
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                void changeStatus();
+              }}
+            >
+              {t('ljudi.erasures.retry')}
+            </Button>
+          </Notice>
+        ) : null}
         <DialogFooter>
           <Button
             className="h-11"

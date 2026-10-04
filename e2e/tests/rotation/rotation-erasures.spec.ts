@@ -17,8 +17,8 @@ import {
   type SeededLeaveMember,
   type SeededRotation,
 } from '../../utils/database-helper.ts';
-import { dayMonth, weekdayOf } from '../../utils/dates.ts';
-import { fill, hr } from '../../utils/i18n.ts';
+import { addDays, dayMonth, weekdayOf } from '../../utils/dates.ts';
+import { fill, hr, plural } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll } from '../../utils/layout.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
@@ -77,14 +77,6 @@ test.afterEach(async () => {
   if (failures.length > 0) throw failures[0];
 });
 
-/** A `YYYY-MM-DD` date `days` days from `date`, by UTC arithmetic. */
-function addDays(date: string, days: number): string {
-  const instant = new Date(`${date}T12:00:00Z`);
-  instant.setUTCDate(instant.getUTCDate() + days);
-
-  return instant.toISOString().slice(0, 10);
-}
-
 interface Setup {
   readonly rotation: SeededRotation;
   readonly team: { readonly id: string; readonly name: string };
@@ -132,14 +124,6 @@ async function draftOnly(rotationPage: RotationPage, rotation: SeededRotation, s
 /** The draft: the seed's `Slobodno` alone, from tomorrow — every team free every day. */
 async function draftAllFree(rotationPage: RotationPage, rotation: SeededRotation): Promise<void> {
   await draftOnly(rotationPage, rotation, 2);
-}
-
-/** The `one` form of an ICU plural, filled — `Uklonjen 1 konflikt.` — without an ICU parser. */
-function oneForm(message: string): string {
-  const form = /one \{([^}]*)\}/.exec(message)?.[1];
-  if (form === undefined) throw new Error(`E2E: ${message} has no one form`);
-
-  return form.replace('#', '1');
 }
 
 /** The text after an ICU plural block: `za sljedeći ciklus:`. */
@@ -337,7 +321,7 @@ test('a save that keeps an existing conflict working erases nothing, and saves a
 
   await expect(rotationPage.savedConfirmation).toBeVisible();
   // No count of removed conflicts: every form starts with the one form's first word.
-  await expect(rotationPage.savedConfirmation).not.toContainText(oneForm(erasures.removed).split(' ')[0] ?? '');
+  await expect(rotationPage.savedConfirmation).not.toContainText(plural(erasures.removed, 1).split(' ')[0] ?? '');
   await expect(rotationPage.dialog()).toHaveCount(0);
   // The check ran and passed: the conflict still stands.
   await conflictsPage.goto();
@@ -374,7 +358,7 @@ test('a roster override the change leaves pending is listed, its team still work
 
   await rotationPage.erasureConfirmIn(rows.nth(0)).click();
   await rotationPage.erasureSaveIn(dialog).click();
-  await expect(rotationPage.savedConfirmation).toContainText(oneForm(erasures.removed));
+  await expect(rotationPage.savedConfirmation).toContainText(plural(erasures.removed, 1));
 });
 
 test('a save whose erasures cannot be checked is refused, saves nothing, and the retry checks again', async ({

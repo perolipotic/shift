@@ -55,3 +55,29 @@ export function focusLater(
     }
   });
 }
+
+/** What {@link firstEnabledOf} needs of an element: focus's needs, and its attributes. */
+export interface Inspectable extends Focusable {
+  getAttribute(name: string): string | null;
+}
+
+/**
+ * The first of `targets` in the document and enabled — neither `disabled`
+ * nor `aria-disabled="true"` — else `null` (story 5.5e): where focus returns
+ * when a dialog closes, never a control that would not act on a press.
+ */
+export function firstEnabledOf<Element extends Inspectable>(
+  ...targets: readonly (() => Element | null)[]
+): Element | null {
+  const ready = targets
+    .map((target) => target())
+    .find(
+      (element) =>
+        element !== null &&
+        element.isConnected &&
+        element.disabled !== true &&
+        element.getAttribute('aria-disabled') !== 'true',
+    );
+
+  return ready ?? null;
+}

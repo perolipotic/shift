@@ -60,9 +60,18 @@ export const TEAM_CHANGE_DEPENDENTS: readonly QueryKey[] = [
 
 /**
  * A member moved between teams, or their status changed: every read that
- * says who is on which team today.
+ * says who is on which team today — and, since story 5.5e, the
+ * organization's live leave records and resolutions, the other two reads the
+ * member page's erasure check stands on beside the calendar, so a change
+ * that erased a conflict takes it out of the queue on the next read.
  */
-export const MEMBERSHIP_WRITE_DEPENDENTS: readonly QueryKey[] = [OWN_TEAM_KEY, TEAM_ROSTERS_KEY, CALENDAR_KEY];
+export const MEMBERSHIP_WRITE_DEPENDENTS: readonly QueryKey[] = [
+  OWN_TEAM_KEY,
+  TEAM_ROSTERS_KEY,
+  CALENDAR_KEY,
+  ORGANIZATION_LEAVE_RECORDS_KEY,
+  ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+];
 
 /**
  * A member's own row saved: the rosters and the builder's history show the
