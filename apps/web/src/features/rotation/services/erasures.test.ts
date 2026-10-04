@@ -8,13 +8,15 @@ import {
   ERASURES_UNAVAILABLE,
   ERASURE_CONFIRMED,
   ERASURE_KEPT,
-  draftCalendarSnapshotOf,
   erasureKeptOf,
   erasuresConfirmedOf,
-  rotationErasuresOf,
-  rotationErasuresOutcomeOf,
   sameErasuresOf,
   type ErasureRow,
+} from '@/features/conflicts/services/erasures';
+import {
+  draftCalendarSnapshotOf,
+  rotationErasuresOf,
+  rotationErasuresOutcomeOf,
 } from '@/features/rotation/services/erasures';
 import { prefillOf, withEffectiveFrom, withTeamStep, type RotationDraft } from '@/features/rotation/utils/draft';
 import { initLocalization, t } from '@/lib/i18n';

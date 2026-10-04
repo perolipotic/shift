@@ -350,6 +350,12 @@ const ROTATION_HISTORY_KEYS = join(srcRoot, 'features', 'rotation', 'services', 
  * module holding its refusals and what a landed disposition says.
  */
 const ROTATION_OVERRIDE_REVIEW = join(srcRoot, 'features', 'rotation', 'components', 'override-review.tsx');
+/**
+ * The erasure confirmation (story 5.5b), lifted out of the rotation builder
+ * and shared with the calendar's roster changes: its own entry, since both
+ * surfaces render it with their own words and it holds no key.
+ */
+const ERASURE_DIALOG = join(srcRoot, 'features', 'conflicts', 'components', 'erasure-dialog.tsx');
 const ROTATION_DISPOSITION_KEYS = join(srcRoot, 'features', 'rotation', 'services', 'override-disposition.ts');
 
 /** The calendar feature, which holds the calendar screen's parts. */
@@ -697,7 +703,11 @@ const SCREENS = [
   // confirmation's cancel and confirm.
   // TWENTY-TWO SINCE STORY 5.3c: the unavailable alert's retry, which reads
   // the schedule and the leave the marks stand on again.
-  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 22 },
+  // TWENTY-THREE SINCE STORY 5.5b: the retry beside the refusal when what a
+  // roster change would erase cannot be checked, written once and shown in
+  // the form or in the removal's confirmation. The erasure confirmation's own
+  // controls are the shared `ErasureDialog`'s, counted there.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 23 },
   // STORY 4.1b. THREE on Sati: the month navigation it shares with the
   // calendar — the previous month, `Ovaj mjesec` and the next month. The
   // figures are read, never pressed.
@@ -772,7 +782,13 @@ const SCREENS = [
   // TWENTY-ONE SINCE STORY 5.5a: the erasure confirmation's two toggles per
   // row (written once), its "Natrag na uređivanje" and its own save, and the
   // retry beside the refusal when the check cannot be derived.
-  { name: 'the rotation builder', file: ROTATION_SECTION, expectedControls: 21 },
+  // SEVENTEEN SINCE STORY 5.5b: the confirmation's four moved with it to the
+  // shared `ErasureDialog`, counted below; the retry stays.
+  { name: 'the rotation builder', file: ROTATION_SECTION, expectedControls: 17 },
+  // STORY 5.5b. FOUR on the shared erasure confirmation, each written once
+  // however many rows: a row's "Potvrdi brisanje" and "Zadrži", "Natrag na
+  // uređivanje" and its own save.
+  { name: 'the erasure confirmation', file: ERASURE_DIALOG, expectedControls: 4 },
   // STORY 3.5c. NINE on the override review, each written once however many
   // overrides are pending: a row's confirm, amend and discard; the amend's
   // type `<select>`, reason, cancel and save; and the discard's cancel and
@@ -1098,11 +1114,18 @@ const IN_FLIGHT_HANDLERS = [
     // STORY 3.6b, the calendar roster form's two awaiting handlers: the save
     // and the removal of a change, sharing their own hook's `writing` ref for
     // the reason the override form's do, each with its own refusal state.
+    // STORY 5.5b: each now runs the erasure check first, under the same
+    // latch, and hands the write itself to `writeSave` / `writeRemoval`,
+    // which the erasure confirmation calls too — so the refused outcome is
+    // read off that WRITER, and the latch, the finally and the catch off
+    // the handler. The save's handler is `submitRoster`, which the form's
+    // submit and the refusal's retry both call.
     name: "the Kalendar roster form's save",
     file: KALENDAR,
     effect: 'setRosterOverride(',
     inFlight: 'writing',
-    handler: 'saveRoster',
+    handler: 'submitRoster',
+    writers: [{ name: 'writeSave', failure: 'setFailure' }],
     pending: 'setPending',
     failure: 'setFailure',
   },
@@ -1112,8 +1135,27 @@ const IN_FLIGHT_HANDLERS = [
     effect: 'removeRosterOverride(',
     inFlight: 'writing',
     handler: 'removeChange',
+    writers: [{ name: 'writeRemoval', failure: 'setRemoveFailure' }],
     pending: 'setPending',
     failure: 'setRemoveFailure',
+  },
+  {
+    // STORY 5.5b, THE THIRD: the erasure confirmation's own save, which
+    // re-derives the check and then writes the save or the removal it was
+    // shown for, under the same `writing` latch. Its refused outcomes are the
+    // two writers', EACH swept with its own refusal state; what it surfaces
+    // itself is the thrown path.
+    name: "the Kalendar roster erasure confirmation",
+    file: KALENDAR,
+    effect: 'setRosterOverride(',
+    inFlight: 'writing',
+    handler: 'confirmErasures',
+    writers: [
+      { name: 'writeSave', failure: 'setFailure' },
+      { name: 'writeRemoval', failure: 'setRemoveFailure' },
+    ],
+    pending: 'setPending',
+    failure: 'setFailure',
   },
 ];
 
@@ -2213,10 +2255,19 @@ const KEY_SOURCES = [
     // SEVENTY-FIVE SINCE EPIC 4 RETRO C2: the roster form's overlap hint.
     // SEVENTY-SIX SINCE STORY 5.3c: the unavailable alert's retry. The marks'
     // labels still come through `@/features/calendar/utils/modifiers`.
+    // NINETY-TWO SINCE STORY 5.5b: the roster change's erasure confirmation —
+    // its title, lede, changed line, row title, the row's two second lines,
+    // the toggles' group label, the two toggles, the way back and the kept
+    // hint, and its own save, "Spremi promjenu" or "Ukloni" (both keys written
+    // a second time) — the refusal when the check cannot be derived, with its
+    // retry, and the landed write's count of the conflicts it removed.
+    // NINETY-THREE SINCE THE 5.5b REVIEW: a removal's own lede and kept hint;
+    // the row's "taj dan slobodna" is gone, since a roster change never makes
+    // the team free.
     name: 'the Kalendar destination',
     file: KALENDAR,
     keys: translationKeys,
-    strings: 76,
+    strings: 93,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's
@@ -2755,7 +2806,11 @@ describe('the screen is read at all, so every sweep below means something', () =
     // TWENTY-FIVE AND FORTY-EIGHT SINCE STORY 3.5c: the override review is a
     // new `.tsx` that renders strings (one each), and
     // `@/features/rotation/services/override-disposition` is a key source.
-    expect(SCREENS).toHaveLength(26);
+    //
+    // TWENTY-SEVEN SINCE STORY 5.5b: the shared erasure confirmation, lifted
+    // out of the rotation builder; it renders the words it is handed and
+    // holds no key, so no key source joins.
+    expect(SCREENS).toHaveLength(27);
     //
     // FORTY-NINE SINCE STORY 3.6b: `@/features/calendar/services/roster-write`.
     //
@@ -4878,6 +4933,9 @@ describe('the member list reads once, under one key', () => {
     // and the erasure check's three reads are the hook's, fetched on a press.
     const screen = source(ROTATION_SECTION);
     const check = source(join(srcRoot, 'features', 'rotation', 'hooks', 'use-erasure-check.ts'));
+    // STORY 5.5b: the three core reads moved to the shared hook; the rotation
+    // read stays the builder's own addition, beside them.
+    const reads = source(join(srcRoot, 'features', 'conflicts', 'hooks', 'use-erasure-reads.ts'));
 
     expect(occurrences(screen, 'useQuery(')).toBe(1);
     expect(occurrences(screen, 'useQuery(rotationQueryOptions(')).toBe(1);
@@ -4886,8 +4944,12 @@ describe('the member list reads once, under one key', () => {
     expect(screen).toContain('refreshAfterWrite(queryClient, ROTATION_KEY, ROTATION_SAVE_DEPENDENTS)');
     expect(occurrences(screen, 'refreshAfterWrite(')).toBe(1);
     expect(occurrences(check, 'useQuery('), 'the check observes its reads between presses').toBe(0);
-    expect(occurrences(check, 'staleTime: 0')).toBe(4);
-    expect(occurrences(check, "networkMode: 'always'"), 'a fetch could pause offline').toBe(4);
+    expect(occurrences(check, 'staleTime: 0')).toBe(1);
+    expect(occurrences(check, "networkMode: 'always'"), 'a fetch could pause offline').toBe(1);
+    expect(check, 'the builder no longer stands on the shared core reads').toContain('useErasureReads()');
+    expect(occurrences(reads, 'useQuery('), 'the check observes its reads between presses').toBe(0);
+    expect(occurrences(reads, 'staleTime: 0')).toBe(3);
+    expect(occurrences(reads, "networkMode: 'always'"), 'a fetch could pause offline').toBe(3);
     expect(screen, 'useMutation arrived; this repository uses a pending ref').not.toContain('useMutation');
     expect(screen, 'no in-flight ref guards a second save').toMatch(/saving\.current = true/);
     expect(screen, 'the in-flight ref is never released').toMatch(/finally \{\s*saving\.current = false;/);
@@ -6418,7 +6480,9 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // card's save.
     // TWENTY-FIVE SINCE STORY 5.2b: its sixth and seventh, the leave card's
     // amend and a record's removal.
-    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(25);
+    // TWENTY-SIX SINCE STORY 5.5b: the calendar roster form's erasure
+    // confirmation; its save's handler is `submitRoster` now.
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(26);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
       'the in-flight handler names drifted from the handlers that hold them',
@@ -6429,13 +6493,13 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'cancelTimes/writing',
       'changeStatus/statusing',
       'changeTeam/teaming',
+      'confirmErasures/writing',
       'issue/resetting',
       'remove/removing',
       'remove/writing',
       'remove/writing',
       'removeChange/writing',
       'save/recording',
-      'saveRoster/writing',
       'saveTimes/writing',
       'submit/creating',
       'submit/creating',
@@ -6448,6 +6512,7 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'submit/writing',
       'submit/writing',
       'submit/writing',
+      'submitRoster/writing',
     ]);
     // NON-VACUITY ON THE EXTRACTOR ITSELF. A `namedHandler` that answered `''`
     // for every name would make all three sweeps below assert nothing at all.
@@ -6531,7 +6596,21 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     },
   );
 
-  it.each(IN_FLIGHT_HANDLERS)('surfaces the refused outcome code on $name', ({ file, handler: named, failure }) => {
+  it.each(IN_FLIGHT_HANDLERS)('surfaces the refused outcome code on $name', (entry) => {
+    // STORY 5.5b: where a handler hands its writes to writers, each outcome is
+    // its writer's to surface, into that writer's own refusal state — and a
+    // handler with two writers is swept for both, each called from it.
+    const writers = 'writers' in entry ? entry.writers : [{ name: entry.handler, failure: entry.failure }];
+
+    for (const { name, failure } of writers) {
+      if (name !== entry.handler) {
+        expect(namedHandler(source(entry.file), entry.handler), `${entry.handler} never calls ${name}`).toContain(`${name}(`);
+      }
+      refusedOutcomeSurfaced(entry.file, name, failure);
+    }
+  });
+
+  function refusedOutcomeSurfaced(file: Parameters<typeof source>[0], named: string, failure: string): void {
     // MUTATION-PROVEN GAP, found by the 1.4a review: deleting
     // `setFailure(outcome.code)` from the settings surface's handler left the
     // whole suite green, and a refused save then looked exactly like a saved
@@ -6561,7 +6640,7 @@ describe('the screen reaches the authentication seam rather than faking one', ()
           `|const next = createdOutcomeOf\\(outcome\\);[\\s\\S]{0,120}?${failure}\\(next\\.failure\\)`,
       ),
     );
-  });
+  }
 
   it('keeps every entered value by never controlling the fields', () => {
     // UX-DR34: a refused save keeps every entered value. Uncontrolled inputs

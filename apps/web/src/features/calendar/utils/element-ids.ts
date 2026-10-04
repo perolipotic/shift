@@ -90,3 +90,12 @@ export function describedByOf(...ids: readonly (string | null)[]): string | unde
 
   return named.length === 0 ? undefined : named.join(' ');
 }
+
+/**
+ * The roster change's erasure confirmation (story 5.5b): the prefix of the
+ * ids its title, lede and kept hint carry (`ErasureDialog`'s `idPrefix`).
+ */
+export const ROSTER_ERASURES_ID = 'kalendar-roster-erasures';
+
+/** The refusal when what a roster change would erase cannot be checked (story 5.5b). */
+export const ROSTER_UNCHECKED_ID = 'kalendar-roster-unchecked';

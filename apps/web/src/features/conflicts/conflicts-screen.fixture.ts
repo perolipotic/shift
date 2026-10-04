@@ -51,6 +51,26 @@ export const CONFLICTS_SCREEN_EXEMPT: readonly { readonly file: string; readonly
     why: 'every rule of the resolution screen (story 5.4b) — its place in the queue, facts, strip and status line; a key source of its own, executed by resolution-screen.test.ts',
   },
   {
+    file: 'services/erasures.ts',
+    why: 'the surface-neutral erasure diff, rows and decisions (stories 5.5a, 5.5b); renders nothing and declares no key, executed by erasures.test.ts',
+  },
+  {
+    file: 'services/erasure-check.ts',
+    why: 'one never-throwing run of an erasure check over the three core reads (story 5.5b); renders nothing, executed by erasure-check.test.ts',
+  },
+  {
+    file: 'hooks/use-erasure-reads.ts',
+    why: 'the three fresh reads every erasure check stands on (story 5.5b), used by the rotation builder and the calendar; wiring only, swept by the sign-in suite',
+  },
+  {
+    file: 'hooks/use-erasure-confirmation.ts',
+    why: 'the erasure confirmation state, decisions, freshness loop and focus (story 5.5b), shared by the rotation builder and the calendar; renders nothing',
+  },
+  {
+    file: 'components/erasure-dialog.tsx',
+    why: 'the shared erasure confirmation (story 5.5b), rendered by the rotation builder and the calendar with their own words; a screen entry of its own in the sign-in suite',
+  },
+  {
     file: 'services/resolution-write.ts',
     why: 'the two resolution writes (stories 5.4b, 5.4c) and their refusals; a key source of its own, executed by resolution-write.test.ts',
   },

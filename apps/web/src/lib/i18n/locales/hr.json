@@ -94,6 +94,23 @@
           "gone": "Promjena je već uklonjena.",
           "denied": "Ne možeš mijenjati sastav. Za to trebaš ovlasti administratora.",
           "failed": "Promjena nije uspjela. Pokušaj ponovno."
+        },
+        "erasures": {
+          "title": "{count, plural, one {Promjena briše # konflikt} few {Promjena briše # konflikta} other {Promjena briše # konflikata}}",
+          "lede": "{count, plural, one {Ova promjena uklanja uzrok # neriješenog konflikta.} few {Ova promjena uklanja uzrok # neriješena konflikta.} other {Ova promjena uklanja uzrok # neriješenih konflikata.}} Prije spremanja odluči za svaki.",
+          "rowTitle": "{team} · {weekday} {date} · {type}",
+          "ledeRemoval": "{count, plural, one {Ova promjena uklanja uzrok # neriješenog konflikta.} few {Ova promjena uklanja uzrok # neriješena konflikta.} other {Ova promjena uklanja uzrok # neriješenih konflikata.}} Prije uklanjanja odluči za svaki.",
+          "rowWithout": "{member} na godišnjem · nakon promjene: {team} taj dan bez {member}",
+          "decision": "Odluka: {team} · {weekday} {date} · {type}",
+          "confirm": "Potvrdi brisanje",
+          "keep": "Zadrži",
+          "back": "Natrag na uređivanje",
+          "kept": "Zadržan konflikt: vrati se na uređivanje.",
+          "keptRemoval": "Zadržan konflikt: odustani od uklanjanja ili se vrati na dan.",
+          "changed": "Popis konflikata se promijenio. Odluči ponovno za svaki.",
+          "unavailable": "Ne mogu provjeriti konflikte koje bi promjena izbrisala.",
+          "retry": "Pokušaj ponovno",
+          "removed": "{count, plural, one {Uklonjen # konflikt.} few {Uklonjena # konflikta.} other {Uklonjeno # konflikata.}}"
         }
       },
       "override": {

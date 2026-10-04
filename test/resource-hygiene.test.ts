@@ -101,6 +101,13 @@ const SANCTIONED_PLURAL_KEYS = [
   // STORY 5.5a (review): what a guarded save removed, in its confirmation —
   // `Uklonjen 1 konflikt`, `Uklonjena 2 konflikta`, `Uklonjeno 5 konflikata`.
   'rotation.builder.erasures.removed',
+  // STORY 5.5b: the same three counts for a calendar roster change — its
+  // erasure confirmation's title and lede, and what a guarded write removed.
+  'kalendar.detail.rosterChange.erasures.title',
+  'kalendar.detail.rosterChange.erasures.lede',
+  // A removal's lede, "… Prije uklanjanja odluči za svaki." (review).
+  'kalendar.detail.rosterChange.erasures.ledeRemoval',
+  'kalendar.detail.rosterChange.erasures.removed',
   // STORY 4.1b: how many shifts the viewer works in the month and in each
   // band — `0 smjena`, `1 smjena`, `2 smjene`, `21 smjena` — and the note on
   // the ones with no times, shown only when there is one.
@@ -1110,6 +1117,25 @@ const SANCTIONED_SCREEN_KEYS = [
   // EPIC 4 RETRO C2: the roster form's neutral hint for a member who already
   // works an overlapping shift.
   'kalendar.detail.rosterChange.set.overlap',
+  // STORY 5.5b: a roster change's erasure confirmation — a row's title and
+  // its second line ("nakon promjene: {team} taj dan bez {member}"; no "taj
+  // dan slobodna" as the rotation has: a roster change never changes whether
+  // the team works that day), the toggles' group label, "Potvrdi brisanje"
+  // and "Zadrži", the way back, the kept hint (a save's, and a removal's own)
+  // and the changed line — and the refusal when what the change would erase
+  // cannot be checked, with its retry. The title, the ledes and the removed
+  // count are plurals, above.
+  'kalendar.detail.rosterChange.erasures.rowTitle',
+  'kalendar.detail.rosterChange.erasures.rowWithout',
+  'kalendar.detail.rosterChange.erasures.decision',
+  'kalendar.detail.rosterChange.erasures.confirm',
+  'kalendar.detail.rosterChange.erasures.keep',
+  'kalendar.detail.rosterChange.erasures.back',
+  'kalendar.detail.rosterChange.erasures.kept',
+  'kalendar.detail.rosterChange.erasures.keptRemoval',
+  'kalendar.detail.rosterChange.erasures.changed',
+  'kalendar.detail.rosterChange.erasures.unavailable',
+  'kalendar.detail.rosterChange.erasures.retry',
   // STORY 4.1b: *Sati* — the total's and the shift count's labels, the bands'
   // heading, the leave row and the one failure. The hours themselves are the
   // band screens' `organization.hourBands.duration.*` units.

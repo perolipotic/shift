@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
 import type { RosterFormState } from '@/features/calendar/hooks/use-roster-form';
+import { ROSTER_CHANGE_REMOVAL, ROSTER_CHANGE_SAVE } from '@/features/calendar/services/roster-erasures';
 import { rosterDoneMessageKey, rosterWriteMessageKey } from '@/features/calendar/services/roster-write';
 import {
   OVERRIDE_REASON_MAX,
@@ -19,6 +20,7 @@ import {
 } from '@/features/calendar/utils/day-detail';
 import {
   ROSTER_IN_FIELD_ID,
+  ROSTER_ERASURES_ID,
   ROSTER_OUT_FIELD_ID,
   ROSTER_OVERLAP_ID,
   ROSTER_REASON_FIELD_ID,
@@ -26,9 +28,12 @@ import {
   ROSTER_REMOVE_PROMPT_ID,
   ROSTER_SET_ERROR_ID,
   ROSTER_SET_HEADING_ID,
+  ROSTER_UNCHECKED_ID,
   describedByOf,
   rosterChangeLineIdOf,
 } from '@/features/calendar/utils/element-ids';
+import { ErasureDialog } from '@/features/conflicts/components/erasure-dialog';
+import type { ErasureRow } from '@/features/conflicts/services/erasures';
 import { t } from '@/lib/i18n';
 
 /** A member a roster change names, or `unknownAuthor` for one the snapshot does not hold. */
@@ -74,7 +79,19 @@ export function RosterSetForm({
   readonly outOptions: readonly RosterOption[];
   readonly inOptions: readonly RosterOption[];
 }): ReactNode {
-  const { outField, inField, rosterReasonField, pending, failure, saveRoster, overlap, chooseIn } = form;
+  const {
+    outField,
+    inField,
+    rosterReasonField,
+    pending,
+    failure,
+    saveRoster,
+    overlap,
+    chooseIn,
+    saveButton,
+    unchecked,
+    clearUnchecked,
+  } = form;
   const reasonRefused = failure === ROSTER_REFUSED_REASON;
   const memberRefused = failure !== null && !reasonRefused;
   // EPIC 4 RETRO C2: every mount starts from what the "Dolazi" `Select`
@@ -103,6 +120,8 @@ export function RosterSetForm({
         onSubmit={(event) => {
           void saveRoster(event);
         }}
+        // STORY 5.5b: a field changed, so the refusal to check what was entered before no longer stands.
+        onChange={clearUnchecked}
         className="grid gap-4"
       >
         <div className="grid gap-2">
@@ -185,8 +204,10 @@ export function RosterSetForm({
             {t(rosterWriteMessageKey(failure))}
           </Notice>
         )}
+        {/* STORY 5.5b: a save that could not check what it would erase saved nothing. */}
+        {unchecked === ROSTER_CHANGE_SAVE ? <RosterUnchecked form={form} busy={busy} /> : null}
         <DialogFooter>
-          <Button className="h-11" type="submit" disabled={pending || busy} aria-busy={pending}>
+          <Button ref={saveButton} className="h-11" type="submit" disabled={pending || busy} aria-busy={pending}>
             {pending ? t('kalendar.detail.rosterChange.set.saving') : t('kalendar.detail.rosterChange.set.save')}
           </Button>
         </DialogFooter>
@@ -243,13 +264,48 @@ export function RosterRemoveRefusal({ form }: { readonly form: RosterFormState }
   );
 }
 
-/** A write that landed (story 3.6b), said in the day detail as a `role="status"` Notice. */
+/**
+ * A write that could not check what it would erase (story 5.5b), so it wrote
+ * nothing: said with a retry, which asks the same write again.
+ */
+function RosterUnchecked({ form, busy }: { readonly form: RosterFormState; readonly busy: boolean }): ReactNode {
+  const { pending, retryButton, retry } = form;
+
+  return (
+    <Notice id={ROSTER_UNCHECKED_ID} role="alert">
+      {t('kalendar.detail.rosterChange.erasures.unavailable')}
+      <Button
+        ref={retryButton}
+        className="mt-3 flex h-11"
+        type="button"
+        variant="outline"
+        disabled={pending || busy}
+        onClick={retry}
+      >
+        {t('kalendar.detail.rosterChange.erasures.retry')}
+      </Button>
+    </Notice>
+  );
+}
+
+/**
+ * A write that landed (story 3.6b), said in the day detail as a `role="status"`
+ * Notice — and, since story 5.5b, how many conflicts it removed, as confirmed
+ * in its erasure confirmation.
+ */
 export function RosterDoneNotice({ form }: { readonly form: RosterFormState }): ReactNode {
-  const { done } = form;
+  const { done, erased } = form;
 
   if (done === null) return null;
 
-  return <Notice role="status">{t(rosterDoneMessageKey(done))}</Notice>;
+  return (
+    <Notice role="status">
+      <span className="block">{t(rosterDoneMessageKey(done))}</span>
+      {erased === 0 ? null : (
+        <span className="mt-2 block">{t('kalendar.detail.rosterChange.erasures.removed', { count: erased })}</span>
+      )}
+    </Notice>
+  );
 }
 
 /**
@@ -284,6 +340,8 @@ export function RosterRemoveConfirm({
           {t(rosterWriteMessageKey(removeFailure))}
         </Notice>
       )}
+      {/* STORY 5.5b: a removal that could not check what it would erase removed nothing. */}
+      {form.unchecked === ROSTER_CHANGE_REMOVAL ? <RosterUnchecked form={form} busy={busy} /> : null}
       <DialogFooter>
         <Button
           ref={removeCancel}
@@ -311,5 +369,78 @@ export function RosterRemoveConfirm({
         </Button>
       </DialogFooter>
     </ConfirmDialog>
+  );
+}
+
+/**
+ * A ROSTER CHANGE'S ERASURE CONFIRMATION (story 5.5b): the shared
+ * `ErasureDialog` in the calendar's words, rendered BESIDE the day detail as
+ * the removal's confirmation is. One row per conflict the change would
+ * erase — "{member} na godišnjem · nakon promjene: {team} taj dan bez
+ * {member}" — and its own save: "Spremi promjenu" for a save, "Ukloni" for a
+ * removal, `aria-disabled` until every row is confirmed. A removal's lede and
+ * kept hint say so in its own words. "Natrag na
+ * uređivanje" returns to the form with its inputs kept, or to the day detail.
+ */
+export function RosterErasureConfirm({
+  form,
+  busy,
+}: {
+  readonly form: RosterFormState;
+  /** The override form's write is in flight. */
+  readonly busy: boolean;
+}): ReactNode {
+  const { erasures, pending, confirmErasures } = form;
+  const shown = erasures.shown;
+
+  if (shown === null) return null;
+
+  const { rows } = shown;
+  const removal = shown.subject.kind === ROSTER_CHANGE_REMOVAL;
+  const partsOf = (row: ErasureRow) => ({
+    team: row.teamName,
+    weekday: row.weekday,
+    date: row.dayMonth,
+    type: row.shiftTypeName,
+  });
+
+  return (
+    <ErasureDialog
+      id={ROSTER_ERASURES_ID}
+      rows={rows}
+      changed={shown.changed}
+      decisions={erasures.decisions}
+      busy={pending || busy}
+      firstErasure={erasures.firstErasure}
+      copy={{
+        title: t('kalendar.detail.rosterChange.erasures.title', { count: rows.length }),
+        lede: removal
+          ? t('kalendar.detail.rosterChange.erasures.ledeRemoval', { count: rows.length })
+          : t('kalendar.detail.rosterChange.erasures.lede', { count: rows.length }),
+        changed: t('kalendar.detail.rosterChange.erasures.changed'),
+        rowTitle: (row) => t('kalendar.detail.rosterChange.erasures.rowTitle', partsOf(row)),
+        // ALWAYS "TAJ DAN BEZ": a roster change never changes whether the
+        // team works that day — the shift type is the rotation's and its
+        // overrides' — so `teamWorks` is true on every row here, and the
+        // rotation's "taj dan slobodna" has no calendar twin.
+        rowDetail: (row) =>
+          t('kalendar.detail.rosterChange.erasures.rowWithout', { member: row.memberName, team: row.teamName }),
+        decision: (row) => t('kalendar.detail.rosterChange.erasures.decision', partsOf(row)),
+        confirm: t('kalendar.detail.rosterChange.erasures.confirm'),
+        keep: t('kalendar.detail.rosterChange.erasures.keep'),
+        back: t('kalendar.detail.rosterChange.erasures.back'),
+        kept: removal
+          ? t('kalendar.detail.rosterChange.erasures.keptRemoval')
+          : t('kalendar.detail.rosterChange.erasures.kept'),
+        save: removal
+            ? t('kalendar.detail.rosterChange.remove.confirm')
+            : t('kalendar.detail.rosterChange.set.save'),
+      }}
+      onDecide={erasures.decide}
+      onBack={erasures.close}
+      onSave={() => {
+        void confirmErasures(shown);
+      }}
+    />
   );
 }
