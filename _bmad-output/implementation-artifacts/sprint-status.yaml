@@ -518,7 +518,7 @@ development_status:
   5-5e-member-erasure-guard: done
   5-5f-override-erasure-guard: done
   5-5g-rotation-cancel-erasure-guard: done
-  5-5h-override-review-erasure-guard: review
+  5-5h-override-review-erasure-guard: done
   epic-5-retrospective: optional
 
   epic-6: backlog
