@@ -414,6 +414,31 @@ export class RotationPage extends BasePage {
     await dialog.getByRole('button', { name: builder.overrides.amendDialog.save, exact: true }).click();
   }
 
+  // ------------------------------ override review erasure guard (story 5.5h)
+
+  /**
+   * The review's erasure confirmation's locators, in the review's words: its
+   * save is "Potvrdi izmjenu" after a confirm, "Spremi izmjenu" after an amend.
+   */
+  reviewErasures(after: 'confirm' | 'amend'): ErasureDialogParts {
+    const words = builder.overrides.erasures;
+
+    return new ErasureDialogParts(this.page, {
+      ...words,
+      save: after === 'confirm' ? builder.overrides.erasures.saveConfirm : builder.overrides.amendDialog.save,
+    });
+  }
+
+  /** The refusal when what a confirm or an amend would erase cannot be checked, wherever it is said. */
+  get reviewUnchecked(): Locator {
+    return this.alertWith(builder.overrides.erasures.unavailable);
+  }
+
+  /** That refusal's retry. */
+  get reviewUncheckedRetry(): Locator {
+    return this.reviewUnchecked.getByRole('button', { name: builder.overrides.erasures.retry, exact: true });
+  }
+
   /** The discard's confirmation, named by its prompt: the team, the date and the type restored. */
   discardConfirmOf(teamName: string, date: string, type: string): Locator {
     return this.dialog(fill(builder.overrides.discardDialog.prompt, { team: teamName, date, type }));

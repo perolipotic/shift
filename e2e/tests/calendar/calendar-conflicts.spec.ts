@@ -120,6 +120,7 @@ test('the admin records leave and opens Kalendar: the conflicts and the hatch ar
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { today, team } = await seeded(fixture.slug);
   const member = await seedLeaveMember(fixture.slug, team.id, today, 20);
   withLeave.push({ slug: fixture.slug, id: member.id });
@@ -234,6 +235,7 @@ test("a member reads their own leave hatched with no conflict, nothing new on th
   browser,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { today, team } = await seeded(fixture.slug);
   const member = await seedLeaveMember(fixture.slug, team.id, today, 20);
   const teammate = await seedLeaveMember(fixture.slug, team.id, today, 20);
@@ -311,6 +313,7 @@ test('a conflict accepted as uncovered carries the uncovered mark and no conflic
   calendarPage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { today, team } = await seeded(fixture.slug);
   const member = await seedLeaveMember(fixture.slug, team.id, today, 20);
   withLeave.push({ slug: fixture.slug, id: member.id });

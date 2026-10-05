@@ -787,6 +787,23 @@
           "reason": "Upiši razlog, 1–200 znakova.",
           "sameAsProjected": "To je već tip smjene prema rotaciji.",
           "failed": "Promjena nije uspjela. Pokušaj ponovno."
+        },
+        "erasures": {
+          "title": "{count, plural, one {Izmjena briše # konflikt} few {Izmjena briše # konflikta} other {Izmjena briše # konflikata}}",
+          "ledeConfirm": "{count, plural, one {Kad izmjena vrijedi, uklanja uzrok # neriješenog konflikta.} few {Kad izmjena vrijedi, uklanja uzrok # neriješena konflikta.} other {Kad izmjena vrijedi, uklanja uzrok # neriješenih konflikata.}} Prije potvrde odluči za svaki.",
+          "ledeAmend": "{count, plural, one {Promijenjena izmjena uklanja uzrok # neriješenog konflikta.} few {Promijenjena izmjena uklanja uzrok # neriješena konflikta.} other {Promijenjena izmjena uklanja uzrok # neriješenih konflikata.}} Prije izmjene odluči za svaki.",
+          "rowTitle": "{team} · {weekday} {date} · {type}",
+          "rowFree": "{member} na godišnjem · nakon promjene: {team} taj dan slobodna",
+          "decision": "Odluka: {team} · {weekday} {date} · {type}",
+          "confirm": "Potvrdi brisanje",
+          "keep": "Zadrži",
+          "back": "Natrag na uređivanje",
+          "kept": "Zadržan konflikt: promijeni ili odbaci izmjenu, ili se vrati na uređivanje.",
+          "changed": "Popis konflikata se promijenio. Odluči ponovno za svaki.",
+          "unavailable": "Ne mogu provjeriti konflikte koje bi izmjena izbrisala.",
+          "retry": "Pokušaj ponovno",
+          "saveConfirm": "Potvrdi izmjenu",
+          "removed": "{count, plural, one {Uklonjen # konflikt.} few {Uklonjena # konflikta.} other {Uklonjeno # konflikata.}}"
         }
       },
       "erasures": {

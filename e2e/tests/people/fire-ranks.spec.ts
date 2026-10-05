@@ -33,6 +33,7 @@ test('with fire ranks switched on, a member created with a rank shows it on the 
   teamsPage,
   holdRotationForTeams,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   // The setting is switched ON and left on: the run's organization is its own
   // and is deleted at teardown, and switching it back off could race another
   // attempt of this test. Nothing else in the suite depends on it being off —

@@ -256,6 +256,7 @@ test.describe('as a member', () => {
     hoursPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const month = rotation.today.slice(0, 7);
     const dan = daysAtStep(month, rotation.today, 0);
@@ -330,6 +331,7 @@ test.describe('as a member', () => {
     hoursPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
 
     await page.setViewportSize({ width: 390, height: 844 });
@@ -362,6 +364,7 @@ test.describe('as an admin', () => {
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const month = rotation.today.slice(0, 7);
     expect(workingShiftsIn(month, rotation.today), 'the seeded month holds a working shift').toBeGreaterThan(0);
@@ -519,6 +522,7 @@ test.describe('as an admin', () => {
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     // Epic 4 retro, C1: active all last month, inactive from this month's first
     // day — so inactive today. The calendar offers everyone active in the month
     // shown, as a Sati row, so the link opens them and not the whole grid.
@@ -632,6 +636,7 @@ test.describe('the conflict count, as an admin', () => {
     peoplePage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const { today, team } = await seededTeam(fixture.slug);
     const member = await seedLeaveMember(fixture.slug, team.id, today, 20);
     withLeave.push({ slug: fixture.slug, id: member.id });
@@ -758,6 +763,7 @@ test.describe('resolutions, as an admin', () => {
   test.use({ storageState: ADMIN_STATE });
 
   test("a resolved conflict takes exactly one off the member's count in the table and the file", async ({ hoursPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const { today, team } = await seededTeam(fixture.slug);
     const member = await seedLeaveMember(fixture.slug, team.id, today, 20);
     withLeave.push({ slug: fixture.slug, id: member.id });
@@ -806,6 +812,7 @@ test.describe('resolutions, as an admin', () => {
 });
 
 test('a member with one of their own conflicts resolved reads exactly one fewer on their own line', async ({ browser, fixture }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { today, team } = await seededTeam(fixture.slug);
   const member = await seedLeaveMember(fixture.slug, team.id, today, 20);
   withLeave.push({ slug: fixture.slug, id: member.id });
@@ -828,6 +835,7 @@ test('a member with one of their own conflicts resolved reads exactly one fewer 
 });
 
 test('a member with their own leave reads their own line of shifts in conflict', async ({ browser, fixture }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { today, team } = await seededTeam(fixture.slug);
   const member = await seedLeaveMember(fixture.slug, team.id, today, 20);
   withLeave.push({ slug: fixture.slug, id: member.id });

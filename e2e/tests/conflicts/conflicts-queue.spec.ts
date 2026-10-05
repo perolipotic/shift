@@ -93,6 +93,7 @@ test('lists the new conflicts without a reload, upcoming first and past ones aft
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   hold = holdRotation(fixture.slug);
   await hold.ready;
   const suffix = randomBytes(3).toString('hex');
@@ -201,6 +202,7 @@ test('a resolved conflict leaves the queue and its count, and comes back unresol
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   hold = holdRotation(fixture.slug);
   await hold.ready;
   const suffix = randomBytes(3).toString('hex');
@@ -260,6 +262,7 @@ test('an amend that takes a resolved date out of the range ends that resolution 
   hoursPage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   hold = holdRotation(fixture.slug);
   await hold.ready;
   const suffix = randomBytes(3).toString('hex');

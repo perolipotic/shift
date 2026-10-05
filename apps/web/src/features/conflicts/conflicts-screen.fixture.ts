@@ -72,7 +72,7 @@ export const CONFLICTS_SCREEN_EXEMPT: readonly { readonly file: string; readonly
   },
   {
     file: 'services/override-erasures.ts',
-    why: 'the shift-type override\'s erasure "after" for set, remove, confirm and amend, and one run of the check (story 5.5f); renders nothing and declares no key, executed by override-erasures.test.ts',
+    why: 'the shift-type override\'s erasure "after" for set, remove, confirm and amend, and one run of the check (story 5.5f), used by the calendar\'s day detail and the rotation builder\'s override review (5.5h); renders nothing and declares no key, executed by override-erasures.test.ts',
   },
   {
     file: 'services/resolution-write.ts',
