@@ -795,7 +795,10 @@ const SCREENS = [
   // retry beside the refusal when the check cannot be derived.
   // SEVENTEEN SINCE STORY 5.5b: the confirmation's four moved with it to the
   // shared `ErasureDialog`, counted below; the retry stays.
-  { name: 'the rotation builder', file: ROTATION_SECTION, expectedControls: 17 },
+  // EIGHTEEN SINCE STORY 5.5g: the retry inside the cancel's confirmation,
+  // when what the cancel would erase cannot be checked. The cancel's own
+  // erasure dialog is a second shared `ErasureDialog`, counted below.
+  { name: 'the rotation builder', file: ROTATION_SECTION, expectedControls: 18 },
   // STORY 5.5b. FOUR on the shared erasure confirmation, each written once
   // however many rows: a row's "Potvrdi brisanje" and "Zadrži", "Natrag na
   // uređivanje" and its own save.
@@ -2235,8 +2238,14 @@ const KEY_SOURCES = [
     // SEVENTY-NINE SINCE THE 5.5a REVIEW: the line when the list changed
     // since it was decided, and the save's confirmation counting the
     // conflicts it removed.
+    // NINETY-FOUR SINCE STORY 5.5g: the cancel's own erasure dialog — its
+    // title, lede, changed line, row title, the row's two second lines, the
+    // toggles' group label, the two toggles, the way back, the kept hint and
+    // its own save (the cancel's confirm key, written a second time) — the
+    // refusal inside the cancel's confirmation, with its retry, and the
+    // cancel's notice counting the conflicts it removed.
     keys: translationKeys,
-    strings: 79,
+    strings: 94,
   },
   {
     // STORY 3.5c: the review's heading, lede and count; a row's title, type,
@@ -5024,7 +5033,10 @@ describe('the member list reads once, under one key', () => {
     expect(occurrences(screen, 'queryKey:')).toBe(occurrences(screen, 'queryKey: ROTATION_KEY'));
     expect(screen).toContain('invalidateQueries({ queryKey: ROTATION_KEY })');
     expect(screen).toContain('refreshAfterWrite(queryClient, ROTATION_KEY, ROTATION_SAVE_DEPENDENTS)');
-    expect(occurrences(screen, 'refreshAfterWrite(')).toBe(1);
+    // STORY 5.5g: a landed cancel re-reads the same dependents through its
+    // own declared list; a stale one still re-reads only `ROTATION_KEY`.
+    expect(screen).toContain('refreshAfterWrite(queryClient, ROTATION_KEY, ROTATION_CANCEL_DEPENDENTS)');
+    expect(occurrences(screen, 'refreshAfterWrite(')).toBe(2);
     expect(occurrences(check, 'useQuery('), 'the check observes its reads between presses').toBe(0);
     expect(occurrences(check, 'staleTime: 0')).toBe(1);
     expect(occurrences(check, "networkMode: 'always'"), 'a fetch could pause offline').toBe(1);
@@ -5160,16 +5172,35 @@ describe('the member list reads once, under one key', () => {
     // Neutral, never `destructive`, and confirmed in a `ConfirmDialog`.
     expect(source(ROTATION_SECTION)).toContain('<ConfirmDialog');
     expect(source(ROTATION_SECTION)).not.toContain('destructive');
-    // The cancel guards on the save's ref, releases it on every path, and
-    // re-reads only `ROTATION_KEY`.
+    // The cancel guards on the save's ref and releases it on every path.
+    // STORY 5.5g: the guarded handler runs the erasure check first; the write
+    // itself is `writeCancel`, whose outcome `settleCancel` follows with the
+    // declared dependents when it landed and `ROTATION_KEY` alone when stale.
     const cancel = namedHandler(source(ROTATION_SECTION), 'cancelScheduled');
+    const writeCancel = namedHandler(source(ROTATION_SECTION), 'writeCancel');
+    const confirmCancel = namedHandler(source(ROTATION_SECTION), 'confirmCancelErasures');
 
     expect(cancel.length, 'the cancel handler could not be extracted').toBeGreaterThan(80);
-    expect(cancel).toContain('cancelScheduledRotation(');
+    expect(writeCancel.length, 'the cancel write could not be extracted').toBeGreaterThan(80);
+    expect(confirmCancel.length, 'the cancel dialog\'s save could not be extracted').toBeGreaterThan(80);
+    expect(writeCancel).toContain('cancelScheduledRotation(');
+    expect(occurrences(source(ROTATION_SECTION), 'cancelScheduledRotation('), 'a second cancel path arrived').toBe(1);
+    expect(cancel).toContain('checkCancelErasures(');
     expect(cancel).toMatch(/if \(saving\.current\) return;/);
     expect(finallyBlock(cancel)).toContain('saving.current = false');
     expect(finallyBlock(cancel)).toContain('setPending(false)');
-    expect(cancel).toContain('invalidateQueries({ queryKey: ROTATION_KEY })');
+    expect(confirmCancel).toContain('checkCancelErasures(');
+    expect(confirmCancel).toMatch(/if \(saving\.current \|\| !cancelErasures\.confirmed\) return;/);
+    expect(finallyBlock(confirmCancel)).toContain('saving.current = false');
+    expect(finallyBlock(confirmCancel)).toContain('setPending(false)');
+    // The re-reads are `settleCancel`'s, which the write ends in.
+    const settle = namedHandler(source(ROTATION_SECTION), 'settleCancel');
+
+    expect(writeCancel).toContain('settleCancel(');
+    expect(settle).toContain('refreshAfterWrite(queryClient, ROTATION_KEY, ROTATION_CANCEL_DEPENDENTS)');
+    expect(settle).toContain('invalidateQueries({ queryKey: ROTATION_KEY })');
+    // THE DIALOG'S SAVE TAKES TODAY AGAIN, and never deletes with yesterday's.
+    expect(confirmCancel).toContain('rotationTodayOf(');
   });
 
   it('reviews the pending overrides neutrally, holds its dialogs while a write is in flight, and re-reads only the rotation', () => {

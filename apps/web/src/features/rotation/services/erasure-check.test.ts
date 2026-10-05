@@ -5,6 +5,7 @@ import {
   CHECK_READY,
   CHECK_REFUSED,
   CHECK_UNAVAILABLE,
+  cancelErasureCheckOf,
   erasureCheckOf,
   type ErasureReads,
 } from '@/features/rotation/services/erasure-check';
@@ -153,5 +154,108 @@ describe('erasureCheckOf', () => {
       kind: CHECK_REFUSED,
       rotation: changed,
     });
+  });
+});
+
+describe('cancelErasureCheckOf (story 5.5g)', () => {
+  const SCHEDULED = '2026-09-10';
+  /** PILOT with a change scheduled from 10.09, Smjena A at `offsetA`. */
+  function scheduledRowsOf(offsetA: number): FixtureRows {
+    return {
+      ...PILOT,
+      assignments: [
+        ...PILOT.assignments,
+        ...PILOT.teams.map((team, offset) =>
+          assignmentRow(String(team['id']), 'pilot-rotation', `pilot-step-${String(team['id'] === A ? offsetA : offset)}`, SEEDED, SCHEDULED, undefined, {
+            createdAt: '2026-09-20T10:00:00+00:00',
+          }),
+        ),
+      ],
+    };
+  }
+
+  // Smjena A scheduled at step 2: free on 10.09 and 11.09, Dan on 12.09.
+  const scheduledRows = scheduledRowsOf(2);
+
+  async function scheduledCalendarOf(rows: FixtureRows = scheduledRows): Promise<CalendarSnapshot> {
+    const source = calendarTableOf(
+      {
+        data: [
+          calendarOrganizationRow(rows, {
+            viewers: [viewerRow([membershipRow(A, SEEDED)], { role: 'admin' })],
+            versions: [memberMembershipRow(VIEWER_MEMBER, A, SEEDED)],
+          }),
+        ],
+        error: null,
+        count: 1,
+      },
+      membersAnswerOf([calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME)]),
+    );
+    const outcome = await readCalendar(source, source, viewerSession());
+
+    if (!outcome.ok) throw new Error(outcome.code);
+
+    return outcome.snapshot;
+  }
+
+  const LEAVE_12 = [{ id: 'record-1', member_id: VIEWER_MEMBER, during: '[2026-09-12,2026-09-13)' }];
+
+  it('answers the erasures and the fresh rotation it checked', async () => {
+    const scheduled = await rotationOf(scheduledRows);
+    const check = await cancelErasureCheckOf(
+      readsOf({ rotation: scheduled, calendar: await scheduledCalendarOf(), records: LEAVE_12 }),
+      SCHEDULED,
+      TODAY,
+      true,
+    );
+
+    if (check.kind !== CHECK_READY) throw new Error(check.kind);
+
+    expect(check.rows.map((row) => row.date)).toEqual(['2026-09-12']);
+    expect(check.rotation).toBe(scheduled);
+  });
+
+  it('answers refused, with the fresh rotation, when nothing is scheduled any more', async () => {
+    expect(await cancelErasureCheckOf(readsOf(), SCHEDULED, TODAY, true)).toEqual({ kind: CHECK_REFUSED, rotation });
+  });
+
+  it('answers refused when another date is scheduled than the one confirmed', async () => {
+    const scheduled = await rotationOf(scheduledRows);
+
+    expect(await cancelErasureCheckOf(readsOf({ rotation: scheduled }), '2026-09-11', TODAY, true)).toEqual({
+      kind: CHECK_REFUSED,
+      rotation: scheduled,
+    });
+  });
+
+  it('answers refused when the scheduled date has come into effect', async () => {
+    const scheduled = await rotationOf(scheduledRows);
+
+    expect(await cancelErasureCheckOf(readsOf({ rotation: scheduled }), SCHEDULED, SCHEDULED, true)).toEqual({
+      kind: CHECK_REFUSED,
+      rotation: scheduled,
+    });
+  });
+
+  it('answers unavailable offline, without reading', async () => {
+    const read = vi.fn(readsOf());
+
+    expect(await cancelErasureCheckOf(read, SCHEDULED, TODAY, false)).toEqual({ kind: CHECK_UNAVAILABLE });
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it('answers unavailable, logged, when the calendar differs from the rotation only in its scheduled versions', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const scheduled = await rotationOf(scheduledRows);
+    // The same rows but Smjena A's scheduled step.
+    const calendarRead = await scheduledCalendarOf(scheduledRowsOf(1));
+
+    expect(await cancelErasureCheckOf(readsOf({ rotation: scheduled, calendar: calendarRead }), SCHEDULED, TODAY, true)).toEqual({
+      kind: CHECK_UNAVAILABLE,
+    });
+    expect(logged).toHaveBeenCalledWith(
+      CHECK_UNAVAILABLE,
+      expect.objectContaining({ message: 'the rotation and the calendar disagree on the scheduled versions' }),
+    );
   });
 });

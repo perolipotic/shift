@@ -726,7 +726,23 @@
         "confirm": "Potvrdi poništavanje promjene",
         "keep": "Odustani",
         "done": "Zakazana promjena rotacije je poništena.",
-        "stale": "Zakazana promjena više ne postoji: poništena je ili je već na snazi. Prikazano je trenutačno stanje."
+        "stale": "Zakazana promjena više ne postoji: poništena je ili je već na snazi. Prikazano je trenutačno stanje.",
+        "erasures": {
+          "title": "{count, plural, one {Poništavanje briše # konflikt} few {Poništavanje briše # konflikta} other {Poništavanje briše # konflikata}}",
+          "lede": "{count, plural, one {Poništavanje uklanja uzrok # neriješenog konflikta.} few {Poništavanje uklanja uzrok # neriješena konflikta.} other {Poništavanje uklanja uzrok # neriješenih konflikata.}} Prije poništavanja odluči za svaki.",
+          "rowTitle": "{team} · {weekday} {date} · {type}",
+          "rowFree": "{member} na godišnjem · nakon poništavanja: {team} taj dan slobodna",
+          "rowWithout": "{member} na godišnjem · nakon poništavanja: {team} taj dan bez {member}",
+          "decision": "Odluka: {team} · {weekday} {date} · {type}",
+          "confirm": "Potvrdi brisanje",
+          "keep": "Zadrži",
+          "back": "Natrag",
+          "kept": "Zadržan konflikt: odustani od poništavanja.",
+          "changed": "Popis konflikata se promijenio. Odluči ponovno za svaki.",
+          "unavailable": "Ne mogu provjeriti konflikte koje bi poništavanje izbrisalo.",
+          "retry": "Pokušaj ponovno",
+          "removed": "{count, plural, one {Uklonjen # konflikt.} few {Uklonjena # konflikta.} other {Uklonjeno # konflikata.}}"
+        }
       },
       "overrides": {
         "heading": "Izmjene za pregled",
