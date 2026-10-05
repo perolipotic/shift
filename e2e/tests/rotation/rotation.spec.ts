@@ -17,7 +17,7 @@ import {
 } from '../../utils/database-helper.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { addDays } from '../../utils/dates.ts';
-import { fill, hr } from '../../utils/i18n.ts';
+import { fill, hr, plural } from '../../utils/i18n.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
 test.use({ storageState: ADMIN_STATE });
@@ -431,7 +431,24 @@ test('an admin schedules a change from tomorrow, sees it in the history, is refu
   const dialog = rotationPage.dialog();
   await expect(dialog).toContainText(fill(builder.cancelScheduled.prompt, { date: shownDate(tomorrow) }));
   await rotationPage.cancelScheduledConfirm.click();
-  await expect(rotationPage.statusWith(builder.cancelScheduled.done)).toBeVisible();
+
+  // STORY 5.5g: THE RUN'S ORGANIZATION IS SHARED. The save above wrote a
+  // version for every active team, other specs' teams included, so leave
+  // those specs left on them collides under it, and the cancel would erase
+  // those conflicts. The guard then asks first; every row is confirmed here,
+  // and the done line counts them. Nothing to erase: the cancel lands at once.
+  const done = rotationPage.statusWith(builder.cancelScheduled.done);
+  const erasures = rotationPage.cancelErasures;
+  await expect(done.or(erasures.anyDialog)).toBeVisible();
+  if (await erasures.anyDialog.isVisible()) {
+    const rows = erasures.rowsIn(erasures.anyDialog);
+    const count = await rows.count();
+    for (let index = 0; index < count; index += 1) await erasures.confirmIn(rows.nth(index)).click();
+    await erasures.saveIn(erasures.anyDialog).click();
+    await expect(done).toBeVisible();
+    await expect(done).toContainText(plural(builder.cancelScheduled.erasures.removed, count));
+  }
+  await expect(done).toBeVisible();
   await expect(rotationPage.historyRow(shownDate(tomorrow))).toHaveCount(0);
   await expect(refusal).toHaveCount(0);
 });

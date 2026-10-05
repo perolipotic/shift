@@ -1,6 +1,6 @@
 import type { Locator, Page } from '@playwright/test';
 
-import { plural } from '../utils/i18n.ts';
+import { escapeRegExp, plural } from '../utils/i18n.ts';
 
 /**
  * The words one surface's erasure confirmation says (stories 5.5a, 5.5b): the
@@ -33,6 +33,17 @@ export class ErasureDialogParts {
   /** The confirmation, named by its title for `count` conflicts. */
   dialog(count: number): Locator {
     return this.page.getByRole('dialog', { name: plural(this.words.title, count) });
+  }
+
+  /**
+   * The confirmation whatever it counts: named by its title's words before
+   * the count (`Poništavanje briše`), for a test that cannot know how many
+   * conflicts a shared organization holds.
+   */
+  get anyDialog(): Locator {
+    const head = plural(this.words.title, 1).split(' 1')[0] ?? '';
+
+    return this.page.getByRole('dialog', { name: new RegExp(`^${escapeRegExp(head)} \\d+ `) });
   }
 
   /** The confirmation's conflict rows, in order: each holds its own "Potvrdi brisanje". */
