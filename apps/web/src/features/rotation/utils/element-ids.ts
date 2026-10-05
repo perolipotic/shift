@@ -31,3 +31,10 @@ export const OVERRIDE_REVIEW_ERASURES_ID = 'rotation-overrides-erasures';
 
 /** The refusal when what a confirm or an amend would erase cannot be checked (story 5.5h). */
 export const OVERRIDE_REVIEW_UNCHECKED_ID = 'rotation-overrides-unchecked';
+
+/**
+ * The save bar (story 5.5c), which `index.css` finds while it is sticky
+ * (`data-sticky="true"`) to pad the page's scroll by its height, so a
+ * focused control is never left under it.
+ */
+export const ROTATION_SAVE_BAR_ID = 'rotation-save-bar';

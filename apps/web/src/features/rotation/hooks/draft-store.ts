@@ -45,7 +45,10 @@ export interface DraftStore {
   get(): StoredDraft | null;
   /** Keep an edit. */
   set(organizationId: string, draft: RotationDraft): void;
-  /** Forget the edit — after a landed save — so the builder re-opens as the rotation in force. */
+  /**
+   * Forget the edit — after a landed save, or "Odbaci promjene" (story
+   * 5.5c) — so the builder re-opens as the rotation in force.
+   */
   reset(): void;
   /** `useSyncExternalStore`'s subscription: the listener runs after every change. */
   subscribe(listener: () => void): () => void;
@@ -130,6 +133,12 @@ export interface StepperStore {
   next(): void;
   /** Natrag. */
   back(): void;
+  /**
+   * Back to step 1 with nothing reached — after "Odbaci promjene" (story
+   * 5.5c), so the stepper never stands on a step reached with the discarded
+   * pattern.
+   */
+  reset(): void;
   subscribe(listener: () => void): () => void;
 }
 
@@ -154,6 +163,9 @@ export function createStepperStore(): StepperStore {
     },
     back() {
       settle(stepperBack(state));
+    },
+    reset() {
+      settle(STEPPER_START);
     },
     subscribe(listener) {
       listeners = [...listeners, listener];
@@ -187,4 +199,14 @@ export function shownDraftOf(
   const own = stored !== null && stored.organizationId === snapshot.organizationId ? stored.draft : null;
 
   return normalizedDraftOf(own ?? prefillOf(snapshot, today), rotationTeamsOf(snapshot));
+}
+
+/**
+ * Whether the builder holds UNSAVED CHANGES (story 5.5c): the admin's own
+ * draft for this organization is in the store. A draft edited back to the
+ * prefill by hand still counts — only a landed save or "Odbaci promjene"
+ * forgets it. Another organization's draft is never this one's.
+ */
+export function unsavedDraftOf(stored: StoredDraft | null, organizationId: string): boolean {
+  return stored !== null && stored.organizationId === organizationId;
 }

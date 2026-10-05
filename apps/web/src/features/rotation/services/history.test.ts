@@ -9,7 +9,9 @@ import {
   HISTORY_SCHEDULED,
   rotationHistoryAuthorMessageKey,
   rotationHistoryOf,
+  inForceFromOf,
   rotationHistoryStatusMessageKey,
+  saveBarHintOf,
   scheduledChangeOf,
   type RotationHistoryStatus,
 } from '@/features/rotation/services/history';
@@ -170,6 +172,70 @@ describe('the history', () => {
     expect(scheduledChangeOf(await snapshotOf(changed(PILOT, 'next', NEXT_WEEK, ADMIN, '2026-09-26T07:30:00+00:00')), TODAY)).toEqual({
       effectiveFrom: NEXT_WEEK,
       label: '03.10.2026',
+    });
+  });
+});
+
+describe('the save bar hint (story 5.5c)', () => {
+  it('says nothing with no unsaved changes', async () => {
+    expect(saveBarHintOf(false, await snapshotOf(PILOT), TODAY, NEXT_WEEK)).toBeNull();
+  });
+
+  it.each([
+    { fixture: 'pilot', rows: PILOT },
+    { fixture: 'UJ-5', rows: UJ5 },
+  ])('$fixture: the draft\'s date, and the date the rotation in force today applies from', async ({ rows }) => {
+    expect(saveBarHintOf(true, await snapshotOf(rows), TODAY, '2026-11-01')).toEqual({
+      effectiveLabel: '01.11.2026',
+      inForceLabel: '01.01.2020',
+    });
+  });
+
+  it('names the version governing today, never a scheduled one', async () => {
+    const today = changed(PILOT, 'today-rotation', TODAY, ADMIN, '2026-09-26T06:00:00+00:00');
+    const snapshot = await snapshotOf(changed(today, 'next-rotation', NEXT_WEEK, ADMIN, '2026-09-26T07:30:00+00:00'));
+
+    expect(saveBarHintOf(true, snapshot, TODAY, NEXT_WEEK)?.inForceLabel).toBe('26.09.2026');
+  });
+
+  it('says nothing for an empty or invalid Vrijedi od, never "Promjena vrijedi od ."', async () => {
+    const snapshot = await snapshotOf(PILOT);
+
+    expect(saveBarHintOf(true, snapshot, TODAY, '')).toBeNull();
+    expect(saveBarHintOf(true, snapshot, TODAY, '2026-13-40')).toBeNull();
+  });
+
+  it('takes the newest in-force date across active teams on different versions', async () => {
+    const rows: FixtureRows = {
+      ...PILOT,
+      steps: [...PILOT.steps, stepRow('late-0', 'late', 0, 'pilot-dan')],
+      assignments: [
+        ...PILOT.assignments,
+        assignmentRow('pilot-smjena-d', 'late', 'late-0', YESTERDAY, YESTERDAY, undefined, {
+          createdAt: '2026-09-24T09:15:00+00:00',
+        }),
+      ],
+    };
+    const snapshot = await snapshotOf(rows);
+
+    expect(inForceFromOf(snapshot, TODAY)).toBe(YESTERDAY);
+    // Whatever order the assignments come in.
+    expect(inForceFromOf({ ...snapshot, assignments: [...snapshot.assignments].reverse() }, TODAY)).toBe(YESTERDAY);
+    expect(saveBarHintOf(true, snapshot, TODAY, NEXT_WEEK)?.inForceLabel).toBe('25.09.2026');
+  });
+
+  it('reads the in-force date from the assignments, even with no history row in force', async () => {
+    const snapshot = { ...(await snapshotOf(PILOT)), history: [] };
+
+    expect(rotationHistoryOf(snapshot, TODAY)).toEqual([]);
+    expect(inForceFromOf(snapshot, TODAY)).toBe(SEEDED);
+    expect(saveBarHintOf(true, snapshot, TODAY, NEXT_WEEK)?.inForceLabel).toBe('01.01.2020');
+  });
+
+  it('has only the first part while no version is in force', async () => {
+    expect(saveBarHintOf(true, await snapshotOf({ ...PILOT, assignments: [] }), TODAY, TODAY)).toEqual({
+      effectiveLabel: '26.09.2026',
+      inForceLabel: null,
     });
   });
 });

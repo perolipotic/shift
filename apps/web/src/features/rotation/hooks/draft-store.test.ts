@@ -8,6 +8,7 @@ import {
   rotationDraftStore,
   rotationStepperStore,
   shownDraftOf,
+  unsavedDraftOf,
 } from '@/features/rotation/hooks/draft-store';
 import { readRotation, type RotationSnapshot } from '@/features/rotation/services/list';
 import {
@@ -116,6 +117,46 @@ describe('the draft shown', () => {
       'pilot-smjena-d': 1,
       new: 0,
     });
+  });
+});
+
+describe('unsaved changes (story 5.5c)', () => {
+  it("are the admin's own draft for this organization, even one edited back to the prefill", async () => {
+    const snapshot = await snapshotOf(PILOT);
+    const prefill = prefillOf(snapshot, TODAY);
+
+    expect(unsavedDraftOf(null, snapshot.organizationId)).toBe(false);
+    expect(unsavedDraftOf({ organizationId: snapshot.organizationId, draft: prefill }, snapshot.organizationId)).toBe(
+      true,
+    );
+    expect(unsavedDraftOf({ organizationId: OTHER_ORGANIZATION, draft: prefill }, snapshot.organizationId)).toBe(false);
+  });
+
+  it('a stepper reset goes back to step 1 with nothing reached, and says so only on a change', () => {
+    const store = createStepperStore();
+    let heard = 0;
+
+    store.subscribe(() => {
+      heard += 1;
+    });
+    store.reset();
+    expect(heard).toBe(0);
+    store.next();
+    store.next();
+    expect(store.get()).toEqual({ current: 3, reached: 3 });
+    store.reset();
+    expect(store.get()).toEqual({ current: 1, reached: 1 });
+    expect(heard).toBe(3);
+  });
+
+  it('are gone once the store is reset', async () => {
+    const snapshot = await snapshotOf(PILOT);
+    const store = createDraftStore();
+
+    store.set(snapshot.organizationId, withStepAdded(prefillOf(snapshot, TODAY), 'pilot-dan'));
+    expect(unsavedDraftOf(store.get(), snapshot.organizationId)).toBe(true);
+    store.reset();
+    expect(unsavedDraftOf(store.get(), snapshot.organizationId)).toBe(false);
   });
 });
 

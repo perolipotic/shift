@@ -138,6 +138,22 @@ export function stepGroupClassOf(state: StepperState, steps: readonly StepperSte
   return steps.includes(state.current) ? SECTION_SHOWN_CLASS : SECTION_HIDDEN_CLASS;
 }
 
+/**
+ * The save bar (story 5.5c, mockup `setup-1.html` §2): full width across the
+ * page frame's `p-6`, on the card's background behind a top border. While
+ * there are unsaved changes it is `sticky` at the viewport's bottom FROM `sm`
+ * UP ONLY, where the phone's tab bar is gone (`chrome.tsx`, `sm:hidden`) —
+ * below `sm` it stays in flow at the end of the builder, after the history,
+ * never on top of the tab bar. CSS alone, like the stepper.
+ */
+const SAVE_BAR_CLASS = '-mx-6 -mb-6 flex flex-wrap items-center gap-3 border-t bg-card px-6 py-3';
+const SAVE_BAR_STICKY_CLASS = `${SAVE_BAR_CLASS} sm:sticky sm:bottom-0 sm:z-20`;
+
+/** The save bar's class: sticky from `sm` up while `unsaved`, static otherwise. */
+export function saveBarClassOf(unsaved: boolean): string {
+  return unsaved ? SAVE_BAR_STICKY_CLASS : SAVE_BAR_CLASS;
+}
+
 /** A step's name in the bar. */
 export function stepMessageKey(
   step: StepperStep,

@@ -2,6 +2,7 @@ import { formatDate, formatIsoDate, formatTime } from '@/lib/i18n/format';
 import {
   assignmentInForceOf,
   rotationScheduledDateOf,
+  rotationTeamsOf,
   type RotationHistoryRecord,
   type RotationSnapshot,
 } from '@/features/rotation/services/list';
@@ -145,4 +146,61 @@ export function scheduledChangeOf(snapshot: RotationSnapshot, today: string): Sc
   const effectiveFrom = rotationScheduledDateOf(snapshot, today);
 
   return effectiveFrom === null ? null : { effectiveFrom, label: formatIsoDate(effectiveFrom) ?? effectiveFrom };
+}
+
+// ---------------------------------------------------------- the save bar
+
+/**
+ * The save bar's hint (story 5.5c): when the draft would apply from, and
+ * since when the rotation governing today has been in force.
+ */
+export interface SaveBarHint {
+  /** The draft's `Vrijedi od`, `01.11.2026`, through the format layer. */
+  readonly effectiveLabel: string;
+  /**
+   * The effective date of the version in force today, `01.01.2020`; `null`
+   * while no active team has one.
+   */
+  readonly inForceLabel: string | null;
+}
+
+/**
+ * The effective date of the version governing `today`: per active team the
+ * version in force (`assignmentInForceOf`), and across teams THE NEWEST of
+ * those dates — explicitly, never by any list's sort order. `null` while no
+ * active team has a version in force.
+ */
+export function inForceFromOf(snapshot: RotationSnapshot, today: string): string | null {
+  let newest: string | null = null;
+
+  for (const team of rotationTeamsOf(snapshot)) {
+    const version = assignmentInForceOf(snapshot, team.id, today);
+
+    if (version !== null && version.effectiveFrom <= today && (newest === null || version.effectiveFrom > newest)) {
+      newest = version.effectiveFrom;
+    }
+  }
+
+  return newest;
+}
+
+/**
+ * The hint the save bar shows, or `null`: with no unsaved changes, and with
+ * a `Vrijedi od` that is empty or not a date — never "Promjena vrijedi od .".
+ */
+export function saveBarHintOf(
+  unsaved: boolean,
+  snapshot: RotationSnapshot,
+  today: string,
+  effectiveFrom: string,
+): SaveBarHint | null {
+  if (!unsaved) return null;
+
+  const effectiveLabel = formatIsoDate(effectiveFrom);
+
+  if (effectiveLabel === null) return null;
+
+  const inForce = inForceFromOf(snapshot, today);
+
+  return { effectiveLabel, inForceLabel: inForce === null ? null : (formatIsoDate(inForce) ?? inForce) };
 }

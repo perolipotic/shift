@@ -891,6 +891,12 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.builder.previewCycles',
   'rotation.builder.save',
   'rotation.builder.saveNote',
+  // STORY 5.5c: the save bar's region label, its "Odbaci promjene", and its
+  // hint with and without the rotation in force.
+  'rotation.builder.saveBar.label',
+  'rotation.builder.saveBar.discard',
+  'rotation.builder.saveBar.hint',
+  'rotation.builder.saveBar.hintInForce',
   'rotation.builder.saved',
   // STORY 2.5: the save's warnings, in the success notice. One date and its
   // types; the rest gap true on the clock (`24 h rada bez slobodnog dana
