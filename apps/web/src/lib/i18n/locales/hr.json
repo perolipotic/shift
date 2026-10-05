@@ -257,6 +257,9 @@
       "backToQueue": "Natrag na Raspored",
       "unavailable": "Konflikt trenutačno nije moguće učitati. Pokušaj ponovno.",
       "retry": "Pokušaj ponovno",
+      "held": "Zamjena se ne primjenjuje. Ukloni je u kalendaru pa odluči ponovno.",
+      "heldHint": "Zamjena se ne primjenjuje. {action} pa odluči ponovno.",
+      "heldAction": "Ukloni je u kalendaru",
       "error": {
         "gone": "Ovaj konflikt više nije otvoren: odluka je već zabilježena ili godišnji više ne pokriva taj datum.",
         "denied": "Nemaš ovlasti odlučiti o ovom konfliktu.",

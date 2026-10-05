@@ -75,6 +75,14 @@ export const CONFLICTS_SCREEN_EXEMPT: readonly { readonly file: string; readonly
     why: 'the shift-type override\'s erasure "after" for set, remove, confirm and amend, and one run of the check (story 5.5f), used by the calendar\'s day detail and the rotation builder\'s override review (5.5h); renders nothing and declares no key, executed by override-erasures.test.ts',
   },
   {
+    file: 'services/replacement-effect.ts',
+    why: 'whether a replace_member resolution\'s override still applies (story 5.5d), the one test the queue, the hours and the leave screen\'s replacement guard share; renders nothing and declares no key, executed by replacement-effect.test.ts',
+  },
+  {
+    file: 'hooks/use-replacement-link-refresh.ts',
+    why: 'the fetch-skew re-read of the calendar snapshot (story 5.5d), used by the queue, the resolution screen, the calendar and the hours; wiring only, renders nothing',
+  },
+  {
     file: 'services/resolution-write.ts',
     why: 'the two resolution writes (stories 5.4b, 5.4c) and their refusals; a key source of its own, executed by resolution-write.test.ts',
   },

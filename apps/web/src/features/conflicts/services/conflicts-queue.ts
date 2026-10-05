@@ -4,6 +4,7 @@ import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar
 import { calendarTodayOf, memberScheduleInputOf, typeRangeOn } from '@/features/calendar/utils/month';
 import { organizationLeaveRecordsOf, type OrganizationLeaveRecord } from '@/features/leave/services/leave-list';
 import { leaveRangeValuesOf } from '@/features/leave/services/leave-section';
+import { effectiveResolutionsOf } from '@/features/conflicts/services/replacement-effect';
 import { conflictResolutionsOf, type ConflictResolution } from '@/features/conflicts/services/resolutions';
 import { formatIsoDate } from '@/lib/i18n/format';
 
@@ -138,11 +139,13 @@ export function collisionInputOf(
 
 /**
  * The resolution rows as read, parsed against the snapshot's members and
- * teams.
+ * teams: EVERY live row, a replacement that no longer applies included. Only
+ * the resolution screen reads these, to say why a key is still held
+ * (story 5.5d); everything that matches keys reads {@link resolutionsOf}.
  *
  * @throws RangeError when a row cannot be trusted (`conflictResolutionsOf`).
  */
-export function resolutionsOf(snapshot: CalendarSnapshot, rows: readonly unknown[]): readonly ConflictResolution[] {
+export function liveResolutionsOf(snapshot: CalendarSnapshot, rows: readonly unknown[]): readonly ConflictResolution[] {
   const resolutions = conflictResolutionsOf(
     rows,
     snapshot.members.map((member) => member.id),
@@ -152,6 +155,21 @@ export function resolutionsOf(snapshot: CalendarSnapshot, rows: readonly unknown
   if (resolutions === null) throw new RangeError('a conflict resolution row cannot be trusted');
 
   return resolutions;
+}
+
+/**
+ * THE ONE FUNNEL resolutions become keys through (story 5.5d): the live rows
+ * ({@link liveResolutionsOf}) less every `replace_member` whose linked
+ * override no longer applies (`effectiveResolutionsOf`) — removed, pending
+ * after a rotation save, or inert. The queue, the resolution screen, the
+ * calendar's marks, the admin's *Sati* and the erasure guard's "before" all
+ * read this, so a replacement that does not apply hides its conflict nowhere.
+ *
+ * @throws RangeError when a row cannot be trusted, or a link disagrees with
+ *   its override, or on any precondition of the domain's derivation.
+ */
+export function resolutionsOf(snapshot: CalendarSnapshot, rows: readonly unknown[]): readonly ConflictResolution[] {
+  return effectiveResolutionsOf(snapshot, liveResolutionsOf(snapshot, rows));
 }
 
 /**

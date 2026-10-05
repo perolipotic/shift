@@ -8,6 +8,7 @@ import {
   removeLeaveMemberInSql,
   removeSeededRotation,
   removeTeamInSql,
+  seedConflictResolution,
   seedExtraTeam,
   seedLeaveMember,
   seedLeaveRecord,
@@ -229,6 +230,41 @@ test('removing an override that put a member on leave on the roster goes through
   await conflictsPage.goto();
   await expect(conflictsPage.anyCountHeading).toBeVisible();
   await expect(conflictsPage.rowsOf(person.name)).toHaveCount(0);
+});
+
+test('removing the override behind a replacement asks nothing, and its conflict comes back to the queue (story 5.5d)', async ({
+  page,
+  fixture,
+  calendarPage,
+  conflictsPage,
+}) => {
+  test.slow();
+  const { rotation, team, person, date } = await setUp(fixture.slug);
+  // The replacement, on no rotation of this test's: a fresh member on the fixture team.
+  const dino = await seedLeaveMember(fixture.slug, fixture.team.id, rotation.today, 20);
+  if (written === null) throw new Error('E2E: setUp wrote nothing to clean up after');
+  written.members.push(dino.id);
+  await seedConflictResolution(fixture.slug, person.id, date, team.id, 'replace_member', dino.id);
+
+  await conflictsPage.goto();
+  await expect(conflictsPage.anyCountHeading).toBeVisible();
+  await expect(conflictsPage.rowsOf(person.name)).toHaveCount(0);
+
+  const detail = await openDay(calendarPage, team.name, date);
+  const block = calendarPage.rosterChangesIn(detail);
+  const added = fill(rosterChange.added, { name: dino.name });
+  await expect(block).toContainText(added);
+  await calendarPage.rosterRemoveIn(block).click();
+  await calendarPage.confirmRosterRemoveIn(calendarPage.rosterRemoveConfirmOf(added, team.name, date)).click();
+
+  // Nothing is erased by the removal: no confirmation of any count, and it lands.
+  await expect(calendarPage.statusIn(detail)).toHaveText(rosterChange.removedDone);
+  await expect(page.getByRole('dialog', { name: anyErasureTitle })).toHaveCount(0);
+  await expect(block).toHaveCount(0);
+
+  // The replacement no longer covers the shift: the conflict is open again.
+  await conflictsPage.goto();
+  await expect(conflictsPage.rowsOf(person.name)).toHaveCount(1);
 });
 
 test('a roster change that erases nothing saves in one click', async ({ page, fixture, calendarPage, conflictsPage }) => {

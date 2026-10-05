@@ -17,6 +17,7 @@ import {
   type ConflictsQueueView,
   type LeaveRowsAnswer,
 } from '@/features/conflicts/services/conflicts-queue';
+import { REPLACEMENT_LINK_MISMATCH } from '@/features/conflicts/services/replacement-effect';
 import { organizationLeaveRecordsOf } from '@/features/leave/services/leave-list';
 import { initLocalization, t } from '@/lib/i18n';
 import {
@@ -490,8 +491,14 @@ describe('the three reads', () => {
 });
 
 /** A resolution row as `conflict_resolutions` answers it. */
-function resolutionOf(memberId: string, date: string, teamId: string, kind = 'accept_uncovered'): Row {
-  return { member_id: memberId, date, team_id: teamId, kind };
+function resolutionOf(
+  memberId: string,
+  date: string,
+  teamId: string,
+  kind = 'accept_uncovered',
+  rosterOverrideId: string | null = null,
+): Row {
+  return { member_id: memberId, date, team_id: teamId, kind, roster_override_id: rosterOverrideId };
 }
 
 describe('resolutions (story 5.4a)', () => {
@@ -532,10 +539,59 @@ describe('resolutions (story 5.4a)', () => {
     expect(view.count).toBe(viewOf(snapshot, [WORKED], '2026-09-01').count - 1);
   });
 
+  describe('a replacement that no longer applies (story 5.5d)', () => {
+    // Ana, of the other team, put on the viewer's 11.09 Noć by a replacement.
+    const replaced = [resolutionOf(VIEWER_MEMBER, '2026-09-11', a, 'replace_member', 'ro-ana')];
+
+    it('Effective: hides its conflict while its override applies, as today', async () => {
+      const snapshot = await snapshotOf(PILOT, [calendarRosterOverrideRow('ro-ana', a, '2026-09-11', null, ANA)]);
+
+      expect(viewOf(snapshot, [WORKED], '2026-09-01', replaced).count).toBe(2);
+    });
+
+    it('Pending after rotation save: lists the conflict again once a rotation save left its override pending', async () => {
+      const snapshot = await snapshotOf(PILOT, [
+        calendarRosterOverrideRow('ro-ana', a, '2026-09-11', null, ANA, { createdAt: '2019-01-01T00:00:00+00:00' }),
+      ]);
+      const view = viewOf(snapshot, [WORKED], '2026-09-01', replaced);
+
+      expect(view.count).toBe(3);
+      expect(view.rows.map((row) => row.date)).toEqual(['2026-09-10', '2026-09-11', '2026-09-14']);
+    });
+
+    it('Fetch skew: a link to an override the snapshot does not hold yet keeps hiding its conflict until the snapshot is read again', () => {
+      expect(viewOf(pilot, [WORKED], '2026-09-01', replaced).count).toBe(2);
+    });
+
+    it('Accept unaffected: an accepted conflict stays hidden beside a pending replacement', async () => {
+      const snapshot = await snapshotOf(PILOT, [
+        calendarRosterOverrideRow('ro-ana', a, '2026-09-11', null, ANA, { createdAt: '2019-01-01T00:00:00+00:00' }),
+      ]);
+
+      expect(viewOf(snapshot, [WORKED], '2026-09-01', [...replaced, resolutionOf(VIEWER_MEMBER, '2026-09-10', a)]).count).toBe(2);
+    });
+
+    it('One bad link: a link that disagrees with its override is logged and shows its conflict, never the whole queue unavailable', async () => {
+      const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      // The override is on 11.09; the resolution names it from 10.09.
+      const snapshot = await snapshotOf(PILOT, [calendarRosterOverrideRow('ro-ana', a, '2026-09-11', null, ANA)]);
+      const outcome = conflictsQueueOutcomeOf(
+        snapshot,
+        [WORKED],
+        [resolutionOf(VIEWER_MEMBER, '2026-09-10', a, 'replace_member', 'ro-ana')],
+        '2026-09-01',
+      );
+
+      expect(outcome.ok).toBe(true);
+      expect(viewOf(snapshot, [WORKED], '2026-09-01', [resolutionOf(VIEWER_MEMBER, '2026-09-10', a, 'replace_member', 'ro-ana')]).count).toBe(3);
+      expect(logged).toHaveBeenCalledWith(REPLACEMENT_LINK_MISMATCH, 'ro-ana');
+    });
+  });
+
   it('ignores a resolution that matches no collision, whatever its kind', () => {
     const view = viewOf(pilot, [WORKED], '2026-09-01', [
       resolutionOf(VIEWER_MEMBER, '2026-09-12', a, 'amend_leave'),
-      resolutionOf(ANA, '2026-09-10', a, 'replace_member'),
+      resolutionOf(ANA, '2026-09-10', a, 'replace_member', 'ro-elsewhere'),
     ]);
 
     expect(view.count).toBe(3);
@@ -548,6 +604,9 @@ describe('resolutions (story 5.4a)', () => {
     ['an unknown kind', [resolutionOf(VIEWER_MEMBER, '2026-09-11', a, 'uncovered')]],
     ['two live rows of one key', [resolutionOf(VIEWER_MEMBER, '2026-09-11', a), resolutionOf(VIEWER_MEMBER, '2026-09-11', a, 'amend_leave')]],
     ['a row that is not a record', [null]],
+    // 0032's check, as an integrity break (story 5.5d).
+    ['a replacement with no link', [resolutionOf(VIEWER_MEMBER, '2026-09-11', a, 'replace_member')]],
+    ['an acceptance with a link', [resolutionOf(VIEWER_MEMBER, '2026-09-11', a, 'accept_uncovered', 'ro-ana')]],
   ])('refuses the whole queue for %s, and logs it', (_name, resolutionRows) => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 

@@ -4,8 +4,6 @@ import {
   leaveBalanceOf,
   leaveCostOf,
   leavePreviewOf,
-  rosterOn,
-  scheduledShiftTypeOn,
   type LeaveBalance,
   type LeaveBalanceInput,
   type LeavePreview,
@@ -14,14 +12,13 @@ import {
 } from '@shift/domain';
 
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
+import { calendarTodayOf, dayMonthOf, memberScheduleInputOf } from '@/features/calendar/utils/month';
 import {
-  calendarTodayOf,
-  dayMonthOf,
-  memberScheduleInputOf,
-  overrideStandingOfCalendar,
-  rosterStandingOfCalendar,
-  workingShiftTypeIdsOf,
-} from '@/features/calendar/utils/month';
+  REPLACEMENT_APPLIED,
+  REPLACEMENT_MISMATCH,
+  replacementContextOf,
+  replacementStandingIn,
+} from '@/features/conflicts/services/replacement-effect';
 import { replacementLinksOf, type ReplacementLink } from '@/features/conflicts/services/resolutions';
 import type { LeaveRecord, LeaveRecordsState } from '@/features/leave/services/leave-list';
 import {
@@ -472,38 +469,25 @@ export function replacementWarningsOf(
   if (uncovered.length === 0) return [];
 
   try {
-    const working = new Set(workingShiftTypeIdsOf(snapshot));
-    const typeStanding = overrideStandingOfCalendar(snapshot);
-    const rosterStanding = rosterStandingOfCalendar(snapshot);
     const warnings: (ReplacementWarning & { readonly isoDate: string })[] = [];
+    // THE SHARED TEST (story 5.5d), its standings worked out once for every link.
+    const context = replacementContextOf(snapshot);
 
     for (const link of uncovered) {
-      const override = snapshot.rosterOverrides.find((one) => one.id === link.rosterOverrideId);
+      const standing = replacementStandingIn(context, link);
 
-      if (override === undefined) continue;
       // THE LINK AND ITS OVERRIDE MUST AGREE: 0032 writes both from one key.
-      if (override.teamId !== link.teamId || override.date !== link.date) {
+      if (standing.kind === REPLACEMENT_MISMATCH) {
         console.error(REPLACEMENTS_UNAVAILABLE, 'link');
 
         return null;
       }
-      if (override.memberInId === null) continue;
+      // Live, in force and applied on a working shift; a removed, pending or inert one gives no line.
+      if (standing.kind !== REPLACEMENT_APPLIED) continue;
 
-      const { teamId, date } = override;
-      const scheduled = scheduledShiftTypeOn(
-        snapshot.assignments.filter((assignment) => assignment.teamId === teamId),
-        snapshot.steps,
-        typeStanding.inForce,
-        teamId,
-        date,
-      );
-
-      if (scheduled === null || !working.has(scheduled.shiftTypeId)) continue;
-
-      const applied = rosterOn(snapshot.members, rosterStanding.inForce, teamId, date).applied;
-
-      if (!applied.some((one) => one.id === override.id)) continue;
-
+      const override = standing.override;
+      const teamId = override.teamId;
+      const date = override.date;
       const replacement = snapshot.members.find((member) => member.id === override.memberInId);
       const team = snapshot.teams.find((one) => one.id === teamId);
 

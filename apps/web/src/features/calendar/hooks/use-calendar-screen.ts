@@ -60,6 +60,7 @@ import {
   type MyLeaveRecordsRpc,
   type OrganizationLeaveRecordsTable,
 } from '@/features/leave/services/leave-list';
+import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import { supabaseClient } from '@/lib/supabase/client';
 
@@ -131,6 +132,8 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
     ),
     enabled: readsResolutions,
   });
+  // STORY 5.5d: a replacement naming an override the snapshot does not hold yet re-reads it once.
+  useReplacementLinkRefresh(snapshot, readsResolutions ? resolutions.data : undefined);
   const leaveAnswer = role !== null && readsOrganizationLeave(role) ? organizationLeave : ownLeave;
   const leaveData = leaveAnswer.data;
   const leaveIsError = leaveAnswer.isError;

@@ -278,6 +278,30 @@ describe('Replace link', () => {
 
     expect(rows).toEqual([]);
   });
+
+  it('erases nothing when an applied replacement that only adds is removed: its conflict comes back instead (story 5.5d)', async () => {
+    const snapshot = await calendarOf([calendarRosterOverrideRow('replace', A, '2026-09-10', null, ANA)]);
+    const rows = rowsOf(snapshot, removal('replace'), [recordOf('record-1', '2026-09-10', '2026-09-11')], [
+      resolutionOf(VIEWER_MEMBER, '2026-09-10', A, 'replace_member', 'replace'),
+    ]);
+
+    expect(rows).toEqual([]);
+  });
+
+  it('Erasure before: a replacement that does not apply before the change, and applies after it, erases nothing (story 5.5d)', async () => {
+    // Pending before (written before the seeded rotation's stamp); in force after.
+    const before = await calendarOf([
+      calendarRosterOverrideRow('replace', A, '2026-09-10', null, ANA, { createdAt: '2019-01-01T00:00:00+00:00' }),
+    ]);
+    const after = await calendarOf([calendarRosterOverrideRow('replace', A, '2026-09-10', null, ANA)]);
+
+    expect(rosterStandingOfCalendar(before).inForce).toEqual([]);
+    expect(
+      erasuresOf(before, after, '2026-09-10', [recordOf('record-1', '2026-09-10', '2026-09-11')], [
+        resolutionOf(VIEWER_MEMBER, '2026-09-10', A, 'replace_member', 'replace'),
+      ]),
+    ).toEqual([]);
+  });
 });
 
 describe('refused anyway', () => {

@@ -164,6 +164,11 @@ export function erasuresOf(
 
   if (records === null) throw new RangeError('a leave record row cannot be trusted');
 
+  // ONE LIST FOR BOTH SIDES (story 5.5d): `resolutionsOf(before, …)` now
+  // filters — it drops every replacement `before` holds pending or inert —
+  // and that one list is matched against both sides, so a replacement that
+  // does not apply before the change hides nothing on either side, and a
+  // change that makes it apply again erases nothing.
   const erased = erasedCollisionsOf(
     collisionInputOf(before, records),
     collisionInputOf(after, records),

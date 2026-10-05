@@ -2565,6 +2565,70 @@ describe('the access-control migration', () => {
     expect((migration.match(/create (or replace )?function/gi) ?? []).length, 'story 5.4c takes one function').toBe(1);
   });
 
+  it('ends a replacement with the override behind it, backfills the orphans, and gives a member the link (story 5.5d)', () => {
+    // STORY 5.5d (human, 2026-10-05): 0033 re-creates 0027's removal with its
+    // body and refusals, plus the soft-removal of the resolution that names
+    // the override; backfills the live rows whose override is already gone;
+    // and re-creates the member's read with the link, under 0031's grants.
+    const migration = readFileSync(
+      join(supabaseRoot, 'migrations', '0033_replacement_resolution_lifetime.sql'),
+      'utf8',
+    ).replaceAll(/--[^\n]*/g, '');
+    const remove = /create or replace function public\.remove_roster_override\(p_override_id uuid\)[\s\S]*?\$\$;/i.exec(
+      migration,
+    )?.[0];
+    expect(remove, 'remove_roster_override is not re-created').toBeDefined();
+    expect(remove).toMatch(/returns void/i);
+    expect(remove).toMatch(/security definer/i);
+    expect(remove).toMatch(/set search_path = ''/);
+    expect(remove, 'the removal admits a caller who is no active admin').toMatch(
+      /from public\.current_member_access\(\) as access\s+where access\.organization_id = claimed\s+and access\.is_active\s+and access\.member_role = 'admin'/,
+    );
+    expect(remove, 'a refusal of the caller is not 42501').toMatch(
+      /errcode = 'insufficient_privilege',\s+message = 'ROSTER_OVERRIDE_REMOVAL_REFUSED'/,
+    );
+    expect(remove, 'a missing live row is not P0002').toMatch(/errcode = 'no_data_found',\s+message = 'ROSTER_OVERRIDE_NOT_LIVE'/);
+    expect(remove, 'the override removal changed').toMatch(
+      /update public\.roster_overrides o\s+set removed_by = auth\.uid\(\),\s+removed_at = now\(\)\s+where o\.id = p_override_id\s+and o\.organization_id = claimed\s+and o\.removed_at is null;/,
+    );
+    expect(remove, 'the linked resolution is not ended by the caller').toMatch(
+      /update public\.conflict_resolutions c\s+set removed_by = auth\.uid\(\),\s+removed_at = now\(\)\s+where c\.organization_id = claimed\s+and c\.roster_override_id = p_override_id\s+and c\.removed_at is null;/,
+    );
+    // The refusal first: a refused removal ends no resolution.
+    expect(remove?.indexOf('ROSTER_OVERRIDE_NOT_LIVE')).toBeLessThan(remove?.indexOf('update public.conflict_resolutions') ?? 0);
+    expect(remove, 'the removal hard-deletes').not.toMatch(/\bdelete\b/i);
+    expect(migration, 'the backfill does not copy the override\'s removal onto exactly the orphaned live rows').toMatch(
+      /update public\.conflict_resolutions c\s+set removed_by = o\.removed_by,\s+removed_at = o\.removed_at\s+from public\.roster_overrides o\s+where o\.organization_id = c\.organization_id\s+and o\.id = c\.roster_override_id\s+and o\.removed_at is not null\s+and c\.removed_at is null;/,
+    );
+    expect(migration).toMatch(/drop function public\.my_conflict_resolutions\(\);/);
+    const read = /create function public\.my_conflict_resolutions\(\)[\s\S]*?\$\$;/i.exec(migration)?.[0];
+    expect(read, 'my_conflict_resolutions is not re-created').toBeDefined();
+    expect(read).toMatch(
+      /returns table \(\s*member_id uuid,\s*date date,\s*team_id uuid,\s*kind text,\s*roster_override_id uuid\s*\)/,
+    );
+    expect(read).toMatch(/security definer/i);
+    expect(read).toMatch(/set search_path = ''/);
+    expect(read, 'the read lost the claim pin').toMatch(
+      /c\.organization_id = nullif\(\(\(select auth\.jwt\(\)\) ->> 'organization_id'\), ''\)::uuid/,
+    );
+    expect(read, 'the read lost the active caller pin').toMatch(/where access\.is_active/);
+    expect(read, "the read is not the caller's own member row").toMatch(/and m\.auth_user_id = \(select auth\.uid\(\)\)/);
+    expect(read, 'a removed resolution is read').toMatch(/and c\.removed_at is null/);
+    expect(read, 'an author or a removal leaves the function').not.toMatch(
+      /select c\.member_id,[^$]*\b(created_by|removed_by|removed_at|auth_user_id)\b[^$]*from public\.conflict_resolutions/,
+    );
+    for (const role of ['public', 'anon', 'service_role']) {
+      expect(migration).toContain(`revoke execute on function public.my_conflict_resolutions() from ${role};`);
+    }
+    expect(migration).toContain('grant execute on function public.my_conflict_resolutions() to authenticated;');
+    expect(migration, 'story 5.5d takes a trigger').not.toMatch(/create (or replace )?trigger/i);
+    expect(migration, 'story 5.5d changes a policy').not.toMatch(/\b(create|alter|drop) policy\b/i);
+    expect(migration, 'story 5.5d grants on a table').not.toMatch(/\bon table\b/i);
+    expect(migration, 'story 5.5d computes a roster in the database').not.toMatch(
+      /rotation_|team_membership_versions|member_status_versions|leave_records/,
+    );
+  });
+
   it('stores a leave record as one member and one bounded inclusive range, refusing a live overlap by exclusion (story 5.1b)', () => {
     // STORY 5.1b (R4.1, R4.4, AD-3): one member, one daterange, attributed and
     // soft-removable. No cost, balance, allowance or schedule column: those

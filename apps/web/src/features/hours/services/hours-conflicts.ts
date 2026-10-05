@@ -8,6 +8,7 @@ import {
   unresolvedOf,
   type LeaveRowsAnswer,
 } from '@/features/conflicts/services/conflicts-queue';
+import { effectiveResolutionsOf } from '@/features/conflicts/services/replacement-effect';
 import { conflictResolutionsOf, leaveHoursKeysOf } from '@/features/conflicts/services/resolutions';
 import { leaveRecordsOf, organizationLeaveRecordsOf } from '@/features/leave/services/leave-list';
 
@@ -35,7 +36,9 @@ import { leaveRecordsOf, organizationLeaveRecordsOf } from '@/features/leave/ser
  *
  * AN ACCEPTED-UNCOVERED OR REPLACED SHIFT IS LEAVE (stories 5.4b, 5.4c). The
  * same resolution rows name the conflicts accepted as uncovered and those
- * resolved by a replacement ({@link hoursLeaveKeysOf}); the domain moves each
+ * resolved by a replacement that still applies (story 5.5d: one whose
+ * override is removed, pending or inert counts for nothing, and the shift is
+ * band hours and a conflict again) ({@link hoursLeaveKeysOf}); the domain moves each
  * one's shift out of the absent member's band hours, total and shift count
  * and into their leave hours. A replacement's own band hours rise through its
  * roster override, with no code here. No other kind does either.
@@ -105,10 +108,14 @@ export function hoursCollisionsOf(
       resolutionRows,
       [viewer.memberId],
       snapshot.teams.map((team) => team.id),
+      // A member's read from before 0033 answers no link.
+      { linkOptional: true },
     );
 
     if (resolutions === null) throw new RangeError('an own conflict resolution row cannot be trusted');
 
+    // THE SAME FUNNEL as the admin's (story 5.5d): a replacement that no
+    // longer applies hides nothing, so a member's own *Sati* agrees.
     return unresolvedCollisionsOf(
       collisionsOf(
         collisionInputOf(
@@ -116,7 +123,7 @@ export function hoursCollisionsOf(
           own.map((record) => ({ ...record, memberId: viewer.memberId })),
         ),
       ),
-      resolutions,
+      effectiveResolutionsOf(snapshot, resolutions),
     );
   }
 
@@ -147,11 +154,12 @@ export function hoursLeaveKeysOf(snapshot: CalendarSnapshot, resolutionRows: rea
     resolutionRows,
     [viewer.memberId],
     snapshot.teams.map((team) => team.id),
+    { linkOptional: true },
   );
 
   if (own === null) throw new RangeError('an own conflict resolution row cannot be trusted');
 
-  return leaveHoursKeysOf(own);
+  return leaveHoursKeysOf(effectiveResolutionsOf(snapshot, own));
 }
 
 /** Whether a read failed or is paused offline, a failed refetch over cached rows included. */

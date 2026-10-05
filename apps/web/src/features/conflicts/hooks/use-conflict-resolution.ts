@@ -9,6 +9,7 @@ import {
   calendarSurfaceStateOf,
   type CalendarMembersRpc,
 } from '@/features/calendar/services/snapshot';
+import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
 import {
   OPTION_AMEND_LEAVE,
   OPTION_REPLACE_MEMBER,
@@ -35,6 +36,7 @@ import {
 import {
   RESOLUTION_FAILED,
   RESOLUTION_GONE,
+  RESOLUTION_HELD,
   RESOLUTION_TAKEN,
   RESOLUTION_WRITE_TABLE,
   acceptUncovered,
@@ -72,6 +74,7 @@ import {
   CONFLICT_REPLACE_TAKEN_DEPENDENTS,
   CONFLICT_REPLACE_WRITE_DEPENDENTS,
   CONFLICT_RESOLUTION_GONE_DEPENDENTS,
+  CONFLICT_RESOLUTION_HELD_DEPENDENTS,
   CONFLICT_RESOLUTION_WRITE_DEPENDENTS,
   NO_DEPENDENTS,
   refreshAfterWrite,
@@ -115,6 +118,11 @@ import { supabaseClient } from '@/lib/supabase/client';
  * replacement. Refused as TAKEN — the replacement is already on the shift —
  * the snapshot is re-read so the candidates drop them, the pick is cleared,
  * and the line names who was taken.
+ *
+ * A KEY STILL HELD (story 5.5d): when a replacement that no longer applies
+ * holds the key, a refusal on it is HELD — the screen's own line, "remove it
+ * in the calendar, then decide" — and the snapshot is re-read beside the
+ * resolutions.
  *
  * AMENDING (story 5.4d): the third card writes nothing. Its Spremi goes to the
  * member page with the record and the range that would clear the conflict, or
@@ -174,6 +182,9 @@ export function useConflictResolution(params: ResolutionParams) {
   );
   const members = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
   const organization = useQuery(organizationSnapshotQueryOptions(() => supabaseClient().from(ORGANIZATION_TABLE)));
+
+  // STORY 5.5d: a replacement naming an override the snapshot does not hold yet re-reads it once.
+  useReplacementLinkRefresh(calendarSurfaceStateOf(calendar).snapshot, resolutions.data);
 
   const derived = resolutionScreenOf(
     {
@@ -259,6 +270,9 @@ export function useConflictResolution(params: ResolutionParams) {
    * it is called on a replacement alone.
    */
   async function save(replacementReasonOf: (memberName: string) => string): Promise<void> {
+    // HELD (story 5.5d): the key is a replacement's until it is removed in the calendar; saving would fail.
+    if (screen.kind === RESOLUTION_READY && screen.view.held) return;
+
     const focus = saveFocusOf(choice, replacement?.id ?? null, candidatesExist);
 
     if (focus !== null) {
@@ -303,14 +317,23 @@ export function useConflictResolution(params: ResolutionParams) {
 
     try {
       // Structurally, for the reason the reads are.
+      // `view.held` (story 5.5d): a refusal on the key says to remove the replacement first.
       const outcome: ResolutionWriteOutcome =
         replacing === null
-          ? await acceptUncovered(supabaseClient().from(RESOLUTION_WRITE_TABLE) as unknown as ResolutionInsertTable, target)
-          : await replaceMember(supabaseClient() as unknown as ResolutionReplaceRpc, {
-              ...target,
-              replacementId: replacing.id,
-              reason: replacementReasonOf(view.memberName),
-            });
+          ? await acceptUncovered(
+              supabaseClient().from(RESOLUTION_WRITE_TABLE) as unknown as ResolutionInsertTable,
+              target,
+              view.held,
+            )
+          : await replaceMember(
+              supabaseClient() as unknown as ResolutionReplaceRpc,
+              {
+                ...target,
+                replacementId: replacing.id,
+                reason: replacementReasonOf(view.memberName),
+              },
+              view.held,
+            );
 
       // A screen left meanwhile is not written to.
       if (!mounted.current) return;
@@ -329,7 +352,9 @@ export function useConflictResolution(params: ResolutionParams) {
             ? CONFLICT_RESOLUTION_GONE_DEPENDENTS
             : outcome.code === RESOLUTION_TAKEN
               ? CONFLICT_REPLACE_TAKEN_DEPENDENTS
-              : NO_DEPENDENTS,
+              : outcome.code === RESOLUTION_HELD
+                ? CONFLICT_RESOLUTION_HELD_DEPENDENTS
+                : NO_DEPENDENTS,
         );
 
         if (mounted.current && outcome.code === RESOLUTION_TAKEN) setRefocus(true);

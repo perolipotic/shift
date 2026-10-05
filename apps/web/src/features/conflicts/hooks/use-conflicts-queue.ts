@@ -9,6 +9,7 @@ import {
   calendarSurfaceStateOf,
   type CalendarMembersRpc,
 } from '@/features/calendar/services/snapshot';
+import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
 import { CONFLICTS_LOADING, conflictsQueueOf } from '@/features/conflicts/services/conflicts-queue';
 import {
   resolutionSavedOf,
@@ -100,6 +101,9 @@ export function useConflictsQueue() {
       () => supabaseClient().from(CONFLICT_RESOLUTIONS_TABLE) as unknown as OrganizationConflictResolutionsTable,
     ),
   );
+
+  // STORY 5.5d: a replacement naming an override the snapshot does not hold yet re-reads it once.
+  useReplacementLinkRefresh(calendarSurfaceStateOf(calendar).snapshot, resolutions.data);
 
   const queue = conflictsQueueOf({ calendar: calendarSurfaceStateOf(calendar), records, resolutions }, new Date());
 

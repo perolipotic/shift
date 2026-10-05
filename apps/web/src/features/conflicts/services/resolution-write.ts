@@ -32,6 +32,13 @@ import { isIsoDate } from '@/lib/i18n/format';
  * `CONFLICT_REPLACEMENT_TAKEN` — the replacement is already put on that
  * shift — is {@link RESOLUTION_TAKEN}; any other 23505 is the resolution's
  * live key, {@link RESOLUTION_GONE}.
+ *
+ * A KEY HELD BY A REPLACEMENT THAT DOES NOT APPLY (story 5.5d). When the
+ * screen knows a live `replace_member` row still holds the key although its
+ * override no longer applies (`ResolutionView.held`), the caller passes
+ * `held`, and a 23505 on the resolution's live key — from either write — is
+ * {@link RESOLUTION_HELD}: the override must be removed in the calendar
+ * first, which ends that resolution (0033).
  */
 
 /** The conflict is no longer open: resolved meanwhile, or its leave removed. */
@@ -42,8 +49,11 @@ export const RESOLUTION_DENIED = 'denied';
 export const RESOLUTION_FAILED = 'failed';
 /** The replacement is already put on that shift (story 5.4c): pick someone else. */
 export const RESOLUTION_TAKEN = 'taken';
+/** A replacement that no longer applies still holds the key (story 5.5d): remove it in the calendar, then decide. */
+export const RESOLUTION_HELD = 'held';
 
 export type ResolutionWriteFailure =
+  | typeof RESOLUTION_HELD
   | typeof RESOLUTION_GONE
   | typeof RESOLUTION_DENIED
   | typeof RESOLUTION_FAILED
@@ -133,8 +143,12 @@ export function replacementReasonOf(reason: string): string {
   return Array.from(reason.trim()).slice(0, REPLACEMENT_REASON_MAX).join('').trim();
 }
 
-/** A refused insert as this application's own failure. */
-export function resolutionInsertFailureOf(error: ResolutionWriteError): ResolutionWriteFailure {
+/**
+ * A refused insert as this application's own failure; `held` (story 5.5d)
+ * turns the live key's 23505 into {@link RESOLUTION_HELD}.
+ */
+export function resolutionInsertFailureOf(error: ResolutionWriteError, held = false): ResolutionWriteFailure {
+  if (error.code === UNIQUE_VIOLATION && held) return RESOLUTION_HELD;
   if (error.code === UNIQUE_VIOLATION || error.code === NO_DATA_FOUND) return RESOLUTION_GONE;
   if (error.code === INSUFFICIENT_PRIVILEGE) return RESOLUTION_DENIED;
 
@@ -142,17 +156,22 @@ export function resolutionInsertFailureOf(error: ResolutionWriteError): Resoluti
 }
 
 /** A refused replacement as this application's own failure: the insert's, plus the replacement already put on. */
-export function resolutionReplaceFailureOf(error: ResolutionWriteError): ResolutionWriteFailure {
+export function resolutionReplaceFailureOf(error: ResolutionWriteError, held = false): ResolutionWriteFailure {
   if (error.code === UNIQUE_VIOLATION && error.message === REPLACEMENT_TAKEN_MESSAGE) return RESOLUTION_TAKEN;
 
-  return resolutionInsertFailureOf(error);
+  return resolutionInsertFailureOf(error, held);
 }
 
 /**
  * Accept the conflict as uncovered. A date that is not a calendar
- * `YYYY-MM-DD` is {@link RESOLUTION_FAILED} without a request.
+ * `YYYY-MM-DD` is {@link RESOLUTION_FAILED} without a request. `held`: the
+ * screen knows a replacement that does not apply holds the key (story 5.5d).
  */
-export async function acceptUncovered(table: ResolutionInsertTable, target: ResolutionTarget): Promise<ResolutionWriteOutcome> {
+export async function acceptUncovered(
+  table: ResolutionInsertTable,
+  target: ResolutionTarget,
+  held = false,
+): Promise<ResolutionWriteOutcome> {
   return settledWrite(
     target.date,
     () =>
@@ -163,16 +182,21 @@ export async function acceptUncovered(table: ResolutionInsertTable, target: Reso
         team_id: target.teamId,
         kind: ACCEPT_UNCOVERED,
       }),
-    resolutionInsertFailureOf,
+    (error) => resolutionInsertFailureOf(error, held),
   );
 }
 
 /**
  * Resolve the conflict by putting `replacementId` on the shift (story 5.4c),
  * through 0032's function. A date that is not a calendar `YYYY-MM-DD` is
- * {@link RESOLUTION_FAILED} without a request.
+ * {@link RESOLUTION_FAILED} without a request. `held` as for
+ * {@link acceptUncovered}.
  */
-export async function replaceMember(client: ResolutionReplaceRpc, target: ReplacementTarget): Promise<ResolutionWriteOutcome> {
+export async function replaceMember(
+  client: ResolutionReplaceRpc,
+  target: ReplacementTarget,
+  held = false,
+): Promise<ResolutionWriteOutcome> {
   return settledWrite(
     target.date,
     () =>
@@ -183,7 +207,7 @@ export async function replaceMember(client: ResolutionReplaceRpc, target: Replac
         p_replacement_id: target.replacementId,
         p_reason: replacementReasonOf(target.reason),
       }),
-    resolutionReplaceFailureOf,
+    (error) => resolutionReplaceFailureOf(error, held),
   );
 }
 
@@ -248,6 +272,7 @@ export interface ResolutionFailureLine {
  */
 export function resolutionFailureLineOf(failure: ResolutionWriteFailure, taken: string | null): ResolutionFailureLine {
   switch (failure) {
+    case RESOLUTION_HELD:
     case RESOLUTION_GONE:
     case RESOLUTION_DENIED:
     case RESOLUTION_FAILED:
@@ -268,11 +293,15 @@ export function resolutionFailureLineOf(failure: ResolutionWriteFailure, taken: 
 export function resolutionFailureMessageKey(
   failure: ResolutionWriteFailure,
 ):
+  | 'raspored.resolution.held'
   | 'raspored.resolution.error.gone'
   | 'raspored.resolution.error.denied'
   | 'raspored.resolution.error.failed'
   | 'raspored.resolution.error.taken' {
   switch (failure) {
+    // The same line the screen states while the key is held (story 5.5d).
+    case RESOLUTION_HELD:
+      return 'raspored.resolution.held';
     case RESOLUTION_GONE:
       return 'raspored.resolution.error.gone';
     case RESOLUTION_DENIED:

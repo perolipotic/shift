@@ -505,8 +505,14 @@ describe('no rotation, no mark', () => {
 });
 
 /** A resolution row as `conflict_resolutions` answers it. */
-function resolutionOf(memberId: string, date: string, teamId: string, kind = 'accept_uncovered'): Row {
-  return { member_id: memberId, date, team_id: teamId, kind };
+function resolutionOf(
+  memberId: string,
+  date: string,
+  teamId: string,
+  kind = 'accept_uncovered',
+  rosterOverrideId: string | null = null,
+): Row {
+  return { member_id: memberId, date, team_id: teamId, kind, roster_override_id: rosterOverrideId };
 }
 
 describe('resolutions (story 5.4a)', () => {
@@ -526,10 +532,26 @@ describe('resolutions (story 5.4a)', () => {
     expect(dayMarksOf(daysOf(month.days), ['2026-09-11'])).toEqual({ '2026-09-11': [['leave']] });
   });
 
-  it('takes the mark off with no uncovered mark for a resolution of another kind', () => {
-    const month = monthOf(pilot, [WORKED], SEPTEMBER, [resolutionOf(VIEWER_MEMBER, '2026-09-11', a, 'replace_member')]);
+  it('takes the mark off with no uncovered mark for a replacement, while its override applies', async () => {
+    // Ana, of the other team, put on the viewer's team's 11.09 shift by the replacement.
+    const snapshot = await snapshotOf(PILOT, {
+      rosterOverrides: [calendarRosterOverrideRow('ro-ana-11', a, '2026-09-11', null, ANA)],
+    });
+    const month = monthOf(snapshot, [WORKED], SEPTEMBER, [resolutionOf(VIEWER_MEMBER, '2026-09-11', a, 'replace_member', 'ro-ana-11')]);
 
-    expect(gridCellOf(month, a, '2026-09-11').modifiers).toEqual([]);
+    expect(gridCellOf(month, a, '2026-09-11').modifiers).toEqual(['overridden']);
+  });
+
+  it('keeps the conflict mark for a replacement whose override a rotation change left pending (story 5.5d)', async () => {
+    // Written before the seeded rotation's stamp: pending review, so not applied.
+    const snapshot = await snapshotOf(PILOT, {
+      rosterOverrides: [
+        calendarRosterOverrideRow('ro-ana-11', a, '2026-09-11', null, ANA, { createdAt: '2019-01-01T00:00:00+00:00' }),
+      ],
+    });
+    const month = monthOf(snapshot, [WORKED], SEPTEMBER, [resolutionOf(VIEWER_MEMBER, '2026-09-11', a, 'replace_member', 'ro-ana-11')]);
+
+    expect(gridCellOf(month, a, '2026-09-11').modifiers).toEqual(['conflict', 'leave']);
   });
 
   it("keeps the other team's mark when the member is on two teams and one is resolved", async () => {

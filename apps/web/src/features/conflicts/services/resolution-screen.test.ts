@@ -33,6 +33,7 @@ import {
   SAVE_FOCUS_CANDIDATES,
   SAVE_FOCUS_CHOICE,
   SAVE_FOCUS_REPLACE,
+  heldHintPartsOf,
   readyToSave,
   replacedSavedOf,
   saveFocusOf,
@@ -159,8 +160,14 @@ function rowOf(id: string, from: string, toExclusive: string, memberId: string =
 /** The pilot's worked example: 10.09–14.09 over Dan, Noć, Slobodno, Slobodno, Dan — three conflicts. */
 const WORKED = rowOf('record-worked', '2026-09-10', '2026-09-15');
 
-function resolutionOf(memberId: string, date: string, teamId: string, kind = 'accept_uncovered'): Row {
-  return { member_id: memberId, date, team_id: teamId, kind };
+function resolutionOf(
+  memberId: string,
+  date: string,
+  teamId: string,
+  kind = 'accept_uncovered',
+  rosterOverrideId: string | null = null,
+): Row {
+  return { member_id: memberId, date, team_id: teamId, kind, roster_override_id: rosterOverrideId };
 }
 
 function settled(rows: readonly unknown[]) {
@@ -622,7 +629,7 @@ describe('replacing the absent member (story 5.4c)', () => {
   it('Leave pick: Eva put on the shift while on leave has her own new conflict in the queue, and the replaced one is resolved', async () => {
     const replaced = await snapshotOf(false, PILOT, true, [calendarRosterOverrideRow('ro-eva', A, '2026-09-10', null, EVA)]);
     const leave = [WORKED, rowOf('record-eva', '2026-09-10', '2026-09-11', EVA)];
-    const eva = viewOf(resolutionScreenOf(sourcesOf(replaced, leave, [resolutionOf(VIEWER_MEMBER, '2026-09-10', A, 'replace_member')]), paramsOn('2026-09-10', EVA), NOW));
+    const eva = viewOf(resolutionScreenOf(sourcesOf(replaced, leave, [resolutionOf(VIEWER_MEMBER, '2026-09-10', A, 'replace_member', 'ro-eva')]), paramsOn('2026-09-10', EVA), NOW));
 
     expect(eva.memberName).toBe('Eva Šarić');
     expect(eva.teamName).toBe('Smjena A');
@@ -651,6 +658,61 @@ describe('replacing the absent member (story 5.4c)', () => {
       }),
     ).toBe(`Odluka je spremljena: Dan · Smjena A · četvrtak 10.09.2026 · ${VIEWER_NAME}, zamjena: Dino Grgić.`);
     expect(resolutionSavedOf({ resolutionSaved: { ...saved, replacementName: 3 } })).toBeNull();
+  });
+});
+
+describe('a replacement that no longer applies (story 5.5d)', () => {
+  const replacedBy = (overrideId: string) => [resolutionOf(VIEWER_MEMBER, '2026-09-10', A, 'replace_member', overrideId)];
+  const DINO_ON = calendarRosterOverrideRow('ro-dino', A, '2026-09-10', null, DINO);
+  // Written before the seeded rotation's stamp: a rotation save made it pending.
+  const DINO_PENDING = calendarRosterOverrideRow('ro-dino', A, '2026-09-10', null, DINO, { createdAt: '2019-01-01T00:00:00+00:00' });
+
+  it('Effective: an applied replacement keeps its conflict resolved, as today', async () => {
+    const snapshot = await snapshotOf(false, PILOT, true, [DINO_ON]);
+    const screen = resolutionScreenOf(sourcesOf(snapshot, [WORKED], replacedBy('ro-dino')), paramsOn('2026-09-10'), NOW);
+
+    expect(screen).toEqual({ kind: RESOLUTION_MISSING, count: 2 });
+  });
+
+  it('Pending after rotation save: the conflict is open again, counted in the queue, and the screen says how to free it', async () => {
+    const snapshot = await snapshotOf(false, PILOT, true, [DINO_PENDING]);
+    const view = viewOf(resolutionScreenOf(sourcesOf(snapshot, [WORKED], replacedBy('ro-dino')), paramsOn('2026-09-10'), NOW));
+
+    expect([view.position, view.count, view.held]).toEqual([1, 3, true]);
+    expect(t('raspored.resolution.held')).toBe('Zamjena se ne primjenjuje. Ukloni je u kalendaru pa odluči ponovno.');
+  });
+
+  it('Inert: a replacement already on the team\'s roster holds the key, the conflict open, and Spremi waits with the way to the calendar', async () => {
+    const snapshot = await snapshotOf(false, PILOT, true, [calendarRosterOverrideRow('ro-karlo', A, '2026-09-10', null, KARLO)]);
+    const view = viewOf(resolutionScreenOf(sourcesOf(snapshot, [WORKED], replacedBy('ro-karlo')), paramsOn('2026-09-10'), NOW));
+
+    expect([view.count, view.held]).toEqual([3, true]);
+    expect(view.heldCalendar).toEqual({ prikaz: 'sve', mjesec: '2026-09', smjena: A });
+    expect(readyToSave(OPTION_ACCEPT_UNCOVERED, null, view.held)).toBe(false);
+    expect(readyToSave(OPTION_REPLACE_MEMBER, DINO, view.held)).toBe(false);
+    expect(readyToSave(OPTION_ACCEPT_UNCOVERED, null)).toBe(true);
+    // The hint, split around its link, reads as the refusal's line.
+    const { before, after } = heldHintPartsOf((action) => t('raspored.resolution.heldHint', { action }));
+
+    expect([before, after]).toEqual(['Zamjena se ne primjenjuje. ', ' pa odluči ponovno.']);
+    expect(`${before}${t('raspored.resolution.heldAction')}${after}`).toBe(t('raspored.resolution.held'));
+  });
+
+  it('Fetch skew: a link to an override the snapshot does not hold yet keeps the conflict resolved, never held', async () => {
+    const snapshot = await snapshotOf(false, PILOT, true);
+
+    expect(resolutionScreenOf(sourcesOf(snapshot, [WORKED], replacedBy('ro-dino')), paramsOn('2026-09-10'), NOW)).toEqual({
+      kind: RESOLUTION_MISSING,
+      count: 2,
+    });
+  });
+
+  it('holds nothing on a conflict no live row names, nor on its neighbours', async () => {
+    const snapshot = await snapshotOf(false, PILOT, true, [DINO_PENDING]);
+    const neighbour = viewOf(resolutionScreenOf(sourcesOf(snapshot, [WORKED], replacedBy('ro-dino')), paramsOn('2026-09-11'), NOW));
+    const none = viewOf(resolutionScreenOf(sourcesOf(snapshot), paramsOn('2026-09-10'), NOW));
+
+    expect([neighbour.held, none.held]).toEqual([false, false]);
   });
 });
 

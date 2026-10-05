@@ -144,15 +144,19 @@ export const FEATURE_PUBLIC = {
   // Story 5.5f: the shift-type override's "after" for its four writes (set,
   // remove, confirm, amend), surface-neutral: the calendar's set and removal
   // use it, and so does the rotation builder's override review for its
-  // confirm and amend (story 5.5h).
+  // confirm and amend (story 5.5h). Story 5.5d: whether a replacement still
+  // applies, the one test the hours' member path and the leave screen's
+  // replacement guard share with the queue.
   conflicts: [
     'components/erasure-dialog', // calendar, members, rotation
     'hooks/use-erasure-confirmation', // calendar, members, rotation
     'hooks/use-erasure-reads', // calendar, members, rotation
+    'hooks/use-replacement-link-refresh', // calendar, hours
     'services/conflicts-queue', // calendar, hours
     'services/erasure-check', // calendar, members, rotation
     'services/erasures', // calendar, members, rotation
     'services/override-erasures', // calendar, rotation
+    'services/replacement-effect', // hours, leave
     'services/resolutions', // calendar, hours, teams
   ],
   'hour-bands': [

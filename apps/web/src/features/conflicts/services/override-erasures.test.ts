@@ -34,6 +34,7 @@ import {
   calendarMemberRow,
   calendarOrganizationRow,
   calendarOverrideRow,
+  calendarRosterOverrideRow,
   calendarTableOf,
   memberMembershipRow,
   membersAnswerOf,
@@ -65,7 +66,11 @@ const BEFORE_VERSIONS = '2019-12-01T08:00:00+00:00';
 
 type Row = Record<string, unknown>;
 
-async function calendarOf(overrides: readonly Row[] = [], anaTeam: string = B): Promise<CalendarSnapshot> {
+async function calendarOf(
+  overrides: readonly Row[] = [],
+  anaTeam: string = B,
+  rosterOverrides: readonly Row[] = [],
+): Promise<CalendarSnapshot> {
   const source = calendarTableOf(
     {
       data: [
@@ -79,7 +84,7 @@ async function calendarOf(overrides: readonly Row[] = [], anaTeam: string = B): 
     },
     membersAnswerOf([calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME), calendarMemberRow(ANA, 'Ana Anić')]),
     overridesAnswerOf(overrides),
-    rosterOverridesAnswerOf([]),
+    rosterOverridesAnswerOf(rosterOverrides),
   );
   const outcome = await readCalendar(source, source, viewerSession());
 
@@ -447,5 +452,36 @@ describe('overrideErasureCheckOf', () => {
     );
 
     expect(check).toEqual({ kind: CHECK_UNAVAILABLE });
+  });
+});
+
+describe('the erasure "before" filter over a replacement (story 5.5d)', () => {
+  // Ana, of Smjena B, put on Smjena A's Dan on 10.09 by a replacement of the viewer, on leave that day.
+  const leave = [recordOf('record-1', '2026-09-10', '2026-09-11')];
+  const replaced = [
+    { member_id: VIEWER_MEMBER, date: '2026-09-10', team_id: A, kind: 'replace_member', roster_override_id: 'ro-ana' },
+  ];
+
+  it('erases nothing when a day-off override lands on a date an applied replacement already decided', async () => {
+    const calendar = await calendarOf([], B, [calendarRosterOverrideRow('ro-ana', A, '2026-09-10', null, ANA)]);
+
+    expect(rowsOf(calendar, set(A, '2026-09-10', SLOBODNO), leave, replaced)).toEqual([]);
+  });
+
+  it('lists the absent member when the replacement before the change is pending, and so decided nothing', async () => {
+    const calendar = await calendarOf([], B, [
+      calendarRosterOverrideRow('ro-ana', A, '2026-09-10', null, ANA, { createdAt: BEFORE_VERSIONS }),
+    ]);
+    const rows = rowsOf(calendar, set(A, '2026-09-10', SLOBODNO), leave, replaced);
+
+    expect(rows.map((row) => [row.memberName, row.date])).toEqual([[VIEWER_NAME, '2026-09-10']]);
+  });
+
+  it('lists the absent member when the replacement before the change is inert: Ana already on the team roster', async () => {
+    // Ana already on Smjena A's default roster: the put-on is inert.
+    const calendar = await calendarOf([], A, [calendarRosterOverrideRow('ro-ana', A, '2026-09-10', null, ANA)]);
+    const rows = rowsOf(calendar, set(A, '2026-09-10', SLOBODNO), leave, replaced);
+
+    expect(rows.map((row) => row.memberName)).toEqual([VIEWER_NAME]);
   });
 });
