@@ -150,6 +150,23 @@
           "type": "Upisana izmjena: {type}",
           "removePrompt": "Ukloniti izmjenu koja čeka pregled za {team} · {date}? Ona se već ne primjenjuje, pa se prikaz dana ne mijenja.",
           "removed": "Izmjena koja je čekala pregled je uklonjena."
+        },
+        "erasures": {
+          "title": "{count, plural, one {Promjena briše # konflikt} few {Promjena briše # konflikta} other {Promjena briše # konflikata}}",
+          "lede": "{count, plural, one {Ova izmjena uklanja uzrok # neriješenog konflikta.} few {Ova izmjena uklanja uzrok # neriješena konflikta.} other {Ova izmjena uklanja uzrok # neriješenih konflikata.}} Prije spremanja odluči za svaki.",
+          "ledeRemoval": "{count, plural, one {Uklanjanje izmjene uklanja uzrok # neriješenog konflikta.} few {Uklanjanje izmjene uklanja uzrok # neriješena konflikta.} other {Uklanjanje izmjene uklanja uzrok # neriješenih konflikata.}} Prije uklanjanja odluči za svaki.",
+          "rowTitle": "{team} · {weekday} {date} · {type}",
+          "rowFree": "{member} na godišnjem · nakon promjene: {team} taj dan slobodna",
+          "decision": "Odluka: {team} · {weekday} {date} · {type}",
+          "confirm": "Potvrdi brisanje",
+          "keep": "Zadrži",
+          "back": "Natrag na uređivanje",
+          "kept": "Zadržan konflikt: promijeni izmjenu ili se vrati na uređivanje.",
+          "keptRemoval": "Zadržan konflikt: odustani od uklanjanja ili se vrati na dan.",
+          "changed": "Popis konflikata se promijenio. Odluči ponovno za svaki.",
+          "unavailable": "Ne mogu provjeriti konflikte koje bi promjena izbrisala.",
+          "retry": "Pokušaj ponovno",
+          "removed": "{count, plural, one {Uklonjen # konflikt.} few {Uklonjena # konflikta.} other {Uklonjeno # konflikata.}}"
         }
       }
     },

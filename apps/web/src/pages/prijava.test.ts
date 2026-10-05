@@ -714,7 +714,11 @@ const SCREENS = [
   // roster change would erase cannot be checked, written once and shown in
   // the form or in the removal's confirmation. The erasure confirmation's own
   // controls are the shared `ErasureDialog`'s, counted there.
-  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 23 },
+  // TWENTY-FOUR SINCE STORY 5.5f: the retry beside the refusal when what a
+  // shift-type override would erase cannot be checked, written once and shown
+  // in the form or in the removal's confirmation. Its erasure confirmation's
+  // controls are the shared `ErasureDialog`'s, counted there.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 24 },
   // STORY 4.1b. THREE on Sati: the month navigation it shares with the
   // calendar — the previous month, `Ovaj mjesec` and the next month. The
   // figures are read, never pressed.
@@ -937,11 +941,17 @@ const FORM_SCREENS = [
   // Story 3.5b, on the same terms: the admin's override form in the day
   // detail, and `writing` shared by its set and its removal, which must never
   // run at once on the same day.
+  // STORY 5.5f: the set now runs the preflight and the erasure check first,
+  // under the same latch, and hands the insert itself to `writeSet`, which
+  // the erasure confirmation calls too — so the effect read in `submit`,
+  // after the default submission is stopped, is that writer's call, and the
+  // refused outcome is read off the writer.
   {
     name: 'the Kalendar override form',
     file: KALENDAR,
-    effect: 'setShiftTypeOverride(',
+    effect: 'writeSet(',
     inFlight: 'writing',
+    writers: [{ name: 'writeSet', failure: 'setFailure' }],
   },
 ];
 
@@ -1138,13 +1148,35 @@ const IN_FLIGHT_HANDLERS = [
     // STORY 3.5b, the calendar override form's second awaiting handler: the
     // removal, sharing the set's `writing` ref for the reason the band
     // removal does, with its own refusal announced inside its confirmation.
+    // STORY 5.5f: it runs the erasure check first (an override pending
+    // review excepted), under the same latch, and hands the removal itself to
+    // `writeRemoval`, which the erasure confirmation calls too.
     name: "the Kalendar override form's removal",
     file: KALENDAR,
     effect: 'removeShiftTypeOverride(',
     inFlight: 'writing',
     handler: 'remove',
+    writers: [{ name: 'writeRemoval', failure: 'setRemoveFailure' }],
     pending: 'setPending',
     failure: 'setRemoveFailure',
+  },
+  {
+    // STORY 5.5f: the override form's erasure confirmation's own save, which
+    // re-derives the check and then writes the set or the removal it was
+    // shown for, under the same `writing` latch — named apart from the
+    // roster's `confirmErasures`, which shares the file set. Its refused
+    // outcomes are the two writers', each swept with its own refusal state.
+    name: 'the Kalendar override erasure confirmation',
+    file: KALENDAR,
+    effect: 'setShiftTypeOverride(',
+    inFlight: 'writing',
+    handler: 'confirmOverrideErasures',
+    writers: [
+      { name: 'writeSet', failure: 'setFailure' },
+      { name: 'writeRemoval', failure: 'setRemoveFailure' },
+    ],
+    pending: 'setPending',
+    failure: 'setFailure',
   },
   {
     // STORY 3.6b, the calendar roster form's two awaiting handlers: the save
@@ -2303,7 +2335,14 @@ const KEY_SOURCES = [
     name: 'the Kalendar destination',
     file: KALENDAR,
     keys: translationKeys,
-    strings: 93,
+    // ONE HUNDRED AND TEN SINCE STORY 5.5f: the shift-type override's erasure
+    // confirmation — its title, a set's and a removal's lede, the changed
+    // line, row title, the row's "taj dan slobodna" line, the toggles' group
+    // label, the two toggles, the way back, a set's and a removal's kept
+    // hint, and its own save, "Spremi izmjenu" or "Ukloni" (both keys written
+    // a second time) — the refusal when the check cannot be derived, with
+    // its retry, and the landed write's count of the conflicts it removed.
+    strings: 110,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's
@@ -6527,7 +6566,9 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // confirmation; its save's handler is `submitRoster` now.
     // TWENTY-EIGHT SINCE STORY 5.5e: the member edit form's team and status
     // erasure dialogs' own saves.
-    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(28);
+    // TWENTY-NINE SINCE STORY 5.5f: the calendar override form's erasure
+    // confirmation.
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(29);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
       'the in-flight handler names drifted from the handlers that hold them',
@@ -6539,6 +6580,7 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'changeStatus/statusing',
       'changeTeam/teaming',
       'confirmErasures/writing',
+      'confirmOverrideErasures/writing',
       'confirmStatusErasures/statusing',
       'confirmTeamErasures/teaming',
       'issue/resetting',

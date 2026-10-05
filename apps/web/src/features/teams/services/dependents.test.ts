@@ -29,6 +29,7 @@ import {
   MEMBERSHIP_WRITE_DEPENDENTS,
   MEMBER_SAVE_DEPENDENTS,
   NO_DEPENDENTS,
+  OVERRIDE_WRITE_DEPENDENTS,
   ROSTER_WRITE_DEPENDENTS,
   ROTATION_SAVE_DEPENDENTS,
   TEAM_CHANGE_DEPENDENTS,
@@ -282,6 +283,14 @@ describe('the reads a team or membership write makes stale', () => {
       own: CALENDAR_KEY,
       dependents: ROSTER_WRITE_DEPENDENTS,
       // The calendar snapshot the change is drawn in, and the leave and
+      // resolutions the erasure check and the queue derive from with it.
+      stale: [CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
+    },
+    {
+      write: 'a calendar shift-type override set or removed (story 5.5f)',
+      own: CALENDAR_KEY,
+      dependents: OVERRIDE_WRITE_DEPENDENTS,
+      // The calendar snapshot the override is drawn in, and the leave and
       // resolutions the erasure check and the queue derive from with it.
       stale: [CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
     },

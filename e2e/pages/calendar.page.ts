@@ -567,6 +567,34 @@ export class CalendarPage extends BasePage {
     return this.rosterUnchecked.getByRole('button', { name: kalendar.detail.rosterChange.erasures.retry, exact: true });
   }
 
+  // --------------------------- the shift-type override's erasure guard (5.5f)
+
+  /**
+   * The shift-type override's erasure confirmation, in the calendar's words:
+   * its own save says "Spremi izmjenu" after the form's save and "Ukloni"
+   * after a removal's confirmation.
+   */
+  overrideErasures(after: 'save' | 'removal'): ErasureDialogParts {
+    const override = kalendar.detail.override;
+
+    return new ErasureDialogParts(this.page, {
+      ...override.erasures,
+      // A removal's kept hint is its own; the lede is not a locator's.
+      kept: after === 'save' ? override.erasures.kept : override.erasures.keptRemoval,
+      save: after === 'save' ? override.set.save : override.remove.confirm,
+    });
+  }
+
+  /** The refusal when what a shift-type override would erase cannot be checked. */
+  get overrideUnchecked(): Locator {
+    return this.alertWith(kalendar.detail.override.erasures.unavailable);
+  }
+
+  /** The refusal's retry. */
+  get overrideUncheckedRetry(): Locator {
+    return this.overrideUnchecked.getByRole('button', { name: kalendar.detail.override.erasures.retry, exact: true });
+  }
+
   /** A grid cell's position among the data cells, from its `data-row` and `data-column`. */
   async positionOf(cell: Locator): Promise<GridPosition> {
     const [row, column] = await Promise.all([cell.getAttribute('data-row'), cell.getAttribute('data-column')]);

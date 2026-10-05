@@ -74,8 +74,9 @@ export function ErasureDialog({
   readonly notes?: ReactNode;
   /**
    * The rows scroll inside the dialog rather than the dialog growing past the
-   * screen (story 5.5e: a deactivation can erase many). Off for the rotation
-   * and the calendar, whose layouts stay as they were.
+   * screen (story 5.5e: a deactivation can erase many; story 5.5f: so can a
+   * shift-type override). Off for the rotation and the calendar's roster
+   * changes, whose layouts stay as they were.
    */
   readonly scrollRows?: boolean;
   readonly onDecide: (key: string, decision: ErasureDecision) => void;
