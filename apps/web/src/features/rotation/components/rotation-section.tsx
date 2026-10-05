@@ -105,7 +105,7 @@ import {
   rotationStepperStore,
   shownDraftOf,
 } from '@/features/rotation/hooks/draft-store';
-import { useErasureCheck } from '@/features/rotation/hooks/use-erasure-check';
+import { useCancelErasureCheck, useErasureCheck } from '@/features/rotation/hooks/use-erasure-check';
 import { CHECK_REFUSED, CHECK_UNAVAILABLE } from '@/features/rotation/services/erasure-check';
 import { ErasureDialog } from '@/features/conflicts/components/erasure-dialog';
 import { useErasureConfirmation } from '@/features/conflicts/hooks/use-erasure-confirmation';
@@ -119,6 +119,7 @@ import {
   reopensAfterSaveOf,
   rotationMessageKey,
   rotationQueryOptions,
+  rotationScheduledDateOf,
   rotationScheduledOf,
   rotationSurfaceStateOf,
   rotationTeamsOf,
@@ -176,7 +177,11 @@ import {
 import { savedPendingCountOf } from '@/features/rotation/services/override-disposition';
 import { OverrideReview } from '@/features/rotation/components/override-review';
 import { durationValuesOf, shiftTypeDurationMessageKey } from '@/features/shift-types/services/list';
-import { ROTATION_SAVE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
+import {
+  ROTATION_CANCEL_DEPENDENTS,
+  ROTATION_SAVE_DEPENDENTS,
+  refreshAfterWrite,
+} from '@/features/teams/services/dependents';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /**
@@ -229,6 +234,16 @@ import { supabaseClient } from '@/lib/supabase/client';
  * is shown again, undecided. A check that cannot be derived refuses the save,
  * with a retry. A draft the save refuses anyway is refused as before, with no
  * check.
+ *
+ * NOR DOES A CANCEL (story 5.5g). Cancelling the scheduled change reverts its
+ * dates to the previous version and brings back the overrides it had made
+ * pending, so its confirmation first runs the same check over the snapshot
+ * without the cancelled versions (`cancelledCalendarSnapshotOf`). None erased:
+ * it cancels as it always did. Some: the confirmation closes and a second,
+ * separate erasure dialog lists each; its own confirm re-checks, then cancels.
+ * A check that cannot be derived refuses the cancel inside its confirmation,
+ * with a retry. A landed cancel re-reads the calendar, the leave and the
+ * resolutions beside `ROTATION_KEY`.
  */
 
 /** What the erasure check stood on: the write writes exactly this. */
@@ -238,6 +253,16 @@ interface CheckedSave {
   /** The draft as checked, normalized to that rotation's active teams. */
   readonly draft: RotationDraft;
   /** The organization's today when the save was asked. */
+  readonly today: string;
+}
+
+/** What the cancel's erasure check stood on: the cancel sends exactly this (story 5.5g). */
+interface CheckedCancel {
+  /** The fresh rotation the check stood on. */
+  readonly rotation: RotationSnapshot;
+  /** The scheduled date the admin confirmed. */
+  readonly confirmed: string;
+  /** The organization's today when the cancel was asked. */
   readonly today: string;
 }
 
@@ -268,7 +293,12 @@ export function RotationSection({
   const [savedPending, setSavedPending] = useState<number | null>(null);
   /** How many saves have started: the override review clears what it said last on each. */
   const [savedTimes, setSavedTimes] = useState(0);
-  const [cancelArmed, setCancelArmed] = useState(false);
+  /**
+   * The scheduled date whose cancel confirmation is open, or `null`. The
+   * confirmation renders only while the snapshot still schedules that very
+   * date; otherwise it is disarmed (see the effect below).
+   */
+  const [cancelArmed, setCancelArmed] = useState<string | null>(null);
   const [cancelled, setCancelled] = useState<RotationCancelOutcome | null>(null);
   /** The cancel's confirmation, where focus goes when the pressed control unmounts. */
   const cancelConfirmation = useRef<HTMLParagraphElement>(null);
@@ -290,11 +320,39 @@ export function RotationSection({
   const [erasedCount, setErasedCount] = useState(0);
   /** The refusal's retry, which takes focus when the check cannot be derived. */
   const retryButton = useRef<HTMLButtonElement>(null);
+  const checkCancelErasures = useCancelErasureCheck();
+  /** The cancel's offer, where focus returns when its erasure dialog closes (story 5.5g). */
+  const cancelOfferButton = useRef<HTMLButtonElement>(null);
+  /**
+   * The conflicts the cancel would erase and what was checked, while their
+   * dialog is open: its OWN confirmation, separate from the save's. Closed,
+   * focus returns to the cancel's offer, or to "Spremi rotaciju" once the
+   * offer is gone.
+   */
+  const cancelErasures = useErasureConfirmation<CheckedCancel>(
+    pending,
+    // A LANDED CANCEL'S NOTICE first, once rendered; then the offer, then the save.
+    () => cancelConfirmation.current ?? cancelOfferButton.current ?? saveButton.current,
+  );
+  /**
+   * The scheduled date whose cancel could not check what it would erase, so
+   * it deleted nothing; `null` otherwise. Its retry cancels that very date.
+   */
+  const [cancelUnchecked, setCancelUnchecked] = useState<string | null>(null);
+  /** How many conflicts the last landed cancel removed, confirmed in its dialog; 0 for none. */
+  const [cancelErasedCount, setCancelErasedCount] = useState(0);
+  /** The cancel confirmation's retry, which takes focus when the check cannot be derived. */
+  const cancelRetryButton = useRef<HTMLButtonElement>(null);
 
   // A CHECK THAT CANNOT BE DERIVED: focus on its retry, so it is announced and in reach.
   useEffect(() => {
     if (erasuresUnavailable && !pending) retryButton.current?.focus();
   }, [erasuresUnavailable, pending]);
+
+  // THE SAME FOR THE CANCEL (story 5.5g): its retry sits inside its confirmation.
+  useEffect(() => {
+    if (cancelUnchecked !== null && cancelArmed !== null && !pending) cancelRetryButton.current?.focus();
+  }, [cancelUnchecked, cancelArmed, pending]);
 
   /**
    * The checked draft's warnings (story 2.5), for the confirmation: from the
@@ -601,18 +659,103 @@ export function RotationSection({
   }
 
   /**
-   * Cancel the scheduled change, once confirmed (story 2.6, decision 2a). The
-   * confirmation stays mounted and disabled while the delete is outstanding.
-   * A landed cancel and a stale one both re-read `ROTATION_KEY`, and only it;
-   * the draft is kept either way.
+   * What a cancel's outcome leaves on screen (stories 2.6, 5.5g): the notice,
+   * and the re-read. A landed cancel re-reads `ROTATION_KEY` and its
+   * dependents — the calendar, the leave and the resolutions — so the
+   * calendar and the queue show the revert; a stale one re-reads only
+   * `ROTATION_KEY`. The draft is kept either way.
+   */
+  async function settleCancel(outcome: RotationCancelOutcome, erased: number): Promise<void> {
+    const stale = !outcome.ok && outcome.code === ROTATION_CANCEL_STALE;
+
+    // The scheduled refusal it was offered beside no longer holds — landed,
+    // or stale and about to be re-read; a save after the re-read refuses
+    // again if a change is still scheduled.
+    if (outcome.ok || stale) {
+      setOutcome(null);
+      setSavedPending(null);
+    }
+    setCancelled(outcome);
+    if (outcome.ok) setCancelErasedCount(erased);
+
+    try {
+      if (outcome.ok) await refreshAfterWrite(queryClient, ROTATION_KEY, ROTATION_CANCEL_DEPENDENTS);
+      else if (stale) await queryClient.invalidateQueries({ queryKey: ROTATION_KEY });
+    } catch (cause) {
+      console.error(ROTATION_WRITE_UNAVAILABLE, cause);
+    }
+
+    // The offer unmounts with the refusal; focus follows the confirmation
+    // rather than falling to the document, as the shift type cancel's does.
+    // (From the erasure dialog, its close puts it there once it is gone.)
+    if (outcome.ok) cancelConfirmation.current?.focus();
+  }
+
+  /**
+   * THE CANCEL ITSELF, under a guard its caller already holds (story 2.6,
+   * decision 2a): `cancelScheduledRotation` on `today` — the organization's
+   * today, taken at the press and taken again before the dialog's save — from
+   * `writable`, the rotation the check (if any) stood on, for the date the
+   * admin `confirmed`. `erased` is how many conflicts the admin confirmed it
+   * removes.
+   */
+  async function writeCancel(
+    writable: RotationSnapshot,
+    today: string,
+    confirmed: string,
+    erased: number,
+  ): Promise<RotationCancelOutcome> {
+    const client = supabaseClient();
+    const { data } = await client.auth.getSession();
+    const organization = claimedOrganizationOf(data.session?.access_token);
+
+    if (organization === null) {
+      const refused: RotationCancelOutcome = { ok: false, code: ROTATION_WRITE_REFUSED };
+
+      setCancelled(refused);
+
+      return refused;
+    }
+
+    const outcome = await cancelScheduledRotation(
+      client.from(ROTATION_ASSIGNMENTS_TABLE) as unknown as RotationAssignmentDeleteTable,
+      organization,
+      writable,
+      today,
+      confirmed,
+    );
+
+    await settleCancel(outcome, erased);
+
+    return outcome;
+  }
+
+  /**
+   * The cancel confirmation's own confirm and its retry (stories 2.6, 5.5g):
+   * the erasure check, then the cancel, under ONE guard held from the press
+   * to the write's end. The confirmation stays mounted and disabled while
+   * either is outstanding — a refusal shown in it, with its retry, included.
+   *
+   * TODAY IS TAKEN ONCE, at the press. A cancel the snapshot, or the check's
+   * fresh rotation, already finds stale — nothing scheduled any more, or
+   * another date than the one confirmed — goes straight to the write, which
+   * refuses it as STALE as it always did. Otherwise the check: none erased
+   * cancels at once; some close the confirmation and open the cancel's own
+   * erasure dialog; a check that cannot be derived keeps the confirmation
+   * open with its refusal and a retry. Nothing is deleted unchecked.
    */
   async function cancelScheduled(confirmed: string): Promise<void> {
     const writable = writableRotationOf(state);
 
     if (saving.current) return;
 
+    // Disarmed when this settles, except while it asks for a retry; the
+    // refusal stays mounted until then, so focus stays in the confirmation.
+    let unchecked = false;
+
     saving.current = true;
     setCancelled(null);
+    setCancelErasedCount(0);
     setPending(true);
 
     try {
@@ -622,52 +765,105 @@ export function RotationSection({
         return;
       }
 
-      const client = supabaseClient();
-      const { data } = await client.auth.getSession();
-      const organization = claimedOrganizationOf(data.session?.access_token);
+      const today = rotationTodayOf(writable, new Date());
 
-      if (organization === null) {
-        setCancelled({ ok: false, code: ROTATION_WRITE_REFUSED });
+      if (rotationScheduledDateOf(writable, today) !== confirmed) {
+        await writeCancel(writable, today, confirmed, 0);
 
         return;
       }
 
-      const outcome = await cancelScheduledRotation(
-        client.from(ROTATION_ASSIGNMENTS_TABLE) as unknown as RotationAssignmentDeleteTable,
-        organization,
-        writable,
-        rotationTodayOf(writable, new Date()),
-        confirmed,
-      );
-      const reread = outcome.ok || outcome.code === ROTATION_CANCEL_STALE;
+      const check = await checkCancelErasures(confirmed, today);
 
-      // The scheduled refusal it was offered beside no longer holds — landed,
-      // or stale and about to be re-read; a save after the re-read refuses
-      // again if a change is still scheduled.
-      if (reread) {
-        setOutcome(null);
-        setSavedPending(null);
-      }
-      setCancelled(outcome);
+      if (check.kind === CHECK_UNAVAILABLE) {
+        unchecked = true;
 
-      if (reread) {
-        try {
-          await queryClient.invalidateQueries({ queryKey: ROTATION_KEY });
-        } catch (cause) {
-          console.error(ROTATION_WRITE_UNAVAILABLE, cause);
-        }
+        return;
       }
 
-      // The offer unmounts with the refusal; focus follows the confirmation
-      // rather than falling to the document, as the shift type cancel's does.
-      if (outcome.ok) cancelConfirmation.current?.focus();
+      if (check.kind === CHECK_REFUSED || check.rows.length === 0) {
+        await writeCancel(check.rotation, today, confirmed, 0);
+
+        return;
+      }
+
+      cancelErasures.show(check.rows, { rotation: check.rotation, confirmed, today });
     } catch (cause) {
       console.error(ROTATION_WRITE_UNAVAILABLE, cause);
       setCancelled({ ok: false, code: ROTATION_WRITE_UNAVAILABLE });
     } finally {
       saving.current = false;
       setPending(false);
-      setCancelArmed(false);
+      setCancelUnchecked(unchecked ? confirmed : null);
+      if (!unchecked) setCancelArmed(null);
+    }
+  }
+
+  /**
+   * The cancel's erasure dialog's own save, once every row is confirmed (story
+   * 5.5g), under the same one guard. The dialog stays open, busy, until the
+   * write settles, and closes after it; focus then goes to the landed
+   * cancel's notice, or back to the offer, or to the save.
+   *
+   * TODAY IS TAKEN AGAIN: the organization's day the dialog was shown for has
+   * passed — before the re-check, or during it — so the cancel is STALE,
+   * and nothing is deleted with yesterday's today. Otherwise the check is
+   * derived again from fresh reads on that day. The same conflicts, as
+   * shown: the cancel runs, from the check's rotation. A changed list: it is
+   * shown again, undecided. A fresh rotation that no longer schedules the
+   * confirmed date takes the cancel's own STALE path. A check that cannot be
+   * derived closes the dialog and arms the cancel's confirmation again, with
+   * its refusal and retry — or, once nothing is scheduled to confirm, puts
+   * focus on the save.
+   */
+  async function confirmCancelErasures(shown: NonNullable<typeof cancelErasures.shown>): Promise<void> {
+    if (saving.current || !cancelErasures.confirmed) return;
+
+    const { confirmed, today: shownToday, rotation: shownRotation } = shown.subject;
+    const rolledOver = (rotation: RotationSnapshot): boolean => rotationTodayOf(rotation, new Date()) !== shownToday;
+
+    saving.current = true;
+    setPending(true);
+
+    try {
+      if (rolledOver(shownRotation)) {
+        await settleCancel({ ok: false, code: ROTATION_CANCEL_STALE }, 0);
+        cancelErasures.close();
+
+        return;
+      }
+
+      const check = await checkCancelErasures(confirmed, shownToday);
+
+      if (check.kind === CHECK_UNAVAILABLE) {
+        cancelErasures.drop();
+        setCancelUnchecked(confirmed);
+        setCancelArmed(confirmed);
+
+        return;
+      }
+
+      if (check.kind === CHECK_REFUSED || rolledOver(check.rotation)) {
+        // The fresh rotation's own refusal, or a day gone by: STALE, nothing deleted.
+        await settleCancel({ ok: false, code: ROTATION_CANCEL_STALE }, 0);
+        cancelErasures.close();
+
+        return;
+      }
+
+      const fresh = { rotation: check.rotation, confirmed, today: shownToday };
+
+      if (cancelErasures.recheck(shown, check.rows, fresh) === RECHECK_CHANGED) return;
+
+      await writeCancel(check.rotation, shownToday, confirmed, check.rows.length);
+      cancelErasures.close();
+    } catch (cause) {
+      console.error(ROTATION_WRITE_UNAVAILABLE, cause);
+      setCancelled({ ok: false, code: ROTATION_WRITE_UNAVAILABLE });
+      cancelErasures.close();
+    } finally {
+      saving.current = false;
+      setPending(false);
     }
   }
 
@@ -1232,13 +1428,34 @@ export function RotationSection({
       <ConfirmDialog
         busy={pending}
         onCancel={() => {
-          setCancelArmed(false);
+          setCancelArmed(null);
+          setCancelUnchecked(null);
         }}
         aria-labelledby="rotation-cancel-prompt"
       >
         <p id="rotation-cancel-prompt" className="text-sm font-medium">
           {t('rotation.builder.cancelScheduled.prompt', { date: change.label })}
         </p>
+        {/* STORY 5.5g: a cancel that could not check what it would erase deleted nothing. */}
+        {cancelUnchecked !== null ? (
+          <Notice role="alert">
+            {t('rotation.builder.cancelScheduled.erasures.unavailable')}
+            <Button
+              ref={cancelRetryButton}
+              className="mt-3 flex h-11"
+              type="button"
+              variant="outline"
+              disabled={pending}
+              onClick={() => {
+                // THE DATE THAT WAS CONFIRMED, never the snapshot's now: a
+                // change re-dated meanwhile goes down the STALE path.
+                void cancelScheduled(cancelUnchecked);
+              }}
+            >
+              {t('rotation.builder.cancelScheduled.erasures.retry')}
+            </Button>
+          </Notice>
+        ) : null}
         <DialogFooter>
           <Button
             className="h-11"
@@ -1246,7 +1463,8 @@ export function RotationSection({
             variant="outline"
             disabled={pending}
             onClick={() => {
-              setCancelArmed(false);
+              setCancelArmed(null);
+              setCancelUnchecked(null);
             }}
           >
             {t('rotation.builder.cancelScheduled.keep')}
@@ -1350,6 +1568,57 @@ export function RotationSection({
     );
   }
 
+  /**
+   * The cancel's erasure dialog (story 5.5g), the shared `ErasureDialog` in
+   * the cancel's own words, opened after its confirmation: one row per
+   * conflict the cancel would erase, by date then team. Its confirm is the
+   * cancel's own label and `aria-disabled` until every row is confirmed;
+   * "Natrag na uređivanje", Escape and the backdrop close it and keep the
+   * scheduled change.
+   */
+  function renderCancelErasures(shown: NonNullable<typeof cancelErasures.shown>): ReactNode {
+    const { rows } = shown;
+    const partsOf = (row: (typeof rows)[number]) => ({
+      team: row.teamName,
+      weekday: row.weekday,
+      date: row.dayMonth,
+      type: row.shiftTypeName,
+    });
+
+    return (
+      <ErasureDialog
+        id="rotation-cancel-erasures"
+        rows={rows}
+        changed={shown.changed}
+        decisions={cancelErasures.decisions}
+        busy={pending}
+        firstErasure={cancelErasures.firstErasure}
+        copy={{
+          title: t('rotation.builder.cancelScheduled.erasures.title', { count: rows.length }),
+          lede: t('rotation.builder.cancelScheduled.erasures.lede', { count: rows.length }),
+          changed: t('rotation.builder.cancelScheduled.erasures.changed'),
+          rowTitle: (row) => t('rotation.builder.cancelScheduled.erasures.rowTitle', partsOf(row)),
+          rowDetail: (row) =>
+            row.teamWorks
+              ? t('rotation.builder.cancelScheduled.erasures.rowWithout', { member: row.memberName, team: row.teamName })
+              : t('rotation.builder.cancelScheduled.erasures.rowFree', { member: row.memberName, team: row.teamName }),
+          decision: (row) => t('rotation.builder.cancelScheduled.erasures.decision', partsOf(row)),
+          confirm: t('rotation.builder.cancelScheduled.erasures.confirm'),
+          keep: t('rotation.builder.cancelScheduled.erasures.keep'),
+          back: t('rotation.builder.cancelScheduled.erasures.back'),
+          kept: t('rotation.builder.cancelScheduled.erasures.kept'),
+          save: t('rotation.builder.cancelScheduled.confirm'),
+        }}
+        saveIcon={<Undo2 aria-hidden />}
+        onDecide={cancelErasures.decide}
+        onBack={cancelErasures.close}
+        onSave={() => {
+          void confirmCancelErasures(shown);
+        }}
+      />
+    );
+  }
+
   const partial = outcome === null ? null : rotationPartialMessageKey(outcome);
   // THE CANCEL IS OFFERED ONLY BESIDE THE SCHEDULED REFUSAL, and only while a
   // change is still scheduled in the snapshot.
@@ -1358,6 +1627,19 @@ export function RotationSection({
       ? null
       : scheduledChangeOf(snapshot, today);
   const cancelOffered = scheduled !== null && outcome !== null && !outcome.ok && outcome.code === ROTATION_SCHEDULED;
+  /** The cancel's confirmation, while the snapshot still schedules the very date it was armed for. */
+  const cancelShown = cancelArmed !== null && scheduled !== null && scheduled.effectiveFrom === cancelArmed;
+
+  // NEVER ARMED WITH NO CONFIRMATION RENDERED (story 5.5g): once the date it
+  // was armed for is no longer scheduled — cancelled elsewhere, in effect, or
+  // a day gone by — it is disarmed, and focus goes to the save.
+  useEffect(() => {
+    if (cancelArmed === null || cancelShown || pending) return;
+
+    setCancelArmed(null);
+    setCancelUnchecked(null);
+    saveButton.current?.focus();
+  }, [cancelArmed, cancelShown, pending]);
   /** A warning's words, every one from `hr.json`, resolved by `@/features/rotation/utils/warnings`. */
   const translate: WarningTranslate = (key, values) => t(key, values);
 
@@ -1390,12 +1672,14 @@ export function RotationSection({
           {partial === null ? null : <> {t(partial)}</>}
           {cancelOffered ? (
             <Button
+              ref={cancelOfferButton}
               className="mt-3 flex h-11"
               type="button"
               variant="outline"
               disabled={pending}
               onClick={() => {
-                setCancelArmed(true);
+                setCancelUnchecked(null);
+                setCancelArmed(scheduled.effectiveFrom);
               }}
             >
               <Undo2 aria-hidden />
@@ -1404,7 +1688,7 @@ export function RotationSection({
           ) : null}
         </Notice>
       )}
-      {cancelArmed && scheduled !== null ? renderCancelConfirmation(scheduled) : null}
+      {cancelShown ? renderCancelConfirmation(scheduled) : null}
       {/* STORY 5.5a: a save that could not check what it would erase saved nothing. */}
       {erasuresUnavailable ? (
         <Notice role="alert">
@@ -1424,9 +1708,16 @@ export function RotationSection({
         </Notice>
       ) : null}
       {erasures === null ? null : renderErasures(erasures)}
+      {cancelErasures.shown === null ? null : renderCancelErasures(cancelErasures.shown)}
       {cancelled === null ? null : cancelled.ok ? (
         <Notice ref={cancelConfirmation} tabIndex={-1} role="status">
-          {t(ROTATION_CANCELLED_MESSAGE_KEY)}
+          <span className="block">{t(ROTATION_CANCELLED_MESSAGE_KEY)}</span>
+          {/* STORY 5.5g: how many conflicts the cancel removed, as confirmed in its dialog. */}
+          {cancelErasedCount === 0 ? null : (
+            <span className="mt-2 block">
+              {t('rotation.builder.cancelScheduled.erasures.removed', { count: cancelErasedCount })}
+            </span>
+          )}
         </Notice>
       ) : (
         <Notice role="alert">{t(rotationCancelMessageKey(cancelled.code))}</Notice>

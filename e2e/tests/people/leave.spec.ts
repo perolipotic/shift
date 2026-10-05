@@ -5,7 +5,9 @@ import {
   leaveYearStartOf,
   removeLeaveRecordsInSql,
   removeRosterOverridesInSql,
+  removeLeaveMemberInSql,
   removeSeededRotation,
+  removeTeamInSql,
   seedConflictResolution,
   seedExtraTeam,
   seedLeaveMember,
@@ -76,13 +78,30 @@ let hold: RotationHold | null = null;
 /** What this file's test seeded, removed before the hold is released. */
 let seed: SeededRotation | null = null;
 
+/**
+ * The members and teams this file's test seeded, deleted after the seed and
+ * before the hold is released (story 5.5g): the run's organization is
+ * shared, and a member left on an active team with live leave collides with
+ * the next spec's rotation save, which another spec's cancel would then
+ * erase.
+ */
+let written: { slug: string; members: string[]; teams: string[] } = { slug: '', members: [], teams: [] };
+
 test.afterEach(async () => {
   try {
     if (seed !== null) await removeSeededRotation(seed);
   } finally {
     seed = null;
-    await hold?.release();
-    hold = null;
+    const own = written;
+    written = { slug: '', members: [], teams: [] };
+    try {
+      // The members first, with their leave and resolutions, then the teams their versions name.
+      for (const id of own.members) await removeLeaveMemberInSql(own.slug, id);
+      for (const id of own.teams) await removeTeamInSql(own.slug, id);
+    } finally {
+      await hold?.release();
+      hold = null;
+    }
   }
 });
 
@@ -160,6 +179,7 @@ async function seeded(slug: string, allowanceOf: (cost: number) => number): Prom
   await hold.ready;
   const suffix = randomBytes(3).toString('hex');
   const team = await seedExtraTeam(slug, `Smjena ${suffix}`);
+  written = { slug, members: [], teams: [team.id] };
   seed = await seedTeamRotation(slug, team.id, suffix);
   const today = seed.today;
   const yearEnd = leaveYearEndOf(today, await leaveYearStartOf(slug));
@@ -167,6 +187,7 @@ async function seeded(slug: string, allowanceOf: (cost: number) => number): Prom
   const last = plusFour <= yearEnd ? plusFour : yearEnd;
   const cost = workingDaysOf(today, last);
   const member = await seedLeaveMember(slug, team.id, today, allowanceOf(cost));
+  written.members.push(member.id);
 
   return { member, team, today, last, cost, yearEnd };
 }
@@ -594,7 +615,9 @@ test('cancelling an amend, or removing the record it amends, returns the form to
  */
 async function replacedOn(slug: string, setup: Seeded, dates: readonly string[]): Promise<SeededLeaveMember> {
   const own = await seedExtraTeam(slug, `Zamjene ${randomBytes(3).toString('hex')}`);
+  written.teams.push(own.id);
   const replacement = await seedLeaveMember(slug, own.id, setup.today, 20);
+  written.members.unshift(replacement.id);
   for (const date of dates) {
     await seedConflictResolution(slug, setup.member.id, date, setup.team.id, 'replace_member', replacement.id);
   }

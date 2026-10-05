@@ -5,7 +5,9 @@ import type { Browser, Page } from '@playwright/test';
 import {
   holdRotation,
   leaveYearStartOf,
+  removeLeaveMemberInSql,
   removeSeededRotation,
+  removeTeamInSql,
   seedExtraTeam,
   seedLeaveMember,
   seedLeaveRecord,
@@ -52,13 +54,30 @@ let hold: RotationHold | null = null;
 /** What this file's test seeded, removed before the hold is released. */
 let seed: SeededRotation | null = null;
 
+/**
+ * The members and teams this file's test seeded, deleted after the seed and
+ * before the hold is released (story 5.5g): the run's organization is
+ * shared, and a member left on an active team with live leave collides with
+ * the next spec's rotation save, which another spec's cancel would then
+ * erase.
+ */
+let written: { slug: string; members: string[]; teams: string[] } = { slug: '', members: [], teams: [] };
+
 test.afterEach(async () => {
   try {
     if (seed !== null) await removeSeededRotation(seed);
   } finally {
     seed = null;
-    await hold?.release();
-    hold = null;
+    const own = written;
+    written = { slug: '', members: [], teams: [] };
+    try {
+      // The members first, with their leave and resolutions, then the teams their versions name.
+      for (const id of own.members) await removeLeaveMemberInSql(own.slug, id);
+      for (const id of own.teams) await removeTeamInSql(own.slug, id);
+    } finally {
+      await hold?.release();
+      hold = null;
+    }
   }
 });
 
@@ -106,6 +125,7 @@ async function seeded(slug: string): Promise<Seeded> {
   await hold.ready;
   const suffix = randomBytes(3).toString('hex');
   const team = await seedExtraTeam(slug, `Smjena ${suffix}`);
+  written = { slug, members: [], teams: [team.id] };
   seed = await seedTeamRotation(slug, team.id, suffix);
   const today = seed.today;
   const yearEnd = leaveYearEndOf(today, await leaveYearStartOf(slug));
@@ -113,6 +133,7 @@ async function seeded(slug: string): Promise<Seeded> {
   const last = plusFour <= yearEnd ? plusFour : yearEnd;
   const member = await seedLeaveMember(slug, team.id, today, 20);
   const colleague = await seedLeaveMember(slug, team.id, today, 20);
+  written.members.push(member.id, colleague.id);
 
   return { member, colleague, today, last, cost: workingDaysOf(today, last) };
 }

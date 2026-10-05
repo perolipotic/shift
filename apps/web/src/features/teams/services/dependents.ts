@@ -167,6 +167,20 @@ export const ROTATION_SAVE_DEPENDENTS: readonly QueryKey[] = [
 ];
 
 /**
+ * A scheduled rotation change cancelled (story 5.5g): the same reads as a
+ * save, for the same reasons — the calendar snapshot loses the cancelled
+ * versions and the overrides they had made pending come back into force, and
+ * the leave and resolutions are the other two reads the cancel's erasure
+ * check stands on, so a cancel that erased a conflict takes it out of the
+ * queue on the next read.
+ */
+export const ROTATION_CANCEL_DEPENDENTS: readonly QueryKey[] = [
+  CALENDAR_KEY,
+  ORGANIZATION_LEAVE_RECORDS_KEY,
+  ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+];
+
+/**
  * A calendar roster change saved or removed (story 5.5b), beside the
  * calendar snapshot it is drawn from: the organization's live leave records
  * and resolutions, the other two reads its erasure check stands on, so a

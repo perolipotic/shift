@@ -9,6 +9,7 @@ const builder = hr.rotation.builder;
 const shiftTypes = hr.rotation.shiftTypes;
 const stepper = builder.stepper;
 const erasures = builder.erasures;
+const cancelErasures = builder.cancelScheduled.erasures;
 
 /**
  * `/postavke-rotacije`: the shift types, the rotation builder (pattern,
@@ -502,5 +503,30 @@ export class RotationPage extends BasePage {
   /** The refusal's retry. */
   get erasuresRetry(): Locator {
     return this.erasuresUnavailable.getByRole('button', { name: erasures.retry, exact: true });
+  }
+
+  // ------------------------------------- cancel erasure guard (story 5.5g)
+
+  /**
+   * The cancel's own erasure dialog's locators, in the cancel's words: its
+   * save is the cancel's own confirm label.
+   */
+  get cancelErasures(): ErasureDialogParts {
+    return new ErasureDialogParts(this.page, { ...cancelErasures, save: builder.cancelScheduled.confirm });
+  }
+
+  /** The refusal inside the cancel's confirmation when what it would erase cannot be checked. */
+  get cancelErasuresUnavailable(): Locator {
+    return this.dialog().getByRole('alert').filter({ hasText: cancelErasures.unavailable });
+  }
+
+  /** That refusal's retry. */
+  get cancelErasuresRetry(): Locator {
+    return this.cancelErasuresUnavailable.getByRole('button', { name: cancelErasures.retry, exact: true });
+  }
+
+  /** The status line a landed cancel shows. */
+  get cancelledConfirmation(): Locator {
+    return this.statusWith(builder.cancelScheduled.done);
   }
 }

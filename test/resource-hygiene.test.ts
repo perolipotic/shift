@@ -115,6 +115,12 @@ const SANCTIONED_PLURAL_KEYS = [
   'kalendar.detail.override.erasures.lede',
   'kalendar.detail.override.erasures.ledeRemoval',
   'kalendar.detail.override.erasures.removed',
+  // STORY 5.5g: the same three counts for cancelling a scheduled rotation
+  // change — its erasure dialog's title and lede, and what a guarded cancel
+  // removed.
+  'rotation.builder.cancelScheduled.erasures.title',
+  'rotation.builder.cancelScheduled.erasures.lede',
+  'rotation.builder.cancelScheduled.erasures.removed',
   // STORY 5.5e: the same three counts for the member page's team and status
   // cards — their erasure dialogs' title and lede, and what a guarded write
   // removed.
@@ -1091,6 +1097,24 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.builder.erasures.changed',
   'rotation.builder.erasures.unavailable',
   'rotation.builder.erasures.retry',
+  // STORY 5.5g: the cancel's own erasure dialog — the same parts in its own
+  // words ("nakon poništavanja: …", "odustani od poništavanja", "Natrag") —
+  // and its refusal and retry, inside the cancel's confirmation. The title,
+  // the lede and the removed count are plurals, above. ITS OWN BLOCK, not the
+  // save's `rotation.builder.erasures.*`: a cancel is no new rotation and
+  // leaves no draft to edit, so the save's row line, kept hint and way back
+  // would say what is not true here.
+  'rotation.builder.cancelScheduled.erasures.rowTitle',
+  'rotation.builder.cancelScheduled.erasures.rowFree',
+  'rotation.builder.cancelScheduled.erasures.rowWithout',
+  'rotation.builder.cancelScheduled.erasures.decision',
+  'rotation.builder.cancelScheduled.erasures.confirm',
+  'rotation.builder.cancelScheduled.erasures.keep',
+  'rotation.builder.cancelScheduled.erasures.back',
+  'rotation.builder.cancelScheduled.erasures.kept',
+  'rotation.builder.cancelScheduled.erasures.changed',
+  'rotation.builder.cancelScheduled.erasures.unavailable',
+  'rotation.builder.cancelScheduled.erasures.retry',
   // STORY 3.6a: the day detail's roster changes — the block's heading, an
   // addition, a removal and a replacement (`{out} → {in}`), and the heading
   // of those a rotation change left pending. The author, time, reason and an

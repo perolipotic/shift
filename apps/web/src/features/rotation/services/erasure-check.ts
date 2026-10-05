@@ -6,8 +6,8 @@ import {
   type ErasureReads as CoreErasureReads,
 } from '@/features/conflicts/services/erasure-check';
 import type { ErasureRow } from '@/features/conflicts/services/erasures';
-import { rotationErasuresOutcomeOf } from '@/features/rotation/services/erasures';
-import { rotationTeamsOf, type RotationSnapshot } from '@/features/rotation/services/list';
+import { rotationCancelErasuresOutcomeOf, rotationErasuresOutcomeOf } from '@/features/rotation/services/erasures';
+import { rotationScheduledDateOf, rotationTeamsOf, type RotationSnapshot } from '@/features/rotation/services/list';
 import { draftRefusalOf, normalizedDraftOf, type RotationDraft } from '@/features/rotation/utils/draft';
 
 export { CHECK_READY, CHECK_REFUSED, CHECK_UNAVAILABLE };
@@ -68,6 +68,47 @@ export async function erasureCheckOf(
       const outcome = rotationErasuresOutcomeOf(calendar, rotation, draft, records, resolutions);
 
       return outcome.ok ? { kind: CHECK_READY, rotation, draft, rows: outcome.rows } : { kind: CHECK_UNAVAILABLE };
+    },
+    online,
+  );
+}
+
+// ------------------------------------------------------------ the cancel (5.5g)
+
+export type CancelErasureCheck =
+  | { readonly kind: typeof CHECK_UNAVAILABLE }
+  | { readonly kind: typeof CHECK_REFUSED; readonly rotation: RotationSnapshot }
+  | {
+      readonly kind: typeof CHECK_READY;
+      /** The fresh rotation the cancel is sent from. */
+      readonly rotation: RotationSnapshot;
+      readonly rows: readonly ErasureRow[];
+    };
+
+/**
+ * The check of cancelling the change the admin confirmed as scheduled on
+ * `confirmed` (story 5.5g), on `today` (the organization's, taken once when
+ * the cancel was asked), over `read`'s answer. Never throws: anything that
+ * goes wrong is unavailable, and logged.
+ *
+ * THE FRESH ROTATION DECIDES FIRST. When it schedules nothing any more, or a
+ * different date than the one confirmed, the check answers `refused` and the
+ * builder takes the cancel's own STALE path, never "cannot check".
+ */
+export async function cancelErasureCheckOf(
+  read: () => Promise<ErasureReads>,
+  confirmed: string,
+  today: string,
+  online: boolean,
+): Promise<CancelErasureCheck> {
+  return checkedOf(
+    read,
+    ({ rotation, calendar, records, resolutions }): CancelErasureCheck => {
+      if (rotationScheduledDateOf(rotation, today) !== confirmed) return { kind: CHECK_REFUSED, rotation };
+
+      const outcome = rotationCancelErasuresOutcomeOf(calendar, rotation, confirmed, records, resolutions);
+
+      return outcome.ok ? { kind: CHECK_READY, rotation, rows: outcome.rows } : { kind: CHECK_UNAVAILABLE };
     },
     online,
   );

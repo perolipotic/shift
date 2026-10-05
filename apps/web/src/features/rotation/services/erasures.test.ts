@@ -9,12 +9,16 @@ import {
   ERASURE_CONFIRMED,
   ERASURE_KEPT,
   erasureKeptOf,
+  erasuresOf as sharedErasuresOf,
   erasuresConfirmedOf,
   sameErasuresOf,
   type ErasureRow,
 } from '@/features/conflicts/services/erasures';
 import {
+  cancelledCalendarSnapshotOf,
   draftCalendarSnapshotOf,
+  rotationCancelErasuresOf,
+  rotationCancelErasuresOutcomeOf,
   rotationErasuresOf,
   rotationErasuresOutcomeOf,
 } from '@/features/rotation/services/erasures';
@@ -71,14 +75,14 @@ const B = teamOf(PILOT, 1);
 async function calendarOf(
   rows: FixtureRows,
   rosterOverrides: readonly Row[] = [],
-  { overrides = [] as readonly Row[], statuses = [] as readonly Row[] } = {},
+  { overrides = [] as readonly Row[], statuses = [] as readonly Row[], anaTeam = null as string | null } = {},
 ): Promise<CalendarSnapshot> {
   const source = calendarTableOf(
     {
       data: [
         calendarOrganizationRow(rows, {
           viewers: [viewerRow([membershipRow(teamOf(rows, 0), SEEDED)], { role: 'admin' })],
-          versions: [memberMembershipRow(VIEWER_MEMBER, teamOf(rows, 0), SEEDED), memberMembershipRow(ANA, teamOf(rows, 1), SEEDED)],
+          versions: [memberMembershipRow(VIEWER_MEMBER, teamOf(rows, 0), SEEDED), memberMembershipRow(ANA, anaTeam ?? teamOf(rows, 1), SEEDED)],
           statuses,
         }),
       ],
@@ -397,5 +401,263 @@ describe('the decisions', () => {
     // A conflict added meanwhile: the shown list is no longer the one to save over.
     expect(sameErasuresOf(rows, [...rows, { key: 'three' } as unknown as ErasureRow])).toBe(false);
     expect(sameErasuresOf([], [])).toBe(true);
+  });
+});
+
+// ------------------------------------------------------------ the cancel (5.5g)
+
+/**
+ * Story 5.5g's cancel "after", executed: a change scheduled from 10.09 for
+ * every active team, saved on 20.09 — after every override the cases write
+ * (12.09 by default) — so those dated from 10.09 on are pending under it.
+ * Under the version in force before, Smjena A works Dan 10.09, Noć 11.09 and
+ * Dan 14.09; scheduled at step 2 it works Dan 12.09 and Noć 13.09 instead.
+ */
+const SCHEDULED = '2026-09-10';
+const SCHEDULED_AT = '2026-09-20T10:00:00.000001+00:00';
+/** Written after the scheduled stamp: in force under it and without it. */
+const AFTER_STAMP = '2026-09-25T08:00:00.000001+00:00';
+
+/** One scheduled version of `teamId`, at step `offset`, from `date` (by default {@link SCHEDULED}). */
+function scheduledRow(teamId: string, offset: number, date = SCHEDULED, createdAt = SCHEDULED_AT): Row {
+  return assignmentRow(teamId, 'pilot-rotation', `pilot-step-${String(offset)}`, SEEDED, date, undefined, { createdAt });
+}
+
+/** PILOT with a change scheduled on {@link SCHEDULED}: Smjena A at `offsetA`, the others as they are. */
+function scheduledRows(offsetA = 0, rows: FixtureRows = PILOT): FixtureRows {
+  return {
+    ...rows,
+    assignments: [
+      ...rows.assignments,
+      ...PILOT.teams.map((team, offset) => scheduledRow(String(team['id']), team['id'] === A ? offsetA : offset)),
+    ],
+  };
+}
+
+async function cancelErasuresOf(
+  rows: FixtureRows,
+  snapshot: CalendarSnapshot,
+  records: readonly Row[],
+  resolutions: readonly Row[] = [],
+): Promise<readonly ErasureRow[]> {
+  return rotationCancelErasuresOf(snapshot, await rotationOf(rows), SCHEDULED, records, resolutions);
+}
+
+describe('the cancel: Plain revert', () => {
+  it('lists the conflict the scheduled version alone raises, the team free after the cancel', async () => {
+    const rows = scheduledRows(2);
+    const listed = await cancelErasuresOf(rows, await calendarOf(rows), [recordOf('record-1', '2026-09-12', '2026-09-13')]);
+
+    expect(listed).toEqual([
+      expect.objectContaining({ date: '2026-09-12', teamName: 'Smjena A', shiftTypeName: 'Dan', teamWorks: false }),
+    ]);
+    expect(t('rotation.builder.cancelScheduled.erasures.rowFree', { member: VIEWER_NAME, team: 'Smjena A' })).toBe(
+      `${VIEWER_NAME} na godišnjem · nakon poništavanja: Smjena A taj dan slobodna`,
+    );
+    expect(t('rotation.builder.cancelScheduled.erasures.lede', { count: 1 })).toBe(
+      'Poništavanje uklanja uzrok 1 neriješenog konflikta. Prije poništavanja odluči za svaki.',
+    );
+    expect(t('rotation.builder.cancelScheduled.erasures.kept')).toBe('Zadržan konflikt: odustani od poništavanja.');
+    expect(t('rotation.builder.cancelScheduled.erasures.unavailable')).toBe(
+      'Ne mogu provjeriti konflikte koje bi poništavanje izbrisalo.',
+    );
+    expect(t('rotation.builder.cancelScheduled.erasures.removed', { count: 1 })).toBe('Uklonjen 1 konflikt.');
+  });
+
+  it('never lists a conflict dated before the scheduled date', async () => {
+    // 09.09: Smjena A works Noć under the version in force either way.
+    const rows = scheduledRows(2);
+
+    expect(await cancelErasuresOf(rows, await calendarOf(rows), [recordOf('record-1', '2026-09-08', '2026-09-10')])).toEqual([]);
+  });
+
+  it('cancels only the earliest scheduled change: a later version keeps its own conflicts', async () => {
+    // A second change from 14.09 puts Smjena A back at step 0: Dan on 14.09 with or without the cancel.
+    const base = scheduledRows(2);
+    const rows = { ...base, assignments: [...base.assignments, scheduledRow(A, 0, '2026-09-14', '2026-09-21T10:00:00+00:00')] };
+    const listed = await cancelErasuresOf(rows, await calendarOf(rows), [
+      recordOf('record-1', '2026-09-12', '2026-09-13'),
+      recordOf('record-2', '2026-09-14', '2026-09-15'),
+    ]);
+
+    expect(listed.map((row) => row.date)).toEqual(['2026-09-12']);
+  });
+});
+
+describe('the cancel: Override returns', () => {
+  it('lists the conflict a Slobodno override written before the scheduled stamp clears once in force again', async () => {
+    const rows = scheduledRows();
+    const snapshot = await calendarOf(rows, [], {
+      overrides: [calendarOverrideRow('free', A, '2026-09-10', 'pilot-slobodno')],
+    });
+
+    expect(overrideStandingOfCalendar(snapshot).pending.map((override) => override.id)).toEqual(['free']);
+    expect(overrideStandingOfCalendar(cancelledCalendarSnapshotOf(snapshot, SCHEDULED)).inForce.map((override) => override.id)).toEqual([
+      'free',
+    ]);
+    expect(await cancelErasuresOf(rows, snapshot, [recordOf('record-1', '2026-09-10', '2026-09-11')])).toEqual([
+      expect.objectContaining({ date: '2026-09-10', teamName: 'Smjena A', shiftTypeName: 'Dan', teamWorks: false }),
+    ]);
+  });
+
+  it('never lists a conflict an override written after the scheduled stamp holds either way', async () => {
+    // 12.09 would be erased (Plain revert), but a Dan override written after the stamp keeps Smjena A working.
+    const rows = scheduledRows(2);
+    const snapshot = await calendarOf(rows, [], {
+      overrides: [calendarOverrideRow('worked', A, '2026-09-12', 'pilot-dan', { createdAt: AFTER_STAMP })],
+    });
+
+    expect(overrideStandingOfCalendar(snapshot).inForce.map((override) => override.id)).toEqual(['worked']);
+    expect(await cancelErasuresOf(rows, snapshot, [recordOf('record-1', '2026-09-12', '2026-09-13')])).toEqual([]);
+  });
+
+  it('lists one row when a shift-type and a roster override come back on the same date', async () => {
+    const rows = scheduledRows();
+    const snapshot = await calendarOf(rows, [calendarRosterOverrideRow('take-off', A, '2026-09-10', VIEWER_MEMBER, null)], {
+      overrides: [calendarOverrideRow('free', A, '2026-09-10', 'pilot-slobodno')],
+    });
+
+    expect(await cancelErasuresOf(rows, snapshot, [recordOf('record-1', '2026-09-10', '2026-09-11')])).toEqual([
+      expect.objectContaining({ date: '2026-09-10', teamName: 'Smjena A', teamWorks: false }),
+    ]);
+  });
+});
+
+describe('the cancel: Roster returns', () => {
+  it('lists the conflict a take-off written in that window clears, the team still working', async () => {
+    const rows = scheduledRows();
+    const snapshot = await calendarOf(rows, [calendarRosterOverrideRow('take-off', A, '2026-09-10', VIEWER_MEMBER, null)]);
+
+    expect(rosterStandingOfCalendar(snapshot).pending.map((override) => override.id)).toEqual(['take-off']);
+    expect(await cancelErasuresOf(rows, snapshot, [recordOf('record-1', '2026-09-10', '2026-09-11')])).toEqual([
+      expect.objectContaining({ date: '2026-09-10', teamName: 'Smjena A', memberName: VIEWER_NAME, teamWorks: true }),
+    ]);
+    expect(t('rotation.builder.cancelScheduled.erasures.rowWithout', { member: VIEWER_NAME, team: 'Smjena A' })).toBe(
+      `${VIEWER_NAME} na godišnjem · nakon poništavanja: Smjena A taj dan bez ${VIEWER_NAME}`,
+    );
+  });
+});
+
+describe('the cancel: No erasure', () => {
+  it('erases nothing when the cancel changes no leave date', async () => {
+    const rows = scheduledRows();
+
+    expect(await cancelErasuresOf(rows, await calendarOf(rows), [recordOf('record-1', '2026-09-10', '2026-09-15')])).toEqual([]);
+  });
+
+  it('never lists a collision the cancel adds', async () => {
+    // The scheduled Smjena A is free on 10.09; the version in force before works Dan.
+    const rows = scheduledRows(2);
+
+    expect(await cancelErasuresOf(rows, await calendarOf(rows), [recordOf('record-1', '2026-09-10', '2026-09-11')])).toEqual([]);
+  });
+
+  it('does not list a resolved conflict', async () => {
+    const rows = scheduledRows(2);
+
+    expect(
+      await cancelErasuresOf(rows, await calendarOf(rows), [recordOf('record-1', '2026-09-12', '2026-09-13')], [
+        resolutionOf(VIEWER_MEMBER, '2026-09-12', A),
+      ]),
+    ).toEqual([]);
+  });
+});
+
+describe('the cancel: Archived team', () => {
+  const ARCHIVED = 'pilot-smjena-e';
+  // Smjena E, archived: free on 10.09 under its old version (step 2), Dan under its scheduled one (step 0).
+  const withArchived: FixtureRows = {
+    ...PILOT,
+    teams: [...PILOT.teams, teamRow(ARCHIVED, 'Smjena E', { archived: true })],
+    assignments: [...PILOT.assignments, assignmentRow(ARCHIVED, 'pilot-rotation', 'pilot-step-2', SEEDED, SEEDED), scheduledRow(ARCHIVED, 0)],
+  };
+
+  it('keeps an archived team\'s scheduled version in "after", as the delete does', async () => {
+    const rows = scheduledRows(2, withArchived);
+    const snapshot = await calendarOf(rows);
+    const after = cancelledCalendarSnapshotOf(snapshot, SCHEDULED);
+
+    expect(after.assignments.filter((assignment) => assignment.effectiveFrom === SCHEDULED).map((assignment) => assignment.teamId)).toEqual([
+      ARCHIVED,
+    ]);
+    expect(after.assignmentStamps.filter((stamp) => stamp.effectiveFrom === SCHEDULED).map((stamp) => stamp.teamId)).toEqual([ARCHIVED]);
+    expect(after.steps).toBe(snapshot.steps);
+    expect(await cancelErasuresOf(rows, snapshot, [recordOf('record-1', '2026-09-12', '2026-09-13')])).toEqual([
+      expect.objectContaining({ date: '2026-09-12', teamName: 'Smjena A' }),
+    ]);
+  });
+
+  it('never lists a conflict the archived team\'s kept version raises', async () => {
+    // Ana is on Smjena E and on leave 10.09, a Dan under its scheduled version, which the cancel keeps.
+    const rows = scheduledRows(0, withArchived);
+    const snapshot = await calendarOf(rows, [], { anaTeam: ARCHIVED });
+    const leave = [recordOf('record-ana', '2026-09-10', '2026-09-11', ANA)];
+    // Were it dropped with the active teams', the conflict would be erased.
+    const dropped = {
+      ...snapshot,
+      assignments: snapshot.assignments.filter((assignment) => assignment.effectiveFrom !== SCHEDULED),
+      assignmentStamps: snapshot.assignmentStamps.filter((stamp) => stamp.effectiveFrom !== SCHEDULED),
+    };
+
+    expect(sharedErasuresOf(snapshot, dropped, SCHEDULED, leave, [])).toEqual([
+      expect.objectContaining({ memberName: 'Ana Anić', teamName: 'Smjena E', date: '2026-09-10' }),
+    ]);
+    expect(await cancelErasuresOf(rows, snapshot, leave)).toEqual([]);
+  });
+});
+
+describe('the cancel: not derivable', () => {
+  it('refuses when the calendar and the rotation disagree on how many versions are scheduled', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const snapshot = await calendarOf(scheduledRows());
+    const partial = await rotationOf({ ...scheduledRows(), assignments: scheduledRows().assignments.slice(0, -1) });
+
+    expect(rotationCancelErasuresOutcomeOf(snapshot, partial, SCHEDULED, [], [])).toEqual({ ok: false, code: ERASURES_UNAVAILABLE });
+    expect(logged).toHaveBeenCalledWith(
+      ERASURES_UNAVAILABLE,
+      expect.objectContaining({ message: 'the rotation and the calendar disagree on the scheduled versions' }),
+    );
+  });
+
+  it('refuses when the counts agree but the teams scheduled differ', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const [a, b, c, d] = PILOT.teams.map((team) => String(team['id']));
+    const drawnRows = { ...PILOT, assignments: [...PILOT.assignments, scheduledRow(a ?? '', 0), scheduledRow(b ?? '', 1), scheduledRow(c ?? '', 2)] };
+    const boundRows = { ...PILOT, assignments: [...PILOT.assignments, scheduledRow(a ?? '', 0), scheduledRow(b ?? '', 1), scheduledRow(d ?? '', 3)] };
+
+    expect(rotationCancelErasuresOutcomeOf(await calendarOf(drawnRows), await rotationOf(boundRows), SCHEDULED, [], [])).toEqual({
+      ok: false,
+      code: ERASURES_UNAVAILABLE,
+    });
+    expect(logged).toHaveBeenCalledWith(
+      ERASURES_UNAVAILABLE,
+      expect.objectContaining({ message: 'the rotation and the calendar disagree on the scheduled versions' }),
+    );
+  });
+
+  it('refuses when the same teams are scheduled at another step', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(rotationCancelErasuresOutcomeOf(await calendarOf(scheduledRows(2)), await rotationOf(scheduledRows(1)), SCHEDULED, [], [])).toEqual({
+      ok: false,
+      code: ERASURES_UNAVAILABLE,
+    });
+  });
+
+  it('refuses when the rotation and the calendar disagree on the active teams', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const snapshot = await calendarOf(scheduledRows());
+    const wider = await rotationOf({ ...scheduledRows(), teams: [...PILOT.teams, teamRow('pilot-smjena-e', 'Smjena E')] });
+
+    expect(rotationCancelErasuresOutcomeOf(snapshot, wider, SCHEDULED, [], [])).toEqual({ ok: false, code: ERASURES_UNAVAILABLE });
+  });
+
+  it('leaves the snapshot as read unchanged', async () => {
+    const snapshot = await calendarOf(scheduledRows());
+    const versions = snapshot.assignments.length;
+
+    cancelledCalendarSnapshotOf(snapshot, SCHEDULED);
+
+    expect(snapshot.assignments).toHaveLength(versions);
   });
 });
