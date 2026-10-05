@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { differenceCiede2000, displayable, rgb, wcagContrast, type Color, type Rgb } from 'culori';
+import { differenceCiede2000, differenceEuclidean, displayable, rgb, wcagContrast, type Color, type Rgb } from 'culori';
 import { describe, expect, it } from 'vitest';
 
 import { NONWORKING_TOKEN, rampSlotOf, rampTokenOf } from '../apps/web/src/features/shift-types/utils/ramp.ts';
@@ -33,6 +33,9 @@ import { BASE_TOKENS, BRAND_TOKENS, STYLESHEET, rawToken, readToken, type Theme 
 
 const AA_BODY = 4.5;
 const AA_LARGE = 3;
+/** CIEDE2000: ~2.3 is the just-noticeable bound and 3 is comfortably
+ *  perceptible. For textures and hairlines, which carry no text. */
+const PERCEPTIBLE = 3;
 const THEMES = ['light', 'dark'] as const;
 
 /**
@@ -700,7 +703,6 @@ describe('the hatch itself is perceivable, not only the glyph on it', () => {
    * perceptible. Since story 5.3c the stripe is the fill's own foreground at
    * the shipped share, over every fill, slot-2 included.
    */
-  const PERCEPTIBLE = 3;
   const difference = differenceCiede2000();
   const cases = THEMES.flatMap((theme) => FILLS.map((fill) => ({ theme, fill })));
 
@@ -745,6 +747,87 @@ describe('the conflict marker is perceivable on the cells it marks', () => {
       measured,
       `destructive on ${fill} (${theme}) measured ${measured.toFixed(2)}:1`,
     ).toBeGreaterThanOrEqual(AA_LARGE);
+  });
+});
+
+describe('a working shift never reads as a free day (story 7.1)', () => {
+  /**
+   * The UX review of 2026-10-01 measured dark *Noć* (slot-2, #171F29) against
+   * a non-working day (#161D24) at 1.02:1: a night shift read as a free day.
+   * Every sweep above measures a fill against its OWN foreground or marker, so
+   * none could see two fills collapse into one. This block measures the fills
+   * against each other: the pilot's working slots against non-working, as a
+   * contrast ratio AND as OKLab distance (ΔE×100), so neither a lightness-only
+   * nor a chroma-only collapse slips through.
+   *
+   * WHY NOT HUE for Noć ↔ non-working. The approved dark values (decision 4,
+   * `dark-tokens-1.html` §5) give slot-2 and non-working the same hue, 259.4°
+   * vs 259.5°: the non-working fill recedes below the card and Noć rises to a
+   * light slate, so they separate by lightness. A hue gap would be a demand the
+   * approved design does not make. What tells them apart is the fill difference
+   * pinned here, the non-working border below and the always-visible D/N/S
+   * label, so no state rests on colour alone. (Dan and Noć do differ by hue,
+   * about 24°.)
+   *
+   * LIGHT SLOT-1 IS NOT ASSERTED. The light theme is out of this story's scope
+   * (changing a light value needs a human), and light Dan (#E4F0FA) against
+   * light non-working (#F0F3F6) measures about 1.04:1, ΔE×100 1.9. There the
+   * label carries the distinction. Tracked as an open design question in
+   * `_bmad-output/implementation-artifacts/deferred-work.md`, not a value to
+   * nudge.
+   *
+   * DARK SLOTS 3–6 ARE NOT ASSERTED EITHER. They predate the re-tune, the pilot
+   * uses none of them, and story 7.1 may change only the six approved dark
+   * values. Measured against dark non-working they fall short of these floors:
+   * slot-3 1.15:1 / ΔE×100 6.6, slot-4 1.23:1 / 10.8, slot-5 1.26:1 / 9.0,
+   * slot-6 1.21:1 / 8.5. Raising them is a design decision for a human.
+   */
+  const MIN_RATIO = 1.4;
+  const MIN_OKLAB_DELTA = 10;
+  const oklabDelta = differenceEuclidean('oklab');
+  const PAIRS: { theme: Theme; slot: string }[] = [
+    { theme: 'dark', slot: 'shift-slot-1' },
+    { theme: 'dark', slot: 'shift-slot-2' },
+    { theme: 'light', slot: 'shift-slot-2' },
+  ];
+
+  it.each(PAIRS)('$slot stands apart from shift-nonworking in $theme', ({ theme, slot }) => {
+    const fill = colour(theme, slot);
+    const nonworking = colour(theme, 'shift-nonworking');
+    const measured = ratio(fill, nonworking);
+    const distance = oklabDelta(fill, nonworking) * 100;
+
+    expect(measured, `${slot} vs shift-nonworking (${theme}) measured ${measured.toFixed(2)}:1`).toBeGreaterThanOrEqual(
+      MIN_RATIO,
+    );
+    expect(
+      distance,
+      `${slot} vs shift-nonworking (${theme}) measured OKLab ΔE×100 ${distance.toFixed(2)}`,
+    ).toBeGreaterThanOrEqual(MIN_OKLAB_DELTA);
+  });
+
+  it('holds dark Dan and Noć apart by hue', () => {
+    // DESIGN.md and `index.css` claim ≈24° separates slot-1 from slot-2 at
+    // similar lightness; this pins the claim with headroom.
+    const gap = hueGap(colour('dark', 'shift-slot-1'), colour('dark', 'shift-slot-2'));
+
+    expect(gap, `shift-slot-1 vs shift-slot-2 (dark) are ${gap.toFixed(1)}° apart`).toBeGreaterThanOrEqual(20);
+  });
+
+  it('draws the non-working border perceptibly on the non-working fill in dark', () => {
+    const fill = colour('dark', 'shift-nonworking');
+    const border = colour('dark', 'shift-nonworking-border');
+    const measured = differenceCiede2000()(composite(border, fill), fill);
+
+    expect(
+      measured,
+      `shift-nonworking-border over shift-nonworking (dark) measured ΔE ${measured.toFixed(2)}`,
+    ).toBeGreaterThanOrEqual(PERCEPTIBLE);
+  });
+
+  it('keeps the non-working border invisible in light', () => {
+    // Transparent, so the light theme — out of this story's scope — is unchanged.
+    expect(colour('light', 'shift-nonworking-border').alpha).toBe(0);
   });
 });
 

@@ -397,8 +397,25 @@ const SLOT_CHIP_CLASSES: Readonly<Record<RampSlot, string>> = {
  */
 export const NO_TIMES_SHOWN = '\u2014';
 
-/** A non-working type's chip. */
-export const NONWORKING_CHIP_CLASS = 'bg-shift-nonworking text-shift-nonworking-foreground';
+/**
+ * A non-working type's colour classes — chip, calendar cell and rotation tile
+ * alike, since every non-working surface reads this one string.
+ *
+ * STORY 7.1: an inset 1px OUTLINE in `shift-nonworking-border` keeps the
+ * recessed dark non-working fill a cell rather than a hole in the card. An
+ * outline takes no layout space, so a non-working cell is exactly a working
+ * cell's size, and it is not a box-shadow, so the calendar's inset
+ * `modifier-ring-*` shadows draw over the fill without replacing it. The token
+ * is `transparent` in light, so nothing visible changes there.
+ *
+ * `forced-colors:outline-none`: a forced-colours mode repaints `outline-color`
+ * in a system colour, so the hairline would become a solid 1px outline on
+ * every non-working surface — close to the conflict ring's own 2px solid
+ * fallback. It is suppressed there; the ring fallbacks in `index.css` are an
+ * `!important` shorthand (style included), so they still win on a ringed cell.
+ */
+export const NONWORKING_CHIP_CLASS =
+  'bg-shift-nonworking text-shift-nonworking-foreground outline outline-1 -outline-offset-1 outline-shift-nonworking-border forced-colors:outline-none';
 
 /** The chip's shape — the Badge primitive's pill — shared by every slot. */
 export const CHIP_SHAPE_CLASS =

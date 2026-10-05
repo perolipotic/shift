@@ -498,6 +498,61 @@ async function drawnTreatments(page: Page): Promise<Drawn[]> {
   );
 }
 
+/**
+ * `NONWORKING_CHIP_CLASS` (`apps/web/src/features/shift-types/services/list.ts`),
+ * restated: the E2E suite imports nothing from the app's source, and
+ * `list.test.ts` pins the original to this exact string.
+ */
+const NONWORKING_CLASSES =
+  'bg-shift-nonworking text-shift-nonworking-foreground outline outline-1 -outline-offset-1 outline-shift-nonworking-border forced-colors:outline-none';
+
+interface Probed {
+  readonly className: string;
+  /** `style width`; `none …` is no outline. */
+  readonly outline: string;
+  readonly outlineColor: string;
+  readonly outlineOffset: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** Each class list's computed outline and box, on a probe carrying a label like a cell's. */
+async function probed(page: Page, classNames: readonly string[]): Promise<Probed[]> {
+  return page.evaluate(
+    (names) =>
+      names.map((className) => {
+        const probe = document.createElement('div');
+        probe.className = className;
+        probe.style.width = 'max-content';
+        probe.textContent = 'N';
+        document.body.append(probe);
+        const style = getComputedStyle(probe);
+        const box = probe.getBoundingClientRect();
+        const drawn = {
+          className,
+          outline: `${style.outlineStyle} ${style.outlineWidth}`,
+          outlineColor: style.outlineColor,
+          outlineOffset: parseFloat(style.outlineOffset),
+          width: box.width,
+          height: box.height,
+        };
+        probe.remove();
+
+        return drawn;
+      }),
+    classNames,
+  );
+}
+
+/** The alpha of a computed colour string (`rgba(…, a)`, `oklch(… / a)`, or opaque). */
+function alphaOf(colour: string): number {
+  if (colour === 'transparent') return 0;
+  const found = /[/,]\s*([\d.]+%?)\s*\)$/.exec(colour);
+  if (found?.[1] === undefined || /^(rgb|hsl)\(/.test(colour)) return 1;
+
+  return found[1].endsWith('%') ? parseFloat(found[1]) / 100 : parseFloat(found[1]);
+}
+
 test.describe('the calendar under forced colours', () => {
   test.use({ storageState: ADMIN_STATE, viewport: { width: 1280, height: 800 } });
 
@@ -534,6 +589,55 @@ test.describe('the calendar under forced colours', () => {
     const hatches = forced.filter((_, index) => TREATMENTS[index]?.kind === 'hatch').map((drawn) => drawn.border);
     expect(new Set(rings).size).toBe(rings.length);
     expect(new Set(hatches).size).toBe(hatches.length);
+  });
+
+  test('a non-working cell keeps its hairline out of the way of the rings (story 7.1)', async ({ page, calendarPage }) => {
+    await calendarPage.goto();
+    await expect(calendarPage.monthHeading()).toBeVisible();
+
+    const rings = TREATMENTS.filter((treatment) => treatment.kind === 'ring').map((treatment) => treatment.name);
+    const bare = `${CELL_PADDING}`;
+    const nonworking = `${CELL_PADDING} ${NONWORKING_CLASSES}`;
+
+    // Normally: a 1px outline drawn INSIDE the box, in the token — transparent
+    // in light, a faint white in dark — and the box exactly a working cell's.
+    await page.emulateMedia({ forcedColors: 'none' });
+    for (const theme of ['light', 'dark'] as const) {
+      await page.evaluate((value) => {
+        document.documentElement.setAttribute('data-theme', value);
+      }, theme);
+      const [plain, cell] = await probed(page, [bare, nonworking]);
+      if (plain === undefined || cell === undefined) throw new Error('no probe');
+
+      expect(cell.outline, theme).toMatch(/^solid 1px$/);
+      expect(cell.outlineOffset, `${theme}: the hairline is not drawn inside the box`).toBeLessThan(0);
+      if (theme === 'light') expect(alphaOf(cell.outlineColor), cell.outlineColor).toBe(0);
+      else expect(alphaOf(cell.outlineColor), cell.outlineColor).toBeCloseTo(0.07, 2);
+      expect({ width: cell.width, height: cell.height }, `${theme}: the hairline takes layout space`).toEqual({
+        width: plain.width,
+        height: plain.height,
+      });
+    }
+
+    // Forced: no hairline on its own, and every ring keeps its own outline.
+    await page.emulateMedia({ forcedColors: 'active' });
+    const [alone] = await probed(page, [nonworking]);
+    expect(alone?.outline, 'the hairline shows under forced colours').toMatch(/^none /);
+
+    const ringed = await probed(
+      page,
+      rings.map((ring) => `${nonworking} ${ring}`),
+    );
+    const expected: Record<string, RegExp> = {
+      'modifier-ring-conflict': /^solid 2px$/,
+      'modifier-ring-overridden': /^dashed 2px$/,
+      'modifier-ring-conflict-overridden': /^double 4px$/,
+    };
+    for (const [index, drawn] of ringed.entries()) {
+      const ring = rings[index] ?? '';
+      expect(drawn.outline, `${ring} on a non-working cell`).toMatch(expected[ring] ?? /^$/);
+    }
+    expect(new Set(ringed.map((drawn) => drawn.outline)).size).toBe(ringed.length);
   });
 
   test('shows the focused cell and the sticky header’s edge', async ({ page, calendarPage }) => {

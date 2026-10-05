@@ -5,7 +5,8 @@
  * `components.json` presumes with `cssVariables: true`, filled since visual
  * refresh A with a slate/navy palette instead of shadcn's neutral greys. Then
  * DESIGN.md's brand delta: `primary` and `destructive`, the working-shift
- * ramp, the non-working slot, the modifier signals and the curated accents.
+ * ramp, the non-working slot and its border, the modifier signals and the
+ * curated accents.
  * Then `@layer base`, which paints them onto the document — Tailwind 4's
  * preflight sets no page background, so without that layer every token is
  * defined and none is ever consumed.
@@ -51,9 +52,29 @@
  *     1.25:1 -> 1.32:1 (the same 10% white over navy). Still deliberately below
  *     AA and still pinned: it edges cards and separators, never a control, and
  *     1.4.11 says nothing about a decorative divider.
- *   --shift-nonworking-foreground  unchanged since 1.1b: L 0.6801 -> 0.5361
- *     light, 0.5665 -> 0.6165 dark, because DESIGN.md's values measured 2.58:1
- *     and 3.76:1 against their own fill and UX-DR7 keeps that label visible.
+ *   --shift-nonworking-foreground  LIGHT only since story 7.1: L 0.6801 ->
+ *     0.5361, because DESIGN.md's value measured 2.58:1 against its own fill
+ *     and UX-DR7 keeps that label visible. Dark carried the same kind of shift
+ *     (0.5665 -> 0.6165) until story 7.1 re-tuned the dark ramp; DESIGN.md's
+ *     dark value is now the shipped one (#8494A8) and round-trips.
+ *
+ * THE DARK RAMP (story 7.1, UX review 2026-10-01, decision 4). *Noć* (slot-2
+ * #171F29) and a non-working day (#161D24) measured 1.02:1, so a night shift
+ * read as a free day. The dark ramp now has three lightness levels: the
+ * non-working fill recedes BELOW the card (#0E1828, L 0.208), slot-2 rises to
+ * a light slate (#2F3641, L 0.331) and slot-1 to a more saturated blue
+ * (#00415D, L 0.354, the lightest of the three), with lighter foregrounds to
+ * match. Slot-2 and non-working share a hue (259.4° vs 259.5°), so they are
+ * told apart by lightness (1.46:1, OKLab ΔE×100 12.3), by
+ * `--shift-nonworking-border` and by the always-visible label. Dan and Noć sit
+ * at similar lightness and differ by hue (≈24°) and by label. The border is a 7% white
+ * hairline in dark and `transparent` in light, drawn as an inset OUTLINE on
+ * every non-working surface (`NONWORKING_CHIP_CLASS`) — an outline takes no
+ * layout space and is not a box-shadow, so the `modifier-ring-*` insets below
+ * do not replace it. Dark slot-1's chroma is 0.0751 rather than the mockup's
+ * 0.0752: #00415D has a zero red channel, and at four decimals 0.0752 lands a
+ * hair outside sRGB (r -0.0001), which the gamut sweep refuses. 0.0751 is
+ * inside it and still round-trips to #00415D.
  *
  * THE FOUR BRAND ACCENTS (story 1.4c, UX-DR5) are authored here rather than
  * stored anywhere, and that is the whole architecture of the feature. An
@@ -105,9 +126,11 @@
  * `--modifier-overridden` — are held apart by distance rather than by hue:
  * every accent is at least ΔE 10 from every one of them in both themes.
  *
- * `destructive`, the ramp, the non-working slot and the modifiers did NOT move.
- * Their tests measure them against their own fills, never against a surface,
- * so the new page colours change none of their ratios.
+ * `destructive`, the ramp, the non-working slot and the modifiers did NOT move
+ * in visual refresh A. Their tests measure them against their own fills, never
+ * against a surface, so the new page colours change none of their ratios.
+ * (Story 7.1 later re-tuned the dark slot-1, slot-2 and non-working values;
+ * see THE DARK RAMP above.)
  *
  * Light lives on `:root`; dark lives on `:root[data-theme="dark"]`, and each
  * sets `color-scheme` so the UA paints scrollbars and form controls to match.
@@ -199,6 +222,7 @@
   --shift-slot-6-foreground: oklch(0.4445 0.0253 85.94);
   --shift-nonworking: oklch(0.9627 0.0051 247.88);
   --shift-nonworking-foreground: oklch(0.5361 0.0243 248.19);
+  --shift-nonworking-border: transparent;
   --modifier-leave: oklch(0.439 0.0847 157.07 / 0.16);
   --modifier-leave-foreground: oklch(0.439 0.0847 157.07);
   --modifier-uncovered: oklch(0.5762 0.1151 75.47 / 0.22);
@@ -257,10 +281,10 @@
   --primary-foreground: oklch(0.2004 0.0397 259.82);
   --destructive: oklch(0.6564 0.1747 18.71);
   --destructive-foreground: oklch(0.1757 0.0245 10.61);
-  --shift-slot-1: oklch(0.3071 0.0518 245.22);
-  --shift-slot-1-foreground: oklch(0.8467 0.0627 239.8);
-  --shift-slot-2: oklch(0.2362 0.0226 254.26);
-  --shift-slot-2-foreground: oklch(0.7576 0.0352 246.91);
+  --shift-slot-1: oklch(0.3543 0.0751 235.02);
+  --shift-slot-1-foreground: oklch(0.8908 0.0549 233.25);
+  --shift-slot-2: oklch(0.3309 0.0217 259.38);
+  --shift-slot-2-foreground: oklch(0.9137 0.0168 259.42);
   --shift-slot-3: oklch(0.2669 0.0455 302.6);
   --shift-slot-3-foreground: oklch(0.8068 0.0761 304.88);
   --shift-slot-4: oklch(0.2831 0.0423 85.72);
@@ -269,8 +293,9 @@
   --shift-slot-5-foreground: oklch(0.807 0.0699 168.78);
   --shift-slot-6: oklch(0.2759 0.0162 96.9);
   --shift-slot-6-foreground: oklch(0.8275 0.0341 89.87);
-  --shift-nonworking: oklch(0.227 0.0171 248.59);
-  --shift-nonworking-foreground: oklch(0.6165 0.0254 248.28);
+  --shift-nonworking: oklch(0.2084 0.0353 259.49);
+  --shift-nonworking-foreground: oklch(0.6607 0.0351 254.08);
+  --shift-nonworking-border: oklch(1 0 0 / 7%);
   --modifier-leave: oklch(0.7873 0.09 160.99 / 0.15);
   --modifier-leave-foreground: oklch(0.7873 0.09 160.99);
   --modifier-uncovered: oklch(0.7758 0.1401 78.65 / 0.16);
@@ -344,6 +369,7 @@
   --color-shift-slot-6-foreground: var(--shift-slot-6-foreground);
   --color-shift-nonworking: var(--shift-nonworking);
   --color-shift-nonworking-foreground: var(--shift-nonworking-foreground);
+  --color-shift-nonworking-border: var(--shift-nonworking-border);
   --color-modifier-leave: var(--modifier-leave);
   --color-modifier-leave-foreground: var(--modifier-leave-foreground);
   --color-modifier-uncovered: var(--modifier-uncovered);
@@ -472,8 +498,8 @@
  * STORY 5.3c: the calendar's hatches are drawn in the cell's OWN foreground
  * (`currentColor`, the slot's `-foreground` text colour) at 16%, never in a
  * fixed `--modifier-*` tint, so the stripe follows the fill it lies on — the
- * inverted `shift-slot-2` included, where a fixed dark tint landed
- * dark-on-dark. Their glyphs are drawn in the same foreground.
+ * light theme's inverted `shift-slot-2` included, where a fixed dark tint
+ * landed dark-on-dark. Their glyphs are drawn in the same foreground.
  * `test/theme-contrast.test.ts` reads the 16% from here and measures stripe
  * and glyph over every fill, in both themes.
  *
@@ -487,13 +513,25 @@
  * cell's 4 px padding, so it never covers the label — and a HATCH becomes
  * a BORDER — leave dotted, uncovered dashed, both dotted across and dashed
  * down. Outline and border are separate properties, so a ring and a hatch on
- * one cell still show together. */
+ * one cell still show together.
+ *
+ * STORY 7.1: a non-working cell draws its own 1px inset OUTLINE
+ * (`shift-nonworking-border`, via `NONWORKING_CHIP_CLASS`), and Tailwind emits
+ * those outline utilities AFTER these, at the same specificity — so under
+ * forced colours they would thin a ring's fallback to 1px and turn the
+ * overridden ring's dashes solid, leaving conflict and overridden
+ * indistinguishable on a non-working day. The ring fallbacks are therefore
+ * `!important`, scoped to forced colours, as the focus rule in `@layer base`
+ * is for the same reason. The hairline itself is switched off under forced
+ * colours (`forced-colors:outline-none`), where its colour would be repainted
+ * into a solid system-colour outline; the `!important` shorthand, style
+ * included, still beats that on a ringed cell. */
 @utility modifier-ring-conflict {
   box-shadow: inset 0 0 0 2px var(--destructive);
 
   @media (forced-colors: active) {
-    outline: 2px solid CanvasText;
-    outline-offset: -2px;
+    outline: 2px solid CanvasText !important;
+    outline-offset: -2px !important;
   }
 }
 
@@ -501,8 +539,8 @@
   box-shadow: inset 0 0 0 2px var(--modifier-overridden);
 
   @media (forced-colors: active) {
-    outline: 2px dashed Highlight;
-    outline-offset: -2px;
+    outline: 2px dashed Highlight !important;
+    outline-offset: -2px !important;
   }
 }
 
@@ -512,8 +550,8 @@
     inset 0 0 0 4px var(--modifier-overridden);
 
   @media (forced-colors: active) {
-    outline: 4px double CanvasText;
-    outline-offset: -4px;
+    outline: 4px double CanvasText !important;
+    outline-offset: -4px !important;
   }
 }
 

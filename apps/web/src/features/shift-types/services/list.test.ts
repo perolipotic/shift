@@ -320,7 +320,9 @@ describe('the ramp', () => {
       expect(chipClassOf(slot)).toContain(`bg-shift-slot-${String(slot)} text-shift-slot-${String(slot)}-foreground`);
     }
     expect(chipClassOf(null)).toContain(NONWORKING_CHIP_CLASS);
-    expect(NONWORKING_CHIP_CLASS).toBe('bg-shift-nonworking text-shift-nonworking-foreground');
+    expect(NONWORKING_CHIP_CLASS).toBe(
+      'bg-shift-nonworking text-shift-nonworking-foreground outline outline-1 -outline-offset-1 outline-shift-nonworking-border forced-colors:outline-none',
+    );
   });
 });
 

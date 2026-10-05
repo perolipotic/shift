@@ -15,10 +15,12 @@ import { BASE_TOKENS, rawToken, type Theme } from './theme-css.js';
  * source of truth, so the check is mechanical — convert each shipped value back
  * and compare it to the front matter it came from.
  *
- * Two values are expected to differ. `--shift-nonworking-foreground` was
- * lightness-shifted in both themes by human decision, because DESIGN.md's own
- * values measured 2.58:1 and 3.76:1 against their fill. Those are named here so
- * the deviation stays deliberate: a third divergence fails.
+ * One value is expected to differ: LIGHT `--shift-nonworking-foreground`, which
+ * was lightness-shifted by human decision because DESIGN.md's own value
+ * measured 2.58:1 against its fill. It is named here so the deviation stays
+ * deliberate: a second divergence fails. The dark one carried the same kind of
+ * shift until story 7.1 re-tuned the dark ramp (decision 4); DESIGN.md now
+ * declares the shipped dark value, so it round-trips like any other.
  */
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -31,9 +33,9 @@ const DESIGN = join(
   'DESIGN.md',
 );
 
-/** Approved divergences: token name → the reason it may differ. */
+/** Approved divergences: `theme:token` → the reason it may differ. */
 const APPROVED = new Map([
-  ['shift-nonworking-foreground', 'lightness-shifted to clear 4.5:1; see the spec change log'],
+  ['light:shift-nonworking-foreground', 'lightness-shifted to clear 4.5:1; see the spec change log'],
 ]);
 
 /** DESIGN.md's `colors:` front matter, as declared. */
@@ -67,7 +69,7 @@ function tokens(): Map<string, string> {
   return cached;
 }
 
-/** The 23 base names, derived rather than hard-coded so a DESIGN.md rename
+/** The 24 base names, derived rather than hard-coded so a DESIGN.md rename
  *  changes the case list instead of silently skipping a token. */
 function tokenNames(): string[] {
   return [...new Set([...tokens().keys()].map((key) => key.replace(/-dark$/, '')))];
@@ -75,12 +77,12 @@ function tokenNames(): string[] {
 
 describe('DESIGN.md is readable and complete', () => {
   // Without this, an unparsed front matter would make every case below vacuous.
-  it('parses all 46 declared colour values', () => {
-    expect(tokens().size).toBe(46);
+  it('parses all 48 declared colour values', () => {
+    expect(tokens().size).toBe(48);
   });
 
-  it('yields the 23 token names the rest of the suite expects', () => {
-    expect(tokenNames()).toHaveLength(23);
+  it('yields the 24 token names the rest of the suite expects', () => {
+    expect(tokenNames()).toHaveLength(24);
   });
 });
 
@@ -121,7 +123,7 @@ describe('every shipped value round-trips to the hex DESIGN.md declares', () => 
       Math.abs(expected.b - actual.b),
     ) * 255;
 
-    if (APPROVED.has(token)) {
+    if (APPROVED.has(`${theme}:${token}`)) {
       // A deviation must stay a deviation: if it silently reverts to DESIGN.md,
       // the contrast fix has been undone and this test should say so.
       expect(
@@ -138,8 +140,10 @@ describe('every shipped value round-trips to the hex DESIGN.md declares', () => 
     ).toBeLessThan(0.5);
   });
 
-  it.each(THEMES)('preserves alpha on the overlay modifiers in %s', (theme) => {
-    for (const token of ['modifier-leave', 'modifier-uncovered']) {
+  it.each(THEMES)('preserves alpha on the overlay modifiers and the non-working border in %s', (theme) => {
+    // `shift-nonworking-border` (story 7.1) is alpha-only: transparent in
+    // light, a 7% white hairline in dark. Dropped alpha would paint it opaque.
+    for (const token of ['modifier-leave', 'modifier-uncovered', 'shift-nonworking-border']) {
       const declared = parse(tokens().get(designKey(theme, token)) ?? '');
       const shipped = parse(rawToken(theme, token) ?? '');
 

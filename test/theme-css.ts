@@ -23,12 +23,13 @@ export const STYLESHEET = join(repoRoot, 'apps', 'web', 'src', 'index.css');
 export const DARK_SELECTOR = ':root[data-theme="dark"]';
 
 /**
- * The 31 brand token names: DESIGN.md's `colors:` front matter, plus the four
- * curated accents story 1.4c adds.
+ * The 32 brand token names: DESIGN.md's `colors:` front matter (24 names
+ * since story 7.1 added `shift-nonworking-border`), plus the four curated
+ * accents story 1.4c adds.
  *
  * BUILT rather than written out, and the expansion is what the accents extend:
  * each name below becomes a `[name, name-foreground]` pair, so an accent joins
- * by adding ONE entry and inherits every sweep the other twenty-three get —
+ * by adding ONE entry and inherits every sweep the other twenty-four get —
  * declared once per theme, present in both, light and dark actually different,
  * and mapped in `@theme inline`. `deferred-work.md:449` item (f) names the
  * failure this shape avoids: a token list that grows while the counts asserted
@@ -36,9 +37,13 @@ export const DARK_SELECTOR = ':root[data-theme="dark"]';
  *
  * The accents are the first entries here that are NOT in DESIGN.md, which is
  * why `theme-fidelity.test.ts` does not measure them: that file derives its
- * case list from DESIGN.md's own front matter, so it covers the twenty-three
+ * case list from DESIGN.md's own front matter, so it covers the twenty-four
  * and no more. `theme-contrast.test.ts` is what measures the accents, in both
  * themes, and what holds each of them away from `destructive`'s hue.
+ *
+ * Two names have no foreground and join through the `concat` instead:
+ * `modifier-overridden` (a ring colour) and `shift-nonworking-border` (story
+ * 7.1, the non-working cell's hairline).
  */
 export const BRAND_TOKENS: string[] = [
   'primary',
@@ -56,7 +61,9 @@ export const BRAND_TOKENS: string[] = [
   'brand-green',
   'brand-amber',
   'brand-violet',
-].flatMap((name) => [name, `${name}-foreground`]).concat('modifier-overridden');
+]
+  .flatMap((name) => [name, `${name}-foreground`])
+  .concat('modifier-overridden', 'shift-nonworking-border');
 
 /** The 28 shadcn/ui neutral base names, less `primary` and `destructive`,
  *  which the brand delta supplies instead. */
