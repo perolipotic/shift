@@ -89,7 +89,7 @@ Treat them as recommendations, and implement none until a person approves it.
 22. **The amend-leave option suggests a start date** (03.10) (`conflicts-1`). This is a computation, not a recommendation, but confirm it does not break "no automatic helpfulness".
 23. **Member directory by team** in Više (`people-1`). This changes UX-DR33: the roster becomes one page instead of staying inside Team detail.
 24. **Status as a filter and column in Ljudi, and a new member in a dialog** instead of a page (`people-1`).
-25. **Sticky save bar with "Odbaci promjene"** on rotation settings (`setup-1`).
+25. **Sticky save bar with "Odbaci promjene"** on rotation settings (`setup-1`). Shipped in 5.5c: sticky from `sm` up only, in flow on the phone.
 26. **Save confirmation dialog for rotation warnings** (`setup-1`). The warnings still do not block (UX-DR23).
 27. **Organization as a page of facts with dialogs** (`setup-1`), and "Povijest rotacije" behind a header button.
 

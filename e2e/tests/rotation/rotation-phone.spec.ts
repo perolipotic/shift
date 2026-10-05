@@ -28,7 +28,7 @@ test.afterEach(async () => {
 test.describe('at 390 px, on a touch phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
 
-  test('an admin walks the four steps, goes back through the bar, builds, saves from the header and sees the prefill', async ({
+  test('an admin walks the four steps, goes back through the bar, builds, saves from the save bar and sees the prefill', async ({
     page,
     fixture,
     rotationPage,
@@ -162,7 +162,9 @@ test.describe('at 390 px, on a touch phone', () => {
     await rotationPage.stepButton(4).tap();
     await expect(rotationPage.stepProgress(4)).toBeFocused();
 
-    // SAVE FROM THE HEADER, on step 4; the outcome sits under the header.
+    // SAVE FROM THE SAVE BAR (story 5.5c), on step 4: in flow at the end of
+    // the builder, after the history, never sticky on a phone; the outcome
+    // sits under the header.
     await rotationPage.saveButton.tap();
     await expect(rotationPage.text(builder.saved)).toBeVisible();
 

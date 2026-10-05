@@ -13,6 +13,7 @@ import {
   stepOpenable,
   stepGroupClassOf,
   shownStepperOf,
+  saveBarClassOf,
   stepSectionClassOf,
   stepStatusOf,
   stepperBack,
@@ -185,5 +186,22 @@ describe('the words', () => {
       'rotation.builder.stepper.next.offsets',
       'rotation.builder.stepper.next.preview',
     ]);
+  });
+});
+
+describe('the save bar (story 5.5c)', () => {
+  it('is sticky from sm up only, and only with unsaved changes', () => {
+    const sticky = saveBarClassOf(true).split(' ');
+    const still = saveBarClassOf(false).split(' ');
+
+    expect(sticky).toEqual(expect.arrayContaining(['sm:sticky', 'sm:bottom-0']));
+    // NEVER STICKY BELOW `sm`, so it never stacks on the phone's tab bar.
+    for (const classes of [sticky, still]) {
+      expect(classes).not.toContain('sticky');
+      expect(classes).not.toContain('bottom-0');
+      expect(classes).not.toContain('sm:hidden');
+      expect(classes).toEqual(expect.arrayContaining(['-mx-6', '-mb-6', 'px-6', 'border-t', 'bg-card', 'flex-wrap']));
+    }
+    expect(still.some((name) => name.includes('sticky'))).toBe(false);
   });
 });

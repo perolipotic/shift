@@ -808,7 +808,9 @@ const SCREENS = [
   // EIGHTEEN SINCE STORY 5.5g: the retry inside the cancel's confirmation,
   // when what the cancel would erase cannot be checked. The cancel's own
   // erasure dialog is a second shared `ErasureDialog`, counted below.
-  { name: 'the rotation builder', file: ROTATION_SECTION, expectedControls: 18 },
+  // NINETEEN SINCE STORY 5.5c: the save bar's "Odbaci promjene". The save
+  // moved from the header into the bar and is still written once.
+  { name: 'the rotation builder', file: ROTATION_SECTION, expectedControls: 19 },
   // STORY 5.5b. FOUR on the shared erasure confirmation, each written once
   // however many rows: a row's "Potvrdi brisanje" and "Zadrži", "Natrag na
   // uređivanje" and its own save.
@@ -2263,8 +2265,10 @@ const KEY_SOURCES = [
     // its own save (the cancel's confirm key, written a second time) — the
     // refusal inside the cancel's confirmation, with its retry, and the
     // cancel's notice counting the conflicts it removed.
+    // NINETY-EIGHT SINCE STORY 5.5c: the save bar's region label, its
+    // "Odbaci promjene" and its hint, with and without the rotation in force.
     keys: translationKeys,
-    strings: 94,
+    strings: 98,
   },
   {
     // STORY 3.5c: the review's heading, lede and count; a row's title, type,

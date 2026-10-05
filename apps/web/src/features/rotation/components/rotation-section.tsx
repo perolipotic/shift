@@ -53,7 +53,7 @@ import { IconTile } from '@/components/ui/icon-tile';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
-import { PageActions, PageHeader } from '@/components/ui/page-header';
+import { PageHeader } from '@/components/ui/page-header';
 import { SectionNumber } from '@/components/ui/section-number';
 import { Select } from '@/components/ui/select';
 import { StatTile, StatTileLabel, StatTileValue } from '@/components/ui/stat-tile';
@@ -104,6 +104,7 @@ import {
   rotationPreviewCyclesStore,
   rotationStepperStore,
   shownDraftOf,
+  unsavedDraftOf,
 } from '@/features/rotation/hooks/draft-store';
 import { useCancelErasureCheck, useErasureCheck } from '@/features/rotation/hooks/use-erasure-check';
 import { CHECK_REFUSED, CHECK_UNAVAILABLE } from '@/features/rotation/services/erasure-check';
@@ -131,6 +132,7 @@ import {
   rotationHistoryAuthorMessageKey,
   rotationHistoryOf,
   rotationHistoryStatusMessageKey,
+  saveBarHintOf,
   scheduledChangeOf,
   type ScheduledChange,
 } from '@/features/rotation/services/history';
@@ -159,6 +161,7 @@ import {
   nextMessageKey,
   nextStepOf,
   previousStepOf,
+  saveBarClassOf,
   shownStepperOf,
   stepGroupClassOf,
   stepMessageKey,
@@ -175,6 +178,7 @@ import {
   type WarningTranslate,
 } from '@/features/rotation/utils/warnings';
 import { savedPendingCountOf } from '@/features/rotation/services/override-disposition';
+import { ROTATION_SAVE_BAR_ID } from '@/features/rotation/utils/element-ids';
 import { OverrideReview } from '@/features/rotation/components/override-review';
 import { durationValuesOf, shiftTypeDurationMessageKey } from '@/features/shift-types/services/list';
 import {
@@ -210,8 +214,8 @@ import { supabaseClient } from '@/lib/supabase/client';
  * always rendered; the one that is not the current step is hidden below `sm`
  * (`stepSectionClassOf`), and the step bar and Natrag / Dalje are `sm:hidden`.
  * One tree at every width: the data, the validations and the order cannot
- * differ, and a step change remounts nothing. The header, its save, the save's
- * note and outcome and the read refusal stay outside every step.
+ * differ, and a step change remounts nothing. The header, the save's note and
+ * outcome, the read refusal and the save bar stay outside every step.
  *
  * FROM A DATE FORWARD (story 2.6). `Vrijedi od` sits beside the anchor; the
  * figures, the preview, the checks and the warnings all start on it, and the
@@ -244,6 +248,14 @@ import { supabaseClient } from '@/lib/supabase/client';
  * A check that cannot be derived refuses the cancel inside its confirmation,
  * with a retry. A landed cancel re-reads the calendar, the leave and the
  * resolutions beside `ROTATION_KEY`.
+ *
+ * THE SAVE SITS IN A BAR AT THE END (story 5.5c, mockup `setup-1.html` §2).
+ * The one "Spremi rotaciju" moved out of the header into it, with every rule
+ * it had. While the admin holds unsaved changes (`unsavedDraftOf`) the bar
+ * carries a hint and "Odbaci promjene", which forgets the draft, and from
+ * `sm` up it is `sticky` at the viewport's bottom; otherwise, and always on
+ * the phone, it sits static at the end of the builder, after the history.
+ * CSS only. Like the step actions and the history, it needs a draft.
  */
 
 /** What the erasure check stood on: the write writes exactly this. */
@@ -407,18 +419,46 @@ export function RotationSection({
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
-  /** Every change goes through a draft operation, into the store; a message describes the last save only. */
-  function change(next: RotationDraft): void {
-    // NOTHING CHANGES THE DRAFT while a check or a write is in flight: the
-    // controls are disabled then, and this holds even if one is not.
-    if (saving.current) return;
+  /** Whether the admin holds unsaved changes: their own draft for this organization (story 5.5c). */
+  const unsaved = snapshot !== null && unsavedDraftOf(stored, snapshot.organizationId);
 
+  /** What an edit, or a discard, clears: a message describes the last save only. */
+  function clearRaised(): void {
     setOutcome(null);
     setSavedPending(null);
     setErasedCount(0);
     setCancelled(null);
     setErasuresUnavailable(false);
+  }
+
+  /** Every change goes through a draft operation, into the store. */
+  function change(next: RotationDraft): void {
+    // NOTHING CHANGES THE DRAFT while a check or a write is in flight: the
+    // controls are disabled then, and this holds even if one is not.
+    if (saving.current) return;
+
+    clearRaised();
     if (snapshot !== null) rotationDraftStore.set(snapshot.organizationId, next);
+  }
+
+  /**
+   * "Odbaci promjene" (story 5.5c): forgets the local draft, so the builder
+   * shows the prefill again, and clears what an edit clears, the cancel's
+   * own refusal included. No confirmation — nothing saved is touched. The
+   * cancel offer and the override review stay as they are. The phone
+   * stepper goes back to step 1, so it never stands on a step reached with
+   * the discarded pattern (the preview's cycles are a view choice and stay).
+   * Focus goes to "Spremi rotaciju", which stays mounted while the discard
+   * itself unmounts.
+   */
+  function discard(): void {
+    if (saving.current) return;
+
+    clearRaised();
+    setCancelUnchecked(null);
+    rotationDraftStore.reset();
+    rotationStepperStore.reset();
+    saveButton.current?.focus();
   }
 
   /**
@@ -1640,20 +1680,60 @@ export function RotationSection({
     setCancelUnchecked(null);
     saveButton.current?.focus();
   }, [cancelArmed, cancelShown, pending]);
-  /** A warning's words, every one from `hr.json`, resolved by `@/features/rotation/utils/warnings`. */
-  const translate: WarningTranslate = (key, values) => t(key, values);
+  /**
+   * THE SAVE BAR (story 5.5c, mockup `setup-1.html` §2): the builder's last
+   * element — at the end of the builder, after the history — full width
+   * across the page's `p-6`, on the card's background behind a top border.
+   * From `sm` up (where the phone's tab bar is gone) it is `sticky` at the
+   * viewport's bottom while there are unsaved changes, so the save stays in
+   * reach however far the admin scrolled, and the page's scroll padding
+   * clears it (`index.css`, keyed on `data-sticky`) so a focused control is
+   * never under it; below `sm` it is never sticky — it stays in flow at the
+   * end, after the step actions and the history, and never stacks on the
+   * tab bar. The hint wraps above the buttons on a phone, and is a polite
+   * live region, so becoming unsaved is announced. Only rendered with a
+   * draft, like the step actions and the history.
+   */
+  function renderSaveBar(current: RotationDraft): ReactNode {
+    const hint =
+      snapshot === null || today === null ? null : saveBarHintOf(unsaved, snapshot, today, current.effectiveFrom);
 
-  return (
-    <>
-      <PageHeader>
-        {heading}
-        <PageActions>
-          {/* THE SAVE, in the page's own actions (owner layout). */}
+    return (
+      <div
+        id={ROTATION_SAVE_BAR_ID}
+        role="region"
+        aria-label={t('rotation.builder.saveBar.label')}
+        data-sticky={unsaved}
+        className={saveBarClassOf(unsaved)}
+      >
+        {/* ALWAYS MOUNTED, so the live region exists before its text arrives;
+            empty, it takes no space. */}
+        <p
+          aria-live="polite"
+          className="min-w-0 basis-full text-sm text-muted-foreground empty:sr-only sm:flex-1 sm:basis-auto"
+        >
+          {hint === null
+            ? null
+            : hint.inForceLabel === null
+              ? t('rotation.builder.saveBar.hint', { effectiveFrom: hint.effectiveLabel })
+              : t('rotation.builder.saveBar.hintInForce', {
+                  effectiveFrom: hint.effectiveLabel,
+                  inForceFrom: hint.inForceLabel,
+                })}
+        </p>
+        <div className="flex flex-wrap gap-3 sm:ml-auto">
+          {/* An outline, never the alarm variant: it drops only a local draft. */}
+          {unsaved ? (
+            <Button className="h-11" type="button" variant="outline" disabled={pending} onClick={discard}>
+              {t('rotation.builder.saveBar.discard')}
+            </Button>
+          ) : null}
+          {/* THE ONE SAVE, moved here from the header (story 5.5c), every rule kept. */}
           <Button
             ref={saveButton}
             className="h-11"
             type="button"
-            disabled={pending || draft === null}
+            disabled={pending}
             aria-busy={pending}
             onClick={() => {
               void requestSave();
@@ -1662,9 +1742,19 @@ export function RotationSection({
             <Save aria-hidden />
             {t('rotation.builder.save')}
           </Button>
-        </PageActions>
-      </PageHeader>
-      {/* THE SAVE'S NOTE AND OUTCOME, right under the header its button sits in. */}
+        </div>
+      </div>
+    );
+  }
+
+  /** A warning's words, every one from `hr.json`, resolved by `@/features/rotation/utils/warnings`. */
+  const translate: WarningTranslate = (key, values) => t(key, values);
+
+  return (
+    <>
+      <PageHeader>{heading}</PageHeader>
+      {/* THE SAVE'S NOTE AND OUTCOME, right under the header; the save itself
+          is in the bar at the end (story 5.5c). */}
       <p className="-mt-3 text-sm text-muted-foreground">{t('rotation.builder.saveNote')}</p>
       {outcome === null || outcome.ok ? null : (
         <Notice role="alert">
@@ -1777,6 +1867,7 @@ export function RotationSection({
       {draft === null ? null : renderStepActions()}
       {/* THE HISTORY, after every step section and at every width. */}
       {draft === null ? null : renderHistory()}
+      {draft === null ? null : renderSaveBar(draft)}
     </>
   );
 }

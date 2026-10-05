@@ -399,6 +399,19 @@
     }
   }
 
+  /* The rotation builder's save bar (story 5.5c) is sticky at the viewport's
+   * bottom from 640 px up while there are unsaved changes, so the page's
+   * scroll padding clears it there and then: a control focused near the
+   * bottom scrolls above the bar rather than under it. The bar is one row
+   * (`py-3` around 44 px buttons, about 4.3 rem) from 640 px up, and the
+   * padding leaves room for a hint wrapped to a second line. CSS only, keyed
+   * on the bar's own `data-sticky`. */
+  @media (min-width: 640px) {
+    html:has(#rotation-save-bar[data-sticky='true']) {
+      scroll-padding-bottom: 6rem;
+    }
+  }
+
   /* The focus indicator in a forced-colours mode, which is the one place the
    * token layer cannot reach.
    *

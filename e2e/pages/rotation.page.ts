@@ -314,9 +314,28 @@ export class RotationPage extends BasePage {
 
   // ------------------------------------------------------ save, history
 
-  /** Saves the draft, from the header. */
+  /**
+   * Saves the draft, from the save bar at the end of the builder, after the
+   * history (story 5.5c) — sticky at the viewport's bottom from 640 px up
+   * while the draft is unsaved.
+   */
   get saveButton(): Locator {
     return this.page.getByRole('button', { name: builder.save });
+  }
+
+  /** The save bar itself, a region named "Spremanje rotacije" (story 5.5c). */
+  get saveBar(): Locator {
+    return this.page.getByRole('region', { name: builder.saveBar.label, exact: true });
+  }
+
+  /** The save bar's "Odbaci promjene", shown only while the draft is unsaved (story 5.5c). */
+  get discardButton(): Locator {
+    return this.page.getByRole('button', { name: builder.saveBar.discard, exact: true });
+  }
+
+  /** The save bar's hint, with or without the rotation in force (story 5.5c). */
+  saveBarHint(text: string): Locator {
+    return this.saveBar.getByText(text, { exact: true });
   }
 
   /** The save's confirmation, with the warnings it carries. */

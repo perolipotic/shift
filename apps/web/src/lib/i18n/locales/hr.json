@@ -707,6 +707,12 @@
       "cycleCount": "{count, plural, one {# ciklus} few {# ciklusa} other {# ciklusa}}",
       "save": "Spremi rotaciju",
       "saveNote": "Rotacija vrijedi od odabranog datuma. Dani prije njega zadržavaju dosadašnju rotaciju.",
+      "saveBar": {
+        "label": "Spremanje rotacije",
+        "discard": "Odbaci promjene",
+        "hint": "Promjena vrijedi od {effectiveFrom}.",
+        "hintInForce": "Promjena vrijedi od {effectiveFrom}. · na snazi je rotacija od {inForceFrom}."
+      },
       "saved": "Rotacija je spremljena.",
       "warnings": {
         "summary": "{count, plural, one {# upozorenje} few {# upozorenja} other {# upozorenja}} za sljedeći ciklus:",

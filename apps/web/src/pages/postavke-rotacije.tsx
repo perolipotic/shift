@@ -47,10 +47,11 @@ export function PostavkeRotacijeScreen() {
       className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6"
       aria-busy={screen.loading}
     >
-      {/* THE OWNER LAYOUT (story 2.3b): the page header, with `Spremi
-          rotaciju` among its actions, and the four numbered sections are laid
-          out by the rotation builder; this screen hands it its title and
-          section 1, the shift types. */}
+      {/* THE OWNER LAYOUT (story 2.3b): the page header, the four numbered
+          sections and, since story 5.5c, the save bar with `Spremi rotaciju`
+          at the end (full width across this frame's `p-6`) are laid out by
+          the rotation builder; this screen hands it its title and section 1,
+          the shift types. */}
       <RotationSection
         heading={
           <div className="min-w-0">
