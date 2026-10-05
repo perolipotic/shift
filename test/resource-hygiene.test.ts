@@ -108,6 +108,12 @@ const SANCTIONED_PLURAL_KEYS = [
   // A removal's lede, "… Prije uklanjanja odluči za svaki." (review).
   'kalendar.detail.rosterChange.erasures.ledeRemoval',
   'kalendar.detail.rosterChange.erasures.removed',
+  // STORY 5.5e: the same three counts for the member page's team and status
+  // cards — their erasure dialogs' title and lede, and what a guarded write
+  // removed.
+  'ljudi.erasures.title',
+  'ljudi.erasures.lede',
+  'ljudi.erasures.removed',
   // STORY 4.1b: how many shifts the viewer works in the month and in each
   // band — `0 smjena`, `1 smjena`, `2 smjene`, `21 smjena` — and the note on
   // the ones with no times, shown only when there is one.
@@ -1136,6 +1142,23 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.detail.rosterChange.erasures.changed',
   'kalendar.detail.rosterChange.erasures.unavailable',
   'kalendar.detail.rosterChange.erasures.retry',
+  // STORY 5.5e: the member page's erasure dialogs, shared by the team and
+  // status cards — a row's title and its second line ("nakon promjene:
+  // {team} taj dan bez {member}", the team the conflict was on), the
+  // toggles' group label, "Potvrdi brisanje" and "Zadrži", the way back, the
+  // kept hint and the changed line — and the refusal when what the change
+  // would erase cannot be checked, with its retry. The title, the lede and
+  // the removed count are plurals, above.
+  'ljudi.erasures.rowTitle',
+  'ljudi.erasures.rowWithout',
+  'ljudi.erasures.decision',
+  'ljudi.erasures.confirm',
+  'ljudi.erasures.keep',
+  'ljudi.erasures.back',
+  'ljudi.erasures.kept',
+  'ljudi.erasures.changed',
+  'ljudi.erasures.unavailable',
+  'ljudi.erasures.retry',
   // STORY 4.1b: *Sati* — the total's and the shift count's labels, the bands'
   // heading, the leave row and the one failure. The hours themselves are the
   // band screens' `organization.hourBands.duration.*` units.

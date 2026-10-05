@@ -18,7 +18,7 @@ import {
   type RotationHold,
   type SeededRotation,
 } from '../../utils/database-helper.ts';
-import { dayMonth, weekdayOf } from '../../utils/dates.ts';
+import { addDays, dayMonth, weekdayOf } from '../../utils/dates.ts';
 import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
 import { fill, hr } from '../../utils/i18n.ts';
 import { MINIMUM_TARGET, expectNoHorizontalScroll, expectTouchTargets } from '../../utils/layout.ts';
@@ -138,14 +138,6 @@ async function seeded(slug: string, teamId: string): Promise<SeededRotation> {
 async function held(slug: string): Promise<void> {
   hold = holdRotation(slug);
   await hold.ready;
-}
-
-/** A `YYYY-MM-DD` date `days` days from `date`, by UTC arithmetic. */
-function addDays(date: string, days: number): string {
-  const instant = new Date(`${date}T12:00:00Z`);
-  instant.setUTCDate(instant.getUTCDate() + days);
-
-  return instant.toISOString().slice(0, 10);
 }
 
 /** The first date of the month after `date`'s. */

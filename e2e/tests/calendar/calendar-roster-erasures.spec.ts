@@ -18,8 +18,8 @@ import {
   type SeededLeaveMember,
   type SeededRotation,
 } from '../../utils/database-helper.ts';
-import { dayMonth, weekdayOf } from '../../utils/dates.ts';
-import { escapeRegExp, fill, hr } from '../../utils/i18n.ts';
+import { addDays, dayMonth, weekdayOf } from '../../utils/dates.ts';
+import { escapeRegExp, fill, hr, plural } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll } from '../../utils/layout.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
@@ -75,14 +75,6 @@ test.afterEach(async () => {
   if (failures.length > 0) throw failures[0];
 });
 
-/** A `YYYY-MM-DD` date `days` days from `date`, by UTC arithmetic. */
-function addDays(date: string, days: number): string {
-  const instant = new Date(`${date}T12:00:00Z`);
-  instant.setUTCDate(instant.getUTCDate() + days);
-
-  return instant.toISOString().slice(0, 10);
-}
-
 /** `/kalendar`'s search for the grid on the month `date` falls in. */
 function gridMonthOf(date: string): string {
   return `?prikaz=sve&mjesec=${date.slice(0, 7)}`;
@@ -90,14 +82,6 @@ function gridMonthOf(date: string): string {
 
 /** Every count of the confirmation's title: its words before the ICU count. */
 const anyErasureTitle = new RegExp(`^${escapeRegExp(/one \{([^#]*)#/.exec(erasures.title)?.[1] ?? 'E2E: no title')}`);
-
-/** The `one` form of an ICU plural, filled — `Uklonjen 1 konflikt.` — without an ICU parser. */
-function oneForm(message: string): string {
-  const form = /one \{([^}]*)\}/.exec(message)?.[1];
-  if (form === undefined) throw new Error(`E2E: ${message} has no one form`);
-
-  return form.replace('#', '1');
-}
 
 interface Setup {
   readonly rotation: SeededRotation;
@@ -184,7 +168,7 @@ test('taking a member on leave off the roster waits for the confirmation, by key
 
   await expect(dialog).toHaveCount(0);
   await expect(calendarPage.statusIn(detail)).toContainText(rosterChange.saved);
-  await expect(calendarPage.statusIn(detail)).toContainText(oneForm(erasures.removed));
+  await expect(calendarPage.statusIn(detail)).toContainText(plural(erasures.removed, 1));
   await expect(calendarPage.rosterChangesIn(detail)).toContainText(fill(rosterChange.removed, { name: person.name }));
 
   // THE QUEUE −1: the cause is gone, so the conflict is.
@@ -239,7 +223,7 @@ test('removing an override that put a member on leave on the roster goes through
 
   await expect(dialog).toHaveCount(0);
   await expect(calendarPage.statusIn(detail)).toContainText(rosterChange.removedDone);
-  await expect(calendarPage.statusIn(detail)).toContainText(oneForm(erasures.removed));
+  await expect(calendarPage.statusIn(detail)).toContainText(plural(erasures.removed, 1));
   await expect(block).toHaveCount(0);
 
   await conflictsPage.goto();

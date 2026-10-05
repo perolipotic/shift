@@ -199,8 +199,17 @@ describe('the reads a team or membership write makes stale', () => {
       write: 'a team move or a status change',
       own: MEMBERS_LIST_KEY,
       dependents: MEMBERSHIP_WRITE_DEPENDENTS,
-      // Who is on which team today: Danas's line, every roster, the calendar.
-      stale: [MEMBERS_LIST_KEY, OWN_TEAM_KEY, ROSTER_A, ROSTER_B, CALENDAR_KEY],
+      // Who is on which team today: Danas's line, every roster, the calendar;
+      // and the leave and resolutions its erasure check stands on (5.5e).
+      stale: [
+        MEMBERS_LIST_KEY,
+        OWN_TEAM_KEY,
+        ROSTER_A,
+        ROSTER_B,
+        CALENDAR_KEY,
+        ORGANIZATION_LEAVE_RECORDS_KEY,
+        ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+      ],
     },
     {
       write: "a member's own row saved",

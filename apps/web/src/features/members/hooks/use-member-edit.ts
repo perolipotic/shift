@@ -1,5 +1,10 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { onlineManager, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+
+import { useErasureConfirmation, type ShownErasures } from '@/features/conflicts/hooks/use-erasure-confirmation';
+import { useErasureReads } from '@/features/conflicts/hooks/use-erasure-reads';
+import { CHECK_REFUSED, CHECK_UNAVAILABLE } from '@/features/conflicts/services/erasure-check';
+import { RECHECK_CHANGED } from '@/features/conflicts/services/erasures';
 
 import {
   MEMBERS_LIST_KEY,
@@ -11,6 +16,14 @@ import {
   type MemberListRow,
 } from '@/features/members/services/list';
 import {
+  memberErasureCheckOf,
+  statusChangeOf,
+  teamChangeOf,
+  type MemberChange,
+  type MemberChangeRefusal,
+} from '@/features/members/services/member-erasures';
+import {
+  MEMBER_STATUS_STALE,
   MEMBER_STATUS_TABLE,
   MEMBER_TEAM_STALE,
   MEMBER_TEAM_TABLE,
@@ -80,6 +93,19 @@ import {
   teamsSurfaceStateOf,
   writableTeamsOf,
 } from '@/features/teams/services/list';
+import { firstEnabledOf, focusLater } from '@/utils/focus-later';
+
+/**
+ * What a card's erasure check stood on (story 5.5e): the member it is about,
+ * the card's own confirmation — so a re-check, a retry and the write still
+ * have it once that confirmation has closed — and the change derived from it.
+ */
+export interface CheckedMemberChange<Confirmation> {
+  readonly member: string;
+  readonly confirmation: Confirmation;
+  readonly change: MemberChange;
+}
+
 
 /**
  * `/ljudi/$id`'s state, its four reads and its handlers (story 1.5b). The page
@@ -200,6 +226,24 @@ export function useMemberEdit(id: string) {
   // position control can follow it.
   const positionField = useRef<HTMLSelectElement>(null);
   const [teamPick, setTeamPick] = useState<RaisedForMember<TeamPick> | null>(null);
+  // THE ERASURE GUARD (story 5.5e), one per card: its offer (where focus
+  // returns), the retry of a check that could not be derived, that refusal,
+  // how many conflicts a landed write removed, and the erasure dialog itself.
+  const readErasures = useErasureReads();
+  const teamOfferButton = useRef<HTMLButtonElement>(null);
+  const teamRetryButton = useRef<HTMLButtonElement>(null);
+  const [teamUnchecked, setTeamUnchecked] = useState<RaisedForMember<true> | null>(null);
+  const [teamErased, setTeamErased] = useState<RaisedForMember<number> | null>(null);
+  const teamErasures = useErasureConfirmation<CheckedMemberChange<TeamConfirmation>>(teamPending, () =>
+    firstEnabledOf<HTMLElement>(() => teamOfferButton.current, () => teamDateField.current),
+  );
+  const statusOfferButton = useRef<HTMLButtonElement>(null);
+  const statusRetryButton = useRef<HTMLButtonElement>(null);
+  const [statusUnchecked, setStatusUnchecked] = useState<RaisedForMember<true> | null>(null);
+  const [statusErased, setStatusErased] = useState<RaisedForMember<number> | null>(null);
+  const statusErasures = useErasureConfirmation<CheckedMemberChange<StatusConfirmation>>(statusPending, () =>
+    firstEnabledOf<HTMLElement>(() => statusOfferButton.current, () => dateField.current),
+  );
 
   const answer = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
 
@@ -244,6 +288,37 @@ export function useMemberEdit(id: string) {
   // TWO PURE FUNCTIONS AND NO BRANCH OF ITS OWN: the list's four states, then
   // "is this member in it". Both are pinned by execution in `write.test.ts`.
   const form = memberFormRefusalOf(membersSurfaceStateOf(answer), id);
+  // THE SCREEN AS LAST DRAWN, read after an await (story 5.5e): the member,
+  // the organization's today, the teams, every member and the caller. An
+  // erasure dialog's save is judged against these as they are then, never
+  // against what the render that started it had captured.
+  const latest = useRef({
+    member: form.member,
+    today,
+    teams: allTeams,
+    members: organizationMembers,
+    caller: callerAuthUserId,
+  });
+
+  useEffect(() => {
+    latest.current = { member: form.member, today, teams: allTeams, members: organizationMembers, caller: callerAuthUserId };
+  });
+
+  // The two erasure confirmations as last drawn, for the effect below.
+  const erasureDialogs = useRef({ team: teamErasures, status: statusErasures });
+
+  useEffect(() => {
+    erasureDialogs.current = { team: teamErasures, status: statusErasures };
+  });
+
+  // ANOTHER MEMBER, or none: an erasure dialog was about the last one's
+  // change, so it closes — once, when the route's member changes.
+  useEffect(() => {
+    const { team, status } = erasureDialogs.current;
+
+    if (team.shown !== null && team.shown.subject.member !== id) team.drop();
+    if (status.shown !== null && status.shown.subject.member !== id) status.drop();
+  }, [id]);
   // The save's refusal wins over the read's: if a save has just been refused,
   // that is the thing the person is waiting to hear about.
   const refusal: MemberWriteRefusal | null =
@@ -330,6 +405,8 @@ export function useMemberEdit(id: string) {
     );
 
     setTeamSaved(null);
+    setTeamErased(null);
+    setTeamUnchecked(null);
 
     if (refusal !== null) {
       const raised = { code: refusal, saved: false };
@@ -375,8 +452,74 @@ export function useMemberEdit(id: string) {
   }
 
   /**
+   * THE TEAM WRITE ITSELF (story 5.5e: split out of `changeTeam`, which the
+   * erasure dialog's save shares), under the in-flight ref its caller already
+   * holds: exactly what `confirmation` names, judged against `member` as the
+   * list holds it. `erased` is how many conflicts the admin confirmed it
+   * removes; 0 for none.
+   */
+  async function writeTeam(
+    member: MemberListRow,
+    confirmation: TeamConfirmation,
+    teams: NonNullable<typeof allTeams>,
+    on: string,
+    erased: number,
+  ): Promise<void> {
+    const outcome = await changeMemberTeam(
+      supabaseClient().from(MEMBER_TEAM_TABLE),
+      confirmation.change,
+      confirmation.day,
+      confirmation.team?.id ?? null,
+      { member, teams, today: on, positions: offersPosition },
+      confirmation.position,
+    );
+
+    if (outcome.ok) {
+      setTeamSaved({ member: member.id, raised: true });
+      setTeamErased({ member: member.id, raised: erased });
+      // The block remounts on the new history; the pick goes with it.
+      setTeamPick(null);
+    } else {
+      setTeamFailure({ member: member.id, raised: outcome.refusal });
+      setTeamDateMark(dateMarkFor(outcome.refusal, teamBlockKey(member), false));
+    }
+
+    // THE LIST CARRIES THE TEAM HISTORY, and a refusal is refetched too: the
+    // likeliest reason for one is a list behind the database. The teams are
+    // refetched as well, because a team archived meanwhile is the other.
+    // A LANDED MOVE is re-read wherever it shows — Danas's line, the rosters,
+    // and since story 5.5e the leave and resolutions its erasure check stands
+    // on (`MEMBERSHIP_WRITE_DEPENDENTS`), started beside the list.
+    try {
+      await refreshAfterWrite(
+        queryClient,
+        MEMBERS_LIST_KEY,
+        outcome.ok ? MEMBERSHIP_WRITE_DEPENDENTS : NO_DEPENDENTS,
+      );
+      if (!outcome.ok) await queryClient.invalidateQueries({ queryKey: TEAMS_LIST_KEY });
+      // TEAM POSITION: a refusal for a missing position means the setting
+      // moved since this screen read it, so the organization is read again.
+      if (!outcome.ok && teamRefusalRereadsOrganization(outcome.refusal.code)) {
+        await queryClient.invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY });
+      }
+    } catch (cause) {
+      console.error(MEMBER_WRITE_UNAVAILABLE, cause);
+    }
+  }
+
+  /**
    * Send the confirmed team change, keeping the confirmation on screen while it
    * is outstanding. NOTHING CLEARS `teamArmed` BEFORE THE AWAIT.
+   *
+   * A CHANGE NEVER QUIETLY ERASES A CONFLICT (story 5.5e). A move, or the
+   * withdrawal of a scheduled one, first re-reads the calendar, the
+   * organization's leave and its resolutions and derives which unresolved
+   * conflicts it would erase (`@/features/members/services/member-erasures`).
+   * None: the write goes at once, as it always did. Some: the confirmation
+   * closes and the shared erasure dialog opens, carrying it. A check that
+   * cannot be derived keeps the confirmation open with a retry, and writes
+   * nothing; a write refused anyway takes the write's own refusal path. A
+   * position-only change runs no check.
    */
   async function changeTeam(): Promise<void> {
     const member = form.member;
@@ -391,50 +534,45 @@ export function useMemberEdit(id: string) {
       return;
     }
 
+    // Disarmed when this settles, except while it asks for a retry.
+    let disarm = true;
+
     teaming.current = true;
     setTeamFailure(null);
     setTeamSaved(null);
+    setTeamErased(null);
+    setTeamUnchecked(null);
     setTeamPending(true);
 
     try {
-      const outcome = await changeMemberTeam(
-        supabaseClient().from(MEMBER_TEAM_TABLE),
-        confirmation.change,
-        confirmation.day,
-        confirmation.team?.id ?? null,
-        { member, teams: allTeams, today, positions: offersPosition },
-        confirmation.position,
-      );
+      const change = teamChangeOf(member.id, confirmation);
 
-      if (outcome.ok) {
-        setTeamSaved({ member: member.id, raised: true });
-        // The block remounts on the new history; the pick goes with it.
-        setTeamPick(null);
-      } else {
-        setTeamFailure({ member: member.id, raised: outcome.refusal });
-        setTeamDateMark(dateMarkFor(outcome.refusal, teamBlockKey(member), false));
-      }
+      if (change !== null) {
+        const check = await memberErasureCheckOf(readErasures.readAndShare, change, onlineManager.isOnline());
 
-      // THE LIST CARRIES THE TEAM HISTORY, and a refusal is refetched too: the
-      // likeliest reason for one is a list behind the database. The teams are
-      // refetched as well, because a team archived meanwhile is the other.
-      // A LANDED MOVE is re-read wherever it shows — Danas's line and the
-      // rosters (`MEMBERSHIP_WRITE_DEPENDENTS`), started beside the list.
-      try {
-        await refreshAfterWrite(
-          queryClient,
-          MEMBERS_LIST_KEY,
-          outcome.ok ? MEMBERSHIP_WRITE_DEPENDENTS : NO_DEPENDENTS,
-        );
-        if (!outcome.ok) await queryClient.invalidateQueries({ queryKey: TEAMS_LIST_KEY });
-        // TEAM POSITION: a refusal for a missing position means the setting
-        // moved since this screen read it, so the organization is read again.
-        if (!outcome.ok && teamRefusalRereadsOrganization(outcome.refusal.code)) {
-          await queryClient.invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY });
+        if (check.kind === CHECK_UNAVAILABLE) {
+          disarm = false;
+          setTeamUnchecked({ member: member.id, raised: true });
+          focusLater([() => teamRetryButton.current], () => teamOfferButton.current);
+
+          return;
         }
-      } catch (cause) {
-        console.error(MEMBER_WRITE_UNAVAILABLE, cause);
+
+        // REFUSED ANYWAY: the card's own refusal, said here, and nothing sent.
+        if (check.kind === CHECK_REFUSED) {
+          await refuseTeamChecked(member, check.code);
+
+          return;
+        }
+
+        if (check.rows.length > 0) {
+          teamErasures.show(check.rows, { member: member.id, confirmation, change });
+
+          return;
+        }
       }
+
+      await writeTeam(member, confirmation, allTeams, today, 0);
     } catch (cause) {
       console.error(MEMBER_WRITE_UNAVAILABLE, cause);
       setTeamFailure({
@@ -444,7 +582,125 @@ export function useMemberEdit(id: string) {
     } finally {
       teaming.current = false;
       setTeamPending(false);
-      setTeamArmed(null);
+      if (disarm) setTeamArmed(null);
+    }
+  }
+
+  /** Focus on the team card's offer, or its date field once the offer has gone. */
+  function focusTeamCard(): void {
+    focusLater([() => teamOfferButton.current, () => teamDateField.current], () =>
+      firstEnabledOf<HTMLElement>(() => teamOfferButton.current, () => teamDateField.current),
+    );
+  }
+
+  /**
+   * A team change the database would refuse anyway, as the erasure check
+   * found it (story 5.5e): the card's own refusal, with its date mark, and
+   * nothing sent. The list and the teams are read again — and the
+   * organization for a position refusal — as after the write's own refusal;
+   * focus goes to the date field, or the offer.
+   */
+  async function refuseTeamChecked(member: MemberListRow, code: MemberChangeRefusal): Promise<void> {
+    const refusal = { code, saved: false };
+
+    setTeamFailure({ member: member.id, raised: refusal });
+    setTeamDateMark(dateMarkFor(refusal, teamBlockKey(member), false));
+    focusLater([() => teamDateField.current, () => teamOfferButton.current], () =>
+      firstEnabledOf<HTMLElement>(() => teamDateField.current, () => teamOfferButton.current),
+    );
+
+    try {
+      await queryClient.invalidateQueries({ queryKey: MEMBERS_LIST_KEY });
+      await queryClient.invalidateQueries({ queryKey: TEAMS_LIST_KEY });
+      if (teamRefusalRereadsOrganization(code)) {
+        await queryClient.invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY });
+      }
+    } catch (cause) {
+      console.error(MEMBER_WRITE_UNAVAILABLE, cause);
+    }
+  }
+
+  /**
+   * The team erasure dialog's own save, once every row is confirmed (story
+   * 5.5e), under the same in-flight ref: the check is derived again from
+   * fresh reads for the very change it was shown for, and judged against the
+   * screen as it is THEN (`latest`). Another member shown: the dialog closes
+   * and nothing is said. The member's history changed since the
+   * confirmation was armed: stale, nothing written. Unavailable: the card's
+   * confirmation is armed again with the retry. Refused: the card's own
+   * refusal. A changed list: shown again, undecided. Otherwise the write.
+   */
+  async function confirmTeamErasures(shown: ShownErasures<CheckedMemberChange<TeamConfirmation>>): Promise<void> {
+    if (teaming.current || !teamErasures.confirmed) return;
+
+    const { member: memberId, confirmation, change } = shown.subject;
+    const before = latest.current;
+
+    if (before.member === null || before.member.id !== memberId) {
+      teamErasures.drop();
+
+      return;
+    }
+
+    teaming.current = true;
+    setTeamPending(true);
+
+    try {
+      const check = await memberErasureCheckOf(readErasures.readAndShare, change, onlineManager.isOnline());
+      const { member: current, today: on, teams } = latest.current;
+
+      if (current === null || current.id !== memberId) {
+        teamErasures.drop();
+
+        return;
+      }
+
+      if (teamBlockKey(current) !== confirmation.history) {
+        teamErasures.drop();
+        setTeamFailure({ member: memberId, raised: { code: MEMBER_TEAM_STALE, saved: false } });
+        focusTeamCard();
+
+        return;
+      }
+
+      if (check.kind === CHECK_UNAVAILABLE) {
+        teamErasures.drop();
+        // Its own confirmation, armed again, refuses with the retry.
+        setTeamArmed({ member: memberId, raised: confirmation });
+        setTeamUnchecked({ member: memberId, raised: true });
+        focusLater([() => teamRetryButton.current], () => firstEnabledOf<HTMLElement>(() => teamOfferButton.current, () => teamDateField.current));
+
+        return;
+      }
+
+      if (check.kind === CHECK_REFUSED) {
+        teamErasures.drop();
+        await refuseTeamChecked(current, check.code);
+
+        return;
+      }
+
+      if (teamErasures.recheck(shown, check.rows, shown.subject) === RECHECK_CHANGED) return;
+
+      teamErasures.drop();
+
+      if (teams === null || on === null) {
+        setTeamFailure({ member: memberId, raised: { code: MEMBER_WRITE_UNAVAILABLE, saved: false } });
+        focusTeamCard();
+
+        return;
+      }
+
+      await writeTeam(current, confirmation, teams, on, check.rows.length);
+      focusTeamCard();
+    } catch (cause) {
+      console.error(MEMBER_WRITE_UNAVAILABLE, cause);
+      teamErasures.drop();
+      setTeamFailure({ member: memberId, raised: { code: MEMBER_WRITE_UNAVAILABLE, saved: false } });
+      focusTeamCard();
+    } finally {
+      teaming.current = false;
+      setTeamPending(false);
     }
   }
 
@@ -470,6 +726,8 @@ export function useMemberEdit(id: string) {
     });
 
     setStatusSaved(null);
+    setStatusErased(null);
+    setStatusUnchecked(null);
 
     if (refusal !== null) {
       // FOCUS MOVES TO THE DATE, which the block's own alert names; that alert
@@ -491,10 +749,61 @@ export function useMemberEdit(id: string) {
   }
 
   /**
+   * THE STATUS WRITE ITSELF (story 5.5e: split out of `changeStatus`, which
+   * the erasure dialog's save shares), under the in-flight ref its caller
+   * already holds: exactly what `confirmation` names. `erased` is how many
+   * conflicts the admin confirmed it removes; 0 for none.
+   */
+  async function writeStatus(
+    member: MemberListRow,
+    confirmation: StatusConfirmation,
+    members: readonly MemberListRow[],
+    caller: string,
+    on: string,
+    erased: number,
+  ): Promise<void> {
+    const outcome = await changeMemberStatus(
+      supabaseClient().from(MEMBER_STATUS_TABLE),
+      confirmation.change,
+      confirmation.day,
+      { member, members, callerAuthUserId: caller, today: on },
+    );
+
+    if (outcome.ok) {
+      setStatusSaved({ member: member.id, raised: true });
+      setStatusErased({ member: member.id, raised: erased });
+    } else {
+      setStatusFailure({ member: member.id, raised: outcome.refusal });
+      setStatusDateMark(dateMarkFor(outcome.refusal, statusBlockKey(member), false));
+    }
+
+    // THE LIST CARRIES THE VERSIONS, so the marker, the status line and the
+    // next offer all move with it — and it is refetched on a REFUSAL too,
+    // because the likeliest reason for one is a list behind the database
+    // (`MEMBER_STATUS_STALE`). A failed re-read resolves, and the `try` is
+    // for a client that throws first, exactly as the save's is. A LANDED
+    // CHANGE is re-read wherever it shows, as a move is.
+    try {
+      await refreshAfterWrite(
+        queryClient,
+        MEMBERS_LIST_KEY,
+        outcome.ok ? MEMBERSHIP_WRITE_DEPENDENTS : NO_DEPENDENTS,
+      );
+    } catch (cause) {
+      console.error(MEMBER_WRITE_UNAVAILABLE, cause);
+    }
+  }
+
+  /**
    * Send the confirmed status change, keeping the confirmation on screen while
    * it is outstanding.
    *
    * NOTHING CLEARS `statusArmed` BEFORE THE AWAIT, for the reason `issue` gives.
+   *
+   * A CHANGE NEVER QUIETLY ERASES A CONFLICT (story 5.5e): a deactivation,
+   * and the withdrawal of a scheduled reactivation, are checked first exactly
+   * as a team move is (see `changeTeam`). A reactivation, and the withdrawal
+   * of a scheduled deactivation, only add, and run no check.
    */
   async function changeStatus(): Promise<void> {
     const member = form.member;
@@ -510,40 +819,45 @@ export function useMemberEdit(id: string) {
       return;
     }
 
+    // Disarmed when this settles, except while it asks for a retry.
+    let disarm = true;
+
     statusing.current = true;
     setStatusFailure(null);
     setStatusSaved(null);
+    setStatusErased(null);
+    setStatusUnchecked(null);
     setStatusPending(true);
 
     try {
-      const outcome = await changeMemberStatus(
-        supabaseClient().from(MEMBER_STATUS_TABLE),
-        confirmation.change,
-        confirmation.day,
-        { member, members: organizationMembers, callerAuthUserId, today },
-      );
+      const change = statusChangeOf(member.id, confirmation);
 
-      if (outcome.ok) {
-        setStatusSaved({ member: member.id, raised: true });
-      } else {
-        setStatusFailure({ member: member.id, raised: outcome.refusal });
-        setStatusDateMark(dateMarkFor(outcome.refusal, statusBlockKey(member), false));
+      if (change !== null) {
+        const check = await memberErasureCheckOf(readErasures.readAndShare, change, onlineManager.isOnline());
+
+        if (check.kind === CHECK_UNAVAILABLE) {
+          disarm = false;
+          setStatusUnchecked({ member: member.id, raised: true });
+          focusLater([() => statusRetryButton.current], () => statusOfferButton.current);
+
+          return;
+        }
+
+        // REFUSED ANYWAY: the card's own refusal, said here, and nothing sent.
+        if (check.kind === CHECK_REFUSED) {
+          await refuseStatusChecked(member, check.code);
+
+          return;
+        }
+
+        if (check.rows.length > 0) {
+          statusErasures.show(check.rows, { member: member.id, confirmation, change });
+
+          return;
+        }
       }
 
-      // THE LIST CARRIES THE VERSIONS, so the marker, the status line and the
-      // next offer all move with it — and it is refetched on a REFUSAL too,
-      // because the likeliest reason for one is a list behind the database
-      // (`MEMBER_STATUS_STALE`). A failed re-read resolves, and the `try` is
-      // for a client that throws first, exactly as the save's is. A LANDED CHANGE is re-read wherever it shows, as a move is.
-      try {
-        await refreshAfterWrite(
-          queryClient,
-          MEMBERS_LIST_KEY,
-          outcome.ok ? MEMBERSHIP_WRITE_DEPENDENTS : NO_DEPENDENTS,
-        );
-      } catch (cause) {
-        console.error(MEMBER_WRITE_UNAVAILABLE, cause);
-      }
+      await writeStatus(member, confirmation, organizationMembers, callerAuthUserId, today, 0);
     } catch (cause) {
       console.error(MEMBER_WRITE_UNAVAILABLE, cause);
       setStatusFailure({
@@ -555,7 +869,114 @@ export function useMemberEdit(id: string) {
       // carries the busy state, so it has to outlive the request it started.
       statusing.current = false;
       setStatusPending(false);
-      setStatusArmed(null);
+      if (disarm) setStatusArmed(null);
+    }
+  }
+
+  /** Focus on the status card's offer, or its date field once the offer has gone. */
+  function focusStatusCard(): void {
+    focusLater([() => statusOfferButton.current, () => dateField.current], () =>
+      firstEnabledOf<HTMLElement>(() => statusOfferButton.current, () => dateField.current),
+    );
+  }
+
+  /**
+   * A status change the database would refuse anyway, as the erasure check
+   * found it (story 5.5e): `refuseTeamChecked`'s twin.
+   */
+  async function refuseStatusChecked(member: MemberListRow, code: MemberChangeRefusal): Promise<void> {
+    const refusal = { code, saved: false };
+
+    setStatusFailure({ member: member.id, raised: refusal });
+    setStatusDateMark(dateMarkFor(refusal, statusBlockKey(member), false));
+    focusLater([() => dateField.current, () => statusOfferButton.current], () =>
+      firstEnabledOf<HTMLElement>(() => dateField.current, () => statusOfferButton.current),
+    );
+
+    try {
+      await queryClient.invalidateQueries({ queryKey: MEMBERS_LIST_KEY });
+    } catch (cause) {
+      console.error(MEMBER_WRITE_UNAVAILABLE, cause);
+    }
+  }
+
+  /**
+   * The status erasure dialog's own save, once every row is confirmed (story
+   * 5.5e): `confirmTeamErasures`'s twin.
+   */
+  async function confirmStatusErasures(
+    shown: ShownErasures<CheckedMemberChange<StatusConfirmation>>,
+  ): Promise<void> {
+    if (statusing.current || !statusErasures.confirmed) return;
+
+    const { member: memberId, confirmation, change } = shown.subject;
+    const before = latest.current;
+
+    if (before.member === null || before.member.id !== memberId) {
+      statusErasures.drop();
+
+      return;
+    }
+
+    statusing.current = true;
+    setStatusPending(true);
+
+    try {
+      const check = await memberErasureCheckOf(readErasures.readAndShare, change, onlineManager.isOnline());
+      const { member: current, today: on, members, caller } = latest.current;
+
+      if (current === null || current.id !== memberId) {
+        statusErasures.drop();
+
+        return;
+      }
+
+      if (statusBlockKey(current) !== confirmation.history) {
+        statusErasures.drop();
+        setStatusFailure({ member: memberId, raised: { code: MEMBER_STATUS_STALE, saved: false } });
+        focusStatusCard();
+
+        return;
+      }
+
+      if (check.kind === CHECK_UNAVAILABLE) {
+        statusErasures.drop();
+        // Its own confirmation, armed again, refuses with the retry.
+        setStatusArmed({ member: memberId, raised: confirmation });
+        setStatusUnchecked({ member: memberId, raised: true });
+        focusLater([() => statusRetryButton.current], () => firstEnabledOf<HTMLElement>(() => statusOfferButton.current, () => dateField.current));
+
+        return;
+      }
+
+      if (check.kind === CHECK_REFUSED) {
+        statusErasures.drop();
+        await refuseStatusChecked(current, check.code);
+
+        return;
+      }
+
+      if (statusErasures.recheck(shown, check.rows, shown.subject) === RECHECK_CHANGED) return;
+
+      statusErasures.drop();
+
+      if (caller === null || on === null) {
+        setStatusFailure({ member: memberId, raised: { code: MEMBER_WRITE_UNAVAILABLE, saved: false } });
+        focusStatusCard();
+
+        return;
+      }
+
+      await writeStatus(current, confirmation, members, caller, on, check.rows.length);
+      focusStatusCard();
+    } catch (cause) {
+      console.error(MEMBER_WRITE_UNAVAILABLE, cause);
+      statusErasures.drop();
+      setStatusFailure({ member: memberId, raised: { code: MEMBER_WRITE_UNAVAILABLE, saved: false } });
+      focusStatusCard();
+    } finally {
+      statusing.current = false;
+      setStatusPending(false);
     }
   }
 
@@ -734,6 +1155,12 @@ export function useMemberEdit(id: string) {
     setStatusArmed,
     armStatus,
     changeStatus,
+    statusOfferButton,
+    statusRetryButton,
+    statusUnchecked: raisedForMember(statusUnchecked, id) !== null,
+    statusErased: raisedForMember(statusErased, id) ?? 0,
+    statusErasures,
+    confirmStatusErasures,
     // The team block.
     teamDateField,
     positionField,
@@ -752,6 +1179,12 @@ export function useMemberEdit(id: string) {
     armTeam,
     pickTeam,
     changeTeam,
+    teamOfferButton,
+    teamRetryButton,
+    teamUnchecked: raisedForMember(teamUnchecked, id) !== null,
+    teamErased: raisedForMember(teamErased, id) ?? 0,
+    teamErasures,
+    confirmTeamErasures,
   };
 }
 

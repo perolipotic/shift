@@ -3,6 +3,7 @@ import { expect, type Locator } from '@playwright/test';
 import { dayMonth, fullDate } from '../utils/dates.ts';
 import { fill, hr, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
+import { ErasureDialogParts } from './erasure-dialog.ts';
 
 const membership = hr.smjene.membership;
 const leave = hr.ljudi.leaveRecord;
@@ -115,6 +116,47 @@ export class PeoplePage extends BasePage {
 
   deactivateButton(name: string): Locator {
     return this.page.getByRole('button', { name: fill(hr.ljudi.status.deactivate, { name }) });
+  }
+
+  /** The deactivation's confirm, in the status card's confirmation. */
+  deactivateConfirmButton(name: string): Locator {
+    return this.page.getByRole('button', { name: fill(hr.ljudi.status.deactivateConfirm, { name }) });
+  }
+
+  /** The status card's offer to withdraw its scheduled change. */
+  statusWithdrawButton(name: string): Locator {
+    return this.page.getByRole('button', { name: fill(hr.ljudi.status.withdraw, { name }) });
+  }
+
+  /** That withdrawal's confirm, in the status card's confirmation. */
+  statusWithdrawConfirmButton(name: string): Locator {
+    return this.page.getByRole('button', { name: fill(hr.ljudi.status.withdrawConfirm, { name }) });
+  }
+
+  /** The status card's change confirmed from the date field's value: the offer, then its confirm. */
+  async deactivate(name: string): Promise<void> {
+    await this.deactivateButton(name).click();
+    await this.deactivateConfirmButton(name).click();
+  }
+
+  // ------------------------------------------------- the erasure guard (5.5e)
+
+  /**
+   * The team or status card's erasure dialog (story 5.5e), its save named
+   * `save` — the card's own confirm, as its confirmation words it.
+   */
+  memberErasures(save: string): ErasureDialogParts {
+    return new ErasureDialogParts(this.page, { ...hr.ljudi.erasures, save });
+  }
+
+  /** The refusal, inside a card's confirmation, when what its change would erase cannot be checked. */
+  get memberUnchecked(): Locator {
+    return this.alertWith(hr.ljudi.erasures.unavailable);
+  }
+
+  /** That refusal's retry. */
+  get memberUncheckedRetry(): Locator {
+    return this.memberUnchecked.getByRole('button', { name: hr.ljudi.erasures.retry, exact: true });
   }
 
   // ------------------------------------------------ the team membership

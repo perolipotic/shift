@@ -122,7 +122,7 @@ export const FEATURE_PUBLIC = {
   // conflict's glyph.
   calendar: [
     'services/marks', // hours
-    'services/snapshot', // conflicts, hours, leave, pages, teams
+    'services/snapshot', // conflicts, hours, leave, members, pages, teams
     'utils/day-detail', // conflicts
     'utils/modifiers', // conflicts, hours
     'utils/month', // conflicts, hours, leave, pages
@@ -139,14 +139,15 @@ export const FEATURE_PUBLIC = {
   // Story 5.5b: the erasure guard, lifted out of the rotation builder, is
   // shared by the builder and the calendar's roster changes — the diff, rows
   // and decisions, the never-throwing check run, the three fresh reads, the
-  // confirmation's state and freshness loop, and the dialog itself.
+  // confirmation's state and freshness loop, and the dialog itself. Story
+  // 5.5e: the member page's team and status cards use the same pieces.
   conflicts: [
-    'components/erasure-dialog', // calendar, rotation
-    'hooks/use-erasure-confirmation', // calendar, rotation
-    'hooks/use-erasure-reads', // calendar, rotation
+    'components/erasure-dialog', // calendar, members, rotation
+    'hooks/use-erasure-confirmation', // calendar, members, rotation
+    'hooks/use-erasure-reads', // calendar, members, rotation
     'services/conflicts-queue', // calendar, hours
-    'services/erasure-check', // calendar, rotation
-    'services/erasures', // calendar, rotation
+    'services/erasure-check', // calendar, members, rotation
+    'services/erasures', // calendar, members, rotation
     'services/resolutions', // calendar, hours, teams
   ],
   'hour-bands': [
