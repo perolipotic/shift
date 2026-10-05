@@ -121,6 +121,13 @@ const SANCTIONED_PLURAL_KEYS = [
   'rotation.builder.cancelScheduled.erasures.title',
   'rotation.builder.cancelScheduled.erasures.lede',
   'rotation.builder.cancelScheduled.erasures.removed',
+  // STORY 5.5h: the same three counts for confirming or amending an override
+  // in the builder's review — its erasure dialog's title and lede, and what a
+  // guarded disposition removed. A confirm's and an amend's lede are two keys.
+  'rotation.builder.overrides.erasures.title',
+  'rotation.builder.overrides.erasures.ledeConfirm',
+  'rotation.builder.overrides.erasures.ledeAmend',
+  'rotation.builder.overrides.erasures.removed',
   // STORY 5.5e: the same three counts for the member page's team and status
   // cards — their erasure dialogs' title and lede, and what a guarded write
   // removed.
@@ -1191,6 +1198,25 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.detail.override.erasures.changed',
   'kalendar.detail.override.erasures.unavailable',
   'kalendar.detail.override.erasures.retry',
+  // STORY 5.5h: the builder's override review's erasure dialog — a row's
+  // title and its second line ("nakon promjene: {team} taj dan slobodna"; a
+  // shift-type override never changes who is rostered), the toggles' group
+  // label, "Potvrdi brisanje" and "Zadrži", the way back, the kept hint and
+  // the changed line — and the refusal when what a confirm or an amend would
+  // erase cannot be checked, with its retry. The title, the lede and the
+  // removed count are plurals, above.
+  'rotation.builder.overrides.erasures.rowTitle',
+  'rotation.builder.overrides.erasures.rowFree',
+  'rotation.builder.overrides.erasures.decision',
+  'rotation.builder.overrides.erasures.confirm',
+  'rotation.builder.overrides.erasures.keep',
+  'rotation.builder.overrides.erasures.back',
+  'rotation.builder.overrides.erasures.kept',
+  'rotation.builder.overrides.erasures.changed',
+  'rotation.builder.overrides.erasures.unavailable',
+  'rotation.builder.overrides.erasures.retry',
+  // The dialog's own save after a confirm, "Potvrdi izmjenu", apart from "Potvrdi brisanje".
+  'rotation.builder.overrides.erasures.saveConfirm',
   // STORY 5.5e: the member page's erasure dialogs, shared by the team and
   // status cards — a row's title and its second line ("nakon promjene:
   // {team} taj dan bez {member}", the team the conflict was on), the

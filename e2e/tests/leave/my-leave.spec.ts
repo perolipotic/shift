@@ -158,6 +158,7 @@ test("a member reads their own figures, a colleague's leave changes nothing, and
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { member, colleague, today, last, cost } = await seeded(fixture.slug);
   expect(cost, 'the range holds a working day').toBeGreaterThan(0);
 
@@ -228,6 +229,7 @@ test.describe('signed in as the seeded member', () => {
     leavePage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const { member, today, last, cost } = await seeded(fixture.slug);
     await seedLeaveRecord(fixture.slug, member.id, today, last);
 

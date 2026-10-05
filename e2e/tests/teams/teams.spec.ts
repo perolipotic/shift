@@ -17,6 +17,7 @@ test('a created team gets a member, and its roster lists them for every role', a
   teamsPage,
   holdRotationForTeams,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   // EVERYTHING THIS TEST WRITES IS ITS OWN, per attempt: a member can move
   // teams only once per date, so a retry reusing a fixture member would be
   // refused. A fresh team and a fresh member make a second attempt a first.
@@ -95,6 +96,7 @@ test('the add dialog cannot be dismissed while its create is in flight, and conf
   teamsPage,
   holdRotationForTeams,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   // ITS OWN TEAM, per attempt, added under the rotation's hold and archived
   // at the end.
   const teamName = `Smjena ${randomBytes(3).toString('hex')}`;
@@ -169,6 +171,7 @@ test('a renamed team shows under its new name on the member list, without a relo
   teamsPage,
   holdRotationForTeams,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   // ITS OWN TEAM AND MEMBER, per attempt, as the roster test's are: a member
   // moves teams once per date. The team keeps its member, so it is not
   // archived at the end, exactly as the roster test's is not.
@@ -208,6 +211,7 @@ test('a renamed team shows under its new name on the member list, without a relo
 });
 
 test('a renamed team is confirmed and listed under its new name', async ({ page, teamsPage, holdRotationForTeams }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   // ITS OWN TEAM, per attempt, added under the rotation's hold and archived
   // at the end.
   // Neither name holds the other, so a link matched by either is that team's alone.
@@ -245,6 +249,7 @@ test('an archived team asks first, keeps what was typed when cancelled, moves un
   teamsPage,
   holdRotationForTeams,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   // ITS OWN TEAM, per attempt, added under the rotation's hold, and never
   // given a member: a team with members cannot be archived.
   const teamName = `Smjena ${randomBytes(3).toString('hex')}`;

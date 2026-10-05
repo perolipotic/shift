@@ -567,6 +567,10 @@ const SOURCES = [
   // refusals and landed dispositions as return-type unions.
   join(webRoot, 'src', 'features', 'rotation', 'components', 'override-review.tsx'),
   join(webRoot, 'src', 'features', 'rotation', 'services', 'override-disposition.ts'),
+  // Story 5.5h: the review's hook, which holds its state and wiring, and the
+  // pure part of its erasure guard.
+  join(webRoot, 'src', 'features', 'rotation', 'hooks', 'use-override-review.ts'),
+  join(webRoot, 'src', 'features', 'rotation', 'services', 'override-review-erasures.ts'),
   // Story 3.1's calendar: the read failure as a return-type union.
   // `kalendar.tsx` is listed with the destinations above.
   join(webRoot, 'src', 'features', 'calendar', 'services', 'snapshot.ts'),

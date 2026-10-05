@@ -353,6 +353,16 @@ const ROTATION_HISTORY_KEYS = join(srcRoot, 'features', 'rotation', 'services', 
  */
 const ROTATION_OVERRIDE_REVIEW = join(srcRoot, 'features', 'rotation', 'components', 'override-review.tsx');
 /**
+ * Story 5.5h: the review's state and wiring moved into a hook of its own, so
+ * the component renders and the hook holds the latch, the erasure check and
+ * the writes. The two are read as one set wherever a claim is about the
+ * review as a whole; the component alone stays the screen and key entry.
+ */
+const ROTATION_OVERRIDE_REVIEW_HOOK = join(srcRoot, 'features', 'rotation', 'hooks', 'use-override-review.ts');
+const ROTATION_OVERRIDE_REVIEW_SET: readonly string[] = [ROTATION_OVERRIDE_REVIEW, ROTATION_OVERRIDE_REVIEW_HOOK];
+/** Story 5.5h's pure part of the review's erasure guard: the row's change and the refusals' codes. */
+const ROTATION_OVERRIDE_REVIEW_ERASURES = join(srcRoot, 'features', 'rotation', 'services', 'override-review-erasures.ts');
+/**
  * The erasure confirmation (story 5.5b), lifted out of the rotation builder
  * and shared with the calendar's roster changes: its own entry, since both
  * surfaces render it with their own words and it holds no key.
@@ -807,7 +817,11 @@ const SCREENS = [
   // overrides are pending: a row's confirm, amend and discard; the amend's
   // type `<select>`, reason, cancel and save; and the discard's cancel and
   // confirm. The amend dialog's close is `DialogHeader`'s, not the screen's.
-  { name: 'the rotation override review', file: ROTATION_OVERRIDE_REVIEW, expectedControls: 9 },
+  // TEN SINCE STORY 5.5h: the retry beside the refusal when what a confirm or
+  // an amend would erase cannot be checked, written once and shown in the
+  // review or inside the amend's dialog. Its erasure confirmation's controls
+  // are the shared `ErasureDialog`'s, counted there.
+  { name: 'the rotation override review', file: ROTATION_OVERRIDE_REVIEW, expectedControls: 10 },
   // ZERO on every remaining placeholder (four since story 2.2b built
   // `/postavke-rotacije`), and asserted rather than assumed: a placeholder is a
   // heading and nothing else, so the first control any of them grows is a
@@ -979,6 +993,11 @@ const IN_FLIGHT_SCREENS = FORM_SCREENS.filter(
  *
  * So the sweeps below are driven by HANDLER, each one extracted by name, and a
  * screen contributes as many entries as it has handlers that await.
+ *
+ * The rotation override review (stories 3.5c, 5.5h) is not listed: its four
+ * awaiting handlers share one `begin()` latch in its hook, which these sweeps'
+ * per-handler shape cannot read, so its own test below asserts each one's
+ * latch and `finally` by name.
  */
 const IN_FLIGHT_HANDLERS = [
   ...IN_FLIGHT_SCREENS.map((screen) => ({
@@ -2255,10 +2274,18 @@ const KEY_SOURCES = [
     // discarding; and the review that cannot be derived. The refusals and
     // what a landed disposition says come through
     // `@/features/rotation/services/override-disposition`, below.
+    // FORTY-TWO SINCE STORY 5.5h: the review's erasure confirmation — its
+    // title, a confirm's and an amend's lede, changed line, row title, the
+    // row's "taj dan slobodna" line, the toggles' group label, the two
+    // toggles, the way back, the kept hint, and its own save, "Potvrdi
+    // izmjenu" or "Spremi izmjenu" (the amend's key written a second time) —
+    // the refusal when the check cannot be derived,
+    // with its retry, and the landed disposition's count of the conflicts it
+    // removed. The hook renders no string.
     name: 'the rotation override review',
     file: ROTATION_OVERRIDE_REVIEW,
     keys: translationKeys,
-    strings: 26,
+    strings: 42,
   },
   {
     // STORY 3.5c: the six refusals of a disposition (an archived team or type
@@ -5100,6 +5127,8 @@ describe('the member list reads once, under one key', () => {
       ROTATION_WARNING_KEYS,
       ROTATION_HISTORY_KEYS,
       ROTATION_OVERRIDE_REVIEW,
+      ROTATION_OVERRIDE_REVIEW_HOOK,
+      ROTATION_OVERRIDE_REVIEW_ERASURES,
       ROTATION_DISPOSITION_KEYS,
     ]) {
       const text = readFileSync(file, 'utf8');
@@ -5203,15 +5232,28 @@ describe('the member list reads once, under one key', () => {
     expect(confirmCancel).toContain('rotationTodayOf(');
   });
 
-  it('reviews the pending overrides neutrally, holds its dialogs while a write is in flight, and re-reads only the rotation', () => {
+  it('reviews the pending overrides neutrally, holds its dialogs while a write is in flight, and re-reads the rotation and, once landed, its dependents', () => {
     // STORY 3.5c. The review reads nothing of its own — the builder's snapshot
     // is its answer — and every call it makes is
     // `@/features/rotation/services/override-disposition`'s.
-    const review = source(ROTATION_OVERRIDE_REVIEW);
+    // STORY 5.5h, DELIBERATELY: the review is the component and its hook
+    // (`use-override-review`), read as one set. The component renders and
+    // reads no query; the hook holds the latch, the erasure check — whose
+    // three reads are the shared `useErasureReads`'s fetches, never observed —
+    // and the writes. A landed confirm or amend re-reads the rotation with its
+    // declared dependents; a discard and every refusal re-read `ROTATION_KEY`
+    // alone.
+    const review = source(ROTATION_OVERRIDE_REVIEW_SET);
+    const component = source(ROTATION_OVERRIDE_REVIEW);
+    const hook = source(ROTATION_OVERRIDE_REVIEW_HOOK);
 
     expect(occurrences(review, 'useQuery('), 'the review reads a second time').toBe(0);
     expect(occurrences(review, 'queryKey:')).toBe(occurrences(review, 'queryKey: ROTATION_KEY'));
-    expect(review).toContain('invalidateQueries({ queryKey: ROTATION_KEY })');
+    expect(hook).toContain('invalidateQueries({ queryKey: ROTATION_KEY })');
+    expect(hook).toContain('refreshAfterWrite(queryClient, ROTATION_KEY, ROTATION_SAVE_DEPENDENTS)');
+    expect(occurrences(review, 'refreshAfterWrite(')).toBe(1);
+    expect(hook).toContain('useErasureReads(');
+    expect(component, 'the component reads or writes for itself').not.toMatch(/useQueryClient|supabaseClient|ROTATION_KEY/);
     expect(review, 'the review reaches past its modules into the domain').not.toContain('@shift/domain');
     expect(review, 'the review calls a function directly').not.toContain('.rpc(');
     expect(review, 'the review writes a table').not.toMatch(/\.(insert|update|upsert|delete)\(/);
@@ -5219,10 +5261,30 @@ describe('the member list reads once, under one key', () => {
     expect(review).not.toMatch(/\baccent\b/);
     // The discard is ONE neutral confirmation; the amend a Dialog that the
     // backdrop and Escape cannot close while it saves.
-    expect(review).toContain('<ConfirmDialog busy={pending}');
-    expect(review).toContain('dismissible={!pending}');
-    expect(review, 'no in-flight ref guards a second write').toMatch(/writing\.current = true/);
-    expect(review, 'the in-flight ref is never released').toMatch(/finally \{\s*writing\.current = false;/);
+    expect(component).toContain('<ConfirmDialog busy={pending}');
+    expect(component).toContain('dismissible={!pending}');
+    expect(component).toContain('<ErasureDialog');
+    // ONE LATCH, taken by every handler that writes and released on every path.
+    for (const name of ['discard', 'confirm', 'amend', 'confirmReviewErasures']) {
+      const handler = namedHandler(hook, name);
+
+      expect(handler.length, `${name} could not be extracted`).toBeGreaterThan(80);
+      // Anchored on the exact handler, never one whose name merely starts so.
+      expect(handler.startsWith(`async function ${name}(`), `${name} matched another handler`).toBe(true);
+      expect(finallyBlock(handler), `${name} never releases the latch`).toContain('writing.current = false');
+      expect(finallyBlock(handler), `${name} never settles`).toContain('setPending(false)');
+    }
+    expect(hook, 'no in-flight ref guards a second write').toMatch(/writing\.current = true/);
+    expect(namedHandler(hook, 'confirmReviewErasures')).toMatch(
+      /if \(writing\.current \|\| busy \|\| !confirmation\.confirmed\) return;/,
+    );
+    // DISCARD IS NEVER CHECKED (human, 2026-10-05): the check is asked by the
+    // confirm, the amend and the erasure dialog's save, and nothing else.
+    expect(namedHandler(hook, 'discard')).not.toContain('checkErasures(');
+    expect(occurrences(hook, 'await checkErasures(')).toBe(3);
+    for (const name of ['confirm', 'amend', 'confirmReviewErasures']) {
+      expect(namedHandler(hook, name), `${name} asks no check`).toContain('await checkErasures(');
+    }
     // The builder renders it once, after its notices, and no second time.
     expect(occurrences(source(ROTATION_SECTION), '<OverrideReview ')).toBe(1);
   });

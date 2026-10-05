@@ -49,6 +49,7 @@ test('with positions in use, a member moved in as driver shows it on the roster,
   teamsPage,
   holdRotationForTeams,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   // THE SETTING IS SWITCHED ON and left on, for the reason fire-ranks.spec.ts
   // gives: the run's organization is its own and is deleted at teardown.
   await organizationPage.goto();

@@ -25,3 +25,9 @@ export const OVERRIDE_DISCARD_PROMPT_ID = 'rotation-overrides-discard-prompt';
 
 /** The discard confirmation's refusal. */
 export const OVERRIDE_DISCARD_ERROR_ID = 'rotation-overrides-discard-error';
+
+/** The review's erasure confirmation (story 5.5h): the prefix of its title, lede and kept hint ids. */
+export const OVERRIDE_REVIEW_ERASURES_ID = 'rotation-overrides-erasures';
+
+/** The refusal when what a confirm or an amend would erase cannot be checked (story 5.5h). */
+export const OVERRIDE_REVIEW_UNCHECKED_ID = 'rotation-overrides-unchecked';

@@ -179,6 +179,7 @@ for (const [role, storageState] of [
     test.use({ storageState });
 
     test('the month shows the team column and the projected types, today marked', async ({ calendarPage, fixture }) => {
+      test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
       const rotation = await seeded(fixture.slug, fixture.team.id);
 
       await calendarPage.goto();
@@ -228,6 +229,7 @@ test.describe('month navigation', () => {
   test.use({ storageState: ADMIN_STATE });
 
   test('next, next, previous change the month without reading again', async ({ page, calendarPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
 
     await calendarPage.goto();
@@ -308,6 +310,7 @@ test.describe('at 320 px', () => {
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
 
     await calendarPage.goto();
@@ -338,6 +341,7 @@ test.describe('on a phone, as a member', () => {
   test.use({ storageState: MEMBER_STATE, viewport: { width: 390, height: 844 } });
 
   test('lands on Moj raspored with the seeded types, and the switch shows the letters', async ({ page, calendarPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
 
     const reads: string[] = [];
@@ -445,6 +449,7 @@ test.describe('on a phone, as the member on no team', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
   test('reads the notice, never an empty list', async ({ page, calendarPage, loginPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     await held(fixture.slug);
     await loginPage.signIn(fixture.slug, fixture.spare.username, fixture.password);
     await calendarPage.goto();
@@ -465,6 +470,7 @@ for (const [width, height, name] of [
     test.use({ storageState: ADMIN_STATE, viewport: { width, height } });
 
     test('one tab stop on today, the keys move focus, and every cell is named in full', async ({ page, calendarPage, fixture }) => {
+      test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
       const rotation = await seeded(fixture.slug, fixture.team.id);
 
       await calendarPage.goto('?prikaz=sve');
@@ -601,6 +607,7 @@ test.describe('the day detail at 1280 px, as an admin', () => {
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const range = expectedRange(rotation, rotation.today);
     if (range === null) throw new Error('E2E: the seeded rotation does not work today');
@@ -637,6 +644,7 @@ test.describe('the day detail at 1280 px, as an admin', () => {
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     ranksHold = holdFireRanks(fixture.slug);
     await ranksHold.ready;
@@ -671,6 +679,7 @@ test.describe('the day detail at 1280 px, as an admin', () => {
   });
 
   test('a day before the rotation shows the no-rotation text and no roster', async ({ calendarPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     // The seeded rotation starts today, so yesterday has none.
     const yesterday = addDays(rotation.today, -1);
@@ -685,6 +694,7 @@ test.describe('the day detail at 1280 px, as an admin', () => {
   });
 
   test('an off-day cell says the team does not work, with no roster', async ({ calendarPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     // Dan, Noć, Slobodno, Slobodno from today: the day after tomorrow is off.
     const off = addDays(rotation.today, 2);
@@ -700,6 +710,7 @@ test.describe('the day detail at 1280 px, as an admin', () => {
   });
 
   test('browser Back after an in-app month change closes the detail and returns focus to the grid', async ({ page, calendarPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     // The opener is gone once Back shows the other month, so focus falls back
     // to the grid's one tab stop. The months are changed in the app, not by
     // `goto`: a Back across two loaded documents restores the earlier document,
@@ -720,6 +731,7 @@ test.describe('the day detail at 1280 px, as an admin', () => {
   });
 
   test('a day opened before the late close event of a month change stays open', async ({ page, calendarPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     // Back to the earlier month closes the detail through a `detailKey`
     // change, and the dialog's `close` event comes as a later task. A click
     // the browser runs ahead of that task opens a day of the month Back
@@ -750,6 +762,7 @@ test.describe('the day detail at 1280 px, as an admin', () => {
   });
 
   test('browser Back while the detail is open closes it, and it does not reopen', async ({ page, calendarPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const next = firstOfNextMonth(rotation.today);
 
@@ -770,6 +783,7 @@ test.describe('the day detail at 390 px, as a member in Moj raspored', () => {
   test.use({ storageState: MEMBER_STATE, viewport: { width: 390, height: 844 }, hasTouch: true });
 
   test("tapping today's day opens the detail naming her", async ({ page, calendarPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const range = expectedRange(rotation, rotation.today);
     if (range === null) throw new Error('E2E: the seeded rotation does not work today');
@@ -805,6 +819,7 @@ test.describe('a shift-type override at 1280 px, as an admin', () => {
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     // Today projects the first step (Dan); the team worked the second (Noć).
     const override = await seedShiftTypeOverride(rotation, fixture.team.id, rotation.today, 1, REASON);
@@ -851,6 +866,7 @@ test.describe('a shift-type override at 1280 px, as an admin', () => {
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     // Today projects the first step (Dan); the team was off (Slobodno).
     const override = await seedShiftTypeOverride(rotation, fixture.team.id, rotation.today, 2, REASON);
@@ -877,6 +893,7 @@ test.describe('a shift-type override at 390 px, as a member in Moj raspored', ()
   test.use({ storageState: MEMBER_STATE, viewport: { width: 390, height: 844 }, hasTouch: true });
 
   test('marks the day with ✎ and the legend, and the detail names the change', async ({ page, calendarPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const override = await seedShiftTypeOverride(rotation, fixture.team.id, rotation.today, 1, REASON);
 
@@ -911,6 +928,7 @@ test.describe('a roster override at 1280 px, as an admin', () => {
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const range = expectedRange(rotation, rotation.today);
     if (range === null) throw new Error('E2E: the seeded rotation does not work today');
@@ -960,6 +978,7 @@ test.describe('a roster override at 1280 px, as an admin', () => {
   });
 
   test('the person filter on the member taken off lacks the shift', async ({ page, calendarPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const range = expectedRange(rotation, rotation.today);
     if (range === null) throw new Error('E2E: the seeded rotation does not work today');
@@ -997,6 +1016,7 @@ test.describe('a roster override at 390 px, as the member put on', () => {
     loginPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const range = expectedRange(rotation, rotation.today);
     if (range === null) throw new Error('E2E: the seeded rotation does not work today');
@@ -1034,6 +1054,7 @@ test.describe('a double shift at 390 px, as the member put on in Moj raspored', 
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const suffix = randomBytes(3).toString('hex');
     const beta = await seedExtraTeam(fixture.slug, `Smjena Beta ${suffix}`);
@@ -1074,6 +1095,7 @@ test.describe('a roster override a rotation change left pending, at 1280 px, as 
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     // A replacement on D+3, then a change from D+1 saved after it: the new
     // version anchors D+1 on the third step, so D+3 projects Dan — a working
     // day, where the change would otherwise apply.
@@ -1121,6 +1143,7 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     // Ranks on, and the member on no team given one: the candidate line shows it.
     ranksHold = holdFireRanks(fixture.slug);
@@ -1224,6 +1247,7 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     // Both teams work the seeded rotation's first step today: Dan 07:00–19:00.
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const beta = await seedExtraTeam(fixture.slug, `Smjena Beta ${randomBytes(3).toString('hex')}`);
@@ -1296,6 +1320,7 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
   });
 
   test('nothing chosen is refused without a request and keeps the reason', async ({ page, calendarPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const writes: string[] = [];
     page.on('request', (request) => {
@@ -1318,6 +1343,7 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
 
     await calendarPage.goto(gridMonthOf(rotation.today));
@@ -1342,6 +1368,7 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     await seedRosterOverride(rotation, fixture.team.id, rotation.today, fixture.member.name, fixture.spare.name, ROSTER_REASON);
     const replaced = fill(kalendar.detail.rosterChange.replaced, { out: fixture.member.name, in: fixture.spare.name });
@@ -1396,6 +1423,7 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
   });
 
   test('lists a seeded inert change apart, and removes it', async ({ calendarPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     // The member on no team is not on the roster, so taking him off applies to nothing.
     await seedRosterOverride(rotation, fixture.team.id, rotation.today, fixture.spare.name, null, ROSTER_REASON);
@@ -1428,6 +1456,7 @@ test.describe('the roster form at 390 px, as an admin', () => {
   test.use({ storageState: ADMIN_STATE, viewport: { width: 390, height: 844 }, hasTouch: true });
 
   test('a working day shows the form, and the page never scrolls sideways', async ({ page, calendarPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
 
     await calendarPage.goto(gridMonthOf(rotation.today));
@@ -1444,6 +1473,7 @@ test.describe('the roster form at 390 px, as a member', () => {
   test.use({ storageState: MEMBER_STATE, viewport: { width: 390, height: 844 }, hasTouch: true });
 
   test('offers a member-role account no form, no removal and no inert block', async ({ page, calendarPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     // An inert change: the member on no team taken off a shift he is not on.
     await seedRosterOverride(rotation, fixture.team.id, rotation.today, fixture.spare.name, null, ROSTER_REASON);
@@ -1469,6 +1499,7 @@ test.describe('an admin sets and removes a shift-type override at 1280 px', () =
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     // Today projects the first step (Dan); the admin sets the second (Noć).
     const projected = expectedType(rotation, rotation.today);
@@ -1553,6 +1584,7 @@ test.describe('an admin sets and removes a shift-type override at 1280 px', () =
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const worked = rotation.steps[1];
     const writes: string[] = [];
@@ -1585,6 +1617,7 @@ test.describe('an admin sets and removes a shift-type override at 1280 px', () =
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     // Seeded in SQL on a seeded type: the `afterEach` deletes it whatever happens.
     await seedShiftTypeOverride(rotation, fixture.team.id, rotation.today, 1, REASON);
@@ -1643,6 +1676,7 @@ test.describe('the override form at 390 px, as a member', () => {
   test.use({ storageState: MEMBER_STATE, viewport: { width: 390, height: 844 }, hasTouch: true });
 
   test('offers a member-role account no form and no removal in the detail', async ({ page, calendarPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const tomorrow = addDays(rotation.today, 1);
     await seedShiftTypeOverride(rotation, fixture.team.id, tomorrow, 1, REASON);
@@ -1860,6 +1894,7 @@ test.describe('the person filter at 1280 px', () => {
   });
 
   test('a person on no team all month is explained, never an empty list', async ({ page, calendarPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     await held(fixture.slug);
     await calendarPage.goto();
     const select = calendarPage.teamFilter;
@@ -1905,6 +1940,7 @@ test.describe('the person filter for a member-role account', () => {
   test.use({ storageState: MEMBER_STATE, viewport: { width: 1280, height: 800 } });
 
   test('lists the colleagues under Osobe', async ({ page, calendarPage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     await held(fixture.slug);
     await calendarPage.goto('?prikaz=sve');
     await expect(calendarPage.teamFilter).toBeVisible();
@@ -1959,6 +1995,7 @@ test.describe('an override a rotation change left pending, at 1280 px, as an adm
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     // STORY 3.5c. An override on D+3, then a change from D+1 saved after it:
     // the new version anchors D+1 on the third step, so D+3 projects the
     // first (Dan) where the override names the second (Noć).
@@ -2008,6 +2045,7 @@ test.describe('an override a rotation change left pending, at 1280 px, as an adm
     calendarPage,
     fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
     const date = addDays(rotation.today, -2);
     const override = await seedShiftTypeOverride(rotation, fixture.team.id, date, 1, REASON);

@@ -12,7 +12,7 @@ An admin records a member's annual leave as a date range and sees its cost befor
 - Story 5.2: An admin amends or deletes leave, and the balance follows (done)
 - Story 5.3: A collision with a rostered shift becomes a visible conflict (done)
 - Story 5.4: An admin decides each conflict on its own screen (done, 5.4a–e)
-- Story 5.5: A configuration change cannot quietly erase a pending decision (in progress: 5.5a, 5.5b, 5.5e, 5.5f done; 5.5g in review; 5.5c, 5.5d, 5.5h backlog)
+- Story 5.5: A configuration change cannot quietly erase a pending decision (in progress: 5.5a, 5.5b, 5.5e, 5.5f, 5.5g done; 5.5h in review; 5.5c, 5.5d backlog)
 
 ## Requirements & Constraints
 

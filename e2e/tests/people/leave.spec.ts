@@ -203,6 +203,7 @@ test('the cost shows before saving, a save updates the figures, and an overlap i
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { member, today, last, cost } = await seeded(fixture.slug, () => 20);
   expect(cost, 'the range holds a working day').toBeGreaterThan(0);
 
@@ -255,6 +256,7 @@ test('an over-balance range saves with the warning and its number, and the phone
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   // Two short of the cost wherever the cost allows it (`−2` for the usual 3).
   const { member, today, last, cost } = await seeded(fixture.slug, (range) => Math.max(range - 2, 0));
   const allowance = Math.max(cost - 2, 0);
@@ -289,6 +291,7 @@ test('a failed records read replaces the figures and disables the form, and the 
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { member } = await seeded(fixture.slug, () => 20);
   const records = '**/rest/v1/leave_records*';
 
@@ -312,6 +315,7 @@ test('an amend previews without its record, refuses an overlap naming the other,
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const seed = await seeded(fixture.slug, () => 20);
   const { member, today } = seed;
   const first = { from: today, to: isoDaysAfter(today, 4) };
@@ -382,6 +386,7 @@ test('a removal takes one confirmation and restores the balance, a cancel sends 
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const seed = await seeded(fixture.slug, () => 20);
   const { member, today } = seed;
   const record = { from: today, to: isoDaysAfter(today, 4) };
@@ -430,6 +435,7 @@ test('a record removed from under the screen closes amend mode or the confirmati
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const seed = await seeded(fixture.slug, () => 20);
   const { member, today } = seed;
   const record = { from: today, to: isoDaysAfter(today, 4) };
@@ -473,6 +479,7 @@ test('a refused removal keeps its one confirmation open with the alert inside, a
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const seed = await seeded(fixture.slug, () => 20);
   const { member, today } = seed;
   const record = { from: today, to: isoDaysAfter(today, 4) };
@@ -530,6 +537,7 @@ test('a failed amend keeps amend mode and every value and re-reads the records, 
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   // No allowance: whatever the amend charges goes over it.
   const seed = await seeded(fixture.slug, () => 0);
   const { member, today } = seed;
@@ -576,6 +584,7 @@ test('cancelling an amend, or removing the record it amends, returns the form to
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const seed = await seeded(fixture.slug, () => 20);
   const { member, today } = seed;
   const record = { from: today, to: isoDaysAfter(today, 4) };
@@ -629,6 +638,7 @@ test('an amend that uncovers a replaced date names the replacement in the previe
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const setup = await seeded(fixture.slug, () => 20);
   const { member, team, today } = setup;
   const record = { from: today, to: isoDaysAfter(today, 4) };
@@ -671,6 +681,7 @@ test('a removal names every replacement left rostered, by date, and none whose o
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const setup = await seeded(fixture.slug, () => 20);
   const { member, team, today } = setup;
   const record = { from: today, to: isoDaysAfter(today, 4) };
@@ -717,6 +728,7 @@ test('a failed resolutions read says the replacements cannot be checked, in the 
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const setup = await seeded(fixture.slug, () => 20);
   const { member, today } = setup;
   const record = { from: today, to: isoDaysAfter(today, 4) };
@@ -748,6 +760,7 @@ test('opening a removal re-reads the replacements, so one written since the page
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const setup = await seeded(fixture.slug, () => 20);
   const { member, team, today } = setup;
   const record = { from: today, to: isoDaysAfter(today, 4) };

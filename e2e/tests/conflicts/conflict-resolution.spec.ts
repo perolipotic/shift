@@ -138,6 +138,7 @@ test('opens a conflict from its queue row, shows K of N, moves with ‹ › in t
   resolutionPage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { team, seeded, dates } = await scenarioOf(fixture.slug);
   await onlyLeaveOf(page, seeded.id);
 
@@ -230,6 +231,7 @@ test('accepts a conflict as uncovered by keyboard: the queue drops it with a sta
   hoursPage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { team, seeded, today } = await scenarioOf(fixture.slug);
   const sati = hr.sati.organization;
 
@@ -319,6 +321,7 @@ test('a failed save says so and Spremi saves again, the saved line is gone on na
   resolutionPage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { team, seeded, dates } = await scenarioOf(fixture.slug);
   const [today, next, last] = dates;
 
@@ -437,6 +440,7 @@ test('moves the selection across the three cards with the arrow keys, and Tab re
   resolutionPage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { team, seeded, today } = await scenarioOf(fixture.slug);
   await resolutionPage.gotoConflict(seeded.id, today, team.id);
   await expect(resolutionPage.acceptOption).toBeVisible();
@@ -484,6 +488,7 @@ test('replaces the absent member by keyboard: the queue drops the conflict with 
   hoursPage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { team, seeded, today } = await scenarioOf(fixture.slug);
   const dino = await replacementOf(fixture.slug, today);
   const sati = hr.sati.organization;
@@ -584,6 +589,7 @@ test('a replacement already put on the shift meanwhile is named and leaves the l
   resolutionPage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { team, seeded, dates } = await scenarioOf(fixture.slug);
   const [today, next, last] = dates;
   const dino = await replacementOf(fixture.slug, today);
@@ -630,6 +636,7 @@ test('fits the picker on a phone: no sideways scroll, and every candidate line w
   resolutionPage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { team, seeded, today } = await scenarioOf(fixture.slug);
   // A name far wider than a phone, one unbroken word in it, so a line that
   // truncated or pushed the page sideways would show.
@@ -662,6 +669,7 @@ test('a pick is dropped when the choice moves to the first card: accepting saves
   calendarPage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { team, seeded, today } = await scenarioOf(fixture.slug);
   const dino = await replacementOf(fixture.slug, today);
 
@@ -701,6 +709,7 @@ test('Leave pick: a member on leave that date can be picked, and back on the que
   resolutionPage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { team, seeded, today } = await scenarioOf(fixture.slug);
   const eva = await replacementOf(fixture.slug, today);
   await seedLeaveRecord(fixture.slug, eva.id, today, today);
@@ -764,6 +773,7 @@ test('amends the leave by keyboard: card 3 opens the member page\'s amend form p
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { team, seeded, today } = await scenarioOf(fixture.slug);
   const last = isoDaysAfter(today, 4);
   const start = isoDaysAfter(today, 1);
@@ -883,6 +893,7 @@ test('a one-day record: card 3 says the leave is removed and Spremi opens its re
   peoplePage,
   fixture,
 }) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { team, seeded, today } = await scenarioOf(fixture.slug);
   await removeLeaveRecordsInSql(fixture.slug, seeded.id);
   await seedLeaveRecord(fixture.slug, seeded.id, today, today);
