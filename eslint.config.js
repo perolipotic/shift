@@ -141,6 +141,9 @@ export const FEATURE_PUBLIC = {
   // and decisions, the never-throwing check run, the three fresh reads, the
   // confirmation's state and freshness loop, and the dialog itself. Story
   // 5.5e: the member page's team and status cards use the same pieces.
+  // Story 5.5f: the shift-type override's "after" for its four writes (set,
+  // remove, confirm, amend), surface-neutral: the calendar's set and removal
+  // use it, and the rotation builder's override review will (story 5.5h).
   conflicts: [
     'components/erasure-dialog', // calendar, members, rotation
     'hooks/use-erasure-confirmation', // calendar, members, rotation
@@ -148,6 +151,7 @@ export const FEATURE_PUBLIC = {
     'services/conflicts-queue', // calendar, hours
     'services/erasure-check', // calendar, members, rotation
     'services/erasures', // calendar, members, rotation
+    'services/override-erasures', // calendar
     'services/resolutions', // calendar, hours, teams
   ],
   'hour-bands': [

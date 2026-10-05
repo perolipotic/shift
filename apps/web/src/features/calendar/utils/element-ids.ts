@@ -99,3 +99,12 @@ export const ROSTER_ERASURES_ID = 'kalendar-roster-erasures';
 
 /** The refusal when what a roster change would erase cannot be checked (story 5.5b). */
 export const ROSTER_UNCHECKED_ID = 'kalendar-roster-unchecked';
+
+/**
+ * The shift-type override's erasure confirmation (story 5.5f): the prefix of
+ * the ids its title, lede and kept hint carry (`ErasureDialog`'s `id`).
+ */
+export const OVERRIDE_ERASURES_ID = 'kalendar-override-erasures';
+
+/** The refusal when what a shift-type override would erase cannot be checked (story 5.5f). */
+export const OVERRIDE_UNCHECKED_ID = 'kalendar-override-unchecked';

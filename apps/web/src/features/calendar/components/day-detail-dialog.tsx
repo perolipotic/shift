@@ -16,10 +16,12 @@ import {
 import { MODIFIER_OVERRIDDEN, modifierTreatmentOf } from '@/features/calendar/utils/modifiers';
 import {
   OverrideDoneNotice,
+  OverrideErasureConfirm,
   OverrideRemoveAction,
   OverrideRemoveConfirm,
   OverrideRemoveRefusal,
   OverrideSetForm,
+  OverrideSetRefusal,
 } from '@/features/calendar/components/override-form';
 import {
   RosterDoneNotice,
@@ -242,6 +244,7 @@ function renderDetail(
       <RosterRemoveRefusal form={roster} />
       <OverrideDoneNotice form={form} />
       <OverrideRemoveRefusal form={form} />
+      <OverrideSetRefusal form={form} />
       {form.offersRemove ? <OverrideRemoveAction form={form} busy={roster.pending} /> : null}
       {form.offersSet ? (
         <OverrideSetForm key={`${shown.teamId}:${shown.isoDate}`} form={form} busy={roster.pending} />
@@ -380,6 +383,7 @@ export function DayDetailDialog({
       <OverrideRemoveConfirm form={form} detail={detail} busy={roster.pending} />
       <RosterRemoveConfirm form={roster} busy={form.pending} />
       <RosterErasureConfirm form={roster} busy={form.pending} />
+      <OverrideErasureConfirm form={form} busy={roster.pending} />
     </>
   );
 }

@@ -19,13 +19,18 @@ import {
   type DayDetail,
 } from '@/features/calendar/utils/day-detail';
 import {
+  OVERRIDE_ERASURES_ID,
   OVERRIDE_REASON_FIELD_ID,
   OVERRIDE_REMOVE_ERROR_ID,
   OVERRIDE_REMOVE_PROMPT_ID,
   OVERRIDE_SET_ERROR_ID,
   OVERRIDE_SET_HEADING_ID,
   OVERRIDE_TYPE_FIELD_ID,
+  OVERRIDE_UNCHECKED_ID,
 } from '@/features/calendar/utils/element-ids';
+import { ErasureDialog } from '@/features/conflicts/components/erasure-dialog';
+import type { ErasureRow } from '@/features/conflicts/services/erasures';
+import { OVERRIDE_CHANGE_REMOVE, OVERRIDE_CHANGE_SET } from '@/features/conflicts/services/override-erasures';
 import { t } from '@/lib/i18n';
 
 /**
@@ -43,7 +48,7 @@ export function OverrideSetForm({
   /** The roster form's write is in flight (story 3.6b): nothing here may start one. */
   readonly busy: boolean;
 }): ReactNode {
-  const { typeField, reasonField, pending, failure, options, submit } = form;
+  const { typeField, reasonField, pending, failure, options, submit, saveButton, unchecked, clearUnchecked } = form;
   const reasonRefused = failure === OVERRIDE_REFUSED_REASON;
   const typeRefused = failure !== null && !reasonRefused;
 
@@ -58,6 +63,8 @@ export function OverrideSetForm({
         onSubmit={(event) => {
           void submit(event);
         }}
+        // STORY 5.5f: a field changed, so the refusal to check what was entered before no longer stands.
+        onChange={clearUnchecked}
         className="grid gap-4"
       >
         <div className="grid gap-2">
@@ -100,8 +107,10 @@ export function OverrideSetForm({
             {t(overrideWriteMessageKey(failure))}
           </Notice>
         )}
+        {/* STORY 5.5f: a set that could not check what it would erase saved nothing. */}
+        {unchecked === OVERRIDE_CHANGE_SET ? <OverrideUnchecked form={form} busy={busy} /> : null}
         <DialogFooter>
-          <Button className="h-11" type="submit" disabled={pending || busy} aria-busy={pending}>
+          <Button ref={saveButton} className="h-11" type="submit" disabled={pending || busy} aria-busy={pending}>
             {pending ? t('kalendar.detail.override.set.saving') : t('kalendar.detail.override.set.save')}
           </Button>
         </DialogFooter>
@@ -154,19 +163,68 @@ export function OverrideRemoveRefusal({ form }: { readonly form: OverrideFormSta
 }
 
 /**
+ * A set refused once the form has given way (story 5.5f): `taken` re-reads
+ * the day, and the override that landed first replaces the form — and its
+ * Notice with it — so the refusal is said in the day detail itself, in the
+ * same words.
+ */
+export function OverrideSetRefusal({ form }: { readonly form: OverrideFormState }): ReactNode {
+  const { offersSet, failure } = form;
+
+  if (offersSet || failure === null) return null;
+
+  return (
+    <Notice id={OVERRIDE_SET_ERROR_ID} role="alert">
+      {t(overrideWriteMessageKey(failure))}
+    </Notice>
+  );
+}
+
+/**
+ * A write that could not check what it would erase (story 5.5f), so it wrote
+ * nothing: said with a retry, which asks the same write again.
+ */
+function OverrideUnchecked({ form, busy }: { readonly form: OverrideFormState; readonly busy: boolean }): ReactNode {
+  const { pending, retryButton, retry } = form;
+
+  return (
+    <Notice id={OVERRIDE_UNCHECKED_ID} role="alert">
+      {t('kalendar.detail.override.erasures.unavailable')}
+      <Button
+        ref={retryButton}
+        className="mt-3 flex h-11"
+        type="button"
+        variant="outline"
+        disabled={pending || busy}
+        onClick={retry}
+      >
+        {t('kalendar.detail.override.erasures.retry')}
+      </Button>
+    </Notice>
+  );
+}
+
+/**
  * A write that landed (story 3.5b), said in the day detail as a
- * `role="status"` Notice: the save, or the removal and the type it restored.
+ * `role="status"` Notice: the save, or the removal and the type it restored
+ * — and, since story 5.5f, how many conflicts it removed, as confirmed in its
+ * erasure confirmation.
  */
 export function OverrideDoneNotice({ form }: { readonly form: OverrideFormState }): ReactNode {
-  const { done } = form;
+  const { done, erased } = form;
 
   if (done === null) return null;
 
   return (
     <Notice role="status">
-      {done.code === OVERRIDE_REMOVED && done.projectedTypeName !== null
-        ? t(overrideDoneMessageKey(done), { type: done.projectedTypeName })
-        : t(overrideDoneMessageKey(done))}
+      <span className="block">
+        {done.code === OVERRIDE_REMOVED && done.projectedTypeName !== null
+          ? t(overrideDoneMessageKey(done), { type: done.projectedTypeName })
+          : t(overrideDoneMessageKey(done))}
+      </span>
+      {erased === 0 ? null : (
+        <span className="mt-2 block">{t('kalendar.detail.override.erasures.removed', { count: erased })}</span>
+      )}
     </Notice>
   );
 }
@@ -211,6 +269,8 @@ export function OverrideRemoveConfirm({
           {t(overrideWriteMessageKey(removeFailure))}
         </Notice>
       )}
+      {/* STORY 5.5f: a removal that could not check what it would erase removed nothing. */}
+      {form.unchecked === OVERRIDE_CHANGE_REMOVE ? <OverrideUnchecked form={form} busy={busy} /> : null}
       <DialogFooter>
         <Button
           ref={removeCancel}
@@ -235,5 +295,78 @@ export function OverrideRemoveConfirm({
         </Button>
       </DialogFooter>
     </ConfirmDialog>
+  );
+}
+
+/**
+ * A SHIFT-TYPE OVERRIDE'S ERASURE CONFIRMATION (story 5.5f): the shared
+ * `ErasureDialog` in the calendar's words, rendered BESIDE the day detail as
+ * the removal's confirmation is. One row per conflict the write would erase
+ * — "{member} na godišnjem · nakon promjene: {team} taj dan slobodna" — and
+ * its own save: "Spremi izmjenu" for a set, "Ukloni" for a removal,
+ * `aria-disabled` until every row is confirmed. A removal's lede and kept
+ * hint say so in its own words. "Natrag na uređivanje" returns to the form
+ * with its inputs kept, or to the day detail. Its rows scroll inside it.
+ */
+export function OverrideErasureConfirm({
+  form,
+  busy,
+}: {
+  readonly form: OverrideFormState;
+  /** The roster form's write is in flight (story 3.6b). */
+  readonly busy: boolean;
+}): ReactNode {
+  const { erasures, pending, confirmOverrideErasures } = form;
+  const shown = erasures.shown;
+
+  if (shown === null) return null;
+
+  const { rows } = shown;
+  const removal = shown.subject.kind === OVERRIDE_CHANGE_REMOVE;
+  const partsOf = (row: ErasureRow) => ({
+    team: row.teamName,
+    weekday: row.weekday,
+    date: row.dayMonth,
+    type: row.shiftTypeName,
+  });
+
+  return (
+    <ErasureDialog
+      id={OVERRIDE_ERASURES_ID}
+      rows={rows}
+      changed={shown.changed}
+      decisions={erasures.decisions}
+      busy={pending || busy}
+      firstErasure={erasures.firstErasure}
+      // A shift-type override can erase the conflict of every member on leave
+      // that day, so the rows scroll inside the dialog (as the member page's).
+      scrollRows
+      copy={{
+        title: t('kalendar.detail.override.erasures.title', { count: rows.length }),
+        lede: removal
+          ? t('kalendar.detail.override.erasures.ledeRemoval', { count: rows.length })
+          : t('kalendar.detail.override.erasures.lede', { count: rows.length }),
+        changed: t('kalendar.detail.override.erasures.changed'),
+        rowTitle: (row) => t('kalendar.detail.override.erasures.rowTitle', partsOf(row)),
+        // ALWAYS "TAJ DAN SLOBODNA": a shift-type override never changes who
+        // is rostered, so a conflict it erases is one whose team no longer
+        // works that day — `teamWorks` is false on every row here.
+        rowDetail: (row) =>
+          t('kalendar.detail.override.erasures.rowFree', { member: row.memberName, team: row.teamName }),
+        decision: (row) => t('kalendar.detail.override.erasures.decision', partsOf(row)),
+        confirm: t('kalendar.detail.override.erasures.confirm'),
+        keep: t('kalendar.detail.override.erasures.keep'),
+        back: t('kalendar.detail.override.erasures.back'),
+        kept: removal
+          ? t('kalendar.detail.override.erasures.keptRemoval')
+          : t('kalendar.detail.override.erasures.kept'),
+        save: removal ? t('kalendar.detail.override.remove.confirm') : t('kalendar.detail.override.set.save'),
+      }}
+      onDecide={erasures.decide}
+      onBack={erasures.close}
+      onSave={() => {
+        void confirmOverrideErasures(shown);
+      }}
+    />
   );
 }

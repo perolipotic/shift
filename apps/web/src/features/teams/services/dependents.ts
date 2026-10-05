@@ -177,6 +177,17 @@ export const ROSTER_WRITE_DEPENDENTS: readonly QueryKey[] = [
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
 ];
 
+/**
+ * A calendar shift-type override set or removed (story 5.5f), beside the
+ * calendar snapshot it is drawn from: the organization's live leave records
+ * and resolutions, the other two reads its erasure check stands on, so an
+ * override that erased a conflict takes it out of the queue on the next read.
+ */
+export const OVERRIDE_WRITE_DEPENDENTS: readonly QueryKey[] = [
+  ORGANIZATION_LEAVE_RECORDS_KEY,
+  ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+];
+
 /** A refusal's re-read: the surface's own key, and nothing that depends on it. */
 export const NO_DEPENDENTS: readonly QueryKey[] = [];
 

@@ -71,6 +71,10 @@ export const CONFLICTS_SCREEN_EXEMPT: readonly { readonly file: string; readonly
     why: 'the shared erasure confirmation (story 5.5b), rendered by the rotation builder, the calendar and the member page\'s two cards (5.5e, its rows scrolling inside) with their own words; a screen entry of its own in the sign-in suite',
   },
   {
+    file: 'services/override-erasures.ts',
+    why: 'the shift-type override\'s erasure "after" for set, remove, confirm and amend, and one run of the check (story 5.5f); renders nothing and declares no key, executed by override-erasures.test.ts',
+  },
+  {
     file: 'services/resolution-write.ts',
     why: 'the two resolution writes (stories 5.4b, 5.4c) and their refusals; a key source of its own, executed by resolution-write.test.ts',
   },

@@ -108,6 +108,13 @@ const SANCTIONED_PLURAL_KEYS = [
   // A removal's lede, "… Prije uklanjanja odluči za svaki." (review).
   'kalendar.detail.rosterChange.erasures.ledeRemoval',
   'kalendar.detail.rosterChange.erasures.removed',
+  // STORY 5.5f: the same counts for a calendar shift-type override — its
+  // erasure confirmation's title, a set's and a removal's lede, and what a
+  // guarded write removed.
+  'kalendar.detail.override.erasures.title',
+  'kalendar.detail.override.erasures.lede',
+  'kalendar.detail.override.erasures.ledeRemoval',
+  'kalendar.detail.override.erasures.removed',
   // STORY 5.5e: the same three counts for the member page's team and status
   // cards — their erasure dialogs' title and lede, and what a guarded write
   // removed.
@@ -1142,6 +1149,24 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.detail.rosterChange.erasures.changed',
   'kalendar.detail.rosterChange.erasures.unavailable',
   'kalendar.detail.rosterChange.erasures.retry',
+  // STORY 5.5f: a shift-type override's erasure confirmation — a row's title
+  // and its second line ("nakon promjene: {team} taj dan slobodna"; never
+  // "taj dan bez": an override never changes who is rostered), the toggles'
+  // group label, "Potvrdi brisanje" and "Zadrži", the way back, the kept
+  // hint (a set's, and a removal's own) and the changed line — and the
+  // refusal when what the write would erase cannot be checked, with its
+  // retry. The title, the ledes and the removed count are plurals, above.
+  'kalendar.detail.override.erasures.rowTitle',
+  'kalendar.detail.override.erasures.rowFree',
+  'kalendar.detail.override.erasures.decision',
+  'kalendar.detail.override.erasures.confirm',
+  'kalendar.detail.override.erasures.keep',
+  'kalendar.detail.override.erasures.back',
+  'kalendar.detail.override.erasures.kept',
+  'kalendar.detail.override.erasures.keptRemoval',
+  'kalendar.detail.override.erasures.changed',
+  'kalendar.detail.override.erasures.unavailable',
+  'kalendar.detail.override.erasures.retry',
   // STORY 5.5e: the member page's erasure dialogs, shared by the team and
   // status cards — a row's title and its second line ("nakon promjene:
   // {team} taj dan bez {member}", the team the conflict was on), the
