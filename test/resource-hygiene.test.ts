@@ -1451,6 +1451,13 @@ const SANCTIONED_SCREEN_KEYS = [
   'raspored.resolution.hintAmend',
   'raspored.resolution.hintAmendRemove',
   'ljudi.form.backToConflicts',
+  // STORY 5.5d: a conflict back because its replacement no longer applies —
+  // the line that says to remove it in the calendar and decide again, which a
+  // refusal on the held key repeats.
+  'raspored.resolution.held',
+  // The same as Spremi's hint, "Ukloni je u kalendaru" a link to the day's month.
+  'raspored.resolution.heldHint',
+  'raspored.resolution.heldAction',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

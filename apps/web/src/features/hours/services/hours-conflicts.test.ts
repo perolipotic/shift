@@ -478,8 +478,14 @@ describe('the surface', () => {
 });
 
 /** A resolution row as `conflict_resolutions` and `my_conflict_resolutions()` answer it. */
-function resolutionOf(memberId: string, date: string, teamId: string, kind = 'accept_uncovered'): Row {
-  return { member_id: memberId, date, team_id: teamId, kind };
+function resolutionOf(
+  memberId: string,
+  date: string,
+  teamId: string,
+  kind = 'accept_uncovered',
+  rosterOverrideId: string | null = null,
+): Row {
+  return { member_id: memberId, date, team_id: teamId, kind, roster_override_id: rosterOverrideId };
 }
 
 describe('resolutions (story 5.4a)', () => {
@@ -628,7 +634,7 @@ describe('accepted as leaveKeys is leave, not work (story 5.4b)', () => {
 describe('replaced is leave too, and the replacement works it (story 5.4c)', () => {
   const a = teamOf(PILOT, 0);
   // 10.09 is a 12 h Dan of the viewer's team, in conflict with WORKED; Ana is put on it.
-  const replaced = [resolutionOf(VIEWER_MEMBER, '2026-09-10', a, 'replace_member')];
+  const replaced = [resolutionOf(VIEWER_MEMBER, '2026-09-10', a, 'replace_member', 'ro-ana')];
   const TWELVE_HOURS = 720;
   let replacedAdmin: CalendarSnapshot;
   let replacedMember: CalendarSnapshot;
@@ -677,5 +683,38 @@ describe('replaced is leave too, and the replacement works it (story 5.4c)', () 
 
     expect(view.leave).not.toBeNull();
     expect(t(view.leave!.key, view.leave!.values)).toBe('12 h');
+  });
+
+  describe('Hours: a replacement that no longer applies (story 5.5d)', () => {
+    let pendingAdmin: CalendarSnapshot;
+    let pendingMember: CalendarSnapshot;
+
+    beforeAll(async () => {
+      // The same resolution, its override written before the seeded rotation's stamp: pending, so not applied.
+      const rosterOverrides = [
+        calendarRosterOverrideRow('ro-ana', a, '2026-09-10', null, ANA, { createdAt: '2019-01-01T00:00:00+00:00' }),
+      ];
+
+      pendingAdmin = await snapshotOf(PILOT, { rosterOverrides });
+      pendingMember = await snapshotOf(PILOT, { role: 'member_role', rosterOverrides });
+    });
+
+    it('feeds no leave key, on the admin path and on the member path alike', () => {
+      expect(stateOf(pendingAdmin, replaced).leaveKeys).toEqual([]);
+      expect(stateOf(pendingMember, replaced).leaveKeys).toEqual([]);
+      expect(hoursLeaveKeysOf(pendingMember, replaced)).toEqual([]);
+    });
+
+    it("returns the absent member's shift to band hours and counts its conflict again, on both sides", () => {
+      const adminState = stateOf(pendingAdmin, replaced);
+      const memberState = stateOf(pendingMember, replaced);
+      const absent = rowOfMember(tableOf(pendingAdmin, adminState.collisions, SEPTEMBER, adminState.leaveKeys), VIEWER_MEMBER);
+      const own = ownOf(pendingMember, memberState.collisions, SEPTEMBER, memberState.leaveKeys);
+
+      expect(absent.hours.leaveMinutes).toBe(0);
+      expect(absent.conflictCount).toBe(3);
+      expect(own.leave).toBeNull();
+      expect(memberState.collisions).toHaveLength(adminState.collisions.length);
+    });
   });
 });

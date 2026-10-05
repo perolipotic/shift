@@ -2462,10 +2462,12 @@ const KEY_SOURCES = [
     // nobody-to-add line, and the generated reason.
     // THIRTY-SIX SINCE STORY 5.4d: the third card's title, the absent member
     // working in its strip, and the balance it gives back.
+    // THIRTY-EIGHT SINCE STORY 5.5d: Spremi's hint while a replacement that
+    // no longer applies holds the key, and its link to the calendar.
     name: 'the conflict resolution screen',
     file: RESOLUTION,
     keys: translationKeys,
-    strings: 36,
+    strings: 38,
   },
   {
     // STORY 5.4b: the facts line with and without times, who else works or
@@ -2486,11 +2488,12 @@ const KEY_SOURCES = [
   },
   {
     // STORY 5.4b: the write's three refusals — gone, denied, failed. FOUR
-    // SINCE STORY 5.4c: the replacement already on the shift.
+    // SINCE STORY 5.4c: the replacement already on the shift. FIVE SINCE
+    // STORY 5.5d: the key a replacement that does not apply still holds.
     name: 'the conflict resolution write',
     file: RESOLUTION_WRITE_KEYS,
     keys: messageKeyUnions,
-    strings: 4,
+    strings: 5,
   },
   {
     // STORY 5.2c: the two lines in place of the figures (unavailable,

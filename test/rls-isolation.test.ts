@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -17937,11 +17938,11 @@ describe('a conflict resolution is recorded by an active admin alone, one live p
     },
   );
 
-  it.skipIf(noDatabase)('my_conflict_resolutions returns exactly member_id, date, team_id and kind', async () => {
+  it.skipIf(noDatabase)('my_conflict_resolutions returns exactly member_id, date, team_id, kind and, since 0033, roster_override_id', async () => {
     const client = await connect();
     try {
       const { fields } = await client.query('select * from public.my_conflict_resolutions() limit 0');
-      expect(fields.map((field) => field.name)).toEqual(['member_id', 'date', 'team_id', 'kind']);
+      expect(fields.map((field) => field.name)).toEqual(['member_id', 'date', 'team_id', 'kind', 'roster_override_id']);
     } finally {
       await client.end();
     }
@@ -18650,4 +18651,171 @@ describe('a conflict is resolved by putting someone else on the shift, the overr
     expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
     expect(refusal.message).toBe('permission denied for function replace_conflict_member');
   });
+});
+
+/**
+ * Story 5.5d's half in the database (0033): removing the override behind a
+ * `replace_member` resolution ends that resolution in the same call,
+ * attributed to the admin who removed it, which frees the conflict's key; the
+ * rows 0032's gap left behind are backfilled; and a member reads their own
+ * link.
+ */
+describe('removing the override behind a replacement ends its resolution, and frees the key (story 5.5d)', () => {
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'soft-removes the $fixture replacement with its override, attributed to the remover, and admits a new decision on the key',
+    async ({ slug, admin, member, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const replacement = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+        const [team] = await twoLiveTeamsOf(client, organization);
+
+        await actAs(client, owner.authUserId, organization);
+        await leaveOver(client, organization, [self.id]);
+        const replaced = await replaceConflictMember(client, { member: self.id, date: '2042-09-12', team, replacement: replacement.id });
+        const accepted = await insertResolution(client, { organization, member: self.id, date: '2042-09-13', team });
+        // An override no decision wrote, on another day: removing it touches no resolution.
+        await client.query(
+          `insert into roster_overrides (organization_id, team_id, date, member_out_id, member_in_id, reason)
+           values ($1, $2, '2042-09-13', null, $3, 'Dodatni')`,
+          [organization, team, replacement.id],
+        );
+        // One transaction, one `now()`: told apart by date, never by creation order.
+        const overrides = await rosterOverrideRowsOf(client, team);
+        const linked = overrides.find((row) => row.date === '2042-09-12');
+        const unrelated = overrides.find((row) => row.date === '2042-09-13');
+        if (linked === undefined || unrelated === undefined) throw new Error(`${slug}: the overrides were not written`);
+
+        // A member may not remove it: nothing ends.
+        await actAs(client, self.authUserId, organization);
+        const refused = await refusedThenContinue(client, () => removeRosterOverride(client, linked.id));
+        await actAs(client, owner.authUserId, organization);
+        await removeRosterOverride(client, unrelated.id);
+        const afterUnrelated = await resolutionRowsOf(client, self.id);
+        await removeRosterOverride(client, linked.id);
+        // The key is free: the admin decides again, and it saves.
+        const again = await insertResolution(client, { organization, member: self.id, date: '2042-09-12', team });
+        await actAsOwner(client);
+
+        expect(refused.code, slug).toBe('42501');
+        expect(
+          afterUnrelated.map((row) => ({ id: row.id, live: row.live })),
+          `${slug}: removing an override no decision wrote ended a resolution`,
+        ).toEqual([
+          { id: replaced, live: true },
+          { id: accepted, live: true },
+        ]);
+        const { rows } = await client.query<{ id: string; removedBy: string | null; same: boolean }>(
+          `select c.id::text as id, c.removed_by::text as "removedBy", c.removed_at = o.removed_at as same
+             from conflict_resolutions c join roster_overrides o on o.id = c.roster_override_id
+            where c.id = $1`,
+          [replaced],
+        );
+        expect(rows, `${slug}: the replacement did not end with its override, attributed to the remover`).toEqual([
+          { id: replaced, removedBy: owner.authUserId, same: true },
+        ]);
+        expect(
+          (await resolutionRowsOf(client, self.id)).map((row) => ({ id: row.id, date: row.date, live: row.live })),
+          `${slug}: the accepted conflict was touched, or the key was not freed`,
+        ).toEqual([
+          { id: replaced, date: '2042-09-12', live: false },
+          { id: again, date: '2042-09-12', live: true },
+          { id: accepted, date: '2042-09-13', live: true },
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'backfills a $fixture replacement whose override was removed before 0033, copying the removal, and nothing else',
+    async ({ slug, admin, member, bystander }) => {
+      // 0033's backfill, executed as written against rows 0032's gap left behind.
+      const migration = readFileSync(
+        join(repoRoot, 'supabase', 'migrations', '0033_replacement_resolution_lifetime.sql'),
+        'utf8',
+      ).replaceAll(/--[^\n]*/g, '');
+      const backfill = /update public\.conflict_resolutions c\s+set removed_by = o\.removed_by,[\s\S]*?;/.exec(migration)?.[0];
+      expect(backfill, '0033 has no backfill').toBeDefined();
+
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const replacement = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+        const [team] = await twoLiveTeamsOf(client, organization);
+
+        await actAs(client, owner.authUserId, organization);
+        await leaveOver(client, organization, [self.id]);
+        const orphaned = await replaceConflictMember(client, { member: self.id, date: '2042-09-12', team, replacement: replacement.id });
+        const standing = await replaceConflictMember(client, { member: self.id, date: '2042-09-13', team, replacement: replacement.id });
+        const accepted = await insertResolution(client, { organization, member: self.id, date: '2042-09-14', team });
+        await actAsOwner(client);
+        // As 0027 removed it before 0033: the override alone, removed an hour ago by the bystander.
+        await client.query(
+          `update roster_overrides set removed_by = $2, removed_at = now() - interval '1 hour'
+            where team_id = $1 and date = '2042-09-12'`,
+          [team, replacement.authUserId],
+        );
+        await client.query(backfill ?? '');
+
+        const { rows } = await client.query<{ id: string; live: boolean; removedBy: string | null; same: boolean | null }>(
+          `select c.id::text as id, c.removed_at is null as live, c.removed_by::text as "removedBy",
+                  c.removed_at = o.removed_at as same
+             from conflict_resolutions c left join roster_overrides o on o.id = c.roster_override_id
+            where c.member_id = $1 order by c.date`,
+          [self.id],
+        );
+        expect(rows, `${slug}: the backfill did not end exactly the orphaned replacement, as its override's removal`).toEqual([
+          { id: orphaned, live: false, removedBy: replacement.authUserId, same: true },
+          { id: standing, live: true, removedBy: null, same: null },
+          { id: accepted, live: true, removedBy: null, same: null },
+        ]);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase)('leaves no live replacement linked to a removed override anywhere once 0033 has run', async () => {
+    const client = await connect();
+    try {
+      const { rows } = await client.query<{ count: number }>(
+        `select count(*)::int as count
+           from conflict_resolutions c join roster_overrides o
+             on o.organization_id = c.organization_id and o.id = c.roster_override_id
+          where c.removed_at is null and o.removed_at is not null`,
+      );
+      expect(rows[0]?.count).toBe(0);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'gives the $fixture member the override their own replacement names, and none for an accepted one',
+    async ({ slug, admin, member, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const replacement = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+        const [team] = await twoLiveTeamsOf(client, organization);
+
+        await actAs(client, owner.authUserId, organization);
+        await leaveOver(client, organization, [self.id]);
+        await replaceConflictMember(client, { member: self.id, date: '2042-09-12', team, replacement: replacement.id });
+        await insertResolution(client, { organization, member: self.id, date: '2042-09-13', team });
+        const [linked] = await rosterOverrideRowsOf(client, team);
+        await actAs(client, self.authUserId, organization);
+        const { rows } = await client.query<{ date: string; kind: string; link: string | null }>(
+          `select date::text as date, kind, roster_override_id::text as link from public.my_conflict_resolutions()`,
+        );
+        await actAsOwner(client);
+
+        expect(rows, slug).toEqual([
+          { date: '2042-09-12', kind: 'replace_member', link: linked?.id },
+          { date: '2042-09-13', kind: 'accept_uncovered', link: null },
+        ]);
+      });
+    },
+  );
 });

@@ -4,6 +4,7 @@ import {
   RESOLUTION_DENIED,
   RESOLUTION_FAILED,
   RESOLUTION_GONE,
+  RESOLUTION_HELD,
   RESOLUTION_TAKEN,
   RESOLUTION_WRITE_TABLE,
   REPLACE_CONFLICT_MEMBER_FUNCTION,
@@ -206,6 +207,35 @@ describe('replacing the absent member (story 5.4c)', () => {
     });
     expect(unsent.calls).toEqual([]);
     expect(errors).toHaveBeenCalled();
+  });
+});
+
+describe('a key a replacement that does not apply still holds (story 5.5d)', () => {
+  const LIVE_KEY = { code: '23505', message: 'duplicate key value violates unique constraint "conflict_resolutions_live_key"' };
+  const EXISTS = { code: '23505', message: 'CONFLICT_RESOLUTION_EXISTS' };
+
+  it('answers the accept\'s 23505 as held when the screen knows the key is held, and as gone otherwise', async () => {
+    const { table } = tableAnswering(() => Promise.resolve({ error: LIVE_KEY }));
+
+    await expect(acceptUncovered(table, TARGET, true)).resolves.toEqual({ ok: false, code: RESOLUTION_HELD });
+    await expect(acceptUncovered(table, TARGET)).resolves.toEqual({ ok: false, code: RESOLUTION_GONE });
+    expect(resolutionInsertFailureOf(LIVE_KEY, true)).toBe(RESOLUTION_HELD);
+  });
+
+  it('answers the replacement\'s resolution key as held, but a taken replacement and a P0002 stay their own', async () => {
+    const { client } = rpcAnswering(() => Promise.resolve({ error: EXISTS }));
+
+    await expect(replaceMember(client, REPLACEMENT, true)).resolves.toEqual({ ok: false, code: RESOLUTION_HELD });
+    expect(resolutionReplaceFailureOf({ code: '23505', message: 'CONFLICT_REPLACEMENT_TAKEN' }, true)).toBe(RESOLUTION_TAKEN);
+    expect(resolutionReplaceFailureOf({ code: 'P0002' }, true)).toBe(RESOLUTION_GONE);
+    expect(resolutionReplaceFailureOf(EXISTS)).toBe(RESOLUTION_GONE);
+  });
+
+  it('says the same line the screen states while the key is held', () => {
+    expect(resolutionFailureLineOf(RESOLUTION_HELD, null)).toEqual({ key: 'raspored.resolution.held' });
+    expect(t(resolutionFailureMessageKey(RESOLUTION_HELD))).toBe(
+      'Zamjena se ne primjenjuje. Ukloni je u kalendaru pa odluči ponovno.',
+    );
   });
 });
 

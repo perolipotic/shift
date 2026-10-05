@@ -23,6 +23,7 @@ import {
   CONFLICT_REPLACE_TAKEN_DEPENDENTS,
   CONFLICT_REPLACE_WRITE_DEPENDENTS,
   CONFLICT_RESOLUTION_GONE_DEPENDENTS,
+  CONFLICT_RESOLUTION_HELD_DEPENDENTS,
   CONFLICT_RESOLUTION_WRITE_DEPENDENTS,
   HOUR_BAND_WRITE_DEPENDENTS,
   LEAVE_WRITE_DEPENDENTS,
@@ -264,6 +265,13 @@ describe('the reads a team or membership write makes stale', () => {
       stale: [CALENDAR_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
     },
     {
+      write: 'a decision refused on a key a replacement that does not apply holds (story 5.5d)',
+      own: ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+      dependents: CONFLICT_RESOLUTION_HELD_DEPENDENTS,
+      // Both resolution reads, and the snapshot that decides whether the replacement applies.
+      stale: [CALENDAR_KEY, MY_CONFLICT_RESOLUTIONS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
+    },
+    {
       write: 'a conflict resolution refused as no longer open (story 5.4b)',
       own: ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
       dependents: CONFLICT_RESOLUTION_GONE_DEPENDENTS,
@@ -293,8 +301,14 @@ describe('the reads a team or membership write makes stale', () => {
       own: CALENDAR_KEY,
       dependents: ROSTER_WRITE_DEPENDENTS,
       // The calendar snapshot the change is drawn in, and the leave and
-      // resolutions the erasure check and the queue derive from with it.
-      stale: [CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
+      // resolutions the erasure check and the queue derive from with it;
+      // since 0033 a removal can end a replacement, so both resolution reads.
+      stale: [
+        CALENDAR_KEY,
+        ORGANIZATION_LEAVE_RECORDS_KEY,
+        MY_CONFLICT_RESOLUTIONS_KEY,
+        ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+      ],
     },
     {
       write: 'a calendar shift-type override set or removed (story 5.5f)',

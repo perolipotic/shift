@@ -79,9 +79,15 @@ const KIND_COLUMN = 'kind';
 const REMOVED_COLUMN = 'removed_at';
 const ROSTER_OVERRIDE_COLUMN = 'roster_override_id';
 
-/** One live resolution: the key it matches a collision on, and its kind. */
+/**
+ * One live resolution: the key it matches a collision on, its kind, and for a
+ * `replace_member` the roster override it names (0032; story 5.5d) — `null`
+ * for every other kind, and on a member's read from before 0033, which did not
+ * answer the link.
+ */
 export interface ConflictResolution extends CollisionResolution {
   readonly kind: ConflictResolutionKind;
+  readonly rosterOverrideId: string | null;
 }
 
 export interface ConflictResolutionsReadError {
@@ -238,16 +244,32 @@ function isKind(value: unknown): value is ConflictResolutionKind {
   return typeof value === 'string' && (CONFLICT_RESOLUTION_KINDS as readonly string[]).includes(value);
 }
 
+/** How strictly {@link conflictResolutionsOf} reads a replacement's link. */
+export interface ConflictResolutionsParse {
+  /**
+   * True for a member's own read alone (`my_conflict_resolutions()`), whose
+   * shape before 0033 has no link: a `replace_member` row with none is then
+   * read as unknown. The organization's read always carries it (0032's check).
+   */
+  readonly linkOptional?: boolean;
+}
+
 /**
  * The rows as resolutions, in the order given, or null when any row is not a
  * record, carries a member outside `memberIds` or a team outside `teamIds`, a
- * date that is no calendar `YYYY-MM-DD`, or a kind 0031 does not admit, or
- * when two rows share a key — which 0031's live key refuses.
+ * date that is no calendar `YYYY-MM-DD`, a kind 0031 does not admit, or a
+ * link that is neither a non-empty text nor null, or when two rows share a
+ * key — which 0031's live key refuses. THE LINK MATCHES THE KIND (0032's
+ * check): a `replace_member` row with no link — unless `linkOptional`, for a
+ * member's read from before 0033 — or any other kind with one is an
+ * integrity break, and refuses the answer. Whether a replacement still
+ * applies is `./replacement-effect`'s question, not the parse's.
  */
 export function conflictResolutionsOf(
   rows: readonly unknown[],
   memberIds: readonly string[],
   teamIds: readonly string[],
+  { linkOptional = false }: ConflictResolutionsParse = {},
 ): readonly ConflictResolution[] | null {
   const members = new Set(memberIds);
   const teams = new Set(teamIds);
@@ -267,7 +289,14 @@ export function conflictResolutionsOf(
     if (typeof date !== 'string' || !isIsoDate(date)) return null;
     if (!isKind(kind)) return null;
 
-    const resolution = { memberId, date, teamId, kind };
+    const link = row[ROSTER_OVERRIDE_COLUMN];
+    const rosterOverrideId = link === undefined ? null : link;
+
+    if (rosterOverrideId !== null && (typeof rosterOverrideId !== 'string' || rosterOverrideId === '')) return null;
+    if (kind !== REPLACE_MEMBER && rosterOverrideId !== null) return null;
+    if (kind === REPLACE_MEMBER && rosterOverrideId === null && !linkOptional) return null;
+
+    const resolution: ConflictResolution = { memberId, date, teamId, kind, rosterOverrideId };
     const key = collisionKeyOf(resolution);
 
     if (keys.has(key)) return null;

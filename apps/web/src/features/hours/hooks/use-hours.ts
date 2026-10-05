@@ -19,6 +19,7 @@ import {
   type MyConflictResolutionsRpc,
   type OrganizationConflictResolutionsTable,
 } from '@/features/conflicts/services/resolutions';
+import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
 import { hoursConflictsStateOf } from '@/features/hours/services/hours-conflicts';
 import {
   hoursSearchTo,
@@ -114,6 +115,8 @@ export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
     ownResolutions,
   );
   const resolutionsData = resolutionsAnswer.data;
+  // STORY 5.5d: a replacement naming an override the snapshot does not hold yet re-reads it once.
+  useReplacementLinkRefresh(snapshot, resolutionsData);
   const resolutionsIsError = resolutionsAnswer.isError;
   const resolutionsIsPending = resolutionsAnswer.isPending;
   const resolutionsFetchStatus = resolutionsAnswer.fetchStatus;

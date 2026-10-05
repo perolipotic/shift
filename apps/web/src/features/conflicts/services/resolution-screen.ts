@@ -2,7 +2,7 @@ import { collisionKeyOf, deriveShiftTimes, leaveBalanceOf, shiftTypeVersionOn, t
 
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import { dayDetailOf } from '@/features/calendar/utils/day-detail';
-import { calendarTodayOf, dayMonthOf } from '@/features/calendar/utils/month';
+import { MODE_SVE, calendarTodayOf, dayMonthOf, type CalendarSearch } from '@/features/calendar/utils/month';
 import {
   CANDIDATES_FREE,
   CANDIDATES_ON_LEAVE,
@@ -13,11 +13,13 @@ import {
   type ReplacementCandidate,
 } from '@/features/calendar/utils/replacement-candidates';
 import {
+  liveResolutionsOf,
   queueOrderOf,
   queueReadFailed,
   unresolvedOf,
   type LeaveRowsAnswer,
 } from '@/features/conflicts/services/conflicts-queue';
+import { heldByReplacement } from '@/features/conflicts/services/replacement-effect';
 import { ACCEPT_UNCOVERED, REPLACE_MEMBER } from '@/features/conflicts/services/resolutions';
 import { durationMessageKey, durationValuesOf, type DurationValues } from '@/features/hour-bands/services/list';
 import {
@@ -91,6 +93,14 @@ import { ranksShown, rosterRankMessageKey } from '@/features/members/utils/rank'
  * (`covered + 1 of total`), never "Nepokriveno", and the same hours and
  * balance as the first card — the replacement's override only adds, so the
  * absent member stays rostered on leave (human, 2026-10-02).
+ *
+ * A KEY STILL HELD (story 5.5d). A conflict back among the unresolved
+ * because the snapshot holds its `replace_member` resolution's override
+ * pending after a rotation save, or inert, still has that live row holding
+ * 0031's key, so no new decision can be saved on it until the override is
+ * removed in the calendar, which 0033 makes end the resolution too.
+ * {@link ResolutionView.held} says so: the screen states it as Spremi's hint,
+ * with the way to that day in the calendar, and Spremi waits.
  *
  * NEVER A PARTIAL SCREEN. A read that failed or is paused offline, a row that
  * cannot be trusted, and any `RangeError` of a derivation make the screen
@@ -302,6 +312,15 @@ export interface ResolutionView {
   readonly leaveRecordId: string;
   /** The third card's target and figures (story 5.4d). */
   readonly amend: ResolutionAmend;
+  /**
+   * Whether a live resolution still holds this conflict's key although it is
+   * unresolved (story 5.5d): a replacement whose override no longer applies.
+   * The screen says to remove the override in the calendar and decide again;
+   * a save refused on the key says the same.
+   */
+  readonly held: boolean;
+  /** Where the held line's "Ukloni je u kalendaru" goes: the grid on the conflict's month, narrowed to its team. */
+  readonly heldCalendar: CalendarSearch;
   /** The insert's columns: the organization and the key. */
   readonly organizationId: string;
   /** What the queue's status line names once an acceptance lands; a replacement adds its name ({@link replacedSavedOf}). */
@@ -540,11 +559,16 @@ function resolutionScreenFrom(
   const range = leaveRangeValuesOf(record.record);
   const dateShown = detail.date;
   const typeName = detail.typeName ?? type.name;
+  const key = collisionKeyOf(collision);
+  // Unresolved, yet a live row holds this key: a replacement the snapshot holds pending or inert.
+  const held = liveResolutionsOf(snapshot, resolutionRows).some(
+    (resolution) => collisionKeyOf(resolution) === key && heldByReplacement(snapshot, resolution),
+  );
 
   return {
     kind: RESOLUTION_READY,
     view: {
-      key: collisionKeyOf(collision),
+      key,
       count: ordered.length,
       position: index + 1,
       previous: linkOf(ordered[index - 1]),
@@ -572,6 +596,8 @@ function resolutionScreenFrom(
       dayMonth: dayMonthOf(collision.date),
       leaveRecordId: record.record.id,
       amend: resolutionAmendOf(base.input, record.record, collision.date),
+      held,
+      heldCalendar: heldCalendarSearchOf(collision),
       organizationId: snapshot.organizationId,
       saved: { kind: ACCEPT_UNCOVERED, shiftTypeName: typeName, teamName: detail.teamName, dateShown, memberName: member.name },
     },
@@ -624,9 +650,37 @@ export function saveHintMessageKey(
   return 'raspored.resolution.hintRecorded';
 }
 
-/** Whether Spremi can save: a card, and for the second one a candidate (story 5.4c); the third at once (story 5.4d). */
-export function readyToSave(choice: ResolutionOption | null, replacementId: string | null): boolean {
-  if (choice === null) return false;
+/**
+ * The calendar's search for the held line's link (story 5.5d): *Sve smjene*
+ * on the conflict's month, narrowed to its team. The day itself opens from
+ * its cell: which day is open is not in the URL (story 3.4b).
+ */
+export function heldCalendarSearchOf(conflict: { readonly date: string; readonly teamId: string }): CalendarSearch {
+  return { prikaz: MODE_SVE, mjesec: conflict.date.slice(0, 7), smjena: conflict.teamId };
+}
+
+/** Where the held hint's link goes in its sentence: a character no translation holds. */
+const HELD_ACTION_SLOT = '\u0000';
+
+/**
+ * The held hint (story 5.5d) split around its link: what `format` — the
+ * sentence `raspored.resolution.heldHint` translated with `action` as its
+ * slot — says before the link and after it. The link's own words are
+ * `raspored.resolution.heldAction`.
+ */
+export function heldHintPartsOf(format: (action: string) => string): { readonly before: string; readonly after: string } {
+  const [before = '', after = ''] = format(HELD_ACTION_SLOT).split(HELD_ACTION_SLOT);
+
+  return { before, after };
+}
+
+/**
+ * Whether Spremi can save: a card, and for the second one a candidate (story
+ * 5.4c); the third at once (story 5.4d). Never while the key is `held` (story
+ * 5.5d): saving is known to fail until the replacement is removed.
+ */
+export function readyToSave(choice: ResolutionOption | null, replacementId: string | null, held = false): boolean {
+  if (held || choice === null) return false;
   if (choice === OPTION_REPLACE_MEMBER) return replacementId !== null;
 
   return true;

@@ -53,6 +53,7 @@ import {
   replacementGuardOf,
   replacementLinesShown,
   replacementWarningsOf,
+  REPLACEMENTS_UNAVAILABLE,
   type ReplacementResolutionsSource,
   type LeaveCalendarSource,
   type LeaveMembersSource,
@@ -931,11 +932,24 @@ describe('the replacement guard (story 5.4e)', () => {
     ]);
   });
 
-  it('cannot be known when a link and the override it names disagree on the team or the date', async () => {
+  it('cannot be known when a link and the override it names disagree on the team or the date, logged as the link', async () => {
     const snapshot = await guardSnapshotOf([DINO_10]);
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     expect(replacementWarningsOf([link('ro-dino-10', '2026-09-10', TEAM_B)], snapshot, VIEWER_MEMBER, RECORD, null)).toBeNull();
     expect(replacementWarningsOf([link('ro-dino-10', '2026-09-11')], snapshot, VIEWER_MEMBER, RECORD, null)).toBeNull();
+    expect(logged).toHaveBeenCalledWith(REPLACEMENTS_UNAVAILABLE, 'link');
+  });
+
+  it('Pending: a replacement a rotation change left pending gives no line, from one standing for every link (story 5.5d)', async () => {
+    const pending = await guardSnapshotOf([
+      calendarRosterOverrideRow('ro-dino-10', TEAM_A, '2026-09-10', null, DINO, { createdAt: '2019-01-01T00:00:00+00:00' }),
+      DINO_11,
+    ]);
+
+    expect(
+      replacementWarningsOf([link('ro-dino-10', '2026-09-10'), link('ro-dino-11', '2026-09-11')], pending, VIEWER_MEMBER, RECORD, null),
+    ).toEqual([stays('ro-dino-11', '11.09.')]);
   });
 
   it('Override removed: a resolution whose override is no longer live gives no line', async () => {

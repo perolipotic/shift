@@ -23,6 +23,7 @@ import {
   RESOLUTION_SAVE_HINT_ID,
   RESOLUTION_UNAVAILABLE,
   coworkersMessageKey,
+  heldHintPartsOf,
   readyToSave,
   saveHintMessageKey,
   shiftFactsMessageKey,
@@ -31,6 +32,7 @@ import {
 } from '@/features/conflicts/services/resolution-screen';
 import {
   RESOLUTION_GONE,
+  RESOLUTION_HELD,
   resolutionFailureLineOf,
   resolutionFailureMessageKey,
   type ResolutionWriteFailure,
@@ -147,7 +149,8 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
   const { choice, choose, pending, failure, save, go, firstOption, firstCandidate, replaceOption, candidatesExist, replacement, pick, taken } =
     state;
   const pickedId = replacement?.id ?? null;
-  const waiting = !readyToSave(choice, pickedId);
+  const waiting = !readyToSave(choice, pickedId, view.held);
+  const held = heldHintPartsOf((action) => t('raspored.resolution.heldHint', { action }));
   const gone = failure === RESOLUTION_GONE;
 
   return (
@@ -196,15 +199,27 @@ function ResolutionReady({ state, view }: { readonly state: ConflictResolutionSt
             firstCandidate={firstCandidate}
           />
         ) : null}
-        {failure === null ? null : <FailureNotice failure={failure} taken={taken} />}
+        {/* A held refusal whose re-read finds the key free again says nothing: saving again may land (story 5.5d). */}
+        {failure === null || (failure === RESOLUTION_HELD && !view.held) ? null : <FailureNotice failure={failure} taken={taken} />}
         {/* GONE: nothing left to save, and the header's way back is the one way on. */}
         {gone ? null : (
           <div className="flex min-w-0 flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center">
-            <p id={RESOLUTION_SAVE_HINT_ID} className="min-w-0 flex-1 break-words text-sm text-muted-foreground">
-              {t(saveHintMessageKey(choice, pickedId, candidatesExist, view.amend.target.kind), {
-                date: view.amend.dateShown ?? undefined,
-              })}
-            </p>
+            {view.held ? (
+              // STORY 5.5d: a replacement the snapshot holds pending or inert keeps the key; Spremi waits.
+              <p id={RESOLUTION_SAVE_HINT_ID} className="min-w-0 flex-1 break-words text-sm text-muted-foreground">
+                {held.before}
+                <Link to="/kalendar" search={view.heldCalendar} className="font-medium text-foreground underline underline-offset-4">
+                  {t('raspored.resolution.heldAction')}
+                </Link>
+                {held.after}
+              </p>
+            ) : (
+              <p id={RESOLUTION_SAVE_HINT_ID} className="min-w-0 flex-1 break-words text-sm text-muted-foreground">
+                {t(saveHintMessageKey(choice, pickedId, candidatesExist, view.amend.target.kind), {
+                  date: view.amend.dateShown ?? undefined,
+                })}
+              </p>
+            )}
             <Button asChild variant="outline" className="h-11 w-full sm:w-auto">
               <Link to="/raspored" disabled={pending}>
                 {t('raspored.resolution.cancel')}
@@ -251,10 +266,11 @@ export function ConflictResolutionBody({ state }: { readonly state: ConflictReso
         </PageHeader>
         {screen.kind === RESOLUTION_LOADING ? <ResolutionSkeleton /> : null}
         {/* A save refused as no longer open keeps saying so once the re-read takes the conflict away. */}
-        {screen.kind === RESOLUTION_MISSING && failure === RESOLUTION_GONE ? (
-          <Notice role="alert">{t(resolutionFailureMessageKey(failure))}</Notice>
+        {/* Refused as held, and the re-read finds the key decided by an effective resolution: the gone line (story 5.5d). */}
+        {screen.kind === RESOLUTION_MISSING && (failure === RESOLUTION_GONE || failure === RESOLUTION_HELD) ? (
+          <Notice role="alert">{t(resolutionFailureMessageKey(RESOLUTION_GONE))}</Notice>
         ) : null}
-        {screen.kind === RESOLUTION_MISSING && failure !== RESOLUTION_GONE ? (
+        {screen.kind === RESOLUTION_MISSING && failure !== RESOLUTION_GONE && failure !== RESOLUTION_HELD ? (
           <Notice role="status">{t('raspored.resolution.missing')}</Notice>
         ) : null}
         {screen.kind === RESOLUTION_UNAVAILABLE ? (

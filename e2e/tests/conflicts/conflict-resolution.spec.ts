@@ -4,14 +4,18 @@ import { randomBytes } from 'node:crypto';
 import type { Locator, Page } from '@playwright/test';
 
 import {
+  databaseNow,
   holdRotation,
   removeLeaveRecordsInSql,
+  removeRotationChangesOver,
   removeSeededRotation,
   seedConflictResolution,
   seedExtraTeam,
   seedLeaveMember,
   seedLeaveRecord,
+  seedMemberStatusVersions,
   seedRosterOverride,
+  seedRotationChange,
   seedTeamRotation,
   type RotationHold,
   type SeededRotation,
@@ -736,6 +740,197 @@ test('Leave pick: a member on leave that date can be picked, and back on the que
   await expect(conflictsPage.rowsOf(seeded.name)).toHaveCount(2);
   await expect(conflictsPage.rowsOf(eva.name)).toHaveCount(1);
   await expect(conflictsPage.rowsOf(eva.name)).toContainText(team.name);
+});
+
+/**
+ * Story 5.5d: a replacement that no longer applies stops hiding its conflict.
+ * The replacement is seeded in SQL as 0032 writes it — Dino's override and
+ * the `replace_member` resolution naming it — and then stops applying: its
+ * override removed in the calendar (0033 ends the resolution with it, so the
+ * key is free), or left pending by a rotation change saved after it (the
+ * resolution stays live and holds the key until that override is removed).
+ */
+test('Removed override: removing the replacement in the calendar asks nothing, the conflict is back in the queue and in Sati, and accepting it saves', async ({
+  page,
+  conflictsPage,
+  resolutionPage,
+  calendarPage,
+  hoursPage,
+  fixture,
+}) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  const { team, seeded, today } = await scenarioOf(fixture.slug);
+  const dino = await replacementOf(fixture.slug, today);
+  const sati = hr.sati.organization;
+  const rosterChange = hr.kalendar.detail.rosterChange;
+  await seedConflictResolution(fixture.slug, seeded.id, today, team.id, 'replace_member', dino.id);
+
+  await conflictsPage.goto();
+  const rows = conflictsPage.rowsOf(seeded.name);
+  await expect(rows).toHaveCount(2);
+  await hoursPage.goto();
+  const absentRow = hoursPage.organizationRow(seeded.name);
+  await expect(absentRow).toHaveCount(1);
+  await expect(await hoursPage.cellIn(absentRow, sati.leave)).toHaveText('12 h');
+  const conflictsCell = await hoursPage.cellIn(absentRow, sati.conflicts);
+  const countOf = async (): Promise<number> => {
+    const text = (await conflictsCell.textContent()) ?? '';
+    const found = /\d+/.exec(text)?.[0];
+    if (found === undefined) throw new Error(`E2E: the conflicts cell reads no number: ${text}`);
+
+    return Number(found);
+  };
+  const before = await countOf();
+
+  // THE CALENDAR: the replacement's override goes through its own confirmation, and no erasure dialog follows.
+  await calendarPage.goto(`?prikaz=sve&mjesec=${today.slice(0, 7)}`);
+  await (await calendarPage.cellOf(team.name, today)).click();
+  const detail = calendarPage.detailOf(team.name, today);
+  const block = calendarPage.rosterChangesIn(detail);
+  const added = fill(rosterChange.added, { name: dino.name });
+  await expect(block).toContainText(added);
+  await calendarPage.rosterRemoveIn(block).click();
+  const confirm = calendarPage.rosterRemoveConfirmOf(added, team.name, today);
+  await calendarPage.confirmRosterRemoveIn(confirm).click();
+  await expect(calendarPage.statusIn(detail)).toContainText(rosterChange.removedDone);
+  // Removed straight from its confirmation: nothing it erases is asked about.
+  await expect(calendarPage.rosterErasures('removal').dialog(1)).toHaveCount(0);
+  await expect(block).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  // SATI: the absent member's shift is band hours again, and counted as a conflict.
+  await hoursPage.goto();
+  await expect(absentRow).toHaveCount(1);
+  await expect(await hoursPage.cellIn(absentRow, sati.leave)).toHaveText(hr.sati.noFigure);
+  await expect.poll(countOf).toBe(before + 1);
+
+  // THE QUEUE lists it again, and its screen holds nothing: 0033 ended the resolution with the override.
+  await conflictsPage.goto();
+  await expect(rows).toHaveCount(3);
+  await resolutionPage.gotoConflict(seeded.id, today, team.id);
+  await expect(resolutionPage.acceptOption).toBeVisible();
+  await expect(resolutionPage.line(resolution.held)).toHaveCount(0);
+  await resolutionPage.acceptOption.click();
+  await resolutionPage.saveButton.click();
+  await expect(page).toHaveURL('/raspored');
+  await expect(conflictsPage.savedStatus).toContainText(seeded.name);
+  await expect(rows).toHaveCount(2);
+});
+
+test('Pending after rotation save: the conflict is listed again, Spremi waits with the hint linking to the calendar, and once the pending change is removed accepting saves', async ({
+  page,
+  conflictsPage,
+  resolutionPage,
+  calendarPage,
+  fixture,
+}) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  const { team, seeded, today, dates } = await scenarioOf(fixture.slug);
+  const last = dates[2];
+  const dino = await replacementOf(fixture.slug, today);
+  const rosterChange = hr.kalendar.detail.rosterChange;
+  await seedConflictResolution(fixture.slug, seeded.id, last, team.id, 'replace_member', dino.id);
+
+  await conflictsPage.goto();
+  const rows = conflictsPage.rowsOf(seeded.name);
+  await expect(rows).toHaveCount(2);
+
+  // A ROTATION CHANGE saved after the replacement, from today + 1 on its own step: the same
+  // schedule, so the conflict on today + 4 stands, but Dino's override is now pending review.
+  if (seed === null) throw new Error('E2E: no seeded rotation');
+  const rotation = seed;
+  const since = await databaseNow();
+  await seedRotationChange(rotation, team.id, dates[1], 1);
+  try {
+    await conflictsPage.goto();
+    await expect(rows).toHaveCount(3);
+    await resolutionPage.gotoConflict(seeded.id, last, team.id);
+    await expect(resolutionPage.line(resolution.held)).toBeVisible();
+
+    // The key is still held: Spremi waits, and a press writes nothing.
+    const writes = resolutionWritesOf(page);
+    await resolutionPage.acceptOption.click();
+    await expect(resolutionPage.saveButton).toHaveAttribute('aria-disabled', 'true');
+    // `aria-disabled` keeps it focusable: a press does nothing.
+    await resolutionPage.saveButton.focus();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(`/raspored/${seeded.id}/${last}/${team.id}`);
+    expect(writes.count()).toBe(0);
+
+    // THE HINT'S LINK: the grid on that month, narrowed to the team; the pending change is removed there.
+    await page.getByRole('link', { name: resolution.heldAction, exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/kalendar\\?.*mjesec=${last.slice(0, 7)}`));
+    await expect(page).toHaveURL(new RegExp(`smjena=${team.id}`));
+    await (await calendarPage.cellOf(team.name, last)).click();
+    const detail = calendarPage.detailOf(team.name, last);
+    const pending = calendarPage.rosterPendingIn(detail);
+    const added = fill(rosterChange.added, { name: dino.name });
+    await expect(pending).toContainText(added);
+    await calendarPage.rosterRemoveIn(pending).click();
+    await calendarPage.confirmRosterRemoveIn(calendarPage.rosterRemoveConfirmOf(added, team.name, last)).click();
+    await expect(calendarPage.statusIn(detail)).toContainText(rosterChange.removedDone);
+    await expect(calendarPage.rosterErasures('removal').dialog(1)).toHaveCount(0);
+    await expect(pending).toHaveCount(0);
+    await page.keyboard.press('Escape');
+
+    // RE-DECIDED: the key is free, the line is gone, and accepting saves.
+    await resolutionPage.gotoConflict(seeded.id, last, team.id);
+    await expect(resolutionPage.acceptOption).toBeVisible();
+    await expect(resolutionPage.line(resolution.held)).toHaveCount(0);
+    await resolutionPage.acceptOption.click();
+    await resolutionPage.saveButton.click();
+    await expect(page).toHaveURL('/raspored');
+    await expect(rows).toHaveCount(2);
+  } finally {
+    await removeRotationChangesOver(rotation, since);
+  }
+});
+
+test('Inert replacement: a replacement deactivated before the date holds the conflict with the hint, its change is removed from the day detail, and accepting then saves', async ({
+  page,
+  conflictsPage,
+  resolutionPage,
+  calendarPage,
+  fixture,
+}) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  const { team, seeded, today, dates } = await scenarioOf(fixture.slug);
+  const last = dates[2];
+  const dino = await replacementOf(fixture.slug, today);
+  const rosterChange = hr.kalendar.detail.rosterChange;
+  await seedConflictResolution(fixture.slug, seeded.id, last, team.id, 'replace_member', dino.id);
+  // Dino is deactivated from today + 1: on today + 4 the replacement is inert.
+  await seedMemberStatusVersions(fixture.slug, dino.id, [{ active: false, effectiveFrom: dates[1] }]);
+
+  await conflictsPage.goto();
+  const rows = conflictsPage.rowsOf(seeded.name);
+  await expect(rows).toHaveCount(3);
+  await resolutionPage.gotoConflict(seeded.id, last, team.id);
+  await expect(resolutionPage.line(resolution.held)).toBeVisible();
+  await resolutionPage.acceptOption.click();
+  await expect(resolutionPage.saveButton).toHaveAttribute('aria-disabled', 'true');
+
+  // THE DAY DETAIL lists the inert change apart, and it can be removed there.
+  await calendarPage.goto(`?prikaz=sve&mjesec=${last.slice(0, 7)}`);
+  await (await calendarPage.cellOf(team.name, last)).click();
+  const detail = calendarPage.detailOf(team.name, last);
+  const inert = detail.getByRole('region', { name: rosterChange.inertHeading, exact: true });
+  const added = fill(rosterChange.added, { name: dino.name });
+  await expect(inert).toContainText(added);
+  await calendarPage.rosterRemoveIn(inert).click();
+  await calendarPage.confirmRosterRemoveIn(calendarPage.rosterRemoveConfirmOf(added, team.name, last)).click();
+  await expect(calendarPage.statusIn(detail)).toContainText(rosterChange.removedDone);
+  await expect(calendarPage.rosterErasures('removal').dialog(1)).toHaveCount(0);
+  await expect(inert).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  await resolutionPage.gotoConflict(seeded.id, last, team.id);
+  await expect(resolutionPage.acceptOption).toBeVisible();
+  await expect(resolutionPage.line(resolution.held)).toHaveCount(0);
+  await resolutionPage.acceptOption.click();
+  await resolutionPage.saveButton.click();
+  await expect(page).toHaveURL('/raspored');
+  await expect(rows).toHaveCount(2);
 });
 
 test.describe('a member', () => {

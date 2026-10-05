@@ -145,6 +145,13 @@ export const CONFLICT_REPLACE_WRITE_DEPENDENTS: readonly QueryKey[] = [
 export const CONFLICT_REPLACE_TAKEN_DEPENDENTS: readonly QueryKey[] = [CALENDAR_KEY];
 
 /**
+ * A decision refused because a replacement that no longer applies still holds
+ * the key (story 5.5d): the calendar snapshot, whose roster overrides decide
+ * whether that replacement applies, beside both resolution reads.
+ */
+export const CONFLICT_RESOLUTION_HELD_DEPENDENTS: readonly QueryKey[] = [MY_CONFLICT_RESOLUTIONS_KEY, CALENDAR_KEY];
+
+/**
  * A conflict resolution refused as no longer open (story 5.4b): beside the
  * resolutions themselves, the organization's live leave — a P0002 means the
  * leave covering the date is gone, and only the leave read takes the
@@ -185,10 +192,14 @@ export const ROTATION_CANCEL_DEPENDENTS: readonly QueryKey[] = [
  * calendar snapshot it is drawn from: the organization's live leave records
  * and resolutions, the other two reads its erasure check stands on, so a
  * change that erased a conflict takes it out of the queue on the next read.
+ * Since 0033 (story 5.5d) removing the override behind a `replace_member`
+ * ends that resolution too, so the viewer's own resolutions are re-read
+ * beside the organization's, as a recorded resolution's are.
  */
 export const ROSTER_WRITE_DEPENDENTS: readonly QueryKey[] = [
   ORGANIZATION_LEAVE_RECORDS_KEY,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
+  MY_CONFLICT_RESOLUTIONS_KEY,
 ];
 
 /**
