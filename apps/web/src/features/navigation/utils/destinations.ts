@@ -138,3 +138,67 @@ export function destinationsFor(role: MemberRole): readonly Destination[] {
 export function isCurrentDestination(pathname: string, path: string): boolean {
   return pathname === path || pathname.startsWith(`${path}/`);
 }
+
+/** The four paths a phone bar shows as tabs. Exactly four, by type. */
+type PhoneTabs = readonly [RegisteredPath, RegisteredPath, RegisteredPath, RegisteredPath];
+
+/**
+ * The phone bar's four fixed tabs per role (story 7.3), as DATA.
+ *
+ * Below 640 px the bar is five equal cells: these four and *Više*. A member's
+ * four are all of their destinations, so their *Više* holds no destination at
+ * all. An admin's four trade Sati and Godišnji for Raspored and Ljudi, the two
+ * an admin opens most; the rest stay one press away in *Više*.
+ *
+ * Paths rather than keys, and checked against `destinationsFor` by
+ * `destinations.test.ts`: a tab the role does not reach would be dropped by
+ * the filter below, and the test fails on the missing tab instead.
+ *
+ * READ AS A SET. The tabs render in BINDING ORDER (the table's), because
+ * `phoneNavigationFor` filters the role's list rather than mapping this tuple.
+ * The two orders coincide today, and `destinations.test.ts` asserts the tabs
+ * equal this tuple as a sequence, so reordering one without the other fails
+ * there instead of rendering an order nobody wrote.
+ */
+export const PHONE_TABS: Readonly<Record<MemberRole, PhoneTabs>> = {
+  member_role: ['/danas', '/kalendar', '/sati', '/godisnji'],
+  admin: ['/danas', '/kalendar', '/raspored', '/ljudi'],
+};
+
+/** What the phone shows: the four tabs, and the rest grouped for *Više*. */
+export interface PhoneNavigation {
+  /** The bar's tabs, in binding order. */
+  readonly tabs: readonly Destination[];
+  /** Everything else this role reaches, in binding order, split in two groups. */
+  readonly more: {
+    /** Destinations every role reaches (*Pregled*). */
+    readonly everyone: readonly Destination[];
+    /** Destinations not every role reaches: the admin-only ones (*Postavke*). */
+    readonly adminOnly: readonly Destination[];
+  };
+}
+
+/** Every role, which is what "every role reaches it" is measured against. */
+const ALL_ROLES: readonly MemberRole[] = EVERYONE;
+
+/**
+ * The phone layout for a role: its tabs, and the remaining destinations in
+ * binding order, split by who reaches them. The groups come from `roles`, so
+ * the table carries no `group` field that could disagree with it.
+ */
+export function phoneNavigationFor(role: MemberRole): PhoneNavigation {
+  const reached = destinationsFor(role);
+  const tabPaths: readonly string[] = PHONE_TABS[role];
+  const tabs = reached.filter((destination) => tabPaths.includes(destination.path));
+  const rest = reached.filter((destination) => !tabPaths.includes(destination.path));
+  const isEveryones = (destination: Destination): boolean =>
+    ALL_ROLES.every((each) => destination.roles.includes(each));
+
+  return {
+    tabs,
+    more: {
+      everyone: rest.filter(isEveryones),
+      adminOnly: rest.filter((destination) => !isEveryones(destination)),
+    },
+  };
+}

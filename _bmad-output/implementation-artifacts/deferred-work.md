@@ -771,3 +771,18 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-1-dark-slot-tokens.md`
   summary: Dark slots 3–6 do not reach the "never reads as a free day" floor against the re-tuned dark non-working fill. Ratio ≥ 1.4 fails for all four (slot-3 1.15, slot-4 1.23, slot-5 1.26, slot-6 1.21). ΔE×100 ≥ 10 fails for slot-3 (6.6), slot-5 (9.0) and slot-6 (8.5); slot-4 reaches 10.8. `theme-contrast` leaves them out with a comment. The pilot uses only slots 1–2; an organization with three or more working types would need a dark re-tune of 3–6 (UX-DR3 still marks them as an assumption).
   evidence: Measured by the 7.1 review patch on 2026-10-05. Decision 4 re-tuned only slots 1–2 and non-working, so changing 3–6 was out of scope (Ask First).
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-3-phone-bar-four-tabs.md`
+  summary: The mockup's Raspored ⚠ badge (the count of unresolved conflicts on the admin's Raspored tab, with an accessible name such as "Raspored, 4 neriješena konflikta") is not built. Showing it is Ask First in 7.3, and it needs the conflict count in the chrome without a second snapshot (AD-13).
+  evidence: `ux-designs/ux-shift-2026-10-01-redesign/mockups/mobile-navigation-1.html`, frames A, B and D; left out by 7.3 on 2026-10-06.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-3-phone-bar-four-tabs.md`
+  summary: The mockup's *Više* sublabel naming the current place (for example "Rotacija" under *Više* while on Postavke rotacije) and the sheet's "Ovdje si" marker are not built. 7.3 marks a sheet destination with *Više*'s active treatment and the row's own `aria-current`. The sheet rows' one-line descriptions ("Sati svih osoba po mjesecu, izvoz u Excel") are also not built; they need new copy.
+  evidence: Mockup frames B and D; left out by 7.3 on 2026-10-06.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-3-phone-bar-four-tabs.md`
+  summary: The desktop sidebar has no group labels (Pregled, Postavke) like the *Više* sheet has. Changing the sidebar beyond moving the theme control is Ask First in 7.3.
+  evidence: The mockup notes say the sheet's groups "follow the desktop sidebar"; the sidebar has no groups today. Left out by 7.3 on 2026-10-06.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-3-phone-bar-four-tabs.md`
+  summary: The member's *Više* sheet has no *Moja smjena* row (who is on my team). Adding entries to the member's sheet is Ask First in 7.3; the directory arrives with story 7.17 ("Members find the directory by team in Više").
+  evidence: Mockup frame C; left out by 7.3 on 2026-10-06.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-3-phone-bar-four-tabs.md`
+  summary: A refused global logout (500 or a transport failure) still signs the device out but leaves the server session alive. The pinned auth-js `GoTrueClient._signOut` removes the local session before returning the error, so a refusal from the server never reaches the chrome's `SIGN_OUT_FAILED` alert with the session intact. The alert keeps the session only when `auth.signOut()` throws, or when `_useSession` answers a session error other than a missing session, which `_signOut` returns without removing the session (`GoTrueClient.js:3419-3420`). Either accept a device-only sign-out (and drop the dead alert copy), or sign out locally only after the server confirms.
+  evidence: Found by the 7.3 matrix audit on 2026-10-06 (`node_modules/@supabase/auth-js/dist/module/GoTrueClient.js:3412`); the human accepted the current behaviour for 7.3. Applies to the desktop profile-menu exit as well. Predates 7.3.

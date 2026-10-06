@@ -48,10 +48,10 @@ import type { OrganizationSnapshot } from '@/features/organization/services/snap
  *
  * NOTHING HERE IS A CONTROL. The lockup is not pressable, carries no handler a
  * person can reach, and is therefore outside UX-DR40's 44 px floor — which is
- * why it may be 32 px in the phone bar, where nine real targets already compete
- * for the width. Its type scale travels with its box for the same reason the
- * box is a constant: a mark is the first code point of an admin-entered name,
- * and one fixed scale for both sizes clips a wide glyph at the small one.
+ * why it may be 32 px at the top of the sidebar. Its type scale travels with
+ * its box for the same reason the box is a constant: a mark is the first code
+ * point of an admin-entered name, and one fixed scale for both sizes clips a
+ * wide glyph at the small one.
  */
 
 export interface OrganizationLockupProps {

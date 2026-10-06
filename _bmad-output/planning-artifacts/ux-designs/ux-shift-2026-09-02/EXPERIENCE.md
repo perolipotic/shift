@@ -16,7 +16,7 @@ sources:
 
 **UI system.** shadcn/ui on React + TypeScript + Vite + Tailwind. Both spines inherit from it. `DESIGN.md` specifies only the brand-layer visual delta; this file specifies only the behavioural delta. Where shadcn defines a behaviour — focus trapping in Dialog, dismissal in Sheet, filtering in Command — that behaviour is inherited and not respecified here.
 
-**Themes.** Light and dark both ship, driven entirely by `prefers-color-scheme`. There is **no in-app theme toggle and no theme setting**, so no surface exists for it and no preference is persisted. Consequence for every screen: state must be legible in both themes, and no state may rely on one theme's contrast.
+**Themes.** Light and dark both ship. The default follows `prefers-color-scheme`; a three-option control (Sustav / Svijetla / Tamna) pins either theme per device (human decision 2026-09-25). It lives beside Odjava: in the *Više* sheet on a phone and in the profile menu on desktop (story 7.3). Consequence for every screen: state must be legible in both themes, and no state may rely on one theme's contrast.
 
 **Localization.** Croatian is the only complete locale. Every string resolves through a translation key; none is hard-coded. See the spec's `localization.md` for the full contract — it is binding here, particularly the three-form plural rule, which affects every count this document specifies.
 
@@ -27,6 +27,8 @@ sources:
 *Rendered reference: [mockups/rotation-config-1.html](mockups/rotation-config-1.html) — Hour Bands and rotation configuration, desktop panel and phone stepper.*
 
 **Navigation shape.** Bottom tabs on mobile, sidebar on desktop. Two layouts, one architecture.
+
+**Phone bar (< 640 px) — four tabs and *Više*** (story 7.3). Five equal cells; the bar never scrolls sideways, so the current tab is always on screen. The four tabs are fixed per role: a member's are Danas, Kalendar, Sati, Godišnji; an admin's are Danas, Kalendar, Raspored, Ljudi. *Više* opens a modal bottom sheet (focus trapped, Escape and a backdrop press close it, focus returns to *Više*) that shows who is signed in (name, role · organization) and then, in binding order: *Pregled* — the role's other destinations every role reaches (Sati, Godišnji for an admin); *Postavke* — the admin-only ones (Postavke rotacije, Organizacija); *Prikaz* — the theme; and Odjava. A member's sheet holds only *Prikaz* and Odjava. While the page is a sheet destination, *Više* carries the active treatment. On desktop the sidebar lists every destination, and the theme and Odjava sit in the profile menu at its foot.
 
 **Member Role — four destinations.** No configuration surface is reachable at all.
 
@@ -141,7 +143,7 @@ Behavioural. Visual contrast requirements are in `DESIGN.md`.
 - **No information by colour alone**, anywhere. Every shift state carries a glyph or a fill treatment alongside its colour. This is verified in the compressed grid, in status pips, and in badges — the compact surfaces where the rule is most often broken.
 - **Keyboard navigable**: calendar grid, both dashboards, the conflict queue, and the resolution screen. The resolution screen's options are a radio group, arrow-navigable.
 - **Assistive technology** gets meaningful labels on every calendar cell: date, team, shift type, times, and any modifier — not a colour swatch and not a bare letter.
-- **Both themes verified**, since there is no toggle and a member may be in either without having chosen.
+- **Both themes verified**, since a member may be in either without having chosen (the default follows the device).
 - **No horizontal page scroll** at any width; wide content scrolls within its own container.
 - Target is WCAG 2.1 AA without formal audit in MVP. `[ASSUMPTION — carried from SPEC.]`
 
@@ -162,7 +164,7 @@ Behavioural. Visual contrast requirements are in `DESIGN.md`.
 
 | Width | Calendar | Navigation | Notes |
 |---|---|---|---|
-| Phone (< 640) | *Moj raspored* day list by default; *Sve smjene* compressed grid one tap away, teams as one-letter columns | Bottom tabs | Priority order: today's shift, next shift, calendar, hours, leave |
+| Phone (< 640) | *Moj raspored* day list by default; *Sve smjene* compressed grid one tap away, teams as one-letter columns | Bottom tabs: four plus *Više* | Priority order: today's shift, next shift, calendar, hours, leave. An admin's bar trades hours and leave for Raspored and Ljudi; Sati and Godišnji are one press away in *Više* (story 7.3) |
 | Tablet (640–1024) | Full grid with team names | Sidebar, collapsible | Admin configuration fully usable |
 | Desktop (> 1024) | Full grid, times visible in cells | Sidebar | Admin default working width |
 

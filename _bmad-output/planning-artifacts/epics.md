@@ -107,7 +107,7 @@ From `DESIGN.md` (visual) and `EXPERIENCE.md` (behavioural). Both are binding an
 
 **Design tokens and theme**
 - **UX-DR1** Implement the 48-token colour layer as a shadcn theme delta: `primary`, `destructive`, the six-slot working-shift ramp plus `shift-nonworking` and its `shift-nonworking-border`, and four modifier signals — each defined in *both* light and dark.
-- **UX-DR2** Light and dark both ship. The default follows `prefers-color-scheme`; a Sustav / Svijetla / Tamna glyph beside the organization lockup pins either theme, persisted per device in `localStorage` (changed 2026-09-25 by human decision — it originally forbade any toggle, setting or persisted preference).
+- **UX-DR2** Light and dark both ship. The default follows `prefers-color-scheme`; a Sustav / Svijetla / Tamna control pins either theme, persisted per device in `localStorage` (changed 2026-09-25 by human decision — it originally forbade any toggle, setting or persisted preference). It sits beside Odjava: in the *Više* sheet on a phone and in the user (profile) menu on desktop (story 7.3).
 - **UX-DR3** Convert DESIGN.md's hex tokens to the space shadcn now emits (OKLCH), and contrast-verify ramp slots 3–6 in both themes before any second organization uses them. Slots 3–6 are marked `[ASSUMPTION]` and unexercised by the pilot.
 - **UX-DR4** `destructive` is reserved exclusively for an unresolved conflict — not delete buttons, not validation errors, not an organization's accent. Destructive actions use neutral styling plus a confirmation step.
 - **UX-DR5** An organization's accent may tint the application shell and logo lockup only; never a shift state, a modifier, or `destructive`.
@@ -144,8 +144,8 @@ From `DESIGN.md` (visual) and `EXPERIENCE.md` (behavioural). Both are binding an
 - **UX-DR30** Month navigation symmetric and unbounded in both directions; no month unreachable or slower.
 
 **Information architecture**
-- **UX-DR31** Bottom tabs on mobile, sidebar on desktop — two layouts, one architecture. Member-role reaches four destinations (Danas, Kalendar, Sati, Godišnji) and no configuration surface at all.
-- **UX-DR32** Admin sidebar adds grouped configuration: Raspored, Ljudi, Postavke rotacije, Organizacija, Sati.
+- **UX-DR31** Bottom tabs on mobile, sidebar on desktop — two layouts, one architecture. Member-role reaches four destinations (Danas, Kalendar, Sati, Godišnji) and no configuration surface at all. On a phone the bar is four fixed tabs plus *Više* and never scrolls; a member's tabs are their four destinations, so their *Više* holds only the theme and Odjava (story 7.3).
+- **UX-DR32** The admin's sidebar lists the configuration destinations after the member's four: Raspored, Ljudi, Postavke rotacije, Organizacija. Sati stays one of the shared four and shows organization-wide content to an admin. The sidebar has no group labels yet (deferred from story 7.3). On a phone an admin's tabs are Danas, Kalendar, Raspored, Ljudi; *Više* holds Sati and Godišnji (*Pregled*) and Postavke rotacije and Organizacija (*Postavke*) (story 7.3).
 - **UX-DR33** Build the 17 surfaces in the EXPERIENCE.md inventory; the member roster lives inside team detail, not as a top-level destination.
 
 **Voice and localization**
@@ -469,6 +469,8 @@ So that I know who I am working with.
 **When** they open the navigation
 **Then** it carries the same four destinations plus grouped configuration — Raspored, Ljudi, Postavke rotacije, Organizacija, Sati (UX-DR32)
 **And** the shape is bottom tabs on mobile and a sidebar on desktop: two layouts, one information architecture (UX-DR31)
+
+*Reach since story 7.3:* on a phone the admin's bar shows Danas, Kalendar, Raspored and Ljudi plus *Više*; Sati, Godišnji and the two configuration destinations are in the *Više* sheet, not on the bar. The sidebar still lists all of them.
 
 
 ### Story 1.9: An organization that uses fire ranks records each member's rank and team position (delivered 2026-09-25, sprint change)

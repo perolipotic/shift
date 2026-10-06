@@ -238,8 +238,10 @@ describe('the navy sidebar carries readable text and visible controls', () => {
    * the active destination's label, the hovered row, the sign-in brand
    * panel's headline and the section label were measured by nothing.
    *
-   * The section label is drawn at 70% of `sidebar-foreground`, so it is
-   * composited over the sidebar first — the raw token flatters it.
+   * The small muted text is drawn at 70% of `sidebar-foreground` — the
+   * profile card's role and, since story 7.3, the *Više* sheet's group
+   * headings and "role · organization" line, on the same `sidebar` fill — so
+   * it is composited over the sidebar first; the raw token flatters it.
    */
   const SIDEBAR_PAIRS: { label: string; text: (theme: Theme) => Rgb | Color; surface: string }[] = [
     {
@@ -258,7 +260,7 @@ describe('the navy sidebar carries readable text and visible controls', () => {
       surface: 'sidebar',
     },
     {
-      label: 'sidebar-foreground at 70% on sidebar (the section label)',
+      label: 'sidebar-foreground at 70% on sidebar (the profile role, the Više group headings and identity line)',
       text: (theme) =>
         composite({ ...rgb(colour(theme, 'sidebar-foreground')), alpha: 0.7 }, colour(theme, 'sidebar')),
       surface: 'sidebar',

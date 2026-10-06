@@ -8,6 +8,8 @@ import {
   DESTINATIONS,
   destinationsFor,
   isCurrentDestination,
+  PHONE_TABS,
+  phoneNavigationFor,
   type Destination,
   type MemberRole,
 } from '@/features/navigation/utils/destinations';
@@ -327,5 +329,86 @@ describe('the readers read what they claim to read', () => {
     expect(messageAt('nav.danas')).toBe('Danas');
     expect(messageAt('nav.postavkeRotacije')).toBe('Postavke rotacije');
     expect(messageAt('nav.nema')).toBeUndefined();
+  });
+});
+
+describe('the phone bar shows four tabs and puts the rest in Više (story 7.3)', () => {
+  /** A role's phone layout as key sequences, so order is asserted, never a set. */
+  function phoneKeysFor(role: MemberRole) {
+    const { tabs, more } = phoneNavigationFor(role);
+    const keys = (list: readonly Destination[]) => list.map((destination) => destination.key);
+
+    return { tabs: keys(tabs), everyone: keys(more.everyone), adminOnly: keys(more.adminOnly) };
+  }
+
+  it('gives the member role Danas, Kalendar, Sati and Godišnji as tabs, in order', () => {
+    expect(phoneKeysFor('member_role').tabs).toEqual([
+      'nav.danas',
+      'nav.kalendar',
+      'nav.sati',
+      'nav.godisnji',
+    ]);
+  });
+
+  it('gives the admin role Danas, Kalendar, Raspored and Ljudi as tabs, in order', () => {
+    expect(phoneKeysFor('admin').tabs).toEqual([
+      'nav.danas',
+      'nav.kalendar',
+      'nav.raspored',
+      'nav.ljudi',
+    ]);
+  });
+
+  it.each<MemberRole>(['member_role', 'admin'])(
+    'renders the tabs for %s in exactly the order PHONE_TABS writes',
+    (role) => {
+      // The reader keeps BINDING order and the tuple is read as a set; this is
+      // what stops the two orders from diverging silently.
+      expect(phoneNavigationFor(role).tabs.map((destination) => destination.path)).toEqual([
+        ...PHONE_TABS[role],
+      ]);
+    },
+  );
+
+  it.each<MemberRole>(['member_role', 'admin'])('names only tabs %s actually reaches', (role) => {
+    // The reader FILTERS the role's own destinations, so a tab path the role
+    // does not reach would vanish silently and leave three tabs. Checked
+    // against the tuple itself, so that drop fails here.
+    const reached = destinationsFor(role).map((destination) => destination.path);
+
+    expect(PHONE_TABS[role]).toHaveLength(4);
+    for (const path of PHONE_TABS[role]) {
+      expect(reached, `${role} has a tab it does not reach: ${path}`).toContain(path);
+    }
+    expect(new Set(PHONE_TABS[role]).size).toBe(4);
+  });
+
+  it.each<MemberRole>(['member_role', 'admin'])(
+    'splits every destination %s reaches between the tabs and Više, once each, in binding order',
+    (role) => {
+      const { tabs, everyone, adminOnly } = phoneKeysFor(role);
+      const more = [...everyone, ...adminOnly];
+      const all = keysFor(role);
+
+      // No overlap, and nothing lost: tabs ∪ more is exactly the role's list.
+      expect(tabs.filter((key) => more.includes(key))).toEqual([]);
+      expect([...tabs, ...more].sort()).toEqual([...all].sort());
+      // Više keeps binding order: the two groups, read in turn, are a
+      // subsequence of the role's own list.
+      const positions = more.map((key) => all.indexOf(key));
+      expect(positions).toEqual([...positions].sort((a, b) => a - b));
+    },
+  );
+
+  it('gives the admin Sati and Godišnji under Pregled, and the settings under Postavke', () => {
+    expect(phoneKeysFor('admin').everyone).toEqual(['nav.sati', 'nav.godisnji']);
+    expect(phoneKeysFor('admin').adminOnly).toEqual(['nav.postavkeRotacije', 'nav.organizacija']);
+  });
+
+  it('leaves the member with no destination in Više at all', () => {
+    // A member's four destinations are all tabs, so their Više holds only the
+    // theme and Odjava.
+    expect(phoneKeysFor('member_role').everyone).toEqual([]);
+    expect(phoneKeysFor('member_role').adminOnly).toEqual([]);
   });
 });
