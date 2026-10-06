@@ -111,6 +111,26 @@ test('Odjava signs out and returns to the organization prompt', async ({ page, l
   await expect(page).toHaveURL(`/prijava?povratak=${encodeURIComponent('/danas')}`);
 });
 
+test.describe('on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+
+  test('Odjava in the Više sheet signs out and returns to the organization prompt', async ({
+    page,
+    loginPage,
+    fixture,
+  }) => {
+    await loginPage.signIn(fixture.slug, fixture.spare.username, fixture.password);
+
+    // On a phone the exit lives in the Više sheet (story 7.3).
+    await loginPage.moreButton.click();
+    await expect(loginPage.moreSheet).toBeVisible();
+    await loginPage.moreSheet.getByRole('button', { name: hr.shell.signOut, exact: true }).click();
+
+    await expect(page).toHaveURL('/prijava');
+    await expect(loginPage.organizationHeading).toBeVisible();
+  });
+});
+
 test('a signed-out deep link to Kalendar lands back on it, search and hash intact, after sign-in', async ({
   page,
   loginPage,

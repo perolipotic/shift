@@ -46,9 +46,24 @@ export abstract class BasePage {
     return this.page.getByRole('button', { name });
   }
 
-  /** Odjava, inside the profile menu. */
+  /** Odjava, inside the profile menu (sidebar) or the *Više* sheet (phone). */
   get signOutButton(): Locator {
     return this.page.getByRole('button', { name: hr.shell.signOut });
+  }
+
+  /** The phone bar's *Više*, the fifth cell; it opens the sheet. */
+  get moreButton(): Locator {
+    return this.navigation.getByRole('button', { name: hr.shell.more, exact: true });
+  }
+
+  /** The *Više* sheet: the role's other destinations, the theme and Odjava. */
+  get moreSheet(): Locator {
+    return this.page.getByRole('dialog', { name: hr.shell.more, exact: true });
+  }
+
+  /** The theme group (Tema), wherever it is open: the profile menu or the sheet. */
+  get themeGroup(): Locator {
+    return this.page.getByRole('group', { name: hr.shell.theme.label, exact: true });
   }
 
   /** The page's status line (a confirmation). */

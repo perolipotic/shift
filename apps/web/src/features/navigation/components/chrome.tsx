@@ -3,6 +3,7 @@ import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import {
   ChevronDown,
   ChevronUp,
+  Ellipsis,
   LogOut,
   Monitor,
   Moon,
@@ -17,10 +18,17 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { initialsOf } from '@/utils/initials';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogHeader } from '@/components/ui/dialog';
 import { t } from '@/lib/i18n';
-import { destinationsFor, isCurrentDestination } from '@/features/navigation/utils/destinations';
+import {
+  destinationsFor,
+  isCurrentDestination,
+  phoneNavigationFor,
+  type Destination,
+} from '@/features/navigation/utils/destinations';
 import { destinationIcon } from '@/features/navigation/utils/icons';
 import { useDismiss } from '@/features/navigation/hooks/dismiss';
+import { useCloseWhenWide } from '@/features/navigation/hooks/wide';
 import { navigationMessageKey } from '@/features/navigation/utils/messages';
 import { MEMBER_NAME_KEY, memberRoleLabelKey, readMemberName } from '@/features/navigation/services/profile';
 import {
@@ -43,7 +51,6 @@ import {
 import { currentSession, supabaseClient } from '@/lib/supabase/client';
 import { SIGN_OUT_FAILED, signOut, type SignOutFailure } from '@/features/auth/services/sign-out';
 import {
-  nextPreference,
   THEME_PREFERENCES,
   useThemePreference,
   type ThemePreference,
@@ -57,20 +64,34 @@ import {
  * and shipped no way to reach any of them — `destinationsFor` was called by
  * nothing and the layout rendered a bare outlet. This is what calls it.
  *
- * BOTTOM TABS BELOW 640px, SIDEBAR AT AND ABOVE IT, and it is ONE list of links
- * rendered in two containers rather than two lists: the destinations, their
- * order, their icons and their active treatment are the same fact, and two
- * copies of it are two places for the fact to drift. `sm:` is the only
- * breakpoint, matching Tailwind's own 640px; the bar is `sm:hidden` and the
- * aside is `hidden sm:flex`, so exactly one of the two is in the accessibility
- * tree at any width — which is also why both `<nav>` landmarks may carry the
- * same name without ever being two things called the same thing.
+ * BOTTOM TABS BELOW 640px, SIDEBAR AT AND ABOVE IT, and ONE `<Link>` element
+ * renders every destination in both — the sidebar entry, the phone tab and the
+ * row in the *Više* sheet — rather than one list per layout: the destinations,
+ * their icons and their active treatment are the same fact, and two copies of
+ * it are two places for the fact to drift. Where a link sits changes only its
+ * shape, through its container's `*:` classes. `sm:` is the only breakpoint, matching
+ * Tailwind's own 640px; the bar is `sm:hidden` and the aside is
+ * `hidden sm:flex`, so exactly one of the two is in the accessibility tree at
+ * any width — which is also why both `<nav>` landmarks may carry the same name
+ * without ever being two things called the same thing.
  *
- * THE EXIT IS IN BOTH BARS AND IN NEITHER COLLAPSE. It sits inside each `<nav>`
- * but OUTSIDE the collapsible region, because a collapse that takes the way out
- * of the application with it is a collapse that can strand somebody on a shared
+ * THE PHONE BAR IS FIVE EQUAL CELLS (story 7.3): four fixed tabs per role and
+ * *Više*. Which four is data (`phoneNavigationFor`), executed by
+ * `destinations.test.ts`, never a filter written here. *Više* opens a bottom
+ * sheet on the one native `Dialog`, so the browser supplies the focus trap,
+ * Escape and the return of focus to *Više*. The sheet holds the role's other
+ * destinations in two groups (Pregled: everyone's; Postavke: admin-only), the
+ * theme and Odjava. While the current route is one of the sheet's
+ * destinations, *Više* carries `aria-current` and the active treatment, so the
+ * bar always marks where the person is. Nothing scrolls sideways: at 320 px
+ * each cell is 64 px wide.
+ *
+ * THE EXIT IS IN BOTH LAYOUTS AND IN NEITHER COLLAPSE. On a phone it is in the
+ * *Više* sheet; on the sidebar it is in the profile menu, OUTSIDE the
+ * collapsible region, because a collapse that takes the way out of the
+ * application with it is a collapse that can strand somebody on a shared
  * device — and the state resets on reload, so the way back is a page refresh
- * nobody would think to try.
+ * nobody would think to try. The theme sits beside it in both places.
  *
  * THE ROLE IS READ, NEVER CLAIMED. `@/features/navigation/services/role` explains why at length;
  * what matters here is that this component holds NO role logic of its own. It
@@ -104,11 +125,11 @@ import {
  * screen-reader-only text, so assistive technology still hears it once, and it
  * is the entry's `title`, so a pointer user can read it on hover. The rail is
  * driven by the aside's `data-collapsed` through a `group/sidebar` variant, so
- * it reaches the sidebar alone — the phone's bottom bar renders the same
- * entries outside that group and always shows their names.
+ * it reaches the sidebar alone — the phone's tabs and sheet render the same
+ * link outside that group and always show their names.
  *
- * NOTHING IS PERSISTED. The collapse lives in `useState` and resets on every
- * load, matching the theme layer's stance for the same reason: these are shared
+ * NOTHING IS PERSISTED. The collapse and the sheet live in `useState` and reset
+ * on every load, matching the theme layer's stance for the same reason: these are shared
  * devices, and a layout one person chose following the next person into their
  * shift is a setting nobody asked for and nobody can find to undo.
  *
@@ -146,23 +167,28 @@ import {
  * and the shell renders. An empty shell is the one state this component exists
  * to make impossible, and that is as true of the branding as it is of the role.
  *
- * REPORTED ONCE, NOT PER LAYOUT. The lockup is computed once and rendered into
- * both bars, exactly as `destinations` and `exit` are, and the logging happens
- * inside the query function rather than in a render — so a phone-width session
- * and a desktop one produce the same one console entry rather than one per bar.
+ * THE LOCKUP IS THE SIDEBAR'S ALONE since story 7.3: the phone bar gave its
+ * width to the five cells, and the *Više* sheet names the organization in
+ * words beside the person. It is rendered once, and the logging happens inside
+ * the query function rather than in a render, so a session produces one
+ * console entry for one unreadable logo.
  *
  * Sizing: `h-11` is 44 px, the tap-target floor UX-DR40 sets, composed onto
- * every link and every button — the inherited primitives are `h-9`/`h-10`. The
- * bar scrolls in its own container rather than letting the page scroll
- * sideways: an admin reaches eight destinations plus the exit, and nine 44 px
- * targets do not fit across a phone. The lockup is NOT a control — nothing
- * about it is pressable — so it is 32 px rather than 44.
+ * every link and every button — the inherited primitives are `h-9`/`h-10`. A
+ * phone cell is taller still (56 px, icon over label), and the bar is 4 rem
+ * plus its 1 px edge, which is what the content's bottom padding and the
+ * page's `scroll-padding-bottom` (`index.css`) clear. The lockup is NOT a
+ * control — nothing about it is pressable — so it is 32 px rather than 44.
  */
 
 export interface AppChromeProps {
   /** The destination, rendered inside the chrome rather than beside it. */
   readonly children: ReactNode;
 }
+
+/** Where the one link renders. Numbers, not words: a place is never text. */
+const PLACE = { sidebar: 0, tab: 1, sheet: 2 } as const;
+type Place = (typeof PLACE)[keyof typeof PLACE];
 
 const THEME_GLYPHS: Record<ThemePreference, LucideIcon> = {
   system: Monitor,
@@ -180,8 +206,11 @@ export function AppChrome({ children }: AppChromeProps) {
   const [expanded, setExpanded] = useState(true);
   const [theme, setTheme] = useThemePreference();
   const [profileOpen, setProfileOpen] = useState(false);
+  // The phone's *Više* sheet. Never persisted, like the collapse.
+  const [moreOpen, setMoreOpen] = useState(false);
   const profileRegion = useRef<HTMLDivElement>(null);
   const closeProfile = useCallback(() => setProfileOpen(false), []);
+  const closeMoreWhenWide = useCallback(() => setMoreOpen(false), []);
   // A REF as well as state, and the two are not redundant — the shape every
   // handler in this application uses: state drives the disabled button, and
   // state is stale inside a handler already called once this tick, so a second
@@ -255,17 +284,34 @@ export function AppChrome({ children }: AppChromeProps) {
   // refused, that is the thing the person is waiting to hear about, and the role
   // read's failure is still on screen as the absent destinations.
   const refusal: MemberRoleFailure | SignOutFailure | null = failure ?? roleFailure;
+  // The phone layout, read off the table like the sidebar's list. No role, no
+  // tabs and an empty *Više* — which still opens, for the theme and Odjava.
+  const phone = role === null ? null : phoneNavigationFor(role);
+  const more = phone === null ? { everyone: [], adminOnly: [] } : phone.more;
+  // *Više* is current while the page is one of the destinations it holds, so
+  // the bar always marks where the person is.
+  const moreCurrent = [...more.everyone, ...more.adminOnly].some((destination) =>
+    isCurrentDestination(pathname, destination.path),
+  );
 
   // A REFUSED PRESS IS ABOUT THE PRESS, and it stops being about anything the
   // moment the person moves on. Without this the alert followed them onto every
   // destination for the rest of the session — and, through the `??` above, sat
   // in front of a later role failure that nothing would then have shown.
+  //
+  // The sheet closes on the same signal: following a row in it is a
+  // navigation, and the page it opens should not sit behind a modal.
   useEffect(() => {
     setProfileOpen(false);
+    setMoreOpen(false);
     setFailure(null);
   }, [pathname]);
 
   useDismiss(profileOpen, profileRegion, closeProfile);
+  // The sheet is the phone's; a viewport that turns wide (a rotation, a
+  // resize) would otherwise keep a modal open over the sidebar and return
+  // focus to a hidden *Više*.
+  useCloseWhenWide(moreOpen, closeMoreWhenWide);
 
   // MOVED TO, not merely announced. `role="alert"` reaches assistive technology
   // on insertion and reaches a sighted person not at all: on a phone the exit is
@@ -291,6 +337,17 @@ export function AppChrome({ children }: AppChromeProps) {
     if (!outcome.ok) console.error(ORGANIZATION_UNAVAILABLE, outcome.code);
 
     return outcome;
+  }
+
+  /**
+   * Closes the sheet — never while a sign-out is in flight, so the close
+   * button cannot do what `dismissible={!pending}` refuses Escape and the
+   * backdrop. Read off the ref, which is current inside a handler.
+   */
+  function closeMore(): void {
+    if (leaving.current) return;
+
+    setMoreOpen(false);
   }
 
   function toggleNavigation(): void {
@@ -325,6 +382,12 @@ export function AppChrome({ children }: AppChromeProps) {
         // Sending somebody to a sign-in route here would render a form their
         // still-valid session bounces them off, which reads as "the button did
         // nothing" rather than as the failure it is.
+        //
+        // The sheet closes IN THE SAME RENDER as the failure lands: the alert
+        // sits behind the modal, which makes it inert, and closing the sheet in
+        // a later render would hand focus back to *Više* after the alert took
+        // it.
+        setMoreOpen(false);
         setFailure(outcome.code);
 
         return;
@@ -372,7 +435,10 @@ export function AppChrome({ children }: AppChromeProps) {
       // SUCCEEDED and the person is signed out wherever they are standing; the
       // console carries the navigation failure and the screen must not claim the
       // opposite of what the database now believes.
-      if (!revoked) setFailure(SIGN_OUT_FAILED);
+      if (!revoked) {
+        setMoreOpen(false);
+        setFailure(SIGN_OUT_FAILED);
+      }
     } finally {
       // On EVERY path, including the successful one. Clearing it only on failure
       // leaves the control dead the moment `navigate` stops resolving, with
@@ -387,65 +453,89 @@ export function AppChrome({ children }: AppChromeProps) {
   }
 
   /**
-   * The destinations this role reaches, as links — or a skeleton, or nothing.
+   * A list of destinations as links — or a skeleton, or nothing.
    *
    * NOTHING, and never an empty list, is what a failed or unrecognised role
    * produces: the alert below is what says so. A skeleton rather than a spinner
    * (UX-DR40) while the one read is still pending, and it is gated on `isPending`
    * rather than on "no role yet" — gated the other way, a settled failure pulses
-   * forever and is indistinguishable from a slow network.
+   * forever and is indistinguishable from a slow network. On the phone bar the
+   * skeleton spans the four tab cells, and *Više* stays beside it.
    */
-  function renderDestinations(): ReactNode {
-    if (member.isPending) return <div className="h-11 w-full animate-pulse rounded-md bg-muted" />;
+  function renderDestinations(list: readonly Destination[], place: Place): ReactNode {
+    if (member.isPending) {
+      return (
+        <div
+          className={
+            place === PLACE.tab
+              ? 'col-span-4 h-11 w-full animate-pulse rounded-md bg-muted'
+              : 'h-11 w-full animate-pulse rounded-md bg-muted'
+          }
+        />
+      );
+    }
 
     if (role === null) return null;
 
-    return destinationsFor(role).map((destination) => {
-      const Icon = destinationIcon(destination.key);
-      const name = t(destination.key);
+    return list.map((destination) => renderLink(destination, place));
+  }
 
-      return (
-        <Link
-          key={destination.key}
-          to={destination.path}
-          // `aria-current="page"` AND a treatment that is not colour (UX-DR37):
-          // the active entry is a filled `sidebar-primary` pill, and it is ALSO
-          // semibold and underlined where its neighbours are neither. The pill
-          // alone is not enough: a hovered neighbour takes the same filled
-          // shape, so the weight and the underline are what make the active
-          // entry readable to somebody who cannot tell the two fills apart; the
-          // attribute is what makes it audible. All of them are driven by the
-          // same attribute, so they cannot disagree.
-          //
-          // The focus ring is OFFSET by the sidebar colour, so it is always
-          // drawn against navy (where `--sidebar-ring` clears 3:1) and never
-          // against the pill it would touch at under 3:1.
-          //
-          // MATCHED AS A SECTION, not as a string. Every destination here is a
-          // section rather than a leaf, and an equality test drops the signal on
-          // the first child route — see `isCurrentDestination`, which is in the
-          // data module because it is a rule with two polarities worth running.
-          aria-current={isCurrentDestination(pathname, destination.path) ? 'page' : undefined}
-          title={expanded ? undefined : name}
-          className="flex h-11 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-normal text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar aria-[current=page]:bg-sidebar-primary aria-[current=page]:font-semibold aria-[current=page]:text-sidebar-primary-foreground aria-[current=page]:underline aria-[current=page]:underline-offset-4 sm:justify-start"
-        >
-          <Icon aria-hidden className="size-4 shrink-0" />
-          <span className="group-data-[collapsed=true]/sidebar:sr-only">{name}</span>
-        </Link>
-      );
-    });
+  /**
+   * THE ONE LINK. The sidebar entry, the phone tab and the sheet row are this
+   * element. Where it sits changes only its shape, and the container does that
+   * through `*:` classes on its children (the phone bar stacks icon over
+   * label), so the link itself carries one treatment everywhere. `place` adds
+   * only behaviour: the collapsed rail's tooltip belongs to the sidebar, and a
+   * sheet row closes the sheet when pressed, even when it is the current page
+   * and so changes no pathname.
+   */
+  function renderLink(destination: Destination, place: Place): ReactNode {
+    const Icon = destinationIcon(destination.key);
+    const name = t(destination.key);
+
+    return (
+      <Link
+        key={destination.key}
+        to={destination.path}
+        // `aria-current="page"` AND a treatment that is not colour (UX-DR37),
+        // all of it in the `shell-entry` utility (`index.css`), which *Više*
+        // carries too, so the two cannot drift:
+        // the active entry is a filled `sidebar-primary` pill, and it is ALSO
+        // semibold and underlined where its neighbours are neither. The pill
+        // alone is not enough: a hovered neighbour takes the same filled
+        // shape, so the weight and the underline are what make the active
+        // entry readable to somebody who cannot tell the two fills apart; the
+        // attribute is what makes it audible. All of them are driven by the
+        // same attribute, so they cannot disagree.
+        //
+        // The focus ring (also in `shell-entry`) is OFFSET by the sidebar colour, so it is always
+        // drawn against navy (where `--sidebar-ring` clears 3:1) and never
+        // against the pill it would touch at under 3:1.
+        //
+        // MATCHED AS A SECTION, not as a string. Every destination here is a
+        // section rather than a leaf, and an equality test drops the signal on
+        // the first child route — see `isCurrentDestination`, which is in the
+        // data module because it is a rule with two polarities worth running.
+        aria-current={isCurrentDestination(pathname, destination.path) ? 'page' : undefined}
+        title={place === PLACE.sidebar && !expanded ? name : undefined}
+        onClick={place === PLACE.sheet ? closeMore : undefined}
+        className="shell-entry flex h-11 min-w-0 shrink-0 items-center justify-center gap-2 rounded-md px-3 text-sm font-normal text-sidebar-foreground sm:justify-start"
+      >
+        <Icon aria-hidden className="size-4 shrink-0" />
+        <span className="max-w-full truncate group-data-[collapsed=true]/sidebar:sr-only">{name}</span>
+      </Link>
+    );
   }
 
   /**
    * The theme control (human decision 2026-09-25): sustav, svijetla or tamna.
    *
-   * TWO SHAPES OF ONE PREFERENCE. Where there is room — the expanded sidebar —
-   * it is a three-segment pill (sidebar redesign), each segment a toggle
-   * button whose `aria-pressed` says which one holds. Where there is not — the
-   * collapsed rail and the phone bar — it is one glyph that cycles
-   * sustav → svijetla → tamna. Either way every name is the words, on
-   * `aria-label` and `title`, and states a preference rather than an action:
-   * a segment names the value it sets, the cycle names the value that holds.
+   * ONE SHAPE, IN TWO PLACES (story 7.3): a three-segment pill, each segment a
+   * toggle button whose `aria-pressed` says which one holds. It sits beside
+   * Odjava in both layouts — in the sidebar's profile menu and in the phone's
+   * *Više* sheet — so the bar and the sidebar foot carry no theme control of
+   * their own. Every name is the words, on `aria-label` and `title`, and names
+   * the value the segment sets.
    */
   function themeNames(): Record<ThemePreference, string> {
     // Three literal calls rather than one templated key: the key sweep in
@@ -465,7 +555,7 @@ export function AppChrome({ children }: AppChromeProps) {
       <div
         role="group"
         aria-label={t('shell.theme.label')}
-        className="flex self-center rounded-full border-[1.5px] border-sidebar-foreground/50 p-0.5 group-data-[collapsed=true]/sidebar:hidden"
+        className="flex w-fit self-center rounded-full border-[1.5px] border-sidebar-foreground/50 p-0.5"
       >
         {THEME_PREFERENCES.map((preference) => {
           const Glyph = THEME_GLYPHS[preference];
@@ -489,28 +579,9 @@ export function AppChrome({ children }: AppChromeProps) {
     );
   }
 
-  function renderThemeCycle(): ReactNode {
-    const name = themeNames()[theme];
-    const Glyph = THEME_GLYPHS[theme];
-
-    return (
-      <Button
-        className="h-11 w-11 shrink-0 p-0"
-        type="button"
-        variant="sidebar"
-        aria-label={name}
-        title={name}
-        onClick={() => setTheme(nextPreference(theme))}
-      >
-        <Glyph aria-hidden className="size-5" />
-      </Button>
-    );
-  }
-
   /**
-   * The exit: inside the profile menu on the sidebar, directly in the phone
-   * bar, where there is no menu to put it in. The `sm:` classes are the menu's
-   * — the phone bar is gone at that width.
+   * The exit: inside the profile menu on the sidebar, and in the *Više* sheet
+   * on a phone. Full width in both; the `sm:` classes are the menu's.
    *
    * ITS NAME DOES NOT CHANGE WHILE IT IS BUSY, deliberately. A disclosure has
    * two STATES and a name that says which one it will produce; this has one
@@ -525,7 +596,7 @@ export function AppChrome({ children }: AppChromeProps) {
 
     return (
       <Button
-        className="h-11 shrink-0 gap-2 px-4 sm:w-full sm:justify-start sm:border-0"
+        className="h-11 w-full shrink-0 gap-2 px-4 sm:justify-start sm:border-0"
         type="button"
         variant="sidebar"
         disabled={pending}
@@ -540,8 +611,8 @@ export function AppChrome({ children }: AppChromeProps) {
 
   /**
    * The profile card at the foot of the sidebar (sidebar redesign): initials,
-   * name and role, and a disclosure whose panel holds the exit (human decision
-   * 2026-09-26 — the mockup has no exit of its own).
+   * name and role, and a disclosure whose panel holds the theme and the exit
+   * (human decision 2026-09-26; the theme moved in with story 7.3).
    *
    * The name is its own read (`@/features/navigation/services/profile`) and is decoration: while
    * it is missing the card says the role alone, and the chip falls back to a
@@ -561,8 +632,9 @@ export function AppChrome({ children }: AppChromeProps) {
         {profileOpen ? (
           <div
             id="profile-menu"
-            className="absolute bottom-full left-0 z-10 mb-2 flex w-full min-w-48 flex-col rounded-lg border border-sidebar-border bg-sidebar p-2 shadow-sh-lg group-data-[collapsed=true]/sidebar:bottom-0 group-data-[collapsed=true]/sidebar:left-full group-data-[collapsed=true]/sidebar:mb-0 group-data-[collapsed=true]/sidebar:ml-3 group-data-[collapsed=true]/sidebar:w-auto"
+            className="absolute bottom-full left-0 z-10 mb-2 flex w-full min-w-48 flex-col gap-2 rounded-lg border border-sidebar-border bg-sidebar p-2 shadow-sh-lg group-data-[collapsed=true]/sidebar:bottom-0 group-data-[collapsed=true]/sidebar:left-full group-data-[collapsed=true]/sidebar:mb-0 group-data-[collapsed=true]/sidebar:ml-3 group-data-[collapsed=true]/sidebar:w-auto"
           >
+            {renderThemeSegments()}
             {renderSignOut()}
           </div>
         ) : null}
@@ -592,6 +664,90 @@ export function AppChrome({ children }: AppChromeProps) {
           />
         </Button>
       </div>
+    );
+  }
+
+  /**
+   * The phone's *Više* sheet (story 7.3): who is signed in, the role's other
+   * destinations in two groups, the theme and Odjava.
+   *
+   * THE ONE `Dialog`, docked at the bottom, so it is modal the way every other
+   * dialog here is: the browser traps focus, Escape and a backdrop press close
+   * it, and focus returns to *Više*. A group renders only when it has rows, so
+   * a member's sheet holds the theme and Odjava and nothing else. Navy, like
+   * the bar it opens from, so the one link keeps the one treatment.
+   *
+   * Not dismissible while a sign-out is in flight, so the request cannot lose
+   * the sheet before it answers; a refusal closes it in the same render the
+   * alert arrives in (see `leave`).
+   */
+  function renderMore(): ReactNode {
+    const roleName = role === null ? null : t(memberRoleLabelKey(role));
+    const organizationName = organization === null ? null : organization.name;
+    const initials = memberName === null ? null : initialsOf(memberName);
+    // TWO LINES THAT NEVER REPEAT: the first is the most personal fact there
+    // is, the second whatever is left of role and organization, and a line
+    // with nothing to say is not drawn.
+    const primary = memberName ?? roleName ?? organizationName;
+    const rest = memberName !== null ? [roleName, organizationName] : roleName !== null ? [organizationName] : [];
+    const [first = null, second = null] = rest.filter((part) => part !== null);
+    const secondary =
+      first !== null && second !== null
+        ? t('shell.identity', { role: first, organization: second })
+        : first;
+    const groups = [
+      { id: 'more-everyone', label: t('shell.moreGroup.everyone'), rows: more.everyone },
+      { id: 'more-admin-only', label: t('shell.moreGroup.adminOnly'), rows: more.adminOnly },
+    ];
+
+    return (
+      <Dialog
+        open={moreOpen}
+        onOpenChange={setMoreOpen}
+        dismissible={!pending}
+        aria-label={t('shell.more')}
+        className="mb-0 mt-auto w-full max-w-none rounded-b-none rounded-t-2xl border-x-0 border-b-0 border-sidebar-border bg-sidebar pb-[env(safe-area-inset-bottom,0px)] text-sidebar-foreground"
+      >
+        <DialogHeader
+          // The close is the primitive's `ghost` button; on navy it takes the
+          // shell's hover and its ring offset by the sidebar, from here, so no
+          // other dialog changes.
+          className="[&>button]:hover:bg-sidebar-accent [&>button]:hover:text-sidebar-accent-foreground [&>button]:focus-visible:ring-sidebar-ring [&>button]:focus-visible:ring-offset-sidebar"
+          closeLabel={t('shell.moreClose')}
+          onClose={closeMore}
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <Avatar className="bg-sidebar-accent text-sidebar-accent-foreground">
+              {initials ?? <User className="size-4" />}
+            </Avatar>
+            <div className="grid min-w-0">
+              {primary === null ? null : (
+                <span className="truncate text-sm font-semibold">{primary}</span>
+              )}
+              {secondary === null ? null : (
+                <span className="truncate text-xs text-sidebar-foreground/70">{secondary}</span>
+              )}
+            </div>
+          </div>
+        </DialogHeader>
+        {groups.map((group) =>
+          group.rows.length === 0 ? null : (
+            <section key={group.id} aria-labelledby={group.id} className="grid gap-1 *:justify-start">
+              <h2 id={group.id} className="font-sans text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/70">
+                {group.label}
+              </h2>
+              {group.rows.map((destination) => renderLink(destination, PLACE.sheet))}
+            </section>
+          ),
+        )}
+        <section aria-labelledby="more-display" className="grid gap-2">
+          <h2 id="more-display" className="font-sans text-xs font-semibold uppercase tracking-wide text-sidebar-foreground/70">
+            {t('shell.moreGroup.display')}
+          </h2>
+          {renderThemeSegments()}
+        </section>
+        {renderSignOut()}
+      </Dialog>
     );
   }
 
@@ -629,12 +785,13 @@ export function AppChrome({ children }: AppChromeProps) {
   }
 
   /**
-   * The lockup, rendered into whichever of the two bars is on screen.
+   * The lockup, rendered once, into the sidebar (the phone bar gave its width
+   * to the five cells in story 7.3).
    *
-   * COMPUTED ONCE, exactly as `destinations` and `exit` are, and for the same
-   * reason: the organization's branding is one fact, and two copies of the
-   * element are two places for the fallback, the accessible name and the accent
-   * to drift apart. It is also what keeps the read's failure reported once.
+   * One element, because the organization's branding is one fact, and two
+   * copies of it are two places for the fallback, the accessible name and the
+   * accent to drift apart. It is also what keeps the read's failure reported
+   * once.
    */
   function renderLockup(): ReactNode {
     return (
@@ -649,9 +806,9 @@ export function AppChrome({ children }: AppChromeProps) {
   }
 
   const toggleName = expanded ? t('shell.menuHide') : t('shell.menuShow');
-  const destinations = renderDestinations();
-  const lockup = renderLockup();
-  const exit = renderSignOut();
+  const destinations = renderDestinations(role === null ? [] : destinationsFor(role), PLACE.sidebar);
+  const tabs = renderDestinations(phone === null ? [] : phone.tabs, PLACE.tab);
+  const moreName = t('shell.more');
 
   return (
     <div className="flex flex-1 flex-col sm:flex-row">
@@ -675,7 +832,7 @@ export function AppChrome({ children }: AppChromeProps) {
             room. The name is `aria-hidden` because the mark already carries it
             as its accessible name; read twice it would be noise. */}
         <div className="flex min-h-11 items-center gap-3 border-b border-sidebar-border pb-3 group-data-[collapsed=true]/sidebar:justify-center">
-          {lockup}
+          {renderLockup()}
           {organization === null ? null : (
             <span
               aria-hidden
@@ -701,10 +858,6 @@ export function AppChrome({ children }: AppChromeProps) {
         </nav>
         <div className="flex flex-col gap-3 border-t border-sidebar-border pt-3">
           {renderProfile()}
-          {renderThemeSegments()}
-          <div className="hidden justify-center group-data-[collapsed=true]/sidebar:flex">
-            {renderThemeCycle()}
-          </div>
         </div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
@@ -737,33 +890,40 @@ export function AppChrome({ children }: AppChromeProps) {
         {/* Bottom padding that clears the sticky bar and the phone's own home
             indicator. The bar is `sticky`, so content scrolls UNDER it; without
             this the last thing on every destination is unreachable on exactly
-            the device this story is written for. */}
-        <div className="flex flex-1 flex-col pb-[calc(4rem+env(safe-area-inset-bottom,0px))] sm:pb-0">
+            the device this story is written for. 4 rem is the bar (two 4 px
+            paddings around a 56 px cell) and 1 px its edge. */}
+        <div className="flex flex-1 flex-col pb-[calc(4rem+1px+env(safe-area-inset-bottom,0px))] sm:pb-0">
           {children}
         </div>
-        {/* `overflow-x-auto` on the landmark and `shrink-0` on every entry: an
-            admin reaches eight destinations plus the exit, and nine 44 px
-            targets do not fit across a phone. Wide content scrolls in its own
-            container so the PAGE never scrolls sideways, which is the rule this
-            bar would otherwise be the first thing to break. */}
+        {/* FIVE EQUAL CELLS AND NO SCROLLER (story 7.3): four tabs and *Više*,
+            a grid on the landmark itself, so nothing can sit off screen — not
+            even the current tab. No lockup, no theme and no exit here: the
+            sheet holds the last two, and the sidebar the lockup. The `<nav>`
+            stays the sticky bar's direct child; the calendar's layout test
+            finds the bar as its sticky parent. */}
         <div
-          className={`sticky bottom-0 flex items-center gap-2 border-t bg-sidebar p-2 pb-[calc(0.5rem+env(safe-area-inset-bottom,0px))] text-sidebar-foreground sm:hidden ${accent.edge}`}
+          className={`sticky bottom-0 border-t bg-sidebar pt-1 pb-[calc(0.25rem+env(safe-area-inset-bottom,0px))] text-sidebar-foreground sm:hidden ${accent.edge}`}
         >
-          {/* The lockup is branding, not a destination, so it belongs OUTSIDE
-              the navigation landmark, and outside the SCROLLER too: a lockup
-              inside the scrolling region is branding that scrolls away while
-              stealing width from targets that already do not fit. The phone
-              has no profile card, so the exit sits in the bar directly. */}
-          {lockup}
-          {renderThemeCycle()}
           <nav
             aria-label={t('shell.navigation')}
-            className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+            className="grid grid-cols-5 items-center *:h-14 *:min-w-0 *:flex-col *:gap-1 *:px-1 *:text-xs"
           >
-            {destinations}
-            {exit}
+            {tabs}
+            <Button
+              className="shell-entry col-start-5 h-14 gap-1 rounded-md border-0 px-1 py-0 text-xs font-normal"
+              type="button"
+              variant="sidebar"
+              aria-haspopup="dialog"
+              aria-expanded={moreOpen}
+              aria-current={moreCurrent ? 'page' : undefined}
+              onClick={() => setMoreOpen(true)}
+            >
+              <Ellipsis aria-hidden className="size-4 shrink-0" />
+              <span className="max-w-full truncate">{moreName}</span>
+            </Button>
           </nav>
         </div>
+        {renderMore()}
       </div>
     </div>
   );

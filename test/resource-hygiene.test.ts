@@ -560,13 +560,22 @@ const SANCTIONED_SCREEN_KEYS = [
   'shell.signOut',
   // THE THEME CONTROL (human decision 2026-09-25, reversing UX-DR2). A glyph
   // whose name — `aria-label` and `title` — states the CURRENT preference, one
-  // key per value; the press cycles sustav → svijetla → tamna.
-  // The expanded sidebar shows the three as a segmented pill, a group whose
-  // name is this one word (sidebar redesign).
+  // key per value. Since story 7.3 it is one shape, a segmented pill whose
+  // group name is this one word, in the profile menu and the *Više* sheet.
   'shell.theme.label',
   'shell.theme.system',
   'shell.theme.light',
   'shell.theme.dark',
+  // STORY 7.3: the phone bar's *Više* and the sheet it opens. Its name (the
+  // button's word and the sheet's label), the sheet's close, the three group
+  // headings (Pregled: destinations every role reaches; Postavke: admin-only;
+  // Prikaz: the theme), and the "role · organization" line under the person.
+  'shell.more',
+  'shell.moreClose',
+  'shell.moreGroup.everyone',
+  'shell.moreGroup.adminOnly',
+  'shell.moreGroup.display',
+  'shell.identity',
   // TWO refusals, and the partition is the point in one direction and the
   // collapse in the other. A role that cannot be read, one that reaches no row
   // and one this build does not recognise are three CODES

@@ -479,13 +479,14 @@
     font-family: var(--font-heading);
   }
 
-  /* The phone's sticky bottom bar (`chrome.tsx`) covers the page's last 4 rem
-   * below 640 px — the space the content above it already clears with its own
-   * `pb-[calc(4rem+…)]` — so the page's scroll padding says the same: a
-   * `scrollIntoView` (the calendar's focused cell) stops above the bar rather
-   * than under it. From 640 px up there is no bar. */
+  /* The phone's sticky bottom bar (`chrome.tsx`) covers the page's last
+   * 4 rem + 1 px below 640 px (two 4 px paddings around a 56 px tab cell, and
+   * its 1 px edge) — the space the content above it already clears with its
+   * own `pb-[calc(4rem+1px+…)]` — so the page's scroll padding says the same:
+   * a `scrollIntoView` (the calendar's focused cell) stops above the bar
+   * rather than under it. From 640 px up there is no bar. */
   html {
-    scroll-padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
+    scroll-padding-bottom: calc(4rem + 1px + env(safe-area-inset-bottom, 0px));
 
     @media (min-width: 640px) {
       scroll-padding-bottom: 0;
@@ -593,6 +594,14 @@
  * colours (`forced-colors:outline-none`), where its colour would be repainted
  * into a solid system-colour outline; the `!important` shorthand, style
  * included, still beats that on a ringed cell. */
+/* One shell entry's states (story 7.3): the hover, the focus ring offset by
+ * the sidebar colour, and the current treatment — a `sidebar-primary` pill
+ * AND semibold AND underlined, never colour alone (UX-DR37). The navigation
+ * link and the phone bar's *Više* both carry it, so the two cannot drift. */
+@utility shell-entry {
+  @apply transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar aria-[current=page]:bg-sidebar-primary aria-[current=page]:font-semibold aria-[current=page]:text-sidebar-primary-foreground aria-[current=page]:underline aria-[current=page]:underline-offset-4;
+}
+
 @utility modifier-ring-conflict {
   box-shadow: inset 0 0 0 2px var(--destructive);
 

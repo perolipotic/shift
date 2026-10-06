@@ -60,12 +60,6 @@ export function resolveTheme(preference: ThemePreference, systemDark: boolean): 
   return preference;
 }
 
-/** The press order: system → light → dark → system. */
-export function nextPreference(preference: ThemePreference): ThemePreference {
-  const index = THEME_PREFERENCES.indexOf(preference);
-  return THEME_PREFERENCES[(index + 1) % THEME_PREFERENCES.length] ?? 'system';
-}
-
 function applyTheme(preference: ThemePreference): void {
   const systemDark = window.matchMedia(DARK_QUERY).matches;
   document.documentElement.setAttribute('data-theme', resolveTheme(preference, systemDark));

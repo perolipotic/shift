@@ -845,10 +845,12 @@ const SCREENS = [
   // leaking back into the route module the guard lives in.
   { name: 'the signed-in layout', file: LAYOUT, expectedControls: 0 },
   // SIX on the chrome: the collapse (on the page since the sidebar redesign),
-  // the theme control's two shapes — the segmented pill and the cycling glyph
-  // (human decisions 2026-09-25/26) — the profile card that discloses the exit,
-  // the exit, and the retry that makes the role read's failure something a
-  // person can act on. The
+  // the theme's segmented pill (human decisions 2026-09-25/26), the profile
+  // card that discloses the exit, the exit, the retry that makes the role
+  // read's failure something a person can act on, and *Više* (story 7.3),
+  // which replaced the theme's cycling glyph when the phone bar lost it. The
+  // sheet's close is `DialogHeader`'s own button, measured with the primitive.
+  // The
   // destinations are `<Link>`s, which neither detector matches by construction —
   // they are swept by name in the chrome block below, with their own count — so
   // this number is the six BUTTONS and nothing else. It is what notices a
@@ -1587,6 +1589,14 @@ const STRUCTURAL_ATTRIBUTES = new Set([
   // team's column to their cells for assistive technology. `aria-label`
   // remains guarded.
   'scope',
+  // ADDED by story 7.3's *Više* button, and it is a loosening of a GLOBAL
+  // allowlist, so it is named. `aria-haspopup` takes its value from a CLOSED,
+  // NON-TEXTUAL vocabulary the ARIA specification fixes — `true`, `false`,
+  // `menu`, `listbox`, `tree`, `grid`, `dialog` — and renders nowhere; it tells
+  // a screen reader that *Više* opens a dialog. Paid for like `aria-current`:
+  // `ariaHaspopupValues` holds every value on every swept screen to that
+  // vocabulary. `aria-label` remains guarded.
+  'aria-haspopup',
 ]);
 
 /** Content inside a template literal, with every `${…}` removed. */
@@ -1819,6 +1829,17 @@ function ariaInvalidValues(text: string): string[] {
 }
 
 /**
+ * Every LITERAL value an `aria-haspopup` attribute is given, on any screen.
+ *
+ * The twin of `ariaInvalidValues`, for the entry story 7.3 put on
+ * `STRUCTURAL_ATTRIBUTES`: the exemption holds only while every value stays in
+ * the ARIA vocabulary, and this is what reads them.
+ */
+function ariaHaspopupValues(text: string): string[] {
+  return [...text.matchAll(/aria-haspopup="([^"]*)"/g)].map((found) => found[1] ?? '');
+}
+
+/**
  * Every value an `aria-sort` attribute can take, in either syntax.
  *
  * The twin of `ariaCurrentValues` above, and it exists for the identical
@@ -1853,6 +1874,14 @@ function ariaSortValues(text: string): string[] {
  * above are non-vacuously guarded by each of theirs, and copying one without
  * that guard is precisely how a sweep goes quiet.
  */
+/** The `shell-entry` utility's body in `index.css` (story 7.3): the hover,
+ *  focus and current treatment the chrome's link and *Više* share. */
+function shellEntryUtility(): string {
+  const css = readFileSync(join(srcRoot, 'index.css'), 'utf8');
+
+  return /@utility shell-entry \{([^}]*)\}/.exec(css)?.[1] ?? '';
+}
+
 function linkElements(text: string): string[] {
   return [...text.matchAll(/<Link\b([^>]*?)\/?>/g)].map((found) => found[1] ?? '');
 }
@@ -2828,7 +2857,10 @@ const KEY_SOURCES = [
   // came in; the sidebar's muted section label, a third `shell.navigation`,
   // went out with the sidebar redesign. The profile card's role words arrive
   // through `memberRoleLabelKey`, a key this sweep does not see by design.
-  { name: 'the navigation chrome', file: CHROME, keys: translationKeys, strings: 10 },
+  // SEVENTEEN with story 7.3's *Više*: its name twice (the button's word and
+  // the sheet's `aria-label`), the sheet's close, its three group headings
+  // and the "role · organization" line under the person's name.
+  { name: 'the navigation chrome', file: CHROME, keys: translationKeys, strings: 17 },
   {
     // TWO, for three role codes and one sign-out code. The collapse is the
     // decision `messages.test.ts` executes; what this count pins is that there
@@ -4094,14 +4126,15 @@ describe('the chrome the layout wraps every destination in', () => {
     ).toHaveLength(1);
   });
 
-  it('puts the destinations AND the exit in both bars, not merely somewhere', () => {
+  it('puts the destinations in both bars and the exit in both layouts, not merely somewhere', () => {
     // MUTATION-PROVEN GAP, and the demonstration is the reason this block exists
-    // at all: deleting `{exit}` from the phone `<nav>` alone left the `<Link>`
-    // count at one, `expectedControls` at three and every responsive-class
-    // assertion untouched — 327 tests green on a phone build with navigation and
-    // no way to sign out, on the device this story's whole argument is built
-    // around. Counting controls says nothing about where they are.
-    const bars = navBlocks(source(CHROME));
+    // at all: deleting the exit from the phone layout alone left the `<Link>`
+    // count at one, `expectedControls` unchanged and every responsive-class
+    // assertion untouched — a phone build with navigation and no way to sign
+    // out, on the device this story's whole argument is built around. Counting
+    // controls says nothing about where they are.
+    const chrome = source(CHROME);
+    const bars = navBlocks(chrome);
 
     // NON-VACUITY, and specifically the count rather than "more than zero": one
     // bar is the mutation where a whole layout was deleted, and three is a `<nav>`
@@ -4109,25 +4142,116 @@ describe('the chrome the layout wraps every destination in', () => {
     // wrongly.
     expect(bars, 'the chrome does not render exactly two navigation bars').toHaveLength(2);
 
-    for (const bar of bars) {
-      expect(bar, `a navigation bar renders no destinations: ${bar}`).toContain('{destinations}');
-    }
+    // The sidebar renders the role's whole list; the phone bar its four tabs.
+    // Both go through the one renderer, so both are the one `<Link>`.
+    const [sidebar = '', phone = ''] = bars;
 
-    // THE EXIT, ONE PER LAYOUT (sidebar redesign, human decision 2026-09-26).
-    // The phone bar carries it inside its landmark; the sidebar carries it in
-    // the profile menu at the foot of the aside, which is not navigation. Both
-    // halves are read, because deleting either one is the mutation above.
-    const chrome = source(CHROME);
+    expect(sidebar, 'the sidebar renders no destinations').toContain('{destinations}');
+    expect(phone, 'the phone bar renders no tabs').toContain('{tabs}');
+    expect(chrome, 'the tabs are not read off the table').toMatch(
+      /const tabs = renderDestinations\(phone === null \? \[\] : phone\.tabs, PLACE\.tab\)/,
+    );
+
+    // THE EXIT, ONE PER LAYOUT. On the sidebar it is in the profile menu at the
+    // foot of the aside; on a phone it is in the *Više* sheet (story 7.3), and
+    // the theme sits beside it in both. Both halves are read, because deleting
+    // either one is the mutation above.
     const aside = /<aside\b[\s\S]*?<\/aside>/.exec(chrome)?.[0] ?? '';
+    const profile = componentFunction(chrome, 'renderProfile');
+    const sheet = componentFunction(chrome, 'renderMore');
 
-    const phone = /<div\s+className=\{`sticky[\s\S]*?<\/div>/.exec(chrome)?.[0] ?? '';
-
-    expect(phone, 'the phone bar renders no exit').toMatch(/<nav[\s\S]*\{exit\}[\s\S]*<\/nav>/);
     expect(aside, 'the sidebar renders no profile card').toContain('{renderProfile()}');
+    expect(profile, 'the profile menu holds no exit').toContain('{renderSignOut()}');
+    expect(profile, 'the profile menu holds no theme').toContain('{renderThemeSegments()}');
+    expect(sheet, 'the Više sheet holds no exit').toContain('{renderSignOut()}');
+    expect(sheet, 'the Više sheet holds no theme').toContain('{renderThemeSegments()}');
+    expect(chrome, 'the Više sheet is never rendered').toContain('{renderMore()}');
+    // And neither has a second home: the sidebar foot and the phone bar carry
+    // no theme and no exit of their own.
+    expect(aside, 'the sidebar foot still carries a theme control').not.toContain('renderThemeSegments(');
+    expect(phone, 'the phone bar still carries the exit').not.toContain('renderSignOut(');
+    expect(phone, 'the phone bar still carries a theme control').not.toMatch(/renderTheme/);
+    expect(chrome, 'the collapsed rail still cycles the theme').not.toContain('renderThemeCycle');
+  });
+
+  it('gives the phone bar five cells that never scroll, and opens Više as a labelled modal', () => {
+    // Story 7.3. The old bar scrolled sideways and an admin saw about three
+    // tabs; five equal grid cells cannot overflow, so the current tab is always
+    // on screen.
+    const chrome = source(CHROME);
+    const phone = navBlocks(chrome)[1] ?? '';
+    const sheet = componentFunction(chrome, 'renderMore');
+
+    expect(phone, 'no phone bar to read').not.toBe('');
+    expect(phone, 'the phone bar scrolls sideways again').not.toContain('overflow-x-auto');
+    expect(phone, 'the phone bar is not five equal cells').toContain('grid-cols-5');
+
+    const more = buttonElements(phone).find((element) => element.includes('aria-haspopup'));
+
+    expect(more, 'the phone bar has no Više').not.toBeUndefined();
+    expect(more, 'Više does not say it opens a dialog').toContain('aria-haspopup="dialog"');
+    expect(more, 'Više does not say whether the sheet is open').toContain('aria-expanded={moreOpen}');
+    // Current while the page is one of the sheet's destinations, through the
+    // same section rule the links use.
+    expect(more, 'Više is never marked current').toContain("aria-current={moreCurrent ? 'page' : undefined}");
+    expect(chrome, 'Više decides its own current state by hand').toMatch(
+      /const moreCurrent = [\s\S]{0,160}?isCurrentDestination\(pathname, destination\.path\)/,
+    );
+    // The SAME treatment as the link, by construction: both carry the one
+    // `shell-entry` utility rather than two copies of its classes.
     expect(
-      /function renderProfile\(\)[\s\S]*?\{renderSignOut\(/.test(chrome),
-      'the profile menu holds no exit',
-    ).toBe(true);
+      (attributeOf(more ?? '', 'className') ?? '').split(/\s+/),
+      'Više does not share the link’s treatment',
+    ).toContain('shell-entry');
+    expect(more, 'Više hand-copies the current treatment').not.toContain('aria-[current=page]:');
+
+    // The sheet is the one native Dialog, labelled, with a named close.
+    expect(sheet, 'the sheet is not the shared Dialog').toContain('<Dialog');
+    expect(sheet, 'the sheet carries no name').toContain("aria-label={t('shell.more')}");
+    expect(sheet, 'the sheet has no named close').toContain("closeLabel={t('shell.moreClose')}");
+    // Its rows are the one link, and the groups come from the table.
+    expect(sheet, 'the sheet renders its rows some other way').toContain(
+      'renderLink(destination, PLACE.sheet)',
+    );
+    expect(sheet).toContain('more.everyone');
+    expect(sheet).toContain('more.adminOnly');
+    expect(chrome, 'the phone layout is not read off the table').toContain('phoneNavigationFor(role)');
+  });
+
+  it('closes the sheet on a navigation and on a refused sign-out', () => {
+    // A row in the sheet is a navigation; the page it opens must not sit behind
+    // a modal. A refused sign-out must close it in the same render as the
+    // failure, or the alert it focuses is inert behind the sheet.
+    const chrome = source(CHROME);
+    const handler = componentFunction(chrome, 'leave');
+
+    expect(chrome, 'the sheet survives a navigation').toMatch(
+      /setMoreOpen\(false\);\s*setFailure\(null\);\s*\n\s*\}, \[pathname\]\)/,
+    );
+    expect(handler, 'a refused sign-out leaves the sheet over its alert').toMatch(
+      /setMoreOpen\(false\);\s*setFailure\(outcome\.code\);/,
+    );
+
+    // A row that IS the current page changes no pathname, so the row's own
+    // press closes the sheet — on the one link, for the sheet placement only.
+    const link = linkElements(chrome)[0] ?? '';
+
+    expect(link, 'a sheet row leaves the sheet open on the current page').toContain(
+      'onClick={place === PLACE.sheet ? closeMore : undefined}',
+    );
+    // The collapsed rail's tooltip is the sidebar's alone.
+    expect(link, 'the rail tooltip leaks onto tabs and sheet rows').toContain(
+      'title={place === PLACE.sidebar && !expanded ? name : undefined}',
+    );
+    // The close button cannot close what Escape and the backdrop may not.
+    expect(componentFunction(chrome, 'closeMore'), 'the close ignores an in-flight sign-out').toMatch(
+      /if \(leaving\.current\) return;/,
+    );
+    expect(componentFunction(chrome, 'renderMore')).toContain('onClose={closeMore}');
+    // A viewport that turns wide closes the phone's sheet.
+    expect(chrome, 'the sheet stays modal past the breakpoint').toContain(
+      'useCloseWhenWide(moreOpen, closeMoreWhenWide)',
+    );
   });
 
   it('keeps the exit outside the collapsible region, so collapsing cannot strand anybody', () => {
@@ -4199,14 +4323,22 @@ describe('the chrome the layout wraps every destination in', () => {
     // The treatment is keyed off the attribute itself (`aria-[current=page]:`),
     // which is what stops the two from disagreeing: there is one condition, not
     // two that happen to be written the same way today.
+    //
+    // Since story 7.3 the treatment is the `shell-entry` utility in
+    // `index.css`, shared with *Više* so the two cannot drift: the link must
+    // carry it, and the utility must hold the non-colour half.
     const link = linkElements(source(CHROME))[0] ?? '';
     const className = attributeOf(link, 'className') ?? '';
 
     expect(link, 'the chrome never marks the current destination').toMatch(/aria-current=\{/);
+    expect(className.split(/\s+/), 'the link does not carry the shell treatment').toContain('shell-entry');
     expect(
-      /aria-\[current=page\]:(?:font-bold|font-semibold|underline)/.test(className),
+      /aria-\[current=page\]:(?:font-bold|font-semibold|underline)/.test(shellEntryUtility()),
       'the active entry is distinguished by colour alone',
     ).toBe(true);
+    expect(shellEntryUtility(), 'the focus ring is not offset by the sidebar').toContain(
+      'focus-visible:ring-offset-sidebar',
+    );
   });
 
   it('matches a destination and its descendants, not the exact path alone', () => {
@@ -4534,7 +4666,9 @@ describe('the exit ends the session and says so when it cannot', () => {
       'let revoked = false',
     );
     expect(handler, 'the catch reports every failure as a failed sign-out').toMatch(
-      /if \(!revoked\) setFailure\(SIGN_OUT_FAILED\)/,
+      // A block since story 7.3: the refusal also closes the *Više* sheet, in
+      // the same render, so the alert it focuses is not behind a modal.
+      /if \(!revoked\) \{\s*setMoreOpen\(false\);\s*setFailure\(SIGN_OUT_FAILED\);/,
     );
   });
 
@@ -7193,31 +7327,26 @@ describe('the lockup the chrome and the settings surface share', () => {
   });
 });
 
-describe('the lockup reaches both layouts, not merely the one on a laptop', () => {
+describe('the lockup is rendered once, in the sidebar, and never inside a landmark', () => {
   /**
-   * MUTATION-PROVEN GAP, and the same one `{exit}` closed: the destinations and
-   * the exit are rendered into two bars from two variables, and deleting one of
-   * the two references leaves every count, every responsive class and every
-   * accessible name untouched. A lockup in the sidebar alone is a phone build
-   * with no branding at all, on the device this epic's whole argument is built
-   * around — and nobody testing at laptop width would ever see it.
+   * Story 7.3 took the lockup off the phone bar: the five cells need the whole
+   * width, and the *Više* sheet names the organization in words beside the
+   * person. What stays is the 1.4c rule that branding is not a destination, so
+   * it never sits inside a navigation landmark, and the rule that it is ONE
+   * element, so its fallback, its name and its accent cannot drift.
    */
   /**
-   * The phone layout's sticky container.
-   *
-   * It is a `<div>` rather than the `<nav>` since the 1.4c review: the lockup is
-   * branding, not a destination, so it belongs outside the navigation landmark —
-   * and it was inside this one while sitting outside the sidebar's, which made a
-   * phone announce an image as part of the navigation that a laptop correctly
-   * did not. The wrapper holds the lockup and the landmark, exactly as the
-   * `<aside>` does. Non-greedy to its own closing tag, which is correct while it
-   * holds no nested `<div>`; the consumers assert what is inside it, so the day
-   * one arrives fails loudly rather than silently widening.
+   * The phone layout's sticky container: a `<div>` around the `<nav>`, which
+   * stays its direct child (the calendar's layout test finds the bar as the
+   * landmark's sticky parent). Non-greedy to its own closing tag, which is
+   * correct while it holds no nested `<div>`; the consumers assert what is
+   * inside it, so the day one arrives fails loudly rather than silently
+   * widening.
    */
   const phoneBar = (chrome: string): string =>
     /<div\s+className=\{`sticky[\s\S]*?<\/div>/.exec(chrome)?.[0] ?? '';
 
-  it('renders the lockup once, into the sidebar and into the phone bar', () => {
+  it('renders the lockup once, into the sidebar and not the phone bar', () => {
     const chrome = source(CHROME);
     const aside = /<aside\b[\s\S]*?<\/aside>/.exec(chrome)?.[0] ?? '';
     const bar = phoneBar(chrome);
@@ -7225,40 +7354,30 @@ describe('the lockup reaches both layouts, not merely the one on a laptop', () =
     expect(aside, 'no <aside> to read').not.toBe('');
     expect(bar, 'no phone bar to read').not.toBe('');
 
-    // COMPUTED ONCE and rendered twice, exactly as `destinations` and `exit`
-    // are: two copies of the element would be two places for the fallback, the
-    // accessible name and the accent to drift, and two console entries for one
-    // unreadable logo.
     expect(
       [...chrome.matchAll(/<OrganizationLockup\b/g)],
       'the chrome builds more than one lockup',
     ).toHaveLength(1);
-    expect(aside, 'the sidebar renders no lockup').toContain('{lockup}');
-    expect(bar, 'the phone bar renders no lockup').toContain('{lockup}');
+    expect(aside, 'the sidebar renders no lockup').toContain('{renderLockup()}');
+    expect(bar, 'the phone bar still renders the lockup').not.toContain('renderLockup(');
+    // The `<nav>` is the bar's FIRST child: nothing sits beside the cells.
+    expect(bar, 'the phone bar holds something before its landmark').toMatch(
+      /^<div\s+className=\{`sticky[^`]*`\}\s*>\s*<nav\b/,
+    );
   });
 
-  it('keeps the lockup out of both navigation landmarks, not just one of them', () => {
-    // BRANDING IS NOT A DESTINATION. The lockup sat inside the phone `<nav>` and
-    // outside the sidebar's until the 1.4c review, so the same image was part of
-    // the navigation landmark on a phone and not on a laptop — and it sat inside
-    // the `overflow-x-auto` region whose own comment says nine 44 px targets
-    // already do not fit across a phone, stealing width from them and scrolling
-    // away from the person it identifies.
+  it('keeps the lockup out of both navigation landmarks', () => {
+    // BRANDING IS NOT A DESTINATION (1.4c review).
     const chrome = source(CHROME);
     const bars = navBlocks(chrome);
 
     expect(bars, 'the chrome does not render exactly two navigation bars').toHaveLength(2);
     for (const bar of bars) {
-      expect(bar, `a navigation landmark carries the lockup: ${bar}`).not.toContain('{lockup}');
-      // And the destinations are still INSIDE the landmark, which is the half
-      // this could otherwise break by moving everything out.
-      expect(bar, `a navigation bar renders no destinations: ${bar}`).toContain('{destinations}');
+      expect(bar, `a navigation landmark carries the lockup: ${bar}`).not.toMatch(/lockup|Lockup/);
+      // And the links are still INSIDE each landmark, which is the half this
+      // could otherwise break by moving everything out.
+      expect(bar, `a navigation bar renders no links: ${bar}`).toMatch(/\{destinations\}|\{tabs\}/);
     }
-    // The scroller is the landmark, so the lockup is beside it rather than in it.
-    expect(
-      phoneBar(chrome).slice(0, phoneBar(chrome).indexOf('<nav')),
-      'the lockup is not the phone bar’s first child, before the scrolling landmark',
-    ).toContain('{lockup}');
   });
 
   it('tints the shell chrome itself, in both layouts', () => {
@@ -8629,6 +8748,23 @@ describe('the exempted attribute keeps the promise that exempted it', () => {
     for (const value of ariaInvalidValues(source(file))) {
       expect(['true', 'false', 'grammar', 'spelling'], `aria-invalid="${value}"`).toContain(value);
     }
+  });
+
+  it.each(SCREENS)('admits only ARIA popup kinds wherever aria-haspopup is quoted in $name', ({ file }) => {
+    // What pays for `aria-haspopup`'s place on the global allowlist (story 7.3).
+    for (const value of ariaHaspopupValues(source(file))) {
+      expect(['true', 'false', 'menu', 'listbox', 'tree', 'grid', 'dialog'], `aria-haspopup="${value}"`).toContain(
+        value,
+      );
+    }
+  });
+
+  it('reads aria-haspopup in the quoted syntax, and the chrome carries one', () => {
+    // BOTH POLARITIES, and non-vacuity on the one screen that uses it.
+    expect(ariaHaspopupValues('<Button aria-haspopup="dialog" />')).toEqual(['dialog']);
+    expect(ariaHaspopupValues('<Button aria-haspopup="Više" />')).toEqual(['Više']);
+    expect(ariaHaspopupValues('<Button aria-expanded={open} />')).toEqual([]);
+    expect(ariaHaspopupValues(source(CHROME))).toEqual(['dialog']);
   });
 
   it('reads aria-invalid in the quoted syntax, and finds none where there is none', () => {

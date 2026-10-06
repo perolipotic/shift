@@ -886,6 +886,14 @@
     "menuShow": "Prikaži izbornik",
     "menuHide": "Sakrij izbornik",
     "signOut": "Odjava",
+    "more": "Više",
+    "moreClose": "Zatvori izbornik Više",
+    "moreGroup": {
+      "everyone": "Pregled",
+      "adminOnly": "Postavke",
+      "display": "Prikaz"
+    },
+    "identity": "{role} · {organization}",
     "theme": {
       "label": "Tema",
       "system": "Tema: sustav",
