@@ -20,6 +20,16 @@ export const TODAY_SCREEN_PARTS = {
   leaveTile: ['features', 'today', 'components', 'leave-tile.tsx'],
   // Story 6.2: the duty-block, drawn in the today card's place on a 24 h duty.
   dutyBlock: ['features', 'today', 'components', 'duty-block.tsx'],
+  // SINCE STORY 6.3: an admin's own body, the hook holding its three reads
+  // (and the role the page picks the body by), its four blocks and its
+  // skeleton.
+  adminHook: ['features', 'today', 'hooks', 'use-admin-today.ts'],
+  adminBody: ['features', 'today', 'components', 'admin-today-body.tsx'],
+  needsYouCard: ['features', 'today', 'components', 'needs-you-card.tsx'],
+  coverageCard: ['features', 'today', 'components', 'coverage-card.tsx'],
+  absentCard: ['features', 'today', 'components', 'absent-card.tsx'],
+  weekGrid: ['features', 'today', 'components', 'week-grid.tsx'],
+  adminSkeleton: ['features', 'today', 'components', 'admin-today-skeleton.tsx'],
 } as const;
 
 /**
@@ -43,5 +53,9 @@ export const TODAY_SCREEN_EXEMPT: readonly { readonly file: string; readonly why
   {
     file: 'services/today-duty.ts',
     why: "today's 24 h duty (story 6.2): the window, the legs and their notes, and the duty-block's lines; a key source of its own, executed by today.test.ts",
+  },
+  {
+    file: 'services/admin-today.ts',
+    why: "an admin's Danas (story 6.3): the queue's gating, Treba tebe, the coverage, the absences, the week and the subtitle's status; a key source of its own, executed by admin-today.test.ts",
   },
 ];

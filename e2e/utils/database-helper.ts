@@ -381,6 +381,28 @@ export async function removeLeaveMemberInSql(slug: string, memberId: string): Pr
   }
 }
 
+/**
+ * Makes a member {@link seedLeaveMember} wrote an ADMIN of the run
+ * organization, in SQL (story 6.3): an admin of the test's own, on the test's
+ * own team, so the shared fixture admin is never put on a team under a
+ * concurrent spec. {@link removeLeaveMemberInSql} deletes them as any other.
+ * REFUSES any member whose username is not one {@link seedLeaveMember} writes.
+ */
+export async function promoteToAdminInSql(slug: string, memberId: string): Promise<void> {
+  const client = await connect();
+  try {
+    const { rowCount } = await client.query(
+      `update members m set role = 'admin'
+         from organizations o
+        where o.id = m.organization_id and o.slug = $1 and m.id = $2 and m.username like $3`,
+      [slug, memberId, `${LEAVE_MEMBER_USERNAME_PREFIX}%`],
+    );
+    if (rowCount !== 1) throw new Error(`E2E: ${memberId} is not a member seedLeaveMember wrote in ${slug}`);
+  } finally {
+    await client.end();
+  }
+}
+
 /** Where the run organization's leave year begins (story 5.1c): a month 1–12 and a day 1–28. */
 export async function leaveYearStartOf(slug: string): Promise<{ readonly month: number; readonly day: number }> {
   const client = await connect();

@@ -261,7 +261,7 @@ function leaveOn(records: readonly LeaveRecord[], date: string): LeaveRecord | n
 }
 
 /** The whole absence covering a date, and the own records it joins, each with its own range. */
-interface Absence extends LeaveRange {
+export interface Absence extends LeaveRange {
   readonly records: readonly LeaveRange[];
 }
 
@@ -270,9 +270,10 @@ interface Absence extends LeaveRange {
  * across every own record that overlaps it or starts the day after it ends —
  * back-to-back records are one absence, and the next shift is the return
  * after all of them — with the records it joins. `null` when no record
- * covers `date`.
+ * covers `date`. EXPORTED for story 6.3: *Odsutni danas* states each
+ * member's absence the same way, over that member's records alone.
  */
-function absenceOn(records: readonly LeaveRecord[], date: string): Absence | null {
+export function absenceOn(records: readonly LeaveRecord[], date: string): Absence | null {
   const covering = leaveOn(records, date);
 
   if (covering === null) return null;

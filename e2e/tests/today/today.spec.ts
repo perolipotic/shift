@@ -10,6 +10,7 @@ import { TodayPage } from '../../pages/today.page.ts';
 import {
   holdRotation,
   organizationInstant,
+  promoteToAdminInSql,
   removeLeaveMemberInSql,
   removeLeaveRecordsInSql,
   removeRosterOverridesInSql,
@@ -28,7 +29,7 @@ import {
 import { addDays, dayMonth, fullDate, weekdayOf } from '../../utils/dates.ts';
 import { escapeRegExp, fill, hr, plural } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll } from '../../utils/layout.ts';
-import { MEMBER_STATE } from '../../utils/run-fixture.ts';
+import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
 /**
@@ -55,9 +56,29 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * as minutes pass without a reload. *Kalendar* still lists two shifts that
  * date. At 06:00 the same duty is still to come: "počinje u 07:00" on
  * today's date, both legs "Slijedi". Nothing scrolls sideways at 390 px.
+ *
+ * Story 6.3: an admin's own Danas at 14:20 in the organization's zone
+ * (`page.clock`). With no live leave, *Treba tebe* says `0 neriješenih
+ * konflikata`, neutral, with "Otvori konflikte (0)", and the admin on no
+ * team reads "Nisi raspoređen ni u jednu smjenu." in the subtitle. With a
+ * team of the test's own working Noć today, four members on it and one on
+ * leave today — the organization's leave read narrowed to those four, since
+ * other specs write leave to the same organization — the count is 1 and
+ * equals *Raspored*'s, the row opens its conflict's resolution screen,
+ * coverage reads `3 od 4 člana` with the member's name and why, the member is
+ * absent today, and the week's cell for that team today is named with the
+ * conflict. The keyboard reaches the row, "Otvori konflikte", the coverage,
+ * the absences and the week in that order, and nothing scrolls sideways at
+ * 390 px. A failed leave read is one alert whose retry brings it back. The
+ * member's Danas has no admin block. The keyboard starts from the top of the
+ * page and arrows inside the week grid to the team's cell. Accepting the
+ * conflict as uncovered on its screen takes the count to 0 on Raspored and,
+ * after the save, on Danas. An admin of the test's own on the team reads
+ * "Danas radiš ‹tip› ‹raspon›" and their team's link in the subtitle.
  */
 
 const danas = hr.danas;
+const admin = danas.admin;
 
 /** The run organization's rotation, while this file's test holds it (`holdRotation`). */
 let hold: RotationHold | null = null;
@@ -67,6 +88,8 @@ let seed: SeededRotation | null = null;
 let withLeave: { readonly slug: string; readonly id: string } | null = null;
 /** A context of the test's own, closed afterwards. */
 let context: BrowserContext | null = null;
+/** Fresh members a story 6.3 test seeded, deleted afterwards. */
+let crew: { readonly slug: string; readonly ids: readonly string[] } | null = null;
 /**
  * A second team, its rotation, the roster override on it and the member it
  * replaces, removed afterwards (story 6.2).
@@ -88,6 +111,14 @@ test.afterEach(async () => {
       await removeRosterOverridesInSql(rotation, extra.teamId, date).catch(() => undefined);
     }
     if (seed !== null) await removeSeededRotation(seed);
+    if (extra !== null && extra.seed !== null) await removeSeededRotation(extra.seed).catch(() => undefined);
+    if (crew !== null) {
+      for (const id of crew.ids) {
+        // Their memberships, leave and resolutions go with them (checked:
+        // the delete succeeds while they are still on the team).
+        await removeLeaveMemberInSql(crew.slug, id).catch(() => undefined);
+      }
+    }
     if (extra !== null) {
       // Each step on its own: one that fails leaves the rest to run.
       const { slug, teamId, memberId } = extra;
@@ -98,6 +129,7 @@ test.afterEach(async () => {
     }
   } finally {
     context = null;
+    crew = null;
     withLeave = null;
     seed = null;
     extra = null;
@@ -239,6 +271,9 @@ test.describe('as a member', () => {
     await expect(card).toContainText(rotation.steps[2]);
     await expect(card).toContainText(fixture.team.name);
     await expect(todayPage.todayCard(danas.today.working)).toHaveCount(0);
+    // STORY 6.3: the member's Danas is unchanged — no admin block.
+    await expect(todayPage.needsYouCard).toHaveCount(0);
+    await expect(todayPage.weekCard).toHaveCount(0);
 
     const next = addDays(today, 2);
     await expect(todayPage.nextShiftHeading).toHaveText(nextHeading(danas.next.heading, 2));
@@ -501,5 +536,238 @@ test.describe('a 24 h duty at 390 px, as the member', () => {
     await expect(todayPage.dutyLegs.nth(0)).toContainText(danas.duty.legUpcoming);
     await expect(todayPage.dutyLegs.nth(1)).toContainText(danas.duty.legUpcoming);
     await expectNoHorizontalScroll(page);
+  });
+});
+
+/** The organization's leave read, as PostgREST answers it: `rows`, with their exact count. */
+function leaveAnswer(rows: readonly unknown[]): { status: number; contentType: string; headers: Record<string, string>; body: string } {
+  return {
+    status: 200,
+    contentType: 'application/json',
+    // Exposed across origins, as the API exposes it, or the page cannot read it.
+    headers: {
+      'access-control-allow-origin': '*',
+      'access-control-expose-headers': 'Content-Range',
+      'content-range': rows.length === 0 ? '*/0' : `0-${String(rows.length - 1)}/${String(rows.length)}`,
+    },
+    body: JSON.stringify(rows),
+  };
+}
+
+/** The organization's leave read (`leave_records`), never the member's own (`my_leave_records`). */
+const ORGANIZATION_LEAVE = '**/rest/v1/leave_records*';
+
+/** `3 od 4 člana`: the present count, then the roster through the plural. */
+function membersText(present: number, total: number): string {
+  const message = admin.coverage.members;
+  const at = message.indexOf('{total');
+
+  return `${fill(message.slice(0, at), { present: String(present) })}${plural(message.slice(at).replace('{total,', '{count,'), total)}`;
+}
+
+/** What {@link seedShortTeam} wrote: the team, its rotation, its four members and the one on leave. */
+interface ShortTeam {
+  readonly team: { readonly id: string; readonly name: string };
+  readonly rotation: SeededRotation;
+  readonly members: readonly SeededLeaveMember[];
+  readonly absent: SeededLeaveMember;
+}
+
+/**
+ * A team of the test's own working Noć today (a day into the pattern), four
+ * fresh members on it from today, and the first of them on leave today.
+ */
+async function seedShortTeam(slug: string): Promise<ShortTeam> {
+  hold = holdRotation(slug);
+  await hold.ready;
+  const suffix = randomBytes(3).toString('hex');
+  const team = await seedExtraTeam(slug, `Smjena Gama ${suffix}`);
+  extra = { slug, teamId: team.id, seed: null, override: null, memberId: null };
+  const rotation = await seedTeamRotation(slug, team.id, suffix, 1);
+  extra = { ...extra, seed: rotation };
+  expect(stepOn(rotation, rotation.today)).toBe(1);
+  const members: SeededLeaveMember[] = [];
+  for (let index = 0; index < 4; index += 1) {
+    members.push(await seedLeaveMember(slug, team.id, rotation.today, 20));
+    crew = { slug, ids: members.map((member) => member.id) };
+  }
+  const [absent] = members;
+  if (absent === undefined) throw new Error('E2E: no member seeded');
+  await seedLeaveRecord(slug, absent.id, rotation.today, rotation.today);
+
+  return { team, rotation, members, absent };
+}
+
+test.describe('as an admin', () => {
+  test.use({ storageState: ADMIN_STATE });
+
+  test('Zero: 0 neriješenih konflikata, neutral, Otvori konflikte (0), and the subtitle for an admin on no team', async ({
+    page,
+    todayPage,
+    conflictsPage,
+  }) => {
+    await page.route(ORGANIZATION_LEAVE, (route) => route.fulfill(leaveAnswer([])));
+    await todayPage.goto();
+    await expect(todayPage.needsYouCard).toBeVisible();
+    await expect(todayPage.needsYouCount(0)).toBeVisible();
+    await expect(todayPage.needsYouCount(0)).toHaveText('0 neriješenih konflikata');
+    await expect(todayPage.needsYouCard).toContainText(admin.needsYou.calm);
+    await expect(todayPage.needsYouRowLinks).toHaveCount(0);
+    await expect(todayPage.openConflictsLink(0)).toBeVisible();
+    await expect(todayPage.absentCard).toContainText(admin.absent.none);
+    await expect(todayPage.page.getByText(new RegExp(`${escapeRegExp(admin.status.unscheduled)}$`))).toBeVisible();
+    // No "Tvoja smjena" card for an admin.
+    await expect(todayPage.page.getByText(hr.smjene.membership.none, { exact: true })).toHaveCount(0);
+
+    await todayPage.openConflictsLink(0).click();
+    await expect(page).toHaveURL(/\/raspored$/);
+    await expect(conflictsPage.countHeading(0)).toBeVisible();
+  });
+
+  test('a seeded leave conflict: the count equals Raspored, 3 od 4 člana, the absence, ⚠ in the week, and a decision saved takes it to 0', async ({
+    page,
+    todayPage,
+    conflictsPage,
+    resolutionPage,
+    fixture,
+  }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+    const { team, rotation, members, absent } = await seedShortTeam(fixture.slug);
+    const today = rotation.today;
+    const ours = new Set(members.map((member) => member.id));
+    // Only this test's members' leave: other specs write leave to the same organization.
+    await page.route(ORGANIZATION_LEAVE, async (route) => {
+      const answered = await route.fetch();
+      const rows = ((await answered.json()) as readonly { readonly member_id?: string }[]).filter(
+        (row) => row.member_id !== undefined && ours.has(row.member_id),
+      );
+      await route.fulfill(leaveAnswer(rows));
+    });
+    await page.clock.install({ time: await organizationInstant(fixture.slug, today, '14:20') });
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    await todayPage.goto();
+    await expect(todayPage.needsYouCount(1)).toBeVisible();
+    await expect(todayPage.openConflictsLink(1)).toBeVisible();
+    await expect(todayPage.needsYouRowLinks).toHaveCount(1);
+    const row = todayPage.needsYouRowLinks.first();
+    await expect(row).toContainText(absent.name);
+    await expect(row).toContainText(fill(admin.needsYou.shiftTimed, { type: rotation.steps[1], times: rotation.ranges[1] ?? '', team: team.name }));
+    await expect(row).toContainText(admin.needsYou.today);
+
+    // POKRIVENOST: today's Noć, 3 of its 4, the absent member and why.
+    const coverage = todayPage.coverageCard;
+    await expect(coverage).toContainText(fill(admin.coverage.shiftTimed, { type: rotation.steps[1], range: rotation.ranges[1] ?? '', team: team.name }));
+    await expect(coverage).toContainText(fill(admin.coverage.starts, { time: '19:00' }));
+    await expect(coverage).toContainText(membersText(3, 4));
+    await expect(coverage).toContainText(fill(admin.coverage.absentUnresolved, { name: absent.name }));
+
+    // ODSUTNI DANAS: the member, their team and the day.
+    await expect(todayPage.absentCard).toContainText(absent.name);
+    // One day of leave: its one date, never `07.10.–07.10.`.
+    await expect(todayPage.absentCard).toContainText(fill(admin.absent.lineDay, { team: team.name, date: dayMonth(today) }));
+
+    // OVAJ TJEDAN: the team's cell today, named with the conflict.
+    const ourCell = todayPage.weekCell(
+      fill(admin.week.cellTimedConflict, {
+        weekday: weekdayOf(today),
+        date: dayMonth(today),
+        team: team.name,
+        type: rotation.steps[1],
+        range: rotation.ranges[1] ?? '',
+      }),
+    );
+    await expect(ourCell).toHaveCount(1);
+    await expectNoHorizontalScroll(page);
+
+    // THE KEYBOARD, from the top of the page: the row, Otvori konflikte, the
+    // coverage, the absences, then the week grid's one tab stop — today's
+    // first team — and the arrows down to this team's row; then the week's link.
+    await todayPage.heading(hr.nav.danas).click();
+    for (const next of [row, todayPage.openConflictsLink(1), todayPage.coverageLink, todayPage.absentLink, todayPage.weekTabStop]) {
+      await page.keyboard.press('Tab');
+      await expect(next).toBeFocused();
+    }
+    const teams = (await todayPage.weekTeamHeaders.allInnerTexts()).map(normalized);
+    const ourRow = teams.indexOf(team.name);
+    expect(ourRow, 'the seeded team has a week row').toBeGreaterThanOrEqual(0);
+    for (let step = 0; step < ourRow; step += 1) await page.keyboard.press('ArrowDown');
+    await expect(ourCell).toBeFocused();
+    await page.keyboard.press('ArrowRight');
+    await expect(ourCell).not.toBeFocused();
+    await page.keyboard.press('ArrowLeft');
+    await expect(ourCell).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(todayPage.weekLink).toBeFocused();
+
+    // EQUALITY: the same count on Raspored.
+    await todayPage.openConflictsLink(1).click();
+    await expect(page).toHaveURL(/\/raspored$/);
+    await expect(conflictsPage.countHeading(1)).toBeVisible();
+
+    // The row opens its own conflict's resolution screen; Danas still
+    // counts 1 until the decision is saved, never ahead of it.
+    await todayPage.goto();
+    await todayPage.needsYouRowLinks.first().click();
+    await expect(page).toHaveURL(new RegExp(`/raspored/${absent.id}/${today}/${team.id}$`));
+    await resolutionPage.acceptOption.click();
+    await page.goBack();
+    await expect(todayPage.needsYouCount(1)).toBeVisible();
+    await todayPage.needsYouRowLinks.first().click();
+    await resolutionPage.acceptOption.click();
+    await resolutionPage.saveButton.click();
+    await expect(page).toHaveURL(/\/raspored$/);
+    await expect(conflictsPage.countHeading(0)).toBeVisible();
+
+    // Back on Danas, after the save: 0 there too.
+    await todayPage.navigationLink(hr.nav.danas, { exact: true }).click();
+    await expect(todayPage.needsYouCount(0)).toBeVisible();
+    await expect(todayPage.openConflictsLink(0)).toBeVisible();
+  });
+
+  test('an admin on a team: the subtitle says the shift worked today and links to the team', async ({ browser, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+    // An admin of the test's own, so the shared admin is never put on a team.
+    hold = holdRotation(fixture.slug);
+    await hold.ready;
+    const suffix = randomBytes(3).toString('hex');
+    const team = await seedExtraTeam(fixture.slug, `Smjena Delta ${suffix}`);
+    extra = { slug: fixture.slug, teamId: team.id, seed: null, override: null, memberId: null };
+    const rotation = await seedTeamRotation(fixture.slug, team.id, suffix, 1);
+    extra = { ...extra, seed: rotation };
+    const today = rotation.today;
+    expect(stepOn(rotation, today)).toBe(1);
+    const ownAdmin = await seedLeaveMember(fixture.slug, team.id, today, 20);
+    crew = { slug: fixture.slug, ids: [ownAdmin.id] };
+    await promoteToAdminInSql(fixture.slug, ownAdmin.id);
+
+    const { today: todayPage } = await signedInAs(browser, fixture.slug, ownAdmin);
+    await todayPage.page.clock.install({ time: await organizationInstant(fixture.slug, today, '14:20') });
+    await todayPage.goto();
+
+    await expect(todayPage.needsYouCard).toBeVisible();
+    const status = fill(admin.status.working, { type: rotation.steps[1], range: rotation.ranges[1] ?? '' });
+    await expect(
+      todayPage.text(fill(admin.subtitle, { weekday: weekdayOf(today), date: fullDate(today), status })),
+    ).toBeVisible();
+    await expect(todayPage.teamLink(team.name)).toHaveAttribute('href', `/smjene/${team.id}`);
+    // No "Tvoja smjena" card: the subtitle's link is the only one to the team.
+    await expect(todayPage.teamLink(team.name)).toHaveCount(1);
+    await expect(todayPage.page.getByText(hr.smjene.today.label, { exact: true })).toHaveCount(0);
+  });
+
+  test('a failed leave read is one alert with no figure, and the retry brings Treba tebe back', async ({ page, todayPage }) => {
+    await page.route(ORGANIZATION_LEAVE, (route) => route.fulfill({ status: 500, body: '{}' }));
+
+    await todayPage.goto();
+    await expect(todayPage.adminUnavailableAlert).toBeVisible();
+    await expect(todayPage.needsYouCard).toHaveCount(0);
+    await expect(todayPage.openConflictsLink()).toHaveCount(0);
+
+    await page.unroute(ORGANIZATION_LEAVE);
+    await todayPage.retryButton.click();
+    await expect(todayPage.adminUnavailableAlert).toHaveCount(0);
+    await expect(todayPage.needsYouCard).toBeVisible();
+    await expect(todayPage.openConflictsLink()).toBeVisible();
   });
 });

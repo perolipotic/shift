@@ -12,6 +12,7 @@ import {
   formatIsoMonthName,
   formatIsoMonthShortName,
   formatIsoWeekdayName,
+  formatIsoWeekdayShortName,
   formatMinuteOfDay,
   isIsoDate,
   nextIsoDate,
@@ -265,6 +266,8 @@ const UNZONED_ENTRY_POINTS = [
   // Story 3.1: the month and weekday names of a calendar date.
   'formatIsoMonthName',
   'formatIsoWeekdayName',
+  // Story 6.3: the short weekday of a calendar date, for the admin's week grid.
+  'formatIsoWeekdayShortName',
   // Story 7.4: the short month name of a calendar date, for the month picker.
   'formatIsoMonthShortName',
   'isIsoDate',
@@ -1224,6 +1227,22 @@ describe('formatIsoMonthShortName (story 7.4)', () => {
   it('refuses what isIsoDate refuses', () => {
     expect(formatIsoMonthShortName('2026-02-30')).toBeNull();
     expect(formatIsoMonthShortName('2026-09')).toBeNull();
+  });
+});
+
+describe('formatIsoWeekdayShortName (story 6.3)', () => {
+  it('names the short weekday of a calendar date, lowercase, whatever the device zone', () => {
+    expect(
+      ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05', '2026-10-06', '2026-10-07'].map(
+        formatIsoWeekdayShortName,
+      ),
+    ).toEqual(['čet', 'pet', 'sub', 'ned', 'pon', 'uto', 'sri']);
+    expect(formatIsoWeekdayShortName('0001-01-01')).toBe('pon');
+  });
+
+  it('refuses anything that is not a calendar date', () => {
+    expect(formatIsoWeekdayShortName('2026-02-30')).toBeNull();
+    expect(formatIsoWeekdayShortName('2026-10')).toBeNull();
   });
 });
 

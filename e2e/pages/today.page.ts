@@ -1,9 +1,10 @@
 import type { Locator } from '@playwright/test';
 
-import { escapeRegExp, hr } from '../utils/i18n.ts';
+import { escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 
 const danas = hr.danas;
+const admin = danas.admin;
 
 /** A message's text before its first placeholder: `Sati · ` of `Sati · {month} {year}`. */
 function leadOf(message: string): string {
@@ -17,6 +18,11 @@ function leadOf(message: string): string {
  * tiles (story 6.1b), each a link to its detail view. On a 24 h duty, the
  * duty-block in today's card's place (story 6.2). The team line below them
  * is the roster's (`teams.page.ts`).
+ *
+ * For an admin (story 6.3): *Treba tebe* with its count, its rows (each a
+ * link to its conflict) and "Otvori konflikte (n)"; *Pokrivenost danas*;
+ * *Odsutni danas*; and *Ovaj tjedan*, a grid in a scrolling region whose
+ * cells are named in words — each block with its way to its list view.
  */
 export class TodayPage extends BasePage {
   protected readonly path = '/danas';
@@ -120,5 +126,95 @@ export class TodayPage extends BasePage {
   /** The leave tile's hint, `preostalo · iskorišteno 3 od 20`, its third paragraph. */
   get leaveTileHint(): Locator {
     return this.leaveTile.locator('p').nth(2);
+  }
+
+  /** *Treba tebe* (story 6.3), by the region its heading names. */
+  get needsYouCard(): Locator {
+    return this.card(admin.needsYou.heading);
+  }
+
+  /** *Treba tebe*'s count, `7 neriješenih konflikata`, for `count`. */
+  needsYouCount(count: number): Locator {
+    return this.needsYouCard.getByText(plural(hr.raspored.count, count), { exact: true });
+  }
+
+  /** *Treba tebe*'s rows, each the link to its conflict's resolution screen, in order. */
+  get needsYouRowLinks(): Locator {
+    return this.needsYouCard.getByRole('list').getByRole('link');
+  }
+
+  /** "Otvori konflikte (n)" for `count`, or whatever it counts. */
+  openConflictsLink(count?: number): Locator {
+    const name =
+      count === undefined
+        ? new RegExp(`^${escapeRegExp(admin.needsYou.open).replace('\\{count\\}', '\\d+')}$`)
+        : fill(admin.needsYou.open, { count: String(count) });
+
+    return this.page.getByRole('link', typeof name === 'string' ? { name, exact: true } : { name });
+  }
+
+  /** *Pokrivenost danas*. */
+  get coverageCard(): Locator {
+    return this.card(admin.coverage.heading);
+  }
+
+  /** The coverage's way to the calendar. */
+  get coverageLink(): Locator {
+    return this.coverageCard.getByRole('link', { name: admin.coverage.link, exact: true });
+  }
+
+  /** *Odsutni danas*. */
+  get absentCard(): Locator {
+    return this.card(admin.absent.heading);
+  }
+
+  /** The absences' way to *Godišnji*. */
+  get absentLink(): Locator {
+    return this.absentCard.getByRole('link', { name: admin.absent.link, exact: true });
+  }
+
+  /** *Ovaj tjedan*. */
+  get weekCard(): Locator {
+    return this.card(admin.week.heading);
+  }
+
+  /** The week's grid region, which scrolls on its own and takes focus. */
+  get weekRegion(): Locator {
+    return this.card(admin.week.region);
+  }
+
+  /** The week's grid (Kalendar's model: one tab stop, the arrow keys). */
+  get weekGridTable(): Locator {
+    return this.weekRegion.getByRole('grid');
+  }
+
+  /** A week cell, by its full name in words. */
+  weekCell(name: string): Locator {
+    return this.weekGridTable.getByRole('gridcell', { name, exact: true });
+  }
+
+  /** The week grid's one tab stop: the cell with `tabindex="0"`, which no role or label reaches. */
+  get weekTabStop(): Locator {
+    return this.weekGridTable.locator('[role="gridcell"][tabindex="0"]');
+  }
+
+  /** The week's team names, one row header per team, in row order. */
+  get weekTeamHeaders(): Locator {
+    return this.weekGridTable.getByRole('rowheader');
+  }
+
+  /** A team's name in the page, the link to its roster (the admin's subtitle). */
+  teamLink(name: string): Locator {
+    return this.page.getByRole('main').getByRole('link', { name, exact: true });
+  }
+
+  /** The week's way to the calendar. */
+  get weekLink(): Locator {
+    return this.weekCard.getByRole('link', { name: admin.week.link, exact: true });
+  }
+
+  /** The admin body's unavailable alert. */
+  get adminUnavailableAlert(): Locator {
+    return this.page.getByRole('alert').filter({ hasText: admin.unavailable });
   }
 }

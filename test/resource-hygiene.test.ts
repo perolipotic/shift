@@ -168,6 +168,11 @@ const SANCTIONED_PLURAL_KEYS = [
   'raspored.resolution.balance',
   // STORY 5.4d: what the third card gives back to the balance, `+1 dan`.
   'raspored.resolution.balanceGained',
+  // SINCE STORY 6.3: an admin's Danas — how many of the unresolved conflicts are
+  // past (`1 na datum koji je prošao`, `3 na datume koji su prošli`), and how
+  // many of a shift's roster are present (`3 od 4 člana`, `5 od 5 članova`).
+  'danas.admin.needsYou.pastLine',
+  'danas.admin.coverage.members',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -1524,6 +1529,73 @@ const SANCTIONED_SCREEN_KEYS = [
   'danas.duty.noteOwn',
   'danas.duty.noteReplacing',
   'danas.duty.noteAdded',
+  // SINCE STORY 6.3: an admin's Danas — the subtitle with its separators and each
+  // status (working with or without times, on a duty, on leave, free, on no
+  // team); *Treba tebe*'s heading, calm line, a row's date and shift, the two
+  // badges and "Otvori konflikte (n)"; the coverage's heading, shift, three
+  // phases, three absent states, full shift, none, off line and link; the
+  // absences' heading, line and tomorrow's (each with or without a team),
+  // none and link; the week's heading, region, team column, four cell names,
+  // legend with its two entries and link; and the admin unavailable line.
+  // From review: a working team with nobody rostered, the teams with no
+  // rotation today, and a one-day absence's line and tomorrow's, each with or
+  // without a team.
+  // The past share and a coverage row's members are plurals, listed above.
+  'danas.admin.subtitle',
+  'danas.admin.separator',
+  'danas.admin.listSeparator',
+  'danas.admin.status.working',
+  'danas.admin.status.workingUntimed',
+  'danas.admin.status.duty',
+  'danas.admin.status.leave',
+  'danas.admin.status.free',
+  'danas.admin.status.unscheduled',
+  'danas.admin.needsYou.heading',
+  'danas.admin.needsYou.calm',
+  'danas.admin.needsYou.date',
+  'danas.admin.needsYou.shiftTimed',
+  'danas.admin.needsYou.shift',
+  'danas.admin.needsYou.past',
+  'danas.admin.needsYou.today',
+  'danas.admin.needsYou.open',
+  'danas.admin.coverage.heading',
+  'danas.admin.coverage.shiftTimed',
+  'danas.admin.coverage.shift',
+  'danas.admin.coverage.starts',
+  'danas.admin.coverage.running',
+  'danas.admin.coverage.ended',
+  'danas.admin.coverage.absentUnresolved',
+  'danas.admin.coverage.absentAccepted',
+  'danas.admin.coverage.absentResolved',
+  'danas.admin.coverage.full',
+  'danas.admin.coverage.nobody',
+  'danas.admin.coverage.noRotation',
+  'danas.admin.coverage.none',
+  'danas.admin.coverage.off',
+  'danas.admin.coverage.link',
+  'danas.admin.absent.heading',
+  'danas.admin.absent.line',
+  'danas.admin.absent.lineNoTeam',
+  'danas.admin.absent.lineDay',
+  'danas.admin.absent.lineDayNoTeam',
+  'danas.admin.absent.tomorrow',
+  'danas.admin.absent.tomorrowNoTeam',
+  'danas.admin.absent.tomorrowDay',
+  'danas.admin.absent.tomorrowDayNoTeam',
+  'danas.admin.absent.none',
+  'danas.admin.absent.link',
+  'danas.admin.week.heading',
+  'danas.admin.week.region',
+  'danas.admin.week.team',
+  'danas.admin.week.cellTimed',
+  'danas.admin.week.cell',
+  'danas.admin.week.cellTimedConflict',
+  'danas.admin.week.cellConflict',
+  'danas.admin.week.legend',
+  'danas.admin.week.legendType',
+  'danas.admin.week.legendConflict',
+  'danas.admin.week.link',
+  'danas.admin.unavailable',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

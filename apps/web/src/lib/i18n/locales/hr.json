@@ -67,7 +67,76 @@
     },
     "unscheduled": "Još nisi ni u jednoj smjeni, pa za tebe ne postoji raspored.",
     "unavailable": "Danas trenutačno nije moguće učitati. Pokušaj ponovno.",
-    "retry": "Pokušaj ponovno"
+    "retry": "Pokušaj ponovno",
+    "admin": {
+      "subtitle": "{weekday}, {date} · {status}",
+      "separator": " · ",
+      "listSeparator": ", ",
+      "status": {
+        "working": "Danas radiš {type} {range}",
+        "workingUntimed": "Danas radiš {type}",
+        "duty": "Na dužnosti do {time}",
+        "leave": "Danas si na godišnjem odmoru",
+        "free": "Danas ne radiš",
+        "unscheduled": "Nisi raspoređen ni u jednu smjenu."
+      },
+      "needsYou": {
+        "heading": "Treba tebe",
+        "pastLine": "{count, plural, one {# na datum koji je prošao} few {# na datume koji su prošli} other {# na datume koji su prošli}} · najraniji {date}",
+        "calm": "Svaki upisani godišnji odmor usklađen je s rasporedom.",
+        "date": "{weekday} {date}",
+        "shiftTimed": "{type} {times} · {team}",
+        "shift": "{type} · {team}",
+        "past": "prošlo",
+        "today": "danas",
+        "open": "Otvori konflikte ({count})"
+      },
+      "coverage": {
+        "heading": "Pokrivenost danas",
+        "shiftTimed": "{type} {range} · {team}",
+        "shift": "{type} · {team}",
+        "starts": "počinje u {time}",
+        "running": "u tijeku, do {time}",
+        "ended": "završeno u {time}",
+        "members": "{present} od {total, plural, one {# člana} few {# člana} other {# članova}}",
+        "absentUnresolved": "{name} je na godišnjem · konflikt nije riješen",
+        "absentAccepted": "{name} je na godišnjem · prihvaćeno bez zamjene",
+        "absentResolved": "{name} je na godišnjem · konflikt je riješen",
+        "full": "✓ puna smjena",
+        "nobody": "Nitko nije raspoređen",
+        "none": "Danas nijedna smjena ne radi.",
+        "off": "Slobodno: {teams}",
+        "noRotation": "Bez rotacije: {teams}",
+        "link": "Otvori kalendar smjena"
+      },
+      "absent": {
+        "heading": "Odsutni danas",
+        "line": "{team} · godišnji {from}–{to}",
+        "lineNoTeam": "godišnji {from}–{to}",
+        "lineDay": "{team} · godišnji {date}",
+        "lineDayNoTeam": "godišnji {date}",
+        "tomorrow": "Od sutra: {name} ({team}), {from}–{to}",
+        "tomorrowNoTeam": "Od sutra: {name}, {from}–{to}",
+        "tomorrowDay": "Od sutra: {name} ({team}), {date}",
+        "tomorrowDayNoTeam": "Od sutra: {name}, {date}",
+        "none": "Danas nitko nije na godišnjem odmoru.",
+        "link": "Otvori godišnje odmore"
+      },
+      "week": {
+        "heading": "Ovaj tjedan",
+        "region": "Ovaj tjedan po smjenama",
+        "team": "Smjena",
+        "cellTimed": "{weekday} {date}, {team}, {type} {range}",
+        "cell": "{weekday} {date}, {team}, {type}",
+        "cellTimedConflict": "{weekday} {date}, {team}, {type} {range}, neriješen konflikt",
+        "cellConflict": "{weekday} {date}, {team}, {type}, neriješen konflikt",
+        "legend": "Oznake",
+        "legendType": "{letter} {name}",
+        "legendConflict": "{glyph} neriješen konflikt",
+        "link": "Otvori kalendar"
+      },
+      "unavailable": "Pregled trenutačno nije moguće učitati. Pokušaj ponovno."
+    }
   },
   "kalendar": {
     "monthHeading": "{month} {year}",

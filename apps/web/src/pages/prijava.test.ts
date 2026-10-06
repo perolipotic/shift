@@ -291,6 +291,10 @@ const TODAY_FEATURE = join(srcRoot, 'features', 'today');
 const TODAY_KEYS = join(TODAY_FEATURE, 'services', 'today.ts');
 /** Story 6.2's rules: the duty-block's headline, its end line, each leg's state and whose shift a leg is. */
 const TODAY_DUTY_KEYS = join(TODAY_FEATURE, 'services', 'today-duty.ts');
+/** SINCE STORY 6.3: an admin's rules — the subtitle's status, the rows' badges, the coverage, the absences and the week's cells. */
+const TODAY_ADMIN_KEYS = join(TODAY_FEATURE, 'services', 'admin-today.ts');
+/** SINCE STORY 6.3: *Treba tebe*, the one Danas part sanctioned to draw `destructive`. */
+const NEEDS_YOU_CARD = join(srcRoot, ...TODAY_SCREEN_PARTS.needsYouCard);
 const TEAM_ROSTER_KEYS = join(srcRoot, 'features', 'teams', 'services', 'roster.ts');
 
 /** The hour bands feature, which holds both hour band screens' parts. */
@@ -721,8 +725,12 @@ const SCREENS = [
   // and the two tiles are `<Link>`s to *Sati* and *Godišnji*, whose own
   // retries are one tap away. No control of their own.
   // STILL ONE SINCE STORY 6.2: the duty-block offers nothing to tap.
+  // TWO SINCE STORY 6.3: the admin body's unavailable alert has a retry of
+  // its own, which reads the queue's three keys again. Every row of *Treba
+  // tebe*, "Otvori konflikte" and each block's way to its list view is a
+  // `<Link>`, which no detector reads.
   { name: 'the team roster', file: TEAM_ROSTER, expectedControls: 1 },
-  { name: 'the Danas destination', file: DANAS, expectedControls: 1 },
+  { name: 'the Danas destination', file: DANAS, expectedControls: 2 },
   // STORY 3.1. THREE on Kalendar: the previous month, `Ovaj mjesec` and the
   // next month. The grid is a table and offers nothing (day detail is 3.4).
   // STORY 3.2a: five — the previous and next months, `Ovaj mjesec`, and the
@@ -2189,10 +2197,27 @@ const KEY_SOURCES = [
     // end line, leg states and notes come through
     // `@/features/today/services/today-duty`, below; each duration is
     // `durationMessageKey`'s.
+    //
+    // FIFTY-EIGHT SINCE STORY 6.3, thirty-one more: the admin's subtitle
+    // (five: the date line again for an admin before their case answers,
+    // the subtitle, its separator twice — between shifts and before the team
+    // link — and the no-rotation word); *Treba tebe*'s heading, count
+    // (`raspored.count`), calm and past lines, a row's date and the action
+    // (six); the coverage's heading, members (a plural), full shift, none,
+    // off line with its list separator, and link (seven); the absences'
+    // heading, none and link (three); the week's heading, region, team
+    // column, no-rotation word, legend and its two entries, and link
+    // (eight); the admin unavailable line and its retry (two).
+    //
+    // FIFTY-NINE SINCE THE STORY 6.3 REVIEW: the teams with no rotation
+    // today, with a second list separator (two more); the full shift's mark
+    // moved into `coverageStaffingMessageKey`'s union, below (one fewer). The
+    // status, badges, phases, absent lines and cell names come through
+    // `@/features/today/services/admin-today`, below.
     name: 'the Danas destination',
     file: DANAS,
     keys: translationKeys,
-    strings: 27,
+    strings: 59,
   },
   {
     // STORY 6.1a: today's three cases, the next shift's two headings, and
@@ -2209,6 +2234,21 @@ const KEY_SOURCES = [
     file: TODAY_DUTY_KEYS,
     keys: messageKeyUnions,
     strings: 10,
+  },
+  {
+    // STORY 6.3: the subtitle's four statuses and its working shift with or
+    // without times; a row's two badges and its shift with or without times;
+    // the three phases, the three absent states and a coverage row's shift
+    // with or without times; an absence's line and tomorrow's, each with or
+    // without a team; and a week cell's four names.
+    //
+    // THIRTY-TWO SINCE THE STORY 6.3 REVIEW: a one-day absence's line and
+    // tomorrow's, each with or without a team (four), and a working team's
+    // staffing, full or nobody rostered (two).
+    name: 'the Danas admin rules',
+    file: TODAY_ADMIN_KEYS,
+    keys: messageKeyUnions,
+    strings: 32,
   },
   {
     // FIVE over three unions: the roster's two refusals (unknown, and the
@@ -3070,7 +3110,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // FIFTY-EIGHT SINCE STORY 6.1a: `@/features/today/services/today`.
     //
     // FIFTY-NINE SINCE STORY 6.2: `@/features/today/services/today-duty`.
-    expect(KEY_SOURCES).toHaveLength(59);
+    //
+    // SIXTY SINCE STORY 6.3: `@/features/today/services/admin-today`.
+    expect(KEY_SOURCES).toHaveLength(60);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -8965,11 +9007,27 @@ describe('the exempted attribute keeps the promise that exempted it', () => {
 });
 
 describe('the screen uses no reserved signal', () => {
-  it.each(SCREENS)('names no destructive utility in $name', ({ file }) => {
+  /** SINCE STORY 6.3: *Treba tebe*'s edge, drawn only while unresolved conflicts wait. */
+  const NEEDS_YOU_EDGE = "waiting && 'border-l-4 border-l-destructive'";
+
+  it.each(SCREENS)('names no destructive utility in $name', ({ name, file }) => {
     // UX-DR4: `destructive` is reserved exclusively for an unresolved conflict.
     // Comment-blind, so the screen's own explanation of the rule does not trip
     // it — which is what makes the assertion about the markup.
-    expect(source(file)).not.toContain('destructive');
+    // SINCE STORY 6.3: on Danas, *Treba tebe*'s left edge is exactly that —
+    // drawn only while the count of unresolved conflicts is above zero — and
+    // is taken out here, once, and pinned by the case below.
+    const screen = name === 'the Danas destination' ? source(file).replace(NEEDS_YOU_EDGE, '') : source(file);
+
+    expect(screen).not.toContain('destructive');
+  });
+
+  it("draws destructive on Danas only as Treba tebe's edge, and only while conflicts wait", () => {
+    const card = source(NEEDS_YOU_CARD);
+
+    expect(occurrences(card, 'destructive')).toBe(1);
+    expect(card).toContain(NEEDS_YOU_EDGE);
+    expect(card).toContain('const waiting = needsYou.count !== 0;');
   });
 });
 

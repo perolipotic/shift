@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link, createRoute } from '@tanstack/react-router';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 
 import { Card, CardContent } from '@/components/ui/card';
 import { Notice } from '@/components/ui/notice';
@@ -18,8 +18,20 @@ import {
   readOwnTeamToday,
   type OwnTeamLine,
 } from '@/features/teams/services/roster';
+import { AdminTodayBody } from '@/features/today/components/admin-today-body';
 import { TodayBody } from '@/features/today/components/today-body';
+import { useTodayRole } from '@/features/today/hooks/use-admin-today';
 import { useToday } from '@/features/today/hooks/use-today';
+import {
+  STATUS_DUTY,
+  STATUS_UNSCHEDULED,
+  STATUS_WORKING,
+  adminStatusMessageKey,
+  adminStatusOf,
+  adminStatusShiftMessageKey,
+  showsAdminToday,
+  type AdminStatus,
+} from '@/features/today/services/admin-today';
 
 /**
  * `Danas` — the heading with today's weekday and date, today in words, the
@@ -27,8 +39,16 @@ import { useToday } from '@/features/today/hooks/use-today';
  * leave balance (story 6.1b), and, below them, one line naming the caller's
  * team today.
  *
- * Member and admin alike (UX-DR31/UX-DR32): an admin on a team reads the
- * same screen; story 6.3 replaces the admin's.
+ * STORY 6.3 GIVES AN ADMIN THEIR OWN BODY (UX-DR31/UX-DR32): *Treba tebe*,
+ * today's coverage, who is absent and the week, with their reads and rules
+ * in `AdminTodayBody` and `@/features/today/services/admin-today`. The page
+ * only PICKS the body — by the snapshot's role, or the chrome's cached one
+ * before it lands (`useTodayRole`) — and states the admin's own today as one
+ * line in the subtitle, from `useToday`'s case, with their team as the same
+ * one link to its roster — none while they are on no team. No "Tvoja
+ * smjena" card for an admin, but the own-team read's refusal still shows,
+ * above their body, so the missing link is explained. `main` is busy while
+ * either body's reads are pending.
  *
  * STORY 6.1a ADDS THE CARDS above the line, in phone priority order. Their
  * reads and state are `useToday`, their rules
@@ -50,7 +70,10 @@ import { useToday } from '@/features/today/hooks/use-today';
  * redirected before the component is ever asked for.
  */
 export function DanasScreen() {
-  const { today, tiles, date, loading: todayLoading, retry } = useToday();
+  const { today, tiles, date, role: snapshotRole, loading: todayLoading, retry } = useToday();
+  const admin = showsAdminToday(useTodayRole(snapshotRole));
+  // Whether the admin body's own reads are pending: `main` is busy then too.
+  const [adminBusy, setAdminBusy] = useState(false);
   const answer = useQuery({
     queryKey: OWN_TEAM_KEY,
     queryFn: () => readOwnTeamToday(supabaseClient().from(OWN_TEAM_TABLE), currentSession),
@@ -60,6 +83,21 @@ export function DanasScreen() {
 
   const { line, refusal, loading } = ownTeamSurfaceStateOf(answer, new Date());
 
+  /** THE ONE LINK, to the roster of the team the line names: in the member's card, or the admin's subtitle. */
+  function renderTeamLink(shown: OwnTeamLine): ReactNode {
+    if (shown.team === null) return null;
+
+    return (
+      <Link
+        to="/smjene/$id"
+        params={{ id: shown.team.id }}
+        className="inline-flex h-11 items-center break-words font-medium underline underline-offset-4"
+      >
+        {shown.team.name}
+      </Link>
+    );
+  }
+
   function renderLine(shown: OwnTeamLine): ReactNode {
     if (shown.team === null) {
       return <p className="text-base">{t(ownTeamLineMessageKey(shown))}</p>;
@@ -68,19 +106,52 @@ export function DanasScreen() {
     return (
       <p className="flex flex-wrap items-center gap-x-2 text-base">
         <span>{t(ownTeamLineMessageKey(shown))}</span>
-        <Link
-          to="/smjene/$id"
-          params={{ id: shown.team.id }}
-          className="inline-flex h-11 items-center break-words font-medium underline underline-offset-4"
-        >
-          {shown.team.name}
-        </Link>
+        {renderTeamLink(shown)}
       </p>
     );
   }
 
-  /** The heading's subline: today's weekday and date, its placeholder while loading, or nothing. */
+  /** The admin's own today in words: each shift worked, the duty's end, leave, free, or no team. */
+  function statusText(status: AdminStatus): string {
+    if (status.kind === STATUS_WORKING) {
+      return status.shifts
+        .map((shift) =>
+          t(adminStatusShiftMessageKey(shift), { type: shift.name ?? t('kalendar.noRotation'), range: shift.range }),
+        )
+        .join(t('danas.admin.separator'));
+    }
+
+    if (status.kind === STATUS_DUTY) return t(adminStatusMessageKey(status.kind), { time: status.until });
+
+    return t(adminStatusMessageKey(status.kind));
+  }
+
+  /**
+   * The heading's subline: today's weekday and date — for an admin, then
+   * their own today and their team's link — its placeholder while loading,
+   * or nothing.
+   */
   function renderDateLine(): ReactNode {
+    if (date !== null && admin) {
+      const status = adminStatusOf(today);
+
+      return (
+        <PageDescription className="flex flex-wrap items-center gap-x-2 tabular-nums">
+          <span>
+            {status === null
+              ? t('danas.dateLine', { weekday: date.weekday, date: date.text })
+              : t('danas.admin.subtitle', { weekday: date.weekday, date: date.text, status: statusText(status) })}
+          </span>
+          {status === null || status.kind === STATUS_UNSCHEDULED || line === null || line.team === null ? null : (
+            <>
+              <span aria-hidden>{t('danas.admin.separator')}</span>
+              {renderTeamLink(line)}
+            </>
+          )}
+        </PageDescription>
+      );
+    }
+
     if (date !== null) {
       return (
         <PageDescription className="tabular-nums">
@@ -92,28 +163,45 @@ export function DanasScreen() {
     return todayLoading ? <div aria-hidden className="mt-1.5 h-5 w-48 max-w-full animate-pulse rounded-sm bg-muted" /> : null;
   }
 
+  /** The own-team read's refusal: in the member's card, or above the admin's body. */
+  function renderRefusal(): ReactNode {
+    return refusal === null ? null : <Notice role="alert">{t(ownTeamMessageKey(refusal))}</Notice>;
+  }
+
   return (
-    <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6" aria-busy={todayLoading}>
+    <main
+      className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6"
+      aria-busy={todayLoading || (admin && adminBusy)}
+    >
       <PageHeader>
         <PageTitle asChild>
           <h1>{t('nav.danas')}</h1>
         </PageTitle>
         {renderDateLine()}
       </PageHeader>
-      <div className="grid w-full min-w-0 max-w-lg gap-4">
-        <TodayBody today={today} tiles={tiles} onRetry={retry} />
-      </div>
-      {/* ONE CARD, holding the refusal as the form screens hold theirs, then
-          the line or its skeleton while it loads. */}
-      <Card className="w-full min-w-0 max-w-lg">
-        <CardContent className="grid gap-4">
-          {refusal === null ? null : <Notice role="alert">{t(ownTeamMessageKey(refusal))}</Notice>}
-          {line === null ? null : renderLine(line)}
-          {line === null && loading ? (
-            <div className="h-11 w-48 max-w-full animate-pulse rounded-md bg-muted" />
-          ) : null}
-        </CardContent>
-      </Card>
+      {admin ? (
+        <div className="grid w-full min-w-0 max-w-3xl grid-cols-1 gap-4">
+          {renderRefusal()}
+          <AdminTodayBody onBusy={setAdminBusy} />
+        </div>
+      ) : (
+        <>
+          <div className="grid w-full min-w-0 max-w-lg gap-4">
+            <TodayBody today={today} tiles={tiles} onRetry={retry} />
+          </div>
+          {/* ONE CARD, holding the refusal as the form screens hold theirs, then
+              the line or its skeleton while it loads. */}
+          <Card className="w-full min-w-0 max-w-lg">
+            <CardContent className="grid gap-4">
+              {renderRefusal()}
+              {line === null ? null : renderLine(line)}
+              {line === null && loading ? (
+                <div className="h-11 w-48 max-w-full animate-pulse rounded-md bg-muted" />
+              ) : null}
+            </CardContent>
+          </Card>
+        </>
+      )}
     </main>
   );
 }
