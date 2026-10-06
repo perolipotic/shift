@@ -980,6 +980,16 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.previous',
   'kalendar.next',
   'kalendar.current',
+  // STORY 7.4: the month toolbar — the group's name, the trigger's name, the
+  // picker's name, "ovaj mjesec" in the trigger and "ovaj" under the current
+  // month in the picker, and the picker's year ‹ and ›.
+  'kalendar.month',
+  'kalendar.chooseMonth',
+  'kalendar.monthPicker',
+  'kalendar.thisMonthLabel',
+  'kalendar.thisMonthShort',
+  'kalendar.previousYear',
+  'kalendar.nextYear',
   'kalendar.columnDate',
   'kalendar.noRotation',
   'kalendar.noTeams',

@@ -1,18 +1,13 @@
 import { expect, type Locator } from '@playwright/test';
 
 import { dayMonth, weekdayOf } from '../utils/dates.ts';
-import { fill, hr } from '../utils/i18n.ts';
+import { MONTH_TRIGGER_NAME, escapeRegExp, fill, hr } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 import { ErasureDialogParts } from './erasure-dialog.ts';
 
 const kalendar = hr.kalendar;
 
 /** `subota 05.10.2026` — a date as the day detail's title names it, year included. */
-/** `text` as a pattern that matches it literally. */
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function detailDate(date: string): string {
   return `${weekdayOf(date)} ${dayMonth(date)}${date.slice(0, 4)}`;
 }
@@ -46,9 +41,50 @@ export class CalendarPage extends BasePage {
     return this.page.getByRole('button', { name: kalendar.previous });
   }
 
-  /** `Ovaj mjesec`. */
+  /** `Ovaj mjesec`, drawn only off the current month (story 7.4). */
   get currentButton(): Locator {
     return this.page.getByRole('button', { name: kalendar.current, exact: true });
+  }
+
+  /** The month toolbar (story 7.4): ‹ month ▾ › in one group named "Mjesec". */
+  get monthToolbar(): Locator {
+    return this.page.getByRole('group', { name: kalendar.month, exact: true });
+  }
+
+  /** The month toolbar's trigger, which opens the month picker. */
+  get monthTrigger(): Locator {
+    return this.monthToolbar.getByRole('button', { name: MONTH_TRIGGER_NAME });
+  }
+
+  /** The "ovaj mjesec" label inside the trigger on the current month. */
+  get thisMonthLabel(): Locator {
+    return this.monthTrigger.getByText(kalendar.thisMonthLabel, { exact: true });
+  }
+
+  /** The month picker, open. */
+  get monthPicker(): Locator {
+    return this.page.getByRole('dialog', { name: kalendar.monthPicker, exact: true });
+  }
+
+  /** The picker's year ‹ and ›. */
+  pickerYears(): { readonly previous: Locator; readonly next: Locator } {
+    return {
+      previous: this.monthPicker.getByRole('button', { name: kalendar.previousYear, exact: true }),
+      next: this.monthPicker.getByRole('button', { name: kalendar.nextYear, exact: true }),
+    };
+  }
+
+  /**
+   * A month button in the picker, by its accessible name — the month's
+   * heading, `Ožujak 2025`, followed by ", ovaj mjesec" on the current month.
+   */
+  pickerMonth(heading: string): Locator {
+    return this.monthPicker.getByRole('button', { name: new RegExp(`^${escapeRegExp(heading)}(?:, |$)`) });
+  }
+
+  /** The picker's year, a live region announcing each change. */
+  get pickerYear(): Locator {
+    return this.monthPicker.locator('[aria-live="polite"]');
   }
 
   /** The mode switch's two buttons. */

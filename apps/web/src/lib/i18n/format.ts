@@ -88,6 +88,7 @@ const SHAPES = {
   dayMonth: { day: '2-digit', month: '2-digit' },
   time: { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' },
   monthName: { month: 'long' },
+  monthShortName: { month: 'short' },
   weekdayName: { weekday: 'long' },
 } as const satisfies Record<string, Intl.DateTimeFormatOptions>;
 
@@ -389,6 +390,18 @@ export function formatIsoMonthName(isoDate: string): string | null {
   if (!isIsoDate(isoDate)) return null;
 
   return formatMonthName(noonOf(isoDate), FALLBACK_TIME_ZONE);
+}
+
+/**
+ * `ruj` — the short month name of an ISO calendar date, CLDR verbatim and
+ * lowercase (story 7.4, the month picker's twelve buttons), by the same
+ * reading as {@link formatIsoMonthName}. `null` for anything
+ * {@link isIsoDate} refuses.
+ */
+export function formatIsoMonthShortName(isoDate: string): string | null {
+  if (!isIsoDate(isoDate)) return null;
+
+  return part(partsOf('monthShortName', noonOf(isoDate), FALLBACK_TIME_ZONE), 'month').toLocaleLowerCase(LOCALE);
 }
 
 /**

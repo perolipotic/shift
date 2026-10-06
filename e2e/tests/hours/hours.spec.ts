@@ -303,7 +303,9 @@ test.describe('as a member', () => {
     await expect(hoursPage.untimedNote).toHaveCount(0);
     // No leave, so no shift in conflict: nothing is added (story 5.3d).
     await expect(hoursPage.conflictsLine).toHaveCount(0);
-    await expect(hoursPage.currentButton).toBeDisabled();
+    // On the current month, "ovaj mjesec" is a label, not a button (story 7.4).
+    await expect(hoursPage.thisMonthLabel).toBeVisible();
+    await expect(hoursPage.currentButton).toHaveCount(0);
   });
 
   test("a failed read of their own leave shows the unavailable message with a retry, and the retry brings their figures back", async ({
@@ -351,6 +353,29 @@ test.describe('as a member', () => {
     await expectNoHorizontalScroll(page);
     await hoursPage.currentButton.click();
     await expect(hoursPage.monthHeading(monthHeading(rotation.today))).toBeVisible();
+    // Focus lands on the shared toolbar's trigger, never <body> (story 7.4).
+    await expect(hoursPage.monthTrigger).toBeFocused();
+    await expect(hoursPage.thisMonthLabel).toBeVisible();
+  });
+});
+
+test.describe('the shared month toolbar on Sati (story 7.4)', () => {
+  test.use({ storageState: MEMBER_STATE });
+
+  test('PgDn in the toolbar steps the month, and the picker opens on it', async ({ page, hoursPage }) => {
+    await hoursPage.goto('?mjesec=2026-07');
+    await expect(hoursPage.monthHeading(monthHeading('2026-07-01'))).toBeAttached();
+    await hoursPage.monthTrigger.focus();
+
+    await page.keyboard.press('PageDown');
+    await expect(page).toHaveURL(/mjesec=2026-08/);
+    await expect(hoursPage.monthHeading(monthHeading('2026-08-01'))).toBeAttached();
+    await expect(hoursPage.monthTrigger).toBeFocused();
+
+    await hoursPage.monthTrigger.click();
+    await expect(hoursPage.monthPicker).toBeVisible();
+    await expect(hoursPage.pickerMonth(monthHeading('2026-08-01'))).toBeFocused();
+    await expect(hoursPage.pickerMonth(monthHeading('2026-08-01'))).toHaveAttribute('aria-current', 'true');
   });
 });
 

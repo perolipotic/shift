@@ -1,6 +1,6 @@
 import type { Download, Locator } from '@playwright/test';
 
-import { escapeRegExp, hr } from '../utils/i18n.ts';
+import { MONTH_TRIGGER_NAME, escapeRegExp, hr } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 
 const kalendar = hr.kalendar;
@@ -28,9 +28,29 @@ export class HoursPage extends BasePage {
     return this.page.getByRole('button', { name: kalendar.next });
   }
 
-  /** `Ovaj mjesec`. */
+  /** `Ovaj mjesec`, drawn only off the current month (story 7.4). */
   get currentButton(): Locator {
     return this.page.getByRole('button', { name: kalendar.current, exact: true });
+  }
+
+  /** The shared month toolbar's trigger (story 7.4). */
+  get monthTrigger(): Locator {
+    return this.page.getByRole('group', { name: kalendar.month, exact: true }).getByRole('button', { name: MONTH_TRIGGER_NAME });
+  }
+
+  /** The "ovaj mjesec" label inside the trigger on the current month. */
+  get thisMonthLabel(): Locator {
+    return this.monthTrigger.getByText(kalendar.thisMonthLabel, { exact: true });
+  }
+
+  /** The month picker, open (story 7.4). */
+  get monthPicker(): Locator {
+    return this.page.getByRole('dialog', { name: kalendar.monthPicker, exact: true });
+  }
+
+  /** A month button in the picker, by its accessible name, `Ožujak 2025`. */
+  pickerMonth(heading: string): Locator {
+    return this.monthPicker.getByRole('button', { name: new RegExp(`^${escapeRegExp(heading)}(?:, |$)`) });
   }
 
   /** The tile a summary label heads: its label and its figure. */

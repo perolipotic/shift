@@ -266,10 +266,11 @@ describe("the viewer's month", () => {
       previous: '2026-08',
       next: '2026-10',
       isCurrent: true,
+      current: '2026-09',
     });
     expect(viewOf(pilot, hoursSearchOf({ mjesec: '2026-13' })).header.month).toBe('2026-09');
     expect(viewOf(pilot, {}).header.month).toBe('2026-09');
-    expect(viewOf(pilot, { mjesec: '2026-10' }).header).toMatchObject({ month: '2026-10', isCurrent: false });
+    expect(viewOf(pilot, { mjesec: '2026-10' }).header).toMatchObject({ month: '2026-10', isCurrent: false, current: '2026-09' });
   });
 });
 

@@ -158,6 +158,7 @@ describe('this month', () => {
     expect(month.monthName).toBe('Rujan');
     expect(month.year).toBe('2026');
     expect(month.isCurrent).toBe(true);
+    expect(month.current).toBe('2026-09');
     expect(month.previous).toBe('2026-08');
     expect(month.next).toBe('2026-10');
     expect(month.columns.map((team) => team.name)).toEqual(['Smjena A', 'Smjena B', 'Smjena C', 'Smjena D']);
@@ -175,6 +176,7 @@ describe('this month', () => {
     const month = calendarMonthOf(pilot, { mjesec: '2026-10' }, TODAY);
 
     expect(month.isCurrent).toBe(false);
+    expect(month.current).toBe('2026-09');
     expect(month.rows.some((row) => row.isToday)).toBe(false);
   });
 

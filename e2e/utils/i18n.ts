@@ -28,6 +28,14 @@ export function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * The month toolbar's trigger (story 7.4), `Listopad 2026, odaberi mjesec…`,
+ * whatever the month: *Kalendar* and *Sati* share it.
+ */
+export const MONTH_TRIGGER_NAME = new RegExp(
+  `^${escapeRegExp(hr.kalendar.chooseMonth).replace(/\\\{\w+\\\}/g, '.+')}`,
+);
+
 /** The plural categories and exact selectors (`=0`, `=1`, …) ICU allows. */
 const PLURAL_SELECTOR = /^(?:=\d+|zero|one|two|few|many|other)$/;
 
