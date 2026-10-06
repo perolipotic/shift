@@ -5,10 +5,16 @@ import { WEEK_DAYS } from '@/features/today/services/today';
 
 const WEEK_ROWS = Array.from({ length: WEEK_DAYS }, (_, index) => index);
 
+/** One of the two tiles' placeholder while its reads are pending (story 6.1b), in the tile's shape. */
+export function TodayTileSkeleton(): ReactNode {
+  return <div aria-hidden className="h-28 min-w-0 animate-pulse rounded-md bg-muted" />;
+}
+
 /**
  * *Danas*'s placeholder while its reads are unanswered, in the shape the
- * cards will take: today's card, the next shift's, and a bar per day of the
- * week. No spinner, and no case until the reads answer.
+ * cards will take: today's card, the next shift's, a bar per day of the
+ * week, and the two tiles side by side (story 6.1b). No spinner, and no case
+ * until the reads answer.
  */
 export function TodaySkeleton(): ReactNode {
   return (
@@ -28,6 +34,10 @@ export function TodaySkeleton(): ReactNode {
           <div key={row} aria-hidden className="h-11 animate-pulse rounded-sm bg-muted" />
         ))}
       </Card>
+      <div className="grid min-w-0 grid-cols-2 gap-3">
+        <TodayTileSkeleton />
+        <TodayTileSkeleton />
+      </div>
     </>
   );
 }

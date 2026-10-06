@@ -1,7 +1,8 @@
+import { leaveCostOf } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
-import { calendarDayListOf, type CalendarMarks } from '@/features/calendar/utils/month';
+import { calendarDayListOf, memberScheduleInputOf, type CalendarMarks } from '@/features/calendar/utils/month';
 import { MODIFIER_LEAVE } from '@/features/calendar/utils/modifiers';
 import {
   CASE_FREE,
@@ -149,7 +150,8 @@ describe("today's one case", () => {
   it('is on leave, with the range, and the next shift is the return after it', () => {
     const view = readyOf(todayViewOf(pilot, [rowOf('leave-1', '2026-09-28', '2026-10-05')], noonOf('2026-10-01')));
 
-    expect(view.todayCase).toEqual({ kind: CASE_LEAVE, from: '28.09.2026', to: '04.10.2026' });
+    // 30.09. Dan, 01.10. Noć and 04.10. Dan cost 3.
+    expect(view.todayCase).toEqual({ kind: CASE_LEAVE, from: '28.09.2026', to: '04.10.2026', costDays: 3 });
     expect(t(todayCaseMessageKey(view.todayCase.kind))).toBe('Danas si na godišnjem odmoru');
     expect(view.returning).toBe(true);
     expect(view.next).toMatchObject({ date: '2026-10-05', inDays: 4, name: 'Noć', text: '05.10.2026' });
@@ -169,7 +171,8 @@ describe("today's one case", () => {
     const rows = [rowOf('leave-1', '2026-09-28', '2026-10-01'), rowOf('leave-2', '2026-10-01', '2026-10-05')];
     const view = readyOf(todayViewOf(pilot, rows, noonOf('2026-10-01')));
 
-    expect(view.todayCase).toEqual({ kind: CASE_LEAVE, from: '28.09.2026', to: '04.10.2026' });
+    // 1 (30.09.) + 2 (01.10., 04.10.).
+    expect(view.todayCase).toEqual({ kind: CASE_LEAVE, from: '28.09.2026', to: '04.10.2026', costDays: 3 });
     expect(view.next).toMatchObject({ date: '2026-10-05', inDays: 4 });
   });
 
@@ -178,7 +181,7 @@ describe("today's one case", () => {
     const view = readyOf(todayViewOf(pilot, rows, noonOf('2026-10-01')));
 
     // 28.09.–01.10., then 02.10. free of leave, then 03.10.–04.10.
-    expect(view.todayCase).toEqual({ kind: CASE_LEAVE, from: '28.09.2026', to: '01.10.2026' });
+    expect(view.todayCase).toEqual({ kind: CASE_LEAVE, from: '28.09.2026', to: '01.10.2026', costDays: 2 });
   });
 
   it('names a next shift whose type has no times by its name alone', async () => {
@@ -264,6 +267,64 @@ describe("today's one case", () => {
 
     expect(view.today).toEqual({ date: '2026-10-01', weekday: 'četvrtak', text: '01.10.2026' });
     expect(t('danas.dateLine', { weekday: view.today.weekday, date: view.today.text })).toBe('četvrtak, 01.10.2026');
+  });
+});
+
+describe("what today's leave costs (story 6.1b)", () => {
+  /** The cost the case states, and the domain's own for the same ranges. */
+  function costOf(view: TodayView): number {
+    if (view.todayCase.kind !== CASE_LEAVE) throw new Error(`not on leave: ${view.todayCase.kind}`);
+
+    return view.todayCase.costDays;
+  }
+
+  it("states the record's cost, the domain's leaveCostOf over the viewer's schedule", () => {
+    const view = readyOf(todayViewOf(pilot, [rowOf('leave-1', '2026-09-28', '2026-10-05')], noonOf('2026-10-01')));
+    const input = memberScheduleInputOf(pilot, pilot.viewer);
+
+    // 30.09. Dan, 01.10. Noć and 04.10. Dan: only the days the viewer would work.
+    expect(costOf(view)).toBe(3);
+    expect(costOf(view)).toBe(leaveCostOf(input, '2026-09-28', '2026-10-04'));
+    expect(t('danas.today.leaveCost', { days: t('count.days', { count: costOf(view) }) })).toBe(
+      'Troši 3 dana godišnjeg — računaju se samo tvoji radni dani.',
+    );
+  });
+
+  it('sums back-to-back records, each costed on its own range', () => {
+    const rows = [rowOf('leave-1', '2026-09-28', '2026-10-01'), rowOf('leave-2', '2026-10-01', '2026-10-05')];
+    const view = readyOf(todayViewOf(pilot, rows, noonOf('2026-10-01')));
+    const input = memberScheduleInputOf(pilot, pilot.viewer);
+    const first = leaveCostOf(input, '2026-09-28', '2026-09-30');
+    const second = leaveCostOf(input, '2026-10-01', '2026-10-04');
+
+    // 30.09. Dan; then 01.10. Noć and 04.10. Dan.
+    expect([first, second]).toEqual([1, 2]);
+    expect(costOf(view)).toBe(first + second);
+  });
+
+  it('leaves a record after a gap out of the cost', () => {
+    const rows = [rowOf('leave-1', '2026-09-28', '2026-10-02'), rowOf('leave-2', '2026-10-03', '2026-10-05')];
+    const view = readyOf(todayViewOf(pilot, rows, noonOf('2026-10-01')));
+
+    // 30.09. Dan and 01.10. Noć; 04.10. is the later record's.
+    expect(costOf(view)).toBe(2);
+  });
+
+  it('states the cost in all three forms: 1 dan, 2 dana, 5 dana', () => {
+    const sentence = (count: number) => t('danas.today.leaveCost', { days: t('count.days', { count }) });
+
+    expect(sentence(1)).toBe('Troši 1 dan godišnjeg — računaju se samo tvoji radni dani.');
+    expect(sentence(2)).toContain('Troši 2 dana godišnjeg');
+    expect(sentence(5)).toContain('Troši 5 dana godišnjeg');
+  });
+
+  it('is unavailable, logged, when the cost throws a RangeError', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    // A range longer than the domain admits: today on leave, the cost refused.
+    const view = todayViewOf(pilot, [rowOf('leave-1', '2020-01-01', '2026-12-31')], noonOf('2026-10-01'));
+
+    expect(view).toEqual({ kind: TODAY_UNAVAILABLE, retryable: false });
+    expect(logged).toHaveBeenCalledWith(TODAY_UNAVAILABLE, expect.any(RangeError));
   });
 });
 

@@ -15,11 +15,17 @@ function renderShift(shift: TodayShift, index: number): ReactNode {
   );
 }
 
-/** What follows the case's sentence: the leave's range, today's shifts, or the free day's type. */
+/** What follows the case's sentence: the leave's range and cost, today's shifts, or the free day's type. */
 function renderDetail(todayCase: TodayCase): ReactNode {
   if (todayCase.kind === CASE_LEAVE) {
+    // STORY 6.1b: what the absence costs, through `count.days`.
     return (
-      <p className="tabular-nums">{t('danas.today.leaveRange', { from: todayCase.from, to: todayCase.to })}</p>
+      <>
+        <p className="tabular-nums">{t('danas.today.leaveRange', { from: todayCase.from, to: todayCase.to })}</p>
+        <p className="tabular-nums">
+          {t('danas.today.leaveCost', { days: t('count.days', { count: todayCase.costDays }) })}
+        </p>
+      </>
     );
   }
 

@@ -1497,6 +1497,16 @@ const SANCTIONED_SCREEN_KEYS = [
   'danas.unscheduled',
   'danas.unavailable',
   'danas.retry',
+  // STORY 6.1b: what today's leave costs (`count.days`, a plural listed
+  // above); the hours tile's kicker, one band's hours and the separator
+  // between bands; the leave tile's kicker and its hint. The tiles'
+  // unavailable sentences are *Sati*'s and *Godišnji*'s own.
+  'danas.today.leaveCost',
+  'danas.tiles.hoursKicker',
+  'danas.tiles.band',
+  'danas.tiles.separator',
+  'danas.tiles.leaveKicker',
+  'danas.tiles.leaveHint',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

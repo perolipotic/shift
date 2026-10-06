@@ -30,7 +30,8 @@
       "working": "Danas radiš",
       "free": "Danas ne radiš",
       "leave": "Danas si na godišnjem odmoru",
-      "leaveRange": "Godišnji odmor {from}–{to}"
+      "leaveRange": "Godišnji odmor {from}–{to}",
+      "leaveCost": "Troši {days} godišnjeg — računaju se samo tvoji radni dani."
     },
     "next": {
       "title": "Sljedeća smjena",
@@ -41,6 +42,13 @@
     "week": {
       "heading": "Sljedećih 7 dana",
       "link": "Otvori kalendar"
+    },
+    "tiles": {
+      "hoursKicker": "Sati · {month} {year}",
+      "band": "{name} {hours}",
+      "separator": " · ",
+      "leaveKicker": "Godišnji odmor",
+      "leaveHint": "preostalo · iskorišteno {used} od {allowance}"
     },
     "unscheduled": "Još nisi ni u jednoj smjeni, pa za tebe ne postoji raspored.",
     "unavailable": "Danas trenutačno nije moguće učitati. Pokušaj ponovno.",

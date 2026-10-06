@@ -23,8 +23,9 @@ import { useToday } from '@/features/today/hooks/use-today';
 
 /**
  * `Danas` — the heading with today's weekday and date, today in words, the
- * next shift and the next seven days (story 6.1a), and one line naming the
- * caller's team today.
+ * next shift and the next seven days (story 6.1a), the month's hours and the
+ * leave balance (story 6.1b), and, below them, one line naming the caller's
+ * team today.
  *
  * Member and admin alike (UX-DR31/UX-DR32): an admin on a team reads the
  * same screen; story 6.3 replaces the admin's.
@@ -49,7 +50,7 @@ import { useToday } from '@/features/today/hooks/use-today';
  * redirected before the component is ever asked for.
  */
 export function DanasScreen() {
-  const { today, date, loading: todayLoading, retry } = useToday();
+  const { today, tiles, date, loading: todayLoading, retry } = useToday();
   const answer = useQuery({
     queryKey: OWN_TEAM_KEY,
     queryFn: () => readOwnTeamToday(supabaseClient().from(OWN_TEAM_TABLE), currentSession),
@@ -100,7 +101,7 @@ export function DanasScreen() {
         {renderDateLine()}
       </PageHeader>
       <div className="grid w-full min-w-0 max-w-lg gap-4">
-        <TodayBody today={today} onRetry={retry} />
+        <TodayBody today={today} tiles={tiles} onRetry={retry} />
       </div>
       {/* ONE CARD, holding the refusal as the form screens hold theirs, then
           the line or its skeleton while it loads. */}
