@@ -2,7 +2,7 @@
 name: Shift
 description: Industry-agnostic shift management platform. shadcn/ui primitives on React + Vite + Tailwind, restyled once in `components/ui` to the shiftapp-v2 register — slate surfaces, a navy sidebar, one blue primary, soft elevation, DM Sans and Syne. Croatian-first UI, light and dark driven by prefers-color-scheme.
 status: final
-updated: 2026-10-05
+updated: 2026-10-06
 colors:
   # ── Brand delta ───────────────────────────────────────────────────
   # The surface tokens (background, card, muted, border, input, ring,
@@ -144,7 +144,11 @@ typography:
     fontFamily: 'DM Sans Variable'   # @fontsource-variable/dm-sans, self-hosted
   heading:
     fontFamily: 'Syne Variable'      # @fontsource-variable/syne, self-hosted
-    use: 'h1-h6, card titles, large numerals'
+    use: 'h1-h6, card titles; letters only, never digits'
+  figures:
+    fontFamily: 'Shift Figures'      # derived from DM Sans by scripts/fonts/build-figures.py, self-hosted
+    unicodeRange: 'U+0030-0039'      # digits only; leads both --font-sans and --font-heading
+    weights: [400, 500, 600, 700, 800]
   numeric:
     fontVariantNumeric: 'tabular-nums'
 rounded:
@@ -229,15 +233,16 @@ Two properties are not stylistic preferences but consequences of the product con
 
 ## Typography
 
-**Two faces, both self-hosted** through `@fontsource-variable`, never the Google CDN:
+**Two faces and a figure set, all self-hosted**, never the Google CDN:
 
-- **DM Sans** for body text, labels, controls and table cells — `--font-sans`.
-- **Syne** for headings (`h1`–`h6`, card titles) and, when they arrive, large display numerals — `--font-heading`. Applied once in `@layer base` and in the Card primitive; screens never spell a font family.
+- **DM Sans** for body text, labels, controls, table cells and every stat value — `--font-sans`, through `@fontsource-variable`.
+- **Syne** for the words of headings (`h1`–`h6`, card titles) — `--font-heading`, through `@fontsource-variable`. Applied once in `@layer base` and in the Card primitive; screens never spell a font family.
+- **Shift Figures** for every digit (story 7.2). DM Sans ships no tabular figures — no `tnum`, and its `1` is 312 units wide where `0` is 684 — and Syne's heavy numerals were misread ("17" as "ı7"). Shift Figures is DM Sans's own digit glyphs, one static file per weight in use (400–800), each digit centred on one advance shared by every weight. `scripts/fonts/build-figures.py` derives it byte-deterministically from the Fontsource DM Sans file; the OFL notice ships beside it in `apps/web/src/assets/fonts/`. It leads **both** stacks with `unicode-range: U+0030-0039`, so **digits are never Syne**: "Listopad 2026" in an `h2` is Syne letters and DM Sans tabular digits. The range excludes the space, so line-box metrics stay DM Sans and Syne. Boundary cases: every weight shares one digit advance (the widest digit across 400–800), so a column that mixes weights still aligns; weights outside 400–800 have no figure file and are not used, which `test/typography-coverage.test.ts` enforces.
 
 Two requirements, neither of them stylistic, and each applies to **both** faces:
 
 - **Latin Extended-A coverage is mandatory.** Croatian needs **č ć ž š đ Č Ć Ž Đ Š**. A face that falls back mid-word breaks exactly the strings that matter most — `Noć`, `Godišnji`, `Slobodno`, `Izmijenjeno`, and members' own names. Both faces ship a latin-ext subset; `test/typography-coverage.test.ts` checks each import, and any substitution must pass the same check before it lands.
-- **Tabular numerals wherever numbers align.** The hours table, every `07:00–19:00`, leave balances, and calendar date columns. Proportional digits make columns wobble and make two totals hard to compare. Applied via the `numeric` token.
+- **Tabular numerals wherever numbers align.** The hours table, every `07:00–19:00`, leave balances, and calendar date columns. Proportional digits make columns wobble and make two totals hard to compare. Shift Figures makes every digit tabular by construction; the `numeric` token (`tabular-nums`) stays on the slots that align, harmless today and correct if a face with real `tnum` replaces it. A numeric slot never takes `font-heading`.
 
 ## Layout & Spacing
 
@@ -274,7 +279,7 @@ A 12 px base radius (`--radius: 0.75rem`): cards `lg` (12 px), buttons and input
 | **Input** | `rounded-md`, 1.5 px `border-input` on the card colour, and a 2 px `ring` focus ring. |
 | **Table** | Header cells uppercase, small, `muted-foreground` on `muted`; rows divide with `border` and tint to `muted` on hover. Scrolls in its own container. |
 | **PageHeader / PageTitle** | The page skeleton's head (visual refresh B). The title is top-left, Syne `text-2xl` extrabold, and the actions sit at the right, stacking under the title on a phone. `PageTitle asChild` styles the screen's own `<h1>`, and the primitive carries no copy. |
-| **StatCard** | A `Card` with a small uppercase `muted-foreground` label and a large Syne tabular value. It counts only data the screen already holds, as one snapshot. |
+| **StatCard** | A `Card` with a small uppercase `muted-foreground` label and a large DM Sans value whose digits are tabular Shift Figures, never Syne. It counts only data the screen already holds, as one snapshot. |
 | **Badge** | A `rounded-full` pill in `text-xs` semibold. `default` is a 15% `primary` tint with `foreground` text, because dark `primary` text on the dark card measures below 4.5:1 at any tint. Badges are measured on the card and on a hovered row. `secondary` is the `secondary` fill, and `outline` is an `input` border with `muted-foreground` text. Its text carries the meaning, and there are no status colours. |
 | **Avatar** | A round `secondary` chip for a person, holding initials: the first letter (with its combining marks, after NFC) of the first and last word that has one, so brackets, digits and emoji are skipped. A name with no letter draws an empty chip, so names stay aligned. It is decorative and hidden from assistive technology, because the name is always rendered beside it. |
 | **RadioGroup / RadioCard / RadioRow** | Radix's radio group, restyled once (story 5.4b): one tab stop, the arrow keys move and Space selects. `RadioCard` is a whole card as the radio, the words beside the dot and an optional full-width footer under them; its states are the resolution-option's. `RadioRow` (story 5.4c) is one line of a pick list, the replacement candidates: the dot and words that wrap, at least 44 px tall, a transparent border that turns `input` on hover and `primary` when chosen, never a fill. |
@@ -283,7 +288,7 @@ A 12 px base radius (`--radius: 0.75rem`): cards `lg` (12 px), buttons and input
 | **Dialog** | The one modal (design refresh C), on the native `<dialog>` and `showModal()`: focus trap, Escape, the inert page and focus return come from the browser. `rounded-lg`, `border`, `shadow-sh-lg`, a `sidebar`-tinted backdrop. A header carries the Syne title and a 44 px close button named by the screen. Closed means hidden, not unmounted, so uncontrolled fields keep a refused value. Not dismissible while a write it started is in flight. **ConfirmDialog** is a confirmation on its own: a prompt and a right-aligned footer — cancel, then the confirm. |
 | **Callout** | An explanation box: `primary` at 5% over the page with a 20% `primary` border, an icon tile, a title and a sentence, and an optional action at the right. It explains, and is never a refusal or a confirmation (that is `Notice`). It also sets a scheduled change apart from the present-tense lines around it. |
 | **IconTile** | A `rounded-md` square holding one decorative icon beside words that carry the meaning. `muted`, `primary`, and the timeline's two tones, `light` and `dark`. |
-| **StatTile** | A summary figure inside a card, where `StatCard` would nest a card in a card: a `muted` panel, an icon tile, a small label and a Syne value. |
+| **StatTile** | A summary figure inside a card, where `StatCard` would nest a card in a card: a `muted` panel, an icon tile, a small label and a DM Sans value in tabular Shift Figures, never Syne. |
 | **InputGroup** | A leading icon on an `Input` or a native `<select>`. The group adds the padding, so the select's documented class string stays literal. |
 | **OutputField** | A computed, read-only value in a field's shape: the Input height and radius, dashed `input` border on `muted`, on a native `<output>`. It sits beside the field it is computed from (the hour band's end beside its start). |
 | **Timeline** | A day as one bar: a scale of hours, stretches alternating `light` (the Badge's primary tint) and `dark` (the navy sidebar pair) so neighbours read apart, the uncovered stretch hatched, boundaries labelled beneath, and a legend. Each stretch carries its band's name; the screen hides the drawing from assistive technology beside a text equivalent. Tones follow position, never a band's name, and never the shift-slot ramp. |

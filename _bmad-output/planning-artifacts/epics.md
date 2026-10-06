@@ -157,7 +157,7 @@ From `DESIGN.md` (visual) and `EXPERIENCE.md` (behavioural). Both are binding an
 - **UX-DR37** No information by colour alone anywhere — verified specifically in the compressed grid, status pips and badges, where the rule is most often broken.
 - **UX-DR38** Keyboard navigation for the calendar grid, both dashboards, the conflict queue and the resolution screen, whose options are an arrow-navigable radio group.
 - **UX-DR39** Assistive technology gets date, team, shift type, times and any modifier on every calendar cell — not a colour swatch, not a bare letter.
-- **UX-DR40** Typography: verify Latin Extended-A coverage against **č ć ž š đ Č Ć Ž Đ Š** before any face substitution; tabular numerals wherever numbers align.
+- **UX-DR40** Typography: verify Latin Extended-A coverage against **č ć ž š đ Č Ć Ž Đ Š** before any face substitution; every digit is a DM Sans tabular figure (Shift Figures, derived from DM Sans and leading both font stacks), never Syne; tabular numerals wherever numbers align.
 
 **Responsive**
 - **UX-DR41** Phone (<640): *Moj raspored* day list by default, compressed grid one tap away with teams as one-letter columns. Tablet (640–1024): full grid with team names. Desktop (>1024): times visible in cells.

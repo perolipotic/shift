@@ -172,3 +172,24 @@ describe('the user agent follows the theme too', () => {
     expect(builtCss()).toMatch(/color-scheme\s*:\s*dark\b/);
   });
 });
+
+// Story 7.2. The Shift Figures files are under Vite's 4 KB inline limit, so
+// without `assetsInlineLimit` in `vite.config.ts` they would be data URIs in
+// the stylesheet: every weight fetched with the first paint instead of only
+// when a digit at that weight renders.
+describe('the built stylesheet links the figure files rather than inlining them', () => {
+  const WEIGHTS = ['400', '500', '600', '700', '800'] as const;
+
+  it.skipIf(notBuilt)('references one hashed file per weight, each on disk', () => {
+    const referenced = [...builtCss().matchAll(/shift-figures-(400|500|600|700|800)-[\w-]+\.woff2/g)];
+    const files = [...new Set(referenced.map((match) => match[0]))];
+
+    expect([...new Set(referenced.map((match) => match[1]))].sort()).toEqual([...WEIGHTS]);
+    expect(files).toHaveLength(WEIGHTS.length);
+    expect(files.filter((file) => !existsSync(join(assets, file))), 'a referenced figure file is missing').toEqual([]);
+  });
+
+  it.skipIf(notBuilt)('inlines no woff2 as a data URI', () => {
+    expect(builtCss()).not.toContain('data:font/woff2');
+  });
+});

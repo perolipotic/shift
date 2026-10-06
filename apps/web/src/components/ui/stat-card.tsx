@@ -4,9 +4,10 @@ import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
 // A summary figure on a card (visual refresh B): a small label above a large
-// heading-face value in tabular numerals. Two slots and no copy. The screen
-// passes a `t()` label and a `formatNumber` value, counted by a pure module
-// from data the screen already holds.
+// value in the body face, whose digits are Shift Figures (story 7.2: numbers
+// are never Syne, so "17" is not misread as "ı7"). Two slots and no copy. The
+// screen passes a `t()` label and a `formatNumber` value, counted by a pure
+// module from data the screen already holds.
 
 const StatCard = React.forwardRef<
   HTMLDivElement,
@@ -37,7 +38,7 @@ const StatValue = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <p
     ref={ref}
-    className={cn("font-heading text-3xl font-extrabold leading-none tabular-nums", className)}
+    className={cn("text-3xl font-extrabold leading-none tabular-nums", className)}
     {...props}
   />
 ))

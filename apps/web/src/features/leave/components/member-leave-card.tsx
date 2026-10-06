@@ -116,7 +116,8 @@ export function MemberLeaveCard({
     );
   }
 
-  /** One figure in whole days, or its skeleton. */
+  /** One figure in whole days, or its skeleton. Body face, not Syne: its
+   *  digits are tabular Shift Figures (story 7.2). */
   function renderFigure(days: number | null): ReactNode {
     if (days === null) {
       return (
@@ -126,7 +127,7 @@ export function MemberLeaveCard({
       );
     }
 
-    return <dd className="font-heading text-lg font-bold tabular-nums">{t('count.days', { count: days })}</dd>;
+    return <dd className="text-lg font-bold tabular-nums">{t('count.days', { count: days })}</dd>;
   }
 
   /**

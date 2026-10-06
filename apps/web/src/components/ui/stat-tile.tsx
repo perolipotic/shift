@@ -4,7 +4,8 @@ import { cn } from "@/lib/utils"
 
 // A summary figure INSIDE a card (design refresh C), where `StatCard` would be
 // a card inside a card: a muted panel with an icon tile, a small label and a
-// heading-face value. Two slots and no copy, like `StatCard`.
+// value in the body face, whose digits are Shift Figures (story 7.2: numbers
+// are never Syne). Two slots and no copy, like `StatCard`.
 
 const StatTile = React.forwardRef<
   HTMLDivElement,
@@ -32,7 +33,7 @@ const StatTileValue = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <p
     ref={ref}
-    className={cn("font-heading text-xl font-bold leading-tight tabular-nums", className)}
+    className={cn("text-xl font-bold leading-tight tabular-nums", className)}
     {...props}
   />
 ))

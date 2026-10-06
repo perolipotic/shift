@@ -24,5 +24,10 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    // STORY 7.2. The Shift Figures files are ~1.3 KB each, under Vite's 4 KB
+    // inline limit, so they would land in the CSS as data URIs and every
+    // weight would ride along with the first stylesheet. As files, each is
+    // fetched only when a digit at that weight renders (`unicode-range`).
+    assetsInlineLimit: (file) => (file.endsWith('.woff2') ? false : undefined),
   },
 });

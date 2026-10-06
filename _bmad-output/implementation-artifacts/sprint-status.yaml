@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 10-06-2026 09:00
+last_updated: 10-06-2026 09:50
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -531,7 +531,7 @@ development_status:
   # Order: 7.1-7.4 (foundations) ship before Epic 6; 7.5-7.18 follow Epic 6, by dependency.
   epic-7: in-progress
   7-1-dark-slot-tokens-are-re-tuned-so-noc-never-reads-as-a-free-d: review
-  7-2-every-number-is-set-in-dm-sans-tabular-figures: backlog
+  7-2-every-number-is-set-in-dm-sans-tabular-figures: review
   7-3-the-phone-bar-has-four-tabs-and-vise: backlog
   7-4-kalendar-and-sati-share-one-month-toolbar: backlog
   7-5-filters-are-chips-that-say-what-is-shown-and-clear-in-one-ac: backlog
