@@ -141,7 +141,7 @@ From `DESIGN.md` (visual) and `EXPERIENCE.md` (behavioural). Both are binding an
 - **UX-DR27** One destructive confirmation step, never a colour-only signal.
 - **UX-DR28** No bulk conflict resolution anywhere. Amending a leave record still clears every conflict it caused — cause-removal, not batching.
 - **UX-DR29** No optimistic updates for hours, leave balance or conflict state. A recorded conflict decision is confirmed by a `Notice role="status"` line on the queue, not a toast: it is gone on navigation and persists nowhere (decision 21, story 5.4b).
-- **UX-DR30** Month navigation symmetric and unbounded in both directions; no month unreachable or slower.
+- **UX-DR30** Month navigation symmetric in both directions across every month the calendar represents (0001-01…9999-12); no month unreachable or slower. Since story 7.4 one month toolbar (‹ month ▾ ›) on *Kalendar* and *Sati*: PgUp/PgDn step the month within it, and the month opens a twelve-month picker with the year's ‹ ›.
 
 **Information architecture**
 - **UX-DR31** Bottom tabs on mobile, sidebar on desktop — two layouts, one architecture. Member-role reaches four destinations (Danas, Kalendar, Sati, Godišnji) and no configuration surface at all. On a phone the bar is four fixed tabs plus *Više* and never scrolls; a member's tabs are their four destinations, so their *Više* holds only the theme and Odjava (story 7.3).

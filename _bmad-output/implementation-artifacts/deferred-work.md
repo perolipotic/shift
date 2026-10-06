@@ -581,7 +581,7 @@
   summary: Story 4-1b, the member's `Sati` screen. It loads one month snapshot (`?mjesec=YYYY-MM`, navigated like the calendar) and shows the viewer's own shift counts, band hours, total and an empty leave figure from `domain/hours`. An admin also sees only their own hours until 4.2.
   evidence: The human split story 4.1 on 2026-09-30 into 4-1a (the pure `domain/hours` rule) and 4-1b (the screen), following the 2-1a/2-1b and 3-6a/3-6b pattern. They also chose a calendar-month period and own hours for an admin in 4.1.
 - source_spec: `_bmad-output/implementation-artifacts/spec-4-1b-my-hours-screen.md`
-  summary: Pressing `Ovaj mjesec` in the shared `MonthNav` disables the focused button, so focus drops to `<body>` on both Kalendar and Sati; focus should move to the month heading (the nav already takes `headingId`).
+  summary: RESOLVED by 7.4 — `Ovaj mjesec` is no longer a disabled button on the current month: the month toolbar draws "ovaj mjesec" as an outline Badge label inside its trigger there, and draws the button only off the current month. Pressing it moves focus to the month trigger (`focusLater`, the heading as the fallback), never `<body>`; e2e asserts it on Kalendar and Sati. Was: pressing `Ovaj mjesec` in the shared `MonthNav` disables the focused button, so focus drops to `<body>` on both Kalendar and Sati; focus should move to the month heading (the nav already takes `headingId`).
   evidence: Raised by the 4.1b review (2026-09-30). The behaviour predates 4.1b: it came from `calendar-month-nav.tsx` unchanged, and `Sati` inherits it.
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-fix-leave-figure-empty.md`
@@ -786,3 +786,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-3-phone-bar-four-tabs.md`
   summary: A refused global logout (500 or a transport failure) still signs the device out but leaves the server session alive. The pinned auth-js `GoTrueClient._signOut` removes the local session before returning the error, so a refusal from the server never reaches the chrome's `SIGN_OUT_FAILED` alert with the session intact. The alert keeps the session only when `auth.signOut()` throws, or when `_useSession` answers a session error other than a missing session, which `_signOut` returns without removing the session (`GoTrueClient.js:3419-3420`). Either accept a device-only sign-out (and drop the dead alert copy), or sign out locally only after the server confirms.
   evidence: Found by the 7.3 matrix audit on 2026-10-06 (`node_modules/@supabase/auth-js/dist/module/GoTrueClient.js:3412`); the human accepted the current behaviour for 7.3. Applies to the desktop profile-menu exit as well. Predates 7.3.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-4-month-toolbar.md`
+  summary: Swiping to change the month (the mockup's §7 "povlačenje prstom") is not built. Swipe gestures are Never in 7.4; ‹ › and PgUp/PgDn are the ways between months.
+  evidence: `ux-designs/ux-shift-2026-10-01-redesign/mockups/filters-and-month-nav-1.html` §7; left out by 7.4 on 2026-10-06.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-4-month-toolbar.md`
+  summary: The phone bottom-sheet variant of the month picker is not built. 7.4 keeps the one anchored Popover at every width, sized to `calc(100vw-2rem)`; turning it into a bottom sheet on a phone is Ask First.
+  evidence: Mockup §5 (phone states); left out by 7.4 on 2026-10-06.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-4-month-toolbar.md`
+  summary: The month picker's footer (the key hint "← → mjesec · ↑ ↓ red" and an `Ovaj mjesec` link) is not built. The picker marks the current month with an inset ring and "ovaj", and `Ovaj mjesec` stays beside the toolbar off the current month.
+  evidence: Mockup §3, the popover's `.ft` row; left out by 7.4 on 2026-10-06.

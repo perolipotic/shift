@@ -2,8 +2,8 @@ import { useEffect, type RefObject } from 'react';
 
 /**
  * Closes an open popover on Escape and on a press anywhere outside `region`
- * (the sidebar's profile menu). Listens only while `open`, so a closed menu
- * costs nothing.
+ * (the sidebar's profile menu and the month picker, story 7.4). Listens only
+ * while `open`, so a closed menu costs nothing.
  */
 export function useDismiss(
   open: boolean,

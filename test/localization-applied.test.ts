@@ -583,12 +583,16 @@ const SOURCES = [
   // (story 3.1), the modifier vocabulary and the grid's keyboard rules (story
   // 3.2b) and the day detail model (story 3.4b) beside them.
   ...calendarScreenParts(),
-  // Story 4.1b: the month navigation *Kalendar* and *Sati* share — it renders
-  // the heading and the three buttons' copy — and the hours feature, READ OFF
+  // Story 4.1b: the month navigation *Kalendar* and *Sati* share — since
+  // story 7.4 the month toolbar and its picker, with the picker's short month
+  // names read through `utils/month-keys.ts` — and the hours feature, READ OFF
   // its folders: *Sati*'s hook and components, and its rules module, which
   // owns the failure key as a return-type union. `sati.tsx` is listed with the
   // destinations above.
   join(webRoot, 'src', 'components', 'month-nav.tsx'),
+  join(webRoot, 'src', 'utils', 'month-keys.ts'),
+  // Story 7.4's Popover, a primitive: text-free, here for freshness.
+  join(webRoot, 'src', 'components', 'ui', 'popover.tsx'),
   ...hoursFeatureParts(),
   // Story 5.2c: *Godišnji*'s hook and components, and its rules module, which
   // owns the two lines' keys as a return-type union and the tiles' labels.

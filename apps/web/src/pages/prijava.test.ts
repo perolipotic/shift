@@ -388,6 +388,8 @@ const KALENDAR: readonly string[] = Object.values(CALENDAR_SCREEN_PARTS).map((pa
 const CALENDAR_SNAPSHOT_KEYS = join(srcRoot, 'features', 'calendar', 'services', 'snapshot.ts');
 /** The month navigation *Kalendar* and *Sati* share (story 4.1b): a part of both sets. */
 const SHARED_MONTH_NAV = join(srcRoot, ...CALENDAR_SCREEN_PARTS.monthNav);
+/** Story 7.4: the month toolbar's keyboard and picker rules, pure, beside it. */
+const MONTH_KEYS = join(srcRoot, 'utils', 'month-keys.ts');
 
 /** The hours feature, which holds the *Sati* screen's parts (story 4.1b). */
 const HOURS_FEATURE = join(srcRoot, 'features', 'hours');
@@ -728,7 +730,11 @@ const SCREENS = [
   // shift-type override would erase cannot be checked, written once and shown
   // in the form or in the removal's confirmation. Its erasure confirmation's
   // controls are the shared `ErasureDialog`'s, counted there.
-  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 24 },
+  // TWENTY-EIGHT SINCE STORY 7.4: the month toolbar's ‹, month trigger and ›,
+  // `Ovaj mjesec` (now drawn only off the current month), and the month
+  // picker's year ‹ and › and its month button, written once inside the map
+  // over the twelve months.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 28 },
   // STORY 4.1b. THREE on Sati: the month navigation it shares with the
   // calendar — the previous month, `Ovaj mjesec` and the next month. The
   // figures are read, never pressed.
@@ -740,7 +746,10 @@ const SCREENS = [
   // EIGHT SINCE STORY 5.3d: the unavailable message's retry, which reads the
   // snapshot and the leave the conflict count stands on again. The conflicts
   // heading is plain text, never a sort.
-  { name: 'the Sati destination', file: SATI, expectedControls: 8 },
+  // TWELVE SINCE STORY 7.4: the shared month toolbar grew from three to
+  // seven — the month trigger, and the picker's year ‹ and › and its month
+  // button, written once inside the map over the twelve months.
+  { name: 'the Sati destination', file: SATI, expectedControls: 12 },
   // STORY 5.2c. ONE on Godišnji: the retry its unavailable alert offers. The
   // three figures are read, never pressed, and nothing here writes: a member
   // requests no leave (story 5.3 is conflicts, not requests).
@@ -2411,7 +2420,13 @@ const KEY_SOURCES = [
     // hint, and its own save, "Spremi izmjenu" or "Ukloni" (both keys written
     // a second time) — the refusal when the check cannot be derived, with
     // its retry, and the landed write's count of the conflicts it removed.
-    strings: 110,
+    // ONE HUNDRED AND TWENTY-ONE SINCE STORY 7.4: the month toolbar's group
+    // name, the trigger's name, the month heading twice more (the trigger's
+    // visible text and a picker month's name, "Ožujak 2025"), "ovaj mjesec"
+    // three times (the trigger's name, its label and the current picker
+    // month's name), the picker's name, the year's ‹ and ›, and "ovaj" under
+    // the current month.
+    strings: 121,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's
@@ -2449,10 +2464,13 @@ const KEY_SOURCES = [
     // THIRTY SINCE STORY 5.3d: the viewer's own line of shifts in unresolved
     // conflict, the table's conflicts heading, and the retry the unavailable
     // message offers when a read failed.
+    //
+    // FORTY-ONE SINCE STORY 7.4: the shared month toolbar's eleven more,
+    // counted in the Kalendar set too.
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 30,
+    strings: 41,
   },
   {
     // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the
@@ -3102,6 +3120,37 @@ describe('the screen is read at all, so every sweep below means something', () =
       found.filter((file) => !exempt.has(file)).sort(),
       'the Sati file set and the feature folders disagree',
     ).toEqual(SATI.filter((file) => file !== SATI_PAGE && file !== SHARED_MONTH_NAV).sort());
+  });
+
+  it('draws the month as one toolbar, shared by Kalendar and Sati (story 7.4)', () => {
+    const nav = source(SHARED_MONTH_NAV);
+    const keys = source(MONTH_KEYS);
+
+    // `Ovaj mjesec` is never a disabled button on the current month: it is a
+    // label there, and a button only off it.
+    expect(nav, 'Ovaj mjesec is disabled on the current month again').not.toMatch(/disabled=\{month\.isCurrent\}/);
+    expect(nav).toMatch(/\{month\.isCurrent \? null : \(\s*<Button/);
+    // One group named "Mjesec", and the month is a button that opens a dialog.
+    expect(nav).toMatch(/role="group"\s+aria-label=\{t\('kalendar\.month'\)\}/);
+    expect(ariaHaspopupValues(nav)).toEqual(['dialog']);
+    expect(nav).toMatch(/ref=\{trigger\}[\s\S]{0,240}?aria-haspopup="dialog"\s+aria-expanded=\{open\}/);
+    expect(nav).toMatch(/<Popover\s+id=\{pickerId\}[^>]*aria-label=\{t\('kalendar\.monthPicker'\)\}/);
+    // While open, the trigger names the picker it opened.
+    expect(nav).toMatch(/aria-controls=\{open \? pickerId : undefined\}/);
+    // The picker belongs to the month it was opened on.
+    expect(nav).toMatch(/const open = shownMonth !== null && openOn === shownMonth;/);
+    // PgUp and PgDn on the group, by the pure rule, never page-wide.
+    expect(nav).toMatch(/onKeyDown=\{stepOnKey\}/);
+    expect(nav).toMatch(/monthStepOfKey\(event\.key, event\)[\s\S]{0,80}?event\.preventDefault\(\)/);
+    expect(keys).toContain("key === 'PageUp'");
+    expect(keys).toContain("key === 'PageDown'");
+    expect(nav, 'a page-wide key listener arrived').not.toContain('addEventListener');
+    // The heading stays for focus and names, visually hidden.
+    expect(nav).toMatch(/<h2 id=\{headingId\} tabIndex=\{-1\} className="sr-only">/);
+    // The popover renders no heading, or `monthHeading()` with no name would match it.
+    expect(occurrences(nav, '<h2'), 'a second heading arrived in the month toolbar').toBe(1);
+    // While no month is shown, the placeholder bar stands in for the toolbar.
+    expect(nav).toMatch(/if \(month === null\) \{\s*return <div className="[^"]*animate-pulse[^"]*" \/>;/);
   });
 
   it('sweeps every part of the Godišnji screen, so a new file cannot escape the set', () => {
@@ -8765,6 +8814,8 @@ describe('the exempted attribute keeps the promise that exempted it', () => {
     expect(ariaHaspopupValues('<Button aria-haspopup="Više" />')).toEqual(['Više']);
     expect(ariaHaspopupValues('<Button aria-expanded={open} />')).toEqual([]);
     expect(ariaHaspopupValues(source(CHROME))).toEqual(['dialog']);
+    // Story 7.4: the month toolbar's trigger, on both Kalendar and Sati.
+    expect(ariaHaspopupValues(source(SHARED_MONTH_NAV))).toEqual(['dialog']);
   });
 
   it('reads aria-invalid in the quoted syntax, and finds none where there is none', () => {

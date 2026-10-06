@@ -258,22 +258,224 @@ test.describe('month navigation', () => {
 
     await calendarPage.currentButton.click();
     await expect(calendarPage.monthHeading(monthHeading(rotation.today))).toBeVisible();
-    // On the current month, `Ovaj mjesec` has nowhere to go.
-    await expect(calendarPage.currentButton).toBeDisabled();
+    // On the current month, "ovaj mjesec" is a label in the trigger, not a
+    // disabled button (story 7.4), and focus is on the trigger, never <body>.
+    await expect(calendarPage.thisMonthLabel).toBeVisible();
+    await expect(calendarPage.currentButton).toHaveCount(0);
+    await expect(calendarPage.monthTrigger).toBeFocused();
 
     // Whatever a navigation might have fetched has landed before the count is read.
     await page.waitForLoadState('networkidle');
     expect(reads, 'moving between months read the snapshot again').toEqual([]);
   });
 
-  test('the bounds disable only the button that would leave the calendar', async ({ calendarPage }) => {
+  test('the bounds disable only the button that would leave the calendar', async ({ page, calendarPage }) => {
     await calendarPage.goto('?mjesec=9999-12');
     await expect(calendarPage.nextButton).toBeDisabled();
     await expect(calendarPage.previousButton).toBeEnabled();
+    // PgDn at the upper bound does what the disabled › does: nothing (story 7.4).
+    await calendarPage.previousButton.focus();
+    await page.keyboard.press('PageDown');
+    await expect(page).toHaveURL(/mjesec=9999-12/);
 
     await calendarPage.goto('?mjesec=0001-01');
     await expect(calendarPage.previousButton).toBeDisabled();
     await expect(calendarPage.nextButton).toBeEnabled();
+    await calendarPage.nextButton.focus();
+    await page.keyboard.press('PageUp');
+    await expect(page).toHaveURL(/mjesec=0001-01/);
+    await expect(calendarPage.monthHeading(monthHeading('0001-01-01'))).toBeVisible();
+  });
+});
+
+/**
+ * Story 7.4: the month is one toolbar, ‹ month ▾ ›, shared with *Sati*. PgUp
+ * and PgDn step it from anywhere in the group; the month opens a picker of
+ * twelve months with the year's ‹ ›; `Ovaj mjesec` is a button only off the
+ * current month. No rotation is needed: the toolbar reads none.
+ */
+test.describe('the month toolbar', () => {
+  test.use({ storageState: ADMIN_STATE });
+
+  test('on the current month the trigger carries the label and no Ovaj mjesec button is drawn', async ({
+    calendarPage,
+  }) => {
+    await calendarPage.goto();
+    await expect(calendarPage.monthToolbar).toBeVisible();
+    await expect(calendarPage.monthTrigger).toHaveAttribute('aria-haspopup', 'dialog');
+    await expect(calendarPage.monthTrigger).toHaveAttribute('aria-expanded', 'false');
+    await expect(calendarPage.thisMonthLabel).toBeVisible();
+    await expect(calendarPage.currentButton).toHaveCount(0);
+  });
+
+  test('PgDn and PgUp in the toolbar step the month, and focus stays where it was', async ({ page, calendarPage }) => {
+    await calendarPage.goto('?mjesec=2026-07&prikaz=sve');
+    await calendarPage.previousButton.focus();
+
+    await page.keyboard.press('PageDown');
+    await expect(page).toHaveURL(/mjesec=2026-08/);
+    await expect(calendarPage.monthHeading(monthHeading('2026-08-01'))).toBeVisible();
+    await expect(calendarPage.previousButton).toBeFocused();
+
+    await calendarPage.monthTrigger.focus();
+    await page.keyboard.press('PageUp');
+    await page.keyboard.press('PageUp');
+    await expect(page).toHaveURL(/mjesec=2026-06/);
+    await expect(page).toHaveURL(/prikaz=sve/);
+    await expect(calendarPage.monthTrigger).toBeFocused();
+  });
+
+  test('a month in another year is picked from the picker, keeping the filters, and focus returns to the trigger', async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
+    await calendarPage.goto(`?mjesec=2026-07&prikaz=sve&smjena=${fixture.team.id}`);
+    await calendarPage.monthTrigger.click();
+    await expect(calendarPage.monthPicker).toBeVisible();
+    await expect(calendarPage.monthTrigger).toHaveAttribute('aria-expanded', 'true');
+    // It opens on the shown month, focused and marked.
+    await expect(calendarPage.pickerMonth(monthHeading('2026-07-01'))).toBeFocused();
+    await expect(calendarPage.pickerMonth(monthHeading('2026-07-01'))).toHaveAttribute('aria-current', 'true');
+    // The arrows move by a month and by a row of four.
+    await page.keyboard.press('ArrowRight');
+    await expect(calendarPage.pickerMonth(monthHeading('2026-08-01'))).toBeFocused();
+    await page.keyboard.press('ArrowUp');
+    await expect(calendarPage.pickerMonth(monthHeading('2026-04-01'))).toBeFocused();
+
+    await calendarPage.pickerYears().previous.click();
+    await expect(calendarPage.pickerYear).toHaveText('2025');
+    await calendarPage.pickerMonth(monthHeading('2025-03-01')).click();
+
+    await expect(page).toHaveURL(/mjesec=2025-03/);
+    await expect(page).toHaveURL(/prikaz=sve/);
+    await expect(page).toHaveURL(new RegExp(`smjena=${fixture.team.id}`));
+    await expect(calendarPage.monthPicker).toHaveCount(0);
+    await expect(calendarPage.monthTrigger).toBeFocused();
+    await expect(calendarPage.monthHeading(monthHeading('2025-03-01'))).toBeVisible();
+  });
+
+  test('Escape closes the picker with the month unchanged, and focus returns to the trigger', async ({
+    page,
+    calendarPage,
+  }) => {
+    await calendarPage.goto('?mjesec=2026-07');
+    await calendarPage.monthTrigger.click();
+    await expect(calendarPage.monthPicker).toBeVisible();
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('Escape');
+
+    await expect(calendarPage.monthPicker).toHaveCount(0);
+    await expect(calendarPage.monthTrigger).toBeFocused();
+    await expect(page).toHaveURL(/mjesec=2026-07/);
+  });
+
+  test('Ovaj mjesec returns to the current month with focus on the trigger', async ({ page, calendarPage }) => {
+    await calendarPage.goto('?mjesec=2026-07&prikaz=sve');
+    await calendarPage.currentButton.click();
+
+    await expect(page).not.toHaveURL(/mjesec=/);
+    await expect(page).toHaveURL(/prikaz=sve/);
+    await expect(calendarPage.thisMonthLabel).toBeVisible();
+    await expect(calendarPage.currentButton).toHaveCount(0);
+    await expect(calendarPage.monthTrigger).toBeFocused();
+  });
+
+  test('picking the current month from the picker drops the month from the URL', async ({ page, calendarPage }) => {
+    await calendarPage.goto('?prikaz=sve');
+    // Today's month, as the trigger names it, before moving off it.
+    const heading = (await calendarPage.monthHeading().innerText()).trim();
+    await calendarPage.nextButton.click();
+    await expect(page).toHaveURL(/mjesec=/);
+
+    await calendarPage.monthTrigger.click();
+    await calendarPage.pickerYears().previous.click();
+    await calendarPage.pickerYears().next.click();
+    await calendarPage.pickerMonth(heading).click();
+
+    await expect(page).not.toHaveURL(/mjesec=/);
+    await expect(page).toHaveURL(/prikaz=sve/);
+    await expect(calendarPage.thisMonthLabel).toBeVisible();
+    await expect(calendarPage.currentButton).toHaveCount(0);
+    await expect(calendarPage.monthTrigger).toBeFocused();
+  });
+
+  test("the picker's year stops at the calendar's bounds, and focus stays in the picker", async ({
+    calendarPage,
+  }) => {
+    await calendarPage.goto('?mjesec=0001-01');
+    await calendarPage.monthTrigger.click();
+    await expect(calendarPage.pickerYears().previous).toBeDisabled();
+    await expect(calendarPage.pickerYears().next).toBeEnabled();
+
+    await calendarPage.goto('?mjesec=9999-12');
+    await calendarPage.monthTrigger.click();
+    await expect(calendarPage.pickerYears().next).toBeDisabled();
+
+    // Reaching the last year disables the pressed button: focus moves to the
+    // month the picker holds, never to <body>.
+    await calendarPage.goto('?mjesec=9998-05');
+    await calendarPage.monthTrigger.click();
+    await calendarPage.pickerYears().next.click();
+    await expect(calendarPage.pickerYear).toHaveText('9999');
+    await expect(calendarPage.pickerYears().next).toBeDisabled();
+    await expect(calendarPage.pickerMonth(monthHeading('9999-05-01'))).toBeFocused();
+  });
+
+  test('a press outside, a second press on the trigger, and Tab out each close the picker', async ({
+    page,
+    calendarPage,
+  }) => {
+    await calendarPage.goto('?mjesec=2026-07');
+
+    await calendarPage.monthTrigger.click();
+    await expect(calendarPage.monthPicker).toBeVisible();
+    await page.getByRole('heading', { level: 1 }).click();
+    await expect(calendarPage.monthPicker).toHaveCount(0);
+    await expect(calendarPage.monthTrigger).toHaveAttribute('aria-expanded', 'false');
+
+    await calendarPage.monthTrigger.click();
+    await expect(calendarPage.monthTrigger).toHaveAttribute('aria-expanded', 'true');
+    await calendarPage.monthTrigger.click();
+    await expect(calendarPage.monthPicker).toHaveCount(0);
+    await expect(calendarPage.monthTrigger).toHaveAttribute('aria-expanded', 'false');
+
+    // Tab from the focused month leaves the picker: it closes where focus went.
+    await calendarPage.monthTrigger.click();
+    await expect(calendarPage.pickerMonth(monthHeading('2026-07-01'))).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(calendarPage.monthPicker).toHaveCount(0);
+    await expect(page).toHaveURL(/mjesec=2026-07/);
+  });
+
+  test('PgUp on ‹ reaching the first month moves focus to the trigger, never <body>', async ({
+    page,
+    calendarPage,
+  }) => {
+    await calendarPage.goto('?mjesec=0001-02');
+    await calendarPage.previousButton.focus();
+    await page.keyboard.press('PageUp');
+
+    await expect(page).toHaveURL(/mjesec=0001-01/);
+    await expect(calendarPage.previousButton).toBeDisabled();
+    await expect(calendarPage.monthTrigger).toBeFocused();
+  });
+
+  test('at 320 px the open picker fits: every control 44 px and no sideways scroll', async ({ page, calendarPage }) => {
+    await page.setViewportSize({ width: 320, height: 720 });
+    // The current month: the widest trigger, with its "ovaj mjesec" label.
+    await calendarPage.goto();
+    await expect(calendarPage.thisMonthLabel).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    await calendarPage.monthTrigger.click();
+    await expect(calendarPage.monthPicker).toBeVisible();
+
+    await expectNoHorizontalScroll(page);
+    await expectTouchTargets(page);
+    const box = await calendarPage.monthPicker.boundingBox();
+    expect(box, 'the picker has no box').not.toBeNull();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(320);
   });
 });
 

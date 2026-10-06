@@ -514,6 +514,7 @@ export function monthHeaderOf(month: string, today: string): MonthHeader {
     previous: adjacentMonth(month, -1),
     next: adjacentMonth(month, 1),
     isCurrent: month === monthOf(today),
+    current: monthOf(today),
   };
 }
 
@@ -802,6 +803,8 @@ export interface MonthHeader {
   readonly next: string | null;
   /** Whether the month shown is the one today falls in. */
   readonly isCurrent: boolean;
+  /** The month today falls in, `2026-09` — the month picker marks it (story 7.4). */
+  readonly current: string;
 }
 
 /** One month, ready to render. */

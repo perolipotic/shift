@@ -10,6 +10,7 @@ import {
   formatIsoDate,
   formatIsoDayMonth,
   formatIsoMonthName,
+  formatIsoMonthShortName,
   formatIsoWeekdayName,
   formatMinuteOfDay,
   isIsoDate,
@@ -263,6 +264,8 @@ const UNZONED_ENTRY_POINTS = [
   // Story 3.1: the month and weekday names of a calendar date.
   'formatIsoMonthName',
   'formatIsoWeekdayName',
+  // Story 7.4: the short month name of a calendar date, for the month picker.
+  'formatIsoMonthShortName',
   'isIsoDate',
   'nextIsoDate',
   // Story 5.4d: the day before, as the day after.
@@ -1185,6 +1188,23 @@ describe('formatIsoDayMonth (story 2.3b)', () => {
     expect(formatIsoDayMonth('2026-01-05')).toBe('05.01.');
     expect(formatIsoDayMonth('2026-02-30')).toBeNull();
     expect(formatIsoDayMonth('')).toBeNull();
+  });
+});
+
+describe('formatIsoMonthShortName (story 7.4)', () => {
+  it('names the twelve months short, CLDR verbatim and lowercase', () => {
+    const months = Array.from({ length: 12 }, (_, index) =>
+      formatIsoMonthShortName(`2026-${String(index + 1).padStart(2, '0')}-01`),
+    );
+
+    expect(months).toEqual(['sij', 'velj', 'ožu', 'tra', 'svi', 'lip', 'srp', 'kol', 'ruj', 'lis', 'stu', 'pro']);
+    expect(formatIsoMonthShortName('0001-01-01')).toBe('sij');
+    expect(formatIsoMonthShortName('9999-12-31')).toBe('pro');
+  });
+
+  it('refuses what isIsoDate refuses', () => {
+    expect(formatIsoMonthShortName('2026-02-30')).toBeNull();
+    expect(formatIsoMonthShortName('2026-09')).toBeNull();
   });
 });
 
