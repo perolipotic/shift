@@ -152,25 +152,31 @@ export const FEATURE_PUBLIC = {
   // use it, and so does the rotation builder's override review for its
   // confirm and amend (story 5.5h). Story 5.5d: whether a replacement still
   // applies, the one test the hours' member path and the leave screen's
-  // replacement guard share with the queue.
+  // replacement guard share with the queue. Story 6.1b: *Danas*'s hours tile
+  // reads the viewer's own resolutions and re-reads a replacement's link, as
+  // *Sati*'s member branch does.
   conflicts: [
     'components/erasure-dialog', // calendar, members, rotation
     'hooks/use-erasure-confirmation', // calendar, members, rotation
     'hooks/use-erasure-reads', // calendar, members, rotation
-    'hooks/use-replacement-link-refresh', // calendar, hours
+    'hooks/use-replacement-link-refresh', // calendar, hours, today
     'services/conflicts-queue', // calendar, hours
     'services/erasure-check', // calendar, members, rotation
     'services/erasures', // calendar, members, rotation
     'services/override-erasures', // calendar, rotation
     'services/replacement-effect', // hours, leave
-    'services/resolutions', // calendar, hours, teams
+    'services/resolutions', // calendar, hours, teams, today
   ],
   'hour-bands': [
     'services/list', // calendar, conflicts, hours, shift-types, pages
     'services/write', // pages
   ],
+  // Story 6.1b: *Danas*'s hours tile is *Sati*'s own surface for the
+  // viewer's month (`myHoursSurfaceOf`), over the conflicts state *Sati*
+  // derives (`hoursConflictsStateOf`), so the tile equals *Sati*.
   hours: [
-    'services/my-hours', // pages
+    'services/hours-conflicts', // today
+    'services/my-hours', // pages, today
   ],
   // Story 5.1c: the member page composes `components/member-leave-card`,
   // which every page may import. Story 5.2c: the teams feature's dependents
@@ -184,12 +190,15 @@ export const FEATURE_PUBLIC = {
   // read the organization's records or the viewer's own through `leave-list`,
   // and since story 5.3d so does *Sati*'s conflict count. Story 6.1a:
   // *Danas* reads the viewer's own records through the same query options.
+  // Story 6.1b: *Danas*'s leave tile is *Godišnji*'s own state (`myLeaveOf`).
   leave: [
     'services/leave-list', // calendar, conflicts, hours, teams, today
     'services/leave-section', // conflicts
+    'services/my-leave', // today
   ],
+  // Story 6.1b: *Danas*'s leave tile reads the viewer's allowance, as *Godišnji* does.
   members: [
-    'services/list', // conflicts, hour-bands, leave, shift-types, teams, pages
+    'services/list', // conflicts, hour-bands, leave, shift-types, teams, today, pages
     'utils/position', // calendar, conflicts, teams
     'utils/rank', // calendar, conflicts, organization, teams
   ],
@@ -198,10 +207,11 @@ export const FEATURE_PUBLIC = {
     'services/role', // calendar, members, pages, router, teams
     'utils/destinations', // calendar, members, pages
   ],
+  // Story 6.1b: *Danas*'s leave tile reads the leave year, as *Godišnji* does.
   organization: [
     'components/lockup', // navigation
     'hooks/logo-url', // navigation
-    'services/snapshot', // conflicts, leave, members, navigation, teams
+    'services/snapshot', // conflicts, leave, members, navigation, teams, today
     'utils/accent', // navigation
   ],
   rotation: [
@@ -211,10 +221,11 @@ export const FEATURE_PUBLIC = {
     'services/list', // calendar, rotation, pages
     'services/write', // pages
   ],
+  // Story 6.1b: *Danas*'s retry reads the team line's key again with the rest.
   teams: [
     'services/dependents', // conflicts, hour-bands, leave, members
     'services/list', // calendar, members, rotation, pages
-    'services/roster', // pages
+    'services/roster', // pages, today
     'services/write', // calendar, hour-bands, rotation, shift-types, pages
   ],
 };

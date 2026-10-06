@@ -1,10 +1,11 @@
-import { monthOf, type LeaveRange } from '@shift/domain';
+import { leaveCostOf, monthOf, type LeaveRange } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import {
   calendarDayListOf,
   calendarTodayOf,
   dayMonthOf,
+  memberScheduleInputOf,
   weekdayOf,
   workingShiftTypeIdsOf,
   type CalendarDay,
@@ -14,7 +15,8 @@ import { leaveRecordsOf, type LeaveRecord } from '@/features/leave/services/leav
 import { formatIsoDate, nextIsoDate } from '@/lib/i18n/format';
 
 /**
- * *Danas* for the viewer (story 6.1a): today in words, the next working
+ * *Danas* for the viewer (story 6.1a): today in words — on leave, with what
+ * the absence costs in leave days since story 6.1b — the next working
  * shift and the next seven days, as a pure view model in a `.ts` that
  * renders nothing (AD-15). The hook only wires it; the node suite executes it.
  *
@@ -83,6 +85,12 @@ export type TodayCase =
       /** The whole absence's first and last day, `28.09.2026`: back-to-back records read as one. */
       readonly from: string;
       readonly to: string;
+      /**
+       * What the absence costs in leave days (story 6.1b): the domain's
+       * `leaveCostOf` over each own record it joins, each on its own range,
+       * summed — only the days the viewer would have worked count.
+       */
+      readonly costDays: number;
     }
   | { readonly kind: typeof CASE_WORKING; readonly shifts: readonly TodayShift[] }
   | {
@@ -231,13 +239,19 @@ function leaveOn(records: readonly LeaveRecord[], date: string): LeaveRecord | n
   return records.find((record) => record.from <= date && date <= record.to) ?? null;
 }
 
+/** The whole absence covering a date, and the own records it joins, each with its own range. */
+interface Absence extends LeaveRange {
+  readonly records: readonly LeaveRange[];
+}
+
 /**
  * The whole absence that covers `date`: the record covering it, extended
  * across every own record that overlaps it or starts the day after it ends —
  * back-to-back records are one absence, and the next shift is the return
- * after all of them. `null` when no record covers `date`.
+ * after all of them — with the records it joins. `null` when no record
+ * covers `date`.
  */
-function absenceOn(records: readonly LeaveRecord[], date: string): LeaveRange | null {
+function absenceOn(records: readonly LeaveRecord[], date: string): Absence | null {
   const covering = leaveOn(records, date);
 
   if (covering === null) return null;
@@ -267,7 +281,13 @@ function absenceOn(records: readonly LeaveRecord[], date: string): LeaveRange | 
     }
   }
 
-  return { from, to };
+  // Every record inside the absence is one it joined: the absence is the
+  // contiguous union of its records, and records of one member never overlap.
+  const joined = ordered
+    .filter((record) => from <= record.from && record.to <= to)
+    .map((record) => ({ from: record.from, to: record.to }));
+
+  return { from, to, records: joined };
 }
 
 /** The day after `date`. @throws RangeError at the end of the calendar. */
@@ -340,11 +360,17 @@ function isWorking(working: ReadonlySet<string>, shift: CalendarDay['shifts'][nu
   return shift.cell.shiftTypeId !== null && working.has(shift.cell.shiftTypeId);
 }
 
-/** Today's one case: leave first, then working, then free. */
+/**
+ * Today's one case: leave first, then working, then free. The leave's cost is
+ * the domain's `leaveCostOf` over the viewer's schedule, each joined
+ * record costed on its own range, never the merged one.
+ *
+ * @throws RangeError on any precondition of `leaveCostOf`.
+ */
 function todayCaseOf(
   snapshot: CalendarSnapshot,
   day: CalendarDay,
-  leave: LeaveRange | null,
+  leave: Absence | null,
   working: ReadonlySet<string>,
 ): TodayCase {
   if (leave !== null) {
@@ -353,7 +379,10 @@ function todayCaseOf(
 
     if (from === null || to === null) throw new RangeError(`the leave ${leave.from}–${leave.to} could not be formatted`);
 
-    return { kind: CASE_LEAVE, from, to };
+    const input = memberScheduleInputOf(snapshot, snapshot.viewer);
+    const costDays = leave.records.reduce((sum, record) => sum + leaveCostOf(input, record.from, record.to), 0);
+
+    return { kind: CASE_LEAVE, from, to, costDays };
   }
 
   const shifts = day.shifts.filter((shift) => isWorking(working, shift));

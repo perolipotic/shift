@@ -3,6 +3,8 @@ import { randomBytes } from 'node:crypto';
 import type { Browser, BrowserContext } from '@playwright/test';
 
 import { CalendarPage } from '../../pages/calendar.page.ts';
+import { HoursPage } from '../../pages/hours.page.ts';
+import { LeavePage } from '../../pages/leave.page.ts';
 import { LoginPage } from '../../pages/login.page.ts';
 import { TodayPage } from '../../pages/today.page.ts';
 import {
@@ -32,6 +34,12 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * *Moj raspored* for the same dates. A fresh member with leave today reads
  * the leave case with its range, and their return as the next shift. Nothing
  * scrolls sideways at 390 px.
+ *
+ * Story 6.1b: below the week, the hours tile equals *Sati*'s month — its
+ * total and every band's hours — and the leave tile equals *Godišnji*'s
+ * balance and used days; the leave case states what the leave costs. A
+ * failed resolutions read leaves the hours tile in *Sati*'s unavailable
+ * sentence, still a link to *Sati*, and the leave tile unaffected.
  */
 
 const danas = hr.danas;
@@ -120,13 +128,50 @@ async function expectWeekEqualsCalendar(
   }
 }
 
+/** Every duration in a text, in order: `96 h`, `12 h 30 min`, `45 min`. */
+function durationsIn(text: string): string[] {
+  return [...text.matchAll(/\d+ h(?: \d+ min)?|\d+ min/g)].map((found) => found[0]);
+}
+
+/**
+ * The two tiles against their detail views, read on the same page: the hours
+ * tile's total and every band's hours equal *Sati*'s for the month, and the
+ * leave tile's balance and used days equal *Godišnji*'s. Leaves the page on
+ * *Godišnji*.
+ */
+async function expectTilesEqualDetailViews(todayPage: TodayPage, hoursPage: HoursPage, leavePage: LeavePage): Promise<void> {
+  await todayPage.goto();
+  await expect(todayPage.hoursTile).toBeVisible();
+  await expect(todayPage.leaveTile).toBeVisible();
+  const total = normalized(await todayPage.hoursTileTotal.innerText());
+  const bands = durationsIn(normalized(await todayPage.hoursTileBands.innerText()));
+  const balance = normalized(await todayPage.leaveTileBalance.innerText());
+  const hint = normalized(await todayPage.leaveTileHint.innerText());
+
+  await hoursPage.goto();
+  await expect(hoursPage.totalTile).toBeVisible();
+  // Exact: the figure itself, never a substring of it (`80 h` in `180 h`).
+  await expect(hoursPage.figureIn(hoursPage.totalTile, total)).toBeVisible();
+  expect((await hoursPage.bandHours()).map(normalized), 'every band, in Sati’s order').toEqual(bands);
+
+  await leavePage.goto();
+  await expect(leavePage.balanceFigure).toHaveText(balance);
+  const used = /-?\d+/.exec(await leavePage.usedFigure.innerText())?.[0] ?? '';
+  const allowance = /-?\d+/.exec(await leavePage.allowanceFigure.innerText())?.[0] ?? '';
+  expect(hint).toBe(fill(danas.tiles.leaveHint, { used, allowance }));
+}
+
 /** *Danas* as `member`, in a fresh context of its own. */
-async function signedInAs(browser: Browser, slug: string, member: SeededLeaveMember): Promise<{ today: TodayPage; calendar: CalendarPage }> {
+async function signedInAs(
+  browser: Browser,
+  slug: string,
+  member: SeededLeaveMember,
+): Promise<{ today: TodayPage; calendar: CalendarPage; hours: HoursPage; leave: LeavePage }> {
   context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
   const page = await context.newPage();
   await new LoginPage(page).signIn(slug, member.username, member.password);
 
-  return { today: new TodayPage(page), calendar: new CalendarPage(page) };
+  return { today: new TodayPage(page), calendar: new CalendarPage(page), hours: new HoursPage(page), leave: new LeavePage(page) };
 }
 
 test.describe('as a member', () => {
@@ -164,8 +209,41 @@ test.describe('as a member', () => {
 
     await expectNoHorizontalScroll(page);
     await expect(todayPage.calendarLink).toBeVisible();
+    // STORY 6.1b: both tiles, side by side at 390 px, still no sideways scroll.
+    await expect(todayPage.hoursTile).toBeVisible();
+    await expect(todayPage.leaveTile).toBeVisible();
+    await expectNoHorizontalScroll(page);
 
     await expectWeekEqualsCalendar(todayPage, calendarPage, today);
+  });
+
+  test('the hours tile equals Sati and the leave tile equals Godišnji', async ({ todayPage, hoursPage, leavePage, fixture }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+    await seeded(fixture.slug, fixture.team.id, 2);
+
+    await expectTilesEqualDetailViews(todayPage, hoursPage, leavePage);
+  });
+
+  test("a failed resolutions read leaves the hours tile in Sati's sentence, still a link, and the rest as it was", async ({
+    page,
+    todayPage,
+    fixture,
+  }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+    const rotation = await seeded(fixture.slug, fixture.team.id, 2);
+    const failed = (url: URL) => url.pathname.endsWith('/rest/v1/rpc/my_conflict_resolutions');
+    await page.route(failed, (route) => route.fulfill({ status: 500, body: '{}' }));
+
+    await todayPage.goto();
+    await expect(todayPage.hoursTileUnavailable).toBeVisible();
+    await expect(todayPage.hoursTile).toHaveCount(0);
+    await expect(todayPage.leaveTile).toBeVisible();
+    await expect(todayPage.todayCard(danas.today.free)).toContainText(rotation.steps[2]);
+    await expect(todayPage.unavailableAlert).toHaveCount(0);
+
+    await page.unroute(failed);
+    await todayPage.hoursTileUnavailable.click();
+    await expect(page).toHaveURL(/\/sati$/);
   });
 
   test('a working day says so, with the type, its range and the team', async ({ todayPage, fixture }) => {
@@ -210,6 +288,11 @@ test.describe('as a member', () => {
       await expect(todayPage.retryButton).toBeVisible();
       await expect(todayPage.weekList).toHaveCount(0);
       await expect(todayPage.card(new RegExp(`^${escapeRegExp(danas.today.free)}$`))).toHaveCount(0);
+      // STORY 6.1b: the page-unavailable screen shows no tile, in any state.
+      await expect(todayPage.hoursTile).toHaveCount(0);
+      await expect(todayPage.hoursTileUnavailable).toHaveCount(0);
+      await expect(todayPage.leaveTile).toHaveCount(0);
+      await expect(todayPage.leaveTileUnavailable).toHaveCount(0);
 
       await page.unroute(failed.route);
       await todayPage.retryButton.click();
@@ -234,13 +317,15 @@ test('a member on leave today reads the leave case with its range, and the next 
   await seedLeaveRecord(fixture.slug, member.id, today, until);
   withLeave = { slug: fixture.slug, id: member.id };
 
-  const { today: todayPage, calendar } = await signedInAs(browser, fixture.slug, member);
+  const { today: todayPage, calendar, hours, leave } = await signedInAs(browser, fixture.slug, member);
   await todayPage.page.setViewportSize({ width: 390, height: 844 });
   await todayPage.goto();
 
   const card = todayPage.todayCard(danas.today.leave);
   await expect(card).toBeVisible();
   await expect(card).toContainText(fill(danas.today.leaveRange, { from: fullDate(today), to: fullDate(until) }));
+  // STORY 6.1b: today's Dan and tomorrow's Noć, the days the member would work.
+  await expect(card).toContainText(fill(danas.today.leaveCost, { days: plural(hr.count.days, 2) }));
 
   const back = addDays(today, 4);
   await expect(todayPage.nextShiftHeading).toHaveText(nextHeading(danas.next.returnHeading, 4));
@@ -250,4 +335,5 @@ test('a member on leave today reads the leave case with its range, and the next 
   await expectNoHorizontalScroll(todayPage.page);
 
   await expectWeekEqualsCalendar(todayPage, calendar, today, new Set([until]));
+  await expectTilesEqualDetailViews(todayPage, hours, leave);
 });

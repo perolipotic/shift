@@ -9,16 +9,41 @@ import {
   type CalendarMembersRpc,
 } from '@/features/calendar/services/snapshot';
 import { calendarTodayOf } from '@/features/calendar/utils/month';
+import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
+import {
+  MY_CONFLICT_RESOLUTIONS_KEY,
+  myConflictResolutionsQueryOptions,
+  type MyConflictResolutionsRpc,
+} from '@/features/conflicts/services/resolutions';
+import { hoursConflictsStateOf } from '@/features/hours/services/hours-conflicts';
+import { hoursSnapshotStateOf, myHoursSurfaceOf, type HoursSearch } from '@/features/hours/services/my-hours';
 import {
   MY_LEAVE_RECORDS_KEY,
   myLeaveRecordsQueryOptions,
   type MyLeaveRecordsRpc,
 } from '@/features/leave/services/leave-list';
+import { myLeaveOf, myLeaveRowsStateOf } from '@/features/leave/services/my-leave';
+import {
+  MEMBERS_LIST_KEY,
+  MEMBERS_TABLE,
+  membersQueryOptions,
+  membersSurfaceStateOf,
+} from '@/features/members/services/list';
+import {
+  ORGANIZATION_SNAPSHOT_KEY,
+  ORGANIZATION_TABLE,
+  organizationSnapshotQueryOptions,
+} from '@/features/organization/services/snapshot';
+import { OWN_TEAM_KEY } from '@/features/teams/services/roster';
 import { TODAY_LOADING, todayDateShownOf, todayOf } from '@/features/today/services/today';
+import { todayTilesOf } from '@/features/today/services/today-tiles';
 import { supabaseClient } from '@/lib/supabase/client';
 
+/** *Sati*'s default search: the organization's current month, nothing else. */
+const CURRENT_MONTH: HoursSearch = {};
+
 /**
- * *Danas*'s two reads and its state (story 6.1a). Wiring only — every
+ * *Danas*'s reads and its state (story 6.1a; the tiles, story 6.1b). Wiring only — every
  * decision is `@/features/today/services/today`'s, which the node suite
  * executes.
  *
@@ -28,6 +53,15 @@ import { supabaseClient } from '@/lib/supabase/client';
  * role — an admin's own rows included — never a select on `leave_records`.
  * One cache entry per key, shared with *Kalendar*, *Sati* and *Godišnji*; a
  * leave write names that key among its dependents. No figure is optimistic.
+ *
+ * THE TILES' READS (story 6.1b), each its detail view's own, under the same
+ * keys. The hours tile is *Sati*'s member branch for every role — the
+ * viewer's own month — over the snapshot, the own leave and the own
+ * resolutions under `MY_CONFLICT_RESOLUTIONS_KEY` (through
+ * `hoursConflictsStateOf`, as *Sati*). The leave tile is *Godišnji*'s
+ * `myLeaveOf` over its four reads: the member list under `MEMBERS_LIST_KEY`,
+ * the organization snapshot under `ORGANIZATION_SNAPSHOT_KEY`, the calendar
+ * and the own leave. No organization-wide leave or resolution read.
  */
 export function useToday() {
   const queryClient = useQueryClient();
@@ -41,6 +75,14 @@ export function useToday() {
   const records = useQuery(
     // Named structurally, as *Godišnji*'s read is.
     myLeaveRecordsQueryOptions(() => supabaseClient() as unknown as MyLeaveRecordsRpc),
+  );
+  const resolutions = useQuery(
+    // Named structurally, as *Sati*'s read is.
+    myConflictResolutionsQueryOptions(() => supabaseClient() as unknown as MyConflictResolutionsRpc),
+  );
+  const members = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
+  const organization = useQuery(
+    organizationSnapshotQueryOptions(() => supabaseClient().from(ORGANIZATION_TABLE)),
   );
   const calendarState = calendarSurfaceStateOf(calendar);
   const snapshot = calendarState.snapshot;
@@ -68,12 +110,81 @@ export function useToday() {
     [snapshot, refusal, calendarLoading, rows, rowsIsError, rowsIsPending, rowsFetchStatus, todayDate],
   );
 
-  /** Read again both reads the screen stands on, from the unavailable alert's retry. */
+  // THE HOURS TILE: *Sati*'s own surface, the viewer's own month.
+  const hoursState = hoursSnapshotStateOf(calendar);
+  const hoursSnapshot = hoursState.snapshot;
+  const hoursRefusal = hoursState.refusal;
+  const hoursLoading = hoursState.loading;
+  const resolutionsData = resolutions.data;
+  // STORY 5.5d, as *Sati*: a replacement naming an override the snapshot does not hold yet re-reads it once.
+  useReplacementLinkRefresh(hoursSnapshot, resolutionsData);
+  const resolutionsIsError = resolutions.isError;
+  const resolutionsIsPending = resolutions.isPending;
+  const resolutionsFetchStatus = resolutions.fetchStatus;
+  // Derived once per answer, not on every render: the collisions walk every record.
+  const conflicts = useMemo(
+    () =>
+      hoursSnapshot === null
+        ? null
+        : hoursConflictsStateOf(
+            hoursSnapshot,
+            { data: rows, isError: rowsIsError, isPending: rowsIsPending, fetchStatus: rowsFetchStatus },
+            {
+              data: resolutionsData,
+              isError: resolutionsIsError,
+              isPending: resolutionsIsPending,
+              fetchStatus: resolutionsFetchStatus,
+            },
+          ),
+    [
+      hoursSnapshot,
+      rows,
+      rowsIsError,
+      rowsIsPending,
+      rowsFetchStatus,
+      resolutionsData,
+      resolutionsIsError,
+      resolutionsIsPending,
+      resolutionsFetchStatus,
+    ],
+  );
+  const hoursToday = hoursSnapshot === null ? null : calendarTodayOf(hoursSnapshot, new Date());
+  // Worked out once per answer and per day, not on every render.
+  const hours = useMemo(
+    () =>
+      myHoursSurfaceOf(
+        { snapshot: hoursSnapshot, refusal: hoursRefusal, loading: hoursLoading },
+        conflicts,
+        CURRENT_MONTH,
+        hoursToday,
+      ),
+    [hoursSnapshot, hoursRefusal, hoursLoading, conflicts, hoursToday],
+  );
+  // THE LEAVE TILE: *Godišnji*'s own state, over its four reads.
+  const leave = myLeaveOf(
+    {
+      members: membersSurfaceStateOf(members),
+      calendar: calendarState,
+      organization,
+      records: myLeaveRowsStateOf(records),
+    },
+    new Date(),
+  );
+  const tiles = todayTilesOf(hours, leave);
+
+  /** Read again every read the screen stands on, the team line's included, from the unavailable alert's retry. */
   function retry(): void {
-    for (const queryKey of [CALENDAR_KEY, MY_LEAVE_RECORDS_KEY]) {
+    for (const queryKey of [
+      CALENDAR_KEY,
+      MY_LEAVE_RECORDS_KEY,
+      MY_CONFLICT_RESOLUTIONS_KEY,
+      MEMBERS_LIST_KEY,
+      ORGANIZATION_SNAPSHOT_KEY,
+      OWN_TEAM_KEY,
+    ]) {
       void queryClient.invalidateQueries({ queryKey });
     }
   }
 
-  return { today, date: todayDateShownOf(today), loading: today.kind === TODAY_LOADING, retry };
+  return { today, tiles, date: todayDateShownOf(today), loading: today.kind === TODAY_LOADING, retry };
 }

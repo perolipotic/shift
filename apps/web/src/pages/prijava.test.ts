@@ -280,8 +280,8 @@ const TEAM_ROSTER: readonly string[] = Object.values(TEAM_ROSTER_PARTS).map((par
 /** The *Danas* page, which composes the cards and keeps the team line (story 6.1a). */
 const DANAS_PAGE = join(srcRoot, ...TODAY_SCREEN_PARTS.page);
 /**
- * A FILE SET since story 6.1a — the page, the hook holding its two reads and
- * the cards — on *Godišnji*'s terms, written ONCE in `today-screen.fixture.ts`.
+ * A FILE SET since story 6.1a — the page, the hook holding its reads, the
+ * cards and, since story 6.1b, the two tiles — on *Godišnji*'s terms, written ONCE in `today-screen.fixture.ts`.
  * The team line stays in the page, which the roster's sweeps read alone.
  */
 const DANAS: readonly string[] = Object.values(TODAY_SCREEN_PARTS).map((parts) => join(srcRoot, ...parts));
@@ -715,6 +715,9 @@ const SCREENS = [
   // ONE SINCE STORY 6.1a: the unavailable alert's retry, which reads the
   // calendar snapshot and the viewer's own leave again. The link to the
   // calendar is a `<Link>`, which no detector reads.
+  // STILL ONE SINCE STORY 6.1b: the retry reads every key Danas reads again,
+  // and the two tiles are `<Link>`s to *Sati* and *Godišnji*, whose own
+  // retries are one tap away. No control of their own.
   { name: 'the team roster', file: TEAM_ROSTER, expectedControls: 1 },
   { name: 'the Danas destination', file: DANAS, expectedControls: 1 },
   // STORY 3.1. THREE on Kalendar: the previous month, `Ovaj mjesec` and the
@@ -2169,10 +2172,17 @@ const KEY_SOURCES = [
     // `count.days` beside both, the week's heading and its link, and the
     // leave word. The cases, the headings and the two lines come through
     // `@/features/today/services/today`, below.
+    //
+    // TWENTY-FOUR SINCE STORY 6.1b: the leave's cost sentence and its
+    // `count.days`; the hours tile's kicker, one band's hours, the separator
+    // between bands and *Sati*'s conflict line; the leave tile's kicker, its
+    // balance through `count.days` and its hint. Each tile's unavailable
+    // sentence is its detail view's own, through `hoursMessageKey` and
+    // `myLeaveMessageKey`.
     name: 'the Danas destination',
     file: DANAS,
     keys: translationKeys,
-    strings: 15,
+    strings: 24,
   },
   {
     // STORY 6.1a: today's three cases, the next shift's two headings, and
