@@ -18,6 +18,8 @@ export const TODAY_SCREEN_PARTS = {
   // Story 6.1b: the two tiles; their skeleton is `today-skeleton.tsx`'s.
   hoursTile: ['features', 'today', 'components', 'hours-tile.tsx'],
   leaveTile: ['features', 'today', 'components', 'leave-tile.tsx'],
+  // Story 6.2: the duty-block, drawn in the today card's place on a 24 h duty.
+  dutyBlock: ['features', 'today', 'components', 'duty-block.tsx'],
 } as const;
 
 /**
@@ -37,5 +39,9 @@ export const TODAY_SCREEN_EXEMPT: readonly { readonly file: string; readonly why
   {
     file: 'services/today-tiles.ts',
     why: "the two tiles' states, picked from Sati's and Godišnji's own derivations; executed by today-tiles.test.ts",
+  },
+  {
+    file: 'services/today-duty.ts',
+    why: "today's 24 h duty (story 6.2): the window, the legs and their notes, and the duty-block's lines; a key source of its own, executed by today.test.ts",
   },
 ];

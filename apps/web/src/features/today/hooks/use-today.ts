@@ -37,6 +37,7 @@ import {
 import { OWN_TEAM_KEY } from '@/features/teams/services/roster';
 import { TODAY_LOADING, todayDateShownOf, todayOf } from '@/features/today/services/today';
 import { todayTilesOf } from '@/features/today/services/today-tiles';
+import { useMinuteTicker } from '@/hooks/minute-ticker';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /** *Sati*'s default search: the organization's current month, nothing else. */
@@ -65,6 +66,7 @@ const CURRENT_MONTH: HoursSearch = {};
  */
 export function useToday() {
   const queryClient = useQueryClient();
+  const now = useMinuteTicker();
   const calendar = useQuery(
     calendarQueryOptions(
       () => supabaseClient().from(CALENDAR_READ_TABLE),
@@ -92,11 +94,10 @@ export function useToday() {
   const rowsIsError = records.isError;
   const rowsIsPending = records.isPending;
   const rowsFetchStatus = records.fetchStatus;
-  // THE ORGANIZATION'S TODAY, worked out on every render as *Kalendar*'s is:
-  // a tab left open past midnight re-derives the case, the next shift, the
-  // week and the date once the date changes.
-  const todayDate = snapshot === null ? null : calendarTodayOf(snapshot, new Date());
-  // Derived once per answer and per date, not on every render: the next shift walks up to a year of days.
+  // THE ORGANIZATION'S TODAY AND ITS MINUTE (story 6.2), at the ticker's
+  // `now`: a duty's progress moves every minute, and a tab left open past
+  // midnight re-derives the case, the next shift, the week and the date.
+  // Derived once per answer and per minute, not on every render: the next shift walks up to a year of days.
   const today = useMemo(
     () =>
       todayOf(
@@ -104,10 +105,9 @@ export function useToday() {
           calendar: { snapshot, refusal, loading: calendarLoading },
           records: { data: rows, isError: rowsIsError, isPending: rowsIsPending, fetchStatus: rowsFetchStatus },
         },
-        new Date(),
+        now,
       ),
-    // `todayDate` is read through `new Date()` inside; it is here so a new date re-derives.
-    [snapshot, refusal, calendarLoading, rows, rowsIsError, rowsIsPending, rowsFetchStatus, todayDate],
+    [snapshot, refusal, calendarLoading, rows, rowsIsError, rowsIsPending, rowsFetchStatus, now],
   );
 
   // THE HOURS TILE: *Sati*'s own surface, the viewer's own month.

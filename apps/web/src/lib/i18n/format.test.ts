@@ -16,6 +16,7 @@ import {
   isIsoDate,
   nextIsoDate,
   organizationIsoDate,
+  organizationWallClock,
   previousIsoDate,
   formatDate,
   formatDayMonthRange,
@@ -302,6 +303,9 @@ const ZONED_ENTRY_POINTS = [
   // Story 1.6. The organization's today as an ISO date: the very question the
   // rule exists for, since the device's today is the wrong answer to it.
   'organizationIsoDate',
+  // Story 6.2. The organization's wall clock — today and the minute of it —
+  // that a duty's progress is measured against.
+  'organizationWallClock',
 ];
 
 beforeAll(async () => {
@@ -1105,6 +1109,21 @@ describe("the organization's calendar date, and a calendar date in the binding s
 
   it('falls back to UTC for a zone it cannot render, as the database does', () => {
     expect(organizationIsoDate(at('2026-09-22T22:30:00Z'), 'Europe/Zagrb')).toBe('2026-09-22');
+  });
+
+  it('reads the wall clock — date and minute of the day — in the organization zone (story 6.2)', () => {
+    // 19:10 UTC is 21:10 in Zagreb in October (UTC+2).
+    expect(organizationWallClock(at('2026-10-01T19:10:00Z'), ZONE)).toEqual({ date: '2026-10-01', minute: 1270 });
+    // 22:30 UTC is already 00:30 tomorrow in Zagreb: midnight is minute 0, never 24:00.
+    expect(organizationWallClock(at('2026-09-22T22:30:00Z'), ZONE)).toEqual({ date: '2026-09-23', minute: 30 });
+    expect(organizationWallClock(at('2026-09-22T22:30:00Z'), 'Etc/UTC')).toEqual({
+      date: '2026-09-22',
+      minute: 1350,
+    });
+    expect(organizationWallClock(at('2026-09-22T22:30:00Z'), 'Europe/Zagrb')).toEqual({
+      date: '2026-09-22',
+      minute: 1350,
+    });
   });
 
   it('renders an ISO date as 23.09.2026 and refuses anything that is not one', () => {

@@ -1,7 +1,15 @@
 import { useId, type ReactNode } from 'react';
 
 import { Card } from '@/components/ui/card';
-import { CASE_LEAVE, CASE_WORKING, todayCaseMessageKey, type TodayCase, type TodayShift } from '@/features/today/services/today';
+import { DutyBlock } from '@/features/today/components/duty-block';
+import {
+  CASE_DUTY,
+  CASE_LEAVE,
+  CASE_WORKING,
+  todayCaseMessageKey,
+  type TodayCase,
+  type TodayShift,
+} from '@/features/today/services/today';
 import { t } from '@/lib/i18n';
 
 /** One shift of today: the type's name, its range and the team, each on its own. */
@@ -16,7 +24,7 @@ function renderShift(shift: TodayShift, index: number): ReactNode {
 }
 
 /** What follows the case's sentence: the leave's range and cost, today's shifts, or the free day's type. */
-function renderDetail(todayCase: TodayCase): ReactNode {
+function renderDetail(todayCase: Exclude<TodayCase, { readonly kind: typeof CASE_DUTY }>): ReactNode {
   if (todayCase.kind === CASE_LEAVE) {
     // STORY 6.1b: what the absence costs, through `count.days`.
     return (
@@ -31,7 +39,7 @@ function renderDetail(todayCase: TodayCase): ReactNode {
 
   if (todayCase.kind === CASE_WORKING) {
     // STORY 6.1a: one row per shift — the own team's first, then each one a
-    // roster override put the viewer on. 6.2 groups a 24 h duty.
+    // roster override put the viewer on. A 24 h duty is the duty-block's (6.2).
     return <ul className="grid gap-2">{todayCase.shifts.map(renderShift)}</ul>;
   }
 
@@ -45,10 +53,15 @@ function renderDetail(todayCase: TodayCase): ReactNode {
 
 /**
  * Today in words (story 6.1a): exactly one case as the card's heading — on
- * leave, working or free — and what it rests on beneath it. Nothing to tap.
+ * leave, working or free — and what it rests on beneath it; on a duty, the
+ * duty-block in its place (story 6.2). Nothing to tap.
  */
 export function TodayCard({ todayCase }: { readonly todayCase: TodayCase }): ReactNode {
   const headingId = useId();
+
+  if (todayCase.kind === CASE_DUTY) {
+    return <DutyBlock duty={todayCase.duty} />;
+  }
 
   return (
     <Card className="min-w-0">

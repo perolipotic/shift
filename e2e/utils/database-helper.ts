@@ -1014,6 +1014,48 @@ export async function removeTeamInSql(slug: string, teamId: string): Promise<voi
   }
 }
 
+/**
+ * Takes every member off `teamId` in SQL (story 6.2): deletes the membership
+ * versions naming it, so {@link removeTeamInSql} can delete the team a test
+ * put a fresh member on. The member stays, on no team.
+ */
+export async function removeTeamMembershipsInSql(slug: string, teamId: string): Promise<void> {
+  const client = await connect();
+  try {
+    await client.query(
+      `delete from team_membership_versions
+        where team_id = $2 and organization_id = (select id from organizations where slug = $1)`,
+      [slug, teamId],
+    );
+  } finally {
+    await client.end();
+  }
+}
+
+/**
+ * The instant at which the run organization's wall clock reads `time` on
+ * `date` (story 6.2), from the database's own zone rules — what a test sets
+ * `page.clock` to, so "21:10 today" is the organization's, never the
+ * machine's.
+ */
+export async function organizationInstant(slug: string, date: string, time: string): Promise<Date> {
+  const client = await connect();
+  try {
+    const { rows } = await client.query<{ epoch_ms: string }>(
+      `select (extract(epoch from (($2::date + $3::time) at time zone o.timezone)) * 1000)::bigint::text as epoch_ms
+         from organizations o
+        where o.slug = $1`,
+      [slug, date, time],
+    );
+    const found = rows[0];
+    if (found === undefined) throw new Error(`E2E: no organization ${slug} to read the clock of`);
+
+    return new Date(Number(found.epoch_ms));
+  } finally {
+    await client.end();
+  }
+}
+
 /** What {@link seedRosterOverride} wrote, as the day detail names it (story 3.6a). */
 export interface SeededRosterOverride {
   readonly reason: string;

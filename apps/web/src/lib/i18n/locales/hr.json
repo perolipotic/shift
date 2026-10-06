@@ -33,6 +33,21 @@
       "leaveRange": "Godišnji odmor {from}–{to}",
       "leaveCost": "Troši {days} godišnjeg — računaju se samo tvoji radni dani."
     },
+    "duty": {
+      "kicker": "Na dužnosti · {total} bez pauze",
+      "until": "do {time}",
+      "ended": "Završeno u {time}",
+      "remaining": "{weekday}, {date} · još {duration}",
+      "startsAt": "{weekday}, {date} · počinje u {time}",
+      "progress": "{done} od {total}",
+      "moment": "{date} {time}",
+      "legDone": "Odrađeno",
+      "legRunning": "U tijeku",
+      "legUpcoming": "Slijedi",
+      "noteOwn": "tvoja smjena · {team}",
+      "noteReplacing": "zamjena za {name} ({team})",
+      "noteAdded": "dodatna smjena · {team}"
+    },
     "next": {
       "title": "Sljedeća smjena",
       "heading": "Sljedeća smjena · za {days}",

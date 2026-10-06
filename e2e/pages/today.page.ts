@@ -14,8 +14,9 @@ function leadOf(message: string): string {
  * `/danas` for the viewer (story 6.1a): the heading's date subline, today's
  * card (one case as its heading), the next shift's card, the next seven days
  * and the unavailable alert's retry. Below the week, the hours and leave
- * tiles (story 6.1b), each a link to its detail view. The team line below
- * them is the roster's (`teams.page.ts`).
+ * tiles (story 6.1b), each a link to its detail view. On a 24 h duty, the
+ * duty-block in today's card's place (story 6.2). The team line below them
+ * is the roster's (`teams.page.ts`).
  */
 export class TodayPage extends BasePage {
   protected readonly path = '/danas';
@@ -55,6 +56,21 @@ export class TodayPage extends BasePage {
   /** The week's way to the calendar. */
   get calendarLink(): Locator {
     return this.page.getByRole('link', { name: danas.week.link, exact: true });
+  }
+
+  /** Today's duty-block (story 6.2), by the region its kicker names: `Na dužnosti · 24 h bez pauze`. */
+  get dutyBlock(): Locator {
+    return this.card(new RegExp(`^${escapeRegExp(leadOf(danas.duty.kicker))}`));
+  }
+
+  /** The duty-block's progress bar; its valuetext says how much is done in words. */
+  get dutyProgress(): Locator {
+    return this.dutyBlock.getByRole('progressbar');
+  }
+
+  /** The duty-block's legs, one per scheduled shift, in order. */
+  get dutyLegs(): Locator {
+    return this.dutyBlock.getByRole('listitem');
   }
 
   /** The unavailable alert. */

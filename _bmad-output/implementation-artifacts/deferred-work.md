@@ -804,3 +804,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-1a-member-today-and-next-shift.md`
   summary: Danas still renders the kept "Tvoja smjena ‹tim›" line from its own read (`OWN_TEAM_KEY` / `readOwnTeamToday`), while the today card names today's team from the calendar snapshot. One fact therefore comes from two reads on one screen, and the line sits after the 7 days, where 6.1b's hours and leave tiles should go. 6.1b should decide where the line goes in the priority order, and whether it derives from the calendar snapshot.
   evidence: Found by the 6.1a Epic AC audit on 2026-10-06. The human chose to keep the line (decision 4, 2026-10-06); `apps/web/src/pages/danas.tsx` renders it below `TodayBody`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-2-duty-block.md`
+  summary: Danas groups a duty only on the today card. The 7-day list keeps Kalendar's per-date rows, and the next-shift card shows one shift, even when the next working shift starts a duty. Grouping there (for example a "24 h" note on a week row, or the next card headlining the duty's end) is undecided.
+  evidence: Epic 6.2 AC "consecutive working shifts … When the member dashboard renders Then they are presented as one duty" was NARROWED to the today card by the human on 2026-10-06, so that the 7 days stay equal to Kalendar (6.1a).
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-2-duty-block.md`
+  summary: A lone overnight shift (own Noć only, not a duty) still reads "Danas ne radiš" after midnight on a free date, because 6.1a's today case looks only at today's date. 6.2 fixed this only for a running duty.
+  evidence: 6.2 review (Blind Hunter). The spec's matrix keeps "Single overnight → working case as in 6.1a" by design.
+- source_spec: `_bmad-output/implementation-artifacts/spec-6-2-duty-block.md`
+  summary: When Danas shows today's duty, a working shift today that is not part of that duty (separated by a gap) appears neither on the today card nor in the next-shift card, which starts tomorrow.
+  evidence: 6.2 review (Edge Case Hunter). It needs more than 36 h of work in one day, so it is rare. The human chose the running > upcoming > done rule and deferred this on 2026-10-06.
