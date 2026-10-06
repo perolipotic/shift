@@ -39,10 +39,10 @@ naming `supabase start` or `supabase functions serve` if one is missing.
 e2e/
 ├── pages/                # page objects: one class per screen, locators and actions
 │   ├── base.page.ts      # the shared chrome: navigation, the h1, status, alert, dialog, goto()
-│   └── <screen>.page.ts  # login, calendar, conflicts, people, teams, organization, hour-bands, hours, leave, rotation
+│   └── <screen>.page.ts  # login, calendar, conflicts, people, teams, organization, hour-bands, hours, leave, rotation, today
 ├── tests/
 │   ├── auth.setup.ts     # the setup project: signs in and stores the sessions
-│   └── <feature>/        # auth, calendar, conflicts, people, teams, hour-bands, hours, leave, rotation, layout
+│   └── <feature>/        # auth, calendar, conflicts, people, teams, hour-bands, hours, leave, rotation, today, layout
 └── utils/                # fixtures, database and run-fixture helpers, i18n, dates, layout checks,
                           # members and stepper data, stack check, global setup/teardown
 ```
@@ -53,7 +53,7 @@ and a new feature gets its own folder; specs import helpers as
 `../../utils/<name>.ts`. `custom-fixtures.ts` gives the `test` and `expect`
 every spec imports, with every page object as a test fixture (`loginPage`,
 `calendarPage`, `conflictsPage`, `resolutionPage`, `peoplePage`, `teamsPage`, `organizationPage`, `hourBandsPage`,
-`hoursPage`, `leavePage`, `rotationPage`), and `run-fixture.ts` provisions and deletes the run's
+`hoursPage`, `leavePage`, `rotationPage`, `todayPage`), and `run-fixture.ts` provisions and deletes the run's
 organization (`readFixture`).
 
 ### Page objects

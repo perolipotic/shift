@@ -121,6 +121,24 @@ function hoursFeatureParts(): string[] {
 }
 
 /**
+ * Every non-test module anywhere under the today feature (story 6.1a), less
+ * any fixture: *Danas*'s hook, cards and rules module.
+ */
+function todayFeatureParts(): string[] {
+  const feature = join(webRoot, 'src', 'features', 'today');
+
+  if (!existsSync(feature)) return [];
+
+  return readdirSync(feature, { recursive: true, encoding: 'utf8' })
+    .filter(
+      (name) =>
+        /\.[cm]?[jt]sx?$/.test(name) && !/\.test\.[cm]?[jt]sx?$/.test(name) && !/\.fixture\.[cm]?[jt]sx?$/.test(name),
+    )
+    .sort()
+    .map((name) => join(feature, name));
+}
+
+/**
  * Every non-test module anywhere under the shift types feature — its root and
  * every folder, at any depth — less its fixture: both shift type screens'
  * parts since source structure B4, and the read, the writes and the ramp
@@ -609,6 +627,9 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'conflicts', 'components', 'conflicts-list.tsx'),
   join(webRoot, 'src', 'features', 'conflicts', 'components', 'conflicts-skeleton.tsx'),
   join(webRoot, 'src', 'features', 'conflicts', 'services', 'conflicts-queue.ts'),
+  // Story 6.1a: *Danas*'s hook, cards and rules module, READ OFF the today
+  // feature's folders. `danas.tsx` is listed with the destinations above.
+  ...todayFeatureParts(),
   // The owner layout's numbered section badge, a primitive: text-free, here
   // for freshness like the other primitives.
   join(webRoot, 'src', 'components', 'ui', 'section-number.tsx'),

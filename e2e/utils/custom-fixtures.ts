@@ -10,6 +10,7 @@ import { OrganizationPage } from '../pages/organization.page.ts';
 import { PeoplePage } from '../pages/people.page.ts';
 import { RotationPage } from '../pages/rotation.page.ts';
 import { TeamsPage } from '../pages/teams.page.ts';
+import { TodayPage } from '../pages/today.page.ts';
 import { holdRotation, type RotationHold } from './database-helper.ts';
 import { readFixture, type Fixture, type FixtureBand } from './run-fixture.ts';
 
@@ -28,6 +29,7 @@ export interface PageObjects {
   readonly hoursPage: HoursPage;
   readonly leavePage: LeavePage;
   readonly rotationPage: RotationPage;
+  readonly todayPage: TodayPage;
 }
 
 /**
@@ -80,6 +82,9 @@ export const test = base.extend<PageObjects & RotationHoldFixtures, { fixture: F
   },
   rotationPage: async ({ page }, use) => {
     await use(new RotationPage(page));
+  },
+  todayPage: async ({ page }, use) => {
+    await use(new TodayPage(page));
   },
   holdRotationForTeams: async ({ fixture }, use, testInfo) => {
     await use(async (add) => {
