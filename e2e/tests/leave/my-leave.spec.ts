@@ -235,9 +235,11 @@ test.describe('signed in as the seeded member', () => {
 
     // THE OWN-RECORDS READ FAILS: its first attempt and the query's one
     // automatic retry answer 500, and every later request goes through.
+    // Only Godišnji's own requests count: Danas, where sign-in lands, reads
+    // the same records (story 6.1a) and would spend both failures first.
     let failures = 2;
     await page.route('**/rest/v1/rpc/my_leave_records', async (route) => {
-      if (failures > 0) {
+      if (failures > 0 && new URL(page.url()).pathname === '/godisnji') {
         failures -= 1;
         await route.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"e2e"}' });
         return;
