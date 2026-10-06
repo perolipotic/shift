@@ -2,9 +2,10 @@ import { leaveCostOf } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
-import { calendarDayListOf, memberScheduleInputOf, type CalendarMarks } from '@/features/calendar/utils/month';
+import { NO_MARKS, calendarDayListOf, memberScheduleInputOf, type CalendarMarks } from '@/features/calendar/utils/month';
 import { MODIFIER_LEAVE } from '@/features/calendar/utils/modifiers';
 import {
+  CASE_DUTY,
   CASE_FREE,
   CASE_LEAVE,
   CASE_WORKING,
@@ -24,13 +25,29 @@ import {
   type TodayRowsAnswer,
   type TodayView,
 } from '@/features/today/services/today';
+import {
+  NOTE_ADDED,
+  NOTE_OWN,
+  NOTE_REPLACING,
+  dutyEndLineMessageKey,
+  dutyHeadlineMessageKey,
+  dutyLegStateMessageKey,
+  dutyNoteMessageKey,
+  endLinePointOf,
+  legNoteOf,
+  type DutyLegNote,
+  type TodayDuty,
+} from '@/features/today/services/today-duty';
 import { initLocalization, t } from '@/lib/i18n';
 import {
   PILOT,
   type FixtureRows,
   SEEDED,
   VIEWER_MEMBER,
+  VIEWER_NAME,
+  calendarMemberRow,
   calendarOrganizationRow,
+  calendarOverrideRow,
   calendarRosterOverrideRow,
   calendarTableOf,
   typeRow,
@@ -63,18 +80,30 @@ async function snapshotOf(
     readonly versions?: readonly Record<string, unknown>[];
     readonly role?: string;
     readonly roster?: readonly Record<string, unknown>[];
+    readonly overrides?: readonly Record<string, unknown>[];
+    readonly members?: readonly Record<string, unknown>[];
+    /** Other members' membership versions, each with its `member_id` (story 6.2). */
+    readonly others?: readonly Record<string, unknown>[];
     readonly rows?: FixtureRows;
   } = {},
 ): Promise<CalendarSnapshot> {
   const versions = options.versions ?? [membershipRow(TEAM_A, SEEDED)];
   const source = calendarTableOf(
     {
-      data: [calendarOrganizationRow(options.rows ?? PILOT, { viewers: [viewerRow(versions, { role: options.role ?? 'member_role' })] })],
+      data: [
+        calendarOrganizationRow(options.rows ?? PILOT, {
+          viewers: [viewerRow(versions, { role: options.role ?? 'member_role' })],
+          versions:
+            options.others === undefined
+              ? null
+              : [...versions.map((version) => ({ ...version, member_id: VIEWER_MEMBER, position: null })), ...options.others],
+        }),
+      ],
       error: null,
       count: 1,
     },
-    membersAnswerOf(),
-    overridesAnswerOf(),
+    membersAnswerOf(options.members),
+    overridesAnswerOf(options.overrides ?? []),
     rosterOverridesAnswerOf(options.roster ?? []),
   );
   const outcome = await readCalendar(source, source, viewerSession());
@@ -93,6 +122,13 @@ function readyOf(today: Today): TodayView {
   if (today.kind !== TODAY_READY) throw new Error(`not ready: ${today.kind}`);
 
   return today.view;
+}
+
+/** The sentence a case other than a duty is stated in. */
+function caseSentenceOf(view: TodayView): string {
+  if (view.todayCase.kind === CASE_DUTY) throw new Error('a duty states itself in its duty-block');
+
+  return t(todayCaseMessageKey(view.todayCase.kind));
 }
 
 let pilot: CalendarSnapshot;
@@ -114,7 +150,7 @@ describe("today's one case", () => {
       kind: CASE_WORKING,
       shifts: [{ teamId: TEAM_A, teamName: 'Smjena A', name: 'Noć', range: '19:00–07:00' }],
     });
-    expect(t(todayCaseMessageKey(view.todayCase.kind))).toBe('Danas radiš');
+    expect(caseSentenceOf(view)).toBe('Danas radiš');
   });
 
   it('is free on Slobodno, and the next shift is the Dan in 2 days', () => {
@@ -124,7 +160,7 @@ describe("today's one case", () => {
       kind: CASE_FREE,
       shift: { teamId: TEAM_A, teamName: 'Smjena A', name: 'Slobodno', range: null },
     });
-    expect(t(todayCaseMessageKey(view.todayCase.kind))).toBe('Danas ne radiš');
+    expect(caseSentenceOf(view)).toBe('Danas ne radiš');
     expect(view.next).toMatchObject({ date: '2026-09-30', inDays: 2, name: 'Dan', range: '07:00–19:00' });
     expect(view.returning).toBe(false);
     expect(
@@ -132,16 +168,25 @@ describe("today's one case", () => {
     ).toBe('Sljedeća smjena · za 2 dana');
   });
 
-  it('lists two shifts today, the own team first, when a roster override puts the viewer on another', async () => {
+  it('lists two shifts today, the own team first, when a roster override puts the viewer on another that does not touch', async () => {
+    // Story 6.2: a Noć from 20:00 leaves an hour after the Dan, so the two are no duty.
     const snapshot = await snapshotOf({
       roster: [calendarRosterOverrideRow('roster-1', TEAM_D, '2026-10-01', null, VIEWER_MEMBER)],
+      rows: {
+        ...PILOT,
+        types: [
+          PILOT.types[0] ?? {},
+          typeRow('pilot-noc', 'Noć', '2026-09-25T20:07:49.331741+00:00', { times: ['20:00:00', '08:00:00'] }),
+          ...PILOT.types.slice(2),
+        ],
+      },
     });
     const view = readyOf(todayViewOf(snapshot, [], noonOf('2026-10-01')));
 
     expect(view.todayCase).toEqual({
       kind: CASE_WORKING,
       shifts: [
-        { teamId: TEAM_A, teamName: 'Smjena A', name: 'Noć', range: '19:00–07:00' },
+        { teamId: TEAM_A, teamName: 'Smjena A', name: 'Noć', range: '20:00–08:00' },
         { teamId: TEAM_D, teamName: 'Smjena D', name: 'Dan', range: '07:00–19:00' },
       ],
     });
@@ -152,7 +197,7 @@ describe("today's one case", () => {
 
     // 30.09. Dan, 01.10. Noć and 04.10. Dan cost 3.
     expect(view.todayCase).toEqual({ kind: CASE_LEAVE, from: '28.09.2026', to: '04.10.2026', costDays: 3 });
-    expect(t(todayCaseMessageKey(view.todayCase.kind))).toBe('Danas si na godišnjem odmoru');
+    expect(caseSentenceOf(view)).toBe('Danas si na godišnjem odmoru');
     expect(view.returning).toBe(true);
     expect(view.next).toMatchObject({ date: '2026-10-05', inDays: 4, name: 'Noć', text: '05.10.2026' });
     expect(
@@ -467,6 +512,346 @@ describe('the words', () => {
       'Sljedeća smjena · za 2 dana',
       'Sljedeća smjena · za 5 dana',
       'Sljedeća smjena · za 21 dan',
+    ]);
+  });
+});
+
+describe("today's 24 h duty (story 6.2)", () => {
+  const TEAM_B = 'pilot-smjena-b';
+  const TEAM_C = 'pilot-smjena-c';
+  const LEA = '00000000-0000-4000-8000-0000000000c7';
+  const MEMBERS = [calendarMemberRow(VIEWER_MEMBER, VIEWER_NAME), calendarMemberRow(LEA, 'Lea Bašić')];
+  /** Lea on Smjena D. */
+  const OTHERS = [{ ...membershipRow(TEAM_D, SEEDED), member_id: LEA, position: null }];
+
+  /** `hh:mm` on `date` in Zagreb, which is UTC+2 in early October. */
+  function zagrebOf(date: string, time: string): Date {
+    const [hours = 0, minutes = 0] = time.split(':').map(Number);
+
+    return new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)) - 1, Number(date.slice(8, 10)), hours - 2, minutes));
+  }
+
+  function dutyOf(view: TodayView): TodayDuty {
+    if (view.todayCase.kind !== CASE_DUTY) throw new Error(`not a duty: ${view.todayCase.kind}`);
+
+    return view.todayCase.duty;
+  }
+
+  /** Whose shift a leg is, as the component words it: the member replaced named only on a replacement. */
+  function noteText(note: DutyLegNote): string {
+    return note.kind === NOTE_REPLACING
+      ? t(dutyNoteMessageKey(note.kind), { name: note.member, team: note.team })
+      : t(dutyNoteMessageKey(note.kind), { team: note.team });
+  }
+
+  /** The duty-block's lines, as the component words them. */
+  function linesOf(duty: TodayDuty) {
+    const duration = (value: TodayDuty['total']) => t(value.key, value.values);
+
+    return {
+      kicker: t('danas.duty.kicker', { total: duration(duty.total) }),
+      headline: t(dutyHeadlineMessageKey(duty.phase), { time: duty.end.time }),
+      endLine:
+        duty.phase === 'done'
+          ? null
+          : t(dutyEndLineMessageKey(duty.phase), {
+              weekday: endLinePointOf(duty).weekday,
+              date: endLinePointOf(duty).dayMonth,
+              duration: duration(duty.remaining),
+              time: duty.start.time,
+            }),
+      progress: t('danas.duty.progress', { done: duration(duty.elapsed), total: duration(duty.total) }),
+      span: [duty.start, duty.end].map((point) => t('danas.duty.moment', { date: point.dayMonth, time: point.time })),
+      legs: duty.legs.map(
+        (leg) =>
+          `${t(dutyLegStateMessageKey(leg.state))} ${leg.name} ${leg.range ?? ''} ${noteText(leg.note)}`,
+      ),
+    };
+  }
+
+  /** The viewer on Smjena A, taking over Lea's Dan on Smjena D on 01.10., then their own Noć. */
+  let takenOver: CalendarSnapshot;
+
+  beforeAll(async () => {
+    takenOver = await snapshotOf({
+      members: MEMBERS,
+      others: OTHERS,
+      roster: [calendarRosterOverrideRow('roster-1', TEAM_D, '2026-10-01', LEA, VIEWER_MEMBER)],
+    });
+  });
+
+  it('runs at 21:10: do 07:00, what remains, 14 h 10 min od 24 h, Dan done and Noć running', () => {
+    const view = readyOf(todayViewOf(takenOver, [], zagrebOf('2026-10-01', '21:10')));
+    const duty = dutyOf(view);
+
+    expect(duty).toMatchObject({ phase: 'running', totalMinutes: 1440, elapsedMinutes: 850 });
+    expect(linesOf(duty)).toEqual({
+      kicker: 'Na dužnosti · 24 h bez pauze',
+      headline: 'do 07:00',
+      endLine: 'petak, 02.10. · još 9 h 50 min',
+      progress: '14 h 10 min od 24 h',
+      span: ['01.10. 07:00', '02.10. 07:00'],
+      legs: [
+        'Odrađeno Dan 07:00–19:00 zamjena za Lea Bašić (Smjena D)',
+        'U tijeku Noć 19:00–07:00 tvoja smjena · Smjena A',
+      ],
+    });
+    expect(duty.legs.map((leg) => leg.note.kind)).toEqual([NOTE_REPLACING, NOTE_OWN]);
+  });
+
+  it('is still the duty past midnight, on a free day, not Danas ne radiš', () => {
+    const view = readyOf(todayViewOf(takenOver, [], zagrebOf('2026-10-02', '03:00')));
+
+    expect(view.today.date).toBe('2026-10-02');
+    expect(linesOf(dutyOf(view))).toMatchObject({ headline: 'do 07:00', progress: '20 h od 24 h' });
+  });
+
+  it('is upcoming before 07:00: počinje u 07:00, nothing done, both Slijedi', () => {
+    const duty = dutyOf(readyOf(todayViewOf(takenOver, [], zagrebOf('2026-10-01', '06:00'))));
+
+    expect(duty).toMatchObject({ phase: 'upcoming', elapsedMinutes: 0 });
+    expect(linesOf(duty)).toMatchObject({
+      headline: 'do 07:00',
+      endLine: 'četvrtak, 01.10. · počinje u 07:00',
+      progress: '0 h od 24 h',
+    });
+    expect(duty.legs.map((leg) => leg.state)).toEqual(['upcoming', 'upcoming']);
+  });
+
+  it('is done once ended: Završeno u 19:00, all of it, both Odrađeno', async () => {
+    // On Smjena B: Noć on 30.09.; then Dan on Smjena D on 01.10., added.
+    const snapshot = await snapshotOf({
+      versions: [membershipRow(TEAM_B, SEEDED)],
+      roster: [calendarRosterOverrideRow('roster-1', TEAM_D, '2026-10-01', null, VIEWER_MEMBER)],
+    });
+    const duty = dutyOf(readyOf(todayViewOf(snapshot, [], zagrebOf('2026-10-01', '20:00'))));
+
+    expect(duty).toMatchObject({ phase: 'done', elapsedMinutes: 1440 });
+    expect(linesOf(duty)).toMatchObject({ headline: 'Završeno u 19:00', endLine: null, progress: '24 h od 24 h' });
+    expect(linesOf(duty).legs).toEqual([
+      'Odrađeno Noć 19:00–07:00 tvoja smjena · Smjena B',
+      'Odrađeno Dan 07:00–19:00 dodatna smjena · Smjena D',
+    ]);
+    expect(duty.legs.map((leg) => leg.note.kind)).toEqual([NOTE_OWN, NOTE_ADDED]);
+  });
+
+  it('is no duty over a gap: a working case of two rows (Dan 07–19, Noć 20–08)', async () => {
+    const snapshot = await snapshotOf({
+      roster: [calendarRosterOverrideRow('roster-1', TEAM_D, '2026-10-01', null, VIEWER_MEMBER)],
+      rows: {
+        ...PILOT,
+        types: [
+          PILOT.types[0] ?? {},
+          typeRow('pilot-noc', 'Noć', '2026-09-25T20:07:49.331741+00:00', { times: ['20:00:00', '08:00:00'] }),
+          ...PILOT.types.slice(2),
+        ],
+      },
+    });
+    const view = readyOf(todayViewOf(snapshot, [], zagrebOf('2026-10-01', '21:10')));
+
+    expect(view.todayCase.kind).toBe(CASE_WORKING);
+  });
+
+  it('is no duty over an overlap: two Dan 07–19 on one date', async () => {
+    // Smjena B's Noć on 30.09. made a Dan, and the viewer put on it beside their own Dan.
+    const snapshot = await snapshotOf({
+      overrides: [calendarOverrideRow('override-1', TEAM_B, '2026-09-30', 'pilot-dan')],
+      roster: [calendarRosterOverrideRow('roster-1', TEAM_B, '2026-09-30', null, VIEWER_MEMBER)],
+    });
+    const view = readyOf(todayViewOf(snapshot, [], zagrebOf('2026-09-30', '12:00')));
+
+    expect(view.todayCase).toMatchObject({
+      kind: CASE_WORKING,
+      shifts: [
+        { teamId: TEAM_A, name: 'Dan' },
+        { teamId: TEAM_B, name: 'Dan' },
+      ],
+    });
+  });
+
+  it('is the working case for a single overnight shift, as in 6.1a', () => {
+    expect(readyOf(todayViewOf(pilot, [], zagrebOf('2026-10-01', '21:10'))).todayCase.kind).toBe(CASE_WORKING);
+    expect(readyOf(todayViewOf(pilot, [], zagrebOf('2026-10-02', '03:00'))).todayCase.kind).toBe(CASE_FREE);
+  });
+
+  it('gives way to leave today, and drops a leg on a date leave covers', () => {
+    const today = readyOf(todayViewOf(takenOver, [rowOf('leave-1', '2026-10-01', '2026-10-02')], zagrebOf('2026-10-01', '21:10')));
+
+    expect(today.todayCase.kind).toBe(CASE_LEAVE);
+
+    // On leave on 30.09.: its Dan is no leg, and 01.10.'s Dan and Noć stay a duty.
+    const before = readyOf(
+      todayViewOf(takenOver, [rowOf('leave-1', '2026-09-30', '2026-10-01')], zagrebOf('2026-10-01', '21:10')),
+    );
+
+    expect(dutyOf(before).legs).toHaveLength(2);
+  });
+
+  it('widens the window while the duty touches its edge: 48 h over 30.09. and 01.10.', async () => {
+    // Own Dan 30.09., Smjena B's Noć 30.09., Smjena D's Dan 01.10., own Noć 01.10.
+    const snapshot = await snapshotOf({
+      members: MEMBERS,
+      others: OTHERS,
+      roster: [
+        calendarRosterOverrideRow('roster-1', TEAM_B, '2026-09-30', null, VIEWER_MEMBER),
+        calendarRosterOverrideRow('roster-2', TEAM_D, '2026-10-01', LEA, VIEWER_MEMBER),
+      ],
+    });
+    const duty = dutyOf(readyOf(todayViewOf(snapshot, [], zagrebOf('2026-10-02', '03:00'))));
+
+    expect(duty.totalMinutes).toBe(48 * 60);
+    expect(linesOf(duty)).toMatchObject({ kicker: 'Na dužnosti · 48 h bez pauze', span: ['30.09. 07:00', '02.10. 07:00'] });
+    expect(duty.legs.map((leg) => leg.state)).toEqual(['done', 'done', 'done', 'running']);
+  });
+
+  it("skips every leg of today's duty for the next shift (Noć 01.10. + Dan 02.10.)", async () => {
+    const snapshot = await snapshotOf({
+      roster: [calendarRosterOverrideRow('roster-1', TEAM_C, '2026-10-02', null, VIEWER_MEMBER)],
+    });
+    const view = readyOf(todayViewOf(snapshot, [], noonOf('2026-10-01')));
+
+    expect(dutyOf(view).legs.map((leg) => leg.name)).toEqual(['Noć', 'Dan']);
+    // Smjena A's next Dan, on 04.10.: never 02.10.'s Dan, a leg of today's duty.
+    expect(view.next).toMatchObject({ date: '2026-10-04', inDays: 3, name: 'Dan' });
+  });
+
+  it('keeps the week as the calendar lists it: both shifts on their own dates', async () => {
+    const snapshot = await snapshotOf({
+      roster: [calendarRosterOverrideRow('roster-1', TEAM_C, '2026-10-02', null, VIEWER_MEMBER)],
+    });
+    const view = readyOf(todayViewOf(snapshot, [], noonOf('2026-10-01')));
+
+    expect(view.week[0]?.day.shifts.map((shift) => shift.cell.name)).toEqual(['Slobodno', 'Dan']);
+  });
+
+  it('prefers a duty still to come today over one that ended this morning', async () => {
+    // On Smjena B: Noć 30.09. and Jutro 07–11 on 01.10. (done by noon); then
+    // Popodne 13–19 on Smjena D and Noć on Smjena A on 01.10. (still to come).
+    const snapshot = await snapshotOf({
+      versions: [membershipRow(TEAM_B, SEEDED)],
+      rows: {
+        ...PILOT,
+        types: [
+          ...PILOT.types,
+          typeRow('pilot-jutro', 'Jutro', '2026-09-25T20:07:49.333741+00:00', { times: ['07:00:00', '11:00:00'] }),
+          typeRow('pilot-popodne', 'Popodne', '2026-09-25T20:07:49.334741+00:00', { times: ['13:00:00', '19:00:00'] }),
+        ],
+      },
+      overrides: [
+        calendarOverrideRow('override-1', TEAM_B, '2026-10-01', 'pilot-jutro'),
+        calendarOverrideRow('override-2', TEAM_D, '2026-10-01', 'pilot-popodne'),
+      ],
+      roster: [
+        calendarRosterOverrideRow('roster-1', TEAM_D, '2026-10-01', null, VIEWER_MEMBER),
+        calendarRosterOverrideRow('roster-2', TEAM_A, '2026-10-01', null, VIEWER_MEMBER),
+      ],
+    });
+    const duty = dutyOf(readyOf(todayViewOf(snapshot, [], zagrebOf('2026-10-01', '12:00'))));
+
+    expect(duty.phase).toBe('upcoming');
+    expect(duty.legs.map((leg) => leg.name)).toEqual(['Popodne', 'Noć']);
+    expect(linesOf(duty)).toMatchObject({ headline: 'do 07:00', endLine: 'četvrtak, 01.10. · počinje u 13:00' });
+
+    // The morning's duty is still today's when it is the only one left to show.
+    const morning = dutyOf(readyOf(todayViewOf({ ...snapshot, rosterOverrides: [] }, [], zagrebOf('2026-10-01', '12:00'))));
+
+    expect(morning).toMatchObject({ phase: 'done' });
+    expect(morning.legs.map((leg) => leg.name)).toEqual(['Noć', 'Jutro']);
+  });
+
+  it('reads a replacement whose member the snapshot does not name as an added shift, never a blank Danas', () => {
+    const view = readyOf(todayViewOf(takenOver, [], zagrebOf('2026-10-01', '21:10')));
+    const [taken] = calendarDayListOf(takenOver, takenOver.viewer, '2026-10', '2026-10-01', NO_MARKS)
+      ?.find((day) => day.date === '2026-10-01')
+      ?.shifts.filter((candidate) => candidate.viaOverride) ?? [];
+
+    if (taken === undefined) throw new Error('the taken-over shift is missing');
+
+    expect(dutyOf(view).legs[0]?.note).toEqual({ kind: NOTE_REPLACING, team: 'Smjena D', member: 'Lea Bašić' });
+
+    const unnamed: CalendarSnapshot = { ...takenOver, members: takenOver.members.filter((member) => member.id !== LEA) };
+
+    expect(legNoteOf(unnamed, { date: '2026-10-01', shift: taken })).toEqual({ kind: NOTE_ADDED, team: 'Smjena D' });
+  });
+
+  it('joins no leg on a date own leave covers (Noć 01.10. + Dan 02.10., leave on 02.10.)', async () => {
+    const snapshot = await snapshotOf({
+      roster: [calendarRosterOverrideRow('roster-1', TEAM_C, '2026-10-02', null, VIEWER_MEMBER)],
+    });
+    const view = readyOf(todayViewOf(snapshot, [rowOf('leave-1', '2026-10-02', '2026-10-03')], noonOf('2026-10-01')));
+
+    expect(view.todayCase).toEqual({
+      kind: CASE_WORKING,
+      shifts: [{ teamId: TEAM_A, teamName: 'Smjena A', name: 'Noć', range: '19:00–07:00' }],
+    });
+  });
+
+  it('widens back past yesterday for a leg of yesterday running now (Noć 01.10. + 24 h from 02.10. 07:00, at 03.10. 03:00)', async () => {
+    // Smjena A's Slobodno on 02.10. made a 24 h type: yesterday's only leg,
+    // running now, joined to the Noć dated the day before it.
+    const snapshot = await snapshotOf({
+      rows: {
+        ...PILOT,
+        types: [
+          ...PILOT.types,
+          typeRow('pilot-24', 'Dežurstvo', '2026-09-25T20:07:49.333741+00:00', { times: ['07:00:00', '07:00:00'] }),
+        ],
+      },
+      overrides: [calendarOverrideRow('override-1', TEAM_A, '2026-10-02', 'pilot-24')],
+    });
+    const duty = dutyOf(readyOf(todayViewOf(snapshot, [], zagrebOf('2026-10-03', '03:00'))));
+
+    expect(duty).toMatchObject({ phase: 'running', totalMinutes: 36 * 60 });
+    expect(linesOf(duty).span).toEqual(['01.10. 19:00', '03.10. 07:00']);
+    expect(duty.legs.map((leg) => leg.name)).toEqual(['Noć', 'Dežurstvo']);
+  });
+
+  it('widens forward past tomorrow for a duty that runs on (to 02.10. 19:00, read on 30.09.)', async () => {
+    // Own Dan 30.09., Smjena B's Noć 30.09., Smjena D's Dan 01.10., own Noć 01.10., Smjena C's Dan 02.10.
+    const snapshot = await snapshotOf({
+      roster: [
+        calendarRosterOverrideRow('roster-1', TEAM_B, '2026-09-30', null, VIEWER_MEMBER),
+        calendarRosterOverrideRow('roster-2', TEAM_D, '2026-10-01', null, VIEWER_MEMBER),
+        calendarRosterOverrideRow('roster-3', TEAM_C, '2026-10-02', null, VIEWER_MEMBER),
+      ],
+    });
+    const duty = dutyOf(readyOf(todayViewOf(snapshot, [], noonOf('2026-09-30'))));
+
+    expect(duty.totalMinutes).toBe(60 * 60);
+    expect(linesOf(duty)).toMatchObject({ headline: 'do 19:00', span: ['30.09. 07:00', '02.10. 19:00'] });
+    expect(duty.legs).toHaveLength(5);
+  });
+
+  it('is unavailable, logged, when a type’s version breaks a precondition', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const broken: CalendarSnapshot = {
+      ...takenOver,
+      types: takenOver.types.map((type) =>
+        type.id === 'pilot-noc' && type.versions[0] !== undefined
+          ? { ...type, versions: [type.versions[0], { ...type.versions[0], startMinute: 1440 }] }
+          : type,
+      ),
+    };
+
+    expect(todayViewOf(broken, [], zagrebOf('2026-10-01', '21:10'))).toEqual({ kind: TODAY_UNAVAILABLE, retryable: false });
+    expect(logged).toHaveBeenCalledWith(TODAY_UNAVAILABLE, expect.any(RangeError));
+  });
+
+  it('words every state, headline and note by its own key', () => {
+    expect((['done', 'running', 'upcoming'] as const).map((state) => t(dutyLegStateMessageKey(state)))).toEqual([
+      'Odrađeno',
+      'U tijeku',
+      'Slijedi',
+    ]);
+    expect(dutyHeadlineMessageKey('upcoming')).toBe('danas.duty.until');
+    expect(dutyHeadlineMessageKey('running')).toBe('danas.duty.until');
+    expect(dutyHeadlineMessageKey('done')).toBe('danas.duty.ended');
+    expect(dutyEndLineMessageKey('running')).toBe('danas.duty.remaining');
+    expect(dutyEndLineMessageKey('upcoming')).toBe('danas.duty.startsAt');
+    expect(([NOTE_OWN, NOTE_REPLACING, NOTE_ADDED] as const).map((kind) => dutyNoteMessageKey(kind))).toEqual([
+      'danas.duty.noteOwn',
+      'danas.duty.noteReplacing',
+      'danas.duty.noteAdded',
     ]);
   });
 });

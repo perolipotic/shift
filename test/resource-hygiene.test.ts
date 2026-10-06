@@ -1507,6 +1507,23 @@ const SANCTIONED_SCREEN_KEYS = [
   'danas.tiles.separator',
   'danas.tiles.leaveKicker',
   'danas.tiles.leaveHint',
+  // STORY 6.2: the duty-block — its kicker with the total, the headline
+  // until the end or when it ended, the line with what remains or when it
+  // starts, the progress, one end of the span, each leg's state in words,
+  // and whose shift a leg is (own, a replacement naming the member, added).
+  'danas.duty.kicker',
+  'danas.duty.until',
+  'danas.duty.ended',
+  'danas.duty.remaining',
+  'danas.duty.startsAt',
+  'danas.duty.progress',
+  'danas.duty.moment',
+  'danas.duty.legDone',
+  'danas.duty.legRunning',
+  'danas.duty.legUpcoming',
+  'danas.duty.noteOwn',
+  'danas.duty.noteReplacing',
+  'danas.duty.noteAdded',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

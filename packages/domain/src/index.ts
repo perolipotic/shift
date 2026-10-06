@@ -43,6 +43,21 @@ export {
 } from './duration.js';
 
 export {
+  DUTY_DONE,
+  DUTY_RUNNING,
+  DUTY_UPCOMING,
+  absoluteMinuteOf,
+  dutiesOf,
+  dutyProgressOf,
+  momentOf,
+  type Duty,
+  type DutyLeg,
+  type DutyMoment,
+  type DutyPhase,
+  type DutyProgress,
+} from './duty.js';
+
+export {
   memberHoursOfMonth,
   type BandHours,
   type LeaveShift,

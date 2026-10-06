@@ -234,6 +234,32 @@ export function organizationIsoDate(instant: Date, timeZone: string): string {
   return `${yearOf(parts)}-${part(parts, 'month')}-${part(parts, 'day')}`;
 }
 
+/** The organization's wall clock at an instant: its calendar date and the minute of that date. */
+export interface WallClock {
+  /** `2026-10-01`, as {@link organizationIsoDate} reads it. */
+  readonly date: string;
+  /** 0–1439: `21:10` is 1270. */
+  readonly minute: number;
+}
+
+/**
+ * `{ date: '2026-10-01', minute: 1270 }` — the organization's wall clock at an
+ * instant (story 6.2): the date {@link organizationIsoDate} reads and the
+ * minute of that date, in the organization's zone, never the device's (L8).
+ * What a duty's progress is measured against, as nominal minutes.
+ *
+ * THE SAME FALLBACK as {@link organizationIsoDate}: an unrenderable zone
+ * reads UTC, so the date here is always the organization's today.
+ */
+export function organizationWallClock(instant: Date, timeZone: string): WallClock {
+  const zone = isRenderableTimeZone(timeZone) ? timeZone : FALLBACK_TIME_ZONE;
+  const parts = partsOf('time', instant, zone);
+  // `h23`: midnight is hour 0, never 24.
+  const minute = Number(part(parts, 'hour')) * MINUTES_PER_HOUR + Number(part(parts, 'minute'));
+
+  return { date: organizationIsoDate(instant, zone), minute };
+}
+
 /** An ISO calendar date, shaped `YYYY-MM-DD`. */
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 

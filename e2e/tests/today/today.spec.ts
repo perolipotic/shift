@@ -9,10 +9,17 @@ import { LoginPage } from '../../pages/login.page.ts';
 import { TodayPage } from '../../pages/today.page.ts';
 import {
   holdRotation,
+  organizationInstant,
+  removeLeaveMemberInSql,
   removeLeaveRecordsInSql,
+  removeRosterOverridesInSql,
   removeSeededRotation,
+  removeTeamInSql,
+  removeTeamMembershipsInSql,
+  seedExtraTeam,
   seedLeaveMember,
   seedLeaveRecord,
+  seedRosterOverride,
   seedTeamRotation,
   type RotationHold,
   type SeededLeaveMember,
@@ -40,6 +47,14 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * balance and used days; the leave case states what the leave costs. A
  * failed resolutions read leaves the hours tile in *Sati*'s unavailable
  * sentence, still a link to *Sati*, and the leave tile unaffected.
+ *
+ * Story 6.2: the member's own Dan today and another team's Noć they take
+ * over from one of its members read as ONE duty-block at 21:10 in the
+ * organization's zone (`page.clock`) — "do 07:00", the Dan done, the Noć
+ * under way naming the member replaced, the progress in words — and it moves
+ * as minutes pass without a reload. *Kalendar* still lists two shifts that
+ * date. At 06:00 the same duty is still to come: "počinje u 07:00" on
+ * today's date, both legs "Slijedi". Nothing scrolls sideways at 390 px.
  */
 
 const danas = hr.danas;
@@ -52,16 +67,40 @@ let seed: SeededRotation | null = null;
 let withLeave: { readonly slug: string; readonly id: string } | null = null;
 /** A context of the test's own, closed afterwards. */
 let context: BrowserContext | null = null;
+/**
+ * A second team, its rotation, the roster override on it and the member it
+ * replaces, removed afterwards (story 6.2).
+ */
+let extra: {
+  readonly slug: string;
+  readonly teamId: string;
+  readonly seed: SeededRotation | null;
+  readonly override: { readonly rotation: SeededRotation; readonly date: string } | null;
+  readonly memberId: string | null;
+} | null = null;
 
 test.afterEach(async () => {
   try {
     await context?.close();
     if (withLeave !== null) await removeLeaveRecordsInSql(withLeave.slug, withLeave.id).catch(() => undefined);
+    if (extra !== null && extra.override !== null) {
+      const { rotation, date } = extra.override;
+      await removeRosterOverridesInSql(rotation, extra.teamId, date).catch(() => undefined);
+    }
     if (seed !== null) await removeSeededRotation(seed);
+    if (extra !== null) {
+      // Each step on its own: one that fails leaves the rest to run.
+      const { slug, teamId, memberId } = extra;
+      if (extra.seed !== null) await removeSeededRotation(extra.seed).catch(() => undefined);
+      if (memberId !== null) await removeLeaveMemberInSql(slug, memberId).catch(() => undefined);
+      await removeTeamMembershipsInSql(slug, teamId).catch(() => undefined);
+      await removeTeamInSql(slug, teamId).catch(() => undefined);
+    }
   } finally {
     context = null;
     withLeave = null;
     seed = null;
+    extra = null;
     await hold?.release();
     hold = null;
   }
@@ -336,4 +375,131 @@ test('a member on leave today reads the leave case with its range, and the next 
 
   await expectWeekEqualsCalendar(todayPage, calendar, today, new Set([until]));
   await expectTilesEqualDetailViews(todayPage, hours, leave);
+});
+
+/** What {@link seedDuty} wrote: her own rotation, the second team's, and the member she replaces on it. */
+interface SeededDuty {
+  readonly rotation: SeededRotation;
+  readonly other: SeededRotation;
+  readonly beta: { readonly id: string; readonly name: string };
+  readonly replaced: SeededLeaveMember;
+}
+
+/**
+ * Story 6.2's duty: the fixture team works Dan today; a second team, a day
+ * into the same pattern, works Noć today, and the fixture member replaces a
+ * fresh member of it on that Noć.
+ */
+async function seedDuty(slug: string, teamId: string, memberName: string): Promise<SeededDuty> {
+  const rotation = await seeded(slug, teamId, 0);
+  const today = rotation.today;
+  const beta = await seedExtraTeam(slug, `Smjena Beta ${randomBytes(3).toString('hex')}`);
+  extra = { slug, teamId: beta.id, seed: null, override: null, memberId: null };
+  const other = await seedTeamRotation(slug, beta.id, randomBytes(3).toString('hex'), 1);
+  extra = { ...extra, seed: other };
+  expect(stepOn(rotation, today)).toBe(0);
+  expect(stepOn(other, today)).toBe(1);
+  const replaced = await seedLeaveMember(slug, beta.id, today, 20);
+  extra = { ...extra, memberId: replaced.id };
+  await seedRosterOverride(rotation, beta.id, today, replaced.name, memberName, 'Zamjena zbog bolovanja.');
+  extra = { ...extra, override: { rotation, date: today } };
+
+  return { rotation, other, beta, replaced };
+}
+
+const duration = hr.organization.hourBands.duration;
+
+/** `14 h 10 min od 24 h`: the progress bar's valuetext. */
+function progressOf(hours: number, minutes: number): string {
+  const done =
+    minutes === 0
+      ? fill(duration.hours, { hours: String(hours) })
+      : fill(duration.hoursMinutes, { hours: String(hours), minutes: String(minutes) });
+
+  return fill(danas.duty.progress, { done, total: fill(duration.hours, { hours: '24' }) });
+}
+
+test.describe('a 24 h duty at 390 px, as the member', () => {
+  test.use({ storageState: MEMBER_STATE, viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('her own Dan and the Noć she takes over read as one duty-block, and Kalendar still lists two shifts', async ({
+    page,
+    todayPage,
+    calendarPage,
+    fixture,
+  }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+    const { rotation, other, beta, replaced } = await seedDuty(fixture.slug, fixture.team.id, fixture.member.name);
+    const today = rotation.today;
+    const tomorrow = addDays(today, 1);
+
+    // 21:10 today on the organization's wall clock.
+    await page.clock.install({ time: await organizationInstant(fixture.slug, today, '21:10') });
+    await todayPage.goto();
+
+    const block = todayPage.dutyBlock;
+    await expect(block).toBeVisible();
+    await expect(block.getByRole('heading', { level: 2 })).toHaveText(
+      fill(danas.duty.kicker, { total: fill(duration.hours, { hours: '24' }) }),
+    );
+    await expect(block).toContainText(fill(danas.duty.until, { time: '07:00' }));
+    await expect(block).toContainText(
+      fill(danas.duty.remaining, {
+        weekday: weekdayOf(tomorrow),
+        date: dayMonth(tomorrow),
+        duration: fill(duration.hoursMinutes, { hours: '9', minutes: '50' }),
+      }),
+    );
+    await expect(todayPage.dutyProgress).toHaveAttribute('aria-valuetext', progressOf(14, 10));
+    await expect(todayPage.dutyLegs).toHaveCount(2);
+    const [dan] = rotation.steps;
+    const noc = other.steps[1];
+    await expect(todayPage.dutyLegs.nth(0)).toContainText(danas.duty.legDone);
+    await expect(todayPage.dutyLegs.nth(0)).toContainText(dan);
+    await expect(todayPage.dutyLegs.nth(0)).toContainText(fill(danas.duty.noteOwn, { team: fixture.team.name }));
+    await expect(todayPage.dutyLegs.nth(1)).toContainText(danas.duty.legRunning);
+    await expect(todayPage.dutyLegs.nth(1)).toContainText(noc);
+    await expect(todayPage.dutyLegs.nth(1)).toContainText(
+      fill(danas.duty.noteReplacing, { name: replaced.name, team: beta.name }),
+    );
+    // One duty, never the two rows of the working case.
+    await expect(todayPage.todayCard(danas.today.working)).toHaveCount(0);
+    await expectNoHorizontalScroll(page);
+
+    // Ten minutes later, without a reload: every tick on the way runs.
+    await page.clock.runFor(10 * 60_000);
+    await expect(todayPage.dutyProgress).toHaveAttribute('aria-valuetext', progressOf(14, 20));
+    await expect(block).toContainText(fill(danas.duty.until, { time: '07:00' }));
+
+    // The data stays two scheduled shifts on their own dates.
+    await calendarPage.goto();
+    await expect(calendarPage.openerIn(calendarPage.today)).toHaveCount(2);
+    await expectNoHorizontalScroll(page);
+  });
+
+  test('before 07:00 the same duty is still to come: do 07:00, počinje u 07:00 today, both legs Slijedi', async ({
+    page,
+    todayPage,
+    fixture,
+  }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+    const { rotation } = await seedDuty(fixture.slug, fixture.team.id, fixture.member.name);
+    const today = rotation.today;
+
+    // 06:00 today on the organization's wall clock.
+    await page.clock.install({ time: await organizationInstant(fixture.slug, today, '06:00') });
+    await todayPage.goto();
+
+    const block = todayPage.dutyBlock;
+    await expect(block).toBeVisible();
+    await expect(block).toContainText(fill(danas.duty.until, { time: '07:00' }));
+    await expect(block).toContainText(
+      fill(danas.duty.startsAt, { weekday: weekdayOf(today), date: dayMonth(today), time: '07:00' }),
+    );
+    await expect(todayPage.dutyProgress).toHaveAttribute('aria-valuetext', progressOf(0, 0));
+    await expect(todayPage.dutyLegs).toHaveCount(2);
+    await expect(todayPage.dutyLegs.nth(0)).toContainText(danas.duty.legUpcoming);
+    await expect(todayPage.dutyLegs.nth(1)).toContainText(danas.duty.legUpcoming);
+    await expectNoHorizontalScroll(page);
+  });
 });

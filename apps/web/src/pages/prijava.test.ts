@@ -289,6 +289,8 @@ const DANAS: readonly string[] = Object.values(TODAY_SCREEN_PARTS).map((parts) =
 const TODAY_FEATURE = join(srcRoot, 'features', 'today');
 /** Story 6.1a's rules: today's three cases, the next shift's two headings, and the two lines in place of a case. */
 const TODAY_KEYS = join(TODAY_FEATURE, 'services', 'today.ts');
+/** Story 6.2's rules: the duty-block's headline, its end line, each leg's state and whose shift a leg is. */
+const TODAY_DUTY_KEYS = join(TODAY_FEATURE, 'services', 'today-duty.ts');
 const TEAM_ROSTER_KEYS = join(srcRoot, 'features', 'teams', 'services', 'roster.ts');
 
 /** The hour bands feature, which holds both hour band screens' parts. */
@@ -718,6 +720,7 @@ const SCREENS = [
   // STILL ONE SINCE STORY 6.1b: the retry reads every key Danas reads again,
   // and the two tiles are `<Link>`s to *Sati* and *Godišnji*, whose own
   // retries are one tap away. No control of their own.
+  // STILL ONE SINCE STORY 6.2: the duty-block offers nothing to tap.
   { name: 'the team roster', file: TEAM_ROSTER, expectedControls: 1 },
   { name: 'the Danas destination', file: DANAS, expectedControls: 1 },
   // STORY 3.1. THREE on Kalendar: the previous month, `Ovaj mjesec` and the
@@ -2179,10 +2182,17 @@ const KEY_SOURCES = [
     // balance through `count.days` and its hint. Each tile's unavailable
     // sentence is its detail view's own, through `hoursMessageKey` and
     // `myLeaveMessageKey`.
+    //
+    // TWENTY-SEVEN SINCE STORY 6.2: the duty-block's kicker with the total,
+    // its progress (the bar's valuetext and the line under it, written once)
+    // and one end of the span (written once, for both ends). Its headline,
+    // end line, leg states and notes come through
+    // `@/features/today/services/today-duty`, below; each duration is
+    // `durationMessageKey`'s.
     name: 'the Danas destination',
     file: DANAS,
     keys: translationKeys,
-    strings: 24,
+    strings: 27,
   },
   {
     // STORY 6.1a: today's three cases, the next shift's two headings, and
@@ -2191,6 +2201,14 @@ const KEY_SOURCES = [
     file: TODAY_KEYS,
     keys: messageKeyUnions,
     strings: 7,
+  },
+  {
+    // STORY 6.2: the duty's two headlines, its two end lines, the three leg
+    // states and the three notes.
+    name: 'the Danas duty rules',
+    file: TODAY_DUTY_KEYS,
+    keys: messageKeyUnions,
+    strings: 10,
   },
   {
     // FIVE over three unions: the roster's two refusals (unknown, and the
@@ -3050,7 +3068,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // more).
     //
     // FIFTY-EIGHT SINCE STORY 6.1a: `@/features/today/services/today`.
-    expect(KEY_SOURCES).toHaveLength(58);
+    //
+    // FIFTY-NINE SINCE STORY 6.2: `@/features/today/services/today-duty`.
+    expect(KEY_SOURCES).toHaveLength(59);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"

@@ -12,7 +12,8 @@ import {
   type CalendarMarks,
 } from '@/features/calendar/utils/month';
 import { leaveRecordsOf, type LeaveRecord } from '@/features/leave/services/leave-list';
-import { formatIsoDate, nextIsoDate } from '@/lib/i18n/format';
+import { legKeyOf, todayDutyOf, type TodayDuty } from '@/features/today/services/today-duty';
+import { formatIsoDate, nextIsoDate, organizationWallClock } from '@/lib/i18n/format';
 
 /**
  * *Danas* for the viewer (story 6.1a): today in words — on leave, with what
@@ -34,7 +35,8 @@ import { formatIsoDate, nextIsoDate } from '@/lib/i18n/format';
  * answers an admin's own rows too.
  *
  * EXACTLY ONE CASE TODAY: on leave (wins over the rest, on a working or a
- * non-working day), working (a working shift today), or free (only
+ * non-working day), on a duty (story 6.2: touching working shifts read as
+ * one, `today-duty.ts`'s), working (a working shift today), or free (only
  * non-working types, or none). A viewer with no membership at all is
  * unscheduled, and has no next shift and no week.
  *
@@ -64,6 +66,8 @@ export const TODAY_READY = 'ready';
 
 /** On leave today: wins over every other case. */
 export const CASE_LEAVE = 'leave';
+/** On a duty (story 6.2): working shifts that touch, one of them today or running now. */
+export const CASE_DUTY = 'duty';
 /** A working shift today. */
 export const CASE_WORKING = 'working';
 /** Only non-working types today, or no shift at all. */
@@ -92,6 +96,7 @@ export type TodayCase =
        */
       readonly costDays: number;
     }
+  | { readonly kind: typeof CASE_DUTY; readonly duty: TodayDuty }
   | { readonly kind: typeof CASE_WORKING; readonly shifts: readonly TodayShift[] }
   | {
       readonly kind: typeof CASE_FREE;
@@ -184,6 +189,9 @@ export function todayOf({ calendar, records }: TodaySources, now: Date): Today {
  * no membership, unavailable when a row cannot be trusted or the derivation
  * throws a `RangeError` — logged, never a crashed route — and otherwise
  * ready. Anything else thrown is a defect, and is not caught here.
+ *
+ * `now` is read as the organization's wall clock (story 6.2): the minute a
+ * duty's progress is measured at.
  */
 export function todayViewOf(snapshot: CalendarSnapshot, rows: readonly unknown[], now: Date): Today {
   try {
@@ -204,14 +212,27 @@ export function todayViewOf(snapshot: CalendarSnapshot, rows: readonly unknown[]
     const days = dayLookupOf(snapshot, today, records);
     const working = new Set(workingShiftTypeIdsOf(snapshot));
     const leaveToday = absenceOn(records, today);
-    const todayCase = todayCaseOf(snapshot, days.on(today), leaveToday, working);
+    // Leave wins: no duty is looked for on a day of leave.
+    const found =
+      leaveToday === null
+        ? todayDutyOf(
+            snapshot,
+            { on: (date) => days.on(date), onLeave: (date) => leaveOn(records, date) !== null, working },
+            today,
+            organizationWallClock(now, snapshot.timeZone),
+          )
+        : null;
+    const todayCase: TodayCase =
+      found === null
+        ? todayCaseOf(snapshot, days.on(today), leaveToday, working)
+        : { kind: CASE_DUTY, duty: found.duty };
 
     return {
       kind: TODAY_READY,
       view: {
         today: shown,
         todayCase,
-        next: nextShiftOf(days, today, records, working),
+        next: nextShiftOf(days, today, records, working, found?.legKeys ?? NO_LEGS),
         returning: todayCase.kind === CASE_LEAVE,
         week: weekOf(days, today, records),
       },
@@ -396,16 +417,22 @@ function todayCaseOf(
   return { kind: CASE_FREE, shift: free === undefined ? null : todayShiftOf(snapshot, free) };
 }
 
+/** No leg to skip: today is no duty. */
+const NO_LEGS: ReadonlySet<string> = new Set();
+
 /**
  * The first date after today, at most {@link NEXT_SHIFT_HORIZON_DAYS} days
  * on, with a working shift that the viewer's own leave does not cover — its
- * first such shift, the own team's before any a roster override added.
+ * first such shift, the own team's before any a roster override added. A
+ * leg of today's duty (`skip`, by `legKeyOf`) is today's, never the next
+ * shift (story 6.2).
  */
 function nextShiftOf(
   days: DayLookup,
   today: string,
   records: readonly LeaveRecord[],
   working: ReadonlySet<string>,
+  skip: ReadonlySet<string>,
 ): NextShift | null {
   let date = today;
 
@@ -414,7 +441,9 @@ function nextShiftOf(
 
     if (leaveOn(records, date) !== null) continue;
 
-    const shift = days.on(date).shifts.find((candidate) => isWorking(working, candidate));
+    const shift = days
+      .on(date)
+      .shifts.find((candidate) => isWorking(working, candidate) && !skip.has(legKeyOf(date, candidate.teamId)));
 
     if (shift !== undefined && shift.cell.name !== null) {
       return { ...todayDateOf(date), inDays, name: shift.cell.name, range: shift.cell.range };
@@ -445,9 +474,9 @@ export function todayDateShownOf(today: Today): TodayDate | null {
   return null;
 }
 
-/** The sentence today's case is stated in. Exhaustive. */
+/** The sentence today's case is stated in; a duty states itself in its duty-block. Exhaustive. */
 export function todayCaseMessageKey(
-  kind: TodayCase['kind'],
+  kind: Exclude<TodayCase['kind'], typeof CASE_DUTY>,
 ): 'danas.today.leave' | 'danas.today.working' | 'danas.today.free' {
   switch (kind) {
     case CASE_LEAVE:
