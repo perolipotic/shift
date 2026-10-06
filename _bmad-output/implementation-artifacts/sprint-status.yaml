@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 10-06-2026 23:23
+last_updated: 10-06-2026 23:24
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -529,7 +529,7 @@ development_status:
   6-1-a-member-opens-the-app-and-already-has-their-answer: done
   6-1a-member-today-and-next-shift: done
   6-1b-member-hours-and-leave: done
-  6-2-a-24-hour-duty-reads-as-one-duty-not-two-unrelated-shifts: review
+  6-2-a-24-hour-duty-reads-as-one-duty-not-two-unrelated-shifts: done
   6-3-an-admin-opens-the-app-and-sees-what-needs-them: backlog
   epic-6-retrospective: optional
 
