@@ -44,14 +44,15 @@ describe('the token lists are the size everything else assumes', () => {
   // count and "28 base". Dropping a name would silently shrink every sweep that
   // consumes these lists while the suite stayed green.
   //
-  // THIRTY-ONE SINCE STORY 1.4c, and the count MOVED WITH the list rather than
+  // THIRTY-TWO SINCE STORY 7.1 added `shift-nonworking-border` (thirty-one
+  // since story 1.4c), and the count MOVED WITH the list rather than
   // after it: `BRAND_TOKENS` is built by expansion, so four accent names became
   // eight tokens, and a number left at 23 here would have failed loudly — which
   // is the point. `deferred-work.md:449` item (f) records the opposite failure
   // as the one to avoid: a hard-coded count that admits the new tokens without
   // anybody deciding to let them in leaves them swept by nothing.
-  it('has 31 brand tokens', () => {
-    expect(BRAND_TOKENS).toHaveLength(31);
+  it('has 32 brand tokens', () => {
+    expect(BRAND_TOKENS).toHaveLength(32);
   });
 
   it('has 28 shadcn base tokens', () => {
@@ -121,8 +122,17 @@ describe('the conversion to OKLCH is complete', () => {
       .filter((value) => value.startsWith('oklch(') || /^(#|rgb|hsl|[a-z]+\()/i.test(value))
       .filter((value) => !value.startsWith('calc(') && !value.startsWith('var('));
 
+    // The one bare keyword value the layer admits: light
+    // `--shift-nonworking-border` (story 7.1) is `transparent`, which is no
+    // colour function and so is not counted above. Any bare keyword — a named
+    // colour, `currentColor`, `inherit` — on any other custom property fails.
+    expect(rawToken('light', 'shift-nonworking-border')).toBe('transparent');
+    expect(lightScope()).toMatch(/(?<![\w-])--shift-nonworking-border:\s*transparent\s*;/);
+    const keywords = [...stripped().matchAll(/^\s*--([a-z0-9-]+):\s*[a-z]+\s*;/gim)].map((match) => match[1]);
+    expect(keywords).toEqual(['shift-nonworking-border']);
+
     // Guard against a vacuous pass if the regex ever stops matching.
-    expect(colours.length).toBeGreaterThanOrEqual(ALL_TOKENS.length * 2);
+    expect(colours.length).toBeGreaterThanOrEqual(ALL_TOKENS.length * 2 - keywords.length);
     expect(colours.filter((value) => !value.startsWith('oklch('))).toEqual([]);
   });
 
@@ -311,6 +321,19 @@ describe('the calendar modifiers survive forced colours', () => {
     expect(declarations, `${name}'s fallback names no system colour`).toMatch(SYSTEM_COLOUR);
     expect(declarations, `${name}'s fallback reaches for a token forced colours override`).not.toMatch(/var\(/);
   });
+
+  it.each(treatments.filter((treatment) => treatment.kind === 'ring'))(
+    'lets $name win the outline over a non-working cell under forced colours',
+    ({ name }) => {
+      // Story 7.1: `NONWORKING_CHIP_CLASS` draws a 1px outline, and Tailwind
+      // emits those utilities after these at equal specificity. Without
+      // `!important` a ring on a non-working day would lose its width and dash.
+      const declarations = fallback(name) ?? '';
+
+      expect(declarations).toMatch(/(^|;)\s*outline:[^;]*!important/);
+      expect(declarations).toMatch(/(^|;)\s*outline-offset:[^;]*!important/);
+    },
+  );
 
   it('keeps the treatments apart under forced colours too', () => {
     for (const kind of ['ring', 'hatch']) {

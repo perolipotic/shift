@@ -2,13 +2,13 @@
 name: Shift
 description: Industry-agnostic shift management platform. shadcn/ui primitives on React + Vite + Tailwind, restyled once in `components/ui` to the shiftapp-v2 register — slate surfaces, a navy sidebar, one blue primary, soft elevation, DM Sans and Syne. Croatian-first UI, light and dark driven by prefers-color-scheme.
 status: final
-updated: 2026-09-25
+updated: 2026-10-05
 colors:
   # ── Brand delta ───────────────────────────────────────────────────
   # The surface tokens (background, card, muted, border, input, ring,
   # sidebar…) are NOT listed here; they live under `base-palette:` below.
   # This block is parsed by test/theme-fidelity.test.ts and must hold
-  # exactly the 23 brand names.
+  # exactly the 24 brand names.
   primary: '#2563EB'
   primary-foreground: '#FFFFFF'
   primary-dark: '#3B82F6'
@@ -25,12 +25,12 @@ colors:
   # count (SPEC constraint DI-8). Pilot: Dan → slot-1, Noć → slot-2.
   shift-slot-1: '#E4F0FA'
   shift-slot-1-foreground: '#14496F'
-  shift-slot-1-dark: '#173248'
-  shift-slot-1-foreground-dark: '#A8D3F2'
+  shift-slot-1-dark: '#00415D'
+  shift-slot-1-foreground-dark: '#B8E2FA'
   shift-slot-2: '#1B2735'
   shift-slot-2-foreground: '#CBD8E6'
-  shift-slot-2-dark: '#171F29'
-  shift-slot-2-foreground-dark: '#9FB3C6'
+  shift-slot-2-dark: '#2F3641'
+  shift-slot-2-foreground-dark: '#DCE3EE'
   shift-slot-3: '#EFE7F7'          # slots 3-6 verified in both themes, test/theme-contrast.test.ts
   shift-slot-3-foreground: '#4B3168'
   shift-slot-3-dark: '#2A2038'
@@ -49,8 +49,11 @@ colors:
   shift-slot-6-foreground-dark: '#CFC6AE'
   shift-nonworking: '#F0F3F6'
   shift-nonworking-foreground: '#8D9AA7'
-  shift-nonworking-dark: '#161D24'
-  shift-nonworking-foreground-dark: '#6B7885'
+  shift-nonworking-dark: '#0E1828'
+  shift-nonworking-foreground-dark: '#8494A8'
+  # A hairline that keeps the recessed dark non-working cell a cell (7.1).
+  shift-nonworking-border: 'transparent'
+  shift-nonworking-border-dark: 'rgba(255,255,255,0.07)'
 
   # ── Modifier signals ──────────────────────────────────────────────
   # System-defined and fixed. Never the sole carrier of meaning —
@@ -161,6 +164,7 @@ components:
   shift-cell-nonworking:
     background: '{colors.shift-nonworking}'
     foreground: '{colors.shift-nonworking-foreground}'
+    outline: '1px inside {colors.shift-nonworking-border}'   # drawn inside the box: no layout space, survives the rings; off under forced colours
   shift-cell-conflict:
     border: '2px inset {colors.destructive}'
     glyph: '⚠'
@@ -217,7 +221,9 @@ Two properties are not stylistic preferences but consequences of the product con
 
 **Organization branding.** An Organization's accent is data, not design. It tints exactly three things — the logo lockup, the sidebar's edge and the phone bar's edge — and nothing else. Because the lockup and the sidebar edge sit on the navy sidebar, a light-theme accent must clear 3:1 against both a white card and the navy, and 4.5:1 under its own white letter, which confines it to roughly OKLCH L 0.53–0.56; the accent values in `index.css` are tuned into that window and `test/theme-contrast.test.ts` measures them there. It may never be used for a shift state, a modifier, or `destructive`. An Organization whose accent is red gets a red shell and an unchanged red conflict signal — which is why the conflict signal also carries a glyph and a border.
 
-**The working-shift ramp.** Working Shift Types are Organization data of arbitrary count, so colour is assigned to six ordered slots rather than to named shift types. An Organization's Shift Types take slots in creation order; the pilot's `Dan` takes slot 1 and `Noć` takes slot 2. Slot 1 reads light and cool, slot 2 dark and deep — a deliberate light/dark contrast that happens to suit a day/night organization without encoding one. Slots 3–6 are verified in both themes, `test/theme-contrast.test.ts` (story 2.2b pins that every slot the ramp can return has a measured light and dark pair). Beyond six Shift Types a slot repeats, and the always-visible label carries the distinction.
+**The working-shift ramp.** Working Shift Types are Organization data of arbitrary count, so colour is assigned to six ordered slots rather than to named shift types. An Organization's Shift Types take slots in creation order; the pilot's `Dan` takes slot 1 and `Noć` takes slot 2. In the light theme slot 1 reads light and cool, slot 2 dark and deep — a deliberate light/dark contrast that happens to suit a day/night organization without encoding one. Slots 3–6 are verified in both themes, `test/theme-contrast.test.ts` (story 2.2b pins that every slot the ramp can return has a measured light and dark pair). Beyond six Shift Types a slot repeats, and the always-visible label carries the distinction.
+
+**The dark ramp has three lightness levels** (story 7.1). The non-working fill recedes below the card (`#0E1828`), *Noć*'s slot-2 rises to a light slate (`#2F3641`) and *Dan*'s slot-1 is a more saturated blue (`#00415D`, the lightest of the three), so a night shift never reads as a free day (1.46:1 and OKLab ΔE×100 12.3 between slot-2 and non-working, pinned in `test/theme-contrast.test.ts`). Slot-2 and non-working share a hue, so beyond lightness they are told apart by `shift-nonworking-border` — a 7 % white hairline in dark, transparent in light, drawn as a 1 px outline inside every non-working cell, chip and tile so it takes no layout space and survives the modifier rings — and by the always-visible label. *Dan* and *Noć* sit at similar lightness and differ by hue (about 24°) and by label.
 
 **Modifier signals** — leave, uncovered, overridden, conflict — are system-defined and fixed forever. Leave and uncovered are hatch fills, overridden is an inset ring, conflict is an inset ring in the reserved hue. All four also carry a glyph.
 
