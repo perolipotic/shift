@@ -90,6 +90,7 @@ const SHAPES = {
   monthName: { month: 'long' },
   monthShortName: { month: 'short' },
   weekdayName: { weekday: 'long' },
+  weekdayShortName: { weekday: 'short' },
 } as const satisfies Record<string, Intl.DateTimeFormatOptions>;
 
 type Shape = keyof typeof SHAPES;
@@ -440,6 +441,19 @@ export function formatIsoWeekdayName(isoDate: string): string | null {
   if (!isIsoDate(isoDate)) return null;
 
   return formatWeekdayName(noonOf(isoDate), FALLBACK_TIME_ZONE);
+}
+
+/**
+ * `čet` — the short weekday of an ISO calendar date, CLDR verbatim and
+ * lowercase (story 6.3: the admin's week grid's column heads). A DATE — the
+ * organization's, already read in its zone — so, as
+ * {@link formatIsoWeekdayName}, it is read at noon in the fallback zone, where
+ * no offset can move it. `null` for anything {@link isIsoDate} refuses.
+ */
+export function formatIsoWeekdayShortName(isoDate: string): string | null {
+  if (!isIsoDate(isoDate)) return null;
+
+  return part(partsOf('weekdayShortName', noonOf(isoDate), FALLBACK_TIME_ZONE), 'weekday').toLocaleLowerCase(LOCALE);
 }
 
 /**

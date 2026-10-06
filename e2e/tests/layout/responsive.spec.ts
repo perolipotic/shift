@@ -19,7 +19,10 @@ import { expect, firstBand, test, type PageObjects } from '../../utils/custom-fi
 test.use({ viewport: { width: 320, height: 640 }, isMobile: true, hasTouch: true });
 
 /** The page objects a screen's ready element is read from. */
-type ScreenPages = Pick<PageObjects, 'loginPage' | 'peoplePage' | 'teamsPage' | 'hourBandsPage' | 'organizationPage'>;
+type ScreenPages = Pick<
+  PageObjects,
+  'loginPage' | 'peoplePage' | 'teamsPage' | 'hourBandsPage' | 'organizationPage' | 'todayPage'
+>;
 
 interface Screen {
   readonly title: string;
@@ -57,6 +60,13 @@ const asMember: readonly Screen[] = [
 ];
 
 const asAdmin: readonly Screen[] = [
+  {
+    // STORY 6.3: an admin's own Danas — Treba tebe, the coverage, the
+    // absences and the week, whose grid scrolls inside its own region.
+    title: 'Danas',
+    path: () => '/danas',
+    ready: ({ todayPage }) => todayPage.openConflictsLink(),
+  },
   {
     title: 'Ljudi',
     path: () => '/ljudi',
@@ -99,8 +109,9 @@ test.describe('signed out', () => {
       teamsPage,
       hourBandsPage,
       organizationPage,
+      todayPage,
     }) => {
-      const pages = { loginPage, peoplePage, teamsPage, hourBandsPage, organizationPage };
+      const pages = { loginPage, peoplePage, teamsPage, hourBandsPage, organizationPage, todayPage };
       await checkScreen(page, pages, fixture, screen);
     });
   }
@@ -118,8 +129,9 @@ test.describe('as a member', () => {
       teamsPage,
       hourBandsPage,
       organizationPage,
+      todayPage,
     }) => {
-      const pages = { loginPage, peoplePage, teamsPage, hourBandsPage, organizationPage };
+      const pages = { loginPage, peoplePage, teamsPage, hourBandsPage, organizationPage, todayPage };
       await checkScreen(page, pages, fixture, screen);
     });
   }
@@ -137,8 +149,9 @@ test.describe('as an admin', () => {
       teamsPage,
       hourBandsPage,
       organizationPage,
+      todayPage,
     }) => {
-      const pages = { loginPage, peoplePage, teamsPage, hourBandsPage, organizationPage };
+      const pages = { loginPage, peoplePage, teamsPage, hourBandsPage, organizationPage, todayPage };
       await checkScreen(page, pages, fixture, screen);
     });
   }

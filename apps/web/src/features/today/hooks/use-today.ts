@@ -186,5 +186,13 @@ export function useToday() {
     }
   }
 
-  return { today, tiles, date: todayDateShownOf(today), loading: today.kind === TODAY_LOADING, retry };
+  return {
+    today,
+    tiles,
+    date: todayDateShownOf(today),
+    // STORY 6.3: the role *Danas* picks its body by, once the snapshot names it.
+    role: snapshot === null ? null : snapshot.viewer.role,
+    loading: today.kind === TODAY_LOADING,
+    retry,
+  };
 }

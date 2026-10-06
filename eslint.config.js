@@ -124,14 +124,21 @@ export const FEATURE_PUBLIC = {
   // day with *Moj raspored*'s own derivation (`calendarDayListOf`), and draws
   // a day's shift with the calendar's one cell renderer and the leave glyph,
   // so its seven days equal the calendar's.
+  // SINCE STORY 6.3: an admin's *Danas* draws its week and today's coverage from
+  // the calendar's own months under the admin's own marks (`marks`), and
+  // picks its skeleton by the chrome's cached role, as *Kalendar* does
+  // (`cachedRoleOf`), and its week is Kalendar's grid model: one tab stop and
+  // the arrow keys (`grid-keys`).
   calendar: [
     'components/calendar-cell', // today
     'components/modifier-glyphs', // today
-    'services/marks', // hours
+    'services/marks', // hours, today
     'services/snapshot', // conflicts, hours, leave, members, pages, teams, today
     'utils/day-detail', // conflicts
+    'utils/grid-keys', // today
     'utils/modifiers', // conflicts, hours, today
     'utils/month', // conflicts, hours, leave, pages, today
+    'utils/skeleton', // today
     // Story 5.4c: the replacement candidates, grouped once, for the conflict
     // screen's second card (and story 7.9's roster dialog).
     'utils/replacement-candidates', // conflicts
@@ -154,13 +161,16 @@ export const FEATURE_PUBLIC = {
   // applies, the one test the hours' member path and the leave screen's
   // replacement guard share with the queue. Story 6.1b: *Danas*'s hours tile
   // reads the viewer's own resolutions and re-reads a replacement's link, as
-  // *Sati*'s member branch does.
+  // *Sati*'s member branch does. SINCE STORY 6.3: an admin's *Danas* stands on the
+  // queue's own gating and rows (`conflictsQueueOf`), its effective
+  // resolutions and the organization's resolutions read, so its count equals
+  // *Raspored*'s.
   conflicts: [
     'components/erasure-dialog', // calendar, members, rotation
     'hooks/use-erasure-confirmation', // calendar, members, rotation
     'hooks/use-erasure-reads', // calendar, members, rotation
     'hooks/use-replacement-link-refresh', // calendar, hours, today
-    'services/conflicts-queue', // calendar, hours
+    'services/conflicts-queue', // calendar, hours, today
     'services/erasure-check', // calendar, members, rotation
     'services/erasures', // calendar, members, rotation
     'services/override-erasures', // calendar, rotation
@@ -191,6 +201,8 @@ export const FEATURE_PUBLIC = {
   // and since story 5.3d so does *Sati*'s conflict count. Story 6.1a:
   // *Danas* reads the viewer's own records through the same query options.
   // Story 6.1b: *Danas*'s leave tile is *Godišnji*'s own state (`myLeaveOf`).
+  // SINCE STORY 6.3: an admin's *Danas* reads the organization's records through
+  // the queue's own query options.
   leave: [
     'services/leave-list', // calendar, conflicts, hours, teams, today
     'services/leave-section', // conflicts
@@ -202,10 +214,12 @@ export const FEATURE_PUBLIC = {
     'utils/position', // calendar, conflicts, teams
     'utils/rank', // calendar, conflicts, organization, teams
   ],
+  // SINCE STORY 6.3: *Danas* reads the chrome's cached role under its key, never
+  // a read of its own, and narrows it as the calendar does.
   navigation: [
     'services/profile', // teams
-    'services/role', // calendar, members, pages, router, teams
-    'utils/destinations', // calendar, members, pages
+    'services/role', // calendar, members, pages, router, teams, today
+    'utils/destinations', // calendar, members, pages, today
   ],
   // Story 6.1b: *Danas*'s leave tile reads the leave year, as *Godišnji* does.
   organization: [
@@ -227,6 +241,11 @@ export const FEATURE_PUBLIC = {
     'services/list', // calendar, members, rotation, pages
     'services/roster', // pages, today
     'services/write', // calendar, hour-bands, rotation, shift-types, pages
+  ],
+  // SINCE STORY 6.3: the *Danas* page picks the admin's body by role and states
+  // the admin's own today in its subtitle, from the rules that executes.
+  today: [
+    'services/admin-today', // pages
   ],
 };
 
