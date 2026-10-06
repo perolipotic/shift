@@ -19,6 +19,7 @@ import {
 } from '@/features/conflicts/conflicts-screen.fixture';
 import { HOURS_SCREEN_EXEMPT, HOURS_SCREEN_PARTS } from '@/features/hours/hours-screen.fixture';
 import { LEAVE_SCREEN_EXEMPT, LEAVE_SCREEN_PARTS } from '@/features/leave/leave-screen.fixture';
+import { TODAY_SCREEN_EXEMPT, TODAY_SCREEN_PARTS } from '@/features/today/today-screen.fixture';
 import {
   HOUR_BAND_EDIT_PARTS,
   HOUR_BAND_LIST_PARTS,
@@ -276,7 +277,18 @@ const TEAM_ROSTER_PART = join(srcRoot, ...TEAM_ROSTER_PARTS.roster);
  * component — and the third, disjoint set in `team-screens.fixture.ts`.
  */
 const TEAM_ROSTER: readonly string[] = Object.values(TEAM_ROSTER_PARTS).map((parts) => join(srcRoot, ...parts));
-const DANAS = join(srcRoot, 'pages', 'danas.tsx');
+/** The *Danas* page, which composes the cards and keeps the team line (story 6.1a). */
+const DANAS_PAGE = join(srcRoot, ...TODAY_SCREEN_PARTS.page);
+/**
+ * A FILE SET since story 6.1a — the page, the hook holding its two reads and
+ * the cards — on *Godišnji*'s terms, written ONCE in `today-screen.fixture.ts`.
+ * The team line stays in the page, which the roster's sweeps read alone.
+ */
+const DANAS: readonly string[] = Object.values(TODAY_SCREEN_PARTS).map((parts) => join(srcRoot, ...parts));
+/** The today feature, which holds the *Danas* screen's parts. */
+const TODAY_FEATURE = join(srcRoot, 'features', 'today');
+/** Story 6.1a's rules: today's three cases, the next shift's two headings, and the two lines in place of a case. */
+const TODAY_KEYS = join(TODAY_FEATURE, 'services', 'today.ts');
 const TEAM_ROSTER_KEYS = join(srcRoot, 'features', 'teams', 'services', 'roster.ts');
 
 /** The hour bands feature, which holds both hour band screens' parts. */
@@ -700,8 +712,11 @@ const SCREENS = [
   // No field, no form and no write — the count is what notices one arriving.
   // ZERO on Danas: its one new control is the `<Link>` to the roster, which
   // neither detector matches by construction and the link sweep measures.
+  // ONE SINCE STORY 6.1a: the unavailable alert's retry, which reads the
+  // calendar snapshot and the viewer's own leave again. The link to the
+  // calendar is a `<Link>`, which no detector reads.
   { name: 'the team roster', file: TEAM_ROSTER, expectedControls: 1 },
-  { name: 'the Danas destination', file: DANAS, expectedControls: 0 },
+  { name: 'the Danas destination', file: DANAS, expectedControls: 1 },
   // STORY 3.1. THREE on Kalendar: the previous month, `Ovaj mjesec` and the
   // next month. The grid is a table and offers nothing (day detail is 3.4).
   // STORY 3.2a: five — the previous and next months, `Ovaj mjesec`, and the
@@ -2147,10 +2162,25 @@ const KEY_SOURCES = [
   {
     // ONE on Danas: its own `nav.danas` heading. The line's words and its
     // refusal reach `t()` through `@/features/teams/services/roster`, below.
+    //
+    // FIFTEEN SINCE STORY 6.1a: the date subline (on the page and under the
+    // next shift's date), the retry, the no-rotation and no-shift words, the
+    // leave's range, the next shift's plain title and its none sentence, the
+    // `count.days` beside both, the week's heading and its link, and the
+    // leave word. The cases, the headings and the two lines come through
+    // `@/features/today/services/today`, below.
     name: 'the Danas destination',
     file: DANAS,
     keys: translationKeys,
-    strings: 1,
+    strings: 15,
+  },
+  {
+    // STORY 6.1a: today's three cases, the next shift's two headings, and
+    // the two lines in place of a case (unavailable, unscheduled).
+    name: 'the Danas rules',
+    file: TODAY_KEYS,
+    keys: messageKeyUnions,
+    strings: 7,
   },
   {
     // FIVE over three unions: the roster's two refusals (unknown, and the
@@ -3008,7 +3038,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // `@/features/conflicts/services/resolution-screen` and
     // `@/features/conflicts/services/resolution-write` are key sources (two
     // more).
-    expect(KEY_SOURCES).toHaveLength(57);
+    //
+    // FIFTY-EIGHT SINCE STORY 6.1a: `@/features/today/services/today`.
+    expect(KEY_SOURCES).toHaveLength(58);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -3177,6 +3209,28 @@ describe('the screen is read at all, so every sweep below means something', () =
       found.filter((file) => !exempt.has(file)).sort(),
       'the Godišnji file set and the feature folders disagree',
     ).toEqual(GODISNJI.filter((file) => file !== GODISNJI_PAGE).sort());
+  });
+
+  it('sweeps every part of the Danas screen, so a new file cannot escape the set', () => {
+    // STORY 6.1a, on *Godišnji*'s terms: an EQUALITY between the set and
+    // every non-test module under the today feature, less the exempt ones.
+    const exempt = new Set(TODAY_SCREEN_EXEMPT.map((entry) => join(TODAY_FEATURE, entry.file)));
+    const found = readdirSync(TODAY_FEATURE, { recursive: true, encoding: 'utf8' })
+      .filter((name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name))
+      .map((name) => join(TODAY_FEATURE, name));
+
+    expect(found, 'the walk reaches services/').toContain(TODAY_KEYS);
+    for (const file of exempt) expect(found, `${file} is exempt and does not exist`).toContain(file);
+    for (const entry of TODAY_SCREEN_EXEMPT) expect(entry.why.length).toBeGreaterThan(20);
+    for (const file of DANAS) {
+      expect(existsSync(file), `${file} is in the set and does not exist`).toBe(true);
+      expect(source(file).trim().length, `${file} is all but empty`).toBeGreaterThan(150);
+    }
+    expect(DANAS[0], 'the page is read first').toBe(DANAS_PAGE);
+    expect(
+      found.filter((file) => !exempt.has(file)).sort(),
+      'the Danas file set and the feature folders disagree',
+    ).toEqual(DANAS.filter((file) => file !== DANAS_PAGE).sort());
   });
 
   it('sweeps every part of the Raspored screens, so a new file cannot escape the sets', () => {
@@ -5598,8 +5652,8 @@ describe('the roster and the Danas line read once, show names only, and write no
     },
     {
       name: 'the Danas destination',
-      file: DANAS,
-      hookFile: DANAS,
+      file: DANAS_PAGE,
+      hookFile: DANAS_PAGE,
       read: 'readOwnTeamToday(',
       key: 'OWN_TEAM_KEY',
       organizationReads: 0,
@@ -5661,7 +5715,9 @@ describe('the roster and the Danas line read once, show names only, and write no
   });
 
   it('links Danas to the roster of the team it names, and to nothing else', () => {
-    const screen = source(DANAS);
+    // The page alone, which draws the line; the week's link to the calendar
+    // is a card's (story 6.1a).
+    const screen = source(DANAS_PAGE);
 
     expect(linkElements(screen)).toHaveLength(1);
     expect(screen).toContain('to="/smjene/$id"');

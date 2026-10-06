@@ -24,6 +24,28 @@
     "days": "{count, plural, one {# dan} few {# dana} other {# dana}}",
     "conflicts": "{count, plural, one {# konflikt} few {# konflikta} other {# konflikata}}"
   },
+  "danas": {
+    "dateLine": "{weekday}, {date}",
+    "today": {
+      "working": "Danas radiš",
+      "free": "Danas ne radiš",
+      "leave": "Danas si na godišnjem odmoru",
+      "leaveRange": "Godišnji odmor {from}–{to}"
+    },
+    "next": {
+      "title": "Sljedeća smjena",
+      "heading": "Sljedeća smjena · za {days}",
+      "returnHeading": "Vraćaš se · za {days}",
+      "none": "U sljedećih {days} nemaš nijednu smjenu."
+    },
+    "week": {
+      "heading": "Sljedećih 7 dana",
+      "link": "Otvori kalendar"
+    },
+    "unscheduled": "Još nisi ni u jednoj smjeni, pa za tebe ne postoji raspored.",
+    "unavailable": "Danas trenutačno nije moguće učitati. Pokušaj ponovno.",
+    "retry": "Pokušaj ponovno"
+  },
   "kalendar": {
     "monthHeading": "{month} {year}",
     "previous": "Prethodni mjesec",

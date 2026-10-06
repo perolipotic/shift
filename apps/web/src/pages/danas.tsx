@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 
 import { Card, CardContent } from '@/components/ui/card';
 import { Notice } from '@/components/ui/notice';
-import { PageHeader, PageTitle } from '@/components/ui/page-header';
+import { PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { t } from '@/lib/i18n';
 import { appLayoutRoute } from '@/pages/_app';
 import { currentSession, supabaseClient } from '@/lib/supabase/client';
@@ -18,11 +18,21 @@ import {
   readOwnTeamToday,
   type OwnTeamLine,
 } from '@/features/teams/services/roster';
+import { TodayBody } from '@/features/today/components/today-body';
+import { useToday } from '@/features/today/hooks/use-today';
 
 /**
- * `Danas` — the heading, and one line naming the caller's team today.
+ * `Danas` — the heading with today's weekday and date, today in words, the
+ * next shift and the next seven days (story 6.1a), and one line naming the
+ * caller's team today.
  *
- * Member and admin alike (UX-DR31/UX-DR32).
+ * Member and admin alike (UX-DR31/UX-DR32): an admin on a team reads the
+ * same screen; story 6.3 replaces the admin's.
+ *
+ * STORY 6.1a ADDS THE CARDS above the line, in phone priority order. Their
+ * reads and state are `useToday`, their rules
+ * `@/features/today/services/today`, which the node suite executes, and
+ * their markup `@/features/today/components`.
  *
  * STORY 1.8 ADDS THE LINE and nothing else: "Tvoja smjena" and the team's name,
  * linked to that team's roster, or "Bez smjene" when the caller is on no team
@@ -39,6 +49,7 @@ import {
  * redirected before the component is ever asked for.
  */
 export function DanasScreen() {
+  const { today, date, loading: todayLoading, retry } = useToday();
   const answer = useQuery({
     queryKey: OWN_TEAM_KEY,
     queryFn: () => readOwnTeamToday(supabaseClient().from(OWN_TEAM_TABLE), currentSession),
@@ -67,13 +78,30 @@ export function DanasScreen() {
     );
   }
 
+  /** The heading's subline: today's weekday and date, its placeholder while loading, or nothing. */
+  function renderDateLine(): ReactNode {
+    if (date !== null) {
+      return (
+        <PageDescription className="tabular-nums">
+          {t('danas.dateLine', { weekday: date.weekday, date: date.text })}
+        </PageDescription>
+      );
+    }
+
+    return todayLoading ? <div aria-hidden className="mt-1.5 h-5 w-48 max-w-full animate-pulse rounded-sm bg-muted" /> : null;
+  }
+
   return (
-    <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6">
+    <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6" aria-busy={todayLoading}>
       <PageHeader>
         <PageTitle asChild>
           <h1>{t('nav.danas')}</h1>
         </PageTitle>
+        {renderDateLine()}
       </PageHeader>
+      <div className="grid w-full min-w-0 max-w-lg gap-4">
+        <TodayBody today={today} onRetry={retry} />
+      </div>
       {/* ONE CARD, holding the refusal as the form screens hold theirs, then
           the line or its skeleton while it loads. */}
       <Card className="w-full min-w-0 max-w-lg">

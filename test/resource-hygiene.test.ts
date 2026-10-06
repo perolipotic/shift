@@ -1477,6 +1477,26 @@ const SANCTIONED_SCREEN_KEYS = [
   // The same as Spremi's hint, "Ukloni je u kalendaru" a link to the day's month.
   'raspored.resolution.heldHint',
   'raspored.resolution.heldAction',
+  // STORY 6.1a: *Danas* for the viewer — the heading's date subline; today's
+  // three cases and the leave's range; the next shift's plain title, its
+  // heading with the days (`count.days`, a plural listed above), the return
+  // from leave, and the sentence when none falls within the horizon; the
+  // week's heading and its link to the calendar; the line for a viewer with
+  // no membership, and the unavailable line with its retry.
+  'danas.dateLine',
+  'danas.today.working',
+  'danas.today.free',
+  'danas.today.leave',
+  'danas.today.leaveRange',
+  'danas.next.title',
+  'danas.next.heading',
+  'danas.next.returnHeading',
+  'danas.next.none',
+  'danas.week.heading',
+  'danas.week.link',
+  'danas.unscheduled',
+  'danas.unavailable',
+  'danas.retry',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
@@ -1548,6 +1568,14 @@ const CALENDAR_NAMESPACE = 'kalendar.';
 const HOURS_NAMESPACE = 'sati.';
 
 /**
+ * *Danas*'s namespace (story 6.1a). It states the viewer's own next SHIFT —
+ * `Sljedeća smjena`, the epic's own words — and that they are on no team, so
+ * `smjen` names a worked shift or the Team there, as on *Sati*, and
+ * `tip… smjen…` is refused: a shift type is shown by its name.
+ */
+const DANAS_NAMESPACE = 'danas.';
+
+/**
  * The resolution screen's namespace (story 5.4b). It decides what holds for
  * ONE rostered shift — `odluči što vrijedi za ovu smjenu`, the mockup's own
  * words — so `smjen` names that shift there, as on *Sati*, and `tip… smjen…`
@@ -1614,6 +1642,7 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     !key.startsWith(ROTATION_BUILDER_NAMESPACE) &&
     !key.startsWith(CALENDAR_NAMESPACE) &&
     !key.startsWith(HOURS_NAMESPACE) &&
+    !key.startsWith(DANAS_NAMESPACE) &&
     !key.startsWith(RESOLUTION_NAMESPACE) &&
     key !== LEAVE_REPLACEMENT_KEY
   ) {
