@@ -2,21 +2,17 @@ import {
   activeOn,
   datesOfMonth,
   memberHoursOfMonth,
-  membershipOn,
   type Collision,
   type CollisionResolution,
   type MemberHours,
 } from '@shift/domain';
 
-import {
-  type CalendarMember,
-  type CalendarSnapshot,
-  type CalendarSurfaceState,
-} from '@/features/calendar/services/snapshot';
+import { type CalendarSnapshot, type CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import {
   MODE_SVE,
   monthHeaderOf,
   monthShownOf,
+  monthTeamOf,
   type CalendarSearch,
   type MonthHeader,
 } from '@/features/calendar/utils/month';
@@ -46,6 +42,7 @@ import {
   type MyHoursSurface,
 } from '@/features/hours/services/my-hours';
 import { compareText } from '@/lib/i18n/format';
+import { filterBarOf, type FilterBarModel } from '@/utils/filter-bar';
 
 /**
  * *Sati* for an admin: every member's month of hours in one table (story
@@ -88,8 +85,9 @@ export interface OrganizationHoursRow {
   readonly memberId: string;
   readonly name: string;
   /**
-   * Their team on their last active date of the month (`membershipOn`), or
-   * `null` for none — drawn `—`, and outside every team filter.
+   * Their team for the month (`monthTeamOf`, the rule Kalendar's filter
+   * shares since story 7.5: their membership on their last active date of
+   * the month), or `null` for none — drawn `—`, and outside every team filter.
    */
   readonly team: HoursTeam | null;
   readonly shiftCount: number;
@@ -147,8 +145,10 @@ export interface OrganizationHoursView {
   readonly untimedShiftCount: number | null;
   /** How many columns a row has: the fixed six and one per band. */
   readonly columnCount: number;
-  /** The line an empty table shows, or `null` while it has a row. */
-  readonly empty: HoursEmptyMessageKey | null;
+  /** What an empty table says, or `null` while it has a row. */
+  readonly empty: HoursEmpty | null;
+  /** The filter bar (story 7.5): the two filters combine. */
+  readonly filters: FilterBarModel;
 }
 
 export type OrganizationHoursOutcome =
@@ -163,17 +163,6 @@ export function bandSortKeyOf(bandId: string): HoursSortKey {
 /** Where a member's name leads: their calendar month, in *Sve smjene*. */
 export function calendarLinkSearchOf(memberId: string, month: string): CalendarSearch {
   return { prikaz: MODE_SVE, osoba: memberId, mjesec: month };
-}
-
-/** The last date of `dates` the member is active on, or `null` for none. */
-function lastActiveDateOf(member: CalendarMember, dates: readonly string[]): string | null {
-  for (let index = dates.length - 1; index >= 0; index -= 1) {
-    const date = dates[index];
-
-    if (date !== undefined && activeOn(member.statuses, date)) return date;
-  }
-
-  return null;
 }
 
 /**
@@ -200,11 +189,11 @@ export function organizationHoursRowsOf(
 
   for (const member of snapshot.members) {
     const hours = memberHoursOfMonth(memberHoursInputOf(snapshot, { ...member, memberId: member.id }, leaveKeys), month);
-    const lastActive = lastActiveDateOf(member, dates);
+    const active = dates.some((date) => activeOn(member.statuses, date));
 
-    if (lastActive === null && hours.shiftCount === 0) continue;
+    if (!active && hours.shiftCount === 0) continue;
 
-    const teamId = lastActive === null ? null : (membershipOn(member.memberships, lastActive)?.teamId ?? null);
+    const teamId = monthTeamOf(member, dates);
     const teamName = teamId === null ? undefined : teams.get(teamId);
 
     if (teamId !== null && teamName === undefined) throw new RangeError(`team ${teamId} is not in the snapshot`);
@@ -331,19 +320,6 @@ export function hoursSortChangeOf(sort: HoursSort): HoursSearchChange {
   };
 }
 
-/** The filters' "all" option value; no search ever names `''`. */
-export const ALL_FILTER = '';
-
-/** A team filter `<select>` value as a search change. */
-export function hoursTeamChangeOf(value: string): HoursSearchChange {
-  return { tim: value === ALL_FILTER ? null : value };
-}
-
-/** A person filter `<select>` value as a search change. */
-export function hoursPersonChangeOf(value: string): HoursSearchChange {
-  return { osoba: value === ALL_FILTER ? null : value };
-}
-
 /** `aria-sort`'s own vocabulary. */
 export type AriaSort = 'ascending' | 'descending' | 'none';
 
@@ -363,21 +339,114 @@ export function hoursSortArrowOf(sort: HoursSort, key: HoursSortKey): HoursSortA
   return sort.direction === SORT_UP ? 'up' : 'down';
 }
 
-/** What an empty table says: nobody matches the filter, or nobody has a row this month. */
-export type HoursEmptyMessageKey = 'sati.organization.empty' | 'sati.organization.emptyMonth';
+/** Nobody has a row in the month at all. */
+export const HOURS_EMPTY_MONTH = 'emptyMonth';
+
+/** The filters left no row: the person chosen is not in the team chosen this month. */
+export const HOURS_EMPTY_NOT_IN_TEAM = 'notInTeam';
 
 /**
- * The line an empty table shows, or `null` while a row is shown: nobody has
- * a row in the month at all, or the rows there are all filtered out — the
- * only way `shown` can be fewer than `all`.
+ * The filters left no row, and not by the two together. The options rule it
+ * out today — every team offered is some row's, every person offered has a
+ * row — so it says only that the filters show nobody, never a wrong reason.
  */
-export function hoursEmptyMessageKey(
-  shown: number,
-  all: number,
-): 'sati.organization.empty' | 'sati.organization.emptyMonth' | null {
-  if (shown > 0) return null;
+export const HOURS_EMPTY_FILTERED = 'filtered';
 
-  return all === 0 ? 'sati.organization.emptyMonth' : 'sati.organization.empty';
+/**
+ * What an empty table says (story 7.5): codes and operands, never prose.
+ * The names are data, never declined; `month` is `YYYY-MM`, which the
+ * sentence reads in the locative.
+ */
+export type HoursEmpty =
+  | { readonly code: typeof HOURS_EMPTY_MONTH }
+  | { readonly code: typeof HOURS_EMPTY_FILTERED }
+  | {
+      readonly code: typeof HOURS_EMPTY_NOT_IN_TEAM;
+      /** The person chosen. */
+      readonly person: string;
+      /** Their own team for the month, or `null` for none. */
+      readonly personTeam: string | null;
+      /** The team chosen. */
+      readonly team: string;
+      readonly month: string;
+    };
+
+/**
+ * What an empty table says, or `null` while a row is shown. Nobody has a row
+ * in the month, or the filters left none — and only the two together can:
+ * every team offered is some row's, and every person offered has a row. A
+ * filter alone leaving none is {@link HOURS_EMPTY_FILTERED}, never a throw
+ * during render.
+ */
+export function hoursEmptyOf(
+  shown: number,
+  all: readonly OrganizationHoursRow[],
+  team: string | null,
+  person: string | null,
+  month: string,
+): HoursEmpty | null {
+  if (shown > 0) return null;
+  if (all.length === 0) return { code: HOURS_EMPTY_MONTH };
+
+  const chosenTeam = all.find((row) => row.team?.id === team)?.team ?? null;
+  const chosenPerson = all.find((row) => row.memberId === person) ?? null;
+
+  if (chosenTeam === null || chosenPerson === null) return { code: HOURS_EMPTY_FILTERED };
+
+  return {
+    code: HOURS_EMPTY_NOT_IN_TEAM,
+    person: chosenPerson.name,
+    personTeam: chosenPerson.team?.name ?? null,
+    team: chosenTeam.name,
+    month,
+  };
+}
+
+/** The empty table's first sentence. */
+export function hoursEmptyMessageKey(
+  empty: HoursEmpty,
+): 'sati.organization.emptyMonth' | 'filter.empty.filtered' | 'filter.empty.notInTeam' {
+  switch (empty.code) {
+    case HOURS_EMPTY_MONTH:
+      return 'sati.organization.emptyMonth';
+    case HOURS_EMPTY_FILTERED:
+      return 'filter.empty.filtered';
+    case HOURS_EMPTY_NOT_IN_TEAM:
+      return 'filter.empty.notInTeam';
+  }
+}
+
+/** The second, where the person is instead: their own team, or none this month. */
+export function hoursEmptyFactMessageKey(personTeam: string | null): 'filter.empty.inTeam' | 'filter.empty.noTeam' {
+  return personTeam === null ? 'filter.empty.noTeam' : 'filter.empty.inTeam';
+}
+
+/**
+ * *Sati*'s filter bar (story 7.5): the Smjena chip's options are the teams
+ * some row names, by name, each with its rows; the Osoba chip's every row's
+ * member, in name order, with their team for the month. THE TWO COMBINE
+ * (`combine: true`), and the people shown are the rows shown.
+ */
+export function hoursFilterBarOf(
+  all: readonly OrganizationHoursRow[],
+  teams: readonly HoursTeam[],
+  team: string | null,
+  person: string | null,
+  shownCount: number,
+): FilterBarModel {
+  return filterBarOf({
+    combine: true,
+    teams: teams.map(({ id, name }) => ({ id, name, count: all.filter((row) => row.team?.id === id).length })),
+    team,
+    people: all.map((row) => ({
+      id: row.memberId,
+      name: row.name,
+      teamId: row.team?.id ?? null,
+      teamName: row.team?.name ?? null,
+    })),
+    person,
+    shownCount,
+  });
 }
 
 /**
@@ -418,7 +487,7 @@ export function organizationHoursViewOf(
   const all = organizationHoursRowsOf(snapshot, month, header, collisions, leaveKeys);
   const teams = hoursTeamsOf(all);
   const people = all.map((row) => ({ id: row.memberId, name: row.name }));
-  const team = teams.find((one) => one.id === search.tim)?.id ?? null;
+  const team = teams.find((one) => one.id === search.smjena)?.id ?? null;
   const person = people.find((one) => one.id === search.osoba)?.id ?? null;
   const sort = hoursSortOf(search, bands);
   const shown = all.filter(
@@ -437,14 +506,15 @@ export function organizationHoursViewOf(
     person,
     search: {
       ...(search.mjesec === undefined ? {} : { mjesec: search.mjesec }),
-      ...(team === null ? {} : { tim: team }),
+      ...(team === null ? {} : { smjena: team }),
       ...(person === null ? {} : { osoba: person }),
       ...(sort.key === DEFAULT_HOURS_SORT.key ? {} : { sort: sort.key }),
       ...(sort.direction === DEFAULT_HOURS_SORT.direction ? {} : { smjer: sort.direction }),
     },
     untimedShiftCount: untimedShiftsOf(shown),
     columnCount: FIXED_COLUMN_COUNT + bands.length,
-    empty: hoursEmptyMessageKey(shown.length, all.length),
+    empty: hoursEmptyOf(shown.length, all, team, person, month),
+    filters: hoursFilterBarOf(all, teams, team, person, shown.length),
   };
 }
 

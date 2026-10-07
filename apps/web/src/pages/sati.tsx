@@ -1,11 +1,16 @@
-import { createRoute, useNavigate } from '@tanstack/react-router';
+import { createRoute, redirect, useNavigate } from '@tanstack/react-router';
 
 import { MonthNav } from '@/components/month-nav';
 import { Card } from '@/components/ui/card';
 import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { HoursBody, HoursNotice } from '@/features/hours/components/hours-body';
 import { useHours } from '@/features/hours/hooks/use-hours';
-import { HOURS_MONTH_HEADING_ID, hoursSearchOf, type HoursSearch } from '@/features/hours/services/my-hours';
+import {
+  HOURS_MONTH_HEADING_ID,
+  hoursSearchOf,
+  legacyHoursSearchOf,
+  type HoursSearch,
+} from '@/features/hours/services/my-hours';
 import { t } from '@/lib/i18n';
 import { appLayoutRoute } from '@/pages/_app';
 
@@ -21,7 +26,8 @@ import { appLayoutRoute } from '@/pages/_app';
  * UX-DR32 lists it again for an admin; the human decision of 2026-09-04
  * resolved that overlap as one destination whose CONTENT is role-scoped:
  * a member reads their own month, an admin the organization's table, whose
- * team, person and sort live in the URL beside the month.
+ * team (`?smjena=`, since story 7.5; an old `?tim=` is redirected), person
+ * and sort live in the URL beside the month.
  *
  * The month is chosen in the URL (`?mjesec=2026-09`), as on the calendar, and
  * moved through the month navigation the two screens share. The figures come
@@ -78,5 +84,13 @@ export const satiRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/sati',
   validateSearch: (search: Record<string, unknown>): HoursSearch => hoursSearchOf(search),
+  // STORY 7.5: `?tim=` became `?smjena=`, as on the calendar. An old URL is
+  // REPLACED by the same view, every other parameter kept — never a second
+  // history entry, so Back skips it.
+  beforeLoad: ({ location }) => {
+    const legacy = legacyHoursSearchOf(location.search as Record<string, unknown>);
+
+    if (legacy !== null) throw redirect({ to: '/sati', search: legacy, replace: true });
+  },
   component: SatiScreen,
 });

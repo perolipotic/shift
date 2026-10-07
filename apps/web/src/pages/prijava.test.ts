@@ -408,6 +408,14 @@ const CALENDAR_SNAPSHOT_KEYS = join(srcRoot, 'features', 'calendar', 'services',
 const SHARED_MONTH_NAV = join(srcRoot, ...CALENDAR_SCREEN_PARTS.monthNav);
 /** Story 7.4: the month toolbar's keyboard and picker rules, pure, beside it. */
 const MONTH_KEYS = join(srcRoot, 'utils', 'month-keys.ts');
+/** Story 7.5: the filter bar *Kalendar* and *Sati* share: a part of both sets. */
+const SHARED_FILTER_BAR = join(srcRoot, ...CALENDAR_SCREEN_PARTS.filterBar);
+/** Story 7.5: the filter bar's model — its chips, summary and the month locative — pure, beside it. */
+const FILTER_BAR_KEYS = join(srcRoot, 'utils', 'filter-bar.ts');
+/** Story 7.5: *Kalendar*'s own filter bar, the one Select it replaced. */
+const CALENDAR_FILTERS = join(srcRoot, ...CALENDAR_SCREEN_PARTS.filter);
+/** Story 7.5: *Sati*'s own filter bar, the two Selects it replaced. */
+const HOURS_FILTERS = join(srcRoot, ...HOURS_SCREEN_PARTS.organizationFilters);
 
 /** The hours feature, which holds the *Sati* screen's parts (story 4.1b). */
 const HOURS_FEATURE = join(srcRoot, 'features', 'hours');
@@ -763,7 +771,14 @@ const SCREENS = [
   // `Ovaj mjesec` (now drawn only off the current month), and the month
   // picker's year ‹ and › and its month button, written once inside the map
   // over the twelve months.
-  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 28 },
+  // THIRTY-FOUR SINCE STORY 7.5: the filter `Select` and its reset gave way
+  // to the shared filter bar's eight — `Filtri`, the chip, its ✕ (each
+  // written once inside the map over the chips), a picker option (written
+  // once inside the map over the options), the Osoba search `Input`,
+  // `Poništi filtre`, and the sheet's `Poništi` and `Prikaži`. The sheet's
+  // Smjena rows are radio items, never a `<Button>`, and its close is
+  // `DialogHeader`'s own.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 34 },
   // STORY 4.1b. THREE on Sati: the month navigation it shares with the
   // calendar — the previous month, `Ovaj mjesec` and the next month. The
   // figures are read, never pressed.
@@ -778,7 +793,10 @@ const SCREENS = [
   // TWELVE SINCE STORY 7.4: the shared month toolbar grew from three to
   // seven — the month trigger, and the picker's year ‹ and › and its month
   // button, written once inside the map over the twelve months.
-  { name: 'the Sati destination', file: SATI, expectedControls: 12 },
+  // TWENTY SINCE STORY 7.5: the two filter `Select`s gave way to the shared
+  // filter bar's eight, counted in the Kalendar set too, and the empty
+  // table's two ways out, `Ukloni filtar: Smjena B` and `Poništi filtre`.
+  { name: 'the Sati destination', file: SATI, expectedControls: 20 },
   // STORY 5.2c. ONE on Godišnji: the retry its unavailable alert offers. The
   // three figures are read, never pressed, and nothing here writes: a member
   // requests no leave (story 5.3 is conflicts, not requests).
@@ -2524,7 +2542,19 @@ const KEY_SOURCES = [
     // three times (the trigger's name, its label and the current picker
     // month's name), the picker's name, the year's ‹ and ›, and "ovaj" under
     // the current month.
-    strings: 121,
+    // ONE HUNDRED AND THIRTY-EIGHT SINCE STORY 7.5: the filter `Select`'s
+    // label, its "all" option, its two group labels and its reset (five) gave
+    // way to the shared filter bar's twenty-two — the bar's group name,
+    // `Filtri` with and without its count, `Poništi filtre`, the two pickers'
+    // names, `Sve smjene` and a team's person count (twice each: the picker
+    // and the sheet), the teams' group heading, `Sve osobe`, `Bez smjene`,
+    // the search's label and its match count, the sheet's title, close,
+    // Smjena and Osoba headings, the note that a person replaces the team,
+    // and `Poništi` and `Prikaži`. The summary, a chip's text and a ✕'s name
+    // are `t()` calls here too, but over keys `@/utils/filter-bar` chooses —
+    // `t(filterSummaryMessageKey(…))` — so those keys are counted in that
+    // module, a key source, and not here.
+    strings: 138,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's
@@ -2565,10 +2595,17 @@ const KEY_SOURCES = [
     //
     // FORTY-ONE SINCE STORY 7.4: the shared month toolbar's eleven more,
     // counted in the Kalendar set too.
+    //
+    // SIXTY-ONE SINCE STORY 7.5: the two filters' labels and "all" options
+    // (four) gave way to the shared filter bar's twenty-two, counted in the
+    // Kalendar set too, and the empty table's two ways out, `Ukloni filtar:
+    // Smjena B` and `Poništi filtre`. Its sentences' keys are chosen by
+    // `@/features/hours/services/organization-hours` and the month in the
+    // locative's by `@/utils/filter-bar`, both key sources.
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 41,
+    strings: 61,
   },
   {
     // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the
@@ -2661,10 +2698,24 @@ const KEY_SOURCES = [
   {
     // STORY 4.2: why an admin's table is empty — nobody matches the filter,
     // or nobody has a row this month.
+    // FIVE SINCE STORY 7.5, read off BOTH unions: the month with nobody, the
+    // person not in the team chosen (in place of "nobody matches"), the
+    // filters showing nobody (a filter alone, which the options rule out
+    // today), and where the person is instead — their own team, or none this
+    // month.
     name: 'the organization hours rules',
     file: ORGANIZATION_HOURS_KEYS,
-    keys: messageKeyUnion,
-    strings: 2,
+    keys: messageKeyUnions,
+    strings: 5,
+  },
+  {
+    // STORY 7.5: the filter bar's model — the summary line's five forms, a
+    // chip's four (a team or a person, chosen or `sve`), a ✕'s two names,
+    // and the twelve months in the locative an empty table's sentence reads.
+    name: 'the filter bar rules',
+    file: FILTER_BAR_KEYS,
+    keys: messageKeyUnions,
+    strings: 23,
   },
   {
     // STORY 4.3: the export's sheet — its eight `t()` calls: the five fixed
@@ -3112,7 +3163,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // FIFTY-NINE SINCE STORY 6.2: `@/features/today/services/today-duty`.
     //
     // SIXTY SINCE STORY 6.3: `@/features/today/services/admin-today`.
-    expect(KEY_SOURCES).toHaveLength(60);
+    //
+    // SIXTY-ONE SINCE STORY 7.5: `@/utils/filter-bar`.
+    expect(KEY_SOURCES).toHaveLength(61);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -3197,10 +3250,14 @@ describe('the screen is read at all, so every sweep below means something', () =
     // STORY 4.1b: the month navigation is shared with *Sati*, so it lives
     // outside the feature (`@/components/month-nav`) and is in the set still.
     expect(KALENDAR, 'the shared month navigation left the set').toContain(SHARED_MONTH_NAV);
+    // STORY 7.5: so is the filter bar, shared from `@/components/filter-bar`.
+    expect(KALENDAR, 'the shared filter bar left the set').toContain(SHARED_FILTER_BAR);
     expect(
       found.filter((file) => !exempt.has(file)).sort(),
       'the calendar file set and the feature folders disagree',
-    ).toEqual(KALENDAR.filter((file) => file !== KALENDAR_PAGE && file !== SHARED_MONTH_NAV).sort());
+    ).toEqual(
+      KALENDAR.filter((file) => file !== KALENDAR_PAGE && file !== SHARED_MONTH_NAV && file !== SHARED_FILTER_BAR).sort(),
+    );
   });
 
   it('sweeps every part of the Sati screen, so a new file cannot escape the set', () => {
@@ -3220,10 +3277,11 @@ describe('the screen is read at all, so every sweep below means something', () =
     }
     expect(SATI[0], 'the page is read first').toBe(SATI_PAGE);
     expect(SATI, 'the shared month navigation left the set').toContain(SHARED_MONTH_NAV);
+    expect(SATI, 'the shared filter bar left the set').toContain(SHARED_FILTER_BAR);
     expect(
       found.filter((file) => !exempt.has(file)).sort(),
       'the Sati file set and the feature folders disagree',
-    ).toEqual(SATI.filter((file) => file !== SATI_PAGE && file !== SHARED_MONTH_NAV).sort());
+    ).toEqual(SATI.filter((file) => file !== SATI_PAGE && file !== SHARED_MONTH_NAV && file !== SHARED_FILTER_BAR).sort());
   });
 
   it('draws the month as one toolbar, shared by Kalendar and Sati (story 7.4)', () => {
@@ -3255,6 +3313,37 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(occurrences(nav, '<h2'), 'a second heading arrived in the month toolbar').toBe(1);
     // While no month is shown, the placeholder bar stands in for the toolbar.
     expect(nav).toMatch(/if \(month === null\) \{\s*return <div className="[^"]*animate-pulse[^"]*" \/>;/);
+  });
+
+  it('filters Kalendar and Sati through one chip bar, never a Select (story 7.5)', () => {
+    const bar = source(SHARED_FILTER_BAR);
+
+    // No `<Select` in either filter: both draw the one shared bar.
+    for (const file of [SHARED_FILTER_BAR, CALENDAR_FILTERS, HOURS_FILTERS]) {
+      expect(source(file), `${file} draws a Select`).not.toMatch(/<Select\b|<select\b/);
+    }
+    expect(source(CALENDAR_FILTERS)).toMatch(/<FilterBar\b/);
+    expect(source(HOURS_FILTERS)).toMatch(/<FilterBar\b/);
+    // A ✕ is named by an expression — the filter and its value — never a literal.
+    expect(bar).toMatch(/aria-label=\{t\(filterRemoveMessageKey\(chip\), \{ value: chip\.value \}\)\}/);
+    // A chip says it opens a dialog, and while open names the picker it opened.
+    // On a phone it opens the sheet, and says so: expanded and controlling it.
+    expect(bar).toMatch(
+      /aria-haspopup="dialog"\s+aria-expanded=\{expanded\}\s+aria-controls=\{open \? pickerId : \(controls \?\? undefined\)\}/,
+    );
+    expect(bar).toMatch(/expanded=\{isPhone \? sheetOpen : open === chip\.key\}/);
+    // The breakpoint is the shared one, read through ONE store, never a feature's.
+    expect(bar).toMatch(/from '@\/hooks\/viewport'/);
+    expect(bar, 'the bar reaches into a feature for the breakpoint').not.toMatch(/from '@\/features\//);
+    // Focus waits for the change to render, never a frame poll.
+    expect(bar, 'focus is polled again').not.toContain('requestAnimationFrame');
+    // The summary is a status line, not a banner, and the sheet the native Dialog.
+    expect(bar).toMatch(/<p role="status"/);
+    expect(bar).toMatch(/<Dialog\b/);
+    expect(bar).toMatch(/useCloseWhenWide\(sheetOpen, closeSheet\)/);
+    // Sati's old `?tim=` is redirected to `?smjena=`, replacing the entry.
+    expect(source(SATI_PAGE)).toMatch(/beforeLoad:[\s\S]{0,200}?legacyHoursSearchOf\(/);
+    expect(source(SATI_PAGE)).toMatch(/throw redirect\(\{ to: '\/sati', search: legacy, replace: true \}\)/);
   });
 
   it('sweeps every part of the Godišnji screen, so a new file cannot escape the set', () => {
@@ -5832,7 +5921,8 @@ describe('every select is the one Select primitive, in the one Input look', () =
     // FOURTEEN SINCE STORY 3.3a: the calendar's team filter.
     // FIFTEEN SINCE STORY 3.5b: the override form's type.
     // SEVENTEEN SINCE STORY 3.6b: the roster form's "Skida se" and "Dolazi".
-    expect(selectClasses()).toHaveLength(17);
+    // SIXTEEN SINCE STORY 7.5: the calendar's filter is chips, not a Select.
+    expect(selectClasses()).toHaveLength(16);
   });
 
   it('composes only the 44 px height onto each, so no screen restyles the primitive', () => {
@@ -8944,6 +9034,8 @@ describe('the exempted attribute keeps the promise that exempted it', () => {
     expect(ariaHaspopupValues(source(CHROME))).toEqual(['dialog']);
     // Story 7.4: the month toolbar's trigger, on both Kalendar and Sati.
     expect(ariaHaspopupValues(source(SHARED_MONTH_NAV))).toEqual(['dialog']);
+    // Story 7.5: `Filtri`, which opens the sheet, and a chip, which opens its picker.
+    expect(ariaHaspopupValues(source(SHARED_FILTER_BAR))).toEqual(['dialog', 'dialog']);
   });
 
   it('reads aria-invalid in the quoted syntax, and finds none where there is none', () => {

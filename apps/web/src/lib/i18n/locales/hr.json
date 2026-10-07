@@ -138,6 +138,66 @@
       "unavailable": "Pregled trenutačno nije moguće učitati. Pokušaj ponovno."
     }
   },
+  "filter": {
+    "label": "Filtri",
+    "open": "Filtri",
+    "openCount": "Filtri · {count}",
+    "chip": {
+      "team": "Smjena: {value}",
+      "teamAll": "Smjena: sve",
+      "person": "Osoba: {value}",
+      "personAll": "Osoba: sve"
+    },
+    "remove": {
+      "team": "Ukloni filtar smjena: {value}",
+      "person": "Ukloni filtar osoba: {value}"
+    },
+    "teamPicker": "Odaberi smjenu",
+    "personPicker": "Odaberi osobu",
+    "allTeams": "Sve smjene ({count})",
+    "allPeople": "Sve osobe ({count})",
+    "teamGroup": "Smjene",
+    "personCount": "{count, plural, one {# osoba} few {# osobe} other {# osoba}}",
+    "noTeam": "Bez smjene",
+    "search": "Traži osobu ({count})",
+    "matches": "{shown} od {total}",
+    "summary": {
+      "all": "Prikazano: sve smjene ({teams}) · {people, plural, one {# osoba} few {# osobe} other {# osoba}}",
+      "team": "Prikazano: {team} · {shown, plural, one {# osoba} few {# osobe} other {# osoba}} od {total}",
+      "person": "Prikazano: {person} · {team}",
+      "personNoTeam": "Prikazano: {person} · Bez smjene",
+      "both": "Prikazano: {team} i {person} · {shown, plural, one {# osoba} few {# osobe} other {# osoba}}"
+    },
+    "clear": "Poništi filtre",
+    "sheetTitle": "Filtri",
+    "sheetClose": "Zatvori filtre",
+    "team": "Smjena",
+    "person": "Osoba",
+    "replaceNote": "U Kalendaru osoba zamjenjuje smjenu.",
+    "sheetReset": "Poništi",
+    "sheetShow": "{count, plural, one {Prikaži # osobu} few {Prikaži # osobe} other {Prikaži # osoba}}",
+    "empty": {
+      "filtered": "Odabrani filtri ne prikazuju nijednu osobu.",
+      "notInTeam": "{person} nije u smjeni {team} {monthIn} {year}.",
+      "inTeam": "{person} je u smjeni {team}.",
+      "noTeam": "{person} nije ni u jednoj smjeni {monthIn} {year}.",
+      "removeTeam": "Ukloni filtar: {team}"
+    },
+    "monthIn": {
+      "1": "u siječnju",
+      "2": "u veljači",
+      "3": "u ožujku",
+      "4": "u travnju",
+      "5": "u svibnju",
+      "6": "u lipnju",
+      "7": "u srpnju",
+      "8": "u kolovozu",
+      "9": "u rujnu",
+      "10": "u listopadu",
+      "11": "u studenome",
+      "12": "u prosincu"
+    }
+  },
   "kalendar": {
     "monthHeading": "{month} {year}",
     "previous": "Prethodni mjesec",
@@ -161,13 +221,6 @@
       "label": "Prikaz kalendara",
       "moj": "Moj raspored",
       "sve": "Sve smjene"
-    },
-    "filter": {
-      "label": "Smjena ili osoba",
-      "all": "Sve smjene ({count})",
-      "group": "Smjene",
-      "people": "Osobe",
-      "reset": "Poništi filtar"
     },
     "person": {
       "noTeam": "{name} ovaj mjesec nije ni u jednoj smjeni."
@@ -410,12 +463,7 @@
       "total": "Ukupno",
       "leave": "Godišnji odmor",
       "conflicts": "Neriješeni konflikti",
-      "teamFilter": "Smjena",
-      "personFilter": "Osoba",
-      "allTeams": "Sve smjene",
-      "allPeople": "Sve osobe",
       "noTeam": "—",
-      "empty": "Nijedna osoba ne odgovara odabranom filtru.",
       "emptyMonth": "U ovom mjesecu nema nijedne osobe.",
       "export": {
         "action": "Izvezi u Excel",

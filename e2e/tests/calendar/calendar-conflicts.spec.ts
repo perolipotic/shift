@@ -184,7 +184,7 @@ test('the admin records leave and opens Kalendar: the conflicts and the hatch ar
 
   // THE PERSON VIEW: every leave date hatched, the working ones also ⚠.
   await calendarPage.showMonthOf(today, today);
-  await calendarPage.teamFilter.selectOption({ label: member.name });
+  await calendarPage.filters.choosePerson(member.name);
   const list = calendarPage.personListOf(member.name);
   await expect(list).toBeVisible();
   for (const offset of OFFSETS) {
@@ -273,7 +273,7 @@ test("a member reads their own leave hatched with no conflict, nothing new on th
 
     // THE TEAMMATE'S PERSON VIEW: nothing of their leave.
     await calendar.showMonthOf(today, today);
-    await calendar.teamFilter.selectOption({ label: teammate.name });
+    await calendar.filters.choosePerson(teammate.name);
     const theirs = calendar.personListOf(teammate.name);
     await expect(theirs).toBeVisible();
     for (const offset of [5, 6, 7, 8]) {
@@ -339,7 +339,7 @@ test('a conflict accepted as uncovered carries the uncovered mark and no conflic
 
   // The person view: today is still leave, and no longer a conflict.
   await calendarPage.showMonthOf(today, today);
-  await calendarPage.teamFilter.selectOption({ label: member.name });
+  await calendarPage.filters.choosePerson(member.name);
   const list = calendarPage.personListOf(member.name);
   await expect(list).toBeVisible();
   const day = calendarPage.dayButtonIn(list, team.name, today);

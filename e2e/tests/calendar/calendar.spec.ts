@@ -84,6 +84,7 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  */
 
 const kalendar = hr.kalendar;
+const filterWords = hr.filter;
 
 /** The run organization's rotation, while this file's test holds it (`holdRotation`). */
 let hold: RotationHold | null = null;
@@ -701,8 +702,8 @@ for (const [width, height, name] of [
       await expect(cells).toHaveCount(rows * columns);
 
       // Tab enters the grid on that one cell, and a second Tab leaves it. The
-      // control before the grid is the team filter (story 3.3a), under the switch.
-      await calendarPage.teamFilter.focus();
+      // control before the grid is the filter bar's last one drawn (story 7.5).
+      await calendarPage.filters.lastControl.focus();
       await page.keyboard.press('Tab');
       await expect(calendarPage.todayFirstCell).toBeFocused();
       const start = await calendarPage.focusedCell();
@@ -1189,7 +1190,7 @@ test.describe('a roster override at 1280 px, as an admin', () => {
     const shift = `${weekdayOf(rotation.today)} ${dayMonth(rotation.today)}, ${fixture.team.name}, ${expectedType(rotation, rotation.today)}, ${range}, ${kalendar.modifier.overridden}`;
 
     await calendarPage.goto(gridMonthOf(rotation.today));
-    await calendarPage.teamFilter.selectOption({ label: fixture.member.name });
+    await calendarPage.filters.choosePerson(fixture.member.name);
     await expect(page).toHaveURL(anySearchParamPattern('osoba'));
     await expect(calendarPage.personHeading(fixture.member.name)).toBeVisible();
     await expect(calendarPage.anyGrid).toHaveCount(0);
@@ -1201,7 +1202,7 @@ test.describe('a roster override at 1280 px, as an admin', () => {
     await expect(calendarPage.dayOpenerNamed(shift)).toHaveCount(0);
 
     // Toni, on no team, holds that one shift this month.
-    await calendarPage.teamFilter.selectOption({ label: fixture.spare.name });
+    await calendarPage.filters.choosePerson(fixture.spare.name);
     const spare = calendarPage.personListOf(fixture.spare.name);
     await expect(spare).toBeVisible();
     await expect(calendarPage.todayIn(spare)).toContainText('\u270E');
@@ -1924,51 +1925,89 @@ async function expectTabStopOnToday(calendarPage: CalendarPage): Promise<void> {
   await expect(stops).toHaveAttribute('data-column', '0');
 }
 
+/** `Prikazano: sve smjene (4)` — the unfiltered summary up to its person count. */
+function summaryAllOf(columns: number): string {
+  return fill(filterWords.summary.all.split(' · ')[0] ?? '', { teams: String(columns) });
+}
+
+/** `Prikazano: Smjena B · ` — the team summary up to its counts. */
+function summaryTeamOf(team: string): string {
+  return `${fill(filterWords.summary.team.split(' · ')[0] ?? '', { team })} · `;
+}
+
 test.describe('the team filter at 1280 px', () => {
   test.use({ storageState: ADMIN_STATE, viewport: { width: 1280, height: 800 } });
 
-  test('narrows the grid to one team, keeps it across months, and resets in one press', async ({ page, calendarPage, fixture }) => {
+  test('narrows the grid to one team, says so, keeps it across months, and clears in one press', async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
     await calendarPage.goto();
     await expect(calendarPage.columnHeader(fixture.team.name)).toBeVisible();
     // The run organization may hold teams other specs created: count, never assume.
     const columns = await calendarPage.columnCount();
     expect(columns).toBeGreaterThan(0);
     const team = searchParamPattern('smjena', fixture.team.id);
+    const filters = calendarPage.filters;
 
-    const select = calendarPage.teamFilter;
-    await expect(select).toBeVisible();
-    await expect(calendarPage.allTeamsOption).toHaveText(fill(kalendar.filter.all, { count: String(columns) }));
-    await expect(select).toHaveValue('');
-    const grouped = calendarPage.teamOptions;
-    await expect(grouped).toHaveCount(columns);
-    await expect(grouped.filter({ hasText: fixture.team.name })).toHaveCount(1);
-    const reset = calendarPage.resetButton;
-    await expect(reset).toHaveCount(0);
+    // Two chips, both `sve`, no ✕ and no `Poništi filtre`; the summary says all.
+    await expect(filters.teamChip).toHaveAccessibleName(filters.teamChipText(null));
+    await expect(filters.personChip).toHaveAccessibleName(filters.personChipText(null));
+    await expect(filters.teamChip).toHaveAttribute('aria-haspopup', 'dialog');
+    await expect(filters.teamChip).toHaveAttribute('aria-expanded', 'false');
+    await expect(filters.summary).toContainText(summaryAllOf(columns));
+    await expect(filters.clearButton).toHaveCount(0);
 
-    // Choosing a team narrows the grid and resets the tab stop to today.
+    // The Smjena picker: `Sve smjene (N)` chosen, every team with its count.
+    await filters.teamChip.click();
+    await expect(filters.teamPicker).toBeVisible();
+    await expect(filters.teamChip).toHaveAttribute('aria-expanded', 'true');
+    await expect(filters.allTeamsOption(columns)).toHaveAttribute('aria-pressed', 'true');
+    await expect(filters.allTeamsOption(columns)).toBeFocused();
+    await expect(filters.teamOptions).toHaveCount(columns);
+    await expect(filters.teamOption(fixture.team.name)).toHaveCount(1);
+    // Escape closes it, focus back on the chip.
+    await page.keyboard.press('Escape');
+    await expect(filters.teamPicker).toHaveCount(0);
+    await expect(filters.teamChip).toBeFocused();
+
+    // Choosing a team narrows the grid, says so, and resets the tab stop to today.
     await calendarPage.moveTabStopOffToday();
-    await select.selectOption(fixture.team.id);
+    await filters.chooseTeam(fixture.team.name);
     await expect(page).toHaveURL(team);
     await expect(calendarPage.headerCells).toHaveCount(2);
     await expect(calendarPage.columnHeader(fixture.team.name)).toBeVisible();
-    await expect(select).toHaveValue(fixture.team.id);
-    await expect(reset).toBeVisible();
+    await expect(filters.teamChip).toHaveAccessibleName(filters.teamChipText(fixture.team.name));
+    await expect(filters.teamChip).toBeFocused();
+    await expect(filters.removeTeam(fixture.team.name)).toBeVisible();
+    await expect(filters.summary).toContainText(summaryTeamOf(fixture.team.name));
+    await expect(filters.clearButton).toBeVisible();
     await expectTabStopOnToday(calendarPage);
 
-    // One press brings every column back, on /kalendar, the reset goes, focus
-    // lands on the filter rather than <body>, and the tab stop is on today.
+    // The ✕ drops the team, and focus moves to the next chip, Osoba.
+    await filters.removeTeam(fixture.team.name).click();
+    await expect(page).not.toHaveURL(anySearchParamPattern('smjena'));
+    await expect(calendarPage.headerCells).toHaveCount(columns + 1);
+    await expect(filters.personChip).toBeFocused();
+    await expect(filters.clearButton).toHaveCount(0);
+
+    // `Poništi filtre` brings every column back, on /kalendar, focus on the
+    // first chip rather than <body>, and the tab stop on today.
+    await filters.chooseTeam(fixture.team.name);
+    await expect(page).toHaveURL(team);
     await calendarPage.moveTabStopOffToday();
-    await reset.click();
+    await filters.clearButton.click();
     await expect(page).not.toHaveURL(anySearchParamPattern('smjena'));
     await expect(page).toHaveURL(/\/kalendar(\?|$)/);
     await expect(calendarPage.headerCells).toHaveCount(columns + 1);
-    await expect(select).toHaveValue('');
-    await expect(reset).toHaveCount(0);
-    await expect(select).toBeFocused();
+    await expect(filters.teamChip).toHaveAccessibleName(filters.teamChipText(null));
+    await expect(filters.clearButton).toHaveCount(0);
+    await expect(filters.teamChip).toBeFocused();
     await expectTabStopOnToday(calendarPage);
 
     // The next month keeps the team: the heading moves, the filter stays.
-    await select.selectOption(fixture.team.id);
+    await filters.chooseTeam(fixture.team.name);
     await expect(page).toHaveURL(team);
     const heading = calendarPage.monthHeading();
     const thisMonth = (await heading.innerText()).trim();
@@ -1977,28 +2016,31 @@ test.describe('the team filter at 1280 px', () => {
     await expect(page).toHaveURL(anySearchParamPattern('mjesec'));
     await expect(page).toHaveURL(team);
     await expect(calendarPage.headerCells).toHaveCount(2);
-    await expect(select).toHaveValue(fixture.team.id);
+    await expect(filters.teamChip).toHaveAccessibleName(filters.teamChipText(fixture.team.name));
 
-    // A reset there drops the team and keeps the month.
+    // `Poništi filtre` there drops the team and keeps the month, and Back
+    // undoes the clear: the team is back.
     const mjesec = new URL(page.url()).searchParams.get('mjesec') ?? '';
     expect(mjesec).toMatch(/^\d{4}-\d{2}$/);
-    await reset.click();
+    await filters.clearButton.click();
     await expect(page).not.toHaveURL(anySearchParamPattern('smjena'));
     await expect(page).toHaveURL(searchParamPattern('mjesec', mjesec));
     await expect(calendarPage.headerCells).toHaveCount(columns + 1);
-    await expect(select).toBeFocused();
+    await expect(filters.teamChip).toBeFocused();
+    await page.goBack();
+    await expect(page).toHaveURL(team);
+    await expect(calendarPage.headerCells).toHaveCount(2);
   });
 
-  test('an unknown team id shows every column, reads as all teams, and offers no reset', async ({ page, calendarPage, fixture }) => {
+  test('an unknown team id shows every column, reads as `sve`, and offers no ✕', async ({ page, calendarPage, fixture }) => {
     const unknown = randomUUID();
     await calendarPage.goto(`?smjena=${unknown}`);
     await expect(calendarPage.columnHeader(fixture.team.name)).toBeVisible();
-    const select = calendarPage.teamFilter;
-    await expect(select).toHaveValue('');
+    const filters = calendarPage.filters;
     const columns = await calendarPage.columnCount();
-    await expect(calendarPage.teamOptions).toHaveCount(columns);
-    await expect(calendarPage.allTeamsOption).toHaveText(fill(kalendar.filter.all, { count: String(columns) }));
-    await expect(calendarPage.resetButton).toHaveCount(0);
+    await expect(filters.teamChip).toHaveAccessibleName(filters.teamChipText(null));
+    await expect(filters.summary).toContainText(summaryAllOf(columns));
+    await expect(filters.clearButton).toHaveCount(0);
     // Silently ignored, and left in the URL.
     await expect(page).toHaveURL(searchParamPattern('smjena', unknown));
   });
@@ -2007,8 +2049,8 @@ test.describe('the team filter at 1280 px', () => {
     await calendarPage.goto(`?prikaz=moj&smjena=${fixture.team.id}`);
     await expect(calendarPage.modes().moj).toHaveAttribute('aria-pressed', 'true');
     await expect(calendarPage.monthHeading(/\d{4}$/)).toBeVisible();
-    await expect(calendarPage.teamFilter).toHaveCount(0);
-    await expect(calendarPage.resetButton).toHaveCount(0);
+    await expect(calendarPage.filters.bar).toHaveCount(0);
+    await expect(calendarPage.filters.summary).toHaveCount(0);
     await expect(calendarPage.anyGrid).toHaveCount(0);
     await expect(page).toHaveURL(searchParamPattern('smjena', fixture.team.id));
   });
@@ -2017,7 +2059,7 @@ test.describe('the team filter at 1280 px', () => {
 test.describe('the person filter at 1280 px', () => {
   test.use({ storageState: ADMIN_STATE, viewport: { width: 1280, height: 800 } });
 
-  test("shows one person's day list in place of the grid, kept across months and cleared by a team or the reset", async ({
+  test("a person replaces the team: their day list in place of the grid, kept across months, cleared by ✕", async ({
     page,
     calendarPage,
     fixture,
@@ -2025,21 +2067,39 @@ test.describe('the person filter at 1280 px', () => {
     await calendarPage.goto();
     await expect(calendarPage.columnHeader(fixture.team.name)).toBeVisible();
     const columns = await calendarPage.columnCount();
-    const select = calendarPage.teamFilter;
-    const reset = calendarPage.resetButton;
+    const filters = calendarPage.filters;
 
-    // The Osobe group follows the teams and lists the fixture's people.
-    await expect(calendarPage.filterGroups).toHaveCount(2);
-    await expect(calendarPage.filterGroups.nth(1)).toHaveAttribute('label', kalendar.filter.people);
+    // The Osoba picker: a search, every person grouped by team, the spare under Bez smjene.
+    await filters.chooseTeam(fixture.team.name);
+    await expect(page).toHaveURL(searchParamPattern('smjena', fixture.team.id));
+    await filters.personChip.click();
+    await expect(filters.personPicker).toBeVisible();
+    await expect(filters.personSearch).toBeFocused();
     for (const person of [fixture.admin, fixture.member, fixture.spare]) {
-      await expect(calendarPage.peopleOptions.filter({ hasText: person.name }), person.name).toHaveCount(1);
+      await expect(filters.personOption(person.name), person.name).toHaveCount(1);
     }
+    await expect(filters.personGroup(fixture.team.name)).toBeVisible();
+    await expect(filters.personGroup(filterWords.noTeam)).toBeVisible();
+    // The search filters live, and says how many of all it shows.
+    await filters.personSearch.fill(fixture.member.name);
+    await expect(filters.personOption(fixture.member.name)).toBeVisible();
+    await expect(filters.personOption(fixture.spare.name)).toHaveCount(0);
+    await expect(filters.personPicker.locator(filters.matchesOf(1))).toBeVisible();
 
-    // Choosing her shows her day list headed with her name, and no grid.
-    await select.selectOption({ label: fixture.member.name });
+    // Choosing her drops the team: her day list headed with her name, no grid,
+    // the Smjena chip hidden, and the summary names her team.
+    await filters.personOption(fixture.member.name).click();
     await expect(page).toHaveURL(anySearchParamPattern('osoba'));
+    await expect(page).not.toHaveURL(anySearchParamPattern('smjena'));
     const osoba = new URL(page.url()).searchParams.get('osoba') ?? '';
     expect(osoba).not.toBe('');
+    await expect(filters.personPicker).toHaveCount(0);
+    await expect(filters.personChip).toBeFocused();
+    await expect(filters.personChip).toHaveAccessibleName(filters.personChipText(fixture.member.name));
+    await expect(filters.teamChip).toHaveCount(0);
+    await expect(filters.summary).toHaveText(
+      fill(filterWords.summary.person, { person: fixture.member.name, team: fixture.team.name }),
+    );
     await expect(calendarPage.personHeading(fixture.member.name)).toBeVisible();
     const list = calendarPage.personListOf(fixture.member.name);
     await expect(list).toBeVisible();
@@ -2047,8 +2107,6 @@ test.describe('the person filter at 1280 px', () => {
       `${fixture.member.name} ${(await calendarPage.monthHeading().innerText()).trim()}`,
     );
     await expect(calendarPage.anyGrid).toHaveCount(0);
-    await expect(select).toHaveValue(`osoba:${osoba}`);
-    await expect(reset).toBeVisible();
 
     // The next month keeps her.
     const heading = calendarPage.monthHeading();
@@ -2060,37 +2118,76 @@ test.describe('the person filter at 1280 px', () => {
     await expect(calendarPage.personListOf(fixture.member.name)).toBeVisible();
     await expect(calendarPage.anyGrid).toHaveCount(0);
 
-    // Choosing a team drops her: the grid narrowed to that team.
-    await select.selectOption(fixture.team.id);
-    await expect(page).not.toHaveURL(anySearchParamPattern('osoba'));
-    await expect(page).toHaveURL(searchParamPattern('smjena', fixture.team.id));
-    await expect(calendarPage.headerCells).toHaveCount(2);
-
-    // Back to her, then the reset returns the whole grid and keeps the month.
-    await select.selectOption({ label: fixture.member.name });
-    await expect(page).toHaveURL(searchParamPattern('osoba', osoba));
-    await expect(page).not.toHaveURL(anySearchParamPattern('smjena'));
+    // Her ✕ returns the whole grid, keeps the month, and focus lands on the
+    // Smjena chip, drawn again.
     const mjesec = new URL(page.url()).searchParams.get('mjesec') ?? '';
-    await reset.click();
+    await filters.removePerson(fixture.member.name).click();
     await expect(page).not.toHaveURL(anySearchParamPattern('osoba'));
     await expect(page).not.toHaveURL(anySearchParamPattern('smjena'));
     await expect(page).toHaveURL(searchParamPattern('mjesec', mjesec));
     await expect(calendarPage.headerCells).toHaveCount(columns + 1);
-    await expect(select).toHaveValue('');
-    await expect(reset).toHaveCount(0);
-    await expect(select).toBeFocused();
+    await expect(filters.teamChip).toBeFocused();
+    await expect(filters.clearButton).toHaveCount(0);
   });
 
-  test('forgets the grid tab stop when a person is chosen and reset', async ({ page, calendarPage, fixture }) => {
+  test('Poništi filtre with a person chosen puts focus on the Smjena chip it brings back', async ({ page, calendarPage, fixture }) => {
     await calendarPage.goto();
     await expect(calendarPage.columnHeader(fixture.team.name)).toBeVisible();
-    const select = calendarPage.teamFilter;
+    const filters = calendarPage.filters;
+
+    await filters.choosePerson(fixture.member.name);
+    await expect(page).toHaveURL(anySearchParamPattern('osoba'));
+    await expect(filters.teamChip).toHaveCount(0);
+    await filters.clearButton.click();
+    await expect(page).not.toHaveURL(anySearchParamPattern('osoba'));
+    // Focus waits for the re-render: the Smjena chip, drawn again, never Osoba.
+    await expect(filters.teamChip).toBeFocused();
+  });
+
+  test('the pickers move by ↑ ↓ Home End, and ↓ from the search enters the list', async ({ page, calendarPage, fixture }) => {
+    await calendarPage.goto();
+    await expect(calendarPage.columnHeader(fixture.team.name)).toBeVisible();
+    const filters = calendarPage.filters;
+    const columns = await calendarPage.columnCount();
+
+    await filters.teamChip.click();
+    const all = filters.allTeamsOption(columns);
+    const teams = filters.teamOptions;
+    await expect(all).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(teams.first()).toBeFocused();
+    await page.keyboard.press('End');
+    await expect(teams.last()).toBeFocused();
+    await page.keyboard.press('Home');
+    await expect(all).toBeFocused();
+    await page.keyboard.press('ArrowUp');
+    await expect(all).toBeFocused();
+    // One tab stop: the option focused is the only one Tab reaches.
+    await expect(filters.teamPicker.locator('button[tabindex="0"]')).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await expect(filters.teamChip).toBeFocused();
+
+    await filters.personChip.click();
+    await expect(filters.personSearch).toBeFocused();
+    await filters.personSearch.fill(fixture.member.name);
+    await page.keyboard.press('ArrowDown');
+    // The tab stop is `Sve osobe` (nobody chosen), and ↓ moves on to her.
+    await page.keyboard.press('ArrowDown');
+    await expect(filters.personOption(fixture.member.name)).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(anySearchParamPattern('osoba'));
+    await expect(filters.personChip).toBeFocused();
+  });
+
+  test('forgets the grid tab stop when a person is chosen and the filters cleared', async ({ page, calendarPage, fixture }) => {
+    await calendarPage.goto();
+    await expect(calendarPage.columnHeader(fixture.team.name)).toBeVisible();
 
     await calendarPage.moveTabStopOffToday();
-    await select.selectOption({ label: fixture.member.name });
+    await calendarPage.filters.choosePerson(fixture.member.name);
     await expect(page).toHaveURL(anySearchParamPattern('osoba'));
     await expect(calendarPage.anyGrid).toHaveCount(0);
-    await calendarPage.resetButton.click();
+    await calendarPage.filters.clearButton.click();
     await expect(page).not.toHaveURL(anySearchParamPattern('osoba'));
     await expectTabStopOnToday(calendarPage);
   });
@@ -2099,24 +2196,56 @@ test.describe('the person filter at 1280 px', () => {
     test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     await held(fixture.slug);
     await calendarPage.goto();
-    const select = calendarPage.teamFilter;
-    await expect(calendarPage.peopleOptions.filter({ hasText: fixture.spare.name })).toHaveCount(1);
 
-    await select.selectOption({ label: fixture.spare.name });
+    await calendarPage.filters.choosePerson(fixture.spare.name);
     await expect(page).toHaveURL(anySearchParamPattern('osoba'));
     await expect(calendarPage.personHeading(fixture.spare.name)).toBeVisible();
     await expect(calendarPage.personNoTeam(fixture.spare.name)).toBeVisible();
     await expect(calendarPage.personListOf(fixture.spare.name)).toHaveCount(0);
     await expect(calendarPage.anyGrid).toHaveCount(0);
+    await expect(calendarPage.filters.summary).toHaveText(
+      fill(filterWords.summary.personNoTeam, { person: fixture.spare.name }),
+    );
   });
 
-  test('an unknown person id is ignored: the grid, and no reset', async ({ page, calendarPage, fixture }) => {
+  test('an unknown person id is ignored: the grid, and both chips `sve`', async ({ page, calendarPage, fixture }) => {
     const unknown = randomUUID();
     await calendarPage.goto(`?osoba=${unknown}`);
     await expect(calendarPage.columnHeader(fixture.team.name)).toBeVisible();
-    await expect(calendarPage.teamFilter).toHaveValue('');
-    await expect(calendarPage.resetButton).toHaveCount(0);
+    await expect(calendarPage.filters.personChip).toHaveAccessibleName(calendarPage.filters.personChipText(null));
+    await expect(calendarPage.filters.teamChip).toHaveAccessibleName(calendarPage.filters.teamChipText(null));
+    await expect(calendarPage.filters.clearButton).toHaveCount(0);
     await expect(page).toHaveURL(searchParamPattern('osoba', unknown));
+  });
+});
+
+test.describe('the filter bar while the month loads', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 1280, height: 800 } });
+
+  test('is omitted until the month is shown: the toolbar stands in, the skeleton below', async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route('**/rest/v1/organizations*', async (route) => {
+      await gate;
+      await route.continue();
+    });
+    await calendarPage.goto('?prikaz=sve');
+
+    await expect(page.locator('main[aria-busy="true"]')).toBeVisible();
+    await expect(calendarPage.anyGrid).toHaveCount(0);
+    await expect(calendarPage.filters.bar).toHaveCount(0);
+    await expect(calendarPage.filters.summary).toHaveCount(0);
+
+    release();
+    await expect(calendarPage.columnHeader(fixture.team.name)).toBeVisible();
+    await expect(calendarPage.filters.bar).toBeVisible();
+    await expect(calendarPage.filters.summary).toBeVisible();
   });
 });
 
@@ -2125,14 +2254,15 @@ test.describe('the person filter in Moj raspored', () => {
 
   test('Moj raspored ignores the person, shows no filter, and keeps it in the URL', async ({ page, calendarPage, fixture }) => {
     await calendarPage.goto();
-    const value = await calendarPage.peopleOptions.filter({ hasText: fixture.member.name }).getAttribute('value');
-    const osoba = (value ?? '').replace(/^osoba:/, '');
+    await calendarPage.filters.choosePerson(fixture.member.name);
+    await expect(page).toHaveURL(anySearchParamPattern('osoba'));
+    const osoba = new URL(page.url()).searchParams.get('osoba') ?? '';
     expect(osoba).not.toBe('');
 
     await calendarPage.goto(`?prikaz=moj&osoba=${osoba}`);
     await expect(calendarPage.modes().moj).toHaveAttribute('aria-pressed', 'true');
     await expect(calendarPage.monthHeading(/\d{4}$/)).toBeVisible();
-    await expect(calendarPage.teamFilter).toHaveCount(0);
+    await expect(calendarPage.filters.bar).toHaveCount(0);
     await expect(calendarPage.personHeading(fixture.member.name, { exact: false })).toHaveCount(0);
     await expect(page).toHaveURL(searchParamPattern('osoba', osoba));
   });
@@ -2141,45 +2271,191 @@ test.describe('the person filter in Moj raspored', () => {
 test.describe('the person filter for a member-role account', () => {
   test.use({ storageState: MEMBER_STATE, viewport: { width: 1280, height: 800 } });
 
-  test('lists the colleagues under Osobe', async ({ page, calendarPage, fixture }) => {
+  test('lists the colleagues in the Osoba picker', async ({ page, calendarPage, fixture }) => {
     test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     await held(fixture.slug);
     await calendarPage.goto('?prikaz=sve');
-    await expect(calendarPage.teamFilter).toBeVisible();
+    const filters = calendarPage.filters;
+    await filters.personChip.click();
     for (const person of [fixture.admin, fixture.member, fixture.spare]) {
-      await expect(calendarPage.peopleOptions.filter({ hasText: person.name }), person.name).toHaveCount(1);
+      await expect(filters.personOption(person.name), person.name).toHaveCount(1);
     }
     // Every option is a name and nothing else: no address, no username.
-    for (const text of await calendarPage.peopleOptions.allInnerTexts()) {
+    for (const text of await filters.personPicker.getByRole('button').allInnerTexts()) {
       expect(text).not.toMatch(/@|e2e\./);
     }
 
     // A colleague's month — the reading `calendar_members()` exists for.
-    const select = calendarPage.teamFilter;
-    await select.selectOption({ label: fixture.admin.name });
+    await filters.personOption(fixture.admin.name).click();
     await expect(page).toHaveURL(anySearchParamPattern('osoba'));
     await expect(calendarPage.personHeading(fixture.admin.name)).toBeVisible();
     await expect(calendarPage.anyGrid).toHaveCount(0);
 
-    await select.selectOption({ label: fixture.spare.name });
+    await filters.choosePerson(fixture.spare.name);
     await expect(calendarPage.personHeading(fixture.spare.name)).toBeVisible();
     await expect(calendarPage.personNoTeam(fixture.spare.name)).toBeVisible();
     await expect(calendarPage.anyGrid).toHaveCount(0);
   });
 });
 
+test.describe('the filters on a phone', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 390, height: 844 } });
+
+  test('Filtri opens a sheet whose choices write the URL at once, and the active chip stays above the content', async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
+    await calendarPage.goto('?prikaz=sve');
+    await expect(calendarPage.columnHeader(fixture.team.name)).toBeAttached();
+    const filters = calendarPage.filters;
+    const columns = await calendarPage.columnCount();
+
+    // Only active chips show: none yet, and `Filtri` carries no number.
+    await expect(filters.filtriButton).toHaveAccessibleName(filterWords.open);
+    await expect(filters.teamChip).toBeHidden();
+    await expect(filters.personChip).toBeHidden();
+
+    await filters.filtriButton.click();
+    await expect(filters.sheet).toBeVisible();
+    await expect(filters.replaceNote).toBeVisible();
+    await expect(filters.sheet.getByRole('radio', { name: fill(filterWords.allTeams, { count: String(columns) }) })).toBeChecked();
+
+    // Choosing a team writes the URL at once, and `Prikaži` counts its people.
+    const before = await filters.sheetShowAny.innerText();
+    await filters.sheetTeam(fixture.team.name).check();
+    await expect(page).toHaveURL(searchParamPattern('smjena', fixture.team.id));
+    await expect(filters.sheetTeam(fixture.team.name)).toBeChecked();
+    await expect(filters.sheetShowAny).not.toHaveText(before);
+
+    // Escape closes it, focus on `Filtri`, which now counts one.
+    await page.keyboard.press('Escape');
+    await expect(filters.sheet).toBeHidden();
+    await expect(filters.filtriButton).toBeFocused();
+    await expect(filters.filtriButton).toHaveAccessibleName(fill(filterWords.openCount, { count: '1' }));
+    // The active chip stays visible, with its ✕, above the grid.
+    await expect(filters.teamChip).toBeVisible();
+    await expect(filters.teamChip).toHaveAccessibleName(filters.teamChipText(fixture.team.name));
+    await expect(filters.removeTeam(fixture.team.name)).toBeVisible();
+    await expect(filters.personChip).toBeHidden();
+    const chipBox = await filters.teamChip.boundingBox();
+    const gridBox = await calendarPage.grid.boundingBox();
+    expect(chipBox!.y).toBeLessThan(gridBox!.y);
+    await expectNoHorizontalScroll(page);
+
+    // Back works: each choice was its own entry.
+    await page.goBack();
+    await expect(page).not.toHaveURL(anySearchParamPattern('smjena'));
+    await expect(filters.teamChip).toBeHidden();
+
+    // `Prikaži …` closes the sheet.
+    await filters.filtriButton.click();
+    await filters.sheetPerson(fixture.member.name).click();
+    await expect(page).toHaveURL(anySearchParamPattern('osoba'));
+    await filters.sheetShow(1).click();
+    await expect(filters.sheet).toBeHidden();
+    await expect(filters.personChip).toHaveAccessibleName(filters.personChipText(fixture.member.name));
+  });
+});
+
+test.describe('the filters on a phone, after a change', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 390, height: 844 } });
+
+  test('✕ on the only active chip moves focus to Filtri, never to the page', async ({ page, calendarPage, fixture }) => {
+    await calendarPage.goto(`?prikaz=sve&smjena=${fixture.team.id}`);
+    await expect(calendarPage.columnHeader(fixture.team.name)).toBeAttached();
+    const filters = calendarPage.filters;
+
+    await filters.removeTeam(fixture.team.name).click();
+    await expect(page).not.toHaveURL(anySearchParamPattern('smjena'));
+    await expect(filters.teamChip).toBeHidden();
+    await expect(filters.filtriButton).toBeFocused();
+  });
+
+  test("the sheet's Poništi clears both and updates Prikaži, and reopening starts with an empty search", async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
+    await calendarPage.goto(`?prikaz=sve&smjena=${fixture.team.id}`);
+    await expect(calendarPage.columnHeader(fixture.team.name)).toBeAttached();
+    const filters = calendarPage.filters;
+
+    await filters.filtriButton.click();
+    await expect(filters.sheet).toBeVisible();
+    // A phone's chip says it opened the sheet.
+    await expect(filters.filtriButton).toHaveAttribute('aria-expanded', 'true');
+    const narrowed = await filters.sheetShowAny.innerText();
+    await filters.sheetReset.click();
+    await expect(page).not.toHaveURL(anySearchParamPattern('smjena'));
+    await expect(page).not.toHaveURL(anySearchParamPattern('osoba'));
+    await expect(filters.sheetShowAny).not.toHaveText(narrowed);
+
+    // Type into the search, close, reopen: the search is empty again.
+    // (Escape in a search with text first clears the text, as the browser does.)
+    await filters.personSearch.fill(fixture.member.name);
+    await filters.sheet.getByRole('button', { name: filterWords.sheetClose, exact: true }).click();
+    await expect(filters.sheet).toBeHidden();
+    await filters.filtriButton.click();
+    await expect(filters.sheet).toBeVisible();
+    await expect(filters.personSearch).toHaveValue('');
+    await expect(filters.sheetPerson(fixture.spare.name)).toBeVisible();
+  });
+
+  test('an active chip opens the sheet and says so', async ({ calendarPage, fixture }) => {
+    await calendarPage.goto(`?prikaz=sve&smjena=${fixture.team.id}`);
+    await expect(calendarPage.columnHeader(fixture.team.name)).toBeAttached();
+    const filters = calendarPage.filters;
+
+    await expect(filters.teamChip).toHaveAttribute('aria-expanded', 'false');
+    await filters.teamChip.click();
+    await expect(filters.sheet).toBeVisible();
+    await expect(filters.teamChip).toHaveAttribute('aria-expanded', 'true');
+    const controls = await filters.teamChip.getAttribute('aria-controls');
+    expect(controls).not.toBeNull();
+    await expect(filters.sheet).toHaveAttribute('id', controls ?? '');
+  });
+
+  test('the sheet closes when the viewport turns wide', async ({ page, calendarPage, fixture }) => {
+    await calendarPage.goto('?prikaz=sve');
+    await expect(calendarPage.columnHeader(fixture.team.name)).toBeAttached();
+    const filters = calendarPage.filters;
+
+    await filters.filtriButton.click();
+    await expect(filters.sheet).toBeVisible();
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(filters.sheet).toBeHidden();
+    await expect(filters.teamChip).toBeVisible();
+  });
+});
+
+test.describe('the filters on a wide screen turning narrow', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 1280, height: 800 } });
+
+  test('an open picker closes when the viewport turns narrow', async ({ page, calendarPage, fixture }) => {
+    await calendarPage.goto('?prikaz=sve');
+    await expect(calendarPage.columnHeader(fixture.team.name)).toBeVisible();
+    const filters = calendarPage.filters;
+
+    await filters.teamChip.click();
+    await expect(filters.teamPicker).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(filters.teamPicker).toHaveCount(0);
+  });
+});
+
 test.describe('the team filter at 320 px', () => {
   test.use({ storageState: ADMIN_STATE, viewport: { width: 320, height: 720 } });
 
-  test('never scrolls the page sideways, and the select and the reset are touch targets', async ({ page, calendarPage, fixture }) => {
+  test('never scrolls the page sideways, and Filtri, the chip and its ✕ are touch targets', async ({ page, calendarPage, fixture }) => {
     await calendarPage.goto(`?prikaz=sve&smjena=${fixture.team.id}`);
     await expect(calendarPage.columnHeader(fixture.team.name)).toBeAttached();
-    const select = calendarPage.teamFilter;
-    const reset = calendarPage.resetButton;
-    await expect(select).toHaveValue(fixture.team.id);
-    await expect(reset).toBeVisible();
+    const filters = calendarPage.filters;
+    await expect(filters.teamChip).toHaveAccessibleName(filters.teamChipText(fixture.team.name));
+    const remove = filters.removeTeam(fixture.team.name);
+    await expect(remove).toBeVisible();
 
-    for (const target of [select, reset]) {
+    for (const target of [filters.filtriButton, filters.teamChip, remove, filters.clearButton]) {
       const box = await target.boundingBox();
       expect(box, 'a target has no box').not.toBeNull();
       expect(box!.width).toBeGreaterThanOrEqual(MINIMUM_TARGET - 0.5);

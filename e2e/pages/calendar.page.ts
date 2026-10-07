@@ -4,6 +4,7 @@ import { dayMonth, weekdayOf } from '../utils/dates.ts';
 import { MONTH_TRIGGER_NAME, escapeRegExp, fill, hr } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 import { ErasureDialogParts } from './erasure-dialog.ts';
+import { FilterBarParts } from './filter-bar.ts';
 
 const kalendar = hr.kalendar;
 
@@ -674,33 +675,9 @@ export class CalendarPage extends BasePage {
 
   // ------------------------------------------------------------- filter
 
-  /** The team and person filter's native select. */
-  get teamFilter(): Locator {
-    return this.page.getByRole('combobox', { name: kalendar.filter.label, exact: true });
-  }
-
-  /** The filter's first option, all teams. */
-  get allTeamsOption(): Locator {
-    return this.teamFilter.locator('option').first();
-  }
-
-  /** The filter's option groups: the teams, then the people. */
-  get filterGroups(): Locator {
-    return this.teamFilter.locator('optgroup');
-  }
-
-  /** The teams under the filter's teams heading. */
-  get teamOptions(): Locator {
-    return this.teamFilter.locator(`optgroup[label="${kalendar.filter.group}"] > option`);
-  }
-
-  /** The people under the filter's *Osobe* heading. */
-  get peopleOptions(): Locator {
-    return this.teamFilter.locator(`optgroup[label="${kalendar.filter.people}"] > option`);
-  }
-
-  get resetButton(): Locator {
-    return this.page.getByRole('button', { name: kalendar.filter.reset, exact: true });
+  /** The filter bar (story 7.5): Smjena and Osoba chips, the summary and the phone sheet. */
+  get filters(): FilterBarParts {
+    return new FilterBarParts(this.page);
   }
 
   /** A chosen person's heading (h3). */

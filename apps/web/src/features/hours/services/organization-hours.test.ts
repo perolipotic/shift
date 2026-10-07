@@ -18,13 +18,16 @@ import {
   bandSortKeyOf,
   calendarLinkSearchOf,
   hoursAriaSortOf,
+  HOURS_EMPTY_FILTERED,
+  HOURS_EMPTY_MONTH,
+  HOURS_EMPTY_NOT_IN_TEAM,
+  hoursEmptyFactMessageKey,
   hoursEmptyMessageKey,
-  hoursPersonChangeOf,
+  hoursEmptyOf,
   hoursSearchBaseOf,
   hoursSortArrowOf,
   hoursSortChangeOf,
   hoursSurfaceOf,
-  hoursTeamChangeOf,
   nextHoursSort,
   organizationHoursOf,
   organizationHoursRowsOf,
@@ -248,8 +251,8 @@ describe('the rows', () => {
     const cedo = viewOf(pilot).rows.find((row) => row.memberId === CEDO)!;
 
     expect(cedo.team).toEqual({ id: b, name: 'Smjena B' });
-    expect(viewOf(pilot, { mjesec: MONTH, tim: b }).rows.map((row) => row.memberId)).toContain(CEDO);
-    expect(viewOf(pilot, { mjesec: MONTH, tim: teamOf(PILOT, 0) }).rows.map((row) => row.memberId)).not.toContain(
+    expect(viewOf(pilot, { mjesec: MONTH, smjena: b }).rows.map((row) => row.memberId)).toContain(CEDO);
+    expect(viewOf(pilot, { mjesec: MONTH, smjena: teamOf(PILOT, 0) }).rows.map((row) => row.memberId)).not.toContain(
       CEDO,
     );
   });
@@ -262,7 +265,7 @@ describe('the rows', () => {
     expect(dora.shiftCount).toBe(0);
     expect(t('sati.organization.noTeam')).toBe('—');
     for (const team of viewOf(pilot).teams) {
-      expect(viewOf(pilot, { mjesec: MONTH, tim: team.id }).rows.map((row) => row.memberId)).not.toContain(DORA);
+      expect(viewOf(pilot, { mjesec: MONTH, smjena: team.id }).rows.map((row) => row.memberId)).not.toContain(DORA);
     }
   });
 
@@ -345,17 +348,37 @@ describe('the filters', () => {
   it('combine: a team and a person narrow together', () => {
     const b = teamOf(PILOT, 1);
 
-    expect(names(viewOf(pilot, { mjesec: MONTH, tim: b }))).toEqual(['Ana Anić', 'Čedo Čačić']);
-    expect(names(viewOf(pilot, { mjesec: MONTH, tim: b, osoba: ANA }))).toEqual(['Ana Anić']);
-    expect(names(viewOf(pilot, { mjesec: MONTH, tim: b, osoba: FILIP }))).toEqual([]);
+    expect(names(viewOf(pilot, { mjesec: MONTH, smjena: b }))).toEqual(['Ana Anić', 'Čedo Čačić']);
+    expect(names(viewOf(pilot, { mjesec: MONTH, smjena: b, osoba: ANA }))).toEqual(['Ana Anić']);
+    expect(names(viewOf(pilot, { mjesec: MONTH, smjena: b, osoba: FILIP }))).toEqual([]);
     expect(names(viewOf(pilot, { mjesec: MONTH, osoba: FILIP }))).toEqual(['Filip Filić']);
   });
 
-  it('map the selects: "all" drops the parameter', () => {
-    expect(hoursTeamChangeOf('')).toEqual({ tim: null });
-    expect(hoursTeamChangeOf('t')).toEqual({ tim: 't' });
-    expect(hoursPersonChangeOf('')).toEqual({ osoba: null });
-    expect(hoursPersonChangeOf(ANA)).toEqual({ osoba: ANA });
+  it('the filter bar combines, and counts each team\'s rows (story 7.5)', () => {
+    const b = teamOf(PILOT, 1);
+    const view = viewOf(pilot);
+    const all = view.filters;
+
+    expect(all.combine).toBe(true);
+    expect(all.chips.map((chip) => chip.key)).toEqual(['team', 'person']);
+    expect(all.teams.map((team) => [team.name, team.count])).toEqual(
+      view.teams.map((team) => [team.name, view.rows.filter((row) => row.team?.id === team.id).length]),
+    );
+    expect(all.people.map((person) => person.id)).toEqual(view.people.map((person) => person.id));
+    expect(all.summary).toEqual({ kind: 'all', teams: view.teams.length, people: view.rowCount });
+
+    const both = viewOf(pilot, { mjesec: MONTH, smjena: b, osoba: FILIP }).filters;
+
+    expect(both.chips).toEqual([
+      { key: 'team', value: 'Smjena B' },
+      { key: 'person', value: 'Filip Filić' },
+    ]);
+    expect(both.summary).toEqual({ kind: 'both', team: 'Smjena B', person: 'Filip Filić', shown: 0 });
+    expect(both.activeCount).toBe(2);
+    expect(both.shownCount).toBe(0);
+    // Each person carries their team for the month: Čedo moved to B on the 16th.
+    expect(all.people.find((person) => person.id === CEDO)).toMatchObject({ teamId: b, teamName: 'Smjena B' });
+    expect(all.people.find((person) => person.id === DORA)).toMatchObject({ teamId: null, teamName: null });
   });
 });
 
@@ -440,7 +463,7 @@ describe('the sort', () => {
 
 describe('the matrix edges', () => {
   it('stale params: an unknown person and a deleted band are dropped — all rows, by name', () => {
-    const view = viewOf(pilot, hoursSearchOf({ mjesec: MONTH, osoba: 'nobody', tim: 'gone', sort: 'pojas-deleted' }));
+    const view = viewOf(pilot, hoursSearchOf({ mjesec: MONTH, osoba: 'nobody', smjena: 'gone', sort: 'pojas-deleted' }));
 
     expect(view.person).toBeNull();
     expect(view.team).toBeNull();
@@ -460,17 +483,42 @@ describe('the matrix edges', () => {
     expect(viewOf(pilot, { mjesec: MONTH, smjer: 'silazno' }).search).toEqual({ mjesec: MONTH, smjer: 'silazno' });
   });
 
-  it('an empty table says why: nobody matches the filter, or nobody has a row this month', () => {
-    expect(hoursEmptyMessageKey(3, 5)).toBeNull();
-    expect(hoursEmptyMessageKey(0, 5)).toBe('sati.organization.empty');
-    expect(hoursEmptyMessageKey(0, 0)).toBe('sati.organization.emptyMonth');
+  it('an empty table says what is true: who is where this month, or nobody has a row (story 7.5)', () => {
     expect(viewOf(pilot).empty).toBeNull();
-    expect(viewOf(pilot, { mjesec: MONTH, tim: teamOf(PILOT, 1), osoba: FILIP }).empty).toBe('sati.organization.empty');
+    // Matrix: combine — Filip is in D, not B.
+    const filtered = viewOf(pilot, { mjesec: MONTH, smjena: teamOf(PILOT, 1), osoba: FILIP }).empty;
+
+    expect(filtered).toEqual({
+      code: HOURS_EMPTY_NOT_IN_TEAM,
+      person: 'Filip Filić',
+      personTeam: 'Smjena D',
+      team: 'Smjena B',
+      month: MONTH,
+    });
+    expect(hoursEmptyMessageKey(filtered!)).toBe('filter.empty.notInTeam');
+    expect(hoursEmptyFactMessageKey('Smjena D')).toBe('filter.empty.inTeam');
+    expect(hoursEmptyFactMessageKey(null)).toBe('filter.empty.noTeam');
+    expect(
+      t('filter.empty.notInTeam', { person: 'Luka Knežević', team: 'Smjena B', monthIn: t('filter.monthIn.10'), year: '2026' }),
+    ).toBe('Luka Knežević nije u smjeni Smjena B u listopadu 2026.');
+    expect(t('filter.empty.inTeam', { person: 'Luka Knežević', team: 'Smjena A' })).toBe('Luka Knežević je u smjeni Smjena A.');
+    expect(t('filter.empty.noTeam', { person: 'Luka Knežević', monthIn: t('filter.monthIn.10'), year: '2026' })).toBe(
+      'Luka Knežević nije ni u jednoj smjeni u listopadu 2026.',
+    );
+    expect(t('filter.empty.removeTeam', { team: 'Smjena B' })).toBe('Ukloni filtar: Smjena B');
+
     const empty = viewOf({ ...pilot, members: [] });
 
     expect(empty.rows).toEqual([]);
-    expect(empty.empty).toBe('sati.organization.emptyMonth');
+    expect(empty.empty).toEqual({ code: HOURS_EMPTY_MONTH });
+    expect(hoursEmptyMessageKey({ code: HOURS_EMPTY_MONTH })).toBe('sati.organization.emptyMonth');
     expect(t('sati.organization.emptyMonth')).toBe('U ovom mjesecu nema nijedne osobe.');
+    // A filter alone never empties the table today (its options are the
+    // rows'); were it to, the table says the filters show nobody, never throws.
+    expect(hoursEmptyOf(0, viewOf(pilot).rows, null, FILIP, MONTH)).toEqual({ code: HOURS_EMPTY_FILTERED });
+    expect(hoursEmptyOf(0, viewOf(pilot).rows, null, 'gone', MONTH)).toEqual({ code: HOURS_EMPTY_FILTERED });
+    expect(hoursEmptyMessageKey({ code: HOURS_EMPTY_FILTERED })).toBe('filter.empty.filtered');
+    expect(t('filter.empty.filtered')).toBe('Odabrani filtri ne prikazuju nijednu osobu.');
   });
 
   it('spans a row across every column: the fixed six and one per band', async () => {
@@ -488,16 +536,16 @@ describe('the matrix edges', () => {
   });
 
   it("navigates from the table's own search for an admin, and from the month alone for a member", () => {
-    const view = viewOf(pilot, { mjesec: MONTH, tim: teamOf(PILOT, 1), osoba: 'gone', sort: 'ukupno', smjer: 'silazno' });
-    const raw: HoursSearch = { mjesec: MONTH, tim: 't', osoba: 'o', sort: 'ukupno', smjer: 'silazno' };
+    const view = viewOf(pilot, { mjesec: MONTH, smjena: teamOf(PILOT, 1), osoba: 'gone', sort: 'ukupno', smjer: 'silazno' });
+    const raw: HoursSearch = { mjesec: MONTH, smjena: 't', osoba: 'o', sort: 'ukupno', smjer: 'silazno' };
 
-    expect(hoursSearchBaseOf(view, raw)).toEqual({ mjesec: MONTH, tim: teamOf(PILOT, 1), sort: 'ukupno', smjer: 'silazno' });
+    expect(hoursSearchBaseOf(view, raw)).toEqual({ mjesec: MONTH, smjena: teamOf(PILOT, 1), sort: 'ukupno', smjer: 'silazno' });
     expect(hoursSearchBaseOf(null, raw)).toEqual({ mjesec: MONTH });
-    expect(hoursSearchBaseOf(null, { tim: 't', sort: 'ukupno' })).toEqual({});
+    expect(hoursSearchBaseOf(null, { smjena: 't', sort: 'ukupno' })).toEqual({});
   });
 
   it('the search the table stands for keeps what it applies, and reloading it gives the same rows in the same order', () => {
-    const search = { mjesec: MONTH, tim: teamOf(PILOT, 1), sort: 'ukupno', smjer: 'silazno' } as const;
+    const search = { mjesec: MONTH, smjena: teamOf(PILOT, 1), sort: 'ukupno', smjer: 'silazno' } as const;
     const view = viewOf(pilot, search);
 
     expect(view.search).toEqual(search);
@@ -565,7 +613,7 @@ describe('the surface', () => {
   it('a member-role viewer sees exactly the 4.1b screen, whatever the search holds', async () => {
     const asMember = await organizationOf(PILOT, { role: 'member_role' });
     const state = { snapshot: asMember, refusal: null, loading: false };
-    const search = { mjesec: MONTH, tim: teamOf(PILOT, 1), sort: 'ukupno' } as const;
+    const search = { mjesec: MONTH, smjena: teamOf(PILOT, 1), sort: 'ukupno' } as const;
 
     expect(hoursSurfaceOf(state, READY, search, TODAY)).toEqual({
       ...myHoursSurfaceOf(state, READY, { mjesec: MONTH }, TODAY),

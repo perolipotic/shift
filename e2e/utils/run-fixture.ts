@@ -25,6 +25,10 @@ import { addressDomain, connect, insertMember } from './database-helper.ts';
  * all of them.
  */
 
+
+/** The run organization's zone: what its "today" and "this month" are read in. */
+export const RUN_TIMEZONE = 'Europe/Zagreb';
+
 export const SLUG_PREFIX = 'e2e-';
 
 /** A stale run is one that crashed before its teardown. Younger ones may be a
@@ -113,7 +117,7 @@ export async function provision(): Promise<Fixture> {
       organization_slug: slug,
       organization_name: `E2E ${runId}`,
       organization_type: 'E2E',
-      organization_timezone: 'Europe/Zagreb',
+      organization_timezone: RUN_TIMEZONE,
       organization_locale: 'hr',
       leave_year_start_month: '1',
       leave_year_start_day: '1',

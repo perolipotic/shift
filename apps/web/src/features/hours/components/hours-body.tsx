@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 
+import type { FilterBarHandle } from '@/components/filter-bar';
 import { Button } from '@/components/ui/button';
 import { Notice } from '@/components/ui/notice';
 import { HoursSkeleton } from '@/features/hours/components/hours-skeleton';
@@ -49,7 +50,7 @@ export function HoursNotice({
  * What sits under the month navigation: the message in place of the figures
  * when the domain refused them, the skeleton while the read is unanswered,
  * the organization's table for an admin (story 4.2) with its export beside
- * the filters (story 4.3), and the viewer's own
+ * the filter bar (stories 4.3, 7.5), and the viewer's own
  * figures for a member (story 4.1b). `hoursSurfaceOf` decides which; this
  * only draws it.
  */
@@ -69,6 +70,9 @@ export function HoursBody({
   readonly onChange: (change: HoursSearchChange) => void;
   readonly onPress: (key: HoursSortKey) => void;
 }): ReactNode {
+  // The filter bar's first chip: where the empty table's two actions put focus.
+  const filtersRef = useRef<FilterBarHandle>(null);
+
   if (refusal !== null) {
     return (
       <div className="px-4 pb-4">
@@ -80,11 +84,11 @@ export function HoursBody({
   if (organization !== null) {
     return (
       <>
-        <OrganizationHoursFilters view={organization} onChange={onChange} />
+        <OrganizationHoursFilters view={organization} filtersRef={filtersRef} onChange={onChange} />
         {organizationName === null ? null : (
           <OrganizationHoursExport view={organization} organizationName={organizationName} />
         )}
-        <OrganizationHoursTable view={organization} onPress={onPress} />
+        <OrganizationHoursTable view={organization} filtersRef={filtersRef} onChange={onChange} onPress={onPress} />
       </>
     );
   }

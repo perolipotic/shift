@@ -239,7 +239,7 @@ test.describe('a focused cell in a grid that scrolls sideways, on a phone', () =
     // Tab into the grid on its one tab stop, while that cell is partly under
     // the sticky date column.
     await coverFirstColumn(scroller);
-    await calendarPage.teamFilter.focus();
+    await calendarPage.filters.lastControl.focus();
     await page.keyboard.press('Tab');
     await expect(calendarPage.tabStops).toBeFocused();
     await expectClear(page, 'Tab');
@@ -645,7 +645,7 @@ test.describe('the calendar under forced colours', () => {
     await calendarPage.goto('?prikaz=sve');
     await expect(calendarPage.grid).toBeVisible();
 
-    await calendarPage.teamFilter.focus();
+    await calendarPage.filters.lastControl.focus();
     await page.keyboard.press('Tab');
     await expect(calendarPage.tabStops).toBeFocused();
     const outline = await calendarPage.tabStops.evaluate((cell) => {

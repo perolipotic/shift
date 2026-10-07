@@ -126,10 +126,10 @@ From `DESIGN.md` (visual) and `EXPERIENCE.md` (behavioural). Both are binding an
 - **UX-DR16** Configuration stepper — four steps on phone (shift types, pattern, offsets, preview) with completed steps navigable backwards; one scrolling panel on tablet and desktop. Same data, same validations, same order. The builder ends in a save bar (story 5.5c): a hint, "Odbaci promjene" while there are unsaved changes, and the one "Spremi rotaciju"; sticky at the viewport's bottom from `sm` up (where the phone tab bar is gone) while there are unsaved changes, with the page's scroll padding clearing it; at the end of the builder, after the history, and never sticky on a phone.
 - **UX-DR17** Hours table — tabular numerals, sortable and filterable by team and member, scrolling inside its own container.
 - **UX-DR18** Calendar mode switch — segmented, two modes (*Moj raspored* default on mobile for member-role, *Sve smjene*), persisting across month navigation within a session.
-- **UX-DR19** Team/member filter — populated from live records, never hard-coded; shows a count in its label; resets to all-teams in one action without leaving the calendar.
+- **UX-DR19** Team/member filter — one chip bar shared by *Kalendar* and *Sati* (story 7.5): `Smjena: sve|<team>` and `Osoba: sve|<name>`, populated from live records, never hard-coded, each option with its count; an active chip has its own ✕; a summary line always states what is shown (`Prikazano: Smjena B · 4 osobe od 17`); one `Poništi filtre` clears all filters without leaving the screen. In *Kalendar* a person replaces the team; in *Sati* the two combine. Below 640 px `Filtri · N` opens a bottom sheet, and active chips stay visible. All filter state lives in the URL (`?smjena=…&osoba=…`).
 
 **State language**
-- **UX-DR20** Empty states state what is true, never absence. A zero count is still shown — `0 neriješenih konflikata` — because hiding it is indistinguishable from not having loaded.
+- **UX-DR20** Empty states state what is true, never absence. A zero count is still shown — `0 neriješenih konflikata` — because hiding it is indistinguishable from not having loaded. A filter that leaves no row says why and where instead (`Luka Knežević nije u smjeni Smjena B u listopadu 2026.` · `Luka Knežević je u smjeni Smjena A.`) and offers `Ukloni filtar: Smjena B` and `Poništi filtre`.
 - **UX-DR21** Loading uses skeletons matching final layout for the calendar grid and tables; no spinners on primary surfaces. A visited and an unvisited month must feel the same.
 - **UX-DR22** A refused save names the specific problem in hours and keeps every entered value.
 - **UX-DR23** Warnings appear at save time with the consequence in numbers and never block, and never persist as standing banners. The one thing a configuration save waits on is an erasure (AD-5): since story 5.5a, a rotation save that would erase an unresolved conflict opens a confirmation listing each, and saves only once every one is confirmed ("Potvrdi brisanje"); the warnings show beside them and still never block. Since story 5.5b the same confirmation guards a calendar roster change, saved or removed, beside the day detail.
@@ -149,9 +149,9 @@ From `DESIGN.md` (visual) and `EXPERIENCE.md` (behavioural). Both are binding an
 - **UX-DR33** Build the 17 surfaces in the EXPERIENCE.md inventory; the member roster lives inside team detail, not as a top-level destination.
 
 **Voice and localization**
-- **UX-DR34** Croatian microcopy rules: state the fact not the absence; numbers not adjectives; no exclamation marks; second person singular informal; `19:00–07:00` with an en dash; `12.09.2026` date format.
+- **UX-DR34** Croatian microcopy rules: state the fact not the absence; numbers not adjectives; no exclamation marks; second person singular informal; `19:00–07:00` with an en dash; `12.09.2026` date format. A data name (a team, a person) is never declined: it stands in apposition (`nije u smjeni Smjena B`), and a month in a sentence reads in the locative (`u listopadu 2026.`).
 - **UX-DR35** Three plural forms wherever a count renders — days, hours, shifts, conflicts, members, teams.
-- **UX-DR36** Never say *smjena* for a shift type. `Sve smjene` carries a count and groups its options under a labelled heading.
+- **UX-DR36** Never say *smjena* for a shift type. `Sve smjene` carries a count (`Sve smjene (4)`), each team its person count (`4 osobe`), and the teams are grouped under a labelled heading (*Smjene*).
 
 **Accessibility**
 - **UX-DR37** No information by colour alone anywhere — verified specifically in the compressed grid, status pips and badges, where the rule is most often broken.

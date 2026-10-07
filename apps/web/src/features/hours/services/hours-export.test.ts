@@ -170,7 +170,7 @@ describe('the sheet', () => {
   });
 
   it('screen equals file: filtered by team, sorted by total descending, the same rows in the same order', () => {
-    const view = viewOf(pilot, hoursSearchOf({ mjesec: MONTH, tim: teamOf(PILOT, 0), sort: 'ukupno', smjer: 'silazno' }));
+    const view = viewOf(pilot, hoursSearchOf({ mjesec: MONTH, smjena: teamOf(PILOT, 0), sort: 'ukupno', smjer: 'silazno' }));
     const sheet = hoursExportOf(view, pilot.organizationName);
 
     expect(view.rows.length).toBeGreaterThan(1);

@@ -153,11 +153,11 @@ export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
     ],
   );
   const today = snapshot === null ? null : calendarTodayOf(snapshot, new Date());
-  const { mjesec, tim, osoba, sort, smjer } = search;
+  const { mjesec, smjena, osoba, sort, smjer } = search;
   // Worked out once per snapshot, leave, search and day, not on every render.
   const surface = useMemo(
-    () => hoursSurfaceOf({ snapshot, refusal, loading }, conflicts, { mjesec, tim, osoba, sort, smjer }, today),
-    [snapshot, refusal, loading, conflicts, mjesec, tim, osoba, sort, smjer, today],
+    () => hoursSurfaceOf({ snapshot, refusal, loading }, conflicts, { mjesec, smjena, osoba, sort, smjer }, today),
+    [snapshot, refusal, loading, conflicts, mjesec, smjena, osoba, sort, smjer, today],
   );
   const client = useQueryClient();
 

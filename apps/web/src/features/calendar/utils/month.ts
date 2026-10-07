@@ -3,6 +3,7 @@ import {
   adjacentMonth,
   datesOfMonth,
   memberScheduleOfMonth,
+  membershipOn,
   monthOf,
   overrideStandingOf,
   overridesByTeamAndDate,
@@ -175,24 +176,11 @@ export const TEAM_SEARCH_PARAM = 'smjena';
 export const PERSON_SEARCH_PARAM = 'osoba';
 
 /**
- * The team filter's all-teams option value. It cannot collide with a chosen
- * team because {@link calendarSearchOf} drops an empty `smjena`: no search the
- * calendar reads ever names `''`. {@link calendarFilterChangeOf} is the one
- * place that turns it into `{ smjena: null, osoba: null }`.
+ * What a screen key reads where no team or person is chosen: it cannot
+ * collide with a chosen one, because {@link calendarSearchOf} drops an empty
+ * `smjena` and `osoba`.
  */
-export const ALL_TEAMS_FILTER = '';
-
-/**
- * What a person's option value starts with in the one filter Select (story
- * 3.3b): `osoba:<member id>`, so a person's value never reads as a team id. A
- * team's value stays its bare id.
- */
-export const PERSON_FILTER_PREFIX = 'osoba:';
-
-/** A person's option value in the filter Select. */
-export function personFilterValueOf(id: string): string {
-  return `${PERSON_FILTER_PREFIX}${id}`;
-}
+export const NOTHING_CHOSEN = '';
 
 /** *Moj raspored*: the viewer's own day list. */
 export const MODE_MOJ = 'moj';
@@ -204,47 +192,6 @@ export const MODE_SVE = 'sve';
 export const CALENDAR_MODES = [MODE_MOJ, MODE_SVE] as const;
 
 export type CalendarMode = (typeof CALENDAR_MODES)[number];
-
-/** Below Tailwind's `sm:` (640 px) — the width the navigation's bottom tabs show at. */
-export const PHONE_MEDIA_QUERY = '(max-width: 639px)';
-
-/** As much of a `MediaQueryList` as the phone store reads. */
-export interface PhoneMediaQuery {
-  readonly matches: boolean;
-  addEventListener(type: 'change', listener: () => void): void;
-  removeEventListener(type: 'change', listener: () => void): void;
-}
-
-/** A `useSyncExternalStore` source for "is this a phone", read live. */
-export interface PhoneStore {
-  subscribe(onChange: () => void): () => void;
-  get(): boolean;
-}
-
-/**
- * Whether the viewport is below 640 px ({@link PHONE_MEDIA_QUERY}), as a store
- * that follows the width live: crossing 640 px changes the default mode while
- * the viewer has chosen none. `media` is `window.matchMedia`, asked lazily.
- */
-export function phoneStoreOf(media: (query: string) => PhoneMediaQuery): PhoneStore {
-  // ONE list, asked for on first use and shared: what `get` reads is what
-  // `subscribe` listens to.
-  let list: PhoneMediaQuery | null = null;
-  const query = (): PhoneMediaQuery => (list ??= media(PHONE_MEDIA_QUERY));
-
-  return {
-    subscribe(onChange) {
-      const shared = query();
-
-      shared.addEventListener('change', onChange);
-
-      return () => {
-        shared.removeEventListener('change', onChange);
-      };
-    },
-    get: () => query().matches,
-  };
-}
 
 /**
  * The calendar's search, as `validateSearch` returns it: a valid month and
@@ -312,26 +259,6 @@ export function calendarSearchTo(search: CalendarSearch, change: CalendarSearchC
     ...(smjena === null ? {} : { smjena }),
     ...(osoba === null ? {} : { osoba }),
   };
-}
-
-/**
- * The filter `<select>`'s value as a search change, both keys always present:
- * the all-teams option ({@link ALL_TEAMS_FILTER}) drops both, a person's
- * `osoba:<id>` ({@link PERSON_FILTER_PREFIX}) chooses that person and drops
- * the team, and anything else chooses that team and drops the person. The ONE
- * place the values are mapped; pass its answer straight to
- * {@link calendarSearchTo}.
- */
-export function calendarFilterChangeOf(value: string): CalendarFilterChange {
-  if (value === ALL_TEAMS_FILTER) return { smjena: null, osoba: null };
-
-  if (value.startsWith(PERSON_FILTER_PREFIX)) {
-    const osoba = value.slice(PERSON_FILTER_PREFIX.length);
-
-    return { smjena: null, osoba: osoba === '' ? null : osoba };
-  }
-
-  return { smjena: value, osoba: null };
 }
 
 /** A cell's shape: at least 30 px high, the small radius, the label never truncated. */
@@ -727,10 +654,16 @@ export interface CalendarMemberHistory {
   readonly statuses: readonly StatusVersion[];
 }
 
-/** A person the filter offers: id and name only (story 3.3b). */
+/**
+ * A person the filter offers (story 3.3b), with their team for the month
+ * (story 7.5, {@link monthTeamOf}): its id, and its name as stored — archived
+ * teams included — or `null` for none.
+ */
 export interface CalendarFilterPerson {
   readonly id: string;
   readonly name: string;
+  readonly teamId: string | null;
+  readonly teamName: string | null;
 }
 
 /** The filter of *Sve smjene*: one team (story 3.3a) or one person (story 3.3b). */
@@ -750,12 +683,22 @@ export interface CalendarFilter {
   readonly people: readonly CalendarFilterPerson[];
   /** The person shown, one of `people`; `null` for none. */
   readonly person: string | null;
+  /**
+   * How many of `people` each team holds for the month (story 7.5), keyed by
+   * team id: every one of `teams`, a zero included. A person on no team, or
+   * on an archived one, counts in no team.
+   */
+  readonly teamCounts: Readonly<Record<string, number>>;
 }
 
 /** The person *Sve smjene* shows in place of the grid (story 3.3b). */
 export interface CalendarPersonMonth {
   readonly id: string;
   readonly name: string;
+  /** Their team for the month ({@link monthTeamOf}), or `null` for none (story 7.5). */
+  readonly teamId: string | null;
+  /** That team's name as stored, archived or not; `null` with no team. */
+  readonly teamName: string | null;
   /** Their day list, as *Moj raspored* draws the viewer's; its failure is theirs alone. */
   readonly days: CalendarDayListOutcome;
 }
@@ -816,7 +759,7 @@ export interface CalendarMonth extends MonthHeader {
   readonly columns: readonly CalendarColumn[];
   /**
    * The team filter. Its `teams` are the UNFILTERED active set — every active
-   * team, whatever is chosen — so the Select always offers them all; only
+   * team, whatever is chosen — so the Smjena chip always offers them all; only
    * `columns` and `rows` are narrowed.
    */
   readonly filter: CalendarFilter;
@@ -1041,6 +984,32 @@ function dayListOutcomeOf(
   }
 }
 
+/** The last of `dates` the member is active on (`activeOn`), or `null` for none. */
+export function lastActiveDateOf(member: { readonly statuses: readonly StatusVersion[] }, dates: readonly string[]): string | null {
+  for (let index = dates.length - 1; index >= 0; index -= 1) {
+    const date = dates[index];
+
+    if (date !== undefined && activeOn(member.statuses, date)) return date;
+  }
+
+  return null;
+}
+
+/**
+ * A PERSON'S TEAM FOR THE MONTH (story 7.5), THE ONE RULE Kalendar's filter
+ * and *Sati*'s rows share: their membership (`membershipOn`) on their last
+ * active date of the month's `dates`, or `null` when they are on no team
+ * then, or inactive all month.
+ */
+export function monthTeamOf(
+  member: { readonly memberships: readonly MembershipVersion[]; readonly statuses: readonly StatusVersion[] },
+  dates: readonly string[],
+): string | null {
+  const lastActive = lastActiveDateOf(member, dates);
+
+  return lastActive === null ? null : (membershipOn(member.memberships, lastActive)?.teamId ?? null);
+}
+
 /**
  * The team the grid is narrowed to: `smjena` when it names one of the active
  * `teams`, and `null` otherwise. An unknown or archived id — a bookmark that
@@ -1068,7 +1037,7 @@ export function chosenPersonOf(search: CalendarSearch, people: readonly { readon
  * The month `search` names — or today's — as the screen draws it, from the
  * one snapshot. `today` is the organization's ({@link calendarTodayOf}).
  *
- * A PERSON WINS OVER A TEAM (story 3.3b): the Select only ever produces one,
+ * A PERSON WINS OVER A TEAM (story 3.3b): the filter bar only ever writes one,
  * and a hand-edited URL carrying both resolves to the narrower. With a person
  * chosen, the team filter reads `chosen: null` and the grid is not narrowed.
  *
@@ -1106,12 +1075,27 @@ export function calendarMonthOf(
   // ACTIVE IN THE MONTH SHOWN: a member active on at least one of its dates,
   // by the domain's rule over their status versions (story 3.4a) — the same
   // membership rule as a Sati row, so a Sati name always opens that member.
-  // One list feeds both the Select and `chosenPersonOf`.
+  // One list feeds both the Osoba picker and `chosenPersonOf`.
   const dates = datesOfMonth(month);
   const people = snapshot.members.filter((member) => dates.some((date) => activeOn(member.statuses, date)));
   const person = chosenPersonOf(search, people);
   const chosen = person === null ? chosenTeamOf(search, teams) : null;
-  const personShown = people.find((one) => one.id === person) ?? null;
+  const teamNames = new Map(snapshot.teams.map((team) => [team.id, team.name]));
+  // Each person with their team for the month (story 7.5) — a team the
+  // snapshot does not name is a defect, as on *Sati*, and the guarded outcome
+  // turns it into the read failure.
+  const offered = people.map((member) => {
+    const teamId = monthTeamOf(member, dates);
+    const teamName = teamId === null ? null : teamNames.get(teamId);
+
+    if (teamName === undefined) throw new RangeError(`team ${String(teamId)} is not in the snapshot`);
+
+    return { member, filtered: { id: member.id, name: member.name, teamId, teamName } };
+  });
+  const teamCounts = Object.fromEntries(
+    teams.map((team) => [team.id, offered.filter((one) => one.filtered.teamId === team.id).length]),
+  );
+  const chosenOne = offered.find((one) => one.member.id === person) ?? null;
   const shown = (teamId: string): boolean => chosen === null || teamId === chosen;
   const columns = teams.filter((team) => shown(team.id));
 
@@ -1121,8 +1105,9 @@ export function calendarMonthOf(
     filter: {
       teams,
       chosen,
-      people: people.map(({ id, name }) => ({ id, name })),
+      people: offered.map((one) => one.filtered),
       person,
+      teamCounts,
     },
     rows: schedule.map((row) => ({
       date: row.date,
@@ -1143,12 +1128,11 @@ export function calendarMonthOf(
     })),
     days: dayListOutcomeOf(snapshot, snapshot.viewer, month, today, marks),
     person:
-      personShown === null
+      chosenOne === null
         ? null
         : {
-            id: personShown.id,
-            name: personShown.name,
-            days: dayListOutcomeOf(snapshot, { ...personShown, memberId: personShown.id }, month, today, marks),
+            ...chosenOne.filtered,
+            days: dayListOutcomeOf(snapshot, { ...chosenOne.member, memberId: chosenOne.member.id }, month, today, marks),
           },
   };
 }
