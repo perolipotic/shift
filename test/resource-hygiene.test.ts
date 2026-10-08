@@ -188,6 +188,15 @@ const SANCTIONED_PLURAL_KEYS = [
   // many of a shift's roster are present (`3 od 4 člana`, `5 od 5 članova`).
   'danas.admin.needsYou.pastLine',
   'danas.admin.coverage.members',
+  // STORY 7.12: the leave dialog's conflict preview — how many conflicts a
+  // save creates and where each is resolved, an amend's cleared, kept and new
+  // groups, and the conflicts a removal clears.
+  'ljudi.leaveRecord.conflictsCreated',
+  'ljudi.leaveRecord.conflictsWhere',
+  'ljudi.leaveRecord.conflictsCleared',
+  'ljudi.leaveRecord.conflictsKept',
+  'ljudi.leaveRecord.conflictsNew',
+  'ljudi.leaveRecord.removeClears',
 ];
 
 /** The flat screen strings the application is permitted to ship, by the story
@@ -1468,7 +1477,6 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.leaveRecord.heading',
   'ljudi.leaveRecord.used',
   'ljudi.leaveRecord.balance',
-  'ljudi.leaveRecord.newHeading',
   'ljudi.leaveRecord.from',
   'ljudi.leaveRecord.to',
   'ljudi.leaveRecord.cost',
@@ -1498,7 +1506,6 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.leaveRecord.recordsEmpty',
   'ljudi.leaveRecord.amend',
   'ljudi.leaveRecord.amendName',
-  'ljudi.leaveRecord.amendHeading',
   'ljudi.leaveRecord.amendSave',
   'ljudi.leaveRecord.amendCancel',
   'ljudi.leaveRecord.unchanged',
@@ -1519,7 +1526,6 @@ const SANCTIONED_SCREEN_KEYS = [
   // current leave year, naming the in-year part too, and the row's marker
   // while it is in amend mode.
   'ljudi.leaveRecord.removePromptInYear',
-  'ljudi.leaveRecord.amending',
   // STORY 5.4e: the replacement guard — the line naming a replacement an
   // amend or a removal would leave rostered, and the line in its place when
   // the resolutions cannot be read.
@@ -1786,6 +1792,24 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.form.signInHeading',
   'ljudi.form.signInLine',
   'ljudi.form.resetAction',
+  // STORY 7.12: the leave dialog. Its opener (and the name it announces) and
+  // both dialog titles, which replace the card's inline headings and the
+  // amend's busy word; the cancel; the amend's *Što se mijenja* with *Bilo* and
+  // *Sada* and the range-and-cost line under each; a conflict's line, a
+  // group's sentence, and the preview's none and unknown states.
+  'ljudi.leaveRecord.record',
+  'ljudi.leaveRecord.recordName',
+  'ljudi.leaveRecord.recordDialogHeading',
+  'ljudi.leaveRecord.amendDialogHeading',
+  'ljudi.leaveRecord.cancel',
+  'ljudi.leaveRecord.changes',
+  'ljudi.leaveRecord.before',
+  'ljudi.leaveRecord.after',
+  'ljudi.leaveRecord.rangeCost',
+  'ljudi.leaveRecord.conflictLine',
+  'ljudi.leaveRecord.conflictsGroup',
+  'ljudi.leaveRecord.conflictsNone',
+  'ljudi.leaveRecord.conflictsUnknown',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
