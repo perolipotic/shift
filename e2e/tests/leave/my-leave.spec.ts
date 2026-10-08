@@ -184,6 +184,7 @@ test("a member reads their own figures, a colleague's leave changes nothing, and
     // THE ADMIN AMENDS the record on the member's page to today alone — a Dan.
     await peoplePage.gotoMember(member.id);
     await peoplePage.amendLeaveButton(today, last).click();
+    await expect(peoplePage.leaveAmendDialog(today, last)).toBeVisible();
     await peoplePage.enterLeave(today, today);
     await peoplePage.amendSaveButton.click();
     await expect(peoplePage.statusWith(plural(leave.amended, 1))).toBeVisible();
