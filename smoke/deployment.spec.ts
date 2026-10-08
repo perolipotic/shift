@@ -44,8 +44,8 @@ test('renders the sign-in screen, and the build carries a usable Supabase enviro
 
   await page.goto('/');
   await expect(page).toHaveURL('/prijava');
-  await expect(page.getByRole('heading', { level: 1, name: hr.auth.organization.heading })).toBeVisible();
-  await expect(page.getByLabel(hr.auth.organization.label, { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: hr.auth.heading })).toBeVisible();
+  await expect(page.getByRole('textbox', { name: hr.auth.organization.label, exact: true })).toBeVisible();
 
   expect(messages.filter((line) => line.includes('SUPABASE_ENVIRONMENT_MISSING'))).toEqual([]);
 });

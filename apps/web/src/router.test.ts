@@ -45,8 +45,7 @@ import {
   PostavkeRotacijeTipSmjeneScreen,
   postavkeRotacijeTipSmjeneRoute,
 } from '@/pages/postavke-rotacije.tipovi-smjena.$id';
-import { OrganizationPromptScreen, prijavaOrganizacijaRoute } from '@/pages/prijava-organizacija';
-import { prijavaRoute, SignInScreen } from '@/pages/prijava';
+import { prijavaBareRoute, prijavaRoute, SignInScreen } from '@/pages/prijava';
 import { RasporedScreen, rasporedRoute } from '@/pages/raspored';
 import { RasporedKonfliktScreen, rasporedKonfliktRoute } from '@/pages/raspored.$memberId.$date.$teamId';
 import { SatiScreen, satiRoute } from '@/pages/sati';
@@ -315,7 +314,8 @@ describe('the shell route tree', () => {
     // is what makes an accidentally unregistered route a failing test rather
     // than a link that resolves to nothing. EXTENDED by story 1.3b rather than
     // relaxed — the credential form moved to `/prijava/$slug` and bare
-    // `/prijava` became the organization prompt, so both ids must be named.
+    // `/prijava` became a second sign-in route (the organization prompt until
+    // 7.7, the same form since), so both ids must be named.
     //
     // EXTENDED AGAIN, by nine, for the navigation shell's route skeleton: the
     // pathless `_app` layout and the eight destinations that nest under it.
@@ -369,7 +369,7 @@ describe('the shell route tree', () => {
     expect(match('/').map((matched) => matched.routeId)).toEqual(['__root__', '/']);
   });
 
-  it('resolves /prijava to the organization prompt inside the root layout', () => {
+  it('resolves /prijava to the bare sign-in route inside the root layout', () => {
     expect(match('/prijava').map((matched) => matched.routeId)).toEqual(['__root__', '/prijava']);
   });
 
@@ -395,19 +395,27 @@ describe('the shell route tree', () => {
     ).toBe(SignInScreen);
   });
 
-  it('renders the organization prompt on bare /prijava, not the credential form', () => {
-    // The SPLIT of 1.1d's single identity assertion, and both halves are
-    // needed: one route swapped for the other would keep every path resolving
-    // while putting a two-field credential form on a URL that carries no
-    // organization, where every sign-in it accepted would fail.
-    const registered = (prijavaOrganizacijaRoute.options as { component?: unknown }).component;
+  it('remounts the sign-in screen when only the slug changes (story 7.7)', () => {
+    // TanStack Router keeps a component mounted across a params-only
+    // navigation, which would carry one slug's fields and focus into the next.
+    // `remountDeps` keyed on the slug is what makes each link open afresh.
+    const remountDeps = (prijavaRoute.options as { remountDeps?: unknown }).remountDeps;
 
-    expect(registered, '/prijava does not render the organization prompt').toBe(
-      OrganizationPromptScreen,
-    );
-    expect(registered, '/prijava renders the credential form, which has no slug').not.toBe(
-      SignInScreen,
-    );
+    expect(remountDeps, '/prijava/$slug does not remount per slug').toBeTypeOf('function');
+    const keyOf = remountDeps as (options: { params: { slug: string } }) => unknown;
+
+    expect(keyOf({ params: { slug: 'dvd-a' } })).toBe('dvd-a');
+    expect(keyOf({ params: { slug: 'dvd-b' } })).not.toEqual(keyOf({ params: { slug: 'dvd-a' } }));
+  });
+
+  it('renders the same SignInScreen on bare /prijava (story 7.7)', () => {
+    // ONE FORM ON BOTH ROUTES. Until 7.7 bare `/prijava` was an organization
+    // prompt and a second screen; now it renders the very same component,
+    // which offers the organization field where the URL carries no slug. An
+    // identity, so a swap back to a separate step fails here.
+    const registered = (prijavaBareRoute.options as { component?: unknown }).component;
+
+    expect(registered, '/prijava does not render SignInScreen').toBe(SignInScreen);
   });
 
   // AD-14: the host answers every unmatched path with index.html at 200, so the
@@ -607,8 +615,8 @@ describe('the return target a sign-in follows is a path this tree knows', () => 
   });
 
   it.each([
-    { name: 'the organization prompt', route: prijavaOrganizacijaRoute },
-    { name: 'the credential form', route: prijavaRoute },
+    { name: 'bare /prijava', route: prijavaBareRoute },
+    { name: '/prijava/$slug', route: prijavaRoute },
   ])('carries the return target on $name, and only it', ({ route }) => {
     const validate = (route.options as { validateSearch?: unknown }).validateSearch;
 
@@ -688,15 +696,15 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
   it('sends a signed-out visitor to the sign-in path', async () => {
     const thrown = (await beforeLoad(null)) as { options: { to?: string } };
 
-    // Bare `/prijava`, which is the organization prompt: `/` has no slug in
-    // scope, and inventing one would send everybody to one tenant.
+    // Bare `/prijava`, the sign-in form with the organization field: `/` has
+    // no slug in scope, and inventing one would send everybody to one tenant.
     expect(thrown.options.to).toBe('/prijava');
   });
 
   it('carries the location, search and hash included, through on that redirect', async () => {
     // THE HREF RIDES `povratak`, and the sign-in returns to it. This redirect
-    // used to keep the search and the hash as the prompt's own (`search: true`
-    // / `hash: true`), where they lived for one hop and died at the next.
+    // used to keep the search and the hash as bare `/prijava`'s own
+    // (`search: true` / `hash: true`), where they lived for one hop and died at the next.
     // Dropping them makes a deep link's parameters unrecoverable, and silently:
     // the user lands on a working screen either way, so nothing looks wrong.
     const { options } = (await beforeLoad(null)) as { options: { search?: unknown; hash?: unknown } };
@@ -704,7 +712,7 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
     expect(options.search, 'the redirect drops the location').toEqual({
       povratak: '/?invite=abc#section',
     });
-    expect(options.hash, 'the prompt carries a hash that belongs to the location').toBeUndefined();
+    expect(options.hash, 'bare /prijava carries a hash that belongs to the location').toBeUndefined();
   });
 
   it('carries nothing for a bare /, where a sign-in lands anyway', async () => {
@@ -1076,7 +1084,7 @@ describe('a slug that cannot be one never reaches the credential form', () => {
     { row: 'a doubled hyphen run', slug: 'dvd--kastel' },
     { row: 'a path segment longer than a DNS label', slug: 'a'.repeat(64) },
     { row: 'an empty-looking segment', slug: '%20' },
-  ])('redirects $row to the organization prompt', async ({ slug }) => {
+  ])('redirects $row to bare /prijava', async ({ slug }) => {
     // REVIEW DECISION, 2026-09-08. Normalization already rescued the case a URL
     // produces most often — a capital letter, from a phone's autocapitalization
     // or a shared link — but a segment no normalization can rescue rendered a
@@ -1092,7 +1100,7 @@ describe('a slug that cannot be one never reaches the credential form', () => {
     // visitor the slug, never the destination they were signing in for.
     expect(
       (thrown as { options: { search?: unknown } }).options.search,
-      'the bounce to the prompt drops the return target',
+      'the bounce to bare /prijava drops the return target',
     ).toBe(true);
   });
 
@@ -1114,7 +1122,7 @@ describe('a slug that cannot be one never reaches the credential form', () => {
   });
 
   it('judges the slug before it asks about the session', async () => {
-    // The ORDER, pinned. A malformed segment goes to the organization prompt
+    // The ORDER, pinned. A malformed segment goes to bare `/prijava`
     // whether or not anybody is signed in — the 2026-09-08 decision, unchanged
     // and deliberately not made conditional on a session read that can fail.
     // Asked the other way round, `/prijava/under_score` opened for a signed-out
@@ -1164,8 +1172,8 @@ describe('a signed-in visitor is never offered a credential form', () => {
    * left the other protected by nothing.
    */
   const SIGN_IN_ROUTES = [
-    { name: 'the credential form at /prijava/$slug', route: prijavaRoute },
-    { name: 'the organization prompt at bare /prijava', route: prijavaOrganizacijaRoute },
+    { name: 'the sign-in form at /prijava/$slug', route: prijavaRoute },
+    { name: 'the sign-in form at bare /prijava', route: prijavaBareRoute },
   ];
 
   async function beforeLoad(
@@ -1429,8 +1437,8 @@ describe('the signed-in layout guards every destination once, and is pathless', 
     const thrown = thrownBy(await beforeLoad(() => Promise.resolve(null)));
 
     expect(isRedirect(thrown), 'the layout threw something that is not a redirect').toBe(true);
-    // Bare `/prijava`, the organization prompt: a destination URL carries no
-    // slug, and inventing one would send everybody to one tenant.
+    // Bare `/prijava`, the sign-in form with the organization field: a
+    // destination URL carries no slug, and inventing one would send everybody to one tenant.
     expect((thrown as { options: { to?: string } }).options.to).toBe('/prijava');
   });
 
@@ -1446,7 +1454,7 @@ describe('the signed-in layout guards every destination once, and is pathless', 
     expect(options.search, 'the redirect drops the location').toEqual({
       povratak: '/kalendar?tim=2#tjedan',
     });
-    expect(options.hash, 'the prompt carries a hash that belongs to the location').toBeUndefined();
+    expect(options.hash, 'bare /prijava carries a hash that belongs to the location').toBeUndefined();
   });
 
   it('resolves to the same redirect when the session cannot be read at all', async () => {

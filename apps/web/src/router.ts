@@ -15,8 +15,7 @@ import { organizacijaSatniPojasRoute } from '@/pages/organizacija.satni-pojasi.$
 import { organizacijaSatniPojasiRoute } from '@/pages/organizacija.satni-pojasi';
 import { postavkeRotacijeRoute } from '@/pages/postavke-rotacije';
 import { postavkeRotacijeTipSmjeneRoute } from '@/pages/postavke-rotacije.tipovi-smjena.$id';
-import { prijavaOrganizacijaRoute } from '@/pages/prijava-organizacija';
-import { prijavaRoute } from '@/pages/prijava';
+import { prijavaBareRoute, prijavaRoute } from '@/pages/prijava';
 import { rasporedKonfliktRoute } from '@/pages/raspored.$memberId.$date.$teamId';
 import { rasporedRoute } from '@/pages/raspored';
 import { rootRoute } from '@/pages/__root';
@@ -98,7 +97,7 @@ const appDestinations = appLayoutRoute.addChildren([
 const routeTree = rootRoute.addChildren([
   indexRoute,
   prijavaRoute,
-  prijavaOrganizacijaRoute,
+  prijavaBareRoute,
   appDestinations,
 ]);
 

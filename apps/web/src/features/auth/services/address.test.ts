@@ -130,7 +130,7 @@ describe('the slug rule is the one the migration declares', () => {
   });
 
   it('normalizes a capitalized slug rather than refusing it', () => {
-    // `/prijava/DVD-Kastel-Novi` is exactly what the organization prompt would
+    // `/prijava/DVD-Kastel-Novi` is exactly what the organization field would
     // have lowercased, and what a phone's autocapitalization or a shared link
     // produces. Refusing it rendered a working form that refused every correct
     // credential forever, saying the password was wrong.
@@ -190,18 +190,19 @@ describe('the username half is normalized exactly as far as the slug half is', (
   });
 });
 
-describe('the organization prompt decides where to go, and the decision is executed', () => {
-  // Matrix row "Bare /prijava": submitting navigates to /prijava/<slug>, and an
-  // unusable value is refused inertly. The screen itself cannot be asserted —
-  // AD-15 bans jsdom and `.tsx` is not collected — so the decision was
-  // extracted here, the way `lib/i18n/boot.ts` was extracted from `main.tsx`, and
-  // this is the case that would have been missing otherwise.
+describe('the slug rule decides what a typed organization means, and the decision is executed', () => {
+  // Story 7.7: what the sign-in form's organization field holds goes through
+  // this rule in `signIn`, and what this device remembers goes through it in
+  // `last-organization.ts`. Until 7.7 a separate prompt at bare `/prijava`
+  // navigated with it. The screen itself cannot be asserted — AD-15 bans jsdom
+  // and `.tsx` is not collected — so the decision was extracted here, the way
+  // `lib/i18n/boot.ts` was extracted from `main.tsx`.
   it.each([
     ['the seeded pilot slug', 'dvd-kastel-novi', 'dvd-kastel-novi'],
     ['surrounding whitespace, which typing produces', '  dvd-kastel-novi  ', 'dvd-kastel-novi'],
     ['capitals, which a shift key produces', 'DVD-Kastel-Novi', 'dvd-kastel-novi'],
     ['a tab and a newline from a paste', '\tzastita-split\n', 'zastita-split'],
-  ])('navigates to %s', (_case, typed, expected) => {
+  ])('accepts %s', (_case, typed, expected) => {
     expect(organizationDestination(typed)).toBe(expected);
   });
 
@@ -219,10 +220,11 @@ describe('the organization prompt decides where to go, and the decision is execu
   });
 
   it('refuses inertly rather than raising, because a message here starts an oracle', () => {
-    // The prompt renders no error for a bad slug on purpose: telling somebody
-    // that an organization does not exist is the same disclosure the sign-in
-    // path refuses to make. A thrown error would force the screen to decide
-    // what to say; `null` lets it say nothing.
+    // A bad slug gets no message of its own on purpose: telling somebody that
+    // an organization does not exist, or cannot, is the same disclosure the
+    // sign-in path refuses to make — `signIn` answers it with the ordinary
+    // refusal. A thrown error would force a caller to decide what to say;
+    // `null` lets it say nothing.
     expect(() => organizationDestination('-not-a-slug-')).not.toThrow();
   });
 });

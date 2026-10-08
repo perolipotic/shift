@@ -416,12 +416,12 @@ export function AppChrome({ children }: AppChromeProps) {
       // organization's slug lives on the `organizations` row, and nothing in the
       // signed-in chrome holds it: the token carries `organization_id`, a uuid,
       // and the destination routes carry no params at all. Carrying it would
-      // mean the chrome issuing an organization read of its own purely to
-      // pre-fill a field on a screen it is about to leave — a second snapshot on
-      // a surface that has none, against AD-13, to save one person one short
-      // typed word. Recorded rather than silently accepted: if the organization
-      // snapshot ever legitimately reaches this component, this is the line to
-      // revisit.
+      // mean the chrome issuing an organization read of its own — a second
+      // snapshot on a surface that has none, against AD-13. It does not need
+      // to: since story 7.7 the sign-in form prefills the organization field
+      // from the last organization signed into on this device
+      // (`@/features/auth/services/last-organization`), so the slug comes back
+      // without the chrome carrying it.
       await navigate({ to: '/prijava' });
     } catch (cause) {
       // Everything `signOut` does not already map, which is now exactly two

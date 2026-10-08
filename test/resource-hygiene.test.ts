@@ -206,18 +206,30 @@ const SANCTIONED_SCREEN_KEYS = [
   'auth.username',
   'auth.password',
   'auth.submit',
-  'auth.passwordReset',
-  // Two, not three. A wrong password, an unknown username and a deactivated
-  // account share `auth.error.credentials`: a third message would tell an
+  // STORY 7.7: the button's label while signing in, the password toggle's name,
+  // and the forgotten-password disclosure's trigger and panel.
+  'auth.pending',
+  'auth.passwordShow',
+  'auth.forgot.trigger',
+  'auth.forgot.heading',
+  'auth.forgot.body',
+  // Two, not three. A wrong organization (story 7.7), a wrong password, an
+  // unknown username and a deactivated account share `auth.error.credentials`: a third message would tell an
   // anonymous caller which usernames exist in an organization, which is the
   // enumeration oracle story 1.3b refused a resolution RPC for.
   'auth.error.credentials',
   'auth.error.unavailable',
-  'auth.organization.heading',
+  // STORY 7.7: the organization is a field of the one sign-in form — its
+  // label, the URL slug row's `Promijeni` and its accessible name, and the
+  // field's two hints and its placeholder. The separate prompt's heading and button went with it.
   'auth.organization.label',
-  'auth.organization.submit',
+  'auth.organization.change',
+  'auth.organization.changeLabel',
+  'auth.organization.remembered',
+  'auth.organization.hint',
+  'auth.organization.placeholder',
   // VISUAL REFRESH A's three: the sign-in brand panel's product name, headline
-  // and subline, rendered on both sign-in steps from `lg` up.
+  // and subline, rendered around the sign-in form from `lg` up.
   'auth.brand.name',
   'auth.brand.headline',
   'auth.brand.subline',

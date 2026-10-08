@@ -13,8 +13,9 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * a column that mixes weights (a semibold date under a regular one, a bold
  * total) aligns: `1111` at 400 is as wide as `0000` at 800.
  *
- * The sign-in prompt is the surface because it needs no session, and its own
- * stylesheet is the app's, so the probes inherit exactly what a screen does.
+ * The sign-in screen at bare `/prijava` is the surface because it needs no
+ * session, and its own stylesheet is the app's, so the probes inherit exactly
+ * what a screen does.
  */
 
 const WEIGHTS = [400, 500, 600, 700, 800] as const;

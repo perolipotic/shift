@@ -1,4 +1,4 @@
-import { createRoute, redirect } from '@tanstack/react-router';
+import { createRoute, redirect, useParams } from '@tanstack/react-router';
 
 import { AuthLayout } from '@/components/layout/auth-layout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -11,18 +11,19 @@ import { resolvedSession } from '@/lib/supabase/client';
 import { rootRoute } from '@/pages/__root';
 
 /**
- * The sign-in screen (story 1.1d, wired by 1.3b).
+ * The sign-in screen (story 1.1d, wired by 1.3b, made one form by 7.7), on
+ * BOTH `/prijava` and `/prijava/$slug`.
  *
- * PER TENANT, at `/prijava/$slug`. AD-12 authenticates against a synthesized
- * address namespaced by the organization's slug, so the slug has to be in scope
- * at the moment of sign-in — and at that moment there is no session to read it
- * from. Three ways out were weighed on 2026-09-07: globally-unique usernames
- * (loses per-tenant namespacing and rewrites every issued address), a third form
- * field (changes 1.1d's frozen two-field form), and an anonymous
- * username-resolution RPC (an enumeration oracle exposed to `anon`). The URL was
- * chosen because it changes neither the form nor the security surface, which is
- * why the form still has exactly two fields and why the slug arrives as a route
- * param rather than as an input.
+ * AD-12 authenticates against a synthesized address namespaced by the
+ * organization's slug, so the slug has to be in scope at the moment of sign-in
+ * — and at that moment there is no session to read it from. Until 7.7 the URL
+ * carried it and bare `/prijava` was a separate prompt that asked for it first:
+ * two screens for one task. Story 7.7 (redesign decisions 12 and 12a) made it
+ * one form with three values. The slug comes from the URL, shown read-only with
+ * `Promijeni`; or from the last organization signed into on this device; or
+ * from what the person types. The security surface did not change: nothing is
+ * looked up before sign-in, every value goes to the one `signIn()`, and a wrong
+ * organization fails exactly like a wrong password.
  *
  * Every string resolves through the module-level `t` (L1/L2). `useTranslation`
  * is deliberately not used: with one locale, no language switch and no lazily
@@ -34,7 +35,9 @@ import { rootRoute } from '@/pages/__root';
  * `@/features/auth/services/sign-in`, which the node suite executes.
  */
 export function SignInScreen() {
-  const { slug } = prijavaRoute.useParams();
+  // NOT STRICT, so one component serves both routes: bare `/prijava` has no
+  // `slug`, and the form then offers the field instead of the row.
+  const { slug } = useParams({ strict: false });
   const screen = useSignIn(slug);
 
   return (
@@ -71,7 +74,7 @@ export const prijavaRoute = createRoute({
   // forever with the message that says the password is wrong. Unrecoverable,
   // because the screen may not say which.
   //
-  // Sent to the organization prompt rather than answered, and that discloses
+  // Sent to bare `/prijava` rather than answered, and that discloses
   // NOTHING: well-formedness is the DNS-label rule in
   // `0002_organizations_and_members.sql`, computable by anyone without asking
   // this application anything. Existence is the question that stays unanswered
@@ -86,7 +89,7 @@ export const prijavaRoute = createRoute({
   // the guard ships in the same commit as the affordance.
   //
   // THE SLUG IS JUDGED FIRST, and the order matters: a malformed segment goes to
-  // the organization prompt whether or not anybody is signed in, which keeps the
+  // bare `/prijava` whether or not anybody is signed in, which keeps the
   // 2026-09-08 decision exactly as it was rather than making it conditional on a
   // session read that can fail.
   //
@@ -97,20 +100,51 @@ export const prijavaRoute = createRoute({
   // `/` on a failed read would leave the one screen that could fix their session
   // unreachable. Same read, opposite default, because the cost of being wrong
   // points the other way. `resolvedSession` is the read; the default is here.
+  // REMOUNTED PER SLUG. TanStack Router keeps a route's component mounted
+  // across a params-only navigation, so `/prijava/a` to `/prijava/b` would keep
+  // the first slug's uncontrolled fields, `Promijeni` state and focus. Keyed
+  // on the slug, the screen mounts afresh and opens as the new link says.
+  remountDeps: ({ params }) => params.slug,
   beforeLoad: async ({ context, params }) => {
-    // `search: true` keeps the return target on the way to the prompt, so a
+    // `search: true` keeps the return target on the way to bare `/prijava`, so a
     // malformed segment costs the visitor the slug and never the destination.
     if (organizationDestination(params.slug) === null) {
       throw redirect({ to: '/prijava', search: true });
     }
 
-    // ONE HELPER, TWO ROUTES. The read, the `catch` and the logging were copied
-    // verbatim into both sign-in routes, which is the same hand-copied block
-    // `router.test.ts` argues against two files away — and the failure mode is
-    // the one this story is fixing: a fix applied to one copy and not the other,
-    // on a pair of routes nobody looks at together. What is NOT shared is what
+    // ONE HELPER, TWO ROUTES. The read, the `catch` and the logging were once
+    // copied verbatim into both sign-in routes — and the failure mode of a copy
+    // is a fix applied to one and not the other. What is NOT shared is what
     // `null` means, because that genuinely differs (see `@/lib/supabase/client`):
-    // this route fails OPEN.
+    // both sign-in routes fail OPEN.
+    if ((await resolvedSession(context.currentSession)) === null) return;
+
+    throw redirect({ to: '/' });
+  },
+  component: SignInScreen,
+});
+
+/**
+ * Bare `/prijava`: the same screen with no slug in the URL (story 7.7).
+ *
+ * It is where `/`'s redirect, a typed `/prijava`, a malformed slug, sign-out
+ * and `not-found.tsx`'s link back all land. The form shows the organization
+ * field, prefilled from this device when it has signed in before.
+ */
+export const prijavaBareRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/prijava',
+  // The return target the signed-out redirect carries, and nothing else.
+  validateSearch: returnSearchOf,
+  // A SIGNED-IN VISITOR GOES TO `/`, for the reason recorded on
+  // `/prijava/$slug`: on a shared device the person reading the form may not
+  // be the person signed in.
+  //
+  // FAIL OPEN, the opposite of `pages/_app.tsx` and for the reason recorded
+  // there too: an unreadable session must render the form, because redirecting
+  // on a failed read would put the one path that can repair a session behind
+  // the session working.
+  beforeLoad: async ({ context }) => {
     if ((await resolvedSession(context.currentSession)) === null) return;
 
     throw redirect({ to: '/' });

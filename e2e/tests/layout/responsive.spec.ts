@@ -43,12 +43,12 @@ async function checkScreen(page: Page, pages: ScreenPages, fixture: Fixture, scr
 
 const signedOut: readonly Screen[] = [
   {
-    title: 'organization prompt',
+    title: 'sign-in without a slug',
     path: () => '/prijava',
     ready: ({ loginPage }) => loginPage.organizationInput,
   },
   {
-    title: 'sign-in',
+    title: 'sign-in from the DVD link',
     path: (fixture) => `/prijava/${fixture.slug}`,
     ready: ({ loginPage }) => loginPage.passwordInput,
   },
