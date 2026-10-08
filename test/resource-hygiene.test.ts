@@ -119,6 +119,11 @@ const SANCTIONED_PLURAL_KEYS = [
   'kalendar.detail.override.erasures.lede',
   'kalendar.detail.override.erasures.ledeRemoval',
   'kalendar.detail.override.erasures.removed',
+  // STORY 7.9: *Što se mijenja*'s hours of a group of members — one member's,
+  // or each of several, `svakome`.
+  'kalendar.detail.preview.hours',
+  // The day's unresolved conflicts' heading: `Konflikt` for one, `Konflikti` for several.
+  'kalendar.detail.conflict.heading',
   // STORY 5.5g: the same three counts for cancelling a scheduled rotation
   // change — its erasure dialog's title and lede, and what a guarded cancel
   // removed.
@@ -1144,6 +1149,40 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.detail.empty',
   'kalendar.detail.off',
   'kalendar.detail.noRotation',
+  // STORY 7.9: day detail is facts, and each change its own dialog — the
+  // *Izmjene* heading and the sentence for a day with none; the day's
+  // unresolved conflict (heading, line, "Riješi konflikt"); a type with its
+  // times, and a change dialog's description (the day with that type); both
+  // dialogs' cancel; and *Što se mijenja* — its label, the type from and to,
+  // who leaves and who arrives, an hour delta signed less or more, and
+  // nobody's hours moving. The hours line is a plural, above.
+  'kalendar.detail.changes.heading',
+  'kalendar.detail.changes.empty',
+  'kalendar.detail.conflict.line',
+  // A conflict line said without dates (a leave the derivation cannot find),
+  // a member the snapshot does not hold, the preview's side with no rotation,
+  // the type dialog's placeholder and its refusal, each dialog's close named
+  // after its change, and the notice when the day stops offering the roster form.
+  'kalendar.detail.conflict.lineUndated',
+  'kalendar.detail.unknownMember',
+  'kalendar.detail.preview.noType',
+  'kalendar.detail.override.set.choose',
+  'kalendar.detail.override.refused.type',
+  'kalendar.detail.override.set.close',
+  'kalendar.detail.rosterChange.set.close',
+  'kalendar.detail.rosterChange.refused.notOffered',
+  'kalendar.detail.conflict.resolve',
+  'kalendar.detail.typeTimes',
+  'kalendar.detail.changeContext',
+  'kalendar.detail.override.set.cancel',
+  'kalendar.detail.rosterChange.set.cancel',
+  'kalendar.detail.preview.heading',
+  'kalendar.detail.preview.type',
+  'kalendar.detail.preview.out',
+  'kalendar.detail.preview.in',
+  'kalendar.detail.preview.less',
+  'kalendar.detail.preview.more',
+  'kalendar.detail.preview.noHours',
   // STORY 3.5a: the day detail's override block — its heading, the type the
   // rotation projects, the author (or an unknown one), when it was saved and
   // its reason. `Izmjena` names the change, never a shift type.
@@ -1811,6 +1850,14 @@ const LEAVE_REPLACEMENT_KEY = 'ljudi.leaveRecord.replacementStays';
 const CALENDAR_OVERRIDE_NAMESPACE = 'kalendar.detail.override.';
 
 /**
+ * Story 7.9's two day-detail lines that name the Shift Type by its term, on
+ * {@link CALENDAR_OVERRIDE_NAMESPACE}'s terms: *Izmjene*'s sentence for a day
+ * with no change of type or roster, and *Što se mijenja*'s type from and to.
+ * `smjen` only inside the term `tip… smjen…`.
+ */
+const CALENDAR_TYPE_TERM_KEYS: readonly string[] = ['kalendar.detail.changes.empty', 'kalendar.detail.preview.type'];
+
+/**
  * The rotation builder's override review (story 3.5c): the admin amends an
  * override's SHIFT TYPE there, so it says the term — `Tip smjene` is the
  * amend's field — and, being the builder's, the TEAM too, as `smjena` (an
@@ -1842,7 +1889,11 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     return /smjen(?!a\b|e\b|u\b|om\b|ama\b)/.test(lowered.replace(SHIFT_TYPE_TERM, ''));
   }
 
-  if (key.startsWith(SHIFT_TYPE_NAMESPACE) || key.startsWith(CALENDAR_OVERRIDE_NAMESPACE)) {
+  if (
+    key.startsWith(SHIFT_TYPE_NAMESPACE) ||
+    key.startsWith(CALENDAR_OVERRIDE_NAMESPACE) ||
+    CALENDAR_TYPE_TERM_KEYS.includes(key)
+  ) {
     return lowered.replace(SHIFT_TYPE_TERM, '').includes('smjen');
   }
 

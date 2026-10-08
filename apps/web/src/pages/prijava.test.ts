@@ -243,6 +243,8 @@ const RESOLUTION: readonly string[] = Object.values(CONFLICT_RESOLUTION_PARTS).m
 const CONFLICTS_QUEUE_RULES = join(CONFLICTS_FEATURE, 'services', 'conflicts-queue.ts');
 /** Story 5.4b's rules: the resolution screen's facts, strip and lines, off `\w*MessageKey` unions. */
 const RESOLUTION_SCREEN_KEYS = join(CONFLICTS_FEATURE, 'services', 'resolution-screen.ts');
+/** Story 7.9: the replacement candidates' three group headings, off `candidateGroupMessageKey`. */
+const REPLACEMENT_CANDIDATE_KEYS = join(srcRoot, 'features', 'calendar', 'utils', 'replacement-candidates.ts');
 /** Story 5.4b's write: its three refusals, off `resolutionFailureMessageKey`. */
 const RESOLUTION_WRITE_KEYS = join(CONFLICTS_FEATURE, 'services', 'resolution-write.ts');
 const MEMBER_EDIT: readonly string[] = [
@@ -825,7 +827,11 @@ const SCREENS = [
   // `Poništi filtre`, and the sheet's `Poništi` and `Prikaži`. The sheet's
   // Smjena rows are radio items, never a `<Button>`, and its close is
   // `DialogHeader`'s own.
-  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 34 },
+  // THIRTY-NINE SINCE STORY 7.9: the day detail's footer — "Promijeni
+  // sastav" and "Promijeni tip smjene" — each change dialog's cancel, and
+  // "Riješi konflikt", a `<Button asChild>` over the link, written once
+  // inside the map over the day's conflicts.
+  { name: 'the Kalendar destination', file: KALENDAR, expectedControls: 39 },
   // STORY 4.1b. THREE on Sati: the month navigation it shares with the
   // calendar — the previous month, `Ovaj mjesec` and the next month. The
   // figures are read, never pressed.
@@ -2633,7 +2639,19 @@ const KEY_SOURCES = [
     // are `t()` calls here too, but over keys `@/utils/filter-bar` chooses —
     // `t(filterSummaryMessageKey(…))` — so those keys are counted in that
     // module, a key source, and not here.
-    strings: 138,
+    // ONE HUNDRED AND SIXTY-TWO SINCE STORY 7.9: day detail is facts, and each
+    // change is its own dialog — *Izmjene*'s heading and empty sentence; the
+    // conflict's heading, line and "Riješi konflikt"; the footer's two
+    // openers; each dialog's close and cancel, and its description (the day,
+    // or the day with its type and times); a "Dolazi" group's heading; and
+    // *Što se mijenja* — its label, the type from and to (a type with its
+    // times), who leaves and who arrives (or an unknown name), the hours of a
+    // group of members, signed less or more, or nobody's. ONE HUNDRED AND
+    // SIXTY-SEVEN SINCE ITS REVIEW: the type dialog's placeholder, a conflict
+    // line without dates, an unknown member's name, the preview's side with
+    // no rotation, and the notice when the day stops offering the roster form;
+    // each dialog's close now names its change.
+    strings: 167,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's
@@ -2753,10 +2771,21 @@ const KEY_SOURCES = [
     // leave starts later, ends earlier, or is removed), its hours as work or
     // the empty mark, and the hint once it is chosen, with a date or for a
     // removal.
+    // TWENTY SINCE STORY 7.9: the three candidate group headings moved to the
+    // calendar's public `utils/replacement-candidates`, counted there.
     name: 'the conflict resolution rules',
     file: RESOLUTION_SCREEN_KEYS,
     keys: messageKeyUnions,
-    strings: 23,
+    strings: 20,
+  },
+  {
+    // STORY 7.9: the three candidate group headings — free, working that day,
+    // on leave that day — shared by the conflict screen's picker and the day
+    // detail's roster dialog, off `candidateGroupMessageKey`.
+    name: 'the replacement candidate groups',
+    file: REPLACEMENT_CANDIDATE_KEYS,
+    keys: messageKeyUnions,
+    strings: 3,
   },
   {
     // STORY 5.4b: the write's three refusals — gone, denied, failed. FOUR
@@ -2845,10 +2874,11 @@ const KEY_SOURCES = [
     // STORY 3.5b: the six refusals of setting or removing an override, and
     // the two things a landed write says — saved, and removed. NINE SINCE
     // STORY 3.5c: a pending override removed from a day with no rotation.
+    // TEN SINCE STORY 7.9: no type chosen in the type dialog, its own refusal.
     name: 'the calendar override write rules',
     file: CALENDAR_OVERRIDE_WRITE_KEYS,
     keys: messageKeyUnions,
-    strings: 9,
+    strings: 10,
   },
   {
     // STORY 3.6b: the six refusals of changing a roster or removing a
@@ -3277,7 +3307,7 @@ describe('the screen is read at all, so every sweep below means something', () =
     //
     // SIXTY-THREE SINCE STORY 7.8: the set-password step, its rules, and the
     // credential copy's mapping.
-    expect(KEY_SOURCES).toHaveLength(63);
+    expect(KEY_SOURCES).toHaveLength(64);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"

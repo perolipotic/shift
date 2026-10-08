@@ -143,7 +143,8 @@ export const FEATURE_PUBLIC = {
     'utils/month', // conflicts, hours, leave, pages, today
     'utils/skeleton', // today
     // Story 5.4c: the replacement candidates, grouped once, for the conflict
-    // screen's second card (and story 7.9's roster dialog).
+    // screen's second card (and story 7.9's roster dialog). Story 7.9: their
+    // group headings (`candidateGroupMessageKey`) live beside them.
     'utils/replacement-candidates', // conflicts
   ],
   // Story 5.3c: the calendar's marks derive every collision through
@@ -187,9 +188,12 @@ export const FEATURE_PUBLIC = {
   // Story 6.1b: *Danas*'s hours tile is *Sati*'s own surface for the
   // viewer's month (`myHoursSurfaceOf`), over the conflicts state *Sati*
   // derives (`hoursConflictsStateOf`), so the tile equals *Sati*.
+  // Story 7.9: the day detail's *Što se mijenja* counts each member's hours
+  // through *Sati*'s own input (`memberHoursInputOf`) and leave-hours keys
+  // (`hoursLeaveKeysOf`), never a second recipe.
   hours: [
-    'services/hours-conflicts', // today
-    'services/my-hours', // pages, today
+    'services/hours-conflicts', // calendar, today
+    'services/my-hours', // calendar, pages, today
   ],
   // Story 5.1c: the member page composes `components/member-leave-card`,
   // which every page may import. Story 5.2c: the teams feature's dependents

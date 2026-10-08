@@ -20,7 +20,7 @@ import {
 } from '../../utils/database-helper.ts';
 import { addDays, dayMonth, weekdayOf } from '../../utils/dates.ts';
 import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
-import { fill, hr } from '../../utils/i18n.ts';
+import { escapeRegExp, fill, hr } from '../../utils/i18n.ts';
 import { MINIMUM_TARGET, expectNoHorizontalScroll, expectTouchTargets } from '../../utils/layout.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
@@ -1370,19 +1370,34 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     await cell.click();
     const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
     await expect(detail).toBeVisible();
-    await expect(calendarPage.rosterFormIn(detail)).toBeVisible();
+    // STORY 7.9: the day detail is facts — no form — and its footer opens the roster dialog.
+    await expect(detail.locator('form')).toHaveCount(0);
+    await expect(calendarPage.changesIn(detail)).toContainText(kalendar.detail.changes.empty);
     await expect(calendarPage.rosterRemoveIn(detail)).toHaveCount(0);
-    // The member put on reads `Ime · čin · Smjena` — on no team here.
+    const form = await calendarPage.openRosterFormIn(detail);
+    // The member put on reads `Ime · čin · Smjena` — on no team here — under "slobodan", and nobody is preselected.
     const spareLine = fill(hr.smjene.roster.withRankAndPosition, {
       name: fixture.spare.name,
       rank: hr.ljudi.rank.firefighter,
       position: kalendar.detail.rosterChange.set.noTeam,
     });
-    await expect(calendarPage.optionIn(calendarPage.rosterInIn(detail), spareLine)).toHaveCount(1);
-    await expect(calendarPage.memberOptionIn(calendarPage.rosterInIn(detail), fixture.spare.name)).toHaveText(spareLine);
+    await expect(calendarPage.optionIn(calendarPage.rosterInIn(form), spareLine)).toHaveCount(1);
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterInIn(form), fixture.spare.name)).toHaveText(spareLine);
+    const free = calendarPage.rosterInGroupIn(form, 'free');
+    await expect(free).toHaveAttribute('label', hr.raspored.resolution.candidates.free);
+    await expect(calendarPage.memberOptionIn(free, fixture.spare.name)).toHaveCount(1);
+    await expect(calendarPage.rosterInIn(form)).toHaveValue('');
     // The member on the default roster is offered to take off, not to put on.
-    await expect(calendarPage.memberOptionIn(calendarPage.rosterOutIn(detail), fixture.member.name)).toHaveCount(1);
-    await expect(calendarPage.memberOptionIn(calendarPage.rosterInIn(detail), fixture.member.name)).toHaveCount(0);
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterOutIn(form), fixture.member.name)).toHaveCount(1);
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterInIn(form), fixture.member.name)).toHaveCount(0);
+    // *Što se mijenja* says nothing until a choice is made, then who leaves, who arrives, and their hours.
+    await expect(calendarPage.previewIn(form)).toBeEmpty();
+    await calendarPage.chooseIn(calendarPage.rosterOutIn(form), fixture.member.name);
+    await calendarPage.chooseIn(calendarPage.rosterInIn(form), fixture.spare.name);
+    await expect(calendarPage.previewIn(form)).toContainText(fill(kalendar.detail.preview.out, { name: fixture.member.name }));
+    await expect(calendarPage.previewIn(form)).toContainText(fill(kalendar.detail.preview.in, { name: fixture.spare.name }));
+    await expect(calendarPage.previewIn(form)).toContainText(/−\d/);
+    await expect(calendarPage.previewIn(form)).toContainText(/\+\d/);
 
     // WHILE THE INSERT IS IN FLIGHT, Escape, the backdrop and the close
     // button close nothing. `removeSeededRotation` deletes every roster
@@ -1396,17 +1411,21 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
       if (route.request().method() === 'POST') await held;
       await route.continue();
     });
-    await calendarPage.changeRosterIn(detail, fixture.member.name, fixture.spare.name, ROSTER_REASON);
-    await expect(calendarPage.rosterSaveIn(detail)).toHaveCount(0);
+    await calendarPage.fillRosterIn(form, fixture.member.name, fixture.spare.name, ROSTER_REASON);
+    await expect(calendarPage.rosterSaveIn(form)).toHaveCount(0);
     await page.keyboard.press('Escape');
     await page.mouse.click(5, 5);
-    await calendarPage.closeIn(detail).click();
+    await calendarPage.rosterCloseIn(form).click();
+    await expect(form).toBeVisible();
     await expect(detail).toBeVisible();
     release();
 
+    // Landed: the dialog closes, focus returns to its opener, and the day detail says so.
     const block = calendarPage.rosterChangesIn(detail);
     await expect(block).toBeVisible();
     await page.unroute(insert);
+    await expect(calendarPage.rosterForm).toHaveCount(0);
+    await expect(calendarPage.rosterOpenerIn(detail)).toBeFocused();
     await expect(block).toContainText(replaced);
     await expect(block).toContainText(fill(kalendar.detail.override.author, { name: fixture.admin.name }));
     await expect(block).toContainText(fill(kalendar.detail.override.reason, { reason: ROSTER_REASON }));
@@ -1414,8 +1433,13 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     await expect(calendarPage.rosterLinesIn(detail)).toHaveCount(1);
     await expect(calendarPage.rosterLinesIn(detail)).toContainText(fixture.spare.name);
     // Both members are named by a live change: neither is offered again.
-    await expect(calendarPage.memberOptionIn(calendarPage.rosterOutIn(detail), fixture.member.name)).toHaveCount(0);
-    await expect(calendarPage.memberOptionIn(calendarPage.rosterInIn(detail), fixture.spare.name)).toHaveCount(0);
+    const again = await calendarPage.openRosterFormIn(detail);
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterOutIn(again), fixture.member.name)).toHaveCount(0);
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterInIn(again), fixture.spare.name)).toHaveCount(0);
+    // Its cancel closes it, and focus returns to the opener.
+    await calendarPage.rosterCancelIn(again).click();
+    await expect(calendarPage.rosterForm).toHaveCount(0);
+    await expect(calendarPage.rosterOpenerIn(detail)).toBeFocused();
     await expect(cell).toContainText('\u270E');
 
     // Remove: one neutral confirmation naming the change, the team and the date.
@@ -1434,11 +1458,16 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     await expect(confirm).toHaveCount(0);
     await expect(block).toHaveCount(0);
     await expect(calendarPage.statusIn(detail)).toHaveText(kalendar.detail.rosterChange.removedDone);
+    // Focus is back on the roster dialog's opener.
+    await expect(calendarPage.rosterOpenerIn(detail)).toBeFocused();
     // The default roster, and its candidates, are back.
     await expect(calendarPage.rosterLinesIn(detail)).toHaveCount(1);
     await expect(calendarPage.rosterLinesIn(detail)).toContainText(fixture.member.name);
-    await expect(calendarPage.memberOptionIn(calendarPage.rosterOutIn(detail), fixture.member.name)).toHaveCount(1);
-    await expect(calendarPage.memberOptionIn(calendarPage.rosterInIn(detail), fixture.spare.name)).toHaveCount(1);
+    const back = await calendarPage.openRosterFormIn(detail);
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterOutIn(back), fixture.member.name)).toHaveCount(1);
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterInIn(back), fixture.spare.name)).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await expect(calendarPage.rosterForm).toHaveCount(0);
 
     await page.keyboard.press('Escape');
     await expect(detail).toHaveCount(0);
@@ -1472,19 +1501,24 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     await betaCell.click();
     const detail = calendarPage.detailOf(beta.name, rotation.today);
     await expect(detail).toBeVisible();
-    const put = calendarPage.rosterInIn(detail);
-    const hint = calendarPage.rosterOverlapIn(detail);
+    const form = await calendarPage.openRosterFormIn(detail);
+    const put = calendarPage.rosterInIn(form);
+    const hint = calendarPage.rosterOverlapIn(form);
     // The live region is there from the start, empty, and describes nothing.
     await expect(hint).toHaveCount(1);
     await expect(hint).toBeEmpty();
     await expect(put).toHaveAccessibleDescription('');
+    // STORY 7.9: she works that day, so she is under "radi taj dan · 24 h bez pauze" — informing, never blocking.
+    const working = calendarPage.rosterInGroupIn(form, 'working');
+    await expect(working).toHaveAttribute('label', hr.raspored.resolution.candidates.working);
+    await expect(calendarPage.memberOptionIn(working, fixture.member.name)).toHaveCount(1);
 
     // Her own team works the same window: the hint names it, tied to the field, neutral.
     await calendarPage.chooseIn(put, fixture.member.name);
     await expect(hint).toHaveText(hintText);
     await expect(put).toHaveAccessibleDescription(hintText);
-    await expect(calendarPage.rosterFormIn(detail).locator('.text-destructive, .bg-destructive')).toHaveCount(0);
-    await expect(calendarPage.rosterSaveIn(detail)).toBeEnabled();
+    await expect(form.locator('.text-destructive, .bg-destructive')).toHaveCount(0);
+    await expect(calendarPage.rosterSaveIn(form)).toBeEnabled();
 
     // Nobody, and then a member on no team: no hint.
     await put.selectOption({ label: kalendar.detail.rosterChange.set.none });
@@ -1493,9 +1527,9 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     await expect(hint).toBeEmpty();
 
     // Warned, never blocked: the save lands, and the hint goes with the chosen member.
-    await calendarPage.changeRosterIn(detail, null, fixture.member.name, ROSTER_REASON);
+    await calendarPage.fillRosterIn(form, null, fixture.member.name, ROSTER_REASON);
     await expect(calendarPage.statusIn(detail)).toHaveText(kalendar.detail.rosterChange.saved);
-    await expect(hint).toBeEmpty();
+    await expect(calendarPage.rosterForm).toHaveCount(0);
     const block = calendarPage.rosterChangesIn(detail);
     await expect(block).toContainText(added);
 
@@ -1506,20 +1540,24 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     await expect(block).toHaveCount(0);
     await expect(calendarPage.statusIn(detail)).toHaveText(kalendar.detail.rosterChange.removedDone);
     // She is offered again, on "— nitko —": no hint from before the save.
+    await calendarPage.openRosterFormIn(detail);
     await expect(calendarPage.memberOptionIn(put, fixture.member.name)).toHaveCount(1);
     await expect(hint).toBeEmpty();
 
-    // Chosen, then the day closed: another team's working day in the same window starts with no hint.
+    // Chosen, then the dialog and the day closed: another team's working day in the same window starts with no hint.
     await calendarPage.chooseIn(put, fixture.member.name);
     await expect(hint).toHaveText(hintText);
+    await page.keyboard.press('Escape');
+    await expect(calendarPage.rosterForm).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(detail).toHaveCount(0);
     await (await calendarPage.cellOf(fixture.team.name, rotation.today)).click();
     const own = calendarPage.detailOf(fixture.team.name, rotation.today);
     await expect(own).toBeVisible();
-    await expect(calendarPage.rosterOverlapIn(own)).toHaveCount(1);
-    await expect(calendarPage.rosterOverlapIn(own)).toBeEmpty();
-    await expect(calendarPage.rosterInIn(own)).toHaveAccessibleDescription('');
+    const ownForm = await calendarPage.openRosterFormIn(own);
+    await expect(calendarPage.rosterOverlapIn(ownForm)).toHaveCount(1);
+    await expect(calendarPage.rosterOverlapIn(ownForm)).toBeEmpty();
+    await expect(calendarPage.rosterInIn(ownForm)).toHaveAccessibleDescription('');
   });
 
   test('nothing chosen is refused without a request and keeps the reason', async ({ page, calendarPage, fixture }) => {
@@ -1533,11 +1571,11 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     await calendarPage.goto(gridMonthOf(rotation.today));
     await (await calendarPage.cellOf(fixture.team.name, rotation.today)).click();
     const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
-    await calendarPage.changeRosterIn(detail, null, null, ROSTER_REASON);
+    const form = await calendarPage.changeRosterIn(detail, null, null, ROSTER_REASON);
 
-    await expect(calendarPage.alertIn(detail)).toHaveText(kalendar.detail.rosterChange.refused.member);
-    await expect(calendarPage.rosterReasonIn(detail)).toHaveValue(ROSTER_REASON);
-    await expect(calendarPage.rosterOutIn(detail)).toBeFocused();
+    await expect(calendarPage.alertIn(form)).toHaveText(kalendar.detail.rosterChange.refused.member);
+    await expect(calendarPage.rosterReasonIn(form)).toHaveValue(ROSTER_REASON);
+    await expect(calendarPage.rosterOutIn(form)).toBeFocused();
     await expect(calendarPage.rosterChangesIn(detail)).toHaveCount(0);
     expect(writes, 'a refused preflight sent a request').toEqual([]);
   });
@@ -1552,18 +1590,19 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     await calendarPage.goto(gridMonthOf(rotation.today));
     await (await calendarPage.cellOf(fixture.team.name, rotation.today)).click();
     const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
-    await expect(calendarPage.memberOptionIn(calendarPage.rosterOutIn(detail), fixture.member.name)).toHaveCount(1);
+    const form = await calendarPage.openRosterFormIn(detail);
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterOutIn(form), fixture.member.name)).toHaveCount(1);
     // Another admin takes her off the shift while the day is open.
     await seedRosterOverride(rotation, fixture.team.id, rotation.today, fixture.member.name, null, ROSTER_REASON);
-    await calendarPage.changeRosterIn(detail, fixture.member.name, fixture.spare.name, ROSTER_REASON);
+    await calendarPage.fillRosterIn(form, fixture.member.name, fixture.spare.name, ROSTER_REASON);
 
-    await expect(calendarPage.alertIn(detail)).toHaveText(kalendar.detail.rosterChange.refused.taken);
-    await expect(calendarPage.rosterReasonIn(detail)).toHaveValue(ROSTER_REASON);
+    await expect(calendarPage.alertIn(form)).toHaveText(kalendar.detail.rosterChange.refused.taken);
+    await expect(calendarPage.rosterReasonIn(form)).toHaveValue(ROSTER_REASON);
     // The re-read shows the day as it is: her removal applied, and she is offered no more.
     await expect(calendarPage.rosterChangesIn(detail)).toContainText(
       fill(kalendar.detail.rosterChange.removed, { name: fixture.member.name }),
     );
-    await expect(calendarPage.memberOptionIn(calendarPage.rosterOutIn(detail), fixture.member.name)).toHaveCount(0);
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterOutIn(form), fixture.member.name)).toHaveCount(0);
   });
 
   test('a removal answered P0002 holds its confirmation while in flight, then says gone and shows the day as it is', async ({
@@ -1651,14 +1690,15 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     await expect(confirm).toHaveCount(0);
     await expect(inert).toHaveCount(0);
     await expect(calendarPage.statusIn(detail)).toHaveText(kalendar.detail.rosterChange.removedDone);
-    await expect(calendarPage.memberOptionIn(calendarPage.rosterInIn(detail), fixture.spare.name)).toHaveCount(1);
+    const form = await calendarPage.openRosterFormIn(detail);
+    await expect(calendarPage.memberOptionIn(calendarPage.rosterInIn(form), fixture.spare.name)).toHaveCount(1);
   });
 });
 
 test.describe('the roster form at 390 px, as an admin', () => {
   test.use({ storageState: ADMIN_STATE, viewport: { width: 390, height: 844 }, hasTouch: true });
 
-  test('a working day shows the form, and the page never scrolls sideways', async ({ page, calendarPage, fixture }) => {
+  test('a working day opens the roster dialog, and the page never scrolls sideways', async ({ page, calendarPage, fixture }) => {
     test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
     const rotation = await seeded(fixture.slug, fixture.team.id);
 
@@ -1666,8 +1706,10 @@ test.describe('the roster form at 390 px, as an admin', () => {
     await (await calendarPage.cellOf(fixture.team.name, rotation.today)).tap();
     const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
     await expect(detail).toBeVisible();
-    await expect(calendarPage.rosterFormIn(detail)).toBeVisible();
-    await expect(calendarPage.rosterSaveIn(detail)).toBeVisible();
+    await expect(calendarPage.rosterOpenerIn(detail)).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    const form = await calendarPage.openRosterFormIn(detail);
+    await expect(calendarPage.rosterSaveIn(form)).toBeVisible();
     await expectNoHorizontalScroll(page);
   });
 });
@@ -1686,7 +1728,9 @@ test.describe('the roster form at 390 px, as a member', () => {
     const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
     await expect(detail).toBeVisible();
     await expect(calendarPage.rosterLinesIn(detail)).toContainText(fixture.member.name);
-    await expect(calendarPage.rosterFormIn(detail)).toHaveCount(0);
+    await expect(calendarPage.rosterOpenerIn(detail)).toHaveCount(0);
+    await expect(calendarPage.overrideOpenerIn(detail)).toHaveCount(0);
+    await expect(calendarPage.conflictsIn(detail)).toHaveCount(0);
     await expect(calendarPage.rosterRemoveIn(detail)).toHaveCount(0);
     await expect(calendarPage.rosterInertIn(detail)).toHaveCount(0);
     await expect(detail).not.toContainText(fixture.spare.name);
@@ -1715,10 +1759,17 @@ test.describe('an admin sets and removes a shift-type override at 1280 px', () =
     await cell.click();
     const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
     await expect(detail).toBeVisible();
-    await expect(calendarPage.overrideFormIn(detail)).toBeVisible();
+    await expect(detail.locator('form')).toHaveCount(0);
     await expect(calendarPage.overrideRemoveIn(detail)).toHaveCount(0);
+    const form = await calendarPage.openOverrideFormIn(detail);
     // The projected type is not offered.
-    await expect(calendarPage.overrideTypeIn(detail).locator('option', { hasText: projected })).toHaveCount(0);
+    await expect(calendarPage.overrideTypeIn(form).locator('option', { hasText: projected })).toHaveCount(0);
+    // Nothing is chosen yet, so *Što se mijenja* says nothing; then it follows the type chosen, before any save.
+    await expect(calendarPage.overrideTypeIn(form)).toHaveValue('');
+    await expect(calendarPage.previewIn(form)).toBeEmpty();
+    await calendarPage.overrideTypeIn(form).selectOption({ label: worked });
+    await expect(calendarPage.previewIn(form)).toContainText(kalendar.detail.preview.heading);
+    await expect(calendarPage.previewIn(form)).toContainText(new RegExp(`→ ${escapeRegExp(worked)}`));
 
     // WHILE THE INSERT IS IN FLIGHT, Escape, the backdrop and the close
     // button close nothing. Every override written here is of a seeded type,
@@ -1734,11 +1785,12 @@ test.describe('an admin sets and removes a shift-type override at 1280 px', () =
       if (route.request().method() === 'POST') await held;
       await route.continue();
     });
-    await calendarPage.setOverrideIn(detail, worked, REASON);
-    await expect(calendarPage.overrideSaveIn(detail)).toHaveCount(0);
+    await calendarPage.fillOverrideIn(form, worked, REASON);
+    await expect(calendarPage.overrideSaveIn(form)).toHaveCount(0);
     await page.keyboard.press('Escape');
     await page.mouse.click(5, 5);
-    await calendarPage.closeIn(detail).click();
+    await calendarPage.overrideCloseIn(form).click();
+    await expect(form).toBeVisible();
     await expect(detail).toBeVisible();
     release();
 
@@ -1750,7 +1802,8 @@ test.describe('an admin sets and removes a shift-type override at 1280 px', () =
     await expect(block).toContainText(fill(kalendar.detail.override.author, { name: fixture.admin.name }));
     await expect(block).toContainText(fill(kalendar.detail.override.reason, { reason: REASON }));
     await expect(calendarPage.statusIn(detail)).toHaveText(kalendar.detail.override.saved);
-    await expect(calendarPage.overrideFormIn(detail)).toHaveCount(0);
+    await expect(calendarPage.overrideForm).toHaveCount(0);
+    await expect(calendarPage.overrideOpenerIn(detail)).toHaveCount(0);
     const remove = calendarPage.overrideRemoveIn(detail);
     await expect(remove).toBeFocused();
     await expect(cell).toContainText(worked);
@@ -1770,7 +1823,8 @@ test.describe('an admin sets and removes a shift-type override at 1280 px', () =
     await calendarPage.confirmRemoveIn(confirm).click();
     await expect(confirm).toHaveCount(0);
     await expect(block).toHaveCount(0);
-    await expect(calendarPage.overrideFormIn(detail)).toBeVisible();
+    await expect(calendarPage.overrideOpenerIn(detail)).toBeVisible();
+    await expect(calendarPage.overrideOpenerIn(detail)).toBeFocused();
     await expect(calendarPage.statusIn(detail)).toHaveText(
       fill(kalendar.detail.override.removed, { type: projected }),
     );
@@ -1780,6 +1834,31 @@ test.describe('an admin sets and removes a shift-type override at 1280 px', () =
     await expect(detail).toHaveCount(0);
     await expect(cell).toContainText(projected);
     await expect(cell).not.toContainText('\u270E');
+  });
+
+  test('no type chosen is refused with its own words, without a request, and focuses the type', async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+    const writes: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/rest/v1/shift_type_overrides')) writes.push(request.method());
+    });
+
+    await calendarPage.goto(gridMonthOf(rotation.today));
+    await (await calendarPage.cellOf(fixture.team.name, rotation.today)).click();
+    const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
+    const form = await calendarPage.openOverrideFormIn(detail);
+    await calendarPage.overrideReasonIn(form).fill(REASON);
+    await calendarPage.overrideSaveIn(form).click();
+
+    await expect(calendarPage.alertIn(form)).toHaveText(kalendar.detail.override.refused.type);
+    await expect(calendarPage.overrideTypeIn(form)).toBeFocused();
+    await expect(calendarPage.overrideReasonIn(form)).toHaveValue(REASON);
+    expect(writes, 'a refused preflight sent a request').toEqual([]);
   });
 
   test('a blank reason is refused without a request, keeps the type chosen and focuses the reason', async ({
@@ -1798,16 +1877,18 @@ test.describe('an admin sets and removes a shift-type override at 1280 px', () =
     await calendarPage.goto(gridMonthOf(rotation.today));
     await (await calendarPage.cellOf(fixture.team.name, rotation.today)).click();
     const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
-    await calendarPage.setOverrideIn(detail, worked, '   ');
+    const form = await calendarPage.setOverrideIn(detail, worked, '   ');
 
-    await expect(calendarPage.alertIn(detail)).toHaveText(kalendar.detail.override.refused.reason);
-    await expect(calendarPage.overrideTypeIn(detail).locator('option:checked')).toHaveText(worked);
-    await expect(calendarPage.overrideReasonIn(detail)).toHaveValue('   ');
-    await expect(calendarPage.overrideReasonIn(detail)).toBeFocused();
+    await expect(calendarPage.alertIn(form)).toHaveText(kalendar.detail.override.refused.reason);
+    await expect(calendarPage.overrideTypeIn(form).locator('option:checked')).toHaveText(worked);
+    await expect(calendarPage.overrideReasonIn(form)).toHaveValue('   ');
+    await expect(calendarPage.overrideReasonIn(form)).toBeFocused();
     await expect(calendarPage.overrideIn(detail)).toHaveCount(0);
     expect(writes, 'a refused preflight sent a request').toEqual([]);
 
     // Closed and reopened, the day carries no refusal of the last visit.
+    await page.keyboard.press('Escape');
+    await expect(calendarPage.overrideForm).toHaveCount(0);
     await page.keyboard.press('Escape');
     await expect(detail).toHaveCount(0);
     await (await calendarPage.cellOf(fixture.team.name, rotation.today)).click();
@@ -1869,7 +1950,7 @@ test.describe('an admin sets and removes a shift-type override at 1280 px', () =
     await expect(calendarPage.alertIn(detail)).toHaveText(kalendar.detail.override.refused.gone);
     // The re-read shows the day as it is: no override, the form offered again.
     await expect(calendarPage.overrideIn(detail)).toHaveCount(0);
-    await expect(calendarPage.overrideFormIn(detail)).toBeVisible();
+    await expect(calendarPage.overrideOpenerIn(detail)).toBeVisible();
     await expect(cell).not.toContainText('\u270E');
     await page.unroute(removal);
   });
@@ -1888,9 +1969,10 @@ test.describe('the override form at 390 px, as a member', () => {
     await calendarPage.openerIn(calendarPage.today).tap();
     const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
     await expect(detail).toBeVisible();
-    await expect(calendarPage.overrideFormIn(detail)).toHaveCount(0);
+    await expect(calendarPage.overrideOpenerIn(detail)).toHaveCount(0);
     await expect(calendarPage.overrideTypeIn(detail)).toHaveCount(0);
     await expect(calendarPage.overrideRemoveIn(detail)).toHaveCount(0);
+    await expect(detail.locator('form')).toHaveCount(0);
     await expectNoHorizontalScroll(page);
     await page.keyboard.press('Escape');
     await expect(detail).toHaveCount(0);
@@ -1901,7 +1983,7 @@ test.describe('the override form at 390 px, as a member', () => {
     const overridden = calendarPage.detailOf(fixture.team.name, tomorrow);
     await expect(calendarPage.overrideIn(overridden)).toBeVisible();
     await expect(calendarPage.overrideRemoveIn(overridden)).toHaveCount(0);
-    await expect(calendarPage.overrideFormIn(overridden)).toHaveCount(0);
+    await expect(calendarPage.overrideOpenerIn(overridden)).toHaveCount(0);
   });
 });
 
@@ -2501,7 +2583,7 @@ test.describe('an override a rotation change left pending, at 1280 px, as an adm
     // The admin may only remove it here; no set form.
     const remove = calendarPage.overrideRemoveIn(detail);
     await expect(remove).toBeVisible();
-    await expect(calendarPage.overrideFormIn(detail)).toHaveCount(0);
+    await expect(calendarPage.overrideOpenerIn(detail)).toHaveCount(0);
 
     // Removed through the pending copy: the day already shows the projection.
     await remove.click();
@@ -2512,8 +2594,8 @@ test.describe('an override a rotation change left pending, at 1280 px, as an adm
     await expect(confirm).toHaveCount(0);
     await expect(pending).toHaveCount(0);
     await expect(calendarPage.statusIn(detail)).toHaveText(kalendar.detail.override.pending.removed);
-    // With nothing pending, the set form is back.
-    await expect(calendarPage.overrideFormIn(detail)).toBeVisible();
+    // With nothing pending, the type dialog's opener is back.
+    await expect(calendarPage.overrideOpenerIn(detail)).toBeVisible();
     await calendarPage.closeIn(detail).click();
     await expect(cell).toContainText(projected);
     await expect(cell).not.toContainText('\u270E');
@@ -2536,7 +2618,7 @@ test.describe('an override a rotation change left pending, at 1280 px, as an adm
     await expect(detail).toContainText(fill(kalendar.detail.noRotation, { team: fixture.team.name }));
     const pending = calendarPage.pendingOverrideIn(detail);
     await expect(pending).toContainText(fill(kalendar.detail.override.pending.type, { type: override.typeName }));
-    await expect(calendarPage.overrideFormIn(detail)).toHaveCount(0);
+    await expect(calendarPage.overrideOpenerIn(detail)).toHaveCount(0);
 
     await calendarPage.overrideRemoveIn(detail).click();
     const confirm = calendarPage.pendingRemoveConfirmOf(fixture.team.name, date);

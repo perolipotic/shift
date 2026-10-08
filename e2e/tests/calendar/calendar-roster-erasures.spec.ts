@@ -295,7 +295,7 @@ test('a kept conflict holds the change, and going back keeps the form as entered
   const { team, person, date } = await setUp(fixture.slug);
 
   const detail = await openDay(calendarPage, team.name, date);
-  await calendarPage.changeRosterIn(detail, person.name, null, REASON);
+  const form = await calendarPage.changeRosterIn(detail, person.name, null, REASON);
   const parts = calendarPage.rosterErasures('save');
   const dialog = parts.dialog(1);
   const rows = parts.rowsIn(dialog);
@@ -317,11 +317,11 @@ test('a kept conflict holds the change, and going back keeps the form as entered
 
   await parts.backIn(dialog).click();
   await expect(dialog).toHaveCount(0);
-  await expect(calendarPage.rosterSaveIn(detail), 'focus is not back on the form\'s save').toBeFocused();
+  await expect(calendarPage.rosterSaveIn(form), 'focus is not back on the form\'s save').toBeFocused();
   await expect(calendarPage.statusIn(detail)).toHaveCount(0);
   // The form is as it was entered.
-  await expect(calendarPage.rosterReasonIn(detail)).toHaveValue(REASON);
-  await expect(calendarPage.rosterOutIn(detail)).toHaveValue(person.id);
+  await expect(calendarPage.rosterReasonIn(form)).toHaveValue(REASON);
+  await expect(calendarPage.rosterOutIn(form)).toHaveValue(person.id);
   await page.setViewportSize({ width: 1280, height: 900 });
 
   // Nothing was written: the conflict is still on the queue.

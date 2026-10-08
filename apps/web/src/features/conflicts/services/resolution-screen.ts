@@ -4,9 +4,6 @@ import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar
 import { dayDetailOf } from '@/features/calendar/utils/day-detail';
 import { MODE_SVE, calendarTodayOf, dayMonthOf, type CalendarSearch } from '@/features/calendar/utils/month';
 import {
-  CANDIDATES_FREE,
-  CANDIDATES_ON_LEAVE,
-  CANDIDATES_WORKING,
   replacementCandidatesOf,
   type CandidateGroup,
   type CandidateGroupKind,
@@ -724,28 +721,6 @@ export function replacementOf(view: ResolutionView, id: string | null): Replacem
 /** The candidate picker's value as a candidate's id, or `null` for nobody. */
 export function candidateIdOf(value: string): string | null {
   return value === NO_CANDIDATE ? null : value;
-}
-
-/** A candidate group's heading, by its kind. Exhaustive. */
-export function candidateGroupMessageKey(
-  kind: CandidateGroupKind,
-):
-  | 'raspored.resolution.candidates.free'
-  | 'raspored.resolution.candidates.working'
-  | 'raspored.resolution.candidates.onLeave' {
-  switch (kind) {
-    case CANDIDATES_FREE:
-      return 'raspored.resolution.candidates.free';
-    case CANDIDATES_WORKING:
-      return 'raspored.resolution.candidates.working';
-    case CANDIDATES_ON_LEAVE:
-      return 'raspored.resolution.candidates.onLeave';
-    default: {
-      const unhandled: never = kind;
-
-      return unhandled;
-    }
-  }
 }
 
 /** Whether there is anybody at all to put on the shift. */

@@ -1,7 +1,7 @@
 import { expect, type Locator } from '@playwright/test';
 
 import { dayMonth, weekdayOf } from '../utils/dates.ts';
-import { MONTH_TRIGGER_NAME, escapeRegExp, fill, hr } from '../utils/i18n.ts';
+import { MONTH_TRIGGER_NAME, escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 import { ErasureDialogParts } from './erasure-dialog.ts';
 import { FilterBarParts } from './filter-bar.ts';
@@ -416,31 +416,82 @@ export class CalendarPage extends BasePage {
     return detail.getByRole('button', { name: kalendar.detail.close, exact: true });
   }
 
-  // ------------------------------------------------ the override form (3.5b)
+  // ------------------------------------- the override form (3.5b, 7.9)
 
-  /** The admin's override form in the detail, named by its heading. */
-  overrideFormIn(detail: Locator): Locator {
-    return detail.getByRole('region', { name: kalendar.detail.override.set.heading, exact: true });
+  /**
+   * The day detail's "Promijeni tip smjene" (story 7.9): the opener of the
+   * type dialog, in the detail's footer — there exactly when a type may be set.
+   */
+  overrideOpenerIn(detail: Locator): Locator {
+    return detail.getByRole('button', { name: kalendar.detail.override.set.heading, exact: true });
   }
 
-  /** The form's type `Select`. */
-  overrideTypeIn(detail: Locator): Locator {
-    return detail.getByLabel(kalendar.detail.override.set.type, { exact: true });
+  /** The type dialog (story 7.9), named by its title. */
+  get overrideForm(): Locator {
+    return this.page.getByRole('dialog', { name: kalendar.detail.override.set.heading, exact: true });
   }
 
-  /** The form's reason field, inside the form: the roster form (story 3.6b) has a `Razlog` too. */
-  overrideReasonIn(detail: Locator): Locator {
-    return this.overrideFormIn(detail).getByLabel(kalendar.detail.override.set.reason, { exact: true });
+  /** Opens the type dialog from `detail`'s footer and answers it, open. */
+  async openOverrideFormIn(detail: Locator): Promise<Locator> {
+    await this.overrideOpenerIn(detail).click();
+    await expect(this.overrideForm).toBeVisible();
+
+    return this.overrideForm;
   }
 
-  /** The form's save. */
-  overrideSaveIn(detail: Locator): Locator {
-    return detail.getByRole('button', { name: kalendar.detail.override.set.save, exact: true });
+  /** The dialog's type `Select`. */
+  overrideTypeIn(form: Locator): Locator {
+    return form.getByLabel(kalendar.detail.override.set.type, { exact: true });
   }
 
-  /** The removal's action, beside the override block. */
+  /** The dialog's reason field. */
+  overrideReasonIn(form: Locator): Locator {
+    return form.getByLabel(kalendar.detail.override.set.reason, { exact: true });
+  }
+
+  /** The dialog's save. */
+  overrideSaveIn(form: Locator): Locator {
+    return form.getByRole('button', { name: kalendar.detail.override.set.save, exact: true });
+  }
+
+  /** The dialog's cancel. */
+  overrideCancelIn(form: Locator): Locator {
+    return form.getByRole('button', { name: kalendar.detail.override.set.cancel, exact: true });
+  }
+
+  /** The dialog's close, named after its change. */
+  overrideCloseIn(form: Locator): Locator {
+    return form.getByRole('button', { name: kalendar.detail.override.set.close, exact: true });
+  }
+
+  /** A change dialog's *Što se mijenja* (story 7.9): its `<output>`, a status, empty until a choice is made. */
+  previewIn(form: Locator): Locator {
+    return form.locator('output');
+  }
+
+  /** The removal's action, on the override's own block in *Izmjene*. */
   overrideRemoveIn(detail: Locator): Locator {
     return detail.getByRole('button', { name: kalendar.detail.override.remove.action, exact: true });
+  }
+
+  /** The day detail's *Izmjene* (story 7.9): every change of the day, or the sentence for none. */
+  changesIn(detail: Locator): Locator {
+    return detail.getByRole('region', { name: kalendar.detail.changes.heading, exact: true });
+  }
+
+  /** The day detail's unresolved conflicts (story 7.9), an admin's alone. */
+  conflictsIn(detail: Locator): Locator {
+    const heading = kalendar.detail.conflict.heading;
+
+    // `Konflikt` for one, `Konflikti` for several.
+    return detail.getByRole('region', {
+      name: new RegExp(`^(?:${escapeRegExp(plural(heading, 1))}|${escapeRegExp(plural(heading, 2))})$`),
+    });
+  }
+
+  /** Every "Riješi konflikt" in `scope`. */
+  resolveLinksIn(scope: Locator): Locator {
+    return scope.getByRole('link', { name: kalendar.detail.conflict.resolve, exact: true });
   }
 
   /** A refusal inside a Dialog. */
@@ -479,28 +530,61 @@ export class CalendarPage extends BasePage {
     return confirm.getByRole('button', { name: kalendar.detail.override.remove.cancel, exact: true });
   }
 
-  /** Chooses `typeName`, types `reason` and saves the override form in `detail`. */
-  async setOverrideIn(detail: Locator, typeName: string, reason: string): Promise<void> {
-    await this.overrideTypeIn(detail).selectOption({ label: typeName });
-    await this.overrideReasonIn(detail).fill(reason);
-    await this.overrideSaveIn(detail).click();
+  /** In the open type dialog `form`, chooses `typeName`, types `reason` and saves. */
+  async fillOverrideIn(form: Locator, typeName: string, reason: string): Promise<void> {
+    await this.overrideTypeIn(form).selectOption({ label: typeName });
+    await this.overrideReasonIn(form).fill(reason);
+    await this.overrideSaveIn(form).click();
   }
 
-  // -------------------------------------------------- the roster form (3.6b)
+  /** Opens the type dialog from `detail`, chooses `typeName`, types `reason` and saves; answers the dialog. */
+  async setOverrideIn(detail: Locator, typeName: string, reason: string): Promise<Locator> {
+    const form = await this.openOverrideFormIn(detail);
 
-  /** The admin's roster form in the detail, named by its heading. */
-  rosterFormIn(detail: Locator): Locator {
-    return detail.getByRole('region', { name: kalendar.detail.rosterChange.set.heading, exact: true });
+    await this.fillOverrideIn(form, typeName, reason);
+
+    return form;
   }
 
-  /** The form's "Skida se" `Select`. */
-  rosterOutIn(detail: Locator): Locator {
-    return this.rosterFormIn(detail).getByLabel(kalendar.detail.rosterChange.set.out, { exact: true });
+  // ---------------------------------------- the roster form (3.6b, 7.9)
+
+  /**
+   * The day detail's "Promijeni sastav" (story 7.9): the opener of the roster
+   * dialog, in the detail's footer — there exactly on an admin's working day.
+   */
+  rosterOpenerIn(detail: Locator): Locator {
+    return detail.getByRole('button', { name: kalendar.detail.rosterChange.set.heading, exact: true });
   }
 
-  /** The form's "Dolazi" `Select`. */
-  rosterInIn(detail: Locator): Locator {
-    return this.rosterFormIn(detail).getByLabel(kalendar.detail.rosterChange.set.in, { exact: true });
+  /** The roster dialog (story 7.9), named by its title. */
+  get rosterForm(): Locator {
+    return this.page.getByRole('dialog', { name: kalendar.detail.rosterChange.set.heading, exact: true });
+  }
+
+  /** Opens the roster dialog from `detail`'s footer and answers it, open. */
+  async openRosterFormIn(detail: Locator): Promise<Locator> {
+    await this.rosterOpenerIn(detail).click();
+    await expect(this.rosterForm).toBeVisible();
+
+    return this.rosterForm;
+  }
+
+  /** The dialog's "Skida se" `Select`. */
+  rosterOutIn(form: Locator): Locator {
+    return form.getByLabel(kalendar.detail.rosterChange.set.out, { exact: true });
+  }
+
+  /** The dialog's "Dolazi" `Select`. */
+  rosterInIn(form: Locator): Locator {
+    return form.getByLabel(kalendar.detail.rosterChange.set.in, { exact: true });
+  }
+
+  /**
+   * One of "Dolazi"'s groups (story 7.9): a native `<optgroup>`, found by its
+   * kind's code — a fixed word, never copy — whose `label` the test asserts.
+   */
+  rosterInGroupIn(form: Locator, kind: 'free' | 'working' | 'onLeave'): Locator {
+    return this.rosterInIn(form).locator(`optgroup[data-kind="${kind}"]`);
   }
 
   /** One `Select`'s option, by the whole line it reads. */
@@ -514,23 +598,33 @@ export class CalendarPage extends BasePage {
   }
 
   /**
-   * The form's overlap hint (Epic 4 retro C2): the polite live region right after
-   * the "Dolazi" `Select`'s wrapper, which it describes while it says anything.
-   * Always attached — empty while there is nothing to say — so an empty hint
-   * is asserted on the one node, never on a locator that matches nothing.
+   * The dialog's overlap hint (Epic 4 retro C2): the polite live region right
+   * after the "Dolazi" `Select`'s wrapper, which it describes while it says
+   * anything. Always attached — empty while there is nothing to say — so an
+   * empty hint is asserted on the one node, never on a locator that matches nothing.
    */
-  rosterOverlapIn(detail: Locator): Locator {
-    return this.rosterInIn(detail).locator('xpath=../following-sibling::*[@role="status"][1]');
+  rosterOverlapIn(form: Locator): Locator {
+    return this.rosterInIn(form).locator('xpath=../following-sibling::*[@role="status"][1]');
   }
 
-  /** The form's reason field. */
-  rosterReasonIn(detail: Locator): Locator {
-    return this.rosterFormIn(detail).getByLabel(kalendar.detail.rosterChange.set.reason, { exact: true });
+  /** The dialog's reason field. */
+  rosterReasonIn(form: Locator): Locator {
+    return form.getByLabel(kalendar.detail.rosterChange.set.reason, { exact: true });
   }
 
-  /** The form's save. */
-  rosterSaveIn(detail: Locator): Locator {
-    return this.rosterFormIn(detail).getByRole('button', { name: kalendar.detail.rosterChange.set.save, exact: true });
+  /** The dialog's save. */
+  rosterSaveIn(form: Locator): Locator {
+    return form.getByRole('button', { name: kalendar.detail.rosterChange.set.save, exact: true });
+  }
+
+  /** The dialog's cancel. */
+  rosterCancelIn(form: Locator): Locator {
+    return form.getByRole('button', { name: kalendar.detail.rosterChange.set.cancel, exact: true });
+  }
+
+  /** The dialog's close, named after its change. */
+  rosterCloseIn(form: Locator): Locator {
+    return form.getByRole('button', { name: kalendar.detail.rosterChange.set.close, exact: true });
   }
 
   /** The block of in-force roster changes that apply to nothing (story 3.6b), an admin's alone. */
@@ -568,14 +662,23 @@ export class CalendarPage extends BasePage {
   }
 
   /**
-   * Fills the roster form in `detail` — the member taken off and the one put
+   * Fills the open roster dialog `form` — the member taken off and the one put
    * on by their names, `null` leaving "— nitko —" — types `reason` and saves.
    */
-  async changeRosterIn(detail: Locator, out: string | null, put: string | null, reason: string): Promise<void> {
-    if (out !== null) await this.chooseIn(this.rosterOutIn(detail), out);
-    if (put !== null) await this.chooseIn(this.rosterInIn(detail), put);
-    await this.rosterReasonIn(detail).fill(reason);
-    await this.rosterSaveIn(detail).click();
+  async fillRosterIn(form: Locator, out: string | null, put: string | null, reason: string): Promise<void> {
+    if (out !== null) await this.chooseIn(this.rosterOutIn(form), out);
+    if (put !== null) await this.chooseIn(this.rosterInIn(form), put);
+    await this.rosterReasonIn(form).fill(reason);
+    await this.rosterSaveIn(form).click();
+  }
+
+  /** Opens the roster dialog from `detail` and fills it as {@link fillRosterIn} does; answers the dialog. */
+  async changeRosterIn(detail: Locator, out: string | null, put: string | null, reason: string): Promise<Locator> {
+    const form = await this.openRosterFormIn(detail);
+
+    await this.fillRosterIn(form, out, put, reason);
+
+    return form;
   }
 
   // ------------------------------- the roster change's erasure guard (5.5b)

@@ -17,7 +17,8 @@ import {
   type SeededLeaveMember,
   type SeededRotation,
 } from '../../utils/database-helper.ts';
-import { hr } from '../../utils/i18n.ts';
+import { fullDate } from '../../utils/dates.ts';
+import { fill, hr } from '../../utils/i18n.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
@@ -271,6 +272,18 @@ test("a member reads their own leave hatched with no conflict, nothing new on th
       await expect(calendar.legendOf().heading).toHaveCount(0);
     }
 
+    // STORY 7.9: the day detail of a day in unresolved conflict states no conflict to a member, and offers no change.
+    await calendar.showMonthOf(today, today);
+    await (await calendar.cellOf(team.name, today)).click();
+    const detail = calendar.detailOf(team.name, today);
+    await expect(detail).toBeVisible();
+    await expect(calendar.rosterLinesIn(detail).filter({ hasText: member.name })).toHaveCount(1);
+    await expect(calendar.conflictsIn(detail)).toHaveCount(0);
+    await expect(calendar.rosterOpenerIn(detail)).toHaveCount(0);
+    await expect(calendar.overrideOpenerIn(detail)).toHaveCount(0);
+    await page.keyboard.press('Escape');
+    await expect(detail).toHaveCount(0);
+
     // THE TEAMMATE'S PERSON VIEW: nothing of their leave.
     await calendar.showMonthOf(today, today);
     await calendar.filters.choosePerson(teammate.name);
@@ -345,6 +358,75 @@ test('a conflict accepted as uncovered carries the uncovered mark and no conflic
   const day = calendarPage.dayButtonIn(list, team.name, today);
   await expect(day).toHaveAccessibleName(names(LEAVE));
   await expect(day).not.toHaveAccessibleName(names(CONFLICT));
+});
+
+test('the day detail states each unresolved conflict with its leave, links to its decision, and the type dialog previews the change', async ({
+  page,
+  calendarPage,
+  fixture,
+}) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  // STORY 7.9. Today + 1 is the seeded rotation's Noć; the member on leave works it.
+  const { today, team } = await seeded(fixture.slug);
+  const member = await seedLeaveMember(fixture.slug, team.id, today, 20);
+  withLeave.push({ slug: fixture.slug, id: member.id });
+  const last = isoDaysAfter(today, 4);
+  await seedLeaveRecord(fixture.slug, member.id, today, last);
+  // Today's is accepted as uncovered: resolved, so its day states no conflict.
+  await seedConflictResolution(fixture.slug, member.id, today, team.id);
+  const date = isoDaysAfter(today, 1);
+  // A member of another team (with no rotation), on leave that day: a candidate "na godišnjem taj dan".
+  const elsewhere = await seedExtraTeam(fixture.slug, `Smjena ${randomBytes(3).toString('hex')}`);
+  const away = await seedLeaveMember(fixture.slug, elsewhere.id, today, 20);
+  withLeave.push({ slug: fixture.slug, id: away.id });
+  await seedLeaveRecord(fixture.slug, away.id, date, date);
+
+  await calendarPage.goto('?prikaz=sve');
+  await calendarPage.showMonthOf(today, today);
+  await (await calendarPage.cellOf(team.name, today)).click();
+  const resolved = calendarPage.detailOf(team.name, today);
+  await expect(resolved).toBeVisible();
+  await expect(calendarPage.conflictsIn(resolved)).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(resolved).toHaveCount(0);
+
+  await calendarPage.showMonthOf(date, today);
+  await (await calendarPage.cellOf(team.name, date)).click();
+  const detail = calendarPage.detailOf(team.name, date);
+  await expect(detail).toBeVisible();
+  await expect(detail.locator('form')).toHaveCount(0);
+  const conflicts = calendarPage.conflictsIn(detail);
+  await expect(conflicts).toContainText(
+    fill(kalendar.detail.conflict.line, { name: member.name, from: fullDate(today), to: fullDate(last) }),
+  );
+  await expect(calendarPage.resolveLinksIn(conflicts)).toHaveCount(1);
+  await expect(calendarPage.changesIn(detail)).toContainText(kalendar.detail.changes.empty);
+
+  // The type dialog: Slobodno takes the member's hours away, before any save; its cancel returns to the day.
+  const form = await calendarPage.openOverrideFormIn(detail);
+  const free = seed?.steps[2];
+  if (free === undefined) throw new Error('E2E: no seeded rotation');
+  await calendarPage.overrideTypeIn(form).selectOption({ label: free });
+  await expect(calendarPage.previewIn(form)).toContainText(kalendar.detail.preview.heading);
+  await expect(calendarPage.previewIn(form)).toContainText(`→ ${free}`);
+  await expect(calendarPage.previewIn(form)).toContainText(member.name);
+  await expect(calendarPage.previewIn(form)).toContainText(/−\d/);
+  await calendarPage.overrideCancelIn(form).click();
+  await expect(calendarPage.overrideForm).toHaveCount(0);
+  await expect(calendarPage.overrideOpenerIn(detail)).toBeFocused();
+
+  // The roster dialog: the member on leave elsewhere is offered under "na godišnjem taj dan", none preselected.
+  const roster = await calendarPage.openRosterFormIn(detail);
+  await expect(calendarPage.rosterInIn(roster)).toHaveValue('');
+  const onLeave = calendarPage.rosterInGroupIn(roster, 'onLeave');
+  await expect(onLeave).toHaveAttribute('label', hr.raspored.resolution.candidates.onLeave);
+  await expect(calendarPage.memberOptionIn(onLeave, away.name)).toHaveCount(1);
+  await page.keyboard.press('Escape');
+  await expect(calendarPage.rosterForm).toHaveCount(0);
+
+  // "Riješi konflikt" goes to that conflict's decision screen.
+  await calendarPage.resolveLinksIn(conflicts).click();
+  await expect(page).toHaveURL(`/raspored/${member.id}/${date}/${team.id}`);
 });
 
 test('a failed resolutions read shows the unavailable alert and no month, and the retry brings the month back', async ({

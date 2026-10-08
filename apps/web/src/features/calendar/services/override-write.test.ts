@@ -177,6 +177,7 @@ describe('the refusals, as the dialog says them', () => {
   const COPY: Readonly<Record<OverrideWriteFailure, string>> = {
     reason: 'Upiši razlog, 1–200 znakova.',
     sameAsProjected: 'To je već tip smjene prema rotaciji.',
+    type: 'Odaberi tip smjene.',
     taken: 'Za taj dan već postoji izmjena. Osvježi prikaz.',
     gone: 'Izmjena je već uklonjena.',
     denied: 'Ne možeš mijenjati izmjene. Za to trebaš ovlasti administratora.',

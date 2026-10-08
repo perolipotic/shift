@@ -1,6 +1,7 @@
 import {
   OVERRIDE_REFUSED_REASON,
   OVERRIDE_REFUSED_SAME,
+  OVERRIDE_REFUSED_TYPE,
   overrideEntryOf,
   type DayDetail,
 } from '@/features/calendar/utils/day-detail';
@@ -41,6 +42,7 @@ export const OVERRIDE_FAILED = 'failed';
 export type OverrideWriteFailure =
   | typeof OVERRIDE_REFUSED_REASON
   | typeof OVERRIDE_REFUSED_SAME
+  | typeof OVERRIDE_REFUSED_TYPE
   | typeof OVERRIDE_TAKEN
   | typeof OVERRIDE_GONE
   | typeof OVERRIDE_DENIED
@@ -183,12 +185,14 @@ export function overrideWriteMessageKey(
 ):
   | 'kalendar.detail.override.refused.reason'
   | 'kalendar.detail.override.refused.sameAsProjected'
+  | 'kalendar.detail.override.refused.type'
   | 'kalendar.detail.override.refused.taken'
   | 'kalendar.detail.override.refused.gone'
   | 'kalendar.detail.override.refused.denied'
   | 'kalendar.detail.override.refused.failed' {
   if (failure === OVERRIDE_REFUSED_REASON) return 'kalendar.detail.override.refused.reason';
   if (failure === OVERRIDE_REFUSED_SAME) return 'kalendar.detail.override.refused.sameAsProjected';
+  if (failure === OVERRIDE_REFUSED_TYPE) return 'kalendar.detail.override.refused.type';
   if (failure === OVERRIDE_TAKEN) return 'kalendar.detail.override.refused.taken';
   if (failure === OVERRIDE_GONE) return 'kalendar.detail.override.refused.gone';
   if (failure === OVERRIDE_DENIED) return 'kalendar.detail.override.refused.denied';

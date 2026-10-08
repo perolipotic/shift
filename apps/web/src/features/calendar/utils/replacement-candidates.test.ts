@@ -6,6 +6,7 @@ import {
   CANDIDATES_FREE,
   CANDIDATES_ON_LEAVE,
   CANDIDATES_WORKING,
+  candidateLeaveOf,
   replacementCandidatesOf,
   type CandidateGroup,
 } from '@/features/calendar/utils/replacement-candidates';
@@ -263,5 +264,21 @@ describe('the second fixture', () => {
       [CANDIDATES_WORKING]: ['Ivo Horvat'],
       [CANDIDATES_ON_LEAVE]: [],
     });
+  });
+});
+
+describe('the leave the candidates are grouped by (story 7.9)', () => {
+  it('flattens the marks\' leave, by member, into one record per range', () => {
+    const leave = new Map([
+      [EVA, [{ from: '2026-09-09', to: '2026-09-10' }]],
+      [VIEWER_MEMBER, [{ from: '2026-09-01', to: '2026-09-02' }, { from: '2026-09-10', to: '2026-09-14' }]],
+    ]);
+
+    expect(candidateLeaveOf(leave)).toEqual([
+      { memberId: EVA, from: '2026-09-09', to: '2026-09-10' },
+      { memberId: VIEWER_MEMBER, from: '2026-09-01', to: '2026-09-02' },
+      { memberId: VIEWER_MEMBER, from: '2026-09-10', to: '2026-09-14' },
+    ]);
+    expect(candidateLeaveOf(new Map())).toEqual([]);
   });
 });

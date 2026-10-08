@@ -2,11 +2,11 @@ import type { ReactNode, RefObject } from 'react';
 
 import { RadioGroup, RadioRow } from '@/components/ui/radio-group';
 import { outOptionOf, type RosterLineTranslate } from '@/features/calendar/utils/day-detail';
+import { candidateGroupMessageKey } from '@/features/calendar/utils/replacement-candidates';
 import {
   NO_CANDIDATE,
   RESOLUTION_CANDIDATES_HEADING_ID,
   candidateGroupHeadingId,
-  candidateGroupMessageKey,
   hasCandidates,
   type ResolutionView,
 } from '@/features/conflicts/services/resolution-screen';

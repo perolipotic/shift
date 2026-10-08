@@ -1,3 +1,4 @@
+import type { CollisionResolution } from '@shift/domain';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
 
@@ -29,6 +30,8 @@ import {
   type CalendarSearch,
 } from '@/features/calendar/utils/month';
 import { translateCellLabel } from '@/features/calendar/utils/cell-label';
+import { dayConflictsOf, type DayConflict } from '@/features/calendar/utils/day-detail';
+import { candidateLeaveOf } from '@/features/calendar/utils/replacement-candidates';
 import { cachedRoleOf, calendarSkeletonShapeOf, earlyCalendarModeOf } from '@/features/calendar/utils/skeleton';
 import { dayDetailKeyOf, gridFocusKeyOf } from '@/features/calendar/utils/screen-keys';
 import {
@@ -61,8 +64,13 @@ import {
   type OrganizationLeaveRecordsTable,
 } from '@/features/leave/services/leave-list';
 import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
+import { hoursLeaveKeysOf } from '@/features/hours/services/hours-conflicts';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import { supabaseClient } from '@/lib/supabase/client';
+
+/** No conflicts on the open day, and no leave-hours keys: frozen, so a memo's answer stays the same object. */
+const NO_CONFLICTS: readonly DayConflict[] = Object.freeze([]);
+const NO_LEAVE_KEYS: readonly CollisionResolution[] = Object.freeze([]);
 
 function noRoleOnServer(): null {
   return null;
@@ -92,6 +100,13 @@ function noRoleOnServer(): null {
  * by role as the leave is, so a resolved conflict is never marked. A member
  * is shown no conflict and reads none, so the retry reads the organization's
  * key alone. Every leave write names it among its dependents.
+ *
+ * THE OPEN DAY'S FACTS (story 7.9) come from the same reads, never a fourth:
+ * its unresolved conflicts (`dayConflicts`, the marks' own collisions — none
+ * for a member), the live leave the roster dialog groups its candidates by
+ * (`candidateLeave`), and the leave-hours keys its previews count hours with
+ * as *Sati* does (`leaveKeys`, an admin's alone). Each is derived once per
+ * answer; one that cannot be derived is none, logged.
  */
 export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSearch) => void) {
   const answer = useQuery(
@@ -173,6 +188,20 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
     ],
   );
   const marks = marksState?.kind === MARKS_READY ? marksState.marks : null;
+  // `null` while the marks are not ready (loading or failed): grouping over no
+  // leave would read every member on leave as free, so nobody is grouped.
+  const candidateLeave = useMemo(() => (marks === null ? null : candidateLeaveOf(marks.leave)), [marks]);
+  const leaveKeys = useMemo(() => {
+    if (snapshot === null || !readsResolutions || resolutionsData === undefined) return NO_LEAVE_KEYS;
+
+    try {
+      return hoursLeaveKeysOf(snapshot, resolutionsData);
+    } catch (cause) {
+      console.error(cause);
+
+      return NO_LEAVE_KEYS;
+    }
+  }, [snapshot, readsResolutions, resolutionsData]);
   const loading = state.loading || marksState?.kind === MARKS_LOADING;
   const today = snapshot === null ? null : calendarTodayOf(snapshot, new Date());
   const mjesec = search.mjesec;
@@ -233,6 +262,16 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
     snapshot,
     dayDetailKeyOf(shownGrid, mode),
     gridRef,
+  );
+  // An admin's alone: a member is shown no conflict (their marks carry none
+  // anyway). `dayConflictsOf` never throws: an entry it cannot date is said
+  // without dates, so one bad entry never hides the others.
+  const dayConflicts = useMemo(
+    () =>
+      snapshot === null || marks === null || detail === null || !readsResolutions
+        ? NO_CONFLICTS
+        : dayConflictsOf(snapshot, marks.collisions, marks.leave, detail),
+    [snapshot, marks, detail, readsResolutions],
   );
   // Built once per month shown, not on every focus move.
   const labels = useMemo(() => (month === null ? null : gridCellLabelsOf(month, translateCellLabel)), [month]);
@@ -365,6 +404,9 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
     gridFocus,
     gridRef,
     detail,
+    dayConflicts,
+    candidateLeave,
+    leaveKeys,
     retry,
     show,
     choose,
