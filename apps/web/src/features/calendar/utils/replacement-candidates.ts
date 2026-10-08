@@ -1,4 +1,12 @@
-import { activeOn, memberScheduleOfMonth, membershipOn, monthOf, rosterOn, shiftRoster } from '@shift/domain';
+import {
+  activeOn,
+  memberScheduleOfMonth,
+  membershipOn,
+  monthOf,
+  rosterOn,
+  shiftRoster,
+  type LeaveRange,
+} from '@shift/domain';
 
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import type { RosterOutCandidate } from '@/features/calendar/utils/day-detail';
@@ -70,6 +78,15 @@ export interface CandidateLeave {
 }
 
 /**
+ * The leave records the calendar marks' `leave` holds, by member, as the
+ * candidates are grouped by (story 7.9): the calendar's own marks, never a
+ * read of their own.
+ */
+export function candidateLeaveOf(leave: ReadonlyMap<string, readonly LeaveRange[]>): readonly CandidateLeave[] {
+  return [...leave].flatMap(([memberId, ranges]) => ranges.map(({ from, to }) => ({ memberId, from, to })));
+}
+
+/**
  * The candidates to put on `teamId`'s shift on `date`, in the three groups
  * and their fixed order, every group present.
  *
@@ -128,4 +145,26 @@ export function replacementCandidatesOf(
   }
 
   return CANDIDATE_GROUPS.map((kind) => ({ kind, candidates: groups[kind] }));
+}
+
+/** A candidate group's heading, by its kind. Exhaustive. */
+export function candidateGroupMessageKey(
+  kind: CandidateGroupKind,
+):
+  | 'raspored.resolution.candidates.free'
+  | 'raspored.resolution.candidates.working'
+  | 'raspored.resolution.candidates.onLeave' {
+  switch (kind) {
+    case CANDIDATES_FREE:
+      return 'raspored.resolution.candidates.free';
+    case CANDIDATES_WORKING:
+      return 'raspored.resolution.candidates.working';
+    case CANDIDATES_ON_LEAVE:
+      return 'raspored.resolution.candidates.onLeave';
+    default: {
+      const unhandled: never = kind;
+
+      return unhandled;
+    }
+  }
 }

@@ -10,6 +10,8 @@ import {
   scheduledShiftTypeOn,
   shiftRoster,
   shiftTypeVersionOn,
+  type Collision,
+  type LeaveRange,
 } from '@shift/domain';
 
 import {
@@ -25,6 +27,12 @@ import type {
   CalendarRosterOverride,
   CalendarSnapshot,
 } from '@/features/calendar/services/snapshot';
+import {
+  CANDIDATE_GROUPS,
+  replacementCandidatesOf,
+  type CandidateGroupKind,
+  type CandidateLeave,
+} from '@/features/calendar/utils/replacement-candidates';
 import { compareText, formatDate, formatIsoDate, formatTime } from '@/lib/i18n/format';
 import { rosterLineOf, rosterPositionMessageKey, type RosterLine } from '@/features/members/utils/position';
 import { rosterRankMessageKey } from '@/features/members/utils/rank';
@@ -516,10 +524,19 @@ export const OVERRIDE_REASON_MAX = 200;
 /** The reason is blank or longer than {@link OVERRIDE_REASON_MAX} once trimmed. */
 export const OVERRIDE_REFUSED_REASON = 'reason';
 
-/** The type chosen is the one the rotation already projects, or none at all. */
+/** The type chosen is the one the rotation already projects. */
 export const OVERRIDE_REFUSED_SAME = 'sameAsProjected';
 
-export type OverrideEntryRefusal = typeof OVERRIDE_REFUSED_REASON | typeof OVERRIDE_REFUSED_SAME;
+/** No type chosen at all (story 7.9): the type dialog's placeholder left as it is. */
+export const OVERRIDE_REFUSED_TYPE = 'type';
+
+/** No type chosen (story 7.9): the type `Select`'s placeholder, which the preview shows nothing for and the preflight refuses as {@link OVERRIDE_REFUSED_TYPE}. */
+export const OVERRIDE_NO_TYPE = '';
+
+export type OverrideEntryRefusal =
+  | typeof OVERRIDE_REFUSED_REASON
+  | typeof OVERRIDE_REFUSED_SAME
+  | typeof OVERRIDE_REFUSED_TYPE;
 
 export type OverrideEntry =
   | { readonly ok: true; readonly shiftTypeId: string; readonly reason: string }
@@ -527,17 +544,17 @@ export type OverrideEntry =
 
 /**
  * The browser's preflight of an override entered on `detail` (story 3.5b):
- * the type first, as the first field, then the reason. The type may not be
- * empty or the projected one — "same as projected" is the browser's to
- * check, because the database cannot project. The reason is trimmed of
+ * the type first, as the first field, then the reason. The type must be
+ * chosen ({@link OVERRIDE_REFUSED_TYPE}, story 7.9) and may not be the
+ * projected one — "same as projected" is the browser's to check, because the
+ * database cannot project. The reason is trimmed of
  * surrounding white space and must then hold 1–200 characters (code points,
  * as `char_length` counts them). What passes is what is sent: the trimmed
  * reason.
  */
 export function overrideEntryOf(detail: DayDetail, shiftTypeId: string, reason: string): OverrideEntry {
-  if (shiftTypeId === '' || shiftTypeId === detail.projectedShiftTypeId) {
-    return { ok: false, code: OVERRIDE_REFUSED_SAME };
-  }
+  if (shiftTypeId === OVERRIDE_NO_TYPE) return { ok: false, code: OVERRIDE_REFUSED_TYPE };
+  if (shiftTypeId === detail.projectedShiftTypeId) return { ok: false, code: OVERRIDE_REFUSED_SAME };
 
   const trimmed = reason.trim();
   const length = [...trimmed].length;
@@ -620,6 +637,16 @@ export interface RosterInCandidate {
   readonly teamName: string | null;
 }
 
+/**
+ * One group of members to put on (story 7.9): 5.4c's grouping
+ * (`replacementCandidatesOf`) — free, working that day, on leave that day —
+ * informing and never blocking. An empty group is kept, so the order is fixed.
+ */
+export interface RosterInGroup {
+  readonly kind: CandidateGroupKind;
+  readonly candidates: readonly RosterInCandidate[];
+}
+
 /** What the day detail offers an admin for its roster (story 3.6b). */
 export interface RosterOffers {
   /** The form: an admin, on a working day. */
@@ -628,9 +655,18 @@ export interface RosterOffers {
   readonly remove: boolean;
   readonly out: readonly RosterOutCandidate[];
   readonly in: readonly RosterInCandidate[];
+  /** `in` in 5.4c's groups (story 7.9); empty while the leave they are grouped by is not read. */
+  readonly inGroups: readonly RosterInGroup[];
+  /**
+   * The members of `in` in no group, drawn outside any `<optgroup>` (story
+   * 7.9): all of them while the leave is not read or the grouping cannot be
+   * derived, and otherwise any the helper did not place (never, by
+   * construction). Never under a group they were not placed in.
+   */
+  readonly inUngrouped: readonly RosterInCandidate[];
 }
 
-const NO_ROSTER_OFFERS: RosterOffers = { set: false, remove: false, out: [], in: [] };
+const NO_ROSTER_OFFERS: RosterOffers = { set: false, remove: false, out: [], in: [], inGroups: [], inUngrouped: [] };
 
 /**
  * What `detail` offers the viewer of `snapshot` for its roster (story 3.6b).
@@ -652,10 +688,21 @@ const NO_ROSTER_OFFERS: RosterOffers = { set: false, remove: false, out: [], in:
  * AN ARCHIVED TEAM (a day list's past team still opens) offers no form: the
  * insert policy refuses it. Its changes can still be removed.
  *
- * @throws RangeError on any precondition of `shiftRoster`, `activeOn` or
- *   `membershipOn`.
+ * THOSE TO PUT ON ARE GROUPED (story 7.9) by 5.4c's helper
+ * (`replacementCandidatesOf`, over `leave`, the live leave the admin reads):
+ * free, working that day, on leave that day. The groups only inform: none is
+ * left out or disabled for its group. With `leave` `null` — not read yet, or
+ * failed — nobody is grouped, since a member on leave would read as free; a
+ * grouping that cannot be derived is logged and groups nobody either.
+ *
+ * @throws RangeError on any precondition of `shiftRoster`, `activeOn`,
+ *   `membershipOn` or `replacementCandidatesOf`.
  */
-export function rosterOffersOf(snapshot: CalendarSnapshot | null, detail: DayDetail | null): RosterOffers {
+export function rosterOffersOf(
+  snapshot: CalendarSnapshot | null,
+  detail: DayDetail | null,
+  leave: readonly CandidateLeave[] | null = null,
+): RosterOffers {
   if (snapshot === null || detail === null || snapshot.viewer.role !== 'admin') return NO_ROSTER_OFFERS;
   const { teamId, isoDate } = detail;
   const archived = snapshot.teams.find((team) => team.id === teamId)?.archived ?? false;
@@ -699,7 +746,62 @@ export function rosterOffersOf(snapshot: CalendarSnapshot | null, detail: DayDet
     });
   }
 
-  return { set: true, remove: true, out, in: put };
+  const ungrouped = { set: true, remove: true, out, in: put, inGroups: [], inUngrouped: put };
+
+  if (leave === null) return ungrouped;
+
+  try {
+    return { set: true, remove: true, out, in: put, ...inGroupsOf(snapshot, leave, detail, put) };
+  } catch (cause) {
+    console.error(cause);
+
+    return ungrouped;
+  }
+}
+
+/**
+ * `put` in 5.4c's groups, each in `put`'s own order. The helper's candidates
+ * are a superset of `put` (it leaves out fewer of the members a live change
+ * names), so only those in `put` are kept. One the helper would not place —
+ * never, by construction — is logged and left ungrouped, never put under a
+ * group it was not placed in.
+ *
+ * @throws RangeError on any precondition of `replacementCandidatesOf`.
+ */
+function inGroupsOf(
+  snapshot: CalendarSnapshot,
+  leave: readonly CandidateLeave[],
+  detail: DayDetail,
+  put: readonly RosterInCandidate[],
+): Pick<RosterOffers, 'inGroups' | 'inUngrouped'> {
+  const kindOf = new Map<string, CandidateGroupKind>();
+
+  for (const group of replacementCandidatesOf(snapshot, leave, detail.teamId, detail.isoDate)) {
+    for (const candidate of group.candidates) kindOf.set(candidate.id, group.kind);
+  }
+
+  const groups = new Map<CandidateGroupKind, RosterInCandidate[]>();
+  const unplaced: RosterInCandidate[] = [];
+
+  for (const candidate of put) {
+    const kind = kindOf.get(candidate.id);
+
+    if (kind === undefined) {
+      console.error(`member ${candidate.id} is offered on ${detail.isoDate} but in no candidate group`);
+      unplaced.push(candidate);
+      continue;
+    }
+
+    const group = groups.get(kind);
+
+    if (group === undefined) groups.set(kind, [candidate]);
+    else group.push(candidate);
+  }
+
+  return {
+    inGroups: CANDIDATE_GROUPS.map((kind) => ({ kind, candidates: groups.get(kind) ?? [] })),
+    inUngrouped: unplaced,
+  };
 }
 
 /** The value of a roster form's "— nitko —" option: no member on that side. */
@@ -1032,4 +1134,97 @@ export function rosterRemovalTargetOf(detail: DayDetail | null, overrideId: stri
   );
 
   return change === undefined ? null : { change, teamName: detail.teamName, date: detail.date };
+}
+
+// -------------------------------------------- the day's conflicts (story 7.9)
+
+/**
+ * One unresolved conflict on the day (story 7.9): a member on leave who is
+ * rostered on the shift, the leave that covers it, and the conflict's key —
+ * the member, the date and the team — which its decision screen is reached by.
+ */
+export interface DayConflict {
+  readonly memberId: string;
+  /** `null` for a member the snapshot does not hold (`kalendar.detail.override.unknownAuthor`). */
+  readonly memberName: string | null;
+  /**
+   * The leave's first and last day, `12.09.2026`; both `null` when no live
+   * leave range of the member covers the date — a derivation that disagrees
+   * with itself, logged — so the line is said without dates, never dropped.
+   */
+  readonly leaveFrom: string | null;
+  readonly leaveTo: string | null;
+  /** The conflict's key: `/raspored/$memberId/$date/$teamId`. */
+  readonly date: string;
+  readonly teamId: string;
+}
+
+/**
+ * The unresolved conflicts of the day `detail`, by member name: those of
+ * `collisions` (the calendar's own marks, `calendarMarksStateOf`, unresolved
+ * already) on its team and date, each with the leave range of `leave` that
+ * covers the date. An admin's marks alone carry collisions; a member's carry
+ * none, so a member is shown none. Never throws: a collision whose leave
+ * cannot be found or formatted is kept without dates, and logged, so one bad
+ * entry never hides the others.
+ */
+export function dayConflictsOf(
+  snapshot: CalendarSnapshot,
+  collisions: readonly Collision[],
+  leave: ReadonlyMap<string, readonly LeaveRange[]>,
+  detail: DayDetail,
+): readonly DayConflict[] {
+  const conflicts = collisions
+    .filter((collision) => collision.teamId === detail.teamId && collision.date === detail.isoDate)
+    .map((collision): DayConflict => {
+      const range = leave.get(collision.memberId)?.find((one) => one.from <= collision.date && collision.date <= one.to);
+      const from = range === undefined ? null : formatIsoDate(range.from);
+      const to = range === undefined ? null : formatIsoDate(range.to);
+
+      const dated = from !== null && to !== null;
+
+      if (!dated) console.error(`no leave of member ${collision.memberId} covers ${collision.date}`);
+
+      return {
+        memberId: collision.memberId,
+        memberName: memberNameOf(snapshot, collision.memberId),
+        leaveFrom: dated ? from : null,
+        leaveTo: dated ? to : null,
+        date: collision.date,
+        teamId: collision.teamId,
+      };
+    });
+
+  // By name, a member the snapshot does not hold last, then by id: the roster's own order.
+  return conflicts.sort((left, right) => {
+    if (left.memberName !== right.memberName) {
+      if (left.memberName === null) return 1;
+      if (right.memberName === null) return -1;
+
+      const byName = compareText(left.memberName, right.memberName);
+
+      if (byName !== 0) return byName;
+    }
+
+    return left.memberId < right.memberId ? -1 : left.memberId > right.memberId ? 1 : 0;
+  });
+}
+
+/**
+ * What a change dialog's description names (story 7.9): the team and the
+ * date, and the type the day works now with its times, where it works one.
+ * Operands only; the dialog words them.
+ */
+export interface ChangeContext {
+  readonly team: string;
+  readonly date: string;
+  readonly type: { readonly name: string; readonly range: string | null } | null;
+}
+
+export function changeContextOf(detail: DayDetail): ChangeContext {
+  return {
+    team: detail.teamName,
+    date: detail.date,
+    type: detail.typeName === null ? null : { name: detail.typeName, range: detail.range },
+  };
 }

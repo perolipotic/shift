@@ -4,6 +4,8 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   OVERRIDE_REFUSED_REASON,
   OVERRIDE_REFUSED_SAME,
+  OVERRIDE_REFUSED_TYPE,
+  dayConflictsOf,
   dayDetailOf,
   dayDetailShownOf,
   overrideEntryOf,
@@ -26,6 +28,7 @@ import {
 } from '@/features/calendar/utils/day-detail';
 import { OVERRIDE_REMOVED, OVERRIDE_SAVED, overrideDoneMessageKey } from '@/features/calendar/services/override-write';
 import { calendarMonthOf } from '@/features/calendar/utils/month';
+import { CANDIDATES_FREE, CANDIDATES_ON_LEAVE, CANDIDATES_WORKING } from '@/features/calendar/utils/replacement-candidates';
 import { readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { initLocalization, t } from '@/lib/i18n';
 import { positionsShown, rosterLineOf, rosterPositionMessageKey } from '@/features/members/utils/position';
@@ -504,7 +507,8 @@ describe('what an admin may set on a day (story 3.5b)', () => {
     const detail = dayDetailOf(snapshot, TEAM, WORKING)!;
 
     expect(overrideEntryOf(detail, 'pilot-noc', 'Zamjena')).toEqual({ ok: false, code: OVERRIDE_REFUSED_SAME });
-    expect(overrideEntryOf(detail, '', 'Zamjena')).toEqual({ ok: false, code: OVERRIDE_REFUSED_SAME });
+    // STORY 7.9: no type chosen is its own refusal, never "same as projected".
+    expect(overrideEntryOf(detail, '', 'Zamjena')).toEqual({ ok: false, code: OVERRIDE_REFUSED_TYPE });
     expect(overrideEntryOf(detail, 'pilot-noc', '  ')).toEqual({ ok: false, code: OVERRIDE_REFUSED_SAME });
     for (const reason of ['', '  ', '\t\n', 'z'.repeat(201), ` ${'z'.repeat(201)} `]) {
       expect(overrideEntryOf(detail, 'pilot-dan', reason), JSON.stringify(reason)).toEqual({
@@ -899,6 +903,40 @@ describe('an admin adds, removes or replaces someone on a shift (story 3.6b)', (
     ]);
   });
 
+  it('groups those to put on by 5.4c\'s helper (story 7.9): free, working that day, on leave — every one offered, none preselected', async () => {
+    const snapshot = await asAdmin();
+    const detail = dayDetailOf(snapshot, TEAM, WORKING);
+    const grouped = (leave: Parameters<typeof rosterOffersOf>[2]) =>
+      rosterOffersOf(snapshot, detail, leave).inGroups.map((group) => [group.kind, ids(group.candidates)]);
+
+    // Lana's own team works Dan that day; Dora works nothing.
+    expect(grouped([])).toEqual([
+      [CANDIDATES_FREE, [DORA]],
+      [CANDIDATES_WORKING, [VIEWER_MEMBER]],
+      [CANDIDATES_ON_LEAVE, []],
+    ]);
+    // On leave that day wins over the other two, and the member is still offered.
+    expect(grouped([{ memberId: DORA, from: WORKING, to: WORKING }])).toEqual([
+      [CANDIDATES_FREE, []],
+      [CANDIDATES_WORKING, [VIEWER_MEMBER]],
+      [CANDIDATES_ON_LEAVE, [DORA]],
+    ]);
+    // The groups hold exactly the flat list, so the save's own check is unchanged; nobody is left ungrouped.
+    const offers = rosterOffersOf(snapshot, detail, []);
+
+    expect(offers.inGroups.flatMap((group) => ids(group.candidates)).sort()).toEqual(ids(offers.in).sort());
+    expect(offers.inUngrouped).toEqual([]);
+  });
+
+  it('groups nobody while the leave is not read (story 7.9), so no member on leave reads as free', async () => {
+    const snapshot = await asAdmin();
+    const offers = rosterOffersOf(snapshot, dayDetailOf(snapshot, TEAM, WORKING), null);
+
+    expect(offers.inGroups).toEqual([]);
+    expect(offers.inUngrouped).toEqual(offers.in);
+    expect(ids(offers.in)).toEqual([DORA, VIEWER_MEMBER]);
+  });
+
   it('leaves out every member a live change on the shift names, applied, pending or inert, on either side', async () => {
     const applied = await asAdmin([calendarRosterOverrideRow('r1', TEAM, WORKING, ANA, VIEWER_MEMBER)]);
     const appliedDetail = dayDetailOf(applied, TEAM, WORKING);
@@ -922,9 +960,12 @@ describe('an admin adds, removes or replaces someone on a shift (story 3.6b)', (
       calendarRosterOverrideRow('r4', TEAM, '2020-01-05', ANA, null),
     ]);
 
-    expect(rosterOffersOf(elsewhere, dayDetailOf(elsewhere, TEAM, WORKING))).toEqual(
-      rosterOffersOf(await asAdmin(), dayDetailOf(await asAdmin(), TEAM, WORKING)),
-    );
+    // (Who works that day may change — r3 takes Lana off her own shift — so the groups are left aside.)
+    const { inGroups: elsewhereGroups, ...elsewhereOffers } = rosterOffersOf(elsewhere, dayDetailOf(elsewhere, TEAM, WORKING));
+    const { inGroups: pureGroups, ...pureOffers } = rosterOffersOf(await asAdmin(), dayDetailOf(await asAdmin(), TEAM, WORKING));
+
+    expect(elsewhereOffers).toEqual(pureOffers);
+    expect(elsewhereGroups.map((group) => group.kind)).toEqual(pureGroups.map((group) => group.kind));
   });
 
   it('leaves out a member named by a change pending review', async () => {
@@ -952,7 +993,7 @@ describe('an admin adds, removes or replaces someone on a shift (story 3.6b)', (
     const before = dayDetailOf(snapshot, TEAM, BEFORE);
 
     expect(off?.kind).toBe('off');
-    expect(rosterOffersOf(snapshot, off)).toEqual({ set: false, remove: true, out: [], in: [] });
+    expect(rosterOffersOf(snapshot, off)).toEqual({ set: false, remove: true, out: [], in: [], inGroups: [], inUngrouped: [] });
     expect(off?.rosterInert.map((change) => change.id)).toEqual(['r1']);
     expect(rosterRemovalTargetOf(off, 'r1')).toEqual({
       change: off?.rosterInert[0],
@@ -960,12 +1001,12 @@ describe('an admin adds, removes or replaces someone on a shift (story 3.6b)', (
       date: off?.date,
     });
     expect(before?.kind).toBe('noRotation');
-    expect(rosterOffersOf(snapshot, before)).toEqual({ set: false, remove: true, out: [], in: [] });
+    expect(rosterOffersOf(snapshot, before)).toEqual({ set: false, remove: true, out: [], in: [], inGroups: [], inUngrouped: [] });
 
     const member = await asAdmin([calendarRosterOverrideRow('r1', TEAM, OFF, ANA, VIEWER_MEMBER)], {
       role: 'member_role',
     });
-    const none = { set: false, remove: false, out: [], in: [] };
+    const none = { set: false, remove: false, out: [], in: [], inGroups: [], inUngrouped: [] };
 
     expect(rosterOffersOf(member, dayDetailOf(member, TEAM, WORKING))).toEqual(none);
     expect(rosterOffersOf(member, dayDetailOf(member, TEAM, OFF))).toEqual(none);
@@ -1145,12 +1186,12 @@ describe('an admin adds, removes or replaces someone on a shift (story 3.6b)', (
     const detail = dayDetailOf(snapshot, TEAM, WORKING);
 
     expect(detail?.kind).toBe('working');
-    expect(rosterOffersOf(snapshot, detail)).toEqual({ set: false, remove: true, out: [], in: [] });
+    expect(rosterOffersOf(snapshot, detail)).toEqual({ set: false, remove: true, out: [], in: [], inGroups: [], inUngrouped: [] });
     expect(rosterRemovalTargetOf(detail, 'r1')?.change.id).toBe('r1');
   });
 
   it('carries the form, removal and notice copy', () => {
-    expect(t('kalendar.detail.rosterChange.set.heading')).toBe('Promjena sastava');
+    expect(t('kalendar.detail.rosterChange.set.heading')).toBe('Promijeni sastav');
     expect(t('kalendar.detail.rosterChange.set.out')).toBe('Skida se');
     expect(t('kalendar.detail.rosterChange.set.in')).toBe('Dolazi');
     expect(t('kalendar.detail.rosterChange.set.none')).toBe('— nitko —');
@@ -1447,5 +1488,62 @@ describe('putting someone on a shift they would double-book warns (Epic 4 retro 
         range: '19:00–07:00',
       }),
     ).toBe('Ana tada već radi: Smjena A, četvrtak 02.01. 19:00–07:00. Ti bi se sati brojali dvaput.');
+  });
+});
+
+describe("the day's unresolved conflicts (story 7.9)", () => {
+  it('lists each collision of this team and date by name, with the leave that covers it, and nothing else', async () => {
+    const snapshot = await onSmjenaB();
+    const detail = dayDetailOf(snapshot, TEAM, WORKING);
+
+    if (detail === null) throw new Error('no day');
+
+    const collision = (memberId: string, date = WORKING, teamId = TEAM) => ({
+      memberId,
+      date,
+      teamId,
+      shiftTypeId: 'pilot-dan',
+      leaveRecordId: `leave-${memberId}`,
+    });
+    const leave = new Map([
+      [BORIS, [{ from: '2019-12-30', to: '2020-01-03' }]],
+      [ANA, [{ from: '2019-12-01', to: '2019-12-02' }, { from: WORKING, to: WORKING }]],
+    ]);
+    const conflicts = dayConflictsOf(
+      snapshot,
+      [collision(BORIS), collision(ANA), collision(ANA, OFF), collision(ANA, WORKING, 'pilot-smjena-a')],
+      leave,
+      detail,
+    );
+
+    expect(conflicts).toEqual([
+      { memberId: ANA, memberName: 'Ana', leaveFrom: '01.01.2020', leaveTo: '01.01.2020', date: WORKING, teamId: TEAM },
+      { memberId: BORIS, memberName: 'Boris', leaveFrom: '30.12.2019', leaveTo: '03.01.2020', date: WORKING, teamId: TEAM },
+    ]);
+    expect(dayConflictsOf(snapshot, [], leave, detail)).toEqual([]);
+  });
+
+  it('degrades per entry: a collision no leave range covers is kept without dates, logged, and the others stand', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const snapshot = await onSmjenaB();
+    const detail = dayDetailOf(snapshot, TEAM, WORKING);
+
+    if (detail === null) throw new Error('no day');
+
+    const collision = (memberId: string) => ({
+      memberId,
+      date: WORKING,
+      teamId: TEAM,
+      shiftTypeId: 'pilot-dan',
+      leaveRecordId: `leave-${memberId}`,
+    });
+    const leave = new Map([[BORIS, [{ from: '2019-12-30', to: '2020-01-03' }]]]);
+
+    expect(dayConflictsOf(snapshot, [collision(CVITA), collision(BORIS)], leave, detail)).toEqual([
+      { memberId: BORIS, memberName: 'Boris', leaveFrom: '30.12.2019', leaveTo: '03.01.2020', date: WORKING, teamId: TEAM },
+      { memberId: CVITA, memberName: 'Cvita', leaveFrom: null, leaveTo: null, date: WORKING, teamId: TEAM },
+    ]);
+    expect(error).toHaveBeenCalledTimes(1);
+    error.mockRestore();
   });
 });

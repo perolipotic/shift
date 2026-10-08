@@ -261,10 +261,34 @@
     "detail": {
       "title": "{team} · {date}",
       "close": "Zatvori",
+      "unknownMember": "Nepoznata osoba",
       "roster": "Raspored",
       "empty": "Taj dan nitko nije raspoređen.",
       "off": "{team} taj dan ne radi.",
       "noRotation": "{team} taj dan nema rotacije.",
+      "changes": {
+        "heading": "Izmjene",
+        "empty": "Za ovaj dan nema izmjena tipa smjene ni sastava."
+      },
+      "conflict": {
+        "heading": "{count, plural, one {Konflikt} few {Konflikti} other {Konflikti}}",
+        "line": "{name}: godišnji {from}–{to}, a u sastavu je ove smjene.",
+        "lineUndated": "{name}: godišnji, a u sastavu je ove smjene.",
+        "resolve": "Riješi konflikt"
+      },
+      "typeTimes": "{name} {range}",
+      "changeContext": "{team} · {date} · {type}",
+      "preview": {
+        "heading": "Što se mijenja",
+        "type": "Tip smjene: {from} → {to}",
+        "noType": "bez rotacije",
+        "out": "Skida se: {name}",
+        "in": "Dolazi: {name}",
+        "hours": "{count, plural, one {Sati: {names} {delta}} few {Sati: {names} {delta} svakome} other {Sati: {names} {delta} svakome}}",
+        "less": "−{duration}",
+        "more": "+{duration}",
+        "noHours": "Nikome se sati ne mijenjaju."
+      },
       "rosterChange": {
         "heading": "Promjene sastava",
         "added": "Dodano: {name}",
@@ -273,13 +297,15 @@
         "pendingHeading": "Promjena sastava čeka pregled",
         "inertHeading": "Promjena sastava se ne primjenjuje",
         "set": {
-          "heading": "Promjena sastava",
+          "heading": "Promijeni sastav",
           "out": "Skida se",
           "in": "Dolazi",
           "none": "— nitko —",
           "reason": "Razlog",
           "save": "Spremi promjenu",
           "saving": "Spremanje…",
+          "cancel": "Odustani",
+          "close": "Zatvori promjenu sastava",
           "noTeam": "bez smjene",
           "overlap": "{name} tada već radi: {team}, {day} {range}. Ti bi se sati brojali dvaput."
         },
@@ -297,6 +323,7 @@
           "reason": "Upiši razlog, 1–200 znakova.",
           "taken": "Taj je član već u promjeni za ovu smjenu. Osvježi prikaz.",
           "gone": "Promjena je već uklonjena.",
+          "notOffered": "Sastav ovog dana više se ne može mijenjati. Prikazan je dan kakav je sada.",
           "denied": "Ne možeš mijenjati sastav. Za to trebaš ovlasti administratora.",
           "failed": "Promjena nije uspjela. Pokušaj ponovno."
         },
@@ -328,9 +355,12 @@
         "set": {
           "heading": "Promijeni tip smjene",
           "type": "Tip smjene",
+          "choose": "— odaberi tip smjene —",
           "reason": "Razlog",
           "save": "Spremi izmjenu",
-          "saving": "Spremanje…"
+          "saving": "Spremanje…",
+          "cancel": "Odustani",
+          "close": "Zatvori promjenu tipa smjene"
         },
         "remove": {
           "action": "Ukloni izmjenu",
@@ -344,6 +374,7 @@
         "refused": {
           "reason": "Upiši razlog, 1–200 znakova.",
           "sameAsProjected": "To je već tip smjene prema rotaciji.",
+          "type": "Odaberi tip smjene.",
           "taken": "Za taj dan već postoji izmjena. Osvježi prikaz.",
           "gone": "Izmjena je već uklonjena.",
           "denied": "Ne možeš mijenjati izmjene. Za to trebaš ovlasti administratora.",

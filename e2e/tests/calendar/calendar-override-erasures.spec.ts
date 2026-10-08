@@ -140,13 +140,14 @@ test('setting a non-working type on a member\'s leave day waits for the confirma
   const detail = await openDay(calendarPage, team.name, date);
   // THE KEYBOARD ALONE: the type chosen by typing its name into the focused
   // select (its typeahead), Tab to the reason, the reason typed, Enter saves.
-  const type = calendarPage.overrideTypeIn(detail);
+  const form = await calendarPage.openOverrideFormIn(detail);
+  const type = calendarPage.overrideTypeIn(form);
   await type.focus();
   await page.keyboard.type(rotation.steps[2]);
   const chosen = await calendarPage.optionIn(type, rotation.steps[2]).first().getAttribute('value');
   await expect(type).toHaveValue(chosen ?? 'E2E: no option');
   await page.keyboard.press('Tab');
-  await expect(calendarPage.overrideReasonIn(detail)).toBeFocused();
+  await expect(calendarPage.overrideReasonIn(form)).toBeFocused();
   await page.keyboard.type(REASON);
   await page.keyboard.press('Enter');
 
@@ -308,7 +309,7 @@ test('a kept conflict holds the override, and going back keeps the form as enter
   const { rotation, team, person, date } = await setUp(fixture.slug);
 
   const detail = await openDay(calendarPage, team.name, date);
-  await calendarPage.setOverrideIn(detail, rotation.steps[2], REASON);
+  const form = await calendarPage.setOverrideIn(detail, rotation.steps[2], REASON);
   const parts = calendarPage.overrideErasures('save');
   const dialog = parts.dialog(1);
   const rows = parts.rowsIn(dialog);
@@ -330,13 +331,13 @@ test('a kept conflict holds the override, and going back keeps the form as enter
 
   await parts.backIn(dialog).click();
   await expect(dialog).toHaveCount(0);
-  await expect(calendarPage.overrideSaveIn(detail), 'focus is not back on the form\'s save').toBeFocused();
+  await expect(calendarPage.overrideSaveIn(form), 'focus is not back on the form\'s save').toBeFocused();
   await expect(calendarPage.statusIn(detail)).toHaveCount(0);
   // The form is as it was entered.
-  const type = calendarPage.overrideTypeIn(detail);
+  const type = calendarPage.overrideTypeIn(form);
   const chosen = await calendarPage.optionIn(type, rotation.steps[2]).getAttribute('value');
   await expect(type).toHaveValue(chosen ?? 'E2E: no option');
-  await expect(calendarPage.overrideReasonIn(detail)).toHaveValue(REASON);
+  await expect(calendarPage.overrideReasonIn(form)).toHaveValue(REASON);
   await page.setViewportSize({ width: 1280, height: 900 });
 
   // Nothing was written: the conflict is still on the queue.
@@ -443,8 +444,9 @@ test('an override another admin wrote meanwhile is refused as taken, with no era
   await seedShiftTypeOverride(rotation, team.id, date, 1, 'Zamjena smjene (E2E).');
   await calendarPage.setOverrideIn(detail, rotation.steps[2], REASON);
 
-  // The form's own `taken` refusal, said in the day detail once the form gives way.
+  // The form's own `taken` refusal, said in the day detail once the type dialog gives way (story 7.9: it closes).
   await expect(calendarPage.alertIn(detail).filter({ hasText: override.refused.taken })).toBeVisible();
+  await expect(calendarPage.overrideForm).toHaveCount(0);
 
   // The write's own `taken` path, without a request: the day is read again and
   // the form gives way to the override that landed first; nothing is saved.
@@ -543,7 +545,7 @@ test('a set whose erasures cannot be checked again at the dialog\'s save is refu
   const resolutions = '**/rest/v1/conflict_resolutions*';
 
   const detail = await openDay(calendarPage, team.name, date);
-  await calendarPage.setOverrideIn(detail, rotation.steps[2], REASON);
+  const form = await calendarPage.setOverrideIn(detail, rotation.steps[2], REASON);
   const parts = calendarPage.overrideErasures('save');
   const dialog = parts.dialog(1);
   await parts.confirmIn(parts.rowsIn(dialog).nth(0)).click();
@@ -554,7 +556,7 @@ test('a set whose erasures cannot be checked again at the dialog\'s save is refu
   await expect(dialog).toHaveCount(0);
   await expect(calendarPage.overrideUnchecked).toBeVisible();
   await expect(calendarPage.overrideUncheckedRetry, 'the retry is not in reach').toBeFocused();
-  await expect(calendarPage.overrideReasonIn(detail)).toHaveValue(REASON);
+  await expect(calendarPage.overrideReasonIn(form)).toHaveValue(REASON);
   await expect(calendarPage.statusIn(detail)).toHaveCount(0);
   await expect(calendarPage.overrideRemoveIn(detail)).toHaveCount(0);
   await page.unroute(resolutions);

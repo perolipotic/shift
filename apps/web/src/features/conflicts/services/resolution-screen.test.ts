@@ -6,6 +6,7 @@ import {
   CANDIDATES_FREE,
   CANDIDATES_ON_LEAVE,
   CANDIDATES_WORKING,
+  candidateGroupMessageKey,
 } from '@/features/calendar/utils/replacement-candidates';
 import {
   AMEND_ENDS,
@@ -25,7 +26,6 @@ import {
   amendBodyMessageKey,
   amendHandoffOf,
   amendTargetOf,
-  candidateGroupMessageKey,
   candidateIdOf,
   coverageMessageKey,
   coworkersMessageKey,

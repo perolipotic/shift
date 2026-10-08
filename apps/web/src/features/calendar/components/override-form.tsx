@@ -1,11 +1,12 @@
-import type { ReactNode } from 'react';
+import { useEffect, type ReactNode, type SyntheticEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { ConfirmDialog, DialogFooter } from '@/components/ui/dialog';
+import { ConfirmDialog, Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
+import { ChangeContextDescription, ChangePreviewOutput } from '@/features/calendar/components/change-preview-output';
 import type { OverrideFormState } from '@/features/calendar/hooks/use-override-form';
 import {
   OVERRIDE_REMOVED,
@@ -13,6 +14,7 @@ import {
   overrideWriteMessageKey,
 } from '@/features/calendar/services/override-write';
 import {
+  OVERRIDE_NO_TYPE,
   OVERRIDE_REASON_MAX,
   OVERRIDE_REFUSED_REASON,
   overrideRemovalTargetOf,
@@ -20,6 +22,7 @@ import {
 } from '@/features/calendar/utils/day-detail';
 import {
   OVERRIDE_ERASURES_ID,
+  OVERRIDE_PREVIEW_ID,
   OVERRIDE_REASON_FIELD_ID,
   OVERRIDE_REMOVE_ERROR_ID,
   OVERRIDE_REMOVE_PROMPT_ID,
@@ -27,95 +30,189 @@ import {
   OVERRIDE_SET_HEADING_ID,
   OVERRIDE_TYPE_FIELD_ID,
   OVERRIDE_UNCHECKED_ID,
+  describedByOf,
 } from '@/features/calendar/utils/element-ids';
+import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { ErasureDialog } from '@/features/conflicts/components/erasure-dialog';
 import type { ErasureRow } from '@/features/conflicts/services/erasures';
 import { OVERRIDE_CHANGE_REMOVE, OVERRIDE_CHANGE_SET } from '@/features/conflicts/services/override-erasures';
 import { t } from '@/lib/i18n';
 
 /**
- * SETTING AN OVERRIDE (story 3.5b), inside the day detail and for an admin
- * alone: the type, a native `Select` of the types the day may take, and the
- * reason. Both fields are uncontrolled, so a refused save keeps them; the
- * refusal is the form's own `Notice`, inside the Dialog. Neutral: never
- * `destructive` and never the accent.
+ * SETTING AN OVERRIDE (story 3.5b) — its own dialog since story 7.9 — for an
+ * admin alone: a native `Select` of the types the day may take, the reason,
+ * and *Što se mijenja* for the type chosen. Both fields are uncontrolled, so a
+ * refused save keeps them; the refusal is the form's own `Notice`. One save,
+ * and a cancel that closes the dialog. Neutral: never `destructive` and never
+ * the accent.
  */
 export function OverrideSetForm({
   form,
   busy,
+  snapshot,
 }: {
   readonly form: OverrideFormState;
   /** The roster form's write is in flight (story 3.6b): nothing here may start one. */
   readonly busy: boolean;
+  readonly snapshot: CalendarSnapshot | null;
 }): ReactNode {
-  const { typeField, reasonField, pending, failure, options, submit, saveButton, unchecked, clearUnchecked } = form;
+  const {
+    typeField,
+    reasonField,
+    pending,
+    failure,
+    options,
+    submit,
+    saveButton,
+    unchecked,
+    clearUnchecked,
+    chooseType,
+    preview,
+    closeChange,
+  } = form;
   const reasonRefused = failure === OVERRIDE_REFUSED_REASON;
   const typeRefused = failure !== null && !reasonRefused;
 
+  // STORY 7.9: every mount starts the preview from what the `Select` shows,
+  // and an unmounted form chooses nothing, so the preview never outlives it.
+  useEffect(() => {
+    chooseType(typeField.current?.value ?? OVERRIDE_NO_TYPE);
+
+    return () => {
+      chooseType(OVERRIDE_NO_TYPE);
+    };
+  }, [chooseType, typeField]);
+
   return (
-    <section aria-labelledby={OVERRIDE_SET_HEADING_ID} className="grid gap-3">
-      <h3 id={OVERRIDE_SET_HEADING_ID} className="font-heading text-base font-semibold">
-        {t('kalendar.detail.override.set.heading')}
-      </h3>
-      <form
-        method="post"
-        noValidate
-        onSubmit={(event) => {
-          void submit(event);
-        }}
-        // STORY 5.5f: a field changed, so the refusal to check what was entered before no longer stands.
-        onChange={clearUnchecked}
-        className="grid gap-4"
-      >
-        <div className="grid gap-2">
-          <Label htmlFor={OVERRIDE_TYPE_FIELD_ID}>{t('kalendar.detail.override.set.type')}</Label>
-          <Select
-            ref={typeField}
-            id={OVERRIDE_TYPE_FIELD_ID}
-            name="type"
-            defaultValue={options[0]?.id}
-            disabled={pending}
-            aria-invalid={typeRefused}
-            aria-describedby={typeRefused ? OVERRIDE_SET_ERROR_ID : undefined}
-            className="h-11"
+    <form
+      method="post"
+      noValidate
+      onSubmit={(event) => {
+        void submit(event);
+      }}
+      // STORY 5.5f: a field changed, so the refusal to check what was entered before no longer stands.
+      onChange={clearUnchecked}
+      className="grid gap-4"
+    >
+      <div className="grid gap-2">
+        <Label htmlFor={OVERRIDE_TYPE_FIELD_ID}>{t('kalendar.detail.override.set.type')}</Label>
+        <Select
+          ref={typeField}
+          id={OVERRIDE_TYPE_FIELD_ID}
+          name="type"
+          // STORY 7.9: nothing is chosen until the admin chooses, so *Što se mijenja* says nothing yet.
+          defaultValue={OVERRIDE_NO_TYPE}
+          disabled={pending}
+          aria-invalid={typeRefused}
+          aria-describedby={typeRefused ? OVERRIDE_SET_ERROR_ID : undefined}
+          className="h-11"
+          onChange={(event) => {
+            chooseType(event.target.value);
+          }}
+        >
+          <option value={OVERRIDE_NO_TYPE}>{t('kalendar.detail.override.set.choose')}</option>
+          {options.map((option) => (
+            <option key={option.id} value={option.id}>
+              {option.name}
+            </option>
+          ))}
+        </Select>
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor={OVERRIDE_REASON_FIELD_ID}>{t('kalendar.detail.override.set.reason')}</Label>
+        <Input
+          ref={reasonField}
+          id={OVERRIDE_REASON_FIELD_ID}
+          name="reason"
+          type="text"
+          required
+          maxLength={OVERRIDE_REASON_MAX}
+          autoComplete="off"
+          readOnly={pending}
+          aria-invalid={reasonRefused}
+          aria-describedby={reasonRefused ? OVERRIDE_SET_ERROR_ID : undefined}
+          className="h-11 w-full"
+        />
+      </div>
+      <ChangePreviewOutput id={OVERRIDE_PREVIEW_ID} preview={preview} snapshot={snapshot} />
+      {failure === null ? null : (
+        <Notice id={OVERRIDE_SET_ERROR_ID} role="alert">
+          {t(overrideWriteMessageKey(failure))}
+        </Notice>
+      )}
+      {/* STORY 5.5f: a set that could not check what it would erase saved nothing. */}
+      {unchecked === OVERRIDE_CHANGE_SET ? <OverrideUnchecked form={form} busy={busy} /> : null}
+      <DialogFooter>
+        <Button className="h-11" type="button" variant="outline" disabled={pending} onClick={closeChange}>
+          {t('kalendar.detail.override.set.cancel')}
+        </Button>
+        <Button
+          ref={saveButton}
+          className="h-11"
+          type="submit"
+          disabled={pending || busy}
+          aria-busy={pending}
+          aria-describedby={describedByOf(preview === null ? null : OVERRIDE_PREVIEW_ID)}
+        >
+          {pending ? t('kalendar.detail.override.set.saving') : t('kalendar.detail.override.set.save')}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+/**
+ * "PROMIJENI TIP SMJENE" (story 7.9): the override form in its own small
+ * dialog, opened from the day detail's footer and rendered BESIDE it. Its
+ * title names the change, its description the team, the date and the type
+ * the day works now. Not dismissible while a write is in flight; a save that
+ * landed closes it, and its notice is the day detail's. The form is drawn
+ * only while it is open, so each opening starts from the day as it is.
+ */
+export function OverrideChangeDialog({
+  form,
+  detail,
+  snapshot,
+  busy,
+}: {
+  readonly form: OverrideFormState;
+  readonly detail: DayDetail | null;
+  readonly snapshot: CalendarSnapshot | null;
+  /** The roster form's write is in flight (story 3.6b). */
+  readonly busy: boolean;
+}): ReactNode {
+  const { changing, pending, closeChange } = form;
+
+  return (
+    <Dialog
+      open={changing && detail !== null}
+      dismissible={!pending}
+      onOpenChange={(next) => {
+        if (!next) closeChange();
+      }}
+      // ESCAPE, AS THE DAY DETAIL'S: the cancel is refused here, and the
+      // dialog closes through the screen's state, never while a write is in flight.
+      onCancel={(event: SyntheticEvent<HTMLDialogElement>) => {
+        event.preventDefault();
+        if (!pending) closeChange();
+      }}
+      aria-labelledby={OVERRIDE_SET_HEADING_ID}
+    >
+      {!changing || detail === null ? null : (
+        <>
+          <DialogHeader
+            closeLabel={t('kalendar.detail.override.set.close')}
+            onClose={() => {
+              if (!pending) closeChange();
+            }}
           >
-            {options.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.name}
-              </option>
-            ))}
-          </Select>
-        </div>
-        <div className="grid gap-2">
-          <Label htmlFor={OVERRIDE_REASON_FIELD_ID}>{t('kalendar.detail.override.set.reason')}</Label>
-          <Input
-            ref={reasonField}
-            id={OVERRIDE_REASON_FIELD_ID}
-            name="reason"
-            type="text"
-            required
-            maxLength={OVERRIDE_REASON_MAX}
-            autoComplete="off"
-            readOnly={pending}
-            aria-invalid={reasonRefused}
-            aria-describedby={reasonRefused ? OVERRIDE_SET_ERROR_ID : undefined}
-            className="h-11 w-full"
-          />
-        </div>
-        {failure === null ? null : (
-          <Notice id={OVERRIDE_SET_ERROR_ID} role="alert">
-            {t(overrideWriteMessageKey(failure))}
-          </Notice>
-        )}
-        {/* STORY 5.5f: a set that could not check what it would erase saved nothing. */}
-        {unchecked === OVERRIDE_CHANGE_SET ? <OverrideUnchecked form={form} busy={busy} /> : null}
-        <DialogFooter>
-          <Button ref={saveButton} className="h-11" type="submit" disabled={pending || busy} aria-busy={pending}>
-            {pending ? t('kalendar.detail.override.set.saving') : t('kalendar.detail.override.set.save')}
-          </Button>
-        </DialogFooter>
-      </form>
-    </section>
+            <DialogTitle id={OVERRIDE_SET_HEADING_ID}>{t('kalendar.detail.override.set.heading')}</DialogTitle>
+            <ChangeContextDescription detail={detail} />
+          </DialogHeader>
+          <OverrideSetForm key={`${detail.teamId}:${detail.isoDate}`} form={form} busy={busy} snapshot={snapshot} />
+        </>
+      )}
+    </Dialog>
   );
 }
 
@@ -131,7 +228,7 @@ export function OverrideRemoveAction({
   const { removeAction, pending, openRemove } = form;
 
   return (
-    <DialogFooter>
+    <div>
       <Button
         ref={removeAction}
         className="h-11"
@@ -142,7 +239,7 @@ export function OverrideRemoveAction({
       >
         {t('kalendar.detail.override.remove.action')}
       </Button>
-    </DialogFooter>
+    </div>
   );
 }
 

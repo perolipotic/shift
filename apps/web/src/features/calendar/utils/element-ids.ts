@@ -108,3 +108,20 @@ export const OVERRIDE_ERASURES_ID = 'kalendar-override-erasures';
 
 /** The refusal when what a shift-type override would erase cannot be checked (story 5.5f). */
 export const OVERRIDE_UNCHECKED_ID = 'kalendar-override-unchecked';
+
+/** The day detail's *Izmjene* heading (story 7.9), which names its section of changes. */
+export const DAY_DETAIL_CHANGES_ID = 'kalendar-detail-changes';
+
+/** The day detail's conflict heading (story 7.9), which names its section of unresolved conflicts. */
+export const DAY_DETAIL_CONFLICTS_ID = 'kalendar-detail-conflicts';
+
+/** One conflict's line in the day detail (story 7.9), which its "Riješi konflikt" is described by. */
+export function conflictLineIdOf(memberId: string): string {
+  return `kalendar-conflict-${memberId}`;
+}
+
+/** The type dialog's *Što se mijenja* (story 7.9), which its save is described by. */
+export const OVERRIDE_PREVIEW_ID = 'kalendar-override-preview';
+
+/** The roster dialog's *Što se mijenja* (story 7.9), which its save is described by. */
+export const ROSTER_PREVIEW_ID = 'kalendar-roster-preview';

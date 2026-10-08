@@ -1,3 +1,4 @@
+import type { CollisionResolution } from '@shift/domain';
 import { onlineManager, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type RefObject } from 'react';
 
@@ -26,6 +27,7 @@ import {
   type RosterSaveChange,
 } from '@/features/calendar/services/roster-erasures';
 import { CALENDAR_KEY, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
+import { rosterPreviewOf } from '@/features/calendar/utils/change-preview';
 import {
   ROSTER_NOBODY,
   ROSTER_REFUSED_REASON,
@@ -36,6 +38,7 @@ import {
   type DayDetail,
 } from '@/features/calendar/utils/day-detail';
 import { DAY_DETAIL_HEADING_ID } from '@/features/calendar/utils/element-ids';
+import type { CandidateLeave } from '@/features/calendar/utils/replacement-candidates';
 import { useErasureConfirmation } from '@/features/conflicts/hooks/use-erasure-confirmation';
 import { useErasureReads } from '@/features/conflicts/hooks/use-erasure-reads';
 import { CHECK_READY, CHECK_REFUSED, CHECK_UNAVAILABLE } from '@/features/conflicts/services/erasure-check';
@@ -93,6 +96,15 @@ import { focusLater } from '@/utils/focus-later';
  * it is forgotten on another day, after a save, and as soon as the member is
  * no longer offered — so it never names someone the `Select` does not show.
  *
+ * THE FORM IS ITS OWN DIALOG (story 7.9), opened from the day detail's
+ * "Promijeni sastav" (`openButton`), on `useOverrideForm`'s terms: closed by
+ * its cancel, its close button or Escape — never while a write is in flight
+ * — or by a save that landed, and with the day; focus returns to the opener.
+ * "Dolazi" offers its members in 5.4c's groups, over `leave`, the live leave
+ * the admin reads; they inform and never block. `preview` is the dialog's
+ * *Što se mijenja* for the members chosen (`chosenOut` and `chosenIn`), from
+ * `@/features/calendar/utils/change-preview`.
+ *
  * Every rule is in `@/features/calendar/services/roster-write` and
  * `@/features/calendar/utils/day-detail`, which the node suite executes;
  * this hook holds state and wiring only.
@@ -134,10 +146,20 @@ function readyOf(...targets: readonly (() => HTMLElement | null)[]): HTMLElement
   return ready ?? null;
 }
 
+/** No leave-hours keys: one frozen array, so a default never changes the preview's memo. */
+const NO_LEAVE_KEYS: readonly CollisionResolution[] = Object.freeze([]);
+
 export function useRosterForm(
   snapshot: CalendarSnapshot | null,
   detail: DayDetail | null,
   latch: RefObject<boolean>,
+  /**
+   * The organization's live leave, which groups those to put on (story 7.9);
+   * `null` while it is not read (or failed), when nobody is grouped.
+   */
+  leave: readonly CandidateLeave[] | null = null,
+  /** The leave-hours keys the preview's hours count as leave, as *Sati* does (story 7.9). */
+  leaveKeys: readonly CollisionResolution[] = NO_LEAVE_KEYS,
 ) {
   const queryClient = useQueryClient();
   const outField = useRef<HTMLSelectElement>(null);
@@ -158,6 +180,14 @@ export function useRosterForm(
   const [erased, setErased] = useState(0);
   // The "Dolazi" value, mirrored for the overlap hint alone: the save reads the field.
   const [chosenIn, setChosenIn] = useState<string>(ROSTER_NOBODY);
+  // The "Skida se" value, mirrored for the preview alone (story 7.9).
+  const [chosenOut, setChosenOut] = useState<string>(ROSTER_NOBODY);
+  /** Whether the form's dialog is open (story 7.9). */
+  const [changing, setChanging] = useState(false);
+  /** The day stopped offering the form while its dialog was open (story 7.9): said in the day detail. */
+  const [formLost, setFormLost] = useState(false);
+  /** The day detail's "Promijeni sastav", which opens the form's dialog and gets focus back (story 7.9). */
+  const openButton = useRef<HTMLButtonElement>(null);
   /** The form's own save, where focus returns when its erasure confirmation closes. */
   const saveButton = useRef<HTMLButtonElement>(null);
   /** The refusal's retry, which takes focus when the check cannot be derived. */
@@ -194,19 +224,45 @@ export function useRosterForm(
     setRemoveFailure(null);
     setDone(null);
     setChosenIn(ROSTER_NOBODY);
+    setChosenOut(ROSTER_NOBODY);
+    setChanging(false);
+    setFormLost(false);
     setUnchecked(null);
     setErased(0);
     // Its erasure confirmation, too: it was about that day's change.
     if (confirmation.shown !== null) confirmation.drop();
   }
 
-  const offers = rosterOffersOf(snapshot, detail);
+  // GUARDED (story 7.9): what cannot be grouped is offered ungrouped, logged,
+  // so the day detail never goes down for its candidates' groups.
+  const offers = useMemo(() => {
+    try {
+      return rosterOffersOf(snapshot, detail, leave);
+    } catch (cause) {
+      console.error(cause);
+
+      return rosterOffersOf(snapshot, detail, null);
+    }
+  }, [snapshot, detail, leave]);
 
   // A member no longer offered (a save, or a re-read after `taken`) is no
   // longer chosen: the remounted `Select` shows "— nitko —".
   if (chosenIn !== ROSTER_NOBODY && !offers.in.some((one) => one.id === chosenIn)) {
     setChosenIn(ROSTER_NOBODY);
   }
+  if (chosenOut !== ROSTER_NOBODY && !offers.out.some((one) => one.id === chosenOut)) {
+    setChosenOut(ROSTER_NOBODY);
+  }
+  // A day that no longer offers the form closes its dialog (the effect below).
+  const formGone = changing && !offers.set && !pending;
+
+  const preview = useMemo(
+    () => rosterPreviewOf(snapshot, detail, chosenOut, chosenIn, leaveKeys),
+    [snapshot, detail, chosenOut, chosenIn, leaveKeys],
+  );
+  const chooseOut = useCallback((id: string): void => {
+    setChosenOut(id);
+  }, []);
 
   const target = rosterRemovalTargetOf(detail, confirming);
   const lost = confirming !== null && target === null && !pending;
@@ -226,10 +282,12 @@ export function useRosterForm(
    * title, so focus never falls to the page body.
    */
   function focusAfterWrite(...targets: readonly (() => HTMLElement | null)[]): void {
-    focusLater(targets, () => document.getElementById(DAY_DETAIL_HEADING_ID));
+    // The opener last (story 7.9): a target inside the closed dialog is gone.
+    focusLater([...targets, opener], () => document.getElementById(DAY_DETAIL_HEADING_ID));
   }
 
   const first = () => outField.current;
+  const opener = () => openButton.current;
   const reasonShown = () => rosterReasonField.current;
   const cancelShown = () => removeCancel.current;
   const actionOf = (id: string | null) => () => (id === null ? null : (removeActions.current.get(id) ?? null));
@@ -242,6 +300,16 @@ export function useRosterForm(
     setConfirming(null);
     setRemoveFailure(ROSTER_GONE);
     focusAfterWrite(first);
+  });
+
+  // THE DAY NO LONGER OFFERS THE FORM (story 7.9) — another admin made it a
+  // day off, or the team was archived: the dialog closes, never to reopen by
+  // itself, the day detail says why, and focus moves to its title.
+  useEffect(() => {
+    if (!formGone) return;
+    setChanging(false);
+    setFormLost(true);
+    focusAfterWrite();
   });
 
   async function invalidate(): Promise<void> {
@@ -322,9 +390,12 @@ export function useRosterForm(
     if (!stillOn(startedFor)) return;
     setSaves((count) => count + 1);
     setChosenIn(ROSTER_NOBODY);
+    setChosenOut(ROSTER_NOBODY);
     setDone(ROSTER_SAVED);
     setErased(erased);
-    focusAfterWrite(first);
+    // The dialog closes, and focus returns to its opener in the day detail.
+    setChanging(false);
+    focusAfterWrite(opener);
   }
 
   /**
@@ -460,9 +531,9 @@ export function useRosterForm(
     setConfirming(null);
     setDone(ROSTER_REMOVED_DONE);
     setErased(erased);
-    // The default roster is back, and so are its candidates in the form —
-    // or, on a day with no form, the dialog's title.
-    focusAfterWrite(first);
+    // The default roster is back, and so is the form's opener — or, on a day
+    // with no form, the dialog's title.
+    focusAfterWrite(opener);
   }
 
   /**
@@ -618,6 +689,27 @@ export function useRosterForm(
     else void submitRoster();
   }
 
+  /** "Promijeni sastav": the form's dialog opens; what the last write said belongs to it. */
+  function openChange(): void {
+    if (writing.current) return;
+
+    setDone(null);
+    setErased(0);
+    setRemoveFailure(null);
+    setFormLost(false);
+    setChanging(true);
+  }
+
+  /** The dialog's cancel, close button and Escape: never while a write is in flight. Focus returns to the opener. */
+  function closeChange(): void {
+    if (writing.current) return;
+
+    setChanging(false);
+    setFailure(null);
+    setUnchecked(null);
+    focusAfterWrite(opener);
+  }
+
   return {
     outField,
     inField,
@@ -634,8 +726,16 @@ export function useRosterForm(
     overlap,
     chooseIn,
     outOptions: offers.out,
-    inOptions: offers.in,
+    inGroups: offers.inGroups,
+    inUngrouped: offers.inUngrouped,
+    formLost,
     offersSet: offers.set,
+    openButton,
+    changing: changing && offers.set,
+    openChange,
+    closeChange,
+    chooseOut,
+    preview,
     offersRemove: offers.remove,
     saveRoster,
     openRemove,

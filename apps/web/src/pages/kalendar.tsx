@@ -51,13 +51,15 @@ import { appLayoutRoute } from '@/pages/_app';
  * the toolbar and the skeleton only.
  *
  * ONE DAY (story 3.4b): a grid cell — clicked, or Enter or Space on it — and a
- * day-list day on a team open a read-only Dialog of that team on that date.
+ * day-list day on a team open a Dialog of that team on that date: facts only
+ * since story 7.9 — the type, an admin's unresolved conflicts with "Riješi
+ * konflikt", the roster and *Izmjene* — with each change in its own dialog.
  * Which day is open lives in `useState`, not in the URL, and every close
  * returns focus to the opener, or to the grid's tab stop or the month heading
  * when the opener is gone.
  *
  * ONE CHANGE (story 3.5b): an admin sets a shift-type override on the open
- * day from its Dialog, or removes the one it has through a neutral
+ * day from its own dialog ("Promijeni tip smjene", story 7.9), or removes the one it has through a neutral
  * confirmation — `useOverrideForm`'s state, shown by the viewer's role and
  * decided by the database.
  *
@@ -81,8 +83,14 @@ export function KalendarScreen() {
     void navigate({ search: next });
   });
   const { snapshot, loading, refusal, month, mode } = screen;
-  const overrideForm = useOverrideForm(snapshot, screen.detail);
-  const rosterForm = useRosterForm(snapshot, screen.detail, overrideForm.latch);
+  const overrideForm = useOverrideForm(snapshot, screen.detail, screen.leaveKeys);
+  const rosterForm = useRosterForm(
+    snapshot,
+    screen.detail,
+    overrideForm.latch,
+    screen.candidateLeave,
+    screen.leaveKeys,
+  );
 
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6" aria-busy={loading}>
@@ -121,6 +129,7 @@ export function KalendarScreen() {
       <DayDetailDialog
         detail={screen.detail}
         snapshot={snapshot}
+        conflicts={screen.dayConflicts}
         form={overrideForm}
         roster={rosterForm}
         onClose={screen.closeDay}

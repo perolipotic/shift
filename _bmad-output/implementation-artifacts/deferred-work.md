@@ -856,3 +856,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-8-first-sign-in-password.md`
   summary: A flagged session that opens a deep link (for example `/kalendar?tim=2`) is sent to `/postavi-lozinku` with no return target and lands on `/` after saving; carrying `povratak` through the step is not built.
   evidence: 7.8 review (Blind Hunter); the spec says "continue to `/`".
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-9-day-detail-dialogs.md`
+  summary: The roster dialog's `Dolazi` is a native select with one `<optgroup>` per availability group, not the mockup's searchable combobox ("Odaberi osobu · 13 osoba"). A searchable, grouped, accessible combobox needs a new component (or dependency, Ask First).
+  evidence: Epic 7.9 AC "replacement candidates are grouped by availability with 5.4's helper" narrowed in spec 7.9 Epic AC Deviations; `mockups/calendar-1.html` §5.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-9-day-detail-dialogs.md`
+  summary: *Što se mijenja* in the type dialog omits the mockup's coverage clause ("Noć 10.10. tada ne radi nijedna smjena (0 članova)"). It needs an organization-wide per-type coverage count from the after-snapshot.
+  evidence: `mockups/calendar-1.html` §5 type dialog; deferred in spec 7.9 Epic AC Deviations.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-9-day-detail-dialogs.md`
+  summary: `Riješi konflikt` in day detail goes to `/raspored/$memberId/$date/$teamId`, but the open day lives in `useState`, so Back to *Kalendar* does not reopen the day detail. Keeping the open day in the URL (for example `?dan=`) would restore it.
+  evidence: 7.9 review (Blind Hunter); `use-day-detail.ts` holds the opened day in component state.

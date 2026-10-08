@@ -1159,9 +1159,14 @@ const CANDIDATES_CARRY = [
   { token: 'fireRank', count: 2 },
   { token: 'position', count: 2 },
 ] as const;
+/**
+ * STORY 7.9: the roster form moved into its own dialog, so the day detail
+ * dialog words its candidate lines beside it, gated by the setting read once
+ * more for the dialog (two reads, where the working branch had one pass).
+ */
 const SCREEN_SHOWS = [
   { token: "'@/features/members/utils/rank'", count: 1 },
-  { token: 'usesFireRanks', count: 8 },
+  { token: 'usesFireRanks', count: 10 },
   { token: 'member.fireRank', count: 1 },
   { token: "'@/features/members/utils/position'", count: 1 },
   { token: 'positionsShown', count: 3 },
@@ -1248,7 +1253,8 @@ describe('the calendar only reads, and projects nothing of its own', () => {
     // string literal names any mark.
     const NAMED: Readonly<Record<string, Readonly<Record<string, number>>>> = {
       [MONTH]: { MODIFIER_OVERRIDDEN: 2, MODIFIER_CONFLICT: 2, MODIFIER_LEAVE: 2, MODIFIER_UNCOVERED: 2 },
-      [SHOWS_OWNER]: { MODIFIER_OVERRIDDEN: 2 },
+      // STORY 7.9: and the day's unresolved conflicts, beside their heading, with the cell's own `⚠`.
+      [SHOWS_OWNER]: { MODIFIER_OVERRIDDEN: 2, MODIFIER_CONFLICT: 2 },
     };
 
     for (const file of files.filter((one) => one !== MODIFIERS)) {

@@ -1,5 +1,6 @@
 import { onlineManager, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import type { CollisionResolution } from '@shift/domain';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 
 import {
   OVERRIDE_DENIED,
@@ -17,7 +18,9 @@ import {
   type OverrideWriteFailure,
 } from '@/features/calendar/services/override-write';
 import { CALENDAR_KEY, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
+import { overridePreviewOf } from '@/features/calendar/utils/change-preview';
 import {
+  OVERRIDE_NO_TYPE,
   OVERRIDE_REFUSED_REASON,
   OVERRIDE_REFUSED_SAME,
   dayDetailOf,
@@ -101,6 +104,16 @@ import { firstEnabledOf, focusLater } from '@/utils/focus-later';
  * type it restored, for a `role="status"` Notice, until the next write or
  * another day.
  *
+ * THE FORM IS ITS OWN DIALOG (story 7.9), opened from the day detail's
+ * "Promijeni tip smjene" (`openButton`) and closed by its cancel, its close
+ * button, Escape — never while a write is in flight — or by a save that
+ * landed, whose notice the day detail says; focus then returns to the
+ * opener. It closes with the day, and when the day no longer offers the form
+ * (another admin's override landed first). `preview` is the dialog's
+ * *Što se mijenja* for the type chosen (`chosenType`, which mirrors the
+ * uncontrolled `Select` as `chosenIn` does the roster's), from
+ * `@/features/calendar/utils/change-preview`.
+ *
  * Every rule is in `@/features/calendar/services/override-write` and
  * `@/features/calendar/utils/day-detail`, which the node suite executes;
  * this hook holds state and wiring only.
@@ -150,7 +163,15 @@ function writeFailureOf(code: OverrideChangeRefusal): OverrideWriteFailure {
   return OVERRIDE_FAILED;
 }
 
-export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDetail | null) {
+/** No leave-hours keys: one frozen array, so a default never changes the preview's memo. */
+const NO_LEAVE_KEYS: readonly CollisionResolution[] = Object.freeze([]);
+
+export function useOverrideForm(
+  snapshot: CalendarSnapshot | null,
+  detail: DayDetail | null,
+  /** The leave-hours keys the preview's hours count as leave, as *Sati* does (story 7.9). */
+  leaveKeys: readonly CollisionResolution[] = NO_LEAVE_KEYS,
+) {
   const queryClient = useQueryClient();
   const typeField = useRef<HTMLSelectElement>(null);
   const reasonField = useRef<HTMLInputElement>(null);
@@ -160,7 +181,13 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
   const saveButton = useRef<HTMLButtonElement>(null);
   /** The refusal's retry, which takes focus when the check cannot be derived. */
   const retryButton = useRef<HTMLButtonElement>(null);
+  /** The day detail's "Promijeni tip smjene", which opens the form's dialog and gets focus back (story 7.9). */
+  const openButton = useRef<HTMLButtonElement>(null);
   const writing = useRef(false);
+  /** Whether the form's dialog is open (story 7.9). */
+  const [changing, setChanging] = useState(false);
+  // The type `Select`'s value, mirrored for the preview alone: the save reads the field.
+  const [chosenType, setChosenType] = useState<string>(OVERRIDE_NO_TYPE);
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState<OverrideWriteFailure | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -201,11 +228,25 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
     setDone(null);
     setUnchecked(null);
     setErased(0);
+    setChanging(false);
+    setChosenType(OVERRIDE_NO_TYPE);
     // Its erasure confirmation, too: it was about that day's override.
     if (confirmation.shown !== null) confirmation.drop();
   }
 
   const offers = overrideOffersOf(snapshot, detail);
+
+  // THE DAY NO LONGER OFFERS THE FORM — another admin's override landed first,
+  // and a re-read brought it — so its dialog closes (the effect below).
+  const formGone = changing && !offers.set && !pending;
+
+  const preview = useMemo(
+    () => overridePreviewOf(snapshot, detail, chosenType, leaveKeys),
+    [snapshot, detail, chosenType, leaveKeys],
+  );
+  const chooseType = useCallback((id: string): void => {
+    setChosenType(id);
+  }, []);
   // The override in force, or — story 3.5c — the one pending review.
   const override = overrideRemovalTargetOf(detail);
   // THE OVERRIDE LEFT THE DAY while its confirmation was armed: the day as
@@ -224,8 +265,9 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
    * title, so focus never falls to the page body.
    */
   function focusAfterWrite(...targets: readonly { readonly current: HTMLElement | null }[]): void {
+    // The opener last (story 7.9): a target inside the closed dialog is gone.
     focusLater(
-      targets.map((target) => () => target.current),
+      [...targets, openButton].map((target) => () => target.current),
       () => document.getElementById(DAY_DETAIL_HEADING_ID),
     );
   }
@@ -239,6 +281,17 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
     setUnchecked(null);
     setRemoveFailure(OVERRIDE_GONE);
     focusAfterWrite(removeAction, typeField);
+  });
+
+  // THE DAY NO LONGER OFFERS THE FORM (story 7.9): its dialog closes, never
+  // to reopen by itself; the day detail says why (`OverrideSetRefusal`) — the
+  // write's own refusal when one was said, else `taken` — and focus moves to
+  // the override that landed, or the day detail's title.
+  useEffect(() => {
+    if (!formGone) return;
+    setChanging(false);
+    setFailure((said) => said ?? OVERRIDE_TAKEN);
+    focusAfterWrite(removeAction);
   });
 
   async function invalidate(): Promise<void> {
@@ -370,8 +423,10 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
     if (!stillOn(startedFor)) return;
     setDone({ code: OVERRIDE_SAVED });
     setErased(erased);
-    // The form gives way to the override block and its removal.
-    focusAfterWrite(removeAction);
+    // The dialog closes, and focus returns to the day detail: its opener, or —
+    // the day now overridden offers no form — the override's own removal.
+    setChanging(false);
+    focusAfterWrite(openButton, removeAction);
   }
 
   /**
@@ -530,9 +585,9 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
     setConfirming(false);
     setDone({ code: OVERRIDE_REMOVED, projectedTypeName });
     setErased(erased);
-    // The projection is back, and so is the form — or, with no type to
-    // offer, the dialog's title.
-    focusAfterWrite(typeField);
+    // The projection is back, and so is the form's opener — or, with no type
+    // to offer, the dialog's title.
+    focusAfterWrite(openButton);
   }
 
   /**
@@ -705,6 +760,26 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
     else void submit();
   }
 
+  /** "Promijeni tip smjene": the form's dialog opens; what the last write said belongs to it. */
+  function openChange(): void {
+    if (writing.current) return;
+
+    setDone(null);
+    setErased(0);
+    setRemoveFailure(null);
+    setChanging(true);
+  }
+
+  /** The dialog's cancel, close button and Escape: never while a write is in flight. Focus returns to the opener. */
+  function closeChange(): void {
+    if (writing.current) return;
+
+    setChanging(false);
+    setFailure(null);
+    setUnchecked(null);
+    focusAfterWrite(openButton);
+  }
+
   return {
     latch: writing,
     typeField,
@@ -718,6 +793,12 @@ export function useOverrideForm(snapshot: CalendarSnapshot | null, detail: DayDe
     done,
     options: offers.options,
     offersSet: offers.set,
+    openButton,
+    changing: changing && offers.set,
+    openChange,
+    closeChange,
+    chooseType,
+    preview,
     offersRemove: offers.remove,
     submit,
     openRemove,

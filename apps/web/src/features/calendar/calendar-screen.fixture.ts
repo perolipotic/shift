@@ -42,6 +42,8 @@ export const CALENDAR_SCREEN_PARTS = {
   dayDetailDialog: ['features', 'calendar', 'components', 'day-detail-dialog.tsx'],
   overrideForm: ['features', 'calendar', 'components', 'override-form.tsx'],
   rosterForm: ['features', 'calendar', 'components', 'roster-form.tsx'],
+  // Story 7.9: *Što se mijenja*, drawn in both change dialogs.
+  changePreview: ['features', 'calendar', 'components', 'change-preview-output.tsx'],
   skeleton: ['features', 'calendar', 'components', 'calendar-skeleton.tsx'],
   cellLabel: ['features', 'calendar', 'utils', 'cell-label.ts'],
   screenKeys: ['features', 'calendar', 'utils', 'screen-keys.ts'],
@@ -88,7 +90,11 @@ export const CALENDAR_SCREEN_EXEMPT: readonly { readonly file: string; readonly 
   },
   {
     file: 'utils/replacement-candidates.ts',
-    why: 'the replacement candidates of one shift, grouped (story 5.4c) for the conflict screen; declares no key, executed by replacement-candidates.test.ts',
+    why: 'the replacement candidates of one shift, grouped (story 5.4c) for the conflict screen and the roster dialog (story 7.9); a key source of its own in the sign-in suite (the three group headings), executed by replacement-candidates.test.ts',
+  },
+  {
+    file: 'utils/change-preview.ts',
+    why: 'the change dialogs\' *Što se mijenja* (story 7.9), codes and operands from the "after" snapshots; renders nothing and declares no key, executed by change-preview.test.ts',
   },
   {
     file: 'utils/modifiers.ts',
