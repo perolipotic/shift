@@ -10,10 +10,12 @@ import { cn } from "@/lib/utils"
 // renders is a primitive nobody reviewed.
 //
 // `Table`'s own wrapper is `overflow-auto`, and that is the ONE scroll
-// container `DESIGN.md:150` grants this screen: wide content scrolls inside its
-// own container, never the page. A surface that nests a second scroller around
-// this one produces two overlapping scrollbars on a phone and a page body that
-// still cannot be reached sideways.
+// container DESIGN.md §Layout & Spacing grants a table from 640 px: wide
+// content scrolls inside its own container, never the page. Below 640 px the
+// Sati, Ljudi and shift-types tables are not rendered at all — their stacked
+// rows (`stacked-list.tsx`, story 7.6) never scroll sideways. A surface that
+// nests a second scroller around this one produces two overlapping scrollbars
+// on a phone and a page body that still cannot be reached sideways.
 
 const Table = React.forwardRef<
   HTMLTableElement,

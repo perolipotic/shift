@@ -59,7 +59,7 @@ export function ShiftTypeListSection({ screen }: { readonly screen: ShiftTypeLis
               {t('rotation.shiftTypes.open')}
             </Button>
           </CardHeader>
-          <ShiftTypeTable rows={list.active} />
+          <ShiftTypeTable label={t('rotation.shiftTypes.heading')} rows={list.active} />
         </Card>
       )}
       {list === null || list.archived.length === 0 ? null : (
@@ -69,7 +69,7 @@ export function ShiftTypeListSection({ screen }: { readonly screen: ShiftTypeLis
               <h2>{t('rotation.shiftTypes.archivedHeading')}</h2>
             </CardTitle>
           </CardHeader>
-          <ShiftTypeTable rows={list.archived} />
+          <ShiftTypeTable label={t('rotation.shiftTypes.archivedHeading')} rows={list.archived} />
         </Card>
       )}
     </div>

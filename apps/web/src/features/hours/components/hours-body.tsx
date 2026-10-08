@@ -7,6 +7,7 @@ import { HoursSkeleton } from '@/features/hours/components/hours-skeleton';
 import { HoursSummary } from '@/features/hours/components/hours-summary';
 import { OrganizationHoursExport } from '@/features/hours/components/organization-hours-export';
 import { OrganizationHoursFilters } from '@/features/hours/components/organization-hours-filters';
+import { OrganizationHoursRows } from '@/features/hours/components/organization-hours-rows';
 import { OrganizationHoursTable } from '@/features/hours/components/organization-hours-table';
 import {
   hoursMessageKey,
@@ -16,6 +17,7 @@ import {
   type MyHoursView,
 } from '@/features/hours/services/my-hours';
 import type { OrganizationHoursView } from '@/features/hours/services/organization-hours';
+import { usePhone } from '@/hooks/viewport';
 import { t } from '@/lib/i18n';
 
 /**
@@ -50,7 +52,8 @@ export function HoursNotice({
  * What sits under the month navigation: the message in place of the figures
  * when the domain refused them, the skeleton while the read is unanswered,
  * the organization's table for an admin (story 4.2) with its export beside
- * the filter bar (stories 4.3, 7.5), and the viewer's own
+ * the filter bar (stories 4.3, 7.5) — below 640 px its stacked rows
+ * instead, only one of the two in the DOM (story 7.6) — and the viewer's own
  * figures for a member (story 4.1b). `hoursSurfaceOf` decides which; this
  * only draws it.
  */
@@ -72,6 +75,9 @@ export function HoursBody({
 }): ReactNode {
   // The filter bar's first chip: where the empty table's two actions put focus.
   const filtersRef = useRef<FilterBarHandle>(null);
+  // Story 7.6: which form the organization's month takes. The sort and the
+  // filters live in the URL, so crossing 640 px keeps both.
+  const isPhone = usePhone();
 
   if (refusal !== null) {
     return (
@@ -88,7 +94,11 @@ export function HoursBody({
         {organizationName === null ? null : (
           <OrganizationHoursExport view={organization} organizationName={organizationName} />
         )}
-        <OrganizationHoursTable view={organization} filtersRef={filtersRef} onChange={onChange} onPress={onPress} />
+        {isPhone ? (
+          <OrganizationHoursRows view={organization} filtersRef={filtersRef} onChange={onChange} onPress={onPress} />
+        ) : (
+          <OrganizationHoursTable view={organization} filtersRef={filtersRef} onChange={onChange} onPress={onPress} />
+        )}
       </>
     );
   }

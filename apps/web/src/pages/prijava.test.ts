@@ -151,6 +151,10 @@ const MEMBER_LIST: readonly string[] = [
   join(MEMBERS_FEATURE, 'hooks', 'use-member-list.ts'),
   join(MEMBERS_FEATURE, 'components', 'member-stats.tsx'),
   join(MEMBERS_FEATURE, 'components', 'member-table.tsx'),
+  // Story 7.6: the same rows stacked below 640 px, and the phone's sort
+  // control *Sati* shares, from `@/components/sort-control`.
+  join(MEMBERS_FEATURE, 'components', 'member-rows.tsx'),
+  join(srcRoot, 'components', 'sort-control.tsx'),
   join(MEMBERS_FEATURE, 'components', 'member-filters.tsx'),
   join(MEMBERS_FEATURE, 'components', 'cell-view.tsx'),
   join(MEMBERS_FEATURE, 'components', 'member-count.tsx'),
@@ -412,6 +416,8 @@ const MONTH_KEYS = join(srcRoot, 'utils', 'month-keys.ts');
 const SHARED_FILTER_BAR = join(srcRoot, ...CALENDAR_SCREEN_PARTS.filterBar);
 /** Story 7.5: the filter bar's model — its chips, summary and the month locative — pure, beside it. */
 const FILTER_BAR_KEYS = join(srcRoot, 'utils', 'filter-bar.ts');
+/** Story 7.6: the phone's sort control *Sati* and *Ljudi* share: a part of both sets. */
+const SHARED_SORT_CONTROL = join(srcRoot, ...HOURS_SCREEN_PARTS.sortControl);
 /** Story 7.5: *Kalendar*'s own filter bar, the one Select it replaced. */
 const CALENDAR_FILTERS = join(srcRoot, ...CALENDAR_SCREEN_PARTS.filter);
 /** Story 7.5: *Sati*'s own filter bar, the two Selects it replaced. */
@@ -662,7 +668,12 @@ const SCREENS = [
   // EIGHT SINCE THE TEAM FILTER: the team `<select>` beside the level one, and
   // the reset `<Button>`, which is the one non-link button here and still
   // writes nothing — it only returns the three filters to their defaults.
-  { name: 'the member list', file: MEMBER_LIST, expectedControls: 8 },
+  //
+  // TEN SINCE STORY 7.6: the phone's shared sort control — its `Poredano:`
+  // trigger and one column `Button` written once inside the map over the
+  // columns. The stacked row's name is a `<Link>` stretched over the row,
+  // which no detector reads, and it replaces the row's pencil on a phone.
+  { name: 'the member list', file: MEMBER_LIST, expectedControls: 10 },
   // EIGHT on the create form: four `<Input>`s — name, username, address,
   // allowance — the level `<select>`, and three `<Button>`s, which are Save,
   // Cancel and the link back to the list. The count is what notices a SIXTH
@@ -796,7 +807,11 @@ const SCREENS = [
   // TWENTY SINCE STORY 7.5: the two filter `Select`s gave way to the shared
   // filter bar's eight, counted in the Kalendar set too, and the empty
   // table's two ways out, `Ukloni filtar: Smjena B` and `Poništi filtre`.
-  { name: 'the Sati destination', file: SATI, expectedControls: 20 },
+  // TWENTY-TWO SINCE STORY 7.6: the phone's shared sort control — its
+  // `Poredano:` trigger and one column `Button` inside the map over the
+  // columns — counted in the member list too. The stacked rows reuse the
+  // table's `EmptyResult`, so its two ways out are not written twice.
+  { name: 'the Sati destination', file: SATI, expectedControls: 22 },
   // STORY 5.2c. ONE on Godišnji: the retry its unavailable alert offers. The
   // three figures are read, never pressed, and nothing here writes: a member
   // requests no leave (story 5.3 is conflicts, not requests).
@@ -840,7 +855,9 @@ const SCREENS = [
   // DESIGN REFRESH C: EIGHT on the list, the add form in a dialog with the
   // button that opens it and its cancel; TEN on one type, a dialog over the
   // list whose own close replaced the link back.
-  { name: 'the shift type list', file: SHIFT_TYPE_LIST, expectedControls: 8 },
+  // NINE SINCE STORY 7.6: the stacked row's edit link below 640 px, the same
+  // 44 px `<Button asChild>` link as the table's, written once inside the map.
+  { name: 'the shift type list', file: SHIFT_TYPE_LIST, expectedControls: 9 },
   { name: 'the shift type edit form', file: SHIFT_TYPE_EDIT, expectedControls: 10 },
   // STORY 2.3b, AS RENEGOTIATED. SEVEN on the rotation builder, each written
   // once however many steps and teams there are: a step's drag handle and
@@ -2118,10 +2135,18 @@ const KEY_SOURCES = [
     // through `teamFilterMessageKey`, counted with the rules below.
     //
     // FOURTEEN SINCE DESIGN REFRESH C: the lede.
+    //
+    // TWENTY-FOUR SINCE STORY 7.6: the stacked rows' caption (the list's
+    // name), the edit-link name and the status separator again (three), the
+    // allowance's unit beside its figure (`cellUnit`), and the shared sort
+    // control's six — `Poredano:`, its accessible name with the direction,
+    // the two directions, the sorted option's name with its direction and
+    // the picker's name. The rows' field labels are the columns' own keys,
+    // `t(column.label)`, counted with the rules.
     name: 'the member list',
     file: MEMBER_LIST,
     keys: translationKeys,
-    strings: 14,
+    strings: 24,
   },
   {
     // STORY 1.7a. EIGHT on the team list: its heading, the link back
@@ -2341,10 +2366,17 @@ const KEY_SOURCES = [
     // beside the non-working one; the section heading became the card's.
     // TWENTY-TWO SINCE THE OWNER LAYOUT (story 2.3b): the kind column's
     // head and its two pills are gone; a non-working type reads as a dash.
+    // TWENTY-NINE SINCE STORY 7.6: the two section headings again, each
+    // naming its phone list, and the stacked rows' five — the name label, the
+    // times label twice (the times, and the midnight flag beside the
+    // duration), the duration label and the edit link. The no-times line,
+    // the scheduled correction and the midnight flag moved out of the table
+    // into `shift-type-cells.tsx`, which both forms draw, so each is still
+    // written once.
     name: 'the shift type list',
     file: SHIFT_TYPE_LIST,
     keys: translationKeys,
-    strings: 22,
+    strings: 29,
   },
   {
     // On one type: the facts a row says (as on the list), the name and Save,
@@ -2602,10 +2634,21 @@ const KEY_SOURCES = [
     // Smjena B` and `Poništi filtre`. Its sentences' keys are chosen by
     // `@/features/hours/services/organization-hours` and the month in the
     // locative's by `@/utils/filter-bar`, both key sources.
+    //
+    // EIGHTY-FOUR SINCE STORY 7.6: the stacked rows' seventeen — the sort
+    // control's five fixed column headings, the caption naming the list,
+    // each value's label (member, team, shifts, total, leave, conflicts —
+    // six), the no-team mark, the shift count twice (the row's and a
+    // band's), the conflict line and the untimed note — and the shared sort
+    // control's six, `Poredano:`, its accessible name with the direction,
+    // the two directions, the sorted option's name with its direction and
+    // the picker's name, counted in the member list too. A band's label is
+    // its name as stored. The empty result moved to its own part
+    // (`organization-hours-empty.tsx`) and is counted once, as before.
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 61,
+    strings: 84,
   },
   {
     // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the
@@ -3278,10 +3321,17 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(SATI[0], 'the page is read first').toBe(SATI_PAGE);
     expect(SATI, 'the shared month navigation left the set').toContain(SHARED_MONTH_NAV);
     expect(SATI, 'the shared filter bar left the set').toContain(SHARED_FILTER_BAR);
+    // STORY 7.6: so is the phone's sort control, shared with Ljudi.
+    expect(SATI, 'the shared sort control left the set').toContain(SHARED_SORT_CONTROL);
     expect(
       found.filter((file) => !exempt.has(file)).sort(),
       'the Sati file set and the feature folders disagree',
-    ).toEqual(SATI.filter((file) => file !== SATI_PAGE && file !== SHARED_MONTH_NAV && file !== SHARED_FILTER_BAR).sort());
+    ).toEqual(
+      SATI.filter(
+        (file) =>
+          file !== SATI_PAGE && file !== SHARED_MONTH_NAV && file !== SHARED_FILTER_BAR && file !== SHARED_SORT_CONTROL,
+      ).sort(),
+    );
   });
 
   it('draws the month as one toolbar, shared by Kalendar and Sati (story 7.4)', () => {
@@ -6040,8 +6090,9 @@ describe('the member list filters are dead while unanswered, and the reset resto
 
 describe('the member list owns exactly one scroll container, and states its count', () => {
   /**
-   * `DESIGN.md:150`: wide content scrolls inside its own container, never the
-   * page, and it names the member list explicitly. Two things can break that
+   * DESIGN.md §Layout & Spacing: from 640 px wide content scrolls inside its
+   * own container, never the page (below 640 px the member list is stacked
+   * rows, story 7.6, and has no table to scroll). Two things can break that
    * and only the source says which: the primitive giving up its wrapper, and
    * the screen nesting a second one around it. Neither is visible to any other
    * assertion in this repository — there is no DOM to measure (AD-15) — so both
@@ -6086,6 +6137,86 @@ describe('the member list owns exactly one scroll container, and states its coun
       screen,
       'the member list branches on an empty list, which is how a stated zero disappears',
     ).not.toMatch(/\.length\s*(===|!==|>|<)\s*0/);
+  });
+});
+
+describe('a table becomes stacked rows below 640 px (story 7.6)', () => {
+  /**
+   * NFR-15: below 640 px the Sati, Ljudi and shift-types tables render their
+   * own view model as a list (`ul` of `li`, each value a `dt` + `dd`), never
+   * a table restyled with `display` overrides, which drops its roles in
+   * WebKit, and never both forms with one hidden. What no DOM test here can
+   * see (AD-15) is read from the source; the widths are measured in
+   * `e2e/tests/layout/responsive.spec.ts`.
+   */
+  const STACKED_PRIMITIVE = join(srcRoot, 'components', 'ui', 'stacked-list.tsx');
+  const ROWS = [
+    join(srcRoot, ...HOURS_SCREEN_PARTS.organizationRows),
+    join(MEMBERS_FEATURE, 'components', 'member-rows.tsx'),
+    join(srcRoot, ...SHIFT_TYPE_LIST_PARTS.rows),
+  ];
+  const SWITCHES = [
+    join(srcRoot, ...HOURS_SCREEN_PARTS.body),
+    join(MEMBERS_FEATURE, 'components', 'member-table.tsx'),
+    join(srcRoot, ...SHIFT_TYPE_LIST_PARTS.table),
+  ];
+
+  it('builds the list from one primitive: a ul, an li, and a dt beside every dd', () => {
+    const primitive = source(STACKED_PRIMITIVE);
+
+    expect(primitive).toMatch(/<ul\b/);
+    expect(primitive).toMatch(/<li\b/);
+    expect(primitive).toMatch(/<dl\b/);
+    expect(occurrences(primitive, '<dt'), 'a field draws no label, or two').toBe(1);
+    expect(occurrences(primitive, '<dd'), 'a field draws no value, or two').toBe(1);
+    // The label is only ever HIDDEN visually, never dropped.
+    expect(primitive).toMatch(/data-\[hidden=true\]:sr-only/);
+    expect(primitive, 'the list scrolls sideways').not.toMatch(/overflow-/);
+    // The list is named by the table's caption: the name is required.
+    expect(primitive).toMatch(/"aria-label": string/);
+  });
+
+  it.each(ROWS)('draws %s as a list, never a restyled table', (file) => {
+    const rows = source(file);
+
+    expect(rows.length).toBeGreaterThan(500);
+    expect(rows, 'a rows form draws table markup').not.toMatch(/<Table|<table\b|<tr\b|<td\b|<th\b/);
+    expect(rows, 'a rows form scrolls sideways').not.toMatch(/overflow-/);
+    expect(rows, 'a rows form overrides display with a style').not.toMatch(/display\s*:/);
+    expect(rows).toMatch(/<StackedList\b[^>]*aria-label=/);
+  });
+
+  it.each(ROWS)('labels every value in %s through StackedField', (file) => {
+    const rows = source(file);
+    // LABEL FIRST, pinned: every `<StackedField` opens with `label={`, so the
+    // check reads no further than the tag's name and cannot be fooled by a
+    // `=>` or a `>` inside a later prop.
+    const opened = occurrences(rows, '<StackedField ') + occurrences(rows, '<StackedField\n');
+    const labelled = [...rows.matchAll(/<StackedField\s+label=\{/g)].length;
+
+    expect(opened, 'no value goes through StackedField').toBeGreaterThan(1);
+    expect(labelled, 'a StackedField does not open with its column label').toBe(opened);
+    expect(rows, 'a value is drawn outside StackedField').not.toMatch(/<dd\b|<dt\b|<dl\b/);
+  });
+
+  it.each(SWITCHES)('renders one form at a time in %s, by usePhone', (file) => {
+    const screen = source(file);
+
+    expect(screen).toMatch(/const isPhone = usePhone\(\);/);
+    // Never both drawn and one hidden by a breakpoint class.
+    expect(screen).not.toMatch(/max-sm:hidden|sm:hidden|hidden sm:/);
+  });
+
+  it('sorts on a phone through the one shared control, whose pick is the heading press', () => {
+    const control = source(SHARED_SORT_CONTROL);
+
+    expect(control).toMatch(/<Popover\b[^>]*aria-label=\{t\('sort\.picker'\)\}/);
+    expect(control).toMatch(/aria-pressed=\{column\.key === active\}/);
+    expect(control).toMatch(/pickerIndexAfter\(/);
+    // A pick and Escape put focus back on the control.
+    expect(control).toMatch(/setOpen\(false\);\s*trigger\.current\?\.focus\(\);/);
+    expect(source(join(srcRoot, ...HOURS_SCREEN_PARTS.organizationRows))).toMatch(/onPick=\{onPress\}/);
+    expect(source(join(MEMBERS_FEATURE, 'components', 'member-table.tsx'))).toMatch(/onPick=\{pressColumn\}/);
   });
 });
 

@@ -2,7 +2,6 @@ import { Link } from '@tanstack/react-router';
 import { Pencil } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
   Table,
@@ -12,67 +11,31 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { shownDate } from '@/features/members/services/list';
 import {
-  NO_TIMES_SHOWN,
-  durationValuesOf,
-  shiftTypeDurationMessageKey,
-  type ShiftTypeDisplayRow,
-} from '@/features/shift-types/services/list';
+  CrossesMidnight,
+  ShiftTypeTimes,
+  shiftTypeDurationOf,
+} from '@/features/shift-types/components/shift-type-cells';
+import { ShiftTypeRows } from '@/features/shift-types/components/shift-type-rows';
+import { usePhone } from '@/hooks/viewport';
+import { NO_TIMES_SHOWN, type ShiftTypeDisplayRow } from '@/features/shift-types/services/list';
 import { t } from '@/lib/i18n';
 
-/** A non-working type's times and duration: none, shown as a dash. */
-function renderNoTimes(): ReactNode {
-  return (
-    <span className="text-muted-foreground">{NO_TIMES_SHOWN}</span>
-  );
-}
-
-/** A type's times and flags, read-only, in the table's time column. */
-function renderTimes(row: ShiftTypeDisplayRow): ReactNode {
-  // A NON-WORKING TYPE HAS NO TIMES, and says so with a dash; there is no
-  // kind column, and its chip carries its name.
-  if (!row.type.isWorking) return renderNoTimes();
-
-  return (
-    <div className="grid gap-1">
-      {row.times === null ? (
-        <span className="text-muted-foreground">{t('rotation.shiftTypes.noTimes')}</span>
-      ) : (
-        <span className="tabular-nums">{row.times.range}</span>
-      )}
-      {row.scheduled === null ? null : (
-        <span className="text-xs text-muted-foreground tabular-nums">
-          {t('rotation.shiftTypes.scheduled', {
-            date: shownDate(row.scheduled.from),
-            range: row.scheduled.times.range,
-            duration: t(
-              shiftTypeDurationMessageKey(row.scheduled.times.durationMinutes),
-              durationValuesOf(row.scheduled.times.durationMinutes),
-            ),
-          })}
-        </span>
-      )}
-    </div>
-  );
-}
-
+/** A type's duration and its midnight flag, in the table's duration column. */
 function renderDuration(row: ShiftTypeDisplayRow): ReactNode {
-  if (!row.type.isWorking) return renderNoTimes();
-  if (row.times === null) return null;
+  // A NON-WORKING TYPE HAS NO DURATION, and says so with a dash.
+  if (!row.type.isWorking) {
+    return <span className="text-muted-foreground">{NO_TIMES_SHOWN}</span>;
+  }
+
+  const duration = shiftTypeDurationOf(row);
+
+  if (duration === null) return null;
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <span className="tabular-nums">
-        {t(
-          shiftTypeDurationMessageKey(row.times.durationMinutes),
-          durationValuesOf(row.times.durationMinutes),
-        )}
-      </span>
-      {/* A pill whose TEXT is the meaning; no status colour. */}
-      {row.times.crossesMidnight ? (
-        <Badge variant="outline">{t('rotation.shiftTypes.crossesMidnight')}</Badge>
-      ) : null}
+      <span className="tabular-nums">{duration}</span>
+      {row.times?.crossesMidnight === true ? <CrossesMidnight /> : null}
     </div>
   );
 }
@@ -87,7 +50,9 @@ function renderRow(row: ShiftTypeDisplayRow): ReactNode {
           <span className="truncate">{row.type.name}</span>
         </span>
       </TableCell>
-      <TableCell>{renderTimes(row)}</TableCell>
+      <TableCell>
+        <ShiftTypeTimes row={row} />
+      </TableCell>
       <TableCell>{renderDuration(row)}</TableCell>
       <TableCell className="text-right">
         {row.type.archived ? null : (
@@ -105,10 +70,24 @@ function renderRow(row: ShiftTypeDisplayRow): ReactNode {
 
 /**
  * The types in a table (design refresh C): the chip, the times, the duration
- * and the edit link. Nothing when there are no rows.
+ * and the edit link. Nothing when there are no rows. Below 640 px the same
+ * rows stack instead (story 7.6, `ShiftTypeRows`), named by the section's
+ * heading; only one of the two forms is in the DOM.
  */
-export function ShiftTypeTable({ rows }: { readonly rows: readonly ShiftTypeDisplayRow[] }): ReactNode {
+export function ShiftTypeTable({
+  label,
+  rows,
+}: {
+  /** The section's heading, from the screen's `t()`: what names the phone's list. */
+  readonly label: string;
+  readonly rows: readonly ShiftTypeDisplayRow[];
+}): ReactNode {
+  const isPhone = usePhone();
+
   if (rows.length === 0) return null;
+  if (isPhone) {
+    return <ShiftTypeRows label={label} rows={rows} />;
+  }
 
   return (
     <Table>

@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto';
 
-import { holdRotation, type RotationHold } from '../../utils/database-helper.ts';
+import { archiveShiftType, holdRotation, type RotationHold } from '../../utils/database-helper.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
-import { hr } from '../../utils/i18n.ts';
+import { fill, hr } from '../../utils/i18n.ts';
 import { NEXT_LABELS, STEP_HEADINGS } from '../../utils/rotation.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
@@ -27,6 +27,33 @@ test.afterEach(async () => {
 
 test.describe('at 390 px, on a touch phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+
+  test('the shift types are stacked rows: an active one has its edit link, an archived one none (story 7.6)', async ({
+    fixture,
+    rotationPage,
+  }) => {
+    // ITS OWN TYPE, per attempt; nothing here saves a rotation.
+    const name = `Arhiva ${randomBytes(3).toString('hex')}`;
+
+    try {
+      await rotationPage.goto();
+      await rotationPage.addShiftType(name, ['07:00', '19:00']);
+      const active = rotationPage.shiftTypeList.getByRole('listitem').filter({ hasText: name });
+      await expect(active).toBeVisible();
+      await expect(active.getByRole('link', { name: fill(hr.rotation.shiftTypes.edit, { name }) })).toBeVisible();
+      await expect(active.locator('dt', { hasText: hr.rotation.shiftTypes.times })).toHaveCount(1);
+      await expect(active.locator('dt', { hasText: hr.rotation.shiftTypes.duration.label })).toHaveCount(1);
+
+      await archiveShiftType(fixture.slug, name);
+      await rotationPage.goto();
+      await expect(rotationPage.archivedShiftTypeItem(name)).toBeVisible();
+      await expect(rotationPage.archivedShiftTypeItem(name).getByRole('link')).toHaveCount(0);
+      await expect(rotationPage.shiftTypeEditLink(name)).toHaveCount(0);
+    } finally {
+      // ARCHIVED WHATEVER HAPPENED, so a failure leaves no active type behind. Idempotent.
+      await archiveShiftType(fixture.slug, name);
+    }
+  });
 
   test('an admin walks the four steps, goes back through the bar, builds, saves from the save bar and sees the prefill', async ({
     page,

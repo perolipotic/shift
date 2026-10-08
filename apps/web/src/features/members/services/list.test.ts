@@ -28,6 +28,7 @@ import {
   MEMBERS_UNAVAILABLE,
   MEMBERS_READ_STALE_MS,
   MEMBER_COLUMNS,
+  memberColumnOf,
   NAME_COLUMN,
   TEAM_CELL,
   TEAM_COLUMN,
@@ -77,6 +78,7 @@ import {
   nextSortState,
   readMembers,
   sortIndicatorOf,
+  sortDirectionIndicatorOf,
   sortStateOf,
   type LevelFilter,
   type MemberListRow,
@@ -520,6 +522,11 @@ describe('the four columns are one table, so a heading and its sort key cannot d
       [TEAM_COLUMN, 'smjene.membership.column'],
       [LEAVE_COLUMN, 'ljudi.leave'],
     ]);
+  });
+
+  it('finds each column by its key, the one the phone row places it by (story 7.6)', () => {
+    for (const column of MEMBER_COLUMNS) expect(memberColumnOf(column.key)).toBe(column);
+    expect(() => memberColumnOf('hours' as typeof NAME_COLUMN)).toThrow();
   });
 
   it('carries no hours or active column', () => {
@@ -1301,6 +1308,8 @@ describe('the sort indicator and aria-sort are one decision', () => {
         const sort: SortState = { key, direction };
 
         expect(sortIndicatorOf(sort, key)).toBe(direction === ASCENDING ? ARROW_UP : ARROW_DOWN);
+        // Story 7.6: the phone's sort control reads the same arrow.
+        expect(sortDirectionIndicatorOf(sort)).toBe(sortIndicatorOf(sort, key));
         expect(sortStateOf(sort, key)).toBe(direction);
       }
     },

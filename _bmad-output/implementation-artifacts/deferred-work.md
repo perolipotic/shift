@@ -826,3 +826,12 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-5-filter-chips.md`
   summary: Sati still drops a team or person filter from the URL when the next month has no row for it, so "month changes keep the filters" holds only on Kalendar.
   evidence: `hoursSearchBaseOf` / `organizationHoursViewOf` rebuild `search` from matched ids only (pre-existing, Epic 4 retro C5); surfaced by the 7.5 review, no test moves to a month where the chosen team or person has no row.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-6-stacked-rows.md`
+  summary: Below 640 px only the Sati, Ljudi and shift-types tables stack. The hour-band (`/organizacija/satni-pojasi`), team (`/ljudi/smjene`), rotation-offset and rotation-history tables still scroll sideways inside their own box on a phone; stacking each is Ask First and reuses `components/ui/stacked-list.tsx`. The calendar, week and rotation-preview grids keep their own scroller by the epic's rule.
+  evidence: Human decision of 2026-10-08 (spec 7.6 Epic AC Deviations). At 390 px the rotation history table measured 590 px in a 340 px box during the 7.6 e2e run, which is why the shift-types step's inner-scroll check is scoped to the types' card.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-6-stacked-rows.md`
+  summary: Ljudi's filters (search, level, team) stay three stacked fields above the phone rows. Moving them into a `Filtri` sheet, as the mockup shows, is Ask First in 7.6; 7.13's status chip should reuse 7.5's chip pattern there.
+  evidence: `mockups/mobile-tables-1.html` §1 A; spec 7.6 Ask First.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-6-stacked-rows.md`
+  summary: Focus is lost when a resize crosses 640 px and unmounts the focused form — a stacked row's link, or the open sort popover's option (or the table's heading button the other way). Focus falls to the page body. Restoring it needs a screen-level focus handoff between the two forms (for example, the same member's link or the matching heading).
+  evidence: 7.6 review on 2026-10-08. `usePhone()` renders one form at a time by design, so the focused element is removed rather than hidden.
