@@ -339,6 +339,19 @@ export function hoursSortArrowOf(sort: HoursSort, key: HoursSortKey): HoursSortA
   return sort.direction === SORT_UP ? 'up' : 'down';
 }
 
+/**
+ * The arrow the phone's sort control shows (story 7.6): the sorted column's,
+ * which always has one — `hoursSortArrowOf` of the sort's own key.
+ */
+export function hoursSortDirectionArrowOf(sort: HoursSort): HoursSortArrow {
+  const arrow = hoursSortArrowOf(sort, sort.key);
+
+  // Unreachable: a sort's own key is always the sorted one.
+  if (arrow === null) throw new Error('The sorted column has no arrow');
+
+  return arrow;
+}
+
 /** Nobody has a row in the month at all. */
 export const HOURS_EMPTY_MONTH = 'emptyMonth';
 

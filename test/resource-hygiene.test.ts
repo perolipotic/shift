@@ -52,6 +52,10 @@ const SANCTIONED_PLURAL_KEYS = [
   'ljudi.filterAll',
   'ljudi.filterAdmin',
   'ljudi.filterMember',
+  // STORY 7.6: the unit beside a member's leave allowance on the phone's
+  // stacked row, where no column heading stands above it — `1 dan god.`,
+  // `2 dana god.`, `21 dan god.`. The figure itself is the cell's own.
+  'ljudi.leaveUnit',
   // STORY 1.7a's TWO: the active teams' stated count and the archived group's,
   // both rendered at zero — `0 smjena` — and both ICU so `21 smjena` and
   // `22 smjene` come out right. No count is special-cased (DI-8).
@@ -1080,6 +1084,17 @@ const SANCTIONED_SCREEN_KEYS = [
   'filter.monthIn.10',
   'filter.monthIn.11',
   'filter.monthIn.12',
+  // STORY 7.6: the phone's sort control Sati and Ljudi share — its visible
+  // `Poredano: {column}`, its accessible name with the direction, the two
+  // directions, the sorted option, and the name of the list it opens. `{column}` is
+  // a heading's own key or a band's name as stored. `sort.option` names the
+  // sorted column in the list with its direction, its arrow being hidden.
+  'sort.label',
+  'sort.name',
+  'sort.option',
+  'sort.ascending',
+  'sort.descending',
+  'sort.picker',
   // STORY 3.4b: the day detail — its title (the team and the date), its close, the heading over the roster, a
   // working day with nobody on it, an off day and a day with no rotation.
   // `{team}` is the Team.

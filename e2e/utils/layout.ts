@@ -1,4 +1,4 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Locator, type Page } from '@playwright/test';
 
 /** WCAG 2.5.5's target size, and the floor every control in this app keeps. */
 export const MINIMUM_TARGET = 44;
@@ -42,6 +42,45 @@ export async function expectNoHorizontalScroll(page: Page): Promise<void> {
   await expect
     .poll(() => horizontalOverflow(page), { message: 'the page scrolls sideways by this many px' })
     .toBeLessThanOrEqual(0);
+}
+
+/**
+ * Every element in `main` that scrolls sideways: its own content wider than
+ * its box, and an `overflow-x` that lets a person scroll it. A box that
+ * clips (`hidden`, `clip` — a truncated name, the `sr-only` pattern) is not
+ * a scroller.
+ */
+async function innerHorizontalScrollers(scope: Locator): Promise<string[]> {
+  return scope.evaluateAll((mains) =>
+    mains.flatMap((main) =>
+      [main, ...main.querySelectorAll('*')]
+        .filter((element) => {
+          const overflow = getComputedStyle(element).overflowX;
+
+          return (overflow === 'auto' || overflow === 'scroll') && element.scrollWidth > element.clientWidth + 1;
+        })
+        .map(
+          (element) =>
+            `${element.tagName.toLowerCase()}.${element.className.toString().split(' ').slice(0, 3).join('.')}: ${String(element.scrollWidth)} > ${String(element.clientWidth)}`,
+        ),
+    ),
+  );
+}
+
+/**
+ * Story 7.6: no element inside the screen scrolls sideways either — a table
+ * that became stacked rows below 640 px, so a person never swipes inside a
+ * box to find a number. `scope` narrows it to a region where the screen also
+ * holds a grid or table that keeps its own scroller by decision (the
+ * rotation's history, ledgered in `deferred-work.md`). Polled, like the page
+ * check.
+ */
+export async function expectNoInnerHorizontalScroll(page: Page, scope?: Locator): Promise<void> {
+  await expect
+    .poll(() => innerHorizontalScrollers(scope ?? page.locator('main')), {
+      message: 'an element in main scrolls sideways',
+    })
+    .toEqual([]);
 }
 
 async function measureControls(page: Page): Promise<Measured[]> {

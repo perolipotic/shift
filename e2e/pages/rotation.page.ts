@@ -150,6 +150,21 @@ export class RotationPage extends BasePage {
     });
   }
 
+  /** The active types as stacked rows below 640 px (story 7.6), named by their section's heading. */
+  get shiftTypeList(): Locator {
+    return this.page.getByRole('list', { name: shiftTypes.heading, exact: true });
+  }
+
+  /** The archived types as stacked rows below 640 px, named by their heading. */
+  get archivedShiftTypeList(): Locator {
+    return this.page.getByRole('list', { name: shiftTypes.archivedHeading, exact: true });
+  }
+
+  /** A type's stacked row in the archived list, by its name. */
+  archivedShiftTypeItem(name: string): Locator {
+    return this.archivedShiftTypeList.getByRole('listitem').filter({ hasText: name });
+  }
+
   /** The archived types' table: the one under their heading. */
   get archivedShiftTypes(): Locator {
     return this.sectionHeading(shiftTypes.archivedHeading).locator('xpath=ancestor::div[.//table][1]').getByRole('table');

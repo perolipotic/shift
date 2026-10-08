@@ -1,8 +1,11 @@
+import { randomBytes } from 'node:crypto';
+
 import type { Locator, Page } from '@playwright/test';
 
 import type { RotationPage } from '../../pages/rotation.page.ts';
+import { archiveShiftType } from '../../utils/database-helper.ts';
 import { ADMIN_STATE, MEMBER_STATE, type Fixture } from '../../utils/run-fixture.ts';
-import { expectNoHorizontalScroll, expectTouchTargets } from '../../utils/layout.ts';
+import { expectNoHorizontalScroll, expectNoInnerHorizontalScroll, expectTouchTargets } from '../../utils/layout.ts';
 import { NEXT_LABELS, STEP_HEADINGS } from '../../utils/rotation.ts';
 import { expect, firstBand, test, type PageObjects } from '../../utils/custom-fixtures.ts';
 
@@ -220,3 +223,53 @@ test.describe('as an admin at 390 px', () => {
     await checkRotationSteps(page, rotationPage);
   });
 });
+
+// STORY 7.6: below 640 px the Sati, Ljudi and shift-types tables are stacked
+// rows, so neither the page nor any element in it scrolls sideways — at the
+// narrowest phone and at the one the screens are designed against.
+for (const width of [320, 390]) {
+  test.describe(`as an admin, the stacked rows at ${String(width)} px`, () => {
+    test.use({ storageState: ADMIN_STATE, viewport: { width, height: 844 } });
+
+    test('Sati is stacked rows, and nothing in it scrolls sideways', async ({ page, hoursPage }) => {
+      await hoursPage.goto();
+      await expect(hoursPage.organizationListRows.first()).toBeVisible();
+      await expect(hoursPage.organizationTable).toHaveCount(0);
+      await expectNoHorizontalScroll(page);
+      await expectNoInnerHorizontalScroll(page);
+      await expectTouchTargets(page);
+    });
+
+    test('Ljudi is stacked rows, and nothing in it scrolls sideways', async ({ page, peoplePage, fixture }) => {
+      await peoplePage.goto();
+      await expect(peoplePage.listRow(fixture.member.name)).toBeVisible();
+      await expect(peoplePage.table).toHaveCount(0);
+      await expectNoHorizontalScroll(page);
+      await expectNoInnerHorizontalScroll(page);
+      await expectTouchTargets(page);
+    });
+
+    test('the shift types step is stacked rows, and nothing in it scrolls sideways', async ({
+      page,
+      rotationPage,
+      fixture,
+    }) => {
+      // The run organization starts with no type: this test adds its own, a
+      // long name crossing midnight, and archives it whatever happens.
+      const name = `Noćna dežurna smjena ${randomBytes(3).toString('hex')}`;
+
+      try {
+        await rotationPage.goto();
+        await rotationPage.addShiftType(name, ['19:00', '07:00']);
+        await expect(rotationPage.shiftTypeList.getByRole('listitem').filter({ hasText: name })).toBeVisible();
+        await expectNoHorizontalScroll(page);
+        // The types' own card: the rotation history below it is a table that
+        // keeps its scroller until it stacks too (`deferred-work.md`).
+        await expectNoInnerHorizontalScroll(page, rotationPage.shiftTypeList.locator('xpath=..'));
+        await expectTouchTargets(page);
+      } finally {
+        await archiveShiftType(fixture.slug, name);
+      }
+    });
+  });
+}

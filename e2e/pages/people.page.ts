@@ -1,9 +1,10 @@
 import { expect, type Locator } from '@playwright/test';
 
 import { dayMonth, fullDate } from '../utils/dates.ts';
-import { fill, hr, plural } from '../utils/i18n.ts';
+import { escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 import { ErasureDialogParts } from './erasure-dialog.ts';
+import { sortControlIn, sortOptionIn, sortPickerIn } from './sort-control.ts';
 
 const membership = hr.smjene.membership;
 const leave = hr.ljudi.leaveRecord;
@@ -39,6 +40,51 @@ export class PeoplePage extends BasePage {
     return this.table
       .getByRole('row')
       .filter({ has: this.page.getByRole('link', { name: fill(hr.ljudi.form.edit, { name }) }) });
+  }
+
+  /** The member list as stacked rows below 640 px (story 7.6), named by the table's caption. */
+  get list(): Locator {
+    return this.page.getByRole('list', { name: hr.ljudi.caption, exact: true });
+  }
+
+  /** Every stacked row, in list order. */
+  get listRows(): Locator {
+    return this.list.getByRole('listitem');
+  }
+
+  /** A member's stacked row: the one holding their link, named as the table's edit link. */
+  listRow(name: string): Locator {
+    return this.listRows.filter({ has: this.page.getByRole('link', { name: fill(hr.ljudi.form.edit, { name }) }) });
+  }
+
+  /** A stacked row's label (`dt`), matched whole. */
+  listLabel(row: Locator, label: string): Locator {
+    return row.locator('dt', { hasText: new RegExp(`^${escapeRegExp(label)}$`) });
+  }
+
+  /** Every stacked row's link, in list order: each named `Uredi osobu {name}`. */
+  get listLinks(): Locator {
+    return this.list.getByRole('link');
+  }
+
+  /** The phone's sort control (story 7.6), whatever the column and direction. */
+  get sortControl(): Locator {
+    return sortControlIn(this.page);
+  }
+
+  /** The sort control's list, open. */
+  get sortPicker(): Locator {
+    return sortPickerIn(this.page);
+  }
+
+  /** A column in the sort control's list. */
+  sortOption(label: string): Locator {
+    return sortOptionIn(this.page, label);
+  }
+
+  /** A sortable heading of the table from 640 px, by its label: `aria-sort` is on it. */
+  columnHeader(label: string): Locator {
+    return this.table.getByRole('columnheader', { name: label, exact: true });
   }
 
   /** The way from the list to the teams screen, a client-side link. */

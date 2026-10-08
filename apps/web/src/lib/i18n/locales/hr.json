@@ -482,6 +482,7 @@
     "email": "Adresa e-pošte",
     "role": "Razina ovlasti",
     "leave": "Dani godišnjeg odmora",
+    "leaveUnit": "{count, plural, one {dan god.} few {dana god.} other {dana god.}}",
     "admin": "Administrator",
     "member": "Član",
     "count": "{count, plural, one {Prikazana # osoba} few {Prikazane # osobe} other {Prikazano # osoba}}",
@@ -1184,5 +1185,13 @@
         "unavailable": "Tvoju smjenu trenutačno nije moguće učitati. Pokušaj ponovno."
       }
     }
+  },
+  "sort": {
+    "label": "Poredano: {column}",
+    "name": "Poredano: {column}, {direction}",
+    "ascending": "uzlazno",
+    "descending": "silazno",
+    "picker": "Poredaj po stupcu",
+    "option": "{column}, {direction}"
   }
 }

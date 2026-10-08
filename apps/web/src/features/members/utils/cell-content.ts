@@ -52,3 +52,13 @@ export function cellContent(cell: MemberCell): string {
 
   return unhandled;
 }
+
+/**
+ * The unit a figure cell's value is read in on a phone's stacked row (story
+ * 7.6), where no column heading stands above it: `dana god.` beside an
+ * allowance, in the count's plural. `null` for a cell that is not a figure.
+ * Decorative beside the row's `dt`, which carries the column's own label.
+ */
+export function cellUnit(cell: MemberCell): string | null {
+  return cell.kind === DAYS_CELL ? t('ljudi.leaveUnit', { count: cell.days }) : null;
+}

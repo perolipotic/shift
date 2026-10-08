@@ -26,6 +26,7 @@ import {
   hoursEmptyOf,
   hoursSearchBaseOf,
   hoursSortArrowOf,
+  hoursSortDirectionArrowOf,
   hoursSortChangeOf,
   hoursSurfaceOf,
   nextHoursSort,
@@ -458,6 +459,9 @@ describe('the sort', () => {
     expect(hoursSortArrowOf(sort, 'ukupno')).toBe('down');
     expect(hoursSortArrowOf(DEFAULT_HOURS_SORT, 'ime')).toBe('up');
     expect(hoursSortArrowOf(sort, 'ime')).toBeNull();
+    // Story 7.6: the phone's sort control points the sorted column's way.
+    expect(hoursSortDirectionArrowOf(sort)).toBe('down');
+    expect(hoursSortDirectionArrowOf(DEFAULT_HOURS_SORT)).toBe('up');
   });
 });
 

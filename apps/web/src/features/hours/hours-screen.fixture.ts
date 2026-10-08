@@ -17,11 +17,17 @@ export const HOURS_SCREEN_PARTS = {
   skeleton: ['features', 'hours', 'components', 'hours-skeleton.tsx'],
   organizationFilters: ['features', 'hours', 'components', 'organization-hours-filters.tsx'],
   organizationTable: ['features', 'hours', 'components', 'organization-hours-table.tsx'],
+  // Story 7.6: the same view as stacked rows below 640 px.
+  organizationRows: ['features', 'hours', 'components', 'organization-hours-rows.tsx'],
+  // Story 7.6: what an empty result says, drawn by both forms.
+  organizationEmpty: ['features', 'hours', 'components', 'organization-hours-empty.tsx'],
   organizationExport: ['features', 'hours', 'components', 'organization-hours-export.tsx'],
   exportHook: ['features', 'hours', 'hooks', 'use-hours-export.ts'],
   monthNav: ['components', 'month-nav.tsx'],
   // Story 7.5: the filter bar Kalendar and Sati share.
   filterBar: ['components', 'filter-bar.tsx'],
+  // Story 7.6: the phone's sort control Sati and Ljudi share.
+  sortControl: ['components', 'sort-control.tsx'],
 } as const;
 
 /**

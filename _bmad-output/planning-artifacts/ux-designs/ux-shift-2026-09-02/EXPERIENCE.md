@@ -108,7 +108,7 @@ Behavioural specs. Visual specs are in `DESIGN.md` § Components.
 - **Hour Band editor.** Bands are entered as a **name and a start time only**; the window, duration, and midnight-crossing flag are derived and shown read-only. A 24-hour bar renders the partition, with any gap hatched and flagged. Entering start times rather than ranges is what makes a gap or overlap unrepresentable instead of validated after the fact.
 - **Pattern builder.** An ordered, reorderable list of shift-type steps of arbitrary length; the same shift type may appear more than once. Derived facts — cycle length, working steps, hours per cycle — update live beneath it.
 - **Cycle preview.** Renders the next full cycle from pattern, offsets, and anchor date before saving, so the configuration is judged by its output rather than its inputs.
-- **Hours table.** Tabular numerals; sortable, and filtered through the filter chips, where the team and the person combine; scrolls inside its own container.
+- **Hours table.** Tabular numerals; sortable, and filtered through the filter chips, where the team and the person combine. From 640 px it is a table that scrolls inside its own container; below 640 px each member is a stacked row (story 7.6): the name linking to their calendar month, `{team} · {n} smjena` under it, `Ukupno` over the total at the top right, then one cell per band and the leave, each with its label, its hours and the band's shifts, and the shifts in unresolved conflict only above zero, as `⚠` and words. The sort is one `Poredano: {column} ↑|↓` control above the rows, and an empty result shows its sentences and two ways out in place of the list.
 - **Hours export.** One secondary action on Organization hours, `Izvezi u Excel`, admin-only. It exports the current period, the rows the filter chips leave, and the sort, and nothing else. While the file is being built the action shows progress and is disabled. A filter that leaves no row closes it. There is no format picker in MVP.
 
 ## State Patterns
@@ -170,6 +170,12 @@ Behavioural. Visual contrast requirements are in `DESIGN.md`.
 | Desktop (> 1024) | Full grid, times visible in cells | Sidebar | Admin default working width |
 
 - The compressed grid is the same component as the full grid with a narrower column treatment, not a separate mobile calendar.
+- **Tables become stacked rows below 640 px** (story 7.6). Sati, Ljudi and the shift-types step render their own figures as a list of rows, never a table that scrolls sideways, and only one of the two forms is ever in the DOM. Every value keeps its column's label for assistive technology. Sort and filter state are kept across the 640 px switch.
+  - **Sati:** as the hours table above.
+  - **Ljudi:** the initials chip (hidden below 360 px, where its width is what lets the level's badge fit), the name, `{team} · {level}` under it, the leave allowance on the right and a chevron. The whole row is the one link to the member (`Uredi osobu {name}`); there is no pencil, and the address is shown only on the member's page and in the table from 640 px.
+  - **Shift types:** the type's chip (its name wraps, never cut), the times as the main line, `{duration} · Prelazi ponoć` under them, and the 44 px edit link on an active type; an archived type has none. A type with no duration has no duration line.
+  - **Sort:** on Sati and Ljudi one `Poredano: {column} ↑|↓` control opens the sortable columns the row shows as pressed buttons (Ljudi's address is not offered, yet still names the control while it is the sorted column); there is no control over an empty result. Picking one is a heading press: a new column starts ascending and the sorted one flips. A pick and Escape return focus to the control.
+  - The calendar, week and rotation-preview grids still scroll inside their own box. The hour-band, team, rotation-offset and rotation-history tables do too until they stack (`deferred-work.md`).
 - Every administrative task completes on a phone. Rotation configuration is the hardest case and the one to test first.
 
 ## Key Flows

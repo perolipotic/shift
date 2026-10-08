@@ -1144,6 +1144,23 @@ export const MEMBER_COLUMNS: readonly MemberColumn[] = [
 ];
 
 /**
+ * One column of {@link MEMBER_COLUMNS}, by its key (story 7.6): the phone's
+ * stacked row places each value by what it IS — the name as the title, the
+ * team and level under it, the allowance on the right — rather than by the
+ * table's column order, and reads every cell and heading from the same
+ * column the table does, so the two forms cannot disagree.
+ *
+ * @throws Error for a key no column has — unreachable while the key is typed.
+ */
+export function memberColumnOf(key: MemberColumnKey): MemberColumn {
+  const column = MEMBER_COLUMNS.find((candidate) => candidate.key === key);
+
+  if (column === undefined) throw new Error(`No member column ${key}`);
+
+  return column;
+}
+
+/**
  * What the row action on this list is NAMED AFTER.
  *
  * A FUNCTION FOR ONE FIELD READ, and it earns its line for the reason every
@@ -1449,7 +1466,21 @@ export type SortIndicator = typeof ARROW_UP | typeof ARROW_DOWN;
 export function sortIndicatorOf(sort: SortState, column: MemberColumnKey): SortIndicator | null {
   if (sort.key !== column) return null;
 
-  return sort.direction === ASCENDING ? ARROW_UP : ARROW_DOWN;
+  return sortDirectionIndicatorOf(sort);
+}
+
+/**
+ * Which way the SORTED column's arrow points (story 7.6): the phone's sort
+ * control names the sorted column, which always has an arrow. A total
+ * mapping of the two directions, so there is no fallback to get wrong.
+ */
+const DIRECTION_INDICATORS: Record<SortDirection, SortIndicator> = {
+  [ASCENDING]: ARROW_UP,
+  [DESCENDING]: ARROW_DOWN,
+};
+
+export function sortDirectionIndicatorOf(sort: SortState): SortIndicator {
+  return DIRECTION_INDICATORS[sort.direction];
 }
 
 /** Every member, whatever their level. */

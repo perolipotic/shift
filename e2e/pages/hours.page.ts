@@ -3,6 +3,7 @@ import type { Download, Locator } from '@playwright/test';
 import { MONTH_TRIGGER_NAME, escapeRegExp, fill, hr } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 import { FilterBarParts } from './filter-bar.ts';
+import { sortControlIn, sortOptionIn, sortPickerIn } from './sort-control.ts';
 
 const kalendar = hr.kalendar;
 const sati = hr.sati;
@@ -191,6 +192,70 @@ export class HoursPage extends BasePage {
   /** The button that sorts by a heading. */
   sortButton(label: string): Locator {
     return this.columnHeader(label).getByRole('button');
+  }
+
+  // ------------------------------------- the stacked rows below 640 px (7.6)
+
+  /** The admin's month as stacked rows on a phone: the list named by the table's caption. */
+  get organizationList(): Locator {
+    const prefix = organization.caption.slice(0, organization.caption.indexOf('{'));
+
+    return this.page.getByRole('list', { name: new RegExp(`^${escapeRegExp(prefix)}`) });
+  }
+
+  /** Every stacked row, in list order. */
+  get organizationListRows(): Locator {
+    return this.organizationList.getByRole('listitem');
+  }
+
+  /** A member's stacked row, found by the link their name is. */
+  organizationListRow(name: string): Locator {
+    return this.organizationListRows.filter({ has: this.page.getByRole('link', { name, exact: true }) });
+  }
+
+  /** The link a member's name is, in the stacked rows. */
+  listMemberLink(name: string): Locator {
+    return this.organizationList.getByRole('link', { name, exact: true });
+  }
+
+  /** Every stacked row's name, in list order. */
+  get listedNames(): Locator {
+    return this.organizationListRows.getByRole('link');
+  }
+
+  /** A stacked row's label (`dt`), matched whole: `Ukupno`, a band's name. */
+  listLabel(row: Locator, label: string): Locator {
+    return row.locator('dt', { hasText: new RegExp(`^${escapeRegExp(label)}$`) });
+  }
+
+  /** A value of a stacked row, by its label (`Ukupno`, a band's name): the `dd` beside that `dt`. */
+  listValue(row: Locator, label: string): Locator {
+    return this.listLabel(row, label).locator('xpath=following-sibling::dd[1]');
+  }
+
+  /** A band cell's hours in a stacked row. */
+  listBandHours(row: Locator, band: string): Locator {
+    return this.listValue(row, band).locator('span.font-semibold');
+  }
+
+  /** A band cell's shift count in a stacked row. */
+  listBandShifts(row: Locator, band: string): Locator {
+    return this.listValue(row, band).locator('span.text-xs');
+  }
+
+  /** The phone's sort control, `Poredano: Osoba, uzlazno`, whatever the column and direction. */
+  get sortControl(): Locator {
+    return sortControlIn(this.page);
+  }
+
+  /** The sort control's list, open. */
+  get sortPicker(): Locator {
+    return sortPickerIn(this.page);
+  }
+
+  /** A column in the sort control's list. */
+  sortOption(label: string): Locator {
+    return sortOptionIn(this.page, label);
   }
 
   /** The filter bar (story 7.5): Smjena and Osoba chips, the summary and the phone sheet. */

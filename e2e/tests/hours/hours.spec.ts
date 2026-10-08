@@ -22,10 +22,11 @@ import {
 } from '../../utils/database-helper.ts';
 import { ADMIN_STATE, MEMBER_STATE, RUN_TIMEZONE } from '../../utils/run-fixture.ts';
 import { fill, hr, plural } from '../../utils/i18n.ts';
-import { expectNoHorizontalScroll } from '../../utils/layout.ts';
+import { expectNoHorizontalScroll, expectNoInnerHorizontalScroll } from '../../utils/layout.ts';
 import { hoursExportFileName, readXlsx, type XlsxCell } from '../../utils/xlsx.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 import { HoursPage } from '../../pages/hours.page.ts';
+import { sortControlName } from '../../pages/sort-control.ts';
 
 /**
  * Story 4.1b: *Sati*, the viewer's own month of hours. The fixture team gets
@@ -552,13 +553,17 @@ test.describe('as an admin', () => {
     await expect(hoursPage.columnHeader(organization.total)).toHaveAttribute('aria-sort', 'descending');
     await expect(hoursPage.filters.teamChip).toHaveAccessibleName(hoursPage.filters.teamChipText(fixture.team.name));
 
-    // No sideways page scroll at phone width: the table scrolls in its own box.
+    // STORY 7.6: at phone width the table becomes stacked rows — the same
+    // filter and sort, nothing scrolling sideways, the page or inside it.
     await page.setViewportSize({ width: 390, height: 844 });
-    await expect(hoursPage.organizationTable).toBeVisible();
+    await expect(hoursPage.organizationList).toBeVisible();
+    await expect(hoursPage.organizationTable).toHaveCount(0);
+    await expect(hoursPage.sortControl).toHaveAccessibleName(sortControlName(organization.total, false));
     await expectNoHorizontalScroll(page);
+    await expectNoInnerHorizontalScroll(page);
 
     // The name opens their calendar month, where the roster changes behind a figure show.
-    await hoursPage.memberLink(fixture.member.name).click();
+    await hoursPage.listMemberLink(fixture.member.name).click();
     await expect(page).toHaveURL(new RegExp(`/kalendar\\?.*mjesec=${next}`));
     await expect(page).toHaveURL(/[?&]prikaz=sve/);
     await expect(page).toHaveURL(/[?&]osoba=/);
@@ -626,6 +631,23 @@ test.describe('as an admin', () => {
         { name: 'shown', count: 0 },
       ),
     );
+
+    // STORY 7.6: on a phone the same filters show no list, only the two
+    // sentences and the two ways out — `Poništi filtre` beside the summary's.
+    await page.setViewportSize({ width: 390, height: 844 });
+    const main = page.getByRole('main');
+    await expect(main.getByText(fill(hr.filter.empty.notInTeam, when), { exact: true })).toBeVisible();
+    await expect(main.getByText(fill(hr.filter.empty.noTeam, when), { exact: true })).toBeVisible();
+    await expect(hoursPage.organizationList).toHaveCount(0);
+    await expect(hoursPage.organizationTable).toHaveCount(0);
+    await expect(
+      main.getByRole('button', { name: fill(hr.filter.empty.removeTeam, { team: fixture.team.name }), exact: true }),
+    ).toBeVisible();
+    await expect(main.getByRole('button', { name: hr.filter.clear, exact: true })).toHaveCount(2);
+    await expectNoHorizontalScroll(page);
+    await expectNoInnerHorizontalScroll(page);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await expect(hoursPage.organizationTable).toBeVisible();
 
     // `Ukloni filtar: <team>` keeps the person and stays on the screen.
     await hoursPage.emptyRemoveTeam(fixture.team.name).click();
@@ -738,7 +760,7 @@ test.describe('the filters on a phone, as an admin', () => {
     fixture,
   }) => {
     await hoursPage.goto();
-    await expect(hoursPage.organizationTable).toBeVisible();
+    await expect(hoursPage.organizationList).toBeVisible();
     const filters = hoursPage.filters;
 
     await filters.filtriButton.click();
@@ -757,8 +779,125 @@ test.describe('the filters on a phone, as an admin', () => {
     await expect(filters.filtriButton).toHaveAccessibleName(fill(hr.filter.openCount, { count: '2' }));
     await expect(filters.removeTeam(fixture.team.name)).toBeVisible();
     await expect(filters.removePerson(fixture.member.name)).toBeVisible();
-    await expect(hoursPage.organizationRows).toHaveCount(1);
+    await expect(hoursPage.organizationListRows).toHaveCount(1);
     await expectNoHorizontalScroll(page);
+    await expectNoInnerHorizontalScroll(page);
+  });
+
+  test('the month is stacked rows whose every value keeps its label, sorted through one control (story 7.6)', async ({
+    browser,
+    page,
+    hoursPage,
+    fixture,
+  }) => {
+    // WHAT THE MEMBER READS on their own Sati, in a session of their own —
+    // the figures their stacked row must repeat, band by band.
+    const memberContext = await browser.newContext({ storageState: MEMBER_STATE });
+    let memberTotal: string;
+    let memberBandNames: string[];
+    let memberBandHours: string[];
+    let memberBandShifts: string[];
+    try {
+      const memberHours = new HoursPage(await memberContext.newPage());
+      await memberHours.goto();
+      await expect(memberHours.tileValue(sati.total)).toHaveText(/\S/);
+      await expect(memberHours.bandNames.first()).toBeVisible();
+      memberTotal = ((await memberHours.tileValue(sati.total).textContent()) ?? '').trim();
+      memberBandNames = (await memberHours.bandNames.allTextContents()).map((text) => text.trim());
+      memberBandHours = (await memberHours.bandHourFigures.allTextContents()).map((text) => text.trim());
+      memberBandShifts = (await memberHours.bandShiftFigures.allTextContents()).map((text) => text.trim());
+    } finally {
+      await memberContext.close();
+    }
+
+    await hoursPage.goto();
+    await expect(hoursPage.organizationList).toBeVisible();
+    await expect(hoursPage.organizationTable).toHaveCount(0);
+    await expectNoHorizontalScroll(page);
+    await expectNoInnerHorizontalScroll(page);
+
+    // EVERY VALUE KEEPS ITS COLUMN'S LABEL for assistive technology: the
+    // member's row names its total under `Ukupno`, and each band and the
+    // leave under their own labels, shown above the figure.
+    const row = hoursPage.organizationListRow(fixture.member.name);
+    await expect(row).toHaveCount(1);
+    for (const label of [organization.member, organization.team, organization.shifts, organization.total, organization.leave]) {
+      await expect(hoursPage.listValue(row, label)).toHaveCount(1);
+    }
+    await expect(hoursPage.listValue(row, organization.total)).toHaveText(memberTotal);
+    await expect(hoursPage.listLabel(row, organization.total)).toBeVisible();
+    await expect(hoursPage.listValue(row, organization.leave)).toHaveText(sati.noFigure);
+    // EVERY FIXTURE BAND under its own visible label, with the member's own
+    // hours and shifts for it.
+    for (const band of fixture.bands) {
+      const index = memberBandNames.indexOf(band.name);
+      expect(index, `the member reads ${band.name}`).toBeGreaterThanOrEqual(0);
+      await expect(hoursPage.listLabel(row, band.name)).toBeVisible();
+      await expect(hoursPage.listBandHours(row, band.name)).toHaveText(memberBandHours[index] ?? '');
+      await expect(hoursPage.listBandShifts(row, band.name)).toHaveText(memberBandShifts[index] ?? '');
+    }
+
+    // THE SORT CONTROL: name ascending by default.
+    const control = hoursPage.sortControl;
+    await expect(control).toHaveAccessibleName(sortControlName(organization.member, true));
+    // THE FIXTURE'S THREE, in the order shown: other specs add members to the
+    // run organization in parallel, so only these three are compared.
+    const fixed = new Set([fixture.admin.name, fixture.member.name, fixture.spare.name]);
+    const shownOrder = async (): Promise<string[]> =>
+      (await hoursPage.listedNames.allTextContents()).map((name) => name.trim()).filter((name) => fixed.has(name));
+    const names = await shownOrder();
+    expect(names, 'the three fixture members are listed').toHaveLength(3);
+
+    // Opening focuses the sorted column, which says its direction in words;
+    // ↑ ↓ Home End move among the columns; Escape closes the list and puts
+    // focus back on the control.
+    await control.click();
+    await expect(hoursPage.sortPicker).toBeVisible();
+    const first = hoursPage.sortOption(organization.member);
+    await expect(first).toHaveAttribute('aria-pressed', 'true');
+    await expect(first).toHaveAccessibleName(fill(hr.sort.option, { column: organization.member, direction: hr.sort.ascending }));
+    await expect(first).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(hoursPage.sortOption(organization.team)).toBeFocused();
+    await expect(hoursPage.sortOption(organization.team)).toHaveAttribute('aria-pressed', 'false');
+    await page.keyboard.press('End');
+    await expect(hoursPage.sortOption(organization.leave)).toBeFocused();
+    await page.keyboard.press('ArrowDown');
+    await expect(hoursPage.sortOption(organization.leave)).toBeFocused();
+    await page.keyboard.press('Home');
+    await expect(first).toBeFocused();
+    await page.keyboard.press('ArrowUp');
+    await expect(first).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(hoursPage.sortPicker).toHaveCount(0);
+    await expect(control).toBeFocused();
+
+    // Picking the sorted column flips it, as a heading press would.
+    await control.click();
+    await hoursPage.sortOption(organization.member).click();
+    await expect(page).toHaveURL(/[?&]smjer=silazno/);
+    await expect(hoursPage.sortPicker).toHaveCount(0);
+    await expect(control).toBeFocused();
+    await expect(control).toHaveAccessibleName(sortControlName(organization.member, false));
+    await expect.poll(shownOrder).toEqual([...names].reverse());
+
+    // Another column starts ascending, and the choice is the URL's.
+    await control.click();
+    await hoursPage.sortOption(organization.total).click();
+    await expect(page).toHaveURL(/[?&]sort=ukupno/);
+    await expect(page).not.toHaveURL(/[?&]smjer=/);
+    await expect(control).toHaveAccessibleName(sortControlName(organization.total, true));
+    await control.click();
+    await hoursPage.sortOption(organization.total).click();
+    await expect(page).toHaveURL(/[?&]smjer=silazno/);
+    await expect(control).toBeFocused();
+
+    // ACROSS 640 PX THE STATE IS KEPT: the table, sorted by total descending.
+    await page.setViewportSize({ width: 1024, height: 800 });
+    await expect(hoursPage.organizationTable).toBeVisible();
+    await expect(hoursPage.organizationList).toHaveCount(0);
+    await expect(hoursPage.columnHeader(organization.total)).toHaveAttribute('aria-sort', 'descending');
+    await expect(hoursPage.sortControl).toHaveCount(0);
   });
 });
 
@@ -828,6 +967,20 @@ test.describe('the conflict count, as an admin', () => {
     expect(countOf(member.name)).toEqual({ type: 'number', value: expected, format: null });
     expect(countOf(fixture.member.name)).toEqual({ type: 'number', value: 0, format: null });
     expect(countOf(fixture.admin.name)).toEqual({ type: 'number', value: 0, format: null });
+
+    // STORY 7.6, ON A PHONE: the member's stacked row says `⚠` and the
+    // shifts in words under the conflicts label; a row at zero has no such
+    // field at all.
+    await page.setViewportSize({ width: 390, height: 844 });
+    const phoneRow = hoursPage.organizationListRow(member.name);
+    await expect(phoneRow).toHaveCount(1);
+    const phoneConflicts = hoursPage.listValue(phoneRow, organization.conflicts);
+    await expect(phoneConflicts).toHaveText(`⚠${plural(sati.conflicts, expected)}`);
+    await expect(phoneConflicts.locator('[aria-hidden]')).toHaveText('⚠');
+    await expect(hoursPage.listLabel(hoursPage.organizationListRow(fixture.member.name), organization.conflicts)).toHaveCount(0);
+    await expect(hoursPage.listLabel(hoursPage.organizationListRow(fixture.admin.name), organization.conflicts)).toHaveCount(0);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await expect(hoursPage.organizationTable).toBeVisible();
 
     // THE NEXT MONTH counts only its own dates.
     await hoursPage.nextButton.click();

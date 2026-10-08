@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 10-08-2026 11:15
+last_updated: 10-08-2026 12:00
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -541,7 +541,7 @@ development_status:
   7-3-the-phone-bar-has-four-tabs-and-vise: done
   7-4-kalendar-and-sati-share-one-month-toolbar: done
   7-5-filters-are-chips-that-say-what-is-shown-and-clear-in-one-ac: done
-  7-6-tables-become-stacked-rows-on-a-phone: backlog
+  7-6-tables-become-stacked-rows-on-a-phone: review
   7-7-sign-in-is-one-form: backlog
   7-8-a-member-s-first-sign-in-makes-them-set-their-own-password: backlog
   7-9-day-detail-changes-open-in-their-own-dialogs: backlog

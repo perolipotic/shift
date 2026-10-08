@@ -28,6 +28,10 @@ export const SHIFT_TYPE_LIST_PARTS = {
   hook: ['features', 'shift-types', 'hooks', 'use-shift-type-list.ts'],
   section: ['features', 'shift-types', 'components', 'shift-type-list-section.tsx'],
   table: ['features', 'shift-types', 'components', 'shift-type-table.tsx'],
+  // Story 7.6: the same rows stacked below 640 px.
+  rows: ['features', 'shift-types', 'components', 'shift-type-rows.tsx'],
+  // Story 7.6: what a type's times and duration say, shared by both forms.
+  cells: ['features', 'shift-types', 'components', 'shift-type-cells.tsx'],
   addDialog: ['features', 'shift-types', 'components', 'shift-type-add-dialog.tsx'],
 } as const;
 
