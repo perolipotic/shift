@@ -5,9 +5,8 @@ import { cn } from "@/lib/utils"
 // Vendored from shadcn/ui and restyled ONCE, here, to DESIGN.md's register
 // (visual refresh A): uppercase header cells on `muted`, dividing rows that
 // tint on hover, and roomier cells. Screens compose these and never restyle
-// them. Only the parts the member list uses are here — there is no
-// `TableFooter`, because nothing sums a column yet and a primitive nothing
-// renders is a primitive nobody reviewed.
+// them. Only the parts the screens use are here; `TableFooter` joined them
+// when *Sati*'s organization table first summed its columns (story 7.14).
 //
 // `Table`'s own wrapper is `overflow-auto`, and that is the ONE scroll
 // container DESIGN.md §Layout & Spacing grants a table from 640 px: wide
@@ -96,6 +95,18 @@ const TableCell = React.forwardRef<
 ))
 TableCell.displayName = "TableCell"
 
+const TableFooter = React.forwardRef<
+  HTMLTableSectionElement,
+  React.HTMLAttributes<HTMLTableSectionElement>
+>(({ className, ...props }, ref) => (
+  <tfoot
+    ref={ref}
+    className={cn("border-t bg-muted/50 font-semibold [&>tr]:border-b-0", className)}
+    {...props}
+  />
+))
+TableFooter.displayName = "TableFooter"
+
 const TableCaption = React.forwardRef<
   HTMLTableCaptionElement,
   React.HTMLAttributes<HTMLTableCaptionElement>
@@ -112,6 +123,7 @@ export {
   Table,
   TableHeader,
   TableBody,
+  TableFooter,
   TableHead,
   TableRow,
   TableCell,

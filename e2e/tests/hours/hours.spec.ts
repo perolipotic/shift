@@ -271,7 +271,8 @@ test.describe('as a member', () => {
     expect(shifts, 'the seeded month holds a working shift').toBeGreaterThan(0);
 
     await hoursPage.goto();
-    await expect(hoursPage.heading(hr.nav.sati)).toBeVisible();
+    // A member's own page is *Moji sati* (story 7.14), the whole title: *Sati* alone would match it in part.
+    await expect(hoursPage.heading(sati.title.own, { exact: true })).toBeVisible();
     await expect(hoursPage.monthHeading(monthHeading(rotation.today))).toBeVisible();
     await expect(hoursPage.figureIn(hoursPage.totalTile, hoursOf(shifts))).toBeVisible();
     // No export for a member-role account, not even of their own hours (story 4.3).
@@ -312,6 +313,35 @@ test.describe('as a member', () => {
     // On the current month, "ovaj mjesec" is a label, not a button (story 7.4).
     await expect(hoursPage.thisMonthLabel).toBeVisible();
     await expect(hoursPage.currentButton).toHaveCount(0);
+  });
+
+  test('the explanation of the total lists the shifts, and every way of closing it returns focus to its ⓘ (story 7.14)', async ({
+    page,
+    hoursPage,
+    fixture,
+  }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+    // A figure of 0 has no ⓘ, so the member needs a worked shift this month: the seeded rotation starts on Dan today.
+    await seeded(fixture.slug, fixture.team.id);
+
+    await hoursPage.goto();
+    await expect(hoursPage.heading(sati.title.own, { exact: true })).toBeVisible();
+
+    const opener = hoursPage.totalExplainButton;
+
+    // The ✕, the backdrop and Escape: a native `<dialog>` closed, never unmounted open.
+    for (const close of [
+      () => hoursPage.explanationClose.click(),
+      () => page.mouse.click(2, 2),
+      () => page.keyboard.press('Escape'),
+    ]) {
+      await opener.click();
+      await expect(hoursPage.explanation).toBeVisible();
+      await expect(hoursPage.explanation.getByRole('listitem').first()).toBeVisible();
+      await close();
+      await expect(hoursPage.explanation).toBeHidden();
+      await expect(opener).toBeFocused();
+    }
   });
 
   test("a failed read of their own leave shows the unavailable message with a retry, and the retry brings their figures back", async ({

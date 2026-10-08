@@ -532,6 +532,29 @@
     "untimed": "{count, plural, one {# smjena nema upisano vrijeme pa nije uračunata u sate.} few {# smjene nemaju upisano vrijeme pa nisu uračunate u sate.} other {# smjena nema upisano vrijeme pa nije uračunato u sate.}}",
     "conflicts": "{count, plural, one {# smjena u neriješenom konfliktu} few {# smjene u neriješenom konfliktu} other {# smjena u neriješenom konfliktu}}",
     "retry": "Pokušaj ponovno",
+    "title": {
+      "own": "Moji sati"
+    },
+    "explain": {
+      "open": "Što čini iznos: {figure}",
+      "title": "Što čini iznos",
+      "contextUnavailable": "Nije moguće prikazati sastav ovog iznosa.",
+      "close": "Zatvori",
+      "month": "{month} {year}.",
+      "memberMonth": "{name} · {month}",
+      "line": "{team} · {shiftType} · {source}",
+      "conflict": "u neriješenom konfliktu",
+      "plus": "+",
+      "equals": "=",
+      "sum": "Zbroj",
+      "empty": "Nijedna smjena ne ulazi u ovaj iznos.",
+      "unavailable": "Iznos trenutačno nije moguće objasniti. Pokušaj ponovno.",
+      "source": {
+        "rotation": "rotacija",
+        "change": "promjena",
+        "replacement": "zamjena"
+      }
+    },
     "error": {
       "unavailable": "Sate trenutačno nije moguće učitati. Pokušaj ponovno."
     },
@@ -542,6 +565,7 @@
       "shifts": "Smjene",
       "total": "Ukupno",
       "leave": "Godišnji odmor",
+      "footer": "Ukupno za prikazane osobe",
       "conflicts": "Neriješeni konflikti",
       "noTeam": "—",
       "emptyMonth": "U ovom mjesecu nema nijedne osobe.",
@@ -549,6 +573,7 @@
         "action": "Izvezi u Excel",
         "pending": "Izvoz…",
         "failed": "Izvoz nije uspio. Osvježi stranicu i pokušaj ponovno.",
+        "done": "{count, plural, one {Preuzeta je datoteka {fileName} s # osobom.} few {Preuzeta je datoteka {fileName} s # osobe.} other {Preuzeta je datoteka {fileName} s # osoba.}}",
         "sheetName": "Sati",
         "fileName": "Sati {organization} {month} {year}"
       }

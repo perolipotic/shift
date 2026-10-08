@@ -1,12 +1,20 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  HOURS_FIGURE_BAND,
+  HOURS_FIGURE_LEAVE,
+  HOURS_FIGURE_TOTAL,
+  HOURS_SOURCE_CHANGE,
+  HOURS_SOURCE_REPLACEMENT,
+  HOURS_SOURCE_ROTATION,
   datesOfMonth,
+  explainMemberHours,
   deriveHourBands,
   memberHoursOfMonth,
   memberScheduleOfMonth,
   projectedShiftTypeOn,
   type HourBand,
+  type HoursFigureCode,
   type LeaveShift,
   type MemberHours,
   type MemberHoursInput,
@@ -833,5 +841,86 @@ describe('the invariant, over randomized configurations', () => {
       expect(hours.unbandedMinutes === 0, `${label}: unbanded only with no bands`).toBe(bands.length > 0 || hours.totalMinutes === 0);
       expect(hours, label).toEqual(oracleHours(input, month));
     }
+  });
+});
+
+describe('a figure explains itself as codes and operands (story 7.14)', () => {
+  const figuresOf = (hours: MemberHours): readonly (readonly [HoursFigureCode, number])[] => [
+    [{ code: HOURS_FIGURE_TOTAL }, hours.totalMinutes],
+    [{ code: HOURS_FIGURE_LEAVE }, hours.leaveMinutes],
+    ...hours.bands.map((band): readonly [HoursFigureCode, number] => [{ code: HOURS_FIGURE_BAND, bandId: band.bandId }, band.minutes]),
+  ];
+
+  it.each(FIXTURES)('$fixture: every figure of every member is the exact sum of its operands', (fx) => {
+    const alfa = fx.teams[0]!.id;
+    const bravo = fx.teams[1]!.id;
+    const date = dateWhere(fx, [alfa], bravo);
+    const rosterOverrides: RosterOverride[] = [{ id: 'r1', teamId: alfa, date, memberOutId: `${alfa}-1`, memberInId: `${bravo}-1` }];
+    const leaveShifts = [{ date: dateWhere(fx, [bravo], null), teamId: bravo }];
+    for (const member of membersOf(fx.teams)) {
+      const input = fixtureInput(fx, member.id, { rosterOverrides, leaveShifts });
+      for (const [figure, minutes] of figuresOf(memberHoursOfMonth(input, MONTH))) {
+        const explanation = explainMemberHours(input, MONTH, figure);
+        expect(explanation.minutes, `${member.id} ${figure.code}`).toBe(minutes);
+        expect(explanation.operands.reduce((sum, operand) => sum + operand.minutes, 0)).toBe(minutes);
+        const dates = explanation.operands.map((operand) => operand.date);
+        expect(dates).toEqual([...dates].sort());
+      }
+    }
+  });
+
+  it('names where each shift came from: the rotation, a change, or a replacement', () => {
+    const fx = FIXTURES[0];
+    const alfa = fx.teams[0]!.id;
+    const bravo = fx.teams[1]!.id;
+    const date = dateWhere(fx, [alfa], bravo);
+    const rosterOverrides: RosterOverride[] = [{ id: 'r1', teamId: alfa, date, memberOutId: `${alfa}-1`, memberInId: `${bravo}-1` }];
+    const replaced = explainMemberHours(fixtureInput(fx, `${bravo}-1`, { rosterOverrides }), MONTH, { code: HOURS_FIGURE_TOTAL });
+    expect(replaced.operands.find((operand) => operand.date === date)?.source).toBe(HOURS_SOURCE_REPLACEMENT);
+    expect(replaced.operands.filter((operand) => operand.source === HOURS_SOURCE_REPLACEMENT)).toHaveLength(1);
+
+    const changeDate = dateWhere(fx, [alfa], null);
+    const projected = projectedShiftTypeOn(fx.assignments.filter((one) => one.teamId === alfa), fx.steps, changeDate);
+    const working = fx.types.find((type) => type.isWorking && type.id !== projected)!;
+    const overrides: ShiftTypeOverride[] = [{ teamId: alfa, date: changeDate, shiftTypeId: working.id }];
+    const changed = explainMemberHours(fixtureInput(fx, `${alfa}-1`, { overrides }), MONTH, { code: HOURS_FIGURE_TOTAL });
+    expect(changed.operands.find((operand) => operand.date === changeDate)?.source).toBe(HOURS_SOURCE_CHANGE);
+    expect(changed.operands.filter((operand) => operand.source === HOURS_SOURCE_ROTATION).length).toBeGreaterThan(0);
+  });
+
+  it('keeps a leave shift out of the total and in the leave', () => {
+    const fx = FIXTURES[1];
+    const alfa = fx.teams[0]!.id;
+    const date = dateWhere(fx, [alfa], null);
+    const input = fixtureInput(fx, `${alfa}-1`, { leaveShifts: [{ date, teamId: alfa }] });
+    const total = explainMemberHours(input, MONTH, { code: HOURS_FIGURE_TOTAL });
+    expect(total.operands.some((operand) => operand.date === date)).toBe(false);
+    const leave = explainMemberHours(input, MONTH, { code: HOURS_FIGURE_LEAVE });
+    expect(leave.operands.map((operand) => operand.date)).toEqual([date]);
+  });
+
+  it('puts a shift across a band edge in every band it touches', () => {
+    const fx = FIXTURES[1];
+    const input = fixtureInput(fx, `${fx.teams[0]!.id}-1`);
+    const hours = memberHoursOfMonth(input, MONTH);
+    const operands = hours.bands.map((band) => explainMemberHours(input, MONTH, { code: HOURS_FIGURE_BAND, bandId: band.bandId }).operands.length);
+    // UJ-5: every shift straddles an edge, so it is an operand of two bands.
+    expect(operands.reduce((sum, count) => sum + count, 0)).toBe(hours.bands.reduce((sum, band) => sum + band.shiftCount, 0));
+    expect(operands.reduce((sum, count) => sum + count, 0)).toBe(2 * hours.shiftCount);
+  });
+
+  it('is empty for a figure of 0, and refuses a band that is not given', () => {
+    const fx = FIXTURES[0];
+    const input = fixtureInput(fx, `${fx.teams[0]!.id}-1`);
+    expect(explainMemberHours(input, MONTH, { code: HOURS_FIGURE_LEAVE })).toEqual({ figure: { code: HOURS_FIGURE_LEAVE }, minutes: 0, operands: [] });
+    expect(() => explainMemberHours(input, MONTH, { code: HOURS_FIGURE_BAND, bandId: 'nope' })).toThrow(RangeError);
+  });
+
+  it('is the rotation for a shift nothing changed', () => {
+    const fx = FIXTURES[0];
+    const input = fixtureInput(fx, `${fx.teams[0]!.id}-1`);
+    const explanation = explainMemberHours(input, MONTH, { code: HOURS_FIGURE_TOTAL });
+    expect(explanation.operands.length).toBeGreaterThan(0);
+    expect(explanation.operands.every((operand) => operand.source === HOURS_SOURCE_ROTATION)).toBe(true);
   });
 });

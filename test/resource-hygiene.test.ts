@@ -151,6 +151,9 @@ const SANCTIONED_PLURAL_KEYS = [
   // STORY 5.3d: the viewer's shifts in unresolved conflict on *Sati*, shown
   // only above 0 — `1 smjena`, `2 smjene`, `5 smjena u neriješenom konfliktu`.
   'sati.conflicts',
+  // STORY 7.14: the status line after a downloaded hours file — its name and
+  // how many people it holds, `1 osobom`, `3 osobe`, `17 osoba`.
+  'sati.organization.export.done',
   // STORY 7.5: the filter bar Kalendar and Sati share — a team's person
   // count (`4 osobe`), the summary line with no filter, a team, or a team and
   // a person (`17 osoba`, `4 osobe od 17`, `0 osoba`), and the sheet's
@@ -1450,6 +1453,30 @@ const SANCTIONED_SCREEN_KEYS = [
   // read failed — the snapshot's or the leave's *Sati* now waits for.
   'sati.organization.conflicts',
   'sati.retry',
+  // STORY 7.14: a member's page title, *Moji sati*; the organization table's
+  // footer total; and the dialog behind an hours figure's ⓘ — the button's
+  // name, the dialog's title, close, month and member lines, a shift's line
+  // and its words for a shift in unresolved conflict, the sum's name, the
+  // empty and the unavailable sentences, and the three words a shift's source
+  // reads as. The figures and names are data.
+  'sati.title.own',
+  'sati.organization.footer',
+  'sati.explain.open',
+  'sati.explain.title',
+  'sati.explain.contextUnavailable',
+  'sati.explain.close',
+  'sati.explain.month',
+  'sati.explain.memberMonth',
+  'sati.explain.line',
+  'sati.explain.conflict',
+  'sati.explain.plus',
+  'sati.explain.equals',
+  'sati.explain.sum',
+  'sati.explain.empty',
+  'sati.explain.unavailable',
+  'sati.explain.source.rotation',
+  'sati.explain.source.change',
+  'sati.explain.source.replacement',
   // STORY 5.1c: the member page's leave card — its heading, the used and
   // balance figures' labels (the allowance's is `ljudi.leave`), the form's
   // legend, its two date labels and its action, the preview's two labels, the
