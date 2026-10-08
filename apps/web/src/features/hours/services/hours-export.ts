@@ -170,43 +170,39 @@ export function hoursExportMessageKey(
 }
 
 /**
- * The status line after a download (story 7.14; FR-42a): the file's name and
- * how many people it holds — the sheet's own, so the line cannot name a file
- * other than the one written. `null` when the sheet cannot be built.
+ * What the status line after a download says (story 7.14; FR-42a): the
+ * file's name and how many people it holds.
  */
-export function hoursExportDoneOf(
-  view: OrganizationHoursView,
-  organizationName: string,
-): { readonly fileName: string; readonly count: number } | null {
-  try {
-    return { fileName: hoursExportOf(view, organizationName).fileName, count: view.rows.length };
-  } catch (cause) {
-    if (!(cause instanceof RangeError)) throw cause;
-
-    return null;
-  }
-}
+// A type, not an interface: `t()` takes it as its values.
+export type HoursExportDone = {
+  readonly fileName: string;
+  readonly count: number;
+};
 
 /** What writes a sheet to a file: `./xlsx`'s writer, or a test's. */
 export type HoursExportWriter = (sheet: HoursExport) => Promise<void>;
 
 /**
- * Builds the sheet and writes it, GUARDED: a failed build, a writer that
- * cannot load, or one that refuses, is logged and answered `false` — never
- * thrown, so the screen shows its message and offers the action again.
+ * Builds the sheet and writes it, answering what its status line says — the
+ * written sheet's own name and row count, so the line cannot name a file
+ * other than the one written. GUARDED: a failed build, a writer that cannot
+ * load, or one that refuses, is logged and answered `null` — never thrown, so
+ * the screen shows its message and offers the action again.
  */
 export async function exportHours(
   view: OrganizationHoursView,
   organizationName: string,
   write: HoursExportWriter,
-): Promise<boolean> {
+): Promise<HoursExportDone | null> {
   try {
-    await write(hoursExportOf(view, organizationName));
+    const sheet = hoursExportOf(view, organizationName);
 
-    return true;
+    await write(sheet);
+
+    return { fileName: sheet.fileName, count: sheet.rows.length };
   } catch (cause) {
     console.error(HOURS_EXPORT_FAILED, cause);
 
-    return false;
+    return null;
   }
 }

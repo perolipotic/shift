@@ -271,7 +271,8 @@ test.describe('as a member', () => {
     expect(shifts, 'the seeded month holds a working shift').toBeGreaterThan(0);
 
     await hoursPage.goto();
-    await expect(hoursPage.heading(hr.nav.sati)).toBeVisible();
+    // A member's own page is *Moji sati* (story 7.14), the whole title: *Sati* alone would match it in part.
+    await expect(hoursPage.heading(sati.title.own, { exact: true })).toBeVisible();
     await expect(hoursPage.monthHeading(monthHeading(rotation.today))).toBeVisible();
     await expect(hoursPage.figureIn(hoursPage.totalTile, hoursOf(shifts))).toBeVisible();
     // No export for a member-role account, not even of their own hours (story 4.3).
@@ -319,7 +320,7 @@ test.describe('as a member', () => {
     hoursPage,
   }) => {
     await hoursPage.goto();
-    await expect(hoursPage.heading(sati.title.own)).toBeVisible();
+    await expect(hoursPage.heading(sati.title.own, { exact: true })).toBeVisible();
 
     const opener = hoursPage.totalExplainButton;
 

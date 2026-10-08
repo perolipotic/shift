@@ -5,7 +5,8 @@ created: '2026-10-08'
 status: 'in-review'
 review_loop_iteration: 0
 context:
-  - '{project-root}/_bmad-output/planning-artifacts/ux-designs/ux-shift-2026-10-01-redesign/README.md'
+  - '{project-root}/_bmad-output/planning-artifacts/ux-designs/ux-shift-2026-09-02/DESIGN.md'
+  - '{project-root}/_bmad-output/planning-artifacts/ux-designs/ux-shift-2026-09-02/EXPERIENCE.md'
 ---
 
 <frozen-after-approval reason="human-owned intent — do not modify unless human renegotiates">
@@ -37,6 +38,8 @@ context:
 
 - "a drawer lists the shifts and bands that compose it": drawn in the shared modal `Dialog` (the app's one modal primitive, EXPERIENCE.md), not a new side-sheet component, so the epic's "drawer" is a modal dialog.
 - "any figure on Sati": the hours figures (total, each band, leave) get an ⓘ; shift counts do not, they are counts, not hours.
+- "any figure on Sati": the organization table's footer totals have no ⓘ. The footer is the sum of the rows above it, and each row's figure has its own ⓘ (review of PR #179).
+- "the shifts and bands that compose it": the Total dialog lists each shift with its whole duration; the split of a shift across bands is shown in each band's own dialog, not in the Total's (review of PR #179).
 
 </frozen-after-approval>
 
