@@ -71,8 +71,14 @@ export const HOURS_UNAVAILABLE = 'HOURS_UNAVAILABLE';
 
 export type HoursFailure = typeof HOURS_UNAVAILABLE;
 
-/** The search parameter naming the one team the organization's table is narrowed to (story 4.2). */
-export const HOURS_TEAM_PARAM = 'tim';
+/**
+ * The search parameter naming the one team the organization's table is
+ * narrowed to (story 4.2): `smjena`, as on the calendar, since story 7.5.
+ */
+export const HOURS_TEAM_PARAM = 'smjena';
+
+/** The parameter *Sati* named the team with before story 7.5: an old URL carrying it is redirected. */
+export const LEGACY_HOURS_TEAM_PARAM = 'tim';
 
 /** The search parameter naming the one person the organization's table is narrowed to (story 4.2). */
 export const HOURS_PERSON_PARAM = 'osoba';
@@ -105,13 +111,13 @@ export type HoursSortDirection = typeof SORT_UP | typeof SORT_DOWN;
 
 /**
  * *Sati*'s search, as `validateSearch` returns it: each parameter valid in
- * its own shape, or absent. Whether `tim`, `osoba` or a band's `sort` names
+ * its own shape, or absent. Whether `smjena`, `osoba` or a band's `sort` names
  * something the snapshot holds is the organization view's decision, not the
  * parser's: the parser cannot see the snapshot.
  */
 export interface HoursSearch {
   readonly mjesec?: string | undefined;
-  readonly tim?: string | undefined;
+  readonly smjena?: string | undefined;
   readonly osoba?: string | undefined;
   readonly sort?: HoursSortKey | undefined;
   readonly smjer?: HoursSortDirection | undefined;
@@ -136,7 +142,7 @@ function nonEmptyText(value: unknown): value is string {
 
 /**
  * The raw search as *Sati* reads it: `?mjesec=YYYY-MM`, the calendar's own
- * rule, and for an admin's table (story 4.2) `tim`, `osoba`, `sort` and
+ * rule, and for an admin's table (story 4.2) `smjena`, `osoba`, `sort` and
  * `smjer`. Each invalid or missing parameter is dropped on its own — a month
  * falls back to the organization's current one, a sort to the name,
  * ascending — and every other parameter is dropped too.
@@ -150,7 +156,7 @@ export function hoursSearchOf(search: Record<string, unknown>): HoursSearch {
 
   return {
     ...(isCalendarMonth(month) ? { mjesec: month } : {}),
-    ...(nonEmptyText(team) ? { tim: team } : {}),
+    ...(nonEmptyText(team) ? { smjena: team } : {}),
     ...(nonEmptyText(person) ? { osoba: person } : {}),
     ...(isHoursSortKey(sort) ? { sort } : {}),
     ...(isHoursSortDirection(direction) ? { smjer: direction } : {}),
@@ -158,14 +164,28 @@ export function hoursSearchOf(search: Record<string, unknown>): HoursSearch {
 }
 
 /**
- * A change of the search: the month (`null`: the current one), the team or
- * the person (`null`: all), or the sort (both keys; `null` drops either, the
+ * The search an old *Sati* URL (before story 7.5) is redirected to, or
+ * `null` when it names no `tim`: `tim` becomes `smjena`, appended last, and
+ * every other parameter is kept as it was, in order. A `smjena` already there
+ * wins, and `tim` is dropped.
+ */
+export function legacyHoursSearchOf(search: Record<string, unknown>): Record<string, unknown> | null {
+  if (!(LEGACY_HOURS_TEAM_PARAM in search)) return null;
+
+  const { [LEGACY_HOURS_TEAM_PARAM]: team, ...rest } = search;
+
+  return HOURS_TEAM_PARAM in rest ? rest : { ...rest, [HOURS_TEAM_PARAM]: team };
+}
+
+/**
+ * A change of the search: the month (`null`: the current one), the filters —
+ * the team and the person, both keys, as the filter bar writes them (story
+ * 7.5; `null`: all) — or the sort (both keys; `null` drops either, the
  * default).
  */
 export type HoursSearchChange =
   | { readonly mjesec: string | null }
-  | { readonly tim: string | null }
-  | { readonly osoba: string | null }
+  | { readonly smjena: string | null; readonly osoba: string | null }
   | { readonly sort: HoursSortKey | null; readonly smjer: HoursSortDirection | null };
 
 /**
@@ -175,14 +195,14 @@ export type HoursSearchChange =
  */
 export function hoursSearchTo(search: HoursSearch, change: HoursSearchChange): HoursSearch {
   const mjesec = 'mjesec' in change ? change.mjesec : (search.mjesec ?? null);
-  const tim = 'tim' in change ? change.tim : (search.tim ?? null);
+  const smjena = 'smjena' in change ? change.smjena : (search.smjena ?? null);
   const osoba = 'osoba' in change ? change.osoba : (search.osoba ?? null);
   const sort = 'sort' in change ? change.sort : (search.sort ?? null);
   const smjer = 'smjer' in change ? change.smjer : (search.smjer ?? null);
 
   return {
     ...(mjesec === null ? {} : { mjesec }),
-    ...(tim === null ? {} : { tim }),
+    ...(smjena === null ? {} : { smjena }),
     ...(osoba === null ? {} : { osoba }),
     ...(sort === null ? {} : { sort }),
     ...(smjer === null ? {} : { smjer }),

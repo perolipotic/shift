@@ -2,17 +2,13 @@ import { projectedShiftTypeOn, shiftRoster } from '@shift/domain';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
-  ALL_TEAMS_FILTER,
   CALENDAR_CELL_CLASS,
-  PERSON_FILTER_PREFIX,
   COMPRESSED_CELL_CLASS,
   NO_ROTATION_CELL_CLASS,
   NO_ROTATION_SHOWN,
   SKELETON_COLUMN_COUNT,
   SKELETON_GRID_STYLE,
-  PHONE_MEDIA_QUERY,
   calendarDayListOf,
-  calendarFilterChangeOf,
   calendarModeOf,
   calendarMonthOf,
   calendarMonthOutcomeOf,
@@ -24,14 +20,12 @@ import {
   defaultModeOf,
   isCalendarMonth,
   monthShownOf,
-  personFilterValueOf,
+  monthTeamOf,
   teamLettersOf,
-  phoneStoreOf,
   typeLettersOf,
   type CalendarCell,
   type CalendarDay,
   type CalendarMonth,
-  type PhoneMediaQuery,
 } from '@/features/calendar/utils/month';
 import { cellLabelOf, gridCellLabelsOf, legendOf, type CellLabelTranslate } from '@/features/calendar/utils/modifiers';
 import { CALENDAR_UNAVAILABLE, readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
@@ -437,7 +431,6 @@ describe('the mode (story 3.2a)', () => {
     expect(defaultModeOf('member_role', false)).toBe('sve');
     expect(defaultModeOf('admin', true)).toBe('sve');
     expect(defaultModeOf('admin', false)).toBe('sve');
-    expect(PHONE_MEDIA_QUERY).toBe('(max-width: 639px)');
   });
 
   it('shows the mode the search names, whatever the role or width', () => {
@@ -660,40 +653,6 @@ describe('the review of 3.2a', () => {
     expect(logged).toHaveBeenCalledWith(CALENDAR_UNAVAILABLE, expect.any(RangeError));
     logged.mockRestore();
   });
-
-  it('follows the width through one shared media query list', () => {
-    const listeners = new Set<() => void>();
-    const asked: string[] = [];
-    const list: PhoneMediaQuery & { matches: boolean } = {
-      matches: false,
-      addEventListener: vi.fn((_type: 'change', listener: () => void) => {
-        listeners.add(listener);
-      }),
-      removeEventListener: vi.fn((_type: 'change', listener: () => void) => {
-        listeners.delete(listener);
-      }),
-    };
-    const store = phoneStoreOf((query) => {
-      asked.push(query);
-
-      return list;
-    });
-
-    expect(asked).toEqual([]);
-    expect(store.get()).toBe(false);
-    const onChange = vi.fn();
-    const unsubscribe = store.subscribe(onChange);
-
-    expect(list.addEventListener).toHaveBeenCalledWith('change', onChange);
-    list.matches = true;
-    for (const listener of listeners) listener();
-    expect(onChange).toHaveBeenCalledTimes(1);
-    expect(store.get()).toBe(true);
-    unsubscribe();
-    expect(list.removeEventListener).toHaveBeenCalledWith('change', onChange);
-    expect(listeners.size).toBe(0);
-    expect(asked).toEqual([PHONE_MEDIA_QUERY]);
-  });
 });
 
 describe('modifiers and labels (story 3.2b)', () => {
@@ -880,11 +839,6 @@ describe('the team filter (story 3.3a)', () => {
     expect(calendarSearchTo({}, { mjesec: '2026-10' })).toEqual({ mjesec: '2026-10' });
   });
 
-  it('turns the all-teams option into the reset, and a team into itself', () => {
-    expect(calendarFilterChangeOf(ALL_TEAMS_FILTER)).toEqual({ smjena: null, osoba: null });
-    expect(calendarFilterChangeOf('pilot-smjena-b')).toEqual({ smjena: 'pilot-smjena-b', osoba: null });
-  });
-
   it('shows every column and chooses nothing with no smjena', () => {
     // Matrix: no filter — 4 columns.
     const month = calendarMonthOf(pilot, {}, TODAY);
@@ -985,8 +939,9 @@ describe('the team filter (story 3.3a)', () => {
     expect(month.filter).toEqual({
       teams: [],
       chosen: null,
-      people: [{ id: VIEWER_MEMBER, name: VIEWER_NAME }],
+      people: [{ id: VIEWER_MEMBER, name: VIEWER_NAME, teamId: null, teamName: null }],
       person: null,
+      teamCounts: {},
     });
   });
 });
@@ -1045,37 +1000,58 @@ describe('the person filter (story 3.3b)', () => {
     expect(calendarSearchTo({ osoba: 'P' }, { prikaz: 'moj' })).toEqual({ prikaz: 'moj', osoba: 'P' });
   });
 
-  it('maps the Select: a person drops the team, a team drops the person, all teams drops both', () => {
-    expect(PERSON_FILTER_PREFIX).toBe('osoba:');
-    expect(personFilterValueOf(COLLEAGUE)).toBe(`osoba:${COLLEAGUE}`);
-    expect(calendarFilterChangeOf(personFilterValueOf(COLLEAGUE))).toEqual({ smjena: null, osoba: COLLEAGUE });
-    expect(calendarFilterChangeOf('osoba:')).toEqual({ smjena: null, osoba: null });
-    // Matrix: choose a team after a person — `{smjena: A}`, `osoba` dropped.
-    expect(
-      calendarSearchTo({ mjesec: '2026-10', osoba: 'P' }, calendarFilterChangeOf('pilot-smjena-a')),
-    ).toEqual({ mjesec: '2026-10', smjena: 'pilot-smjena-a' });
-    expect(calendarSearchTo({ smjena: 'A' }, calendarFilterChangeOf(personFilterValueOf('P')))).toEqual({
-      osoba: 'P',
-    });
-    // Matrix: reset — neither `osoba` nor `smjena`, the other params kept.
-    expect(
-      calendarSearchTo(
-        { mjesec: '2026-10', prikaz: 'sve', smjena: 'A', osoba: 'P' },
-        calendarFilterChangeOf(ALL_TEAMS_FILTER),
-      ),
-    ).toEqual({ mjesec: '2026-10', prikaz: 'sve' });
-  });
-
-  it('offers every person active today, id and name only, and chooses nobody without osoba', () => {
+  it('offers every person active today, with their team for the month, and chooses nobody without osoba', () => {
     const month = calendarMonthOf(colleagues, {}, TODAY);
 
+    // Story 7.5: the colleague moved to B on 2026-09-15, so B is their team
+    // for this month; the spare is on none.
     expect(month.filter.people).toEqual([
-      { id: COLLEAGUE, name: 'Ante Babić' },
-      { id: VIEWER_MEMBER, name: VIEWER_NAME },
-      { id: SPARE, name: 'Toni Bezsmjene' },
+      { id: COLLEAGUE, name: 'Ante Babić', teamId: 'pilot-smjena-b', teamName: 'Smjena B' },
+      { id: VIEWER_MEMBER, name: VIEWER_NAME, teamId: 'pilot-smjena-a', teamName: 'Smjena A' },
+      { id: SPARE, name: 'Toni Bezsmjene', teamId: null, teamName: null },
     ]);
     expect(month.filter.person).toBeNull();
     expect(month.person).toBeNull();
+  });
+
+  it("counts each active team's people by their team for the month, and gives the person shown theirs (story 7.5)", () => {
+    const month = calendarMonthOf(colleagues, {}, TODAY);
+
+    expect(month.filter.teamCounts['pilot-smjena-a']).toBe(1);
+    expect(month.filter.teamCounts['pilot-smjena-b']).toBe(1);
+    expect(month.filter.teamCounts['pilot-smjena-c']).toBe(0);
+    expect(Object.keys(month.filter.teamCounts)).toEqual(month.filter.teams.map((team) => team.id));
+
+    const shown = calendarMonthOf(colleagues, { osoba: COLLEAGUE }, TODAY).person;
+
+    expect(shown).toMatchObject({ id: COLLEAGUE, teamId: 'pilot-smjena-b', teamName: 'Smjena B' });
+    expect(calendarMonthOf(colleagues, { osoba: SPARE }, TODAY).person).toMatchObject({ teamId: null, teamName: null });
+  });
+
+  it('refuses a person whose team for the month the snapshot does not name (story 7.5)', () => {
+    // The colleague is on B this month; a snapshot without B is a defect.
+    const withoutB = { ...colleagues, teams: colleagues.teams.filter((team) => team.id !== 'pilot-smjena-b') };
+
+    expect(() => calendarMonthOf(withoutB, {}, TODAY)).toThrow(RangeError);
+  });
+
+  it("reads a person's team for the month on their last active date (story 7.5)", () => {
+    const memberships = [
+      { teamId: 'a', effectiveFrom: '2026-01-01' },
+      { teamId: 'b', effectiveFrom: '2026-09-15' },
+    ] as unknown as Parameters<typeof monthTeamOf>[0]['memberships'];
+    const september = ['2026-09-01', '2026-09-14', '2026-09-15', '2026-09-30'];
+
+    expect(monthTeamOf({ memberships, statuses: [] }, september)).toBe('b');
+    // Inactive from the 15th: their last active date is the 14th, on A.
+    const leaving = [
+      { active: true, effectiveFrom: '2026-01-01' },
+      { active: false, effectiveFrom: '2026-09-15' },
+    ] as unknown as Parameters<typeof monthTeamOf>[0]['statuses'];
+
+    expect(monthTeamOf({ memberships, statuses: leaving }, september)).toBe('a');
+    expect(monthTeamOf({ memberships, statuses: leaving }, ['2026-10-01'])).toBeNull();
+    expect(monthTeamOf({ memberships: [], statuses: [] }, september)).toBeNull();
   });
 
   it("shows the chosen person's day list, headed with their name, across a mid-month move", () => {
@@ -1111,7 +1087,13 @@ describe('the person filter (story 3.3b)', () => {
     // Matrix: no team this month.
     const month = calendarMonthOf(colleagues, { mjesec: '2026-09', osoba: SPARE }, TODAY);
 
-    expect(month.person).toEqual({ id: SPARE, name: 'Toni Bezsmjene', days: { ok: true, days: null } });
+    expect(month.person).toEqual({
+      id: SPARE,
+      name: 'Toni Bezsmjene',
+      teamId: null,
+      teamName: null,
+      days: { ok: true, days: null },
+    });
   });
 
   it('ignores an unknown or inactive id: the grid, or the smjena team', () => {
@@ -1151,7 +1133,12 @@ describe('the person filter (story 3.3b)', () => {
       {
         ...broken,
         // The 3.2a defect, on the person: a team whose rotation the grid
-        // never projects, on a pattern with no steps.
+        // never projects, on a pattern with no steps. Archived but named, as
+        // story 7.5's team for the month requires of every person's team.
+        teams: [
+          ...broken.teams,
+          { id: 'archived-team', organizationId: broken.teams[0]!.organizationId, name: 'Stara smjena', archived: true },
+        ],
         members: broken.members.map((one) =>
           one.id === COLLEAGUE
             ? { ...one, memberships: [{ teamId: 'archived-team', position: null, effectiveFrom: SEEDED }] }

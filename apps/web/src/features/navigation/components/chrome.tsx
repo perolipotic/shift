@@ -28,7 +28,7 @@ import {
 } from '@/features/navigation/utils/destinations';
 import { destinationIcon } from '@/features/navigation/utils/icons';
 import { useDismiss } from '@/hooks/dismiss';
-import { useCloseWhenWide } from '@/features/navigation/hooks/wide';
+import { useCloseWhenWide } from '@/hooks/viewport';
 import { navigationMessageKey } from '@/features/navigation/utils/messages';
 import { MEMBER_NAME_KEY, memberRoleLabelKey, readMemberName } from '@/features/navigation/services/profile';
 import {

@@ -209,6 +209,14 @@ const ROLE_GUARDED_PATHS: readonly string[] = DESTINATIONS.filter(
 ).map((destination) => destination.path);
 
 /**
+ * STORY 7.5: destinations whose `beforeLoad` is a SEARCH redirect, never a
+ * guard — `/sati` moves an old `?tim=` to `?smjena=`. Each is proved below to
+ * redirect only that old search and to let every other one through, so a
+ * second session or role check cannot hide behind this list.
+ */
+const SEARCH_REDIRECT_PATHS: readonly string[] = ['/sati'];
+
+/**
  * Every route that decides on the permission LEVEL, and the screen each one
  * renders.
  *
@@ -1517,6 +1525,11 @@ describe('the signed-in layout guards every destination once, and is pathless', 
         continue;
       }
 
+      if (SEARCH_REDIRECT_PATHS.includes(path)) {
+        expect(registered, `${path} is listed as a search redirect and carries none`).toBeTypeOf('function');
+        continue;
+      }
+
       expect(
         registered,
         `${path} carries a guard of its own instead of inheriting the layout's`,
@@ -1535,8 +1548,36 @@ describe('the signed-in layout guards every destination once, and is pathless', 
     expect(
       DESTINATION_ROUTES.filter(
         ({ route }) => (route.options as { beforeLoad?: unknown }).beforeLoad !== undefined,
-      ).map(({ path }) => path),
+      )
+        .map(({ path }) => path)
+        .filter((path) => !SEARCH_REDIRECT_PATHS.includes(path)),
     ).toEqual([...ROLE_GUARDED_PATHS]);
+  });
+
+  it.each(SEARCH_REDIRECT_PATHS)('%s redirects only an old search, and lets every other one through (story 7.5)', (path) => {
+    const route = DESTINATION_ROUTES.find((one) => one.path === path)?.route;
+    const run = (route?.options as { beforeLoad?: (context: unknown) => unknown } | undefined)?.beforeLoad;
+
+    expect(run, `${path} has no beforeLoad`).toBeTypeOf('function');
+
+    const thrownBy = (search: Record<string, unknown>): unknown => {
+      try {
+        run?.({ location: { search } });
+      } catch (thrown) {
+        return thrown;
+      }
+
+      return null;
+    };
+    const moved = thrownBy({ tim: 'B', mjesec: '2026-07' });
+
+    expect(isRedirect(moved), 'an old ?tim= is not redirected').toBe(true);
+    expect((moved as { options: { search: unknown; replace: boolean } }).options).toMatchObject({
+      search: { mjesec: '2026-07', smjena: 'B' },
+      replace: true,
+    });
+    expect(thrownBy({ smjena: 'B', mjesec: '2026-07' })).toBeNull();
+    expect(thrownBy({})).toBeNull();
   });
 });
 

@@ -1,4 +1,4 @@
-import { ALL_TEAMS_FILTER, type CalendarMode, type CalendarMonth } from '@/features/calendar/utils/month';
+import { NOTHING_CHOSEN as NONE, type CalendarMode, type CalendarMonth } from '@/features/calendar/utils/month';
 
 /**
  * What the grid's one tab stop is FORGOTTEN on: the month shown, the team
@@ -9,7 +9,7 @@ import { ALL_TEAMS_FILTER, type CalendarMode, type CalendarMonth } from '@/featu
 export function gridFocusKeyOf(month: CalendarMonth | null): string | null {
   return month === null
     ? null
-    : `${month.month}|${month.filter.chosen ?? ALL_TEAMS_FILTER}|${month.filter.person ?? ALL_TEAMS_FILTER}`;
+    : `${month.month}|${month.filter.chosen ?? NONE}|${month.filter.person ?? NONE}`;
 }
 
 /**
@@ -17,5 +17,5 @@ export function gridFocusKeyOf(month: CalendarMonth | null): string | null {
  * Any change closes it — browser Back while it is open included.
  */
 export function dayDetailKeyOf(gridKey: string | null, mode: CalendarMode | null): string {
-  return `${gridKey ?? ALL_TEAMS_FILTER}|${mode ?? ALL_TEAMS_FILTER}`;
+  return `${gridKey ?? NONE}|${mode ?? NONE}`;
 }

@@ -28,7 +28,10 @@ export const CALENDAR_SCREEN_PARTS = {
   // Shared with *Sati* since story 4.1b, and still part of this screen.
   monthNav: ['components', 'month-nav.tsx'],
   modeSwitch: ['features', 'calendar', 'components', 'calendar-mode-switch.tsx'],
-  filter: ['features', 'calendar', 'components', 'calendar-filter.tsx'],
+  filter: ['features', 'calendar', 'components', 'calendar-filters.tsx'],
+  // Story 7.5: the filter bar Kalendar and Sati share. Its model,
+  // `utils/filter-bar.ts`, renders nothing and is no part of the set.
+  filterBar: ['components', 'filter-bar.tsx'],
   monthBody: ['features', 'calendar', 'components', 'calendar-month-body.tsx'],
   grid: ['features', 'calendar', 'components', 'calendar-grid.tsx'],
   cell: ['features', 'calendar', 'components', 'calendar-cell.tsx'],
@@ -78,6 +81,10 @@ export const CALENDAR_SCREEN_EXEMPT: readonly { readonly file: string; readonly 
   {
     file: 'utils/month.ts',
     why: 'the month model, executed by month.test.ts; declares no key and is swept by the snapshot suite under its own counts',
+  },
+  {
+    file: 'utils/filters.ts',
+    why: "the filter bar's model for Kalendar (story 7.5), executed by filters.test.ts; renders nothing and declares no key",
   },
   {
     file: 'utils/replacement-candidates.ts',

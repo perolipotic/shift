@@ -1,7 +1,8 @@
 import type { Download, Locator } from '@playwright/test';
 
-import { MONTH_TRIGGER_NAME, escapeRegExp, hr } from '../utils/i18n.ts';
+import { MONTH_TRIGGER_NAME, escapeRegExp, fill, hr } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
+import { FilterBarParts } from './filter-bar.ts';
 
 const kalendar = hr.kalendar;
 const sati = hr.sati;
@@ -177,11 +178,6 @@ export class HoursPage extends BasePage {
     return cell.locator('span.text-xs');
   }
 
-  /** The option a filter shows as chosen. */
-  chosenOption(filter: Locator): Locator {
-    return filter.locator('option:checked');
-  }
-
   /** The link a member's name is, in the table. */
   memberLink(name: string): Locator {
     return this.organizationTable.getByRole('link', { name, exact: true });
@@ -197,14 +193,19 @@ export class HoursPage extends BasePage {
     return this.columnHeader(label).getByRole('button');
   }
 
-  /** The team filter's native select. */
-  get teamFilter(): Locator {
-    return this.page.getByRole('combobox', { name: organization.teamFilter, exact: true });
+  /** The filter bar (story 7.5): Smjena and Osoba chips, the summary and the phone sheet. */
+  get filters(): FilterBarParts {
+    return new FilterBarParts(this.page);
   }
 
-  /** The person filter's native select. */
-  get personFilter(): Locator {
-    return this.page.getByRole('combobox', { name: organization.personFilter, exact: true });
+  /** The empty table's `Ukloni filtar: Smjena B` (story 7.5). */
+  emptyRemoveTeam(team: string): Locator {
+    return this.organizationTable.getByRole('button', { name: fill(hr.filter.empty.removeTeam, { team }), exact: true });
+  }
+
+  /** The empty table's `Poništi filtre`. */
+  get emptyClear(): Locator {
+    return this.organizationTable.getByRole('button', { name: hr.filter.clear, exact: true });
   }
 
   // ------------------------------------------------ the export (story 4.3)

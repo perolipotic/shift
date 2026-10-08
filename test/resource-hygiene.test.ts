@@ -142,6 +142,15 @@ const SANCTIONED_PLURAL_KEYS = [
   // STORY 5.3d: the viewer's shifts in unresolved conflict on *Sati*, shown
   // only above 0 — `1 smjena`, `2 smjene`, `5 smjena u neriješenom konfliktu`.
   'sati.conflicts',
+  // STORY 7.5: the filter bar Kalendar and Sati share — a team's person
+  // count (`4 osobe`), the summary line with no filter, a team, or a team and
+  // a person (`17 osoba`, `4 osobe od 17`, `0 osoba`), and the sheet's
+  // `Prikaži 1 osobu`, `Prikaži 4 osobe`, `Prikaži 17 osoba`.
+  'filter.personCount',
+  'filter.summary.all',
+  'filter.summary.team',
+  'filter.summary.both',
+  'filter.sheetShow',
   // STORY 5.1c: the leave card's three day counts that are a sentence of their
   // own — the preview's over-balance note and the two lines a landed save
   // shows — each carrying a number that may be negative (`−2 dana`) — and the
@@ -1017,17 +1026,60 @@ const SANCTIONED_SCREEN_KEYS = [
   // STORY 5.3c: the unavailable alert's retry, which reads the schedule and
   // the leave the marks stand on again.
   'kalendar.retry',
-  // STORY 3.3a: the team filter — its label, the all-teams option with its
-  // count, the heading over the teams and the reset. `Smjena` is the Team.
-  'kalendar.filter.label',
-  'kalendar.filter.all',
-  'kalendar.filter.group',
-  'kalendar.filter.reset',
-  // STORY 3.3b: the person filter — the heading over the people in the same
-  // Select, and the note for a person on no team all month. The label now
-  // reads `Smjena ili osoba`; `Smjena` is still the Team.
-  'kalendar.filter.people',
+  // STORY 3.3b: the note for a person on no team all month. The filter
+  // itself moved to the shared `filter.*` namespace in story 7.5.
   'kalendar.person.noTeam',
+  // STORY 7.5: the filter bar Kalendar and Sati share, which replaced the
+  // calendar's one Select (3.3a/3.3b) and Sati's two (4.2): the bar's name,
+  // `Filtri` with and without its count, a chip in each of its four states,
+  // a ✕'s two names, the pickers' names and options, the search, its match
+  // count, `Bez smjene`, the summary for one person (with and without a
+  // team), `Poništi filtre`, the phone sheet's title, close, headings, note,
+  // `Poništi`, and the empty table's sentences (the generic one for a filter
+  // alone included), its way out and the twelve months in the locative. `Smjena` is the Team throughout.
+  'filter.label',
+  'filter.open',
+  'filter.openCount',
+  'filter.chip.team',
+  'filter.chip.teamAll',
+  'filter.chip.person',
+  'filter.chip.personAll',
+  'filter.remove.team',
+  'filter.remove.person',
+  'filter.teamPicker',
+  'filter.personPicker',
+  'filter.allTeams',
+  'filter.allPeople',
+  'filter.teamGroup',
+  'filter.noTeam',
+  'filter.search',
+  'filter.matches',
+  'filter.summary.person',
+  'filter.summary.personNoTeam',
+  'filter.clear',
+  'filter.sheetTitle',
+  'filter.sheetClose',
+  'filter.team',
+  'filter.person',
+  'filter.replaceNote',
+  'filter.sheetReset',
+  'filter.empty.filtered',
+  'filter.empty.notInTeam',
+  'filter.empty.inTeam',
+  'filter.empty.noTeam',
+  'filter.empty.removeTeam',
+  'filter.monthIn.1',
+  'filter.monthIn.2',
+  'filter.monthIn.3',
+  'filter.monthIn.4',
+  'filter.monthIn.5',
+  'filter.monthIn.6',
+  'filter.monthIn.7',
+  'filter.monthIn.8',
+  'filter.monthIn.9',
+  'filter.monthIn.10',
+  'filter.monthIn.11',
+  'filter.monthIn.12',
   // STORY 3.4b: the day detail — its title (the team and the date), its close, the heading over the roster, a
   // working day with nobody on it, an off day and a day with no rotation.
   // `{team}` is the Team.
@@ -1276,22 +1328,17 @@ const SANCTIONED_SCREEN_KEYS = [
   'sati.noFigure',
   'sati.error.unavailable',
   // STORY 4.2: an admin's organization table on *Sati* — its caption, its
-  // column headings, its two filters with their "all" options, the mark of a
-  // member on no team, and the two lines an empty table shows (nobody matches
-  // the filter; nobody has a row this month). Band headings are
-  // the bands' names as stored, never keys.
+  // column headings, the mark of a member on no team, and the line a month
+  // with nobody shows. Band headings are the bands' names as stored, never
+  // keys. Its filters and its filtered-empty sentences moved to the shared
+  // `filter.*` namespace in story 7.5.
   'sati.organization.caption',
   'sati.organization.member',
   'sati.organization.team',
   'sati.organization.shifts',
   'sati.organization.total',
   'sati.organization.leave',
-  'sati.organization.teamFilter',
-  'sati.organization.personFilter',
-  'sati.organization.allTeams',
-  'sati.organization.allPeople',
   'sati.organization.noTeam',
-  'sati.organization.empty',
   'sati.organization.emptyMonth',
   // STORY 4.3: the organization table's one export — its action, the label
   // it wears while the file is built, the line a failed build shows, and the
@@ -1667,6 +1714,14 @@ const CALENDAR_NAMESPACE = 'kalendar.';
 const HOURS_NAMESPACE = 'sati.';
 
 /**
+ * The filter bar's namespace (story 7.5), shared by *Kalendar* and *Sati*:
+ * its first chip is `Smjena`, the Team, and an empty table says a person
+ * `nije u smjeni Smjena B` — so `smjen` names the Team there, as in
+ * `kalendar`, and `tip… smjen…` is refused: no filter is by shift type.
+ */
+const FILTER_NAMESPACE = 'filter.';
+
+/**
  * *Danas*'s namespace (story 6.1a). It states the viewer's own next SHIFT —
  * `Sljedeća smjena`, the epic's own words — and that they are on no team, so
  * `smjen` names a worked shift or the Team there, as on *Sati*, and
@@ -1741,6 +1796,7 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     !key.startsWith(ROTATION_BUILDER_NAMESPACE) &&
     !key.startsWith(CALENDAR_NAMESPACE) &&
     !key.startsWith(HOURS_NAMESPACE) &&
+    !key.startsWith(FILTER_NAMESPACE) &&
     !key.startsWith(DANAS_NAMESPACE) &&
     !key.startsWith(RESOLUTION_NAMESPACE) &&
     key !== LEAVE_REPLACEMENT_KEY
@@ -2118,6 +2174,10 @@ describe('the detector reads the file it thinks it does', () => {
     expect(teamTermOutOfTurn('sati.shiftCount', '{count, plural, one {# smjena}}')).toBe(false);
     expect(teamTermOutOfTurn('sati.shifts', 'Tip smjene')).toBe(true);
     expect(teamTermOutOfTurn('satix.shifts', 'Smjene')).toBe(true);
+    // STORY 7.5: the filter bar names the Team, never the Shift Type.
+    expect(teamTermOutOfTurn('filter.chip.teamAll', 'Smjena: sve')).toBe(false);
+    expect(teamTermOutOfTurn('filter.team', 'Tip smjene')).toBe(true);
+    expect(teamTermOutOfTurn('filterx.team', 'Smjena')).toBe(true);
     // Story 5.4e: the one guard line names the shift; its siblings still may not.
     expect(teamTermOutOfTurn('ljudi.leaveRecord.replacementStays', 'Dino ostaje na smjeni Smjena C')).toBe(false);
     expect(teamTermOutOfTurn('ljudi.leaveRecord.replacementStays', 'Tip smjene')).toBe(true);

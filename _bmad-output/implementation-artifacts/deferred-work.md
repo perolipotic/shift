@@ -603,7 +603,7 @@
     - D2: the sort vocabulary and `SORT_GLYPHS` are copied from members.
     - D3: `MINUTES_PER_DAY` is redefined in `hours-export.ts` although the domain exports it; the missing-band rule differs (0 in the table, a throw in the export); the RangeError guard is written twice.
     - P1: the 4.2 table vocabulary (`tim`/`osoba`/`sort`/`smjer`, `SORT_*`, `HoursSortKey`) lives in `my-hours.ts`.
-    - P2: hours names a team `tim` and drops unknown parameters, while calendar uses `smjena` and keeps them.
+    - P2: RESOLVED by 7.5 (spec-7-5-filter-chips.md) — *Sati* names the team `smjena`, as the calendar does, and an old `?tim=` is redirected to `?smjena=` with every other parameter kept. Hours still drops unknown parameters, while calendar keeps them.
     - C3: the export omits the untimed-shift note, so shifts × length ≠ Total in the file.
     - C4: the untimed note is an organization-wide sum, not per row.
     - C5: a filter that matches no row in the new month is silently dropped from the next URL.
@@ -813,3 +813,16 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-2-duty-block.md`
   summary: When Danas shows today's duty, a working shift today that is not part of that duty (separated by a gap) appears neither on the today card nor in the next-shift card, which starts tomorrow.
   evidence: 6.2 review (Edge Case Hunter). It needs more than 36 h of work in one day, so it is rare. The human chose the running > upcoming > done rule and deferred this on 2026-10-06.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-5-filter-chips.md`
+  summary: The sticky phone header (about 150 px, the month toolbar and the active chips held under the top bar while the grid scrolls) is not built. The filter bar and its active chips scroll with the card.
+  evidence: Epic 7 context § Phone ("The header is sticky, about 150 px"); Ask First in 7.5 on 2026-10-07.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-5-filter-chips.md`
+  summary: Swiping the grid to change the month is still not built (see the 7.4 entry). ‹ › and PgUp/PgDn remain the ways between months.
+  evidence: Epic 7 context § Phone ("Swiping the grid changes the month as a shortcut only"); Ask First in 7.5 on 2026-10-07.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-5-filter-chips.md`
+  summary: *Moj raspored* shows no filters and no sentence about them. The epic's `Tvoj raspored · Smjena A. Filtri vrijede za „Sve smjene”.` is not built; showing filters, or that sentence, in *Moj raspored* is Ask First.
+  evidence: Epic 7 context § "Kalendar, Moj raspored"; left out by 7.5 on 2026-10-07.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-5-filter-chips.md`
+  summary: Sati still drops a team or person filter from the URL when the next month has no row for it, so "month changes keep the filters" holds only on Kalendar.
+  evidence: `hoursSearchBaseOf` / `organizationHoursViewOf` rebuild `search` from matched ids only (pre-existing, Epic 4 retro C5); surfaced by the 7.5 review, no test moves to a month where the chosen team or person has no row.

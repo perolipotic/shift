@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
 
 import { useDayDetail } from '@/features/calendar/hooks/use-day-detail';
+import { usePhone } from '@/hooks/viewport';
 import {
   GRID_CELL_SELECTOR,
   FOCUS_VISIBLE,
@@ -22,7 +23,6 @@ import {
   calendarMonthOutcomeOf,
   calendarSearchTo,
   calendarTodayOf,
-  phoneStoreOf,
   type CalendarFilterChange,
   type CalendarMode,
   type CalendarMonth,
@@ -63,12 +63,6 @@ import {
 import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import { supabaseClient } from '@/lib/supabase/client';
-
-const phone = phoneStoreOf((query) => window.matchMedia(query));
-
-function isPhoneOnServer(): boolean {
-  return false;
-}
 
 function noRoleOnServer(): null {
   return null;
@@ -201,7 +195,7 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
   );
   const month = outcome !== null && outcome.ok ? outcome.month : null;
   // READ LIVE: crossing 640 px changes the default mode while no `prikaz` is chosen.
-  const isPhone = useSyncExternalStore(phone.subscribe, phone.get, isPhoneOnServer);
+  const isPhone = usePhone();
   // Before the snapshot lands, the mode switch and the skeleton's shape follow
   // the chrome's role answer, if the cache already holds it, read and followed
   // there — never fetched here, so the calendar still makes its one read.
@@ -240,8 +234,6 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
     dayDetailKeyOf(shownGrid, mode),
     gridRef,
   );
-  // The reset unmounts itself; focus goes to the filter rather than <body>.
-  const filterRef = useRef<HTMLSelectElement>(null);
   // Built once per month shown, not on every focus move.
   const labels = useMemo(() => (month === null ? null : gridCellLabelsOf(month, translateCellLabel)), [month]);
 
@@ -267,12 +259,6 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
 
   function filter(change: CalendarFilterChange): void {
     go(calendarSearchTo(search, change));
-  }
-
-  /** The filter's reset: every team, nobody chosen, and focus on the filter. */
-  function resetFilter(): void {
-    filter({ smjena: null, osoba: null });
-    filterRef.current?.focus();
   }
 
   /** Opens the detail of the grid cell at `from`, `target` its element. */
@@ -378,13 +364,11 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
     labels,
     gridFocus,
     gridRef,
-    filterRef,
     detail,
     retry,
     show,
     choose,
     filter,
-    resetFilter,
     remember,
     reveal,
     moveGridFocus,

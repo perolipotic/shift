@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Notice } from '@/components/ui/notice';
 import { PageHeader, PageTitle } from '@/components/ui/page-header';
-import { CalendarFilter } from '@/features/calendar/components/calendar-filter';
+import { CalendarFilters } from '@/features/calendar/components/calendar-filters';
 import { CalendarModeSwitch } from '@/features/calendar/components/calendar-mode-switch';
 import { CalendarMonthBody } from '@/features/calendar/components/calendar-month-body';
 import { DayDetailDialog } from '@/features/calendar/components/day-detail-dialog';
@@ -43,10 +43,12 @@ import { appLayoutRoute } from '@/pages/_app';
  * a mark is on screen. The day list stays a plain list.
  *
  * ONE TEAM (story 3.3a), `?smjena=<team id>`, and ONE PERSON (story 3.3b),
- * `?osoba=<member id>`: *Sve smjene* narrowed by a native `Select` above the
- * grid, with a reset while either is chosen. A person chosen replaces the grid
- * with their day list, headed with their name, and wins over a team. The state
- * lives in the URL alone.
+ * `?osoba=<member id>`: *Sve smjene* narrowed by the shared filter bar under
+ * the month toolbar (story 7.5) — Smjena and Osoba chips, a summary of what is
+ * shown and one `Poništi filtre`. A person chosen replaces the grid with their
+ * day list, headed with their name, and wins over a team. The state lives in
+ * the URL alone, and the bar waits for the month, so a loading screen shows
+ * the toolbar and the skeleton only.
  *
  * ONE DAY (story 3.4b): a grid cell — clicked, or Enter or Space on it — and a
  * day-list day on a team open a read-only Dialog of that team on that date.
@@ -111,12 +113,7 @@ export function KalendarScreen() {
             {mode === null ? null : <CalendarModeSwitch chosen={mode} onChoose={screen.choose} />}
           </div>
           {month === null || mode !== MODE_SVE ? null : (
-            <CalendarFilter
-              shown={month}
-              filterRef={screen.filterRef}
-              onFilter={screen.filter}
-              onReset={screen.resetFilter}
-            />
+            <CalendarFilters shown={month} onFilter={screen.filter} />
           )}
           <CalendarMonthBody screen={screen} />
         </Card>

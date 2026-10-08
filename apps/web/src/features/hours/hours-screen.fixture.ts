@@ -20,6 +20,8 @@ export const HOURS_SCREEN_PARTS = {
   organizationExport: ['features', 'hours', 'components', 'organization-hours-export.tsx'],
   exportHook: ['features', 'hours', 'hooks', 'use-hours-export.ts'],
   monthNav: ['components', 'month-nav.tsx'],
+  // Story 7.5: the filter bar Kalendar and Sati share.
+  filterBar: ['components', 'filter-bar.tsx'],
 } as const;
 
 /**

@@ -1201,6 +1201,8 @@ describe('the calendar only reads, and projects nothing of its own', () => {
   const route = `${srcRoot}${CALENDAR_SCREEN_PARTS.page.join('/')}`;
   // STORY 4.1b: the month navigation, shared with *Sati* from `@/components`.
   const monthNav = `${srcRoot}${CALENDAR_SCREEN_PARTS.monthNav.join('/')}`;
+  // STORY 7.5: the filter bar, shared with *Sati* from `@/components`.
+  const filterBar = `${srcRoot}${CALENDAR_SCREEN_PARTS.filterBar.join('/')}`;
   const files = [
     ...readdirSync(directory, { recursive: true, encoding: 'utf8' })
       .map(slashed)
@@ -1208,6 +1210,7 @@ describe('the calendar only reads, and projects nothing of its own', () => {
       .map(feature),
     route,
     monthNav,
+    filterBar,
   ];
   const stripped = (file: string) =>
     readFileSync(file, 'utf8')

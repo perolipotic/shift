@@ -20,7 +20,7 @@ import {
   type SeededLeaveMember,
   type SeededRotation,
 } from '../../utils/database-helper.ts';
-import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
+import { ADMIN_STATE, MEMBER_STATE, RUN_TIMEZONE } from '../../utils/run-fixture.ts';
 import { fill, hr, plural } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll } from '../../utils/layout.ts';
 import { hoursExportFileName, readXlsx, type XlsxCell } from '../../utils/xlsx.ts';
@@ -249,6 +249,11 @@ function monthHeading(date: string): string {
   });
 }
 
+/** This month in the run organization's zone, `2026-10`. */
+function thisMonth(): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: RUN_TIMEZONE, year: 'numeric', month: '2-digit' }).format(new Date());
+}
+
 test.describe('as a member', () => {
   test.use({ storageState: MEMBER_STATE });
 
@@ -455,8 +460,13 @@ test.describe('as an admin', () => {
     // every row left is on the chosen team.
     const adminRow = hoursPage.organizationRow(fixture.admin.name);
     await expect(adminRow).toHaveCount(1);
-    await hoursPage.teamFilter.selectOption({ label: fixture.team.name });
-    await expect(page).toHaveURL(/[?&]tim=/);
+    await hoursPage.filters.chooseTeam(fixture.team.name);
+    await expect(page).toHaveURL(/[?&]smjena=/);
+    await expect(page).not.toHaveURL(/[?&]tim=/);
+    await expect(hoursPage.filters.teamChip).toHaveAccessibleName(hoursPage.filters.teamChipText(fixture.team.name));
+    // The picker closes and focus is back on its chip.
+    await expect(hoursPage.filters.teamPicker).toHaveCount(0);
+    await expect(hoursPage.filters.teamChip).toBeFocused();
     await expect(adminRow).toHaveCount(0);
     await expect(row).toHaveCount(1);
     await expect
@@ -466,18 +476,32 @@ test.describe('as an admin', () => {
       })
       .toBe(true);
 
-    // THE PERSON FILTER: the member alone, and chosen.
-    await hoursPage.teamFilter.selectOption({ index: 0 });
-    await expect(page).not.toHaveURL(/[?&]tim=/);
-    await expect(adminRow).toHaveCount(1);
-    await hoursPage.personFilter.selectOption({ label: fixture.member.name });
+    // THE PERSON FILTER COMBINES with the team (story 7.5): the member alone,
+    // both chips on, and the ✕ on the team drops it alone, focus on Osoba.
+    await hoursPage.filters.choosePerson(fixture.member.name);
     await expect(page).toHaveURL(/[?&]osoba=/);
+    await expect(page).toHaveURL(/[?&]smjena=/);
     await expect(hoursPage.organizationRows).toHaveCount(1);
     await expect(row).toHaveCount(1);
-    await expect(hoursPage.chosenOption(hoursPage.personFilter)).toHaveText(fixture.member.name);
-    await hoursPage.personFilter.selectOption({ index: 0 });
+    await expect(hoursPage.filters.personChip).toHaveAccessibleName(hoursPage.filters.personChipText(fixture.member.name));
+    await expect(hoursPage.filters.summary).toHaveText(
+      hoursPage.filters.summaryText(
+        hr.filter.summary.both,
+        { team: fixture.team.name, person: fixture.member.name },
+        { name: 'shown', count: 1 },
+      ),
+    );
+    await hoursPage.filters.removeTeam(fixture.team.name).click();
+    await expect(page).not.toHaveURL(/[?&]smjena=/);
+    await expect(page).toHaveURL(/[?&]osoba=/);
+    await expect(hoursPage.filters.personChip).toBeFocused();
+    await expect(row).toHaveCount(1);
+    await hoursPage.filters.removePerson(fixture.member.name).click();
     await expect(page).not.toHaveURL(/[?&]osoba=/);
     await expect(adminRow).toHaveCount(1);
+    // Focus moves to the first chip, never to <body>.
+    await expect(hoursPage.filters.teamChip).toBeFocused();
+    await expect(hoursPage.filters.clearButton).toHaveCount(0);
 
     // SORTING BY TOTAL: ascending first, then descending, and a reload keeps it.
     await hoursPage.sortButton(organization.total).click();
@@ -512,21 +536,21 @@ test.describe('as an admin', () => {
     expect(totals).toEqual([...totals].sort((first, second) => second - first));
 
     // THE MONTH KEEPS THE FILTER AND THE SORT.
-    await hoursPage.teamFilter.selectOption({ label: fixture.team.name });
-    await expect(page).toHaveURL(/[?&]tim=/);
+    await hoursPage.filters.chooseTeam(fixture.team.name);
+    await expect(page).toHaveURL(/[?&]smjena=/);
 
     // THE EXPORT IS THE SCREEN, FILTERED (story 4.3): by team, sorted by
     // total descending, the file holds exactly the rows shown.
-    await expect(hoursPage.chosenOption(hoursPage.teamFilter)).toHaveText(fixture.team.name);
+    await expect(hoursPage.filters.teamChip).toHaveAccessibleName(hoursPage.filters.teamChipText(fixture.team.name));
     await expectExportIsTable(hoursPage, fileName);
     const next = nextMonth(month);
     await hoursPage.nextButton.click();
     await expect(page).toHaveURL(new RegExp(`[?&]mjesec=${next}`));
-    await expect(page).toHaveURL(/[?&]tim=/);
+    await expect(page).toHaveURL(/[?&]smjena=/);
     await expect(page).toHaveURL(/[?&]sort=ukupno/);
     await expect(page).toHaveURL(/[?&]smjer=silazno/);
     await expect(hoursPage.columnHeader(organization.total)).toHaveAttribute('aria-sort', 'descending');
-    await expect(hoursPage.chosenOption(hoursPage.teamFilter)).toHaveText(fixture.team.name);
+    await expect(hoursPage.filters.teamChip).toHaveAccessibleName(hoursPage.filters.teamChipText(fixture.team.name));
 
     // No sideways page scroll at phone width: the table scrolls in its own box.
     await page.setViewportSize({ width: 390, height: 844 });
@@ -572,19 +596,72 @@ test.describe('as an admin', () => {
     await expect(calendarPage.personDaysOnTeam(seededFormer.name, fixture.team.name).first()).toBeVisible();
   });
 
-  test('a filter that leaves no row closes the export', async ({ page, hoursPage, fixture }) => {
-    await hoursPage.goto();
+  test('a filter that leaves no row says what is true, offers two ways out, and closes the export', async ({
+    page,
+    hoursPage,
+    fixture,
+  }) => {
+    // This month, named in the URL so the sentence's month is known.
+    const month = thisMonth();
+    const monthIn = hr.filter.monthIn[String(Number(month.slice(5, 7))) as keyof typeof hr.filter.monthIn];
+
+    await hoursPage.goto(`?mjesec=${month}`);
     await expect(hoursPage.organizationTable).toBeVisible();
     await expect(hoursPage.exportButton).toBeEnabled();
     // The admin is on no team: on the fixture team AND the admin, nobody is left.
-    await hoursPage.teamFilter.selectOption({ label: fixture.team.name });
-    await expect(page).toHaveURL(/[?&]tim=/);
-    await hoursPage.personFilter.selectOption({ label: fixture.admin.name });
+    await hoursPage.filters.chooseTeam(fixture.team.name);
+    await expect(page).toHaveURL(/[?&]smjena=/);
+    await hoursPage.filters.choosePerson(fixture.admin.name);
     await expect(page).toHaveURL(/[?&]osoba=/);
     await expect(hoursPage.organizationRows.filter({ has: page.getByRole('link') })).toHaveCount(0);
     await expect(hoursPage.exportButton).toBeDisabled();
-    await hoursPage.personFilter.selectOption({ index: 0 });
+    // STORY 7.5: what is true, never "no results" — the team name undeclined.
+    const when = { person: fixture.admin.name, team: fixture.team.name, monthIn, year: month.slice(0, 4) };
+    await expect(hoursPage.organizationTable.getByText(fill(hr.filter.empty.notInTeam, when), { exact: true })).toBeVisible();
+    await expect(hoursPage.organizationTable.getByText(fill(hr.filter.empty.noTeam, when), { exact: true })).toBeVisible();
+    await expect(hoursPage.filters.summary).toHaveText(
+      hoursPage.filters.summaryText(
+        hr.filter.summary.both,
+        { team: fixture.team.name, person: fixture.admin.name },
+        { name: 'shown', count: 0 },
+      ),
+    );
+
+    // `Ukloni filtar: <team>` keeps the person and stays on the screen.
+    await hoursPage.emptyRemoveTeam(fixture.team.name).click();
+    await expect(page).not.toHaveURL(/[?&]smjena=/);
+    await expect(page).toHaveURL(/[?&]osoba=/);
+    await expect(page).toHaveURL(/\/sati\?/);
+    await expect(hoursPage.memberLink(fixture.admin.name)).toBeVisible();
     await expect(hoursPage.exportButton).toBeEnabled();
+    await expect(hoursPage.filters.teamChip).toBeFocused();
+
+    // `Poništi filtre` in the empty table drops both.
+    await hoursPage.filters.chooseTeam(fixture.team.name);
+    await expect(hoursPage.emptyClear).toBeVisible();
+    await hoursPage.emptyClear.click();
+    await expect(page).not.toHaveURL(/[?&]smjena=/);
+    await expect(page).not.toHaveURL(/[?&]osoba=/);
+    await expect(page).toHaveURL(new RegExp(`[?&]mjesec=${month}`));
+    await expect(hoursPage.filters.teamChip).toBeFocused();
+    await expect(hoursPage.exportButton).toBeEnabled();
+  });
+
+  test('an old ?tim= link is replaced by the same view under ?smjena=, every other parameter kept', async ({
+    page,
+    hoursPage,
+    fixture,
+  }) => {
+    const month = thisMonth();
+
+    await page.goto('/sati');
+    await expect(hoursPage.organizationTable).toBeVisible();
+    await hoursPage.goto(`?tim=${fixture.team.id}&mjesec=${month}`);
+    await expect(page).toHaveURL(new RegExp(`/sati\\?mjesec=${month}&smjena=${fixture.team.id}$`));
+    await expect(hoursPage.filters.teamChip).toHaveAccessibleName(hoursPage.filters.teamChipText(fixture.team.name));
+    // Replaced, never pushed: Back skips the old URL.
+    await page.goBack();
+    await expect(page).toHaveURL(/\/sati$/);
   });
 
   test('a writer that cannot load shows the failure, and the action is usable again', async ({ page, hoursPage }) => {
@@ -651,6 +728,39 @@ async function signedInAs(browser: Browser, slug: string, member: SeededLeaveMem
     throw cause;
   }
 }
+
+test.describe('the filters on a phone, as an admin', () => {
+  test.use({ storageState: ADMIN_STATE, viewport: { width: 390, height: 844 } });
+
+  test('the sheet combines the team and the person, with no note that one replaces the other', async ({
+    page,
+    hoursPage,
+    fixture,
+  }) => {
+    await hoursPage.goto();
+    await expect(hoursPage.organizationTable).toBeVisible();
+    const filters = hoursPage.filters;
+
+    await filters.filtriButton.click();
+    await expect(filters.sheet).toBeVisible();
+    await expect(filters.sheet.getByText(hr.filter.replaceNote, { exact: true })).toHaveCount(0);
+    await filters.sheetTeam(fixture.team.name).check();
+    await expect(page).toHaveURL(/[?&]smjena=/);
+    await filters.sheetPerson(fixture.member.name).click();
+    // Combined: the team is kept beside the person.
+    await expect(page).toHaveURL(/[?&]smjena=/);
+    await expect(page).toHaveURL(/[?&]osoba=/);
+    await expect(filters.sheetShow(1)).toBeVisible();
+    await filters.sheetShow(1).click();
+    await expect(filters.sheet).toBeHidden();
+    // Both chips stay visible above the table, each with its ✕.
+    await expect(filters.filtriButton).toHaveAccessibleName(fill(hr.filter.openCount, { count: '2' }));
+    await expect(filters.removeTeam(fixture.team.name)).toBeVisible();
+    await expect(filters.removePerson(fixture.member.name)).toBeVisible();
+    await expect(hoursPage.organizationRows).toHaveCount(1);
+    await expectNoHorizontalScroll(page);
+  });
+});
 
 test.describe('the conflict count, as an admin', () => {
   test.use({ storageState: ADMIN_STATE });
