@@ -48,10 +48,14 @@ const SANCTIONED_PLURAL_KEYS = [
   // They are here rather than in the screen list below because that list
   // asserts a plain string and would refuse an ICU argument; splitting them is
   // what makes each list check the thing it is for.
-  'ljudi.count',
-  'ljudi.filterAll',
-  'ljudi.filterAdmin',
-  'ljudi.filterMember',
+  //
+  // STORY 7.13 replaced the four: the row count and the counted level options
+  // became ONE summary line — `Prikazano: 15 osoba · 1 administrator ·
+  // 1 zakazana promjena`, every count in all three forms and stated at zero —
+  // and its form without the scheduled count while today is unknown. Each
+  // option's count is `filter.personCount`, drawn beside its name.
+  'ljudi.summary.full',
+  'ljudi.summary.noStatus',
   // STORY 7.6: the unit beside a member's leave allowance on the phone's
   // stacked row, where no column heading stands above it — `1 dan god.`,
   // `2 dana god.`, `21 dan god.`. The figure itself is the cell's own.
@@ -68,13 +72,6 @@ const SANCTIONED_PLURAL_KEYS = [
   // `0 pojaseva`, `1 pojas`, `2 pojasa`, `21 pojas`. Durations are NOT here:
   // `12 h` and `1 h 30 min` are units and take no plural.
   'organization.hourBands.count',
-  // THE MEMBER LIST'S TEAM FILTER, three options each stating its own count,
-  // rendered at zero — `Bez smjene: 0 osoba`. Under `smjene.membership.*`
-  // rather than `ljudi.*`, because only the team namespace may say `smjena`.
-  // `filterTeam` interpolates the team's name, which is data and never a key.
-  'smjene.membership.filterAll',
-  'smjene.membership.filterTeam',
-  'smjene.membership.filterNone',
   // STORY 2.2b: how many shift types are in use, rendered at zero —
   // `0 tipova smjena`, `1 tip smjene`, `2 tipa smjene`, `21 tip smjene`.
   'rotation.shiftTypes.count',
@@ -423,9 +420,27 @@ const SANCTIONED_SCREEN_KEYS = [
   // They state what happened instead.
   'ljudi.error.refused',
   'ljudi.error.unavailable',
-  // The member list's one reset: search, level and team back to their
-  // defaults in a single action (UX-DR17). Plain words, no count.
-  'ljudi.reset',
+  // STORY 7.13: the member list's chips. Razina's text (chosen or `sve`), its
+  // ✕, picker and sheet heading, and its every-level option; Status's text,
+  // ✕ and picker (its heading is the status column's); the status options'
+  // names and the chip's lowercase values; and the pending mark a team chip
+  // reads before the answer names its team. The reset is `filter.clear`.
+  'ljudi.chip.level',
+  'ljudi.chip.levelAll',
+  'ljudi.chip.status',
+  'ljudi.chip.removeLevel',
+  'ljudi.chip.removeStatus',
+  'ljudi.chip.levelPicker',
+  'ljudi.chip.statusPicker',
+  'ljudi.chip.levelHeading',
+  'ljudi.chip.allLevels',
+  'ljudi.chip.pending',
+  'ljudi.statusFilter.active',
+  'ljudi.statusFilter.inactive',
+  'ljudi.statusFilter.all',
+  'ljudi.statusValue.active',
+  'ljudi.statusValue.inactive',
+  'ljudi.statusValue.all',
   // The two member forms. TWENTY strings the screens render and TWELVE
   // refusals the write path maps to, and the partition is the point in both
   // halves. Twelve of the twenty are story 1.5b's; the other eight and the
@@ -539,13 +554,6 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.form.error.statusStale',
   'ljudi.form.error.unavailable',
   'ljudi.form.error.saved',
-  // VISUAL REFRESH B's FOUR: the member list's summary figures, labels only.
-  // Each value is counted by `membersSummaryOf` from the one snapshot and
-  // rendered through `formatNumber`, so none of these carries a count argument.
-  'ljudi.stats.total',
-  'ljudi.stats.admins',
-  'ljudi.stats.active',
-  'ljudi.stats.inactive',
   // MEMBER RANK: the rank control's label, no rank, a code this build lacks,
   // and the eleven fixed rank names, lowercase because they read as a noun
   // phrase beside a name.
@@ -580,8 +588,15 @@ const SANCTIONED_SCREEN_KEYS = [
   // because it sits beside names of every gender with no subject of its own.
   // The separator is visually hidden and read before the badge, so a screen
   // reader announces the name and the marker as two things.
-  'ljudi.status.inactive',
-  'ljudi.status.inactiveScheduled',
+  //
+  // STORY 7.13: the two name markers gave way to the status COLUMN's four
+  // facts — `Aktivno`, `Neaktivno`, and a scheduled change either way,
+  // `Od {date}: neaktivno|aktivno`, its date as `05.10.`. The separator stays
+  // for the team cell's scheduled-move marker.
+  'ljudi.status.cellActive',
+  'ljudi.status.cellInactive',
+  'ljudi.status.cellFromActive',
+  'ljudi.status.cellFromInactive',
   'ljudi.status.separator',
   'ljudi.status.active',
   'ljudi.status.inactiveFrom',
@@ -717,6 +732,8 @@ const SANCTIONED_SCREEN_KEYS = [
   // them; "no team" is `Bez smjene`, positive words, never `Nema`.
   'smjene.membership.column',
   'smjene.membership.none',
+  // STORY 7.13: the Smjena chip's every-team option on *Ljudi*, its count beside it.
+  'smjene.membership.allTeams',
   'smjene.membership.current',
   // TEAM POSITION: the team today and the scheduled change, each with the
   // position it is held in.

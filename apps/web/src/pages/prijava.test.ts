@@ -165,15 +165,16 @@ const MEMBERS_FEATURE = join(srcRoot, 'features', 'members');
 const MEMBER_LIST: readonly string[] = [
   join(srcRoot, 'pages', 'ljudi.tsx'),
   join(MEMBERS_FEATURE, 'hooks', 'use-member-list.ts'),
-  join(MEMBERS_FEATURE, 'components', 'member-stats.tsx'),
   join(MEMBERS_FEATURE, 'components', 'member-table.tsx'),
   // Story 7.6: the same rows stacked below 640 px, and the phone's sort
   // control *Sati* shares, from `@/components/sort-control`.
   join(MEMBERS_FEATURE, 'components', 'member-rows.tsx'),
   join(srcRoot, 'components', 'sort-control.tsx'),
   join(MEMBERS_FEATURE, 'components', 'member-filters.tsx'),
+  // Story 7.13: the option-chip bar only *Ljudi* draws, over the shared
+  // chip, picker and sheet primitives of `@/components/filter-bar`.
+  join(srcRoot, 'components', 'option-filter-bar.tsx'),
   join(MEMBERS_FEATURE, 'components', 'cell-view.tsx'),
-  join(MEMBERS_FEATURE, 'components', 'member-count.tsx'),
   join(MEMBERS_FEATURE, 'utils', 'cell-content.ts'),
   join(MEMBERS_FEATURE, 'utils', 'sort-glyphs.ts'),
 ];
@@ -716,7 +717,13 @@ const SCREENS = [
   // trigger and one column `Button` written once inside the map over the
   // columns. The stacked row's name is a `<Link>` stretched over the row,
   // which no detector reads, and it replaces the row's pencil on a phone.
-  { name: 'the member list', file: MEMBER_LIST, expectedControls: 10 },
+  //
+  // SEVEN SINCE STORY 7.13: the two `<select>`s and the reset gave way to the
+  // shared option-chip bar (`@/components/filter-bar`, counted in the
+  // Kalendar and Sati sets) and its summary line's `Poništi filtre`.
+  // EIGHT with the option-chip bar's own `Filtri` (`option-filter-bar.tsx`,
+  // read with the member list since it is only *Ljudi*'s).
+  { name: 'the member list', file: MEMBER_LIST, expectedControls: 8 },
   // EIGHT on the create form: four `<Input>`s — name, username, address,
   // allowance — the level `<select>`, and three `<Button>`s, which are Save,
   // Cancel and the link back to the list. The count is what notices a SIXTH
@@ -2217,10 +2224,18 @@ const KEY_SOURCES = [
     // the two directions, the sorted option's name with its direction and
     // the picker's name. The rows' field labels are the columns' own keys,
     // `t(column.label)`, counted with the rules.
+    //
+    // THIRTY-EIGHT SINCE STORY 7.13: the two selects' labels, the count and
+    // the reset left with the selects; the three chips arrived — Razina's
+    // text, value, ✕, picker and sheet heading, Smjena's (the shared
+    // `filter.*` keys) with `Bez smjene` and the pending name, Status's text,
+    // ✕, picker and heading — with each option's person count and the
+    // summary line's message. FORTY-ONE with the option-chip bar's own part,
+    // read with the member list: `Filtri`, its count, and the bar's label.
     name: 'the member list',
     file: MEMBER_LIST,
     keys: translationKeys,
-    strings: 24,
+    strings: 41,
   },
   {
     // STORY 1.7a. EIGHT on the team list: its heading, the link back
@@ -3117,10 +3132,16 @@ const KEY_SOURCES = [
     // TWENTY-FOUR SINCE DESIGN REFRESH C: `teamMarkerMessageKey`'s three
     // markers for a scheduled team change — a move, no team, and a change
     // that keeps the team.
+    // THIRTY SINCE STORY 7.13: the four stat labels and the two inactive
+    // markers left with the stat cards and the name's badge; the status
+    // column's heading and its four facts arrived (`memberStatusMessageKey`),
+    // the summary line's two forms, the level picker's every-level option,
+    // the status chip's three values and its three option names, and the team
+    // options are now `Sve smjene` and `Bez smjene` beside their counts.
     name: 'the member list rules',
     file: MEMBER_LIST_KEYS,
     keys: memberListKeys,
-    strings: 24,
+    strings: 30,
   },
   {
     // ONE on the lockup: the accessible name it falls back to when the
@@ -3533,7 +3554,11 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(source(CALENDAR_FILTERS)).toMatch(/<FilterBar\b/);
     expect(source(HOURS_FILTERS)).toMatch(/<FilterBar\b/);
     // A ✕ is named by an expression — the filter and its value — never a literal.
-    expect(bar).toMatch(/aria-label=\{t\(filterRemoveMessageKey\(chip\), \{ value: chip\.value \}\)\}/);
+    expect(bar).toMatch(/removeLabel=\{t\(filterRemoveMessageKey\(chip\), \{ value: chip\.value \}\)\}/);
+    expect(bar).toMatch(/aria-label=\{removeLabel\}/);
+    // STORY 7.13: *Ljudi* draws the same chips through the option-chip bar.
+    expect(source(MEMBER_LIST)).toMatch(/<OptionFilterBar\b/);
+    expect(source(MEMBER_LIST), 'the member list draws a Select again').not.toMatch(/<Select\b|<select\b/);
     // A chip says it opens a dialog, and while open names the picker it opened.
     // On a phone it opens the sheet, and says so: expanded and controlling it.
     expect(bar).toMatch(
@@ -5417,6 +5442,9 @@ describe('the member list computes nothing it renders', () => {
       // the name: the marker is a badge BESIDE it now, rendered by `cellStatus`,
       // so the name itself is no longer wrapped in anything.
       'cell.text',
+      // STORY 7.13: the status column's fact, its key and its date both the
+      // module's (`memberStatusMessageKey`, `memberStatusArgsOf`).
+      't(memberStatusMessageKey(cell), memberStatusArgsOf(cell))',
       't(memberLevelMessageKey(cell.level))',
       // STORY 1.7b, a FIFTH: the team today, or "no team" stated in positive
       // words (`Bez smjene`) where a blank would read as not loaded. The
@@ -6216,14 +6244,15 @@ describe('every select is the one Select primitive, in the one Input look', () =
     );
   }
 
-  it('finds all seventeen, so the comparison is not vacuous', () => {
+  it('finds all fourteen, so the comparison is not vacuous', () => {
     // THIRTEEN: the twelve visual refresh B held to one literal, and the shift
     // type kind on `/postavke-rotacije`, which that block never listed.
     // FOURTEEN SINCE STORY 3.3a: the calendar's team filter.
     // FIFTEEN SINCE STORY 3.5b: the override form's type.
     // SEVENTEEN SINCE STORY 3.6b: the roster form's "Skida se" and "Dolazi".
     // SIXTEEN SINCE STORY 7.5: the calendar's filter is chips, not a Select.
-    expect(selectClasses()).toHaveLength(16);
+    // FOURTEEN SINCE STORY 7.13: so is the member list's.
+    expect(selectClasses()).toHaveLength(14);
   });
 
   it('composes only the 44 px height onto each, so no screen restyles the primitive', () => {
@@ -6248,93 +6277,70 @@ describe('every select is the one Select primitive, in the one Input look', () =
   });
 });
 
-describe('the member list filters are dead while unanswered, and the reset restores all three', () => {
+describe('the member list filters are dead while unanswered, and the reset restores the defaults', () => {
   /**
-   * TWO I/O ROWS OF THE TEAM FILTER SPEC live only in `ljudi.tsx` markup, which
-   * no test executes (AD-15): "unanswered — both selects and reset disabled"
-   * and "reset — one press returns search, level and team to their defaults".
-   * `isNarrowed` itself is executed in `features/members/services/list.test.ts`; what is read here
-   * is the wiring. The checks are one pure function over source text, so the
-   * self-tests below can prove each mutation fails.
+   * TWO I/O ROWS OF THE FILTER SPECS live only in markup and the hook, which
+   * no test executes (AD-15): "unanswered — the search and the chips are
+   * disabled" and "reset — one press returns the URL to its defaults" (story
+   * 7.13: no search, every level, every team, `aktivni`, by name ascending).
+   * `isNarrowed` itself is executed in `features/members/services/list.test.ts`;
+   * what is read here is the wiring. The checks are one pure function over
+   * source text, so the self-tests below can prove each mutation fails.
    */
   function filterWiringFaults(text: string): string[] {
     const faults: string[] = [];
     const selects = selectElements(text);
     const inputs = inputElements(text);
 
-    if (selects.length !== 2) faults.push(`expected two selects, found ${String(selects.length)}`);
+    if (selects.length !== 0) faults.push(`expected no select, found ${String(selects.length)}`);
     if (inputs.length !== 1) faults.push(`expected one Input, found ${String(inputs.length)}`);
-    for (const control of [...selects, ...inputs]) {
-      if (!control.includes('disabled={unanswered}')) faults.push('a filter control is live while unanswered');
+    for (const control of inputs) {
+      if (!control.includes('disabled={unanswered}')) faults.push('the search is live while unanswered');
     }
 
-    const reset = buttonElements(text).find((button) => button.includes('onClick={resetFilters}'));
-    const disabled = /disabled=\{([^}]*)\}/.exec(reset ?? '')?.[1] ?? '';
+    const bar = /<OptionFilterBar\b[\s\S]*?\n {4}\/>/.exec(text)?.[0] ?? '';
 
-    if (reset === undefined) faults.push('no reset button');
-    if (!/\bunanswered\b/.test(disabled)) faults.push('the reset is live while unanswered');
-    if (!disabled.includes('isNarrowed(')) faults.push('the reset ignores whether anything is narrowed');
-    if (!/isNarrowed\(\s*search\s*,\s*level\s*,\s*narrowed\.team\s*\)/.test(disabled)) {
-      faults.push('the reset does not judge the search, the level and the applied team');
+    if (bar === '') faults.push('no chip bar');
+    if (!/\n {6}disabled=\{unanswered\}/.test(bar)) faults.push('the chips are live while unanswered');
+    const showClear = /showClear=\{([^}]*)\}/.exec(bar)?.[1] ?? '';
+
+    if (!/!unanswered\b/.test(showClear)) faults.push('the reset is live while unanswered');
+    if (!/isNarrowed\(filters\)/.test(showClear)) faults.push('the reset ignores whether anything is narrowed');
+    if (!/onReset=\{list\.clearFilters\}/.test(bar)) faults.push('the sheet\'s reset moves focus behind the sheet');
+    if (!/onClear=\{list\.resetFilters\}/.test(bar)) faults.push('the reset is not the hook\'s');
+    if (!/const team = unanswered \? filters\.team : narrowed\.team;/.test(text)) {
+      faults.push('the team chip does not show the team the rows were narrowed by');
     }
 
-    const teamSelect = selects.find((control) => control.includes('onChange={changeTeam}'));
-
-    if (!/value=\{\s*narrowed\.team\s*\}/.test(teamSelect ?? '')) {
-      faults.push('the team select does not show the team the rows were narrowed by');
-    }
-
+    const clear = /function clearFilters\(\)[^{]*\{([\s\S]*?)\n {2}\}/.exec(text)?.[1] ?? '';
     const body = /function resetFilters\(\)[^{]*\{([\s\S]*?)\n {2}\}/.exec(text)?.[1] ?? '';
 
-    for (const [setter, value] of [
-      ['setSearch', 'NO_TEXT'],
-      ['setLevel', 'ALL_LEVELS'],
-      ['setTeam', 'ALL_TEAMS'],
-    ] as const) {
-      if (!new RegExp(`\\b${setter}\\(\\s*${value}\\s*\\)`).test(body)) {
-        faults.push(`the reset does not call ${setter}(${value})`);
-      }
-    }
+    if (!/\bgo\(\s*DEFAULT_FILTERS\s*\)/.test(clear)) faults.push('the reset does not return the URL to its defaults');
+    if (!/\bsetText\(\s*NO_TEXT\s*\)/.test(clear)) faults.push('the reset keeps the search box');
+    if (/focus\(/.test(clear)) faults.push('the sheet\'s reset moves focus');
+    if (!/\bclearFilters\(\)/.test(body)) faults.push('the reset does not clear');
+    if (!/searchField\.current\?\.focus\(\)/.test(body)) faults.push('the reset drops focus');
 
     return faults;
   }
 
-  it('disables both selects and the search while unanswered, and the reset restores all three', () => {
+  it('disables the search and the chips while unanswered, and the reset restores the defaults', () => {
     expect(filterWiringFaults(source(MEMBER_LIST))).toEqual([]);
   });
 
   it.each([
-    { name: 'the level select losing its guard', from: 'onChange={changeLevel}\n          disabled={unanswered}', to: 'onChange={changeLevel}' },
-    { name: 'the team select losing its guard', from: 'onChange={changeTeam}\n          disabled={unanswered}', to: 'onChange={changeTeam}' },
-    { name: 'the search losing its guard', from: 'onChange={changeSearch}\n            disabled={unanswered}', to: 'onChange={changeSearch}' },
-    { name: 'the reset dropping unanswered', from: 'disabled={unanswered || !isNarrowed(', to: 'disabled={!isNarrowed(' },
-    { name: 'the reset dropping isNarrowed', from: 'disabled={unanswered || !isNarrowed(search, level, narrowed.team)}', to: 'disabled={unanswered}' },
-    { name: 'the reset keeping the search', from: '    setSearch(NO_TEXT);\n    setLevel(ALL_LEVELS);', to: '    setLevel(ALL_LEVELS);' },
-    { name: 'the reset keeping the level', from: '    setLevel(ALL_LEVELS);\n    setTeam(ALL_TEAMS);', to: '    setTeam(ALL_TEAMS);' },
-    { name: 'the reset keeping the team', from: '    setLevel(ALL_LEVELS);\n    setTeam(ALL_TEAMS);', to: '    setLevel(ALL_LEVELS);' },
+    { name: 'the search losing its guard', from: 'onChange={changeSearch}\n              disabled={unanswered}', to: 'onChange={changeSearch}' },
+    { name: 'the chips losing their guard', from: '      disabled={unanswered}\n      describedBy', to: '      describedBy' },
+    { name: 'the reset dropping unanswered', from: 'showClear={!unanswered && isNarrowed(filters)}', to: 'showClear={isNarrowed(filters)}' },
+    { name: 'the reset ignoring isNarrowed', from: 'showClear={!unanswered && isNarrowed(filters)}', to: 'showClear={!unanswered}' },
+    { name: 'the sheet resetting with focus', from: 'onReset={list.clearFilters}', to: 'onReset={list.resetFilters}' },
+    { name: 'the reset keeping the URL', from: '    go(DEFAULT_FILTERS);\n', to: '' },
+    { name: 'the reset keeping the box', from: '    setText(NO_TEXT);\n    go(DEFAULT_FILTERS);', to: '    go(DEFAULT_FILTERS);' },
+    { name: 'the team chip showing the stored team', from: 'const team = unanswered ? filters.team : narrowed.team;', to: 'const team = filters.team;' },
   ])('would notice $name', ({ from, to }) => {
     const screen = source(MEMBER_LIST);
 
     expect(screen, 'the mutation no longer applies to the screen').toContain(from);
-    expect(filterWiringFaults(screen.replace(from, to)).length).toBeGreaterThan(0);
-  });
-
-  it.each([
-    { name: 'the team select showing the stored team', from: /value=\{\s*narrowed\.team\s*\}/, to: 'value={team}' },
-    {
-      name: 'the reset judging the stored team',
-      from: /isNarrowed\(\s*search\s*,\s*level\s*,\s*narrowed\.team\s*\)/,
-      to: 'isNarrowed(search, level, team)',
-    },
-    {
-      name: 'the reset ignoring the level',
-      from: /isNarrowed\(\s*search\s*,\s*level\s*,/,
-      to: 'isNarrowed(search, ALL_LEVELS,',
-    },
-  ])('would notice $name, whatever the whitespace', ({ from, to }) => {
-    const screen = source(MEMBER_LIST);
-
-    expect(screen, 'the mutation no longer applies to the screen').toMatch(from);
     expect(filterWiringFaults(screen.replace(from, to)).length).toBeGreaterThan(0);
   });
 });
@@ -6383,7 +6389,8 @@ describe('the member list owns exactly one scroll container, and states its coun
     // so the shape that would — a branch on an empty list — is refused here.
     const screen = source(MEMBER_LIST);
 
-    expect(screen, 'the member list never renders its count').toMatch(/t\('ljudi\.count'/);
+    // STORY 7.13: the count is the summary line's, every figure at zero too.
+    expect(screen, 'the member list never renders its count').toMatch(/t\(membersSummaryMessageKey\(summary\)/);
     expect(
       screen,
       'the member list branches on an empty list, which is how a stated zero disappears',

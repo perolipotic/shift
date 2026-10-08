@@ -1147,6 +1147,11 @@ const AUTHORED_VOCABULARY = [
   // option, and a component hard-coding either is a count that no longer
   // matches.
   //
+  // STORY 7.13 retired `Administratori`, `Članovi`, `Prikazana` and
+  // `Prikazane` with the counted level options and the row count: the level
+  // options are the levels' own names, and the one summary line says
+  // `Prikazano`.
+  //
   // Six of them were already in `hr.json` before this story — `ovlasti`,
   // `godišnjeg`, `odmora`, `prikazati`, `moguće`, `trenutačno` — and were in
   // NEITHER list, so they are joining the count rather than moving into it.
@@ -1168,11 +1173,7 @@ const AUTHORED_VOCABULARY = [
   'godišnjeg',
   'odmora',
   'Administrator',
-  'Administratori',
   'Član',
-  'Članovi',
-  'Prikazana',
-  'Prikazane',
   'Prikazano',
   'Sve',
   'prikazati',

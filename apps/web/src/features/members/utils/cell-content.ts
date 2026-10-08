@@ -2,13 +2,14 @@ import { formatNumber } from '@/lib/i18n/format';
 import { t } from '@/lib/i18n';
 import {
   DAYS_CELL,
-  INACTIVE_NAME_CELL,
   LEVEL_CELL,
   NAME_CELL,
-  SCHEDULED_INACTIVE_NAME_CELL,
+  STATUS_CELL,
   TEAM_CELL,
   TEXT_CELL,
   memberLevelMessageKey,
+  memberStatusArgsOf,
+  memberStatusMessageKey,
   type MemberCell,
 } from '@/features/members/services/list';
 
@@ -29,17 +30,9 @@ import {
  * initialised to be testable at all.
  */
 export function cellContent(cell: MemberCell): string {
-  // VISUAL REFRESH B: every name kind renders its name untouched. The inactive
-  // marker moved out of the name and into a badge beside it, whose words
-  // `memberCellLookOf` decides.
-  if (
-    cell.kind === TEXT_CELL ||
-    cell.kind === NAME_CELL ||
-    cell.kind === INACTIVE_NAME_CELL ||
-    cell.kind === SCHEDULED_INACTIVE_NAME_CELL
-  ) {
-    return cell.text;
-  }
+  if (cell.kind === TEXT_CELL || cell.kind === NAME_CELL) return cell.text;
+  // STORY 7.13: today's status, or the change scheduled after it, in words.
+  if (cell.kind === STATUS_CELL) return t(memberStatusMessageKey(cell), memberStatusArgsOf(cell));
   if (cell.kind === LEVEL_CELL) return t(memberLevelMessageKey(cell.level));
   // STORY 1.7b: the team today, and "no team" in positive words — never a
   // blank cell, which would read as a value that did not load.

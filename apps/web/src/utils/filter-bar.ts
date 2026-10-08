@@ -249,6 +249,48 @@ export function focusAfterRemovalOf(model: FilterBarModel, key: FilterKey): Filt
 }
 
 /**
+ * OPTION CHIPS (story 7.13): a bar of chips each choosing one value from a
+ * fixed list — *Ljudi*'s Razina, Smjena and Status — drawn by the same chip,
+ * picker and phone sheet as the two above. A screen hands the component the
+ * chips' keys and whether each is set; what a press changes stays the
+ * screen's own rule.
+ */
+export interface OptionChipState {
+  readonly key: string;
+  /** Set: drawn active, with its ✕, and shown on a phone. */
+  readonly active: boolean;
+}
+
+/** How many option chips are set: `Filtri · N`. */
+export function optionChipsActiveCount(chips: readonly OptionChipState[]): number {
+  return chips.filter((chip) => chip.active).length;
+}
+
+/**
+ * Where focus goes after an option chip's ✕: the chip after it, or else the
+ * first — as {@link focusAfterRemovalOf}. The component falls back to
+ * `Filtri` where that chip is not drawn (a phone shows only set chips).
+ */
+export function focusAfterOptionRemovalOf(chips: readonly OptionChipState[], key: string): string | null {
+  const index = chips.findIndex((chip) => chip.key === key);
+
+  return chips[index + 1]?.key ?? chips[0]?.key ?? null;
+}
+
+/** Which edge of its chip a picker opens under: `start` (left) or `end` (right). */
+export type OptionPickerAlign = 'start' | 'end';
+
+/**
+ * Where an option chip's picker opens, from 640 px: under the first chip's
+ * left edge, which is where the row begins below 1024 px, and under every
+ * later chip's right edge, so a picker opened near the end of the row stays
+ * inside the card.
+ */
+export function optionPickerAlignOf(chips: readonly OptionChipState[], key: string): OptionPickerAlign {
+  return chips[0]?.key === key ? 'start' : 'end';
+}
+
+/**
  * Lower case, with the diacritics folded: `Knežević` is found by `knezevic`,
  * and `đ` and `dj` read alike, so `Đuro` is found by `djuro` and by `duro`.
  */

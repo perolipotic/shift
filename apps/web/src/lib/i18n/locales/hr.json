@@ -548,16 +548,31 @@
     "leaveUnit": "{count, plural, one {dan god.} few {dana god.} other {dana god.}}",
     "admin": "Administrator",
     "member": "Član",
-    "count": "{count, plural, one {Prikazana # osoba} few {Prikazane # osobe} other {Prikazano # osoba}}",
-    "filterAll": "{count, plural, one {Sve razine: # osoba} few {Sve razine: # osobe} other {Sve razine: # osoba}}",
-    "filterAdmin": "{count, plural, one {Administratori: # osoba} few {Administratori: # osobe} other {Administratori: # osoba}}",
-    "filterMember": "{count, plural, one {Članovi: # osoba} few {Članovi: # osobe} other {Članovi: # osoba}}",
-    "reset": "Poništi filtre",
-    "stats": {
-      "total": "Ukupno osoba",
-      "admins": "Administratori",
-      "active": "Aktivne danas",
-      "inactive": "Neaktivne danas"
+    "summary": {
+      "full": "Prikazano: {shown, plural, one {# osoba} few {# osobe} other {# osoba}} · {admins, plural, one {# administrator} few {# administratora} other {# administratora}} · {scheduled, plural, one {# zakazana promjena} few {# zakazane promjene} other {# zakazanih promjena}}",
+      "noStatus": "Prikazano: {shown, plural, one {# osoba} few {# osobe} other {# osoba}} · {admins, plural, one {# administrator} few {# administratora} other {# administratora}}"
+    },
+    "chip": {
+      "level": "Razina: {value}",
+      "levelAll": "Razina: sve",
+      "status": "Status: {value}",
+      "removeLevel": "Ukloni filtar razina: {value}",
+      "removeStatus": "Ukloni filtar status: {value}",
+      "levelPicker": "Odaberi razinu",
+      "statusPicker": "Odaberi status",
+      "levelHeading": "Razina",
+      "allLevels": "Sve razine",
+      "pending": "…"
+    },
+    "statusFilter": {
+      "active": "Aktivni",
+      "inactive": "Neaktivni",
+      "all": "Svi"
+    },
+    "statusValue": {
+      "active": "aktivni",
+      "inactive": "neaktivni",
+      "all": "svi"
     },
     "error": {
       "refused": "Popis osoba nije moguće prikazati. Odjavi se i prijavi ponovno.",
@@ -656,8 +671,10 @@
     },
     "status": {
       "heading": "Status",
-      "inactive": "Neaktivna osoba",
-      "inactiveScheduled": "Neaktivno od {date}",
+      "cellActive": "Aktivno",
+      "cellInactive": "Neaktivno",
+      "cellFromActive": "Od {date}: aktivno",
+      "cellFromInactive": "Od {date}: neaktivno",
       "separator": ", ",
       "active": "Osoba je aktivna.",
       "inactiveFrom": "Osoba je neaktivna od {date}.",
@@ -1228,9 +1245,7 @@
     "membership": {
       "column": "Smjena",
       "none": "Bez smjene",
-      "filterAll": "{count, plural, one {Sve smjene: # osoba} few {Sve smjene: # osobe} other {Sve smjene: # osoba}}",
-      "filterTeam": "{count, plural, one {{team}: # osoba} few {{team}: # osobe} other {{team}: # osoba}}",
-      "filterNone": "{count, plural, one {Bez smjene: # osoba} few {Bez smjene: # osobe} other {Bez smjene: # osoba}}",
+      "allTeams": "Sve smjene",
       "current": "Smjena: {team}",
       "currentPosition": "Smjena: {team}, položaj: {position}",
       "scheduled": "Od {date} osoba će biti u smjeni {team}.",
