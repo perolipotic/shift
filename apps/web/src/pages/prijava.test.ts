@@ -271,6 +271,8 @@ const MEMBER_EDIT: readonly string[] = [
   join(LEAVE_FEATURE, 'components', 'member-leave-card.tsx'),
   // STORY 5.2b: the card's list of live records and its removal confirmation.
   join(LEAVE_FEATURE, 'components', 'member-leave-records.tsx'),
+  // STORY 7.12: the card's record and amend dialog, the od–do fields' one home.
+  join(LEAVE_FEATURE, 'components', 'member-leave-dialog.tsx'),
 ];
 
 /** The teams feature, which holds both team screens' parts. */
@@ -774,7 +776,11 @@ const SCREENS = [
   // status) less the old in-card offers and confirmations they replace; the
   // allowance's own field; and the withdrawals, which stay card buttons
   // behind their own confirmations.
-  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 46 },
+  //
+  // FORTY-SEVEN SINCE STORY 7.12: the leave card's od–do form moves into its
+  // dialog — the same two fields and Spremi, its cancel now always drawn —
+  // and the card's header gains *Upiši godišnji*.
+  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 47 },
   // STORY 1.7a. FOUR on the team list: the link back to `Ljudi`, the one name
   // `<Input>`, the add `<Button>`, and ONE row link written once inside the map
   // over the teams — the same count at zero teams as at nine. SIX on one team:
@@ -3037,10 +3043,18 @@ const KEY_SOURCES = [
     // card's heading, line and button; and the leave card's year heading and
     // *Pravo*. Every dialog's close button is `ljudi.page.close`. And the
     // team withdrawal's prompt, written by the card itself.
+    //
+    // ONE HUNDRED AND FORTY-NINE SINCE STORY 7.12, the leave dialog: the
+    // card's *Upiši godišnji* and its name; the dialog's two titles, close,
+    // cancel, *Što se mijenja*, *Bilo* and *Sada* with their ranges; the
+    // conflict lines (one line's shape, created, where, none, cleared, kept,
+    // new, their one group shape and unknown); and the removal's cleared
+    // line or its unknown line — less the form's two legends and the row's amend-mode word they
+    // replace.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 129,
+    strings: 149,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
@@ -9124,10 +9138,11 @@ describe('the two member forms write through the seam and keep nothing back', ()
     // never again. Each dialog's body is keyed to its OPENING rather than to
     // the row: a new opening seeds from the record as it is now, and a refetch
     // during one — a refused rename re-reads the list — leaves what is typed
-    // alone. Four dialogs: the basics, the allowance, the team and the status.
+    // alone. Five dialogs: the basics, the allowance, the team, the status
+    // and — since story 7.12 — the leave record's, one body for new and amend.
     const screen = source(MEMBER_EDIT);
 
-    expect(occurrences(screen, '<Fragment key={opening.key}>'), 'a dialog body is not keyed to its opening').toBe(4);
+    expect(occurrences(screen, '<Fragment key={opening.key}>'), 'a dialog body is not keyed to its opening').toBe(5);
     expect(screen, 'the edit screen still keys a form to the row').not.toContain('memberFormKey(');
   });
 

@@ -10,6 +10,13 @@ export function weekdayOf(date: string): string {
   return new Intl.DateTimeFormat('hr', { weekday: 'long', timeZone: 'UTC' }).format(new Date(`${date}T12:00:00Z`));
 }
 
+/** `čet` — a date's short weekday, lowercase, as the leave dialog's conflict lines name it (story 7.12). */
+export function weekdayShort(date: string): string {
+  return new Intl.DateTimeFormat('hr', { weekday: 'short', timeZone: 'UTC' })
+    .format(new Date(`${date}T12:00:00Z`))
+    .toLocaleLowerCase('hr');
+}
+
 /** `05.10.2026` — a whole date as the app's `formatIsoDate` writes it. */
 export function fullDate(date: string): string {
   return `${date.slice(8, 10)}.${date.slice(5, 7)}.${date.slice(0, 4)}`;

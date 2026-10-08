@@ -338,6 +338,12 @@ export const LEAVE_PREVIEW_ID = 'member-leave-preview';
 /** The replacement lines' id, which describes the removal confirmation while it shows any (story 5.4e). */
 export const LEAVE_REMOVE_REPLACEMENTS_ID = 'member-leave-remove-replacements';
 
+/** The removal confirmation's line of the conflicts it clears (story 7.12), which describes it. */
+export const LEAVE_REMOVE_CLEARS_ID = 'member-leave-remove-clears';
+
+/** The leave dialog's title (story 7.12), which names the dialog. */
+export const LEAVE_DIALOG_HEADING_ID = 'member-leave-dialog-heading';
+
 /** The reason's id, which the field it names is described by while that field is marked. */
 export const LEAVE_REASON_ID = 'member-leave-reason';
 

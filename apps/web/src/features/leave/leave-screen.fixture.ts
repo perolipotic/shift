@@ -53,4 +53,12 @@ export const LEAVE_SCREEN_EXEMPT: readonly { readonly file: string; readonly why
     file: 'components/member-leave-records.tsx',
     why: "the admin card's records and removal confirmation, a part of the member edit screen's set",
   },
+  {
+    file: 'components/member-leave-dialog.tsx',
+    why: "the admin card's record and amend dialog (story 7.12), a part of the member edit screen's set",
+  },
+  {
+    file: 'services/leave-conflicts.ts',
+    why: "the admin dialog's conflict preview (story 7.12); codes and operands only, executed by leave-conflicts.test.ts",
+  },
 ];
