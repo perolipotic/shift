@@ -440,7 +440,6 @@ const SANCTIONED_SCREEN_KEYS = [
   // the one field with no column, because `0007`'s username renders in no
   // column (`apps/web/src/features/members/services/list.ts`).
   'ljudi.form.newHeading',
-  'ljudi.form.editHeading',
   'ljudi.form.add',
   // The row action's name INTERPOLATES the member it acts on, which is why it
   // is the one key in this file carrying an ICU argument that is not a plural:
@@ -669,9 +668,8 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.form.newAboutBody',
   'ljudi.form.sectionBasics',
   'ljudi.form.sectionSettings',
-  // The member edit screen's cards for the status and the password.
+  // The member edit screen's card for the status.
   'ljudi.status.heading',
-  'ljudi.form.passwordHeading',
   // The member list's marker for a scheduled team change, in the team cell.
   'smjene.membership.markerMove',
   'smjene.membership.markerNone',
@@ -733,16 +731,7 @@ const SANCTIONED_SCREEN_KEYS = [
   'smjene.membership.team',
   'smjene.membership.date',
   'smjene.membership.move',
-  'smjene.membership.movePrompt',
-  'smjene.membership.movePromptFuture',
-  // TEAM POSITION: a move naming its position, and a position-only change,
-  // each today or later.
-  'smjene.membership.movePositionPrompt',
-  'smjene.membership.movePositionPromptFuture',
-  'smjene.membership.positionPrompt',
-  'smjene.membership.positionPromptFuture',
-  'smjene.membership.removePrompt',
-  'smjene.membership.removePromptFuture',
+  // The erasure dialog's save for a move, in the move's own words.
   'smjene.membership.moveConfirm',
   'smjene.membership.withdraw',
   'smjene.membership.withdrawPrompt',
@@ -1738,6 +1727,48 @@ const SANCTIONED_SCREEN_KEYS = [
   'danas.admin.week.legendConflict',
   'danas.admin.week.link',
   'danas.admin.unavailable',
+  // STORY 7.11: the member page as facts and dialogs. The header — the
+  // person's name is the title, so its fallback, the subline's separator and
+  // the status badge's two words; every dialog's close. The *Osnovni podaci*
+  // card, its edit button (and the name it announces) and its dialog; the
+  // allowance's action on the leave card, its dialog and its notice; the
+  // leave card's year heading and *Pravo*; the status dialog's titles and
+  // its final button, the action itself; the team dialog's title, its
+  // description, the placeholder and the current team's option, its Spremi
+  // and the placeholder's refusal; the *Prijava* card and its line.
+  'ljudi.page.heading',
+  'ljudi.page.separator',
+  'ljudi.page.active',
+  'ljudi.page.inactive',
+  'ljudi.page.close',
+  'ljudi.basics.heading',
+  'ljudi.basics.edit',
+  'ljudi.basics.editName',
+  'ljudi.basics.dialogHeading',
+  'ljudi.basics.noEmail',
+  'ljudi.allowance.change',
+  'ljudi.allowance.changeName',
+  'ljudi.allowance.dialogHeading',
+  'ljudi.allowance.saved',
+  'ljudi.leaveRecord.allowance',
+  'ljudi.leaveRecord.headingYear',
+  'ljudi.leaveRecord.headingYears',
+  'ljudi.status.deactivateAction',
+  'ljudi.status.reactivateAction',
+  'ljudi.status.deactivateHeading',
+  'ljudi.status.reactivateHeading',
+  'smjene.membership.change',
+  'smjene.membership.dialogHeading',
+  'smjene.membership.now',
+  'smjene.membership.nowPosition',
+  'smjene.membership.nowNone',
+  'smjene.membership.choose',
+  'smjene.membership.currentChoice',
+  'smjene.membership.save',
+  'smjene.membership.error.unpicked',
+  'ljudi.form.signInHeading',
+  'ljudi.form.signInLine',
+  'ljudi.form.resetAction',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

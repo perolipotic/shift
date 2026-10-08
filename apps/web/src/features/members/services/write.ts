@@ -38,15 +38,13 @@ import {
   MEMBER_TEAM_POSITION_UNCHANGED,
   MEMBER_TEAM_STALE,
   MEMBER_TEAM_UNCHANGED,
+  MEMBER_TEAM_UNPICKED,
   MEMBER_UNKNOWN,
   MEMBER_WRITE_FUNCTION,
   MEMBER_WRITE_INVALID,
   MEMBER_WRITE_REFUSED,
   MEMBER_WRITE_UNAVAILABLE,
   ORGANIZATION_WOULD_HAVE_NO_ADMIN,
-  PROMPT_POSITION_ONLY,
-  PROMPT_TEAM_ONLY,
-  PROMPT_WITH_POSITION,
   REACTIVATE,
   WITHDRAW,
   PASSWORD_RESET,
@@ -57,11 +55,9 @@ import {
   memberWriteFailureOf,
   statusPromptMessageKey,
   TEAM_MOVE,
-  teamPromptMessageKey,
   teamScheduledMessageKey,
   teamCurrentMessageKey,
   type TeamChange,
-  type TeamPromptPosition,
   type MemberWriteFailure,
   type MemberWriteRefusal,
   type PostgrestFailure,
@@ -318,7 +314,7 @@ export function enteredAllowance(value: string): number | null {
 
 /** What both forms collect. `username` is here because both forms show it —
  *  where it GOES is {@link saveMember}'s branch, not the form's. */
-export interface MemberEdits {
+export interface MemberFields {
   readonly name: string;
   readonly email: string | null;
   readonly role: MemberRole;
@@ -332,6 +328,24 @@ export interface MemberEdits {
    */
   readonly fireRank?: string | null;
 }
+
+/**
+ * One edit of an existing member (story 7.11): A PARTIAL PATCH. An absent
+ * field is not sent, so a dialog writes only the fields it showed — the
+ * basics dialog never writes back the allowance, and the allowance dialog
+ * never writes back a name another admin may have changed since this screen
+ * read the list. `fireRank`'s rule has always been this one.
+ */
+export type MemberEdits = Partial<MemberFields>;
+
+/**
+ * Which of the member page's two dialogs a member save came from (story
+ * 7.11): the basics, or the allowance on the leave card. The one member write
+ * serves both, and the card the dialog closed back onto says it landed.
+ */
+export const BASICS_SAVE = 'basics';
+export const ALLOWANCE_SAVE = 'allowance';
+export type MemberSaveScope = typeof BASICS_SAVE | typeof ALLOWANCE_SAVE;
 
 export type MemberWriteOutcome =
   | { readonly ok: true }
@@ -494,6 +508,24 @@ export function storedUsernameOf(rows: readonly unknown[] | null, cached: string
 }
 
 /**
+ * The PATCH one edit sends: exactly the fields it carries (story 7.11), in
+ * the columns' spelling. The name is TRIMMED, exactly as `createPayloadOf`
+ * trims it on the other path — untrimmed, `  Ana  ` created through one form
+ * and typed into the other are two names for one person. `null` is a value —
+ * "no address", "no rank" — and is written; an absent field leaves its column
+ * alone. The username is never here: it moves through the function.
+ */
+export function memberPatchOf(edits: MemberEdits): Record<string, unknown> {
+  return {
+    ...(edits.name === undefined ? {} : { name: edits.name.trim() }),
+    ...(edits.email === undefined ? {} : { email: edits.email }),
+    ...(edits.role === undefined ? {} : { role: edits.role }),
+    ...(edits.leaveAllowanceDays === undefined ? {} : { leave_allowance_days: edits.leaveAllowanceDays }),
+    ...(edits.fireRank === undefined ? {} : { fire_rank: edits.fireRank }),
+  };
+}
+
+/**
  * Save an edit: the ordinary fields through PostgREST, the username through the
  * function, and the function only when the username actually moved.
  *
@@ -511,8 +543,18 @@ export async function saveMember(
   // BLANK IN `0024`'s CLASS, refused before anything is sent and with the code
   // `members_name_check`'s 23514 would reach through `editFailureOf`: a value to
   // correct. `trim()` keeps U+0085 and U+001C–001F, so without this a name of
-  // those alone would travel to the database only to be refused there.
-  if (isBlankName(edits.name)) {
+  // those alone would travel to the database only to be refused there. Only
+  // when the edit carries a name: the allowance dialog sends none.
+  if (edits.name !== undefined && isBlankName(edits.name)) {
+    return { ok: false, refusal: { code: MEMBER_WRITE_INVALID, saved: false } };
+  }
+
+  const patch = memberPatchOf(edits);
+
+  // AN EMPTY EDIT IS NO WRITE: a PATCH of nothing would answer the row as it
+  // is and report a save that changed nothing. Refused as a value to correct,
+  // before anything is sent — no dialog sends one.
+  if (Object.keys(patch).length === 0) {
     return { ok: false, refusal: { code: MEMBER_WRITE_INVALID, saved: false } };
   }
 
@@ -520,19 +562,7 @@ export async function saveMember(
 
   try {
     answered = await table
-      .update({
-        // TRIMMED, exactly as `createPayloadOf` trims it on the other path.
-        // Untrimmed here, `  Ana  ` created through one form and typed into the
-        // other are two different names for one person — a difference nobody
-        // can see and nobody chose.
-        name: edits.name.trim(),
-        email: edits.email,
-        role: edits.role,
-        leave_allowance_days: edits.leaveAllowanceDays,
-        // ONLY WHEN THE FORM OFFERED IT. `null` is a value — the empty choice,
-        // "no rank" — and is written; an absent rank leaves the column alone.
-        ...(edits.fireRank === undefined ? {} : { fire_rank: edits.fireRank }),
-      })
+      .update(patch)
       .eq(ID_COLUMN, member.id)
       .select(MEMBER_EDIT_COLUMNS);
   } catch (cause) {
@@ -560,14 +590,18 @@ export async function saveMember(
   // is the cached username, and renaming to it would silently undo another
   // admin's rename that landed meanwhile. AND the database does not already
   // hold it: another admin may have made this very rename first.
+  // A USERNAME ABSENT FROM THE EDIT is no rename at all (the allowance dialog).
+  const username = edits.username;
+
   if (
-    !usernameChanged(member.username, edits.username) ||
-    !usernameChanged(storedUsernameOf(answered.data, member.username), edits.username)
+    username === undefined ||
+    !usernameChanged(member.username, username) ||
+    !usernameChanged(storedUsernameOf(answered.data, member.username), username)
   ) {
     return { ok: true };
   }
 
-  const renamed = await renameMember(functions, member.id, edits.username);
+  const renamed = await renameMember(functions, member.id, username);
 
   if (renamed.ok) return { ok: true };
 
@@ -576,7 +610,7 @@ export async function saveMember(
 }
 
 /** What a create collects, plus the organization the row belongs to. */
-export interface MemberCreation extends MemberEdits {
+export interface MemberCreation extends MemberFields {
   readonly organizationId: string;
 }
 
@@ -776,9 +810,8 @@ export function createFormStateOf(answer: OrganizationQueryAnswer): CreateFormSt
  *
  * WHY THE MEMBER TRAVELS WITH IT. `/ljudi/$id` is one component instance for
  * every member: navigating from one row's form to another's changes a route
- * PARAM, not the component, so React state survives the move. The form itself
- * remounts — {@link memberFormKey} sees to that — and the alert above it did
- * not, so a refusal raised on Ana stayed on screen over Marko's form, naming a
+ * PARAM, not the component, so React state survives the move — and unscoped,
+ * the alert above a form did not move with it, so a refusal raised on Ana stayed on screen over Marko's form, naming a
  * problem with a record nobody was looking at. The same is true of a
  * confirmation, in the more dangerous direction: "saved" standing over a form
  * that was never submitted.
@@ -799,38 +832,6 @@ export interface RaisedForMember<T> {
  */
 export function raisedForMember<T>(raised: RaisedForMember<T> | null, id: string): T | null {
   return raised !== null && raised.member === id ? raised.raised : null;
-}
-
-/**
- * The identity the edit form's uncontrolled fields are mounted under.
- *
- * WHY A KEY AT ALL. Every field on that form is uncontrolled with a
- * `defaultValue` (UX-DR34: a refused save keeps every entered value), and
- * `defaultValue` seeds the DOM at MOUNT and never again. After a successful
- * save the list is invalidated and refetched, so the row underneath the form
- * changes — and without a remount the fields still show what the row held when
- * the screen opened, while `Odustani`, which is `type="reset"`, snaps them back
- * to that stale state. `<select>` is worse still: its `defaultValue` sets
- * `defaultSelected`, so the level control and the fields would disagree.
- * `organizacija.tsx` keys its accent `<select>` for exactly this reason; here
- * the whole form takes the key, because every field has the problem.
- *
- * EVERY WRITTEN FIELD IS IN THE FINGERPRINT, not just the id: keying on `id`
- * alone never changes for a row being edited in place, which is the only case
- * that matters. A test executes this rather than reading the JSX, so a field
- * dropped from it is a failing case rather than one control left stale.
- */
-export function memberFormKey(member: MemberListRow): string {
-  return [
-    member.id,
-    member.name,
-    member.username,
-    member.email ?? '',
-    member.role,
-    String(member.leaveAllowanceDays),
-    // MEMBER RANK: the rank `<select>` is seeded by `defaultValue` too.
-    member.fireRank ?? '',
-  ].join('|');
 }
 
 // ------------------------------------------------------ the reset's four stages
@@ -955,6 +956,9 @@ export type StatusOffer =
       /** The scheduled version the cancellation removes. */
       readonly scheduled: MemberStatusVersion;
     };
+
+/** The status change the status dialog offers (story 7.11): a deactivation or a reactivation. */
+export type StatusChangeOffer = Exclude<StatusOffer, { readonly change: typeof WITHDRAW }>;
 
 /**
  * Whether the status block renders at all, and what it offers.
@@ -1391,6 +1395,9 @@ export type TeamOffer =
       readonly scheduled: MemberTeamVersion;
     };
 
+/** The team move the team dialog offers (story 7.11). */
+export type TeamMoveOffer = Extract<TeamOffer, { readonly change: typeof TEAM_MOVE }>;
+
 /**
  * Whether the team block offers anything, and what.
  *
@@ -1461,17 +1468,23 @@ export function chosenTeam(value: string, offer: TeamOffer): TeamChoice | null |
 }
 
 /**
- * The value the picker opens on: the first team offered other than the
- * current one, then the current one, then "no team". A move stays the first
- * thing offered; a position-only change is one pick away.
+ * The value the team picker opens on (story 7.11): THE PLACEHOLDER,
+ * `Odaberi smjenu`, never a team. A preselected team is a move one hurried
+ * press away, so nothing is chosen until the admin chooses. Not a uuid and not
+ * {@link NO_TEAM_VALUE}, so it can never name a team or "no team".
  */
-export function teamPickerDefault(offer: TeamOffer): string {
-  if (offer.change !== TEAM_MOVE) return NO_TEAM_VALUE;
+export const TEAM_UNPICKED_VALUE = '';
 
-  const other = offer.choices.find((choice) => choice.id !== offer.current?.id);
-
-  return other?.id ?? offer.choices[0]?.id ?? NO_TEAM_VALUE;
+/**
+ * The refusal a team pick earns before anything else is judged: the
+ * placeholder is no choice, so a save on it is refused in the dialog with
+ * `Odaberi smjenu.` and nothing is sent — before the preflight, which would
+ * otherwise read it as a stale value.
+ */
+export function teamPickRefusalOf(value: string): MemberWriteFailure | null {
+  return value === TEAM_UNPICKED_VALUE ? MEMBER_TEAM_UNPICKED : null;
 }
+
 
 /**
  * What a team pick is made against: the member's team history (the block's
@@ -1493,7 +1506,7 @@ export interface TeamPick {
  * the position control and for the confirmation alike: the person's pick
  * while it was made against this {@link teamPickHistory} and the offer still
  * renders it,
- * and otherwise {@link teamPickerDefault} — what the remounted picker opens on.
+ * and otherwise {@link TEAM_UNPICKED_VALUE} — what the remounted picker opens on.
  * The position control's default and visibility follow this value.
  */
 export function pickedTeamValue(
@@ -1501,20 +1514,26 @@ export function pickedTeamValue(
   member: MemberListRow,
   offer: TeamOffer,
 ): string {
-  if (offer.change !== TEAM_MOVE || pick === null) return teamPickerDefault(offer);
-  if (pick.history !== teamPickHistory(member, offer)) return teamPickerDefault(offer);
-  if (chosenTeam(pick.value, offer) === undefined) return teamPickerDefault(offer);
+  if (offer.change !== TEAM_MOVE || pick === null) return TEAM_UNPICKED_VALUE;
+  if (pick.history !== teamPickHistory(member, offer)) return TEAM_UNPICKED_VALUE;
+  if (chosenTeam(pick.value, offer) === undefined) return TEAM_UNPICKED_VALUE;
 
   return pick.value;
 }
 
 /**
  * Whether the position control shows for the team the picker holds: only while
- * positions are offered and a team — not "no team" — is picked. A version
+ * positions are offered and a team — not "no team", and not the placeholder —
+ * is picked. A version
  * naming no team names no position (`0015`).
  */
 export function offersPositionFor(offer: TeamOffer, teamValue: string): boolean {
-  return offer.change === TEAM_MOVE && offer.positions && teamValue !== NO_TEAM_VALUE;
+  return (
+    offer.change === TEAM_MOVE &&
+    offer.positions &&
+    teamValue !== NO_TEAM_VALUE &&
+    teamValue !== TEAM_UNPICKED_VALUE
+  );
 }
 
 /**
@@ -1626,7 +1645,7 @@ export function teamRefusalRereadsOrganization(failure: MemberWriteFailure): boo
 
 /**
  * The team `<select>`'s key: the offer's choices and whether positions are
- * offered, so it remounts onto {@link teamPickerDefault} whenever either moves
+ * offered, so it remounts onto {@link TEAM_UNPICKED_VALUE} whenever either moves
  * and the DOM never holds a pick the state does not.
  */
 export function teamSelectKey(offer: TeamOffer): string {
@@ -1889,31 +1908,6 @@ export interface TeamConfirmation {
   readonly history: string;
 }
 
-/** How a confirmation names its position; see {@link teamPromptMessageKey}. */
-export function teamPromptPositionOf(
-  confirmation: Partial<Pick<TeamConfirmation, 'position' | 'keepsTeam'>>,
-): TeamPromptPosition {
-  if (confirmation.position === undefined || confirmation.position === null) {
-    return PROMPT_TEAM_ONLY;
-  }
-
-  return confirmation.keepsTeam === true ? PROMPT_POSITION_ONLY : PROMPT_WITH_POSITION;
-}
-
-/** The prompt key for an armed team confirmation, worded by its date. */
-export function teamPromptKeyOf(
-  confirmation: Pick<TeamConfirmation, 'change' | 'team' | 'day'> &
-    Partial<Pick<TeamConfirmation, 'position' | 'keepsTeam'>>,
-  today: string,
-): ReturnType<typeof teamPromptMessageKey> {
-  return teamPromptMessageKey(
-    confirmation.change,
-    confirmation.team === null,
-    confirmation.day > today,
-    teamPromptPositionOf(confirmation),
-  );
-}
-
 /** The team block's fingerprint: the member and their whole team history. */
 export function teamBlockKey(member: MemberListRow): string {
   return [
@@ -1985,6 +1979,7 @@ export {
   MEMBER_TEAM_POSITION_UNCHANGED,
   MEMBER_TEAM_STALE,
   MEMBER_TEAM_UNCHANGED,
+  MEMBER_TEAM_UNPICKED,
   MEMBER_UNKNOWN,
   MEMBER_USERNAME_INVALID,
   MEMBER_USERNAME_NOT_APPLIED,
@@ -2007,22 +2002,19 @@ export {
   memberWriteFailureOf,
   memberWriteMessageKey,
   memberWriteMessageKeys,
+  statusActionMessageKey,
   statusConfirmMessageKey,
+  statusDialogHeadingMessageKey,
   statusOfferMessageKey,
   statusPromptMessageKey,
   statusScheduledMessageKey,
   statusTodayMessageKey,
   TEAM_MOVE,
-  PROMPT_POSITION_ONLY,
-  PROMPT_TEAM_ONLY,
-  PROMPT_WITH_POSITION,
   teamConfirmMessageKey,
   teamCurrentMessageKey,
   teamOfferMessageKey,
-  teamPromptMessageKey,
   teamScheduledMessageKey,
   type TeamChange,
-  type TeamPromptPosition,
   type MemberWriteFailure,
   type MemberWriteMessageKey,
   type MemberWriteRefusal,

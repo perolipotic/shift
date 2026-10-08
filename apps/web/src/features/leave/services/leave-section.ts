@@ -4,6 +4,7 @@ import {
   leaveBalanceOf,
   leaveCostOf,
   leavePreviewOf,
+  leaveYearOf,
   type LeaveBalance,
   type LeaveBalanceInput,
   type LeavePreview,
@@ -187,6 +188,27 @@ export function leaveRemovePromptMessageKey(
   row: LeaveRecordRow,
 ): 'ljudi.leaveRecord.removePrompt' | 'ljudi.leaveRecord.removePromptInYear' {
   return row.inYearDays === null ? 'ljudi.leaveRecord.removePrompt' : 'ljudi.leaveRecord.removePromptInYear';
+}
+
+/**
+ * The leave year the card's heading names (story 7.11): the year it begins
+ * in, and the year it ends in when it crosses New Year (`null` otherwise) —
+ * *Godišnji odmor 2026.* or *Godišnji odmor 2026./2027.* `null` until the
+ * card is ready, when the heading is plain *Godišnji odmor*.
+ */
+export interface LeaveHeadingYears {
+  readonly from: string;
+  readonly to: string | null;
+}
+
+export function leaveHeadingYearsOf(base: MemberLeaveBase): LeaveHeadingYears | null {
+  if (base.kind !== LEAVE_READY) return null;
+
+  const year = leaveYearOf(base.input.today, base.input.leaveYearStart);
+  const from = year.from.slice(0, 4);
+  const to = year.to.slice(0, 4);
+
+  return { from, to: from === to ? null : to };
 }
 
 /** Where the leave year begins, or null while it is not known. */

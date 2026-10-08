@@ -209,7 +209,7 @@ test('the cost shows before saving, a save updates the figures, and an overlap i
 
   await peoplePage.gotoMember(member.id);
   await expect(peoplePage.leaveHeading).toBeVisible();
-  await expect(peoplePage.leaveFigure(hr.ljudi.leave)).toHaveText(plural(days, 20));
+  await expect(peoplePage.leaveFigure(leave.allowance)).toHaveText(plural(days, 20));
   await expect(peoplePage.leaveFigure(leave.used)).toHaveText(plural(days, 0));
   await expect(peoplePage.leaveFigure(leave.balance)).toHaveText(plural(days, 20));
   // No preview until both dates are in: the reason stands in its place.

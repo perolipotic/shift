@@ -254,6 +254,10 @@ const MEMBER_EDIT: readonly string[] = [
   join(MEMBERS_FEATURE, 'components', 'member-team-card.tsx'),
   join(MEMBERS_FEATURE, 'components', 'member-status-card.tsx'),
   join(MEMBERS_FEATURE, 'components', 'member-reset-card.tsx'),
+  // STORY 7.11: the page's title — the person's name — and the allowance's
+  // dialog, which the page hands the leave card as a slot.
+  join(MEMBERS_FEATURE, 'components', 'member-page-header.tsx'),
+  join(MEMBERS_FEATURE, 'components', 'member-allowance-dialog.tsx'),
   // STORY 7.8: the reset's credential line with `Kopiraj`, shared with the
   // create form.
   join(MEMBERS_FEATURE, 'components', 'credential-line.tsx'),
@@ -527,6 +531,10 @@ const ACCENT_KEYS = join(srcRoot, 'features', 'organization', 'utils', 'accent.t
 
 /** The fixed rank list as data (member rank), and its two label mappings. */
 const RANK_KEYS = join(srcRoot, 'features', 'members', 'utils', 'rank.ts');
+/** Story 7.11: the member page header's status badge, off one `\w*MessageKey` union. */
+const MEMBER_FACTS_KEYS = join(srcRoot, 'features', 'members', 'utils', 'member-facts.ts');
+/** Story 7.11: the member page's element ids, named once; no string a screen renders. */
+const MEMBER_ELEMENT_IDS = join(srcRoot, 'features', 'members', 'utils', 'element-ids.ts');
 
 /** The fixed position list as data (team position), and its label mapping. */
 const POSITION_KEYS = join(srcRoot, 'features', 'members', 'utils', 'position.ts');
@@ -759,7 +767,14 @@ const SCREENS = [
   //
   // THIRTY-SIX SINCE STORY 7.8: `Kopiraj` beside the reset's password, the
   // create form's credential line, written once and shared.
-  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 36 },
+  //
+  // FORTY-SIX SINCE STORY 7.11, facts and dialogs: each card's header button
+  // (Uredi, Promijeni, the status action, Dodijeli novu lozinku, Promijeni pravo); each
+  // dialog's close button, cancel and final button (basics, allowance, team,
+  // status) less the old in-card offers and confirmations they replace; the
+  // allowance's own field; and the withdrawals, which stay card buttons
+  // behind their own confirmations.
+  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 46 },
   // STORY 1.7a. FOUR on the team list: the link back to `Ljudi`, the one name
   // `<Input>`, the add `<Button>`, and ONE row link written once inside the map
   // over the teams — the same count at zero teams as at nine. SIX on one team:
@@ -3007,10 +3022,20 @@ const KEY_SOURCES = [
     // count beside the saved line.
     //
     // NINETY-FIVE SINCE STORY 7.8: `Kopiraj` on the reset's credential line.
+    //
+    // ONE HUNDRED AND TWENTY-NINE SINCE STORY 7.11, facts and dialogs: the
+    // header's fallback title, separator and no-team word; the basics card's
+    // heading, facts, edit button and its dialog's title, close and fields;
+    // the team card's header button, its dialog's title, description,
+    // placeholder, current-team option and Spremi; the allowance's button,
+    // notice, dialog and field; the status dialog's question; the sign-in
+    // card's heading, line and button; and the leave card's year heading and
+    // *Pravo*. Every dialog's close button is `ljudi.page.close`. And the
+    // team withdrawal's prompt, written by the card itself.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 95,
+    strings: 129,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
@@ -3052,10 +3077,16 @@ const KEY_SOURCES = [
     // SIXTY-FIVE after review: the refusal for a team with no position while
     // positions are in use, and the two scheduled lines for a change that
     // keeps the team — by position, and neutral while positions are off.
+    //
+    // SIXTY-ONE SINCE STORY 7.11: five more — the placeholder's refusal
+    // (`Odaberi smjenu.`), and the status dialog's title and final button for
+    // each of deactivate and reactivate — and nine fewer. A move has no
+    // confirmation any more, so its eight prompts are retired, and the
+    // withdrawal's prompt is the card's own `t()` call now.
     name: 'the member write rules',
     file: MEMBER_WRITE_KEYS,
     keys: memberWriteKeys,
-    strings: 65,
+    strings: 61,
   },
   {
     // ELEVEN on the member list's rules: four column headings, two permission
@@ -3100,6 +3131,14 @@ const KEY_SOURCES = [
     file: ACCENT_KEYS,
     keys: messageKeyUnion,
     strings: 5,
+  },
+  {
+    // STORY 7.11. TWO on the member page's header: today's status badge,
+    // active or not, off `memberStatusBadgeMessageKey`.
+    name: 'the member page header facts',
+    file: MEMBER_FACTS_KEYS,
+    keys: memberListKeys,
+    strings: 2,
   },
   {
     // MEMBER RANK. TWENTY-NINE over four unions: the eleven rank labels, no
@@ -3309,7 +3348,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     //
     // SIXTY-THREE SINCE STORY 7.8: the set-password step, its rules, and the
     // credential copy's mapping.
-    expect(KEY_SOURCES).toHaveLength(64);
+    //
+    // SIXTY-FIVE SINCE STORY 7.11: the member page header's status badge.
+    expect(KEY_SOURCES).toHaveLength(65);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -3335,7 +3376,9 @@ describe('the screen is read at all, so every sweep below means something', () =
         .map((name) => join(MEMBERS_FEATURE, folder, name));
     // The rule modules under `utils/` that predate B1 are key sources of
     // their own, read through `KEY_SOURCES`, and render no screen.
-    const ruleModules = new Set([RANK_KEYS, POSITION_KEYS, CREDENTIAL_COPY_KEYS]);
+    // STORY 7.11: the header's facts (a key source of its own) and the page's
+    // element ids, which render nothing.
+    const ruleModules = new Set([RANK_KEYS, POSITION_KEYS, CREDENTIAL_COPY_KEYS, MEMBER_FACTS_KEYS, MEMBER_ELEMENT_IDS]);
     const found = [...parts('components'), ...parts('hooks'), ...parts('utils')].filter(
       (file) => !ruleModules.has(file),
     );
@@ -6464,6 +6507,8 @@ describe('the keys rendered and the keys declared are the same set', () => {
       MEMBER_EDIT,
       MEMBER_WRITE_KEYS,
       RANK_KEYS,
+      // STORY 7.11: the member page header's status badge.
+      MEMBER_FACTS_KEYS,
       // STORY 5.1c: `@/features/leave/services/leave-section` maps the leave
       // card's reasons and refusals.
       LEAVE_SECTION_KEYS,
@@ -9069,16 +9114,16 @@ describe('the two member forms write through the seam and keep nothing back', ()
     );
   });
 
-  it('remounts the edit form with the row, so a refetch cannot leave it stale', () => {
+  it('starts each opening of a dialog from the record as it is now (story 7.11)', () => {
     // Every field is uncontrolled, so `defaultValue` seeds the DOM at MOUNT and
-    // never again — and this screen refetches after every successful save.
-    // Without the key the fields show what the row held when the screen opened,
-    // and `Odustani`, which is `type="reset"`, snaps them back to that. The
-    // fingerprint itself is executed in `write.test.ts`; what is pinned here is
-    // that the form actually carries it.
-    expect(source(MEMBER_EDIT), 'the edit form never remounts with its row').toMatch(
-      /<form\s+key=\{memberFormKey\(member\)\}/,
-    );
+    // never again. Each dialog's body is keyed to its OPENING rather than to
+    // the row: a new opening seeds from the record as it is now, and a refetch
+    // during one — a refused rename re-reads the list — leaves what is typed
+    // alone. Four dialogs: the basics, the allowance, the team and the status.
+    const screen = source(MEMBER_EDIT);
+
+    expect(occurrences(screen, '<Fragment key={opening.key}>'), 'a dialog body is not keyed to its opening').toBe(4);
+    expect(screen, 'the edit screen still keys a form to the row').not.toContain('memberFormKey(');
   });
 
   it.each([
@@ -9274,16 +9319,27 @@ describe('the two member forms write through the seam and keep nothing back', ()
   });
 
   it.each([
-    { name: 'the member create form', file: MEMBER_CREATE, marked: ['member-leave'] },
+    {
+      name: 'the member create form',
+      file: MEMBER_CREATE,
+      marked: ['member-leave'],
+      leaveId: "id=\"member-leave\"",
+      leaveMark: "aria-invalid={invalidField === 'member-leave'}",
+    },
     // The status and team dates are marked by their own blocks' refusals; see
     // the date test below.
     {
       name: 'the member edit form',
       file: MEMBER_EDIT,
       // STORY 5.1c: the leave card's od and do, marked by its own refusals.
-      marked: ['member-leave', 'member-leave-from', 'member-leave-to', 'member-status-date', 'member-team-date'],
+      // STORY 7.11: the allowance's field is in its own dialog, its id named
+      // once (`MEMBER_ALLOWANCE_FIELD_ID`, `member-leave`), so it is matched
+      // by its constant rather than a literal.
+      marked: [null, 'member-leave-from', 'member-leave-to', 'member-status-date', 'member-team-date'],
+      leaveId: 'id={MEMBER_ALLOWANCE_FIELD_ID}',
+      leaveMark: 'aria-invalid={invalidField === MEMBER_ALLOWANCE_FIELD_ID}',
     },
-  ])('names the offending field on $name when it refuses one itself', ({ file, marked: ids }) => {
+  ])('names the offending field on $name when it refuses one itself', ({ file, marked: ids, leaveId, leaveMark }) => {
     // THE ONE REFUSAL EACH SCREEN RAISES ITSELF is also the one it knows the
     // FIELD for — an allowance that is not a whole number the column can hold —
     // and a five-field form saying "Unesena vrijednost nije dopuštena." with no
@@ -9307,13 +9363,13 @@ describe('the two member forms write through the seam and keep nothing back', ()
     const marked = inputElements(screen).filter((input) => input.includes('aria-invalid'));
 
     expect(
-      marked.map((input) => attributeOf(input, 'id')).sort(),
+      marked.map((input) => attributeOf(input, 'id')).sort((a, b) => String(a).localeCompare(String(b))),
       'the marked controls are not the ones the refusals are about',
-    ).toEqual(ids);
+    ).toEqual([...ids].sort((a, b) => String(a).localeCompare(String(b))));
     expect(
-      marked.find((input) => attributeOf(input, 'id') === 'member-leave'),
+      marked.find((input) => input.includes(leaveId)),
       'the leave field is not marked by the form refusal',
-    ).toContain("aria-invalid={invalidField === 'member-leave'}");
+    ).toContain(leaveMark);
   });
 
   it.each([

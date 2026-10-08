@@ -121,21 +121,22 @@ test('moving a member on leave to another team waits for the erasure dialog, by 
   await expect(conflictsPage.rowsOf(person.name)).toHaveCount(1);
 
   await peoplePage.gotoMember(person.id);
-  await peoplePage.teamSelect.selectOption({ label: fixture.team.name });
-  // THE KEYBOARD ALONE, from the card's offer through its confirmation.
+  // THE KEYBOARD ALONE, from the card's Promijeni through the team dialog's
+  // one Spremi (story 7.11): no second confirm.
   await peoplePage.moveButton(person.name).focus();
   await page.keyboard.press('Enter');
-  const confirm = peoplePage.moveConfirmButton(person.name);
-  await expect(confirm).toBeVisible();
-  await confirm.focus();
+  await expect(peoplePage.teamDialog).toBeVisible();
+  await peoplePage.teamSelect.selectOption({ label: fixture.team.name });
+  await peoplePage.teamSaveButton.focus();
   await page.keyboard.press('Enter');
 
   const parts = peoplePage.memberErasures(fill(membership.moveConfirm, { name: person.name }));
   const dialog = parts.dialog(1);
   await expect(dialog).toBeVisible();
-  // The card's own confirmation closed first: the erasure dialog is the one
-  // open (its save carries the confirmation's own words).
-  await expect(page.getByRole('dialog')).toHaveCount(1);
+  // The erasure dialog opens OVER the team dialog, which keeps what was
+  // entered; only one erasure dialog is open (its save carries the change's
+  // own words).
+  await expect(page.getByRole('dialog', { name: anyErasureTitle })).toHaveCount(1);
   const rows = parts.rowsIn(dialog);
   await expect(rows).toHaveCount(1);
   await expect(rows.nth(0)).toContainText(
@@ -160,6 +161,8 @@ test('moving a member on leave to another team waits for the erasure dialog, by 
   await page.keyboard.press('Enter');
 
   await expect(dialog).toHaveCount(0);
+  // A LANDED MOVE closes the team dialog too, and says so on the card.
+  await expect(peoplePage.teamDialog).toHaveCount(0);
   const saved = peoplePage.statusWith(membership.saved);
   await expect(saved).toBeVisible();
   await expect(saved).toContainText(plural(erasures.removed, 1));
@@ -186,7 +189,7 @@ test('deactivating a member on leave lists every conflict it erases, by keyboard
   await peoplePage.gotoMember(person.id);
   await peoplePage.deactivateButton(person.name).focus();
   await page.keyboard.press('Enter');
-  const confirm = peoplePage.deactivateConfirmButton(person.name);
+  const confirm = peoplePage.deactivateSaveButton;
   await expect(confirm).toBeVisible();
   await confirm.focus();
   await page.keyboard.press('Enter');
@@ -215,6 +218,7 @@ test('deactivating a member on leave lists every conflict it erases, by keyboard
   await page.keyboard.press('Enter');
 
   await expect(dialog).toHaveCount(0);
+  await expect(peoplePage.statusDialog).toHaveCount(0);
   const saved = peoplePage.statusWith(hr.ljudi.status.saved);
   await expect(saved).toBeVisible();
   // The `few` form: "Uklonjena 2 konflikta."
@@ -237,7 +241,7 @@ test('a status change that erases nothing writes as it always did', async ({ pag
   await expect(page.getByRole('dialog', { name: anyErasureTitle })).toHaveCount(0);
 });
 
-test('a kept conflict holds the move, and going back keeps the card as entered and writes nothing', async ({
+test('a kept conflict holds the move, and going back keeps the team dialog as entered and writes nothing', async ({
   page,
   fixture,
   peoplePage,
@@ -248,10 +252,10 @@ test('a kept conflict holds the move, and going back keeps the card as entered a
   const day = addDays(rotation.today, 2);
 
   await peoplePage.gotoMember(person.id);
+  await peoplePage.moveButton(person.name).click();
   await peoplePage.teamSelect.selectOption({ label: fixture.team.name });
   await peoplePage.dateInput.fill(day);
-  await peoplePage.moveButton(person.name).click();
-  await peoplePage.moveConfirmButton(person.name).click();
+  await peoplePage.teamSaveButton.click();
 
   const parts = peoplePage.memberErasures(fill(membership.moveConfirm, { name: person.name }));
   const dialog = parts.dialog(1);
@@ -270,17 +274,20 @@ test('a kept conflict holds the move, and going back keeps the card as entered a
 
   await parts.backIn(dialog).click();
   await expect(dialog).toHaveCount(0);
-  await expect(peoplePage.moveButton(person.name), 'focus is not back on the card\'s offer').toBeFocused();
-  // The card is as it was entered, and nothing was saved.
-  await expect(peoplePage.teamSelect.locator('option:checked')).toHaveText(fixture.team.name);
+  await expect(peoplePage.teamSaveButton, 'focus is not back on the team dialog\'s Spremi').toBeFocused();
+  // The team dialog is as it was entered, and nothing was saved.
+  await expect(peoplePage.selectedTeam).toHaveText(fixture.team.name);
   await expect(peoplePage.dateInput).toHaveValue(day);
   await expect(peoplePage.statusWith(membership.saved)).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(peoplePage.teamDialog).toHaveCount(0);
+  await expect(peoplePage.moveButton(person.name), 'focus is not back on the card\'s Promijeni').toBeFocused();
 
   await conflictsPage.goto();
   await expect(conflictsPage.rowsOf(person.name)).toHaveCount(1);
 });
 
-test('a move whose erasures cannot be checked is refused inside its confirmation, writes nothing, and the retry checks again', async ({
+test('a move whose erasures cannot be checked is refused inside its dialog, writes nothing, and the retry checks again', async ({
   page,
   fixture,
   peoplePage,
@@ -290,13 +297,12 @@ test('a move whose erasures cannot be checked is refused inside its confirmation
   const resolutions = '**/rest/v1/conflict_resolutions*';
 
   await peoplePage.gotoMember(person.id);
-  await peoplePage.teamSelect.selectOption({ label: fixture.team.name });
   await peoplePage.moveButton(person.name).click();
-  const confirm = peoplePage.moveConfirmButton(person.name);
+  await peoplePage.teamSelect.selectOption({ label: fixture.team.name });
   await page.route(resolutions, (route) => route.fulfill({ status: 500, body: '{}' }));
-  await confirm.click();
+  await peoplePage.teamSaveButton.click();
 
-  await expect(peoplePage.memberUnchecked).toBeVisible();
+  await expect(peoplePage.teamDialog.getByRole('alert').filter({ hasText: hr.ljudi.erasures.unavailable })).toBeVisible();
   await expect(peoplePage.memberUncheckedRetry, 'the retry is not in reach').toBeFocused();
   // Nothing written, and no erasure dialog.
   await expect(peoplePage.statusWith(membership.saved)).toHaveCount(0);
@@ -308,7 +314,7 @@ test('a move whose erasures cannot be checked is refused inside its confirmation
   const parts = peoplePage.memberErasures(fill(membership.moveConfirm, { name: person.name }));
   const dialog = parts.dialog(1);
   await expect(dialog).toBeVisible();
-  await expect(page.getByRole('dialog')).toHaveCount(1);
+  await expect(page.getByRole('dialog', { name: anyErasureTitle })).toHaveCount(1);
   await expect(peoplePage.memberUnchecked).toHaveCount(0);
   await parts.backIn(dialog).click();
   await expect(peoplePage.statusWith(membership.saved)).toHaveCount(0);
@@ -394,9 +400,9 @@ test('a list that changed by the dialog\'s save is shown again, undecided, and n
   const { rotation, team, person } = await setUp(fixture.slug, [4, 4]);
 
   await peoplePage.gotoMember(person.id);
-  await peoplePage.teamSelect.selectOption({ label: fixture.team.name });
   await peoplePage.moveButton(person.name).click();
-  await peoplePage.moveConfirmButton(person.name).click();
+  await peoplePage.teamSelect.selectOption({ label: fixture.team.name });
+  await peoplePage.teamSaveButton.click();
   const parts = peoplePage.memberErasures(fill(membership.moveConfirm, { name: person.name }));
   const first = parts.dialog(1);
   await expect(parts.rowsIn(first)).toHaveCount(1);
@@ -424,7 +430,7 @@ test('a list that changed by the dialog\'s save is shown again, undecided, and n
   await expect(conflictsPage.rowsOf(person.name)).toHaveCount(1);
 });
 
-test('a dialog save whose re-check cannot be derived brings the card\'s confirmation back with the retry', async ({
+test('a dialog save whose re-check cannot be derived returns to the team dialog with the retry', async ({
   page,
   fixture,
   peoplePage,
@@ -434,9 +440,9 @@ test('a dialog save whose re-check cannot be derived brings the card\'s confirma
   const resolutions = '**/rest/v1/conflict_resolutions*';
 
   await peoplePage.gotoMember(person.id);
-  await peoplePage.teamSelect.selectOption({ label: fixture.team.name });
   await peoplePage.moveButton(person.name).click();
-  await peoplePage.moveConfirmButton(person.name).click();
+  await peoplePage.teamSelect.selectOption({ label: fixture.team.name });
+  await peoplePage.teamSaveButton.click();
   const parts = peoplePage.memberErasures(fill(membership.moveConfirm, { name: person.name }));
   const dialog = parts.dialog(1);
   const rows = parts.rowsIn(dialog);
@@ -446,9 +452,9 @@ test('a dialog save whose re-check cannot be derived brings the card\'s confirma
   await page.route(resolutions, (route) => route.fulfill({ status: 500, body: '{}' }));
   await parts.saveIn(dialog).click();
 
-  // The erasure dialog closes; the card's own confirmation is back, refusing with the retry.
+  // The erasure dialog closes; the team dialog beneath refuses with the retry.
   await expect(dialog).toHaveCount(0);
-  await expect(peoplePage.memberUnchecked).toBeVisible();
+  await expect(peoplePage.teamDialog.getByRole('alert').filter({ hasText: hr.ljudi.erasures.unavailable })).toBeVisible();
   await expect(peoplePage.memberUncheckedRetry, 'the retry is not in reach').toBeFocused();
   await expect(page.getByRole('dialog')).toHaveCount(1);
   await expect(peoplePage.statusWith(membership.saved)).toHaveCount(0);
@@ -460,7 +466,7 @@ test('a dialog save whose re-check cannot be derived brings the card\'s confirma
   await expect(peoplePage.statusWith(membership.saved)).toHaveCount(0);
 });
 
-test('a deactivation whose erasures cannot be checked is refused inside the status confirmation, with focus on the retry', async ({
+test('a deactivation whose erasures cannot be checked is refused inside the status dialog, with focus on the retry', async ({
   page,
   fixture,
   peoplePage,
@@ -472,7 +478,7 @@ test('a deactivation whose erasures cannot be checked is refused inside the stat
   await peoplePage.gotoMember(person.id);
   await peoplePage.deactivateButton(person.name).click();
   await page.route(resolutions, (route) => route.fulfill({ status: 500, body: '{}' }));
-  await peoplePage.deactivateConfirmButton(person.name).click();
+  await peoplePage.deactivateSaveButton.click();
 
   await expect(peoplePage.memberUnchecked).toBeVisible();
   await expect(peoplePage.memberUncheckedRetry, 'the retry is not in reach').toBeFocused();
@@ -487,6 +493,9 @@ test('a deactivation whose erasures cannot be checked is refused inside the stat
   await expect(peoplePage.memberUnchecked).toHaveCount(0);
   await parts.backIn(dialog).click();
   await expect(dialog).toHaveCount(0);
-  await expect(peoplePage.deactivateButton(person.name), 'focus is not back on the card\'s offer').toBeFocused();
+  await expect(peoplePage.deactivateSaveButton, 'focus is not back on the status dialog\'s action').toBeFocused();
   await expect(peoplePage.statusWith(hr.ljudi.status.saved)).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(peoplePage.statusDialog).toHaveCount(0);
+  await expect(peoplePage.deactivateButton(person.name), 'focus is not back on the card\'s Deaktiviraj').toBeFocused();
 });

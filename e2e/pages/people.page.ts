@@ -8,9 +8,12 @@ import { sortControlIn, sortOptionIn, sortPickerIn } from './sort-control.ts';
 
 const membership = hr.smjene.membership;
 const leave = hr.ljudi.leaveRecord;
+/** *Godišnji odmor*, or *Godišnji odmor 2026.* once the leave year is read — never the records' own heading. */
+const LEAVE_HEADING = new RegExp(`^${escapeRegExp(leave.heading)}( \\d{4}\\.(/\\d{4}\\.)?)?$`);
 
 /** `/ljudi`, `/ljudi/novi` and `/ljudi/:id`: the member list, the new-member
- *  form and a member's edit screen with its team membership. */
+ *  form and a member's page — facts, each change in its own dialog (story
+ *  7.11) — with its team membership. */
 export class PeoplePage extends BasePage {
   protected readonly path = '/ljudi';
 
@@ -112,7 +115,17 @@ export class PeoplePage extends BasePage {
     return this.page.getByLabel(hr.ljudi.form.username, { exact: true });
   }
 
-  /** The fire-rank control, on the new-member form and the edit form alike. */
+  /** The e-mail field, on the new-member form and the basics dialog alike. */
+  get emailInput(): Locator {
+    return this.page.getByLabel(hr.ljudi.email, { exact: true });
+  }
+
+  /** The role control, on the new-member form and the basics dialog alike. */
+  get roleSelect(): Locator {
+    return this.page.getByLabel(hr.ljudi.role, { exact: true });
+  }
+
+  /** The fire-rank control, on the new-member form and the basics dialog alike. */
   get rankSelect(): Locator {
     return this.page.getByLabel(hr.ljudi.rank.label, { exact: true });
   }
@@ -148,6 +161,81 @@ export class PeoplePage extends BasePage {
     await expect(this.status).toHaveText(hr.ljudi.form.created);
   }
 
+  // ------------------------------------------- the member page (story 7.11)
+
+  /** The page's title: the person's name. */
+  memberHeading(name: string): Locator {
+    return this.heading(name);
+  }
+
+  /** A fact card, a region named by its heading. */
+  card(heading: string): Locator {
+    return this.page.getByRole('region', { name: heading, exact: true });
+  }
+
+  /** *Osnovni podaci*. */
+  get basicsCard(): Locator {
+    return this.card(hr.ljudi.basics.heading);
+  }
+
+  /** *Smjena*. */
+  get teamCard(): Locator {
+    return this.card(membership.column);
+  }
+
+  /** *Status*. */
+  get statusCard(): Locator {
+    return this.card(hr.ljudi.status.heading);
+  }
+
+  /** *Prijava*. */
+  get signInCard(): Locator {
+    return this.card(hr.ljudi.form.signInHeading);
+  }
+
+  /** `Uredi` on *Osnovni podaci*, named for the member. */
+  editBasicsButton(name: string): Locator {
+    return this.page.getByRole('button', { name: fill(hr.ljudi.basics.editName, { name }), exact: true });
+  }
+
+  /** The basics dialog. */
+  get basicsDialog(): Locator {
+    return this.dialog(hr.ljudi.basics.dialogHeading);
+  }
+
+  /** The basics dialog's Spremi. */
+  get basicsSaveButton(): Locator {
+    return this.basicsDialog.getByRole('button', { name: hr.ljudi.form.save, exact: true });
+  }
+
+  /** `Promijeni pravo` on the leave card, named for the member. */
+  changeAllowanceButton(name: string): Locator {
+    return this.page.getByRole('button', { name: fill(hr.ljudi.allowance.changeName, { name }), exact: true });
+  }
+
+  /** The allowance dialog. */
+  get allowanceDialog(): Locator {
+    return this.dialog(hr.ljudi.allowance.dialogHeading);
+  }
+
+  /** The allowance dialog's one field. */
+  get allowanceInput(): Locator {
+    return this.allowanceDialog.getByLabel(hr.ljudi.leave, { exact: true });
+  }
+
+  /** The allowance dialog's Spremi. */
+  get allowanceSaveButton(): Locator {
+    return this.allowanceDialog.getByRole('button', { name: hr.ljudi.form.save, exact: true });
+  }
+
+  /** Changes the open member's allowance to `days` through its dialog, and waits for it to close. */
+  async changeAllowance(name: string, days: number): Promise<void> {
+    await this.changeAllowanceButton(name).click();
+    await this.allowanceInput.fill(String(days));
+    await this.allowanceSaveButton.click();
+    await expect(this.allowanceDialog).toHaveCount(0);
+  }
+
   /** The member page's reset offer, naming the member. */
   resetButton(name: string): Locator {
     return this.page.getByRole('button', { name: fill(hr.ljudi.form.reset, { name }) });
@@ -176,17 +264,26 @@ export class PeoplePage extends BasePage {
 
   // ------------------------------------------------------- the status
 
+  /** The status dialog (story 7.11), deactivating or reactivating. */
+  get statusDialog(): Locator {
+    return this.page.getByRole('dialog', {
+      name: new RegExp(`^(${escapeRegExp(hr.ljudi.status.deactivateHeading)}|${escapeRegExp(hr.ljudi.status.reactivateHeading)})$`),
+    });
+  }
+
+  /** *Vrijedi od* in the status dialog. */
   get statusDateInput(): Locator {
-    return this.page.getByLabel(hr.ljudi.status.date, { exact: true });
+    return this.statusDialog.getByLabel(hr.ljudi.status.date, { exact: true });
   }
 
+  /** `Deaktiviraj` in the status card's header, named for the member: it opens the dialog. */
   deactivateButton(name: string): Locator {
-    return this.page.getByRole('button', { name: fill(hr.ljudi.status.deactivate, { name }) });
+    return this.page.getByRole('button', { name: fill(hr.ljudi.status.deactivate, { name }), exact: true });
   }
 
-  /** The deactivation's confirm, in the status card's confirmation. */
-  deactivateConfirmButton(name: string): Locator {
-    return this.page.getByRole('button', { name: fill(hr.ljudi.status.deactivateConfirm, { name }) });
+  /** The status dialog's final button: `Deaktiviraj`, the action itself. */
+  get deactivateSaveButton(): Locator {
+    return this.statusDialog.getByRole('button', { name: hr.ljudi.status.deactivateAction, exact: true });
   }
 
   /** The status card's offer to withdraw its scheduled change. */
@@ -199,10 +296,10 @@ export class PeoplePage extends BasePage {
     return this.page.getByRole('button', { name: fill(hr.ljudi.status.withdrawConfirm, { name }) });
   }
 
-  /** The status card's change confirmed from the date field's value: the offer, then its confirm. */
+  /** Deactivates the open member from the dialog's default date: the header button, then the action. */
   async deactivate(name: string): Promise<void> {
     await this.deactivateButton(name).click();
-    await this.deactivateConfirmButton(name).click();
+    await this.deactivateSaveButton.click();
   }
 
   // ------------------------------------------------- the erasure guard (5.5e)
@@ -215,7 +312,7 @@ export class PeoplePage extends BasePage {
     return new ErasureDialogParts(this.page, { ...hr.ljudi.erasures, save });
   }
 
-  /** The refusal, inside a card's confirmation, when what its change would erase cannot be checked. */
+  /** The refusal, inside a card's dialog or confirmation, when what its change would erase cannot be checked. */
   get memberUnchecked(): Locator {
     return this.alertWith(hr.ljudi.erasures.unavailable);
   }
@@ -227,12 +324,28 @@ export class PeoplePage extends BasePage {
 
   // ------------------------------------------------ the team membership
 
+  /** The team dialog (story 7.11): *Nova smjena*, *Položaj* and *Vrijedi od*. */
+  get teamDialog(): Locator {
+    return this.dialog(membership.dialogHeading);
+  }
+
+  /** *Nova smjena*, which opens on `Odaberi smjenu`. */
   get teamSelect(): Locator {
-    return this.page.getByLabel(membership.team, { exact: true });
+    return this.teamDialog.getByLabel(membership.team, { exact: true });
+  }
+
+  /** The team the picker has selected. */
+  get selectedTeam(): Locator {
+    return this.teamSelect.locator('option:checked');
   }
 
   get positionSelect(): Locator {
-    return this.page.getByLabel(hr.smjene.position.label, { exact: true });
+    return this.teamDialog.getByLabel(hr.smjene.position.label, { exact: true });
+  }
+
+  /** The team dialog's Spremi. */
+  get teamSaveButton(): Locator {
+    return this.teamDialog.getByRole('button', { name: membership.save, exact: true });
   }
 
   /** The position the control has selected. */
@@ -240,16 +353,14 @@ export class PeoplePage extends BasePage {
     return this.positionSelect.locator('option:checked');
   }
 
+  /** *Vrijedi od* in the team dialog. */
   get dateInput(): Locator {
-    return this.page.getByLabel(membership.date, { exact: true });
+    return this.teamDialog.getByLabel(membership.date, { exact: true });
   }
 
+  /** `Promijeni` in the team card's header, named for the member: it opens the dialog. */
   moveButton(name: string): Locator {
-    return this.page.getByRole('button', { name: fill(membership.move, { name }) });
-  }
-
-  moveConfirmButton(name: string): Locator {
-    return this.page.getByRole('button', { name: fill(membership.moveConfirm, { name }) });
+    return this.page.getByRole('button', { name: fill(membership.move, { name }), exact: true });
   }
 
   withdrawButton(name: string): Locator {
@@ -272,14 +383,14 @@ export class PeoplePage extends BasePage {
     return this.page.getByRole('main').getByRole('link', { name: hr.ljudi.form.backToConflicts, exact: true });
   }
 
-  /** The leave card's heading. */
+  /** The leave card's heading: *Godišnji odmor*, with its leave year once read (story 7.11). */
   get leaveHeading(): Locator {
-    return this.page.getByRole('heading', { level: 2, name: leave.heading });
+    return this.page.getByRole('heading', { level: 2, name: LEAVE_HEADING });
   }
 
   /** The leave card, a region named by its heading. */
   get leaveCard(): Locator {
-    return this.page.getByRole('region', { name: leave.heading });
+    return this.page.getByRole('region', { name: LEAVE_HEADING });
   }
 
   /**
@@ -411,10 +522,11 @@ export class PeoplePage extends BasePage {
     await this.leaveToInput.fill(to);
   }
 
-  /** Puts the open member on a team from the date field's value, confirmed. */
+  /** Puts the open member on a team from the dialog's default date: open, pick, Spremi, closed. */
   async moveToTeam(teamName: string, name: string): Promise<void> {
-    await this.teamSelect.selectOption({ label: teamName });
     await this.moveButton(name).click();
-    await this.moveConfirmButton(name).click();
+    await this.teamSelect.selectOption({ label: teamName });
+    await this.teamSaveButton.click();
+    await expect(this.teamDialog).toHaveCount(0);
   }
 }

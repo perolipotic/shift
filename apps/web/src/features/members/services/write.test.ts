@@ -53,7 +53,6 @@ import {
   createMember,
   editFailureOf,
   enteredAllowance,
-  memberFormKey,
   memberFormRefusalOf,
   memberWriteFailureOf,
   memberWriteMessageKey,
@@ -67,7 +66,9 @@ import {
   saveMember,
   standingConfirmation,
   statusBlockKey,
+  statusActionMessageKey,
   statusConfirmMessageKey,
+  statusDialogHeadingMessageKey,
   statusFailureOf,
   statusOfferMessageKey,
   statusOfferOf,
@@ -97,15 +98,13 @@ import {
   MEMBER_TEAM_OUT_OF_ORDER,
   MEMBER_TEAM_SCHEDULED,
   MEMBER_TEAM_STALE,
+  MEMBER_TEAM_UNPICKED,
   MEMBER_TEAM_TABLE,
   MEMBER_TEAM_POSITION_REQUIRED,
   MEMBER_TEAM_POSITION_UNCHANGED,
   MEMBER_TEAM_UNCHANGED,
   MEMBER_WRITE_UNAVAILABLE as UNAVAILABLE,
   NO_TEAM_VALUE,
-  PROMPT_POSITION_ONLY,
-  PROMPT_TEAM_ONLY,
-  PROMPT_WITH_POSITION,
   STATUS_BLOCK_PREFIX,
   TEAM_BLOCK_PREFIX,
   TEAM_MOVE,
@@ -121,10 +120,9 @@ import {
   teamFailureOf,
   teamOfferMessageKey,
   teamOfferOf,
-  teamPickerDefault,
+  TEAM_UNPICKED_VALUE,
+  teamPickRefusalOf,
   teamPreflightOf,
-  teamPromptKeyOf,
-  teamPromptPositionOf,
   teamCurrentLineOf,
   teamOfferFor,
   teamPickHistory,
@@ -904,6 +902,54 @@ describe('an edit reaches the privileged function only when the identity moves',
     expect(Object.keys(calls[0]?.values ?? {})).not.toContain('fire_rank');
   });
 
+  it('sends nothing for an empty edit, and judges no name it was not given (story 7.11)', async () => {
+    const empty = tableThat({ data: [{ id: 'member-1' }], error: null });
+    const emptyFunctions = functionsThat(replied({ code: USERNAME_CHANGED }));
+
+    expect(await saveMember(empty.table, emptyFunctions.functions, member(), {})).toEqual({
+      ok: false,
+      refusal: { code: MEMBER_WRITE_INVALID, saved: false },
+    });
+    expect(empty.calls, 'an empty PATCH was sent').toEqual([]);
+    expect(emptyFunctions.calls).toEqual([]);
+
+    // AN ALLOWANCE-ONLY EDIT never meets the blank-name check: a member whose
+    // stored name is blank still has their allowance saved.
+    const allowance = tableThat({ data: [{ id: 'member-1' }], error: null });
+
+    expect(
+      await saveMember(allowance.table, functionsThat(replied({ code: USERNAME_CHANGED })).functions, member({ name: '   ' }), {
+        leaveAllowanceDays: 30,
+      }),
+    ).toEqual({ ok: true });
+    expect(allowance.calls[0]?.values).toEqual({ leave_allowance_days: 30 });
+  });
+
+  it('sends only the fields its edit carries, so no dialog writes back what it did not show (story 7.11)', async () => {
+    // THE ALLOWANCE DIALOG: the allowance and nothing else — no name, address,
+    // role or rank another admin may have changed since the page was read —
+    // and no rename, since it carries no username.
+    const allowance = tableThat({ data: [{ id: 'member-1' }], error: null });
+    const allowanceFunctions = functionsThat(replied({ code: USERNAME_CHANGED }));
+
+    expect(
+      await saveMember(allowance.table, allowanceFunctions.functions, member(), { leaveAllowanceDays: 25 }),
+    ).toEqual({ ok: true });
+    expect(allowance.calls).toHaveLength(1);
+    expect(allowance.calls[0]?.values).toEqual({ leave_allowance_days: 25 });
+    expect(allowanceFunctions.calls).toEqual([]);
+
+    // THE BASICS DIALOG: everything it shows, and never the allowance.
+    const basics = tableThat({ data: [{ id: 'member-1' }], error: null });
+    const basicsFunctions = functionsThat(replied({ code: USERNAME_CHANGED }));
+    const { leaveAllowanceDays: _omitted, ...shown } = edits({ role: 'admin' });
+
+    await saveMember(basics.table, basicsFunctions.functions, member(), shown);
+
+    expect(basics.calls[0]?.values).toEqual({ name: 'Ana Kovač', email: null, role: 'admin' });
+    expect(Object.keys(basics.calls[0]?.values ?? {})).not.toContain('leave_allowance_days');
+  });
+
   it('reports a rank the check constraint refuses as a value to correct', async () => {
     // A direct write of a code outside `0014`'s list is refused by the
     // database with 23514; nothing is written, and it reads as INVALID.
@@ -1513,37 +1559,6 @@ describe('what the edit screen raised, and the member it was raised about', () =
   });
 });
 
-describe('the edit form remounts when its row changes', () => {
-  it.each(['name', 'username', 'email', 'role', 'leaveAllowanceDays', 'fireRank'] as const)(
-    'changes the form identity when %s changes',
-    (field) => {
-      // EVERY WRITTEN FIELD IS IN THE FINGERPRINT. Keying on `id` alone never
-      // changes for a row being edited in place — which is the only case that
-      // matters — so the fields would keep showing what the row held when the
-      // screen opened, and `Odustani` would snap them back to that.
-      const before = member();
-      const after = member(
-        field === 'leaveAllowanceDays'
-          ? { leaveAllowanceDays: 25 }
-          : ({ [field]: field === 'role' ? 'admin' : 'changed' } as Partial<MemberListRow>),
-      );
-
-      expect(memberFormKey(before)).not.toBe(memberFormKey(after));
-    },
-  );
-
-  it('keeps the same identity for the same row', () => {
-    expect(memberFormKey(member())).toBe(memberFormKey(member()));
-  });
-
-  it('treats no address and an emptied one as the same seed, because they are', () => {
-    // The form seeds that field with `member.email ?? ''`, so the two produce
-    // an identical control — and a key that told them apart would remount the
-    // whole form on a refetch that changed nothing anybody can see.
-    expect(memberFormKey(member({ email: null }))).toBe(memberFormKey(member({ email: '' })));
-  });
-});
-
 describe('a status change is one appended version or one cancelled one, judged before and after it is sent (story 1.6)', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -2078,7 +2093,25 @@ describe('a team change is one appended version or one cancelled one, judged bef
     expect(chosenTeam(NO_TEAM_VALUE, fresh)).toBeUndefined();
     expect(chosenTeam(OLD.id, on)).toBeUndefined();
     expect(chosenTeam(A.id, on)).toBeUndefined();
-    expect(teamPickerDefault(on)).toBe(B.id);
+    // STORY 7.11: the placeholder names no team, so a lookup never turns it into one.
+    expect(chosenTeam(TEAM_UNPICKED_VALUE, on)).toBeUndefined();
+  });
+
+  it('opens the picker on the placeholder and refuses it before anything is judged (story 7.11)', () => {
+    const on = teamOfferOf(onA(), TEAMS, TODAY, true);
+    if (on === null) throw new Error('no offer');
+
+    // NO TEAM IS PRESELECTED: nothing is chosen until the admin chooses.
+    expect(pickedTeamValue(null, onA(), on)).toBe(TEAM_UNPICKED_VALUE);
+    expect(TEAM_UNPICKED_VALUE).not.toBe(NO_TEAM_VALUE);
+    expect(teamPickRefusalOf(TEAM_UNPICKED_VALUE)).toBe(MEMBER_TEAM_UNPICKED);
+    expect(memberWriteMessageKey(MEMBER_TEAM_UNPICKED)).toBe('smjene.membership.error.unpicked');
+    // Any real choice — a team, the current one, or no team — passes this gate.
+    expect(teamPickRefusalOf(B.id)).toBeNull();
+    expect(teamPickRefusalOf(A.id)).toBeNull();
+    expect(teamPickRefusalOf(NO_TEAM_VALUE)).toBeNull();
+    // NO POSITION BEFORE A PICK: the position control follows a chosen team.
+    expect(offersPositionFor(on, TEAM_UNPICKED_VALUE)).toBe(false);
   });
 
   it.each([
@@ -2204,21 +2237,11 @@ describe('a team change is one appended version or one cancelled one, judged bef
     }
   });
 
-  it('words the prompt by tense and by whether the move is onto no team', () => {
-    const team = { id: B.id, name: B.name };
-    expect(teamPromptKeyOf({ change: TEAM_MOVE, team, day: TODAY }, TODAY)).toBe('smjene.membership.movePrompt');
-    expect(teamPromptKeyOf({ change: TEAM_MOVE, team, day: '2026-09-30' }, TODAY)).toBe(
-      'smjene.membership.movePromptFuture',
-    );
-    expect(teamPromptKeyOf({ change: TEAM_MOVE, team: null, day: TODAY }, TODAY)).toBe(
-      'smjene.membership.removePrompt',
-    );
-    expect(teamPromptKeyOf({ change: TEAM_MOVE, team: null, day: '2026-09-30' }, TODAY)).toBe(
-      'smjene.membership.removePromptFuture',
-    );
-    expect(teamPromptKeyOf({ change: WITHDRAW, team: null, day: '2026-09-30' }, TODAY)).toBe(
-      'smjene.membership.withdrawPrompt',
-    );
+  it('words the offers, the confirms and the scheduled lines', () => {
+    expect(statusActionMessageKey(DEACTIVATE)).toBe('ljudi.status.deactivateAction');
+    expect(statusActionMessageKey(REACTIVATE)).toBe('ljudi.status.reactivateAction');
+    expect(statusDialogHeadingMessageKey(DEACTIVATE)).toBe('ljudi.status.deactivateHeading');
+    expect(statusDialogHeadingMessageKey(REACTIVATE)).toBe('ljudi.status.reactivateHeading');
     expect(teamOfferMessageKey(TEAM_MOVE)).toBe('smjene.membership.move');
     expect(teamOfferMessageKey(WITHDRAW)).toBe('smjene.membership.withdraw');
     expect(teamConfirmMessageKey(TEAM_MOVE)).toBe('smjene.membership.moveConfirm');
@@ -2227,23 +2250,7 @@ describe('a team change is one appended version or one cancelled one, judged bef
     expect(teamScheduledMessageKey(false)).toBe('smjene.membership.scheduled');
   });
 
-  it('names the position in the prompt when it changes, and a position-only change as its own sentence', () => {
-    const team = { id: B.id, name: B.name };
-    const at = (day: string, position: string | null, keepsTeam: boolean) =>
-      teamPromptKeyOf({ change: TEAM_MOVE, team, day, position, keepsTeam }, TODAY);
-
-    expect(at(TODAY, null, false)).toBe('smjene.membership.movePrompt');
-    expect(at(TODAY, 'driver', false)).toBe('smjene.membership.movePositionPrompt');
-    expect(at('2026-09-30', 'driver', false)).toBe('smjene.membership.movePositionPromptFuture');
-    expect(at(TODAY, 'commander', true)).toBe('smjene.membership.positionPrompt');
-    expect(at('2026-09-30', 'commander', true)).toBe('smjene.membership.positionPromptFuture');
-    // No team names no position, whatever else holds.
-    expect(
-      teamPromptKeyOf({ change: TEAM_MOVE, team: null, day: TODAY, position: null, keepsTeam: false }, TODAY),
-    ).toBe('smjene.membership.removePrompt');
-    expect(teamPromptPositionOf({})).toBe(PROMPT_TEAM_ONLY);
-    expect(teamPromptPositionOf({ position: 'driver', keepsTeam: false })).toBe(PROMPT_WITH_POSITION);
-    expect(teamPromptPositionOf({ position: 'driver', keepsTeam: true })).toBe(PROMPT_POSITION_ONLY);
+  it('names the position in the scheduled and current lines while it is shown', () => {
     expect(teamScheduledMessageKey(false, true)).toBe('smjene.membership.scheduledPosition');
     expect(teamScheduledMessageKey(true, true)).toBe('smjene.membership.scheduledNone');
     expect(teamCurrentMessageKey(false)).toBe('smjene.membership.current');
@@ -2263,8 +2270,6 @@ describe('a team change is one appended version or one cancelled one, judged bef
     ]);
     expect(on).toMatchObject({ positions: true, current: { id: A.id, name: A.name }, currentPosition: null });
     expect(chosenTeam(A.id, on)).toEqual({ id: A.id, name: A.name });
-    // A MOVE stays the first thing offered; the current team is one pick away.
-    expect(teamPickerDefault(on)).toBe(B.id);
     // A member on no team has no current team to keep.
     expect(teamOfferOf(member(), TEAMS, TODAY, true)).toMatchObject({ current: null, currentPosition: null });
     // A scheduled change still offers only the cancellation.
@@ -2272,8 +2277,6 @@ describe('a team change is one appended version or one cancelled one, judged bef
     // Only the current team left, and positions on: still offered, for a position change.
     const alone = teamOfferOf(onA(), [{ ...A, archived: false }], TODAY, true);
     expect(alone).toMatchObject({ choices: [{ id: A.id, name: A.name }] });
-    if (alone === null) throw new Error('no offer');
-    expect(teamPickerDefault(alone)).toBe(A.id);
   });
 
   it('opens the position on the current one for the same team and on the default for a move', () => {
@@ -2303,19 +2306,19 @@ describe('a team change is one appended version or one cancelled one, judged bef
     if (on === null) throw new Error('no offer');
     const history = teamPickHistory(target, on);
 
-    expect(pickedTeamValue(null, target, on)).toBe(B.id);
+    expect(pickedTeamValue(null, target, on)).toBe(TEAM_UNPICKED_VALUE);
     // A pick made before the select's own key moved (other choices, or the
     // setting flipped) no longer describes the remounted control.
     const off = teamOfferOf(target, TEAMS, TODAY, false);
     if (off === null) throw new Error('no offer');
     expect(teamSelectKey(on)).not.toBe(teamSelectKey(off));
-    expect(pickedTeamValue({ value: B.id, history }, target, off)).toBe(B.id);
-    expect(pickedTeamValue({ value: NO_TEAM_VALUE, history }, target, off)).toBe(B.id);
+    expect(pickedTeamValue({ value: B.id, history }, target, off)).toBe(TEAM_UNPICKED_VALUE);
+    expect(pickedTeamValue({ value: NO_TEAM_VALUE, history }, target, off)).toBe(TEAM_UNPICKED_VALUE);
     expect(pickedTeamValue({ value: A.id, history }, target, on)).toBe(A.id);
     expect(pickedTeamValue({ value: NO_TEAM_VALUE, history }, target, on)).toBe(NO_TEAM_VALUE);
     // A pick made against another history, or one the offer no longer renders.
-    expect(pickedTeamValue({ value: A.id, history: 'stale' }, target, on)).toBe(B.id);
-    expect(pickedTeamValue({ value: OLD.id, history }, target, on)).toBe(B.id);
+    expect(pickedTeamValue({ value: A.id, history: 'stale' }, target, on)).toBe(TEAM_UNPICKED_VALUE);
+    expect(pickedTeamValue({ value: OLD.id, history }, target, on)).toBe(TEAM_UNPICKED_VALUE);
   });
 
   it('refuses the same team and position, and admits a position-only change', async () => {

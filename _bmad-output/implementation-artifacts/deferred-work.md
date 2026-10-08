@@ -868,3 +868,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-10-member-schedule-no-conflict-marks.md`
   summary: PRD FR-37 ("In the all-Teams view, leave is indicated…") has no role qualifier, while FR-38 does; a member's *Sve smjene* shows no one's leave, their own included, so FR-37 should say it applies to an admin.
   evidence: 7.10 review (Blind Hunter); `prd.md` FR-37 L504 and §5.9 assumption L880 vs EXPERIENCE.md §State Patterns *Conflict*.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-11-member-page-facts-dialogs.md`
+  summary: The member page's *Promijeni smjenu* dialog shows no *Što se mijenja* (decision 16: "Zadnja u A · čet 01.10. · Noć · 19:00–07:00 / Prva u B · sub 03.10. · Dan · 07:00–19:00"). It needs a projection of a member's move across teams from a date, and `change-preview.ts` models only one team on one day.
+  evidence: `mockups/member-page-1.html` panel D; deferred in spec 7.11 Epic AC Deviations.
