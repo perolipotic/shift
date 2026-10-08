@@ -381,19 +381,19 @@ const SOURCES = [
   // form are read off the auth feature's folders below.
   SIGN_IN_PAGE,
   join(webRoot, 'src', 'pages', 'not-found.tsx'),
-  // The organization prompt at bare `/prijava`, and `/`. A `.tsx` carrying a
-  // string that is absent from this list is swept by nothing — the freshness
-  // guard would not notice a build that predates it.
+  // `/`. A `.tsx` carrying a string that is absent from this list is swept by
+  // nothing — the freshness guard would not notice a build that predates it.
+  // (Bare `/prijava` had its own prompt here until story 7.7; it now renders
+  // the sign-in page above.)
   //
   // `/` IS HERE FOR FRESHNESS ALONE, and no longer for the reason 1.3b added
   // it: it renders no heading and no string at all now, it decides where a
   // signed-in person belongs and redirects. It stays listed because it is still
   // wiring the built chunk depends on — the redirect target and the forward are
   // behaviour a stale build would misreport — not because it carries a key.
-  join(webRoot, 'src', 'pages', 'prijava-organizacija.tsx'),
   join(webRoot, 'src', 'pages', 'index.tsx'),
-  // The sign-in steps' shared frame (visual refresh A), which renders the
-  // brand panel's three strings around both steps.
+  // The sign-in frame (visual refresh A), which renders the brand panel's
+  // three strings around the sign-in form.
   join(webRoot, 'src', 'components', 'layout', 'auth-layout.tsx'),
   // NOT `.tsx`, and that is the point. This list guards build FRESHNESS, and
   // the file that owns `auth.error.credentials` and `auth.error.unavailable` is
@@ -735,12 +735,14 @@ describe('the build being read reflects the current localization source', () => 
     const parts = authScreenParts();
 
     // THE EXACT COUNT, read off the disk and derived from the fixture: the
-    // hook and the form, and the four service modules — the fourth the return
-    // target the sign-in fix carries through both sign-in routes.
+    // hook and the form, and the five service modules — the fourth the return
+    // target the sign-in fix carries through both sign-in routes, the fifth the
+    // organization this device remembers (story 7.7).
     // EXACT, so a new exemption is a reviewed change to this test.
     expect([...AUTH_RULE_MODULES].sort(), 'the fixture exempts other service modules').toEqual(
       [
         'services/address.ts',
+        'services/last-organization.ts',
         'services/return-target.ts',
         'services/sign-in.ts',
         'services/sign-out.ts',
@@ -749,7 +751,7 @@ describe('the build being read reflects the current localization source', () => 
     expect(parts, 'the auth feature grew or lost a module').toHaveLength(
       AUTH_FEATURE_PARTS.length + AUTH_RULE_MODULES.length,
     );
-    expect(parts, 'the auth feature grew or lost a module').toHaveLength(6);
+    expect(parts, 'the auth feature grew or lost a module').toHaveLength(7);
     expect(SOURCES, `${SIGN_IN_PAGE} is not in SOURCES`).toContain(SIGN_IN_PAGE);
     expect([...parts].sort(), 'the feature holds a module no set and no service list names').toEqual(
       [...AUTH_SOURCES_REQUIRED].sort(),
@@ -1012,8 +1014,8 @@ describe('a rejected initialization does not mount the application', () => {
  *  SIX MORE MOVED the same way with the navigation shell's route skeleton —
  *  `Danas`, `Kalendar`, `Godišnji`, `Raspored`, `Ljudi` and `Postavke`, which
  *  are now `nav.*` labels rendered by eight placeholder destinations. Note
- *  `Organizacija` is now in `hr.json` TWICE, as the organization prompt's
- *  heading and as a destination label, and the count assertion holds because it
+ *  `Organizacija` is in `hr.json` more than once, as the sign-in form's
+ *  organization label and as a destination label, and the count assertion holds because it
  *  compares the chunk against the resource file rather than against a number
  *  written here.
  *
@@ -1023,7 +1025,8 @@ describe('a rejected initialization does not mount the application', () => {
  *  a word. */
 const AUTHORED_VOCABULARY = [
   'Prijava',
-  'Prijavi',
+  // NOT `Prijavi` since story 7.7: the button reads `Prijava` now, and the
+  // capitalized `Prijavi` is in `hr.json` nowhere (the lowercase form below is).
   'Lozinka',
   'Korisničko',
   'Zaboravljena',
@@ -1167,10 +1170,10 @@ const AUTHORED_VOCABULARY = [
   // question of the same claim. It names the action that CAN change the answer
   // instead, which is signing in again.
   //
-  // `prijavi` is the lowercase form and is counted SEPARATELY from `Prijavi`
-  // above, which is what the word boundary buys: the capitalized form is the
-  // sign-in button and the lowercase one ends this sentence, and a component
-  // hard-coding either is a count that no longer matches. `Odjavi` needs no
+  // `prijavi` is the lowercase form, counted on its own, which is what the
+  // word boundary buys: the capitalized `Prijavi` was the sign-in button until
+  // story 7.7 renamed it `Prijava`, and the lowercase one ends this sentence;
+  // a component hard-coding it is a count that no longer matches. `Odjavi` needs no
   // entry of its own — it is already counted, and every count here is read off
   // `hr.json`, so a second occurrence moves both sides at once.
   //

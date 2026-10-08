@@ -326,7 +326,7 @@ A 12 px base radius (`--radius: 0.75rem`): cards `lg` (12 px), buttons and input
 - Don't add a `shift-day` or `shift-night` token, however convenient. It encodes one Organization into the design system and breaks the platform's core constraint.
 - Don't restyle a primitive in a screen. Colour, radius, border, shadow and type belong to `components/ui`; a screen that needs a primitive to look different changes the primitive for everyone, or adds a new one.
 - Don't load fonts from the Google CDN, and don't swap a face without re-running the Croatian glyph check against it.
-- Don't copy the style reference's copy or flows: no English, no "ShiftApp", no social login, signup, demo buttons or "remember me".
+- Don't copy the style reference's copy or flows: no English, no "ShiftApp", no social login, signup, demo buttons or "remember me". "Remember me" means a lasting session, and that stays out. Remembering the organization slug on this device after a successful sign-in is allowed (story 7.7). It is the slug only: no username, no password.
 - Don't let an Organization's brand accent touch a shift state, a modifier, or `destructive`.
 - Don't convey a state by colour alone anywhere — not in the compressed grid, not in a status pip, not in a badge.
 - Don't introduce a motion token. Primitives use short colour/shadow transitions; the product adds no animation of its own.

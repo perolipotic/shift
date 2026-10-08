@@ -186,7 +186,7 @@ test.describe('the I/O matrix at 390 px', () => {
     // The pinned auth-js (`GoTrueClient._signOut`) removes the local session on
     // any logout error other than 401/403/404 before returning the error, so
     // the session-cache rule sees SIGNED_OUT and the guard sends the person to
-    // the sign-in prompt. The server session that survives is ledgered in
+    // the sign-in form. The server session that survives is ledgered in
     // `deferred-work.md`.
     test('a refused sign-out in the sheet still signs this device out', async ({ page, loginPage }) => {
       await page.route(isLogout, (route) =>
@@ -201,7 +201,7 @@ test.describe('the I/O matrix at 390 px', () => {
       await loginPage.moreSheet.getByRole('button', { name: hr.shell.signOut, exact: true }).click();
 
       await expect(page).toHaveURL(/\/prijava/);
-      await expect(loginPage.organizationHeading).toBeVisible();
+      await expect(loginPage.signInHeading).toBeVisible();
       await expect(loginPage.moreSheet).toHaveCount(0);
       await expect(loginPage.alertWith(hr.shell.error.signOut)).toHaveCount(0);
     });

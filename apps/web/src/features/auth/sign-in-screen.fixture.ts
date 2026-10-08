@@ -1,14 +1,12 @@
 /**
  * THE SIGN-IN SCREEN'S FILE SET, written once (source structure B7).
  *
- * `/prijava/$slug` is more than one file: a page that only composes, the hook
+ * The sign-in screen — one form on both `/prijava` and `/prijava/$slug` since
+ * story 7.7 — is more than one file: a page that only composes, the hook
  * holding its refs, its state and its one exchange, and the form that draws
  * it. The sign-in suite (`pages/prijava.test.ts`) reads the set as one source,
  * and `test/localization-applied.test.ts` checks that its folder read holds
  * every part, so both build their paths from this.
- *
- * The organization prompt at bare `/prijava` is ONE file within budget, and is
- * in no set: it stays `pages/prijava-organizacija.tsx`.
  *
  * Paths are SEGMENTS under `apps/web/src`, joined by each suite against its own
  * root, so this module imports nothing and runs in neither the browser nor a
@@ -42,6 +40,10 @@ export const SIGN_IN_SCREEN_EXEMPT: readonly { readonly file: string; readonly w
   {
     file: 'services/sign-in.ts',
     why: 'the exchange, its refusals and the failure-to-message mapping; a key source of its own in the sign-in suite, executed by sign-in.test.ts',
+  },
+  {
+    file: 'services/last-organization.ts',
+    why: 'the slug this device remembers after a successful sign-in, behind an injected Storage; the one module that touches localStorage, executed by last-organization.test.ts',
   },
   {
     file: 'services/return-target.ts',

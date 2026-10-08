@@ -4,9 +4,9 @@
  *
  * THE LOCATION RIDES A SEARCH PARAMETER through both sign-in routes. `_app.tsx`
  * and `index.tsx` put the whole href (path, search and hash) into
- * {@link RETURN_SEARCH_KEY} on `/prijava`; the organization prompt hands it on
- * to `/prijava/$slug`; the sign-in hook navigates to it once the password is
- * accepted. Carried as the prompt's own search and hash, which is what the two
+ * {@link RETURN_SEARCH_KEY} on `/prijava`, where the one sign-in form (story
+ * 7.7) reads it; the sign-in hook navigates to it once the password is
+ * accepted. Carried as the sign-in route's own search and hash, which is what the two
  * redirects did before this module, the parameters lived for one hop and the
  * PATH never travelled at all, so `/kalendar?tim=2#tjedan` came back as `/`.
  *

@@ -8,6 +8,11 @@ import { cn } from "@/lib/utils"
 // its chevron, so the select is reached as a descendant, not a child, and that
 // positioned wrapper would paint over the icon without its `z-10`. The icon is
 // decorative; the field keeps its `<Label>`.
+//
+// `InputGroupAction` is a TRAILING button inside the field (story 7.7: the
+// password's show/hide toggle). It is a real control, so it is not hidden from
+// assistive technology; the screen gives it its name and makes room for it on
+// the input with a right padding of its own.
 
 const InputGroup = React.forwardRef<
   HTMLDivElement,
@@ -37,4 +42,16 @@ const InputGroupIcon = React.forwardRef<
 ))
 InputGroupIcon.displayName = "InputGroupIcon"
 
-export { InputGroup, InputGroupIcon }
+const InputGroupAction = React.forwardRef<
+  HTMLSpanElement,
+  React.HTMLAttributes<HTMLSpanElement>
+>(({ className, ...props }, ref) => (
+  <span
+    ref={ref}
+    className={cn("absolute right-0 top-1/2 z-10 flex -translate-y-1/2", className)}
+    {...props}
+  />
+))
+InputGroupAction.displayName = "InputGroupAction"
+
+export { InputGroup, InputGroupAction, InputGroupIcon }

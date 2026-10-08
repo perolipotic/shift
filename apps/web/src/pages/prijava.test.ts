@@ -66,8 +66,8 @@ import {
  *   - the boundary the theme layer raised is the boundary the control draws.
  *     MUTATION-PROVEN GAP too: `border-input` → `border-border` in `input.tsx`
  *     left `--input`'s measured 3.23:1 true of a token nothing consumed.
- *   - both fields carry an accessible name, and the reset guidance is bound to
- *     the password field. `htmlFor`/`id` is the only thing that ties a
+ *   - all three fields carry an accessible name, and the one refusal is bound
+ *     to all three (story 7.7). `htmlFor`/`id` is the only thing that ties a
  *     `<Label>` to its `<Input>`, and getting it wrong leaves a screen reader
  *     announcing "edit text, blank" on a password field.
  *   - the screen REACHES the authentication seam. This was the inverse claim
@@ -101,7 +101,6 @@ const SIGN_IN_FORM = join(srcRoot, ...SIGN_IN_PARTS.form);
  */
 const SCREEN: readonly string[] = Object.values(SIGN_IN_PARTS).map((parts) => join(srcRoot, ...parts));
 const NOT_FOUND = join(srcRoot, 'pages', 'not-found.tsx');
-const ORGANIZATION = join(srcRoot, 'pages', 'prijava-organizacija.tsx');
 // `pages/index.tsx` IS NOT A SCREEN and is swept by nothing here: `/` forwards
 // a signed-in visitor to the first destination and renders nothing, so the file
 // carries no JSX and no key for any sweep below to read.
@@ -611,9 +610,12 @@ const SCREENS = [
   // with no count behind it read as coverage while asserting nothing on half
   // its cases. A screen that gains a control fails here until the number moves,
   // which is the moment somebody confirms the new control is measured.
-  { name: 'the sign-in screen', file: SCREEN, expectedControls: 3 },
+  // SEVEN SINCE STORY 7.7: three fields (organization, username, password)
+  // and four buttons (`Promijeni`, the password toggle, `Prijava` and the
+  // `Zaboravljena lozinka?` disclosure). The bare-`/prijava` prompt's two
+  // controls went with it.
+  { name: 'the sign-in screen', file: SCREEN, expectedControls: 7 },
   { name: 'the not-found component', file: NOT_FOUND, expectedControls: 1 },
-  { name: 'the organization prompt', file: ORGANIZATION, expectedControls: 2 },
   // EIGHT, and it was seven until story 1.4b: the settings surface carries five
   // fields — name, type, timezone and the leave year's month and day — plus a
   // save, a cancel, and now the logo's choose action. The number is what notices
@@ -961,16 +963,6 @@ const FORM_SCREENS = [
   // `finally` left the whole suite green while the identically shaped sign-in
   // screen was protected against exactly that.
   { name: 'the sign-in screen', file: SCREEN, effect: 'signIn(', inFlight: 'exchanging' },
-  // The prompt awaits nothing and holds no failure state — it validates what was
-  // typed and navigates — so there is no in-flight flag to clear and no refusal
-  // to surface. `null` rather than a name, and the derived list below asserts it
-  // is not empty, so "every screen opted out" cannot read as coverage.
-  {
-    name: 'the organization prompt',
-    file: ORGANIZATION,
-    effect: 'organizationDestination(',
-    inFlight: null,
-  },
   // Story 1.4a. The settings surface is the third screen with a form, and it is
   // the one with the most to lose from getting the uncontrolled-ref shape wrong:
   // five fields rather than two, so a refusal that re-rendered them away would
@@ -2044,9 +2036,13 @@ function resourceKeys(): string[] {
  * only true if both are read.
  */
 const KEY_SOURCES = [
-  { name: 'the sign-in screen', file: SCREEN, keys: translationKeys, strings: 5 },
+  // SIXTEEN SINCE STORY 7.7, counted per call: the heading; the organization
+  // label (twice: the field's `<Label>` and the URL slug row's), `remembered`,
+  // `hint`, `placeholder`, `change` and `changeLabel`; the username and password labels; the
+  // toggle's `passwordShow`; `submit` and `pending`; and the disclosure's
+  // `trigger`, `heading` and `body`.
+  { name: 'the sign-in screen', file: SCREEN, keys: translationKeys, strings: 16 },
   { name: 'the not-found component', file: NOT_FOUND, keys: translationKeys, strings: 2 },
-  { name: 'the organization prompt', file: ORGANIZATION, keys: translationKeys, strings: 3 },
   // THREE on the sign-in frame (visual refresh A): the brand panel's product
   // name, headline and subline, written once and rendered around both steps,
   // so neither step's own count moved.
@@ -3177,7 +3173,10 @@ describe('the screen is read at all, so every sweep below means something', () =
     // TWENTY-SEVEN SINCE STORY 5.5b: the shared erasure confirmation, lifted
     // out of the rotation builder; it renders the words it is handed and
     // holds no key, so no key source joins.
-    expect(SCREENS).toHaveLength(27);
+    //
+    // TWENTY-SIX SINCE STORY 7.7: the organization prompt is gone. Bare
+    // `/prijava` renders the sign-in screen, which is already an entry.
+    expect(SCREENS).toHaveLength(26);
     //
     // FORTY-NINE SINCE STORY 3.6b: `@/features/calendar/services/roster-write`.
     //
@@ -3208,7 +3207,10 @@ describe('the screen is read at all, so every sweep below means something', () =
     // SIXTY SINCE STORY 6.3: `@/features/today/services/admin-today`.
     //
     // SIXTY-ONE SINCE STORY 7.5: `@/utils/filter-bar`.
-    expect(KEY_SOURCES).toHaveLength(61);
+    //
+    // SIXTY SINCE STORY 7.7: the organization prompt, which rendered its own
+    // three keys, is gone; the sign-in screen renders its label now.
+    expect(KEY_SOURCES).toHaveLength(60);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -4081,17 +4083,45 @@ describe('the screen is read at all, so every sweep below means something', () =
 
   it('keeps the sign-in fields, the slug and the form state where they belong', () => {
     // NO NATIVE FIELD in any part, so the `<Input>` guards cannot be bypassed.
+    // STORY 7.7's one exception: the URL slug's row carries the organization
+    // in the form data as a HIDDEN input, which is no control, so it needs no
+    // label, ref or tap target. Exactly that one, and only that shape.
+    const HIDDEN_ORGANIZATION = '<input type="hidden" name="organization" value={shownSlug} />';
+
+    expect(occurrences(source(SIGN_IN_FORM), HIDDEN_ORGANIZATION), 'the row does not carry the organization').toBe(1);
     for (const part of SCREEN) {
-      expect(source(part), `${part} renders a bare input`).not.toMatch(/<input\b/);
+      expect(source(part).replace(HIDDEN_ORGANIZATION, ''), `${part} renders a bare input`).not.toMatch(/<input\b/);
       expect(source(part), `${part} declares a slug of its own`).not.toMatch(/\b(?:const|let|var)\s+slug\b/);
     }
     // THE SLUG COMES IN: the hook takes it, the page hands its route's in.
-    expect(source(SIGN_IN_HOOK), 'the hook does not take the slug').toContain('export function useSignIn(slug: string)');
+    // STORY 7.7: the URL slug OR NONE. Bare `/prijava` hands `undefined`, and
+    // the form then offers the organization field instead of the row.
+    expect(source(SIGN_IN_HOOK), 'the hook does not take the slug').toContain(
+      'export function useSignIn(slug: string | undefined)',
+    );
     expect(source(SIGN_IN_PAGE), 'the page does not hand the slug to the hook').toContain('useSignIn(slug)');
-    // THE FORM'S STATE IS THE HOOK'S, taken from the screen and never its own.
+    // THE FORM'S STATE IS THE HOOK'S, taken from the screen and never its own:
+    // the three fields' refs, the row-or-field switch, the toggle and the
+    // disclosure (story 7.7) as much as the refusal and the exchange.
+    // The organization's row-or-field is its own component in the form file,
+    // so every destructure of `screen` there is read together.
     const form = source(SIGN_IN_FORM);
-    const taken = /const \{([^}]*)\} = screen;/.exec(form)?.[1] ?? '';
-    const names = ['usernameField', 'passwordField', 'failure', 'pending', 'submit'];
+    const taken = [...form.matchAll(/const \{([^}]*)\} = screen;/g)].map((found) => found[1] ?? '').join(',');
+    const names = [
+      'organizationField',
+      'usernameField',
+      'passwordField',
+      'organizationEditable',
+      'passwordShown',
+      'forgotOpen',
+      'failure',
+      'pending',
+      'changeOrganization',
+      'togglePassword',
+      'toggleForgot',
+      'organizationInput',
+      'submit',
+    ];
 
     expect(taken, 'the form takes nothing from the screen').not.toBe('');
     for (const name of names) {
@@ -4148,8 +4178,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // SOURCE STRUCTURE B7, on B6's terms: an EQUALITY between the set and
     // EVERY non-test module anywhere under the auth feature — its root,
     // `services/`, and `components/` and `hooks/` at any depth — less the
-    // four modules exempt for a stated reason (`sign-in-screen.fixture.ts`):
-    // the fixture, `services/address.ts`, `services/sign-in.ts` and
+    // modules exempt for a stated reason (`sign-in-screen.fixture.ts`): the
+    // fixture, `services/address.ts`, `services/last-organization.ts` (story
+    // 7.7), `services/return-target.ts`, `services/sign-in.ts` and
     // `services/sign-out.ts`. ANY
     // SCRIPT MODULE (`.[cm]?[jt]sx?`), less tests and declaration files, and
     // ANY `*.fixture.*`, which renders nothing, is left out by its shape.
@@ -4170,6 +4201,7 @@ describe('the screen is read at all, so every sweep below means something', () =
       [
         'sign-in-screen.fixture.ts',
         'services/address.ts',
+        'services/last-organization.ts',
         'services/return-target.ts',
         'services/sign-in.ts',
         'services/sign-out.ts',
@@ -4182,15 +4214,15 @@ describe('the screen is read at all, so every sweep below means something', () =
     }
     // DISJOINT from EVERY other screen in `SCREENS` — the member, settings,
     // calendar, hour band, shift type and three team sets, the rotation
-    // builder, the organization prompt and every single-file screen — so no
-    // part is counted on two screens.
+    // builder and every single-file screen — so no part is counted on two
+    // screens.
     const others = SCREENS.filter((screen) => screen.file !== SCREEN).flatMap((screen) =>
       typeof screen.file === 'string' ? [screen.file] : [...screen.file],
     );
 
     expect(SCREENS.filter((screen) => screen.file === SCREEN), 'the sign-in set is not one screen').toHaveLength(1);
     expect(others, 'the other sets were not read').toEqual(
-      expect.arrayContaining([ORGANIZATION, ...TEAM_ROSTER, ...KALENDAR, ...SETTINGS, ...MEMBER_EDIT]),
+      expect.arrayContaining([NOT_FOUND, ...TEAM_ROSTER, ...KALENDAR, ...SETTINGS, ...MEMBER_EDIT]),
     );
     for (const file of SCREEN) expect(others, `${file} is in the sign-in set and another`).not.toContain(file);
     for (const file of SCREEN) {
@@ -4219,14 +4251,16 @@ describe('the screen is read at all, so every sweep below means something', () =
   it('creates every attached ref once, in the hook, on the sign-in screen', () => {
     const attached = [...source(SCREEN).matchAll(/\b(?:ref|\w+Ref)=\{([^}]*)\}/g)].map((found) => found[1] ?? '');
 
-    expect(attached.length, 'not both fields carry a ref').toBe(2);
+    // THREE SINCE STORY 7.7: the organization field joined the username and
+    // the password.
+    expect(attached.length, 'not all three fields carry a ref').toBe(3);
     // A BARE NAME, so it resolves to a hook-created `const`; `screen.x` would not.
     for (const name of attached) expect(name, `an attached ref is not a bare name: ${name}`).toMatch(/^\w+$/);
     for (const name of new Set(attached)) {
       expect(occurrences(source(SCREEN), `const ${name} = useRef`), `${name} is not created exactly once`).toBe(1);
       expect(source(SIGN_IN_HOOK), `${name} is not created in the hook`).toContain(`const ${name} = useRef`);
     }
-    expect(occurrences(source(SCREEN), '= useRef'), 'a ref is created besides the two fields and the in-flight flag').toBe(3);
+    expect(occurrences(source(SCREEN), '= useRef'), 'a ref is created besides the three fields and the in-flight flag').toBe(4);
     expect(source(SIGN_IN_HOOK), 'the in-flight ref is not in the hook').toContain('const exchanging = useRef(false);');
   });
 
@@ -4260,10 +4294,17 @@ describe('the screen is read at all, so every sweep below means something', () =
   it('finds the controls it is about to measure', () => {
     // SOURCE STRUCTURE B7: in the form, the part that renders them, and over
     // the whole set, so no other part grows a field or a button.
-    expect(inputElements(source(SIGN_IN_FORM))).toHaveLength(2);
-    expect(buttonElements(source(SIGN_IN_FORM))).toHaveLength(1);
-    expect(inputElements(source(SCREEN))).toHaveLength(2);
-    expect(buttonElements(source(SCREEN))).toHaveLength(1);
+    //
+    // STORY 7.7: THREE fields — the organization, the username and the
+    // password — and FOUR buttons: `Promijeni` on the URL slug's row, the
+    // password's show/hide toggle, `Prijava`, and the `Zaboravljena lozinka?`
+    // disclosure. Exactly one is `type="submit"`.
+    expect(inputElements(source(SIGN_IN_FORM))).toHaveLength(3);
+    expect(buttonElements(source(SIGN_IN_FORM))).toHaveLength(4);
+    expect(inputElements(source(SCREEN))).toHaveLength(3);
+    expect(buttonElements(source(SCREEN))).toHaveLength(4);
+    expect(occurrences(source(SIGN_IN_FORM), 'type="submit"'), 'not exactly one submit button').toBe(1);
+    expect(occurrences(source(SIGN_IN_FORM), 'type="button"'), 'a non-submit button would submit').toBe(3);
   });
 });
 
@@ -6394,16 +6435,18 @@ describe('the boundary the theme layer raised is the one the control draws', () 
   });
 });
 
-describe('both credential fields carry an accessible name', () => {
+describe('all three sign-in fields carry an accessible name', () => {
   // SOURCE STRUCTURE B7: every claim here is read off the sign-in FORM, the
   // one part that renders the fields, their labels and what they describe.
+  // STORY 7.7: three fields — the organization joined the username and the
+  // password — so three labels.
   it('gives every input a label bound by htmlFor', () => {
     const screen = source(SIGN_IN_FORM);
     const targets = labelTargets(screen);
     const inputs = inputElements(screen);
 
-    expect(inputs).toHaveLength(2);
-    expect(targets).toHaveLength(2);
+    expect(inputs).toHaveLength(3);
+    expect(targets).toHaveLength(3);
     for (const input of inputs) {
       const id = attributeOf(input, 'id');
 
@@ -6412,7 +6455,7 @@ describe('both credential fields carry an accessible name', () => {
     }
   });
 
-  it('gives the two fields distinct ids', () => {
+  it('gives the three fields distinct ids', () => {
     // Two inputs sharing one id satisfies the assertion above — every id is
     // pointed at by some label — while one field goes unnamed and the other is
     // named twice.
@@ -6432,45 +6475,61 @@ describe('both credential fields carry an accessible name', () => {
     }
   });
 
-  it('binds the reset guidance and the refusal to the password field', () => {
-    // Static text that nothing in the tab order passes through, so
+  /** The password field, found by its credential token: its `type` toggles. */
+  function passwordInput(screen: string): string {
+    return inputElements(screen).find((input) => attributeOf(input, 'autoComplete') === 'current-password') ?? '';
+  }
+
+  /** The organization field, found by its id. */
+  function organizationInput(screen: string): string {
+    return inputElements(screen).find((input) => attributeOf(input, 'id') === 'organization') ?? '';
+  }
+
+  it('binds the refusal to the password field', () => {
+    // A refusal that nothing in the tab order passes through, so
     // `aria-describedby` is the only route to a screen-reader user. Asserted as
     // a RESOLVING reference, not merely a present attribute: every id the
     // attribute can name, in either branch, must be an id this screen renders.
     const screen = source(SIGN_IN_FORM);
-    const password = inputElements(screen).find(
-      (input) => attributeOf(input, 'type') === 'password',
-    );
-    const ids = describedByIds(password ?? '');
+    const ids = describedByIds(passwordInput(screen));
 
-    expect(ids.length, 'the password field describes nothing').toBeGreaterThan(0);
+    expect(ids, 'the password field is not described by the refusal').toContain('sign-in-error');
     for (const id of ids) {
       expect(screen, `no element carries id="${id}"`).toContain(`id="${id}"`);
     }
   });
 
-  it('binds the refusal to the username field too, since it concerns both', () => {
-    // One message for the pair. A description reachable from only one of the
-    // two fields is unreachable from wherever the person actually is.
+  it('binds the refusal to all three values, since it concerns all three', () => {
+    // STORY 7.7: one message for a wrong organization, username or password.
+    // A description reachable from only some of the fields is unreachable from
+    // wherever the person actually is. The URL slug's row is not a field, so
+    // the refusal is bound to the row's group and to `Promijeni`, the one
+    // focusable thing in it (a group's description is not announced while
+    // tabbing).
     const screen = source(SIGN_IN_FORM);
-    const username = inputElements(screen).find(
-      (input) => attributeOf(input, 'autoComplete') === 'username',
-    );
-    const password = inputElements(screen).find(
-      (input) => attributeOf(input, 'type') === 'password',
-    );
-    const shared = describedByIds(username ?? '').filter((id) =>
-      describedByIds(password ?? '').includes(id),
-    );
+    const username = inputElements(screen).find((input) => attributeOf(input, 'autoComplete') === 'username') ?? '';
+    const row = /<div\s+role="group"[^>]*>/.exec(screen)?.[0] ?? '';
 
-    expect(shared, 'the two fields share no description').not.toEqual([]);
-    for (const id of shared) expect(screen).toContain(`id="${id}"`);
+    for (const [name, element] of [
+      ['the organization field', organizationInput(screen)],
+      ['the username field', username],
+      ['the password field', passwordInput(screen)],
+      ["the URL slug's row", row],
+      ['Promijeni', buttonElements(screen).find((button) => button.includes('onClick={changeOrganization}')) ?? ''],
+    ] as const) {
+      expect(element, `${name} was not found`).not.toBe('');
+      expect(describedByIds(element), `${name} is not described by the refusal`).toContain('sign-in-error');
+    }
+    expect(row, "the URL slug's row is not named by the organization label").toContain(
+      'aria-labelledby="organization-label"',
+    );
+    expect(screen, 'the organization label the row names is not rendered').toContain('id="organization-label"');
   });
 
   it('names the refusal only while the refusal is on the page', () => {
     // The runtime defect a resolving-reference assertion structurally cannot
     // see: `<p id="sign-in-error">` renders only on failure, so a STATIC
-    // `aria-describedby="sign-in-error"` described both fields by an element
+    // `aria-describedby="sign-in-error"` described the fields by an element
     // that is absent in the common case. Assistive technology ignores a
     // dangling reference silently, and the source-level lookup above passes
     // either way — the id is in the file.
@@ -6500,33 +6559,39 @@ describe('both credential fields carry an accessible name', () => {
     }
   });
 
-  it('keeps the reset guidance bound in BOTH branches, since it never goes away', () => {
+  it('keeps the organization hint bound in BOTH branches, since it never goes away', () => {
     // The other polarity of the conditional. Making the whole attribute
-    // conditional on a failure would silently drop the password-reset guidance
-    // — permanent, always rendered, and reachable only this way — from every
-    // screen that has not failed yet, which is all of them.
+    // conditional on a failure would silently drop the hint on how to find the
+    // slug — always rendered under the field, and reachable from it only this
+    // way — from every screen that has not failed yet, which is all of them.
     const screen = source(SIGN_IN_FORM);
-    const password =
-      inputElements(screen).find((input) => attributeOf(input, 'type') === 'password') ?? '';
-    const branches = [...(/aria-describedby=\{([^}]*)\}/.exec(password)?.[1] ?? '').matchAll(
+    const branches = [...(/aria-describedby=\{([^}]*)\}/.exec(organizationInput(screen))?.[1] ?? '').matchAll(
       /'([^']*)'/g,
     )].map((found) => idTokens(found[1] ?? ''));
 
-    expect(branches.length, 'the password description is not a two-branch expression').toBe(2);
+    expect(branches.length, 'the organization description is not a two-branch expression').toBe(2);
     for (const branch of branches) {
-      expect(branch, 'a branch drops the password-reset guidance').toContain('password-reset');
+      expect(branch, 'a branch drops the organization hint').toContain('organization-hint');
     }
+    expect(screen, 'the hint the field names is not rendered').toContain('id="organization-hint"');
   });
 
-  it('lets the credential manager fill both fields', () => {
+  it('lets the credential manager fill the username and the password', () => {
     // `autoComplete` is what makes a saved credential offerable, and the VALUE
     // is what decides it: `off` and `on` are both non-null and neither offers
     // a credential, so a presence check would pass for the shape that breaks
     // every password manager. It is also why the `<form>` element is there at
     // all — outside a form the attribute is ignored.
+    //
+    // STORY 7.7: the organization field is the one exception, and pinned as
+    // such below — it takes a slug, which no credential manager holds.
     const CREDENTIAL_TOKENS = new Set(['username', 'current-password', 'new-password', 'email']);
+    const credentials = inputElements(source(SIGN_IN_FORM)).filter(
+      (input) => attributeOf(input, 'id') !== 'organization',
+    );
 
-    for (const input of inputElements(source(SIGN_IN_FORM))) {
+    expect(credentials, 'the credential fields were not found').toHaveLength(2);
+    for (const input of credentials) {
       const declared = attributeOf(input, 'autoComplete');
 
       expect(declared, 'an <Input> declares no autoComplete').not.toBeNull();
@@ -6535,13 +6600,96 @@ describe('both credential fields carry an accessible name', () => {
         `autoComplete="${String(declared)}" is not a credential-manager value`,
       ).toBe(true);
     }
+    expect(attributeOf(passwordInput(source(SIGN_IN_FORM)), 'autoComplete')).toBe('current-password');
   });
 
-  it('masks the password field', () => {
-    const types = inputElements(source(SIGN_IN_FORM)).map((input) => attributeOf(input, 'type'));
+  it('keeps autofill and the phone keyboard out of the organization slug', () => {
+    // `off` rather than `organization`: the WHATWG token names the
+    // organization's NAME, and this field takes its slug, so autofill would
+    // supply a value the slug rule always refuses. A slug is a DNS label, so
+    // none of a phone keyboard's text conveniences are wanted either.
+    const organization = organizationInput(source(SIGN_IN_FORM));
 
-    expect(types).toContain('password');
+    expect(attributeOf(organization, 'autoComplete')).toBe('off');
+    expect(attributeOf(organization, 'autoCapitalize')).toBe('none');
+    expect(attributeOf(organization, 'autoCorrect')).toBe('off');
+    expect(organization).toContain('spellCheck={false}');
+    expect(organization).toContain('required');
+    expect(attributeOf(organization, 'className')).toContain('h-11');
+  });
+
+  it('masks the password until the toggle shows it', () => {
+    // STORY 7.7: the `type` is an expression on the toggle's state, and that
+    // state starts false, so the field opens masked. The toggle is a real
+    // `type="button"` (inside a form, a bare button submits), states itself
+    // with `aria-pressed` under one constant name, and is 44 px square.
+    const form = source(SIGN_IN_FORM);
+    const types = inputElements(form).map((input) => attributeOf(input, 'type'));
+    const toggle = buttonElements(form).find((button) => button.includes('aria-pressed')) ?? '';
+
     expect(types).toContain('text');
+    expect(passwordInput(form), 'the password type does not follow the toggle').toContain(
+      "type={passwordShown ? 'text' : 'password'}",
+    );
+    expect(source(SIGN_IN_HOOK), 'the password does not open masked').toContain(
+      'const [passwordShown, setPasswordShown] = useState(false);',
+    );
+    expect(toggle, 'no toggle states itself with aria-pressed').not.toBe('');
+    expect(toggle).toContain('aria-pressed={passwordShown}');
+    expect(toggle).toContain('type="button"');
+    expect(toggle).toContain("aria-label={t('auth.passwordShow')}");
+    expect(toggle).toContain('onClick={togglePassword}');
+    expect(form, 'the toggle does not show its state').toContain(
+      '{passwordShown ? <EyeOff aria-hidden /> : <Eye aria-hidden />}',
+    );
+    expect(attributeOf(toggle, 'className')).toMatch(/\bh-11\b[\s\S]*\bw-11\b/);
+  });
+
+  it('opens the forgotten-password panel in place, as a disclosure', () => {
+    // STORY 7.7: a `type="button"` with `aria-expanded` and `aria-controls`,
+    // not a link — there is nowhere to go, since an administrator sets every
+    // password. The panel is always in the tree and only `hidden` while
+    // closed, so `aria-controls` never names an absent id.
+    const form = source(SIGN_IN_FORM);
+    const trigger = buttonElements(form).find((button) => button.includes('aria-expanded')) ?? '';
+
+    expect(trigger, 'no disclosure states itself with aria-expanded').not.toBe('');
+    expect(trigger).toContain('aria-expanded={forgotOpen}');
+    expect(trigger).toContain('aria-controls="forgot-password"');
+    expect(trigger).toContain('type="button"');
+    expect(form, 'the panel the disclosure controls is not always rendered').toMatch(
+      /<Callout id="forgot-password" hidden=\{!forgotOpen\}>/,
+    );
+    expect(source(SIGN_IN_HOOK), 'the panel does not open closed').toContain(
+      'const [forgotOpen, setForgotOpen] = useState(false);',
+    );
+  });
+
+  it("swaps the URL slug's row for the field with Promijeni, and focuses it", () => {
+    // STORY 7.7: the row shows the slug as text, not an input, and
+    // `Promijeni` (named `Promijeni organizaciju`) swaps in the field. The URL
+    // does not change, so the hook navigates nowhere to do it: it commits the
+    // field first and then focuses it.
+    const form = source(SIGN_IN_FORM);
+    const change = buttonElements(form).find((button) => button.includes('onClick={changeOrganization}')) ?? '';
+    const handler = /function changeOrganization\(\)[\s\S]*?\n {2}\}/.exec(source(SIGN_IN_HOOK))?.[0] ?? '';
+
+    expect(change, 'no button swaps the row for the field').not.toBe('');
+    expect(change).toContain('type="button"');
+    expect(change).toContain("aria-label={t('auth.organization.changeLabel')}");
+    // A group is not focusable, so its description is not announced while
+    // tabbing: the button carries the refusal too.
+    expect(change).toContain("aria-describedby={failure === null ? undefined : 'sign-in-error'}");
+    expect(handler, 'the swap is not committed before the focus').toMatch(
+      /flushSync\([\s\S]*setEditing\(true\)[\s\S]*organizationField\.current\?\.focus\(\)/,
+    );
+    expect(handler, 'the swap navigates').not.toContain('navigate');
+  });
+
+  it('never disables the submit button, only marks it', () => {
+    // `disabled` on the button somebody has just pressed drops keyboard focus
+    // to `<body>`. Nothing on the form carries it.
+    expect(source(SIGN_IN_FORM)).not.toMatch(/(?<![\w-])disabled[=\s>{]/);
   });
 
   it('keeps the phone keyboard out of an admin-issued username', () => {
@@ -7377,12 +7525,13 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // UX-DR34: a refused save keeps every entered value. Uncontrolled inputs
     // keep what was typed because nothing re-renders them away — so the state
     // this screen holds is the FAILURE, never the credentials. A `value={…}` on
-    // either field is the shape that loses them on the render that shows the
-    // error.
+    // any field is the shape that loses them on the render that shows the
+    // error. STORY 7.7: three fields, and the organization field's prefill is
+    // a `defaultValue`, which an uncontrolled field keeps.
     // SOURCE STRUCTURE B7: in the form, the part that renders the fields.
     const screen = source(SIGN_IN_FORM);
 
-    expect(inputElements(screen), 'the form renders no field to read').toHaveLength(2);
+    expect(inputElements(screen), 'the form renders no field to read').toHaveLength(3);
     for (const input of inputElements(screen)) {
       expect(attributeOf(input, 'value'), 'a credential field is controlled').toBeNull();
       expect(input, 'a credential field is controlled').not.toContain('value={');
@@ -7408,23 +7557,79 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     }
   });
 
-  it('signs in against the slug from the URL, and not one of its own', () => {
+  it('signs in against the URL slug or the field, and not one of its own', () => {
     // Nothing pinned this. A hard-coded slug, or `slug` dropped from the
     // credentials object, passed every test in the suite — and would send every
     // sign-in to one tenant, or to none.
     // SOURCE STRUCTURE B7: the page reads the slug and hands it to the hook,
-    // and the hook hands it to `signIn`.
+    // and the hook hands `signIn` either that slug or what the organization
+    // field holds (story 7.7). NOT STRICT, because one component serves both
+    // routes and bare `/prijava` has no slug.
     expect(source(SIGN_IN_PAGE), 'the screen never reads the slug from the route params').toMatch(
-      /const \{\s*slug\s*\}\s*=\s*[\w.]*useParams\(\)/,
+      /const \{\s*slug\s*\}\s*=\s*useParams\(\{\s*strict:\s*false\s*\}\)/,
     );
     expect(source(SIGN_IN_PAGE), 'the page does not hand the slug to the hook').toContain('useSignIn(slug)');
     expect(occurrences(source(SCREEN), 'useParams('), 'a part reads the route params besides the page').toBe(1);
 
-    const call = /signIn\(([\s\S]*?)\}\)/.exec(source(SIGN_IN_HOOK))?.[1];
+    const hook = source(SIGN_IN_HOOK);
+    const call = /signIn\(([\s\S]*?)\}\)/.exec(hook)?.[1];
 
     expect(call, 'the screen does not call signIn at all').not.toBeUndefined();
-    expect(call, 'the slug is not among the credentials handed to signIn').toMatch(
-      /(?:^|[\s,{])slug\s*,/,
+    expect(call, 'the organization is not among the credentials handed to signIn').toMatch(
+      /(?:^|[\s,{])slug:\s*organization\s*,/,
+    );
+    expect(hook, 'the organization is not the URL slug or the field').toMatch(
+      /const organization = organizationEditable \? organizationField\.current\?\.value : shownSlug;/,
+    );
+    // The URL slug NORMALIZED before it is shown, prefilled or sent, so
+    // `/prijava/DVD-Demo` shows what is sent and remembered.
+    expect(hook, 'the URL slug is shown as typed rather than as sent').toContain(
+      'const shownSlug = slug === undefined ? undefined : (organizationDestination(slug) ?? slug);',
+    );
+    expect(hook, 'the Promijeni prefill is not the normalized slug').toContain(
+      'organizationDefault: shownSlug ?? remembered,',
+    );
+    expect(source(SIGN_IN_FORM), 'the row shows the slug as typed').toContain('{shownSlug}</span>');
+    expect(hook, 'the field does not stand in for the row once Promijeni is pressed').toContain(
+      'const organizationEditable = slug === undefined || editing;',
+    );
+  });
+
+  it('re-masks the password before the exchange', () => {
+    // STORY 7.7: committed before anything is asked, so a refusal never
+    // focuses a password shown as plain text, and a credential manager sees a
+    // `type="password"` field on the submit.
+    const handler = submitHandler(source(SIGN_IN_HOOK));
+
+    expect(handler, 'the password is not re-masked before the exchange').toMatch(
+      /flushSync\(\(\) => \{\s*setPasswordShown\(false\);\s*\}\);[\s\S]*?exchanging\.current = true;[\s\S]*?signIn\(/,
+    );
+  });
+
+  it('says the organization was remembered only while the field still holds it', () => {
+    // STORY 7.7: once the person edits the prefill, `Zapamćeno na ovom
+    // uređaju.` is no longer true. Tracked from the field's own input event,
+    // not an effect (the effect count above stays zero).
+    const hook = source(SIGN_IN_HOOK);
+
+    expect(hook).toContain('setStillRemembered(event.currentTarget.value === remembered);');
+    expect(hook, 'the hint ignores an edited field').toMatch(/rememberedHere:[\s\S]{0,160}?&& stillRemembered,/);
+    expect(source(SIGN_IN_FORM), 'the field does not report its edits').toContain('onInput={organizationInput}');
+    expect(source(SIGN_IN_FORM), 'the field has no example of a slug').toContain(
+      "placeholder={t('auth.organization.placeholder')}",
+    );
+  });
+
+  it('remembers the organization only after a successful sign-in', () => {
+    // STORY 7.7: written after `!outcome.ok` has returned, so a refused value
+    // — a typo — is never remembered, and through the service, which stores
+    // only the normalized slug. The parts never name `localStorage` (the
+    // sweep above); the service is the one place it is touched.
+    const handler = submitHandler(source(SIGN_IN_HOOK));
+
+    expect(occurrences(handler, 'lastOrganization.remember('), 'not exactly one write').toBe(1);
+    expect(handler, 'the write is not after the refusal returns').toMatch(
+      /!outcome\.ok\)\s*\{[\s\S]*?return;\s*\}[\s\S]*?lastOrganization\.remember\(lastOrganization\.deviceStorage\(\), organization\)/,
     );
   });
 
@@ -7432,8 +7637,8 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // MUTATION-PROVEN GAP. Nothing in this repository read a `navigate(` call:
     // a grep across every test file returned zero matches, so `to: '/prijava'`
     // here passed the entire suite while a correct sign-in established a
-    // session and then dropped the person back on the organization prompt —
-    // which, with no signed-in guard on that route, renders as though nothing
+    // session and then dropped the person back on bare `/prijava` — which,
+    // with no signed-in guard on that route then, renders as though nothing
     // happened. The story's first acceptance criterion was verified only by
     // somebody remembering to run the manual browser check.
     // SOURCE STRUCTURE B7: inside the hook's own submit.
@@ -7462,13 +7667,18 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // `aria-disabled` now and the in-flight ref refuses the second submit; a
     // refusal moves focus to the password field the message describes, in the
     // handler, on both the refused and the thrown path.
-    const button = buttonElements(source(SIGN_IN_FORM))[0] ?? '';
+    // STORY 7.7: the submit button is one of four now, so it is found by type.
+    const button = buttonElements(source(SIGN_IN_FORM)).find((found) => found.includes('type="submit"')) ?? '';
     const handler = submitHandler(source(SIGN_IN_HOOK));
 
     expect(button, 'the submit button is disabled natively, which drops focus').not.toMatch(
       /\sdisabled=/,
     );
     expect(button, 'the pending state is not stated').toContain('aria-disabled={pending}');
+    expect(button, 'the pending state is not stated as busy').toContain('aria-busy={pending}');
+    expect(source(SIGN_IN_FORM), 'the button does not say it is signing in').toContain(
+      "{pending ? t('auth.pending') : t('auth.submit')}",
+    );
     // FOCUS AFTER THE COMMIT: the refusal is rendered through `flushSync`
     // first, so the field is announced with the error it now points at.
     expect(handler, 'a refused sign-in leaves focus where it was, or focuses before the commit').toMatch(
@@ -7529,61 +7739,18 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     );
   });
 
-  it('requires both credentials before it asks the service about them', () => {
-    // The organization prompt marks its one field `required` and says why: the
-    // browser's own validation stops an empty submission in the user's own
-    // language. The credential form marked neither, so a blank submit reached
+  it('requires all three values before it asks the service about them', () => {
+    // `required` lets the browser's own validation stop an empty submission in
+    // the user's own language. The credential form once marked neither field, so a blank submit reached
     // `normalizeUsername`, was refused locally, and rendered "Korisničko ime
     // ili lozinka nisu točni." — telling somebody their credentials are wrong
     // when they had not entered any. UX-DR34 names the problem instead.
+    // STORY 7.7: the organization field too.
     // SOURCE STRUCTURE B7: in the form, the part that renders the fields.
-    expect(inputElements(source(SIGN_IN_FORM)), 'the form renders no field to read').toHaveLength(2);
+    expect(inputElements(source(SIGN_IN_FORM)), 'the form renders no field to read').toHaveLength(3);
     for (const input of inputElements(source(SIGN_IN_FORM))) {
-      expect(input, `a credential field is not required: ${input}`).toContain('required');
+      expect(input, `a sign-in field is not required: ${input}`).toContain('required');
     }
-  });
-});
-
-describe('the organization prompt reaches the tenant it was given', () => {
-  it('navigates to the parameterized form with the slug it just validated', () => {
-    // MUTATION-PROVEN GAP, and the widest one this story shipped. This hop is
-    // the entire product behaviour of the screen, and no test read it: replace
-    // the call with `navigate({ to: '/prijava' })` and the prompt silently does
-    // nothing on submit; hard-code `params: { slug: 'dvd-kastel-novi' }` and
-    // every visitor of every organization is sent to one tenant's form, where
-    // their correct credentials are refused with the deliberately
-    // indistinguishable message. Both type-check, both keep `slug` referenced
-    // so no lint fires, and both passed the whole suite.
-    //
-    // The PAIR is what matters: the destination must be the parameterized
-    // route, and the parameter must be the value `organizationDestination`
-    // returned rather than a literal of the handler's own.
-    const handler = submitHandler(source(ORGANIZATION));
-
-    expect(handler, 'the organization prompt has no submit handler').not.toBe('');
-    expect(handler, 'the prompt does not navigate to the per-tenant form').toMatch(
-      /navigate\(\{\s*to:\s*'\/prijava\/\$slug'/,
-    );
-    expect(handler, 'the prompt derives no slug from what was typed').toMatch(
-      /const\s+slug\s*=\s*organizationDestination\(/,
-    );
-    expect(handler, 'the slug handed to the route is not the validated one').toMatch(
-      /params:\s*\{\s*slug\s*\}/,
-    );
-  });
-
-  it('surfaces a rejected navigation instead of discarding it', () => {
-    // `void navigate(...)` on a promise that rejects is an unhandled rejection:
-    // the prompt stays put with no explanation and nothing in the console. The
-    // sign-in screen's equivalent call is inside a try/catch for the same
-    // reason. No message reaches the screen — one would begin the enumeration
-    // oracle this screen is built to avoid — so the console is the whole of it.
-    const handler = submitHandler(source(ORGANIZATION));
-
-    expect(handler, 'a rejected navigation is discarded rather than reported').toMatch(
-      /navigate\([\s\S]{0,200}?\.catch\(/,
-    );
-    expect(handler, 'the rejected navigation reports nothing').toContain('console.error(');
   });
 });
 

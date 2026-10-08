@@ -3,16 +3,25 @@
     "heading": "Prijava",
     "username": "Korisničko ime",
     "password": "Lozinka",
-    "submit": "Prijavi se",
-    "passwordReset": "Zaboravljena lozinka? Administrator ti postavlja novu.",
+    "submit": "Prijava",
+    "pending": "Prijava…",
+    "passwordShow": "Prikaži lozinku",
     "error": {
-      "credentials": "Korisničko ime ili lozinka nisu točni.",
+      "credentials": "Organizacija, korisničko ime ili lozinka nisu točni.",
       "unavailable": "Prijava trenutačno nije moguća. Pokušaj ponovno."
     },
     "organization": {
-      "heading": "Organizacija",
-      "label": "Kratica organizacije",
-      "submit": "Nastavi"
+      "label": "Organizacija",
+      "change": "Promijeni",
+      "changeLabel": "Promijeni organizaciju",
+      "remembered": "Zapamćeno na ovom uređaju.",
+      "hint": "Kratica organizacije je na poveznici za prijavu ili je dobiješ od administratora.",
+      "placeholder": "npr. dvd-kastel-novi"
+    },
+    "forgot": {
+      "trigger": "Zaboravljena lozinka?",
+      "heading": "Lozinku postavlja administrator",
+      "body": "Javi se administratoru svoje organizacije. On ti daje novu lozinku, a stare prijave tada prestaju vrijediti."
     },
     "brand": {
       "name": "Shift",

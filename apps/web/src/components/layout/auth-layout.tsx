@@ -4,13 +4,13 @@ import type { ReactNode } from 'react';
 import { t } from '@/lib/i18n';
 
 /**
- * The two sign-in steps' shared frame (visual refresh A): a navy brand panel
- * from `lg` up, and the form column on the page background.
+ * The sign-in frame (visual refresh A): a navy brand panel from `lg` up, and
+ * the form column on the page background.
  *
- * ONE COMPONENT, TWO STEPS. `/prijava` and `/prijava/$slug` are one flow, and
- * the panel is the same fact on both — written twice it would be two places
- * for the product name, the headline and the glows to drift. Each screen keeps
- * its own `<Card>`, heading and form; this owns only what surrounds them.
+ * ONE FRAME. `/prijava` and `/prijava/$slug` render the one sign-in form since
+ * story 7.7, and the panel is a fact of the frame rather than of the form — the
+ * product name, the headline and the glows have one place. The screen keeps its
+ * own `<Card>`, heading and form; this owns only what surrounds them.
  *
  * FROM `lg` UP ONLY. On a phone the form is the whole screen, because the
  * person holding it came to sign in, not to read. The panel carries no control

@@ -118,9 +118,13 @@ function isServiceFailure(error: AuthFailure): boolean {
 /**
  * Exchanges an admin-issued username for a session, under one organization.
  *
+ * The slug arrives from the form's organization row (the URL) or its field
+ * (this device's memory, or what was typed) — story 7.7 — and is judged here
+ * either way, exactly as the username is.
+ *
  * BOTH halves are normalized before they are judged, and that is a correctness
- * fix rather than a convenience. `/prijava/DVD-Kastel-Novi` is exactly what the
- * organization prompt would have lowercased, and a URL is shared, typed and
+ * fix rather than a convenience. `/prijava/DVD-Kastel-Novi`, or `DVD-Kastel-Novi`
+ * typed into the field, is a slug a person meant, and a URL is shared, typed and
  * autocapitalized by phones — treating it as unusable rendered a working form
  * that refused every correct credential forever, with the message that says the
  * password was wrong. Format validity is not an existence question, so the
