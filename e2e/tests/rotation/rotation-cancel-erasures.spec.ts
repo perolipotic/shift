@@ -185,7 +185,9 @@ test('a cancel that erases a conflict asks first, by keyboard, and the queue los
   await expect(rotationPage.cancelledConfirmation).toContainText(plural(cancelErasures.removed, 1));
   await expect(rotationPage.dialog()).toHaveCount(0);
   await expect(rotationPage.cancelledConfirmation, 'focus did not follow the landed cancel').toBeFocused();
+  await rotationPage.openHistory();
   await expect(rotationPage.historyRow(fullDate(scheduled))).toHaveCount(0);
+  await rotationPage.closeHistory();
 
   // THE QUEUE −1, IN-APP: the landed cancel re-read the calendar, the leave and the resolutions.
   await rotationPage.navigationLink(hr.nav.raspored, { exact: true }).click();
@@ -226,7 +228,9 @@ test('a kept conflict holds the cancel, and going back keeps the scheduled chang
   await expect(rotationPage.cancelScheduledOffer(fullDate(scheduled)), 'focus is not back on the offer').toBeFocused();
   await expect(rotationPage.cancelledConfirmation).toHaveCount(0);
   // The scheduled change stands, and so does the conflict.
+  await rotationPage.openHistory();
   await expect(rotationPage.historyRow(fullDate(scheduled))).toContainText(builder.history.status.scheduled);
+  await rotationPage.closeHistory();
   await conflictsPage.goto();
   await expect(conflictsPage.rowsOf(person.name)).toHaveCount(1);
 });
@@ -247,7 +251,8 @@ test('a cancel whose erasures cannot be checked is refused inside its confirmati
   await expect(rotationPage.cancelErasuresUnavailable).toBeVisible();
   await expect(rotationPage.cancelErasuresRetry, 'the retry is not in reach').toBeFocused();
   await expect(rotationPage.cancelledConfirmation).toHaveCount(0);
-  await expect(rotationPage.historyRow(fullDate(scheduled))).toContainText(builder.history.status.scheduled);
+  // The history is read once the confirmation has closed, below: while it is
+  // open the page behind it, the history's header button included, is inert.
 
   // The read answers again: the retry checks afresh and asks about the one conflict.
   await page.unroute(resolutions);
@@ -256,7 +261,9 @@ test('a cancel whose erasures cannot be checked is refused inside its confirmati
   await expect(dialog).toBeVisible();
   await rotationPage.cancelErasures.backIn(dialog).click();
   await expect(rotationPage.cancelledConfirmation).toHaveCount(0);
+  await rotationPage.openHistory();
   await expect(rotationPage.historyRow(fullDate(scheduled))).toContainText(builder.history.status.scheduled);
+  await rotationPage.closeHistory();
 });
 
 test('a cancel that erases nothing cancels at once after its confirmation, as before', async ({
@@ -278,7 +285,9 @@ test('a cancel that erases nothing cancels at once after its confirmation, as be
   // No count of removed conflicts: the notice is the one line, and nothing more.
   await expect(rotationPage.cancelledConfirmation).toHaveText(builder.cancelScheduled.done);
   await expect(rotationPage.dialog()).toHaveCount(0);
+  await rotationPage.openHistory();
   await expect(rotationPage.historyRow(fullDate(scheduled))).toHaveCount(0);
+  await rotationPage.closeHistory();
 
   await conflictsPage.goto();
   await expect(conflictsPage.anyCountHeading).toBeVisible();
@@ -321,7 +330,9 @@ test('a conflict added while the cancel\'s dialog is open shows the list again, 
   // Nothing was deleted.
   await expect(rotationPage.cancelledConfirmation).toHaveCount(0);
   await parts.backIn(again).click();
+  await rotationPage.openHistory();
   await expect(rotationPage.historyRow(fullDate(scheduled))).toContainText(builder.history.status.scheduled);
+  await rotationPage.closeHistory();
 });
 
 test('a read that fails at the dialog\'s save brings the cancel\'s confirmation back with its refusal, and deletes nothing', async ({
@@ -350,7 +361,13 @@ test('a read that fails at the dialog\'s save brings the cancel\'s confirmation 
   await expect(rotationPage.cancelErasuresRetry, 'the retry is not in reach').toBeFocused();
   await expect(rotationPage.cancelledConfirmation).toHaveCount(0);
   await page.unroute(resolutions);
+  // The confirmation is dismissed first: the history sits behind a header
+  // button, which is inert while a dialog is open.
+  await page.keyboard.press('Escape');
+  await expect(rotationPage.dialog()).toHaveCount(0);
+  await rotationPage.openHistory();
   await expect(rotationPage.historyRow(fullDate(scheduled))).toContainText(builder.history.status.scheduled);
+  await rotationPage.closeHistory();
 });
 
 test('a change gone before the confirm is the cancel\'s own stale refusal, with no erasure dialog and no "cannot check"', async ({

@@ -20,8 +20,8 @@ import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
 /**
- * Story 5.5c: a save bar at the end of the builder, after the history, keeps
- * "Spremi rotaciju" and "Odbaci promjene" in reach.
+ * Story 5.5c: a save bar at the end of the builder keeps "Spremi rotaciju"
+ * and "Odbaci promjene" in reach.
  *
  * Under the run's rotation hold, a team of the test's own gets the seeded
  * rotation from three days ago — the version in force today — and the
@@ -337,7 +337,9 @@ test.describe('with no version in force', () => {
 
     await openBuilder(rotationPage);
     const today = await rotationPage.effectiveFromInput.inputValue();
+    await rotationPage.openHistory();
     await expect(rotationPage.historyRow(builder.history.status.inForce)).toHaveCount(0);
+    await rotationPage.closeHistory();
     await rotationPage.anchorInput.fill(addDays(today, 1));
 
     await expect(

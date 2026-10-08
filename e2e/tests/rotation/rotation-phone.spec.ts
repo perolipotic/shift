@@ -190,8 +190,8 @@ test.describe('at 390 px, on a touch phone', () => {
     await expect(rotationPage.stepProgress(4)).toBeFocused();
 
     // SAVE FROM THE SAVE BAR (story 5.5c), on step 4: in flow at the end of
-    // the builder, after the history, never sticky on a phone; the outcome
-    // sits under the header.
+    // the builder (the history is a dialog since story 7.18), never sticky on
+    // a phone; the outcome sits under the header.
     await rotationPage.saveButton.tap();
     await expect(rotationPage.text(builder.saved)).toBeVisible();
 

@@ -13,7 +13,8 @@ const cancelErasures = builder.cancelScheduled.erasures;
 
 /**
  * `/postavke-rotacije`: the shift types, the rotation builder (pattern,
- * offsets, preview, history) and, below 640 px, its four-step stepper.
+ * offsets, preview), its history behind a header button (story 7.18) and,
+ * below 640 px, its four-step stepper.
  */
 export class RotationPage extends BasePage {
   protected readonly path = '/postavke-rotacije';
@@ -363,9 +364,32 @@ export class RotationPage extends BasePage {
     return this.savedConfirmation.getByRole('listitem');
   }
 
-  /** The history's row that holds `text`. */
+  /** Story 7.18: the header button that opens the history. */
+  get historyButton(): Locator {
+    return this.page.getByRole('button', { name: builder.history.heading, exact: true });
+  }
+
+  /** Story 7.18: the history, a dialog behind the header button. */
+  get historyDialog(): Locator {
+    return this.dialog(builder.history.heading);
+  }
+
+  /** Opens the history from the header; its rows are read only while it is open. */
+  async openHistory(): Promise<void> {
+    await this.historyButton.click();
+    await expect(this.historyDialog).toBeVisible();
+  }
+
+  /** Closes the history with Escape; focus goes back to the header button. */
+  async closeHistory(): Promise<void> {
+    await this.page.keyboard.press('Escape');
+    await expect(this.historyDialog).toHaveCount(0);
+    await expect(this.historyButton).toBeFocused();
+  }
+
+  /** The history's row that holds `text`, while the history is open. */
   historyRow(text: string): Locator {
-    return this.page
+    return this.historyDialog
       .getByRole('table')
       .filter({ has: this.page.getByRole('columnheader', { name: builder.history.columnSaved }) })
       .getByRole('row')

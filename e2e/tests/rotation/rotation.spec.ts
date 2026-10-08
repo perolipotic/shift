@@ -413,10 +413,13 @@ test('an admin schedules a change from tomorrow, sees it in the history, is refu
   await expect(rotationPage.savedConfirmation).toBeVisible();
 
   // The history names the change: from tomorrow, scheduled, by the admin.
+  // STORY 7.18: read in its dialog, behind the header button.
+  await rotationPage.openHistory();
   const scheduledRow = rotationPage.historyRow(shownDate(tomorrow));
   await expect(scheduledRow).toHaveCount(1);
   await expect(scheduledRow).toContainText(history.status.scheduled);
   await expect(scheduledRow).toContainText(fixture.admin.name);
+  await rotationPage.closeHistory();
 
   // A second change is refused while that one is scheduled; the cancel is
   // offered beside the refusal.
@@ -449,7 +452,9 @@ test('an admin schedules a change from tomorrow, sees it in the history, is refu
     await expect(done).toContainText(plural(builder.cancelScheduled.erasures.removed, count));
   }
   await expect(done).toBeVisible();
+  await rotationPage.openHistory();
   await expect(rotationPage.historyRow(shownDate(tomorrow))).toHaveCount(0);
+  await rotationPage.closeHistory();
   await expect(refusal).toHaveCount(0);
 });
 

@@ -98,7 +98,7 @@ const asAdmin: readonly Screen[] = [
   {
     title: 'Organizacija',
     path: () => '/organizacija',
-    ready: ({ organizationPage }) => organizationPage.nameInput,
+    ready: ({ organizationPage }) => organizationPage.nameOpener,
   },
 ];
 

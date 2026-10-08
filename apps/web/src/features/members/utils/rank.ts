@@ -251,11 +251,11 @@ export function rosterRankMessageKey(
 
 // ------------------------------------------------------------- the setting
 
-/** The setting control's two values. Strings because a `<select>` speaks them. */
+/** The setting's two radio values. Strings because a radio group speaks them. */
 export const FIRE_RANKS_ON = 'on';
 export const FIRE_RANKS_OFF = 'off';
 
-/** The options the setting control offers, off first: the default. */
+/** The options the setting's dialog offers, off first: the default. */
 export const FIRE_RANKS_OPTIONS: readonly boolean[] = [false, true];
 
 export function fireRanksValue(uses: boolean): string {
@@ -263,9 +263,9 @@ export function fireRanksValue(uses: boolean): string {
 }
 
 /**
- * What the setting control hands back, given what the row holds. A value that
- * is neither option keeps the stored setting — the direction that changes
- * nothing, as {@link chosenRank} takes.
+ * What the setting's radio group hands back, given what the row holds. A
+ * value that is neither option keeps the stored setting — the direction that
+ * changes nothing, as {@link chosenRank} takes.
  */
 export function fireRanksOf(value: string, stored: boolean): boolean {
   if (value === FIRE_RANKS_ON) return true;
@@ -274,53 +274,7 @@ export function fireRanksOf(value: string, stored: boolean): boolean {
   return stored;
 }
 
-/**
- * The setting control's React key: the stored value AND a revision that moves
- * on every refused write, so a refusal remounts the uncontrolled control back
- * to what the row holds rather than leaving the refused choice on screen.
- */
-export function fireRanksControlKey(uses: boolean, revision: number): string {
-  return `${fireRanksValue(uses)}:${String(revision)}`;
-}
-
-/** Write the choice now, or hold it until the write in flight settles. */
-export const FIRE_RANKS_WRITE = 'write';
-export const FIRE_RANKS_QUEUE = 'queue';
-
-/**
- * What a setting change does given what is in flight. ANY write in flight —
- * the form save, the logo upload, the accent, or this setting's own — queues
- * the choice rather than dropping it; the latest choice wins.
- */
-export function fireRanksStepOf(
-  writingElsewhere: boolean,
-  writingSelf: boolean,
-): typeof FIRE_RANKS_WRITE | typeof FIRE_RANKS_QUEUE {
-  return writingElsewhere || writingSelf ? FIRE_RANKS_QUEUE : FIRE_RANKS_WRITE;
-}
-
-/**
- * The queued choice to apply once a write settles, or `undefined` for none.
- * After a REFUSED write the queue is dropped: firing it would clear a refusal
- * nobody has read yet with a write the person made before seeing it.
- */
-export function fireRanksFollowUpOf(
-  queued: boolean | undefined,
-  refused: boolean,
-): boolean | undefined {
-  return refused ? undefined : queued;
-}
-
-/**
- * Whether starting a setting write clears the message region. A write the
- * person just made does; a QUEUED follow-up, applied when another write
- * settled, does not — the region may hold that write's unread outcome.
- */
-export function fireRanksClearsFailure(fromQueue: boolean): boolean {
-  return !fromQueue;
-}
-
-/** The setting's option label. */
+/** The setting's option label, and the fact the settings page states. */
 export function fireRanksMessageKey(
   uses: boolean,
 ): 'organization.fireRanksOff' | 'organization.fireRanksOn' {
@@ -328,8 +282,9 @@ export function fireRanksMessageKey(
 }
 
 /**
- * The status line beside the setting: what the row holds, with its subject,
- * so it reads as a sentence rather than a bare "Koriste se".
+ * The status line a landed save leaves on the setting's card: what the row
+ * now holds, with its subject, so it reads as a sentence rather than a bare
+ * "Koriste se".
  */
 export function fireRanksStatusMessageKey(
   uses: boolean,
