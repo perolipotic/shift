@@ -183,6 +183,24 @@ export function statusOfferMessageKey(
 }
 
 /**
+ * The status dialog's final button, and the card's header button (story
+ * 7.11): the action itself, in one word. Never `destructive` — the screen
+ * styles it neutrally.
+ */
+export function statusActionMessageKey(
+  change: typeof DEACTIVATE | typeof REACTIVATE,
+): 'ljudi.status.deactivateAction' | 'ljudi.status.reactivateAction' {
+  return change === DEACTIVATE ? 'ljudi.status.deactivateAction' : 'ljudi.status.reactivateAction';
+}
+
+/** The status dialog's title (story 7.11). */
+export function statusDialogHeadingMessageKey(
+  change: typeof DEACTIVATE | typeof REACTIVATE,
+): 'ljudi.status.deactivateHeading' | 'ljudi.status.reactivateHeading' {
+  return change === DEACTIVATE ? 'ljudi.status.deactivateHeading' : 'ljudi.status.reactivateHeading';
+}
+
+/**
  * The confirmation's sentence, naming the member and the date.
  *
  * TENSE FOLLOWS THE DATE: a change from today is worded in the present, one
@@ -280,6 +298,9 @@ export const MEMBER_TEAM_ARCHIVED = 'MEMBER_TEAM_ARCHIVED';
 /** The member's team history, or the teams, changed since the screen read
  *  them. Look again. */
 export const MEMBER_TEAM_STALE = 'MEMBER_TEAM_STALE';
+/** No team was chosen: the picker still holds its placeholder (story 7.11).
+ *  Never on the wire — the dialog refuses it before anything is sent. */
+export const MEMBER_TEAM_UNPICKED = 'MEMBER_TEAM_UNPICKED';
 
 /** Move the member onto a team, or onto no team, from a date. */
 export const TEAM_MOVE = 'move';
@@ -293,65 +314,6 @@ export function teamOfferMessageKey(
 ): 'smjene.membership.move' | 'smjene.membership.withdraw' {
   if (change === TEAM_MOVE) return 'smjene.membership.move';
   if (change === WITHDRAW) return 'smjene.membership.withdraw';
-
-  const unhandled: never = change;
-
-  return unhandled;
-}
-
-/** The confirmation names no position: none is offered, or no team is chosen. */
-export const PROMPT_TEAM_ONLY = 'team';
-/** The confirmation names the team and the position it is joined in. */
-export const PROMPT_WITH_POSITION = 'withPosition';
-/** The team stays; only the position changes, and the sentence says so. */
-export const PROMPT_POSITION_ONLY = 'positionOnly';
-
-/** How a team confirmation names the position (team position, `0015`). */
-export type TeamPromptPosition =
-  | typeof PROMPT_TEAM_ONLY
-  | typeof PROMPT_WITH_POSITION
-  | typeof PROMPT_POSITION_ONLY;
-
-/**
- * The confirmation's sentence. TENSE FOLLOWS THE DATE, as the status prompt's
- * does, and a move to no team is its own sentence rather than a team name
- * that is not one. A cancellation is only ever of a later date.
- *
- * THE POSITION IS NAMED WHEN IT CHANGES: a move while positions are in use
- * names the position it is made in, and a change that keeps the team is its
- * own sentence about the position.
- */
-export function teamPromptMessageKey(
-  change: TeamChange,
-  toNoTeam: boolean,
-  future: boolean,
-  position: TeamPromptPosition = PROMPT_TEAM_ONLY,
-):
-  | 'smjene.membership.movePrompt'
-  | 'smjene.membership.movePromptFuture'
-  | 'smjene.membership.movePositionPrompt'
-  | 'smjene.membership.movePositionPromptFuture'
-  | 'smjene.membership.positionPrompt'
-  | 'smjene.membership.positionPromptFuture'
-  | 'smjene.membership.removePrompt'
-  | 'smjene.membership.removePromptFuture'
-  | 'smjene.membership.withdrawPrompt' {
-  if (change === TEAM_MOVE) {
-    if (toNoTeam) {
-      return future ? 'smjene.membership.removePromptFuture' : 'smjene.membership.removePrompt';
-    }
-    if (position === PROMPT_POSITION_ONLY) {
-      return future ? 'smjene.membership.positionPromptFuture' : 'smjene.membership.positionPrompt';
-    }
-    if (position === PROMPT_WITH_POSITION) {
-      return future
-        ? 'smjene.membership.movePositionPromptFuture'
-        : 'smjene.membership.movePositionPrompt';
-    }
-
-    return future ? 'smjene.membership.movePromptFuture' : 'smjene.membership.movePrompt';
-  }
-  if (change === WITHDRAW) return 'smjene.membership.withdrawPrompt';
 
   const unhandled: never = change;
 
@@ -433,6 +395,7 @@ export type MemberWriteFailure =
   | typeof MEMBER_TEAM_IN_EFFECT
   | typeof MEMBER_TEAM_ARCHIVED
   | typeof MEMBER_TEAM_STALE
+  | typeof MEMBER_TEAM_UNPICKED
   | typeof MEMBER_WRITE_UNAVAILABLE;
 
 /**
@@ -694,6 +657,7 @@ export function memberWriteMessageKey(
   | 'smjene.membership.error.inEffect'
   | 'smjene.membership.error.archived'
   | 'smjene.membership.error.stale'
+  | 'smjene.membership.error.unpicked'
   | 'ljudi.form.error.unavailable' {
   if (failure === MEMBER_WRITE_REFUSED) return 'ljudi.form.error.refused';
   if (failure === MEMBER_WRITE_INVALID) return 'ljudi.form.error.invalid';
@@ -732,6 +696,7 @@ export function memberWriteMessageKey(
   if (failure === MEMBER_TEAM_IN_EFFECT) return 'smjene.membership.error.inEffect';
   if (failure === MEMBER_TEAM_ARCHIVED) return 'smjene.membership.error.archived';
   if (failure === MEMBER_TEAM_STALE) return 'smjene.membership.error.stale';
+  if (failure === MEMBER_TEAM_UNPICKED) return 'smjene.membership.error.unpicked';
   if (failure === MEMBER_WRITE_UNAVAILABLE) return 'ljudi.form.error.unavailable';
 
   const unhandled: never = failure;

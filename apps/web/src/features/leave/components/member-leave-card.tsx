@@ -27,6 +27,7 @@ import {
   leaveBaseMessageKey,
   leaveDescribedByOf,
   leaveFormFailureOf,
+  leaveHeadingYearsOf,
   leaveInYearChargeOf,
   leaveOverlapNoteShown,
   leaveRangeValuesOf,
@@ -51,13 +52,19 @@ import {
  *
  * Reached from a conflict (story 5.4d), `handoff` opens amend mode with the
  * computed range, or the record's removal confirmation, once.
+ *
+ * `allowanceAction` (story 7.11) is *Promijeni pravo*, which the page hands in
+ * as a slot beside *Pravo* — the allowance is a member's field and its dialog
+ * is `members`'s, so this feature never imports it.
  */
 export function MemberLeaveCard({
   memberId,
   handoff = null,
+  allowanceAction = null,
 }: {
   readonly memberId: string;
   readonly handoff?: LeaveHandoff | null;
+  readonly allowanceAction?: ReactNode;
 }): ReactNode {
   const leave = useMemberLeave(memberId, handoff);
   const {
@@ -81,6 +88,17 @@ export function MemberLeaveCard({
 
   if (base.kind === LEAVE_ABSENT) return null;
 
+  /** *Godišnji odmor 2026.*, by the leave year the figures count. */
+  function renderHeading(): string {
+    const years = leaveHeadingYearsOf(base);
+
+    if (years === null) return t('ljudi.leaveRecord.heading');
+
+    return years.to === null
+      ? t('ljudi.leaveRecord.headingYear', { year: years.from })
+      : t('ljudi.leaveRecord.headingYears', { from: years.from, to: years.to });
+  }
+
   /** The three figures, a skeleton for each while the reads are pending; or the line in their place. */
   function renderFigures(): ReactNode {
     if (base.kind === LEAVE_UNAVAILABLE || base.kind === LEAVE_UNSCHEDULED) {
@@ -101,7 +119,7 @@ export function MemberLeaveCard({
     return (
       <dl className="grid min-w-0 gap-3 sm:grid-cols-3">
         <div className="grid min-w-0 gap-1 rounded-md bg-muted p-3">
-          <dt className="text-xs text-muted-foreground">{t('ljudi.leave')}</dt>
+          <dt className="text-xs text-muted-foreground">{t('ljudi.leaveRecord.allowance')}</dt>
           {renderFigure(balance?.allowanceDays ?? null)}
         </div>
         <div className="grid min-w-0 gap-1 rounded-md bg-muted p-3">
@@ -229,11 +247,16 @@ export function MemberLeaveCard({
       <Card role="region" aria-labelledby={LEAVE_HEADING_ID} className="w-full min-w-0 max-w-2xl">
         <CardHeader>
           <CardTitle asChild>
-            <h2 id={LEAVE_HEADING_ID}>{t('ljudi.leaveRecord.heading')}</h2>
+            <h2 id={LEAVE_HEADING_ID}>{renderHeading()}</h2>
           </CardTitle>
         </CardHeader>
         <CardContent className="grid min-w-0 gap-4">
           {renderFigures()}
+          {/* *PROMIJENI PRAVO* (story 7.11), in ONE place whatever the
+              figures' state — ready, loading, unavailable or unscheduled — so
+              its open dialog never remounts and loses what is typed, and the
+              allowance stays changeable without a schedule to cost against. */}
+          {allowanceAction === null ? null : <div className="grid min-w-0 gap-2 sm:flex sm:items-center">{allowanceAction}</div>}
           <MemberLeaveRecords leave={leave} />
           <form
             ref={leave.formField}

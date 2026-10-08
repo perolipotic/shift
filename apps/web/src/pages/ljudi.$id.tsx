@@ -2,11 +2,13 @@ import { Link, createRoute, redirect, useLocation } from '@tanstack/react-router
 import { ArrowLeft } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { PageHeader, PageTitle } from '@/components/ui/page-header';
+import { PageHeader } from '@/components/ui/page-header';
 import { t } from '@/lib/i18n';
 import { MemberLeaveCard } from '@/features/leave/components/member-leave-card';
 import { leaveHandoffOf, leaveHandoffOriginOf } from '@/features/leave/services/leave-section';
+import { MemberAllowanceAction } from '@/features/members/components/member-allowance-dialog';
 import { MemberBasicsCard } from '@/features/members/components/member-basics-card';
+import { MemberPageTitle } from '@/features/members/components/member-page-header';
 import { MemberResetCard } from '@/features/members/components/member-reset-card';
 import { MemberStatusCard } from '@/features/members/components/member-status-card';
 import { MemberTeamCard } from '@/features/members/components/member-team-card';
@@ -17,13 +19,15 @@ import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/features/navi
 import { appLayoutRoute } from '@/pages/_app';
 
 /**
- * `/ljudi/$id` — an admin edits one member (story 1.5b). This file composes
- * the screen; its state, reads and handlers are `useMemberEdit`, its cards are
- * components in `@/features/members/components`, and every rule is
- * `@/features/members/services/write`'s.
+ * `/ljudi/$id` — one member's page (story 1.5b; facts and dialogs since story
+ * 7.11). Headed by the person's name, it reads as fact cards in the order of
+ * the approved mockup — *Osnovni podaci*, *Smjena*, *Godišnji odmor*,
+ * *Status* and *Prijava* — and each card's header button opens its own small
+ * dialog. This file composes the screen; its state, reads and handlers are
+ * `useMemberEdit`, its cards are components in `@/features/members/components`,
+ * and every rule is `@/features/members/services/write`'s.
  *
- * THIS IS NOT A DESTINATION, so `type="reset"` is not an exit — it restores the
- * fields. The way back to the list is a link that says so.
+ * THIS IS NOT A DESTINATION. The way back to the list is a link that says so.
  */
 
 /** Where a session that is not an administrator's is sent. The FIRST
@@ -69,28 +73,27 @@ export function LjudiMemberScreen() {
               </Button>
             ) : null}
           </div>
-          <PageTitle asChild>
-            <h1>
-              {t('ljudi.form.editHeading')}
-            </h1>
-          </PageTitle>
+          <MemberPageTitle edit={edit} />
         </div>
       </PageHeader>
-      <MemberBasicsCard edit={edit} />
-      {/* EACH OTHER DECISION IN ITS OWN CARD (design refresh C), and every one
-          outside the `<form>`: inside it a `<Button>` submits, and
-          `key={memberFormKey(member)}` remounts that subtree on every refetch —
-          which would wipe a credential nobody had finished reading. A card is
+      {/* FACT CARDS, EACH CHANGE IN ITS OWN DIALOG (story 7.11). A card is
           drawn only around a block that renders, so none stands empty — the
-          status block renders nothing on one's own row, for instance. */}
+          status card renders nothing on one's own row, for instance. */}
+      <MemberBasicsCard edit={edit} />
       {/* STORY 1.7b. */}
       <MemberTeamCard edit={edit} />
-      {/* STORY 1.6. */}
-      <MemberStatusCard edit={edit} />
       {/* STORY 5.1c: the member's leave — figures, the od–do form and what
           a range costs before it is saved. Keyed by the member, so nothing it
-          raised about one member stands over another's. */}
-      <MemberLeaveCard key={id} memberId={id} handoff={handoff} />
+          raised about one member stands over another's. The allowance's
+          action is the members feature's, handed in as a slot (story 7.11). */}
+      <MemberLeaveCard
+        key={id}
+        memberId={id}
+        handoff={handoff}
+        allowanceAction={<MemberAllowanceAction edit={edit} />}
+      />
+      {/* STORY 1.6. */}
+      <MemberStatusCard edit={edit} />
       <MemberResetCard edit={edit} />
     </main>
   );

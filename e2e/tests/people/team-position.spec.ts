@@ -83,28 +83,24 @@ test('with positions in use, a member moved in as driver shows it on the roster,
 
   await peoplePage.openMember(person.name);
 
-  // MOVE IN AS DRIVER, from today. The position control follows the team pick
-  // and opens on the default for a move.
+  // MOVE IN AS DRIVER, from today, in the team dialog (story 7.11): it opens
+  // empty, and the position control follows the team pick, opening on the
+  // default for a move.
+  await peoplePage.moveButton(person.name).click();
+  await expect(peoplePage.selectedTeam).toHaveText(hr.smjene.membership.choose);
+  await expect(peoplePage.positionSelect).toHaveCount(0);
   await peoplePage.teamSelect.selectOption({ label: teamName });
   const position = peoplePage.positionSelect;
   await expect(peoplePage.selectedPosition).toHaveText(hr.smjene.position.firefighter);
   await position.selectOption({ label: driver });
-  await peoplePage.moveButton(person.name).click();
-  await expect(
-    peoplePage.text(
-      withAnyDate(hr.smjene.membership.movePositionPrompt, {
-        name: person.name,
-        team: teamName,
-        position: driver,
-      }),
-      { exact: false },
-    ),
-  ).toBeVisible();
-  await peoplePage.moveConfirmButton(person.name).click();
-  await expect(peoplePage.text(hr.smjene.membership.saved)).toBeVisible();
+  await peoplePage.teamSaveButton.click();
+  await expect(peoplePage.teamDialog).toHaveCount(0);
+  await expect(peoplePage.teamCard.getByRole('status')).toContainText(hr.smjene.membership.saved);
   await expect(
     peoplePage.text(fill(hr.smjene.membership.currentPosition, { team: teamName, position: driver })),
   ).toBeVisible();
+  // THE HEADER says it too: the position in the team.
+  await expect(peoplePage.text(`${driver}${hr.ljudi.page.separator}${teamName}`, { exact: false })).toBeVisible();
 
   // THE ROSTER, for the admin and for the member role.
   const onRoster = fill(hr.smjene.roster.withPosition, { name: person.name, position: driver });
@@ -123,9 +119,14 @@ test('with positions in use, a member moved in as driver shows it on the roster,
   }
 
   // A POSITION-ONLY CHANGE to commander, from a later date: the same team,
-  // still choosable, opens on the member's current position.
+  // marked `sadašnja` and still choosable while positions are used, opens on
+  // the member's current position. No second confirm: Spremi writes.
+  const currentChoice = fill(hr.smjene.membership.currentChoice, { team: teamName });
+
   await peoplePage.openMember(person.name);
-  await peoplePage.teamSelect.selectOption({ label: teamName });
+  await peoplePage.moveButton(person.name).click();
+  await expect(peoplePage.teamSelect.getByRole('option', { name: currentChoice })).toBeEnabled();
+  await peoplePage.teamSelect.selectOption({ label: currentChoice });
   await expect(peoplePage.selectedPosition).toHaveText(driver);
   await position.selectOption({ label: commander });
 
@@ -134,19 +135,9 @@ test('with positions in use, a member moved in as driver shows it on the roster,
   if (minimum === null) throw new Error('E2E: the team date control has no minimum');
   await date.fill(isoDaysAfter(minimum, 7));
 
-  await peoplePage.moveButton(person.name).click();
-  await expect(
-    peoplePage.text(
-      withAnyDate(hr.smjene.membership.positionPromptFuture, {
-        name: person.name,
-        team: teamName,
-        position: commander,
-      }),
-      { exact: false },
-    ),
-  ).toBeVisible();
-  await peoplePage.moveConfirmButton(person.name).click();
-  await expect(peoplePage.text(hr.smjene.membership.saved)).toBeVisible();
+  await peoplePage.teamSaveButton.click();
+  await expect(peoplePage.teamDialog).toHaveCount(0);
+  await expect(peoplePage.teamCard.getByRole('status')).toContainText(hr.smjene.membership.saved);
 
   // SCHEDULED — worded as a position change in the same team, never as a move
   // onto it — and offered only as a withdrawal.
@@ -157,6 +148,8 @@ test('with positions in use, a member moved in as driver shows it on the roster,
   await expect(scheduledLine).toBeVisible();
   const withdraw = peoplePage.withdrawButton(person.name);
   await expect(withdraw).toBeVisible();
+  // NO MOVE IS OFFERED beside a scheduled change: no Promijeni, no controls.
+  await expect(peoplePage.moveButton(person.name)).toHaveCount(0);
   await expect(position).toHaveCount(0);
 
   // Today is still driver on the roster.
@@ -170,6 +163,7 @@ test('with positions in use, a member moved in as driver shows it on the roster,
   await expect(peoplePage.text(hr.smjene.membership.saved)).toBeVisible();
   await expect(scheduledLine).toHaveCount(0);
   await expect(peoplePage.moveButton(person.name)).toBeVisible();
-  await peoplePage.teamSelect.selectOption({ label: teamName });
+  await peoplePage.moveButton(person.name).click();
+  await peoplePage.teamSelect.selectOption({ label: currentChoice });
   await expect(peoplePage.selectedPosition).toHaveText(driver);
 });

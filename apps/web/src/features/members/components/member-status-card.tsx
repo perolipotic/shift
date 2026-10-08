@@ -1,95 +1,92 @@
 import { CalendarClock } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode, type SyntheticEvent } from 'react';
 
 import { ErasureDialog } from '@/features/conflicts/components/erasure-dialog';
 
 import { Button } from '@/components/ui/button';
 import { Callout, CalloutBody } from '@/components/ui/callout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ConfirmDialog, DialogFooter } from '@/components/ui/dialog';
+import {
+  ConfirmDialog,
+  Dialog,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { IconTile } from '@/components/ui/icon-tile';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/lib/i18n';
+import { isIsoDate } from '@/lib/i18n/format';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import { memberErasureCopyOf } from '@/features/members/utils/erasure-copy';
-import { shownDate, type MemberListRow } from '@/features/members/services/list';
+import { NO_TEXT, shownDate, type MemberListRow } from '@/features/members/services/list';
 import {
   STATUS_ARMED,
   STATUS_BUSY,
-  STATUS_IDLE,
   WITHDRAW,
+  statusActionMessageKey,
   statusBlockKey,
   statusConfirmMessageKey,
+  statusDialogHeadingMessageKey,
   statusOfferMessageKey,
   statusPromptKeyOf,
   statusScheduledMessageKey,
   statusSinceOf,
   statusTodayMessageKey,
+  type StatusChangeOffer,
   type StatusOffer,
 } from '@/features/members/services/write';
+import {
+  MEMBER_STATUS_DIALOG_HEADING_ID,
+  MEMBER_STATUS_ERROR_ID,
+  MEMBER_STATUS_HEADING_ID,
+  MEMBER_STATUS_PROMPT_ID,
+  MEMBER_STATUS_WITHDRAW_PROMPT_ID,
+} from '@/features/members/utils/element-ids';
 import { refusalText } from '@/features/members/utils/refusal-text';
 
 /**
- * The member edit screen's status card (story 1.6), drawn only while its block
- * renders — never on the caller's own row.
+ * The member page's *Status* card (story 1.6; facts and a dialog since story
+ * 7.11), drawn only while its block renders — never on the caller's own row.
+ * Today's status, the change scheduled after it, and in its header the change
+ * offered — `Deaktiviraj` or `Ponovno aktiviraj` — which opens
+ * {@link MemberStatusDialog}. A scheduled change is withdrawn from the card
+ * itself, behind its own confirmation.
  *
  * DEACTIVATION is a plain PostgREST insert of a status version, never the
  * privileged function, and every rule of it is `0008`'s insert policy. What it
  * offers, whether it renders at all, which stage shows and what a refusal is
- * called are all `@/features/members/services/write`'s decisions. The date
- * control defaults to, and may not go below, the ORGANIZATION's today; it stays
- * mounted through the confirmation, so a refusal keeps the date that was entered.
+ * called are all `@/features/members/services/write`'s decisions. NEVER
+ * `destructive`: the action is a neutral button with one question.
  */
 export function MemberStatusCard({ edit }: { readonly edit: MemberEdit }): ReactNode {
   const {
     form,
     offer,
-    dateField,
-    statusArmedFor,
     statusConfirmed,
     statusRefusal,
-    statusDateInvalid,
-    statusStage,
-    setStatusArmed,
+    statusPending,
     armStatus,
-    changeStatus,
-    statusOfferButton,
-    statusRetryButton,
-    statusUnchecked,
     statusErased,
-    statusErasures,
-    confirmStatusErasures,
+    statusDialog,
   } = edit;
 
   /**
-   * The status block: today's status, the change scheduled after it, and the
-   * one thing offered — a change from a date, or the scheduled change's
-   * cancellation — or its confirmation.
-   *
-   * ABSENT ON THE CALLER'S OWN ROW, and while the organization's today or the
-   * caller's identity is unknown — `statusOfferOf`'s decision.
-   *
-   * THE DATE CONTROL STAYS MOUNTED across every stage, disabled while a
-   * confirmation stands, so a refused change returns to the offer with the date
-   * that was entered still in it. The block is keyed to the member's history,
-   * so it remounts — and the date returns to the new minimum — only once a
-   * version lands.
+   * The card's body: today's status, the change scheduled after it, the
+   * card's own refusal, the withdrawal, and what a landed change said. Keyed
+   * to the member's history, so it redraws once a version lands.
    */
-  function renderStatus(): ReactNode {
-    const member = form.member;
-
-    if (member === null || offer === null) return null;
-
-    const idle = statusStage === STATUS_IDLE;
-    const { status } = offer;
+  function renderStatus(member: MemberListRow, offered: StatusOffer): ReactNode {
+    const { status } = offered;
 
     return (
-      <div key={statusBlockKey(member)} className="grid gap-2">
+      <CardContent key={statusBlockKey(member)} className="grid gap-4">
         <p className="text-sm font-medium">
           {t(statusTodayMessageKey(status.activeToday), {
-            date: shownDate(statusSinceOf(status, offer.today)),
+            date: shownDate(statusSinceOf(status, offered.today)),
           })}
         </p>
         {/* A SCHEDULED CHANGE STANDS OUT (design refresh C): it is the one
@@ -108,13 +105,27 @@ export function MemberStatusCard({ edit }: { readonly edit: MemberEdit }): React
             </CalloutBody>
           </Callout>
         )}
-        {statusRefusal === null ? null : (
-          <Notice id="member-status-error" role="alert">
+        {/* THE CARD'S OWN REFUSAL — a withdrawal refused, or a dialog that
+            closed because the record moved — while no dialog says it. */}
+        {statusDialog.opening !== null || statusRefusal === null ? null : (
+          <Notice id={MEMBER_STATUS_ERROR_ID} role="alert">
             {refusalText(statusRefusal)}
           </Notice>
         )}
-        {renderStatusDate(offer, idle)}
-        {idle ? renderStatusOffer(member, offer) : renderStatusConfirmation()}
+        {offered.change === WITHDRAW ? (
+          <Button
+            ref={statusDialog.withdrawButton}
+            className="h-11 w-full sm:w-auto sm:justify-self-start"
+            type="button"
+            variant="outline"
+            disabled={statusPending}
+            onClick={() => {
+              armStatus(member, offered);
+            }}
+          >
+            {t(statusOfferMessageKey(WITHDRAW), { name: member.name })}
+          </Button>
+        ) : null}
         {statusConfirmed ? (
           <Notice role="status">
             <span className="block">{t('ljudi.status.saved')}</span>
@@ -124,177 +135,273 @@ export function MemberStatusCard({ edit }: { readonly edit: MemberEdit }): React
             )}
           </Notice>
         ) : null}
-        {renderStatusErasures(member)}
-      </div>
+      </CardContent>
     );
   }
 
-  /**
-   * THE STATUS CHANGE'S ERASURE DIALOG (story 5.5e): the team card's twin,
-   * for a deactivation or the withdrawal of a scheduled reactivation. A
-   * deactivation can erase many conflicts, so the rows scroll inside it.
-   */
-  function renderStatusErasures(member: MemberListRow): ReactNode {
-    const shown = statusErasures.shown;
+  const member = form.member;
 
-    if (shown === null || shown.subject.member !== member.id) return null;
+  if (member === null || offer === null) return null;
 
-    const { confirmation } = shown.subject;
+  const action = statusDialog.available;
 
-    return (
-      <ErasureDialog
-        id="member-status-erasures"
-        rows={shown.rows}
-        changed={shown.changed}
-        decisions={statusErasures.decisions}
-        busy={statusStage === STATUS_BUSY}
-        firstErasure={statusErasures.firstErasure}
-        copy={memberErasureCopyOf(
-          shown.rows,
-          t(statusConfirmMessageKey(confirmation.change), { name: confirmation.name }),
-        )}
-        scrollRows
-        onDecide={statusErasures.decide}
-        onBack={statusErasures.close}
-        onSave={() => {
-          void confirmStatusErasures(shown);
-        }}
-      />
-    );
-  }
-
-  /**
-   * The date control, for the two changes that take one. A cancellation names
-   * the scheduled version's own date and offers no control.
-   *
-   * DESCRIBED BY THE STATUS BLOCK'S OWN ALERT and by nothing else: the form's
-   * refusal is about other fields, and pointing this control at it would read
-   * an unrelated error out as the reason the date was refused.
-   */
-  function renderStatusDate(offered: StatusOffer, idle: boolean): ReactNode {
-    if (offered.change === WITHDRAW) return null;
-
-    return (
-      <>
-        <Label htmlFor="member-status-date">{t('ljudi.status.date')}</Label>
-        <Input
-          ref={dateField}
-          id="member-status-date"
-          name="effectiveFrom"
-          type="date"
-          required
-          min={offered.minimum}
-          defaultValue={offered.minimum}
-          disabled={!idle}
-          aria-describedby={statusRefusal === null ? undefined : 'member-status-error'}
-          aria-invalid={statusDateInvalid}
-          className="h-11"
-        />
-      </>
-    );
-  }
-
-  /** The offer, naming the member it acts on. One press sends nothing. */
-  function renderStatusOffer(member: MemberListRow, offered: StatusOffer): ReactNode {
-    return (
-      <Button
-        ref={statusOfferButton}
-        className="h-11 w-full"
-        type="button"
-        variant="outline"
-        onClick={() => {
-          armStatus(member, offered);
-        }}
-      >
-        {t(statusOfferMessageKey(offered.change), { name: member.name })}
-      </Button>
-    );
-  }
-
-  /**
-   * The confirmation, naming the member and the date, and the busy state it
-   * keeps carrying while the write is outstanding.
-   */
-  function renderStatusConfirmation(): ReactNode {
-    if (statusArmedFor === null || offer === null) return null;
-
-    const busy = statusStage === STATUS_BUSY;
-    const armedName = statusArmedFor.name;
-
-    // IN A MODAL (design refresh C), open for as long as it is rendered: the
-    // armed state is the screen's as before, and Escape or the backdrop cancel
-    // except while the write is outstanding.
-    return (
-      <ConfirmDialog
-        busy={busy}
-        onCancel={() => {
-          setStatusArmed(null);
-        }}
-        aria-labelledby="member-status-prompt"
-      >
-        <p id="member-status-prompt" className="text-sm font-medium">
-          {t(statusPromptKeyOf(statusArmedFor, offer.today), {
-            name: armedName,
-            date: shownDate(statusArmedFor.day),
-          })}
-        </p>
-        {/* WHAT THE CHANGE WOULD ERASE COULD NOT BE CHECKED (story 5.5e), so
-            nothing was written: said here, with a retry of the same write. */}
-        {statusUnchecked ? (
-          <Notice id="member-status-unchecked" role="alert">
-            {t('ljudi.erasures.unavailable')}
+  return (
+    <>
+      <Card role="region" aria-labelledby={MEMBER_STATUS_HEADING_ID} className="w-full min-w-0 max-w-2xl">
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-3">
+          <CardTitle asChild>
+            <h2 id={MEMBER_STATUS_HEADING_ID} tabIndex={-1}>
+              {t('ljudi.status.heading')}
+            </h2>
+          </CardTitle>
+          {/* ITS ACCESSIBLE NAME CARRIES THE MEMBER; its visible word is the action. */}
+          {action === null ? null : (
             <Button
-              ref={statusRetryButton}
-              className="mt-3 flex h-11"
+              ref={statusDialog.opener}
+              className="h-11"
               type="button"
               variant="outline"
-              disabled={busy}
-              onClick={() => {
-                void changeStatus();
-              }}
+              aria-label={t(statusOfferMessageKey(action.change), { name: member.name })}
+              disabled={statusPending}
+              onClick={statusDialog.open}
             >
-              {t('ljudi.erasures.retry')}
+              {t(statusActionMessageKey(action.change))}
             </Button>
-          </Notice>
-        ) : null}
-        <DialogFooter>
-          <Button
+          )}
+        </CardHeader>
+        {renderStatus(member, offer)}
+      </Card>
+      <MemberStatusDialog edit={edit} />
+      <MemberStatusWithdrawal edit={edit} />
+      <MemberStatusErasures edit={edit} />
+    </>
+  );
+}
+
+/** "Pokušaj ponovno", when what the change would erase could not be checked (story 5.5e). */
+function StatusUnchecked({ edit }: { readonly edit: MemberEdit }): ReactNode {
+  const { statusUnchecked, statusRetryButton, statusPending, retryStatus } = edit;
+
+  if (!statusUnchecked) return null;
+
+  // NOTHING WAS WRITTEN: said here, with a retry of the same change.
+  return (
+    <Notice id="member-status-unchecked" role="alert">
+      {t('ljudi.erasures.unavailable')}
+      <Button
+        ref={statusRetryButton}
+        className="mt-3 flex h-11"
+        type="button"
+        variant="outline"
+        disabled={statusPending}
+        onClick={retryStatus}
+      >
+        {t('ljudi.erasures.retry')}
+      </Button>
+    </Notice>
+  );
+}
+
+/**
+ * `Deaktivacija osobe` / `Ponovna aktivacija osobe` (story 7.11): *Vrijedi
+ * od* and the one neutral question naming the person and the date as it is
+ * entered. Its final button is the action itself — `Deaktiviraj` or
+ * `Ponovno aktiviraj` — and never `destructive`. It runs the preflight, then
+ * the erasure check, then the write. Not dismissible while that is in flight;
+ * a refusal keeps it open, with the date focused when the refusal names it.
+ *
+ * THE DATE CONTROL IS DESCRIBED BY THE DIALOG'S OWN ALERT and by nothing else.
+ */
+export function MemberStatusDialog({ edit }: { readonly edit: MemberEdit }): ReactNode {
+  const { form, dateField, statusRefusal, statusDateInvalid, statusPending, statusDialog } = edit;
+  const opening = statusDialog.opening;
+  // THE CHANGE THE DIALOG WAS OPENED ON: it stays, busy, while its write is out.
+  const action = opening?.held.offer ?? null;
+  const name = form.member?.name ?? opening?.held.name ?? NO_TEXT;
+  /** The question exists only while the field holds a date; nothing points at an empty element. */
+  const asked = action !== null && isIsoDate(statusDialog.day);
+
+  /** The one neutral question, naming the person and the date as it stands in the field. */
+  function renderQuestion(offered: StatusChangeOffer): ReactNode {
+    return (
+      <p id={MEMBER_STATUS_PROMPT_ID} className="text-sm font-medium">
+        {t(statusPromptKeyOf({ change: offered.change, day: statusDialog.day }, offered.today), {
+          name,
+          date: shownDate(statusDialog.day),
+        })}
+      </p>
+    );
+  }
+
+  /** The dialog's form: the date, the question, and the one final button. */
+  function renderChange(offered: StatusChangeOffer): ReactNode {
+    return (
+      <form
+        method="post"
+        noValidate
+        onSubmit={(event) => {
+          void statusDialog.save(event);
+        }}
+        className="grid gap-5"
+      >
+        <div className="grid gap-2">
+          <Label htmlFor="member-status-date">{t('ljudi.status.date')}</Label>
+          <Input
+            ref={dateField}
+            id="member-status-date"
+            name="effectiveFrom"
+            type="date"
+            required
+            min={offered.minimum}
+            defaultValue={offered.minimum}
+            readOnly={statusPending}
+            onChange={statusDialog.enterDay}
+            aria-describedby={statusRefusal === null ? undefined : MEMBER_STATUS_ERROR_ID}
+            aria-invalid={statusDateInvalid}
             className="h-11"
-            type="button"
-            variant="outline"
-            disabled={busy}
-            onClick={() => {
-              setStatusArmed(null);
-            }}
-          >
+          />
+        </div>
+        {asked ? renderQuestion(offered) : null}
+        {statusRefusal === null ? null : (
+          <Notice id={MEMBER_STATUS_ERROR_ID} role="alert">
+            {refusalText(statusRefusal)}
+          </Notice>
+        )}
+        <StatusUnchecked edit={edit} />
+        <DialogFooter>
+          <Button className="h-11" type="button" variant="outline" disabled={statusPending} onClick={statusDialog.close}>
             {t('ljudi.status.cancel')}
           </Button>
           <Button
+            ref={statusDialog.saveButton}
             className="h-11"
-            type="button"
-            disabled={busy || statusStage !== STATUS_ARMED}
-            aria-busy={busy}
-            onClick={() => {
-              void changeStatus();
-            }}
+            type="submit"
+            disabled={statusPending}
+            aria-busy={statusPending}
           >
-            {t(statusConfirmMessageKey(statusArmedFor.change), { name: armedName })}
+            {t(statusActionMessageKey(offered.change))}
           </Button>
         </DialogFooter>
-      </ConfirmDialog>
+      </form>
     );
   }
 
-  const statusBlock = renderStatus();
+  return (
+    <Dialog
+      open={opening !== null && action !== null}
+      dismissible={!statusPending}
+      onOpenChange={(next) => {
+        if (!next) statusDialog.close();
+      }}
+      // ESCAPE closes through the screen's state, never while a write is in flight.
+      onCancel={(event: SyntheticEvent<HTMLDialogElement>) => {
+        event.preventDefault();
+        if (!statusPending) statusDialog.close();
+      }}
+      aria-labelledby={MEMBER_STATUS_DIALOG_HEADING_ID}
+      aria-describedby={asked ? MEMBER_STATUS_PROMPT_ID : undefined}
+    >
+      {opening === null || action === null ? null : (
+        <>
+          <DialogHeader closeLabel={t('ljudi.page.close')} onClose={statusDialog.close}>
+            <DialogTitle id={MEMBER_STATUS_DIALOG_HEADING_ID}>
+              {t(statusDialogHeadingMessageKey(action.change))}
+            </DialogTitle>
+            <DialogDescription>{name}</DialogDescription>
+          </DialogHeader>
+          <Fragment key={opening.key}>{renderChange(action)}</Fragment>
+        </>
+      )}
+    </Dialog>
+  );
+}
 
-  return statusBlock === null ? null : (
-    <Card className="w-full min-w-0 max-w-2xl">
-      <CardHeader>
-        <CardTitle asChild>
-          <h2>{t('ljudi.status.heading')}</h2>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-4">{statusBlock}</CardContent>
-    </Card>
+/**
+ * The withdrawal of a scheduled status change: its own confirmation, naming
+ * the member and the date, open for as long as it is armed. Escape and the
+ * backdrop cancel except while the write is outstanding.
+ */
+function MemberStatusWithdrawal({ edit }: { readonly edit: MemberEdit }): ReactNode {
+  const { offer, statusArmedFor, statusStage, setStatusArmed, confirmStatus } = edit;
+
+  if (statusArmedFor === null || statusArmedFor.change !== WITHDRAW || offer === null) return null;
+
+  const busy = statusStage === STATUS_BUSY;
+  const armedName = statusArmedFor.name;
+
+  return (
+    <ConfirmDialog
+      busy={busy}
+      onCancel={() => {
+        setStatusArmed(null);
+      }}
+      aria-labelledby={MEMBER_STATUS_WITHDRAW_PROMPT_ID}
+    >
+      <p id={MEMBER_STATUS_WITHDRAW_PROMPT_ID} className="text-sm font-medium">
+        {t(statusPromptKeyOf(statusArmedFor, offer.today), {
+          name: armedName,
+          date: shownDate(statusArmedFor.day),
+        })}
+      </p>
+      <StatusUnchecked edit={edit} />
+      <DialogFooter>
+        <Button
+          className="h-11"
+          type="button"
+          variant="outline"
+          disabled={busy}
+          onClick={() => {
+            setStatusArmed(null);
+          }}
+        >
+          {t('ljudi.status.cancel')}
+        </Button>
+        <Button
+          className="h-11"
+          type="button"
+          disabled={busy || statusStage !== STATUS_ARMED}
+          aria-busy={busy}
+          onClick={confirmStatus}
+        >
+          {t(statusConfirmMessageKey(WITHDRAW), { name: armedName })}
+        </Button>
+      </DialogFooter>
+    </ConfirmDialog>
+  );
+}
+
+/**
+ * THE STATUS CHANGE'S ERASURE DIALOG (story 5.5e): the team card's twin, for
+ * a deactivation or the withdrawal of a scheduled reactivation, opened over
+ * the status dialog. A deactivation can erase many conflicts, so the rows
+ * scroll inside it.
+ */
+function MemberStatusErasures({ edit }: { readonly edit: MemberEdit }): ReactNode {
+  const { form, statusErasures, statusPending, confirmStatusErasures } = edit;
+  const shown = statusErasures.shown;
+
+  if (shown === null || form.member === null || shown.subject.member !== form.member.id) return null;
+
+  const { confirmation } = shown.subject;
+
+  return (
+    <ErasureDialog
+      id="member-status-erasures"
+      rows={shown.rows}
+      changed={shown.changed}
+      decisions={statusErasures.decisions}
+      busy={statusPending}
+      firstErasure={statusErasures.firstErasure}
+      copy={memberErasureCopyOf(
+        shown.rows,
+        t(statusConfirmMessageKey(confirmation.change), { name: confirmation.name }),
+      )}
+      scrollRows
+      onDecide={statusErasures.decide}
+      onBack={statusErasures.close}
+      onSave={() => {
+        void confirmStatusErasures(shown);
+      }}
+    />
   );
 }

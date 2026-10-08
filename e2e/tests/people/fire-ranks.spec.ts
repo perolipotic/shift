@@ -70,13 +70,24 @@ test('with fire ranks switched on, a member created with a rank shows it on the 
   await peoplePage.saveButton.click();
   await expect(peoplePage.status).toHaveText(hr.ljudi.form.created);
 
-  // The edit form reads the stored rank back.
+  // The member page states the stored rank as a fact, under the name and on
+  // *Osnovni podaci*, and its basics dialog reads it back (story 7.11).
   await peoplePage.openMember(person.name);
+  await expect(peoplePage.basicsCard).toContainText(rank);
+  await peoplePage.editBasicsButton(person.name).click();
   await expect(peoplePage.selectedRank).toHaveText(rank);
+  await page.keyboard.press('Escape');
+  await expect(peoplePage.basicsDialog).toHaveCount(0);
 
   // Put them on the team from today, then read the roster.
   await peoplePage.moveToTeam(teamName, person.name);
   await expect(peoplePage.text(hr.smjene.membership.saved)).toBeVisible();
+  await expect(
+    peoplePage.text(
+      [rank, hr.smjene.position.firefighter, teamName].join(hr.ljudi.page.separator),
+      { exact: true },
+    ),
+  ).toBeVisible();
 
   // THE EXACT LINE. With fire ranks and positions on, the move put the member
   // on the team in the default position, so the roster names both.

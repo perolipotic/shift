@@ -37,6 +37,7 @@ import {
   leaveInYearChargeOf,
   leaveInvalidFieldOf,
   leaveListFailureOf,
+  leaveHeadingYearsOf,
   leaveOverlapNoteShown,
   leavePreviewStateOf,
   leaveRangeValuesOf,
@@ -173,6 +174,31 @@ function readyOf(base: MemberLeaveBase): Extract<MemberLeaveBase, { kind: typeof
 
 /** The pilot's worked example: 10.09–14.09 over Dan, Noć, Slobodno, Slobodno, Dan. */
 const WORKED: LeaveRecord = { id: 'record-worked', from: '2026-09-10', to: '2026-09-14' };
+
+describe('the heading names the leave year the figures count (story 7.11)', () => {
+  it('names the one year a calendar leave year begins and ends in', () => {
+    const base = memberLeaveBaseOf(sourcesOf(pilot), VIEWER_MEMBER, NOW);
+
+    expect(leaveHeadingYearsOf(base)).toEqual({ from: '2026', to: null });
+  });
+
+  it('names both years of a leave year that crosses New Year', () => {
+    const organization: LeaveOrganizationSource = {
+      ...ORGANIZATION,
+      data: { ok: true, snapshot: { leaveYearStartMonth: 7, leaveYearStartDay: 1 } },
+    };
+
+    expect(leaveHeadingYearsOf(memberLeaveBaseOf(sourcesOf(pilot, { organization }), VIEWER_MEMBER, NOW))).toEqual({
+      from: '2026',
+      to: '2027',
+    });
+  });
+
+  it('names no year until the card is ready', () => {
+    expect(leaveHeadingYearsOf({ kind: LEAVE_LOADING })).toBeNull();
+    expect(leaveHeadingYearsOf({ kind: LEAVE_UNSCHEDULED })).toBeNull();
+  });
+});
 
 describe('the figures', () => {
   it('shows 20 / 3 / 17 for an allowance of 20 and one record costing 3 this year, as the domain does', () => {

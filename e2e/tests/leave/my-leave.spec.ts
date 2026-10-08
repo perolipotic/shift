@@ -189,7 +189,7 @@ test("a member reads their own figures, a colleague's leave changes nothing, and
     await expect(peoplePage.statusWith(plural(leave.amended, 1))).toBeVisible();
     await expect(peoplePage.leaveFigure(leave.used)).toHaveText(plural(days, 1));
     const cardFigures = await Promise.all(
-      [hr.ljudi.leave, leave.used, leave.balance].map(async (label) =>
+      [leave.allowance, leave.used, leave.balance].map(async (label) =>
         ((await peoplePage.leaveFigure(label).textContent()) ?? '').trim(),
       ),
     );

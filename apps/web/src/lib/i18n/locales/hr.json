@@ -563,6 +563,26 @@
       "refused": "Popis osoba nije moguće prikazati. Odjavi se i prijavi ponovno.",
       "unavailable": "Popis osoba trenutačno nije moguće učitati. Pokušaj ponovno."
     },
+    "page": {
+      "heading": "Osoba",
+      "separator": " · ",
+      "active": "Aktivna",
+      "inactive": "Neaktivna",
+      "close": "Zatvori"
+    },
+    "basics": {
+      "heading": "Osnovni podaci",
+      "edit": "Uredi",
+      "editName": "Uredi osnovne podatke osobe {name}",
+      "dialogHeading": "Uredi osnovne podatke",
+      "noEmail": "Nije upisana"
+    },
+    "allowance": {
+      "change": "Promijeni pravo",
+      "changeName": "Promijeni pravo na godišnji odmor osobe {name}",
+      "dialogHeading": "Promijeni pravo na godišnji odmor",
+      "saved": "Pravo na godišnji odmor je spremljeno."
+    },
     "form": {
       "newHeading": "Nova osoba",
       "newLede": "Nova osoba dobiva račun za prijavu i početnu lozinku.",
@@ -570,7 +590,6 @@
       "newAboutBody": "Početna lozinka prikazuje se samo jednom. Položaj i status osobi dodjeljuješ na njezinoj stranici.",
       "sectionBasics": "Osnovni podaci",
       "sectionSettings": "Postavke",
-      "editHeading": "Uređivanje osobe",
       "add": "Dodaj osobu",
       "edit": "Uredi osobu {name}",
       "actions": "Radnje",
@@ -588,13 +607,15 @@
       "copied": "Kopirano.",
       "copyFailed": "Kopiranje nije uspjelo. Zapiši lozinku.",
       "reset": "Dodijeli novu lozinku osobi {name}",
+      "resetAction": "Dodijeli novu lozinku",
       "resetPrompt": "Osoba {name} dobiva novu lozinku. Postojeće prijave prestaju vrijediti.",
       "resetConfirm": "Potvrdi novu lozinku za osobu {name}",
       "resetCancel": "Odustani od nove lozinke",
       "resetIssued": "Nova lozinka je dodijeljena.",
       "resetCredential": "Nova lozinka",
-      "passwordHeading": "Lozinka",
       "resetDismiss": "Sakrij lozinku",
+      "signInHeading": "Prijava",
+      "signInLine": "Prijavljuje se korisničkim imenom {username}.",
       "error": {
         "refused": "Promjena nije spremljena. Odjavi se i prijavi ponovno.",
         "invalid": "Unesena vrijednost nije dopuštena.",
@@ -645,6 +666,10 @@
       "date": "Vrijedi od",
       "deactivate": "Deaktiviraj osobu {name}",
       "reactivate": "Ponovno aktiviraj osobu {name}",
+      "deactivateAction": "Deaktiviraj",
+      "reactivateAction": "Ponovno aktiviraj",
+      "deactivateHeading": "Deaktivacija osobe",
+      "reactivateHeading": "Ponovna aktivacija osobe",
       "deactivatePrompt": "Osoba {name} od {date} se ne može prijaviti i ne ulazi u buduće rasporede. Prošli rasporedi ostaju nepromijenjeni.",
       "deactivatePromptFuture": "Osoba {name} od {date} neće se moći prijaviti i neće ulaziti u rasporede. Prošli rasporedi ostaju nepromijenjeni.",
       "reactivatePrompt": "Osoba {name} od {date} se ponovno može prijaviti.",
@@ -674,6 +699,9 @@
     },
     "leaveRecord": {
       "heading": "Godišnji odmor",
+      "headingYear": "Godišnji odmor {year}.",
+      "headingYears": "Godišnji odmor {from}./{to}.",
+      "allowance": "Pravo",
       "used": "Iskorišteno u tekućoj godini",
       "balance": "Preostalo",
       "newHeading": "Novi godišnji odmor",
@@ -1198,21 +1226,21 @@
       "markerNone": "Od {date}: bez smjene",
       "markerChange": "Od {date}: novi položaj",
       "team": "Nova smjena",
-      "date": "Smjena vrijedi od",
+      "choose": "Odaberi smjenu",
+      "currentChoice": "{team} · sadašnja",
+      "date": "Vrijedi od",
       "move": "Promijeni smjenu osobe {name}",
-      "movePrompt": "Osoba {name} od {date} je u smjeni {team}. Prošli rasporedi ostaju nepromijenjeni.",
-      "movePromptFuture": "Osoba {name} od {date} bit će u smjeni {team}. Prošli rasporedi ostaju nepromijenjeni.",
-      "movePositionPrompt": "Osoba {name} od {date} je u smjeni {team}, položaj: {position}. Prošli rasporedi ostaju nepromijenjeni.",
-      "movePositionPromptFuture": "Osoba {name} od {date} bit će u smjeni {team}, položaj: {position}. Prošli rasporedi ostaju nepromijenjeni.",
-      "positionPrompt": "Osoba {name} od {date} u smjeni {team} ima položaj: {position}. Prošli rasporedi ostaju nepromijenjeni.",
-      "positionPromptFuture": "Osoba {name} od {date} u smjeni {team} imat će položaj: {position}. Prošli rasporedi ostaju nepromijenjeni.",
-      "removePrompt": "Osoba {name} od {date} je bez smjene. Prošli rasporedi ostaju nepromijenjeni.",
-      "removePromptFuture": "Osoba {name} od {date} bit će bez smjene. Prošli rasporedi ostaju nepromijenjeni.",
+      "change": "Promijeni",
+      "dialogHeading": "Promijeni smjenu",
+      "now": "{name} · sada {team}",
+      "nowPosition": "{name} · sada {team}, {position}",
+      "nowNone": "{name} · sada bez smjene",
       "moveConfirm": "Potvrdi promjenu smjene osobe {name}",
       "withdraw": "Poništi zakazanu promjenu smjene za osobu {name}",
       "withdrawPrompt": "Zakazana promjena smjene osobe {name} od {date} bit će poništena.",
       "withdrawConfirm": "Potvrdi poništavanje promjene smjene za osobu {name}",
       "cancel": "Odustani od promjene smjene",
+      "save": "Spremi",
       "saved": "Promjena smjene je spremljena.",
       "error": {
         "past": "Datum promjene smjene ne smije biti u prošlosti.",
@@ -1224,7 +1252,8 @@
         "scheduled": "Promjena smjene već je zakazana. Najprije je poništi.",
         "inEffect": "Promjena smjene je već na snazi i ne može se poništiti.",
         "archived": "Ta smjena je arhivirana. Odaberi smjenu u upotrebi.",
-        "stale": "Smjena osobe se u međuvremenu promijenila. Provjeri je i pokušaj ponovno."
+        "stale": "Smjena osobe se u međuvremenu promijenila. Provjeri je i pokušaj ponovno.",
+        "unpicked": "Odaberi smjenu."
       }
     },
     "position": {
