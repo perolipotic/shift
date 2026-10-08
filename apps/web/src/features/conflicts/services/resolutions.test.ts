@@ -110,7 +110,7 @@ describe("the organization's read", () => {
   const LAST = CONFLICT_RESOLUTIONS_PAGE_ROWS - 1;
   const many = (count: number) => Array.from({ length: count }, (_, index) => row(MEMBER, '2026-09-12', `t${String(index)}`));
 
-  it('asks for every live resolution by id, a page at a time, with its exact count, and no author column', async () => {
+  it('asks for every live resolution by id, a page at a time, with its exact count, and the author columns the Riješeni tab reads', async () => {
     const table = tableAnswering([{ data: [A, B], error: null, count: 2 }]);
 
     expect(await readOrganizationConflictResolutionRows(table)).toEqual({ ok: true, rows: [A, B] });
@@ -120,8 +120,8 @@ describe("the organization's read", () => {
       ['order', 'id', { ascending: true }],
       ['range', 0, LAST],
     ]);
-    expect(CONFLICT_RESOLUTIONS_COLUMNS).toBe('member_id,date,team_id,kind,roster_override_id');
-    expect(CONFLICT_RESOLUTIONS_COLUMNS).not.toMatch(/created_by|removed_by/);
+    expect(CONFLICT_RESOLUTIONS_COLUMNS).toBe('member_id,date,team_id,kind,roster_override_id,created_by,created_at');
+    expect(CONFLICT_RESOLUTIONS_COLUMNS).not.toMatch(/removed_by|removed_at/);
     expect(CONFLICT_RESOLUTIONS_TABLE).toBe('conflict_resolutions');
   });
 
