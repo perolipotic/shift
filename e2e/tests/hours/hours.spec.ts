@@ -318,7 +318,12 @@ test.describe('as a member', () => {
   test('the explanation of the total lists the shifts, and every way of closing it returns focus to its ⓘ (story 7.14)', async ({
     page,
     hoursPage,
+    fixture,
   }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+    // A figure of 0 has no ⓘ, so the member needs a worked shift this month: the seeded rotation starts on Dan today.
+    await seeded(fixture.slug, fixture.team.id);
+
     await hoursPage.goto();
     await expect(hoursPage.heading(sati.title.own, { exact: true })).toBeVisible();
 
