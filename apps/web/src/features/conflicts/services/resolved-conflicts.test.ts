@@ -157,13 +157,25 @@ describe('what an entry shows', () => {
     const [row] = viewOf(pilot, [resolutionOf('2026-09-11', a, '2026-09-02T09:30:00+00:00', { by: GONE_AUTH })]).rows;
 
     expect(row?.actorName).toBeNull();
+    // The screen's words for a null actor (resolved-list.tsx).
+    expect(t('raspored.resolved.actorGone')).toBe('administrator kojeg više nema u organizaciji');
   });
 
-  it('keeps an entry whose collision the schedule no longer derives, without a shift type', () => {
+  it('keeps an entry whose team no longer works that day, without a shift type', () => {
     // 12.09 is Slobodno: no collision there, the resolution still stands.
     const [row] = viewOf(pilot, [resolutionOf('2026-09-12', a, '2026-09-02T09:30:00+00:00')]).rows;
 
     expect(row).toMatchObject({ dateShown: '12.09.2026', shiftTypeName: null, times: null });
+    // The screen's words for a null shift type (resolved-list.tsx).
+    expect(t('raspored.resolved.shiftGone')).toBe('Taj dan više nije radni po rasporedu');
+  });
+
+  it("names the team's shift type when the member is only taken off the roster that day", async () => {
+    // 11.09 is Noć and team A works it; the override only takes the member off, so the collision goes but the shift stands.
+    const snapshot = await snapshotOf(PILOT, [calendarRosterOverrideRow('ro-off', a, '2026-09-11', VIEWER_MEMBER, null)]);
+    const [row] = viewOf(snapshot, [resolutionOf('2026-09-11', a, '2026-09-02T09:30:00+00:00')]).rows;
+
+    expect(row).toMatchObject({ dateShown: '11.09.2026', shiftTypeName: 'Noć', times: '19:00–07:00' });
   });
 });
 
@@ -197,8 +209,13 @@ describe('the list', () => {
     const snapshot = await snapshotOf(PILOT, [
       calendarRosterOverrideRow('ro-ana', a, '2026-09-11', null, ANA, { createdAt: '2019-01-01T00:00:00+00:00' }),
     ]);
+    const rows = [resolutionOf('2026-09-11', a, '2026-09-02T09:30:00+00:00', { kind: 'replace_member', link: 'ro-ana' })];
+    const queue = conflictsQueueOutcomeOf(snapshot, [WORKED], rows, '2026-09-01');
 
-    expect(viewOf(snapshot, [resolutionOf('2026-09-11', a, '2026-09-02T09:30:00+00:00', { kind: 'replace_member', link: 'ro-ana' })]).rows).toEqual([]);
+    if (!queue.ok) throw new Error(queue.code);
+
+    expect(viewOf(snapshot, rows).rows).toEqual([]);
+    expect(queue.view.rows.map((row) => row.dateShown)).toContain('11.09.2026');
   });
 });
 

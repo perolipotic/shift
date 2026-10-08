@@ -1,9 +1,9 @@
 import { queryOptions } from '@tanstack/react-query';
-import { collisionKeyOf, collisionsOf, type Collision } from '@shift/domain';
+import { collisionKeyOf, scheduledShiftTypeOn } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
-import { typeRangeOn } from '@/features/calendar/utils/month';
-import { collisionInputOf, liveResolutionsOf, queueReadFailed, type LeaveRowsAnswer } from '@/features/conflicts/services/conflicts-queue';
+import { overrideStandingOfCalendar, typeRangeOn, workingShiftTypeIdsOf } from '@/features/calendar/utils/month';
+import { liveResolutionsOf, queueReadFailed, type LeaveRowsAnswer } from '@/features/conflicts/services/conflicts-queue';
 import { effectiveResolutionsOf } from '@/features/conflicts/services/replacement-effect';
 import { REPLACE_MEMBER, type ConflictResolutionKind } from '@/features/conflicts/services/resolutions';
 import { organizationLeaveRecordsOf } from '@/features/leave/services/leave-list';
@@ -18,11 +18,16 @@ import { formatDate, formatIsoDate, formatTime } from '@/lib/i18n/format';
  * drops its conflicts by (`resolutionsOf`'s funnel), so a conflict is in
  * exactly one of the two tabs — with its date, team, member, decision, the
  * acting admin and the instant it was recorded (`created_by`, `created_at`;
- * AD-11). No other change history is listed: the leave records and the
- * snapshot are read ONLY to name the shift type the collision was on, which
- * the table does not store (AD-4). A resolution whose collision the schedule
- * no longer derives keeps its entry, with no shift type. A resolution ends
- * with its leave (0031's lifetime rule), so a removed one is not listed.
+ * AD-11). No other change history is listed. The table does not store the
+ * shift type (AD-4), so it is named from the team's schedule for that date as
+ * it stands today (`scheduledShiftTypeOn`, as the replacement test reads it):
+ * after a rotation change an old entry shows the current type. It is NOT
+ * named from the collision, which also goes when the member is no longer on
+ * the roster that day (a take-off override, a team move, deactivation) while
+ * the shift itself stands. Only a team with no working shift that day has no
+ * shift type. The leave records are read only so an untrustworthy row refuses
+ * the tab as it refuses the queue. A resolution ends with its leave (0031's
+ * lifetime rule), so a removed one is not listed.
  *
  * THE ACTING ADMIN is named from `members` by `auth_user_id`; an author with
  * no member left (deleted) has `actorName` `null`, which the screen says in
@@ -41,7 +46,7 @@ export interface ResolvedConflictRow {
   readonly dateShown: string;
   readonly teamName: string;
   readonly memberName: string;
-  /** The shift type the collision is on; `null` when the schedule no longer derives it. */
+  /** The team's scheduled working shift type that date, as today's schedule has it; `null` when the team does not work that day. */
   readonly shiftTypeName: string | null;
   /** `19:00–07:00`, or `null` with no times in effect (or no shift type). */
   readonly times: string | null;
@@ -167,9 +172,8 @@ export function resolvedConflictsViewOf(
   if (records === null) throw new RangeError('a leave record row cannot be trusted');
 
   const resolutions = effectiveResolutionsOf(snapshot, liveResolutionsOf(snapshot, resolutionRows));
-  const collisions = new Map<string, Collision>(
-    collisionsOf(collisionInputOf(snapshot, records)).map((collision) => [collisionKeyOf(collision), collision]),
-  );
+  const typeInForce = overrideStandingOfCalendar(snapshot).inForce;
+  const working = new Set(workingShiftTypeIdsOf(snapshot));
   const raw = rowsByKeyOf(resolutionRows);
   const actors = actorNamesOf(actorRows);
   const members = new Map(snapshot.members.map((member) => [member.id, member.name]));
@@ -193,8 +197,14 @@ export function resolvedConflictsViewOf(
     if (createdAt === null || Number.isNaN(createdAt.getTime())) throw new RangeError(`resolution ${key} has no valid instant`);
     if (typeof createdBy !== 'string') throw new RangeError(`resolution ${key} has no author`);
 
-    const collision = collisions.get(key);
-    const type = collision === undefined ? undefined : types.get(collision.shiftTypeId);
+    const scheduled = scheduledShiftTypeOn(
+      snapshot.assignments.filter((assignment) => assignment.teamId === resolution.teamId),
+      snapshot.steps,
+      typeInForce,
+      resolution.teamId,
+      resolution.date,
+    );
+    const type = scheduled === null || !working.has(scheduled.shiftTypeId) ? undefined : types.get(scheduled.shiftTypeId);
     const link =
       resolution.kind === REPLACE_MEMBER && resolution.rosterOverrideId !== null
         ? overrides.get(resolution.rosterOverrideId)

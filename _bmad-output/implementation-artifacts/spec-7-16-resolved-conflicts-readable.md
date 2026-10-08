@@ -48,7 +48,7 @@ None.
 
 ## Design Notes
 
-The shift type is not stored, so it is named from the derived collision (AD-4); an entry whose collision is no longer derived says "Taj dan više nije radni po rasporedu". An actor with no member row reads "administrator kojeg više nema u organizaciji".
+The shift type is not stored (AD-4), so it is named from the team's schedule for that date as it stands today (`scheduledShiftTypeOn`, the same read as `replacement-effect.ts`), not from the collision: a collision also goes when the member is no longer on the roster that day (a take-off override, a team move, deactivation) while the shift stands. Because it is today's schedule, after a rotation change an old entry shows the current type. Only an entry whose team has no working shift that day says "Taj dan više nije radni po rasporedu". An actor with no member row reads "administrator kojeg više nema u organizaciji".
 
 ## Verification
 
