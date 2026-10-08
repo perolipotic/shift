@@ -23,6 +23,7 @@ import {
   type LeaveRecord,
   type LeaveRecordsTable,
 } from '@/features/leave/services/leave-list';
+import { leaveConflictsOf, type LeaveConflicts } from '@/features/leave/services/leave-conflicts';
 import {
   LEAVE_AMEND_ACTION,
   LEAVE_FROM_FIELD,
@@ -77,6 +78,18 @@ import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
 
 /**
+ * One opening of a leave dialog (story 7.12; the member page's
+ * `DialogOpening` from 7.11): a fresh key, so each opening renders its body
+ * anew, the record it amends — null for a new record — and the range its
+ * fields start at, null for empty.
+ */
+export interface LeaveDialogOpening {
+  readonly key: number;
+  readonly target: LeaveRecord | null;
+  readonly range: { readonly from: string; readonly to: string } | null;
+}
+
+/**
  * The member page's leave card: its four reads, the entered range and the one
  * write (story 5.1c). Wiring only — every decision is a pure function in
  * `@/features/leave/services/leave-section`, which the node suite executes.
@@ -86,11 +99,24 @@ import { focusLater } from '@/utils/focus-later';
  * leave year), the calendar snapshot (the schedule and today) and the
  * member's live leave records.
  *
+ * THE DIALOGS (story 7.12, the member page's pattern from 7.11). The od–do
+ * fields live only in a dialog: `recordDialog` (*Upiši godišnji* in the
+ * card's header) and `amendDialog` (a row's *Izmijeni*, or the hand-off).
+ * The hook owns which is open and the button that opened it; each opening
+ * renders a fresh keyed body whose fields start from the opening's range.
+ * While a write is pending neither can be dismissed; a refusal keeps it open
+ * with the entered values; a landed save or amend closes it, says so on the
+ * card and returns focus to the opener — the list's heading when there is
+ * none. An amended record a re-read finds gone closes it, and the list says so.
+ *
  * THE FIELDS ARE UNCONTROLLED, so a refused save keeps every entered value;
- * their values are mirrored into state — on mount too, for a value the
- * browser restored or autofilled — only so the preview can follow them. The
- * whole form is disabled while a save is outstanding, so nothing typed after
- * the press can be lost to the reset that follows a landed save.
+ * their values are mirrored into state only so the preview can follow them.
+ * The whole form is disabled while a save is outstanding.
+ *
+ * THE CONFLICT PREVIEW (story 7.12): `conflicts` is what the ready range
+ * would create, clear and keep, and `removeConflicts` what the open removal
+ * clears — both `leaveConflictsOf`, over the queue's own recipe. A note,
+ * never a gate.
  *
  * THE WRITE has its own in-flight ref, pending flag and failure. After any
  * outcome the records are re-read, and the leave write's declared dependents
@@ -98,25 +124,25 @@ import { focusLater } from '@/utils/focus-later';
  * re-read answered, never from the records held before it. No figure is
  * optimistic, and no preview is drawn while a re-read is under way.
  *
- * AMEND AND REMOVE (story 5.2b). `startAmend` puts the one od–do form into
- * amend mode for one record — prefilled with its range, previewed without it —
- * and `amend` sends it through `amendLeave`; `cancelAmend` returns the form to
- * a new record. `openRemove` arms one confirmation for one record, and
- * `remove` sends it through `removeLeave`. Each write has its own in-flight
- * ref and pending flag, and after every outcome the records and the leave
- * write's dependents are re-read: an amend that failed may still have landed
- * (`amendLeave`'s doc). A record found gone closes amend mode or the
- * confirmation, and the list says so over the records it re-read.
+ * AMEND AND REMOVE (story 5.2b). `amendDialog.open` opens the amend dialog for
+ * one record — prefilled with its range, previewed without it — and `amend`
+ * sends it through `amendLeave`. `openRemove` arms one confirmation for one
+ * record, and `remove` sends it through `removeLeave`. Each write has its own
+ * in-flight ref and pending flag, and after every outcome the records and the
+ * leave write's dependents are re-read: an amend that failed may still have
+ * landed (`amendLeave`'s doc). A record found gone closes the amend dialog or
+ * the confirmation, and the list says so over the records it re-read.
  *
  * THE HAND-OFF FROM A CONFLICT (story 5.4d). Reached from a resolution
  * screen's third card, the card opens ONCE, after its rows are first ready:
- * amend mode for the record with the computed range in the fields and the od
- * field focused, or that record's removal confirmation — by the rule applied
- * to the record as it is now. A record already gone, or no longer covering
- * the conflict's date, opens nothing, and the card stays as it was. Either
- * way the history entry is then replaced without the opening, so a reload or
- * Back never reopens it; the origin stays, for "Natrag na konflikte". Nothing
- * is written here until the admin saves; cancelling leaves the conflict open.
+ * the amend dialog for the record with the computed range in the fields and
+ * the od field focused, or that record's removal confirmation — by the rule
+ * applied to the record as it is now. A record already gone, or no longer
+ * covering the conflict's date, opens nothing, and the card stays as it was.
+ * Either way the history entry is then replaced without the opening, so a
+ * reload or Back never reopens it; the origin stays, for "Natrag na
+ * konflikte". Nothing is written here until the admin saves; cancelling leaves
+ * the conflict open.
  *
  * THE REPLACEMENT GUARD (story 5.4e). The organization's live resolutions
  * are read too, and they and the calendar snapshot (whose live overrides the
@@ -138,19 +164,31 @@ import { focusLater } from '@/utils/focus-later';
 export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = null) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const formField = useRef<HTMLFormElement>(null);
   const fromField = useRef<HTMLInputElement>(null);
   const toField = useRef<HTMLInputElement>(null);
-  /** The alert or status line the last save raised: `Notice` renders a `<p>`. */
+  /** The card's status line a landed save or amend raised: `Notice` renders a `<p>`. */
   const noticeField = useRef<HTMLParagraphElement>(null);
+  /** The open dialog's alert: a refused save or amend, above its buttons (story 7.12). */
+  const alertField = useRef<HTMLParagraphElement>(null);
   /** What the list says after an amend or a removal: the removed line, or that the record is gone. */
   const listNoticeField = useRef<HTMLParagraphElement>(null);
   /** The removal confirmation's cancel, which a refused removal focuses. */
   const removeCancel = useRef<HTMLButtonElement>(null);
   /** The list's heading, where focus lands when nothing nearer is left to take it. */
   const listHeading = useRef<HTMLHeadingElement>(null);
-  /** The Izmijeni that opened amend mode, which a cancel returns focus to. */
-  const amendReturn = useRef<HTMLButtonElement | null>(null);
+  /**
+   * The card's heading, where focus lands when the list is not drawn — a card
+   * no longer ready closes its dialog, and its unavailable line says why.
+   */
+  const cardHeading = useRef<HTMLHeadingElement>(null);
+  /** *Upiši godišnji*, which opens the record dialog and takes focus back when it closes (story 7.12). */
+  const recordOpener = useRef<HTMLButtonElement>(null);
+  /** The Izmijeni that opened the amend dialog, which takes focus back when it closes; null after a hand-off. */
+  const amendOpener = useRef<HTMLButtonElement | null>(null);
+  /** How many dialogs have opened: each opening's key, so its body is drawn afresh. */
+  const openings = useRef(0);
+  /** Each drawn row's Izmijeni by its record's id, so focus can find a re-keyed row's after an amend. */
+  const amendButtons = useRef(new Map<string, HTMLButtonElement>());
   /** The Ukloni that opened the confirmation, which a cancel returns focus to. */
   const removeReturn = useRef<HTMLButtonElement | null>(null);
   // A REF as well as state: state drives the disabled form, and state is
@@ -161,8 +199,10 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   const [recordPending, setRecordPending] = useState(false);
   const [amendPending, setAmendPending] = useState(false);
   const [removePending, setRemovePending] = useState(false);
-  /** The record the form amends, or null for a new record. One at a time. */
-  const [amendTarget, setAmendTarget] = useState<LeaveRecord | null>(null);
+  /** The open leave dialog — a new record's, or an amend's — or null. One at a time. */
+  const [opening, setOpening] = useState<LeaveDialogOpening | null>(null);
+  /** The record the open dialog amends, or null for a new record or none. */
+  const amendTarget = opening?.target ?? null;
   /** The row whose removal is being confirmed, or null. */
   const [confirming, setConfirming] = useState<LeaveRecordRow | null>(null);
   const [removeFailure, setRemoveFailure] = useState<LeaveFailure | null>(null);
@@ -215,13 +255,6 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     ),
   );
 
-  // A VALUE ALREADY IN A FIELD when it mounts — restored by the browser on
-  // back-navigation, or autofilled — is previewed like a typed one.
-  useEffect(() => {
-    setFrom(fromField.current?.value ?? LEAVE_NO_DATE);
-    setTo(toField.current?.value ?? LEAVE_NO_DATE);
-  }, []);
-
   const recordsState = leaveRecordsStateOf(records);
   const calendarState = calendarSurfaceStateOf(calendar);
   const base = memberLeaveBaseOf(
@@ -268,6 +301,50 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   );
   // A SENT REMOVAL'S LINES stand on its confirmation until it closes or another opens.
   const removeGuard = confirming !== null && sentRemoveGuard !== null ? sentRemoveGuard : liveRemoveGuard;
+  const liveRecords = base.kind === LEAVE_READY ? base.input.records : null;
+  // WHAT THE MEMOS FOLLOW: the records' and the range's values, not the
+  // objects, which are new on every render.
+  const recordsKey = JSON.stringify(liveRecords);
+  const rangeFrom = opening !== null && preview?.kind === LEAVE_PREVIEW_READY ? preview.range.from : null;
+  const rangeTo = opening !== null && preview?.kind === LEAVE_PREVIEW_READY ? preview.range.to : null;
+  /** The calendar snapshot is being re-read — as every opening asks for — so the conflicts wait for it. */
+  const calendarFetching = calendar.isFetching;
+  /** What the ready range in the open dialog would create, clear and keep (story 7.12); null while none is ready. */
+  const conflicts = useMemo<LeaveConflicts | null>(
+    () =>
+      snapshot !== null && liveRecords !== null && opening !== null && rangeFrom !== null && rangeTo !== null
+        ? leaveConflictsOf(
+            resolutionsRead,
+            snapshot,
+            memberId,
+            liveRecords,
+            { target: opening.target, next: { from: rangeFrom, to: rangeTo } },
+            calendarFetching,
+          )
+        : null,
+    [resolutionsRead, snapshot, memberId, recordsKey, opening, rangeFrom, rangeTo, calendarFetching],
+  );
+  /** What the open removal would clear (story 7.12); null while no confirmation is open. */
+  const removeConflicts = useMemo<LeaveConflicts | null>(
+    () =>
+      snapshot !== null && liveRecords !== null && confirming !== null
+        ? leaveConflictsOf(
+            resolutionsRead,
+            snapshot,
+            memberId,
+            liveRecords,
+            { target: confirming.record, next: null },
+            calendarFetching,
+          )
+        : null,
+    [resolutionsRead, snapshot, memberId, recordsKey, confirming, calendarFetching],
+  );
+  /** The member's name as the calendar reads it, for the opener's accessible name and the dialog; null when not read. */
+  // FROM THE MEMBER LIST first, which the card reads anyway; the calendar's otherwise.
+  const memberName =
+    membersSurfaceStateOf(members).members?.find((member) => member.id === memberId)?.name ??
+    snapshot?.members.find((member) => member.id === memberId)?.name ??
+    null;
   /** Either read the guard stands on is being re-read: a capture now would be of rows about to be replaced. */
   const guardFetching = resolutions.isFetching || calendar.isFetching;
 
@@ -285,22 +362,42 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   const liveKey = JSON.stringify(liveIds);
 
   // A RECORD THAT LEFT THE LIST — removed or amended elsewhere, seen on a
-  // re-read — takes amend mode and its confirmation with it, and so does a
+  // re-read — closes its amend dialog and its confirmation, and so does a
   // card that is no longer ready. Never while that record's own write is in
   // flight: its handler settles what it leaves, and this runs again after.
+  // An amend dialog closed by a re-read that still lists the others says so
+  // on the list (story 7.12), as an amend that found its record gone does.
+  // The record dialog is no longer offered once the card is not ready (story
+  // 7.12): it closes, and the card's unavailable line says why. With no list
+  // drawn then, focus goes to the card's heading.
   useEffect(() => {
     const live = liveIds;
 
     if (amendTarget !== null && !amendPending && (live === null || !live.includes(amendTarget.id))) {
-      setAmendTarget(null);
-      formField.current?.reset();
+      setOpening(null);
       setFrom(LEAVE_NO_DATE);
       setTo(LEAVE_NO_DATE);
+      setRefusedField(null);
+      if (live !== null) {
+        setLeaveFailure({ code: LEAVE_GONE, action: LEAVE_AMEND_ACTION, conflict: null });
+        focusLater([() => listNoticeField.current, () => listHeading.current], () => cardHeading.current);
+      } else {
+        setLeaveFailure(null);
+        focusLater([() => listHeading.current, () => cardHeading.current], () => cardHeading.current);
+      }
+    }
+    if (opening !== null && opening.target === null && !recordPending && live === null) {
+      setOpening(null);
+      setFrom(LEAVE_NO_DATE);
+      setTo(LEAVE_NO_DATE);
+      setRefusedField(null);
+      setLeaveFailure(null);
+      focusLater([() => cardHeading.current], () => cardHeading.current);
     }
     if (confirming !== null && !removePending && (live === null || !live.includes(confirming.record.id))) {
       setConfirming(null);
     }
-  }, [liveKey, amendTarget, amendPending, confirming, removePending]);
+  }, [liveKey, amendTarget, amendPending, confirming, removePending, opening, recordPending]);
 
   const handoffReady = base.kind === LEAVE_READY && !recordsState.refreshing;
   const handoffKey = leaveHandoffKeyOf(handoff);
@@ -313,7 +410,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
 
     handedOff.current = handoffKey;
 
-    const opening = leaveHandoffOpeningOf(handoff, memberId, base.rows);
+    const handedOpening = leaveHandoffOpeningOf(handoff, memberId, base.rows);
 
     void navigate({
       to: '/ljudi/$id',
@@ -322,20 +419,18 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
       state: (entry) => withoutLeaveHandoffOpening(entry),
     });
 
-    if (opening === null) return;
+    if (handedOpening === null) return;
 
-    // No row action opened it, so a cancel has nothing to return to but the card's own fallbacks.
-    amendReturn.current = null;
+    // No row action opened it, so a close has nothing to return to but the list's heading.
+    amendOpener.current = null;
     removeReturn.current = null;
     clearRaised();
     rereadResolutions();
 
-    if (opening.kind === LEAVE_AMEND_ACTION) {
-      setAmendTarget(opening.row.record);
-      fillFields(opening.range);
-      focusLater([() => fromField.current], () => toField.current);
+    if (handedOpening.kind === LEAVE_AMEND_ACTION) {
+      openDialog(handedOpening.row.record, handedOpening.range);
     } else {
-      setConfirming(opening.row);
+      setConfirming(handedOpening.row);
     }
     // `handoff` and the rows are read through their key and readiness: the
     // objects are new on every render.
@@ -354,9 +449,10 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   }
 
   /**
-   * Read the organization's resolutions and the calendar snapshot again, as an
-   * amend or a removal confirmation opens (story 5.4e): the guard joins the
-   * one to the other's live overrides, so both must be fresh.
+   * Read the organization's resolutions and the calendar snapshot again, as a
+   * leave dialog or a removal confirmation opens (stories 5.4e, 7.12): the
+   * replacement guard and the conflict preview join the one to the other's
+   * live schedule, so both must be fresh.
    */
   function rereadResolutions(): void {
     setSentRemoveGuard(null);
@@ -364,16 +460,28 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     void queryClient.invalidateQueries({ queryKey: CALENDAR_KEY });
   }
 
-  /** Put the od and do fields, and the state the preview follows, to `range`; empty for none. */
-  function fillFields(range: { readonly from: string; readonly to: string } | null): void {
-    const nextFrom = range?.from ?? LEAVE_NO_DATE;
-    const nextTo = range?.to ?? LEAVE_NO_DATE;
+  /**
+   * Open a leave dialog — for a new record (`target` null) or an amend of
+   * `target` — with a fresh body whose fields start at `range`, the preview
+   * following them, and the od field focused once it is drawn.
+   */
+  function openDialog(target: LeaveRecord | null, range: { readonly from: string; readonly to: string } | null): void {
+    openings.current += 1;
+    setOpening({ key: openings.current, target, range });
+    setFrom(range?.from ?? LEAVE_NO_DATE);
+    setTo(range?.to ?? LEAVE_NO_DATE);
+    focusLater([() => fromField.current], () => toField.current);
+  }
 
-    if (range === null) formField.current?.reset();
-    if (fromField.current !== null) fromField.current.value = nextFrom;
-    if (toField.current !== null) toField.current.value = nextTo;
-    setFrom(nextFrom);
-    setTo(nextTo);
+  /** The ref a row's Izmijeni registers itself under its record's id with, while it is drawn. */
+  function amendButtonRef(id: string): (element: HTMLButtonElement | null) => () => void {
+    return (element) => {
+      if (element !== null) amendButtons.current.set(id, element);
+
+      return () => {
+        amendButtons.current.delete(id);
+      };
+    };
   }
 
   /** Mirror an edited date into state, for the preview; an edit clears everything raised. */
@@ -385,31 +493,45 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     clearRaised();
   }
 
-  /**
-   * Put the form into amend mode for `row`'s record: its range in the
-   * fields, the preview without it, and the od field focused. Only one record
-   * at a time; another row's Izmijeni moves amend mode to that record.
-   */
-  function startAmend(row: LeaveRecordRow, event: MouseEvent<HTMLButtonElement>): void {
+  /** *Upiši godišnji*: the record dialog, empty. */
+  function openRecord(): void {
     if (recording.current || amending.current || removing.current) return;
 
-    amendReturn.current = event.currentTarget;
     clearRaised();
     rereadResolutions();
-    setAmendTarget(row.record);
-    fillFields(row.record);
-    focusLater([() => fromField.current], () => toField.current);
+    openDialog(null, null);
   }
 
-  /** Return the form to a new record, empty, and focus back on the row action that opened amend mode. */
-  function cancelAmend(): void {
-    if (amending.current) return;
+  /**
+   * A row's *Izmijeni*: the amend dialog for `row`'s record — its range in
+   * the fields, the preview without it, and the od field focused.
+   */
+  function openAmend(row: LeaveRecordRow, event: MouseEvent<HTMLButtonElement>): void {
+    if (recording.current || amending.current || removing.current) return;
+
+    amendOpener.current = event.currentTarget;
+    clearRaised();
+    rereadResolutions();
+    openDialog(row.record, row.record);
+  }
+
+  /**
+   * Either dialog's cancel, close button, Escape and backdrop: nothing is
+   * sent, and focus goes back to its opener — never while its write is in flight.
+   */
+  function closeDialog(): void {
+    if (recording.current || amending.current || opening === null) return;
+
+    const amendClosed = opening.target !== null;
 
     clearRaised();
-    setAmendTarget(null);
-    fillFields(null);
-    // Its Izmijeni, unless its row left the list meanwhile: then the od field.
-    focusLater([() => amendReturn.current, () => fromField.current], () => fromField.current);
+    setOpening(null);
+    setFrom(LEAVE_NO_DATE);
+    setTo(LEAVE_NO_DATE);
+    focusLater(
+      [amendClosed ? () => amendOpener.current : () => recordOpener.current, () => listHeading.current],
+      () => cardHeading.current,
+    );
   }
 
   /** Arm the one confirmation for `row`'s removal. */
@@ -431,7 +553,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     // Its Ukloni, unless its row left the list meanwhile: then what the list says, or its heading.
     focusLater(
       [() => removeReturn.current, () => listNoticeField.current, () => listHeading.current],
-      () => fromField.current,
+      () => cardHeading.current,
     );
   }
 
@@ -469,7 +591,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
       const field = preview.field;
 
       setRefusedField(field);
-      focusLater([() => fieldOf(field)], () => fromField.current);
+      focusLater([() => fieldOf(field)], () => alertField.current);
 
       return;
     }
@@ -515,7 +637,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
         const fresh = leaveRecordsAfterWriteOf(queryClient.getQueryState(LEAVE_RECORDS_KEY(memberId)));
 
         setLeaveSaved(leaveSavedOf(sentInput, fresh, sent.range));
-        formField.current?.reset();
+        setOpening(null);
         setFrom(LEAVE_NO_DATE);
         setTo(LEAVE_NO_DATE);
       }
@@ -528,8 +650,10 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
       setRecordPending(false);
     }
 
-    if (focusNotice) focusLater([() => noticeField.current], () => fromField.current);
-    else focusLater([() => fromField.current], () => noticeField.current);
+    // LANDED: the dialog has closed, so back to its opener. REFUSED: the od
+    // field, which the alert describes, once the fields are enabled again.
+    if (focusNotice) focusLater([() => recordOpener.current, () => listHeading.current], () => cardHeading.current);
+    else focusLater([() => fromField.current], () => alertField.current);
   }
 
   /** Re-read the records and the leave write's dependents, after any amend or removal outcome. */
@@ -542,10 +666,12 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
   }
 
   /**
-   * Save the amend of the record in amend mode. A range the preview does not
+   * Save the amend in the open amend dialog. A range the preview does not
    * cost, or the record's own range unchanged, is refused here before any
-   * request, as a new record's is. An overlap or a refusal keeps every value
-   * and amend mode; a gone record closes amend mode and the list says so.
+   * request, as a new record's is. An overlap or a refusal keeps the dialog
+   * open with every value; a gone record closes it and the list says so; a
+   * landed amend closes it, says so on the card, and returns focus to the
+   * row's Izmijeni — the replacement record's, since an amend re-keys its row.
    */
   async function amend(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -558,7 +684,7 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
       const field = preview.field;
 
       setRefusedField(field);
-      focusLater([() => fieldOf(field)], () => fromField.current);
+      focusLater([() => fieldOf(field)], () => alertField.current);
 
       return;
     }
@@ -569,9 +695,11 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     // BEFORE THE WRITE, which removes the resolutions these lines come from.
     const replacements = capturedGuard(amendGuard);
     // Where focus goes once the form is enabled again, after the `finally`:
-    // the status line, else the od field, else the list's gone line.
+    // the opener, else the od field, else the list's gone line.
     let focusField = false;
     let focusList = false;
+    /** The replacement record's id, whose row's Izmijeni takes focus after a landed amend. */
+    let landedId: string | null = null;
 
     amending.current = true;
     setRefusedField(null);
@@ -606,11 +734,14 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
 
         setLeaveAmended(leaveAmendedOf(sentInput, fresh, outcome.id));
         setAmendedReplacements(replacements);
-        setAmendTarget(null);
-        fillFields(null);
+        setOpening(null);
+        setFrom(LEAVE_NO_DATE);
+        setTo(LEAVE_NO_DATE);
+        landedId = outcome.id;
       } else if (outcome.code === LEAVE_GONE) {
-        setAmendTarget(null);
-        fillFields(null);
+        setOpening(null);
+        setFrom(LEAVE_NO_DATE);
+        setTo(LEAVE_NO_DATE);
       }
     } catch (cause) {
       console.error(LEAVE_FAILED, cause);
@@ -624,16 +755,27 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
       setAmendPending(false);
     }
 
-    if (focusList) focusLater([() => listNoticeField.current], () => fromField.current);
-    else if (focusField) focusLater([() => fromField.current], () => noticeField.current);
-    else focusLater([() => noticeField.current], () => fromField.current);
+    const replaced = landedId;
+
+    if (focusList) focusLater([() => listNoticeField.current, () => listHeading.current], () => cardHeading.current);
+    else if (focusField) focusLater([() => fromField.current], () => alertField.current);
+    else {
+      // THE REPLACEMENT RECORD'S Izmijeni — an amend re-keys its row, so the
+      // one that opened it is gone — whether a row or a hand-off opened the
+      // dialog, waited for frame by frame until its row is drawn; the list's
+      // heading only when it never is.
+      focusLater(
+        [() => (replaced === null ? null : (amendButtons.current.get(replaced) ?? null)), () => amendOpener.current],
+        () => listHeading.current ?? cardHeading.current,
+      );
+    }
   }
 
   /**
    * Remove the record whose confirmation is open. A refusal keeps the
    * confirmation open with its alert and focuses its cancel; a gone record
    * closes it and the list says so; a landed removal closes it and the list
-   * says what was removed. Amend mode on the same record ends with it.
+   * says what was removed.
    */
   async function remove(): Promise<void> {
     if (confirming === null || removing.current || base.kind !== LEAVE_READY || recordsState.refreshing) return;
@@ -666,10 +808,6 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
       }
       if (landed) {
         setConfirming(null);
-        if (amendTarget?.id === target.record.id) {
-          setAmendTarget(null);
-          fillFields(null);
-        }
       }
     } catch (cause) {
       console.error(LEAVE_FAILED, cause);
@@ -681,8 +819,8 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
       setRemovePending(false);
     }
 
-    if (landed) focusLater([() => listNoticeField.current, () => listHeading.current], () => fromField.current);
-    else focusLater([() => removeCancel.current], () => fromField.current);
+    if (landed) focusLater([() => listNoticeField.current, () => listHeading.current], () => cardHeading.current);
+    else focusLater([() => removeCancel.current], () => cardHeading.current);
   }
 
   return {
@@ -705,18 +843,35 @@ export function useMemberLeave(memberId: string, handoff: LeaveHandoff | null = 
     removePending,
     formDisabled,
     listHeading,
-    formField,
+    cardHeading,
     fromField,
     toField,
     noticeField,
+    alertField,
     listNoticeField,
     removeCancel,
+    amendButtonRef,
+    conflicts,
+    removeConflicts,
+    memberName,
     change,
     retry,
     save,
-    startAmend,
-    cancelAmend,
     amend,
+    /** The record dialog (story 7.12): *Upiši godišnji* opens it. */
+    recordDialog: {
+      opener: recordOpener,
+      opening: opening !== null && opening.target === null ? opening : null,
+      open: openRecord,
+      close: closeDialog,
+    },
+    /** The amend dialog (story 7.12): a row's *Izmijeni*, or the hand-off, opens it. */
+    amendDialog: {
+      opener: amendOpener,
+      opening: opening !== null && opening.target !== null ? opening : null,
+      open: openAmend,
+      close: closeDialog,
+    },
     openRemove,
     cancelRemove,
     remove,
