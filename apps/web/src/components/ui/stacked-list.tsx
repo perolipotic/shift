@@ -17,7 +17,12 @@ import { cn } from "@/lib/utils"
 // muted above the value.
 //
 // Nothing here scrolls sideways: no `overflow-*`, and every part is `min-w-0`
-// so long names wrap or truncate inside the row. No copy and no `t()`: the
+// so long names wrap inside the row. A field is `wrap-anywhere`
+// (`overflow-wrap: anywhere`), not `break-words`: only `anywhere` lowers the
+// min-content width, and a name sits in an `inline-flex` link, a flex item
+// that never shrinks below it. With `break-words` one unbroken word wider
+// than a phone (a real surname, and the conflict picker's e2e member) keeps
+// its full width and pushes the page sideways. No copy and no `t()`: the
 // labels and the list's name come from the screen.
 
 const StackedList = React.forwardRef<
@@ -66,7 +71,7 @@ const StackedField = React.forwardRef<HTMLDivElement, StackedFieldProps>(
       ref={ref}
       data-separated={separated}
       className={cn(
-        "min-w-0 data-[separated=true]:flex data-[separated=true]:before:px-1 data-[separated=true]:before:text-muted-foreground data-[separated=true]:before:content-['·']",
+        "min-w-0 wrap-anywhere data-[separated=true]:flex data-[separated=true]:before:px-1 data-[separated=true]:before:text-muted-foreground data-[separated=true]:before:content-['·']",
         className
       )}
       {...props}
@@ -77,7 +82,7 @@ const StackedField = React.forwardRef<HTMLDivElement, StackedFieldProps>(
       >
         {label}
       </dt>
-      <dd className="min-w-0 break-words tabular-nums">{children}</dd>
+      <dd className="min-w-0 tabular-nums">{children}</dd>
     </div>
   )
 )
