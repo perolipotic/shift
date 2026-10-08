@@ -33,11 +33,19 @@ export const ORGANIZATION_DIALOG_SAVE_ID = 'organization-dialog-save';
  */
 export const ORGANIZATION_DIALOG_ERROR_ID = 'organization-dialog-error';
 
+/**
+ * The read's retry, where focus goes when a re-read loses the row under an
+ * open dialog: the one control left on the page.
+ */
+export const ORGANIZATION_READ_RETRY_ID = 'organization-read-retry';
+
 /** The fields, each in its own dialog. */
 export const ORGANIZATION_NAME_FIELD_ID = 'organization-name';
 export const ORGANIZATION_LEAVE_DAY_FIELD_ID = 'organization-leave-day';
 export const ORGANIZATION_LEAVE_MONTH_FIELD_ID = 'organization-leave-month';
 export const ORGANIZATION_LOGO_FIELD_ID = 'organization-logo';
+/** `Odaberi sliku`, where focus goes after a refused upload: the pick to retry. */
+export const ORGANIZATION_LOGO_CHOOSE_ID = 'organization-logo-choose';
 
 /** The accent's radio group: its label, and the UX-DR5 rule that describes it. */
 export const ORGANIZATION_ACCENT_LABEL_ID = 'organization-accent-label';

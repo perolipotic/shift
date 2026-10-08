@@ -153,7 +153,7 @@ function NameForm({
   readonly settings: OrganizationSettings;
   readonly organization: OrganizationSnapshot;
 }): ReactNode {
-  const { failure, refusedField, saveName } = settings;
+  const { pending, failure, refusedField, saveName } = settings;
 
   return (
     <OrganizationDialogForm settings={settings} onSubmit={saveName}>
@@ -171,6 +171,7 @@ function NameForm({
             type="text"
             required
             defaultValue={organization.name}
+            disabled={pending}
             aria-invalid={refusedField === ORGANIZATION_NAME_FIELD}
             aria-describedby={failure === null ? undefined : ORGANIZATION_DIALOG_ERROR_ID}
             className="h-11"

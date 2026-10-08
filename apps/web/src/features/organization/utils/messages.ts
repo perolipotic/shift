@@ -10,7 +10,6 @@ import {
   ORGANIZATION_INVALID,
   ORGANIZATION_NAME_BLANK,
   ORGANIZATION_REFUSED,
-  ORGANIZATION_TIMEZONE_UNKNOWN,
   ORGANIZATION_UNAVAILABLE,
   type OrganizationFailure,
 } from '@/features/organization/services/snapshot';
@@ -27,11 +26,11 @@ import {
  * wrong. `@/features/auth/services/sign-in`'s `signInMessageKey` set this shape; this is the
  * second instance of it, and the reason it is a pattern rather than a one-off.
  *
- * TEN CODES, TEN MESSAGES, and the partition is deliberate in both directions.
- * A refused policy, a blank name, an unknown timezone and a service failure are
- * four different things for the person in front of the screen to do next — earn
- * the rights, fix the field, fix a different field, try again — so collapsing
- * them would cost an action. They are
+ * NINE CODES, NINE MESSAGES, and the partition is deliberate in both directions.
+ * A refused policy, a blank name and a service failure are three different
+ * things for the person in front of the screen to do next — earn the rights,
+ * fix the field, try again — so collapsing them would cost an action. (A tenth,
+ * the unknown timezone, went with story 7.18: no write carries a zone.) They are
  * also all POST-authentication, which is why nothing here is narrowed the way
  * `signInMessageKey` narrows three refusals into one: the enumeration-oracle
  * argument applies to an anonymous caller, and this surface is reachable only by
@@ -60,7 +59,6 @@ export function organizationMessageKey(
   | 'organization.error.refused'
   | 'organization.error.name'
   | 'organization.error.invalid'
-  | 'organization.error.timezone'
   | 'organization.error.logoRefused'
   | 'organization.error.logoUnreadable'
   | 'organization.error.logoTooLarge'
@@ -70,7 +68,6 @@ export function organizationMessageKey(
   if (failure === ORGANIZATION_REFUSED) return 'organization.error.refused';
   if (failure === ORGANIZATION_NAME_BLANK) return 'organization.error.name';
   if (failure === ORGANIZATION_INVALID) return 'organization.error.invalid';
-  if (failure === ORGANIZATION_TIMEZONE_UNKNOWN) return 'organization.error.timezone';
   if (failure === LOGO_REFUSED) return 'organization.error.logoRefused';
   // A SEPARATE MESSAGE from the one above, and the separation is the whole
   // reason the read has its own code: `logoRefused` tells somebody they need an
@@ -83,8 +80,8 @@ export function organizationMessageKey(
   if (failure === ORGANIZATION_UNAVAILABLE) return 'organization.error.unavailable';
 
   // EXHAUSTIVE, and `never` is what makes it so. Written as a fall-through this
-  // mapping answered "try again" for any code it had not been taught, so an
-  // eleventh failure added to either vocabulary would have rendered a message
+  // mapping answered "try again" for any code it had not been taught, so a
+  // tenth failure added to either vocabulary would have rendered a message
   // that is wrong in the one direction that matters — it tells somebody a
   // transient problem is transient when it is not. Assigning to `never` turns
   // that into a `pnpm typecheck` failure here, at the one place a new code has

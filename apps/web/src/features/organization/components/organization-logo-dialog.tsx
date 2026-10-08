@@ -14,6 +14,7 @@ import type { OrganizationSnapshot } from '@/features/organization/services/snap
 import { LOGO_DIALOG } from '@/features/organization/utils/dialogs';
 import {
   ORGANIZATION_DIALOG_ERROR_ID,
+  ORGANIZATION_LOGO_CHOOSE_ID,
   ORGANIZATION_LOGO_FIELD_ID,
 } from '@/features/organization/utils/element-ids';
 
@@ -98,6 +99,7 @@ function LogoForm({
           className="sr-only"
         />
         <Button
+          id={ORGANIZATION_LOGO_CHOOSE_ID}
           className="h-11"
           type="button"
           variant="dashed"

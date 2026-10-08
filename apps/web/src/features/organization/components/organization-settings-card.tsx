@@ -7,6 +7,7 @@ import { OrganizationFireRanksCard } from '@/features/organization/components/or
 import { OrganizationProfileCard } from '@/features/organization/components/organization-profile-card';
 import { OrganizationTimeCard } from '@/features/organization/components/organization-time-card';
 import type { OrganizationSettings } from '@/features/organization/hooks/use-organization-settings';
+import { ORGANIZATION_READ_RETRY_ID } from '@/features/organization/utils/element-ids';
 import { ORGANIZATION_ERROR_ID, organizationMessageKey } from '@/features/organization/utils/messages';
 
 /**
@@ -79,7 +80,7 @@ export function OrganizationSettingsCard({
           READ'S ATTEMPTS: a retry that fails again remounts the region, which
           is what makes `role="alert"` announce it again. */}
       {readFailure === null ? null : (
-        <Notice id={ORGANIZATION_ERROR_ID} role="alert" key={readAttempts} className="max-w-2xl">
+        <Notice id={ORGANIZATION_ERROR_ID} role="alert" key={readAttempts} tabIndex={-1} className="max-w-2xl outline-none">
           {t(organizationMessageKey(readFailure))}
         </Notice>
       )}
@@ -88,6 +89,7 @@ export function OrganizationSettingsCard({
           so the person who pressed it keeps their place. */}
       {readRetry ? (
         <Button
+          id={ORGANIZATION_READ_RETRY_ID}
           className="h-11 w-full aria-disabled:opacity-50 sm:w-auto sm:justify-self-start"
           type="button"
           variant="outline"

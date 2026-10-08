@@ -33,7 +33,6 @@
 
 import { queryOptions } from '@tanstack/react-query';
 
-import { isRenderableTimeZone } from '@/lib/i18n/format';
 import type { BrandAccentKey } from '@/features/organization/utils/accent';
 
 /** The relation the surface reads and writes. Named here so no screen holds it. */
@@ -72,7 +71,7 @@ export const ORGANIZATION_READ_STALE_MS = 300000;
  * `slug` is READ and never written: AD-12 builds every member's sign-in address
  * as `username@slug.shift.invalid`, so editing it would silently refuse every
  * existing credential in the organization. It is in the snapshot because the
- * organization genuinely has one; it is absent from {@link OrganizationEdits}
+ * organization genuinely has one; it is absent from every {@link OrganizationWrite}
  * because no control may offer it.
  *
  * `created_at` is not here. It is the one `timestamptz` the conventions permit
@@ -142,16 +141,42 @@ export interface OrganizationSnapshot {
   readonly usesFireRanks: boolean;
 }
 
-/** The fields the settings FORM may change. Deliberately not the row. */
-export interface OrganizationEdits {
+/**
+ * The name, written on its own (story 7.18).
+ *
+ * The name and the leave year's start were ONE identity write that sent five
+ * columns, the ones a dialog did not show filled from the cached snapshot. A
+ * stale cache then wrote another admin's newer value back over theirs, and
+ * could write an old timezone back too, which FR-8 forbids. Each dialog now
+ * sends only what it shows, so neither can move what it did not show.
+ *
+ * NO TYPE AND NO ZONE ON ANY WRITE. Every shape below excludes both, so no
+ * write the client can express changes either of them.
+ */
+export interface OrganizationNameEdit {
   readonly name: string;
-  readonly organizationType: string;
-  readonly timezone: string;
+  /** None of these, ever. See {@link OrganizationWrite}. */
+  readonly organizationType?: never;
+  readonly timezone?: never;
+  readonly leaveYearStartMonth?: never;
+  readonly leaveYearStartDay?: never;
+  readonly logoPath?: never;
+  readonly brandAccent?: never;
+  readonly usesFireRanks?: never;
+}
+
+/**
+ * The leave year's start, written on its own (story 7.18): the day and the
+ * month together, because they are one value, and nothing else.
+ */
+export interface OrganizationLeaveYearEdit {
   readonly leaveYearStartMonth: number;
   readonly leaveYearStartDay: number;
-  /** Never here. See {@link OrganizationWrite} for why it is typed rather than said. */
+  /** None of these, ever. See {@link OrganizationWrite}. */
+  readonly name?: never;
+  readonly organizationType?: never;
+  readonly timezone?: never;
   readonly logoPath?: never;
-  /** Never here either, and for the same reason. */
   readonly brandAccent?: never;
   readonly usesFireRanks?: never;
 }
@@ -159,8 +184,8 @@ export interface OrganizationEdits {
 /**
  * The logo reference, written on its own.
  *
- * A SEPARATE SHAPE rather than a sixth optional field on {@link
- * OrganizationEdits}, and the separation is the enforcement rather than the
+ * A SEPARATE SHAPE rather than an optional field on the name's write, and
+ * the separation is the enforcement rather than the
  * tidiness: the two writes happen seconds apart and from different controls, so
  * a form submit that also carried `logo_path` would overwrite a logo uploaded
  * while the fields were being typed — silently, with a PATCH that reports
@@ -254,19 +279,19 @@ export interface OrganizationFireRanksEdit {
 }
 
 /**
- * Either write, and NEITHER can be both.
+ * One of the five writes, and NEVER two of them.
  *
- * The `?: never` members on both sides are what make "disjoint" a fact the
+ * The `?: never` members on every side are what make "disjoint" a fact the
  * compiler checks rather than a claim a comment makes. Without them a value
- * carrying the five fields AND a `logoPath` — from a spread, or from a variable
+ * carrying the name AND a `logoPath` — from a spread, or from a variable
  * assembled elsewhere — satisfies `OrganizationLogoEdit` structurally, routes to
- * the logo branch of {@link organizationEditColumns}, and silently drops all
- * five identity fields on a save that reports success. With them such a value
- * is a `pnpm typecheck` failure at the call site, which is the only place it can
- * be fixed.
+ * the logo branch of {@link organizationEditColumns}, and silently drops the
+ * name on a save that reports success. With them such a value is a `pnpm
+ * typecheck` failure at the call site, which is the only place it can be fixed.
  */
 export type OrganizationWrite =
-  | OrganizationEdits
+  | OrganizationNameEdit
+  | OrganizationLeaveYearEdit
   | OrganizationLogoEdit
   | OrganizationAccentEdit
   | OrganizationFireRanksEdit;
@@ -275,7 +300,7 @@ export type OrganizationWrite =
  * Which of the two a write is: the one that actually carries a logo path.
  *
  * `!== undefined` as well as `in`, because `exactOptionalPropertyTypes` still
- * admits `{ …five, logoPath: undefined }` at runtime from a spread of a partial
+ * admits `{ name, logoPath: undefined }` at runtime from a spread of a partial
  * — and `'logoPath' in write` alone would route that to the logo branch and
  * write `logo_path = undefined`, which PostgREST drops, producing a PATCH with
  * an empty body that matches the row and changes nothing while reporting
@@ -291,8 +316,8 @@ function isLogoEdit(write: OrganizationWrite): write is OrganizationLogoEdit {
  * `!== undefined` rather than `!== null`, and the distinction is the whole
  * value of this predicate. `null` is a MEANINGFUL accent — it is how an
  * organization returns to the untinted shell — so a guard written `!= null`
- * would route "clear the accent" to the identity branch and send five form
- * fields the caller never typed. `undefined` is the only absence, and it is the
+ * would route "clear the accent" past its own branch to one that sends
+ * nothing the caller chose. `undefined` is the only absence, and it is the
  * one `exactOptionalPropertyTypes` still admits at runtime from a spread of a
  * partial.
  */
@@ -306,32 +331,23 @@ function isFireRanksEdit(write: OrganizationWrite): write is OrganizationFireRan
 }
 
 /**
- * The identity write, recognised POSITIVELY rather than as "neither of the
- * other two".
+ * The name write, recognised POSITIVELY: the one that carries a name.
  *
- * The guard in {@link updateOrganization} was a growing list of negations, and
- * a list of negations is a list somebody has to remember to grow: a fourth
- * write shape added to {@link OrganizationWrite} without a fourth `!isX(write)`
- * would have started silently refusing that write as
- * {@link ORGANIZATION_TIMEZONE_UNKNOWN} — a timezone message for something that
- * carries no zone. Asking whether this IS the write that has a timezone makes
- * the fourth shape simply not match, which is the failure direction that does
- * not lie to anybody.
- *
- * `!== undefined` for the reason its two siblings use it: `exactOptionalProperty
- * Types` still admits `{ …logoPath, name: undefined }` at runtime from a spread.
- *
- * WORTH KNOWING, because it is the opposite of what a reader assumes: the chain
- * of negations this replaces did NOT in fact refuse a zone-less write.
- * `isRenderableTimeZone` delegates to `new Intl.DateTimeFormat(…, { timeZone })`,
- * and `timeZone: undefined` means "use the default" rather than "reject", so it
- * answers `true` for a write that carries no zone at all. The old shape was
- * therefore harmless AND unreadable: it looked like a guard that would refuse
- * the accent write and was not one. `snapshot.test.ts` pins that behaviour, so
- * nobody builds on the assumption in either direction.
+ * `!== undefined` for the reason its siblings use it: `exactOptionalProperty
+ * Types` still admits `{ logoPath, name: undefined }` at runtime from a spread.
  */
-function isIdentityEdit(write: OrganizationWrite): write is OrganizationEdits {
+function isNameEdit(write: OrganizationWrite): write is OrganizationNameEdit {
   return 'name' in write && write.name !== undefined;
+}
+
+/** The leave-year write: the one that carries the start's month and day. */
+function isLeaveYearEdit(write: OrganizationWrite): write is OrganizationLeaveYearEdit {
+  return (
+    'leaveYearStartMonth' in write &&
+    write.leaveYearStartMonth !== undefined &&
+    'leaveYearStartDay' in write &&
+    write.leaveYearStartDay !== undefined
+  );
 }
 
 /**
@@ -347,8 +363,6 @@ export const ORGANIZATION_REFUSED = 'ORGANIZATION_REFUSED';
 export const ORGANIZATION_NAME_BLANK = 'ORGANIZATION_NAME_BLANK';
 /** Some other shape on the table refused the value — a leave-year day out of range. */
 export const ORGANIZATION_INVALID = 'ORGANIZATION_INVALID';
-/** The entered zone is one no runtime can render in. See {@link isRenderableTimeZone}. */
-export const ORGANIZATION_TIMEZONE_UNKNOWN = 'ORGANIZATION_TIMEZONE_UNKNOWN';
 /** The service could not be reached, or answered with something that is not a row. */
 export const ORGANIZATION_UNAVAILABLE = 'ORGANIZATION_UNAVAILABLE';
 
@@ -356,7 +370,6 @@ export type OrganizationFailure =
   | typeof ORGANIZATION_REFUSED
   | typeof ORGANIZATION_NAME_BLANK
   | typeof ORGANIZATION_INVALID
-  | typeof ORGANIZATION_TIMEZONE_UNKNOWN
   | typeof ORGANIZATION_UNAVAILABLE;
 
 /**
@@ -454,7 +467,7 @@ const NAME_CHECK_CONSTRAINT = 'organizations_name_check';
  * name PostgreSQL gives it (`<table>_<column>_check`): `0002`'s name and two
  * leave-year bounds and `0006`'s accent. The checks on `organization_type`,
  * `timezone` and `locale` map to nothing, because no control on the form
- * edits them — a save writes them back unchanged — and a mark on the wrong
+ * edits them — no write names them — and a mark on the wrong
  * control would be worse than none. `rls-isolation.test.ts` asserts each name
  * against the live database, so a renamed constraint fails there.
  */
@@ -566,8 +579,8 @@ export function organizationEditColumns(
   write: OrganizationWrite,
 ): Readonly<Record<string, unknown>> {
   // ONE COLUMN, AND ONLY THAT COLUMN, on the logo path. The write that follows
-  // an upload names `logo_path` and nothing else, so an identity save that was
-  // typed but not yet submitted is not part of it, and neither is the reverse.
+  // an upload names `logo_path` and nothing else, so a name that was typed but
+  // not yet submitted is not part of it, and neither is the reverse.
   if (isLogoEdit(write)) return { logo_path: write.logoPath };
 
   // ONE COLUMN AGAIN on the accent, and `null` is a value rather than an
@@ -579,23 +592,28 @@ export function organizationEditColumns(
   // ONE COLUMN on the fire-rank setting, for the same reason.
   if (isFireRanksEdit(write)) return { uses_fire_ranks: write.usesFireRanks };
 
-  if (isIdentityEdit(write)) {
+  // ONE COLUMN on the name (story 7.18). It used to travel with the type, the
+  // zone and the leave year's start, filled in from the cached snapshot, so a
+  // rename on a stale cache wrote another admin's older values back. Now no
+  // write names `organization_type` or `timezone` at all (FR-7, FR-8).
+  if (isNameEdit(write)) return { name: write.name };
+
+  // TWO COLUMNS on the leave year's start, the day and the month, which are one
+  // value and are never written apart.
+  if (isLeaveYearEdit(write)) {
     return {
-      name: write.name,
-      organization_type: write.organizationType,
-      timezone: write.timezone,
       leave_year_start_month: write.leaveYearStartMonth,
       leave_year_start_day: write.leaveYearStartDay,
     };
   }
 
   // EXHAUSTIVE, and `never` is what makes it so — the idiom
-  // `@/features/organization/utils/messages` records. Written as a fall-through, a FOURTH
-  // write shape added to `OrganizationWrite` would have been mapped as an
-  // identity write and sent five columns it does not have, which PostgREST
-  // drops: an empty PATCH that matches the row, changes nothing, and reports
-  // success. Assigning to `never` turns that into a `pnpm typecheck` failure
-  // here, at the one place the new shape has to be taught.
+  // `@/features/organization/utils/messages` records. Written as a fall-through, a
+  // new write shape added to `OrganizationWrite` would have been mapped as one
+  // of the others and sent columns it does not have, which PostgREST drops: an
+  // empty PATCH that matches the row, changes nothing, and reports success.
+  // Assigning to `never` turns that into a `pnpm typecheck` failure here, at
+  // the one place the new shape has to be taught.
   const unhandled: never = write;
 
   return unhandled;
@@ -788,35 +806,17 @@ export function organizationSnapshotQueryOptions(table: () => OrganizationTable)
  * `select` is what makes the refusal visible, and the returned row is what makes
  * the caller's refetch honest: what comes back is what the database now holds,
  * including anything a default or a trigger changed, rather than what was sent.
+ *
+ * NO ZONE CHECK any more. The identity write carried the zone, so it was
+ * refused here when no runtime could render it (`0002:93` leaves the column
+ * unchecked). Since story 7.18 no write carries a zone at all, so there is
+ * nothing to ask, and a rename is never refused over a zone it does not touch.
  */
 export async function updateOrganization(
   table: OrganizationTable,
   id: string,
   write: OrganizationWrite,
 ): Promise<OrganizationOutcome> {
-  // REFUSED BEFORE IT IS SENT, and this is the only validation in the system
-  // that is not the database's. `0002:93` leaves `timezone` unchecked on purpose
-  // — `pg_timezone_names` is not immutable and so cannot appear in a constraint
-  // — which leaves the one value every later surface resolves against (L8)
-  // checked nowhere at all. And the failure it produces is not a wrong date:
-  // every zoned function in `@/lib/i18n/format` THROWS `RangeError` on an unknown
-  // zone, so `Europe/Zagrb` saved here takes down each screen that renders an
-  // instant, long after the edit and nowhere near it.
-  //
-  // Asked of the runtime rather than matched against a pattern, and asked in
-  // `format.ts` because that is the only file in `apps/web` permitted to touch
-  // `Intl` at all.
-  //
-  // Asked of the IDENTITY write only, and asked POSITIVELY. Neither the logo
-  // write nor the accent write carries a zone at all, so there is nothing to
-  // check and nothing to refuse — and this guard was a chain of negations until
-  // the 1.4c review, which is a shape that refuses a write nobody remembered to
-  // exempt. `isIdentityEdit` asks whether this is the write that HAS a zone, so
-  // a shape it does not recognise is simply not asked.
-  if (isIdentityEdit(write) && !isRenderableTimeZone(write.timezone)) {
-    return { ok: false, code: ORGANIZATION_TIMEZONE_UNKNOWN };
-  }
-
   let answered;
 
   try {

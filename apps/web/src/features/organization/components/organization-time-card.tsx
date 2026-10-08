@@ -87,10 +87,7 @@ export function OrganizationTimeCard({
               {starts === null ? null : t('organization.leaveYearStartsOn', { date: starts })}
             </OrganizationFact>
           </dl>
-          <p className="flex items-start gap-2 text-sm text-muted-foreground">
-            <Lock aria-hidden className="mt-0.5 size-4 shrink-0" />
-            {t('organization.timezoneReason')}
-          </p>
+          <p className="text-sm text-muted-foreground">{t('organization.timezoneReason')}</p>
         </CardContent>
       </Card>
       <OrganizationChangeDialog settings={settings} dialog={LEAVE_YEAR_DIALOG} title={t('organization.leaveYearStart')}>
@@ -113,7 +110,7 @@ function LeaveYearForm({
   readonly settings: OrganizationSettings;
   readonly organization: OrganizationSnapshot;
 }): ReactNode {
-  const { failure, refusedField, saveLeaveYear } = settings;
+  const { pending, failure, refusedField, saveLeaveYear } = settings;
 
   return (
     <OrganizationDialogForm settings={settings} onSubmit={saveLeaveYear}>
@@ -125,6 +122,7 @@ function LeaveYearForm({
             name={ORGANIZATION_LEAVE_DAY_FIELD}
             required
             defaultValue={organization.leaveYearStartDay}
+            disabled={pending}
             aria-invalid={refusedField === ORGANIZATION_LEAVE_DAY_FIELD}
             aria-describedby={failure === null ? undefined : ORGANIZATION_DIALOG_ERROR_ID}
             className="h-11"
@@ -147,6 +145,7 @@ function LeaveYearForm({
               name={ORGANIZATION_LEAVE_MONTH_FIELD}
               required
               defaultValue={organization.leaveYearStartMonth}
+              disabled={pending}
               aria-invalid={refusedField === ORGANIZATION_LEAVE_MONTH_FIELD}
               aria-describedby={failure === null ? undefined : ORGANIZATION_DIALOG_ERROR_ID}
               className="h-11"

@@ -30,7 +30,9 @@ import {
   ORGANIZATION_DIALOG_SAVE_ID,
   ORGANIZATION_LEAVE_DAY_FIELD_ID,
   ORGANIZATION_LEAVE_MONTH_FIELD_ID,
+  ORGANIZATION_LOGO_CHOOSE_ID,
   ORGANIZATION_NAME_FIELD_ID,
+  ORGANIZATION_READ_RETRY_ID,
 } from '@/features/organization/utils/element-ids';
 import {
   ACCENT_DIALOG,
@@ -40,7 +42,7 @@ import {
   NAME_DIALOG,
   type OrganizationDialog,
 } from '@/features/organization/utils/dialogs';
-import { offersReadRetry } from '@/features/organization/utils/messages';
+import { ORGANIZATION_ERROR_ID, offersReadRetry } from '@/features/organization/utils/messages';
 import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
 
@@ -110,11 +112,12 @@ function cardHeading(dialog: OrganizationDialog): () => HTMLElement | null {
  * fire-rank queue) and the flags that locked one control while another wrote.
  *
  * THE SEPARATION IS STILL A TYPE. `@/features/organization/services/snapshot`
- * types the identity write, `{ logoPath }`, `{ brandAccent }` and
- * `{ usesFireRanks }` as disjoint shapes, and each dialog sends exactly one.
- * The name and the leave year's start share the identity write: each fills
- * the fields it does not show from the snapshot as it is at submit time, and
- * the type and the zone go back unchanged, as they always have (FR-7, FR-8).
+ * types `{ name }`, the leave year's start, `{ logoPath }`, `{ brandAccent }`
+ * and `{ usesFireRanks }` as disjoint shapes, and each dialog sends exactly
+ * one: ONLY WHAT IT SHOWS. The name and the leave year's start once shared a
+ * write that filled what a dialog did not show from the cached snapshot, so a
+ * stale cache wrote another admin's change back (story 7.18 review). No write
+ * names the type or the zone (FR-7, FR-8).
  *
  * A FAILED WRITE IS THE WRITE'S, NEVER THE REFETCH'S. The invalidation that
  * follows a landed write sits in a `try` of its own, so a refetch that rejects
@@ -176,15 +179,17 @@ export function useOrganizationSettings() {
 
   // A RE-READ THAT LOST THE ROW closes the open dialog: the cards it belongs
   // to are gone with the row, and an opening left behind would reopen a
-  // dialog nobody asked for once a later read lands. A write in flight keeps
-  // its dialog's state until it settles. Focus goes to the read's retry, the
-  // one control left on the page.
+  // dialog nobody asked for once a later read lands. Whatever was entered in
+  // it goes with it. A write in flight keeps its dialog's state until it
+  // settles. Focus goes to the read's retry, the one control left on the
+  // page, or to the read's message when it offers none; never to `<body>`.
   useEffect(() => {
     if (organization !== null || opening === null || saving.current) return;
 
     setOpening(null);
     setFailure(null);
     setRefusedField(null);
+    focusLater([byId(ORGANIZATION_READ_RETRY_ID), byId(ORGANIZATION_ERROR_ID)], byId(ORGANIZATION_ERROR_ID));
   }, [organization, opening]);
 
   /** Opens one dialog afresh: no refusal and no confirmation carried over. */
@@ -210,6 +215,19 @@ export function useOrganizationSettings() {
     // The browser returns focus to the opener as the dialog closes; this is
     // the net for an opener that re-rendered under it.
     if (was !== null) focusLater([() => openers[was.dialog].current], cardHeading(was.dialog));
+  }
+
+  /**
+   * Where focus goes when a dialog's write is refused, or throws: the field
+   * the refusal names, or else the logo's `Odaberi sliku` (the pick to retry)
+   * or Spremi. Every control in the dialog was disabled while the write was
+   * in flight, so focus left them, and a keyboard user would otherwise be left
+   * on the body of a modal. `focusLater` waits for the target to re-enable.
+   */
+  function focusRefused(dialog: OrganizationDialog, field: string | undefined): void {
+    const retry = field ?? (dialog === LOGO_DIALOG ? ORGANIZATION_LOGO_CHOOSE_ID : ORGANIZATION_DIALOG_SAVE_ID);
+
+    focusLater([byId(retry), byId(ORGANIZATION_DIALOG_SAVE_ID)], cardHeading(dialog));
   }
 
   /**
@@ -240,13 +258,7 @@ export function useOrganizationSettings() {
         setFailure(outcome.code);
         setRefusedField(field);
 
-        const target = field === null ? undefined : REFUSED_FIELD_IDS[field];
-
-        // THE NAMED FIELD, or else Spremi: it was disabled while the write was
-        // in flight, so focus left it, and a keyboard user would otherwise be
-        // left on the body of a modal. `focusLater` waits for it to re-enable.
-        if (target !== undefined) document.getElementById(target)?.focus();
-        else focusLater([byId(ORGANIZATION_DIALOG_SAVE_ID)], cardHeading(dialog));
+        focusRefused(dialog, field === null ? undefined : REFUSED_FIELD_IDS[field]);
 
         return;
       }
@@ -270,6 +282,7 @@ export function useOrganizationSettings() {
       // as well as surfaced.
       console.error(unavailable, cause);
       setFailure(unavailable);
+      focusRefused(dialog, undefined);
     } finally {
       // On EVERY path, including the successful one.
       saving.current = false;
@@ -277,7 +290,7 @@ export function useOrganizationSettings() {
     }
   }
 
-  /** The name dialog's Spremi: the identity write, the leave year's start as the row holds it. */
+  /** The name dialog's Spremi: the name, and nothing else. */
   async function saveName(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
 
@@ -289,32 +302,25 @@ export function useOrganizationSettings() {
     // was pressed. A blank one is refused by the database, never here.
     const name = field.value;
 
-    await write(NAME_DIALOG, (row) =>
-      updateOrganization(supabaseClient().from(ORGANIZATION_TABLE), row.id, {
-        name,
-        // NOT IN THIS DIALOG: written back as the row holds them, so a save
-        // never moves them (FR-7, FR-8, and the leave year's own dialog).
-        organizationType: row.organizationType,
-        timezone: row.timezone,
-        leaveYearStartMonth: row.leaveYearStartMonth,
-        leaveYearStartDay: row.leaveYearStartDay,
-      }),
-    );
+    // ONLY THE NAME. What this dialog does not show is not sent, so a stale
+    // cache cannot write another admin's change back (FR-7, FR-8).
+    await write(NAME_DIALOG, (row) => updateOrganization(supabaseClient().from(ORGANIZATION_TABLE), row.id, { name }));
   }
 
-  /** The leave year's Spremi: the identity write, the name as the row holds it. */
+  /** The leave year's Spremi: its start's month and day, and nothing else. */
   async function saveLeaveYear(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
 
+    // Read before the write disables the selects: a disabled control is left
+    // out of `FormData`.
     const entered = new FormData(event.currentTarget);
+    const leaveYearStartMonth = Number(entered.get(ORGANIZATION_LEAVE_MONTH_FIELD));
+    const leaveYearStartDay = Number(entered.get(ORGANIZATION_LEAVE_DAY_FIELD));
 
     await write(LEAVE_YEAR_DIALOG, (row) =>
       updateOrganization(supabaseClient().from(ORGANIZATION_TABLE), row.id, {
-        name: row.name,
-        organizationType: row.organizationType,
-        timezone: row.timezone,
-        leaveYearStartMonth: Number(entered.get(ORGANIZATION_LEAVE_MONTH_FIELD)),
-        leaveYearStartDay: Number(entered.get(ORGANIZATION_LEAVE_DAY_FIELD)),
+        leaveYearStartMonth,
+        leaveYearStartDay,
       }),
     );
   }

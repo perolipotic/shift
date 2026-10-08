@@ -3251,14 +3251,15 @@ const KEY_SOURCES = [
     strings: 2,
   },
   {
-    // TEN since story 1.4b, and one function rather than two: the surface
+    // NINE since story 7.18 (ten from story 1.4b; no write carries a zone any
+    // more, so the zone's refusal went), and one function rather than two: the surface
     // shows exactly one message region, so a second mapping would need a
     // screen-side ternary choosing between them — the executed-by-nothing
     // branch this entry exists to abolish.
     name: 'the organization failure-to-message mapping',
     file: ORGANIZATION_MESSAGE_KEYS,
     keys: messageKeyUnion,
-    strings: 10,
+    strings: 9,
   },
   // SIX literal keys on the chrome — the navigation landmark's name twice (one
   // per bar), the collapse's two state-dependent names, the exit and the retry —
@@ -7075,7 +7076,6 @@ describe('every field on the settings surface carries an accessible name', () =>
       'organization.error.refused',
       'organization.error.name',
       'organization.error.invalid',
-      'organization.error.timezone',
       'organization.error.unavailable',
     ]) {
       expect(screen, `${key} is branched on in the screen`).not.toContain(key);
@@ -7213,29 +7213,66 @@ describe('the settings page is facts, and each change opens its own dialog (stor
     expect(time, 'the zone is not stated').toContain('{organization.timezone}');
     expect(time, 'the lock is not said in words').toContain("t('organization.timezoneLocked')");
     expect(time, 'the page does not say why').toContain("t('organization.timezoneReason')");
-    // WRITTEN BACK UNCHANGED by both identity writes, never read off a field.
+    // NEVER WRITTEN: no write names the zone or the type (story 7.18 review),
+    // so a save on a stale cache cannot write an old one back.
     for (const handler of ['saveName', 'saveLeaveYear']) {
-      expect(componentFunction(source(SETTINGS_HOOK), handler)).toContain('timezone: row.timezone,');
-      expect(componentFunction(source(SETTINGS_HOOK), handler)).toContain('organizationType: row.organizationType,');
+      expect(componentFunction(source(SETTINGS_HOOK), handler), `${handler} writes the zone`).not.toMatch(/timezone/);
+      expect(componentFunction(source(SETTINGS_HOOK), handler), `${handler} writes the type`).not.toMatch(/organizationType/);
     }
   });
 
-  it('sends each identity dialog only what it shows, and the rest as the row holds it', () => {
+  it('sends the name and the leave year each on its own, and nothing it does not show', () => {
+    // STORY 7.18 REVIEW. Both used to send one five-column write, the fields a
+    // dialog did not show filled from the cached snapshot: a stale cache then
+    // wrote another admin's change back. `snapshot.test.ts` executes the
+    // columns each shape maps to; this reads that each handler sends its own.
     const hook = source(SETTINGS_HOOK);
     const name = componentFunction(hook, 'saveName');
     const year = componentFunction(hook, 'saveLeaveYear');
 
-    expect(name).toContain('leaveYearStartMonth: row.leaveYearStartMonth,');
-    expect(name).toContain('leaveYearStartDay: row.leaveYearStartDay,');
-    expect(year).toContain('name: row.name,');
+    expect(name, 'no saveName function to read').not.toBe('');
+    expect(year, 'no saveLeaveYear function to read').not.toBe('');
+    expect(name).toContain('row.id, { name })');
+    expect(year).toMatch(/row\.id, \{\s*leaveYearStartMonth,\s*leaveYearStartDay,\s*\}\)/);
     expect(year).toContain('Number(entered.get(ORGANIZATION_LEAVE_MONTH_FIELD))');
     expect(year).toContain('Number(entered.get(ORGANIZATION_LEAVE_DAY_FIELD))');
     for (const handler of [name, year]) {
+      expect(handler, 'a dialog sends a field off the cached row').not.toMatch(/row\.(?!id\b)\w+/);
       expect(handler.indexOf('preventDefault()'), 'the default submission is not stopped first').toBeLessThan(
         handler.indexOf('updateOrganization('),
       );
       expect(handler, 'an identity save carries another write with it').not.toMatch(/logoPath|brandAccent|usesFireRanks/);
     }
+    expect(name, 'the name write carries the leave year').not.toMatch(/leaveYearStart/);
+    expect(year, 'the leave year write carries the name').not.toMatch(/\bname\b/);
+  });
+
+  it('holds the name and the leave year still while their write is in flight', () => {
+    // As 7.11's fields and every other control in these dialogs: a value
+    // changed mid-write would be neither what was sent nor what was kept.
+    for (const [file, id] of [
+      [SETTINGS_PROFILE, 'ORGANIZATION_NAME_FIELD_ID'],
+      [SETTINGS_TIME, 'ORGANIZATION_LEAVE_DAY_FIELD_ID'],
+      [SETTINGS_TIME, 'ORGANIZATION_LEAVE_MONTH_FIELD_ID'],
+    ] as const) {
+      const control = new RegExp(`id=\\{${id}\\}[\\s\\S]{0,600}?className=`).exec(source(file))?.[0] ?? '';
+
+      expect(control, `no ${id} control to read`).not.toBe('');
+      expect(control, `${id} stays live while its write is in flight`).toContain('disabled={pending}');
+    }
+  });
+
+  it('moves focus to the read retry when a re-read loses the row under an open dialog', () => {
+    // The dialog closes with the row; without this, focus fell to `<body>`.
+    const hook = source(SETTINGS_HOOK);
+
+    expect(hook).toMatch(
+      /if \(organization !== null \|\| opening === null \|\| saving\.current\) return;[\s\S]{0,200}?focusLater\(\[byId\(ORGANIZATION_READ_RETRY_ID\), byId\(ORGANIZATION_ERROR_ID\)\], byId\(ORGANIZATION_ERROR_ID\)\);/,
+    );
+    expect(source(SETTINGS_CARD), 'the retry carries no id to focus').toContain('id={ORGANIZATION_READ_RETRY_ID}');
+    expect(source(SETTINGS_CARD), 'the read message cannot take focus').toMatch(
+      /<Notice id=\{ORGANIZATION_ERROR_ID\}[^>]*tabIndex=\{-1\}/,
+    );
   });
 });
 
@@ -8338,12 +8375,23 @@ describe('the accent control offers a curated set and nothing else', () => {
       /const field = outcome\.field \?\? null;[\s\S]{0,120}?setRefusedField\(field\)/,
     );
     expect(write, 'a refused save does not move focus to the named control').toContain(
-      'document.getElementById(target)?.focus()',
+      'focusRefused(dialog, field === null ? undefined : REFUSED_FIELD_IDS[field]);',
     );
-    // ANY OTHER REFUSAL puts focus back on Spremi, which was disabled while the
-    // write was in flight and so lost it.
-    expect(write, 'a refusal that names no field leaves focus on the body').toContain(
-      'else focusLater([byId(ORGANIZATION_DIALOG_SAVE_ID)], cardHeading(dialog));',
+    // A WRITE THAT THREW is refused the same way, never left on a disabled button.
+    expect(write, 'a thrown write leaves focus on the body').toMatch(
+      /setFailure\(unavailable\);\s*focusRefused\(dialog, undefined\);/,
+    );
+    // ANY OTHER REFUSAL puts focus back on the logo's `Odaberi sliku`, or on
+    // Spremi: every control was disabled while the write was in flight and so
+    // lost it. `focusLater` waits for the target to re-enable.
+    const focusRefused = componentFunction(source(SETTINGS_HOOK), 'focusRefused');
+
+    expect(focusRefused, 'a refusal that names no field leaves focus on the body').toContain(
+      'field ?? (dialog === LOGO_DIALOG ? ORGANIZATION_LOGO_CHOOSE_ID : ORGANIZATION_DIALOG_SAVE_ID)',
+    );
+    expect(focusRefused).toContain('focusLater([byId(retry), byId(ORGANIZATION_DIALOG_SAVE_ID)], cardHeading(dialog));');
+    expect(source(SETTINGS_LOGO), 'Odaberi sliku carries no id to come back to').toContain(
+      'id={ORGANIZATION_LOGO_CHOOSE_ID}',
     );
     expect(source(SETTINGS_DIALOG), 'Spremi carries no id to come back to').toContain(
       'id={ORGANIZATION_DIALOG_SAVE_ID}',

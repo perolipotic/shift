@@ -360,11 +360,6 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.error.refused',
   'organization.error.name',
   'organization.error.invalid',
-  // The one refusal on this surface that is not the database's: `0002:93`
-  // leaves `timezone` unchecked because `pg_timezone_names` is not immutable,
-  // so the value every later screen renders against is validated in
-  // `@/lib/i18n/format` and refused before the write.
-  'organization.error.timezone',
   // FIVE MORE from story 1.4b, and the partition is the point again. The
   // storage layer refuses in five distinguishable ways — a refused write, a
   // read that reaches nothing, the

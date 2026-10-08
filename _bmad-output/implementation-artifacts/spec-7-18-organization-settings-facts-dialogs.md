@@ -85,6 +85,8 @@ context:
 
 The hook keeps the single failure slot, now owned by the open dialog: one dialog at a time, so no queue is needed. A save that lands closes the dialog through state. `Dialog`'s effect then calls `close()`, the browser returns focus, and `focusLater` covers the case where the opener re-rendered. The accent card previews the mark through `OrganizationLockup` (hidden from assistive technology), so UX-DR5's tint stays inside the lockup.
 
+**The identity write is split per field (Ask First, approved by the human 2026-10-08).** The Always rule "Type and timezone are written back unchanged" is superseded. Filling the fields a dialog does not show from the cached snapshot lost updates: a stale cache wrote another admin's newer leave year back over theirs on a rename, and could write an old timezone back, against FR-8. `OrganizationEdits` (five columns) is replaced by two one-purpose shapes, `OrganizationNameEdit` (`{ name }`) and `OrganizationLeaveYearEdit` (`{ leaveYearStartMonth, leaveYearStartDay }`), beside the logo, accent and fire-rank shapes, with `organizationEditColumns` still exhaustive over `never`. No write names `organization_type` or `timezone`. The client-side `isRenderableTimeZone` refusal and its `ORGANIZATION_TIMEZONE_UNKNOWN` code and message are gone with the zone: a rename is never refused over a zone it does not touch. No migration: `organizations_update_by_own_active_admin` (0004) is row-level, the column grants are per column, and no trigger or table-level check on `organizations` needs the other columns.
+
 ## Verification
 
 **Commands:**
@@ -94,6 +96,7 @@ The hook keeps the single failure slot, now owned by the open dialog: one dialog
 ## Spec Change Log
 
 - 2026-10-08, review (Edge Case Hunter, Blind Hunter, Verification Gap): no intent gap and no bad spec; patches applied. A refused accent marks its radio group `aria-invalid`; a refusal that names no field returns focus to Spremi (it was disabled in flight); both radio groups point at the refusal while it shows; a read that loses the row clears the open dialog; the history button no longer waits for a draft; EXPERIENCE.md no longer claims every button's name is its dialog's title. Rejected: leave-year values outside 1-28/1-12 (the database's checks make them unreachable); hard-coded rotation history ids (the builder's own convention). Not done, reported instead: executed e2e saves of each dialog (the run's organization is shared, so the new spec only opens and closes dialogs).
+- 2026-10-08, review follow-up: the human approved splitting the identity write per field (Design Notes), which fixes a lost update on a stale cache and keeps every save off the timezone (FR-8). Also: a re-read that loses the row under an open dialog moves focus to the read's retry (or its message), and EXPERIENCE.md says the unsaved value is discarded; the name field and the leave-year selects are disabled while their write is in flight; a write that throws moves focus as a refusal does, and a refused or failed upload returns focus to `Odaberi sliku`; the timezone lock is drawn once, beside the zone. Merged `origin/main` (7.12).
 
 ## Suggested Review Order
 
@@ -125,13 +128,13 @@ The hook keeps the single failure slot, now owned by the open dialog: one dialog
 **The hook: one runner for five writes**
 
 - Refusal keeps the dialog and focuses the field or Spremi; a landed save closes and returns focus.
-  [`use-organization-settings.ts:220`](../../apps/web/src/features/organization/hooks/use-organization-settings.ts#L220)
+  [`use-organization-settings.ts:238`](../../apps/web/src/features/organization/hooks/use-organization-settings.ts#L238)
 
-- Identity dialogs send what they show, the rest as the row holds it.
-  [`use-organization-settings.ts:281`](../../apps/web/src/features/organization/hooks/use-organization-settings.ts#L281)
+- The name and leave-year dialogs each send only what they show; no write names the zone.
+  [`use-organization-settings.ts:294`](../../apps/web/src/features/organization/hooks/use-organization-settings.ts#L294)
 
 - A read that loses the row clears the open dialog.
-  [`use-organization-settings.ts:182`](../../apps/web/src/features/organization/hooks/use-organization-settings.ts#L182)
+  [`use-organization-settings.ts:180`](../../apps/web/src/features/organization/hooks/use-organization-settings.ts#L180)
 
 **Rotation history behind a header button**
 
