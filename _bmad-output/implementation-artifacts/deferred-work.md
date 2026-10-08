@@ -835,3 +835,24 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-6-stacked-rows.md`
   summary: Focus is lost when a resize crosses 640 px and unmounts the focused form — a stacked row's link, or the open sort popover's option (or the table's heading button the other way). Focus falls to the page body. Restoring it needs a screen-level focus handoff between the two forms (for example, the same member's link or the matching heading).
   evidence: 7.6 review on 2026-10-08. `usePhone()` renders one form at a time by design, so the focused element is removed rather than hidden.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-8-first-sign-in-password.md`
+  summary: The admin-issued password (create and reset) is shown with `Kopiraj` in the existing inline one-time display, not in a dialog; moving it into a dialog belongs to 7.11 (member page dialogs) and 7.13 (add member in a dialog).
+  evidence: Epic 7.8 AC "the admin's dialog shows the new four-word password once, with `Kopiraj`" narrowed by human decision 2026-10-08 (spec 7.8 Epic AC Deviations).
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-8-first-sign-in-password.md`
+  summary: `must_set_password` is enforced only by the route guard. A flagged session can still read and write what RLS allows through PostgREST, and it can call `clearMustSetPassword` without changing its password. A data-layer check (for example in the access-token hook) is Ask First in 7.8.
+  evidence: 7.8 review (Blind Hunter); spec Design Notes "Bypass" and Ask First "any guard at the data layer".
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-8-first-sign-in-password.md`
+  summary: Accounts issued or reset before 7.8 carry no flag and keep the 16-character admin-issued password. A one-off backfill that flags them is Ask First (it changes accounts outside `createUser`/`resetPassword`).
+  evidence: 7.8 review (Blind Hunter); the spec flags only through the two operations.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-8-first-sign-in-password.md`
+  summary: `minimum_password_length = 10` is set only in `supabase/config.toml`. The hosted project needs the same auth setting (config push or dashboard) when deploys are enabled, or the local check is the only floor.
+  evidence: 7.8 review (Blind Hunter); deploys are off until DEPLOY_ENABLED.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-8-first-sign-in-password.md`
+  summary: The 2048-word list only excludes words that differ by a final vowel. It still has about 900 pairs that differ by one letter, including sound-alikes over the phone (`kosa`/`koza`, `bas`/`pas`, `bal`/`val`), and about 277 root derivations (`riba`/`ribar`). Curating it for read-aloud distinctness needs a reworked list and a test.
+  evidence: 7.8 review (Blind Hunter) scan of `supabase/functions/admin-auth/words.ts`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-8-first-sign-in-password.md`
+  summary: A member whose password save landed but whose flag clear did not, and who then reloads and types the same new password, is told `Nova lozinka mora biti drukčija od početne.` GoTrue's `same_password` cannot tell the issued password from their own one.
+  evidence: 7.8 review (Edge Case Hunter, Blind Hunter); the in-page retry is handled, only the reload path remains.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-8-first-sign-in-password.md`
+  summary: A flagged session that opens a deep link (for example `/kalendar?tim=2`) is sent to `/postavi-lozinku` with no return target and lands on `/` after saving; carrying `povratak` through the step is not built.
+  evidence: 7.8 review (Blind Hunter); the spec says "continue to `/`".

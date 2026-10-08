@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
+  SET_PASSWORD_PARTS,
+  SET_PASSWORD_SCREEN_EXEMPT,
+} from '../apps/web/src/features/auth/set-password-screen.fixture.ts';
+import {
   SIGN_IN_PARTS,
   SIGN_IN_SCREEN_EXEMPT,
 } from '../apps/web/src/features/auth/sign-in-screen.fixture.ts';
@@ -259,13 +263,18 @@ function authScreenParts(): string[] {
 /** The sign-in page, from the fixture rather than written out. */
 const SIGN_IN_PAGE = join(webRoot, 'src', ...SIGN_IN_PARTS.page);
 
-/** The service modules beside the set's parts, read off the fixture's exempt list. */
-const AUTH_RULE_MODULES = SIGN_IN_SCREEN_EXEMPT.map((entry) => entry.file).filter(
-  (file) => !/\.fixture\.[cm]?[jt]sx?$/.test(file),
-);
+/** Story 7.8's set-password page, from its own fixture. */
+const SET_PASSWORD_PAGE = join(webRoot, 'src', ...SET_PASSWORD_PARTS.page);
 
-/** Every part of the sign-in set outside `pages/`, from the fixture. */
-const AUTH_FEATURE_PARTS = Object.values(SIGN_IN_PARTS).filter((parts) => parts[0] !== 'pages');
+/** The service modules beside the two sets' parts, read off both fixtures' exempt lists. */
+const AUTH_RULE_MODULES = [...SIGN_IN_SCREEN_EXEMPT, ...SET_PASSWORD_SCREEN_EXEMPT]
+  .map((entry) => entry.file)
+  .filter((file) => !/\.fixture\.[cm]?[jt]sx?$/.test(file));
+
+/** Every part of the two auth sets outside `pages/`, from the fixtures. */
+const AUTH_FEATURE_PARTS = [...Object.values(SIGN_IN_PARTS), ...Object.values(SET_PASSWORD_PARTS)].filter(
+  (parts) => parts[0] !== 'pages',
+);
 
 /**
  * What `authScreenParts()` must hold: the sign-in set's hook and form, and the
@@ -380,6 +389,9 @@ const SOURCES = [
   // The sign-in page, from the fixture (source structure B7); its hook and
   // form are read off the auth feature's folders below.
   SIGN_IN_PAGE,
+  // Story 7.8: the first sign-in's set-password step, its hook and form read
+  // off the auth feature's folders with the sign-in screen's.
+  SET_PASSWORD_PAGE,
   join(webRoot, 'src', 'pages', 'not-found.tsx'),
   // `/`. A `.tsx` carrying a string that is absent from this list is swept by
   // nothing — the freshness guard would not notice a build that predates it.
@@ -744,6 +756,7 @@ describe('the build being read reflects the current localization source', () => 
         'services/address.ts',
         'services/last-organization.ts',
         'services/return-target.ts',
+        'services/set-password.ts',
         'services/sign-in.ts',
         'services/sign-out.ts',
       ].sort(),
@@ -751,8 +764,11 @@ describe('the build being read reflects the current localization source', () => 
     expect(parts, 'the auth feature grew or lost a module').toHaveLength(
       AUTH_FEATURE_PARTS.length + AUTH_RULE_MODULES.length,
     );
-    expect(parts, 'the auth feature grew or lost a module').toHaveLength(7);
+    // TEN SINCE STORY 7.8: the set-password step's hook and form, and its
+    // service module.
+    expect(parts, 'the auth feature grew or lost a module').toHaveLength(10);
     expect(SOURCES, `${SIGN_IN_PAGE} is not in SOURCES`).toContain(SIGN_IN_PAGE);
+    expect(SOURCES, `${SET_PASSWORD_PAGE} is not in SOURCES`).toContain(SET_PASSWORD_PAGE);
     expect([...parts].sort(), 'the feature holds a module no set and no service list names').toEqual(
       [...AUTH_SOURCES_REQUIRED].sort(),
     );
@@ -1577,7 +1593,9 @@ function wordOccurrences(haystack: string, needle: string): number {
  * path prefix, so a bare `smjena` literal — or the segment under any other
  * path — still counts.
  */
-const ROUTE_SEGMENTS = ['/postavke-rotacije/tipovi-smjena/'];
+// STORY 7.8: `/postavi-lozinku`, whose `lozinku` is the set-password step's
+// path (the route definition and both guards' redirects), never copy.
+const ROUTE_SEGMENTS = ['/postavke-rotacije/tipovi-smjena/', '/postavi-lozinku'];
 
 function withoutRouteSegments(chunk: string): string {
   return ROUTE_SEGMENTS.reduce((text, segment) => text.replaceAll(segment, ''), chunk);

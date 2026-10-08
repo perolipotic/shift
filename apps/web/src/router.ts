@@ -13,6 +13,7 @@ import { ljudiRoute } from '@/pages/ljudi';
 import { organizacijaRoute } from '@/pages/organizacija';
 import { organizacijaSatniPojasRoute } from '@/pages/organizacija.satni-pojasi.$id';
 import { organizacijaSatniPojasiRoute } from '@/pages/organizacija.satni-pojasi';
+import { postaviLozinkuRoute } from '@/pages/postavi-lozinku';
 import { postavkeRotacijeRoute } from '@/pages/postavke-rotacije';
 import { postavkeRotacijeTipSmjeneRoute } from '@/pages/postavke-rotacije.tipovi-smjena.$id';
 import { prijavaBareRoute, prijavaRoute } from '@/pages/prijava';
@@ -98,6 +99,10 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   prijavaRoute,
   prijavaBareRoute,
+  // STORY 7.8. The first sign-in's set-password step: outside the layout,
+  // because the layout's guard is what sends a flagged session here, and with
+  // no chrome, because no destination is open to it yet.
+  postaviLozinkuRoute,
   appDestinations,
 ]);
 

@@ -25,7 +25,7 @@
 /** The Edge Function this module calls, by name (`supabase/functions/admin-auth`). */
 export const MEMBER_WRITE_FUNCTION = 'admin-auth';
 
-/** The three operations `OPERATIONS` declares as implemented. */
+/** The operations `OPERATIONS` declares as implemented. */
 export const CREATE_USER_OPERATION = 'createUser';
 export const UPDATE_USER_OPERATION = 'updateUserById';
 /**
@@ -464,6 +464,10 @@ export const WIRE_CODES = [
   'MEMBER_CREATED',
   'USERNAME_CHANGED',
   'PASSWORD_RESET',
+  // STORY 7.8's two, from `clearMustSetPassword`. The set-password step reads
+  // them through its own leaf, `@/features/auth/services/set-password`, whose
+  // copies the boundary suite binds to the function's as it binds these.
+  'PASSWORD_FLAG_CLEARED',
   'NOT_AN_ADMIN',
   'ACCESS_UNREADABLE',
   'ORGANIZATION_UNREADABLE',
@@ -478,6 +482,7 @@ export const WIRE_CODES = [
   'USERNAME_NOT_APPLIED',
   'USERNAME_NOT_RESTORED',
   'PASSWORD_NOT_APPLIED',
+  'PASSWORD_FLAG_NOT_CLEARED',
   'OPERATION_FAILED',
 ] as const;
 

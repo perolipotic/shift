@@ -17,7 +17,9 @@
  */
 
 import {
+  AUTHORIZATION_MISSING,
   OPERATION_FAILED,
+  clearMustSetPassword,
   createUser,
   resetPassword,
   updateUserById,
@@ -29,7 +31,13 @@ import {
 /**
  * The complete set of operations this boundary will ever expose (AD-16).
  *
- * THREE, and `ban`/`unban` LEFT in story 1.6 rather than being implemented.
+ * FOUR SINCE STORY 7.8, which added `clearMustSetPassword`: a member's own
+ * `updateUser` cannot write `app_metadata`, so clearing the first-sign-in flag
+ * needs the secret key — for the CALLER only, named by the token and never by
+ * the body (`operations.ts`). Each name here is a decision that a capability
+ * exists, and the boundary suite writes the list out rather than deriving it.
+ *
+ * `ban`/`unban` LEFT in story 1.6 rather than being implemented.
  * Active state is a versioned domain table (`0008_member_status.sql`) written
  * through PostgREST under row level security; sign-in is ended by the access
  * token hook and data access by the helper every policy re-reads. The only
@@ -38,7 +46,12 @@ import {
  * would have been ceremony on the one component AD-16 keeps small. Human
  * decision 2026-09-23.
  */
-export const OPERATIONS = ['createUser', 'updateUserById', 'resetPassword'] as const;
+export const OPERATIONS = [
+  'createUser',
+  'updateUserById',
+  'resetPassword',
+  'clearMustSetPassword',
+] as const;
 
 export type Operation = (typeof OPERATIONS)[number];
 
@@ -54,7 +67,10 @@ export type Operation = (typeof OPERATIONS)[number];
  * fixed by signing in again and by nothing else, and "try again" repeats the
  * request that carries no credential.
  */
-export const AUTHORIZATION_MISSING = 'AUTHORIZATION_MISSING';
+// DECLARED IN `operations.ts` since story 7.8, because `clearMustSetPassword`
+// answers it too for a token GoTrue names nobody for; re-exported here, where
+// it has always been imported from.
+export { AUTHORIZATION_MISSING };
 export const METHOD_NOT_ALLOWED = 'METHOD_NOT_ALLOWED';
 export const BODY_NOT_JSON = 'BODY_NOT_JSON';
 /** The request did not declare `application/json`. Refused before the body is read. */
@@ -368,6 +384,13 @@ export function createHandler(
       // anything at all.
       if (operation === 'resetPassword') {
         answered = await resetPassword({ privileged: accounts, caller: client }, payload);
+      }
+      // STORY 7.8. THE HEADER, NEVER THE PAYLOAD: the operation is handed the
+      // caller's own `Authorization` and nothing from the body, so no request
+      // can name another account. No caller client either — it reads no
+      // domain table.
+      if (operation === 'clearMustSetPassword') {
+        answered = await clearMustSetPassword({ privileged: accounts }, authorization);
       }
 
       if (answered !== null) return reply(answered.status, answered.body);

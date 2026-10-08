@@ -40,6 +40,7 @@ import {
   OrganizacijaSatniPojasiScreen,
   organizacijaSatniPojasiRoute,
 } from '@/pages/organizacija.satni-pojasi';
+import { SetPasswordScreen, postaviLozinkuRoute } from '@/pages/postavi-lozinku';
 import { PostavkeRotacijeScreen, postavkeRotacijeRoute } from '@/pages/postavke-rotacije';
 import {
   PostavkeRotacijeTipSmjeneScreen,
@@ -359,10 +360,22 @@ describe('the shell route tree', () => {
       '/_app/sati',
       // STORY 1.8. One team's roster, for every role, reached from Danas only.
       '/_app/smjene/$id',
+      // STORY 7.8. The first sign-in's set-password step: a root route, outside
+      // the layout whose guard sends a flagged session to it.
+      '/postavi-lozinku',
       '/prijava',
       '/prijava/$slug',
       '__root__',
     ]);
+  });
+
+  it('resolves /postavi-lozinku outside the layout, to the set-password screen (story 7.8)', () => {
+    // OUTSIDE `_app`, or the layout's own guard would send the step to itself.
+    expect(match('/postavi-lozinku').map((matched) => matched.routeId)).toEqual([
+      '__root__',
+      '/postavi-lozinku',
+    ]);
+    expect((postaviLozinkuRoute.options as { component?: unknown }).component).toBe(SetPasswordScreen);
   });
 
   it('resolves / to the index route inside the root layout', () => {
@@ -1442,6 +1455,31 @@ describe('the signed-in layout guards every destination once, and is pathless', 
     expect((thrown as { options: { to?: string } }).options.to).toBe('/prijava');
   });
 
+  it('holds a flagged session at the set-password step, wherever it was going (story 7.8)', async () => {
+    // A member signed in with an admin-issued or admin-reset password reaches
+    // no destination until they have set their own: the typed `/kalendar` deep
+    // link below lands on the step, not the calendar.
+    const flagged = {
+      access_token: 'token',
+      user: { id: 'member', app_metadata: { must_set_password: true } },
+    } as unknown as Session;
+    const thrown = thrownBy(await beforeLoad(() => Promise.resolve(flagged)));
+
+    expect(isRedirect(thrown), 'the layout let a flagged session through').toBe(true);
+    expect((thrown as { options: { to?: string } }).options.to).toBe('/postavi-lozinku');
+  });
+
+  it('lets a session through once its flag is cleared, or when it never had one', async () => {
+    for (const metadata of [{ must_set_password: false }, {}]) {
+      const cleared = {
+        access_token: 'token',
+        user: { id: 'member', app_metadata: metadata },
+      } as unknown as Session;
+
+      expect(await beforeLoad(() => Promise.resolve(cleared))).toEqual({ returned: undefined });
+    }
+  });
+
   it('carries the whole location, path included, through on that redirect', async () => {
     // AD-14 has the host answer every path with `index.html` at 200, so
     // `/kalendar?tim=2#tjedan` is a shape a real link takes. The redirect kept
@@ -1972,5 +2010,67 @@ describe('the roster route is for every role and is not a destination', () => {
     expect(DESTINATION_ROUTES.map((destination) => destination.path)).not.toContain('/smjene/$id');
     expect(ROLE_GUARDED_PATHS).not.toContain('/smjene/$id');
     expect(LEVEL_GUARDED_ROUTES.map((guarded) => guarded.path)).not.toContain('/smjene/$id');
+  });
+});
+
+describe('the set-password step opens only to a flagged session (story 7.8)', () => {
+  type BeforeLoad = (options: {
+    context: AppRouterContext;
+    location: { href: string };
+  }) => unknown;
+
+  const STEP = { href: '/postavi-lozinku' };
+
+  function sessionWith(metadata: Readonly<Record<string, unknown>>): Session {
+    return { access_token: 'token', user: { id: 'member', app_metadata: metadata } } as unknown as Session;
+  }
+
+  async function outcomeOf(currentSession: () => Promise<Session | null>): Promise<unknown> {
+    const run = (postaviLozinkuRoute.options as unknown as { beforeLoad?: BeforeLoad }).beforeLoad;
+
+    if (typeof run !== 'function') throw new Error('the step has no beforeLoad');
+
+    try {
+      await run({ location: STEP, context: { currentSession, currentMemberRole: REFUSES_ROLE } });
+
+      return undefined;
+    } catch (thrown) {
+      return thrown;
+    }
+  }
+
+  it('renders for a flagged session', async () => {
+    expect(await outcomeOf(() => Promise.resolve(sessionWith({ must_set_password: true })))).toBeUndefined();
+  });
+
+  it('sends an unflagged session to /, so the URL is no second way to change a password', async () => {
+    const thrown = await outcomeOf(() => Promise.resolve(sessionWith({ must_set_password: false })));
+
+    expect(isRedirect(thrown)).toBe(true);
+    expect((thrown as { options: { to?: string } }).options.to).toBe('/');
+  });
+
+  it('sends nobody to the sign-in form, carrying the step as the return target', async () => {
+    const thrown = await outcomeOf(() => Promise.resolve(null));
+
+    expect(isRedirect(thrown)).toBe(true);
+    expect((thrown as { options: { to?: string; search?: unknown } }).options).toMatchObject({
+      to: '/prijava',
+      search: { povratak: '/postavi-lozinku' },
+    });
+  });
+
+  it('fails CLOSED on a session it cannot read, and logs why', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const thrown = await outcomeOf(() => Promise.reject(new Error('SecurityError')));
+
+      expect(isRedirect(thrown)).toBe(true);
+      expect((thrown as { options: { to?: string } }).options.to).toBe('/prijava');
+      expect(logged).toHaveBeenCalledWith(SESSION_UNRESOLVED, expect.anything());
+    } finally {
+      logged.mockRestore();
+    }
   });
 });

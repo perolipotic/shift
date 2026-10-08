@@ -148,6 +148,26 @@ export class PeoplePage extends BasePage {
     await expect(this.status).toHaveText(hr.ljudi.form.created);
   }
 
+  /** The member page's reset offer, naming the member. */
+  resetButton(name: string): Locator {
+    return this.page.getByRole('button', { name: fill(hr.ljudi.form.reset, { name }) });
+  }
+
+  /** The reset's confirm, in its confirmation. */
+  resetConfirmButton(name: string): Locator {
+    return this.page.getByRole('button', { name: fill(hr.ljudi.form.resetConfirm, { name }) });
+  }
+
+  /** `Kopiraj` beside the one-time password (story 7.8). */
+  get copyButton(): Locator {
+    return this.page.getByRole('button', { name: hr.ljudi.form.copy, exact: true });
+  }
+
+  /** The one-time password itself: four hyphen-joined words. */
+  get issuedPassword(): Locator {
+    return this.page.getByText(/^[a-z]{3,6}(-[a-z]{3,6}){3}$/);
+  }
+
   /** Opens `/ljudi/novi` and issues the account. */
   async createMember(name: string, username: string): Promise<void> {
     await this.gotoNew();

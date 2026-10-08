@@ -1093,14 +1093,14 @@ describe('creating a member issues one credential and reports it once', () => {
 
   it('sends the whole payload to the one function, by name', async () => {
     const { functions, calls } = functionsThat(
-      replied({ code: MEMBER_CREATED, username: 'marko.novak', password: 'Xy7kPq2mRt4vLn8s' }),
+      replied({ code: MEMBER_CREATED, username: 'marko.novak', password: 'kosa-more-lipa-zora' }),
     );
 
     const outcome = await createMember(functions, creation);
 
     expect(outcome).toEqual({
       ok: true,
-      credential: { username: 'marko.novak', password: 'Xy7kPq2mRt4vLn8s' },
+      credential: { username: 'marko.novak', password: 'kosa-more-lipa-zora' },
     });
     expect(calls).toEqual([
       {
@@ -1125,7 +1125,7 @@ describe('creating a member issues one credential and reports it once', () => {
     // MEMBER RANK. The row is inserted with its rank in one insert.
     for (const fireRank of ['nco', null] as const) {
       const { functions, calls } = functionsThat(
-        replied({ code: MEMBER_CREATED, username: 'marko.novak', password: 'Xy7kPq2mRt4vLn8s' }),
+        replied({ code: MEMBER_CREATED, username: 'marko.novak', password: 'kosa-more-lipa-zora' }),
       );
 
       await createMember(functions, { ...creation, fireRank });
@@ -1202,12 +1202,12 @@ describe('a reset issues one credential, and a reply without one is not a succes
     // `MEMBER_WRITE_UNAVAILABLE`, and shows "try again" for ever to an admin
     // whose member has no other recovery route.
     const { functions, calls } = functionsThat(
-      replied({ code: PASSWORD_RESET, password: 'Xy7kPq2mRt4vLn8s' }),
+      replied({ code: PASSWORD_RESET, password: 'kosa-more-lipa-zora' }),
     );
 
     expect(await resetPassword(functions, 'member-1')).toEqual({
       ok: true,
-      credential: { password: 'Xy7kPq2mRt4vLn8s' },
+      credential: { password: 'kosa-more-lipa-zora' },
     });
     expect(calls).toEqual([
       { name: MEMBER_WRITE_FUNCTION, body: { operation: 'resetPassword', memberId: 'member-1' } },
@@ -1219,7 +1219,7 @@ describe('a reset issues one credential, and a reply without one is not a succes
     // forbidden (the credential is generated in `admin-auth`), and an
     // organization in the body is a caller choosing which tenant to act in.
     const { functions, calls } = functionsThat(
-      replied({ code: PASSWORD_RESET, password: 'Xy7kPq2mRt4vLn8s' }),
+      replied({ code: PASSWORD_RESET, password: 'kosa-more-lipa-zora' }),
     );
 
     await resetPassword(functions, 'member-1');
@@ -1290,13 +1290,13 @@ describe('a reset issues one credential, and a reply without one is not a succes
 
   it('never logs the reply body, which is where the credential is', async () => {
     const { functions } = functionsThat(
-      replied({ code: PASSWORD_RESET, password: 'Xy7kPq2mRt4vLn8s' }),
+      replied({ code: PASSWORD_RESET, password: 'kosa-more-lipa-zora' }),
     );
 
     await resetPassword(functions, 'member-1');
 
     for (const call of logged.mock.calls) {
-      expect(JSON.stringify(call)).not.toContain('Xy7kPq2mRt4vLn8s');
+      expect(JSON.stringify(call)).not.toContain('kosa-more-lipa-zora');
     }
   });
 
@@ -1324,7 +1324,7 @@ describe('a reset issues one credential, and a reply without one is not a succes
 });
 
 describe('the reset has four stages, and the in-flight one is the one that gets lost', () => {
-  const credential = { password: 'Xy7kPq2mRt4vLn8s' };
+  const credential = { password: 'kosa-more-lipa-zora' };
 
   it('offers a reset when nothing is armed, nothing is in flight and nothing is shown', () => {
     expect(resetStageOf(false, false, null)).toBe(RESET_IDLE);

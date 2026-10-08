@@ -233,6 +233,28 @@ const SANCTIONED_SCREEN_KEYS = [
   'auth.brand.name',
   'auth.brand.headline',
   'auth.brand.subline',
+  // STORY 7.8: the first sign-in's set-password step — its heading and lede,
+  // the two fields, the two live checks and their met / not-yet words, the
+  // submit and its in-flight label, `Odjava`, and the six refusals.
+  'auth.setPassword.heading',
+  'auth.setPassword.lede',
+  'auth.setPassword.password',
+  'auth.setPassword.repeat',
+  'auth.setPassword.ruleLength',
+  'auth.setPassword.ruleMatch',
+  'auth.setPassword.ruleMet',
+  'auth.setPassword.ruleUnmet',
+  'auth.setPassword.submit',
+  'auth.setPassword.pending',
+  'auth.setPassword.signOut',
+  'auth.setPassword.error.tooShort',
+  'auth.setPassword.error.mismatch',
+  'auth.setPassword.error.same',
+  'auth.setPassword.error.unavailable',
+  'auth.setPassword.error.notContinued',
+  'auth.setPassword.error.signOut',
+  // The 7.8 review: the token was refused after the password landed.
+  'auth.setPassword.error.signInAgain',
   // NO `home.*` KEY, and there is no screen at `/` for one to belong to: it is
   // a redirect-only route. This list is an EQUALITY assertion, so a key added
   // to `hr.json` for a screen that does not render is refused here.
@@ -441,6 +463,12 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.form.saved',
   'ljudi.form.credential',
   'ljudi.form.credentialOnce',
+  // STORY 7.8: `Kopiraj` beside the one-time password, and its two outcomes.
+  // The reset's own write-it-down line, naming the NEXT sign-in.
+  'ljudi.form.resetCredentialOnce',
+  'ljudi.form.copy',
+  'ljudi.form.copied',
+  'ljudi.form.copyFailed',
   // THE ADMIN-ISSUED RESET'S SEVEN, and they are seven rather than two because
   // the reset is a two-step confirmation whose panel has to be closable.
   //

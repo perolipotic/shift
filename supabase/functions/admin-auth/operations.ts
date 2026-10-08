@@ -1,6 +1,6 @@
 /**
- * `createUser`, `updateUserById` and `resetPassword` — the three operations the
- * privileged boundary implements.
+ * `createUser`, `updateUserById`, `resetPassword` and `clearMustSetPassword` —
+ * the four operations the privileged boundary implements.
  *
  * THE TWO-CLIENT DIVISION IS THE WHOLE DESIGN and it is visible in every
  * signature below: the PRIVILEGED client appears only as
@@ -84,6 +84,30 @@ export const USERNAME_CHANGED = 'USERNAME_CHANGED';
  */
 export const PASSWORD_RESET = 'PASSWORD_RESET';
 
+/**
+ * The caller's own first-sign-in flag was cleared (story 7.8). The gate the
+ * SPA moves on: only after this does the set-password step let the member go.
+ */
+export const PASSWORD_FLAG_CLEARED = 'PASSWORD_FLAG_CLEARED';
+/**
+ * GoTrue would not clear the flag. The member's new password is already saved
+ * by then (the SPA calls this only after its own `updateUser` landed), so what
+ * the member does next is retry THIS, and nothing else.
+ */
+export const PASSWORD_FLAG_NOT_CLEARED = 'PASSWORD_FLAG_NOT_CLEARED';
+
+/**
+ * The request carried no usable credential.
+ *
+ * DECLARED HERE AND RE-EXPORTED BY `handler.ts`, which answers it before any
+ * operation runs. {@link clearMustSetPassword} answers it too, for a token
+ * GoTrue will not name a user for: that is the same fact — no caller — and a
+ * second code for it would be a second sentence for one thing to do, which is
+ * signing in again. Listed in `TRANSPORT_CODES` and not in
+ * {@link OPERATION_CODES}, so the contract case counts it once.
+ */
+export const AUTHORIZATION_MISSING = 'AUTHORIZATION_MISSING';
+
 /** The request body is not the shape this operation accepts. */
 export const PAYLOAD_INVALID = 'PAYLOAD_INVALID';
 /** The username cannot be the local part of an address (`0007`'s shape rule). */
@@ -144,6 +168,7 @@ export const OPERATION_CODES = [
   MEMBER_CREATED,
   USERNAME_CHANGED,
   PASSWORD_RESET,
+  PASSWORD_FLAG_CLEARED,
   NOT_AN_ADMIN,
   ACCESS_UNREADABLE,
   PAYLOAD_INVALID,
@@ -158,6 +183,7 @@ export const OPERATION_CODES = [
   USERNAME_NOT_APPLIED,
   USERNAME_NOT_RESTORED,
   PASSWORD_NOT_APPLIED,
+  PASSWORD_FLAG_NOT_CLEARED,
   OPERATION_FAILED,
 ] as const;
 
@@ -261,10 +287,11 @@ export interface AccountAnswer {
 /**
  * The privileged client, as narrowly as this module uses it.
  *
- * THREE METHODS, ALL OF THEM UNDER `auth.admin`. There is no `from` on this
- * interface and there must never be one: a domain-table write with the secret
- * key is the AD-16 defect, and making it unrepresentable is stronger than a
- * comment asking nobody to do it.
+ * THREE WRITES, ALL OF THEM UNDER `auth.admin`, and one read beside them
+ * (`auth.getUser`, story 7.8) that names the caller of `clearMustSetPassword`.
+ * There is no `from` on this interface and there must never be one: a
+ * domain-table write with the secret key is the AD-16 defect, and making it
+ * unrepresentable is stronger than a comment asking nobody to do it.
  *
  * THE RESET NEEDS NO FOURTH METHOD, and that is a finding rather than an
  * omission — see {@link RESET_ATTRIBUTES}. GoTrue's admin user update is the
@@ -280,6 +307,14 @@ export interface AccountAnswer {
  */
 export interface PrivilegedAccounts {
   readonly auth: {
+    /**
+     * WHO A TOKEN BELONGS TO, asked of GoTrue (story 7.8). The one call here
+     * outside `auth.admin`, and it writes nothing: {@link clearMustSetPassword}
+     * names its target with it, so the target is whoever signed the request and
+     * never a value in the body. The real client carries it as
+     * `auth.getUser(jwt)`.
+     */
+    getUser(jwt: string): PromiseLike<AccountAnswer>;
     readonly admin: {
       createUser(attributes: Readonly<Record<string, unknown>>): PromiseLike<AccountAnswer>;
       updateUserById(
@@ -677,6 +712,36 @@ const AUTH_USER_COLUMN = 'auth_user_id';
 const ORGANIZATION_COLUMN = 'organization_id';
 
 /**
+ * The flag a first sign-in is held behind (story 7.8), in `app_metadata`.
+ *
+ * `app_metadata` AND NEVER `user_metadata`: a member can write their own
+ * `user_metadata` through `auth.updateUser`, so a flag there is one the person
+ * it holds back can clear. Only the secret key writes `app_metadata`, which is
+ * why clearing it is an operation of this boundary ({@link clearMustSetPassword})
+ * rather than a call from the browser.
+ */
+export const MUST_SET_PASSWORD = 'must_set_password';
+
+/**
+ * What a create sends GoTrue, named so the boundary suite can pin its keys.
+ *
+ * `email_confirm` makes the address usable immediately: nothing is ever sent
+ * to a `.invalid` address, so a confirmation step would be a link nobody can
+ * receive. The flag holds the account's first sign-in at the set-password step.
+ */
+export function createAttributes(
+  address: string,
+  password: string,
+): Readonly<Record<string, unknown>> {
+  return {
+    email: address,
+    password,
+    email_confirm: true,
+    app_metadata: { [MUST_SET_PASSWORD]: true },
+  };
+}
+
+/**
  * Issue an account and the member row that gives it an organization.
  *
  * THE ONLY COPY OF THE PASSWORD LEAVES IN THE REPLY. It is not stored, not
@@ -707,15 +772,11 @@ export async function createUser(
   const address = synthesizedAddress(payload.username, namespace.slug);
   const password = generatePassword(dependencies.randomBytes);
 
-  // THE ACCOUNT FIRST, because the foreign key forces it (`0002:128`).
-  // `email_confirm` is what makes the address usable immediately: nothing is
-  // ever sent to a `.invalid` address, so a confirmation step would be a link
-  // nobody can ever receive.
-  const created = await dependencies.privileged.auth.admin.createUser({
-    email: address,
-    password,
-    email_confirm: true,
-  });
+  // THE ACCOUNT FIRST, because the foreign key forces it (`0002:128`). What it
+  // carries is `createAttributes`, flag included.
+  const created = await dependencies.privileged.auth.admin.createUser(
+    createAttributes(address, password),
+  );
 
   if (created.error !== null) {
     // BY CODE, NEVER BY STATUS — see the header.
@@ -928,14 +989,15 @@ export interface ResetDependencies {
 const MEMBER_RESET_COLUMNS = `${ORGANIZATION_COLUMN},${AUTH_USER_COLUMN}`;
 
 /**
- * The one attribute a reset sends GoTrue, named so it can be pinned.
+ * The two attributes a reset sends GoTrue, named so they can be pinned.
  *
- * `password` AND NOTHING ELSE. `email_confirm` belongs to the address and the
- * rename owns it; `ban_duration` is nobody's, since story 1.6 deactivates in a
- * domain table and never bans; and `user_metadata` is the one
- * place a credential must never be written, because every later admin read can
- * see it. The boundary suite pins these keys exactly, so an attribute added
- * here is a failing case rather than a value in the auth store nobody chose.
+ * `password` AND THE FIRST-SIGN-IN FLAG, nothing else. `email_confirm` belongs
+ * to the address and the rename owns it; `ban_duration` is nobody's, since
+ * story 1.6 deactivates in a domain table and never bans; and `user_metadata`
+ * is the one place a credential must never be written, because every later
+ * admin read can see it. The boundary suite pins these keys exactly, so an
+ * attribute added here is a failing case rather than a value in the auth store
+ * nobody chose.
  *
  * IT IS ALSO THE REVOCATION. GoTrue's admin user update logs an account out of
  * every session it holds when a password is set through it — the access token
@@ -947,7 +1009,11 @@ const MEMBER_RESET_COLUMNS = `${ORGANIZATION_COLUMN},${AUTH_USER_COLUMN}`;
  * running stack, because a stub cannot answer that question at all.
  */
 export function resetAttributes(password: string): Readonly<Record<string, unknown>> {
-  return { password };
+  // THE FLAG GOES BACK ON with the password (story 7.8): a reset hands the
+  // member a credential somebody else has read aloud, so their next sign-in is
+  // held at the set-password step exactly like their first. Never cleared here
+  // — only the member's own `clearMustSetPassword` clears it.
+  return { password, app_metadata: { [MUST_SET_PASSWORD]: true } };
 }
 
 /**
@@ -1049,4 +1115,88 @@ export async function resetPassword(
   // the credential lives in `auth.users` and the reply, and the reply is shown
   // once.
   return { status: 200, body: { code: PASSWORD_RESET, password } };
+}
+
+// ------------------------------------------------- the first sign-in (7.8)
+
+/** What `clearMustSetPassword` is handed: the privileged client and nothing
+ *  else. It reads no domain table, so it gets no caller client to read one
+ *  with. */
+export interface ClearDependencies {
+  readonly privileged: PrivilegedAccounts;
+}
+
+/** The scheme on an `Authorization` header, stripped before GoTrue is asked. */
+const BEARER = /^bearer\s+/i;
+
+/** The lowest status GoTrue answers an outage with, as opposed to a refusal. */
+const FIRST_SERVER_ERROR_STATUS = 500;
+/** A rate limit: "not now", never "not you". */
+const TOO_MANY_REQUESTS = 429;
+
+/**
+ * Clear the CALLER's first-sign-in flag, and nobody else's (story 7.8, AD-16).
+ *
+ * THE TARGET IS THE TOKEN. `auth.getUser(<jwt>)` asks GoTrue whose token
+ * signed this request, and that id is the only one written. Nothing in the body
+ * is read at all — this function is not even handed it — so a `userId` or a
+ * `memberId` in the request names nothing. A body-supplied id here would let
+ * any signed-in account clear any other account's flag with the secret key,
+ * which is the defect the whole design of this operation refuses.
+ *
+ * `app_metadata` ONLY. The password is not touched and no session is revoked:
+ * GoTrue's admin update revokes sessions when it sets a PASSWORD, and this
+ * sets none, so the member keeps the session they are about to continue in.
+ *
+ * NO DOMAIN READ OR WRITE and OPEN TO ANY ROLE. Every member has this flag and
+ * every member clears their own; there is no organization to authorize against
+ * and nothing in the database to change.
+ *
+ * NOT A PROOF THE PASSWORD CHANGED. The SPA calls this after its own
+ * `updateUser({ password })`, and a member who calls it without changing their
+ * password keeps the one the admin read aloud. That harms only their own
+ * account, and the route guard is the agreed enforcement point (spec 7.8).
+ */
+export async function clearMustSetPassword(
+  dependencies: ClearDependencies,
+  authorization: string,
+): Promise<OperationReply> {
+  const jwt = authorization.replace(BEARER, '').trim();
+
+  if (jwt === '') return { status: 401, body: { code: AUTHORIZATION_MISSING } };
+
+  const caller = await dependencies.privileged.auth.getUser(jwt);
+  const callerId = accountIdOf(caller);
+
+  if (caller.error !== null || callerId === null) {
+    const status = caller.error?.status;
+
+    // AN OUTAGE IS NOT A REFUSAL, and neither is a rate limit. GoTrue that
+    // could not answer says nothing about the token, and "sign in again" would send somebody whose new
+    // password is already saved round a loop that cannot help.
+    if (
+      caller.error !== null &&
+      (status === undefined || status === TOO_MANY_REQUESTS || status >= FIRST_SERVER_ERROR_STATUS)
+    ) {
+      console.error(PASSWORD_FLAG_NOT_CLEARED, caller.error.code, caller.error.status);
+
+      return { status: 502, body: { code: PASSWORD_FLAG_NOT_CLEARED } };
+    }
+
+    return { status: 401, body: { code: AUTHORIZATION_MISSING } };
+  }
+
+  const cleared = await dependencies.privileged.auth.admin.updateUserById(callerId, {
+    app_metadata: { [MUST_SET_PASSWORD]: false },
+  });
+
+  // THE PROOF THE WRITE LANDED, the way `resetPassword` proves its own: no
+  // error AND an account back.
+  if (cleared.error !== null || accountIdOf(cleared) === null) {
+    console.error(PASSWORD_FLAG_NOT_CLEARED, cleared.error?.code, cleared.error?.status);
+
+    return { status: 502, body: { code: PASSWORD_FLAG_NOT_CLEARED } };
+  }
+
+  return { status: 200, body: { code: PASSWORD_FLAG_CLEARED } };
 }

@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
+  SET_PASSWORD_PARTS,
+  SET_PASSWORD_SCREEN_EXEMPT,
+} from '@/features/auth/set-password-screen.fixture';
+import {
   SIGN_IN_PARTS,
   SIGN_IN_SCREEN_EXEMPT,
 } from '@/features/auth/sign-in-screen.fixture';
@@ -100,6 +104,19 @@ const SIGN_IN_FORM = join(srcRoot, ...SIGN_IN_PARTS.form);
  * part that must hold it.
  */
 const SCREEN: readonly string[] = Object.values(SIGN_IN_PARTS).map((parts) => join(srcRoot, ...parts));
+/** Story 7.8's set-password step: its page, which only composes, its hook and its form. */
+const SET_PASSWORD_PAGE = join(srcRoot, ...SET_PASSWORD_PARTS.page);
+const SET_PASSWORD_HOOK = join(srcRoot, ...SET_PASSWORD_PARTS.hook);
+const SET_PASSWORD_FORM = join(srcRoot, ...SET_PASSWORD_PARTS.form);
+/**
+ * The first sign-in's set-password step (story 7.8): a second, DISJOINT file
+ * set under the auth feature, written ONCE in `set-password-screen.fixture.ts`.
+ */
+const SET_PASSWORD_SCREEN: readonly string[] = Object.values(SET_PASSWORD_PARTS).map((parts) =>
+  join(srcRoot, ...parts),
+);
+/** Its rules: the local refusals, the save's failures and the live checks' state, off `\w*MessageKey` unions. */
+const SET_PASSWORD_KEYS = join(srcRoot, 'features', 'auth', 'services', 'set-password.ts');
 const NOT_FOUND = join(srcRoot, 'pages', 'not-found.tsx');
 // `pages/index.tsx` IS NOT A SCREEN and is swept by nothing here: `/` forwards
 // a signed-in visitor to the first destination and renders nothing, so the file
@@ -187,6 +204,9 @@ const MEMBER_CREATE: readonly string[] = [
   join(MEMBERS_FEATURE, 'hooks', 'use-member-create.ts'),
   join(MEMBERS_FEATURE, 'components', 'member-create-card.tsx'),
   join(MEMBERS_FEATURE, 'components', 'member-create-about.tsx'),
+  // STORY 7.8: the one-time credential's line with `Kopiraj`, shared with
+  // the edit form's reset.
+  join(MEMBERS_FEATURE, 'components', 'credential-line.tsx'),
   join(MEMBERS_FEATURE, 'utils', 'refusal-text.ts'),
 ];
 /** The leave feature, which holds the member page's leave card (story 5.1c). */
@@ -232,6 +252,9 @@ const MEMBER_EDIT: readonly string[] = [
   join(MEMBERS_FEATURE, 'components', 'member-team-card.tsx'),
   join(MEMBERS_FEATURE, 'components', 'member-status-card.tsx'),
   join(MEMBERS_FEATURE, 'components', 'member-reset-card.tsx'),
+  // STORY 7.8: the reset's credential line with `Kopiraj`, shared with the
+  // create form.
+  join(MEMBERS_FEATURE, 'components', 'credential-line.tsx'),
   join(MEMBERS_FEATURE, 'utils', 'refusal-text.ts'),
   join(MEMBERS_FEATURE, 'utils', 'date-refusal.ts'),
   // STORY 5.5e: the copy of the team and status cards' erasure dialogs.
@@ -506,6 +529,9 @@ const RANK_KEYS = join(srcRoot, 'features', 'members', 'utils', 'rank.ts');
 /** The fixed position list as data (team position), and its label mapping. */
 const POSITION_KEYS = join(srcRoot, 'features', 'members', 'utils', 'position.ts');
 
+/** Story 7.8's `Kopiraj`: the copy and its two status lines' mapping. */
+const CREDENTIAL_COPY_KEYS = join(srcRoot, 'features', 'members', 'utils', 'credential-copy.ts');
+
 /**
  * The one signed-URL read behind every lockup.
  *
@@ -615,6 +641,9 @@ const SCREENS = [
   // `Zaboravljena lozinka?` disclosure). The bare-`/prijava` prompt's two
   // controls went with it.
   { name: 'the sign-in screen', file: SCREEN, expectedControls: 7 },
+  // STORY 7.8. FIVE on the set-password step: the new password and its
+  // repeat, the show/hide toggle, `Spremi i nastavi` and `Odjava`.
+  { name: 'the set-password screen', file: SET_PASSWORD_SCREEN, expectedControls: 5 },
   { name: 'the not-found component', file: NOT_FOUND, expectedControls: 1 },
   // EIGHT, and it was seven until story 1.4b: the settings surface carries five
   // fields — name, type, timezone and the leave year's month and day — plus a
@@ -686,7 +715,9 @@ const SCREENS = [
   //
   // NINE SINCE MEMBER RANK: the rank `<select>`, rendered only while the
   // organization uses ranks — written once, so counted once.
-  { name: 'the member create form', file: MEMBER_CREATE, expectedControls: 9 },
+  //
+  // TEN SINCE STORY 7.8: `Kopiraj` beside the issued password.
+  { name: 'the member create form', file: MEMBER_CREATE, expectedControls: 10 },
   // TWELVE on the edit form: the same eight, plus the admin-issued reset's
   // FOUR `<Button>`s — the offer, the confirm and cancel that replace it, and
   // the dismiss on the shown credential. Four and not one, because the reset is
@@ -723,7 +754,10 @@ const SCREENS = [
   // confirmation offers when what its change would erase cannot be checked,
   // one in each card. The erasure dialog's own controls are the shared
   // component's, swept as an entry of their own.
-  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 35 },
+  //
+  // THIRTY-SIX SINCE STORY 7.8: `Kopiraj` beside the reset's password, the
+  // create form's credential line, written once and shared.
+  { name: 'the member edit form', file: MEMBER_EDIT, expectedControls: 36 },
   // STORY 1.7a. FOUR on the team list: the link back to `Ljudi`, the one name
   // `<Input>`, the add `<Button>`, and ONE row link written once inside the map
   // over the teams — the same count at zero teams as at nine. SIX on one team:
@@ -963,6 +997,13 @@ const FORM_SCREENS = [
   // `finally` left the whole suite green while the identically shaped sign-in
   // screen was protected against exactly that.
   { name: 'the sign-in screen', file: SCREEN, effect: 'signIn(', inFlight: 'exchanging' },
+  // STORY 7.8: the set-password step, on the sign-in screen's terms.
+  {
+    name: 'the set-password screen',
+    file: SET_PASSWORD_SCREEN,
+    effect: 'savePassword(',
+    inFlight: 'exchanging',
+  },
   // Story 1.4a. The settings surface is the third screen with a form, and it is
   // the one with the most to lose from getting the uncontrolled-ref shape wrong:
   // five fields rather than two, so a refusal that re-rendered them away would
@@ -2042,6 +2083,16 @@ const KEY_SOURCES = [
   // toggle's `passwordShow`; `submit` and `pending`; and the disclosure's
   // `trigger`, `heading` and `body`.
   { name: 'the sign-in screen', file: SCREEN, keys: translationKeys, strings: 16 },
+  // STORY 7.8. ELEVEN on the set-password step: the heading and the lede; the
+  // two field labels and the toggle's `passwordShow`; the two live checks;
+  // `submit` and `pending`; `Odjava` and the sign-out refusal. The checks'
+  // met / not-yet words and the save's refusals come through the next entry.
+  { name: 'the set-password screen', file: SET_PASSWORD_SCREEN, keys: translationKeys, strings: 11 },
+  // EIGHT over two unions: the six failures (`setPasswordMessageKey`) — the
+  // sixth, `signInAgain`, from the 7.8 review: a refused token after the
+  // password landed — and the live checks' two states in words
+  // (`ruleStateMessageKey`).
+  { name: 'the set-password rules', file: SET_PASSWORD_KEYS, keys: messageKeyUnions, strings: 8 },
   { name: 'the not-found component', file: NOT_FOUND, keys: translationKeys, strings: 2 },
   // THREE on the sign-in frame (visual refresh A): the brand panel's product
   // name, headline and subline, written once and rendered around both steps,
@@ -2840,10 +2891,12 @@ const KEY_SOURCES = [
     // `t()` through `rankMessageKey`, counted with the rank rules below.
     // NINETEEN SINCE DESIGN REFRESH C: the lede, the two section headings,
     // and the aside's title and body.
+    //
+    // TWENTY SINCE STORY 7.8: `Kopiraj` on the credential line.
     name: 'the member create form',
     file: MEMBER_CREATE,
     keys: translationKeys,
-    strings: 19,
+    strings: 20,
   },
   {
     // EIGHTEEN on the edit form: its own heading, five field labels, save,
@@ -2920,10 +2973,12 @@ const KEY_SOURCES = [
     // "Potvrdi brisanje", "Zadrži", the way back and the kept hint); and in
     // each of the two cards the unavailable line, its retry and the removed
     // count beside the saved line.
+    //
+    // NINETY-FIVE SINCE STORY 7.8: `Kopiraj` on the reset's credential line.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 94,
+    strings: 95,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`
@@ -3038,6 +3093,13 @@ const KEY_SOURCES = [
     file: POSITION_KEYS,
     keys: memberListKeys,
     strings: 7,
+  },
+  {
+    // STORY 7.8. TWO: what `Kopiraj` did — copied, or write it down.
+    name: 'the credential copy mapping',
+    file: CREDENTIAL_COPY_KEYS,
+    keys: memberListKeys,
+    strings: 2,
   },
   {
     // TEN since story 1.4b, and one function rather than two: the surface
@@ -3176,7 +3238,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     //
     // TWENTY-SIX SINCE STORY 7.7: the organization prompt is gone. Bare
     // `/prijava` renders the sign-in screen, which is already an entry.
-    expect(SCREENS).toHaveLength(26);
+    //
+    // TWENTY-SEVEN SINCE STORY 7.8: the set-password step.
+    expect(SCREENS).toHaveLength(27);
     //
     // FORTY-NINE SINCE STORY 3.6b: `@/features/calendar/services/roster-write`.
     //
@@ -3210,7 +3274,10 @@ describe('the screen is read at all, so every sweep below means something', () =
     //
     // SIXTY SINCE STORY 7.7: the organization prompt, which rendered its own
     // three keys, is gone; the sign-in screen renders its label now.
-    expect(KEY_SOURCES).toHaveLength(60);
+    //
+    // SIXTY-THREE SINCE STORY 7.8: the set-password step, its rules, and the
+    // credential copy's mapping.
+    expect(KEY_SOURCES).toHaveLength(63);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -3236,7 +3303,7 @@ describe('the screen is read at all, so every sweep below means something', () =
         .map((name) => join(MEMBERS_FEATURE, folder, name));
     // The rule modules under `utils/` that predate B1 are key sources of
     // their own, read through `KEY_SOURCES`, and render no screen.
-    const ruleModules = new Set([RANK_KEYS, POSITION_KEYS]);
+    const ruleModules = new Set([RANK_KEYS, POSITION_KEYS, CREDENTIAL_COPY_KEYS]);
     const found = [...parts('components'), ...parts('hooks'), ...parts('utils')].filter(
       (file) => !ruleModules.has(file),
     );
@@ -4184,7 +4251,10 @@ describe('the screen is read at all, so every sweep below means something', () =
     // `services/sign-out.ts`. ANY
     // SCRIPT MODULE (`.[cm]?[jt]sx?`), less tests and declaration files, and
     // ANY `*.fixture.*`, which renders nothing, is left out by its shape.
-    const exempt = new Set(SIGN_IN_SCREEN_EXEMPT.map((entry) => join(AUTH_FEATURE, ...entry.file.split('/'))));
+    // STORY 7.8: the set-password step shares the feature, so the walk
+    // answers to BOTH sets and both exemption lists.
+    const exemptions = [...SIGN_IN_SCREEN_EXEMPT, ...SET_PASSWORD_SCREEN_EXEMPT];
+    const exempt = new Set(exemptions.map((entry) => join(AUTH_FEATURE, ...entry.file.split('/'))));
     const walked = readdirSync(AUTH_FEATURE, { recursive: true, encoding: 'utf8' })
       .filter(
         (name) =>
@@ -4200,16 +4270,18 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect([...exempt].sort(), 'the sign-in exemptions changed').toEqual(
       [
         'sign-in-screen.fixture.ts',
+        'set-password-screen.fixture.ts',
         'services/address.ts',
         'services/last-organization.ts',
         'services/return-target.ts',
+        'services/set-password.ts',
         'services/sign-in.ts',
         'services/sign-out.ts',
       ]
         .map((file) => join(AUTH_FEATURE, ...file.split('/')))
         .sort(),
     );
-    for (const entry of SIGN_IN_SCREEN_EXEMPT) {
+    for (const entry of exemptions) {
       expect(entry.why.length, `${entry.file} is exempt without a stated reason`).toBeGreaterThan(20);
     }
     // DISJOINT from EVERY other screen in `SCREENS` — the member, settings,
@@ -4225,6 +4297,24 @@ describe('the screen is read at all, so every sweep below means something', () =
       expect.arrayContaining([NOT_FOUND, ...TEAM_ROSTER, ...KALENDAR, ...SETTINGS, ...MEMBER_EDIT]),
     );
     for (const file of SCREEN) expect(others, `${file} is in the sign-in set and another`).not.toContain(file);
+    // AND THE SET-PASSWORD SET IS DISJOINT from every other screen too.
+    const besidesSetPassword = SCREENS.filter((screen) => screen.file !== SET_PASSWORD_SCREEN).flatMap(
+      (screen) => (typeof screen.file === 'string' ? [screen.file] : [...screen.file]),
+    );
+
+    for (const file of SET_PASSWORD_SCREEN) {
+      expect(besidesSetPassword, `${file} is in the set-password set and another`).not.toContain(file);
+      expect(existsSync(file), `${file} is in the set and does not exist`).toBe(true);
+      expect(source(file).trim().length, `${file} is all but empty`).toBeGreaterThan(150);
+    }
+    expect(SET_PASSWORD_SCREEN[0], 'the set-password page is read first').toBe(SET_PASSWORD_PAGE);
+    expect(
+      source(SET_PASSWORD_SCREEN).match(/function submit\(/g)?.length,
+      'the set-password submit is not declared exactly once',
+    ).toBe(1);
+    expect(source(SET_PASSWORD_HOOK), 'the set-password submit is not in its hook').toMatch(
+      /\n {2}(?:async )?function submit\(/,
+    );
     for (const file of SCREEN) {
       expect(existsSync(file), `${file} is in the set and does not exist`).toBe(true);
       // NON-VACUITY PER FILE, with a floor rather than "not empty".
@@ -4236,8 +4326,13 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(source(SIGN_IN_HOOK), 'submit is not in its hook').toMatch(/\n {2}(?:async )?function submit\(/);
     expect(
       found.filter((file) => !exempt.has(file)).sort(),
-      'the sign-in file set and the feature folders disagree',
-    ).toEqual(SCREEN.filter((file) => file !== SIGN_IN_PAGE).sort());
+      'the two auth file sets and the feature folders disagree',
+    ).toEqual(
+      [
+        ...SCREEN.filter((file) => file !== SIGN_IN_PAGE),
+        ...SET_PASSWORD_SCREEN.filter((file) => file !== SET_PASSWORD_PAGE),
+      ].sort(),
+    );
   });
 
   it('holds one instance of its hook, in the page, on the sign-in screen', () => {
@@ -4305,6 +4400,32 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(buttonElements(source(SCREEN))).toHaveLength(4);
     expect(occurrences(source(SIGN_IN_FORM), 'type="submit"'), 'not exactly one submit button').toBe(1);
     expect(occurrences(source(SIGN_IN_FORM), 'type="button"'), 'a non-submit button would submit').toBe(3);
+  });
+});
+
+describe('the set-password step is one form with nothing to skip it (story 7.8)', () => {
+  it('finds its two fields and its three buttons, in the form', () => {
+    // The new password and its repeat; the show/hide toggle, `Spremi i
+    // nastavi` and `Odjava`. Exactly one submits.
+    expect(inputElements(source(SET_PASSWORD_FORM))).toHaveLength(2);
+    expect(buttonElements(source(SET_PASSWORD_FORM))).toHaveLength(3);
+    expect(inputElements(source(SET_PASSWORD_SCREEN))).toHaveLength(2);
+    expect(buttonElements(source(SET_PASSWORD_SCREEN))).toHaveLength(3);
+    expect(occurrences(source(SET_PASSWORD_FORM), 'type="submit"')).toBe(1);
+  });
+
+  it('never disables its submit, and says new-password to the credential manager', () => {
+    const form = source(SET_PASSWORD_FORM);
+
+    expect(form, 'the submit is disabled rather than refusing').not.toMatch(/(?<![-\w])disabled=/);
+    expect(occurrences(form, 'autoComplete="new-password"')).toBe(2);
+    expect(form).toContain('role="status"');
+  });
+
+  it('holds its one hook in the page, and its one exchange in the hook', () => {
+    expect(occurrences(source(SET_PASSWORD_PAGE), 'useSetPassword(')).toBe(1);
+    expect(source(SET_PASSWORD_HOOK)).toContain('savePassword(');
+    expect(occurrences(source(SET_PASSWORD_SCREEN), 'Effect('), 'an effect arrived on the step').toBe(0);
   });
 });
 
@@ -6314,6 +6435,8 @@ describe('the keys rendered and the keys declared are the same set', () => {
       // STORY 5.1c: `@/features/leave/services/leave-section` maps the leave
       // card's reasons and refusals.
       LEAVE_SECTION_KEYS,
+      // STORY 7.8: `Kopiraj`'s two status lines.
+      CREDENTIAL_COPY_KEYS,
     ]
       .map((file) => source(file))
       .join('\n');
@@ -7307,7 +7430,8 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // EIGHT SINCE STORY 2.1b: the two hour band screens.
     // TEN SINCE STORY 2.2b: the two shift type screens.
     // ELEVEN SINCE STORY 3.5b: the calendar's override form.
-    expect(IN_FLIGHT_SCREENS.length, 'no form screen declares an in-flight ref').toBe(11);
+    // TWELVE SINCE STORY 7.8: the set-password step.
+    expect(IN_FLIGHT_SCREENS.length, 'no form screen declares an in-flight ref').toBe(12);
     expect(
       IN_FLIGHT_SCREENS.map((screen) => screen.inFlight).sort(),
       'the in-flight ref names drifted from the screens that hold them',
@@ -7315,6 +7439,7 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'creating',
       'creating',
       'creating',
+      'exchanging',
       'exchanging',
       'issuing',
       'saving',
@@ -7348,7 +7473,8 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // erasure dialogs' own saves.
     // TWENTY-NINE SINCE STORY 5.5f: the calendar override form's erasure
     // confirmation.
-    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(29);
+    // THIRTY SINCE STORY 7.8: the set-password step's submit.
+    expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(30);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
       'the in-flight handler names drifted from the handlers that hold them',
@@ -7373,6 +7499,7 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'submit/creating',
       'submit/creating',
       'submit/creating',
+      'submit/exchanging',
       'submit/exchanging',
       'submit/issuing',
       'submit/saving',

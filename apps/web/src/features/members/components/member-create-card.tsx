@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
 import { t } from '@/lib/i18n';
+import { CredentialLine } from '@/features/members/components/credential-line';
 import type { MemberCreate } from '@/features/members/hooks/use-member-create';
 import { NO_TEXT, memberLevelMessageKey } from '@/features/members/services/list';
 import {
@@ -88,7 +89,7 @@ export function MemberCreateCard({ create }: { readonly create: MemberCreate }):
         </div>
         <div className="grid gap-2">
           <p className="text-sm text-muted-foreground">{t('ljudi.form.credential')}</p>
-          <p className="break-all font-mono text-base">{issued.password}</p>
+          <CredentialLine password={issued.password} />
         </div>
         <p className="text-sm font-medium">{t('ljudi.form.credentialOnce')}</p>
       </div>

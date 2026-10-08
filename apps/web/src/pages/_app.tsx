@@ -3,6 +3,7 @@ import type { Session } from '@supabase/supabase-js';
 
 import { AppChrome } from '@/features/navigation/components/chrome';
 import { returnSearchFor } from '@/features/auth/services/return-target';
+import { mustSetPassword } from '@/features/auth/services/set-password';
 import { rootRoute } from '@/pages/__root';
 import { SESSION_UNRESOLVED } from '@/lib/supabase/client';
 
@@ -115,7 +116,17 @@ export const appLayoutRoute = createRoute({
       console.error(SESSION_UNRESOLVED, cause);
     }
 
-    if (session !== null) return;
+    if (session !== null) {
+      // THE FIRST SIGN-IN (story 7.8). A session admin-auth flagged — a new
+      // account, or one an admin reset — reaches no destination until the
+      // member has set their own password. Every destination nests here, so
+      // one check holds them all; `/postavi-lozinku` sits OUTSIDE this layout
+      // or it would redirect to itself. The flag is read off the session the
+      // guard already holds: who the person is, never what they may do.
+      if (mustSetPassword(session)) throw redirect({ to: '/postavi-lozinku' });
+
+      return;
+    }
 
     // THE WHOLE LOCATION TRAVELS, path included. AD-14 has the host answer every
     // path with `index.html` at 200, so `/kalendar?tim=2#tjedan` is a shape a

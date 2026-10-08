@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ConfirmDialog, DialogFooter } from '@/components/ui/dialog';
 import { Notice } from '@/components/ui/notice';
+import { CredentialLine } from '@/features/members/components/credential-line';
 import { t } from '@/lib/i18n';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import {
@@ -167,11 +168,12 @@ export function MemberResetCard({ edit }: { readonly edit: MemberEdit }): ReactN
               one screen where the distinction decides what somebody writes
               down. */}
           <p className="text-sm text-muted-foreground">{t('ljudi.form.resetCredential')}</p>
-          {/* DATA, never a key. `break-all font-mono` is what makes a generated
-              string readable aloud off a phone. */}
-          <p className="break-all font-mono text-base">{shown.password}</p>
+          {/* DATA, never a key, with `Kopiraj` beside it (story 7.8). */}
+          <CredentialLine password={shown.password} />
         </div>
-        <p className="text-sm font-medium">{t('ljudi.form.credentialOnce')}</p>
+        {/* ITS OWN SENTENCE: a reset is not the first sign-in, so it names
+            the NEXT one (story 7.8). */}
+        <p className="text-sm font-medium">{t('ljudi.form.resetCredentialOnce')}</p>
         <Button
           className="h-11 w-full"
           type="button"

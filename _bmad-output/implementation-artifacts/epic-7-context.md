@@ -4,7 +4,7 @@
 
 ## Goal
 
-Every shipped screen should read calm, minimal and simple on a phone (390 px) and a desktop (1440 px), in both light and dark themes. A pilot user finds each answer at a glance and makes each change behind one Save. The epic fixes defects measured in the 2026-10-01 UX review and rewrites already-shipped surfaces through new stories, without rolling any completed story back. It also adds four small capabilities: a first-sign-in password, an explanation for any hours figure, an admin leave overview and a history of resolved conflicts. Foundations 7.1–7.6 have shipped (dark tokens, DM Sans numerals, the four-tab phone bar with *Više*, the shared month toolbar, filter chips, stacked rows on phones). 7.7–7.18 remain, in dependency order. The reference design is the approved mockups in `ux-designs/ux-shift-2026-10-01-redesign/mockups/` (one file per area: `sign-in-1`, `calendar-1`, `hours-1`, `leave-1`, `conflicts-1`, `people-1`, `member-page-1`, `setup-1`) and the 27 decisions in that folder's README. Where a mockup and an epic criterion disagree, the criterion wins.
+Every shipped screen should read calm, minimal and simple on a phone (390 px) and a desktop (1440 px), in both light and dark themes. A pilot user finds each answer at a glance and makes each change behind one Save. The epic fixes defects measured in the 2026-10-01 UX review and rewrites already-shipped surfaces through new stories, without rolling any completed story back. It also adds four small capabilities: a first-sign-in password, an explanation for any hours figure, an admin leave overview and a history of resolved conflicts. Stories 7.1–7.7 have shipped (dark tokens, DM Sans numerals, the four-tab phone bar with *Više*, the shared month toolbar, filter chips, stacked rows on phones, one-form sign-in). 7.8–7.18 remain, in dependency order. The reference design is the approved mockups in `ux-designs/ux-shift-2026-10-01-redesign/mockups/` (one file per area: `sign-in-1`, `calendar-1`, `hours-1`, `leave-1`, `conflicts-1`, `people-1`, `member-page-1`, `setup-1`) and the 27 decisions in that folder's README. Where a mockup and an epic criterion disagree, the criterion wins.
 
 ## Stories
 
@@ -31,10 +31,7 @@ Every shipped screen should read calm, minimal and simple on a phone (390 px) an
 
 - **Definition of done on every surface:** no horizontal page scroll at phone width (tables stack below 640 px, and the calendar grid scrolls inside its own container). No information is shown by colour alone. Every surface is keyboard operable and has meaningful labels for assistive technology. Text meets WCAG 2.1 AA in both themes.
 - **Figures agree everywhere.** Hour and leave figures match on every surface at a given moment. A row in an overview equals that member's own view.
-- **Sign-in:**
-  - It reveals nothing before authentication. With `/prijava/<slug>`, the organization shows as the slug only, read-only, with `Promijeni`. No organization name or logo is looked up (this overrides the mockup's logo row).
-  - Without the URL, the field is prefilled from the last organization used on this device (localStorage), and is empty when storage is unavailable. A slug that does not exist stays editable and fails like any other wrong value.
-  - One generic error covers a wrong organization, username or password: `Organizacija, korisničko ime ili lozinka nisu točni.`
+- **Sign-in (shipped in 7.7, keep it intact):** one form, nothing looked up before authentication (no organization name or logo). From `/prijava/<slug>` the slug is a read-only row with `Promijeni`. Otherwise the field is prefilled with the last organization signed into on this device, remembered only after a successful sign-in and only the slug (never username or password, no lasting "remember me" session). One generic error covers a wrong organization, username or password.
 - **First sign-in:** a member with an admin-issued or admin-reset password reaches only the set-password step until they save their own. An admin reset puts them back under this rule. The issued password is four words, shown to the admin once with `Kopiraj`. After saving, the member continues to their landing surface without signing in again.
 - **Hours explanation:** any Sati figure opens the shifts and bands that compose it. Each line shows the date, shift type, band hours and source (rotation, override or leave). A shift in unresolved conflict is marked as it is on the view. The equation sums exactly to the figure.
 - **Admin leave overview:** each row shows allowance, used and balance for the leave year, and allowance − used = balance on every row. A member-role account is refused.
@@ -61,6 +58,7 @@ Every shipped screen should read calm, minimal and simple on a phone (390 px) an
 
 - **Facts plus dialogs:** day detail, the member page, Ljudi and Organizacija read as facts. Each change opens its own small dialog with one Save and a computed *Što se mijenja* before saving. A team change starts empty and never preselects a team.
 - **Reuse the shipped patterns:** use the 7.4 month toolbar, the 7.5 filter chips with summary line and `Poništi filtre` (7.13's Ljudi status chip reuses them), and the 7.6 stacked rows for new tables (the 7.14 footer total and the 7.15 overview).
+- **Stacked rows below 640 px:** a `usePhone()` switch renders exactly one form in the DOM (`StackedList`/`StackedRow`/`StackedFields`/`StackedField`, never a table restyled or hidden). Every value keeps its column label for assistive technology; sort and filter state live outside the table so crossing 640 px keeps them; on a phone the sort is one `Poredano: {column} ↑|↓` control. Grids (calendar, week, rotation preview) still scroll inside their own box. A Ljudi row is one link to the member, with no pencil.
 - **Neutral confirmations:** removal and deactivation ask one neutral question, giving a date and the consequence in numbers. `destructive` styling is reserved for unresolved conflicts, and destructive actions are never styled destructive.
 - **Status feedback:** a status line is `Notice role="status"` and disappears on navigation. Do not use toasts or standing banners.
 - **Empty states and counts:** say what is true, never "no results". A zero count is still shown, such as the *Neriješeni* count at zero.
@@ -70,9 +68,9 @@ Every shipped screen should read calm, minimal and simple on a phone (390 px) an
 
 ## Cross-Story Dependencies
 
-- 7.1–7.6 are done.
+- 7.1–7.7 are done.
 - 7.8 needs 7.7 and carries the AD-16 edit.
 - 7.9 needs 7.5 and 5.4's helper. 7.16 needs 5.4. 7.17 needs 7.3.
 - 7.12 and 7.13 need 7.11. 7.13, 7.14 and 7.15 need 7.6.
-- 7.7, 7.10, 7.11 and 7.18 have no story prerequisites. Their PRD edits have already landed.
-- Epic 7 rewrites shipped surfaces from 1.3/1.3b (sign-in), 1.4 (organization settings), 1.8 (roster), 2.4, 3.3–3.6 (calendar, day detail and overrides), 4.1b/4.2 (hours) and 5.1/5.2 (leave). Expect churn in unit tests and e2e page objects, including sign-in helpers once sign-in becomes one form.
+- 7.10, 7.11 and 7.18 have no story prerequisites. Their PRD edits have already landed.
+- Epic 7 rewrites shipped surfaces from 1.3/1.3b (sign-in), 1.4 (organization settings), 1.8 (roster), 2.4, 3.3–3.6 (calendar, day detail and overrides), 4.1b/4.2 (hours) and 5.1/5.2 (leave). Expect churn in unit tests and e2e page objects.
