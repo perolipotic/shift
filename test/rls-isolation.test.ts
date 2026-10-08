@@ -12,7 +12,11 @@ import {
 } from '../supabase/functions/admin-auth/authorize.ts';
 import {
   MEMBER_UNKNOWN,
+  MUST_SET_PASSWORD,
+  PASSWORD_FLAG_CLEARED,
   PASSWORD_RESET,
+  clearMustSetPassword,
+  createUser,
   resetPassword,
   updateUserById,
   type CallerClient,
@@ -4895,6 +4899,20 @@ describe('an admin-issued reset replaces the credential and ends every session i
 
     return {
       auth: {
+        // STORY 7.8: whose token this is, as `supabase-js`'s `auth.getUser(jwt)`
+        // asks GoTrue — the one read `clearMustSetPassword` names its target by.
+        getUser: async (jwt) => {
+          const response = await fetch(`${endpoint.url}/auth/v1/user`, {
+            headers: { apikey: adminKey, Authorization: `Bearer ${jwt}` },
+          });
+          const body: unknown = await response.json();
+          const fields =
+            typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+
+          return response.ok
+            ? { data: { user: { id: fields['id'] } }, error: null }
+            : { data: { user: null }, error: { status: response.status } };
+        },
         admin: {
           createUser: () => Promise.reject(new Error('a reset must not create an account')),
           deleteUser: () => Promise.reject(new Error('a reset must not delete an account')),
@@ -5247,6 +5265,288 @@ describe('an admin-issued reset replaces the credential and ends every session i
         expect(reply.status).toBe(404);
         expect(reply.body).toEqual({ code: MEMBER_UNKNOWN });
         expect((await grant(target, ISSUED)).status, 'a refused reset moved the password').toBe(200);
+      } finally {
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  // ------------------------------------------------- the first sign-in (7.8)
+
+  /** The flag as GoTrue stores it, read as the owner: `true`, `false`, or
+   *  `null` when the account has none. */
+  async function flagOf(client: Client, authUserId: string): Promise<boolean | null> {
+    const { rows } = await client.query<{ flag: boolean | null }>(
+      `select (raw_app_meta_data->>'${MUST_SET_PASSWORD}')::boolean as flag from auth.users where id = $1`,
+      [authUserId],
+    );
+
+    return rows[0]?.flag ?? null;
+  }
+
+  /** A JWT's claims, unverified — GoTrue minted it a line earlier. */
+  function claimsOf(token: string): Record<string, unknown> {
+    const payload = token.split('.')[1] ?? '';
+
+    return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as Record<string, unknown>;
+  }
+
+  it.skipIf(noAdminApi).each(FIXTURES)(
+    'flags a $fixture account createUser issues, so its first sign-in is held at the step',
+    async ({ slug, admin }) => {
+      // THE REAL OPERATION, against the stack: GoTrue's admin API for the
+      // account, and PostgREST as the admin for the `members` row.
+      const client = await connect();
+      const endpoint = apiEndpoint;
+      if (endpoint === undefined || adminKey === undefined) throw new Error('unreachable: gated by skipIf');
+      const username = `${THROWAWAY}-created-${slug}`;
+      const issuedAddress = address(username, slug);
+      const token = await tokenFor(admin, slug);
+      const base = callerOver(token);
+      const caller: CallerClient = {
+        ...base,
+        from: (table) => ({
+          ...base.from(table),
+          insert: (values) => ({
+            select: async (columns) => {
+              const response = await rest(`${table}?select=${columns}`, {
+                token,
+                method: 'POST',
+                body: values,
+                prefer: 'return=representation',
+              });
+              const body: unknown = await response.json();
+
+              return response.ok
+                ? { data: body, error: null }
+                : { data: null, error: { code: String((body as Record<string, unknown>)['code'] ?? response.status) } };
+            },
+          }),
+        }),
+      };
+      const headers = {
+        apikey: adminKey,
+        Authorization: `Bearer ${adminKey}`,
+        'content-type': 'application/json',
+      };
+      const privileged = privilegedOverAdminApi();
+      const accounts: PrivilegedAccounts = {
+        auth: {
+          ...privileged.auth,
+          admin: {
+            ...privileged.auth.admin,
+            createUser: async (attributes) => {
+              const response = await fetch(`${endpoint.url}/auth/v1/admin/users`, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(attributes),
+              });
+              const body = (await response.json()) as Record<string, unknown>;
+
+              return response.ok
+                ? { data: { user: { id: body['id'] } }, error: null }
+                : { data: null, error: { status: response.status, code: String(body['error_code'] ?? '') } };
+            },
+            deleteUser: async (id) => {
+              const response = await fetch(`${endpoint.url}/auth/v1/admin/users/${id}`, {
+                method: 'DELETE',
+                headers,
+              });
+
+              return { error: response.ok ? null : { status: response.status } };
+            },
+          },
+        },
+      };
+
+      try {
+        const organization = (await memberByUsername(client, slug, admin)).organizationId;
+
+        await client.query('delete from members where username = $1 and organization_id = $2', [
+          username,
+          organization,
+        ]);
+        await client.query('delete from auth.users where email = $1', [issuedAddress]);
+
+        const reply = await createUser(
+          { privileged: accounts, caller },
+          {
+            organizationId: organization,
+            name: 'Prva Prijava',
+            username,
+            email: null,
+            role: 'member_role',
+            leaveAllowanceDays: 20,
+          },
+        );
+
+        expect(reply.status, `the create was refused: ${JSON.stringify(reply.body)}`).toBe(201);
+
+        const { rows } = await client.query<{ id: string }>('select id from auth.users where email = $1', [
+          issuedAddress,
+        ]);
+
+        expect(await flagOf(client, rows[0]?.id ?? ''), 'createUser left the flag off').toBe(true);
+        expect(String(reply.body['password'])).toMatch(/^[a-z]{3,6}(-[a-z]{3,6}){3}$/);
+      } finally {
+        await client
+          .query('delete from members where username = $1', [username])
+          .catch(() => undefined);
+        await client.query('delete from auth.users where email = $1', [issuedAddress]).catch(() => undefined);
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(noAdminApi).each(FIXTURES)(
+    'flags a $fixture member on reset, so the next sign-in is held at the set-password step',
+    async ({ slug, admin }) => {
+      const client = await connect();
+
+      try {
+        const organization = (await memberByUsername(client, slug, admin)).organizationId;
+        const { member, address: target } = await targetIn(client, organization);
+
+        expect(await flagOf(client, member.authUserId), 'a seeded account already carried the flag').not.toBe(true);
+
+        const reply = await resetPassword(
+          { privileged: privilegedOverAdminApi(), caller: callerOver(await tokenFor(admin, slug)) },
+          { memberId: member.id },
+        );
+
+        expect(reply.status).toBe(200);
+        expect(await flagOf(client, member.authUserId), 'the reset left the flag off').toBe(true);
+
+        // AND THE SESSION THE NEW CREDENTIAL MINTS CARRIES IT, which is what the
+        // route guard reads.
+        const signedIn = (await (await grant(target, String(reply.body['password']))).json()) as Record<
+          string,
+          unknown
+        >;
+        const user = signedIn['user'] as { app_metadata?: Record<string, unknown> } | undefined;
+
+        expect(user?.app_metadata?.[MUST_SET_PASSWORD]).toBe(true);
+      } finally {
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(noAdminApi).each(FIXTURES)(
+    'lets a $fixture member set their own password and clear their own flag, keeping the session',
+    async ({ slug, admin }) => {
+      const client = await connect();
+      const endpoint = apiEndpoint;
+      if (endpoint === undefined) throw new Error('unreachable: gated by skipIf');
+
+      try {
+        const organization = (await memberByUsername(client, slug, admin)).organizationId;
+        const { member, address: target } = await targetIn(client, organization);
+        const reset = await resetPassword(
+          { privileged: privilegedOverAdminApi(), caller: callerOver(await tokenFor(admin, slug)) },
+          { memberId: member.id },
+        );
+        const issued = String(reset.body['password']);
+        const session = (await (await grant(target, issued)).json()) as Record<string, unknown>;
+        const held = String(session['access_token'] ?? '');
+        const refresh = String(session['refresh_token'] ?? '');
+        const chosen = 'moja-vlastita-lozinka-7';
+
+        const asMember = (body: Readonly<Record<string, unknown>>): Promise<Response> =>
+          fetch(`${endpoint.url}/auth/v1/user`, {
+            method: 'PUT',
+            headers: {
+              apikey: endpoint.key,
+              Authorization: `Bearer ${held}`,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify(body),
+          });
+
+        // THE REASON STEP 2 EXISTS: GoTrue's own user update will not let the
+        // member write `app_metadata`, so the flag cannot be cleared from the
+        // browser.
+        await asMember({ app_metadata: { [MUST_SET_PASSWORD]: false } });
+        expect(await flagOf(client, member.authUserId), 'a member cleared their own app_metadata').toBe(true);
+
+        // STEP 1, AS THE MEMBER: their own password.
+        const updated = await asMember({ password: chosen });
+
+        expect(updated.status, 'the member could not set their own password').toBe(200);
+        expect(await flagOf(client, member.authUserId), 'setting a password cleared the flag').toBe(true);
+
+        // STEP 2: the operation, with the member's own token.
+        const cleared = await clearMustSetPassword({ privileged: privilegedOverAdminApi() }, `Bearer ${held}`);
+
+        expect(cleared).toEqual({ status: 200, body: { code: PASSWORD_FLAG_CLEARED } });
+        expect(await flagOf(client, member.authUserId)).toBe(false);
+        // NO SESSION REVOKED: the token the member is continuing in still works.
+        expect(await stillAuthenticates(held), 'the clear ended the member\'s session').toBe(true);
+
+        // STEP 3: the refreshed token carries the flag false — what the guard reads.
+        const renewed = await fetch(`${endpoint.url}/auth/v1/token?grant_type=refresh_token`, {
+          method: 'POST',
+          headers: { apikey: endpoint.key, 'content-type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refresh }),
+        });
+        const fresh = (await renewed.json()) as Record<string, unknown>;
+
+        expect(renewed.status, 'the session could not be refreshed').toBe(200);
+        expect(
+          (claimsOf(String(fresh['access_token'] ?? ''))['app_metadata'] as Record<string, unknown>)[
+            MUST_SET_PASSWORD
+          ],
+        ).toBe(false);
+        // AND THE PASSWORD IS THE MEMBER'S NOW.
+        expect((await grant(target, chosen)).status).toBe(200);
+        expect((await grant(target, issued)).ok, 'the issued password still signs in').toBe(false);
+      } finally {
+        await client.end();
+      }
+    },
+    30_000,
+  );
+
+  it.skipIf(noAdminApi).each(FIXTURES)(
+    'leaves another $fixture member\'s flag alone, whatever the body names',
+    async ({ slug, admin }) => {
+      const client = await connect();
+
+      try {
+        const organization = (await memberByUsername(client, slug, admin)).organizationId;
+        const adminToken = await tokenFor(admin, slug);
+        const first = await targetIn(client, organization);
+        const second = await targetIn(client, organization);
+
+        for (const target of [first, second]) {
+          await resetPassword(
+            { privileged: privilegedOverAdminApi(), caller: callerOver(adminToken) },
+            { memberId: target.member.id },
+          );
+        }
+
+        // The first member's own session, from a credential set through the
+        // admin API so the issued one need not be carried.
+        const endpoint = apiEndpoint;
+        if (endpoint === undefined || adminKey === undefined) throw new Error('unreachable: gated by skipIf');
+        await fetch(`${endpoint.url}/auth/v1/admin/users/${first.member.authUserId}`, {
+          method: 'PUT',
+          headers: { apikey: adminKey, Authorization: `Bearer ${adminKey}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ password: ISSUED }),
+        });
+        const session = (await (await grant(first.address, ISSUED)).json()) as Record<string, unknown>;
+
+        expect(
+          await clearMustSetPassword(
+            { privileged: privilegedOverAdminApi() },
+            `Bearer ${String(session['access_token'] ?? '')}`,
+          ),
+        ).toEqual({ status: 200, body: { code: PASSWORD_FLAG_CLEARED } });
+        expect(await flagOf(client, first.member.authUserId)).toBe(false);
+        expect(await flagOf(client, second.member.authUserId), 'a clear reached another account').toBe(true);
       } finally {
         await client.end();
       }

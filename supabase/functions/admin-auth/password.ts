@@ -9,130 +9,116 @@
  * bundle, out of the request body and out of every log, and leaves exactly one
  * copy: the one shown once on screen.
  *
- * WHY THE ALPHABET IS SHORTER THAN YOU WOULD WRITE BY HAND. This credential is
- * READ ALOUD or copied off a screen by somebody who cannot be sent a link, so
- * every pair a person confuses in that setting is excluded — and excluded on
- * BOTH SIDES, which is the half that is easy to get wrong. Dropping `0`, `O`,
- * `1`, `l` and `I` while keeping lowercase `o` and `i` leaves precisely the
- * confusion the exclusion exists to prevent: `o` against `0` is gone but `o`
- * against `O` never was, and `i` against `l` is gone but `i` against `1` never
- * was. So {@link AMBIGUOUS} is closed under the pairs, not a sample of them.
+ * WHY FOUR WORDS (story 7.8, redesign decision 12b). This credential is READ
+ * ALOUD or copied off a screen by somebody who cannot be sent a link, and it is
+ * no longer the member's password for long: the first sign-in makes them set
+ * their own (`app_metadata.must_set_password`). So what it has to be is easy
+ * to say and hear — four short lowercase words from {@link WORDS}, joined by
+ * {@link WORD_SEPARATOR} — rather than sixteen characters nobody can dictate.
+ * The list holds only `a–z`, so no letter is lost between a phone keyboard
+ * and a spoken `č`.
  *
- * WHY REJECTION SAMPLING. `bytes[i] % alphabet.length` is the obvious line and
- * it is biased: 256 is not a multiple of the alphabet's length, so the first
- * `256 mod length` characters come up more often than the rest. The bias is
- * small and it is also completely invisible — every password still looks random
- * — which is why it has to be refused by construction rather than noticed.
- * Bytes at or above {@link PASSWORD_ACCEPTABLE_BYTES} are DISCARDED and redrawn.
+ * WHY THERE IS NO REJECTION SAMPLING. The list's length is a power of two, so
+ * the low bits of a 16-bit draw map onto it exactly: every 16-bit value is one
+ * of `65536 / WORDS.length` values for each word, the same number for every
+ * word. `index % length` is biased only when the range is not a multiple of
+ * the length, and here it is by construction — which `test/admin-auth-boundary.test.ts`
+ * holds by asserting the length is a power of two at all.
  *
- * EVERY FIGURE HERE IS COMPUTED FROM THE LITERAL. The alphabet's size, the
- * entropy and the discard rate are derived below rather than written into this
- * comment, because a number in prose beside the thing it describes is never
- * wrong at the moment somebody reads it and is stale by the next commit — and
- * the 1.5b review found exactly that: arithmetic asserted beside an alphabet it
- * no longer described.
+ * TWO THINGS THROW RATHER THAN DEGRADE. A list whose length is not a power of
+ * two no larger than one 16-bit draw (65536) would make the mask biased or
+ * leave words unreachable, so the module refuses to load with one. And a byte
+ * source that answers with NO bytes would spin the draw loop for ever, so the
+ * generator throws instead — a failed issue, never a hung function.
+ *
+ * EVERY FIGURE HERE IS COMPUTED FROM THE LIST. The bits per word and the
+ * entropy are derived below rather than written into this comment, because a
+ * number in prose beside the thing it describes is stale by the next commit —
+ * and the 1.5b review found exactly that.
  *
  * THE BYTE SOURCE IS A PARAMETER, so `test/admin-auth-boundary.test.ts` can
- * prove the generator CONSUMES it — hand it a source that only ever yields a
- * byte in the discard band followed by an acceptable one, and a generator that
- * quietly fell back to `Math.random` answers the wrong string. Default is
- * `crypto.getRandomValues`, which both Deno and the node suite provide.
+ * prove the generator CONSUMES it — hand it a deterministic source, and a
+ * generator that quietly fell back to `Math.random` answers the wrong words.
+ * Default is `crypto.getRandomValues`, which both Deno and the node suite
+ * provide.
  */
 
-/**
- * Characters excluded because a person reading the credential aloud, or typing
- * it off a screen, confuses them with another character in the set.
- *
- * CLOSED UNDER THE PAIRS: `0/O/o` is one equivalence class and `1/l/I/i` is
- * another, and every member of both is here. Removing one side of a pair is
- * worse than removing neither, because it leaves a set that LOOKS curated.
- */
-export const AMBIGUOUS = '0Oo1lIi';
+import { WORDS } from './words.ts';
 
-function withoutAmbiguous(characters: string): string {
-  return [...characters].filter((character) => !AMBIGUOUS.includes(character)).join('');
+/** How many words a generated credential carries. */
+export const PASSWORD_WORD_COUNT = 4;
+
+/** Between two words. A hyphen survives being read aloud, typed on a phone
+ *  and copied out of a monospace line, and no word in the list contains one. */
+export const WORD_SEPARATOR = '-';
+
+/** One draw's width: two bytes, read big-endian. */
+const BYTES_PER_DRAW = 2;
+const BYTE_BITS = 8;
+
+/** The values one 16-bit draw can take: the ceiling on the list's length. */
+const DRAW_VALUES = 2 ** (BYTES_PER_DRAW * BYTE_BITS);
+
+/** A positive power of two no larger than a draw. Checked at load. */
+function isDrawablePowerOfTwo(length: number): boolean {
+  return Number.isInteger(length) && length > 0 && length <= DRAW_VALUES && (length & (length - 1)) === 0;
 }
 
-const UPPERCASE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-const LOWERCASE = 'abcdefghijklmnopqrstuvwxyz';
-const DIGITS = '0123456789';
+if (!isDrawablePowerOfTwo(WORDS.length)) {
+  throw new Error('PASSWORD_WORDS_NOT_A_POWER_OF_TWO');
+}
 
-/**
- * The alphabet, DERIVED from the three ranges and the exclusion rather than
- * typed out.
- *
- * Typed out, the exclusion becomes a claim about a string somebody transcribed,
- * and the one character accidentally left in is invisible — it reads as a
- * perfectly ordinary letter. Derived, the exclusion is executable, and
- * `test/admin-auth-boundary.test.ts` asserts both that every ambiguous
- * character is absent and that `PASSWORD_ALPHABET.length` equals the value the
- * arithmetic below is computed from.
- */
-export const PASSWORD_ALPHABET =
-  withoutAmbiguous(UPPERCASE) + withoutAmbiguous(LOWERCASE) + withoutAmbiguous(DIGITS);
+/** Thrown when the byte source answers with nothing at all. */
+export const BYTE_SOURCE_EMPTY = 'BYTE_SOURCE_EMPTY';
 
-/** How many characters a generated credential carries. */
-export const PASSWORD_LENGTH = 16;
+/** How many bits each word takes from its draw. Computed from the list. */
+export const BITS_PER_WORD = Math.log2(WORDS.length);
 
-/** One byte's worth of values. Named because three figures below divide by it. */
-const BYTE_VALUES = 256;
-
-/**
- * The highest byte value that can be mapped without bias, exclusive.
- *
- * The largest multiple of the alphabet's length that fits in a byte. Every byte
- * below it maps to exactly one character with exactly the same probability as
- * every other; every byte at or above it is discarded.
- */
-export const PASSWORD_ACCEPTABLE_BYTES =
-  PASSWORD_ALPHABET.length * Math.floor(BYTE_VALUES / PASSWORD_ALPHABET.length);
-
-/** The share of drawn bytes the rejection sampler throws away. Computed, so it
- *  cannot disagree with the alphabet it is a property of. */
-export const PASSWORD_DISCARD_RATE = (BYTE_VALUES - PASSWORD_ACCEPTABLE_BYTES) / BYTE_VALUES;
+/** The low bits of a draw that pick a word. Exact only because the length is a
+ *  power of two — see the header. */
+const WORD_MASK = WORDS.length - 1;
 
 /** How much a generated credential is actually worth, in bits. Computed. */
-export const PASSWORD_BITS_OF_ENTROPY = PASSWORD_LENGTH * Math.log2(PASSWORD_ALPHABET.length);
+export const PASSWORD_BITS_OF_ENTROPY = PASSWORD_WORD_COUNT * BITS_PER_WORD;
 
 /** A source of uniformly random bytes. A PARAMETER — see the header. */
 export type ByteSource = (count: number) => Uint8Array;
 
 /** The real one. `crypto` is a global in Deno and in the node suite alike, so
- *  this module needs no import and stays assertable from both. */
+ *  this module needs no import of its own beyond the list. */
 export const cryptoRandomBytes: ByteSource = (count) =>
   crypto.getRandomValues(new Uint8Array(count));
 
 /**
- * One credential.
+ * One credential: {@link PASSWORD_WORD_COUNT} words, each chosen independently
+ * and uniformly.
  *
- * THE LOOP CANNOT HANG on a real byte source: the discard band is a fraction of
- * a byte's range ({@link PASSWORD_DISCARD_RATE}), so the expected number of
- * draws per character is a small constant and the probability of a long run of
- * discards falls off geometrically. It CAN hang on a deliberately adversarial
- * source that yields only discarded bytes — which is a property of the stub, not
- * of this function, and the alternative (a bounded loop that gives up and
- * returns a short password) fails in the one direction that must never happen
- * silently.
- *
- * Bytes are drawn in batches of the remaining length rather than one at a time,
- * so a source backed by a syscall is asked a handful of times rather than
- * sixteen-plus.
+ * A source that answers SHORT is asked again for the rest, rather than padded:
+ * a missing byte read as zero is the first word of the list, every time.
  */
 export function generatePassword(randomBytes: ByteSource = cryptoRandomBytes): string {
-  const characters: string[] = [];
+  const needed = PASSWORD_WORD_COUNT * BYTES_PER_DRAW;
+  const drawn: number[] = [];
 
-  while (characters.length < PASSWORD_LENGTH) {
-    const drawn = randomBytes(PASSWORD_LENGTH - characters.length);
+  while (drawn.length < needed) {
+    const batch = randomBytes(needed - drawn.length);
 
-    for (const byte of drawn) {
-      if (characters.length === PASSWORD_LENGTH) break;
-      // THE DISCARD. Without it, `byte % length` is biased toward the first
-      // `256 mod length` characters of the alphabet — invisibly.
-      if (byte >= PASSWORD_ACCEPTABLE_BYTES) continue;
+    // NOTHING BACK IS NOT "ASK AGAIN": it would loop for ever.
+    if (batch.length === 0) throw new Error(BYTE_SOURCE_EMPTY);
 
-      characters.push(PASSWORD_ALPHABET[byte % PASSWORD_ALPHABET.length] ?? '');
+    for (const byte of batch) {
+      if (drawn.length === needed) break;
+      drawn.push(byte);
     }
   }
 
-  return characters.join('');
+  const words: string[] = [];
+
+  for (let at = 0; at < needed; at += BYTES_PER_DRAW) {
+    const draw = ((drawn[at] ?? 0) << BYTE_BITS) | (drawn[at + 1] ?? 0);
+
+    words.push(WORDS[draw & WORD_MASK] ?? '');
+  }
+
+  return words.join(WORD_SEPARATOR);
 }

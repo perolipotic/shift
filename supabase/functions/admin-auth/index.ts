@@ -2,8 +2,8 @@
  * admin-auth — the one privileged boundary (AD-16), and it may not think.
  *
  * This is the only server-side component in the system (AD-14). It exposes
- * `createUser`, `updateUserById` and `resetPassword` — the three operations in
- * `OPERATIONS` — and nothing else. It
+ * `createUser`, `updateUserById`, `resetPassword` and `clearMustSetPassword` —
+ * the four operations in `OPERATIONS` — and nothing else. It
  * performs no domain calculation and contains no rule from `engine-rules.md`;
  * adding either is a defect, not a refactor.
  *
@@ -55,9 +55,11 @@ if (!configuration.ok) {
 
 const handle = createHandler(configuration, {
   /**
-   * The privileged client. Its ONLY permitted use is `client.auth.admin.*`.
-   * Reaching for `.from(...)` on this client is the defect AD-16 exists to
-   * prevent — use the caller-scoped client instead.
+   * The privileged client. Its ONLY permitted use is `client.auth.admin.*`,
+   * plus `client.auth.getUser(jwt)` to name the caller of
+   * `clearMustSetPassword` (story 7.8), which writes nothing. Reaching for
+   * `.from(...)` on this client is the defect AD-16 exists to prevent — use
+   * the caller-scoped client instead.
    */
   makePrivilegedClient: () => {
     if (!configuration.ok) throw new Error(configuration.code);

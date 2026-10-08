@@ -17,6 +17,12 @@ import {
   memberWriteMessageKey,
 } from '../apps/web/src/features/members/services/wire.ts';
 import { normalizeUsername, signInAddress } from '../apps/web/src/features/auth/services/address.ts';
+import {
+  CLEAR_MUST_SET_PASSWORD_OPERATION,
+  MUST_SET_PASSWORD as CLIENT_MUST_SET_PASSWORD,
+  PASSWORD_FLAG_CLEARED as CLIENT_PASSWORD_FLAG_CLEARED,
+  SET_PASSWORD_FUNCTION,
+} from '../apps/web/src/features/auth/services/set-password.ts';
 import { NAME_WHITESPACE as CLIENT_NAME_WHITESPACE } from '../apps/web/src/utils/name.ts';
 import {
   ACCESS_UNREADABLE,
@@ -55,6 +61,9 @@ import {
   OPERATION_FAILED,
   ORGANIZATIONS_TABLE,
   ORGANIZATION_UNKNOWN,
+  MUST_SET_PASSWORD,
+  PASSWORD_FLAG_CLEARED,
+  PASSWORD_FLAG_NOT_CLEARED,
   PASSWORD_NOT_APPLIED,
   PASSWORD_RESET,
   PAYLOAD_INVALID,
@@ -64,6 +73,8 @@ import {
   USERNAME_NOT_RESTORED,
   USERNAME_TAKEN,
   ORGANIZATION_UNREADABLE,
+  clearMustSetPassword,
+  createAttributes,
   createPayloadOf,
   NAME_WHITESPACE as FUNCTION_NAME_WHITESPACE,
   createUser,
@@ -80,14 +91,18 @@ import {
   type PrivilegedAccounts,
 } from '../supabase/functions/admin-auth/operations.ts';
 import {
-  AMBIGUOUS,
-  PASSWORD_ACCEPTABLE_BYTES,
-  PASSWORD_ALPHABET,
+  BITS_PER_WORD,
+  BYTE_SOURCE_EMPTY,
   PASSWORD_BITS_OF_ENTROPY,
-  PASSWORD_DISCARD_RATE,
-  PASSWORD_LENGTH,
+  PASSWORD_WORD_COUNT,
+  WORD_SEPARATOR,
   generatePassword,
 } from '../supabase/functions/admin-auth/password.ts';
+import { WORDS } from '../supabase/functions/admin-auth/words.ts';
+
+/** What every issued credential looks like (story 7.8): four words of three
+ *  to six lowercase letters, joined by hyphens. Written out, not derived. */
+const FOUR_WORDS = /^[a-z]{3,6}(-[a-z]{3,6}){3}$/;
 
 /**
  * AD-16 / AD-17 — the privileged boundary refuses to act, and fails fast when
@@ -154,7 +169,7 @@ function allowHeaders(response: Response): Record<string, string> {
   );
 }
 
-describe('admin-auth: exactly three operations, and none of them refuses to act', () => {
+describe('admin-auth: exactly four operations, and none of them refuses to act', () => {
   it('answers a request aimed at a removed operation as unknown, never as 501', async () => {
     // STORY 1.6 REMOVED `ban` AND `unban`. Deactivation is a versioned row
     // written through PostgREST under row level security, and the access token
@@ -179,13 +194,35 @@ describe('admin-auth: exactly three operations, and none of them refuses to act'
     // would reach the handler's final `OPERATION_FAILED`. Each operation with no
     // payload is refused by its own validation instead, which is the proof it
     // was dispatched.
-    for (const operation of OPERATIONS) {
+    for (const operation of OPERATIONS.filter((name) => name !== 'clearMustSetPassword')) {
       const handle = createHandler(readConfiguration(envFrom()), deps());
       const response = await handle(post(operation));
 
       expect(response.status, `${operation} was not dispatched`).toBe(400);
       expect(await response.json()).toEqual({ code: 'PAYLOAD_INVALID' });
     }
+
+    // STORY 7.8's operation takes no payload at all, so it is proved dispatched
+    // by the one thing it does: ask GoTrue whose token it was handed — the
+    // HEADER's, stripped of its scheme — and answer that token's refusal.
+    const asked: string[] = [];
+    const handle = createHandler(readConfiguration(envFrom()), {
+      makePrivilegedClient: vi.fn(() => ({
+        auth: {
+          getUser: (jwt: string) => {
+            asked.push(jwt);
+
+            return Promise.resolve({ data: { user: null }, error: { status: 401, code: 'bad_jwt' } });
+          },
+        },
+      })),
+      makeCallerClient: vi.fn((_authorization: string) => ({ caller: true })),
+    });
+    const response = await handle(post('clearMustSetPassword'));
+
+    expect(response.status, 'clearMustSetPassword was not dispatched').toBe(401);
+    expect(await response.json()).toEqual({ code: AUTHORIZATION_MISSING });
+    expect(asked).toEqual(['caller-jwt']);
   });
 
   it('constructs both clients on a real request, proving the two-client wiring', async () => {
@@ -198,13 +235,19 @@ describe('admin-auth: exactly three operations, and none of them refuses to act'
     expect(dependencies.makeCallerClient).toHaveBeenCalledExactlyOnceWith('Bearer caller-jwt');
   });
 
-  it('exposes exactly the three operations AD-16 permits, and nothing else', async () => {
-    // THREE SINCE STORY 1.6, and every one of them is written out rather than
+  it('exposes exactly the four operations AD-16 permits, and nothing else', async () => {
+    // FOUR SINCE STORY 7.8, and every one of them is written out rather than
     // derived: this list is the whole of what the secret key may be pointed at,
     // so an operation appearing in it is the moment somebody decides a new
     // capability exists. `ban` and `unban` left it by human decision
-    // 2026-09-23.
-    expect([...OPERATIONS]).toEqual(['createUser', 'updateUserById', 'resetPassword']);
+    // 2026-09-23; `clearMustSetPassword` joined it with story 7.8, for the
+    // caller's own first-sign-in flag only.
+    expect([...OPERATIONS]).toEqual([
+      'createUser',
+      'updateUserById',
+      'resetPassword',
+      'clearMustSetPassword',
+    ]);
 
     const handle = createHandler(readConfiguration(envFrom()), deps());
     const response = await handle(post('deleteUser'));
@@ -764,6 +807,17 @@ describe('the function and the SPA speak one vocabulary, bound here', () => {
     expect(MEMBER_CREATED).toBe(CLIENT_MEMBER_CREATED);
     expect(USERNAME_CHANGED).toBe(CLIENT_USERNAME_CHANGED);
     expect(PASSWORD_RESET).toBe(CLIENT_PASSWORD_RESET);
+    // STORY 7.8: the fourth gate. Drifted, a member whose flag was cleared is
+    // told the step failed and retries for ever.
+    expect(PASSWORD_FLAG_CLEARED).toBe(CLIENT_PASSWORD_FLAG_CLEARED);
+  });
+
+  it('spells the first-sign-in clear the way the transport dispatches on it', () => {
+    // The set-password step's own copies (a leaf, like `wire.ts`), bound here:
+    // the operation, the function it is sent to, and the flag's key.
+    expect(OPERATIONS).toContain(CLEAR_MUST_SET_PASSWORD_OPERATION);
+    expect(SET_PASSWORD_FUNCTION).toBe(MEMBER_WRITE_FUNCTION);
+    expect(CLIENT_MUST_SET_PASSWORD).toBe(MUST_SET_PASSWORD);
   });
 
   it('spells the reset operation the way the transport dispatches on it', () => {
@@ -813,95 +867,103 @@ describe('the function and the SPA speak one vocabulary, bound here', () => {
 });
 
 describe('the password an admin hands over is generated, not typed', () => {
-  it('excludes BOTH HALVES of every pair a person confuses', () => {
-    // THE HALF THAT IS EASY TO GET WRONG. Dropping `0`, `O`, `1`, `l` and `I`
-    // while keeping lowercase `o` and `i` leaves exactly the confusion the
-    // exclusion exists to prevent — `o` against `O`, `i` against `1` — on a
-    // credential read aloud to somebody who has no mailbox to send it to.
-    for (const character of AMBIGUOUS) {
-      expect(PASSWORD_ALPHABET, `${character} is still in the alphabet`).not.toContain(character);
+  /**
+   * FOUR WORDS SINCE STORY 7.8 (redesign decision 12b): a credential read
+   * aloud over the phone, and only until the member sets their own at the
+   * first sign-in.
+   */
+
+  it('draws from a list of 2048 unique words of 3 to 6 letters, a to z only', () => {
+    expect(WORDS).toHaveLength(2048);
+    expect(new Set(WORDS).size, 'a word appears twice, so it is twice as likely').toBe(WORDS.length);
+    for (const word of WORDS) expect(word, `${word} is not 3-6 letters a-z`).toMatch(/^[a-z]{3,6}$/);
+  });
+
+  it('holds no near-duplicates: no two words differ only by a final vowel', () => {
+    // `kuca`/`kuce`, or `kos`/`kosa`: two words one inflection apart are one
+    // word said twice over a phone, and the listener cannot tell which.
+    const stems = new Map<string, string>();
+
+    for (const word of WORDS) {
+      const stem = word.replace(/[aeiou]$/, '');
+      const earlier = stems.get(stem);
+
+      expect(earlier, `${word} and ${earlier ?? ''} are one word said twice`).toBeUndefined();
+      stems.set(stem, word);
     }
-    expect([...AMBIGUOUS].sort().join('')).toBe('01IOilo');
   });
 
-  it('pins the alphabet to its ACTUAL size, which every figure below divides by', () => {
-    // 26 + 26 + 10 = 62, minus the seven excluded above. Written out rather than
-    // computed from the same expression the module uses, because a test that
-    // recomputes the implementation asserts nothing about it.
-    expect(PASSWORD_ALPHABET.length).toBe(55);
-    // No duplicates, which a hand-typed alphabet acquires and a derived one
-    // cannot — and a duplicate is a character twice as likely as its neighbours.
-    expect(new Set(PASSWORD_ALPHABET).size).toBe(PASSWORD_ALPHABET.length);
+  it('holds no word with a separator or a letter outside the plain alphabet', () => {
+    // No č ć š ž đ: a phone keyboard and a spoken `č` disagree too often.
+    expect(WORDS.join('')).toMatch(/^[a-z]+$/);
+    expect(WORDS.some((word) => word.includes(WORD_SEPARATOR))).toBe(false);
   });
 
-  it('computes its entropy and its discard rate from that size rather than beside it', () => {
-    // EVERY FIGURE COMPUTED FROM THE LITERAL. 55 × 4 = 220 is the largest
-    // multiple of the alphabet that fits in a byte, so 36 of 256 draws are
-    // discarded and the remaining mapping is uniform.
-    expect(PASSWORD_ACCEPTABLE_BYTES).toBe(220);
-    expect(PASSWORD_DISCARD_RATE).toBeCloseTo(36 / 256, 10);
-    // log2(55) ≈ 5.7814 bits per character over sixteen characters.
-    expect(PASSWORD_BITS_OF_ENTROPY).toBeCloseTo(PASSWORD_LENGTH * Math.log2(55), 10);
-    expect(PASSWORD_BITS_OF_ENTROPY).toBeGreaterThan(80);
+  it('computes its entropy from the list rather than writing it beside it', () => {
+    // 2048 = 2^11, so the low bits of a 16-bit draw are uniform over the list
+    // with no rejection: 65536 is a multiple of the length.
+    expect(Number.isInteger(BITS_PER_WORD), 'the list length is not a power of two').toBe(true);
+    expect(65536 % WORDS.length).toBe(0);
+    expect(BITS_PER_WORD).toBe(11);
+    expect(PASSWORD_WORD_COUNT).toBe(4);
+    expect(PASSWORD_BITS_OF_ENTROPY).toBe(PASSWORD_WORD_COUNT * Math.log2(WORDS.length));
+    expect(PASSWORD_BITS_OF_ENTROPY).toBe(44);
   });
 
-  it('draws only from the alphabet, at the declared length', () => {
+  it('draws four words from the list, hyphen-joined', () => {
     const generated = generatePassword();
 
-    expect(generated).toHaveLength(PASSWORD_LENGTH);
-    for (const character of generated) expect(PASSWORD_ALPHABET).toContain(character);
+    expect(generated).toMatch(FOUR_WORDS);
+    for (const word of generated.split(WORD_SEPARATOR)) expect(WORDS).toContain(word);
   });
 
   it('consumes the byte source it was given, rather than a random of its own', () => {
-    // THE PROBE: replace the generator with `Math.random`. Fed a deterministic
-    // source, the output is determined — so a generator that ignored its
-    // argument answers something else. This is the only thing that can tell a
-    // CSPRNG from `Math.random` without statistics.
+    // THE PROBE: a generator that fell back to `Math.random` answers other
+    // words. Each draw is two bytes, big-endian, and its low 11 bits pick.
     const drawn: number[] = [];
-    let next = 0;
+    const bytes = [0x00, 0x00, 0x00, 0x01, 0x07, 0xff, 0xf8, 0x05];
     const source = (count: number): Uint8Array => {
-      const bytes = new Uint8Array(count);
-      for (let index = 0; index < count; index += 1) {
-        bytes[index] = next % PASSWORD_ACCEPTABLE_BYTES;
-        drawn.push(next % PASSWORD_ACCEPTABLE_BYTES);
-        next += 1;
-      }
+      const out = new Uint8Array(bytes.splice(0, count));
 
-      return bytes;
+      drawn.push(...out);
+
+      return out;
     };
 
     expect(generatePassword(source)).toBe(
-      Array.from({ length: PASSWORD_LENGTH }, (_unused, index) =>
-        PASSWORD_ALPHABET[index % PASSWORD_ALPHABET.length],
-      ).join(''),
+      [WORDS[0], WORDS[1], WORDS[2047], WORDS[5]].join(WORD_SEPARATOR),
     );
-    expect(drawn, 'the generator never asked the source for a byte').toHaveLength(PASSWORD_LENGTH);
+    expect(drawn, 'the generator never asked the source for its bytes').toHaveLength(8);
   });
 
-  it('DISCARDS a byte in the biased band rather than folding it in', () => {
-    // `byte % length` without the discard is biased toward the first
-    // `256 mod 55` characters — small, invisible, and exactly why it has to be
-    // refused by construction. A source whose first byte is IN the band must
-    // produce the same password as one that never yields that byte at all.
-    //
-    // The probe byte is `PASSWORD_ACCEPTABLE_BYTES + 1` rather than the first
-    // byte of the band: 220 % 55 is 0, which is the same character the
-    // replacement byte produces, so a generator that folded it in would answer
-    // identically and this case would pass having proved nothing. 221 % 55 is
-    // 1, which is a different character entirely.
-    let index = 0;
-    const withDiscard = (count: number): Uint8Array => {
-      const bytes = new Uint8Array(count);
-      for (let at = 0; at < count; at += 1) {
-        bytes[at] = index === 0 ? PASSWORD_ACCEPTABLE_BYTES + 1 : 0;
-        index += 1;
-      }
+  it('takes the LOW eleven bits of each draw, so the high five never fold in', () => {
+    // 0xF800 has every high bit set and every low bit clear: the first word.
+    const high = (count: number): Uint8Array => new Uint8Array(count).map((_unused, at) => (at % 2 === 0 ? 0xf8 : 0x00));
 
-      return bytes;
+    expect(generatePassword(high)).toBe(Array(4).fill(WORDS[0]).join(WORD_SEPARATOR));
+  });
+
+  it('throws on a source that answers with no bytes, rather than looping for ever', () => {
+    expect(() => generatePassword(() => new Uint8Array(0))).toThrow(BYTE_SOURCE_EMPTY);
+  });
+
+  it('refuses to load with a list that is not a power of two a draw can reach', () => {
+    const source = readFileSync(join(repoRoot, 'supabase', 'functions', 'admin-auth', 'password.ts'), 'utf8');
+
+    expect(source).toContain("throw new Error('PASSWORD_WORDS_NOT_A_POWER_OF_TWO')");
+    expect(source).toMatch(/length <= DRAW_VALUES/);
+  });
+
+  it('asks again when a source answers short, rather than padding with the first word', () => {
+    let calls = 0;
+    const trickle = (_count: number): Uint8Array => {
+      calls += 1;
+
+      return new Uint8Array([0x00, 0x03]);
     };
 
-    expect((PASSWORD_ACCEPTABLE_BYTES + 1) % PASSWORD_ALPHABET.length).not.toBe(0);
-    expect(generatePassword(withDiscard)).toBe(PASSWORD_ALPHABET[0]?.repeat(PASSWORD_LENGTH));
+    expect(generatePassword(trickle)).toBe(Array(4).fill(WORDS[3]).join(WORD_SEPARATOR));
+    expect(calls).toBe(4);
   });
 });
 
@@ -915,6 +977,8 @@ const ORGANIZATION = 'organization-1';
 const OTHER_ORGANIZATION = 'organization-2';
 const SLUG = 'dvd-kastel-novi';
 const ACCOUNT = 'auth-user-1';
+/** The account a token belongs to, in the first-sign-in clear (story 7.8). */
+const CALLER_ACCOUNT = 'auth-user-caller';
 // A UUID, because `members.id` is one and both operations that take a member
 // id refuse anything else before they query.
 const MEMBER = '5d1c6b3e-2f4a-4c8e-9b7d-1a2b3c4d5e6f';
@@ -1016,24 +1080,36 @@ function callerThat(plan: CallerPlan = {}): { client: CallerClient; log: CallerL
 }
 
 interface AccountLog {
+  /** The tokens `auth.getUser` was asked about (story 7.8). */
+  readonly asked: string[];
   readonly created: Readonly<Record<string, unknown>>[];
   readonly updated: { id: string; attributes: Readonly<Record<string, unknown>> }[];
   readonly deleted: string[];
 }
 
 interface AccountPlan {
+  /** What `auth.getUser` answers: by default, the account {@link CALLER_ACCOUNT}. */
+  readonly caller?: AccountAnswer | Error;
   readonly created?: AccountAnswer | Error;
   readonly updated?: AccountAnswer | Error;
   readonly deleted?: { error: { code?: string } | null } | Error;
 }
 
 function accountsThat(plan: AccountPlan = {}): { client: PrivilegedAccounts; log: AccountLog } {
-  const log: AccountLog = { created: [], updated: [], deleted: [] };
+  const log: AccountLog = { asked: [], created: [], updated: [], deleted: [] };
 
   return {
     log,
     client: {
       auth: {
+        getUser(jwt) {
+          log.asked.push(jwt);
+          const answer = plan.caller ?? { data: { user: { id: CALLER_ACCOUNT } }, error: null };
+
+          if (answer instanceof Error) throw answer;
+
+          return Promise.resolve(answer);
+        },
         admin: {
           createUser(attributes) {
             log.created.push(attributes);
@@ -1193,7 +1269,7 @@ describe('createUser: an account and the row that gives it an organization', () 
     expect(reply.status).toBe(201);
     expect(reply.body).toMatchObject({ code: MEMBER_CREATED, username: 'marko.novak' });
     expect(typeof reply.body['password']).toBe('string');
-    expect(String(reply.body['password'])).toHaveLength(PASSWORD_LENGTH);
+    expect(String(reply.body['password'])).toMatch(FOUR_WORDS);
 
     // THE ACCOUNT FIRST, because `members.auth_user_id` is
     // `not null references auth.users(id)` (`0002:128`) — that ordering is
@@ -1202,6 +1278,8 @@ describe('createUser: an account and the row that gives it an organization', () 
     expect(accounts.log.created[0]).toMatchObject({
       email: synthesizedAddress('marko.novak', SLUG),
       email_confirm: true,
+      // STORY 7.8: the first sign-in is held at the set-password step.
+      app_metadata: { [MUST_SET_PASSWORD]: true },
     });
     // THE ROW THROUGH THE CALLER'S CLIENT. The secret key would bypass
     // `members_insert_by_own_active_admin` and AD-11's attribution default in
@@ -1771,11 +1849,14 @@ describe('resetPassword: a new credential, and every session the old one minted'
       reset,
     );
 
-    expect(Object.keys(accounts.log.updated[0]?.attributes ?? {})).toEqual(['password']);
+    // STORY 7.8: AND THE FLAG, back on — a reset holds the next sign-in at the
+    // set-password step exactly like the first. Never cleared here.
+    expect(Object.keys(accounts.log.updated[0]?.attributes ?? {})).toEqual(['password', 'app_metadata']);
+    expect(accounts.log.updated[0]?.attributes['app_metadata']).toEqual({ [MUST_SET_PASSWORD]: true });
     // THE VALUE ON THE WIRE IS THE VALUE IN THE REPLY. Two different strings
     // here is a password shown to an admin that no account ever received.
     expect(accounts.log.updated[0]?.attributes['password']).toBe(reply.body['password']);
-    expect(Object.keys(resetAttributes('x'))).toEqual(['password']);
+    expect(resetAttributes('x')).toEqual({ password: 'x', app_metadata: { [MUST_SET_PASSWORD]: true } });
   });
 
   it('generates the credential with the shared generator, from the injected bytes', async () => {
@@ -1783,7 +1864,6 @@ describe('resetPassword: a new credential, and every session the old one minted'
     // The byte source travels with the dependencies precisely so this can be
     // asserted: a generator that ignored it answers a different string.
     const drawn: number[] = [];
-    let next = 0;
     const accounts = accountsThat();
     const caller = callerThat({ reads: RESET_READ });
 
@@ -1792,12 +1872,10 @@ describe('resetPassword: a new credential, and every session the old one minted'
         privileged: accounts.client,
         caller: caller.client,
         randomBytes: (count) => {
-          const bytes = new Uint8Array(count);
-          for (let at = 0; at < count; at += 1) {
-            bytes[at] = next % PASSWORD_ACCEPTABLE_BYTES;
-            drawn.push(bytes[at] ?? 0);
-            next += 1;
-          }
+          const bytes = new Uint8Array(count).fill(0x00).map((_unused, at) => (at % 2 === 0 ? 0 : 7));
+
+          drawn.push(...bytes);
+
           return bytes;
         },
       },
@@ -1806,11 +1884,10 @@ describe('resetPassword: a new credential, and every session the old one minted'
 
     const password = String(reply.body['password']);
 
-    expect(password).toHaveLength(PASSWORD_LENGTH);
     expect(drawn.length, 'the injected source was never consulted').toBeGreaterThan(0);
-    for (const character of password) {
-      expect(PASSWORD_ALPHABET, `${character} is outside the alphabet`).toContain(character);
-    }
+    // DETERMINED BY THE SOURCE: every draw is 0x0007, so every word is the eighth.
+    expect(password).toBe(Array(4).fill(WORDS[7]).join(WORD_SEPARATOR));
+    expect(password).toMatch(FOUR_WORDS);
   });
 
   it('NEVER generates a credential for a caller it is about to refuse', async () => {
@@ -2164,7 +2241,12 @@ describe('the dispatch is wrapped, so a throw is still a reply the SPA can read'
         'email',
         'password',
         'email_confirm',
+        'app_metadata',
       ]);
+      expect(accounts.log.created[0]).toEqual(
+        createAttributes(String(accounts.log.created[0]?.['email']), password),
+      );
+      expect(accounts.log.created[0]?.['app_metadata']).toEqual({ [MUST_SET_PASSWORD]: true });
     } finally {
       logged.mockRestore();
     }
@@ -2196,7 +2278,7 @@ describe('the dispatch is wrapped, so a throw is still a reply the SPA can read'
         expect(JSON.stringify(call)).not.toContain(password);
       }
       expect(JSON.stringify(accounts.log.updated)).toContain(password);
-      expect(Object.keys(accounts.log.updated[0]?.attributes ?? {})).toEqual(['password']);
+      expect(Object.keys(accounts.log.updated[0]?.attributes ?? {})).toEqual(['password', 'app_metadata']);
     } finally {
       logged.mockRestore();
     }
@@ -2950,5 +3032,121 @@ describe('the member name is blank in the same class as the database (0024)', ()
       ok: true,
       payload: { name: 'Ana\u0085' },
     });
+  });
+});
+
+describe('clearMustSetPassword clears the CALLER\'s first-sign-in flag, and nobody else\'s (story 7.8)', () => {
+  it('names its target from the token alone, and writes only the flag', async () => {
+    const accounts = accountsThat();
+
+    await expect(
+      clearMustSetPassword({ privileged: accounts.client }, 'Bearer caller-jwt'),
+    ).resolves.toEqual({ status: 200, body: { code: PASSWORD_FLAG_CLEARED } });
+    // THE SCHEME STRIPPED, the token asked about, and the account GoTrue named
+    // is the one written — `app_metadata` and nothing else, so the password is
+    // untouched and no session is revoked.
+    expect(accounts.log.asked).toEqual(['caller-jwt']);
+    expect(accounts.log.updated).toEqual([
+      { id: CALLER_ACCOUNT, attributes: { app_metadata: { [MUST_SET_PASSWORD]: false } } },
+    ]);
+    expect(accounts.log.created).toEqual([]);
+    expect(accounts.log.deleted).toEqual([]);
+  });
+
+  it('ignores an account named in the body: only the caller\'s flag changes', async () => {
+    // THE DEFECT THIS OPERATION REFUSES BY CONSTRUCTION. Through the real
+    // transport, with a body naming somebody else three ways.
+    const accounts = accountsThat();
+    const handle = createHandler(readConfiguration(envFrom()), {
+      makePrivilegedClient: vi.fn(() => accounts.client),
+      makeCallerClient: vi.fn((_authorization: string) => ({ caller: true })),
+    });
+
+    const response = await handle(
+      post('clearMustSetPassword', {}, { userId: ACCOUNT, memberId: MEMBER, id: ACCOUNT }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ code: PASSWORD_FLAG_CLEARED });
+    expect(accounts.log.updated.map((call) => call.id)).toEqual([CALLER_ACCOUNT]);
+    expect(accounts.log.updated.map((call) => call.id)).not.toContain(ACCOUNT);
+  });
+
+  it('refuses a token GoTrue names nobody for, and writes nothing', async () => {
+    for (const caller of [
+      { data: { user: null }, error: { status: 401, code: 'bad_jwt' } },
+      { data: { user: null }, error: { status: 403, code: 'session_not_found' } },
+      { data: { user: null }, error: null },
+    ] satisfies AccountAnswer[]) {
+      const accounts = accountsThat({ caller });
+
+      await expect(
+        clearMustSetPassword({ privileged: accounts.client }, 'Bearer stale-jwt'),
+      ).resolves.toEqual({ status: 401, body: { code: AUTHORIZATION_MISSING } });
+      expect(accounts.log.updated, 'a refused token reached the auth store').toEqual([]);
+    }
+  });
+
+  it('refuses a header with no token after the scheme, before asking anybody', async () => {
+    const accounts = accountsThat();
+
+    await expect(clearMustSetPassword({ privileged: accounts.client }, 'Bearer   ')).resolves.toEqual({
+      status: 401,
+      body: { code: AUTHORIZATION_MISSING },
+    });
+    expect(accounts.log.asked).toEqual([]);
+  });
+
+  it('answers an auth store that could not answer, or would not write, as not cleared', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      for (const plan of [
+        { caller: { data: { user: null }, error: { status: 500, code: 'unexpected_failure' } } },
+        // A RATE LIMIT is "not now", never "sign in again".
+        { caller: { data: { user: null }, error: { status: 429, code: 'over_request_rate_limit' } } },
+        { updated: { data: { user: null }, error: { status: 500, code: 'unexpected_failure' } } },
+        { updated: { data: { user: null }, error: null } },
+      ] satisfies AccountPlan[]) {
+        await expect(
+          clearMustSetPassword({ privileged: accountsThat(plan).client }, 'Bearer caller-jwt'),
+        ).resolves.toEqual({ status: 502, body: { code: PASSWORD_FLAG_NOT_CLEARED } });
+      }
+      // THE CODE, never the token.
+      for (const call of logged.mock.calls) expect(JSON.stringify(call)).not.toContain('caller-jwt');
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it('is open to any role, because it reads no domain table', async () => {
+    // Open to every role: it never touches the caller client, so a member-role
+    // session reaches it exactly as an admin's does.
+    const accounts = accountsThat();
+    const makeCallerClient = vi.fn((_authorization: string) => ({ caller: true }));
+    const handle = createHandler(readConfiguration(envFrom()), {
+      makePrivilegedClient: vi.fn(() => accounts.client),
+      makeCallerClient,
+    });
+
+    const response = await handle(post('clearMustSetPassword'));
+
+    expect(response.status).toBe(200);
+    expect(accounts.log.asked).toEqual(['caller-jwt']);
+    // The caller's client is BUILT, as on every request (the two-client
+    // wiring), and never asked anything: no access read, no organization.
+    expect(makeCallerClient).toHaveBeenCalledOnce();
+  });
+
+  it('never uses user_metadata for the flag, on any of the three writes', async () => {
+    // `user_metadata` is writable by the member through `updateUser`, so a
+    // flag there is one the person it holds back can clear.
+    expect(JSON.stringify(createAttributes('a@b.shift.invalid', 'x'))).not.toContain('user_metadata');
+    expect(JSON.stringify(resetAttributes('x'))).not.toContain('user_metadata');
+
+    const accounts = accountsThat();
+
+    await clearMustSetPassword({ privileged: accounts.client }, 'Bearer caller-jwt');
+    expect(JSON.stringify(accounts.log.updated)).not.toContain('user_metadata');
   });
 });

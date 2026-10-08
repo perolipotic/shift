@@ -6,6 +6,28 @@
     "submit": "Prijava",
     "pending": "Prijava…",
     "passwordShow": "Prikaži lozinku",
+    "setPassword": {
+      "heading": "Postavi svoju lozinku",
+      "lede": "Prijavio si se početnom lozinkom koju ti je dao administrator. Prije prvog koraka postavi lozinku koju znaš samo ti.",
+      "password": "Nova lozinka",
+      "repeat": "Ponovi novu lozinku",
+      "ruleLength": "Najmanje 10 znakova (upisano: {count})",
+      "ruleMatch": "Lozinke se podudaraju",
+      "ruleMet": "Ispunjeno:",
+      "ruleUnmet": "Nije ispunjeno:",
+      "submit": "Spremi i nastavi",
+      "pending": "Spremanje…",
+      "signOut": "Odjava",
+      "error": {
+        "tooShort": "Nova lozinka mora imati najmanje 10 znakova.",
+        "mismatch": "Lozinke se ne podudaraju.",
+        "same": "Nova lozinka mora biti drukčija od početne.",
+        "unavailable": "Lozinka nije spremljena. Pokušaj ponovno.",
+        "notContinued": "Lozinka je spremljena, ali nastavak nije uspio. Pokušaj ponovno.",
+        "signOut": "Odjava trenutačno nije moguća. Pokušaj ponovno.",
+        "signInAgain": "Prijava je istekla. Odjavi se i prijavi novom lozinkom."
+      }
+    },
     "error": {
       "credentials": "Organizacija, korisničko ime ili lozinka nisu točni.",
       "unavailable": "Prijava trenutačno nije moguća. Pokušaj ponovno."
@@ -528,7 +550,11 @@
       "created": "Račun je izrađen.",
       "saved": "Promjene su spremljene.",
       "credential": "Početna lozinka",
-      "credentialOnce": "Zapiši lozinku. Poslije nije moguće ponovno je prikazati.",
+      "credentialOnce": "Zapiši lozinku. Poslije nije moguće ponovno je prikazati. Kod prve prijave osoba postavlja svoju lozinku.",
+      "resetCredentialOnce": "Zapiši lozinku. Poslije nije moguće ponovno je prikazati. Kod sljedeće prijave osoba postavlja svoju lozinku.",
+      "copy": "Kopiraj",
+      "copied": "Kopirano.",
+      "copyFailed": "Kopiranje nije uspjelo. Zapiši lozinku.",
       "reset": "Dodijeli novu lozinku osobi {name}",
       "resetPrompt": "Osoba {name} dobiva novu lozinku. Postojeće prijave prestaju vrijediti.",
       "resetConfirm": "Potvrdi novu lozinku za osobu {name}",

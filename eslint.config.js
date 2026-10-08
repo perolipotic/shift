@@ -109,9 +109,12 @@ const LABEL_MESSAGE =
  * Adding a module here is a deliberate widening of that feature's API.
  */
 export const FEATURE_PUBLIC = {
+  // Story 7.8: the signed-in layout holds a flagged session at the
+  // set-password step through `mustSetPassword`, never a reading of its own.
   auth: [
     'services/address', // pages
     'services/return-target', // pages
+    'services/set-password', // pages
     'services/sign-out', // navigation
   ],
   // Story 5.3d: *Sati* reads leave by the marks' own role rule
