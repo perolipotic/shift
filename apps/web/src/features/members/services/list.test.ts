@@ -40,8 +40,6 @@ import {
   TEXT_CELL,
   NAME_CELL,
   LEVEL_CELL,
-  INACTIVE_NAME_CELL,
-  SCHEDULED_INACTIVE_NAME_CELL,
   memberActiveFrom,
   memberActiveOn,
   memberLatestVersion,
@@ -80,13 +78,42 @@ import {
   sortIndicatorOf,
   sortDirectionIndicatorOf,
   sortStateOf,
-  type LevelFilter,
   type MemberListRow,
   type MembersAnswer,
   type MembersQueryAnswer,
   type MembersTable,
+  type MembersFilters,
   type NarrowingInputs,
   type SortState,
+  CHIP_LEVEL,
+  CHIP_STATUS,
+  CHIP_TEAM,
+  DEFAULT_FILTERS,
+  DEFAULT_STATUS,
+  MEMBER_CHIPS,
+  STATUS_ACTIVE,
+  STATUS_ALL,
+  STATUS_CELL,
+  STATUS_COLUMN,
+  STATUS_FILTERS,
+  STATUS_INACTIVE,
+  cellTextClassNameOf,
+  chooseChip,
+  chooseStatus,
+  memberChipActive,
+  memberChipChoiceOf,
+  memberChipRemovalOf,
+  memberChipsActiveCount,
+  membersFiltersOf,
+  membersSearchFor,
+  membersSearchKeyOf,
+  membersSearchOf,
+  membersSummaryMessageKey,
+  memberStatusArgsOf,
+  membersAwaitTodayOf,
+  statusCellOf,
+  statusFilterMessageKey,
+  statusValueMessageKey,
 } from '@/features/members/services/list';
 import { TEAM_HISTORY, TEAM_HISTORY_ANSWERS, TEAM_HISTORY_SPAN } from '@/features/members/team-history.fixture';
 import { initLocalization, t } from '@/lib/i18n';
@@ -509,7 +536,7 @@ describe('the level the guard admits is the one the rank order names', () => {
   });
 });
 
-describe('the four columns are one table, so a heading and its sort key cannot drift', () => {
+describe('the six columns are one table, so a heading and its sort key cannot drift', () => {
   it('pins every column, its heading key and its order', () => {
     // WHAT NOTHING ELSE BINDS. Swapping the sort keys carried by two headings
     // is a two-character edit in a component that no test executes, and the
@@ -521,6 +548,7 @@ describe('the four columns are one table, so a heading and its sort key cannot d
       [LEVEL_COLUMN, 'ljudi.role'],
       [TEAM_COLUMN, 'smjene.membership.column'],
       [LEAVE_COLUMN, 'ljudi.leave'],
+      [STATUS_COLUMN, 'ljudi.status.heading'],
     ]);
   });
 
@@ -529,11 +557,10 @@ describe('the four columns are one table, so a heading and its sort key cannot d
     expect(() => memberColumnOf('hours' as typeof NAME_COLUMN)).toThrow();
   });
 
-  it('carries no hours or active column', () => {
-    // Each absence is a decision: hours are epic 4, and active state is
-    // versioned (AD-2) — story 1.6 marks an inactive member in words inside
-    // the name cell, not in a column. The team arrived in story 1.7b.
-    expect(MEMBER_COLUMNS).toHaveLength(5);
+  it('carries no hours column, and the status as one column (story 7.13)', () => {
+    // Hours are epic 4. The team arrived in story 1.7b, and the status in
+    // story 7.13: one column stating today's status or the change scheduled.
+    expect(MEMBER_COLUMNS).toHaveLength(6);
     for (const forbidden of ['hours', 'active']) {
       expect(MEMBER_COLUMNS.map((column) => String(column.key))).not.toContain(forbidden);
     }
@@ -852,6 +879,7 @@ describe('the order is Croatian, and an address-less member has a place in it', 
         search: '',
         level: ALL_LEVELS,
         team: ALL_TEAMS,
+        status: STATUS_ALL,
         sort: { key: TEAM_COLUMN, direction: ASCENDING },
         today: TODAY,
       }).rows.map((found) => found.id),
@@ -1095,24 +1123,25 @@ describe('the team filter is derived from the snapshot, counted by facet, and fa
     expect(ALL_TEAMS).not.toBe(NO_TEAM);
   });
 
-  it('maps each kind of option to its own counted label', () => {
-    expect(teamFilterMessageKey(ALL_TEAMS)).toBe('smjene.membership.filterAll');
-    expect(teamFilterMessageKey(NO_TEAM)).toBe('smjene.membership.filterNone');
-    expect(teamFilterMessageKey(alfa.id)).toBe('smjene.membership.filterTeam');
+  it('names each sentinel option in words, and a team by its own name (data)', () => {
+    expect(teamFilterMessageKey(ALL_TEAMS)).toBe('smjene.membership.allTeams');
+    expect(teamFilterMessageKey(NO_TEAM)).toBe('smjene.membership.none');
+    expect(teamFilterMessageKey(alfa.id)).toBeNull();
   });
 
-  it('keeps the summary unfiltered whatever team is chosen', () => {
+  it('counts the summary over the rows the chosen team leaves (story 7.13)', () => {
     const view = membersViewOf({
       members: people,
       search: NO_TEXT,
       level: ALL_LEVELS,
       team: NO_TEAM,
+      status: STATUS_ALL,
       sort: DEFAULT_SORT,
       today: TODAY,
     });
 
     expect(view.narrowed.rows.map((found) => found.id)).toEqual(['n1']);
-    expect(view.summary?.[0]).toEqual({ label: 'ljudi.stats.total', value: 4 });
+    expect(view.summary?.shown).toBe(1);
   });
 });
 
@@ -1142,37 +1171,58 @@ describe('the stored team follows the applied one, once the answer is real', () 
   });
 });
 
-describe('the team options render their counts in all three Croatian forms', () => {
+describe('the summary line states every count in all three Croatian forms (story 7.13)', () => {
   beforeAll(async () => {
     await initLocalization();
   });
 
   it.each([
-    [1, 'Sve smjene: 1 osoba', 'Alfa: 1 osoba', 'Bez smjene: 1 osoba'],
-    [2, 'Sve smjene: 2 osobe', 'Alfa: 2 osobe', 'Bez smjene: 2 osobe'],
-    [5, 'Sve smjene: 5 osoba', 'Alfa: 5 osoba', 'Bez smjene: 5 osoba'],
-    [21, 'Sve smjene: 21 osoba', 'Alfa: 21 osoba', 'Bez smjene: 21 osoba'],
-  ])('states %i people', (count, all, named, none) => {
-    expect(t('smjene.membership.filterAll', { count })).toBe(all);
-    expect(t('smjene.membership.filterTeam', { count, team: 'Alfa' })).toBe(named);
-    expect(t('smjene.membership.filterNone', { count })).toBe(none);
+    [1, 'Prikazano: 1 osoba · 1 administrator · 1 zakazana promjena'],
+    [2, 'Prikazano: 2 osobe · 2 administratora · 2 zakazane promjene'],
+    [5, 'Prikazano: 5 osoba · 5 administratora · 5 zakazanih promjena'],
+    [21, 'Prikazano: 21 osoba · 21 administrator · 21 zakazana promjena'],
+  ])('states %i of each', (count, line) => {
+    const summary = { shown: count, admins: count, scheduled: count };
+
+    expect(t(membersSummaryMessageKey(summary), { ...summary })).toBe(line);
+  });
+
+  it('states zero, and no scheduled figure while today is unknown', () => {
+    const zero = { shown: 0, admins: 0, scheduled: 0 };
+    const unknown = { shown: 3, admins: 1, scheduled: null };
+
+    expect(t(membersSummaryMessageKey(zero), { ...zero })).toBe(
+      'Prikazano: 0 osoba · 0 administratora · 0 zakazanih promjena',
+    );
+    expect(membersSummaryMessageKey(unknown)).toBe('ljudi.summary.noStatus');
+    expect(t(membersSummaryMessageKey(unknown), { ...unknown })).toBe('Prikazano: 3 osobe · 1 administrator');
   });
 });
 
-describe('the reset has something to reset only when a filter is narrowed', () => {
-  it('has nothing to reset at the defaults', () => {
-    expect(isNarrowed(NO_TEXT, ALL_LEVELS, ALL_TEAMS)).toBe(false);
+describe('the reset is offered only while the URL differs from its defaults (story 7.13)', () => {
+  it('has nothing to reset at the defaults, which narrow to the active', () => {
+    expect(isNarrowed(DEFAULT_FILTERS)).toBe(false);
+    expect(DEFAULT_FILTERS).toEqual({
+      search: NO_TEXT,
+      level: ALL_LEVELS,
+      team: ALL_TEAMS,
+      status: STATUS_ACTIVE,
+      sort: { key: NAME_COLUMN, direction: ASCENDING },
+    });
   });
 
-  it.each<{ name: string; search: string; level: LevelFilter; team: string }>([
-    { name: 'a search', search: 'ana', level: ALL_LEVELS, team: ALL_TEAMS },
-    { name: 'whitespace in the box', search: '  ', level: ALL_LEVELS, team: ALL_TEAMS },
-    { name: 'a level', search: NO_TEXT, level: 'admin', team: ALL_TEAMS },
-    { name: 'a team', search: NO_TEXT, level: ALL_LEVELS, team: 'team-alfa' },
-    { name: 'no team', search: NO_TEXT, level: ALL_LEVELS, team: NO_TEAM },
-    { name: 'all three', search: 'ana', level: 'admin', team: 'team-alfa' },
-  ])('has something to reset with $name', ({ search, level, team }) => {
-    expect(isNarrowed(search, level, team)).toBe(true);
+  it.each<{ name: string; change: Partial<MembersFilters> }>([
+    { name: 'a search', change: { search: 'ana' } },
+    { name: 'whitespace in the box', change: { search: '  ' } },
+    { name: 'a level', change: { level: 'admin' } },
+    { name: 'a team', change: { team: 'team-alfa' } },
+    { name: 'no team', change: { team: NO_TEAM } },
+    { name: 'every status', change: { status: STATUS_ALL } },
+    { name: 'the inactive', change: { status: STATUS_INACTIVE } },
+    { name: 'another sort column', change: { sort: { key: LEVEL_COLUMN, direction: ASCENDING } } },
+    { name: 'the name descending', change: { sort: { key: NAME_COLUMN, direction: DESCENDING } } },
+  ])('has something to reset with $name', ({ change }) => {
+    expect(isNarrowed({ ...DEFAULT_FILTERS, ...change })).toBe(true);
   });
 });
 
@@ -1191,10 +1241,23 @@ describe('every code and every level resolves to its own message', () => {
     expect(memberLevelMessageKey('member_role')).toBe('ljudi.member');
   });
 
-  it('maps each filter option to its own counted label', () => {
-    expect(levelFilterMessageKey(ALL_LEVELS)).toBe('ljudi.filterAll');
-    expect(levelFilterMessageKey('admin')).toBe('ljudi.filterAdmin');
-    expect(levelFilterMessageKey('member_role')).toBe('ljudi.filterMember');
+  it('maps each filter option to its own name (story 7.13: the count is drawn beside it)', () => {
+    expect(levelFilterMessageKey(ALL_LEVELS)).toBe('ljudi.chip.allLevels');
+    expect(levelFilterMessageKey('admin')).toBe('ljudi.admin');
+    expect(levelFilterMessageKey('member_role')).toBe('ljudi.member');
+  });
+
+  it('maps each status option to its own name and its own chip value', () => {
+    expect(STATUS_FILTERS.map(statusFilterMessageKey)).toEqual([
+      'ljudi.statusFilter.active',
+      'ljudi.statusFilter.inactive',
+      'ljudi.statusFilter.all',
+    ]);
+    expect(STATUS_FILTERS.map(statusValueMessageKey)).toEqual([
+      'ljudi.statusValue.active',
+      'ljudi.statusValue.inactive',
+      'ljudi.statusValue.all',
+    ]);
   });
 
   it('gives every option a key of its own, so the mapping is not a constant', () => {
@@ -1203,7 +1266,8 @@ describe('every code and every level resolves to its own message', () => {
 
   it.each([
     { name: 'the level label', map: memberLevelMessageKey, wrong: 'ljudi.member' },
-    { name: 'the filter option', map: levelFilterMessageKey, wrong: 'ljudi.filterMember' },
+    { name: 'the filter option', map: levelFilterMessageKey, wrong: 'ljudi.member' },
+    { name: 'the status option', map: statusFilterMessageKey, wrong: 'ljudi.statusFilter.all' },
     { name: 'the refusal', map: membersMessageKey, wrong: 'ljudi.error.unavailable' },
   ])('returns a value $name has never been taught as itself, not as $wrong', ({ map, wrong }) => {
     // THE PROBE THE `never` ALONE DOES NOT CATCH, and the reason these are
@@ -1665,6 +1729,7 @@ describe('the narrowing declares its own inputs, so a memo cannot drop one', () 
     search: 'ana',
     level: ALL_LEVELS,
     team: ALL_TEAMS,
+    status: STATUS_ACTIVE,
     sort: DEFAULT_SORT,
     today: TODAY,
   };
@@ -1677,17 +1742,18 @@ describe('the narrowing declares its own inputs, so a memo cannot drop one', () 
     expect(narrowingDependencies(inputs)).toHaveLength(Object.keys(inputs).length);
   });
 
-  it('names exactly the six inputs, team among them', () => {
-    expect(Object.keys(inputs)).toEqual(['members', 'search', 'level', 'team', 'sort', 'today']);
+  it('names exactly the seven inputs, team and status among them', () => {
+    expect(Object.keys(inputs)).toEqual(['members', 'search', 'level', 'team', 'status', 'sort', 'today']);
   });
 
-  it.each(['members', 'search', 'level', 'team', 'sort', 'today'])('changes when %s changes', (field) => {
+  it.each(['members', 'search', 'level', 'team', 'status', 'sort', 'today'])('changes when %s changes', (field) => {
     const changed: NarrowingInputs = {
       ...inputs,
       ...(field === 'members' ? { members: [member({ id: 'b' })] } : {}),
       ...(field === 'search' ? { search: 'boris' } : {}),
       ...(field === 'level' ? { level: 'admin' as const } : {}),
       ...(field === 'team' ? { team: NO_TEAM } : {}),
+      ...(field === 'status' ? { status: STATUS_ALL } : {}),
       ...(field === 'sort' ? { sort: { key: LEAVE_COLUMN, direction: DESCENDING } } : {}),
       ...(field === 'today' ? { today: '2026-09-24' } : {}),
     };
@@ -1704,6 +1770,7 @@ describe('the narrowing declares its own inputs, so a memo cannot drop one', () 
         inputs.sort,
         inputs.today,
         inputs.team,
+        inputs.status,
       ),
     );
   });
@@ -1985,42 +2052,77 @@ describe('status as at a date, read off the embedded versions (story 1.6)', () =
     });
   });
 
-  it('marks the name cell inactive as at today, and marks nobody while today is unknown', () => {
-    const name = MEMBER_COLUMNS.find((column) => column.key === NAME_COLUMN);
+  it('states the status in the status column as at today, and nothing while today is unknown (story 7.13)', () => {
+    const name = memberColumnOf(NAME_COLUMN);
+    const status = memberColumnOf(STATUS_COLUMN);
     const away = member({ id: 'm', name: 'Ana', statusVersions: versions([false, TODAY]) });
     const scheduled = member({ id: 'n', name: 'Ivo', statusVersions: versions([false, '2026-10-01']) });
+    const here = member({ id: 'h', name: 'Ema' });
 
-    expect(name?.cell(away, TODAY)).toEqual({ kind: INACTIVE_NAME_CELL, text: 'Ana', initials: 'A' });
+    // THE NAME CARRIES NO STATUS any more: the column states it, once.
+    expect(name.cell(away, TODAY)).toEqual({ kind: NAME_CELL, text: 'Ana', initials: 'A' });
+    expect(name.cell(scheduled, TODAY)).toEqual({ kind: NAME_CELL, text: 'Ivo', initials: 'I' });
+
+    expect(status.cell(here, TODAY)).toEqual({ kind: STATUS_CELL, activeToday: true, scheduled: null });
+    expect(status.cell(away, TODAY)).toEqual({ kind: STATUS_CELL, activeToday: false, scheduled: null });
     // THE DAY BEFORE, the same version is a scheduled deactivation.
-    expect(name?.cell(away, '2026-09-22')).toEqual({
-      kind: SCHEDULED_INACTIVE_NAME_CELL,
-      text: 'Ana',
-      initials: 'A',
-      from: TODAY,
+    expect(status.cell(away, '2026-09-22')).toEqual({
+      kind: STATUS_CELL,
+      activeToday: true,
+      scheduled: { active: false, from: TODAY },
     });
-    // A SCHEDULED DEACTIVATION is marked too, with the date it takes effect.
-    expect(name?.cell(scheduled, TODAY)).toEqual({
-      kind: SCHEDULED_INACTIVE_NAME_CELL,
-      text: 'Ivo',
-      initials: 'I',
-      from: '2026-10-01',
-    });
-    expect(name?.cell(scheduled, '2026-10-01')).toEqual({
-      kind: INACTIVE_NAME_CELL,
-      text: 'Ivo',
-      initials: 'I',
-    });
-    expect(name?.cell(away, null)).toEqual({ kind: NAME_CELL, text: 'Ana', initials: 'A' });
-    expect(name?.cell(scheduled, null)).toEqual({ kind: NAME_CELL, text: 'Ivo', initials: 'I' });
+    expect(status.cell(scheduled, '2026-10-01')).toEqual({ kind: STATUS_CELL, activeToday: false, scheduled: null });
+    expect(status.cell(away, null)).toEqual({ kind: TEXT_CELL, text: NO_TEXT });
 
-    // INACTIVE TODAY WITH A REACTIVATION SCHEDULED is marked inactive: that is
-    // today's fact, and the return is the edit screen's to state.
+    // INACTIVE TODAY WITH A REACTIVATION SCHEDULED: the column shows the change.
     const returning = member({
       id: 'r',
       name: 'Eva',
       statusVersions: versions([false, '2026-09-01'], [true, '2026-10-01']),
     });
-    expect(name?.cell(returning, TODAY)).toEqual({ kind: INACTIVE_NAME_CELL, text: 'Eva', initials: 'E' });
+    expect(status.cell(returning, TODAY)).toEqual({
+      kind: STATUS_CELL,
+      activeToday: false,
+      scheduled: { active: true, from: '2026-10-01' },
+    });
+  });
+
+  it('reads the status cell through the rule the member page reads (memberStatusOf)', () => {
+    const returning = member({ id: 'r', statusVersions: versions([false, '2026-09-01'], [true, '2026-10-01']) });
+    const fact = memberStatusOf(returning, TODAY);
+
+    expect(statusCellOf(returning, TODAY)).toEqual({
+      kind: STATUS_CELL,
+      activeToday: fact.activeToday,
+      scheduled: fact.scheduled === null ? null : { active: fact.scheduled.active, from: fact.scheduled.effectiveFrom },
+    });
+  });
+
+  it('sorts the status column active, deactivating, reactivating, inactive, and not at all while today is unknown', () => {
+    const status = memberColumnOf(STATUS_COLUMN);
+    const ranks = [
+      member({ id: 'a' }),
+      member({ id: 'b', statusVersions: versions([false, '2026-10-01']) }),
+      member({ id: 'c', statusVersions: versions([false, '2026-09-01'], [true, '2026-10-01']) }),
+      member({ id: 'd', statusVersions: versions([false, '2026-09-01']) }),
+    ].map((one) => status.sortValue(one, TODAY));
+
+    expect(ranks).toEqual([0, 1, 2, 3]);
+    expect(status.sortValue(member({ id: 'a' }), null)).toBeNull();
+  });
+
+  it('breaks a tie inside a status group by name, ascending', () => {
+    const away = versions([false, '2026-09-01']);
+    const people = [
+      member({ id: '1', name: 'Zora' }),
+      member({ id: '2', name: 'Ana', statusVersions: away }),
+      member({ id: '3', name: 'Ivo' }),
+      member({ id: '4', name: 'Boris', statusVersions: away }),
+      member({ id: '5', name: 'Ćiro' }),
+    ];
+    const rows = narrowMembers(people, NO_TEXT, ALL_LEVELS, { key: STATUS_COLUMN, direction: ASCENDING }, TODAY, ALL_TEAMS, STATUS_ALL).rows;
+
+    expect(rows.map((row) => row.name)).toEqual(['Ćiro', 'Ivo', 'Zora', 'Ana', 'Boris']);
   });
 
   it('shows an ISO date in the binding shape, and a malformed one unchanged', () => {
@@ -2244,7 +2346,7 @@ describe('how a cell is drawn is decided here, never in the screen (visual refre
 
     return found as (typeof MEMBER_COLUMNS)[number];
   };
-  const plain = { avatar: null, badge: null, status: null };
+  const plain = { avatar: null, badge: null, status: null, muted: false };
   const away = member({
     id: 'b',
     name: 'Ana Horvat',
@@ -2276,43 +2378,42 @@ describe('how a cell is drawn is decided here, never in the screen (visual refre
     expect(look.avatar).toEqual({ initials: null });
   });
 
-  it('marks an inactive member with the present-tense key and no date', () => {
-    const cell = columnOf(NAME_COLUMN).cell(away, TODAY);
+  it('states an active member in muted words, and an inactive one in plain words (story 7.13)', () => {
+    const status = columnOf(STATUS_COLUMN);
+    const active = status.cell(member({ id: 'a' }), TODAY);
+    const inactive = status.cell(away, TODAY);
 
-    expect(memberStatusMessageKey(cell)).toBe('ljudi.status.inactive');
-    expect(memberCellLookOf(cell)).toEqual({
-      ...plain,
-      avatar: { initials: 'AH' },
-      status: { variant: 'outline', key: 'ljudi.status.inactive', args: { date: NO_TEXT, team: NO_TEXT } },
-    });
+    if (active.kind !== STATUS_CELL || inactive.kind !== STATUS_CELL) throw new Error('not a status cell');
+    expect(memberStatusMessageKey(active)).toBe('ljudi.status.cellActive');
+    expect(memberCellLookOf(active)).toEqual({ ...plain, muted: true });
+    expect(cellTextClassNameOf(memberCellLookOf(active))).toBe('truncate text-muted-foreground');
+    expect(memberStatusMessageKey(inactive)).toBe('ljudi.status.cellInactive');
+    expect(memberCellLookOf(inactive)).toEqual(plain);
+    expect(cellTextClassNameOf(memberCellLookOf(inactive))).toBe('truncate');
+    expect(memberStatusArgsOf(inactive)).toEqual({ date: NO_TEXT });
   });
 
-  it('marks a scheduled deactivation with the future key and its SHOWN date', () => {
-    const cell = columnOf(NAME_COLUMN).cell(leaving, TODAY);
+  it('states a scheduled change as an outline badge with its day and month, either way', () => {
+    const status = columnOf(STATUS_COLUMN);
+    const deactivating = status.cell(leaving, TODAY);
+    const reactivating = status.cell(
+      member({ id: 'r', statusVersions: [{ active: false, effectiveFrom: '2026-09-01' }, { active: true, effectiveFrom: '2026-10-12' }] }),
+      TODAY,
+    );
 
-    expect(memberStatusMessageKey(cell)).toBe('ljudi.status.inactiveScheduled');
-    expect(memberCellLookOf(cell)).toEqual({
-      ...plain,
-      avatar: { initials: 'EK' },
-      status: {
-        variant: 'outline',
-        key: 'ljudi.status.inactiveScheduled',
-        args: { date: '01.10.2026', team: NO_TEXT },
-      },
-    });
+    if (deactivating.kind !== STATUS_CELL || reactivating.kind !== STATUS_CELL) throw new Error('not a status cell');
+    expect(memberStatusMessageKey(deactivating)).toBe('ljudi.status.cellFromInactive');
+    expect(memberStatusArgsOf(deactivating)).toEqual({ date: '01.10.' });
+    expect(memberCellLookOf(deactivating)).toEqual({ ...plain, badge: 'outline' });
+    expect(memberStatusMessageKey(reactivating)).toBe('ljudi.status.cellFromActive');
+    expect(memberStatusArgsOf(reactivating)).toEqual({ date: '12.10.' });
+    expect(memberCellLookOf(reactivating)).toEqual({ ...plain, badge: 'outline' });
   });
 
-  it('never swaps the two markers', () => {
-    // The mutation this module exists to catch: the scheduled key on a member
-    // who is inactive today, or the reverse.
-    expect(memberStatusMessageKey(columnOf(NAME_COLUMN).cell(away, TODAY))).not.toBe(
-      'ljudi.status.inactiveScheduled',
-    );
-    expect(memberStatusMessageKey(columnOf(NAME_COLUMN).cell(leaving, TODAY))).not.toBe(
-      'ljudi.status.inactive',
-    );
-    // And no marker at all while today is unknown.
-    expect(memberStatusMessageKey(columnOf(NAME_COLUMN).cell(away, null))).toBeNull();
+  it('marks the name with nothing, whatever the status', () => {
+    for (const one of [away, leaving]) {
+      expect(memberCellLookOf(columnOf(NAME_COLUMN).cell(one, TODAY)).status).toBeNull();
+    }
   });
 
   it('draws the level as a badge whose word carries the meaning, the tint only reinforcing it', () => {
@@ -2333,7 +2434,6 @@ describe('how a cell is drawn is decided here, never in the screen (visual refre
 
     for (const key of [EMAIL_COLUMN, LEAVE_COLUMN, TEAM_COLUMN]) {
       expect(memberCellLookOf(columnOf(key).cell(one, TODAY)), key).toEqual(plain);
-      expect(memberStatusMessageKey(columnOf(key).cell(one, TODAY)), key).toBeNull();
     }
   });
 
@@ -2347,7 +2447,7 @@ describe('how a cell is drawn is decided here, never in the screen (visual refre
   });
 });
 
-describe('the summary counts the whole snapshot, never the narrowed rows (visual refresh B)', () => {
+describe('the status filter opens on the active, and the summary counts the rows shown (story 7.13)', () => {
   const people = [
     member({ id: 'a', name: 'Ana Anić', role: 'admin' }),
     member({
@@ -2364,53 +2464,216 @@ describe('the summary counts the whole snapshot, never the narrowed rows (visual
       name: 'Ema Emić',
       statusVersions: [{ active: false, effectiveFrom: '2026-10-01' }],
     }),
+    // Inactive today, back from a later date.
+    member({
+      id: 'f',
+      name: 'Filip Filić',
+      statusVersions: [
+        { active: false, effectiveFrom: '2026-09-01' },
+        { active: true, effectiveFrom: '2026-10-12' },
+      ],
+    }),
   ];
   const inputs: NarrowingInputs = {
     members: people,
     search: NO_TEXT,
     level: ALL_LEVELS,
     team: ALL_TEAMS,
+    status: STATUS_ACTIVE,
     sort: DEFAULT_SORT,
     today: TODAY,
   };
+  const ids = (view: { readonly narrowed: { readonly rows: readonly MemberListRow[] } }): string[] =>
+    view.narrowed.rows.map((row) => row.id);
 
-  it('states total, administrators, active and inactive as at today', () => {
-    expect(membersSummaryOf(people, TODAY)).toEqual([
-      { label: 'ljudi.stats.total', value: 5 },
-      { label: 'ljudi.stats.admins', value: 2 },
-      { label: 'ljudi.stats.active', value: 3 },
-      { label: 'ljudi.stats.inactive', value: 2 },
-    ]);
+  it('shows the members active today by default, a scheduled deactivation among them', () => {
+    const view = membersViewOf(inputs);
+
+    expect(ids(view)).toEqual(['a', 'c', 'e']);
+    expect(view.summary).toEqual({ shown: 3, admins: 1, scheduled: 1 });
   });
 
-  it('keeps counting everyone through the call the screen makes, with a search that matches nobody', () => {
+  it('shows the inactive, a scheduled reactivation among them', () => {
+    const view = membersViewOf({ ...inputs, status: STATUS_INACTIVE });
+
+    expect(ids(view)).toEqual(['b', 'd', 'f']);
+    expect(view.summary).toEqual({ shown: 3, admins: 1, scheduled: 1 });
+  });
+
+  it('shows everybody at svi', () => {
+    const view = membersViewOf({ ...inputs, status: STATUS_ALL });
+
+    expect(ids(view)).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
+    expect(view.summary).toEqual({ shown: 6, admins: 2, scheduled: 2 });
+  });
+
+  it('counts each status option over the search, the level and the team', () => {
+    expect(membersViewOf(inputs).narrowed.statuses).toEqual({
+      [STATUS_ACTIVE]: 3,
+      [STATUS_INACTIVE]: 3,
+      [STATUS_ALL]: 6,
+    });
+    expect(membersViewOf({ ...inputs, level: 'admin' }).narrowed.statuses).toEqual({
+      [STATUS_ACTIVE]: 1,
+      [STATUS_INACTIVE]: 1,
+      [STATUS_ALL]: 2,
+    });
+    // AND THE OTHER AXES COUNT OVER THE STATUS: the level options under `aktivni`.
+    expect(membersViewOf(inputs).narrowed.counts).toEqual({ [ALL_LEVELS]: 3, admin: 1, member_role: 2 });
+  });
+
+  it('counts the shown rows at zero, with a search that matches nobody', () => {
     const view = membersViewOf({ ...inputs, search: 'nobody matches this' });
 
     expect(view.narrowed.rows).toEqual([]);
-    expect(view.summary).toEqual(membersSummaryOf(people, TODAY));
-    expect(view.summary?.[0]).toEqual({ label: 'ljudi.stats.total', value: 5 });
-  });
-
-  it('keeps counting everyone with a level filter too', () => {
-    const view = membersViewOf({ ...inputs, level: 'admin' });
-
-    expect(view.narrowed.rows.map((row) => row.id).sort()).toEqual(['a', 'b']);
-    expect(view.summary?.map((stat) => stat.value)).toEqual([5, 2, 3, 2]);
+    expect(view.summary).toEqual({ shown: 0, admins: 0, scheduled: 0 });
   });
 
   it('hands the narrowing through unchanged', () => {
     expect(membersViewOf(inputs).narrowed).toEqual(narrowFrom(inputs));
   });
 
-  it('states neither active nor inactive while today is unknown, and nothing before an answer', () => {
-    expect(membersSummaryOf(people, null)).toEqual([
-      { label: 'ljudi.stats.total', value: 5 },
-      { label: 'ljudi.stats.admins', value: 2 },
-      { label: 'ljudi.stats.active', value: null },
-      { label: 'ljudi.stats.inactive', value: null },
-    ]);
-    expect(membersSummaryOf([], null)?.map((stat) => stat.value)).toEqual([0, 0, null, null]);
-    expect(membersSummaryOf(null, TODAY)).toBeNull();
+  it('states no scheduled figure while today is unknown, and nothing before an answer', () => {
+    expect(membersSummaryOf(people, null)).toEqual({ shown: 6, admins: 2, scheduled: null });
+    expect(membersSummaryOf([], TODAY)).toEqual({ shown: 0, admins: 0, scheduled: 0 });
     expect(membersViewOf({ ...inputs, members: null }).summary).toBeNull();
+    // WITH NO TODAY NOBODY IS "ACTIVE" OR "INACTIVE": the screen waits with
+    // skeleton rows rather than list the inactive under `aktivni`. `svi` lists.
+    expect(narrowMembers(people, NO_TEXT, ALL_LEVELS, DEFAULT_SORT, null, ALL_TEAMS, STATUS_ACTIVE).rows).toEqual([]);
+    expect(narrowMembers(people, NO_TEXT, ALL_LEVELS, DEFAULT_SORT, null, ALL_TEAMS, STATUS_INACTIVE).rows).toEqual([]);
+    expect(narrowMembers(people, NO_TEXT, ALL_LEVELS, DEFAULT_SORT, null, ALL_TEAMS, STATUS_ALL).rows).toHaveLength(6);
+  });
+
+  it('waits for today before drawing rows, unless the filter is svi or there is nobody', () => {
+    expect(membersAwaitTodayOf(people, null, STATUS_ACTIVE)).toBe(true);
+    expect(membersAwaitTodayOf(people, null, STATUS_INACTIVE)).toBe(true);
+    expect(membersAwaitTodayOf(people, null, STATUS_ALL)).toBe(false);
+    expect(membersAwaitTodayOf(people, TODAY, STATUS_ACTIVE)).toBe(false);
+    expect(membersAwaitTodayOf(null, null, STATUS_ACTIVE)).toBe(false);
+    expect(membersAwaitTodayOf([], null, STATUS_ACTIVE)).toBe(false);
+  });
+
+  it('filters by the one status rule the cell reads (memberStatusOf)', () => {
+    for (const one of people) {
+      const active = memberStatusOf(one, TODAY).activeToday;
+      const shownActive = membersViewOf({ ...inputs, members: [one] }).narrowed.rows.length === 1;
+
+      expect(shownActive, one.id).toBe(active);
+    }
+  });
+});
+
+describe('the search, filters and sort live in the URL, with every default left out (story 7.13)', () => {
+  it('reads an empty search as the defaults, and writes the defaults as nothing', () => {
+    expect(membersFiltersOf({})).toEqual(DEFAULT_FILTERS);
+    expect(membersSearchFor(DEFAULT_FILTERS)).toEqual({});
+    expect(membersSearchOf({})).toEqual({});
+  });
+
+  it('round-trips every value through the URL', () => {
+    const filters: MembersFilters = {
+      search: 'ana',
+      level: 'member_role',
+      team: 'team-alfa',
+      status: STATUS_ALL,
+      sort: { key: LEAVE_COLUMN, direction: DESCENDING },
+    };
+    const search = membersSearchFor(filters);
+
+    expect(search).toEqual({ trazi: 'ana', razina: 'clan', smjena: 'team-alfa', status: 'svi', sort: '-godisnji' });
+    expect(membersFiltersOf(search)).toEqual(filters);
+  });
+
+  it('reads the deep link the spec names', () => {
+    expect(membersFiltersOf({ razina: 'admin', smjena: 'team-alfa', sort: '-ime' })).toEqual({
+      ...DEFAULT_FILTERS,
+      level: 'admin',
+      team: 'team-alfa',
+      sort: { key: NAME_COLUMN, direction: DESCENDING },
+    });
+    expect(membersFiltersOf({ smjena: NO_TEAM }).team).toBe(NO_TEAM);
+    expect(membersFiltersOf({ status: 'neaktivni' }).status).toBe(STATUS_INACTIVE);
+    expect(membersFiltersOf({ sort: 'status' }).sort).toEqual({ key: STATUS_COLUMN, direction: ASCENDING });
+  });
+
+  it('falls back to the default for every value outside its vocabulary, and never throws', () => {
+    expect(
+      membersFiltersOf({ status: 'x', razina: 'boss', sort: '-visina', smjena: '', trazi: { nested: true } }),
+    ).toEqual(DEFAULT_FILTERS);
+    expect(membersFiltersOf({ status: 3, razina: null, sort: 7, smjena: 12 })).toEqual(DEFAULT_FILTERS);
+    // THE ROUTER PARSES `?trazi=123` AS JSON: a number is still a search.
+    expect(membersFiltersOf({ trazi: 123 }).search).toBe('123');
+    // AN EXPLICIT DEFAULT IS DROPPED, so the URL only ever holds what differs.
+    expect(membersSearchOf({ status: 'aktivni', sort: 'ime', razina: 'x' })).toEqual({});
+  });
+
+  it('keeps a stale team in the parse, for the snapshot to settle (teamToStore)', () => {
+    expect(membersSearchOf({ smjena: 'team-gone' })).toEqual({ smjena: 'team-gone' });
+  });
+
+  it('names one state with one key, so a change and the URL it leaves compare', () => {
+    const search = membersSearchFor({ ...DEFAULT_FILTERS, status: STATUS_ALL });
+
+    expect(membersSearchKeyOf(search)).toBe(membersSearchKeyOf(membersSearchOf({ status: 'svi' })));
+    expect(membersSearchKeyOf(search)).not.toBe(membersSearchKeyOf({}));
+  });
+
+  it('never gives two states one key, whatever the search text holds', () => {
+    expect(membersSearchKeyOf({ trazi: 'a|clan' })).not.toBe(membersSearchKeyOf({ trazi: 'a', razina: 'clan' }));
+    expect(membersSearchKeyOf({ trazi: 'a","b' })).not.toBe(membersSearchKeyOf({ trazi: 'a', razina: 'b' }));
+  });
+
+  it('trims the search, and reads whitespace alone as no search', () => {
+    expect(membersFiltersOf({ trazi: '  ' })).toEqual(DEFAULT_FILTERS);
+    expect(isNarrowed(membersFiltersOf({ trazi: '  ' }))).toBe(false);
+    expect(membersSearchOf({ trazi: '  ' })).toEqual({});
+    expect(membersFiltersOf({ trazi: ' ana ' }).search).toBe('ana');
+  });
+});
+
+describe('the chips say what is set, and each press is a change of the filters (story 7.13)', () => {
+  const teams = [
+    { value: ALL_TEAMS, team: NO_TEXT, count: 3 },
+    { value: 'team-alfa', team: 'Alfa', count: 2 },
+    { value: NO_TEAM, team: NO_TEXT, count: 1 },
+  ];
+
+  it('draws the status chip set at its default, and every other chip unset', () => {
+    expect(MEMBER_CHIPS).toEqual([CHIP_LEVEL, CHIP_TEAM, CHIP_STATUS]);
+    expect(MEMBER_CHIPS.map((key) => memberChipActive(DEFAULT_FILTERS, ALL_TEAMS, key))).toEqual([false, false, true]);
+    expect(memberChipsActiveCount(DEFAULT_FILTERS, ALL_TEAMS)).toBe(1);
+    expect(memberChipActive({ ...DEFAULT_FILTERS, status: STATUS_ALL }, ALL_TEAMS, CHIP_STATUS)).toBe(false);
+    expect(memberChipActive(DEFAULT_FILTERS, 'team-alfa', CHIP_TEAM)).toBe(true);
+  });
+
+  it('removes the status to svi, and every other chip to all', () => {
+    const narrowed: MembersFilters = { ...DEFAULT_FILTERS, level: 'admin', team: 'team-alfa' };
+
+    expect(memberChipRemovalOf(narrowed, CHIP_STATUS).status).toBe(STATUS_ALL);
+    expect(memberChipRemovalOf(narrowed, CHIP_LEVEL)).toEqual({ ...narrowed, level: ALL_LEVELS });
+    expect(memberChipRemovalOf(narrowed, CHIP_TEAM)).toEqual({ ...narrowed, team: ALL_TEAMS });
+  });
+
+  it('picks a value among the options, and falls back for anything else', () => {
+    expect(memberChipChoiceOf(DEFAULT_FILTERS, CHIP_LEVEL, 'admin', teams).level).toBe('admin');
+    expect(memberChipChoiceOf(DEFAULT_FILTERS, CHIP_TEAM, 'team-alfa', teams).team).toBe('team-alfa');
+    expect(memberChipChoiceOf(DEFAULT_FILTERS, CHIP_TEAM, 'team-gone', teams).team).toBe(ALL_TEAMS);
+    expect(memberChipChoiceOf(DEFAULT_FILTERS, CHIP_STATUS, STATUS_INACTIVE, teams).status).toBe(STATUS_INACTIVE);
+    // ONE FALLBACK FOR AN UNKNOWN STATUS, the URL's: the default.
+    expect(memberChipChoiceOf(DEFAULT_FILTERS, CHIP_STATUS, 'x', teams).status).toBe(DEFAULT_STATUS);
+    expect(memberChipChoiceOf({ ...DEFAULT_FILTERS, status: STATUS_ALL }, CHIP_STATUS, 'x', teams).status).toBe(
+      chooseStatus('x'),
+    );
+  });
+
+  it('admits only its own chip keys', () => {
+    expect(chooseChip(CHIP_STATUS)).toBe(CHIP_STATUS);
+    expect(chooseChip('osoba')).toBeNull();
+  });
+
+  it('keeps a status that is one, and falls back to the default otherwise', () => {
+    expect(STATUS_FILTERS.map(chooseStatus)).toEqual(STATUS_FILTERS);
+    expect(chooseStatus('x')).toBe(DEFAULT_STATUS);
+    expect(DEFAULT_STATUS).toBe(STATUS_ACTIVE);
   });
 });

@@ -88,6 +88,186 @@ test('a status or team date the screen refuses is marked invalid and focused, in
   await expect(peoplePage.teamCard).toContainText(fill(hr.smjene.membership.current, { team: hr.smjene.membership.none }));
 });
 
+// STORY 7.13: the list opens on the members active today, filters by status
+// through a chip, states each member's status — or the change scheduled — in
+// its own column, and keeps its search, filters and sort in the URL.
+test.describe('the member list filters by status and states it in a column', () => {
+  /** A member deactivated from today, and one scheduled to be from three days on. */
+  async function seedStatuses(peoplePage: PeoplePage, label: string): Promise<{ away: string; leaving: string; later: string }> {
+    const away = uniqueMember(`${label} Otišla`);
+    const leaving = uniqueMember(`${label} Odlazi`);
+
+    await peoplePage.createMember(away.name, away.username);
+    await peoplePage.backLink.click();
+    await peoplePage.editLink(away.name).click();
+    await peoplePage.deactivate(away.name);
+    await expect(peoplePage.statusCard.getByRole('status')).toHaveText(hr.ljudi.status.saved);
+
+    await peoplePage.createMember(leaving.name, leaving.username);
+    await peoplePage.backLink.click();
+    await peoplePage.editLink(leaving.name).click();
+    await peoplePage.deactivateButton(leaving.name).click();
+    const minimum = await peoplePage.statusDateInput.getAttribute('min');
+    if (minimum === null) throw new Error('E2E: the status date control has no minimum');
+    const later = addDays(minimum, 3);
+    await peoplePage.statusDateInput.fill(later);
+    await peoplePage.deactivateSaveButton.click();
+    await expect(peoplePage.statusDialog).toHaveCount(0);
+
+    return { away: away.name, leaving: leaving.name, later };
+  }
+
+  test('opens on the active, shows a scheduled change in the status column, and Status ✕ shows everyone', async ({
+    page,
+    peoplePage,
+    fixture,
+  }) => {
+    const { away, leaving, later } = await seedStatuses(peoplePage, 'Status Stupac');
+
+    await peoplePage.goto();
+    // THE DEFAULT IS `aktivni`, drawn as set, with no reset to offer.
+    await expect(peoplePage.statusChip).toHaveAccessibleName(peoplePage.statusChipText('active'));
+    await expect(peoplePage.removeStatus('active')).toBeVisible();
+    await expect(peoplePage.filters.clearButton).toHaveCount(0);
+    await expect(peoplePage.filters.summary).toBeVisible();
+    // No `<select>` and no stat card are left.
+    await expect(page.locator('select')).toHaveCount(0);
+
+    await expect(peoplePage.memberRow(fixture.member.name)).toContainText(hr.ljudi.status.cellActive);
+    await expect(peoplePage.memberRow(leaving)).toContainText(peoplePage.scheduledStatusText(later, false));
+    await expect(peoplePage.memberRow(away)).toHaveCount(0);
+    await expect(peoplePage.columnHeader(hr.ljudi.status.heading)).toBeVisible();
+
+    // ✕ SHOWS EVERYONE, in the URL; the inactive read `Neaktivno`.
+    await peoplePage.removeStatus('active').click();
+    await expect(page).toHaveURL(/[?&]status=svi\b/);
+    await expect(peoplePage.statusChip).toHaveAccessibleName(peoplePage.statusChipText('all'));
+    await expect(peoplePage.memberRow(away)).toContainText(hr.ljudi.status.cellInactive);
+    // Focus moves on to the first chip, the one after the last being none.
+    await expect(peoplePage.levelChip).toBeFocused();
+
+    // A RELOAD SHOWS THE SAME.
+    await page.reload();
+    await expect(peoplePage.memberRow(away)).toContainText(hr.ljudi.status.cellInactive);
+
+    // THE PICKER NARROWS TO THE INACTIVE.
+    await peoplePage.statusChip.click();
+    await peoplePage.statusOption('inactive').click();
+    await expect(page).toHaveURL(/[?&]status=neaktivni\b/);
+    await expect(peoplePage.statusChip).toBeFocused();
+    await expect(peoplePage.memberRow(away)).toBeVisible();
+    await expect(peoplePage.memberRow(fixture.member.name)).toHaveCount(0);
+
+    // THE RESET: `Poništi filtre` returns `/ljudi`, focus to the search.
+    await peoplePage.filters.clearButton.click();
+    await expect(page).toHaveURL('/ljudi');
+    await expect(peoplePage.searchInput).toBeFocused();
+    await expect(peoplePage.memberRow(away)).toHaveCount(0);
+  });
+
+  test('restores a deep link, Back restores the previous filter, and a bad value falls back', async ({
+    page,
+    peoplePage,
+    fixture,
+  }) => {
+    await page.goto('/ljudi?razina=admin&sort=-ime');
+    await expect(peoplePage.levelChip).toHaveAccessibleName(fill(hr.ljudi.chip.level, { value: hr.ljudi.admin }));
+    await expect(peoplePage.columnHeader(hr.ljudi.name)).toHaveAttribute('aria-sort', 'descending');
+    await expect(peoplePage.memberRow(fixture.admin.name)).toBeVisible();
+    await expect(peoplePage.memberRow(fixture.member.name)).toHaveCount(0);
+
+    await peoplePage.removeStatus('active').click();
+    await expect(page).toHaveURL(/[?&]status=svi\b/);
+    await page.goBack();
+    await expect(page).not.toHaveURL(/status=/);
+    await expect(peoplePage.statusChip).toHaveAccessibleName(peoplePage.statusChipText('active'));
+    await expect(peoplePage.levelChip).toHaveAccessibleName(fill(hr.ljudi.chip.level, { value: hr.ljudi.admin }));
+
+    // TYPING REPLACES THE ENTRY: no history entry per letter.
+    const entries = await page.evaluate(() => history.length);
+    await peoplePage.searchInput.pressSequentially('Ana');
+    await expect(page).toHaveURL(/[?&]trazi=Ana\b/);
+    expect(await page.evaluate(() => history.length)).toBe(entries);
+
+    // A BAD VALUE FALLS BACK, and a team nobody is on leaves the URL.
+    await page.goto('/ljudi?status=x&smjena=00000000-0000-4000-8000-000000000000');
+    await expect(peoplePage.statusChip).toHaveAccessibleName(peoplePage.statusChipText('active'));
+    await expect(peoplePage.memberRow(fixture.member.name)).toBeVisible();
+    await expect(page).not.toHaveURL(/smjena=/);
+    await expect(peoplePage.filters.bar.getByRole('button', { name: hr.filter.chip.teamAll, exact: true })).toBeVisible();
+  });
+
+  test('opens a searched link, and Back after a chip and typing restores the box and the rows', async ({
+    page,
+    peoplePage,
+    fixture,
+  }) => {
+    const searched = fixture.member.name;
+
+    await page.goto(`/ljudi?trazi=${encodeURIComponent(searched)}`);
+    await expect(peoplePage.searchInput).toHaveValue(searched);
+    await expect(peoplePage.memberRow(fixture.member.name)).toBeVisible();
+    await expect(peoplePage.memberRow(fixture.admin.name)).toHaveCount(0);
+
+    // A CHIP PUSHES AN ENTRY; TYPING REPLACES IT.
+    await peoplePage.removeStatus('active').click();
+    await expect(page).toHaveURL(/[?&]status=svi\b/);
+    await peoplePage.searchInput.fill('');
+    await peoplePage.searchInput.pressSequentially(fixture.admin.name);
+    await expect(peoplePage.memberRow(fixture.admin.name)).toBeVisible();
+    await expect(peoplePage.memberRow(fixture.member.name)).toHaveCount(0);
+
+    // BACK RESTORES THE LINK: the box and the rows follow the URL.
+    await page.goBack();
+    await expect(page).not.toHaveURL(/status=/);
+    await expect(peoplePage.searchInput).toHaveValue(searched);
+    await expect(peoplePage.memberRow(fixture.member.name)).toBeVisible();
+    await expect(peoplePage.memberRow(fixture.admin.name)).toHaveCount(0);
+  });
+
+  test('puts the inactive chips behind Filtri at 390 px, and each row is one link with its status', async ({
+    page,
+    peoplePage,
+  }) => {
+    const { away, leaving, later } = await seedStatuses(peoplePage, 'Status Telefon');
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await peoplePage.goto();
+    await expect(peoplePage.list).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    // ONLY THE SET CHIP IS DRAWN: Status, behind `Filtri · 1`.
+    await expect(peoplePage.filters.filtriButton).toHaveAccessibleName(fill(hr.filter.openCount, { count: '1' }));
+    await expect(peoplePage.statusChip).toBeVisible();
+    await expect(peoplePage.levelChip).toBeHidden();
+
+    const leavingRow = peoplePage.listRow(leaving);
+    await expect(leavingRow.getByRole('link')).toHaveCount(1);
+    await expect(peoplePage.listLabel(leavingRow, hr.ljudi.status.heading)).toHaveCount(1);
+    await expect(leavingRow).toContainText(peoplePage.scheduledStatusText(later, false));
+
+    // THE SHEET: one radio group per chip; a choice writes the URL at once.
+    await peoplePage.filters.filtriButton.click();
+    await expect(peoplePage.filters.sheet).toBeVisible();
+    await peoplePage.sheetStatus('all').click();
+    await expect(page).toHaveURL(/[?&]status=svi\b/);
+    await peoplePage.filters.sheetShowAny.click();
+    await expect(peoplePage.filters.sheet).toBeHidden();
+    await expect(peoplePage.filters.filtriButton).toHaveAccessibleName(hr.filter.open);
+    await expect(peoplePage.listRow(away)).toContainText(hr.ljudi.status.cellInactive);
+    await expectNoHorizontalScroll(page);
+
+    // THE SHEET'S `Poništi` returns the defaults and leaves focus in the sheet.
+    await peoplePage.filters.filtriButton.click();
+    await peoplePage.sheetStatus('all').click();
+    await expect(page).toHaveURL(/[?&]status=svi\b/);
+    await peoplePage.filters.sheetReset.click();
+    await expect(page).toHaveURL('/ljudi');
+    await expect(peoplePage.sheetStatus('active')).toBeChecked();
+    await expect(peoplePage.filters.sheetReset).toBeFocused();
+    expect(await peoplePage.filters.sheet.evaluate((sheet) => sheet.contains(document.activeElement))).toBe(true);
+  });
+});
+
 // STORY 7.11: the member page reads as facts headed by the person's name, and
 // each change opens its own dialog with one final button.
 test.describe('the member page shows facts and each change opens one dialog', () => {
@@ -448,7 +628,7 @@ test.describe('the member list on a phone', () => {
     await expect(row).toHaveCount(1);
     await expect(row.getByRole('link')).toHaveCount(1);
     await expect(peoplePage.listLabel(row, hr.ljudi.email)).toHaveCount(0);
-    for (const label of [hr.ljudi.name, hr.ljudi.role, hr.smjene.membership.column, hr.ljudi.leave]) {
+    for (const label of [hr.ljudi.name, hr.ljudi.role, hr.smjene.membership.column, hr.ljudi.leave, hr.ljudi.status.heading]) {
       await expect(peoplePage.listLabel(row, label)).toHaveCount(1);
     }
 

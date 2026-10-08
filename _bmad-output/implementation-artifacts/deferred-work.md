@@ -871,3 +871,9 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-11-member-page-facts-dialogs.md`
   summary: The member page's *Promijeni smjenu* dialog shows no *Što se mijenja* (decision 16: "Zadnja u A · čet 01.10. · Noć · 19:00–07:00 / Prva u B · sub 03.10. · Dan · 07:00–19:00"). It needs a projection of a member's move across teams from a date, and `change-preview.ts` models only one team on one day.
   evidence: `mockups/member-page-1.html` panel D; deferred in spec 7.11 Epic AC Deviations.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-13-ljudi-status-filter.md`
+  summary: Story 7.13 b) *Dodaj osobu* opens a short dialog on Ljudi instead of the `/ljudi/novi` page. The dialog ends in the same dialog with the password shown once (`CredentialLine`, `Kopiraj`), then offers *Dodaj još jednu* and *Otvori stranicu osobe*, which needs the `memberId` that `createUser` already returns and the client drops. Decided 2026-10-08: no team at creation (team stays on the member page), username suggested from the name, the e-mail field stays, and the `/ljudi/novi` route is removed (rewrite the `prijava.test.ts` / `router.test.ts` sweeps). Closes the 7.8 entry about the inline one-time display.
+  evidence: 7.13 split at planning (SCOPE STANDARD, three shippable goals); `mockups/people-1.html` §2; epics.md 7.13 AC2.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-13-ljudi-status-filter.md`
+  summary: Story 7.13 c) The member page's deactivation question states the consequence in numbers (UX-DR27): "Smjena {team} od tada ima {n} od {m} članova, a u {month} je to {k} smjena.", computed from the domain roster (`rosterOn` / `shiftRoster`), and the action button repeats the date ("Deaktiviraj od {dd.mm.}"). Decided 2026-10-08: deactivation stays on the member page only and is not offered from Ljudi.
+  evidence: 7.13 split at planning; `mockups/people-1.html` §3; spec-7-11 L50 handed the numbers to 7.13; epics.md 7.13 AC3.

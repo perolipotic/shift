@@ -34,7 +34,7 @@ describe('plural', () => {
 
   it('refuses ICU it does not support', () => {
     expect(() => plural('{count, plural, offset:1 one {# a} other {# b}}', 1)).toThrow();
-    expect(() => plural(hr.smjene.membership.filterTeam, 1)).toThrow();
+    expect(() => plural(hr.ljudi.summary.full, 1)).toThrow();
     expect(() => plural('{n, plural, one {# a} other {# b}}', 1)).toThrow();
     expect(() => plural('{count, plural, one {# a} other {# b}} i {team}', 1)).toThrow();
     expect(() => plural('bez broja', 1)).toThrow();

@@ -1,15 +1,20 @@
-import { Link, createRoute, redirect } from '@tanstack/react-router';
+import { Link, createRoute, redirect, useNavigate } from '@tanstack/react-router';
 import { Plus, UsersRound } from 'lucide-react';
+import { useCallback } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Notice } from '@/components/ui/notice';
 import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { t } from '@/lib/i18n';
-import { MemberCount } from '@/features/members/components/member-count';
-import { MemberStats } from '@/features/members/components/member-stats';
 import { MemberTable } from '@/features/members/components/member-table';
-import { useMemberList } from '@/features/members/hooks/use-member-list';
-import { mayReadMembers, membersMessageKey } from '@/features/members/services/list';
+import { useMemberList, type MembersNavigate } from '@/features/members/hooks/use-member-list';
+import {
+  MEMBERS_ERROR_ID,
+  mayReadMembers,
+  membersMessageKey,
+  membersSearchOf,
+  type MembersSearch,
+} from '@/features/members/services/list';
 import { DESTINATIONS } from '@/features/navigation/utils/destinations';
 import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/features/navigation/services/role';
 import { appLayoutRoute } from '@/pages/_app';
@@ -18,6 +23,11 @@ import { appLayoutRoute } from '@/pages/_app';
  * `Ljudi` — the member list (story 1.5a). This file composes the screen; its
  * state and its one read are `useMemberList`, its sections are components in
  * `@/features/members/components`, and every rule is `@/features/members/services/list`'s.
+ *
+ * THE FILTERS ARE IN THE URL (story 7.13): `?trazi=&razina=&smjena=&status=&sort=`,
+ * validated here by `membersSearchOf` — an unknown value falls back to its
+ * default — and written by the hook through `navigate`. The list opens on the
+ * members active today; one summary line under the chips says what is shown.
  *
  * ADMIN ONLY, AND THE FIRST ROUTE IN THE TREE WHERE THAT IS TRUE. The screen
  * holds every colleague's address and leave allowance, UX-DR31 gives the member
@@ -38,7 +48,17 @@ import { appLayoutRoute } from '@/pages/_app';
 const FIRST_DESTINATION = DESTINATIONS[0];
 
 export function LjudiScreen() {
-  const list = useMemberList();
+  const search = ljudiRoute.useSearch();
+  const navigate = useNavigate({ from: ljudiRoute.fullPath });
+  // ONE FUNCTION FOR THE SCREEN'S LIFE, so the hook's effects that write the
+  // URL do not re-run for a new closure on every render.
+  const write = useCallback<MembersNavigate>(
+    (next, { replace }) => {
+      void navigate({ search: next, replace });
+    },
+    [navigate],
+  );
+  const list = useMemberList(search, write);
   const { refusal, loading } = list;
 
   return (
@@ -74,18 +94,16 @@ export function LjudiScreen() {
           </Button>
         </PageActions>
       </PageHeader>
-      <MemberStats list={list} />
       {/* OUTSIDE the answered branch, and conditional on both sides: a read that
           produced no row never renders a table, so an explanation rendered
           inside one would be exactly the element nobody can see. `role="alert"`
           announces it on insertion, and the controls point at it by id. */}
       {refusal === null ? null : (
-        <Notice id="ljudi-error" role="alert">
+        <Notice id={MEMBERS_ERROR_ID} role="alert">
           {t(membersMessageKey(refusal))}
         </Notice>
       )}
       <MemberTable list={list} />
-      <MemberCount list={list} />
     </main>
   );
 }
@@ -93,6 +111,7 @@ export function LjudiScreen() {
 export const ljudiRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/ljudi',
+  validateSearch: (search: Record<string, unknown>): MembersSearch => membersSearchOf(search),
   /**
    * The role guard, and the first one in the tree.
    *

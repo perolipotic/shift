@@ -29,6 +29,9 @@ import {
   type FilterBarInput,
   type FilterPersonOption,
   type FilterTeamOption,
+  focusAfterOptionRemovalOf,
+  optionPickerAlignOf,
+  optionChipsActiveCount,
 } from '@/utils/filter-bar';
 
 /**
@@ -287,5 +290,31 @@ describe('the month in the locative', () => {
     expect(() => monthInMessageKey('2026-13')).toThrow(RangeError);
     expect(() => monthInMessageKey('2026-1')).toThrow(RangeError);
     expect(yearOfMonthText('2026-10')).toBe('2026');
+  });
+});
+
+describe('option chips count what is set and pass focus on after a removal (story 7.13)', () => {
+  const chips = [
+    { key: 'level', active: false },
+    { key: 'team', active: true },
+    { key: 'status', active: true },
+  ];
+
+  it('counts the set chips for Filtri · N', () => {
+    expect(optionChipsActiveCount(chips)).toBe(2);
+    expect(optionChipsActiveCount([])).toBe(0);
+  });
+
+  it('moves focus to the chip after the removed one, else to the first', () => {
+    expect(focusAfterOptionRemovalOf(chips, 'level')).toBe('team');
+    expect(focusAfterOptionRemovalOf(chips, 'team')).toBe('status');
+    expect(focusAfterOptionRemovalOf(chips, 'status')).toBe('level');
+    expect(focusAfterOptionRemovalOf([], 'status')).toBeNull();
+  });
+
+  it('opens the first picker from its left edge and every later one from its right', () => {
+    expect(optionPickerAlignOf(chips, 'level')).toBe('start');
+    expect(optionPickerAlignOf(chips, 'team')).toBe('end');
+    expect(optionPickerAlignOf(chips, 'status')).toBe('end');
   });
 });

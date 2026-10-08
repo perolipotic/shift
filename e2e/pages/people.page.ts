@@ -4,6 +4,7 @@ import { dayMonth, fullDate, weekdayShort } from '../utils/dates.ts';
 import { escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 import { ErasureDialogParts } from './erasure-dialog.ts';
+import { FilterBarParts } from './filter-bar.ts';
 import { sortControlIn, sortOptionIn, sortPickerIn } from './sort-control.ts';
 
 const membership = hr.smjene.membership;
@@ -95,6 +96,55 @@ export class PeoplePage extends BasePage {
   /** A sortable heading of the table from 640 px, by its label: `aria-sort` is on it. */
   columnHeader(label: string): Locator {
     return this.table.getByRole('columnheader', { name: label, exact: true });
+  }
+
+  // ---------------------------------------------- the list's filters (7.13)
+
+  /** The shared filter bar's parts: the chips' group, the summary, `Poništi filtre`, `Filtri` and its sheet. */
+  get filters(): FilterBarParts {
+    return new FilterBarParts(this.page);
+  }
+
+  /** The list's search, beside the chips. */
+  get searchInput(): Locator {
+    return this.page.getByRole('searchbox', { name: hr.ljudi.search, exact: true });
+  }
+
+  /** The Razina chip, whatever it reads. */
+  get levelChip(): Locator {
+    return this.filters.bar.getByRole('button', { name: new RegExp(`^${escapeRegExp(hr.ljudi.chip.levelAll.replace(/\S+$/, ''))}`) });
+  }
+
+  /** The Status chip, whatever it reads. */
+  get statusChip(): Locator {
+    return this.filters.bar.getByRole('button', { name: new RegExp(`^${escapeRegExp(hr.ljudi.chip.status.replace('{value}', ''))}`) });
+  }
+
+  /** The Status chip's text for a value: `Status: aktivni`. */
+  statusChipText(value: keyof typeof hr.ljudi.statusValue): string {
+    return fill(hr.ljudi.chip.status, { value: hr.ljudi.statusValue[value] });
+  }
+
+  /** The Status chip's ✕ while `value` is set. */
+  removeStatus(value: keyof typeof hr.ljudi.statusValue): Locator {
+    return this.page.getByRole('button', { name: fill(hr.ljudi.chip.removeStatus, { value: hr.ljudi.statusValue[value] }), exact: true });
+  }
+
+  /** A status option in the Status chip's picker (from 640 px). */
+  statusOption(value: keyof typeof hr.ljudi.statusFilter): Locator {
+    return this.page
+      .getByRole('dialog', { name: hr.ljudi.chip.statusPicker, exact: true })
+      .getByRole('button', { name: new RegExp(`^${escapeRegExp(hr.ljudi.statusFilter[value])}\\s*\\d`) });
+  }
+
+  /** A status radio in the phone's filter sheet. */
+  sheetStatus(value: keyof typeof hr.ljudi.statusFilter): Locator {
+    return this.filters.sheet.getByRole('radio', { name: new RegExp(`^${escapeRegExp(hr.ljudi.statusFilter[value])}\\s*\\d`) });
+  }
+
+  /** The status column's words for a scheduled change from `date` (ISO): `Od 05.10.: neaktivno`. */
+  scheduledStatusText(date: string, active: boolean): string {
+    return fill(active ? hr.ljudi.status.cellFromActive : hr.ljudi.status.cellFromInactive, { date: dayMonth(date) });
   }
 
   /** The way from the list to the teams screen, a client-side link. */

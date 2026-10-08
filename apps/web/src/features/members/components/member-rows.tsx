@@ -3,7 +3,6 @@ import { ChevronRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { Avatar } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import {
   StackedField,
   StackedFields,
@@ -18,6 +17,7 @@ import {
   LEAVE_COLUMN,
   LEVEL_COLUMN,
   NAME_COLUMN,
+  STATUS_COLUMN,
   TEAM_COLUMN,
   memberActionName,
   memberCellLookOf,
@@ -33,7 +33,9 @@ const SKELETON_ROWS = [0, 1, 2, 3, 4];
  * The member list on a phone (story 7.6): the table's own columns as stacked
  * rows, every cell read from the same `MEMBER_COLUMNS` entry the table reads.
  * A row is the initials chip, the name as its title with `{team} · {level}`
- * under it, the leave allowance on the right, and a chevron. The address is
+ * under it and the status on a line of its own — today's, or the change
+ * scheduled after it (story 7.13), drawn as the table's status cell is — the
+ * leave allowance on the right, and a chevron. The address is
  * not shown on a phone (the approved mockup); it stays on the member page and
  * in the table from 640 px.
  *
@@ -69,6 +71,7 @@ function MemberRow({
   const team = memberColumnOf(TEAM_COLUMN);
   const level = memberColumnOf(LEVEL_COLUMN);
   const leave = memberColumnOf(LEAVE_COLUMN);
+  const status = memberColumnOf(STATUS_COLUMN);
   const nameCell = name.cell(member, today);
   const look = memberCellLookOf(nameCell);
   const leaveCell = leave.cell(member, today);
@@ -80,28 +83,23 @@ function MemberRow({
       {look.avatar === null ? null : <Avatar className="max-[359px]:hidden">{look.avatar.initials}</Avatar>}
       <StackedFields className="flex min-w-0 flex-1 flex-wrap items-baseline text-sm text-muted-foreground">
         <StackedField label={t(name.label)} labelHidden className="basis-full">
-          <span className="inline-flex max-w-full flex-wrap items-center gap-x-3 gap-y-1">
-            <Link
-              to="/ljudi/$id"
-              params={{ id: member.id }}
-              aria-label={t('ljudi.form.edit', { name: memberActionName(member) })}
-              className="inline-flex min-h-11 items-center font-medium text-foreground outline-none after:absolute after:inset-0 after:rounded-md focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
-            >
-              {cellContent(nameCell)}
-            </Link>
-            {look.status === null ? null : (
-              <span>
-                <span className="sr-only">{t('ljudi.status.separator')}</span>
-                <Badge variant={look.status.variant}>{t(look.status.key, look.status.args)}</Badge>
-              </span>
-            )}
-          </span>
+          <Link
+            to="/ljudi/$id"
+            params={{ id: member.id }}
+            aria-label={t('ljudi.form.edit', { name: memberActionName(member) })}
+            className="inline-flex min-h-11 items-center font-medium text-foreground outline-none after:absolute after:inset-0 after:rounded-md focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring"
+          >
+            {cellContent(nameCell)}
+          </Link>
         </StackedField>
         <StackedField label={t(team.label)} labelHidden>
           <CellView cell={team.cell(member, today)} />
         </StackedField>
         <StackedField label={t(level.label)} labelHidden separated>
           <CellView cell={level.cell(member, today)} />
+        </StackedField>
+        <StackedField label={t(status.label)} labelHidden className="basis-full">
+          <CellView cell={status.cell(member, today)} />
         </StackedField>
       </StackedFields>
       <StackedFields className="shrink-0 text-right">

@@ -1,7 +1,7 @@
 import { queryOptions } from '@tanstack/react-query';
 
 import { initialsOf } from '@/utils/initials';
-import { compareText, formatIsoDate, isIsoDate, organizationIsoDate } from '@/lib/i18n/format';
+import { compareText, formatIsoDate, formatIsoDayMonth, isIsoDate, organizationIsoDate } from '@/lib/i18n/format';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
 import { MEMBER_ROLES, type MemberRoleOutcome } from '@/features/navigation/services/role';
 
@@ -154,6 +154,9 @@ export const MEMBERS_COUNT: MembersCountOptions = { count: 'exact' };
  * cell of a member with no address. Both are this.
  */
 export const NO_TEXT = '';
+
+/** The id of the list's refusal notice, which the search and the chips point at while it is shown. */
+export const MEMBERS_ERROR_ID = 'ljudi-error';
 
 /**
  * TanStack Query's own name for a fetch it has NOT started.
@@ -921,15 +924,18 @@ export const LEVEL_COLUMN = 'role';
 export const LEAVE_COLUMN = 'leaveAllowanceDays';
 /** The column carrying the member's team today (story 1.7b). */
 export const TEAM_COLUMN = 'team';
+/** The column carrying the member's status today, or the change scheduled after it (story 7.13). */
+export const STATUS_COLUMN = 'status';
 
 export type MemberColumnKey =
   | typeof NAME_COLUMN
   | typeof EMAIL_COLUMN
   | typeof LEVEL_COLUMN
   | typeof TEAM_COLUMN
-  | typeof LEAVE_COLUMN;
+  | typeof LEAVE_COLUMN
+  | typeof STATUS_COLUMN;
 
-/** The keys the five column headings render. Typed as the union so a heading
+/** The keys the six column headings render. Typed as the union so a heading
  *  absent from `hr.json` is a `pnpm typecheck` failure here. The team heading
  *  lives under `smjene.*`, the one namespace that may say the Team. */
 export type MemberColumnLabel =
@@ -937,32 +943,26 @@ export type MemberColumnLabel =
   | 'ljudi.email'
   | 'ljudi.role'
   | 'smjene.membership.column'
-  | 'ljudi.leave';
+  | 'ljudi.leave'
+  | 'ljudi.status.heading';
 
 /** A cell holding text the row already carries — an address. */
 export const TEXT_CELL = 'text';
 /**
- * A cell holding the name of a member who is active today, or of any member
- * while today is not yet known (visual refresh B). It carries the initials the
- * avatar chip beside the name draws, so the screen reads no member field for
- * them. The inactive and scheduled name cells carry the same two values.
+ * A cell holding a member's name (visual refresh B). It carries the initials
+ * the avatar chip beside the name draws, so the screen reads no member field
+ * for them. SINCE STORY 7.13 IT CARRIES NO STATUS: the status column states
+ * that fact, once per row.
  */
 export const NAME_CELL = 'name';
 /**
- * A cell holding the name of a member who is inactive TODAY (story 1.6). The
- * surface renders it with the inactive marker in WORDS: colour alone is a
- * signal part of the audience cannot see, and a row that looks like every
- * other is the defect the marker exists for. An active member's name is an
- * ordinary {@link TEXT_CELL}, so the marker is decided here and nowhere else.
+ * A cell holding a member's status as at the organization's today (story
+ * 7.13): active, inactive, or — when a change is dated after today — that
+ * change and its date, which covers a scheduled reactivation too. One fact
+ * per row, in WORDS (colour is never the only signal), and read through
+ * {@link memberStatusOf}, the one rule the member page's Status card reads.
  */
-export const INACTIVE_NAME_CELL = 'inactiveName';
-/**
- * A cell holding the name of a member who is active today and SCHEDULED to be
- * inactive from a later date. Marked too, in words and in the future tense,
- * because an admin reading the list is the person who would otherwise plan
- * next week around somebody who will not be there.
- */
-export const SCHEDULED_INACTIVE_NAME_CELL = 'scheduledInactiveName';
+export const STATUS_CELL = 'status';
 /** A cell holding a permission level, which the surface resolves through `t()`. */
 export const LEVEL_CELL = 'level';
 /** A cell holding a count of days, which the surface runs through the formatter. */
@@ -993,16 +993,10 @@ export type MemberCell =
   | { readonly kind: typeof TEXT_CELL; readonly text: string }
   | { readonly kind: typeof NAME_CELL; readonly text: string; readonly initials: string | null }
   | {
-      readonly kind: typeof INACTIVE_NAME_CELL;
-      readonly text: string;
-      readonly initials: string | null;
-    }
-  | {
-      readonly kind: typeof SCHEDULED_INACTIVE_NAME_CELL;
-      readonly text: string;
-      readonly initials: string | null;
-      /** The ISO date the member is inactive from. */
-      readonly from: string;
+      readonly kind: typeof STATUS_CELL;
+      readonly activeToday: boolean;
+      /** The change dated after today, or `null`: active or inactive from `from` (an ISO date). */
+      readonly scheduled: { readonly active: boolean; readonly from: string } | null;
     }
   | { readonly kind: typeof LEVEL_CELL; readonly level: MemberRole }
   | {
@@ -1019,6 +1013,9 @@ export type MemberCell =
       } | null;
     }
   | { readonly kind: typeof DAYS_CELL; readonly days: number };
+
+/** The status column's cell (story 7.13). */
+export type StatusCell = Extract<MemberCell, { readonly kind: typeof STATUS_CELL }>;
 
 export interface MemberColumn {
   readonly key: MemberColumnKey;
@@ -1052,7 +1049,7 @@ export interface MemberColumn {
 }
 
 /**
- * The four columns, in binding order.
+ * The six columns, in binding order.
  *
  * DATA IN A `.ts`, exactly as `@/features/navigation/utils/destinations` is and for the same
  * reason: the surface renders its headings, its skeleton cells and its body
@@ -1061,11 +1058,11 @@ export interface MemberColumn {
  * could. The 1.5a review swapped two headers' sort keys and the suite stayed
  * green precisely because the pairing lived in JSX.
  *
- * FIVE SINCE STORY 1.7b, which adds the team as at the organization's today.
- * Each remaining absence is a decision rather than an omission: there is no
- * hours column (epic 4), and no active/inactive column: story 1.6 marks an
- * inactive member in words inside the NAME cell, so an active member's row
- * carries no word about it at all.
+ * FIVE SINCE STORY 1.7b, which adds the team as at the organization's today,
+ * and SIX SINCE STORY 7.13, which adds the status: today's, or the change
+ * scheduled after it, so a reactivation shows before it takes effect. The
+ * name cell carried an inactive marker until then; the status column states
+ * that fact instead, once. There is still no hours column (epic 4).
  *
  * The permission level sorts by RANK rather than by its own text: `MEMBER_ROLES`
  * is ordered most-privileged first, so ascending puts administrators at the top.
@@ -1078,28 +1075,7 @@ export const MEMBER_COLUMNS: readonly MemberColumn[] = [
     key: NAME_COLUMN,
     label: 'ljudi.name',
     numeric: false,
-    // AS AT TODAY, and no marker at all while today is not known: a member
-    // marked inactive by a guessed date is a false statement about a person,
-    // and the device's own date is the wrong frame (L8).
-    cell: (member, today) => {
-      const initials = initialsOf(member.name);
-
-      if (today === null) return { kind: NAME_CELL, text: member.name, initials };
-
-      const status = memberStatusOf(member, today);
-
-      if (!status.activeToday) return { kind: INACTIVE_NAME_CELL, text: member.name, initials };
-      if (status.scheduled !== null && !status.scheduled.active) {
-        return {
-          kind: SCHEDULED_INACTIVE_NAME_CELL,
-          text: member.name,
-          initials,
-          from: status.scheduled.effectiveFrom,
-        };
-      }
-
-      return { kind: NAME_CELL, text: member.name, initials };
-    },
+    cell: (member) => ({ kind: NAME_CELL, text: member.name, initials: initialsOf(member.name) }),
     sortValue: (member) => member.name,
   },
   {
@@ -1141,7 +1117,41 @@ export const MEMBER_COLUMNS: readonly MemberColumn[] = [
     cell: (member) => ({ kind: DAYS_CELL, days: member.leaveAllowanceDays }),
     sortValue: (member) => member.leaveAllowanceDays,
   },
+  {
+    key: STATUS_COLUMN,
+    label: 'ljudi.status.heading',
+    numeric: false,
+    // AS AT TODAY, and nothing at all while today is not known: a member
+    // called inactive by a guessed date is a false statement about a person,
+    // and the device's own date is the wrong frame (L8).
+    cell: (member, today) => (today === null ? { kind: TEXT_CELL, text: NO_TEXT } : statusCellOf(member, today)),
+    // BY THE FACT THE CELL STATES: active, then a scheduled deactivation, then
+    // a scheduled reactivation, then inactive. Nothing while today is unknown.
+    sortValue: (member, today) =>
+      today === null || today === undefined ? null : statusRankOf(memberStatusOf(member, today)),
+  },
 ];
+
+/** The status column's cell for a member as at `today`, from {@link memberStatusOf}. */
+export function statusCellOf(member: MemberListRow, today: string): StatusCell {
+  const status = memberStatusOf(member, today);
+
+  return {
+    kind: STATUS_CELL,
+    activeToday: status.activeToday,
+    scheduled:
+      status.scheduled === null
+        ? null
+        : { active: status.scheduled.active, from: status.scheduled.effectiveFrom },
+  };
+}
+
+/** Where a status sorts: active 0, active with a deactivation scheduled 1, inactive with a reactivation scheduled 2, inactive 3. */
+function statusRankOf(status: MemberStatus): number {
+  if (status.activeToday) return status.scheduled === null ? 0 : 1;
+
+  return status.scheduled === null ? 3 : 2;
+}
 
 /**
  * One column of {@link MEMBER_COLUMNS}, by its key (story 7.6): the phone's
@@ -1221,22 +1231,34 @@ export function cellClassNameOf(column: MemberColumn): string {
 export type MemberBadge = 'default' | 'secondary' | 'outline';
 
 /**
- * The inactive marker's words for a name cell, or `null` for a member with no
- * marker (story 1.6, moved here by visual refresh B).
+ * The status cell's words (story 7.13), or `null` for any other cell.
  *
- * AN INACTIVE MEMBER IS MARKED IN WORDS, never by colour alone: inactive today
- * in the present, a deactivation already scheduled in the future with its
- * date. Swapping the two would mark a member inactive who is only scheduled to
- * be, so the pairing is executed by `features/members/services/list.test.ts` rather than written
- * in a `.tsx` nothing runs.
+ * ONE FACT, IN WORDS, never by colour alone: `Aktivno`, `Neaktivno`, or — a
+ * change dated after today — `Od {dd.mm.}: neaktivno|aktivno`, which says
+ * what the member WILL be. Swapping two would call a member inactive who is
+ * only scheduled to be, so the pairing is executed by
+ * `features/members/services/list.test.ts` rather than written in a `.tsx`
+ * nothing runs.
  */
 export function memberStatusMessageKey(
-  cell: MemberCell,
-): 'ljudi.status.inactive' | 'ljudi.status.inactiveScheduled' | null {
-  if (cell.kind === INACTIVE_NAME_CELL) return 'ljudi.status.inactive';
-  if (cell.kind === SCHEDULED_INACTIVE_NAME_CELL) return 'ljudi.status.inactiveScheduled';
+  cell: StatusCell,
+):
+  | 'ljudi.status.cellActive'
+  | 'ljudi.status.cellInactive'
+  | 'ljudi.status.cellFromActive'
+  | 'ljudi.status.cellFromInactive' {
+  if (cell.scheduled !== null) {
+    return cell.scheduled.active ? 'ljudi.status.cellFromActive' : 'ljudi.status.cellFromInactive';
+  }
 
-  return null;
+  return cell.activeToday ? 'ljudi.status.cellActive' : 'ljudi.status.cellInactive';
+}
+
+/** The status cell's interpolation: the scheduled change's date as `05.10.`, or empty for none. */
+export function memberStatusArgsOf(cell: StatusCell): { readonly date: string } {
+  if (cell.scheduled === null) return { date: NO_TEXT };
+
+  return { date: formatIsoDayMonth(cell.scheduled.from) ?? cell.scheduled.from };
 }
 
 /**
@@ -1259,12 +1281,10 @@ export function teamMarkerMessageKey(
   return 'smjene.membership.markerMove';
 }
 
-/** The inactive marker as the screen draws it: a variant, a key and its argument. */
+/** A marker beside a cell's value as the screen draws it: a variant, a key and its argument. */
 export interface MemberStatusLook {
   readonly variant: MemberBadge;
-  readonly key:
-    | NonNullable<ReturnType<typeof memberStatusMessageKey>>
-    | NonNullable<ReturnType<typeof teamMarkerMessageKey>>;
+  readonly key: NonNullable<ReturnType<typeof teamMarkerMessageKey>>;
   /**
    * The key's interpolation. `date` is the SHOWN date, or empty for none;
    * `team` the scheduled team's name, or empty for none.
@@ -1286,27 +1306,21 @@ export interface MemberAvatar {
  * - `badge`: the badge the cell's own value is drawn as, or `null` for plain
  *   text. A permission level is a badge: administrators in the primary tint,
  *   members in the secondary fill. The level's WORD is what says which it is.
- * - `status`: the inactive marker beside the name, with its words, or `null`
- *   when the member carries no marker. The key comes from
- *   {@link memberStatusMessageKey}, so the look and the words are one decision.
+ *   A scheduled status change is an outline badge (story 7.13).
+ * - `status`: the scheduled team change's marker beside the team, with its
+ *   words, or `null` when none is scheduled. The key comes from
+ *   {@link teamMarkerMessageKey}, so the look and the words are one decision.
+ * - `muted`: the plain value is drawn in muted text — `Aktivno`, the common
+ *   case, so the rows that differ stand out by their words.
  */
 export interface MemberCellLook {
   readonly avatar: MemberAvatar | null;
   readonly badge: MemberBadge | null;
   readonly status: MemberStatusLook | null;
+  readonly muted: boolean;
 }
 
-const PLAIN_LOOK: MemberCellLook = { avatar: null, badge: null, status: null };
-
-function statusLookOf(cell: MemberCell): MemberStatusLook | null {
-  const key = memberStatusMessageKey(cell);
-
-  if (key === null) return null;
-
-  const date = cell.kind === SCHEDULED_INACTIVE_NAME_CELL ? shownDate(cell.from) : NO_TEXT;
-
-  return { variant: 'outline', key, args: { date, team: NO_TEXT } };
-}
+const PLAIN_LOOK: MemberCellLook = { avatar: null, badge: null, status: null, muted: false };
 
 /**
  * A scheduled team change, drawn in the PRIMARY tint so it stands out from
@@ -1326,12 +1340,11 @@ function teamMarkerLookOf(cell: MemberCell): MemberStatusLook | null {
 }
 
 export function memberCellLookOf(cell: MemberCell): MemberCellLook {
-  if (
-    cell.kind === NAME_CELL ||
-    cell.kind === INACTIVE_NAME_CELL ||
-    cell.kind === SCHEDULED_INACTIVE_NAME_CELL
-  ) {
-    return { ...PLAIN_LOOK, avatar: { initials: cell.initials }, status: statusLookOf(cell) };
+  if (cell.kind === NAME_CELL) return { ...PLAIN_LOOK, avatar: { initials: cell.initials } };
+  if (cell.kind === STATUS_CELL) {
+    if (cell.scheduled !== null) return { ...PLAIN_LOOK, badge: 'outline' };
+
+    return { ...PLAIN_LOOK, muted: cell.activeToday };
   }
   if (cell.kind === LEVEL_CELL) {
     return { ...PLAIN_LOOK, badge: cell.level === 'admin' ? 'default' : 'secondary' };
@@ -1341,54 +1354,47 @@ export function memberCellLookOf(cell: MemberCell): MemberCellLook {
   return PLAIN_LOOK;
 }
 
-/** The keys the four summary figures are labelled with. */
-export type MemberStatLabel =
-  | 'ljudi.stats.total'
-  | 'ljudi.stats.admins'
-  | 'ljudi.stats.active'
-  | 'ljudi.stats.inactive';
-
-export interface MemberStat {
-  /** The heading's translation key. NEVER the heading. */
-  readonly label: MemberStatLabel;
-  /** The figure, or `null` while it cannot yet be stated: drawn as pending. */
-  readonly value: number | null;
+/**
+ * The classes a cell's plain value is drawn with: cut with an ellipsis, and
+ * muted where {@link memberCellLookOf} says so. In a `.ts` because a ternary
+ * over two class strings in JSX is refused by `eslint.config.js`'s L2 block.
+ */
+export function cellTextClassNameOf(look: MemberCellLook): string {
+  return look.muted ? 'truncate text-muted-foreground' : 'truncate';
 }
 
 /**
- * The summary row above the list: everybody, the administrators, and who is
- * active and inactive as at the organization's today (visual refresh B).
+ * The summary line's operands (story 7.13): how many rows are shown, how many
+ * of them are administrators, and how many have a status change scheduled
+ * after today — `Prikazano: 15 osoba · 1 administrator · 1 zakazana promjena`.
  *
- * UNFILTERED, AND FROM THE ONE SNAPSHOT (AD-13). It counts the `members` the
- * single read returned, never the narrowed rows, so a typed search or a chosen
- * level changes the table and leaves these four figures alone. No second read
- * exists for it. The screen reaches it through {@link membersViewOf}.
- *
- * `null` while there is no answer, so no figure is stated before one exists.
- * While today is unknown the ACTIVE and INACTIVE figures are `null` too, for
- * the reason the name cell marks nobody: a count by a guessed date is a false
- * statement, and `5 / 0` would be one.
+ * THE ROWS SHOWN, never the whole snapshot: the line says what the table
+ * holds, so a search or a filter moves it with the rows. Every count is
+ * stated at zero. `scheduled` is `null` while today is unknown, for the reason
+ * the status cell is empty then: a count by a guessed date is a false statement.
  */
-export function membersSummaryOf(
-  members: readonly MemberListRow[] | null,
-  today: string | null,
-): readonly MemberStat[] | null {
-  if (members === null) return null;
+export interface MembersSummary {
+  readonly shown: number;
+  readonly admins: number;
+  readonly scheduled: number | null;
+}
 
+/** The summary of the rows the table shows, as at `today`. */
+export function membersSummaryOf(rows: readonly MemberListRow[], today: string | null): MembersSummary {
   let admins = 0;
-  let inactive = 0;
+  let scheduled = 0;
 
-  for (const member of members) {
+  for (const member of rows) {
     if (member.role === 'admin') admins += 1;
-    if (today !== null && !memberActiveOn(member, today)) inactive += 1;
+    if (today !== null && memberStatusOf(member, today).scheduled !== null) scheduled += 1;
   }
 
-  return [
-    { label: 'ljudi.stats.total', value: members.length },
-    { label: 'ljudi.stats.admins', value: admins },
-    { label: 'ljudi.stats.active', value: today === null ? null : members.length - inactive },
-    { label: 'ljudi.stats.inactive', value: today === null ? null : inactive },
-  ];
+  return { shown: rows.length, admins, scheduled: today === null ? null : scheduled };
+}
+
+/** The summary line's message: with the scheduled count, or without it while today is unknown. */
+export function membersSummaryMessageKey(summary: MembersSummary): 'ljudi.summary.full' | 'ljudi.summary.noStatus' {
+  return summary.scheduled === null ? 'ljudi.summary.noStatus' : 'ljudi.summary.full';
 }
 
 /** `aria-sort`'s own vocabulary, so the screen writes neither value by hand. */
@@ -1595,7 +1601,8 @@ export function chooseTeam(value: string, options: readonly TeamFilterOption[]):
 }
 
 /**
- * The label one team option renders as — a count, in all three Croatian forms.
+ * The name one team option renders as in the Smjena chip's picker (story
+ * 7.13), or `null` for a team, whose name is data. Its count is drawn beside it.
  *
  * UNDER `smjene.membership.*`, not `ljudi.*`: the team namespace is the one
  * that may say `smjena` (`test/resource-hygiene.test.ts`), and "no team" is
@@ -1603,14 +1610,11 @@ export function chooseTeam(value: string, options: readonly TeamFilterOption[]):
  */
 export function teamFilterMessageKey(
   value: TeamFilter,
-):
-  | 'smjene.membership.filterAll'
-  | 'smjene.membership.filterTeam'
-  | 'smjene.membership.filterNone' {
-  if (value === ALL_TEAMS) return 'smjene.membership.filterAll';
-  if (value === NO_TEAM) return 'smjene.membership.filterNone';
+): 'smjene.membership.allTeams' | 'smjene.membership.none' | null {
+  if (value === ALL_TEAMS) return 'smjene.membership.allTeams';
+  if (value === NO_TEAM) return 'smjene.membership.none';
 
-  return 'smjene.membership.filterTeam';
+  return null;
 }
 
 /**
@@ -1637,15 +1641,275 @@ export function teamToStore(
   return stored === applied ? stored : applied;
 }
 
+/** Every member, whatever their status: the status chip's ✕ (story 7.13). */
+export const STATUS_ALL = 'svi';
+/** The members active today: the view the list opens in. */
+export const STATUS_ACTIVE = 'aktivni';
+/** The members inactive today. */
+export const STATUS_INACTIVE = 'neaktivni';
+
 /**
- * Whether the reset has anything to reset: something in the search box, or a
- * level or a team other than every one.
+ * A status filter value, written to the URL as `?status=` (story 7.13). The
+ * values ARE the URL's words, as `?prikaz=moj|sve` are on *Kalendar*.
+ */
+export type StatusFilter = typeof STATUS_ACTIVE | typeof STATUS_INACTIVE | typeof STATUS_ALL;
+
+/** The status options, in the order the chip's picker offers them. */
+export const STATUS_FILTERS: readonly StatusFilter[] = [STATUS_ACTIVE, STATUS_INACTIVE, STATUS_ALL];
+
+/** The status the list opens in: active today (FR-15). */
+export const DEFAULT_STATUS: StatusFilter = STATUS_ACTIVE;
+
+/** The status a value IS, or the default — never a cast (see {@link chooseLevel}). */
+export function chooseStatus(value: unknown): StatusFilter {
+  return STATUS_FILTERS.find((known) => known === value) ?? DEFAULT_STATUS;
+}
+
+/** The label one status option renders as. */
+export function statusFilterMessageKey(
+  status: StatusFilter,
+): 'ljudi.statusFilter.active' | 'ljudi.statusFilter.inactive' | 'ljudi.statusFilter.all' {
+  if (status === STATUS_ACTIVE) return 'ljudi.statusFilter.active';
+  if (status === STATUS_INACTIVE) return 'ljudi.statusFilter.inactive';
+  if (status === STATUS_ALL) return 'ljudi.statusFilter.all';
+
+  const unhandled: never = status;
+
+  return unhandled;
+}
+
+/**
+ * Whether a member passes the status filter as at `today`, by the one status
+ * rule the status cell and the member page read ({@link memberStatusOf}).
+ * `svi` needs no status. With today unknown nobody passes `aktivni` or
+ * `neaktivni`: there is no honest answer to "who is active" without it, and
+ * the screen draws skeleton rows instead ({@link membersAwaitTodayOf}).
+ */
+function statusMatches(member: MemberListRow, status: StatusFilter, today: string | null): boolean {
+  if (status === STATUS_ALL) return true;
+  if (today === null) return false;
+
+  return memberStatusOf(member, today).activeToday === (status === STATUS_ACTIVE);
+}
+
+/**
+ * Whether the list must wait for today before it can draw a row (story
+ * 7.13): it has members, the organization's today is not settled, and the
+ * status filter needs it. The screen draws skeleton rows meanwhile; `svi`
+ * lists rows at once, because it needs no status.
+ */
+export function membersAwaitTodayOf(
+  members: readonly MemberListRow[] | null,
+  today: string | null,
+  status: StatusFilter,
+): boolean {
+  return members !== null && members.length > 0 && today === null && status !== STATUS_ALL;
+}
+
+/**
+ * Everything the list is narrowed and ordered by, as the URL holds it (story
+ * 7.13): the search as typed, the level, the team, the status and the sort.
+ */
+export interface MembersFilters {
+  readonly search: string;
+  readonly level: LevelFilter;
+  readonly team: TeamFilter;
+  readonly status: StatusFilter;
+  readonly sort: SortState;
+}
+
+/** The list as it opens: no search, every level, every team, active today, by name ascending. */
+export const DEFAULT_FILTERS: MembersFilters = {
+  search: NO_TEXT,
+  level: ALL_LEVELS,
+  team: ALL_TEAMS,
+  status: DEFAULT_STATUS,
+  sort: DEFAULT_SORT,
+};
+
+/**
+ * Whether the list differs from the view it opens in, which is when
+ * `Poništi filtre` is shown (story 7.13).
  *
  * ANY TEXT IN THE BOX COUNTS, whitespace included: the reset's job is to put
- * the three controls back, and a box holding two spaces is not back.
+ * the controls back, and a box holding two spaces is not back. The sort counts
+ * too: the reset returns the URL to its defaults, and the sort is in the URL.
  */
-export function isNarrowed(search: string, level: LevelFilter, team: TeamFilter): boolean {
-  return search !== NO_TEXT || level !== ALL_LEVELS || team !== ALL_TEAMS;
+export function isNarrowed(filters: MembersFilters): boolean {
+  return (
+    filters.search !== DEFAULT_FILTERS.search ||
+    filters.level !== DEFAULT_FILTERS.level ||
+    filters.team !== DEFAULT_FILTERS.team ||
+    filters.status !== DEFAULT_FILTERS.status ||
+    filters.sort.key !== DEFAULT_FILTERS.sort.key ||
+    filters.sort.direction !== DEFAULT_FILTERS.sort.direction
+  );
+}
+
+/** The search parameters `/ljudi` reads: `?trazi=&razina=&smjena=&status=&sort=`, each absent at its default. */
+export type MembersSearch = {
+  readonly trazi?: string | undefined;
+  readonly razina?: string | undefined;
+  readonly smjena?: string | undefined;
+  readonly status?: string | undefined;
+  readonly sort?: string | undefined;
+};
+
+/** Each level as the URL writes it: `?razina=admin|clan`. */
+const LEVEL_SEARCH_VALUES: Readonly<Record<MemberRole, string>> = { admin: 'admin', member_role: 'clan' };
+
+/** Each sortable column as the URL writes it: `?sort=ime`, `?sort=-ime` descending. */
+const SORT_SEARCH_VALUES: Readonly<Record<MemberColumnKey, string>> = {
+  [NAME_COLUMN]: 'ime',
+  [EMAIL_COLUMN]: 'adresa',
+  [LEVEL_COLUMN]: 'razina',
+  // `tim`, as *Sati*'s `sort=tim`: the team's search parameter is `smjena`.
+  [TEAM_COLUMN]: 'tim',
+  [LEAVE_COLUMN]: 'godisnji',
+  [STATUS_COLUMN]: 'status',
+};
+
+/** The prefix a descending sort carries in the URL. */
+const DESCENDING_PREFIX = '-';
+
+function levelOfSearch(value: unknown): LevelFilter {
+  return MEMBER_ROLES.find((role) => LEVEL_SEARCH_VALUES[role] === value) ?? ALL_LEVELS;
+}
+
+function sortOfSearch(value: unknown): SortState {
+  if (typeof value !== 'string') return DEFAULT_SORT;
+
+  const descending = value.startsWith(DESCENDING_PREFIX);
+  const name = descending ? value.slice(DESCENDING_PREFIX.length) : value;
+  const key = MEMBER_COLUMNS.find((column) => SORT_SEARCH_VALUES[column.key] === name)?.key;
+
+  return key === undefined ? DEFAULT_SORT : { key, direction: descending ? DESCENDING : ASCENDING };
+}
+
+/**
+ * The URL's search text, trimmed: whitespace alone is no search, so
+ * `?trazi=%20%20` opens at the defaults and offers no reset. A number too —
+ * the router parses `?trazi=123` as JSON.
+ */
+function searchOfText(text: unknown): string {
+  if (typeof text === 'number') return String(text);
+
+  return typeof text === 'string' ? text.trim() : NO_TEXT;
+}
+
+/**
+ * What the URL's search says, as filters: every value outside its vocabulary
+ * falls back to its default, and never throws. A team is any non-empty value
+ * here — whether it is still an option is the snapshot's to say
+ * ({@link teamToStore}), which the parser cannot see.
+ */
+export function membersFiltersOf(search: Readonly<Record<string, unknown>>): MembersFilters {
+  const text = search['trazi'];
+  const team = search['smjena'];
+
+  return {
+    search: searchOfText(text),
+    level: levelOfSearch(search['razina']),
+    team: typeof team === 'string' && team !== NO_TEXT ? team : ALL_TEAMS,
+    status: chooseStatus(search['status']),
+    sort: sortOfSearch(search['sort']),
+  };
+}
+
+/** The URL's search for `filters`: each value at its default is left out, so the defaults are `/ljudi`. */
+export function membersSearchFor(filters: MembersFilters): MembersSearch {
+  const sorted = filters.sort.key !== DEFAULT_SORT.key || filters.sort.direction !== DEFAULT_SORT.direction;
+  const sort = `${filters.sort.direction === DESCENDING ? DESCENDING_PREFIX : NO_TEXT}${SORT_SEARCH_VALUES[filters.sort.key]}`;
+
+  return {
+    ...(filters.search === NO_TEXT ? {} : { trazi: filters.search }),
+    ...(filters.level === ALL_LEVELS ? {} : { razina: LEVEL_SEARCH_VALUES[filters.level] }),
+    ...(filters.team === ALL_TEAMS ? {} : { smjena: filters.team }),
+    ...(filters.status === DEFAULT_STATUS ? {} : { status: filters.status }),
+    ...(sorted ? { sort } : {}),
+  };
+}
+
+/**
+ * `/ljudi`'s `validateSearch`: the search parsed and written back, so an
+ * unknown value is dropped and the route only ever holds what it shows.
+ */
+export function membersSearchOf(search: Readonly<Record<string, unknown>>): MembersSearch {
+  return membersSearchFor(membersFiltersOf(search));
+}
+
+/** One search as a string, so a change and the state it leaves compare as one key. */
+export function membersSearchKeyOf(search: MembersSearch): string {
+  // JSON, never a join: free text holding the separator would make two states one key.
+  return JSON.stringify([search.trazi, search.razina, search.smjena, search.status, search.sort].map((value) => value ?? null));
+}
+
+/** The three chips beside the search (story 7.13), in the order they are drawn. */
+export const CHIP_LEVEL = 'level';
+export const CHIP_TEAM = 'team';
+export const CHIP_STATUS = 'status';
+
+export type MemberChipKey = typeof CHIP_LEVEL | typeof CHIP_TEAM | typeof CHIP_STATUS;
+
+export const MEMBER_CHIPS: readonly MemberChipKey[] = [CHIP_LEVEL, CHIP_TEAM, CHIP_STATUS];
+
+/** The chip a key names, or `null` for none — never a cast. */
+export function chooseChip(value: string): MemberChipKey | null {
+  return MEMBER_CHIPS.find((key) => key === value) ?? null;
+}
+
+/**
+ * Whether a chip is SET — drawn active, with its ✕. The status chip is set at
+ * its default, `aktivni`, because the default view does narrow: its ✕ shows
+ * `svi`. `team` is the team the rows were narrowed by.
+ */
+export function memberChipActive(filters: MembersFilters, team: TeamFilter, key: MemberChipKey): boolean {
+  switch (key) {
+    case CHIP_LEVEL:
+      return filters.level !== ALL_LEVELS;
+    case CHIP_TEAM:
+      return team !== ALL_TEAMS;
+    case CHIP_STATUS:
+      return filters.status !== STATUS_ALL;
+  }
+}
+
+/** How many chips are set: the phone's `Filtri · N`. */
+export function memberChipsActiveCount(filters: MembersFilters, team: TeamFilter): number {
+  return MEMBER_CHIPS.filter((key) => memberChipActive(filters, team, key)).length;
+}
+
+/**
+ * What choosing `value` in a chip's picker leaves. A value outside the chip's
+ * options falls back as the URL does: a level or a team to "all", a status to
+ * its default ({@link chooseStatus}) — one rule.
+ */
+export function memberChipChoiceOf(
+  filters: MembersFilters,
+  key: MemberChipKey,
+  value: string,
+  teams: readonly TeamFilterOption[],
+): MembersFilters {
+  switch (key) {
+    case CHIP_LEVEL:
+      return { ...filters, level: chooseLevel(value) };
+    case CHIP_TEAM:
+      return { ...filters, team: chooseTeam(value, teams) };
+    case CHIP_STATUS:
+      return { ...filters, status: chooseStatus(value) };
+  }
+}
+
+/** What a chip's ✕ leaves: that chip at "all" — the status at `svi` — and the rest kept. */
+export function memberChipRemovalOf(filters: MembersFilters, key: MemberChipKey): MembersFilters {
+  switch (key) {
+    case CHIP_LEVEL:
+      return { ...filters, level: ALL_LEVELS };
+    case CHIP_TEAM:
+      return { ...filters, team: ALL_TEAMS };
+    case CHIP_STATUS:
+      return { ...filters, status: STATUS_ALL };
+  }
 }
 
 /**
@@ -1712,21 +1976,28 @@ export function memberLevelMessageKey(role: MemberRole): 'ljudi.admin' | 'ljudi.
 }
 
 /**
- * The label one filter option renders as — a count, in all three Croatian
- * forms (L7).
+ * The name one level option renders as in the Razina chip's picker (story
+ * 7.13); its count is drawn beside it.
  *
  * EXHAUSTIVE for the reason above, and with the same consequence if it were not:
  * a fall-through would label a third level as "every level" and quietly promise
  * a list it does not produce.
  */
-export function levelFilterMessageKey(
-  level: LevelFilter,
-): 'ljudi.filterAll' | 'ljudi.filterAdmin' | 'ljudi.filterMember' {
-  if (level === ALL_LEVELS) return 'ljudi.filterAll';
-  if (level === 'admin') return 'ljudi.filterAdmin';
-  if (level === 'member_role') return 'ljudi.filterMember';
+export function levelFilterMessageKey(level: LevelFilter): 'ljudi.chip.allLevels' | 'ljudi.admin' | 'ljudi.member' {
+  if (level === ALL_LEVELS) return 'ljudi.chip.allLevels';
 
-  const unhandled: never = level;
+  return memberLevelMessageKey(level);
+}
+
+/** The status chip's value, `aktivni`, and its option's name, `Aktivni` (story 7.13). */
+export function statusValueMessageKey(
+  status: StatusFilter,
+): 'ljudi.statusValue.active' | 'ljudi.statusValue.inactive' | 'ljudi.statusValue.all' {
+  if (status === STATUS_ACTIVE) return 'ljudi.statusValue.active';
+  if (status === STATUS_INACTIVE) return 'ljudi.statusValue.inactive';
+  if (status === STATUS_ALL) return 'ljudi.statusValue.all';
+
+  const unhandled: never = status;
 
   return unhandled;
 }
@@ -1852,6 +2123,8 @@ export interface MembersNarrowing {
    * from the same search and level.
    */
   readonly teams: readonly TeamFilterOption[];
+  /** What each status option would yield from the same search, level and team (story 7.13). */
+  readonly statuses: Readonly<Record<StatusFilter, number>>;
   /**
    * The team the rows were actually narrowed by: the one asked for, or
    * {@link ALL_TEAMS} when it is not among {@link teams} any more. The
@@ -1946,6 +2219,7 @@ export function narrowMembers(
   sort: SortState,
   today: string | null = null,
   team: TeamFilter = ALL_TEAMS,
+  status: StatusFilter = STATUS_ALL,
 ): MembersNarrowing {
   const searched = searchedMembers(members, search);
 
@@ -1962,28 +2236,35 @@ export function narrowMembers(
     member_role: 0,
   };
   const teamCounts = new Map<TeamFilter, number>(values.map((value) => [value, 0]));
+  const statuses: Record<StatusFilter, number> = { [STATUS_ACTIVE]: 0, [STATUS_INACTIVE]: 0, [STATUS_ALL]: 0 };
   const filtered: MemberListRow[] = [];
 
-  // ONE TRAVERSAL for the rows and both sets of counts, so none of the three
-  // can drift from the others.
+  // ONE TRAVERSAL for the rows and every set of counts, so none of them can
+  // drift from the others. Each axis counts over the other two (faceted).
   for (const member of searched) {
     // `null` IS "UNKNOWN", never a filter value: with no today there is no team
     // to count a member under, and only the every-team option exists.
     const onTeam: TeamFilter | null = today === null ? null : teamFilterValueOf(member, today);
     const levelMatches = level === ALL_LEVELS || member.role === level;
     const teamMatches = applied === ALL_TEAMS || onTeam === applied;
+    const statusMatch = statusMatches(member, status, today);
 
-    if (teamMatches) {
+    if (teamMatches && statusMatch) {
       counts[ALL_LEVELS] += 1;
       counts[member.role] += 1;
     }
 
-    if (levelMatches) {
+    if (levelMatches && statusMatch) {
       teamCounts.set(ALL_TEAMS, (teamCounts.get(ALL_TEAMS) ?? 0) + 1);
       if (onTeam !== null) teamCounts.set(onTeam, (teamCounts.get(onTeam) ?? 0) + 1);
     }
 
-    if (levelMatches && teamMatches) filtered.push(member);
+    if (levelMatches && teamMatches) {
+      statuses[STATUS_ALL] += 1;
+      if (today !== null) statuses[memberStatusOf(member, today).activeToday ? STATUS_ACTIVE : STATUS_INACTIVE] += 1;
+    }
+
+    if (levelMatches && teamMatches && statusMatch) filtered.push(member);
   }
 
   const names = new Map(named.map((known) => [known.id, known.name]));
@@ -1997,7 +2278,7 @@ export function narrowMembers(
   // A sort key no column owns orders nothing rather than throwing: the state is
   // this module's own and cannot reach that, but a `!` here would turn a future
   // mistake into a blank screen instead of an unsorted one.
-  if (column === undefined) return { rows: filtered, counts, teams, team: applied };
+  if (column === undefined) return { rows: filtered, counts, teams, statuses, team: applied };
 
   // DECORATED once rather than read inside the comparator, which is called
   // O(n log n) times: at Q20's several hundred members that is a few thousand
@@ -2033,6 +2314,7 @@ export function narrowMembers(
     rows: [...present.map((entry) => entry.member), ...absent],
     counts,
     teams,
+    statuses,
     team: applied,
   };
 }
@@ -2058,6 +2340,8 @@ export interface NarrowingInputs {
   readonly level: LevelFilter;
   /** The team filter's value; {@link narrowMembers} decides whether it applies. */
   readonly team: TeamFilter;
+  /** The status filter's value (story 7.13). */
+  readonly status: StatusFilter;
   readonly sort: SortState;
   /** The organization's today, which the team column sorts by (story 1.7b). */
   readonly today: string | null;
@@ -2073,7 +2357,7 @@ export interface NarrowingInputs {
  * quietly stops responding to it.
  */
 export function narrowingDependencies(inputs: NarrowingInputs): readonly unknown[] {
-  return [inputs.members, inputs.search, inputs.level, inputs.team, inputs.sort, inputs.today];
+  return [inputs.members, inputs.search, inputs.level, inputs.team, inputs.status, inputs.sort, inputs.today];
 }
 
 /** The narrowing, from the same object the dependencies are derived from. */
@@ -2085,30 +2369,32 @@ export function narrowFrom(inputs: NarrowingInputs): MembersNarrowing {
     inputs.sort,
     inputs.today,
     inputs.team,
+    inputs.status,
   );
 }
 
 /** Everything the member list draws from one set of inputs. */
 export interface MembersView {
-  /** The summary row: the WHOLE snapshot, whatever is searched or filtered. */
-  readonly summary: readonly MemberStat[] | null;
-  /** The table's rows and the filter's counts. */
+  /** The summary line: the rows SHOWN, or `null` before there is an answer. */
+  readonly summary: MembersSummary | null;
+  /** The table's rows and the filters' counts. */
   readonly narrowed: MembersNarrowing;
 }
 
 /**
  * The summary and the narrowing, from the same inputs, in ONE call the screen
- * makes (visual refresh B).
+ * makes (story 7.13).
  *
- * THE SUMMARY IS HANDED `members` AND `today` ONLY, never the search, the
- * level, the team or the sort, and this is the function the screen calls, so the claim
- * "the stat cards show unfiltered totals" is executed here rather than hoped
- * for in a `.tsx` nothing runs.
+ * THE SUMMARY COUNTS THE NARROWED ROWS, the very array the table draws, so
+ * the line and the rows cannot disagree; this is the function the screen
+ * calls, so the claim is executed here rather than hoped for in a `.tsx`.
  */
 export function membersViewOf(inputs: NarrowingInputs): MembersView {
+  const narrowed = narrowFrom(inputs);
+
   return {
-    summary: membersSummaryOf(inputs.members, inputs.today),
-    narrowed: narrowFrom(inputs),
+    summary: inputs.members === null ? null : membersSummaryOf(narrowed.rows, inputs.today),
+    narrowed,
   };
 }
 

@@ -47,6 +47,7 @@ import {
   type FilterChange,
   type FilterChip,
   type FilterKey,
+  type OptionPickerAlign,
 } from '@/utils/filter-bar';
 
 /**
@@ -59,7 +60,7 @@ export interface FilterBarHandle {
 }
 
 /** An element focus can actually land on: in the document and drawn (a phone hides inactive chips). */
-function drawn(element: HTMLElement | null | undefined): HTMLElement | null {
+export function drawn(element: HTMLElement | null | undefined): HTMLElement | null {
   return element !== null && element !== undefined && element.isConnected && element.getClientRects().length > 0
     ? element
     : null;
@@ -237,16 +238,11 @@ export function FilterBar({
           />
         ))}
       </div>
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3">
-        <p role="status" className="min-w-0 py-1 text-sm text-muted-foreground tabular-nums">
-          {t(filterSummaryMessageKey(model.summary), filterSummaryValuesOf(model.summary))}
-        </p>
-        {active ? (
-          <Button type="button" variant="link" className="h-11 px-0" onClick={clear}>
-            {t('filter.clear')}
-          </Button>
-        ) : null}
-      </div>
+      <SummaryLine
+        text={t(filterSummaryMessageKey(model.summary), filterSummaryValuesOf(model.summary))}
+        showClear={active}
+        onClear={clear}
+      />
       <FilterSheet
         id={sheetId}
         opening={opening}
@@ -259,7 +255,34 @@ export function FilterBar({
   );
 }
 
-/** One chip: the button that opens its picker, its ✕ while active, and the picker. */
+/**
+ * The summary line under a bar: what is shown, `role="status"`, ending in
+ * `Poništi filtre` while there is something to clear.
+ */
+export function SummaryLine({
+  text,
+  showClear,
+  onClear,
+}: {
+  readonly text: string;
+  readonly showClear: boolean;
+  readonly onClear: () => void;
+}): ReactNode {
+  return (
+    <div className="flex min-w-0 flex-wrap items-center gap-x-3">
+      <p role="status" className="min-w-0 py-1 text-sm text-muted-foreground tabular-nums">
+        {text}
+      </p>
+      {showClear ? (
+        <Button type="button" variant="link" className="h-11 px-0" onClick={onClear}>
+          {t('filter.clear')}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+/** One chip of *Kalendar*'s or *Sati*'s bar: the shared frame, with its words and its picker. */
 function Chip({
   chip,
   model,
@@ -275,11 +298,8 @@ function Chip({
 }: {
   readonly chip: FilterChip;
   readonly model: FilterBarModel;
-  /** The picker is open (from 640 px). */
   readonly open: boolean;
-  /** What the chip opened is open: its picker, or on a phone the sheet. */
   readonly expanded: boolean;
-  /** The sheet's id while a phone's chip opened it; the picker's is the chip's own. */
   readonly controls: string | null;
   readonly chipRef: (element: HTMLButtonElement | null) => void;
   readonly onToggle: () => void;
@@ -288,9 +308,80 @@ function Chip({
   readonly onPick: (id: string | null) => void;
   readonly onRemove: () => void;
 }): ReactNode {
+  return (
+    <ChipFrame
+      open={open}
+      expanded={expanded}
+      controls={controls}
+      chipRef={chipRef}
+      onToggle={onToggle}
+      onClose={onClose}
+      onLeave={onLeave}
+      onRemove={onRemove}
+      text={t(filterChipMessageKey(chip), { value: chip.value })}
+      active={chip.value !== null}
+      removeLabel={t(filterRemoveMessageKey(chip), { value: chip.value })}
+      pickerLabel={chip.key === FILTER_TEAM ? t('filter.teamPicker') : t('filter.personPicker')}
+    >
+      {chip.key === FILTER_TEAM ? (
+        <TeamOptions model={model} onPick={onPick} />
+      ) : (
+        <PersonOptions model={model} onPick={onPick} autoFocus />
+      )}
+    </ChipFrame>
+  );
+}
+
+export interface ChipFrameProps {
+  /** `Ključ: vrijednost`. */
+  readonly text: string;
+  /** Set: drawn active, with its ✕; an unset chip is not drawn below 640 px. */
+  readonly active: boolean;
+  /** The ✕'s name, saying what it removes. */
+  readonly removeLabel: string;
+  /** The picker's name. */
+  readonly pickerLabel: string;
+  /** Which edge of the chip the picker opens under, from 640 px; the left by default. */
+  readonly pickerAlign?: OptionPickerAlign;
+  /** The picker is open (from 640 px). */
+  readonly open: boolean;
+  /** What the chip opened is open: its picker, or on a phone the sheet. */
+  readonly expanded: boolean;
+  /** The sheet's id while a phone's chip opened it; the picker's is the chip's own. */
+  readonly controls: string | null;
+  readonly disabled?: boolean;
+  /** The id of what describes the chip — the screen's refusal while one is shown. */
+  readonly describedBy?: string | undefined;
+  readonly chipRef: (element: HTMLButtonElement | null) => void;
+  readonly onToggle: () => void;
+  readonly onClose: () => void;
+  readonly onLeave: () => void;
+  readonly onRemove: () => void;
+  /** The picker's content. */
+  readonly children: ReactNode;
+}
+
+/** One chip: the button that opens its picker, its ✕ while active, and the picker. */
+export function ChipFrame({
+  text,
+  active,
+  removeLabel,
+  pickerLabel,
+  pickerAlign,
+  open,
+  expanded,
+  controls,
+  disabled = false,
+  describedBy,
+  chipRef,
+  onToggle,
+  onClose,
+  onLeave,
+  onRemove,
+  children,
+}: ChipFrameProps): ReactNode {
   const region = useRef<HTMLDivElement>(null);
   const pickerId = useId();
-  const active = chip.value !== null;
 
   /** Focus leaving the chip and its picker closes the picker where focus went. */
   function closeOnLeave(event: FocusEvent<HTMLDivElement>): void {
@@ -315,9 +406,11 @@ function Chip({
         aria-haspopup="dialog"
         aria-expanded={expanded}
         aria-controls={open ? pickerId : (controls ?? undefined)}
+        aria-describedby={describedBy}
+        disabled={disabled}
         onClick={onToggle}
       >
-        <span className="truncate">{t(filterChipMessageKey(chip), { value: chip.value })}</span>
+        <span className="truncate">{text}</span>
         <ChevronDown aria-hidden />
       </Button>
       {active ? (
@@ -325,7 +418,8 @@ function Chip({
           type="button"
           variant="ghost"
           className="h-11 w-11 shrink-0 rounded-full p-0"
-          aria-label={t(filterRemoveMessageKey(chip), { value: chip.value })}
+          aria-label={removeLabel}
+          disabled={disabled}
           onClick={onRemove}
         >
           <X aria-hidden />
@@ -336,21 +430,18 @@ function Chip({
         open={open}
         onClose={onClose}
         region={region}
-        aria-label={chip.key === FILTER_TEAM ? t('filter.teamPicker') : t('filter.personPicker')}
-        className="w-72"
+        aria-label={pickerLabel}
+        data-align={pickerAlign}
+        className="w-72 sm:data-[align=end]:left-auto sm:data-[align=end]:right-0"
       >
-        {chip.key === FILTER_TEAM ? (
-          <TeamOptions model={model} onPick={onPick} />
-        ) : (
-          <PersonOptions model={model} onPick={onPick} autoFocus />
-        )}
+        {children}
       </Popover>
     </div>
   );
 }
 
 /** One option of a picker list: its id (`null`: all), its name, and the count beside it, if any. */
-interface PickerOption {
+export interface PickerOption {
   readonly id: string | null;
   readonly name: string;
   readonly count: string | null;
@@ -363,7 +454,7 @@ interface PickerOption {
  * stop that ↑ ↓ Home End move (as the month picker's grid), and a heading
  * above each group. Opening focuses the chosen option when `autoFocus`.
  */
-function OptionList({
+export function OptionList({
   options,
   chosen,
   autoFocus,
@@ -578,15 +669,7 @@ function FilterSheet({
   }, [open, opening]);
 
   return (
-    <Dialog
-      id={id}
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) onClose();
-      }}
-      aria-labelledby={titleId}
-      className="mb-0 mt-auto w-full max-w-none rounded-b-none rounded-t-2xl border-x-0 border-b-0 pb-[env(safe-area-inset-bottom,0px)]"
-    >
+    <SheetDialog id={id} titleId={titleId} open={open} onClose={onClose}>
       <SheetContent
         key={opening}
         titleId={titleId}
@@ -596,7 +679,67 @@ function FilterSheet({
         onClose={onClose}
         onChange={onChange}
       />
+    </SheetDialog>
+  );
+}
+
+/** The phone's bottom sheet: the native `Dialog`, docked to the bottom edge. */
+export function SheetDialog({
+  id,
+  titleId,
+  open,
+  onClose,
+  children,
+}: {
+  readonly id: string;
+  readonly titleId: string;
+  readonly open: boolean;
+  readonly onClose: () => void;
+  readonly children: ReactNode;
+}): ReactNode {
+  return (
+    <Dialog
+      id={id}
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
+      }}
+      aria-labelledby={titleId}
+      className="mb-0 mt-auto w-full max-w-none rounded-b-none rounded-t-2xl border-x-0 border-b-0 pb-[env(safe-area-inset-bottom,0px)]"
+    >
+      {children}
     </Dialog>
+  );
+}
+
+/** The sheet's title, `Filtri`, and its close. */
+export function SheetHeader({ titleId, onClose }: { readonly titleId: string; readonly onClose: () => void }): ReactNode {
+  return (
+    <DialogHeader closeLabel={t('filter.sheetClose')} onClose={onClose}>
+      <DialogTitle id={titleId}>{t('filter.sheetTitle')}</DialogTitle>
+    </DialogHeader>
+  );
+}
+
+/** The sheet's `Poništi`, and `Prikaži {n} osoba`, which closes it. */
+export function SheetFooter({
+  shownCount,
+  onReset,
+  onClose,
+}: {
+  readonly shownCount: number;
+  readonly onReset: () => void;
+  readonly onClose: () => void;
+}): ReactNode {
+  return (
+    <DialogFooter className="flex-row [&>*]:flex-1">
+      <Button type="button" variant="outline" className="h-11" onClick={onReset}>
+        {t('filter.sheetReset')}
+      </Button>
+      <Button type="button" className="h-11" onClick={onClose}>
+        {t('filter.sheetShow', { count: shownCount })}
+      </Button>
+    </DialogFooter>
   );
 }
 
@@ -622,9 +765,7 @@ function SheetContent({
 
   return (
     <>
-      <DialogHeader closeLabel={t('filter.sheetClose')} onClose={onClose}>
-        <DialogTitle id={titleId}>{t('filter.sheetTitle')}</DialogTitle>
-      </DialogHeader>
+      <SheetHeader titleId={titleId} onClose={onClose} />
       <section aria-labelledby={teamId} className="grid min-w-0 gap-2">
         <h3 id={teamId} className="font-sans text-sm font-semibold">
           {t('filter.team')}
@@ -664,21 +805,13 @@ function SheetContent({
           }}
         />
       </section>
-      <DialogFooter className="flex-row [&>*]:flex-1">
-        <Button
-          type="button"
-          variant="outline"
-          className="h-11"
-          onClick={() => {
-            onChange(FILTERS_CLEARED);
-          }}
-        >
-          {t('filter.sheetReset')}
-        </Button>
-        <Button type="button" className="h-11" onClick={onClose}>
-          {t('filter.sheetShow', { count: model.shownCount })}
-        </Button>
-      </DialogFooter>
+      <SheetFooter
+        shownCount={model.shownCount}
+        onReset={() => {
+          onChange(FILTERS_CLEARED);
+        }}
+        onClose={onClose}
+      />
     </>
   );
 }

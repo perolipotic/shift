@@ -1,131 +1,206 @@
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 
 import {
-  ALL_LEVELS,
   ALL_TEAMS,
-  DEFAULT_SORT,
+  DEFAULT_FILTERS,
   MEMBERS_TABLE,
   NO_TEXT,
-  chooseLevel,
-  chooseTeam,
+  chooseChip,
+  membersAwaitTodayOf,
+  memberChipChoiceOf,
+  memberChipRemovalOf,
+  membersFiltersOf,
   membersQueryOptions,
   membersNoticeOf,
+  membersSearchFor,
+  membersSearchKeyOf,
   membersSurfaceStateOf,
   membersTodayOf,
   membersViewOf,
   narrowingDependencies,
   nextSortState,
   teamToStore,
-  type LevelFilter,
   type MemberColumnKey,
+  type MembersFilters,
+  type MembersSearch,
   type NarrowingInputs,
-  type TeamFilter,
 } from '@/features/members/services/list';
 import { supabaseClient } from '@/lib/supabase/client';
+
+/** How the hook writes the URL: the whole search, pushed, or replacing the entry. */
+export type MembersNavigate = (search: MembersSearch, options: { readonly replace: boolean }) => void;
 
 /**
  * The member list's state, its one read and its handlers (story 1.5a).
  *
  * ONE SNAPSHOT, ONE QUERY KEY (AD-13). Every figure the screen draws — the rows,
- * the stated count, the counts beside both filters, and the team options
+ * the summary line, the counts beside every option, and the team options
  * themselves — comes from the single `useQuery` under `MEMBERS_LIST_KEY` and is
  * derived by `narrowMembers`. There is no second read on this screen and there
  * must not be one: the team options are the teams somebody is on today, never a
  * read of `teams`.
  *
+ * THE FILTERS LIVE IN THE URL (story 7.13): `?trazi=&razina=&smjena=&status=&sort=`,
+ * parsed by the route's `validateSearch` and handed in as `search`, so a
+ * filtered list can be linked, reloaded, and restored by Back. Every chip and
+ * sort change pushes an entry; typing in the search REPLACES the entry, so
+ * Back does not step through a word letter by letter. The box itself holds
+ * what was typed, and follows the URL when it changes from elsewhere (Back,
+ * `Poništi filtre`).
+ *
  * THIS HOOK AND THE SCREEN'S COMPONENTS HOLD STATE AND MARKUP, NOTHING ELSE.
- * Every rule — the fold, the collation, the sort toggle, the level and team
- * fallbacks, the faceted counts, whether the reset has anything to reset, the
- * labels — is a pure function in `@/features/members/services/list`, because a
- * `.tsx` is collected by nothing (AD-15) and the 1.5a review shipped two
- * swapped sort keys green when the pairing lived in the screen.
+ * Every rule — the fold, the collation, the sort toggle, the URL's vocabulary
+ * and its fallbacks, the faceted counts, whether the reset has anything to
+ * reset, the labels — is a pure function in `@/features/members/services/list`.
  */
-export function useMemberList() {
-  const [search, setSearch] = useState(NO_TEXT);
-  const [level, setLevel] = useState<LevelFilter>(ALL_LEVELS);
-  const [team, setTeam] = useState<TeamFilter>(ALL_TEAMS);
+export function useMemberList(search: MembersSearch, navigate: MembersNavigate) {
+  const filters = useMemo(() => membersFiltersOf(search), [search]);
+  const [text, setText] = useState(filters.search);
+  // THE SEARCH VALUES THIS HOOK WROTE and the URL has not reached yet, as the
+  // URL parses them. The URL settling on one of them — an older keystroke
+  // included — is this hook catching up, never a change from elsewhere, so the
+  // box keeps what was typed since. Any other value is Back, a reload or a
+  // link, and the box follows it.
+  const pending = useRef<string[]>([]);
   const searchField = useRef<HTMLInputElement>(null);
-  const [sort, setSort] = useState(DEFAULT_SORT);
+
+  useEffect(() => {
+    const ours = pending.current.indexOf(filters.search);
+
+    if (ours === -1) {
+      pending.current = [];
+      setText(filters.search);
+
+      return;
+    }
+    pending.current = pending.current.slice(ours + 1);
+  }, [filters.search]);
 
   const answer = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
 
-  // EVERY STATE THIS SCREEN CAN BE IN, decided in `@/features/members/services/list` and pinned by
-  // execution over real query results. Written in the screen it was four lines
-  // of conditional that vitest never ran: replacing `answer.isError || paused`
-  // with `paused` shipped green, and a thrown query function then rendered
-  // headings with no rows, no count and no message.
+  // EVERY STATE THIS SCREEN CAN BE IN, decided in `@/features/members/services/list`
+  // and pinned by execution over real query results.
   const state = membersSurfaceStateOf(answer);
-  const { members, loading } = state;
+  const { members } = state;
   // THE LIST'S NOTICE: the refusal, or the unavailable message beside rows a
-  // refetch paused offline over, which is never a refusal (an edit form keeps them).
+  // refetch paused offline over, which is never a refusal.
   const refusal = membersNoticeOf(state);
-  // THE ORGANIZATION'S TODAY, for the inactive marker (story 1.6), from the zone
-  // the same one read embeds — `null` until it has settled, which marks nobody.
+  // THE ORGANIZATION'S TODAY, for the status column (story 7.13), from the zone
+  // the same one read embeds — `null` until it has settled, which states nobody's.
   const today = membersTodayOf(members, new Date());
+  // SKELETON ROWS while the status filter waits for today: rows unfiltered by
+  // status under `Status: aktivni` would be a false list (`svi` needs no today).
+  const loading = state.loading || membersAwaitTodayOf(members, today, filters.status);
 
   // ONE OBJECT, and the memo's dependencies are DERIVED from it rather than
-  // written beside it. `eslint.config.js` registers no `react-hooks` plugin, so
-  // nothing lints a dependency array here; dropping `sort` from a hand-written
-  // one left the suite green and eslint clean while the arrow flipped and the
-  // rows never moved. There is only one list of inputs now, and
-  // `features/members/services/list.test.ts` pins what it contains.
-  const inputs: NarrowingInputs = { members, search, level, team, sort, today };
-  // THE SUMMARY ROW COMES OUT OF THE SAME CALL, from the snapshot and never
-  // from the narrowed rows: `membersViewOf` is executed by `features/members/services/list.test.ts`
-  // with a search that matches nobody, and the four figures still count everyone.
+  // written beside it: `features/members/services/list.test.ts` pins what it contains.
+  const inputs: NarrowingInputs = {
+    members,
+    search: text,
+    level: filters.level,
+    team: filters.team,
+    status: filters.status,
+    sort: filters.sort,
+    today,
+  };
+  // THE SUMMARY LINE COMES OUT OF THE SAME CALL, counting the very rows drawn.
   const { summary, narrowed } = useMemo(
     () => membersViewOf(inputs),
     narrowingDependencies(inputs),
   );
 
-  // THE CONTROLS ARE DEAD WHILE THERE IS NOTHING TO NARROW. A live filter over
-  // an absent list renders `Sve razine: 0 osoba` beside a failure message, and
-  // `0 / 0 / 0` under a pulsing skeleton — a confidently wrong figure in the two
-  // states where the surface knows it has no answer. Disabled, they say what is
-  // true: there is nothing here to search yet.
+  // THE CONTROLS ARE DEAD WHILE THERE IS NOTHING TO NARROW: a live filter over
+  // an absent list states a confidently wrong figure.
   const unanswered = members === null;
 
-  // A TEAM THAT LEFT THE OPTIONS LEAVES THE STATE TOO, adjusted during render
-  // (React's documented pattern for state derived from props). It cannot loop:
-  // once stored, the value IS the applied one and `teamToStore` returns it.
-  const settledTeam = teamToStore(team, narrowed.team, members, today);
-  if (settledTeam !== team) setTeam(settledTeam);
+  /** What the screen shows, the box's own text included. */
+  const shown: MembersFilters = { ...filters, search: text };
+  /** The state the URL holds, as one key: the filter bar waits for it to move focus. */
+  const stateKey = membersSearchKeyOf(search);
+
+  // A TEAM THAT LEFT THE OPTIONS LEAVES THE URL TOO, replacing the entry: a
+  // stale id falls back to every team (`teamToStore`), once the answer is real.
+  const settledTeam = teamToStore(filters.team, narrowed.team, members, today);
+
+  /**
+   * Write `next` to the URL, and return the state it leaves. A change that
+   * leaves the URL as it is navigates nowhere, so it pushes no duplicate entry.
+   */
+  function write(next: MembersFilters, replace: boolean): string {
+    const written = membersSearchFor(next);
+    const key = membersSearchKeyOf(written);
+
+    if (key === stateKey) return key;
+
+    const parsed = membersFiltersOf(written).search;
+
+    // Only a search the URL does not already hold is waited for.
+    if (parsed !== filters.search) pending.current = [...pending.current, parsed];
+    navigate(written, { replace });
+
+    return key;
+  }
+
+  // EVERY VALUE THE REPLACE READS IS A DEPENDENCY — `filters` (memoized on the
+  // search), `text`, `settledTeam` and `navigate` — so it never carries a
+  // stale box (no `react-hooks` lint rule would say so).
+  useEffect(() => {
+    if (settledTeam === filters.team) return;
+    write({ ...filters, search: text, team: ALL_TEAMS }, true);
+  }, [settledTeam, filters, text, navigate]);
+
+  /** Write `next` to the URL as a new entry, and return the state it leaves. */
+  function go(next: MembersFilters): string {
+    return write(next, false);
+  }
 
   function changeSearch(event: ChangeEvent<HTMLInputElement>): void {
-    setSearch(event.target.value);
+    const value = event.target.value;
+
+    setText(value);
+    write({ ...shown, search: value }, true);
   }
 
-  function changeLevel(event: ChangeEvent<HTMLSelectElement>): void {
-    setLevel(chooseLevel(event.target.value));
+  /** A chip's pick: the URL changes, and the state it leaves is returned. */
+  function pickChip(key: string, id: string): string {
+    const chip = chooseChip(key);
+
+    return chip === null ? stateKey : go(memberChipChoiceOf(shown, chip, id, narrowed.teams));
   }
 
-  // THE CHOICE IS LOOKED UP AMONG THE OPTIONS ON SCREEN, which are data: a
-  // value that is not one of them falls back to every team rather than
-  // narrowing to a list nobody explained.
-  function changeTeam(event: ChangeEvent<HTMLSelectElement>): void {
-    setTeam(chooseTeam(event.target.value, narrowed.teams));
+  /** A chip's ✕. */
+  function removeChip(key: string): string {
+    const chip = chooseChip(key);
+
+    return chip === null ? stateKey : go(memberChipRemovalOf(shown, chip));
   }
 
-  // ONE ACTION FOR ALL THREE (UX-DR17): the search, the level and the team
-  // return to their defaults together. The sort is not a filter and stays.
+  // THE URL BACK TO ITS DEFAULTS — no search, every level, every team,
+  // `aktivni`, by name ascending — in one entry. The phone sheet's `Poništi`:
+  // focus stays in the sheet.
+  function clearFilters(): void {
+    setText(NO_TEXT);
+    go(DEFAULT_FILTERS);
+  }
+
+  // `Poništi filtre` under the chips: the same, and focus to the search.
   function resetFilters(): void {
-    setSearch(NO_TEXT);
-    setLevel(ALL_LEVELS);
-    setTeam(ALL_TEAMS);
-    // THE PRESSED BUTTON IS ABOUT TO BE DISABLED, which would drop keyboard
-    // focus to the page body. The search is where narrowing starts again.
+    clearFilters();
+    // THE PRESSED BUTTON IS ABOUT TO GO, which would drop keyboard focus to
+    // the page body. The search is where narrowing starts again.
     searchField.current?.focus();
   }
 
   function pressColumn(column: MemberColumnKey): void {
-    setSort((current) => nextSortState(current, column));
+    go({ ...shown, sort: nextSortState(shown.sort, column) });
   }
 
   return {
-    search,
-    level,
-    sort,
+    search: text,
+    filters: shown,
+    sort: shown.sort,
+    stateKey,
     searchField,
     refusal,
     loading,
@@ -134,8 +209,9 @@ export function useMemberList() {
     narrowed,
     unanswered,
     changeSearch,
-    changeLevel,
-    changeTeam,
+    pickChip,
+    removeChip,
+    clearFilters,
     resetFilters,
     pressColumn,
   };
