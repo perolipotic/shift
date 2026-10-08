@@ -5,6 +5,7 @@ import {
   hoursExportDisabled,
   hoursExportEmpty,
   hoursExportMessageKey,
+  type HoursExportDone,
 } from '@/features/hours/services/hours-export';
 import type { OrganizationHoursView } from '@/features/hours/services/organization-hours';
 import { writeHoursExport } from '@/features/hours/services/xlsx';
@@ -18,13 +19,16 @@ import { writeHoursExport } from '@/features/hours/services/xlsx';
  * this hook holds wiring only.
  *
  * A failure belongs to the view it was built from: another month, filter or
- * sort shows no old alert. A result arriving after the screen unmounted is
+ * sort shows no old alert, and the status line of a written file (story
+ * 7.14) goes the same way. A result arriving after the screen unmounted is
  * dropped. A second press while a file is built is refused by a ref, not by
  * the render's `pending`, so two quick presses cannot start two builds.
  */
 export function useHoursExport(view: OrganizationHoursView, organizationName: string) {
   const [pending, setPending] = useState(false);
   const [failedView, setFailedView] = useState<OrganizationHoursView | null>(null);
+  // The written file's status line, kept with the view it was built from.
+  const [written, setWritten] = useState<{ readonly view: OrganizationHoursView; readonly done: HoursExportDone } | null>(null);
   const inFlight = useRef(false);
   const live = useRef(true);
 
@@ -44,13 +48,15 @@ export function useHoursExport(view: OrganizationHoursView, organizationName: st
     inFlight.current = true;
     setPending(true);
     setFailedView(null);
-    void exportHours(built, organizationName, writeHoursExport).then((written) => {
+    setWritten(null);
+    void exportHours(built, organizationName, writeHoursExport).then((done) => {
       inFlight.current = false;
       if (!live.current) return;
 
       setPending(false);
       // Kept against the view it was built from; shown only while that view is.
-      if (!written) setFailedView(built);
+      if (done === null) setFailedView(built);
+      else setWritten({ view: built, done });
     });
   }
 
@@ -62,6 +68,8 @@ export function useHoursExport(view: OrganizationHoursView, organizationName: st
     labelKey: hoursExportMessageKey(pending),
     pending,
     failed: failedView !== null && failedView === view,
+    /** The status line of the file just written, while its view is shown (story 7.14). */
+    written: written !== null && written.view === view ? written.done : null,
     start,
   };
 }

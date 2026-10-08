@@ -241,6 +241,11 @@ export function figureOf(minutes: number): HoursFigure {
   return { key: durationMessageKey(minutes), values: durationValuesOf(minutes) };
 }
 
+/** Whether a figure is 0: nothing composes it, so it offers no explanation (story 7.14). */
+export function figureIsEmpty(figure: HoursFigure): boolean {
+  return figure.values.hours === 0 && figure.values.minutes === 0;
+}
+
 /**
  * THE ONE RULE OF AN EMPTY LEAVE: zero means empty — an absence, never a
  * claimed `0 h` or `0:00`. The screen (`leaveFigureOf`) and the file

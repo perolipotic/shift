@@ -21,6 +21,10 @@ export const HOURS_SCREEN_PARTS = {
   organizationRows: ['features', 'hours', 'components', 'organization-hours-rows.tsx'],
   // Story 7.6: what an empty result says, drawn by both forms.
   organizationEmpty: ['features', 'hours', 'components', 'organization-hours-empty.tsx'],
+  // Story 7.14: the ⓘ beside a figure and the dialog of what composes it,
+  // and the screen's hold on that dialog.
+  explanation: ['features', 'hours', 'components', 'hours-explanation.tsx'],
+  explanationHook: ['features', 'hours', 'hooks', 'use-hours-explanation.ts'],
   organizationExport: ['features', 'hours', 'components', 'organization-hours-export.tsx'],
   exportHook: ['features', 'hours', 'hooks', 'use-hours-export.ts'],
   monthNav: ['components', 'month-nav.tsx'],
@@ -51,6 +55,10 @@ export const HOURS_SCREEN_EXEMPT: readonly { readonly file: string; readonly why
   {
     file: 'services/hours-export.ts',
     why: "every rule of the table's export (story 4.3): columns, cells, names, the guard; renders nothing, executed by hours-export.test.ts",
+  },
+  {
+    file: 'services/hours-explanation.ts',
+    why: "the shifts behind a figure (story 7.14): the domain's operands given names, dates and words; renders nothing, executed by hours-explanation.test.ts",
   },
   {
     file: 'services/hours-conflicts.ts',

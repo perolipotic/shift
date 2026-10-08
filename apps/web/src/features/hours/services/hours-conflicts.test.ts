@@ -1,8 +1,10 @@
-import { collisionsOf, type Collision, type CollisionResolution } from '@shift/domain';
+import { HOURS_FIGURE_TOTAL, collisionsOf, type Collision, type CollisionResolution } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { CALENDAR_UNAVAILABLE, readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
+import { monthHeaderOf } from '@/features/calendar/utils/month';
 import { collisionInputOf } from '@/features/conflicts/services/conflicts-queue';
+import { hoursExplanationOf, type HoursExplanationLine } from '@/features/hours/services/hours-explanation';
 import { hoursExportOf } from '@/features/hours/services/hours-export';
 import {
   HOURS_CONFLICTS_LOADING,
@@ -716,5 +718,49 @@ describe('replaced is leave too, and the replacement works it (story 5.4c)', () 
       expect(own.leave).toBeNull();
       expect(memberState.collisions).toHaveLength(adminState.collisions.length);
     });
+  });
+});
+
+describe('the explanation marks a shift in unresolved conflict as the view counts it (story 7.14; FR-42b)', () => {
+  const a = teamOf(PILOT, 0);
+  const header = monthHeaderOf(SEPTEMBER, TODAY);
+
+  /** The lines of the viewer's total, over the collisions and leave keys *Sati* holds. */
+  function totalLinesOf(snapshot: CalendarSnapshot, memberId: string | null, resolutionRows: readonly Row[] = []) {
+    const state = ready(snapshot, [WORKED], resolutionRows);
+
+    if (state.kind !== HOURS_CONFLICTS_READY) throw new Error(state.kind);
+
+    const view = hoursExplanationOf(snapshot, { memberId, figure: { code: HOURS_FIGURE_TOTAL } }, header, state.leaveKeys, state.collisions);
+
+    if (view === null) throw new Error('refused');
+
+    return view.lines;
+  }
+
+  function markedOf(lines: readonly HoursExplanationLine[]): readonly string[] {
+    return lines.filter((line) => line.conflict).map((line) => line.key);
+  }
+
+  it("marks each rostered shift the leave collides with on the admin's explanation, as many as the table counts, and no other", () => {
+    const lines = totalLinesOf(admin, VIEWER_MEMBER);
+
+    // The worked example: Dan 10.09, Noć 11.09 and Dan 14.09 of the viewer's team.
+    expect(markedOf(lines)).toEqual([`2026-09-10|${a}`, `2026-09-11|${a}`, `2026-09-14|${a}`]);
+    expect(lines.length).toBeGreaterThan(3);
+    expect(markedOf(lines)).toHaveLength(rowOfMember(tableOf(admin, collisionsFrom(admin, [WORKED])), VIEWER_MEMBER).conflictCount);
+    // Another member's explanation has no conflict to mark.
+    expect(markedOf(totalLinesOf(admin, ANA))).toEqual([]);
+  });
+
+  it("marks the same shifts on a member's own explanation", () => {
+    expect(markedOf(totalLinesOf(member, null))).toEqual(markedOf(totalLinesOf(admin, VIEWER_MEMBER)));
+  });
+
+  it('leaves a resolved conflict unmarked: its shift still counts, without the mark', () => {
+    const lines = totalLinesOf(admin, VIEWER_MEMBER, [resolutionOf(VIEWER_MEMBER, '2026-09-11', a, 'amend_leave')]);
+
+    expect(lines.map((line) => line.key)).toContain(`2026-09-11|${a}`);
+    expect(markedOf(lines)).toEqual([`2026-09-10|${a}`, `2026-09-14|${a}`]);
   });
 });

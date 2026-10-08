@@ -37,7 +37,7 @@
 
 import { MINUTES_PER_DAY, deriveHourBands, partitionOfDay, type DayPartition, type HourBand } from './bands.js';
 import { deriveShiftTimes, shiftDurationOn, shiftTypeVersionOn, type ShiftType, type ShiftTypeVersion } from './duration.js';
-import { datesOfMonth, memberScheduleOfMonth, type MemberScheduleInput } from './schedule.js';
+import { datesOfMonth, memberScheduleOfMonth, type MemberScheduleInput, type MemberShift } from './schedule.js';
 
 /** One shift type with every version of its times. */
 export interface ShiftTypeWithVersions {
@@ -157,6 +157,149 @@ function shiftTypesById(input: MemberHoursInput, probeDate: string): ReadonlyMap
   return byId;
 }
 
+/** How a shift came to be on the member's schedule (story 7.14). */
+export const HOURS_SOURCE_ROTATION = 'ROTATION';
+export const HOURS_SOURCE_CHANGE = 'CHANGE';
+export const HOURS_SOURCE_REPLACEMENT = 'REPLACEMENT';
+
+/**
+ * The rotation's projection (`ROTATION`), a shift-type override that replaced
+ * it (`CHANGE`), or a roster override that put the member on another team's
+ * shift (`REPLACEMENT`, which wins when both apply).
+ */
+export type HoursSource =
+  | typeof HOURS_SOURCE_ROTATION
+  | typeof HOURS_SOURCE_CHANGE
+  | typeof HOURS_SOURCE_REPLACEMENT;
+
+/** What a shift is in the month's hours: worked, leave, or worked with no times. */
+const HOURS_KIND_WORKED = 'WORKED';
+const HOURS_KIND_LEAVE = 'LEAVE';
+const HOURS_KIND_UNTIMED = 'UNTIMED';
+
+type HoursKind = typeof HOURS_KIND_WORKED | typeof HOURS_KIND_LEAVE | typeof HOURS_KIND_UNTIMED;
+
+/** The part of one shift that falls in one band; `bandId` is `null` for the uncovered day (no bands). */
+interface HoursShare {
+  readonly bandId: string | null;
+  readonly minutes: number;
+}
+
+/**
+ * One working shift of the month, the unit every figure is a sum of: the
+ * month's walk produces exactly these (story 7.14), so a figure and its
+ * explanation cannot differ. `minutes` is the shift's duration, 0 for an
+ * untimed shift; `shares` split a worked shift over the bands and sum to
+ * `minutes`, and are empty for leave and untimed ones.
+ */
+interface HoursTerm {
+  readonly date: string;
+  readonly teamId: string;
+  readonly shiftTypeId: string;
+  readonly source: HoursSource;
+  readonly kind: HoursKind;
+  readonly minutes: number;
+  readonly shares: readonly HoursShare[];
+}
+
+/** Which figure of the month an explanation is of. */
+export const HOURS_FIGURE_TOTAL = 'TOTAL';
+export const HOURS_FIGURE_BAND = 'BAND';
+export const HOURS_FIGURE_LEAVE = 'LEAVE';
+
+export type HoursFigureCode =
+  | { readonly code: typeof HOURS_FIGURE_TOTAL }
+  | { readonly code: typeof HOURS_FIGURE_BAND; readonly bandId: string }
+  | { readonly code: typeof HOURS_FIGURE_LEAVE };
+
+/** One operand of an equation: a shift and the minutes it adds to the figure. */
+export interface HoursOperand {
+  readonly date: string;
+  readonly teamId: string;
+  readonly shiftTypeId: string;
+  readonly source: HoursSource;
+  readonly minutes: number;
+}
+
+/**
+ * A figure as codes and operands (AD-8): `minutes` is the figure and equals
+ * the sum of the operands' minutes exactly (DI-7). The operands are in date
+ * order, a shift per operand; a figure of 0 has none.
+ */
+export interface HoursExplanation {
+  readonly figure: HoursFigureCode;
+  readonly minutes: number;
+  readonly operands: readonly HoursOperand[];
+}
+
+interface MonthWalk {
+  readonly bandIds: readonly string[];
+  readonly terms: readonly HoursTerm[];
+}
+
+function sourceOf(shift: MemberShift): HoursSource {
+  if (shift.viaOverride) return HOURS_SOURCE_REPLACEMENT;
+  return shift.overridden ? HOURS_SOURCE_CHANGE : HOURS_SOURCE_ROTATION;
+}
+
+/**
+ * The month's one walk: every working shift as a term, the band ids in
+ * {@link deriveHourBands} order. Every precondition is checked here.
+ */
+function walkMonth(input: MemberHoursInput, month: string): MonthWalk {
+  const dates = datesOfMonth(month);
+  const windows = deriveHourBands(input.bands);
+  const bandIds = new Set<string>();
+  for (const window of windows) {
+    if (bandIds.has(window.bandId)) throw new RangeError(`hour band ${window.bandId} is given twice`);
+    bandIds.add(window.bandId);
+  }
+  const partition = partitionOfDay(input.bands);
+  // Non-null: every month has a first date.
+  const typesById = shiftTypesById(input, dates[0]!);
+  const leaveShifts = new Set((input.leaveShifts ?? []).map((shift) => JSON.stringify([shift.date, shift.teamId])));
+  const terms: HoursTerm[] = [];
+
+  for (const day of memberScheduleOfMonth(input, month)) {
+    for (const shift of day.shifts) {
+      if (shift.shiftTypeId === null) continue;
+      const entry = typesById.get(shift.shiftTypeId);
+      if (entry === undefined) {
+        throw new RangeError(`the schedule names shift type ${shift.shiftTypeId} on ${day.date}, which is not given`);
+      }
+      if (!entry.type.isWorking) continue;
+
+      const version = shiftTypeVersionOn(entry.versions, day.date);
+      const base = { date: day.date, teamId: shift.teamId, shiftTypeId: shift.shiftTypeId, source: sourceOf(shift) };
+      if (leaveShifts.has(JSON.stringify([day.date, shift.teamId]))) {
+        // A leave shift is not worked: only its duration, as leave.
+        if (version !== null) {
+          const { durationMinutes } = deriveShiftTimes(version.startMinute, version.endMinute);
+          terms.push({ ...base, kind: HOURS_KIND_LEAVE, minutes: durationMinutes, shares: [] });
+        }
+        continue;
+      }
+
+      if (version === null) {
+        terms.push({ ...base, kind: HOURS_KIND_UNTIMED, minutes: 0, shares: [] });
+        continue;
+      }
+      const times = deriveShiftTimes(version.startMinute, version.endMinute);
+      terms.push({
+        ...base,
+        kind: HOURS_KIND_WORKED,
+        minutes: times.durationMinutes,
+        shares: [...minutesByBand(partition, times.startMinute, times.durationMinutes)].map(([bandId, minutes]) => ({
+          bandId,
+          minutes,
+        })),
+      });
+    }
+  }
+
+  return { bandIds: windows.map((window) => window.bandId), terms };
+}
+
 /**
  * One member's hours of `month` (`YYYY-MM`): each working shift of
  * {@link memberScheduleOfMonth} — the own team's and each one a roster
@@ -172,74 +315,82 @@ function shiftTypesById(input: MemberHoursInput, probeDate: string): ReadonlyMap
  *   shift type that is not given.
  */
 export function memberHoursOfMonth(input: MemberHoursInput, month: string): MemberHours {
-  const dates = datesOfMonth(month);
-  const windows = deriveHourBands(input.bands);
-  const bandIds = new Set<string>();
-  for (const window of windows) {
-    if (bandIds.has(window.bandId)) throw new RangeError(`hour band ${window.bandId} is given twice`);
-    bandIds.add(window.bandId);
-  }
-  const partition = partitionOfDay(input.bands);
-  // Non-null: every month has a first date.
-  const typesById = shiftTypesById(input, dates[0]!);
-
-  const bandMinutes = new Map<string, number>();
-  const bandShifts = new Map<string, number>();
-  for (const window of windows) {
-    bandMinutes.set(window.bandId, 0);
-    bandShifts.set(window.bandId, 0);
-  }
+  const { bandIds, terms } = walkMonth(input, month);
+  const bandMinutes = new Map<string, number>(bandIds.map((id) => [id, 0]));
+  const bandShifts = new Map<string, number>(bandIds.map((id) => [id, 0]));
   let shiftCount = 0;
   let untimedShiftCount = 0;
   let unbandedMinutes = 0;
   let totalMinutes = 0;
   let leaveMinutes = 0;
-  const leaveShifts = new Set((input.leaveShifts ?? []).map((shift) => JSON.stringify([shift.date, shift.teamId])));
 
-  for (const day of memberScheduleOfMonth(input, month)) {
-    for (const shift of day.shifts) {
-      if (shift.shiftTypeId === null) continue;
-      const entry = typesById.get(shift.shiftTypeId);
-      if (entry === undefined) {
-        throw new RangeError(`the schedule names shift type ${shift.shiftTypeId} on ${day.date}, which is not given`);
-      }
-      if (!entry.type.isWorking) continue;
-
-      const version = shiftTypeVersionOn(entry.versions, day.date);
-      if (leaveShifts.has(JSON.stringify([day.date, shift.teamId]))) {
-        // A leave shift is not worked: only its duration, as leave.
-        if (version !== null) leaveMinutes += deriveShiftTimes(version.startMinute, version.endMinute).durationMinutes;
-        continue;
-      }
-
-      shiftCount += 1;
-      if (version === null) {
-        untimedShiftCount += 1;
-        continue;
-      }
-      const times = deriveShiftTimes(version.startMinute, version.endMinute);
-      totalMinutes += times.durationMinutes;
-      for (const [bandId, minutes] of minutesByBand(partition, times.startMinute, times.durationMinutes)) {
-        if (bandId === null) {
-          unbandedMinutes += minutes;
-        } else {
-          bandMinutes.set(bandId, (bandMinutes.get(bandId) ?? 0) + minutes);
-          bandShifts.set(bandId, (bandShifts.get(bandId) ?? 0) + 1);
-        }
+  for (const term of terms) {
+    if (term.kind === HOURS_KIND_LEAVE) {
+      leaveMinutes += term.minutes;
+      continue;
+    }
+    shiftCount += 1;
+    if (term.kind === HOURS_KIND_UNTIMED) {
+      untimedShiftCount += 1;
+      continue;
+    }
+    totalMinutes += term.minutes;
+    for (const share of term.shares) {
+      if (share.bandId === null) {
+        unbandedMinutes += share.minutes;
+      } else {
+        bandMinutes.set(share.bandId, (bandMinutes.get(share.bandId) ?? 0) + share.minutes);
+        bandShifts.set(share.bandId, (bandShifts.get(share.bandId) ?? 0) + 1);
       }
     }
   }
 
   return {
     shiftCount,
-    bands: windows.map((window) => ({
-      bandId: window.bandId,
-      minutes: bandMinutes.get(window.bandId) ?? 0,
-      shiftCount: bandShifts.get(window.bandId) ?? 0,
+    bands: bandIds.map((bandId) => ({
+      bandId,
+      minutes: bandMinutes.get(bandId) ?? 0,
+      shiftCount: bandShifts.get(bandId) ?? 0,
     })),
     unbandedMinutes,
     totalMinutes,
     leaveMinutes,
     untimedShiftCount,
   };
+}
+
+/**
+ * One figure of `month` as an equation (story 7.14; FR-42b): the shifts that
+ * compose it, each with the minutes it adds. The total is every worked
+ * shift's duration, a band's the part of each worked shift inside it (a
+ * shift across a band edge appears in each band it touches), the leave the
+ * duration of each leave shift. The operands sum exactly to
+ * `memberHoursOfMonth`'s figure — both come from one walk.
+ *
+ * @throws RangeError on any precondition of {@link memberHoursOfMonth}, and
+ *   when a band figure names a band that is not given.
+ */
+export function explainMemberHours(input: MemberHoursInput, month: string, figure: HoursFigureCode): HoursExplanation {
+  const { bandIds, terms } = walkMonth(input, month);
+  if (figure.code === HOURS_FIGURE_BAND && !bandIds.includes(figure.bandId)) {
+    throw new RangeError(`hour band ${figure.bandId} is not given`);
+  }
+
+  const operands: HoursOperand[] = [];
+  for (const term of terms) {
+    let minutes = 0;
+    if (figure.code === HOURS_FIGURE_LEAVE) {
+      if (term.kind === HOURS_KIND_LEAVE) minutes = term.minutes;
+    } else if (term.kind === HOURS_KIND_WORKED) {
+      minutes =
+        figure.code === HOURS_FIGURE_TOTAL
+          ? term.minutes
+          : (term.shares.find((share) => share.bandId === figure.bandId)?.minutes ?? 0);
+    }
+    if (minutes > 0) {
+      operands.push({ date: term.date, teamId: term.teamId, shiftTypeId: term.shiftTypeId, source: term.source, minutes });
+    }
+  }
+
+  return { figure, minutes: operands.reduce((sum, operand) => sum + operand.minutes, 0), operands };
 }
