@@ -58,8 +58,19 @@ export {
 } from './duty.js';
 
 export {
+  HOURS_FIGURE_BAND,
+  HOURS_FIGURE_LEAVE,
+  HOURS_FIGURE_TOTAL,
+  HOURS_SOURCE_CHANGE,
+  HOURS_SOURCE_REPLACEMENT,
+  HOURS_SOURCE_ROTATION,
+  explainMemberHours,
   memberHoursOfMonth,
   type BandHours,
+  type HoursExplanation,
+  type HoursFigureCode,
+  type HoursOperand,
+  type HoursSource,
   type LeaveShift,
   type MemberHours,
   type MemberHoursInput,

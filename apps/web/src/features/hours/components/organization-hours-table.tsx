@@ -1,15 +1,18 @@
+import { HOURS_FIGURE_BAND, HOURS_FIGURE_LEAVE, HOURS_FIGURE_TOTAL, type HoursFigureCode } from '@shift/domain';
 import { Link } from '@tanstack/react-router';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import type { ReactNode, RefObject } from 'react';
 
 import type { FilterBarHandle } from '@/components/filter-bar';
 import { Button } from '@/components/ui/button';
+import { ExplainButton } from '@/features/hours/components/hours-explanation';
 import { EmptyResult } from '@/features/hours/components/organization-hours-empty';
 import {
   Table,
   TableBody,
   TableCaption,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -21,6 +24,7 @@ import {
   SORT_SHIFTS,
   SORT_TEAM,
   SORT_TOTAL,
+  figureIsEmpty,
   leaveShownOf,
   type HoursSortKey,
 } from '@/features/hours/services/my-hours';
@@ -87,7 +91,9 @@ function SortHead({
  * month, where the roster changes behind a figure show. It renders from
  * 640 px and scrolls inside its own container, never the page; below 640 px
  * `OrganizationHoursRows` draws the same view as stacked rows (story 7.6),
- * both drawing `EmptyResult` (`./organization-hours-empty`). Every figure is
+ * both drawing `EmptyResult` (`./organization-hours-empty`). A footer totals
+ * each figure column over the rows shown (story 7.14), and every hours
+ * figure above 0 has an ⓘ that asks for its explanation (`onExplain`). Every figure is
  * `@/features/hours/services/organization-hours`'s, in tabular numerals.
  */
 export function OrganizationHoursTable({
@@ -95,12 +101,16 @@ export function OrganizationHoursTable({
   filtersRef,
   onChange,
   onPress,
+  onExplain,
 }: {
   readonly view: OrganizationHoursView;
   readonly filtersRef: RefObject<FilterBarHandle | null>;
   readonly onChange: (change: HoursSearchChange) => void;
   readonly onPress: (key: HoursSortKey) => void;
+  readonly onExplain: (memberId: string, figure: HoursFigureCode) => void;
 }): ReactNode {
+  const footerLeave = leaveShownOf(view.footer?.leave ?? null);
+
   return (
     <div className="flex min-w-0 flex-col gap-3 pb-4">
       <Table>
@@ -141,19 +151,49 @@ export function OrganizationHoursTable({
                 </TableCell>
                 {row.bands.map((band) => (
                   <TableCell key={band.bandId} className="whitespace-nowrap text-right tabular-nums">
-                    <span className="flex flex-col items-end">
-                      <span className="font-semibold">{t(band.hours.key, band.hours.values)}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {t('sati.shiftCount', { count: band.shiftCount })}
+                    <span className="flex items-center justify-end gap-1">
+                      <span className="flex flex-col items-end">
+                        <span className="font-semibold">{t(band.hours.key, band.hours.values)}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {t('sati.shiftCount', { count: band.shiftCount })}
+                        </span>
                       </span>
+                      {figureIsEmpty(band.hours) ? null : (
+                        <ExplainButton
+                          figureName={`${band.name}, ${row.name}`}
+                          onPress={() => {
+                            onExplain(row.memberId, { code: HOURS_FIGURE_BAND, bandId: band.bandId });
+                          }}
+                        />
+                      )}
                     </span>
                   </TableCell>
                 ))}
                 <TableCell className="whitespace-nowrap text-right font-semibold tabular-nums">
-                  {t(row.total.key, row.total.values)}
+                  <span className="flex items-center justify-end gap-1">
+                    {t(row.total.key, row.total.values)}
+                    {figureIsEmpty(row.total) ? null : (
+                      <ExplainButton
+                        figureName={`${t('sati.organization.total')}, ${row.name}`}
+                        onPress={() => {
+                          onExplain(row.memberId, { code: HOURS_FIGURE_TOTAL });
+                        }}
+                      />
+                    )}
+                  </span>
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-right tabular-nums">
-                  {t(leave.key, leave.values)}
+                  <span className="flex items-center justify-end gap-1">
+                    {t(leave.key, leave.values)}
+                    {row.leave === null ? null : (
+                      <ExplainButton
+                        figureName={`${t('sati.organization.leave')}, ${row.name}`}
+                        onPress={() => {
+                          onExplain(row.memberId, { code: HOURS_FIGURE_LEAVE });
+                        }}
+                      />
+                    )}
+                  </span>
                 </TableCell>
                 <TableCell className="whitespace-nowrap text-right tabular-nums">
                   {row.conflictCount === 0 ? (
@@ -176,6 +216,30 @@ export function OrganizationHoursTable({
             </TableRow>
           )}
         </TableBody>
+        {view.footer === null ? null : (
+          <TableFooter>
+            <TableRow>
+              <TableCell colSpan={2} className="whitespace-nowrap">
+                {t('sati.organization.footer')}
+              </TableCell>
+              <TableCell className="whitespace-nowrap text-right tabular-nums">
+                {t('sati.shiftCount', { count: view.footer.shiftCount })}
+              </TableCell>
+              {view.footer.bands.map((band) => (
+                <TableCell key={band.bandId} className="whitespace-nowrap text-right tabular-nums">
+                  {t(band.hours.key, band.hours.values)}
+                </TableCell>
+              ))}
+              <TableCell className="whitespace-nowrap text-right tabular-nums">
+                {t(view.footer.total.key, view.footer.total.values)}
+              </TableCell>
+              <TableCell className="whitespace-nowrap text-right tabular-nums">
+                {t(footerLeave.key, footerLeave.values)}
+              </TableCell>
+              <TableCell className="whitespace-nowrap text-right tabular-nums">{view.footer.conflictCount}</TableCell>
+            </TableRow>
+          </TableFooter>
+        )}
       </Table>
       {view.untimedShiftCount === null ? null : (
         <p className="px-4 text-sm text-muted-foreground">{t('sati.untimed', { count: view.untimedShiftCount })}</p>

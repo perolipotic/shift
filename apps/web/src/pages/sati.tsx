@@ -41,13 +41,16 @@ import { appLayoutRoute } from '@/pages/_app';
  * figures it changes none of. A read that failed shows the message with a
  * retry; a refusal reading again would repeat shows the message alone.
  *
+ * THE TITLE (story 7.14): a member's page is *Moji sati*, their own month; an
+ * admin's, and the page before the read names the viewer, is *Sati*.
+ *
  * The session guard is NOT here. It is registered once on the pathless `_app`
  * layout this route nests under.
  */
 export function SatiScreen() {
   const search = satiRoute.useSearch();
   const navigate = useNavigate({ from: satiRoute.fullPath });
-  const { view, organization, organizationName, month, navShown, refusal, retryable, loading, retry, show, change, pressColumn } =
+  const { view, organization, organizationName, own, explain, month, navShown, refusal, retryable, loading, retry, show, change, pressColumn } =
     useHours(search, (next) => {
       void navigate({ search: next });
     });
@@ -55,9 +58,15 @@ export function SatiScreen() {
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6" aria-busy={loading}>
       <PageHeader>
-        <PageTitle asChild>
-          <h1>{t('nav.sati')}</h1>
-        </PageTitle>
+        {own ? (
+          <PageTitle asChild>
+            <h1>{t('sati.title.own')}</h1>
+          </PageTitle>
+        ) : (
+          <PageTitle asChild>
+            <h1>{t('nav.sati')}</h1>
+          </PageTitle>
+        )}
       </PageHeader>
       {navShown ? (
         <Card className="min-w-0">
@@ -71,6 +80,7 @@ export function SatiScreen() {
             organizationName={organizationName}
             onChange={change}
             onPress={pressColumn}
+            explain={explain}
           />
         </Card>
       ) : (

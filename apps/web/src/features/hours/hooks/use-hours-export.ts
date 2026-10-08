@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import {
   exportHours,
+  hoursExportDoneOf,
   hoursExportDisabled,
   hoursExportEmpty,
   hoursExportMessageKey,
@@ -18,13 +19,15 @@ import { writeHoursExport } from '@/features/hours/services/xlsx';
  * this hook holds wiring only.
  *
  * A failure belongs to the view it was built from: another month, filter or
- * sort shows no old alert. A result arriving after the screen unmounted is
+ * sort shows no old alert, and the status line of a written file (story
+ * 7.14) goes the same way. A result arriving after the screen unmounted is
  * dropped. A second press while a file is built is refused by a ref, not by
  * the render's `pending`, so two quick presses cannot start two builds.
  */
 export function useHoursExport(view: OrganizationHoursView, organizationName: string) {
   const [pending, setPending] = useState(false);
   const [failedView, setFailedView] = useState<OrganizationHoursView | null>(null);
+  const [writtenView, setWrittenView] = useState<OrganizationHoursView | null>(null);
   const inFlight = useRef(false);
   const live = useRef(true);
 
@@ -44,13 +47,15 @@ export function useHoursExport(view: OrganizationHoursView, organizationName: st
     inFlight.current = true;
     setPending(true);
     setFailedView(null);
+    setWrittenView(null);
     void exportHours(built, organizationName, writeHoursExport).then((written) => {
       inFlight.current = false;
       if (!live.current) return;
 
       setPending(false);
       // Kept against the view it was built from; shown only while that view is.
-      if (!written) setFailedView(built);
+      if (written) setWrittenView(built);
+      else setFailedView(built);
     });
   }
 
@@ -62,6 +67,8 @@ export function useHoursExport(view: OrganizationHoursView, organizationName: st
     labelKey: hoursExportMessageKey(pending),
     pending,
     failed: failedView !== null && failedView === view,
+    /** The status line of the file just written, while its view is shown (story 7.14). */
+    written: writtenView !== null && writtenView === view ? hoursExportDoneOf(view, organizationName) : null,
     start,
   };
 }

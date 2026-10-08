@@ -36,7 +36,7 @@ sources:
 |---|---|---|
 | Danas | Member dashboard | Am I on? When next? |
 | Kalendar | Calendar | What does the month look like? |
-| Sati | My hours | How much have I worked? |
+| Sati | My hours — titled *Moji sati* (story 7.14) | How much have I worked? |
 | Godišnji | My leave | How much is left? |
 
 **Admin — the four above plus configuration**, grouped in the sidebar:
@@ -57,7 +57,7 @@ sources:
 | Calendar — *Moj raspored* mode | CAP-11, CAP-13 | UJ-2 |
 | Calendar — *Sve smjene* mode | CAP-13 | UJ-1, UJ-3 |
 | Day detail | CAP-11, CAP-12 | UJ-3 |
-| My hours | CAP-14 | UJ-2 |
+| My hours (*Moji sati*) | CAP-14 | UJ-2 |
 | Organization hours | CAP-14 | UJ-4 |
 | My leave | CAP-15 | UJ-2 |
 | Leave management | CAP-15 | UJ-3 |
@@ -110,8 +110,9 @@ Behavioural specs. Visual specs are in `DESIGN.md` § Components.
 - **Hour Band editor.** Bands are entered as a **name and a start time only**; the window, duration, and midnight-crossing flag are derived and shown read-only. A 24-hour bar renders the partition, with any gap hatched and flagged. Entering start times rather than ranges is what makes a gap or overlap unrepresentable instead of validated after the fact.
 - **Pattern builder.** An ordered, reorderable list of shift-type steps of arbitrary length; the same shift type may appear more than once. Derived facts — cycle length, working steps, hours per cycle — update live beneath it.
 - **Cycle preview.** Renders the next full cycle from pattern, offsets, and anchor date before saving, so the configuration is judged by its output rather than its inputs.
-- **Hours table.** Tabular numerals; sortable, and filtered through the filter chips, where the team and the person combine. From 640 px it is a table that scrolls inside its own container; below 640 px each member is a stacked row (story 7.6): the name linking to their calendar month, `{team} · {n} smjena` under it, `Ukupno` over the total at the top right, then one cell per band and the leave, each with its label, its hours and the band's shifts, and the shifts in unresolved conflict only above zero, as `⚠` and words. The sort is one `Poredano: {column} ↑|↓` control above the rows, and an empty result shows its sentences and two ways out in place of the list.
-- **Hours export.** One secondary action on Organization hours, `Izvezi u Excel`, admin-only. It exports the current period, the rows the filter chips leave, and the sort, and nothing else. While the file is being built the action shows progress and is disabled. A filter that leaves no row closes it. There is no format picker in MVP.
+- **Hours table.** Tabular numerals; sortable, and filtered through the filter chips, where the team and the person combine. From 640 px it is a table that scrolls inside its own container; below 640 px each member is a stacked row (story 7.6): the name linking to their calendar month, `{team} · {n} smjena` under it, `Ukupno` over the total at the top right, then one cell per band and the leave, each with its label, its hours and the band's shifts, and the shifts in unresolved conflict only above zero, as `⚠` and words. The table ends with a footer total (story 7.14): each figure column summed over the rows the filters leave, labelled *Ukupno za prikazane osobe*; on a phone it is one line under the list, the total alone. The sort is one `Poredano: {column} ↑|↓` control above the rows, and an empty result shows its sentences and two ways out in place of the list.
+- **Hours explanation (story 7.14, FR-42b).** Every hours figure above 0 on *Sati* — a member's total, each band and the leave; an admin's row figures in the table and on the phone — has an ⓘ, a 44 px ghost icon button named "Što čini iznos: {figure}" (with the person's name in the table). It opens the shared Dialog, a drawer of the shifts that compose the figure as an equation with dates: one line per shift in date order — the date as `23.09.2026`, then "{smjena} · {tip smjene} · {izvor}" with the source in words, *rotacija*, *promjena* (a shift-type override) or *zamjena* (a roster replacement), and the hours it adds with a `+` — then, under a rule, `=` and the figure. The lines are the domain's operands and sum to the figure exactly; a shift across a band's edge appears in each band it touches with that band's part. A figure of 0 has no ⓘ; a figure the domain cannot explain says so in a `Notice role="alert"`. Closing returns focus to the ⓘ. A member's own page is titled *Moji sati*; an admin's remains *Sati*.
+- **Hours export.** One secondary action on Organization hours, `Izvezi u Excel`, admin-only. It exports the current period, the rows the filter chips leave, and the sort, and nothing else. While the file is being built the action shows progress and is disabled. A filter that leaves no row closes it. There is no format picker in MVP. After the file downloads a status line (`Notice role="status"`, story 7.14) names it and how many people it holds — "Preuzeta je datoteka Sati DVD Mladost listopad 2026.xlsx s 17 osoba." It belongs to the view it was built from: another month, filter or sort, or a new export, removes it, and it is never a toast.
 
 ## State Patterns
 

@@ -466,6 +466,8 @@ const HOURS_KEYS = join(srcRoot, 'features', 'hours', 'services', 'my-hours.ts')
 const ORGANIZATION_HOURS_KEYS = join(srcRoot, 'features', 'hours', 'services', 'organization-hours.ts');
 /** Story 4.3's rules: the export's headings, sheet and file names, and its action's two labels. */
 const HOURS_EXPORT_KEYS = join(srcRoot, 'features', 'hours', 'services', 'hours-export.ts');
+/** Story 7.14's rules: a figure's explanation, its words and the three words a shift's source reads as. */
+const HOURS_EXPLANATION_KEYS = join(srcRoot, 'features', 'hours', 'services', 'hours-explanation.ts');
 /** Story 3.5b's override writes: the six refusals the day detail's form and confirmation render. */
 const CALENDAR_OVERRIDE_WRITE_KEYS = join(srcRoot, 'features', 'calendar', 'services', 'override-write.ts');
 /** Story 3.6b's roster writes: the six refusals and the two landed notices the roster form and confirmation render. */
@@ -868,7 +870,9 @@ const SCREENS = [
   // `Poredano:` trigger and one column `Button` inside the map over the
   // columns — counted in the member list too. The stacked rows reuse the
   // table's `EmptyResult`, so its two ways out are not written twice.
-  { name: 'the Sati destination', file: SATI, expectedControls: 22 },
+  // TWENTY-THREE SINCE STORY 7.14: the ⓘ `Button` beside an hours figure,
+  // written once in `ExplainButton` however many figures carry one.
+  { name: 'the Sati destination', file: SATI, expectedControls: 23 },
   // STORY 5.2c. ONE on Godišnji: the retry its unavailable alert offers. The
   // three figures are read, never pressed, and nothing here writes: a member
   // requests no leave (story 5.3 is conflicts, not requests).
@@ -2727,10 +2731,20 @@ const KEY_SOURCES = [
     // the picker's name, counted in the member list too. A band's label is
     // its name as stored. The empty result moved to its own part
     // (`organization-hours-empty.tsx`) and is counted once, as before.
+    //
+    // ONE HUNDRED AND FIVE SINCE STORY 7.14: the table's footer label and the
+    // phone's (two), the export's status line, a member's own title, and the
+    // explanation's — the ⓘ's name, the drawer's close and two fallbacks of
+    // its title (a title and a description), the line, the `+` and `=` marks,
+    // the sum's name, the empty and the unavailable sentences — and the figure
+    // names each ⓘ is given (the total's and the leave's words, in the summary and
+    // twice in each of the table and the stacked rows). The figure's
+    // words and the source's three come through
+    // `@/features/hours/services/hours-explanation`, a key source.
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 84,
+    strings: 105,
   },
   {
     // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the
@@ -2863,6 +2877,15 @@ const KEY_SOURCES = [
     file: HOURS_EXPORT_KEYS,
     keys: (text: string) => [...translationKeys(text), ...messageKeyUnions(text)],
     strings: 11,
+  },
+  {
+    // STORY 7.14: the figure's name — the total's and the leave's words —
+    // the month, the person and month, and a shift's line, off `t()`; and the
+    // three words a shift's source reads as, off `hoursSourceKeyOf`.
+    name: 'the hours explanation rules',
+    file: HOURS_EXPLANATION_KEYS,
+    keys: (text: string) => [...translationKeys(text), ...messageKeyUnions(text)],
+    strings: 7,
   },
   {
     // STORY 5.1c: the leave card's four reasons for no preview (incomplete,
@@ -3350,7 +3373,7 @@ describe('the screen is read at all, so every sweep below means something', () =
     // credential copy's mapping.
     //
     // SIXTY-FIVE SINCE STORY 7.11: the member page header's status badge.
-    expect(KEY_SOURCES).toHaveLength(65);
+    expect(KEY_SOURCES).toHaveLength(66);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -4571,7 +4594,10 @@ describe('the route skeleton is the one the destination table describes', () => 
     // a screen whose `<h1>` drifted to some other key is a page titled something
     // the navigation does not call it. Their per-file exact counts in
     // `KEY_SOURCES` keep the other seven as tight as they were.
-    expect(headingKey(screen), `${path} does not title itself ${key}`).toBe(key);
+    // STORY 7.14: a member's own *Sati* is titled *Moji sati*, an admin's is the destination's.
+    const titles = path === '/sati' ? [key, 'sati.title.own'] : [key];
+
+    expect(titles, `${path} does not title itself ${key}`).toContain(headingKey(screen));
     expect(translationKeys(screen), `${path} never renders ${key}`).toContain(key);
   });
 });

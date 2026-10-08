@@ -1,3 +1,4 @@
+import { HOURS_FIGURE_BAND, HOURS_FIGURE_LEAVE, HOURS_FIGURE_TOTAL, type HoursFigureCode } from '@shift/domain';
 import { Link } from '@tanstack/react-router';
 import type { ReactNode, RefObject } from 'react';
 
@@ -5,6 +6,7 @@ import type { FilterBarHandle } from '@/components/filter-bar';
 import { SortControl } from '@/components/sort-control';
 import { StackedField, StackedFields, StackedList, StackedRow } from '@/components/ui/stacked-list';
 import { CONFLICT_GLYPH } from '@/features/calendar/utils/modifiers';
+import { ExplainButton } from '@/features/hours/components/hours-explanation';
 import { EmptyResult } from '@/features/hours/components/organization-hours-empty';
 import {
   SORT_LEAVE,
@@ -12,6 +14,7 @@ import {
   SORT_SHIFTS,
   SORT_TEAM,
   SORT_TOTAL,
+  figureIsEmpty,
   leaveShownOf,
   type HoursSearchChange,
   type HoursSortKey,
@@ -33,18 +36,21 @@ import type { SortControlColumn } from '@/utils/sort-control';
  * own label even where the position carries it (`labelHidden`). The sort is
  * the shared `SortControl`, whose pick is the heading press; an empty result
  * is the shared `EmptyResult` with its two ways out, in place of the
- * list and its sort control.
+ * list and its sort control. Every hours figure above 0 has an ⓘ (story 7.14,
+ * `onExplain`), and under the list stands the total of the rows shown.
  */
 export function OrganizationHoursRows({
   view,
   filtersRef,
   onChange,
   onPress,
+  onExplain,
 }: {
   readonly view: OrganizationHoursView;
   readonly filtersRef: RefObject<FilterBarHandle | null>;
   readonly onChange: (change: HoursSearchChange) => void;
   readonly onPress: (key: HoursSortKey) => void;
+  readonly onExplain: (memberId: string, figure: HoursFigureCode) => void;
 }): ReactNode {
   const columns: readonly SortControlColumn<HoursSortKey>[] = [
     { key: SORT_NAME, label: t('sati.organization.member') },
@@ -96,21 +102,53 @@ export function OrganizationHoursRows({
                   </StackedFields>
                   <StackedFields className="shrink-0 text-right">
                     <StackedField label={t('sati.organization.total')}>
-                      <span className="text-xl font-bold">{t(row.total.key, row.total.values)}</span>
+                      <span className="flex items-center justify-end gap-1">
+                        <span className="text-xl font-bold">{t(row.total.key, row.total.values)}</span>
+                        {figureIsEmpty(row.total) ? null : (
+                          <ExplainButton
+                            figureName={`${t('sati.organization.total')}, ${row.name}`}
+                            onPress={() => {
+                              onExplain(row.memberId, { code: HOURS_FIGURE_TOTAL });
+                            }}
+                          />
+                        )}
+                      </span>
                     </StackedField>
                   </StackedFields>
                 </div>
                 <StackedFields className="grid grid-cols-3 gap-2">
                   {row.bands.map((band) => (
                     <StackedField label={band.name} key={band.bandId} className="rounded-md bg-muted px-2 py-1.5">
-                      <span className="block font-semibold">{t(band.hours.key, band.hours.values)}</span>
-                      <span className="block text-xs text-muted-foreground">
-                        {t('sati.shiftCount', { count: band.shiftCount })}
+                      <span className="flex items-center justify-between gap-1">
+                        <span className="min-w-0">
+                          <span className="block font-semibold">{t(band.hours.key, band.hours.values)}</span>
+                          <span className="block text-xs text-muted-foreground">
+                            {t('sati.shiftCount', { count: band.shiftCount })}
+                          </span>
+                        </span>
+                        {figureIsEmpty(band.hours) ? null : (
+                          <ExplainButton
+                            figureName={`${band.name}, ${row.name}`}
+                            onPress={() => {
+                              onExplain(row.memberId, { code: HOURS_FIGURE_BAND, bandId: band.bandId });
+                            }}
+                          />
+                        )}
                       </span>
                     </StackedField>
                   ))}
                   <StackedField label={t('sati.organization.leave')} className="rounded-md bg-muted px-2 py-1.5">
-                    <span className="block font-semibold">{t(leave.key, leave.values)}</span>
+                    <span className="flex items-center justify-between gap-1">
+                      <span className="font-semibold">{t(leave.key, leave.values)}</span>
+                      {row.leave === null ? null : (
+                        <ExplainButton
+                          figureName={`${t('sati.organization.leave')}, ${row.name}`}
+                          onPress={() => {
+                            onExplain(row.memberId, { code: HOURS_FIGURE_LEAVE });
+                          }}
+                        />
+                      )}
+                    </span>
                   </StackedField>
                 </StackedFields>
                 {row.conflictCount === 0 ? null : (
@@ -131,6 +169,12 @@ export function OrganizationHoursRows({
         <div className="px-4 text-muted-foreground">
           <EmptyResult empty={view.empty} view={view} filtersRef={filtersRef} onChange={onChange} />
         </div>
+      )}
+      {view.footer === null ? null : (
+        <p className="flex min-w-0 items-baseline justify-between gap-3 px-4 pt-2 font-semibold tabular-nums">
+          <span>{t('sati.organization.footer')}</span>
+          <span>{t(view.footer.total.key, view.footer.total.values)}</span>
+        </p>
       )}
       {view.untimedShiftCount === null ? null : (
         <p className="px-4 pt-2 text-sm text-muted-foreground">{t('sati.untimed', { count: view.untimedShiftCount })}</p>

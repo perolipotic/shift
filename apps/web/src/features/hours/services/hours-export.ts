@@ -169,6 +169,24 @@ export function hoursExportMessageKey(
   return pending ? 'sati.organization.export.pending' : 'sati.organization.export.action';
 }
 
+/**
+ * The status line after a download (story 7.14; FR-42a): the file's name and
+ * how many people it holds — the sheet's own, so the line cannot name a file
+ * other than the one written. `null` when the sheet cannot be built.
+ */
+export function hoursExportDoneOf(
+  view: OrganizationHoursView,
+  organizationName: string,
+): { readonly fileName: string; readonly count: number } | null {
+  try {
+    return { fileName: hoursExportOf(view, organizationName).fileName, count: view.rows.length };
+  } catch (cause) {
+    if (!(cause instanceof RangeError)) throw cause;
+
+    return null;
+  }
+}
+
 /** What writes a sheet to a file: `./xlsx`'s writer, or a test's. */
 export type HoursExportWriter = (sheet: HoursExport) => Promise<void>;
 

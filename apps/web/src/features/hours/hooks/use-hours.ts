@@ -20,7 +20,8 @@ import {
   type OrganizationConflictResolutionsTable,
 } from '@/features/conflicts/services/resolutions';
 import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
-import { hoursConflictsStateOf } from '@/features/hours/services/hours-conflicts';
+import { HOURS_CONFLICTS_READY, hoursConflictsStateOf } from '@/features/hours/services/hours-conflicts';
+import { hoursExplanationOf, type HoursExplainRequest } from '@/features/hours/services/hours-explanation';
 import {
   hoursSearchTo,
   hoursSnapshotStateOf,
@@ -30,6 +31,7 @@ import {
 } from '@/features/hours/services/my-hours';
 import {
   hoursSearchBaseOf,
+  hoursPageIsOwn,
   hoursSortChangeOf,
   hoursSurfaceOf,
   nextHoursSort,
@@ -194,6 +196,23 @@ export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
 
   // The export's file name carries it (story 4.3): the same row, the same read.
   const organizationName = snapshot === null ? null : snapshot.organizationName;
+  // Story 7.14: *Moji sati* is a member's own page; the role is unknown until the snapshot names it.
+  const own = hoursPageIsOwn(snapshot);
 
-  return { ...surface, organizationName, retry, show, change, pressColumn };
+  /**
+   * The explanation behind a figure's ⓘ (story 7.14), worked out when asked:
+   * the domain's, over the snapshot and the leave the figures were made from.
+   */
+  function explain(request: HoursExplainRequest) {
+    if (snapshot === null || surface.month === null) return null;
+
+    return hoursExplanationOf(
+      snapshot,
+      request,
+      surface.month,
+      conflicts?.kind === HOURS_CONFLICTS_READY ? conflicts.leaveKeys : [],
+    );
+  }
+
+  return { ...surface, organizationName, own, explain, retry, show, change, pressColumn };
 }
