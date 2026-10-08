@@ -2740,17 +2740,20 @@ const KEY_SOURCES = [
     //
     // ONE HUNDRED AND FIVE SINCE STORY 7.14: the table's footer label and the
     // phone's (two), the export's status line, a member's own title, and the
-    // explanation's — the ⓘ's name, the drawer's close and two fallbacks of
+    // explanation's — the ⓘ's name, the dialog's close and two fallbacks of
     // its title (a title and a description), the line, the `+` and `=` marks,
     // the sum's name, the empty and the unavailable sentences — and the figure
     // names each ⓘ is given (the total's and the leave's words, in the summary and
     // twice in each of the table and the stacked rows). The figure's
     // words and the source's three come through
     // `@/features/hours/services/hours-explanation`, a key source.
+    //
+    // ONE HUNDRED AND SIX SINCE THE 7.14 REVIEW: a line's words for a shift in
+    // unresolved conflict, beside its `⚠` (FR-42b).
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 105,
+    strings: 106,
   },
   {
     // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the
@@ -2887,7 +2890,7 @@ const KEY_SOURCES = [
   {
     // STORY 7.14: the figure's name — the total's and the leave's words —
     // the month, the person and month, and a shift's line, off `t()`; and the
-    // three words a shift's source reads as, off `hoursSourceKeyOf`.
+    // three words a shift's source reads as, off `hoursSourceMessageKey`.
     name: 'the hours explanation rules',
     file: HOURS_EXPLANATION_KEYS,
     keys: (text: string) => [...translationKeys(text), ...messageKeyUnions(text)],

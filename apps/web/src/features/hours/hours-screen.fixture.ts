@@ -21,8 +21,10 @@ export const HOURS_SCREEN_PARTS = {
   organizationRows: ['features', 'hours', 'components', 'organization-hours-rows.tsx'],
   // Story 7.6: what an empty result says, drawn by both forms.
   organizationEmpty: ['features', 'hours', 'components', 'organization-hours-empty.tsx'],
-  // Story 7.14: the ⓘ beside a figure and the drawer of what composes it.
+  // Story 7.14: the ⓘ beside a figure and the dialog of what composes it,
+  // and the screen's hold on that dialog.
   explanation: ['features', 'hours', 'components', 'hours-explanation.tsx'],
+  explanationHook: ['features', 'hours', 'hooks', 'use-hours-explanation.ts'],
   organizationExport: ['features', 'hours', 'components', 'organization-hours-export.tsx'],
   exportHook: ['features', 'hours', 'hooks', 'use-hours-export.ts'],
   monthNav: ['components', 'month-nav.tsx'],

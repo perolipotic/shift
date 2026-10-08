@@ -4,7 +4,9 @@ import { MonthNav } from '@/components/month-nav';
 import { Card } from '@/components/ui/card';
 import { PageHeader, PageTitle } from '@/components/ui/page-header';
 import { HoursBody, HoursNotice } from '@/features/hours/components/hours-body';
+import { HoursExplanationDialog } from '@/features/hours/components/hours-explanation';
 import { useHours } from '@/features/hours/hooks/use-hours';
+import { useHoursExplanation } from '@/features/hours/hooks/use-hours-explanation';
 import {
   HOURS_MONTH_HEADING_ID,
   hoursSearchOf,
@@ -54,6 +56,11 @@ export function SatiScreen() {
     useHours(search, (next) => {
       void navigate({ search: next });
     });
+  // Story 7.14: the explanation dialog lives here, above every branch below, so it is never unmounted open.
+  const explanation = useHoursExplanation(explain, {
+    figuresShown: navShown && refusal === null && (view !== null || organization !== null),
+    organization: organization !== null,
+  });
 
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6" aria-busy={loading}>
@@ -80,11 +87,18 @@ export function SatiScreen() {
             organizationName={organizationName}
             onChange={change}
             onPress={pressColumn}
-            explain={explain}
+            onExplain={explanation.ask}
           />
         </Card>
       ) : (
         <HoursNotice refusal={refusal} onRetry={retryable ? retry : null} />
+      )}
+      {explanation.dialog === null ? null : (
+        <HoursExplanationDialog
+          open={explanation.dialog.open}
+          explanation={explanation.dialog.explanation}
+          onClose={explanation.close}
+        />
       )}
     </main>
   );
