@@ -1693,6 +1693,31 @@ test.describe('an admin changes a shift roster at 1280 px', () => {
     const form = await calendarPage.openRosterFormIn(detail);
     await expect(calendarPage.memberOptionIn(calendarPage.rosterInIn(form), fixture.spare.name)).toHaveCount(1);
   });
+
+  test('closes the roster dialog when a re-read makes the day off, says why in the day, and moves focus to its title', async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+
+    await calendarPage.goto(gridMonthOf(rotation.today));
+    await (await calendarPage.cellOf(fixture.team.name, rotation.today)).click();
+    const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
+    await calendarPage.openRosterFormIn(detail);
+    // Another admin makes the day off (Slobodno) while the dialog is open;
+    // going back online re-reads the calendar, with no save sent.
+    await seedShiftTypeOverride(rotation, fixture.team.id, rotation.today, 2, REASON);
+    await page.context().setOffline(true);
+    await page.context().setOffline(false);
+
+    await expect(calendarPage.rosterForm).toHaveCount(0);
+    await expect(detail).toContainText(fill(kalendar.detail.off, { team: fixture.team.name }));
+    await expect(calendarPage.alertIn(detail)).toHaveText(kalendar.detail.rosterChange.refused.notOffered);
+    await expect(page.locator('#kalendar-detail-heading')).toBeFocused();
+    await expect(calendarPage.rosterOpenerIn(detail)).toHaveCount(0);
+  });
 });
 
 test.describe('the roster form at 390 px, as an admin', () => {
@@ -1953,6 +1978,30 @@ test.describe('an admin sets and removes a shift-type override at 1280 px', () =
     await expect(calendarPage.overrideOpenerIn(detail)).toBeVisible();
     await expect(cell).not.toContainText('\u270E');
     await page.unroute(removal);
+  });
+
+  test('closes the type dialog when a re-read brings another admin\'s override, says taken in the day, and moves focus out', async ({
+    page,
+    calendarPage,
+    fixture,
+  }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+    const rotation = await seeded(fixture.slug, fixture.team.id);
+
+    await calendarPage.goto(gridMonthOf(rotation.today));
+    await (await calendarPage.cellOf(fixture.team.name, rotation.today)).click();
+    const detail = calendarPage.detailOf(fixture.team.name, rotation.today);
+    await calendarPage.openOverrideFormIn(detail);
+    // Another admin's override lands while the dialog is open; going back
+    // online re-reads the calendar, with no save sent.
+    await seedShiftTypeOverride(rotation, fixture.team.id, rotation.today, 1, REASON);
+    await page.context().setOffline(true);
+    await page.context().setOffline(false);
+
+    await expect(calendarPage.overrideForm).toHaveCount(0);
+    await expect(calendarPage.alertIn(detail)).toHaveText(kalendar.detail.override.refused.taken);
+    await expect(calendarPage.overrideRemoveIn(detail)).toBeFocused();
+    await expect(calendarPage.overrideOpenerIn(detail)).toHaveCount(0);
   });
 });
 

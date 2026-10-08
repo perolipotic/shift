@@ -51,6 +51,7 @@ context:
 - *"replacement candidates are grouped by availability with 5.4's helper"*: the groups render as native `<optgroup>`s in the existing `Dolazi` select, not the mockup's searchable combobox. This avoids a new dependency. A searchable combobox is DEFERRED (deferred-work entry).
 - The mockup's coverage clause (*"Noć 10.10. tada ne radi nijedna smjena (0 članova)"*) is DEFERRED. The preview covers the type, the roster and the hours only.
 - The mockup's in-place removal question inside the type dialog is narrowed: removal keeps the shipped `ConfirmDialog`, opened from the change line.
+- *"candidates appear under `slobodan` / `radi taj dan · 24 h bez pauze` / `na godišnjem taj dan`"*: while the leave marks are loading or have failed, or if grouping throws, every candidate is offered ungrouped (logged). A candidate the helper does not place is offered ungrouped too. Grouping over unread leave would show a member on leave as free. Approved in the code review of 2026-10-08.
 
 </frozen-after-approval>
 
@@ -96,7 +97,26 @@ context:
 - Given `Riješi konflikt`, then it navigates to that collision's decision screen.
 - Lint (including feature boundaries), typecheck, unit and e2e tests pass.
 
+### Review Findings
+
+- [x] [Review][Decision] New preflight refusal `OVERRIDE_REFUSED_TYPE` ("Odaberi tip smjene.") — the type dialog's placeholder needed a refusal, and the change added a new code and copy where `''` used to be refused as `sameAsProjected`. The spec's Ask First covers "changing any … validation rule", and the Spec Change Log does not record it.
+- [x] [Review][Decision] Ungrouped `Dolazi` fallback is not in Epic AC Deviations — while the leave marks are loading or have failed (`leave === null`), or if grouping throws, every candidate is offered without groups, and a candidate the helper does not place is offered ungrouped. Only EXPERIENCE.md records this.
+- [x] [Review][Patch] Reopening a change dialog shows a stale refusal — `openChange` clears `done`/`removeFailure` but not `failure`/`unchecked`, and the `formGone` effect leaves the override's `taken` behind (roster: a write refusal left in the unmounted form) [apps/web/src/features/calendar/hooks/use-override-form.ts:764, apps/web/src/features/calendar/hooks/use-roster-form.ts:693]
+- [x] [Review][Patch] The type dialog's auto-close always says `taken` — `formGone` falls back to `OVERRIDE_TAKEN` even when the day lost its rotation, its options or its team; say `taken` only when an override or a pending one is on the day, otherwise a `notOffered` copy as the roster dialog does [apps/web/src/features/calendar/hooks/use-override-form.ts:293]
+- [x] [Review][Patch] `formLost` notice outlives later writes — the `role="alert"` stays beside the notices of later removals; clear it when a removal is armed or a write starts [apps/web/src/features/calendar/hooks/use-roster-form.ts:311]
+- [x] [Review][Patch] Redundant outer guard on roster offers — `rosterOffersOf` already catches grouping errors; the outer catch calls the same failing path again and rethrows [apps/web/src/features/calendar/hooks/use-roster-form.ts:238]
+- [x] [Review][Patch] Misleading conflict log — a covering range whose dates cannot be formatted is logged as "no leave … covers" [apps/web/src/features/calendar/utils/day-detail.ts:1185]
+- [x] [Review][Patch] Stale doc key — `DayConflict.memberName` cites `kalendar.detail.override.unknownAuthor`; the dialog renders `kalendar.detail.unknownMember` [apps/web/src/features/calendar/utils/day-detail.ts:1148]
+- [x] [Review][Patch] Override "Taken" preview test mixes reads — it passes `dayOf(snapshot, B)` with the `taken` snapshot; use `dayOf(taken, B)` as the roster case does [apps/web/src/features/calendar/utils/change-preview.test.ts:169]
+- [x] [Review][Patch] No test covers the leave-hours keys reaching the previews — dropping `screen.leaveKeys` in `kalendar.tsx` fails nothing; add an e2e preview on the day whose collision is accepted as uncovered [e2e/tests/calendar/calendar-conflicts.spec.ts:376]
+- [x] [Review][Patch] No test covers the auto-close when a re-read takes the change away — roster `notOffered` and the override's closing notice, with focus on the day detail [e2e/tests/calendar/calendar.spec.ts]
+- [x] [Review][Patch] Bookkeeping — 7.9 is merged (#173), but sprint-status still says `review`; the spec has no Spec Change Log entry for the review's additions [_bmad-output/implementation-artifacts/sprint-status.yaml:547]
+
 ## Spec Change Log
+
+- 2026-10-08, code review: the type dialog's placeholder is refused as a new preflight code, `OVERRIDE_REFUSED_TYPE` (`kalendar.detail.override.refused.type`, "Odaberi tip smjene."), not as `sameAsProjected`. Human approved the new validation rule under Ask First.
+- 2026-10-08, code review: the ungrouped `Dolazi` fallback is added to Epic AC Deviations. Human approved.
+- 2026-10-08, code review patches: the type dialog gets its own `formLost` notice (`kalendar.detail.override.refused.notOffered`) when the day stops offering it with no override on it, and says `taken` only when an override is on the day. Reopening either dialog clears the last write's refusal, and either `formLost` clears when a removal is armed or a write starts. The roster offers' redundant outer guard is gone. E2E tests now cover the leave-hours keys in the preview and both dialogs closing on a re-read.
 
 ## Design Notes
 

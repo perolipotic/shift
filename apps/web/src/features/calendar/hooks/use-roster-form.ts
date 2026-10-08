@@ -233,17 +233,10 @@ export function useRosterForm(
     if (confirmation.shown !== null) confirmation.drop();
   }
 
-  // GUARDED (story 7.9): what cannot be grouped is offered ungrouped, logged,
-  // so the day detail never goes down for its candidates' groups.
-  const offers = useMemo(() => {
-    try {
-      return rosterOffersOf(snapshot, detail, leave);
-    } catch (cause) {
-      console.error(cause);
-
-      return rosterOffersOf(snapshot, detail, null);
-    }
-  }, [snapshot, detail, leave]);
+  // What cannot be grouped is offered ungrouped, logged, inside
+  // `rosterOffersOf` (story 7.9): the day detail never goes down for its
+  // candidates' groups.
+  const offers = useMemo(() => rosterOffersOf(snapshot, detail, leave), [snapshot, detail, leave]);
 
   // A member no longer offered (a save, or a re-read after `taken`) is no
   // longer chosen: the remounted `Select` shows "— nitko —".
@@ -424,6 +417,7 @@ export function useRosterForm(
     setDone(null);
     setErased(0);
     setUnchecked(null);
+    setFormLost(false);
     setPending(true);
 
     try {
@@ -483,6 +477,7 @@ export function useRosterForm(
     setErased(0);
     setRemoveFailure(null);
     setUnchecked(null);
+    setFormLost(false);
     setConfirming(id);
   }
 
@@ -554,6 +549,7 @@ export function useRosterForm(
     setDone(null);
     setErased(0);
     setUnchecked(null);
+    setFormLost(false);
     setPending(true);
 
     try {
@@ -695,6 +691,8 @@ export function useRosterForm(
 
     setDone(null);
     setErased(0);
+    setFailure(null);
+    setUnchecked(null);
     setRemoveFailure(null);
     setFormLost(false);
     setChanging(true);

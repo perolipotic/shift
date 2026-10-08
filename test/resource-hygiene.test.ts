@@ -1162,7 +1162,7 @@ const SANCTIONED_SCREEN_KEYS = [
   // A conflict line said without dates (a leave the derivation cannot find),
   // a member the snapshot does not hold, the preview's side with no rotation,
   // the type dialog's placeholder and its refusal, each dialog's close named
-  // after its change, and the notice when the day stops offering the roster form.
+  // after its change, and the notice when the day stops offering either form.
   'kalendar.detail.conflict.lineUndated',
   'kalendar.detail.unknownMember',
   'kalendar.detail.preview.noType',
@@ -1171,6 +1171,7 @@ const SANCTIONED_SCREEN_KEYS = [
   'kalendar.detail.override.set.close',
   'kalendar.detail.rosterChange.set.close',
   'kalendar.detail.rosterChange.refused.notOffered',
+  'kalendar.detail.override.refused.notOffered',
   'kalendar.detail.conflict.resolve',
   'kalendar.detail.typeTimes',
   'kalendar.detail.changeContext',

@@ -2650,8 +2650,10 @@ const KEY_SOURCES = [
     // SIXTY-SEVEN SINCE ITS REVIEW: the type dialog's placeholder, a conflict
     // line without dates, an unknown member's name, the preview's side with
     // no rotation, and the notice when the day stops offering the roster form;
-    // each dialog's close now names its change.
-    strings: 167,
+    // each dialog's close now names its change. ONE HUNDRED AND SIXTY-EIGHT
+    // SINCE ITS CODE REVIEW: the notice when the day stops offering the type
+    // form with no override on it.
+    strings: 168,
   },
   {
     // STORY 3.2b: the four marks' labels and the no-rotation label a cell's

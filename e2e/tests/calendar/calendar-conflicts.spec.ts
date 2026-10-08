@@ -387,6 +387,16 @@ test('the day detail states each unresolved conflict with its leave, links to it
   const resolved = calendarPage.detailOf(team.name, today);
   await expect(resolved).toBeVisible();
   await expect(calendarPage.conflictsIn(resolved)).toHaveCount(0);
+  // Its preview counts the accepted shift as leave, as *Sati* does: a type
+  // change moves no hours of the member on leave.
+  const free = seed?.steps[2];
+  if (free === undefined) throw new Error('E2E: no seeded rotation');
+  const resolvedForm = await calendarPage.openOverrideFormIn(resolved);
+  await calendarPage.overrideTypeIn(resolvedForm).selectOption({ label: free });
+  await expect(calendarPage.previewIn(resolvedForm)).toContainText(`→ ${free}`);
+  await expect(calendarPage.previewIn(resolvedForm)).not.toContainText(member.name);
+  await calendarPage.overrideCancelIn(resolvedForm).click();
+  await expect(calendarPage.overrideForm).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(resolved).toHaveCount(0);
 
@@ -404,8 +414,6 @@ test('the day detail states each unresolved conflict with its leave, links to it
 
   // The type dialog: Slobodno takes the member's hours away, before any save; its cancel returns to the day.
   const form = await calendarPage.openOverrideFormIn(detail);
-  const free = seed?.steps[2];
-  if (free === undefined) throw new Error('E2E: no seeded rotation');
   await calendarPage.overrideTypeIn(form).selectOption({ label: free });
   await expect(calendarPage.previewIn(form)).toContainText(kalendar.detail.preview.heading);
   await expect(calendarPage.previewIn(form)).toContainText(`→ ${free}`);

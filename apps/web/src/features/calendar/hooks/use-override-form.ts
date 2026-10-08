@@ -186,6 +186,12 @@ export function useOverrideForm(
   const writing = useRef(false);
   /** Whether the form's dialog is open (story 7.9). */
   const [changing, setChanging] = useState(false);
+  /**
+   * The day stopped offering the form while its dialog was open with no
+   * override on the day (its rotation, its options or its team went): said in
+   * the day detail, as the roster form's `formLost` is.
+   */
+  const [formLost, setFormLost] = useState(false);
   // The type `Select`'s value, mirrored for the preview alone: the save reads the field.
   const [chosenType, setChosenType] = useState<string>(OVERRIDE_NO_TYPE);
   const [pending, setPending] = useState(false);
@@ -229,6 +235,7 @@ export function useOverrideForm(
     setUnchecked(null);
     setErased(0);
     setChanging(false);
+    setFormLost(false);
     setChosenType(OVERRIDE_NO_TYPE);
     // Its erasure confirmation, too: it was about that day's override.
     if (confirmation.shown !== null) confirmation.drop();
@@ -236,8 +243,9 @@ export function useOverrideForm(
 
   const offers = overrideOffersOf(snapshot, detail);
 
-  // THE DAY NO LONGER OFFERS THE FORM — another admin's override landed first,
-  // and a re-read brought it — so its dialog closes (the effect below).
+  // THE DAY NO LONGER OFFERS THE FORM — another admin's override landed first
+  // and a re-read brought it, or the day lost its rotation, its options or its
+  // team — so its dialog closes (the effect below).
   const formGone = changing && !offers.set && !pending;
 
   const preview = useMemo(
@@ -285,12 +293,15 @@ export function useOverrideForm(
 
   // THE DAY NO LONGER OFFERS THE FORM (story 7.9): its dialog closes, never
   // to reopen by itself; the day detail says why (`OverrideSetRefusal`) — the
-  // write's own refusal when one was said, else `taken` — and focus moves to
-  // the override that landed, or the day detail's title.
+  // write's own refusal when one was said, else `taken` when an override (in
+  // force or pending) is on the day now, else that the type can no longer be
+  // changed — and focus moves to the override that landed, or the day
+  // detail's title.
   useEffect(() => {
     if (!formGone) return;
     setChanging(false);
-    setFailure((said) => said ?? OVERRIDE_TAKEN);
+    if (failure === null && override === null) setFormLost(true);
+    else setFailure((said) => said ?? OVERRIDE_TAKEN);
     focusAfterWrite(removeAction);
   });
 
@@ -457,6 +468,7 @@ export function useOverrideForm(
     setDone(null);
     setErased(0);
     setUnchecked(null);
+    setFormLost(false);
     setPending(true);
 
     try {
@@ -530,6 +542,7 @@ export function useOverrideForm(
     setErased(0);
     setRemoveFailure(null);
     setUnchecked(null);
+    setFormLost(false);
     setConfirming(true);
   }
 
@@ -612,6 +625,7 @@ export function useOverrideForm(
     setDone(null);
     setErased(0);
     setUnchecked(null);
+    setFormLost(false);
     setPending(true);
 
     try {
@@ -766,7 +780,10 @@ export function useOverrideForm(
 
     setDone(null);
     setErased(0);
+    setFailure(null);
+    setUnchecked(null);
     setRemoveFailure(null);
+    setFormLost(false);
     setChanging(true);
   }
 
@@ -788,6 +805,7 @@ export function useOverrideForm(
     removeCancel,
     pending,
     failure,
+    formLost,
     confirming,
     removeFailure,
     done,

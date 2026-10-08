@@ -25,6 +25,7 @@ import {
   OverrideRemoveAction,
   OverrideRemoveConfirm,
   OverrideRemoveRefusal,
+  OverrideFormLostNotice,
   OverrideSetRefusal,
 } from '@/features/calendar/components/override-form';
 import {
@@ -332,6 +333,7 @@ function renderDetail(
       <OverrideDoneNotice form={form} />
       <OverrideRemoveRefusal form={form} />
       <OverrideSetRefusal form={form} />
+      <OverrideFormLostNotice form={form} />
     </>
   );
 
