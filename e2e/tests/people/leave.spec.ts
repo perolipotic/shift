@@ -17,6 +17,7 @@ import {
   type SeededLeaveMember,
   type SeededRotation,
 } from '../../utils/database-helper.ts';
+import type { PeoplePage } from '../../pages/people.page.ts';
 import { fullDate } from '../../utils/dates.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { fill, hr, plural } from '../../utils/i18n.ts';
@@ -66,6 +67,13 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * nothing, and opening a removal re-reads them, so a replacement written
  * since the page loaded is named. Each replacement is seeded with its
  * override in SQL (`seedConflictResolution`).
+ *
+ * Story 7.12: no od–do field is mounted on the card. *Upiši godišnji* opens
+ * the record dialog and a row's Izmijeni its amend dialog; each shows, before
+ * saving, the cost, the balance after and the conflicts the range creates —
+ * an amend *Bilo / Sada* and which conflicts clear and which stay — and a
+ * removal says how many unresolved conflicts it clears. A landed write
+ * closes its dialog and returns focus to the opener; a cancel sends nothing.
  */
 
 test.use({ storageState: ADMIN_STATE });
@@ -136,6 +144,21 @@ function workingDaysIn(today: string, from: string, to: string): number {
   }
 
   return count;
+}
+
+/**
+ * The conflict lines `from`–`to` raises for the seeded member, soonest first
+ * (story 7.12): each working day of the seeded pattern, by its type's name.
+ */
+function conflictLinesOf(peoplePage: PeoplePage, today: string, from: string, to: string): string[] {
+  if (seed === null) throw new Error('E2E: the rotation was not seeded');
+  const lines: string[] = [];
+  for (let offset = 0; isoDaysAfter(today, offset) <= to; offset += 1) {
+    const date = isoDaysAfter(today, offset);
+    if (date >= from && offset % 4 < 2) lines.push(peoplePage.leaveConflictLine(date, seed.steps[offset % 4] ?? ''));
+  }
+
+  return lines;
 }
 
 /** A record's inclusive dates, both `YYYY-MM-DD`. */
@@ -212,26 +235,47 @@ test('the cost shows before saving, a save updates the figures, and an overlap i
   await expect(peoplePage.leaveFigure(leave.allowance)).toHaveText(plural(days, 20));
   await expect(peoplePage.leaveFigure(leave.used)).toHaveText(plural(days, 0));
   await expect(peoplePage.leaveFigure(leave.balance)).toHaveText(plural(days, 20));
+  // NO FORM ON THE PAGE (story 7.12): the fields live only in the dialog.
+  await expect(peoplePage.page.locator('main form')).toHaveCount(0);
+  // The opener's name names the member (story 7.12).
+  await expect(peoplePage.recordLeaveButton).toHaveAccessibleName(fill(leave.recordName, { name: member.name }));
+  await peoplePage.recordLeaveButton.click();
+  await expect(peoplePage.leaveRecordDialog).toBeVisible();
+  await expect(peoplePage.leaveFromInput).toHaveValue('');
+  await expect(peoplePage.leaveToInput).toHaveValue('');
+  await expect(peoplePage.leaveFromInput).toBeFocused();
   // No preview until both dates are in: the reason stands in its place.
   await expect(peoplePage.text(leave.incomplete)).toBeVisible();
 
-  // THE PREVIEW, before any save: the seeded working days of the range.
+  // CLOSED WITHOUT SAVING: nothing is written, and focus is back on the opener.
   await peoplePage.enterLeave(today, last);
+  await peoplePage.cancelLeaveButton.click();
+  await expect(peoplePage.leaveDialog).toHaveCount(0);
+  await expect(peoplePage.recordLeaveButton).toBeFocused();
+  await expect(peoplePage.leaveRecordRows).toHaveCount(0);
+
+  // THE PREVIEW, before any save: the seeded working days of the range, and
+  // the conflicts it creates — one per working day, as neutral lines.
+  await peoplePage.enterLeave(today, last);
+  await expect(peoplePage.leaveRecordDialog).toBeVisible();
+  await expect(peoplePage.leaveFromInput).toHaveValue(today);
   await expect(peoplePage.leaveFigure(leave.cost)).toHaveText(plural(days, cost));
   await expect(peoplePage.leaveFigure(leave.balanceAfter)).toHaveText(plural(days, 20 - cost));
   await expect(peoplePage.text(leave.overlap)).toHaveCount(0);
+  await expect(peoplePage.leavePreviewRegion.getByText(plural(leave.conflictsCreated, cost), { exact: true })).toBeVisible();
+  await expect(peoplePage.leavePreviewRegion.getByRole('listitem')).toHaveText(conflictLinesOf(peoplePage, today, today, last));
 
   await peoplePage.saveLeaveButton.click();
   await expect(peoplePage.statusWith(plural(leave.saved, cost))).toBeVisible();
-  await expect(peoplePage.leaveFromInput).toHaveValue('');
-  await expect(peoplePage.leaveToInput).toHaveValue('');
+  await expect(peoplePage.leaveDialog).toHaveCount(0);
+  await expect(peoplePage.recordLeaveButton).toBeFocused();
   // The figures are the re-read's, never optimistic.
   await expect(peoplePage.leaveFigure(leave.used)).toHaveText(plural(days, cost));
   await expect(peoplePage.leaveFigure(leave.balance)).toHaveText(plural(days, 20 - cost));
 
   // AN OVERLAP: noted in the preview, refused by the database on save, named
-  // by the existing record's dates, and every entered value kept. The note
-  // gives way to the alert, so the overlap is said once.
+  // by the existing record's dates, and the dialog open with every entered
+  // value kept. The note gives way to the alert, so the overlap is said once.
   const from = last;
   const to = isoDaysAfter(last, 2);
   await peoplePage.enterLeave(from, to);
@@ -241,6 +285,7 @@ test('the cost shows before saving, a save updates the figures, and an overlap i
     peoplePage.alertWith(fill(leave.overlapConflict, { from: fullDate(today), to: fullDate(last) })),
   ).toBeVisible();
   await expect(peoplePage.text(leave.overlap)).toHaveCount(0);
+  await expect(peoplePage.leaveRecordDialog.getByRole('alert')).toBeVisible();
   await expect(peoplePage.leaveFromInput).toHaveValue(from);
   await expect(peoplePage.leaveToInput).toHaveValue(to);
   await expect(peoplePage.leaveFromInput).toBeFocused();
@@ -299,14 +344,14 @@ test('a failed records read replaces the figures and disables the form, and the 
   await peoplePage.gotoMember(member.id);
   await expect(peoplePage.alertWith(leave.unavailable)).toBeVisible();
   await expect(peoplePage.leaveFigure(leave.balance)).toHaveCount(0);
-  await expect(peoplePage.leaveFromInput).toBeDisabled();
-  await expect(peoplePage.leaveToInput).toBeDisabled();
-  await expect(peoplePage.saveLeaveButton).toBeDisabled();
+  await expect(peoplePage.recordLeaveButton).toBeDisabled();
 
   await page.unroute(records);
   await peoplePage.retryLeaveButton.click();
   await expect(peoplePage.leaveFigure(leave.balance)).toHaveText(plural(days, 20));
   await expect(peoplePage.alertWith(leave.unavailable)).toHaveCount(0);
+  await expect(peoplePage.recordLeaveButton).toBeEnabled();
+  await peoplePage.recordLeaveButton.click();
   await expect(peoplePage.leaveFromInput).toBeEnabled();
   await expect(peoplePage.saveLeaveButton).toBeEnabled();
 });
@@ -331,9 +376,9 @@ test('an amend previews without its record, refuses an overlap naming the other,
   await expect(peoplePage.leaveRecordRows.nth(1)).toContainText(labelOf(second));
   await expect(peoplePage.leaveFigure(leave.used)).toHaveText(plural(days, chargeOf(seed, first) + chargeOf(seed, second)));
 
-  // AMEND MODE: the legend names the record, its range fills the one form.
+  // THE AMEND DIALOG: its title names the record, its range fills the fields.
   await peoplePage.amendLeaveButton(first.from, first.to).click();
-  await expect(peoplePage.leaveAmendGroup(first.from, first.to)).toBeVisible();
+  await expect(peoplePage.leaveAmendDialog(first.from, first.to)).toBeVisible();
   await expect(peoplePage.leaveFromInput).toHaveValue(first.from);
   await expect(peoplePage.leaveToInput).toHaveValue(first.to);
   await expect(peoplePage.leaveFromInput).toBeFocused();
@@ -345,14 +390,46 @@ test('an amend previews without its record, refuses an overlap naming the other,
   await expect(peoplePage.leaveFromInput).toHaveAttribute('aria-invalid', 'true');
 
   // THE PREVIEW leaves the amended record out: no overlap with its own dates,
-  // and the balance after it charges the new range alone.
+  // and the balance after it charges the new range alone. *Bilo / Sada*
+  // name both ranges with their costs.
   const amended = { from: today, to: isoDaysAfter(today, 6) };
   await peoplePage.leaveToInput.fill(amended.to);
-  await expect(peoplePage.leaveFigure(leave.cost)).toHaveText(plural(days, workingDaysIn(today, amended.from, amended.to)));
+  const costOf = (range: Range) => plural(days, workingDaysIn(today, range.from, range.to));
+  await expect(peoplePage.leaveFigure(leave.before)).toHaveText(
+    fill(leave.rangeCost, { from: fullDate(first.from), to: fullDate(first.to), cost: costOf(first) }),
+  );
+  await expect(peoplePage.leaveFigure(leave.after)).toHaveText(
+    fill(leave.rangeCost, { from: fullDate(amended.from), to: fullDate(amended.to), cost: costOf(amended) }),
+  );
   await expect(peoplePage.leaveFigure(leave.balanceAfter)).toHaveText(
     plural(days, 20 - chargeOf(seed, second) - chargeOf(seed, amended)),
   );
   await expect(peoplePage.text(leave.overlap)).toHaveCount(0);
+
+  // ITS CONFLICTS: the first record's stay, and the new working days add
+  // theirs — today + 5 is always the pattern's Noć, so exactly one.
+  const kept = conflictLinesOf(peoplePage, today, first.from, first.to);
+  const added = conflictLinesOf(peoplePage, today, isoDaysAfter(first.to, 1), amended.to);
+  expect(added, 'today + 5 is a working day of the seeded pattern').toHaveLength(1);
+  await expect(peoplePage.leavePreviewRegion.getByText(peoplePage.leaveConflictGroup(leave.conflictsKept, kept), { exact: true })).toBeVisible();
+  await expect(
+    peoplePage.leavePreviewRegion.getByText(peoplePage.leaveConflictGroup(leave.conflictsNew, added), { exact: true }),
+  ).toBeVisible();
+
+  // SHORTER: the dropped working days' conflicts clear, the rest stay.
+  const shorter = { from: today, to: isoDaysAfter(today, 1) };
+  await peoplePage.leaveToInput.fill(shorter.to);
+  const cleared = conflictLinesOf(peoplePage, today, isoDaysAfter(shorter.to, 1), first.to);
+  await expect(
+    peoplePage.leavePreviewRegion.getByText(peoplePage.leaveConflictGroup(leave.conflictsCleared, cleared), { exact: true }),
+  ).toBeVisible();
+  await expect(
+    peoplePage.leavePreviewRegion.getByText(
+      peoplePage.leaveConflictGroup(leave.conflictsKept, conflictLinesOf(peoplePage, today, shorter.from, shorter.to)),
+      { exact: true },
+    ),
+  ).toBeVisible();
+  await expect(peoplePage.amendSaveButton).toBeEnabled();
 
   // AN OVERLAP onto the other record: named by its dates, amend mode and every value kept.
   const overlapping = isoDaysAfter(today, 9);
@@ -362,18 +439,18 @@ test('an amend previews without its record, refuses an overlap naming the other,
   await expect(
     peoplePage.alertWith(fill(leave.overlapConflict, { from: fullDate(second.from), to: fullDate(second.to) })),
   ).toBeVisible();
-  await expect(peoplePage.leaveAmendGroup(first.from, first.to)).toBeVisible();
+  await expect(peoplePage.leaveAmendDialog(first.from, first.to)).toBeVisible();
   await expect(peoplePage.leaveFromInput).toHaveValue(first.from);
   await expect(peoplePage.leaveToInput).toHaveValue(overlapping);
   await expect(peoplePage.leaveFromInput).toBeFocused();
 
-  // THE SAVE: what the new range cost, the form back to a new record, and the re-read figures.
+  // THE SAVE: what the new range cost, the dialog closed with focus on the
+  // replacement record's Izmijeni, and the re-read figures.
   await peoplePage.leaveToInput.fill(amended.to);
   await peoplePage.amendSaveButton.click();
   await expect(peoplePage.statusWith(plural(leave.amended, workingDaysIn(today, amended.from, amended.to)))).toBeVisible();
-  await expect(peoplePage.leaveNewGroup).toBeVisible();
-  await expect(peoplePage.leaveFromInput).toHaveValue('');
-  await expect(peoplePage.leaveToInput).toHaveValue('');
+  await expect(peoplePage.leaveDialog).toHaveCount(0);
+  await expect(peoplePage.amendLeaveButton(amended.from, amended.to)).toBeFocused();
   const used = chargeOf(seed, amended) + chargeOf(seed, second);
   await expect(peoplePage.leaveFigure(leave.used)).toHaveText(plural(days, used));
   await expect(peoplePage.leaveFigure(leave.balance)).toHaveText(plural(days, 20 - used));
@@ -431,7 +508,7 @@ test('a removal takes one confirmation and restores the balance, a cancel sends 
   await expectNoHorizontalScroll(page);
 });
 
-test('a record removed from under the screen closes amend mode or the confirmation, says so, and refreshes the list', async ({
+test('a record removed from under the screen closes the amend dialog or the confirmation, says so, and refreshes the list', async ({
   peoplePage,
   fixture,
 }) => {
@@ -445,13 +522,13 @@ test('a record removed from under the screen closes amend mode or the confirmati
   // AN AMEND of a record already gone.
   await peoplePage.gotoMember(member.id);
   await peoplePage.amendLeaveButton(record.from, record.to).click();
-  await expect(peoplePage.leaveAmendGroup(record.from, record.to)).toBeVisible();
+  await expect(peoplePage.leaveAmendDialog(record.from, record.to)).toBeVisible();
   await removeLeaveRecordsInSql(fixture.slug, member.id);
   await peoplePage.leaveToInput.fill(isoDaysAfter(today, 6));
   await peoplePage.amendSaveButton.click();
   await expect(peoplePage.alertWith(leave.gone)).toBeVisible();
   await expect(peoplePage.alertWith(leave.gone)).toBeFocused();
-  await expect(peoplePage.leaveNewGroup).toBeVisible();
+  await expect(peoplePage.leaveDialog).toHaveCount(0);
   await expect(peoplePage.leaveRecordRows).toHaveCount(0);
   await expect(peoplePage.leaveFigure(leave.used)).toHaveText(plural(days, 0));
 
@@ -532,7 +609,55 @@ test('a refused removal keeps its one confirmation open with the alert inside, a
   await expect(peoplePage.leaveRecordRows).toHaveCount(1);
 });
 
-test('a failed amend keeps amend mode and every value and re-reads the records, and an amend over the balance warns', async ({
+test('an amend in flight cannot be dismissed by Escape, the close button or Odustani, and its landing closes the dialog', async ({
+  page,
+  peoplePage,
+  fixture,
+}) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  const seed = await seeded(fixture.slug, () => 20);
+  const { member, today } = seed;
+  const record = { from: today, to: isoDaysAfter(today, 4) };
+  const amended = { from: today, to: isoDaysAfter(today, 6) };
+  await seedLeaveRecord(fixture.slug, member.id, record.from, record.to);
+  await peoplePage.gotoMember(member.id);
+
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const amend = '**/rest/v1/rpc/amend_leave_record*';
+  await page.route(amend, async (route) => {
+    if (route.request().method() === 'POST') await held;
+    await route.continue();
+  });
+
+  await peoplePage.amendLeaveButton(record.from, record.to).click();
+  const dialog = peoplePage.leaveAmendDialog(record.from, record.to);
+  await expect(dialog).toBeVisible();
+  await peoplePage.leaveToInput.fill(amended.to);
+  await peoplePage.amendSaveButton.click();
+  await expect(peoplePage.amendCancelButton).toBeDisabled();
+
+  // WHILE HELD: Escape, the close button and Odustani leave it open.
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: hr.ljudi.page.close, exact: true }).click();
+  await expect(dialog).toBeVisible();
+  await peoplePage.amendCancelButton.click({ force: true });
+  await expect(dialog).toBeVisible();
+  await expect(peoplePage.leaveToInput).toHaveValue(amended.to);
+
+  // RELEASED: the amend lands, the dialog closes, and focus is on the new row's Izmijeni.
+  release();
+  await expect(peoplePage.statusWith(plural(leave.amended, workingDaysIn(today, amended.from, amended.to)))).toBeVisible();
+  await expect(peoplePage.leaveDialog).toHaveCount(0);
+  await expect(peoplePage.amendLeaveButton(amended.from, amended.to)).toBeFocused();
+  await page.unroute(amend);
+});
+
+test('a failed amend keeps its dialog and every value and re-reads the records, and an amend over the balance warns', async ({
   page,
   peoplePage,
   fixture,
@@ -566,7 +691,7 @@ test('a failed amend keeps amend mode and every value and re-reads the records, 
   });
   await peoplePage.amendSaveButton.click();
   await expect(peoplePage.alertWith(leave.amendFailed)).toBeVisible();
-  await expect(peoplePage.leaveAmendGroup(record.from, record.to)).toBeVisible();
+  await expect(peoplePage.leaveAmendDialog(record.from, record.to).getByRole('alert')).toBeVisible();
   await expect(peoplePage.leaveFromInput).toHaveValue(amended.from);
   await expect(peoplePage.leaveToInput).toHaveValue(amended.to);
   await expect.poll(() => readsAfter, { message: 'the records were not re-read after the amend' }).toBeGreaterThan(0);
@@ -578,9 +703,11 @@ test('a failed amend keeps amend mode and every value and re-reads the records, 
   await expect(peoplePage.statusWith(plural(leave.amended, workingDaysIn(today, amended.from, amended.to)))).toBeVisible();
   await expect(peoplePage.statusWith(plural(leave.savedExceeds, 0 - charge))).toBeVisible();
   await expect(peoplePage.leaveFigure(leave.balance)).toHaveText(plural(days, 0 - charge));
+  await expect(peoplePage.leaveDialog).toHaveCount(0);
 });
 
-test('cancelling an amend, or removing the record it amends, returns the form to a new record', async ({
+test('closing an amend sends nothing and returns focus to its Izmijeni; a removal says how many conflicts it clears', async ({
+  page,
   peoplePage,
   fixture,
 }) => {
@@ -592,27 +719,31 @@ test('cancelling an amend, or removing the record it amends, returns the form to
   await seedLeaveRecord(fixture.slug, member.id, record.from, record.to);
   await peoplePage.gotoMember(member.id);
 
-  // CANCEL: a new record, empty, and focus back on that row's Izmijeni.
+  // CANCEL: nothing sent, the dialog gone, and focus back on that row's Izmijeni.
   await peoplePage.amendLeaveButton(record.from, record.to).click();
-  await expect(peoplePage.leaveAmendGroup(record.from, record.to)).toBeVisible();
-  await expect(peoplePage.leaveRecordRow(record.from, record.to)).toContainText(leave.amending);
-  await expect(peoplePage.amendLeaveButton(record.from, record.to)).toBeDisabled();
+  await expect(peoplePage.leaveAmendDialog(record.from, record.to)).toBeVisible();
+  await peoplePage.leaveToInput.fill(isoDaysAfter(today, 6));
   await peoplePage.amendCancelButton.click();
-  await expect(peoplePage.leaveNewGroup).toBeVisible();
-  await expect(peoplePage.leaveFromInput).toHaveValue('');
-  await expect(peoplePage.leaveToInput).toHaveValue('');
+  await expect(peoplePage.leaveDialog).toHaveCount(0);
   await expect(peoplePage.amendLeaveButton(record.from, record.to)).toBeFocused();
+  await expect(peoplePage.leaveRecordRow(record.from, record.to)).toHaveCount(1);
 
-  // REMOVING THE RECORD IN AMEND MODE ends amend mode with it.
+  // ESCAPE closes it the same way, and a new opening starts from the record again.
   await peoplePage.amendLeaveButton(record.from, record.to).click();
-  await expect(peoplePage.leaveAmendGroup(record.from, record.to)).toBeVisible();
+  await peoplePage.leaveToInput.fill(isoDaysAfter(today, 6));
+  await page.keyboard.press('Escape');
+  await expect(peoplePage.leaveDialog).toHaveCount(0);
+  await expect(peoplePage.amendLeaveButton(record.from, record.to)).toBeFocused();
+  await peoplePage.amendLeaveButton(record.from, record.to).click();
+  await expect(peoplePage.leaveToInput).toHaveValue(record.to);
+  await peoplePage.amendCancelButton.click();
+
+  // THE REMOVAL names the unresolved conflicts it clears: one per working day.
   const confirm = peoplePage.removeLeaveConfirmOf(record.from, record.to, cost, inYearOf(seed, record));
   await peoplePage.removeLeaveButton(record.from, record.to).click();
+  await expect(confirm.getByText(plural(leave.removeClears, cost), { exact: true })).toBeVisible();
   await peoplePage.confirmRemoveLeaveIn(confirm).click();
   await expect(peoplePage.statusWith(fill(leave.removed, { from: fullDate(record.from), to: fullDate(record.to) }))).toBeVisible();
-  await expect(peoplePage.leaveNewGroup).toBeVisible();
-  await expect(peoplePage.leaveFromInput).toHaveValue('');
-  await expect(peoplePage.leaveToInput).toHaveValue('');
   await expect(peoplePage.leaveRecordRows).toHaveCount(0);
 });
 
@@ -661,7 +792,13 @@ test('an amend that uncovers a replaced date names the replacement in the previe
   // KEEPS: today is still covered, so nothing is said.
   await peoplePage.leaveFromInput.fill(today);
   await peoplePage.leaveToInput.fill(isoDaysAfter(today, 3));
-  await expect(peoplePage.leaveFigure(leave.cost)).toHaveText(plural(days, workingDaysIn(today, today, isoDaysAfter(today, 3))));
+  await expect(peoplePage.leaveFigure(leave.after)).toHaveText(
+    fill(leave.rangeCost, {
+      from: fullDate(today),
+      to: fullDate(isoDaysAfter(today, 3)),
+      cost: plural(days, workingDaysIn(today, today, isoDaysAfter(today, 3))),
+    }),
+  );
   await expect(peoplePage.text(line)).toHaveCount(0);
   await expect(peoplePage.text(leave.replacementsUnknown)).toHaveCount(0);
 
@@ -673,7 +810,7 @@ test('an amend that uncovers a replaced date names the replacement in the previe
   const notice = peoplePage.statusWith(plural(leave.amended, workingDaysIn(today, later, record.to)));
   await expect(notice).toBeVisible();
   await expect(notice).toContainText(line);
-  await expect(peoplePage.leaveNewGroup).toBeVisible();
+  await expect(peoplePage.leaveDialog).toHaveCount(0);
 });
 
 test('a removal names every replacement left rostered, by date, and none whose override was removed; the phone does not scroll sideways', async ({
@@ -743,6 +880,8 @@ test('a failed resolutions read says the replacements cannot be checked, in the 
   await peoplePage.amendLeaveButton(record.from, record.to).click();
   await peoplePage.leaveFromInput.fill(isoDaysAfter(today, 1));
   await expect(peoplePage.leavePreviewRegion.getByText(leave.replacementsUnknown, { exact: true })).toBeVisible();
+  // STORY 7.12: nor can the conflicts be — said once, and Spremi stays enabled.
+  await expect(peoplePage.leavePreviewRegion.getByText(leave.conflictsUnknown, { exact: true })).toBeVisible();
   await expect(peoplePage.amendSaveButton).toBeEnabled();
   await peoplePage.amendCancelButton.click();
 
@@ -751,6 +890,8 @@ test('a failed resolutions read says the replacements cannot be checked, in the 
   await peoplePage.removeLeaveButton(record.from, record.to).click();
   await expect(confirm).toBeVisible();
   await expect(confirm.getByText(leave.replacementsUnknown, { exact: true })).toBeVisible();
+  // STORY 7.12: nor can the conflicts it clears — said, neutral, never silence.
+  await expect(confirm.getByText(leave.conflictsUnknown, { exact: true })).toBeVisible();
   await expect(peoplePage.confirmRemoveLeaveIn(confirm)).toBeEnabled();
   await peoplePage.cancelRemoveLeaveIn(confirm).click();
   await page.unroute(resolutions);

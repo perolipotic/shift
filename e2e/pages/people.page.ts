@@ -1,6 +1,6 @@
 import { expect, type Locator } from '@playwright/test';
 
-import { dayMonth, fullDate } from '../utils/dates.ts';
+import { dayMonth, fullDate, weekdayShort } from '../utils/dates.ts';
 import { escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 import { ErasureDialogParts } from './erasure-dialog.ts';
@@ -10,6 +10,13 @@ const membership = hr.smjene.membership;
 const leave = hr.ljudi.leaveRecord;
 /** *Godišnji odmor*, or *Godišnji odmor 2026.* once the leave year is read — never the records' own heading. */
 const LEAVE_HEADING = new RegExp(`^${escapeRegExp(leave.heading)}( \\d{4}\\.(/\\d{4}\\.)?)?$`);
+/**
+ * Either leave dialog (story 7.12), by its title: `Upiši godišnji odmor`, or
+ * `Izmijeni godišnji odmor {od}–{do}` whatever the range.
+ */
+const LEAVE_DIALOG = new RegExp(
+  `^(${escapeRegExp(leave.recordDialogHeading)}|${escapeRegExp(leave.amendDialogHeading.split('{')[0] ?? '')}.+)$`,
+);
 
 /** `/ljudi`, `/ljudi/novi` and `/ljudi/:id`: the member list, the new-member
  *  form and a member's page — facts, each change in its own dialog (story
@@ -394,45 +401,84 @@ export class PeoplePage extends BasePage {
   }
 
   /**
-   * The figure under `label` in the leave card — the allowance, used, the
-   * balance, the cost or the balance after. A `<dt>`/`<dd>` pair in its own
-   * `<div>`, which no role or label reaches as a pair.
+   * The figure under `label` in the leave card or its open dialog — the
+   * allowance, used, the balance; the cost, *Bilo*, *Sada* or the balance
+   * after. A `<dt>`/`<dd>` pair in its own `<div>`, which no role or label
+   * reaches as a pair.
    */
   leaveFigure(label: string): Locator {
     return this.leaveCard
+      .or(this.leaveDialog)
       .locator('dl > div')
       .filter({ has: this.page.getByRole('term').getByText(label, { exact: true }) })
       .getByRole('definition');
   }
 
+  /** *Upiši godišnji* in the leave card's header (story 7.12): it opens the record dialog. */
+  get recordLeaveButton(): Locator {
+    return this.leaveCard.getByRole('button', { name: leave.record });
+  }
+
+  /** Whichever leave dialog is open — a new record's or an amend's (story 7.12). */
+  get leaveDialog(): Locator {
+    return this.dialog().filter({ has: this.page.getByRole('heading', { name: LEAVE_DIALOG }) });
+  }
+
+  /** The new record's dialog, `Upiši godišnji odmor`. */
+  get leaveRecordDialog(): Locator {
+    return this.dialog(leave.recordDialogHeading);
+  }
+
+  /** The amend dialog of the record `from`–`to`, both `YYYY-MM-DD`. */
+  leaveAmendDialog(from: string, to: string): Locator {
+    return this.dialog(fill(leave.amendDialogHeading, { from: fullDate(from), to: fullDate(to) }));
+  }
+
   get leaveFromInput(): Locator {
-    return this.leaveCard.getByLabel(leave.from, { exact: true });
+    return this.leaveDialog.getByLabel(leave.from, { exact: true });
   }
 
   get leaveToInput(): Locator {
-    return this.leaveCard.getByLabel(leave.to, { exact: true });
+    return this.leaveDialog.getByLabel(leave.to, { exact: true });
   }
 
   get saveLeaveButton(): Locator {
-    return this.leaveCard.getByRole('button', { name: leave.save, exact: true });
+    return this.leaveDialog.getByRole('button', { name: leave.save, exact: true });
   }
 
-  /** The amend-mode legend naming the record `from`–`to`, both `YYYY-MM-DD`. */
-  leaveAmendGroup(from: string, to: string): Locator {
-    return this.leaveCard.getByRole('group', { name: fill(leave.amendHeading, { from: fullDate(from), to: fullDate(to) }) });
-  }
-
-  /** The form in new-record mode. */
-  get leaveNewGroup(): Locator {
-    return this.leaveCard.getByRole('group', { name: leave.newHeading, exact: true });
+  /** The record dialog's Odustani. */
+  get cancelLeaveButton(): Locator {
+    return this.leaveDialog.getByRole('button', { name: leave.cancel, exact: true });
   }
 
   get amendSaveButton(): Locator {
-    return this.leaveCard.getByRole('button', { name: leave.amendSave, exact: true });
+    return this.leaveDialog.getByRole('button', { name: leave.amendSave, exact: true });
   }
 
   get amendCancelButton(): Locator {
-    return this.leaveCard.getByRole('button', { name: leave.amendCancel, exact: true });
+    return this.leaveDialog.getByRole('button', { name: leave.amendCancel, exact: true });
+  }
+
+  /** A conflict as the leave dialog names it (story 7.12): `pon 21.12. Dan`, `date` `YYYY-MM-DD`. */
+  leaveConflictLine(date: string, type: string): string {
+    return fill(leave.conflictLine, { weekday: weekdayShort(date), date: dayMonth(date), type });
+  }
+
+  /**
+   * One group of an amend's conflicts as its line reads (story 7.12):
+   * `summary` — `conflictsCleared`, `conflictsKept` or `conflictsNew` — counted
+   * by `lines`, then the lines joined as the app's `formatList` joins them.
+   */
+  leaveConflictGroup(summary: string, lines: readonly string[]): string {
+    return fill(leave.conflictsGroup, {
+      summary: plural(summary, lines.length),
+      lines: new Intl.ListFormat('hr', { style: 'long', type: 'conjunction' }).format(lines),
+    });
+  }
+
+  /** The records list's heading, where focus lands when a closed dialog has no opener (story 7.12). */
+  get leaveRecordsHeading(): Locator {
+    return this.leaveCard.getByRole('heading', { level: 3, name: leave.recordsHeading, exact: true });
   }
 
   /** The card's list of live records, a section named by its heading. */
@@ -508,7 +554,7 @@ export class PeoplePage extends BasePage {
    * its replacement lines there); a spec asserts its `aria-live` too.
    */
   get leavePreviewRegion(): Locator {
-    return this.leaveCard.locator('#member-leave-preview');
+    return this.leaveDialog.locator('#member-leave-preview');
   }
 
   /** The retry the leave card's unavailable line offers. */
@@ -516,8 +562,15 @@ export class PeoplePage extends BasePage {
     return this.leaveCard.getByRole('button', { name: leave.retry });
   }
 
-  /** Enters an od–do range, both `YYYY-MM-DD`. */
+  /**
+   * Enters an od–do range, both `YYYY-MM-DD`, in the open leave dialog —
+   * opening the record dialog first when none is open (story 7.12).
+   */
   async enterLeave(from: string, to: string): Promise<void> {
+    if (!(await this.leaveDialog.isVisible())) {
+      await this.recordLeaveButton.click();
+      await expect(this.leaveRecordDialog).toBeVisible();
+    }
     await this.leaveFromInput.fill(from);
     await this.leaveToInput.fill(to);
   }

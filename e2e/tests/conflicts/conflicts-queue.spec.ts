@@ -128,14 +128,19 @@ test('lists the new conflicts without a reload, upcoming first and past ones aft
   );
 
   // RECORD THE WORKED EXAMPLE on the member's page, back without a reload.
+  // Its dialog says, before the save, how many conflicts it creates (story
+  // 7.12) — exactly the rows the queue then gains.
   await page.goBack();
   await expect(peoplePage.leaveHeading).toBeVisible();
   await peoplePage.enterLeave(worked.from, worked.to);
+  await expect(
+    peoplePage.leavePreviewRegion.getByText(plural(hr.ljudi.leaveRecord.conflictsCreated, 3), { exact: true }),
+  ).toBeVisible();
   await peoplePage.saveLeaveButton.click();
   await expect(peoplePage.status).toBeVisible();
 
   await peoplePage.navigationLink(hr.nav.raspored, { exact: true }).click();
-  await expect(rows).toHaveCount(5);
+  await expect(rows).toHaveCount(2 + 3);
   const expected = [
     { date: today, step: 0, past: false },
     { date: isoDaysAfter(today, 1), step: 1, past: false },
@@ -292,10 +297,10 @@ test('an amend that takes a resolved date out of the range ends that resolution 
   await peoplePage.listedMember(seeded.name).click();
   await expect(peoplePage.leaveHeading).toBeVisible();
   await peoplePage.amendLeaveButton(worked.from, worked.to).click();
-  await expect(peoplePage.leaveAmendGroup(worked.from, worked.to)).toBeVisible();
+  await expect(peoplePage.leaveAmendDialog(worked.from, worked.to)).toBeVisible();
   await peoplePage.leaveToInput.fill(amended.to);
   await peoplePage.amendSaveButton.click();
-  await expect(peoplePage.leaveNewGroup).toBeVisible();
+  await expect(peoplePage.leaveDialog).toHaveCount(0);
   await expect(peoplePage.leaveRecordRows).toHaveCount(1);
 
   await peoplePage.navigationLink(hr.nav.raspored, { exact: true }).click();

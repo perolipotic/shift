@@ -1038,9 +1038,9 @@ test('amends the leave by keyboard: card 3 opens the member page\'s amend form p
   await resolutionPage.cancelLink.click();
   await expect(page).toHaveURL('/raspored');
 
-  // THE AMEND FORM, prefilled with the range that clears the conflict, focus in it.
+  // THE AMEND DIALOG, opened once and prefilled with the range that clears the conflict, focus in it.
   await amendByKeyboard();
-  await expect(peoplePage.leaveAmendGroup(today, last)).toBeVisible();
+  await expect(peoplePage.leaveAmendDialog(today, last)).toBeVisible();
   await expect(peoplePage.leaveFromInput).toBeFocused();
   await expect(peoplePage.leaveFromInput).toHaveValue(start);
   await expect(peoplePage.leaveToInput).toHaveValue(last);
@@ -1048,17 +1048,18 @@ test('amends the leave by keyboard: card 3 opens the member page\'s amend form p
 
   // A RELOAD reopens nothing — the opening has left the entry — and the way back stays.
   await page.reload();
-  await expect(peoplePage.leaveNewGroup).toBeVisible();
-  await expect(peoplePage.leaveFromInput).toHaveValue('');
+  await expect(peoplePage.leaveRecordRow(today, last)).toHaveCount(1);
+  await expect(peoplePage.leaveDialog).toHaveCount(0);
   await expect(peoplePage.backToConflictsLink).toBeVisible();
   await page.goBack();
   await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
   await amendFromScreen();
-  await expect(peoplePage.leaveAmendGroup(today, last)).toBeVisible();
+  await expect(peoplePage.leaveAmendDialog(today, last)).toBeVisible();
 
-  // CANCEL: the conflict is still open.
+  // CANCEL: the conflict is still open; with no opener, focus goes to the list's heading.
   await peoplePage.amendCancelButton.click();
-  await expect(peoplePage.leaveNewGroup).toBeVisible();
+  await expect(peoplePage.leaveDialog).toHaveCount(0);
+  await expect(peoplePage.leaveRecordsHeading).toBeFocused();
   await peoplePage.backToConflictsLink.click();
   await expect(page).toHaveURL('/raspored');
   await expect(rows).toHaveCount(3);
@@ -1067,7 +1068,7 @@ test('amends the leave by keyboard: card 3 opens the member page\'s amend form p
   await amendByKeyboard();
   await expect(peoplePage.leaveFromInput).toBeFocused();
   await peoplePage.amendSaveButton.click();
-  await expect(peoplePage.leaveNewGroup).toBeVisible();
+  await expect(peoplePage.leaveDialog).toHaveCount(0);
   await expect(peoplePage.leaveRecordRow(start, last)).toHaveCount(1);
   await peoplePage.backToConflictsLink.click();
   await expect(page).toHaveURL('/raspored');
@@ -1117,7 +1118,8 @@ test('a one-day record: card 3 says the leave is removed and Spremi opens its re
   await resolutionPage.amendOption.click();
   await resolutionPage.saveButton.click();
   await expect(page).toHaveURL(`/ljudi/${seeded.id}`);
-  await expect(peoplePage.leaveNewGroup).toBeVisible();
+  await expect(peoplePage.leaveHeading).toBeVisible();
+  await expect(peoplePage.text(hr.ljudi.leaveRecord.recordsEmpty)).toBeVisible();
   await expect(peoplePage.leaveRecordRows).toHaveCount(0);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(peoplePage.backToConflictsLink).toBeVisible();

@@ -119,9 +119,9 @@ test.describe('the member page shows facts and each change opens one dialog', ()
       await expect(peoplePage.leaveCard).toBeVisible();
       await expect(peoplePage.basicsCard).toContainText(username);
       await expect(peoplePage.basicsCard).toContainText(hr.ljudi.basics.noEmail);
-      // NO FIELD ON THE PAGE: the only form is the leave card's record form,
-      // which story 7.12 moves into its own dialog.
-      await expect(page.locator('main form')).toHaveCount(await peoplePage.leaveCard.locator('form').count());
+      // NO FIELD ON THE PAGE: every change opens its own dialog, the leave
+      // record's too since story 7.12, so no form is mounted at all.
+      await expect(page.locator('main form')).toHaveCount(0);
       await expect(peoplePage.basicsCard.getByRole('textbox')).toHaveCount(0);
       await expect(peoplePage.teamCard.getByRole('combobox')).toHaveCount(0);
       // THE ALLOWANCE SITS IN THE LEAVE CARD, beside its figure.

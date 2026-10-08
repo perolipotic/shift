@@ -5,11 +5,13 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog, DialogFooter } from '@/components/ui/dialog';
 import { Notice } from '@/components/ui/notice';
 import type { MemberLeave } from '@/features/leave/hooks/use-member-leave';
+import { leaveConflictsUnknown, leaveRemoveClearsOf } from '@/features/leave/services/leave-conflicts';
 import {
   LEAVE_LINE_SEPARATOR,
   LEAVE_LOADING,
   LEAVE_READY,
   LEAVE_RECORDS_HEADING_ID,
+  LEAVE_REMOVE_CLEARS_ID,
   LEAVE_REMOVE_PROMPT_ID,
   LEAVE_REMOVE_REPLACEMENTS_ID,
   REPLACEMENTS_UNKNOWN,
@@ -81,15 +83,15 @@ function replacementLinesOf(guard: ReplacementGuard | null): readonly { readonly
 /**
  * The member's live leave records on the *Godišnji* card (story 5.2b),
  * soonest first, each with its range, what it costs, and its two actions:
- * Izmijeni puts the card's one od–do form into amend mode for it, and Ukloni
- * opens its one confirmation. Above them, what the last amend or removal
+ * Izmijeni opens its amend dialog (story 7.12), and Ukloni its one
+ * confirmation. Above them, what the last amend or removal
  * left the list saying: the record removed, or that it was already gone.
  *
  * Every row, cost and message is `@/features/leave/services/leave-section`'s
  * decision; this renders them. Neutral styling throughout (UX-DR4, UX-DR27).
  */
 export function MemberLeaveRecords({ leave }: { readonly leave: MemberLeave }): ReactNode {
-  const { base, formDisabled, leaveFailure, removeFailure, confirming, leaveRemoved, removedReplacements, amendTarget } =
+  const { base, formDisabled, leaveFailure, removeFailure, confirming, leaveRemoved, removedReplacements, amendDialog } =
     leave;
 
   if (base.kind !== LEAVE_READY && base.kind !== LEAVE_LOADING) return null;
@@ -108,64 +110,55 @@ export function MemberLeaveRecords({ leave }: { readonly leave: MemberLeave }): 
 
     return (
       <ul className="grid min-w-0 gap-2">
-        {base.rows.map((row) => {
-          // THE ROW IN AMEND MODE says so in words, not colour alone, and
-          // offers no second Izmijeni of itself.
-          const amended = amendTarget?.id === row.record.id;
-
-          return (
-            <li
-              key={row.record.id}
-              aria-current={amended ? 'true' : undefined}
-              className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-input p-3"
-            >
-              <div className="grid min-w-0 gap-0.5">
-                <span className="text-sm font-medium tabular-nums">
-                  {row.label}
-                  {amended ? <span className="ms-2 text-xs font-semibold">{t('ljudi.leaveRecord.amending')}</span> : null}
+        {base.rows.map((row) => (
+          <li
+            key={row.record.id}
+            className="flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-md border border-input p-3"
+          >
+            <div className="grid min-w-0 gap-0.5">
+              <span className="text-sm font-medium tabular-nums">{row.label}</span>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {t('count.days', { count: row.costDays })}
+              </span>
+              {row.inYearDays === null ? null : (
+                <span className="text-xs text-muted-foreground">
+                  {t('ljudi.leaveRecord.costInYear', { count: row.inYearDays })}
                 </span>
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {t('count.days', { count: row.costDays })}
-                </span>
-                {row.inYearDays === null ? null : (
-                  <span className="text-xs text-muted-foreground">
-                    {t('ljudi.leaveRecord.costInYear', { count: row.inYearDays })}
-                  </span>
-                )}
-              </div>
-              <div className="flex min-w-0 flex-wrap gap-2">
-                <Button
-                  className="h-11"
-                  type="button"
-                  variant="outline"
-                  disabled={formDisabled || amended}
-                  onClick={(event) => {
-                    leave.startAmend(row, event);
-                  }}
-                >
-                  <Pencil aria-hidden />
-                  {/* THE WORD IS SHORT, THE NAME IS WHOLE: the range is read
-                      beside it, and the accessible name names it (WCAG 2.5.3). */}
-                  <span aria-hidden>{t('ljudi.leaveRecord.amend')}</span>
-                  <span className="sr-only">{t('ljudi.leaveRecord.amendName', { from: row.from, to: row.to })}</span>
-                </Button>
-                <Button
-                  className="h-11"
-                  type="button"
-                  variant="ghost"
-                  disabled={formDisabled}
-                  onClick={(event) => {
-                    leave.openRemove(row, event);
-                  }}
-                >
-                  <Trash2 aria-hidden />
-                  <span aria-hidden>{t('ljudi.leaveRecord.remove')}</span>
-                  <span className="sr-only">{t('ljudi.leaveRecord.removeName', { from: row.from, to: row.to })}</span>
-                </Button>
-              </div>
-            </li>
-          );
-        })}
+              )}
+            </div>
+            <div className="flex min-w-0 flex-wrap gap-2">
+              <Button
+                className="h-11"
+                type="button"
+                variant="outline"
+                disabled={formDisabled}
+                ref={leave.amendButtonRef(row.record.id)}
+                onClick={(event) => {
+                  amendDialog.open(row, event);
+                }}
+              >
+                <Pencil aria-hidden />
+                {/* THE WORD IS SHORT, THE NAME IS WHOLE: the range is read
+                    beside it, and the accessible name names it (WCAG 2.5.3). */}
+                <span aria-hidden>{t('ljudi.leaveRecord.amend')}</span>
+                <span className="sr-only">{t('ljudi.leaveRecord.amendName', { from: row.from, to: row.to })}</span>
+              </Button>
+              <Button
+                className="h-11"
+                type="button"
+                variant="ghost"
+                disabled={formDisabled}
+                onClick={(event) => {
+                  leave.openRemove(row, event);
+                }}
+              >
+                <Trash2 aria-hidden />
+                <span aria-hidden>{t('ljudi.leaveRecord.remove')}</span>
+                <span className="sr-only">{t('ljudi.leaveRecord.removeName', { from: row.from, to: row.to })}</span>
+              </Button>
+            </div>
+          </li>
+        ))}
       </ul>
     );
   }
@@ -203,20 +196,39 @@ export function MemberLeaveRecords({ leave }: { readonly leave: MemberLeave }): 
 
 /**
  * REMOVING A RECORD (story 5.2b): exactly one neutral modal confirmation that
- * names the range and what it costs, and each replacement the removal would
+ * names the range and what it costs, how many unresolved conflicts it clears
+ * when there are any (story 7.12), and each replacement the removal would
  * leave rostered (story 5.4e) — the removal confirm of
  * `override-form.tsx`. Cancel is `outline`, confirm the default variant, and
  * nothing is `destructive`. A refusal keeps it open with its alert inside;
  * while the removal is in flight nothing dismisses it.
  */
 export function MemberLeaveRemoveConfirm({ leave }: { readonly leave: MemberLeave }): ReactNode {
-  const { confirming, removePending, removeFailure, removeCancel, cancelRemove, formDisabled, removeGuard } = leave;
+  const { confirming, removePending, removeFailure, removeCancel, cancelRemove, formDisabled, removeGuard, removeConflicts } =
+    leave;
 
   if (confirming === null) return null;
 
   const failure = leaveConfirmFailureOf(removeFailure);
-  // THE REPLACEMENT LINES DESCRIBE THE DIALOG while there are any (story 5.4e); the prompt already names it.
-  const describedBy = replacementLinesShown(removeGuard) ? LEAVE_REMOVE_REPLACEMENTS_ID : undefined;
+  /** How many unresolved conflicts the removal clears (story 7.12): a line only when there are any. */
+  const clears = leaveRemoveClearsOf(removeConflicts);
+  /** The conflicts cannot be checked now: one neutral line says so instead (story 7.12). */
+  const clearsUnknown = leaveConflictsUnknown(removeConflicts);
+  /** The conflicts line, or null when there is nothing to say. */
+  const clearsLine = clearsUnknown
+    ? t('ljudi.leaveRecord.conflictsUnknown')
+    : clears === 0
+      ? null
+      : t('ljudi.leaveRecord.removeClears', { count: clears });
+  // THE CONFLICTS LINE AND THE REPLACEMENT LINES DESCRIBE THE DIALOG while
+  // there are any (stories 7.12, 5.4e); the prompt already names it.
+  const describedBy =
+    [
+      clearsLine === null ? null : LEAVE_REMOVE_CLEARS_ID,
+      replacementLinesShown(removeGuard) ? LEAVE_REMOVE_REPLACEMENTS_ID : null,
+    ]
+      .filter((id) => id !== null)
+      .join(LEAVE_LINE_SEPARATOR) || undefined;
 
   return (
     <ConfirmDialog
@@ -233,6 +245,12 @@ export function MemberLeaveRemoveConfirm({ leave }: { readonly leave: MemberLeav
           inYear: t('count.days', { count: confirming.inYearDays ?? confirming.costDays }),
         })}
       </p>
+      {/* STORY 7.12: the conflicts the removal clears, neutral, never a gate. */}
+      {clearsLine === null ? null : (
+        <p id={LEAVE_REMOVE_CLEARS_ID} className="text-sm">
+          {clearsLine}
+        </p>
+      )}
       {/* STORY 5.4e: a note beside the confirm, never a gate. */}
       <LeaveReplacementLines guard={removeGuard} id={LEAVE_REMOVE_REPLACEMENTS_ID} />
       {failure === null ? null : <Notice role="alert">{t(leaveRefusalMessageKey(failure))}</Notice>}
