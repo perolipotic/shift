@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import type { Locator, Page } from '@playwright/test';
 
 import type { RotationPage } from '../../pages/rotation.page.ts';
-import { archiveShiftType } from '../../utils/database-helper.ts';
+import { archiveShiftType, removeLeaveMemberInSql, seedLongNamedMember } from '../../utils/database-helper.ts';
 import { ADMIN_STATE, MEMBER_STATE, type Fixture } from '../../utils/run-fixture.ts';
 import { expectNoHorizontalScroll, expectNoInnerHorizontalScroll, expectTouchTargets } from '../../utils/layout.ts';
 import { NEXT_LABELS, STEP_HEADINGS } from '../../utils/rotation.ts';
@@ -226,27 +226,41 @@ test.describe('as an admin at 390 px', () => {
 
 // STORY 7.6: below 640 px the Sati, Ljudi and shift-types tables are stacked
 // rows, so neither the page nor any element in it scrolls sideways — at the
-// narrowest phone and at the one the screens are designed against.
+// narrowest phone and at the one the screens are designed against. Sati and
+// Ljudi each list a member of the test's own whose name holds one unbroken
+// word wider than the phone, so a row that cannot wrap it fails here on every
+// run, not only after another spec left such a name in the run organization.
 for (const width of [320, 390]) {
   test.describe(`as an admin, the stacked rows at ${String(width)} px`, () => {
     test.use({ storageState: ADMIN_STATE, viewport: { width, height: 844 } });
 
-    test('Sati is stacked rows, and nothing in it scrolls sideways', async ({ page, hoursPage }) => {
-      await hoursPage.goto();
-      await expect(hoursPage.organizationListRows.first()).toBeVisible();
-      await expect(hoursPage.organizationTable).toHaveCount(0);
-      await expectNoHorizontalScroll(page);
-      await expectNoInnerHorizontalScroll(page);
-      await expectTouchTargets(page);
+    test('Sati is stacked rows, and nothing in it scrolls sideways', async ({ page, hoursPage, fixture }) => {
+      const long = await seedLongNamedMember(fixture.slug);
+      try {
+        await hoursPage.goto();
+        await expect(hoursPage.organizationListRow(long.name)).toBeVisible();
+        await expect(hoursPage.organizationTable).toHaveCount(0);
+        await expectNoHorizontalScroll(page);
+        await expectNoInnerHorizontalScroll(page);
+        await expectTouchTargets(page);
+      } finally {
+        await removeLeaveMemberInSql(fixture.slug, long.id);
+      }
     });
 
     test('Ljudi is stacked rows, and nothing in it scrolls sideways', async ({ page, peoplePage, fixture }) => {
-      await peoplePage.goto();
-      await expect(peoplePage.listRow(fixture.member.name)).toBeVisible();
-      await expect(peoplePage.table).toHaveCount(0);
-      await expectNoHorizontalScroll(page);
-      await expectNoInnerHorizontalScroll(page);
-      await expectTouchTargets(page);
+      const long = await seedLongNamedMember(fixture.slug);
+      try {
+        await peoplePage.goto();
+        await expect(peoplePage.listRow(fixture.member.name)).toBeVisible();
+        await expect(peoplePage.listRow(long.name)).toBeVisible();
+        await expect(peoplePage.table).toHaveCount(0);
+        await expectNoHorizontalScroll(page);
+        await expectNoInnerHorizontalScroll(page);
+        await expectTouchTargets(page);
+      } finally {
+        await removeLeaveMemberInSql(fixture.slug, long.id);
+      }
     });
 
     test('the shift types step is stacked rows, and nothing in it scrolls sideways', async ({

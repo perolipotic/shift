@@ -299,6 +299,40 @@ export async function seedLeaveMember(
 }
 
 /**
+ * A fresh active member of the run organization on NO team whose name holds
+ * one unbroken word wider than any phone (story 7.6's stacked rows), in SQL. A
+ * test that measures a list's width at phone size seeds its own rather than
+ * relying on the long name another spec happens to leave in the run
+ * organization (story 5.4c's conflict picker), which made the measurement
+ * depend on which specs ran first. The username is under
+ * {@link LEAVE_MEMBER_USERNAME_PREFIX}, so {@link removeLeaveMemberInSql}
+ * deletes them.
+ */
+export async function seedLongNamedMember(slug: string): Promise<{ readonly id: string; readonly name: string }> {
+  const suffix = randomBytes(3).toString('hex');
+  const person = {
+    name: `Dugo ${suffix} Ana-Marija Kovačević-Horvatinčić Nepregledivodugoprezimekojesenemozeprelomitinarazmaku`,
+    username: `${LEAVE_MEMBER_USERNAME_PREFIX}${suffix}`,
+  };
+  const client = await connect();
+  try {
+    await client.query('begin');
+    const found = await client.query<{ id: string }>('select id from organizations where slug = $1', [slug]);
+    const organizationId = found.rows[0]?.id;
+    if (organizationId === undefined) throw new Error(`E2E: no organization ${slug}`);
+    const { memberId } = await insertMember(client, organizationId, slug, person, randomBytes(18).toString('base64url'));
+    await client.query('commit');
+
+    return { id: memberId, name: person.name };
+  } catch (cause) {
+    await client.query('rollback').catch(() => undefined);
+    throw cause;
+  } finally {
+    await client.end();
+  }
+}
+
+/**
  * Status versions of a member {@link seedLeaveMember} wrote (story 5.5e), in
  * SQL, attributed to the run organization's first admin — a deactivation from
  * a date and a reactivation scheduled after it, say. The superuser bypasses
