@@ -4,12 +4,13 @@ import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Notice } from '@/components/ui/notice';
+import { CONFLICT_GLYPH } from '@/features/calendar/utils/modifiers';
 import { hoursSourceMessageKey, type HoursExplanationView } from '@/features/hours/services/hours-explanation';
 import { t } from '@/lib/i18n';
 
 /**
  * The ⓘ beside an hours figure (story 7.14): a ghost icon button, 44 px,
- * named for the figure it explains. Choosing it opens {@link HoursExplanationDrawer}.
+ * named for the figure it explains. Choosing it opens {@link HoursExplanationDialog}.
  */
 export function ExplainButton({
   figureName,
@@ -36,14 +37,17 @@ export function ExplainButton({
  * What composes a figure, as an equation with dates: a line per shift — its
  * date, team, shift type and where it came from (the rotation, a change or a
  * replacement) with the hours it adds — and, under a rule, `=` and the
- * figure. Every line and the figure are the domain's
+ * figure. A shift in unresolved conflict is marked on its line as on the
+ * view (FR-42b): `⚠`, hidden from readers, and the words that carry the
+ * meaning, never colour alone. Every line and the figure are the domain's
  * (`@/features/hours/services/hours-explanation`); the lines sum to it
  * exactly. It is the shared modal Dialog, kept mounted and closed through `open`, so
  * every way of closing (the ✕, the backdrop, Escape) returns focus to the ⓘ
- * that opened it. A figure the domain cannot explain (`explanation` `null`) is the
- * message alone.
+ * that opened it. Its `explanation` is the one worked out as it opened: the
+ * screen holds it, so a re-read never redraws it while open. A figure the
+ * domain cannot explain (`explanation` `null`) is the message alone.
  */
-export function HoursExplanationDrawer({
+export function HoursExplanationDialog({
   open,
   explanation,
   onClose,
@@ -94,6 +98,12 @@ function EquationBody({ explanation }: { readonly explanation: HoursExplanationV
                   source: t(hoursSourceMessageKey(line.source)),
                 })}
               </span>
+              {line.conflict ? (
+                <span className="flex min-w-0 items-center gap-1 text-sm font-semibold">
+                  <span aria-hidden>{CONFLICT_GLYPH}</span>
+                  <span className="min-w-0 break-words">{t('sati.explain.conflict')}</span>
+                </span>
+              ) : null}
             </span>
             <span className="shrink-0 font-semibold tabular-nums">
               <span aria-hidden>{t('sati.explain.plus')} </span>

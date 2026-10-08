@@ -68,7 +68,7 @@ beforeAll(async () => {
 });
 
 function explained(snapshot: CalendarSnapshot, figure: HoursFigureCode, memberId: string | null = null): HoursExplanationView {
-  const view = hoursExplanationOf(snapshot, { memberId, figure }, HEADER, []);
+  const view = hoursExplanationOf(snapshot, { memberId, figure }, HEADER, [], []);
 
   if (view === null) throw new Error('refused');
 
@@ -137,7 +137,7 @@ describe('an explanation the domain refuses is null, never a guess', () => {
   it('is null for a band the snapshot lacks, and for a member it does not hold', () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    expect(hoursExplanationOf(pilot, { memberId: null, figure: { code: HOURS_FIGURE_BAND, bandId: 'nope' } }, HEADER, [])).toBeNull();
-    expect(hoursExplanationOf(pilot, { memberId: 'nobody', figure: { code: HOURS_FIGURE_TOTAL } }, HEADER, [])).toBeNull();
+    expect(hoursExplanationOf(pilot, { memberId: null, figure: { code: HOURS_FIGURE_BAND, bandId: 'nope' } }, HEADER, [], [])).toBeNull();
+    expect(hoursExplanationOf(pilot, { memberId: 'nobody', figure: { code: HOURS_FIGURE_TOTAL } }, HEADER, [], [])).toBeNull();
   });
 });

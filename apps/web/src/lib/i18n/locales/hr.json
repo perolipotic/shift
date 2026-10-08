@@ -526,6 +526,7 @@
       "month": "{month} {year}.",
       "memberMonth": "{name} · {month}",
       "line": "{team} · {shiftType} · {source}",
+      "conflict": "u neriješenom konfliktu",
       "plus": "+",
       "equals": "=",
       "sum": "Zbroj",

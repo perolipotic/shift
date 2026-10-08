@@ -200,18 +200,18 @@ export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
   const own = hoursPageIsOwn(snapshot);
 
   /**
-   * The explanation behind a figure's ⓘ (story 7.14), worked out when asked:
-   * the domain's, over the snapshot and the leave the figures were made from.
+   * The explanation behind a figure's ⓘ (story 7.14), worked out when asked —
+   * once, as its dialog opens, never on a render: the domain's, over the
+   * snapshot, the leave and the unresolved collisions the figures and their
+   * conflict count were made from, so a shift in conflict is marked in it as
+   * on the view (FR-42b).
    */
   function explain(request: HoursExplainRequest) {
     if (snapshot === null || surface.month === null) return null;
 
-    return hoursExplanationOf(
-      snapshot,
-      request,
-      surface.month,
-      conflicts?.kind === HOURS_CONFLICTS_READY ? conflicts.leaveKeys : [],
-    );
+    const ready = conflicts?.kind === HOURS_CONFLICTS_READY ? conflicts : null;
+
+    return hoursExplanationOf(snapshot, request, surface.month, ready?.leaveKeys ?? [], ready?.collisions ?? []);
   }
 
   return { ...surface, organizationName, own, explain, retry, show, change, pressColumn };

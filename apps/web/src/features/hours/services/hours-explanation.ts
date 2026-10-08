@@ -4,7 +4,9 @@ import {
   HOURS_SOURCE_CHANGE,
   HOURS_SOURCE_REPLACEMENT,
   HOURS_SOURCE_ROTATION,
+  collisionKeyOf,
   explainMemberHours,
+  type Collision,
   type CollisionResolution,
   type HoursFigureCode,
   type HoursSource,
@@ -17,7 +19,7 @@ import { formatIsoDate } from '@/lib/i18n/format';
 
 /**
  * An hours figure explained (story 7.14; FR-42b): the shifts that compose it,
- * as the drawer behind a figure's ⓘ lists them.
+ * as the dialog behind a figure's ⓘ lists them.
  *
  * NO HOUR IS COMPUTED HERE (AD-3, AD-7, AD-8). The equation is
  * `explainMemberHours`'s — codes and operands over the same
@@ -25,6 +27,12 @@ import { formatIsoDate } from '@/lib/i18n/format';
  * gives its ids their names (teams and shift types as stored), its dates their
  * binding shape and its source code its words. The operands sum to the figure
  * exactly, so `total` is the domain's own minutes, never a sum made here.
+ *
+ * A SHIFT IN UNRESOLVED CONFLICT IS MARKED (FR-42b, as FR-41 marks it on the
+ * view). The mark is a join, never a second collision rule: each line's
+ * `(member, date, team)` is looked up among the unresolved collisions *Sati*
+ * already holds (`hoursConflictsStateOf`'s), by the domain's own
+ * `collisionKeyOf`. A resolved conflict is not among them, so it is not marked.
  */
 
 /** Which figure, of whom: `memberId` `null` is the viewer's own. */
@@ -43,9 +51,11 @@ export interface HoursExplanationLine {
   readonly shiftType: string;
   readonly source: HoursSource;
   readonly hours: HoursFigure;
+  /** Whether this shift is in an unresolved conflict, as the view counts it. */
+  readonly conflict: boolean;
 }
 
-/** The drawer's content. */
+/** The dialog's content. */
 export interface HoursExplanationView {
   /** The figure's name: `Ukupno sati`, a band's name as stored, `Godišnji odmor`. */
   readonly figureName: string;
@@ -77,14 +87,16 @@ export function hoursSourceMessageKey(
 /**
  * The explanation of `request` for the month `month` (`YYYY-MM`) shown, or
  * `null` when the domain refuses it (a `RangeError`, logged) or the member is
- * not in the snapshot — the drawer then says it cannot be shown, never a
- * guess.
+ * not in the snapshot — the dialog then says it cannot be shown, never a
+ * guess. `collisions` are the unresolved ones the view counts; a line whose
+ * shift is among them is marked.
  */
 export function hoursExplanationOf(
   snapshot: CalendarSnapshot,
   request: HoursExplainRequest,
   month: { readonly month: string; readonly monthName: string; readonly year: string },
   leaveKeys: readonly CollisionResolution[],
+  collisions: readonly Collision[],
 ): HoursExplanationView | null {
   const memberId = request.memberId ?? snapshot.viewer.memberId;
   const member = snapshot.members.find((one) => one.id === memberId) ?? null;
@@ -96,6 +108,7 @@ export function hoursExplanationOf(
     const explanation = explainMemberHours(memberHoursInputOf(snapshot, history, leaveKeys), month.month, request.figure);
     const teams = new Map(snapshot.teams.map((team) => [team.id, team.name]));
     const types = new Map(snapshot.types.map((type) => [type.id, type.name]));
+    const inConflict = new Set(collisions.map(collisionKeyOf));
     const lines = explanation.operands.map((operand): HoursExplanationLine => {
       const team = teams.get(operand.teamId);
       const shiftType = types.get(operand.shiftTypeId);
@@ -105,7 +118,15 @@ export function hoursExplanationOf(
       if (shiftType === undefined) throw new RangeError(`shift type ${operand.shiftTypeId} is not in the snapshot`);
       if (date === null) throw new RangeError(`the date ${operand.date}`);
 
-      return { key: `${operand.date}|${operand.teamId}`, date, team, shiftType, source: operand.source, hours: figureOf(operand.minutes) };
+      return {
+        key: `${operand.date}|${operand.teamId}`,
+        date,
+        team,
+        shiftType,
+        source: operand.source,
+        hours: figureOf(operand.minutes),
+        conflict: inConflict.has(collisionKeyOf({ memberId, date: operand.date, teamId: operand.teamId })),
+      };
     });
     const monthText = t('sati.explain.month', { month: month.monthName, year: month.year });
 

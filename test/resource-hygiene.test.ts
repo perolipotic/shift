@@ -1442,10 +1442,11 @@ const SANCTIONED_SCREEN_KEYS = [
   'sati.organization.conflicts',
   'sati.retry',
   // STORY 7.14: a member's page title, *Moji sati*; the organization table's
-  // footer total; and the drawer behind an hours figure's ⓘ — the button's
-  // name, the drawer's title, close, month and member lines, a shift's line,
-  // the sum's name, the empty and the unavailable sentences, and the three
-  // words a shift's source reads as. The figures and names are data.
+  // footer total; and the dialog behind an hours figure's ⓘ — the button's
+  // name, the dialog's title, close, month and member lines, a shift's line
+  // and its words for a shift in unresolved conflict, the sum's name, the
+  // empty and the unavailable sentences, and the three words a shift's source
+  // reads as. The figures and names are data.
   'sati.title.own',
   'sati.organization.footer',
   'sati.explain.open',
@@ -1455,6 +1456,7 @@ const SANCTIONED_SCREEN_KEYS = [
   'sati.explain.month',
   'sati.explain.memberMonth',
   'sati.explain.line',
+  'sati.explain.conflict',
   'sati.explain.plus',
   'sati.explain.equals',
   'sati.explain.sum',
