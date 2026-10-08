@@ -34,6 +34,8 @@ const PERMITTED_DIST_ENTRIES = new Set([
   'assets', // hashed js/css/media
   '_redirects', // the Cloudflare Pages SPA fallback, copied from public/
   '_headers', // the Cloudflare Pages security headers, copied from public/
+  'favicon.svg', // the tab icon `index.html` links, copied from public/
+  'site.webmanifest', // the web manifest `index.html` links, copied from public/
 ]);
 
 /**

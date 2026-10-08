@@ -173,6 +173,9 @@ const SANCTIONED_PLURAL_KEYS = [
   // konflikata` included (UX-DR20). Its own key rather than `count.conflicts`,
   // because the adjective agrees with the noun in all three forms.
   'raspored.count',
+  // STORY 7.16: the Riješeni tab's count, always shown — `0 riješenih konflikata`
+  // included — with the adjective agreeing as the queue's does.
+  'raspored.resolved.count',
   // STORY 5.4b: the resolution screen's four counts — the way back's
   // `Raspored · 7 neriješenih`, the causing record's cost in days, the
   // coverage term's roster (`3 od 4 člana`, `od 5 članova`), and the balance
@@ -1810,6 +1813,23 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.leaveRecord.conflictsGroup',
   'ljudi.leaveRecord.conflictsNone',
   'ljudi.leaveRecord.conflictsUnknown',
+  // STORY 7.16: *Raspored*'s two tabs, *Neriješeni* (with its count, shown at
+  // zero too) and *Riješeni*, and the Riješeni list — its empty sentence, the
+  // line for an entry whose day is no longer worked, the decision per kind (a
+  // replacement with or without the person's name), and who decided it and
+  // when, with the words for an admin who is no longer a member.
+  'raspored.tabs.label',
+  'raspored.tabs.unresolved',
+  'raspored.tabs.unresolvedCount',
+  'raspored.tabs.resolved',
+  'raspored.resolved.empty',
+  'raspored.resolved.shiftGone',
+  'raspored.resolved.accept_uncovered',
+  'raspored.resolved.replace_member',
+  'raspored.resolved.replace_memberUnknown',
+  'raspored.resolved.amend_leave',
+  'raspored.resolved.decided',
+  'raspored.resolved.actorGone',
 ];
 
 /** Everything the resource file is permitted to hold, together. */
