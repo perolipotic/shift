@@ -785,7 +785,7 @@
       "replacementsUnknown": "Ne mogu provjeriti zamjene za ove datume.",
       "conflictLine": "{weekday} {date} {type}",
       "conflictsCreated": "{count, plural, one {Spremanjem nastaje # konflikt s rasporedom.} few {Spremanjem nastaju # konflikta s rasporedom.} other {Spremanjem nastaje # konflikata s rasporedom.}}",
-      "conflictsWhere": "{count, plural, one {Rješavaš ga na njegovu ekranu u Rasporedu.} other {Svaki rješavaš na njegovu ekranu u Rasporedu.}}",
+      "conflictsWhere": "{count, plural, one {Rješavaš ga na njegovu ekranu u Rasporedu.} few {Svaki rješavaš na njegovu ekranu u Rasporedu.} other {Svaki rješavaš na njegovu ekranu u Rasporedu.}}",
       "conflictsNone": "Spremanjem ne nastaje nijedan konflikt.",
       "conflictsCleared": "{count, plural, one {Uklanja se # konflikt} few {Uklanjaju se # konflikta} other {Uklanja se # konflikata}}",
       "conflictsKept": "{count, plural, one {Ostaje #} few {Ostaju #} other {Ostaje #}}",
