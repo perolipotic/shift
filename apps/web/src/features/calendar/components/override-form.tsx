@@ -259,6 +259,13 @@ export function OverrideRemoveRefusal({ form }: { readonly form: OverrideFormSta
   );
 }
 
+/** The day stopped offering the type form, with no override on it, while its dialog was open (story 7.9). */
+export function OverrideFormLostNotice({ form }: { readonly form: OverrideFormState }): ReactNode {
+  if (!form.formLost) return null;
+
+  return <Notice role="alert">{t('kalendar.detail.override.refused.notOffered')}</Notice>;
+}
+
 /**
  * A set refused once the form has given way (story 5.5f): `taken` re-reads
  * the day, and the override that landed first replaces the form — and its

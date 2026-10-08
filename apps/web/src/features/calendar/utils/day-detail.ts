@@ -1145,7 +1145,7 @@ export function rosterRemovalTargetOf(detail: DayDetail | null, overrideId: stri
  */
 export interface DayConflict {
   readonly memberId: string;
-  /** `null` for a member the snapshot does not hold (`kalendar.detail.override.unknownAuthor`). */
+  /** `null` for a member the snapshot does not hold (`kalendar.detail.unknownMember`). */
   readonly memberName: string | null;
   /**
    * The leave's first and last day, `12.09.2026`; both `null` when no live
@@ -1183,7 +1183,8 @@ export function dayConflictsOf(
 
       const dated = from !== null && to !== null;
 
-      if (!dated) console.error(`no leave of member ${collision.memberId} covers ${collision.date}`);
+      if (range === undefined) console.error(`no leave of member ${collision.memberId} covers ${collision.date}`);
+      else if (!dated) console.error(`the leave of member ${collision.memberId} covering ${collision.date} cannot be formatted`);
 
       return {
         memberId: collision.memberId,

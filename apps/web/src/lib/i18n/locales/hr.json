@@ -376,6 +376,7 @@
           "sameAsProjected": "To je već tip smjene prema rotaciji.",
           "type": "Odaberi tip smjene.",
           "taken": "Za taj dan već postoji izmjena. Osvježi prikaz.",
+          "notOffered": "Tip smjene ovog dana više se ne može mijenjati. Prikazan je dan kakav je sada.",
           "gone": "Izmjena je već uklonjena.",
           "denied": "Ne možeš mijenjati izmjene. Za to trebaš ovlasti administratora.",
           "failed": "Promjena nije uspjela. Pokušaj ponovno."

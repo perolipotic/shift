@@ -166,7 +166,7 @@ describe('the type preview (story 7.9)', () => {
   it('Taken: a day that already has an override has no preview, as the write would refuse it', async () => {
     const taken = await snapshotOf([calendarOverrideRow('ov-b', B, DATE, SLOBODNO)]);
 
-    expect(overridePreviewOf(taken, dayOf(snapshot, B), DAN, [])).toBeNull();
+    expect(overridePreviewOf(taken, dayOf(taken, B), DAN, [])).toBeNull();
   });
 });
 
