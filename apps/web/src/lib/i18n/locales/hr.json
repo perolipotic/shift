@@ -429,6 +429,23 @@
     "count": "{count, plural, one {# neriješen konflikt} few {# neriješena konflikta} other {# neriješenih konflikata}}",
     "empty": "Nema konflikata između godišnjih odmora i rasporeda.",
     "past": "Prošli datum",
+    "tabs": {
+      "label": "Konflikti",
+      "unresolved": "Neriješeni",
+      "unresolvedCount": "Neriješeni · {count}",
+      "resolved": "Riješeni"
+    },
+    "resolved": {
+      "count": "{count, plural, one {# riješen konflikt} few {# riješena konflikta} other {# riješenih konflikata}}",
+      "empty": "Još nijedan konflikt nije riješen.",
+      "shiftGone": "Taj dan više nije radni po rasporedu",
+      "accept_uncovered": "Prihvaćeno kao nepokriveno",
+      "replace_member": "Zamjena: {replacement}",
+      "replace_memberUnknown": "Zamjena osobe",
+      "amend_leave": "Izmijenjen godišnji odmor",
+      "decided": "Odluka: {actor}, {date} u {time}",
+      "actorGone": "administrator kojeg više nema u organizaciji"
+    },
     "who": "{member} · {team}",
     "detail": "{type} · Godišnji odmor {from}–{to}",
     "detailTimed": "{type} {times} · Godišnji odmor {from}–{to}",

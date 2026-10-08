@@ -2776,7 +2776,12 @@ const KEY_SOURCES = [
     keys: translationKeys,
     // STILL NINE SINCE STORY 5.4b: the status line a decision returns with
     // reads through `resolutionSavedMessageKey`, the rules' union below.
-    strings: 9,
+    // TWENTY-THREE SINCE STORY 7.16: the two tabs' name, label and queue count
+    // (four), and the Riješeni list's count, empty sentence, shift-gone line,
+    // the decisions (accepted, replacement with and without a name, amended),
+    // and who decided it and when, with the words for an admin no longer
+    // there.
+    strings: 23,
   },
   {
     // STORY 5.4b. On one conflict's screen, through `t('…')`: the way back

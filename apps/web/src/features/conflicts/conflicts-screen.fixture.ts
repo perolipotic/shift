@@ -17,6 +17,8 @@ export const CONFLICTS_QUEUE_PARTS = {
   body: ['features', 'conflicts', 'components', 'conflicts-body.tsx'],
   list: ['features', 'conflicts', 'components', 'conflicts-list.tsx'],
   skeleton: ['features', 'conflicts', 'components', 'conflicts-skeleton.tsx'],
+  tabs: ['features', 'conflicts', 'components', 'conflicts-tabs.tsx'],
+  resolved: ['features', 'conflicts', 'components', 'resolved-list.tsx'],
 } as const;
 
 export const CONFLICT_RESOLUTION_PARTS = {
@@ -45,6 +47,10 @@ export const CONFLICTS_SCREEN_EXEMPT: readonly { readonly file: string; readonly
   {
     file: 'services/resolutions.ts',
     why: 'the live conflict resolutions (story 5.4a) — their two reads, keys and parser; renders nothing, executed by resolutions.test.ts',
+  },
+  {
+    file: 'services/resolved-conflicts.ts',
+    why: 'the Riješeni tab\'s rules (story 7.16) — resolved entries from conflict_resolutions only, the acting admins\' names and the tab state; renders nothing and declares no key, executed by resolved-conflicts.test.ts',
   },
   {
     file: 'services/resolution-screen.ts',
