@@ -17,6 +17,7 @@ import { SESSION_SUBJECT_KEY } from '@/features/members/services/write';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import { ORGANIZATION_SNAPSHOT_KEY } from '@/features/organization/services/snapshot';
+import { ACTING_ADMINS_KEY } from '@/features/conflicts/services/resolved-conflicts';
 import { ROTATION_KEY } from '@/features/rotation/services/list';
 import { SHIFT_TYPES_LIST_KEY } from '@/features/shift-types/services/list';
 import {
@@ -85,6 +86,8 @@ const CLASSIFIED: Readonly<Record<string, readonly QueryKey[]>> = {
   ORGANIZATION_LEAVE_RECORDS_KEY: [ORGANIZATION_LEAVE_RECORDS_KEY],
   MY_CONFLICT_RESOLUTIONS_KEY: [MY_CONFLICT_RESOLUTIONS_KEY],
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY: [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
+  // Story 7.16: the Riješeni tab's names; stale from the first read, so no write names it.
+  ACTING_ADMINS_KEY: [ACTING_ADMINS_KEY],
 };
 
 /**

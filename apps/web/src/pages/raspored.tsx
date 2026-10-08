@@ -33,7 +33,7 @@ import { appLayoutRoute } from '@/pages/_app';
 const FIRST_DESTINATION = DESTINATIONS[0];
 
 export function RasporedScreen() {
-  const { queue, saved, savedField, loading, retry } = useConflictsQueue();
+  const { queue, resolved, tab, setTab, saved, savedField, loading, retry } = useConflictsQueue();
 
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6" aria-busy={loading}>
@@ -43,7 +43,7 @@ export function RasporedScreen() {
         </PageTitle>
       </PageHeader>
       <Card className="min-w-0 p-4">
-        <ConflictsBody queue={queue} saved={saved} savedField={savedField} onRetry={retry} />
+        <ConflictsBody queue={queue} resolved={resolved} tab={tab} onTab={setTab} saved={saved} savedField={savedField} onRetry={retry} />
       </Card>
     </main>
   );

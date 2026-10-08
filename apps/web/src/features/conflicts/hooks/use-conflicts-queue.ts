@@ -18,6 +18,16 @@ import {
   type ResolutionSaved,
 } from '@/features/conflicts/services/resolution-screen';
 import {
+  ACTING_ADMINS_KEY,
+  ACTING_ADMINS_TABLE,
+  TAB_RESOLVED,
+  TAB_UNRESOLVED,
+  actingAdminsQueryOptions,
+  resolvedConflictsOf,
+  type ActingAdminsTable,
+  type ConflictsTab,
+} from '@/features/conflicts/services/resolved-conflicts';
+import {
   CONFLICT_RESOLUTIONS_TABLE,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
   organizationConflictResolutionsQueryOptions,
@@ -49,11 +59,16 @@ import { supabaseClient } from '@/lib/supabase/client';
  * and clears it off the entry through the router, so a reload or Back to the
  * entry later finds none; any other navigation, the Raspored tab's included,
  * drops it. Focus moves to it once drawn, so it is announced.
+ *
+ * THE TABS (story 7.16): *Neriješeni* is the default. The *Riješeni* tab reads
+ * the same three answers and, once opened, the names of whoever decided
+ * (`resolvedConflictsOf`); nothing is written.
  */
 export function useConflictsQueue() {
   const queryClient = useQueryClient();
   const location = useLocation();
   const navigate = useNavigate();
+  const [tab, setTab] = useState<ConflictsTab>(TAB_UNRESOLVED);
   const [saved, setSaved] = useState<ResolutionSaved | null>(() => resolutionSavedOf(location.state));
   /** Whether the next location is our own clearing replace. */
   const clearing = useRef(false);
@@ -105,14 +120,25 @@ export function useConflictsQueue() {
   // STORY 5.5d: a replacement naming an override the snapshot does not hold yet re-reads it once.
   useReplacementLinkRefresh(calendarSurfaceStateOf(calendar).snapshot, resolutions.data);
 
+  // THE *RIJEŠENI* TAB (story 7.16) reads the same three, plus the names of
+  // whoever decided, and only once the tab is open.
+  const actors = useQuery(
+    actingAdminsQueryOptions(
+      () => supabaseClient().from(ACTING_ADMINS_TABLE) as unknown as ActingAdminsTable,
+      tab === TAB_RESOLVED,
+    ),
+  );
+
+  const resolved = resolvedConflictsOf({ calendar: calendarSurfaceStateOf(calendar), records, resolutions, actors });
+
   const queue = conflictsQueueOf({ calendar: calendarSurfaceStateOf(calendar), records, resolutions }, new Date());
 
   /** Read again every read the queue stands on, from the unavailable alert's retry. */
   function retry(): void {
-    for (const queryKey of [CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY]) {
+    for (const queryKey of [CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY, ACTING_ADMINS_KEY]) {
       void queryClient.invalidateQueries({ queryKey });
     }
   }
 
-  return { queue, saved, savedField, loading: queue.kind === CONFLICTS_LOADING, retry };
+  return { queue, resolved, tab, setTab, saved, savedField, loading: queue.kind === CONFLICTS_LOADING, retry };
 }
