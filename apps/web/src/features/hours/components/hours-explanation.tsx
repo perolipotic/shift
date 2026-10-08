@@ -38,29 +38,33 @@ export function ExplainButton({
  * replacement) with the hours it adds — and, under a rule, `=` and the
  * figure. Every line and the figure are the domain's
  * (`@/features/hours/services/hours-explanation`); the lines sum to it
- * exactly. It opens as the shared modal, which returns focus to the ⓘ that
- * opened it. A figure the domain cannot explain (`explanation` `null`) is the
+ * exactly. It is the shared modal Dialog, kept mounted and closed through `open`, so
+ * every way of closing (the ✕, the backdrop, Escape) returns focus to the ⓘ
+ * that opened it. A figure the domain cannot explain (`explanation` `null`) is the
  * message alone.
  */
 export function HoursExplanationDrawer({
+  open,
   explanation,
   onClose,
 }: {
+  /** Whether it is shown; it stays mounted when closed, so the browser returns focus to the ⓘ. */
+  readonly open: boolean;
   readonly explanation: HoursExplanationView | null;
   readonly onClose: () => void;
 }): ReactNode {
   return (
     <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open) onClose();
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onClose();
       }}
       aria-labelledby="sati-explain-title"
       aria-describedby="sati-explain-context"
     >
       <DialogHeader closeLabel={t('sati.explain.close')} onClose={onClose}>
         <DialogTitle id="sati-explain-title">{explanation?.figureName ?? t('sati.explain.title')}</DialogTitle>
-        <DialogDescription id="sati-explain-context">{explanation?.context ?? t('sati.explain.title')}</DialogDescription>
+        <DialogDescription id="sati-explain-context">{explanation?.context ?? t('sati.explain.contextUnavailable')}</DialogDescription>
       </DialogHeader>
       <EquationBody explanation={explanation} />
     </Dialog>

@@ -86,19 +86,25 @@ export function HoursBody({
   // Story 7.6: which form the organization's month takes. The sort and the
   // filters live in the URL, so crossing 640 px keeps both.
   const isPhone = usePhone();
-  // Story 7.14: the figure whose ⓘ was chosen, or `null` while no drawer is open.
+  // Story 7.14: the figure whose ⓘ was chosen. It is KEPT after the drawer closes
+  // and the drawer stays mounted, closed through `open`: a native `<dialog>`
+  // restores focus to the ⓘ that opened it only when it is `close()`d, never
+  // when it is unmounted open (the Dialog's own rule, as the day detail's).
   const [explained, setExplained] = useState<HoursExplainRequest | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   function ask(memberId: string | null, figure: HoursFigureCode): void {
     setExplained({ memberId, figure });
+    setDrawerOpen(true);
   }
 
   const drawer =
     explained === null ? null : (
       <HoursExplanationDrawer
+        open={drawerOpen}
         explanation={explain(explained)}
         onClose={() => {
-          setExplained(null);
+          setDrawerOpen(false);
         }}
       />
     );

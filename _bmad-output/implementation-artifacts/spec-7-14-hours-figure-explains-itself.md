@@ -14,7 +14,7 @@ context:
 
 **Problem:** An hours figure on *Sati* cannot be traced to the shifts behind it; the admin reconstructs it by hand (FR-42b). The organization table has no footer total, the export gives no word about the downloaded file, and a member's page is titled *Sati*.
 
-**Approach:** `domain/hours` explains a figure as codes and operands (one term per shift, summing exactly to the figure, built from the same walk as `memberHoursOfMonth`). Each figure gets an ⓘ that opens a drawer listing the terms with dates. Add the table's footer total, the export's status line, the member title *Moji sati*, and the binding docs.
+**Approach:** `domain/hours` explains a figure as codes and operands (one term per shift, summing exactly to the figure, built from the same walk as `memberHoursOfMonth`). Each figure gets an ⓘ that opens a dialog listing the terms with dates. Add the table's footer total, the export's status line, the member title *Moji sati*, and the binding docs.
 
 ## Boundaries & Constraints
 
@@ -29,13 +29,13 @@ context:
 | Scenario | Input / State | Expected Output / Behavior | Error Handling |
 |----------|--------------|---------------------------|----------------|
 | Total / band / leave | a member's month | operands (date, team, shift type, source code, minutes) summing to the figure | N/A |
-| Zero figure | leave 0, band 0 | no operands, sum 0 | drawer says nothing composes it |
+| Zero figure | leave 0, band 0 | no operands, sum 0 | dialog says nothing composes it |
 | Untimed shift | shift before type's first version | not an operand of any hours figure | N/A |
 | Band split | shift straddling a band edge | one operand per band touched, minutes of that band | N/A |
 
 ## Epic AC Deviations
 
-- "a drawer lists the shifts and bands that compose it": drawn in the shared modal `Dialog` (the app's one modal primitive, EXPERIENCE.md), not a new side-sheet component.
+- "a drawer lists the shifts and bands that compose it": drawn in the shared modal `Dialog` (the app's one modal primitive, EXPERIENCE.md), not a new side-sheet component, so the epic's "drawer" is a modal dialog.
 - "any figure on Sati": the hours figures (total, each band, leave) get an ⓘ; shift counts do not, they are counts, not hours.
 
 </frozen-after-approval>
@@ -44,8 +44,8 @@ context:
 
 - `packages/domain/src/hours.ts` -- one walk of the month yields per-shift terms; `memberHoursOfMonth` aggregates them; new `explainMemberHours`.
 - `packages/domain/src/index.ts` -- exports.
-- `apps/web/src/features/hours/services/hours-explanation.ts` -- snapshot to drawer rows (names, dates, figures); footer total.
-- `apps/web/src/features/hours/components/` -- `hours-explanation.tsx` (ⓘ + drawer), summary, table, rows, export.
+- `apps/web/src/features/hours/services/hours-explanation.ts` -- snapshot to dialog rows (names, dates, figures); footer total.
+- `apps/web/src/features/hours/components/` -- `hours-explanation.tsx` (ⓘ + dialog), summary, table, rows, export.
 - `apps/web/src/lib/i18n/locales/hr.json`, `pages/sati.tsx` -- copy, *Moji sati*.
 - `DESIGN.md`, `EXPERIENCE.md`, `epics.md` UX-DR lines.
 
@@ -54,7 +54,7 @@ context:
 **Execution:**
 - [ ] domain explanation + tests
 - [ ] web explanation service + tests
-- [ ] ⓘ and drawer on member page, table and phone rows
+- [ ] ⓘ and dialog on member page, table and phone rows
 - [ ] footer total, export status line, *Moji sati*
 - [ ] DESIGN.md / EXPERIENCE.md / UX-DR33 updates
 

@@ -521,6 +521,7 @@
     "explain": {
       "open": "Što čini iznos: {figure}",
       "title": "Što čini iznos",
+      "contextUnavailable": "Nije moguće prikazati sastav ovog iznosa.",
       "close": "Zatvori",
       "month": "{month} {year}.",
       "memberMonth": "{name} · {month}",

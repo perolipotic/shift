@@ -1450,6 +1450,7 @@ const SANCTIONED_SCREEN_KEYS = [
   'sati.organization.footer',
   'sati.explain.open',
   'sati.explain.title',
+  'sati.explain.contextUnavailable',
   'sati.explain.close',
   'sati.explain.month',
   'sati.explain.memberMonth',

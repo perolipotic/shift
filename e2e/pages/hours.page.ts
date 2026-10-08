@@ -65,6 +65,21 @@ export class HoursPage extends BasePage {
     return this.tile(sati.total);
   }
 
+  /** The ⓘ beside the month's total (story 7.14). */
+  get totalExplainButton(): Locator {
+    return this.page.getByRole('button', { name: fill(sati.explain.open, { figure: sati.total }) });
+  }
+
+  /** The dialog of what composes a figure, open (story 7.14). */
+  get explanation(): Locator {
+    return this.page.getByRole('dialog', { name: sati.total, exact: true });
+  }
+
+  /** The explanation's ✕. */
+  get explanationClose(): Locator {
+    return this.explanation.getByRole('button', { name: sati.explain.close });
+  }
+
   /** The month's shift count, with its label. */
   get shiftsTile(): Locator {
     return this.tile(sati.shifts);

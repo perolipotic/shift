@@ -314,6 +314,30 @@ test.describe('as a member', () => {
     await expect(hoursPage.currentButton).toHaveCount(0);
   });
 
+  test('the explanation of the total lists the shifts, and every way of closing it returns focus to its ⓘ (story 7.14)', async ({
+    page,
+    hoursPage,
+  }) => {
+    await hoursPage.goto();
+    await expect(hoursPage.heading(sati.title.own)).toBeVisible();
+
+    const opener = hoursPage.totalExplainButton;
+
+    // The ✕, the backdrop and Escape: a native `<dialog>` closed, never unmounted open.
+    for (const close of [
+      () => hoursPage.explanationClose.click(),
+      () => page.mouse.click(2, 2),
+      () => page.keyboard.press('Escape'),
+    ]) {
+      await opener.click();
+      await expect(hoursPage.explanation).toBeVisible();
+      await expect(hoursPage.explanation.getByRole('listitem').first()).toBeVisible();
+      await close();
+      await expect(hoursPage.explanation).toBeHidden();
+      await expect(opener).toBeFocused();
+    }
+  });
+
   test("a failed read of their own leave shows the unavailable message with a retry, and the retry brings their figures back", async ({
     page,
     hoursPage,
