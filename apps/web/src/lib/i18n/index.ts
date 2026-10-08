@@ -1,6 +1,7 @@
 import i18next from 'i18next';
 import ICU from 'i18next-icu';
 
+import { bindDocumentLanguage } from '@/lib/i18n/document-language';
 import { LOCALE } from '@/lib/i18n/format';
 import hr from '@/lib/i18n/locales/hr.json';
 
@@ -66,8 +67,8 @@ export function missingKeyPlaceholder(key: string): string {
 export const i18n = i18next.createInstance();
 
 /** Initializes the instance. Must resolve before the first render. */
-export function initLocalization(): Promise<unknown> {
-  return i18n.use(ICU).init({
+export async function initLocalization(): Promise<unknown> {
+  const initialized = await i18n.use(ICU).init({
     lng: LANGUAGE,
     supportedLngs: [LANGUAGE],
     fallbackLng: false,
@@ -79,6 +80,11 @@ export function initLocalization(): Promise<unknown> {
       parseErrorHandler: (_error: Error, key: string) => missingKeyPlaceholder(key),
     },
   });
+
+  // `<html lang>` follows the active locale (L3). The node suite has no document.
+  if (typeof document !== 'undefined') bindDocumentLanguage(i18n, document);
+
+  return initialized;
 }
 
 /**
