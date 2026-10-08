@@ -169,12 +169,15 @@ export const FEATURE_PUBLIC = {
   // queue's own gating and rows (`conflictsQueueOf`), its effective
   // resolutions and the organization's resolutions read, so its count equals
   // *Raspored*'s.
+  // Story 7.12: the leave dialog's conflict preview derives through the
+  // queue's own recipe (`collisionInputOf`) and funnel (`resolutionsOf`), so
+  // the conflicts it says a save creates are the rows the queue then lists.
   conflicts: [
     'components/erasure-dialog', // calendar, members, rotation
     'hooks/use-erasure-confirmation', // calendar, members, rotation
     'hooks/use-erasure-reads', // calendar, members, rotation
     'hooks/use-replacement-link-refresh', // calendar, hours, today
-    'services/conflicts-queue', // calendar, hours, today
+    'services/conflicts-queue', // calendar, hours, leave, today
     'services/erasure-check', // calendar, members, rotation
     'services/erasures', // calendar, members, rotation
     'services/override-erasures', // calendar, rotation
