@@ -10,7 +10,7 @@ test.use({ storageState: ADMIN_STATE });
  * refused answer rather than an aborted socket, for the reason
  * `calendar.spec.ts` gives — and passed through to the stack once it stops.
  */
-test('a failed read offers a retry: a second failure is announced again, and a success lands focus on the name', async ({
+test('a failed read offers a retry: a second failure is announced again, and a success lands focus on the name’s change', async ({
   page,
   organizationPage,
 }) => {
@@ -38,11 +38,11 @@ test('a failed read offers a retry: a second failure is announced again, and a s
   await expect(page.locator('[data-e2e-first-alert]')).toHaveCount(0);
   await expect(alert).toBeVisible();
 
-  // A retry that succeeds unmounts the button; focus goes to the name field
-  // rather than dropping to the body.
+  // A retry that succeeds unmounts the button; focus goes to the first change
+  // on the page, the name's (story 7.18), rather than dropping to the body.
   failing = false;
   await retry.click();
-  await expect(organizationPage.nameInput).toBeFocused();
+  await expect(organizationPage.nameOpener).toBeFocused();
   await expect(retry).toHaveCount(0);
   await expect(alert).toHaveCount(0);
 });

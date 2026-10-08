@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { LEAVE_START_DAYS, LEAVE_START_LAST_DAY, LEAVE_START_MONTHS } from '@/features/organization/utils/leave-start';
+import {
+  LEAVE_START_DAYS,
+  LEAVE_START_LAST_DAY,
+  LEAVE_START_MONTHS,
+  leaveYearStartLabel,
+} from '@/features/organization/utils/leave-start';
 
 describe("the leave year's start, as a day and a month", () => {
   it('offers the days 1 to 28 and nothing a February lacks', () => {
@@ -14,5 +19,11 @@ describe("the leave year's start, as a day and a month", () => {
     expect(LEAVE_START_MONTHS.map((month) => month.value)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     expect(LEAVE_START_MONTHS[0]?.label).toBe('siječanj');
     expect(LEAVE_START_MONTHS[11]?.label).toBe('prosinac');
+  });
+
+  it('states the start as a day and a month, in the binding shape and without a year', () => {
+    expect(leaveYearStartLabel(1, 1)).toBe('01.01.');
+    expect(leaveYearStartLabel(9, 28)).toBe('28.09.');
+    expect(leaveYearStartLabel(13, 1)).toBeNull();
   });
 });

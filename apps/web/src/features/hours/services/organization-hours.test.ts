@@ -30,6 +30,7 @@ import {
   hoursSortChangeOf,
   hoursSurfaceOf,
   nextHoursSort,
+  hoursFooterOf,
   organizationHoursOf,
   organizationHoursRowsOf,
   type OrganizationHoursView,
@@ -582,6 +583,31 @@ describe('the matrix edges', () => {
     expect(ana.untimedShiftCount).toBe(ana.rows[0]!.untimedShiftCount);
     expect(viewOf(snapshot, { mjesec: MONTH, osoba: DORA }).untimedShiftCount).toBeNull();
     expect(viewOf(pilot).untimedShiftCount).toBeNull();
+  });
+
+  it('the footer totals each column of the rows shown, and nothing when none is shown (story 7.14)', () => {
+    for (const snapshot of [pilot, uj5]) {
+      const view = viewOf(snapshot);
+      const footer = view.footer!;
+      const minutes = (figure: { readonly values: { readonly hours: number; readonly minutes: number } }): number =>
+        figure.values.hours * 60 + figure.values.minutes;
+
+      expect(minutes(footer.total)).toBe(view.rows.reduce((sum, row) => sum + row.hours.totalMinutes, 0));
+      expect(footer.shiftCount).toBe(view.rows.reduce((sum, row) => sum + row.shiftCount, 0));
+      expect(footer.leave).toBeNull();
+      expect(footer.conflictCount).toBe(view.rows.reduce((sum, row) => sum + row.conflictCount, 0));
+      expect(footer.bands.map((band) => band.bandId)).toEqual(view.bands.map((band) => band.bandId));
+      footer.bands.forEach((band, index) => {
+        expect(minutes(band.hours)).toBe(view.rows.reduce((sum, row) => sum + row.hours.bands[index]!.minutes, 0));
+      });
+      // The columns add up to the footer's total: the bands partition it.
+      expect(footer.bands.reduce((sum, band) => sum + minutes(band.hours), 0)).toBe(minutes(footer.total));
+    }
+
+    const one = viewOf(pilot, { mjesec: MONTH, osoba: ANA });
+
+    expect(one.footer!.total).toEqual(one.rows[0]!.total);
+    expect(hoursFooterOf([], one.bands)).toBeNull();
   });
 
   it('a RangeError for any row refuses the whole table, logged, never thrown', () => {

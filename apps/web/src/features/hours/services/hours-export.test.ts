@@ -365,20 +365,31 @@ describe('the action', () => {
       exportHours(view, pilot.organizationName, async (sheet) => {
         written.push(sheet);
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual({ fileName: hoursExportOf(view, pilot.organizationName).fileName, count: view.rows.length });
     expect(written).toEqual([hoursExportOf(view, pilot.organizationName)]);
   });
 
-  it('import fails: logged, answered false, never thrown — and a build that throws the same', async () => {
+  it('the status line names the file written and how many people it holds (story 7.14)', async () => {
+    const view = viewOf(pilot);
+    const done = await exportHours(view, pilot.organizationName, () => Promise.resolve());
+
+    expect(done).toEqual({ fileName: hoursExportOf(view, pilot.organizationName).fileName, count: view.rows.length });
+    expect(t('sati.organization.export.done', done!)).toContain(done!.fileName);
+    expect(t('sati.organization.export.done', { fileName: 'x.xlsx', count: 1 })).toContain('1 osobom');
+    expect(t('sati.organization.export.done', { fileName: 'x.xlsx', count: 3 })).toContain('3 osobe');
+    expect(t('sati.organization.export.done', { fileName: 'x.xlsx', count: 17 })).toContain('17 osoba');
+  });
+
+  it('import fails: logged, answered null, never thrown — and a build that throws the same', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const view = viewOf(pilot);
     const chunk = new TypeError('Failed to fetch dynamically imported module');
 
-    await expect(exportHours(view, pilot.organizationName, () => Promise.reject(chunk))).resolves.toBe(false);
+    await expect(exportHours(view, pilot.organizationName, () => Promise.reject(chunk))).resolves.toBeNull();
     expect(errors).toHaveBeenCalledWith(HOURS_EXPORT_FAILED, chunk);
     const broken = { ...view, bands: [...view.bands, { ...view.bands[0]!, bandId: 'gone' }] };
 
-    await expect(exportHours(broken, pilot.organizationName, () => Promise.resolve())).resolves.toBe(false);
+    await expect(exportHours(broken, pilot.organizationName, () => Promise.resolve())).resolves.toBeNull();
     expect(errors).toHaveBeenLastCalledWith(HOURS_EXPORT_FAILED, expect.any(RangeError));
   });
 });

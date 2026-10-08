@@ -28,6 +28,8 @@ import {
   SORT_TOTAL,
   SORT_UP,
   hoursReadsOf,
+  figureOf,
+  leaveIsEmpty,
   memberHoursInputOf,
   monthShownHeaderOf,
   myHoursSurfaceOf,
@@ -106,6 +108,21 @@ export interface OrganizationHoursRow {
   readonly hours: MemberHours;
 }
 
+/**
+ * The footer of the rows shown (story 7.14): each column's total, the sum of
+ * that column over the rows — the domain's minutes added, never recomputed
+ * from shifts, so a column adds up to its footer whatever the filter shows.
+ */
+export interface HoursFooter {
+  readonly shiftCount: number;
+  /** One per band column, in the same order. */
+  readonly bands: readonly { readonly bandId: string; readonly hours: HoursFigure }[];
+  readonly total: HoursFigure;
+  /** `null` when the leave of the rows shown is 0, drawn `—` as a row's is. */
+  readonly leave: HoursFigure | null;
+  readonly conflictCount: number;
+}
+
 /** The table's sort: a column and a direction. */
 export interface HoursSort {
   readonly key: HoursSortKey;
@@ -143,6 +160,8 @@ export interface OrganizationHoursView {
   readonly search: HoursSearch;
   /** The untimed shifts of the rows shown, or `null` when there are none. */
   readonly untimedShiftCount: number | null;
+  /** The total of the rows shown (story 7.14), or `null` while none is. */
+  readonly footer: HoursFooter | null;
   /** How many columns a row has: the fixed six and one per band. */
   readonly columnCount: number;
   /** What an empty table says, or `null` while it has a row. */
@@ -480,6 +499,26 @@ export function untimedShiftsOf(rows: readonly OrganizationHoursRow[]): number |
   return sum > 0 ? sum : null;
 }
 
+/** The footer of `rows`, or `null` when there are none. */
+export function hoursFooterOf(
+  rows: readonly OrganizationHoursRow[],
+  bands: readonly HoursBandColumn[],
+): HoursFooter | null {
+  if (rows.length === 0) return null;
+
+  const sum = (minutesOf: (row: OrganizationHoursRow) => number): number =>
+    rows.reduce((total, row) => total + minutesOf(row), 0);
+  const leave = sum((row) => row.hours.leaveMinutes);
+
+  return {
+    shiftCount: sum((row) => row.shiftCount),
+    bands: bands.map((band) => ({ bandId: band.bandId, hours: figureOf(sum((row) => bandMinutesOf(row, band.bandId))) })),
+    total: figureOf(sum((row) => row.hours.totalMinutes)),
+    leave: leaveIsEmpty(leave) ? null : figureOf(leave),
+    conflictCount: sum((row) => row.conflictCount),
+  };
+}
+
 /**
  * The organization's month `search` names, `today` the organization's, the
  * conflicts counted from `collisions`, the accepted-uncovered shifts in
@@ -525,6 +564,7 @@ export function organizationHoursViewOf(
       ...(sort.direction === DEFAULT_HOURS_SORT.direction ? {} : { smjer: sort.direction }),
     },
     untimedShiftCount: untimedShiftsOf(shown),
+    footer: hoursFooterOf(shown, bands),
     columnCount: FIXED_COLUMN_COUNT + bands.length,
     empty: hoursEmptyOf(shown.length, all, team, person, month),
     filters: hoursFilterBarOf(all, teams, team, person, shown.length),
@@ -551,6 +591,14 @@ export function organizationHoursOf(
 
     return { ok: false, code: HOURS_UNAVAILABLE };
   }
+}
+
+/**
+ * Whether *Sati* is the viewer's own page (story 7.14, *Moji sati*): the
+ * snapshot names a member-role viewer. `false` until the snapshot is read.
+ */
+export function hoursPageIsOwn(snapshot: CalendarSnapshot | null): boolean {
+  return snapshot !== null && snapshot.viewer.role !== 'admin';
 }
 
 /**

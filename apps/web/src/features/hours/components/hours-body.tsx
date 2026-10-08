@@ -1,3 +1,4 @@
+import type { HoursFigureCode } from '@shift/domain';
 import { useRef, type ReactNode } from 'react';
 
 import type { FilterBarHandle } from '@/components/filter-bar';
@@ -55,7 +56,8 @@ export function HoursNotice({
  * the filter bar (stories 4.3, 7.5) — below 640 px its stacked rows
  * instead, only one of the two in the DOM (story 7.6) — and the viewer's own
  * figures for a member (story 4.1b). `hoursSurfaceOf` decides which; this
- * only draws it.
+ * only draws it. A figure's ⓘ (story 7.14) asks for its explanation through
+ * `onExplain`; the screen holds the dialog, above this and every branch.
  */
 export function HoursBody({
   refusal,
@@ -64,6 +66,7 @@ export function HoursBody({
   organizationName,
   onChange,
   onPress,
+  onExplain,
 }: {
   readonly refusal: HoursFailure | null;
   readonly view: MyHoursView | null;
@@ -72,6 +75,8 @@ export function HoursBody({
   readonly organizationName: string | null;
   readonly onChange: (change: HoursSearchChange) => void;
   readonly onPress: (key: HoursSortKey) => void;
+  /** A figure's ⓘ was chosen: `memberId` `null` is the viewer's own. */
+  readonly onExplain: (memberId: string | null, figure: HoursFigureCode) => void;
 }): ReactNode {
   // The filter bar's first chip: where the empty table's two actions put focus.
   const filtersRef = useRef<FilterBarHandle>(null);
@@ -95,9 +100,21 @@ export function HoursBody({
           <OrganizationHoursExport view={organization} organizationName={organizationName} />
         )}
         {isPhone ? (
-          <OrganizationHoursRows view={organization} filtersRef={filtersRef} onChange={onChange} onPress={onPress} />
+          <OrganizationHoursRows
+            view={organization}
+            filtersRef={filtersRef}
+            onChange={onChange}
+            onPress={onPress}
+            onExplain={onExplain}
+          />
         ) : (
-          <OrganizationHoursTable view={organization} filtersRef={filtersRef} onChange={onChange} onPress={onPress} />
+          <OrganizationHoursTable
+            view={organization}
+            filtersRef={filtersRef}
+            onChange={onChange}
+            onPress={onPress}
+            onExplain={onExplain}
+          />
         )}
       </>
     );
@@ -107,5 +124,12 @@ export function HoursBody({
     return <HoursSkeleton />;
   }
 
-  return <HoursSummary view={view} />;
+  return (
+    <HoursSummary
+      view={view}
+      onExplain={(figure) => {
+        onExplain(null, figure);
+      }}
+    />
+  );
 }

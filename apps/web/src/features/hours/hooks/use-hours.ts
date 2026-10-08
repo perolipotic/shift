@@ -20,7 +20,8 @@ import {
   type OrganizationConflictResolutionsTable,
 } from '@/features/conflicts/services/resolutions';
 import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
-import { hoursConflictsStateOf } from '@/features/hours/services/hours-conflicts';
+import { HOURS_CONFLICTS_READY, hoursConflictsStateOf } from '@/features/hours/services/hours-conflicts';
+import { hoursExplanationOf, type HoursExplainRequest } from '@/features/hours/services/hours-explanation';
 import {
   hoursSearchTo,
   hoursSnapshotStateOf,
@@ -30,6 +31,7 @@ import {
 } from '@/features/hours/services/my-hours';
 import {
   hoursSearchBaseOf,
+  hoursPageIsOwn,
   hoursSortChangeOf,
   hoursSurfaceOf,
   nextHoursSort,
@@ -194,6 +196,23 @@ export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
 
   // The export's file name carries it (story 4.3): the same row, the same read.
   const organizationName = snapshot === null ? null : snapshot.organizationName;
+  // Story 7.14: *Moji sati* is a member's own page; the role is unknown until the snapshot names it.
+  const own = hoursPageIsOwn(snapshot);
 
-  return { ...surface, organizationName, retry, show, change, pressColumn };
+  /**
+   * The explanation behind a figure's ⓘ (story 7.14), worked out when asked —
+   * once, as its dialog opens, never on a render: the domain's, over the
+   * snapshot, the leave and the unresolved collisions the figures and their
+   * conflict count were made from, so a shift in conflict is marked in it as
+   * on the view (FR-42b).
+   */
+  function explain(request: HoursExplainRequest) {
+    if (snapshot === null || surface.month === null) return null;
+
+    const ready = conflicts?.kind === HOURS_CONFLICTS_READY ? conflicts : null;
+
+    return hoursExplanationOf(snapshot, request, surface.month, ready?.leaveKeys ?? [], ready?.collisions ?? []);
+  }
+
+  return { ...surface, organizationName, own, explain, retry, show, change, pressColumn };
 }

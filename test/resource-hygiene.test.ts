@@ -148,6 +148,9 @@ const SANCTIONED_PLURAL_KEYS = [
   // STORY 5.3d: the viewer's shifts in unresolved conflict on *Sati*, shown
   // only above 0 — `1 smjena`, `2 smjene`, `5 smjena u neriješenom konfliktu`.
   'sati.conflicts',
+  // STORY 7.14: the status line after a downloaded hours file — its name and
+  // how many people it holds, `1 osobom`, `3 osobe`, `17 osoba`.
+  'sati.organization.export.done',
   // STORY 7.5: the filter bar Kalendar and Sati share — a team's person
   // count (`4 osobe`), the summary line with no filter, a team, or a team and
   // a person (`17 osoba`, `4 osobe od 17`, `0 osoba`), and the sheet's
@@ -369,11 +372,6 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.error.refused',
   'organization.error.name',
   'organization.error.invalid',
-  // The one refusal on this surface that is not the database's: `0002:93`
-  // leaves `timezone` unchecked because `pg_timezone_names` is not immutable,
-  // so the value every later screen renders against is validated in
-  // `@/lib/i18n/format` and refused before the write.
-  'organization.error.timezone',
   // FIVE MORE from story 1.4b, and the partition is the point again. The
   // storage layer refuses in five distinguishable ways — a refused write, a
   // read that reaches nothing, the
@@ -806,11 +804,10 @@ const SANCTIONED_SCREEN_KEYS = [
   // name and a start are entered; the window, duration and midnight flag are
   // shown read-only, and zero bands state their uncovered hours in numbers
   // rather than saying the absence.
-  // DESIGN REFRESH C: the organization screen's lede, the aside explaining
-  // what its settings do, and the logo's accepted formats under its label.
+  // DESIGN REFRESH C: the organization screen's lede and the logo's accepted
+  // formats under its label. The aside that explained the settings left with
+  // story 7.18: the page states its facts itself.
   'organization.lede',
-  'organization.aboutTitle',
-  'organization.aboutBody',
   'organization.logoHint',
   'organization.hourBands.heading',
   'organization.hourBands.name',
@@ -1467,6 +1464,30 @@ const SANCTIONED_SCREEN_KEYS = [
   // read failed — the snapshot's or the leave's *Sati* now waits for.
   'sati.organization.conflicts',
   'sati.retry',
+  // STORY 7.14: a member's page title, *Moji sati*; the organization table's
+  // footer total; and the dialog behind an hours figure's ⓘ — the button's
+  // name, the dialog's title, close, month and member lines, a shift's line
+  // and its words for a shift in unresolved conflict, the sum's name, the
+  // empty and the unavailable sentences, and the three words a shift's source
+  // reads as. The figures and names are data.
+  'sati.title.own',
+  'sati.organization.footer',
+  'sati.explain.open',
+  'sati.explain.title',
+  'sati.explain.contextUnavailable',
+  'sati.explain.close',
+  'sati.explain.month',
+  'sati.explain.memberMonth',
+  'sati.explain.line',
+  'sati.explain.conflict',
+  'sati.explain.plus',
+  'sati.explain.equals',
+  'sati.explain.sum',
+  'sati.explain.empty',
+  'sati.explain.unavailable',
+  'sati.explain.source.rotation',
+  'sati.explain.source.change',
+  'sati.explain.source.replacement',
   // STORY 5.1c: the member page's leave card — its heading, the used and
   // balance figures' labels (the allowance's is `ljudi.leave`), the form's
   // legend, its two date labels and its action, the preview's two labels, the
@@ -1830,6 +1851,38 @@ const SANCTIONED_SCREEN_KEYS = [
   'raspored.resolved.amend_leave',
   'raspored.resolved.decided',
   'raspored.resolved.actorGone',
+  // STORY 7.18: Organizacija as facts and dialogs. The *Profil* and *Vrijeme i
+  // godina* headings; `Promijeni` and `Uredi` with the names they announce
+  // (the three on *Profil* are also their dialogs' titles); every dialog's
+  // close and the saved
+  // line; the logo's two facts in words and the chosen file; the accent's
+  // UX-DR5 rule and the line while nothing is chosen; the zone's locked word
+  // and the reason it is locked (FR-8); the leave year's label and its start;
+  // and the fire-rank setting's label and what switching it off keeps. And the
+  // rotation history's close, now that it is a dialog behind a header button.
+  'organization.profileHeading',
+  'organization.timeHeading',
+  'organization.change',
+  'organization.edit',
+  'organization.close',
+  'organization.saved',
+  'organization.changeName',
+  'organization.changeLogo',
+  'organization.changeAccent',
+  'organization.editLeaveYear',
+  'organization.editFireRanks',
+  'organization.logoImage',
+  'organization.logoMark',
+  'organization.logoChosen',
+  'organization.accentRule',
+  'organization.accentChoose',
+  'organization.timezoneLocked',
+  'organization.timezoneReason',
+  'organization.leaveYear',
+  'organization.leaveYearStartsOn',
+  'organization.fireRanksUse',
+  'organization.fireRanksHint',
+  'rotation.builder.history.close',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

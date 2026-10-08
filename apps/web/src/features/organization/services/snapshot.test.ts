@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { formatDate, isRenderableTimeZone } from '@/lib/i18n/format';
+import { formatDate } from '@/lib/i18n/format';
 import { offersReadRetry, organizationMessageKey } from '@/features/organization/utils/messages';
 import { SETTINGS_SCREEN_PARTS } from '@/features/organization/settings-screen.fixture';
 import {
@@ -20,7 +20,6 @@ import {
   ORGANIZATION_REFUSED,
   ORGANIZATION_SNAPSHOT_KEY,
   ORGANIZATION_TABLE,
-  ORGANIZATION_TIMEZONE_UNKNOWN,
   ORGANIZATION_UNAVAILABLE,
   organizationEditColumns,
   organizationSnapshotOf,
@@ -30,7 +29,8 @@ import {
   readOrganization,
   refusedOrganizationFieldOf,
   updateOrganization,
-  type OrganizationEdits,
+  type OrganizationLeaveYearEdit,
+  type OrganizationNameEdit,
   type OrganizationFailure,
   type OrganizationOutcome,
   type OrganizationTable,
@@ -128,13 +128,11 @@ const PILOT_ROW = {
   uses_fire_ranks: true,
 };
 
-const EDITS: OrganizationEdits = {
-  name: 'DVD Kaštel Novi',
-  organizationType: 'Fire Department',
-  timezone: 'Europe/Zagreb',
-  leaveYearStartMonth: 4,
-  leaveYearStartDay: 1,
-};
+/** The name dialog's write (story 7.18): the name and nothing else. */
+const EDITS: OrganizationNameEdit = { name: 'DVD Kaštel Novi' };
+
+/** The leave year dialog's write: the start's month and day, and nothing else. */
+const LEAVE_YEAR: OrganizationLeaveYearEdit = { leaveYearStartMonth: 4, leaveYearStartDay: 1 };
 
 /** What the seed's row maps to. Built through the mapper, so one drift fails
  *  loudly rather than being asserted twice in two spellings. */
@@ -512,17 +510,70 @@ describe('the member screens read the organization through one query definition'
 // ----------------------------------------------------------------- the update
 
 describe('the update writes the edited fields and answers with the row', () => {
-  it('sends the five editable columns, spelled as the table spells them', () => {
-    expect(organizationEditColumns(EDITS)).toEqual({
-      name: 'DVD Kaštel Novi',
-      organization_type: 'Fire Department',
-      timezone: 'Europe/Zagreb',
+  it('sends the name alone, spelled as the table spells it', () => {
+    // STORY 7.18. The name used to travel with the type, the zone and the
+    // leave year's start, filled from the cached snapshot, so a rename on a
+    // stale cache wrote another admin's newer leave year back to the old one,
+    // and could write an old zone back too (FR-8).
+    expect(organizationEditColumns(EDITS)).toEqual({ name: 'DVD Kaštel Novi' });
+  });
+
+  it('sends the leave year start alone, its month and day together', () => {
+    expect(organizationEditColumns(LEAVE_YEAR)).toEqual({
       leave_year_start_month: 4,
       leave_year_start_day: 1,
     });
   });
 
-  it('sends the logo reference alone, and never beside the five fields', () => {
+  it.each([
+    ['the name', EDITS],
+    ['the leave year start', LEAVE_YEAR],
+    ['the logo', { logoPath: 'an-organization/logo' }],
+    ['the accent', { brandAccent: 'violet' }],
+    ['the cleared accent', { brandAccent: null }],
+    ['the fire-rank setting', { usesFireRanks: true }],
+  ] as const)('never writes the type or the zone with %s (FR-7, FR-8)', (_, write) => {
+    const written = Object.keys(organizationEditColumns(write));
+
+    expect(written).not.toContain('organization_type');
+    expect(written).not.toContain('timezone');
+  });
+
+  it('refuses a write that carries the name AND the leave year start, or the zone', () => {
+    // `@ts-expect-error` is itself executable: an expectation that stops being
+    // violated is a `pnpm typecheck` failure.
+    // @ts-expect-error the name write may not carry the leave year start
+    const both: OrganizationWrite = { ...EDITS, ...LEAVE_YEAR };
+    // @ts-expect-error the name write may not carry the zone
+    const withZone: OrganizationWrite = { ...EDITS, timezone: 'Europe/Zagreb' };
+    // @ts-expect-error the leave year write may not carry the type
+    const withType: OrganizationWrite = { ...LEAVE_YEAR, organizationType: 'Fire Department' };
+
+    // And what the value the type system refuses would do: the first guard
+    // that matches wins, and the rest is dropped.
+    expect(Object.keys(organizationEditColumns(both))).toEqual(['name']);
+    expect(withZone).toBeDefined();
+    expect(withType).toBeDefined();
+  });
+
+  it('writes the name and the leave year start through the update, each alone', async () => {
+    for (const [write, columns] of [
+      [EDITS, { name: 'DVD Kaštel Novi' }],
+      [LEAVE_YEAR, { leave_year_start_month: 4, leave_year_start_day: 1 }],
+    ] as const) {
+      const log = recorder();
+      const outcome = await updateOrganization(
+        answering({ data: [PILOT_ROW], error: null }, log),
+        PILOT_ROW.id,
+        write,
+      );
+
+      expect(outcome.ok).toBe(true);
+      expect(log.updated).toEqual([columns]);
+    }
+  });
+
+  it('sends the logo reference alone, and never beside the name', () => {
     // STORY 1.4b, and the whole of why the two writes are disjoint types: the
     // upload happens seconds after somebody starts typing in the name field,
     // and a logo write that also carried the five fields would save whatever
@@ -538,12 +589,12 @@ describe('the update writes the edited fields and answers with the row', () => {
     expect(written, 'the logo write carries the form fields with it').toEqual(['logo_path']);
   });
 
-  it('refuses a write that carries the five fields AND the logo reference', () => {
+  it('refuses a write that carries the name AND the logo reference', () => {
     // THE UNTAGGED-UNION HOLE, closed by `?: never` on both sides and asserted
     // by `@ts-expect-error` — which is itself executable, because an expectation
     // that stops being violated is a `pnpm typecheck` failure. Without the
     // exclusions such a value satisfies `OrganizationLogoEdit` structurally,
-    // routes to the logo branch, and silently drops all five identity fields on
+    // routes to the logo branch, and silently drops the name on
     // a save that reports success.
     // @ts-expect-error neither write may carry the other's fields, by construction
     const both: OrganizationWrite = { ...EDITS, logoPath: `${PILOT_ROW.id}/logo` };
@@ -553,8 +604,8 @@ describe('the update writes the edited fields and answers with the row', () => {
     expect(Object.keys(organizationEditColumns(both))).toEqual(['logo_path']);
   });
 
-  it('routes a logoPath of undefined to the identity write, not to the logo write', () => {
-    // `'logoPath' in write` alone routed `{ …five, logoPath: undefined }` — the
+  it('routes a logoPath of undefined to the name write, not to the logo write', () => {
+    // `'logoPath' in write` alone routed `{ name, logoPath: undefined }` — the
     // shape a spread of a partial produces — to the logo branch, which writes
     // `logo_path: undefined`. PostgREST drops an undefined value, so that is a
     // PATCH with an empty body: it matches the row, changes nothing, and
@@ -564,7 +615,7 @@ describe('the update writes the edited fields and answers with the row', () => {
     expect(organizationEditColumns(spread)).toEqual(organizationEditColumns(EDITS));
   });
 
-  it('sends the accent alone, and never beside the five fields or the logo', () => {
+  it('sends the accent alone, and never beside the name or the logo', () => {
     // STORY 1.4c, and the accent's case for a disjoint shape is the sharper of
     // the three: its control sits INSIDE the settings form, so a submit that
     // also carried `brand_accent` would overwrite a choice made while somebody
@@ -582,12 +633,9 @@ describe('the update writes the edited fields and answers with the row', () => {
 
   it('sends null as a VALUE, which is how an organization returns to no accent', () => {
     // MUTATION-PROVEN GAP. `isAccentEdit` guards on `!== undefined`, and a
-    // one-character change to `!== null` routes "clear the accent" into the
-    // IDENTITY branch — where `updateOrganization` then asks the timezone
-    // validator about a zone the write does not carry and refuses it as
-    // `ORGANIZATION_TIMEZONE_UNKNOWN`. A colour control reporting a timezone
-    // problem, on the one write that takes an organization back to the untinted
-    // shell.
+    // one-character change to `!== null` routes "clear the accent" past its
+    // own branch, on the one write that takes an organization back to the
+    // untinted shell.
     //
     // The key must also be PRESENT: PostgREST drops an undefined value, so a
     // branch that omitted it would send an empty PATCH that matches the row,
@@ -600,7 +648,7 @@ describe('the update writes the edited fields and answers with the row', () => {
     expect(cleared['brand_accent'], 'the cleared accent is dropped rather than written').toBeNull();
   });
 
-  it('routes a brandAccent of undefined to the identity write, not to the accent write', () => {
+  it('routes a brandAccent of undefined to the name write, not to the accent write', () => {
     // The same hole `logoPath: undefined` closes, and the same shape produces
     // it: a spread of a partial. `exactOptionalPropertyTypes` admits the value
     // at runtime, and `'brandAccent' in write` alone would route it to the
@@ -616,7 +664,7 @@ describe('the update writes the edited fields and answers with the row', () => {
     // `?: never` members are what make "disjoint" a fact the compiler checks;
     // `@ts-expect-error` is itself executable, because an expectation that
     // stops being violated is a `pnpm typecheck` failure.
-    // @ts-expect-error the accent write may not carry the identity fields
+    // @ts-expect-error the accent write may not carry the name
     const withFields: OrganizationWrite = { ...EDITS, brandAccent: 'violet' };
     // @ts-expect-error the accent write may not carry the logo reference
     const withLogo: OrganizationWrite = { logoPath: `${PILOT_ROW.id}/logo`, brandAccent: 'violet' };
@@ -653,7 +701,7 @@ describe('the update writes the edited fields and answers with the row', () => {
     }
     expect(Object.keys(organizationEditColumns(EDITS))).not.toContain('uses_fire_ranks');
 
-    // @ts-expect-error the setting write may not carry the identity fields
+    // @ts-expect-error the setting write may not carry the name
     const withFields: OrganizationWrite = { ...EDITS, usesFireRanks: true };
     // @ts-expect-error the setting write may not carry the accent
     const withAccent: OrganizationWrite = { brandAccent: 'violet', usesFireRanks: true };
@@ -696,7 +744,7 @@ describe('the update writes the edited fields and answers with the row', () => {
     );
     const covered = new Set([
       ...excluded.flatMap((write) => Object.keys(write)),
-      // The identity fields and the accent are covered by the case above.
+      // The name and the accent are covered by the case above.
       'name',
       'brandAccent',
     ]);
@@ -704,13 +752,7 @@ describe('the update writes the edited fields and answers with the row', () => {
     for (const field of snapshotFields) expect(covered, `${field} is not excluded`).toContain(field);
   });
 
-  it('writes the accent without asking the timezone validator anything', async () => {
-    // MUTATION-PROVEN GAP, and the second one-character regression this block
-    // exists for: deleting `!isAccentEdit(write) &&` from the guard in
-    // `updateOrganization` refuses EVERY accent write as
-    // `ORGANIZATION_TIMEZONE_UNKNOWN`, because the accent write carries no zone
-    // and `isRenderableTimeZone(undefined)` is false. Executed here rather than
-    // read as source text, which is the only way a guard's polarity is a fact.
+  it('writes the accent and reads the written row back', async () => {
     for (const accent of ['violet', null] as const) {
       const log = recorder();
       const outcome = await updateOrganization(
@@ -719,10 +761,7 @@ describe('the update writes the edited fields and answers with the row', () => {
         { brandAccent: accent },
       );
 
-      expect(
-        outcome.ok,
-        `the accent write was refused by a check that does not apply (${String(accent)})`,
-      ).toBe(true);
+      expect(outcome.ok, `the accent write was refused (${String(accent)})`).toBe(true);
       expect(log.updated).toEqual([{ brand_accent: accent }]);
       expect(log.filtered).toEqual([{ column: 'id', value: PILOT_ROW.id }]);
       expect(log.selected, 'the accent write does not read the row back').toEqual([
@@ -731,34 +770,15 @@ describe('the update writes the edited fields and answers with the row', () => {
     }
   });
 
-  it('pins what the timezone check answers for a write that carries no zone', () => {
-    // THE ASSUMPTION THE GUARD'S SHAPE INVITES, and it is false. A reader — and
-    // a reviewer — naturally expects `!isAccentEdit(write) &&` to be what stops
-    // an accent write being refused as `ORGANIZATION_TIMEZONE_UNKNOWN`. It is
-    // not: `isRenderableTimeZone` delegates to
-    // `new Intl.DateTimeFormat(…, { timeZone })`, and `undefined` there means
-    // "use the default" rather than "reject", so the check ANSWERS TRUE for a
-    // write with no zone.
-    //
-    // Pinned rather than relied on. The guard is positive now
-    // (`isIdentityEdit`), which is the readable shape and the one a fourth
-    // write shape cannot fall through; this records why the version it replaces
-    // was nonetheless not a live defect, so the next person to reason about it
-    // reasons from a measurement rather than from the code's shape.
-    expect(isRenderableTimeZone(undefined as unknown as string)).toBe(true);
-    expect(isRenderableTimeZone('Europe/Zagrb')).toBe(false);
-  });
-
-  it('sends no logo reference when the form saves its five fields', () => {
+  it('sends no logo reference when the name or the leave year is saved', () => {
     // The other direction of the same claim, which is the one the acceptance
     // criterion words as "saving identity cannot clobber a logo uploaded
     // seconds earlier".
     expect(Object.keys(organizationEditColumns(EDITS))).not.toContain('logo_path');
+    expect(Object.keys(organizationEditColumns(LEAVE_YEAR))).not.toContain('logo_path');
   });
 
-  it('writes the logo reference without asking the timezone validator anything', async () => {
-    // The timezone check is the identity write's, and running it against a
-    // write that carries no zone at all would refuse every upload.
+  it('writes the logo reference alone', async () => {
     const log = recorder();
     const outcome = await updateOrganization(
       answering({ data: [PILOT_ROW], error: null }, log),
@@ -776,7 +796,9 @@ describe('the update writes the edited fields and answers with the row', () => {
     // refuse every issued credential; the locale is a hard-coded constant and a
     // control that changes nothing is a dead control. Neither is on the edits
     // type at all, so this asserts the mapping cannot reintroduce them.
-    const written = Object.keys(organizationEditColumns(EDITS));
+    const written = [EDITS, LEAVE_YEAR].flatMap((write) =>
+      Object.keys(organizationEditColumns(write)),
+    );
 
     expect(written).not.toContain('slug');
     expect(written).not.toContain('locale');
@@ -838,7 +860,7 @@ describe('the update writes the edited fields and answers with the row', () => {
     // so the MESSAGE stays general, and the constraint's name is what marks
     // the day control as the one refused.
     expect(
-      await updateOrganization(answering(LEAVE_DAY_OUT_OF_RANGE), PILOT_ROW.id, EDITS),
+      await updateOrganization(answering(LEAVE_DAY_OUT_OF_RANGE), PILOT_ROW.id, LEAVE_YEAR),
     ).toEqual({ ok: false, code: ORGANIZATION_INVALID, field: ORGANIZATION_LEAVE_DAY_FIELD });
   });
 
@@ -900,43 +922,6 @@ describe('the update writes the edited fields and answers with the row', () => {
     ).toEqual({ ok: false, code: ORGANIZATION_UNAVAILABLE });
   });
 
-  it.each(['Europe/Zagrb', 'not a zone', '', 'UTC+2'])(
-    'refuses the timezone %s before it is written at all',
-    async (timezone) => {
-      // `0002:93` leaves the column unchecked on purpose — `pg_timezone_names`
-      // is not immutable and cannot appear in a constraint — so this is the one
-      // validation in the system that is not the database's, and it has to be:
-      // every zoned function in `@/lib/i18n/format` THROWS `RangeError` on an
-      // unknown zone, so a typo saved here takes down each later screen that
-      // renders an instant, far from the edit that caused it.
-      const log = recorder();
-      const outcome = await updateOrganization(
-        answering({ data: [PILOT_ROW], error: null }, log),
-        PILOT_ROW.id,
-        { ...EDITS, timezone },
-      );
-
-      expect(outcome).toEqual({ ok: false, code: ORGANIZATION_TIMEZONE_UNKNOWN });
-      // NOT WRITTEN, which is the half a code alone does not say: the refusal
-      // has to happen before the request, or the row carries the bad value and
-      // the message is an apology.
-      expect(log.updated, 'the unknown zone reached the table anyway').toEqual([]);
-    },
-  );
-
-  it('writes a zone the runtime can actually render in', async () => {
-    // The positive control. A validator that refused everything would satisfy
-    // every case above and make the surface unable to save at all.
-    const log = recorder();
-    const outcome = await updateOrganization(
-      answering({ data: [PILOT_ROW], error: null }, log),
-      PILOT_ROW.id,
-      { ...EDITS, timezone: 'Pacific/Kiritimati' },
-    );
-
-    expect(outcome.ok).toBe(true);
-    expect(log.updated[0]?.['timezone']).toBe('Pacific/Kiritimati');
-  });
 });
 
 // ------------------------------------------------------- the rendering frame
@@ -1089,7 +1074,6 @@ describe('a failed read offers a retry only where trying again can help', () => 
     ORGANIZATION_REFUSED,
     ORGANIZATION_NAME_BLANK,
     ORGANIZATION_INVALID,
-    ORGANIZATION_TIMEZONE_UNKNOWN,
   ];
 
   it.each(OTHERS)(
@@ -1105,7 +1089,6 @@ describe('every failure code has its own message key', () => {
     ORGANIZATION_REFUSED,
     ORGANIZATION_NAME_BLANK,
     ORGANIZATION_INVALID,
-    ORGANIZATION_TIMEZONE_UNKNOWN,
     ORGANIZATION_UNAVAILABLE,
   ];
 
@@ -1126,9 +1109,6 @@ describe('every failure code has its own message key', () => {
     expect(organizationMessageKey(ORGANIZATION_REFUSED)).toBe('organization.error.refused');
     expect(organizationMessageKey(ORGANIZATION_NAME_BLANK)).toBe('organization.error.name');
     expect(organizationMessageKey(ORGANIZATION_INVALID)).toBe('organization.error.invalid');
-    expect(organizationMessageKey(ORGANIZATION_TIMEZONE_UNKNOWN)).toBe(
-      'organization.error.timezone',
-    );
     expect(organizationMessageKey(ORGANIZATION_UNAVAILABLE)).toBe(
       'organization.error.unavailable',
     );

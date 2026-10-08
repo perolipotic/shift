@@ -7,17 +7,17 @@ import { t } from '@/lib/i18n';
 import { mayReadMembers } from '@/features/members/services/list';
 import { DESTINATIONS } from '@/features/navigation/utils/destinations';
 import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/features/navigation/services/role';
-import { OrganizationAbout } from '@/features/organization/components/organization-about';
 import { OrganizationSettingsCard } from '@/features/organization/components/organization-settings-card';
 import { useOrganizationSettings } from '@/features/organization/hooks/use-organization-settings';
 import { appLayoutRoute } from '@/pages/_app';
 
 /**
  * `Organizacija` — the organization settings surface (stories 1.4a-1.4c,
- * member rank). This file composes the screen: the header, the settings card
- * and the aside. Its state, its one read and its four writes, with the
- * rationale for each write, are `useOrganizationSettings`; what the form
- * deliberately does not offer is `OrganizationSettingsCard`'s.
+ * member rank; a page of facts with a dialog per change since story 7.18).
+ * This file composes the screen: the header and the fact cards. Its state,
+ * its one read and its five writes, with the rationale for each, are
+ * `useOrganizationSettings`; what the page deliberately does not offer is
+ * `OrganizationSettingsCard`'s.
  *
  * ADMIN ONLY (UX-DR32). The WRITES are enforced by the DATABASE:
  * `organizations_update_by_own_active_admin` (`0004`) is the whole of it: a
@@ -66,10 +66,7 @@ export function OrganizacijaScreen() {
           </Button>
         </PageActions>
       </PageHeader>
-      <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-        <OrganizationSettingsCard settings={settings} />
-        <OrganizationAbout organization={settings.organization} />
-      </div>
+      <OrganizationSettingsCard settings={settings} />
     </main>
   );
 }

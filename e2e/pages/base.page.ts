@@ -36,9 +36,9 @@ export abstract class BasePage {
     return this.navigation.getByRole('link', { name, ...options });
   }
 
-  /** The page's h1. */
-  heading(name: string | RegExp): Locator {
-    return this.page.getByRole('heading', { level: 1, name });
+  /** The page's h1; `exact` matches the whole name, not a part of it. */
+  heading(name: string | RegExp, { exact = false }: { readonly exact?: boolean } = {}): Locator {
+    return this.page.getByRole('heading', { level: 1, name, exact });
   }
 
   /** The sidebar's profile card, named by the person's own name; it discloses the exit. */
