@@ -865,3 +865,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-9-day-detail-dialogs.md`
   summary: `Riješi konflikt` in day detail goes to `/raspored/$memberId/$date/$teamId`, but the open day lives in `useState`, so Back to *Kalendar* does not reopen the day detail. Keeping the open day in the URL (for example `?dan=`) would restore it.
   evidence: 7.9 review (Blind Hunter); `use-day-detail.ts` holds the opened day in component state.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-10-member-schedule-no-conflict-marks.md`
+  summary: PRD FR-37 ("In the all-Teams view, leave is indicated…") has no role qualifier, while FR-38 does; a member's *Sve smjene* shows no one's leave, their own included, so FR-37 should say it applies to an admin.
+  evidence: 7.10 review (Blind Hunter); `prd.md` FR-37 L504 and §5.9 assumption L880 vs EXPERIENCE.md §State Patterns *Conflict*.
