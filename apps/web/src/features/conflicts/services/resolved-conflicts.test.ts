@@ -4,6 +4,7 @@ import { readCalendar, type CalendarSnapshot } from '@/features/calendar/service
 import { conflictsQueueOutcomeOf } from '@/features/conflicts/services/conflicts-queue';
 import {
   ACTING_ADMINS_COLUMNS,
+  ACTING_ADMINS_PAGE_ROWS,
   ACTING_ADMINS_UNAVAILABLE,
   RESOLVED_LOADING,
   RESOLVED_READY,
@@ -240,12 +241,29 @@ describe('the reads', () => {
   });
 
   it("reads the members' auth id and name and nothing else, and fails on an error", async () => {
-    const select = vi.fn().mockResolvedValueOnce({ data: ACTORS, error: null }).mockResolvedValueOnce({ data: null, error: { code: 'x' } });
+    const range = vi.fn().mockResolvedValueOnce({ data: ACTORS, error: null }).mockResolvedValueOnce({ data: null, error: { code: 'x' } });
+    const order = vi.fn(() => ({ order, range }));
+    const select = vi.fn(() => ({ order, range }));
 
     expect(await readActingAdminRows({ select })).toEqual(ACTORS);
     expect(select).toHaveBeenCalledWith(ACTING_ADMINS_COLUMNS);
     expect(ACTING_ADMINS_COLUMNS).toBe('auth_user_id,name');
     await expect(readActingAdminRows({ select })).rejects.toThrow(ACTING_ADMINS_UNAVAILABLE);
+  });
+
+  it('reads every page of members, so an admin past the first thousand still resolves', async () => {
+    const full = Array.from({ length: ACTING_ADMINS_PAGE_ROWS }, (_, index) => ({ auth_user_id: `u${index}`, name: `N${index}` }));
+    const last = [{ auth_user_id: 'late-admin', name: 'Kasni' }];
+    const range = vi.fn().mockResolvedValueOnce({ data: full, error: null }).mockResolvedValueOnce({ data: last, error: null });
+    const order = vi.fn(() => ({ order, range }));
+    const select = vi.fn(() => ({ order, range }));
+
+    const rows = await readActingAdminRows({ select });
+
+    expect(rows).toHaveLength(ACTING_ADMINS_PAGE_ROWS + 1);
+    expect(rows[ACTING_ADMINS_PAGE_ROWS]).toEqual(last[0]);
+    expect(range).toHaveBeenNthCalledWith(1, 0, ACTING_ADMINS_PAGE_ROWS - 1);
+    expect(range).toHaveBeenNthCalledWith(2, ACTING_ADMINS_PAGE_ROWS, 2 * ACTING_ADMINS_PAGE_ROWS - 1);
   });
 });
 

@@ -59,12 +59,21 @@ export interface ResolvedConflictsView {
   readonly rows: readonly ResolvedConflictRow[];
 }
 
-/** The names read, `members(auth_user_id,name)`, named structurally so it can be stubbed. */
-export interface ActingAdminsTable {
-  select(columns: string): PromiseLike<{
+/** One page of the names read, `members(auth_user_id,name)`, named structurally so it can be stubbed. */
+export interface ActingAdminsQuery {
+  order(column: string, options: { readonly ascending: boolean }): ActingAdminsQuery;
+  range(
+    from: number,
+    to: number,
+  ): PromiseLike<{
     readonly data: readonly unknown[] | null;
     readonly error: { readonly code?: string | undefined } | null;
   }>;
+}
+
+/** The one call made on `members` for the names, named structurally so it can be stubbed. */
+export interface ActingAdminsTable {
+  select(columns: string): ActingAdminsQuery;
 }
 
 /** The table the acting admins' names are read from (0002). */
@@ -80,13 +89,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** The member rows, unparsed; throws when the read failed. */
+/** PostgREST's `max_rows` (supabase/config.toml); the names are read one page of this size at a time. */
+export const ACTING_ADMINS_PAGE_ROWS = 1000;
+const ACTING_ADMINS_ORDER_COLUMN = 'id';
+
+/** The member rows, unparsed, every page of them; throws when any read failed. */
 export async function readActingAdminRows(table: ActingAdminsTable): Promise<readonly unknown[]> {
-  const answered = await table.select(ACTING_ADMINS_COLUMNS);
+  const rows: unknown[] = [];
 
-  if (answered.error !== null || !Array.isArray(answered.data)) throw new Error(ACTING_ADMINS_UNAVAILABLE);
+  for (let from = 0; ; from += ACTING_ADMINS_PAGE_ROWS) {
+    const answered = await table
+      .select(ACTING_ADMINS_COLUMNS)
+      .order(ACTING_ADMINS_ORDER_COLUMN, { ascending: true })
+      .range(from, from + ACTING_ADMINS_PAGE_ROWS - 1);
 
-  return answered.data as readonly unknown[];
+    if (answered.error !== null || !Array.isArray(answered.data)) throw new Error(ACTING_ADMINS_UNAVAILABLE);
+
+    rows.push(...(answered.data as readonly unknown[]));
+
+    // A short page is the last one, so nothing is asked past the end.
+    if (answered.data.length < ACTING_ADMINS_PAGE_ROWS) break;
+  }
+
+  return rows;
 }
 
 /** The names by auth user id; a row that is not two texts is skipped, since a name only decorates. */
