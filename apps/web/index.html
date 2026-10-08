@@ -4,6 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Shift</title>
+    <!-- Static Croatian, like the title and the boot fallback: crawlers and
+         link previews read it without running the bundle. `lang` on <html> is
+         only the pre-script default; `lib/i18n/document-language.ts` rewrites
+         it from the active locale. The two theme colours are `--background` in
+         each theme (`index.css`), as hex because the browser chrome reads
+         them, not the page. -->
+    <meta
+      name="description"
+      content="Planiranje dežurstava, odsustava i pokrivenosti za dobrovoljna vatrogasna društva."
+    />
+    <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0d1829" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/site.webmanifest" />
     <!-- The theme, resolved before the first paint. `data-theme` on <html> is
          always `light` or `dark`; `index.css` hangs the dark tokens on it. The
          preference (`system`, `light`, `dark`) lives in localStorage under
@@ -76,6 +90,19 @@
     </style>
   </head>
   <body>
+    <!-- Nothing works without scripting. The boot fallback below would also
+         surface after its delay and ask for a refresh, which cannot help, so
+         it is hidden here and this names the actual cause. -->
+    <noscript>
+      <style>
+        #boot-fallback {
+          display: none;
+        }
+      </style>
+      <p style="margin: 0; padding: 2rem; text-align: center; font: 1rem/1.5 system-ui, sans-serif">
+        Shift ne radi bez JavaScripta. Uključi JavaScript u pregledniku i osvježi stranicu.
+      </p>
+    </noscript>
     <!-- The boot fallback (story 1.1d), and the one Croatian literal outside
          hr.json. It cannot come from a key: the failures it covers are the
          translation layer refusing to start and the bundle never loading at
