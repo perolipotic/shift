@@ -7,19 +7,13 @@ import { describe, expect, it } from 'vitest';
 import {
   chosenRank,
   fireRankOf,
-  fireRanksClearsFailure,
-  fireRanksControlKey,
-  fireRanksFollowUpOf,
   fireRanksMessageKey,
   fireRanksOf,
   fireRanksStatusMessageKey,
-  fireRanksStepOf,
   fireRanksValue,
   FIRE_RANKS_OFF,
   FIRE_RANKS_ON,
   FIRE_RANKS_OPTIONS,
-  FIRE_RANKS_QUEUE,
-  FIRE_RANKS_WRITE,
   isRankCode,
   NO_RANK,
   rankEditOf,
@@ -292,31 +286,5 @@ describe('the setting gates display and entry only', () => {
 
       expect(status, 'the status line does not name the setting').toContain(subject);
     }
-  });
-
-  it('remounts the setting control on every refusal and every stored change', () => {
-    expect(fireRanksControlKey(true, 0)).not.toBe(fireRanksControlKey(true, 1));
-    expect(fireRanksControlKey(true, 0)).not.toBe(fireRanksControlKey(false, 0));
-    expect(fireRanksControlKey(false, 2)).toBe(fireRanksControlKey(false, 2));
-  });
-
-  it('queues a change while ANY write is in flight, and writes it otherwise', () => {
-    expect(fireRanksStepOf(false, false)).toBe(FIRE_RANKS_WRITE);
-    expect(fireRanksStepOf(true, false)).toBe(FIRE_RANKS_QUEUE);
-    expect(fireRanksStepOf(false, true)).toBe(FIRE_RANKS_QUEUE);
-    expect(fireRanksStepOf(true, true)).toBe(FIRE_RANKS_QUEUE);
-  });
-
-  it('drops the queued follow-up after a refusal, and applies it otherwise', () => {
-    expect(fireRanksFollowUpOf(true, false)).toBe(true);
-    expect(fireRanksFollowUpOf(false, false)).toBe(false);
-    expect(fireRanksFollowUpOf(undefined, false)).toBeUndefined();
-    expect(fireRanksFollowUpOf(true, true)).toBeUndefined();
-    expect(fireRanksFollowUpOf(false, true)).toBeUndefined();
-  });
-
-  it('clears the message region for a fresh choice, never for a queued follow-up', () => {
-    expect(fireRanksClearsFailure(false)).toBe(true);
-    expect(fireRanksClearsFailure(true)).toBe(false);
   });
 });

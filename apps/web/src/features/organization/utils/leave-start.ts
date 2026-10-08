@@ -1,4 +1,4 @@
-import { formatMonthName } from '@/lib/i18n/format';
+import { formatIsoDayMonth, formatMonthName } from '@/lib/i18n/format';
 
 /**
  * The leave year's start as the organization screen offers it: a day and a
@@ -46,3 +46,20 @@ export const LEAVE_START_MONTHS: readonly LeaveStartMonth[] = Array.from(
     label: formatMonthName(new Date(Date.UTC(REFERENCE_YEAR, index, REFERENCE_DAY)), REFERENCE_ZONE),
   }),
 );
+
+/** Two digits, as an ISO date spells a month or a day. */
+const ISO_PART_WIDTH = 2;
+
+/**
+ * `01.01.` — the leave year's start as the settings page states it (story
+ * 7.18), in the binding date shape cut before the year: the setting recurs
+ * yearly, so a year is a fact it does not have. Built on the reference year,
+ * which is safe because the day is 1 to 28 in every month. `null` for a month
+ * or a day no calendar has.
+ */
+export function leaveYearStartLabel(month: number, day: number): string | null {
+  const isoMonth = String(month).padStart(ISO_PART_WIDTH, '0');
+  const isoDay = String(day).padStart(ISO_PART_WIDTH, '0');
+
+  return formatIsoDayMonth(`${String(REFERENCE_YEAR)}-${isoMonth}-${isoDay}`);
+}

@@ -131,12 +131,24 @@ const RESOURCE = join(srcRoot, 'lib', 'i18n', 'locales', 'hr.json');
 const ORGANIZATION_FEATURE = join(srcRoot, 'features', 'organization');
 /** The settings surface's page, which only composes (source structure B2). */
 const SETTINGS_PAGE = join(srcRoot, ...SETTINGS_SCREEN_PARTS.page);
-/** Its state, its one read and its four named writes. */
+/** Its state, its one read, its dialogs and its five named writes. */
 const SETTINGS_HOOK = join(srcRoot, ...SETTINGS_SCREEN_PARTS.hook);
-/** The message region, the form and its three selects beside the name. */
+/** The read's message and retry, and the three fact cards (story 7.18). */
 const SETTINGS_CARD = join(srcRoot, ...SETTINGS_SCREEN_PARTS.card);
-/** The logo block: the shared lockup, the file picker and its visible action. */
+/** Story 7.18: the dialog every change opens in, its form, and one fact's shape. */
+const SETTINGS_DIALOG = join(srcRoot, ...SETTINGS_SCREEN_PARTS.dialog);
+/** Story 7.18: *Profil* — the name, the logo and the accent — and the name's dialog. */
+const SETTINGS_PROFILE = join(srcRoot, ...SETTINGS_SCREEN_PARTS.profile);
+/** The logo's dialog: the shared lockup, the file picker and its visible action. */
 const SETTINGS_LOGO = join(srcRoot, ...SETTINGS_SCREEN_PARTS.logo);
+/** Story 7.18: the accent's dialog, its named radio cards and the UX-DR5 rule. */
+const SETTINGS_ACCENT = join(srcRoot, ...SETTINGS_SCREEN_PARTS.accent);
+/** Story 7.18: *Vrijeme i godina* — the locked zone and the leave year — and its dialog. */
+const SETTINGS_TIME = join(srcRoot, ...SETTINGS_SCREEN_PARTS.time);
+/** Story 7.18: the fire-rank setting's card and dialog. */
+const SETTINGS_FIRE_RANKS = join(srcRoot, ...SETTINGS_SCREEN_PARTS.fireRanks);
+/** Story 7.18: the settings page's element ids, named once; no string a screen renders. */
+const SETTINGS_ELEMENT_IDS = join(srcRoot, 'features', 'organization', 'utils', 'element-ids.ts');
 /** The status line's name for the stored accent. */
 const SETTINGS_ACCENT_LABEL = join(srcRoot, ...SETTINGS_SCREEN_PARTS.accentLabel);
 /**
@@ -388,6 +400,11 @@ const SHIFT_TYPE_WRITE_KEYS = join(srcRoot, 'features', 'shift-types', 'services
  * here by hand. `@/features/rotation/utils/draft` declares no key.
  */
 const ROTATION_SECTION = join(srcRoot, 'features', 'rotation', 'components', 'rotation-section.tsx');
+/**
+ * Story 7.18: `Povijest rotacije` left the builder's page for a dialog behind
+ * a header button — a component of its own, rendered in the builder's header.
+ */
+const ROTATION_HISTORY_DIALOG = join(srcRoot, 'features', 'rotation', 'components', 'rotation-history-dialog.tsx');
 const ROTATION_LIST_KEYS = join(srcRoot, 'features', 'rotation', 'services', 'list.ts');
 const ROTATION_WRITE_KEYS = join(srcRoot, 'features', 'rotation', 'services', 'write.ts');
 /** Story 2.4's phone stepper rules: each step's name and Dalje's label per target step. */
@@ -684,7 +701,15 @@ const SCREENS = [
   // leave year's day and month are selects now, still two controls.
   // TEN SINCE THE SETTINGS FIX: the read's retry, rendered beside the message
   // only when a read has failed, so a failed read has something to act with.
-  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 10 },
+  // ELEVEN SINCE STORY 7.18, the page of facts with a dialog per change, each
+  // written once: the hour band link and the read's retry; the shared
+  // dialog's cancel and save; *Profil*'s `Promijeni` (one row component for
+  // three facts), the name dialog's field, and the logo's choose action;
+  // the two `Uredi` buttons; and the leave year's day and month selects. The
+  // accent and the fire-rank setting are radio groups, which are not fields
+  // anybody types in, and a slug, a zone or a locale control would still be
+  // the count moving.
+  { name: 'the organization settings surface', file: SETTINGS, expectedControls: 11 },
   // THREE on the member list, and the count is what keeps a fourth from
   // arriving unreviewed: the search field, the permission-level filter, and ONE
   // `<Button>` — the sort control, written once inside a map over
@@ -941,6 +966,9 @@ const SCREENS = [
   // NINETEEN SINCE STORY 5.5c: the save bar's "Odbaci promjene". The save
   // moved from the header into the bar and is still written once.
   { name: 'the rotation builder', file: ROTATION_SECTION, expectedControls: 19 },
+  // STORY 7.18. ONE on the rotation history: the header button that opens
+  // it. The dialog's close is `DialogHeader`'s, and the table offers nothing.
+  { name: 'the rotation history', file: ROTATION_HISTORY_DIALOG, expectedControls: 1 },
   // STORY 5.5b. FOUR on the shared erasure confirmation, each written once
   // however many rows: a row's "Potvrdi brisanje" and "Zadrži", "Natrag na
   // uređivanje" and its own save.
@@ -1025,16 +1053,10 @@ const FORM_SCREENS = [
     effect: 'savePassword(',
     inFlight: 'exchanging',
   },
-  // Story 1.4a. The settings surface is the third screen with a form, and it is
-  // the one with the most to lose from getting the uncontrolled-ref shape wrong:
-  // five fields rather than two, so a refusal that re-rendered them away would
-  // discard five entered values instead of a password.
-  {
-    name: 'the organization settings surface',
-    file: SETTINGS,
-    effect: 'updateOrganization(',
-    inFlight: 'saving',
-  },
+  // Story 1.4a's settings surface LEFT THIS LIST in story 7.18: it has no
+  // `submit` and no refs any more. Each change is its own dialog, whose save
+  // reads its form and hands its write to one runner, `write`, swept by
+  // handler below and asserted by name in the settings blocks.
   // Story 1.5b's two. Both await a write and both hold a refusal, so every
   // sweep below applies — and applying them is the point rather than a bonus:
   // the settings surface only gained the in-flight coverage when a second
@@ -1137,6 +1159,18 @@ const IN_FLIGHT_HANDLERS = [
     pending: 'setPending',
     failure: 'setFailure',
   })),
+  {
+    // STORY 7.18: the settings surface's five dialogs share one runner, which
+    // holds the in-flight ref, the pending flag and the refusal; each save
+    // hands it the write it sends.
+    name: "the organization settings surface's dialogs",
+    file: SETTINGS,
+    effect: 'send(organization)',
+    inFlight: 'saving',
+    handler: 'write',
+    pending: 'setPending',
+    failure: 'setFailure',
+  },
   {
     // THE SECOND AWAITING HANDLER ON THE EDIT FORM. Its flags are its own on
     // purpose: sharing `saving` with the form would make a reset in flight
@@ -2158,7 +2192,24 @@ const KEY_SOURCES = [
   // EIGHTEEN SINCE DESIGN REFRESH C: the lede, the logo's accepted formats,
   // and the aside's title and body.
   // NINETEEN since the settings fix: the read's retry reuses `shell.retry`.
-  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 19 },
+  //
+  // FORTY-EIGHT SINCE STORY 7.18, the page of facts with a dialog per change.
+  // The page: its heading, lede and the hour band link. The read's retry.
+  // The shared dialog: its close, cancel and save. *Profil*: its heading, the
+  // saved line, the shared `Promijeni`, and per row a label and a change name
+  // (the name, the logo and the accent), the logo's two facts in words, and
+  // the name dialog's title and label (keys written a second time). The logo
+  // dialog: title, hint, the choose action twice (button and file input, one
+  // affordance), and the chosen file. The accent dialog: title, label, the
+  // UX-DR5 rule and the line when nothing is chosen. *Vrijeme i godina*: its
+  // heading, `Uredi` and its name, the saved line, the zone's label, its
+  // locked word, the leave year's label and value, the reason, and the
+  // dialog's title and two labels. The fire-rank card: heading, `Uredi` and
+  // its name, the use label, and the dialog's title, label and hint. The
+  // option names, the accent's stored label and the fire-rank status line
+  // reach `t()` through their `MessageKey` modules. The aside left the page:
+  // its title and body went with it.
+  { name: 'the organization settings surface', file: SETTINGS, keys: translationKeys, strings: 48 },
   {
     // EIGHT on the member list since story 1.5b, up from five, and the number is
     // still small because most of what this screen says is read off a table
@@ -2521,8 +2572,21 @@ const KEY_SOURCES = [
     // cancel's notice counting the conflicts it removed.
     // NINETY-EIGHT SINCE STORY 5.5c: the save bar's region label, its
     // "Odbaci promjene" and its hint, with and without the rotation in force.
+    // EIGHTY-EIGHT SINCE STORY 7.18: the history's ten moved to its own
+    // dialog, the next entry.
     keys: translationKeys,
-    strings: 98,
+    strings: 88,
+  },
+  {
+    // STORY 7.18: the history behind a header button — the button and the
+    // dialog's title (the heading key, written twice), its close and lede,
+    // the empty note, the five column heads, the save time and the team
+    // count. The statuses and the unknown author come through
+    // `@/features/rotation/services/history`.
+    name: 'the rotation history',
+    file: ROTATION_HISTORY_DIALOG,
+    keys: translationKeys,
+    strings: 12,
   },
   {
     // STORY 3.5c: the review's heading, lede and count; a row's title, type,
@@ -3311,7 +3375,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     // `/prijava` renders the sign-in screen, which is already an entry.
     //
     // TWENTY-SEVEN SINCE STORY 7.8: the set-password step.
-    expect(SCREENS).toHaveLength(27);
+    // TWENTY-EIGHT SINCE STORY 7.18: the rotation history's dialog.
+    expect(SCREENS).toHaveLength(28);
     //
     // FORTY-NINE SINCE STORY 3.6b: `@/features/calendar/services/roster-write`.
     //
@@ -3350,7 +3415,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // credential copy's mapping.
     //
     // SIXTY-FIVE SINCE STORY 7.11: the member page header's status badge.
-    expect(KEY_SOURCES).toHaveLength(65);
+    //
+    // SIXTY-SIX SINCE STORY 7.18: the rotation history's dialog.
+    expect(KEY_SOURCES).toHaveLength(66);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -5814,6 +5881,7 @@ describe('the member list reads once, under one key', () => {
       ROTATION_LIST_KEYS,
       ROTATION_WRITE_KEYS,
       ROTATION_SECTION,
+      ROTATION_HISTORY_DIALOG,
       join(srcRoot, 'features', 'rotation', 'utils', 'draft.ts'),
       ROTATION_STEPPER_KEYS,
       ROTATION_WARNING_KEYS,
@@ -6202,14 +6270,16 @@ describe('every select is the one Select primitive, in the one Input look', () =
     );
   }
 
-  it('finds all seventeen, so the comparison is not vacuous', () => {
+  it('finds all fourteen, so the comparison is not vacuous', () => {
     // THIRTEEN: the twelve visual refresh B held to one literal, and the shift
     // type kind on `/postavke-rotacije`, which that block never listed.
     // FOURTEEN SINCE STORY 3.3a: the calendar's team filter.
     // FIFTEEN SINCE STORY 3.5b: the override form's type.
     // SEVENTEEN SINCE STORY 3.6b: the roster form's "Skida se" and "Dolazi".
     // SIXTEEN SINCE STORY 7.5: the calendar's filter is chips, not a Select.
-    expect(selectClasses()).toHaveLength(16);
+    // FOURTEEN SINCE STORY 7.18: the accent and the fire-rank setting are
+    // radio groups in their dialogs, not selects.
+    expect(selectClasses()).toHaveLength(14);
   });
 
   it('composes only the 44 px height onto each, so no screen restyles the primitive', () => {
@@ -6905,127 +6975,88 @@ describe('all three sign-in fields carry an accessible name', () => {
 
 describe('every field on the settings surface carries an accessible name', () => {
   /**
-   * The same claims the credential form makes, on the screen that has five
-   * fields instead of two (story 1.4a).
+   * The same claims the credential form makes, on the settings surface (story
+   * 1.4a). Since story 7.18 its fields live in dialogs, one change each, and
+   * their ids are constants named once in `utils/element-ids.ts`.
    *
    * Written as its own block rather than folded into the one above, because the
    * assertions there are about `type="password"` and `autoComplete="username"` —
    * facts about credentials, not about forms. What generalizes is the binding:
-   * `htmlFor`/`id` is the only thing that ties a `<Label>` to its `<Input>`, and
-   * getting it wrong leaves a screen reader announcing "edit text, blank" on a
-   * field whose value decides what timezone the whole organization renders in.
+   * `htmlFor`/`id` is the only thing that ties a `<Label>` to its control.
    */
   it('gives every field a label bound by htmlFor, and every label a field', () => {
-    // SIX LABELLED FIELDS since story 1.4c: the five `<Input>`s and the accent
-    // `<select>`. The select is counted through its own detector rather than
-    // folded into `inputElements`, for the reason `linkElements` is separate —
-    // every other screen's `<Input>` count is a tight number, and widening a
-    // shared detector to cover one file loosens all of them. What matters here
-    // is that nothing on the screen is labelled by accident: every control has
-    // an id a `<Label>` names, and every `<Label>` names a control that exists.
+    // THREE LABELLED FIELDS since story 7.18: the name's `<Input>` and the
+    // leave year's day and month. The accent and the fire-rank setting are
+    // radio groups, each named by `aria-labelledby` and asserted in their own
+    // blocks below.
     const screen = source(SETTINGS);
-    const targets = labelTargets(screen);
-    const inputs = inputElements(screen);
-    const selects = selectElements(screen);
-    const ids = [...inputs, ...selects].map((element) => attributeOf(element, 'id'));
+    const fields = [...inputElements(screen), ...selectElements(screen)];
+    const ids = fields.map((element) => /\bid=\{(\w+)\}/.exec(element)?.[1] ?? null);
+    const targets = [...screen.matchAll(/<Label htmlFor=\{(\w+)\}/g)].map((found) => found[1] ?? '');
 
-    // ONE INPUT AND FOUR SELECTS SINCE DESIGN REFRESH C: the type and zone
-    // left the form (both written back unchanged), and the leave year's day
-    // and month became selects beside the accent and the fire-rank setting.
-    expect(inputs).toHaveLength(1);
-    expect(selects, 'the accent control is not a select any more').toHaveLength(4);
-    expect(targets).toHaveLength(5);
-    expect(ids, 'a field carries no id, so no <Label> can name it').not.toContain(null);
+    expect(inputElements(screen)).toHaveLength(1);
+    expect(selectElements(screen), 'a control became a select again').toHaveLength(2);
+    expect(ids, 'a field carries no id constant, so no <Label> can name it').not.toContain(null);
     expect(new Set(ids).size, 'two fields share one id').toBe(ids.length);
+    expect([...targets].sort()).toEqual([...(ids as string[])].sort());
     for (const id of ids) {
-      expect(targets, `no <Label htmlFor> points at ${String(id)}`).toContain(id);
-    }
-    for (const target of targets) {
-      expect(ids, `<Label htmlFor="${target}"> points at no field`).toContain(target);
+      expect(source(SETTINGS_ELEMENT_IDS), `${String(id)} names no id`).toMatch(
+        new RegExp(`export const ${String(id)} = '[\\w-]+';`),
+      );
     }
   });
 
   it('binds the refusal to every field, and only while it is on the page', () => {
-    // One message for five fields: a description reachable from only one of them
-    // is unreachable from wherever the person actually is. CONDITIONAL, for the
-    // reason the sign-in screen's is — the element renders only on a refusal,
-    // and a reference to an absent id is ignored in silence, which is worse than
-    // no reference because the source-level lookup passes either way.
+    // One message per dialog, above its buttons: every field of the open
+    // dialog points at it, and only while it is drawn — a reference to an
+    // absent id is ignored in silence. ONE CONSTANT: only one dialog is open
+    // at a time, and each draws its body only while open.
     const screen = source(SETTINGS);
-    // VISUAL REFRESH B: the refusal is drawn by the `Notice` primitive, which
-    // renders the `<p>`, so the element read here is `<Notice`. Same shape.
-    // ONE CONSTANT since source structure B2, because the id is shared by two
-    // files (the settings card and the logo block): the Notice carries it by
-    // name, every field names the same constant, and the constant resolves to
-    // a real id in the refusal's own module.
-    const errorName = /<Notice\s+id=\{(\w+)\}\s+role="alert"/.exec(screen)?.[1];
-    const errorId = new RegExp(`export const ${String(errorName)} = '([\\w-]+)';`).exec(
-      source(ORGANIZATION_MESSAGE_KEYS),
-    )?.[1];
 
-    expect(errorName, 'no role="alert" element to describe the fields by').not.toBeUndefined();
-    expect(errorId, `${String(errorName)} names no id`).not.toBeUndefined();
-    expect(screen, 'the refusal id is spelled by hand somewhere').not.toContain(`'${String(errorId)}'`);
-    for (const file of [SETTINGS_CARD, SETTINGS_LOGO]) {
-      expect(source(file), `${file} does not take the id from its module`).toMatch(
-        new RegExp(`import \\{[^}]*\\b${String(errorName)}\\b[^}]*\\} from '@/features/organization/utils/messages'`),
+    expect(source(SETTINGS_DIALOG), 'the dialog draws its refusal unconditionally').toMatch(
+      /\{failure === null \? null : \(\s*<Notice id=\{ORGANIZATION_DIALOG_ERROR_ID\} role="alert">/,
+    );
+    for (const field of [...inputElements(screen), ...selectElements(screen), ...bareInputElements(screen)]) {
+      expect(field, 'a field describes nothing, or names its refusal unconditionally').toContain(
+        'aria-describedby={failure === null ? undefined : ORGANIZATION_DIALOG_ERROR_ID}',
       );
-    }
-
-    for (const input of inputElements(screen)) {
-      expect(input, 'a field describes nothing').toMatch(
-        new RegExp(`aria-describedby=\\{[^}]*\\b${String(errorName)}\\b[^}]*\\}`),
-      );
-      expect(
-        attributeOf(input, 'aria-describedby'),
-        `a field names ${String(errorId)} unconditionally, so it dangles until something fails`,
-      ).toBeNull();
-      expect(
-        /aria-describedby=\{[^}]*refusal[^}]*\}/.test(input),
-        'the description is not conditioned on there being a refusal',
-      ).toBe(true);
     }
   });
 
   it('bounds the leave-year day at 28, so the control cannot express the broken case', () => {
     // `0002:106` admits 1-28 by SHAPE rather than by validation, because a leave
-    // year starting on the 30th has no boundary in February. The spec's I/O
-    // matrix says the control cannot express the value; a `max` of 31 would make
-    // it expressible and turn a shape into a refusal somebody has to read.
-    //
-    // CLOSED LISTS SINCE DESIGN REFRESH C: the day and month are selects whose
-    // options come from `@/features/organization/utils/leave-start`, where the days stop at
+    // year starting on the 30th has no boundary in February. The options come
+    // from `@/features/organization/utils/leave-start`, where the days stop at
     // `LEAVE_START_LAST_DAY` (28) — asserted by that module's own test.
-    const screen = source(SETTINGS);
-    const day = selectElements(screen).find((control) => /id="[\w-]*leave-day"/.test(control));
-    const month = selectElements(screen).find((control) => /id="[\w-]*leave-month"/.test(control));
+    const screen = source(SETTINGS_TIME);
 
-    expect(day, 'no leave-year day field on the settings surface').not.toBeUndefined();
-    expect(month, 'no leave-year month field on the settings surface').not.toBeUndefined();
-    // READ OFF THE CARD THAT RENDERS THEM (source structure B2), not the set.
-    expect(source(SETTINGS_CARD)).toContain('LEAVE_START_DAYS.map(');
-    expect(source(SETTINGS_CARD)).toContain('LEAVE_START_MONTHS.map(');
-    expect(screen, 'a day beyond 28 is expressible').not.toMatch(/max=\{(29|30|31)\}/);
+    expect(selectElements(screen).some((control) => control.includes('id={ORGANIZATION_LEAVE_DAY_FIELD_ID}'))).toBe(true);
+    expect(selectElements(screen).some((control) => control.includes('id={ORGANIZATION_LEAVE_MONTH_FIELD_ID}'))).toBe(
+      true,
+    );
+    expect(screen).toContain('LEAVE_START_DAYS.map(');
+    expect(screen).toContain('LEAVE_START_MONTHS.map(');
+    expect(source(SETTINGS), 'a day beyond 28 is expressible').not.toMatch(/max=\{(29|30|31)\}/);
   });
 
   it('keeps every entered value by never controlling a field', () => {
-    // UX-DR34, and the reason this screen is uncontrolled: a refused save must
-    // keep all five entered values. `value={…}` on any of them is the shape that
-    // loses them on the render that shows the refusal; `defaultValue={…}` is not
-    // — it seeds an uncontrolled field and never re-renders it away.
-    for (const input of inputElements(source(SETTINGS))) {
-      expect(attributeOf(input, 'value'), 'a settings field is controlled').toBeNull();
-      expect(input.includes('value={') && !input.includes('defaultValue={')).toBe(false);
+    // UX-DR34: a refused save keeps what was entered. `value={…}` is the shape
+    // that loses it on the render that shows the refusal; `defaultValue={…}`
+    // seeds an uncontrolled field and never re-renders it away.
+    for (const field of [...inputElements(source(SETTINGS)), ...selectElements(source(SETTINGS))]) {
+      expect(field, 'a settings field is controlled').not.toMatch(/(?<![A-Za-z])value=\{/);
+      expect(field, 'a settings field is not seeded from the row').toContain('defaultValue={organization.');
     }
   });
 
   it('delegates the failure-to-message pairing rather than branching on it', () => {
     const screen = source(SETTINGS);
 
-    expect(
-      source(SETTINGS_CARD),
-      'the screen no longer renders its message through the mapping',
-    ).toContain('t(organizationMessageKey(');
+    for (const file of [SETTINGS_CARD, SETTINGS_DIALOG]) {
+      expect(source(file), `${file} no longer renders its message through the mapping`).toContain(
+        't(organizationMessageKey(',
+      );
+    }
     for (const key of [
       'organization.error.refused',
       'organization.error.name',
@@ -7049,68 +7080,163 @@ describe('every field on the settings surface carries an accessible name', () =>
     }
   });
 
-  it('renders the refusal outside the branch that needs a snapshot to exist', () => {
-    // MUTATION-PROVEN GAP, found by the 1.4a review. The alert lived inside
-    // `renderSettings`, after its `organization === null` early return — so it
-    // was reachable only once a row had been read, and a read that was REFUSED
-    // or UNAVAILABLE produced no row, no form, and therefore no message. The
-    // one element that explains the failure was behind the success.
-    const screen = source(SETTINGS);
-    const gated = componentFunction(screen, 'renderSettings');
+  it('renders the read refusal outside the branch that needs a snapshot to exist', () => {
+    // MUTATION-PROVEN GAP, found by the 1.4a review: a refusal drawn inside the
+    // snapshot-gated branch is reachable only once a row has been read, so a
+    // read that was REFUSED or UNAVAILABLE produced no row and no message.
+    const card = source(SETTINGS_CARD);
+    const gated = componentFunction(card, 'renderCards');
 
-    expect(gated, 'no renderSettings function to read').not.toBe('');
-    expect(screen, 'the screen renders no alert at all').toContain('role="alert"');
-    // FILE BY FILE since source structure B2: the alert is the settings
-    // card's, outside its gated `renderSettings`, and never the logo block's,
-    // which is gated on the same snapshot as a whole.
-    expect(source(SETTINGS_CARD), 'the settings card renders no alert').toContain('role="alert"');
-    expect(source(SETTINGS_LOGO), 'the refusal moved into the snapshot-gated logo block').not.toContain(
-      'role="alert"',
+    expect(gated, 'no renderCards function to read').not.toBe('');
+    expect(card, 'the settings card renders no alert').toContain('role="alert"');
+    expect(gated, 'the refusal is inside the snapshot-gated branch').not.toContain('role="alert"');
+    expect(gated, 'the refusal message is inside the snapshot-gated branch').not.toContain(
+      'organizationMessageKey(',
     );
-    expect(
-      gated,
-      'the refusal is inside the snapshot-gated branch, so a failed read shows nothing',
-    ).not.toContain('role="alert"');
-    expect(
-      gated,
-      'the refusal message is inside the snapshot-gated branch',
-    ).not.toContain('organizationMessageKey(');
   });
 
   it('shows the skeleton only while the read is actually pending', () => {
-    // The other half of the same defect. Gated on `organization === null`, the
-    // skeleton was what a permanently failed read looked like: an indefinitely
-    // pulsing bar, byte-identical to a slow one, with no message and no way
-    // forward. UX-DR40 asks for a skeleton rather than a spinner; it does not
-    // ask for one that never resolves.
-    const gated = componentFunction(source(SETTINGS), 'renderSettings');
+    // Gated on `organization === null`, the skeleton was what a permanently
+    // failed read looked like: a pulsing bar identical to a slow one. UX-DR40
+    // asks for a skeleton rather than a spinner, not one that never resolves.
+    const gated = componentFunction(source(SETTINGS_CARD), 'renderCards');
 
-    expect(gated, 'no renderSettings function to read').not.toBe('');
     expect(gated, 'the screen renders no skeleton').toContain('animate-pulse');
+    expect(gated, 'the skeleton is not conditioned on the read being pending').toMatch(
+      /isPending \? \(\s*<div aria-busy\b[\s\S]{0,80}?animate-pulse/,
+    );
+  });
+});
+
+describe('the settings page is facts, and each change opens its own dialog (story 7.18)', () => {
+  /**
+   * STORY 7.18. The page states the organization as facts in three cards, and
+   * every change — the name, the logo, the accent, the leave year's start and
+   * the fire-rank setting — opens its own dialog with one Spremi. Nothing on
+   * the page writes on change, and no field is mounted outside a dialog.
+   */
+  const DIALOG_BODIES = [SETTINGS_PROFILE, SETTINGS_LOGO, SETTINGS_ACCENT, SETTINGS_TIME, SETTINGS_FIRE_RANKS];
+
+  it('mounts no form outside the one dialog form every change draws', () => {
+    expect(occurrences(source(SETTINGS), '<form'), 'a second form arrived on the page').toBe(1);
+    expect(source(SETTINGS_DIALOG)).toContain('<form');
+    // ONE SPREMI: the dialog form's only submit, beside its cancel.
+    expect(occurrences(source(SETTINGS_DIALOG), 'type="submit"')).toBe(1);
+    expect(source(SETTINGS_DIALOG), 'the save is not the existing key').toContain("{t('organization.save')}");
+    // EVERY BODY IS DRAWN THROUGH IT, inside its own dialog.
+    for (const file of DIALOG_BODIES) {
+      expect(source(file), `${file} draws a form of its own`).not.toContain('<form');
+      expect(source(file), `${file} draws its change outside the shared dialog`).toContain('<OrganizationDialogForm');
+    }
     expect(
-      gated,
-      'the skeleton is not conditioned on the query being pending, so a settled failure pulses forever',
-    ).toMatch(/isPending[\s\S]{0,120}?animate-pulse/);
+      occurrences(source(SETTINGS), '<OrganizationChangeDialog'),
+      'a change has no dialog, or two',
+    ).toBe(5);
+  });
+
+  it('keeps each dialog mounted and drives it through open, so every close returns focus', () => {
+    // 7.14 WAS BITTEN BY UNMOUNTING AN OPEN <dialog>: the element vanished with
+    // its own state and focus fell to the body. The dialog element is always
+    // rendered; `open` follows the hook's state, and ✕, the backdrop and
+    // Escape all close it through that state and the element's own `close()`,
+    // which returns focus to the opener. Not dismissible while a write is in
+    // flight.
+    const file = source(SETTINGS_DIALOG);
+    const shell = file.slice(
+      file.indexOf('export function OrganizationChangeDialog('),
+      file.indexOf('export function OrganizationDialogForm('),
+    );
+
+    expect(shell, 'no dialog to read').not.toBe('');
+    expect(shell).toMatch(/<Dialog\s+open=\{shown\}/);
+    expect(shell).toContain('dismissible={!pending}');
+    expect(shell, 'Escape closes the element behind the state').toMatch(
+      /onCancel=\{[\s\S]{0,160}?event\.preventDefault\(\);\s*if \(!pending\) close\(\);/,
+    );
+    expect(shell, 'the body survives its opening').toContain('<Fragment key={opening.key}>');
+    expect(shell, 'the dialog element itself is unmounted while closed').not.toMatch(/\?\s*<Dialog|&&\s*<Dialog/);
+  });
+
+  it('opens each dialog from its own button, which focus returns to', () => {
+    const hook = source(SETTINGS_HOOK);
+    const openers = [...source(SETTINGS).matchAll(/ref=\{openers\.(\w+)\}/g)].map((found) => found[1]);
+
+    // FIVE OPENERS, ONE PER DIALOG; `ProfileRow` takes *Profil*'s three by prop.
+    expect(openers.sort()).toEqual(['fireRanks', 'leaveYear']);
+    expect(source(SETTINGS_PROFILE)).toContain('<Button ref={opener}');
+    for (const opener of ['openers.name', 'openers.logo', 'openers.accent']) {
+      expect(source(SETTINGS_PROFILE), `${opener} opens nothing`).toContain(`opener={${opener}}`);
+    }
+    expect(hook, 'a landed save does not return focus to its opener').toMatch(
+      /setOpening\(null\);\s*setSaved\(dialog\);\s*focusLater\(\[\(\) => openers\[dialog\]\.current\], cardHeading\(dialog\)\);/,
+    );
+    expect(componentFunction(hook, 'close'), 'a closed dialog loses its opener').toContain(
+      'focusLater([() => openers[was.dialog].current], cardHeading(was.dialog))',
+    );
+    expect(componentFunction(hook, 'close'), 'a dialog closes under its own write').toMatch(
+      /if \(saving\.current\) return;/,
+    );
+  });
+
+  it('writes nothing on change', () => {
+    // The accent and the fire-rank setting used to save the instant they
+    // changed, and the logo the instant a file was picked. Each now waits for
+    // its Spremi, so a mistaken choice costs nothing.
+    const screen = source(SETTINGS);
+
+    for (const gone of ['applyAccent', 'applyFireRanks', 'chooseAccent', 'chooseFireRanks', 'queuedAccent', 'drainFireRanks']) {
+      expect(screen, `${gone} is still on the surface`).not.toContain(gone);
+    }
+    for (const change of screen.match(/onChange=\{[\s\S]*?\n\s*\}\}/g) ?? []) {
+      expect(change, 'a change handler writes').not.toMatch(/save\w*\(/);
+    }
+  });
+
+  it('shows the timezone locked, says why, and offers no control for it (FR-8)', () => {
+    const time = source(SETTINGS_TIME);
+
+    expect(source(SETTINGS), 'a timezone control arrived').not.toMatch(/id=\{?["\w-]*TIMEZONE[\w-]*FIELD/);
+    expect(time, 'the zone is not stated').toContain('{organization.timezone}');
+    expect(time, 'the lock is not said in words').toContain("t('organization.timezoneLocked')");
+    expect(time, 'the page does not say why').toContain("t('organization.timezoneReason')");
+    // WRITTEN BACK UNCHANGED by both identity writes, never read off a field.
+    for (const handler of ['saveName', 'saveLeaveYear']) {
+      expect(componentFunction(source(SETTINGS_HOOK), handler)).toContain('timezone: row.timezone,');
+      expect(componentFunction(source(SETTINGS_HOOK), handler)).toContain('organizationType: row.organizationType,');
+    }
+  });
+
+  it('sends each identity dialog only what it shows, and the rest as the row holds it', () => {
+    const hook = source(SETTINGS_HOOK);
+    const name = componentFunction(hook, 'saveName');
+    const year = componentFunction(hook, 'saveLeaveYear');
+
+    expect(name).toContain('leaveYearStartMonth: row.leaveYearStartMonth,');
+    expect(name).toContain('leaveYearStartDay: row.leaveYearStartDay,');
+    expect(year).toContain('name: row.name,');
+    expect(year).toContain('Number(entered.get(ORGANIZATION_LEAVE_MONTH_FIELD))');
+    expect(year).toContain('Number(entered.get(ORGANIZATION_LEAVE_DAY_FIELD))');
+    for (const handler of [name, year]) {
+      expect(handler.indexOf('preventDefault()'), 'the default submission is not stopped first').toBeLessThan(
+        handler.indexOf('updateOrganization('),
+      );
+      expect(handler, 'an identity save carries another write with it').not.toMatch(/logoPath|brandAccent|usesFireRanks/);
+    }
   });
 });
 
 describe('the logo control the general sweeps structurally cannot see', () => {
   /**
-   * STORY 1.4b. Every other control on this screen is an `<Input>` or a
-   * `<Button>`, and every sweep above is built on those two detectors. The file
-   * picker is neither: it is a bare `<input type="file">` kept off-screen, and
-   * the affordance a pointer meets is a `<Button>` that opens it.
-   *
-   * That split is the right one — a native file input renders its own chrome in
-   * the BROWSER's language, which is the one string on this screen that could
-   * never come from `hr.json`, and it cannot be sized to UX-DR40's 44 px floor
-   * either — but it puts the input outside every general assertion in this file.
-   * So each property it would otherwise have inherited is claimed here by name.
+   * STORY 1.4b. Every other control on this screen is an `<Input>`, a
+   * `<Select>` or a `<Button>`, and every sweep above is built on those
+   * detectors. The file picker is neither: it is a bare `<input type="file">`
+   * kept off-screen, and the affordance a pointer meets is a `<Button>` that
+   * opens it. Since story 7.18 both live in the logo's dialog, and the pick is
+   * held until its Spremi.
    */
 
   it('keeps exactly one file picker, off-screen but still in the accessibility tree', () => {
-    const screen = source(SETTINGS);
-    const pickers = bareInputElements(screen);
+    const pickers = bareInputElements(source(SETTINGS));
 
     // NON-VACUITY first: with no bare input found, every assertion below would
     // pass against an empty string and read as coverage.
@@ -7119,51 +7245,27 @@ describe('the logo control the general sweeps structurally cannot see', () => {
     const picker = pickers[0] ?? '';
 
     expect(attributeOf(picker, 'type'), 'the picker is not a file input').toBe('file');
-    expect(attributeOf(picker, 'id'), 'the picker carries no id to open it by').not.toBeNull();
+    expect(picker, 'the picker carries no id to open it by').toContain('id={ORGANIZATION_LOGO_FIELD_ID}');
     // `sr-only` and NOT `hidden`: `hidden` removes the control from the
-    // accessibility tree and from the tab order, which would leave the logo
-    // unreachable by keyboard with the visible button doing nothing for anyone
-    // who cannot use a pointer.
+    // accessibility tree and from the tab order.
     expect(picker, 'the picker is not kept off-screen').toContain('sr-only');
-    expect(picker, 'the picker is removed from the accessibility tree').not.toMatch(
-      /(^|\s)hidden(\s|$|=)/,
-    );
+    expect(picker, 'the picker is removed from the accessibility tree').not.toMatch(/(^|\s)hidden(\s|$|=)/);
     expect(picker, 'the picker carries no accessible name').toMatch(/aria-label=\{t\(/);
-    expect(picker, 'the picker describes nothing when the upload is refused').toMatch(
-      /aria-describedby=\{[^}]*refusal[^}]*\}/,
-    );
-    // DISABLED TOO, and not only the button. Carried on the button alone, a
-    // keyboard user reaching the input directly could choose a second file
-    // mid-upload and get silence — the in-flight guard returns without a word.
-    expect(picker, 'the picker stays live while an upload is in flight').toMatch(
-      /disabled=\{[^}]+\}/,
-    );
-    // The accept hint is DERIVED from the bucket's allowlist rather than typed
-    // here, so a hint offering a type the bucket refuses is not expressible.
+    // DISABLED TOO while a write is in flight, and not only the button.
+    expect(picker, 'the picker stays live while an upload is in flight').toContain('disabled={pending}');
     expect(picker, 'the accept hint is written by hand rather than derived').toContain(
       'accept={ORGANIZATION_LOGO_ACCEPT}',
     );
   });
 
   it('gives the picker a visible action that clears the tap-target floor', () => {
-    const screen = source(SETTINGS);
-    const buttons = buttonElements(screen);
+    const choose =
+      buttonElements(source(SETTINGS_LOGO)).find((element) => element.includes('variant="dashed"')) ?? null;
 
-    // FOUR SINCE STORY 2.1b: the link to the hour band editor. FIVE since the
-    // settings fix: the read's retry.
-    expect(buttons, 'the settings surface lost a button').toHaveLength(5);
-
-    const choose = buttons.find((element) => element.includes('onClick={openLogoPicker}')) ?? null;
-
-    expect(choose, 'nothing on the screen opens the file picker').not.toBeNull();
-    expect(choose, 'the choose action would submit the settings form').toContain('type="button"');
-    // THE CONTROL A PERSON ACTUALLY OPERATES is the button, so the refusal has
-    // to be reachable from it: describing only the off-screen input leaves the
-    // message unreachable from wherever a pointer user actually is.
-    expect(choose ?? '', 'the visible action describes nothing when the upload is refused').toMatch(
-      /aria-describedby=\{[^}]*refusal[^}]*\}/,
-    );
-    expect(choose ?? '', 'the in-flight state is not announced').toMatch(/aria-busy=\{[^}]+\}/);
+    expect(choose, 'nothing in the dialog opens the file picker').not.toBeNull();
+    expect(source(SETTINGS_LOGO), 'the visible action does not open the picker').toContain('picker.current?.click()');
+    expect(choose, 'the choose action would submit the dialog').toContain('type="button"');
+    expect(choose, 'the choose action stays live while an upload is in flight').toContain('disabled={pending}');
 
     const measured = heightPx(attributeOf(choose ?? '', 'className'));
 
@@ -7171,191 +7273,78 @@ describe('the logo control the general sweeps structurally cannot see', () => {
     expect(measured).toBeGreaterThanOrEqual(TARGET_FLOOR_PX);
   });
 
-  it('disables both controls while either handler is in flight', () => {
-    // ONE MESSAGE REGION, two handlers: a save started while an upload is in
-    // flight takes the region from a refusal nobody has read yet, and whichever
-    // finished last owned it. Both flags on every control is the half of the fix
-    // that is visible; the guards below are the other half.
-    const screen = source(SETTINGS);
-    // STORY 2.1b's link to the hour band editor NAVIGATES rather than writes,
-    // so no in-flight flag applies to it — and exactly one such link exists,
-    // so this exemption cannot quietly widen to a write.
-    const links = buttonElements(screen).filter((element) => element.includes('asChild'));
-    // THE READ'S RETRY is exempt on the same terms: it renders only while there
-    // is no row, so no write — and no in-flight flag — can exist beside it.
-    const retries = buttonElements(screen).filter((element) => element.includes('onClick={retryRead}'));
-
-    expect(links, 'the settings surface grew a second link').toHaveLength(1);
-    expect(retries, 'the settings surface has not exactly one read retry').toHaveLength(1);
-
-    for (const element of buttonElements(screen).filter(
-      (candidate) => !links.includes(candidate) && !retries.includes(candidate),
-    )) {
-      expect(
-        element,
-        `a control is disabled by only some of the in-flight flags: ${element}`,
-      ).toMatch(/disabled=\{busy\}/);
-    }
-  });
-
   it('never renders a broken image, however the signed URL stops working', () => {
-    // A signed URL is a capability with a deadline, so a tab left open past the
-    // expiry renders the browser's broken-image glyph — the exact state the
-    // acceptance criterion forbids. Two defences, both asserted: the cache is
-    // bounded below the expiry, and the element falls back when the load fails
-    // for any reason a timer cannot predict.
-    //
-    // ASSERTED ON THE ONE MODULE THAT FETCHES IT since story 1.4c. Both surfaces
-    // read the same logo under the same derived key, and they had a copy of this
-    // machinery each — two `queryFn`s for one key, so whichever mounted first
-    // owned the fetch and the other copy's bounds were dead code. The three
-    // defences are properties of the read, so they live where the read is.
+    // A signed URL is a capability with a deadline: the cache is bounded below
+    // the expiry, and the element falls back when the load fails for any
+    // reason a timer cannot predict. Asserted on the one module that fetches.
     const reader = source(LOGO_URL);
 
-    expect(reader, 'the derived key is not the snapshot’s own').toContain(
-      'queryKey: organizationLogoKey(logoPath)',
-    );
-    expect(reader, 'the signed URL is cached without regard for its expiry').toContain(
-      'staleTime: LOGO_URL_STALE_MS',
-    );
+    expect(reader, 'the derived key is not the snapshot’s own').toContain('queryKey: organizationLogoKey(logoPath)');
+    expect(reader, 'the signed URL is cached without regard for its expiry').toContain('staleTime: LOGO_URL_STALE_MS');
     expect(reader, 'a settled refusal is retried as though it were slow').toContain('retry: false');
     expect(reader, 'storage is asked even when the column says there is nothing').toContain(
       'enabled: logoPath !== null',
     );
-    expect(reader, 'a URL the browser cannot load is never taken back').toContain(
-      'setUnrenderable(readable)',
-    );
+    expect(reader, 'a URL the browser cannot load is never taken back').toContain('setUnrenderable(readable)');
 
-    // And both surfaces route through it rather than round it. Each needle is
-    // read off the file that must hold it (source structure B2): the settings
-    // surface calls the hook in its hook and draws the lockup in its logo card.
+    // And both surfaces route through it rather than round it: the settings
+    // hook reads it, and both places the page draws the stored logo — the
+    // *Profil* fact and the logo's dialog — fall back with it.
     for (const { surface, reads, draws } of [
-      { surface: SETTINGS, reads: SETTINGS_HOOK, draws: SETTINGS_LOGO },
-      { surface: CHROME, reads: CHROME, draws: CHROME },
+      { surface: SETTINGS, reads: SETTINGS_HOOK, draws: [SETTINGS_PROFILE, SETTINGS_LOGO] },
+      { surface: CHROME, reads: CHROME, draws: [CHROME] },
     ]) {
-      expect(source(reads), 'a surface fetches the signed URL itself').toContain(
-        'useRenderableLogo(',
-      );
+      expect(source(reads), 'a surface fetches the signed URL itself').toContain('useRenderableLogo(');
       expect(source(surface), 'a surface still registers its own logo query').not.toContain(
         'queryKey: organizationLogoKey(',
       );
-      expect(
-        source(draws),
-        'the lockup has no failure path, so a dead URL renders broken',
-      ).toContain('onUnrenderable={logo.onUnrenderable}');
+      for (const file of draws) {
+        expect(source(file), 'the lockup has no failure path, so a dead URL renders broken').toContain(
+          'onUnrenderable={logo.onUnrenderable}',
+        );
+      }
     }
-  });
-
-  it('never sends the logo reference from the form submit', () => {
-    // THE CLOBBER the two disjoint write shapes exist to prevent: a save of the
-    // five identity fields that also carried `logo_path` would overwrite a logo
-    // uploaded seconds earlier, silently, with a PATCH that reports success.
-    const handler = submitHandler(source(SETTINGS));
-
-    expect(handler, 'no submit handler to read').not.toBe('');
-    expect(handler, 'the identity save carries the logo reference with it').not.toContain(
-      'logoPath',
-    );
   });
 
   it('delegates the whole upload rather than sequencing it here', () => {
-    // A `.tsx` is collected by nothing (AD-15), so a sequence written here is
-    // read as source text and never executed — and the mutation that permits is
-    // not subtle: passing `organization.slug` where the policies authorize
-    // `organization.id` typechecks, lints, and leaves every assertion in this
-    // repository green while every upload is refused 403 at runtime. The
-    // sequence, the ordering and the path are executed in `logo.test.ts`
-    // against a recorder; what is left to assert here is that the screen ROUTES
-    // through it and derives no path of its own.
-    const upload = componentFunction(source(SETTINGS), 'uploadLogo');
+    // A `.tsx` is collected by nothing (AD-15): the sequence, the ordering and
+    // the path are executed in `logo.test.ts`. What is left to assert is that
+    // the surface ROUTES through it, hands over the snapshot, and derives no
+    // path of its own.
+    const upload = componentFunction(source(SETTINGS_HOOK), 'saveLogo');
 
-    expect(upload, 'no uploadLogo function to read').not.toBe('');
-    expect(upload, 'the screen no longer routes through the upload module').toContain(
-      'replaceOrganizationLogo(',
-    );
-    expect(upload, 'the screen hands over something other than the snapshot').toMatch(
-      /replaceOrganizationLogo\([\s\S]{0,240}?\n\s+organization,/,
+    expect(upload, 'no saveLogo function to read').not.toBe('');
+    expect(upload, 'the surface no longer routes through the upload module').toContain('replaceOrganizationLogo(');
+    expect(upload, 'the surface hands over something other than the snapshot').toMatch(
+      /replaceOrganizationLogo\([\s\S]{0,240}?\n\s+row,/,
     );
     for (const sequenced of ['organizationLogoPath(', 'uploadOrganizationLogo(', 'logoPath:']) {
-      expect(
-        source(SETTINGS),
-        `the screen sequences the upload itself by naming ${sequenced}`,
-      ).not.toContain(sequenced);
-    }
-    expect(upload, 'the refused upload is not put on screen').toMatch(
-      /!outcome\.ok[\s\S]{0,160}?setFailure\(outcome\.code\)/,
-    );
-    // ONE invalidation, and it is the snapshot's key: the derived URL is keyed
-    // underneath it, so refetching the row refetches the preview with it.
-    expect(upload, 'the preview is not refreshed after an upload').toContain(
-      'invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY })',
-    );
-  });
-
-  it('clears the in-flight flag on every path, and guards on both refs not on state', () => {
-    // The same two defects the submit handler is swept for, on the second
-    // handler this screen grew: `setUploadingLogo(false)` outside a `finally`
-    // leaves the button dead after the first refusal, and a guard on state is
-    // stale inside a handler already called once this tick.
-    //
-    // BOTH REFS, in both handlers. They share one message region and
-    // `setFailure(null)` here erases whatever the other put there, so a guard
-    // on its own flag alone lets one handler wipe a refusal nobody has read.
-    const upload = componentFunction(source(SETTINGS), 'uploadLogo');
-    const submit = submitHandler(source(SETTINGS));
-
-    expect(upload, 'no uploadLogo function to read').not.toBe('');
-    expect(upload, 'the upload has no finally, so a path can leave it in flight').toMatch(
-      /\}\s*finally\s*\{/,
-    );
-    for (const [name, handler] of [
-      ['uploadLogo', upload],
-      ['submit', submit],
-    ] as const) {
-      expect(handler, `${name} does not guard on the upload flag`).toMatch(
-        /if\s*\([\s\S]*?uploading\.current[\s\S]*?\)\s*\{?\s*return;/,
-      );
-      expect(handler, `${name} does not guard on the save flag`).toMatch(
-        /if\s*\([\s\S]*?saving\.current[\s\S]*?\)\s*\{?\s*return;/,
+      expect(source(SETTINGS), `the surface sequences the upload itself by naming ${sequenced}`).not.toContain(
+        sequenced,
       );
     }
-    expect(upload, 'the finally does not re-enable the action').toContain(
-      'setUploadingLogo(false)',
-    );
-    expect(upload, 'the finally does not clear the in-flight ref').toContain(
-      'uploading.current = false',
-    );
-    expect(upload, 'nothing is surfaced when the call throws outside its own mapping').toMatch(
-      /catch[\s\S]{0,200}?setFailure\(/,
-    );
   });
 
   it('logs a read it could not render rather than falling back in silence', () => {
-    // A persistently unreadable logo and an organization with no logo look
-    // identical on screen, by design — that is the matrix's own row. Which is
-    // exactly why the read has to leave a trace somewhere: silence is how a
-    // misconfigured bucket stays undiagnosed, and `uploadLogo` already logs.
-    // READ OFF THE SHARED MODULE since story 1.4c, and the placement is the
-    // claim: the logging sits in the query FUNCTION rather than beside an
-    // element, which is what makes "reported once, not per layout" true — the
-    // chrome renders the lockup into two bars.
     const reader = componentFunction(source(LOGO_URL), 'signedLogoUrl');
 
     expect(reader, 'no signedLogoUrl function to read').not.toBe('');
-    expect(reader, 'a failed read reports nothing at all').toMatch(
-      /!outcome\.ok[\s\S]{0,80}?console\.error\(/,
-    );
+    expect(reader, 'a failed read reports nothing at all').toMatch(/!outcome\.ok[\s\S]{0,80}?console\.error\(/);
   });
 
-  it('clears the picker after a chosen file, so the same file can be chosen twice', () => {
+  it('clears the picker after a chosen file, and holds the file for Spremi', () => {
     // A file input fires no `change` event when the same file is chosen twice
     // running, so without the reset "the upload was refused, try that file
-    // again" does nothing at all — the retry a person is most likely to make.
-    const chooser = componentFunction(source(SETTINGS), 'chooseLogo');
+    // again" does nothing at all. The pick only holds the file: Spremi sends.
+    const dialog = source(SETTINGS_LOGO);
+    const change = /onChange=\{\(event\) => \{([\s\S]*?)\n {10}\}\}/.exec(dialog)?.[1] ?? '';
 
-    expect(chooser, 'no chooseLogo function to read').not.toBe('');
-    expect(chooser, 'the picker is never cleared').toContain('value = NO_FILE_CHOSEN');
-    expect(chooser, 'nothing is uploaded when a file is chosen').toContain('uploadLogo(');
+    expect(change, 'no change handler to read').not.toBe('');
+    expect(change, 'the picker is never cleared').toContain('value = NO_FILE_CHOSEN');
+    expect(change, 'a pick uploads before Spremi').not.toContain('saveLogo(');
+    expect(change, 'the pick is not held').toContain('setChosen(file)');
+    expect(dialog, 'Spremi waits for nothing').toContain('canSave={chosen !== null}');
+    expect(dialog, 'Spremi does not send the held file').toContain('await saveLogo(chosen)');
   });
 });
 
@@ -7508,7 +7497,9 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // TEN SINCE STORY 2.2b: the two shift type screens.
     // ELEVEN SINCE STORY 3.5b: the calendar's override form.
     // TWELVE SINCE STORY 7.8: the set-password step.
-    expect(IN_FLIGHT_SCREENS.length, 'no form screen declares an in-flight ref').toBe(12);
+    // ELEVEN SINCE STORY 7.18: the settings surface's dialogs are swept by
+    // their runner, below, rather than as a form screen.
+    expect(IN_FLIGHT_SCREENS.length, 'no form screen declares an in-flight ref').toBe(11);
     expect(
       IN_FLIGHT_SCREENS.map((screen) => screen.inFlight).sort(),
       'the in-flight ref names drifted from the screens that hold them',
@@ -7519,7 +7510,6 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'exchanging',
       'exchanging',
       'issuing',
-      'saving',
       'saving',
       'writing',
       'writing',
@@ -7551,6 +7541,8 @@ describe('the screen reaches the authentication seam rather than faking one', ()
     // TWENTY-NINE SINCE STORY 5.5f: the calendar override form's erasure
     // confirmation.
     // THIRTY SINCE STORY 7.8: the set-password step's submit.
+    // STILL THIRTY SINCE STORY 7.18: the settings surface's `submit` became
+    // the dialogs' one runner, `write`.
     expect(IN_FLIGHT_HANDLERS.length, 'an awaiting handler is swept by nothing').toBe(30);
     expect(
       IN_FLIGHT_HANDLERS.map((entry) => `${entry.handler}/${entry.inFlight}`).sort(),
@@ -7580,12 +7572,12 @@ describe('the screen reaches the authentication seam rather than faking one', ()
       'submit/exchanging',
       'submit/issuing',
       'submit/saving',
-      'submit/saving',
       'submit/writing',
       'submit/writing',
       'submit/writing',
       'submit/writing',
       'submitRoster/writing',
+      'write/saving',
     ]);
     // NON-VACUITY ON THE EXTRACTOR ITSELF. A `namedHandler` that answered `''`
     // for every name would make all three sweeps below assert nothing at all.
@@ -8221,94 +8213,51 @@ describe('the lockup is rendered once, in the sidebar, and never inside a landma
 
 describe('the accent control offers a curated set and nothing else', () => {
   /**
-   * STORY 1.4c, and this block exists for the reason the logo picker's does:
-   * the control is a native `<select>`, which is neither an `<Input>` nor a
-   * `<Button>`, so every general sweep in this file structurally cannot see it.
-   * Each property it would otherwise have inherited is claimed here by name.
+   * STORY 1.4c, and since story 7.18 the control is named radio cards in the
+   * accent's own dialog (UX-DR5). A radio group is neither an `<Input>`, a
+   * `<Select>` nor a `<Button>`, so every general sweep in this file
+   * structurally cannot see it. Each property it would otherwise have
+   * inherited is claimed here by name.
    */
+  const group = (): string => /<RadioGroup\b([\s\S]*?)>/.exec(source(SETTINGS_ACCENT))?.[1] ?? '';
 
-  it('is exactly one select, with an accessible name and the 44 px floor', () => {
-    const screen = source(SETTINGS);
-    const selects = selectElements(screen);
+  it('is one radio group of named cards, labelled and described by the rule', () => {
+    const accent = source(SETTINGS_ACCENT);
 
-    // NON-VACUITY first: with no `<select>` found, every assertion below would
-    // pass against an empty string and read as coverage.
-    // TWO SINCE MEMBER RANK. The accent is the first; the fire-rank setting,
-    // after it, carries the same properties and is asserted in its own block.
-    // FOUR SINCE DESIGN REFRESH C, the leave year's day and month before them,
-    // so the accent is found by its id.
-    expect(selects, 'no accent control on the settings surface').toHaveLength(4);
-
-    const control = selects.find((select) => select.includes('id="organization-accent"')) ?? '';
-    const id = attributeOf(control, 'id');
-
-    expect(id, 'the accent control carries no id to name it by').not.toBeNull();
-    expect(screen, `no <Label htmlFor="${String(id)}">`).toContain(`htmlFor="${String(id)}"`);
-    expect(labelTargets(screen), 'the accent control is not labelled').toContain(String(id));
-    expect(control, 'the accent control describes nothing when the write is refused').toMatch(
-      /aria-describedby=\{[^}]*refusal[^}]*\}/,
+    expect(group(), 'no accent control on the settings surface').not.toBe('');
+    expect(group(), 'the accent control is not labelled').toContain('aria-labelledby={ORGANIZATION_ACCENT_LABEL_ID}');
+    expect(group(), 'the UX-DR5 rule does not describe the choice, or the refusal does not').toContain(
+      'aria-describedby={failure === null ? ORGANIZATION_ACCENT_RULE_ID : ORGANIZATION_ACCENT_REFUSED_DESCRIPTION}',
     );
-    expect(control, 'the in-flight state is not announced').toMatch(/aria-busy=\{[^}]+\}/);
-    // DISABLED BY THE OTHER TWO HANDLERS AND NOT BY ITS OWN WRITE. `disabled` on
-    // an element that currently has focus moves focus to `<body>`, so a control
-    // that disables itself from inside its own `onChange` ejects every keyboard
-    // user from it on every choice — and then re-enables itself somewhere they
-    // are no longer standing. Its own second change is serialised instead.
-    expect(control, 'the accent control is not locked while another write runs').toMatch(
-      /disabled=\{writingElsewhere\}/,
+    expect(group(), 'a refused accent is not marked').toContain(
+      'aria-invalid={refusedField === ORGANIZATION_ACCENT_FIELD}',
     );
-    expect(
-      control,
-      'the accent control disables itself from inside its own change handler',
-    ).not.toMatch(/disabled=\{busy\}/);
-
-    const measured = heightPx(attributeOf(control, 'className'));
-
-    expect(measured, 'the accent control declares no usable height class').not.toBeNull();
-    expect(measured).toBeGreaterThanOrEqual(TARGET_FLOOR_PX);
-
-    // THE AFFORDANCES ITS NEIGHBOURS GET FROM `components/ui/input.tsx`. The
-    // control draws them through `components/ui/select.tsx` now, so they are
-    // read off that primitive — and the two that are invisible in a screenshot
-    // are the two that matter: a keyboard user with no focus ring cannot see
-    // where they are, and a disabled control that looks identical to a live one
-    // is a control people press. The boundary is `--input`'s, which is the token
-    // story 1.1d raised to 3.23:1 for WCAG 1.4.11.
-    const composed = source(SELECT_PRIMITIVE);
-
-    expect(composed, 'the accent control draws no focus indicator').toContain(
-      'focus-visible:ring-ring',
-    );
-    expect(composed, 'the accent control looks the same disabled as live').toContain(
-      'disabled:opacity-50',
-    );
-    expect(composed, 'the accent control does not draw the raised input boundary').toContain(
-      'border-input',
-    );
+    expect(accent).toContain('<p id={ORGANIZATION_ACCENT_LABEL_ID}');
+    expect(accent).toContain('<p id={ORGANIZATION_ACCENT_RULE_ID}');
+    expect(accent, 'the rule is not said beside the cards').toContain("t('organization.accentRule')");
+    // A NAME ON EVERY CARD, in words: the mark beside it only previews the
+    // tint, hidden from assistive technology, so no card is a colour alone.
+    expect(accent).toContain('<RadioCard key={brandAccentValue(option)} value={brandAccentValue(option)}>');
+    expect(accent).toMatch(/<span aria-hidden[^>]*>\s*<OrganizationLockup/);
+    expect(group(), 'the cards stay live while the write is in flight').toContain('disabled={pending}');
   });
 
   it('offers the curated options rather than a set written into the screen', () => {
     // A LIST WRITTEN HERE would be a fifth copy of the accent set — after the
-    // check constraint, the tokens, the module and `hr.json` — and the one
-    // copy no test could compare against the others. The options come from the
-    // module `accent.test.ts` pins to `0006`, and their names come from the
-    // mapping it executes.
-    const screen = source(SETTINGS_CARD);
+    // check constraint, the tokens, the module and `hr.json`. The options come
+    // from the module `accent.test.ts` pins to `0006`, and their names come
+    // from the mapping it executes.
+    const accent = source(SETTINGS_ACCENT);
 
-    expect(screen, 'the options are not read off the curated set').toContain(
-      'BRAND_ACCENT_OPTIONS.map(',
-    );
-    expect(screen, 'the option names are not resolved through the tested mapping').toContain(
+    expect(accent, 'the options are not read off the curated set').toContain('BRAND_ACCENT_OPTIONS.map(');
+    expect(accent, 'the option names are not resolved through the tested mapping').toContain(
       't(accentMessageKey(option))',
     );
   });
 
   it('offers no way to express a colour, which is the whole of the curation', () => {
     // The frozen "Never": no free-form colour input, no hex field, no colour
-    // picker. Every colour in this application has its contrast measured at
-    // BUILD time, and any of these three would move that guarantee to runtime —
-    // which would need a contrast function in `apps/web/src`, where there is
-    // none.
+    // picker. Every colour has its contrast measured at BUILD time.
     const screen = source(SETTINGS);
 
     expect(screen, 'the screen offers a native colour picker').not.toContain('type="color"');
@@ -8318,139 +8267,93 @@ describe('the accent control offers a curated set and nothing else', () => {
     }
   });
 
-  it('serialises a second choice rather than dropping it', () => {
-    // A `<select>` fires a change per ARROW KEY in several browsers, so somebody
-    // arrowing to the accent they want passes through the ones in between —
-    // and a handler that returns early while a write is in flight would leave
-    // the row holding whichever one they passed through first. Latest wins: the
-    // choice made over the top is held and applied when the first settles.
-    const accentWrite = componentFunction(source(SETTINGS), 'applyAccent');
+  it('starts from what the row holds, and never folds an unknown accent into none', () => {
+    // A row written by a newer build is an ordinary state during a deploy.
+    // Folded into `Neutralna`, the dialog would claim the organization had no
+    // accent. Nothing is chosen instead, Spremi waits, and the line says why.
+    const accent = source(SETTINGS_ACCENT);
 
-    expect(accentWrite, 'no applyAccent function to read').not.toBe('');
-    expect(accentWrite, 'a second choice is dropped on the floor').toMatch(
-      /tinting\.current[\s\S]{0,120}?queuedAccent\.current = accent/,
-    );
-    expect(accentWrite, 'the queued choice is never applied').toMatch(
-      /finally[\s\S]{0,400}?applyAccent\(next\)/,
+    expect(accent).toContain('const unknown = stored !== null && brandAccentOf(stored) === null;');
+    expect(accent).toContain('useState<string | null>(unknown ? null : brandAccentValue(brandAccentOf(stored)))');
+    expect(accent, 'Spremi does not wait for a choice').toContain('canSave={chosen !== null}');
+    expect(accent, 'nothing says why Spremi waits').toMatch(
+      /\{chosen === null \? \([\s\S]{0,160}?t\('organization\.accentChoose'\)/,
     );
   });
 
-  it.each(['submit', 'uploadLogo', 'applyAccent', 'applyFireRanks'])(
-    'keeps a failed refetch out of the write’s own outcome on %s',
-    (handler) => {
+  it('keeps a failed refetch out of the write’s own outcome', () => {
     // The row has already changed by the time the invalidation runs, so a
     // refetch that rejects must not be reported as a refused save: that tells
-    // somebody their accent was rejected while the database holds it and the
-    // next reload shows it. Its own `catch`, and no `setFailure` inside it.
-    // OVER ALL FOUR WRITES since the settings fix: part C fixed the accent
-    // path only, and `submit` and `uploadLogo` kept the invalidation inside
-    // the write's own `try`.
-    const write = componentFunction(source(SETTINGS), handler);
+    // somebody their accent was rejected while the database holds it. Its own
+    // `catch`, and no `setFailure` inside it. ONE RUNNER for all five writes
+    // since story 7.18, so one place to hold it.
+    const write = componentFunction(source(SETTINGS_HOOK), 'write');
     const invalidation =
-      /try \{\s*await queryClient\.invalidateQueries[\s\S]*?catch[\s\S]*?\n {6}\}/.exec(
-        write,
-      )?.[0] ?? '';
+      /try \{\s*await queryClient\.invalidateQueries[\s\S]*?catch[\s\S]*?\n {6}\}/.exec(write)?.[0] ?? '';
 
-    expect(write, `no ${handler} function to read`).not.toBe('');
-    expect(
-      occurrences(write, 'invalidateQueries('),
-      'an invalidation escapes its own try',
-    ).toBe(occurrences(invalidation, 'invalidateQueries('));
-    expect(invalidation, 'the invalidation is not guarded at all').not.toBe('');
-    expect(invalidation, 'a failed refetch reports the landed write as refused').not.toContain(
-      'setFailure(',
+    expect(write, 'no write function to read').not.toBe('');
+    expect(occurrences(write, 'invalidateQueries('), 'an invalidation escapes its own try').toBe(
+      occurrences(invalidation, 'invalidateQueries('),
     );
+    expect(invalidation, 'the invalidation is not guarded at all').not.toBe('');
+    expect(invalidation, 'a failed refetch reports the landed write as refused').not.toContain('setFailure(');
     expect(invalidation, 'a failed refetch is swallowed in silence').toContain('console.error(');
-    },
-  );
+    expect(invalidation, 'the invalidation is not the snapshot’s key').toContain(
+      'invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY })',
+    );
+    expect(occurrences(source(SETTINGS_HOOK), 'invalidateQueries('), 'a write invalidates outside the runner').toBe(1);
+  });
 
   it('marks and focuses the control a refused save names, and only that one', () => {
     // The database names the constraint, and `refusedOrganizationFieldOf`
     // (executed in `snapshot.test.ts`) maps it to a control. What is left to
-    // pin here is the wiring: each of the four controls compares against its
-    // OWN field, and a refused save moves focus to the named control in the
-    // handler — never an effect.
-    const card = source(SETTINGS_CARD);
-    const save = submitHandler(source(SETTINGS));
+    // pin here is the wiring: each field compares against its OWN field, and a
+    // refused save moves focus to the named control in the handler.
+    const write = componentFunction(source(SETTINGS_HOOK), 'write');
 
-    for (const [id, field] of [
-      ['organization-name', 'ORGANIZATION_NAME_FIELD'],
-      ['organization-leave-day', 'ORGANIZATION_LEAVE_DAY_FIELD'],
-      ['organization-leave-month', 'ORGANIZATION_LEAVE_MONTH_FIELD'],
-      ['organization-accent', 'ORGANIZATION_ACCENT_FIELD'],
+    for (const [file, id, field] of [
+      [SETTINGS_PROFILE, 'ORGANIZATION_NAME_FIELD_ID', 'ORGANIZATION_NAME_FIELD'],
+      [SETTINGS_TIME, 'ORGANIZATION_LEAVE_DAY_FIELD_ID', 'ORGANIZATION_LEAVE_DAY_FIELD'],
+      [SETTINGS_TIME, 'ORGANIZATION_LEAVE_MONTH_FIELD_ID', 'ORGANIZATION_LEAVE_MONTH_FIELD'],
     ] as const) {
-      const control = new RegExp(`id="${id}"[\\s\\S]{0,400}?aria-invalid=\\{([^}]*)\\}`).exec(card)?.[1];
+      const control = new RegExp(`id=\\{${id}\\}[\\s\\S]{0,400}?aria-invalid=\\{([^}]*)\\}`).exec(source(file))?.[1];
 
       expect(control, `${id} carries no aria-invalid`).toBe(`refusedField === ${field}`);
     }
-    expect(save, 'a refused save does not keep the field it names').toMatch(
-      /setRefusedField\(outcome\.field \?\? null\)/,
+    expect(write, 'a refused save does not keep the field it names').toMatch(
+      /const field = outcome\.field \?\? null;[\s\S]{0,120}?setRefusedField\(field\)/,
     );
-    expect(save, 'a refused save does not move focus to the named control').toMatch(
-      /controls\[outcome\.field\]\?\.focus\(\)/,
+    expect(write, 'a refused save does not move focus to the named control').toContain(
+      'document.getElementById(target)?.focus()',
     );
-    // THE MAP, read entry by entry: each field sends focus to the element its
-    // own ref holds, the shorthand `name` included — a `name` entry pointing
-    // at `day` would pass a substring check for `name,` and focus the wrong
-    // control.
-    const body = /const controls[^=]*=\s*\{([\s\S]*?)\};/.exec(save)?.[1] ?? '';
-    const entries = new Map(
-      body
-        .split(',')
-        .map((entry) => entry.trim())
-        .filter((entry) => entry !== '')
-        .map((entry) => {
-          const [key, value] = entry.split(':').map((part) => part.trim());
+    // ANY OTHER REFUSAL puts focus back on Spremi, which was disabled while the
+    // write was in flight and so lost it.
+    expect(write, 'a refusal that names no field leaves focus on the body').toContain(
+      'else focusLater([byId(ORGANIZATION_DIALOG_SAVE_ID)], cardHeading(dialog));',
+    );
+    expect(source(SETTINGS_DIALOG), 'Spremi carries no id to come back to').toContain(
+      'id={ORGANIZATION_DIALOG_SAVE_ID}',
+    );
+    // THE MAP, read entry by entry: each field sends focus to its own id.
+    const body = /const REFUSED_FIELD_IDS[^=]*=\s*\{([\s\S]*?)\};/.exec(source(SETTINGS_HOOK))?.[1] ?? '';
 
-          return [key, value ?? key] as const;
-        }),
-    );
-
-    expect(body, 'no controls map to read').not.toBe('');
-    expect([...entries.keys()].sort(), 'the controls map names other fields').toEqual(
-      ['leaveYearStartDay', 'leaveYearStartMonth', 'name'],
-    );
-    for (const [field, element, ref] of [
-      ['name', 'name', 'nameField'],
-      ['leaveYearStartDay', 'day', 'dayField'],
-      ['leaveYearStartMonth', 'month', 'monthField'],
+    expect(body, 'no field map to read').not.toBe('');
+    for (const [field, id] of [
+      ['name', 'ORGANIZATION_NAME_FIELD_ID'],
+      ['leaveYearStartDay', 'ORGANIZATION_LEAVE_DAY_FIELD_ID'],
+      ['leaveYearStartMonth', 'ORGANIZATION_LEAVE_MONTH_FIELD_ID'],
     ] as const) {
-      expect(entries.get(field), `a ${field} refusal focuses another control`).toBe(element);
-      expect(save, `${element} is not the element ${ref} holds`).toContain(
-        `const ${element} = ${ref}.current;`,
-      );
-    }
-    // THE OTHER WRITES KEEP THE FIELD TOO, and it is shown only while its
-    // refusal is: a field outliving the refusal would mark a valid control.
-    for (const handler of ['applyAccent', 'applyFireRanks']) {
-      expect(
-        componentFunction(source(SETTINGS), handler),
-        `${handler} drops the field its refusal names`,
-      ).toMatch(/setFailure\(outcome\.code\);[\s\S]{0,200}?setRefusedField\(outcome\.field \?\? null\)/);
+      expect(body, `a ${field} refusal focuses another control`).toContain(`${field}: ${id},`);
     }
     expect(source(SETTINGS_HOOK), 'the field outlives the refusal it explains').toContain(
       'refusedField: failure === null ? null : refusedField,',
     );
   });
 
-  it('draws the form’s shape while the read is pending, and says it is busy', () => {
-    const gated = componentFunction(source(SETTINGS), 'renderSettings');
-    const skeleton = /isPending \? \(([\s\S]*?)\) : null;/.exec(gated)?.[1] ?? '';
-
-    expect(skeleton, 'no pending branch to read').not.toBe('');
-    expect(skeleton, 'the skeleton region is not marked busy').toMatch(/^\s*<div aria-busy\b/);
-    expect(
-      occurrences(skeleton, '<FieldSkeleton'),
-      'the skeleton does not reserve one row per field',
-    ).toBe(4);
-  });
-
   it('offers the failed read a retry that re-reads the one query', () => {
     const hook = source(SETTINGS_HOOK);
     const retry = componentFunction(hook, 'retryRead');
-    const button = buttonElements(source(SETTINGS_CARD)).find((element) =>
-      element.includes('onClick={retryRead}'),
-    );
+    const button = buttonElements(source(SETTINGS_CARD)).find((element) => element.includes('onClick={retryRead}'));
 
     expect(retry, 'no retryRead function to read').not.toBe('');
     expect(retry, 'the retry does not re-read the snapshot query').toContain('snapshot.refetch()');
@@ -8458,23 +8361,21 @@ describe('the accent control offers a curated set and nothing else', () => {
       'offersReadRetry(readFailure)',
     );
     // A THROWN read is a failed read: the refusal and the retry both read
-    // `readFailureOf(snapshot)` (executed in `snapshot.test.ts`), never the
-    // answer alone, which is `undefined` when the query function threw.
+    // `readFailureOf(snapshot)` (executed in `snapshot.test.ts`).
     expect(hook, 'a read that threw is not treated as a failed read').toContain(
       'const readFailure = readFailureOf(snapshot);',
     );
-    expect(hook, 'the refusal ignores a read that threw').toMatch(/failure \?\? readFailure;/);
     // AFTER THE RETRY: the answer is committed through `flushSync`, then a
-    // success focuses the name field (the button just unmounted) and every
-    // attempt re-keys the alert, so a second failure is announced again.
+    // success focuses the first change on the page (the button just
+    // unmounted) and every attempt re-keys the alert.
     expect(retry, 'the retry does not commit before deciding focus').toMatch(
       /await snapshot\.refetch\(\);\s*flushSync\(\(\) => \{\s*setReadAttempts\(/,
     );
     expect(retry, 'a successful retry drops focus to the body').toMatch(
-      /\}\);\s*if \(retried\.data\?\.ok === true\) nameField\.current\?\.focus\(\);/,
+      /\}\);\s*if \(retried\.data\?\.ok === true\) focusLater\(\[\(\) => nameOpener\.current\], cardHeading\(NAME_DIALOG\)\);/,
     );
     expect(source(SETTINGS_CARD), 'a retry that fails again is not re-announced').toMatch(
-      /<Notice id=\{ORGANIZATION_ERROR_ID\} role="alert" key=\{readAttempts\}>/,
+      /<Notice id=\{ORGANIZATION_ERROR_ID\} role="alert" key=\{readAttempts\}/,
     );
     expect(button, 'nothing on the card calls the retry').toBeDefined();
     expect(source(SETTINGS_CARD), 'the retry is not labelled by the existing key').toMatch(
@@ -8485,114 +8386,43 @@ describe('the accent control offers a curated set and nothing else', () => {
     );
   });
 
-  it('shows what the row holds beside the control that changes it', () => {
-    // THE ONLY CONFIRMATION this write gets. Every other write on this screen is
-    // attached to a Save button, so its `aria-busy` going off beside a button
-    // the person pressed is the signal; the accent writes on change, and
-    // `aria-busy` alone announces that something started and never that it
-    // landed. `role="status"` rather than a second `role="alert"`, which would
-    // be a second assertive thing competing to be announced.
-    //
-    // READ OUT OF THE SNAPSHOT and not out of the control, which is the half
-    // that makes it honest: after a refusal the control shows what was chosen
-    // and this shows what the database holds, and the difference is the thing
-    // somebody needs to see.
-    const screen = source(SETTINGS_CARD);
+  it('states what the row holds, even an accent this build cannot name', () => {
+    // READ OUT OF THE SNAPSHOT, in *Profil*: the fact is what the database
+    // holds. `accentMessageKey` folds an unrecognised key to `Neutralna`, which
+    // is right for the class it resolves and a lie here, so the label comes
+    // from its own module (executed in `accent-label.test.ts`).
+    const profile = source(SETTINGS_PROFILE);
 
-    expect(screen, 'nothing reports what the stored accent is').toContain('role="status"');
-    expect(screen, 'the status line is read off the control rather than the row').toContain(
+    expect(profile, 'the fact is read off something other than the row').toContain(
       'storedAccentLabel(organization.brandAccent)',
     );
-    // AND IT SAYS WHAT THE ROW HOLDS even when this build has no name for it.
-    // `accentMessageKey` folds an unrecognised key to `Neutralna`, which is
-    // right for the class it resolves and a lie here. Its own module since
-    // source structure B2: the card imports it and keeps no copy, and the fold
-    // is read off that module alone (and executed in `accent-label.test.ts`).
-    expect(screen, 'the card does not take the label from its module').toContain(
+    expect(profile, 'the card does not take the label from its module').toContain(
       "import { storedAccentLabel } from '@/features/organization/utils/accent-label';",
     );
-    expect(screen, 'the card keeps a local copy of the label').not.toContain(
-      'function storedAccentLabel(',
-    );
+    for (const file of SETTINGS.filter((part) => part !== SETTINGS_ACCENT_LABEL)) {
+      expect(source(file), `${file} keeps a local copy of the label`).not.toContain('function storedAccentLabel(');
+    }
+
     const label = exportedFunction(source(SETTINGS_ACCENT_LABEL), 'storedAccentLabel');
 
     expect(label, 'no storedAccentLabel function to read').not.toBe('');
-    expect(label, 'the status line renames an accent it cannot resolve').toMatch(
+    expect(label, 'the fact renames an accent it cannot resolve').toMatch(
       /brandAccentOf\(accent\) === null && accent !== null/,
     );
   });
 
-  it('shows an accent this build cannot render rather than claiming there is none', () => {
-    // A row written by a newer build is an ordinary state during a deploy.
-    // Collapsed into `Neutralna`, the control claimed the organization had no
-    // accent AND made every other option unreachable by keyboard — selecting the
-    // option already shown fires no change event, so there was no path back to
-    // the `null` the screen was claiming to display. Rendered as its own option,
-    // the row is described honestly and every other option is one change away.
-    const screen = source(SETTINGS_CARD);
+  it('writes the accent on its own, never with another write', () => {
+    // THE CLOBBER the disjoint write shapes exist to prevent: an identity save
+    // that also carried `brandAccent` would overwrite a choice made in another
+    // dialog, and an accent write that carried the name would push one.
+    const hook = source(SETTINGS_HOOK);
+    const accentWrite = componentFunction(hook, 'saveAccent');
 
-    expect(screen, 'an unrenderable stored accent is hidden behind the neutral option').toMatch(
-      /brandAccentOf\(organization\.brandAccent\) === null &&/,
-    );
-    expect(screen, 'the unknown option carries no value').toContain(
-      '<option value={organization.brandAccent}>',
-    );
-    // Its label is the stored VALUE, because this build has no name for it —
-    // and data is never a key.
-    expect(screen, 'the unknown accent is given a translated name it cannot have').toContain(
-      '{organization.brandAccent}</option>',
-    );
-  });
-
-  it('writes the accent on its own, never on the form submit', () => {
-    // THE CLOBBER the three disjoint write shapes exist to prevent, and the
-    // accent's case is the sharper one: its control sits INSIDE the form, so a
-    // submit that also carried `brandAccent` would overwrite a choice made
-    // while somebody was typing, and an accent write that carried the five
-    // fields would push a half-typed name the moment the picker was touched.
-    const screen = source(SETTINGS);
-    const handler = submitHandler(screen);
-    const accentWrite = componentFunction(screen, 'applyAccent');
-
-    expect(handler, 'no submit handler to read').not.toBe('');
-    expect(handler, 'the identity save carries the accent with it').not.toContain('brandAccent');
-    expect(accentWrite, 'no applyAccent function to read').not.toBe('');
-    expect(accentWrite, 'the accent write does not go through the tested module').toContain(
-      'updateOrganization(',
-    );
-    expect(accentWrite, 'the accent write carries the identity fields with it').not.toContain(
-      'nameField',
-    );
-    // ONE INVALIDATION, under the key the chrome reads too, so the shell tints
-    // itself from the same refetch rather than from a second read.
-    expect(accentWrite, 'nothing refreshes the shell after the accent is written').toContain(
-      'invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY })',
-    );
-  });
-
-  it('keeps the choice on screen when the write is refused', () => {
-    // UX-DR34: a refused save names the problem and keeps every entered value.
-    // The control is UNCONTROLLED like the five inputs beside it — `defaultValue`
-    // and no `value` — so a refusal leaves it showing what was chosen instead of
-    // snapping back to the stored accent, which would look like the press did
-    // nothing.
-    const control =
-      selectElements(source(SETTINGS)).find((select) => select.includes('id="organization-accent"')) ?? '';
-
-    expect(control, 'no accent control to read').not.toBe('');
-    expect(control, 'the accent control is not seeded from the snapshot').toContain(
-      'defaultValue={organization.brandAccent ?? NO_BRAND_ACCENT}',
-    );
-    // REMOUNTED WHEN THE ROW CHANGES. `defaultValue` sets `defaultSelected` at
-    // MOUNT and never again, so after a successful write the element's RESET
-    // state still named the accent the row held when the screen opened — and
-    // `Cancel` is `type="reset"`, so pressing it snapped the control back to an
-    // accent the database no longer holds while the shell stayed tinted.
-    expect(control, 'the control never remounts, so Cancel restores a stale accent').toContain(
-      'key={organization.brandAccent ?? NO_BRAND_ACCENT}',
-    );
-    expect(control, 'the accent control is controlled, so a refusal discards the choice').not.toMatch(
-      /(?<![A-Za-z])value=\{/,
+    expect(accentWrite, 'no saveAccent function to read').not.toBe('');
+    expect(accentWrite, 'the accent write does not go through the tested module').toContain('updateOrganization(');
+    expect(accentWrite, 'the accent write carries another field with it').toContain('{ brandAccent: accent }');
+    expect(source(SETTINGS_ACCENT), 'the chosen key does not cross through the narrowing').toContain(
+      'saveAccent(brandAccentOf(chosen))',
     );
   });
 });
@@ -8602,97 +8432,42 @@ describe('member rank: the setting gates display and entry, and deletes nothing'
    * MEMBER RANK. Every rule here is executed in `@/features/members/utils/rank`; what is read
    * here is the wiring a `.tsx` holds and nothing executes (AD-15).
    */
-  function fireRanksControl(): string {
-    return (
-      selectElements(source(SETTINGS)).find((control) =>
-        control.includes('id="organization-fire-ranks"'),
-      ) ?? ''
-    );
-  }
+  it('offers the setting as one labelled radio group in its own dialog', () => {
+    const card = source(SETTINGS_FIRE_RANKS);
+    const radios = /<RadioGroup\b([\s\S]*?)>/.exec(card)?.[1] ?? '';
 
-  it('offers the setting as one labelled select, locked by the other writes only', () => {
-    const control = fireRanksControl();
-    const screen = source(SETTINGS);
-
-    expect(control, 'no fire-rank setting on the settings surface').not.toBe('');
-    expect(labelTargets(screen)).toContain('organization-fire-ranks');
-    expect(control).toMatch(/disabled=\{writingBesideFireRanks\}/);
-    expect(control).not.toMatch(/disabled=\{busy\}/);
-    expect(control).toMatch(/aria-busy=\{savingFireRanks\}/);
-    expect(control, 'the control is controlled, so a refusal discards the choice').not.toMatch(
-      /(?<![A-Za-z])value=\{/,
+    expect(radios, 'no fire-rank setting on the settings surface').not.toBe('');
+    expect(radios).toContain('aria-labelledby={ORGANIZATION_FIRE_RANKS_LABEL_ID}');
+    expect(radios, 'what switching it off keeps, or the refusal, is not said').toContain(
+      'aria-describedby={failure === null ? ORGANIZATION_FIRE_RANKS_HINT_ID : ORGANIZATION_FIRE_RANKS_REFUSED_DESCRIPTION}',
     );
-    // REMOUNTED on a stored change AND on every refused write, so a refusal
-    // never leaves the refused choice showing.
-    expect(control).toContain(
-      'key={fireRanksControlKey(organization.usesFireRanks, fireRanksRevision)}',
-    );
-    expect(control, 'the setting control is not seeded from the row').toContain(
-      'defaultValue={fireRanksValue(organization.usesFireRanks)}',
-    );
-    // Each needle read off the file that must hold it (source structure B2):
-    // the card renders the options and the status line, the hook holds the
-    // handler and the two lock derivations.
-    const card = source(SETTINGS_CARD);
-    const hook = source(SETTINGS_HOOK);
-
+    expect(radios).toContain('disabled={pending}');
     expect(card).toContain('FIRE_RANKS_OPTIONS.map(');
     expect(card).toContain('t(fireRanksMessageKey(option))');
-    expect(card, 'nothing reports what the stored setting is').toContain(
+    // SEEDED FROM THE ROW, so the dialog opens on what the organization uses.
+    expect(card).toContain('useState(fireRanksValue(organization.usesFireRanks))');
+    // THE FACT AND THE LANDED SAVE are both read off the row.
+    expect(card, 'the fact is not what the row holds').toContain(
+      't(fireRanksMessageKey(organization.usesFireRanks))',
+    );
+    expect(card, 'a landed save does not say what the row now holds').toContain(
       't(fireRanksStatusMessageKey(organization.usesFireRanks))',
     );
-    expect(hook, 'the control reads an unexpected value as off').toContain(
-      'fireRanksOf(event.target.value, organization?.usesFireRanks ?? false)',
-    );
-    expect(
-      /const writingBesideFireRanks = ([^;]*);/.exec(hook)?.[1] ?? '',
-      'the setting is not locked while the accent is written',
-    ).toContain('savingAccent');
-    expect(
-      /const writingElsewhere = ([^;]*);/.exec(hook)?.[1] ?? '',
-      'the accent is not locked while the setting is written',
-    ).toContain('savingFireRanks');
+    // AN UNEXPECTED VALUE KEEPS THE STORED SETTING (`fireRanksOf`, executed).
+    expect(card).toContain('saveFireRanks(fireRanksOf(chosen, organization.usesFireRanks))');
   });
 
-  it('writes the setting on its own, immediately, and serialises a second change', () => {
-    const screen = source(SETTINGS);
-    const write = componentFunction(screen, 'applyFireRanks');
+  it('writes the setting on its own, on its Spremi', () => {
+    const write = componentFunction(source(SETTINGS_HOOK), 'saveFireRanks');
 
-    expect(write, 'no applyFireRanks function to read').not.toBe('');
+    expect(write, 'no saveFireRanks function to read').not.toBe('');
     expect(write).toContain('{ usesFireRanks: uses }');
-    expect(write).not.toContain('nameField');
-    // QUEUED, never dropped, while ANY write is in flight.
-    expect(write).toMatch(
-      /fireRanksStepOf\(writingElsewhereNow, ranking\.current\) === FIRE_RANKS_QUEUE\)[\s\S]{0,80}?queuedFireRanks\.current = uses/,
-    );
-    expect(write).toContain(
-      'const writingElsewhereNow = saving.current || uploading.current || tinting.current;',
-    );
-    // A queued follow-up does not erase the region's unread outcome.
-    expect(write).toContain('if (fireRanksClearsFailure(fromQueue)) setFailure(null);');
-    expect(write, 'the write clears the region unconditionally').not.toMatch(
-      /^ {4}setFailure\(null\);/m,
-    );
-    expect(write).toMatch(/finally[\s\S]{0,600}?drainFireRanks\(refused\)/);
-    expect(write).toMatch(/if \(refused\) setFireRanksRevision\(/);
-
-    // THE QUEUE IS DRAINED BY EVERY HANDLER, with that handler's own outcome,
-    // so a queued choice is never stranded and a refusal drops it.
-    const drain = componentFunction(screen, 'drainFireRanks');
-
-    expect(drain).toContain('fireRanksFollowUpOf(queuedFireRanks.current, refused)');
-    expect(drain).toContain('applyFireRanks(next, true)');
-    for (const handler of ['submit', 'uploadLogo', 'applyAccent']) {
-      expect(
-        finallyBlock(componentFunction(screen, handler)),
-        `${handler} strands a queued setting choice`,
-      ).toContain('drainFireRanks(refused)');
+    expect(write).toContain('updateOrganization(');
+    for (const handler of ['saveName', 'saveLeaveYear']) {
+      expect(componentFunction(source(SETTINGS_HOOK), handler), 'an identity save carries the setting').not.toContain(
+        'usesFireRanks',
+      );
     }
-    expect(write).toContain('invalidateQueries({ queryKey: ORGANIZATION_SNAPSHOT_KEY })');
-    expect(submitHandler(screen), 'the identity save carries the setting').not.toContain(
-      'usesFireRanks',
-    );
-    expect(submitHandler(screen), 'a save runs over a setting write').toContain('ranking.current');
   });
 
   it.each([

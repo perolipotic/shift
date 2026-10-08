@@ -26,7 +26,6 @@ import {
   Clock3,
   Coffee,
   GripVertical,
-  History,
   Info,
   Plus,
   Rows3,
@@ -129,13 +128,12 @@ import {
   type RotationSnapshot,
 } from '@/features/rotation/services/list';
 import {
-  rotationHistoryAuthorMessageKey,
   rotationHistoryOf,
-  rotationHistoryStatusMessageKey,
   saveBarHintOf,
   scheduledChangeOf,
   type ScheduledChange,
 } from '@/features/rotation/services/history';
+import { RotationHistoryDialog } from '@/features/rotation/components/rotation-history-dialog';
 import {
   ROTATION_CANCELLED_MESSAGE_KEY,
   ROTATION_CANCEL_STALE,
@@ -1396,69 +1394,6 @@ export function RotationSection({
   }
 
   /**
-   * `Povijest rotacije`: every saved change, newest first, after the step
-   * sections and at every width. The table scrolls inside its own container.
-   */
-  function renderHistory(): ReactNode {
-    if (snapshot === null || today === null) return null;
-
-    const rows = rotationHistoryOf(snapshot, today);
-
-    return (
-      <Card className="min-w-0">
-        <CardHeader className="flex-row items-start gap-3">
-          <IconTile>
-            <History />
-          </IconTile>
-          <div className="grid min-w-0 gap-1.5">
-            <CardTitle asChild>
-              <h2>{t('rotation.builder.history.heading')}</h2>
-            </CardTitle>
-            <CardDescription>{t('rotation.builder.history.lede')}</CardDescription>
-          </div>
-        </CardHeader>
-        {rows.length === 0 ? (
-          <CardContent className="pt-4">
-            <p className="text-sm text-muted-foreground">{t('rotation.builder.history.empty')}</p>
-          </CardContent>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t('rotation.builder.history.columnEffective')}</TableHead>
-                <TableHead>{t('rotation.builder.history.columnStatus')}</TableHead>
-                <TableHead>{t('rotation.builder.history.columnAuthor')}</TableHead>
-                <TableHead>{t('rotation.builder.history.columnSaved')}</TableHead>
-                <TableHead>{t('rotation.builder.history.columnTeams')}</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.key}>
-                  <TableCell className="whitespace-nowrap font-semibold tabular-nums">{row.effectiveLabel}</TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {/* THE STATUS IN WORDS: the badge's colour adds nothing the text does not say. */}
-                    <Badge variant="outline">{t(rotationHistoryStatusMessageKey(row.status))}</Badge>
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {row.author ?? t(rotationHistoryAuthorMessageKey())}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap tabular-nums">
-                    {t('rotation.builder.history.savedAt', { date: row.savedDate, time: row.savedTime })}
-                  </TableCell>
-                  <TableCell className="whitespace-nowrap">
-                    {t('rotation.builder.history.teamCount', { count: row.teamCount })}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </Card>
-    );
-  }
-
-  /**
    * The cancel's confirmation, in a modal open for as long as it is rendered;
    * Escape or the backdrop dismiss it except while the delete is outstanding.
    * Neutral, never `destructive`.
@@ -1752,7 +1687,15 @@ export function RotationSection({
 
   return (
     <>
-      <PageHeader>{heading}</PageHeader>
+      <PageHeader>
+        {heading}
+        {/* STORY 7.18: the history behind a header button, in its own dialog. */}
+        {/* NOT GATED ON THE DRAFT: the history reads the snapshot alone, and an
+            open dialog must not unmount when a draft is discarded under it. */}
+        {snapshot === null || today === null ? null : (
+          <RotationHistoryDialog rows={rotationHistoryOf(snapshot, today)} />
+        )}
+      </PageHeader>
       {/* THE SAVE'S NOTE AND OUTCOME, right under the header; the save itself
           is in the bar at the end (story 5.5c). */}
       <p className="-mt-3 text-sm text-muted-foreground">{t('rotation.builder.saveNote')}</p>
@@ -1865,8 +1808,6 @@ export function RotationSection({
       {draft === null ? null : <div className={stepSectionClassOf(shown, 3)}>{renderOffsets(draft)}</div>}
       {draft === null ? null : <div className={stepSectionClassOf(shown, 4)}>{renderPreview(draft)}</div>}
       {draft === null ? null : renderStepActions()}
-      {/* THE HISTORY, after every step section and at every width. */}
-      {draft === null ? null : renderHistory()}
       {draft === null ? null : renderSaveBar(draft)}
     </>
   );
