@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 10-09-2026 14:19
+last_updated: 10-09-2026 16:37
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -519,7 +519,7 @@ development_status:
   5-5f-override-erasure-guard: done
   5-5g-rotation-cancel-erasure-guard: done
   5-5h-override-review-erasure-guard: done
-  epic-5-retrospective: optional
+  epic-5-retrospective: done
 
   epic-6: in-progress
   # Story 6.1 is split (2026-10-06): 6.1a states today in words, the next
@@ -531,7 +531,7 @@ development_status:
   6-1b-member-hours-and-leave: done
   6-2-a-24-hour-duty-reads-as-one-duty-not-two-unrelated-shifts: done
   6-3-an-admin-opens-the-app-and-sees-what-needs-them: done
-  epic-6-retrospective: optional
+  epic-6-retrospective: done
 
   # Epic 7 added by sprint-change-proposal-2026-10-02-ux-redesign.md (approved 2026-10-02).
   # Order: 7.1-7.4 (foundations) ship before Epic 6; 7.5-7.18 follow Epic 6, by dependency.
@@ -554,7 +554,7 @@ development_status:
   7-16-resolved-conflicts-stay-readable: done
   7-17-members-find-the-directory-by-team-in-vise: done
   7-18-organization-settings-show-facts-and-change-through-dialogs: done
-  epic-7-retrospective: optional
+  epic-7-retrospective: done
 action_items:
   - id: "epic-4-retro-item-1-fix-c1-a-sati-name-for-a-member-no-longe"
     epic: 4
@@ -604,3 +604,59 @@ action_items:
     owner: "Perolipotic (bmad-sprint-planning)"
     status: done
     ref: "_bmad-output/implementation-artifacts/epic-4-retro-2026-10-01.md"
+  - id: "epic-7-retro-item-8-process-l1-l2-branch-protection-on-main"
+    epic: 7
+    action: "Process L1/L2: branch protection on main with Test and E2E required;
+      no merge while a story is in review"
+    owner: "Perolipotic"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-6-7-retro-2026-10-09.md"
+  - id: "epic-7-retro-item-9-fix-c1-danas-treats-yesterday-dated-shif"
+    epic: 7
+    action: "Fix C1: Danas treats yesterday-dated shift still running as working today,
+      over free and today-leave cases; lone overnight Noc included"
+    owner: "Dev (bmad-build)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-6-7-retro-2026-10-09.md"
+  - id: "epic-7-retro-item-10-bookkeeping-epic-5-6-done-add-7-13c-key"
+    epic: 7
+    action: "Bookkeeping: epic-5/6 done, add 7-13c key and reopen 7.13/epic-7, fix
+      stale spec statuses and missing ledger entries (R4, R5, R6, R8-R11)"
+    owner: "Perolipotic (bmad-sprint-planning)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-6-7-retro-2026-10-09.md"
+  - id: "epic-7-retro-item-11-docs-r3-design-md-experience-md-and-ux-d"
+    epic: 7
+    action: "Docs R3: DESIGN.md, EXPERIENCE.md and UX-DR9 match Epic 6 as built (replaced
+      member, progress bar, admin Danas, UJ-2 on leave)"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-6-7-retro-2026-10-09.md"
+  - id: "epic-7-retro-item-12-test-c2-e2e-for-rijeseni-tab-resolve-see"
+    epic: 7
+    action: "Test C2: e2e for Rijeseni tab (resolve, see entry, remove replacement,
+      back to Nerijeseni)"
+    owner: "Dev (bmad-build)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-6-7-retro-2026-10-09.md"
+  - id: "epic-7-retro-item-13-cleanup-a9-a10-a12-one-date-validator-sh"
+    epic: 7
+    action: "Cleanup A9/A10/A12: one date validator, shared dayAfter/datesFrom, shared
+      URL sort/search parser"
+    owner: "Dev (bmad-build)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-6-7-retro-2026-10-09.md"
+  - id: "epic-7-retro-item-14-architecture-a4-a6-r1-decide-ad-13-wordi"
+    epic: 7
+    action: "Architecture A4/A6/R1: decide AD-13 wording, components t() rule, Danas
+      coverage derivation"
+    owner: "Perolipotic (Architect)"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-6-7-retro-2026-10-09.md"
+  - id: "epic-7-retro-item-15-deferred-refactor-a15-a16-a21-a22-one-de"
+    epic: 7
+    action: "Deferred refactor A15/A16/A21/A22: one deferred-work entry for shared
+      erasure-confirm hook, god-module splits, prijava.test.ts split"
+    owner: "Dev"
+    status: open
+    ref: "_bmad-output/implementation-artifacts/epic-5-6-7-retro-2026-10-09.md"
