@@ -490,7 +490,7 @@ development_status:
   4-3-an-admin-exports-the-month-s-hours-to-excel: done
   epic-4-retrospective: done
 
-  epic-5: in-progress
+  epic-5: done
   5-1-an-admin-records-leave-and-sees-what-it-costs-first: done
   5-1a-leave-rule: done
   5-1b-leave-record: done
@@ -521,7 +521,7 @@ development_status:
   5-5h-override-review-erasure-guard: done
   epic-5-retrospective: done
 
-  epic-6: in-progress
+  epic-6: done
   # Story 6.1 is split (2026-10-06): 6.1a states today in words, the next
   # shift and the next 7 days (spec-6-1a-member-today-and-next-shift.md);
   # 6.1b adds the hours and leave tiles (deferred-work.md). The 24 h duty case
@@ -535,7 +535,7 @@ development_status:
 
   # Epic 7 added by sprint-change-proposal-2026-10-02-ux-redesign.md (approved 2026-10-02).
   # Order: 7.1-7.4 (foundations) ship before Epic 6; 7.5-7.18 follow Epic 6, by dependency.
-  epic-7: done
+  epic-7: in-progress
   7-1-dark-slot-tokens-are-re-tuned-so-noc-never-reads-as-a-free-d: done
   7-2-every-number-is-set-in-dm-sans-tabular-figures: done
   7-3-the-phone-bar-has-four-tabs-and-vise: done
@@ -548,7 +548,11 @@ development_status:
   7-10-a-member-s-own-schedule-shows-their-leave-and-no-conflict-m: done
   7-11-the-member-page-shows-facts-and-each-change-opens-one-dialo: done
   7-12-the-leave-dialog-shows-what-a-record-costs-and-creates-befo: done
-  7-13-ljudi-shows-each-member-s-status-and-adds-a-member-in-a-dia: done
+  7-13-ljudi-shows-each-member-s-status-and-adds-a-member-in-a-dia: in-progress
+  # 7.13 is split: 7.13a (cdec898) and 7.13b (9106c2b) are done. 7.13c puts the
+  # deactivation consequence in numbers (AC3, UX-DR27; deferred-work.md 7.13 c).
+  # 7.13 and epic-7 stay in-progress until it lands (epic-5-6-7 retro, 2026-10-09).
+  7-13c-deactivation-consequence-in-numbers: backlog
   7-14-an-hours-figure-explains-itself: done
   7-15-an-admin-sees-everyone-s-leave-in-one-overview: done
   7-16-resolved-conflicts-stay-readable: done
