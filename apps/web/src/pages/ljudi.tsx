@@ -14,40 +14,57 @@ import {
   MEMBERS_ADD_OPEN,
   MEMBERS_ERROR_ID,
   MEMBERS_PAGE_HEADING_ID,
-  mayReadMembers,
+  LJUDI_DIRECTORY,
+  LJUDI_TABLE,
+  NO_TEXT,
+  ljudiViewOf,
   membersAddSearchOf,
   membersMessageKey,
   membersSearchOf,
   type LjudiSearch,
 } from '@/features/members/services/list';
 import { DESTINATIONS } from '@/features/navigation/utils/destinations';
+import { MemberDirectory } from '@/features/teams/components/member-directory';
+import { useMemberDirectory, type DirectoryNavigate } from '@/features/teams/hooks/use-member-directory';
 import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/features/navigation/services/role';
 import { appLayoutRoute } from '@/pages/_app';
 
 /**
- * `Ljudi` — the member list (story 1.5a). This file composes the screen; its
- * state and its one read are `useMemberList`, its sections are components in
- * `@/features/members/components`, and every rule is `@/features/members/services/list`'s.
+ * `Ljudi` — ONE DESTINATION WITH ROLE-SCOPED CONTENT (story 7.17), as *Sati*
+ * is: an administrator gets the member list (story 1.5a), a member-role
+ * session the read-only directory of who is on which team today. The guard
+ * below decides which, from the permission level, and hands it to the screen
+ * through the route context.
  *
- * THE FILTERS ARE IN THE URL (story 7.13): `?trazi=&razina=&smjena=&status=&sort=`,
- * validated here by `membersSearchOf` — an unknown value falls back to its
- * default — and written by the hook through `navigate`. The list opens on the
- * members active today; one summary line under the chips says what is shown.
+ * THE LIST. This file composes the screen; its state and its one read are
+ * `useMemberList`, its sections are components in `@/features/members/components`,
+ * and every rule is `@/features/members/services/list`'s. THE FILTERS ARE IN
+ * THE URL (story 7.13): `?trazi=&razina=&smjena=&status=&sort=`, validated
+ * here by `membersSearchOf` — an unknown value falls back to its default — and
+ * written by the hook through `navigate`. The list opens on the members
+ * active today; one summary line under the chips says what is shown.
  *
- * ADMIN ONLY, AND THE FIRST ROUTE IN THE TREE WHERE THAT IS TRUE. The screen
- * holds every colleague's address and leave allowance, UX-DR31 gives the member
- * role no configuration surface, and UX-DR32 groups `Ljudi` under
- * configuration; the member-facing view of people is story 1.8's team detail.
- * THE GUARD PROTECTS NOTHING AGAINST A DIRECT API CALL, and is not pretending
- * to: `members_select_own_organization` carries no role filter (`0003:286-288`).
- * What it settles is an IA question — which screen a level reaches.
- *
- * *DODAJ OSOBU* IS A DIALOG ON THIS SCREEN (story 7.13b), and its open state
- * is the URL's: `?dodaj=1`, parsed beside the filters by `membersAddSearchOf`.
+ * *DODAJ OSOBU* IS A DIALOG ON THE LIST (story 7.13b), and its open state is
+ * the URL's: `?dodaj=1`, parsed beside the filters by `membersAddSearchOf`.
  * Opening pushes an entry, so Back closes it; closing replaces the entry; every
  * filter write carries the current `dodaj` through. Its state and its one write
- * are `useMemberCreate`'s. Editing a member is `/ljudi/$id`, which this screen
+ * are `useMemberCreate`'s. Editing a member is `/ljudi/$id`, which the list
  * links to; `/ljudi/novi` is a redirect to the dialog.
+ *
+ * THE DIRECTORY (story 7.17) holds every active team with today's members as
+ * `Ime · čin · položaj`, the caller's own team first, and a name search in
+ * `?trazi=`. Its reads and state are `useMemberDirectory` and its rules
+ * `@/features/teams/services/directory`. It shows no allowance, address,
+ * level or hours (CAP-5, FR-16), links no line to `/ljudi/$id`, offers no
+ * write, and IGNORES `dodaj`: a member's `/ljudi?dodaj=1` opens no dialog.
+ * `dodaj` and the admin's filter keys stay in a member's URL until the first
+ * search write, which writes `?trazi=` alone.
+ *
+ * THE GUARD PROTECTS NOTHING AGAINST A DIRECT API CALL, and is not pretending
+ * to: what a session may read is RLS's (`0011` gives a member-role session its
+ * own `members` row and the `team_roster` read). What it settles is an IA
+ * question — which content a level reaches. A level that cannot be read is
+ * still forwarded to the first destination, as before the directory existed.
  */
 
 /** Where a refused session is sent: the FIRST destination, in binding order,
@@ -56,6 +73,50 @@ import { appLayoutRoute } from '@/pages/_app';
 const FIRST_DESTINATION = DESTINATIONS[0];
 
 export function LjudiScreen() {
+  const view = ljudiRoute.useRouteContext({ select: (context) => context.ljudiView });
+
+  // FAILING CLOSED: each content by name, and nothing for any other value — a
+  // missing context included — never the admin's list by default.
+  if (view !== LJUDI_TABLE && view !== LJUDI_DIRECTORY) return null;
+
+  return view === LJUDI_DIRECTORY ? <LjudiDirectory /> : <LjudiList />;
+}
+
+/** A member-role session's `/ljudi`: the directory, read-only (story 7.17). */
+function LjudiDirectory() {
+  const search = ljudiRoute.useSearch();
+  const navigate = useNavigate({ from: ljudiRoute.fullPath });
+  // ONE FUNCTION FOR THE SCREEN'S LIFE. Only `?trazi=` is written, replacing
+  // the entry. `dodaj` and the admin's filter keys stay in the URL as opened
+  // and are ignored here; the first search write drops them.
+  const write = useCallback<DirectoryNavigate>(
+    (text) => {
+      void navigate({ search: membersSearchOf({ trazi: text }), replace: true });
+    },
+    [navigate],
+  );
+  const screen = useMemberDirectory(search.trazi ?? NO_TEXT, write);
+
+  return (
+    <main
+      className="mx-auto flex w-full min-w-0 max-w-5xl flex-1 flex-col gap-6 p-6"
+      aria-busy={screen.loading}
+    >
+      <PageHeader>
+        <div className="min-w-0">
+          <PageTitle asChild>
+            <h1>{t('nav.ljudi')}</h1>
+          </PageTitle>
+          <PageDescription>{t('ljudi.directory.lede')}</PageDescription>
+        </div>
+      </PageHeader>
+      <MemberDirectory screen={screen} />
+    </main>
+  );
+}
+
+/** An administrator's `/ljudi`: the member list, unchanged. */
+function LjudiList() {
   const search = ljudiRoute.useSearch();
   const navigate = useNavigate({ from: ljudiRoute.fullPath });
   // ONE FUNCTION FOR THE SCREEN'S LIFE, so the hook's effects that write the
@@ -141,7 +202,9 @@ export const ljudiRoute = createRoute({
     ...membersAddSearchOf(search),
   }),
   /**
-   * The role guard, and the first one in the tree.
+   * The role guard, and the first one in the tree. SINCE STORY 7.17 it
+   * forwards only a level it cannot place, and RETURNS which content the level
+   * gets, `ljudiView`, which the screen reads from the route context.
    *
    * THE READER ARRIVES THROUGH THE ROUTER CONTEXT, as `currentSession` does: it
    * makes both branches executable from the node suite (`router.test.ts`), and
@@ -166,7 +229,9 @@ export const ljudiRoute = createRoute({
       outcome = { ok: false, code: MEMBER_ROLE_UNAVAILABLE };
     }
 
-    if (mayReadMembers(outcome)) return;
+    const ljudiView = ljudiViewOf(outcome);
+
+    if (ljudiView !== null) return { ljudiView };
 
     throw redirect({ to: FIRST_DESTINATION.path, replace: true });
   },

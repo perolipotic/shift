@@ -19,10 +19,25 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
 const ADMIN_TABS = [hr.nav.danas, hr.nav.kalendar, hr.nav.raspored, hr.nav.ljudi] as const;
 const MEMBER_TABS = [hr.nav.danas, hr.nav.kalendar, hr.nav.sati, hr.nav.godisnji] as const;
 const ADMIN_MORE = [hr.nav.sati, hr.nav.godisnji, hr.nav.postavkeRotacije, hr.nav.organizacija] as const;
+/** Story 7.17: the member's fifth destination, the team directory, under *Pregled*. */
+const MEMBER_MORE = [hr.nav.ljudi] as const;
 
+/** Each role's first *Više* row, the page it opens and that page's heading. */
 const ROLES = [
-  { title: 'an admin', state: ADMIN_STATE, tabs: ADMIN_TABS, more: ADMIN_MORE },
-  { title: 'a member', state: MEMBER_STATE, tabs: MEMBER_TABS, more: [] as readonly string[] },
+  {
+    title: 'an admin',
+    state: ADMIN_STATE,
+    tabs: ADMIN_TABS,
+    more: ADMIN_MORE,
+    follow: { name: hr.nav.sati, path: '/sati' },
+  },
+  {
+    title: 'a member',
+    state: MEMBER_STATE,
+    tabs: MEMBER_TABS,
+    more: MEMBER_MORE,
+    follow: { name: hr.nav.ljudi, path: '/ljudi' },
+  },
 ] as const;
 
 const WIDTHS = [390, 320] as const;
@@ -116,27 +131,28 @@ for (const width of WIDTHS) {
         await expect(loginPage.moreButton).toHaveAttribute('aria-expanded', 'false');
       });
 
-      if (role.more.length > 0) {
-        test('following Sati from the sheet closes it and marks Više as current', async ({ loginPage, page }) => {
-          await page.goto('/danas');
-          await expect(loginPage.heading(hr.nav.danas)).toBeVisible();
+      test(`following ${role.follow.name} from the sheet closes it and marks Više as current`, async ({
+        loginPage,
+        page,
+      }) => {
+        await page.goto('/danas');
+        await expect(loginPage.heading(hr.nav.danas)).toBeVisible();
 
-          await loginPage.moreButton.click();
-          await loginPage.moreSheet.getByRole('link', { name: hr.nav.sati, exact: true }).click();
+        await loginPage.moreButton.click();
+        await loginPage.moreSheet.getByRole('link', { name: role.follow.name, exact: true }).click();
 
-          await expect(page).toHaveURL('/sati');
-          await expect(loginPage.moreSheet).toBeHidden();
-          await expect(loginPage.moreButton).toHaveAttribute('aria-current', 'page');
-          await expect(loginPage.moreButton).toBeInViewport({ ratio: 1 });
-          await expect(loginPage.navigation.locator('[aria-current="page"]')).toHaveCount(1);
+        await expect(page).toHaveURL(role.follow.path);
+        await expect(loginPage.moreSheet).toBeHidden();
+        await expect(loginPage.moreButton).toHaveAttribute('aria-current', 'page');
+        await expect(loginPage.moreButton).toBeInViewport({ ratio: 1 });
+        await expect(loginPage.navigation.locator('[aria-current="page"]')).toHaveCount(1);
 
-          // And inside the sheet the Sati row is the current one.
-          await loginPage.moreButton.click();
-          await expect(
-            loginPage.moreSheet.getByRole('link', { name: hr.nav.sati, exact: true }),
-          ).toHaveAttribute('aria-current', 'page');
-        });
-      }
+        // And inside the sheet that row is the current one.
+        await loginPage.moreButton.click();
+        await expect(
+          loginPage.moreSheet.getByRole('link', { name: role.follow.name, exact: true }),
+        ).toHaveAttribute('aria-current', 'page');
+      });
     });
   }
 }

@@ -790,8 +790,10 @@ describe('the build being read reflects the current localization source', () => 
       TEAMS_FEATURE_PARTS.length + TEAMS_RULE_MODULES.length,
     );
     // Ten since source structure B6, twelve since B7: the roster's hook and
-    // component; thirteen since the list-refresh fix: the write dependents.
-    expect(parts, 'the teams feature grew or lost a module').toHaveLength(13);
+    // component; thirteen since the list-refresh fix: the write dependents;
+    // seventeen since story 7.17: the roster lines, and the member directory's
+    // rules, hook and component.
+    expect(parts, 'the teams feature grew or lost a module').toHaveLength(17);
     for (const page of TEAM_PAGES) expect(SOURCES, `${page} is not in SOURCES`).toContain(page);
     expect([...parts].sort(), 'the feature holds a module no set and no rule list names').toEqual(
       [...TEAMS_SOURCES_REQUIRED].sort(),

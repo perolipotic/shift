@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 10-08-2026 23:43
+last_updated: 10-09-2026 12:42
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -548,11 +548,11 @@ development_status:
   7-10-a-member-s-own-schedule-shows-their-leave-and-no-conflict-m: done
   7-11-the-member-page-shows-facts-and-each-change-opens-one-dialo: done
   7-12-the-leave-dialog-shows-what-a-record-costs-and-creates-befo: done
-  7-13-ljudi-shows-each-member-s-status-and-adds-a-member-in-a-dia: in-progress
+  7-13-ljudi-shows-each-member-s-status-and-adds-a-member-in-a-dia: done
   7-14-an-hours-figure-explains-itself: done
   7-15-an-admin-sees-everyone-s-leave-in-one-overview: backlog
   7-16-resolved-conflicts-stay-readable: done
-  7-17-members-find-the-directory-by-team-in-vise: backlog
+  7-17-members-find-the-directory-by-team-in-vise: done
   7-18-organization-settings-show-facts-and-change-through-dialogs: done
   epic-7-retrospective: optional
 action_items:

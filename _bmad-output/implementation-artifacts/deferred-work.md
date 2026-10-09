@@ -871,3 +871,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-13-ljudi-status-filter.md`
   summary: Story 7.13 c) The member page's deactivation question states the consequence in numbers (UX-DR27): "Smjena {team} od tada ima {n} od {m} članova, a u {month} je to {k} smjena.", computed from the domain roster (`rosterOn` / `shiftRoster`), and the action button repeats the date ("Deaktiviraj od {dd.mm.}"). Decided 2026-10-08: deactivation stays on the member page only and is not offered from Ljudi.
   evidence: 7.13 split at planning; `mockups/people-1.html` §3; spec-7-11 L50 handed the numbers to 7.13; epics.md 7.13 AC3.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-17-member-directory.md`
+  summary: `/ljudi`'s `beforeLoad` re-reads the member role uncached on every search write, so each keystroke costs a role read and a transient failure mid-typing redirects to `/danas`.
+  evidence: `currentMemberRole()` (`features/navigation/services/role.ts:353`) calls `readMemberRole` directly with no cache; TanStack Router re-runs `beforeLoad` on search-only navigations. Pre-existing on the admin Ljudi search (7.13a); the 7.17 member search inherits it.

@@ -192,6 +192,20 @@ const MEMBER_LIST: readonly string[] = [
 ];
 
 /**
+ * Story 7.17: `/ljudi` is role-scoped, and a member-role session gets the
+ * read-only directory instead of the list. Its markup and hook live in the
+ * teams feature and are composed by `pages/ljudi.tsx`, which is read with the
+ * list above; the directory is a DISJOINT set of its own, so the list's
+ * one-read and one-search sweeps keep meaning the list. Its member lines are
+ * the roster's (`TEAM_ROSTER_PARTS.lines`), swept there, and its rules are
+ * `@/features/teams/services/directory`, executed by `directory.test.ts`.
+ */
+const MEMBER_DIRECTORY: readonly string[] = [
+  join(srcRoot, 'features', 'teams', 'components', 'member-directory.tsx'),
+  join(srcRoot, 'features', 'teams', 'hooks', 'use-member-directory.ts'),
+];
+
+/**
  * The member list's rules, as a `.ts` module that renders nothing.
  *
  * It declares keys in TWO shapes — three `\w*MessageKey` return-type unions and
@@ -319,6 +333,8 @@ const TEAM_WRITE_KEYS = join(srcRoot, 'features', 'teams', 'services', 'write.ts
 const TEAM_ROSTER_PAGE = join(srcRoot, ...TEAM_ROSTER_PARTS.page);
 const TEAM_ROSTER_HOOK = join(srcRoot, ...TEAM_ROSTER_PARTS.hook);
 const TEAM_ROSTER_PART = join(srcRoot, ...TEAM_ROSTER_PARTS.roster);
+/** Story 7.17: the member lines, shared by the roster and the member directory. */
+const TEAM_ROSTER_LINES = join(srcRoot, ...TEAM_ROSTER_PARTS.lines);
 /**
  * A FILE SET since source structure B7 — the page, its hook and the roster
  * component — and the third, disjoint set in `team-screens.fixture.ts`.
@@ -846,6 +862,10 @@ const SCREENS = [
   // tebe*, "Otvori konflikte" and each block's way to its list view is a
   // `<Link>`, which no detector reads.
   { name: 'the team roster', file: TEAM_ROSTER, expectedControls: 1 },
+  // STORY 7.17. THREE on the member directory: *Traži osobu*, the
+  // unavailable notice's retry and *Poništi pretragu*. No line is a link and
+  // nothing writes.
+  { name: 'the member directory', file: MEMBER_DIRECTORY, expectedControls: 3 },
   { name: 'the Danas destination', file: DANAS, expectedControls: 2 },
   // STORY 3.1. THREE on Kalendar: the previous month, `Ovaj mjesec` and the
   // next month. The grid is a table and offers nothing (day detail is 3.4).
@@ -2291,10 +2311,14 @@ const KEY_SOURCES = [
     // ✕, picker and heading — with each option's person count and the
     // summary line's message. FORTY-ONE with the option-chip bar's own part,
     // read with the member list: `Filtri`, its count, and the bar's label.
+    //
+    // FORTY-THREE SINCE STORY 7.17: the page renders the directory's title —
+    // `nav.ljudi` a second time — and its lede. The directory's own words are
+    // its set's, below.
     name: 'the member list',
     file: MEMBER_LIST,
     keys: translationKeys,
-    strings: 41,
+    strings: 43,
   },
   {
     // STORY 1.7a. EIGHT on the team list: its heading, the link back
@@ -2363,6 +2387,17 @@ const KEY_SOURCES = [
     file: TEAM_ROSTER,
     keys: translationKeys,
     strings: 4,
+  },
+  {
+    // STORY 7.17. NINE on the member directory: the search's label and its
+    // placeholder, *tvoja smjena*, the count (the roster's own plural), the
+    // unavailable notice and its retry, the no-hit line and *Poništi
+    // pretragu*, and the no-team line. The names, the teams' names and the
+    // rank and position words are data or the roster lines'.
+    name: 'the member directory',
+    file: MEMBER_DIRECTORY,
+    keys: translationKeys,
+    strings: 9,
   },
   {
     // ONE on Danas: its own `nav.danas` heading. The line's words and its
@@ -3453,7 +3488,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     //
     // TWENTY-SEVEN SINCE STORY 7.8: the set-password step.
     // TWENTY-EIGHT SINCE STORY 7.18: the rotation history's dialog.
-    expect(SCREENS).toHaveLength(28);
+    // TWENTY-NINE SINCE STORY 7.17: the member directory.
+    expect(SCREENS).toHaveLength(29);
     //
     // FORTY-NINE SINCE STORY 3.6b: `@/features/calendar/services/roster-write`.
     //
@@ -3497,7 +3533,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     //
     // SIXTY-SEVEN SINCE STORIES 7.14 AND 7.18 TOGETHER: 7.14's
     // `@/features/hours/services/hours-explanation` and 7.18's history dialog.
-    expect(KEY_SOURCES).toHaveLength(67);
+    //
+    // SIXTY-EIGHT SINCE STORY 7.17: the member directory.
+    expect(KEY_SOURCES).toHaveLength(68);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -4121,10 +4159,24 @@ describe('the screen is read at all, so every sweep below means something', () =
     for (const file of exempt) expect(walked, `${file} is exempt and does not exist`).toContain(file);
     // THE EXACT EXEMPTIONS, so a new one is a reviewed change to this test.
     expect([...exempt].sort(), 'the team exemptions changed').toEqual(
-      ['team-screens.fixture.ts', 'services/list.ts', 'services/write.ts', 'services/roster.ts', 'services/dependents.ts']
+      [
+        'team-screens.fixture.ts',
+        'services/list.ts',
+        'services/write.ts',
+        'services/roster.ts',
+        'services/dependents.ts',
+        // STORY 7.17: the directory's rules, and its two parts, which are the
+        // sign-in suite's MEMBER_DIRECTORY set rather than a team screen's.
+        'services/directory.ts',
+        'hooks/use-member-directory.ts',
+        'components/member-directory.tsx',
+      ]
         .map((file) => join(TEAM_FEATURE, ...file.split('/')))
         .sort(),
     );
+    for (const part of MEMBER_DIRECTORY) {
+      expect(exempt, `${part} is a directory part and not exempt from the team sets`).toContain(part);
+    }
     for (const entry of TEAM_SCREENS_EXEMPT) {
       expect(entry.why.length, `${entry.file} is exempt without a stated reason`).toBeGreaterThan(20);
     }
@@ -6642,6 +6694,8 @@ describe('the keys rendered and the keys declared are the same set', () => {
     const owned = [
       MEMBER_LIST,
       MEMBER_LIST_KEYS,
+      // STORY 7.17: the member directory's `ljudi.directory.*` block.
+      MEMBER_DIRECTORY,
       MEMBER_CREATE,
       MEMBER_EDIT,
       MEMBER_WRITE_KEYS,
@@ -8686,7 +8740,8 @@ describe('member rank: the setting gates display and entry, and deletes nothing'
   it('shows the rank on the roster only while the setting is on, as text', () => {
     // SOURCE STRUCTURE B7: the setting derived in the hook, the line drawn in
     // the component.
-    const screen = source(TEAM_ROSTER_PART);
+    // STORY 7.17: the lines are a part of their own, shared with the directory.
+    const screen = source(TEAM_ROSTER_LINES);
 
     expect(screen).toContain('rosterRankMessageKey(member.fireRank, shown)');
     expect(source(TEAM_ROSTER_HOOK)).toContain('const shown = ranksShown(');
@@ -8738,7 +8793,8 @@ describe('team position: the setting gates the position control and the roster t
   it('shows the position on the roster only while the setting is on, as text', () => {
     // SOURCE STRUCTURE B7: the setting derived in the hook, the line drawn in
     // the component.
-    const screen = source(TEAM_ROSTER_PART);
+    // STORY 7.17: the lines are a part of their own, shared with the directory.
+    const screen = source(TEAM_ROSTER_LINES);
 
     expect(source(TEAM_ROSTER_HOOK)).toContain('const positionShown = positionsShown(snapshot);');
     expect(occurrences(source(TEAM_ROSTER), 'positionsShown('), 'the setting is derived twice').toBe(1);

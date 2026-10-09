@@ -28,9 +28,9 @@ sources:
 
 **Navigation shape.** Bottom tabs on mobile, sidebar on desktop. Two layouts, one architecture.
 
-**Phone bar (< 640 px) — four tabs and *Više*** (story 7.3). Five equal cells; the bar never scrolls sideways, so the current tab is always on screen. The four tabs are fixed per role: a member's are Danas, Kalendar, Sati, Godišnji; an admin's are Danas, Kalendar, Raspored, Ljudi. *Više* opens a modal bottom sheet (focus trapped, Escape and a backdrop press close it, focus returns to *Više*) that shows who is signed in (name, role · organization) and then, in binding order: *Pregled* — the role's other destinations every role reaches (Sati, Godišnji for an admin); *Postavke* — the admin-only ones (Postavke rotacije, Organizacija); *Prikaz* — the theme; and Odjava. A member's sheet holds only *Prikaz* and Odjava. While the page is a sheet destination, *Više* carries the active treatment. On desktop the sidebar lists every destination, and the theme and Odjava sit in the profile menu at its foot.
+**Phone bar (< 640 px) — four tabs and *Više*** (story 7.3). Five equal cells; the bar never scrolls sideways, so the current tab is always on screen. The four tabs are fixed per role: a member's are Danas, Kalendar, Sati, Godišnji; an admin's are Danas, Kalendar, Raspored, Ljudi. *Više* opens a modal bottom sheet (focus trapped, Escape and a backdrop press close it, focus returns to *Više*) that shows who is signed in (name, role · organization) and then, in binding order: *Pregled* — the role's other destinations every role reaches (Sati, Godišnji for an admin; Ljudi for a member, story 7.17); *Postavke* — the admin-only ones (Postavke rotacije, Organizacija); *Prikaz* — the theme; and Odjava. A member's sheet holds *Pregled* with Ljudi, *Prikaz* and Odjava. While the page is a sheet destination, *Više* carries the active treatment. On desktop the sidebar lists every destination, and the theme and Odjava sit in the profile menu at its foot.
 
-**Member Role — four destinations.** No configuration surface is reachable at all.
+**Member Role — five destinations.** No configuration surface is reachable at all. The phone bar holds the first four; Ljudi is in *Više*.
 
 | Tab | Surface | Answers |
 |---|---|---|
@@ -38,11 +38,11 @@ sources:
 | Kalendar | Calendar | What does the month look like? |
 | Sati | My hours — titled *Moji sati* (story 7.14) | How much have I worked? |
 | Godišnji | My leave | How much is left? |
+| Ljudi *(in Više)* | Member directory (story 7.17) | Who is on which team? |
 
-**Admin — the four above plus configuration**, grouped in the sidebar:
+**Admin — the five above plus configuration**, grouped in the sidebar. *Ljudi* is one of the five and role-scoped: for an admin it is Members and Teams, for a member the directory (story 7.17). *Sati* is role-scoped the same way:
 
 - *Raspored* — Calendar, Conflicts (*Neriješeni*, and *Riješeni* to read what was decided, by whom and when)
-- *Ljudi* — Members, Teams
 - *Postavke rotacije* — Shift Types, Rotation Patterns and Assignments
 - *Organizacija* — Organization settings as a page of facts, each change in its own dialog (story 7.18): *Profil* (name, logo, accent), *Vrijeme i godina* (the timezone, locked, with the reason; the Leave Year's start) and the fire-rank setting; Hour Bands reached from its header. Type, timezone and locale are set at provisioning. The Leave Year's start is chosen as a day (1–28) and a month, never a date picker: it recurs yearly, and `0002` admits no day a February lacks.
 - *Sati* — Organization hours
@@ -65,11 +65,12 @@ sources:
 | Conflict resolution | CAP-16 | UJ-3 |
 | Members list *(opens on the active; status chip and column; *Dodaj osobu* opens the add dialog, `?dodaj=1`)* · member page *(facts; each change in its own dialog, leave included)* | CAP-4 | UJ-1 |
 | Team detail *(includes team roster)* | CAP-5, CAP-6 | UJ-2 |
+| Member directory *(Ljudi for a member: every active team with today's members, own team first and marked *tvoja smjena*, name search in `?trazi=`; read-only)* | CAP-5 | UJ-2 |
 | Shift Types | CAP-7 | UJ-1, UJ-5 |
 | Rotation configuration | CAP-8, CAP-9, CAP-10 | UJ-1, UJ-5 |
 | Organization settings *(facts; each change in its own dialog)* | CAP-2, CAP-3 | UJ-1, UJ-5 |
 
-**The member roster is not a top-level destination.** Its purpose is "see who is on my team", so it lives inside Team detail, reached from the member's own dashboard or schedule. `[NOTE FOR UX: this narrows spec CAP-5, which reads as an organization-wide directory. SPEC.md needs a bmad-spec update run to match.]`
+**The member roster is one page for a member (story 7.17).** *Ljudi* is role-scoped: for a member-role session it is the directory — every active team as a group with today's members, each line `Ime · čin · položaj` (rank and position only where the organization uses them), the member's own team first and marked *tvoja smjena*, the rest by name, each group with its count (`0 osoba` included), and *Traži osobu*, a name-only search in `?trazi=` that hides teams with no hit and offers *Poništi pretragu* when nothing matches. It is read-only: no line links anywhere, no write is offered, and it never shows an allowance, balance, leave, hours, username, address or level (CAP-5, FR-16). Members on no team today are not listed. If any read fails, one notice with a retry replaces the groups; it never shows a partial directory. A member reaches it from *Više* → *Pregled* on a phone and from the sidebar on a desktop. One team's roster also stays in Team detail, reached from Danas.
 
 ## Voice and Tone
 
@@ -173,7 +174,7 @@ Behavioural. Visual contrast requirements are in `DESIGN.md`.
 
 | Width | Calendar | Navigation | Notes |
 |---|---|---|---|
-| Phone (< 640) | *Moj raspored* day list by default; *Sve smjene* compressed grid one tap away, teams as one-letter columns | Bottom tabs: four plus *Više* | Priority order: today's shift, next shift, calendar, hours, leave. An admin's bar trades hours and leave for Raspored and Ljudi; Sati and Godišnji are one press away in *Više* (story 7.3) |
+| Phone (< 640) | *Moj raspored* day list by default; *Sve smjene* compressed grid one tap away, teams as one-letter columns | Bottom tabs: four plus *Više* | Priority order: today's shift, next shift, calendar, hours, leave. An admin's bar trades hours and leave for Raspored and Ljudi; Sati and Godišnji are one press away in *Više* (story 7.3). A member's Ljudi, the directory, is in *Više* (story 7.17) |
 | Tablet (640–1024) | Full grid with team names | Sidebar, collapsible | Admin configuration fully usable |
 | Desktop (> 1024) | Full grid, times visible in cells | Sidebar | Admin default working width |
 

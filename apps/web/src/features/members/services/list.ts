@@ -917,6 +917,38 @@ export function mayReadMembers(outcome: MemberRoleOutcome): boolean {
   return outcome.ok && outcome.role === MEMBER_ROLES[0];
 }
 
+/** What `/ljudi` shows an administrator: the member list (story 1.5a). */
+export const LJUDI_TABLE = 'table';
+/** What `/ljudi` shows a member-role session: the read-only directory (story 7.17). */
+export const LJUDI_DIRECTORY = 'directory';
+
+export type LjudiView = typeof LJUDI_TABLE | typeof LJUDI_DIRECTORY;
+
+/**
+ * The level that reads the directory instead of the list: `MEMBER_ROLES[1]`,
+ * THE MEMBER LEVEL the rank order names, for {@link mayReadMembers}'s reason —
+ * the route decides by the order `@/features/navigation/services/role`
+ * declares, never by a literal of its own. `features/members/services/list.test.ts`
+ * pins the order against the literals.
+ */
+const DIRECTORY_ROLE: MemberRole | undefined = MEMBER_ROLES[1];
+
+/**
+ * Which of `/ljudi`'s two contents a session gets, or `null` for none
+ * (story 7.17). `/ljudi` is ROLE-SCOPED, as *Sati* is: one destination whose
+ * content the level decides.
+ *
+ * The list is still {@link mayReadMembers}'s decision, unchanged. The directory
+ * is for the member level BY NAME, never "anyone who is not an admin", so a
+ * level this build does not know gets neither. A failed read gets neither too:
+ * the route forwards it, as it did before the directory existed.
+ */
+export function ljudiViewOf(outcome: MemberRoleOutcome): LjudiView | null {
+  if (mayReadMembers(outcome)) return LJUDI_TABLE;
+
+  return outcome.ok && DIRECTORY_ROLE !== undefined && outcome.role === DIRECTORY_ROLE ? LJUDI_DIRECTORY : null;
+}
+
 /** The column a row is named by. */
 export const NAME_COLUMN = 'name';
 /** The column carrying the member's own address, which may be absent. */
@@ -2118,11 +2150,25 @@ function searchedMembers(
   members: readonly MemberListRow[],
   search: string,
 ): readonly MemberListRow[] {
+  const folded = foldedSearchOf(search);
+
+  if (folded === null) return members;
+  if (folded === NO_TEXT) return [];
+
+  return members.filter((member) => matches(member, folded));
+}
+
+/**
+ * A search box's text as the folded query a match looks for: `null` when the
+ * box holds no search at all (everyone matches), `''` when it folds to nothing
+ * (nobody matches — see {@link searchedMembers}), and the folded text otherwise.
+ * Shared with the member directory's name-only search (story 7.17), so the two
+ * searches fold and refuse the same way.
+ */
+export function foldedSearchOf(search: string): string | null {
   const query = search.trim();
 
-  if (query === NO_TEXT) return members;
-
-  const folded = foldForSearch(query);
+  if (query === NO_TEXT) return null;
 
   // TRIMMED AGAIN, and the second trim is not the first one repeating itself.
   // The fold removes combining marks from the MIDDLE of the query as well as
@@ -2130,9 +2176,9 @@ function searchedMembers(
   // survives the first trim as a non-empty query and folds to a lone space,
   // which `includes` then finds in every member whose name has one. What is left
   // after folding has to carry something before it can select anybody.
-  if (folded.trim() === NO_TEXT) return [];
+  const folded = foldForSearch(query);
 
-  return members.filter((member) => matches(member, folded));
+  return folded.trim() === NO_TEXT ? NO_TEXT : folded;
 }
 
 /** How many of each level a set of members holds, keyed the filter's own way. */

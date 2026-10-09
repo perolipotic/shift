@@ -13,15 +13,17 @@ export function fill(message: string, values: Readonly<Record<string, string>>):
 }
 
 /** The destinations only an admin reaches (`features/navigation/utils/destinations.ts`). */
-export const ADMIN_DESTINATIONS = [
-  hr.nav.raspored,
-  hr.nav.ljudi,
-  hr.nav.postavkeRotacije,
-  hr.nav.organizacija,
-] as const;
+export const ADMIN_DESTINATIONS = [hr.nav.raspored, hr.nav.postavkeRotacije, hr.nav.organizacija] as const;
 
-/** The ones every role reaches. */
-export const MEMBER_DESTINATIONS = [hr.nav.danas, hr.nav.kalendar, hr.nav.sati, hr.nav.godisnji] as const;
+/** The ones every role reaches. Ljudi since story 7.17: the list for an admin,
+ *  the team directory for a member. */
+export const MEMBER_DESTINATIONS = [
+  hr.nav.danas,
+  hr.nav.kalendar,
+  hr.nav.sati,
+  hr.nav.godisnji,
+  hr.nav.ljudi,
+] as const;
 
 /** Escapes every character a `RegExp` gives meaning to, so `text` matches only itself. */
 export function escapeRegExp(text: string): string {
