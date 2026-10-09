@@ -423,7 +423,22 @@
     "balance": "Preostalo",
     "unavailable": "Godišnji odmor trenutačno nije moguće učitati. Pokušaj ponovno.",
     "unscheduled": "Za tebe još ne postoji raspored, pa se godišnji odmor ne može izračunati.",
-    "retry": "Pokušaj ponovno"
+    "retry": "Pokušaj ponovno",
+    "overview": {
+      "lede": "Godišnji odmori svih osoba aktivnih danas. Upisuju se na stranici osobe.",
+      "caption": "Godišnji odmor osoba aktivnih danas u tekućoj godini",
+      "search": "Traži osobu",
+      "person": "Osoba",
+      "team": "Smjena",
+      "allowance": "Pravo",
+      "used": "Iskorišteno",
+      "balance": "Preostalo",
+      "noTeam": "Bez smjene",
+      "summary": "Prikazano: {count, plural, one {# osoba} few {# osobe} other {# osoba}} · iskorišteno ukupno {used, plural, one {# dan} few {# dana} other {# dana}} od {allowance}",
+      "noMatch": "Nijedna aktivna osoba nema to ime.",
+      "clear": "Poništi pretragu",
+      "none": "Danas nema nijedne aktivne osobe."
+    }
   },
   "raspored": {
     "count": "{count, plural, one {# neriješen konflikt} few {# neriješena konflikta} other {# neriješenih konflikata}}",

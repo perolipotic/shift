@@ -179,6 +179,9 @@ const SANCTIONED_PLURAL_KEYS = [
   // STORY 7.16: the Riješeni tab's count, always shown — `0 riješenih konflikata`
   // included — with the adjective agreeing as the queue's does.
   'raspored.resolved.count',
+  // STORY 7.15: the overview's summary line — how many people are shown, and
+  // the days they used in total, each in its three forms.
+  'godisnji.overview.summary',
   // STORY 5.4b: the resolution screen's four counts — the way back's
   // `Raspored · 7 neriješenih`, the causing record's cost in days, the
   // coverage term's roster (`3 od 4 člana`, `od 5 članova`), and the balance
@@ -1577,6 +1580,22 @@ const SANCTIONED_SCREEN_KEYS = [
   'godisnji.unavailable',
   'godisnji.unscheduled',
   'godisnji.retry',
+  // STORY 7.15: the admin's overview on *Godišnji* — the lede, the table's
+  // caption and five column names, the words for no team, the search box,
+  // and the two empty sentences with the search's way out. The summary line
+  // is a plural, listed above.
+  'godisnji.overview.lede',
+  'godisnji.overview.caption',
+  'godisnji.overview.search',
+  'godisnji.overview.person',
+  'godisnji.overview.team',
+  'godisnji.overview.allowance',
+  'godisnji.overview.used',
+  'godisnji.overview.balance',
+  'godisnji.overview.noTeam',
+  'godisnji.overview.noMatch',
+  'godisnji.overview.clear',
+  'godisnji.overview.none',
   // STORY 5.3b: *Raspored*, the conflicts queue — the true sentence an empty
   // queue states, the words a past row carries beside its dashed border, a
   // row's member and team, its shift type (with its times, or a type with
@@ -1997,6 +2016,13 @@ const RESOLUTION_NAMESPACE = 'raspored.resolution.';
 const DIRECTORY_NAMESPACE = 'ljudi.directory.';
 
 /**
+ * The admin's leave overview (story 7.15). Its *Smjena* column and *Bez
+ * smjene* name each member's Team today, so `smjen` names the Team there, and
+ * `tip… smjen…` is refused: the overview never names a shift type.
+ */
+const LEAVE_OVERVIEW_NAMESPACE = 'godisnji.overview.';
+
+/**
  * The leave card's replacement guard (story 5.4e), ONE KEY and no namespace:
  * it names the rostered shift a replacement stays on — `ostaje na smjeni
  * {team}`, the spec's own words — so `smjen` names that shift there, as on
@@ -2079,6 +2105,7 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     !key.startsWith(DANAS_NAMESPACE) &&
     !key.startsWith(RESOLUTION_NAMESPACE) &&
     !key.startsWith(DIRECTORY_NAMESPACE) &&
+    !key.startsWith(LEAVE_OVERVIEW_NAMESPACE) &&
     key !== LEAVE_REPLACEMENT_KEY &&
     key !== MEMBER_NO_TEAM_KEY
   ) {
@@ -2224,6 +2251,9 @@ describe('the messages obey the voice rules that bind every string', () => {
     // AMENDED BY STORY 3.5c: `rotation.builder.overrides` amends an
     // override's Shift Type and names the Team, so there both are admitted:
     // the term `tip… smjen…`, and `smjen` otherwise only as the Team's noun.
+    //
+    // AMENDED BY STORY 7.15: `godisnji.overview` names each member's Team
+    // today, as the directory does, and never the Shift Type.
     const found = leafKeys(resource())
       .map((key) => ({ key, message: String(messageAt(key)) }))
       .filter(({ key, message }) => teamTermOutOfTurn(key, message));

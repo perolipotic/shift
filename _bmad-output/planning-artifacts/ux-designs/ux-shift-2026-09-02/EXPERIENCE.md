@@ -28,7 +28,7 @@ sources:
 
 **Navigation shape.** Bottom tabs on mobile, sidebar on desktop. Two layouts, one architecture.
 
-**Phone bar (< 640 px) — four tabs and *Više*** (story 7.3). Five equal cells; the bar never scrolls sideways, so the current tab is always on screen. The four tabs are fixed per role: a member's are Danas, Kalendar, Sati, Godišnji; an admin's are Danas, Kalendar, Raspored, Ljudi. *Više* opens a modal bottom sheet (focus trapped, Escape and a backdrop press close it, focus returns to *Više*) that shows who is signed in (name, role · organization) and then, in binding order: *Pregled* — the role's other destinations every role reaches (Sati, Godišnji for an admin; Ljudi for a member, story 7.17); *Postavke* — the admin-only ones (Postavke rotacije, Organizacija); *Prikaz* — the theme; and Odjava. A member's sheet holds *Pregled* with Ljudi, *Prikaz* and Odjava. While the page is a sheet destination, *Više* carries the active treatment. On desktop the sidebar lists every destination, and the theme and Odjava sit in the profile menu at its foot.
+**Phone bar (< 640 px) — four tabs and *Više*** (story 7.3). Five equal cells; the bar never scrolls sideways, so the current tab is always on screen. The four tabs are fixed per role: a member's are Danas, Kalendar, Sati, Godišnji; an admin's are Danas, Kalendar, Raspored, Ljudi. *Više* opens a modal bottom sheet (focus trapped, Escape and a backdrop press close it, focus returns to *Više*) that shows who is signed in (name, role · organization) and then, in binding order: *Pregled* — the role's other destinations every role reaches (Sati, Godišnji for an admin — the leave overview, story 7.15; Ljudi for a member, story 7.17); *Postavke* — the admin-only ones (Postavke rotacije, Organizacija); *Prikaz* — the theme; and Odjava. A member's sheet holds *Pregled* with Ljudi, *Prikaz* and Odjava. While the page is a sheet destination, *Više* carries the active treatment. On desktop the sidebar lists every destination, and the theme and Odjava sit in the profile menu at its foot.
 
 **Member Role — five destinations.** No configuration surface is reachable at all. The phone bar holds the first four; Ljudi is in *Više*.
 
@@ -37,15 +37,16 @@ sources:
 | Danas | Member dashboard | Am I on? When next? |
 | Kalendar | Calendar | What does the month look like? |
 | Sati | My hours — titled *Moji sati* (story 7.14) | How much have I worked? |
-| Godišnji | My leave | How much is left? |
+| Godišnji | My leave — an admin's is the leave overview (story 7.15) | How much is left? |
 | Ljudi *(in Više)* | Member directory (story 7.17) | Who is on which team? |
 
-**Admin — the five above plus configuration**, grouped in the sidebar. *Ljudi* is one of the five and role-scoped: for an admin it is Members and Teams, for a member the directory (story 7.17). *Sati* is role-scoped the same way:
+**Admin — the five above plus configuration**, grouped in the sidebar. *Ljudi* is one of the five and role-scoped: for an admin it is Members and Teams, for a member the directory (story 7.17). *Sati* and *Godišnji* are role-scoped the same way:
 
 - *Raspored* — Calendar, Conflicts (*Neriješeni*, and *Riješeni* to read what was decided, by whom and when)
 - *Postavke rotacije* — Shift Types, Rotation Patterns and Assignments
 - *Organizacija* — Organization settings as a page of facts, each change in its own dialog (story 7.18): *Profil* (name, logo, accent), *Vrijeme i godina* (the timezone, locked, with the reason; the Leave Year's start) and the fire-rank setting; Hour Bands reached from its header. Type, timezone and locale are set at provisioning. The Leave Year's start is chosen as a day (1–28) and a month, never a date picker: it recurs yearly, and `0002` admits no day a February lacks.
 - *Sati* — Organization hours
+- *Godišnji* — Leave overview (story 7.15): every member active today with *Smjena*, *Pravo*, *Iskorišteno* and *Preostalo* for the current leave year, each row equal to the member page's leave card; a name search (`?trazi=`) and a sort (`?sort=`), read-only — leave is recorded on the member page, which each name opens. No tiles of the admin's own.
 
 **Surface inventory and the journey that reaches each.** IA closes when every capability has a surface and every surface has a journey landing on it.
 
@@ -60,7 +61,7 @@ sources:
 | My hours (*Moji sati*) | CAP-14 | UJ-2 |
 | Organization hours | CAP-14 | UJ-4 |
 | My leave | CAP-15 | UJ-2 |
-| Leave management | CAP-15 | UJ-3 |
+| Leave management *(the overview on Godišnji, story 7.15; recorded on the member page)* | CAP-15 | UJ-3 |
 | Conflicts queue *(tabs: Neriješeni, the default, and Riješeni)* | CAP-16 | UJ-3, UJ-4 |
 | Conflict resolution | CAP-16 | UJ-3 |
 | Members list *(opens on the active; status chip and column; *Dodaj osobu* opens the add dialog, `?dodaj=1`)* · member page *(facts; each change in its own dialog, leave included)* | CAP-4 | UJ-1 |
@@ -174,7 +175,7 @@ Behavioural. Visual contrast requirements are in `DESIGN.md`.
 
 | Width | Calendar | Navigation | Notes |
 |---|---|---|---|
-| Phone (< 640) | *Moj raspored* day list by default; *Sve smjene* compressed grid one tap away, teams as one-letter columns | Bottom tabs: four plus *Više* | Priority order: today's shift, next shift, calendar, hours, leave. An admin's bar trades hours and leave for Raspored and Ljudi; Sati and Godišnji are one press away in *Više* (story 7.3). A member's Ljudi, the directory, is in *Više* (story 7.17) |
+| Phone (< 640) | *Moj raspored* day list by default; *Sve smjene* compressed grid one tap away, teams as one-letter columns | Bottom tabs: four plus *Više* | Priority order: today's shift, next shift, calendar, hours, leave. An admin's bar trades hours and leave for Raspored and Ljudi; Sati and Godišnji (the leave overview, stacked rows, story 7.15) are one press away in *Više* (story 7.3). A member's Ljudi, the directory, is in *Više* (story 7.17) |
 | Tablet (640–1024) | Full grid with team names | Sidebar, collapsible | Admin configuration fully usable |
 | Desktop (> 1024) | Full grid, times visible in cells | Sidebar | Admin default working width |
 

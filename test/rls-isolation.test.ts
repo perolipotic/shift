@@ -1178,6 +1178,7 @@ describe('the access-control layer is present, so nothing below passes vacuously
               'confirm_shift_type_override',
               'current_member_access',
               'custom_access_token_hook',
+              'leave_overview_records',
               'member_active_from',
               'member_active_on',
               'member_latest_version',
@@ -1231,6 +1232,9 @@ describe('the access-control layer is present, so nothing below passes vacuously
         'confirm_shift_type_override',
         'current_member_access',
         'custom_access_token_hook',
+        // STORY 7.15: the one an active admin reads the organization's live
+        // leave records through, shaped as 5.2c's, refusing anybody else.
+        'leave_overview_records',
         'member_active_from',
         'member_active_on',
         'member_latest_version',
@@ -17845,6 +17849,227 @@ describe("a member reads their own live leave records alone, with no author and 
           await client.query('delete from leave_records where member_id = any($1::uuid[]) and during && $2::daterange', [
             cleanup,
             year2042,
+          ]);
+        }
+        await client.end();
+      }
+    },
+    20_000,
+  );
+});
+
+// ------------------------------- story 7.15: the admin's leave overview
+
+/**
+ * STORY 7.15 (`0034`). An admin's *Godišnji* reads every live leave record of
+ * the organization through `leave_overview_records()`, shaped
+ * `id, member_id, during` as 0030's are: never an author or a removal, never
+ * another organization's row. A member-role session, an inactive admin and a
+ * session with no claim are REFUSED with 42501 `LEAVE_OVERVIEW_REFUSED` —
+ * the select policy would quietly show a member their own rows, so the
+ * refusal is the function's. Every SQL case runs in a rolled-back
+ * transaction; the REST case commits inside year 2043 and deletes what it
+ * wrote in `finally`.
+ */
+
+/** `leave_overview_records()`, as whoever the connection currently is: each row's id, member and range as text. */
+async function leaveOverviewRecords(client: Client): Promise<{ id: string; memberId: string; during: string }[]> {
+  const { rows } = await client.query<{ id: string; memberId: string; during: string }>(
+    `select id::text as id, member_id::text as "memberId", during::text as during
+       from public.leave_overview_records()`,
+  );
+  return rows;
+}
+
+describe("an active admin reads the organization's live leave records, and nobody else does (story 7.15)", () => {
+  it.skipIf(noDatabase)('returns exactly id, member_id and during', async () => {
+    const client = await connect();
+    try {
+      const { fields } = await client.query('select * from public.leave_overview_records() limit 0');
+      expect(fields.map((field) => field.name)).toEqual(['id', 'member_id', 'during']);
+    } finally {
+      await client.end();
+    }
+  });
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    "gives the $fixture admin every member's live record and never a removed one",
+    async ({ slug, admin, member, bystander }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const other = await memberByUsername(client, slug, bystander);
+        const organization = owner.organizationId;
+
+        await actAs(client, owner.authUserId, organization);
+        const before = await leaveOverviewRecords(client);
+        const kept = await insertLeave(client, { organization, member: self.id, during: '[2042-03-02,2042-03-06]' });
+        const removed = await insertLeave(client, { organization, member: self.id, during: '[2042-04-06,2042-04-10]' });
+        await removeLeaveRecord(client, removed);
+        const others = await insertLeave(client, { organization, member: other.id, during: '[2042-03-02,2042-03-06]' });
+        const own = await insertLeave(client, { organization, member: owner.id, during: '[2042-06-01,2042-06-03]' });
+        const after = await leaveOverviewRecords(client);
+        await actAsOwner(client);
+
+        const added = after.filter((row) => !before.some((earlier) => earlier.id === row.id));
+        expect(
+          [...added].sort((first, second) => first.id.localeCompare(second.id)),
+          `${slug}: the organization's new live records`,
+        ).toEqual(
+          [
+            { id: kept, memberId: self.id, during: '[2042-03-02,2042-03-07)' },
+            { id: others, memberId: other.id, during: '[2042-03-02,2042-03-07)' },
+            { id: own, memberId: owner.id, during: '[2042-06-01,2042-06-04)' },
+          ].sort((first, second) => first.id.localeCompare(second.id)),
+        );
+        expect(after.map((row) => row.id), `${slug}: a removed record was read`).not.toContain(removed);
+        // EVERY live record the table holds for the organization, as the owner sees it.
+        const { rows } = await client.query<{ count: number }>(
+          'select count(*)::int as count from leave_records where organization_id = $1 and removed_at is null',
+          [organization],
+        );
+        expect(after.length, `${slug}: the overview missed a live record`).toBe(rows[0]?.count);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture member-role account, an inactive admin, a session with no claim and a claim that is no UUID with 42501',
+    async ({ slug, admin, member }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const inactive = await addThrowawayAdmin(client, organization);
+
+        await actAs(client, owner.authUserId, organization);
+        await insertLeave(client, { organization, member: self.id, during: '[2042-09-10,2042-09-14]' });
+        await actAsOwner(client);
+        await ownerVersion(client, {
+          organization,
+          member: inactive.id,
+          active: false,
+          from: await organizationDay(client, organization),
+          by: owner.authUserId,
+        });
+
+        const refusals: Record<string, Refusal> = {};
+        for (const [label, caller, claim] of [
+          ['member', self.authUserId, organization],
+          ['inactive admin', inactive.authUserId, organization],
+          ['no claim', owner.authUserId, null],
+          // A malformed claim is no organization: 42501, never the cast's 22P02.
+          ['claim that is no UUID', owner.authUserId, 'not-a-uuid'],
+        ] as const) {
+          await actAs(client, caller, claim);
+          refusals[label] = await refusedThenContinue(client, () => leaveOverviewRecords(client));
+          await actAsOwner(client);
+        }
+
+        for (const [label, refusal] of Object.entries(refusals)) {
+          expect(refusal, `${slug}: ${label}`).toEqual({ code: '42501', message: 'LEAVE_OVERVIEW_REFUSED' });
+        }
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(CROSS_TENANT)(
+    'never gives a $fixture admin a $otherFixture record, and refuses a forged claim',
+    async ({ slug, admin, otherSlug }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const foreignFixture = FIXTURES.find((entry) => entry.slug === otherSlug);
+        const foreignOwner = await memberByUsername(client, otherSlug, foreignFixture?.admin ?? '');
+        const foreignMember = await memberByUsername(client, otherSlug, foreignFixture?.member ?? '');
+        await actAs(client, foreignOwner.authUserId, foreignOwner.organizationId);
+        const foreign = await insertLeave(client, {
+          organization: foreignOwner.organizationId,
+          member: foreignMember.id,
+          during: '[2042-03-02,2042-03-06]',
+        });
+
+        await actAs(client, owner.authUserId, owner.organizationId);
+        const ownClaim = await leaveOverviewRecords(client);
+        await actAsOwner(client);
+        await actAs(client, owner.authUserId, foreignOwner.organizationId);
+        const forged = await refusedThenContinue(client, () => leaveOverviewRecords(client));
+        await actAsOwner(client);
+
+        expect(ownClaim.map((row) => row.id), `${slug} read a ${otherSlug} record`).not.toContain(foreign);
+        const { rows } = await client.query<{ id: string }>(
+          'select id::text as id from members where organization_id = $1',
+          [owner.organizationId],
+        );
+        const own = new Set(rows.map((row) => row.id));
+        for (const row of ownClaim) expect(own.has(row.memberId), `${slug} read a foreign member's record`).toBe(true);
+        expect(forged.code, `${slug} read ${otherSlug} under a forged claim`).toBe('42501');
+      });
+    },
+  );
+
+  it.skipIf(noApi)('refuses an anonymous caller', async () => {
+    const response = await rest('rpc/leave_overview_records', { method: 'POST', body: {} });
+    expect(response.status, 'an anonymous caller reached leave_overview_records').toBe(401);
+    const refusal = await restRefusal(response);
+    expect(refusal.code, 'a privilege refusal is 42501').toBe('42501');
+    expect(refusal.message).toBe('permission denied for function leave_overview_records');
+  });
+
+  it.skipIf(noApi).each(FIXTURES)(
+    'refuses the $fixture member over PostgREST, and answers the admin with three columns and an exact count',
+    async ({ slug, admin, member }) => {
+      const client = await connect();
+      const year2043 = '[2043-01-01,2044-01-01)';
+      let cleanup: string[] = [];
+      try {
+        const owner = await memberByUsername(client, slug, admin);
+        const self = await memberByUsername(client, slug, member);
+        const organization = owner.organizationId;
+        const by = owner.authUserId;
+        cleanup = [self.id];
+        // Leftovers of an interrupted run, before anything is seeded.
+        await client.query('delete from leave_records where member_id = any($1::uuid[]) and during && $2::daterange', [
+          cleanup,
+          year2043,
+        ]);
+
+        const kept = await insertLeave(client, { organization, member: self.id, during: '[2043-09-10,2043-09-14]', by });
+
+        const refusedResponse = await rest('rpc/leave_overview_records', {
+          token: await tokenFor(member, slug),
+          method: 'POST',
+          body: {},
+        });
+        expect(refusedResponse.status, `${slug}: the member was not refused`).toBe(403);
+        const refusal = await restRefusal(refusedResponse);
+        expect(refusal.code, slug).toBe('42501');
+        expect(refusal.message, slug).toBe('LEAVE_OVERVIEW_REFUSED');
+
+        const response = await rest('rpc/leave_overview_records?order=id.asc', {
+          token: await tokenFor(admin, slug),
+          method: 'POST',
+          body: {},
+          prefer: 'count=exact',
+        });
+        expect(response.status, slug).toBe(200);
+        const rows = (await response.json()) as Record<string, unknown>[];
+        const range = response.headers.get('content-range') ?? '';
+        expect(range.split('/')[1], `${slug}: the count is not exact`).toBe(String(rows.length));
+        for (const row of rows) {
+          expect(Object.keys(row).sort(), `${slug}: a row carries more than its three columns`).toEqual([
+            'during',
+            'id',
+            'member_id',
+          ]);
+        }
+        expect(rows.filter((row) => row['id'] === kept), slug).toEqual([
+          { id: kept, member_id: self.id, during: '[2043-09-10,2043-09-15)' },
+        ]);
+      } finally {
+        if (cleanup.length > 0) {
+          await client.query('delete from leave_records where member_id = any($1::uuid[]) and during && $2::daterange', [
+            cleanup,
+            year2043,
           ]);
         }
         await client.end();

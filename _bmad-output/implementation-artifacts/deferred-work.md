@@ -875,3 +875,15 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-17-member-directory.md`
   summary: `/ljudi`'s `beforeLoad` re-reads the member role uncached on every search write, so each keystroke costs a role read and a transient failure mid-typing redirects to `/danas`.
   evidence: `currentMemberRole()` (`features/navigation/services/role.ts:353`) calls `readMemberRole` directly with no cache; TanStack Router re-runs `beforeLoad` on search-only navigations. Pre-existing on the admin Ljudi search (7.13a); the 7.17 member search inherits it.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-15-leave-overview.md`
+  summary: The admin's leave overview shows the current leave year only. The mockup's year stepper (`2025. / 2026. tekuća / 2027.`) needs a year in the URL and the balance computed for a leave year other than today's.
+  evidence: `mockups/leave-1.html` §4; the core-only decision of 2026-10-09 in spec 7.15; Ask First there.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-15-leave-overview.md`
+  summary: The overview has no filter chips (`Smjena: sve`, `Stanje: sve`) and no summary count of records (`upisano 3 godišnja`). Both would reuse the 7.5 filter chips and the URL state.
+  evidence: `mockups/leave-1.html` §4; Ask First in spec 7.15.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-15-leave-overview.md`
+  summary: The overview has no *Upisano* column (the member's current or next record with its range, `u tijeku`, and its conflict count `⚠ n` or `prihvaćeno`). It needs the collision and resolution reads beside the overview's records.
+  evidence: `mockups/leave-1.html` §4; Ask First in spec 7.15.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-15-leave-overview.md`
+  summary: The leave overview's `SortHead`, `SORT_GLYPHS` and aria-sort/arrow rules copy the organization hours table's sort heading; extract one shared sortable heading in `components/` used by both tables.
+  evidence: 7.15 review (Blind Hunter); `leave-overview-table.tsx` vs `hours/components/organization-hours-table.tsx:50-80`.

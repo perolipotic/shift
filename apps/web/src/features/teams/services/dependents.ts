@@ -5,7 +5,11 @@ import {
   MY_CONFLICT_RESOLUTIONS_KEY,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
 } from '@/features/conflicts/services/resolutions';
-import { MY_LEAVE_RECORDS_KEY, ORGANIZATION_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
+import {
+  LEAVE_OVERVIEW_RECORDS_KEY,
+  MY_LEAVE_RECORDS_KEY,
+  ORGANIZATION_LEAVE_RECORDS_KEY,
+} from '@/features/leave/services/leave-list';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
@@ -70,6 +74,7 @@ export const MEMBERSHIP_WRITE_DEPENDENTS: readonly QueryKey[] = [
   TEAM_ROSTERS_KEY,
   CALENDAR_KEY,
   ORGANIZATION_LEAVE_RECORDS_KEY,
+  LEAVE_OVERVIEW_RECORDS_KEY,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
 ];
 
@@ -101,11 +106,14 @@ export const HOUR_BAND_WRITE_DEPENDENTS: readonly QueryKey[] = [CALENDAR_KEY];
  * it follows too. Since story 5.4a the live conflict resolutions — the
  * organization's and the viewer's own — depend on it too: a removal or an
  * amend ends the resolutions whose date its leave stops covering (0031), and
- * every unresolved surface reads them.
+ * every unresolved surface reads them. Since story 7.15 the admin's leave
+ * overview on *Godišnji* reads the organization's records under a key of its
+ * own, and every list naming the organization's records names it beside them.
  */
 export const LEAVE_WRITE_DEPENDENTS: readonly QueryKey[] = [
   MY_LEAVE_RECORDS_KEY,
   ORGANIZATION_LEAVE_RECORDS_KEY,
+  LEAVE_OVERVIEW_RECORDS_KEY,
   MY_CONFLICT_RESOLUTIONS_KEY,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
 ];
@@ -157,7 +165,10 @@ export const CONFLICT_RESOLUTION_HELD_DEPENDENTS: readonly QueryKey[] = [MY_CONF
  * leave covering the date is gone, and only the leave read takes the
  * conflict away.
  */
-export const CONFLICT_RESOLUTION_GONE_DEPENDENTS: readonly QueryKey[] = [ORGANIZATION_LEAVE_RECORDS_KEY];
+export const CONFLICT_RESOLUTION_GONE_DEPENDENTS: readonly QueryKey[] = [
+  ORGANIZATION_LEAVE_RECORDS_KEY,
+  LEAVE_OVERVIEW_RECORDS_KEY,
+];
 
 /**
  * A rotation saved (story 5.5a): beside the builder's own read, the calendar
@@ -170,6 +181,7 @@ export const CONFLICT_RESOLUTION_GONE_DEPENDENTS: readonly QueryKey[] = [ORGANIZ
 export const ROTATION_SAVE_DEPENDENTS: readonly QueryKey[] = [
   CALENDAR_KEY,
   ORGANIZATION_LEAVE_RECORDS_KEY,
+  LEAVE_OVERVIEW_RECORDS_KEY,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
 ];
 
@@ -184,6 +196,7 @@ export const ROTATION_SAVE_DEPENDENTS: readonly QueryKey[] = [
 export const ROTATION_CANCEL_DEPENDENTS: readonly QueryKey[] = [
   CALENDAR_KEY,
   ORGANIZATION_LEAVE_RECORDS_KEY,
+  LEAVE_OVERVIEW_RECORDS_KEY,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
 ];
 
@@ -198,6 +211,7 @@ export const ROTATION_CANCEL_DEPENDENTS: readonly QueryKey[] = [
  */
 export const ROSTER_WRITE_DEPENDENTS: readonly QueryKey[] = [
   ORGANIZATION_LEAVE_RECORDS_KEY,
+  LEAVE_OVERVIEW_RECORDS_KEY,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
   MY_CONFLICT_RESOLUTIONS_KEY,
 ];
@@ -210,6 +224,7 @@ export const ROSTER_WRITE_DEPENDENTS: readonly QueryKey[] = [
  */
 export const OVERRIDE_WRITE_DEPENDENTS: readonly QueryKey[] = [
   ORGANIZATION_LEAVE_RECORDS_KEY,
+  LEAVE_OVERVIEW_RECORDS_KEY,
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
 ];
 

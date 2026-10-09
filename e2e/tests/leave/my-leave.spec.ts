@@ -11,18 +11,21 @@ import {
   seedExtraTeam,
   seedLeaveMember,
   seedLeaveRecord,
+  seedMemberStatusVersions,
   seedTeamRotation,
   type RotationHold,
   type SeededLeaveMember,
   type SeededRotation,
+  API_URL,
 } from '../../utils/database-helper.ts';
-import { fill, hr, plural } from '../../utils/i18n.ts';
+import { escapeRegExp, fill, hr, plural } from '../../utils/i18n.ts';
 import { fullDate } from '../../utils/dates.ts';
 import { expectNoHorizontalScroll } from '../../utils/layout.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 import { LeavePage } from '../../pages/leave.page.ts';
 import { LoginPage } from '../../pages/login.page.ts';
+import { sortControlName } from '../../pages/sort-control.ts';
 
 /**
  * Story 5.2c: a member opens *Godišnji* and sees their own allowance, the
@@ -41,6 +44,12 @@ import { LoginPage } from '../../pages/login.page.ts';
  * removes it the reload reads 20 / 0 / 20; and the screen does not scroll
  * sideways at 390 px. A failed read of the member's own records shows the
  * unavailable alert and its retry, and the retry brings the figures back.
+ *
+ * Story 7.15: an admin's *Godišnji* is the overview instead — every member
+ * active today with *Pravo*, *Iskorišteno* and *Preostalo*, a row equal to
+ * the member page's card, as a table at 1280 px and stacked rows at 390 px,
+ * reached on a phone from *Više*. A member's session never asks for the
+ * overview, and the database refuses it when asked.
  */
 
 test.use({ storageState: ADMIN_STATE });
@@ -260,5 +269,182 @@ test.describe('signed in as the seeded member', () => {
     await expect(leavePage.balanceFigure).toHaveText(plural(days, 20 - cost));
     await expect(leavePage.alertWith(godisnji.unavailable)).toHaveCount(0);
     await expect(leavePage.retryButton).toHaveCount(0);
+  });
+});
+
+test.describe("the admin's overview (story 7.15)", () => {
+  const overview = godisnji.overview;
+
+  test('lists the members active today, each row equal to the member page, at 1280 px and at 390 px', async ({
+    page,
+    leavePage,
+    peoplePage,
+    fixture,
+  }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+    const { member, colleague, today, last, cost } = await seeded(fixture.slug);
+    await seedLeaveRecord(fixture.slug, member.id, today, last);
+    // THE COLLEAGUE IS INACTIVE TODAY: no row.
+    await seedMemberStatusVersions(fixture.slug, colleague.id, [{ active: false, effectiveFrom: today }]);
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await leavePage.goto(`?trazi=${encodeURIComponent(member.name)}`);
+    await expect(leavePage.heading(hr.nav.godisnji)).toBeVisible();
+    await expect(leavePage.text(overview.lede)).toBeVisible();
+    // AN ADMIN SEES ONLY THE OVERVIEW: no tiles of their own.
+    await expect(leavePage.allowanceFigure).toHaveCount(0);
+    await expect(leavePage.overviewTable).toBeVisible();
+    const cells = leavePage.tableCells(member.name);
+    await expect(cells.nth(2)).toHaveText('20');
+    await expect(cells.nth(3)).toHaveText(String(cost));
+    await expect(cells.nth(4)).toHaveText(String(20 - cost));
+    await expect(leavePage.tableRow(colleague.name)).toHaveCount(0);
+    // One person shown, and the days they used of their 20 in the summary.
+    await expect(
+      leavePage.text(new RegExp(`${escapeRegExp(plural(days, cost))}\\D+20$`)),
+    ).toBeVisible();
+
+    // A NAME NOBODY HAS: one line and its way out.
+    await leavePage.overviewSearch.fill('zzzz-nobody');
+    await expect(leavePage.text(overview.noMatch)).toBeVisible();
+    await leavePage.clearSearchButton.click();
+    await expect(leavePage.overviewSearch).toHaveValue('');
+    await expect(leavePage.overviewSearch).toBeFocused();
+    await leavePage.overviewSearch.fill(member.name);
+    await expect(leavePage.tableRow(member.name)).toBeVisible();
+
+    // THE ROW EQUALS THE MEMBER PAGE: its name opens it, and its card reads the same three figures.
+    await leavePage.tableRow(member.name).getByRole('link', { name: member.name, exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/ljudi/${member.id}$`));
+    await expect(peoplePage.leaveFigure(leave.allowance)).toHaveText(plural(days, 20));
+    await expect(peoplePage.leaveFigure(leave.used)).toHaveText(plural(days, cost));
+    await expect(peoplePage.leaveFigure(leave.balance)).toHaveText(plural(days, 20 - cost));
+
+    // THE PHONE: reached from Više → Pregled, stacked rows, one sort control, no sideways scroll.
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/danas');
+    await leavePage.moreButton.click();
+    await leavePage.moreSheet.getByRole('link', { name: hr.nav.godisnji, exact: true }).click();
+    await expect(page).toHaveURL(/\/godisnji$/);
+    await leavePage.overviewSearch.fill(member.name);
+    await expect(leavePage.overviewList).toBeVisible();
+    await expect(leavePage.overviewTable).toHaveCount(0);
+    await expect(leavePage.sortControl).toHaveCount(1);
+    await expect(leavePage.stackedFigure(member.name, overview.allowance)).toHaveText('20');
+    await expect(leavePage.stackedFigure(member.name, overview.used)).toHaveText(String(cost));
+    await expect(leavePage.stackedFigure(member.name, overview.balance)).toHaveText(String(20 - cost));
+    await expectNoHorizontalScroll(page);
+  });
+
+  test('a bad sort falls back to the name, ascending, and is rewritten out of the URL', async ({ page, leavePage }) => {
+    await leavePage.goto('?sort=xyz');
+    await expect(leavePage.overviewTable).toBeVisible();
+    await expect(leavePage.columnHeader(overview.person)).toHaveAttribute('aria-sort', 'ascending');
+    await expect(page).not.toHaveURL(/sort=/);
+  });
+
+  test('the headings sort by Preostalo both ways, in the URL, and a descending link opens descending', async ({
+    page,
+    leavePage,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await leavePage.goto();
+    await expect(leavePage.overviewTable).toBeVisible();
+
+    await leavePage.sortHeading(overview.balance).click();
+    await expect(page).toHaveURL(/[?&]sort=preostalo\b/);
+    await expect(leavePage.columnHeader(overview.balance)).toHaveAttribute('aria-sort', 'ascending');
+    await expect(leavePage.columnHeader(overview.person)).toHaveAttribute('aria-sort', 'none');
+
+    await leavePage.sortHeading(overview.balance).click();
+    await expect(page).toHaveURL(/[?&]sort=-preostalo\b/);
+    await expect(leavePage.columnHeader(overview.balance)).toHaveAttribute('aria-sort', 'descending');
+
+    await leavePage.goto('?sort=-preostalo');
+    await expect(leavePage.columnHeader(overview.balance)).toHaveAttribute('aria-sort', 'descending');
+  });
+
+  test('the phone sort control picks a column and says so', async ({ page, leavePage }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await leavePage.goto();
+    await expect(leavePage.overviewList).toBeVisible();
+    const control = leavePage.sortControl;
+    await expect(control).toHaveAccessibleName(sortControlName(overview.person, true));
+
+    await control.click();
+    await expect(leavePage.sortPicker).toBeVisible();
+    await leavePage.sortOption(overview.balance).click();
+    await expect(page).toHaveURL(/[?&]sort=preostalo\b/);
+    await expect(leavePage.sortPicker).toHaveCount(0);
+    await expect(control).toBeFocused();
+    await expect(control).toHaveAccessibleName(sortControlName(overview.balance, true));
+  });
+
+  test('a failed overview read is one alert with its retry, and the retry brings the rows back', async ({
+    page,
+    leavePage,
+  }) => {
+    const failed = '**/rest/v1/rpc/leave_overview_records*';
+    // Every request fails until unrouted: the first and the query's one retry, and any more.
+    await page.route(failed, (route) =>
+      route.fulfill({ status: 500, contentType: 'application/json', body: '{"message":"e2e"}' }),
+    );
+
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await leavePage.goto();
+    await expect(leavePage.overviewUnavailable).toBeVisible();
+    await expect(leavePage.retryButton).toBeVisible();
+    await expect(leavePage.overviewTable).toHaveCount(0);
+
+    await page.unroute(failed);
+    await leavePage.retryButton.click();
+    await expect(leavePage.overviewTable).toBeVisible();
+    await expect(leavePage.overviewTable.getByRole('row').nth(1)).toBeVisible();
+    await expect(leavePage.overviewUnavailable).toHaveCount(0);
+  });
+});
+
+test.describe("a member's Godišnji (story 7.15)", () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test('keeps their own tiles, never asks for the overview, and is refused when it does', async ({
+    page,
+    loginPage,
+    leavePage,
+    fixture,
+  }) => {
+    test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+    const { member, today, last, cost } = await seeded(fixture.slug);
+    await seedLeaveRecord(fixture.slug, member.id, today, last);
+    const asked: string[] = [];
+    let credentials: Record<string, string> | null = null;
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (url.pathname.endsWith('/rest/v1/rpc/leave_overview_records')) asked.push(url.pathname);
+      if (url.pathname.endsWith('/rest/v1/rpc/my_leave_records')) {
+        const headers = request.headers();
+        credentials = { apikey: headers['apikey'] ?? '', authorization: headers['authorization'] ?? '' };
+      }
+    });
+
+    await loginPage.signIn(fixture.slug, member.username, member.password);
+    await leavePage.goto();
+    await expect(leavePage.allowanceFigure).toHaveText(plural(days, 20));
+    await expect(leavePage.usedFigure).toHaveText(plural(days, cost));
+    await expect(leavePage.balanceFigure).toHaveText(plural(days, 20 - cost));
+    await expect(leavePage.overviewTable).toHaveCount(0);
+    expect(asked, 'a member session asked for the overview').toEqual([]);
+
+    // ASKED DIRECTLY, with the member's own session: refused at the data layer.
+    expect(credentials, 'the own read carried no session').not.toBeNull();
+    const response = await page.request.post(`${API_URL}/rest/v1/rpc/leave_overview_records`, {
+      headers: { ...(credentials ?? {}), 'content-type': 'application/json' },
+      data: {},
+    });
+    expect(response.status()).toBe(403);
+    expect(((await response.json()) as { code?: string; message?: string })).toMatchObject({
+      code: '42501',
+      message: 'LEAVE_OVERVIEW_REFUSED',
+    });
   });
 });

@@ -223,11 +223,12 @@ const ROLE_SCOPED_PATHS: readonly string[] = ['/ljudi'];
 
 /**
  * STORY 7.5: destinations whose `beforeLoad` is a SEARCH redirect, never a
- * guard — `/sati` moves an old `?tim=` to `?smjena=`. Each is proved below to
- * redirect only that old search and to let every other one through, so a
- * second session or role check cannot hide behind this list.
+ * guard — `/sati` moves an old `?tim=` to `?smjena=`, and since story 7.15
+ * `/godisnji` rewrites a value it does not show (`?sort=xyz`) out of the URL.
+ * Each is proved below to redirect only that search and to let every other
+ * one through, so a second session or role check cannot hide behind this list.
  */
-const SEARCH_REDIRECT_PATHS: readonly string[] = ['/sati'];
+const SEARCH_REDIRECT_PATHS: readonly string[] = ['/sati', '/godisnji'];
 
 /**
  * Every route that decides on the permission LEVEL, and the screen each one
@@ -1624,7 +1625,33 @@ describe('the signed-in layout guards every destination once, and is pathless', 
     ).toEqual([...ROLE_GUARDED_PATHS]);
   });
 
-  it.each(SEARCH_REDIRECT_PATHS)('%s redirects only an old search, and lets every other one through (story 7.5)', (path) => {
+  it('/godisnji rewrites only a search it does not show, and lets a clean one through (story 7.15)', () => {
+    const route = DESTINATION_ROUTES.find((one) => one.path === '/godisnji')?.route;
+    const run = (route?.options as { beforeLoad?: (context: unknown) => unknown } | undefined)?.beforeLoad;
+
+    expect(run, '/godisnji has no beforeLoad').toBeTypeOf('function');
+
+    const thrownBy = (search: Record<string, unknown>): unknown => {
+      try {
+        run?.({ location: { search } });
+      } catch (thrown) {
+        return thrown;
+      }
+
+      return null;
+    };
+    const moved = thrownBy({ sort: 'xyz', trazi: 'ana' });
+
+    expect(isRedirect(moved), 'a bad ?sort= is not rewritten').toBe(true);
+    expect((moved as { options: { search: unknown; replace: boolean } }).options).toMatchObject({
+      search: { trazi: 'ana' },
+      replace: true,
+    });
+    expect(thrownBy({ sort: '-preostalo', trazi: 'ana' })).toBeNull();
+    expect(thrownBy({})).toBeNull();
+  });
+
+  it.each(['/sati'])('%s redirects only an old search, and lets every other one through (story 7.5)', (path) => {
     const route = DESTINATION_ROUTES.find((one) => one.path === path)?.route;
     const run = (route?.options as { beforeLoad?: (context: unknown) => unknown } | undefined)?.beforeLoad;
 

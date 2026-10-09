@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  LEAVE_OVERVIEW_RECORDS_FUNCTION,
+  LEAVE_OVERVIEW_RECORDS_KEY,
   LEAVE_RECORDS_COLUMNS,
   LEAVE_RECORDS_KEY,
   LEAVE_RECORDS_UNAVAILABLE,
@@ -8,6 +10,7 @@ import {
   MY_LEAVE_RECORDS_KEY,
   ORGANIZATION_LEAVE_PAGE_ROWS,
   ORGANIZATION_LEAVE_RECORDS_KEY,
+  leaveOverviewRecordsQueryOptions,
   leaveRecordsAfterWriteOf,
   leaveRecordsOf,
   leaveRecordsQueryOptions,
@@ -15,9 +18,12 @@ import {
   myLeaveRecordsQueryOptions,
   organizationLeaveRecordsOf,
   organizationLeaveRecordsQueryOptions,
+  readLeaveOverviewRows,
   readLeaveRecords,
   readMyLeaveRows,
   readOrganizationLeaveRows,
+  type LeaveOverviewRecordsQuery,
+  type LeaveOverviewRecordsRpc,
   type LeaveRecordsAnswer,
   type MyLeaveRecordsRpc,
   type LeaveRecordsQuery,
@@ -488,5 +494,98 @@ describe("the organization's records (story 5.3b)", () => {
     ['a row that is not a record', [A, 'row'], [MEMBER]],
   ])('refuses the whole answer for %s', (_name, rows, members) => {
     expect(organizationLeaveRecordsOf(rows, members)).toBeNull();
+  });
+});
+
+describe("the admin's overview records (story 7.15)", () => {
+  const row = (id: string, memberId: string, during: unknown) => ({ id, member_id: memberId, during });
+  const A = row(FIRST, MEMBER, '[2026-09-10,2026-09-15)');
+  const B = row(SECOND, OTHER, '[2026-09-12,2026-09-13)');
+  const LAST = ORGANIZATION_LEAVE_PAGE_ROWS - 1;
+
+  function rpcAnswering(
+    pages: readonly (OrganizationLeaveRecordsAnswer | Promise<never>)[],
+  ): LeaveOverviewRecordsRpc & { calls: unknown[] } {
+    const calls: unknown[] = [];
+    let index = 0;
+
+    return {
+      calls,
+      rpc(fn, args, options) {
+        calls.push(['rpc', fn, args, options]);
+
+        const query: LeaveOverviewRecordsQuery = {
+          order(column, order) {
+            calls.push(['order', column, order]);
+
+            return query;
+          },
+          range(from, to) {
+            calls.push(['range', from, to]);
+            const answer = pages[index] ?? { data: [], error: null, count: 0 };
+            index += 1;
+
+            return answer instanceof Promise ? answer : Promise.resolve(answer);
+          },
+        };
+
+        return query;
+      },
+    };
+  }
+
+  it('calls leave_overview_records with no argument, by id, a page at a time, with its exact count', async () => {
+    const client = rpcAnswering([{ data: [A, B], error: null, count: 2 }]);
+
+    expect(LEAVE_OVERVIEW_RECORDS_FUNCTION).toBe('leave_overview_records');
+    expect(await readLeaveOverviewRows(client)).toEqual({ ok: true, rows: [A, B] });
+    expect(client.calls).toEqual([
+      ['rpc', 'leave_overview_records', {}, { count: 'exact' }],
+      ['order', 'id', { ascending: true }],
+      ['range', 0, LAST],
+    ]);
+  });
+
+  it('pages the server cap through the same loop as the select', async () => {
+    const first = Array.from({ length: ORGANIZATION_LEAVE_PAGE_ROWS }, (_, index) =>
+      row(`r${String(index)}`, MEMBER, '[2026-09-10,2026-09-11)'),
+    );
+    const total = ORGANIZATION_LEAVE_PAGE_ROWS + 1;
+    const client = rpcAnswering([
+      { data: first, error: null, count: total },
+      { data: [A], error: null, count: total },
+    ]);
+
+    expect(await readLeaveOverviewRows(client)).toEqual({ ok: true, rows: [...first, A] });
+    expect(client.calls.filter((call) => (call as unknown[])[0] === 'range')).toEqual([
+      ['range', 0, LAST],
+      ['range', ORGANIZATION_LEAVE_PAGE_ROWS, ORGANIZATION_LEAVE_PAGE_ROWS + LAST],
+    ]);
+  });
+
+  it("is unavailable on the function's refusal, a rejection, no count or no list", async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    for (const pages of [
+      [{ data: null, error: { code: '42501' } }],
+      [Promise.reject(new Error('down'))],
+      [{ data: [A], error: null }],
+      [{ data: null, error: null, count: 0 }],
+    ] as const) {
+      expect(await readLeaveOverviewRows(rpcAnswering(pages))).toEqual({ ok: false, code: LEAVE_RECORDS_UNAVAILABLE });
+    }
+  });
+
+  it('reads under its own key, and throws on a failure so the query settles failed', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const ok = leaveOverviewRecordsQueryOptions(() => rpcAnswering([{ data: [A], error: null, count: 1 }]));
+    const failed = leaveOverviewRecordsQueryOptions(() => rpcAnswering([{ data: null, error: { code: '42501' } }]));
+
+    expect(ok.queryKey).toEqual(LEAVE_OVERVIEW_RECORDS_KEY);
+    expect(LEAVE_OVERVIEW_RECORDS_KEY).not.toEqual(ORGANIZATION_LEAVE_RECORDS_KEY);
+    const run = (options: typeof ok) => (options.queryFn as () => Promise<unknown>)();
+
+    await expect(run(ok)).resolves.toEqual([A]);
+    await expect(run(failed)).rejects.toThrow(LEAVE_RECORDS_UNAVAILABLE);
   });
 });

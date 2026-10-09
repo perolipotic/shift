@@ -11,7 +11,12 @@ import {
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
 } from '@/features/conflicts/services/resolutions';
 import { HOUR_BANDS_LIST_KEY } from '@/features/hour-bands/services/list';
-import { LEAVE_RECORDS_KEY, MY_LEAVE_RECORDS_KEY, ORGANIZATION_LEAVE_RECORDS_KEY } from '@/features/leave/services/leave-list';
+import {
+  LEAVE_OVERVIEW_RECORDS_KEY,
+  LEAVE_RECORDS_KEY,
+  MY_LEAVE_RECORDS_KEY,
+  ORGANIZATION_LEAVE_RECORDS_KEY,
+} from '@/features/leave/services/leave-list';
 import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { SESSION_SUBJECT_KEY } from '@/features/members/services/write';
 import { MEMBER_NAME_KEY } from '@/features/navigation/services/profile';
@@ -84,6 +89,8 @@ const CLASSIFIED: Readonly<Record<string, readonly QueryKey[]>> = {
   LEAVE_RECORDS_KEY: [LEAVE_A, LEAVE_B],
   MY_LEAVE_RECORDS_KEY: [MY_LEAVE_RECORDS_KEY],
   ORGANIZATION_LEAVE_RECORDS_KEY: [ORGANIZATION_LEAVE_RECORDS_KEY],
+  // Story 7.15: the admin's overview on *Godišnji*, beside the organization's records wherever they are named.
+  LEAVE_OVERVIEW_RECORDS_KEY: [LEAVE_OVERVIEW_RECORDS_KEY],
   MY_CONFLICT_RESOLUTIONS_KEY: [MY_CONFLICT_RESOLUTIONS_KEY],
   ORGANIZATION_CONFLICT_RESOLUTIONS_KEY: [ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
   // Story 7.16: the Riješeni tab's names; stale from the first read, so no write names it.
@@ -214,6 +221,7 @@ describe('the reads a team or membership write makes stale', () => {
         ROSTER_B,
         CALENDAR_KEY,
         ORGANIZATION_LEAVE_RECORDS_KEY,
+        LEAVE_OVERVIEW_RECORDS_KEY,
         ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
       ],
     },
@@ -241,7 +249,7 @@ describe('the reads a team or membership write makes stale', () => {
       // (*Godišnji*), and since story 5.3b the organization's, which the
       // conflicts queue derives from; never another member's. Since story
       // 5.4a both resolution reads, which a removal or an amend can end.
-      stale: [LEAVE_A, MY_LEAVE_RECORDS_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, MY_CONFLICT_RESOLUTIONS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
+      stale: [LEAVE_A, MY_LEAVE_RECORDS_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, LEAVE_OVERVIEW_RECORDS_KEY, MY_CONFLICT_RESOLUTIONS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
     },
     {
       write: 'a conflict resolution recorded (story 5.4b)',
@@ -279,7 +287,7 @@ describe('the reads a team or membership write makes stale', () => {
       own: ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
       dependents: CONFLICT_RESOLUTION_GONE_DEPENDENTS,
       // The resolutions, and the leave a P0002 says is gone.
-      stale: [ORGANIZATION_LEAVE_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
+      stale: [ORGANIZATION_LEAVE_RECORDS_KEY, LEAVE_OVERVIEW_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
     },
     {
       write: 'a rotation saved (story 5.5a)',
@@ -288,7 +296,7 @@ describe('the reads a team or membership write makes stale', () => {
       // The builder's own read, the calendar snapshot that embeds every
       // version, and the leave and resolutions the erasure check and the
       // queue derive from with it.
-      stale: [ROTATION_KEY, CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
+      stale: [ROTATION_KEY, CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, LEAVE_OVERVIEW_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
     },
     {
       write: 'a scheduled rotation change cancelled (story 5.5g)',
@@ -297,7 +305,7 @@ describe('the reads a team or membership write makes stale', () => {
       // The builder's own read, the calendar snapshot that loses the
       // cancelled versions, and the leave and resolutions the erasure check
       // and the queue derive from with it.
-      stale: [ROTATION_KEY, CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
+      stale: [ROTATION_KEY, CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, LEAVE_OVERVIEW_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
     },
     {
       write: 'a calendar roster change saved or removed (story 5.5b)',
@@ -309,6 +317,7 @@ describe('the reads a team or membership write makes stale', () => {
       stale: [
         CALENDAR_KEY,
         ORGANIZATION_LEAVE_RECORDS_KEY,
+        LEAVE_OVERVIEW_RECORDS_KEY,
         MY_CONFLICT_RESOLUTIONS_KEY,
         ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
       ],
@@ -319,7 +328,7 @@ describe('the reads a team or membership write makes stale', () => {
       dependents: OVERRIDE_WRITE_DEPENDENTS,
       // The calendar snapshot the override is drawn in, and the leave and
       // resolutions the erasure check and the queue derive from with it.
-      stale: [CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
+      stale: [CALENDAR_KEY, ORGANIZATION_LEAVE_RECORDS_KEY, LEAVE_OVERVIEW_RECORDS_KEY, ORGANIZATION_CONFLICT_RESOLUTIONS_KEY],
     },
     {
       write: 'a refusal',

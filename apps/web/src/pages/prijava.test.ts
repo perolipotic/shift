@@ -938,7 +938,13 @@ const SCREENS = [
   // STORY 5.2c. ONE on Godišnji: the retry its unavailable alert offers. The
   // three figures are read, never pressed, and nothing here writes: a member
   // requests no leave (story 5.3 is conflicts, not requests).
-  { name: 'the Godišnji destination', file: GODISNJI, expectedControls: 1 },
+  // SIX SINCE STORY 7.15: the member's retry above (1); the admin's
+  // overview — its search `<Input>` (2), the sortable heading `Button`
+  // written once in `SortHead` (3), its own retry (4) and *Poništi
+  // pretragu* (5); and the page's own retry when the calendar cannot name
+  // the viewer's role (6). The phone's `SortControl` is a shared component,
+  // and every row's name is a `<Link>`; nothing on the overview writes.
+  { name: 'the Godišnji destination', file: GODISNJI, expectedControls: 6 },
   // STORY 5.3b. ONE on Raspored: the retry its unavailable alert offers. The
   // queue is read, never pressed: no `Riješi` and no bulk action. STILL ONE
   // SINCE STORY 5.4b: each row became a `<Link>` to its resolution screen,
@@ -2878,10 +2884,17 @@ const KEY_SOURCES = [
     // retry, and `count.days` once — written once inside the map over the
     // three tiles. The tiles' labels and the two lines in place of the figures
     // come through `@/features/leave/services/my-leave`, a key source.
+    //
+    // THIRTY-SIX SINCE STORY 7.15: the admin's overview — the page's lede,
+    // its own unavailable line and retry (beside the member's), the search's
+    // label and placeholder, the summary, the empty sentences and
+    // *Poništi pretragu*, the overview's unavailable line and retry, and the
+    // five column names, the caption, *Bez smjene* and the unscheduled line,
+    // written once in the table and once in the stacked rows.
     name: 'the Godišnji destination',
     file: GODISNJI,
     keys: translationKeys,
-    strings: 3,
+    strings: 36,
   },
   {
     // STORY 5.3b. NINE on Raspored: its own `nav.raspored` heading; the
