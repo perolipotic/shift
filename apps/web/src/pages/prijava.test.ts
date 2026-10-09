@@ -213,10 +213,10 @@ const MEMBER_LIST_KEYS = join(srcRoot, 'features', 'members', 'services', 'list.
  * renders and is absent from `SCREENS` is swept by nothing at all.
  */
 const MEMBER_CREATE: readonly string[] = [
-  join(srcRoot, 'pages', 'ljudi.novi.tsx'),
+  // STORY 7.13b: no page of its own any more. *Dodaj osobu* is a dialog on
+  // Ljudi, and `/ljudi/novi` only redirects to it, so the dialog leads the set.
+  join(MEMBERS_FEATURE, 'components', 'member-add-dialog.tsx'),
   join(MEMBERS_FEATURE, 'hooks', 'use-member-create.ts'),
-  join(MEMBERS_FEATURE, 'components', 'member-create-card.tsx'),
-  join(MEMBERS_FEATURE, 'components', 'member-create-about.tsx'),
   // STORY 7.8: the one-time credential's line with `Kopiraj`, shared with
   // the edit form's reset.
   join(MEMBERS_FEATURE, 'components', 'credential-line.tsx'),
@@ -763,7 +763,11 @@ const SCREENS = [
   // organization uses ranks — written once, so counted once.
   //
   // TEN SINCE STORY 7.8: `Kopiraj` beside the issued password.
-  { name: 'the member create form', file: MEMBER_CREATE, expectedControls: 10 },
+  //
+  // ELEVEN SINCE STORY 7.13b, a dialog in two steps: the link back to the list
+  // is gone (the dialog's close is the primitive's own), and the second step
+  // adds *Dodaj još jednu* and *Otvori stranicu osobe*.
+  { name: 'the member create form', file: MEMBER_CREATE, expectedControls: 11 },
   // TWELVE on the edit form: the same eight, plus the admin-issued reset's
   // FOUR `<Button>`s — the offer, the confirm and cancel that replace it, and
   // the dismiss on the shown credential. Four and not one, because the reset is
@@ -3056,10 +3060,16 @@ const KEY_SOURCES = [
     // and the aside's title and body.
     //
     // TWENTY SINCE STORY 7.8: `Kopiraj` on the credential line.
+    //
+    // NINETEEN SINCE STORY 7.13b, a dialog: the title and lede stay, the two
+    // section headings, the aside, the link back and the second username label
+    // go; the username's hint, the dialog's close, `Račun je izrađen: {name} ·
+    // {username}`, the no-team line, *Dodaj još jednu* and *Otvori stranicu
+    // osobe* arrive, and the submit is `Dodaj osobu` rather than `Spremi`.
     name: 'the member create form',
     file: MEMBER_CREATE,
     keys: translationKeys,
-    strings: 20,
+    strings: 19,
   },
   {
     // EIGHTEEN on the edit form: its own heading, five field labels, save,
@@ -9008,8 +9018,20 @@ describe('the two member forms write through the seam and keep nothing back', ()
     expect(screen, 'the edit screen still keys a form to the row').not.toContain('memberFormKey(');
   });
 
+  it('offers one link in the add dialog: the new member\'s page, from the second step only (story 7.13b)', () => {
+    // The dialog closes onto the list, so it needs no way back; its one link
+    // opens the page of the person it just created, and only when the reply
+    // named the row.
+    const screen = source(MEMBER_CREATE);
+    const links = linkElements(screen);
+
+    expect(links).toHaveLength(1);
+    expect(attributeOf(links[0] ?? '', 'to')).toBe('/ljudi/$id');
+    expect(componentFunction(screen, 'renderForm'), 'the page link is on the first step').not.toContain('<Link');
+    expect(componentFunction(screen, 'renderCredential')).toContain('issued.memberId === null ? null');
+  });
+
   it.each([
-    { name: 'the member create form', file: MEMBER_CREATE },
     { name: 'the member edit form', file: MEMBER_EDIT },
   ])('gives $name a way back to the list that is not a reset', ({ file }) => {
     // NEITHER ROUTE IS A DESTINATION, so the chrome offers no way off either
@@ -9065,7 +9087,7 @@ describe('the two member forms write through the seam and keep nothing back', ()
     {
       name: 'the member create form',
       file: MEMBER_CREATE,
-      card: join(MEMBERS_FEATURE, 'components', 'member-create-card.tsx'),
+      card: join(MEMBERS_FEATURE, 'components', 'member-add-dialog.tsx'),
     },
     {
       name: 'the member edit form',
@@ -9098,7 +9120,7 @@ describe('the two member forms write through the seam and keep nothing back', ()
   it('would notice a form card rendering the refusal code instead of its text', () => {
     // BOTH POLARITIES, on the real card: the swap a reviewer showed passed the
     // set-wide check, because the helper carried the mapping for it.
-    for (const name of ['member-create-card.tsx', 'member-basics-card.tsx']) {
+    for (const name of ['member-add-dialog.tsx', 'member-basics-card.tsx']) {
       const card = source(join(MEMBERS_FEATURE, 'components', name));
 
       expect(rendersRefusalText(card), name).toBe(true);

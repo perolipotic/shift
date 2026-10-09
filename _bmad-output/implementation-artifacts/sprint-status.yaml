@@ -548,12 +548,12 @@ development_status:
   7-10-a-member-s-own-schedule-shows-their-leave-and-no-conflict-m: done
   7-11-the-member-page-shows-facts-and-each-change-opens-one-dialo: done
   7-12-the-leave-dialog-shows-what-a-record-costs-and-creates-befo: done
-  7-13-ljudi-shows-each-member-s-status-and-adds-a-member-in-a-dia: review
-  7-14-an-hours-figure-explains-itself: backlog
+  7-13-ljudi-shows-each-member-s-status-and-adds-a-member-in-a-dia: in-progress
+  7-14-an-hours-figure-explains-itself: done
   7-15-an-admin-sees-everyone-s-leave-in-one-overview: backlog
-  7-16-resolved-conflicts-stay-readable: backlog
+  7-16-resolved-conflicts-stay-readable: done
   7-17-members-find-the-directory-by-team-in-vise: backlog
-  7-18-organization-settings-show-facts-and-change-through-dialogs: backlog
+  7-18-organization-settings-show-facts-and-change-through-dialogs: done
   epic-7-retrospective: optional
 action_items:
   - id: "epic-4-retro-item-1-fix-c1-a-sati-name-for-a-member-no-longe"

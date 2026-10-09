@@ -6,14 +6,19 @@ import { Button } from '@/components/ui/button';
 import { Notice } from '@/components/ui/notice';
 import { PageActions, PageDescription, PageHeader, PageTitle } from '@/components/ui/page-header';
 import { t } from '@/lib/i18n';
+import { MemberAddDialog } from '@/features/members/components/member-add-dialog';
 import { MemberTable } from '@/features/members/components/member-table';
+import { useMemberCreate, type MemberAddNavigate } from '@/features/members/hooks/use-member-create';
 import { useMemberList, type MembersNavigate } from '@/features/members/hooks/use-member-list';
 import {
+  MEMBERS_ADD_OPEN,
   MEMBERS_ERROR_ID,
+  MEMBERS_PAGE_HEADING_ID,
   mayReadMembers,
+  membersAddSearchOf,
   membersMessageKey,
   membersSearchOf,
-  type MembersSearch,
+  type LjudiSearch,
 } from '@/features/members/services/list';
 import { DESTINATIONS } from '@/features/navigation/utils/destinations';
 import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/features/navigation/services/role';
@@ -37,9 +42,12 @@ import { appLayoutRoute } from '@/pages/_app';
  * to: `members_select_own_organization` carries no role filter (`0003:286-288`).
  * What it settles is an IA question — which screen a level reaches.
  *
- * TWO WAYS OUT OF THIS SCREEN AND NO WRITE ON IT (story 1.5b): creating and
- * editing a member are `/ljudi/novi` and `/ljudi/$id`, which this screen links
- * to and performs neither.
+ * *DODAJ OSOBU* IS A DIALOG ON THIS SCREEN (story 7.13b), and its open state
+ * is the URL's: `?dodaj=1`, parsed beside the filters by `membersAddSearchOf`.
+ * Opening pushes an entry, so Back closes it; closing replaces the entry; every
+ * filter write carries the current `dodaj` through. Its state and its one write
+ * are `useMemberCreate`'s. Editing a member is `/ljudi/$id`, which this screen
+ * links to; `/ljudi/novi` is a redirect to the dialog.
  */
 
 /** Where a refused session is sent: the FIRST destination, in binding order,
@@ -51,14 +59,28 @@ export function LjudiScreen() {
   const search = ljudiRoute.useSearch();
   const navigate = useNavigate({ from: ljudiRoute.fullPath });
   // ONE FUNCTION FOR THE SCREEN'S LIFE, so the hook's effects that write the
-  // URL do not re-run for a new closure on every render.
+  // URL do not re-run for a new closure on every render. THE DIALOG'S `dodaj`
+  // IS CARRIED THROUGH, read at the moment of the write — the stale-team
+  // replace included, which would otherwise close an open dialog.
   const write = useCallback<MembersNavigate>(
     (next, { replace }) => {
-      void navigate({ search: next, replace });
+      void navigate({ search: (current) => ({ ...next, ...membersAddSearchOf(current) }), replace });
+    },
+    [navigate],
+  );
+  // OPENING PUSHES `?dodaj=1`, so Back closes the dialog; CLOSING REPLACES the
+  // entry, so it leaves no open state to step back into.
+  const writeAdding = useCallback<MemberAddNavigate>(
+    (open, options) => {
+      void navigate({
+        search: (current) => ({ ...current, dodaj: open ? MEMBERS_ADD_OPEN : undefined }),
+        replace: options?.replace ?? !open,
+      });
     },
     [navigate],
   );
   const list = useMemberList(search, write);
+  const create = useMemberCreate(search.dodaj === MEMBERS_ADD_OPEN, writeAdding);
   const { refusal, loading } = list;
 
   return (
@@ -68,15 +90,15 @@ export function LjudiScreen() {
     >
       <PageHeader>
         <div className="min-w-0">
+          {/* FOCUSABLE BY SCRIPT ONLY: where focus lands when the dialog
+              closes after a deep link, with no button that opened it. */}
           <PageTitle asChild>
-            <h1>{t('nav.ljudi')}</h1>
+            <h1 id={MEMBERS_PAGE_HEADING_ID} tabIndex={-1}>
+              {t('nav.ljudi')}
+            </h1>
           </PageTitle>
           <PageDescription>{t('ljudi.lede')}</PageDescription>
         </div>
-        {/* THE WAY IN, and it is a LINK rather than a button that navigates:
-            issuing an account is a screen, not an action performed here, so
-            middle-click and "open in new tab" work the way they do everywhere
-            else. `asChild` keeps the 44 px floor on the anchor itself. */}
         <PageActions>
           {/* STORY 1.7a: the teams screen, reached from here rather than from
               the navigation, so the destinations stay eight. */}
@@ -86,11 +108,11 @@ export function LjudiScreen() {
               {t('smjene.heading')}
             </Link>
           </Button>
-          <Button asChild className="h-11">
-            <Link to="/ljudi/novi">
-              <Plus aria-hidden />
-              {t('ljudi.form.add')}
-            </Link>
+          {/* THE WAY IN, a BUTTON (story 7.13b): adding a person is a dialog
+              on this list, not a screen. It is where focus returns on close. */}
+          <Button ref={create.opener} type="button" className="h-11" onClick={create.open}>
+            <Plus aria-hidden />
+            {t('ljudi.form.add')}
           </Button>
         </PageActions>
       </PageHeader>
@@ -104,6 +126,7 @@ export function LjudiScreen() {
         </Notice>
       )}
       <MemberTable list={list} />
+      <MemberAddDialog create={create} />
     </main>
   );
 }
@@ -111,7 +134,12 @@ export function LjudiScreen() {
 export const ljudiRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/ljudi',
-  validateSearch: (search: Record<string, unknown>): MembersSearch => membersSearchOf(search),
+  // THE FILTERS AND THE DIALOG, each parsed by its own rule: an unknown value
+  // of either is dropped.
+  validateSearch: (search: Record<string, unknown>): LjudiSearch => ({
+    ...membersSearchOf(search),
+    ...membersAddSearchOf(search),
+  }),
   /**
    * The role guard, and the first one in the tree.
    *

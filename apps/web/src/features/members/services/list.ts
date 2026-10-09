@@ -158,6 +158,9 @@ export const NO_TEXT = '';
 /** The id of the list's refusal notice, which the search and the chips point at while it is shown. */
 export const MEMBERS_ERROR_ID = 'ljudi-error';
 
+/** Ljudi's `h1` (story 7.13b): where focus lands when the add dialog closes and no button opened it. */
+export const MEMBERS_PAGE_HEADING_ID = 'ljudi-heading';
+
 /**
  * TanStack Query's own name for a fetch it has NOT started.
  *
@@ -1836,6 +1839,29 @@ export function membersSearchFor(filters: MembersFilters): MembersSearch {
  */
 export function membersSearchOf(search: Readonly<Record<string, unknown>>): MembersSearch {
   return membersSearchFor(membersFiltersOf(search));
+}
+
+/** `?dodaj=1`: the add-member dialog is open (story 7.13b). The one value it takes. */
+export const MEMBERS_ADD_OPEN = 1;
+
+/** The dialog's half of `/ljudi`'s search, beside the filters: absent while it is closed. */
+export type MembersAddSearch = {
+  readonly dodaj?: typeof MEMBERS_ADD_OPEN | undefined;
+};
+
+/** `/ljudi`'s whole search: the filters, and whether the add dialog is open. */
+export type LjudiSearch = MembersSearch & MembersAddSearch;
+
+/**
+ * Whether the URL opens the add dialog: `?dodaj=1` does, which the router
+ * reads as the number `1` (or the text `'1'` from a hand-written link). Any
+ * other value is no dialog and is dropped, and nothing throws. Kept apart from
+ * {@link membersSearchOf}, which drops every key it does not know by design.
+ */
+export function membersAddSearchOf(search: Readonly<Record<string, unknown>>): MembersAddSearch {
+  const value = search['dodaj'];
+
+  return value === MEMBERS_ADD_OPEN || value === String(MEMBERS_ADD_OPEN) ? { dodaj: MEMBERS_ADD_OPEN } : {};
 }
 
 /** One search as a string, so a change and the state it leaves compare as one key. */

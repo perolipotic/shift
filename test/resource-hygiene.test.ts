@@ -484,7 +484,15 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.form.cancel',
   // The one-showing credential panel. THREE strings, and not one of them is the
   // password: that is data, generated in `admin-auth` and never authored.
-  'ljudi.form.created',
+  // STORY 7.13b: the add dialog's second step names whom and which username
+  // (`Račun je izrađen: {name} · {username}`, data in apposition), says the
+  // person has no team yet, and offers the next two steps.
+  'ljudi.form.createdFor',
+  'ljudi.form.noTeam',
+  'ljudi.form.again',
+  'ljudi.form.openPage',
+  // The username's hint: suggested from the name, no space and no `@`.
+  'ljudi.form.usernameHint',
   // THE EDIT FORM'S ONLY CONFIRMATION. Its fields are uncontrolled and remount
   // to the values they were just saved with, so without this a successful save
   // is visually identical to a press that did nothing — on the one surface
@@ -689,10 +697,6 @@ const SANCTIONED_SCREEN_KEYS = [
   // aside; the two sections both member forms are split into.
   'ljudi.lede',
   'ljudi.form.newLede',
-  'ljudi.form.newAboutTitle',
-  'ljudi.form.newAboutBody',
-  'ljudi.form.sectionBasics',
-  'ljudi.form.sectionSettings',
   // The member edit screen's card for the status.
   'ljudi.status.heading',
   // The member list's marker for a scheduled team change, in the team cell.
@@ -1987,6 +1991,14 @@ const RESOLUTION_NAMESPACE = 'raspored.resolution.';
 const LEAVE_REPLACEMENT_KEY = 'ljudi.leaveRecord.replacementStays';
 
 /**
+ * The add dialog's no-team line (story 7.13b), ONE KEY: "Osoba je bez
+ * smjene. Smjenu joj dodjeljuješ na njezinoj stranici." — the spec's own
+ * words, where `smjen` is the Team. `tip… smjen…` is still refused there, and
+ * every other `ljudi.form` message still may not say `smjen` at all.
+ */
+const MEMBER_NO_TEAM_KEY = 'ljudi.form.noTeam';
+
+/**
  * The day detail's override copy (story 3.5b), inside the calendar's
  * namespace: the admin changes a team's SHIFT TYPE there, so it says the term
  * — `Tip smjene` is the form's field — and, as in
@@ -2051,7 +2063,8 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     !key.startsWith(FILTER_NAMESPACE) &&
     !key.startsWith(DANAS_NAMESPACE) &&
     !key.startsWith(RESOLUTION_NAMESPACE) &&
-    key !== LEAVE_REPLACEMENT_KEY
+    key !== LEAVE_REPLACEMENT_KEY &&
+    key !== MEMBER_NO_TEAM_KEY
   ) {
     return lowered.includes('smjen');
   }

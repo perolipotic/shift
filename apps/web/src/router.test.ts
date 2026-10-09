@@ -26,7 +26,7 @@ import { GodisnjiScreen, godisnjiRoute } from '@/pages/godisnji';
 import { indexRoute } from '@/pages/index';
 import { KalendarScreen, kalendarRoute } from '@/pages/kalendar';
 import { LjudiMemberScreen, ljudiMemberRoute } from '@/pages/ljudi.$id';
-import { LjudiNoviScreen, ljudiNoviRoute } from '@/pages/ljudi.novi';
+import { ljudiNoviRoute } from '@/pages/ljudi.novi';
 import { LjudiSmjenaScreen, ljudiSmjenaRoute } from '@/pages/ljudi.smjene.$id';
 import { LjudiSmjeneScreen, ljudiSmjeneRoute } from '@/pages/ljudi.smjene';
 import { LjudiScreen, ljudiRoute } from '@/pages/ljudi';
@@ -252,11 +252,14 @@ const LEVEL_GUARDED_ROUTES = [
     component: OrganizacijaScreen,
   },
   { id: '/_app/ljudi', path: '/ljudi', route: ljudiRoute, component: LjudiScreen },
+  // STORY 7.13b: no screen of its own. Past the guard, an admin is
+  // redirected to the add dialog on Ljudi, which the cases below assert
+  // instead of a component.
   {
     id: '/_app/ljudi/novi',
     path: '/ljudi/novi',
     route: ljudiNoviRoute,
-    component: LjudiNoviScreen,
+    component: null,
   },
   {
     id: '/_app/ljudi/$id',
@@ -340,7 +343,8 @@ describe('the shell route tree', () => {
       // The STATIC id sorts before the parameterized one here only because `$`
       // sorts before `n`; what settles which one a URL matches is TanStack's
       // ranking, and the block below pins `/ljudi/novi` resolving to the static
-      // route rather than being read as an id.
+      // route rather than being read as an id. Since story 7.13b that route
+      // renders nothing: past its guard it redirects to `/ljudi?dodaj=1`.
       '/_app/ljudi/$id',
       '/_app/ljudi/novi',
       // STORY 1.7a. `/ljudi/smjene` is static and must beat `/ljudi/$id`; the
@@ -1844,10 +1848,24 @@ describe('the member list is the first destination that refuses a permission lev
       }
     });
 
-    it.each(LEVEL_GUARDED_ROUTES)('lets an admin through to $path', async ({ route }) => {
-      expect(
-        await beforeLoadOn(route, () => Promise.resolve({ ok: true, role: 'admin' })),
-      ).toEqual({ returned: undefined });
+    it.each(LEVEL_GUARDED_ROUTES.filter((entry) => entry.component !== null))(
+      'lets an admin through to $path',
+      async ({ route }) => {
+        expect(
+          await beforeLoadOn(route, () => Promise.resolve({ ok: true, role: 'admin' })),
+        ).toEqual({ returned: undefined });
+      },
+    );
+
+    it('sends an admin on from /ljudi/novi to the add dialog on Ljudi, replacing the entry (story 7.13b)', async () => {
+      const thrown = thrownBy(
+        await beforeLoadOn(ljudiNoviRoute, () => Promise.resolve({ ok: true, role: 'admin' })),
+      );
+
+      expect(isRedirect(thrown), '/ljudi/novi let an admin through to a screen it no longer has').toBe(true);
+      expect((thrown as { options: { to?: string } }).options.to).toBe('/ljudi');
+      expect((thrown as { options: { search?: unknown } }).options.search).toEqual({ dodaj: 1 });
+      expect((thrown as { options: { replace?: unknown } }).options.replace).toBe(true);
     });
 
     it.each(LEVEL_GUARDED_ROUTES)(
@@ -1963,7 +1981,13 @@ describe('the member list is the first destination that refuses a permission lev
       expect(match('/raspored/m-1/2026-10-02/t-1').at(-1)?.routeId).toBe('/_app/raspored/$memberId/$date/$teamId');
     });
 
-    it.each(LEVEL_GUARDED_ROUTES)('resolves $path to $id and to its own screen', ({ id, path, component }) => {
+    it('resolves /ljudi/novi to its own route, which renders nothing and only redirects (story 7.13b)', () => {
+      // Still the static route rather than `/ljudi/$id` with `id = 'novi'`.
+      expect(match('/ljudi/novi').at(-1)?.routeId).toBe('/_app/ljudi/novi');
+      expect((ljudiNoviRoute.options as { component?: unknown }).component).toBeUndefined();
+    });
+
+    it.each(LEVEL_GUARDED_ROUTES.filter((entry) => entry.component !== null))('resolves $path to $id and to its own screen', ({ id, path, component }) => {
       // `/ljudi/novi` must not be read as `/ljudi/$id` with `id = 'novi'`, which
       // is what a ranking change would do — and the screen it resolved to would
       // be an edit form for a member that does not exist. The component is named

@@ -66,9 +66,9 @@ test('with fire ranks switched on, a member created with a rank shows it on the 
   // Issue the member WITH a rank: the rank travels in the one create call.
   await peoplePage.gotoNew();
   await peoplePage.fillNewMember(person.name, person.username);
-  await peoplePage.rankSelect.selectOption({ label: rank });
-  await peoplePage.saveButton.click();
-  await expect(peoplePage.status).toHaveText(hr.ljudi.form.created);
+  await peoplePage.addRankSelect.selectOption({ label: rank });
+  await peoplePage.addSubmitButton.click();
+  await expect(peoplePage.createdStatus(person.name, person.username)).toBeVisible();
 
   // The member page states the stored rank as a fact, under the name and on
   // *Osnovni podaci*, and its basics dialog reads it back (story 7.11).

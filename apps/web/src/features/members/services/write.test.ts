@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -66,6 +68,7 @@ import {
   saveMember,
   standingConfirmation,
   statusBlockKey,
+  suggestedUsername,
   statusActionMessageKey,
   statusConfirmMessageKey,
   statusDialogHeadingMessageKey,
@@ -1144,9 +1147,11 @@ describe('creating a member issues one credential and reports it once', () => {
 
     const outcome = await createMember(functions, creation);
 
+    // NO `memberId` IN THE REPLY: the credential is still shown, and the
+    // page link is what is left out (story 7.13b).
     expect(outcome).toEqual({
       ok: true,
-      credential: { username: 'marko.novak', password: 'kosa-more-lipa-zora' },
+      credential: { username: 'marko.novak', password: 'kosa-more-lipa-zora', memberId: null },
     });
     expect(calls).toEqual([
       {
@@ -1165,6 +1170,48 @@ describe('creating a member issues one credential and reports it once', () => {
     expect(Object.keys(calls[0]?.body ?? {}), 'an absent rank reached the payload').not.toContain(
       'fireRank',
     );
+  });
+
+  it('returns the new member\'s id beside the credential (story 7.13b)', async () => {
+    const { functions } = functionsThat(
+      replied({
+        code: MEMBER_CREATED,
+        memberId: 'member-9',
+        username: 'marko.novak',
+        password: 'kosa-more-lipa-zora',
+      }),
+    );
+
+    expect(await createMember(functions, creation)).toEqual({
+      ok: true,
+      credential: { username: 'marko.novak', password: 'kosa-more-lipa-zora', memberId: 'member-9' },
+    });
+  });
+
+  it('returns a memberId with whitespace around it trimmed', async () => {
+    const { functions } = functionsThat(
+      replied({ code: MEMBER_CREATED, memberId: '  member-9 ', username: 'marko.novak', password: 'kosa-more-lipa-zora' }),
+    );
+
+    expect(await createMember(functions, creation)).toEqual({
+      ok: true,
+      credential: { username: 'marko.novak', password: 'kosa-more-lipa-zora', memberId: 'member-9' },
+    });
+  });
+
+  it.each([
+    ['blank', ''],
+    ['whitespace', '  '],
+    ['not a string', 42],
+  ])('maps a %s memberId to null and still shows the credential', async (_label, memberId) => {
+    const { functions } = functionsThat(
+      replied({ code: MEMBER_CREATED, memberId, username: 'marko.novak', password: 'kosa-more-lipa-zora' }),
+    );
+
+    expect(await createMember(functions, creation)).toEqual({
+      ok: true,
+      credential: { username: 'marko.novak', password: 'kosa-more-lipa-zora', memberId: null },
+    });
   });
 
   it('carries the rank in the one create payload, null included', async () => {
@@ -2517,5 +2564,61 @@ describe('a team change is one appended version or one cancelled one, judged bef
     expect(standingTeamConfirmation(armed, scheduledB(), false)).toBeNull();
     expect(standingTeamConfirmation(armed, scheduledB(), true)).toBe(armed);
     expect(standingTeamConfirmation(null, before, false)).toBeNull();
+  });
+});
+
+describe('the suggested username follows one rule (story 7.13b)', () => {
+  it.each([
+    ['Petra Jurić', 'petra.juric'],
+    ['Čedo Šimić Žanić', 'cedo.simic.zanic'],
+    ['Ćiro Đurđević', 'ciro.durdevic'],
+    ['Đuro', 'duro'],
+    ['  Ana   Marija  Kovač ', 'ana.marija.kovac'],
+    ['Ana\tKovač', 'ana.kovac'],
+    ['ana@vatrogasci Novak', 'anavatrogasci.novak'],
+    ['@', ''],
+    ['', ''],
+    ['   ', ''],
+    // ONLY `[a-z0-9._-]`: punctuation and undecomposed letters are dropped,
+    // dots collapse, and none leads or trails.
+    ["O'Neil Ćosić", 'oneil.cosic'],
+    ['Ivan Jr.', 'ivan.jr'],
+    ['Kovač, Ana', 'kovac.ana'],
+    ['Ana (Anči) Horvat', 'ana.anci.horvat'],
+    ['Paweł Søren Strauß', 'pawe.sren.strau'],
+    ['Zoë Brontë-Šarić', 'zoe.bronte-saric'],
+    [' Ivo  @ Ivić ', 'ivo.ivic'],
+    ['.Ana..Marić.', 'ana.maric'],
+    ['Ivo 2', 'ivo.2'],
+    ['ł ø ß', ''],
+    ["'", ''],
+  ])('suggests %j as %j', (name, expected) => {
+    expect(suggestedUsername(name)).toBe(expected);
+  });
+
+  it.each(['Petra Jurić', 'ĐURĐA ŠTEFANIĆ', ' Ivo  @ Ivić ', 'Zoë Brontë-Šarić', 'O\'Neil Ćosić'])(
+    'suggests for %j a username the server keeps exactly as it is',
+    (name) => {
+      const suggested = suggestedUsername(name);
+      // `normalizedUsername` (`admin-auth/operations.ts`): trim, lowercase, and
+      // refuse nothing, whitespace or `@` — and `0007`'s check, verbatim.
+      const normalized = suggested.trim().toLowerCase();
+
+      expect(suggested).not.toBe('');
+      expect(normalized).toBe(suggested);
+      expect(/[\s@]/.test(normalized)).toBe(false);
+      expect(/^[^\s@]+$/.test(suggested)).toBe(true);
+      expect(suggested).toMatch(/^[a-z0-9_-]+(\.[a-z0-9_-]+)*$/);
+    },
+  );
+
+  it('agrees with the rule the server applies, as the server spells it', () => {
+    const operations = readFileSync(
+      new URL('../../../../../../supabase/functions/admin-auth/operations.ts', import.meta.url),
+      'utf8',
+    );
+
+    expect(operations).toContain('const normalized = value.trim().toLowerCase();');
+    expect(operations).toContain("if (normalized === '' || /[\\s@]/.test(normalized)) return null;");
   });
 });

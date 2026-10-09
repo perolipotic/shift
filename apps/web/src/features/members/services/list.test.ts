@@ -107,6 +107,8 @@ import {
   membersFiltersOf,
   membersSearchFor,
   membersSearchKeyOf,
+  membersAddSearchOf,
+  MEMBERS_ADD_OPEN,
   membersSearchOf,
   membersSummaryMessageKey,
   memberStatusArgsOf,
@@ -2628,6 +2630,32 @@ describe('the search, filters and sort live in the URL, with every default left 
     expect(isNarrowed(membersFiltersOf({ trazi: '  ' }))).toBe(false);
     expect(membersSearchOf({ trazi: '  ' })).toEqual({});
     expect(membersFiltersOf({ trazi: ' ana ' }).search).toBe('ana');
+  });
+});
+
+describe('`?dodaj=1` opens the add dialog, beside the filters (story 7.13b)', () => {
+  it('reads 1, as the router parses it or as text, as open', () => {
+    expect(membersAddSearchOf({ dodaj: 1 })).toEqual({ dodaj: MEMBERS_ADD_OPEN });
+    expect(membersAddSearchOf({ dodaj: '1' })).toEqual({ dodaj: MEMBERS_ADD_OPEN });
+  });
+
+  // EXACTLY `1` or `'1'`, deliberately: a padded, zero-led or decimal spelling,
+  // a boolean and a repeated parameter are not the open state, and are dropped.
+  it.each([['x'], [0], [2], [true], [null], [{ nested: 1 }], [''], [' 1'], ['01'], ['1.0'], [['1', '1']], [1.5]])(
+    'drops %j and never throws',
+    (dodaj) => {
+      expect(membersAddSearchOf({ dodaj })).toEqual({});
+    },
+  );
+
+  it('reads an absent value as closed', () => {
+    expect(membersAddSearchOf({})).toEqual({});
+  });
+
+  it('leaves the filter search as it was: `membersSearchOf` still drops the key', () => {
+    expect(membersSearchOf({ status: 'svi', dodaj: 1 })).toEqual({ status: 'svi' });
+    expect(membersFiltersOf({ dodaj: 1 })).toEqual(DEFAULT_FILTERS);
+    expect(membersAddSearchOf({ status: 'svi', dodaj: 1 })).toEqual({ dodaj: 1 });
   });
 });
 

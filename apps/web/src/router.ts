@@ -53,8 +53,9 @@ const appDestinations = appLayoutRoute.addChildren([
   // exactly as it covers the eight — and they are deliberately absent from
   // `@/features/navigation/utils/destinations`: the chrome offers places, and these two are
   // reached from the member list rather than from the navigation. Each carries
-  // its own role guard, because the layout's is session-only and both screens
-  // write the data `/ljudi` guards the reading of.
+  // its own role guard, because the layout's is session-only. `/ljudi/novi`
+  // renders nothing since story 7.13b: past its guard it redirects to the add
+  // dialog on Ljudi, `/ljudi?dodaj=1`, so an old link still opens it.
   //
   // The STATIC one is registered before the parameterized one. TanStack ranks
   // matches rather than taking source order, so this is legibility rather than
