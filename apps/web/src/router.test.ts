@@ -10,13 +10,14 @@ import {
   returnTargetOf,
   type RouteMatcher,
 } from '@/features/auth/services/return-target';
-import { mayReadMembers } from '@/features/members/services/list';
+import { LJUDI_DIRECTORY, LJUDI_TABLE, ljudiViewOf, mayReadMembers } from '@/features/members/services/list';
 import { DESTINATIONS, destinationsFor } from '@/features/navigation/utils/destinations';
 import {
   currentMemberRole,
   MEMBER_ROLES,
   MEMBER_ROLE_REFUSED,
   MEMBER_ROLE_UNAVAILABLE,
+  MEMBER_ROLE_UNRECOGNISED,
   type MemberRoleOutcome,
 } from '@/features/navigation/services/role';
 import { currentSession, SESSION_UNRESOLVED } from '@/lib/supabase/client';
@@ -204,9 +205,21 @@ const DESTINATION_ROUTES = [
 // reached an admin screen shell. Every destination the member role does not
 // reach carries the admin guard, so a new `ADMIN_ONLY` row without one fails
 // the completeness test below rather than shipping.
+//
+// `/ljudi` LEFT IN STORY 7.17: a member reaches it as the read-only directory,
+// so it is in `ROLE_SCOPED_PATHS` below instead.
 const ROLE_GUARDED_PATHS: readonly string[] = DESTINATIONS.filter(
   (destination) => !destination.roles.includes('member_role'),
 ).map((destination) => destination.path);
+
+/**
+ * STORY 7.17: destinations every role reaches whose `beforeLoad` decides WHICH
+ * CONTENT the permission level gets — `/ljudi`, the member list for an admin
+ * and the directory for a member — and forwards a level it cannot read. Each
+ * is driven by execution in the block below, so a second session check cannot
+ * hide behind this list either.
+ */
+const ROLE_SCOPED_PATHS: readonly string[] = ['/ljudi'];
 
 /**
  * STORY 7.5: destinations whose `beforeLoad` is a SEARCH redirect, never a
@@ -251,7 +264,9 @@ const LEVEL_GUARDED_ROUTES = [
     route: organizacijaRoute,
     component: OrganizacijaScreen,
   },
-  { id: '/_app/ljudi', path: '/ljudi', route: ljudiRoute, component: LjudiScreen },
+  // `/ljudi` LEFT THIS TABLE IN STORY 7.17: a member reaches it too, as the
+  // directory, so its guard decides the content rather than refusing. It is
+  // driven by the block below instead.
   // STORY 7.13b: no screen of its own. Past the guard, an admin is
   // redirected to the add dialog on Ljudi, which the cases below assert
   // instead of a component.
@@ -1580,6 +1595,11 @@ describe('the signed-in layout guards every destination once, and is pathless', 
         continue;
       }
 
+      if (ROLE_SCOPED_PATHS.includes(path)) {
+        expect(registered, `${path} is listed as role-scoped and carries no guard`).toBeTypeOf('function');
+        continue;
+      }
+
       expect(
         registered,
         `${path} carries a guard of its own instead of inheriting the layout's`,
@@ -1600,7 +1620,7 @@ describe('the signed-in layout guards every destination once, and is pathless', 
         ({ route }) => (route.options as { beforeLoad?: unknown }).beforeLoad !== undefined,
       )
         .map(({ path }) => path)
-        .filter((path) => !SEARCH_REDIRECT_PATHS.includes(path)),
+        .filter((path) => !SEARCH_REDIRECT_PATHS.includes(path) && !ROLE_SCOPED_PATHS.includes(path)),
     ).toEqual([...ROLE_GUARDED_PATHS]);
   });
 
@@ -1631,7 +1651,7 @@ describe('the signed-in layout guards every destination once, and is pathless', 
   });
 });
 
-describe('the member list is the first destination that refuses a permission level', () => {
+describe('/ljudi decides its content by permission level, and the admin screens refuse a member', () => {
   /**
    * The guard `_app.tsx` asked a later story to write, EXECUTED.
    *
@@ -1698,7 +1718,7 @@ describe('the member list is the first destination that refuses a permission lev
     }
   }
 
-  /** The member list's own copy, which the detailed cases below drive. */
+  /** `/ljudi`'s guard, which the detailed cases below drive (story 7.17: role-scoped). */
   const beforeLoad = (role: () => Promise<MemberRoleOutcome>): Promise<Outcome> =>
     beforeLoadOn(ljudiRoute, role);
 
@@ -1713,23 +1733,57 @@ describe('the member list is the first destination that refuses a permission lev
     return 'thrown' in outcome ? outcome.thrown : null;
   }
 
-  it('lets an admin through, which is the branch that makes the others worth having', async () => {
+  it('gives an admin the member list, which is the branch that makes the others worth having', async () => {
     // A guard that forwarded unconditionally would satisfy every redirect case
     // below and no administrator could reach the list at all.
     expect(await beforeLoad(() => Promise.resolve({ ok: true, role: 'admin' }))).toEqual({
-      returned: undefined,
+      returned: { ljudiView: LJUDI_TABLE },
     });
   });
 
-  it('forwards a member-role session to its first destination', async () => {
-    // THE CASE THE PREVIOUS ITERATION COULD NOT MAKE. Driven with a real
-    // `{ ok: true, role: 'member_role' }`, so widening the guard to admit any
-    // resolved outcome fails here rather than shipping.
+  it('gives a member-role session the directory, never the member list (story 7.17)', async () => {
+    // Driven with a real `{ ok: true, role: 'member_role' }`, so a guard that
+    // handed every resolved outcome the list fails here rather than shipping
+    // every colleague's address and allowance to a member.
+    expect(await beforeLoad(() => Promise.resolve({ ok: true, role: 'member_role' }))).toEqual({
+      returned: { ljudiView: LJUDI_DIRECTORY },
+    });
+  });
+
+  it.each([MEMBER_ROLE_REFUSED, MEMBER_ROLE_UNRECOGNISED, MEMBER_ROLE_UNAVAILABLE] as const)(
+    'forwards from /ljudi when the level comes back as %s, rather than showing either content',
+    async (code) => {
+      // FAILING CLOSED, as before the directory existed.
+      const thrown = thrownBy(await beforeLoad(() => Promise.resolve({ ok: false, code })));
+
+      expect(isRedirect(thrown), `/ljudi admitted a session whose level was ${code}`).toBe(true);
+      expect((thrown as { options: { to?: string } }).options.to).toBe(DESTINATIONS[0].path);
+      expect((thrown as { options: { replace?: unknown } }).options.replace).toBe(true);
+    },
+  );
+
+  it('says nothing to the console on the ordinary paths through /ljudi', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      await beforeLoad(() => Promise.resolve({ ok: true, role: 'admin' }));
+      await beforeLoad(() => Promise.resolve({ ok: true, role: 'member_role' }));
+
+      expect(logged).not.toHaveBeenCalled();
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  it('forwards a member-role session away from an admin screen, to its first destination', async () => {
+    // THE CASE THE 1.5a ITERATION COULD NOT MAKE, now on `/raspored`: driven
+    // with a real `{ ok: true, role: 'member_role' }`, so widening a guard to
+    // admit any resolved outcome fails here rather than shipping.
     const thrown = thrownBy(
-      await beforeLoad(() => Promise.resolve({ ok: true, role: 'member_role' })),
+      await beforeLoadOn(rasporedRoute, () => Promise.resolve({ ok: true, role: 'member_role' })),
     );
 
-    expect(isRedirect(thrown), '/ljudi threw something that is not a redirect').toBe(true);
+    expect(isRedirect(thrown), '/raspored threw something that is not a redirect').toBe(true);
     // The FIRST destination, read off the table rather than written here, and
     // the same one `/` forwards to: a second destination policy is the one that
     // goes stale silently.
@@ -1784,6 +1838,13 @@ describe('the member list is the first destination that refuses a permission lev
     expect(asked, '/ljudi never asked the router context for the permission level').toBe(1);
   });
 
+  it('decides the content by one rule, which names the member level and places nothing else', () => {
+    expect(ljudiViewOf({ ok: true, role: 'admin' })).toBe(LJUDI_TABLE);
+    expect(ljudiViewOf({ ok: true, role: 'member_role' })).toBe(LJUDI_DIRECTORY);
+    expect(ljudiViewOf({ ok: false, code: MEMBER_ROLE_REFUSED })).toBeNull();
+    expect(ljudiViewOf({ ok: false, code: MEMBER_ROLE_UNAVAILABLE })).toBeNull();
+  });
+
   it('decides on the level the rank order names, not on a literal of its own', () => {
     // The guard's decision as a VALUE, so the reorder mutation reaches it. The
     // exhaustive pinning of `MEMBER_ROLES[0]` against the literal `'admin'`
@@ -1806,12 +1867,13 @@ describe('the member list is the first destination that refuses a permission lev
      * over the branches that decide who gets in, so a copy that was pasted and
      * then quietly loosened fails here rather than shipping.
      */
-    it('guards exactly the twelve routes the table names, and no fewer', () => {
+    it('guards exactly the eleven routes the table names, and no fewer', () => {
       // NON-VACUITY. An entry deleted from the table takes its cases with it and
       // Vitest reports the shorter run as a pass. SEVEN SINCE STORY 2.1b.
       // NINE SINCE STORY 2.2b. ELEVEN SINCE THE ADMIN ROUTE GUARD FIX.
-      // TWELVE SINCE STORY 5.4b.
-      expect(LEVEL_GUARDED_ROUTES).toHaveLength(12);
+      // TWELVE SINCE STORY 5.4b. ELEVEN AGAIN SINCE STORY 7.17: `/ljudi` is
+      // role-scoped, and driven by the cases above instead.
+      expect(LEVEL_GUARDED_ROUTES).toHaveLength(11);
       for (const { path, route } of LEVEL_GUARDED_ROUTES) {
         expect(
           (route.options as { beforeLoad?: unknown }).beforeLoad,

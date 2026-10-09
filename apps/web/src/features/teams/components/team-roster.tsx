@@ -1,12 +1,9 @@
 import type { ReactNode } from 'react';
 
-import { Avatar } from '@/components/ui/avatar';
-import { rosterLineOf, rosterPositionMessageKey } from '@/features/members/utils/position';
-import { rosterRankMessageKey } from '@/features/members/utils/rank';
+import { RosterLines } from '@/features/teams/components/roster-lines';
 import type { TeamRosterScreen } from '@/features/teams/hooks/use-team-roster';
 import type { TeamRoster as TeamRosterAnswer } from '@/features/teams/services/roster';
 import { t } from '@/lib/i18n';
-import { initialsOf } from '@/utils/initials';
 
 const SKELETON_ROWS = [0, 1, 2];
 
@@ -30,28 +27,7 @@ export function TeamRoster({ screen }: { readonly screen: TeamRosterScreen }): R
         <p className="text-sm font-medium">
           {t('smjene.roster.count', { count: team.members.length })}
         </p>
-        {team.members.length === 0 ? null : (
-          <ul className="grid gap-2">
-            {team.members.map((member) => {
-              const initials = initialsOf(member.name);
-              const rank = rosterRankMessageKey(member.fireRank, shown);
-              const position = rosterPositionMessageKey(member.position, positionShown);
-              // WHICH SENTENCE is `rosterLineOf`'s decision, executed in a test.
-              const line = rosterLineOf(member.name, rank, position, (key) => t(key));
-
-              return (
-                <li key={member.id} className="flex min-w-0 items-center gap-3 text-base">
-                  {/* EMPTY for a name with no letter, so the names stay aligned. */}
-                  <Avatar>{initials}</Avatar>
-                  {/* TEXT, never a colour or an icon: rank and position are words. */}
-                  <span className="min-w-0 break-words">
-                    {line.key === null ? line.text : t(line.key, line.values)}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
+        <RosterLines members={team.members} shown={shown} positionShown={positionShown} />
       </div>
     );
   }

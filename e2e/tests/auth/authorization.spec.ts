@@ -7,14 +7,15 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  *
  * Every admin-only destination is here, `/raspored` and `/organizacija`
  * included: both carry the admin guard the other admin routes do, and a member
- * who types either lands where one sent away from `/ljudi` does.
+ * who types either lands on Danas. `/ljudi` is NOT here since story 7.17: a
+ * member reaches it as the read-only directory (`people/member-directory.spec.ts`),
+ * while `/ljudi/novi` still sends them away.
  */
 
 test.describe('a member opening an admin screen directly', () => {
   test.use({ storageState: MEMBER_STATE });
 
   for (const path of [
-    '/ljudi',
     '/ljudi/novi',
     '/organizacija/satni-pojasi',
     '/postavke-rotacije',

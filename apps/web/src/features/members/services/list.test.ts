@@ -54,6 +54,10 @@ import {
   teamFilterMessageKey,
   teamToStore,
   foldForSearch,
+  foldedSearchOf,
+  LJUDI_DIRECTORY,
+  LJUDI_TABLE,
+  ljudiViewOf,
   levelFilterMessageKey,
   mayReadMembers,
   memberLevelMessageKey,
@@ -535,6 +539,31 @@ describe('the level the guard admits is the one the rank order names', () => {
     expect(mayReadMembers({ ok: false, code: 'MEMBER_ROLE_REFUSED' })).toBe(false);
     expect(mayReadMembers({ ok: false, code: 'MEMBER_ROLE_UNRECOGNISED' })).toBe(false);
     expect(mayReadMembers({ ok: false, code: 'MEMBER_ROLE_UNAVAILABLE' })).toBe(false);
+  });
+});
+
+describe('/ljudi is role-scoped: the list for an admin, the directory for a member (story 7.17)', () => {
+  it('gives the list to admin and the directory to member_role, by name', () => {
+    expect(ljudiViewOf({ ok: true, role: 'admin' })).toBe(LJUDI_TABLE);
+    expect(ljudiViewOf({ ok: true, role: 'member_role' })).toBe(LJUDI_DIRECTORY);
+  });
+
+  it('gives neither to an outcome that is not a level', () => {
+    expect(ljudiViewOf({ ok: false, code: 'MEMBER_ROLE_REFUSED' })).toBeNull();
+    expect(ljudiViewOf({ ok: false, code: 'MEMBER_ROLE_UNRECOGNISED' })).toBeNull();
+    expect(ljudiViewOf({ ok: false, code: 'MEMBER_ROLE_UNAVAILABLE' })).toBeNull();
+  });
+});
+
+describe('a search folds once, for the list and the directory alike (story 7.17)', () => {
+  it('reads an empty or blank box as no search', () => {
+    expect(foldedSearchOf('')).toBeNull();
+    expect(foldedSearchOf('   ')).toBeNull();
+  });
+
+  it('folds the query, and a query that folds to nothing to the empty string', () => {
+    expect(foldedSearchOf(' Đurić ')).toBe('duric');
+    expect(foldedSearchOf('\u0300 \u0301')).toBe('');
   });
 });
 

@@ -45,6 +45,9 @@ export const TEAM_ROSTER_PARTS = {
   page: ['pages', 'smjene.$id.tsx'],
   hook: ['features', 'teams', 'hooks', 'use-team-roster.ts'],
   roster: ['features', 'teams', 'components', 'team-roster.tsx'],
+  // STORY 7.17: the member lines, lifted out of the roster so the member
+  // directory on `/ljudi` says a person the same way.
+  lines: ['features', 'teams', 'components', 'roster-lines.tsx'],
 } as const;
 
 /**
@@ -70,6 +73,18 @@ export const TEAM_SCREENS_EXEMPT: readonly { readonly file: string; readonly why
   {
     file: 'services/roster.ts',
     why: 'the roster read, its refusals and the Danas line (story 1.8); a key source of its own in the sign-in suite, executed by roster.test.ts',
+  },
+  {
+    file: 'services/directory.ts',
+    why: 'the member directory\'s groups, order, counts, search and states (story 7.17); renders nothing, executed by directory.test.ts',
+  },
+  {
+    file: 'hooks/use-member-directory.ts',
+    why: 'the member directory\'s reads and search box (story 7.17); swept as the sign-in suite\'s MEMBER_DIRECTORY set, composed by `/ljudi`',
+  },
+  {
+    file: 'components/member-directory.tsx',
+    why: 'the member directory\'s markup (story 7.17); swept as the sign-in suite\'s MEMBER_DIRECTORY set, composed by `/ljudi`',
   },
   {
     file: 'services/dependents.ts',

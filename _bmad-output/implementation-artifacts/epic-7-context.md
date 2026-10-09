@@ -4,7 +4,7 @@
 
 ## Goal
 
-Every shipped screen should read calm, minimal and simple on a phone (390 px) and on a desktop, in both themes. A pilot user finds each answer at a glance and makes each change behind one Save. The epic fixes defects measured in the 2026-10-01 UX review and rewrites already-shipped surfaces through new stories. It rolls no completed story back. It also adds four small capabilities: a first-sign-in password, an explanation for any hours figure, an admin leave overview and a list of resolved conflicts. **Status:** 7.1–7.12, 7.14, 7.16 and 7.18 have shipped. 7.13 was split into three parts: 7.13a (status chip and Status column) has shipped, 7.13b (the add-member dialog) is in progress, and 7.13c (deactivation consequence in numbers) is a deferred entry. 7.15 and 7.17 remain. The reference design is the approved mockups in `ux-designs/ux-shift-2026-10-01-redesign/mockups/` (for the remaining work, `people-1` and `leave-1`) and the 27 decisions in that folder's README. Where a mockup and an epic criterion disagree, the criterion wins.
+Every shipped screen should read calm, minimal and simple on a phone (390 px) and on a desktop, in both themes. A pilot user finds each answer at a glance and makes each change behind one Save. The epic fixes defects measured in the 2026-10-01 UX review and rewrites already-shipped surfaces through new stories. It rolls no completed story back. It also adds four small capabilities: a first-sign-in password, an explanation for any hours figure, an admin leave overview and a list of resolved conflicts. **Status:** 7.1–7.12, 7.14, 7.16 and 7.18 have shipped. 7.13 was split into three parts: 7.13a (status chip and Status column) and 7.13b (the add-member dialog, merged as PR #185 on 2026-10-09) have shipped, and 7.13c (deactivation consequence in numbers) is a deferred-work entry. 7.15 and 7.17 remain; 7.17 is now being built. The reference design is the approved mockups in `ux-designs/ux-shift-2026-10-01-redesign/mockups/` (for the remaining work, `people-1` for the directory and `leave-1` for the overview) and the 27 decisions in that folder's README. Where a mockup and an epic criterion disagree, the criterion wins.
 
 ## Stories
 
@@ -36,12 +36,10 @@ Every shipped screen should read calm, minimal and simple on a phone (390 px) an
   - WCAG 2.1 AA in both themes;
   - all copy in i18n, with Croatian's three plural forms.
 - **Figures agree everywhere.** Hour and leave figures match on every surface at a given moment. A row in any overview equals that member's own view.
-- **Add a member (7.13b):** `Novi član` / *Dodaj osobu* opens a short dialog on Ljudi (`/ljudi?dodaj=1`), which replaces the `/ljudi/novi` page. The route stays as a guarded redirect to `/ljudi?dodaj=1`, so an old link still opens the dialog.
-  - The dialog asks for no team; the team is set on the member page. The username is suggested from the name, and the e-mail field stays.
-  - It ends inside the same dialog by showing the four-word password once, with `Kopiraj`. It then offers *Dodaj još jednu* and *Otvori stranicu osobe*. The second needs the `memberId` that `createUser` already returns.
-- **Deactivation (7.13c):** offered only on the member page, never from Ljudi. It is one neutral question with a date and the consequence in numbers, computed from the domain roster. The action button repeats the date.
+- **Add a member (7.13b, shipped):** *Dodaj osobu* opens a dialog on Ljudi (`/ljudi?dodaj=1`); `/ljudi/novi` is a guarded redirect to it. The dialog ends by showing the password once.
+- **Deactivation (7.13c, deferred):** offered only on the member page, never from Ljudi. It is one neutral question with a date and the consequence in numbers, computed from the domain roster. The action button repeats the date.
 - **Admin leave overview (7.15):** an admin on *Godišnji* sees every member's allowance, days used and balance for the leave year. Allowance − used = balance on every row, and each row equals that member's own view. A member-role account is refused at the data layer and sees only their own leave.
-- **Member directory (7.17):** a member reaches it from *Više*. It is grouped by team and read-only. It shows name and team, plus rank and position where the organization uses them. It never shows allowance, balance, leave, hours or contact details. This replaces "the roster lives only inside team detail".
+- **Member directory (7.17):** a member reaches it from *Više*. It is grouped by team and read-only. It shows name and team, plus rank and position where the organization uses them. It never shows allowance, balance, leave, hours or contact details, and offers no write action to a member-role account. This changes UX-DR33 and CAP-5's "reached through team context, not a top-level destination": the roster becomes one page reachable from *Više*.
 - **Keep shipped behaviour intact:**
   - Sign-in reveals nothing before authentication and has one generic error (7.7).
   - The set-password guard stays (7.8).
@@ -59,7 +57,7 @@ Every shipped screen should read calm, minimal and simple on a phone (390 px) an
   - `clearMustSetPassword` acts only on the caller.
   - `createUser` and `resetPassword` set `app_metadata.must_set_password`.
   - The function does no domain calculation. Adding an operation or a function needs an architecture amendment.
-- **Role and tenant enforcement stay in RLS.** A new org-wide read, such as the leave overview, must fail for member-role through the API, not only in the UI.
+- **Role and tenant enforcement stay in RLS.** A new org-wide read, such as the leave overview, must fail for member-role through the API, not only in the UI. The directory's data is the CAP-5 roster: `members.fire_rank`, `team_membership_versions.position` and the `team_roster` read; it must not widen what a member can read.
 - **Migrations:** the epic allows at most one. Before you number one, check the main checkout for untracked migrations from parallel sessions.
 - **Filter state lives only in the URL.** Ljudi uses `?trazi=&razina=&smjena=&status=&sort=`. A bad value falls back to its default.
 - **Module boundaries:** pages compose features and hold no query, mutation or derivation of their own. A feature reaches another feature only through `FEATURE_PUBLIC`. Do not add `index.ts` barrels.
@@ -88,8 +86,7 @@ Every shipped screen should read calm, minimal and simple on a phone (390 px) an
 
 ## Cross-Story Dependencies
 
-- 7.13b and 7.13c build on 7.11's member page and dialog pattern, and on 7.13a's Ljudi.
-- 7.13b turns `/ljudi/novi` into a guarded redirect to `/ljudi?dodaj=1`. Rewrite the route sweeps in `prijava.test.ts` and `router.test.ts`.
+- 7.13c builds on 7.11's member page and dialog pattern, and on 7.13a's Ljudi.
 - 7.15 needs 7.6 (stacked rows) and FR-45a, which has landed.
 - 7.17 needs 7.3 (*Više*) and the CAP-5 / FR-16 edit, which has landed.
 - Epic 7 rewrites shipped surfaces, so expect churn in unit tests and e2e page objects (people, leave, base navigation).

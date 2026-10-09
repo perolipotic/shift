@@ -4,11 +4,12 @@ import type { ParseKeys } from 'i18next';
 /**
  * Which destinations each role reaches — as DATA, not as markup.
  *
- * UX-DR31 gives the member role four destinations and no configuration surface
- * at all; UX-DR32 adds four more for an admin (`epics.md:151-152`). `Sati` is
- * ONE destination with role-scoped content rather than two — the human decision
- * of 2026-09-04 that resolves the overlap between those two rules — so the
- * totals are four and eight, never nine.
+ * UX-DR31 gives the member role five destinations and no configuration surface
+ * at all; UX-DR32 adds three more for an admin (`epics.md`). `Sati` is ONE
+ * destination with role-scoped content rather than two — the human decision of
+ * 2026-09-04 that resolves the overlap between those two rules — and so is
+ * `Ljudi` since story 7.17 (decision of 2026-10-09): the member list for an
+ * admin, the team directory for a member. The totals are five and eight.
  *
  * A `.ts` module rather than a component, and that is the whole reason this file
  * exists. L2 is an ESLint `no-restricted-syntax` selector over JSX shapes:
@@ -83,9 +84,11 @@ const ADMIN_ONLY: readonly MemberRole[] = ['admin'];
  * preserves it by filtering rather than sorting, and `destinations.test.ts`
  * pins both sequences exactly rather than as sets.
  *
- * The admin's four are appended rather than interleaved: UX-DR32 describes them
- * as GROUPED configuration added to the member's four, so a member and an admin
- * see the same first four in the same order.
+ * The admin's destinations follow the shared four rather than interleaving
+ * them: UX-DR32 describes them as GROUPED configuration, so a member and an
+ * admin see the same first four in the same order. `Ljudi` keeps its place
+ * among them although a member reaches it too (story 7.17): a member's list is
+ * a subsequence of the table, so it is their fifth.
  *
  * TYPED AS A NON-EMPTY TUPLE, which is a claim about the table rather than a
  * formality. `/` forwards a signed-in visitor to the FIRST entry here
@@ -104,7 +107,9 @@ export const DESTINATIONS: readonly [Destination, ...Destination[]] = [
   { key: 'nav.sati', path: '/sati', roles: EVERYONE },
   { key: 'nav.godisnji', path: '/godisnji', roles: EVERYONE },
   { key: 'nav.raspored', path: '/raspored', roles: ADMIN_ONLY },
-  { key: 'nav.ljudi', path: '/ljudi', roles: ADMIN_ONLY },
+  // ROLE-SCOPED TOO (story 7.17): the member list for an admin, the read-only
+  // directory of who is on which team for a member.
+  { key: 'nav.ljudi', path: '/ljudi', roles: EVERYONE },
   { key: 'nav.postavkeRotacije', path: '/postavke-rotacije', roles: ADMIN_ONLY },
   { key: 'nav.organizacija', path: '/organizacija', roles: ADMIN_ONLY },
 ];
@@ -146,9 +151,9 @@ type PhoneTabs = readonly [RegisteredPath, RegisteredPath, RegisteredPath, Regis
  * The phone bar's four fixed tabs per role (story 7.3), as DATA.
  *
  * Below 640 px the bar is five equal cells: these four and *Više*. A member's
- * four are all of their destinations, so their *Više* holds no destination at
- * all. An admin's four trade Sati and Godišnji for Raspored and Ljudi, the two
- * an admin opens most; the rest stay one press away in *Više*.
+ * fifth destination, Ljudi (story 7.17), is in their *Više* under *Pregled*.
+ * An admin's four trade Sati and Godišnji for Raspored and Ljudi, the two an
+ * admin opens most; the rest stay one press away in *Više*.
  *
  * Paths rather than keys, and checked against `destinationsFor` by
  * `destinations.test.ts`: a tab the role does not reach would be dropped by

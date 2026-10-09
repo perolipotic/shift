@@ -26,12 +26,12 @@ import {
  * regex, and a label smuggled in where a key belongs fails an assertion instead
  * of passing a lint.
  *
- * The numbers are binding, not illustrative. UX-DR31 gives the member role four
- * destinations and no configuration surface at all; UX-DR32 adds four more for
- * an admin (`epics.md:151-152`). `Sati` appears in both lists and is ONE
- * destination with role-scoped content (human decision, 2026-09-04) — so eight
- * exist, not nine, and "appears once" is asserted per role rather than assumed
- * from the total.
+ * The numbers are binding, not illustrative. UX-DR31 gives the member role five
+ * destinations and no configuration surface at all; UX-DR32 adds three more for
+ * an admin (`epics.md`). `Sati` appears in both lists and is ONE destination
+ * with role-scoped content (human decision, 2026-09-04), and so is `Ljudi`
+ * since story 7.17 (decision of 2026-10-09) — so eight exist, not ten, and
+ * "appears once" is asserted per role rather than assumed from the total.
  *
  * `.ts` and not `.tsx`: `apps/web/vitest.config.ts` collects `src/**\/*.test.ts`
  * only, so a `.tsx` test here would be silently uncollected — green while
@@ -126,21 +126,23 @@ describe('the table is read at all, so every count below means something', () =>
 });
 
 describe('each role reaches exactly the destinations its rule names', () => {
-  it('gives the member role four, in binding order', () => {
+  it('gives the member role five, in binding order', () => {
     // UX-DR31, exhaustively and IN ORDER rather than as a set: the order is
     // what a tab bar and a sidebar both render, and a set assertion would let
-    // it drift silently.
+    // it drift silently. STORY 7.17: Ljudi is the member's fifth, the
+    // read-only directory of who is on which team.
     expect(keysFor('member_role')).toEqual([
       'nav.danas',
       'nav.kalendar',
       'nav.sati',
       'nav.godisnji',
+      'nav.ljudi',
     ]);
   });
 
   it('gives the admin role eight, in binding order', () => {
-    // UX-DR32: the member's four, then the four grouped configuration
-    // destinations. Same first four in the same order, which is what makes the
+    // UX-DR32: the shared four, then the grouped destinations, Ljudi among
+    // them although a member reaches it too (story 7.17). Same first four in the same order, which is what makes the
     // two layouts one architecture.
     expect(keysFor('admin')).toEqual([
       'nav.danas',
@@ -155,20 +157,22 @@ describe('each role reaches exactly the destinations its rule names', () => {
   });
 
   it('gives the member role no configuration surface at all', () => {
-    // The half of UX-DR31 a count cannot state. Four is also the answer if the
-    // four happened to be the wrong four, and the specific fear is a
-    // configuration destination leaking into the member's list.
-    for (const key of ['nav.raspored', 'nav.ljudi', 'nav.postavkeRotacije', 'nav.organizacija']) {
+    // The half of UX-DR31 a count cannot state. Five is also the answer if the
+    // five happened to be the wrong five, and the specific fear is a
+    // configuration destination leaking into the member's list. `Ljudi` is not
+    // one for a member: its content is the read-only directory (story 7.17).
+    for (const key of ['nav.raspored', 'nav.postavkeRotacije', 'nav.organizacija']) {
       expect(keysFor('member_role'), `a member reaches ${key}`).not.toContain(key);
     }
   });
 
-  it.each<MemberRole>(['member_role', 'admin'])('lists Sati exactly once for %s', (role) => {
-    // The human decision of 2026-09-04. UX-DR31 and UX-DR32 both name `Sati`,
-    // and reading them additively produces nine destinations with two called
-    // the same thing — one of which no navigation could distinguish from the
-    // other. It is ONE destination whose content is role-scoped.
+  it.each<MemberRole>(['member_role', 'admin'])('lists Sati and Ljudi exactly once each for %s', (role) => {
+    // The human decisions of 2026-09-04 (Sati) and 2026-10-09 (Ljudi). Read
+    // additively, the rules would produce two destinations called the same
+    // thing — one of which no navigation could distinguish from the other.
+    // Each is ONE destination whose content is role-scoped.
     expect(keysFor(role).filter((key) => key === 'nav.sati')).toHaveLength(1);
+    expect(keysFor(role).filter((key) => key === 'nav.ljudi')).toHaveLength(1);
   });
 
   it('yields a subsequence of the table for every role, never a reordering', () => {
@@ -405,10 +409,10 @@ describe('the phone bar shows four tabs and puts the rest in Više (story 7.3)',
     expect(phoneKeysFor('admin').adminOnly).toEqual(['nav.postavkeRotacije', 'nav.organizacija']);
   });
 
-  it('leaves the member with no destination in Više at all', () => {
-    // A member's four destinations are all tabs, so their Više holds only the
-    // theme and Odjava.
-    expect(phoneKeysFor('member_role').everyone).toEqual([]);
+  it('gives the member Ljudi under Pregled in Više, and nothing under Postavke (story 7.17)', () => {
+    // A member's four tabs are Danas, Kalendar, Sati and Godišnji; the
+    // directory is their fifth destination, one press away in Više.
+    expect(phoneKeysFor('member_role').everyone).toEqual(['nav.ljudi']);
     expect(phoneKeysFor('member_role').adminOnly).toEqual([]);
   });
 });

@@ -94,7 +94,7 @@ afterEach(() => {
 describe('a recognised role comes back as a role', () => {
   it.each([
     { row: 'an admin', stored: 'admin', destinations: 8 },
-    { row: 'a member', stored: 'member_role', destinations: 4 },
+    { row: 'a member', stored: 'member_role', destinations: 5 },
   ])('reads $row off its own row', async ({ stored, destinations }) => {
     const { table } = answering({ data: [{ role: stored }], error: null });
 

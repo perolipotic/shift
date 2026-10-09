@@ -581,6 +581,16 @@
   },
   "ljudi": {
     "lede": "Osobe u organizaciji, njihove razine ovlasti i dani godišnjeg odmora.",
+    "directory": {
+      "lede": "Tko je u kojoj smjeni.",
+      "search": "Traži osobu",
+      "own": "tvoja smjena",
+      "noMatch": "Nijedna osoba u smjenama nema to ime.",
+      "clear": "Poništi pretragu",
+      "noTeams": "Organizacija nema nijednu aktivnu smjenu.",
+      "unavailable": "Popis smjena trenutačno nije moguće učitati. Pokušaj ponovno.",
+      "retry": "Pokušaj ponovno"
+    },
     "caption": "Popis osoba u organizaciji",
     "search": "Pretraga po imenu ili adresi",
     "name": "Ime",
