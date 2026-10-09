@@ -1824,6 +1824,10 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // STORY 5.2c. The member's own live leave records, read past 0028's
     // select policy so no author leaves, on 3.6a's attributes.
     { name: 'my_leave_records', argumentCount: 0 },
+    // STORY 7.15. The organization's live leave records for an active admin,
+    // read past 0028's select policy so it can refuse anybody else, on 5.2c's
+    // attributes.
+    { name: 'leave_overview_records', argumentCount: 0 },
     // STORY 5.4a. The member's own live conflict resolutions, read past
     // 0031's admin-only select policy so no author leaves, on 5.2c's
     // attributes.
@@ -1932,6 +1936,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'amend_leave_record', argumentCount: 3, expected: ['authenticated'] },
     // STORY 5.2c. The member's own leave records, on 3.6a's read's terms.
     { name: 'my_leave_records', argumentCount: 0, expected: ['authenticated'] },
+    // STORY 7.15. The admin's leave overview, on 5.2c's terms; the function
+    // itself refuses every caller but an active admin.
+    { name: 'leave_overview_records', argumentCount: 0, expected: ['authenticated'] },
     // STORY 5.4a. The member's own conflict resolutions, on 5.2c's terms.
     { name: 'my_conflict_resolutions', argumentCount: 0, expected: ['authenticated'] },
     // STORY 5.4c. The replacement, on 5.2a's amend's terms.

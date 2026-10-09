@@ -212,9 +212,11 @@ export const FEATURE_PUBLIC = {
   // *Danas* reads the viewer's own records through the same query options.
   // Story 6.1b: *Danas*'s leave tile is *Godišnji*'s own state (`myLeaveOf`).
   // SINCE STORY 6.3: an admin's *Danas* reads the organization's records through
-  // the queue's own query options.
+  // the queue's own query options. Story 7.15: `/godisnji` parses its search
+  // and picks its role-scoped body through the overview's own rules.
   leave: [
     'services/leave-list', // calendar, conflicts, hours, teams, today
+    'services/leave-overview', // pages
     'services/leave-section', // conflicts
     'services/my-leave', // today
   ],

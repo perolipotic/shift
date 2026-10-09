@@ -632,6 +632,13 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'leave', 'components', 'my-leave-summary.tsx'),
   join(webRoot, 'src', 'features', 'leave', 'components', 'my-leave-skeleton.tsx'),
   join(webRoot, 'src', 'features', 'leave', 'services', 'my-leave.ts'),
+  // Story 7.15: the admin's overview — its hook, body, table and stacked
+  // rows, and its rules module, which renders no string of its own.
+  join(webRoot, 'src', 'features', 'leave', 'hooks', 'use-leave-overview.ts'),
+  join(webRoot, 'src', 'features', 'leave', 'components', 'leave-overview-body.tsx'),
+  join(webRoot, 'src', 'features', 'leave', 'components', 'leave-overview-table.tsx'),
+  join(webRoot, 'src', 'features', 'leave', 'components', 'leave-overview-rows.tsx'),
+  join(webRoot, 'src', 'features', 'leave', 'services', 'leave-overview.ts'),
   // Story 5.3b: *Raspored*'s conflicts queue — its hook, components and rules
   // module. `raspored.tsx` is listed with the destinations above.
   join(webRoot, 'src', 'features', 'conflicts', 'hooks', 'use-conflicts-queue.ts'),

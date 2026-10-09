@@ -2291,6 +2291,44 @@ describe('the access-control migration', () => {
     expect((migration.match(/create function/gi) ?? []).length, 'story 5.2c takes one function').toBe(1);
   });
 
+  it("reads the organization's live leave records through one definer function that refuses all but an active admin (story 7.15)", () => {
+    const statements = migrationStatements();
+    const read = /create function public\.leave_overview_records\(\)[\s\S]*?\$\$;/i.exec(statements)?.[0];
+    expect(read, 'leave_overview_records is not declared').toBeDefined();
+    expect(read).toMatch(/returns table \(\s*id uuid,\s*member_id uuid,\s*during daterange\s*\)/);
+    expect(read).toMatch(/\bstable\b/i);
+    expect(read).toMatch(/security definer/i);
+    expect(read).toMatch(/set search_path = ''/);
+    expect(read, 'the read lost the claim pin').toMatch(
+      /claim text := nullif\(\(\(select auth\.jwt\(\)\) ->> 'organization_id'\), ''\);/,
+    );
+    expect(read, 'the claim is cast without its UUID guard').toMatch(
+      /if claim ~\* '\^\[0-9a-f\]\{8\}[^']*\$' then\s+claimed := claim::uuid;/,
+    );
+    expect(read, 'the read lost the active admin pin').toMatch(/and access\.is_active\s+and access\.member_role = 'admin'/);
+    expect(read, 'the refusal is not 42501 LEAVE_OVERVIEW_REFUSED').toMatch(
+      /errcode = 'insufficient_privilege',\s*message = 'LEAVE_OVERVIEW_REFUSED'/,
+    );
+    expect(read, 'a removed record is read').toMatch(/and r\.removed_at is null/);
+    expect(read, 'an author or a removal leaves the function').not.toMatch(/\b(created_by|removed_by|auth_user_id)\b/);
+    for (const role of ['public', 'anon', 'service_role']) {
+      expect(statements).toContain(`revoke execute on function public.leave_overview_records() from ${role};`);
+    }
+    expect(statements).toContain('grant execute on function public.leave_overview_records() to authenticated;');
+    const migration = readFileSync(join(supabaseRoot, 'migrations', '0034_leave_overview_records.sql'), 'utf8').replaceAll(
+      /--[^\n]*/g,
+      '',
+    );
+    expect(migration, 'story 7.15 takes no trigger').not.toMatch(/create (or replace )?trigger/i);
+    expect(migration, 'story 7.15 writes or refers to a rotation, membership, status or override row').not.toMatch(
+      /rotation_|team_membership_versions|member_status_versions|_overrides/,
+    );
+    expect(migration, 'story 7.15 changes a policy').not.toMatch(/\b(create|alter|drop) policy\b/i);
+    expect(migration, 'story 7.15 grants on a table').not.toMatch(/\bon table\b/i);
+    expect(migration, 'story 7.15 writes a row').not.toMatch(/\b(insert|update|delete)\b/i);
+    expect((migration.match(/create function/gi) ?? []).length, 'story 7.15 takes one function').toBe(1);
+  });
+
   it('stores a conflict resolution as its collision key, a kind and its attribution, one live per conflict (story 5.4a)', () => {
     // STORY 5.4a (AD-4): conflicts are derived, only the decision is stored,
     // keyed by `collisionKeyOf`'s `(member, date, team)` and never by a leave

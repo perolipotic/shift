@@ -13,6 +13,12 @@ export const LEAVE_SCREEN_PARTS = {
   body: ['features', 'leave', 'components', 'my-leave-body.tsx'],
   summary: ['features', 'leave', 'components', 'my-leave-summary.tsx'],
   skeleton: ['features', 'leave', 'components', 'my-leave-skeleton.tsx'],
+  // STORY 7.15: the admin's overview — its hook, its body, the table from
+  // 640 px and the stacked rows below it.
+  overviewHook: ['features', 'leave', 'hooks', 'use-leave-overview.ts'],
+  overviewBody: ['features', 'leave', 'components', 'leave-overview-body.tsx'],
+  overviewTable: ['features', 'leave', 'components', 'leave-overview-table.tsx'],
+  overviewRows: ['features', 'leave', 'components', 'leave-overview-rows.tsx'],
 } as const;
 
 /**
@@ -32,6 +38,10 @@ export const LEAVE_SCREEN_EXEMPT: readonly { readonly file: string; readonly why
   {
     file: 'services/leave-list.ts',
     why: "the leave reads — a member's records for the admin card, the viewer's own for this screen; renders nothing",
+  },
+  {
+    file: 'services/leave-overview.ts',
+    why: "every rule of the admin's overview (story 7.15): the role gate, the rows, the sort, the search and the summary; executed by leave-overview.test.ts",
   },
   {
     file: 'services/leave-section.ts',

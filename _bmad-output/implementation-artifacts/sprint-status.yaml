@@ -29,7 +29,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 # - Retrospective appends its action items to action_items; the status view surfaces open ones
 generated: 09-02-2026 14:26
-last_updated: 10-09-2026 12:42
+last_updated: 10-09-2026 14:19
 project: shift
 project_key: NOKEY
 tracking_system: file-system
@@ -535,7 +535,7 @@ development_status:
 
   # Epic 7 added by sprint-change-proposal-2026-10-02-ux-redesign.md (approved 2026-10-02).
   # Order: 7.1-7.4 (foundations) ship before Epic 6; 7.5-7.18 follow Epic 6, by dependency.
-  epic-7: in-progress
+  epic-7: done
   7-1-dark-slot-tokens-are-re-tuned-so-noc-never-reads-as-a-free-d: done
   7-2-every-number-is-set-in-dm-sans-tabular-figures: done
   7-3-the-phone-bar-has-four-tabs-and-vise: done
@@ -550,7 +550,7 @@ development_status:
   7-12-the-leave-dialog-shows-what-a-record-costs-and-creates-befo: done
   7-13-ljudi-shows-each-member-s-status-and-adds-a-member-in-a-dia: done
   7-14-an-hours-figure-explains-itself: done
-  7-15-an-admin-sees-everyone-s-leave-in-one-overview: backlog
+  7-15-an-admin-sees-everyone-s-leave-in-one-overview: done
   7-16-resolved-conflicts-stay-readable: done
   7-17-members-find-the-directory-by-team-in-vise: done
   7-18-organization-settings-show-facts-and-change-through-dialogs: done

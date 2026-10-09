@@ -387,6 +387,27 @@ export interface OrganizationLeaveRecordsTable {
  * assembled — a write landing mid-read — is unavailable, never a guess.
  */
 export async function readOrganizationLeaveRows(table: OrganizationLeaveRecordsTable): Promise<LeaveRowsOutcome> {
+  return readLeaveRowPages((from, to) =>
+    table
+      .select(LEAVE_RECORDS_COLUMNS, { count: 'exact' })
+      .is(REMOVED_COLUMN, null)
+      .order(ID_COLUMN, { ascending: true })
+      .range(from, to),
+  );
+}
+
+/** One page of a paged read, rows `from` to `to` inclusive, with the exact count of every row. */
+export type LeaveRowsPage = (from: number, to: number) => PromiseLike<OrganizationLeaveRecordsAnswer>;
+
+/**
+ * THE ONE PAGING LOOP the organization's records are read with — the select
+ * of story 5.3b and the overview's definer read of story 7.15 alike: pages of
+ * {@link ORGANIZATION_LEAVE_PAGE_ROWS}, ordered by id by the caller, until
+ * every counted row is in or a page comes back short. A count that is
+ * missing, changes between pages, or disagrees with the rows assembled is
+ * unavailable, never a guess.
+ */
+export async function readLeaveRowPages(page: LeaveRowsPage): Promise<LeaveRowsOutcome> {
   const rows: unknown[] = [];
   let expected: number | null = null;
 
@@ -394,20 +415,16 @@ export async function readOrganizationLeaveRows(table: OrganizationLeaveRecordsT
     let answered: OrganizationLeaveRecordsAnswer;
 
     try {
-      answered = await table
-        .select(LEAVE_RECORDS_COLUMNS, { count: 'exact' })
-        .is(REMOVED_COLUMN, null)
-        .order(ID_COLUMN, { ascending: true })
-        .range(from, from + ORGANIZATION_LEAVE_PAGE_ROWS - 1);
+      answered = await page(from, from + ORGANIZATION_LEAVE_PAGE_ROWS - 1);
     } catch (cause) {
       console.error(LEAVE_RECORDS_UNAVAILABLE, cause);
 
       return { ok: false, code: LEAVE_RECORDS_UNAVAILABLE };
     }
 
-    const page = rowsOfAnswer(answered);
+    const answer = rowsOfAnswer(answered);
 
-    if (!page.ok) return page;
+    if (!answer.ok) return answer;
 
     const count = answered.count;
 
@@ -418,11 +435,11 @@ export async function readOrganizationLeaveRows(table: OrganizationLeaveRecordsT
     }
 
     expected = count;
-    rows.push(...page.rows);
+    rows.push(...answer.rows);
 
     // Every row counted is in, or the page was short: no page after it. Never
     // asked past the count, which PostgREST answers 416 rather than empty.
-    if (rows.length >= count || page.rows.length < ORGANIZATION_LEAVE_PAGE_ROWS) break;
+    if (rows.length >= count || answer.rows.length < ORGANIZATION_LEAVE_PAGE_ROWS) break;
   }
 
   if (rows.length !== expected) {
@@ -440,6 +457,66 @@ export function organizationLeaveRecordsQueryOptions(table: () => OrganizationLe
     queryKey: ORGANIZATION_LEAVE_RECORDS_KEY,
     queryFn: async (): Promise<readonly unknown[]> => {
       const outcome = await readOrganizationLeaveRows(table());
+
+      if (!outcome.ok) throw new Error(outcome.code);
+
+      return outcome.rows;
+    },
+    staleTime: LEAVE_RECORDS_READ_STALE_MS,
+    refetchOnWindowFocus: false,
+    retry: 1,
+    retryDelay: 1000,
+  });
+}
+
+// ------------------------------------------- the admin's overview (7.15)
+
+/**
+ * EVERY LIVE RECORD OF THE ORGANIZATION FOR THE ADMIN'S OVERVIEW (story
+ * 7.15), read through `leave_overview_records()` (0034) rather than a select:
+ * the select policy (0028) would quietly show a member-role session its own
+ * rows, where the function REFUSES anybody but an active admin with 42501. It
+ * answers the rows shaped as {@link LEAVE_RECORDS_COLUMNS}, paged by
+ * {@link readLeaveRowPages} under `max_rows` with an exact count.
+ *
+ * THE ROWS COME BACK UNPARSED, as the organization's select's do: whose rows
+ * are trustworthy is the members read's question, and the overview parses
+ * them with {@link organizationLeaveRecordsOf} against those ids.
+ */
+
+/** The one query key the overview's records are read under. */
+export const LEAVE_OVERVIEW_RECORDS_KEY = ['leave-overview-records'] as const;
+
+/** The definer function the overview's records are read through (0034). */
+export const LEAVE_OVERVIEW_RECORDS_FUNCTION = 'leave_overview_records';
+
+/** The function's call as a query: a stable order, and one page of it. */
+export interface LeaveOverviewRecordsQuery {
+  order(column: string, options: { readonly ascending: boolean }): LeaveOverviewRecordsQuery;
+  range(from: number, to: number): PromiseLike<OrganizationLeaveRecordsAnswer>;
+}
+
+/** The one call made here, named structurally so it can be stubbed, as the viewer's own read is. */
+export interface LeaveOverviewRecordsRpc {
+  rpc(fn: string, args: Record<string, never>, options: { readonly count: 'exact' }): LeaveOverviewRecordsQuery;
+}
+
+/** The organization's live rows as the function answered them, EVERY ONE, or unavailable. */
+export async function readLeaveOverviewRows(client: LeaveOverviewRecordsRpc): Promise<LeaveRowsOutcome> {
+  return readLeaveRowPages((from, to) =>
+    client
+      .rpc(LEAVE_OVERVIEW_RECORDS_FUNCTION, {}, { count: 'exact' })
+      .order(ID_COLUMN, { ascending: true })
+      .range(from, to),
+  );
+}
+
+/** The query options the overview's records are read with, under {@link LEAVE_OVERVIEW_RECORDS_KEY}. */
+export function leaveOverviewRecordsQueryOptions(client: () => LeaveOverviewRecordsRpc) {
+  return queryOptions({
+    queryKey: LEAVE_OVERVIEW_RECORDS_KEY,
+    queryFn: async (): Promise<readonly unknown[]> => {
+      const outcome = await readLeaveOverviewRows(client());
 
       if (!outcome.ok) throw new Error(outcome.code);
 
