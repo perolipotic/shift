@@ -445,6 +445,14 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.chip.levelHeading',
   'ljudi.chip.allLevels',
   'ljudi.chip.pending',
+  'ljudi.directory.lede',
+  'ljudi.directory.search',
+  'ljudi.directory.own',
+  'ljudi.directory.noMatch',
+  'ljudi.directory.clear',
+  'ljudi.directory.noTeams',
+  'ljudi.directory.unavailable',
+  'ljudi.directory.retry',
   'ljudi.statusFilter.active',
   'ljudi.statusFilter.inactive',
   'ljudi.statusFilter.all',
@@ -1982,6 +1990,13 @@ const DANAS_NAMESPACE = 'danas.';
 const RESOLUTION_NAMESPACE = 'raspored.resolution.';
 
 /**
+ * The member directory's namespace (story 7.17). It lists who is on which
+ * team, so `smjen` names the Team there, as under `smjene`, and `tip… smjen…`
+ * is refused: the directory never names a shift type.
+ */
+const DIRECTORY_NAMESPACE = 'ljudi.directory.';
+
+/**
  * The leave card's replacement guard (story 5.4e), ONE KEY and no namespace:
  * it names the rostered shift a replacement stays on — `ostaje na smjeni
  * {team}`, the spec's own words — so `smjen` names that shift there, as on
@@ -2063,6 +2078,7 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     !key.startsWith(FILTER_NAMESPACE) &&
     !key.startsWith(DANAS_NAMESPACE) &&
     !key.startsWith(RESOLUTION_NAMESPACE) &&
+    !key.startsWith(DIRECTORY_NAMESPACE) &&
     key !== LEAVE_REPLACEMENT_KEY &&
     key !== MEMBER_NO_TEAM_KEY
   ) {
