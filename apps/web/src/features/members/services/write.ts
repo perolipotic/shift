@@ -361,6 +361,34 @@ export function storedEmail(entered: string): string | null {
 }
 
 /**
+ * The username a create form proposes for `name` (story 7.13b):
+ * `Petra Jurić` → `petra.juric`.
+ *
+ * THE TRIMMED NAME, lowercased, its diacritics stripped (`č ć š ž` → `c c s
+ * z`, `đ` → `d`), its words joined with `.`; then only `[a-z0-9._-]` is kept —
+ * an apostrophe, a comma, a parenthesis, or a letter NFD does not decompose
+ * (`ł`, `ø`, `ß`) is dropped — repeated dots collapse into one, and a leading
+ * or trailing dot goes. `''` when nothing is left. Every result is therefore
+ * one `normalizedUsername` (`admin-auth/operations.ts`) and `0007`'s check
+ * keep as it is. Only the SUGGESTION is this narrow: the admin may type any
+ * username the server accepts, and the field is theirs from their first edit.
+ */
+export function suggestedUsername(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    // `đ` carries no combining mark, so NFD leaves it whole.
+    .replace(/đ/g, 'd')
+    .split(/\s+/)
+    .join('.')
+    .replace(/[^a-z0-9._-]/g, '')
+    .replace(/\.{2,}/g, '.')
+    .replace(/^\.+|\.+$/g, '');
+}
+
+/**
  * Whether this edit moves the sign-in identity.
  *
  * NORMALIZED ON BOTH SIDES, so capitalizing a username that is already issued
@@ -625,6 +653,13 @@ export interface MemberCreation extends MemberFields {
 export interface IssuedCredential {
   readonly username: string;
   readonly password: string;
+  /**
+   * The new member's row id, for *Otvori stranicu osobe* (story 7.13b), or
+   * `null` when the reply carried a blank one. A blank id never refuses the
+   * create: the account exists and the password is shown regardless; only the
+   * link to the page is left out.
+   */
+  readonly memberId: string | null;
 }
 
 export type MemberCreateOutcome =
@@ -678,6 +713,7 @@ export async function createMember(
   if (code === MEMBER_CREATED) {
     const username = body?.['username'];
     const password = body?.['password'];
+    const memberId = body?.['memberId'];
 
     // A SUCCESS WITH NO CREDENTIAL IN IT IS NOT A SUCCESS, and BOTH HALVES have
     // to be there. The account exists either way, but nobody can sign in to it
@@ -691,7 +727,14 @@ export async function createMember(
       typeof password === 'string' &&
       password !== ''
     ) {
-      return { ok: true, credential: { username, password } };
+      return {
+        ok: true,
+        credential: {
+          username,
+          password,
+          memberId: typeof memberId === 'string' && memberId.trim() !== '' ? memberId.trim() : null,
+        },
+      };
     }
 
     // DELIBERATELY NOT LOGGED WITH THE BODY. The body is where the credential

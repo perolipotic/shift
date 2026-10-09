@@ -4,7 +4,7 @@
 
 ## Goal
 
-Every shipped screen should read calm, minimal and simple on a phone (390 px) and a desktop (1440 px), in both light and dark themes. A pilot user finds each answer at a glance and makes each change behind one Save. The epic fixes defects measured in the 2026-10-01 UX review and rewrites already-shipped surfaces through new stories, without rolling any completed story back. It also adds four small capabilities: a first-sign-in password, an explanation for any hours figure, an admin leave overview and a history of resolved conflicts. Stories 7.1–7.10 have shipped (dark tokens, DM Sans numerals, the four-tab phone bar with *Više*, the shared month toolbar, filter chips, stacked rows on phones, one-form sign-in, the first-sign-in password, day detail as facts plus dialogs, a member's calendar without conflict marks) and so has 7.11 (member page as facts plus dialogs). 7.12 (the leave dialog with its computed cost, balance and conflicts) is built. 7.13–7.18 remain, in dependency order. The reference design is the approved mockups in `ux-designs/ux-shift-2026-10-01-redesign/mockups/` (one file per area: `sign-in-1`, `calendar-1`, `hours-1`, `leave-1`, `conflicts-1`, `people-1`, `member-page-1`, `setup-1`) and the 27 decisions in that folder's README. Where a mockup and an epic criterion disagree, the criterion wins.
+Every shipped screen should read calm, minimal and simple on a phone (390 px) and on a desktop, in both themes. A pilot user finds each answer at a glance and makes each change behind one Save. The epic fixes defects measured in the 2026-10-01 UX review and rewrites already-shipped surfaces through new stories. It rolls no completed story back. It also adds four small capabilities: a first-sign-in password, an explanation for any hours figure, an admin leave overview and a list of resolved conflicts. **Status:** 7.1–7.12, 7.14, 7.16 and 7.18 have shipped. 7.13 was split into three parts: 7.13a (status chip and Status column) has shipped, 7.13b (the add-member dialog) is in progress, and 7.13c (deactivation consequence in numbers) is a deferred entry. 7.15 and 7.17 remain. The reference design is the approved mockups in `ux-designs/ux-shift-2026-10-01-redesign/mockups/` (for the remaining work, `people-1` and `leave-1`) and the 27 decisions in that folder's README. Where a mockup and an epic criterion disagree, the criterion wins.
 
 ## Stories
 
@@ -29,47 +29,67 @@ Every shipped screen should read calm, minimal and simple on a phone (390 px) an
 
 ## Requirements & Constraints
 
-- **Definition of done on every surface:** no horizontal page scroll at phone width (tables stack below 640 px, and the calendar grid scrolls inside its own container). No information is shown by colour alone. Every surface is keyboard operable and has meaningful labels for assistive technology. Text meets WCAG 2.1 AA in both themes.
-- **Figures agree everywhere.** Hour and leave figures match on every surface at a given moment. A row in an overview equals that member's own view.
-- **Sign-in (shipped in 7.7, keep it intact):** one form, nothing looked up before authentication (no organization name or logo). From `/prijava/<slug>` the slug is a read-only row with `Promijeni`. Otherwise the field is prefilled with the last organization signed into on this device, remembered only after a successful sign-in and only the slug (never username or password, no lasting "remember me" session). One generic error covers a wrong organization, username or password.
-- **First sign-in (shipped in 7.8, keep it intact):** a member with an admin-issued or admin-reset password reaches only the set-password step until they save their own. An admin reset puts them back under this rule. The issued password is four words, shown to the admin once with `Kopiraj`. After saving, the member continues to their landing surface without signing in again.
-- **Hours explanation:** any Sati figure opens the shifts and bands that compose it. Each line shows the date, shift type, band hours and source (rotation, override or leave). A shift in unresolved conflict is marked as it is on the view. The equation sums exactly to the figure.
-- **Admin leave overview:** each row shows allowance, used and balance for the leave year, and allowance − used = balance on every row. A member-role account is refused.
-- **Resolved conflicts:** each entry shows date, team, shift type, member, resolution, acting admin and timestamp. It reads only stored conflict resolutions and is not an audit-log UI.
-- **Member directory:** members reach it from *Više*, grouped by team and read-only. It shows name, team, and rank and position where used. It never shows allowance, balance, leave, hours or contact details.
-- **Conflict marks (shipped in 7.10, keep it intact):** a member-role account sees no conflict (`⚠`) and no uncovered (`◌`) mark anywhere on their calendar, and their legend never lists them. In *Moj raspored* their own leave dates carry `◷`, including dates with no working shift. *Sve smjene* shows a member no one's leave, and their day detail states no conflict. This is the calendar only: Sati still counts a member's own shifts in unresolved conflict. An admin still sees every unresolved conflict without opening detail.
+- **Definition of done on every surface:**
+  - no horizontal page scroll at phone width;
+  - no information shown by colour alone;
+  - keyboard operable, with meaningful labels for assistive technology;
+  - WCAG 2.1 AA in both themes;
+  - all copy in i18n, with Croatian's three plural forms.
+- **Figures agree everywhere.** Hour and leave figures match on every surface at a given moment. A row in any overview equals that member's own view.
+- **Add a member (7.13b):** `Novi član` / *Dodaj osobu* opens a short dialog on Ljudi (`/ljudi?dodaj=1`), which replaces the `/ljudi/novi` page. The route stays as a guarded redirect to `/ljudi?dodaj=1`, so an old link still opens the dialog.
+  - The dialog asks for no team; the team is set on the member page. The username is suggested from the name, and the e-mail field stays.
+  - It ends inside the same dialog by showing the four-word password once, with `Kopiraj`. It then offers *Dodaj još jednu* and *Otvori stranicu osobe*. The second needs the `memberId` that `createUser` already returns.
+- **Deactivation (7.13c):** offered only on the member page, never from Ljudi. It is one neutral question with a date and the consequence in numbers, computed from the domain roster. The action button repeats the date.
+- **Admin leave overview (7.15):** an admin on *Godišnji* sees every member's allowance, days used and balance for the leave year. Allowance − used = balance on every row, and each row equals that member's own view. A member-role account is refused at the data layer and sees only their own leave.
+- **Member directory (7.17):** a member reaches it from *Više*. It is grouped by team and read-only. It shows name and team, plus rank and position where the organization uses them. It never shows allowance, balance, leave, hours or contact details. This replaces "the roster lives only inside team detail".
+- **Keep shipped behaviour intact:**
+  - Sign-in reveals nothing before authentication and has one generic error (7.7).
+  - The set-password guard stays (7.8).
+  - A member's calendar shows no conflict mark or uncovered mark (7.10).
+  - *Neriješeni* stays the default tab and shows its count at zero (7.16).
 - **Docs in the same PR:** every story updates the DESIGN.md, EXPERIENCE.md and UX-DR lines it changes. Binding docs never describe unbuilt UI.
 
 ## Technical Decisions
 
-- **The domain returns codes and operands, never prose.** This covers equations, *Što se mijenja* previews, warnings and empty-state facts. The i18n layer translates them, and no user-facing literal appears outside i18n.
-- **One snapshot per surface:** every figure on a screen comes from one composite read under one query key. There are no optimistic updates for hours, leave balance or conflict state. Writes invalidate their surface and every dependent key.
-- **Previews reuse domain functions, never a second implementation.** The leave dialog's conflict preview is the domain collision function. Day detail's replacement candidates use 5.4's candidate-grouping helper, and the groups inform without blocking.
-- **One privileged auth boundary (AD-16), as extended by 7.8:**
-  - The single Edge Function now has four operations. `createUser`, `updateUserById` and `resetPassword` are each callable only by an admin of the target member's own organization, verified against the database rather than the request. `clearMustSetPassword` is open to any role and acts only on the caller, identified from the caller's JWT, never from the request. It writes nothing but that account's flag.
-  - `createUser` and `resetPassword` set `app_metadata.must_set_password`. The `_app` route guard keeps every destination closed while it is set. The flag lives in `app_metadata` (never `user_metadata`) and needs no migration.
-  - The function performs no domain calculation, and every domain write goes through the caller's JWT. A second Edge Function or a fifth operation needs an architecture amendment; no remaining story needs one.
-- **Migrations:** at most one in the whole epic. Check the main checkout for untracked migrations from parallel sessions before numbering one.
-- **Filter state lives in the URL.** It survives month navigation and is never persisted across sessions.
+- **The domain returns codes and operands, never prose.** This covers equations, previews, consequences and empty-state facts. The i18n layer translates them.
+- **One snapshot per surface.** Every figure on a screen comes from one composite read under one query key. There are no optimistic updates for hours, leave balance or conflict state. A write invalidates its surface and every dependent key.
+- **One canonical calculation.** A preview or consequence reuses the domain function, such as the collision rule, `memberStatusOf`, `rosterOn` / `shiftRoster` or the hours explanation. It never re-implements one.
+- **One privileged auth boundary (AD-16).** A single Edge Function has four operations:
+  - `createUser`, `updateUserById` and `resetPassword` are admin-only. Each is verified against the database for the target's own organization.
+  - `clearMustSetPassword` acts only on the caller.
+  - `createUser` and `resetPassword` set `app_metadata.must_set_password`.
+  - The function does no domain calculation. Adding an operation or a function needs an architecture amendment.
+- **Role and tenant enforcement stay in RLS.** A new org-wide read, such as the leave overview, must fail for member-role through the API, not only in the UI.
+- **Migrations:** the epic allows at most one. Before you number one, check the main checkout for untracked migrations from parallel sessions.
+- **Filter state lives only in the URL.** Ljudi uses `?trazi=&razina=&smjena=&status=&sort=`. A bad value falls back to its default.
 - **Module boundaries:** pages compose features and hold no query, mutation or derivation of their own. A feature reaches another feature only through `FEATURE_PUBLIC`. Do not add `index.ts` barrels.
 
 ## UX & Interaction Patterns
 
-- **Facts plus dialogs:** day detail (7.9), the member page (7.11) and the member page's leave record and amend dialogs (7.12) are the reference implementations; Ljudi (7.13) and Organizacija (7.18) follow them. Each change opens its own small dialog from its card's header button, with one final button (`Spremi`, or the action itself for a status change, never `destructive`) and, where the change moves figures, a computed *Što se mijenja* (an `<output>`, announced politely) before saving. A change dialog draws its body afresh on each opening, cannot be dismissed while its write is in flight, keeps entered values with a `Notice role="alert"` on refusal, and on success closes, shows the new fact with a `Notice role="status"` and returns focus to its opener. A re-read never redraws an open dialog; if its change is no longer offered it closes and the card or day detail says why. Each opener's accessible name names its subject.
-- **Member page (shipped in 7.11 and 7.12):** a name `h1` with rank · position · team beneath, role and status badges, then fact cards in order *Osnovni podaci*, *Smjena*, *Godišnji odmor {year}.*, *Status* (never on the caller's own row), *Prijava*. The allowance changes through `Promijeni pravo` on the leave card, never in `Uredi`. A team change opens on `Odaberi smjenu` and never preselects a team. A save sends only the fields its dialog shows. No form is mounted on the page. Since 7.12 the leave card's header `Upiši godišnji` opens the record dialog and each record's `Izmijeni` its amend dialog (prefilled; the hand-off from a conflict opens it once). Before its Save each shows the cost, the balance after and the conflicts the range creates, from the domain's collision rule through *Raspored*'s own recipe; the amend adds *Bilo / Sada* and which conflicts clear and which stay. The replacement-guard lines (5.4e) and the conflict lines are neutral notes in the preview's polite live region and never gate the save; a removal's one confirmation says how many unresolved conflicts it clears. The team dialog's *Što se mijenja* is deferred until a projection of a member's move across teams exists.
-- **Reuse the shipped patterns:** use the 7.4 month toolbar, the 7.5 filter chips with summary line and `Poništi filtre` (7.13's Ljudi status chip reuses them), and the 7.6 stacked rows for new tables (the 7.14 footer total and the 7.15 overview).
-- **Stacked rows below 640 px:** a `usePhone()` switch renders exactly one form in the DOM (`StackedList`/`StackedRow`/`StackedFields`/`StackedField`, never a table restyled or hidden). Every value keeps its column label for assistive technology; sort and filter state live outside the table so crossing 640 px keeps them; on a phone the sort is one `Poredano: {column} ↑|↓` control. Grids (calendar, week, rotation preview) still scroll inside their own box. A Ljudi row is one link to the member, with no pencil.
-- **Neutral confirmations:** removal and deactivation ask one neutral question, giving a date and the consequence in numbers. `destructive` styling is reserved for unresolved conflicts, and destructive actions are never styled destructive.
-- **Status feedback:** a status line is `Notice role="status"` and disappears on navigation. Do not use toasts or standing banners.
-- **Empty states and counts:** say what is true, never "no results". A zero count is still shown, such as the *Neriješeni* count at zero.
-- **Loading:** skeletons, not spinners. URL-derived controls render at once.
-- **Navigation:** the phone bar has four tabs plus *Više*. The member directory is added to *Više*. *Povijest rotacije* sits behind a header button.
-- **Croatian microcopy:** state facts, use numbers rather than adjectives, no exclamation marks, informal second person singular. Formats are `19:00–07:00` and `12.09.2026`. Never use *smjena* for a shift type.
+- **Facts plus dialogs.** The reference implementations are the day detail (7.9), the member page (7.11, 7.12) and Organizacija (7.18). Each change opens its own dialog from its card's header button and has one final button, never styled `destructive`. Where a change moves figures, the dialog shows a computed *Što se mijenja* before the Save.
+  - On refusal, the dialog keeps the entered values and shows `Notice role="alert"`.
+  - On success, it closes, shows `Notice role="status"` and returns focus to its opener.
+  - A change dialog cannot be dismissed while its write is in flight.
+- **Reuse the shipped components:**
+  - the 7.4 month toolbar;
+  - the 7.5 filter chips, with their summary line, `Poništi filtre` and the phone `Filtri · N` sheet (generalised for Ljudi in 7.13a);
+  - the 7.6 stacked rows below 640 px, built from `StackedList` / `StackedRow` with exactly one form in the DOM, a labelled value in every field and one `Poredano` control on a phone;
+  - the 7.14 `TableFooter` total and the `CredentialLine` for a one-time password.
+- **Neutral confirmations.** A removal or a deactivation asks one neutral question that gives a date and the consequence in numbers. `destructive` is reserved for unresolved conflicts.
+- **Status feedback** uses a `Notice role="status"` line that is gone on navigation. Do not use toasts or standing banners.
+- **Empty states** state what is true. Counts show at zero.
+- **Loading** uses skeletons, never spinners. Controls derived from the URL render at once.
+- **Navigation.** The phone bar has four tabs plus *Više*. The member directory goes in a member's *Više*. On a phone an admin reaches *Godišnji* under *Više* → *Pregled*.
+- **Croatian microcopy:**
+  - state facts, use numbers rather than adjectives, no exclamation marks, informal second person singular;
+  - write times as `19:00–07:00` and dates as `12.09.2026`;
+  - never decline a data name; it stands in apposition;
+  - never use *smjena* for a shift type.
 
 ## Cross-Story Dependencies
 
-- 7.1–7.11 are done and 7.12 is built, so every prerequisite of 7.13–7.18 inside Epic 7 is either done, built, or another remaining story.
-- 7.16 needs 5.4. 7.17 needs 7.3.
-- 7.12 and 7.13 build on 7.11's member page and dialog pattern. 7.13, 7.14 and 7.15 need 7.6.
-- 7.18 has no story prerequisites. The PRD edits behind 7.14 (FR-42b), 7.15 (FR-45a), 7.16 (FR-48a) and 7.17 (FR-16) have already landed.
-- Epic 7 rewrites shipped surfaces from 1.3/1.3b (sign-in), 1.4 (organization settings), 1.8 (roster), 2.4, 3.3–3.6 (calendar, day detail and overrides), 4.1b/4.2 (hours) and 5.1/5.2 (leave). Expect churn in unit tests and e2e page objects.
+- 7.13b and 7.13c build on 7.11's member page and dialog pattern, and on 7.13a's Ljudi.
+- 7.13b turns `/ljudi/novi` into a guarded redirect to `/ljudi?dodaj=1`. Rewrite the route sweeps in `prijava.test.ts` and `router.test.ts`.
+- 7.15 needs 7.6 (stacked rows) and FR-45a, which has landed.
+- 7.17 needs 7.3 (*Više*) and the CAP-5 / FR-16 edit, which has landed.
+- Epic 7 rewrites shipped surfaces, so expect churn in unit tests and e2e page objects (people, leave, base navigation).

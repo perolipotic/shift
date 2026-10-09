@@ -4,7 +4,7 @@ import { leaveYearStartOf } from '../../utils/database-helper.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { addDays, fullDate } from '../../utils/dates.ts';
 import { fill, hr, plural } from '../../utils/i18n.ts';
-import { expectNoHorizontalScroll, expectNoInnerHorizontalScroll } from '../../utils/layout.ts';
+import { expectNoHorizontalScroll, expectNoInnerHorizontalScroll, expectTouchTargets } from '../../utils/layout.ts';
 import { uniqueMember } from '../../utils/members.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
@@ -19,22 +19,240 @@ test('the member list shows the fixture members', async ({ peoplePage, fixture }
   }
 });
 
-test('creating a member shows the one-time password and lists the member', async ({ page, peoplePage }) => {
+test('Dodaj osobu opens a dialog on the list that ends with the password shown once (story 7.13b)', async ({
+  page,
+  peoplePage,
+}) => {
   // `Članica`: the username is ASCII, the name keeps its diacritics.
   const { name, username } = uniqueMember('Nova Članica');
 
-  await peoplePage.goto();
-  await peoplePage.addLink.click();
-  await expect(page).toHaveURL('/ljudi/novi');
+  await page.goto('/ljudi?status=svi');
+  await peoplePage.addButton.click();
+  await expect(page).toHaveURL('/ljudi?status=svi&dodaj=1');
+  await expect(peoplePage.addDialog).toBeVisible();
+  await expect(peoplePage.addNameInput).toBeFocused();
+
+  // THE USERNAME FOLLOWS THE NAME, until it is edited; emptied, it follows again.
+  await peoplePage.addNameInput.fill('Petra Jurić');
+  await expect(peoplePage.addUsernameInput).toHaveValue('petra.juric');
+  await peoplePage.addUsernameInput.fill('pjuric');
+  await peoplePage.addNameInput.fill('Petra Jurić Horvat');
+  await expect(peoplePage.addUsernameInput).toHaveValue('pjuric');
+  await peoplePage.addUsernameInput.fill('');
+  await peoplePage.addNameInput.fill('Petra Horvat');
+  await expect(peoplePage.addUsernameInput).toHaveValue('petra.horvat');
 
   await peoplePage.submitNewMember(name, username);
-  await expect(peoplePage.text(hr.ljudi.form.credential)).toBeVisible();
-  await expect(peoplePage.text(hr.ljudi.form.credentialOnce)).toBeVisible();
-  await expect(peoplePage.text(username)).toBeVisible();
+  await expect(peoplePage.addDialog.getByText(hr.ljudi.form.credential, { exact: true })).toBeVisible();
+  await expect(peoplePage.addDialog.getByText(hr.ljudi.form.credentialOnce, { exact: true })).toBeVisible();
+  await expect(peoplePage.issuedPassword).toBeVisible();
+  await expect(peoplePage.copyButton).toBeVisible();
+  // THE LIST IS REFETCHED behind the dialog.
+  await expect(peoplePage.editLink(name)).toBeAttached();
 
-  await peoplePage.backLink.click();
+  // DODAJ JOŠ JEDNU: an empty first step, the credential gone, focus in the name.
+  await peoplePage.againButton.click();
+  await expect(peoplePage.addNameInput).toHaveValue('');
+  await expect(peoplePage.addUsernameInput).toHaveValue('');
+  await expect(peoplePage.issuedPassword).toHaveCount(0);
+  await expect(peoplePage.addNameInput).toBeFocused();
+  // The suggestion follows the name again on the new form.
+  await peoplePage.addNameInput.fill('Ivo Ivić');
+  await expect(peoplePage.addUsernameInput).toHaveValue('ivo.ivic');
+
+  // ESCAPE closes onto the list, `dodaj` gone, focus back on Dodaj osobu.
+  await page.keyboard.press('Escape');
+  await expect(peoplePage.addDialog).toBeHidden();
+  await expect(page).toHaveURL('/ljudi?status=svi');
+  await expect(peoplePage.addButton).toBeFocused();
+  await expect(peoplePage.editLink(name)).toBeVisible();
+});
+
+test('the add dialog fits 390 px on both steps, every control at least 44 px', async ({ page, peoplePage }) => {
+  const { name, username } = uniqueMember('Uski Zaslon');
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await peoplePage.gotoNew();
+  await expectNoHorizontalScroll(page);
+  await expectTouchTargets(page);
+
+  await peoplePage.submitNewMember(name, username);
+  await expect(peoplePage.againButton).toBeVisible();
+  await expectNoHorizontalScroll(page);
+  await expectTouchTargets(page);
+});
+
+test('after a create, Otvori stranicu osobe opens the new member\'s page', async ({ page, peoplePage }) => {
+  const { name, username } = uniqueMember('Otvori Stranicu');
+
+  await peoplePage.goto();
+  await peoplePage.addButton.click();
+  await peoplePage.submitNewMember(name, username);
+  // FOCUS LANDS ON THE CONFIRMATION once the form is replaced.
+  await expect(peoplePage.createdStatus(name, username)).toBeFocused();
+  await peoplePage.openPageLink.click();
+  await expect(page).toHaveURL(/\/ljudi\/[0-9a-f-]{36}$/);
+  await expect(peoplePage.memberHeading(name)).toBeVisible();
+
+  // THE LINK REPLACED `?dodaj=1`: Back returns to the list, not to an empty dialog.
+  await page.goBack();
   await expect(page).toHaveURL('/ljudi');
   await expect(peoplePage.editLink(name)).toBeVisible();
+  await expect(peoplePage.addDialog).toBeHidden();
+});
+
+test('a dialog closed from its second step opens again on an empty form', async ({ peoplePage }) => {
+  const { name, username } = uniqueMember('Ponovno Prazno');
+
+  await peoplePage.createMember(name, username);
+  await peoplePage.closeAddDialog();
+  await peoplePage.addButton.click();
+  await expect(peoplePage.addDialog).toBeVisible();
+  await expect(peoplePage.addNameInput).toHaveValue('');
+  await expect(peoplePage.addNameInput).toBeFocused();
+  await expect(peoplePage.issuedPassword).toHaveCount(0);
+  await expect(peoplePage.createdStatus(name, username)).toHaveCount(0);
+});
+
+test('a stale team in the URL leaves it, and the open dialog stays open', async ({ page, peoplePage }) => {
+  await page.goto('/ljudi?smjena=00000000-0000-4000-8000-000000000000&dodaj=1');
+  await expect(page).not.toHaveURL(/smjena=/);
+  await expect(page).toHaveURL(/[?&]dodaj=1\b/);
+  await expect(peoplePage.addDialog).toBeVisible();
+});
+
+test('a refused create keeps the dialog and every entered value', async ({ page, peoplePage, fixture }) => {
+  // The fixture member's username is taken in this organization.
+  const { name } = uniqueMember('Zauzeto Ime');
+
+  await peoplePage.gotoNew();
+  await peoplePage.fillNewMember(name, fixture.member.username);
+  await peoplePage.addSubmitButton.click();
+  await expect(peoplePage.addDialog.getByRole('alert').filter({ hasText: hr.ljudi.form.error.usernameTaken })).toBeVisible();
+  await expect(peoplePage.addNameInput).toHaveValue(name);
+  await expect(peoplePage.addUsernameInput).toHaveValue(fixture.member.username);
+  await expect(page).toHaveURL('/ljudi?dodaj=1');
+});
+
+/** The admin-auth Edge Function's `createUser` POST; the CORS preflight is let through. */
+const ADMIN_AUTH = '**/functions/v1/admin-auth';
+
+test('a create reply with a blank memberId still shows the password, without Otvori stranicu osobe', async ({
+  page,
+  peoplePage,
+}) => {
+  const { name, username } = uniqueMember('Bez Id');
+
+  await page.route(ADMIN_AUTH, async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    const response = await route.fetch();
+    const body = (await response.json()) as Record<string, unknown>;
+
+    // The account really is created; only the id in the reply is blanked.
+    return route.fulfill({ response, json: { ...body, memberId: '' } });
+  });
+
+  await peoplePage.gotoNew();
+  await peoplePage.submitNewMember(name, username);
+  await expect(peoplePage.issuedPassword).toBeVisible();
+  await expect(peoplePage.copyButton).toBeVisible();
+  await expect(peoplePage.againButton).toBeVisible();
+  await expect(peoplePage.openPageLink).toHaveCount(0);
+});
+
+test('while a create is in flight, Escape, the close control and Back leave the dialog open', async ({
+  page,
+  peoplePage,
+}) => {
+  const { name, username } = uniqueMember('Na Cekanju');
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let requested: () => void = () => undefined;
+  const inFlight = new Promise<void>((resolve) => {
+    requested = resolve;
+  });
+
+  await page.route(ADMIN_AUTH, async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    requested();
+    await held;
+
+    return route.continue();
+  });
+
+  await peoplePage.goto();
+  await peoplePage.addButton.click();
+  await expect(page).toHaveURL('/ljudi?dodaj=1');
+  await peoplePage.fillNewMember(name, username);
+  await peoplePage.addSubmitButton.click();
+  await inFlight;
+
+  await expect(peoplePage.addSubmitButton).toBeDisabled();
+  await expect(peoplePage.addSubmitButton).toHaveAttribute('aria-busy', 'true');
+  await expect(peoplePage.addCancelButton).toBeDisabled();
+
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(peoplePage.addDialog).toBeVisible();
+  await expect(page).toHaveURL('/ljudi?dodaj=1');
+
+  await peoplePage.addCloseButton.click();
+  await expect(peoplePage.addDialog).toBeVisible();
+  await expect(page).toHaveURL('/ljudi?dodaj=1');
+
+  // BACK steps the URL off `dodaj`, and the dialog stays while the request is held.
+  await page.goBack();
+  await expect(page).toHaveURL('/ljudi');
+  await expect(peoplePage.addDialog).toBeVisible();
+
+  release();
+  // The outcome lands in the same dialog, and the URL comes back with it.
+  await expect(peoplePage.createdStatus(name, username)).toBeVisible();
+  await expect(peoplePage.issuedPassword).toBeVisible();
+  await expect(page).toHaveURL('/ljudi?dodaj=1');
+});
+
+test('Back closes the add dialog, and a reload of its URL opens an empty one', async ({ page, peoplePage }) => {
+  await peoplePage.goto();
+  await peoplePage.addButton.click();
+  await expect(page).toHaveURL('/ljudi?dodaj=1');
+  await peoplePage.addNameInput.fill('Ana Horvat');
+
+  await page.goBack();
+  await expect(peoplePage.addDialog).toBeHidden();
+  await expect(page).toHaveURL('/ljudi');
+
+  // A FULL LOAD: the dialog opens before the organization is read, and focus
+  // still lands in the name once the form is drawn.
+  await peoplePage.gotoNew();
+  await expect(peoplePage.addNameInput).toHaveValue('');
+  await expect(peoplePage.addNameInput).toBeFocused();
+  // AFTER A DEEP LINK, a close lands on the page heading.
+  await peoplePage.addCancelButton.click();
+  await expect(peoplePage.addDialog).toBeHidden();
+  await expect(page).toHaveURL('/ljudi');
+  await expect(peoplePage.heading(hr.nav.ljudi)).toBeFocused();
+});
+
+test('an old /ljudi/novi link opens the add dialog, and an unknown dodaj opens nothing', async ({
+  page,
+  peoplePage,
+  fixture,
+}) => {
+  await page.goto('/ljudi/novi');
+  await expect(page).toHaveURL('/ljudi?dodaj=1');
+  await expect(peoplePage.addDialog).toBeVisible();
+
+  // AN UNKNOWN VALUE IS DROPPED by the parse: no dialog, and the next write
+  // of the search starts from the parsed one.
+  await page.goto('/ljudi?dodaj=x');
+  await expect(peoplePage.editLink(fixture.member.name)).toBeVisible();
+  await expect(peoplePage.addDialog).toBeHidden();
+  await peoplePage.addButton.click();
+  await expect(page).toHaveURL('/ljudi?dodaj=1');
+  await expect(peoplePage.addDialog).toBeVisible();
 });
 
 test('a status or team date the screen refuses is marked invalid and focused, in its own dialog', async ({
@@ -49,7 +267,7 @@ test('a status or team date the screen refuses is marked invalid and focused, in
   const past = '2000-01-01';
 
   await peoplePage.createMember(name, username);
-  await peoplePage.backLink.click();
+  await peoplePage.closeAddDialog();
   await expect(page).toHaveURL('/ljudi');
   await peoplePage.editLink(name).click();
 
@@ -98,13 +316,13 @@ test.describe('the member list filters by status and states it in a column', () 
     const leaving = uniqueMember(`${label} Odlazi`);
 
     await peoplePage.createMember(away.name, away.username);
-    await peoplePage.backLink.click();
+    await peoplePage.closeAddDialog();
     await peoplePage.editLink(away.name).click();
     await peoplePage.deactivate(away.name);
     await expect(peoplePage.statusCard.getByRole('status')).toHaveText(hr.ljudi.status.saved);
 
     await peoplePage.createMember(leaving.name, leaving.username);
-    await peoplePage.backLink.click();
+    await peoplePage.closeAddDialog();
     await peoplePage.editLink(leaving.name).click();
     await peoplePage.deactivateButton(leaving.name).click();
     const minimum = await peoplePage.statusDateInput.getAttribute('min');
@@ -130,8 +348,10 @@ test.describe('the member list filters by status and states it in a column', () 
     await expect(peoplePage.removeStatus('active')).toBeVisible();
     await expect(peoplePage.filters.clearButton).toHaveCount(0);
     await expect(peoplePage.filters.summary).toBeVisible();
-    // No `<select>` and no stat card are left.
-    await expect(page.locator('select')).toHaveCount(0);
+    // No `<select>` and no stat card are left on the list: the page outside
+    // any dialog — the add dialog's own selects stay mounted while it is
+    // closed (story 7.13b), and are its fields, not the list's.
+    await expect(page.locator('main select:not(dialog *)')).toHaveCount(0);
 
     await expect(peoplePage.memberRow(fixture.member.name)).toContainText(hr.ljudi.status.cellActive);
     await expect(peoplePage.memberRow(leaving)).toContainText(peoplePage.scheduledStatusText(later, false));
@@ -283,7 +503,7 @@ test.describe('the member page shows facts and each change opens one dialog', ()
 
       await page.setViewportSize(viewport);
       await peoplePage.createMember(name, username);
-      await peoplePage.backLink.click();
+      await peoplePage.closeAddDialog();
       await peoplePage.editLink(name).click();
 
       await expect(peoplePage.memberHeading(name)).toBeVisible();
@@ -318,7 +538,7 @@ test.describe('the member page shows facts and each change opens one dialog', ()
     const { name, username } = uniqueMember('Uloga Osobe');
 
     await peoplePage.createMember(name, username);
-    await peoplePage.backLink.click();
+    await peoplePage.closeAddDialog();
     await peoplePage.editLink(name).click();
 
     // The allowance is changed first, so the basics save can be shown not to touch it.
@@ -358,7 +578,7 @@ test.describe('the member page shows facts and each change opens one dialog', ()
     const leave = hr.ljudi.leaveRecord;
 
     await peoplePage.createMember(name, username);
-    await peoplePage.backLink.click();
+    await peoplePage.closeAddDialog();
     await peoplePage.editLink(name).click();
     // ON A TEAM, so the card has a schedule to count against and shows its figures.
     await peoplePage.moveToTeam(fixture.team.name, name);
@@ -374,7 +594,7 @@ test.describe('the member page shows facts and each change opens one dialog', ()
     const { name, username } = uniqueMember('Zadnji Admin');
 
     await peoplePage.createMember(name, username);
-    await peoplePage.backLink.click();
+    await peoplePage.closeAddDialog();
     await peoplePage.editLink(name).click();
 
     // THE DATABASE'S DEFERRED REFUSAL, as PostgREST carries it — mocked, so no
@@ -411,7 +631,7 @@ test.describe('the member page shows facts and each change opens one dialog', ()
     const renamed = `${name} Novi`;
 
     await peoplePage.createMember(name, username);
-    await peoplePage.backLink.click();
+    await peoplePage.closeAddDialog();
     await peoplePage.editLink(name).click();
 
     // THE RENAME IS REFUSED by the privileged function; the PATCH is real.
@@ -448,7 +668,7 @@ test.describe('the member page shows facts and each change opens one dialog', ()
     const { name, username } = uniqueMember('Kasnija Deaktivacija');
 
     await peoplePage.createMember(name, username);
-    await peoplePage.backLink.click();
+    await peoplePage.closeAddDialog();
     await peoplePage.editLink(name).click();
 
     await peoplePage.deactivateButton(name).click();
@@ -483,7 +703,7 @@ test.describe('the member page shows facts and each change opens one dialog', ()
         : fill(hr.ljudi.leaveRecord.headingYears, { from: String(from), to: String(from + 1) });
 
     await peoplePage.createMember(name, username);
-    await peoplePage.backLink.click();
+    await peoplePage.closeAddDialog();
     await peoplePage.editLink(name).click();
     await peoplePage.moveToTeam(fixture.team.name, name);
 
@@ -498,7 +718,7 @@ test.describe('the member page shows facts and each change opens one dialog', ()
     const { name, username } = uniqueMember('Lozinka Odbijena');
 
     await peoplePage.createMember(name, username);
-    await peoplePage.backLink.click();
+    await peoplePage.closeAddDialog();
     await peoplePage.editLink(name).click();
 
     // Cancelling the confirmation returns focus to the button that armed it.
@@ -540,7 +760,7 @@ test.describe('the member page shows facts and each change opens one dialog', ()
     const { name, username } = uniqueMember('Zastarjela Smjena');
 
     await peoplePage.createMember(name, username);
-    await peoplePage.backLink.click();
+    await peoplePage.closeAddDialog();
     await peoplePage.editLink(name).click();
     await expect(peoplePage.moveButton(name)).toBeVisible();
 
@@ -572,7 +792,7 @@ test.describe('the member page shows facts and each change opens one dialog', ()
 
     await page.setViewportSize({ width: 390, height: 844 });
     await peoplePage.createMember(name, username);
-    await peoplePage.backLink.click();
+    await peoplePage.closeAddDialog();
     await peoplePage.editLink(name).click();
 
     await peoplePage.editBasicsButton(name).click();

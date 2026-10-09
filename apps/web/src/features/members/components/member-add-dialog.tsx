@@ -1,8 +1,9 @@
-import { AtSign, CalendarDays, Mail, Medal, Save, ShieldCheck, User } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Link } from '@tanstack/react-router';
+import { AtSign, CalendarDays, Mail, Medal, Plus, ShieldCheck, User } from 'lucide-react';
+import type { ReactNode, SyntheticEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
@@ -17,6 +18,13 @@ import {
   LEAVE_ALLOWANCE_MAX,
   type IssuedCredential,
 } from '@/features/members/services/write';
+import {
+  MEMBER_ADD_CREATED_ID,
+  MEMBER_ADD_DIALOG_HEADING_ID,
+  MEMBER_ADD_ERROR_ID,
+  MEMBER_ADD_USERNAME_HINT_AND_ERROR,
+  MEMBER_ADD_USERNAME_HINT_ID,
+} from '@/features/members/utils/element-ids';
 import {
   RANK_OPTIONS,
   rankInitialValue,
@@ -39,17 +47,22 @@ const ALLOWANCE_STEP = 1;
 const ALLOWANCE_DEFAULT = 20;
 
 /**
- * The create form's card: the refusal, then the form or the credential it
- * issued.
+ * *Dodaj osobu* (story 7.13b): a dialog on Ljudi, in two steps. The first is
+ * the form — name, a username suggested from it, an optional address, level,
+ * rank (while the organization uses ranks) and leave days. No team: that is
+ * set on the member page. The second is the account it issued: the password
+ * once, `Kopiraj`, and what comes next — *Dodaj još jednu* or *Otvori
+ * stranicu osobe*.
  *
- * THE READ IS GATED IN FULL, the way `organizacija.tsx:697-707` gates its own:
- * a skeleton while the organization read is pending, NO FORM once it has settled
- * failed, and the message rendered outside that branch so it is not hidden
- * behind the thing that failed. A form whose Save returns silently because the
- * organization id never arrived is the blank-page defect `pages/index.tsx:11-14`
- * warns about wearing a different shape — fully usable, completely inert.
+ * THE READ IS GATED IN FULL: a skeleton while the organization read is
+ * pending, NO FORM once it has settled failed, and the message rendered outside
+ * that branch so it is not hidden behind the thing that failed.
+ *
+ * NOT DISMISSIBLE WHILE A CREATE IS IN FLIGHT: Escape, the backdrop, the close
+ * control and Cancel all wait for the outcome, so the dialog that reports it —
+ * a password nobody can recover — cannot close before it lands.
  */
-export function MemberCreateCard({ create }: { readonly create: MemberCreate }): ReactNode {
+export function MemberAddDialog({ create }: { readonly create: MemberCreate }): ReactNode {
   const {
     nameField,
     usernameField,
@@ -57,41 +70,62 @@ export function MemberCreateCard({ create }: { readonly create: MemberCreate }):
     leaveField,
     roleField,
     rankField,
+    shown,
+    formKey,
     pending,
     invalidField,
     credential,
+    createdName,
     form,
     offersRank,
     refusal,
     submit,
+    close,
+    again,
+    nameChanged,
+    usernameChanged,
   } = create;
 
   /**
-   * The credential, shown once.
+   * The second step: the account issued, shown once.
    *
-   * A FUNCTION rather than a conditional inside the returned JSX, for the reason
-   * `organizacija.tsx`'s `renderSettings` is one: `eslint.config.js`'s L2 block
-   * refuses a string literal inside a branch nested in a branch that is an
-   * element's own child, which a conditional `aria-describedby` inside a
-   * conditionally rendered form is.
+   * A FUNCTION rather than a conditional inside the returned JSX: the L2 lint
+   * block refuses a string literal inside a branch nested in a branch that is
+   * an element's own child.
    */
   function renderCredential(issued: IssuedCredential): ReactNode {
     return (
-      <div className="grid gap-4">
-        <Notice role="status">
-          {t('ljudi.form.created')}
+      <div className="grid gap-5">
+        {/* DATA in apposition, never declined: the name as entered and the
+            username as the reply returned it. */}
+        {/* FOCUSABLE BY SCRIPT ONLY: where focus lands once the form, and
+            its focused submit, are replaced by this step. */}
+        <Notice id={MEMBER_ADD_CREATED_ID} role="status" tabIndex={-1}>
+          {t('ljudi.form.createdFor', { name: createdName, username: issued.username })}
         </Notice>
-        <div className="grid gap-2">
-          <p className="text-sm text-muted-foreground">{t('ljudi.form.username')}</p>
-          {/* DATA, never a key — the username is what the admin typed, read
-              back from the reply so what is shown is what the database holds. */}
-          <p className="break-all font-mono text-base">{issued.username}</p>
-        </div>
         <div className="grid gap-2">
           <p className="text-sm text-muted-foreground">{t('ljudi.form.credential')}</p>
           <CredentialLine password={issued.password} />
         </div>
         <p className="text-sm font-medium">{t('ljudi.form.credentialOnce')}</p>
+        <p className="text-sm text-muted-foreground">{t('ljudi.form.noTeam')}</p>
+        <DialogFooter>
+          {/* A LINK, and only when the reply named the row: a blank id has no
+              page to open, and the password above is shown regardless. It
+              REPLACES the `?dodaj=1` entry, so Back from the member page
+              returns to the list rather than to an empty first step. */}
+          {issued.memberId === null ? null : (
+            <Button asChild variant="outline" className="h-11">
+              <Link to="/ljudi/$id" params={{ id: issued.memberId }} replace>
+                {t('ljudi.form.openPage')}
+              </Link>
+            </Button>
+          )}
+          <Button className="h-11" type="button" onClick={again}>
+            <Plus aria-hidden />
+            {t('ljudi.form.again')}
+          </Button>
+        </DialogFooter>
       </div>
     );
   }
@@ -117,7 +151,7 @@ export function MemberCreateCard({ create }: { readonly create: MemberCreate }):
             id="member-rank"
             name="fireRank"
             defaultValue={rankInitialValue(null)}
-            aria-describedby={refusal === null ? undefined : 'member-form-error'}
+            aria-describedby={refusal === null ? undefined : MEMBER_ADD_ERROR_ID}
             className="h-11"
           >
             {RANK_OPTIONS.map((option) => (
@@ -132,14 +166,13 @@ export function MemberCreateCard({ create }: { readonly create: MemberCreate }):
   }
 
   /**
-   * The form, a skeleton, or nothing at all.
+   * The first step: the form, a skeleton, or nothing at all.
    *
    * NOTHING AT ALL is the case a naive version gets wrong: gated on
    * `organizationId === null` alone this returned a skeleton for a read that had
    * already FAILED, so an indefinitely pulsing bar was what a refused read
-   * looked like — identical to a slow one, with the message that explains it
-   * rendered by nothing. `createFormStateOf` separates pending from settled, and
-   * the alert lives outside this function.
+   * looked like. `createFormStateOf` separates pending from settled, and the
+   * alert lives outside this function.
    */
   function renderForm(): ReactNode {
     if (form.organizationId === null) {
@@ -149,20 +182,20 @@ export function MemberCreateCard({ create }: { readonly create: MemberCreate }):
     }
 
     return (
+      // KEYED, so *Dodaj još jednu* and a close remount every field onto its
+      // default; a refusal re-renders without a new key and keeps them.
       <form
+        key={formKey}
         method="post"
         onSubmit={(event) => {
           void submit(event);
         }}
-        className="grid gap-6"
+        className="grid gap-5"
       >
-        <h2 className="text-base font-bold">{t('ljudi.form.sectionBasics')}</h2>
         <div className="grid gap-2">
           <Label htmlFor="member-name">{t('ljudi.name')}</Label>
           {/* UNCONTROLLED, with a `defaultValue` and never a `value`: a refused
-              save must keep every entered value (UX-DR34), and a controlled
-              field re-rendered from state on a refusal is how six of them get
-              discarded at once. */}
+              save must keep every entered value (UX-DR34). */}
           <InputGroup>
             <InputGroupIcon>
               <User />
@@ -174,18 +207,17 @@ export function MemberCreateCard({ create }: { readonly create: MemberCreate }):
               type="text"
               required
               defaultValue={NO_TEXT}
-              aria-describedby={refusal === null ? undefined : 'member-form-error'}
+              onChange={nameChanged}
+              aria-describedby={refusal === null ? undefined : MEMBER_ADD_ERROR_ID}
               className="h-11"
             />
           </InputGroup>
         </div>
         <div className="grid gap-2">
           <Label htmlFor="member-username">{t('ljudi.form.username')}</Label>
-          {/* The credential AD-12 issues, and the local part of the address the
-              account authenticates against. `autoCapitalize`/`autoCorrect` off
-              for the reason the sign-in field turns them off: a phone keyboard
-              capitalizing the first letter produces a username `0007`'s
-              lowercase check refuses. */}
+          {/* SUGGESTED FROM THE NAME until the admin edits it. `autoCapitalize`
+              and `autoCorrect` off: a phone keyboard capitalizing the first
+              letter produces a username `0007`'s lowercase check refuses. */}
           <InputGroup>
             <InputGroupIcon>
               <AtSign />
@@ -199,17 +231,20 @@ export function MemberCreateCard({ create }: { readonly create: MemberCreate }):
               autoCorrect="off"
               required
               defaultValue={NO_TEXT}
-              aria-describedby={refusal === null ? undefined : 'member-form-error'}
+              onChange={usernameChanged}
+              aria-describedby={refusal === null ? MEMBER_ADD_USERNAME_HINT_ID : MEMBER_ADD_USERNAME_HINT_AND_ERROR}
               className="h-11"
             />
           </InputGroup>
+          <p id={MEMBER_ADD_USERNAME_HINT_ID} className="text-sm text-muted-foreground">
+            {t('ljudi.form.usernameHint')}
+          </p>
         </div>
         <div className="grid gap-2">
           <Label htmlFor="member-email">{t('ljudi.email')}</Label>
           {/* OPTIONAL, and that is CAP-1 rather than an oversight: a member with
-              no address is still a member (`0002:135`), which is the whole
-              reason sign-in is a username. No `required` here and no fallback —
-              an empty field stores `null`, never an empty string. */}
+              no address is still a member (`0002:135`). An empty field stores
+              `null`, never an empty string. */}
           <InputGroup>
             <InputGroupIcon>
               <Mail />
@@ -222,21 +257,15 @@ export function MemberCreateCard({ create }: { readonly create: MemberCreate }):
               autoCapitalize="none"
               autoCorrect="off"
               defaultValue={NO_TEXT}
-              aria-describedby={refusal === null ? undefined : 'member-form-error'}
+              aria-describedby={refusal === null ? undefined : MEMBER_ADD_ERROR_ID}
               className="h-11"
             />
           </InputGroup>
         </div>
-        <h2 className="border-t pt-6 text-base font-bold">{t('ljudi.form.sectionSettings')}</h2>
-        <div className="grid gap-6 sm:grid-cols-2">
+        <div className="grid gap-5 sm:grid-cols-2">
           <div className="grid gap-2">
             <Label htmlFor="member-role">{t('ljudi.role')}</Label>
-            {/* The `Select` primitive, native underneath, as the accent control
-                on `/organizacija` is: the native element carries keyboard
-                behaviour, an accessible name through its `<Label>` and a phone's
-                own picker sheet. Its options are the levels `0002:140`'s check
-                constraint admits, read off `MEMBER_ROLES` rather than written
-                here, so a third level appears the moment it exists. */}
+            {/* The levels `0002:140`'s check admits, read off `MEMBER_ROLES`. */}
             <InputGroup>
               <InputGroupIcon>
                 <ShieldCheck />
@@ -246,7 +275,7 @@ export function MemberCreateCard({ create }: { readonly create: MemberCreate }):
                 id="member-role"
                 name="role"
                 defaultValue={DEFAULT_MEMBER_ROLE}
-                aria-describedby={refusal === null ? undefined : 'member-form-error'}
+                aria-describedby={refusal === null ? undefined : MEMBER_ADD_ERROR_ID}
                 className="h-11"
               >
                 {MEMBER_ROLES.map((option) => (
@@ -276,42 +305,50 @@ export function MemberCreateCard({ create }: { readonly create: MemberCreate }):
               aria-invalid={invalidField === 'member-leave'}
               required
               defaultValue={ALLOWANCE_DEFAULT}
-              aria-describedby={refusal === null ? undefined : 'member-form-error'}
+              aria-describedby={refusal === null ? undefined : MEMBER_ADD_ERROR_ID}
               className="h-11"
             />
           </InputGroup>
         </div>
-        <div className="grid gap-2 border-t pt-6 sm:grid-cols-2">
-          <Button className="h-11 w-full" type="submit" disabled={pending} aria-busy={pending}>
-            <Save aria-hidden />
-            {t('ljudi.form.save')}
-          </Button>
-          {/* `type="reset"`, which on an uncontrolled form is exactly what
-              cancelling means: every field goes back to its `defaultValue`. It
-              is NOT the way out of this screen — that is the link on the page,
-              because this route is not a destination and resetting a form
-              leaves somebody exactly where they were. */}
-          <Button className="h-11 w-full" type="reset" variant="outline" disabled={pending}>
+        <DialogFooter>
+          <Button className="h-11" type="button" variant="outline" disabled={pending} onClick={close}>
             {t('ljudi.form.cancel')}
           </Button>
-        </div>
+          <Button className="h-11" type="submit" disabled={pending} aria-busy={pending}>
+            {t('ljudi.form.add')}
+          </Button>
+        </DialogFooter>
       </form>
     );
   }
 
   return (
-    <Card className="w-full min-w-0 max-w-2xl">
-      {/* OUTSIDE the gated branch, which is the whole point: a read that
-          produced no organization renders no form, so an explanation rendered
-          inside one would be exactly the element nobody can see. */}
-      <CardContent className="grid gap-6">
-        {refusal === null ? null : (
-          <Notice id="member-form-error" role="alert">
-            {refusalText(refusal)}
-          </Notice>
-        )}
-        {credential === null ? renderForm() : renderCredential(credential)}
-      </CardContent>
-    </Card>
+    <Dialog
+      open={shown}
+      dismissible={!pending}
+      onOpenChange={(next) => {
+        if (!next) close();
+      }}
+      // ESCAPE closes through the URL, never while a create is in flight.
+      onCancel={(event: SyntheticEvent<HTMLDialogElement>) => {
+        event.preventDefault();
+        if (!pending) close();
+      }}
+      aria-labelledby={MEMBER_ADD_DIALOG_HEADING_ID}
+    >
+      <DialogHeader closeLabel={t('ljudi.page.close')} onClose={close}>
+        <DialogTitle id={MEMBER_ADD_DIALOG_HEADING_ID} tabIndex={-1}>{t('ljudi.form.newHeading')}</DialogTitle>
+        <DialogDescription>{t('ljudi.form.newLede')}</DialogDescription>
+      </DialogHeader>
+      {/* INSIDE the dialog and OUTSIDE the gated branch: a read that produced
+          no organization renders no form, so an explanation rendered inside
+          one would be exactly the element nobody can see. */}
+      {refusal === null ? null : (
+        <Notice id={MEMBER_ADD_ERROR_ID} role="alert">
+          {refusalText(refusal)}
+        </Notice>
+      )}
+      {credential === null ? renderForm() : renderCredential(credential)}
+    </Dialog>
   );
 }

@@ -34,3 +34,12 @@ export const MEMBER_STATUS_WITHDRAW_PROMPT_ID = 'member-status-withdraw-prompt';
 /** *Prijava*: the card's heading, and the reset's refusal, which describes its button. */
 export const MEMBER_SIGN_IN_HEADING_ID = 'member-sign-in-heading';
 export const MEMBER_RESET_ERROR_ID = 'member-reset-error';
+
+/** *Dodaj osobu*'s dialog: its title, and its refusal. */
+export const MEMBER_ADD_DIALOG_HEADING_ID = 'member-add-dialog-heading';
+export const MEMBER_ADD_ERROR_ID = 'member-form-error';
+/** The second step's `Račun je izrađen: …` line, where focus lands once the form is replaced. */
+export const MEMBER_ADD_CREATED_ID = 'member-add-created';
+/** The username's hint, which describes the field; with the refusal beside it once there is one. */
+export const MEMBER_ADD_USERNAME_HINT_ID = 'member-username-hint';
+export const MEMBER_ADD_USERNAME_HINT_AND_ERROR = `${MEMBER_ADD_USERNAME_HINT_ID} ${MEMBER_ADD_ERROR_ID}`;

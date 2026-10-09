@@ -76,9 +76,10 @@ const asAdmin: readonly Screen[] = [
     ready: ({ peoplePage }, fixture) => peoplePage.editLink(fixture.member.name),
   },
   {
+    // STORY 7.13b: the add dialog on Ljudi, open by its URL.
     title: 'new member',
-    path: () => '/ljudi/novi',
-    ready: ({ peoplePage }) => peoplePage.usernameInput,
+    path: () => '/ljudi?dodaj=1',
+    ready: ({ peoplePage }) => peoplePage.addUsernameInput,
   },
   {
     title: 'teams',

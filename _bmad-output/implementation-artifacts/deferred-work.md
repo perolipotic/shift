@@ -836,9 +836,6 @@
   summary: Focus is lost when a resize crosses 640 px and unmounts the focused form — a stacked row's link, or the open sort popover's option (or the table's heading button the other way). Focus falls to the page body. Restoring it needs a screen-level focus handoff between the two forms (for example, the same member's link or the matching heading).
   evidence: 7.6 review on 2026-10-08. `usePhone()` renders one form at a time by design, so the focused element is removed rather than hidden.
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-8-first-sign-in-password.md`
-  summary: The admin-issued password (create and reset) is shown with `Kopiraj` in the existing inline one-time display, not in a dialog; moving it into a dialog belongs to 7.11 (member page dialogs) and 7.13 (add member in a dialog).
-  evidence: Epic 7.8 AC "the admin's dialog shows the new four-word password once, with `Kopiraj`" narrowed by human decision 2026-10-08 (spec 7.8 Epic AC Deviations).
-- source_spec: `_bmad-output/implementation-artifacts/spec-7-8-first-sign-in-password.md`
   summary: `must_set_password` is enforced only by the route guard. A flagged session can still read and write what RLS allows through PostgREST, and it can call `clearMustSetPassword` without changing its password. A data-layer check (for example in the access-token hook) is Ask First in 7.8.
   evidence: 7.8 review (Blind Hunter); spec Design Notes "Bypass" and Ask First "any guard at the data layer".
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-8-first-sign-in-password.md`
@@ -871,9 +868,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-11-member-page-facts-dialogs.md`
   summary: The member page's *Promijeni smjenu* dialog shows no *Što se mijenja* (decision 16: "Zadnja u A · čet 01.10. · Noć · 19:00–07:00 / Prva u B · sub 03.10. · Dan · 07:00–19:00"). It needs a projection of a member's move across teams from a date, and `change-preview.ts` models only one team on one day.
   evidence: `mockups/member-page-1.html` panel D; deferred in spec 7.11 Epic AC Deviations.
-- source_spec: `_bmad-output/implementation-artifacts/spec-7-13-ljudi-status-filter.md`
-  summary: Story 7.13 b) *Dodaj osobu* opens a short dialog on Ljudi instead of the `/ljudi/novi` page. The dialog ends in the same dialog with the password shown once (`CredentialLine`, `Kopiraj`), then offers *Dodaj još jednu* and *Otvori stranicu osobe*, which needs the `memberId` that `createUser` already returns and the client drops. Decided 2026-10-08: no team at creation (team stays on the member page), username suggested from the name, the e-mail field stays, and the `/ljudi/novi` route is removed (rewrite the `prijava.test.ts` / `router.test.ts` sweeps). Closes the 7.8 entry about the inline one-time display.
-  evidence: 7.13 split at planning (SCOPE STANDARD, three shippable goals); `mockups/people-1.html` §2; epics.md 7.13 AC2.
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-13-ljudi-status-filter.md`
   summary: Story 7.13 c) The member page's deactivation question states the consequence in numbers (UX-DR27): "Smjena {team} od tada ima {n} od {m} članova, a u {month} je to {k} smjena.", computed from the domain roster (`rosterOn` / `shiftRoster`), and the action button repeats the date ("Deaktiviraj od {dd.mm.}"). Decided 2026-10-08: deactivation stays on the member page only and is not offered from Ljudi.
   evidence: 7.13 split at planning; `mockups/people-1.html` §3; spec-7-11 L50 handed the numbers to 7.13; epics.md 7.13 AC3.

@@ -19,9 +19,9 @@ const LEAVE_DIALOG = new RegExp(
   `^(${escapeRegExp(leave.recordDialogHeading)}|${escapeRegExp(leave.amendDialogHeading.split('{')[0] ?? '')}.+)$`,
 );
 
-/** `/ljudi`, `/ljudi/novi` and `/ljudi/:id`: the member list, the new-member
- *  form and a member's page — facts, each change in its own dialog (story
- *  7.11) — with its team membership. */
+/** `/ljudi` and `/ljudi/:id`: the member list with its add dialog (story
+ *  7.13b, `?dodaj=1`) and a member's page — facts, each change in its own
+ *  dialog (story 7.11) — with its team membership. */
 export class PeoplePage extends BasePage {
   protected readonly path = '/ljudi';
 
@@ -42,8 +42,9 @@ export class PeoplePage extends BasePage {
     return this.page.getByRole('link', { name: fill(hr.ljudi.form.edit, { name }) });
   }
 
-  get addLink(): Locator {
-    return this.page.getByRole('link', { name: hr.ljudi.form.add });
+  /** *Dodaj osobu* in the list's header: a button that opens the add dialog (story 7.13b). */
+  get addButton(): Locator {
+    return this.page.getByRole('main').getByRole('button', { name: hr.ljudi.form.add, exact: true }).first();
   }
 
   /** A member's row in the list's table: the one holding their edit link. */
@@ -158,31 +159,40 @@ export class PeoplePage extends BasePage {
     await this.editLink(name).click();
   }
 
-  // ------------------------------------------------------ the new member
+  // ------------------------------------------- the add dialog (story 7.13b)
 
+  /** Opens the add dialog by its URL, `/ljudi?dodaj=1`, and waits for it. */
   async gotoNew(): Promise<void> {
-    await this.page.goto('/ljudi/novi');
+    await this.page.goto('/ljudi?dodaj=1');
+    await expect(this.addDialog).toBeVisible();
   }
 
+  /** *Nova osoba*, the add dialog. */
+  get addDialog(): Locator {
+    return this.dialog(hr.ljudi.form.newHeading);
+  }
+
+  /** The person's name, on the add dialog and the basics dialog alike. */
   get nameInput(): Locator {
     return this.page.getByLabel(hr.ljudi.name, { exact: true });
   }
 
+  /** The username, on the add dialog and the basics dialog alike. */
   get usernameInput(): Locator {
     return this.page.getByLabel(hr.ljudi.form.username, { exact: true });
   }
 
-  /** The e-mail field, on the new-member form and the basics dialog alike. */
+  /** The e-mail field, on the add dialog and the basics dialog alike. */
   get emailInput(): Locator {
     return this.page.getByLabel(hr.ljudi.email, { exact: true });
   }
 
-  /** The role control, on the new-member form and the basics dialog alike. */
+  /** The role control, on the add dialog and the basics dialog alike. */
   get roleSelect(): Locator {
     return this.page.getByLabel(hr.ljudi.role, { exact: true });
   }
 
-  /** The fire-rank control, on the new-member form and the basics dialog alike. */
+  /** The fire-rank control, on the add dialog and the basics dialog alike. */
   get rankSelect(): Locator {
     return this.page.getByLabel(hr.ljudi.rank.label, { exact: true });
   }
@@ -192,30 +202,78 @@ export class PeoplePage extends BasePage {
     return this.rankSelect.locator('option:checked');
   }
 
-  get saveButton(): Locator {
-    return this.page.getByRole('button', { name: hr.ljudi.form.save });
+  /** The add dialog's name field. */
+  get addNameInput(): Locator {
+    return this.addDialog.getByLabel(hr.ljudi.name, { exact: true });
   }
 
-  get backLink(): Locator {
-    return this.page.getByRole('link', { name: hr.ljudi.form.back });
+  /** The add dialog's username field, suggested from the name. */
+  get addUsernameInput(): Locator {
+    return this.addDialog.getByLabel(hr.ljudi.form.username, { exact: true });
   }
 
-  /** Fills the already open `/ljudi/novi` form's name and username. */
+  /** The add dialog's leave days. */
+  get addLeaveInput(): Locator {
+    return this.addDialog.getByLabel(hr.ljudi.leave, { exact: true });
+  }
+
+  /** The add dialog's rank control, offered while the organization uses ranks. */
+  get addRankSelect(): Locator {
+    return this.addDialog.getByLabel(hr.ljudi.rank.label, { exact: true });
+  }
+
+  /** The add dialog's final button, `Dodaj osobu`. */
+  get addSubmitButton(): Locator {
+    return this.addDialog.getByRole('button', { name: hr.ljudi.form.add, exact: true });
+  }
+
+  /** The add dialog's Odustani. */
+  get addCancelButton(): Locator {
+    return this.addDialog.getByRole('button', { name: hr.ljudi.form.cancel, exact: true });
+  }
+
+  /** The add dialog's close control. */
+  get addCloseButton(): Locator {
+    return this.addDialog.getByRole('button', { name: hr.ljudi.page.close, exact: true });
+  }
+
+  /** The second step's *Dodaj još jednu*. */
+  get againButton(): Locator {
+    return this.addDialog.getByRole('button', { name: hr.ljudi.form.again, exact: true });
+  }
+
+  /** The second step's *Otvori stranicu osobe*. */
+  get openPageLink(): Locator {
+    return this.addDialog.getByRole('link', { name: hr.ljudi.form.openPage, exact: true });
+  }
+
+  /** The second step's confirmation: `Račun je izrađen: {name} · {username}`. */
+  createdStatus(name: string, username: string): Locator {
+    return this.addDialog.getByRole('status').filter({ hasText: fill(hr.ljudi.form.createdFor, { name, username }) });
+  }
+
+  /** Fills the open add dialog's name and username. */
   async fillNewMember(name: string, username: string): Promise<void> {
-    await this.nameInput.fill(name);
-    await this.usernameInput.fill(username);
+    await this.addNameInput.fill(name);
+    await this.addUsernameInput.fill(username);
   }
 
   /**
-   * Fills and submits the already open `/ljudi/novi` form — the admin-auth Edge
-   * Function's `createUser` — and waits for the one-time password screen. The
-   * address it builds is under this run's domain, so teardown reaches it.
+   * Fills and submits the open add dialog — the admin-auth Edge Function's
+   * `createUser` — and waits for its second step. The address it builds is
+   * under this run's domain, so teardown reaches it.
    */
   async submitNewMember(name: string, username: string): Promise<void> {
     await this.fillNewMember(name, username);
-    await this.saveButton.click();
+    await this.addSubmitButton.click();
 
-    await expect(this.status).toHaveText(hr.ljudi.form.created);
+    await expect(this.createdStatus(name, username)).toBeVisible();
+  }
+
+  /** Closes the add dialog from its close control, onto the list. */
+  async closeAddDialog(): Promise<void> {
+    await this.addCloseButton.click();
+    await expect(this.addDialog).toBeHidden();
   }
 
   // ------------------------------------------- the member page (story 7.11)
@@ -313,7 +371,7 @@ export class PeoplePage extends BasePage {
     return this.page.getByText(/^[a-z]{3,6}(-[a-z]{3,6}){3}$/);
   }
 
-  /** Opens `/ljudi/novi` and issues the account. */
+  /** Opens the add dialog by its URL and issues the account; the dialog stays on its second step. */
   async createMember(name: string, username: string): Promise<void> {
     await this.gotoNew();
     await this.submitNewMember(name, username);
