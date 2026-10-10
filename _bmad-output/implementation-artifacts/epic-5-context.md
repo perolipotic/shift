@@ -4,7 +4,7 @@
 
 ## Goal
 
-An admin records a member's annual leave as a date range and sees its cost before saving. Leave never removes a shift or touches the rotation. Instead, every working shift the member is rostered for on a leave date becomes a visible conflict. The conflict stands until an admin decides it on its own screen: accept as uncovered, replace the member, or amend the leave. Each decision is attributable, and its consequences are stated in the same three terms. This is the product's core stance: an absence never quietly becomes an uncovered shift that someone discovers on the day. Status (2026-10-05): 5.1–5.4 are done, 5.4a–e included. Story 5.5, the erasure guard, is the last story of the epic: 5.5a (the rotation save's guard), 5.5b (the calendar roster overrides' guard), 5.5c (the rotation save bar), 5.5e (the member page's team move and status), 5.5f (the calendar's shift-type override guard), 5.5g (the rotation cancel guard) and 5.5h (the builder's override review guard) are done; 5.5d (resolution lifetime, the replace link included) is in review.
+An admin records a member's annual leave as a date range and sees its cost before saving. Leave never removes a shift or touches the rotation. Instead, every working shift the member is rostered for on a leave date becomes a visible conflict. The conflict stands until an admin decides it on its own screen: accept as uncovered, replace the member, or amend the leave. Each decision is attributable, and its consequences are stated in the same three terms. This is the product's core stance: an absence never quietly becomes an uncovered shift that someone discovers on the day. Status (2026-10-10): the epic is done. 5.1–5.4 are done, 5.4a–e included. Story 5.5, the erasure guard, was the last story of the epic: 5.5a (the rotation save's guard), 5.5b (the calendar roster overrides' guard), 5.5c (the rotation save bar), 5.5e (the member page's team move and status), 5.5f (the calendar's shift-type override guard), 5.5g (the rotation cancel guard) and 5.5h (the builder's override review guard) and 5.5d (resolution lifetime, the replace link included) are done.
 
 ## Stories
 
@@ -12,7 +12,7 @@ An admin records a member's annual leave as a date range and sees its cost befor
 - Story 5.2: An admin amends or deletes leave, and the balance follows (done)
 - Story 5.3: A collision with a rostered shift becomes a visible conflict (done)
 - Story 5.4: An admin decides each conflict on its own screen (done, 5.4a–e)
-- Story 5.5: A configuration change cannot quietly erase a pending decision (in progress: 5.5a, 5.5b, 5.5c, 5.5e, 5.5f, 5.5g, 5.5h done; 5.5d in review)
+- Story 5.5: A configuration change cannot quietly erase a pending decision (done: 5.5a–5.5h)
 
 ## Requirements & Constraints
 

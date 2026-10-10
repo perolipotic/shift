@@ -620,14 +620,14 @@ action_items:
     action: "Fix C1: Danas treats yesterday-dated shift still running as working today,
       over free and today-leave cases; lone overnight Noc included"
     owner: "Dev (bmad-build)"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-5-6-7-retro-2026-10-09.md"
   - id: "epic-7-retro-item-10-bookkeeping-epic-5-6-done-add-7-13c-key"
     epic: 7
     action: "Bookkeeping: epic-5/6 done, add 7-13c key and reopen 7.13/epic-7, fix
       stale spec statuses and missing ledger entries (R4, R5, R6, R8-R11)"
     owner: "Perolipotic (bmad-sprint-planning)"
-    status: open
+    status: done
     ref: "_bmad-output/implementation-artifacts/epic-5-6-7-retro-2026-10-09.md"
   - id: "epic-7-retro-item-11-docs-r3-design-md-experience-md-and-ux-d"
     epic: 7

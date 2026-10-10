@@ -799,7 +799,7 @@
   summary: RESOLVED by 6.1b (spec-6-1b-member-hours-and-leave.md) — Story 6.1b. Danas's hours tile (band hours and total for the current month, equal to Sati through `myHoursOf` with the own leave and resolution reads) and leave tile (used and remaining for the leave year, equal to Godišnji through `myLeaveOf`) are not built. The leave case's cost sentence ("3 dana godišnjeg", which days count) is not built either. Both come after the 7 days in the phone priority order.
   evidence: The human split story 6.1 into 6.1a and 6.1b on 2026-10-06. Epic AC "their band hours and total for the period, their leave used and remaining" was DEFERRED by 6.1a.
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-1a-member-today-and-next-shift.md`
-  summary: Danas's 24 h duty case. 6.1a lists each of today's shifts separately. Story 6.2 builds the duty-block (end time as the headline, a progress bar, legs marked Odrađeno or U tijeku, the replaced member's name) and makes Danas render it for consecutive working shifts.
+  summary: RESOLVED by 6.2 (spec-6-2-duty-block.md) — Danas renders consecutive working shifts as one duty-block on the today card. Original: Danas's 24 h duty case. 6.1a lists each of today's shifts separately. Story 6.2 builds the duty-block (end time as the headline, a progress bar, legs marked Odrađeno or U tijeku, the replaced member's name) and makes Danas render it for consecutive working shifts.
   evidence: Epic 6.1 AC "on a 24 h duty (as one duty, per 6.2)" was DEFERRED by 6.1a. The human decided this on 2026-10-06.
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-1a-member-today-and-next-shift.md`
   summary: Danas still renders the kept "Tvoja smjena ‹tim›" line from its own read (`OWN_TEAM_KEY` / `readOwnTeamToday`), while the today card names today's team from the calendar snapshot. One fact therefore comes from two reads on one screen, and the line sits after the 7 days, where 6.1b's hours and leave tiles should go. 6.1b should decide where the line goes in the priority order, and whether it derives from the calendar snapshot.
@@ -897,3 +897,24 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-fix-danas-overnight-carry-over.md`
   summary: The admin's own-status subtitle on Danas (`admin-today.ts` `adminStatusOf`) maps a working-case shift to name and range only, so a shift carried over from yesterday reads "Danas radiš Noć 19:00–07:00" without the member card's `od jučer` marker.
   evidence: Review of the C1 fix (2026-10-10). The spec pinned the subtitle text unchanged; the member card and the admin subtitle now describe the same carried shift differently.
+
+## Deferred from: epics 5–7 retrospective (2026-10-09)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-5f-override-erasure-guard.md`
+  summary: The browser-only race window recorded for 5.5a, 5.5b and 5.5e also applies to the shift-type override writes (5.5f set and remove), the rotation cancel (5.5g) and the builder's override review (5.5h confirm and amend). A leave or resolution written between the final re-check and the write can be erased with nobody confirming it. Closing it needs the checked key set verified server-side, as in the 5.5a entry.
+  evidence: Retro R6 (`epic-5-6-7-retro-2026-10-09.md`). The unledgered paths: `override-write.ts` (set, remove), `rotation/services/write.ts` `cancelScheduledRotation`, and `override-disposition.ts` (confirm, amend). Each spec puts a server-side check under Ask First.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-5a-rotation-erasure-guard.md`
+  summary: A confirmed AD-5 erasure takes a pending decision off every list with no record of who confirmed it or when, against the Epic 5 summary's "each decision attributable". Decide whether a confirmed erasure writes an attributable row. Widens the narrow 5.5b take-off entry above to every erasure path.
+  evidence: Retro R5, deferred; open question in the retro. "Recording who confirmed an erasure" is Ask First in `spec-5-5a`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-5-3d-hours-conflict-state.md`
+  summary: The organization hours table's *Neriješeni konflikti* column is not sortable, against 4.2's "every heading sortable". It is a plain `TableHead`, not a `SortHead`; adding it needs a sort key in the table vocabulary.
+  evidence: Retro R8, accepted. `organization-hours-table.tsx` (the conflicts heading); the deviation is noted in the 5.3d review section ("the new column is not sortable") but not in its Epic AC Deviations.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-16-resolved-conflicts-readable.md`
+  summary: A *Riješeni* entry names the shift type from the team's schedule for that date as it stands today, not the type at decision time, because a resolution does not store it (AD-4). A later shift-type override or rotation change renames the entry's type. Storing the type on the resolution would fix it.
+  evidence: Retro R9, accepted and now flagged in spec 7.16's Epic AC Deviations; `scheduledShiftTypeOn`, the same read as `replacement-effect.ts`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-8-first-sign-in-password.md`
+  summary: The admin's reset shows the new four-word password and `Kopiraj` in the existing inline one-time display on the member page, not in a dialog as 7.8's AC asks. Moving it into a dialog, as *Dodaj osobu* (7.13b) now does, is open.
+  evidence: Retro R10, accepted. Spec 7.8 Epic AC Deviations ("narrowed") and its ticked task promised this entry; `member-reset-card.tsx`.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-18-organization-settings-facts-dialogs.md`
+  summary: Organizacija has no *Satni pojasi* facts card (the mockup's summary of the hour bands; the header link to Satni pojasi stays), and the leave dialog has no *Tekuća godina godišnjeg* line. No criterion asks for them, and the card needs a second read.
+  evidence: Retro R11; spec 7.18 Design Notes name both as not built.
