@@ -86,7 +86,7 @@ context:
 - [x] `member-filters.tsx`, `member-table.tsx`, `member-rows.tsx`, `cell-view.tsx`; delete `member-stats.tsx`, `member-count.tsx` -- chips, the status column/field, the summary line -- surface
 - [x] `hr.json`, `pages/prijava.test.ts` sweeps -- keys (plural-aware), file lists -- i18n
 - [x] `e2e/pages/people.page.ts` + specs -- drive the chips; assert the default `aktivni`, `?status=svi`, a scheduled deactivation's status cell, a deep link and Back, and 390 px -- churn
-- [ ] DESIGN.md, EXPERIENCE.md, sprint-status -- docs
+- [x] DESIGN.md, EXPERIENCE.md, sprint-status -- docs
 
 **Acceptance Criteria:**
 - Given an admin on Ljudi, when it renders, then there are chips for Razina, Smjena and Status, a status column, and one summary line, and no `<select>` and no stat card remain.
