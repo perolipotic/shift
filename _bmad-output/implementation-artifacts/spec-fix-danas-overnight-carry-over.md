@@ -39,7 +39,8 @@ context: []
 
 ## Epic AC Deviations
 
-None. Epic 6.1a requires that "Danas states each case in words: on shift today (type and times), free today …". This fix makes "on shift today" include a shift that is still running after midnight.
+- **6.1 "Danas states each case in words: … on leave today"**: REINTERPRETED. On the first day of leave, while a shift or duty dated yesterday is still running, Danas shows that shift or duty and not the leave case. The leave case comes back when the shift or duty ends. Decided at the 2026-10-09 retro (C1/R2, item 2).
+- **6.2 "consecutive working shifts … presented as one duty"**: REINTERPRETED. While a carry-over runs, today's upcoming duty is listed as separate working-case rows after the carried shift. It becomes the duty-block once the carry-over ends. This follows the running > upcoming > done rule (2026-10-06).
 
 </frozen-after-approval>
 
