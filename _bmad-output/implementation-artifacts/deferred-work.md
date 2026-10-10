@@ -808,7 +808,7 @@
   summary: Danas groups a duty only on the today card. The 7-day list keeps Kalendar's per-date rows, and the next-shift card shows one shift, even when the next working shift starts a duty. Grouping there (for example a "24 h" note on a week row, or the next card headlining the duty's end) is undecided.
   evidence: Epic 6.2 AC "consecutive working shifts … When the member dashboard renders Then they are presented as one duty" was NARROWED to the today card by the human on 2026-10-06, so that the 7 days stay equal to Kalendar (6.1a).
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-2-duty-block.md`
-  summary: A lone overnight shift (own Noć only, not a duty) still reads "Danas ne radiš" after midnight on a free date, because 6.1a's today case looks only at today's date. 6.2 fixed this only for a running duty.
+  summary: RESOLVED by spec-fix-danas-overnight-carry-over.md — A lone overnight shift (own Noć only, not a duty) still reads "Danas ne radiš" after midnight on a free date, because 6.1a's today case looks only at today's date. 6.2 fixed this only for a running duty.
   evidence: 6.2 review (Blind Hunter). The spec's matrix keeps "Single overnight → working case as in 6.1a" by design.
 - source_spec: `_bmad-output/implementation-artifacts/spec-6-2-duty-block.md`
   summary: When Danas shows today's duty, a working shift today that is not part of that duty (separated by a gap) appears neither on the today card nor in the next-shift card, which starts tomorrow.
@@ -894,3 +894,6 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-13c-deactivation-consequence-in-numbers.md`
   summary: The calendar snapshot is observed through copied `calendarQueryOptions(...)` lambdas in each hook (`use-member-leave`, `use-member-edit`, `use-erasure-reads`), so "same key, no extra request" holds only by convention; a shared `useCalendarSnapshot()` (or options factory) would pin it, and could let a page observe it only while a surface needs it.
   evidence: 7.13c review round 2 (Blind Hunter); `use-member-edit` now observes the whole calendar on every member page, relying on matching `CALENDAR_KEY` with the leave card's read.
+- source_spec: `_bmad-output/implementation-artifacts/spec-fix-danas-overnight-carry-over.md`
+  summary: The admin's own-status subtitle on Danas (`admin-today.ts` `adminStatusOf`) maps a working-case shift to name and range only, so a shift carried over from yesterday reads "Danas radiš Noć 19:00–07:00" without the member card's `od jučer` marker.
+  evidence: Review of the C1 fix (2026-10-10). The spec pinned the subtitle text unchanged; the member card and the admin subtitle now describe the same carried shift differently.

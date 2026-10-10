@@ -148,7 +148,7 @@ describe("today's one case", () => {
 
     expect(view.todayCase).toEqual({
       kind: CASE_WORKING,
-      shifts: [{ teamId: TEAM_A, teamName: 'Smjena A', name: 'Noć', range: '19:00–07:00' }],
+      shifts: [{ teamId: TEAM_A, teamName: 'Smjena A', name: 'Noć', range: '19:00–07:00', fromYesterday: false }],
     });
     expect(caseSentenceOf(view)).toBe('Danas radiš');
   });
@@ -158,7 +158,7 @@ describe("today's one case", () => {
 
     expect(view.todayCase).toEqual({
       kind: CASE_FREE,
-      shift: { teamId: TEAM_A, teamName: 'Smjena A', name: 'Slobodno', range: null },
+      shift: { teamId: TEAM_A, teamName: 'Smjena A', name: 'Slobodno', range: null, fromYesterday: false },
     });
     expect(caseSentenceOf(view)).toBe('Danas ne radiš');
     expect(view.next).toMatchObject({ date: '2026-09-30', inDays: 2, name: 'Dan', range: '07:00–19:00' });
@@ -186,8 +186,8 @@ describe("today's one case", () => {
     expect(view.todayCase).toEqual({
       kind: CASE_WORKING,
       shifts: [
-        { teamId: TEAM_A, teamName: 'Smjena A', name: 'Noć', range: '20:00–08:00' },
-        { teamId: TEAM_D, teamName: 'Smjena D', name: 'Dan', range: '07:00–19:00' },
+        { teamId: TEAM_A, teamName: 'Smjena A', name: 'Noć', range: '20:00–08:00', fromYesterday: false },
+        { teamId: TEAM_D, teamName: 'Smjena D', name: 'Dan', range: '07:00–19:00', fromYesterday: false },
       ],
     });
   });
@@ -669,9 +669,9 @@ describe("today's 24 h duty (story 6.2)", () => {
     });
   });
 
-  it('is the working case for a single overnight shift, as in 6.1a', () => {
+  it('is the working case for a single overnight shift, as in 6.1a, and still is after midnight while it runs', () => {
     expect(readyOf(todayViewOf(pilot, [], zagrebOf('2026-10-01', '21:10'))).todayCase.kind).toBe(CASE_WORKING);
-    expect(readyOf(todayViewOf(pilot, [], zagrebOf('2026-10-02', '03:00'))).todayCase.kind).toBe(CASE_FREE);
+    expect(readyOf(todayViewOf(pilot, [], zagrebOf('2026-10-02', '03:00'))).todayCase.kind).toBe(CASE_WORKING);
   });
 
   it('gives way to leave today, and drops a leg on a date leave covers', () => {
@@ -782,7 +782,7 @@ describe("today's 24 h duty (story 6.2)", () => {
 
     expect(view.todayCase).toEqual({
       kind: CASE_WORKING,
-      shifts: [{ teamId: TEAM_A, teamName: 'Smjena A', name: 'Noć', range: '19:00–07:00' }],
+      shifts: [{ teamId: TEAM_A, teamName: 'Smjena A', name: 'Noć', range: '19:00–07:00', fromYesterday: false }],
     });
   });
 
@@ -835,6 +835,197 @@ describe("today's 24 h duty (story 6.2)", () => {
 
     expect(todayViewOf(broken, [], zagrebOf('2026-10-01', '21:10'))).toEqual({ kind: TODAY_UNAVAILABLE, retryable: false });
     expect(logged).toHaveBeenCalledWith(TODAY_UNAVAILABLE, expect.any(RangeError));
+  });
+
+  describe('a shift from yesterday still running (the lone-Noć carry-over)', () => {
+    const NOC_FROM_YESTERDAY = {
+      teamId: TEAM_A,
+      teamName: 'Smjena A',
+      name: 'Noć',
+      range: '19:00–07:00',
+      fromYesterday: true,
+    } as const;
+
+    it('Lone Noć, free today: at 02.10. 03:00 the Noć of 01.10. is today’s working case, od jučer', () => {
+      const view = readyOf(todayViewOf(pilot, [], zagrebOf('2026-10-02', '03:00')));
+
+      expect(view.todayCase).toEqual({ kind: CASE_WORKING, shifts: [NOC_FROM_YESTERDAY] });
+      expect(caseSentenceOf(view)).toBe('Danas radiš');
+      expect(t('danas.today.fromYesterday')).toBe('od jučer');
+      expect(view.returning).toBe(false);
+      // Smjena A's next Dan, on 04.10.
+      expect(view.next).toMatchObject({ date: '2026-10-04', inDays: 2, name: 'Dan' });
+    });
+
+    it('Same, ended: at 07:00 the Noć is over, and today is free as before', () => {
+      const view = readyOf(todayViewOf(pilot, [], zagrebOf('2026-10-02', '07:00')));
+
+      expect(view.todayCase).toEqual({
+        kind: CASE_FREE,
+        shift: { teamId: TEAM_A, teamName: 'Smjena A', name: 'Slobodno', range: null, fromYesterday: false },
+      });
+      // One minute before, it still runs.
+      expect(readyOf(todayViewOf(pilot, [], zagrebOf('2026-10-02', '06:59'))).todayCase.kind).toBe(CASE_WORKING);
+    });
+
+    it('Leave from today: the Noć of 05.10. only, not returning, and the next shift the first after the leave', () => {
+      const rows = [rowOf('leave-1', '2026-10-06', '2026-10-09')];
+      const view = readyOf(todayViewOf(pilot, rows, zagrebOf('2026-10-06', '03:00')));
+
+      expect(view.todayCase).toEqual({ kind: CASE_WORKING, shifts: [NOC_FROM_YESTERDAY] });
+      expect(view.returning).toBe(false);
+      // 06.10.–08.10. on leave (08.10.'s Dan with it); 09.10. is a Noć.
+      expect(view.next).toMatchObject({ date: '2026-10-09', inDays: 3, name: 'Noć' });
+    });
+
+    it('Leave from today, at the boundary: 06:59 still the carried Noć, 07:00 the leave case', () => {
+      const rows = [rowOf('leave-1', '2026-10-06', '2026-10-09')];
+
+      expect(readyOf(todayViewOf(pilot, rows, zagrebOf('2026-10-06', '06:59'))).todayCase).toEqual({
+        kind: CASE_WORKING,
+        shifts: [NOC_FROM_YESTERDAY],
+      });
+      expect(readyOf(todayViewOf(pilot, rows, zagrebOf('2026-10-06', '07:00'))).todayCase).toEqual({
+        kind: CASE_LEAVE,
+        from: '06.10.2026',
+        to: '08.10.2026',
+        costDays: 1,
+      });
+    });
+
+    it('A duty begun yesterday still running on the first day of leave: the duty, then the leave once it ends', () => {
+      const rows = [rowOf('leave-1', '2026-10-02', '2026-10-04')];
+      const running = readyOf(todayViewOf(takenOver, rows, zagrebOf('2026-10-02', '03:00')));
+
+      expect(dutyOf(running)).toMatchObject({ phase: 'running', totalMinutes: 1440 });
+      expect(running.returning).toBe(false);
+
+      const ended = readyOf(todayViewOf(takenOver, rows, zagrebOf('2026-10-02', '07:00')));
+
+      // 02.10. and 03.10. are Smjena A's Slobodno pair: the leave costs nothing.
+      expect(ended.todayCase).toEqual({ kind: CASE_LEAVE, from: '02.10.2026', to: '03.10.2026', costDays: 0 });
+      expect(ended.returning).toBe(true);
+    });
+
+    it('Same, ended: at 07:30 the leave case, with its range and cost, as before', () => {
+      const rows = [rowOf('leave-1', '2026-10-06', '2026-10-09')];
+      const view = readyOf(todayViewOf(pilot, rows, zagrebOf('2026-10-06', '07:30')));
+
+      // 08.10.'s Dan is the only working day it covers.
+      expect(view.todayCase).toEqual({ kind: CASE_LEAVE, from: '06.10.2026', to: '08.10.2026', costDays: 1 });
+      expect(view.returning).toBe(true);
+    });
+
+    it('hides today’s own shifts on a day of leave: only the carried-over shift is listed', async () => {
+      // Leave on 02.10., where a roster override put the viewer on Smjena D's Noć.
+      const snapshot = await snapshotOf({
+        roster: [calendarRosterOverrideRow('roster-1', TEAM_D, '2026-10-02', null, VIEWER_MEMBER)],
+      });
+      const view = readyOf(todayViewOf(snapshot, [rowOf('leave-1', '2026-10-02', '2026-10-03')], zagrebOf('2026-10-02', '03:00')));
+
+      expect(view.todayCase).toEqual({ kind: CASE_WORKING, shifts: [NOC_FROM_YESTERDAY] });
+    });
+
+    it('Yesterday on leave: no carry-over, and today is free as before', () => {
+      const view = readyOf(todayViewOf(pilot, [rowOf('leave-1', '2026-10-01', '2026-10-02')], zagrebOf('2026-10-02', '03:00')));
+
+      expect(view.todayCase).toMatchObject({ kind: CASE_FREE, shift: { name: 'Slobodno' } });
+    });
+
+    it('Noć, then Noć tonight: the carried Noć first, then tonight’s', async () => {
+      // Smjena D works Noć on 02.10.; the gap 07:00–19:00 keeps the two apart.
+      const snapshot = await snapshotOf({
+        roster: [calendarRosterOverrideRow('roster-1', TEAM_D, '2026-10-02', null, VIEWER_MEMBER)],
+      });
+      const view = readyOf(todayViewOf(snapshot, [], zagrebOf('2026-10-02', '03:00')));
+
+      expect(view.todayCase).toEqual({
+        kind: CASE_WORKING,
+        shifts: [
+          NOC_FROM_YESTERDAY,
+          { teamId: TEAM_D, teamName: 'Smjena D', name: 'Noć', range: '19:00–07:00', fromYesterday: false },
+        ],
+      });
+      // Tonight's Noć is today's, never the next shift.
+      expect(view.next).toMatchObject({ date: '2026-10-04', name: 'Dan' });
+    });
+
+    it('Carry-over beats an upcoming duty with a leg dated tomorrow, which is never the next shift', async () => {
+      // 02.10.: Dug 08–20 on Smjena A and Kasni 20–08 on Smjena D; 03.10.: Dug 08–20 on
+      // Smjena A again, touching the Kasni — one duty from 02.10. 08:00 to 03.10. 20:00.
+      const snapshot = await snapshotOf({
+        rows: {
+          ...PILOT,
+          types: [
+            ...PILOT.types,
+            typeRow('pilot-dug', 'Dug', '2026-09-25T20:07:49.333741+00:00', { times: ['08:00:00', '20:00:00'] }),
+            typeRow('pilot-kasni', 'Kasni', '2026-09-25T20:07:49.334741+00:00', { times: ['20:00:00', '08:00:00'] }),
+          ],
+        },
+        overrides: [
+          calendarOverrideRow('override-1', TEAM_A, '2026-10-02', 'pilot-dug'),
+          calendarOverrideRow('override-2', TEAM_D, '2026-10-02', 'pilot-kasni'),
+          calendarOverrideRow('override-3', TEAM_A, '2026-10-03', 'pilot-dug'),
+        ],
+        roster: [calendarRosterOverrideRow('roster-1', TEAM_D, '2026-10-02', null, VIEWER_MEMBER)],
+      });
+      const before = readyOf(todayViewOf(snapshot, [], zagrebOf('2026-10-02', '03:00')));
+
+      expect(before.todayCase).toMatchObject({ kind: CASE_WORKING, shifts: [NOC_FROM_YESTERDAY, { name: 'Dug' }, { name: 'Kasni' }] });
+      // Never 03.10.'s Dug, a leg of today's duty: Smjena A's Dan on 04.10.
+      expect(before.next).toMatchObject({ date: '2026-10-04', name: 'Dan' });
+
+      const after = readyOf(todayViewOf(snapshot, [], zagrebOf('2026-10-02', '07:30')));
+
+      expect(dutyOf(after).legs.map((leg) => leg.name)).toEqual(['Dug', 'Kasni', 'Dug']);
+      expect(after.next).toEqual(before.next);
+    });
+
+    it('Joined duty: a Dan and a Noć that touch stay the duty-block, unchanged', () => {
+      const view = readyOf(todayViewOf(takenOver, [], zagrebOf('2026-10-02', '03:00')));
+
+      expect(view.todayCase.kind).toBe(CASE_DUTY);
+      expect(dutyOf(view)).toMatchObject({ phase: 'running', totalMinutes: 1440 });
+    });
+
+    it('Carry-over beats an upcoming duty: the carried Noć, then today’s shifts as rows', async () => {
+      // Smjena A's Slobodno on 02.10. made a Dug 08–20, and Smjena D's shift a
+      // Kasni 20–08 the viewer is put on: a duty from 08:00, an hour after the Noć.
+      const snapshot = await snapshotOf({
+        rows: {
+          ...PILOT,
+          types: [
+            ...PILOT.types,
+            typeRow('pilot-dug', 'Dug', '2026-09-25T20:07:49.333741+00:00', { times: ['08:00:00', '20:00:00'] }),
+            typeRow('pilot-kasni', 'Kasni', '2026-09-25T20:07:49.334741+00:00', { times: ['20:00:00', '08:00:00'] }),
+          ],
+        },
+        overrides: [
+          calendarOverrideRow('override-1', TEAM_A, '2026-10-02', 'pilot-dug'),
+          calendarOverrideRow('override-2', TEAM_D, '2026-10-02', 'pilot-kasni'),
+        ],
+        roster: [calendarRosterOverrideRow('roster-1', TEAM_D, '2026-10-02', null, VIEWER_MEMBER)],
+      });
+      const view = readyOf(todayViewOf(snapshot, [], zagrebOf('2026-10-02', '03:00')));
+
+      expect(view.todayCase).toEqual({
+        kind: CASE_WORKING,
+        shifts: [
+          NOC_FROM_YESTERDAY,
+          { teamId: TEAM_A, teamName: 'Smjena A', name: 'Dug', range: '08:00–20:00', fromYesterday: false },
+          { teamId: TEAM_D, teamName: 'Smjena D', name: 'Kasni', range: '20:00–08:00', fromYesterday: false },
+        ],
+      });
+
+      // Today's duty is rows here, but its legs stay today's: Smjena A's Dan on 04.10. is next.
+      expect(view.next).toMatchObject({ date: '2026-10-04', name: 'Dan' });
+
+      // Once the Noć ends, the duty is today's again.
+      const later = readyOf(todayViewOf(snapshot, [], zagrebOf('2026-10-02', '07:30')));
+
+      expect(dutyOf(later)).toMatchObject({ phase: 'upcoming' });
+      expect(dutyOf(later).legs.map((leg) => leg.name)).toEqual(['Dug', 'Kasni']);
+    });
   });
 
   it('words every state, headline and note by its own key', () => {
