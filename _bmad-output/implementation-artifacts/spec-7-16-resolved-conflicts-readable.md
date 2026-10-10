@@ -2,7 +2,7 @@
 title: 'Resolved conflicts stay readable (7.16)'
 type: 'feature'
 created: '2026-10-08'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 0
 context: []
 ---
@@ -25,7 +25,7 @@ context: []
 
 ## Epic AC Deviations
 
-None.
+- **7.16 "each entry shows date, team, shift type …"**: REINTERPRETED. The shift type is not stored on a resolution (AD-4), so a Riješeni entry names it from the team's schedule for that date as it stands today, not the type at decision time. A later shift-type override or rotation change renames it. Accepted at the epics 5–7 retrospective (2026-10-09, R9); ledgered in `deferred-work.md`.
 
 </frozen-after-approval>
 

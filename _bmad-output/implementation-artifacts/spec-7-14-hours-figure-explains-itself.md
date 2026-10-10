@@ -2,7 +2,7 @@
 title: 'Story 7.14: An hours figure explains itself'
 type: 'feature'
 created: '2026-10-08'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 0
 context:
   - '{project-root}/_bmad-output/planning-artifacts/ux-designs/ux-shift-2026-09-02/DESIGN.md'
@@ -55,11 +55,11 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] domain explanation + tests
-- [ ] web explanation service + tests
-- [ ] ⓘ and dialog on member page, table and phone rows
-- [ ] footer total, export status line, *Moji sati*
-- [ ] DESIGN.md / EXPERIENCE.md / UX-DR33 updates
+- [x] domain explanation + tests
+- [x] web explanation service + tests
+- [x] ⓘ and dialog on member page, table and phone rows
+- [x] footer total, export status line, *Moji sati*
+- [x] DESIGN.md / EXPERIENCE.md / UX-DR33 updates
 
 **Acceptance Criteria:**
 - As the epic's Story 7.14.
