@@ -3265,10 +3265,14 @@ const KEY_SOURCES = [
     // each of deactivate and reactivate — and nine fewer. A move has no
     // confirmation any more, so its eight prompts are retired, and the
     // withdrawal's prompt is the card's own `t()` call now.
+    //
+    // SIXTY-FOUR SINCE STORY 7.13c: the deactivation's final button with its
+    // date (`statusSubmitMessageKey`), and its consequence in numbers with and
+    // without the month clause (`deactivationConsequenceMessageKey`).
     name: 'the member write rules',
     file: MEMBER_WRITE_KEYS,
     keys: memberWriteKeys,
-    strings: 61,
+    strings: 64,
   },
   {
     // ELEVEN on the member list's rules: four column headings, two permission

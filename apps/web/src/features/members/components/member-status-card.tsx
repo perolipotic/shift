@@ -19,14 +19,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { t } from '@/lib/i18n';
-import { isIsoDate } from '@/lib/i18n/format';
+import { formatIsoDayMonth, isIsoDate } from '@/lib/i18n/format';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import { memberErasureCopyOf } from '@/features/members/utils/erasure-copy';
 import { NO_TEXT, shownDate, type MemberListRow } from '@/features/members/services/list';
 import {
+  DEACTIVATE,
   STATUS_ARMED,
   STATUS_BUSY,
   WITHDRAW,
+  deactivationConsequenceMessageKey,
   statusActionMessageKey,
   statusBlockKey,
   statusConfirmMessageKey,
@@ -35,6 +37,7 @@ import {
   statusPromptKeyOf,
   statusScheduledMessageKey,
   statusSinceOf,
+  statusSubmitMessageKey,
   statusTodayMessageKey,
   type StatusChangeOffer,
   type StatusOffer,
@@ -47,6 +50,7 @@ import {
   MEMBER_STATUS_WITHDRAW_PROMPT_ID,
 } from '@/features/members/utils/element-ids';
 import { refusalText } from '@/features/members/utils/refusal-text';
+import { monthInMessageKey } from '@/utils/filter-bar';
 
 /**
  * The member page's *Status* card (story 1.6; facts and a dialog since story
@@ -206,7 +210,9 @@ function StatusUnchecked({ edit }: { readonly edit: MemberEdit }): ReactNode {
  * `Deaktivacija osobe` / `Ponovna aktivacija osobe` (story 7.11): *Vrijedi
  * od* and the one neutral question naming the person and the date as it is
  * entered. Its final button is the action itself — `Deaktiviraj` or
- * `Ponovno aktiviraj` — and never `destructive`. It runs the preflight, then
+ * `Ponovno aktiviraj` — and never `destructive`; a deactivation's repeats the
+ * date (`Deaktiviraj od 05.10.`) and its question adds the consequence in
+ * numbers (story 7.13c). It runs the preflight, then
  * the erasure check, then the write. Not dismissible while that is in flight;
  * a refusal keeps it open, with the date focused when the refusal names it.
  *
@@ -221,15 +227,42 @@ export function MemberStatusDialog({ edit }: { readonly edit: MemberEdit }): Rea
   /** The question exists only while the field holds a date; nothing points at an empty element. */
   const asked = action !== null && isIsoDate(statusDialog.day);
 
-  /** The one neutral question, naming the person and the date as it stands in the field. */
+  /** `05.10.` while the field holds a date, for the final button; `null` otherwise. */
+  const dayMonth = asked ? formatIsoDayMonth(statusDialog.day) : null;
+  const consequence = asked ? statusDialog.consequence : null;
+
+  /**
+   * The one neutral question, naming the person and the date as it stands in
+   * the field — and for a deactivation, the consequence in numbers on its own
+   * line (story 7.13c), inside the same described element. Neutral text: it
+   * never gates the save, and without it the question stands alone.
+   */
   function renderQuestion(offered: StatusChangeOffer): ReactNode {
     return (
-      <p id={MEMBER_STATUS_PROMPT_ID} className="text-sm font-medium">
-        {t(statusPromptKeyOf({ change: offered.change, day: statusDialog.day }, offered.today), {
-          name,
-          date: shownDate(statusDialog.day),
-        })}
-      </p>
+      <div id={MEMBER_STATUS_PROMPT_ID} className="grid gap-2 text-sm">
+        <p className="font-medium">
+          {t(statusPromptKeyOf({ change: offered.change, day: statusDialog.day }, offered.today), {
+            name,
+            date: shownDate(statusDialog.day),
+          })}
+        </p>
+        {/* COMPUTED, as the leave dialog's lines are: a polite live region,
+            there while the question is, so a line that arrives or changes
+            with the date is announced. Plain weight. */}
+        {offered.change === DEACTIVATE ? (
+          <output aria-live="polite" className="block">
+            {consequence === null
+              ? null
+              : t(deactivationConsequenceMessageKey(consequence.duties), {
+                  team: consequence.team,
+                  members: consequence.members,
+                  total: consequence.total,
+                  month: t(monthInMessageKey(consequence.month)),
+                  duties: consequence.duties,
+                })}
+          </output>
+        ) : null}
+      </div>
     );
   }
 
@@ -279,7 +312,7 @@ export function MemberStatusDialog({ edit }: { readonly edit: MemberEdit }): Rea
             disabled={statusPending}
             aria-busy={statusPending}
           >
-            {t(statusActionMessageKey(offered.change))}
+            {t(statusSubmitMessageKey(offered.change, dayMonth !== null), { date: dayMonth ?? NO_TEXT })}
           </Button>
         </DialogFooter>
       </form>

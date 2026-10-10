@@ -16,8 +16,8 @@ import {
   type SeededRotation,
 } from '../../utils/database-helper.ts';
 import { addDays, dayMonth, weekdayOf } from '../../utils/dates.ts';
-import { escapeRegExp, fill, hr, plural } from '../../utils/i18n.ts';
-import { expectNoHorizontalScroll } from '../../utils/layout.ts';
+import { escapeRegExp, fill, hr, icu, plural } from '../../utils/i18n.ts';
+import { expectNoHorizontalScroll, expectTouchTargets } from '../../utils/layout.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
@@ -318,6 +318,68 @@ test('a move whose erasures cannot be checked is refused inside its dialog, writ
   await expect(peoplePage.memberUnchecked).toHaveCount(0);
   await parts.backIn(dialog).click();
   await expect(peoplePage.statusWith(membership.saved)).toHaveCount(0);
+});
+
+// STORY 7.13c: the deactivation question states its consequence in numbers —
+// the team's size before and after, and the member's own duties left in the
+// month — and its final button repeats the date. A member with no
+// leave: nothing to erase, so the dialog is only looked at, then cancelled.
+test('the deactivation question states the team before and after and the duties left, at 1280 and 390 px', async ({
+  page,
+  fixture,
+  peoplePage,
+}) => {
+  test.slow();
+  const { rotation, team, person } = await setUp(fixture.slug, null);
+  // A second member on the team from today: two before, one after.
+  const other = await seedLeaveMember(fixture.slug, team.id, rotation.today, 20);
+  written?.members.push(other.id);
+
+  for (const viewport of [
+    { width: 1280, height: 900 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await peoplePage.gotoMember(person.id);
+    await peoplePage.deactivateButton(person.name).click();
+    const day = await peoplePage.statusDateInput.inputValue();
+
+    // The member's own duties from the day through the month's end, under
+    // `[Dan, Noć, Slobodno, Slobodno]` from the rotation's start. No two of
+    // its shifts touch — a Dan ends a whole day before the next day's Noć
+    // starts — so every working shift is a duty of its own (story 6.2).
+    let duties = 0;
+    for (let date = day; date.slice(0, 7) === day.slice(0, 7); date = addDays(date, 1)) {
+      const offset = Math.round((Date.parse(date) - Date.parse(rotation.start)) / 86_400_000);
+      if (((offset % 4) + 4) % 4 < 2) duties += 1;
+    }
+    const month = hr.filter.monthIn[String(Number(day.slice(5, 7))) as keyof typeof hr.filter.monthIn];
+    const line = icu(duties === 0 ? hr.ljudi.status.deactivateConsequenceTeam : hr.ljudi.status.deactivateConsequence, {
+      team: team.name,
+      members: 1,
+      total: 2,
+      month,
+      duties,
+    });
+
+    await expect(peoplePage.statusQuestion).toContainText(line);
+    await expect(peoplePage.statusDialog).toHaveAttribute('aria-describedby', 'member-status-prompt');
+    await expect(
+      peoplePage.statusDialog.getByRole('button', { name: fill(hr.ljudi.status.deactivateActionFrom, { date: dayMonth(day) }), exact: true }),
+    ).toBeVisible();
+    await expectNoHorizontalScroll(page);
+    await expectTouchTargets(page);
+
+    // A CLEARED DATE asks nothing and repeats nothing.
+    await peoplePage.statusDateInput.fill('');
+    await expect(peoplePage.statusQuestion).toHaveCount(0);
+    await expect(
+      peoplePage.statusDialog.getByRole('button', { name: hr.ljudi.status.deactivateAction, exact: true }),
+    ).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(peoplePage.statusDialog).toHaveCount(0);
+  }
 });
 
 test('a deactivation erasing many conflicts scrolls its rows inside the dialog at 390 px', async ({ page, fixture, peoplePage }) => {

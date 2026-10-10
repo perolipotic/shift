@@ -138,7 +138,7 @@ From `DESIGN.md` (visual) and `EXPERIENCE.md` (behavioural). Both are binding an
 
 **Interaction**
 - **UX-DR26** 44 px minimum tap targets on touch, including calendar cells — which sets the real floor for grid density.
-- **UX-DR27** One destructive confirmation step, never a colour-only signal.
+- **UX-DR27** One destructive confirmation step, never a colour-only signal. Since story 7.13c a deactivation's neutral question also states its date and its consequence in numbers (the team's size before and after, and the member's own duties left in that month), and its final button repeats the date.
 - **UX-DR28** No bulk conflict resolution anywhere. Amending a leave record still clears every conflict it caused — cause-removal, not batching.
 - **UX-DR29** No optimistic updates for hours, leave balance or conflict state. A recorded conflict decision is confirmed by a `Notice role="status"` line on the queue, not a toast: it is gone on navigation and persists nowhere (decision 21, story 5.4b).
 - **UX-DR30** Month navigation symmetric in both directions across every month the calendar represents (0001-01…9999-12); no month unreachable or slower. Since story 7.4 one month toolbar (‹ month ▾ ›) on *Kalendar* and *Sati*: PgUp/PgDn step the month within it, and the month opens a twelve-month picker with the year's ‹ ›.

@@ -2,7 +2,7 @@ import { PeoplePage } from '../../pages/people.page.ts';
 import { sortControlName } from '../../pages/sort-control.ts';
 import { leaveYearStartOf } from '../../utils/database-helper.ts';
 import { ADMIN_STATE } from '../../utils/run-fixture.ts';
-import { addDays, fullDate } from '../../utils/dates.ts';
+import { addDays, dayMonth, fullDate } from '../../utils/dates.ts';
 import { fill, hr, plural } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll, expectNoInnerHorizontalScroll, expectTouchTargets } from '../../utils/layout.ts';
 import { uniqueMember } from '../../utils/members.ts';
@@ -680,6 +680,15 @@ test.describe('the member page shows facts and each change opens one dialog', ()
     await expect(peoplePage.statusDialog).toContainText(
       fill(hr.ljudi.status.deactivatePromptFuture, { name, date: fullDate(later) }),
     );
+    // STORY 7.13c: the final button repeats the date. A member on no team: no
+    // line in numbers — asserted once the calendar snapshot the line is drawn
+    // from has landed, which the leave card's no-schedule line (drawn from that
+    // same snapshot) says, so the count cannot pass on a read still pending.
+    await expect(peoplePage.deactivateSaveButton).toHaveText(fill(hr.ljudi.status.deactivateActionFrom, { date: dayMonth(later) }));
+    await expect(peoplePage.leaveCard).toContainText(hr.ljudi.leaveRecord.unscheduled);
+    const consequenceWords = /\}\s+(od tada ima)\s+\{/.exec(hr.ljudi.status.deactivateConsequenceTeam)?.[1];
+    if (consequenceWords === undefined) throw new Error('E2E: the consequence line has no words to look for');
+    await expect(peoplePage.statusQuestion).not.toContainText(consequenceWords);
     await peoplePage.deactivateSaveButton.click();
 
     await expect(peoplePage.statusDialog).toHaveCount(0);

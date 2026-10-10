@@ -70,6 +70,8 @@ import {
   statusBlockKey,
   suggestedUsername,
   statusActionMessageKey,
+  statusSubmitMessageKey,
+  deactivationConsequenceMessageKey,
   statusConfirmMessageKey,
   statusDialogHeadingMessageKey,
   statusFailureOf,
@@ -2287,6 +2289,12 @@ describe('a team change is one appended version or one cancelled one, judged bef
   it('words the offers, the confirms and the scheduled lines', () => {
     expect(statusActionMessageKey(DEACTIVATE)).toBe('ljudi.status.deactivateAction');
     expect(statusActionMessageKey(REACTIVATE)).toBe('ljudi.status.reactivateAction');
+    // STORY 7.13c: a deactivation's final button repeats a valid date; a reactivation's never does.
+    expect(statusSubmitMessageKey(DEACTIVATE, true)).toBe('ljudi.status.deactivateActionFrom');
+    expect(statusSubmitMessageKey(DEACTIVATE, false)).toBe('ljudi.status.deactivateAction');
+    expect(statusSubmitMessageKey(REACTIVATE, true)).toBe('ljudi.status.reactivateAction');
+    expect(deactivationConsequenceMessageKey(0)).toBe('ljudi.status.deactivateConsequenceTeam');
+    expect(deactivationConsequenceMessageKey(3)).toBe('ljudi.status.deactivateConsequence');
     expect(statusDialogHeadingMessageKey(DEACTIVATE)).toBe('ljudi.status.deactivateHeading');
     expect(statusDialogHeadingMessageKey(REACTIVATE)).toBe('ljudi.status.reactivateHeading');
     expect(teamOfferMessageKey(TEAM_MOVE)).toBe('smjene.membership.move');

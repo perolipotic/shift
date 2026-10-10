@@ -2,6 +2,7 @@ import {
   activeOn,
   adjacentMonth,
   datesOfMonth,
+  deriveShiftTimes,
   memberScheduleOfMonth,
   membershipOn,
   monthOf,
@@ -12,6 +13,7 @@ import {
   shiftTypeVersionOn,
   type Collision,
   type CollisionResolution,
+  type DutyLeg,
   type LeaveRange,
   type MemberScheduleInput,
   type MembershipVersion,
@@ -876,6 +878,32 @@ export function typeRangeOn(type: ShiftTypeRow, date: string): string | null {
   const version = type.isWorking ? shiftTypeVersionOn(type.versions, date) : null;
 
   return version === null ? null : shiftTimesShownOf(version).range;
+}
+
+/**
+ * THE ONE LEG RECIPE (story 6.2): a working shift of `shiftTypeId` on `date`
+ * as a `dutiesOf` leg, its minutes the type's version in effect on that date
+ * (`shiftTypeVersionOn`, `deriveShiftTimes`), as the day's own range is.
+ * `null` for a non-working type, or a working one with no version in effect.
+ * *Danas*'s duty and the member page's deactivation consequence (story
+ * 7.13c) both build their legs here.
+ *
+ * @throws RangeError on any precondition of `shiftTypeVersionOn`, or a type
+ *   the snapshot lacks.
+ */
+export function shiftLegOn(snapshot: CalendarSnapshot, shiftTypeId: string, date: string): DutyLeg | null {
+  const type = snapshot.types.find((candidate) => candidate.id === shiftTypeId);
+
+  if (type === undefined) throw new RangeError(`shift type ${shiftTypeId} is not in the snapshot`);
+  if (!type.isWorking) return null;
+
+  const version = shiftTypeVersionOn(type.versions, date);
+
+  if (version === null) return null;
+
+  const { startMinute, durationMinutes } = deriveShiftTimes(version.startMinute, version.endMinute);
+
+  return { date, startMinute, durationMinutes };
 }
 
 /** `26.09.`, as every row and day of the calendar reads it. */

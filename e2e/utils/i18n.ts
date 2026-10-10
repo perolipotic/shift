@@ -85,3 +85,21 @@ export function plural(message: string, count: number): string {
 
   return message.slice(0, open) + chosen.replaceAll('#', shown) + message.slice(close + 1);
 }
+
+/**
+ * An ICU message with any number of `{name, plural, …}` blocks and plain
+ * `{name}` placeholders, filled from `values` (story 7.13c's consequence line
+ * carries two plurals and three plain values). Each plural block is filled
+ * by {@link plural}'s own rule for its argument; the plain ones by {@link fill}.
+ * A block's forms hold no braces of their own.
+ */
+export function icu(message: string, values: Readonly<Record<string, string | number>>): string {
+  const blocks = message.replace(/\{(\w+), plural,((?:\s*[^\s{}]+\s*\{[^{}]*\})+)\s*\}/g, (block, name: string) => {
+    const value = values[name];
+    if (typeof value !== 'number') throw new Error(`E2E: ${message} needs a number for ${name}`);
+
+    return plural(block.replace(`{${name}, plural,`, '{count, plural,'), value);
+  });
+
+  return fill(blocks, Object.fromEntries(Object.entries(values).map(([key, value]) => [key, String(value)])));
+}
