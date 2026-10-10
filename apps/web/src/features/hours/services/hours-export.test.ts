@@ -11,13 +11,23 @@ import {
   hoursExportEmpty,
   hoursExportMessageKey,
   hoursExportOf,
+  hoursShapeOf,
   type HoursExport,
   type HoursExportCell,
 } from '@/features/hours/services/hours-export';
-import { monthHeaderOf } from '@/features/calendar/utils/month';
-import { hoursSearchOf, myHoursViewOf, type HoursSearch } from '@/features/hours/services/my-hours';
+import { durationMessageKey } from '@/features/hour-bands/services/list';
+import { NO_LEAVE_RECORDS, type LeaveRecordsByMember } from '@/features/hours/services/hours-conflicts';
+import { hoursSearchOf, leaveFigureOf, type HoursSearch } from '@/features/hours/services/my-hours';
 import { organizationHoursOf, type OrganizationHoursView } from '@/features/hours/services/organization-hours';
-import { HOURS_CELL_FORMAT, columnWidthsOf, sheetDataOf } from '@/features/hours/services/xlsx';
+import {
+  HOURS_FORMAT_HOURS,
+  HOURS_FORMAT_HOURS_MINUTES,
+  HOURS_FORMAT_MINUTES,
+  columnWidthsOf,
+  hoursCellFormatOf,
+  renderedLengthOf,
+  sheetDataOf,
+} from '@/features/hours/services/xlsx';
 import { initLocalization, t } from '@/lib/i18n';
 import {
   PILOT,
@@ -97,8 +107,12 @@ async function organizationOf(rows: FixtureRows): Promise<CalendarSnapshot> {
   return outcome.snapshot;
 }
 
-function viewOf(snapshot: CalendarSnapshot, search: HoursSearch = { mjesec: MONTH }): OrganizationHoursView {
-  const outcome = organizationHoursOf(snapshot, search, TODAY, NO_COLLISIONS);
+function viewOf(
+  snapshot: CalendarSnapshot,
+  leaveRecords: LeaveRecordsByMember,
+  search: HoursSearch = { mjesec: MONTH },
+): OrganizationHoursView {
+  const outcome = organizationHoursOf(snapshot, search, TODAY, NO_COLLISIONS, [], leaveRecords);
 
   if (!outcome.ok) throw new Error(outcome.code);
 
@@ -133,7 +147,7 @@ describe('the sheet', () => {
     { fixture: 'pilot', snapshot: () => pilot },
     { fixture: 'UJ-5', snapshot: () => uj5 },
   ])('$fixture: one header row of the table’s columns, then each row as the table has it', ({ snapshot }) => {
-    const view = viewOf(snapshot());
+    const view = viewOf(snapshot(), NO_LEAVE_RECORDS);
     const sheet = hoursExportOf(view, snapshot().organizationName);
 
     expect(sheet.columns).toEqual([
@@ -142,7 +156,7 @@ describe('the sheet', () => {
       t('sati.organization.shifts'),
       ...view.bands.map((band) => band.name),
       t('sati.organization.total'),
-      t('sati.organization.leave'),
+      t('sati.organization.export.leaveDays'),
       t('sati.organization.conflicts'),
     ]);
     expect(sheet.sheetName).toBe(t('sati.organization.export.sheetName'));
@@ -155,32 +169,33 @@ describe('the sheet', () => {
       expect(cells[1]).toEqual({ kind: 'text', value: row.team?.name ?? t('sati.organization.noTeam') });
       expect(cells[2]).toEqual({ kind: 'count', value: row.shiftCount });
       expect(cells.slice(3)).toEqual([
-        ...view.bands.map((band) => ({
-          kind: 'hours',
-          value: row.hours.bands.find((one) => one.bandId === band.bandId)!.minutes / 1440,
-        })),
-        { kind: 'hours', value: row.hours.totalMinutes / 1440 },
-        // No leave before Epic 5: the cell is empty, as the screen's `—`.
+        ...view.bands.map((band) => {
+          const minutes = row.hours.bands.find((one) => one.bandId === band.bandId)!.minutes;
+
+          return { kind: 'hours', value: minutes / 1440, shape: hoursShapeOf(minutes) };
+        }),
+        { kind: 'hours', value: row.hours.totalMinutes / 1440, shape: hoursShapeOf(row.hours.totalMinutes) },
+        // No leave: the leave cell is empty, as the screen's `—`.
         { kind: 'empty' },
         // No collision without leave: a zero, never an empty cell.
         { kind: 'count', value: 0 },
       ]);
-      expect(row.hours.leaveMinutes).toBe(0);
+      expect(row.leaveDays).toBe(0);
     });
   });
 
   it('screen equals file: filtered by team, sorted by total descending, the same rows in the same order', () => {
-    const view = viewOf(pilot, hoursSearchOf({ mjesec: MONTH, smjena: teamOf(PILOT, 0), sort: 'ukupno', smjer: 'silazno' }));
+    const view = viewOf(pilot, NO_LEAVE_RECORDS, hoursSearchOf({ mjesec: MONTH, smjena: teamOf(PILOT, 0), sort: 'ukupno', smjer: 'silazno' }));
     const sheet = hoursExportOf(view, pilot.organizationName);
 
     expect(view.rows.length).toBeGreaterThan(1);
-    expect(view.rows.length).toBeLessThan(viewOf(pilot).rows.length);
+    expect(view.rows.length).toBeLessThan(viewOf(pilot, NO_LEAVE_RECORDS).rows.length);
     expect(sheet.rows.map((row) => valueOf(row[0]))).toEqual(view.rows.map((row) => row.name));
     expect(sheet.rows.map((row) => valueOf(row.at(-3)))).toEqual(view.rows.map((row) => row.hours.totalMinutes / 1440));
   });
 
   it('UJ-5: the band cells show the split, and sum to Total on every row, in minutes', () => {
-    const view = viewOf(uj5);
+    const view = viewOf(uj5, NO_LEAVE_RECORDS);
     const sheet = hoursExportOf(view, uj5.organizationName);
 
     expect(view.bands.map((band) => band.name)).toEqual(['Jutro', 'Popodne', 'Noć']);
@@ -199,53 +214,76 @@ describe('the sheet', () => {
     expect(sheet.rows.some((cells) => numbersOf(cells).slice(0, 3).filter((hours) => hours > 0).length > 1)).toBe(true);
   });
 
-  it('half hours: 750 minutes is the duration 750 / 1440, formatted [h]:mm (reads 12:30)', () => {
-    const view = viewOf(pilot);
+  it.each([
+    { minutes: 11_520, screen: '192 h', format: HOURS_FORMAT_HOURS },
+    { minutes: 750, screen: '12 h 30 min', format: HOURS_FORMAT_HOURS_MINUTES },
+    { minutes: 30, screen: '30 min', format: HOURS_FORMAT_MINUTES },
+    { minutes: 0, screen: '0 h', format: HOURS_FORMAT_HOURS },
+  ])('$minutes min: the duration $minutes / 1440, in the format of the screen’s $screen', ({ minutes, screen, format }) => {
+    const view = viewOf(pilot, NO_LEAVE_RECORDS);
     const [first] = view.rows;
-    const half = { ...first!, hours: { ...first!.hours, totalMinutes: 750 } };
-    const sheet = hoursExportOf({ ...view, rows: [half] }, pilot.organizationName);
-    const total = sheet.rows[0]!.at(-3);
+    const row = { ...first!, hours: { ...first!.hours, totalMinutes: minutes } };
+    const sheet = hoursExportOf({ ...view, rows: [row] }, pilot.organizationName);
 
-    expect(total).toEqual({ kind: 'hours', value: 750 / 1440 });
-    const written = sheetDataOf(sheet)[1]!.at(-3);
-
-    expect(written).toEqual({ type: Number, value: 750 / 1440, format: HOURS_CELL_FORMAT });
-    expect(HOURS_CELL_FORMAT).toBe('[h]:mm');
-    // `[h]` does not wrap at a day: 108 hours stays 108:00.
-    const long = hoursExportOf({ ...view, rows: [{ ...first!, hours: { ...first!.hours, totalMinutes: 6480 } }] }, 'DVD');
-
-    expect(long.rows[0]!.at(-3)).toEqual({ kind: 'hours', value: 4.5 });
+    expect(t(durationMessageKey(minutes), { hours: Math.floor(minutes / 60), minutes: minutes % 60 })).toBe(screen);
+    expect(sheet.rows[0]!.at(-3)).toEqual({ kind: 'hours', value: minutes / 1440, shape: hoursShapeOf(minutes) });
+    expect(sheetDataOf(sheet)[1]!.at(-3)).toEqual({ type: Number, value: minutes / 1440, format });
   });
 
-  it('leave: 0 is an empty cell, and a positive leave a [h]:mm duration with no further change', () => {
-    const view = viewOf(pilot);
+  it('the formats: whole hours, hours and minutes, minutes — `[h]` never wraps at a day', () => {
+    expect(HOURS_FORMAT_HOURS).toBe('[h] "h"');
+    expect(HOURS_FORMAT_HOURS_MINUTES).toBe('[h] "h" m "min"');
+    expect(HOURS_FORMAT_MINUTES).toBe('[m] "min"');
+    expect(hoursCellFormatOf(hoursShapeOf(11_520))).toBe(HOURS_FORMAT_HOURS);
+    expect(11_520 / 1440).toBe(8);
+  });
+
+  it('leave: one cell of days, a plain count, empty at 0, the number the row shows', () => {
+    const view = viewOf(pilot, NO_LEAVE_RECORDS);
     const [first] = view.rows;
-    const withLeave = { ...first!.hours, leaveMinutes: 750 };
-    // The row's leave figure through the one rule that sets it, as the table's rows are built.
-    const leave = myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), withLeave, 0).leave;
-    const some = hoursExportOf({ ...view, rows: [{ ...first!, hours: withLeave, leave }] }, pilot.organizationName);
+    const rowWith = (days: number) => ({ ...first!, leaveDays: days, leave: leaveFigureOf(days) });
+    const some = hoursExportOf({ ...view, rows: [rowWith(3)] }, pilot.organizationName);
+    // The domain's leave minutes are shown nowhere, the file included.
+    const decided = hoursExportOf(
+      { ...view, rows: [{ ...rowWith(3), hours: { ...first!.hours, leaveMinutes: 720 } }] },
+      pilot.organizationName,
+    );
     const none = hoursExportOf({ ...view, rows: [first!] }, pilot.organizationName);
 
     expect(first!.leave).toBeNull();
     expect(none.rows[0]!.at(-2)).toEqual({ kind: 'empty' });
     expect(sheetDataOf(none)[1]!.at(-2)).toBeNull();
-    expect(some.rows[0]!.at(-2)).toEqual({ kind: 'hours', value: 750 / 1440 });
-    expect(sheetDataOf(some)[1]!.at(-2)).toEqual({ type: Number, value: 750 / 1440, format: HOURS_CELL_FORMAT });
+    expect(some.rows[0]!.at(-2)).toEqual({ kind: 'count', value: 3 });
+    expect(sheetDataOf(some)[1]!.at(-2)).toEqual({ type: Number, value: 3 });
+    expect(decided.rows[0]).toEqual(some.rows[0]);
+    expect(t('sati.organization.export.leaveDays')).toBe('Godišnji odmor (dani)');
     // Every other figure is unchanged by the leave.
     expect(some.rows[0]!.slice(0, -2)).toEqual(none.rows[0]!.slice(0, -2));
     expect(some.rows[0]!.at(-1)).toEqual(none.rows[0]!.at(-1));
   });
 
+  it('a recorded leave reads back as the row\'s days', () => {
+    const memberId = viewOf(pilot, NO_LEAVE_RECORDS).rows[0]!.memberId;
+    const view = viewOf(pilot, new Map([[memberId, [{ from: `${MONTH}-05`, to: `${MONTH}-12` }]]]), { mjesec: MONTH });
+    const index = view.rows.findIndex((row) => row.memberId === memberId);
+    const row = view.rows[index]!;
+    const sheet = hoursExportOf(view, pilot.organizationName);
+
+    expect(row.leaveDays).toBeGreaterThan(0);
+    expect(row.leave).toEqual({ key: 'count.days', values: { count: row.leaveDays } });
+    expect(sheet.rows[index]!.at(-2)).toEqual({ kind: 'count', value: row.leaveDays });
+  });
+
   it('no team: the cell is the text the screen shows', () => {
-    const sheet = hoursExportOf(viewOf(pilot, { mjesec: MONTH, osoba: DORA }), pilot.organizationName);
+    const sheet = hoursExportOf(viewOf(pilot, NO_LEAVE_RECORDS, { mjesec: MONTH, osoba: DORA }), pilot.organizationName);
 
     expect(sheet.rows).toHaveLength(1);
     expect(sheet.rows[0]![1]).toEqual({ kind: 'text', value: t('sati.organization.noTeam') });
     expect(t('sati.organization.noTeam')).toBe('—');
   });
 
-  it('zero bands: Member, Team, shifts, Total, Leave, conflicts', async () => {
-    const view = viewOf(await organizationOf({ ...PILOT, bands: [] }));
+  it('zero bands: Member, Team, shifts, Total, leave days, conflicts', async () => {
+    const view = viewOf(await organizationOf({ ...PILOT, bands: [] }), NO_LEAVE_RECORDS);
     const sheet = hoursExportOf(view, pilot.organizationName);
 
     expect(sheet.columns).toEqual([
@@ -253,21 +291,21 @@ describe('the sheet', () => {
       t('sati.organization.team'),
       t('sati.organization.shifts'),
       t('sati.organization.total'),
-      t('sati.organization.leave'),
+      t('sati.organization.export.leaveDays'),
       t('sati.organization.conflicts'),
     ]);
     for (const row of sheet.rows) expect(row).toHaveLength(6);
   });
 
   it('a band a row does not carry refuses the sheet', () => {
-    const view = viewOf(pilot);
+    const view = viewOf(pilot, NO_LEAVE_RECORDS);
     const broken = { ...view, bands: [...view.bands, { ...view.bands[0]!, bandId: 'gone' }] };
 
     expect(() => hoursExportOf(broken, pilot.organizationName)).toThrow(RangeError);
   });
 
   it('writes every figure as a number cell, every heading as text, and an empty leave as no cell', () => {
-    const view = viewOf(uj5);
+    const view = viewOf(uj5, NO_LEAVE_RECORDS);
     const sheet = hoursExportOf(view, uj5.organizationName);
     const [header, ...rows] = sheetDataOf(sheet);
 
@@ -278,11 +316,17 @@ describe('the sheet', () => {
 
       expect(row.slice(0, 2).map((cell) => (cell as { type: unknown }).type)).toEqual([String, String]);
       expect(figures.every((cell) => (cell as { type: unknown }).type === Number)).toBe(true);
-      expect(figures.slice(1).every((cell) => (cell as { format?: string }).format === HOURS_CELL_FORMAT)).toBe(true);
+      expect(
+        figures.slice(1).every((cell) => {
+          const minutes = Math.round((cell as { value: number }).value * 1440);
+
+          return (cell as { format?: string }).format === hoursCellFormatOf(hoursShapeOf(minutes));
+        }),
+      ).toBe(true);
       expect((row[2] as { format?: string }).format).toBeUndefined();
-      // The leave cell as its row has it: none when empty, else a duration.
+      // The leave cell as the row has it: none when no day, else the days a plain number, no duration format.
       if (leave === null) expect(row.at(-2)).toBeNull();
-      else expect(row.at(-2)).toMatchObject({ type: Number, format: HOURS_CELL_FORMAT });
+      else expect(row.at(-2)).toEqual({ type: Number, value: leave.values.count });
       // The conflict count: a plain number, no duration format, 0 included.
       expect(row.at(-1)).toEqual({ type: Number, value: view.rows[index]!.conflictCount });
     }
@@ -291,7 +335,7 @@ describe('the sheet', () => {
 
 describe('the column widths', () => {
   it('the names wide, each figure at least 10 and as wide as its heading, at most 24', () => {
-    const sheet = hoursExportOf(viewOf(uj5), uj5.organizationName);
+    const sheet = hoursExportOf(viewOf(uj5, NO_LEAVE_RECORDS), uj5.organizationName);
     const widths = columnWidthsOf(sheet).map((column) => column.width);
 
     expect(widths).toHaveLength(sheet.columns.length);
@@ -299,21 +343,38 @@ describe('the column widths', () => {
     for (const [index, width] of widths.slice(2).entries()) {
       const heading = sheet.columns[index + 2]!;
 
-      expect(width).toBe(Math.min(24, Math.max(10, heading.length + 2)));
+      const widest = Math.max(0, ...sheet.rows.map((row) => renderedLengthOf(row[index + 2]!)));
+
+      expect(width).toBe(Math.max(10, Math.min(24, heading.length + 2), widest + 2));
     }
     const long = columnWidthsOf({ ...sheet, columns: [...sheet.columns.slice(0, 3), 'P'.repeat(60)] });
 
     expect(long.at(-1)).toEqual({ width: 24 });
   });
+
+  it('a figure column is never narrower than its widest figure as the file renders it, so Excel shows no ####', () => {
+    const view = viewOf(pilot, NO_LEAVE_RECORDS);
+    const [first] = view.rows;
+    const wide = { ...first!, hours: { ...first!.hours, totalMinutes: 999 * 60 + 30 } };
+    const sheet = hoursExportOf({ ...view, rows: [wide] }, pilot.organizationName);
+    const total = sheet.columns.indexOf(t('sati.organization.total'));
+    const cell = sheet.rows[0]![total]!;
+
+    expect(renderedLengthOf(cell)).toBe('999 h 30 min'.length);
+    expect(columnWidthsOf(sheet)[total]!.width).toBeGreaterThanOrEqual('999 h 30 min'.length + 2);
+    expect(renderedLengthOf({ kind: 'hours', value: 11_520 / 1440, shape: hoursShapeOf(11_520) })).toBe('192 h'.length);
+    expect(renderedLengthOf({ kind: 'hours', value: 30 / 1440, shape: hoursShapeOf(30) })).toBe('30 min'.length);
+    expect(renderedLengthOf({ kind: 'hours', value: 750 / 1440, shape: hoursShapeOf(750) })).toBe('12 h 30 min'.length);
+  });
 });
 
 describe('the file name', () => {
   it('carries the organization, the lowercase month and the year', () => {
-    expect(hoursExportOf(viewOf(pilot), 'DVD Mladost').fileName).toBe('Sati DVD Mladost rujan 2026.xlsx');
+    expect(hoursExportOf(viewOf(pilot, NO_LEAVE_RECORDS), 'DVD Mladost').fileName).toBe('Sati DVD Mladost rujan 2026.xlsx');
   });
 
   it('unsafe org name: \\ / : * ? " < > | are removed', () => {
-    expect(hoursExportOf(viewOf(pilot), 'DVD "A/B"').fileName).toBe('Sati DVD AB rujan 2026.xlsx');
+    expect(hoursExportOf(viewOf(pilot, NO_LEAVE_RECORDS), 'DVD "A/B"').fileName).toBe('Sati DVD AB rujan 2026.xlsx');
     expect(fileNameSafeOf('a\\b/c:d*e?f"g<h>i|j')).toBe('abcdefghij');
     expect(fileNameSafeOf('  DVD  :  Sjever ')).toBe('DVD Sjever');
   });
@@ -326,23 +387,23 @@ describe('the file name', () => {
     expect(FILE_NAME_ORGANIZATION_MAX).toBe(100);
     // A cut that lands on a space or a dot does not end the part on one.
     expect(fileNameSafeOf(`${'a'.repeat(99)} b`)).toBe('a'.repeat(99));
-    expect(hoursExportOf(viewOf(pilot), 'x'.repeat(120)).fileName).toBe(`Sati ${'x'.repeat(100)} rujan 2026.xlsx`);
+    expect(hoursExportOf(viewOf(pilot, NO_LEAVE_RECORDS), 'x'.repeat(120)).fileName).toBe(`Sati ${'x'.repeat(100)} rujan 2026.xlsx`);
   });
 
   it('an organization with nothing left is omitted cleanly, with no double space', () => {
     for (const name of ['???', ' "/" ', '...', '\u0001']) {
-      expect(hoursExportOf(viewOf(pilot), name).fileName, JSON.stringify(name)).toBe('Sati rujan 2026.xlsx');
+      expect(hoursExportOf(viewOf(pilot, NO_LEAVE_RECORDS), name).fileName, JSON.stringify(name)).toBe('Sati rujan 2026.xlsx');
     }
   });
 
   it('follows the period shown', () => {
-    expect(hoursExportOf(viewOf(pilot, { mjesec: '2027-01' }), 'DVD').fileName).toBe('Sati DVD siječanj 2027.xlsx');
+    expect(hoursExportOf(viewOf(pilot, NO_LEAVE_RECORDS, { mjesec: '2027-01' }), 'DVD').fileName).toBe('Sati DVD siječanj 2027.xlsx');
   });
 });
 
 describe('the action', () => {
   it('no rows: closed; closed while building; otherwise open', () => {
-    const view = viewOf(pilot);
+    const view = viewOf(pilot, NO_LEAVE_RECORDS);
 
     expect(hoursExportEmpty(view)).toBe(false);
     expect(hoursExportEmpty({ ...view, rows: [] })).toBe(true);
@@ -358,7 +419,7 @@ describe('the action', () => {
   });
 
   it('hands the writer the sheet the view stands for', async () => {
-    const view = viewOf(pilot);
+    const view = viewOf(pilot, NO_LEAVE_RECORDS);
     const written: HoursExport[] = [];
 
     await expect(
@@ -370,7 +431,7 @@ describe('the action', () => {
   });
 
   it('the status line names the file written and how many people it holds (story 7.14)', async () => {
-    const view = viewOf(pilot);
+    const view = viewOf(pilot, NO_LEAVE_RECORDS);
     const done = await exportHours(view, pilot.organizationName, () => Promise.resolve());
 
     expect(done).toEqual({ fileName: hoursExportOf(view, pilot.organizationName).fileName, count: view.rows.length });
@@ -382,7 +443,7 @@ describe('the action', () => {
 
   it('import fails: logged, answered null, never thrown — and a build that throws the same', async () => {
     const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    const view = viewOf(pilot);
+    const view = viewOf(pilot, NO_LEAVE_RECORDS);
     const chunk = new TypeError('Failed to fetch dynamically imported module');
 
     await expect(exportHours(view, pilot.organizationName, () => Promise.reject(chunk))).resolves.toBeNull();

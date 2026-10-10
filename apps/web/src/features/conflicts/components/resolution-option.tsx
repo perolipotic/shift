@@ -20,7 +20,7 @@ import {
   RESOLUTION_REPLACE_TITLE_ID,
   amendBodyMessageKey,
   coverageMessageKey,
-  leaveHoursMessageKey,
+  leaveDaysMessageKey,
   workHoursMessageKey,
   type ResolutionView,
 } from '@/features/conflicts/services/resolution-screen';
@@ -42,7 +42,7 @@ function StripTerm({ label, children }: { readonly label: string; readonly child
 /**
  * The `resolution-option` card for "Prihvati kao nepokriveno" (story 5.4b;
  * UX-DR10, UX-DR11): its title, what it means, and the consequence strip in
- * its three fixed terms — coverage, the absent member's hours, the balance.
+ * its three fixed terms — coverage, the absent member's leave day, the balance.
  * Three columns at every width, a phone's included. Neither preselected nor
  * styled apart: `RadioCard` draws the chosen state.
  */
@@ -149,9 +149,9 @@ export function AmendLeaveOption({ view }: { readonly view: ResolutionView }): R
         <ConsequenceStrip
           id={RESOLUTION_AMEND_STRIP_ID}
           hours={
-            view.leaveHours === null
+            view.shiftHours === null
               ? t(workHoursMessageKey(null))
-              : t(workHoursMessageKey(view.leaveHours), { hours: t(view.leaveHours.key, view.leaveHours.values) })
+              : t(workHoursMessageKey(view.shiftHours), { hours: t(view.shiftHours.key, view.shiftHours.values) })
           }
           balanceDays={amend.balanceDays}
           balanceChange={t('raspored.resolution.balanceGained', { count: amend.gainedDays })}
@@ -178,7 +178,7 @@ export function AmendLeaveOption({ view }: { readonly view: ResolutionView }): R
   );
 }
 
-/** The first two cards' hours and balance: the absent member's hours as leave, and the balance unchanged. */
+/** The first two cards' leave and balance: the absent member's day as leave, `1 dan godišnjeg`, and the balance unchanged. */
 function LeaveStrip({
   view,
   id,
@@ -192,11 +192,7 @@ function LeaveStrip({
     <ConsequenceStrip
       id={id}
       hours={
-        view.leaveHours === null
-          ? t(leaveHoursMessageKey(null))
-          : t(leaveHoursMessageKey(view.leaveHours), {
-              hours: t(view.leaveHours.key, view.leaveHours.values),
-            })
+        t(leaveDaysMessageKey(view.leaveDays), { count: view.leaveDays })
       }
       balanceDays={view.balanceDays}
       balanceChange={t('raspored.resolution.balanceUnchanged')}
@@ -229,7 +225,7 @@ function ConsequenceStrip({
       <StripTerm label={t('raspored.resolution.coverageLabel')}>
         <span className="flex min-w-0 flex-wrap items-center gap-x-1.5">{children}</span>
       </StripTerm>
-      <StripTerm label={t('raspored.resolution.hoursLabel')}>{hours}</StripTerm>
+      <StripTerm label={t('raspored.resolution.absentLabel')}>{hours}</StripTerm>
       <StripTerm label={t('raspored.resolution.balanceLabel')}>
         <span className="block font-semibold tabular-nums">{t('raspored.resolution.balance', { count: balanceDays })}</span>
         <span className="block text-muted-foreground">{balanceChange}</span>

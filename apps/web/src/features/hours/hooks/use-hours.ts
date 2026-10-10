@@ -211,7 +211,16 @@ export function useHours(search: HoursSearch, go: (next: HoursSearch) => void) {
 
     const ready = conflicts?.kind === HOURS_CONFLICTS_READY ? conflicts : null;
 
-    return hoursExplanationOf(snapshot, request, surface.month, ready?.leaveKeys ?? [], ready?.collisions ?? []);
+    return hoursExplanationOf(
+      snapshot,
+      request,
+      surface.month,
+      ready?.leaveKeys ?? [],
+      ready?.collisions ?? [],
+      // `null` while the leave read is not ready: the leave's ⓘ is then unavailable.
+      ready?.leaveRecords ?? null,
+      ready?.acceptedKeys ?? [],
+    );
   }
 
   return { ...surface, organizationName, own, explain, retry, show, change, pressColumn };

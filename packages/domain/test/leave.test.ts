@@ -6,6 +6,7 @@ import {
   isLeaveDay,
   leaveBalanceOf,
   leaveCostOf,
+  leaveDaysOfMonth,
   leavePreviewOf,
   leaveYearOf,
   MAX_LEAVE_RANGE_DAYS,
@@ -271,6 +272,83 @@ describe.each(FIXTURES)('the cost of a range under $fixture (R4.2)', (fx) => {
     expect(leaveCostOf(left, '2026-09-01', '2026-09-30')).toBe(0);
     const late = inputOf(fx, team, { memberships: [{ teamId, position: null, effectiveFrom: '2026-10-01' }] });
     expect(leaveCostOf(late, '2026-09-01', '2026-09-30')).toBe(0);
+  });
+});
+
+describe.each(FIXTURES)('the charged leave days of a month under $fixture (R4.2)', (fx) => {
+  it('splits a record over a month edge into each month, the months summing to its cost', () => {
+    const record = { from: '2026-09-25', to: '2026-10-06' };
+    for (let teamIndex = 0; teamIndex < fx.teams.length; teamIndex += 1) {
+      const input = inputOf(fx, teamIndex);
+      const september = leaveDaysOfMonth(input, [record], '2026-09');
+      const october = leaveDaysOfMonth(input, [record], '2026-10');
+      expect(september).toEqual(utcDatesOf(record.from, '2026-09-30').filter((date) => oracleWorking(fx, teamIndex, date)));
+      expect(october).toEqual(utcDatesOf('2026-10-01', record.to).filter((date) => oracleWorking(fx, teamIndex, date)));
+      expect(september.length + october.length).toBe(leaveCostOf(input, record.from, record.to));
+      expect(leaveDaysOfMonth(input, [record], '2026-11')).toEqual([]);
+    }
+  });
+
+  it('collects every record of the month, in date order, whatever order the records come in', () => {
+    const team = teamOnStep(fx, '2026-09-10', 0);
+    const input = inputOf(fx, team);
+    const records = [
+      { from: '2026-09-20', to: '2026-09-24' },
+      { from: '2026-09-02', to: '2026-09-06' },
+    ];
+    const days = leaveDaysOfMonth(input, records, '2026-09');
+    expect(days).toEqual([...days].sort());
+    expect(days.length).toBe(leaveCostOf(input, '2026-09-02', '2026-09-06') + leaveCostOf(input, '2026-09-20', '2026-09-24'));
+  });
+
+  it('counts no date with no working shift', () => {
+    const offStep = fx.steps.findIndex((step) => !workingOf(fx).includes(step.shiftTypeId));
+    const date = datesOfMonth('2026-09').find((one) => fx.teams.some((_, i) => stepOf(fx, i, one) === offStep))!;
+    const input = inputOf(fx, teamOnStep(fx, date, offStep));
+    expect(leaveDaysOfMonth(input, [{ from: date, to: date }], '2026-09')).toEqual([]);
+  });
+
+  it('counts no date while inactive', () => {
+    const team = teamOnStep(fx, '2026-09-10', 0);
+    const record = { from: '2026-09-01', to: '2026-09-30' };
+    const inactive = inputOf(fx, team, { statuses: [{ active: false, effectiveFrom: '2026-09-01' }] });
+    expect(leaveDaysOfMonth(inputOf(fx, team), [record], '2026-09').length).toBeGreaterThan(0);
+    expect(leaveDaysOfMonth(inactive, [record], '2026-09')).toEqual([]);
+  });
+
+  it('refuses a bad month or record', () => {
+    const input = inputOf(fx, 0);
+    expect(() => leaveDaysOfMonth(input, [], '2026-13')).toThrow(RangeError);
+    expect(() => leaveDaysOfMonth(input, [{ from: '2026-09-14', to: '2026-09-10' }], '2026-09')).toThrow(/^leave record 0 /);
+    expect(() => leaveDaysOfMonth(input, [{ from: '2026-09-1x', to: '2026-09-20' }], '2026-09')).toThrow(/^the start of leave record 0 /);
+  });
+
+  it('renders the month past a malformed record lying wholly in another month: inverted, too long or an impossible date', () => {
+    const team = teamOnStep(fx, '2026-09-10', 0);
+    const input = inputOf(fx, team);
+    const good = { from: '2026-09-08', to: '2026-09-12' };
+    const outside = [
+      { from: '2026-11-14', to: '2026-11-10' },
+      { from: '2026-11-31', to: '2026-12-02' },
+      { from: '2024-01-01', to: '2025-12-31' },
+    ];
+    expect(leaveDaysOfMonth(input, [...outside, good], '2026-09')).toEqual(leaveDaysOfMonth(input, [good], '2026-09'));
+    expect(leaveDaysOfMonth(input, [{ from: '2026-01-01', to: '2026-12-31' }], '2026-09').length).toBe(
+      leaveCostOf(input, '2026-09-01', '2026-09-30'),
+    );
+  });
+
+  it('checks a record reaching the month whole, as leaveCostOf does: a bad end beyond the month still fails it', () => {
+    const input = inputOf(fx, 0);
+    // Straddling: one end inside September, the record inverted or too long as a whole.
+    expect(() => leaveDaysOfMonth(input, [{ from: '2026-09-20', to: '2026-08-25' }], '2026-09')).toThrow(/^leave record 0 .*ends before it starts/);
+    expect(() => leaveDaysOfMonth(input, [{ from: '2025-06-01', to: '2026-09-02' }], '2026-09')).toThrow(/^leave record 0 .*longer than/);
+    expect(() => leaveCostOf(input, '2025-06-01', '2026-09-02')).toThrow(RangeError);
+    // An impossible date on a record reaching the month fails it.
+    expect(() => leaveDaysOfMonth(input, [{ from: '2026-09-28', to: '2026-10-32' }], '2026-09')).toThrow(/^the end of leave record 0 /);
+    // An end that is not date-shaped cannot be placed, and fails every month, wherever the other end is.
+    expect(() => leaveDaysOfMonth(input, [{ from: '2026-09-28', to: '2026-10-3x' }], '2026-09')).toThrow(/^the end of leave record 0 /);
+    expect(() => leaveDaysOfMonth(input, [{ from: 'soon', to: '2026-12-02' }], '2026-09')).toThrow(/^the start of leave record 0 /);
   });
 });
 

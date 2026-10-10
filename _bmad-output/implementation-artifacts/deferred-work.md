@@ -897,3 +897,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-fix-danas-overnight-carry-over.md`
   summary: The admin's own-status subtitle on Danas (`admin-today.ts` `adminStatusOf`) maps a working-case shift to name and range only, so a shift carried over from yesterday reads "Danas radiš Noć 19:00–07:00" without the member card's `od jučer` marker.
   evidence: Review of the C1 fix (2026-10-10). The spec pinned the subtitle text unchanged; the member card and the admin subtitle now describe the same carried shift differently.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-hours-as-on-screen-leave-in-days.md`
+  summary: The `.xlsx` has no footer row, while the Sati table ends in *Ukupno za prikazane osobe* (band hours, total and now leave days); FR-42a's "exactly the figures on screen" would want the total row in the file too.
+  evidence: Review of the leave-in-days change (2026-10-10, Blind Hunter). `hoursExportOf` writes only the header and the member rows; pre-existing since 4.3.

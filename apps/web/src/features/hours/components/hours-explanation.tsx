@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Notice } from '@/components/ui/notice';
 import { CONFLICT_GLYPH } from '@/features/calendar/utils/modifiers';
-import { hoursSourceMessageKey, type HoursExplanationView } from '@/features/hours/services/hours-explanation';
+import type { HoursExplanationView } from '@/features/hours/services/hours-explanation';
 import { t } from '@/lib/i18n';
 
 /**
@@ -36,7 +36,8 @@ export function ExplainButton({
 /**
  * What composes a figure, as an equation with dates: a line per shift — its
  * date, team, shift type and where it came from (the rotation, a change or a
- * replacement) with the hours it adds — and, under a rule, `=` and the
+ * replacement) with the hours it adds; for the leave a line per charged date,
+ * each shift's team and type with `+1 dan` — and, under a rule, `=` and the
  * figure. A shift in unresolved conflict is marked on its line as on the
  * view (FR-42b): `⚠`, hidden from readers, and the words that carry the
  * meaning, never colour alone. Every line and the figure are the domain's
@@ -91,13 +92,7 @@ function EquationBody({ explanation }: { readonly explanation: HoursExplanationV
           <li key={line.key} className="flex min-h-11 min-w-0 items-center justify-between gap-3 py-2">
             <span className="flex min-w-0 flex-col">
               <span className="font-medium tabular-nums">{line.date}</span>
-              <span className="break-words text-sm text-muted-foreground">
-                {t('sati.explain.line', {
-                  team: line.team,
-                  shiftType: line.shiftType,
-                  source: t(hoursSourceMessageKey(line.source)),
-                })}
-              </span>
+              <span className="break-words text-sm text-muted-foreground">{line.label}</span>
               {line.conflict ? (
                 <span className="flex min-w-0 items-center gap-1 text-sm font-semibold">
                   <span aria-hidden>{CONFLICT_GLYPH}</span>
@@ -107,7 +102,7 @@ function EquationBody({ explanation }: { readonly explanation: HoursExplanationV
             </span>
             <span className="shrink-0 font-semibold tabular-nums">
               <span aria-hidden>{t('sati.explain.plus')} </span>
-              {t(line.hours.key, line.hours.values)}
+              {t(line.amount.key, line.amount.values)}
             </span>
           </li>
         ))}

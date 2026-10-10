@@ -24,6 +24,8 @@ import { dayMonth } from '../../utils/dates.ts';
 import { escapeRegExp, fill, hr, plural } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll } from '../../utils/layout.ts';
 import { ADMIN_STATE, MEMBER_STATE } from '../../utils/run-fixture.ts';
+import { leaveText } from '../../pages/hours.page.ts';
+import { chargedLeaveDays } from '../../utils/rotation.ts';
 import { readXlsx } from '../../utils/xlsx.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
 
@@ -113,6 +115,23 @@ async function scenarioOf(slug: string): Promise<Scenario> {
   await seedLeaveRecord(slug, seeded.id, today, isoDaysAfter(today, 4));
 
   return { team, seeded, today, dates: [today, isoDaysAfter(today, 1), isoDaysAfter(today, 4)] };
+}
+
+/**
+ * The leave *Sati* shows for the scenario's member in today's month: the
+ * record's charged days, derived from the seeded schedule as *Godišnji*
+ * charges them — an accepted or replaced shift still stands on the member's
+ * schedule, so its date still counts, and never as hours (2026-10-10).
+ */
+function leaveOf({ today }: Scenario): string {
+  if (seed === null) throw new Error('E2E: no seeded rotation');
+
+  const days = chargedLeaveDays(seed, today, isoDaysAfter(today, 4), today.slice(0, 7));
+
+  // Today's own Dan is in conflict, so the record charges a day at least: never a `—` that would pass by accident.
+  expect(days, 'the record charges a leave day').toBeGreaterThan(0);
+
+  return leaveText(days);
 }
 
 /** Answers the organization's leave read with `memberId`'s live records alone: the real rows, filtered. */
@@ -227,7 +246,7 @@ test('opens a conflict from its queue row, shows K of N, moves with ‹ › in t
   }
 });
 
-test('accepts a conflict as uncovered by keyboard: the queue drops it with a status line, the cell is uncovered, and Sati and the .xlsx count 12 h of leave', async ({
+test('accepts a conflict as uncovered by keyboard: the queue drops it with a status line, the cell is uncovered, Sati takes the shift out of the hours, and Sati and the .xlsx count the leave in days', async ({
   page,
   conflictsPage,
   resolutionPage,
@@ -236,14 +255,16 @@ test('accepts a conflict as uncovered by keyboard: the queue drops it with a sta
   fixture,
 }) => {
   test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
-  const { team, seeded, today } = await scenarioOf(fixture.slug);
+  const scenario = await scenarioOf(fixture.slug);
+  const { team, seeded, today } = scenario;
   const sati = hr.sati.organization;
+  const leaveDays = leaveOf(scenario);
 
-  // SATI BEFORE: the member's shifts and total, and no leave.
+  // SATI BEFORE: the member's shifts and total, and the recorded leave's days.
   await hoursPage.goto();
   const row = hoursPage.organizationRow(seeded.name);
   await expect(row).toHaveCount(1);
-  await expect(await hoursPage.cellIn(row, sati.leave)).toHaveText(hr.sati.noFigure);
+  await expect(await hoursPage.cellIn(row, sati.leave)).toHaveText(leaveDays);
   // `15 smjena`: the count, then its noun.
   const shiftsOf = async (): Promise<number> =>
     Number(/^\d+/.exec(((await (await hoursPage.cellIn(row, sati.shifts)).textContent()) ?? '').trim())?.[0]);
@@ -257,8 +278,10 @@ test('accepts a conflict as uncovered by keyboard: the queue drops it with a sta
   await expect(page).toHaveURL(`/raspored/${seeded.id}/${today}/${team.id}`);
 
   // THE STRIP: three terms, in order.
-  await expect(resolutionPage.stripLabels).toHaveText([resolution.coverageLabel, resolution.hoursLabel, resolution.balanceLabel]);
-  await expect(resolutionPage.acceptOption).toContainText(fill(resolution.hoursAsLeave, { hours: '12 h' }));
+  await expect(resolutionPage.stripLabels).toHaveText([resolution.coverageLabel, resolution.absentLabel, resolution.balanceLabel]);
+  // Leave is counted in days, never hours (2026-10-10): `1 dan godišnjeg`, no `12 h`.
+  await expect(resolutionPage.acceptOption).toContainText(plural(resolution.daysAsLeave, 1));
+  await expect(resolutionPage.acceptOption).not.toContainText('12 h');
   await expect(resolutionPage.acceptOption).toContainText(resolution.balanceUnchanged);
 
   // SPREMI BEFORE A CHOICE saves nothing, sends focus to the choice, and the hint stays.
@@ -301,22 +324,21 @@ test('accepts a conflict as uncovered by keyboard: the queue drops it with a sta
   await expect(cell).toHaveAccessibleName(new RegExp(`, ${escapeRegExp(hr.kalendar.modifier.uncovered)}(,|$)`));
   await expect(cell).not.toHaveAccessibleName(new RegExp(`, ${escapeRegExp(hr.kalendar.modifier.conflict)}(,|$)`));
 
-  // SATI: 12 h of leave, one shift fewer.
+  // SATI: one shift fewer, the same leave days — the accepted date is still a charged leave day — and no leave hours.
   await hoursPage.goto();
   await expect(row).toHaveCount(1);
-  await expect(await hoursPage.cellIn(row, sati.leave)).toHaveText('12 h');
   await expect.poll(shiftsOf).toBe(shiftsBefore - 1);
+  await expect(await hoursPage.cellIn(row, sati.leave)).toHaveText(leaveDays);
 
-  // THE .XLSX: the same 12 h in the leave column.
+  // THE .XLSX: the same day count, a plain number, under a heading that names days; no leave hours.
   const download = await hoursPage.exportDownload();
   const workbook = readXlsx(readFileSync(await download.path()));
   const [header, ...body] = workbook.rows;
-  const leaveColumn = (header ?? []).findIndex((one) => one?.type === 'text' && one.value === sati.leave);
+  const leaveColumn = (header ?? []).findIndex((one) => one?.type === 'text' && one.value === sati.export.leaveDays);
   const own = body.find((cells) => cells[0]?.type === 'text' && cells[0].value === seeded.name);
   expect(leaveColumn).toBeGreaterThan(-1);
-  const leave = own?.[leaveColumn];
-  expect(leave?.type).toBe('number');
-  expect(leave?.type === 'number' ? Math.round(leave.value * 1440) : null).toBe(720);
+  expect(own?.[leaveColumn]).toEqual({ type: 'number', value: Number(/^\d+/.exec(leaveDays)?.[0]), format: null });
+  expect(header?.[leaveColumn + 1]).toEqual({ type: 'text', value: sati.conflicts });
 });
 
 test('a failed save says so and Spremi saves again, the saved line is gone on navigation, a denied save says so, and a conflict resolved meanwhile or whose leave was removed is no longer open', async ({
@@ -484,7 +506,7 @@ test('moves the selection across the three cards with the arrow keys, and Tab re
   await expect(resolutionPage.replaceOption).toBeFocused();
 });
 
-test('replaces the absent member by keyboard: the queue drops the conflict with a status line naming the replacement, the day roster holds them with no uncovered mark, and Sati moves 12 h to leave and gives the replacement the shift', async ({
+test('replaces the absent member by keyboard: the queue drops the conflict with a status line naming the replacement, the day roster holds them with no uncovered mark, and Sati counts the leave in days and gives the replacement the shift', async ({
   page,
   conflictsPage,
   resolutionPage,
@@ -493,7 +515,8 @@ test('replaces the absent member by keyboard: the queue drops the conflict with 
   fixture,
 }) => {
   test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
-  const { team, seeded, today } = await scenarioOf(fixture.slug);
+  const scenario = await scenarioOf(fixture.slug);
+  const { team, seeded, today } = scenario;
   const dino = await replacementOf(fixture.slug, today);
   const sati = hr.sati.organization;
 
@@ -508,6 +531,8 @@ test('replaces the absent member by keyboard: the queue drops the conflict with 
     return count === undefined ? 0 : Number(count);
   };
   const dinoBefore = await shiftsOf(dinoRow);
+  // And the absent member's leave days before the decision, which it must not change.
+  await expect(await hoursPage.cellIn(hoursPage.organizationRow(seeded.name), sati.leave)).toHaveText(leaveOf(scenario));
 
   await conflictsPage.goto();
   const rows = conflictsPage.rowsOf(seeded.name);
@@ -524,7 +549,9 @@ test('replaces the absent member by keyboard: the queue drops the conflict with 
   // Its strip: the coverage one higher, never "Nepokriveno", the hours and the balance as the first card's.
   await expect(resolutionPage.replaceOption).toContainText(replaceCoverageOfOne());
   await expect(resolutionPage.replaceOption).not.toContainText(resolution.uncovered);
-  await expect(resolutionPage.replaceOption).toContainText(fill(resolution.hoursAsLeave, { hours: '12 h' }));
+  // Leave is counted in days, never hours (2026-10-10): `1 dan godišnjeg`, no `12 h`.
+  await expect(resolutionPage.replaceOption).toContainText(plural(resolution.daysAsLeave, 1));
+  await expect(resolutionPage.replaceOption).not.toContainText('12 h');
   await expect(resolutionPage.replaceOption).toContainText(resolution.balanceUnchanged);
 
   // THE PICKER, after the card, nothing picked: Spremi waits and says who is missing.
@@ -579,11 +606,16 @@ test('replaces the absent member by keyboard: the queue drops the conflict with 
   await expect(calendarPage.rosterChangeItemsIn(detail)).toContainText(fill(resolution.replaceReason, { member: seeded.name }));
   await page.keyboard.press('Escape');
 
-  // SATI: the absent member's 12 h are leave; Dino has the shift.
+  // SATI: the absent member's leave in days, the replaced date among them, never as hours; Dino has the shift.
+  // The replaced date still counts: a replacement's override only ADDS Dino
+  // (human, 2026-10-02), so the absent member stays rostered on that date with
+  // their working shift, and Godišnji charges it (R4.2) — today is one of the
+  // dates `leaveOf` counts, and the figure is unchanged by the decision.
+  expect(chargedLeaveDays(seed!, today, today, today.slice(0, 7)), 'the replaced date is a charged leave day').toBe(1);
   await hoursPage.goto();
   const absentRow = hoursPage.organizationRow(seeded.name);
   await expect(absentRow).toHaveCount(1);
-  await expect(await hoursPage.cellIn(absentRow, sati.leave)).toHaveText('12 h');
+  await expect(await hoursPage.cellIn(absentRow, sati.leave)).toHaveText(leaveOf(scenario));
   await expect.poll(() => shiftsOf(dinoRow)).toBe(dinoBefore + 1);
   await expect(await hoursPage.cellIn(dinoRow, sati.leave)).toHaveText(hr.sati.noFigure);
 });
@@ -759,7 +791,8 @@ test('Removed override: removing the replacement in the calendar asks nothing, t
   fixture,
 }) => {
   test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
-  const { team, seeded, today } = await scenarioOf(fixture.slug);
+  const scenario = await scenarioOf(fixture.slug);
+  const { team, seeded, today } = scenario;
   const dino = await replacementOf(fixture.slug, today);
   const sati = hr.sati.organization;
   const rosterChange = hr.kalendar.detail.rosterChange;
@@ -771,7 +804,7 @@ test('Removed override: removing the replacement in the calendar asks nothing, t
   await hoursPage.goto();
   const absentRow = hoursPage.organizationRow(seeded.name);
   await expect(absentRow).toHaveCount(1);
-  await expect(await hoursPage.cellIn(absentRow, sati.leave)).toHaveText('12 h');
+  await expect(await hoursPage.cellIn(absentRow, sati.leave)).toHaveText(leaveOf(scenario));
   const conflictsCell = await hoursPage.cellIn(absentRow, sati.conflicts);
   const countOf = async (): Promise<number> => {
     const text = (await conflictsCell.textContent()) ?? '';
@@ -798,10 +831,10 @@ test('Removed override: removing the replacement in the calendar asks nothing, t
   await expect(block).toHaveCount(0);
   await page.keyboard.press('Escape');
 
-  // SATI: the absent member's shift is band hours again, and counted as a conflict.
+  // SATI: the absent member's shift is band hours again, and counted as a conflict; the leave days stand.
   await hoursPage.goto();
   await expect(absentRow).toHaveCount(1);
-  await expect(await hoursPage.cellIn(absentRow, sati.leave)).toHaveText(hr.sati.noFigure);
+  await expect(await hoursPage.cellIn(absentRow, sati.leave)).toHaveText(leaveOf(scenario));
   await expect.poll(countOf).toBe(before + 1);
 
   // THE QUEUE lists it again, and its screen holds nothing: 0033 ended the resolution with the override.
@@ -1011,7 +1044,7 @@ test('amends the leave by keyboard: card 3 opens the member page\'s amend form p
   );
   await expect(resolutionPage.stripLabelsOf(resolutionPage.amendOption)).toHaveText([
     resolution.coverageLabel,
-    resolution.hoursLabel,
+    resolution.absentLabel,
     resolution.balanceLabel,
   ]);
   // Card 3's coverage, one higher, as card 2's: the absent member works their own shift.

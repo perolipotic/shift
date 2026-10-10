@@ -16,7 +16,12 @@ import {
   type CalendarSearch,
   type MonthHeader,
 } from '@/features/calendar/utils/month';
-import { conflictCountIn, conflictCountsOf, type HoursConflictsState } from '@/features/hours/services/hours-conflicts';
+import {
+  conflictCountIn,
+  conflictCountsOf,
+  type HoursConflictsState,
+  type LeaveRecordsByMember,
+} from '@/features/hours/services/hours-conflicts';
 import {
   BAND_SORT_PREFIX,
   HOURS_UNAVAILABLE,
@@ -29,8 +34,9 @@ import {
   SORT_UP,
   hoursReadsOf,
   figureOf,
-  leaveIsEmpty,
+  leaveFigureOf,
   memberHoursInputOf,
+  memberLeaveDatesOf,
   monthShownHeaderOf,
   myHoursSurfaceOf,
   myHoursViewOf,
@@ -41,6 +47,7 @@ import {
   type HoursSearchChange,
   type HoursSortDirection,
   type HoursSortKey,
+  type LeaveDaysFigure,
   type MyHoursSurface,
 } from '@/features/hours/services/my-hours';
 import { compareText } from '@/lib/i18n/format';
@@ -96,15 +103,22 @@ export interface OrganizationHoursRow {
   /** One cell per band column, in the same order: its hours and its shifts. */
   readonly bands: readonly HoursBandRow[];
   readonly total: HoursFigure;
-  /** The month's leave, or `null` when it is 0 — drawn `—` (`MyHoursView.leave`). */
-  readonly leave: HoursFigure | null;
+  /** The month's leave days, or `null` when there are none — drawn `—` (`MyHoursView.leave`). */
+  readonly leave: LeaveDaysFigure | null;
+  /** The month's charged leave days, 0 included: what the sort, the footer and the file read. */
+  readonly leaveDays: number;
   /** Working shifts with no times, counted as shifts and never in hours. */
   readonly untimedShiftCount: number;
   /** The month's working shifts in unresolved conflict, 0 included: the table and the file show a zero. */
   readonly conflictCount: number;
   /** Where the name leads: `/kalendar?prikaz=sve&osoba=<id>&mjesec=<month>`. */
   readonly calendar: CalendarSearch;
-  /** The domain's answer, which the sort orders by. */
+  /**
+   * The domain's answer, which the sort orders by. Its `leaveMinutes` is
+   * carried only because the domain takes decided shifts out of the bands and
+   * the total through it; it is deliberately shown nowhere, the file
+   * included — leave is counted in days (human decision 2026-10-10).
+   */
   readonly hours: MemberHours;
 }
 
@@ -118,8 +132,8 @@ export interface HoursFooter {
   /** One per band column, in the same order. */
   readonly bands: readonly { readonly bandId: string; readonly hours: HoursFigure }[];
   readonly total: HoursFigure;
-  /** `null` when the leave of the rows shown is 0, drawn `—` as a row's is. */
-  readonly leave: HoursFigure | null;
+  /** The leave days of the rows shown, or `null` when there are none, drawn `—` as a row's is. */
+  readonly leave: LeaveDaysFigure | null;
   readonly conflictCount: number;
 }
 
@@ -188,7 +202,8 @@ export function calendarLinkSearchOf(memberId: string, month: string): CalendarS
  * Every row of `month`, in the snapshot's name order: each member active on
  * at least one of its dates, and any member with a shift in it — each with
  * their conflicts of the month counted from `collisions`, and their
- * accepted-uncovered shifts in `leaveKeys` counted as leave (story 5.4b).
+ * accepted-uncovered shifts in `leaveKeys` counted as leave (story 5.4b),
+ * and their charged leave days counted from `leaveRecords`.
  *
  * @throws RangeError on any precondition of the domain, a band the snapshot
  *   lacks, or a team the snapshot does not name.
@@ -198,7 +213,8 @@ export function organizationHoursRowsOf(
   month: string,
   header: MonthHeader,
   collisions: readonly Collision[],
-  leaveKeys: readonly CollisionResolution[] = [],
+  leaveKeys: readonly CollisionResolution[],
+  leaveRecords: LeaveRecordsByMember,
 ): readonly OrganizationHoursRow[] {
   const dates = datesOfMonth(month);
   const teams = new Map(snapshot.teams.map((team) => [team.id, team.name]));
@@ -207,7 +223,8 @@ export function organizationHoursRowsOf(
   const counts = conflictCountsOf(collisions, month);
 
   for (const member of snapshot.members) {
-    const hours = memberHoursOfMonth(memberHoursInputOf(snapshot, { ...member, memberId: member.id }, leaveKeys), month);
+    const history = { ...member, memberId: member.id };
+    const hours = memberHoursOfMonth(memberHoursInputOf(snapshot, history, leaveKeys), month);
     const active = dates.some((date) => activeOn(member.statuses, date));
 
     if (!active && hours.shiftCount === 0) continue;
@@ -218,7 +235,8 @@ export function organizationHoursRowsOf(
     if (teamId !== null && teamName === undefined) throw new RangeError(`team ${teamId} is not in the snapshot`);
 
     const conflictCount = conflictCountIn(counts, member.id);
-    const figures = myHoursViewOf(snapshot, header, hours, conflictCount);
+    const leaveDays = memberLeaveDatesOf(snapshot, history, leaveRecords, month).length;
+    const figures = myHoursViewOf(snapshot, header, hours, conflictCount, leaveDays);
 
     rows.push({
       memberId: member.id,
@@ -228,6 +246,7 @@ export function organizationHoursRowsOf(
       bands: figures.bands,
       total: figures.total,
       leave: figures.leave,
+      leaveDays,
       untimedShiftCount: hours.untimedShiftCount,
       conflictCount,
       calendar: calendarLinkSearchOf(member.id, month),
@@ -266,7 +285,7 @@ function compareByKey(first: OrganizationHoursRow, second: OrganizationHoursRow,
     case SORT_TOTAL:
       return compareValues(first.hours.totalMinutes, second.hours.totalMinutes);
     case SORT_LEAVE:
-      return compareValues(first.hours.leaveMinutes, second.hours.leaveMinutes);
+      return compareValues(first.leaveDays, second.leaveDays);
     default: {
       const bandId = key.slice(BAND_SORT_PREFIX.length);
 
@@ -508,13 +527,12 @@ export function hoursFooterOf(
 
   const sum = (minutesOf: (row: OrganizationHoursRow) => number): number =>
     rows.reduce((total, row) => total + minutesOf(row), 0);
-  const leave = sum((row) => row.hours.leaveMinutes);
 
   return {
     shiftCount: sum((row) => row.shiftCount),
     bands: bands.map((band) => ({ bandId: band.bandId, hours: figureOf(sum((row) => bandMinutesOf(row, band.bandId))) })),
     total: figureOf(sum((row) => row.hours.totalMinutes)),
-    leave: leaveIsEmpty(leave) ? null : figureOf(leave),
+    leave: leaveFigureOf(sum((row) => row.leaveDays)),
     conflictCount: sum((row) => row.conflictCount),
   };
 }
@@ -522,7 +540,7 @@ export function hoursFooterOf(
 /**
  * The organization's month `search` names, `today` the organization's, the
  * conflicts counted from `collisions`, the accepted-uncovered shifts in
- * `leaveKeys` counted as leave.
+ * `leaveKeys` counted as leave, the leave days from `leaveRecords`.
  *
  * @throws RangeError on any precondition of the rows.
  */
@@ -531,12 +549,13 @@ export function organizationHoursViewOf(
   search: HoursSearch,
   today: string,
   collisions: readonly Collision[],
-  leaveKeys: readonly CollisionResolution[] = [],
+  leaveKeys: readonly CollisionResolution[],
+  leaveRecords: LeaveRecordsByMember,
 ): OrganizationHoursView {
   const month = monthShownOf(search, today);
   const header = monthHeaderOf(month, today);
   const bands = snapshot.bands.map((band) => ({ bandId: band.id, name: band.name, sortKey: bandSortKeyOf(band.id) }));
-  const all = organizationHoursRowsOf(snapshot, month, header, collisions, leaveKeys);
+  const all = organizationHoursRowsOf(snapshot, month, header, collisions, leaveKeys, leaveRecords);
   const teams = hoursTeamsOf(all);
   const people = all.map((row) => ({ id: row.memberId, name: row.name }));
   const team = teams.find((one) => one.id === search.smjena)?.id ?? null;
@@ -580,10 +599,11 @@ export function organizationHoursOf(
   search: HoursSearch,
   today: string,
   collisions: readonly Collision[],
-  leaveKeys: readonly CollisionResolution[] = [],
+  leaveKeys: readonly CollisionResolution[],
+  leaveRecords: LeaveRecordsByMember,
 ): OrganizationHoursOutcome {
   try {
-    return { ok: true, view: organizationHoursViewOf(snapshot, search, today, collisions, leaveKeys) };
+    return { ok: true, view: organizationHoursViewOf(snapshot, search, today, collisions, leaveKeys, leaveRecords) };
   } catch (cause) {
     if (!(cause instanceof RangeError)) throw cause;
 
@@ -630,7 +650,7 @@ export function hoursSurfaceOf(
     return { ...myHoursSurfaceOf(state, conflicts, search, today), organization: null };
   }
 
-  const outcome = organizationHoursOf(reads.snapshot, search, reads.today, reads.collisions, reads.leaveKeys);
+  const outcome = organizationHoursOf(reads.snapshot, search, reads.today, reads.collisions, reads.leaveKeys, reads.leaveRecords);
 
   if (outcome.ok) {
     return {

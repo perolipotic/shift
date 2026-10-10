@@ -1,4 +1,4 @@
-import { collisionKeyOf, deriveShiftTimes, leaveBalanceOf, shiftTypeVersionOn, type Collision } from '@shift/domain';
+import { collisionKeyOf, deriveShiftTimes, leaveBalanceOf, leaveCostOf, shiftTypeVersionOn, type Collision } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import { dayDetailOf } from '@/features/calendar/utils/day-detail';
@@ -68,8 +68,10 @@ import { ranksShown, rosterRankMessageKey } from '@/features/members/utils/rank'
  * costs, and who else works that day, from the day detail's roster
  * (`dayDetailOf`) less every member on live leave that date. The strip's
  * three terms are coverage (`covered of total`, the roster with and without
- * the members on leave), the absent member's hours as leave (the shift's
- * duration on its date, none when untimed) and the balance, which accepting
+ * the members on leave), the absent member's leave in days (the conflict's
+ * date as *Godišnji* charges it, `leaveCostOf` over that one date: `1 dan
+ * godišnjeg` — leave is counted in days, never hours, human 2026-10-10) and
+ * the balance, which accepting
  * leaves unchanged — `leaveBalanceOf` through the member card's own recipe
  * (`memberLeaveBaseOf`).
  *
@@ -292,8 +294,13 @@ export interface ResolutionView {
   readonly total: number;
   /** The roster less every member on live leave that date. */
   readonly covered: number;
-  /** The shift's duration, as the absent member's leave hours; `null` when the shift has no times. */
-  readonly leaveHours: ResolutionHours | null;
+  /** The shift's duration, as the hours the third card has the absent member work; `null` when the shift has no times. */
+  readonly shiftHours: ResolutionHours | null;
+  /**
+   * The conflict's date as leave, in days: what *Godišnji* charges for it
+   * (`leaveCostOf` over the one date), the first two cards' leave term.
+   */
+  readonly leaveDays: number;
   /** The absent member's balance in the leave year that holds the conflict's date, which neither outcome changes. */
   readonly balanceDays: number;
   /** Who may be put on the shift (story 5.4c): the three groups, in their fixed order, each by name. */
@@ -583,7 +590,8 @@ function resolutionScreenFrom(
       coworkers,
       total: detail.roster.length,
       covered: coworkers.length,
-      leaveHours: minutes === null ? null : { key: durationMessageKey(minutes), values: durationValuesOf(minutes) },
+      shiftHours: minutes === null ? null : { key: durationMessageKey(minutes), values: durationValuesOf(minutes) },
+      leaveDays: leaveCostOf(base.input.input, collision.date, collision.date),
       // THE LEAVE YEAR OF THE CONFLICT'S DATE, not today's: the balance the decision is about.
       balanceDays: leaveBalanceOf({ ...base.input, today: collision.date }).balanceDays,
       candidates,
@@ -776,11 +784,15 @@ export function amendHandoffOf(view: ResolutionView, origin: ResolutionParams): 
     : { kind: LEAVE_AMEND_ACTION, recordId: view.leaveRecordId, range: target.range, origin: from };
 }
 
-/** The absent member's hours term: the duration as leave, or the empty mark for an untimed shift. */
-export function leaveHoursMessageKey(
-  hours: ResolutionHours | null,
-): 'raspored.resolution.hoursAsLeave' | 'raspored.resolution.noHours' {
-  return hours === null ? 'raspored.resolution.noHours' : 'raspored.resolution.hoursAsLeave';
+/**
+ * The absent member's leave term: the days as leave, `1 dan godišnjeg`, or
+ * the empty mark for a date that charges none. A conflict's date charges 0
+ * only when the member is inactive on it (R4.2: a leave day needs the member
+ * active, with a working shift — and a conflict always has the shift), a
+ * state a collision should not reach but the strip still states truthfully.
+ */
+export function leaveDaysMessageKey(days: number): 'raspored.resolution.daysAsLeave' | 'raspored.resolution.noDays' {
+  return days === 0 ? 'raspored.resolution.noDays' : 'raspored.resolution.daysAsLeave';
 }
 
 /** The radio group's value as an option, or `null` for anything else. */

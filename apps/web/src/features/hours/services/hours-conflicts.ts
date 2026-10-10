@@ -1,4 +1,11 @@
-import { collisionsOf, monthOf, unresolvedCollisionsOf, type Collision, type CollisionResolution } from '@shift/domain';
+import {
+  collisionsOf,
+  monthOf,
+  unresolvedCollisionsOf,
+  type Collision,
+  type CollisionResolution,
+  type LeaveRange,
+} from '@shift/domain';
 
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import { readsOrganizationLeave } from '@/features/calendar/services/marks';
@@ -9,7 +16,12 @@ import {
   type LeaveRowsAnswer,
 } from '@/features/conflicts/services/conflicts-queue';
 import { effectiveResolutionsOf } from '@/features/conflicts/services/replacement-effect';
-import { conflictResolutionsOf, leaveHoursKeysOf } from '@/features/conflicts/services/resolutions';
+import {
+  acceptedUncoveredOf,
+  conflictResolutionsOf,
+  leaveHoursKeysOf,
+  type ConflictResolution,
+} from '@/features/conflicts/services/resolutions';
 import { leaveRecordsOf, organizationLeaveRecordsOf } from '@/features/leave/services/leave-list';
 
 /**
@@ -40,8 +52,15 @@ import { leaveRecordsOf, organizationLeaveRecordsOf } from '@/features/leave/ser
  * override is removed, pending or inert counts for nothing, and the shift is
  * band hours and a conflict again) ({@link hoursLeaveKeysOf}); the domain moves each
  * one's shift out of the absent member's band hours, total and shift count
- * and into their leave hours. A replacement's own band hours rise through its
- * roster override, with no code here. No other kind does either.
+ * (its `leaveMinutes`, shown nowhere: since 2026-10-10 the shift counts only
+ * as its leave day). A replacement's own band hours rise through its roster
+ * override, with no code here. No other kind does either.
+ *
+ * THE LEAVE RECORDS RIDE ALONG (leave in days, 2026-10-10). The records the
+ * collisions are found from — the same one parse ({@link hoursLeaveOf})
+ * — are handed on by member, so the leave figure's days are the domain's
+ * charged leave days (`leaveDaysOfMonth`) over the records *Sati* already
+ * read: no second read and no second parse.
  *
  * NEVER FIGURES WITHOUT THE COUNT. *Sati* waits for the leave and resolution
  * reads: one that failed, is paused offline, or answered a row that cannot be
@@ -82,21 +101,62 @@ export type HoursConflictsState =
        * every member's for an admin, their own for a member.
        */
       readonly leaveKeys: readonly CollisionResolution[];
+      /**
+       * Those of {@link leaveKeys} accepted as uncovered; the rest were
+       * replaced. The leave's ⓘ names the decision on a decided date's line.
+       */
+      readonly acceptedKeys: readonly CollisionResolution[];
+      /** The live leave records the viewer reads, by member: every member's for an admin, their own for a member. */
+      readonly leaveRecords: LeaveRecordsByMember;
     };
+
+/** Leave records by member id; a member with none is absent. */
+export type LeaveRecordsByMember = ReadonlyMap<string, readonly LeaveRange[]>;
+
+/** No leave records at all. */
+export const NO_LEAVE_RECORDS: LeaveRecordsByMember = new Map();
+
+/** A member's records in {@link LeaveRecordsByMember}: none for a member with none. */
+export function leaveRecordsIn(records: LeaveRecordsByMember, memberId: string): readonly LeaveRange[] {
+  return records.get(memberId) ?? [];
+}
+
+/** What *Sati* takes from the leave rows, parsed once: the unresolved collisions and the records they came from. */
+export interface HoursLeave {
+  readonly collisions: readonly Collision[];
+  /** The live leave records the viewer reads, by member. */
+  readonly leaveRecords: LeaveRecordsByMember;
+}
+
+/** Records as {@link LeaveRecordsByMember}: each member's ranges, in the order read. */
+function byMemberOf(records: readonly { readonly memberId: string; readonly from: string; readonly to: string }[]): LeaveRecordsByMember {
+  const byMember = new Map<string, LeaveRange[]>();
+
+  for (const { memberId, from, to } of records) {
+    const own = byMember.get(memberId);
+
+    if (own === undefined) byMember.set(memberId, [{ from, to }]);
+    else own.push({ from, to });
+  }
+
+  return byMember;
+}
 
 /**
  * The UNRESOLVED collisions the viewer may count, from the snapshot and the
  * leave and resolution rows their role read, as they came back: every
- * member's for an admin, the viewer's own for a member.
+ * member's for an admin, the viewer's own for a member — and, from the same
+ * one parse of the leave rows, the records by member, which the leave
+ * figure's charged days are counted over.
  *
  * @throws RangeError when a row cannot be trusted, or on any precondition of
  *   `collisionsOf`.
  */
-export function hoursCollisionsOf(
+export function hoursLeaveOf(
   snapshot: CalendarSnapshot,
   rows: readonly unknown[],
   resolutionRows: readonly unknown[],
-): readonly Collision[] {
+): HoursLeave {
   const viewer = snapshot.viewer;
 
   if (!readsOrganizationLeave(viewer.role)) {
@@ -114,17 +174,17 @@ export function hoursCollisionsOf(
 
     if (resolutions === null) throw new RangeError('an own conflict resolution row cannot be trusted');
 
+    const records = own.map((record) => ({ ...record, memberId: viewer.memberId }));
+
     // THE SAME FUNNEL as the admin's (story 5.5d): a replacement that no
     // longer applies hides nothing, so a member's own *Sati* agrees.
-    return unresolvedCollisionsOf(
-      collisionsOf(
-        collisionInputOf(
-          snapshot,
-          own.map((record) => ({ ...record, memberId: viewer.memberId })),
-        ),
+    return {
+      collisions: unresolvedCollisionsOf(
+        collisionsOf(collisionInputOf(snapshot, records)),
+        effectiveResolutionsOf(snapshot, resolutions),
       ),
-      effectiveResolutionsOf(snapshot, resolutions),
-    );
+      leaveRecords: byMemberOf(records),
+    };
   }
 
   const records = organizationLeaveRecordsOf(
@@ -134,21 +194,20 @@ export function hoursCollisionsOf(
 
   if (records === null) throw new RangeError('a leave record row cannot be trusted');
 
-  return unresolvedOf(snapshot, records, resolutionRows);
+  return { collisions: unresolvedOf(snapshot, records, resolutionRows), leaveRecords: byMemberOf(records) };
 }
 
 /**
- * The leave-hours keys (stories 5.4b, 5.4c: accepted as uncovered, or
- * replaced) of the resolution rows the viewer's role read, through
- * `leaveHoursKeysOf`, parsed as {@link hoursCollisionsOf} parses them: every
- * member's for an admin, the viewer's own for a member.
+ * The live resolutions that still apply, of the rows the viewer's role read,
+ * parsed as {@link hoursLeaveOf} parses them: every member's for an admin,
+ * the viewer's own for a member.
  *
  * @throws RangeError when a row cannot be trusted.
  */
-export function hoursLeaveKeysOf(snapshot: CalendarSnapshot, resolutionRows: readonly unknown[]): readonly CollisionResolution[] {
+function hoursResolutionsOf(snapshot: CalendarSnapshot, resolutionRows: readonly unknown[]): readonly ConflictResolution[] {
   const viewer = snapshot.viewer;
 
-  if (readsOrganizationLeave(viewer.role)) return leaveHoursKeysOf(resolutionsOf(snapshot, resolutionRows));
+  if (readsOrganizationLeave(viewer.role)) return resolutionsOf(snapshot, resolutionRows);
 
   const own = conflictResolutionsOf(
     resolutionRows,
@@ -159,7 +218,18 @@ export function hoursLeaveKeysOf(snapshot: CalendarSnapshot, resolutionRows: rea
 
   if (own === null) throw new RangeError('an own conflict resolution row cannot be trusted');
 
-  return leaveHoursKeysOf(effectiveResolutionsOf(snapshot, own));
+  return effectiveResolutionsOf(snapshot, own);
+}
+
+/**
+ * The keys whose absent member's shift is moved out of the worked hours
+ * (stories 5.4b, 5.4c: accepted as uncovered, or replaced), through
+ * `leaveHoursKeysOf`, of the rows the viewer's role read.
+ *
+ * @throws RangeError when a row cannot be trusted.
+ */
+export function hoursLeaveKeysOf(snapshot: CalendarSnapshot, resolutionRows: readonly unknown[]): readonly CollisionResolution[] {
+  return leaveHoursKeysOf(hoursResolutionsOf(snapshot, resolutionRows));
 }
 
 /** Whether a read failed or is paused offline, a failed refetch over cached rows included. */
@@ -191,10 +261,15 @@ export function hoursConflictsStateOf(
   if (answer.data === undefined || resolutions.data === undefined) return { kind: HOURS_CONFLICTS_LOADING };
 
   try {
+    const { collisions, leaveRecords } = hoursLeaveOf(snapshot, answer.data, resolutions.data);
+    const decided = hoursResolutionsOf(snapshot, resolutions.data);
+
     return {
       kind: HOURS_CONFLICTS_READY,
-      collisions: hoursCollisionsOf(snapshot, answer.data, resolutions.data),
-      leaveKeys: hoursLeaveKeysOf(snapshot, resolutions.data),
+      collisions,
+      leaveKeys: leaveHoursKeysOf(decided),
+      acceptedKeys: acceptedUncoveredOf(decided),
+      leaveRecords,
     };
   } catch (cause) {
     if (!(cause instanceof RangeError)) throw cause;

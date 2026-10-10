@@ -38,7 +38,7 @@ import {
   replacedSavedOf,
   saveFocusOf,
   replacementOf,
-  leaveHoursMessageKey,
+  leaveDaysMessageKey,
   resolutionOptionOf,
   refetchingAfterFailure,
   resolutionSavedMessageKey,
@@ -291,16 +291,16 @@ describe('the facts', () => {
   });
 });
 
-describe('Strip: coverage, the hours as leave and the balance', () => {
-  it('reads "3 od 4 člana", "12 h kao godišnji" and "16 dana preostalo" for a team of four, a 12 h shift and a balance of 16', () => {
+describe('Strip: coverage, the day as leave and the balance', () => {
+  it('reads "3 od 4 člana", "1 dan godišnjeg" and "16 dana preostalo" for a team of four, a 12 h shift and a balance of 16', () => {
     const view = viewOf(resolutionScreenOf(sourcesOf(pilot), paramsOn('2026-09-10'), NOW));
 
     expect([view.covered, view.total]).toEqual([3, 4]);
     expect(t(coverageMessageKey(), { covered: view.covered, total: view.total })).toBe('3 od 4 člana');
-    expect(view.leaveHours).not.toBeNull();
-    expect(t(leaveHoursMessageKey(view.leaveHours), { hours: t(view.leaveHours!.key, view.leaveHours!.values) })).toBe(
-      '12 h kao godišnji',
-    );
+    // Leave is counted in days, never hours (human, 2026-10-10): the date as Godišnji charges it.
+    expect(view.leaveDays).toBe(1);
+    expect(t(leaveDaysMessageKey(view.leaveDays), { count: view.leaveDays })).toBe('1 dan godišnjeg');
+    expect(t('raspored.resolution.daysAsLeave', { count: 3 })).toBe('3 dana godišnjeg');
     expect(view.balanceDays).toBe(16);
     expect(t('raspored.resolution.balance', { count: view.balanceDays })).toBe('16 dana preostalo');
   });
@@ -316,9 +316,9 @@ describe('Strip: coverage, the hours as leave and the balance', () => {
     expect(t('raspored.resolution.balance', { count: 1 })).toBe('1 dan preostalo');
   });
 
-  it('says the empty mark for an untimed shift', () => {
-    expect(leaveHoursMessageKey(null)).toBe('raspored.resolution.noHours');
-    expect(t(leaveHoursMessageKey(null))).toBe('—');
+  it('says the empty mark for a date not charged', () => {
+    expect(leaveDaysMessageKey(0)).toBe('raspored.resolution.noDays');
+    expect(t(leaveDaysMessageKey(0))).toBe('—');
   });
 
   it('names what the queue\'s status line will say once the decision lands', () => {
@@ -516,7 +516,7 @@ describe('the status line travels in router state only', () => {
 });
 
 describe('the patch round', () => {
-  it('says the empty mark for an untimed conflict: a working type with no times on the date', async () => {
+  it('says the empty mark for an untimed conflict\'s hours, and still its day as leave', async () => {
     const untimed: FixtureRows = {
       ...PILOT,
       types: PILOT.types.map((type) => (type['id'] === 'pilot-dan' ? { ...type, shift_type_versions: [] } : type)),
@@ -525,8 +525,10 @@ describe('the patch round', () => {
     const view = viewOf(resolutionScreenOf(sourcesOf(snapshot), paramsOn('2026-09-10'), NOW));
 
     expect(view.times).toBeNull();
-    expect(view.leaveHours).toBeNull();
-    expect(t(leaveHoursMessageKey(view.leaveHours))).toBe('—');
+    expect(view.shiftHours).toBeNull();
+    expect(t(workHoursMessageKey(view.shiftHours))).toBe('—');
+    // The day is charged with or without times: leave is counted in days.
+    expect(t(leaveDaysMessageKey(view.leaveDays), { count: view.leaveDays })).toBe('1 dan godišnjeg');
     expect(t(shiftFactsMessageKey(view.times), { type: view.shiftTypeName, team: view.teamName, date: view.dateShown })).toBe(
       'Dan · Smjena A · četvrtak 10.09.2026',
     );
@@ -608,7 +610,7 @@ describe('replacing the absent member (story 5.4c)', () => {
     expect(view.candidates[1]?.candidates).toEqual([]);
   });
 
-  it('Strip: "4 od 4 člana · Dino Grgić", "12 h kao godišnji" and "16 dana preostalo · bez promjene"', () => {
+  it('Strip: "4 od 4 člana · Dino Grgić", "1 dan godišnjeg" and "16 dana preostalo · bez promjene"', () => {
     const view = viewOf(resolutionScreenOf(sourcesOf(others), paramsOn('2026-09-10'), NOW));
     const dino = replacementOf(view, DINO);
 
@@ -616,9 +618,7 @@ describe('replacing the absent member (story 5.4c)', () => {
     expect(
       `${t(coverageMessageKey(), { covered: view.replaceCovered, total: view.total })} ${t('raspored.resolution.replacementShown', { name: dino!.name })}`,
     ).toBe('4 od 4 člana · Dino Grgić');
-    expect(t(leaveHoursMessageKey(view.leaveHours), { hours: t(view.leaveHours!.key, view.leaveHours!.values) })).toBe(
-      '12 h kao godišnji',
-    );
+    expect(t(leaveDaysMessageKey(view.leaveDays), { count: view.leaveDays })).toBe('1 dan godišnjeg');
     expect(`${t('raspored.resolution.balance', { count: view.balanceDays })} · ${t('raspored.resolution.balanceUnchanged')}`).toBe(
       '16 dana preostalo · bez promjene',
     );
@@ -744,7 +744,7 @@ describe('amending the leave (story 5.4d)', () => {
     expect(
       `${t(coverageMessageKey(), { covered: view.replaceCovered, total: view.total })} ${t('raspored.resolution.amendWorks', { name: view.memberName })}`,
     ).toBe(`4 od 4 člana · ${view.memberName} radi`);
-    expect(t(workHoursMessageKey(view.leaveHours), { hours: t(view.leaveHours!.key, view.leaveHours!.values) })).toBe('12 h rada');
+    expect(t(workHoursMessageKey(view.shiftHours), { hours: t(view.shiftHours!.key, view.shiftHours!.values) })).toBe('12 h rada');
     expect(
       `${t('raspored.resolution.balance', { count: view.amend.balanceDays })} · ${t('raspored.resolution.balanceGained', { count: view.amend.gainedDays })}`,
     ).toBe('17 dana preostalo · +1 dan');

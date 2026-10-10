@@ -2877,10 +2877,15 @@ const KEY_SOURCES = [
     //
     // ONE HUNDRED AND SIX SINCE THE 7.14 REVIEW: a line's words for a shift in
     // unresolved conflict, beside its `⚠` (FR-42b).
+    //
+    // ONE HUNDRED AND FIVE SINCE LEAVE IN DAYS: a line's words are made by
+    // `@/features/hours/services/hours-explanation` (a key source), since a
+    // leave line pairs each shift's team and type, so the dialog renders the
+    // line it is given.
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 106,
+    strings: 105,
   },
   {
     // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the
@@ -2988,10 +2993,12 @@ const KEY_SOURCES = [
     // STORY 4.1b: the hours' one failure, a read or a domain refusal alike.
     // TWO SINCE THE EMPTY LEAVE FIX (Epic 4 retro, R2): the empty figure `—`
     // a leave of 0 reads, off `leaveMessageKey`.
+    // THREE SINCE LEAVE IN DAYS: a leave reads as its day count, `count.days`,
+    // off the same union.
     name: 'the hours rules',
     file: HOURS_KEYS,
     keys: messageKeyUnions,
-    strings: 2,
+    strings: 3,
   },
   {
     // STORY 4.2: why an admin's table is empty — nobody matches the filter,
@@ -3021,6 +3028,8 @@ const KEY_SOURCES = [
     // and the file's — and its action's two labels, the imperative and the
     // one it wears while the file is built, off `hoursExportMessageKey`.
     // ELEVEN SINCE STORY 5.3d: the conflicts column's heading, the table's own.
+    // STILL ELEVEN SINCE LEAVE IN DAYS: the leave column's heading names its
+    // unit, days, in place of the table's own heading.
     name: 'the hours export rules',
     file: HOURS_EXPORT_KEYS,
     keys: (text: string) => [...translationKeys(text), ...messageKeyUnions(text)],
@@ -3030,10 +3039,15 @@ const KEY_SOURCES = [
     // STORY 7.14: the figure's name — the total's and the leave's words —
     // the month, the person and month, and a shift's line, off `t()`; and the
     // three words a shift's source reads as, off `hoursSourceMessageKey`.
+    // NINE SINCE LEAVE IN DAYS: a shift's line and a leave line's
+    // `team · type`, made here rather than in the dialog. TWELVE SINCE ITS
+    // REVIEW: a decided shift's leave line (`sati.explain.line` again, with
+    // the decision as its source) and the two decisions' words, the resolved
+    // queue's own, off `leaveDecisionMessageKey`.
     name: 'the hours explanation rules',
     file: HOURS_EXPLANATION_KEYS,
     keys: (text: string) => [...translationKeys(text), ...messageKeyUnions(text)],
-    strings: 7,
+    strings: 12,
   },
   {
     // STORY 5.1c: the leave card's four reasons for no preview (incomplete,

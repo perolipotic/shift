@@ -68,7 +68,7 @@ import { hoursLeaveKeysOf } from '@/features/hours/services/hours-conflicts';
 import { MEMBER_ROLE_KEY } from '@/features/navigation/services/role';
 import { supabaseClient } from '@/lib/supabase/client';
 
-/** No conflicts on the open day, and no leave-hours keys: frozen, so a memo's answer stays the same object. */
+/** No conflicts on the open day, and no decided-leave keys: frozen, so a memo's answer stays the same object. */
 const NO_CONFLICTS: readonly DayConflict[] = Object.freeze([]);
 const NO_LEAVE_KEYS: readonly CollisionResolution[] = Object.freeze([]);
 
@@ -104,7 +104,7 @@ function noRoleOnServer(): null {
  * THE OPEN DAY'S FACTS (story 7.9) come from the same reads, never a fourth:
  * its unresolved conflicts (`dayConflicts`, the marks' own collisions — none
  * for a member), the live leave the roster dialog groups its candidates by
- * (`candidateLeave`), and the leave-hours keys its previews count hours with
+ * (`candidateLeave`), and the decided-leave keys its previews count hours with
  * as *Sati* does (`leaveKeys`, an admin's alone). Each is derived once per
  * answer; one that cannot be derived is none, logged.
  */
