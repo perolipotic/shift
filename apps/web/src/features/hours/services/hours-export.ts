@@ -1,3 +1,4 @@
+import { durationMessageKey } from '@/features/hour-bands/services/list';
 import type { OrganizationHoursRow, OrganizationHoursView } from '@/features/hours/services/organization-hours';
 import { leaveIsEmpty } from '@/features/hours/services/my-hours';
 import { t } from '@/lib/i18n';
@@ -15,26 +16,55 @@ import { formatIsoMonthName } from '@/lib/i18n/format';
  *
  * NO HOUR IS COMPUTED HERE (AD-3, AD-7). Every figure is the domain's minutes
  * on `row.hours`, divided by 1440 — a spreadsheet duration, a fraction of a
- * day, which `./xlsx` formats `[h]:mm` — never a parsed display string, so
- * the file's figures are the screen's (`750` minutes reads `12:30`, as the
- * screen's `12 h 30 min`). The one division is the only arithmetic.
+ * day — never a parsed display string. Each hours cell carries the shape the
+ * screen reads it in, by the screen's own rule (`durationMessageKey`), which
+ * `./xlsx` turns into a number format: `192 h`, `12 h 30 min`, `30 min`, as on
+ * the screen, while the cell stays a number and a column sums natively. The
+ * one division is the only arithmetic.
+ *
+ * THE LEAVE IS ONE COLUMN OF DAYS (human, 2026-10-10): the row's charged
+ * leave days, the domain's count, written as a number. Its heading names the
+ * unit, as a number format cannot inflect `dan/dana`. No day is an empty
+ * cell, as the screen draws it `—`. No leave hour is written anywhere.
  */
+
+/** Whole hours: the screen's `192 h`. */
+export const HOURS_SHAPE_HOURS = 'hours';
+/** Hours and minutes: the screen's `12 h 30 min`. */
+export const HOURS_SHAPE_HOURS_MINUTES = 'hoursMinutes';
+/** Under an hour: the screen's `30 min`. */
+export const HOURS_SHAPE_MINUTES = 'minutes';
+
+/** Which shape an hours cell reads in, as the screen reads the same minutes. */
+export type HoursShape = typeof HOURS_SHAPE_HOURS | typeof HOURS_SHAPE_HOURS_MINUTES | typeof HOURS_SHAPE_MINUTES;
+
+/** The shape `minutes` reads in on the screen: `durationMessageKey`'s rule, never a second one. */
+export function hoursShapeOf(minutes: number): HoursShape {
+  switch (durationMessageKey(minutes)) {
+    case 'organization.hourBands.duration.hours':
+      return HOURS_SHAPE_HOURS;
+    case 'organization.hourBands.duration.hoursMinutes':
+      return HOURS_SHAPE_HOURS_MINUTES;
+    case 'organization.hourBands.duration.minutes':
+      return HOURS_SHAPE_MINUTES;
+  }
+}
 
 /** A cell of the sheet: text as it reads, or a figure as a number. */
 export type HoursExportCell =
   | { readonly kind: 'text'; readonly value: string }
-  /** A duration: `minutes / 1440`, a fraction of a day. */
-  | { readonly kind: 'hours'; readonly value: number }
-  /** A count of shifts: worked, or in unresolved conflict. */
+  /** A duration: `minutes / 1440`, a fraction of a day, read in the screen's shape. */
+  | { readonly kind: 'hours'; readonly value: number; readonly shape: HoursShape }
+  /** A count: shifts worked or in unresolved conflict, or leave days. */
   | { readonly kind: 'count'; readonly value: number }
-  /** No figure: a leave of 0, which the screen draws `—` and the file leaves blank. */
+  /** No figure: a leave of no day, which the screen draws `—` and the file leaves blank. */
   | { readonly kind: 'empty' };
 
 /** The sheet, ready for a writer: one header row, then one row per table row. */
 export interface HoursExport {
   readonly fileName: string;
   readonly sheetName: string;
-  /** The header row: Member, Team, shifts, one per band (its name as stored), Total, Leave, unresolved conflicts. */
+  /** The header row: Member, Team, shifts, one per band (its name as stored), Total, leave days, unresolved conflicts. */
   readonly columns: readonly string[];
   /** One row per `view.rows` entry, in order; each as long as `columns`. */
   readonly rows: readonly (readonly HoursExportCell[])[];
@@ -81,7 +111,7 @@ function text(value: string): HoursExportCell {
 }
 
 function hours(minutes: number): HoursExportCell {
-  return { kind: 'hours', value: durationOf(minutes) };
+  return { kind: 'hours', value: durationOf(minutes), shape: hoursShapeOf(minutes) };
 }
 
 /**
@@ -104,7 +134,7 @@ function cellsOf(row: OrganizationHoursRow, bandIds: readonly string[]): readonl
     { kind: 'count', value: row.shiftCount },
     ...bands,
     hours(row.hours.totalMinutes),
-    leaveIsEmpty(row.hours.leaveMinutes) ? { kind: 'empty' } : hours(row.hours.leaveMinutes),
+    leaveIsEmpty(row.leaveDays) ? { kind: 'empty' } : { kind: 'count', value: row.leaveDays },
     // Story 5.3d: the state is the column and the number, 0 included — never a colour.
     { kind: 'count', value: row.conflictCount },
   ];
@@ -138,7 +168,7 @@ export function hoursExportOf(view: OrganizationHoursView, organizationName: str
       t('sati.organization.shifts'),
       ...view.bands.map((band) => band.name),
       t('sati.organization.total'),
-      t('sati.organization.leave'),
+      t('sati.organization.export.leaveDays'),
       t('sati.organization.conflicts'),
     ],
     rows: view.rows.map((row) => cellsOf(row, bandIds)),

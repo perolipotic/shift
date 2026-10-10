@@ -40,9 +40,9 @@ Capabilities from `SPEC.md`. Each is an independently reviewable slice; `engine-
 - **CAP-11** — Schedule projection and rosters. Arbitrary future dates with no generation run; repeated queries agree; with every override removed the schedule equals pure projection exactly; each working shift carries a roster.
 - **CAP-12** — Schedule overrides as a separable exception layer. Pattern and assignment byte-identical before and after; replacing a member is one action recording both; removing an override restores projection and default roster exactly; an overridden date is identifiable without opening detail.
 - **CAP-13** — Monthly calendar with team and member filters. Filters populated from live records; state survives month navigation and clears in one action; a midnight-crossing shift renders once on its start date with both clock times; unresolved conflicts visible to an admin without opening detail, while a member sees no conflict mark and only their own leave (story 7.10); no state by colour alone.
-- **CAP-14** — Hours computed by band intersection. Band hours sum exactly to total; a straddling shift is split not rounded (19:00–07:00 with bands at 06:00/21:00 yields 3 day, 9 night); 12 hours on both DST transition dates; hours follow the roster; a member's figures reconcile exactly with the admin's view. An admin can export the organization hours for a period to Excel, carrying exactly the figures on screen.
+- **CAP-14** — Hours computed by band intersection. Band hours sum exactly to total; a straddling shift is split not rounded (19:00–07:00 with bands at 06:00/21:00 yields 3 day, 9 night); 12 hours on both DST transition dates; hours follow the roster; a member's figures reconcile exactly with the admin's view. An admin can export the organization hours for a period to Excel, carrying exactly the figures on screen, each hours cell formatted as the screen reads it (`192 h`, `12 h 30 min`, `30 min`). The leave is reported in days only — the days the leave balance charges (`3 dana`) — on screen and in one file column of days (human decision 2026-10-10).
 - **CAP-15** — Annual leave against a per-member allowance. Recording leave leaves every shift in place; cost visible before saving; overlapping range refused; allowance minus used equals balance at all times within the current leave year; deleting restores the balance.
-- **CAP-16** — Leave/schedule conflicts resolved explicitly. A conflict exists for every affected working shift and stands until explicitly resolved; none expires or auto-clears; a configuration change that would remove a cause surfaces it for an explicit decision; detection alters no shift; non-working shifts raise nothing; exactly three resolutions, each attributable; resulting hours land as leave hours.
+- **CAP-16** — Leave/schedule conflicts resolved explicitly. A conflict exists for every affected working shift and stands until explicitly resolved; none expires or auto-clears; a configuration change that would remove a cause surfaces it for an explicit decision; detection alters no shift; non-working shifts raise nothing; exactly three resolutions, each attributable; a shift a resolution moves to leave drops out of the worked hours and lands as its leave day, never as hours (human decision 2026-10-10).
 - **CAP-17** — Role-appropriate landing surfaces. Member: today's shift stated in words when not working, next working shift with both times, band hours and total, leave used and remaining, seven days ahead, usable at phone width with no horizontal scrolling. Admin: today's coverage for any team count, unresolved-conflict count shown even at zero and matching the list exactly. Every dashboard figure equals its detail view.
 
 ### NonFunctional Requirements
@@ -118,13 +118,13 @@ From `DESIGN.md` (visual) and `EXPERIENCE.md` (behavioural). Both are binding an
 - **UX-DR8** `shift-cell` modifiers, composable on any base and on each other: conflict (inset 2 px `destructive` + `⚠`), overridden (inset 2 px + `✎`), leave (hatch + `◷`), uncovered (hatch + `◌`). Conflict and uncovered render on an admin's calendar only (story 7.10).
 - **UX-DR9** `duty-block` — groups consecutive working shifts with no non-working interval into one duty; end time as headline, span and total as metadata, progress bar, one leg per constituent shift marked done or in progress. Presentation only; the data remains two scheduled shifts on two dates.
 - **UX-DR10** `resolution-option` — radio-selection card, exactly one selected, no option primary-styled or labelled recommended, fixed order so muscle memory is possible. Nothing is preselected; the selected card takes a border, a ring and a filled radio, never a new background. ‹ › move to the adjacent unresolved conflict in queue order, without saving (decision 20, story 5.4b). "Zamijeni osobu" sits at position 2; its candidate picker is a sibling after the card, its own radio group, grouped `slobodan` / `radi taj dan · 24 h bez pauze` / `na godišnjem taj dan`, every candidate selectable and none preselected (story 5.4c). "Izmijeni godišnji odmor" sits at position 3, the three cards one arrow-key group; it states the computed range that would clear the conflict (rule A: start `d + 1`, end `d − 1` on the last day, removal of a one-day record), never preselected or recommended, records no resolution, and its Spremi opens the member page's leave amend prefilled, or the record's removal confirmation, with "Natrag na konflikte" back to the queue (story 5.4d). Story 7.9: the day detail's roster dialog groups its "Dolazi" candidates by the same three groups, as native option groups, every candidate selectable and none preselected.
-- **UX-DR11** `consequence-strip` — three fixed terms in a fixed order on every resolution option: coverage, the absent member's hours, the leave balance. Three columns at every width, a phone's included; uncovered coverage carries lucide `CircleDashed` (story 5.4b). A replacement's coverage reads one higher and names the person picked, never "Nepokriveno"; its hours and balance read as uncovered's, because the absent member stays on leave (story 5.4c). Amending the leave reads the coverage one higher with "{ime} radi", the shift's hours as work ("12 h rada"), and the balance once the dropped days are given back over what that gives ("17 dana preostalo" / "+1 dan"), in the conflict date's leave year (story 5.4d).
+- **UX-DR11** `consequence-strip` — three fixed terms in a fixed order on every resolution option: coverage, the absent member (labelled *Odsutni član* since 2026-10-10: the first two cards state their leave day, "1 dan godišnjeg", never hours; amending states their hours as work), the leave balance. Three columns at every width, a phone's included; uncovered coverage carries lucide `CircleDashed` (story 5.4b). A replacement's coverage reads one higher and names the person picked, never "Nepokriveno"; its hours and balance read as uncovered's, because the absent member stays on leave (story 5.4c). Amending the leave reads the coverage one higher with "{ime} radi", the shift's hours as work ("12 h rada"), and the balance once the dropped days are given back over what that gives ("17 dana preostalo" / "+1 dan"), in the conflict date's leave year (story 5.4d).
 - **UX-DR12** `state-glyph` — the fixed four-mark vocabulary with a persistent legend anywhere glyphs render. Not a tooltip, not behind an info icon.
 - **UX-DR13** Hour Band editor — name and start time only, with window, duration and midnight-crossing derived and read-only; a 24-hour partition bar with any gap hatched and flagged.
 - **UX-DR14** Pattern builder — ordered, reorderable, arbitrary length, the same shift type may repeat; cycle length, working steps and hours per cycle update live beneath it.
 - **UX-DR15** Cycle preview — renders the next full cycle from pattern, offsets and anchor date before saving.
 - **UX-DR16** Configuration stepper — four steps on phone (shift types, pattern, offsets, preview) with completed steps navigable backwards; one scrolling panel on tablet and desktop. Same data, same validations, same order. The builder ends in a save bar (story 5.5c): a hint, "Odbaci promjene" while there are unsaved changes, and the one "Spremi rotaciju"; sticky at the viewport's bottom from `sm` up (where the phone tab bar is gone) while there are unsaved changes, with the page's scroll padding clearing it; at the end of the builder (the history is a dialog behind a header button since story 7.18), and never sticky on a phone.
-- **UX-DR17** Hours table — tabular numerals, sortable and filterable by team and member; from 640 px a table scrolling inside its own container, and below 640 px stacked rows (story 7.6) — as are Ljudi and the shift types — with every value labelled and one `Poredano: {column} ↑|↓` sort control, the sort and filters kept across the switch. Since story 7.14 the table ends with a footer total (the stacked rows with one total line), the export keeps a status line about the downloaded file, and every hours figure above 0 has an ⓘ that opens a dialog of the shifts that compose it, as an equation with dates (FR-42b).
+- **UX-DR17** Hours table — tabular numerals, sortable and filterable by team and member; from 640 px a table scrolling inside its own container, and below 640 px stacked rows (story 7.6) — as are Ljudi and the shift types — with every value labelled and one `Poredano: {column} ↑|↓` sort control, the sort and filters kept across the switch. Since story 7.14 the table ends with a footer total (the stacked rows with one total line), the export keeps a status line about the downloaded file, and every hours figure above 0 has an ⓘ that opens a dialog of the shifts that compose it, as an equation with dates (FR-42b). Since 2026-10-10 the leave reads in days only (`3 dana`, `—` at 0), sorts and totals by days, and is one column of days in the export; its ⓘ lists the charged dates, `+1 dan` each.
 - **UX-DR18** Calendar mode switch — segmented, two modes (*Moj raspored* default on mobile for member-role, *Sve smjene*), persisting across month navigation within a session.
 - **UX-DR19** Team/member filter — one chip bar shared by *Kalendar* and *Sati* (story 7.5): `Smjena: sve|<team>` and `Osoba: sve|<name>`, populated from live records, never hard-coded, each option with its count; an active chip has its own ✕; a summary line always states what is shown (`Prikazano: Smjena B · 4 osobe od 17`); one `Poništi filtre` clears all filters without leaving the screen. In *Kalendar* a person replaces the team; in *Sati* the two combine. Below 640 px `Filtri · N` opens a bottom sheet, and active chips stay visible. All filter state lives in the URL (`?smjena=…&osoba=…`).
 
@@ -223,7 +223,7 @@ Any member opens a month and reads it — their own schedule or every team's —
 
 ### Epic 4: Hours compute themselves
 
-A member sees their shift counts, hours per band, total and leave hours for a period. An admin sees the same for everyone, sortable and filterable. Nobody enters or reconciles an hour by hand, and a member's own figures reconcile exactly with the admin's view of them. The admin can take the month away as an Excel file that matches the screen.
+A member sees their shift counts, hours per band, total and leave — in days — for a period. An admin sees the same for everyone, sortable and filterable. Nobody enters or reconciles an hour by hand, and a member's own figures reconcile exactly with the admin's view of them. The admin can take the month away as an Excel file that matches the screen.
 
 **Capabilities covered:** CAP-14
 **Standalone:** closes the month, which is one of the three failures the product exists to fix.
@@ -825,11 +825,11 @@ So that hours follow the people who worked rather than the people who were sched
 
 ## Epic 4: Hours compute themselves
 
-A member sees their shift counts, hours per band, total and leave hours for a period. An admin sees the same for everyone, sortable and filterable. Nobody enters or reconciles an hour by hand, and a member's own figures reconcile exactly with the admin's view of them. The admin can take the month away as an Excel file that matches the screen.
+A member sees their shift counts, hours per band, total and leave — in days — for a period. An admin sees the same for everyone, sortable and filterable. Nobody enters or reconciles an hour by hand, and a member's own figures reconcile exactly with the admin's view of them. The admin can take the month away as an Excel file that matches the screen.
 
 **Capabilities:** CAP-14 · **Governed by:** AD-6, AD-7, AD-13 · **Proves:** Q8, Q10, Q19 · **UX:** UX-DR17, 29, 44
 
-**Sequencing note.** This epic delivers worked hours in full. CAP-14's *leave hours* half needs leave records, which arrive in Epic 5 — so the column exists here and is populated there. Epic 4 does not depend on Epic 5 to be correct or useful; it is complete for every hour actually worked.
+**Sequencing note.** This epic delivers worked hours in full. CAP-14's *leave* half — the leave days, since 2026-10-10 — needs leave records, which arrive in Epic 5, so the column exists here and is populated there. Epic 4 does not depend on Epic 5 to be correct or useful; it is complete for every hour actually worked.
 
 ### Story 4.1: A member sees their own hours, split by band
 
@@ -871,7 +871,7 @@ So that I can close the month and answer a question about any number in it.
 **Given** a period and an organization
 **When** an admin opens organization hours
 **Then** every member appears with shift counts, hours per band and total (CAP-14)
-**And** leave hours are reported in their own column, which is populated once leave records exist in Epic 5 and is empty until then
+**And** leave hours are reported in their own column, which is populated once leave records exist in Epic 5 and is empty until then (reinterpreted 2026-10-10: leave in days, see spec-hours-as-on-screen-leave-in-days)
 
 **Given** the hours table
 **When** it renders
@@ -900,7 +900,7 @@ So that I can send the month onward without retyping a number.
 
 **Given** an organization with any number of Hour Bands
 **When** the file is built
-**Then** it has one column per band, named by the organization's bands, next to Member, Team, shift count, Total and Leave Hours; nothing names day or night in code (DI-8)
+**Then** it has one column per band, named by the organization's bands, next to Member, Team, shift count, Total and Leave Hours; nothing names day or night in code (DI-8) (reinterpreted 2026-10-10: leave in days, see spec-hours-as-on-screen-leave-in-days)
 **And** the security fixture, whose bands split shifts, exports its split figures exactly (AD-15)
 
 **Given** the exported figures
@@ -917,7 +917,7 @@ So that I can send the month onward without retyping a number.
 
 **Given** Epic 5 not yet delivered
 **When** the file is built
-**Then** the leave-hours column exists and is empty, and fills with no change to the export once leave records exist
+**Then** the leave-hours column exists and is empty, and fills with no change to the export once leave records exist (reinterpreted 2026-10-10: leave in days, see spec-hours-as-on-screen-leave-in-days)
 
 **Given** a member-role account
 **When** any surface renders
@@ -1038,7 +1038,7 @@ So that I am choosing an outcome rather than clearing a list.
 **Given** a chosen resolution
 **When** it is applied
 **Then** it is recorded against `(organization, member, date, team)` with the acting admin and a timestamp, and the conflict no longer derives as unresolved (AD-4, AD-11, Q11)
-**And** the absent member's hours land as leave hours rather than worked hours (CAP-16)
+**And** the absent member's hours land as leave hours rather than worked hours (CAP-16) (reinterpreted 2026-10-10: leave in days, see spec-hours-as-on-screen-leave-in-days)
 
 **Given** a queue of several conflicts
 **When** an admin looks for a way to clear them together

@@ -122,8 +122,8 @@ export const LEAVE_WRITE_DEPENDENTS: readonly QueryKey[] = [
  * A conflict resolution recorded (story 5.4b): both live resolution reads.
  * The organization's is what the queue (*Raspored*), the calendar's marks
  * (the conflict ring, and the uncovered mark an accepted conflict leaves) and
- * an admin's *Sati* (the count, and the leave hours an accepted conflict
- * moves) derive from; the viewer's own is a member's *Sati* — an admin's
+ * an admin's *Sati* (the count, and the worked hours an accepted conflict
+ * takes out) derive from; the viewer's own is a member's *Sati* — an admin's
  * decision on their own conflict changes it. No leave, schedule or member row
  * changes, so nothing else is re-read.
  */

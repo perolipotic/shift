@@ -1,4 +1,5 @@
 import {
+  leaveDaysOfMonth,
   memberHoursOfMonth,
   type Collision,
   type CollisionResolution,
@@ -27,8 +28,10 @@ import {
   HOURS_CONFLICTS_LOADING,
   HOURS_CONFLICTS_UNAVAILABLE,
   conflictCountOf,
+  leaveRecordsIn,
   leaveShiftsOf,
   type HoursConflictsState,
+  type LeaveRecordsByMember,
 } from '@/features/hours/services/hours-conflicts';
 
 /**
@@ -50,6 +53,13 @@ import {
  * (`durationValuesOf`), never summed, rounded or recomputed.
  *
  * Nothing reads a band's name for meaning: it is shown as stored.
+ *
+ * LEAVE IS COUNTED IN DAYS, AND ONLY IN DAYS (human, 2026-10-10). The leave
+ * figure is the member's charged leave days in the month — the domain's
+ * `leaveDaysOfMonth` over the leave records *Sati* already read, the count
+ * *Godišnji* charges: `3 dana`. An accepted-uncovered or replaced shift is
+ * out of every band, the total and the shift count, and appears only as its
+ * leave day, never as hours. The domain's `leaveMinutes` is shown nowhere.
  *
  * THE CONFLICT COUNT STANDS BESIDE THE FIGURES (story 5.3d): the viewer's
  * shifts in unresolved conflict in the month, `./hours-conflicts`'s count,
@@ -215,7 +225,10 @@ export function hoursSearchTo(search: HoursSearch, change: HoursSearchChange): H
  * plus every hour band and every shift type with its versions — archived ones
  * included, as the schedule may still name them — and, since story 5.4b, the
  * member's shifts accepted as uncovered or, since story 5.4c, replaced (`leaveKeys`, every member's keys or
- * only theirs), which the domain counts as leave rather than work.
+ * only theirs), which the domain counts as leave rather than work: out of the
+ * bands, the total and the shift count, into its `leaveMinutes` — kept only
+ * for that removal and deliberately shown nowhere, since leave is counted in
+ * days (human decision 2026-10-10).
  */
 export function memberHoursInputOf(
   snapshot: CalendarSnapshot,
@@ -246,34 +259,68 @@ export function figureIsEmpty(figure: HoursFigure): boolean {
   return figure.values.hours === 0 && figure.values.minutes === 0;
 }
 
+/** A count of leave days as `t()` renders it: `1 dan`, `3 dana`. */
+// A type alias, not an interface: its values go to `t()`.
+export type LeaveDaysValues = { readonly count: number };
+
+/** A count of leave days as a figure, `t('count.days')`: `3 dana`, and one line's `1 dan` in the leave's ⓘ. */
+export interface LeaveDaysFigure {
+  readonly key: 'count.days';
+  readonly values: LeaveDaysValues;
+}
+
+/** A count of leave days as a figure; never summed or recomputed here. */
+export function leaveDaysFigureOf(days: number): LeaveDaysFigure {
+  return { key: 'count.days', values: { count: days } };
+}
+
 /**
- * THE ONE RULE OF AN EMPTY LEAVE: zero means empty — an absence, never a
- * claimed `0 h` or `0:00`. The screen (`leaveFigureOf`) and the file
- * (`./hours-export`) both decide by it, from the domain's minutes.
+ * THE ONE RULE OF AN EMPTY LEAVE: no charged day means empty — an absence,
+ * never a claimed `0 dana`. The screen (`leaveFigureOf`) and the file
+ * (`./hours-export`) both decide by it, from the domain's day count.
  */
-export function leaveIsEmpty(minutes: number): boolean {
-  return minutes === 0;
+export function leaveIsEmpty(days: number): boolean {
+  return days === 0;
 }
 
-/** Leave as a figure, or `null` when it is empty ({@link leaveIsEmpty}). */
-function leaveFigureOf(minutes: number): HoursFigure | null {
-  return leaveIsEmpty(minutes) ? null : figureOf(minutes);
+/** Leave as a figure of days, or `null` when it is empty ({@link leaveIsEmpty}). */
+export function leaveFigureOf(days: number): LeaveDaysFigure | null {
+  return leaveIsEmpty(days) ? null : leaveDaysFigureOf(days);
 }
 
-/** The key a leave reads through: its duration's, or the empty mark `—` for none. */
-export function leaveMessageKey(leave: HoursFigure | null): ReturnType<typeof durationMessageKey> | 'sati.noFigure' {
+/** The key a leave reads through: its days, `3 dana`, or the empty mark `—` for none. */
+export function leaveMessageKey(leave: LeaveDaysFigure | null): 'sati.noFigure' | 'count.days' {
   return leave === null ? 'sati.noFigure' : leave.key;
 }
 
 /** A leave as `t()` renders it: the empty mark takes no values. */
 export interface LeaveShown {
   readonly key: ReturnType<typeof leaveMessageKey>;
-  readonly values: Partial<DurationValues>;
+  readonly values: Partial<LeaveDaysValues>;
 }
 
-/** The leave as Sati and the table render it: `—` for none, else its duration. */
-export function leaveShownOf(leave: HoursFigure | null): LeaveShown {
+/** The leave as *Sati* and the table render it: `—` for none, else its days. */
+export function leaveShownOf(leave: LeaveDaysFigure | null): LeaveShown {
   return { key: leaveMessageKey(leave), values: leave?.values ?? {} };
+}
+
+/**
+ * The member's charged leave dates of `month` (`YYYY-MM`), in order: the
+ * domain's `leaveDaysOfMonth` over their records and the calendar's schedule
+ * recipe (`memberScheduleInputOf`), which the hours' `memberHoursInputOf`
+ * builds on. Their count is the leave figure.
+ *
+ * @throws RangeError on any precondition of `leaveDaysOfMonth`.
+ */
+export function memberLeaveDatesOf(
+  snapshot: CalendarSnapshot,
+  history: CalendarMemberHistory,
+  leaveRecords: LeaveRecordsByMember,
+  month: string,
+): readonly string[] {
+  const records = leaveRecordsIn(leaveRecords, history.memberId);
+
+  return records.length === 0 ? [] : leaveDaysOfMonth(memberScheduleInputOf(snapshot, history), records, month);
 }
 
 /** One band's row: its name as stored, its hours, and the shifts overlapping it. */
@@ -293,12 +340,13 @@ export interface MyHoursView {
   /** Every band, in start order, those with 0 h included; none with no bands. */
   readonly bands: readonly HoursBandRow[];
   /**
-   * The month's leave, or `null` when it is 0 — drawn empty (`—`), an absence
-   * rather than a claimed `0 h`. Never in a band or the total. Since story
-   * 5.4b it is the month's shifts accepted as uncovered, which the domain
-   * moves out of the bands, the total and the shift count.
+   * The month's leave, or `null` when it is empty — drawn `—`, an absence
+   * rather than a claimed `0 dana`: the days *Godišnji* charges (R4.2:
+   * active, with a working shift, inside a leave record). A shift accepted as
+   * uncovered or replaced is out of the bands, the total and the shift count
+   * (5.4b, 5.4c), and counts only as its leave day.
    */
-  readonly leave: HoursFigure | null;
+  readonly leave: LeaveDaysFigure | null;
   /**
    * Working shifts with no times on their date — counted as shifts, never in
    * hours — or `null` when there are none, so the note is not shown.
@@ -327,6 +375,7 @@ export function myHoursViewOf(
   header: MonthHeader,
   hours: MemberHours,
   conflictCount: number,
+  leaveDays: number,
 ): MyHoursView {
   const names = new Map(snapshot.bands.map((band) => [band.id, band.name]));
 
@@ -341,7 +390,7 @@ export function myHoursViewOf(
 
       return { bandId: band.bandId, name, hours: figureOf(band.minutes), shiftCount: band.shiftCount };
     }),
-    leave: leaveFigureOf(hours.leaveMinutes),
+    leave: leaveFigureOf(leaveDays),
     untimedShiftCount: hours.untimedShiftCount > 0 ? hours.untimedShiftCount : null,
     conflictCount: conflictCount > 0 ? conflictCount : null,
   };
@@ -351,7 +400,8 @@ export function myHoursViewOf(
  * The viewer's hours of the month `search` names — or today's, `today` being
  * the organization's (`calendarTodayOf`) — with their own conflicts of that
  * month counted from `collisions` and their accepted-uncovered shifts in
- * `leaveKeys` counted as leave (story 5.4b), GUARDED: a `RangeError` from the
+ * `leaveKeys` counted as leave (story 5.4b) and their charged leave days
+ * counted over `leaveRecords`, GUARDED: a `RangeError` from the
  * domain is logged and is the one failure, never a crashed route and never a
  * figure.
  */
@@ -360,14 +410,16 @@ export function myHoursOf(
   search: HoursSearch,
   today: string,
   collisions: readonly Collision[],
-  leaveKeys: readonly CollisionResolution[] = [],
+  leaveKeys: readonly CollisionResolution[],
+  leaveRecords: LeaveRecordsByMember,
 ): MyHoursOutcome {
   try {
     const month = monthShownOf(search, today);
     const hours = memberHoursOfMonth(memberHoursInputOf(snapshot, snapshot.viewer, leaveKeys), month);
     const conflictCount = conflictCountOf(collisions, snapshot.viewer.memberId, month);
+    const leaveDays = memberLeaveDatesOf(snapshot, snapshot.viewer, leaveRecords, month).length;
 
-    return { ok: true, view: myHoursViewOf(snapshot, monthHeaderOf(month, today), hours, conflictCount) };
+    return { ok: true, view: myHoursViewOf(snapshot, monthHeaderOf(month, today), hours, conflictCount, leaveDays) };
   } catch (cause) {
     if (!(cause instanceof RangeError)) throw cause;
 
@@ -464,6 +516,7 @@ export function hoursReadsOf(
       readonly today: string;
       readonly collisions: readonly Collision[];
       readonly leaveKeys: readonly CollisionResolution[];
+      readonly leaveRecords: LeaveRecordsByMember;
     } {
   if (state.refusal !== null) return { ready: false, surface: hoursReadRefusedOf(true) };
   if (conflicts?.kind === HOURS_CONFLICTS_UNAVAILABLE) {
@@ -479,6 +532,7 @@ export function hoursReadsOf(
     today,
     collisions: conflicts.collisions,
     leaveKeys: conflicts.leaveKeys,
+    leaveRecords: conflicts.leaveRecords,
   };
 }
 
@@ -500,7 +554,7 @@ export function myHoursSurfaceOf(
 
   if (!reads.ready) return reads.surface;
 
-  const outcome = myHoursOf(reads.snapshot, search, reads.today, reads.collisions, reads.leaveKeys);
+  const outcome = myHoursOf(reads.snapshot, search, reads.today, reads.collisions, reads.leaveKeys, reads.leaveRecords);
 
   if (outcome.ok) {
     return {

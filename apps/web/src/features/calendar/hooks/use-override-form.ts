@@ -163,13 +163,13 @@ function writeFailureOf(code: OverrideChangeRefusal): OverrideWriteFailure {
   return OVERRIDE_FAILED;
 }
 
-/** No leave-hours keys: one frozen array, so a default never changes the preview's memo. */
+/** No decided-leave keys: one frozen array, so a default never changes the preview's memo. */
 const NO_LEAVE_KEYS: readonly CollisionResolution[] = Object.freeze([]);
 
 export function useOverrideForm(
   snapshot: CalendarSnapshot | null,
   detail: DayDetail | null,
-  /** The leave-hours keys the preview's hours count as leave, as *Sati* does (story 7.9). */
+  /** The decided-leave keys whose shifts the preview's hours leave out, as *Sati* does (story 7.9). */
   leaveKeys: readonly CollisionResolution[] = NO_LEAVE_KEYS,
 ) {
   const queryClient = useQueryClient();

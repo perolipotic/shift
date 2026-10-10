@@ -21,11 +21,12 @@ import {
   type SeededRotation,
 } from '../../utils/database-helper.ts';
 import { ADMIN_STATE, MEMBER_STATE, RUN_TIMEZONE } from '../../utils/run-fixture.ts';
-import { fill, hr, plural } from '../../utils/i18n.ts';
+import { escapeRegExp, fill, hr, plural } from '../../utils/i18n.ts';
 import { expectNoHorizontalScroll, expectNoInnerHorizontalScroll } from '../../utils/layout.ts';
+import { chargedLeaveDates, chargedLeaveDays } from '../../utils/rotation.ts';
 import { hoursExportFileName, readXlsx, type XlsxCell } from '../../utils/xlsx.ts';
 import { expect, test } from '../../utils/custom-fixtures.ts';
-import { HoursPage } from '../../pages/hours.page.ts';
+import { HoursPage, leaveText } from '../../pages/hours.page.ts';
 import { sortControlName } from '../../pages/sort-control.ts';
 
 /**
@@ -138,6 +139,33 @@ function minutesOfFigure(text: string): number | null {
   return Number(found[1] ?? 0) * 60 + Number(found[2] ?? 0);
 }
 
+/**
+ * The number format a figure is written in, by how the screen reads it
+ * (`192 h`, `12 h 30 min`, `30 min`): the file reads as the screen.
+ */
+function formatOfFigure(text: string): string | null {
+  const trimmed = text.trim();
+
+  if (/^\d+ h$/.test(trimmed)) return '[h] "h"';
+  if (/^\d+ h \d+ min$/.test(trimmed)) return '[h] "h" m "min"';
+  if (/^\d+ min$/.test(trimmed)) return '[m] "min"';
+
+  return null;
+}
+
+/** A leave as a row reads it, as the file's one cell holds it: `3 dana` → 3; `—` → none. */
+function leaveDaysOfFigure(text: string): number | null {
+  const trimmed = text.trim();
+
+  if (trimmed === sati.noFigure) return null;
+
+  const days = /^(\d+) dana?$/.exec(trimmed);
+
+  if (days === null) throw new Error(`E2E: the leave ${trimmed} is not a count of days`);
+
+  return Number(days[1]);
+}
+
 /** The month after `month`, `YYYY-MM`. */
 function nextMonth(month: string): string {
   const [year, index] = month.split('-').map(Number) as [number, number];
@@ -175,12 +203,15 @@ interface ExportedTable {
  * Exports what the table shows and holds the file to it (story 4.3): its
  * name, the sheet's, the headings, and every row in order — text as shown,
  * the shift count and the conflict count (story 5.3d) numbers, every hour
- * figure a `[h]:mm` duration equal to the screen's minutes, and an empty
- * figure (`—`) an absent cell.
+ * figure a duration equal to the screen's minutes in the number format that
+ * reads as the screen does (`192 h`, `12 h 30 min`, `30 min`), and an empty
+ * figure an absent cell. The leave is its days (`3 dana`), a plain number
+ * under a heading that names days, absent at 0. The headings returned are
+ * the file's.
  */
 async function expectExportIsTable(hoursPage: HoursPage, fileName: string): Promise<ExportedTable> {
   await expect(hoursPage.exportButton).toBeEnabled();
-  const headings = (await hoursPage.columnHeaders.allTextContents()).map((text) => text.trim());
+  const screen = (await hoursPage.columnHeaders.allTextContents()).map((text) => text.trim());
   const shown = await hoursPage.organizationMatrix();
   expect(shown.length, 'the table shows a row').toBeGreaterThan(0);
   const download = await hoursPage.exportDownload();
@@ -188,21 +219,15 @@ async function expectExportIsTable(hoursPage: HoursPage, fileName: string): Prom
   const workbook = readXlsx(readFileSync(await download.path()));
   expect(workbook.name).toBe(organization.export.sheetName);
   const [header, ...body] = workbook.rows;
+  const headings = screen.map((heading) => (heading === organization.leave ? organization.export.leaveDays : heading));
   expect(header?.map((cell) => (cell?.type === 'text' ? cell.value : null))).toEqual(headings);
   expect(body).toHaveLength(shown.length);
   for (const [index, written] of body.entries()) {
     const texts = shown[index] ?? [];
-    // The writer may leave out an empty trailing cell. Only the leave, the
-    // last column, may be empty, and only where the screen shows `—`: then,
-    // and only then, the row is one short, and that one cell is padded.
-    const leaveEmpty = headings.at(-1) === organization.leave && texts[headings.length - 1] === sati.noFigure;
-    expect(written.length, `cells of row ${String(index)}`).toBe(
-      leaveEmpty && written.length === headings.length - 1 ? headings.length - 1 : headings.length,
-    );
-    const cells = written.length === headings.length ? written : [...written, null];
-    expect(cells).toHaveLength(headings.length);
-    for (const [column, label] of headings.entries()) {
-      const cell = cells[column];
+    // The conflicts, the last column, are never empty: no trailing cell is left out.
+    expect(written.length, `cells of row ${String(index)}`).toBe(headings.length);
+    for (const [column, label] of screen.entries()) {
+      const cell = written[column];
       const text = texts[column] ?? '';
       if (label === organization.member || label === organization.team) {
         expect(cell, `${label} of row ${String(index)}`).toEqual({ type: 'text', value: text });
@@ -215,13 +240,18 @@ async function expectExportIsTable(hoursPage: HoursPage, fileName: string): Prom
           value: Number(/^\d+/.exec(text)?.[0]),
           format: null,
         });
-      } else if (label === organization.leave && text === sati.noFigure) {
-        // An empty figure (a leave of 0): no cell, never a 0:00.
-        expect(cell ?? null, `${label} of row ${String(index)} is empty`).toBeNull();
+      } else if (label === organization.leave) {
+        // The leave: its days a plain number, absent at 0 (`—`), never a duration.
+        const days = leaveDaysOfFigure(text);
+        expect(cell ?? null, `leave days of row ${String(index)}`).toEqual(
+          days === null ? null : { type: 'number', value: days, format: null },
+        );
       } else {
-        // A band, the total or a leave: a duration, read back as the screen's minutes.
+        // A band or the total: a duration, read back as the screen's minutes, formatted as the screen reads it.
         expect(cell?.type, `${label} of row ${String(index)} is a number`).toBe('number');
-        expect(cell?.type === 'number' ? cell.format : null).toBe('[h]:mm');
+        expect(cell?.type === 'number' ? cell.format : null, `${label} of row ${String(index)} reads ${text}`).toBe(
+          formatOfFigure(text),
+        );
         expect(exportedMinutes(cell), `${label} of row ${String(index)}`).toBe(minutesOfFigure(text));
       }
     }
@@ -338,6 +368,8 @@ test.describe('as a member', () => {
       await opener.click();
       await expect(hoursPage.explanation).toBeVisible();
       await expect(hoursPage.explanation.getByRole('listitem').first()).toBeVisible();
+      // A line names where its shift came from: the seeded rotation.
+      await expect(hoursPage.explanation.getByRole('listitem').filter({ hasText: sati.explain.source.rotation }).first()).toBeVisible();
       await close();
       await expect(hoursPage.explanation).toBeHidden();
       await expect(opener).toBeFocused();
@@ -934,7 +966,7 @@ test.describe('the filters on a phone, as an admin', () => {
 test.describe('the conflict count, as an admin', () => {
   test.use({ storageState: ADMIN_STATE });
 
-  test('the admin records leave and opens Sati: the count is in the table and the file without a reload, and no figure moves', async ({
+  test('the admin records leave and opens Sati: the count and the leave days are in the table and the file without a reload, and no hour moves', async ({
     page,
     hoursPage,
     peoplePage,
@@ -976,11 +1008,18 @@ test.describe('the conflict count, as an admin', () => {
     await expect(conflicts).toHaveText(`⚠${String(expected)}`);
     // The glyph is hidden from readers: the heading and the number carry it.
     await expect(conflicts.locator('[aria-hidden]')).toHaveText('⚠');
-    // EVERY FIGURE AS BEFORE: the shifts in conflict still count, and the leave stays empty.
-    await expect(await hoursPage.cellIn(row, organization.leave)).toHaveText(sati.noFigure);
+    // THE LEAVE IN DAYS: the record's working dates in the month, from the seeded schedule, as Godišnji charges them.
+    const recorded = { from: today, to: isoDaysAfter(today, 4) };
+    const days = chargedLeaveDays(seed!, recorded.from, recorded.to, month);
+    expect(days, "today's own Dan is a charged day").toBeGreaterThan(0);
+    const leaveDays = leaveText(days);
+    await expect(await hoursPage.cellIn(row, organization.leave)).toHaveText(leaveDays);
+    // EVERY HOUR AS BEFORE: the shifts in conflict still count.
     const after = await row.textContent();
     expect(after, 'the row reads after the write').not.toBeNull();
-    expect(after?.replace(/⚠\d+$/, '')).toBe(before?.replace(/0$/, ''));
+    expect(after?.replace(/⚠\d+$/, '').replace(new RegExp(`${escapeRegExp(leaveDays)}$`), '')).toBe(
+      before?.replace(/0$/, '').replace(new RegExp(`${escapeRegExp(sati.noFigure)}$`), ''),
+    );
     // Nobody else's count moves.
     await expect(await hoursPage.cellIn(hoursPage.organizationRow(fixture.member.name), organization.conflicts)).toHaveText('0');
     await expect(await hoursPage.cellIn(hoursPage.organizationRow(fixture.admin.name), organization.conflicts)).toHaveText('0');
@@ -997,6 +1036,33 @@ test.describe('the conflict count, as an admin', () => {
     expect(countOf(member.name)).toEqual({ type: 'number', value: expected, format: null });
     expect(countOf(fixture.member.name)).toEqual({ type: 'number', value: 0, format: null });
     expect(countOf(fixture.admin.name)).toEqual({ type: 'number', value: 0, format: null });
+    // The leave days, the same number the row shows, under a heading that names days; no leave hours.
+    const leaveColumn = headings.indexOf(organization.export.leaveDays);
+    expect(leaveColumn, 'the file has the leave days column').toBeGreaterThan(-1);
+    expect(headings[leaveColumn + 1]).toBe(organization.conflicts);
+    const leaveOf = (name: string) => {
+      const cells = body.find((one) => one[0]?.type === 'text' && one[0].value === name) ?? [];
+
+      return cells[leaveColumn] ?? null;
+    };
+    expect(leaveOf(member.name)).toEqual({ type: 'number', value: days, format: null });
+    expect(leaveOf(fixture.member.name)).toBeNull();
+
+    // THE LEAVE'S ⓘ: a line per charged date, `+1 dan` each, ⚠ on each in unresolved conflict, = the row's days.
+    await hoursPage.rowLeaveExplainButton(member.name).click();
+    const leaveDialog = hoursPage.explanationOf(sati.leave);
+    await expect(leaveDialog).toBeVisible();
+    await expect(leaveDialog.getByRole('listitem')).toHaveCount(days);
+    // The first line names the charged date's shift as `team · type`, the seeded pattern's type on that date.
+    const [firstCharged] = chargedLeaveDates(seed!, recorded.from, recorded.to, month);
+    await expect(leaveDialog.getByRole('listitem').first()).toContainText(
+      fill(sati.explain.leaveLine, { team: team.name, shiftType: firstCharged!.shiftType }),
+    );
+    await expect(leaveDialog.getByRole('listitem').filter({ hasText: sati.explain.conflict })).toHaveCount(expected);
+    await expect(leaveDialog.getByRole('listitem').filter({ hasText: plural(hr.count.days, 1) })).toHaveCount(days);
+    await expect(leaveDialog.getByText(leaveDays, { exact: true })).toBeVisible();
+    await hoursPage.explanationCloseOf(sati.leave).click();
+    await expect(leaveDialog).toBeHidden();
 
     // STORY 7.6, ON A PHONE: the member's stacked row says `⚠` and the
     // shifts in words under the conflicts label; a row at zero has no such
@@ -1018,6 +1084,9 @@ test.describe('the conflict count, as an admin', () => {
     const later = collidingIn(nextMonth(month), today);
     await expect(await hoursPage.cellIn(row, organization.conflicts)).toHaveText(
       later === 0 ? '0' : `⚠${String(later)}`,
+    );
+    await expect(await hoursPage.cellIn(row, organization.leave)).toHaveText(
+      leaveText(chargedLeaveDays(seed!, recorded.from, recorded.to, nextMonth(month))),
     );
     expect(await page.evaluate(() => (window as unknown as { noReload?: boolean }).noReload)).toBe(true);
   });
@@ -1152,7 +1221,7 @@ test('a member with one of their own conflicts resolved reads exactly one fewer 
   }
 });
 
-test('a member with their own leave reads their own line of shifts in conflict', async ({ browser, fixture }) => {
+test('a member with their own leave reads their own line of shifts in conflict and their leave in days', async ({ browser, fixture }) => {
   test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
   const { today, team } = await seededTeam(fixture.slug);
   const member = await seedLeaveMember(fixture.slug, team.id, today, 20);
@@ -1165,6 +1234,16 @@ test('a member with their own leave reads their own line of shifts in conflict',
     await hours.goto();
     await expect(hours.totalTile).toBeVisible();
     await expect(hours.conflictsLine).toHaveText(plural(sati.conflicts, expected));
+    // *Moji sati* counts the leave in days, the record's working dates in the month, from the seeded schedule.
+    const days = chargedLeaveDays(seed!, today, isoDaysAfter(today, 4), today.slice(0, 7));
+    await expect(hours.figureIn(hours.leaveRow, leaveText(days))).toBeVisible();
+    // Its ⓘ lists them, each in unresolved conflict.
+    await hours.leaveExplainButton.click();
+    const dialog = hours.explanationOf(sati.leave);
+    await expect(dialog.getByRole('listitem')).toHaveCount(days);
+    await expect(dialog.getByRole('listitem').filter({ hasText: sati.explain.conflict })).toHaveCount(expected);
+    await hours.explanationCloseOf(sati.leave).click();
+    await expect(dialog).toBeHidden();
     // Their own figures, never the table.
     await expect(hours.organizationTable).toHaveCount(0);
   } finally {

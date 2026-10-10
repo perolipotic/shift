@@ -81,6 +81,7 @@ export {
   isLeaveDay,
   leaveBalanceOf,
   leaveCostOf,
+  leaveDaysOfMonth,
   leavePreviewOf,
   leaveYearOf,
   MAX_LEAVE_RANGE_DAYS,

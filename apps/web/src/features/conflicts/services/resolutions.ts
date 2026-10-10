@@ -66,13 +66,17 @@ export const CONFLICT_RESOLUTION_KINDS = ['accept_uncovered', 'replace_member', 
 
 export type ConflictResolutionKind = (typeof CONFLICT_RESOLUTION_KINDS)[number];
 
-/** The kind story 5.4b writes: the shift goes uncovered, and the absent member's hours become leave hours. */
+/**
+ * The kind story 5.4b writes: the shift goes uncovered, and leaves the absent
+ * member's worked hours, counting only as their leave day (since 2026-10-10).
+ */
 export const ACCEPT_UNCOVERED = 'accept_uncovered' satisfies ConflictResolutionKind;
 
 /**
  * The kind story 5.4c writes, through 0032's function alone: someone else is
  * put on the shift, and the absent member — still rostered, on leave — has
- * their hours as leave hours, as for {@link ACCEPT_UNCOVERED}.
+ * the shift out of their worked hours, counting only as their leave day, as
+ * for {@link ACCEPT_UNCOVERED}.
  */
 export const REPLACE_MEMBER = 'replace_member' satisfies ConflictResolutionKind;
 
@@ -337,7 +341,8 @@ export function conflictResolutionsAnswerOf<Answer extends ConflictResolutionRow
 /**
  * THE SPLIT BY KIND (story 5.4b): the keys of the resolutions that accepted
  * their conflict as uncovered, in the order given. *Sati* moves each one's
- * shift into the absent member's leave hours, and the admin's calendar marks
+ * shift out of the absent member's worked hours (it counts only as their
+ * leave day, 2026-10-10), and the admin's calendar marks
  * its cell uncovered; no other kind does either.
  */
 export function acceptedUncoveredOf(resolutions: readonly ConflictResolution[]): readonly CollisionResolution[] {
@@ -350,8 +355,8 @@ export function acceptedUncoveredOf(resolutions: readonly ConflictResolution[]):
 const LEAVE_HOURS_KINDS: ReadonlySet<ConflictResolutionKind> = new Set([ACCEPT_UNCOVERED, REPLACE_MEMBER]);
 
 /**
- * THE LEAVE-HOURS SPLIT (stories 5.4b, 5.4c): the keys of the resolutions
- * whose absent member's shift counts as leave hours, in the order given —
+ * THE DECIDED-LEAVE SPLIT (stories 5.4b, 5.4c): the keys of the resolutions
+ * whose absent member's shift leaves their worked hours, in the order given —
  * accepted as uncovered, and replaced. A replacement's override only ADDS
  * (human, 2026-10-02): the absent member stays rostered, so their shift is
  * still in their schedule and must be moved to leave; the replacement's band

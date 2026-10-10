@@ -167,6 +167,6 @@ export class ConflictResolutionPage extends BasePage {
 
   /** One card's strip labels, in order. */
   stripLabelsOf(option: Locator): Locator {
-    return option.getByText(new RegExp(`^(${resolution.coverageLabel}|${resolution.hoursLabel}|${resolution.balanceLabel})$`));
+    return option.getByText(new RegExp(`^(${resolution.coverageLabel}|${resolution.absentLabel}|${resolution.balanceLabel})$`));
   }
 }

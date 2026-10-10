@@ -198,6 +198,9 @@ const SANCTIONED_PLURAL_KEYS = [
   'raspored.resolution.balance',
   // STORY 5.4d: what the third card gives back to the balance, `+1 dan`.
   'raspored.resolution.balanceGained',
+  // LEAVE IN DAYS (2026-10-10): the first two cards' leave term, the day
+  // the decision charges (`1 dan godišnjeg`), where it said hours.
+  'raspored.resolution.daysAsLeave',
   // SINCE STORY 6.3: an admin's Danas — how many of the unresolved conflicts are
   // past (`1 na datum koji je prošao`, `3 na datume koji su prošli`), and how
   // many of a shift's roster are present (`3 od 4 člana`, `5 od 5 članova`).
@@ -1479,6 +1482,9 @@ const SANCTIONED_SCREEN_KEYS = [
   'sati.organization.export.pending',
   'sati.organization.export.failed',
   'sati.organization.export.sheetName',
+  // LEAVE IN DAYS (2026-10-10): the file's leave heading names its unit,
+  // days, since a number format cannot inflect `dan/dana`.
+  'sati.organization.export.leaveDays',
   'sati.organization.export.fileName',
   // STORY 5.3d: the organization table's and the file's column of shifts in
   // unresolved conflict, and the retry the unavailable message offers when a
@@ -1500,6 +1506,8 @@ const SANCTIONED_SCREEN_KEYS = [
   'sati.explain.month',
   'sati.explain.memberMonth',
   'sati.explain.line',
+  // LEAVE IN DAYS (2026-10-10): a leave line names a charged date's team and shift type, with no source.
+  'sati.explain.leaveLine',
   'sati.explain.conflict',
   'sati.explain.plus',
   'sati.explain.equals',
@@ -1642,9 +1650,12 @@ const SANCTIONED_SCREEN_KEYS = [
   'raspored.resolution.acceptBody',
   'raspored.resolution.coverageLabel',
   'raspored.resolution.uncovered',
-  'raspored.resolution.hoursLabel',
-  'raspored.resolution.hoursAsLeave',
+  // LEAVE IN DAYS (2026-10-10): the strip's middle term is named for whom it
+  // is about, the absent member, since it reads a leave day on cards 1–2 and
+  // hours of work on card 3; and its empty mark for a date that charges no day.
+  'raspored.resolution.absentLabel',
   'raspored.resolution.noHours',
+  'raspored.resolution.noDays',
   'raspored.resolution.balanceLabel',
   'raspored.resolution.balanceUnchanged',
   'raspored.resolution.hintChoose',

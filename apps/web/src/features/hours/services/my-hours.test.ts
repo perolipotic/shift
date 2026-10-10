@@ -1,4 +1,4 @@
-import { memberHoursOfMonth, type Collision, type MemberHours } from '@shift/domain';
+import { leaveCostOf, memberHoursOfMonth, type Collision, type MemberHours } from '@shift/domain';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -6,8 +6,8 @@ import {
   readCalendar,
   type CalendarSnapshot,
 } from '@/features/calendar/services/snapshot';
-import { calendarDayListOf, monthHeaderOf } from '@/features/calendar/utils/month';
-import { HOURS_CONFLICTS_READY, type HoursConflictsState } from '@/features/hours/services/hours-conflicts';
+import { calendarDayListOf, memberScheduleInputOf, monthHeaderOf } from '@/features/calendar/utils/month';
+import { HOURS_CONFLICTS_READY, NO_LEAVE_RECORDS, type HoursConflictsState, type LeaveRecordsByMember } from '@/features/hours/services/hours-conflicts';
 import {
   HOURS_BANDS_HEADING_ID,
   HOURS_MONTH_HEADING_ID,
@@ -17,7 +17,8 @@ import {
   HOURS_TEAM_PARAM,
   hoursSearchTo,
   legacyHoursSearchOf,
-  figureOf,
+  leaveDaysFigureOf,
+  leaveFigureOf,
   leaveIsEmpty,
   leaveShownOf,
   memberHoursInputOf,
@@ -57,7 +58,7 @@ const MONTH = '2026-09';
 
 /** No leave, so no collision: the figures exactly as before story 5.3d. */
 const NO_COLLISIONS: readonly Collision[] = [];
-const READY: HoursConflictsState = { kind: HOURS_CONFLICTS_READY, collisions: NO_COLLISIONS, leaveKeys: [] };
+const READY: HoursConflictsState = { kind: HOURS_CONFLICTS_READY, collisions: NO_COLLISIONS, leaveKeys: [], acceptedKeys: [], leaveRecords: NO_LEAVE_RECORDS };
 
 async function snapshotOf(
   rows: FixtureRows,
@@ -79,8 +80,8 @@ async function snapshotOf(
   return outcome.snapshot;
 }
 
-function viewOf(snapshot: CalendarSnapshot, search: HoursSearch = { mjesec: MONTH }): MyHoursView {
-  const outcome = myHoursOf(snapshot, search, TODAY, NO_COLLISIONS);
+function viewOf(snapshot: CalendarSnapshot, leaveRecords: LeaveRecordsByMember, search: HoursSearch = { mjesec: MONTH }): MyHoursView {
+  const outcome = myHoursOf(snapshot, search, TODAY, NO_COLLISIONS, [], leaveRecords);
 
   if (!outcome.ok) throw new Error(outcome.code);
 
@@ -194,7 +195,7 @@ describe("the viewer's month", () => {
   ])('$fixture: every figure is the domain\'s, in band order, names as stored', ({ snapshot, bands }) => {
     const current = snapshot();
     const hours = memberHoursOfMonth(memberHoursInputOf(current), MONTH);
-    const view = viewOf(current);
+    const view = viewOf(current, NO_LEAVE_RECORDS);
 
     expect(view.shiftCount).toBe(hours.shiftCount);
     expect(view.total.values).toEqual({
@@ -220,7 +221,7 @@ describe("the viewer's month", () => {
   });
 
   it('pilot: the member month holds 15 shifts, 180 h, split by the pilot bands without splitting a shift', () => {
-    const view = viewOf(pilot);
+    const view = viewOf(pilot, NO_LEAVE_RECORDS);
 
     expect(view.shiftCount).toBe(15);
     expect(shown(view.total)).toBe('180 h');
@@ -232,7 +233,7 @@ describe("the viewer's month", () => {
   });
 
   it('UJ-5: every shift straddles a band edge, so the band counts sum to twice the shifts', () => {
-    const view = viewOf(uj5);
+    const view = viewOf(uj5, NO_LEAVE_RECORDS);
 
     expect(view.bands.reduce((sum, band) => sum + band.shiftCount, 0)).toBe(2 * view.shiftCount);
   });
@@ -248,35 +249,31 @@ describe("the viewer's month", () => {
       day.shifts.filter((shift) => shift.cell.shiftTypeId !== null && working.has(shift.cell.shiftTypeId)),
     );
 
-    expect(viewOf(current).shiftCount).toBe(workingShifts.length);
+    expect(viewOf(current, NO_LEAVE_RECORDS).shiftCount).toBe(workingShifts.length);
   });
 
   it('follows a roster override: a shift the viewer was taken off leaves their hours', async () => {
-    const before = viewOf(pilot);
+    const before = viewOf(pilot, NO_LEAVE_RECORDS);
     const days = calendarDayListOf(pilot, pilot.viewer, MONTH, TODAY) ?? [];
     const worked = days.find((day) =>
       day.shifts.some((shift) => shift.cell.shiftTypeId === 'pilot-dan' || shift.cell.shiftTypeId === 'pilot-noc'),
     );
 
     expect(worked).toBeDefined();
-    const after = viewOf(
-      await snapshotOf(PILOT, {
+    const after = viewOf(await snapshotOf(PILOT, {
         rosterOverrides: [calendarRosterOverrideRow('off', 'pilot-smjena-a', worked!.date, VIEWER_MEMBER, null)],
-      }),
-    );
+      }), NO_LEAVE_RECORDS);
 
     expect(after.shiftCount).toBe(before.shiftCount - 1);
     expect(shown(after.total)).toBe('168 h');
   });
 
   it('moving a band boundary changes band hours and never the total', async () => {
-    const moved = viewOf(
-      await snapshotOf({
+    const moved = viewOf(await snapshotOf({
         ...PILOT,
         bands: [bandRow('pilot-band-dan', 'Dan', '06:00:00'), bandRow('pilot-band-noc', 'Noć', '21:00:00')],
-      }),
-    );
-    const before = viewOf(pilot);
+      }), NO_LEAVE_RECORDS);
+    const before = viewOf(pilot, NO_LEAVE_RECORDS);
 
     expect(moved.total).toEqual(before.total);
     expect(moved.shiftCount).toBe(before.shiftCount);
@@ -292,8 +289,8 @@ describe("the viewer's month", () => {
   });
 
   it('shows the heading of the month, and the current one for a bad or missing month', () => {
-    expect(viewOf(pilot).header).toEqual(monthHeaderOf(MONTH, TODAY));
-    expect(viewOf(pilot).header).toMatchObject({
+    expect(viewOf(pilot, NO_LEAVE_RECORDS).header).toEqual(monthHeaderOf(MONTH, TODAY));
+    expect(viewOf(pilot, NO_LEAVE_RECORDS).header).toMatchObject({
       month: '2026-09',
       monthName: 'Rujan',
       year: '2026',
@@ -302,15 +299,15 @@ describe("the viewer's month", () => {
       isCurrent: true,
       current: '2026-09',
     });
-    expect(viewOf(pilot, hoursSearchOf({ mjesec: '2026-13' })).header.month).toBe('2026-09');
-    expect(viewOf(pilot, {}).header.month).toBe('2026-09');
-    expect(viewOf(pilot, { mjesec: '2026-10' }).header).toMatchObject({ month: '2026-10', isCurrent: false, current: '2026-09' });
+    expect(viewOf(pilot, NO_LEAVE_RECORDS, hoursSearchOf({ mjesec: '2026-13' })).header.month).toBe('2026-09');
+    expect(viewOf(pilot, NO_LEAVE_RECORDS, {}).header.month).toBe('2026-09');
+    expect(viewOf(pilot, NO_LEAVE_RECORDS, { mjesec: '2026-10' }).header).toMatchObject({ month: '2026-10', isCurrent: false, current: '2026-09' });
   });
 });
 
 describe('the matrix edges', () => {
   it('no shifts: an admin with no team has 0 h, 0 shifts and every band at 0 h', async () => {
-    const view = viewOf(await snapshotOf(PILOT, { viewers: [viewerRow([], { role: 'admin' })] }));
+    const view = viewOf(await snapshotOf(PILOT, { viewers: [viewerRow([], { role: 'admin' })] }), NO_LEAVE_RECORDS);
 
     expect(view.shiftCount).toBe(0);
     expect(shown(view.total)).toBe('0 h');
@@ -320,7 +317,7 @@ describe('the matrix edges', () => {
   });
 
   it('zero bands: the total is shown, and there is no band row', async () => {
-    const view = viewOf(await snapshotOf({ ...PILOT, bands: [] }));
+    const view = viewOf(await snapshotOf({ ...PILOT, bands: [] }), NO_LEAVE_RECORDS);
 
     expect(view.bands).toEqual([]);
     expect(shown(view.total)).toBe('180 h');
@@ -334,7 +331,7 @@ describe('the matrix edges', () => {
       ),
     };
     const snapshot = await snapshotOf(untimed);
-    const view = viewOf(snapshot);
+    const view = viewOf(snapshot, NO_LEAVE_RECORDS);
     const hours = memberHoursOfMonth(memberHoursInputOf(snapshot), MONTH);
 
     expect(view.untimedShiftCount).toBe(hours.untimedShiftCount);
@@ -365,13 +362,13 @@ describe('the matrix edges', () => {
       leaveMinutes: 0,
       untimedShiftCount: 0,
     };
-    const view = myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hours, 0);
+    const view = myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hours, 0, 0);
 
     expect(view.bands.map((band) => shown(band.hours))).toEqual(['12 h 30 min', '45 min']);
     expect(shown(view.total)).toBe('13 h 15 min');
   });
 
-  it('leave: 0 is empty, and a positive leave reads as a duration with no further change', () => {
+  it('leave: days only, `3 dana`, whatever the leave minutes; `—` at 0 days', () => {
     const hoursWith = (leaveMinutes: number): MemberHours => ({
       shiftCount: 1,
       bands: [
@@ -383,26 +380,59 @@ describe('the matrix edges', () => {
       leaveMinutes,
       untimedShiftCount: 0,
     });
-    const none = myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hoursWith(0), 0);
-    const some = myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hoursWith(750), 0);
+    const viewWith = (minutes: number, days: number) => myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hoursWith(minutes), 0, days);
+    const leaveOf = (minutes: number, days: number): string => {
+      const { key, values } = leaveShownOf(viewWith(minutes, days).leave);
 
-    expect(none.leave).toBeNull();
-    expect(some.leave).not.toBeNull();
-    expect(shown(some.leave!)).toBe('12 h 30 min');
+      return t(key, values);
+    };
+    const some = viewWith(750, 3);
+
+    expect(viewWith(0, 0).leave).toBeNull();
+    expect(leaveOf(0, 0)).toBe('—');
+    expect(some.leave).toEqual({ key: 'count.days', values: { count: 3 } });
+    // The domain's leave minutes are shown nowhere: leave is counted in days.
+    expect(leaveOf(750, 3)).toBe('3 dana');
+    expect(leaveOf(0, 3)).toBe('3 dana');
+    expect(leaveOf(0, 1)).toBe('1 dan');
+    expect(leaveOf(720, 0)).toBe('—');
     // Leave is never in the total or a band.
     expect(shown(some.total)).toBe('12 h');
     expect(some.bands.map((band) => shown(band.hours))).toEqual(['12 h', '0 h']);
   });
 
-  it('leave: zero is the one empty rule, and what a leave reads as goes through t()', () => {
+  it('leave: a record over a month edge is counted in each month as Godišnji charges it, the months summing to its cost', () => {
+    const record = { from: '2026-09-25', to: '2026-10-06' };
+    const records = new Map([[VIEWER_MEMBER, [record]]]);
+    const input = memberScheduleInputOf(pilot, pilot.viewer);
+    const daysIn = (month: string): number | null => {
+      const outcome = myHoursOf(pilot, { mjesec: month }, TODAY, NO_COLLISIONS, [], records);
+
+      if (!outcome.ok) throw new Error(outcome.code);
+
+      return outcome.view.leave?.values.count ?? null;
+    };
+    const september = leaveCostOf(input, record.from, '2026-09-30');
+    const october = leaveCostOf(input, '2026-10-01', record.to);
+
+    expect(september).toBeGreaterThan(0);
+    expect(daysIn('2026-09')).toBe(september);
+    expect(daysIn('2026-10')).toBe(october === 0 ? null : october);
+    expect(september + october).toBe(leaveCostOf(input, record.from, record.to));
+    // A month the record does not reach has no leave: `—`.
+    expect(daysIn('2026-11')).toBeNull();
+  });
+
+  it('leave: no day is the one empty rule, and what a leave reads as goes through t()', () => {
     expect(leaveIsEmpty(0)).toBe(true);
     expect(leaveIsEmpty(1)).toBe(false);
-    expect(leaveIsEmpty(750)).toBe(false);
+    expect(leaveFigureOf(0)).toBeNull();
     const none = leaveShownOf(null);
-    const some = leaveShownOf(figureOf(750));
+    const some = leaveShownOf(leaveFigureOf(2));
 
     expect(t(none.key, none.values)).toBe('—');
-    expect(t(some.key, some.values)).toBe('12 h 30 min');
+    expect(t(some.key, some.values)).toBe('2 dana');
+    expect(t(leaveDaysFigureOf(1).key, leaveDaysFigureOf(1).values)).toBe('1 dan');
   });
 
   it('a band the snapshot lacks is refused, never shown nameless', () => {
@@ -415,21 +445,21 @@ describe('the matrix edges', () => {
       untimedShiftCount: 0,
     };
 
-    expect(() => myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hours, 0)).toThrow(RangeError);
+    expect(() => myHoursViewOf(pilot, monthHeaderOf(MONTH, TODAY), hours, 0, 0)).toThrow(RangeError);
   });
 
   it('a RangeError from the domain is the one failure, logged, and no figure', () => {
     const errors = quiet();
     const broken: CalendarSnapshot = { ...pilot, bands: [...pilot.bands, { ...pilot.bands[0]!, startMinute: 3 }] };
 
-    expect(myHoursOf(broken, { mjesec: MONTH }, TODAY, NO_COLLISIONS)).toEqual({ ok: false, code: HOURS_UNAVAILABLE });
+    expect(myHoursOf(broken, { mjesec: MONTH }, TODAY, NO_COLLISIONS, [], NO_LEAVE_RECORDS)).toEqual({ ok: false, code: HOURS_UNAVAILABLE });
     expect(errors).toHaveBeenCalledWith(HOURS_UNAVAILABLE, expect.any(RangeError));
   });
 
   it('anything but a RangeError is not swallowed', () => {
     const broken = { ...pilot, get bands(): never { throw new TypeError('defect'); } } as unknown as CalendarSnapshot;
 
-    expect(() => myHoursOf(broken, { mjesec: MONTH }, TODAY, NO_COLLISIONS)).toThrow(TypeError);
+    expect(() => myHoursOf(broken, { mjesec: MONTH }, TODAY, NO_COLLISIONS, [], NO_LEAVE_RECORDS)).toThrow(TypeError);
   });
 });
 
@@ -464,8 +494,8 @@ describe('the surface state', () => {
 
     expect(surface.refusal).toBeNull();
     expect(surface.loading).toBe(false);
-    expect(surface.view).toEqual(viewOf(pilot));
-    expect(surface.month).toEqual(viewOf(pilot).header);
+    expect(surface.view).toEqual(viewOf(pilot, NO_LEAVE_RECORDS));
+    expect(surface.month).toEqual(viewOf(pilot, NO_LEAVE_RECORDS).header);
     expect(surface.navShown).toBe(true);
   });
 

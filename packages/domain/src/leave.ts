@@ -36,7 +36,7 @@
 
 import { checkDate, civilDayNumber, dateOfCivilDay } from './calendar.js';
 import { activeOn } from './roster.js';
-import { adjacentMonth, memberScheduleOfMonth, monthOf, type MemberScheduleDay, type MemberScheduleInput } from './schedule.js';
+import { adjacentMonth, datesOfMonth, memberScheduleOfMonth, monthOf, type MemberScheduleDay, type MemberScheduleInput } from './schedule.js';
 
 /**
  * The longest range or record accepted, in days, both ends included: annual
@@ -164,12 +164,12 @@ function intersect(range: LeaveRange, year: LeaveRange): LeaveRange | null {
 }
 
 /**
- * A cost counter over one member's input: each month of their schedule is
- * derived at most once per call. It counts the dates of an already-checked
- * range on which the member is active and {@link isLeaveDay} holds, skipping
- * any date inside one of `skip`.
+ * A leave-date collector over one member's input: each month of their
+ * schedule is derived at most once per call. It returns, in order, the dates
+ * of an already-checked range on which the member is active and
+ * {@link isLeaveDay} holds, skipping any date inside one of `skip`.
  */
-function costCounter(input: MemberScheduleInput): (range: LeaveRange, skip?: readonly LeaveRange[]) => number {
+function leaveDatesCollector(input: MemberScheduleInput): (range: LeaveRange, skip?: readonly LeaveRange[]) => readonly string[] {
   const months = new Map<string, readonly MemberScheduleDay[]>();
   const scheduleOf = (month: string): readonly MemberScheduleDay[] => {
     let days = months.get(month);
@@ -182,15 +182,21 @@ function costCounter(input: MemberScheduleInput): (range: LeaveRange, skip?: rea
 
   return (range, skip = []) => {
     const last = monthOf(range.to);
-    let cost = 0;
+    const dates: string[] = [];
     for (let month: string | null = monthOf(range.from); month !== null; month = month === last ? null : adjacentMonth(month, 1)) {
       for (const day of scheduleOf(month)) {
         if (!covers(range, day.date) || skip.some((other) => covers(other, day.date))) continue;
-        if (activeOn(input.statuses, day.date) && isLeaveDay(day, input.workingShiftTypeIds)) cost += 1;
+        if (activeOn(input.statuses, day.date) && isLeaveDay(day, input.workingShiftTypeIds)) dates.push(day.date);
       }
     }
-    return cost;
+    return dates;
   };
+}
+
+/** A cost counter over one member's input: the count of {@link leaveDatesCollector}'s dates. */
+function costCounter(input: MemberScheduleInput): (range: LeaveRange, skip?: readonly LeaveRange[]) => number {
+  const datesOf = leaveDatesCollector(input);
+  return (range, skip) => datesOf(range, skip).length;
 }
 
 /**
@@ -207,6 +213,53 @@ export function leaveCostOf(input: MemberScheduleInput, from: string, to: string
   const range = { from, to };
   checkRange('the leave range', range);
   return costCounter(input)(range);
+}
+
+/** A `YYYY-MM-DD`-shaped string, a real calendar date or not: what can be placed by string comparison. */
+const DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * The member's charged leave dates in `month` (R4.2), in order: every date of
+ * a record inside the month on which they are active and that is
+ * {@link isLeaveDay}. A record straddling the month counts only its dates
+ * inside it, so the months of one record sum to {@link leaveCostOf} over it.
+ * The count of a month's leave days is the length; the dates are what explain
+ * it.
+ *
+ * A record is checked as {@link leaveCostOf} checks a range, whole, whenever
+ * it reaches the month. A record whose ends are both `YYYY-MM-DD`-shaped —
+ * even an impossible date such as `2026-11-31` — and that lies wholly outside
+ * the month by string comparison is skipped unchecked, so a malformed record
+ * in another month cannot fail this one. An end that is not date-shaped at
+ * all cannot be placed, and fails the month.
+ *
+ * @throws RangeError when `month` is not a `YYYY-MM` in years 0001–9999; when
+ *   either end of any record is not `YYYY-MM-DD`-shaped; when a record
+ *   reaching the month has an end that is not a calendar date, ends before it
+ *   starts or is longer than {@link MAX_LEAVE_RANGE_DAYS}; and on any
+ *   precondition of {@link memberScheduleOfMonth}.
+ */
+export function leaveDaysOfMonth(input: MemberScheduleInput, records: readonly LeaveRange[], month: string): readonly string[] {
+  const dates = datesOfMonth(month);
+  const span: LeaveRange = { from: dates[0]!, to: dates[dates.length - 1]! };
+  const datesOf = leaveDatesCollector(input);
+  const charged = new Set<string>();
+  records.forEach((record, index) => {
+    const what = `leave record ${String(index)}`;
+    // Ends that are not date-shaped cannot be placed outside the month either.
+    if (!DATE_SHAPE.test(record.from)) throw new RangeError(`the start of ${what} is ${JSON.stringify(record.from)}, not a YYYY-MM-DD`);
+    if (!DATE_SHAPE.test(record.to)) throw new RangeError(`the end of ${what} is ${JSON.stringify(record.to)}, not a YYYY-MM-DD`);
+    const first = record.from < record.to ? record.from : record.to;
+    const last = record.from < record.to ? record.to : record.from;
+    if (last < span.from || first > span.to) return;
+    checkRange(what, record);
+    const inMonth: LeaveRange = {
+      from: record.from > span.from ? record.from : span.from,
+      to: record.to < span.to ? record.to : span.to,
+    };
+    for (const date of datesOf(inMonth)) charged.add(date);
+  });
+  return [...charged].sort();
 }
 
 /**

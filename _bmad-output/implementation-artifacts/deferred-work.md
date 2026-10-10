@@ -918,3 +918,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-18-organization-settings-facts-dialogs.md`
   summary: Organizacija has no *Satni pojasi* facts card (the mockup's summary of the hour bands; the header link to Satni pojasi stays), and the leave dialog has no *Tekuća godina godišnjeg* line. No criterion asks for them, and the card needs a second read.
   evidence: Retro R11; spec 7.18 Design Notes name both as not built.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-hours-as-on-screen-leave-in-days.md`
+  summary: The `.xlsx` has no footer row, while the Sati table ends in *Ukupno za prikazane osobe* (band hours, total and now leave days); FR-42a's "exactly the figures on screen" would want the total row in the file too.
+  evidence: Review of the leave-in-days change (2026-10-10, Blind Hunter). `hoursExportOf` writes only the header and the member rows; pre-existing since 4.3.

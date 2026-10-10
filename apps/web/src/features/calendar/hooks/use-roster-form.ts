@@ -146,7 +146,7 @@ function readyOf(...targets: readonly (() => HTMLElement | null)[]): HTMLElement
   return ready ?? null;
 }
 
-/** No leave-hours keys: one frozen array, so a default never changes the preview's memo. */
+/** No decided-leave keys: one frozen array, so a default never changes the preview's memo. */
 const NO_LEAVE_KEYS: readonly CollisionResolution[] = Object.freeze([]);
 
 export function useRosterForm(
@@ -158,7 +158,7 @@ export function useRosterForm(
    * `null` while it is not read (or failed), when nobody is grouped.
    */
   leave: readonly CandidateLeave[] | null = null,
-  /** The leave-hours keys the preview's hours count as leave, as *Sati* does (story 7.9). */
+  /** The decided-leave keys whose shifts the preview's hours leave out, as *Sati* does (story 7.9). */
   leaveKeys: readonly CollisionResolution[] = NO_LEAVE_KEYS,
 ) {
   const queryClient = useQueryClient();

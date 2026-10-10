@@ -68,7 +68,7 @@ Named protagonists; pronouns are they/them throughout.
   Ana is on Team C and has agreed the second week of September off. Damir opens Ana's record — 30 allocated, 12 used, 18 remaining — and enters 10.09–16.09. Before saving, the system shows the cost in Leave Days, counting only dates where Ana has a working shift. **Climax:** on save, each affected working shift becomes a visible Conflict; the shifts stay on the Calendar and the rotation is untouched. **Resolution:** Damir resolves two Conflicts by putting a colleague on those shifts and accepts the third as uncovered. Nothing was silently deleted. **Edge case:** a range overlapping leave Ana already has is refused rather than charged twice.
 
 - **UJ-4. Damir closes the month.**
-  End of September. Damir opens Hours, picks the month, and sees every Member with shift counts and hours per category — day, night, total — plus leave hours listed separately. One member's total is low; Damir drills in and sees two shifts were reassigned during week two's leave conflicts. **Climax:** the number is explainable without reconstructing anything. **Resolution:** they export the month to Excel and send it onward, and the file carries exactly the figures on screen (FR-42a).
+  End of September. Damir opens Hours, picks the month, and sees every Member with shift counts and hours per category — day, night, total — plus leave listed separately, in days. One member's total is low; Damir drills in and sees two shifts were reassigned during week two's leave conflicts. **Climax:** the number is explainable without reconstructing anything. **Resolution:** they export the month to Excel and send it onward, and the file carries exactly the figures on screen (FR-42a).
 
 - **UJ-5. A second organization proves the engine.**
   A security company with three Teams on a five-slot `DAY → DAY → NIGHT → OFF → OFF` pattern and 8-hour shifts is configured as a second tenant. **Climax:** it works with no code change, no migration, no branch. **Resolution:** the core principle is validated rather than asserted. This is a product acceptance test, not an end-user flow.
@@ -103,9 +103,8 @@ Downstream workflows and readers use these terms exactly. Introducing a synonym 
 - **Leave Allowance** — the Leave Days a Member is entitled to in a Leave Year.
 - **Leave Year** — the Organization-defined annual period against which Leave Allowance is measured.
 - **Leave Record** — a date range of annual leave for one Member, entered by an Admin.
-- **Leave Day** — one date within a Leave Record on which the Member had a working Scheduled Shift. Only Leave Days draw down Leave Balance.
+- **Leave Day** — one date within a Leave Record on which the Member was active and had a working Scheduled Shift (R4.2). Only Leave Days draw down Leave Balance, and the hours views report the leave as the Leave Days of the period, never as hours (FR-40). A record across a period's edge counts each date in its own period, so the periods of one record sum to its cost.
 - **Leave Balance** — Leave Allowance minus Leave Days consumed in the Leave Year.
-- **Leave Hours** — Nominal Durations of working Scheduled Shifts covered by a Leave Record. Reported separately; never counted into Band Hours or Total Hours.
 - **Conflict** — the state of a working Scheduled Shift whose Shift Roster includes a Member covered by a Leave Record on that date. A first-class, visible, persisted state.
 - **Conflict Resolution** — the explicit Admin action clearing a Conflict: **Accept as Uncovered**, **Replace Member**, or **Amend Leave**.
 - **Uncovered Shift** — a working Scheduled Shift deliberately recorded as having no Member to work it, via Accept as Uncovered.
@@ -527,12 +526,12 @@ Working and non-working shift types are distinguishable at a glance.
 
 ### 5.10 Hours
 
-**Description:** Hours are derived, never entered. For each rostered Member, a working Scheduled Shift's Nominal Duration is split across the Organization's Hour Bands by interval intersection, so a shift straddling a boundary is divided correctly rather than labelled wholesale. Shifts covered by leave are reported as Leave Hours, separately, so a Member on holiday never appears to have worked. Counts of shifts are reported alongside hours, because "5 day shifts, 60 hours" is how the numbers are actually checked. Realizes UJ-2, UJ-4.
+**Description:** Hours are derived, never entered. For each rostered Member, a working Scheduled Shift's Nominal Duration is split across the Organization's Hour Bands by interval intersection, so a shift straddling a boundary is divided correctly rather than labelled wholesale. Leave is reported separately, in Leave Days (human decision 2026-10-10), and a shift a Conflict Resolution moved to leave leaves the worked hours, so a Member on holiday never appears to have worked. Counts of shifts are reported alongside hours, because "5 day shifts, 60 hours" is how the numbers are actually checked. Realizes UJ-2, UJ-4.
 
 **Functional Requirements:**
 
 #### FR-40: Compute hours
-The system computes, per Member and period, the shift count and Band Hours per Hour Band, Total Hours, and Leave Hours.
+The system computes, per Member and period, the shift count and Band Hours per Hour Band, Total Hours, and the leave in days only: the period's Leave Days, charged as the Leave Balance charges them (human decision 2026-10-10). A shift accepted as uncovered or replaced leaves Band Hours, Total Hours and the shift count, and appears only as its Leave Day.
 
 **Consequences (testable):**
 - Band Hours are derived by intersecting each working Scheduled Shift's nominal interval with the Organization's Hour Bands, and always sum exactly to Total Hours (DI-7).
@@ -540,10 +539,11 @@ The system computes, per Member and period, the shift count and Band Hours per H
 - A midnight-crossing shift is intersected as one continuous interval, never as two same-day fragments, and contributes its full Nominal Duration once to its start date's period (DI-5).
 - On both daylight-saving transition dates a 12-hour shift still contributes 12 hours, and its band split is unchanged (DI-6).
 - Hours follow the Shift Roster, so a Roster Override moves hours between Members (FR-31).
-- Leave Hours are never added into Band Hours or Total Hours.
+- A shift a Conflict Resolution moved to leave is never added into Band Hours or Total Hours; it counts only as its Leave Day.
+- A period's Leave Days are the Leave Days of the Member's Leave Records inside it; summed over the periods a record spans, they equal the record's cost.
 
 #### FR-41: Member hours view
-A Member can view their own shift counts, Band Hours, Total Hours, and Leave Hours for a selected period. Realizes UJ-2.
+A Member can view their own shift counts, Band Hours, Total Hours, and leave in Leave Days (`3 dana`) for a selected period. Realizes UJ-2.
 
 **Consequences (testable):**
 - Period selection covers at minimum a calendar month.
@@ -555,6 +555,7 @@ An Admin can view hours for all Members for a selected period. Realizes UJ-4.
 **Consequences (testable):**
 - Sortable and filterable by Team and Member.
 - Per-Member figures reconcile exactly with that Member's own view (FR-41).
+- The leave reads as on the Member's view (`3 dana`), sorts by days, and the footer sums them.
 - Reachable in one navigation step from the Admin dashboard.
 
 #### FR-42a: Export organization hours (added 2026-09-26, sprint change)
@@ -562,8 +563,8 @@ An Admin can export the Organization hours for a selected period to an Excel fil
 
 **Consequences (testable):**
 - The file holds exactly the rows the Organization hours view shows for that period and filter, in its sort order, with the same figures (FR-42). It is built from the same data the view rendered, never from a second read.
-- Columns: Member, Team, shift count, one column per Hour Band named by the Organization's bands, Total Hours, Leave Hours. No band is hard-coded (DI-8).
-- Figures are stored as numbers, not text, so they can be summed in the spreadsheet.
+- Columns: Member, Team, shift count, one column per Hour Band named by the Organization's bands, Total Hours, Leave Days (*Godišnji odmor (dani)*): the heading names the unit, since a number format cannot inflect `dan/dana`. No band is hard-coded (DI-8).
+- Figures are stored as numbers, not text, so they can be summed in the spreadsheet. Each hours cell is a duration whose number format reads as the screen does — `[h] "h"` for whole hours (`192 h`), `[h] "h" m "min"` for hours and minutes (`12 h 30 min`), `[m] "min"` under an hour (`30 min`) — chosen by the screen's own rule; the Leave Days are a plain count. A leave figure of 0 is an empty cell (2026-10-10).
 - Column headers, sheet name and file name follow the Organization locale. The file name carries the Organization and the period.
 - A shift in unresolved Conflict is marked in the file as it is on screen (FR-41), so no exported total is silently wrong.
 - Only an Admin can export. A Member cannot export anyone's hours, their own included, in MVP.
@@ -573,6 +574,7 @@ Any figure on the Member or Organization hours view can be opened to show the Sc
 
 **Consequences (testable):**
 - The explanation lists every shift counted in the figure, with its date, Shift Type, Band Hours, and whether it came from the Rotation, an Override, or leave.
+- The leave's explanation lists one line per charged Leave Day — its date, each shift's Team and Shift Type, `+1 dan` — and `= 3 dana` (2026-10-10).
 - The equation is computed by the domain as codes and operands, never as prose, and sums exactly to the figure it explains (DI-7).
 - The explained figure and the figure on the view are always equal (FR-41, FR-42).
 - A shift in unresolved Conflict is marked in the explanation as it is on the view (FR-41).
@@ -665,7 +667,7 @@ An Admin can resolve a Conflict by accepting the shift as an Uncovered Shift.
 
 **Consequences (testable):**
 - The Scheduled Shift remains, is marked Uncovered, and stays visible on the Calendar (FR-38).
-- The Member's hours count the shift as Leave Hours, not Band Hours (FR-40).
+- The Member's hours no longer count the shift in Band Hours or Total Hours; it counts only as its Leave Day (FR-40).
 - The resolution records the Admin and timestamp (DI-11).
 
 #### FR-50: Resolve by Replace Member

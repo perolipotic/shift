@@ -1,6 +1,6 @@
 import type { Download, Locator } from '@playwright/test';
 
-import { MONTH_TRIGGER_NAME, escapeRegExp, fill, hr } from '../utils/i18n.ts';
+import { MONTH_TRIGGER_NAME, escapeRegExp, fill, hr, plural } from '../utils/i18n.ts';
 import { BasePage } from './base.page.ts';
 import { FilterBarParts } from './filter-bar.ts';
 import { sortControlIn, sortOptionIn, sortPickerIn } from './sort-control.ts';
@@ -8,6 +8,11 @@ import { sortControlIn, sortOptionIn, sortPickerIn } from './sort-control.ts';
 const kalendar = hr.kalendar;
 const sati = hr.sati;
 const organization = hr.sati.organization;
+
+/** A leave as *Sati* reads it (leave in days, 2026-10-10): `—` for none, else `3 dana`. */
+export function leaveText(days: number): string {
+  return days === 0 ? sati.noFigure : plural(hr.count.days, days);
+}
 
 /**
  * `/sati`: the viewer's own month of hours (story 4.1b) — the month
@@ -70,14 +75,34 @@ export class HoursPage extends BasePage {
     return this.page.getByRole('button', { name: fill(sati.explain.open, { figure: sati.total }) });
   }
 
-  /** The dialog of what composes a figure, open (story 7.14). */
+  /** The ⓘ beside the month's leave, on *Moji sati*: shown only when there is a leave. */
+  get leaveExplainButton(): Locator {
+    return this.page.getByRole('button', { name: fill(sati.explain.open, { figure: sati.leave }) });
+  }
+
+  /** The ⓘ beside a member's leave in the admin's table: `Godišnji odmor, Ana Anić`. */
+  rowLeaveExplainButton(name: string): Locator {
+    return this.page.getByRole('button', { name: fill(sati.explain.open, { figure: `${organization.leave}, ${name}` }) });
+  }
+
+  /** The dialog of what composes the total, open (story 7.14). */
   get explanation(): Locator {
-    return this.page.getByRole('dialog', { name: sati.total, exact: true });
+    return this.explanationOf(sati.total);
+  }
+
+  /** The dialog of what composes the figure `figureName` names, open. */
+  explanationOf(figureName: string): Locator {
+    return this.page.getByRole('dialog', { name: figureName, exact: true });
   }
 
   /** The explanation's ✕. */
   get explanationClose(): Locator {
     return this.explanation.getByRole('button', { name: sati.explain.close });
+  }
+
+  /** The ✕ of the dialog `figureName` names. */
+  explanationCloseOf(figureName: string): Locator {
+    return this.explanationOf(figureName).getByRole('button', { name: sati.explain.close });
   }
 
   /** The month's shift count, with its label. */
