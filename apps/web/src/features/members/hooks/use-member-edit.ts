@@ -1,5 +1,13 @@
 import { onlineManager, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+
+import {
+  CALENDAR_READ_TABLE,
+  calendarQueryOptions,
+  calendarSurfaceStateOf,
+  type CalendarMembersRpc,
+  type CalendarSnapshot,
+} from '@/features/calendar/services/snapshot';
 
 import { useErasureConfirmation, type ShownErasures } from '@/features/conflicts/hooks/use-erasure-confirmation';
 import { useErasureReads } from '@/features/conflicts/hooks/use-erasure-reads';
@@ -15,6 +23,7 @@ import {
   membersQueryOptions,
   type MemberListRow,
 } from '@/features/members/services/list';
+import { shownDeactivationConsequenceOf } from '@/features/members/services/deactivation-consequence';
 import {
   memberErasureCheckOf,
   statusChangeOf,
@@ -313,6 +322,16 @@ export function useMemberEdit(id: string) {
   );
 
   const answer = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
+  // THE CALENDAR SNAPSHOT, observed under the leave card's own key and
+  // arguments (`@/features/leave/hooks/use-member-leave`), for the
+  // deactivation's consequence.
+  const calendar = useQuery(
+    calendarQueryOptions(
+      () => supabaseClient().from(CALENDAR_READ_TABLE),
+      // As the calendar's: the client's `rpc` is wider than the calls made.
+      () => supabaseClient() as unknown as CalendarMembersRpc,
+    ),
+  );
 
   // MEMBER RANK. Whether the rank control is offered, read from the one
   // organization snapshot under its shared key (AD-13), through the chrome's
@@ -428,6 +447,37 @@ export function useMemberEdit(id: string) {
     statusOpening !== null && statusOffer !== null && statusOffer.change === statusOpening.held.offer.change;
   // AN OUTSTANDING WRITE OUTLIVES ITS OFFER: the dialog stays, busy, until it settles.
   const statusDialogOpen = statusOpening !== null && (statusStillOffered || statusPending);
+  const statusDayEntered = raisedForMember(statusDay, id) ?? NO_TEXT;
+  // THE DEACTIVATION'S CONSEQUENCE IN NUMBERS (story 7.13c), from the calendar
+  // snapshot the member page already reads under its one key and arguments
+  // (the leave card's, `@/features/leave/hooks/use-member-leave`): no request
+  // of its own, and nothing optimistic. `null` — a reactivation, a date before
+  // the offer's minimum, no team — asks the question alone, and never gates
+  // the save.
+  //
+  // HELD FOR THE OPENING (the Dialog rule: a re-read never redraws an open
+  // dialog): the first snapshot seen while this opening is open, kept until it
+  // closes — so the line stands through a refetch, while the write is pending
+  // and after it lands, and a fresh opening reads afresh.
+  const calendarSnapshot = calendarSurfaceStateOf(calendar).snapshot;
+  const statusOpeningKey = statusDialogOpen ? statusOpening.key : null;
+  const [heldCalendar, setHeldCalendar] = useState<{ readonly key: number; readonly snapshot: CalendarSnapshot } | null>(
+    null,
+  );
+
+  if (statusOpeningKey === null) {
+    if (heldCalendar !== null) setHeldCalendar(null);
+  } else if (calendarSnapshot !== null && (heldCalendar === null || heldCalendar.key !== statusOpeningKey)) {
+    setHeldCalendar({ key: statusOpeningKey, snapshot: calendarSnapshot });
+  }
+
+  const statusCalendar =
+    heldCalendar !== null && heldCalendar.key === statusOpeningKey ? heldCalendar.snapshot : null;
+  const statusDialogOffer = statusDialogOpen ? statusOpening.held.offer : null;
+  const consequence = useMemo(
+    () => shownDeactivationConsequenceOf(statusCalendar, id, statusDialogOffer, statusDayEntered, today),
+    [statusCalendar, id, statusDialogOffer, statusDayEntered, today],
+  );
   const teamArmedFor = standingTeamConfirmation(
     raisedForMember(teamArmed, id),
     form.member,
@@ -1538,7 +1588,9 @@ export function useMemberEdit(id: string) {
       opener: statusOpener,
       withdrawButton: statusWithdrawButton,
       saveButton: statusSaveButton,
-      day: raisedForMember(statusDay, id) ?? NO_TEXT,
+      day: statusDayEntered,
+      /** A deactivation's consequence in numbers on the entered day, or `null` (story 7.13c). */
+      consequence,
       enterDay: enterStatusDay,
       open: openStatus,
       close: closeStatus,

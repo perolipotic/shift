@@ -132,6 +132,10 @@ export const FEATURE_PUBLIC = {
   // picks its skeleton by the chrome's cached role, as *Kalendar* does
   // (`cachedRoleOf`), and its week is Kalendar's grid model: one tab stop and
   // the arrow keys (`grid-keys`).
+  // Story 7.13c: the member page's deactivation counts the member's duties
+  // left in the month off their own schedule (`memberScheduleInputOf`)
+  // and the one leg recipe *Danas*'s duty uses (`shiftLegOn`), from the
+  // calendar snapshot the page already reads.
   calendar: [
     'components/calendar-cell', // today
     'components/modifier-glyphs', // today
@@ -140,7 +144,7 @@ export const FEATURE_PUBLIC = {
     'utils/day-detail', // conflicts
     'utils/grid-keys', // today
     'utils/modifiers', // conflicts, hours, today
-    'utils/month', // conflicts, hours, leave, pages, today
+    'utils/month', // conflicts, hours, leave, members, pages, today
     'utils/skeleton', // today
     // Story 5.4c: the replacement candidates, grouped once, for the conflict
     // screen's second card (and story 7.9's roster dialog). Story 7.9: their

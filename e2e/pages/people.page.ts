@@ -396,9 +396,25 @@ export class PeoplePage extends BasePage {
     return this.page.getByRole('button', { name: fill(hr.ljudi.status.deactivate, { name }), exact: true });
   }
 
-  /** The status dialog's final button: `Deaktiviraj`, the action itself. */
+  /**
+   * The status dialog's final button: `Deaktiviraj od 05.10.`, the action
+   * repeating the date while the field holds one (story 7.13c), or the plain
+   * `Deaktiviraj` while it does not.
+   */
   get deactivateSaveButton(): Locator {
-    return this.statusDialog.getByRole('button', { name: hr.ljudi.status.deactivateAction, exact: true });
+    const dated = escapeRegExp(hr.ljudi.status.deactivateActionFrom).replace('\\{date\\}', '\\d\\d\\.\\d\\d\\.');
+
+    return this.statusDialog.getByRole('button', {
+      name: new RegExp(`^(${dated}|${escapeRegExp(hr.ljudi.status.deactivateAction)})$`),
+    });
+  }
+
+  /**
+   * The status dialog's question — the element its `aria-describedby` names —
+   * which carries a deactivation's line in numbers too (story 7.13c).
+   */
+  get statusQuestion(): Locator {
+    return this.statusDialog.locator('#member-status-prompt');
   }
 
   /** The status card's offer to withdraw its scheduled change. */

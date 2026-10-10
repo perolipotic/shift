@@ -140,6 +140,12 @@ const SANCTIONED_PLURAL_KEYS = [
   'ljudi.erasures.title',
   'ljudi.erasures.lede',
   'ljudi.erasures.removed',
+  // STORY 7.13c: the deactivation's consequence in numbers — the team's size
+  // (`od 4 člana`, `od 5 članova`) and, with the month clause, the member's
+  // duties left, the verb agreeing (`je to 1 smjena`, `su to 2 smjene`, `je to
+  // 7 smjena`); without it, the size alone.
+  'ljudi.status.deactivateConsequence',
+  'ljudi.status.deactivateConsequenceTeam',
   // STORY 4.1b: how many shifts the viewer works in the month and in each
   // band — `0 smjena`, `1 smjena`, `2 smjene`, `21 smjena` — and the note on
   // the ones with no times, shown only when there is one.
@@ -1833,6 +1839,8 @@ const SANCTIONED_SCREEN_KEYS = [
   'ljudi.leaveRecord.headingYears',
   'ljudi.status.deactivateAction',
   'ljudi.status.reactivateAction',
+  // STORY 7.13c: the deactivation's final button with its date.
+  'ljudi.status.deactivateActionFrom',
   'ljudi.status.deactivateHeading',
   'ljudi.status.reactivateHeading',
   'smjene.membership.change',
@@ -2040,6 +2048,16 @@ const LEAVE_REPLACEMENT_KEY = 'ljudi.leaveRecord.replacementStays';
 const MEMBER_NO_TEAM_KEY = 'ljudi.form.noTeam';
 
 /**
+ * The deactivation's consequence in numbers (story 7.13c), ONE KEY: "… a u
+ * listopadu je to 7 smjena." — the spec's own words, where `smjen` counts the
+ * member's duties left in the month (story 6.2's touching shifts count once),
+ * never a shift type. `tip…
+ * smjen…` is still refused there, and every other `ljudi.status` message still
+ * may not say `smjen` at all.
+ */
+const DEACTIVATION_CONSEQUENCE_KEY = 'ljudi.status.deactivateConsequence';
+
+/**
  * The day detail's override copy (story 3.5b), inside the calendar's
  * namespace: the admin changes a team's SHIFT TYPE there, so it says the term
  * — `Tip smjene` is the form's field — and, as in
@@ -2107,7 +2125,8 @@ function teamTermOutOfTurn(key: string, message: string): boolean {
     !key.startsWith(DIRECTORY_NAMESPACE) &&
     !key.startsWith(LEAVE_OVERVIEW_NAMESPACE) &&
     key !== LEAVE_REPLACEMENT_KEY &&
-    key !== MEMBER_NO_TEAM_KEY
+    key !== MEMBER_NO_TEAM_KEY &&
+    key !== DEACTIVATION_CONSEQUENCE_KEY
   ) {
     return lowered.includes('smjen');
   }

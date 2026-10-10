@@ -3,11 +3,9 @@ import {
   DUTY_RUNNING,
   DUTY_UPCOMING,
   absoluteMinuteOf,
-  deriveShiftTimes,
   dutiesOf,
   dutyProgressOf,
   momentOf,
-  shiftTypeVersionOn,
   type Duty,
   type DutyLeg,
   type DutyPhase,
@@ -17,6 +15,7 @@ import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import {
   dayMonthOf,
   rosterStandingOfCalendar,
+  shiftLegOn,
   weekdayOf,
   type CalendarDay,
   type CalendarDayShift,
@@ -32,8 +31,8 @@ import { formatMinuteOfDay, nextIsoDate, previousIsoDate, type WallClock } from 
  * THE CALENDAR'S DAYS. Every candidate leg is a working shift of
  * `calendarDayListOf`'s day list — *Kalendar*'s own day, through the lookup
  * `today.ts` hands in — on a date the viewer's own leave does not cover. Its
- * minutes are the type's version on that date (`shiftTypeVersionOn`,
- * `deriveShiftTimes`), as the day's own range is. The grouping and the
+ * minutes are the type's version on that date (`shiftLegOn`, the calendar's
+ * one leg recipe), as the day's own range is. The grouping and the
  * progress are the domain's `dutiesOf` and `dutyProgressOf`.
  *
  * THE WINDOW is yesterday through tomorrow, widened a day at a time while a
@@ -168,17 +167,11 @@ function legsOn(snapshot: CalendarSnapshot, sources: DutySources, date: string):
 
     if (typeId === null || !sources.working.has(typeId)) continue;
 
-    const type = snapshot.types.find((candidate) => candidate.id === typeId);
+    const leg = shiftLegOn(snapshot, typeId, date);
 
-    if (type === undefined) throw new RangeError(`shift type ${typeId} is not in the snapshot`);
+    if (leg === null) continue;
 
-    const version = shiftTypeVersionOn(type.versions, date);
-
-    if (version === null) continue;
-
-    const { startMinute, durationMinutes } = deriveShiftTimes(version.startMinute, version.endMinute);
-
-    legs.push({ date, startMinute, durationMinutes, shift });
+    legs.push({ ...leg, shift });
   }
 
   return legs;

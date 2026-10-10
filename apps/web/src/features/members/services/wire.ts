@@ -193,6 +193,29 @@ export function statusActionMessageKey(
   return change === DEACTIVATE ? 'ljudi.status.deactivateAction' : 'ljudi.status.reactivateAction';
 }
 
+/**
+ * The status dialog's final button (story 7.13c): a deactivation repeats the
+ * date while the field holds a valid one — `Deaktiviraj od 05.10.` — and is
+ * the one word otherwise. A reactivation is always the one word.
+ */
+export function statusSubmitMessageKey(
+  change: typeof DEACTIVATE | typeof REACTIVATE,
+  dated: boolean,
+): 'ljudi.status.deactivateActionFrom' | ReturnType<typeof statusActionMessageKey> {
+  return change === DEACTIVATE && dated ? 'ljudi.status.deactivateActionFrom' : statusActionMessageKey(change);
+}
+
+/**
+ * The deactivation question's line in numbers (story 7.13c): the team's size
+ * before and after and the member's duties left in the month — or, with none
+ * left, the sizes alone, the month clause dropped.
+ */
+export function deactivationConsequenceMessageKey(
+  duties: number,
+): 'ljudi.status.deactivateConsequence' | 'ljudi.status.deactivateConsequenceTeam' {
+  return duties === 0 ? 'ljudi.status.deactivateConsequenceTeam' : 'ljudi.status.deactivateConsequence';
+}
+
 /** The status dialog's title (story 7.11). */
 export function statusDialogHeadingMessageKey(
   change: typeof DEACTIVATE | typeof REACTIVATE,

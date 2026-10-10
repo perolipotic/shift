@@ -869,8 +869,11 @@
   summary: The member page's *Promijeni smjenu* dialog shows no *Što se mijenja* (decision 16: "Zadnja u A · čet 01.10. · Noć · 19:00–07:00 / Prva u B · sub 03.10. · Dan · 07:00–19:00"). It needs a projection of a member's move across teams from a date, and `change-preview.ts` models only one team on one day.
   evidence: `mockups/member-page-1.html` panel D; deferred in spec 7.11 Epic AC Deviations.
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-13-ljudi-status-filter.md`
-  summary: Story 7.13 c) The member page's deactivation question states the consequence in numbers (UX-DR27): "Smjena {team} od tada ima {n} od {m} članova, a u {month} je to {k} smjena.", computed from the domain roster (`rosterOn` / `shiftRoster`), and the action button repeats the date ("Deaktiviraj od {dd.mm.}"). Decided 2026-10-08: deactivation stays on the member page only and is not offered from Ljudi.
+  summary: RESOLVED by story 7.13c (`spec-7-13c-deactivation-consequence-in-numbers.md`) — the question carries `{team} od tada ima {n} od {m} članova, a {monthIn} je to {k} smjena.` (the month clause dropped at 0; `k` counts the member's own duties by `dutiesOf`) off `deactivationConsequenceOf`, and the final button reads `Deaktiviraj od {dd.mm.}`. Story 7.13 c) The member page's deactivation question states the consequence in numbers (UX-DR27): "Smjena {team} od tada ima {n} od {m} članova, a u {month} je to {k} smjena.", computed from the domain roster (`rosterOn` / `shiftRoster`), and the action button repeats the date ("Deaktiviraj od {dd.mm.}"). Decided 2026-10-08: deactivation stays on the member page only and is not offered from Ljudi.
   evidence: 7.13 split at planning; `mockups/people-1.html` §3; spec-7-11 L50 handed the numbers to 7.13; epics.md 7.13 AC3.
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-13c-deactivation-consequence-in-numbers.md`
+  summary: The status dialog's *Vrijedi od* has no hint under it. The mockup's "Najranije danas. Dani prije ostaju nepromijenjeni." was not added in 7.13c.
+  evidence: `mockups/people-1.html` §3; spec 7.13c Epic AC Deviations (the hint is not part of AC3).
 
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-17-member-directory.md`
   summary: `/ljudi`'s `beforeLoad` re-reads the member role uncached on every search write, so each keystroke costs a role read and a transient failure mid-typing redirects to `/danas`.
@@ -887,3 +890,7 @@
 - source_spec: `_bmad-output/implementation-artifacts/spec-7-15-leave-overview.md`
   summary: The leave overview's `SortHead`, `SORT_GLYPHS` and aria-sort/arrow rules copy the organization hours table's sort heading; extract one shared sortable heading in `components/` used by both tables.
   evidence: 7.15 review (Blind Hunter); `leave-overview-table.tsx` vs `hours/components/organization-hours-table.tsx:50-80`.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-7-13c-deactivation-consequence-in-numbers.md`
+  summary: The calendar snapshot is observed through copied `calendarQueryOptions(...)` lambdas in each hook (`use-member-leave`, `use-member-edit`, `use-erasure-reads`), so "same key, no extra request" holds only by convention; a shared `useCalendarSnapshot()` (or options factory) would pin it, and could let a page observe it only while a surface needs it.
+  evidence: 7.13c review round 2 (Blind Hunter); `use-member-edit` now observes the whole calendar on every member page, relying on matching `CALENDAR_KEY` with the leave card's read.
