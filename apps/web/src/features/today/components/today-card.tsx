@@ -12,12 +12,16 @@ import {
 } from '@/features/today/services/today';
 import { t } from '@/lib/i18n';
 
-/** One shift of today: the type's name, its range and the team, each on its own. */
+/**
+ * One shift of today: the type's name, its range and the team, each on its
+ * own; a shift from yesterday still running now says so, muted (`od jučer`).
+ */
 function renderShift(shift: TodayShift, index: number): ReactNode {
   return (
     <li key={`${String(index)}-${shift.teamId}`} className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
       <span className="font-semibold">{shift.name ?? t('kalendar.noRotation')}</span>
       {shift.range === null ? null : <span className="tabular-nums">{shift.range}</span>}
+      {shift.fromYesterday ? <span className="text-muted-foreground">{t('danas.today.fromYesterday')}</span> : null}
       <span className="min-w-0 break-words text-muted-foreground">{shift.teamName}</span>
     </li>
   );
@@ -38,8 +42,9 @@ function renderDetail(todayCase: Exclude<TodayCase, { readonly kind: typeof CASE
   }
 
   if (todayCase.kind === CASE_WORKING) {
-    // STORY 6.1a: one row per shift — the own team's first, then each one a
-    // roster override put the viewer on. A 24 h duty is the duty-block's (6.2).
+    // STORY 6.1a: one row per shift — yesterday's still running first, then
+    // the own team's, then each one a roster override put the viewer on. A
+    // 24 h duty is the duty-block's (6.2).
     return <ul className="grid gap-2">{todayCase.shifts.map(renderShift)}</ul>;
   }
 

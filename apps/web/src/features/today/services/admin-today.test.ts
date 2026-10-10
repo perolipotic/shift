@@ -708,6 +708,28 @@ describe('the subtitle', () => {
     );
   });
 
+  it('a lone Noć from yesterday still running: Danas radiš Noć 19:00–07:00, and coverage unchanged', async () => {
+    const snapshot = await snapshotOf({ viewerTeam: A });
+    const at = zagreb('2026-10-02', '03:00');
+    const status = adminStatusOf(todayViewOf(snapshot, [], at));
+
+    expect(status).toEqual({ kind: STATUS_WORKING, shifts: [{ name: 'Noć', range: '19:00–07:00' }] });
+
+    if (status?.kind !== STATUS_WORKING) throw new Error('not working');
+
+    const [shift] = status.shifts;
+
+    if (shift === undefined) throw new Error('no shift');
+
+    expect(t(adminStatusShiftMessageKey(shift), { type: shift.name, range: shift.range })).toBe('Danas radiš Noć 19:00–07:00');
+
+    // Coverage is today's teams alone, as for an admin on no team: A's Noć of 01.10. is not in it.
+    const { coverage } = viewOf(snapshot, [], [], at);
+
+    expect(coverage).toEqual(viewOf(pilot, [], [], at).coverage);
+    expect(coverage.rows.map((row) => row.teamId)).not.toContain(A);
+  });
+
   it('on a 24 h duty: until the duty’s own end, from the real case', async () => {
     // Her own D works Dan today; a roster override puts her on A's Noć too.
     const snapshot = await snapshotOf({

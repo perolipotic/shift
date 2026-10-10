@@ -1,4 +1,4 @@
-import { leaveCostOf, monthOf, type LeaveRange } from '@shift/domain';
+import { DUTY_RUNNING, leaveCostOf, monthOf, type LeaveRange } from '@shift/domain';
 
 import type { CalendarSnapshot, CalendarSurfaceState } from '@/features/calendar/services/snapshot';
 import {
@@ -12,7 +12,13 @@ import {
   type CalendarMarks,
 } from '@/features/calendar/utils/month';
 import { leaveRecordsOf, type LeaveRecord } from '@/features/leave/services/leave-list';
-import { legKeyOf, todayDutyOf, type TodayDuty } from '@/features/today/services/today-duty';
+import {
+  legKeyOf,
+  runningFromYesterdayOf,
+  todayDutyOf,
+  type DutySources,
+  type TodayDuty,
+} from '@/features/today/services/today-duty';
 import { formatIsoDate, nextIsoDate, organizationWallClock } from '@/lib/i18n/format';
 
 /**
@@ -34,11 +40,17 @@ import { formatIsoDate, nextIsoDate, organizationWallClock } from '@/lib/i18n/fo
  * team reads the same screen as a member; `my_leave_records()` (0030)
  * answers an admin's own rows too.
  *
- * EXACTLY ONE CASE TODAY: on leave (wins over the rest, on a working or a
- * non-working day), on a duty (story 6.2: touching working shifts read as
- * one, `today-duty.ts`'s), working (a working shift today), or free (only
- * non-working types, or none). A viewer with no membership at all is
- * unscheduled, and has no next shift and no week.
+ * EXACTLY ONE CASE TODAY, chosen in this order: on a duty running now
+ * (story 6.2: touching working shifts read as one, `today-duty.ts`'s — on a
+ * day of leave too, since leave drops only today's legs); working with a
+ * shift from yesterday still running now (the lone-Noć carry-over, marked
+ * `fromYesterday`, listed before today's own working shifts, which a day of
+ * leave hides); on leave (over any duty not yet running or already done,
+ * on a working or a non-working day); on any other duty; working (a working
+ * shift today); or free (only non-working types, or none). Once the
+ * carried-over shift ends, today is the free or the leave case again. A
+ * viewer with no membership at all is unscheduled, and has no next shift
+ * and no week.
  *
  * NEVER A GUESS. A read that failed or is paused offline is unavailable with
  * a retry; a row that cannot be trusted or any error the derivation throws
@@ -68,7 +80,7 @@ export const TODAY_READY = 'ready';
 export const CASE_LEAVE = 'leave';
 /** On a duty (story 6.2): working shifts that touch, one of them today or running now. */
 export const CASE_DUTY = 'duty';
-/** A working shift today. */
+/** A working shift today, or one from yesterday still running now. */
 export const CASE_WORKING = 'working';
 /** Only non-working types today, or no shift at all. */
 export const CASE_FREE = 'free';
@@ -80,6 +92,8 @@ export interface TodayShift {
   readonly name: string | null;
   /** `19:00–07:00`; `null` for a non-working type or one with no times. */
   readonly range: string | null;
+  /** A shift dated yesterday still running now (`od jučer`); today's own are `false`. */
+  readonly fromYesterday: boolean;
 }
 
 /** Today, as exactly one case. */
@@ -212,27 +226,53 @@ export function todayViewOf(snapshot: CalendarSnapshot, rows: readonly unknown[]
     const days = dayLookupOf(snapshot, today, records);
     const working = new Set(workingShiftTypeIdsOf(snapshot));
     const leaveToday = absenceOn(records, today);
-    // Leave wins: no duty is looked for on a day of leave.
-    const found =
-      leaveToday === null
-        ? todayDutyOf(
-            snapshot,
-            { on: (date) => days.on(date), onLeave: (date) => leaveOn(records, date) !== null, working },
-            today,
-            organizationWallClock(now, snapshot.timeZone),
-          )
-        : null;
-    const todayCase: TodayCase =
-      found === null
-        ? todayCaseOf(snapshot, days.on(today), leaveToday, working)
-        : { kind: CASE_DUTY, duty: found.duty };
+    const sources: DutySources = {
+      on: (date) => days.on(date),
+      onLeave: (date) => leaveOn(records, date) !== null,
+      working,
+    };
+    const wallClock = organizationWallClock(now, snapshot.timeZone);
+    // On a day of leave today's legs are dropped, so only a duty running now
+    // — begun on an earlier date — can be found.
+    const duty = todayDutyOf(snapshot, sources, today, wallClock);
+    // Read only when no duty runs: a running duty never depends on it.
+    const carried =
+      duty !== null && duty.duty.phase === DUTY_RUNNING ? [] : runningFromYesterdayOf(snapshot, sources, today, wallClock);
+    let todayCase: TodayCase;
+    // The legs of the duty shown, which are today's and never the next shift.
+    let skip = NO_LEGS;
+
+    if (duty !== null && duty.duty.phase === DUTY_RUNNING) {
+      todayCase = { kind: CASE_DUTY, duty: duty.duty };
+      skip = duty.legKeys;
+    } else if (carried.length > 0) {
+      // A carry-over never joins a duty: today's shifts, a duty's or not, are rows.
+      const own =
+        leaveToday === null ? days.on(today).shifts.filter((shift) => isWorking(working, shift)) : [];
+
+      todayCase = {
+        kind: CASE_WORKING,
+        shifts: [
+          ...carried.map((shift) => todayShiftOf(snapshot, shift, true)),
+          ...own.map((shift) => todayShiftOf(snapshot, shift)),
+        ],
+      };
+      // Today's duty still to come is listed as rows, and its legs stay
+      // today's: one dated tomorrow is never the next shift.
+      if (duty !== null && leaveToday === null) skip = duty.legKeys;
+    } else if (duty !== null && leaveToday === null) {
+      todayCase = { kind: CASE_DUTY, duty: duty.duty };
+      skip = duty.legKeys;
+    } else {
+      todayCase = todayCaseOf(snapshot, days.on(today), leaveToday, working);
+    }
 
     return {
       kind: TODAY_READY,
       view: {
         today: shown,
         todayCase,
-        next: nextShiftOf(days, today, records, working, found?.legKeys ?? NO_LEGS),
+        next: nextShiftOf(days, today, records, working, skip),
         returning: todayCase.kind === CASE_LEAVE,
         week: weekOf(days, today, records),
       },
@@ -368,13 +408,17 @@ function dayLookupOf(snapshot: CalendarSnapshot, today: string, records: readonl
   };
 }
 
-/** A day's shift as today states it, its team named. */
-function todayShiftOf(snapshot: CalendarSnapshot, shift: CalendarDay['shifts'][number]): TodayShift {
+/** A day's shift as today states it, its team named; `fromYesterday` for a carried-over one. */
+function todayShiftOf(
+  snapshot: CalendarSnapshot,
+  shift: CalendarDay['shifts'][number],
+  fromYesterday = false,
+): TodayShift {
   const team = snapshot.teams.find((candidate) => candidate.id === shift.teamId);
 
   if (team === undefined) throw new RangeError(`the team ${shift.teamId} is not in the snapshot`);
 
-  return { teamId: shift.teamId, teamName: team.name, name: shift.cell.name, range: shift.cell.range };
+  return { teamId: shift.teamId, teamName: team.name, name: shift.cell.name, range: shift.cell.range, fromYesterday };
 }
 
 /** Whether a shift of a day is a working one. */

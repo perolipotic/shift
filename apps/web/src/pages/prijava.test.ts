@@ -2446,10 +2446,13 @@ const KEY_SOURCES = [
     // moved into `coverageStaffingMessageKey`'s union, below (one fewer). The
     // status, badges, phases, absent lines and cell names come through
     // `@/features/today/services/admin-today`, below.
+    //
+    // SIXTY SINCE THE LONE-NOĆ CARRY-OVER: a shift from yesterday still
+    // running is marked `od jučer` on its row (one more).
     name: 'the Danas destination',
     file: DANAS,
     keys: translationKeys,
-    strings: 59,
+    strings: 60,
   },
   {
     // STORY 6.1a: today's three cases, the next shift's two headings, and

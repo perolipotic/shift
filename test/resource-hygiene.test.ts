@@ -1722,6 +1722,9 @@ const SANCTIONED_SCREEN_KEYS = [
   // between bands; the leave tile's kicker and its hint. The tiles'
   // unavailable sentences are *Sati*'s and *Godišnji*'s own.
   'danas.today.leaveCost',
+  // C1 fix (retro 2026-10-09): a shift dated yesterday still running is
+  // today's working case, its row marked `od jučer`.
+  'danas.today.fromYesterday',
   'danas.tiles.hoursKicker',
   'danas.tiles.band',
   'danas.tiles.separator',

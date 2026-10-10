@@ -59,6 +59,7 @@
     "dateLine": "{weekday}, {date}",
     "today": {
       "working": "Danas radiš",
+      "fromYesterday": "od jučer",
       "free": "Danas ne radiš",
       "leave": "Danas si na godišnjem odmoru",
       "leaveRange": "Godišnji odmor {from}–{to}",

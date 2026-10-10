@@ -57,6 +57,12 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
  * date. At 06:00 the same duty is still to come: "počinje u 07:00" on
  * today's date, both legs "Slijedi". Nothing scrolls sideways at 390 px.
  *
+ * The lone-Noć carry-over (spec-fix-danas-overnight-carry-over): at 03:00,
+ * a member's Noć dated yesterday (a fresh member, on the team since
+ * yesterday) is still running, so the card reads
+ * "Danas radiš" and names that Noć, marked "od jučer". Nothing scrolls
+ * sideways at 390 px.
+ *
  * Story 6.3: an admin's own Danas at 14:20 in the organization's zone
  * (`page.clock`). With no live leave, *Treba tebe* says `0 neriješenih
  * konflikata`, neutral, with "Otvori konflikte (0)", and the admin on no
@@ -537,6 +543,42 @@ test.describe('a 24 h duty at 390 px, as the member', () => {
     await expect(todayPage.dutyLegs.nth(1)).toContainText(danas.duty.legUpcoming);
     await expectNoHorizontalScroll(page);
   });
+});
+
+test('a lone Noć from yesterday at 390 px: at 03:00 the member still reads Danas radiš, the Noć, od jučer', async ({
+  browser,
+  fixture,
+}) => {
+  test.slow(); // the shared rotation lock (`holdRotation`) can take longer than the default timeout
+  // Two days into the pattern: yesterday was the Noć, today is a Slobodno.
+  const rotation = await seeded(fixture.slug, fixture.team.id, 2);
+  const today = rotation.today;
+  const yesterday = addDays(today, -1);
+  expect(stepOn(rotation, today)).toBe(2);
+  expect(stepOn(rotation, yesterday)).toBe(1);
+  // The run's member joined the team today, so a fresh member on it since yesterday works that
+  // Noć; `20` is only their annual allowance — no leave record is seeded, so nothing covers today.
+  const member = await seedLeaveMember(fixture.slug, fixture.team.id, yesterday, 20);
+  crew = { slug: fixture.slug, ids: [member.id] };
+
+  const { today: todayPage } = await signedInAs(browser, fixture.slug, member);
+  const page = todayPage.page;
+  await page.setViewportSize({ width: 390, height: 844 });
+  // 03:00 today on the organization's wall clock: yesterday's Noć runs to 07:00.
+  await page.clock.install({ time: await organizationInstant(fixture.slug, today, '03:00') });
+  await todayPage.goto();
+
+  const nocRange = rotation.ranges[1];
+  if (nocRange === undefined || nocRange === null) throw new Error('E2E: the seeded Noć has no range');
+
+  const card = todayPage.todayCard(danas.today.working);
+  await expect(card).toBeVisible();
+  await expect(card).toContainText(rotation.steps[1]);
+  await expect(card).toContainText(nocRange);
+  await expect(card).toContainText(danas.today.fromYesterday);
+  await expect(card).toContainText(fixture.team.name);
+  await expect(todayPage.todayCard(danas.today.free)).toHaveCount(0);
+  await expectNoHorizontalScroll(page);
 });
 
 /** The organization's leave read, as PostgREST answers it: `rows`, with their exact count. */

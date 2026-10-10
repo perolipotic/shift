@@ -304,6 +304,31 @@ export function todayDutyOf(
   return chosen === undefined ? null : foundOf(snapshot, chosen, nowMinute);
 }
 
+/**
+ * Yesterday's working shifts still running at `now`, the organization's wall
+ * clock (the lone-Noć carry-over): the legs of yesterday by the duty's own
+ * recipe (`legsOn`, so a date own leave covers has none), each running on
+ * its half-open `[start, start + duration)`. The case and the duty read the
+ * same legs, so they can never disagree. A leg that touches another is a
+ * duty's (`dutiesOf`), and a running duty comes first; this is only ever
+ * read after it.
+ *
+ * @throws RangeError on any precondition of `shiftLegOn`, or at the start of
+ *   the calendar.
+ */
+export function runningFromYesterdayOf(
+  snapshot: CalendarSnapshot,
+  sources: DutySources,
+  today: string,
+  now: WallClock,
+): readonly CalendarDayShift[] {
+  const nowMinute = absoluteMinuteOf(now.date, now.minute);
+
+  return legsOn(snapshot, sources, dayBefore(today))
+    .filter((leg) => runsAt(leg, nowMinute))
+    .map((leg) => leg.shift);
+}
+
 /** The chosen duty as the screen states it. */
 function foundOf(snapshot: CalendarSnapshot, duty: Duty<ShiftLeg>, nowMinute: number): TodayDutyFound {
   const progress = dutyProgressOf(duty, nowMinute);
