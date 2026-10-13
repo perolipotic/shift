@@ -11,7 +11,7 @@ import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
 import { t } from '@/lib/i18n';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
-import { NO_TEXT, memberLevelMessageKey, type MemberListRow } from '@/features/members/services/list';
+import { memberLevelMessageKey, type MemberListRow } from '@/features/members/services/list';
 import {
   MEMBER_BASICS_DIALOG_HEADING_ID,
   MEMBER_BASICS_HEADING_ID,
@@ -25,6 +25,7 @@ import {
 } from '@/features/members/utils/rank';
 import { refusalText } from '@/features/members/utils/refusal-text';
 import { MEMBER_ROLES } from '@/features/navigation/services/role';
+import { NO_TEXT } from '@/utils/text';
 
 /** One fact: its label above its value, so nothing breaks on a phone. */
 function Fact({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactNode {

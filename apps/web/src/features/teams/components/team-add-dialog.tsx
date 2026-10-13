@@ -7,10 +7,10 @@ import { Input } from '@/components/ui/input';
 import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
-import { NO_TEXT } from '@/features/members/services/list';
 import type { TeamListScreen } from '@/features/teams/hooks/use-team-list';
 import { teamWriteMessageKey } from '@/features/teams/services/write';
 import { t } from '@/lib/i18n';
+import { NO_TEXT } from '@/utils/text';
 
 /**
  * THE ADD FORM IS A DIALOG (design refresh C), opened from the page header.

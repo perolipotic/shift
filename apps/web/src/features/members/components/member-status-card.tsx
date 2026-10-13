@@ -22,7 +22,7 @@ import { t } from '@/lib/i18n';
 import { formatIsoDayMonth, isIsoDate } from '@/lib/i18n/format';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import { memberErasureCopyOf } from '@/features/members/utils/erasure-copy';
-import { NO_TEXT, shownDate, type MemberListRow } from '@/features/members/services/list';
+import { type MemberListRow } from '@/features/members/services/list';
 import {
   DEACTIVATE,
   STATUS_ARMED,
@@ -53,6 +53,7 @@ import {
 } from '@/features/members/utils/element-ids';
 import { refusalText } from '@/features/members/utils/refusal-text';
 import { monthInMessageKey } from '@/utils/filter-bar';
+import { NO_TEXT, shownDate } from '@/utils/text';
 
 /**
  * The member page's *Status* card (story 1.6; facts and a dialog since story

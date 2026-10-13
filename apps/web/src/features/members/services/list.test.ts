@@ -36,7 +36,6 @@ import {
   memberTeamOn,
   memberTeamVersionOn,
   NOT_A_ROW,
-  NO_TEXT,
   TEXT_CELL,
   NAME_CELL,
   LEVEL_CELL,
@@ -44,7 +43,6 @@ import {
   memberActiveOn,
   memberLatestVersion,
   memberStatusOf,
-  shownDate,
   membersTodayOf,
   UNSORTED,
   cellClassNameOf,
@@ -126,6 +124,7 @@ import { TEAM_HISTORY, TEAM_HISTORY_ANSWERS, TEAM_HISTORY_SPAN } from '@/feature
 import { initLocalization, t } from '@/lib/i18n';
 import { nextIsoDate } from '@/lib/i18n/format';
 import { MEMBER_ROLES } from '@/features/navigation/services/role';
+import { NO_TEXT } from '@/utils/text';
 
 /**
  * The member list's rules, EXECUTED (story 1.5a).
@@ -2162,12 +2161,6 @@ describe('status as at a date, read off the embedded versions (story 1.6)', () =
     const rows = narrowMembers(people, NO_TEXT, ALL_LEVELS, { key: STATUS_COLUMN, direction: ASCENDING }, TODAY, ALL_TEAMS, STATUS_ALL).rows;
 
     expect(rows.map((row) => row.name)).toEqual(['Ćiro', 'Ivo', 'Zora', 'Ana', 'Boris']);
-  });
-
-  it('shows an ISO date in the binding shape, and a malformed one unchanged', () => {
-    expect(shownDate('2026-09-23')).toBe('23.09.2026');
-    expect(shownDate('nonsense')).toBe('nonsense');
-    expect(shownDate('2026-02-31')).toBe('2026-02-31');
   });
 
   it("derives today from the organization's zone the read embeds, and nothing before it", () => {

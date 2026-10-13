@@ -89,6 +89,8 @@ const SANCTIONED_PLURAL_KEYS = [
   'rotation.builder.warnings.summary',
   'rotation.builder.warnings.coverageGap',
   'rotation.builder.warnings.duplicateCoverage',
+  // A doubled type counts the teams on it, then names them.
+  'rotation.builder.warnings.doubledType',
   // STORY 2.6: how many teams one saved change binds, in the history —
   // `1 smjena`, `2 smjene`, `5 smjena`. The builder's namespace may say the Team.
   'rotation.builder.history.teamCount',
@@ -1075,6 +1077,7 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.builder.error.scheduled',
   // STORY 2.6: an effective date before today.
   'rotation.builder.error.effectivePast',
+  'rotation.builder.error.effectiveTooFar',
   'rotation.builder.error.typeArchived',
   'rotation.builder.error.unchanged',
   'rotation.builder.error.changedToday',

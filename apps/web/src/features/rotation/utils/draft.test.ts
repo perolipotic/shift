@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ROTATION_CHANGED_TODAY,
   ROTATION_EFFECTIVE_PAST,
+  ROTATION_EFFECTIVE_TOO_FAR,
   ROTATION_EMPTY,
   ROTATION_NO_TEAMS,
   ROTATION_SCHEDULED,
@@ -29,6 +30,7 @@ import {
   dropOf,
   focusAfterDropOf,
   focusAfterRemoveOf,
+  latestEffectiveFromOf,
   normalizedDraftOf,
   prefillOf,
   NO_CLOCK_RANGE,
@@ -208,12 +210,29 @@ describe('the prefill', () => {
     expect(prefillOf(snapshot, TODAY).anchorDate).toBe(TODAY);
   });
 
-  it('a team with no rotation, or no team at all: an empty draft, anchored today', async () => {
-    const withNewTeam = await snapshotOf({ ...PILOT, teams: [...PILOT.teams, teamRow('new', 'Smjena E')] });
+  it('a new team with no rotation: the pattern the others share, the new team on step 1', async () => {
+    const snapshot = await snapshotOf({ ...PILOT, teams: [...PILOT.teams, teamRow('new', 'Smjena E')] });
+    const draft = prefillOf(snapshot, TODAY);
+
+    expect(draft.steps).toEqual([DAN, NOC, SLOB, SLOB]);
+    expect(draft.anchorDate).toBe(TODAY);
+    expect(draft.offsets).toEqual({
+      'pilot-smjena-a': 0,
+      'pilot-smjena-b': 1,
+      'pilot-smjena-c': 2,
+      'pilot-smjena-d': 3,
+      new: 0,
+    });
+    // The new team has nothing stored, so the draft is a change to save.
+    expect(draftRefusalOf(snapshot, draft, TODAY)).not.toBe(ROTATION_UNCHANGED);
+  });
+
+  it('no team with a rotation, or no team at all: an empty draft, anchored today', async () => {
+    const noneAssigned = await snapshotOf({ ...PILOT, assignments: [] });
     const withNoTeam = await snapshotOf({ ...PILOT, teams: [], assignments: [] });
 
-    expect(prefillOf(withNewTeam, TODAY).steps).toEqual([]);
-    expect(prefillOf(withNewTeam, TODAY).offsets['new']).toBe(0);
+    expect(prefillOf(noneAssigned, TODAY)).toEqual(emptyDraftOf(rotationTeamsOf(noneAssigned), TODAY));
+    expect(prefillOf(noneAssigned, TODAY).offsets['pilot-smjena-a']).toBe(0);
     expect(prefillOf(withNoTeam, TODAY)).toEqual({ steps: [], anchorDate: TODAY, effectiveFrom: TODAY, offsets: {}, keys: [], nextKey: 0 });
   });
 
@@ -924,6 +943,28 @@ describe('the effective date (story 2.6)', () => {
       expect(draft).toEqual(copy);
     }
     expect(draftRefusalOf(snapshot, withEffectiveFrom(changed, TODAY), TODAY)).toBeNull();
+  });
+
+  it('too far: a date more than a year after today is refused with its own reason, and the draft is kept', async () => {
+    const snapshot = await snapshotOf(PILOT);
+    const [first] = rotationTeamsOf(snapshot);
+    const changed = withTeamStep(prefillOf(snapshot, TODAY), first?.id ?? '', 1);
+    const typo = withEffectiveFrom(changed, '2062-09-26');
+    const copy = JSON.parse(JSON.stringify(typo)) as RotationDraft;
+
+    expect(latestEffectiveFromOf(TODAY)).toBe('2027-09-26');
+    expect(draftRefusalOf(snapshot, typo, TODAY)).toBe(ROTATION_EFFECTIVE_TOO_FAR);
+    expect(typo).toEqual(copy);
+    expect(draftRefusalOf(snapshot, withEffectiveFrom(changed, '2027-09-27'), TODAY)).toBe(ROTATION_EFFECTIVE_TOO_FAR);
+    // A year ahead to the day is still accepted.
+    expect(draftRefusalOf(snapshot, withEffectiveFrom(changed, '2027-09-26'), TODAY)).toBeNull();
+  });
+
+  it('the latest effective date: a year ahead, 29 February falls back to the 28th, and the calendar ends at 9999', () => {
+    expect(latestEffectiveFromOf('2028-02-29')).toBe('2029-02-28');
+    expect(latestEffectiveFromOf('2027-02-28')).toBe('2028-02-28');
+    expect(latestEffectiveFromOf('9999-06-01')).toBe('9999-12-31');
+    expect(latestEffectiveFromOf('2026-02-31')).toBeNull();
   });
 
   it('future: the preview, the figures and the check all start on the effective date', async () => {

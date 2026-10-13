@@ -79,6 +79,7 @@ import {
   figuresOf,
   focusAfterDropOf,
   focusAfterRemoveOf,
+  latestEffectiveFromOf,
   normalizedDraftOf,
   previewGridOf,
   spreadOfferedOf,
@@ -179,7 +180,7 @@ import {
 import { savedPendingCountOf } from '@/features/rotation/services/override-disposition';
 import { ROTATION_SAVE_BAR_ID } from '@/features/rotation/utils/element-ids';
 import { OverrideReview } from '@/features/rotation/components/override-review';
-import { durationValuesOf, shiftTypeDurationMessageKey } from '@/features/shift-types/services/list';
+import { shiftTypeDurationMessageKey } from '@/features/shift-types/services/list';
 import {
   ROTATION_CANCEL_DEPENDENTS,
   ROTATION_SAVE_DEPENDENTS,
@@ -187,6 +188,7 @@ import {
   retryRead,
 } from '@/features/teams/services/dependents';
 import { supabaseClient } from '@/lib/supabase/client';
+import { durationValuesOf } from '@/utils/time';
 
 /**
  * The rotation builder (story 2.3b, UX-DR14, UX-DR15), rendered on
@@ -1124,6 +1126,7 @@ export function RotationSection({
                 type="date"
                 required
                 min={today ?? undefined}
+                max={(today === null ? null : latestEffectiveFromOf(today)) ?? undefined}
                 value={current.effectiveFrom}
                 disabled={pending}
                 onChange={chooseEffectiveFrom(current)}

@@ -111,12 +111,28 @@ describe('rotationWarningsOf — the pilot', () => {
       {
         code: DUPLICATE_COVERAGE,
         dates: [
-          { date: '2026-09-26', shiftTypeIds: [DAN] },
-          { date: '2026-09-27', shiftTypeIds: [NOC] },
+          { date: '2026-09-26', shiftTypeIds: [DAN], teamIds: [['t0', 't1']] },
+          { date: '2026-09-27', shiftTypeIds: [NOC], teamIds: [['t0', 't1']] },
         ],
       },
       { code: REST_GAP, minutes: 1440, shiftTypeIds: [DAN, NOC], endless: false },
     ]);
+  });
+
+  it('names the teams on each doubled type, in the order the assignments were given', () => {
+    // t3 and t0 on step 1 (Dan), t1 and t2 on step 2 (Noć): both doubled on day 1.
+    const warnings = rotationWarningsOf(
+      pilot({ steps: stepsOf([DAN, NOC, SLOB, SLOB]), assignments: teamsAt([0, 1, 1, 0]) }),
+    );
+
+    expect(warnings.find((warning) => warning.code === DUPLICATE_COVERAGE)).toEqual({
+      code: DUPLICATE_COVERAGE,
+      dates: [
+        { date: '2026-09-26', shiftTypeIds: [DAN, NOC], teamIds: [['t0', 't3'], ['t1', 't2']] },
+        { date: '2026-09-27', shiftTypeIds: [NOC], teamIds: [['t0', 't3']] },
+        { date: '2026-09-29', shiftTypeIds: [DAN], teamIds: [['t1', 't2']] },
+      ],
+    });
   });
 
   it('reports no rest gap when a free step separates the working ones', () => {
@@ -285,8 +301,8 @@ describe('rotationWarningsOf — inputs', () => {
       {
         code: DUPLICATE_COVERAGE,
         dates: [
-          { date: '9999-12-30', shiftTypeIds: [DAN] },
-          { date: '9999-12-31', shiftTypeIds: [NOC] },
+          { date: '9999-12-30', shiftTypeIds: [DAN], teamIds: [['t0', 't1']] },
+          { date: '9999-12-31', shiftTypeIds: [NOC], teamIds: [['t0', 't1']] },
         ],
       },
     ]);
@@ -313,8 +329,8 @@ describe('rotationWarningsOf — inputs', () => {
       {
         code: DUPLICATE_COVERAGE,
         dates: [
-          { date: '2028-02-28', shiftTypeIds: [DAN] },
-          { date: '2028-02-29', shiftTypeIds: [NOC] },
+          { date: '2028-02-28', shiftTypeIds: [DAN], teamIds: [['t0', 't1']] },
+          { date: '2028-02-29', shiftTypeIds: [NOC], teamIds: [['t0', 't1']] },
         ],
       },
     ]);
@@ -335,8 +351,8 @@ describe('rotationWarningsOf — inputs', () => {
       {
         code: DUPLICATE_COVERAGE,
         dates: [
-          { date: '2026-09-26', shiftTypeIds: [DAN] },
-          { date: '2026-09-28', shiftTypeIds: [DAN] },
+          { date: '2026-09-26', shiftTypeIds: [DAN], teamIds: [['t0', 't1']] },
+          { date: '2026-09-28', shiftTypeIds: [DAN], teamIds: [['t0', 't1']] },
         ],
       },
     ]);

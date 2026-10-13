@@ -22,7 +22,7 @@ import { Select } from '@/components/ui/select';
 import { t } from '@/lib/i18n';
 import type { MemberEdit } from '@/features/members/hooks/use-member-edit';
 import { memberErasureCopyOf } from '@/features/members/utils/erasure-copy';
-import { NO_TEXT, shownDate, type MemberListRow } from '@/features/members/services/list';
+import { type MemberListRow } from '@/features/members/services/list';
 import {
   NO_TEAM_VALUE,
   STATUS_ARMED,
@@ -56,6 +56,7 @@ import {
   type MoveSide,
 } from '@/features/members/services/team-move-preview';
 import { teamsMessageKey, teamsRetryMessageKey } from '@/features/teams/services/list';
+import { NO_TEXT, shownDate } from '@/utils/text';
 
 /**
  * The member page's *Smjena* card (story 1.7b; facts and a dialog since story

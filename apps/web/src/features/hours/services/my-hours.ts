@@ -22,7 +22,7 @@ import {
   type MonthHeader,
   type SnapshotScheduleInput,
 } from '@/features/calendar/utils/month';
-import { durationMessageKey, durationValuesOf, type DurationValues } from '@/features/hour-bands/services/list';
+import { durationMessageKey } from '@/features/hour-bands/services/list';
 import {
   HOURS_CONFLICTS_LOADING,
   HOURS_CONFLICTS_UNAVAILABLE,
@@ -32,6 +32,7 @@ import {
   type HoursConflictsState,
   type LeaveRecordsByMember,
 } from '@/features/hours/services/hours-conflicts';
+import { durationValuesOf, type DurationValues } from '@/utils/time';
 import type { HoursSearch } from '@/features/hours/services/hours-search';
 
 /**

@@ -18,7 +18,7 @@ import {
 } from '@/features/conflicts/services/conflicts-queue';
 import { heldByReplacement } from '@/features/conflicts/services/replacement-effect';
 import { ACCEPT_UNCOVERED, REPLACE_MEMBER } from '@/features/conflicts/services/resolutions';
-import { durationMessageKey, durationValuesOf, type DurationValues } from '@/features/hour-bands/services/list';
+import { durationMessageKey } from '@/features/hour-bands/services/list';
 import {
   organizationLeaveRecordsOf,
   type LeaveRecord,
@@ -46,6 +46,7 @@ import {
 } from '@/features/leave/services/leave-section';
 import { positionsShown, rosterPositionMessageKey } from '@/features/members/utils/position';
 import { ranksShown, rosterRankMessageKey } from '@/features/members/utils/rank';
+import { durationValuesOf, type DurationValues } from '@/utils/time';
 
 /**
  * One conflict's resolution screen (story 5.4b; CAP-16, UX-DR10, UX-DR11,
