@@ -610,6 +610,57 @@ update members m
 Then ask the admin to try the rename again. If it keeps failing, the cause is in
 the function's log line above the code.
 
+### When a status version already in effect is wrong
+
+A deactivation dated today or earlier is in effect, and nothing in the product
+undoes it. No policy updates or deletes an in-effect `member_status_versions`
+row, and an admin cannot change their own status. So when an admin deactivated
+the wrong member, or the organization's only reachable admin was deactivated by
+a mistaken date, the correction is an operator write as the owner.
+
+**Append a reactivation dated today. Never delete or update the wrong row.**
+History is immutable: the member really was out on the days already past, and
+the record of that stays. The new row is the correction, and it ends the outage
+from today on.
+
+```bash
+# 1. Read the member's versions and the organization's today.
+select v.effective_from, v.active, v.created_at,
+       public.organization_today(v.organization_id) as today
+  from member_status_versions v
+  join members m on m.id = v.member_id
+  join organizations o on o.id = m.organization_id
+ where o.slug = '<slug>' and m.username = '<username>'
+ order by v.effective_from;
+```
+
+- The wrong row is the latest and is dated **before today**: go to step 2.
+- The wrong row is dated **after today**: it is not in effect yet. Another
+  active admin cancels it in the product. If none can, deleting that one row as
+  the owner is that same cancellation and rewrites nothing that has happened.
+- A version dated **after** the wrong one is already scheduled (only the latest
+  row can lie in the future): cancel that one first, as above, so the history
+  still alternates. Then go to step 2.
+- The wrong row is dated **today**: today's date is taken, because a member has
+  one version per date (`unique (member_id, effective_from)`). Date the
+  reactivation tomorrow instead (`+ 1` in step 2). The member is back at
+  midnight in the organization's zone. That costs one day, which is less than a
+  rewritten history.
+
+```bash
+# 2. Append the reactivation. `created_by` cannot default here (no session, so
+#    no auth.uid()), so attribute it to the admin who asked for the correction.
+#    For a lone admin, that is the member themselves.
+insert into member_status_versions (organization_id, member_id, active, effective_from, created_by)
+select m.organization_id, m.id, true, public.organization_today(m.organization_id), '<requesting admin auth user id>'
+  from members m join organizations o on o.id = m.organization_id
+ where o.slug = '<slug>' and m.username = '<username>';
+```
+
+Run step 1 again: the new row is the latest, `active` is true, and it is dated
+today (or tomorrow). The member signs in again as usual. The access-token hook
+refused them while they were inactive, so no session needs to be revoked.
+
 ### TRUNCATE is refused, for `postgres` too
 
 `0023` puts a `before truncate` trigger on `members`, `member_status_versions`
@@ -686,7 +737,15 @@ text and a name with an apostrophe in it is data rather than syntax. `PGOPTIONS`
 is how libpq carries them: `-c <name>=<value>` per setting, with any space in a
 value escaped as `\ `.
 
+The first admin's password is read without echoing it, so it never lands in
+shell history, and it is unset afterwards. It must be at least as long as
+`minimum_password_length` in `supabase/config.toml` (10); a shorter one is
+refused with `ADMIN_PASSWORD_TOO_SHORT`. Inside `PGOPTIONS` a value cannot hold
+a space or a backslash (a space would need `\ `, and the backslash itself is
+consumed), so generate one without either: `openssl rand -hex 16` does.
+
 ```bash
+read -s ADMIN_PW
 PGOPTIONS="\
 -c shift.organization_slug=vatrogasci-primjer \
 -c shift.organization_name=Vatrogasci\ Primjer \
@@ -697,10 +756,17 @@ PGOPTIONS="\
 -c shift.leave_year_start_day=1 \
 -c shift.admin_name=Ime\ Prezime \
 -c shift.admin_username=ime.prezime \
--c shift.admin_password=<a long generated password> \
+-c shift.admin_password=$ADMIN_PW \
 -c shift.admin_leave_allowance_days=20" \
   pnpm db:provision
+unset ADMIN_PW
 ```
+
+`PGOPTIONS` is still visible in the process list for as long as the command
+runs. On a shared machine, or for a password that needs a space or a backslash,
+pipe the settings and the script to `psql` in one session instead, the way §7.5
+does for the demo, and pass the password as a `psql` variable:
+`set_config('shift.admin_password', :'pw', false)` quotes it as data.
 
 `pnpm db:provision` is
 `supabase db query --local -f supabase/operator/provision-organization.sql`.
@@ -716,13 +782,13 @@ For a remote project, run the same file with `--linked` (after
 | `shift.organization_address` | no | |
 | `shift.organization_contact_email` | no | the organization's own address, not a member's |
 | `shift.organization_type` | yes | a descriptive label; inert, and it never affects scheduling |
-| `shift.organization_timezone` | yes | IANA name — every date and time renders in it |
+| `shift.organization_timezone` | yes | IANA `Area/Location` name (`Europe/Zagreb`). Every date and time renders in it, and the product cannot change it later. An abbreviation (`CET`, `UTC`), a POSIX string or a `posix/` alias is refused |
 | `shift.organization_locale` | yes | BCP 47 tag |
 | `shift.leave_year_start_month` | yes | 1–12 |
 | `shift.leave_year_start_day` | yes | 1–28 |
 | `shift.admin_name` | yes | |
 | `shift.admin_username` | yes | lowercase; becomes the local part of the sign-in address |
-| `shift.admin_password` | yes | |
+| `shift.admin_password` | yes | at least 10 characters (`minimum_password_length`) |
 | `shift.admin_email` | no | a real address if the admin has one; sign-in never uses it |
 | `shift.admin_leave_allowance_days` | yes | |
 
@@ -739,6 +805,9 @@ with no email address (AD-12).
 | Supplied organization attributes and no admin | `ORGANIZATION_WITHOUT_ADMIN`, and the organization row is rolled back with it |
 | Omitted a required organization attribute | a Postgres `23502` / `23514` — the schema refuses it, there is no separate validation |
 | Reused a slug or a username within a slug | a unique violation, `23505` |
+| Gave a first-admin password shorter than 10 characters | `ADMIN_PASSWORD_TOO_SHORT` (`23514`) |
+| Gave a timezone that is not an IANA `Area/Location` name the database knows | `ORGANIZATION_TIMEZONE_UNKNOWN` (`23514`), with the value in the detail |
+| Gave a setting of white space alone (tabs and no-break spaces included) | read as not given: `ORGANIZATION_WITHOUT_ADMIN` for an admin setting, the schema's `23502` for a required organization one |
 
 Later, once the organization exists, the database refuses any path that would
 leave it with zero admins — deleting the last admin, or downgrading their role
