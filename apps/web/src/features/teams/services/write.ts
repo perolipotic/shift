@@ -1,5 +1,5 @@
 import { teamById, type TeamRow, type TeamsSurfaceState } from '@/features/teams/services/list';
-import { enteredName } from '@/utils/name';
+import { enteredName, namesLengthCheck } from '@/utils/name';
 
 /**
  * Creating, renaming and archiving a team — every decision the two team
@@ -21,6 +21,8 @@ import { enteredName } from '@/utils/name';
 
 /** The name was empty once trimmed. Refused before anything is sent. */
 export const TEAM_NAME_EMPTY = 'TEAM_NAME_EMPTY';
+/** The name is longer than `0036`'s maximum (`teams_name_length`). */
+export const TEAM_NAME_TOO_LONG = 'TEAM_NAME_TOO_LONG';
 /** Another team still in use in this organization carries the name. */
 export const TEAM_NAME_TAKEN = 'TEAM_NAME_TAKEN';
 /** The team changed since the screen was drawn (archived, or out of reach). */
@@ -43,16 +45,26 @@ export const TEAM_UNKNOWN = 'TEAM_UNKNOWN';
  * answering an ARCHIVE is this rule, not a lost permission.
  */
 export const TEAM_IN_USE = 'TEAM_IN_USE';
+/**
+ * The team has a rotation in force or scheduled (`0036`).
+ *
+ * A BEFORE UPDATE trigger refuses the archive with `23514` and the message
+ * `TEAM_IN_ROTATION`, before the policy's in-use rule is asked. No version
+ * ends a rotation, so a team that has stood on one keeps it.
+ */
+export const TEAM_IN_ROTATION = 'TEAM_IN_ROTATION';
 
 export type TeamWriteFailure =
   | typeof TEAM_NAME_EMPTY
+  | typeof TEAM_NAME_TOO_LONG
   | typeof TEAM_NAME_TAKEN
   | typeof TEAM_STALE
   | typeof TEAM_WRITE_REFUSED
   | typeof TEAM_WRITE_INVALID
   | typeof TEAM_WRITE_UNAVAILABLE
   | typeof TEAM_UNKNOWN
-  | typeof TEAM_IN_USE;
+  | typeof TEAM_IN_USE
+  | typeof TEAM_IN_ROTATION;
 
 export type TeamWriteOutcome =
   | { readonly ok: true }
@@ -109,13 +121,16 @@ const VALUE_CLASSES = ['22', '23'];
  *
  * `23505` IS THE NAME, because the only unique on the columns a session writes
  * is `teams_organization_name_key` — the other two keys are `id`, which the
- * session never names. `23514` IS THE EMPTY NAME, because `teams_name_not_blank`
- * is the table's only check. Both are reported as what they are rather than as
- * a generic "correct a value", so the refusal names the problem.
+ * session never names. `23514` IS THE NAME: `teams_name_length` (`0036`) when
+ * the refusal names it, else `teams_name_not_blank`, the table's only other
+ * check. Each is reported as what it is rather than as a generic "correct a
+ * value", so the refusal names the problem.
  */
 export function teamWriteFailureOf(error: TeamWriteError): TeamWriteFailure {
   if (error.code === UNIQUE_VIOLATION) return TEAM_NAME_TAKEN;
-  if (error.code === CHECK_VIOLATION) return TEAM_NAME_EMPTY;
+  if (error.code === CHECK_VIOLATION) {
+    return namesLengthCheck(error.message) ? TEAM_NAME_TOO_LONG : TEAM_NAME_EMPTY;
+  }
   if (error.code === INSUFFICIENT_PRIVILEGE) return TEAM_WRITE_REFUSED;
   if (error.code !== undefined && VALUE_CLASSES.includes(error.code.slice(0, 2))) {
     return TEAM_WRITE_INVALID;
@@ -124,12 +139,17 @@ export function teamWriteFailureOf(error: TeamWriteError): TeamWriteFailure {
   return TEAM_WRITE_UNAVAILABLE;
 }
 
+/** The message `0036` refuses archiving a team in a rotation with. */
+const IN_ROTATION_MESSAGE = 'TEAM_IN_ROTATION';
+
 /**
  * An archive's refusal: `42501` is the in-use rule (see {@link TEAM_IN_USE}),
+ * `23514` with `0036`'s message the rotation rule ({@link TEAM_IN_ROTATION}),
  * and everything else reads as any other team write does.
  */
 export function archiveFailureOf(error: TeamWriteError): TeamWriteFailure {
   if (error.code === INSUFFICIENT_PRIVILEGE) return TEAM_IN_USE;
+  if (error.code === CHECK_VIOLATION && error.message === IN_ROTATION_MESSAGE) return TEAM_IN_ROTATION;
 
   return teamWriteFailureOf(error);
 }
@@ -250,14 +270,17 @@ export function teamWriteMessageKey(
   failure: TeamWriteFailure,
 ):
   | 'smjene.error.empty'
+  | 'smjene.error.tooLong'
   | 'smjene.error.taken'
   | 'smjene.error.stale'
   | 'smjene.error.refused'
   | 'smjene.error.invalid'
   | 'smjene.error.saveUnavailable'
   | 'smjene.error.unknown'
-  | 'smjene.error.inUse' {
+  | 'smjene.error.inUse'
+  | 'smjene.error.inRotation' {
   if (failure === TEAM_NAME_EMPTY) return 'smjene.error.empty';
+  if (failure === TEAM_NAME_TOO_LONG) return 'smjene.error.tooLong';
   if (failure === TEAM_NAME_TAKEN) return 'smjene.error.taken';
   if (failure === TEAM_STALE) return 'smjene.error.stale';
   if (failure === TEAM_WRITE_REFUSED) return 'smjene.error.refused';
@@ -265,6 +288,7 @@ export function teamWriteMessageKey(
   if (failure === TEAM_WRITE_UNAVAILABLE) return 'smjene.error.saveUnavailable';
   if (failure === TEAM_UNKNOWN) return 'smjene.error.unknown';
   if (failure === TEAM_IN_USE) return 'smjene.error.inUse';
+  if (failure === TEAM_IN_ROTATION) return 'smjene.error.inRotation';
 
   const unhandled: never = failure;
 

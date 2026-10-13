@@ -12,9 +12,11 @@ import {
   ARCHIVE_BUSY,
   ARCHIVE_IDLE,
   TEAM_ARCHIVED,
+  TEAM_IN_ROTATION,
   TEAM_IN_USE,
   TEAM_NAME_EMPTY,
   TEAM_NAME_TAKEN,
+  TEAM_NAME_TOO_LONG,
   TEAM_RENAMED,
   TEAM_STALE,
   TEAM_UNKNOWN,
@@ -235,6 +237,23 @@ describe('a database refusal names its problem', () => {
     expect(teamWriteFailureOf({ code })).toBe(failure);
   });
 
+  it('reads a 23514 naming 0036\'s length check as too long, and any other 23514 as empty', () => {
+    expect(
+      teamWriteFailureOf({
+        code: '23514',
+        message: 'new row for relation "teams" violates check constraint "teams_name_length"',
+      }),
+    ).toBe(TEAM_NAME_TOO_LONG);
+    // `details` holds what was typed, never a constraint.
+    expect(teamWriteFailureOf({ code: '23514', details: 'teams_name_length' })).toBe(TEAM_NAME_EMPTY);
+    expect(
+      teamWriteFailureOf({
+        code: '23514',
+        message: 'new row for relation "teams" violates check constraint "teams_name_not_blank"',
+      }),
+    ).toBe(TEAM_NAME_EMPTY);
+  });
+
   it('gives every failure its own message', () => {
     const failures: TeamWriteFailure[] = [
       TEAM_NAME_EMPTY,
@@ -245,6 +264,8 @@ describe('a database refusal names its problem', () => {
       TEAM_WRITE_UNAVAILABLE,
       TEAM_UNKNOWN,
       TEAM_IN_USE,
+      TEAM_NAME_TOO_LONG,
+      TEAM_IN_ROTATION,
     ];
     const keys = failures.map((failure) => teamWriteMessageKey(failure));
 
@@ -253,6 +274,8 @@ describe('a database refusal names its problem', () => {
     expect(teamWriteMessageKey(TEAM_NAME_EMPTY)).toBe('smjene.error.empty');
     expect(teamWriteMessageKey(TEAM_STALE)).toBe('smjene.error.stale');
     expect(teamWriteMessageKey(TEAM_IN_USE)).toBe('smjene.error.inUse');
+    expect(teamWriteMessageKey(TEAM_NAME_TOO_LONG)).toBe('smjene.error.tooLong');
+    expect(teamWriteMessageKey(TEAM_IN_ROTATION)).toBe('smjene.error.inRotation');
   });
 });
 
@@ -265,6 +288,13 @@ describe('an archive of a team somebody is on is refused by name (story 1.7b)', 
     expect(archiveFailureOf({ code: '23505' })).toBe(TEAM_NAME_TAKEN);
     expect(archiveFailureOf({ code: '40001' })).toBe(TEAM_WRITE_UNAVAILABLE);
     expect(archiveFailureOf({})).toBe(TEAM_WRITE_UNAVAILABLE);
+  });
+
+  it('reads 0036\'s 23514 TEAM_IN_ROTATION as the rotation rule, and only on an archive', () => {
+    expect(archiveFailureOf({ code: '23514', message: 'TEAM_IN_ROTATION' })).toBe(TEAM_IN_ROTATION);
+    // Another check on an archive is still the name's, as on any write.
+    expect(archiveFailureOf({ code: '23514', message: 'teams_name_not_blank' })).toBe(TEAM_NAME_EMPTY);
+    expect(teamWriteFailureOf({ code: '23514', message: 'TEAM_IN_ROTATION' })).toBe(TEAM_NAME_EMPTY);
   });
 
   it('settles a refused archive as in use, and a refused rename as a plain refusal', async () => {

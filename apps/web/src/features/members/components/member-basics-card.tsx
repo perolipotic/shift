@@ -25,6 +25,7 @@ import {
 } from '@/features/members/utils/rank';
 import { refusalText } from '@/features/members/utils/refusal-text';
 import { MEMBER_ROLES } from '@/features/navigation/services/role';
+import { NAME_MAX_LENGTH } from '@/utils/name';
 
 /** One fact: its label above its value, so nothing breaks on a phone. */
 function Fact({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactNode {
@@ -206,6 +207,7 @@ export function MemberBasicsDialog({ edit }: { readonly edit: MemberEdit }): Rea
               ref={nameField}
               id="member-name"
               name="name"
+              maxLength={NAME_MAX_LENGTH}
               type="text"
               required
               defaultValue={member.name}

@@ -11,6 +11,7 @@ import { NO_TEXT } from '@/features/members/services/list';
 import type { TeamListScreen } from '@/features/teams/hooks/use-team-list';
 import { teamWriteMessageKey } from '@/features/teams/services/write';
 import { t } from '@/lib/i18n';
+import { NAME_MAX_LENGTH } from '@/utils/name';
 
 /**
  * THE ADD FORM IS A DIALOG (design refresh C), opened from the page header.
@@ -50,6 +51,7 @@ export function TeamAddDialog({ screen }: { readonly screen: TeamListScreen }): 
               ref={nameField}
               id="team-new-name"
               name="name"
+              maxLength={NAME_MAX_LENGTH}
               type="text"
               required
               defaultValue={NO_TEXT}

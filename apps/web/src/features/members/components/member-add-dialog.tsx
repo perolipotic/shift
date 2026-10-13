@@ -33,6 +33,7 @@ import {
 } from '@/features/members/utils/rank';
 import { refusalText } from '@/features/members/utils/refusal-text';
 import { MEMBER_ROLES } from '@/features/navigation/services/role';
+import { NAME_MAX_LENGTH } from '@/utils/name';
 
 /** `0002:145` — the column is `smallint not null check (>= 0)`, so the control
  *  cannot express a negative, a fraction of a day, or a number the column
@@ -204,6 +205,7 @@ export function MemberAddDialog({ create }: { readonly create: MemberCreate }): 
               ref={nameField}
               id="member-name"
               name="name"
+              maxLength={NAME_MAX_LENGTH}
               type="text"
               required
               defaultValue={NO_TEXT}

@@ -283,8 +283,16 @@ describe('the three calls', () => {
     expect(confirm.calls, 'the confirmation lost its token').toEqual([
       [CONFIRM_OVERRIDE_FUNCTION, { p_override_id: 'o1', p_governing_saved_at: '2026-09-01T08:00:00.123456+00:00' }],
     ]);
-    expect(amend.calls).toEqual([
-      [AMEND_OVERRIDE_FUNCTION, { p_override_id: 'o1', p_shift_type_id: 'pilot-noc', p_reason: 'Zamjena' }],
+    expect(amend.calls, 'the amend lost its token').toEqual([
+      [
+        AMEND_OVERRIDE_FUNCTION,
+        {
+          p_override_id: 'o1',
+          p_shift_type_id: 'pilot-noc',
+          p_reason: 'Zamjena',
+          p_governing_saved_at: '2026-09-01T08:00:00.123456+00:00',
+        },
+      ],
     ]);
     expect(discard.calls).toEqual([[DISCARD_OVERRIDE_FUNCTION, { p_override_id: 'o1' }]]);
     expect([CONFIRM_OVERRIDE_FUNCTION, AMEND_OVERRIDE_FUNCTION, DISCARD_OVERRIDE_FUNCTION]).toEqual([
@@ -305,6 +313,9 @@ describe('the three calls', () => {
     expect(await confirmShiftTypeOverride(client, ungoverned)).toMatchObject({ ok: false });
     expect(await confirmShiftTypeOverride(client, { ...governed, governingSavedAt: null })).toMatchObject({ ok: false });
     expect(await amendShiftTypeOverride(client, ungoverned, 'pilot-noc', 'Zamjena')).toMatchObject({ ok: false });
+    expect(
+      await amendShiftTypeOverride(client, { ...governed, governingSavedAt: null }, 'pilot-noc', 'Zamjena'),
+    ).toMatchObject({ ok: false });
     expect(calls).toEqual([]);
   });
 
@@ -322,6 +333,9 @@ describe('the three calls', () => {
       ] as const) {
         expect(dispositionFailureOf({ code }), code).toBe(failure);
         expect(dispositionFailureOf({ code: 'P0001', message: 'SHIFT_TYPE_OVERRIDE_ARCHIVED' })).toBe(
+          DISPOSITION_ARCHIVED,
+        );
+        expect(dispositionFailureOf({ code: '23514', message: 'SHIFT_TYPE_OVERRIDE_ARCHIVED' })).toBe(
           DISPOSITION_ARCHIVED,
         );
         expect(dispositionFailureOf({ code: 'P0001', message: 'SHIFT_TYPE_OVERRIDE_CHANGED' })).toBe(

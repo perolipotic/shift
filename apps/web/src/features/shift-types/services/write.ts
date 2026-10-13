@@ -55,6 +55,8 @@ export { claimedOrganizationOf };
 
 /** The name was empty once trimmed (client-side, or `shift_types_name_not_blank`). */
 export const SHIFT_TYPE_NAME_EMPTY = 'SHIFT_TYPE_NAME_EMPTY';
+/** The name is longer than `0036`'s maximum (`shift_types_name_length`). */
+export const SHIFT_TYPE_NAME_TOO_LONG = 'SHIFT_TYPE_NAME_TOO_LONG';
 /** Another type in use in this organization carries the name, ignoring case and padding. */
 export const SHIFT_TYPE_NAME_TAKEN = 'SHIFT_TYPE_NAME_TAKEN';
 /** A start or end is not a whole minute of the day (client-side, or a time check). */
@@ -67,6 +69,11 @@ export const SHIFT_TYPE_TIMES_REFUSED = 'SHIFT_TYPE_TIMES_REFUSED';
 export const SHIFT_TYPE_TIMES_UNCHANGED = 'SHIFT_TYPE_TIMES_UNCHANGED';
 /** Archiving was refused (42501): a change of times is scheduled; cancel it first. */
 export const SHIFT_TYPE_CHANGE_SCHEDULED = 'SHIFT_TYPE_CHANGE_SCHEDULED';
+/**
+ * Archiving was refused (`0036`'s 23514 `SHIFT_TYPE_IN_ROTATION`): a rotation
+ * in force or scheduled steps through the type.
+ */
+export const SHIFT_TYPE_IN_ROTATION = 'SHIFT_TYPE_IN_ROTATION';
 /** The type added, but its first times did not: it is listed with no times. */
 export const SHIFT_TYPE_CREATED_WITHOUT_TIMES = 'SHIFT_TYPE_CREATED_WITHOUT_TIMES';
 /** The type changed since the screen was drawn (zero rows, or out of reach). */
@@ -82,12 +89,14 @@ export const SHIFT_TYPE_UNKNOWN = 'SHIFT_TYPE_UNKNOWN';
 
 export type ShiftTypeWriteFailure =
   | typeof SHIFT_TYPE_NAME_EMPTY
+  | typeof SHIFT_TYPE_NAME_TOO_LONG
   | typeof SHIFT_TYPE_NAME_TAKEN
   | typeof SHIFT_TYPE_TIME_INVALID
   | typeof SHIFT_TYPE_DATE_INVALID
   | typeof SHIFT_TYPE_TIMES_REFUSED
   | typeof SHIFT_TYPE_TIMES_UNCHANGED
   | typeof SHIFT_TYPE_CHANGE_SCHEDULED
+  | typeof SHIFT_TYPE_IN_ROTATION
   | typeof SHIFT_TYPE_CREATED_WITHOUT_TIMES
   | typeof SHIFT_TYPE_STALE
   | typeof SHIFT_TYPE_WRITE_REFUSED
@@ -196,6 +205,7 @@ const VALUE_CLASSES = ['22', '23'];
 /** `0013`'s constraint names, as PostgREST reports them in `message`/`details`. */
 const NAME_UNIQUE = 'shift_types_organization_name_key';
 const NAME_CHECK = 'shift_types_name_not_blank';
+const NAME_LENGTH_CHECK = 'shift_types_name_length';
 const TIME_CHECKS = [
   'shift_type_versions_start_before_midnight',
   'shift_type_versions_end_before_midnight',
@@ -227,6 +237,7 @@ export function shiftTypeWriteFailureOf(error: ShiftTypeWriteError): ShiftTypeWr
 
   if (error.code === CHECK_VIOLATION) {
     if (named.includes(NAME_CHECK)) return SHIFT_TYPE_NAME_EMPTY;
+    if (named.includes(NAME_LENGTH_CHECK)) return SHIFT_TYPE_NAME_TOO_LONG;
     if (TIME_CHECKS.some((check) => named.includes(check))) return SHIFT_TYPE_TIME_INVALID;
     if (named.includes(DATE_CHECK)) return SHIFT_TYPE_DATE_INVALID;
 
@@ -252,11 +263,15 @@ export function timesFailureOf(error: ShiftTypeWriteError): ShiftTypeWriteFailur
   return shiftTypeWriteFailureOf(error);
 }
 
+/** The message `0036` refuses archiving a type a rotation uses with. */
+const IN_ROTATION_MESSAGE = 'SHIFT_TYPE_IN_ROTATION';
+
 /**
  * An archive's refusal. `42501` is the scheduled-change rule (see the module
  * comment) ONLY when the snapshot shows a change scheduled — then the message
  * says to cancel it first. Without one, the list cannot explain the refusal,
- * and it is the plain permission refusal.
+ * and it is the plain permission refusal. `23514` with `0036`'s message is the
+ * rotation rule ({@link SHIFT_TYPE_IN_ROTATION}).
  */
 export function archiveFailureOf(
   error: ShiftTypeWriteError,
@@ -265,6 +280,7 @@ export function archiveFailureOf(
   if (error.code === INSUFFICIENT_PRIVILEGE) {
     return scheduled ? SHIFT_TYPE_CHANGE_SCHEDULED : SHIFT_TYPE_WRITE_REFUSED;
   }
+  if (error.code === CHECK_VIOLATION && error.message === IN_ROTATION_MESSAGE) return SHIFT_TYPE_IN_ROTATION;
 
   return shiftTypeWriteFailureOf(error);
 }
@@ -631,7 +647,7 @@ export type ShiftTypeField =
  * both times, since either may be the one; a refusal about no field marks none.
  */
 export function marksField(failure: ShiftTypeWriteFailure | null, field: ShiftTypeField): boolean {
-  if (failure === SHIFT_TYPE_NAME_EMPTY || failure === SHIFT_TYPE_NAME_TAKEN) {
+  if (failure === SHIFT_TYPE_NAME_EMPTY || failure === SHIFT_TYPE_NAME_TOO_LONG || failure === SHIFT_TYPE_NAME_TAKEN) {
     return field === SHIFT_TYPE_NAME_FIELD;
   }
   if (failure === SHIFT_TYPE_TIME_INVALID) {
@@ -650,7 +666,7 @@ export function refusedFieldOf(
   failure: ShiftTypeWriteFailure,
   fallback: ShiftTypeField,
 ): ShiftTypeField {
-  if (failure === SHIFT_TYPE_NAME_EMPTY || failure === SHIFT_TYPE_NAME_TAKEN) {
+  if (failure === SHIFT_TYPE_NAME_EMPTY || failure === SHIFT_TYPE_NAME_TOO_LONG || failure === SHIFT_TYPE_NAME_TAKEN) {
     return SHIFT_TYPE_NAME_FIELD;
   }
   if (failure === SHIFT_TYPE_TIME_INVALID) return SHIFT_TYPE_START_FIELD;
@@ -666,12 +682,14 @@ export function shiftTypeWriteMessageKey(
   failure: ShiftTypeWriteFailure,
 ):
   | 'rotation.shiftTypes.error.nameEmpty'
+  | 'rotation.shiftTypes.error.nameTooLong'
   | 'rotation.shiftTypes.error.nameTaken'
   | 'rotation.shiftTypes.error.timeInvalid'
   | 'rotation.shiftTypes.error.dateInvalid'
   | 'rotation.shiftTypes.error.timesRefused'
   | 'rotation.shiftTypes.error.timesUnchanged'
   | 'rotation.shiftTypes.error.changeScheduled'
+  | 'rotation.shiftTypes.error.inRotation'
   | 'rotation.shiftTypes.error.createdWithoutTimes'
   | 'rotation.shiftTypes.error.stale'
   | 'rotation.shiftTypes.error.refused'
@@ -681,6 +699,8 @@ export function shiftTypeWriteMessageKey(
   switch (failure) {
     case SHIFT_TYPE_NAME_EMPTY:
       return 'rotation.shiftTypes.error.nameEmpty';
+    case SHIFT_TYPE_NAME_TOO_LONG:
+      return 'rotation.shiftTypes.error.nameTooLong';
     case SHIFT_TYPE_NAME_TAKEN:
       return 'rotation.shiftTypes.error.nameTaken';
     case SHIFT_TYPE_TIME_INVALID:
@@ -693,6 +713,8 @@ export function shiftTypeWriteMessageKey(
       return 'rotation.shiftTypes.error.timesUnchanged';
     case SHIFT_TYPE_CHANGE_SCHEDULED:
       return 'rotation.shiftTypes.error.changeScheduled';
+    case SHIFT_TYPE_IN_ROTATION:
+      return 'rotation.shiftTypes.error.inRotation';
     case SHIFT_TYPE_CREATED_WITHOUT_TIMES:
       return 'rotation.shiftTypes.error.createdWithoutTimes';
     case SHIFT_TYPE_STALE:

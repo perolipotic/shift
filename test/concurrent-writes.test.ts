@@ -4,8 +4,9 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { connect, databaseUrl, noDatabase } from './database.js';
 
 /**
- * `0023_serialize_organization_writes.sql` and
- * `0035_serialize_teams_rotation_and_definers.sql`, executed with TWO REAL
+ * `0023_serialize_organization_writes.sql`,
+ * `0035_serialize_teams_rotation_and_definers.sql` and the lock half of
+ * `0036_named_refusals_and_rotation_archives.sql`, executed with TWO REAL
  * CONNECTIONS. Every other live suite runs one connection per case, so it
  * cannot see a race at all. This one can.
  *
@@ -376,9 +377,10 @@ afterAll(async () => {
 });
 
 describe('concurrent writes to one organization wait for each other', () => {
-  it.skipIf(noDatabase)('refuses the second of two admins deleted concurrently', async () => {
-    // Each admin removes their own row, which the delete policy admits. Each
-    // commit-time check alone sees the other admin still present.
+  it.skipIf(noDatabase)('refuses the second of two admins demoting themselves concurrently', async () => {
+    // Each admin demotes their own row, which the update policy admits. Each
+    // commit-time check alone sees the other admin still present. (A delete
+    // was this race's first shape; since 0036 no session deletes a member.)
     const { organization, a, b } = await fixture(async (client) => {
       const organization = await addOrganization(client);
       return {
@@ -391,16 +393,16 @@ describe('concurrent writes to one organization wait for each other', () => {
     await race(async (t1, t2, observer) => {
       await t1.query('begin');
       await actAs(t1, a, organization);
-      expect((await t1.query('delete from members where id = $1', [a.id])).rowCount).toBe(1);
+      expect((await demote(t1, a.id)).rowCount).toBe(1);
 
       const pid = await backendPid(t2);
       await t2.query('begin');
       await actAs(t2, b, organization);
-      const second = pending(t2.query('delete from members where id = $1', [b.id]));
+      const second = pending(demote(t2, b.id));
       await waitUntilBlocked(observer, pid, organization, second);
 
       await t1.query('commit');
-      expect(await second.outcome, 'the second delete statement itself').toEqual({
+      expect(await second.outcome, 'the second demotion statement itself').toEqual({
         ok: true,
         rowCount: 1,
       });
@@ -944,9 +946,9 @@ describe('a caller demoted while the write waited no longer writes as an admin (
     });
   }
 
-  it.skipIf(noDatabase)('still lets an admin remove themself, which the policy admits', async () => {
+  it.skipIf(noDatabase)('still lets an admin demote themself, which the policy admits', async () => {
     // The BEFORE ROW re-check reads the caller before the row is written, so
-    // an admin deleting their own row is still the admin who asked.
+    // an admin demoting their own row is still the admin who asked.
     const { organization, a } = await fixture(async (client) => {
       const organization = await addOrganization(client);
       const a = await addAccount(client, organization, 'admin');
@@ -957,7 +959,7 @@ describe('a caller demoted while the write waited no longer writes as an admin (
     await race(async (t1) => {
       await t1.query('begin');
       await actAs(t1, a, organization);
-      expect(await pending(t1.query('delete from members where id = $1', [a.id])).outcome).toEqual({
+      expect(await pending(demote(t1, a.id)).outcome).toEqual({
         ok: true,
         rowCount: 1,
       });
@@ -1023,11 +1025,16 @@ describe('the override definers take the organization lock before their admin ch
     });
   }
 
-  for (const t1Ends of ['commit', 'rollback'] as const) {
+  for (const [disposition, t1Ends] of [
+    ['confirmation', 'commit'],
+    ['confirmation', 'rollback'],
+    ['amend', 'commit'],
+    ['amend', 'rollback'],
+  ] as const) {
     it.skipIf(noDatabase)(
       t1Ends === 'commit'
-        ? 'refuses a confirmation that waited while a newer rotation change was saved'
-        : 'admits the same confirmation once the change is rolled back (the control)',
+        ? `refuses ${disposition === 'amend' ? 'an amend (0036)' : 'a confirmation'} that waited while a newer rotation change was saved`
+        : `admits the same ${disposition} once the change is rolled back (the control)`,
       async () => {
         // Story 3.5c's race. B reviewed the override under the version in
         // force today and confirms with its save time; A saves a newer change
@@ -1071,6 +1078,7 @@ describe('the override definers take the organization lock before their admin ch
           };
         });
         const { organization, a, b, team, rotation, reviewed, override, change, anchor } = setup;
+        const type = await fixture((client) => addShiftType(client, organization, a.authUserId));
 
         await race(async (t1, t2, observer) => {
           await t1.query('begin');
@@ -1092,7 +1100,14 @@ describe('the override definers take the organization lock before their admin ch
           await t2.query('begin');
           await actAs(t2, b, organization);
           const second = pending(
-            t2.query('select public.confirm_shift_type_override($1::uuid, $2::timestamptz)', [override, reviewed]),
+            disposition === 'amend'
+              ? t2.query('select public.amend_shift_type_override($1::uuid, $2::uuid, $3, $4::timestamptz)', [
+                  override,
+                  type,
+                  'y',
+                  reviewed,
+                ])
+              : t2.query('select public.confirm_shift_type_override($1::uuid, $2::timestamptz)', [override, reviewed]),
           );
           await waitUntilBlocked(observer, pid, organization, second);
 
@@ -1113,7 +1128,198 @@ describe('the override definers take the organization lock before their admin ch
   }
 });
 
-describe('every write verb 0023 and 0035 name waits on the lock', () => {
+describe('the remaining definers take the organization lock before their admin check (0036)', () => {
+  // The admin check is each definer's first refusal, so a placeholder id
+  // reaches it: unlocked, the caller still reads as an admin on the committed
+  // state and the call answers P0002 (or 23503); locked, it waits for the
+  // demotion and answers 42501.
+  const nobody = '00000000-0000-4000-8000-000000000000';
+  const CALLS = [
+    { fn: 'remove_leave_record', sql: 'select public.remove_leave_record($1::uuid)', message: 'LEAVE_RECORD_REMOVAL_REFUSED' },
+    {
+      fn: 'amend_leave_record',
+      sql: `select public.amend_leave_record($1::uuid, current_date, current_date)`,
+      message: 'LEAVE_RECORD_AMEND_REFUSED',
+    },
+    {
+      fn: 'replace_conflict_member',
+      sql: `select public.replace_conflict_member($1::uuid, current_date, $1::uuid, gen_random_uuid(), 'x')`,
+      message: 'CONFLICT_REPLACEMENT_REFUSED',
+    },
+  ] as const;
+
+  for (const { fn, sql, message } of CALLS) {
+    it.skipIf(noDatabase)(`refuses ${fn} whose caller was demoted while it waited`, async () => {
+      const { organization, a, b } = await fixture(async (client) => {
+        const organization = await addOrganization(client);
+        return {
+          organization,
+          a: await addAccount(client, organization, 'admin'),
+          b: await addAccount(client, organization, 'admin'),
+        };
+      });
+
+      await race(async (t1, t2, observer) => {
+        await t1.query('begin');
+        await actAs(t1, b, organization);
+        expect((await demote(t1, a.id)).rowCount).toBe(1);
+
+        const pid = await backendPid(t2);
+        await t2.query('begin');
+        await actAs(t2, a, organization);
+        const second = pending(t2.query(sql, [nobody]));
+        await waitUntilBlocked(observer, pid, organization, second);
+
+        await t1.query('commit');
+
+        expect(await second.outcome).toMatchObject({ ok: false, code: '42501', message });
+      });
+    });
+  }
+});
+
+describe('an archive waits for a rotation write, and a rotation write for an archive (0036)', () => {
+  it.skipIf(noDatabase)('refuses a team archive that waited while the team was given a rotation', async () => {
+    // The archive's trigger reads `rotation_assignments` after the lock and
+    // sees the committed version: 23514 `TEAM_IN_ROTATION`.
+    const { organization, a, b, team, rotation, from } = await fixture(async (client) => {
+      const organization = await addOrganization(client);
+      const a = await addAccount(client, organization, 'admin');
+      return {
+        organization,
+        a,
+        b: await addAccount(client, organization, 'admin'),
+        team: await addTeam(client, organization, a.authUserId),
+        rotation: await addPattern(client, organization, a.authUserId),
+        from: await organizationDay(client, organization, 3),
+      };
+    });
+
+    await race(async (t1, t2, observer) => {
+      await t1.query('begin');
+      await actAs(t1, a, organization);
+      expect(
+        (
+          await insertAssignment(t1, {
+            organization,
+            team,
+            pattern: rotation.pattern,
+            step: rotation.steps[0],
+            anchor: from,
+            from,
+          })
+        ).rowCount,
+      ).toBe(1);
+
+      const pid = await backendPid(t2);
+      await t2.query('begin');
+      await actAs(t2, b, organization);
+      const second = pending(archive(t2, team));
+      await waitUntilBlocked(observer, pid, organization, second);
+
+      await t1.query('commit');
+
+      expect(await second.outcome).toMatchObject({ ok: false, code: '23514', message: 'TEAM_IN_ROTATION' });
+    });
+  });
+
+  for (const t1Ends of ['commit', 'rollback'] as const) {
+    it.skipIf(noDatabase)(
+      t1Ends === 'commit'
+        ? 'refuses a rotation step that waited while its shift type was archived'
+        : 'admits the same step once the archive is rolled back (the control)',
+      async () => {
+        // The step policy reads `shift_types.archived` inline, on the snapshot
+        // taken before the wait. The re-check reads it again after the lock.
+        const { organization, a, b, rotation, type } = await fixture(async (client) => {
+          const organization = await addOrganization(client);
+          const a = await addAccount(client, organization, 'admin');
+          return {
+            organization,
+            a,
+            b: await addAccount(client, organization, 'admin'),
+            rotation: await addPattern(client, organization, a.authUserId),
+            type: await addShiftType(client, organization, a.authUserId),
+          };
+        });
+
+        await race(async (t1, t2, observer) => {
+          await t1.query('begin');
+          await actAs(t1, a, organization);
+          expect((await t1.query('update shift_types set archived = true where id = $1', [type])).rowCount).toBe(1);
+
+          const pid = await backendPid(t2);
+          await t2.query('begin');
+          await actAs(t2, b, organization);
+          const second = pending(
+            t2.query(
+              `insert into rotation_steps (organization_id, pattern_id, position, shift_type_id)
+               values ($1, $2, 2, $3)`,
+              [organization, rotation.pattern, type],
+            ),
+          );
+          await waitUntilBlocked(observer, pid, organization, second);
+
+          await t1.query(t1Ends);
+
+          if (t1Ends === 'commit') {
+            expect(await second.outcome).toMatchObject({
+              ok: false,
+              code: '42501',
+              message: 'new row violates row-level security policy for table "rotation_steps"',
+            });
+          } else {
+            expect(await second.outcome).toEqual({ ok: true, rowCount: 1 });
+          }
+        });
+      },
+    );
+  }
+
+  it.skipIf(noDatabase)('refuses a type archive that waited while a pattern using it was assigned', async () => {
+    const { organization, a, b, team, rotation, from } = await fixture(async (client) => {
+      const organization = await addOrganization(client);
+      const a = await addAccount(client, organization, 'admin');
+      return {
+        organization,
+        a,
+        b: await addAccount(client, organization, 'admin'),
+        team: await addTeam(client, organization, a.authUserId),
+        rotation: await addPattern(client, organization, a.authUserId),
+        from: await organizationDay(client, organization, 3),
+      };
+    });
+
+    await race(async (t1, t2, observer) => {
+      await t1.query('begin');
+      await actAs(t1, a, organization);
+      expect(
+        (
+          await insertAssignment(t1, {
+            organization,
+            team,
+            pattern: rotation.pattern,
+            step: rotation.steps[0],
+            anchor: from,
+            from,
+          })
+        ).rowCount,
+      ).toBe(1);
+
+      const pid = await backendPid(t2);
+      await t2.query('begin');
+      await actAs(t2, b, organization);
+      const second = pending(t2.query('update shift_types set archived = true where id = $1', [rotation.type]));
+      await waitUntilBlocked(observer, pid, organization, second);
+
+      await t1.query('commit');
+
+      expect(await second.outcome).toMatchObject({ ok: false, code: '23514', message: 'SHIFT_TYPE_IN_ROTATION' });
+    });
+  });
+});
+
+describe('every write verb 0023, 0035 and 0036 name waits on the lock', () => {
   it.skipIf(noDatabase)('makes a members insert wait', async () => {
     const { organization, a, b, member, user, from } = await fixture(async (client) => {
       const organization = await addOrganization(client);
@@ -1216,7 +1422,9 @@ describe('every write verb 0023 and 0035 name waits on the lock', () => {
               'public.serialize_organization_writes()'::regprocedure,
               'public.refuse_status_version_leaving_no_admin()'::regprocedure,
               'public.refuse_truncate()'::regprocedure,
-              'public.refuse_write_by_stale_admin()'::regprocedure
+              'public.refuse_write_by_stale_admin()'::regprocedure,
+              'public.refuse_archive_in_rotation()'::regprocedure,
+              'public.refuse_override_on_archived()'::regprocedure
             )
           order by 1, 2`,
       );
@@ -1229,14 +1437,25 @@ describe('every write verb 0023 and 0035 name waits on the lock', () => {
         // statement's lock, before the row is written.
         { table: 'members', trigger: 'members_refuse_write_by_stale_admin', type: 1 | 2 | 4 | 8 | 16, columns: ['role'] },
         { table: 'members', trigger: 'members_serialize_organization_writes', type: 2 | 4 | 8 | 16, columns: ['role'] },
+        // 0036's named archived refusal, ROW level and BEFORE, so it answers
+        // an active admin before the insert policy's WITH CHECK does.
+        { table: 'roster_overrides', trigger: 'roster_overrides_refuse_write_while_archived', type: 1 | 2 | 4, columns: null },
         { table: 'rotation_assignments', trigger: 'rotation_assignments_refuse_write_by_stale_admin', type: 1 | 2 | 4 | 8, columns: null },
         { table: 'rotation_assignments', trigger: 'rotation_assignments_serialize_organization_writes', type: 2 | 4 | 8, columns: null },
         { table: 'rotation_steps', trigger: 'rotation_steps_refuse_write_by_stale_admin', type: 1 | 2 | 4 | 8, columns: null },
         { table: 'rotation_steps', trigger: 'rotation_steps_serialize_organization_writes', type: 2 | 4 | 8, columns: null },
+        { table: 'shift_type_overrides', trigger: 'shift_type_overrides_refuse_write_while_archived', type: 1 | 2 | 4, columns: null },
+        // 0036: archiving a type takes the lock and the caller's re-check, as
+        // 0035's team archive does, and the rotation refusal fires after the
+        // re-check (trigger names order them).
+        { table: 'shift_types', trigger: 'shift_types_refuse_write_by_stale_admin', type: 1 | 2 | 16, columns: ['archived'] },
+        { table: 'shift_types', trigger: 'shift_types_refuse_write_while_in_rotation', type: 1 | 2 | 16, columns: ['archived'] },
+        { table: 'shift_types', trigger: 'shift_types_serialize_organization_writes', type: 2 | 16, columns: ['archived'] },
         { table: 'team_membership_versions', trigger: 'team_membership_versions_refuse_truncate', type: 2 | 32, columns: null },
         { table: 'team_membership_versions', trigger: 'team_membership_versions_refuse_write_by_stale_admin', type: 1 | 2 | 4 | 8 | 16, columns: null },
         { table: 'team_membership_versions', trigger: 'team_membership_versions_serialize_organization_writes', type: 2 | 4 | 8 | 16, columns: null },
         { table: 'teams', trigger: 'teams_refuse_write_by_stale_admin', type: 1 | 2 | 16, columns: ['archived'] },
+        { table: 'teams', trigger: 'teams_refuse_write_while_in_rotation', type: 1 | 2 | 16, columns: ['archived'] },
         { table: 'teams', trigger: 'teams_serialize_organization_writes', type: 2 | 16, columns: ['archived'] },
       ]);
     } finally {
