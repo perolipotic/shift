@@ -252,6 +252,8 @@ const GODISNJI_PAGE = join(srcRoot, ...LEAVE_SCREEN_PARTS.page);
 const GODISNJI: readonly string[] = Object.values(LEAVE_SCREEN_PARTS).map((parts) => join(srcRoot, ...parts));
 /** Story 5.2c's rules: the screen's two lines and its three tiles' labels. */
 const MY_LEAVE_KEYS = join(LEAVE_FEATURE, 'services', 'my-leave.ts');
+/** E884's rules: the overview's Stanje options and chip values, off `\w*MessageKey` unions. */
+const LEAVE_OVERVIEW_KEYS = join(LEAVE_FEATURE, 'services', 'leave-overview.ts');
 /** The conflicts feature, which holds the *Raspored* screen's parts (story 5.3b). */
 const CONFLICTS_FEATURE = join(srcRoot, 'features', 'conflicts');
 /** The *Raspored* screen's page, which only composes (story 5.3b). */
@@ -953,7 +955,10 @@ const SCREENS = [
   // pretragu* (5); and the page's own retry when the calendar cannot name
   // the viewer's role (6). The phone's `SortControl` is a shared component,
   // and every row's name is a `<Link>`; nothing on the overview writes.
-  { name: 'the Godišnji destination', file: GODISNJI, expectedControls: 6 },
+  // SEVEN SINCE E884: the search moved into the overview's filter bar, whose
+  // chips are the shared `OptionFilterBar`'s, and the empty line the chips
+  // leave offers *Poništi filtre* (7).
+  { name: 'the Godišnji destination', file: GODISNJI, expectedControls: 7 },
   // STORY 5.3b. ONE on Raspored: the retry its unavailable alert offers. The
   // queue is read, never pressed: no `Riješi` and no bulk action. STILL ONE
   // SINCE STORY 5.4b: each row became a `<Link>` to its resolution screen,
@@ -2910,10 +2915,24 @@ const KEY_SOURCES = [
     // *Poništi pretragu*, the overview's unavailable line and retry, and the
     // five column names, the caption, *Bez smjene* and the unscheduled line,
     // written once in the table and once in the stacked rows.
+    //
+    // FIFTY SINCE E884: the Smjena chip's six, as Ljudi's (its text set and at
+    // every team, its ✕, its picker and heading, and an option's count), the
+    // pending team name, the Stanje chip's four (its text, ✕, picker and
+    // heading) and its options' count, and the empty line the chips leave
+    // with *Poništi filtre*.
     name: 'the Godišnji destination',
     file: GODISNJI,
     keys: translationKeys,
-    strings: 36,
+    strings: 50,
+  },
+  {
+    // E884: the Stanje chip's five options and the five values its text says,
+    // off `leaveOverviewStateMessageKey` and `leaveOverviewStateValueMessageKey`.
+    name: 'the Godišnji overview rules',
+    file: LEAVE_OVERVIEW_KEYS,
+    keys: messageKeyUnions,
+    strings: 10,
   },
   {
     // STORY 5.3b. NINE on Raspored: its own `nav.raspored` heading; the
@@ -3592,7 +3611,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // SIXTY-EIGHT SINCE STORY 7.17: the member directory.
     //
     // SIXTY-NINE SINCE THE ROUTER-GUARDS FIX: the error screen (A148).
-    expect(KEY_SOURCES).toHaveLength(69);
+    //
+    // SEVENTY SINCE E884: the leave overview's rules, for its Stanje chip.
+    expect(KEY_SOURCES).toHaveLength(70);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"

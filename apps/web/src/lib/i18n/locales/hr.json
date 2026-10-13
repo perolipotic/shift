@@ -435,7 +435,25 @@
       "used": "Iskorišteno",
       "balance": "Preostalo",
       "noTeam": "Bez smjene",
-      "summary": "Prikazano: {count, plural, one {# osoba} few {# osobe} other {# osoba}} · iskorišteno ukupno {used, plural, one {# dan} few {# dana} other {# dana}} od {allowance}",
+      "summary": "Prikazano: {count, plural, one {# osoba} few {# osobe} other {# osoba}} · {records, plural, one {upisan # godišnji} few {upisana # godišnja} other {upisano # godišnjih}} · iskorišteno ukupno {used, plural, one {# dan} few {# dana} other {# dana}} od {allowance}",
+      "stateChip": "Stanje: {value}",
+      "stateRemove": "Ukloni filtar stanje: {value}",
+      "statePicker": "Odaberi stanje",
+      "stateHeading": "Stanje",
+      "state": {
+        "all": "Sva stanja",
+        "onLeave": "Na godišnjem danas",
+        "recorded": "S upisanim godišnjim",
+        "unrecorded": "Bez upisanog godišnjeg",
+        "negative": "Preostalo u minusu"
+      },
+      "stateValue": {
+        "all": "sve",
+        "onLeave": "na godišnjem danas",
+        "recorded": "s upisanim godišnjim",
+        "unrecorded": "bez upisanog godišnjeg",
+        "negative": "preostalo u minusu"
+      },
       "noMatch": "Nijedna aktivna osoba nema to ime.",
       "clear": "Poništi pretragu",
       "none": "Danas nema nijedne aktivne osobe."
