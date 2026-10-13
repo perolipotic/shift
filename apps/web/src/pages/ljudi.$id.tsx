@@ -1,4 +1,4 @@
-import { Link, createRoute, redirect, useLocation } from '@tanstack/react-router';
+import { Link, createRoute, useLocation } from '@tanstack/react-router';
 import { ArrowLeft } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -13,9 +13,7 @@ import { MemberResetCard } from '@/features/members/components/member-reset-card
 import { MemberStatusCard } from '@/features/members/components/member-status-card';
 import { MemberTeamCard } from '@/features/members/components/member-team-card';
 import { useMemberEdit } from '@/features/members/hooks/use-member-edit';
-import { mayReadMembers } from '@/features/members/services/list';
-import { DESTINATIONS } from '@/features/navigation/utils/destinations';
-import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/features/navigation/services/role';
+import { requireAdmin } from '@/features/navigation/services/admin-guard';
 import { appLayoutRoute } from '@/pages/_app';
 
 /**
@@ -29,10 +27,6 @@ import { appLayoutRoute } from '@/pages/_app';
  *
  * THIS IS NOT A DESTINATION. The way back to the list is a link that says so.
  */
-
-/** Where a session that is not an administrator's is sent. The FIRST
- *  destination, read off the table — the same answer `/` and `/ljudi` give. */
-const FIRST_DESTINATION = DESTINATIONS[0];
 
 export function LjudiMemberScreen() {
   const { id } = ljudiMemberRoute.useParams();
@@ -102,28 +96,7 @@ export function LjudiMemberScreen() {
 export const ljudiMemberRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/ljudi/$id',
-  /**
-   * The same role guard `/ljudi` carries, copied VERBATIM — and
-   * `router.test.ts` drives all three copies by execution rather than by
-   * reading any of them. See `pages/ljudi.novi.tsx` for the whole argument;
-   * the short version is that the reader arrives through the router context, so
-   * every branch runs in the node suite with no environment at all, and a level
-   * that cannot be read fails closed.
-   */
-  beforeLoad: async ({ context }) => {
-    let outcome: MemberRoleOutcome;
-
-    try {
-      outcome = await context.currentMemberRole();
-    } catch (cause) {
-      console.error(MEMBER_ROLE_UNAVAILABLE, cause);
-
-      outcome = { ok: false, code: MEMBER_ROLE_UNAVAILABLE };
-    }
-
-    if (mayReadMembers(outcome)) return;
-
-    throw redirect({ to: FIRST_DESTINATION.path, replace: true });
-  },
+  /** The shared admin guard (`@/features/navigation/services/admin-guard`). */
+  beforeLoad: requireAdmin,
   component: LjudiMemberScreen,
 });

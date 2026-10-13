@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { describe, expect, it } from 'vitest';
 
+import { inRolledBackTransaction, noDatabase, refused } from './database.js';
+
 /**
  * The pilot demo organization (`supabase/operator/demo-organization.sql`),
  * executed against the local Postgres.
@@ -28,22 +30,6 @@ import { describe, expect, it } from 'vitest';
  */
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
-
-const databaseUrl =
-  process.env['SUPABASE_DB_URL'] ?? 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
-
-async function reachable(): Promise<boolean> {
-  const client = new Client({ connectionString: databaseUrl, connectionTimeoutMillis: 2000 });
-  try {
-    await client.connect();
-    await client.end();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-const noDatabase = !(await reachable());
 
 const demoScript = readFileSync(
   join(repoRoot, 'supabase', 'operator', 'demo-organization.sql'),
@@ -79,22 +65,12 @@ const LOCAL_SETTINGS = {
 } as const;
 const DEMO_PASSWORD = LOCAL_SETTINGS.password;
 
-async function connect(): Promise<Client> {
-  const client = new Client({ connectionString: databaseUrl });
-  await client.connect();
-  return client;
-}
-
-/** Run `work` in a REPEATABLE READ transaction that is always rolled back. */
-async function inRolledBackTransaction<T>(work: (client: Client) => Promise<T>): Promise<T> {
-  const client = await connect();
-  try {
-    await client.query('begin isolation level repeatable read');
-    return await work(client);
-  } finally {
-    await client.query('rollback').catch(() => undefined);
-    await client.end();
-  }
+/**
+ * Every executing case runs in a REPEATABLE READ transaction that is always
+ * rolled back, so a before/after comparison sees only its own writes.
+ */
+function inRepeatableRead<T>(work: (client: Client) => Promise<T>): Promise<T> {
+  return inRolledBackTransaction(work, 'repeatable read');
 }
 
 /** The two settings the script reads, transaction-local (`set local`). */
@@ -252,21 +228,6 @@ async function othersFingerprint(client: Client): Promise<{ rows: number; digest
   return found;
 }
 
-interface Refusal {
-  readonly code: string;
-  readonly message: string;
-}
-
-async function refused(work: () => Promise<unknown>): Promise<Refusal> {
-  try {
-    await work();
-  } catch (cause) {
-    const error = cause as { code?: string; message?: string };
-    return { code: error.code ?? '', message: error.message ?? '' };
-  }
-  throw new Error('nothing was refused: the script ran');
-}
-
 /** The interface's own labels, so the roster line is the one a screen renders. */
 const hr = JSON.parse(
   readFileSync(join(repoRoot, 'apps', 'web', 'src', 'lib', 'i18n', 'locales', 'hr.json'), 'utf8'),
@@ -317,7 +278,7 @@ describe('the demo organization script', () => {
   });
 
   it.skipIf(noDatabase)('creates the organization, its people, four crews and the pilot configuration', async () => {
-    await inRolledBackTransaction(async (client) => {
+    await inRepeatableRead(async (client) => {
       await configure(client, LOCAL_SETTINGS);
       await runDemo(client);
 
@@ -615,7 +576,7 @@ describe('the demo organization script', () => {
   });
 
   it.skipIf(noDatabase)('shows each crew to a demo member as four `Ime · čin · položaj` lines', async () => {
-    await inRolledBackTransaction(async (client) => {
+    await inRepeatableRead(async (client) => {
       await configure(client, LOCAL_SETTINGS);
       await runDemo(client);
 
@@ -693,7 +654,7 @@ describe('the demo organization script', () => {
   });
 
   it.skipIf(noDatabase)('replaces the demo on a re-run, with no duplicate auth users', async () => {
-    await inRolledBackTransaction(async (client) => {
+    await inRepeatableRead(async (client) => {
       await configure(client, LOCAL_SETTINGS);
       await runDemo(client);
       const first = await demoSnapshot(client);
@@ -783,7 +744,7 @@ describe('the demo organization script', () => {
   });
 
   it.skipIf(noDatabase)('touches no other organization and no other auth user', async () => {
-    await inRolledBackTransaction(async (client) => {
+    await inRepeatableRead(async (client) => {
       const before = await othersFingerprint(client);
 
       // The vacuous-pass guard: both fixtures must be among what is compared.
@@ -816,7 +777,7 @@ describe('the demo organization script', () => {
      * do block's writes by construction.
      */
     async function refusal(settings: { readonly target?: string; readonly password?: string }) {
-      return inRolledBackTransaction(async (client) => {
+      return inRepeatableRead(async (client) => {
         await configure(client, settings);
         const before = await demoSnapshot(client);
         await client.query('savepoint refusal');
@@ -834,7 +795,7 @@ describe('the demo organization script', () => {
     ])('with $what', async ({ settings }) => {
       const { outcome, before, after } = await refusal(settings);
 
-      expect(outcome).toEqual({ code: 'P0001', message: 'DEMO_PASSWORD_MISSING' });
+      expect(outcome).toMatchObject({ code: 'P0001', message: 'DEMO_PASSWORD_MISSING' });
       expect(after).toBe(before);
     });
 
@@ -845,7 +806,7 @@ describe('the demo organization script', () => {
     ])('with $what', async ({ settings }) => {
       const { outcome, before, after } = await refusal(settings);
 
-      expect(outcome).toEqual({ code: 'P0001', message: 'DEMO_TARGET_REFUSED' });
+      expect(outcome).toMatchObject({ code: 'P0001', message: 'DEMO_TARGET_REFUSED' });
       expect(after).toBe(before);
     });
 
@@ -865,20 +826,20 @@ describe('the demo organization script', () => {
       // silently. The guard turns that into a refusal of the whole run.
       expect(demoScript, 'the text this case edits is gone').toContain(from);
       const drifted = demoScript.replace(from, to);
-      await inRolledBackTransaction(async (client) => {
+      await inRepeatableRead(async (client) => {
         await configure(client, LOCAL_SETTINGS);
         const before = await demoSnapshot(client);
         await client.query('savepoint refusal');
         const outcome = await refused(() => client.query(drifted));
         await client.query('rollback to savepoint refusal');
-        expect(outcome).toEqual({ code: 'P0001', message: 'DEMO_ROTATION_INCOMPLETE' });
+        expect(outcome).toMatchObject({ code: 'P0001', message: 'DEMO_ROTATION_INCOMPLETE' });
         expect(await demoSnapshot(client)).toBe(before);
       });
     });
 
     it.skipIf(noDatabase)('with staging as the target, it runs', async () => {
       // The positive control for the target check: `staging` is admitted.
-      await inRolledBackTransaction(async (client) => {
+      await inRepeatableRead(async (client) => {
         await configure(client, { target: 'staging', password: DEMO_PASSWORD });
         await runDemo(client);
         const { rows } = await client.query<{ total: number }>(

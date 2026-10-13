@@ -674,6 +674,10 @@ const SOURCES = [
   // The root route: no string of its own, but it registers the not-found
   // component, so it is wiring the built chunk depends on, as `/` is.
   join(webRoot, 'src', 'pages', '__root.tsx'),
+  // The two components it registers beside the not-found one: the error
+  // screen (A148), which renders its keys, and the pending skeleton (A224).
+  join(webRoot, 'src', 'pages', 'error.tsx'),
+  join(webRoot, 'src', 'pages', 'pending.tsx'),
   // Story 6.1a: *Danas*'s hook, cards and rules module, READ OFF the today
   // feature's folders. `danas.tsx` is listed with the destinations above.
   ...todayFeatureParts(),

@@ -13,8 +13,14 @@ primitive is added here.
 defaults. `utils/initials.ts` is the one pure rule for initials: the avatar
 chips and the organization lockup's neutral mark both draw from it.
 
-No component contains a user-facing literal or calls `t()`. Every string comes
-from `lib/i18n/`, passed in by the screen.
+No component contains a user-facing literal. A `ui/` primitive never calls
+`t()`: every string it shows comes from `lib/i18n/`, passed in by the screen.
+A shared chrome component whose words are the same on every screen that uses
+it owns those strings and may call `t()` with its own keys: `filter-bar.tsx`
+and `option-filter-bar.tsx` (`filter.*`), `sort-control.tsx` (`sort.*`),
+`month-nav.tsx` and `layout/auth-layout.tsx`. What differs per screen — a
+column's label, an option's name, a count's noun — is still passed in
+(2026-10-13, deferred-work sweep; epics 5–7 retro A4).
 
 ## The page skeleton
 

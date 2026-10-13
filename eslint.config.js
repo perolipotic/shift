@@ -243,7 +243,10 @@ export const FEATURE_PUBLIC = {
   ],
   // SINCE STORY 6.3: *Danas* reads the chrome's cached role under its key, never
   // a read of its own, and narrows it as the calendar does.
+  // The router-guards fix (B393): every admin-only page registers the one
+  // shared admin guard, and `/ljudi` reads its level through the same read.
   navigation: [
+    'services/admin-guard', // pages
     'services/profile', // teams
     'services/role', // calendar, members, pages, router, teams, today
     'utils/destinations', // calendar, members, pages, today

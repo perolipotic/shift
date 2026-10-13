@@ -1,10 +1,10 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 
 import { isRedirect } from '@tanstack/react-router';
 import type { Session } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
 
-import { router } from '@/router';
+import { ROUTE_PENDING_MS, router } from '@/router';
 import {
   knownPathOf,
   returnTargetOf,
@@ -12,13 +12,15 @@ import {
 } from '@/features/auth/services/return-target';
 import { LJUDI_DIRECTORY, LJUDI_TABLE, ljudiViewOf, mayReadMembers } from '@/features/members/services/list';
 import { DESTINATIONS, destinationsFor } from '@/features/navigation/utils/destinations';
+import { adminGuard, requireAdmin } from '@/features/navigation/services/admin-guard';
 import {
-  currentMemberRole,
   MEMBER_ROLES,
   MEMBER_ROLE_REFUSED,
   MEMBER_ROLE_UNAVAILABLE,
   MEMBER_ROLE_UNRECOGNISED,
+  routeMemberRole,
   type MemberRoleOutcome,
+  type MemberRoleReadOptions,
 } from '@/features/navigation/services/role';
 import { currentSession, SESSION_UNRESOLVED } from '@/lib/supabase/client';
 import { SESSION } from '@/lib/supabase/session.fixture';
@@ -32,7 +34,9 @@ import { ljudiNoviRoute } from '@/pages/ljudi.novi';
 import { LjudiSmjenaScreen, ljudiSmjenaRoute } from '@/pages/ljudi.smjene.$id';
 import { LjudiSmjeneScreen, ljudiSmjeneRoute } from '@/pages/ljudi.smjene';
 import { LjudiScreen, ljudiRoute } from '@/pages/ljudi';
+import { ErrorScreen } from '@/pages/error';
 import { NotFoundScreen } from '@/pages/not-found';
+import { RoutePending } from '@/pages/pending';
 import { OrganizacijaScreen, organizacijaRoute } from '@/pages/organizacija';
 import {
   OrganizacijaSatniPojasScreen,
@@ -55,6 +59,7 @@ import { SatiScreen, satiRoute } from '@/pages/sati';
 import { SmjenaScreen, smjenaRoute } from '@/pages/smjene.$id';
 import type { AppRouterContext } from '@/pages/__root';
 import { rootRoute } from '@/pages/__root';
+import { READ_TIMED_OUT, withinTimeBudget } from '@/utils/time-budget';
 
 /**
  * The shell's route tree, asserted in the node environment (AD-15).
@@ -610,6 +615,43 @@ describe('an unknown path renders a screen rather than an empty layout', () => {
   });
 });
 
+describe('a failed route and a slow one each render a screen of their own', () => {
+  it('registers the error screen on the root route (A148)', () => {
+    // IDENTITY, for the not-found case's reason: without it a throw anywhere
+    // below the root renders TanStack's English default with the error's
+    // text. On the ROOT, so it catches whatever every route below lets escape.
+    expect(
+      (rootRoute.options as { errorComponent?: unknown }).errorComponent,
+      'the root route does not render ErrorScreen — a failed route shows the English default',
+    ).toBe(ErrorScreen);
+  });
+
+  it('shares one pending skeleton across every route, after a delay (A224)', () => {
+    const options = router.options as { defaultPendingComponent?: unknown; defaultPendingMs?: unknown };
+
+    expect(
+      options.defaultPendingComponent,
+      'a slow guard holds a frozen or blank frame for its whole read',
+    ).toBe(RoutePending);
+    expect(options.defaultPendingMs).toBe(ROUTE_PENDING_MS);
+    // Positive, so a fast guard paints nothing extra, and bounded, so a slow
+    // one is not mistaken for a hang.
+    expect(ROUTE_PENDING_MS).toBeGreaterThan(0);
+    expect(ROUTE_PENDING_MS).toBeLessThanOrEqual(1000);
+  });
+
+  it('lets no route override either one with its own', () => {
+    // ONE treatment each, decided once. A route registering its own would be
+    // a second copy of a decision that should not be invented twice.
+    for (const route of Object.values(router.routesById) as { id: string; options: object }[]) {
+      expect((route.options as { pendingComponent?: unknown }).pendingComponent, route.id).toBeUndefined();
+      if (route.id !== rootRoute.id) {
+        expect((route.options as { errorComponent?: unknown }).errorComponent, route.id).toBeUndefined();
+      }
+    }
+  });
+});
+
 describe('the return target a sign-in follows is a path this tree knows', () => {
   /**
    * `@/features/auth/services/return-target` takes the tree as a predicate so
@@ -958,9 +1000,8 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
     // THE THIRD OUTCOME. `currentSession` can reject: the client throws its
     // stable code on a build with no environment, and `getSession` rejects
     // wherever storage is blocked (Safari private mode, a locked-down
-    // profile). An escaping rejection resolves `/` to neither a redirect nor a
-    // component — the blank page at HTTP 200 the branch invariant exists to
-    // prevent, and `__root.tsx` registers no `errorComponent` to catch it.
+    // profile). An escaping rejection resolves `/` to neither redirect — the
+    // root error screen instead of the decision the branch invariant owes.
     //
     // FAIL CLOSED: a session that cannot be read is not a session.
     const run = (indexRoute.options as unknown as { beforeLoad?: BeforeLoad }).beforeLoad;
@@ -1010,10 +1051,13 @@ describe('the deployed root resolves both ways and is never a blank page', () =>
     // own — so an arrow written into `router.ts` in this position would be
     // executed by nothing and could answer `{ ok: true, role: 'admin' }` to
     // everybody with the whole suite green.
+    //
+    // `routeMemberRole` SINCE THE ROUTER-GUARDS FIX (E878): the same read,
+    // served through the one query cache under the chrome's key.
     expect(
       context?.currentMemberRole,
       'the router does not resolve permission levels through @/features/navigation/services/role',
-    ).toBe(currentMemberRole);
+    ).toBe(routeMemberRole);
   });
 
   it('reads the session through the context rather than reaching for a client', async () => {
@@ -1512,8 +1556,7 @@ describe('the signed-in layout guards every destination once, and is pathless', 
     // looks like an outage. `currentSession` can REJECT: the client throws its
     // stable code on a build with no environment, and `getSession` rejects
     // wherever storage is blocked. An escaping rejection resolves the
-    // destination to neither a redirect nor a component — the blank page at
-    // HTTP 200 that `__root.tsx` registers no `errorComponent` to catch.
+    // destination to the root error screen rather than to the sign-in path.
     //
     // FAIL CLOSED, and NOT SILENTLY: the cause is logged, which is the promise
     // `client.ts` exists to keep and the one a bare catch quietly breaks.
@@ -1533,6 +1576,33 @@ describe('the signed-in layout guards every destination once, and is pathless', 
       );
     } finally {
       logged.mockRestore();
+    }
+  });
+
+  it('sends the visitor to sign in when the session read never settles (B274)', async () => {
+    // A HUNG READ — stalled storage, a `navigator.locks` that never releases —
+    // is not a rejection, and used to leave the navigation unfinished forever.
+    // Bounded by the time budget the shipped reader carries, it rejects, and the
+    // tested fail-closed path above takes it from there.
+    vi.useFakeTimers();
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const hung = withinTimeBudget((): Promise<Session | null> => new Promise(() => undefined));
+      const pending = beforeLoad(hung);
+
+      await vi.runAllTimersAsync();
+      const thrown = thrownBy(await pending);
+
+      expect(isRedirect(thrown), 'a hung session read never resolved the layout').toBe(true);
+      expect((thrown as { options: { to?: string } }).options.to).toBe('/prijava');
+      expect(logged).toHaveBeenCalledWith(
+        SESSION_UNRESOLVED,
+        expect.objectContaining({ message: READ_TIMED_OUT }),
+      );
+    } finally {
+      logged.mockRestore();
+      vi.useRealTimers();
     }
   });
 
@@ -1822,9 +1892,8 @@ describe('/ljudi decides its content by permission level, and the admin screens 
   it('forwards when the reader rejects, and says why on the console', async () => {
     // THE THIRD OUTCOME. `currentMemberRole` can REJECT — the client throws on a
     // build with no environment, and `getSession` rejects wherever storage is
-    // blocked. An escaping rejection resolves `/ljudi` to neither a redirect nor
-    // a component: the blank page at HTTP 200 that `__root.tsx` registers no
-    // `errorComponent` to catch.
+    // blocked. An escaping rejection resolves `/ljudi` to the root error
+    // screen rather than to a decision.
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
     try {
@@ -1856,6 +1925,38 @@ describe('/ljudi decides its content by permission level, and the admin screens 
 
     expect(asked, '/ljudi never asked the router context for the permission level').toBe(1);
   });
+
+  it.each([
+    { cause: 'enter', reuse: false },
+    { cause: 'stay', reuse: true },
+    { cause: undefined, reuse: false },
+  ] as const)(
+    'reuses the cached level only while the route stays (cause $cause → reuse $reuse, E878)',
+    async ({ cause, reuse }) => {
+      // TYPING IN THE SEARCH re-runs `beforeLoad` with `cause: 'stay'`, and
+      // that used to re-read the level per keystroke. A route that stays is
+      // served the cached answer; entering one still reads it fresh, so a
+      // demoted admin loses the route on their next navigation.
+      const asked: (MemberRoleReadOptions | undefined)[] = [];
+      const run = (ljudiRoute.options as unknown as {
+        beforeLoad: (options: { context: AppRouterContext; cause?: string | undefined }) => Promise<unknown>;
+      }).beforeLoad;
+
+      await run({
+        cause,
+        context: {
+          currentSession: () => Promise.reject(new Error('the guard asked for a session')),
+          currentMemberRole: (options) => {
+            asked.push(options);
+
+            return Promise.resolve({ ok: true, role: 'admin' });
+          },
+        },
+      });
+
+      expect(asked).toEqual([{ reuse }]);
+    },
+  );
 
   it('decides the content by one rule, which names the member level and places nothing else', () => {
     expect(ljudiViewOf({ ok: true, role: 'admin' })).toBe(LJUDI_TABLE);
@@ -2045,6 +2146,83 @@ describe('/ljudi decides its content by permission level, and the admin screens 
         });
 
         expect(asked, `${path} never asked the router context for the level`).toBe(1);
+      },
+    );
+
+    it('registers ONE shared admin guard on every admin route, never a copy (B393)', () => {
+      // THE INVENTORY. Identity rather than behaviour, on top of the cases
+      // above: a guard written out again in a page would still pass every
+      // behavioural case today and drift tomorrow. `/ljudi/novi` is the one
+      // route whose admitted branch differs (it redirects an admin on), so it
+      // carries a guard from the same factory and is driven by its own case.
+      for (const { path, route } of LEVEL_GUARDED_ROUTES) {
+        const registered = (route.options as { beforeLoad?: unknown }).beforeLoad;
+
+        if (route === ljudiNoviRoute) {
+          expect(registered, `${path} carries no guard`).toBeTypeOf('function');
+          expect(registered, `${path} carries the plain guard and lets an admin onto no screen`).not.toBe(
+            requireAdmin,
+          );
+        } else {
+          expect(registered, `${path} carries a guard of its own rather than requireAdmin`).toBe(requireAdmin);
+        }
+      }
+    });
+
+    it('leaves no page reading the level by hand', () => {
+      // The copies are gone, so a page calling the reader itself is a new copy
+      // arriving. Every route reads the level through
+      // `@/features/navigation/services/admin-guard`.
+      const pages = new URL('./pages/', import.meta.url);
+
+      for (const file of readdirSync(pages).filter((name) => name.endsWith('.tsx'))) {
+        const text = readFileSync(new URL(file, pages), 'utf8');
+
+        expect(text, `${file} reads the level itself`).not.toContain('currentMemberRole(');
+        expect(text, `${file} decides by the member list's predicate`).not.toContain('mayReadMembers');
+      }
+    });
+
+    it('builds the /ljudi/novi guard from the same factory, admitting only an admin', async () => {
+      // The factory's admitted branch is the only thing that differs, so a
+      // member still meets the shared forward.
+      const admitted = vi.fn();
+      const guard = adminGuard(admitted);
+
+      await guard({ context: { currentMemberRole: () => Promise.resolve({ ok: true, role: 'admin' }) } });
+      expect(admitted).toHaveBeenCalledTimes(1);
+
+      await expect(
+        guard({ context: { currentMemberRole: () => Promise.resolve({ ok: true, role: 'member_role' }) } }),
+      ).rejects.toSatisfy(isRedirect);
+      expect(admitted).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(LEVEL_GUARDED_ROUTES)(
+      'fails closed on $path when the level read never settles (B334)',
+      async ({ route, path }) => {
+        // A hung role read, bounded by the time budget the shipped reader
+        // carries, ends on the same forward as any other failed read.
+        vi.useFakeTimers();
+        const noted = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+        try {
+          const hung = withinTimeBudget((): Promise<MemberRoleOutcome> => new Promise(() => undefined));
+          const pending = beforeLoadOn(route, hung);
+
+          await vi.runAllTimersAsync();
+          const thrown = thrownBy(await pending);
+
+          expect(isRedirect(thrown), `${path} never resolved on a hung read`).toBe(true);
+          expect((thrown as { options: { to?: string } }).options.to).toBe(DESTINATIONS[0].path);
+          expect(noted).toHaveBeenCalledWith(
+            MEMBER_ROLE_UNAVAILABLE,
+            expect.objectContaining({ message: READ_TIMED_OUT }),
+          );
+        } finally {
+          noted.mockRestore();
+          vi.useRealTimers();
+        }
       },
     );
 

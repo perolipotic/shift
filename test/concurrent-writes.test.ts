@@ -1,6 +1,8 @@
 import { Client } from 'pg';
 import { afterAll, describe, expect, it } from 'vitest';
 
+import { connect, databaseUrl, noDatabase } from './database.js';
+
 /**
  * `0023_serialize_organization_writes.sql`, executed with TWO REAL
  * CONNECTIONS. Every other live suite runs one connection per case, so it
@@ -30,28 +32,6 @@ import { afterAll, describe, expect, it } from 'vitest';
  * back and closed in `finally`.
  */
 
-const databaseUrl =
-  process.env['SUPABASE_DB_URL'] ?? 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
-
-/** Connected AND migrated, for the reason `test/rls-isolation.test.ts` gives. */
-async function reachable(): Promise<boolean> {
-  const client = new Client({ connectionString: databaseUrl, connectionTimeoutMillis: 2000 });
-  try {
-    await client.connect();
-    const { rows } = await client.query<{ migrated: boolean }>(
-      `select to_regclass('public.organizations') is not null
-                and to_regclass('public.members') is not null as migrated`,
-    );
-    await client.end();
-    return rows[0]?.migrated === true;
-  } catch {
-    await client.end().catch(() => undefined);
-    return false;
-  }
-}
-
-const noDatabase = !(await reachable());
-
 /** Every organization slug and account address this file issues carries it. */
 const THROWAWAY = 'concurrent-writes-test';
 
@@ -64,12 +44,6 @@ const BLOCK_DEADLINE_MS = 3_000;
 
 /** The timeout of a case that has to outlast a deadline or a deadlock check. */
 const LONG_CASE_MS = 15_000;
-
-async function connect(): Promise<Client> {
-  const client = new Client({ connectionString: databaseUrl });
-  await client.connect();
-  return client;
-}
 
 interface Account {
   readonly id: string;
@@ -952,6 +926,64 @@ describe('TRUNCATE is refused where row rules would be bypassed', () => {
       ).toContain(raised?.detail);
     } finally {
       await client.query('rollback').catch(() => undefined);
+      await client.end();
+    }
+  });
+});
+
+describe('the isolation level 0023 relies on', () => {
+  // 0023's lock works because the write that waited on it reads AFTER the
+  // wait: under READ COMMITTED each statement takes a fresh snapshot, so the
+  // re-check behind the lock sees the commit it waited for. Under REPEATABLE
+  // READ the snapshot is taken when the waiting statement starts, before the
+  // lock, and the re-check would see the world without the other writer's
+  // commit again — the race 0023 closes. No migration chooses the level, so it
+  // is asserted where it is decided: the server default, and the per-role and
+  // per-function settings PostgREST honours for a request.
+  const REQUEST_ROLES = ['authenticator', 'authenticated', 'anon', 'service_role'];
+
+  it.skipIf(noDatabase)('runs every request transaction at read committed', async () => {
+    const client = await connect();
+    try {
+      const { rows: overrides } = await client.query<{ role: string; config: string }>(
+        `select coalesce(r.rolname, '(every role)') as role, s.setconfig::text as config
+           from pg_db_role_setting s
+           left join pg_roles r on r.oid = s.setrole
+          where s.setdatabase in (0, (select oid from pg_database where datname = current_database()))
+            and (s.setrole = 0 or r.rolname = any($1))
+            and exists (select 1 from unnest(s.setconfig) as entry
+                         where entry like 'default_transaction_isolation=%')`,
+        [REQUEST_ROLES],
+      );
+      expect(overrides, 'a database or request-role setting changes the isolation level').toEqual([]);
+
+      const { rows: functions } = await client.query<{ name: string }>(
+        `select p.oid::regprocedure::text as name
+           from pg_proc p
+          where p.pronamespace in ('public'::regnamespace, 'private'::regnamespace)
+            and exists (select 1 from unnest(p.proconfig) as entry
+                         where entry like 'default_transaction_isolation=%')`,
+      );
+      expect(functions, 'a function PostgREST calls sets its own isolation level').toEqual([]);
+
+      const { rows: server } = await client.query<{ level: string }>(
+        `select current_setting('default_transaction_isolation') as level`,
+      );
+      expect(server[0]?.level, 'the server default').toBe('read committed');
+
+      for (const role of REQUEST_ROLES.filter((name) => name !== 'authenticator')) {
+        await client.query('begin');
+        try {
+          await client.query(`set local role ${role}`);
+          const { rows } = await client.query<{ level: string }>(
+            `select current_setting('transaction_isolation') as level`,
+          );
+          expect(rows[0]?.level, `a ${role} transaction`).toBe('read committed');
+        } finally {
+          await client.query('rollback');
+        }
+      }
+    } finally {
       await client.end();
     }
   });

@@ -394,9 +394,9 @@ describe('a session that cannot be read is no session, and never a silence', () 
 
   it('answers null when the read REJECTS, and logs why', async () => {
     // The third outcome, and the reason this helper exists at all: a rejection
-    // escaping a `beforeLoad` resolves the route to neither a redirect nor a
-    // component — a blank page at HTTP 200 that `__root.tsx` registers no
-    // `errorComponent` to catch. Swallowing it silently is the other failure:
+    // escaping a `beforeLoad` resolves the route to the root error screen
+    // rather than to the redirect the guard owes. Swallowing it silently is
+    // the other failure:
     // a build with no environment would then behave like an ordinary signed-out
     // visit, with an empty console and nothing anywhere to say why.
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
