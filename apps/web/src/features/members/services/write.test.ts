@@ -56,6 +56,7 @@ import {
   editFailureOf,
   enteredAllowance,
   memberFormRefusalOf,
+  memberReadRetryable,
   memberWriteFailureOf,
   memberWriteMessageKey,
   memberWriteMessageKeys,
@@ -78,6 +79,7 @@ import {
   statusOfferMessageKey,
   statusOfferOf,
   statusPreflightOf,
+  statusRefusalBeforeErasuresOf,
   statusPromptKeyOf,
   statusPromptMessageKey,
   statusScheduledMessageKey,
@@ -1547,6 +1549,14 @@ describe('whether either form may render at all', () => {
     );
   });
 
+  it('offers the read retry only when the read was unavailable', () => {
+    expect(memberReadRetryable(MEMBER_WRITE_UNAVAILABLE)).toBe(true);
+    // A refused session needs a new sign-in; an unknown id is not fixed by reading again.
+    expect(memberReadRetryable(MEMBER_READ_REFUSED)).toBe(false);
+    expect(memberReadRetryable(MEMBER_UNKNOWN)).toBe(false);
+    expect(memberReadRetryable(null)).toBe(false);
+  });
+
   it('seeds the create form from a settled organization read', () => {
     expect(
       createFormStateOf({
@@ -1883,6 +1893,42 @@ describe('a status change is one appended version or one cancelled one, judged b
         statusContext(target, [member({ id: 'admin-4', authUserId: 'a4', role: 'admin' })]),
       ),
     ).toBe(MEMBER_STATUS_STALE);
+  });
+
+  it('names the last-admin refusal before an erasure dialog would ask for decisions', () => {
+    const target = member({ id: 'admin-2', authUserId: 'account-admin-2', role: 'admin' });
+    const caller = { ...CALLER, statusVersions: [version(false, '2026-09-30')] };
+    const uncovered: StatusContext = {
+      member: target,
+      members: [caller, target],
+      callerAuthUserId: caller.authUserId,
+      today: TODAY,
+    };
+
+    expect(statusRefusalBeforeErasuresOf(DEACTIVATE, TODAY, uncovered)).toBe(ORGANIZATION_WOULD_HAVE_NO_ADMIN);
+    // THE PREFLIGHT'S NAMED REFUSALS COME FIRST: a past date is that, not the admin rule.
+    expect(statusRefusalBeforeErasuresOf(DEACTIVATE, '2026-09-22', uncovered)).toBe(MEMBER_STATUS_IN_PAST);
+    // Another admin active on every date from the day: nothing to refuse.
+    expect(
+      statusRefusalBeforeErasuresOf(
+        DEACTIVATE,
+        TODAY,
+        statusContext(target, [member({ id: 'admin-4', authUserId: 'a4', role: 'admin' })]),
+      ),
+    ).toBeNull();
+    // A non-admin target never earns it.
+    expect(statusRefusalBeforeErasuresOf(DEACTIVATE, TODAY, { ...uncovered, member: member() })).toBeNull();
+  });
+
+  it('judges the date against the organization’s today as at submit, not as last drawn', () => {
+    // THE SCREEN DREW 2026-09-23 AND THE ORGANIZATION'S MIDNIGHT HAS PASSED:
+    // the minimum it offered is now in the past, and is named as that rather
+    // than sent for the database to refuse.
+    const drawn = statusContext();
+    const rolled = { ...drawn, today: '2026-09-24' };
+
+    expect(statusPreflightOf(DEACTIVATE, drawn.today, drawn)).toBeNull();
+    expect(statusPreflightOf(DEACTIVATE, drawn.today, rolled)).toBe(MEMBER_STATUS_IN_PAST);
   });
 
   it('maps the other codes a status write can raise', async () => {

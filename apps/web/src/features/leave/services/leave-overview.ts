@@ -12,7 +12,6 @@ import {
 } from '@/features/leave/services/leave-section';
 import type { MyLeaveRowsState } from '@/features/leave/services/my-leave';
 import {
-  NO_TEXT,
   foldForSearch,
   foldedSearchOf,
   memberStatusOf,
@@ -20,6 +19,7 @@ import {
 } from '@/features/members/services/list';
 import { compareText } from '@/lib/i18n/format';
 import { searchTextOf, sortSearchFor, sortSearchOf } from '@/utils/search-params';
+import { NO_TEXT } from '@/utils/text';
 import type { SortControlDirection } from '@/utils/sort-control';
 
 /**

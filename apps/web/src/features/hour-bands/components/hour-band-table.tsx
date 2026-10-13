@@ -16,8 +16,9 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { usePhone } from '@/hooks/viewport';
-import { durationMessageKey, durationValuesOf, type HourBandDisplayRow } from '@/features/hour-bands/services/list';
+import { durationMessageKey, type HourBandDisplayRow } from '@/features/hour-bands/services/list';
 import { t } from '@/lib/i18n';
+import { durationValuesOf } from '@/utils/time';
 
 /**
  * The bands, one row each: the name in its tone's tile, the window, the

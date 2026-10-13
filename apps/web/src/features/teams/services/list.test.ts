@@ -23,6 +23,7 @@ import {
   teamHeadingMessageKey,
   teamRowOf,
   teamsMessageKey,
+  teamsRetryMessageKey,
   teamsQueryOptions,
   teamsNoticeOf,
   teamsSurfaceStateOf,
@@ -491,6 +492,10 @@ describe('the surface state, driven through the one query definition', () => {
 
   it('maps its one failure to its own message', () => {
     expect(teamsMessageKey(TEAMS_UNAVAILABLE)).toBe('smjene.error.unavailable');
+  });
+
+  it('offers a retry beside the read failure', () => {
+    expect(teamsRetryMessageKey(TEAMS_UNAVAILABLE)).toBe('smjene.error.retry');
   });
 });
 

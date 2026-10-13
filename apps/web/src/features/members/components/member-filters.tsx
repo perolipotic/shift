@@ -15,7 +15,6 @@ import {
   CHIP_TEAM,
   LEVEL_FILTERS,
   MEMBERS_ERROR_ID,
-  NO_TEXT,
   STATUS_FILTERS,
   isNarrowed,
   levelFilterMessageKey,
@@ -28,6 +27,7 @@ import {
   type MembersSummary,
   type TeamFilterOption,
 } from '@/features/members/services/list';
+import { NO_TEXT } from '@/utils/text';
 
 /**
  * The member list's search, its three chips — Razina, Smjena and Status — and

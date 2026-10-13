@@ -89,6 +89,8 @@ const SANCTIONED_PLURAL_KEYS = [
   'rotation.builder.warnings.summary',
   'rotation.builder.warnings.coverageGap',
   'rotation.builder.warnings.duplicateCoverage',
+  // A doubled type counts the teams on it, then names them.
+  'rotation.builder.warnings.doubledType',
   // STORY 2.6: how many teams one saved change binds, in the history —
   // `1 smjena`, `2 smjene`, `5 smjena`. The builder's namespace may say the Team.
   'rotation.builder.history.teamCount',
@@ -1089,6 +1091,7 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.builder.error.scheduled',
   // STORY 2.6: an effective date before today.
   'rotation.builder.error.effectivePast',
+  'rotation.builder.error.effectiveTooFar',
   'rotation.builder.error.typeArchived',
   'rotation.builder.error.unchanged',
   'rotation.builder.error.changedToday',
@@ -1960,6 +1963,22 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.fireRanksUse',
   'organization.fireRanksHint',
   'rotation.builder.history.close',
+  // DEFERRED-WORK SWEEP (members polish): the retry beside each admin list's
+  // and edit screen's read failure, and the hint under the status dialog's date.
+  'ljudi.error.retry',
+  'smjene.error.retry',
+  'organization.hourBands.error.retry',
+  'rotation.shiftTypes.error.retry',
+  'rotation.builder.error.retry',
+  'ljudi.status.dateHint',
+  // DECISION 16: the team dialog's *Što se mijenja* — its heading, and the
+  // last shift in the team left and the first in the team joined, each with
+  // or without the type's range.
+  'smjene.membership.changes',
+  'smjene.membership.lastIn',
+  'smjene.membership.lastInNoRange',
+  'smjene.membership.firstIn',
+  'smjene.membership.firstInNoRange',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

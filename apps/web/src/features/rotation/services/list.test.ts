@@ -20,6 +20,7 @@ import {
   readRotation,
   rotationChangedTodayOf,
   rotationMessageKey,
+  rotationRetryMessageKey,
   rotationQueryOptions,
   rotationScheduledDateOf,
   rotationScheduledOf,
@@ -720,6 +721,10 @@ describe('the surface state, driven through the one query definition', () => {
 
   it('names the read failure through its own key', () => {
     expect(rotationMessageKey(ROTATION_UNAVAILABLE)).toBe('rotation.builder.error.unavailable');
+  });
+
+  it('offers a retry beside the read failure', () => {
+    expect(rotationRetryMessageKey(ROTATION_UNAVAILABLE)).toBe('rotation.builder.error.retry');
   });
 });
 

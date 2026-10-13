@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { OutputField } from '@/components/ui/output-field';
 import { HourBandRemove, HourBandRemoveConfirm } from '@/features/hour-bands/components/hour-band-remove';
 import type { HourBandEditScreen } from '@/features/hour-bands/hooks/use-hour-band-edit';
-import { durationMessageKey, durationValuesOf, type HourBandRow } from '@/features/hour-bands/services/list';
+import { durationMessageKey, type HourBandRow } from '@/features/hour-bands/services/list';
 import {
   HOUR_BAND_NAME_FIELD,
   HOUR_BAND_START_FIELD,
@@ -18,6 +18,7 @@ import {
 } from '@/features/hour-bands/services/write';
 import { formatMinuteOfDay } from '@/lib/i18n/format';
 import { t } from '@/lib/i18n';
+import { durationValuesOf } from '@/utils/time';
 
 /**
  * THE END IS SHOWN BESIDE THE START, computed from the start as typed by

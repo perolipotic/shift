@@ -216,8 +216,8 @@ test.describe('at 390 px, on a touch phone', () => {
     // force, on the step it was saved from. Walked back through the bar, it
     // is the pattern and the offset just saved. Checked in this tab rather
     // than after a reload: a team another spec adds to the run's
-    // organization after the save has no assignment, which empties a
-    // freshly read prefill (mixed patterns) — a race this test does not own.
+    // organization after the save has no assignment, which adds it on step 1
+    // to a freshly read prefill — a race this test does not own.
     await expect(rotationPage.stepButton(4)).toHaveAttribute('aria-current', 'step');
     await rotationPage.stepButton(2).tap();
     await expect(steps).toHaveCount(2);

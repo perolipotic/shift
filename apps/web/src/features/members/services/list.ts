@@ -2,9 +2,10 @@ import { queryOptions } from '@tanstack/react-query';
 
 import { initialsOf } from '@/utils/initials';
 import { searchTextOf, sortSearchFor, sortSearchOf } from '@/utils/search-params';
-import { compareText, formatIsoDate, formatIsoDayMonth, isIsoDate, organizationIsoDate } from '@/lib/i18n/format';
+import { compareText, formatIsoDayMonth, isIsoDate, organizationIsoDate } from '@/lib/i18n/format';
 import type { MemberRole } from '@/features/navigation/utils/destinations';
 import { MEMBER_ROLES, isAdministrator, type MemberRoleOutcome } from '@/features/navigation/services/role';
+import { NO_TEXT, shownDate } from '@/utils/text';
 
 /**
  * The member list: one organization's people, read once and narrowed in memory
@@ -144,17 +145,6 @@ export const MEMBERS_COLUMNS =
  * answer roughly as often as it catches a wrong one.
  */
 export const MEMBERS_COUNT: MembersCountOptions = { count: 'exact' };
-
-/**
- * The empty string, NAMED.
- *
- * `pages/ljudi.tsx` may hold no string literal of its own — `prijava.test.ts`
- * sweeps every screen for a literal that is neither a `t()` key nor a
- * structural attribute value, and an empty one is still one. Two things on that
- * surface are nothing at all: the search a freshly opened list carries, and the
- * cell of a member with no address. Both are this.
- */
-export const NO_TEXT = '';
 
 /** The id of the list's refusal notice, which the search and the chips point at while it is shown. */
 export const MEMBERS_ERROR_ID = 'ljudi-error';
@@ -566,15 +556,6 @@ export function memberActiveFrom(member: MemberListRow, day: string): boolean {
     memberActiveOn(member, day) &&
     !member.statusVersions.some((version) => version.effectiveFrom > day && !version.active)
   );
-}
-
-/**
- * An ISO date the way the screens show one — `23.09.2026` — or the value
- * unchanged if it is not a real calendar date, so a malformed value is still
- * visibly the value that was entered rather than a blank.
- */
-export function shownDate(isoDate: string): string {
-  return formatIsoDate(isoDate) ?? isoDate;
 }
 
 /** A member's latest version, or `null` for a member who has none. */
@@ -2000,6 +1981,20 @@ export function membersMessageKey(
   // `@/features/organization/utils/messages` records. A third code added to the vocabulary
   // becomes a `pnpm typecheck` failure here, at the one place it has to be
   // taught, rather than a fall-through that reports the wrong fact confidently.
+  const unhandled: never = failure;
+
+  return unhandled;
+}
+
+/**
+ * The retry the read failure's notice offers, or `null` for none: a read that
+ * was unavailable is read again (as `kalendar.retry` does), and a refusal —
+ * which only signing in again fixes — offers nothing to press.
+ */
+export function membersRetryMessageKey(failure: MembersFailure): 'ljudi.error.retry' | null {
+  if (failure === MEMBERS_UNAVAILABLE) return 'ljudi.error.retry';
+  if (failure === MEMBERS_REFUSED) return null;
+
   const unhandled: never = failure;
 
   return unhandled;
