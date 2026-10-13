@@ -3,7 +3,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
 
 import { useDayDetail } from '@/features/calendar/hooks/use-day-detail';
+import { useSnapshotSkewRefresh } from '@/features/calendar/hooks/use-snapshot-skew-refresh';
 import { usePhone } from '@/hooks/viewport';
+import { useOrganizationToday } from '@/hooks/organization-today';
 import {
   GRID_CELL_SELECTOR,
   FOCUS_VISIBLE,
@@ -23,7 +25,6 @@ import {
   calendarModeOf,
   calendarMonthOutcomeOf,
   calendarSearchTo,
-  calendarTodayOf,
   type CalendarFilterChange,
   type CalendarMode,
   type CalendarMonth,
@@ -34,18 +35,14 @@ import { dayConflictsOf, type DayConflict } from '@/features/calendar/utils/day-
 import { candidateLeaveOf } from '@/features/calendar/utils/replacement-candidates';
 import { cachedRoleOf, calendarSkeletonShapeOf, earlyCalendarModeOf } from '@/features/calendar/utils/skeleton';
 import { dayDetailKeyOf, gridFocusKeyOf } from '@/features/calendar/utils/screen-keys';
-import {
-  CALENDAR_KEY,
-  CALENDAR_READ_TABLE,
-  type CalendarMembersRpc,
-  calendarQueryOptions,
-  calendarSurfaceStateOf,
-} from '@/features/calendar/services/snapshot';
+import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
+import { CALENDAR_FETCH_FETCHING, CALENDAR_KEY, calendarRetryStateOf } from '@/features/calendar/services/snapshot';
 import {
   MARKS_LOADING,
   MARKS_READY,
   calendarMarksStateOf,
   calendarRefusalOf,
+  snapshotSkewOf,
   readsOrganizationLeave,
 } from '@/features/calendar/services/marks';
 import {
@@ -109,15 +106,9 @@ function noRoleOnServer(): null {
  * answer; one that cannot be derived is none, logged.
  */
 export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSearch) => void) {
-  const answer = useQuery(
-    calendarQueryOptions(
-      () => supabaseClient().from(CALENDAR_READ_TABLE),
-      // The precedent of `smjene.$id.tsx`: the client's `rpc` is wider than
-      // the one call the calendar makes.
-      () => supabaseClient() as unknown as CalendarMembersRpc,
-    ),
-  );
-  const state = calendarSurfaceStateOf(answer);
+  const answer = useCalendarSnapshot();
+  // A failed read being read again is the skeleton, so the retry's press shows.
+  const state = calendarRetryStateOf(answer);
   const { snapshot } = state;
   const role = snapshot === null ? null : snapshot.viewer.role;
   const organizationLeave = useQuery({
@@ -152,6 +143,14 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
   const resolutionsIsError = resolutions.isError;
   const resolutionsIsPending = resolutions.isPending;
   const resolutionsFetchStatus = resolutions.fetchStatus;
+  const snapshotFetching = answer.fetchStatus === CALENDAR_FETCH_FETCHING;
+  // A leave or resolution row naming a member or team the snapshot does not hold yet re-reads it once.
+  const skew = useMemo(
+    () => snapshotSkewOf(snapshot, leaveData, readsResolutions ? resolutionsData : undefined),
+    [snapshot, leaveData, readsResolutions, resolutionsData],
+  );
+
+  useSnapshotSkewRefresh(skew);
   // Derived once per answer, not on every render: the collisions walk every record.
   const marksState = useMemo(
     () =>
@@ -173,6 +172,7 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
                   fetchStatus: resolutionsFetchStatus,
                 }
               : null,
+            snapshotFetching,
           ),
     [
       snapshot,
@@ -185,6 +185,7 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
       resolutionsIsError,
       resolutionsIsPending,
       resolutionsFetchStatus,
+      snapshotFetching,
     ],
   );
   const marks = marksState?.kind === MARKS_READY ? marksState.marks : null;
@@ -203,7 +204,9 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
     }
   }, [snapshot, readsResolutions, resolutionsData]);
   const loading = state.loading || marksState?.kind === MARKS_LOADING;
-  const today = snapshot === null ? null : calendarTodayOf(snapshot, new Date());
+  // THE ORGANIZATION'S TODAY, moved at its midnight: a screen left open
+  // overnight marks the new day's row and `Ovaj mjesec` target.
+  const { today } = useOrganizationToday(snapshot === null ? null : snapshot.timeZone);
   const mjesec = search.mjesec;
   const smjena = search.smjena;
   const osoba = search.osoba;
@@ -284,7 +287,8 @@ export function useCalendarScreen(search: CalendarSearch, go: (next: CalendarSea
       MY_LEAVE_RECORDS_KEY,
       ORGANIZATION_CONFLICT_RESOLUTIONS_KEY,
     ]) {
-      void client.invalidateQueries({ queryKey });
+      // A read already in flight is left to land: repeated presses never restart it.
+      void client.invalidateQueries({ queryKey }, { cancelRefetch: false });
     }
   }
 

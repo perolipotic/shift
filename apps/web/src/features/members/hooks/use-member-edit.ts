@@ -1,13 +1,8 @@
 import { onlineManager, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 
-import {
-  CALENDAR_READ_TABLE,
-  calendarQueryOptions,
-  calendarSurfaceStateOf,
-  type CalendarMembersRpc,
-  type CalendarSnapshot,
-} from '@/features/calendar/services/snapshot';
+import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
+import { calendarSurfaceStateOf, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 
 import { useErasureConfirmation, type ShownErasures } from '@/features/conflicts/hooks/use-erasure-confirmation';
 import { useErasureReads } from '@/features/conflicts/hooks/use-erasure-reads';
@@ -322,16 +317,10 @@ export function useMemberEdit(id: string) {
   );
 
   const answer = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
-  // THE CALENDAR SNAPSHOT, observed under the leave card's own key and
-  // arguments (`@/features/leave/hooks/use-member-leave`), for the
+  // THE CALENDAR SNAPSHOT, observed through its one binding — the leave
+  // card's own (`@/features/leave/hooks/use-member-leave`) — for the
   // deactivation's consequence.
-  const calendar = useQuery(
-    calendarQueryOptions(
-      () => supabaseClient().from(CALENDAR_READ_TABLE),
-      // As the calendar's: the client's `rpc` is wider than the calls made.
-      () => supabaseClient() as unknown as CalendarMembersRpc,
-    ),
-  );
+  const calendar = useCalendarSnapshot();
 
   // MEMBER RANK. Whether the rank control is offered, read from the one
   // organization snapshot under its shared key (AD-13), through the chrome's
