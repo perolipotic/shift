@@ -2949,10 +2949,12 @@ const KEY_SOURCES = [
     // working in its strip, and the balance it gives back.
     // THIRTY-EIGHT SINCE STORY 5.5d: Spremi's hint while a replacement that
     // no longer applies holds the key, and its link to the calendar.
+    // FORTY SINCE D726: the third card's line naming the days a later start
+    // drops, and the line saying some of them are past.
     name: 'the conflict resolution screen',
     file: RESOLUTION,
     keys: translationKeys,
-    strings: 38,
+    strings: 40,
   },
   {
     // STORY 5.4b: the facts line with and without times, who else works or
@@ -2977,10 +2979,12 @@ const KEY_SOURCES = [
     // STORY 7.9: the three candidate group headings — free, working that day,
     // on leave that day — shared by the conflict screen's picker and the day
     // detail's roster dialog, off `candidateGroupMessageKey`.
+    // FOUR SINCE D717: a candidate's line with the continuous duty the shift
+    // would make, off `candidateContinuousMessageKey`.
     name: 'the replacement candidate groups',
     file: REPLACEMENT_CANDIDATE_KEYS,
     keys: messageKeyUnions,
-    strings: 3,
+    strings: 4,
   },
   {
     // STORY 5.4b: the write's three refusals — gone, denied, failed. FOUR
@@ -3242,10 +3246,14 @@ const KEY_SOURCES = [
     // new, their one group shape and unknown); and the removal's cleared
     // line or its unknown line — less the form's two legends and the row's amend-mode word they
     // replace.
+    //
+    // ONE HUNDRED AND FIFTY-ONE SINCE D723: the card's line when a hand-off
+    // from a conflict opened nothing, and the amend dialog's line when its
+    // od and do came from the conflict.
     name: 'the member edit form',
     file: MEMBER_EDIT,
     keys: translationKeys,
-    strings: 149,
+    strings: 151,
   },
   {
     // THIRTEEN on the member write path's rules: eleven `ljudi.form.error.*`

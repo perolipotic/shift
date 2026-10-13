@@ -500,7 +500,8 @@
       "candidatesHeading": "Tko odrađuje smjenu",
       "candidates": {
         "free": "slobodan",
-        "working": "radi taj dan · 24 h bez pauze",
+        "working": "radi taj dan",
+        "continuous": "{line} · {hours} bez pauze",
         "onLeave": "na godišnjem taj dan"
       },
       "noCandidates": "Nema nikoga koga se može dodati na ovu smjenu.",

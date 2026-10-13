@@ -603,7 +603,7 @@ function resolutionScreenFrom(
     return one.name;
   });
   const minutes = shiftMinutesOf(snapshot, collision);
-  const candidates = replacementCandidatesOf(snapshot, records, collision.teamId, collision.date);
+  const candidates = replacementCandidatesOf(snapshot, records, collision.teamId, collision.date, collision.shiftTypeId);
   const range = leaveRangeValuesOf(record.record);
   const dateShown = detail.date;
   const typeName = detail.typeName ?? type.name;

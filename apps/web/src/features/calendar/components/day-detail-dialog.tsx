@@ -43,6 +43,7 @@ import {
 import type { OverrideFormState } from '@/features/calendar/hooks/use-override-form';
 import type { RosterFormState } from '@/features/calendar/hooks/use-roster-form';
 import type { CalendarSnapshot } from '@/features/calendar/services/snapshot';
+import { candidateContinuousMessageKey, candidateContinuousOf } from '@/features/calendar/utils/replacement-candidates';
 import { positionsShown, rosterLineOf, rosterPositionMessageKey } from '@/features/members/utils/position';
 import { ranksShown, rosterRankMessageKey } from '@/features/members/utils/rank';
 import {
@@ -167,6 +168,15 @@ const LINE_WORDS: RosterLineTranslate = {
   word: (key) => t(key),
   line: (key, values) => t(key, values),
 };
+
+/** A candidate's line, then `· 24 h bez pauze` when the shift would make a longer continuous duty (D717). */
+function withContinuous(label: string, continuousMinutes: number | null): string {
+  const continuous = candidateContinuousOf(continuousMinutes);
+
+  if (continuous === null) return label;
+
+  return t(candidateContinuousMessageKey(), { line: label, hours: t(continuous.key, continuous.values) });
+}
 
 /**
  * Roster changes on the day (story 3.6a), each with its author, time and
@@ -460,8 +470,12 @@ export function DayDetailDialog({
     const usesFireRanks = snapshot?.usesFireRanks ?? false;
     const rankShown = ranksShown({ usesFireRanks });
     const positionShown = positionsShown({ usesFireRanks });
-    const inOption = (candidate: RosterInCandidate) =>
-      inOptionOf(candidate, rankShown, t('kalendar.detail.rosterChange.set.noTeam'), LINE_WORDS);
+    // D717: a member the shift would keep on duty longer reads how long, as the resolution screen's picker.
+    const inOption = (candidate: RosterInCandidate) => {
+      const option = inOptionOf(candidate, rankShown, t('kalendar.detail.rosterChange.set.noTeam'), LINE_WORDS);
+
+      return { ...option, label: withContinuous(option.label, candidate.continuousMinutes) };
+    };
 
     return {
       out: roster.outOptions.map((candidate) => outOptionOf(candidate, rankShown, positionShown, LINE_WORDS)),
