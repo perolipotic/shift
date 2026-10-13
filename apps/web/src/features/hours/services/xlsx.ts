@@ -1,3 +1,4 @@
+import { MINUTES_PER_DAY } from '@shift/domain';
 import type { Cell, SheetData } from 'write-excel-file/browser';
 
 import {
@@ -64,7 +65,7 @@ export function renderedLengthOf(cell: HoursExportCell): number {
     case 'empty':
       return 0;
     case 'hours': {
-      const minutes = Math.round(cell.value * 1440);
+      const minutes = Math.round(cell.value * MINUTES_PER_DAY);
       const hours = String(Math.floor(minutes / 60)).length;
       const rest = String(minutes % 60).length;
 
@@ -92,7 +93,9 @@ export function columnWidthsOf(sheet: HoursExport): readonly { readonly width: n
     if (index === 1) return { width: TEAM_WIDTH };
 
     const heading = Math.min(FIGURE_WIDTH_MAX, [...column].length + PADDING);
-    const widest = Math.max(0, ...sheet.rows.map((row) => (row[index] === undefined ? 0 : renderedLengthOf(row[index]))));
+    // The footer's totals are the widest figures of their columns.
+    const figures = sheet.footer === null ? sheet.rows : [...sheet.rows, sheet.footer];
+    const widest = Math.max(0, ...figures.map((row) => (row[index] === undefined ? 0 : renderedLengthOf(row[index]))));
 
     return { width: Math.max(FIGURE_WIDTH, heading, widest + PADDING) };
   });
@@ -111,11 +114,19 @@ function cellOf(cell: HoursExportCell): Cell {
   }
 }
 
-/** The sheet as the writer's rows: the bold header row, then every row. */
+/** A footer cell: the same cell, in bold, as the screen's footer reads apart from the rows. */
+function footerCellOf(cell: HoursExportCell): Cell {
+  const mapped = cellOf(cell);
+
+  return mapped === null ? null : { ...mapped, fontWeight: 'bold' };
+}
+
+/** The sheet as the writer's rows: the bold header row, every row, then the bold footer. */
 export function sheetDataOf(sheet: HoursExport): SheetData {
   return [
     sheet.columns.map((column): Cell => ({ type: String, value: column, fontWeight: 'bold' })),
     ...sheet.rows.map((row) => row.map(cellOf)),
+    ...(sheet.footer === null ? [] : [sheet.footer.map(footerCellOf)]),
   ];
 }
 

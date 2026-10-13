@@ -52,6 +52,14 @@ import {
 } from '@/features/shift-types/services/list';
 import { splitTeams, type TeamRow } from '@/features/teams/services/list';
 import { instantMicrosOf } from '@/features/rotation/services/list';
+import {
+  MONTH_SEARCH_PARAM,
+  PERSON_SEARCH_PARAM,
+  TEAM_SEARCH_PARAM,
+  isSearchText,
+  searchChangedTo,
+  searchEntryOf,
+} from '@/utils/search-params';
 
 /**
  * The month heading's id, re-exported for the page, which hands it to the
@@ -159,23 +167,17 @@ export function workingShiftTypeIdsOf(snapshot: CalendarSnapshot): readonly stri
   return snapshot.types.filter((type) => type.isWorking).map((type) => type.id);
 }
 
-/** The search parameter that names the month shown: `?mjesec=2026-09`. */
-export const MONTH_SEARCH_PARAM = 'mjesec';
+/**
+ * The month (`?mjesec=2026-09`), the one team *Sve smjene* is narrowed to
+ * (`?smjena=<team id>`, story 3.3a; `smjena` is the Team, never a shift type)
+ * and the one person it shows (`?osoba=<member id>`, story 3.3b; a person
+ * chosen wins over `smjena`): the parameters *Sati* names alike, written
+ * once in `@/utils/search-params`.
+ */
+export { MONTH_SEARCH_PARAM, PERSON_SEARCH_PARAM, TEAM_SEARCH_PARAM };
 
 /** The search parameter that names the mode shown: `?prikaz=moj`. */
 export const MODE_SEARCH_PARAM = 'prikaz';
-
-/**
- * The search parameter that names the one team *Sve smjene* is narrowed to:
- * `?smjena=<team id>` (story 3.3a). `smjena` is the Team, never a shift type.
- */
-export const TEAM_SEARCH_PARAM = 'smjena';
-
-/**
- * The search parameter that names the one person *Sve smjene* shows:
- * `?osoba=<member id>` (story 3.3b). A person chosen wins over `smjena`.
- */
-export const PERSON_SEARCH_PARAM = 'osoba';
 
 /**
  * What a screen key reads where no team or person is chosen: it cannot
@@ -250,18 +252,11 @@ export function calendarModeOf(search: CalendarSearch, role: MemberRole, isPhone
  * the viewer never chose is never written in.
  */
 export function calendarSearchTo(search: CalendarSearch, change: CalendarSearchChange): CalendarSearch {
-  const mjesec = 'mjesec' in change ? change.mjesec : (search.mjesec ?? null);
-  const prikaz = 'prikaz' in change ? change.prikaz : search.prikaz;
-  const smjena = 'smjena' in change ? change.smjena : (search.smjena ?? null);
-  const osoba = 'osoba' in change ? change.osoba : (search.osoba ?? null);
-
-  return {
-    ...(mjesec === null ? {} : { mjesec }),
-    ...(prikaz === undefined ? {} : { prikaz }),
-    ...(smjena === null ? {} : { smjena }),
-    ...(osoba === null ? {} : { osoba }),
-  };
+  return searchChangedTo(CALENDAR_SEARCH_ORDER, search, change);
 }
+
+/** The order the calendar writes its parameters in. */
+const CALENDAR_SEARCH_ORDER = [MONTH_SEARCH_PARAM, MODE_SEARCH_PARAM, TEAM_SEARCH_PARAM, PERSON_SEARCH_PARAM] as const;
 
 /** A cell's shape: at least 30 px high, the small radius, the label never truncated. */
 export const CALENDAR_CELL_CLASS =
@@ -316,10 +311,10 @@ export function calendarSearchOf(search: Record<string, unknown>): CalendarSearc
   const person = search[PERSON_SEARCH_PARAM];
 
   return {
-    ...(isCalendarMonth(month) ? { mjesec: month } : {}),
-    ...(isCalendarMode(mode) ? { prikaz: mode } : {}),
-    ...(typeof team === 'string' && team !== '' ? { smjena: team } : {}),
-    ...(typeof person === 'string' && person !== '' ? { osoba: person } : {}),
+    ...searchEntryOf(MONTH_SEARCH_PARAM, month, isCalendarMonth),
+    ...searchEntryOf(MODE_SEARCH_PARAM, mode, isCalendarMode),
+    ...searchEntryOf(TEAM_SEARCH_PARAM, team, isSearchText),
+    ...searchEntryOf(PERSON_SEARCH_PARAM, person, isSearchText),
   };
 }
 
@@ -922,15 +917,29 @@ export function weekdayOf(date: string): string {
  * FORCE. THE ONE RECIPE: the day list below and *Sati*'s hours (story 4.1b)
  * both start from it, so the shifts counted in hours are exactly the working
  * shifts of the day list.
+ *
+ * A screen that walks every member (*Sati*'s table) works out the
+ * snapshot-wide part once ({@link snapshotScheduleInputOf}) and passes it as
+ * `shared`; it is the same value either way.
  */
 export function memberScheduleInputOf(
   snapshot: CalendarSnapshot,
   { memberId, memberships, statuses }: CalendarMemberHistory,
+  shared: SnapshotScheduleInput = snapshotScheduleInputOf(snapshot),
 ): MemberScheduleInput {
+  return { memberId, memberships, statuses, ...shared };
+}
+
+/** The part of {@link memberScheduleInputOf} that is the same for every member. */
+export type SnapshotScheduleInput = Omit<MemberScheduleInput, 'memberId' | 'memberships' | 'statuses'>;
+
+/**
+ * The snapshot-wide part of every member's schedule input: every rotation,
+ * and the shift-type and roster overrides IN FORCE — the standings walk every
+ * override, so a table of members works them out once (Epic 4 retro, C8).
+ */
+export function snapshotScheduleInputOf(snapshot: CalendarSnapshot): SnapshotScheduleInput {
   return {
-    memberId,
-    memberships,
-    statuses,
     assignments: snapshot.assignments,
     steps: snapshot.steps,
     overrides: overrideStandingOfCalendar(snapshot).inForce,

@@ -64,6 +64,15 @@ const BRANCH = ':matches(ConditionalExpression, LogicalExpression)';
  *  on an attribute, where a string is usually structural. */
 const CHILD_CONTAINER = ':matches(JSXElement, JSXFragment) > JSXExpressionContainer';
 
+/** The result of a `.map()`/`.flatMap()` callback rendered as an element child:
+ *  the arrow's expression body, or what a block body returns. Scoped to those
+ *  two array methods rather than reached by a descendant sweep, because a
+ *  descendant sweep also reaches `{t(cond ? 'a' : 'b')}` — a key, not content. */
+const MAPPED_RESULTS = [
+  `${CHILD_CONTAINER} > CallExpression[callee.property.name=/^(map|flatMap)$/] > :function`,
+  `${CHILD_CONTAINER} > CallExpression[callee.property.name=/^(map|flatMap)$/] > :function > BlockStatement > ReturnStatement`,
+];
+
 /** The seven attributes whose string value reaches a user or an assistive
  *  technology. */
 const GUARDED_ATTRIBUTE =
@@ -73,6 +82,8 @@ const GUARDED_ATTRIBUTE =
 const LABEL_ATTRIBUTE =
   'JSXOpeningElement[name.name=/^(optgroup|option|track)$/] > JSXAttribute[name.name="label"]';
 
+const BRACED_MESSAGE =
+  'L2: a string in braces is still a hard-coded string, and a template literal assembled around a value is also how a date gets built by hand (L6). Add it to apps/web/src/lib/i18n/locales/hr.json and render it through t().';
 const BRANCH_MESSAGE =
   'L2: a literal in a ternary or a guard is still a hard-coded string, and a branch between two words is also how a plural gets hand-rolled (L7). Add both outcomes to apps/web/src/lib/i18n/locales/hr.json and branch between t() calls.';
 const ATTRIBUTE_MESSAGE =
@@ -205,6 +216,8 @@ export const FEATURE_PUBLIC = {
   // (`hoursLeaveKeysOf`), never a second recipe.
   hours: [
     'services/hours-conflicts', // calendar, today
+    // Epic 4 retro P1: *Sati*'s URL, moved out of `my-hours`; the route parses with it.
+    'services/hours-search', // pages, today
     'services/my-hours', // calendar, pages, today
   ],
   // Story 5.1c: the member page composes `components/member-leave-card`,
@@ -570,6 +583,9 @@ export default [
   //     would refuse the very fix the message asks for. `t(cond ? 'a' : 'b')`
   //     stays clean for the same reason from the other side — the container's
   //     own child is a call, not a branch.
+  //     The one intervening node let through is a `.map()`/`.flatMap()`
+  //     callback (`MAPPED_RESULTS`): what it returns renders, so its branches
+  //     are held to the same rule, and a `t()` call inside it stays clean.
   {
     files: ['apps/web/**/*.tsx'],
     rules: {
@@ -584,8 +600,7 @@ export default [
         // ---- a string as an element child, braced or templated, branch or not
         {
           selector: `${CHILD_CONTAINER} > ${CONTENT_STRING}`,
-          message:
-            'L2: a string in braces is still a hard-coded string, and a template literal assembled around a value is also how a date gets built by hand (L6). Add it to apps/web/src/lib/i18n/locales/hr.json and render it through t().',
+          message: BRACED_MESSAGE,
         },
         {
           selector: `${CHILD_CONTAINER} > ${BRANCH} > ${CONTENT_STRING}`,
@@ -595,6 +610,15 @@ export default [
           selector: `${CHILD_CONTAINER} > ${BRANCH} ${BRANCH} > ${CONTENT_STRING}`,
           message: BRANCH_MESSAGE,
         },
+        // ---- the same, as what a `.map()` callback returns for each item
+        ...MAPPED_RESULTS.flatMap((result) => [
+          { selector: `${result} > ${CONTENT_STRING}`, message: BRACED_MESSAGE },
+          { selector: `${result} > ${BRANCH} > ${CONTENT_STRING}`, message: BRANCH_MESSAGE },
+          {
+            selector: `${result} > ${BRANCH} ${BRANCH} > ${CONTENT_STRING}`,
+            message: BRANCH_MESSAGE,
+          },
+        ]),
         // ---- an assistive-technology or placeholder string
         {
           selector: `${GUARDED_ATTRIBUTE} > Literal`,

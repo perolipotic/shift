@@ -14,6 +14,7 @@ import {
 } from '@/features/conflicts/services/override-erasures';
 import {
   DISPOSITION_ARCHIVED,
+  DISPOSITION_CHANGED,
   DISPOSITION_DENIED,
   DISPOSITION_FAILED,
   DISPOSITION_GONE,
@@ -106,6 +107,7 @@ function rowOf(id: string, shiftTypeId: string, governed = true): PendingOverrid
     reason: 'Zamjena zbog vježbe.',
     authorName: VIEWER_NAME,
     governed,
+    governingSavedAt: governed ? '2026-09-01T08:00:00.123456+00:00' : null,
     options: governed
       ? [
           { id: NOC, name: 'Noć' },
@@ -156,6 +158,8 @@ describe('the refusal → disposition code mapping', () => {
     expect(reviewRefusalOf(OVERRIDE_CHANGE_ARCHIVED)).toBe(DISPOSITION_ARCHIVED);
     expect(staleRefusalOf(DISPOSITION_GONE)).toBe(true);
     expect(staleRefusalOf(DISPOSITION_ARCHIVED)).toBe(true);
+    // 0035: the governing rotation version changed since the review was read.
+    expect(staleRefusalOf(DISPOSITION_CHANGED)).toBe(true);
   });
 
   it('says sameAsProjected as the amend\'s preflight does, kept in its dialog', () => {

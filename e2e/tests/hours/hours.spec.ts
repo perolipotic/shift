@@ -218,46 +218,41 @@ async function expectExportIsTable(hoursPage: HoursPage, fileName: string): Prom
   expect(download.suggestedFilename()).toBe(fileName);
   const workbook = readXlsx(readFileSync(await download.path()));
   expect(workbook.name).toBe(organization.export.sheetName);
-  const [header, ...body] = workbook.rows;
+  const [header, ...written] = workbook.rows;
   const headings = screen.map((heading) => (heading === organization.leave ? organization.export.leaveDays : heading));
   expect(header?.map((cell) => (cell?.type === 'text' ? cell.value : null))).toEqual(headings);
-  expect(body).toHaveLength(shown.length);
-  for (const [index, written] of body.entries()) {
+  // E922: every row shown, then the footer row, as on the screen.
+  expect(written).toHaveLength(shown.length + 1);
+  const body = written.slice(0, shown.length);
+  const footer = written.at(-1) ?? [];
+  for (const [index, cells] of body.entries()) {
     const texts = shown[index] ?? [];
     // The conflicts, the last column, are never empty: no trailing cell is left out.
-    expect(written.length, `cells of row ${String(index)}`).toBe(headings.length);
+    expect(cells.length, `cells of row ${String(index)}`).toBe(headings.length);
     for (const [column, label] of screen.entries()) {
-      const cell = written[column];
-      const text = texts[column] ?? '';
-      if (label === organization.member || label === organization.team) {
-        expect(cell, `${label} of row ${String(index)}`).toEqual({ type: 'text', value: text });
-      } else if (label === organization.conflicts) {
-        // The state is the column and the number, 0 included: never a colour or a glyph.
-        expect(cell, `${label} of row ${String(index)}`).toEqual({ type: 'number', value: conflictsOf(text), format: null });
-      } else if (label === organization.shifts) {
-        expect(cell, `${label} of row ${String(index)}`).toEqual({
-          type: 'number',
-          value: Number(/^\d+/.exec(text)?.[0]),
-          format: null,
-        });
-      } else if (label === organization.leave) {
-        // The leave: its days a plain number, absent at 0 (`—`), never a duration.
-        const days = leaveDaysOfFigure(text);
-        expect(cell ?? null, `leave days of row ${String(index)}`).toEqual(
-          days === null ? null : { type: 'number', value: days, format: null },
-        );
-      } else {
-        // A band or the total: a duration, read back as the screen's minutes, formatted as the screen reads it.
-        expect(cell?.type, `${label} of row ${String(index)} is a number`).toBe('number');
-        expect(cell?.type === 'number' ? cell.format : null, `${label} of row ${String(index)} reads ${text}`).toBe(
-          formatOfFigure(text),
-        );
-        expect(exportedMinutes(cell), `${label} of row ${String(index)}`).toBe(minutesOfFigure(text));
-      }
+      expectCellIsScreen(cells[column], label, texts[column] ?? '', `${label} of row ${String(index)}`);
     }
   }
   // THE ORDER IS THE SCREEN'S.
   expect(body.map((cells) => (cells[0]?.type === 'text' ? cells[0].value : null))).toEqual(shown.map((row) => row[0]));
+
+  // THE FOOTER IS THE SCREEN'S (E922): its label where the screen's spans
+  // Member and Team, the Team cell empty, and every total as the footer
+  // shows it — each duration column still summing to its footer.
+  const totals = await hoursPage.organizationFooter();
+  expect(totals[0]).toBe(organization.footer);
+  expect(totals, 'the footer spans Member and Team').toHaveLength(screen.length - 1);
+  expect(footer.length, 'cells of the footer').toBe(headings.length);
+  expect(footer[0]).toEqual({ type: 'text', value: organization.footer });
+  expect(footer[1] ?? null, 'the footer leaves Team empty').toBeNull();
+  for (const [column, label] of screen.entries()) {
+    if (column < 2) continue;
+    expectCellIsScreen(footer[column], label, totals[column - 1] ?? '', `${label} of the footer`);
+    if (footer[column]?.type === 'number' && footer[column].format !== null) {
+      const sum = body.reduce((minutes, cells) => minutes + (exportedMinutes(cells[column]) ?? 0), 0);
+      expect(exportedMinutes(footer[column]), `${label} sums to its footer`).toBe(sum);
+    }
+  }
   await expect(hoursPage.exportButton).toBeEnabled();
   await expect(hoursPage.exportFailed).toHaveCount(0);
 
@@ -266,6 +261,32 @@ async function expectExportIsTable(hoursPage: HoursPage, fileName: string): Prom
     headings,
     body,
   };
+}
+
+/**
+ * One downloaded cell held to the text the screen shows in its column: the
+ * name and the team as text, the shift count and the conflict count (story
+ * 5.3d) numbers, the leave its days or absent, and a band or the total a
+ * duration equal to the screen's minutes, in the format that reads as it.
+ */
+function expectCellIsScreen(cell: XlsxCell | null | undefined, label: string, text: string, where: string): void {
+  if (label === organization.member || label === organization.team) {
+    expect(cell, where).toEqual({ type: 'text', value: text });
+  } else if (label === organization.conflicts) {
+    // The state is the column and the number, 0 included: never a colour or a glyph.
+    expect(cell, where).toEqual({ type: 'number', value: conflictsOf(text), format: null });
+  } else if (label === organization.shifts) {
+    expect(cell, where).toEqual({ type: 'number', value: Number(/^\d+/.exec(text)?.[0]), format: null });
+  } else if (label === organization.leave) {
+    // The leave: its days a plain number, absent at 0 (`—`), never a duration.
+    const days = leaveDaysOfFigure(text);
+    expect(cell ?? null, where).toEqual(days === null ? null : { type: 'number', value: days, format: null });
+  } else {
+    // A band or the total: a duration, read back as the screen's minutes, formatted as the screen reads it.
+    expect(cell?.type, `${where} is a number`).toBe('number');
+    expect(cell?.type === 'number' ? cell.format : null, `${where} reads ${text}`).toBe(formatOfFigure(text));
+    expect(exportedMinutes(cell), where).toBe(minutesOfFigure(text));
+  }
 }
 
 /** `Listopad 2026` — the heading a month carries. */
@@ -566,6 +587,11 @@ test.describe('as an admin', () => {
     await expect(hoursPage.filters.teamChip).toBeFocused();
     await expect(hoursPage.filters.clearButton).toHaveCount(0);
 
+    // E909: the shifts in unresolved conflict sort like any other column.
+    await hoursPage.sortButton(organization.conflicts).click();
+    await expect(page).toHaveURL(/[?&]sort=konflikti/);
+    await expect(hoursPage.columnHeader(organization.conflicts)).toHaveAttribute('aria-sort', 'ascending');
+
     // SORTING BY TOTAL: ascending first, then descending, and a reload keeps it.
     await hoursPage.sortButton(organization.total).click();
     await expect(page).toHaveURL(/[?&]sort=ukupno/);
@@ -652,6 +678,23 @@ test.describe('as an admin', () => {
     await hoursPage.goto(`?mjesec=${seededFormer.month}`);
     await expect(hoursPage.organizationTable).toBeVisible();
     await expect(hoursPage.memberLink(seededFormer.name)).toBeVisible();
+
+    // E826 (Epic 4 retro, C5): a person filter that matches no row in the
+    // next month stays in the URL across the month — the table shows everyone
+    // there — and narrows the table again on coming back.
+    const personParam = new RegExp(`[?&]osoba=${seededFormer.id}(?:&|$)`);
+    await hoursPage.filters.choosePerson(seededFormer.name);
+    await expect(page).toHaveURL(personParam);
+    await expect(hoursPage.organizationRows).toHaveCount(1);
+    await hoursPage.nextButton.click();
+    await expect(hoursPage.memberLink(fixture.admin.name)).toBeVisible();
+    await expect(hoursPage.memberLink(seededFormer.name)).toHaveCount(0);
+    await expect(page).toHaveURL(personParam);
+    await hoursPage.previousButton.click();
+    await expect(page).toHaveURL(new RegExp(`[?&]mjesec=${seededFormer.month}`));
+    await expect(page).toHaveURL(personParam);
+    await expect(hoursPage.organizationRows).toHaveCount(1);
+    await expect(hoursPage.filters.personChip).toHaveAccessibleName(hoursPage.filters.personChipText(seededFormer.name));
 
     await hoursPage.memberLink(seededFormer.name).click();
     await expect(page).toHaveURL(new RegExp(`/kalendar\\?.*mjesec=${seededFormer.month}`));
@@ -923,9 +966,9 @@ test.describe('the filters on a phone, as an admin', () => {
     await expect(hoursPage.sortOption(organization.team)).toBeFocused();
     await expect(hoursPage.sortOption(organization.team)).toHaveAttribute('aria-pressed', 'false');
     await page.keyboard.press('End');
-    await expect(hoursPage.sortOption(organization.leave)).toBeFocused();
+    await expect(hoursPage.sortOption(organization.conflicts)).toBeFocused();
     await page.keyboard.press('ArrowDown');
-    await expect(hoursPage.sortOption(organization.leave)).toBeFocused();
+    await expect(hoursPage.sortOption(organization.conflicts)).toBeFocused();
     await page.keyboard.press('Home');
     await expect(first).toBeFocused();
     await page.keyboard.press('ArrowUp');

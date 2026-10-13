@@ -10,6 +10,7 @@ import {
   type PasswordAuth,
   type SignInFailure,
 } from '@/features/auth/services/sign-in';
+import { SESSION } from '@/lib/supabase/session.fixture';
 
 /**
  * The story's I/O matrix, executed (story 1.3b).
@@ -26,9 +27,6 @@ import {
  * other, deeply, in one assertion — the shape a fourth failure code, an added
  * operand or a `message` passed through would break.
  */
-
-/** Enough of a session to be the one the caller gets back. */
-const SESSION = { access_token: 'token', user: { id: 'member' } } as unknown as Session;
 
 const CREDENTIALS = { username: 'ivan.maric', password: 'local-fixture-password', slug: 'dvd-kastel-novi' };
 

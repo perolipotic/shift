@@ -19,6 +19,10 @@ export const LEAVE_SCREEN_PARTS = {
   overviewBody: ['features', 'leave', 'components', 'leave-overview-body.tsx'],
   overviewTable: ['features', 'leave', 'components', 'leave-overview-table.tsx'],
   overviewRows: ['features', 'leave', 'components', 'leave-overview-rows.tsx'],
+  // Epic 4 retro D2 (E890): the sortable heading the overview shares with
+  // Sati, and the glyph record it draws from.
+  sortableHead: ['components', 'sortable-head.tsx'],
+  sortGlyphs: ['components', 'sort-glyphs.ts'],
 } as const;
 
 /**
