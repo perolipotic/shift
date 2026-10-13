@@ -8,15 +8,14 @@ import {
 } from '@/features/calendar/services/snapshot';
 import { calendarDayListOf, memberScheduleInputOf, monthHeaderOf } from '@/features/calendar/utils/month';
 import { HOURS_CONFLICTS_READY, NO_LEAVE_RECORDS, type HoursConflictsState, type LeaveRecordsByMember } from '@/features/hours/services/hours-conflicts';
+import { hoursSearchOf, type HoursSearch } from '@/features/hours/services/hours-search';
 import {
   HOURS_BANDS_HEADING_ID,
   HOURS_MONTH_HEADING_ID,
   HOURS_UNAVAILABLE,
+  hoursGuarded,
   hoursMessageKey,
-  hoursSearchOf,
-  HOURS_TEAM_PARAM,
-  hoursSearchTo,
-  legacyHoursSearchOf,
+  hoursSnapshotInputOf,
   leaveDaysFigureOf,
   leaveFigureOf,
   leaveIsEmpty,
@@ -25,7 +24,6 @@ import {
   myHoursOf,
   myHoursSurfaceOf,
   myHoursViewOf,
-  type HoursSearch,
   type MyHoursView,
 } from '@/features/hours/services/my-hours';
 import { initLocalization, t } from '@/lib/i18n';
@@ -109,79 +107,7 @@ beforeAll(async () => {
   uj5 = await snapshotOf(UJ5);
 });
 
-describe('the search', () => {
-  it('reads a valid month, and drops an invalid one and everything else', () => {
-    expect(hoursSearchOf({ mjesec: '2026-09' })).toEqual({ mjesec: '2026-09' });
-    expect(hoursSearchOf({ mjesec: '2026-13' })).toEqual({});
-    expect(hoursSearchOf({ mjesec: '2026-9' })).toEqual({});
-    expect(hoursSearchOf({ mjesec: 202609 })).toEqual({});
-    expect(hoursSearchOf({ prikaz: 'moj', tim: 'x' })).toEqual({});
-    expect(hoursSearchOf({})).toEqual({});
-  });
-
-  it("reads the organization table's team, person, sort and direction, each dropped on its own when invalid", () => {
-    expect(
-      hoursSearchOf({ mjesec: '2026-09', smjena: 't', osoba: 'o', sort: 'ukupno', smjer: 'silazno' }),
-    ).toEqual({ mjesec: '2026-09', smjena: 't', osoba: 'o', sort: 'ukupno', smjer: 'silazno' });
-    for (const sort of ['ime', 'tim', 'smjene', 'ukupno', 'dopust', 'pojas-b1']) {
-      expect(hoursSearchOf({ sort })).toEqual({ sort });
-    }
-    expect(hoursSearchOf({ sort: 'pojas-' })).toEqual({});
-    expect(hoursSearchOf({ sort: 'total' })).toEqual({});
-    expect(hoursSearchOf({ smjer: 'gore' })).toEqual({});
-    expect(hoursSearchOf({ smjer: 'uzlazno' })).toEqual({ smjer: 'uzlazno' });
-    expect(hoursSearchOf({ smjena: '', osoba: 3 })).toEqual({});
-  });
-
-  it('names the team `smjena`, as the calendar does, and never reads the old `tim` (story 7.5)', () => {
-    expect(HOURS_TEAM_PARAM).toBe('smjena');
-    expect(hoursSearchOf({ tim: 't' })).toEqual({});
-    // `sort=tim` stays a sort value: the Team column.
-    expect(hoursSearchOf({ sort: 'tim' })).toEqual({ sort: 'tim' });
-  });
-
-  it('redirects an old `?tim=` to `?smjena=`, keeping every other parameter in order (story 7.5)', () => {
-    // Matrix: old URL — `/sati?tim=B&mjesec=2026-07` → `?mjesec=2026-07&smjena=B`.
-    const moved = legacyHoursSearchOf({ tim: 'B', mjesec: '2026-07' });
-
-    expect(moved).toEqual({ mjesec: '2026-07', smjena: 'B' });
-    expect(Object.keys(moved ?? {})).toEqual(['mjesec', 'smjena']);
-    expect(legacyHoursSearchOf({ mjesec: '2026-07', tim: 'B', osoba: 'o', sort: 'tim', smjer: 'silazno' })).toEqual({
-      mjesec: '2026-07',
-      osoba: 'o',
-      sort: 'tim',
-      smjer: 'silazno',
-      smjena: 'B',
-    });
-    // `smjena` wins when both are present.
-    expect(legacyHoursSearchOf({ tim: 'B', smjena: 'A' })).toEqual({ smjena: 'A' });
-    // No `tim`, no redirect.
-    expect(legacyHoursSearchOf({ smjena: 'B', mjesec: '2026-07' })).toBeNull();
-    expect(legacyHoursSearchOf({})).toBeNull();
-  });
-
-  it('navigates to a month, and to the current one by dropping the parameter, keeping the rest', () => {
-    expect(hoursSearchTo({}, { mjesec: '2026-10' })).toEqual({ mjesec: '2026-10' });
-    expect(hoursSearchTo({ mjesec: '2026-10' }, { mjesec: null })).toEqual({});
-    const table: HoursSearch = { mjesec: '2026-10', smjena: 't', osoba: 'o', sort: 'ukupno', smjer: 'silazno' };
-
-    expect(hoursSearchTo(table, { mjesec: null })).toEqual({ smjena: 't', osoba: 'o', sort: 'ukupno', smjer: 'silazno' });
-    expect(hoursSearchTo(table, { smjena: null, osoba: 'o' })).toEqual({
-      mjesec: '2026-10',
-      osoba: 'o',
-      sort: 'ukupno',
-      smjer: 'silazno',
-    });
-    expect(hoursSearchTo(table, { smjena: 't', osoba: 'p' })).toEqual({
-      mjesec: '2026-10',
-      smjena: 't',
-      osoba: 'p',
-      sort: 'ukupno',
-      smjer: 'silazno',
-    });
-    expect(hoursSearchTo(table, { sort: null, smjer: null })).toEqual({ mjesec: '2026-10', smjena: 't', osoba: 'o' });
-  });
-
+describe('the headings', () => {
   it('names its own month heading, apart from the calendar, and its bands heading', () => {
     expect(HOURS_MONTH_HEADING_ID).toBe('sati-month-heading');
     expect(HOURS_BANDS_HEADING_ID).toBe('sati-bands-heading');
@@ -460,6 +386,41 @@ describe('the matrix edges', () => {
     const broken = { ...pilot, get bands(): never { throw new TypeError('defect'); } } as unknown as CalendarSnapshot;
 
     expect(() => myHoursOf(broken, { mjesec: MONTH }, TODAY, NO_COLLISIONS, [], NO_LEAVE_RECORDS)).toThrow(TypeError);
+  });
+
+  it('one guard for every view: an answer as it is, a RangeError the one failure, anything else thrown (Epic 4 retro, D3)', () => {
+    const errors = quiet();
+
+    expect(hoursGuarded(() => 3)).toEqual({ ok: true, view: 3 });
+    expect(errors).not.toHaveBeenCalled();
+    expect(
+      hoursGuarded(() => {
+        throw new RangeError('refused');
+      }),
+    ).toEqual({ ok: false, code: HOURS_UNAVAILABLE });
+    expect(errors).toHaveBeenCalledWith(HOURS_UNAVAILABLE, expect.any(RangeError));
+    expect(() =>
+      hoursGuarded(() => {
+        throw new TypeError('defect');
+      }),
+    ).toThrow(TypeError);
+  });
+});
+
+describe('the snapshot-wide input, worked out once (Epic 4 retro, C8)', () => {
+  it('is the same input whether a member is given it or works it out', () => {
+    const shared = hoursSnapshotInputOf(uj5);
+
+    for (const member of uj5.members) {
+      const history = { ...member, memberId: member.id };
+
+      expect(memberHoursInputOf(uj5, history, [], shared)).toEqual(memberHoursInputOf(uj5, history));
+    }
+    expect(memberHoursInputOf(pilot, pilot.viewer, [], hoursSnapshotInputOf(pilot))).toEqual(memberHoursInputOf(pilot));
+    // The input carries no field the per-member recipe does not.
+    expect(Object.keys(memberHoursInputOf(pilot, pilot.viewer, [], hoursSnapshotInputOf(pilot))).sort()).toEqual(
+      Object.keys(memberHoursInputOf(pilot)).sort(),
+    );
   });
 });
 

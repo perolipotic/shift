@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   compareText,
@@ -712,10 +712,36 @@ describe('output is identical under a foreign device timezone', () => {
    * Kiritimati. The time keeps `23:30Z` (01:30 against 13:30) and the range
    * keeps `17:00Z`/`05:00Z` (19:00–07:00 against 07:00–19:00).
    */
+  /** `[major, minor]` of root `package.json`'s `engines.node` floor — read,
+   *  not restated, so raising the floor there cannot leave this guard behind. */
+  function nodeFloor(): [number, number] {
+    const manifest = JSON.parse(readFileSync(join(webRoot, '..', '..', 'package.json'), 'utf8')) as {
+      engines?: { node?: string };
+    };
+    const found = /^>=\s*(\d+)\.(\d+)/.exec(manifest.engines?.node ?? '');
+    if (found === null) throw new Error(`NODE_FLOOR_UNREADABLE: ${String(manifest.engines?.node)}`);
+
+    return [Number(found[1]), Number(found[2])];
+  }
+
   const DATE_INSTANT = '2026-09-12T11:00:00Z';
   const TIME_INSTANT = '2026-09-12T23:30:00Z';
 
   function underForeignZone(): Measured {
+    // The child loads `format.ts` through Node's own type stripping, which an
+    // older Node refuses with an unrecognized-flag error that names the flag
+    // rather than the cause. Name the cause: the version, against the floor
+    // root `package.json` declares (`.nvmrc` pins the one CI runs).
+    const floor = nodeFloor();
+    const [major = 0, minor = 0] = process.versions.node.split('.').map(Number);
+    if (major < floor[0] || (major === floor[0] && minor < floor[1])) {
+      throw new Error(
+        `FOREIGN_ZONE_CHILD_NODE_TOO_OLD: this suite needs Node >=${floor.join('.')} ` +
+          `(root package.json engines; .nvmrc pins the version CI runs), but it is running ` +
+          `under ${process.version}. Run it with the .nvmrc Node, e.g. \`nvm use\`.`,
+      );
+    }
+
     const moduleUrl = new URL('./format.ts', import.meta.url).href;
     const script = [
       `const m = await import(${JSON.stringify(moduleUrl)});`,
@@ -760,6 +786,15 @@ describe('output is identical under a foreign device timezone', () => {
 
   // Guard against a vacuous pass: if the child did not actually pick up the
   // foreign zone, every assertion below would hold for the wrong reason.
+  it('reads the Node floor its version guard names', () => {
+    // The guard above is the first thing a contributor on the wrong Node meets;
+    // an unreadable floor would turn it into a failure naming nothing useful.
+    const [major, minor] = nodeFloor();
+
+    expect(major).toBeGreaterThanOrEqual(22);
+    expect(minor).toBeGreaterThanOrEqual(0);
+  });
+
   it('really ran under Pacific/Kiritimati', () => {
     expect(measured().zone).toBe(FOREIGN_ZONE);
   });
@@ -777,14 +812,79 @@ describe('output is identical under a foreign device timezone', () => {
   });
 });
 
+describe('a shape is built once per zone and reused', () => {
+  /**
+   * The module header justifies its two caches by "a month calendar formats
+   * several hundred cells from the same three shapes in one render" — a
+   * performance claim no output can show, because deleting both caches leaves
+   * every rendered byte identical. Counting constructions is what holds it.
+   *
+   * A FRESH module instance, so constructions an earlier test already cached
+   * cannot make the first call here look free. The constructor is wrapped in a
+   * counting proxy that still constructs the real thing; the namespace is
+   * reached by name so this file does not trip its own scan.
+   */
+  type Namespace = { DateTimeFormat: new (...options: unknown[]) => unknown };
+  const namespace = (globalThis as unknown as Record<string, unknown>)[INTL] as Namespace;
+  const real = namespace.DateTimeFormat;
+  let constructed = 0;
+
+  beforeEach(() => {
+    constructed = 0;
+    namespace.DateTimeFormat = new Proxy(real, {
+      construct(target, options: unknown[]) {
+        constructed += 1;
+
+        return Reflect.construct(target, options) as object;
+      },
+    });
+  });
+
+  afterEach(() => {
+    namespace.DateTimeFormat = real;
+  });
+
+  async function freshFormat(): Promise<typeof import('@/lib/i18n/format')> {
+    vi.resetModules();
+
+    return import('@/lib/i18n/format');
+  }
+
+  it('constructs a date formatter on the first call and none on the next ones', async () => {
+    const format = await freshFormat();
+
+    format.formatDate(at('2026-09-12T11:00:00Z'), ZONE);
+    const first = constructed;
+    format.formatDate(at('2026-09-13T11:00:00Z'), ZONE);
+    format.formatDate(at('2026-09-14T11:00:00Z'), ZONE);
+
+    // Non-zero, so a proxy that never saw a construction cannot pass vacuously.
+    expect(first).toBeGreaterThan(0);
+    expect(constructed).toBe(first);
+  });
+
+  it('builds a new one for another zone, so the cache is keyed by zone', async () => {
+    const format = await freshFormat();
+
+    format.formatDate(at('2026-09-12T11:00:00Z'), ZONE);
+    const first = constructed;
+    format.formatDate(at('2026-09-12T11:00:00Z'), FOREIGN_ZONE);
+
+    expect(constructed).toBeGreaterThan(first);
+  });
+});
+
 // ------------------------------------------------------------- the source scan
 
 /** The one file permitted to construct a formatter. */
 const FORMATTING_MODULE = join(srcRoot, 'lib', 'i18n', 'format.ts');
 
+/** A deliberate copy of `test/source-scan.ts`, which the root source scans
+ *  share: this workspace's Vitest project does not import from the root
+ *  `test/` tree. Change one, change both. */
 const BLOCK_COMMENT = /\/\*[\s\S]*?\*\//g;
 /** `//` to end of line. The leading class keeps `https://` inside a string
- *  intact — the two-pass idiom from `test/key-hygiene.test.ts`. */
+ *  intact — the two-pass idiom from `test/source-scan.ts`. */
 const LINE_SLASH = /(^|[\s;,{}()[\]])\/\/[^\n]*/g;
 
 /**
@@ -818,14 +918,19 @@ function collect(directory: string): string[] {
 }
 
 /** The argument list of each `new Intl.DateTimeFormat(...)`, brace-matched so a
- *  nested options object cannot end it early. */
+ *  nested options object cannot end it early.
+ *
+ *  The needle includes the opening paren, so a match is always opened: an
+ *  "unopened" branch searching for the paren could not be entered by any
+ *  input, and a bare `new Intl.DateTimeFormat` reference with no call is
+ *  `intlValueUses`' finding, not this scanner's. */
 function constructionArguments(source: string): string[] {
+  const needle = `${NEW_DATE_TIME_FORMAT}(`;
   const found: string[] = [];
-  let cursor = source.indexOf(NEW_DATE_TIME_FORMAT);
+  let cursor = source.indexOf(needle);
 
   while (cursor !== -1) {
-    const open = source.indexOf('(', cursor);
-    if (open === -1) throw new Error('CONSTRUCTION_UNOPENED');
+    const open = cursor + needle.length - 1;
 
     let depth = 0;
     let end = -1;
@@ -842,7 +947,7 @@ function constructionArguments(source: string): string[] {
     if (end === -1) throw new Error('CONSTRUCTION_UNBALANCED');
 
     found.push(source.slice(open + 1, end));
-    cursor = source.indexOf(NEW_DATE_TIME_FORMAT, end);
+    cursor = source.indexOf(needle, end);
   }
 
   return found;
@@ -1027,6 +1132,14 @@ describe('the scan detects the shapes it exists to catch', () => {
     ].join('\n');
 
     expect(constructionArguments(source)).toHaveLength(2);
+  });
+
+  it('fails by name on a construction whose argument list never closes', () => {
+    // Rather than returning a truncated list that a `timeZone` check would read
+    // as "no construction here" — a half-written file must not scan as clean.
+    const source = `const f = ${NEW_DATE_TIME_FORMAT}('hr', { timeZone: zone(x) };`;
+
+    expect(() => constructionArguments(source)).toThrow('CONSTRUCTION_UNBALANCED');
   });
 
   it('strips a comment before scanning, so prose about the rule is not a breach', () => {

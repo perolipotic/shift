@@ -11,7 +11,8 @@ import {
   type MyConflictResolutionsRpc,
 } from '@/features/conflicts/services/resolutions';
 import { hoursConflictsStateOf } from '@/features/hours/services/hours-conflicts';
-import { hoursSnapshotStateOf, myHoursSurfaceOf, type HoursSearch } from '@/features/hours/services/my-hours';
+import type { HoursSearch } from '@/features/hours/services/hours-search';
+import { hoursSnapshotStateOf, myHoursSurfaceOf } from '@/features/hours/services/my-hours';
 import {
   MY_LEAVE_RECORDS_KEY,
   myLeaveRecordsQueryOptions,

@@ -1,53 +1,32 @@
 import { HOURS_FIGURE_BAND, HOURS_FIGURE_LEAVE, HOURS_FIGURE_TOTAL, type HoursFigureCode } from '@shift/domain';
 import { Link } from '@tanstack/react-router';
-import { ArrowDown, ArrowUp } from 'lucide-react';
 import type { ReactNode, RefObject } from 'react';
 
 import type { FilterBarHandle } from '@/components/filter-bar';
-import { Button } from '@/components/ui/button';
+import { SortableHead } from '@/components/sortable-head';
+import { Table, TableBody, TableCaption, TableCell, TableFooter, TableHeader, TableRow } from '@/components/ui/table';
 import { ExplainButton } from '@/features/hours/components/hours-explanation';
 import { EmptyResult } from '@/features/hours/components/organization-hours-empty';
 import {
-  Table,
-  TableBody,
-  TableCaption,
-  TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  type HoursSearchChange,
+  SORT_CONFLICTS,
   SORT_LEAVE,
   SORT_NAME,
   SORT_SHIFTS,
   SORT_TEAM,
   SORT_TOTAL,
-  figureIsEmpty,
-  leaveShownOf,
+  type HoursSearchChange,
   type HoursSortKey,
-} from '@/features/hours/services/my-hours';
+} from '@/features/hours/services/hours-search';
+import { figureIsEmpty, leaveShownOf } from '@/features/hours/services/my-hours';
 import {
   hoursAriaSortOf,
   hoursSortArrowOf,
-  type HoursSortArrow,
   type OrganizationHoursView,
 } from '@/features/hours/services/organization-hours';
 import { CONFLICT_GLYPH } from '@/features/calendar/utils/modifiers';
 import { t } from '@/lib/i18n';
 
-/**
- * The glyph each sort direction draws. A RECORD keyed by the rule module's
- * own names, never a ternary: which way the arrow points is
- * `hoursSortArrowOf`'s decision, pinned by execution beside `hoursAriaSortOf`.
- */
-const SORT_GLYPHS: Record<HoursSortArrow, typeof ArrowUp> = {
-  up: ArrowUp,
-  down: ArrowDown,
-};
-
-/** One sortable heading: a ghost button, `aria-sort` on the cell, the arrow hidden from readers. */
+/** One sortable heading of the table: the shared `SortableHead`, its sort state the view's. */
 function SortHead({
   view,
   sortKey,
@@ -61,33 +40,24 @@ function SortHead({
   readonly numeric: boolean;
   readonly onPress: (key: HoursSortKey) => void;
 }): ReactNode {
-  const arrow = hoursSortArrowOf(view.sort, sortKey);
-  const Glyph = arrow === null ? null : SORT_GLYPHS[arrow];
-
   return (
-    <TableHead aria-sort={hoursAriaSortOf(view.sort, sortKey)} className="px-2">
-      <Button
-        variant="ghost"
-        // Figures align right, and so do their headings.
-        data-numeric={numeric}
-        className="h-auto min-h-11 w-full justify-start gap-2 whitespace-nowrap px-2 py-1 text-left data-[numeric=true]:justify-end data-[numeric=true]:text-right"
-        onClick={() => {
-          onPress(sortKey);
-        }}
-      >
-        <span>{label}</span>
-        {Glyph === null ? null : <Glyph aria-hidden className="size-4 shrink-0" />}
-      </Button>
-    </TableHead>
+    <SortableHead
+      sortKey={sortKey}
+      label={label}
+      ariaSort={hoursAriaSortOf(view.sort, sortKey)}
+      direction={hoursSortArrowOf(view.sort, sortKey)}
+      numeric={numeric}
+      onPress={onPress}
+    />
   );
 }
 
 /**
  * Every member's month (story 4.2): Member, Team, shift count, a column per
- * band (its name as stored; the cell its hours over its shifts), Total and
- * Leave, every heading sortable, and the shifts in unresolved conflict (story
- * 5.3d) — a plain heading, no sort — `⚠` and the number above 0, `0` at
- * zero, the glyph hidden from readers. The name leads to the member's calendar
+ * band (its name as stored; the cell its hours over its shifts), Total,
+ * Leave and the shifts in unresolved conflict (story 5.3d), every heading
+ * sortable (the conflicts since the Epic 5–7 cleanup) — `⚠` and the number
+ * above 0, `0` at zero, the glyph hidden from readers. The name leads to the member's calendar
  * month, where the roster changes behind a figure show. It renders from
  * 640 px and scrolls inside its own container, never the page; below 640 px
  * `OrganizationHoursRows` draws the same view as stacked rows (story 7.6),
@@ -127,7 +97,7 @@ export function OrganizationHoursTable({
             ))}
             <SortHead view={view} sortKey={SORT_TOTAL} label={t('sati.organization.total')} numeric onPress={onPress} />
             <SortHead view={view} sortKey={SORT_LEAVE} label={t('sati.organization.leave')} numeric onPress={onPress} />
-            <TableHead className="whitespace-nowrap px-4 text-right">{t('sati.organization.conflicts')}</TableHead>
+            <SortHead view={view} sortKey={SORT_CONFLICTS} label={t('sati.organization.conflicts')} numeric onPress={onPress} />
           </TableRow>
         </TableHeader>
         <TableBody>
