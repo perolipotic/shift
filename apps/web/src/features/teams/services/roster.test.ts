@@ -31,6 +31,7 @@ import {
   type TeamRosterOutcome,
   type TeamRosterRpc,
 } from '@/features/teams/services/roster';
+import { SESSION } from '@/lib/supabase/session.fixture';
 
 /**
  * Story 1.8's two readings, executed rather than read (AD-15): the roster one
@@ -58,7 +59,6 @@ function rosterRow(members: readonly Record<string, unknown>[], archived = false
   return { name: 'Tim 1', archived, members };
 }
 
-const SESSION = { access_token: 'token', user: { id: 'auth-user-id' } } as unknown as Session;
 const signedIn = (): Promise<Session | null> => Promise.resolve(SESSION);
 
 function ownTableAnswering(answer: OwnTeamAnswer | Promise<never>): OwnTeamTable & {

@@ -28,6 +28,8 @@ import {
   TEAM_SCREENS_EXEMPT,
 } from '../apps/web/src/features/teams/team-screens.fixture.ts';
 
+import { stripScriptComments } from './source-scan.ts';
+
 /**
  * The localization layer is not only built but actually WIRED (story 1.1c).
  *
@@ -377,6 +379,14 @@ const CALENDAR_SOURCES_REQUIRED = [
  * `dist/index.html` on every build, so its mtime belongs here for the same
  * reason `hr.json`'s does.
  */
+/**
+ * The route modules under `apps/web/src/pages` that are deliberately NOT in
+ * `SOURCES`, each for a stated reason. Every other page must be listed, which
+ * the freshness block asserts off the disk. Empty today; an entry here is a
+ * reviewed decision that a page carries nothing a stale chunk could misreport.
+ */
+const PAGES_NOT_SOURCES: readonly string[] = [];
+
 const SOURCES = [
   join(webRoot, 'index.html'),
   join(webRoot, 'src', 'main.tsx'),
@@ -646,6 +656,28 @@ const SOURCES = [
   join(webRoot, 'src', 'features', 'conflicts', 'components', 'conflicts-list.tsx'),
   join(webRoot, 'src', 'features', 'conflicts', 'components', 'conflicts-skeleton.tsx'),
   join(webRoot, 'src', 'features', 'conflicts', 'services', 'conflicts-queue.ts'),
+  // Its tabs and the resolved list, which `prijava.test.ts` sweeps in the
+  // same screen set.
+  join(webRoot, 'src', 'features', 'conflicts', 'components', 'conflicts-tabs.tsx'),
+  join(webRoot, 'src', 'features', 'conflicts', 'components', 'resolved-list.tsx'),
+  // Story 5.4b: one conflict's resolution screen — its page, hook, components
+  // and the two rules modules holding its keys. Missing until the pages
+  // completeness check below read `pages/` off the disk.
+  join(webRoot, 'src', 'pages', 'raspored.$memberId.$date.$teamId.tsx'),
+  join(webRoot, 'src', 'features', 'conflicts', 'hooks', 'use-conflict-resolution.ts'),
+  join(webRoot, 'src', 'features', 'conflicts', 'components', 'conflict-resolution-body.tsx'),
+  join(webRoot, 'src', 'features', 'conflicts', 'components', 'resolution-option.tsx'),
+  join(webRoot, 'src', 'features', 'conflicts', 'components', 'replacement-picker.tsx'),
+  join(webRoot, 'src', 'features', 'conflicts', 'components', 'resolution-skeleton.tsx'),
+  join(webRoot, 'src', 'features', 'conflicts', 'services', 'resolution-screen.ts'),
+  join(webRoot, 'src', 'features', 'conflicts', 'services', 'resolution-write.ts'),
+  // The root route: no string of its own, but it registers the not-found
+  // component, so it is wiring the built chunk depends on, as `/` is.
+  join(webRoot, 'src', 'pages', '__root.tsx'),
+  // The two components it registers beside the not-found one: the error
+  // screen (A148), which renders its keys, and the pending skeleton (A224).
+  join(webRoot, 'src', 'pages', 'error.tsx'),
+  join(webRoot, 'src', 'pages', 'pending.tsx'),
   // Story 6.1a: *Danas*'s hook, cards and rules module, READ OFF the today
   // feature's folders. `danas.tsx` is listed with the destinations above.
   ...todayFeatureParts(),
@@ -748,6 +780,29 @@ describe('the build being read reflects the current localization source', () => 
     const twice = SOURCES.filter((file) => (seen.has(file) ? true : (seen.add(file), false)));
 
     expect(twice, 'SOURCES lists a file twice').toEqual([]);
+  });
+
+  it('lists every page, so a new route module cannot escape the freshness guard', () => {
+    // The feature folders got `readdirSync` "required" lists; `pages/` is the
+    // one tree still listed by hand, and its own comment names the hazard: a
+    // `.tsx` absent from SOURCES is swept by nothing. Read off the disk, so a
+    // page added without a line here fails rather than going stale silently.
+    const pagesRoot = join(webRoot, 'src', 'pages');
+    const pages = readdirSync(pagesRoot)
+      .filter((name) => name.endsWith('.tsx'))
+      .map((name) => join(pagesRoot, name));
+
+    expect(pages.length, 'no pages found at all').toBeGreaterThan(10);
+    for (const name of PAGES_NOT_SOURCES) {
+      expect(pages, `${name} is exempt but does not exist`).toContain(join(pagesRoot, name));
+      expect(SOURCES, `${name} is exempt and listed`).not.toContain(join(pagesRoot, name));
+    }
+    const unlisted = pages.filter(
+      (page) =>
+        !SOURCES.includes(page) && !PAGES_NOT_SOURCES.some((name) => join(pagesRoot, name) === page),
+    );
+
+    expect(unlisted, 'pages in neither SOURCES nor PAGES_NOT_SOURCES').toEqual([]);
   });
 
   it('reads every sign-in part and service module into the sources', () => {
@@ -959,10 +1014,7 @@ describe('a rejected initialization does not mount the application', () => {
    * (the boot, not `App.tsx`, which only holds the providers) still routes the
    * decision through that module rather than deciding again inline, and that the module reached the shipped chunk at all.
    */
-  const main = (): string =>
-    readFileSync(join(webRoot, 'src', 'main.tsx'), 'utf8')
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .replace(/(^|[\s;,{}()[\]])\/\/[^\n]*/g, '$1');
+  const main = (): string => stripScriptComments(readFileSync(join(webRoot, 'src', 'main.tsx'), 'utf8'));
 
   it('delegates the decision rather than taking it inline', () => {
     // Comment-blind: this file explains the decision in prose at length, and

@@ -39,6 +39,10 @@ const SOURCE_ALLOWS_BARE: readonly RegExp[] = [];
  */
 const TEST_ALLOWS_BARE: readonly RegExp[] = [/^node:/, /^vitest$/];
 
+/** A deliberate copy of `test/source-scan.ts`'s walker, which the root source
+ *  scans share: this package's Vitest project does not import from the root
+ *  `test/` tree, and the engine's tests import only node builtins and the
+ *  runner (above). Change one, change both. */
 function collectSourceFiles(directory: string): string[] {
   const found: string[] = [];
   for (const entry of readdirSync(directory)) {

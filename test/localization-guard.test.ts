@@ -105,6 +105,21 @@ const translatedTernaryAttribute = (name: string, a: string, b: string): string 
 /** `{t(cond ? 'a' : 'b')}` — a KEY chosen by a branch, which is not a
  *  user-facing literal and must stay silent. */
 const translatedComputedKey = (a: string, b: string): string => `{t(cond ? '${a}' : '${b}')}`;
+/** `{items.map((item) => item.on ? 'a' : 'b')}` — a branch as what a mapped
+ *  callback returns for each item. */
+const mappedTernary = (a: string, b: string): string =>
+  `{items.map((item) => item.on ? '${a}' : '${b}')}`;
+/** The same callback with a block body, returning the branch. */
+const mappedReturnTernary = (a: string, b: string): string =>
+  `{items.flatMap((item) => { return item.on ? '${a}' : '${b}'; })}`;
+/** `{items.map(() => 'a')}` — a string as what the callback returns. */
+const mappedString = (text: string): string => `{items.map(() => '${text}')}`;
+/** `{items.map((item) => item.on ? t('a') : t('b'))}` — the fix, mapped. */
+const mappedTranslatedTernary = (a: string, b: string): string =>
+  `{items.map((item) => item.on ? t('${a}') : t('${b}'))}`;
+/** `{items.map((item) => t(item.on ? 'a' : 'b'))}` — a KEY chosen per item. */
+const mappedComputedKey = (a: string, b: string): string =>
+  `{items.map((item) => t(item.on ? '${a}' : '${b}'))}`;
 const component = (body: string): string => `export function Probe() {\n  return ${body};\n}\n`;
 const fragment = (body: string): string => `(<>${body}</>)`;
 /** A compliant probe imports `t` the way a real screen does. */
@@ -277,6 +292,20 @@ const VIOLATIONS: { name: string; source: string }[] = [
     name: 'a punctuation-only string on a guarded attribute, which names nothing',
     source: component(selfClosing('button', bracedAttribute('aria-label', ' – '))),
   },
+  // ---- a `.map()` callback between the container and the branch, which the
+  // direct-child selectors could not see (deferred from story 1.1d's review).
+  {
+    name: 'a literal in a ternary a .map() callback returns',
+    source: component(open('ul') + mappedTernary(DANAS, ZATVORI) + close('ul')),
+  },
+  {
+    name: 'a literal in a ternary a .flatMap() block body returns',
+    source: component(open('ul') + mappedReturnTernary(DANAS, ZATVORI) + close('ul')),
+  },
+  {
+    name: 'a literal a .map() callback returns',
+    source: component(fragment(mappedString(SMJENE))),
+  },
   // ---- the option/optgroup/track label, in every form but the bare one. All
   // three elements render `label` to the user, and the round-1 selector saw
   // only `label="…"`.
@@ -440,6 +469,14 @@ const BRANCH_COMPLIANT: { name: string; source: string }[] = [
   {
     name: 'a key chosen by a ternary inside the t() call itself',
     source: translated(component(open('p') + translatedComputedKey(KEY_A, KEY_B) + close('p'))),
+  },
+  {
+    name: 'a ternary between two t() calls a .map() callback returns',
+    source: translated(component(open('ul') + mappedTranslatedTernary(KEY_A, KEY_B) + close('ul'))),
+  },
+  {
+    name: 'a key chosen by a ternary inside a mapped t() call',
+    source: translated(component(open('ul') + mappedComputedKey(KEY_A, KEY_B) + close('ul'))),
   },
   {
     name: 'a ternary between two t() calls on a guarded attribute',
