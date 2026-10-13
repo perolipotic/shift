@@ -2983,6 +2983,16 @@ describe('the access-control migration', () => {
       .join('');
     expect(decoded, 'the SQL list and apps/web/src/utils/name.ts disagree').toBe(NAME_WHITESPACE);
 
+    // The operator script's blank-setting class is the same list, copied
+    // because it keeps the value as written rather than keyed.
+    const provisioning = readFileSync(join(operatorRoot, 'provision-organization.sql'), 'utf8');
+    const operatorList = /white_space constant text := U&'((?:\\[0-9A-Fa-f]{4})+)';/.exec(provisioning)?.[1];
+    expect(operatorList, 'provision-organization.sql does not declare its white-space class').toBe(list);
+    expect(
+      provisioning.match(/btrim\(coalesce\(current_setting\([^)]*\), ''\)(?!, white_space\))/g) ?? [],
+      'provision-organization.sql blank-checks a setting with a space-only btrim',
+    ).toEqual([]);
+
     // NOT AN RPC: in `private`, which PostgREST does not expose, and executable
     // by the two roles that write the tables and nobody else.
     expect(statements).toContain('create schema if not exists private;');
