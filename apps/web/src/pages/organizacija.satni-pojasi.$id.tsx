@@ -1,4 +1,4 @@
-import { createRoute, redirect } from '@tanstack/react-router';
+import { createRoute } from '@tanstack/react-router';
 
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -9,9 +9,7 @@ import { useHourBandEdit } from '@/features/hour-bands/hooks/use-hour-band-edit'
 import { hourBandsMessageKey, hourBandsRetryMessageKey } from '@/features/hour-bands/services/list';
 import { hourBandSavedMessageKey, hourBandWriteMessageKey } from '@/features/hour-bands/services/write';
 import { t } from '@/lib/i18n';
-import { mayReadMembers } from '@/features/members/services/list';
-import { DESTINATIONS } from '@/features/navigation/utils/destinations';
-import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/features/navigation/services/role';
+import { requireAdmin } from '@/features/navigation/services/admin-guard';
 import { appLayoutRoute } from '@/pages/_app';
 import { OrganizacijaSatniPojasiScreen } from '@/pages/organizacija.satni-pojasi';
 
@@ -50,8 +48,6 @@ import { OrganizacijaSatniPojasiScreen } from '@/pages/organizacija.satni-pojasi
  * `@/features/hour-bands/services/list` and
  * `@/features/hour-bands/services/write`, which the node suite executes.
  */
-
-const FIRST_DESTINATION = DESTINATIONS[0];
 
 export function OrganizacijaSatniPojasScreen() {
   const { id } = organizacijaSatniPojasRoute.useParams();
@@ -114,21 +110,7 @@ function HourBandScreen({ id }: { readonly id: string }) {
 export const organizacijaSatniPojasRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/organizacija/satni-pojasi/$id',
-  /** The guard `/ljudi/smjene` carries, copied verbatim; `router.test.ts` drives it. */
-  beforeLoad: async ({ context }) => {
-    let outcome: MemberRoleOutcome;
-
-    try {
-      outcome = await context.currentMemberRole();
-    } catch (cause) {
-      console.error(MEMBER_ROLE_UNAVAILABLE, cause);
-
-      outcome = { ok: false, code: MEMBER_ROLE_UNAVAILABLE };
-    }
-
-    if (mayReadMembers(outcome)) return;
-
-    throw redirect({ to: FIRST_DESTINATION.path, replace: true });
-  },
+  /** The shared admin guard (`@/features/navigation/services/admin-guard`). */
+  beforeLoad: requireAdmin,
   component: OrganizacijaSatniPojasScreen,
 });

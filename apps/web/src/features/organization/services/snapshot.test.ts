@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { formatDate } from '@/lib/i18n/format';
 import { offersReadRetry, organizationMessageKey } from '@/features/organization/utils/messages';
@@ -77,8 +77,11 @@ const SCREEN: readonly string[] = Object.values(SETTINGS_SCREEN_PARTS).map((part
 const LOCKUP = join(srcRoot, 'features', 'organization', 'components', 'lockup.tsx');
 /** The one signed-URL read behind every lockup, shared by both surfaces. */
 const LOGO_URL = join(srcRoot, 'features', 'organization', 'hooks', 'logo-url.ts');
-/** The boot: the one query client, the localization gate and the mount. */
+/** The boot: the localization gate and the mount, over the one query client. */
 const ENTRY = join(srcRoot, 'main.tsx');
+/** Where the one query client is built: imported by the boot and by the
+ *  router's role guards (the router-guards fix), never built twice. */
+const QUERY_CLIENT = join(srcRoot, 'lib', 'query-client.ts');
 /** The providers the boot mounts: it receives the client and builds none. */
 const APP = join(srcRoot, 'App.tsx');
 
@@ -504,6 +507,29 @@ describe('the member screens read the organization through one query definition'
     expect(await queryFn()).toEqual({ ok: true, snapshot: pilotSnapshot() });
     expect(resolved).toBe(1);
     expect(log.selected).toEqual([ORGANIZATION_COLUMNS]);
+  });
+
+  it('logs a failed answer once, in the query function, and a good one not at all', async () => {
+    // THE CHROME'S LOG, now the factory's (deferred from fix-member-screens):
+    // the chrome shows no message for an unreadable organization, so the log
+    // is what makes it diagnosable — whichever consumer of the key fetched.
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    try {
+      const failing = organizationSnapshotQueryOptions(() => throwing()).queryFn as () => Promise<OrganizationOutcome>;
+      const good = organizationSnapshotQueryOptions(() => answering({ data: [PILOT_ROW], error: null }))
+        .queryFn as () => Promise<OrganizationOutcome>;
+
+      expect(await failing()).toEqual({ ok: false, code: ORGANIZATION_UNAVAILABLE });
+      expect(logged).toHaveBeenCalledTimes(1);
+      expect(logged).toHaveBeenCalledWith(ORGANIZATION_UNAVAILABLE, ORGANIZATION_UNAVAILABLE);
+
+      await good();
+
+      expect(logged).toHaveBeenCalledTimes(1);
+    } finally {
+      logged.mockRestore();
+    }
   });
 });
 
@@ -1271,7 +1297,10 @@ describe('the query cache is wired into the application, not merely installed', 
     const entry = source(ENTRY);
     const app = source(APP);
 
-    expect(entry, 'main.tsx builds no query client').toContain('new QueryClient(');
+    expect(source(QUERY_CLIENT), 'the query client module builds no client').toContain('new QueryClient(');
+    expect(entry, 'main.tsx does not import the one client').toContain(
+      "import { queryClient } from '@/lib/query-client';",
+    );
     expect(entry, 'main.tsx does not hand its client to App').toMatch(
       /<App queryClient=\{queryClient\}\s*\/>/,
     );
@@ -1283,10 +1312,12 @@ describe('the query cache is wired into the application, not merely installed', 
     );
   });
 
-  it('builds the client in the boot and the providers in App, never the other way', () => {
+  it('builds the client in its own module and the providers in App, never the other way', () => {
     // A second `new QueryClient(` in `App.tsx` would be a second cache per
     // render of the providers; a provider left in `main.tsx` would be a second
-    // provider tree beside the one `App.tsx` holds.
+    // provider tree beside the one `App.tsx` holds. The client moved out of
+    // `main.tsx` so the router's role guards share it (`router.ts`); the boot
+    // building a second one would split the role entry from the chrome's.
     const entry = source(ENTRY);
     const app = source(APP);
 
@@ -1294,7 +1325,8 @@ describe('the query cache is wired into the application, not merely installed', 
     expect(app, 'App.tsx mounts the application').not.toContain('createRoot(');
     expect(entry, 'main.tsx holds the query provider').not.toContain('<QueryClientProvider');
     expect(entry, 'main.tsx holds the router provider').not.toContain('<RouterProvider');
-    expect(occurrences(entry, 'new QueryClient('), 'main.tsx builds more than one client').toBe(1);
+    expect(occurrences(entry, 'new QueryClient('), 'main.tsx builds a second client').toBe(0);
+    expect(occurrences(source(QUERY_CLIENT), 'new QueryClient('), 'more than one client').toBe(1);
   });
 
   it('installs the session rule on the one cache, once', () => {

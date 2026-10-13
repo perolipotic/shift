@@ -1,7 +1,8 @@
 import { Outlet, createRootRouteWithContext } from '@tanstack/react-router';
 import type { Session } from '@supabase/supabase-js';
 
-import type { MemberRoleOutcome } from '@/features/navigation/services/role';
+import type { MemberRoleReader } from '@/features/navigation/services/role';
+import { ErrorScreen } from '@/pages/error';
 import { NotFoundScreen } from '@/pages/not-found';
 
 /**
@@ -14,7 +15,10 @@ import { NotFoundScreen } from '@/pages/not-found';
  * shell holds nothing but the outlet until it lands. What it does own is the
  * not-found case: AD-14 has the host answer every path with `index.html` at 200,
  * so the client decides a path is unknown, and `notFoundComponent` here is the
- * only shape that decides it without adding a route (see `not-found.tsx`).
+ * only shape that decides it without adding a route (see `not-found.tsx`). It
+ * also owns the FAILED case (A148): `errorComponent` here catches whatever a
+ * route below lets escape, in `hr.json`'s words rather than TanStack's English
+ * default with the error's text (see `error.tsx`).
  *
  * The root gained a typed CONTEXT in story 1.3b, and it holds exactly one
  * member. `/`'s `beforeLoad` has to know whether anyone is signed in, and the
@@ -51,8 +55,12 @@ export interface AppRouterContext {
    * of `@/features/navigation/services/role`'s argument: `custom_access_token_hook` deliberately
    * puts no level in the token, so a demoted admin loses the destination on
    * their next navigation rather than at token expiry.
+   *
+   * `reuse` (E878) is the one exception, and only for a route that STAYS: a
+   * search-only navigation serves the chrome's cached answer instead of reading
+   * the level per keystroke (`@/features/navigation/services/admin-guard`).
    */
-  readonly currentMemberRole: () => Promise<MemberRoleOutcome>;
+  readonly currentMemberRole: MemberRoleReader;
 }
 
 function AppShell() {
@@ -66,4 +74,5 @@ function AppShell() {
 export const rootRoute = createRootRouteWithContext<AppRouterContext>()({
   component: AppShell,
   notFoundComponent: NotFoundScreen,
+  errorComponent: ErrorScreen,
 });

@@ -305,6 +305,11 @@ const SANCTIONED_SCREEN_KEYS = [
   'nav.organizacija',
   'notFound.heading',
   'notFound.back',
+  // A148 — the root route's error screen: that something failed, and a retry.
+  // Nothing more specific, so no message or code ever reaches the screen.
+  'error.heading',
+  'error.lede',
+  'error.retry',
   // Story 1.4a — the organization settings surface. FIVE labels, one per
   // editable field, and no sixth: the slug is never editable (AD-12 builds every
   // sign-in address from it), the locale is a hard-coded constant so a control

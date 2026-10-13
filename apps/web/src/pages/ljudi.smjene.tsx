@@ -1,4 +1,4 @@
-import { Link, createRoute, redirect } from '@tanstack/react-router';
+import { Link, createRoute } from '@tanstack/react-router';
 import { Plus, UsersRound } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -9,9 +9,7 @@ import { TeamListSection } from '@/features/teams/components/team-list-section';
 import { useTeamList } from '@/features/teams/hooks/use-team-list';
 import { teamsMessageKey, teamsRetryMessageKey } from '@/features/teams/services/list';
 import { t } from '@/lib/i18n';
-import { mayReadMembers } from '@/features/members/services/list';
-import { DESTINATIONS } from '@/features/navigation/utils/destinations';
-import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/features/navigation/services/role';
+import { requireAdmin } from '@/features/navigation/services/admin-guard';
 import { appLayoutRoute } from '@/pages/_app';
 
 /**
@@ -34,8 +32,6 @@ import { appLayoutRoute } from '@/pages/_app';
  * `@/features/teams/services/list` and `@/features/teams/services/write`,
  * which the node suite executes.
  */
-
-const FIRST_DESTINATION = DESTINATIONS[0];
 
 export function LjudiSmjeneScreen() {
   const screen = useTeamList();
@@ -91,21 +87,7 @@ export function LjudiSmjeneScreen() {
 export const ljudiSmjeneRoute = createRoute({
   getParentRoute: () => appLayoutRoute,
   path: '/ljudi/smjene',
-  /** The guard `/ljudi` carries, copied verbatim; `router.test.ts` drives it. */
-  beforeLoad: async ({ context }) => {
-    let outcome: MemberRoleOutcome;
-
-    try {
-      outcome = await context.currentMemberRole();
-    } catch (cause) {
-      console.error(MEMBER_ROLE_UNAVAILABLE, cause);
-
-      outcome = { ok: false, code: MEMBER_ROLE_UNAVAILABLE };
-    }
-
-    if (mayReadMembers(outcome)) return;
-
-    throw redirect({ to: FIRST_DESTINATION.path, replace: true });
-  },
+  /** The shared admin guard (`@/features/navigation/services/admin-guard`). */
+  beforeLoad: requireAdmin,
   component: LjudiSmjeneScreen,
 });

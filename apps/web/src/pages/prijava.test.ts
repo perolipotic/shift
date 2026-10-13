@@ -118,6 +118,9 @@ const SET_PASSWORD_SCREEN: readonly string[] = Object.values(SET_PASSWORD_PARTS)
 /** Its rules: the local refusals, the save's failures and the live checks' state, off `\w*MessageKey` unions. */
 const SET_PASSWORD_KEYS = join(srcRoot, 'features', 'auth', 'services', 'set-password.ts');
 const NOT_FOUND = join(srcRoot, 'pages', 'not-found.tsx');
+/** The root route's error screen (A148), and the shared pending skeleton (A224). */
+const ERROR_SCREEN = join(srcRoot, 'pages', 'error.tsx');
+const ROUTE_PENDING = join(srcRoot, 'pages', 'pending.tsx');
 // `pages/index.tsx` IS NOT A SCREEN and is swept by nothing here: `/` forwards
 // a signed-in visitor to the first destination and renders nothing, so the file
 // carries no JSX and no key for any sweep below to read.
@@ -695,6 +698,12 @@ const SCREENS = [
   // repeat, the show/hide toggle, `Spremi i nastavi` and `Odjava`.
   { name: 'the set-password screen', file: SET_PASSWORD_SCREEN, expectedControls: 5 },
   { name: 'the not-found component', file: NOT_FOUND, expectedControls: 1 },
+  // A148. ONE on the error screen: *Pokušaj ponovno*. It shows nothing of the
+  // error itself, which the literal sweeps below hold it to.
+  { name: 'the error screen', file: ERROR_SCREEN, expectedControls: 1 },
+  // A224. ZERO on the pending skeleton, which renders no string either, and is
+  // swept so it stays that way.
+  { name: 'the pending skeleton', file: ROUTE_PENDING, expectedControls: 0 },
   // EIGHT, and it was seven until story 1.4b: the settings surface carries five
   // fields — name, type, timezone and the leave year's month and day — plus a
   // save, a cancel, and now the logo's choose action. The number is what notices
@@ -2207,6 +2216,8 @@ const KEY_SOURCES = [
   // (`ruleStateMessageKey`).
   { name: 'the set-password rules', file: SET_PASSWORD_KEYS, keys: messageKeyUnions, strings: 8 },
   { name: 'the not-found component', file: NOT_FOUND, keys: translationKeys, strings: 2 },
+  // A148. THREE on the error screen: the heading, the lede and the retry.
+  { name: 'the error screen', file: ERROR_SCREEN, keys: translationKeys, strings: 3 },
   // THREE on the sign-in frame (visual refresh A): the brand panel's product
   // name, headline and subline, written once and rendered around both steps,
   // so neither step's own count moved.
@@ -3550,7 +3561,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // TWENTY-SEVEN SINCE STORY 7.8: the set-password step.
     // TWENTY-EIGHT SINCE STORY 7.18: the rotation history's dialog.
     // TWENTY-NINE SINCE STORY 7.17: the member directory.
-    expect(SCREENS).toHaveLength(29);
+    // THIRTY-ONE SINCE THE ROUTER-GUARDS FIX: the error screen (A148) and the
+    // pending skeleton (A224).
+    expect(SCREENS).toHaveLength(31);
     //
     // FORTY-NINE SINCE STORY 3.6b: `@/features/calendar/services/roster-write`.
     //
@@ -3597,8 +3610,10 @@ describe('the screen is read at all, so every sweep below means something', () =
     //
     // SIXTY-EIGHT SINCE STORY 7.17: the member directory.
     //
-    // SIXTY-NINE SINCE THE DEFERRED-WORK SWEEP: decision 16's team move preview.
-    expect(KEY_SOURCES).toHaveLength(69);
+    // SIXTY-NINE SINCE THE ROUTER-GUARDS FIX: the error screen (A148).
+    //
+    // SEVENTY SINCE THE DEFERRED-WORK SWEEP: decision 16's team move preview.
+    expect(KEY_SOURCES).toHaveLength(70);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -6389,9 +6404,11 @@ describe('the roster and the Danas line read once, show names only, and write no
     for (const screen of [source(file), source(hookFile)]) {
       expect(occurrences(screen, 'useQuery(')).toBe(1 + organizationReads);
       expect(occurrences(screen, read)).toBe(1);
-      expect(occurrences(screen, 'queryKey:')).toBe(1 + organizationReads);
+      // The organization through its one factory, never a key spelled out beside it.
+      expect(occurrences(screen, 'queryKey:')).toBe(1);
       expect(occurrences(screen, `queryKey: ${key}`)).toBe(1);
-      expect(occurrences(screen, 'queryKey: ORGANIZATION_SNAPSHOT_KEY')).toBe(organizationReads);
+      expect(occurrences(screen, 'queryKey: ORGANIZATION_SNAPSHOT_KEY')).toBe(0);
+      expect(occurrences(screen, 'organizationSnapshotQueryOptions(')).toBe(organizationReads);
       expect(screen, 'the read has no cache floor').toContain('staleTime: TEAM_ROSTER_READ_STALE_MS');
     }
   });
@@ -8385,9 +8402,10 @@ describe('the lockup is rendered once, in the sidebar, and never inside a landma
     // hand here — would be the violation this asserts against.
     const chrome = source(CHROME);
 
-    expect(chrome, 'the chrome does not read the organization at all').toContain(
-      'queryKey: ORGANIZATION_SNAPSHOT_KEY',
+    expect(chrome, 'the chrome does not read the organization through the one factory').toMatch(
+      /useQuery\(\s*organizationSnapshotQueryOptions\(/,
     );
+    expect(chrome, 'the chrome spells the key out beside the factory').not.toContain('queryKey: ORGANIZATION_SNAPSHOT_KEY');
     expect(chrome, 'the chrome spells the snapshot key by hand').not.toContain("['organization']");
     expect(chrome, 'the chrome fetches the signed URL itself').toContain('useRenderableLogo(');
   });
@@ -8398,14 +8416,16 @@ describe('the lockup is rendered once, in the sidebar, and never inside a landma
     // destination, so unbounded it refetches the row on every navigation and
     // every window focus — for a border colour and a logo — and retries a
     // transport fault three times before settling.
+    //
+    // THE BOUND IS THE FACTORY'S (`organizationSnapshotQueryOptions`, whose
+    // retry and stale bound `snapshot.test.ts` executes): the chrome reads
+    // through it and overrides neither, so no mount order picks another policy.
     const chrome = source(CHROME);
-    const read = /const organizationRead = useQuery\(\{[\s\S]*?\n {2}\}\);/.exec(chrome)?.[0] ?? '';
+    const read = /const organizationRead = useQuery\([\s\S]*?\n {2}\);/.exec(chrome)?.[0] ?? '';
 
     expect(read, 'no organization query to read').not.toBe('');
-    expect(read, 'the chrome re-reads the organization on every mount and focus').toContain(
-      'staleTime: ORGANIZATION_READ_STALE_MS',
-    );
-    expect(read, 'a settled refusal is retried as though it were slow').toContain('retry: false');
+    expect(read, 'the chrome does not read through the factory').toContain('organizationSnapshotQueryOptions(');
+    expect(read, 'the chrome overrides the factory\'s policy').not.toMatch(/retry:|staleTime:|queryFn:/);
   });
 
   it('keeps an unreadable organization out of the message region, but not out of the log', () => {
@@ -8418,14 +8438,13 @@ describe('the lockup is rendered once, in the sidebar, and never inside a landma
     // The logging is in the query FUNCTION rather than beside an element, which
     // is what makes "reported once, not per layout" true: the lockup renders
     // into two bars, so a `console.error` at the call site fires twice at every
-    // width where both are in the tree.
+    // width where both are in the tree. It is the FACTORY'S query function
+    // now, executed in `snapshot.test.ts`, so it logs whichever consumer
+    // mounted first.
     const chrome = source(CHROME);
-    const reader = componentFunction(chrome, 'readBranding');
 
-    expect(reader, 'no readBranding function to read').not.toBe('');
-    expect(reader, 'an unreadable organization is never reported at all').toMatch(
-      /!outcome\.ok[\s\S]{0,80}?console\.error\(/,
-    );
+    expect(chrome, 'the chrome does not read through the logging factory').toContain('organizationSnapshotQueryOptions(');
+    expect(chrome, 'the chrome logs beside an element').not.toMatch(/console\.error\(ORGANIZATION_UNAVAILABLE/);
     expect(
       chrome,
       'the organization read feeds the alert region, which is about the role and the exit',
@@ -8791,13 +8810,14 @@ describe('member rank: the setting gates display and entry, and deletes nothing'
   it.each([
     // SOURCE STRUCTURE B7: the roster's read, in the hook that holds it.
     { name: 'the team roster', file: TEAM_ROSTER_HOOK },
-  ])("reads the organization on $name under the chrome's own cache policy", ({ file }) => {
-    const read =
-      /useQuery\(\{\s*queryKey: ORGANIZATION_SNAPSHOT_KEY,[\s\S]*?\}\);/.exec(source(file))?.[0] ?? '';
+  ])("reads the organization on $name through the chrome's own factory", ({ file }) => {
+    // The deferred fix-member-screens item: one query function and one policy
+    // for the key, whichever of the chrome and the roster mounted first.
+    const screen = source(file);
 
-    expect(read, 'no organization read to inspect').not.toBe('');
-    expect(read).toContain('retry: false');
-    expect(read).toContain('staleTime: ORGANIZATION_READ_STALE_MS');
+    expect(screen.match(/useQuery\(\s*organizationSnapshotQueryOptions\(/g) ?? []).toHaveLength(1);
+    expect(screen, 'the read is spelled out beside the factory').not.toContain('readOrganization(');
+    expect(screen, 'a read policy is spelled out beside the factory').not.toMatch(/retry: false|ORGANIZATION_READ_STALE_MS/);
   });
 
   it('shows the rank on the roster only while the setting is on, as text', () => {

@@ -27,7 +27,7 @@ import {
 import { DESTINATIONS } from '@/features/navigation/utils/destinations';
 import { MemberDirectory } from '@/features/teams/components/member-directory';
 import { useMemberDirectory, type DirectoryNavigate } from '@/features/teams/hooks/use-member-directory';
-import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/features/navigation/services/role';
+import { guardMemberRole } from '@/features/navigation/services/admin-guard';
 import { appLayoutRoute } from '@/pages/_app';
 
 /**
@@ -224,27 +224,18 @@ export const ljudiRoute = createRoute({
    * THE READER ARRIVES THROUGH THE ROUTER CONTEXT, as `currentSession` does: it
    * makes both branches executable from the node suite (`router.test.ts`), and
    * keeps a `supabaseClient()` call — which throws on a fresh clone with no
-   * `.env.local` — out of this block. The role is read outside the query cache,
-   * because `beforeLoad` runs before the chrome's entry is reliably warm.
+   * `.env.local` — out of this block. The read is the admin guards' own
+   * (`guardMemberRole`): fresh on entering the route, served from the chrome's
+   * cache entry while only the search changes, so typing in the search reads
+   * no level per keystroke (E878).
    *
    * IT FORWARDS, IT DOES NOT REFUSE: a member who types this URL is sent to the
    * first destination with `replace: true`, so Back is not a loop.
    */
-  beforeLoad: async ({ context }) => {
-    // THREE OUTCOMES, and the third is why the read is wrapped: the reader can
-    // still REJECT, and an escaping rejection is a blank page at HTTP 200.
-    // FAILING CLOSED, and not silently.
-    let outcome: MemberRoleOutcome;
-
-    try {
-      outcome = await context.currentMemberRole();
-    } catch (cause) {
-      console.error(MEMBER_ROLE_UNAVAILABLE, cause);
-
-      outcome = { ok: false, code: MEMBER_ROLE_UNAVAILABLE };
-    }
-
-    const ljudiView = ljudiViewOf(outcome);
+  beforeLoad: async (options) => {
+    // A READ THAT CANNOT FAIL OPEN: a rejection, a timeout included, comes back
+    // as `MEMBER_ROLE_UNAVAILABLE`, logged, which places no content.
+    const ljudiView = ljudiViewOf(await guardMemberRole(options));
 
     if (ljudiView !== null) return { ljudiView };
 

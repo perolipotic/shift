@@ -136,8 +136,13 @@ export const FEATURE_PUBLIC = {
   // left in the month off their own schedule (`memberScheduleInputOf`)
   // and the one leg recipe *Danas*'s duty uses (`shiftLegOn`), from the
   // calendar snapshot the page already reads.
+  // The calendar snapshot's one binding (deferred work from 7.13c): every
+  // screen that reads `CALENDAR_KEY` observes it through `useCalendarSnapshot`
+  // (or its options, for the erasure guard's fresh read), never a copied
+  // `calendarQueryOptions(...)`.
   calendar: [
     'components/calendar-cell', // today
+    'hooks/use-calendar-snapshot', // conflicts, hours, leave, members, today
     'components/modifier-glyphs', // today
     'services/marks', // hours, today
     'services/snapshot', // conflicts, hours, leave, members, pages, teams, today
@@ -232,7 +237,10 @@ export const FEATURE_PUBLIC = {
   ],
   // SINCE STORY 6.3: *Danas* reads the chrome's cached role under its key, never
   // a read of its own, and narrows it as the calendar does.
+  // The router-guards fix (B393): every admin-only page registers the one
+  // shared admin guard, and `/ljudi` reads its level through the same read.
   navigation: [
+    'services/admin-guard', // pages
     'services/profile', // teams
     'services/role', // calendar, members, pages, router, teams, today
     'utils/destinations', // calendar, members, pages, today

@@ -1,5 +1,7 @@
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 
+import { withinTimeBudget } from '@/utils/time-budget';
+
 /**
  * The single browser Supabase client (story 1.3b).
  *
@@ -201,8 +203,15 @@ export function sessionReader(source: () => SessionSource): () => Promise<Sessio
   };
 }
 
-/** The bound reader. Named so `router.test.ts` can pin it by identity. */
-export const currentSession = sessionReader(() => supabaseClient().auth);
+/**
+ * The bound reader. Named so `router.test.ts` can pin it by identity.
+ *
+ * BOUNDED (B274): `getSession` can hang where storage or `navigator.locks`
+ * stalls, and a guard awaiting it would never finish the navigation. Over
+ * `READ_TIME_BUDGET_MS` it rejects, which every guard already handles by
+ * failing closed (`resolvedSession` below).
+ */
+export const currentSession = withinTimeBudget(sessionReader(() => supabaseClient().auth));
 
 /**
  * The session, or `null` — including when reading it FAILED.
@@ -210,9 +219,9 @@ export const currentSession = sessionReader(() => supabaseClient().auth);
  * THREE OUTCOMES COLLAPSED TO TWO, deliberately and in one place. `currentSession`
  * can reject: the client throws its stable code on a build with no environment,
  * and `getSession` rejects wherever storage is blocked — Safari's private mode,
- * a locked-down enterprise profile. A rejection escaping a `beforeLoad` resolves
- * the route to neither a redirect nor a component, which is a blank page at HTTP
- * 200 that `__root.tsx` registers no `errorComponent` to catch.
+ * a locked-down enterprise profile, and the time budget turns a read that never
+ * settles into a rejection too. A rejection escaping a `beforeLoad` resolves the
+ * route to the root error screen rather than to the redirect the guard owes.
  *
  * NOT SILENT, which is the half a bare `catch` loses. `SESSION_UNRESOLVED` is a
  * stable code and never reaches a screen; without it a deployment with no
@@ -228,11 +237,9 @@ export const currentSession = sessionReader(() => supabaseClient().auth);
  * one path that can repair a session behind the session working. Same read,
  * opposite defaults; only the read is shared.
  *
- * SHARED BY THE TWO SIGN-IN ROUTES ONLY, today. `_app.tsx` and `index.tsx` still
- * hold their own copies, and that is a scope boundary rather than an oversight:
- * the navigation shell's own spec permits no change to `_app.tsx` beyond
- * rendering the chrome. Folding those two in is a one-line edit each for
- * whichever story is allowed to touch them.
+ * SHARED BY EVERY SESSION GUARD: both sign-in routes, `index.tsx` and
+ * `_app.tsx` (which held their own copies until the router-guards fix). Each
+ * keeps its own branches after the read; only the read is shared.
  */
 export async function resolvedSession(
   read: () => Promise<Session | null>,

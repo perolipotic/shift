@@ -1,7 +1,10 @@
+import type { QueryClient } from '@tanstack/react-query';
 import type { Session } from '@supabase/supabase-js';
 
 import type { MemberRole } from '@/features/navigation/utils/destinations';
+import { queryClient } from '@/lib/query-client';
 import { currentSession, supabaseClient } from '@/lib/supabase/client';
+import { withinTimeBudget } from '@/utils/time-budget';
 
 /**
  * The signed-in member's own permission level, READ (the navigation shell, part B).
@@ -184,6 +187,20 @@ export interface MemberTable {
 export const MEMBER_ROLES: readonly [MemberRole, ...MemberRole[]] = ['admin', 'member_role'];
 
 /**
+ * Whether a role outcome is the level that ADMINISTERS the organization — the
+ * one predicate every admin-only route guard decides by (B393).
+ *
+ * `MEMBER_ROLES[0]` rather than the literal `'admin'`, and index 0 means the
+ * administering level, not "the most privileged": see `mayReadMembers` in
+ * `@/features/members/services/list`, which is this predicate under the member
+ * list's name, and its test, which pins index 0 to the literal. A FAILED READ IS
+ * NOT PERMISSION: every non-`ok` outcome answers `false`.
+ */
+export function isAdministrator(outcome: MemberRoleOutcome): boolean {
+  return outcome.ok && outcome.role === MEMBER_ROLES[0];
+}
+
+/**
  * The permission level a value IS, or `null` if it is not one.
  *
  * A GUARD, never a cast, and the difference is what reaches the screen: `value
@@ -330,14 +347,68 @@ export async function readMemberRole(
 }
 
 /**
- * The role reader the router binds into its context, and the one place this
- * module's two seams are tied to the real client.
+ * The role read bound to the shipped client, and the one place this module's
+ * two seams are tied to it.
  *
  * THE SEAMS ABOVE STAY SEAMS. `readMemberRole` takes its table and its session
  * reader as parameters and must keep doing so — that is what makes every row of
  * the I/O matrix executable from the node suite against a stub. This is the
- * single BINDING of those parameters to the shipped client, named here so
- * `router.ts` can import it.
+ * single BINDING of those parameters to the shipped client: the chrome's query
+ * runs it under {@link MEMBER_ROLE_KEY}, and the router's guards reach it
+ * through {@link routeMemberRole}.
+ *
+ * BOUNDED (B334): a role read that never settles — a hung connection, a captive
+ * portal — would leave a guard's navigation unfinished, so over
+ * `READ_TIME_BUDGET_MS` it rejects, and every guard already fails closed on a
+ * rejection.
+ *
+ * It constructs nothing at module load: `supabaseClient()` is memoized and
+ * called inside the function, so importing this module still needs no
+ * environment and `VITE_SUPABASE_URL=""` still runs the router suite.
+ */
+export const currentMemberRole: () => Promise<MemberRoleOutcome> = withinTimeBudget(() =>
+  readMemberRole(supabaseClient().from(MEMBERS_TABLE), currentSession),
+);
+
+/** How a guard asks for the level: `reuse` serves an answer already cached. */
+export interface MemberRoleReadOptions {
+  readonly reuse?: boolean;
+}
+
+/** The reader the router context carries (`__root.tsx`). */
+export type MemberRoleReader = (options?: MemberRoleReadOptions) => Promise<MemberRoleOutcome>;
+
+/** As much of the query cache as the guards' reader uses. */
+export type MemberRoleCache = Pick<QueryClient, 'fetchQuery' | 'ensureQueryData'>;
+
+/**
+ * The role reader for route guards, served through the chrome's cache entry
+ * (E878).
+ *
+ * FRESH ON EVERY ENTRY, which is still this module's decision: without
+ * `reuse`, `fetchQuery` reads again (its stale time is 0) and only joins a read
+ * already in flight — the chrome's, on the first navigation — so a demoted
+ * admin loses an admin route on their next navigation, and the chrome's
+ * entry learns it at the same moment.
+ *
+ * `reuse` IS FOR A ROUTE THAT STAYS. TanStack re-runs `beforeLoad` on a
+ * search-only navigation, so typing in `/ljudi`'s search used to re-read the
+ * role per keystroke, and a transient failure mid-typing forwarded the admin
+ * away. A route that stays serves the entry already cached under
+ * {@link MEMBER_ROLE_KEY} (`ensureQueryData`), and reads only if there is none.
+ */
+export function cachedMemberRole(
+  cache: MemberRoleCache,
+  read: () => Promise<MemberRoleOutcome>,
+): MemberRoleReader {
+  return (options) =>
+    options?.reuse === true
+      ? cache.ensureQueryData({ queryKey: MEMBER_ROLE_KEY, queryFn: read })
+      : cache.fetchQuery({ queryKey: MEMBER_ROLE_KEY, queryFn: read });
+}
+
+/**
+ * The reader the router binds into its context, over the one query cache.
  *
  * IMPORTED RATHER THAN WRITTEN AS AN ARROW IN `router.ts`, for the reason that
  * file records about `currentSession`: an arrow in the router's own context
@@ -345,11 +416,5 @@ export async function readMemberRole(
  * context — so a stub left there would keep the suite green while `/ljudi`
  * refused every admin. A named export is something a test can pin by identity,
  * and `router.test.ts` does.
- *
- * It constructs nothing at module load: `supabaseClient()` is memoized and
- * called here, inside the function, so importing this module still needs no
- * environment and `VITE_SUPABASE_URL=""` still runs the router suite.
  */
-export function currentMemberRole(): Promise<MemberRoleOutcome> {
-  return readMemberRole(supabaseClient().from(MEMBERS_TABLE), currentSession);
-}
+export const routeMemberRole: MemberRoleReader = cachedMemberRole(queryClient, currentMemberRole);

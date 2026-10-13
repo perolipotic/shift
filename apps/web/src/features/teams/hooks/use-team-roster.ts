@@ -2,12 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { positionsShown } from '@/features/members/utils/position';
 import { ranksShown } from '@/features/members/utils/rank';
-import {
-  ORGANIZATION_READ_STALE_MS,
-  ORGANIZATION_SNAPSHOT_KEY,
-  ORGANIZATION_TABLE,
-  readOrganization,
-} from '@/features/organization/services/snapshot';
+import { ORGANIZATION_TABLE, organizationSnapshotQueryOptions } from '@/features/organization/services/snapshot';
 import {
   TEAM_ROSTER_KEY,
   TEAM_ROSTER_READ_STALE_MS,
@@ -51,13 +46,10 @@ export function useTeamRoster(id: string) {
   // offline over — the message this screen already has, so no new text.
   const refusal = teamRosterNoticeOf(state);
 
-  const organization = useQuery({
-    queryKey: ORGANIZATION_SNAPSHOT_KEY,
-    queryFn: () => readOrganization(supabaseClient().from(ORGANIZATION_TABLE)),
-    // The chrome's own cache policy for this entry (`features/navigation/components/chrome.tsx`).
-    retry: false,
-    staleTime: ORGANIZATION_READ_STALE_MS,
-  });
+  // Through the one factory the chrome reads this entry with: one function and one policy for the key.
+  const organization = useQuery(
+    organizationSnapshotQueryOptions(() => supabaseClient().from(ORGANIZATION_TABLE)),
+  );
   const snapshot =
     organization.data !== undefined && organization.data.ok ? organization.data.snapshot : null;
   const shown = ranksShown(snapshot);

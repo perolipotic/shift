@@ -8,6 +8,9 @@ import {
   calendarMarksOf,
   calendarMarksStateOf,
   calendarRefusalOf,
+  NO_SKEW,
+  snapshotSkewOf,
+  unknownSnapshotIdsOf,
 } from '@/features/calendar/services/marks';
 import { CALENDAR_UNAVAILABLE, readCalendar, type CalendarSnapshot } from '@/features/calendar/services/snapshot';
 import {
@@ -114,6 +117,10 @@ function rowOf(id: string, from: string, toExclusive: string, memberId: string =
 
 /** The pilot's worked example: 10.09–14.09 over Dan, Noć, Slobodno, Slobodno, Dan. */
 const WORKED = rowOf('record-worked', '2026-09-10', '2026-09-15');
+/** A row of a member the snapshot holds, with a range no record can have: untrusted however often it is read. */
+const UNTRUSTED = { id: 'x', member_id: VIEWER_MEMBER, during: 'not-a-range' };
+/** A row of a member added after the snapshot was read: a skew, not a break. */
+const NEWER = { id: 'y', member_id: 'newer-member', during: '[2026-09-10,2026-09-11)' };
 const WORKED_DATES = ['2026-09-10', '2026-09-11', '2026-09-12', '2026-09-13', '2026-09-14'];
 const COLLIDING_DATES = ['2026-09-10', '2026-09-11', '2026-09-14'];
 
@@ -411,7 +418,7 @@ describe('the leave read, never hidden', () => {
   it('is unavailable, logged, when a row cannot be trusted', () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    expect(calendarMarksStateOf(pilot, answered([{ id: 'x', member_id: 'nobody', during: '[2026-09-10,2026-09-11)' }]), answered([])).kind).toBe(
+    expect(calendarMarksStateOf(pilot, answered([UNTRUSTED]), answered([])).kind).toBe(
       MARKS_UNAVAILABLE,
     );
     expect(logged).toHaveBeenCalledWith(MARKS_UNAVAILABLE, expect.any(RangeError));
@@ -428,10 +435,30 @@ describe('the leave read, never hidden', () => {
       kind: MARKS_UNAVAILABLE,
       retryable: true,
     });
-    expect(calendarMarksStateOf(pilot, answered([{ id: 'x', member_id: 'nobody', during: '[2026-09-10,2026-09-11)' }]), answered([]))).toEqual({
+    expect(calendarMarksStateOf(pilot, answered([UNTRUSTED]), answered([]))).toEqual({
       kind: MARKS_UNAVAILABLE,
       retryable: false,
     });
+  });
+
+  it('is loading while a failed read is being read again, so the retry shows (as *Sati*)', () => {
+    expect(
+      calendarMarksStateOf(pilot, { isPending: false, isError: true, fetchStatus: 'fetching', data: [WORKED] }, answered([])),
+    ).toEqual({ kind: MARKS_LOADING });
+    expect(
+      calendarMarksStateOf(pilot, answered([WORKED]), { isPending: false, isError: true, fetchStatus: 'fetching', data: undefined }),
+    ).toEqual({ kind: MARKS_LOADING });
+  });
+
+  it('offers the retry, unlogged, for a row naming a member the snapshot does not hold yet, and loads while the snapshot is read again', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(calendarMarksStateOf(pilot, answered([WORKED, NEWER]), answered([]))).toEqual({
+      kind: MARKS_UNAVAILABLE,
+      retryable: true,
+    });
+    expect(calendarMarksStateOf(pilot, answered([WORKED, NEWER]), answered([]), true)).toEqual({ kind: MARKS_LOADING });
+    expect(logged).not.toHaveBeenCalled();
   });
 
   it('is ready with the marks once the rows are in', () => {
@@ -568,11 +595,47 @@ describe('resolutions (story 5.4a)', () => {
   it('is unavailable with NO retry, logged, when a resolution row cannot be trusted', () => {
     const logged = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    expect(calendarMarksStateOf(pilot, answered([WORKED]), answered([resolutionOf(VIEWER_MEMBER, '2026-09-11', 'no-such-team')]))).toEqual({
+    expect(calendarMarksStateOf(pilot, answered([WORKED]), answered([resolutionOf(VIEWER_MEMBER, '2026-09-11', a, 'no_such_kind')]))).toEqual({
       kind: MARKS_UNAVAILABLE,
       retryable: false,
     });
     expect(logged).toHaveBeenCalledWith(MARKS_UNAVAILABLE, expect.any(RangeError));
+  });
+
+  it('offers the retry for a resolution naming a team or member the snapshot does not hold yet, and loads while it is read again', () => {
+    for (const row of [resolutionOf(VIEWER_MEMBER, '2026-09-11', 'newer-team'), resolutionOf('newer-member', '2026-09-11', a)]) {
+      expect(calendarMarksStateOf(pilot, answered([WORKED]), answered([row]))).toEqual({
+        kind: MARKS_UNAVAILABLE,
+        retryable: true,
+      });
+      expect(calendarMarksStateOf(pilot, answered([WORKED]), answered([row]), true)).toEqual({ kind: MARKS_LOADING });
+    }
+  });
+
+  it('names every id the rows hold that the snapshot does not, sorted and once, for the re-read', () => {
+    expect(
+      unknownSnapshotIdsOf(
+        pilot,
+        [WORKED, NEWER, NEWER, 'not a record'],
+        [resolutionOf(VIEWER_MEMBER, '2026-09-11', 'newer-team'), resolutionOf('newer-member', '2026-09-11', a)],
+      ),
+    ).toEqual(['member:newer-member', 'team:newer-team']);
+    expect(unknownSnapshotIdsOf(pilot, [WORKED], [resolutionOf(VIEWER_MEMBER, '2026-09-11', a)])).toEqual([]);
+    expect(unknownSnapshotIdsOf(pilot, undefined, undefined)).toEqual([]);
+  });
+
+  it('joins them into one text for the re-read, and answers no skew without a snapshot or an unknown id', () => {
+    expect(snapshotSkewOf(pilot, [NEWER], [resolutionOf(VIEWER_MEMBER, '2026-09-11', 'newer-team')])).toBe(
+      'member:newer-member team:newer-team',
+    );
+    expect(snapshotSkewOf(pilot, [WORKED], [])).toBe(NO_SKEW);
+    expect(snapshotSkewOf(null, [NEWER], undefined)).toBe(NO_SKEW);
+  });
+
+  it("names none for a member's own rows, which are parsed against the viewer alone", async () => {
+    const member = await snapshotOf(PILOT, { role: 'member_role' });
+
+    expect(unknownSnapshotIdsOf(member, [NEWER], undefined)).toEqual([]);
   });
 
   it('is unavailable with a retry when the resolutions read failed or is paused, and loading while it is pending', () => {
