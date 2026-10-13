@@ -1,7 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 
-import { NO_TEXT } from '@/features/members/services/list';
 import { ROTATION_KEY } from '@/features/rotation/services/list';
 import {
   SHIFT_TYPES_LIST_KEY,
@@ -31,6 +30,7 @@ import {
   type ShiftTypeWriteTable,
 } from '@/features/shift-types/services/write';
 import { supabaseClient } from '@/lib/supabase/client';
+import { NO_TEXT } from '@/utils/text';
 
 /**
  * The shift type list's state, its one read and its handlers (story 2.2b):
@@ -68,6 +68,15 @@ export function useShiftTypeList() {
     setFailure(null);
     setSaved(null);
     setAdding(true);
+  }
+
+  /**
+   * Escape, the backdrop, the close control and Cancel: the dialog closes,
+   * except while a create is in flight — the dialog that reports the outcome
+   * cannot be closed before it lands. A landed create closes it in `submit`.
+   */
+  function closeAdding(): void {
+    if (!creating.current) setAdding(false);
   }
 
   const answer = useQuery(
@@ -184,8 +193,8 @@ export function useShiftTypeList() {
     saved,
     setSaved,
     adding,
-    setAdding,
     openAdding,
+    closeAdding,
     chooseKind,
     submit,
     refusal,

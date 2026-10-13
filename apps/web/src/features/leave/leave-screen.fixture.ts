@@ -22,6 +22,10 @@ export const LEAVE_SCREEN_PARTS = {
   // E884: the overview's search, its Smjena and Stanje chips and the summary
   // line, on the shared option-chip bar.
   overviewFilters: ['features', 'leave', 'components', 'leave-overview-filters.tsx'],
+  // Epic 4 retro D2 (E890): the sortable heading the overview shares with
+  // Sati, and the glyph record it draws from.
+  sortableHead: ['components', 'sortable-head.tsx'],
+  sortGlyphs: ['components', 'sort-glyphs.ts'],
 } as const;
 
 /**

@@ -3,6 +3,7 @@ import { Pencil } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { SortControl } from '@/components/sort-control';
+import { SORT_DIRECTION_GLYPHS } from '@/components/sort-glyphs';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -29,7 +30,6 @@ import {
   sortIndicatorOf,
   sortStateOf,
 } from '@/features/members/services/list';
-import { SORT_GLYPHS } from '@/features/members/utils/sort-glyphs';
 
 /** How many skeleton rows stand in for the list while it loads. Enough to show
  *  that a LIST is coming rather than a single figure, and few enough not to
@@ -103,7 +103,7 @@ export function MemberTable({ list }: { readonly list: MemberList }): ReactNode 
                 // is worse than no arrow at all. UX-DR37: colour is never the
                 // sole carrier of meaning, and neither is a screen reader.
                 const indicator = sortIndicatorOf(sort, column.key);
-                const Glyph = indicator === null ? null : SORT_GLYPHS[indicator];
+                const Glyph = indicator === null ? null : SORT_DIRECTION_GLYPHS[indicator];
                 const press = (): void => {
                   pressColumn(column.key);
                 };

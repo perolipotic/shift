@@ -17,8 +17,9 @@ import {
   leaveOverviewStateValueMessageKey,
   type LeaveOverviewTeamOption,
 } from '@/features/leave/services/leave-overview';
-import { ALL_TEAMS, NO_TEXT, teamFilterMessageKey } from '@/features/members/services/list';
+import { ALL_TEAMS, teamFilterMessageKey } from '@/features/members/services/list';
 import { t } from '@/lib/i18n';
+import { NO_TEXT } from '@/utils/text';
 
 /**
  * The overview's *Traži osobu*, its two chips — Smjena and Stanje — and the

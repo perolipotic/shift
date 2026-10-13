@@ -1742,7 +1742,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'remove_shift_type_override', argumentCount: 1 },
     // STORY 3.5c. The two dispositions that write: an attributed confirmation,
     // and an atomic amend that soft-removes and inserts, on the same attributes.
-    { name: 'confirm_shift_type_override', argumentCount: 1 },
+    // 0035 added the concurrency token, dropping the one-argument signature.
+    { name: 'confirm_shift_type_override', argumentCount: 2 },
     { name: 'amend_shift_type_override', argumentCount: 3 },
     // STORY 3.6b. The roster override's soft-remove, on 3.5b's attributes.
     { name: 'remove_roster_override', argumentCount: 1 },
@@ -1773,6 +1774,9 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // level security, as 0002's trigger does, on the same attributes.
     { name: 'serialize_organization_writes', argumentCount: 0 },
     { name: 'refuse_status_version_leaving_no_admin', argumentCount: 0 },
+    // 0035. The caller's re-check behind the lock reads `members`, the status
+    // history and `teams` past row level security, as 0023's re-check does.
+    { name: 'refuse_write_by_stale_admin', argumentCount: 0 },
   ];
 
   it.skipIf(noDatabase).each(ACCESS_CONTROL_FUNCTIONS)(
@@ -1856,7 +1860,7 @@ describe('the access-control layer runs as the owner and hands that power to nob
     // every caller but an active admin of the claimed organization.
     { name: 'remove_shift_type_override', argumentCount: 1, expected: ['authenticated'] },
     // STORY 3.5c. The confirmation and the amend, on the removal's terms.
-    { name: 'confirm_shift_type_override', argumentCount: 1, expected: ['authenticated'] },
+    { name: 'confirm_shift_type_override', argumentCount: 2, expected: ['authenticated'] },
     { name: 'amend_shift_type_override', argumentCount: 3, expected: ['authenticated'] },
     // STORY 3.6b. The roster override's removal, on 3.5b's removal's terms.
     { name: 'remove_roster_override', argumentCount: 1, expected: ['authenticated'] },
@@ -1883,6 +1887,8 @@ describe('the access-control layer runs as the owner and hands that power to nob
     { name: 'serialize_organization_writes', argumentCount: 0, expected: [] },
     { name: 'refuse_status_version_leaving_no_admin', argumentCount: 0, expected: [] },
     { name: 'refuse_truncate', argumentCount: 0, expected: [] },
+    // 0035's re-check of the caller behind the lock, on 0023's terms.
+    { name: 'refuse_write_by_stale_admin', argumentCount: 0, expected: [] },
     // STORY 5.4a's trigger function, on 0023's terms: its owner, and nobody else.
     { name: 'refuse_conflict_resolution_off_leave', argumentCount: 0, expected: [] },
     // 0024's name key, in `private`, which PostgREST does not expose. Every

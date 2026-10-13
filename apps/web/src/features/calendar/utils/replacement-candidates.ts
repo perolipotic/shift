@@ -19,8 +19,9 @@ import {
   shiftLegOn,
   workingShiftTypeIdsOf,
 } from '@/features/calendar/utils/month';
-import { durationMessageKey, durationValuesOf, type DurationValues } from '@/features/hour-bands/services/list';
+import { durationMessageKey } from '@/features/hour-bands/services/list';
 import { nextIsoDate, previousIsoDate } from '@/lib/i18n/format';
+import { durationValuesOf, type DurationValues } from '@/utils/time';
 
 /**
  * WHO MAY BE PUT ON ONE TEAM'S SHIFT ON ONE DATE, grouped (story 5.4c; reused

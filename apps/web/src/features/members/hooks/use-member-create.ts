@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 
-import { MEMBERS_LIST_KEY, MEMBERS_PAGE_HEADING_ID, NO_TEXT } from '@/features/members/services/list';
+import { MEMBERS_LIST_KEY, MEMBERS_PAGE_HEADING_ID } from '@/features/members/services/list';
 import {
   MEMBER_WRITE_INVALID,
   MEMBER_WRITE_UNAVAILABLE,
@@ -23,6 +23,7 @@ import {
 } from '@/features/organization/services/snapshot';
 import { supabaseClient } from '@/lib/supabase/client';
 import { focusLater } from '@/utils/focus-later';
+import { NO_TEXT } from '@/utils/text';
 
 /**
  * How the page opens and closes the dialog: `true` pushes `?dodaj=1`, `false`

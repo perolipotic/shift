@@ -8,7 +8,6 @@ import { InputGroup, InputGroupIcon } from '@/components/ui/input-group';
 import { Label } from '@/components/ui/label';
 import { Notice } from '@/components/ui/notice';
 import { Select } from '@/components/ui/select';
-import { NO_TEXT } from '@/features/members/services/list';
 import type { ShiftTypeListScreen } from '@/features/shift-types/hooks/use-shift-type-list';
 import {
   SHIFT_TYPE_END_FIELD,
@@ -21,6 +20,7 @@ import {
   shiftTypeWriteMessageKey,
 } from '@/features/shift-types/services/write';
 import { t } from '@/lib/i18n';
+import { NO_TEXT } from '@/utils/text';
 
 /** The start and end, offered only for a working type. */
 function renderTimeFields(screen: ShiftTypeListScreen): ReactNode {
@@ -71,7 +71,7 @@ function renderTimeFields(screen: ShiftTypeListScreen): ReactNode {
  * C). Every field is uncontrolled, so a refused add keeps what was typed.
  */
 export function ShiftTypeAddDialog({ screen }: { readonly screen: ShiftTypeListScreen }): ReactNode {
-  const { adding, setAdding, submit, nameField, kindField, failure, setSaved, chooseKind, working, pending } =
+  const { adding, closeAdding, submit, nameField, kindField, failure, setSaved, chooseKind, working, pending } =
     screen;
 
   return (
@@ -80,15 +80,13 @@ export function ShiftTypeAddDialog({ screen }: { readonly screen: ShiftTypeListS
     // reports it cannot be closed before it lands.
     <Dialog
       open={adding}
-      onOpenChange={setAdding}
+      onOpenChange={closeAdding}
       dismissible={!pending}
       aria-labelledby="shift-type-new-heading"
     >
       <DialogHeader
         closeLabel={t('rotation.shiftTypes.close')}
-        onClose={() => {
-          if (!pending) setAdding(false);
-        }}
+        onClose={closeAdding}
       >
         <DialogTitle id="shift-type-new-heading">{t('rotation.shiftTypes.addHeading')}</DialogTitle>
       </DialogHeader>
@@ -156,9 +154,7 @@ export function ShiftTypeAddDialog({ screen }: { readonly screen: ShiftTypeListS
             type="button"
             variant="outline"
             disabled={pending}
-            onClick={() => {
-              setAdding(false);
-            }}
+            onClick={closeAdding}
           >
             {t('rotation.shiftTypes.cancel')}
           </Button>

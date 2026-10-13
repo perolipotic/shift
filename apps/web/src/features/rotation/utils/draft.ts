@@ -156,8 +156,10 @@ export function normalizedDraftOf(draft: RotationDraft, teams: readonly TeamRow[
 // ---------------------------------------------------------------- prefill
 
 /**
- * The draft the builder opens with: the rotation in force today, when EVERY
- * active team's assignment in force today uses ONE pattern.
+ * The draft the builder opens with: the rotation in force today, when every
+ * active team with an assignment in force today uses ONE pattern. An active
+ * team with none in force (a team added since) starts on step 1 (offset 0),
+ * so adding one team does not empty the builder.
  *
  * The draft takes that pattern's steps, and the organization's TODAY as the
  * shared anchor (owner decision, 2026-09-25). Every team's step is
@@ -165,7 +167,7 @@ export function normalizedDraftOf(draft: RotationDraft, teams: readonly TeamRow[
  * so every projected date is unchanged, and each team's step reads as what it
  * works now rather than where it stood on a stored anchor years ago.
  *
- * In any other case — no active team, a team with no rotation in force, or
+ * In any other case — no active team, no team with a rotation in force, or
  * teams on two patterns — the draft is empty, anchored on today.
  *
  * Either way the change applies from TODAY (story 2.6) until the admin moves
@@ -174,23 +176,22 @@ export function normalizedDraftOf(draft: RotationDraft, teams: readonly TeamRow[
 export function prefillOf(snapshot: RotationSnapshot, today: string): RotationDraft {
   const teams = rotationTeamsOf(snapshot);
   const empty = emptyDraftOf(teams, today);
-  const inForce = teams.map((team) => assignmentInForceOf(snapshot, team.id, today));
-  const first = inForce[0];
+  const assigned = teams
+    .map((team) => assignmentInForceOf(snapshot, team.id, today))
+    .filter((assignment) => assignment !== null);
+  const first = assigned[0];
 
-  if (first === undefined || first === null) return empty;
-  if (inForce.some((assignment) => assignment === null || assignment.patternId !== first.patternId)) {
-    return empty;
-  }
+  if (first === undefined) return empty;
+  if (assigned.some((assignment) => assignment.patternId !== first.patternId)) return empty;
 
   const steps = patternStepsOf(snapshot, first.patternId);
 
   if (steps.length === 0) return empty;
 
-  const offsets: Record<string, number> = {};
+  // A team with no rotation in force (one added since) starts on step 1.
+  const offsets: Record<string, number> = { ...empty.offsets };
 
-  for (const assignment of inForce) {
-    if (assignment === null) return empty;
-
+  for (const assignment of assigned) {
     const onAnchor = projectedStepId(steps, assignment, today);
 
     offsets[assignment.teamId] = steps.findIndex((step) => step.id === onAnchor);
@@ -749,6 +750,12 @@ export const ROTATION_NO_TEAMS = 'ROTATION_NO_TEAMS';
 export const ROTATION_SCHEDULED = 'ROTATION_SCHEDULED';
 /** The effective date is before the organization's today: past schedules are never rewritten (2.6). */
 export const ROTATION_EFFECTIVE_PAST = 'ROTATION_EFFECTIVE_PAST';
+/**
+ * The effective date is more than a year after today: most likely a typo in
+ * the year, and a change scheduled that far blocks every later save until it
+ * is cancelled. The database only checks for a finite date.
+ */
+export const ROTATION_EFFECTIVE_TOO_FAR = 'ROTATION_EFFECTIVE_TOO_FAR';
 /** A step names an archived type: `0016` refuses a step on one. */
 export const ROTATION_TYPE_ARCHIVED = 'ROTATION_TYPE_ARCHIVED';
 /** The draft is the rotation in force: the same steps and the same projection over a cycle. */
@@ -761,9 +768,27 @@ export type DraftRefusal =
   | typeof ROTATION_NO_TEAMS
   | typeof ROTATION_SCHEDULED
   | typeof ROTATION_EFFECTIVE_PAST
+  | typeof ROTATION_EFFECTIVE_TOO_FAR
   | typeof ROTATION_TYPE_ARCHIVED
   | typeof ROTATION_UNCHANGED
   | typeof ROTATION_CHANGED_TODAY;
+
+/**
+ * The latest effective date the builder accepts: the same day one year after
+ * `today` (29 February falls back to 28 February), or the last date a
+ * four-digit year can name. `null` when `today` is not an ISO date.
+ */
+export function latestEffectiveFromOf(today: string): string | null {
+  if (!isIsoDate(today)) return null;
+
+  const year = Number(today.slice(0, 4));
+
+  if (year >= 9999) return '9999-12-31';
+
+  const sameDay = `${String(year + 1).padStart(4, '0')}${today.slice(4)}`;
+
+  return isIsoDate(sameDay) ? sameDay : `${sameDay.slice(0, 8)}28`;
+}
 
 function sameSequence(one: readonly string[], other: readonly string[]): boolean {
   return one.length === other.length && one.every((id, index) => id === other[index]);
@@ -823,6 +848,10 @@ export function draftRefusalOf(
   if (rotationTeamsOf(snapshot).length === 0) return ROTATION_NO_TEAMS;
   // ISO dates order as strings: this is the insert policy's own comparison.
   if (!isIsoDate(draft.effectiveFrom) || draft.effectiveFrom < today) return ROTATION_EFFECTIVE_PAST;
+
+  const latest = latestEffectiveFromOf(today);
+
+  if (latest !== null && draft.effectiveFrom > latest) return ROTATION_EFFECTIVE_TOO_FAR;
 
   const inUse = new Set(snapshot.types.filter((type) => !type.archived).map((type) => type.id));
 
