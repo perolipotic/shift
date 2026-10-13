@@ -107,6 +107,7 @@
       "status": {
         "working": "Danas radiš {type} {range}",
         "workingUntimed": "Danas radiš {type}",
+        "workingFromYesterday": "Danas radiš {type} {range} od jučer",
         "duty": "Na dužnosti do {time}",
         "leave": "Danas si na godišnjem odmoru",
         "free": "Danas ne radiš",
