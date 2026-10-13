@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { positionsShown } from '@/features/members/utils/position';
 import { ranksShown } from '@/features/members/utils/rank';
-import { ORGANIZATION_TABLE, organizationSnapshotQueryOptions } from '@/features/organization/services/snapshot';
+import { organizationTable, organizationSnapshotQueryOptions } from '@/features/organization/services/snapshot';
 import {
   TEAM_ROSTER_KEY,
   TEAM_ROSTER_READ_STALE_MS,
@@ -48,7 +48,7 @@ export function useTeamRoster(id: string) {
 
   // Through the one factory the chrome reads this entry with: one function and one policy for the key.
   const organization = useQuery(
-    organizationSnapshotQueryOptions(() => supabaseClient().from(ORGANIZATION_TABLE)),
+    organizationSnapshotQueryOptions(organizationTable),
   );
   const snapshot =
     organization.data !== undefined && organization.data.ok ? organization.data.snapshot : null;

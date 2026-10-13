@@ -26,7 +26,7 @@ import {
 } from '@/features/members/services/list';
 import {
   ORGANIZATION_SNAPSHOT_KEY,
-  ORGANIZATION_TABLE,
+  organizationTable,
   organizationSnapshotQueryOptions,
 } from '@/features/organization/services/snapshot';
 import { OWN_TEAM_KEY } from '@/features/teams/services/roster';
@@ -73,7 +73,7 @@ export function useToday() {
   );
   const members = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
   const organization = useQuery(
-    organizationSnapshotQueryOptions(() => supabaseClient().from(ORGANIZATION_TABLE)),
+    organizationSnapshotQueryOptions(organizationTable),
   );
   const calendarState = calendarSurfaceStateOf(calendar);
   const snapshot = calendarState.snapshot;

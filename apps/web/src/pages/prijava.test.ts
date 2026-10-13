@@ -4530,7 +4530,7 @@ describe('the screen is read at all, so every sweep below means something', () =
    * what no part may hold is a handler, a ref, a form or an effect.
    */
   const ROSTER_WIRING = new RegExp(
-    `\\buseNavigate\\(|\\buseQueryClient\\(|[{,]\\s*(?:${TEAM_HANDLERS})\\s*:|\\bsupabaseClient\\b|\\bORGANIZATION_TABLE\\b|\\bTEAMS_TABLE\\b|\\.from\\(`,
+    `\\buseNavigate\\(|\\buseQueryClient\\(|[{,]\\s*(?:${TEAM_HANDLERS})\\s*:|\\bsupabaseClient\\b|\\borganizationTable\\b|\\bTEAMS_TABLE\\b|\\.from\\(`,
   );
 
   it('remounts the roster per route id, with its hook below the key', () => {

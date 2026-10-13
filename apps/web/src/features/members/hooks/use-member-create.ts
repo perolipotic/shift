@@ -18,7 +18,7 @@ import {
 import { MEMBER_ADD_CREATED_ID, MEMBER_ADD_DIALOG_HEADING_ID } from '@/features/members/utils/element-ids';
 import { rankEditOf, ranksShownIn } from '@/features/members/utils/rank';
 import {
-  ORGANIZATION_TABLE,
+  organizationTable,
   organizationSnapshotQueryOptions,
 } from '@/features/organization/services/snapshot';
 import { supabaseClient } from '@/lib/supabase/client';
@@ -113,7 +113,7 @@ export function useMemberCreate(adding: boolean, navigate: MemberAddNavigate) {
   // THE CHROME'S OWN READ POLICY, through the one factory the edit screen uses
   // too: a second consumer of one cache entry, not a second policy on it.
   const snapshot = useQuery(
-    organizationSnapshotQueryOptions(() => supabaseClient().from(ORGANIZATION_TABLE)),
+    organizationSnapshotQueryOptions(organizationTable),
   );
 
   // EVERY STATE THIS SCREEN CAN BE IN, decided in `@/features/members/services/write` and pinned

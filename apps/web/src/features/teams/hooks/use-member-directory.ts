@@ -7,7 +7,7 @@ import { ranksShown } from '@/features/members/utils/rank';
 import {
   ORGANIZATION_READ_STALE_MS,
   ORGANIZATION_SNAPSHOT_KEY,
-  ORGANIZATION_TABLE,
+  organizationTable,
   readOrganization,
 } from '@/features/organization/services/snapshot';
 import {
@@ -85,7 +85,7 @@ export function useMemberDirectory(search: string, navigate: DirectoryNavigate) 
   });
   const organization = useQuery({
     queryKey: ORGANIZATION_SNAPSHOT_KEY,
-    queryFn: () => readOrganization(supabaseClient().from(ORGANIZATION_TABLE)),
+    queryFn: () => readOrganization(organizationTable()),
     // The chrome's own cache policy for this entry (`features/navigation/components/chrome.tsx`).
     retry: false,
     staleTime: ORGANIZATION_READ_STALE_MS,

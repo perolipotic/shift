@@ -16,7 +16,7 @@ import {
 } from '@/features/members/services/list';
 import {
   ORGANIZATION_SNAPSHOT_KEY,
-  ORGANIZATION_TABLE,
+  organizationTable,
   organizationSnapshotQueryOptions,
 } from '@/features/organization/services/snapshot';
 import { supabaseClient } from '@/lib/supabase/client';
@@ -39,7 +39,7 @@ export function useMyLeave() {
   const queryClient = useQueryClient();
   const members = useQuery(membersQueryOptions(() => supabaseClient().from(MEMBERS_TABLE)));
   const organization = useQuery(
-    organizationSnapshotQueryOptions(() => supabaseClient().from(ORGANIZATION_TABLE)),
+    organizationSnapshotQueryOptions(organizationTable),
   );
   const calendar = useCalendarSnapshot();
   const records = useQuery(
