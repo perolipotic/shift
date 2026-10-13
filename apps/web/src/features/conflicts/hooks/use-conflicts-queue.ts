@@ -2,13 +2,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 
-import {
-  CALENDAR_KEY,
-  CALENDAR_READ_TABLE,
-  calendarQueryOptions,
-  calendarSurfaceStateOf,
-  type CalendarMembersRpc,
-} from '@/features/calendar/services/snapshot';
+import { useCalendarSnapshot } from '@/features/calendar/hooks/use-calendar-snapshot';
+import { CALENDAR_KEY, calendarSurfaceStateOf } from '@/features/calendar/services/snapshot';
 import { useReplacementLinkRefresh } from '@/features/conflicts/hooks/use-replacement-link-refresh';
 import { CONFLICTS_LOADING, conflictsQueueOf } from '@/features/conflicts/services/conflicts-queue';
 import {
@@ -39,6 +34,7 @@ import {
   organizationLeaveRecordsQueryOptions,
   type OrganizationLeaveRecordsTable,
 } from '@/features/leave/services/leave-list';
+import { useOrganizationToday } from '@/hooks/organization-today';
 import { supabaseClient } from '@/lib/supabase/client';
 
 /**
@@ -97,13 +93,7 @@ export function useConflictsQueue() {
     if (saved !== null) savedField.current?.focus();
   }, [saved]);
 
-  const calendar = useQuery(
-    calendarQueryOptions(
-      () => supabaseClient().from(CALENDAR_READ_TABLE),
-      // As the calendar's: the client's `rpc` is wider than the calls made.
-      () => supabaseClient() as unknown as CalendarMembersRpc,
-    ),
-  );
+  const calendar = useCalendarSnapshot();
   const records = useQuery(
     // Named structurally, as the member card's read is.
     organizationLeaveRecordsQueryOptions(
@@ -129,9 +119,12 @@ export function useConflictsQueue() {
     ),
   );
 
-  const resolved = resolvedConflictsOf({ calendar: calendarSurfaceStateOf(calendar), records, resolutions, actors });
+  const calendarState = calendarSurfaceStateOf(calendar);
+  const resolved = resolvedConflictsOf({ calendar: calendarState, records, resolutions, actors });
 
-  const queue = conflictsQueueOf({ calendar: calendarSurfaceStateOf(calendar), records, resolutions }, new Date());
+  // The organization's today, moved at its midnight: a queue left open overnight drops yesterday's conflicts.
+  const { now } = useOrganizationToday(calendarState.snapshot === null ? null : calendarState.snapshot.timeZone);
+  const queue = conflictsQueueOf({ calendar: calendarState, records, resolutions }, now);
 
   /** Read again every read the queue stands on, from the unavailable alert's retry. */
   function retry(): void {

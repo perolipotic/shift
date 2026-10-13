@@ -8,7 +8,7 @@ import {
 } from '@shift/domain';
 
 import {
-  calendarSurfaceStateOf,
+  calendarRetryStateOf,
   type CalendarQueryAnswer,
   type CalendarSnapshot,
   type CalendarSurfaceState,
@@ -24,7 +24,6 @@ import {
 } from '@/features/calendar/utils/month';
 import { durationMessageKey, durationValuesOf, type DurationValues } from '@/features/hour-bands/services/list';
 import {
-  FETCH_FETCHING,
   HOURS_CONFLICTS_LOADING,
   HOURS_CONFLICTS_UNAVAILABLE,
   conflictCountOf,
@@ -471,16 +470,13 @@ export function monthShownHeaderOf(search: HoursSearch, today: string): MonthHea
 }
 
 /**
- * The calendar read as *Sati* stands on it: `calendarSurfaceStateOf`, except
- * that a failed read being read again is loading, not the refusal —
- * TanStack Query keeps `isError` while the retry is in flight, so the message
- * and its retry would otherwise stand unchanged under the press. Never the
- * cached snapshot: the skeleton, until the new answer is in.
+ * The calendar read as *Sati* stands on it: the calendar's own
+ * `calendarRetryStateOf` — a failed read being read again is loading, not
+ * the refusal, so the retry's press shows. Never the cached snapshot: the
+ * skeleton, until the new answer is in.
  */
 export function hoursSnapshotStateOf(answer: CalendarQueryAnswer): CalendarSurfaceState {
-  if (answer.isError && answer.fetchStatus === FETCH_FETCHING) return { snapshot: null, refusal: null, loading: true };
-
-  return calendarSurfaceStateOf(answer);
+  return calendarRetryStateOf(answer);
 }
 
 /** The message alone, no navigation and no figure: a read refused. */

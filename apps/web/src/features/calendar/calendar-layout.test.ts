@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -20,6 +20,7 @@ const source = (parts: readonly string[]): string =>
     .replace(/(^|[^:])\/\/[^\n]*/g, '$1');
 const grid = source(CALENDAR_SCREEN_PARTS.grid);
 const hook = source(CALENDAR_SCREEN_PARTS.screenHook);
+const binding = source(CALENDAR_SCREEN_PARTS.snapshotHook);
 
 /** Every `className="…"` string in the grid. */
 const classes = [...grid.matchAll(/className="([^"]*)"/g)].map(([, value]) => value ?? '');
@@ -64,9 +65,12 @@ describe("the cells' scroll margins are the sticky sizes", () => {
 });
 
 describe('the calendar makes one schedule read, one leave read by role (story 5.3c), and an admin\'s resolution read (story 5.4a)', () => {
-  it('holds exactly four useQuery calls in the screen hook — the snapshot, the two leave reads only one role enables, and the resolutions only an admin enables — and no other way to fetch', () => {
-    expect(hook.split('useQuery(').length - 1).toBe(4);
-    expect(hook.split('calendarQueryOptions(').length - 1).toBe(1);
+  it('holds exactly four reads in the screen hook — the snapshot through its one binding, the two leave reads only one role enables, and the resolutions only an admin enables — and no other way to fetch', () => {
+    expect(hook.split('useCalendarSnapshot(').length - 1).toBe(1);
+    expect(hook.split('useQuery(').length - 1).toBe(3);
+    expect(hook.split('calendarQueryOptions(').length - 1).toBe(0);
+    expect(binding.split('useQuery(').length - 1).toBe(1);
+    expect(binding.split('calendarQueryOptions(').length - 1).toBe(1);
     expect(hook.split('organizationLeaveRecordsQueryOptions(').length - 1).toBe(1);
     expect(hook.split('myLeaveRecordsQueryOptions(').length - 1).toBe(1);
     expect(hook.split('organizationConflictResolutionsQueryOptions(').length - 1).toBe(1);
@@ -74,5 +78,27 @@ describe('the calendar makes one schedule read, one leave read by role (story 5.
     expect(hook.split('myConflictResolutionsQueryOptions(').length - 1).toBe(0);
     expect(hook.split('enabled:').length - 1).toBe(3);
     expect(hook).not.toMatch(/\b(fetchQuery|ensureQueryData|prefetchQuery|fetchInfiniteQuery|refetchQueries)\b/);
+  });
+});
+
+describe('the calendar snapshot has one binding (deferred work from 7.13c)', () => {
+  /** Every non-test module under `src`, as its path from `src` and its source without comments. */
+  const modules = readdirSync(srcRoot, { recursive: true, encoding: 'utf8' })
+    .filter((name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name))
+    .map((name) => ({ name, text: source([name]) }));
+
+  it('calls `calendarQueryOptions(` nowhere but its definition and the one binding, so every screen shares the key by construction', () => {
+    const callers = modules.filter(({ text }) => text.includes('calendarQueryOptions(')).map(({ name }) => name).sort();
+
+    expect(callers).toEqual([
+      join('features', 'calendar', 'hooks', 'use-calendar-snapshot.ts'),
+      join('features', 'calendar', 'services', 'snapshot.ts'),
+    ]);
+  });
+
+  it('is what the screens that read the snapshot observe it through', () => {
+    const observers = modules.filter(({ text }) => /\buseCalendarSnapshot\(\)/.test(text)).map(({ name }) => name);
+
+    expect(observers.length, 'no screen reads the snapshot through the binding').toBeGreaterThanOrEqual(10);
   });
 });

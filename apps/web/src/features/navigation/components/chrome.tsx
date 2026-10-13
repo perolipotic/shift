@@ -41,13 +41,7 @@ import {
 import { brandAccentAppearance } from '@/features/organization/utils/accent';
 import { OrganizationLockup } from '@/features/organization/components/lockup';
 import { useRenderableLogo } from '@/features/organization/hooks/logo-url';
-import {
-  ORGANIZATION_READ_STALE_MS,
-  ORGANIZATION_SNAPSHOT_KEY,
-  ORGANIZATION_TABLE,
-  ORGANIZATION_UNAVAILABLE,
-  readOrganization,
-} from '@/features/organization/services/snapshot';
+import { ORGANIZATION_TABLE, organizationSnapshotQueryOptions } from '@/features/organization/services/snapshot';
 import { currentSession, supabaseClient } from '@/lib/supabase/client';
 import { SIGN_OUT_FAILED, signOut, type SignOutFailure } from '@/features/auth/services/sign-out';
 import {
@@ -228,34 +222,33 @@ export function AppChrome({ children }: AppChromeProps) {
     queryFn: currentMemberRole,
   });
 
-  // THE SAME KEY `/organizacija` READS UNDER, which is what makes this one cache
-  // entry rather than a second snapshot — see the header.
-  //
-  // BOUNDED ON ALL THREE COUNTS, because this one renders EVERYWHERE. The
-  // settings surface's copy of this read is a screen somebody opens
-  // deliberately; this one mounts on every signed-in destination, so an
-  // unbounded version refetches the row on every navigation and every window
-  // focus, and retries a transport fault three times before settling — for a
-  // logo and a border colour. A refusal resolves as DATA rather than as a
-  // throw, so `retry: false` is about the transport faults that do throw.
-  //
-  // AND IT IS LOGGED. The header claims an unreadable organization is
-  // diagnosable; silence is what would make that false. It still reaches no
-  // message region — a person who cannot see their own branding has nothing to
-  // do about it, and the one `role="alert"` here carries the two refusals that
-  // ARE actionable.
   const memberNameRead = useQuery({
     queryKey: MEMBER_NAME_KEY,
     queryFn: () => readMemberName(supabaseClient().from(MEMBERS_TABLE), currentSession),
   });
   const memberName = memberNameRead.data ?? null;
 
-  const organizationRead = useQuery({
-    queryKey: ORGANIZATION_SNAPSHOT_KEY,
-    queryFn: readBranding,
-    retry: false,
-    staleTime: ORGANIZATION_READ_STALE_MS,
-  });
+  // THE SAME KEY `/organizacija` READS UNDER, which is what makes this one cache
+  // entry rather than a second snapshot — see the header.
+  //
+  // THROUGH THE ONE FACTORY (`organizationSnapshotQueryOptions`), so the
+  // chrome, the member screens and the team roster register one query
+  // function and one policy for the key, whichever mounts first.
+  //
+  // BOUNDED ON ALL THREE COUNTS, because this one renders EVERYWHERE: the
+  // factory holds a snapshot fresh for `ORGANIZATION_READ_STALE_MS` and never
+  // retries, so the row is not refetched on every navigation and every window
+  // focus for a logo and a border colour. A failed answer is stale at once,
+  // so the next mount reads again rather than serving it.
+  //
+  // AND IT IS LOGGED, inside the factory's query function. The header claims
+  // an unreadable organization is diagnosable; silence is what would make
+  // that false. It still reaches no message region — a person who cannot see
+  // their own branding has nothing to do about it, and the one `role="alert"`
+  // here carries the two refusals that ARE actionable.
+  const organizationRead = useQuery(
+    organizationSnapshotQueryOptions(() => supabaseClient().from(ORGANIZATION_TABLE)),
+  );
 
   const organizationAnswer = organizationRead.data;
   const organization =
@@ -324,22 +317,6 @@ export function AppChrome({ children }: AppChromeProps) {
   useEffect(() => {
     if (failure !== null) alertRegion.current?.focus();
   }, [failure]);
-
-  /**
-   * The organization, read for its branding and for nothing else.
-   *
-   * A NAMED FUNCTION rather than an arrow in the query options, so the logging
-   * is somewhere a test can reach — the same reason `@/features/organization/hooks/logo-url`
-   * keeps its own failure path out of the hook body. It logs and answers; the
-   * caller falls back.
-   */
-  async function readBranding() {
-    const outcome = await readOrganization(supabaseClient().from(ORGANIZATION_TABLE));
-
-    if (!outcome.ok) console.error(ORGANIZATION_UNAVAILABLE, outcome.code);
-
-    return outcome;
-  }
 
   /**
    * Closes the sheet — never while a sign-out is in flight, so the close

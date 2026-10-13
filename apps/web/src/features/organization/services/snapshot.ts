@@ -781,11 +781,24 @@ export function readFailureOf(read: {
  * THE TABLE IS RESOLVED INSIDE THE QUERY FUNCTION, exactly as
  * `membersQueryOptions` resolves its own, so `supabaseClient()` raising
  * `SUPABASE_ENVIRONMENT_MISSING` happens where the query can answer it.
+ *
+ * A FAILED ANSWER IS LOGGED, inside the query function, so it is reported once
+ * per read whichever consumer mounted first — the navigation chrome renders no
+ * message for it (the branding is nothing its reader can act on) and relies
+ * on the log to make it diagnosable. Every consumer, the chrome and the team
+ * roster included, reads through here, so no mount order picks another
+ * function or policy for this key.
  */
 export function organizationSnapshotQueryOptions(table: () => OrganizationTable) {
   return queryOptions({
     queryKey: ORGANIZATION_SNAPSHOT_KEY,
-    queryFn: () => readOrganization(table()),
+    queryFn: async () => {
+      const outcome = await readOrganization(table());
+
+      if (!outcome.ok) console.error(ORGANIZATION_UNAVAILABLE, outcome.code);
+
+      return outcome;
+    },
     retry: false,
     // ONLY A SNAPSHOT IS HELD FRESH. `readOrganization` resolves a failure as
     // data, so a flat bound would serve a failed answer as fresh for five
