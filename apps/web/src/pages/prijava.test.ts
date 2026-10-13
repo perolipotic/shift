@@ -1514,6 +1514,9 @@ const ORGANIZATION_MESSAGE_KEYS = join(srcRoot, 'features', 'organization', 'uti
 /** The same shape again, for the chrome's role and sign-out failures. */
 const NAVIGATION_MESSAGE_KEYS = join(srcRoot, 'features', 'navigation', 'utils', 'messages.ts');
 
+/** The same shape for the *Više* sheet's copy per destination (story 7.3's mockup). */
+const DESTINATION_COPY_KEYS = join(srcRoot, 'features', 'navigation', 'utils', 'destination-copy.ts');
+
 /** UX-DR40's tap-target floor, in CSS pixels. */
 const TARGET_FLOOR_PX = 44;
 /** Tailwind's spacing scale: `h-11` is 11 × 0.25rem at a 16px root. */
@@ -3494,7 +3497,10 @@ const KEY_SOURCES = [
   // SEVENTEEN with story 7.3's *Više*: its name twice (the button's word and
   // the sheet's `aria-label`), the sheet's close, its three group headings
   // and the "role · organization" line under the person's name.
-  { name: 'the navigation chrome', file: CHROME, keys: translationKeys, strings: 17 },
+  // EIGHTEEN with the sheet's copy: the current row's "Ovdje si". The rows'
+  // descriptions and the place under *Više* come through the next entry but
+  // one.
+  { name: 'the navigation chrome', file: CHROME, keys: translationKeys, strings: 18 },
   {
     // TWO, for three role codes and one sign-out code. The collapse is the
     // decision `messages.test.ts` executes; what this count pins is that there
@@ -3504,6 +3510,14 @@ const KEY_SOURCES = [
     file: NAVIGATION_MESSAGE_KEYS,
     keys: messageKeyUnion,
     strings: 2,
+  },
+  {
+    // NINE over two unions: a description per destination key (eight), and
+    // the one place *Više* names by a shorter word than the label.
+    name: 'the destination copy mapping',
+    file: DESTINATION_COPY_KEYS,
+    keys: messageKeyUnions,
+    strings: 9,
   },
   // ONE each, exactly. The seven together are what make the set comparison
   // below hold once `hr.json` gained eight `nav.*` keys: a key declared and
@@ -3658,7 +3672,9 @@ describe('the screen is read at all, so every sweep below means something', () =
     // SIXTY-EIGHT SINCE STORY 7.17: the member directory.
     //
     // SIXTY-NINE SINCE THE ROUTER-GUARDS FIX: the error screen (A148).
-    expect(KEY_SOURCES).toHaveLength(69);
+    //
+    // SEVENTY SINCE THE SHEET'S COPY: the destination copy mapping.
+    expect(KEY_SOURCES).toHaveLength(70);
   });
 
   // Vacuous-pass guard. A renamed or moved file would make each "contains no"
@@ -5102,8 +5118,9 @@ describe('the chrome the layout wraps every destination in', () => {
     // same section rule the links use.
     expect(more, 'Više is never marked current').toContain("aria-current={moreCurrent ? 'page' : undefined}");
     expect(chrome, 'Više decides its own current state by hand').toMatch(
-      /const moreCurrent = [\s\S]{0,160}?isCurrentDestination\(pathname, destination\.path\)/,
+      /const moreHere =[\s\S]{0,160}?isCurrentDestination\(pathname, destination\.path\)/,
     );
+    expect(chrome).toContain('const moreCurrent = moreHere !== null;');
     // The SAME treatment as the link, by construction: both carry the one
     // `shell-entry` utility rather than two copies of its classes.
     expect(
@@ -5120,8 +5137,10 @@ describe('the chrome the layout wraps every destination in', () => {
     expect(sheet, 'the sheet renders its rows some other way').toContain(
       'renderLink(destination, PLACE.sheet)',
     );
-    expect(sheet).toContain('more.everyone');
-    expect(sheet).toContain('more.adminOnly');
+    expect(sheet).toContain('labelledGroups(more,');
+    expect(chrome, 'the sidebar does not group its destinations').toContain(
+      'labelledGroups(groupDestinations(destinationsFor(role)),',
+    );
     expect(chrome, 'the phone layout is not read off the table').toContain('phoneNavigationFor(role)');
   });
 
@@ -6869,13 +6888,16 @@ describe('the keys rendered and the keys declared are the same set', () => {
       .join('\n');
     const declared = resourceKeys().filter((key) => key.startsWith('ljudi.'));
 
+    // Read once: every source is re-read and re-swept per call.
+    const rendered = used();
+
     expect(declared.length, 'no ljudi keys to sweep at all').toBeGreaterThan(0);
     for (const key of declared) {
       expect(owned, `${key} is declared in hr.json and written nowhere the readers look`).toContain(
         key,
       );
       expect(
-        used(),
+        rendered,
         `${key} is written in the source but no reader here counts it — add its shape to memberListKeys`,
       ).toContain(key);
     }

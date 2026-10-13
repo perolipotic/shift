@@ -18,9 +18,11 @@ import { expect, test } from '../../utils/custom-fixtures.ts';
 
 const ADMIN_TABS = [hr.nav.danas, hr.nav.kalendar, hr.nav.raspored, hr.nav.ljudi] as const;
 const MEMBER_TABS = [hr.nav.danas, hr.nav.kalendar, hr.nav.sati, hr.nav.godisnji] as const;
-const ADMIN_MORE = [hr.nav.sati, hr.nav.godisnji, hr.nav.postavkeRotacije, hr.nav.organizacija] as const;
+/** The sheet's rows by destination name: each row's label and its one-line
+ *  description come from the same key. */
+const ADMIN_MORE = ['sati', 'godisnji', 'postavkeRotacije', 'organizacija'] as const;
 /** Story 7.17: the member's fifth destination, the team directory, under *Pregled*. */
-const MEMBER_MORE = [hr.nav.ljudi] as const;
+const MEMBER_MORE = ['ljudi'] as const;
 
 /** Each role's first *Više* row, the page it opens and that page's heading. */
 const ROLES = [
@@ -115,7 +117,17 @@ for (const width of WIDTHS) {
         await expect(loginPage.moreButton).toHaveAttribute('aria-expanded', 'true');
 
         const sheet = loginPage.moreSheet;
-        await expect(sheet.getByRole('link')).toHaveText([...role.more]);
+        // Each row is named by its label alone and described by its one line
+        // (frame B), so the description never changes the row's name.
+        const rows = sheet.getByRole('link');
+        await expect(rows).toHaveCount(role.more.length);
+        for (const [index, key] of role.more.entries()) {
+          await expect(rows.nth(index)).toHaveAccessibleName(hr.nav[key]);
+          await expect(rows.nth(index)).toHaveAccessibleDescription(hr.shell.description[key]);
+          await expect(rows.nth(index)).toContainText(hr.shell.description[key]);
+        }
+        // Nothing in the sheet is the current page on Danas, so no marker.
+        await expect(sheet.getByText(hr.shell.moreHere, { exact: true })).toHaveCount(0);
         await expect(sheet.getByRole('group', { name: hr.shell.theme.label })).toBeVisible();
         for (const name of [hr.shell.theme.system, hr.shell.theme.light, hr.shell.theme.dark]) {
           await expect(sheet.getByRole('button', { name, exact: true })).toBeVisible();
@@ -146,12 +158,17 @@ for (const width of WIDTHS) {
         await expect(loginPage.moreButton).toHaveAttribute('aria-current', 'page');
         await expect(loginPage.moreButton).toBeInViewport({ ratio: 1 });
         await expect(loginPage.navigation.locator('[aria-current="page"]')).toHaveCount(1);
+        // Više names the place under its label (frame D), as its description,
+        // so the control is still called Više.
+        await expect(loginPage.moreButton).toHaveAccessibleDescription(role.follow.name);
+        await expect(loginPage.moreButton).toContainText(role.follow.name);
 
-        // And inside the sheet that row is the current one.
+        // And inside the sheet that row is the current one, marked in words.
         await loginPage.moreButton.click();
-        await expect(
-          loginPage.moreSheet.getByRole('link', { name: role.follow.name, exact: true }),
-        ).toHaveAttribute('aria-current', 'page');
+        const row = loginPage.moreSheet.getByRole('link', { name: role.follow.name, exact: true });
+        await expect(row).toHaveAttribute('aria-current', 'page');
+        await expect(row).toContainText(hr.shell.moreHere);
+        await expect(loginPage.moreSheet.getByText(hr.shell.moreHere, { exact: true })).toHaveCount(1);
       });
     });
   }
@@ -159,6 +176,27 @@ for (const width of WIDTHS) {
 
 test.describe('at a desktop viewport', () => {
   test.use({ storageState: ADMIN_STATE });
+
+  test('the sidebar shows the sheet’s two groups, Pregled and Postavke', async ({ page, loginPage }) => {
+    await page.goto('/danas');
+    await expect(loginPage.heading(hr.nav.danas)).toBeVisible();
+
+    const overview = loginPage.navigation.getByRole('region', { name: hr.shell.moreGroup.everyone, exact: true });
+    const settings = loginPage.navigation.getByRole('region', { name: hr.shell.moreGroup.adminOnly, exact: true });
+    await expect(overview.getByRole('heading', { name: hr.shell.moreGroup.everyone })).toBeVisible();
+    await expect(overview.getByRole('link')).toHaveText([
+      hr.nav.danas,
+      hr.nav.kalendar,
+      hr.nav.sati,
+      hr.nav.godisnji,
+      hr.nav.raspored,
+      hr.nav.ljudi,
+    ]);
+    await expect(settings.getByRole('heading', { name: hr.shell.moreGroup.adminOnly })).toBeVisible();
+    await expect(settings.getByRole('link')).toHaveText([hr.nav.postavkeRotacije, hr.nav.organizacija]);
+    // The sidebar rows carry no description; that is the sheet's.
+    await expect(loginPage.navigation.getByText(hr.shell.description.sati)).toHaveCount(0);
+  });
 
   test('the profile menu holds the theme and Odjava, and the sidebar foot has no theme of its own', async ({
     page,
@@ -303,6 +341,14 @@ test.describe('closing the sheet at 390 px', () => {
     await expect(loginPage.moreButton).toBeFocused();
   });
 
+  test('Više names Postavke rotacije by its short place, Rotacija', async ({ page, loginPage }) => {
+    await page.goto('/postavke-rotacije');
+    await expect(loginPage.moreButton).toHaveAttribute('aria-current', 'page');
+    await expect(loginPage.moreButton).toHaveAccessibleDescription(hr.shell.place.postavkeRotacije);
+    await expect(loginPage.moreButton).toHaveAccessibleName(hr.shell.more);
+    await expectNoHorizontalScroll(page);
+  });
+
   test('turning the viewport wide closes the sheet', async ({ page, loginPage }) => {
     await page.goto('/danas');
     await loginPage.moreButton.click();
@@ -325,6 +371,25 @@ test.describe('closing the sheet at 390 px', () => {
 
     await expect(loginPage.moreSheet).toBeHidden();
     await expect(page).toHaveURL('/sati');
+  });
+});
+
+test.describe('a member at a desktop viewport', () => {
+  test.use({ storageState: MEMBER_STATE });
+
+  test('the sidebar has Pregled alone, with every destination under it', async ({ page, loginPage }) => {
+    await page.goto('/danas');
+    await expect(loginPage.heading(hr.nav.danas)).toBeVisible();
+
+    const overview = loginPage.navigation.getByRole('region', { name: hr.shell.moreGroup.everyone, exact: true });
+    await expect(overview.getByRole('link')).toHaveText([
+      hr.nav.danas,
+      hr.nav.kalendar,
+      hr.nav.sati,
+      hr.nav.godisnji,
+      hr.nav.ljudi,
+    ]);
+    await expect(loginPage.navigation.getByRole('heading', { name: hr.shell.moreGroup.adminOnly })).toHaveCount(0);
   });
 });
 
