@@ -38,6 +38,9 @@ export function sortControlCursorClampOf(cursor: number, count: number): number 
 /** Which way the sorted column runs: the arrow the control draws and the word it says. */
 export type SortControlDirection = 'up' | 'down';
 
+/** `aria-sort`'s own vocabulary, which a sortable heading (`@/components/sortable-head`) reports. */
+export type SortAriaState = 'ascending' | 'descending' | 'none';
+
 /**
  * Where the list's one tab stop starts: on the sorted column, so opening the
  * list focuses what is chosen — or the first column, should the sorted one not

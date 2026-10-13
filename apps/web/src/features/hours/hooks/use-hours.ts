@@ -24,11 +24,11 @@ import { HOURS_CONFLICTS_READY, hoursConflictsStateOf } from '@/features/hours/s
 import { hoursExplanationOf, type HoursExplainRequest } from '@/features/hours/services/hours-explanation';
 import {
   hoursSearchTo,
-  hoursSnapshotStateOf,
   type HoursSearch,
   type HoursSearchChange,
   type HoursSortKey,
-} from '@/features/hours/services/my-hours';
+} from '@/features/hours/services/hours-search';
+import { hoursSnapshotStateOf } from '@/features/hours/services/my-hours';
 import {
   hoursSearchBaseOf,
   hoursPageIsOwn,

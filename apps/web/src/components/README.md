@@ -13,6 +13,13 @@ primitive is added here.
 defaults. `utils/initials.ts` is the one pure rule for initials: the avatar
 chips and the organization lockup's neutral mark both draw from it.
 
+`sortable-head.tsx` is the one sortable table heading — *Sati*'s
+organization table and *Godišnji*'s leave overview — a ghost `Button` in a
+`TableHead` with `aria-sort` on the cell. The label, the `aria-sort` state and
+the arrow's direction are passed in, all from the screen's own sort module.
+Its arrow comes from `sort-glyphs.ts`, the one direction → icon record that
+*Ljudi*'s headings and `sort-control.tsx` draw from too.
+
 No component contains a user-facing literal or calls `t()`. Every string comes
 from `lib/i18n/`, passed in by the screen.
 

@@ -31,6 +31,10 @@ export class HoursPage extends BasePage {
     return this.page.getByRole('heading', { level: 2, name });
   }
 
+  get previousButton(): Locator {
+    return this.page.getByRole('button', { name: kalendar.previous });
+  }
+
   get nextButton(): Locator {
     return this.page.getByRole('button', { name: kalendar.next });
   }
@@ -358,6 +362,16 @@ export class HoursPage extends BasePage {
         ),
       ),
     );
+  }
+
+  /**
+   * The footer row's cells as shown (story 7.14): `Ukupno za prikazane osobe`
+   * spanning Member and Team, then one cell per figure column.
+   */
+  async organizationFooter(): Promise<string[]> {
+    const cells = await this.organizationTable.locator('tfoot').getByRole('row').getByRole('cell').allTextContents();
+
+    return cells.map((text) => text.trim());
   }
 
   /** The index of a heading among the table's headings, for reading its column. */

@@ -29,7 +29,7 @@ import {
   HOUR_BAND_LIST_PARTS,
   HOUR_BAND_SCREENS_EXEMPT,
 } from '@/features/hour-bands/hour-band-screens.fixture';
-import { MEMBERS_LIST_KEY } from '@/features/members/services/list';
+import { ARROW_DOWN, ARROW_UP, MEMBERS_LIST_KEY } from '@/features/members/services/list';
 import { DESTINATIONS } from '@/features/navigation/utils/destinations';
 import {
   SETTINGS_SCREEN_EXEMPT,
@@ -188,7 +188,8 @@ const MEMBER_LIST: readonly string[] = [
   join(srcRoot, 'components', 'option-filter-bar.tsx'),
   join(MEMBERS_FEATURE, 'components', 'cell-view.tsx'),
   join(MEMBERS_FEATURE, 'utils', 'cell-content.ts'),
-  join(MEMBERS_FEATURE, 'utils', 'sort-glyphs.ts'),
+  // Epic 4 retro D2: the one glyph record every sorted heading draws from.
+  join(srcRoot, 'components', 'sort-glyphs.ts'),
 ];
 
 /**
@@ -2882,10 +2883,13 @@ const KEY_SOURCES = [
     // `@/features/hours/services/hours-explanation` (a key source), since a
     // leave line pairs each shift's team and type, so the dialog renders the
     // line it is given.
+    //
+    // ONE HUNDRED AND SIX SINCE E909: the conflicts column sorts, so the
+    // phone's sort control offers its heading too.
     name: 'the Sati destination',
     file: SATI,
     keys: translationKeys,
-    strings: 105,
+    strings: 106,
   },
   {
     // STORY 5.2c. THREE on Godišnji: its own `nav.godisnji` heading, the
@@ -3030,10 +3034,11 @@ const KEY_SOURCES = [
     // ELEVEN SINCE STORY 5.3d: the conflicts column's heading, the table's own.
     // STILL ELEVEN SINCE LEAVE IN DAYS: the leave column's heading names its
     // unit, days, in place of the table's own heading.
+    // TWELVE SINCE E922: the footer row's label, the table's own.
     name: 'the hours export rules',
     file: HOURS_EXPORT_KEYS,
     keys: (text: string) => [...translationKeys(text), ...messageKeyUnions(text)],
-    strings: 11,
+    strings: 12,
   },
   {
     // STORY 7.14: the figure's name — the total's and the leave's words —
@@ -3690,10 +3695,9 @@ describe('the screen is read at all, so every sweep below means something', () =
       found.filter((file) => !exempt.has(file)).sort(),
       'the Sati file set and the feature folders disagree',
     ).toEqual(
-      SATI.filter(
-        (file) =>
-          file !== SATI_PAGE && file !== SHARED_MONTH_NAV && file !== SHARED_FILTER_BAR && file !== SHARED_SORT_CONTROL,
-      ).sort(),
+      // Every shared part — the month toolbar, the filter bar, the sort
+      // control, the sortable heading and its glyphs — lives outside the feature.
+      SATI.filter((file) => file !== SATI_PAGE && file.startsWith(HOURS_FEATURE)).sort(),
     );
   });
 
@@ -3786,7 +3790,8 @@ describe('the screen is read at all, so every sweep below means something', () =
     expect(
       found.filter((file) => !exempt.has(file)).sort(),
       'the Godišnji file set and the feature folders disagree',
-    ).toEqual(GODISNJI.filter((file) => file !== GODISNJI_PAGE).sort());
+      // The shared sortable heading and its glyphs live in `components/` (Epic 4 retro D2).
+    ).toEqual(GODISNJI.filter((file) => file !== GODISNJI_PAGE && file.startsWith(LEAVE_FEATURE)).sort());
   });
 
   it('sweeps every part of the Danas screen, so a new file cannot escape the set', () => {
@@ -5699,12 +5704,17 @@ describe('the member list computes nothing it renders', () => {
     // wrong way is worse than none because it contradicts a correct `aria-sort`
     // on the same element. A record keyed by the module's own names, asserted
     // pair by pair.
+    // SINCE THE EPIC 4 RETRO (D2) the record is the shared one, keyed by the
+    // direction's own names — `ARROW_UP` and `ARROW_DOWN` are `up` and `down`.
     const screen = source(MEMBER_LIST);
 
-    expect(screen, 'the sort glyphs are no longer a keyed record').toMatch(
-      /\[ARROW_UP\]:\s*ArrowUp/,
+    expect(ARROW_UP).toBe('up');
+    expect(ARROW_DOWN).toBe('down');
+    expect(screen, 'the sort glyphs are no longer a keyed record').toMatch(/\bup:\s*ArrowUp\b/);
+    expect(screen).toMatch(/\bdown:\s*ArrowDown\b/);
+    expect(screen, 'the member table no longer draws from the shared record').toMatch(
+      /SORT_DIRECTION_GLYPHS\[indicator\]/,
     );
-    expect(screen).toMatch(/\[ARROW_DOWN\]:\s*ArrowDown/);
     // And no ternary picking between the two, which is the shape that gets
     // inverted silently.
     expect(

@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
+import { ArrowUpDown, type ArrowUp } from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from 'react';
 
+import { SORT_DIRECTION_GLYPHS } from '@/components/sort-glyphs';
 import { Button } from '@/components/ui/button';
 import { Popover } from '@/components/ui/popover';
 import { t } from '@/lib/i18n';
@@ -22,16 +23,6 @@ import {
   type SortControlColumn,
   type SortControlDirection,
 } from '@/utils/sort-control';
-
-/**
- * The glyph each direction draws. A RECORD keyed by the direction's own
- * names, never a ternary: which way it points is the screen's sort module's
- * decision (`hoursSortArrowOf`, `sortIndicatorOf`), executed there.
- */
-const DIRECTION_GLYPHS: Record<SortControlDirection, typeof ArrowUp> = {
-  up: ArrowUp,
-  down: ArrowDown,
-};
 
 /**
  * THE PHONE'S SORT CONTROL (story 7.6), shared by *Sati* and *Ljudi*: below
@@ -71,7 +62,7 @@ export function SortControl<K extends string>({
   const region = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const listId = useId();
-  const Glyph = DIRECTION_GLYPHS[direction];
+  const Glyph = SORT_DIRECTION_GLYPHS[direction];
   const column = sortControlLabelOf(columns, active);
   const directionName = { up: t('sort.ascending'), down: t('sort.descending') }[direction];
 
