@@ -4,7 +4,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { connect, databaseUrl, noDatabase } from './database.js';
 
 /**
- * `0023_serialize_organization_writes.sql`, executed with TWO REAL
+ * `0023_serialize_organization_writes.sql` and
+ * `0035_serialize_teams_rotation_and_definers.sql`, executed with TWO REAL
  * CONNECTIONS. Every other live suite runs one connection per case, so it
  * cannot see a race at all. This one can.
  *
@@ -22,7 +23,8 @@ import { connect, databaseUrl, noDatabase } from './database.js';
  * failure. It never decides the order.
  *
  * Every writer is a REQUEST SESSION (claims injected, `set local role
- * authenticated`), because 0023 serializes request writes and nothing else.
+ * authenticated`), because 0023 and 0035 serialize request writes and nothing
+ * else.
  * The owner connections here only build fixtures, and in the deadlock cases
  * play the operator or the cascade that takes no lock.
  *
@@ -305,6 +307,61 @@ async function demote(client: Client, member: string): Promise<{ rowCount: numbe
 async function count(observer: Client, sql: string, parameter: string): Promise<number> {
   const { rows } = await observer.query<{ total: number }>(sql, [parameter]);
   return rows[0]?.total ?? -1;
+}
+
+/** The one id an owner `insert ... returning id` answered. */
+async function insertedId(client: Client, sql: string, parameters: unknown[]): Promise<string> {
+  const { rows } = await client.query<{ id: string }>(sql, parameters);
+  const id = rows[0]?.id;
+  if (id === undefined) throw new Error(`no row returned by: ${sql}`);
+  return id;
+}
+
+/** A committed shift type, as the owner. */
+async function addShiftType(client: Client, organization: string, createdBy: string): Promise<string> {
+  return insertedId(
+    client,
+    `insert into shift_types (organization_id, name, is_working, created_by)
+     values ($1, $2, true, $3) returning id`,
+    [organization, `Tip ${crypto.randomUUID().slice(0, 8)}`, createdBy],
+  );
+}
+
+/** A committed two-step pattern no team stands on, as the owner. */
+async function addPattern(
+  client: Client,
+  organization: string,
+  createdBy: string,
+): Promise<{ pattern: string; type: string; steps: [string, string] }> {
+  const type = await addShiftType(client, organization, createdBy);
+  const pattern = await insertedId(
+    client,
+    'insert into rotation_patterns (organization_id, created_by) values ($1, $2) returning id',
+    [organization, createdBy],
+  );
+  const step = (position: number) =>
+    insertedId(
+      client,
+      `insert into rotation_steps (organization_id, pattern_id, position, shift_type_id, created_by)
+       values ($1, $2, $3, $4, $5) returning id`,
+      [organization, pattern, position, type, createdBy],
+    );
+  return { pattern, type, steps: [await step(0), await step(1)] };
+}
+
+async function insertAssignment(
+  client: Client,
+  version: { organization: string; team: string; pattern: string; step: string; anchor: string; from: string },
+): Promise<{ rowCount: number | null }> {
+  return client.query(
+    `insert into rotation_assignments (organization_id, team_id, pattern_id, offset_step_id, anchor_date, effective_from)
+     values ($1, $2, $3, $4, $5::date, $6::date)`,
+    [version.organization, version.team, version.pattern, version.step, version.anchor, version.from],
+  );
+}
+
+async function archive(client: Client, team: string): Promise<{ rowCount: number | null }> {
+  return client.query('update teams set archived = true where id = $1', [team]);
 }
 
 afterAll(async () => {
@@ -631,7 +688,432 @@ describe('concurrent writes to one organization wait for each other', () => {
   }
 });
 
-describe('every write verb 0023 names waits on the lock', () => {
+describe('a team archive and an assignment onto the team wait for each other (0035)', () => {
+  for (const onto of ['team_membership_versions', 'rotation_assignments'] as const) {
+    for (const t1Ends of ['commit', 'rollback'] as const) {
+      it.skipIf(noDatabase)(
+        t1Ends === 'commit'
+          ? `refuses a ${onto} insert that waited while its team was archived`
+          : `admits the same ${onto} insert once the archive is rolled back (the control)`,
+        async () => {
+          // The insert policy reads `teams.archived` inline, on the snapshot
+          // taken before the wait. 0035's BEFORE ROW re-check reads it again.
+          const setup = await fixture(async (client) => {
+            const organization = await addOrganization(client);
+            const a = await addAccount(client, organization, 'admin');
+            return {
+              organization,
+              a,
+              b: await addAccount(client, organization, 'admin'),
+              member: await addAccount(client, organization, 'member_role'),
+              team: await addTeam(client, organization, a.authUserId),
+              rotation: await addPattern(client, organization, a.authUserId),
+              from: await organizationDay(client, organization, 3),
+            };
+          });
+          const { organization, a, b, member, team, rotation, from } = setup;
+
+          await race(async (t1, t2, observer) => {
+            await t1.query('begin');
+            await actAs(t1, a, organization);
+            expect((await archive(t1, team)).rowCount).toBe(1);
+
+            const pid = await backendPid(t2);
+            await t2.query('begin');
+            await actAs(t2, b, organization);
+            const second = pending(
+              onto === 'team_membership_versions'
+                ? insertMembership(t2, { organization, member: member.id, team, from })
+                : insertAssignment(t2, {
+                    organization,
+                    team,
+                    pattern: rotation.pattern,
+                    step: rotation.steps[0],
+                    anchor: from,
+                    from,
+                  }),
+            );
+            await waitUntilBlocked(observer, pid, organization, second);
+
+            await t1.query(t1Ends);
+
+            if (t1Ends === 'commit') {
+              expect(await second.outcome).toMatchObject({
+                ok: false,
+                code: '42501',
+                message: `new row violates row-level security policy for table "${onto}"`,
+              });
+            } else {
+              expect(await second.outcome).toEqual({ ok: true, rowCount: 1 });
+            }
+          });
+        },
+      );
+    }
+  }
+
+  it.skipIf(noDatabase)('refuses an archive that waited while a member was assigned to the team', async () => {
+    // The other order. The archive's WITH CHECK asks `team_in_use`, a volatile
+    // reader, after the lock, and sees the committed assignment.
+    const { organization, a, b, member, team, from } = await fixture(async (client) => {
+      const organization = await addOrganization(client);
+      const a = await addAccount(client, organization, 'admin');
+      return {
+        organization,
+        a,
+        b: await addAccount(client, organization, 'admin'),
+        member: await addAccount(client, organization, 'member_role'),
+        team: await addTeam(client, organization, a.authUserId),
+        from: await organizationDay(client, organization, 3),
+      };
+    });
+
+    await race(async (t1, t2, observer) => {
+      await t1.query('begin');
+      await actAs(t1, a, organization);
+      expect((await insertMembership(t1, { organization, member: member.id, team, from })).rowCount).toBe(1);
+
+      const pid = await backendPid(t2);
+      await t2.query('begin');
+      await actAs(t2, b, organization);
+      const second = pending(archive(t2, team));
+      await waitUntilBlocked(observer, pid, organization, second);
+
+      await t1.query('commit');
+
+      expect(await second.outcome).toMatchObject({ ok: false, code: '42501' });
+      await t2.query('rollback');
+      expect(
+        await count(observer, 'select count(*)::int as total from teams where id = $1 and archived', team),
+        'a team in use was archived',
+      ).toBe(0);
+    });
+  });
+});
+
+describe('rotation writes to one organization wait for each other (0035)', () => {
+  for (const t1Ends of ['commit', 'rollback'] as const) {
+    it.skipIf(noDatabase)(
+      t1Ends === 'commit'
+        ? 'removes no step of a pattern whose first assignment committed while the delete waited'
+        : 'removes the same step once the assignment is rolled back (the control)',
+      async () => {
+        // 0025's KNOWN GAP. The offset key locks its own step; the delete
+        // names the OTHER step, which only the policy's volatile
+        // `rotation_pattern_in_use` guards.
+        const { organization, a, b, team, rotation, from } = await fixture(async (client) => {
+          const organization = await addOrganization(client);
+          const a = await addAccount(client, organization, 'admin');
+          return {
+            organization,
+            a,
+            b: await addAccount(client, organization, 'admin'),
+            team: await addTeam(client, organization, a.authUserId),
+            rotation: await addPattern(client, organization, a.authUserId),
+            from: await organizationDay(client, organization, 2),
+          };
+        });
+
+        await race(async (t1, t2, observer) => {
+          await t1.query('begin');
+          await actAs(t1, a, organization);
+          expect(
+            (
+              await insertAssignment(t1, {
+                organization,
+                team,
+                pattern: rotation.pattern,
+                step: rotation.steps[0],
+                anchor: from,
+                from,
+              })
+            ).rowCount,
+          ).toBe(1);
+
+          const pid = await backendPid(t2);
+          await t2.query('begin');
+          await actAs(t2, b, organization);
+          const second = pending(t2.query('delete from rotation_steps where id = $1', [rotation.steps[1]]));
+          await waitUntilBlocked(observer, pid, organization, second);
+
+          await t1.query(t1Ends);
+
+          expect(await second.outcome).toEqual({ ok: true, rowCount: t1Ends === 'commit' ? 0 : 1 });
+        });
+      },
+    );
+  }
+
+  it.skipIf(noDatabase)('refuses a second scheduled rotation change for one team on another date', async () => {
+    const { organization, a, b, team, rotation, first, later } = await fixture(async (client) => {
+      const organization = await addOrganization(client);
+      const a = await addAccount(client, organization, 'admin');
+      return {
+        organization,
+        a,
+        b: await addAccount(client, organization, 'admin'),
+        team: await addTeam(client, organization, a.authUserId),
+        rotation: await addPattern(client, organization, a.authUserId),
+        first: await organizationDay(client, organization, 3),
+        later: await organizationDay(client, organization, 5),
+      };
+    });
+    const version = (from: string) => ({
+      organization,
+      team,
+      pattern: rotation.pattern,
+      step: rotation.steps[0],
+      anchor: from,
+      from,
+    });
+
+    await race(async (t1, t2, observer) => {
+      await t1.query('begin');
+      await actAs(t1, a, organization);
+      expect((await insertAssignment(t1, version(first))).rowCount).toBe(1);
+
+      const pid = await backendPid(t2);
+      await t2.query('begin');
+      await actAs(t2, b, organization);
+      const second = pending(insertAssignment(t2, version(later)));
+      await waitUntilBlocked(observer, pid, organization, second);
+
+      await t1.query('commit');
+
+      // One scheduled version at most: after the lock, the volatile reader
+      // sees T1's version dated after today.
+      expect(await second.outcome).toMatchObject({ ok: false, code: '42501' });
+    });
+  });
+});
+
+describe('a caller demoted while the write waited no longer writes as an admin (0035)', () => {
+  for (const write of ['a team move', 'a promotion', 'a rotation step'] as const) {
+    it.skipIf(noDatabase)(`refuses ${write} whose caller was demoted while it waited`, async () => {
+      // `current_member_access()` is STABLE, so the policy saw A as an admin
+      // on the statement's snapshot. The BEFORE ROW trigger re-reads A.
+      const setup = await fixture(async (client) => {
+        const organization = await addOrganization(client);
+        const a = await addAccount(client, organization, 'admin');
+        return {
+          organization,
+          a,
+          b: await addAccount(client, organization, 'admin'),
+          member: await addAccount(client, organization, 'member_role'),
+          team: await addTeam(client, organization, a.authUserId),
+          rotation: await addPattern(client, organization, a.authUserId),
+          from: await organizationDay(client, organization, 2),
+        };
+      });
+      const { organization, a, b, member, team, rotation, from } = setup;
+
+      await race(async (t1, t2, observer) => {
+        await t1.query('begin');
+        await actAs(t1, b, organization);
+        expect((await demote(t1, a.id)).rowCount).toBe(1);
+
+        const pid = await backendPid(t2);
+        await t2.query('begin');
+        await actAs(t2, a, organization);
+        const second = pending(
+          write === 'a team move'
+            ? insertMembership(t2, { organization, member: member.id, team, from })
+            : write === 'a promotion'
+              ? t2.query(`update members set role = 'admin' where id = $1`, [member.id])
+              : t2.query(
+                  `insert into rotation_steps (organization_id, pattern_id, position, shift_type_id)
+                   values ($1, $2, 2, $3)`,
+                  [organization, rotation.pattern, rotation.type],
+                ),
+        );
+        await waitUntilBlocked(observer, pid, organization, second);
+
+        await t1.query('commit');
+
+        expect(await second.outcome).toMatchObject({ ok: false, code: '42501' });
+        await t2.query('rollback');
+        expect(
+          await count(
+            observer,
+            `select count(*)::int as total from members where organization_id = $1 and role = 'admin'`,
+            organization,
+          ),
+          'a demoted admin promoted somebody',
+        ).toBe(1);
+      });
+    });
+  }
+
+  it.skipIf(noDatabase)('still lets an admin remove themself, which the policy admits', async () => {
+    // The BEFORE ROW re-check reads the caller before the row is written, so
+    // an admin deleting their own row is still the admin who asked.
+    const { organization, a } = await fixture(async (client) => {
+      const organization = await addOrganization(client);
+      const a = await addAccount(client, organization, 'admin');
+      await addAccount(client, organization, 'admin');
+      return { organization, a };
+    });
+
+    await race(async (t1) => {
+      await t1.query('begin');
+      await actAs(t1, a, organization);
+      expect(await pending(t1.query('delete from members where id = $1', [a.id])).outcome).toEqual({
+        ok: true,
+        rowCount: 1,
+      });
+    });
+  });
+});
+
+describe('the override definers take the organization lock before their admin check (0035)', () => {
+  const REMOVALS = [
+    { fn: 'remove_shift_type_override', message: 'SHIFT_TYPE_OVERRIDE_REMOVAL_REFUSED', table: 'shift_type_overrides' },
+    { fn: 'remove_roster_override', message: 'ROSTER_OVERRIDE_REMOVAL_REFUSED', table: 'roster_overrides' },
+  ] as const;
+
+  for (const { fn, message, table } of REMOVALS) {
+    it.skipIf(noDatabase)(`refuses ${fn} whose caller was demoted while it waited`, async () => {
+      const { organization, a, b, override } = await fixture(async (client) => {
+        const organization = await addOrganization(client);
+        const a = await addAccount(client, organization, 'admin');
+        const member = await addAccount(client, organization, 'member_role');
+        const team = await addTeam(client, organization, a.authUserId);
+        const day = await organizationDay(client, organization, 4);
+        const override =
+          table === 'shift_type_overrides'
+            ? await insertedId(
+                client,
+                `insert into shift_type_overrides (organization_id, team_id, date, shift_type_id, reason, created_by)
+                 values ($1, $2, $3::date, $4, 'x', $5) returning id`,
+                [organization, team, day, await addShiftType(client, organization, a.authUserId), a.authUserId],
+              )
+            : await insertedId(
+                client,
+                `insert into roster_overrides (organization_id, team_id, date, member_in_id, reason, created_by)
+                 values ($1, $2, $3::date, $4, 'x', $5) returning id`,
+                [organization, team, day, member.id, a.authUserId],
+              );
+        return { organization, a, b: await addAccount(client, organization, 'admin'), override };
+      });
+
+      await race(async (t1, t2, observer) => {
+        await t1.query('begin');
+        await actAs(t1, b, organization);
+        expect((await demote(t1, a.id)).rowCount).toBe(1);
+
+        const pid = await backendPid(t2);
+        await t2.query('begin');
+        await actAs(t2, a, organization);
+        const second = pending(t2.query(`select public.${fn}($1::uuid)`, [override]));
+        await waitUntilBlocked(observer, pid, organization, second);
+
+        await t1.query('commit');
+
+        expect(await second.outcome).toMatchObject({ ok: false, code: '42501', message });
+        await t2.query('rollback');
+        expect(
+          await count(
+            observer,
+            `select count(*)::int as total from ${table} where id = $1 and removed_at is null`,
+            override,
+          ),
+          'a demoted admin removed an override',
+        ).toBe(1);
+      });
+    });
+  }
+
+  for (const t1Ends of ['commit', 'rollback'] as const) {
+    it.skipIf(noDatabase)(
+      t1Ends === 'commit'
+        ? 'refuses a confirmation that waited while a newer rotation change was saved'
+        : 'admits the same confirmation once the change is rolled back (the control)',
+      async () => {
+        // Story 3.5c's race. B reviewed the override under the version in
+        // force today and confirms with its save time; A saves a newer change
+        // governing the override's date first.
+        const setup = await fixture(async (client) => {
+          const organization = await addOrganization(client);
+          const a = await addAccount(client, organization, 'admin');
+          const team = await addTeam(client, organization, a.authUserId);
+          const rotation = await addPattern(client, organization, a.authUserId);
+          const today = await organizationDay(client, organization, 0);
+          const { rows } = await client.query<{ at: string }>(
+            `insert into rotation_assignments
+               (organization_id, team_id, pattern_id, offset_step_id, anchor_date, effective_from, created_by)
+             values ($1, $2, $3, $4, $5::date, $5::date, $6)
+             returning created_at::text as at`,
+            [organization, team, rotation.pattern, rotation.steps[0], today, a.authUserId],
+          );
+          const override = await insertedId(
+            client,
+            `insert into shift_type_overrides (organization_id, team_id, date, shift_type_id, reason, created_by)
+             values ($1, $2, $3::date, $4, 'x', $5) returning id`,
+            [
+              organization,
+              team,
+              await organizationDay(client, organization, 10),
+              await addShiftType(client, organization, a.authUserId),
+              a.authUserId,
+            ],
+          );
+          return {
+            organization,
+            a,
+            b: await addAccount(client, organization, 'admin'),
+            team,
+            rotation,
+            reviewed: rows[0]?.at ?? '',
+            override,
+            change: await organizationDay(client, organization, 5),
+            // One day off on a two-step cycle: a different value.
+            anchor: await organizationDay(client, organization, 1),
+          };
+        });
+        const { organization, a, b, team, rotation, reviewed, override, change, anchor } = setup;
+
+        await race(async (t1, t2, observer) => {
+          await t1.query('begin');
+          await actAs(t1, a, organization);
+          expect(
+            (
+              await insertAssignment(t1, {
+                organization,
+                team,
+                pattern: rotation.pattern,
+                step: rotation.steps[0],
+                anchor,
+                from: change,
+              })
+            ).rowCount,
+          ).toBe(1);
+
+          const pid = await backendPid(t2);
+          await t2.query('begin');
+          await actAs(t2, b, organization);
+          const second = pending(
+            t2.query('select public.confirm_shift_type_override($1::uuid, $2::timestamptz)', [override, reviewed]),
+          );
+          await waitUntilBlocked(observer, pid, organization, second);
+
+          await t1.query(t1Ends);
+
+          if (t1Ends === 'commit') {
+            expect(await second.outcome).toMatchObject({
+              ok: false,
+              code: 'P0001',
+              message: 'SHIFT_TYPE_OVERRIDE_CHANGED',
+            });
+          } else {
+            expect(await second.outcome).toEqual({ ok: true, rowCount: 1 });
+          }
+        });
+      },
+    );
+  }
+});
+
+describe('every write verb 0023 and 0035 name waits on the lock', () => {
   it.skipIf(noDatabase)('makes a members insert wait', async () => {
     const { organization, a, b, member, user, from } = await fixture(async (client) => {
       const organization = await addOrganization(client);
@@ -733,7 +1215,8 @@ describe('every write verb 0023 names waits on the lock', () => {
             and t.tgfoid in (
               'public.serialize_organization_writes()'::regprocedure,
               'public.refuse_status_version_leaving_no_admin()'::regprocedure,
-              'public.refuse_truncate()'::regprocedure
+              'public.refuse_truncate()'::regprocedure,
+              'public.refuse_write_by_stale_admin()'::regprocedure
             )
           order by 1, 2`,
       );
@@ -742,9 +1225,19 @@ describe('every write verb 0023 names waits on the lock', () => {
         { table: 'member_status_versions', trigger: 'member_status_versions_refuse_truncate', type: 2 | 32, columns: null },
         { table: 'member_status_versions', trigger: 'member_status_versions_serialize_organization_writes', type: 2 | 4 | 8 | 16, columns: null },
         { table: 'members', trigger: 'members_refuse_truncate', type: 2 | 32, columns: null },
+        // 0035's re-check of the caller is ROW level and BEFORE: after the
+        // statement's lock, before the row is written.
+        { table: 'members', trigger: 'members_refuse_write_by_stale_admin', type: 1 | 2 | 4 | 8 | 16, columns: ['role'] },
         { table: 'members', trigger: 'members_serialize_organization_writes', type: 2 | 4 | 8 | 16, columns: ['role'] },
+        { table: 'rotation_assignments', trigger: 'rotation_assignments_refuse_write_by_stale_admin', type: 1 | 2 | 4 | 8, columns: null },
+        { table: 'rotation_assignments', trigger: 'rotation_assignments_serialize_organization_writes', type: 2 | 4 | 8, columns: null },
+        { table: 'rotation_steps', trigger: 'rotation_steps_refuse_write_by_stale_admin', type: 1 | 2 | 4 | 8, columns: null },
+        { table: 'rotation_steps', trigger: 'rotation_steps_serialize_organization_writes', type: 2 | 4 | 8, columns: null },
         { table: 'team_membership_versions', trigger: 'team_membership_versions_refuse_truncate', type: 2 | 32, columns: null },
+        { table: 'team_membership_versions', trigger: 'team_membership_versions_refuse_write_by_stale_admin', type: 1 | 2 | 4 | 8 | 16, columns: null },
         { table: 'team_membership_versions', trigger: 'team_membership_versions_serialize_organization_writes', type: 2 | 4 | 8 | 16, columns: null },
+        { table: 'teams', trigger: 'teams_refuse_write_by_stale_admin', type: 1 | 2 | 16, columns: ['archived'] },
+        { table: 'teams', trigger: 'teams_serialize_organization_writes', type: 2 | 16, columns: ['archived'] },
       ]);
     } finally {
       await client.end();
