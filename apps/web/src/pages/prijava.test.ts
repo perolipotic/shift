@@ -2695,12 +2695,12 @@ const KEY_SOURCES = [
   },
   {
     // STORY 3.5c: the six refusals of a disposition (an archived team or type
-    // among them) and the three things a landed one says — confirmed,
-    // amended, discarded.
+    // among them), 0035's seventh (the governing rotation version changed),
+    // and the three things a landed one says — confirmed, amended, discarded.
     name: 'the rotation disposition rules',
     file: ROTATION_DISPOSITION_KEYS,
     keys: memberListKeys,
-    strings: 9,
+    strings: 10,
   },
   {
     // STORY 2.4: the four step names and Dalje's three labels, one per step

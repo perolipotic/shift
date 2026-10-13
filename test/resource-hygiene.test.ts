@@ -1304,6 +1304,9 @@ const SANCTIONED_SCREEN_KEYS = [
   'rotation.builder.overrides.refused.denied',
   'rotation.builder.overrides.refused.gone',
   'rotation.builder.overrides.refused.archived',
+  // 0035: a confirmation refused because the rotation version governing the
+  // override's date changed since the review was read.
+  'rotation.builder.overrides.refused.changed',
   'rotation.builder.overrides.refused.reason',
   'rotation.builder.overrides.refused.sameAsProjected',
   'rotation.builder.overrides.refused.failed',

@@ -11,6 +11,7 @@ import {
 } from '@/features/conflicts/services/override-erasures';
 import {
   DISPOSITION_ARCHIVED,
+  DISPOSITION_CHANGED,
   DISPOSITION_FAILED,
   DISPOSITION_GONE,
   DISPOSITION_SAME_AS_PROJECTED,
@@ -68,9 +69,9 @@ export function reviewRefusalOf(code: OverrideChangeRefusal): DispositionFailure
 }
 
 /**
- * Whether a refusal means the review is stale (`gone`, `archived`): it is
+ * Whether a refusal means the review is stale (`gone`, `archived`, `changed`): it is
  * read again, the dialog closes and the review says so — the existing path.
  */
 export function staleRefusalOf(code: DispositionFailure): boolean {
-  return code === DISPOSITION_GONE || code === DISPOSITION_ARCHIVED;
+  return code === DISPOSITION_GONE || code === DISPOSITION_ARCHIVED || code === DISPOSITION_CHANGED;
 }

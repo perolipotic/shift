@@ -15248,9 +15248,32 @@ describe('a shift-type override is removed by an active admin alone, attributed 
  * has, and so write nothing.
  */
 
-/** `confirm_shift_type_override(id)`, as whoever the connection currently is. */
-async function confirmOverride(client: Client, id: string): Promise<void> {
-  await client.query('select public.confirm_shift_type_override($1::uuid)', [id]);
+/**
+ * `confirm_shift_type_override(id, token)`, as whoever the connection
+ * currently is. The token is the save time of the version governing the
+ * override's date now, read by the same session, so it is right unless
+ * `token` is given (0035). A session that cannot read the override sends
+ * `null`, and is refused before the token is compared.
+ */
+async function confirmOverride(client: Client, id: string, token?: string | null): Promise<void> {
+  const governing =
+    token !== undefined
+      ? token
+      : (
+          await client.query<{ at: string | null }>(
+            `select (select a.created_at::text
+                       from rotation_assignments a
+                      where a.organization_id = o.organization_id
+                        and a.team_id = o.team_id
+                        and a.effective_from <= o.date
+                      order by a.effective_from desc
+                      limit 1) as at
+               from shift_type_overrides o
+              where o.id = $1`,
+            [id],
+          )
+        ).rows[0]?.at ?? null;
+  await client.query('select public.confirm_shift_type_override($1::uuid, $2::timestamptz)', [id, governing]);
 }
 
 /** `amend_shift_type_override(id, type, reason)`, as whoever the connection currently is; the new id. */
@@ -15448,6 +15471,53 @@ describe('a pending override is confirmed or amended by an active admin alone, a
   );
 
   it.skipIf(noDatabase).each(FIXTURES)(
+    'refuses a $fixture confirm whose governing version is not the one sent with P0001 SHIFT_TYPE_OVERRIDE_CHANGED (0035)',
+    async ({ slug, admin }) => {
+      await inRolledBackTransaction(async (client) => {
+        const owner = await memberByUsername(client, slug, admin);
+        const organization = owner.organizationId;
+        const team = await seededTeam(client, organization, 'Smjena A');
+        const type = await seededShiftType(client, organization, 'Slobodno');
+
+        await actAs(client, owner.authUserId, organization);
+        const id = await insertOverride(client, { organization, team, date: '2026-10-01', type, reason: 'x' });
+        await actAsOwner(client);
+        const before = await overrideRow(client, id);
+        const { rows: governing } = await client.query<{ at: string; later: string }>(
+          `select a.created_at::text as at, (a.created_at + interval '1 microsecond')::text as later
+             from rotation_assignments a
+            where a.team_id = $1 and a.effective_from <= '2026-10-01'
+            order by a.effective_from desc
+            limit 1`,
+          [team],
+        );
+        const at = governing[0]?.at ?? '';
+        expect(at, `${slug}: no version governs the date, so the token proves nothing`).not.toBe('');
+
+        await actAs(client, owner.authUserId, organization);
+        const cases = {
+          // Another admin saved a newer change after the review was read.
+          'a newer save': await refusedThenContinue(client, () => confirmOverride(client, id, governing[0]?.later ?? '')),
+          // The review showed no version governing the date; one does now.
+          'none sent': await refusedThenContinue(client, () => confirmOverride(client, id, null)),
+        };
+        await actAsOwner(client);
+
+        for (const [label, refusal] of Object.entries(cases)) {
+          expect(refusal, `${slug}: ${label}`).toEqual({ code: 'P0001', message: 'SHIFT_TYPE_OVERRIDE_CHANGED' });
+        }
+        expect(await overrideRow(client, id), `${slug}: a refused confirmation changed the row`).toEqual(before);
+
+        // The token the review read is admitted.
+        await actAs(client, owner.authUserId, organization);
+        await confirmOverride(client, id, at);
+        await actAsOwner(client);
+        expect((await overrideRow(client, id))?.['confirmed_by']).toBe(owner.authUserId);
+      });
+    },
+  );
+
+  it.skipIf(noDatabase).each(FIXTURES)(
     'refuses a $fixture member-role account, an inactive admin and a session with no claim with 42501, and changes nothing',
     async ({ slug, admin, member }) => {
       await inRolledBackTransaction(async (client) => {
@@ -15533,7 +15603,10 @@ describe('a pending override is confirmed or amended by an active admin alone, a
   );
 
   it.skipIf(noApi).each([
-    { name: 'confirm_shift_type_override', body: { p_override_id: '00000000-0000-4000-8000-000000000000' } },
+    {
+      name: 'confirm_shift_type_override',
+      body: { p_override_id: '00000000-0000-4000-8000-000000000000', p_governing_saved_at: null },
+    },
     {
       name: 'amend_shift_type_override',
       body: {
@@ -15555,7 +15628,7 @@ describe('a pending override is confirmed or amended by an active admin alone, a
     async ({ slug, admin, member }) => {
       const nobody = '00000000-0000-4000-8000-000000000000';
       const calls = [
-        { name: 'confirm_shift_type_override', body: { p_override_id: nobody } },
+        { name: 'confirm_shift_type_override', body: { p_override_id: nobody, p_governing_saved_at: null } },
         { name: 'amend_shift_type_override', body: { p_override_id: nobody, p_shift_type_id: nobody, p_reason: 'x' } },
       ];
       for (const { name, body } of calls) {
