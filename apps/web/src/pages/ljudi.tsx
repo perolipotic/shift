@@ -16,7 +16,6 @@ import {
   MEMBERS_PAGE_HEADING_ID,
   LJUDI_DIRECTORY,
   LJUDI_TABLE,
-  NO_TEXT,
   ljudiViewOf,
   membersAddSearchOf,
   membersMessageKey,
@@ -28,6 +27,7 @@ import { MemberDirectory } from '@/features/teams/components/member-directory';
 import { useMemberDirectory, type DirectoryNavigate } from '@/features/teams/hooks/use-member-directory';
 import { MEMBER_ROLE_UNAVAILABLE, type MemberRoleOutcome } from '@/features/navigation/services/role';
 import { appLayoutRoute } from '@/pages/_app';
+import { NO_TEXT } from '@/utils/text';
 
 /**
  * `Ljudi` — ONE DESTINATION WITH ROLE-SCOPED CONTENT (story 7.17), as *Sati*

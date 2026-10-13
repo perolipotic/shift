@@ -18,7 +18,6 @@ import {
   SHIFT_TYPES_UNAVAILABLE,
   chipClassOf,
   compareCreation,
-  durationValuesOf,
   instantOf,
   rampSlotsOf,
   readShiftTypes,
@@ -41,6 +40,7 @@ import {
 } from '@/features/shift-types/services/list';
 import { RAMP_SLOT_COUNT, rampSlotOf, rampTokenOf } from '@/features/shift-types/utils/ramp';
 import { shiftTypeFormStateOf } from '@/features/shift-types/services/write';
+import { durationValuesOf } from '@/utils/time';
 
 /**
  * Story 2.2b's list half, executed rather than read (AD-15): every read-side

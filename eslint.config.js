@@ -189,7 +189,9 @@ export const FEATURE_PUBLIC = {
     'services/resolutions', // calendar, hours, teams, today
   ],
   'hour-bands': [
-    'services/list', // calendar, conflicts, hours, shift-types, pages
+    // The generic time helpers (`minuteOfTime`, `durationValuesOf`)
+    // moved to `utils/time`, so shift-types no longer reaches this module.
+    'services/list', // calendar, conflicts, hours, today, pages
     'services/write', // pages
   ],
   // Story 6.1b: *Danas*'s hours tile is *Sati*'s own surface for the
@@ -226,7 +228,9 @@ export const FEATURE_PUBLIC = {
   ],
   // Story 6.1b: *Danas*'s leave tile reads the viewer's allowance, as *Godišnji* does.
   members: [
-    'services/list', // conflicts, hour-bands, leave, shift-types, teams, today, pages
+    // `NO_TEXT` and `shownDate` live in `utils/text`, shared by every feature
+    // without reaching into this one.
+    'services/list', // conflicts, leave, teams, today, pages
     'utils/position', // calendar, conflicts, teams
     'utils/rank', // calendar, conflicts, organization, teams
   ],

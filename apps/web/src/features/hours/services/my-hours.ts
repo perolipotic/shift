@@ -22,7 +22,7 @@ import {
   monthShownOf,
   type MonthHeader,
 } from '@/features/calendar/utils/month';
-import { durationMessageKey, durationValuesOf, type DurationValues } from '@/features/hour-bands/services/list';
+import { durationMessageKey } from '@/features/hour-bands/services/list';
 import {
   FETCH_FETCHING,
   HOURS_CONFLICTS_LOADING,
@@ -33,6 +33,7 @@ import {
   type HoursConflictsState,
   type LeaveRecordsByMember,
 } from '@/features/hours/services/hours-conflicts';
+import { durationValuesOf, type DurationValues } from '@/utils/time';
 
 /**
  * *Sati*: the viewer's own month of hours (story 4.1b). A member sees their

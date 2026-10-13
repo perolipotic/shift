@@ -20,8 +20,9 @@ import {
   type CalendarDay,
   type CalendarDayShift,
 } from '@/features/calendar/utils/month';
-import { durationMessageKey, durationValuesOf, type DurationValues } from '@/features/hour-bands/services/list';
+import { durationMessageKey } from '@/features/hour-bands/services/list';
 import { formatMinuteOfDay, nextIsoDate, previousIsoDate, type WallClock } from '@/lib/i18n/format';
+import { durationValuesOf, type DurationValues } from '@/utils/time';
 
 /**
  * Today's 24 h duty (story 6.2): the viewer's working shifts that touch, read

@@ -1,7 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 
-import { NO_TEXT } from '@/features/members/services/list';
 import { TEAM_CREATE_DEPENDENTS, refreshAfterWrite } from '@/features/teams/services/dependents';
 import {
   TEAMS_LIST_KEY,
@@ -20,6 +19,7 @@ import {
   type TeamWriteTable,
 } from '@/features/teams/services/write';
 import { supabaseClient } from '@/lib/supabase/client';
+import { NO_TEXT } from '@/utils/text';
 
 /**
  * The team list's state, its one read and its add (story 1.7a): the add

@@ -15,7 +15,6 @@ import {
   HOUR_BANDS_TABLE,
   HOUR_BANDS_UNAVAILABLE,
   durationMessageKey,
-  durationValuesOf,
   hourBandById,
   hourBandDisplayRowsOf,
   hourBandRowOf,
@@ -23,7 +22,6 @@ import {
   hourBandsQueryOptions,
   hourBandsNoticeOf,
   hourBandsSurfaceStateOf,
-  minuteOfTime,
   partitionBarOf,
   DAY_SCALE,
   hourBandPreviewOf,
@@ -34,6 +32,7 @@ import {
 } from '@/features/hour-bands/services/list';
 import { hourBandFormStateOf } from '@/features/hour-bands/services/write';
 import { initLocalization, t } from '@/lib/i18n';
+import { durationValuesOf } from '@/utils/time';
 
 /**
  * Story 2.1b's list half, executed rather than read (AD-15): every read-side
@@ -169,16 +168,6 @@ describe('the read', () => {
       ok: false,
       code: HOUR_BANDS_UNAVAILABLE,
     });
-  });
-
-  it('parses a stored time and an entered one into the same minute', () => {
-    expect(minuteOfTime('07:00:00')).toBe(420);
-    expect(minuteOfTime('07:00')).toBe(420);
-    expect(minuteOfTime('00:00')).toBe(0);
-    expect(minuteOfTime('23:59:00')).toBe(1439);
-    for (const refused of ['24:00', '07:60', '07:00:30', '7:00', '', 'nonsense']) {
-      expect(minuteOfTime(refused), refused).toBeNull();
-    }
   });
 
   it('finds the band a route names, and nothing for an id it lacks', () => {
