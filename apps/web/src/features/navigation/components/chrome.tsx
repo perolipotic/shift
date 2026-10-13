@@ -213,6 +213,7 @@ export function AppChrome({ children }: AppChromeProps) {
   const rowNameId = useId();
   const rowDescriptionId = useId();
   const moreHereId = useId();
+  const moreLabelId = useId();
   // The group headings' ids, one pair per place: the sidebar and the sheet
   // are in the document at once.
   const sidebarGroupIds = [useId(), useId()] as const;
@@ -988,15 +989,19 @@ export function AppChrome({ children }: AppChromeProps) {
               aria-haspopup="dialog"
               aria-expanded={moreOpen}
               aria-current={moreCurrent ? 'page' : undefined}
+              aria-labelledby={moreLabelId}
               aria-describedby={moreHere === null ? undefined : moreHereId}
               onClick={() => setMoreOpen(true)}
             >
               <Ellipsis aria-hidden className="size-4 shrink-0" />
-              <span className="max-w-full truncate">{moreName}</span>
+              <span id={moreLabelId} className="max-w-full truncate">
+                {moreName}
+              </span>
               {/* THE PLACE, under the label while *Više* is current (frame D),
                   so the bar says where the person is and not only that it is
-                  somewhere in the sheet. Its description rather than its name,
-                  so the control is still called *Više*; an inline-block, so the
+                  somewhere in the sheet. Its description rather than its name
+                  (the name is the label alone, `aria-labelledby`), so the
+                  control is still called *Više*; an inline-block, so the
                   current underline stays on the label. */}
               {moreHere === null ? null : (
                 <span className="-mt-0.5 max-w-full leading-none">
