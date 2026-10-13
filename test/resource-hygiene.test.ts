@@ -1976,6 +1976,22 @@ const SANCTIONED_SCREEN_KEYS = [
   'organization.fireRanksUse',
   'organization.fireRanksHint',
   'rotation.builder.history.close',
+  // DEFERRED-WORK SWEEP (members polish): the retry beside each admin list's
+  // and edit screen's read failure, and the hint under the status dialog's date.
+  'ljudi.error.retry',
+  'smjene.error.retry',
+  'organization.hourBands.error.retry',
+  'rotation.shiftTypes.error.retry',
+  'rotation.builder.error.retry',
+  'ljudi.status.dateHint',
+  // DECISION 16: the team dialog's *Što se mijenja* — its heading, and the
+  // last shift in the team left and the first in the team joined, each with
+  // or without the type's range.
+  'smjene.membership.changes',
+  'smjene.membership.lastIn',
+  'smjene.membership.lastInNoRange',
+  'smjene.membership.firstIn',
+  'smjene.membership.firstInNoRange',
 ];
 
 /** Everything the resource file is permitted to hold, together. */

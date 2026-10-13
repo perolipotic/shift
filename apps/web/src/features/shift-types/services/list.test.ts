@@ -29,9 +29,11 @@ import {
   shiftTypeListOf,
   shiftTypeRowOf,
   shiftTypesMessageKey,
+  shiftTypesRetryMessageKey,
   shiftTypesQueryOptions,
   shiftTypesNoticeOf,
   shiftTypesSurfaceStateOf,
+  shiftTypesSubmitTodayOf,
   shiftTypesTodayOf,
   type ShiftTypeRow,
   type ShiftTypesAnswer,
@@ -482,6 +484,16 @@ describe('the list, over both fixtures', () => {
     expect(shiftTypesTodayOf({ ...snapshot, timeZone: 'America/Los_Angeles' }, late)).toBe('2026-09-25');
   });
 
+  it("takes the organization's today again at submit, so a screen open across its midnight moves with it", async () => {
+    const snapshot = await snapshotOf([]);
+    // DRAWN at 21:30Z on the 25th (23:30 in Zagreb), SUBMITTED an hour later.
+    const drawn = shiftTypesTodayOf(snapshot, new Date('2026-09-25T21:30:00Z'));
+
+    expect(drawn).toBe('2026-09-25');
+    expect(shiftTypesSubmitTodayOf(snapshot, new Date('2026-09-25T22:30:00Z'))).toBe('2026-09-26');
+    expect(shiftTypesSubmitTodayOf(null, new Date('2026-09-25T22:30:00Z'))).toBeNull();
+  });
+
   it('shapes a duration as units, never plurals', () => {
     expect(shiftTypeDurationMessageKey(720)).toBe('rotation.shiftTypes.duration.hours');
     expect(shiftTypeDurationMessageKey(90)).toBe('rotation.shiftTypes.duration.hoursMinutes');
@@ -713,5 +725,9 @@ describe('the surface state, driven through the one query definition', () => {
 
   it('names the read failure through its own key', () => {
     expect(shiftTypesMessageKey(SHIFT_TYPES_UNAVAILABLE)).toBe('rotation.shiftTypes.error.unavailable');
+  });
+
+  it('offers a retry beside the read failure', () => {
+    expect(shiftTypesRetryMessageKey(SHIFT_TYPES_UNAVAILABLE)).toBe('rotation.shiftTypes.error.retry');
   });
 });

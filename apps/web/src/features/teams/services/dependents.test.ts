@@ -43,6 +43,7 @@ import {
   TEAM_CHANGE_DEPENDENTS,
   TEAM_CREATE_DEPENDENTS,
   refreshAfterWrite,
+  retryRead,
   type InvalidatingClient,
 } from '@/features/teams/services/dependents';
 import { TEAMS_LIST_KEY } from '@/features/teams/services/list';
@@ -412,6 +413,78 @@ describe('a failed re-read never turns a landed write into a refusal', () => {
         refreshAfterWrite(client, MEMBERS_LIST_KEY, MEMBERSHIP_WRITE_DEPENDENTS),
       ).resolves.toBeUndefined();
       expect(client.getQueryState(OWN_TEAM_KEY)?.fetchStatus, 'the re-read did not pause').toBe('paused');
+    } finally {
+      unsubscribe();
+    }
+  });
+});
+
+describe('a read failure’s retry reads its own key again, and leaves a read in flight to land', () => {
+  const wasServer = environmentManager.isServer();
+
+  beforeAll(() => {
+    environmentManager.setIsServer(() => false);
+  });
+
+  afterAll(() => {
+    environmentManager.setIsServer(() => wasServer);
+  });
+
+  it('re-reads a failed key, and nothing that depends on it', async () => {
+    let calls = 0;
+    const observer = new QueryObserver(client, {
+      queryKey: TEAMS_LIST_KEY,
+      queryFn: () => {
+        calls += 1;
+
+        return calls === 1 ? Promise.reject(new Error('offline')) : Promise.resolve({ fresh: true });
+      },
+      retry: false,
+    });
+    const unsubscribe = observer.subscribe(() => undefined);
+
+    try {
+      await vi.waitFor(() => {
+        expect(observer.getCurrentResult().isError).toBe(true);
+      });
+      await expect(retryRead(client, TEAMS_LIST_KEY)).resolves.toBeUndefined();
+      expect(observer.getCurrentResult().data).toEqual({ fresh: true });
+      // NO WRITE LANDED: a dependent of a team write is left as it was.
+      expect(client.getQueryState(ROTATION_KEY)?.isInvalidated).toBe(false);
+    } finally {
+      unsubscribe();
+    }
+  });
+
+  it('never restarts a read already in flight, however often it is pressed', async () => {
+    const calls: number[] = [];
+    let land: (value: unknown) => void = () => undefined;
+    const observer = new QueryObserver(client, {
+      queryKey: TEAMS_LIST_KEY,
+      queryFn: ({ signal }) => {
+        calls.push(calls.length);
+        signal.addEventListener('abort', () => {
+          calls.push(-1);
+        });
+
+        return new Promise((resolve) => {
+          land = resolve;
+        });
+      },
+      retry: false,
+    });
+    const unsubscribe = observer.subscribe(() => undefined);
+
+    try {
+      await vi.waitFor(() => {
+        expect(observer.getCurrentResult().fetchStatus).toBe('fetching');
+      });
+      const first = retryRead(client, TEAMS_LIST_KEY);
+      const second = retryRead(client, TEAMS_LIST_KEY);
+
+      land({ fresh: true });
+      await Promise.all([first, second]);
+      expect(calls, 'a press cancelled or restarted the read in flight').toEqual([0]);
     } finally {
       unsubscribe();
     }

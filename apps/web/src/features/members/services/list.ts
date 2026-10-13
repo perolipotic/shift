@@ -2000,6 +2000,20 @@ export function membersMessageKey(
 }
 
 /**
+ * The retry the read failure's notice offers, or `null` for none: a read that
+ * was unavailable is read again (as `kalendar.retry` does), and a refusal —
+ * which only signing in again fixes — offers nothing to press.
+ */
+export function membersRetryMessageKey(failure: MembersFailure): 'ljudi.error.retry' | null {
+  if (failure === MEMBERS_UNAVAILABLE) return 'ljudi.error.retry';
+  if (failure === MEMBERS_REFUSED) return null;
+
+  const unhandled: never = failure;
+
+  return unhandled;
+}
+
+/**
  * The label a permission level renders as.
  *
  * AN EXHAUSTIVE MAPPING and never a binary ternary, which is the shape this

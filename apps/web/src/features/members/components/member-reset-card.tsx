@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ConfirmDialog, DialogFooter } from '@/components/ui/dialog';
+import { ConfirmDialog, Dialog, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Notice } from '@/components/ui/notice';
 import { CredentialLine } from '@/features/members/components/credential-line';
 import { t } from '@/lib/i18n';
@@ -15,13 +15,17 @@ import {
   RESET_SHOWN,
   type ResetCredential,
 } from '@/features/members/services/write';
-import { MEMBER_RESET_ERROR_ID, MEMBER_SIGN_IN_HEADING_ID } from '@/features/members/utils/element-ids';
+import {
+  MEMBER_RESET_DIALOG_HEADING_ID,
+  MEMBER_RESET_ERROR_ID,
+  MEMBER_SIGN_IN_HEADING_ID,
+} from '@/features/members/utils/element-ids';
 import { refusalText } from '@/features/members/utils/refusal-text';
 
 /**
  * The member page's *Prijava* card (story 7.11; the reset since story 1.5b):
  * the username the person signs in with, and `Dodijeli novu lozinku` in its header —
- * its confirmation first, then the new password shown once.
+ * its confirmation first, then the new password shown once, in a dialog.
  *
  * Every piece of its state is scoped through `raisedForMember` in the hook,
  * so an armed confirmation or a shown password cannot cross from one member
@@ -163,40 +167,45 @@ export function MemberResetCard({ edit }: { readonly edit: MemberEdit }): ReactN
     );
   }
 
+  /** The shown password dismissed: the only way out, and focus back on the offer. */
+  function dismissIssued(): void {
+    setIssued(null);
+    focusResetOpener();
+  }
+
   /**
-   * The new credential, shown once.
+   * The new credential, shown once, IN A DIALOG (story 7.8's AC, as *Dodaj
+   * osobu*'s second step shows a new member's, story 7.13b).
    *
    * `role="status"` AND NOT `role="alert"`: the assertive region on this screen
-   * belongs to the refusal. THE DISMISS IS THE ONLY WAY OUT, and it is what
-   * makes a second reset possible at all.
+   * belongs to the refusal. THE DISMISS IS THE ONLY WAY OUT — `Sakrij lozinku`
+   * or the close control, never Escape or the backdrop, which would lose the
+   * one copy by accident — and it is what makes a second reset possible at all.
    */
   function renderIssued(shown: ResetCredential): ReactNode {
     return (
-      <div className="grid gap-4">
+      <Dialog open={true} dismissible={false} onOpenChange={dismissIssued} aria-labelledby={MEMBER_RESET_DIALOG_HEADING_ID}>
+        <DialogHeader closeLabel={t('ljudi.page.close')} onClose={dismissIssued}>
+          {/* ITS OWN TITLE, never the create form's `Početna lozinka`: this is
+              not an initial credential. Focus lands here once it opens. */}
+          <DialogTitle id={MEMBER_RESET_DIALOG_HEADING_ID} tabIndex={-1}>
+            {t('ljudi.form.resetCredential')}
+          </DialogTitle>
+        </DialogHeader>
         <Notice role="status">
           {t('ljudi.form.resetIssued')}
         </Notice>
-        <div className="grid gap-2">
-          {/* ITS OWN LABEL, never the create form's `Početna lozinka`: this is
-              not an initial credential. */}
-          <p className="text-sm text-muted-foreground">{t('ljudi.form.resetCredential')}</p>
-          {/* DATA, never a key, with `Kopiraj` beside it (story 7.8). */}
-          <CredentialLine password={shown.password} />
-        </div>
+        {/* DATA, never a key, with `Kopiraj` beside it (story 7.8). */}
+        <CredentialLine password={shown.password} />
         {/* ITS OWN SENTENCE: a reset is not the first sign-in, so it names
             the NEXT one (story 7.8). */}
         <p className="text-sm font-medium">{t('ljudi.form.resetCredentialOnce')}</p>
-        <Button
-          className="h-11 w-full sm:w-auto sm:justify-self-start"
-          type="button"
-          variant="outline"
-          onClick={() => {
-            setIssued(null);
-          }}
-        >
-          {t('ljudi.form.resetDismiss')}
-        </Button>
-      </div>
+        <DialogFooter>
+          <Button className="h-11" type="button" onClick={dismissIssued}>
+            {t('ljudi.form.resetDismiss')}
+          </Button>
+        </DialogFooter>
+      </Dialog>
     );
   }
 
